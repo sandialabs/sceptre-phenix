@@ -5,14 +5,16 @@ import { actionState } from '@/utils/operations.js';
 // not. The Disks page's details window and each row's buttons share these.
 
 // What each disk action needs: the RBAC verb, the disk name the role is
-// checked against (none to create a disk), whether minimega runs it on the
-// disk's path, whether a running experiment using the disk rules it out,
-// and, for actions only VM disks allow, the word for a disk they were used
-// on.
+// checked against (none to create a disk), whether the action reads the disk
+// into a new one, so the role must also be allowed to get it, whether
+// minimega runs it on the disk's path, whether a running experiment using the
+// disk rules it out, and, for actions only VM disks allow, the word for a
+// disk they were used on.
 const byName = (disk) => disk.name;
 export const DISK_ACTION_RULES = {
   snapshot: {
     verb: 'create',
+    reads: true,
     minimega: true,
     idle: true,
     vmOnly: 'snapshotted',
@@ -33,7 +35,7 @@ export const DISK_ACTION_RULES = {
     idle: true,
     vmOnly: 'rebased',
   },
-  clone: { verb: 'create' },
+  clone: { verb: 'create', reads: true },
   resize: { verb: 'update', name: byName, minimega: true, idle: true },
   download: { verb: 'get', name: byName },
   rename: { verb: 'update', name: byName, idle: true },
@@ -88,9 +90,11 @@ export function diskDisabledReason(action, disk, { disks = [], can }) {
       return `its backing image is ${readOnlyReason(backing)}`;
     }
   }
-  const permitted = rule.name
-    ? [rule.name(disk)].flat().every((name) => can(rule.verb, name))
-    : can(rule.verb);
+  const permitted =
+    (rule.name
+      ? [rule.name(disk)].flat().every((name) => can(rule.verb, name))
+      : can(rule.verb)) &&
+    (!rule.reads || can('get', disk.name));
   return permitted ? null : NO_PERMISSION;
 }
 

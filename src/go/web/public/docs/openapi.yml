@@ -2853,7 +2853,7 @@ paths:
       description: >-
         Makes a new qcow2 image backed by the image, with minimega's `disk
         snapshot`. Needs the `disks` `create` permission for the new image's
-        file name.
+        file name and `get` for the image's.
       operationId: postDisksSnapshot
       parameters:
         - name: disk
@@ -3031,7 +3031,8 @@ paths:
       summary: Copy a disk image
       description: >-
         Copies the image's file to a new file, never replacing one. Needs the
-        `disks` `create` permission for the new image's file name.
+        `disks` `create` permission for the new image's file name and `get`
+        for the image's.
       operationId: postDisksClone
       parameters:
         - name: disk
@@ -3083,7 +3084,8 @@ paths:
         hidden temporary file (`.<new>.partial-<hex>`) that becomes the new
         image only once complete, so a canceled or interrupted clone leaves no
         image; the server deletes such temporary files when it starts. Needs
-        the `disks` `create` permission for the new image's file name.
+        the `disks` `create` permission for the new image's file name and
+        `get` for the image's.
       operationId: postDisksCloneJob
       parameters:
         - name: disk

@@ -372,6 +372,12 @@ func TestDiskActionsRefuse(t *testing.T) {
 	all := disksRole([]string{"*"}, "create", "update", "delete", "get")
 	q := url.QueryEscape
 
+	// may create any image and get only its own (x*), so not a.qc2
+	ownOnly := disksRole(nil, "create")
+	ownOnly.Spec.Policies = append(ownOnly.Spec.Policies, &v1.PolicySpec{
+		Resources: []string{"disks"}, ResourceNames: []string{"x*"}, Verbs: []string{"get"},
+	})
+
 	for _, tc := range []struct {
 		name, method, target string
 		role                 rbac.Role
@@ -386,6 +392,7 @@ func TestDiskActionsRefuse(t *testing.T) {
 		{"snapshot missing", http.MethodPost, "/snapshot?disk=missing.qc2&new=x", all, http.StatusNotFound},
 		{"snapshot onto an image", http.MethodPost, "/snapshot?disk=a.qc2&new=over.qc2", all, http.StatusConflict},
 		{"snapshot not allowed", http.MethodPost, "/snapshot?disk=a.qc2&new=x", disksRole(nil, "update"), http.StatusForbidden},
+		{"snapshot a disk it may not get", http.MethodPost, "/snapshot?disk=a.qc2&new=x", ownOnly, http.StatusForbidden},
 		{"snapshot to its folder", http.MethodPost, "/snapshot?disk=" + q("win/win10.qcow2") + "&new=.", all, http.StatusBadRequest},
 		{"commit outside", http.MethodPost, "/commit?disk=" + q(outside+"/o.qc2"), all, http.StatusBadRequest},
 		{"commit into outside", http.MethodPost, "/commit?disk=over.qc2", all, http.StatusBadRequest},
@@ -402,12 +409,14 @@ func TestDiskActionsRefuse(t *testing.T) {
 		{"clone to outside", http.MethodPost, "/clone?disk=a.qc2&new=" + q("/tmp/x"), all, http.StatusBadRequest},
 		{"clone onto an image", http.MethodPost, "/clone?disk=a.qc2&new=over.qc2", all, http.StatusConflict},
 		{"clone not allowed", http.MethodPost, "/clone?disk=a.qc2&new=x", disksRole(nil, "update", "get"), http.StatusForbidden},
+		{"clone a disk it may not get", http.MethodPost, "/clone?disk=a.qc2&new=x", ownOnly, http.StatusForbidden},
 		{"clone to no name", http.MethodPost, "/clone?disk=" + q("win/win10.qcow2") + "&new=", all, http.StatusBadRequest},
 		{"clone to a folder", http.MethodPost, "/clone?disk=" + q("win/win10.qcow2") + "&new=" + q("backup/"), all, http.StatusBadRequest},
 		{"clone job outside", http.MethodPost, "/clone/jobs?disk=" + q(outside+"/o.qc2") + "&new=x", all, http.StatusBadRequest},
 		{"clone job onto an image", http.MethodPost, "/clone/jobs?disk=a.qc2&new=over.qc2", all, http.StatusConflict},
 		{"clone job of a missing image", http.MethodPost, "/clone/jobs?disk=missing.qc2&new=x", all, http.StatusNotFound},
 		{"clone job not allowed", http.MethodPost, "/clone/jobs?disk=a.qc2&new=x", disksRole(nil, "update", "get"), http.StatusForbidden},
+		{"clone job of a disk it may not get", http.MethodPost, "/clone/jobs?disk=a.qc2&new=x", ownOnly, http.StatusForbidden},
 		{"rename onto an image", http.MethodPost, "/rename?disk=a.qc2&new=over.qc2", all, http.StatusConflict},
 		{"rename to a name with a comma", http.MethodPost, "/rename?disk=a.qc2&new=" + q("a,b"), all, http.StatusBadRequest},
 		{"rename a folder", http.MethodPost, "/rename?disk=win&new=x", all, http.StatusBadRequest},
@@ -480,7 +489,7 @@ func TestDiskActionsOnNestedImages(t *testing.T) {
 	backedBy(t, dir+"/win/child.qc2", "../a.qc2")
 
 	var (
-		server = serveAs(t, "alice", disksRole(nil, "create", "update", "delete")).URL + "/api/v1/disks"
+		server = serveAs(t, "alice", disksRole(nil, "create", "update", "delete", "get")).URL + "/api/v1/disks"
 		q      = url.QueryEscape
 		events = captureAudit(t)
 	)
@@ -548,7 +557,7 @@ func TestCloneDiskJob(t *testing.T) {
 
 	writeDisks(t, files.dir+"/win/win10.qcow2")
 
-	server := serveAs(t, "alice", disksRole(nil, "create")).URL + "/api/v1/disks"
+	server := serveAs(t, "alice", disksRole(nil, "create", "get")).URL + "/api/v1/disks"
 	events := captureAudit(t)
 
 	resp := do(t, http.MethodPost, server+"/clone/jobs?disk=win/win10.qcow2&new=copy", "")
@@ -604,7 +613,7 @@ func TestCloneDiskJobAuditsFailure(t *testing.T) {
 
 	writeDisks(t, files.dir+"/a.qc2", files.dir+"/b.qc2")
 
-	server := serveAs(t, "alice", disksRole(nil, "create")).URL + "/api/v1/disks"
+	server := serveAs(t, "alice", disksRole(nil, "create", "get")).URL + "/api/v1/disks"
 
 	release := make(chan struct{})
 	held := startTestJob(t, registry, "alice", "", release, "")

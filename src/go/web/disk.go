@@ -325,6 +325,14 @@ func CommitDisk(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// mayCopyDisk reports whether the role may snapshot or clone the disk at path
+// to newPath: it must be allowed to create the new image and to get the one
+// it reads, as a download of the copy would hand out what the source holds.
+func mayCopyDisk(role rbac.Role, path, newPath string) bool {
+	return role.Allowed("disks", "create", filepath.Base(newPath)) &&
+		role.Allowed("disks", "get", filepath.Base(path))
+}
+
 // SnapshotDisk - POST /disks/snapshot?disk={disk}&new={new}
 //
 // disk is relative to the minimega files directory, or absolute; new is
@@ -340,7 +348,7 @@ func SnapshotDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !role.Allowed("disks", "create", filepath.Base(newPath)) {
+	if !mayCopyDisk(role, path, newPath) {
 		diskForbidden(w, r, audit.DiskSnapshot, "snapshotting disk not allowed", audit.Fields{File: path, Target: newPath})
 
 		return
@@ -451,7 +459,7 @@ func CloneDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !role.Allowed("disks", "create", filepath.Base(newPath)) {
+	if !mayCopyDisk(role, path, newPath) {
 		diskForbidden(w, r, audit.DiskClone, "cloning disk not allowed", audit.Fields{File: path, Target: newPath})
 
 		return
@@ -493,7 +501,7 @@ func CloneDiskJob(w http.ResponseWriter, r *http.Request) {
 
 	cloned := audit.Fields{File: path, Target: newPath}
 
-	if !role.Allowed("disks", "create", filepath.Base(newPath)) {
+	if !mayCopyDisk(role, path, newPath) {
 		diskForbidden(w, r, audit.DiskClone, "cloning disk not allowed", cloned)
 
 		return

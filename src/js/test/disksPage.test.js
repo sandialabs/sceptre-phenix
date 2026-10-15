@@ -230,7 +230,14 @@ describe('disk actions', () => {
 
   // the permissions each action needs on snap.qc2, which is backed by base.qc2
   it.each([
-    ['snapshot', [['disks', 'create']]],
+    // snapshotting and cloning read the disk into a new one
+    [
+      'snapshot',
+      [
+        ['disks', 'create'],
+        ['disks', 'get', 'snap.qc2'],
+      ],
+    ],
     // committing writes the image into its backing image
     [
       'commit',
@@ -240,7 +247,13 @@ describe('disk actions', () => {
       ],
     ],
     ['rebase', [['disks', 'update', 'snap.qc2']]],
-    ['clone', [['disks', 'create']]],
+    [
+      'clone',
+      [
+        ['disks', 'create'],
+        ['disks', 'get', 'snap.qc2'],
+      ],
+    ],
     ['resize', [['disks', 'update', 'snap.qc2']]],
     ['download', [['disks', 'get', 'snap.qc2']]],
     ['rename', [['disks', 'update', 'snap.qc2']]],
@@ -297,24 +310,24 @@ describe('disk actions', () => {
       },
     ],
     [
-      'a role that may only create disks',
+      'a role that may only create disks, so not read one to copy',
       allowOnly(['*', 'create']),
       {
-        'snap.qc2': [OK, OK, NO, NO, NO],
-        'isos/tools.iso': [VM_ONLY, OK, NO, NO, NO],
-        'live.qc2': [USED, OK, NO, USED, USED],
-        'my disk.qc2': [MM, OK, NO, NO, NO],
+        'snap.qc2': [NO, NO, NO, NO, NO],
+        'isos/tools.iso': [VM_ONLY, NO, NO, NO, NO],
+        'live.qc2': [USED, NO, NO, USED, USED],
+        'my disk.qc2': [MM, NO, NO, NO, NO],
         ...readOnly,
       },
     ],
     [
-      'a role that may not download',
+      'a role that may not get disks, so not download or copy them',
       denyOnly(['*', 'get']),
       {
-        'snap.qc2': [OK, OK, NO, OK, OK],
-        'isos/tools.iso': [VM_ONLY, OK, NO, OK, OK],
-        'live.qc2': [USED, OK, NO, USED, USED],
-        'my disk.qc2': [MM, OK, NO, OK, OK],
+        'snap.qc2': [NO, NO, NO, OK, OK],
+        'isos/tools.iso': [VM_ONLY, NO, NO, OK, OK],
+        'live.qc2': [USED, NO, NO, USED, USED],
+        'my disk.qc2': [MM, NO, NO, OK, OK],
         ...readOnly,
       },
     ],

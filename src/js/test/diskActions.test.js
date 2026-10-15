@@ -87,7 +87,13 @@ describe('diskDisabledReason', () => {
   });
 
   it.each([
-    ['snapshot', [['create', undefined]]],
+    [
+      'snapshot',
+      [
+        ['create', undefined],
+        ['get', 'snap.qc2'],
+      ],
+    ],
     [
       'commit',
       [
@@ -95,7 +101,13 @@ describe('diskDisabledReason', () => {
         ['update', 'base.qc2'],
       ],
     ],
-    ['clone', [['create', undefined]]],
+    [
+      'clone',
+      [
+        ['create', undefined],
+        ['get', 'snap.qc2'],
+      ],
+    ],
     ['download', [['get', 'snap.qc2']]],
     ['delete', [['delete', 'snap.qc2']]],
   ])('needs %s permissions %j', (action, needed) => {

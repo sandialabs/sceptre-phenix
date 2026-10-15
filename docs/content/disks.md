@@ -171,7 +171,8 @@ why:
   and `Rebase` apply to VM images only.
 * `Can't delete: you don't have permission` — your role lacks the permission
   the action needs: `create` on `disks` for `Snapshot` and `Clone`, which the
-  server checks against the new image's file name, `update` for `Rebase`,
+  server checks against the new image's file name, along with `get` on the
+  image they copy, `update` for `Rebase`,
   `Rename`, and `Resize`, `update` on both the image and its *backing* image
   for `Commit`, `get` for `Download`, and `delete` for `Delete`.
 
