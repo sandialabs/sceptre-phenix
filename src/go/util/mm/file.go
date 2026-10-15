@@ -16,11 +16,6 @@ import (
 // files directory, before asking again.
 const filesDirRetry = time.Minute
 
-// filesDirWait is how long a caller waits on another's question to minimega
-// for its files directory before using the fallback instead. The question goes
-// over the shared minimega connection, which may be busy for minutes.
-var filesDirWait = 5 * time.Second //nolint:gochecknoglobals // shortened by tests
-
 //nolint:gochecknoglobals // the process's view of minimega's files directory
 var filesDir = struct {
 	mu      sync.Mutex
@@ -86,7 +81,10 @@ func FilesDirectoryGiven() <-chan struct{} {
 // nor minimega may be ready, and keeps the answer. Until minimega answers it
 // returns <PhenixBase>/images, asking again at most once every filesDirRetry.
 // One caller asks at a time, without holding filesDir.mu, so a slow minimega
-// holds up neither FilesDirectoryGiven nor, beyond filesDirWait, other callers.
+// does not hold up FilesDirectoryGiven. Other callers wait for that answer
+// rather than take the fallback early, which would point them at a directory
+// minimega does not use; the question is bounded by the shared connection's
+// own timeouts.
 func filesDirectory() string {
 	filesDir.mu.Lock()
 
@@ -101,15 +99,13 @@ func filesDirectory() string {
 	if asking := filesDir.asking; asking != nil {
 		filesDir.mu.Unlock()
 
-		select {
-		case <-asking:
-			filesDir.mu.Lock()
-			defer filesDir.mu.Unlock()
+		<-asking
 
-			if filesDir.dir != "" {
-				return filesDir.dir
-			}
-		case <-time.After(filesDirWait):
+		filesDir.mu.Lock()
+		defer filesDir.mu.Unlock()
+
+		if filesDir.dir != "" {
+			return filesDir.dir
 		}
 
 		return fallback

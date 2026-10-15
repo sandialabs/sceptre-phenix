@@ -102,10 +102,10 @@ func TestGetMMFullPath(t *testing.T) { //nolint:paralleltest // shares the fake 
 	}
 }
 
-// While one caller waits on a slow minimega for its files directory, others
-// are not held up: FilesDirectoryGiven answers at once, and GetMMFullPath
-// gives the fallback after filesDirWait, or minimega's answer if it comes
-// first.
+// While one caller waits on a slow minimega for its files directory,
+// FilesDirectoryGiven answers at once, and other GetMMFullPath callers wait
+// for minimega's answer rather than take the fallback, a directory minimega
+// does not use.
 func TestFilesDirectoryDoesNotWaitOnASlowMinimega(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	var (
 		release = make(chan struct{})
@@ -129,10 +129,10 @@ func TestFilesDirectoryDoesNotWaitOnASlowMinimega(t *testing.T) { //nolint:paral
 
 	base := t.TempDir()
 
-	originalBase, originalWait := common.PhenixBase, filesDirWait
-	common.PhenixBase, filesDirWait = base, 50*time.Millisecond //nolint:reassign // the fallback's parent
+	originalBase := common.PhenixBase
+	common.PhenixBase = base //nolint:reassign // the fallback's parent
 
-	t.Cleanup(func() { common.PhenixBase, filesDirWait = originalBase, originalWait }) //nolint:reassign // restore
+	t.Cleanup(func() { common.PhenixBase = originalBase }) //nolint:reassign // restore
 
 	first := make(chan string, 1)
 
@@ -164,16 +164,31 @@ func TestFilesDirectoryDoesNotWaitOnASlowMinimega(t *testing.T) { //nolint:paral
 
 	within("FilesDirectoryGiven", func() { _ = FilesDirectoryGiven() })
 
-	within("another GetMMFullPath", func() {
-		if got := GetMMFullPath("a.qc2"); got != base+"/images/a.qc2" {
-			t.Errorf("another caller got %q, want the fallback", got)
-		}
-	})
+	second := make(chan string, 1)
+
+	go func() { second <- GetMMFullPath("b.qc2") }()
+
+	// minimega is still busy, so an answer now would be the fallback
+	select {
+	case got := <-second:
+		close(release)
+		t.Fatalf("another caller answered %q before minimega did", got)
+	case <-time.After(200 * time.Millisecond):
+	}
 
 	close(release)
 
 	if got := <-first; got != "/srv/files/a.qc2" {
 		t.Errorf("the asking caller got %q, want minimega's answer", got)
+	}
+
+	select {
+	case got := <-second:
+		if got != "/srv/files/b.qc2" {
+			t.Errorf("another caller got %q, want minimega's answer, not the fallback under %s", got, base)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("another caller still waits after minimega answered")
 	}
 
 	if got := GetMMFullPath("a.qc2"); got != "/srv/files/a.qc2" {
