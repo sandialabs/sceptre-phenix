@@ -82,6 +82,10 @@ tags:
     description: The web UI settings the store holds, and the parts of them every user reads
   - name: Logs
     description: The server's log entries
+  - name: Events
+    description: >-
+      The websocket the web UI follows the server's changes on, and the
+      requests it sends there
   - name: Console
     description: >-
       minimega consoles in the web UI (the server must run with
@@ -6210,6 +6214,56 @@ paths:
           description: forbidden
         "500":
           description: the log files could not be read
+  "/ws":
+    get:
+      tags:
+        - Events
+      summary: Receive the server's events over a WebSocket
+      description: |
+        The web UI's event stream. Each text frame holds one or more JSON
+        `WebSocketMessage`s, one per line: a change the server publishes,
+        such as an `experiment` that was created, started or deleted, an
+        `experiment/vm` that was started, stopped, redeployed or updated, a
+        VM `experiment/vm/screenshot`, a `config`, `user`, `job` or `disks`
+        change, `apps/<app>` trigger progress, a SCORCH `apps/scorch`
+        update, or a `log` entry. A client gets only the messages its role
+        may see, each checked against the permission of the route that
+        made the change, and `log` entries only once it subscribes and only
+        when its role may `get` `logs`.
+
+        A client sends JSON `WebSocketRequest`s, of at most 2 KiB:
+
+        - `{"resource": {"type": "log", "action": "subscribe"}}` (or
+          `unsubscribe`) starts or stops the live log entries.
+        - `{"resource": {"type": "experiment/vms", "name": "<exp>",
+          "action": "list"}, "request": {...}}` asks for a page of the
+          experiment's VMs, answered with an `experiment/vms` message, whose
+          VMs then get `experiment/vm/screenshot` messages while the
+          experiment runs; `request` takes `filter`, `show_dnb`,
+          `sort_column`, `sort_asc`, `page_number` and `page_size`. A newer
+          list replaces one not yet answered, and `unsubscribe` stops the
+          screenshots. Needs `vms` `list`.
+        - `{"resource": {"type": "metadata/screenshot"}, "request": {"size":
+          "<width>"}}` sets the width of the client's screenshots, in pixels.
+        - `{"resource": {"type": "experiment/topology", "name": "<exp>",
+          "action": "search"}, "request": {"term": "hostname", "value":
+          "<value>"}}` searches the experiment's network graph, as `GET
+          /experiments/{name}/topology/search` does, answered with an
+          `experiment/topology` message. Needs `experiments/topology` `get`.
+
+        Requests the server cannot read are ignored. The server pings every
+        54 seconds and drops a client that has not answered within 60, and
+        closes a client that falls 256 messages behind with 1013 (Try Again
+        Later) and the reason `client too slow`; the client reconnects and
+        reloads what it shows. Every message carries `seq`, as the
+        introduction describes. Needs a signed-in user, but no permission of
+        its own.
+      operationId: getWs
+      responses:
+        "101":
+          description: switching protocols; `WebSocketMessage`s follow
+        "400":
+          description: not a websocket handshake
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -9123,6 +9177,68 @@ components:
           type: string
           description: what the entry is about
           enum: [SYSTEM, ACTION, SECURITY, AUDIT, HTTP, MINIMEGA, SOH, SCORCH, PHENIX-APP]
+    WebSocketMessage:
+      title: Web Socket Message
+      type: object
+      description: A change the server publishes on the `/ws` websocket, or its answer to a request.
+      properties:
+        resource:
+          title: Resource
+          description: what changed
+          allOf:
+            - $ref: "#/components/schemas/WebSocketResource"
+        result:
+          title: Result
+          description: >-
+            the message's data, such as the experiment or VM as the API
+            returns it, or null when the action says it all
+          example:
+            name: web
+            running: true
+        seq:
+          title: Seq
+          type: integer
+          format: int64
+          description: the message's sequence number, comparable with `X-Phenix-Seq`
+          example: 1042
+    WebSocketRequest:
+      title: Web Socket Request
+      type: object
+      description: A request a client sends on the `/ws` websocket.
+      properties:
+        resource:
+          title: Resource
+          description: what the request is about
+          allOf:
+            - $ref: "#/components/schemas/WebSocketResource"
+        request:
+          title: Request
+          type: object
+          description: the request's parameters, which depend on its resource type
+          additionalProperties: true
+          example:
+            term: hostname
+            value: web
+    WebSocketResource:
+      title: Web Socket Resource
+      type: object
+      description: The resource a `/ws` message or request is about.
+      properties:
+        type:
+          title: Type
+          type: string
+          description: the kind of resource, such as `experiment`, `experiment/vm` or `log`
+          example: experiment/vm
+        name:
+          title: Name
+          type: string
+          description: the resource's name, such as `<exp>/<vm>` for a VM
+          example: exp1/web
+        action:
+          title: Action
+          type: string
+          description: what happened to it, or what the request asks
+          example: start
 
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.

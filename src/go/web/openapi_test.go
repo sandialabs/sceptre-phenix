@@ -202,7 +202,6 @@ var undocumentedRoutes = map[string]string{
 	"root HEAD /webshark/captures/{}": "WebShark's capture file",
 	"root GET /webshark/watch":        "WebShark's capture growth events",
 	// websockets, which an OpenAPI 3.0 operation cannot describe
-	"api GET /ws": "the UI's event websocket",
 }
 
 // undocumentedBeforeContract are the API routes openapi.yml has never
