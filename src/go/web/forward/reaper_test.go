@@ -252,3 +252,19 @@ func reapAll() []string {
 
 	return keys
 }
+
+// A VM's forwards are its own, not those of a VM whose name starts with its
+// name.
+//
+//nolint:paralleltest // replaces the store, minimega and the forwards
+func TestListingForwardsOfOneVM(t *testing.T) {
+	forward := func(vm string) ft.Listener {
+		return ft.Listener{Exp: "exp", VM: vm, DstHost: "127.0.0.1", DstPort: 5900, Owner: "u", QEMU: true}
+	}
+
+	useForwards(t, []string{"exp"}, nil, forward("a"), forward("ab"))
+
+	if got, want := listForwards(t, "exp", "a"), []string{forward("a").ToKey()}; !slices.Equal(got, want) {
+		t.Errorf("listed %v, want %v", got, want)
+	}
+}
