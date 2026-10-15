@@ -89,7 +89,7 @@ All notable changes to this project will be documented in this file.
 - **Websocket clients**: A `/ws` client that falls too far behind on updates is disconnected with close code 1013 (`client too slow`) and must reconnect and reload.
 - **VM unmount**: Unmounting a VM waits at most 30 seconds for downloads from it, then answers `409 mount busy` and leaves it mounted.
 - **minimega commands**: A command on the shared minimega connection fails with `timeout running command` once it has waited 10 minutes for the connection or held it for 30 minutes.
-- **minimega commands**: A minimega command queued for a VM, capture or state of health request, or for a bulk VM action job, is dropped when the request is abandoned or the job canceled.
+- **minimega commands**: A minimega command queued for a VM, capture, file list or state of health request, or for a bulk VM action job, is dropped when the request is abandoned or the job canceled.
 - **Subnet captures**: Stopping a subnet's captures (`POST /experiments/{exp}/stopCaptureSubnet`) needs `exp/captureSubnet` `delete` instead of `create`, which roles that may start them gain on startup.
 
 ### Removed

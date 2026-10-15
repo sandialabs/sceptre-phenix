@@ -1225,7 +1225,11 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files, observed, err := experiment.FilesObserved(name, clientFilter)
+	files, observed, err := experiment.FilesObserved(ctx, name, clientFilter)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		// minimega did not list every node's files; an empty or partial list
 		// would read as files missing
