@@ -387,6 +387,12 @@ func RunStarted(c *Command, started func()) chan *miniclient.Response {
 // command already sent is not interrupted, since that would disturb the
 // shared connection; it is bounded by ctx's deadline, if any, or else by
 // DefaultCommandTimeout, as with Run.
+//
+// No phenix code calls it yet: request handlers, background jobs and the mm
+// package still use Run, RunStarted and the tabular helpers, so a command
+// whose request or job has ended still waits up to DefaultWaitTimeout for its
+// turn. Threading request and job contexts through the mm package to here is
+// what lets them give up.
 func RunContext(ctx context.Context, c *Command) chan *miniclient.Response {
 	timeout := DefaultCommandTimeout
 
