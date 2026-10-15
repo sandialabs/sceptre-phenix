@@ -58,7 +58,8 @@ the selection, whether or not its dialog is then confirmed.
 `start`, `pause`, `restart`, `shutdown`, `kill` and `reset disk state` run as
 one [background job](jobs.md) for all the VMs, which the
 [jobs menu](web-ui.md#background-jobs-menu) shows and can cancel; canceling
-stops after the VMs in progress finish. The page waits until the job ends, then
+stops after the VMs in progress finish, and a VM still waiting its turn for
+minimega is left untouched. The page waits until the job ends, then
 shows each VM as the job left it. When every VM succeeded, a short message
 says so (`Restarted 3 VMs`); otherwise one lasting notification sums up the
 outcome (`Restarted 2 of 3 VMs; 1 failed`), names up to eight VMs that failed or
@@ -112,7 +113,9 @@ time, each exactly as the VM's own route would, and records each VM's outcome:
 a VM your role may not act on is skipped, and a VM busy with another action
 fails and is marked retryable. When your role may act on none of the VMs, the
 request is refused with `403` and no job starts. Canceling the job starts no
-more VMs; the ones in progress finish.
+more VMs; the ones in progress finish, except those whose minimega commands
+were still waiting for the minimega connection, which end `canceled`
+untouched.
 
 ### From the Command Line Binary
 

@@ -61,7 +61,9 @@ A job you can cancel answers `POST /jobs/{id}/cancel` with `202` and
 once. A running job stops when its work notices:
 
 * a VM action job starts no more VMs, and finishes the minimega commands
-  already running, so it stops after the VMs in progress finish;
+  already sent, so it stops after the VMs in progress finish; a VM whose
+  commands were still waiting their turn on the minimega connection is
+  `canceled` without being touched;
 * an archive or clone job stops at once and leaves no file behind.
 
 Items that succeeded before the cancel keep their outcome; the others are
