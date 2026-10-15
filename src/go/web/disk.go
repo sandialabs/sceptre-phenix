@@ -1,27 +1,136 @@
 package web
 
 import (
+	"cmp"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 
 	"phenix/api/disk"
+	"phenix/api/job"
+	"phenix/store"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/web/audit"
+	"phenix/web/broker"
+	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
 )
 
+// diskChangeDebounce is how long images must stay unchanged before clients
+// are told they changed; an upload writes continuously until it completes.
+const diskChangeDebounce = 2 * time.Second
+
+// WatchDisks inspects disk images in the background (when phenix inspects them
+// itself; see disk.LocalInspection), at startup and whenever images in the
+// minimega files directory change; after a change it also tells clients
+// allowed to list disks to reload them. Listing disks then only waits on
+// images that changed in the meantime.
+func WatchDisks(ctx context.Context) {
+	warm := func() {
+		// without the cache (no qemu-img), warming would only add minimega load
+		if !disk.LocalInspection() {
+			return
+		}
+
+		if _, err := disk.GetImages(""); err != nil {
+			plog.Warn(plog.TypeSystem, "inspecting disk images", "err", err)
+		}
+	}
+
+	go warm()
+
+	// clones that never finished, as a restart leaves: those this process
+	// did not start, in the files directory phenix uses now and, once
+	// minimega gives it, in minimega's
+	started := time.Now()
+	sweep := func(dir string) {
+		if removed, err := disk.RemoveStalePartials(dir, started); err != nil {
+			plog.Warn(plog.TypeSystem, "removing partial disk clones", "dir", dir, "err", err)
+		} else if removed > 0 {
+			plog.Info(plog.TypeSystem, "removed partial disk clones", "dir", dir, "count", removed)
+		}
+	}
+
+	dir := mm.GetMMFullPath("")
+	sweep(dir)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-mm.FilesDirectoryGiven():
+			if given := mm.GetMMFullPath(""); given != dir {
+				sweep(given)
+			}
+		}
+	}()
+
+	watchFilesDirectory(ctx, mm.FilesDirectoryGiven(), diskChangeDebounce, func() {
+		warm()
+		broker.Broadcast(
+			bt.NewRequestPolicy("disks", "list", ""),
+			bt.NewResource("disks", "", "update"),
+			json.RawMessage("{}"),
+		)
+	})
+}
+
+// watchFilesDirectory calls changed once images in the minimega files
+// directory stop changing for debounce (see disk.Watch), until ctx is done.
+// Until minimega gives its files directory, which closes given, phenix uses
+// <PhenixBase>/images; if minimega's differs, the watch moves to it and
+// changed is called, as the disk list changes with it.
+func watchFilesDirectory(ctx context.Context, given <-chan struct{}, debounce time.Duration, changed func()) {
+	watch := func(dir string) context.CancelFunc {
+		watchCtx, stop := context.WithCancel(ctx)
+
+		if err := disk.Watch(watchCtx, dir, debounce, changed); err != nil {
+			plog.Warn(plog.TypeSystem, "disk list will not update on its own", "dir", dir, "err", err)
+		}
+
+		return stop
+	}
+
+	dir := mm.GetMMFullPath("")
+	stop := watch(dir)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-given:
+			if moved := mm.GetMMFullPath(""); moved != dir {
+				stop()
+				stop = watch(moved)
+				changed()
+			}
+
+			<-ctx.Done()
+		}
+
+		stop()
+	}()
+}
+
 // GetDisks - GET /disks.
+//
+// Lists the images whose names the role may list: a role sees an image
+// outside the minimega files directory only when it may get an experiment
+// using it, or when the image backs one it sees. expName limits the images
+// topologies name to that experiment's, which the role must be allowed to get.
 func GetDisks(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetDisks")
 
@@ -34,13 +143,15 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 		defaultDiskType = disk.VMImage | disk.ContainerImage | disk.ISOImage | disk.UNKNOWN
 	)
 
-	if !role.Allowed("disks", "list") {
+	if !role.Allowed("disks", "list") || expName != "" && !role.Allowed("experiments", "get", expName) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Warn(
 			plog.TypeSecurity,
 			"listing disks not allowed",
 			"user",
 			user,
+			"exp",
+			expName,
 		)
 		http.Error(w, "forbidden", http.StatusForbidden)
 
@@ -54,7 +165,18 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// the UI's refresh button asks for every image to be inspected again
+	if query.Get("refresh") == "true" {
+		disk.ClearCache()
+	}
+
 	disks, err := disk.GetImages(expName)
+	if errors.Is(err, store.ErrNotExist) {
+		http.Error(w, err.Error(), http.StatusNotFound)
+
+		return
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -64,21 +186,15 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 	filtered := []disk.Details{}
 
 	for _, disk := range disks {
-		if disk.Kind&defaultDiskType != 0 {
+		if disk.Kind&defaultDiskType != 0 && role.Allowed("disks", "list", disk.Name) {
 			filtered = append(filtered, disk)
 		}
 	}
 
-	allowed := []disk.Details{}
+	allowed := visibleDisks(role, filtered)
 
-	for _, disk := range filtered {
-		if role.Allowed("disks", "list", disk.Name) {
-			allowed = append(allowed, disk)
-		}
-	}
-
-	sort.Slice(allowed, func(i, j int) bool {
-		return allowed[i].Name < allowed[j].Name
+	slices.SortFunc(allowed, func(a, b disk.Details) int {
+		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.FullPath, b.FullPath))
 	})
 
 	body, err := json.Marshal(util.WithRoot("disks", allowed))
@@ -88,17 +204,88 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
+// visibleDisks returns the disks the role may see: those inside the minimega
+// files directory, those outside it that an experiment the role may get uses,
+// and those backing a disk it sees (whose backing images name them anyway).
+// Each disk's experiments are cut to the ones the role may list.
+func visibleDisks(role rbac.Role, disks []disk.Details) []disk.Details {
+	var (
+		visible = make([]disk.Details, 0, len(disks))
+		held    = make(map[string]disk.Details)
+	)
+
+	for _, d := range disks {
+		readable := slices.ContainsFunc(d.Experiments, func(use disk.ExperimentUse) bool {
+			return role.Allowed("experiments", "get", use.Name)
+		})
+
+		if d.OutsideFilesDir && !readable {
+			held[d.FullPath] = d
+		} else {
+			visible = append(visible, d)
+		}
+	}
+
+	// every disk's backing images are its whole chain, so one pass admits all
+	for _, d := range slices.Clone(visible) {
+		for _, backing := range d.BackingImages {
+			if held, ok := held[backing]; ok {
+				visible = append(visible, held)
+			}
+
+			delete(held, backing)
+		}
+	}
+
+	for i, d := range visible {
+		var uses []disk.ExperimentUse
+
+		for _, use := range d.Experiments {
+			if role.Allowed("experiments", "list", use.Name) {
+				uses = append(uses, use)
+			}
+		}
+
+		visible[i].Experiments = uses
+	}
+
+	return visible
+}
+
 // CommitDisk - POST /disks/commit?disk={disk}.
+//
+// Writes the image into its backing image; both must be inside the minimega
+// files directory, and the role must be allowed to update both.
 func CommitDisk(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	path := mux.Vars(r)["disk"]
+
+	path, err := disk.Resolve(mux.Vars(r)["disk"])
+	if err != nil {
+		diskError(w, err)
+
+		return
+	}
+
+	if !role.Allowed("disks", "update", filepath.Base(path)) {
+		audit.Denied(r, audit.DiskCommit, "committing disk not allowed", audit.Fields{File: path})
+		http.Error(w, "forbidden for "+filepath.Base(path), http.StatusForbidden)
+
+		return
+	}
+
+	if err := disk.ValidateMinimegaPath(path); err != nil {
+		diskError(w, err)
+
+		return
+	}
 
 	info, err := disk.GetImage(path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		diskError(w, err)
 
 		return
 	}
@@ -113,336 +300,382 @@ func CommitDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !role.Allowed("disks", "update", info.BackingImages[0]) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"committing disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			info.BackingImages[0],
-		)
-		http.Error(w, "forbidden for "+info.BackingImages[0], http.StatusForbidden)
-
-		return
-	}
-
-	if !role.Allowed("disks", "update", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"committing disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			info.BackingImages[0],
-		)
-		http.Error(w, "forbidden for "+path, http.StatusForbidden)
-
-		return
-	}
-
-	err = disk.CommitDisk(path)
+	backing, err := disk.Resolve(info.BackingImages[0])
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		diskError(w, fmt.Errorf("committing into the backing image: %w", err))
 
 		return
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"committed disk",
-		"user",
-		user,
-		"from_disk",
-		path,
-		"to_disk",
-		info.BackingImages[0],
-	)
+	committed := audit.Fields{File: path, Target: backing}
+
+	if !role.Allowed("disks", "update", filepath.Base(backing)) {
+		audit.Denied(r, audit.DiskCommit, "committing disk not allowed", committed)
+		http.Error(w, "forbidden for "+filepath.Base(backing), http.StatusForbidden)
+
+		return
+	}
+
+	if err := disk.CommitDisk(path); err != nil {
+		diskFailed(w, r, audit.DiskCommit, "committing disk failed", committed, err)
+
+		return
+	}
+
+	audit.Success(r, audit.DiskCommit, "committed disk", committed)
 	w.WriteHeader(http.StatusOK)
 }
 
+// mayCopyDisk reports whether the role may snapshot or clone the disk at path
+// to newPath: it must be allowed to create the new image and to get the one
+// it reads, as a download of the copy would hand out what the source holds.
+func mayCopyDisk(role rbac.Role, path, newPath string) bool {
+	return role.Allowed("disks", "create", filepath.Base(newPath)) &&
+		role.Allowed("disks", "get", filepath.Base(path))
+}
+
 // SnapshotDisk - POST /disks/snapshot?disk={disk}&new={new}
-// disk should be absolute
-// new may be absolute, but will be put in same dir as disk if not. Extension will be set to qcow2.
 //
-//nolint:dupl // similar to RenameDisk
+// disk is relative to the minimega files directory, or absolute; new is
+// relative to disk's folder, or absolute. Both must be inside the files
+// directory. new gets a .qcow2 extension unless it has .qc2 or .qcow2.
 func SnapshotDisk(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	path := mux.Vars(r)["disk"]
-	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
 
-	if !role.Allowed("disks", "create", filepath.Base(newPath)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"snapshotting disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			newPath,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	err := disk.SnapshotDisk(path, newPath)
+	path, newPath, err := diskAndNew(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		diskError(w, err)
 
 		return
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"snapshotted disk",
-		"user",
-		user,
-		"from_disk",
-		path,
-		"to_disk",
-		newPath,
-	)
+	if !mayCopyDisk(role, path, newPath) {
+		diskForbidden(w, r, audit.DiskSnapshot, "snapshotting disk not allowed", audit.Fields{File: path, Target: newPath})
+
+		return
+	}
+
+	if err := disk.SnapshotDisk(path, newPath); err != nil {
+		diskFailed(w, r, audit.DiskSnapshot, "snapshotting disk failed", audit.Fields{File: path, Target: newPath}, err)
+
+		return
+	}
+
+	diskActionDone(r, audit.DiskSnapshot, "snapshotted disk", path, newPath)
 	w.WriteHeader(http.StatusOK)
 }
 
 // RebaseDisk - POST /disks/rebase?disk={disk}&backing={backing}&unsafe={unsafe}
-// disk and backing should be absolute.
+//
+// disk and backing (empty to make disk independent) are relative to the
+// minimega files directory, or absolute, and must be inside it.
 func RebaseDisk(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	path := mux.Vars(r)["disk"]
-	backing := mux.Vars(r)["backing"]
 
 	unsafe, err := strconv.ParseBool(mux.Vars(r)["unsafe"])
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 
 		return
 	}
+
+	path, err := disk.Resolve(mux.Vars(r)["disk"])
+	if err != nil {
+		diskError(w, err)
+
+		return
+	}
+
+	backing := mux.Vars(r)["backing"]
+	if backing != "" {
+		if backing, err = disk.Resolve(backing); err != nil {
+			diskError(w, err)
+
+			return
+		}
+	}
+
+	rebased := audit.Fields{File: path, Target: backing, Extra: []any{"phenix.disk.unsafe", unsafe}}
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"rebasing disk not allowed",
-			"user",
-			user,
-			"disk",
-			path,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
+		diskForbidden(w, r, audit.DiskRebase, "rebasing disk not allowed", rebased)
 
 		return
 	}
 
-	err = disk.RebaseDisk(path, backing, unsafe)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := disk.RebaseDisk(path, backing, unsafe); err != nil {
+		diskFailed(w, r, audit.DiskRebase, "rebasing disk failed", rebased, err)
 
 		return
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"rebased disk",
-		"user",
-		user,
-		"disk",
-		path,
-		"onto",
-		backing,
-		"unsafe",
-		unsafe,
-	)
+	audit.Success(r, audit.DiskRebase, "rebased disk", rebased)
 	w.WriteHeader(http.StatusOK)
 }
 
 // ResizeDisk - POST /disks/resize?disk={disk}&size={size}
-// disk should be absolute. size should be a valid size (absolute or relative) per `qemu-img --help`.
+//
+// disk is relative to the minimega files directory, or absolute, and must be
+// inside it. size should be a valid size (absolute or relative) per `qemu-img
+// --help`.
 func ResizeDisk(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	path := mux.Vars(r)["disk"]
 	size := mux.Vars(r)["size"]
 
-	if !role.Allowed("disks", "update", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"resizing disk not allowed",
-			"user",
-			user,
-			"disk",
-			path,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	err := disk.ResizeDisk(path, size)
+	path, err := disk.Resolve(mux.Vars(r)["disk"])
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		diskError(w, err)
 
 		return
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"resized disk",
-		"user",
-		user,
-		"disk",
-		path,
-		"size",
-		size,
-	)
+	resized := audit.Fields{File: path, Extra: []any{"phenix.disk.size", size}}
+
+	if !role.Allowed("disks", "update", filepath.Base(path)) {
+		diskForbidden(w, r, audit.DiskResize, "resizing disk not allowed", resized)
+
+		return
+	}
+
+	if err := disk.ResizeDisk(path, size); err != nil {
+		diskFailed(w, r, audit.DiskResize, "resizing disk failed", resized, err)
+
+		return
+	}
+
+	audit.Success(r, audit.DiskResize, "resized disk", resized)
 	w.WriteHeader(http.StatusOK)
 }
 
 // CloneDisk - POST /disks/clone?disk={disk}&new={new}
-// disk should be absolute
-// new may be absolute, but will be put in same dir as disk if not. Extension will be set to qcow2.
+//
+// disk and new are as for SnapshotDisk. The copy never replaces a file.
 func CloneDisk(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	path := mux.Vars(r)["disk"]
-	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
 
-	if !role.Allowed("disks", "create") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"cloning disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			newPath,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	err := disk.CloneDisk(path, newPath)
+	path, newPath, err := diskAndNew(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		diskError(w, err)
 
 		return
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"cloned disk",
-		"user",
-		user,
-		"from_disk",
-		path,
-		"to_disk",
-		newPath,
-	)
+	if !mayCopyDisk(role, path, newPath) {
+		diskForbidden(w, r, audit.DiskClone, "cloning disk not allowed", audit.Fields{File: path, Target: newPath})
+
+		return
+	}
+
+	if err := disk.CloneDisk(path, newPath); err != nil {
+		diskFailed(w, r, audit.DiskClone, "cloning disk failed", audit.Fields{File: path, Target: newPath}, err)
+
+		return
+	}
+
+	diskActionDone(r, audit.DiskClone, "cloned disk", path, newPath)
 	w.WriteHeader(http.StatusOK)
 }
 
-// RenameDisk - POST /disks/rename?disk={disk}&new={new}
-// disk should be absolute
-// new may be absolute, but will be put in same dir as disk if not. Extension will be set to qcow2.
+// cloneKind is the kind of the background jobs that clone a disk image.
+const cloneKind = "disk.clone"
+
+//nolint:gochecknoinits // registers the clone jobs' audit
+func init() {
+	jobFinished[cloneKind] = auditCloneJob
+}
+
+// CloneDiskJob - POST /disks/clone/jobs?disk={disk}&new={new}
 //
-//nolint:dupl // similar to SnapshotDisk
+// Clones as CloneDisk does, in a background job that reports the bytes
+// copied and can be canceled, leaving no file. It checks the request as
+// CloneDisk does before answering 202 with the job. The clone is audited
+// when the job finishes (see auditCloneJob).
+func CloneDiskJob(w http.ResponseWriter, r *http.Request) {
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
+
+	path, newPath, err := diskAndNew(r)
+	if err != nil {
+		diskError(w, err)
+
+		return
+	}
+
+	cloned := audit.Fields{File: path, Target: newPath}
+
+	if !mayCopyDisk(role, path, newPath) {
+		diskForbidden(w, r, audit.DiskClone, "cloning disk not allowed", cloned)
+
+		return
+	}
+
+	// a clone CloneDisk would refuse fails before the job starts, as there
+	size, err := disk.CloneSize(path, newPath)
+	if err != nil {
+		diskFailed(w, r, audit.DiskClone, "cloning disk failed", cloned, err)
+
+		return
+	}
+
+	newName := filepath.Base(newPath)
+
+	startJob(w, r, job.Spec{
+		Kind:       cloneKind,
+		Owner:      "",
+		Experiment: "",
+		Title:      fmt.Sprintf("Clone %s to %s", filepath.Base(path), newName),
+		Params:     map[string]string{"disk": path, "new": newPath},
+		Items:      []string{newName},
+		BytesTotal: size,
+		Cancelable: true,
+		Run: func(ctx context.Context, run *job.Run) error {
+			run.ItemStarted(newName)
+
+			if err := disk.CloneDiskContext(ctx, path, newPath, run.AddBytes); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err() //nolint:wrapcheck // the job is canceled
+				}
+
+				run.ItemFailed(newName, err)
+
+				return nil
+			}
+
+			run.ItemSucceeded(newName, nil)
+
+			return nil
+		},
+	})
+}
+
+// auditCloneJob audits, as the user who started it, the clone a finished
+// clone job made, or failed to make: a job canceled before its copy finished
+// made none.
+func auditCloneJob(j job.Job) {
+	cloned := audit.Fields{File: j.Params["disk"], Target: j.Params["new"], Extra: []any{"phenix.job.id", j.ID}}
+
+	if succeeded, _, _, _ := j.Counts(); succeeded > 0 {
+		audit.Background(j.Owner, audit.DiskClone, "cloned disk", audit.OutcomeSuccess, cloned)
+
+		return
+	}
+
+	audit.BackgroundFailure(j.Owner, audit.DiskClone, "cloning disk failed", cloned, jobError(j))
+}
+
+// RenameDisk - POST /disks/rename?disk={disk}&new={new}
+//
+// disk and new are as for SnapshotDisk. The rename never replaces a file.
 func RenameDisk(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	path := mux.Vars(r)["disk"]
-	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
+
+	path, newPath, err := diskAndNew(r)
+	if err != nil {
+		diskError(w, err)
+
+		return
+	}
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"renaming disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			newPath,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
+		diskForbidden(w, r, audit.DiskRename, "renaming disk not allowed", audit.Fields{File: path, Target: newPath})
 
 		return
 	}
 
-	err := disk.RenameDisk(path, newPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := disk.RenameDisk(path, newPath); err != nil {
+		diskFailed(w, r, audit.DiskRename, "renaming disk failed", audit.Fields{File: path, Target: newPath}, err)
 
 		return
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"renamed disk",
-		"user",
-		user,
-		"from_disk",
-		path,
-		"to_disk",
-		newPath,
-	)
+	diskActionDone(r, audit.DiskRename, "renamed disk", path, newPath)
 	w.WriteHeader(http.StatusOK)
 }
 
 // DeleteDisk - DELETE /disks?disk={disk}
-// disk should be absolute.
+//
+// disk is relative to the minimega files directory, or absolute, and must be
+// inside it.
 func DeleteDisk(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	path := mux.Vars(r)["disk"]
+
+	path, err := disk.Resolve(mux.Vars(r)["disk"])
+	if err != nil {
+		diskError(w, err)
+
+		return
+	}
 
 	if !role.Allowed("disks", "delete", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"deleting disk not allowed",
-			"user",
-			user,
-			"disk",
-			path,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
+		diskForbidden(w, r, audit.DiskDelete, "deleting disk not allowed", audit.Fields{File: path})
 
 		return
 	}
 
-	err := disk.DeleteDisk(path)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := disk.DeleteDisk(path); err != nil {
+		diskFailed(w, r, audit.DiskDelete, "deleting disk failed", audit.Fields{File: path}, err)
 
 		return
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"deleted disk",
-		"user",
-		user,
-		"disk",
-		path,
-	)
+	audit.Success(r, audit.DiskDelete, "deleted disk", audit.Fields{File: path})
 	w.WriteHeader(http.StatusOK)
+}
+
+// diskAndNew resolves an action's disk and new query values (see
+// SnapshotDisk). new must name a file, not a folder, which the added
+// extension would turn into a file beside that folder.
+func diskAndNew(r *http.Request) (string, string, error) {
+	path, err := disk.Resolve(mux.Vars(r)["disk"])
+	if err != nil {
+		return "", "", err
+	}
+
+	dst := mux.Vars(r)["new"]
+	if last := filepath.Base(dst); strings.HasSuffix(dst, "/") || last == "." || last == ".." {
+		return "", "", fmt.Errorf("%w: new image %q does not name a file", disk.ErrNotManaged, dst)
+	}
+
+	newPath, err := disk.Resolve(normalizeDstDisk(path, dst))
+	if err != nil {
+		return "", "", err
+	}
+
+	return path, newPath, nil
+}
+
+// diskError answers with err and the status its cause calls for.
+func diskError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+
+	switch {
+	case errors.Is(err, disk.ErrNotManaged), errors.Is(err, disk.ErrUnsafeName):
+		status = http.StatusBadRequest
+	case errors.Is(err, disk.ErrExists):
+		status = http.StatusConflict
+	case errors.Is(err, fs.ErrNotExist):
+		status = http.StatusNotFound
+	}
+
+	http.Error(w, err.Error(), status)
+}
+
+// diskForbidden audits, as msg with fields f, and answers a disk action a the
+// role may not take.
+func diskForbidden(w http.ResponseWriter, r *http.Request, a audit.Action, msg string, f audit.Fields) {
+	audit.Denied(r, a, msg, f)
+	http.Error(w, "forbidden", http.StatusForbidden)
+}
+
+// diskFailed audits, as msg with fields f, and answers a disk action a that
+// failed with err.
+func diskFailed(w http.ResponseWriter, r *http.Request, a audit.Action, msg string, f audit.Fields, err error) {
+	audit.Failure(r, a, msg, f, err)
+	diskError(w, err)
+}
+
+// diskActionDone audits a disk action a that made image to from image from.
+func diskActionDone(r *http.Request, a audit.Action, msg, from, to string) {
+	audit.Success(r, a, msg, audit.Fields{File: from, Target: to})
 }
 
 // UploadDisk - POST /disks.
@@ -451,13 +684,7 @@ func UploadDisk(w http.ResponseWriter, r *http.Request) {
 	clientFile, handler, err := r.FormFile("file")
 
 	if !role.Allowed("disks", "upload") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"uploading disk not allowed",
-			"user",
-			user,
-		)
+		audit.Denied(r, audit.DiskUpload, "uploading disk not allowed", audit.Fields{})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -465,88 +692,133 @@ func UploadDisk(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		plog.Error(plog.TypeSystem, err.Error())
+		audit.Failure(r, audit.DiskUpload, "uploading disk failed", audit.Fields{}, err)
 		http.Error(w, "Error uploading: "+err.Error(), http.StatusInternalServerError)
+
+		return
 	}
 
 	defer func() { _ = clientFile.Close() }()
 
+	target := mm.GetMMFullPath(handler.Filename)
+
 	localFile, err := os.OpenFile( //nolint:gosec // Path traversal via taint analysis
-		mm.GetMMFullPath(handler.Filename),
+		target,
 		os.O_WRONLY|os.O_CREATE,
 		0o600,
 	)
 	if err != nil {
 		plog.Error(plog.TypeSystem, err.Error())
+		audit.Failure(r, audit.DiskUpload, "uploading disk failed", audit.Fields{Target: target}, err)
 		http.Error(w, "Error uploading: "+err.Error(), http.StatusInternalServerError)
+
+		return
 	}
 
 	defer func() { _ = localFile.Close() }()
 
-	_, _ = io.Copy(localFile, clientFile)
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"uploaded disk",
-		"user",
-		user,
-		"disk",
-		localFile.Name(),
-	)
+	written, err := io.Copy(localFile, clientFile)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "uploading disk", "disk", localFile.Name(), "err", err)
+		audit.Failure(r, audit.DiskUpload, "uploading disk failed", audit.Fields{Target: localFile.Name()}, err)
+		http.Error(w, "Error uploading: "+err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	audit.Success(r, audit.DiskUpload, "uploaded disk", audit.Fields{
+		Target: localFile.Name(), Extra: []any{"file.size", written},
+	})
 }
 
-// DownloadDisk - GET /disks?disk={disk}
-// disk may be relative to filedir or absolute. If absolute must be in the files dir.
+// DownloadDisk - GET /disks/download?disk={disk}
+//
+// disk is relative to the minimega files directory, or absolute; either way it
+// must be within that directory, and not in a folder the disk list leaves
+// out.
 func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	path := mux.Vars(r)["disk"]
 
-	fileDir := mm.GetMMFilesDirectory()
+	path, err := disk.Resolve(mux.Vars(r)["disk"])
+	if err != nil {
+		plog.Error(plog.TypeSystem, "downloading disk", "err", err)
+		diskError(w, err)
 
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(fileDir, path)
-	} else if !strings.HasPrefix(path, fileDir) {
-		errString := fmt.Sprintf("Error getting path %s: Path is not within files directory", path)
-		plog.Error(plog.TypeSystem, errString)
-		http.Error(w, errString, http.StatusBadRequest)
+		return
+	}
+
+	downloaded := audit.Fields{File: path}
+
+	if !role.Allowed("disks", "get", filepath.Base(path)) {
+		diskForbidden(w, r, audit.DiskDownload, "downloading disk not allowed", downloaded)
+
+		return
+	}
+
+	served, err := util.ServeDownload(w, r, util.Download{
+		Path:        path,
+		Name:        filepath.Base(path),
+		ContentType: "application/octet-stream",
+		Live:        false,
+		MaxSize:     0,
+	})
+	if err != nil {
+		audit.Failure(r, audit.DiskDownload, "downloading disk failed", downloaded, err)
+
+		if errors.Is(err, util.ErrNotRegular) {
+			http.Error(w, "Can't download directory: "+path, http.StatusBadRequest)
+
+			return
+		}
+
+		diskError(w, fmt.Errorf("disk image: %w", err))
+
+		return
+	}
+
+	// once per download, not per resumed range or HEAD
+	if served.Started {
+		if rng := r.Header.Get("Range"); rng != "" {
+			downloaded.Extra = []any{"http.request.range", rng}
+		}
+
+		audit.Success(r, audit.DiskDownload, "downloaded disk", downloaded)
+	}
+}
+
+// GetDiskChecksum - GET /disks/checksum?disk=.
+//
+// It answers with the image's SHA-256, computed in the background: 202 until
+// it is known, then 200 (see util.ServeChecksum).
+func GetDiskChecksum(w http.ResponseWriter, r *http.Request) {
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
+	name := mux.Vars(r)["disk"]
+
+	path, err := disk.Resolve(name)
+	if err != nil {
+		diskError(w, err)
 
 		return
 	}
 
 	if !role.Allowed("disks", "get", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"downloading disk not allowed",
-			"user",
-			user,
-			"disk",
-			path,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
+		diskForbidden(w, r, audit.DiskDownload, "getting disk checksum not allowed", audit.Fields{File: path})
 
 		return
 	}
 
-	fileInfo, err := os.Stat(path) //nolint:gosec // Path traversal via taint analysis
-	if err != nil {
-		errString := fmt.Sprintf("Error getting path %s: %s", path, err.Error())
-		plog.Error(plog.TypeSystem, errString)
-		http.Error(w, errString, http.StatusInternalServerError)
+	err = util.ServeChecksum(w, path, name)
 
-		return
+	switch {
+	case err == nil:
+	case errors.Is(err, util.ErrNotRegular):
+		http.Error(w, "Can't checksum directory: "+path, http.StatusBadRequest)
+	case errors.Is(err, util.ErrChangedWhileHashing):
+		http.Error(w, err.Error(), http.StatusConflict)
+	default:
+		plog.Error(plog.TypeSystem, "getting disk checksum", "disk", path, "err", err)
+		diskError(w, fmt.Errorf("disk image: %w", err))
 	}
-
-	if fileInfo.IsDir() {
-		http.Error(w, "Can't download directory: "+path, http.StatusBadRequest)
-
-		return
-	}
-
-	plog.Info(plog.TypeSystem, "download for file", "file", fileInfo.Name())
-
-	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(fileInfo.Name()))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeFile(w, r, path)
 }
 
 // for output disk names - makes absolute and adds qcow2 file extension.

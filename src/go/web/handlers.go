@@ -1,49 +1,48 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net/http"
-	"os"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-	"unsafe"
 
-	"github.com/creack/pty"
 	"github.com/gorilla/mux"
-	"golang.org/x/net/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"phenix/api/config"
+	"phenix/api/disk"
 	"phenix/api/experiment"
 	"phenix/api/scenario"
 	"phenix/api/settings"
 	"phenix/api/vm"
 	"phenix/app"
+	"phenix/store"
+	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	putil "phenix/util"
 	"phenix/util/common"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
 	"phenix/web/middleware"
 	"phenix/web/proto"
-	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
 )
@@ -51,23 +50,23 @@ import (
 var (
 	marshaler   = protojson.MarshalOptions{EmitUnpopulated: true}                      //nolint:gochecknoglobals // global marshaler
 	unmarshaler = protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true} //nolint:gochecknoglobals // global unmarshaler
-
-	ptys  = map[int]*os.File{} //nolint:gochecknoglobals // global state
-	ptyMu sync.Mutex           //nolint:gochecknoglobals // global lock
 )
 
 const sortAsc = "asc"
-const consoleResizeSleep = 100 * time.Millisecond
 const percentDivisor = 100
 const defaultScreenshotSize = "215"
 
 // GetExperiments - GET /experiments.
+//
+// With vms=false the VMs are left out and nothing is asked of minimega: the
+// counts come from each topology.
 func GetExperiments(w http.ResponseWriter, r *http.Request) {
 	var (
 		ctx   = r.Context()
 		role  = middleware.RoleFromContext(ctx)
 		query = r.URL.Query()
 		size  = query.Get("screenshot")
+		noVMs = query.Get("vms") == "false" && size == ""
 	)
 
 	if !role.Allowed("experiments", "list") {
@@ -86,63 +85,55 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 	experiments, err := experiment.List()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiments", "err", err)
+
+		// an empty list would read as no experiments
+		if len(experiments) == 0 {
+			http.Error(w, "unable to read experiments from the store", http.StatusInternalServerError)
+
+			return
+		}
 	}
 
 	allowed := []*proto.Experiment{}
+
+	busy := anyExperimentLocked(experiments)
+
+	// when minimega was read for the VMs listed, and whether it answered
+	observed := freshness.Unobserved()
+
+	// some experiments could not be read, so the list is incomplete
+	observed.Stale = err != nil
 
 	for _, exp := range experiments {
 		if !role.Allowed("experiments", "list", exp.Metadata.Name) {
 			continue
 		}
 
-		// This will happen if another handler is currently acting on the
-		// experiment.
-		status := cache.IsExperimentLocked(exp.Metadata.Name)
+		status, percent := experimentStatus(exp)
 
-		if status == "" {
-			if exp.Running() {
-				status = cache.StatusStarted
-			} else {
-				status = cache.StatusStopped
+		var pb *proto.Experiment
+
+		if noVMs {
+			pb = util.ExperimentSummaryToProtobuf(exp, status)
+		} else {
+			// TODO: limit per-experiment VMs based on RBAC
+			vms, obs := listExperimentVMs(ctx, exp, busy && size == "")
+			observed = observed.Older(obs)
+
+			if exp.Running() && size != "" {
+				addVMScreenshots(ctx, exp.Spec.ExperimentName(), vms, size)
 			}
+
+			pb = util.ExperimentToProtobuf(exp, status, vms)
+			pb.VmsUnknown = !obs.Known
 		}
 
-		// TODO: limit per-experiment VMs based on RBAC
+		pb.Percent = percent
+		allowed = append(allowed, pb)
+	}
 
-		vms, err := vm.List(exp.Spec.ExperimentName())
-		if err != nil {
-			plog.Error(
-				plog.TypeSystem,
-				"listing VMs for experiment",
-				"exp",
-				exp.Spec.ExperimentName(),
-				"err",
-				err,
-			)
-		}
-
-		if exp.Running() && size != "" {
-			for i, v := range vms {
-				if !v.Running {
-					continue
-				}
-
-				screenshot, err := util.GetScreenshot(exp.Spec.ExperimentName(), v.Name, size)
-				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-
-					continue
-				}
-
-				v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-					screenshot,
-				)
-
-				vms[i] = v
-			}
-		}
-
-		allowed = append(allowed, util.ExperimentToProtobuf(exp, status, vms))
+	if requestGone(r) {
+		return
 	}
 
 	body, err := marshaler.Marshal(&proto.ExperimentList{Experiments: allowed})
@@ -157,7 +148,65 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	freshness.SetObserved(w, observed)
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
+}
+
+// addVMScreenshots sets each running VM's screenshot, at the given size, in
+// place, until ctx is done.
+func addVMScreenshots(ctx context.Context, expName string, vms []mm.VM, size string) {
+	for i, v := range vms {
+		if !v.Running {
+			continue
+		}
+
+		screenshot, err := util.GetScreenshotContext(ctx, expName, v.Name, size)
+		if ctx.Err() != nil {
+			return
+		}
+
+		if err != nil {
+			plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+
+			continue
+		}
+
+		vms[i].Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+			screenshot,
+		)
+	}
+}
+
+// anyExperimentLocked reports whether a handler holds the lock of any of the
+// experiments, as while one starts or stops. Starting or stopping keeps
+// minimega busy for as long as it takes, so asking it about VMs meanwhile
+// would stall the experiment list until it finishes.
+func anyExperimentLocked(experiments []types.Experiment) bool {
+	for _, exp := range experiments {
+		if cache.IsExperimentLocked(exp.Metadata.Name) != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// listExperimentVMs lists the experiment's VMs, from its topology alone when
+// minimega is busy, and how minimega was read for them. A running
+// experiment's VMs listed from the topology are unknown, and stale.
+func listExperimentVMs(ctx context.Context, exp types.Experiment, busy bool) ([]mm.VM, freshness.Observation) {
+	if busy {
+		obs := freshness.Unobserved()
+
+		if exp.Running() {
+			obs.Known, obs.Stale = false, true
+		}
+
+		return vm.ListConfigured(exp), obs
+	}
+
+	return vm.ListForObserved(ctx, &exp)
 }
 
 // CreateExperiment - POST /experiments.
@@ -206,6 +255,13 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	annotations, nodeAnnotations, err := createAnnotations(&req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
 	if err := cache.LockExperimentForCreation(req.GetName()); err != nil {
 		plog.Error(
 			plog.TypeSystem,
@@ -247,11 +303,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		experiment.CreateWithDeployMode(deployMode),
 		experiment.CreateWithDefaultBridge(req.GetDefaultBridge()),
 		experiment.CreateWithGREMesh(req.GetUseGreMesh()),
-	}
-
-	if req.GetWorkflowBranch() != "" {
-		annotations := map[string]string{"phenix.workflow/branch": req.GetWorkflowBranch()}
-		opts = append(opts, experiment.CreateWithAnnotations(annotations))
+		experiment.CreateWithAnnotations(annotations),
+		experiment.CreateWithNodeAnnotations(nodeAnnotations),
 	}
 
 	if err := experiment.Create(ctx, opts...); err != nil {
@@ -275,13 +328,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vms, err := vm.List(req.GetName())
-	if err != nil {
-		plog.Error(plog.TypeSystem, "listing experiment VMs", "exp", req.GetName(), "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
+	// broadcast to every client, so read even once this request's client left
+	vms := vm.ListFor(context.WithoutCancel(ctx), exp)
 
 	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {
@@ -307,6 +355,44 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		req.GetName(),
 	)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// createAnnotations returns the experiment and node annotations a create
+// request asks for. The workflow branch is stored as an experiment annotation,
+// so the request may not also give that annotation.
+func createAnnotations(
+	req *proto.CreateExperimentRequest,
+) (map[string]string, map[string]any, error) {
+	const branchKey = "phenix.workflow/branch"
+
+	annotations := maps.Clone(req.GetAnnotations())
+
+	if branch := req.GetWorkflowBranch(); branch != "" {
+		if _, ok := annotations[branchKey]; ok {
+			return nil, nil, fmt.Errorf(
+				"experiment annotation %q is set by workflow_branch; give only one of them",
+				branchKey,
+			)
+		}
+
+		if annotations == nil {
+			annotations = make(map[string]string, 1)
+		}
+
+		annotations[branchKey] = branch
+	}
+
+	var nodeAnnotations map[string]any
+
+	if len(req.GetNodeAnnotations()) > 0 {
+		nodeAnnotations = make(map[string]any, len(req.GetNodeAnnotations()))
+
+		for key, value := range req.GetNodeAnnotations() {
+			nodeAnnotations[key] = value.AsInterface()
+		}
+	}
+
+	return annotations, nodeAnnotations, nil
 }
 
 // UpdateExperiment - PATCH /experiments/{name}.
@@ -340,30 +426,32 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	exp, err := experiment.Get(name)
 	if err != nil {
-		err := weberror.NewWebError(err, "unable to get experiment %s details", name)
+		status := http.StatusInternalServerError
+		if errors.Is(err, store.ErrNotExist) {
+			status = http.StatusNotFound
+		}
 
-		return err.SetStatus(http.StatusInternalServerError)
+		return weberror.NewWebError(err, "unable to get experiment %s details", name).SetStatus(status)
 	}
 
 	if exp.Running() {
-		err := weberror.NewWebError(err, "cannot update running experiment %s", name)
+		err := weberror.NewWebError(nil, "cannot update running experiment %s", name)
 
 		return err.SetStatus(http.StatusBadRequest)
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
+		err := weberror.NewWebError(err, "unable to read update request for experiment %s", name)
 
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
 	var vlans map[string]int
 
+	// a malformed body is the client's mistake
 	if err := json.Unmarshal(body, &vlans); err != nil {
-		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
-
-		return err.SetStatus(http.StatusInternalServerError)
+		return weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
 	}
 
 	aliases := exp.Spec.VLANs().Aliases()
@@ -395,12 +483,16 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 		name,
 	)
 
+	w.WriteHeader(http.StatusNoContent)
+
 	return nil
 }
 
 // GetExperiment - GET /experiments/{name}.
 //
-//nolint:funlen // handler
+// With vms=false the VMs are left out and nothing is asked of minimega:
+// vm_count and delayed_vms come from the topology. The running experiment page
+// uses it, as its VM rows arrive over the websocket (experiment/vms list).
 func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx          = r.Context()
@@ -409,6 +501,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		name         = vars["name"]
 		query        = r.URL.Query()
 		size         = query.Get("screenshot")
+		noVMs        = query.Get("vms") == "false" && size == ""
 		sortCol      = query.Get("sortCol")
 		sortDir      = query.Get("sortDir")
 		pageNum      = query.Get("pageNum")
@@ -437,73 +530,59 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
+	page, pageSize, err := util.ParsePage(pageNum, perPage)
+	if err != nil {
+		return weberror.NewWebError(nil, "%v", err).SetStatus(http.StatusBadRequest)
+	}
+
 	exp, err := experiment.Get(name)
 	if err != nil {
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
-	vms, err := vm.List(name)
-	if err != nil {
-		plog.Error(plog.TypeSystem, "listing VMs for experiment", "exp", name, "err", err)
+	var (
+		vms      []mm.VM
+		observed = freshness.Unobserved()
+	)
+
+	if noVMs {
+		vms = vm.ListConfigured(*exp)
+	} else {
+		vms, observed = vm.ListForObserved(ctx, exp)
 	}
 
 	// This will happen if another handler is currently acting on the
 	// experiment.
 	status := cache.IsExperimentLocked(name)
-	allowed := mm.VMs{}
 
-	// Build a Boolean expression tree and determine
-	// the fields that should be searched
-	filterTree := mm.BuildTree(clientFilter)
-
-	for _, vm := range vms {
-		if vm.DoNotBoot && !showDNB {
-			continue
-		}
-
-		// If the filter supplied could not be
-		// parsed, do not add the VM
-		if len(clientFilter) > 0 {
-			if filterTree == nil {
-				continue
-			} else if !filterTree.Evaluate(&vm) {
-				// If the search string could be parsed,
-				// determine if the VM should be included
-				continue
-			}
-		}
-
-		if role.Allowed("vms", "list", fmt.Sprintf("%s/%s", name, vm.Name)) {
-			if vm.Running && size != "" {
-				screenshot, err := util.GetScreenshot(name, vm.Name, size)
-				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-				} else {
-					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-						screenshot,
-					)
-				}
-			}
-
-			allowed = append(allowed, vm)
-		}
+	vmQuery := util.VMQuery{
+		Filter:  clientFilter,
+		ShowDNB: showDNB,
+		SortCol: sortColumn(sortCol, sortDir),
+		SortAsc: sortDir == sortAsc,
+		Page:    page,
+		Size:    pageSize,
 	}
 
-	if sortCol != "" && sortDir != "" {
-		allowed.SortBy(sortCol, sortDir == sortAsc)
+	allowed, total := util.SelectVMs(name, vms, exp.Spec.Topology(), vmQuery, role)
+
+	if size != "" {
+		addVMScreenshots(ctx, name, allowed, size)
 	}
 
-	totalBeforePaging := len(allowed)
-
-	if pageNum != "" && perPage != "" {
-		n, _ := strconv.Atoi(pageNum)
-		s, _ := strconv.Atoi(perPage)
-
-		allowed = allowed.Paginate(n, s)
+	if requestGone(r) {
+		return nil
 	}
 
 	experiment := util.ExperimentToProtobuf(*exp, status, allowed)
-	experiment.VmCount = uint32(totalBeforePaging) //nolint:gosec // integer overflow conversion int -> uint32
+	experiment.VmCount = uint32(total) //nolint:gosec // integer overflow conversion int -> uint32
+
+	if noVMs {
+		experiment.Vms = nil
+	} else {
+		experiment.VmsUnknown = !observed.Known
+		freshness.SetObserved(w, observed)
+	}
 
 	body, err := marshaler.Marshal(experiment)
 	if err != nil {
@@ -512,9 +591,20 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
+}
+
+// sortColumn is the column a REST list is sorted by: none unless both sortCol
+// and sortDir are given.
+func sortColumn(col, dir string) string {
+	if dir == "" {
+		return ""
+	}
+
+	return col
 }
 
 // DeleteExperiment - DELETE /experiments/{name}.
@@ -617,11 +707,22 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	body, err := startExperiment(name)
-	if err != nil {
+	if err := startExperiment(name); err != nil {
 		return err
 	}
 
+	// The broadcast leaves the VM list out; API callers still get it.
+	exp, err := experiment.Get(name)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to get experiment %s", name)
+	}
+
+	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vm.ListFor(ctx, exp)))
+	if err != nil {
+		return weberror.NewWebError(err, "unable to marshal experiment %s", name)
+	}
+
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 	user := middleware.UserFromContext(ctx)
 	plog.Info(
@@ -672,6 +773,7 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 	user := middleware.UserFromContext(ctx)
 	plog.Info(
@@ -710,6 +812,10 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 		)
 		http.Error(w, "forbidden", http.StatusForbidden)
 
+		return
+	}
+
+	if scorchTriggerForbidden(w, r, appsFilter, "post") {
 		return
 	}
 
@@ -817,6 +923,10 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if scorchTriggerForbidden(w, r, appsFilter, "delete") {
+		return
+	}
+
 	go func() {
 		apps := strings.SplitSeq(appsFilter, ",")
 
@@ -841,7 +951,7 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 	user := middleware.UserFromContext(ctx)
 	plog.Info(
 		plog.TypeAction,
-		"experiment apps trigger cancelled",
+		"experiment apps trigger canceled",
 		"user",
 		user,
 		"exp",
@@ -851,6 +961,54 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 	)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// scorchApp is the SCORCH app's name, and the resource of its permissions.
+const scorchApp = "scorch"
+
+// scorchTriggerForbidden answers 403 and reports true when appsFilter starts
+// or cancels SCORCH, as an empty filter, meaning every app, does too, and the
+// role lacks the scorch verb on the experiment that the SCORCH pipeline routes
+// need.
+func scorchTriggerForbidden(w http.ResponseWriter, r *http.Request, appsFilter, verb string) bool {
+	var (
+		ctx  = r.Context()
+		name = mux.Vars(r)["name"]
+	)
+
+	if !appsIncludeScorch(appsFilter) || middleware.RoleFromContext(ctx).Allowed(scorchApp, verb, name) {
+		return false
+	}
+
+	plog.Warn(
+		plog.TypeSecurity,
+		"triggering experiment scorch app not allowed",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		name,
+		"verb",
+		verb,
+	)
+	http.Error(w, "forbidden", http.StatusForbidden)
+
+	return true
+}
+
+// appsIncludeScorch reports whether a trigger apps filter names the SCORCH
+// app, or names no app and so means every app.
+func appsIncludeScorch(appsFilter string) bool {
+	if strings.TrimSpace(appsFilter) == "" {
+		return true
+	}
+
+	for a := range strings.SplitSeq(appsFilter, ",") {
+		if strings.EqualFold(strings.TrimSpace(a), scorchApp) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetExperimentSchedule - GET /experiments/{name}/schedule.
@@ -908,6 +1066,7 @@ func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	//nolint:gosec // XSS via taint analysis
 	_, _ = w.Write(body)
 }
@@ -1024,6 +1183,7 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
 		req.GetAlgorithm(),
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -1052,12 +1212,22 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		captures = mm.GetExperimentCaptures(mm.NS(name))
+		captures []mm.Capture
 		allowed  []mm.Capture
 	)
 
+	// A stopped experiment has no captures, and asking minimega would
+	// recreate its namespace (see experiment.Running).
+	if experiment.Running(name) {
+		captures = mm.GetExperimentCaptures(mm.NS(name), mm.Context(ctx))
+	}
+
+	if requestGone(r) {
+		return
+	}
+
 	for _, capture := range captures {
-		if role.Allowed("experiments/captures", "list", capture.VM) {
+		if role.Allowed("experiments/captures", "list", name+"/"+capture.VM) {
 			allowed = append(allowed, capture)
 		}
 	}
@@ -1070,6 +1240,7 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	//nolint:gosec // XSS via taint analysis
 	_, _ = w.Write(body)
 }
@@ -1104,26 +1275,40 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files, err := experiment.Files(name, clientFilter)
+	page, pageSize, err := util.ParsePage(pageNum, perPage)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "getting list of files for experiment", "exp", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 
 		return
 	}
+
+	files, observed, err := experiment.FilesObserved(ctx, name, clientFilter)
+	if requestCanceled(r, err) {
+		return
+	}
+
+	if err != nil {
+		// minimega did not list every node's files; an empty or partial list
+		// would read as files missing
+		plog.Error(plog.TypeSystem, "getting list of files for experiment", "exp", name, "err", err)
+		http.Error(w, "could not list files: "+err.Error(), http.StatusBadGateway)
+
+		return
+	}
+
+	freshness.SetObserved(w, observed)
 
 	if sortCol != "" && sortDir != "" {
 		files.SortBy(sortCol, sortDir == "asc")
 	}
 
-	if pageNum != "" && perPage != "" {
-		n, _ := strconv.Atoi(pageNum)
-		s, _ := strconv.Atoi(perPage)
+	total := len(files)
 
-		files = files.Paginate(n, s)
+	if page > 0 {
+		files = files.Paginate(page, pageSize)
 	}
 
-	body, err := json.Marshal(util.WithRoot("files", files))
+	body, err := json.Marshal(map[string]any{"files": files, "total": total})
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling file list for experiment", "exp", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1131,6 +1316,7 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -1146,25 +1332,28 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		path  = query.Get("path")
 	)
 
+	// the Files tab's viewer shows the file inline as text
+	var (
+		preview = r.Header.Get("Accept") == "text/plain"
+		fields  = audit.Fields{
+			Experiment: name, File: path,
+			Extra: []any{"phenix.file.capture", isCaptureFile(path), "phenix.file.preview", preview},
+		}
+	)
+
 	if !role.Allowed("experiments/files", "get", name) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"getting experiment file not allowed",
-			"user",
-			user,
-			"exp",
-			name,
-		)
+		audit.Denied(r, audit.FileDownload, "getting experiment file not allowed", fields)
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
 	}
 
-	contents, err := experiment.File(name, path)
+	local, err := experiment.LocalFile(name, path)
 	if err != nil {
-		if errors.Is(err, mm.ErrCaptureExists) {
-			http.Error(w, "capture still in progress", http.StatusBadRequest)
+		audit.Failure(r, audit.FileDownload, "getting experiment file failed", fields, err)
+
+		if status := fileErrorStatus(err); status != http.StatusInternalServerError {
+			http.Error(w, err.Error(), status)
 
 			return
 		}
@@ -1184,26 +1373,39 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Header.Get("Accept") == "text/plain" {
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write(contents) //nolint:gosec // XSS via taint analysis
+	// a download, streamed from disk and resumable; or the viewer's text
+	d := util.Download{Path: local, Name: file, ContentType: "", Live: false, MaxSize: 0}
+	if preview {
+		d.Name = ""
+		d.ContentType = "text/plain; charset=utf-8"
+		d.MaxSize = maxViewBytes
+	}
+
+	served, err := util.ServeDownload(w, r, d)
+	if err != nil {
+		audit.Failure(r, audit.FileDownload, "getting experiment file failed", fields, err)
+
+		switch {
+		case errors.Is(err, util.ErrTooLarge):
+			http.Error(w, path+" is too large to view (over 10 MiB); download it instead", http.StatusRequestEntityTooLarge)
+		case errors.Is(err, fs.ErrNotExist), errors.Is(err, util.ErrNotRegular):
+			http.Error(w, path+": "+experiment.ErrFileNotFound.Error(), http.StatusNotFound)
+		default:
+			plog.Error(plog.TypeSystem, "sending file for experiment", "exp", name, "file", path, "err", err)
+			http.Error(w, "unable to read "+path, http.StatusInternalServerError)
+		}
 
 		return
 	}
 
-	w.Header().Set("Content-Disposition", "attachment; filename="+file)
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"downloaded file",
-		"user",
-		user,
-		"exp",
-		name,
-		"file",
-		path,
-	)
-	http.ServeContent(w, r, "", time.Now(), bytes.NewReader(contents))
+	// once per download or view, not per resumed range or HEAD
+	if served.Started {
+		if rng := r.Header.Get("Range"); rng != "" {
+			fields.Extra = append(fields.Extra, "http.request.range", rng)
+		}
+
+		audit.Success(r, audit.FileDownload, "downloaded file", fields)
+	}
 }
 
 // GetExperimentApps - GET /experiments/{name}/apps.
@@ -1282,6 +1484,13 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	page, pageSize, err := util.ParsePage(pageNum, perPage)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1289,50 +1498,28 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vms, err := vm.List(expName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	vmQuery := util.VMQuery{ //nolint:exhaustruct // this route does not filter
+		ShowDNB: true,
+		SortCol: sortColumn(sortCol, sortDir),
+		SortAsc: sortDir == sortAsc,
+		Page:    page,
+		Size:    pageSize,
+	}
 
+	vms, observed := vm.ListForObserved(ctx, exp)
+	allowed, total := util.SelectVMs(expName, vms, exp.Spec.Topology(), vmQuery, role)
+
+	if size != "" {
+		addVMScreenshots(ctx, expName, allowed, size)
+	}
+
+	if requestGone(r) {
 		return
 	}
 
-	allowed := mm.VMs{}
-
-	for _, vm := range vms {
-		if role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
-			if vm.Running && size != "" {
-				screenshot, err := util.GetScreenshot(expName, vm.Name, size)
-				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-				} else {
-					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-						screenshot,
-					)
-				}
-			}
-
-			allowed = append(allowed, vm)
-		}
-	}
-
-	if sortCol != "" && sortDir != "" {
-		allowed.SortBy(sortCol, sortDir == "asc")
-	}
-
-	if pageNum != "" && perPage != "" {
-		n, _ := strconv.Atoi(pageNum)
-		s, _ := strconv.Atoi(perPage)
-
-		allowed = allowed.Paginate(n, s)
-	}
-
-	resp := &proto.VMList{
-		Total: uint32(len(allowed)), //nolint:gosec // integer overflow conversion int -> uint32
-		Vms:   make([]*proto.VM, len(allowed)),
-	}
-	for i, v := range allowed {
-		resp.Vms[i] = util.VMToProtobuf(expName, v, exp.Spec.Topology())
-	}
+	resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
+	util.SetVMListObservation(resp, observed)
+	freshness.SetObserved(w, observed)
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
@@ -1341,6 +1528,7 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -1380,7 +1568,11 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vm, err := vm.Get(expName, name)
+	vm, err := vm.GetFor(ctx, exp, name)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -1388,7 +1580,11 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if vm.Running && size != "" {
-		screenshot, err := util.GetScreenshot(expName, name, size)
+		screenshot, err := util.GetScreenshotContext(ctx, expName, name, size)
+		if requestCanceled(r, err) {
+			return
+		}
+
 		if err != nil {
 			plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 		} else {
@@ -1396,14 +1592,32 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
+	body, err := marshaler.Marshal(vmWithAnnotations(expName, *vm, exp.Spec.Topology()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+}
+
+// vmWithAnnotations converts a VM for a response about that one VM, which,
+// unlike VM lists and broadcasts, carries its node's annotations.
+func vmWithAnnotations(expName string, v mm.VM, topo ifaces.TopologySpec) *proto.VM {
+	pb := util.VMToProtobuf(expName, v, topo)
+
+	annotations, err := util.AnnotationsToProtobuf(v.Annotations)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "converting VM annotations", "exp", expName, "vm", v.Name, "err", err)
+
+		return pb
+	}
+
+	pb.Annotations = annotations
+
+	return pb
 }
 
 // UpdateVM - PATCH /experiments/{exp}/vms/{name}.
@@ -1488,7 +1702,17 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		opts = append(opts, vm.UpdateWithSnapshot(req.GetSnapshot()))
 	}
 
+	if req.GetAnnotations() != nil {
+		opts = append(opts, vm.UpdateWithAnnotations(req.GetAnnotations().AsMap()))
+	}
+
 	if err := vm.Update(opts...); err != nil {
+		if errors.Is(err, vm.ErrInvalidAnnotations) || errors.Is(err, vm.ErrInvalidDisk) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+
+			return
+		}
+
 		plog.Error(plog.TypeSystem, "updating VM", "err", err)
 		http.Error(w, "unable to update VM", http.StatusInternalServerError)
 
@@ -1502,7 +1726,8 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vm, err := vm.Get(expName, name)
+	// broadcast to every client, so read even once this request's client left
+	vm, err := vm.GetFor(context.WithoutCancel(ctx), exp, name)
 	if err != nil {
 		http.Error(w, "unable to get VM", http.StatusInternalServerError)
 
@@ -1531,6 +1756,16 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
+	// a caller who may also read the VM gets its annotations
+	if role.Allowed("vms", "get", fmt.Sprintf("%s/%s", expName, name)) {
+		body, err = marshaler.Marshal(vmWithAnnotations(expName, *vm, exp.Spec.Topology()))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+
+			return
+		}
+	}
+
 	plog.Info(
 		plog.TypeAction,
 		"vm updated",
@@ -1541,6 +1776,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		"vm",
 		name,
 	)
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -1569,10 +1805,19 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := &proto.VMList{Total: req.GetTotal()} //nolint:exhaustruct // partial initialization
-	resp.Vms = make([]*proto.VM, int(req.GetTotal()))
+	// refused before any VM changes, as minimega could not boot from the disk
+	for _, vmRequest := range req.GetVms() {
+		if err := disk.ValidateMinimegaPath(vmRequest.GetDisk()); err != nil {
+			http.Error(w, fmt.Sprintf("VM %s: %v", vmRequest.GetName(), err), http.StatusBadRequest)
 
-	for index, vmRequest := range req.GetVms() {
+			return
+		}
+	}
+
+	// the VMs updated, which leaves out those the role may not patch
+	resp := &proto.VMList{Vms: make([]*proto.VM, 0, len(req.GetVms()))} //nolint:exhaustruct // partial initialization
+
+	for _, vmRequest := range req.GetVms() {
 		// Skip any vms that are not allowed to be updated
 		if !role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, vmRequest.GetName())) {
 			plog.Warn(
@@ -1626,32 +1871,6 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		exp, err := experiment.Get(expName)
-		if err != nil {
-			http.Error(w, "unable to get experiment", http.StatusBadRequest)
-
-			return
-		}
-
-		vm, err := vm.Get(expName, vmRequest.GetName())
-		if err != nil {
-			http.Error(w, "unable to get VM", http.StatusInternalServerError)
-
-			return
-		}
-
-		if vm.Running {
-			screenshot, err := util.GetScreenshot(expName, vmRequest.GetName(), defaultScreenshotSize)
-			if err != nil {
-				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-			} else {
-				vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-					screenshot,
-				)
-			}
-		}
-
-		resp.Vms[index] = util.VMToProtobuf(expName, *vm, exp.Spec.Topology())
 		plog.Info(
 			plog.TypeAction,
 			"vm updated",
@@ -1662,7 +1881,54 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			vmRequest.GetName(),
 		)
+
+		// The rest only reads the VM back for the response. Once the client
+		// has left, the remaining VMs are still updated, but not read back.
+		if requestGone(r) {
+			continue
+		}
+
+		exp, err := experiment.Get(expName)
+		if err != nil {
+			http.Error(w, "unable to get experiment", http.StatusBadRequest)
+
+			return
+		}
+
+		vm, err := vm.GetFor(ctx, exp, vmRequest.GetName())
+		if requestCanceled(r, err) {
+			continue
+		}
+
+		if err != nil {
+			http.Error(w, "unable to get VM", http.StatusInternalServerError)
+
+			return
+		}
+
+		if vm.Running {
+			screenshot, err := util.GetScreenshotContext(ctx, expName, vmRequest.GetName(), defaultScreenshotSize)
+			if requestCanceled(r, err) {
+				continue
+			}
+
+			if err != nil {
+				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+			} else {
+				vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+					screenshot,
+				)
+			}
+		}
+
+		resp.Vms = append(resp.Vms, util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
 	}
+
+	if requestGone(r) {
+		return
+	}
+
+	resp.Total = uint32(len(resp.GetVms())) //nolint:gosec // as many VMs as the request named
 
 	body, err = marshaler.Marshal(resp)
 	if err != nil {
@@ -1671,612 +1937,38 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
 // DeleteVM - DELETE /experiments/{exp}/vms/{name}.
 func DeleteVM(w http.ResponseWriter, r *http.Request) {
-	var (
-		ctx     = r.Context()
-		role    = middleware.RoleFromContext(ctx)
-		vars    = mux.Vars(r)
-		expName = vars["exp"]
-		name    = vars["name"]
-	)
-
-	if !role.Allowed("vms", "delete", fmt.Sprintf("%s/%s", expName, name)) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"deleting vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	exp, err := experiment.Get(expName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	if !exp.Running() {
-		http.Error(w, "experiment not running", http.StatusBadRequest)
-
-		return
-	}
-
-	if err := mm.KillVM(mm.NS(expName), mm.VMName(name)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms", "delete", fmt.Sprintf("%s/%s", expName, name)),
-		bt.NewResource("experiment/vm", fmt.Sprintf("%s/%s", expName, name), "delete"),
-		nil,
-	)
-
-	plog.Info(
-		plog.TypeAction,
-		"vm deleted",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
-	w.WriteHeader(http.StatusNoContent)
+	serveVMAction(w, r, "kill")
 }
 
 // StartVM - POST /experiments/{exp}/vms/{name}/start.
-//
-//nolint:funlen // handler
 func StartVM(w http.ResponseWriter, r *http.Request) {
-	var (
-		ctx      = r.Context()
-		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		expName  = vars["exp"]
-		name     = vars["name"]
-		fullName = expName + "/" + name
-	)
-
-	if !role.Allowed("vms/start", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	if err := cache.LockVMForStarting(expName, name); err != nil {
-		plog.Error(
-			plog.TypeSystem,
-			"locking VM",
-			"exp",
-			expName,
-			"vm",
-			name,
-			"action",
-			"starting",
-			"err",
-			err,
-		)
-		http.Error(w, err.Error(), http.StatusConflict)
-
-		return
-	}
-
-	defer cache.UnlockVM(expName, name)
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/start", "update", fullName),
-		bt.NewResource("experiment/vm", name, "starting"),
-		nil,
-	)
-
-	if err := mm.StartVM(mm.NS(expName), mm.VMName(name)); err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("vms/start", "update", fullName),
-			bt.NewResource("experiment/vm", name, "errorStarting"),
-			nil,
-		)
-
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	exp, err := experiment.Get(expName)
-	if err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("vms/start", "update", fullName),
-			bt.NewResource("experiment/vm", name, "errorStarting"),
-			nil,
-		)
-
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	v, err := vm.Get(expName, name)
-	if err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("vms/start", "update", fullName),
-			bt.NewResource("experiment/vm", name, "errorStarting"),
-			nil,
-		)
-
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	screenshot, err := util.GetScreenshot(expName, name, "215")
-	if err != nil {
-		plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-	} else {
-		v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
-	}
-
-	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/start", "update", fullName),
-		bt.NewResource("experiment/vm", expName+"/"+name, "start"),
-		body,
-	)
-
-	plog.Info(
-		plog.TypeAction,
-		"vm started",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	serveVMAction(w, r, "start")
 }
 
 // StopVM - POST /experiments/{exp}/vms/{name}/stop.
-//
-//nolint:funlen // handler
 func StopVM(w http.ResponseWriter, r *http.Request) {
-	var (
-		ctx      = r.Context()
-		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		expName  = vars["exp"]
-		name     = vars["name"]
-		fullName = expName + "/" + name
-	)
-
-	if !role.Allowed("vms/stop", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	if err := cache.LockVMForStopping(expName, name); err != nil {
-		plog.Error(
-			plog.TypeSystem,
-			"locking VM",
-			"exp",
-			expName,
-			"vm",
-			name,
-			"action",
-			"stopping",
-			"err",
-			err,
-		)
-		http.Error(w, err.Error(), http.StatusConflict)
-
-		return
-	}
-
-	defer cache.UnlockVM(expName, name)
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/stop", "update", fullName),
-		bt.NewResource("experiment/vm", name, "stopping"),
-		nil,
-	)
-
-	if err := mm.StopVM(mm.NS(expName), mm.VMName(name)); err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("vms/stop", "update", fullName),
-			bt.NewResource("experiment/vm", name, "errorStopping"),
-			nil,
-		)
-
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	exp, err := experiment.Get(expName)
-	if err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("vms/stop", "update", fullName),
-			bt.NewResource("experiment/vm", name, "errorStopping"),
-			nil,
-		)
-
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	v, err := vm.Get(expName, name)
-	if err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("vms/stop", "update", fullName),
-			bt.NewResource("experiment/vm", name, "errorStopping"),
-			nil,
-		)
-
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/stop", "update", fullName),
-		bt.NewResource("experiment/vm", expName+"/"+name, "stop"),
-		body,
-	)
-
-	plog.Info(
-		plog.TypeAction,
-		"vm stopped",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	serveVMAction(w, r, "pause")
 }
 
 // RestartVM - GET /experiments/{exp}/vms/{name}/restart.
-//
-//nolint:funlen // handler
 func RestartVM(w http.ResponseWriter, r *http.Request) {
-	var (
-		ctx      = r.Context()
-		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		expName  = vars["exp"]
-		name     = vars["name"]
-		fullName = expName + "/" + name
-	)
-
-	if !role.Allowed("vms/restart", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"restarting vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	if err := cache.LockVMForStarting(expName, name); err != nil {
-		plog.Error(
-			plog.TypeSystem,
-			"locking VM",
-			"exp",
-			expName,
-			"vm",
-			name,
-			"action",
-			"starting",
-			"err",
-			err,
-		)
-		http.Error(w, err.Error(), http.StatusConflict)
-
-		return
-	}
-
-	defer cache.UnlockVM(expName, name)
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/restart", "update", fullName),
-		bt.NewResource("experiment/vm", name, "restarting"),
-		nil,
-	)
-
-	if err := vm.Restart(expName, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	exp, err := experiment.Get(expName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	v, err := vm.Get(expName, name)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
-	if err != nil {
-		plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-	} else {
-		v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
-	}
-
-	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/restart", "update", fullName),
-		bt.NewResource("experiment/vm", expName+"/"+name, "update"),
-		body,
-	)
-
-	plog.Info(
-		plog.TypeAction,
-		"vm restarted",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	serveVMAction(w, r, "restart")
 }
 
 // ShutdownVM - GET /experiments/{exp}/vms/{name}/shutdown.
 func ShutdownVM(w http.ResponseWriter, r *http.Request) {
-	var (
-		ctx      = r.Context()
-		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		expName  = vars["exp"]
-		name     = vars["name"]
-		fullName = expName + "/" + name
-	)
-
-	if !role.Allowed("vms/shutdown", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"shutting down vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	if err := cache.LockVMForStopping(expName, name); err != nil {
-		plog.Error(
-			plog.TypeSystem,
-			"locking VM",
-			"exp",
-			expName,
-			"vm",
-			name,
-			"action",
-			"stopping",
-			"err",
-			err,
-		)
-		http.Error(w, err.Error(), http.StatusConflict)
-
-		return
-	}
-
-	defer cache.UnlockVM(expName, name)
-
-	if err := vm.Shutdown(expName, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	exp, err := experiment.Get(expName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	v, err := vm.Get(expName, name)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	v.Running = false
-
-	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/shutdown", "update", fullName),
-		bt.NewResource("experiment/vm", expName+"/"+name, "shutdown"),
-		body,
-	)
-
-	plog.Info(
-		plog.TypeAction,
-		"vm shutdown",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	serveVMAction(w, r, "shutdown")
 }
 
 // ResetVM - GET /experiments/{exp}/vms/{name}/reset.
 func ResetVM(w http.ResponseWriter, r *http.Request) {
-	var (
-		ctx      = r.Context()
-		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		expName  = vars["exp"]
-		name     = vars["name"]
-		fullName = expName + "/" + name
-	)
-
-	if !role.Allowed("vms/reset", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"resetting vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	if err := cache.LockVMForStopping(expName, name); err != nil {
-		plog.Error(
-			plog.TypeSystem,
-			"locking VM",
-			"exp",
-			expName,
-			"vm",
-			name,
-			"action",
-			"stopping",
-			"err",
-			err,
-		)
-		http.Error(w, err.Error(), http.StatusConflict)
-
-		return
-	}
-
-	defer cache.UnlockVM(expName, name)
-
-	if err := vm.ResetDiskState(expName, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	exp, err := experiment.Get(expName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	v, err := vm.Get(expName, name)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/reset", "update", fullName),
-		bt.NewResource("experiment/vm", expName+"/"+name, "reset"),
-		body,
-	)
-
-	plog.Info(
-		plog.TypeAction,
-		"vm reset",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	serveVMAction(w, r, "resetDisk")
 }
 
 // RedeployVM - POST /experiments/{exp}/vms/{name}/redeploy.
@@ -2290,8 +1982,6 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		expName  = vars["exp"]
 		name     = vars["name"]
 		fullName = expName + "/" + name
-		query    = r.URL.Query()
-		inject   = query.Get("replicate-injects") != ""
 	)
 
 	if !role.Allowed("vms/redeploy", "update", fullName) {
@@ -2306,6 +1996,27 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 			name,
 		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	var req proto.VMRedeployRequest
+	if err := unmarshaler.Unmarshal(body, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	// refused before the VM is touched, as minimega could not boot it
+	if err := disk.ValidateMinimegaPath(req.GetDisk()); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 
 		return
 	}
@@ -2337,7 +2048,13 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v, err := vm.Get(expName, name)
+	// the redeploy starts only once this has answered, so a client that left
+	// before then does not have it done
+	v, err := vm.GetFor(ctx, exp, name)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -2346,8 +2063,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 
 	v.Busy = true
 
-	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
-
+	body, err = marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -2365,38 +2081,11 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer close(redeployed)
 
-		body, err := io.ReadAll(r.Body)
-		if err != nil && !errors.Is(err, io.EOF) {
-			redeployed <- err
-
-			return
-		}
-
 		opts := []vm.RedeployOption{
-			vm.CPU(v.CPUs),
-			vm.Memory(v.RAM),
-			vm.Disk(v.Disk),
-			vm.Inject(inject),
-		}
-
-		// `body` will be nil if err above was EOF.
-		if body != nil {
-			var req proto.VMRedeployRequest
-
-			// Update VM struct with values from POST request body.
-			err := unmarshaler.Unmarshal(body, &req)
-			if err != nil {
-				redeployed <- err
-
-				return
-			}
-
-			opts = []vm.RedeployOption{
-				vm.CPU(int(req.GetCpus())),
-				vm.Memory(int(req.GetRam())),
-				vm.Disk(req.GetDisk()),
-				vm.Inject(req.GetInjects()),
-			}
+			vm.CPU(int(req.GetCpus())),
+			vm.Memory(int(req.GetRam())),
+			vm.Disk(req.GetDisk()),
+			vm.Inject(req.GetInjects()),
 		}
 
 		if err := vm.Redeploy(expName, name, opts...); err != nil {
@@ -2426,8 +2115,9 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the VM details again since redeploying may have changed them.
-	v, err = vm.Get(expName, name)
+	// Get the VM details again since redeploying may have changed them. They
+	// are broadcast to every client, so read even once this request's left.
+	v, err = vm.Get(context.WithoutCancel(ctx), expName, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -2459,6 +2149,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		"vm",
 		name,
 	)
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2541,7 +2232,10 @@ func GetVMCaptures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	captures := mm.GetVMCaptures(mm.NS(exp), mm.VMName(name))
+	captures := mm.GetVMCaptures(mm.NS(exp), mm.VMName(name), mm.Context(ctx))
+	if requestGone(r) {
+		return
+	}
 
 	body, err := marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(captures)})
 	if err != nil {
@@ -2550,6 +2244,7 @@ func GetVMCaptures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2564,17 +2259,7 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/captures", "create", fmt.Sprintf("%s/%s", exp, name)) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting capture for VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.CaptureStart, "starting capture for VM not allowed", audit.Fields{Experiment: exp, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -2598,12 +2283,24 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := vm.StartCapture(exp, name, int(req.GetInterface()), req.GetFilename()); err != nil {
+	iface := int(req.GetInterface())
+	captured := audit.Fields{Experiment: exp, VM: name, Interface: &iface, File: req.GetFilename()}
+
+	if err := vm.StartCapture(ctx, exp, name, iface, req.GetFilename()); err != nil {
+		audit.Failure(r, audit.CaptureStart, "starting capture for VM failed", captured, err)
+
+		if requestCanceled(r, err) {
+			return
+		}
+
 		plog.Error(plog.TypeSystem, "starting capture for VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
+
+	// the capture writes to the experiment's files directory
+	experiment.InvalidateFiles(exp)
 
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/captures", "create", fmt.Sprintf("%s/%s", exp, name)),
@@ -2611,17 +2308,7 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm capture started",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.CaptureStart, "vm capture started", captured)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -2641,29 +2328,20 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/captures", "delete", fmt.Sprintf("%s/%s", exp, name)) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping captures for VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.CaptureStop, "stopping captures for VM not allowed", audit.Fields{Experiment: exp, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
 	}
 
 	var (
-		err  error
-		body json.RawMessage
+		err     error
+		body    json.RawMessage
+		stopped = audit.Fields{Experiment: exp, VM: name}
 	)
 
 	if ifaceStr == "" {
-		err = vm.StopCaptures(exp, name)
+		err = vm.StopCaptures(ctx, exp, name)
 	} else {
 		var iface int
 
@@ -2674,7 +2352,9 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err = vm.StopCapture(exp, name, iface); err == nil {
+		stopped.Interface = &iface
+
+		if err = vm.StopCapture(ctx, exp, name, iface); err == nil {
 			body, err = json.Marshal(map[string]int{"interface": iface})
 			if err != nil {
 				plog.Error(plog.TypeSystem, "marshaling capture stop result", "err", err)
@@ -2686,6 +2366,12 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		audit.Failure(r, audit.CaptureStop, "stopping captures for VM failed", stopped, err)
+
+		if requestCanceled(r, err) {
+			return
+		}
+
 		plog.Error(
 			plog.TypeSystem,
 			"stopping captures for VM",
@@ -2703,25 +2389,16 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// the stopped captures' files are now complete
+	experiment.InvalidateFiles(exp)
+
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/captures", "delete", fmt.Sprintf("%s/%s", exp, name)),
 		bt.NewResource("experiment/vm/capture", fmt.Sprintf("%s/%s", exp, name), "stop"),
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm capture stopped",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-		"iface",
-		ifaceStr,
-	)
+	audit.Success(r, audit.CaptureStop, "vm capture stopped", stopped)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -2735,15 +2412,7 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("exp/captureSubnet", "create", exp) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting subnet capture for experiment not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
+		audit.Denied(r, audit.CaptureStart, "starting subnet capture for experiment not allowed", audit.Fields{Experiment: exp})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -2767,8 +2436,16 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vmCaptures, err := vm.CaptureSubnet(exp, req.GetSubnet(), req.GetVms())
+	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
+
+	vmCaptures, err := vm.CaptureSubnet(ctx, exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
+		audit.Failure(r, audit.CaptureStart, "starting subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
+
+		if requestCanceled(r, err) {
+			return
+		}
+
 		plog.Error(plog.TypeSystem, "unable to start subnet capture", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -2783,15 +2460,13 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"subnet capture started",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	for _, c := range vmCaptures {
+		audit.Success(r, audit.CaptureStart, "subnet capture started", audit.Fields{
+			Experiment: exp, VM: c.VM, Interface: &c.Interface, File: c.Filepath, Extra: subnet,
+		})
+	}
+
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2804,16 +2479,8 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		exp  = vars["exp"]
 	)
 
-	if !role.Allowed("exp/captureSubnet", "create", exp) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping subnet capture for experiment not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
+	if !role.Allowed("exp/captureSubnet", "delete", exp) {
+		audit.Denied(r, audit.CaptureStop, "stopping subnet capture for experiment not allowed", audit.Fields{Experiment: exp})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -2835,8 +2502,16 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vms, err := vm.StopCaptureSubnet(exp, req.GetSubnet(), req.GetVms())
+	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
+
+	vms, err := vm.StopCaptureSubnet(ctx, exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
+		audit.Failure(r, audit.CaptureStop, "stopping subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
+
+		if requestCanceled(r, err) {
+			return
+		}
+
 		plog.Error(plog.TypeSystem, "unable to stop subnet capture", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -2851,15 +2526,11 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"subnet capture stopped",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	for _, name := range vms {
+		audit.Success(r, audit.CaptureStop, "subnet capture stopped", audit.Fields{Experiment: exp, VM: name, Extra: subnet})
+	}
+
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2890,7 +2561,11 @@ func GetVMSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshots, err := vm.Snapshots(exp, name)
+	snapshots, err := vm.Snapshots(ctx, exp, name)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		plog.Error(
 			plog.TypeSystem,
@@ -2914,6 +2589,7 @@ func GetVMSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2931,17 +2607,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/snapshots", "create", fullName) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"snapshotting VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMSnapshot, "snapshotting VM not allowed", audit.Fields{Experiment: exp, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -3021,6 +2687,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	cb := func(s string) { status <- s }
+	snapshotted := audit.Fields{Experiment: exp, VM: name, Target: req.GetFilename()}
 
 	if err := vm.Snapshot(exp, name, req.GetFilename(), cb); err != nil {
 		broker.Broadcast(
@@ -3030,6 +2697,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "snapshotting VM", "exp", exp, "vm", name, "err", err)
+		audit.Failure(r, audit.VMSnapshot, "snapshotting VM failed", snapshotted, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -3041,19 +2709,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm snapshotted",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-		"file",
-		req.GetFilename(),
-	)
+	audit.Success(r, audit.VMSnapshot, "vm snapshotted", snapshotted)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -3069,18 +2725,10 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		snap     = vars["snapshot"]
 	)
 
+	restored := audit.Fields{Experiment: exp, VM: name, File: snap}
+
 	if !role.Allowed("vms/snapshots", "update", fullName) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"restoring VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMRestore, "restoring VM not allowed", restored)
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -3126,6 +2774,7 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "restoring VM", "exp", exp, "vm", name, "err", err)
+		audit.Failure(r, audit.VMRestore, "restoring VM failed", restored, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -3137,17 +2786,7 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm restored",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMRestore, "vm restored", restored)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -3165,17 +2804,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/commit", "create", fullName) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"committing VM not allowed",
-			"user",
-			user,
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMCommit, "committing VM not allowed", audit.Fields{Experiment: expName, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -3280,6 +2909,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	cb := func(s float64) { status <- s }
+	committed := audit.Fields{Experiment: expName, VM: name, Target: filename}
 
 	if _, err = vm.CommitToDisk(expName, name, filename, cb); err != nil {
 		broker.Broadcast(
@@ -3289,10 +2919,14 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "committing VM", "exp", expName, "vm", name, "err", err)
+		audit.Failure(r, audit.VMCommit, "committing VM failed", committed, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
+
+	// committed, whether or not the VM can be read back for the response
+	audit.Success(r, audit.VMCommit, "vm committed", committed)
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
@@ -3307,7 +2941,8 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v, err := vm.Get(expName, name)
+	// broadcast to every client, so read even once this request's client left
+	v, err := vm.GetFor(context.WithoutCancel(ctx), exp, name)
 	if err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/commit", "create", fullName),
@@ -3329,17 +2964,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm committed",
-		"user",
-		user,
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3357,17 +2982,9 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/memorySnapshot", "create", fullName) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"capturing memory snapshot of VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMMemorySnapshot, "capturing memory snapshot of VM not allowed", audit.Fields{
+			Experiment: exp, VM: name,
+		})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -3472,6 +3089,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	cb := func(s string) { status <- s }
+	snapshotted := audit.Fields{Experiment: exp, VM: name, Target: filename}
 
 	if _, err = vm.MemorySnapshot(exp, name, filename, cb); err != nil {
 		broker.Broadcast(
@@ -3481,6 +3099,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "memory snapshot for VM", "exp", exp, "vm", name, "err", err)
+		audit.Failure(r, audit.VMMemorySnapshot, "memory snapshot of VM failed", snapshotted, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -3494,17 +3113,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		marshalled,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm memory snapshot created",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMMemorySnapshot, "vm memory snapshot created", snapshotted)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -3533,9 +3142,17 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 	exps, err := experiment.List()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiments", "err", err)
+
+		// an empty list would read as no running VMs
+		if len(exps) == 0 {
+			http.Error(w, "unable to read experiments from the store", http.StatusInternalServerError)
+
+			return
+		}
 	}
 
 	allowed := []*proto.VM{}
+	observed := freshness.Unobserved()
 
 	for _, exp := range exps {
 		if !exp.Running() {
@@ -3544,17 +3161,9 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		vms, err := vm.List(exp.Spec.ExperimentName())
-		if err != nil {
-			plog.Error(
-				plog.TypeSystem,
-				"listing VMs for experiment",
-				"exp",
-				exp.Spec.ExperimentName(),
-				"err",
-				err,
-			)
-		}
+		vms, obs := vm.ListForObserved(ctx, &exp)
+		observed = observed.Older(obs)
+		nodes := util.IndexTopology(exp.Spec.Topology())
 
 		for _, vm := range vms {
 			id := exp.Metadata.Name + "/" + vm.Name
@@ -3569,7 +3178,11 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if size != "" {
-				screenshot, err := util.GetScreenshot(exp.Metadata.Name, vm.Name, size)
+				screenshot, err := util.GetScreenshotContext(ctx, exp.Metadata.Name, vm.Name, size)
+				if requestGone(r) {
+					return
+				}
+
 				if err != nil {
 					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 				} else {
@@ -3579,11 +3192,17 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			allowed = append(allowed, util.VMToProtobuf(exp.Metadata.Name, vm, exp.Spec.Topology()))
+			allowed = append(allowed, util.VMToProtobufIndexed(exp.Metadata.Name, vm, nodes))
 		}
 	}
 
-	resp := &proto.VMList{Total: uint32(len(allowed)), Vms: allowed} //nolint:gosec // integer overflow conversion int -> uint32
+	if requestGone(r) {
+		return
+	}
+
+	resp := &proto.VMList{Total: uint32(len(allowed)), Vms: allowed} //nolint:gosec,exhaustruct // integer overflow conversion int -> uint32
+	util.SetVMListObservation(resp, observed)
+	freshness.SetObserved(w, observed)
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
@@ -3592,6 +3211,7 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3629,6 +3249,7 @@ func GetApplications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3673,6 +3294,7 @@ func GetTopologies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3753,6 +3375,7 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3775,12 +3398,18 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hosts, err := mm.GetClusterHosts(false)
+	hosts, observed, err := mm.GetClusterHostsObserved(ctx, false)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
+
+	freshness.SetObserved(w, observed)
 
 	allowed := []mm.Host{}
 
@@ -3797,241 +3426,8 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(marshalled) //nolint:gosec // XSS via taint analysis
-}
-
-// CreateConsole - POST /console.
-func CreateConsole(w http.ResponseWriter, r *http.Request) {
-	if !o.minimegaConsole {
-		plog.Error(plog.TypeSystem, "request made for minimega console, but console not enabled")
-		http.Error(w, "'minimega-console' CLI arg not enabled", http.StatusMethodNotAllowed)
-
-		return
-	}
-
-	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	if !role.Allowed("miniconsole", "post") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"creating miniconsole not allowed",
-			user,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	// create a new console
-	phenix, err := os.Executable()
-	if err != nil {
-		plog.Error(plog.TypeSystem, "unable to get full path to phenix")
-		http.Error(w, "", http.StatusInternalServerError)
-
-		return
-	}
-
-	// the console must outlive this request; r.Context() is canceled as soon
-	// as the response is written, which would SIGKILL the attach process
-	cmd := exec.CommandContext(
-		context.WithoutCancel(r.Context()),
-		phenix,
-		"mm",
-		"--attach",
-	) //nolint:gosec // Command injection via taint analysis
-
-	tty, err := pty.Start(cmd)
-	if err != nil {
-		http.Error(
-			w,
-			fmt.Sprintf("could not start terminal: %v", err),
-			http.StatusInternalServerError,
-		)
-
-		return
-	}
-
-	pid := cmd.Process.Pid
-
-	plog.Info(plog.TypeSystem, "spawned new minimega console", "pid", pid)
-
-	ptyMu.Lock()
-	ptys[pid] = tty
-	ptyMu.Unlock()
-
-	// reap the console process when it exits and drop its dead pty
-	go func() {
-		_ = cmd.Wait()
-
-		ptyMu.Lock()
-		if t, ok := ptys[pid]; ok && t == tty {
-			_ = t.Close()
-			delete(ptys, pid)
-		}
-		ptyMu.Unlock()
-
-		plog.Debug(plog.TypeSystem, "minimega console exited", "pid", pid)
-	}()
-
-	body, _ := json.Marshal(util.WithRoot("pid", pid))
-
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"miniconsole created",
-		"user",
-		user,
-	)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
-}
-
-// ResizeConsole - POST /console/{pid}/size?cols={[0-9]+}&rows={[0-9]+}.
-func ResizeConsole(w http.ResponseWriter, r *http.Request) {
-	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-
-	if !role.Allowed("miniconsole", "post") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"resizing miniconsole not allowed",
-			user,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	vars := mux.Vars(r)
-
-	pid, err := strconv.Atoi(vars["pid"])
-	if err != nil {
-		http.Error(w, "invalid pid", http.StatusBadRequest)
-
-		return
-	}
-
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-
-		return
-	}
-
-	ptyMu.Lock()
-	tty, ok := ptys[pid]
-	ptyMu.Unlock()
-
-	if !ok {
-		http.Error(w, "pty not found", http.StatusNotFound)
-
-		return
-	}
-
-	rows, err := strconv.ParseUint(r.FormValue("rows"), 10, 16)
-	if err != nil {
-		http.Error(w, "invalid rows", http.StatusBadRequest)
-
-		return
-	}
-
-	cols, err := strconv.ParseUint(r.FormValue("cols"), 10, 16)
-	if err != nil {
-		http.Error(w, "invalid cols", http.StatusBadRequest)
-
-		return
-	}
-
-	plog.Debug(plog.TypeSystem, "resize console", "pid", pid, "cols", cols, "rows", rows)
-
-	ws := struct {
-		R, C, X, Y uint16
-	}{
-		R: uint16(rows), C: uint16(cols), X: 0, Y: 0,
-	}
-
-	_, _, errno := syscall.Syscall(
-		syscall.SYS_IOCTL,
-		tty.Fd(),
-		syscall.TIOCSWINSZ,
-		uintptr(unsafe.Pointer(&ws)),
-	)
-
-	if errno != 0 {
-		plog.Error(plog.TypeSystem, "unable to set winsize", "err", errno)
-		http.Error(w, "set winsize failed", http.StatusInternalServerError)
-	}
-
-	// make sure winsize gets processed, hopefully the user isn't typing...
-	time.Sleep(consoleResizeSleep)
-
-	_, _ = io.WriteString(tty, "\n")
-}
-
-// WsConsole - GET /console/{pid}/ws.
-func WsConsole(w http.ResponseWriter, r *http.Request) {
-	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-
-	if !role.Allowed("miniconsole", "get") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"getting miniconsole not allowed",
-			user,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	vars := mux.Vars(r)
-
-	pid, err := strconv.Atoi(vars["pid"])
-	if err != nil {
-		http.Error(w, "invalid pid", http.StatusBadRequest)
-
-		return
-	}
-
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-
-		return
-	}
-
-	ptyMu.Lock()
-	tty, ok := ptys[pid]
-	ptyMu.Unlock()
-
-	if !ok {
-		http.Error(w, "pty not found", http.StatusNotFound)
-
-		return
-	}
-
-	websocket.Handler(func(ws *websocket.Conn) {
-		defer func() { _ = tty.Close() }()
-
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			plog.Warn(plog.TypeSystem, "unable to find process", "pid", pid)
-
-			return
-		}
-
-		go func() { _, _ = io.Copy(ws, tty) }()
-
-		_, _ = io.Copy(tty, ws)
-
-		plog.Debug(plog.TypeSystem, "killing minimega console", "pid", pid)
-
-		_ = proc.Kill()
-		_, _ = proc.Wait()
-
-		ptyMu.Lock()
-		delete(ptys, pid)
-		ptyMu.Unlock()
-
-		plog.Debug(plog.TypeSystem, "killed minimega console", "pid", pid)
-	}).ServeHTTP(w, r)
 }
 
 // ChangeOpticalDisc - POST /experiments/{exp}/vms/{name}/cdrom.
@@ -4065,7 +3461,11 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := vm.ChangeOpticalDisc(exp, name, isoPath)
+	err := vm.ChangeOpticalDisc(ctx, exp, name, isoPath)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		plog.Error(plog.TypeSystem, "changing disc for VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -4121,7 +3521,11 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := vm.EjectOpticalDisc(exp, name)
+	err := vm.EjectOpticalDisc(ctx, exp, name)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		plog.Error(plog.TypeSystem, "ejecting disc for VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -4221,6 +3625,12 @@ func SetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = settings.UpdateAllSettings(*s)
+	if errors.Is(err, settings.ErrPasswordMinLength) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Updating all settings", "err", err)
 		http.Error(w, "Error updating settings", http.StatusInternalServerError)
@@ -4239,7 +3649,7 @@ func SetSettings(w http.ResponseWriter, r *http.Request) {
 
 // GetPasswordRequirements - GET /settings/password.
 func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) {
-	_ = settings.SetDefaults()
+	ensureSettingDefaults()
 
 	passwordReqs, err := settings.GetPasswordSettings()
 	if err != nil {
@@ -4266,11 +3676,20 @@ func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
+// settingDefaultsOnce stores the default settings once per process: the
+// settings pages ask for them often, storing them opens the store for writing,
+// and settings.List already fills in any defaults missing afterwards.
+var settingDefaultsOnce sync.Once //nolint:gochecknoglobals // process-wide once
+
+func ensureSettingDefaults() {
+	settingDefaultsOnce.Do(func() { _ = settings.SetDefaults() })
+}
+
 // GetTimeoutSettings - GET /settings/timeout.
 func GetTimeoutSettings(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTimeoutSettings")
 
-	_ = settings.SetDefaults()
+	ensureSettingDefaults()
 
 	timeoutReqs, err := settings.GetTimeoutSettings()
 	if err != nil {

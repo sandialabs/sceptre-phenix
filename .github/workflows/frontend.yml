@@ -8,26 +8,40 @@ on:
       - 'src/go/**'
       - 'docker/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/ci-start-phenix-ui.sh'
       - '.github/workflows/frontend.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'src/js/**'
       - 'src/go/**'
       - 'docker/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/ci-start-phenix-ui.sh'
       - '.github/workflows/frontend.yml'
 
 env:
   GO_VERSION: '1.24'
   NODE_VERSION: '24'
 
-permissions:
-  contents: read
+# each job grants only what it needs
+permissions: {}
+
+# a newer commit (or closing the PR) cancels runs still going for this ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-js:
+    if: github.event.action != 'closed'
     name: Unit Tests (JS)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: src/js
@@ -45,9 +59,15 @@ jobs:
       - name: Run unit tests
         run: npm test
 
-  test-e2e:
-    name: E2E Smoke (UI)
+  # Builds the UI and phenix once for the e2e and perf jobs. VITE_AUTH is
+  # compiled into the UI, and the binary embeds the UI, so a job testing
+  # another auth mode needs its own build (make this a matrix over the mode).
+  build:
+    if: github.event.action != 'closed'
+    name: Build UI and phenix (VITE_AUTH=disabled)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,9 +76,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            src/js/package-lock.json
-            src/js/e2e/package-lock.json
+          cache-dependency-path: src/js/package-lock.json
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -71,14 +89,44 @@ jobs:
           npm ci
           VITE_AUTH=disabled npm run build
       - name: Build phenix
-        # SKIP_UI keeps make from rebuilding the UI already built with VITE_AUTH=disabled
+        # SKIP_UI keeps make from rebuilding the UI already built with
+        # VITE_AUTH=disabled; the API reference is built, as in releases
         run: make bin/phenix SKIP_UI=1
+      - name: Package build
+        # tar keeps the executable bit, which upload-artifact drops
+        run: tar -cf phenix-build.tar bin/phenix src/js/dist
+      - name: Upload build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phenix-build-disabled
+          path: phenix-build.tar
+          retention-days: 3
+          if-no-files-found: error
+
+  test-e2e:
+    if: github.event.action != 'closed'
+    name: E2E Smoke (UI)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/js/e2e/package-lock.json
+      - name: Download build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phenix-build-disabled
+      - name: Unpack build
+        run: tar -xf phenix-build.tar && rm phenix-build.tar
       - name: Start phenix UI
-        run: |
-          ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
-            --listen-endpoint 127.0.0.1:3000 &> /tmp/phenix-ui.log &
-          timeout 30 bash -c \
-            'until curl -sf http://127.0.0.1:3000/api/v1/experiments > /dev/null; do sleep 1; done'
+        run: ./scripts/ci-start-phenix-ui.sh /tmp/phenix-e2e.bdb /tmp/phenix-ui.log
       - name: Install e2e dependencies
         working-directory: src/js/e2e
         run: |
@@ -96,3 +144,134 @@ jobs:
         with:
           name: e2e-artifacts
           path: src/js/e2e/test-results
+
+  perf:
+    if: github.event.action != 'closed'
+    name: UI Performance (bundle budgets, Lighthouse)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # finds and downloads the default branch's perf-summary artifact
+      actions: read
+    defaults:
+      run:
+        working-directory: src/js/perf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/js/perf/package-lock.json
+      - name: Download build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phenix-build-disabled
+      - name: Unpack build
+        working-directory: .
+        run: tar -xf phenix-build.tar && rm phenix-build.tar
+      - name: Install perf tooling
+        run: npm ci
+      # The size and Lighthouse steps may fail without stopping the job, so
+      # both always run and the summary covers both; "Check budgets" fails it.
+      - name: Check bundle size budgets
+        id: size
+        continue-on-error: true
+        run: npm run --silent size:json > size-limit.json
+      - name: Start phenix UI
+        id: server
+        working-directory: .
+        run: ./scripts/ci-start-phenix-ui.sh /tmp/phenix-perf.bdb /tmp/phenix-ui.log
+      - name: Run Lighthouse CI
+        id: lighthouse
+        if: steps.server.outcome == 'success'
+        continue-on-error: true
+        run: npm run lighthouse
+      - name: Find baseline
+        # the newest unexpired perf-summary artifact from a push run on the
+        # base branch: push runs are always on this repository's own branches,
+        # never a fork's branch of the same name. Listing runs, not the
+        # repository's artifacts, keeps other branches' artifacts from pushing
+        # the baseline off the first page.
+        id: baseline
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        run: |
+          run_id=""
+          for id in $(gh api -X GET "repos/$REPO/actions/workflows/frontend.yml/runs" \
+              -f branch="$BASE" -f event=push -f status=completed -F per_page=30 \
+              --jq '.workflow_runs[].id'); do
+            found="$(gh api "repos/$REPO/actions/runs/$id/artifacts?name=perf-summary" \
+              --jq '[.artifacts[] | select(.expired | not)] | length')" || found=0
+            if [ "$found" -gt 0 ]; then
+              run_id="$id"
+              break
+            fi
+          done
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Download baseline
+        if: always() && steps.baseline.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: perf-summary
+          run-id: ${{ steps.baseline.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: src/js/perf/baseline
+      - name: Summarize
+        if: always()
+        env:
+          BASE: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        run: |
+          node summary.mjs --size size-limit.json \
+            --assert .lighthouseci/assertion-results.json \
+            --manifest lighthouse-results/manifest.json \
+            --baseline baseline/perf-summary.json --base-ref "$BASE" \
+            --out-md perf-summary.md --out-json perf-summary.json
+      - name: Upload perf summary
+        # kept 90 days: runs on the default branch are the baseline for later runs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: perf-summary
+          path: |
+            src/js/perf/perf-summary.md
+            src/js/perf/perf-summary.json
+          retention-days: 90
+          if-no-files-found: ignore
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lighthouse-reports
+          path: |
+            src/js/perf/lighthouse-results
+            src/js/perf/.lighthouseci
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Check budgets
+        if: always()
+        env:
+          SIZE_OUTCOME: ${{ steps.size.outcome }}
+          LIGHTHOUSE_OUTCOME: ${{ steps.lighthouse.outcome }}
+        run: |
+          if ! node summary.mjs --check perf-summary.json; then
+            exit 1
+          fi
+          # a fallback in case the summary missed a failed step
+          if [ "$SIZE_OUTCOME" != success ] || [ "$LIGHTHOUSE_OUTCOME" != success ]; then
+            echo "::error title=Perf budget::size-limit ($SIZE_OUTCOME) or Lighthouse ($LIGHTHOUSE_OUTCOME) failed; see their steps."
+            exit 1
+          fi
+      - name: Server log
+        if: failure()
+        working-directory: .
+        run: tail -100 /tmp/phenix-ui.log

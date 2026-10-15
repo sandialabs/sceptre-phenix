@@ -1,88 +1,98 @@
-// mirrors role_test.go
-import { roleAllowed } from '@/utils/rbac.js';
-import { test, expect, vi } from 'vitest';
+// Which resources and resource names a role's policies allow; mirrors
+// role_test.go.
+import {
+  roleAllowed,
+  scorchAllowed,
+  scorchControlAllowed,
+  scorchTerminalWriteAllowed,
+  userTokenAllowed,
+} from '@/utils/rbac.js';
+import { usePhenixStore } from '@/store.js';
+import { beforeEach, test, expect, vi } from 'vitest';
 
-vi.mock('@/store.js', () => {
-  return {
-    usePhenixStore: vi.fn().mockReturnValue({
-      role: {
-        name: 'Test Role',
-        policies: [
-          {
-            resources: ['experiments'],
-            resourceNames: ['*', '*/*'],
-            verbs: ['get'],
-          },
-          {
-            resources: ['experiments/start'],
-            resourceNames: ['*', '*/*'],
-            verbs: ['update'],
-          },
-          {
-            resources: ['experiments'],
-            resourceNames: ['exp1'],
-            verbs: ['delete'],
-          },
-          {
-            resources: ['*'],
-            resourceNames: ['vm1'],
-            verbs: ['patch'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['*'],
-            verbs: ['delete'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['expA/*'],
-            verbs: ['update'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['*/vm1'],
-            verbs: ['create'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['*/*'],
-            verbs: ['get'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['**'],
-            verbs: ['list'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['{expA,expB}/*'],
-            verbs: ['post'],
-          },
-          {
-            resources: ['vms/start'],
-            resourceNames: ['expA/*', '!expA/secret'],
-            verbs: ['update'],
-          },
-          {
-            resources: ['**'],
-            resourceNames: ['*'],
-            verbs: ['watch'],
-          },
-          {
-            resources: ['things'],
-            resourceNames: ['*', '!thing1'],
-            verbs: ['*'],
-          },
-          {
-            resources: ['items'],
-            resourceNames: ['item*'],
-            verbs: ['*'],
-          },
-        ],
+import { role } from './helpers/roles.js';
+
+vi.mock('@/store.js', () => ({ usePhenixStore: vi.fn() }));
+
+const signIn = (role) => usePhenixStore.mockReturnValue({ role });
+
+beforeEach(() =>
+  signIn({
+    name: 'Test Role',
+    policies: [
+      {
+        resources: ['experiments'],
+        resourceNames: ['*', '*/*'],
+        verbs: ['get'],
       },
-    }),
-  };
-});
+      {
+        resources: ['experiments/start'],
+        resourceNames: ['*', '*/*'],
+        verbs: ['update'],
+      },
+      {
+        resources: ['experiments'],
+        resourceNames: ['exp1'],
+        verbs: ['delete'],
+      },
+      {
+        resources: ['*'],
+        resourceNames: ['vm1'],
+        verbs: ['patch'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['*'],
+        verbs: ['delete'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['expA/*'],
+        verbs: ['update'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['*/vm1'],
+        verbs: ['create'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['*/*'],
+        verbs: ['get'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['**'],
+        verbs: ['list'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['{expA,expB}/*'],
+        verbs: ['post'],
+      },
+      {
+        resources: ['vms/start'],
+        resourceNames: ['expA/*', '!expA/secret'],
+        verbs: ['update'],
+      },
+      {
+        resources: ['**'],
+        resourceNames: ['*'],
+        verbs: ['watch'],
+      },
+      {
+        resources: ['things'],
+        resourceNames: ['*', '!thing1'],
+        verbs: ['*'],
+      },
+      {
+        resources: ['items'],
+        resourceNames: ['item*'],
+        verbs: ['*'],
+      },
+    ],
+  }),
+);
 
 test('get any experiment', () => {
   expect(roleAllowed('experiments', 'get', 'expA')).toBe(true);
@@ -174,4 +184,138 @@ test('resourceName mid-wildcard', () => {
   expect(roleAllowed('items', 'delete', 'item')).toBe(true);
   expect(roleAllowed('items', 'delete', 'item1')).toBe(true);
   expect(roleAllowed('items', 'delete', 'thing')).toBe(false);
+});
+
+test('allows nothing when no one is signed in', () => {
+  signIn(null);
+  expect(roleAllowed('experiments', 'get', 'expA')).toBe(false);
+  expect(roleAllowed('vms', 'watch')).toBe(false);
+});
+
+test('an empty resourceName is never allowed', () => {
+  expect(roleAllowed('experiments', 'get', '')).toBe(false);
+  expect(roleAllowed('experiments', 'get', '', 'expA')).toBe(true);
+});
+
+test("answers from the signed-in role's own policies after a new sign in", () => {
+  const role = (resourceNames) => ({
+    name: 'Same Name',
+    policies: [{ resources: ['experiments'], resourceNames, verbs: ['get'] }],
+  });
+
+  signIn(role(['exp1']));
+  expect(roleAllowed('experiments', 'get', 'exp1')).toBe(true);
+  expect(roleAllowed('experiments', 'get', 'exp2')).toBe(false);
+
+  // a role of the same name with other policies
+  signIn(role(['exp2']));
+  expect(roleAllowed('experiments', 'get', 'exp1')).toBe(false);
+  expect(roleAllowed('experiments', 'get', 'exp2')).toBe(true);
+});
+
+test('a policy with null resource names allows no resource name', () => {
+  signIn({
+    name: 'Null Resource Names',
+    policies: [
+      { resources: ['vms/forwards'], resourceNames: null, verbs: ['create'] },
+    ],
+  });
+
+  expect(roleAllowed('vms/forwards', 'create')).toBe(true);
+  expect(roleAllowed('vms/forwards', 'create', 'expA/vm1')).toBe(false);
+});
+
+test('a token for another user also needs users/tokens create on them', () => {
+  const usersPatch = {
+    resources: ['users'],
+    resourceNames: ['alice', 'bob', 'carol'],
+    verbs: ['patch'],
+  };
+  const signInAsAlice = (...policies) =>
+    usePhenixStore.mockReturnValue({
+      username: 'alice',
+      role: { name: `Tokens ${policies.length}`, policies },
+    });
+
+  signInAsAlice(usersPatch);
+  expect(userTokenAllowed('alice')).toBe(true);
+  expect(userTokenAllowed('bob')).toBe(false);
+  expect(userTokenAllowed('dave')).toBe(false);
+
+  signInAsAlice(usersPatch, {
+    resources: ['users/tokens'],
+    resourceNames: ['bob'],
+    verbs: ['create'],
+  });
+  expect(userTokenAllowed('bob')).toBe(true);
+  expect(userTokenAllowed('carol')).toBe(false);
+});
+
+// SCORCH needs the scorch verb and experiments get on the experiment, as
+// scorch/handlers.go checks; experiments/trigger plays no part.
+test.each([
+  [
+    'Experiment User of expA',
+    role(
+      'Experiment User',
+      ['experiments', 'get', ['expA']],
+      ['scorch', 'get', ['expA']],
+      ['scorch', 'post', ['expA']],
+      ['scorch', 'delete', ['expA']],
+    ),
+    { view: true, start: true, cancel: true, other: false },
+  ],
+  [
+    'Scorch Viewer',
+    role('Scorch Viewer', ['experiments', 'get'], ['scorch', 'get']),
+    { view: true, start: false, cancel: false, other: true },
+  ],
+  [
+    'scorch without the experiment',
+    role('Scorch Only', ['scorch', '*']),
+    { view: false, start: false, cancel: false, other: false },
+  ],
+  [
+    'trigger without scorch',
+    role(
+      'Trigger Only',
+      ['experiments', 'get'],
+      ['experiments/trigger', 'create'],
+      ['experiments/trigger', 'delete'],
+    ),
+    { view: false, start: false, cancel: false, other: false },
+  ],
+])('SCORCH for a %s', (_, signedIn, want) => {
+  signIn(signedIn);
+
+  expect(scorchAllowed('get', 'expA')).toBe(want.view);
+  expect(scorchControlAllowed('expA', false)).toBe(want.start);
+  expect(scorchControlAllowed('expA', true)).toBe(want.cancel);
+  expect(scorchAllowed('get', 'expB')).toBe(want.other);
+});
+
+// only scorch/terminals write lets a role type into a SCORCH terminal: every
+// scorch verb and reading everything do not
+test.each([
+  [
+    'scorch/terminals write',
+    role('Writer', ['scorch/terminals', 'write']),
+    true,
+  ],
+  ['every verb on everything', role('Admin', ['*', '*'], ['*/*', '*']), true],
+  ['every scorch verb', role('Scorch Runner', ['scorch', '*']), false],
+  [
+    'reading everything',
+    role('Global Viewer', ['*', 'get'], ['*/*', 'get']),
+    false,
+  ],
+  [
+    'scorch/terminals write elsewhere',
+    role('Elsewhere', ['scorch/terminals', 'write', ['expB']]),
+    false,
+  ],
+])('SCORCH terminal writes with %s', (_, signedIn, want) => {
+  signIn(signedIn);
+
+  expect(scorchTerminalWriteAllowed('expA')).toBe(want);
 });

@@ -55,9 +55,20 @@ type User struct {
 }
 
 func NewUser(u, p string) *User {
-	hashed, err := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
+	user, err := CreateUser(u, p)
 	if err != nil {
 		return nil
+	}
+
+	return user
+}
+
+// CreateUser stores a new user u with password p. It returns an error wrapping
+// store.ErrExist when the user exists.
+func CreateUser(u, p string) (*User, error) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hashing password: %w", err)
 	}
 
 	spec := &v1.UserSpec{ //nolint:exhaustruct // partial initialization
@@ -73,10 +84,10 @@ func NewUser(u, p string) *User {
 	}
 
 	if err := store.Create(c); err != nil {
-		return nil
+		return nil, fmt.Errorf("storing user %s: %w", u, err)
 	}
 
-	return &User{Spec: spec, config: c}
+	return &User{Spec: spec, config: c}, nil
 }
 
 func GetUsers() ([]*User, error) {
@@ -280,7 +291,7 @@ func (u User) Role() (Role, error) {
 		return *disabled, nil
 	}
 
-	return Role{Spec: u.Spec.Role}, nil //nolint:exhaustruct // partial initialization
+	return *newRole(u.Spec.Role, nil), nil
 }
 
 func (u *User) SetRole(role *Role) error {

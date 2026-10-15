@@ -24,3 +24,10 @@ export function isInterfaceCapturing(captures, iface) {
 export function hasMultipleCaptures(captures) {
   return (captures || []).length > 1;
 }
+
+// The file a packet capture started from the UI writes to the experiment's
+// files: <vm>_<interface>_<time>.pcap, so a VM's captures sort together and
+// captures started together on several interfaces each get their own file.
+export function captureFilename(vmName, iface, time) {
+  return `${[vmName, iface, time].join('_')}.pcap`;
+}

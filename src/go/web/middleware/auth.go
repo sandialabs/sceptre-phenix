@@ -3,8 +3,11 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	jwtmiddleware "github.com/cescoferraro/go-jwt-middleware"
 	"github.com/dgrijalva/jwt-go"
@@ -77,14 +80,57 @@ func fromPhenixAuthTokenHeader(r *http.Request) (string, error) {
 	return authHeaderParts[1], nil
 }
 
+// fixedRoleTTL bounds how long the no-auth and dev-auth modes reuse a role
+// looked up from the store. Those modes use one role for every request, so
+// listing every role config per request is wasted work, but an edited role
+// config should still take effect without a restart.
+const fixedRoleTTL = 30 * time.Second
+
+type cachedRole struct {
+	role    rbac.Role
+	fetched time.Time
+}
+
+//nolint:gochecknoglobals // process-wide cache for the fixed no-auth/dev-auth roles
+var (
+	fixedRolesMu sync.Mutex
+	fixedRoles   = make(map[string]cachedRole)
+)
+
+// fixedRole returns the named role, reusing a recent lookup. Failed lookups are
+// not cached.
+func fixedRole(name string) (rbac.Role, error) {
+	fixedRolesMu.Lock()
+	defer fixedRolesMu.Unlock()
+
+	if c, ok := fixedRoles[name]; ok && time.Since(c.fetched) < fixedRoleTTL {
+		return c.role, nil
+	}
+
+	role, err := rbac.RoleFromConfig(name)
+	if err != nil {
+		return rbac.Role{}, fmt.Errorf("getting role %s: %w", name, err)
+	}
+
+	fixedRoles[name] = cachedRole{role: *role, fetched: time.Now()}
+
+	return *role, nil
+}
+
 func NoAuth(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		role, _ := rbac.RoleFromConfig("global-admin")
+		role, err := fixedRole("global-admin")
+		if err != nil {
+			plog.Error(plog.TypeSecurity, "getting role for unauthenticated request", "err", err)
+			http.Error(w, "role error", http.StatusInternalServerError)
+
+			return
+		}
 
 		ctx := r.Context()
 
 		ctx = context.WithValue(ctx, ContextKeyUser, "global-admin")
-		ctx = context.WithValue(ctx, ContextKeyRole, *role)
+		ctx = context.WithValue(ctx, ContextKeyRole, role)
 
 		h.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -260,10 +306,16 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			role, _ := rbac.RoleFromConfig(creds[2])
+			role, err := fixedRole(creds[2])
+			if err != nil {
+				plog.Error(plog.TypeSecurity, "getting role for dev auth", "err", err)
+				http.Error(w, "role error", http.StatusInternalServerError)
+
+				return
+			}
 
 			ctx = context.WithValue(ctx, ContextKeyUser, creds[1])
-			ctx = context.WithValue(ctx, ContextKeyRole, *role)
+			ctx = context.WithValue(ctx, ContextKeyRole, role)
 
 			h.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -287,6 +339,96 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 	// First validate the token itself, then ensure the user in the token is valid.
 	return func(h http.Handler) http.Handler { return tokenMiddleware.Handler(userMiddleware(h)) }
 }
+
+// ResolveRole looks up again the role of user, who signed in with the session
+// JWT rawJWT, in the auth mode the JWT signing key jwtKey selects, as Auth
+// does for each request: with sign-in disabled, every user is global-admin;
+// dev auth gives its one user its role; otherwise the user must still exist
+// and still hold the session (not have signed out or deleted it), and gets
+// the role it has now. It does not check the JWT's signature or expiry,
+// which Auth checked when it was presented.
+func ResolveRole(jwtKey, user, rawJWT string) (rbac.Role, error) {
+	switch {
+	case jwtKey == "":
+		return fixedRole("global-admin")
+	case strings.HasPrefix(jwtKey, "dev|"):
+		creds := strings.Split(jwtKey, "|")
+		if len(creds) != 3 || user != creds[1] {
+			return rbac.Role{}, fmt.Errorf("user %s is not the dev auth user", user)
+		}
+
+		return fixedRole(creds[2])
+	}
+
+	u, err := rbac.GetUser(user)
+	if err != nil {
+		return rbac.Role{}, fmt.Errorf("getting user %s: %w", user, err)
+	}
+
+	if err := u.ValidateToken(rawJWT); err != nil {
+		return rbac.Role{}, fmt.Errorf("checking session of user %s: %w", user, err)
+	}
+
+	role, err := u.Role()
+	if err != nil {
+		return rbac.Role{}, fmt.Errorf("getting role of user %s: %w", user, err)
+	}
+
+	return role, nil
+}
+
+// Authenticator reports whether a request carries credentials the API would
+// accept, without rejecting it: with auth disabled (no JWT signing key, or a
+// dev key) every request does. Otherwise a request that presents a token is
+// passed through the same chain Auth builds, with its token, user, revocation
+// and proxy user checks, and counts as authenticated when it gets through. A
+// request without a token is not, and logs nothing, so unauthenticated health
+// probes do not fill the security log.
+func Authenticator(jwtKey, proxyAuthHeader string) func(*http.Request) bool {
+	if jwtKey == "" || strings.HasPrefix(jwtKey, "dev|") {
+		return func(*http.Request) bool { return true }
+	}
+
+	chain := Auth(jwtKey, proxyAuthHeader)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if reached, ok := r.Context().Value(authenticatedKey{}).(*bool); ok {
+			*reached = true
+		}
+	}))
+
+	return func(r *http.Request) bool {
+		if r.Header.Get("X-Phenix-Auth-Token") == "" && r.URL.Query().Get("token") == "" {
+			return false
+		}
+
+		var reached bool
+
+		probe := r.Clone(context.WithValue(r.Context(), authenticatedKey{}, &reached))
+
+		// Auth lets requests for paths ending in /login or /signup through
+		// without a user, which must not count here
+		probe.URL.Path = "/"
+
+		chain.ServeHTTP(discardWriter{header: make(http.Header)}, probe)
+
+		return reached
+	}
+}
+
+// authenticatedKey is the context key of the flag Authenticator's chain sets
+// when a request gets through it.
+type authenticatedKey struct{}
+
+// discardWriter is a response writer that drops what Auth writes when it
+// rejects a request Authenticator checks.
+type discardWriter struct {
+	header http.Header
+}
+
+func (w discardWriter) Header() http.Header { return w.header }
+
+func (discardWriter) Write(b []byte) (int, error) { return len(b), nil }
+
+func (discardWriter) WriteHeader(int) {}
 
 // userTokenFromContext returns the parsed JWT from phenix or JWT middleware context keys.
 func userTokenFromContext(ctx context.Context) any {

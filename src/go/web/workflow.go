@@ -323,7 +323,7 @@ func createFromWorkflow(
 	if start {
 		cache.UnlockExperiment(expName)
 
-		if _, err := startExperiment(expName); err != nil {
+		if err := startExperiment(expName); err != nil {
 			return err
 		}
 	}
@@ -405,7 +405,7 @@ func updateFromWorkflow(
 	if action == workflow.ActionRestart || action == workflow.ActionUpdateAndStart {
 		cache.UnlockExperiment(expName)
 
-		if _, err := startExperiment(expName); err != nil {
+		if err := startExperiment(expName); err != nil {
 			return err
 		}
 	}
@@ -521,10 +521,19 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusForbidden)
 		}
 
+		if err := keepUserSecrets(name, cfg); err != nil {
+			return weberror.NewWebError(err, "unable to read config %s", name).
+				SetStatus(http.StatusInternalServerError)
+		}
+
 		err = updateOrValidate(name, cfg, dryRun)
 		if err != nil {
 			if errors.Is(err, store.ErrNotExist) {
 				return weberror.NewWebError(err, "config to update (%s) does not exist", name)
+			}
+
+			if errors.Is(err, store.ErrConflict) {
+				return conflictWebError(err, name)
 			}
 
 			if errors.Is(err, types.ErrValidationFailed) {
@@ -541,15 +550,8 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to update config %s", name)
 		}
 	} else {
-		if !role.Allowed("configs", "create") {
-			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-			err := weberror.NewWebError(
-				nil,
-				"creating configs not allowed for %s",
-				user,
-			)
-
-			return err.SetStatus(http.StatusForbidden)
+		if err := authorizeConfigCreate(r, cfg); err != nil {
+			return err
 		}
 
 		cfg, err = createOrValidate(cfg, dryRun)
@@ -583,7 +585,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	w.Header().Set("Location", strings.ToLower("/api/v1/configs/"+name))
+	w.Header().Set("Location", apiLocation(strings.ToLower("configs/"+name)))
 	w.WriteHeader(http.StatusCreated)
 
 	cfg.Spec = nil

@@ -2,8 +2,15 @@
 package rbac
 
 import (
+	"errors"
+	"slices"
+	"strings"
 	"testing"
 
+	"phenix/api/config"
+	"phenix/store"
+	"phenix/store/storetest"
+	"phenix/types"
 	v1 "phenix/types/version/v1"
 )
 
@@ -34,9 +41,12 @@ func newTestRole(t *testing.T) Role {
 	}
 }
 
-// TestRoleAllowed verifies resource, verb, and resource name matching.
+// TestRoleAllowed verifies resource, verb, and resource name matching, for a
+// role built with its policy index (stored and user roles) and for a role
+// literal without one, which Allowed must not index: roles are shared.
 func TestRoleAllowed(t *testing.T) {
-	role := newTestRole(t)
+	literal := newTestRole(t)
+	roles := map[string]*Role{"indexed": newRole(literal.Spec, nil), "unindexed": &literal}
 
 	tests := []struct {
 		name     string
@@ -106,9 +116,128 @@ func TestRoleAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := role.Allowed(tt.resource, tt.verb, tt.names...); got != tt.want {
-				t.Errorf("Allowed(%q, %q, %q) = %v, want %v", tt.resource, tt.verb, tt.names, got, tt.want)
+			for kind, role := range roles {
+				if got := role.Allowed(tt.resource, tt.verb, tt.names...); got != tt.want {
+					t.Errorf("%s: Allowed(%q, %q, %q) = %v, want %v", kind, tt.resource, tt.verb, tt.names, got, tt.want)
+				}
 			}
 		})
+	}
+
+	if literal.mappedPolicies != nil {
+		t.Error("Allowed stored a policy index on an unindexed role")
+	}
+}
+
+// Scoping a default role to a user's experiments scopes every policy that
+// names no resources, also those after a policy that keeps its own names,
+// such as Experiment Admin's disks and hosts policies.
+//
+//nolint:paralleltest // replaces the store
+func TestSetResourceNamesScopesEveryUnnamedPolicy(t *testing.T) {
+	storetest.Use(t)
+
+	if err := config.Init(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		role    string
+		allowed [][3]string // resource, verb, name
+	}{
+		{"Experiment Admin", [][3]string{
+			{"experiments", "get", "exp-a"},
+			{"experiments/files", "delete", "exp-a"},
+			{"jobs", "list", "exp-a"},
+			{"jobs", "update", "exp-a"},
+		}},
+		{"Experiment Viewer", [][3]string{
+			{"experiments", "get", "exp-a"},
+			{"vms/mount", "post", "exp-a/vm"},
+		}},
+	} {
+		role, err := RoleFromConfig(tc.role)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := role.SetResourceNames("exp-a", "exp-a/*"); err != nil {
+			t.Fatalf("%s: %v", tc.role, err)
+		}
+
+		for _, a := range tc.allowed {
+			if !role.Allowed(a[0], a[1], a[2]) {
+				t.Errorf("%s may not %s %s %s", tc.role, a[1], a[0], a[2])
+			}
+
+			other := strings.Replace(a[2], "exp-a", "exp-b", 1)
+			if role.Allowed(a[0], a[1], other) {
+				t.Errorf("%s may %s %s %s", tc.role, a[1], a[0], other)
+			}
+		}
+
+		// a policy that names its resources keeps them
+		if !role.Allowed("hosts", "list", "any-host") {
+			t.Errorf("%s may not list every host", tc.role)
+		}
+	}
+
+	if err := (&Role{Spec: &v1.RoleSpec{}}).SetResourceNames("["); !errors.Is(err, ErrResourceNameInvalid) {
+		t.Errorf("an invalid name: %v", err)
+	}
+}
+
+// A saved policy that names no resources leaves resourceNames out rather than
+// storing null, which the role schema rejects on the next edit.
+//
+//nolint:paralleltest // replaces the store
+func TestSaveOmitsNullResourceNames(t *testing.T) {
+	useStore(t, []*v1.RoleSpec{{
+		Name:     "Unscoped",
+		Policies: []*v1.PolicySpec{policy("vms/forwards", nil, "create")},
+	}}, nil)
+
+	role, err := RoleFromConfig("Unscoped")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := role.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	c, _ := store.NewConfig("role/unscoped")
+	if err := store.Get(c); err != nil {
+		t.Fatal(err)
+	}
+
+	policies, _ := c.Spec["policies"].([]any)
+	if len(policies) != 1 {
+		t.Fatalf("stored policies = %#v, want one", c.Spec["policies"])
+	}
+
+	if p, _ := policies[0].(map[string]any); p == nil {
+		t.Fatalf("stored policy = %#v, want a map", policies[0])
+	} else if names, set := p["resourceNames"]; set {
+		t.Errorf("stored resourceNames = %#v, want it left out", names)
+	}
+
+	if err := types.ValidateConfigSpec(*c); err != nil {
+		t.Errorf("stored role fails its schema: %v", err)
+	}
+}
+
+// The generated permission list holds checks whose resource or verb is a
+// constant, as well as those written as literals.
+func TestKnownPermissions(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []Permission{
+		{"users", "get"}, {"users", "list"}, {"users/roles", "patch"}, {"users/tokens", "create"}, {"configs", "create"},
+		{"scorch", "get"}, {"scorch", "post"}, {"scorch", "delete"}, {"scorch/terminals", "write"},
+	} {
+		if !slices.Contains(Permissions, want) {
+			t.Errorf("Permissions lacks %s %s", want.Resource, want.Verb)
+		}
 	}
 }

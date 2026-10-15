@@ -38,6 +38,19 @@ spec:
     verbs:
     - create
   - resources:
+    - "vms/forwards"
+    verbs:
+    - create
+    - delete
+  # Start, cancel, clean up and clear Scorch runs. Typing into Scorch terminals
+  # needs scorch/terminals write, which this role does not have.
+  - resources:
+    - scorch
+    verbs:
+    - get
+    - post
+    - delete
+  - resources:
     - hosts
     resourceNames:
     - "*"

@@ -171,7 +171,7 @@ button:focus-visible,
 }
 
 // Buefy renders an unselected b-select placeholder as rgba($grey, 0.7)
-// (#a2a2a2 on white, 2.6:1); use a colour with 4.5:1 on the white input.
+// (#a2a2a2 on white, 2.6:1); use a color with 4.5:1 on the white input.
 .select.is-empty select {
   color: #5c6672;
 }
@@ -181,6 +181,7 @@ button:focus-visible,
 // its contrast on the dark page background.
 .notification.is-danger,
 .message.is-danger .message-header,
+.tag.is-danger:not(.is-light),
 .button.is-danger:not(.is-outlined):not(.is-inverted) {
   background-color: #a91f3d;
   border-color: #a91f3d;
@@ -190,4 +191,65 @@ button:focus-visible,
 .button.is-danger:not(.is-outlined):not(.is-inverted):focus {
   background-color: #8f1a34;
   border-color: #8f1a34;
+}
+
+// $link (#62c0d7) is 4.4:1 on table rows ($table-background-color); lighten
+// links in table cells, such as the Users page's user names, to 4.75:1.
+.table td a:not(.button):not(.tag) {
+  color: lighten($link, 4);
+}
+
+// Tables: sort arrows sit next to their headings (header-class="sort-inline")
+// rather than at the far edge of the column, and never over centered text.
+.b-table .table th.sort-inline .th-wrap {
+  flex-wrap: nowrap;
+}
+
+.b-table .table th.sort-inline .th-wrap:not(.is-centered) {
+  justify-content: flex-start;
+}
+
+.b-table .table th.sort-inline .sort-icon {
+  position: static;
+  transform: none;
+}
+
+.b-table .table th.sort-inline .sort-icon.icon.is-desc {
+  transform: rotate(180deg) !important;
+}
+
+// In a centered column the arrow would push the heading left of the values
+// below it; an empty space as wide as the arrow and its margin balances it.
+.b-table .table th.sort-inline .th-wrap.is-centered::before {
+  content: '';
+  flex: none;
+  width: 1.5rem;
+}
+
+// Table cells that should size to their content instead of wrapping.
+.b-table .table td.nowrap-cell {
+  white-space: nowrap;
+  width: 1%;
+}
+
+// Error notifications: wide enough that a long server error doesn't wrap
+// into a narrow column, with each step of the error chain on its own line.
+.notices .notification {
+  max-width: min(56rem, calc(100vw - 2rem));
+  overflow-wrap: anywhere;
+}
+
+.notification .error-title {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.notification .error-step {
+  display: block;
+  padding-left: 1.25rem;
+  text-indent: -1.25rem;
+}
+
+.notification .error-step::before {
+  content: '↳ ';
 }

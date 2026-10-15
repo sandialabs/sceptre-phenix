@@ -109,6 +109,38 @@ func TestValidateSchemaRejects(t *testing.T) {
 	}
 }
 
+// TestValidateSchemaTopologyIncludes checks the forms of includeTopologies
+// the topology decoder reads: a list, a single name (a list of one) and null,
+// which a Go topology without includes marshals to. A list of anything but
+// names is refused.
+func TestValidateSchemaTopologyIncludes(t *testing.T) {
+	for _, ver := range []string{"v1", "v2"} {
+		for _, includes := range []any{[]string{"base"}, "base", nil} {
+			value := map[string]any{"includeTopologies": includes, "nodes": []any{}}
+
+			if err := types.ValidateSchema("Topology", ver, value); err != nil {
+				t.Errorf("%s: includeTopologies %#v: error = %v", ver, includes, err)
+			}
+		}
+
+		value := map[string]any{"includeTopologies": []any{map[string]any{"name": "x"}}, "nodes": []any{}}
+
+		if err := types.ValidateSchema("Topology", ver, value); !errors.Is(err, types.ErrValidationFailed) {
+			t.Errorf("%s: a list of mappings: error = %v, want ErrValidationFailed", ver, err)
+		}
+	}
+}
+
+// TestValidateSchemaExperimentWithoutScenario checks that an experiment
+// without a scenario, whose Go spec marshals the scenario to null, is valid.
+func TestValidateSchemaExperimentWithoutScenario(t *testing.T) {
+	value := map[string]any{"topology": map[string]any{"nodes": []any{}}, "scenario": nil}
+
+	if err := types.ValidateSchema("Experiment", "v2", value); err != nil {
+		t.Errorf("error = %v", err)
+	}
+}
+
 // TestValidateSchemaLookupErrors proves a missing schema is a lookup failure,
 // not a validation failure, so callers can report it as an internal error.
 func TestValidateSchemaLookupErrors(t *testing.T) {

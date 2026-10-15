@@ -10,19 +10,20 @@ const defaultBridgeName = "phenix"
 type CreateOption func(*createOptions)
 
 type createOptions struct {
-	name          string
-	annotations   map[string]string
-	topology      string
-	scenario      string
-	disabledApps  []string
-	vlanMin       int
-	vlanMax       int
-	vlanAliases   map[string]int
-	schedules     map[string]string
-	baseDir       string
-	deployMode    common.DeploymentMode
-	useGREMesh    bool
-	defaultBridge string
+	name            string
+	annotations     map[string]string
+	nodeAnnotations map[string]any
+	topology        string
+	scenario        string
+	disabledApps    []string
+	vlanMin         int
+	vlanMax         int
+	vlanAliases     map[string]int
+	schedules       map[string]string
+	baseDir         string
+	deployMode      common.DeploymentMode
+	useGREMesh      bool
+	defaultBridge   string
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
@@ -55,6 +56,15 @@ func CreateWithName(n string) CreateOption {
 func CreateWithAnnotations(a map[string]string) CreateOption {
 	return func(o *createOptions) {
 		o.annotations = a
+	}
+}
+
+// CreateWithNodeAnnotations adds the given annotations to every VM in the
+// experiment's copy of its topology. A VM's own annotation for the same key
+// wins, and the topology config itself is left unchanged.
+func CreateWithNodeAnnotations(a map[string]any) CreateOption {
+	return func(o *createOptions) {
+		o.nodeAnnotations = a
 	}
 }
 

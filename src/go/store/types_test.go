@@ -73,3 +73,18 @@ func TestWorkflowIsNotAStoredKind(t *testing.T) {
 		t.Errorf(`ConfigFullName("Workflow", "wf") = %q, want empty`, got)
 	}
 }
+
+// Clients cannot set a config's revision: the store assigns it.
+func TestNewConfigClearsRevision(t *testing.T) {
+	body := `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology","metadata":{"name":"a","revision":7}}`
+
+	c, err := NewConfigFromJSON([]byte(body))
+	if err != nil || c.Metadata.Revision != 0 {
+		t.Fatalf("NewConfigFromJSON: revision %v, %v; want 0", c, err)
+	}
+
+	c, err = NewConfigFromYAML([]byte("apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: a\n  revision: 7\n"))
+	if err != nil || c.Metadata.Revision != 0 {
+		t.Fatalf("NewConfigFromYAML: revision %v, %v; want 0", c, err)
+	}
+}
