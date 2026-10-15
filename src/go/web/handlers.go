@@ -3305,7 +3305,11 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hosts, observed, err := mm.GetClusterHostsObserved(false)
+	hosts, observed, err := mm.GetClusterHostsObserved(ctx, false)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 

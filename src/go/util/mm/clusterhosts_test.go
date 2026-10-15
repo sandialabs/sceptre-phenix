@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -377,14 +378,14 @@ func TestGetClusterHostsObservedReportsReadTime(t *testing.T) { //nolint:paralle
 		head: "head", peers: "compute1", members: "compute1", compute: []string{"compute1"},
 	}.reply)
 
-	_, first, err := Minimega{}.GetClusterHostsObserved(false)
+	_, first, err := Minimega{}.GetClusterHostsObserved(context.Background(), false)
 	if err != nil || !first.Known || first.At.IsZero() {
 		t.Fatalf("first read: %+v, %v", first, err)
 	}
 
 	time.Sleep(10 * time.Millisecond)
 
-	_, reused, err := Minimega{}.GetClusterHostsObserved(false)
+	_, reused, err := Minimega{}.GetClusterHostsObserved(context.Background(), false)
 	if err != nil || !reused.At.Equal(first.At) {
 		t.Fatalf("reused list observed at %v, %v; want the first read's %v", reused.At, err, first.At)
 	}
