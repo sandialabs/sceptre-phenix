@@ -48,6 +48,6 @@
 //	UI and Builder assets   web assets, builderbundle              the binary             a rebuild                               content-hash ETag
 //
 // Concurrent identical minimega reads (VM info, cluster hosts) also share one
-// run (util/mm flightGroup), but only a run that has not started, so a shared
+// run (util/flight Group), but only a run that has not started, so a shared
 // answer is never older than the call.
 package freshness

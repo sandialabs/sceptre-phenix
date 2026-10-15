@@ -346,7 +346,7 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 
 // GetVMInfo returns minimega's details for the VMs in a namespace, optionally
 // filtered by VM name. Concurrent calls asking for the same VMs share one set of
-// minimega commands (see flightGroup), which give up once the Context of every
+// minimega commands (see flight.Group), which give up once the Context of every
 // call sharing them is done; each caller gets its own copy. When
 // minimega cannot be read the list is partial or empty, and the error is only
 // logged; GetVMInfoObserved reports it.
@@ -370,7 +370,7 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs {
 func (m Minimega) GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation) {
 	o := NewOptions(opts...)
 
-	res, err := vmInfoFlights.do(o.ctx, o.ns+"\x00"+o.vm, func(ctx context.Context, seal func()) vmInfoResult {
+	res, err := vmInfoFlights.Do(o.ctx, o.ns+"\x00"+o.vm, func(ctx context.Context, seal func()) (vmInfoResult, error) {
 		// before the run's first command, so the data is no older than this
 		at := time.Now()
 
@@ -379,7 +379,7 @@ func (m Minimega) GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation)
 
 		vms, err := m.getVMInfo(run, seal)
 
-		return vmInfoResult{vms: vms, at: at, err: err}
+		return vmInfoResult{vms: vms, at: at, err: err}, nil
 	})
 	if err == nil {
 		err = res.err
@@ -1363,7 +1363,7 @@ func (m Minimega) GetVMCaptures(opts ...Option) []Capture {
 // list is only shown to people (the Hosts page, which polls it, and the
 // experiment page's host choices), so it is reused for up to clusterHostsTTL.
 // Both kinds share one set of minimega commands with concurrent calls (see
-// flightGroup), and every fresh answer refreshes the reused one. Each caller
+// flight.Group), and every fresh answer refreshes the reused one. Each caller
 // gets its own copy.
 func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 	hosts, _, err := m.GetClusterHostsObserved(context.Background(), schedOnly)
@@ -1383,7 +1383,7 @@ func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (
 		}
 	}
 
-	res, err := clusterHostsFlights.do(ctx, "", func(ctx context.Context, seal func()) clusterHosts {
+	res, err := clusterHostsFlights.Do(ctx, "", func(ctx context.Context, seal func()) (clusterHosts, error) {
 		at := time.Now()
 
 		hosts, err := m.getClusterHosts(ctx, seal)
@@ -1391,7 +1391,7 @@ func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (
 			recentHosts.put(hosts, at)
 		}
 
-		return clusterHosts{hosts: hosts, at: at, err: err}
+		return clusterHosts{hosts: hosts, at: at, err: err}, nil
 	})
 	if err != nil {
 		return nil, freshness.Observation{}, fmt.Errorf("getting cluster hosts: %w", err)
