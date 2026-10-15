@@ -339,6 +339,8 @@ components:
         scenario:
           title: "Scenario"
           description: "Scenario configuration embedded in or referenced by this resource."
+          type: object
+          nullable: true
           allOf:
           - $ref: "#/components/schemas/Scenario"
         baseDir:

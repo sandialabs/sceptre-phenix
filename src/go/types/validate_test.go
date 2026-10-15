@@ -131,6 +131,16 @@ func TestValidateSchemaTopologyIncludes(t *testing.T) {
 	}
 }
 
+// TestValidateSchemaExperimentWithoutScenario checks that an experiment
+// without a scenario, whose Go spec marshals the scenario to null, is valid.
+func TestValidateSchemaExperimentWithoutScenario(t *testing.T) {
+	value := map[string]any{"topology": map[string]any{"nodes": []any{}}, "scenario": nil}
+
+	if err := types.ValidateSchema("Experiment", "v2", value); err != nil {
+		t.Errorf("error = %v", err)
+	}
+}
+
 // TestValidateSchemaLookupErrors proves a missing schema is a lookup failure,
 // not a validation failure, so callers can report it as an internal error.
 func TestValidateSchemaLookupErrors(t *testing.T) {
