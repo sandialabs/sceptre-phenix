@@ -41,7 +41,7 @@ All notable changes to this project will be documented in this file.
 - **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and the config editor and `phenix config edit` refuse to save over a config changed while it was open. `GET /configs/{kind}/{name}` returns it as an `ETag`, and `PUT` and `DELETE` honor `If-Match` with a 412.
 - **Ordering**: API responses carry an `X-Phenix-Seq` header and websocket messages a `seq` field from one increasing sequence, so clients can tell which of two updates is newer.
 - **Data age**: Responses with runtime data from minimega carry `X-Phenix-Observed-At`, and `X-Phenix-Stale` when they serve earlier data while minimega is busy; the State of Health summary adds `vms_observed_at` and `vms_stale`, and the web UI header shows how old its data is.
-- **Scorch roles**: Added the built-in Scorch Viewer and Scorch Admin roles, which the server creates once on existing installs. Experiment Admin, Experiment User, Experiment Viewer and VM Admin roles gain `scorch` permissions, and Experiment User roles `vms/forwards` `create` and `delete`, once on startup.
+- **Scorch roles**: Added the Scorch Viewer and Scorch Admin roles, and the built-in experiment and VM roles gain `scorch` permissions (Experiment User also `vms/forwards` `create` and `delete`).
 - **Token permission**: Creating an API token for another user needs the new `users/tokens` `create` permission on that user as well as `users` `patch`, which Global Admin has, and the Users tab shows the token button only to roles that may use it.
 
 ### Changed
@@ -182,9 +182,9 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
-- **SCORCH permissions (breaking for custom roles)**: Viewing SCORCH needs the new `scorch` `get` permission, and starting, cleaning up, canceling and clearing runs `scorch` `post` or `delete` instead of `experiments/trigger`, all with `experiments` `get` on the experiment. Triggering or canceling the `scorch` app, or every app, through `/experiments/{name}/trigger` also needs `scorch` `post` or `delete`.
+- **SCORCH permissions (breaking for custom roles)**: Viewing and controlling SCORCH, including triggering it through `/experiments/{name}/trigger`, needs the new `scorch` permission instead of `experiments/trigger`.
 - **SCORCH updates**: SCORCH pipeline, terminal and run progress websocket messages go only to clients whose role may get `scorch` and the experiment.
-- **SCORCH terminals (breaking for custom roles)**: Typing into or exiting a SCORCH terminal, a shell running as the phēnix server process, needs the new `scorch/terminals` `write` permission instead of `experiments/trigger` `create`, which only Global Admin and Scorch Admin have by default.
+- **SCORCH terminals (breaking for custom roles)**: Typing into or exiting a SCORCH terminal needs the new `scorch/terminals` `write` permission instead of `experiments/trigger` `create`.
 
 ## [1.0.0]
 
