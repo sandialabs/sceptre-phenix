@@ -1242,13 +1242,18 @@ func (Minimega) StartVMCapture(opts ...Option) error {
 // StopVMCapture stops packet captures for a VM. If the CaptureInterface
 // option is provided, only the capture running on that interface index is
 // stopped, leaving any other captures for the VM running. Otherwise, all
-// captures for the VM are stopped.
+// captures for the VM are stopped. The VM's captures are listed first unless
+// given with KnownCaptures.
 func (Minimega) StopVMCapture(opts ...Option) error {
 	o := NewOptions(opts...)
 
-	captures := GetVMCaptures(opts...)
-	if err := ended(o.ctx); err != nil {
-		return err
+	captures := o.captures
+
+	if !o.capturesKnown {
+		captures = GetVMCaptures(opts...)
+		if err := ended(o.ctx); err != nil {
+			return err
+		}
 	}
 
 	if o.captureIfaceSet {

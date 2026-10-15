@@ -6,8 +6,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/activeshadow/libminimega/minicli"
+
 	"phenix/api/vm"
 	"phenix/util/mm"
+	"phenix/util/mm/mmtest"
 )
 
 // useCaptureVM makes the running experiment's one VM test-vm, whose topology
@@ -408,6 +411,53 @@ func TestStopCaptureSubnet(t *testing.T) {
 
 			if fake.stops != test.wantStops {
 				t.Errorf("stopped captures %d times, want %d", fake.stops, test.wantStops)
+			}
+
+			// the VM list already holds each VM's captures
+			if fake.vmCaptureListings != 0 {
+				t.Errorf("listed a VM's captures %d times, want none", fake.vmCaptureListings)
+			}
+		})
+	}
+}
+
+// Stopping a VM's captures lists them once, however many it stops.
+func TestStopCapturesListsCapturesOnce(t *testing.T) {
+	for name, stop := range map[string]func(ctx context.Context) error{
+		"all":           func(ctx context.Context) error { return vm.StopCaptures(ctx, testExp, "test-vm") },
+		"one interface": func(ctx context.Context) error { return vm.StopCapture(ctx, testExp, "test-vm", 1) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			useExperiment(t, startTime, vmNode("test-vm", vmIface("IF0", "EXP_1", ""), vmIface("IF1", "EXP_2", "")))
+
+			original := mm.DefaultMM
+			t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore the default
+
+			mm.DefaultMM = new(mm.Minimega) //nolint:reassign // the real one, against the fake minimega
+
+			received := mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
+				if cmd.Base != "capture" {
+					return nil
+				}
+
+				return []*minicli.Response{mmtest.Tabular("head", []string{"interface", "path"},
+					[]string{"test-vm:0", "/0.pcap"}, []string{"test-vm:1", "/1.pcap"})}
+			})
+
+			if err := stop(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+
+			var listings int
+
+			for _, base := range mmtest.Bases(received()) {
+				if base == "capture" {
+					listings++
+				}
+			}
+
+			if listings != 1 {
+				t.Errorf("minimega received %q, want one capture listing", mmtest.Bases(received()))
 			}
 		})
 	}

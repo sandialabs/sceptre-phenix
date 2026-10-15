@@ -1738,7 +1738,7 @@ func StopCaptureSubnet(ctx context.Context, expName, subnet string, vmList []str
 			run = committed
 		}
 
-		err := StopCaptures(run, expName, vm.Name)
+		err := stopListedCaptures(run, expName, vm.Name, nil, vm.Captures)
 		if err == nil {
 			matchedVMs = append(matchedVMs, vm.Name)
 

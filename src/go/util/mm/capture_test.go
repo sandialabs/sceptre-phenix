@@ -34,6 +34,15 @@ func TestStopVMCapture(t *testing.T) { //nolint:paralleltest // shares the fake 
 			want:    []string{captureCmd},
 			wantErr: ErrNoCaptures,
 		},
+		"stops the captures it is given without listing them": {
+			opts: []Option{KnownCaptures([]Capture{{VM: "vm", Interface: 0, Filepath: "/vm0.pcap"}})},
+			want: []string{"capture pcap delete vm vm"},
+		},
+		"reports an interface without a capture among those given": {
+			opts:    []Option{CaptureInterface(3), KnownCaptures([]Capture{{VM: "vm", Interface: 0, Filepath: "/vm0.pcap"}})},
+			want:    nil,
+			wantErr: ErrNoCaptures,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
