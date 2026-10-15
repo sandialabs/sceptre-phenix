@@ -4,12 +4,15 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"phenix/api/config"
+	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/web/rbac"
 )
@@ -183,5 +186,46 @@ func TestUpdateUserConfigKeepsSecrets(t *testing.T) {
 				t.Errorf("%s (injected %t): the update added a token", route, injected)
 			}
 		}
+	}
+}
+
+// An update without If-Match fails with a conflict when the user's secrets
+// change after keepUserSecrets read them, so it cannot write back old tokens.
+//
+//nolint:paralleltest // replaces the store
+func TestKeepUserSecretsRefusesConcurrentChange(t *testing.T) {
+	storetest.Use(t)
+	createUserWithToken(t, "alice")
+
+	cfg, err := store.NewConfig("User/alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Get(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.Metadata.Revision = 0
+
+	if err := keepUserSecrets("User/alice", cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	user, err := rbac.GetUser("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := user.AddToken("second.token.value", "second token"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.Update("User/alice", cfg); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("update after a concurrent token change: %v, want %v", err, store.ErrConflict)
+	}
+
+	if err := user.ValidateToken("second.token.value"); err != nil {
+		t.Errorf("concurrent token lost: %v", err)
 	}
 }

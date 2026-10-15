@@ -579,8 +579,10 @@ config. An update that renames a config or changes its kind also needs
 
 The configs API never returns a `User` config's password hash or API tokens,
 and an update of a `User` config through it keeps the stored ones, so an
-edited config sent back without them leaves them as they were. Change a
-password or a token from the `Users` tab or the users API.
+edited config sent back without them leaves them as they were. If the
+password or tokens change while such an update runs, it fails with `412`
+instead of writing back the old ones. Change a password or a token from the
+`Users` tab or the users API.
 
 #### Resource: `settings`
 

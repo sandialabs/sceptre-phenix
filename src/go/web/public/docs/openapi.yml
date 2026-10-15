@@ -395,7 +395,7 @@ paths:
         "403":
           description: >-
             updating the config is not allowed, or, for a rename or a change
-            of kind, creating a config of the new `Kind/name` is not
+            of kind, creating a config of the new `Kind/name` is not allowed
           content:
             application/json:
               schema:
@@ -407,7 +407,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "412":
-          $ref: "#/components/responses/ConfigPreconditionFailed"
+          description: >-
+            the config is no longer at the `If-Match` revision, or does not
+            exist, or, for a User config, it changed while the update ran;
+            `metadata.revision` holds its current revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: the request or the uploaded file cannot be read or parsed
           content:
@@ -5362,7 +5369,15 @@ paths:
         "403":
           description: >-
             updating the config is not allowed, or creating one of its
-            `Kind/name` is not
+            `Kind/name` is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "412":
+          description: >-
+            a User config changed while the update ran; `metadata.revision`
+            holds its current revision
           content:
             application/json:
               schema:
