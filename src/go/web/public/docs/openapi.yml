@@ -1778,6 +1778,83 @@ paths:
           description: forbidden
         "404":
           description: no netflow capture is running for the experiment
+  "/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}":
+    get:
+      tags:
+        - Scorch
+      summary: Get a SCORCH component's output
+      description: >-
+        For a component that has finished, or not run, its output so far
+        (`output`). For one that is running, where to follow its output: the
+        websocket to stream it from (`stream`), or, for a `break` component,
+        the terminal it opened (`terminal`), connected to as
+        `GET .../terminals/{pid}` would. Needs the `experiments` `get`
+        permission.
+      operationId: getExperimentsNameScorchComponentsRunLoopStageCmp
+      parameters:
+        - $ref: "#/components/parameters/ScorchExp"
+        - $ref: "#/components/parameters/ScorchRun"
+        - $ref: "#/components/parameters/ScorchLoop"
+        - $ref: "#/components/parameters/ScorchStage"
+        - $ref: "#/components/parameters/ScorchComponent"
+      responses:
+        "200":
+          description: the output, its stream, or the component's terminal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  output:
+                    title: Output
+                    type: string
+                    description: the output of a component that is not running
+                    example: "ping: 3 packets transmitted, 3 received"
+                  stream:
+                    title: Stream
+                    type: string
+                    description: >-
+                      the websocket of a running component's output, under the
+                      UI's base path
+                    example: /api/v1/experiments/exp1/scorch/components/0/0/start/ping/ws
+                  terminal:
+                    title: Terminal
+                    description: the terminal of a running break component
+                    allOf:
+                      - $ref: "#/components/schemas/ScorchTerminal"
+        "400":
+          description: the run or loop is not a number, or the break component's terminal is gone
+        "403":
+          description: forbidden
+        "500":
+          description: the output could not be encoded
+  "/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws":
+    get:
+      tags:
+        - Scorch
+      summary: Stream a SCORCH component's output over a WebSocket
+      description: >-
+        Text frames carry the component's output: what it has written so far,
+        then what it writes, and `***** COMPONENT FINISHED *****` once it
+        finishes, when the server closes the websocket. A component that is
+        not running gets its output and the marker at once. A client that
+        falls 256 chunks behind is dropped, and reconnecting replays the
+        output. The handshake needs an `Origin` header. Needs the
+        `experiments` `get` permission.
+      operationId: getExperimentsNameScorchComponentsRunLoopStageCmpWs
+      parameters:
+        - $ref: "#/components/parameters/ScorchExp"
+        - $ref: "#/components/parameters/ScorchRun"
+        - $ref: "#/components/parameters/ScorchLoop"
+        - $ref: "#/components/parameters/ScorchStage"
+        - $ref: "#/components/parameters/ScorchComponent"
+      responses:
+        "101":
+          description: switching protocols; the output follows in text frames
+        "400":
+          description: the run or loop is not a number, or not a websocket handshake
+        "403":
+          description: forbidden, or a handshake without an `Origin` header
   "/experiments/{name}/scorch/pipelines":
     get:
       tags:
@@ -2003,6 +2080,157 @@ paths:
             or the run does not configure that loop
         "403":
           description: getting the experiment is not allowed for this user
+  "/experiments/{name}/scorch/terminals":
+    get:
+      tags:
+        - Scorch
+      summary: List an experiment's SCORCH terminals
+      description: >-
+        The terminals the experiment's running break components opened,
+        without a client to connect as (`loc` and `exit` are empty). Needs
+        the `experiments` `get` permission.
+      operationId: getExperimentsNameScorchTerminals
+      parameters:
+        - $ref: "#/components/parameters/ScorchExp"
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  terminals:
+                    title: Terminals
+                    type: array
+                    nullable: true
+                    description: the terminals; null when there are none
+                    items:
+                      $ref: "#/components/schemas/ScorchTerminal"
+        "403":
+          description: forbidden
+  "/experiments/{name}/scorch/terminals/{pid}":
+    get:
+      tags:
+        - Scorch
+      summary: Connect to a SCORCH terminal
+      description: >-
+        Gives the caller a client of the terminal running the process, whose
+        PID the `loc` and `exit` of an earlier connection name: `loc`, the
+        websocket to attach with, and, for the first client whose role has the
+        `experiments/trigger` `create` permission, which may write to the
+        terminal, `exit`, the route that ends it. Every other client only
+        watches (`readOnly`), and a client without that permission never
+        takes the writing side, even when no one holds it. A client must
+        attach within 5 seconds. Needs the `experiments` `get` permission;
+        writing to the terminal also needs `experiments/trigger` `create`.
+      operationId: getExperimentsNameScorchTerminalsPid
+      parameters:
+        - $ref: "#/components/parameters/ScorchExp"
+        - $ref: "#/components/parameters/ScorchTerminalPID"
+      responses:
+        "200":
+          description: the terminal, with the caller's client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScorchTerminal"
+        "400":
+          description: the PID is not a number
+        "403":
+          description: forbidden
+        "404":
+          description: the experiment has no terminal running that process
+  "/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}":
+    get:
+      tags:
+        - Scorch
+      summary: Connect to a SCORCH component's terminal
+      description: >-
+        As `GET .../terminals/{pid}`, for the terminal the break component
+        opened. Needs the `experiments` `get` permission; writing to the
+        terminal also needs `experiments/trigger` `create`.
+      operationId: getExperimentsNameScorchTerminalsRunLoopStageCmp
+      parameters:
+        - $ref: "#/components/parameters/ScorchExp"
+        - $ref: "#/components/parameters/ScorchRun"
+        - $ref: "#/components/parameters/ScorchLoop"
+        - $ref: "#/components/parameters/ScorchStage"
+        - $ref: "#/components/parameters/ScorchComponent"
+      responses:
+        "200":
+          description: the terminal, with the caller's client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScorchTerminal"
+        "400":
+          description: the run or loop is not a number, or the component has no terminal
+        "403":
+          description: forbidden
+  "/experiments/{name}/scorch/terminals/{pid}/ws/{id}":
+    get:
+      tags:
+        - Scorch
+      summary: Attach to a SCORCH terminal over a WebSocket
+      description: >-
+        Attaches the client a connect route gave (its `loc`), once. Frames
+        carry the terminal's output, and a read-only client first gets what
+        the terminal has written so far. What the writing client sends is
+        typed into the terminal; read-only clients' frames are ignored. When
+        the writing client's process exits, read-only clients get `*****
+        BREAK PROCESS EXITED *****` and the websocket closes. The handshake
+        needs an `Origin` header. Needs the `experiments` `get` permission;
+        attaching as the writing client also needs `experiments/trigger`
+        `create`.
+      operationId: getExperimentsNameScorchTerminalsPidWsId
+      parameters:
+        - $ref: "#/components/parameters/ScorchExp"
+        - $ref: "#/components/parameters/ScorchTerminalPID"
+        - name: id
+          in: path
+          description: the client ID in the connect route's `loc`
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: switching protocols; the terminal follows in frames
+        "403":
+          description: >-
+            forbidden, a handshake without an `Origin` header, or the writing
+            client's ID from a role without the `experiments/trigger` `create`
+            permission
+        "404":
+          description: no such terminal for the experiment, or a client ID unknown, used or expired
+  "/experiments/{name}/scorch/terminals/{pid}/exit/{id}":
+    post:
+      tags:
+        - Scorch
+      summary: End a SCORCH terminal
+      description: >-
+        Kills the terminal's process, which ends its break component, and
+        publishes an `apps/scorch` `terminal-exit` message on the `/ws`
+        websocket. Only the writing client, by the `exit` its connect route
+        gave, may end it. Needs the `experiments` `get` and the
+        `experiments/trigger` `create` permissions.
+      operationId: postExperimentsNameScorchTerminalsPidExitId
+      parameters:
+        - $ref: "#/components/parameters/ScorchExp"
+        - $ref: "#/components/parameters/ScorchTerminalPID"
+        - name: id
+          in: path
+          description: the client ID in the connect route's `exit`
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: the terminal has ended
+        "403":
+          description: forbidden, or the client is not the terminal's writing client
+        "404":
+          description: no such terminal for the experiment, or it could not be ended
   "/experiments/{name}/topology":
     get:
       tags:
@@ -8496,6 +8724,55 @@ components:
           type: boolean
           description: whether the entry is a folder
           example: false
+    ScorchTerminal:
+      title: Scorch Terminal
+      type: object
+      description: A terminal a SCORCH break component opened, and a client of it.
+      properties:
+        exp:
+          title: Experiment
+          type: string
+          description: the experiment's name
+          example: exp1
+        run:
+          title: Run
+          type: integer
+          description: the run's index
+          example: 0
+        loop:
+          title: Loop
+          type: integer
+          description: the loop's nesting depth
+          example: 0
+        stage:
+          title: Stage
+          type: string
+          description: the stage the component runs in
+          example: start
+        name:
+          title: Name
+          type: string
+          description: the break component's name
+          example: pause
+        loc:
+          title: Location
+          type: string
+          description: >-
+            the websocket the client attaches with, under the UI's base path;
+            empty in a listing
+          example: /api/v1/experiments/exp1/scorch/terminals/4242/ws/0f7b2a1e-5c1d-4f6e-9d2a-3b4c5d6e7f80
+        exit:
+          title: Exit
+          type: string
+          description: >-
+            the route that ends the terminal, for its writing client only;
+            empty for a read-only client and in a listing
+          example: /api/v1/experiments/exp1/scorch/terminals/4242/exit/0f7b2a1e-5c1d-4f6e-9d2a-3b4c5d6e7f80
+        readOnly:
+          title: Read-Only
+          type: boolean
+          description: whether the client only watches the terminal
+          example: false
 
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.
@@ -8514,6 +8791,48 @@ components:
       required: true
       schema:
         type: string
+    ScorchExp:
+      name: name
+      in: path
+      description: name of phenix experiment
+      required: true
+      schema:
+        type: string
+    ScorchRun:
+      name: run
+      in: path
+      description: index of the run in the experiment's scorch app metadata
+      required: true
+      schema:
+        type: integer
+    ScorchLoop:
+      name: loop
+      in: path
+      description: nesting depth of the loop, 0 for the run's top-level loop
+      required: true
+      schema:
+        type: integer
+    ScorchStage:
+      name: stage
+      in: path
+      description: the stage, such as configure, start, stop or cleanup
+      required: true
+      schema:
+        type: string
+    ScorchComponent:
+      name: cmp
+      in: path
+      description: the component's name
+      required: true
+      schema:
+        type: string
+    ScorchTerminalPID:
+      name: pid
+      in: path
+      description: the PID of the process the terminal runs
+      required: true
+      schema:
+        type: integer
     JobID:
       name: id
       in: path

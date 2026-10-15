@@ -171,10 +171,10 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 
 // ConnectTerminalByPID - GET /experiments/{name}/scorch/terminals/{pid}.
 //
-// Connects to a terminal as GET /terminals list it, by the PID of the
-// process it runs, rather than by the component it breaks in. As on the
-// component route, only a role that may trigger the experiment can take the
-// terminal's read/write side.
+// Connects to a terminal by the PID of the process it runs, as the loc and
+// exit URLs of an earlier connection name it, rather than by the component it
+// breaks in. As on the component route, only a role that may trigger the
+// experiment can take the terminal's read/write side.
 func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminalByPID")
 

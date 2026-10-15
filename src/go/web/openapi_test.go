@@ -203,8 +203,6 @@ var undocumentedRoutes = map[string]string{
 	"root GET /webshark/watch":        "WebShark's capture growth events",
 	// websockets, which an OpenAPI 3.0 operation cannot describe
 	"api GET /ws": "the UI's event websocket",
-	"api GET /experiments/{}/scorch/components/{}/{}/{}/{}/ws": "the SCORCH component output websocket",
-	"api GET /experiments/{}/scorch/terminals/{}/ws/{}":        "the SCORCH terminal websocket",
 }
 
 // undocumentedBeforeContract are the API routes openapi.yml has never
@@ -213,18 +211,13 @@ var undocumentedRoutes = map[string]string{
 //
 //nolint:gochecknoglobals // constant table
 var undocumentedBeforeContract = map[string]string{
-	"api GET /experiments/{}/scorch/components/{}/{}/{}/{}": "a SCORCH component's output",
-	"api GET /experiments/{}/scorch/terminals":              "lists the SCORCH break terminals",
-	"api GET /experiments/{}/scorch/terminals/{}":           "a SCORCH break terminal",
-	"api GET /experiments/{}/scorch/terminals/{}/{}/{}/{}":  "a SCORCH component's break terminal",
 	"api GET /logs":              "streams the server's logs",
 	"api GET /roles":             "lists the roles",
 	"api GET /settings":          "the server's settings",
 	"api GET /settings/password": "the password requirements",
 	"api GET /settings/timeout":  "the session timeout",
-	"api POST /experiments/{}/scorch/terminals/{}/exit/{}": "exits a SCORCH break terminal",
-	"api POST /settings":        "changes the server's settings",
-	"api POST /users/{}/tokens": "creates a user's API token",
+	"api POST /settings":         "changes the server's settings",
+	"api POST /users/{}/tokens":  "creates a user's API token",
 }
 
 // Every operation the router serves is in openapi.yml, and every operation
