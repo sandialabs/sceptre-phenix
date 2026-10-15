@@ -721,7 +721,9 @@ paths:
       tags:
         - Experiments
       summary: Update VLAN assignments for a stopped experiment
-      description: Updates aliases already assigned to VLAN IDs; unknown aliases are ignored.
+      description: >-
+        Updates aliases already assigned to VLAN IDs; unknown aliases are
+        ignored. Needs the `experiments` `patch` permission.
       operationId: patchExperimentsName
       parameters:
         - name: name
@@ -740,8 +742,16 @@ paths:
               additionalProperties:
                 type: integer
       responses:
-        "200":
+        "204":
           description: experiment updated
+        "400":
+          description: the experiment is running, or the body is not a map of aliases to VLAN IDs
+        "403":
+          description: forbidden
+        "404":
+          description: no such experiment
+        "500":
+          description: the experiment could not be read or written
   "/experiments/{name}/start":
     post:
       tags:

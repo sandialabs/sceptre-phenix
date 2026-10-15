@@ -27,6 +27,7 @@ import (
 	"phenix/api/settings"
 	"phenix/api/vm"
 	"phenix/app"
+	"phenix/store"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	putil "phenix/util"
@@ -415,30 +416,32 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	exp, err := experiment.Get(name)
 	if err != nil {
-		err := weberror.NewWebError(err, "unable to get experiment %s details", name)
+		status := http.StatusInternalServerError
+		if errors.Is(err, store.ErrNotExist) {
+			status = http.StatusNotFound
+		}
 
-		return err.SetStatus(http.StatusInternalServerError)
+		return weberror.NewWebError(err, "unable to get experiment %s details", name).SetStatus(status)
 	}
 
 	if exp.Running() {
-		err := weberror.NewWebError(err, "cannot update running experiment %s", name)
+		err := weberror.NewWebError(nil, "cannot update running experiment %s", name)
 
 		return err.SetStatus(http.StatusBadRequest)
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
+		err := weberror.NewWebError(err, "unable to read update request for experiment %s", name)
 
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
 	var vlans map[string]int
 
+	// a malformed body is the client's mistake
 	if err := json.Unmarshal(body, &vlans); err != nil {
-		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
-
-		return err.SetStatus(http.StatusInternalServerError)
+		return weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
 	}
 
 	aliases := exp.Spec.VLANs().Aliases()
@@ -469,6 +472,8 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 		"experiment",
 		name,
 	)
+
+	w.WriteHeader(http.StatusNoContent)
 
 	return nil
 }
