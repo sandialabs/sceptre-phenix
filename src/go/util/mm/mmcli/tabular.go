@@ -3,6 +3,7 @@
 package mmcli
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -55,15 +56,33 @@ func tabularToMapCols(columns []string) tabularToMapper {
 // be in tabular form. A slice of maps is returned, with each map representing a
 // row in the tabular response and each map key representing the column.
 func RunTabular(cmd *Command) []map[string]string {
-	return RunTabularStarted(cmd, nil)
+	return RunTabularStartedContext(context.Background(), cmd, nil)
+}
+
+// RunTabularContext is RunTabular for a command run on behalf of something
+// that may end first; see RunContext.
+func RunTabularContext(ctx context.Context, cmd *Command) []map[string]string {
+	return RunTabularStartedContext(ctx, cmd, nil)
 }
 
 // RunTabularStarted is RunTabular, calling started as RunStarted does. Errors
 // in the responses are logged and their rows left out, so a failure reads as
 // fewer (or no) rows; use RunTabularChecked to tell the two apart.
 func RunTabularStarted(cmd *Command, started func()) []map[string]string {
-	res, err := RunTabularChecked(cmd, started)
-	if err != nil {
+	return RunTabularStartedContext(context.Background(), cmd, started)
+}
+
+// RunTabularStartedContext is RunTabularStarted for a command run on behalf
+// of something that may end first; see RunContext. A command that gave up
+// because ctx is done is logged at debug level, not as an error.
+func RunTabularStartedContext(ctx context.Context, cmd *Command, started func()) []map[string]string {
+	res, err := RunTabularCheckedContext(ctx, cmd, started)
+
+	switch {
+	case err == nil:
+	case ctx.Err() != nil && errors.Is(err, ctx.Err()):
+		plog.Debug(plog.TypeSystem, "mm cmd canceled", "cmd", cmd.Command, "error", err)
+	default:
 		plog.Error(
 			plog.TypeSystem,
 			"error running mm cmd",
@@ -81,6 +100,16 @@ func RunTabularStarted(cmd *Command, started func()) []map[string]string {
 // response reported, joined. The rows are those of the responses without an
 // error, so they may be partial when the error is not nil.
 func RunTabularChecked(cmd *Command, started func()) ([]map[string]string, error) {
+	return RunTabularCheckedContext(context.Background(), cmd, started)
+}
+
+// RunTabularCheckedContext is RunTabularChecked for a command run on behalf
+// of something that may end first; see RunContext.
+func RunTabularCheckedContext(
+	ctx context.Context,
+	cmd *Command,
+	started func(),
+) ([]map[string]string, error) {
 	// copy all fields in header order
 	mapper := tabularToMap
 
@@ -94,7 +123,7 @@ func RunTabularChecked(cmd *Command, started func()) ([]map[string]string, error
 		errs []error
 	)
 
-	for resps := range RunStarted(cmd, started) {
+	for resps := range RunStartedContext(ctx, cmd, started) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				errs = append(errs, reconstructErr(resp.Error))
