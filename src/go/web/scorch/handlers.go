@@ -78,6 +78,9 @@ var (
 
 	termClientIDs = make(map[string]chan struct{}) //nolint:gochecknoglobals // global state
 
+	// how long a connected client has to attach to its terminal.
+	terminalInitTimeout = TerminalInitTimeout //nolint:gochecknoglobals // tests shorten it
+
 	mu sync.Mutex //nolint:gochecknoglobals // global lock
 )
 
@@ -512,11 +515,17 @@ func initTerminal(exp string, run, loop int, stage, cmp string, rw bool) (WebTer
 	done := make(chan struct{})
 	termClientIDs[id] = done
 
+	timeout := terminalInitTimeout
+
 	go func() {
 		select {
-		case <-time.After(TerminalInitTimeout):
+		case <-time.After(timeout):
 			mu.Lock()
-			delete(rwTerm, t.Pid)
+			// a read-only client that never attaches leaves the writer's rights
+			if rwTerm[t.Pid] == id {
+				delete(rwTerm, t.Pid)
+			}
+
 			delete(termClientIDs, id)
 			mu.Unlock()
 		case <-done:

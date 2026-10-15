@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -417,5 +418,84 @@ func TestConnectTerminalByPID(t *testing.T) {
 		if rec := serveScorch(http.MethodGet, path, role); rec.Code != want {
 			t.Errorf("%s: status %d, want %d", path, rec.Code, want)
 		}
+	}
+}
+
+// The writing client keeps its rights when a read-only client connects and
+// never attaches, and loses them only when it never attaches itself.
+//
+//nolint:paralleltest // shortens the attach timeout and shares the terminal maps
+func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
+	const pid = 4343
+
+	original := terminalInitTimeout
+	terminalInitTimeout = 20 * time.Millisecond
+
+	t.Cleanup(func() { terminalInitTimeout = original })
+
+	fakeTerminal(t, pid)
+
+	var (
+		viewer   = roleFor("experiments", "get")
+		operator = roleFor("experiments", "get", "experiments/trigger", "create")
+	)
+
+	connect := func(role *rbac.Role) WebTerm {
+		t.Helper()
+
+		rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/4343", role)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body)
+		}
+
+		var got WebTerm
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+
+		return got
+	}
+
+	writer := connect(operator)
+	if writer.RO {
+		t.Fatal("the first operator may not write")
+	}
+
+	writerID := writer.Loc[strings.LastIndex(writer.Loc, "/")+1:]
+
+	// the writer attaches, as StreamTerminal does
+	mu.Lock()
+	close(termClientIDs[writerID])
+	mu.Unlock()
+
+	for _, role := range []*rbac.Role{viewer, operator} {
+		if other := connect(role); !other.RO {
+			t.Fatal("a second client may write")
+		}
+	}
+
+	time.Sleep(10 * terminalInitTimeout)
+
+	mu.Lock()
+	owner := rwTerm[pid]
+	mu.Unlock()
+
+	if owner != writerID {
+		t.Fatalf("writer %q, want the attached writer %q", owner, writerID)
+	}
+
+	// a writer that never attaches frees the terminal for the next client
+	mu.Lock()
+	delete(rwTerm, pid)
+	mu.Unlock()
+
+	if unattached := connect(operator); unattached.RO {
+		t.Fatal("the terminal has a writer")
+	}
+
+	time.Sleep(10 * terminalInitTimeout)
+
+	if next := connect(operator); next.RO {
+		t.Error("an unattached writer kept its rights")
 	}
 }
