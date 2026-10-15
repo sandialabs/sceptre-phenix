@@ -89,7 +89,7 @@ tags:
   - name: Features
     description: >-
       The optional features this server has enabled, which the web UI reads to
-      decide what to offer.
+      decide what to offer, and the build it runs.
   - name: Tunneler
     description: >-
       phenix-tunneler builds this server offers for download. Like
@@ -3981,6 +3981,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Features"
+  "/version":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Features
+      summary: Get the server's build
+      description: >-
+        Served from the server root rather than under `/api/v1`, and needs
+        neither credentials nor a permission.
+      operationId: getVersion
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Version"
   "/downloads/tunneler":
     servers:
       - url: http://localhost:3000
@@ -5477,6 +5495,21 @@ components:
         time:
           type: string
           format: date-time
+    Version:
+      type: object
+      properties:
+        commit:
+          type: string
+          description: the git commit the server was built from
+        tag:
+          type: string
+          description: the git tag the server was built from, if any
+        buildDate:
+          type: string
+          description: when the server was built
+        repo:
+          type: string
+          description: the repository the server was built from
     Features:
       type: object
       properties:
