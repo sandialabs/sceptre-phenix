@@ -348,6 +348,12 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 
 	api := router.PathPrefix("/api/v1").Subrouter()
 
+	// rather than the UI's page, which an API client would take for data
+	api.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plog.Warn(plog.TypeSystem, "Unknown API route requested", "route", r.RequestURI, "method", r.Method)
+		http.Error(w, "no such API route", http.StatusNotFound)
+	})
+
 	// OPTIONS method needed for CORS
 	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
 		Methods("GET", "OPTIONS")
@@ -552,7 +558,10 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	api.HandleFunc("/settings/password", GetPasswordRequirements).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings/timeout", GetTimeoutSettings).Methods("GET", "OPTIONS")
 
-	addRoutesToRouter(api, socketRoutes()...)
+	// with OPTIONS, as every API route takes it for CORS preflights
+	for _, r := range socketRoutes() {
+		api.Handle(r.path, r.handler).Methods(append(r.methods, "OPTIONS")...)
+	}
 
 	// outermost, so the other middleware (full logging in particular) sees the
 	// uncompressed response
@@ -561,6 +570,8 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	if o.allowCORS {
 		plog.Info(plog.TypeSystem, "CORS is enabled on HTTP API endpoints")
 		api.Use(middleware.AllowCORS)
+	} else {
+		api.Use(middleware.AnswerOptions)
 	}
 
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))

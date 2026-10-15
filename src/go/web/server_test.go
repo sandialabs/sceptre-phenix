@@ -34,6 +34,10 @@ func TestRouterServesTheUI(t *testing.T) {
 			path: "/webshark/embed", wantStatus: http.StatusNotFound,
 			wantBody: "WebShark is not installed",
 		},
+		// not the UI's page, which an API client would take for data
+		"unknown API route": {
+			path: "/api/v1/no-such-route", wantStatus: http.StatusNotFound, wantBody: "no such API route",
+		},
 		// API data is revalidated: the freshness middleware marks it
 		"API": {
 			path: "/api/v1/options", wantStatus: http.StatusOK,
@@ -57,12 +61,48 @@ func TestRouterServesTheUI(t *testing.T) {
 				t.Errorf("Cache-Control %q, want %q", got, tt.wantCache)
 			}
 
-			if strings.HasPrefix(tt.path, "/api/") && resp.Header.Get("X-Phenix-Seq") == "" {
+			// a route's responses, not the router's own 404
+			if strings.HasPrefix(tt.path, "/api/") && tt.wantStatus == http.StatusOK &&
+				resp.Header.Get("X-Phenix-Seq") == "" {
 				t.Error("an API response has no X-Phenix-Seq")
 			}
 
 			if body := readBody(t, resp); !strings.Contains(body, tt.wantBody) {
 				t.Errorf("body %q does not have %q", body, tt.wantBody)
+			}
+		})
+	}
+}
+
+// An OPTIONS request is answered without running the route's handler, which
+// serves whatever method reaches it; with CORS allowed, preflights of the
+// routes the Unix socket serves as well are answered too.
+func TestRouterAnswersOptions(t *testing.T) {
+	for name, cors := range map[string]bool{"without CORS": false, "with CORS": true} {
+		t.Run(name, func(t *testing.T) {
+			registry := useJobs(t)
+			j := waitJob(t, registry, startTestJob(t, registry, "alice", "", nil, "").ID)
+
+			original := o
+			t.Cleanup(func() { o = original })
+
+			o.allowCORS = cors
+
+			server := serveAs(t, "alice", testRole("options", "list")).URL
+
+			for _, path := range []string{"/api/v1/jobs/" + j.ID, "/api/v1/jobs"} {
+				resp := do(t, http.MethodOptions, server+path, "")
+				if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+					t.Errorf("OPTIONS %s: status %d", path, resp.StatusCode)
+				}
+
+				if got := resp.Header.Get("Access-Control-Allow-Origin") != ""; got != cors {
+					t.Errorf("OPTIONS %s: CORS headers %t, want %t", path, got, cors)
+				}
+			}
+
+			if _, ok := registry.Get(j.ID); !ok {
+				t.Error("OPTIONS on DELETE /jobs/{id} dismissed the job")
 			}
 		})
 	}
