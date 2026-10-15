@@ -130,8 +130,10 @@ When changing a capability, inspect every applicable surface:
 | Log or error message text | Docs and skill text that quotes it, such as the Troubleshooting sections in `docs/content/` and `skills/phenix/references/` |
 | Topology Builder behavior | `src/go/web/builder.go`, Builder routes in `src/go/web/server.go`, the editor under `src/go/web/public/grapheditor/js/`, the embedded schemas in `.../grapheditor/utils/schemas/`, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
 
-Preserve v1/v2 config upgrades, persisted BoltDB/etcd data, RBAC migrations, and
-public API compatibility unless a breaking change is deliberate and documented.
+Preserve persisted BoltDB/etcd data, RBAC migrations, and public API
+compatibility unless a breaking change is deliberate and documented. phēnix has
+no config upgraders: each kind decodes only at its stored version, so changing
+that version breaks existing configs.
 Keep CLI, REST, websocket, and UI authorization consistent.
 
 ## Validation

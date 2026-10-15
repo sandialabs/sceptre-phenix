@@ -16,7 +16,6 @@ import (
 
 	"phenix/store"
 	"phenix/types"
-	"phenix/types/version"
 	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/editor"
@@ -89,7 +88,7 @@ func Init() error {
 
 		// Don't attempt to create this default config again if it already exists in
 		// the store.
-		if _, err := Get(name, false); err == nil {
+		if _, err := Get(name); err == nil {
 			return nil // continue to next file
 		}
 
@@ -164,7 +163,7 @@ func Init() error {
 
 		// Don't attempt to create this default config again if it already exists in
 		// the store.
-		if _, err := Get(name, false); err == nil {
+		if _, err := Get(name); err == nil {
 			return nil
 		}
 
@@ -258,7 +257,7 @@ func List(which string) (store.Configs, error) {
 // its `spec` and `status` fields casted to the given type, but instead will be
 // generic `map[string]interface{}` fields. It's up to the caller to convert
 // these fields into the appropriate types.
-func Get(name string, upgrade bool) (*store.Config, error) {
+func Get(name string) (*store.Config, error) {
 	if name == "" {
 		return nil, util.HumanizeError(errors.New("no config name provided"), "")
 	}
@@ -270,29 +269,6 @@ func Get(name string, upgrade bool) (*store.Config, error) {
 
 	if err = store.Get(c); err != nil {
 		return nil, fmt.Errorf("getting config from store: %w", err)
-	}
-
-	if upgrade {
-		latest := version.StoredVersion[c.Kind]
-
-		if c.APIVersion() != latest {
-			upgrader := types.GetUpgrader(c.Kind + "/" + latest)
-			if upgrader != nil {
-				var iface any
-				iface, err = upgrader.Upgrade(c.APIVersion(), c.Spec, c.Metadata)
-				if err != nil {
-					return nil, fmt.Errorf("upgrading config: %w", err)
-				}
-
-				var cfg *store.Config
-				cfg, err = types.NewConfigFromSpec(c.Metadata.Name, iface)
-				if err != nil {
-					return nil, fmt.Errorf("creating new config from spec: %w", err)
-				}
-
-				return cfg, nil
-			}
-		}
 	}
 
 	return c, nil
@@ -552,7 +528,7 @@ func Delete(name string) error {
 		return errs
 	}
 
-	c, err := Get(name, false)
+	c, err := Get(name)
 	if err != nil {
 		return fmt.Errorf("getting config %s: %w", name, err)
 	}

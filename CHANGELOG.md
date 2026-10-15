@@ -42,6 +42,8 @@ All notable changes to this project will be documented in this file.
 ### Removed
 
 - **Topology v0 (breaking)**: Topology configs with apiVersion `phenix.sandia.gov/v0` are no longer supported.
+- **Scenario v1 (breaking)**: Scenario configs with apiVersion `phenix.sandia.gov/v1` are no longer supported.
+- **Config CLI and API (breaking)**: Removed the `--show-upgraded` (`-u`) flag of `phenix config get` and the `noupgrade` query parameter of `GET /api/v1/configs/{kind}/{name}`.
 
 ### Fixed
 

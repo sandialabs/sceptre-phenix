@@ -178,64 +178,7 @@ func DecodeExperimentFromConfig(c store.Config) (*Experiment, error) {
 	}
 
 	if err := mapstructure.Decode(c.Spec, &iface); err != nil {
-		// If we have a decoding error, it's likely due to the embedded topology or
-		// scenario not being the latest version.
-		var (
-			docSection = "Scenario v1 to v2 Upgrade"
-			docLink    = "https://phenix.sceptre.dev/latest/troubleshooting/#scenario-v1-to-v2-upgrade"
-			kbError    = fmt.Errorf(
-				"decoding versioned spec for experiment %s: %w\n\nPlease see the %q troubleshooting section at %s",
-				c.Metadata.Name,
-				err,
-				docSection,
-				docLink,
-			)
-		)
-
-		tn, ok := c.Metadata.Annotations["topology"]
-		if !ok {
-			return nil, kbError
-		}
-
-		tc, _ := store.NewConfig("topology/" + tn)
-
-		err := store.Get(tc)
-		if err != nil {
-			return nil, kbError
-		}
-
-		if tc.APIVersion() != version.StoredVersion["Topology"] {
-			spec, err := DecodeTopologyFromConfig(*tc)
-			if err != nil {
-				return nil, kbError
-			}
-
-			c.Spec["topology"] = spec
-		}
-
-		sn, ok := c.Metadata.Annotations["scenario"]
-		if ok {
-			sc, _ := store.NewConfig("scenario/" + sn)
-
-			err := store.Get(sc)
-			if err != nil {
-				return nil, kbError
-			}
-
-			if sc.APIVersion() != version.StoredVersion["Scenario"] {
-				spec, err := DecodeScenarioFromConfig(*sc)
-				if err != nil {
-					return nil, kbError
-				}
-
-				c.Spec["scenario"] = spec
-			}
-		}
-
-		err = mapstructure.Decode(c.Spec, &iface)
-		if err != nil {
-			return nil, kbError
-		}
+		return nil, fmt.Errorf("decoding versioned spec for experiment %s: %w", c.Metadata.Name, err)
 	}
 
 	spec, ok := iface.(ifaces.ExperimentSpec)

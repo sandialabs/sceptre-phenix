@@ -161,7 +161,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusForbidden)
 		}
 
-		cfg, err := config.Get(name, false)
+		cfg, err := config.Get(name)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
@@ -204,7 +204,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			continue
 		}
 
-		cfg, err := config.Get(name, false)
+		cfg, err := config.Get(name)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
@@ -450,9 +450,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	upgrade := r.URL.Query().Get("noupgrade") == ""
-
-	cfg, err := config.Get(name, upgrade)
+	cfg, err := config.Get(name)
 	if err != nil {
 		return weberror.NewWebError(err, "unable to get config %s from store", name)
 	}
