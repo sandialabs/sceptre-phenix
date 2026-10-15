@@ -356,8 +356,8 @@ func TestTerminalWriteNeedsTrigger(t *testing.T) {
 	}
 }
 
-// A terminal is reached by the PID GET /terminals lists it under, as a
-// terminal of its experiment only. A role that may only view the experiment
+// A terminal is reached by the PID of the process it runs, as a terminal of
+// its experiment only. A role that may only view the experiment
 // gets a read-only terminal and never takes its read/write side; the first
 // client that may trigger the experiment may write to it, and the others only
 // watch.
