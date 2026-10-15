@@ -234,7 +234,7 @@ func TestKnownPermissions(t *testing.T) {
 
 	for _, want := range []Permission{
 		{"users", "get"}, {"users", "list"}, {"users/roles", "patch"}, {"users/tokens", "create"}, {"configs", "create"},
-		{"scorch/terminals", "write"},
+		{"scorch", "get"}, {"scorch", "post"}, {"scorch", "delete"}, {"scorch/terminals", "write"},
 	} {
 		if !slices.Contains(Permissions, want) {
 			t.Errorf("Permissions lacks %s %s", want.Resource, want.Verb)

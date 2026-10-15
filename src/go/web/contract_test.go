@@ -275,7 +275,8 @@ func contractRoutes() []contractRoute {
 	var (
 		filesGet = testRole("experiments/files", "get", contractExp)
 		captures = testRole("vms/captures", "list", contractExp+"/"+contractVM)
-		trigger  = testRole("experiments/trigger", "create", contractExp)
+		expGet   = testRole("experiments", "get", contractExp)
+		scorch   = func(verb string) []rbac.Role { return []rbac.Role{testRole(scorchApp, verb, contractExp), expGet} }
 		diskGet  = testRole("disks", "get", contractDisk)
 		mount    = testRole("vms/mount", "get", contractExp+"/"+contractVM)
 		one      = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
@@ -320,12 +321,17 @@ func contractRoutes() []contractRoute {
 			need: one(testRole("experiments/files", "delete", contractExp)), want: done,
 		},
 
-		// SCORCH
+		// SCORCH: scorch permissions on the experiment, and getting it
+		{method: "GET", path: exp + "/scorch/pipelines/0/0", need: scorch("get"), jsonErrors: true},
+		{method: "GET", path: exp + "/scorch/terminals", need: scorch("get"), want: ok},
+		{method: "POST", path: exp + "/scorch/pipelines/0/cleanup", need: scorch("post"), jsonErrors: true},
+		{method: "POST", path: exp + "/scorch/pipelines/0/clear", need: scorch("delete"), jsonErrors: true},
+		{method: "DELETE", path: exp + "/scorch/pipelines/0", need: scorch("delete"), want: done, jsonErrors: true},
+		// triggering SCORCH also needs the scorch verb of its pipeline route
 		{
-			method: "POST", path: exp + "/scorch/pipelines/0/cleanup", jsonErrors: true,
-			need: []rbac.Role{trigger, testRole("experiments", "get", contractExp)},
+			method: "DELETE", path: exp + "/trigger?apps=scorch", want: done,
+			need: []rbac.Role{testRole("experiments/trigger", "delete", contractExp), testRole(scorchApp, "delete", contractExp)},
 		},
-		{method: "POST", path: exp + "/scorch/pipelines/0/clear", need: one(trigger), jsonErrors: true},
 
 		// VMs
 		{

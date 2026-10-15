@@ -815,6 +815,10 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if scorchTriggerForbidden(w, r, appsFilter, "post") {
+		return
+	}
+
 	go func() {
 		var (
 			md   = make(map[string]any)
@@ -919,6 +923,10 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if scorchTriggerForbidden(w, r, appsFilter, "delete") {
+		return
+	}
+
 	go func() {
 		apps := strings.SplitSeq(appsFilter, ",")
 
@@ -953,6 +961,54 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 	)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// scorchApp is the SCORCH app's name, and the resource of its permissions.
+const scorchApp = "scorch"
+
+// scorchTriggerForbidden answers 403 and reports true when appsFilter starts
+// or cancels SCORCH, as an empty filter, meaning every app, does too, and the
+// role lacks the scorch verb on the experiment that the SCORCH pipeline routes
+// need.
+func scorchTriggerForbidden(w http.ResponseWriter, r *http.Request, appsFilter, verb string) bool {
+	var (
+		ctx  = r.Context()
+		name = mux.Vars(r)["name"]
+	)
+
+	if !appsIncludeScorch(appsFilter) || middleware.RoleFromContext(ctx).Allowed(scorchApp, verb, name) {
+		return false
+	}
+
+	plog.Warn(
+		plog.TypeSecurity,
+		"triggering experiment scorch app not allowed",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		name,
+		"verb",
+		verb,
+	)
+	http.Error(w, "forbidden", http.StatusForbidden)
+
+	return true
+}
+
+// appsIncludeScorch reports whether a trigger apps filter names the SCORCH
+// app, or names no app and so means every app.
+func appsIncludeScorch(appsFilter string) bool {
+	if strings.TrimSpace(appsFilter) == "" {
+		return true
+	}
+
+	for a := range strings.SplitSeq(appsFilter, ",") {
+		if strings.EqualFold(strings.TrimSpace(a), scorchApp) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetExperimentSchedule - GET /experiments/{name}/schedule.

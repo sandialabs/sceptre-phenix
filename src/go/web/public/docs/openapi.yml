@@ -1816,8 +1816,8 @@ paths:
         (`output`). For one that is running, where to follow its output: the
         websocket to stream it from (`stream`), or, for a `break` component,
         the terminal it opened (`terminal`), connected to as
-        `GET .../terminals/{pid}` would. Needs the `experiments` `get`
-        permission.
+        `GET .../terminals/{pid}` would. Needs the `scorch` `get` and
+        `experiments` `get` permissions on the experiment.
       operationId: getExperimentsNameScorchComponentsRunLoopStageCmp
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -1867,8 +1867,8 @@ paths:
         finishes, when the server closes the websocket. A component that is
         not running gets its output and the marker at once. A client that
         falls 256 chunks behind is dropped, and reconnecting replays the
-        output. The handshake needs an `Origin` header. Needs the
-        `experiments` `get` permission.
+        output. The handshake needs an `Origin` header. Needs the `scorch`
+        `get` and `experiments` `get` permissions on the experiment.
       operationId: getExperimentsNameScorchComponentsRunLoopStageCmpWs
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -1893,8 +1893,8 @@ paths:
         order, each the run's own top-level loop. Also reports which run the
         scorch app is executing, whether that app is running at all, and the
         experiment's own state, so the Scorch page needs no separate
-        experiment request. Needs the `experiments` `get` permission on the
-        experiment.
+        experiment request. Needs the `scorch` `get` and `experiments` `get`
+        permissions on the experiment.
       operationId: getExperimentsNameScorchPipelines
       parameters:
         - name: name
@@ -1915,7 +1915,7 @@ paths:
             the experiment could not be read from the store, or one of its
             pipelines could not be built
         "403":
-          description: getting the experiment is not allowed for this user
+          description: viewing the experiment's Scorch runs is not allowed for this user
         "500":
           description: the experiment's scorch metadata could not be decoded
   "/experiments/{name}/scorch/pipelines/{run}":
@@ -1927,9 +1927,8 @@ paths:
         Executes the run's configure, start, loop, stop and cleanup stages in
         the background and answers as soon as it has started; the pipeline
         endpoints and the `apps/scorch` websocket resource report how it gets
-        on. A run that is already executing is refused. Needs the
-        `experiments/trigger` `create` and the `experiments` `get` permissions
-        on the experiment.
+        on. A run that is already executing is refused. Needs the `scorch`
+        `post` and `experiments` `get` permissions on the experiment.
       operationId: postExperimentsNameScorchPipelinesRun
       parameters:
         - name: name
@@ -1960,8 +1959,8 @@ paths:
       description: >-
         Cancels the run's context, which ends the stage it is executing and
         the run with it. A run that is not executing is left alone and the
-        answer is the same. Needs the `experiments/trigger` `delete`
-        permission on the experiment.
+        answer is the same. Needs the `scorch` `delete` and `experiments`
+        `get` permissions on the experiment.
       operationId: deleteExperimentsNameScorchPipelinesRun
       parameters:
         - name: name
@@ -1993,8 +1992,8 @@ paths:
         its other stages, to tear down what a canceled or failed run left
         behind, and answers as soon as they have started. Only a run whose
         `hasCleanup` is true has any, and a run that is already executing is
-        refused. Needs the `experiments/trigger` `create` and the
-        `experiments` `get` permissions on the experiment.
+        refused. Needs the `scorch` `post` and `experiments` `get`
+        permissions on the experiment.
       operationId: postExperimentsNameScorchPipelinesRunCleanup
       parameters:
         - name: name
@@ -2030,8 +2029,8 @@ paths:
         Forgets the statuses held for every loop of the run, so its pipeline
         shows as never run, and broadcasts each cleared loop over the
         `apps/scorch` websocket resource. A run that is executing is refused,
-        so cancel it first. Needs the `experiments/trigger` `create`
-        permission on the experiment.
+        so cancel it first. Needs the `scorch` `delete` and `experiments`
+        `get` permissions on the experiment.
       operationId: postExperimentsNameScorchPipelinesRunClear
       parameters:
         - name: name
@@ -2072,8 +2071,8 @@ paths:
         The pipeline for a single loop of a run: a node per stage and per
         component, the edges that order them, and each node's latest status.
         Loop 0 is the run itself, and every loop above it is the pipeline
-        nested in the loop below. Needs the `experiments` `get` permission on
-        the experiment.
+        nested in the loop below. Needs the `scorch` `get` and `experiments`
+        `get` permissions on the experiment.
       operationId: getExperimentsNameScorchPipelinesRunLoop
       parameters:
         - name: name
@@ -2107,7 +2106,7 @@ paths:
             could not be read from the store, the experiment has no such run,
             or the run does not configure that loop
         "403":
-          description: getting the experiment is not allowed for this user
+          description: viewing the experiment's Scorch runs is not allowed for this user
   "/experiments/{name}/scorch/terminals":
     get:
       tags:
@@ -2116,7 +2115,8 @@ paths:
       description: >-
         The terminals the experiment's running break components opened,
         without a client to connect as (`loc` and `exit` are empty). Needs
-        the `experiments` `get` permission.
+        the `scorch` `get` and `experiments` `get` permissions on the
+        experiment.
       operationId: getExperimentsNameScorchTerminals
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -2150,8 +2150,9 @@ paths:
         terminal, `exit`, the route that ends it. Every other client only
         watches (`readOnly`), and a client without that permission never
         takes the writing side, even when no one holds it. A client must
-        attach within 5 seconds. Needs the `experiments` `get` permission;
-        writing to the terminal also needs `scorch/terminals` `write`.
+        attach within 5 seconds. Needs the `scorch` `get` and `experiments`
+        `get` permissions on the experiment; writing to the terminal also
+        needs `scorch/terminals` `write`.
       operationId: getExperimentsNameScorchTerminalsPid
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -2176,8 +2177,9 @@ paths:
       summary: Connect to a SCORCH component's terminal
       description: >-
         As `GET .../terminals/{pid}`, for the terminal the break component
-        opened. Needs the `experiments` `get` permission; writing to the
-        terminal also needs `scorch/terminals` `write`.
+        opened. Needs the `scorch` `get` and `experiments` `get` permissions
+        on the experiment; writing to the terminal also needs
+        `scorch/terminals` `write`.
       operationId: getExperimentsNameScorchTerminalsRunLoopStageCmp
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -2208,9 +2210,9 @@ paths:
         typed into the terminal; read-only clients' frames are ignored. When
         the writing client's process exits, read-only clients get `*****
         BREAK PROCESS EXITED *****` and the websocket closes. The handshake
-        needs an `Origin` header. Needs the `experiments` `get` permission;
-        attaching as the writing client also needs `scorch/terminals`
-        `write`.
+        needs an `Origin` header. Needs the `scorch` `get` and `experiments`
+        `get` permissions on the experiment; attaching as the writing client
+        also needs `scorch/terminals` `write`.
       operationId: getExperimentsNameScorchTerminalsPidWsId
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -2240,8 +2242,8 @@ paths:
         Kills the terminal's process, which ends its break component, and
         publishes an `apps/scorch` `terminal-exit` message on the `/ws`
         websocket. Only the writing client, by the `exit` its connect route
-        gave, may end it. Needs the `experiments` `get` and the
-        `scorch/terminals` `write` permissions.
+        gave, may end it. Needs the `scorch` `get`, `experiments` `get` and
+        `scorch/terminals` `write` permissions on the experiment.
       operationId: postExperimentsNameScorchTerminalsPidExitId
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -2388,7 +2390,9 @@ paths:
         app's progress is published on the `/ws` websocket as an
         `apps/<app>` resource named after the experiment, whose action is
         `start`, then `success` or `error` (with the error as its result).
-        Needs the `experiments/trigger` `create` permission.
+        Needs the `experiments/trigger` `create` permission, and, when `apps`
+        names `scorch` or is empty, which triggers every app, also `scorch`
+        `post`, as starting a Scorch run does.
       operationId: postExperimentsNameTrigger
       parameters:
         - name: name
@@ -2417,7 +2421,9 @@ paths:
         Answers at once and cancels the running stage of each app `apps`
         names that a trigger started, publishing an `apps/<app>` `success`
         message, with the `delete` permission verb, on the `/ws` websocket.
-        Needs the `experiments/trigger` `delete` permission.
+        Needs the `experiments/trigger` `delete` permission, and, when `apps`
+        names `scorch` or is empty, also `scorch` `delete`, as canceling a
+        Scorch run does.
       operationId: deleteExperimentsNameTrigger
       parameters:
         - name: name

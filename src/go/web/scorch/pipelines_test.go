@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"phenix/store"
+	"phenix/web/rbac"
 )
 
 // GetPipelines lists each run's pipeline, saying whether it can be cleaned up
@@ -22,7 +23,7 @@ func TestGetPipelines(t *testing.T) {
 		map[string]any{"name": "attack", "start": []string{"a"}},
 	)
 
-	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines", roleFor("experiments", "get"))
+	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines", roleFor("experiments", "get", appNameScorch, "get"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
@@ -63,9 +64,14 @@ func TestGetPipelines(t *testing.T) {
 		t.Errorf("experiment = %v, want %v", body.Experiment, want)
 	}
 
-	rec = serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines", roleFor("experiments", "list"))
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("listing pipelines without experiment get: status %d, want 403", rec.Code)
+	for who, role := range map[string]*rbac.Role{
+		"without experiment get": roleFor("experiments", "list", appNameScorch, "get"),
+		"without scorch get":     roleFor("experiments", "get"),
+	} {
+		rec = serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines", role)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("listing pipelines %s: status %d, want 403", who, rec.Code)
+		}
 	}
 }
 
@@ -99,7 +105,7 @@ func TestGetPipeline(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := "/experiments/exp/scorch/pipelines/" + tc.run + "/" + tc.loop
 
-			rec := serveScorch(http.MethodGet, path, roleFor("experiments", "get"))
+			rec := serveScorch(http.MethodGet, path, roleFor("experiments", "get", appNameScorch, "get"))
 			if rec.Code != tc.status {
 				t.Fatalf("status %d, want %d: %s", rec.Code, tc.status, rec.Body)
 			}
@@ -165,7 +171,7 @@ func TestBreakMarksTheLoopsAboveIt(t *testing.T) {
 	DeletePipeline("exp", -1, -1, false)
 
 	getLoop1 := func() *httptest.ResponseRecorder {
-		return serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines/0/1", roleFor("experiments", "get"))
+		return serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines/0/1", roleFor("experiments", "get", appNameScorch, "get"))
 	}
 
 	if rec := getLoop1(); rec.Code != http.StatusOK {

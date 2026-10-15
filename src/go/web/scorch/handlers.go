@@ -85,12 +85,18 @@ var (
 	mu sync.Mutex //nolint:gochecknoglobals // global lock
 )
 
+// mayView reports whether role may view the experiment's SCORCH runs, output
+// and terminals, which needs scorch get and experiments get on it.
+func mayView(role rbac.Role, exp string) bool {
+	return role.Allowed(appNameScorch, "get", exp) && role.Allowed("experiments", "get", exp)
+}
+
 // canView reports whether the request's role may view the experiment's SCORCH
 // output and terminals, answering 403 when it may not.
 func canView(w http.ResponseWriter, r *http.Request, exp string) bool {
 	ctx := r.Context()
 
-	if middleware.RoleFromContext(ctx).Allowed("experiments", "get", exp) {
+	if mayView(middleware.RoleFromContext(ctx), exp) {
 		return true
 	}
 
@@ -695,7 +701,7 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 		name    = vars["name"]
 	)
 
-	if !role.Allowed("experiments", "get", name) {
+	if !mayView(role, name) {
 		plog.Warn(
 			plog.TypeSecurity,
 			"getting experiment scorch pipelines not allowed",
@@ -808,7 +814,7 @@ func GetPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "invalid loop number '%s' provided", vars["loop"])
 	}
 
-	if !role.Allowed("experiments", "get", exp) {
+	if !mayView(role, exp) {
 		plog.Warn(
 			plog.TypeSecurity,
 			"getting experiment scorch pipeline not allowed",
@@ -861,7 +867,7 @@ func ClearPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
 	}
 
-	if !role.Allowed("experiments/trigger", "create", name) {
+	if !role.Allowed(appNameScorch, "delete", name) || !role.Allowed("experiments", "get", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		err := weberror.NewWebError(
 			nil,
@@ -949,7 +955,7 @@ func startPipeline(w http.ResponseWriter, r *http.Request, cleanupOnly bool) err
 		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
 	}
 
-	if !role.Allowed("experiments/trigger", "create", name) {
+	if !role.Allowed(appNameScorch, "post", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		err := weberror.NewWebError(
 			nil,
@@ -1092,7 +1098,7 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
 	}
 
-	if !role.Allowed("experiments/trigger", "delete", name) {
+	if !role.Allowed(appNameScorch, "delete", name) || !role.Allowed("experiments", "get", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		err := weberror.NewWebError(
 			nil,

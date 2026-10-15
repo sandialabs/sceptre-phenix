@@ -240,7 +240,7 @@ leaving you on a page full of permission errors.
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | trigger the running stage of an experiment |
+| Desc | trigger the running stage of an experiment's apps; for the `scorch` app, or for every app, also needs [`scorch`](#resource-scorch) `post` (`delete` to cancel) |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -618,6 +618,33 @@ instead of writing back the old ones. Change a password or a token from the
 | Desc | manage port forwarding rules for experiment VMs |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
+
+#### Resource: `scorch`
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | see an experiment's SCORCH runs, component output and read-only terminals |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | post |
+| Desc | start a SCORCH run, or run only its cleanup stage |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | cancel a SCORCH run, or clear its status |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+Each also needs `experiments` `get` on the experiment. `experiments/trigger`
+alone no longer controls SCORCH, so a custom role that started or canceled
+SCORCH runs with it needs `scorch` `post` and `delete` added.
 
 #### Resource: `scorch/terminals`
 

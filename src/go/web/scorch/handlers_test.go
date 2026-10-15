@@ -87,11 +87,11 @@ func serveScorch(method, path string, role *rbac.Role) *httptest.ResponseRecorde
 	return rec
 }
 
-// Only a role that may get an experiment sees its SCORCH component output and
-// terminals.
+// Only a role that may get an experiment and its SCORCH sees its SCORCH
+// component output and terminals.
 //
 //nolint:paralleltest // starts the SCORCH processors
-func TestViewingOutputNeedsExperimentGet(t *testing.T) {
+func TestViewingOutputNeedsScorchGet(t *testing.T) {
 	useScorch(t)
 
 	requests := map[string]struct{ method, path string }{
@@ -104,13 +104,15 @@ func TestViewingOutputNeedsExperimentGet(t *testing.T) {
 		"terminal exit":           {http.MethodPost, "/experiments/exp/scorch/terminals/1/exit/id"},
 	}
 
-	other := roleFor("experiments", "get")
-	other.Spec.Policies[0].ResourceNames = []string{"other"}
+	other := roleFor("experiments", "get", appNameScorch, "get")
+	other.Spec.Policies[1].ResourceNames = []string{"other"}
 
 	denied := map[string]*rbac.Role{
 		"no role":                        nil,
 		"a role for other experiments":   other,
-		"a role that may only list them": roleFor("experiments", "list"),
+		"a role that may only list them": roleFor("experiments", "list", appNameScorch, "get"),
+		"a role without scorch get":      roleFor("experiments", "get"),
+		"a role with scorch get only":    roleFor(appNameScorch, "get"),
 	}
 
 	for name, req := range requests {
@@ -121,7 +123,7 @@ func TestViewingOutputNeedsExperimentGet(t *testing.T) {
 		}
 	}
 
-	viewer := roleFor("experiments", "get")
+	viewer := roleFor("experiments", "get", appNameScorch, "get")
 
 	for path, want := range map[string]string{
 		"/experiments/exp/scorch/terminals":               `{"terminals":null}`,
@@ -149,9 +151,13 @@ func TestClearAndCleanUpRuns(t *testing.T) {
 	t.Cleanup(func() { scorchexe.GetCanceler("exp", 1)() })
 
 	var (
-		operator = roleFor("experiments", "get", "experiments/trigger", "create")
-		viewer   = roleFor("experiments", "get")
+		operator  = roleFor("experiments", "get", appNameScorch, "post", appNameScorch, "delete")
+		viewer    = roleFor("experiments", "get", appNameScorch, "get")
+		trigger   = roleFor("experiments", "get", "experiments/trigger", "create", "experiments/trigger", "delete")
+		elsewhere = roleFor("experiments", "get", appNameScorch, "post", appNameScorch, "delete")
 	)
+
+	elsewhere.Spec.Policies[0].ResourceNames = []string{"other"}
 
 	// a component's status shows in its run's pipeline until the run is cleared
 	update := ComponentUpdate{Exp: "exp", Run: 0, Stage: stageStart, CmpName: "a", Status: statusSuccess}
@@ -183,8 +189,14 @@ func TestClearAndCleanUpRuns(t *testing.T) {
 		"cannot clear a run that does not exist": {
 			"pipelines/3/clear", operator, http.StatusNotFound, "not found",
 		},
-		"cannot clear without trigger rights": {
+		"cannot clear without scorch delete": {
 			"pipelines/0/clear", viewer, http.StatusForbidden, "not allowed",
+		},
+		"cannot clear with trigger rights alone": {
+			"pipelines/0/clear", trigger, http.StatusForbidden, "not allowed",
+		},
+		"cannot clear without experiment get": {
+			"pipelines/0/clear", elsewhere, http.StatusForbidden, "not allowed",
 		},
 		"cannot clean up an executing run": {
 			"pipelines/1/cleanup", operator, http.StatusBadRequest, "already executing",
@@ -195,8 +207,14 @@ func TestClearAndCleanUpRuns(t *testing.T) {
 		"cannot clean up a run that does not exist": {
 			"pipelines/3/cleanup", operator, http.StatusBadRequest, "has no cleanup components",
 		},
-		"cannot clean up without trigger rights": {
+		"cannot clean up without scorch post": {
 			"pipelines/0/cleanup", viewer, http.StatusForbidden, "not allowed",
+		},
+		"cannot clean up with trigger rights alone": {
+			"pipelines/0/cleanup", trigger, http.StatusForbidden, "not allowed",
+		},
+		"cannot clean up without experiment get": {
+			"pipelines/0/cleanup", elsewhere, http.StatusForbidden, "not allowed",
 		},
 	}
 
@@ -207,6 +225,37 @@ func TestClearAndCleanUpRuns(t *testing.T) {
 				t.Errorf("%d %s, want %d with %q", rec.Code, rec.Body, tc.status, tc.message)
 			}
 		})
+	}
+}
+
+// Starting and canceling a run need scorch post and delete and experiments get
+// on its experiment; experiments/trigger alone does not do.
+//
+//nolint:paralleltest // starts the SCORCH processors and replaces the store
+func TestStartAndCancelNeedScorch(t *testing.T) {
+	useScorch(t, map[string]any{"start": []string{"a"}})
+
+	elsewhere := roleFor("experiments", "get", appNameScorch, "post", appNameScorch, "delete")
+	elsewhere.Spec.Policies[0].ResourceNames = []string{"other"}
+
+	refused := map[string]*rbac.Role{
+		"a viewer":               roleFor("experiments", "get", appNameScorch, "get"),
+		"a trigger role":         roleFor("experiments", "get", "experiments/trigger", "create", "experiments/trigger", "delete"),
+		"a role for another exp": elsewhere,
+	}
+
+	for who, role := range refused {
+		for _, method := range []string{http.MethodPost, http.MethodDelete} {
+			if rec := serveScorch(method, "/experiments/exp/scorch/pipelines/0", role); rec.Code != http.StatusForbidden {
+				t.Errorf("%s %s: status %d, want 403", who, method, rec.Code)
+			}
+		}
+	}
+
+	// canceling a run that is not executing changes nothing
+	operator := roleFor("experiments", "get", appNameScorch, "delete")
+	if rec := serveScorch(http.MethodDelete, "/experiments/exp/scorch/pipelines/0", operator); rec.Code != http.StatusNoContent {
+		t.Errorf("canceling as an operator: status %d %s, want 204", rec.Code, rec.Body)
 	}
 }
 
@@ -223,9 +272,10 @@ func TestClearAndCleanUpWithoutScorch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	operator := roleFor("experiments", "get", "experiments/trigger", "create")
-	operator.Spec.Policies[0].ResourceNames = []string{"plain"}
-	operator.Spec.Policies[1].ResourceNames = []string{"plain"}
+	operator := roleFor("experiments", "get", appNameScorch, "post", appNameScorch, "delete")
+	for _, p := range operator.Spec.Policies {
+		p.ResourceNames = []string{"plain"}
+	}
 
 	for path, want := range map[string]int{
 		"/experiments/plain/scorch/pipelines/0/clear":   http.StatusNotFound,
@@ -242,7 +292,7 @@ func TestClearAndCleanUpWithoutScorch(t *testing.T) {
 func componentStatus(t *testing.T, run int, name string) string {
 	t.Helper()
 
-	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines", roleFor("experiments", "get"))
+	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines", roleFor("experiments", "get", appNameScorch, "get"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("listing pipelines: %d %s", rec.Code, rec.Body)
 	}
@@ -308,9 +358,9 @@ func TestTerminalWriteNeedsTerminalWrite(t *testing.T) {
 	fakeTerminal(t, pid)
 
 	var (
-		viewer   = roleFor("experiments", "get")
-		trigger  = roleFor("experiments", "get", "experiments/trigger", "create")
-		operator = roleFor("experiments", "get", terminalsResource, "write")
+		viewer   = roleFor("experiments", "get", appNameScorch, "get")
+		trigger  = roleFor("experiments", "get", appNameScorch, "get", "experiments/trigger", "create")
+		operator = roleFor("experiments", "get", appNameScorch, "get", terminalsResource, "write")
 	)
 
 	connect := func(role *rbac.Role) WebTerm {
@@ -417,8 +467,8 @@ func TestConnectTerminalByPID(t *testing.T) {
 	fakeTerminal(t, pid)
 
 	var (
-		viewer   = roleFor("experiments", "get")
-		operator = roleFor("experiments", "get", terminalsResource, "write")
+		viewer   = roleFor("experiments", "get", appNameScorch, "get")
+		operator = roleFor("experiments", "get", appNameScorch, "get", terminalsResource, "write")
 	)
 
 	connect := func(role *rbac.Role, readOnly bool) {
@@ -459,8 +509,10 @@ func TestConnectTerminalByPID(t *testing.T) {
 		"/experiments/exp/scorch/terminals/x":      http.StatusBadRequest,
 		"/experiments/other/scorch/terminals/4242": http.StatusNotFound,
 	} {
-		role := roleFor("experiments", "get")
-		role.Spec.Policies[0].ResourceNames = []string{"*"}
+		role := roleFor("experiments", "get", appNameScorch, "get")
+		for _, p := range role.Spec.Policies {
+			p.ResourceNames = []string{"*"}
+		}
 
 		if rec := serveScorch(http.MethodGet, path, role); rec.Code != want {
 			t.Errorf("%s: status %d, want %d", path, rec.Code, want)
@@ -483,8 +535,8 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 	fakeTerminal(t, pid)
 
 	var (
-		viewer   = roleFor("experiments", "get")
-		operator = roleFor("experiments", "get", terminalsResource, "write")
+		viewer   = roleFor("experiments", "get", appNameScorch, "get")
+		operator = roleFor("experiments", "get", appNameScorch, "get", terminalsResource, "write")
 	)
 
 	connect := func(role *rbac.Role) WebTerm {
@@ -617,7 +669,7 @@ func TestStreamTerminalClaimsClientIDOnce(t *testing.T) {
 
 	fakeTerminal(t, pid)
 
-	operator := roleFor("experiments", "get", terminalsResource, "write")
+	operator := roleFor("experiments", "get", appNameScorch, "get", terminalsResource, "write")
 
 	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/4444", operator)
 	if rec.Code != http.StatusOK {
