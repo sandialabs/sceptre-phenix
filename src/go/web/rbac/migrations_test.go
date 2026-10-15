@@ -227,6 +227,13 @@ func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
 		}
 		startStop = policy(captureSubnetResource, nil, "create", "delete")
 		anything  = policy(captureSubnetResource, nil, "*")
+		// starts them through a pattern, as Role.Allowed matches it
+		startAll  = policy("exp/*", nil, "create", "get")
+		startSome = &v1.PolicySpec{
+			Resources: []string{"exp/capture*"}, ResourceNames: []string{"exp-b"}, Verbs: []string{"create"},
+		}
+		stopAll   = policy("*/*", nil, "delete")
+		otherExps = policy("experiments/*", nil, "create")
 	)
 
 	role := func(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
@@ -239,10 +246,14 @@ func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
 			role("Stopper", startStop),
 			role("Anything", anything),
 			role("Viewer", experiments),
+			role("Patterned", startAll),
+			role("Patterned Stopper", startAll, stopAll),
+			role("Other", otherExps),
 		},
 		[]*v1.UserSpec{
 			{Username: "scoped", Role: role("Capturer", startA)},
 			{Username: "viewer", Role: role("Viewer", experiments)},
+			{Username: "patterned", Role: role("Patterned", startSome)},
 		},
 	)
 
@@ -253,6 +264,11 @@ func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
 		"role Viewer":   {experiments},
 		"user scoped":   {startA, policy(captureSubnetResource, []string{"exp-a"}, "delete")},
 		"user viewer":   {experiments},
+
+		"role Patterned":         {startAll, policy(captureSubnetResource, nil, "delete")},
+		"role Patterned Stopper": {startAll, stopAll},
+		"role Other":             {otherExps},
+		"user patterned":         {startSome, policy(captureSubnetResource, []string{"exp-b"}, "delete")},
 	}
 
 	for _, pass := range []string{"first", "repeated"} {
