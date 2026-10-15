@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -9,6 +10,7 @@ import (
 
 	"phenix/api/config"
 	"phenix/api/settings"
+	"phenix/store"
 	"phenix/util/plog"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
@@ -162,15 +164,15 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		[]string{verbGet, verbPatch},
 	)
 
-	if _, err := rbac.GetUser(req.Username); err == nil {
+	user, err := rbac.CreateUser(req.Username, req.Password)
+	if errors.Is(err, store.ErrExist) {
 		http.Error(w, "user already exists", http.StatusConflict)
 
 		return
 	}
 
-	user := rbac.NewUser(req.Username, req.Password)
-	if user == nil {
-		plog.Error(plog.TypeSystem, "creating user", "user", req.Username)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "creating user", "user", req.Username, "err", err)
 		http.Error(w, "error creating user", http.StatusInternalServerError)
 
 		return

@@ -135,10 +135,7 @@ func (e Etcd) Get(c *Config) error {
 
 func (e Etcd) Create(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
-
-	if resp, _ := e.cli.Get(context.Background(), key); resp.Count != 0 {
-		return fmt.Errorf("config %s/%s already exists", c.Kind, c.Metadata.Name)
-	}
+	metadata := c.Metadata
 
 	now := time.Now().Format(time.RFC3339)
 
@@ -150,12 +147,26 @@ func (e Etcd) Create(c *Config) error {
 
 	v, err := json.Marshal(c)
 	if err != nil {
+		c.Metadata = metadata
+
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
 
-	resp, err := e.cli.Put(context.Background(), key, string(v))
+	// the put only happens while the key does not exist, so two creates cannot both succeed
+	resp, err := e.cli.Txn(context.Background()).
+		If(clientv3.Compare(clientv3.CreateRevision(key), "=", 0)).
+		Then(clientv3.OpPut(key, string(v))).
+		Commit()
 	if err != nil {
+		c.Metadata = metadata
+
 		return fmt.Errorf("writing config JSON to Etcd: %w", err)
+	}
+
+	if !resp.Succeeded {
+		c.Metadata = metadata
+
+		return fmt.Errorf("config %s/%s: %w", c.Kind, c.Metadata.Name, ErrExist)
 	}
 
 	c.Metadata.Revision = uint64(resp.Header.GetRevision()) //nolint:gosec // etcd revisions are positive
