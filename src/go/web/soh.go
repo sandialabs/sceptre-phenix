@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -138,7 +139,11 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		states, obs, vmErr := sohVMStates(exp, busy)
+		states, obs, vmErr := sohVMStates(ctx, exp, busy)
+		if requestCanceled(r, vmErr) {
+			return
+		}
+
 		observed = observed.Older(obs)
 
 		summary, err := soh.Summarize(&exp, states, maxSummaryProblems)
@@ -183,7 +188,8 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) {
 // when there are none to read, and when they were read. While minimega is busy
 // starting or stopping an experiment it returns the states it last read,
 // marked stale, rather than wait; with none read yet, they are unknown.
-func sohVMStates(exp types.Experiment, busy bool) (map[string]string, freshness.Observation, error) {
+// Its minimega command gives up once ctx is done (see mm.Context).
+func sohVMStates(ctx context.Context, exp types.Experiment, busy bool) (map[string]string, freshness.Observation, error) {
 	name := exp.Metadata.Name
 
 	// asking minimega about a stopped experiment would recreate its namespace
@@ -209,7 +215,7 @@ func sohVMStates(exp types.Experiment, busy bool) (map[string]string, freshness.
 
 	at := time.Now()
 
-	states, err := mm.GetVMStates(mm.NS(name))
+	states, err := mm.GetVMStates(mm.NS(name), mm.Context(ctx))
 	if err != nil {
 		return nil, freshness.Observation{At: at, Stale: false, Known: false, Err: err},
 			fmt.Errorf("getting VM states: %w", err)

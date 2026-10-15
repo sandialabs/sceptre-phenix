@@ -168,6 +168,23 @@ func (c *Client) send(msg bt.Publish) bool {
 	}
 }
 
+// context returns a context done once the client is gone, for the work of
+// its requests, such as their minimega commands (see mm.Context). cancel
+// must be called once that work is done.
+func (c *Client) context() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		select {
+		case <-c.done:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	return ctx, cancel
+}
+
 func (c *Client) screenshotSize() string {
 	c.shotSizeMu.RLock()
 	defer c.shotSizeMu.RUnlock()
@@ -621,9 +638,15 @@ func (c *Client) listVMs(job listJob) {
 
 	query := parseVMListQuery(payload)
 
+	ctx, cancel := c.context()
+	defer cancel()
+
 	// Screenshots follow the list (see updateScreenshots): minimega
 	// takes them one at a time, which would hold back the whole list.
-	vms, observed := deps.vms(context.Background(), exp)
+	vms, observed := deps.vms(ctx, exp)
+	if ctx.Err() != nil {
+		return
+	}
 	allowed, total := util.SelectVMs(expName, vms, exp.Spec.Topology(), query, c.role)
 
 	c.vmMu.Lock()
@@ -950,16 +973,8 @@ func (c *Client) pushScreenshots() {
 
 	// a client that leaves stops waiting for its screenshots; minimega still
 	// takes the one asked for, and caches it for the next client
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := c.context()
 	defer cancel()
-
-	go func() {
-		select {
-		case <-c.done:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
 
 	for exp, vms := range names {
 		for _, vm := range vms {

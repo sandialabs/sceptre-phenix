@@ -102,7 +102,8 @@ func listRoles() error {
 
 // runMinimega sends a command to minimega, outside any namespace, on a
 // connection of its own bounded by ctx's deadline, so a health probe never
-// waits behind other commands on the shared connection.
+// waits behind other commands on the shared connection, and sends nothing
+// once ctx is done.
 func runMinimega(ctx context.Context, command string) ([]*minicli.Response, error) {
 	cmd := mmcli.NewCommand()
 	cmd.Command = command
@@ -121,7 +122,7 @@ func runMinimega(ctx context.Context, command string) ([]*minicli.Response, erro
 	)
 
 	// every response is read, so the connection is released
-	for resp := range mmcli.Run(cmd) {
+	for resp := range mmcli.RunContext(ctx, cmd) {
 		for _, r := range resp.Resp {
 			if r.Error != "" {
 				if err == nil {
