@@ -2,32 +2,30 @@ package version
 
 import (
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"gopkg.in/yaml.v3"
 )
 
 func TestEmbeddedOpenAPISchemas(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		version string
-		kind    string
-	}{
-		{name: "v0 topology", version: "v0", kind: "Topology"},
-		{name: "v0 workflow", version: "v0", kind: "Workflow"},
-		{name: "v1 experiment", version: "v1", kind: "Experiment"},
-		{name: "v2 scenario", version: "v2", kind: "Scenario"},
+	// Each config kind at its stored version, and Workflow at v0.
+	versions := map[string]string{"Workflow": "v0"}
+	for _, kind := range configKinds {
+		versions[kind] = StoredVersion[kind]
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for kind, ver := range versions {
+		t.Run(ver+" "+kind, func(t *testing.T) {
 			t.Parallel()
 
-			schema, err := GetVersionedSchemaForKind(test.kind, test.version)
+			schema, err := GetVersionedSchemaForKind(kind, ver)
 			if err != nil {
 				t.Fatalf("get schema: %v", err)
 			}
@@ -36,7 +34,7 @@ func TestEmbeddedOpenAPISchemas(t *testing.T) {
 				t.Fatalf("schema type = %v, want object", schema["type"])
 			}
 
-			validator, err := GetVersionedValidatorForKind(test.kind, test.version)
+			validator, err := GetVersionedValidatorForKind(kind, ver)
 			if err != nil {
 				t.Fatalf("get validator: %v", err)
 			}
@@ -46,6 +44,105 @@ func TestEmbeddedOpenAPISchemas(t *testing.T) {
 			}
 		})
 	}
+}
+
+// configKinds are the config kinds, as the Config schema in package types
+// lists them.
+var configKinds = []string{"Topology", "Scenario", "Experiment", "Image", "User", "Role"} //nolint:gochecknoglobals // test table
+
+// TestSchemaFilePerVersion proves each schema file holds exactly the config
+// kinds stored at its version, plus Workflow in v0, so a config validates
+// against the file of its own apiVersion and the UI scaffolds from that same
+// file. Lowercase components are sub-schemas, not kinds.
+func TestSchemaFilePerVersion(t *testing.T) {
+	t.Parallel()
+
+	want := map[string][]string{"v0": {"Workflow"}}
+	for _, kind := range configKinds {
+		ver, ok := StoredVersion[kind]
+		if !ok {
+			t.Fatalf("StoredVersion has no %s", kind)
+		}
+
+		want[ver] = append(want[ver], kind)
+	}
+
+	entries, err := openAPISchemas.ReadDir("schemas")
+	if err != nil {
+		t.Fatalf("reading schemas: %v", err)
+	}
+
+	got := make(map[string][]string, len(entries))
+
+	for _, entry := range entries {
+		ver := strings.TrimSuffix(entry.Name(), ".yaml")
+
+		for name := range schemaComponents(t, ver) {
+			if unicode.IsUpper(rune(name[0])) {
+				got[ver] = append(got[ver], name)
+			}
+		}
+	}
+
+	if len(got) != len(want) {
+		t.Errorf("schema files hold kinds for %d versions, want %d: %v", len(got), len(want), got)
+	}
+
+	for ver, kinds := range want {
+		slices.Sort(kinds)
+		slices.Sort(got[ver])
+
+		if !slices.Equal(got[ver], kinds) {
+			t.Errorf("%s.yaml kinds = %v, want %v", ver, got[ver], kinds)
+		}
+	}
+}
+
+// TestExperimentScenarioMatchesScenario proves the scenario an Experiment
+// embeds, which v1.yaml describes as experiment_scenario, validates exactly
+// like a Scenario config, which v2.yaml describes.
+func TestExperimentScenarioMatchesScenario(t *testing.T) {
+	t.Parallel()
+
+	embedded := schemaComponents(t, "v1")["experiment_scenario"]
+	if embedded == nil {
+		t.Fatal("v1.yaml has no experiment_scenario component")
+	}
+
+	if scenario := schemaComponents(t, "v2")["Scenario"]; !reflect.DeepEqual(embedded, scenario) {
+		t.Errorf("v1.yaml experiment_scenario differs from v2.yaml Scenario:\n got %v\nwant %v", embedded, scenario)
+	}
+
+	experiment, err := GetVersionedValidatorForKind("Experiment", "v1")
+	if err != nil {
+		t.Fatalf("GetVersionedValidatorForKind(Experiment, v1) error = %v", err)
+	}
+
+	if ref := experiment.Properties["scenario"].Ref; ref != "#/components/schemas/experiment_scenario" {
+		t.Errorf("Experiment scenario $ref = %q, want experiment_scenario", ref)
+	}
+}
+
+// schemaComponents parses the component schemas of the schema file for ver.
+func schemaComponents(t *testing.T, ver string) map[string]any {
+	t.Helper()
+
+	text, err := ReadSchemaFile(ver)
+	if err != nil {
+		t.Fatalf("ReadSchemaFile(%s) error = %v", ver, err)
+	}
+
+	var api struct {
+		Components struct {
+			Schemas map[string]any `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+
+	if err := yaml.Unmarshal(text, &api); err != nil {
+		t.Fatalf("parsing %s.yaml: %v", ver, err)
+	}
+
+	return api.Components.Schemas
 }
 
 func TestGetVersionedSchemaForKindRejectsEmptyKind(t *testing.T) {
@@ -67,7 +164,7 @@ func TestReadSchemaFileRejectsUnknownVersion(t *testing.T) {
 
 // TestWorkflowIsSchemaOnly proves the v0 Workflow schema is a validation
 // component only: it is not a stored or decodable config kind, and it is not
-// part of the latest schemas that config validation and the UI use.
+// part of the v1 or v2 schemas that config validation and the UI use.
 func TestWorkflowIsSchemaOnly(t *testing.T) {
 	t.Parallel()
 
@@ -85,8 +182,10 @@ func TestWorkflowIsSchemaOnly(t *testing.T) {
 		t.Error("GetVersionedSpecForKind(Workflow, v0) returned no error")
 	}
 
-	if _, err := GetVersionedValidatorForKind("Workflow", LATEST_VERSION); !errors.Is(err, ErrInvalidKind) {
-		t.Errorf("GetVersionedValidatorForKind(Workflow, %s) error = %v, want ErrInvalidKind", LATEST_VERSION, err)
+	for _, ver := range []string{"v1", "v2"} {
+		if _, err := GetVersionedValidatorForKind("Workflow", ver); !errors.Is(err, ErrInvalidKind) {
+			t.Errorf("GetVersionedValidatorForKind(Workflow, %s) error = %v, want ErrInvalidKind", ver, err)
+		}
 	}
 
 	// GET /api/v1/schemas/workflow/v0 capitalizes the kind, so it serves the schema.

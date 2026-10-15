@@ -344,7 +344,6 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		return errors.New("topology doesn't exist")
 	}
 
-	// This will upgrade the topology to the latest known version if needed.
 	topo, err2 := types.DecodeTopologyFromConfig(*topoC)
 	if err2 != nil {
 		return fmt.Errorf("decoding topology from config: %w", err2)
@@ -443,7 +442,6 @@ func processCreateScenario(
 		return fmt.Errorf("experiment/scenario topology mismatch for scenario %s", scenarioName)
 	}
 
-	// This will upgrade the scenario to the latest known version if needed.
 	plog.Info(plog.TypeSystem, "Creating custom scenario")
 
 	scenario, err2 := types.MakeCustomScenarioFromConfig(*scenarioC, disabledApps)
@@ -1197,7 +1195,7 @@ func Delete(name string) error {
 		return errors.New("cannot delete a running experiment")
 	}
 
-	c, err := config.Get("experiment/"+name, true)
+	c, err := config.Get("experiment/" + name)
 	if err != nil {
 		return fmt.Errorf("getting experiment %s: %w", name, err)
 	}

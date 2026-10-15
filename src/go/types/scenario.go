@@ -11,7 +11,6 @@ import (
 	"phenix/store"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
-	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
 )
 
@@ -29,36 +28,17 @@ func init() { //nolint:gochecknoinits // interface assertion
 }
 
 func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) { //nolint:ireturn // interface
-	var (
-		iface         any
-		latestVersion = version.StoredVersion[c.Kind]
-	)
+	if c.APIVersion() != version.StoredVersion[c.Kind] {
+		return nil, fmt.Errorf("unknown scenario version %s", c.APIVersion())
+	}
 
-	if c.APIVersion() != latestVersion {
-		version := c.Kind + "/" + latestVersion
-		upgrader := GetUpgrader(version)
+	iface, err := version.GetVersionedSpecForKind(c.Kind, c.APIVersion())
+	if err != nil {
+		return nil, fmt.Errorf("getting versioned spec for config: %w", err)
+	}
 
-		if upgrader == nil {
-			return nil, fmt.Errorf("no upgrader found for scenario version %s", latestVersion)
-		}
-
-		var err error
-
-		iface, err = upgrader.Upgrade(c.APIVersion(), c.Spec, c.Metadata)
-		if err != nil {
-			return nil, fmt.Errorf("upgrading scenario to %s: %w", latestVersion, err)
-		}
-	} else {
-		var err error
-
-		iface, err = version.GetVersionedSpecForKind(c.Kind, c.APIVersion())
-		if err != nil {
-			return nil, fmt.Errorf("getting versioned spec for config: %w", err)
-		}
-
-		if err := mapstructure.Decode(c.Spec, &iface); err != nil {
-			return nil, fmt.Errorf("decoding versioned spec: %w", err)
-		}
+	if err := mapstructure.Decode(c.Spec, &iface); err != nil {
+		return nil, fmt.Errorf("decoding versioned spec: %w", err)
 	}
 
 	spec, ok := iface.(ifaces.ScenarioSpec)
@@ -133,7 +113,6 @@ func MergeScenariosForTopology(scenario ifaces.ScenarioSpec, topology string) er
 				return err
 			}
 
-			// This will upgrade the scenario to the latest known version if needed.
 			fromScenario, err := DecodeScenarioFromConfig(*fromScenarioC)
 			if err != nil {
 				return fmt.Errorf("decoding scenario %s from config: %w", app.FromScenario(), err)
@@ -162,57 +141,4 @@ func MergeScenariosForTopology(scenario ifaces.ScenarioSpec, topology string) er
 	}
 
 	return nil
-}
-
-type scenario struct{}
-
-func (scenario) Upgrade(version string, spec map[string]any, md store.ConfigMetadata) (any, error) {
-	if version == "v1" {
-		var (
-			v1Spec = new(v1.ScenarioSpec)
-			v2Spec = new(v2.ScenarioSpec)
-		)
-
-		err := mapstructure.WeakDecode(spec, &v1Spec)
-		if err != nil {
-			return nil, fmt.Errorf("decoding scenario into v1 spec: %w", err)
-		}
-
-		for _, exp := range v1Spec.AppsF.ExperimentF {
-			app := &v2.ScenarioApp{ //nolint:exhaustruct // partial initialization
-				NameF:     exp.NameF,
-				AssetDirF: exp.AssetDirF,
-				MetadataF: exp.MetadataF,
-			}
-
-			v2Spec.AppsF = append(v2Spec.AppsF, app)
-		}
-
-		for _, host := range v1Spec.AppsF.HostF {
-			hosts := make([]*v2.ScenarioAppHost, len(host.HostsF))
-
-			for i, h1 := range host.HostsF {
-				hosts[i] = &v2.ScenarioAppHost{
-					HostnameF: h1.HostnameF,
-					MetadataF: h1.MetadataF,
-				}
-			}
-
-			app := &v2.ScenarioApp{ //nolint:exhaustruct // partial initialization
-				NameF:     host.NameF,
-				AssetDirF: host.AssetDirF,
-				HostsF:    hosts,
-			}
-
-			v2Spec.AppsF = append(v2Spec.AppsF, app)
-		}
-
-		return v2Spec, nil
-	}
-
-	return nil, fmt.Errorf("unknown version %s to upgrade from", version)
-}
-
-func init() { //nolint:gochecknoinits // upgrader registration
-	RegisterUpgrader("Scenario/v2", new(scenario))
 }

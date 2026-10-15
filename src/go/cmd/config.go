@@ -232,9 +232,7 @@ func newConfigGetCmd() *cobra.Command {
 		Args:              configKindArgsValidator(false, false),
 		ValidArgsFunction: configGetArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			upgraded := MustGetBool(cmd.Flags(), "show-upgraded")
-
-			c, err := config.Get(args[0], upgraded)
+			c, err := config.Get(args[0])
 			if err != nil {
 				err := util.HumanizeError(err, "%s", "Unable to get the "+args[0]+" configuration")
 
@@ -287,8 +285,6 @@ func newConfigGetCmd() *cobra.Command {
 
 	cmd.Flags().StringP("output", "o", FormatYAML, "Configuration output format ('yaml' or 'json')")
 	cmd.Flags().BoolP("pretty", "p", false, "Pretty print the JSON output")
-	cmd.Flags().
-		BoolP("show-upgraded", "u", false, "Show upgraded version of config (if not already latest version)")
 
 	return cmd
 }

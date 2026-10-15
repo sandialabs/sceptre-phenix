@@ -27,14 +27,14 @@ Example
 	|    KIND    |       VERSION        |       NAME       |          CREATED          |
 	+------------+----------------------+------------------+---------------------------+
 	| Topology   | phenix.sandia.gov/v1 | foo-bar-topo     | 2020-04-17T12:13:48-06:00 |
-	| Scenario   | phenix.sandia.gov/v1 | foo-bar-scenario | 2020-04-17T12:13:48-06:00 |
+	| Scenario   | phenix.sandia.gov/v2 | foo-bar-scenario | 2020-04-17T12:13:48-06:00 |
 	| Experiment | phenix.sandia.gov/v1 | foobar           | 2020-04-17T12:13:48-06:00 |
 	+------------+----------------------+------------------+---------------------------+
 
 ... or ...
 
 	$> bin/phenix config get scenario/foo-bar-scenario
-	apiVersion: phenix.sandia.gov/v1
+	apiVersion: phenix.sandia.gov/v2
 	kind: Scenario
 	metadata:
 	    name: foo-bar-scenario
@@ -44,27 +44,25 @@ Example
 	        topology: foo-bar-topo
 	spec:
 	    apps:
-	        experiment:
-	          - metadata: {}
-	            name: sink
-	        host:
-	          - hosts:
-	              - hostname: turbine-01
-	                metadata:
-	                    args: -logfile /var/log/protonuke.log -level debug -http -https
-	                        -smtp -ssh 192.168.100.100
-	            name: protonuke
-	          - hosts:
-	              - hostname: turbine-01
-	                metadata:
-	                    infrastructure:
-	                        address: 10.255.255.1/24
-	                        listen_port: 51820
-	                        private_key: GLlxWJom8cQViGHojqOUShWIZG7IsSX8
-	                    peers:
-	                        allowed_ips: 10.255.255.10/32
-	                        public_key: +joyya2F9g72qbKBtPDn00mIevG1j1OqeN76ylFLsiE=
-	            name: wireguard
+	      - metadata: {}
+	        name: sink
+	      - hosts:
+	          - hostname: turbine-01
+	            metadata:
+	                args: -logfile /var/log/protonuke.log -level debug -http -https
+	                    -smtp -ssh 192.168.100.100
+	        name: protonuke
+	      - hosts:
+	          - hostname: turbine-01
+	            metadata:
+	                infrastructure:
+	                    address: 10.255.255.1/24
+	                    listen_port: 51820
+	                    private_key: GLlxWJom8cQViGHojqOUShWIZG7IsSX8
+	                peers:
+	                    allowed_ips: 10.255.255.10/32
+	                    public_key: +joyya2F9g72qbKBtPDn00mIevG1j1OqeN76ylFLsiE=
+	        name: wireguard
 
 ... or ...
 

@@ -368,7 +368,7 @@ func TestPrepareCreate(t *testing.T) {
 			action:  workflow.ActionCreate,
 			setup:   func(m *store.MockStore) { expectPrepareRead(m, "topology/foo", undecodableTopology) },
 			wantErr: workflow.ErrUnresolved,
-			wantMsg: `decoding topology "foo": upgrading topology to v1: unknown version v7`,
+			wantMsg: `decoding topology "foo": unknown topology version v7`,
 		},
 		{
 			name:   "scenario does not exist",
@@ -412,7 +412,7 @@ func TestPrepareCreate(t *testing.T) {
 				expectPrepareRead(m, "scenario/bar", undecodableScenario)
 			},
 			wantErr: workflow.ErrUnresolved,
-			wantMsg: `decoding scenario "bar": upgrading scenario to v2: unknown version v7`,
+			wantMsg: `decoding scenario "bar": unknown scenario version v7`,
 		},
 		{
 			name:   "fromScenario app does not merge",
@@ -1245,18 +1245,6 @@ func TestPendingRef(t *testing.T) {
 			want: "Scenario/bar?topology=foo",
 		},
 		{
-			// A v1 scenario keeps its apps in a map, and the upgrader gives
-			// them no fromScenario.
-			name: "v1 scenario",
-			cfg: store.Config{
-				Version:  "phenix.sandia.gov/v1",
-				Kind:     "Scenario",
-				Metadata: store.ConfigMetadata{Name: "old"},
-				Spec:     map[string]any{"apps": map[string]any{"experiment": []any{}}},
-			},
-			want: "Scenario/old?",
-		},
-		{
 			// The weak decode names an include 7 by its decimal string.
 			name: "topology that includes others",
 			cfg:  withInclude,
@@ -1419,7 +1407,7 @@ func TestPreparePendingMatchesStored(t *testing.T) {
 		notFound  = `decoding topology "foo": loading included topology missing-include: could not find topology missing-include`
 	)
 
-	// The includes pass the v2 Topology schema, which does not declare them,
+	// The includes pass the Topology schema, which does not declare them,
 	// in every form the real apply's weak decode accepts.
 	withInclude := prepareTopology()
 	withInclude.Spec["includeTopologies"] = []any{"missing-include"}

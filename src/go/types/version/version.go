@@ -10,7 +10,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"gopkg.in/yaml.v3"
 
-	v0 "phenix/types/version/v0"
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
 )
@@ -35,8 +34,6 @@ var StoredVersion = map[string]string{ //nolint:gochecknoglobals // global regis
 	"Setting":      "v2",
 }
 
-const LATEST_VERSION = "v2" //nolint:staticcheck // constant name is part of API
-
 // GetStoredSpecForKind looks up the current stored version for the given kind
 // and returns the versioned spec. Internally it calls `GetVersionedSpecForKind`.
 func GetStoredSpecForKind(kind string) (any, error) {
@@ -54,8 +51,6 @@ func GetVersionedSpecForKind(kind, version string) (any, error) {
 	switch kind {
 	case "Topology":
 		switch version {
-		case "v0":
-			return new(v0.TopologySpec), nil
 		case "v1":
 			return new(v1.TopologySpec), nil
 		default:
@@ -63,8 +58,6 @@ func GetVersionedSpecForKind(kind, version string) (any, error) {
 		}
 	case "Scenario":
 		switch version {
-		case "v1":
-			return new(v1.ScenarioSpec), nil
 		case "v2":
 			return new(v2.ScenarioSpec), nil
 		default:
