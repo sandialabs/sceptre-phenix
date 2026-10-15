@@ -103,6 +103,13 @@ func canView(w http.ResponseWriter, r *http.Request, exp string) bool {
 	return false
 }
 
+// mayWrite reports whether the request's role may type into the experiment's
+// SCORCH terminals and stop them, which, like starting a pipeline, needs
+// experiments/trigger create.
+func mayWrite(r *http.Request, exp string) bool {
+	return middleware.RoleFromContext(r.Context()).Allowed("experiments/trigger", "create", exp)
+}
+
 // GetTerminals - GET /experiments/{name}/scorch/terminals.
 func GetTerminals(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTerminal")
@@ -151,7 +158,7 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := initTerminal(exp, run, loop, stage, cmp)
+	t, err := initTerminal(exp, run, loop, stage, cmp, mayWrite(r, exp))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 
@@ -198,11 +205,17 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	close(done)
-
 	mu.Lock()
 	t.RO = rwTerm[pid] != id
 	mu.Unlock()
+
+	if !t.RO && !mayWrite(r, exp) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	close(done)
 
 	plog.Debug(plog.TypeSystem, "starting web terminal streamer", "pid", pid)
 
@@ -218,6 +231,20 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 
 	if !canView(w, r, exp) {
+		return
+	}
+
+	if !mayWrite(r, exp) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"exiting experiment scorch terminal not allowed",
+			"user",
+			r.Context().Value(middleware.ContextKeyUser),
+			"exp",
+			exp,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -400,7 +427,10 @@ func waitReadOnly(t WebTerm, v *viewer) {
 	}
 }
 
-func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error) {
+// initTerminal hands a client of the terminal its stream location. The first
+// client that may write (rw) gets the terminal's read/write side and its exit
+// location; every other client gets a read-only stream.
+func initTerminal(exp string, run, loop int, stage, cmp string, rw bool) (WebTerm, error) {
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
 
 	t, err := GetTerminalByExperiment(key)
@@ -424,7 +454,7 @@ func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error)
 	mu.Lock()
 	defer mu.Unlock()
 
-	if _, ok := rwTerm[t.Pid]; ok {
+	if _, ok := rwTerm[t.Pid]; ok || !rw {
 		t.RO = true
 	} else {
 		rwTerm[t.Pid] = id
@@ -491,7 +521,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 
 	if resp.running {
 		if resp.terminal {
-			t, err := initTerminal(exp, run, loop, stage, cmp)
+			t, err := initTerminal(exp, run, loop, stage, cmp, mayWrite(r, exp))
 			if err != nil {
 				return weberror.NewWebError(err, "unable to initialize terminal")
 			}
