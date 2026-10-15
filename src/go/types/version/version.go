@@ -34,8 +34,6 @@ var StoredVersion = map[string]string{ //nolint:gochecknoglobals // global regis
 	"Setting":      "v2",
 }
 
-const LATEST_VERSION = "v2" //nolint:staticcheck // constant name is part of API
-
 // GetStoredSpecForKind looks up the current stored version for the given kind
 // and returns the versioned spec. Internally it calls `GetVersionedSpecForKind`.
 func GetStoredSpecForKind(kind string) (any, error) {

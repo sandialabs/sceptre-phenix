@@ -1809,7 +1809,7 @@ func TestApplyWorkflowDryRunChecksPendingIncludes(t *testing.T) {
 			wantCause: notFound,
 		},
 		{
-			// The v2 Topology schema does not declare includeTopologies, and
+			// The Topology schema does not declare includeTopologies, and
 			// the real apply's weak decode reads a single value as a list.
 			name:      "single include in neither the directory nor the store",
 			docs:      []string{topology("${BRANCH_NAME}-net")},

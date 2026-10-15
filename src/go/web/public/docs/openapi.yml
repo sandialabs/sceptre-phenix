@@ -259,7 +259,11 @@ paths:
       tags:
         - Schemas
       summary: Get full schema (all config specs) for specific version
-      description: ""
+      description: >
+        Each version's schema file holds the schemas of the config kinds stored
+        at that version, and a config is validated against the file of its own
+        apiVersion: v0 holds Workflow; v1 holds Topology, Experiment, Image,
+        User and Role; v2 holds Scenario.
       operationId: getSchemasVersion
       parameters:
         - name: version
@@ -294,12 +298,27 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        "400":
+          description: unknown version or Accept content type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: getting schemas is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/schemas/{kind}/{version}":
     get:
       tags:
         - Schemas
       summary: Get schema for specific config spec kind/version
-      description: the Workflow schema exists only in version v0, which holds no other kind
+      description: >
+        A kind's schema exists only in the version it is stored at, the version
+        its configs are validated against: Workflow in v0, Scenario in v2, and
+        every other kind in v1.
       operationId: getSchemasKindVersion
       parameters:
         - name: kind
@@ -348,8 +367,22 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        "400":
+          description: unknown Accept content type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: getting this schema is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
-          description: there is no schema for this kind or version
+          description: >
+            there is no schema for this kind or version, such as a v1 kind
+            requested at v2, or an unknown version
           content:
             application/json:
               schema:

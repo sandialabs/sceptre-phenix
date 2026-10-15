@@ -127,10 +127,10 @@ func TestValidateSchemaLookupErrors(t *testing.T) {
 			invalidKind: true,
 		},
 		{
-			name:        "Workflow is not in the latest schemas",
-			component:   "Workflow",
-			ver:         version.LATEST_VERSION,
-			wantPrefix:  "getting validator for config: invalid kind: no schema definition found for version v2 of Workflow",
+			name:        "kind not in that version's schemas",
+			component:   "Topology",
+			ver:         "v2",
+			wantPrefix:  "getting validator for config: invalid kind: no schema definition found for version v2 of Topology",
 			invalidKind: true,
 		},
 		{
@@ -186,4 +186,44 @@ func TestValidateConfigSpecRejectsWorkflowKind(t *testing.T) {
 	}
 
 	assertSchemaError(t, types.ValidateConfigSpec(cfg), []string{"kind"}, "enum")
+}
+
+// TestValidateConfigSpecUsesOwnVersion proves a config validates against the
+// schema file of its own apiVersion: each kind has a schema at its stored
+// version, and a kind at a version whose file does not hold it is a lookup
+// failure, not a validation failure.
+func TestValidateConfigSpecUsesOwnVersion(t *testing.T) {
+	specs := map[string]map[string]any{
+		"Topology":   {"nodes": []any{}},
+		"Scenario":   {"apps": []any{map[string]any{"name": "app"}}},
+		"Experiment": {"topology": map[string]any{"nodes": []any{}}},
+		"Image":      {"format": "qcow2", "mirror": "m", "release": "focal", "size": "10G", "variant": "minbase"},
+		"User":       {"first_name": "John", "last_name": "Doe", "username": "john"},
+		"Role":       {"roleName": "viewer", "policies": []any{}},
+	}
+
+	config := func(kind, ver string) store.Config {
+		return store.Config{
+			Version:  store.APIGroup + "/" + ver,
+			Kind:     kind,
+			Metadata: store.ConfigMetadata{Name: "own-version"},
+			Spec:     specs[kind],
+		}
+	}
+
+	for kind := range specs {
+		t.Run(kind, func(t *testing.T) {
+			stored := version.StoredVersion[kind]
+			if err := types.ValidateConfigSpec(config(kind, stored)); err != nil {
+				t.Errorf("ValidateConfigSpec(%s %s) error = %v", stored, kind, err)
+			}
+
+			other := map[string]string{"v1": "v2", "v2": "v1"}[stored]
+
+			err := types.ValidateConfigSpec(config(kind, other))
+			if !errors.Is(err, types.ErrValidationFailed) || !errors.Is(err, version.ErrInvalidKind) {
+				t.Errorf("ValidateConfigSpec(%s %s) error = %v, want ErrValidationFailed wrapping ErrInvalidKind", other, kind, err)
+			}
+		})
+	}
 }

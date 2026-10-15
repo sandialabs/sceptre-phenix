@@ -48,7 +48,7 @@ equivalents (`phenix vm mount`/`unmount`) are always available.
 ```bash
 phenix config list <kind|all>                      # table of stored configs
 phenix config get <kind>/<name> [-o yaml|json] [-p] # dump a config
-phenix config create </path/to/file.yaml> ...       # create from file(s) or dir; validates against schema
+phenix config create </path/to/file.yaml> ...       # create from file(s) or dir; validates against its apiVersion's schema
 phenix config create --skip-validation <file>       # skip schema validation
 phenix config edit <kind>/<name> [--force]          # open in $EDITOR
 phenix config delete <kind>/<name> ...              # delete one or more specific configs by kind/name
