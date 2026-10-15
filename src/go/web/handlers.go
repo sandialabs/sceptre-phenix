@@ -328,7 +328,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vms := vm.ListFor(context.Background(), exp)
+	// broadcast to every client, so read even once this request's client left
+	vms := vm.ListFor(context.WithoutCancel(ctx), exp)
 
 	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {
@@ -1669,7 +1670,8 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vm, err := vm.GetFor(context.Background(), exp, name)
+	// broadcast to every client, so read even once this request's client left
+	vm, err := vm.GetFor(context.WithoutCancel(ctx), exp, name)
 	if err != nil {
 		http.Error(w, "unable to get VM", http.StatusInternalServerError)
 
@@ -1813,32 +1815,6 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		exp, err := experiment.Get(expName)
-		if err != nil {
-			http.Error(w, "unable to get experiment", http.StatusBadRequest)
-
-			return
-		}
-
-		vm, err := vm.GetFor(context.Background(), exp, vmRequest.GetName())
-		if err != nil {
-			http.Error(w, "unable to get VM", http.StatusInternalServerError)
-
-			return
-		}
-
-		if vm.Running {
-			screenshot, err := util.GetScreenshot(expName, vmRequest.GetName(), defaultScreenshotSize)
-			if err != nil {
-				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-			} else {
-				vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-					screenshot,
-				)
-			}
-		}
-
-		resp.Vms = append(resp.Vms, util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
 		plog.Info(
 			plog.TypeAction,
 			"vm updated",
@@ -1849,6 +1825,51 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			vmRequest.GetName(),
 		)
+
+		// The rest only reads the VM back for the response. Once the client
+		// has left, the remaining VMs are still updated, but not read back.
+		if requestGone(r) {
+			continue
+		}
+
+		exp, err := experiment.Get(expName)
+		if err != nil {
+			http.Error(w, "unable to get experiment", http.StatusBadRequest)
+
+			return
+		}
+
+		vm, err := vm.GetFor(ctx, exp, vmRequest.GetName())
+		if requestCanceled(r, err) {
+			continue
+		}
+
+		if err != nil {
+			http.Error(w, "unable to get VM", http.StatusInternalServerError)
+
+			return
+		}
+
+		if vm.Running {
+			screenshot, err := util.GetScreenshotContext(ctx, expName, vmRequest.GetName(), defaultScreenshotSize)
+			if requestCanceled(r, err) {
+				continue
+			}
+
+			if err != nil {
+				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+			} else {
+				vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+					screenshot,
+				)
+			}
+		}
+
+		resp.Vms = append(resp.Vms, util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
+	}
+
+	if requestGone(r) {
+		return
 	}
 
 	resp.Total = uint32(len(resp.GetVms())) //nolint:gosec // as many VMs as the request named
@@ -2038,8 +2059,9 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the VM details again since redeploying may have changed them.
-	v, err = vm.Get(context.Background(), expName, name)
+	// Get the VM details again since redeploying may have changed them. They
+	// are broadcast to every client, so read even once this request's left.
+	v, err = vm.Get(context.WithoutCancel(ctx), expName, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -2360,10 +2382,15 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 
 	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
 
-	vmCaptures, err := vm.CaptureSubnet(exp, req.GetSubnet(), req.GetVms())
+	vmCaptures, err := vm.CaptureSubnet(ctx, exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
-		plog.Error(plog.TypeSystem, "unable to start subnet capture", "err", err)
 		audit.Failure(r, audit.CaptureStart, "starting subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
+
+		if requestCanceled(r, err) {
+			return
+		}
+
+		plog.Error(plog.TypeSystem, "unable to start subnet capture", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -2421,10 +2448,15 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 
 	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
 
-	vms, err := vm.StopCaptureSubnet(exp, req.GetSubnet(), req.GetVms())
+	vms, err := vm.StopCaptureSubnet(ctx, exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
-		plog.Error(plog.TypeSystem, "unable to stop subnet capture", "err", err)
 		audit.Failure(r, audit.CaptureStop, "stopping subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
+
+		if requestCanceled(r, err) {
+			return
+		}
+
+		plog.Error(plog.TypeSystem, "unable to stop subnet capture", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -2473,7 +2505,11 @@ func GetVMSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshots, err := vm.Snapshots(exp, name)
+	snapshots, err := vm.Snapshots(ctx, exp, name)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		plog.Error(
 			plog.TypeSystem,
@@ -2849,7 +2885,8 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v, err := vm.GetFor(context.Background(), exp, name)
+	// broadcast to every client, so read even once this request's client left
+	v, err := vm.GetFor(context.WithoutCancel(ctx), exp, name)
 	if err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/commit", "create", fullName),

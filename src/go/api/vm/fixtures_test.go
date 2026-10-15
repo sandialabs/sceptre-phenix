@@ -49,6 +49,9 @@ type fakeMM struct {
 
 	startErr, stopErr error
 
+	// called as each capture starts or stops, before it reports its error
+	onCapture func()
+
 	starts, stops, connects, tagUpdates, captureListings int
 }
 
@@ -69,11 +72,19 @@ func (m *fakeMM) GetExperimentCaptures(...mm.Option) []mm.Capture {
 func (m *fakeMM) StartVMCapture(...mm.Option) error {
 	m.starts++
 
+	if m.onCapture != nil {
+		m.onCapture()
+	}
+
 	return m.startErr
 }
 
 func (m *fakeMM) StopVMCapture(...mm.Option) error {
 	m.stops++
+
+	if m.onCapture != nil {
+		m.onCapture()
+	}
 
 	return m.stopErr
 }

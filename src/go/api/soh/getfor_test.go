@@ -37,7 +37,7 @@ func TestGetForStoppedExperimentShowsItsTopology(t *testing.T) {
 		Status: &v1.ExperimentStatus{},
 	}
 
-	network, err := GetFor(exp, "")
+	network, err := GetFor(t.Context(), exp, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestGetForStoppedExperimentShowsItsTopology(t *testing.T) {
 		t.Errorf("unexpected states: %+v", network.Nodes)
 	}
 
-	filtered, err := GetFor(exp, "notboot")
+	filtered, err := GetFor(t.Context(), exp, "notboot")
 	if err != nil {
 		t.Fatal(err)
 	}

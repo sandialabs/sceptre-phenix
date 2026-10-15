@@ -53,26 +53,32 @@ func TopologySearchIndex(exp string) (TopologySearch, error) {
 		}
 	}
 
-	_, search := topologyFor(stored, nil)
+	_, search, err := topologyFor(context.Background(), stored, nil)
 
-	return search, nil
+	return search, err
 }
 
-func Topology(exp string, ignore []string) (topology, error) {
+// Topology returns the experiment's network topology. Once ctx is done, its
+// minimega commands give up (see mm.Context) and it returns an error wrapping
+// ctx's error.
+func Topology(ctx context.Context, exp string, ignore []string) (topology, error) {
 	stored, err := experiment.Get(exp)
 	if err != nil {
 		return topology{}, fmt.Errorf("getting VMs: getting experiment %s: %w", exp, err)
 	}
 
-	topo, _ := topologyFor(stored, ignore)
+	topo, _, err := topologyFor(ctx, stored, ignore)
 
-	return topo, nil
+	return topo, err
 }
 
 // topologyFor is Topology for an experiment read from the store, also
-// returning its search index.
-func topologyFor(stored *types.Experiment, ignore []string) (topology, TopologySearch) {
-	vms := ListFor(context.Background(), stored)
+// returning its search index, which is cached unless ctx is done.
+func topologyFor(ctx context.Context, stored *types.Experiment, ignore []string) (topology, TopologySearch, error) {
+	vms := ListFor(ctx, stored)
+	if err := ctx.Err(); err != nil {
+		return topology{}, TopologySearch{}, fmt.Errorf("listing VMs of experiment %s: %w", stored.Metadata.Name, err)
+	}
 
 	var (
 		networks = make(map[string]mm.VM)
@@ -151,5 +157,5 @@ func topologyFor(stored *types.Experiment, ignore []string) (topology, TopologyS
 		_ = cache.SetWithExpire(cacheKey, search, topologySearchTTL)
 	}
 
-	return topology{Nodes: nodes, Edges: edges, Running: stored.Running()}, search
+	return topology{Nodes: nodes, Edges: edges, Running: stored.Running()}, search, nil
 }

@@ -1050,7 +1050,7 @@ func newVMCaptureCmd() *cobra.Command {
 				}
 			}
 
-			vms, err := vm.CaptureSubnet(expName, subnet, vmList)
+			vms, err := vm.CaptureSubnet(context.Background(), expName, subnet, vmList)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
@@ -1206,7 +1206,7 @@ func newVMCaptureCmd() *cobra.Command {
 				}
 			}
 
-			if _, err := vm.StopCaptureSubnet(expName, subnet, vmList); err != nil {
+			if _, err := vm.StopCaptureSubnet(context.Background(), expName, subnet, vmList); err != nil {
 				err := util.HumanizeError(
 					err,
 					"%s",
@@ -1232,7 +1232,7 @@ func newVMCaptureCmd() *cobra.Command {
 
 			expName := args[0]
 
-			if _, err := vm.StopCaptureSubnet(expName, "", []string{}); err != nil {
+			if _, err := vm.StopCaptureSubnet(context.Background(), expName, "", []string{}); err != nil {
 				err := util.HumanizeError(
 					err,
 					"%s",
