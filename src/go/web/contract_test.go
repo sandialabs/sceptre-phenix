@@ -336,7 +336,7 @@ func contractRoutes() []contractRoute {
 		{method: "HEAD", path: "/api/v1/disks/download?disk=" + contractDisk, need: one(diskGet)},
 		{
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=copy",
-			need: one(testRole("disks", "create", "copy.qcow2")),
+			need: []rbac.Role{testRole("disks", "create", "copy.qcow2"), diskGet},
 		},
 
 		// consoles: a user reaches only their own
