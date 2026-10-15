@@ -1263,9 +1263,10 @@ func Files(name, filter string) (file.Files, error) {
 
 // FilesObserved is Files, also reporting when the listing was read from
 // minimega. It returns an error, not a partial listing, when a cluster node
-// could not be listed.
-func FilesObserved(name, filter string) (file.Files, freshness.Observation, error) {
-	return file.GetExperimentFilesObserved(name, filter) //nolint:wrapcheck // passthrough
+// could not be listed, or when ctx ended while the listing waited for
+// minimega (see file.GetExperimentFilesObserved).
+func FilesObserved(ctx context.Context, name, filter string) (file.Files, freshness.Observation, error) {
+	return file.GetExperimentFilesObserved(ctx, name, filter) //nolint:wrapcheck // passthrough
 }
 
 // InvalidateFiles makes the next Files call list the experiment's files anew,

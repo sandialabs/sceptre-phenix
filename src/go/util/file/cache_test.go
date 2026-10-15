@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/activeshadow/libminimega/minicli"
 
 	"phenix/util/mm/mmtest"
+	"phenix/util/polltest"
 )
 
 // newTestCache returns a listing cache whose listings expire only when a test
@@ -451,7 +453,8 @@ func TestListingErrorsPropagate(t *testing.T) {
 
 	var files MMClusterFiles
 
-	if listed, _, err := files.GetExperimentFilesObserved("exp", ""); err == nil || !strings.Contains(err.Error(), "timed out") {
+	listed, _, err := files.GetExperimentFilesObserved(t.Context(), "exp", "")
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("listing with a node timing out = %v, %v; want its error", listed, err)
 	}
 
@@ -459,13 +462,79 @@ func TestListingErrorsPropagate(t *testing.T) {
 
 	before := time.Now()
 
-	listed, first, err := files.GetExperimentFilesObserved("exp", "")
+	listed, first, err := files.GetExperimentFilesObserved(t.Context(), "exp", "")
 	if err != nil || len(listed) != 1 || first.At.Before(before) || !first.Known {
 		t.Fatalf("listing once the node answers = %v, %+v, %v; want notes.txt, read now", listed, first, err)
 	}
 
-	_, again, err := files.GetExperimentFilesObserved("exp", "")
+	_, again, err := files.GetExperimentFilesObserved(t.Context(), "exp", "")
 	if err != nil || !again.At.Equal(first.At) {
 		t.Fatalf("reused listing observed at %v, %v; want the first's %v", again.At, err, first.At)
+	}
+}
+
+// A caller whose context ends while it waits for another's listing returns at
+// once, and the listing goes on for the callers still waiting. Once none is
+// left, the listing's context is canceled, and a later call lists anew.
+func TestListingCacheCancelsAListingNoOneWaitsFor(t *testing.T) {
+	var (
+		cache      = newTestCache()
+		running    = make(chan context.Context, 1)
+		leaderDone = make(chan error, 1)
+		joinedDone = make(chan error, 1)
+
+		leaderCtx, cancelLeader = context.WithCancel(t.Context())
+		joinedCtx, cancelJoined = context.WithCancel(t.Context())
+	)
+
+	t.Cleanup(cancelLeader)
+	t.Cleanup(cancelJoined)
+
+	go func() {
+		_, _, err := cache.getContext(leaderCtx, "k", func(ctx context.Context) (Files, error) {
+			running <- ctx
+			<-ctx.Done()
+
+			return nil, ctx.Err()
+		})
+		leaderDone <- err
+	}()
+
+	listCtx := <-running
+
+	go func() {
+		_, _, err := cache.getContext(joinedCtx, "k", func(context.Context) (Files, error) { return nil, nil })
+		joinedDone <- err
+	}()
+
+	polltest.Until(t, "the second caller waits for the listing", func() bool {
+		cache.mu.Lock()
+		defer cache.mu.Unlock()
+
+		l, ok := cache.entries["k"]
+
+		return ok && l.waiting == 2
+	})
+
+	cancelJoined()
+
+	if err := <-joinedDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the caller that left got %v, want %v", err, context.Canceled)
+	}
+
+	if err := listCtx.Err(); err != nil {
+		t.Fatalf("the listing's context ended (%v) while its first caller still waited", err)
+	}
+
+	cancelLeader()
+
+	if err := <-leaderDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the first caller got %v, want its listing's %v", err, context.Canceled)
+	}
+
+	var calls atomic.Int32
+
+	if _, _, err := cache.get("k", countingList(&calls, nil)); err != nil || calls.Load() != 1 {
+		t.Fatalf("call after the canceled listing: err %v, %d listings; want its own", err, calls.Load())
 	}
 }

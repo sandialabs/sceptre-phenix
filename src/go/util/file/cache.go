@@ -1,7 +1,9 @@
 package file
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -55,6 +57,12 @@ type listingCache struct {
 type listing struct {
 	done chan struct{}
 
+	// cancel cancels the run's context; waiting counts the callers still
+	// waiting for the run in flight, whose context is not done. Both are
+	// guarded by the cache's mu.
+	cancel  context.CancelFunc
+	waiting int
+
 	// set before done is closed, read only after
 	files Files
 	err   error // errListingAborted if list did not return
@@ -67,28 +75,63 @@ func newListingCache(ttl time.Duration) *listingCache {
 	return &listingCache{ttl: ttl, mu: sync.Mutex{}, entries: make(map[string]*listing)}
 }
 
-// get returns the listing for key: a copy of a recent one, the result of an
-// identical one in flight, or a fresh one from list, with when that listing
-// started. A failed listing is returned to its waiters but never reused. If
-// list panics, the panic carries on up the caller that ran it, and every
-// caller waiting on the listing gets errListingAborted.
+// get is getContext for a caller that waits however long the listing takes.
 func (c *listingCache) get(key string, list func() (Files, error)) (Files, time.Time, error) {
+	return c.getContext(context.Background(), key, func(context.Context) (Files, error) { return list() })
+}
+
+// getContext returns the listing for key: a copy of a recent one, the result
+// of an identical one in flight, or a fresh one from list, with when that
+// listing started. A failed listing is returned to its waiters but never
+// reused. If list panics, the panic carries on up the caller that ran it, and
+// every caller waiting on the listing gets errListingAborted.
+//
+// list runs with a context of its own, canceled once every caller waiting for
+// the listing has stopped because the caller's ctx is done, so a listing no
+// one waits for gives up its queued minimega commands (see mmcli.RunContext).
+// A caller waiting for another's listing returns ctx's error as soon as ctx
+// is done; the caller running list returns once list does.
+func (c *listingCache) getContext(
+	ctx context.Context,
+	key string,
+	list func(ctx context.Context) (Files, error),
+) (Files, time.Time, error) {
 	c.mu.Lock()
 
 	if l, ok := c.entries[key]; ok && !c.expired(l) {
+		select {
+		case <-l.done:
+			c.mu.Unlock()
+
+			return cloneFiles(l.files), l.started, l.err
+		default:
+		}
+
+		stop := c.join(ctx, key, l)
+
 		c.mu.Unlock()
 
-		<-l.done
+		defer stop()
 
-		return cloneFiles(l.files), l.started, l.err
+		select {
+		case <-l.done:
+			return cloneFiles(l.files), l.started, l.err
+		case <-ctx.Done():
+			return nil, time.Time{}, fmt.Errorf("waiting for the file listing: %w", ctx.Err())
+		}
 	}
 
 	c.prune()
 
-	l := &listing{done: make(chan struct{}), files: nil, err: nil, started: time.Now()}
+	listCtx, cancel := context.WithCancel(context.Background())
+
+	l := &listing{done: make(chan struct{}), files: nil, err: nil, started: time.Now(), cancel: cancel, waiting: 0}
 	c.entries[key] = l
+	stop := c.join(ctx, key, l)
 
 	c.mu.Unlock()
+
+	defer stop()
 
 	completed := false
 
@@ -108,13 +151,38 @@ func (c *listingCache) get(key string, list func() (Files, error)) (Files, time.
 
 		c.mu.Unlock()
 
+		cancel()
 		close(l.done)
 	}()
 
-	l.files, l.err = list()
+	l.files, l.err = list(listCtx)
 	completed = true
 
 	return cloneFiles(l.files), l.started, l.err
+}
+
+// join counts a caller waiting for l, a listing in flight, until the caller's
+// ctx is done. Once no caller is left waiting, l is dropped, so no later
+// caller joins a listing no one waits for, and its context is canceled. The
+// returned function stops the count's watch on ctx, once the caller is done
+// waiting. c.mu must be held.
+func (c *listingCache) join(ctx context.Context, key string, l *listing) func() bool {
+	l.waiting++
+
+	return context.AfterFunc(ctx, func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+
+		if l.waiting--; l.waiting > 0 {
+			return
+		}
+
+		if c.entries[key] == l {
+			delete(c.entries, key)
+		}
+
+		l.cancel()
+	})
 }
 
 // expired reports whether a finished listing is too old to reuse. A listing in

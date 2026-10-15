@@ -64,10 +64,10 @@ A command that waits more than 10 minutes for that connection, or holds it for
 more than 30 minutes, fails with `timeout running command`, so one stuck
 command cannot hold up every other one for good. minimega still finishes a
 command phēnix stopped waiting for. A command still waiting its turn for a
-VM, capture or state of health request whose client went away (a closed page,
-say), or for a bulk VM action job that was canceled, is withdrawn without being
-sent; an action made of several commands is withdrawn only before its first
-change, so it is never left half done. Long-running work, such as an
+VM, capture, file list or state of health request whose client went away (a
+closed page, say), or for a bulk VM action job that was canceled, is withdrawn
+without being sent; an action made of several commands is withdrawn only
+before its first change, so it is never left half done. Long-running work, such as an
 experiment's start script and VM launches, uses connections of its own and is
 not limited this way. Seeing this error usually means minimega itself is
 stuck or overloaded: check `minimega -e version` and the minimega log on the
