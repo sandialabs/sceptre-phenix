@@ -47,11 +47,14 @@ const whole = (job) =>
 const waiters = new Map();
 
 // fails the promises waiting for a job the server no longer has, as after it
-// restarts, so the pages awaiting them stop waiting
-function forget(id) {
-  const error = new Error(
+// restarts, or for any job once the user signs out, so the pages awaiting them
+// stop waiting, and polling
+function forget(
+  id,
+  error = new Error(
     `The server no longer has job ${id}; it may have restarted`,
-  );
+  ),
+) {
   for (const { reject } of waiters.get(id) ?? []) reject(error);
   waiters.delete(id);
 }
@@ -205,11 +208,17 @@ export const useJobStore = defineStore('jobs', {
       link.remove();
     },
 
-    // forgets every job, as on sign-out
+    // forgets every job, as on sign-out, failing whatever waits for one
     clear() {
       this.jobs = {};
       this.loaded = false;
-      waiters.clear();
+      // canceled on purpose, so error reports leave it out, as for a
+      // request canceled when the user leaves a page
+      const error = Object.assign(
+        new Error('Signed out while waiting for the job'),
+        { code: 'ERR_CANCELED' },
+      );
+      for (const id of [...waiters.keys()]) forget(id, error);
     },
   },
 });
