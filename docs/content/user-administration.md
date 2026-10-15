@@ -847,6 +847,12 @@ spec:
     - delete
 ```
 
+!!! note
+    Assigning this role once left the `vms/mount` policy without resource
+    names, so those users could not mount their VMs. When the UI server
+    starts it gives that policy, in the role of every user assigned
+    `Experiment Viewer`, the names of the user's `vms` policy.
+
 #### VM Admin (`vm-admin`)
 
 ```yaml
