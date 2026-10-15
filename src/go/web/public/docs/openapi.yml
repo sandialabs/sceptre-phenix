@@ -1181,6 +1181,10 @@ paths:
           description: a path is not one of the experiment's files
         "413":
           description: more than 500 files, or more than 2 GiB in total
+        "429":
+          description: >-
+            too many of the user's jobs, or of all jobs, are waiting to run;
+            `Retry-After` says when to try again
   "/experiments/{name}/files/delete":
     post:
       tags:
@@ -1830,6 +1834,10 @@ paths:
           description: an unknown action, a malformed body, or no VMs or more than 1000
         "403":
           description: the role may take the action on none of the VMs
+        "429":
+          description: >-
+            too many of the user's jobs, or of all jobs, are waiting to run;
+            `Retry-After` says when to try again
   "/experiments/{exp_name}/vms/{vm_name}":
     get:
       tags:
@@ -3121,6 +3129,10 @@ paths:
           description: no such image, or no folder for the new one
         "409":
           description: the new image exists already
+        "429":
+          description: >-
+            too many of the user's jobs, or of all jobs, are waiting to run;
+            `Retry-After` says when to try again
   "/disks/rename":
     post:
       tags:

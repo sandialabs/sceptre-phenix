@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"phenix/api/job"
+	"phenix/web/middleware"
 )
 
 // useJobs gives the test a job registry of its own, keeping artifacts in a
@@ -403,5 +404,31 @@ func TestCancelJobOfNoExperiment(t *testing.T) {
 
 	if resp := do(t, http.MethodPost, admin.URL+cancelURL, ""); resp.StatusCode != http.StatusAccepted {
 		t.Errorf("jobs/global admin canceling: %d, want 202", resp.StatusCode)
+	}
+}
+
+// A job refused because too many are waiting answers 429 with Retry-After.
+//
+//nolint:paralleltest // replaces the job registry
+func TestStartJobAnswersQueueFull(t *testing.T) {
+	r := useJobsIn(t, t.TempDir(), job.WithLimits(1, 1), job.WithQueueLimits(0, 0))
+	release := make(chan struct{})
+
+	t.Cleanup(func() { close(release) })
+
+	startTestJob(t, r, "alice", "", release, "")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", nil)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyUser, "alice"))
+	rec := httptest.NewRecorder()
+
+	startJob(rec, req, job.Spec{Kind: "test", Run: func(context.Context, *job.Run) error { return nil }})
+
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Errorf("status %d, Retry-After %q, want 429 with one", rec.Code, rec.Header().Get("Retry-After"))
+	}
+
+	if s := r.Stats(); s.Queued != 0 || s.Running != 1 {
+		t.Errorf("stats %+v, want the one running job only", s)
 	}
 }

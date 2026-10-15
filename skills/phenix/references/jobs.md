@@ -18,7 +18,9 @@ Code: `src/go/api/job` (registry), `src/go/web/jobs.go` (routes).
 - `progress`: `{done, total, bytes, bytesTotal}`; `artifact`: `{name, size,
   incomplete}` for a file to download.
 - `revision` increases on every change; keep the highest.
-- Limits: 4 running jobs per user, 16 in all, the rest `queued` FIFO. A
+- Limits: 4 running jobs per user, 16 in all, the rest `queued` FIFO; at
+  most 32 queued per user and 256 in all, beyond which starting a job that
+  would queue answers `429` with `Retry-After`. A
   finished job is kept 1 h, at most 200; `DELETE` dismisses it at once.
 
 ## Routes

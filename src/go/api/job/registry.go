@@ -27,6 +27,11 @@ const (
 	DefaultPerOwner = 4
 	// DefaultGlobal is the most jobs running at once in all.
 	DefaultGlobal = 16
+	// DefaultQueuedPerOwner is the most jobs of one owner waiting to run;
+	// Start refuses more with ErrQueueFull.
+	DefaultQueuedPerOwner = 32
+	// DefaultQueuedGlobal is the most jobs waiting to run in all.
+	DefaultQueuedGlobal = 256
 	// NotifyInterval is the least time between two notifications of a job's
 	// progress.
 	NotifyInterval = 250 * time.Millisecond
@@ -72,6 +77,12 @@ func WithMaxFinished(n int) Option {
 // all; the others wait, queued.
 func WithLimits(perOwner, global int) Option {
 	return func(r *Registry) { r.perOwner, r.global = perOwner, global }
+}
+
+// WithQueueLimits has at most perOwner jobs of each owner, and global in all,
+// wait to run; Start refuses more with ErrQueueFull.
+func WithQueueLimits(perOwner, global int) Option {
+	return func(r *Registry) { r.queuedPerOwner, r.queuedGlobal = perOwner, global }
 }
 
 // WithClock has the registry read the time from now, for the jobs' times and
@@ -123,9 +134,12 @@ type Registry struct {
 	maxFinished int
 	perOwner    int
 	global      int
-	now         func() time.Time
-	artifactDir string
-	interval    time.Duration
+	// the most jobs waiting to run, for each owner and in all
+	queuedPerOwner int
+	queuedGlobal   int
+	now            func() time.Time
+	artifactDir    string
+	interval       time.Duration
 
 	wg       sync.WaitGroup
 	sweeping sync.Once
@@ -155,15 +169,17 @@ type entry struct {
 // change.
 func NewRegistry(opts ...Option) *Registry {
 	r := &Registry{ //nolint:exhaustruct // zero values are ready
-		jobs:        make(map[string]*entry),
-		runningBy:   make(map[string]int),
-		retention:   DefaultRetention,
-		maxFinished: DefaultMaxFinished,
-		perOwner:    DefaultPerOwner,
-		global:      DefaultGlobal,
-		now:         time.Now,
-		interval:    NotifyInterval,
-		done:        make(chan struct{}),
+		jobs:           make(map[string]*entry),
+		runningBy:      make(map[string]int),
+		retention:      DefaultRetention,
+		maxFinished:    DefaultMaxFinished,
+		perOwner:       DefaultPerOwner,
+		global:         DefaultGlobal,
+		queuedPerOwner: DefaultQueuedPerOwner,
+		queuedGlobal:   DefaultQueuedGlobal,
+		now:            time.Now,
+		interval:       NotifyInterval,
+		done:           make(chan struct{}),
 	}
 
 	for _, opt := range opts {
@@ -184,7 +200,9 @@ func (r *Registry) Configure(opts ...Option) {
 }
 
 // Start adds a job and runs it as soon as the limits allow: at once, or
-// queued until a slot frees. It returns the job as added.
+// queued until a slot frees. It returns the job as added, or ErrQueueFull,
+// adding nothing, when the job would have to wait and its owner, or the
+// registry, already has as many jobs waiting as the queue limits allow.
 func (r *Registry) Start(spec Spec) (Job, error) {
 	if spec.Run == nil {
 		return Job{}, errors.New("starting job: no work given")
@@ -198,6 +216,13 @@ func (r *Registry) Start(spec Spec) (Job, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	r.mu.Lock()
+
+	if !r.canStart(spec.Owner) && !r.canQueue(spec.Owner) {
+		r.mu.Unlock()
+		cancel()
+
+		return Job{}, ErrQueueFull
+	}
 
 	now := r.now()
 	r.seq++
@@ -510,6 +535,23 @@ func (r *Registry) forceCancel(id string) {
 	r.mu.Unlock()
 
 	_, _ = r.Cancel(id)
+}
+
+// canQueue reports whether a job of owner may wait to run. r.mu is held.
+func (r *Registry) canQueue(owner string) bool {
+	if len(r.queue) >= r.queuedGlobal {
+		return false
+	}
+
+	var queued int
+
+	for _, e := range r.queue {
+		if e.job.Owner == owner {
+			queued++
+		}
+	}
+
+	return queued < r.queuedPerOwner
 }
 
 // canStart reports whether a job of owner may run now. r.mu is held.

@@ -154,6 +154,14 @@ func startJob(w http.ResponseWriter, r *http.Request, spec job.Spec) {
 	spec.Owner = middleware.UserFromContext(r.Context())
 
 	j, err := jobs.Start(spec)
+	if errors.Is(err, job.ErrQueueFull) {
+		plog.Warn(plog.TypeSystem, "job queue full", "kind", spec.Kind, "user", spec.Owner)
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, err.Error(), http.StatusTooManyRequests)
+
+		return
+	}
+
 	if err != nil {
 		plog.Error(plog.TypeSystem, "starting job", "kind", spec.Kind, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

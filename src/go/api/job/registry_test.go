@@ -833,3 +833,51 @@ func TestRemoveStaleArtifacts(t *testing.T) {
 		}
 	}
 }
+
+// A job that would have to wait is refused, adding nothing, once its owner or
+// everyone has as many jobs waiting as the queue limits allow; one that can
+// run at once is not.
+func TestQueueLimitsRefuseJobs(t *testing.T) {
+	t.Parallel()
+
+	r := newTestRegistry(t, WithLimits(1, 2), WithQueueLimits(1, 2))
+	release := make(chan struct{})
+
+	t.Cleanup(func() { close(release) })
+
+	start := func(owner string) (Job, error) {
+		return r.Start(Spec{Kind: "test", Owner: owner, Cancelable: true, Run: func(ctx context.Context, _ *Run) error {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+
+			return nil
+		}})
+	}
+
+	for _, tc := range []struct {
+		owner string
+		want  Status
+	}{
+		{"alice", StatusRunning},
+		{"alice", StatusQueued},
+		{"alice", ""}, // alice has a job waiting
+		{"bob", StatusRunning},
+		{"bob", StatusQueued},
+		{"carol", ""}, // two jobs are waiting
+	} {
+		j, err := start(tc.owner)
+
+		switch {
+		case tc.want == "" && !errors.Is(err, ErrQueueFull):
+			t.Errorf("%s's job: %v, want ErrQueueFull", tc.owner, err)
+		case tc.want != "" && (err != nil || j.Status != tc.want):
+			t.Errorf("%s's job: %s, %v, want %s", tc.owner, j.Status, err, tc.want)
+		}
+	}
+
+	if s := r.Stats(); s.Running != 2 || s.Queued != 2 {
+		t.Errorf("stats %+v, want 2 running and 2 queued", s)
+	}
+}
