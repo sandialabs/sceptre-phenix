@@ -2282,6 +2282,104 @@ paths:
           description: forbidden
         "404":
           description: the interface is not being captured
+  "/experiments/{exp_name}/vms/{vm_name}/files/download":
+    get:
+      tags:
+        - Virtual Machines
+      summary: Download a file from a mounted VM
+      description: >-
+        Streams a file from the VM's mounted disk, mounted with
+        `POST /experiments/{exp_name}/vms/{vm_name}/mount`, as an attachment.
+        Downloads resume with `Range` and `If-Range`, as other downloads do.
+        Served only while the `vm-mount` feature is on. Needs the `vms/mount`
+        `get` permission on `<exp>/<vm>`.
+      operationId: getExperimentsNameVmsNameFilesDownload
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: vm_name
+          in: path
+          description: name of the mounted VM
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: the file, relative to the root of the VM's mount
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the file
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          description: the VM is not mounted, or the path is a folder or outside the mount
+        "403":
+          description: forbidden
+        "404":
+          description: no such file
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+    head:
+      tags:
+        - Virtual Machines
+      summary: Check a mounted VM file download
+      description: >-
+        The GET response's headers without the file: its size
+        (Content-Length), `ETag` and `Last-Modified`. Needs the `vms/mount`
+        `get` permission on `<exp>/<vm>`.
+      operationId: headExperimentsNameVmsNameFilesDownload
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: vm_name
+          in: path
+          description: name of the mounted VM
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: the file, relative to the root of the VM's mount
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the file's headers
+        "400":
+          description: the VM is not mounted, or the path is a folder or outside the mount
+        "403":
+          description: forbidden
+        "404":
+          description: no such file
   "/experiments/{exp_name}/vms/{vm_name}/snapshots":
     get:
       tags:
@@ -3975,6 +4073,56 @@ paths:
           description: the name is empty, is not a bare file name, or starts with a dot
         "404":
           description: no such build is installed on this server
+  "/webshark/streams/{token}":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Virtual Machines
+      summary: Stream a running VM packet capture with a stream token
+      description: >-
+        Streams the running capture a `pcs_` stream token from
+        `POST /experiments/{exp_name}/capture-tokens` names, as
+        `GET /experiments/{exp_name}/vms/{vm_name}/captures/{interface}/stream`
+        does, for a command outside the browser, such as `curl -fsSN
+        '<origin>/webshark/streams/<token>' | wireshark -k -i -`. Served from
+        the server root, under the base path when there is one, rather than
+        under `/api/v1`, and the token is its only credential: it needs no
+        session token, and each use checks again that the token's user may
+        still read the capture. The stream ends when the token does.
+      operationId: getWebsharkStreamsToken
+      parameters:
+        - name: token
+          in: path
+          description: the stream token
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: "`now` to skip packets captured before the request"
+          required: false
+          schema:
+            type: string
+            enum: [now]
+      responses:
+        "200":
+          description: the capture, streamed as it grows
+          content:
+            application/vnd.tcpdump.pcap:
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: >-
+            a proxy that names its user named another user than the token's
+        "404":
+          description: >-
+            no such token, or one that has ended, been revoked, or whose user
+            may no longer read the capture, or the interface is no longer
+            being captured
+        "503":
+          description: the token's user's access could not be checked
   "/healthz":
     servers:
       - url: http://localhost:3000
