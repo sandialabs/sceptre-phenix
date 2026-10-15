@@ -160,6 +160,7 @@ All notable changes to this project will be documented in this file.
 - **API routes**: An unknown `/api/v1` path answered with the web UI's page instead of 404, and an authenticated `OPTIONS` request ran the route's action, such as a delete.
 - **Base path**: The `Location` header of a config created, updated or upserted through `POST /workflow/configs/{branch}` left out the base path phēnix is served behind.
 - **JSON responses**: `GET /features`, `GET /version` and the console routes sent their JSON as `text/plain`.
+- **Experiment update**: `PATCH /experiments/{name}` answered 200 instead of 204, and 500 instead of 404 for an unknown experiment or 400 for a malformed body.
 
 ## [1.0.0]
 
