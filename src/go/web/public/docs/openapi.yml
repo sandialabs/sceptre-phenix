@@ -6376,9 +6376,9 @@ paths:
       summary: Change the web UI settings
       description: >-
         Replaces every setting with the body's, which take effect at once. A
-        field the body leaves out is set to its zero value, so send them all,
-        as `GET /settings` returns them. Needs the `settings` `update`
-        permission.
+        field the body leaves out is set to its zero value, which
+        `min_length` refuses, so send them all, as `GET /settings` returns
+        them. Needs the `settings` `update` permission.
       operationId: postSettings
       requestBody:
         required: true
@@ -6390,13 +6390,15 @@ paths:
         "200":
           description: the settings were changed
         "400":
-          description: the body is not settings
+          description: >-
+            the body is not settings, or its password minimum length is not
+            from 8 to 32; no setting is changed
         "403":
           description: forbidden
         "500":
           description: >-
-            a setting could not be saved, or the password minimum length is
-            not from 8 to 32
+            a setting could not be saved; the settings saved before it keep
+            their new values
   "/settings/password":
     get:
       tags:

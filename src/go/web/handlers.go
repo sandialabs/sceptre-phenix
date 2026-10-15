@@ -3461,6 +3461,12 @@ func SetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = settings.UpdateAllSettings(*s)
+	if errors.Is(err, settings.ErrPasswordMinLength) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Updating all settings", "err", err)
 		http.Error(w, "Error updating settings", http.StatusInternalServerError)
