@@ -75,3 +75,26 @@ func TestUploadExperimentFilesIsAudited(t *testing.T) {
 
 	wantDenied(t, events(), "file-upload")
 }
+
+// An upload drops the experiment's cached file listing, so the Files tab
+// shows the new file at once rather than once the listing expires.
+func TestUploadExperimentFilesRefreshesTheListing(t *testing.T) {
+	useTestStore(t, testExperiment(t, ""))
+	useExperimentFilesDir(t, nil)
+
+	var invalidated []string
+
+	original := invalidateExperimentFiles
+	invalidateExperimentFiles = func(exp string) { invalidated = append(invalidated, exp) }
+
+	t.Cleanup(func() { invalidateExperimentFiles = original })
+
+	rec := uploadToFileServer(t, testRole("experiments/files", "create", "test-experiment"), "notes.txt", "hello")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload: status %d: %s", rec.Code, rec.Body)
+	}
+
+	if len(invalidated) != 1 || invalidated[0] != "test-experiment" {
+		t.Errorf("invalidated the listings of %v, want test-experiment's", invalidated)
+	}
+}
