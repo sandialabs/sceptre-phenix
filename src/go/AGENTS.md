@@ -72,6 +72,16 @@ the root target does.
   [source](https://github.com/sandia-minimega/minimega) before changing code
   that constructs commands or depends on minimega behavior.
 
+## API Contract Tests
+
+`web/contract_test.go` drives each API route through the router `phenix ui`
+serves: auth modes, RBAC, base path, and error statuses and bodies. A new or
+changed route adds a row to `contractRoutes` (with the permissions it needs)
+and its error cases to `TestContractErrors`, and goes in
+`web/public/docs/openapi.yml`. `TestRouterMatchesOpenAPI` fails for a route
+the router serves that `openapi.yml` lacks, or the reverse; leave a route out
+of `openapi.yml` only through `undocumentedRoutes`, with the reason.
+
 ## CI
 
 `.github/workflows/ci.yml` generates artifacts, runs `make check`, and executes
