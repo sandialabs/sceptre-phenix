@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -18,6 +19,7 @@ import (
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
+	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 )
@@ -178,5 +180,78 @@ func TestVMActionsJobGivesUpWhenCanceled(t *testing.T) {
 
 	if n := mmtest.Count(received(), "vm start"); n != 0 {
 		t.Errorf("minimega received %d vm start commands, want none", n)
+	}
+}
+
+// recordVMBroadcasts records the actions of the VM broadcasts sent for the
+// rest of the test.
+func recordVMBroadcasts(t *testing.T) func() []string {
+	t.Helper()
+
+	var (
+		mu      sync.Mutex
+		actions []string
+	)
+
+	original := vmBroadcast
+	t.Cleanup(func() { vmBroadcast = original })
+
+	vmBroadcast = func(_ *bt.RequestPolicy, resource *bt.Resource, _ json.RawMessage) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		actions = append(actions, resource.Action)
+	}
+
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return slices.Clone(actions)
+	}
+}
+
+// A VM action whose minimega commands gave up because its request or job
+// ended reports no failure to other clients, and withdraws the transition it
+// announced.
+func TestVMActionGivingUpWithdrawsItsTransition(t *testing.T) {
+	for action, want := range map[string][]string{
+		"start":    {"starting", "canceled"},
+		"restart":  {"restarting", "canceled"},
+		"shutdown": nil,
+	} {
+		t.Run(action, func(t *testing.T) {
+			useTestStore(t, namedExperiment(t, "exp", "2024-01-01T00:00:00Z", diskVM("a", "a.qc2")))
+			holdMinimega(t)
+
+			var (
+				broadcasts  = recordVMBroadcasts(t)
+				a           = vmActions[action]
+				ctx, cancel = context.WithCancel(t.Context())
+				done        = make(chan error, 1)
+			)
+
+			go func() {
+				_, err := runVMAction(vmRequest{
+					ctx: ctx, role: testRole(a.resource, a.verb, "exp/a"), user: "alice", exp: "exp", name: "a", jobID: "",
+				}, a)
+				done <- err
+			}()
+
+			mmtest.Await(t, "hold")
+			polltest.Until(t, "the action waits for minimega", func() bool {
+				return len(broadcasts()) == min(len(want), 1)
+			})
+
+			cancel()
+
+			if err := <-done; !errors.Is(err, context.Canceled) {
+				t.Fatalf("runVMAction = %v, want %v", err, context.Canceled)
+			}
+
+			if got := broadcasts(); !slices.Equal(got, want) {
+				t.Errorf("broadcast %q, want %q", got, want)
+			}
+		})
 	}
 }
