@@ -58,7 +58,8 @@ button to reload it. Pages opt in with createPageLoader.
 
   export default {
     data() {
-      return { pageStatus, now: Date.now() };
+      // what a screen reader is told: only a problem with the data shown
+      return { pageStatus, now: Date.now(), alert: '' };
     },
     created() {
       // keeps "updated … ago" and the stale state current
@@ -104,9 +105,10 @@ button to reload it. Pages opt in with createPageLoader.
         if (!this.pageStatus.updatedAt) return 'idle';
         return this.stale ? 'stale' : 'ok';
       },
-      // what a screen reader is told: only a problem with the data shown
-      alert() {
-        if (this.pageStatus.loading) return '';
+      // the problem with the data shown, '' for none, or null while a load
+      // runs and the outcome is not yet known
+      problem() {
+        if (this.pageStatus.loading) return null;
         if (this.pageStatus.failed) return 'Refresh failed';
         return this.stale ? `Data may be out of date: ${this.staleText}` : '';
       },
@@ -133,6 +135,14 @@ button to reload it. Pages opt in with createPageLoader.
     watch: {
       'pageStatus.updatedAt'() {
         this.now = Date.now();
+      },
+      // keeps the announcement through a reload, so a problem that outlasts
+      // it is not cleared and announced again on every poll
+      problem: {
+        handler(value) {
+          if (value !== null) this.alert = value;
+        },
+        immediate: true,
       },
     },
   };

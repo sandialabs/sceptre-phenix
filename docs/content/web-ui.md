@@ -84,9 +84,9 @@ The button's icon is colored to match: yellow while a load is running, green
 after a load succeeded, orange while the data may be out of date, and red after
 a load failed. While a load runs, the icon spins and the button cannot be
 pressed. Screen readers announce only a failed load and data that may be out
-of date, with the reason, not each reload or change of age. A page with
-nothing to reload, such as `Builder`, shows neither the
-status nor the button.
+of date, with the reason, and only when that changes, not on each reload or
+change of age. A page with nothing to reload, such as `Builder`, shows neither
+the status nor the button.
 
 The Experiments, Configs, Disks, Hosts, Users, Logs, Scorch, State of Health
 and Settings pages, the VM tiles, and each experiment's own page keep the data
