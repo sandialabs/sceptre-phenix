@@ -14,6 +14,7 @@ import (
 	"phenix/api/job"
 	"phenix/util/common"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -26,6 +27,11 @@ var jobs = job.Default //nolint:gochecknoglobals // replaced in tests
 // artifactServed are called when a download of a job's artifact begins, by
 // job kind, to log what the artifact holds.
 var artifactServed = map[string]func(r *http.Request, j job.Job){} //nolint:gochecknoglobals // filled in by the job kinds
+
+// artifactAllowed are checked, by job kind, each time a job's artifact is
+// downloaded, so a role that has since lost the permission the job's work
+// needed no longer gets what it produced.
+var artifactAllowed = map[string]func(role rbac.Role, j job.Job) bool{} //nolint:gochecknoglobals // filled in by the job kinds
 
 // jobFinished are called once a job has finished, by job kind, to audit what
 // its work did as the user who started it.
@@ -190,6 +196,12 @@ func writeJob(w http.ResponseWriter, status int, j job.Job) {
 // ownJob returns the job the request names, if the user started it or may act
 // on it. Anyone else is answered 404, as for a job that does not exist.
 func ownJob(w http.ResponseWriter, r *http.Request, may jobAccess) (job.Job, bool) {
+	return ownJobOr(w, r, may, nil)
+}
+
+// ownJobOr is ownJob, calling denied, if given, with a job the user may not
+// act on before answering 404.
+func ownJobOr(w http.ResponseWriter, r *http.Request, may jobAccess, denied func(job.Job)) (job.Job, bool) {
 	var (
 		id   = mux.Vars(r)["id"]
 		ctx  = r.Context()
@@ -206,6 +218,11 @@ func ownJob(w http.ResponseWriter, r *http.Request, may jobAccess) (job.Job, boo
 
 	if j.Owner != user && !may(role, j) {
 		plog.Warn(plog.TypeSecurity, "accessing another user's job not allowed", "user", user, "job", id, "method", r.Method)
+
+		if denied != nil {
+			denied(j)
+		}
+
 		http.Error(w, "job not found", http.StatusNotFound)
 
 		return job.Job{}, false
@@ -328,13 +345,26 @@ func DeleteJob(w http.ResponseWriter, r *http.Request) {
 // Sends the file the job produced, with byte ranges, so an interrupted
 // download resumes (see util.ServeDownload).
 func GetJobArtifact(w http.ResponseWriter, r *http.Request) {
-	j, ok := ownJob(w, r, mayGetJob)
+	deniedArtifact := func(j job.Job) {
+		audit.Denied(r, audit.FileDownload, "downloading job artifact not allowed", audit.Fields{
+			Experiment: j.Experiment, Extra: []any{"phenix.job.id", j.ID},
+		})
+	}
+
+	j, ok := ownJobOr(w, r, mayGetJob, deniedArtifact)
 	if !ok {
 		return
 	}
 
 	if j.Artifact == nil {
 		http.Error(w, "job has no artifact", http.StatusNotFound)
+
+		return
+	}
+
+	if allowed, ok := artifactAllowed[j.Kind]; ok && !allowed(middleware.RoleFromContext(r.Context()), j) {
+		deniedArtifact(j)
+		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
 	}
