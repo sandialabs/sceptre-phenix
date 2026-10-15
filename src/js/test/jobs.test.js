@@ -210,6 +210,24 @@ describe('the jobs store', () => {
     expect(jobs.jobs.j1).toBeUndefined();
   });
 
+  it('fails whenDone, and stops polling, on sign-out', async () => {
+    vi.useFakeTimers();
+    jobs.put(job('j1'));
+    const waiting = jobs.whenDone('j1');
+    const failure = waiting.catch((err) => err);
+
+    jobs.clear();
+
+    // canceled, which error reports leave out
+    expect(await failure).toMatchObject({
+      message: expect.stringMatching(/Signed out/),
+      code: 'ERR_CANCELED',
+    });
+    axios.get.mockClear();
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
   it('keeps waiting for a job the server has, though a reload missed it', async () => {
     jobs.put(job('j1'));
     let done = null;
