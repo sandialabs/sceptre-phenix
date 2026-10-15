@@ -28,6 +28,10 @@ All notable changes to this project will be documented in this file.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow Schema (breaking)**: Workflow configs are validated against the new `Workflow` schema, so unknown or misspelled keys, values of the wrong type and a missing `spec` return 400 instead of being ignored. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 
+### Removed
+
+- **Topology v0 (breaking)**: Topology configs with apiVersion `phenix.sandia.gov/v0` are no longer supported.
+
 ### Fixed
 
 - **Topology Builder**:

@@ -10,7 +10,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"gopkg.in/yaml.v3"
 
-	v0 "phenix/types/version/v0"
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
 )
@@ -54,8 +53,6 @@ func GetVersionedSpecForKind(kind, version string) (any, error) {
 	switch kind {
 	case "Topology":
 		switch version {
-		case "v0":
-			return new(v0.TopologySpec), nil
 		case "v1":
 			return new(v1.TopologySpec), nil
 		default:

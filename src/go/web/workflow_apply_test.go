@@ -774,7 +774,7 @@ func TestApplyWorkflowPrepareFailures(t *testing.T) {
 			},
 			wantStatus:  http.StatusBadRequest,
 			wantMessage: prepareMsg,
-			wantCause:   []string{"unknown version v7"},
+			wantCause:   []string{"unknown topology version v7"},
 		},
 		{
 			name:        "scenario does not exist",
