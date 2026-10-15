@@ -145,6 +145,7 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	freshness.SetObserved(w, observed)
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -577,6 +578,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
@@ -707,6 +709,7 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to marshal experiment %s", name)
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 	user := middleware.UserFromContext(ctx)
 	plog.Info(
@@ -757,6 +760,7 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 	user := middleware.UserFromContext(ctx)
 	plog.Info(
@@ -993,6 +997,7 @@ func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	//nolint:gosec // XSS via taint analysis
 	_, _ = w.Write(body)
 }
@@ -1109,6 +1114,7 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
 		req.GetAlgorithm(),
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -1161,6 +1167,7 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	//nolint:gosec // XSS via taint analysis
 	_, _ = w.Write(body)
 }
@@ -1232,6 +1239,7 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -1439,6 +1447,7 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -1501,6 +1510,7 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -1676,6 +1686,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		"vm",
 		name,
 	)
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -1817,6 +1828,7 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2021,6 +2033,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		"vm",
 		name,
 	)
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2112,6 +2125,7 @@ func GetVMCaptures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2318,6 +2332,7 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2376,6 +2391,7 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		audit.Success(r, audit.CaptureStop, "subnet capture stopped", audit.Fields{Experiment: exp, VM: name, Extra: subnet})
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2430,6 +2446,7 @@ func GetVMSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2803,6 +2820,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3041,6 +3059,7 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3078,6 +3097,7 @@ func GetApplications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3122,6 +3142,7 @@ func GetTopologies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3202,6 +3223,7 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3248,6 +3270,7 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(marshalled) //nolint:gosec // XSS via taint analysis
 }
 

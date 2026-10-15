@@ -534,6 +534,7 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		body, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", mimeJSON)
 		_, _ = w.Write(body)
 	case <-time.After(MountPathTimeout):
 		err := "timeout getting files in " + combinedPath

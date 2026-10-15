@@ -324,6 +324,7 @@ func GetPortForwards(w http.ResponseWriter, r *http.Request) {
 	forwardsMu.Unlock()
 
 	body, _ := json.Marshal(util.WithRoot("listeners", listeners))
+	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
 }
 
