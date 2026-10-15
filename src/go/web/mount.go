@@ -684,7 +684,7 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 
 	uploaded.Target = filepath.Join(combinedPath, handler.Filename)
 
-	localFile, err := openInMount(basePath, uploaded.Target, os.O_WRONLY|os.O_CREATE, mountFileMode)
+	localFile, err := openInMount(basePath, uploaded.Target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mountFileMode)
 	if err != nil {
 		plog.Error(
 			plog.TypeSystem,

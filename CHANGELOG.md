@@ -163,6 +163,7 @@ All notable changes to this project will be documented in this file.
 - **Experiment update**: `PATCH /experiments/{name}` answered 200 instead of 204, and 500 instead of 404 for an unknown experiment or 400 for a malformed body.
 - **VM updates**: `PATCH /experiments/{exp}/vms` crashed its request when the body's `total` was below the number of VMs, and otherwise answered with empty VMs in place of those the role could not patch; it now answers with the VMs it updated.
 - **Config downloads**: An archive of configs larger than 4 KiB lost its attachment name, and a config that could not be read broke the archive partway instead of answering an error.
+- **VM mount uploads**: Uploading a file over a longer one of the same name in a mounted VM left the end of the old file behind.
 
 ## [1.0.0]
 
