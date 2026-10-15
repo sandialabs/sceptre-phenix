@@ -4387,7 +4387,9 @@ paths:
       description: >-
         The file the job produced, as an attachment. Downloads resume with
         `Range` and `If-Range`, as other downloads do. Needs to be the job's
-        owner, or `jobs` `get`. A browser link may pass the token as `?token=`.
+        owner, or `jobs` `get`. An experiment file archive also needs
+        `experiments/files` `get` on its experiment, checked on every
+        download. A browser link may pass the token as `?token=`.
       operationId: getJobArtifact
       parameters:
         - $ref: "#/components/parameters/JobID"
@@ -4413,6 +4415,8 @@ paths:
           $ref: "#/components/responses/PartialContent"
         "304":
           $ref: "#/components/responses/NotModified"
+        "403":
+          description: the role may no longer get the files the archive holds
         "404":
           description: no such job, another user's, or a job with no artifact
         "416":
@@ -4428,6 +4432,8 @@ paths:
       responses:
         "200":
           description: the artifact's headers
+        "403":
+          description: the role may no longer get the files the archive holds
         "404":
           description: no such job, another user's, or a job with no artifact
 externalDocs:

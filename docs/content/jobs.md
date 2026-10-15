@@ -95,8 +95,11 @@ The permission's resource name is the job's experiment, so an Experiment Admin
 role sees and cancels the jobs of its own experiments. A job of no experiment,
 such as a disk clone, needs the same verbs on the `jobs/global` resource
 instead, which Global Admin has; a `jobs` permission does not reach it, even
-on every experiment (`*`). Starting a job needs only the permission of the operation
-itself, never `jobs`.
+on every experiment (`*`). Starting a job needs only the permission of the
+operation itself, never `jobs`. Downloading an experiment file archive, the
+owner's included, also needs `experiments/files` `get` on its experiment,
+checked on every download, and a refused download is recorded in the audit
+log.
 
 To anyone else, another user's job answers `404`, as if it did not exist.
 

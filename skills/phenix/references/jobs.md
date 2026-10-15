@@ -29,7 +29,7 @@ Code: `src/go/api/job` (registry), `src/go/web/jobs.go` (routes).
 | `GET /jobs/{id}` | the job, every item with its result |
 | `POST /jobs/{id}/cancel` | `202` + job (`cancelRequested`); `409` finished or not cancelable |
 | `DELETE /jobs/{id}` | `204`; `409` while queued or running |
-| `GET/HEAD /jobs/{id}/artifact` | the file, resumable with `Range`; `404` when there is none |
+| `GET/HEAD /jobs/{id}/artifact` | the file, resumable with `Range`; `404` when there is none; `403` (audited) for an archive once the role may not `get` its experiment's files |
 
 The first three are also served on the unix socket (as `global-admin`), which
 `phenix job list|get|cancel|wait` uses (see [`cli.md`](cli.md)); the CLI

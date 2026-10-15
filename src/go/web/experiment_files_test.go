@@ -22,6 +22,7 @@ import (
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
+	"phenix/web/rbac"
 	"phenix/web/util"
 )
 
@@ -765,6 +766,50 @@ func TestArchiveExperimentFiles(t *testing.T) {
 
 	if n := len(got); n != 2 {
 		t.Errorf("%d audit events, want 2: %v", n, got)
+	}
+}
+
+// An archive is downloaded only by a role that may still get the
+// experiment's files, and every refusal is audited: its owner, once the role
+// loses the permission, a user who may get the job but not the files, and a
+// user who may not even see the job.
+func TestArchiveDownloadRechecksPermission(t *testing.T) {
+	useExperimentFilesDir(t, map[string]string{"a.log": "alpha"})
+	useTestFiles(t)
+
+	registry := useJobs(t)
+	owner := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+
+	j := waitJob(t, registry, startArchive(t, owner, `{"paths":["a.log"]}`).ID)
+	if j.Artifact == nil {
+		t.Fatalf("job %s has no artifact", j.Status)
+	}
+
+	for name, tc := range map[string]struct {
+		user string
+		role rbac.Role
+		want int
+	}{
+		"owner without files get": {"alice", testRole("experiments", "get", "test-experiment"), http.StatusForbidden},
+		"jobs viewer without it":  {"bob", testRole("jobs", "get", "test-experiment"), http.StatusForbidden},
+		"user who may not see it": {"carol", testRole("experiments", "get", "test-experiment"), http.StatusNotFound},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := serveAs(t, tc.user, tc.role).URL
+			events := captureAudit(t)
+
+			resp := do(t, http.MethodGet, server+"/api/v1/jobs/"+j.ID+"/artifact", "")
+			if body := readBody(t, resp); resp.StatusCode != tc.want {
+				t.Fatalf("status %d, want %d: %s", resp.StatusCode, tc.want, body)
+			}
+
+			wantDenied(t, events(), "file-download")
+		})
+	}
+
+	both := combinedRole(testRole("jobs", "get", "test-experiment"), testRole("experiments/files", "get", "test-experiment"))
+	if resp := do(t, http.MethodGet, serveAs(t, "bob", both).URL+"/api/v1/jobs/"+j.ID+"/artifact", ""); resp.StatusCode != http.StatusOK {
+		t.Errorf("a user who may get the job and the files: status %d", resp.StatusCode)
 	}
 }
 

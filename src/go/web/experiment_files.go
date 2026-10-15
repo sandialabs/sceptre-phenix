@@ -19,6 +19,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/middleware"
+	"phenix/web/rbac"
 	"phenix/web/util"
 )
 
@@ -311,7 +312,14 @@ const archiveKind = "files.archive"
 //nolint:gochecknoinits // registers the archive jobs' audit
 func init() {
 	artifactServed[archiveKind] = auditArchiveDownload
+	artifactAllowed[archiveKind] = mayDownloadArchive
 	jobFinished[archiveKind] = auditArchiveJob
+}
+
+// mayDownloadArchive reports whether the role may still get the files of the
+// archive job's experiment, as it had to when it started the job.
+func mayDownloadArchive(role rbac.Role, j job.Job) bool {
+	return role.Allowed("experiments/files", "get", j.Experiment)
 }
 
 // ArchiveExperimentFiles - POST /experiments/{name}/files/archive.
