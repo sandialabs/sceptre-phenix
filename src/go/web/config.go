@@ -92,7 +92,7 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
@@ -497,7 +497,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	var body []byte
 
 	switch typ := r.Header.Get("Accept"); typ {
-	case "", "*/*", "application/json": // default to JSON if not set
+	case "", "*/*", mimeJSON: // default to JSON if not set
 		var err error
 
 		body, err = json.Marshal(cfg)
@@ -507,7 +507,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", mimeJSON)
 	case "application/x-yaml":
 		var err error
 
@@ -577,7 +577,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	switch {
-	case typ == "application/json": // default to JSON if not set
+	case typ == mimeJSON: // default to JSON if not set
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")

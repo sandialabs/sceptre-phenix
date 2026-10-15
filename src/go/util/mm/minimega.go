@@ -43,6 +43,7 @@ const (
 	ccCommandsCmd    = "cc commands"
 	clearCCFilterCmd = "clear cc filter"
 	captureCmd       = "capture"
+	argsCmd          = "args"
 
 	// phenixHostsNS is a namespace phenix only runs `host` in, to reach every
 	// compute node.
@@ -1652,7 +1653,7 @@ func (m Minimega) IsHeadnode(node string) bool {
 
 func (m Minimega) GetMMArgs() (map[string]string, error) {
 	cmd := mmcli.NewCommand()
-	cmd.Command = "args"
+	cmd.Command = argsCmd
 
 	rows := mmcli.RunTabular(cmd)
 	if len(rows) == 1 {

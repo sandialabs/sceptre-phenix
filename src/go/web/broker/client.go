@@ -819,7 +819,7 @@ func (c *Client) trackVMState(msg any) {
 // stopping, stopped or deleted. Its VMs stop with it without VM messages of
 // their own.
 func stoppedExperiment(pub bt.Publish) (string, bool) {
-	if pub.Resource == nil || pub.Resource.Type != "experiment" {
+	if pub.Resource == nil || pub.Resource.Type != experimentResourceType {
 		return "", false
 	}
 
