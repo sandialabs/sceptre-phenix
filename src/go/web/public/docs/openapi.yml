@@ -5,10 +5,11 @@ info:
 
     ## Ordering and freshness
 
-    Every response of an `/api/v1` route carries `X-Phenix-Seq`, a number from
-    one strictly increasing sequence per phenix process, taken as the request
-    started, and `Cache-Control: no-cache, private` unless the endpoint says
-    otherwise. Every message on the `/ws` websocket carries the same sequence
+    Every response of an `/api/v1` route past authentication (not a 401 or
+    403 refusal of authentication, nor an `OPTIONS` answer) carries
+    `X-Phenix-Seq`, a number from one strictly increasing sequence per phenix
+    process, taken as the request started, and `Cache-Control: no-cache,
+    private` unless the endpoint says otherwise. Every message on the `/ws` websocket carries the same sequence
     in its `seq` field, taken as the message was published (a reply to a
     client request, such as an `experiment/vms` list, takes it before its data
     is read). Data tagged with seq S reflects every change whose message
@@ -32,9 +33,12 @@ info:
     route says it answers 404 so as not to reveal another user's job, console
     or token. An unknown `/api/v1` path is a 404 and a method a path does not
     take is a 405, both before authentication, and an `OPTIONS` request
-    answers 204 without running the route. Behind a proxy serving phenix under
-    a base path (`ui.base-path`), the proxy strips it, and the `Location`
-    headers of jobs and configs carry it.
+    answers 204 (200 with `--allow-cors`) without running the route. With
+    `--jwt-signing-key proxy-jwt` the token is read only from the header, and
+    a missing or malformed one answers 400; with auth disabled, every request
+    acts as global-admin. Behind a proxy serving phenix under a base path
+    (`ui.base-path`), the proxy strips it, and the `Location` headers of jobs
+    and configs carry it.
   version: 0.0.0
   title: phenix
   termsOfService: http://swagger.io/terms/
