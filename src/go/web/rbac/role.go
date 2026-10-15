@@ -93,6 +93,10 @@ func (r Role) Save() error {
 	return nil
 }
 
+// SetResourceNames scopes the role's policies that name no resources to
+// names, such as a user's experiments; no names, or one empty name, means
+// every resource ("*"). A policy that already names its resources, such as a
+// default role's disks or hosts policy, keeps them.
 func (r *Role) SetResourceNames(names ...string) error {
 	// Gracefully handle when no names or a single empty name is passed,
 	// defaulting to allow all.
@@ -105,19 +109,17 @@ func (r *Role) SetResourceNames(names ...string) error {
 		}
 	}
 
-	for _, policy := range r.Spec.Policies {
-		if policy.ResourceNames != nil {
-			return fmt.Errorf("%w: resource names already exist for policy", ErrResourceNameExists)
+	for _, name := range names {
+		// Checking to make sure pattern given in 'name' is valid. Thus, the
+		// string provided to match it against is useless.
+		if _, err := filepath.Match(name, "useless"); err != nil {
+			return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
 		}
+	}
 
-		for _, name := range names {
-			// Checking to make sure pattern given in 'name' is valid. Thus, the
-			// string provided to match it against is useless.
-			if _, err := filepath.Match(name, "useless"); err != nil {
-				return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
-			}
-
-			policy.ResourceNames = append(policy.ResourceNames, name)
+	for _, policy := range r.Spec.Policies {
+		if policy.ResourceNames == nil {
+			policy.ResourceNames = slices.Clone(names)
 		}
 	}
 

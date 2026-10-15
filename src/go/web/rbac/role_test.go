@@ -2,8 +2,12 @@
 package rbac
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
+	"phenix/api/config"
+	"phenix/store/storetest"
 	v1 "phenix/types/version/v1"
 )
 
@@ -119,5 +123,63 @@ func TestRoleAllowed(t *testing.T) {
 
 	if literal.mappedPolicies != nil {
 		t.Error("Allowed stored a policy index on an unindexed role")
+	}
+}
+
+// Scoping a default role to a user's experiments scopes every policy that
+// names no resources, also those after a policy that keeps its own names,
+// such as Experiment Admin's disks and hosts policies.
+//
+//nolint:paralleltest // replaces the store
+func TestSetResourceNamesScopesEveryUnnamedPolicy(t *testing.T) {
+	storetest.Use(t)
+
+	if err := config.Init(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		role    string
+		allowed [][3]string // resource, verb, name
+	}{
+		{"Experiment Admin", [][3]string{
+			{"experiments", "get", "exp-a"},
+			{"experiments/files", "delete", "exp-a"},
+			{"jobs", "list", "exp-a"},
+			{"jobs", "update", "exp-a"},
+		}},
+		{"Experiment Viewer", [][3]string{
+			{"experiments", "get", "exp-a"},
+			{"vms/mount", "post", "exp-a/vm"},
+		}},
+	} {
+		role, err := RoleFromConfig(tc.role)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := role.SetResourceNames("exp-a", "exp-a/*"); err != nil {
+			t.Fatalf("%s: %v", tc.role, err)
+		}
+
+		for _, a := range tc.allowed {
+			if !role.Allowed(a[0], a[1], a[2]) {
+				t.Errorf("%s may not %s %s %s", tc.role, a[1], a[0], a[2])
+			}
+
+			other := strings.Replace(a[2], "exp-a", "exp-b", 1)
+			if role.Allowed(a[0], a[1], other) {
+				t.Errorf("%s may %s %s %s", tc.role, a[1], a[0], other)
+			}
+		}
+
+		// a policy that names its resources keeps them
+		if !role.Allowed("hosts", "list", "any-host") {
+			t.Errorf("%s may not list every host", tc.role)
+		}
+	}
+
+	if err := (&Role{Spec: &v1.RoleSpec{}}).SetResourceNames("["); !errors.Is(err, ErrResourceNameInvalid) {
+		t.Errorf("an invalid name: %v", err)
 	}
 }
