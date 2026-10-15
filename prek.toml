@@ -60,6 +60,15 @@ pass_filenames = false
 files = '^(src/go/web/public/docs/openapi\.yml|scripts/api-docs\.sh)$'
 priority = "lint"
 
+[[repos.hooks]]
+id = "schema-lint"
+name = "config schema lint (redocly, spec ruleset)"
+entry = "scripts/api-docs.sh lint-schemas"
+language = "system"
+pass_filenames = false
+files = '^(src/go/types/(version/)?schemas/[^/]+\.yaml|src/go/types/redocly\.yaml|scripts/api-docs\.sh)$'
+priority = "lint"
+
 # Spell checking
 [[repos]]
 repo = "https://github.com/codespell-project/codespell"
