@@ -184,8 +184,10 @@ func (e *vmActionError) Unwrap() error {
 }
 
 // vmRequest is a VM action asked for by user with role, from a bulk action
-// job when jobID is not "".
+// job when jobID is not "". Its minimega commands not yet sent give up once
+// ctx, the request's or the job's, is done (see mm.Context).
 type vmRequest struct {
+	ctx   context.Context //nolint:containedctx // the request's or the job's, for the action's minimega commands
 	role  rbac.Role
 	user  string
 	exp   string
@@ -245,9 +247,14 @@ func runVMAction(req vmRequest, a *vmAction) ([]byte, error) {
 		return &vmActionError{status: status, err: err}
 	}
 
+	// nothing is broadcast for an action whose request or job has ended
+	if err := req.ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", a.title, err)
+	}
+
 	broadcast(a.before, nil)
 
-	if err := a.do(context.Background(), req.exp, req.name); err != nil {
+	if err := a.do(req.ctx, req.exp, req.name); err != nil {
 		return nil, fail(http.StatusInternalServerError, err)
 	}
 
@@ -259,7 +266,9 @@ func runVMAction(req vmRequest, a *vmAction) ([]byte, error) {
 			return nil, fail(http.StatusBadRequest, err)
 		}
 
-		v, err := vm.GetFor(context.Background(), exp, req.name)
+		// the action is done, so the VM is read for the broadcast whatever
+		// req.ctx says
+		v, err := vm.GetFor(context.WithoutCancel(req.ctx), exp, req.name)
 		if err != nil {
 			return nil, fail(http.StatusInternalServerError, err)
 		}
@@ -305,6 +314,7 @@ func serveVMAction(w http.ResponseWriter, r *http.Request, action string) {
 	)
 
 	body, err := runVMAction(vmRequest{
+		ctx:   ctx,
 		role:  middleware.RoleFromContext(ctx),
 		user:  middleware.UserFromContext(ctx),
 		exp:   vars["exp"],
@@ -315,6 +325,7 @@ func serveVMAction(w http.ResponseWriter, r *http.Request, action string) {
 	var actionErr *vmActionError
 
 	switch {
+	case requestCanceled(r, err):
 	case errors.As(err, &actionErr) && actionErr.status == http.StatusForbidden:
 		http.Error(w, "forbidden", http.StatusForbidden)
 	case errors.As(err, &actionErr):
@@ -404,7 +415,7 @@ func RunVMActions(w http.ResponseWriter, r *http.Request) {
 		BytesTotal: 0,
 		Cancelable: true,
 		Run: func(ctx context.Context, run *job.Run) error {
-			runVMActions(ctx, run, vmRequest{role: role, user: user, exp: exp, name: "", jobID: run.ID()}, action, names)
+			runVMActions(ctx, run, vmRequest{ctx: ctx, role: role, user: user, exp: exp, name: "", jobID: run.ID()}, action, names)
 
 			return nil
 		},
@@ -412,7 +423,9 @@ func RunVMActions(w http.ResponseWriter, r *http.Request) {
 }
 
 // runVMActions takes the action on each VM, bulkVMWorkers at a time, until
-// ctx is done: then it starts no more, and the VMs in progress finish.
+// ctx is done: then it starts no more, and the VMs in progress finish, but
+// for those whose minimega commands were still waiting to be sent, which give
+// up and are left for the job to report canceled.
 func runVMActions(ctx context.Context, run *job.Run, req vmRequest, action *vmAction, names []string) {
 	var (
 		queue = make(chan string)
@@ -434,6 +447,8 @@ func runVMActions(ctx context.Context, run *job.Run, req vmRequest, action *vmAc
 				body, err := runVMAction(one, action)
 
 				switch {
+				case ctx.Err() != nil && errors.Is(err, context.Canceled):
+					// canceled with the job (see job.Registry.Cancel)
 				case errors.Is(err, job.ErrForbidden):
 					run.ItemSkipped(name, job.ErrForbidden.Error())
 				case err != nil:

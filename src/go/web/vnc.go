@@ -144,10 +144,15 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name))
+	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name), mm.Context(r.Context()))
 	if err != nil {
-		plog.Error(plog.TypeSystem, "getting VNC endpoint", "err", err)
 		audit.Failure(r, audit.VNCAttach, "vnc attach failed", fields, err)
+
+		if requestCanceled(r, err) {
+			return
+		}
+
+		plog.Error(plog.TypeSystem, "getting VNC endpoint", "err", err)
 		http.Error(w, "", http.StatusBadRequest)
 
 		return
