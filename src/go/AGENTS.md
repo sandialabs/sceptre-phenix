@@ -81,7 +81,10 @@ changed route adds a row to `contractRoutes` (with the permissions it needs)
 and its error cases to `TestContractErrors`, and goes in
 `web/public/docs/openapi.yml`. `TestRouterMatchesOpenAPI` fails for a route
 the router serves that `openapi.yml` lacks, or the reverse; leave a route out
-of `openapi.yml` only through `undocumentedRoutes`, with the reason.
+of `openapi.yml` only through `undocumentedRoutes`, with the reason. Every API
+route names its methods; a route of any method outside the API goes in
+`routesOfAnyMethod`. A route the Unix socket serves gets a case in
+`TestContractSocket`.
 
 ## CI
 

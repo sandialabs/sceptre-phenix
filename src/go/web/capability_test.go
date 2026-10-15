@@ -264,12 +264,7 @@ func TestCaptureGrantWithoutSignIn(t *testing.T) {
 	useWebShark(t)
 	useCapRecheck(t)
 	useExperimentFilesDir(t, map[string]string{"a.pcap": string(testPcapHeader())})
-	useTestStore(t, store.Config{
-		Version:  "phenix.sandia.gov/v1",
-		Kind:     "Role",
-		Metadata: store.ConfigMetadata{Name: "global-admin"},
-		Spec:     map[string]any{"roleName": "Global Admin", "policies": rolePolicies(sharkRole())},
-	})
+	useGlobalAdmin(t)
 
 	server := serveRouter(t, testPublic(), "").URL
 	capture := openInWebShark(t, server, `{"path":"a.pcap"}`)

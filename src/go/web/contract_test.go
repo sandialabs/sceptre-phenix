@@ -1,20 +1,29 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 
 	"phenix/api/job"
+	"phenix/store"
 	v1 "phenix/types/version/v1"
+	"phenix/util/common"
+	"phenix/util/freshness"
+	"phenix/util/mm"
+	"phenix/web/capability"
 	"phenix/web/rbac"
 )
 
@@ -24,13 +33,15 @@ import (
 // A new API route adds a row there, and its path to openapi.yml, which
 // TestRouterMatchesOpenAPI checks.
 
-// The experiment, VM and disk image of the contract fixture, and an
-// experiment it does not have.
+// The experiment, VM, disk image and topology of the contract fixture, the
+// topology's revision, and an experiment it does not have.
 const (
-	contractExp   = "test-experiment"
-	contractVM    = "test-vm"
-	contractDisk  = "test-disk.qc2"
-	contractOther = "other-experiment"
+	contractExp      = "test-experiment"
+	contractVM       = "test-vm"
+	contractDisk     = "test-disk.qc2"
+	contractTopo     = "demo"
+	contractRevision = 5
+	contractOther    = "other-experiment"
 )
 
 // serveContractAs is serveContract with every request taken as one from alice
@@ -50,13 +61,15 @@ func serveContractAs(t *testing.T, role rbac.Role, set func(*serverOptions)) *ht
 }
 
 // contractFixture is what the contract's routes act on: test-experiment,
-// running, with test-vm and the files a.log and a.pcap; the disk image
-// test-disk.qc2; and bob's job on test-experiment, finished, with a 3-byte
-// artifact. minimega is the fake, answering every command with an empty
-// success.
+// running, with test-vm, mounted with the file etc/hostname, and the files
+// a.log and a.pcap; the disk image test-disk.qc2; the demo topology at
+// revision 5; bob's job on test-experiment, finished, with a 3-byte
+// artifact; and, made on demand, each user's capture token and console.
+// minimega is the fake, answering every command with an empty success.
 type contractFixture struct {
-	jobs    *job.Registry
-	bobsJob job.Job
+	jobs     *job.Registry
+	bobsJob  job.Job
+	consoles *consoleRegistry
 }
 
 // useContractFixture sets up the contract fixture until the test ends.
@@ -81,11 +94,72 @@ func useContractFixture(t *testing.T) contractFixture {
 	}
 
 	useCaptureGrants(t)
+	useContractMount(t)
+
+	topology, err := store.NewConfigFromJSON([]byte(revisionTestTopology))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	topology.Metadata.Revision = contractRevision
+	useTestStore(t, *topology)
 
 	registry := useJobs(t)
 	bobs := waitJob(t, registry, startTestJob(t, registry, "bob", contractExp, nil, "zip").ID)
 
-	return contractFixture{jobs: registry, bobsJob: bobs}
+	return contractFixture{jobs: registry, bobsJob: bobs, consoles: useTestConsoles(t, time.Minute)}
+}
+
+// useContractMount mounts test-vm of test-experiment, with the file
+// etc/hostname, under the files directory's parent until the test ends.
+func useContractMount(t *testing.T) {
+	t.Helper()
+
+	original := common.MountBase
+	common.MountBase = "" //nolint:reassign // mounts go under the temporary PhenixBase
+
+	t.Cleanup(func() { common.MountBase = original }) //nolint:reassign // restore
+
+	base := mm.GetLocalMountPath(contractExp, contractVM)
+	hostname := filepath.Join(base, "etc", "hostname")
+
+	if err := os.MkdirAll(filepath.Dir(hostname), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(hostname, []byte(contractVM), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	activeMountsMu.Lock()
+	activeMounts[base] = &MountInfo{users: 1, lock: &sync.RWMutex{}}
+	activeMountsMu.Unlock()
+
+	t.Cleanup(func() {
+		activeMountsMu.Lock()
+		delete(activeMounts, base)
+		activeMountsMu.Unlock()
+	})
+}
+
+// captureToken gives user a capture token for a.pcap, and returns its ID.
+func (f contractFixture) captureToken(user string) string {
+	return captureGrants.Mint("contract-"+user+".pcap", capability.Grant{
+		User: user, Target: capability.Target{Exp: contractExp, File: "a.pcap"},
+		Ops: viewOps, Expires: time.Now().Add(time.Hour),
+	}).ID
+}
+
+// console starts a console of user's, and returns its pid.
+func (f contractFixture) console(t *testing.T, user string) string {
+	t.Helper()
+
+	console, err := f.consoles.start(context.WithoutCancel(t.Context()), user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return strconv.Itoa(console.pid)
 }
 
 // serveContract serves newRouter's routes over testPublic as phenix ui does,
@@ -98,7 +172,7 @@ func serveContract(t *testing.T, set func(*serverOptions)) *httptest.Server {
 	t.Cleanup(func() { o = original })
 
 	o = newServerOptions()
-	o.features = map[string]bool{"webshark": true}
+	o.features = map[string]bool{"webshark": true, "vm-mount": true, "tunneler-download": true}
 	o.websharkDir = t.TempDir()
 
 	if set != nil {
@@ -122,15 +196,22 @@ func serveContract(t *testing.T, set func(*serverOptions)) *httptest.Server {
 // answers past RBAC.
 type contractRoute struct {
 	method string
-	// path is the request's path and query; {job} stands for bob's job
+	// path is the request's path and query; {job} stands for bob's job, and
+	// {token} and {console} for a capture token and a console of the user's
 	path string
 	body string
+	// header is the request's headers, as name and value pairs
+	header []string
 	// need is each permission the route needs, one policy per role; none
 	// for a route that acts only on the user's own things
 	need []rbac.Role
 	// hidden is the status a role without need gets when the route answers
 	// as if the thing did not exist, rather than 403
 	hidden int
+	// want is the statuses the route answers once past authentication and
+	// RBAC; when empty, anything but 401, 403 and its hidden status, short of
+	// a server error
+	want []int
 	// jsonErrors is set for a route that answers errors as weberror JSON
 	// rather than text
 	jsonErrors bool
@@ -138,15 +219,30 @@ type contractRoute struct {
 
 func (c contractRoute) String() string { return c.method + " " + c.path }
 
-// url is the route's URL on server for the fixture.
-func (c contractRoute) url(server string, f contractFixture) string {
-	return server + strings.ReplaceAll(c.path, "{job}", f.bobsJob.ID)
+// url is the route's URL on server for the fixture, when user sends it.
+func (c contractRoute) url(t *testing.T, server string, f contractFixture, user string) string {
+	t.Helper()
+
+	path := strings.ReplaceAll(c.path, "{job}", f.bobsJob.ID)
+
+	if strings.Contains(path, "{token}") {
+		path = strings.ReplaceAll(path, "{token}", f.captureToken(user))
+	}
+
+	if strings.Contains(path, "{console}") {
+		path = strings.ReplaceAll(path, "{console}", f.console(t, user))
+	}
+
+	return server + path
 }
 
 // passed reports whether the route answered past authentication and RBAC
-// with status: anything but 401, 403 and its hidden status, short of a
-// server error.
+// with status.
 func (c contractRoute) passed(status int) bool {
+	if len(c.want) > 0 {
+		return slices.Contains(c.want, status)
+	}
+
 	return status != http.StatusUnauthorized && status != http.StatusForbidden &&
 		(c.hidden == 0 || status != c.hidden) && status < http.StatusInternalServerError
 }
@@ -164,9 +260,10 @@ func (c contractRoute) denied() int {
 // gained on this branch, and those whose contract it changed.
 func contractRoutes() []contractRoute {
 	const (
-		exp   = "/api/v1/experiments/" + contractExp
-		vm    = exp + "/vms/" + contractVM
-		files = `{"paths":["a.log"]}`
+		exp    = "/api/v1/experiments/" + contractExp
+		vm     = exp + "/vms/" + contractVM
+		files  = `{"paths":["a.log"]}`
+		config = "/api/v1/configs/topology/" + contractTopo
 	)
 
 	var (
@@ -174,28 +271,35 @@ func contractRoutes() []contractRoute {
 		captures = testRole("vms/captures", "list", contractExp+"/"+contractVM)
 		trigger  = testRole("experiments/trigger", "create", contractExp)
 		diskGet  = testRole("disks", "get", contractDisk)
+		mount    = testRole("vms/mount", "get", contractExp+"/"+contractVM)
 		one      = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
 		jobs     = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
+		configs  = func(verb string) []rbac.Role { return one(testRole("configs", verb, "Topology/"+contractTopo)) }
+		current  = []string{"If-Match", freshness.ETag(contractRevision), "Content-Type", mimeJSON}
+		ok       = []int{http.StatusOK}
+		done     = []int{http.StatusNoContent}
 	)
 
 	return []contractRoute{
 		// jobs: another user's job is hidden without a jobs permission on
 		// its experiment; GET /jobs lists only what the role may see
-		{method: "GET", path: "/api/v1/jobs"},
+		{method: "GET", path: "/api/v1/jobs", want: ok},
 		{method: "GET", path: "/api/v1/jobs/{job}", need: jobs("get"), hidden: http.StatusNotFound},
 		{method: "POST", path: "/api/v1/jobs/{job}/cancel", need: jobs("update"), hidden: http.StatusNotFound},
 		{method: "DELETE", path: "/api/v1/jobs/{job}", need: jobs("delete"), hidden: http.StatusNotFound},
 		{method: "GET", path: "/api/v1/jobs/{job}/artifact", need: jobs("get"), hidden: http.StatusNotFound},
 		{method: "HEAD", path: "/api/v1/jobs/{job}/artifact", need: jobs("get"), hidden: http.StatusNotFound},
 
-		// captures and WebShark
-		{method: "GET", path: exp + "/capture-tokens"},
+		// captures and WebShark: a user lists and revokes only their own
+		// capture tokens
+		{method: "GET", path: exp + "/capture-tokens", want: ok},
 		{method: "POST", path: exp + "/capture-tokens", body: `{"operations":["view"],"path":"a.pcap"}`, need: one(filesGet)},
-		{method: "DELETE", path: exp + "/capture-tokens/none"},
+		{method: "DELETE", path: exp + "/capture-tokens/{token}", want: done},
 		{method: "POST", path: exp + "/webshark", body: `{"path":"a.pcap"}`, need: one(filesGet)},
 		{method: "GET", path: vm + "/captures/0/stream", need: []rbac.Role{captures, filesGet}},
 
 		// experiment files
+		{method: "GET", path: exp + "/files", need: one(testRole("experiments/files", "list", contractExp)), want: ok},
 		{method: "GET", path: exp + "/files/a.log?path=a.log", need: one(filesGet)},
 		{method: "HEAD", path: exp + "/files/a.log?path=a.log", need: one(filesGet)},
 		{method: "GET", path: exp + "/files/a.log/checksum?path=a.log", need: one(filesGet)},
@@ -204,6 +308,10 @@ func contractRoutes() []contractRoute {
 		{
 			method: "POST", path: exp + "/files/delete", body: files,
 			need: one(testRole("experiments/files", "delete", contractExp)),
+		},
+		{
+			method: "DELETE", path: exp + "/files/a.log?path=a.log",
+			need: one(testRole("experiments/files", "delete", contractExp)), want: done,
 		},
 
 		// SCORCH
@@ -219,6 +327,8 @@ func contractRoutes() []contractRoute {
 			need: one(testRole("vms/start", "update", contractExp+"/"+contractVM)),
 		},
 		{method: "GET", path: vm + "/vnc/ws", need: one(testRole("vms/vnc", "get", contractExp+"/"+contractVM))},
+		{method: "GET", path: vm + "/files/download?path=etc/hostname", need: one(mount), want: ok},
+		{method: "HEAD", path: vm + "/files/download?path=etc/hostname", need: one(mount), want: ok},
 
 		// disks
 		{method: "GET", path: "/api/v1/disks/checksum?disk=" + contractDisk, need: one(diskGet)},
@@ -229,16 +339,24 @@ func contractRoutes() []contractRoute {
 			need: one(testRole("disks", "create", "copy.qcow2")),
 		},
 
-		// consoles: another user's console is hidden whatever the role
-		{method: "GET", path: "/api/v1/console/1", need: one(testRole("miniconsole", "get"))},
-		{method: "DELETE", path: "/api/v1/console/1", need: one(testRole("miniconsole", "post"))},
+		// consoles: a user reaches only their own
+		{method: "GET", path: "/api/v1/console/{console}", need: one(testRole("miniconsole", "get")), want: ok},
+		{method: "DELETE", path: "/api/v1/console/{console}", need: one(testRole("miniconsole", "post")), want: done},
 
-		// state of health and configs
+		// state of health
 		{method: "GET", path: "/api/v1/soh", need: one(testRole("experiments", "list"))},
+
+		// configs, read and written at a revision
 		{
 			method: "GET", path: "/api/v1/configs/experiment/" + contractExp, jsonErrors: true,
 			need: one(testRole("configs", "get", "Experiment/"+contractExp)),
 		},
+		{method: "GET", path: config, need: configs("get"), want: ok, jsonErrors: true},
+		{
+			method: "PUT", path: config, body: revisionTestTopology, header: current,
+			need: configs("update"), want: done, jsonErrors: true,
+		},
+		{method: "DELETE", path: config, header: current, need: configs("delete"), want: done, jsonErrors: true},
 	}
 }
 
@@ -260,13 +378,20 @@ func signedJWT(t *testing.T, user, key string, exp time.Time) string {
 // Each route needs a session of a user who still holds it: without a token
 // it answers 403, and with a token it cannot trust 401. Behind a proxy that
 // names its user (--proxy-auth-header), the proxy must name the token's.
+// Behind a proxy that checks the token itself (proxy-jwt), the token must be
+// in the header and name a user who holds it, and with authentication off,
+// every request passes.
 func TestContractAuth(t *testing.T) {
 	bearer := func(token string) []string { return []string{"X-Phenix-Auth-Token", "Bearer " + token} }
 
 	type request struct {
-		proxy  bool // the server takes the user from X-Remote-User
-		send   func(t *testing.T, route contractRoute, url, session string) *http.Response
-		refuse int // the status it is refused with, or 0 when it passes
+		// the server's --jwt-signing-key, testJWTKey when empty, and whether
+		// it takes the user from X-Remote-User
+		key   string
+		proxy bool
+		send  func(t *testing.T, route contractRoute, url, session string) *http.Response
+		// the status it is refused with, or 0 when it passes
+		refuse int
 	}
 
 	session := func(_ *testing.T, session string) []string { return bearer(session) }
@@ -275,56 +400,72 @@ func TestContractAuth(t *testing.T) {
 		return func(t *testing.T, route contractRoute, url, session string) *http.Response {
 			t.Helper()
 
-			return do(t, route.method, url, route.body, h(t, session)...)
+			return do(t, route.method, url, route.body, append(slices.Clone(route.header), h(t, session)...)...)
 		}
 	}
 
+	parameter := func(t *testing.T, route contractRoute, url, session string) *http.Response {
+		t.Helper()
+
+		sep := "?"
+		if strings.Contains(url, "?") {
+			sep = "&"
+		}
+
+		return do(t, route.method, url+sep+"token="+session, route.body, route.header...)
+	}
+
+	none := header(func(*testing.T, string) []string { return nil })
+
+	unknownUser := header(func(t *testing.T, _ string) []string {
+		t.Helper()
+
+		return bearer(signedJWT(t, "mallory", testJWTKey, time.Now().Add(time.Hour)))
+	})
+
 	requests := map[string]request{
-		"no token": {false, header(func(*testing.T, string) []string { return nil }), http.StatusForbidden},
-		"malformed token": {false, header(func(*testing.T, string) []string {
+		"no token": {send: none, refuse: http.StatusForbidden},
+		"malformed token": {send: header(func(*testing.T, string) []string {
 			return bearer("not.a.jwt")
-		}), http.StatusUnauthorized},
-		"not a bearer token": {false, header(func(_ *testing.T, session string) []string {
+		}), refuse: http.StatusUnauthorized},
+		"not a bearer token": {send: header(func(_ *testing.T, session string) []string {
 			return []string{"X-Phenix-Auth-Token", session}
-		}), http.StatusUnauthorized},
-		"token of another key": {false, header(func(t *testing.T, _ string) []string {
+		}), refuse: http.StatusUnauthorized},
+		"token of another key": {send: header(func(t *testing.T, _ string) []string {
 			t.Helper()
 
 			return bearer(signedJWT(t, "alice", "another-key", time.Now().Add(time.Hour)))
-		}), http.StatusUnauthorized},
-		"expired token": {false, header(func(t *testing.T, _ string) []string {
+		}), refuse: http.StatusUnauthorized},
+		"expired token": {send: header(func(t *testing.T, _ string) []string {
 			t.Helper()
 
 			return bearer(signedJWT(t, "alice", testJWTKey, time.Now().Add(-time.Minute)))
-		}), http.StatusUnauthorized},
-		"signed-out token": {false, header(func(t *testing.T, _ string) []string {
+		}), refuse: http.StatusUnauthorized},
+		"signed-out token": {send: header(func(t *testing.T, _ string) []string {
 			t.Helper()
 
 			return bearer(signedJWT(t, "alice", testJWTKey, time.Now().Add(2*time.Hour)))
-		}), http.StatusUnauthorized},
-		"unknown user": {false, header(func(t *testing.T, _ string) []string {
-			t.Helper()
-
-			return bearer(signedJWT(t, "mallory", testJWTKey, time.Now().Add(time.Hour)))
-		}), http.StatusUnauthorized},
-		"another proxy user": {true, header(func(_ *testing.T, session string) []string {
+		}), refuse: http.StatusUnauthorized},
+		"unknown user": {send: unknownUser, refuse: http.StatusUnauthorized},
+		"another proxy user": {proxy: true, send: header(func(_ *testing.T, session string) []string {
 			return append(bearer(session), "X-Remote-User", "bob")
-		}), http.StatusUnauthorized},
-		"no proxy user": {true, header(session), http.StatusUnauthorized},
-		"token header":  {false, header(session), 0},
-		"token parameter": {false, func(t *testing.T, route contractRoute, url, session string) *http.Response {
-			t.Helper()
-
-			sep := "?"
-			if strings.Contains(url, "?") {
-				sep = "&"
-			}
-
-			return do(t, route.method, url+sep+"token="+session, route.body)
-		}, 0},
-		"the token's proxy user": {true, header(func(_ *testing.T, session string) []string {
+		}), refuse: http.StatusUnauthorized},
+		"no proxy user":   {proxy: true, send: header(session), refuse: http.StatusUnauthorized},
+		"token header":    {send: header(session)},
+		"token parameter": {send: parameter},
+		"the token's proxy user": {proxy: true, send: header(func(_ *testing.T, session string) []string {
 			return append(bearer(session), "X-Remote-User", "alice")
-		}), 0},
+		})},
+		"proxy-jwt without token":   {key: "proxy-jwt", send: none, refuse: http.StatusBadRequest},
+		"proxy-jwt token parameter": {key: "proxy-jwt", send: parameter, refuse: http.StatusBadRequest},
+		"proxy-jwt malformed token": {
+			key:    "proxy-jwt",
+			send:   header(func(*testing.T, string) []string { return bearer("x") }),
+			refuse: http.StatusBadRequest,
+		},
+		"proxy-jwt unknown user":       {key: "proxy-jwt", send: unknownUser, refuse: http.StatusUnauthorized},
+		"proxy-jwt token header":       {key: "proxy-jwt", send: header(session)},
+		"authentication off, no token": {key: "off", send: none},
 	}
 
 	for _, route := range contractRoutes() {
@@ -333,14 +474,25 @@ func TestContractAuth(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					f := useContractFixture(t)
 					session := useTestUser(t, combinedRole(route.need...))
+
+					key, user := testJWTKey, "alice"
+
+					switch req.key {
+					case "off":
+						key, user = "", "global-admin"
+						useGlobalAdmin(t)
+					case "proxy-jwt":
+						key = req.key
+					}
+
 					server := serveContract(t, func(o *serverOptions) {
-						o.jwtKey = testJWTKey
+						o.jwtKey = key
 						if req.proxy {
 							o.proxyAuthHeader = "X-Remote-User"
 						}
 					}).URL
 
-					resp := req.send(t, route, route.url(server, f), session)
+					resp := req.send(t, route, route.url(t, server, f, user), session)
 
 					switch {
 					case req.refuse == 0:
@@ -359,9 +511,10 @@ func TestContractAuth(t *testing.T) {
 }
 
 // Each route refuses a role that lacks any one of the permissions it needs,
-// or has them for another experiment or disk, with 403 (or the route's
-// hidden status) and the route's error body, and lets a role with exactly
-// those permissions past RBAC, with the response's sequence number.
+// or has one of them only for another experiment, VM, disk image or config,
+// with 403 (or the route's hidden status) and the route's error body, and
+// lets a role with exactly those permissions past RBAC, with the response's
+// sequence number.
 func TestContractRBAC(t *testing.T) {
 	for _, route := range contractRoutes() {
 		if len(route.need) == 0 {
@@ -369,7 +522,7 @@ func TestContractRBAC(t *testing.T) {
 		}
 
 		t.Run(route.String(), func(t *testing.T) {
-			denied := map[string]rbac.Role{}
+			denied := otherNames(route.need)
 
 			for i := range route.need {
 				rest := make([]rbac.Role, 0, len(route.need)-1)
@@ -379,16 +532,12 @@ func TestContractRBAC(t *testing.T) {
 				denied["without "+route.need[i].Spec.Policies[0].Resources[0]] = combinedRole(rest...)
 			}
 
-			if other, ok := forOtherNames(route.need); ok {
-				denied["for another experiment or disk"] = other
-			}
-
 			for name, role := range denied {
 				t.Run(name, func(t *testing.T) {
 					f := useContractFixture(t)
 					server := serveContractAs(t, role, nil).URL
 
-					resp := do(t, route.method, route.url(server, f), route.body)
+					resp := do(t, route.method, route.url(t, server, f, "alice"), route.body, route.header...)
 					if resp.StatusCode != route.denied() {
 						t.Fatalf("status %d, want %d", resp.StatusCode, route.denied())
 					}
@@ -401,7 +550,7 @@ func TestContractRBAC(t *testing.T) {
 				f := useContractFixture(t)
 				server := serveContractAs(t, combinedRole(route.need...), nil).URL
 
-				resp := do(t, route.method, route.url(server, f), route.body)
+				resp := do(t, route.method, route.url(t, server, f, "alice"), route.body, route.header...)
 				if !route.passed(resp.StatusCode) {
 					t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
 				}
@@ -415,30 +564,60 @@ func TestContractRBAC(t *testing.T) {
 	}
 }
 
-// forOtherNames returns the roles' policies with their resource names
-// changed from the fixture's experiment and disk images to others, and
-// whether any named one.
-func forOtherNames(roles []rbac.Role) (rbac.Role, bool) {
-	replacer := strings.NewReplacer(contractExp, contractOther, contractDisk, "other-disk.qc2", "copy.qcow2", "other.qcow2")
+// otherNames returns, for each of the roles that names the fixture's things,
+// the roles with only that one's names changed: to another experiment, disk
+// image or config, and, when it names test-vm, to another VM of the
+// experiment. Each is keyed by the changed role's resource and the change.
+func otherNames(roles []rbac.Role) map[string]rbac.Role {
+	changes := map[string]*strings.Replacer{
+		"another experiment, disk or config": strings.NewReplacer(
+			contractExp, contractOther, contractDisk, "other-disk.qc2", "copy.qcow2", "other.qcow2",
+			"/"+contractTopo, "/other-topology",
+		),
+		"another VM": strings.NewReplacer(contractVM, "other-vm"),
+	}
 
+	other := map[string]rbac.Role{}
+
+	for i, role := range roles {
+		for change, replacer := range changes {
+			renamed, ok := renameRole(role, replacer)
+			if !ok {
+				continue
+			}
+
+			all := slices.Clone(roles)
+			all[i] = renamed
+
+			other[role.Spec.Policies[0].Resources[0]+" for "+change] = combinedRole(all...)
+		}
+	}
+
+	return other
+}
+
+// renameRole returns role with its policies' resource names changed by
+// replacer, and whether any changed.
+func renameRole(role rbac.Role, replacer *strings.Replacer) (rbac.Role, bool) {
 	var (
-		other = combinedRole(roles...)
-		named bool
+		spec    = &v1.RoleSpec{}
+		changed bool
 	)
 
-	for i, p := range other.Spec.Policies {
+	for _, p := range role.Spec.Policies {
 		copied := *p
 		copied.ResourceNames = nil
 
 		for _, name := range p.ResourceNames {
-			copied.ResourceNames = append(copied.ResourceNames, replacer.Replace(name))
-			named = true
+			renamed := replacer.Replace(name)
+			changed = changed || renamed != name
+			copied.ResourceNames = append(copied.ResourceNames, renamed)
 		}
 
-		other.Spec.Policies[i] = &copied
+		spec.Policies = append(spec.Policies, &copied)
 	}
 
-	return other, named
+	return rbac.Role{Spec: spec}, changed
 }
 
 // wantErrorBody fails the test unless resp has the route's error body: text,
@@ -516,13 +695,37 @@ func contractAdmin() rbac.Role {
 	}}}}
 }
 
+// useGlobalAdmin stores the global-admin role, which every request has with
+// authentication off and over the Unix socket. The server keeps that role
+// for 30 seconds across tests, so every test stores this one.
+func useGlobalAdmin(t *testing.T) {
+	t.Helper()
+
+	useTestStore(t, store.Config{
+		Version:  "phenix.sandia.gov/v1",
+		Kind:     "Role",
+		Metadata: store.ConfigMetadata{Name: "global-admin"},
+		Spec:     map[string]any{"roleName": "Global Admin", "policies": rolePolicies(contractAdmin())},
+	})
+}
+
 // The routes answer the requests they refuse with the documented status and
-// body: unknown things 404, methods a path does not take 405, bad input 400,
-// conflicts 409 and unsatisfiable ranges 416, as text or a weberror's JSON.
-// Each status is one openapi.yml documents for the route, or, for the 404 of
-// an unknown path and the 405, in its description of errors.
+// body: unknown things, and other users' tokens and consoles, 404, methods a
+// path does not take 405, bad input 400, conflicts 409, stale config
+// revisions 412 and unsatisfiable ranges 416, as text or a weberror's JSON;
+// and a current config revision 304. Each status is one openapi.yml documents
+// for the route, or, for the 404 of an unknown path and the 405, in its
+// description of errors.
 func TestContractErrors(t *testing.T) {
-	const exp = "/api/v1/experiments/" + contractExp
+	const (
+		exp    = "/api/v1/experiments/" + contractExp
+		config = "/api/v1/configs/topology/" + contractTopo
+	)
+
+	var (
+		current = freshness.ETag(contractRevision)
+		stale   = freshness.ETag(contractRevision - 1)
+	)
 
 	type errorCase struct {
 		method, path, body string
@@ -545,6 +748,12 @@ func TestContractErrors(t *testing.T) {
 
 	bobs := func(suffix string) func(*testing.T, contractFixture) string {
 		return func(_ *testing.T, f contractFixture) string { return "/api/v1/jobs/" + f.bobsJob.ID + suffix }
+	}
+
+	bobsConsole := func(t *testing.T, f contractFixture) string {
+		t.Helper()
+
+		return "/api/v1/console/" + f.console(t, "bob")
 	}
 
 	cases := map[string]errorCase{
@@ -576,8 +785,12 @@ func TestContractErrors(t *testing.T) {
 			want: http.StatusBadRequest,
 		},
 		"revoke unknown capture token": {method: "DELETE", path: exp + "/capture-tokens/none", want: http.StatusNotFound},
-		"WebShark without capture":     {method: "POST", path: exp + "/webshark", body: "{}", want: http.StatusBadRequest},
-		"WebShark of non-capture":      {method: "POST", path: exp + "/webshark", body: `{"path":"a.log"}`, want: http.StatusBadRequest},
+		"revoke another user's capture token": {
+			method: "DELETE", want: http.StatusNotFound,
+			prepare: func(_ *testing.T, f contractFixture) string { return exp + "/capture-tokens/" + f.captureToken("bob") },
+		},
+		"WebShark without capture": {method: "POST", path: exp + "/webshark", body: "{}", want: http.StatusBadRequest},
+		"WebShark of non-capture":  {method: "POST", path: exp + "/webshark", body: `{"path":"a.log"}`, want: http.StatusBadRequest},
 		"WebShark of missing capture": {
 			method: "POST", path: exp + "/webshark", body: `{"path":"none.pcap"}`, want: http.StatusNotFound,
 		},
@@ -606,7 +819,40 @@ func TestContractErrors(t *testing.T) {
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=" + contractDisk,
 			want: http.StatusConflict,
 		},
-		"unknown console": {method: "GET", path: "/api/v1/console/1", want: http.StatusNotFound},
+		"unknown console":            {method: "GET", path: "/api/v1/console/1", want: http.StatusNotFound},
+		"another user's console":     {method: "GET", prepare: bobsConsole, want: http.StatusNotFound},
+		"end another user's console": {method: "DELETE", prepare: bobsConsole, want: http.StatusNotFound},
+		"delete missing file": {
+			method: "DELETE", path: exp + "/files/none.log?path=none.log", want: http.StatusNotFound,
+		},
+		"mount download of missing file": {
+			method: "GET", path: exp + "/vms/" + contractVM + "/files/download?path=etc/none", want: http.StatusNotFound,
+		},
+		"mount download of directory": {
+			method: "GET", path: exp + "/vms/" + contractVM + "/files/download?path=etc", want: http.StatusBadRequest,
+		},
+		"unknown config": {method: "GET", path: "/api/v1/configs/topology/none", want: http.StatusNotFound, json: true},
+		"current config": {method: "GET", path: config, header: []string{"If-None-Match", current}, want: http.StatusNotModified},
+		"update of stale config": {
+			method: "PUT", path: config, body: revisionTestTopology, want: http.StatusPreconditionFailed, json: true,
+			header: []string{"If-Match", stale, "Content-Type", mimeJSON},
+		},
+		"update of malformed revision": {
+			method: "PUT", path: config, body: revisionTestTopology, want: http.StatusBadRequest, json: true,
+			header: []string{"If-Match", "r5", "Content-Type", mimeJSON},
+		},
+		"update of missing config at a revision": {
+			method: "PUT", path: "/api/v1/configs/topology/none", body: revisionTestTopology,
+			want: http.StatusPreconditionFailed, json: true, header: []string{"If-Match", current, "Content-Type", mimeJSON},
+		},
+		"update of missing config": {
+			method: "PUT", path: "/api/v1/configs/topology/none", body: revisionTestTopology,
+			want: http.StatusNotFound, json: true, header: []string{"Content-Type", mimeJSON},
+		},
+		"delete of missing config": {method: "DELETE", path: "/api/v1/configs/topology/none", want: http.StatusNotFound, json: true},
+		"delete of stale config": {
+			method: "DELETE", path: config, header: []string{"If-Match", stale}, want: http.StatusPreconditionFailed, json: true,
+		},
 		"clear run that is not a number": {
 			method: "POST", path: exp + "/scorch/pipelines/x/clear", want: http.StatusBadRequest, json: true,
 		},
@@ -638,8 +884,8 @@ func TestContractErrors(t *testing.T) {
 				t.Fatalf("status %d, want %d: %s", resp.StatusCode, tc.want, readBody(t, resp))
 			}
 
-			// gorilla's 405 has no body
-			if tc.want == http.StatusMethodNotAllowed {
+			// gorilla's 405 and a 304 have no body
+			if tc.want == http.StatusMethodNotAllowed || tc.want == http.StatusNotModified {
 				return
 			}
 
@@ -658,8 +904,9 @@ func TestContractErrors(t *testing.T) {
 
 // Behind a proxy that serves phenix under a base path, and strips it from
 // requests, the URLs the server gives clients reach it through the proxy:
-// job locations carry the base path, capture token URLs are relative to it,
-// and WebShark's pages name it.
+// job and config locations carry the base path, a capture token's URL,
+// relative to it, opens WebShark on the capture, and WebShark's pages name
+// it.
 func TestContractBasePath(t *testing.T) {
 	const base = "/phenix/"
 
@@ -714,6 +961,18 @@ func TestContractBasePath(t *testing.T) {
 		}
 	}
 
+	// a config the workflow routes upsert
+	upserted := do(t, http.MethodPost, server+"/api/v1/workflow/configs/main", upsertTestTopology, "Content-Type", mimeYAML)
+	if upserted.StatusCode != http.StatusCreated {
+		t.Fatalf("upserting a config: status %d: %s", upserted.StatusCode, readBody(t, upserted))
+	}
+
+	if location, want := upserted.Header.Get("Location"), base+"api/v1/configs/topology/main-topo"; location != want {
+		t.Errorf("upserted config: Location %q, want %q", location, want)
+	} else if got := proxied(t, http.MethodGet, location); got.StatusCode != http.StatusOK {
+		t.Errorf("GET %s through the proxy: status %d", location, got.StatusCode)
+	}
+
 	resp := do(t, http.MethodPost, server+exp+"/capture-tokens", `{"operations":["view"],"path":"a.pcap"}`)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("giving a capture token: status %d: %s", resp.StatusCode, readBody(t, resp))
@@ -724,8 +983,20 @@ func TestContractBasePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if view := token.URLs["view"]; !strings.HasPrefix(view, "webshark/") {
-		t.Errorf("capture token view URL %q is not relative to the base path", view)
+	// the view URL, resolved against the page phenix is served at, and the
+	// capture WebShark's page then asks for
+	view, err := url.Parse(base + token.URLs["view"])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := proxied(t, http.MethodGet, view.String()); got.StatusCode != http.StatusOK {
+		t.Errorf("GET %s through the proxy: status %d", view, got.StatusCode)
+	}
+
+	capture := base + "webshark/captures/" + view.Query().Get("capture")
+	if got := proxied(t, http.MethodGet, capture); got.StatusCode != http.StatusOK {
+		t.Errorf("GET %s through the proxy: status %d", capture, got.StatusCode)
 	}
 
 	if page := readBody(t, proxied(t, http.MethodGet, base+"webshark/")); !strings.Contains(page, `"`+base+`webshark/"`) {
@@ -734,8 +1005,9 @@ func TestContractBasePath(t *testing.T) {
 }
 
 // The routes outside the API's authentication answer without credentials,
-// with their own statuses: health and features, and the WebShark routes,
-// whose capture name or stream token is their credential.
+// with their own statuses: health, features, version and tunneler downloads,
+// and the WebShark routes, whose capture name or stream token is their
+// credential.
 func TestContractPublicRoutes(t *testing.T) {
 	useContractFixture(t)
 
@@ -749,6 +1021,8 @@ func TestContractPublicRoutes(t *testing.T) {
 		"/readyz":   {[]int{http.StatusOK, http.StatusServiceUnavailable}, "application/health+json"},
 		"/features": {[]int{http.StatusOK}, "application/json"},
 		"/version":  {[]int{http.StatusOK}, "application/json"},
+		// the tunneler builds there are to download
+		"/downloads/tunneler": {[]int{http.StatusOK}, "application/json"},
 		// a capture name or stream token that is not one
 		"/webshark/streams/pcs_none": {[]int{http.StatusNotFound}, "text/plain"},
 		// WebShark's own requests, answered as WebShark's server would
@@ -767,5 +1041,77 @@ func TestContractPublicRoutes(t *testing.T) {
 				t.Errorf("Content-Type %q, want %s", got, tc.contentType)
 			}
 		})
+	}
+}
+
+// The Unix socket serves its routes to every local client, as global-admin,
+// with the response's sequence number, and no other API route: each socket
+// route answers, and an HTTP-only route or method is not there.
+func TestContractSocket(t *testing.T) {
+	f := useContractFixture(t)
+	useGlobalAdmin(t)
+
+	original := o
+	t.Cleanup(func() { o = original })
+
+	o = newServerOptions()
+
+	server := httptest.NewServer(newSocketRouter())
+	t.Cleanup(server.Close)
+
+	covered := map[string]bool{}
+
+	for _, tc := range []struct {
+		method, path, body, contentType string
+		// route is the socket route's path template, or empty for a route or
+		// method only HTTP serves
+		route string
+		want  int
+	}{
+		{method: "GET", path: "/options", route: "/options", want: http.StatusOK},
+		{method: "GET", path: "/jobs", route: "/jobs", want: http.StatusOK},
+		{method: "GET", path: "/jobs/{job}", route: "/jobs/{id}", want: http.StatusOK},
+		{method: "POST", path: "/jobs/{job}/cancel", route: "/jobs/{id}/cancel", want: http.StatusConflict},
+		{
+			method: "POST", path: "/workflow/configs/main?dryRun=true", body: upsertTestTopology, contentType: mimeYAML,
+			route: "/workflow/configs/{branch}", want: http.StatusOK,
+		},
+		// without a workflow config's content type
+		{
+			method: "POST", path: "/workflow/apply/main?dryRun=true", body: "{}",
+			route: "/workflow/apply/{branch}", want: http.StatusBadRequest,
+		},
+		{method: "DELETE", path: "/jobs/{job}", want: http.StatusMethodNotAllowed},
+		{method: "OPTIONS", path: "/jobs", want: http.StatusMethodNotAllowed},
+		{method: "GET", path: "/jobs/{job}/artifact", want: http.StatusNotFound},
+		{method: "GET", path: "/soh", want: http.StatusNotFound},
+	} {
+		if tc.route != "" {
+			covered[tc.method+" "+tc.route] = true
+		}
+
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			var header []string
+			if tc.contentType != "" {
+				header = []string{"Content-Type", tc.contentType}
+			}
+
+			resp := do(t, tc.method, server.URL+"/api/v1"+strings.ReplaceAll(tc.path, "{job}", f.bobsJob.ID), tc.body, header...)
+			if resp.StatusCode != tc.want {
+				t.Fatalf("status %d, want %d: %s", resp.StatusCode, tc.want, readBody(t, resp))
+			}
+
+			if tc.route != "" && resp.Header.Get("X-Phenix-Seq") == "" {
+				t.Error("no X-Phenix-Seq")
+			}
+		})
+	}
+
+	for _, r := range socketRoutes() {
+		for _, method := range r.methods {
+			if !covered[method+" "+r.path] {
+				t.Errorf("socket route %s %s has no case", method, r.path)
+			}
+		}
 	}
 }
