@@ -25,8 +25,16 @@ func newTestBolt(t *testing.T, path string) *BoltDB {
 func TestBoltReadsAndWrites(t *testing.T) {
 	b := newTestBolt(t, filepath.Join(t.TempDir(), "store.bdb"))
 
-	if !b.IsInitialized(ComponentStore) {
-		t.Fatal("store not marked initialized")
+	if b.IsInitialized(ComponentConfigs) {
+		t.Fatal("a new store has its configs marked initialized")
+	}
+
+	if err := b.InitializeComponent(ComponentConfigs); err != nil {
+		t.Fatalf("marking configs initialized: %v", err)
+	}
+
+	if !b.IsInitialized(ComponentConfigs) {
+		t.Fatal("configs not marked initialized")
 	}
 
 	if b.IsInitialized(Component("other")) {
@@ -140,8 +148,8 @@ func TestBoltFailsWithoutItsFile(t *testing.T) {
 			}
 		}
 
-		if b.IsInitialized(ComponentStore) {
-			t.Error("store reported initialized")
+		if b.IsInitialized(ComponentConfigs) {
+			t.Error("configs reported initialized")
 		}
 	}
 }

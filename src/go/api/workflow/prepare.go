@@ -523,8 +523,7 @@ func resolveScenario(prep *Prepared, checkScenarioTopology bool) error {
 }
 
 // readConfig reads the config of the given kind and name from the store. The
-// error wraps [ErrUnresolved]: the etcd store does not mark a missing config,
-// so a missing config and a failed read cannot be told apart.
+// error wraps [ErrUnresolved].
 func readConfig(kind, name string) (*store.Config, error) {
 	cfg, err := store.NewConfig(kind + "/" + name)
 	if err != nil {

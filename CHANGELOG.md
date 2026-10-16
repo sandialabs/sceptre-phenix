@@ -96,6 +96,7 @@ All notable changes to this project will be documented in this file.
 ### Removed
 
 - **API**: The outdated API Blueprint at `/docs/apiary.apib`.
+- **etcd Store (breaking)**: Removed the etcd data store, so `etcd://` store endpoints are no longer accepted; use a `bolt://` endpoint.
 
 ### Fixed
 
