@@ -13,10 +13,10 @@ UI.
 
 ## Downloading the Tunneler
 
-Click the `Tunneler` button at the right-hand end of the banner at the top
+Click the `Tunneler` button near the right-hand end of the banner at the top
 of the phēnix UI.
 
-![screenshot](images/tunneler_tab.png)
+![The Tunneler page, opened from the Tunneler button in the banner, with the Tunneler Downloads table above the Quick Start](images/tunneler_page.png)
 
 The page starts with a `Tunneler Downloads` table of the `phenix-tunneler`
 builds installed on the phēnix server, with an `OS` and an `Architecture`
