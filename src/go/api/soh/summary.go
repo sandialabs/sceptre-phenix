@@ -22,9 +22,11 @@ const (
 	MaxRunHistory = 20
 )
 
-// minimega's state for a running VM, and the reachability check's kind.
+// minimega's states for a running VM and for one launched but not yet started,
+// and the reachability check's kind.
 const (
-	mmRunning = "RUNNING"
+	mmRunning  = "RUNNING"
+	mmBuilding = "BUILDING"
 
 	checkReachability = "reachability"
 )
@@ -339,8 +341,8 @@ func checkTarget(kind string, md map[string]any) string {
 }
 
 // addVMs counts the experiment's VMs by state as GetFor classifies them,
-// except that a VM waiting for its delayed start counts as Delayed rather than
-// not running.
+// except that a VM still waiting for its delayed start (BUILDING) counts as
+// Delayed rather than not running.
 func (s *Summary) addVMs(exp *types.Experiment, vmStates map[string]string, failing map[string]bool, maxDown int) {
 	if exp.Spec.Topology() == nil {
 		return
@@ -374,8 +376,7 @@ func (s *Summary) addVMs(exp *types.Experiment, vmStates map[string]string, fail
 			if failing[name] {
 				s.VMs.Failing++
 			}
-		case node.Delayed() != "":
-			// launched, waiting for its delayed start
+		case node.Delayed() != "" && state == mmBuilding:
 			s.VMs.Delayed++
 		default:
 			s.VMs.NotRunning++
