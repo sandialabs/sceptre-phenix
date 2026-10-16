@@ -52,10 +52,25 @@ func TestDeleteSnapshotsDeletesInternalVMSnapshots(t *testing.T) {
 	})
 
 	external := true
+	snapshot := true
 	exp := types.NewExperiment(store.ConfigMetadata{Name: "test-exp"})
 	exp.Spec.SetTopology(&v1.TopologySpec{
 		NodesF: []*v1.Node{
 			{GeneralF: &v1.General{HostnameF: "vm-one"}},
+			{
+				GeneralF: &v1.General{HostnameF: "vm-two", SnapshotF: &snapshot},
+				HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{
+					{ImageF: "os.qc2"},
+					{ImageF: "data.qc2"},
+				}},
+			},
+			{
+				GeneralF: &v1.General{HostnameF: "vm-three"},
+				HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{
+					{ImageF: "os.qc2"},
+					{ImageF: "data.qc2"},
+				}},
+			},
 			{GeneralF: &v1.General{HostnameF: "outside"}, ExternalF: &external},
 		},
 	})
@@ -64,7 +79,13 @@ func TestDeleteSnapshotsDeletesInternalVMSnapshots(t *testing.T) {
 		t.Fatalf("deleting snapshots: %v", err)
 	}
 
-	want := []string{"headnode_test-exp_vm-one_snapshot"}
+	want := []string{
+		"headnode_test-exp_vm-one_snapshot",
+		"headnode_test-exp_vm-two_snapshot",
+		"headnode_test-exp_vm-two_snapshot_1",
+		"headnode_test-exp_vm-three_snapshot",
+		"headnode_test-exp_vm-three_snapshot_1",
+	}
 	if !slices.Equal(clusterFiles.deleted, want) {
 		t.Fatalf("expected deleted snapshots %v, got %v", want, clusterFiles.deleted)
 	}

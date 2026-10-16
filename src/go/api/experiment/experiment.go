@@ -1316,14 +1316,17 @@ func deleteSnapshots(exp *types.Experiment) error {
 		hostname := node.General().Hostname()
 		snapshot := fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname)
 
-		err := file.DeleteFile(snapshot)
-		if err != nil {
-			return fmt.Errorf(
-				"deleting snapshot file for VM %s in experiment %s: %w",
-				hostname,
-				expName,
-				err,
-			)
+		// Each drive gets its own snapshot; always delete the first drive's.
+		for i := range max(1, len(node.Hardware().Drives())) {
+			err := file.DeleteFile(v1.DriveSnapshotName(snapshot, i))
+			if err != nil {
+				return fmt.Errorf(
+					"deleting snapshot file for VM %s in experiment %s: %w",
+					hostname,
+					expName,
+					err,
+				)
+			}
 		}
 	}
 

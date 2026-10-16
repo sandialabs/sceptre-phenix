@@ -55,7 +55,9 @@ for a complete, copyable two-node topology):
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
   `general.do_not_boot`, `general.snapshot`
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos | other`
-- `hardware.vcpus`, `hardware.memory`, `hardware.drives[].image` (disk image name/path)
+- `hardware.vcpus`, `hardware.memory`, `hardware.drives[].image` (disk image name/path);
+  with `general.snapshot: true` every drive gets its own snapshot, and injections
+  target only the first drive
 - `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|dhcp|manual`
   (router/firewall interfaces also accept `ospf`), `address`, `mask`, `gateway`, `bridge`
 - `network.rulesets[]`: firewall rules with `action: accept|drop|reject`
