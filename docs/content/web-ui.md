@@ -78,6 +78,8 @@ The status reads:
     * `older than 90 s` (or another limit): the data has not been reloaded for
       longer than the page expects, such as the Hosts page's 90 seconds.
 
+![The refresh status reading Updated 3 min ago · may be out of date, beside an orange refresh button](images/header_refresh_stale.png){: width=600 .center}
+
 The age is measured from when the server read the data, not from when your
 browser received it, so a host list the server reused, or a page kept from an
 earlier visit, shows its real age, and a wrong clock on your computer does not
@@ -129,7 +131,9 @@ which screen readers announce as it changes. A running job you can cancel has a
 `Cancel` button, a finished file archive has a `Download` button
 (`Download incomplete archive` when some files could not be added, which asks
 before downloading), and a finished job has a `Dismiss` button that removes it.
-A link under each job opens its experiment.
+A link under each job of an experiment opens that experiment.
+
+![The open jobs menu: two running jobs with progress bars and Cancel buttons, a finished file archive with Download and Dismiss buttons, and a partly succeeded job with a Dismiss button](images/jobs_menu.png){: width=450 .center}
 
 Jobs keep running when you leave the page that started them, reload, or lose
 the connection; the menu catches up when the page reconnects.

@@ -529,6 +529,11 @@ these your role allows:
 
 ![screenshot](images/exp_files_selected.png){: width=800 .center}
 
+While the archive is built, the toolbar shows its progress, with a `Cancel`
+button, and the `Download` and `Delete` buttons wait for it.
+
+![The Files toolbar while a ZIP archive of three checked files is built: its title, a Running tag, a progress bar, the bytes archived so far, and a Cancel button](images/exp_files_archive.png){: width=800 .center}
+
 Only files you can still see stay checked: searching, changing the category, or
 moving to another page drops the rest of the selection.
 
