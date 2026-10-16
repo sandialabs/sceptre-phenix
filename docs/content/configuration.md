@@ -756,7 +756,7 @@ The editor window allows direct editing of an existing or new config file.
   button under `File Format`.
 
 - It is also possible to set keybindings to the Vim editor by enabling them with
-  the sliding selector under `Vim Keybindings`.
+  the sliding selector under `Vim Mode`.
   ![screenshot](images/edit_settings.png){: width=150 .center}
 
 Leaving the editor asks whether to discard your edits only when you have changed
