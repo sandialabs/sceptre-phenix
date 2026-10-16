@@ -12,7 +12,6 @@ import (
 	"github.com/dgrijalva/jwt-go"
 
 	v1 "phenix/types/version/v1"
-	"phenix/util/common"
 	"phenix/util/mm/mmtest"
 	"phenix/web/health"
 	"phenix/web/rbac"
@@ -66,17 +65,6 @@ func getHealth(t *testing.T, url string, header ...string) (*http.Response, heal
 	}
 
 	return resp, body
-}
-
-// useStoreEndpoint sets the store endpoint the health checks report for the
-// rest of the test.
-func useStoreEndpoint(t *testing.T, endpoint string) {
-	t.Helper()
-
-	original := common.StoreEndpoint
-	common.StoreEndpoint = endpoint //nolint:reassign // configuration injection
-
-	t.Cleanup(func() { common.StoreEndpoint = original }) //nolint:reassign // restore
 }
 
 // The disk check measures the test machine's own disks, so these tests leave
@@ -192,7 +180,6 @@ func TestReadyzAnswersWhenMinimegaHangs(t *testing.T) {
 //nolint:paralleltest // uses the process-wide fake minimega
 func TestHealthNeedsNoToken(t *testing.T) {
 	useTestStore(t)
-	useStoreEndpoint(t, "bolt:///var/lib/phenix/store.bdb")
 
 	mmtest.Use(t, healthyMinimega)
 
@@ -232,7 +219,6 @@ func TestHealthNeedsNoToken(t *testing.T) {
 //nolint:paralleltest // uses the process-wide fake minimega
 func TestHealthShowsOutputWithValidToken(t *testing.T) {
 	useTestStore(t)
-	useStoreEndpoint(t, "bolt:///var/lib/phenix/store.bdb")
 
 	mmtest.Use(t, healthyMinimega)
 
@@ -278,10 +264,9 @@ func TestHealthShowsOutputWithValidToken(t *testing.T) {
 // The health endpoints answer themselves, not with the UI's index.html that
 // the router's NotFound fallback serves for unknown paths.
 //
-//nolint:paralleltest // sets the store endpoint
+//nolint:paralleltest // uses the process-wide test store
 func TestHealthzIsNotTheUIIndex(t *testing.T) {
 	useTestStore(t)
-	useStoreEndpoint(t, "etcd://etcd.example:2379")
 
 	server := serveRouter(t, testPublic(), "")
 
@@ -308,12 +293,11 @@ func TestHealthzIsNotTheUIIndex(t *testing.T) {
 	}
 }
 
-// Liveness checks an etcd store only through readiness.
+// Liveness checks the store, and HEAD answers without a body.
 //
-//nolint:paralleltest // sets the store endpoint
-func TestHealthzSkipsEtcdStore(t *testing.T) {
+//nolint:paralleltest // uses the process-wide test store
+func TestHealthzChecksStore(t *testing.T) {
 	useTestStore(t)
-	useStoreEndpoint(t, "etcd://etcd.example:2379")
 
 	server := serveRouter(t, testPublic(), "")
 
@@ -323,8 +307,8 @@ func TestHealthzSkipsEtcdStore(t *testing.T) {
 		t.Errorf("status %d (%s), want 200 (pass)", resp.StatusCode, body.Status)
 	}
 
-	if _, ok := body.Checks[health.KeyStore]; ok {
-		t.Errorf("checks = %+v, want no store check", body.Checks)
+	if r := body.Checks[health.KeyStore]; len(r) != 1 || r[0].Status != health.Pass || r[0].ComponentID != "bolt" {
+		t.Errorf("checks = %+v, want a passing bolt store check", body.Checks)
 	}
 
 	if len(body.Checks[health.KeyUptime]) != 1 {

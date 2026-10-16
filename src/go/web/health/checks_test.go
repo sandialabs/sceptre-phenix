@@ -225,7 +225,7 @@ func TestStore(t *testing.T) {
 		t.Errorf("readable store value = %#v, want milliseconds", r.ObservedValue)
 	}
 
-	r = only(t, one(t, Store("etcd", func() error { return errors.New("connection refused") })), KeyStore)
+	r = only(t, one(t, Store("bolt", func() error { return errors.New("connection refused") })), KeyStore)
 
 	if r.Status != Fail || r.ObservedValue != nil || !strings.Contains(r.Output, "connection refused") {
 		t.Errorf("unreadable store = %+v, want a failure without a value", r)
