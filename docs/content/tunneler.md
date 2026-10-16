@@ -18,9 +18,6 @@ of the phēnix UI.
 
 ![screenshot](images/tunneler_tab.png)
 
-This screenshot shows an earlier version of the UI, in which Tunneler was a
-tab and the downloads were below the quick start.
-
 The page starts with a `Tunneler Downloads` table of the `phenix-tunneler`
 builds installed on the phēnix server, with an `OS` and an `Architecture`
 column and a `Download` link for each build. Below that is a `Quick Start`

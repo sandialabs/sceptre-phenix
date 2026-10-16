@@ -111,8 +111,9 @@ the topology graph, which has them all.
 A legend under the table names the colors of the `VM Health` bar: `Running`,
 `Checks failing`, `Not running`, `Not booted`, `Delayed start` and
 `External / HIL`. A VM counts as down only when it should be up: a VM marked Do
-Not Boot, an external device, or a VM still waiting for its delayed start is
-not a problem.
+Not Boot, an external device, or a VM still waiting for its delayed start
+(state `BUILDING`) is not a problem. A delayed VM that is paused, quit or in
+error counts as down.
 
 The `Run SOH` button in a row's `Actions` column triggers a new run for that
 experiment and spins until the run is reported. When a run cannot be

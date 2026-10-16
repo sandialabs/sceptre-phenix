@@ -212,6 +212,8 @@ and Podman outputs on every push that
 changes more than the docs; `cancel-closed-pr.yml` cancels a closed pull request
 branch's push-triggered runs (branches in this repository only), while each
 workflow's own concurrency group cancels the pull request's `pull_request` runs.
+Those groups are keyed by pull request number, not ref, so a closed pull
+request's run cannot cancel runs on the base branch.
 Update affected path filters, inputs, generated artifacts, tool versions, and
 local-equivalent commands together. Preserve least-privilege permissions,
 supported action versions, lockfile caches, and shared version values.
