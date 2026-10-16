@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -219,6 +220,44 @@ func TestSummarizeWithoutRunTimeUsesNewestCheck(t *testing.T) {
 
 	if sum.SOHInitialized {
 		t.Error("expected soh not initialized")
+	}
+}
+
+func TestSummarizeCountsDelayedVMAsDownOnceStarted(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		state       string
+		delayed     int
+		notRunning  int
+		reportsDown bool
+	}{
+		{state: "BUILDING", delayed: 1},
+		{state: "PAUSED", notRunning: 1, reportsDown: true},
+		{state: "QUIT", notRunning: 1, reportsDown: true},
+		{state: "ERROR", notRunning: 1, reportsDown: true},
+	} {
+		t.Run(tc.state, func(t *testing.T) {
+			t.Parallel()
+
+			vmStates := map[string]string{
+				"hmi": "RUNNING", "plc": "RUNNING", "historian": "RUNNING", "flushed": "RUNNING",
+				"late": tc.state,
+			}
+
+			sum, err := Summarize(summaryExperiment(map[string]any{}), vmStates, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if sum.VMs.Delayed != tc.delayed || sum.VMs.NotRunning != tc.notRunning {
+				t.Errorf("VMs = %+v", sum.VMs)
+			}
+
+			if down := slices.Contains(sum.DownVMs, "late"); down != tc.reportsDown {
+				t.Errorf("DownVMs = %v", sum.DownVMs)
+			}
+		})
 	}
 }
 
