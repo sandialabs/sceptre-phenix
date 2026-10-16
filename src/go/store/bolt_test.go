@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"go.etcd.io/bbolt"
 )
 
 func TestBoltDBOpenFailure(t *testing.T) {
@@ -43,5 +45,37 @@ func TestBoltDBOpenFailure(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBoltDBOpenTimeout(t *testing.T) {
+	orig := boltOpenTimeout
+	boltOpenTimeout = 100 * time.Millisecond
+
+	t.Cleanup(func() { boltOpenTimeout = orig })
+
+	path := filepath.Join(t.TempDir(), "store.bdb")
+
+	// Holding the file open takes its exclusive lock, as another phenix process would.
+	holder, err := bbolt.Open(path, boltFileMode, nil)
+	if err != nil {
+		t.Fatalf("opening BoltDB file: %v", err)
+	}
+
+	t.Cleanup(func() { _ = holder.Close() })
+
+	b := &BoltDB{path: path}
+	cfg := &Config{Kind: "Topology", Metadata: ConfigMetadata{Name: "foo"}}
+	done := make(chan error, 1)
+
+	go func() { done <- b.Get(cfg) }()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, bbolt.ErrTimeout) {
+			t.Fatalf("expected bbolt.ErrTimeout, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("open waited for the file lock without a timeout")
 	}
 }

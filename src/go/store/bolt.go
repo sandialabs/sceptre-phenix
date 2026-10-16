@@ -13,6 +13,9 @@ import (
 
 const boltFileMode = 0o600
 
+// boltOpenTimeout bounds the wait for another process to release its lock on the BoltDB file.
+var boltOpenTimeout = 10 * time.Second //nolint:gochecknoglobals // overridden in tests
+
 type BoltDB struct {
 	mu sync.Mutex
 
@@ -81,7 +84,9 @@ func (b *BoltDB) open() error {
 
 	var err error
 
-	b.db, err = bbolt.Open(b.path, boltFileMode, &bbolt.Options{NoFreelistSync: true}) //nolint:exhaustruct // partial initialization
+	opts := &bbolt.Options{NoFreelistSync: true, Timeout: boltOpenTimeout} //nolint:exhaustruct // partial initialization
+
+	b.db, err = bbolt.Open(b.path, boltFileMode, opts)
 	if err != nil {
 		b.mu.Unlock()
 
