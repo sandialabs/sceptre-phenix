@@ -115,7 +115,8 @@ name; other `${VAR}` placeholders are filled in from the server's environment
 (see [Environment Variables](configuration.md#environment-variables)). That's
 why configs reference injected files as
 `/phenix/injects/${BRANCH_NAME}/<file>`, and why one directory can be deployed
-under several names side by side. An experiment that a workflow creates is
+under several names side by side. A config's `kind` and `metadata.name` can
+use no placeholder but `${BRANCH_NAME}`. An experiment that a workflow creates is
 [mapped](#actions) to its branch name.
 
 Configs that hard-code the injects path need `-b` set to the name they use:

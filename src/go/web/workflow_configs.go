@@ -2,14 +2,23 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 
+	"gopkg.in/yaml.v3"
+
 	"phenix/api/config"
 	"phenix/api/workflow"
 	"phenix/store"
+	"phenix/util/common"
+	"phenix/util/plog"
+	"phenix/web/middleware"
+	"phenix/web/rbac"
 	"phenix/web/weberror"
 )
 
@@ -28,6 +37,93 @@ func parseDryRun(q url.Values) (bool, error) {
 	}
 
 	return dryRun, nil
+}
+
+// configName returns the "<kind>/<name>" of a JSON or YAML config body without
+// reading the server's environment: ${BRANCH_NAME} becomes branch and each
+// other placeholder a distinct number, so a parse error quotes only the body.
+func configName(body []byte, typ, branch string) (string, error) {
+	var n int
+
+	src := common.EnvPlaceholder.ReplaceAllStringFunc(string(body), func(match string) string {
+		if common.EnvPlaceholder.FindStringSubmatch(match)[1] == "BRANCH_NAME" {
+			return branch
+		}
+
+		n++
+
+		return strconv.Itoa(n)
+	})
+
+	var head struct {
+		Kind     string `json:"kind"     yaml:"kind"`
+		Metadata struct {
+			Name string `json:"name" yaml:"name"`
+		} `json:"metadata" yaml:"metadata"`
+	}
+
+	var err error
+	if typ == mimeJSON {
+		err = json.Unmarshal([]byte(src), &head)
+	} else {
+		err = yaml.Unmarshal([]byte(src), &head)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", store.ErrInvalidFormat, err)
+	}
+
+	return fmt.Sprintf("%s/%s", head.Kind, head.Metadata.Name), nil
+}
+
+// authorizeConfigWrite reports whether the config name exists, once role may
+// update it if it does or create it if it does not.
+func authorizeConfigWrite(ctx context.Context, role rbac.Role, name string) (bool, error) {
+	// NewConfig rejects a kind the store does not hold, such as Workflow, and
+	// a name containing a slash; its nil result would make store.Get panic.
+	tester, err := store.NewConfig(name)
+	if err != nil {
+		return false, weberror.NewWebError(err, "invalid config %s", name)
+	}
+
+	exists := true
+
+	if err := store.Get(tester); err != nil {
+		if !errors.Is(err, store.ErrNotExist) {
+			err := weberror.NewWebError(err, "checking store for config")
+
+			return false, err.SetStatus(http.StatusInternalServerError)
+		}
+
+		exists = false
+	}
+
+	verb, action := "update", "updating"
+	if !exists {
+		verb, action = "create", "creating"
+	}
+
+	if !role.Allowed("configs", verb, name) {
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			action+" config not allowed",
+			"user",
+			user,
+		)
+
+		err := weberror.NewWebError(
+			nil,
+			"%s config %s not allowed for %s",
+			action,
+			name,
+			user,
+		)
+
+		return false, err.SetStatus(http.StatusForbidden)
+	}
+
+	return exists, nil
 }
 
 // checkConfig runs the checks a dry run and a real upsert share: the schema,
