@@ -4,10 +4,9 @@
 // # Revisions
 //
 // Every write to a store config gives it a new Metadata.Revision, taken from a
-// counter in BoltDB or from etcd's ModRevision. A revision is opaque and only
-// increases; compare it for equality. It orders writes to one config across
-// processes. The REST API exposes it as a strong ETag, "r<revision>", and
-// honors If-Match on writes.
+// counter in BoltDB. A revision is opaque and only increases; compare it for
+// equality. It orders writes to one config across processes. The REST API
+// exposes it as a strong ETag, "r<revision>", and honors If-Match on writes.
 //
 // # Sequence
 //

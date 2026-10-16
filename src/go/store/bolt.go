@@ -339,8 +339,7 @@ func (b *BoltDB) put(bucket, k string, v []byte) error {
 }
 
 // revisionKey holds the last revision given to a config, in the phenix bucket.
-// One counter for every kind keeps revisions unique across the store, as etcd's
-// are.
+// One counter for every kind keeps revisions unique across the store.
 const revisionKey = "revision"
 
 // putWithRevision gives c the store's next revision and writes it to bucket.
