@@ -30,9 +30,9 @@ env:
 # each job grants only what it needs
 permissions: {}
 
-# a newer commit (or closing the PR) cancels runs still going for this ref
+# a newer commit (or closing the PR) cancels runs still going for this PR or ref
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
 
 jobs:

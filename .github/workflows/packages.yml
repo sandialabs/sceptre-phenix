@@ -22,7 +22,7 @@ env:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   # Never cancel an in-progress tag build (release), but do cancel stale
   # in-progress runs for the same branch/PR when new commits supersede them.
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
