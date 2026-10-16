@@ -27,9 +27,8 @@ var (
 	// safely hand to minimega.
 	ErrInvalidFilePath = errors.New("invalid file path")
 
-	// ErrDownloadTooLarge is returned by ZipFiles when the files asked for are
-	// more, or larger in total, than its limits allow, or one grows past the
-	// size checked while the archive is written.
+	// ErrDownloadTooLarge is returned by ZipFiles when the files asked for exceed
+	// its limits in number or total size, or one grows past its checked size.
 	ErrDownloadTooLarge = errors.New("download too large")
 )
 

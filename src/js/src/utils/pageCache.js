@@ -15,10 +15,9 @@ const inflight = new Map();
 // so a stuck server call does not linger in the background.
 export const BACKGROUND_TIMEOUT_MS = 2 * 60 * 1000;
 
-// Returns { data, at, meta, invalidatedSeq, superseded } or undefined: at is
-// when it was loaded (ms), meta how fresh it is (a FreshnessMeta),
-// invalidatedSeq, when set, the seq of a websocket message that changed it
-// since, and superseded whether a reload was forced while it loaded.
+// Returns { data, at, meta, invalidatedSeq, superseded } or undefined: when it
+// loaded (ms), how fresh (a FreshnessMeta), the seq of a websocket message that
+// changed it since, and whether a reload was forced while it loaded.
 export function cachedPage(key) {
   return cache.get(key);
 }

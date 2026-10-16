@@ -113,9 +113,8 @@ func runQemuImgInfo(ctx context.Context, path string, chain bool) ([]byte, error
 	return out, nil
 }
 
-// inspectChain runs qemu-img on the image and its backing chain. Like
-// minimega, it falls back to the image alone when a backing file is unreadable,
-// and then reports the chain incomplete.
+// inspectChain runs qemu-img on the image and its backing chain, falling back
+// like minimega to the image alone, reported incomplete, if a backing file fails.
 func inspectChain(path string) ([]qemuImage, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), qemuImgTimeout)
 	defer cancel()
@@ -163,10 +162,8 @@ func stat(path string) (fileStamp, error) {
 	return stamp, nil
 }
 
-// cachedChain returns the image's chain and stamps, inspecting the image only
-// when it or a file it is backed by changed since the last inspection. An
-// incomplete chain is not cached, as the backing file missing from it may yet
-// appear.
+// cachedChain returns the image's chain and stamps, inspecting it again only once
+// it or its backing files changed; an incomplete chain is never cached.
 func cachedChain(path string) (cacheEntry, error) {
 	cacheMu.Lock()
 	entry, ok := imageCache[path]
