@@ -775,6 +775,8 @@ revision you opened and the current one, and offers to `Reload it (your edits
 are lost)`, to `Overwrite anyway`, which saves your version over the newer one,
 or to `Cancel` and keep editing.
 
+  ![The Config Changed dialog naming the revision opened and the current one, with Reload it (your edits are lost), Overwrite anyway and Cancel buttons](images/config_conflict.png){: width=500 .center}
+
 #### New Config
 
 The editor window for creating a new config will allow editing the filename in a

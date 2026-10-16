@@ -207,6 +207,9 @@ A clone copies the whole file, which can take minutes for a large image, so
 started the copy, the [jobs menu](web-ui.md#background-jobs-menu) and the
 image's details show its progress and can cancel it, and the list reloads when
 it ends.
+
+![The details of a disk image with a running clone under Clones: its progress bar, the bytes copied so far, and a Cancel button](images/disk_clone_job.png){: width=500 .center}
+
 `POST /api/v1/disks/clone/jobs?disk=&new=` makes the same checks as
 `POST /api/v1/disks/clone`, then answers at once with a
 [background job](jobs.md) that copies the image, counting the bytes copied, and
