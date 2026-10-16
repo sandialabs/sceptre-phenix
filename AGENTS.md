@@ -40,8 +40,8 @@ file rather than growing `SKILL.md`, and leave a one-line pointer to it from
 - `src/go/main.go` starts commands from `src/go/cmd/`.
 - `src/go/api/` implements domain operations; `src/go/types/` owns versioned
   config models and schemas.
-- `src/go/app/` runs apps; `scheduler/` assigns VMs; `store/` abstracts BoltDB
-  and etcd; `web/` serves REST, websockets, RBAC, and the built UI.
+- `src/go/app/` runs apps; `scheduler/` assigns VMs; `store/` abstracts the
+  BoltDB store; `web/` serves REST, websockets, RBAC, and the built UI.
 - `src/js/src/views/` contains pages, `components/` reusable UI, and `utils/`
   shared helpers. `router.js`, `store.js`, and `main.js` wire the app.
 - The Vite server proxies `/api/v1`, `/version`, and `/features` to
@@ -130,7 +130,7 @@ When changing a capability, inspect every applicable surface:
 | Log or error message text | Docs and skill text that quotes it, such as the Troubleshooting sections in `docs/content/` and `skills/phenix/references/` |
 | Topology Builder behavior | `src/go/web/builder.go`, Builder routes in `src/go/web/server.go`, the editor under `src/go/web/public/grapheditor/js/`, the embedded schemas in `.../grapheditor/utils/schemas/`, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
 
-Preserve v1/v2 config upgrades, persisted BoltDB/etcd data, RBAC migrations, and
+Preserve v1/v2 config upgrades, persisted BoltDB data, RBAC migrations, and
 public API compatibility unless a breaking change is deliberate and documented.
 Keep CLI, REST, websocket, and UI authorization consistent.
 

@@ -169,12 +169,8 @@ var rootCmd = &cobra.Command{
 
 		common.StoreEndpoint = endpoint //nolint:reassign // configuration injection
 
-		// Initialize storage backend if not already done
-		if !store.IsInitialized(store.ComponentStore) {
-			err := store.Init(store.Endpoint(endpoint))
-			if err != nil {
-				return fmt.Errorf("initializing storage: %w", err)
-			}
+		if err := store.Init(store.Endpoint(endpoint)); err != nil {
+			return fmt.Errorf("initializing storage: %w", err)
 		}
 
 		// Initialize default configs if not already done
