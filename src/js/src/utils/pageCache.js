@@ -10,6 +10,8 @@ const cache = new Map();
 // earlier visit) waits on that request instead of starting another, and they
 // outlive the page that started them.
 const inflight = new Map();
+// every request not yet settled, including ones a forced load replaced
+const running = new Set();
 
 // A request that has run this long is given up once no page is waiting on it,
 // so a stuck server call does not linger in the background.
@@ -134,9 +136,11 @@ function startRequest(key, fetch, after) {
     })
     .finally(() => {
       clearTimeout(entry.timer);
+      running.delete(entry);
       if (inflight.get(key) === entry) inflight.delete(key);
     });
 
+  running.add(entry);
   inflight.set(key, entry);
   return entry;
 }
@@ -182,7 +186,8 @@ export function invalidatePages(msg) {
 }
 
 export function clearPageCache() {
-  for (const entry of inflight.values()) entry.controller.abort();
+  for (const entry of running) entry.controller.abort();
+  running.clear();
   inflight.clear();
   cache.clear();
 }

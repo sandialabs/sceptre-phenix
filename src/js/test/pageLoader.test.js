@@ -292,6 +292,22 @@ test('a forced load joins a follow-up another page queued', async () => {
   for (const request of [running, queued, plain]) request.release();
 });
 
+test('clearing the cache cancels a request a forced load replaced', async () => {
+  const { fetch, calls } = manualFetch();
+  const older = fetchIntoCache('disks', fetch);
+  const newer = fetchIntoCache('disks', fetch, { force: true });
+
+  clearPageCache();
+  expect(calls[0].signal.aborted).toBe(true);
+  calls[0].resolve(['userA']);
+  await older.promise;
+  await newer.promise.catch(() => {});
+  expect(calls).toHaveLength(1);
+  expect(cachedPage('disks')).toBeUndefined();
+  older.release();
+  newer.release();
+});
+
 test("a page left behind does not clear the next page's header", () => {
   const { fetch } = manualFetch();
   const previous = createPageLoader({ fetch, apply: () => {} });
