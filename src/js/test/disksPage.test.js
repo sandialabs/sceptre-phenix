@@ -92,6 +92,7 @@ describe('the disk list', () => {
     ctx.handleWs({ resource: { type: 'disks', action: 'update' } });
     ctx.handleWs({ resource: { type: 'experiment', action: 'update' } });
     expect(loaderSpy.load).toHaveBeenCalledTimes(1);
+    expect(loaderSpy.load).toHaveBeenCalledWith({ force: true });
   });
 
   it('shows why an upload failed', async () => {

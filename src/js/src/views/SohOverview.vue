@@ -728,7 +728,7 @@
       reloadSoon() {
         clearTimeout(this.reloadTimer);
         this.reloadTimer = setTimeout(
-          () => this.loader.load(),
+          () => this.loader.load({ force: true }),
           RELOAD_DELAY_MS,
         );
       },

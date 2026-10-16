@@ -52,9 +52,18 @@ export function isLoadingPage(key) {
 // for it, and caches the result. fetch passes meta (a FreshnessMeta) with its
 // requests, which fill it in. Returns a handle with the result promise, when
 // the request was sent, its meta, and release(), which a page calls when it
-// stops waiting on the result.
-export function fetchIntoCache(key, fetch) {
+// stops waiting on the result. force starts a new request even when one is
+// running, for data that changed since it was sent: the older one's result is
+// then not cached.
+export function fetchIntoCache(key, fetch, { force = false } = {}) {
   let entry = inflight.get(key);
+
+  if (entry && force) {
+    entry.superseded = true;
+    inflight.delete(key);
+    if (entry.waiting === 0) entry.controller.abort();
+    entry = undefined;
+  }
 
   // an abandoned request that timed out is not worth joining
   if (!entry || entry.controller.signal.aborted) {
@@ -65,6 +74,7 @@ export function fetchIntoCache(key, fetch) {
       meta,
       waiting: 0,
       expired: false,
+      superseded: false,
       startedAt: Date.now(),
     };
 
@@ -73,7 +83,8 @@ export function fetchIntoCache(key, fetch) {
       resolve(fetch(controller.signal, meta)),
     )
       .then((data) => {
-        if (!controller.signal.aborted) cachePage(key, data, meta);
+        if (!controller.signal.aborted && !entry.superseded)
+          cachePage(key, data, meta);
         return data;
       })
       .finally(() => {
@@ -101,8 +112,10 @@ export function fetchIntoCache(key, fetch) {
       if (released) return;
       released = true;
       entry.waiting--;
-      // nobody is left waiting on a request that has already run too long
-      if (entry.waiting === 0 && entry.expired) entry.controller.abort();
+      // nobody is left waiting on a request that has run too long or been
+      // replaced
+      if (entry.waiting === 0 && (entry.expired || entry.superseded))
+        entry.controller.abort();
     },
   };
 }

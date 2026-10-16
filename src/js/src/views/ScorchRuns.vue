@@ -451,7 +451,7 @@
 
       // reloads the experiment's SCORCH runs
       runsView() {
-        return this.loader.load();
+        return this.loader.load({ force: true });
       },
 
       componentDetail(comp) {

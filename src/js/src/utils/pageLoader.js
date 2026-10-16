@@ -133,14 +133,15 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
       return loader.load();
     },
 
-    // resolves to true once fresh data is applied, false otherwise
-    async load() {
+    // Resolves to true once fresh data is applied, false otherwise. force
+    // skips joining a request sent before a change the page was told of.
+    async load({ force = false } = {}) {
       detach();
 
       const k = cacheKey();
       let request;
       if (k) {
-        request = fetchIntoCache(k, fetch);
+        request = fetchIntoCache(k, fetch, { force });
       } else {
         const controller = new AbortController();
         const meta = new FreshnessMeta();
