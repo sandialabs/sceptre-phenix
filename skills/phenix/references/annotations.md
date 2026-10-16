@@ -52,6 +52,10 @@ is `sport[:dhost]:dport`:
 
 Malformed entries are logged and skipped.
 
+Setting it through the web API (`node_annotations` on `POST /experiments`, or
+`PATCH /experiments/{exp}/vms/{name}`) needs `vms/forwards` `create` on the
+affected VMs; the API answers `403` otherwise. The CLI does not check this.
+
 ## `phenix/startup-via-cc` (`startup` app, `pre-start` stage)
 
 When truthy, the startup app drops its disk injections for that node and

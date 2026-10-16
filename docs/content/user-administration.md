@@ -611,6 +611,10 @@ instead of writing back the old ones. Change a password or a token from the
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+`create` is also needed to give a VM the `phenix/startup-autotunnel`
+annotation through the web UI or API, when creating an experiment or editing
+the VM.
+
 #### Resource: `vms/cdrom`
 
 |      |      |

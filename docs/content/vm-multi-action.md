@@ -8,7 +8,7 @@ The experiment must be started; click on the experiment name to enter the
 Running Experiment component. Within that component, click on the checkbox
 in the header of the first column, to the left of the `Node` column, to
 select all the VMs; its tooltip reads `Select/Unselect All`. Alternatively,
-the checkbox adjacent to a specific VM name can be used to select the
+the checkbox at the start of a VM's row can be used to select the
 VM. Once one or more VMs are selected, a toolbar will appear to the
 left of the search text box.
 
@@ -209,18 +209,22 @@ phenix vm info <experiment name> --label <label>
 
 ### From the Web-UI
 
-When a valid ipv4 subnet is entered, the `play` button adjacent to the IPv4 label will be enabled.
-To start capturing, press the `play` button.
+The Web-UI has no single control for a subnet's captures. Enter the subnet in
+the search box, such as `192.168.2.0/30`, to list the VMs in it. Then click an
+address in a VM's `IP` column, or a tap in its `Taps` column, to start a
+capture on that interface (see [Packet Capture](vms.md#packet-capture)).
 
 ![screenshot](images/vms_multi_capture_start.png)
 
-Once there are valid captures, the `stop` button adjacent to the play button will be enabled.
-To stop all the captures, press the `stop` button.
+The `Capture all interfaces` button in a VM's `Actions` column starts a capture
+on every connected interface of that VM. While the VM is capturing, the button
+becomes `Stop all packet captures`, which stops them all (see
+[Capture All Interfaces](vms.md#capture-all-interfaces)).
 
 ![screenshot](images/vms_multi_capture_stop.png)
 
-To stop all packet captures for all subnets, the term `capturing` can be entered in the search bar
-to find all the VMs with active packet captures.
+To find every VM with a running packet capture, enter `capturing` in the search
+box.
 
 ![screenshot](images/vms_multi_captures_stop_all.png)
 

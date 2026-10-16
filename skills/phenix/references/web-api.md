@@ -63,7 +63,7 @@ archive job's files when `GET /jobs/{id}/artifact` downloads the archive.
 | Configs | `GET/POST /configs`, `GET/PUT/DELETE /configs/{kind}/{name}`, `POST /configs/download` |
 | Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` |
 | Experiments | `GET/POST /experiments`, `GET /experiments/{name}`, `PATCH /experiments/{name}`, `DELETE /experiments/{name}`, `POST /experiments/{name}/start`, `POST /experiments/{name}/stop`, `GET /experiments/{name}/apps`, `POST/PUT /experiments/builder` |
-| Experiment detail | `GET /experiments/{name}/topology`, `GET /experiments/{name}/topology/search`, `POST/DELETE /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health), `GET /soh` (state of health summary for every experiment), `GET /experiments/{name}/captures`, `GET /experiments/{name}/files`, `GET/HEAD/DELETE /experiments/{name}/files/{filename}?path=` (resumable; see [Downloads](#downloads)), `GET .../files/{filename}/checksum?path=`, `POST /experiments/{name}/files/download` and `/files/delete` (`{"paths": [...]}`; zip download, not resumable, and bulk delete), `POST /experiments/{name}/files/archive` (same body and limits; builds the zip in a `files.archive` [background job](jobs.md), leaving out files it cannot fetch, listed in `MISSING.txt`, as `<exp>-files-incomplete.zip`; download from `/jobs/{id}/artifact`), `POST /experiments/{name}/webshark` (`{"path"}` or `{"vm", "interface"}`; readies a capture for WebShark, served at `/webshark/` outside `/api/v1` when installed, and returns a capture name bound to the caller's session: 2 h idle, at most 12 h), `POST/GET /experiments/{name}/capture-tokens` (POST takes the same body plus `"operations": ["stream"]` or any of `view`/`download`/`watch`; GET lists the caller's own tokens without secrets), `DELETE /experiments/{name}/capture-tokens/{id}` (owner only; ends open streams), and `GET /webshark/streams/{token}` (outside `/api/v1`; the `pcs_` stream token is the only credential; starts streams for 5 min, ends at sign-out; revoked on logout, user, experiment or file delete, and stream tokens on experiment stop) |
+| Experiment detail | `GET /experiments/{name}/topology`, `GET /experiments/{name}/topology/search`, `POST/DELETE /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health), `GET /soh` (state of health summary for every experiment), `GET /experiments/{name}/captures`, `GET /experiments/{name}/files`, `GET/HEAD/DELETE /experiments/{name}/files/{filename}?path=` (resumable; see [Downloads](#downloads)), `GET .../files/{filename}/checksum?path=`, `POST /experiments/{name}/files/download` and `/files/delete` (`{"paths": [...]}`; zip download, not resumable, and bulk delete), `POST /experiments/{name}/files/archive` (same body and limits; builds the zip in a `files.archive` [background job](jobs.md), leaving out files it cannot fetch, listed in `MISSING.txt`, as `<exp>-files-incomplete.zip`; a file that grows after the request is archived as its first planned bytes and listed in `MISSING.txt` as changed while archiving, also as `-files-incomplete.zip`; download from `/jobs/{id}/artifact`), `POST /experiments/{name}/webshark` (`{"path"}` or `{"vm", "interface"}`; readies a capture for WebShark, served at `/webshark/` outside `/api/v1` when installed, and returns a capture name bound to the caller's session: 2 h idle, at most 12 h), `POST/GET /experiments/{name}/capture-tokens` (POST takes the same body plus `"operations": ["stream"]` or any of `view`/`download`/`watch`; GET lists the caller's own tokens without secrets), `DELETE /experiments/{name}/capture-tokens/{id}` (owner only; ends open streams), and `GET /webshark/streams/{token}` (outside `/api/v1`; the `pcs_` stream token is the only credential; starts streams for 5 min, ends at sign-out; revoked on logout, user, experiment or file delete, and stream tokens on experiment stop) |
 | Netflow | `GET/POST/DELETE /experiments/{exp}/netflow`, `GET /experiments/{exp}/netflow/ws` |
 | Subnet captures | `POST /experiments/{exp}/captureSubnet` (`exp/captureSubnet` `create`), `POST /experiments/{exp}/stopCaptureSubnet` (`exp/captureSubnet` `delete`) |
 | VMs | `GET/PATCH /experiments/{exp}/vms`, `POST /experiments/{exp}/vms/actions` (`{"action": "start|pause|restart|shutdown|kill|resetDisk", "vms": [...]}`, at most 1000; a `vms.action` [background job](jobs.md), 403 when the role may act on none), `GET/PATCH/DELETE /experiments/{exp}/vms/{name}`, plus `/start`, `/stop`, `/restart`, `/redeploy`, `/shutdown`, `/reset`, `/cdrom`, `/vnc`, `/vnc/ws`, `/screenshot.png`, `/captures`, `/captures/{iface}/stream` (running capture as pcap over HTTP or websocket; `?from=now`), `/snapshots`, `/snapshots/{snapshot}`, `/commit`, `/memorySnapshot`, `/forwards`, `/forwards/{host}/{port}/ws` |
@@ -216,7 +216,10 @@ give both. `node_annotations` are added to every VM in the experiment's own
 copy of the topology (the Topology config is unchanged), keep their JSON types,
 and never replace a VM's own value for the same key. A value of the wrong type
 for an annotation the default apps read (see [`annotations.md`](annotations.md))
-is rejected with `400` naming the key.
+is rejected with `400` naming the key. Giving `phenix/startup-autotunnel` in
+`node_annotations` needs `vms/forwards` `create` on every VM the experiment
+deploys (external nodes excluded), or the request gets `403`, because the
+startup app creates those forwards.
 
 ## VM annotations
 
@@ -228,7 +231,8 @@ while the experiment is running, where only `interface` (the VLAN it connects
 to), `tags` and `annotations` may change. Values keep their JSON types, and the
 same type checks as creation reject a bad value with `400` naming the key. The
 response carries the saved annotations only when the role may also `get` the
-VM.
+VM. Setting `phenix/startup-autotunnel` to a value the VM does not already have
+needs `vms/forwards` `create` on that VM, or the request gets `403`.
 
 ```json
 {"annotations": {"phenix/startup-autotunnel": ["8080:80"], "vncBanner": "lab"}}
