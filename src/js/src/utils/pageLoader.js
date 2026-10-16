@@ -93,14 +93,20 @@ let owner = null;
 // Other requests are canceled when the page is left.
 export function createPageLoader({ key = null, fetch, apply, refresh }) {
   let current = null; // the request this page is waiting on
+  // a shared request still running when a forced load queued current behind it
+  let earlier = null;
+  let loads = 0; // numbers each load() call, so older data never replaces newer
+  let applied = 0; // the number of the load whose data is on the page
+  let skipped = false; // whether an earlier result was skipped since then
   const cacheKey = () => (typeof key === 'function' ? key() : key);
 
-  // stops waiting on the current request: a private one is canceled, a
+  // stops waiting on the page's requests: a private one is canceled, a
   // shared one keeps going for the cache
   const detach = () => {
-    const request = current;
+    const requests = [current, earlier];
     current = null;
-    request?.release();
+    earlier = null;
+    for (const request of requests) request?.release();
   };
 
   const loader = {
@@ -134,10 +140,9 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
     },
 
     // Resolves to true once fresh data is applied, false otherwise. force
-    // skips joining a request sent before a change the page was told of.
+    // waits for a request sent after a change the page was told of.
     async load({ force = false } = {}) {
-      detach();
-
+      const n = ++loads;
       const k = cacheKey();
       let request;
       if (k) {
@@ -155,12 +160,33 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
         };
       }
 
+      // A request a forced load queued behind is still awaited: under a
+      // stream of forced loads, every other one lands, so the page keeps up.
+      const previous = current;
+      if (k && previous?.key === k && previous.seq !== request.seq && force) {
+        earlier?.release();
+        earlier = previous;
+      } else {
+        previous?.release();
+        if (earlier && earlier.key !== k) {
+          earlier.release();
+          earlier = null;
+        }
+      }
       current = request;
       if (owner === loader) pageStatus.loading = true;
 
       try {
         const data = await request.promise;
-        if (current !== request) return false;
+        if (current !== request && earlier !== request) return false;
+        if (n < applied) return false;
+        // data from before the change is skipped, but never twice in a row
+        if (earlier === request && !skipped) {
+          skipped = true;
+          return false;
+        }
+        applied = n;
+        skipped = false;
 
         const meta = request.meta;
         apply(data, {
@@ -185,7 +211,10 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
         if (owner === loader) pageStatus.failed = true;
         return false;
       } finally {
-        if (current === request) {
+        if (earlier === request) {
+          earlier = null;
+          request.release();
+        } else if (current === request) {
           detach();
           if (owner === loader) pageStatus.loading = false;
         }
