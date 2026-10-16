@@ -114,8 +114,9 @@ func runQemuImgInfo(ctx context.Context, path string, chain bool) ([]byte, error
 }
 
 // inspectChain runs qemu-img on the image and its backing chain. Like
-// minimega, it falls back to the image alone when a backing file is unreadable.
-func inspectChain(path string) ([]qemuImage, error) {
+// minimega, it falls back to the image alone when a backing file is unreadable,
+// and then reports the chain incomplete.
+func inspectChain(path string) ([]qemuImage, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), qemuImgTimeout)
 	defer cancel()
 
@@ -123,11 +124,11 @@ func inspectChain(path string) ([]qemuImage, error) {
 	if chainErr == nil {
 		var chain []qemuImage
 		if err := json.Unmarshal(out, &chain); err != nil {
-			return nil, fmt.Errorf("parsing qemu-img info for %s: %w", path, err)
+			return nil, false, fmt.Errorf("parsing qemu-img info for %s: %w", path, err)
 		}
 
 		if len(chain) > 0 {
-			return chain, nil
+			return chain, true, nil
 		}
 
 		chainErr = errors.New("empty backing chain")
@@ -135,17 +136,17 @@ func inspectChain(path string) ([]qemuImage, error) {
 
 	out, err := runQemuImgInfo(ctx, path, false)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	var image qemuImage
 	if err := json.Unmarshal(out, &image); err != nil {
-		return nil, fmt.Errorf("parsing qemu-img info for %s: %w", path, err)
+		return nil, false, fmt.Errorf("parsing qemu-img info for %s: %w", path, err)
 	}
 
 	plog.Warn(plog.TypeSystem, "showing image without its backing chain", "image", path, "err", chainErr)
 
-	return []qemuImage{image}, nil
+	return []qemuImage{image}, false, nil
 }
 
 func stat(path string) (fileStamp, error) {
@@ -163,7 +164,9 @@ func stat(path string) (fileStamp, error) {
 }
 
 // cachedChain returns the image's chain and stamps, inspecting the image only
-// when it or a file it is backed by changed since the last inspection.
+// when it or a file it is backed by changed since the last inspection. An
+// incomplete chain is not cached, as the backing file missing from it may yet
+// appear.
 func cachedChain(path string) (cacheEntry, error) {
 	cacheMu.Lock()
 	entry, ok := imageCache[path]
@@ -173,7 +176,7 @@ func cachedChain(path string) (cacheEntry, error) {
 		return entry, nil
 	}
 
-	chain, err := inspectChain(path)
+	chain, complete, err := inspectChain(path)
 	if err != nil {
 		return cacheEntry{}, err
 	}
@@ -203,7 +206,11 @@ func cachedChain(path string) (cacheEntry, error) {
 	}
 
 	cacheMu.Lock()
-	imageCache[path] = entry
+	if complete {
+		imageCache[path] = entry
+	} else {
+		delete(imageCache, path)
+	}
 	cacheMu.Unlock()
 
 	return entry, nil
