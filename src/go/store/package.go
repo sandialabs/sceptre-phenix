@@ -3,9 +3,14 @@ package store
 var DefaultStore Store = NewBoltDB() //nolint:gochecknoglobals // default implementation
 
 func Init(opts ...Option) error {
-	DefaultStore = NewBoltDB()
+	s := NewBoltDB()
+	if err := s.Init(opts...); err != nil {
+		return err
+	}
 
-	return DefaultStore.Init(opts...)
+	DefaultStore = s
+
+	return nil
 }
 
 func Close() error {

@@ -444,7 +444,7 @@ func init() {
 	}
 
 	rootCmd.PersistentFlags().
-		StringVar(&storeEndpoint, "store.endpoint", defaultStore, "endpoint for storage service")
+		StringVar(&storeEndpoint, "store.endpoint", defaultStore, "BoltDB store endpoint (bolt://<path>)")
 	rootCmd.PersistentFlags().
 		String("log.system.path", defaultLogPath, "path to system log (JSON format)")
 
