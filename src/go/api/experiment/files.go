@@ -28,7 +28,8 @@ var (
 	ErrInvalidFilePath = errors.New("invalid file path")
 
 	// ErrDownloadTooLarge is returned by ZipFiles when the files asked for are
-	// more, or larger in total, than its limits allow.
+	// more, or larger in total, than its limits allow, or one grows past the
+	// size checked while the archive is written.
 	ErrDownloadTooLarge = errors.New("download too large")
 )
 
@@ -295,7 +296,8 @@ func PlanZip(name string, paths []string, limits ZipLimits) (ZipPlan, error) {
 // the headnode's copy, and returns the paths archived, each flushed to w once
 // complete, including on a failure. A file it cannot archive fails the
 // archive, unless hooks.SkipFailed, when it is left out and listed in a
-// MISSING.txt entry with the reason. It stops with ctx's error
+// MISSING.txt entry with the reason; so does a file grown past its planned
+// size, with no more than that size of it written. It stops with ctx's error
 // once ctx is done, leaving w with a partial archive.
 func (p ZipPlan) Write(ctx context.Context, w io.Writer, hooks ZipHooks) ([]string, error) {
 	var (
@@ -313,7 +315,7 @@ func (p ZipPlan) Write(ctx context.Context, w io.Writer, hooks ZipHooks) ([]stri
 			hooks.OnStart(filePath)
 		}
 
-		err := addToZip(ctx, archive, p.Name, filePath, hooks.OnBytes)
+		err := addToZip(ctx, archive, p.Name, filePath, p.Sizes[filePath], hooks.OnBytes)
 		if err == nil {
 			// a file counts as sent only once its bytes reach w
 			if flushErr := archive.Flush(); flushErr != nil {
@@ -363,8 +365,9 @@ func (p ZipPlan) Write(ctx context.Context, w io.Writer, hooks ZipHooks) ([]stri
 
 // addToZip copies the experiment's file (a clean path) into the archive,
 // telling onBytes, if not nil, of each chunk read, and stopping once ctx is
-// done.
-func addToZip(ctx context.Context, archive *zip.Writer, name, clean string, onBytes func(n int64)) error {
+// done. A file grown past the planned size fails with ErrDownloadTooLarge,
+// having written no more than size bytes of it.
+func addToZip(ctx context.Context, archive *zip.Writer, name, clean string, size int64, onBytes func(n int64)) error {
 	local, err := fetchFile(name, clean)
 	if err != nil {
 		return err
@@ -382,6 +385,10 @@ func addToZip(ctx context.Context, archive *zip.Writer, name, clean string, onBy
 		return fmt.Errorf("reading %s: %w", clean, err)
 	}
 
+	if info.Size() > size {
+		return grewError(clean, size)
+	}
+
 	method := zip.Deflate
 	if slices.Contains(storedExtensions, strings.ToLower(path.Ext(clean))) {
 		method = zip.Store
@@ -396,12 +403,21 @@ func addToZip(ctx context.Context, archive *zip.Writer, name, clean string, onBy
 		return fmt.Errorf("adding %s to zip archive: %w", clean, err)
 	}
 
-	_, err = io.Copy(w, &ctxReader{ctx: ctx, r: f, onBytes: onBytes})
+	_, err = io.Copy(w, io.LimitReader(&ctxReader{ctx: ctx, r: f, onBytes: onBytes}, size))
 	if err != nil {
 		return fmt.Errorf("adding %s to zip archive: %w", clean, err)
 	}
 
+	// a byte past the planned size, read but not archived, means it grew
+	if n, _ := f.Read(make([]byte, 1)); n > 0 {
+		return grewError(clean, size)
+	}
+
 	return nil
+}
+
+func grewError(clean string, size int64) error {
+	return fmt.Errorf("%w: %s grew past the %d bytes checked", ErrDownloadTooLarge, clean, size)
 }
 
 // ctxReader reads r until ctx is done, telling onBytes of each read.
