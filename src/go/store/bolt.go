@@ -42,7 +42,7 @@ func (b *BoltDB) Init(opts ...Option) error {
 	}
 
 	if u.Scheme != "bolt" {
-		return fmt.Errorf("invalid scheme '%s' for BoltDB endpoint", u.Scheme)
+		return fmt.Errorf("invalid scheme '%s' for store endpoint: only bolt:// is supported", u.Scheme)
 	}
 
 	b.path = u.Host + u.Path

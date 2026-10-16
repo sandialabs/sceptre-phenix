@@ -95,7 +95,7 @@ The following global flags are supported by all `phenix` subcommands:
 | `--log.system.max-size` | `int` | `100` | Maximum size in megabytes of the system log file before rotation. |
 | `--log.system.path` | `string` | `/var/log/phenix/phenix.log` | Path to persistent system log in JSON Lines format, with one JSON object per line. |
 | `--mount-dir` | `string` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts. |
-| `--store.endpoint` | `string` | `bolt:///etc/phenix/store.bdb` | Endpoint for the storage service. |
+| `--store.endpoint` | `string` | `bolt:///etc/phenix/store.bdb` | BoltDB store endpoint (`bolt://<path>`). |
 | `--unix-socket` | `string` | `/tmp/phenix.sock` | phēnix unix socket to listen on (`ui` subcommand) or connect to. |
 | `--use-gre-mesh` | — | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. See [GRE Mesh](gre-mesh.md). |
 
