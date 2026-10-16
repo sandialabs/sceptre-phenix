@@ -210,8 +210,8 @@ succeed list each item's outcome.
         this.$buefy.dialog.confirm({
           title: 'Download incomplete archive',
           message:
-            'Some files could not be added to this archive. Its MISSING.txt ' +
-            'lists them and why. Download it anyway?',
+            'Some files are missing from this archive or only partly in it. ' +
+            'Its MISSING.txt lists them and why. Download it anyway?',
           confirmText: 'Download',
           cancelText: 'Cancel',
           type: 'is-warning',

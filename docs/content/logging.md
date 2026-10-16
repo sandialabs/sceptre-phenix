@@ -234,7 +234,8 @@ with the job's ID in `phenix.job.id`. A job canceled before its work was done
 is a failure with `error.message` `canceled`. A request starting the job is
 audited only when refused, or when it fails before the job starts. The files
 of an archive job are audited when its archive is downloaded, by the user
-downloading it, and only those archived, not those its `MISSING.txt` lists.
+downloading it, and only those archived, including any cut short, not those its
+`MISSING.txt` lists as left out.
 
 ### Fields
 
