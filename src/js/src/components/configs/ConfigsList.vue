@@ -492,7 +492,7 @@
       },
 
       updateConfigs() {
-        this.loader.load();
+        this.loader.load({ force: true });
       },
       isBuilderTopology(cfg) {
         if (cfg.kind == 'Topology') {

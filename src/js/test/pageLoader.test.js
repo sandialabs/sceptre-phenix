@@ -10,6 +10,7 @@ import {
   cachedPage,
   cachePage,
   clearPageCache,
+  fetchIntoCache,
   invalidatePages,
   isLoadingPage,
 } from '@/utils/pageCache.js';
@@ -194,6 +195,41 @@ test('a newer load supersedes an older one', async () => {
   expect(apply).toHaveBeenCalledTimes(1);
   expect(apply).toHaveBeenCalledWith('new', expect.anything());
   loader.stop();
+});
+
+test('a forced load does not join a request sent before a change', async () => {
+  const { fetch, calls } = manualFetch();
+  const apply = vi.fn();
+  const loader = createPageLoader({ key: 'disks', fetch, apply });
+
+  const first = loader.start();
+  const forced = loader.load({ force: true });
+  expect(calls).toHaveLength(2);
+
+  calls[1].resolve(['new']);
+  calls[0].resolve(['old']);
+  expect(await forced).toBe(true);
+  await first;
+  expect(apply).toHaveBeenCalledTimes(1);
+  expect(apply).toHaveBeenCalledWith(['new'], expect.anything());
+  expect(cachedPage('disks').data).toEqual(['new']);
+  loader.stop();
+});
+
+test('a request replaced by a forced one still answers its waiters but is not cached', async () => {
+  const { fetch, calls } = manualFetch();
+  const older = fetchIntoCache('disks', fetch);
+  const newer = fetchIntoCache('disks', fetch, { force: true });
+  expect(calls).toHaveLength(2);
+  expect(calls[0].signal.aborted).toBe(false);
+
+  calls[1].resolve(['new']);
+  await newer.promise;
+  calls[0].resolve(['old']);
+  expect(await older.promise).toEqual(['old']);
+  expect(cachedPage('disks').data).toEqual(['new']);
+  older.release();
+  newer.release();
 });
 
 test("a page left behind does not clear the next page's header", () => {

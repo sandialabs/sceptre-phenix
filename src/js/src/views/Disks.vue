@@ -432,7 +432,7 @@
         refresh: async () => {
           this.rescan = true;
           try {
-            return await this.loader.load();
+            return await this.loader.load({ force: true });
           } finally {
             this.rescan = false;
           }
@@ -513,13 +513,13 @@
       handleWs(msg) {
         // the server saw images added, changed or removed
         if (msg.resource.type === 'disks' && msg.resource.action === 'update') {
-          this.loader.load();
+          this.loader.load({ force: true });
         }
       },
       // closes any open dialog and reloads the list after a change
       updateDisks() {
         this.resetData();
-        this.loader.load();
+        this.loader.load({ force: true });
       },
       rowClick(row) {
         this.detailsModal.disk = row;
@@ -664,7 +664,7 @@
             } catch (err) {
               useErrorNotification(err);
             }
-            this.loader.load();
+            this.loader.load({ force: true });
           },
         });
       },

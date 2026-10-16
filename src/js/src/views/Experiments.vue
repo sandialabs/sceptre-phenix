@@ -579,7 +579,10 @@
       // request covers them.
       reloadSoon() {
         clearTimeout(this.reloadTimer);
-        this.reloadTimer = setTimeout(() => this.loader.load(), 250);
+        this.reloadTimer = setTimeout(
+          () => this.loader.load({ force: true }),
+          250,
+        );
       },
 
       updating(status) {
