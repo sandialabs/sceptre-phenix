@@ -6109,12 +6109,10 @@ paths:
         - Health
       summary: Check the server's liveness
       description: >-
-        Whether the server is up: its uptime and, for a BoltDB store, how long
-        the store takes to list configs. An etcd store is checked only by
-        /readyz, since restarting phenix would not fix an etcd outage. Results
-        are cached briefly (the store for 2 seconds), and each check has a
-        timeout, so probes are cheap. Needs no credentials; `output` fields
-        need a token, or auth disabled.
+        Whether the server is up: its uptime and how long the BoltDB store
+        takes to list configs. Results are cached briefly (the store for 2
+        seconds), and each check has a timeout, so probes are cheap. Needs no
+        credentials; `output` fields need a token, or auth disabled.
       operationId: getHealthz
       responses:
         "200":

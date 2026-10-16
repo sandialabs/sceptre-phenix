@@ -172,7 +172,7 @@ func percentile(h *metrics.Float64Histogram, p float64) float64 {
 
 // Store reports how long the store takes to list, through list: it fails
 // when the listing fails, and warns when it takes over a second. The
-// component is the store's kind ("bolt" or "etcd"), never its location.
+// component is the store's kind, such as "bolt", never its location.
 func Store(component string, list func() error) Check {
 	key := Key{Name: KeyStore, ComponentID: component, ComponentType: TypeDatastore}
 

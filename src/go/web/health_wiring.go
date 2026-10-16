@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -36,10 +35,8 @@ type healthHandlers struct {
 
 // newHealthHandlers builds the health endpoints from the server options:
 //
-//   - /healthz (liveness) reports uptime and, for a BoltDB store, which is a
-//     file of this process's own, whether the store can be read. An etcd store
-//     is an external service whose outage restarting phenix would not fix, so
-//     only /readyz reports it.
+//   - /healthz (liveness) reports uptime and whether the BoltDB store, a file
+//     of this process's own, can be read.
 //   - /readyz (readiness) reports everything phenix needs to run experiments.
 //
 // Only authenticated requests (or every request, with auth disabled) see the
@@ -47,16 +44,10 @@ type healthHandlers struct {
 func newHealthHandlers() healthHandlers {
 	var (
 		authenticated = middleware.Authenticator(o.jwtKey, o.proxyAuthHeader)
-		kind          = storeKind(common.StoreEndpoint)
 		uptime        = health.Uptime(startedAt)
-		storeCheck    = health.Store(kind, listRoles)
+		storeCheck    = health.Store("bolt", listRoles)
 		webshark      = o.featured("webshark")
 	)
-
-	live := []health.Check{uptime}
-	if kind == "bolt" {
-		live = append(live, storeCheck)
-	}
 
 	ready := health.NewRegistry(
 		uptime,
@@ -71,7 +62,7 @@ func newHealthHandlers() healthHandlers {
 
 	return healthHandlers{
 		live: health.Handler{
-			Registry:      health.NewRegistry(live...),
+			Registry:      health.NewRegistry(uptime, storeCheck),
 			Description:   "phēnix liveness",
 			Authenticated: authenticated,
 		},
@@ -81,17 +72,6 @@ func newHealthHandlers() healthHandlers {
 			Authenticated: authenticated,
 		},
 	}
-}
-
-// storeKind is the scheme of the store endpoint ("bolt" or "etcd"), never its
-// path or host, which unauthenticated callers must not see.
-func storeKind(endpoint string) string {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return ""
-	}
-
-	return u.Scheme
 }
 
 func listRoles() error {

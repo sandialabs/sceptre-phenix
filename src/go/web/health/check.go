@@ -41,7 +41,7 @@ type Registry struct {
 // entry is a check with its last result and its run in flight, if any. At
 // most one run of a check is outstanding at a time, however many requests
 // wait on it, so a probe flood cannot multiply the work, and a check that
-// hangs (a minimega or etcd that never answers) holds one goroutine, not one
+// hangs (a minimega that never answers) holds one goroutine, not one
 // per request.
 type entry struct {
 	check Check

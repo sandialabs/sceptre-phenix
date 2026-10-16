@@ -4,9 +4,9 @@ A running `phenix ui` server answers two health endpoints, following the
 Kubernetes `livez`/`readyz` convention:
 
 * **`/healthz` (liveness)**: is the phēnix process up and working? It checks
-  the server's uptime and, for a BoltDB store, that the store can be read. A
-  failing liveness check means restarting phēnix may help, so this is what the
-  Docker and Podman health checks run.
+  the server's uptime and that the store can be read. A failing liveness check
+  means restarting phēnix may help, so this is what the Docker and Podman
+  health checks run.
 * **`/readyz` (readiness)**: can phēnix run experiments right now? It checks
   minimega, the mesh, the store, `qemu-img`, WebShark, free disk space and the
   websocket broker. A failing readiness check usually means something phēnix
@@ -90,7 +90,7 @@ The **Check** column is the name `?exclude=` takes.
 | Key | Check | Endpoints | Unit | Warns when | Fails when |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `uptime` | `uptime` | both | `s` | never | never |
-| `store:responseTime` | `store` | `/readyz`; `/healthz` for a BoltDB store | `ms` | listing configs takes over a second | the store cannot be read |
+| `store:responseTime` | `store` | both | `ms` | listing configs takes over a second | the store cannot be read |
 | `minimega:responseTime` | `minimega` | `/readyz` | `ms` | minimega takes over a second to give its version | minimega does not answer |
 | `minimega:version` | `minimega` | `/readyz` | (version) | never | minimega does not answer |
 | `minimega:namespaces` | `minimega` | `/readyz` | `namespaces` | the namespaces cannot be listed | minimega does not answer |
@@ -104,9 +104,7 @@ The **Check** column is the name `?exclude=` takes.
 
 `disk:utilization` has one result per filesystem, for the minimega files
 directory (`files-dir`) and the phēnix base directory (`phenix-base`); two
-directories on one filesystem are reported once, as the first. With an etcd
-store, `/healthz` leaves the store out: an etcd outage is not something
-restarting phēnix fixes, so only `/readyz` reports it.
+directories on one filesystem are reported once, as the first.
 
 `?exclude=` leaves checks out, by the names above. Repeat it or separate the
 names with commas, for example to ignore disks phēnix does not own:
