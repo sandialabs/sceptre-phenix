@@ -12,6 +12,7 @@ import {
   clearPageCache,
   fetchIntoCache,
   invalidatePages,
+  isInvalidated,
   isLoadingPage,
 } from '@/utils/pageCache.js';
 import { FreshnessMeta, setWsDown } from '@/utils/freshness.js';
@@ -20,6 +21,7 @@ import { usePhenixStore } from '@/store.js';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, test, expect, vi } from 'vitest';
 import { memoryStorage } from './helpers/storage.js';
+import { flush } from './helpers/async.js';
 
 vi.mock('@/utils/errorNotif.js', () => ({ useErrorNotification: vi.fn() }));
 vi.mock('@/router', () => ({ default: { replace: vi.fn() } }));
@@ -197,39 +199,97 @@ test('a newer load supersedes an older one', async () => {
   loader.stop();
 });
 
-test('a forced load does not join a request sent before a change', async () => {
+test('forced loads during a slow request queue one follow-up and do not abort it', async () => {
   const { fetch, calls } = manualFetch();
   const apply = vi.fn();
   const loader = createPageLoader({ key: 'disks', fetch, apply });
 
   const first = loader.start();
+  loader.load({ force: true });
+  loader.load({ force: true });
   const forced = loader.load({ force: true });
+  expect(calls).toHaveLength(1);
+  expect(calls[0].signal.aborted).toBe(false);
+
+  calls[0].resolve(['old']);
+  await flush();
   expect(calls).toHaveLength(2);
+  // known to predate the change: kept, but marked out of date
+  expect(cachedPage('disks').data).toEqual(['old']);
+  expect(isInvalidated(cachedPage('disks'))).toBe(true);
 
   calls[1].resolve(['new']);
-  calls[0].resolve(['old']);
   expect(await forced).toBe(true);
-  await first;
+  expect(await first).toBe(false);
+  expect(calls).toHaveLength(2);
   expect(apply).toHaveBeenCalledTimes(1);
   expect(apply).toHaveBeenCalledWith(['new'], expect.anything());
   expect(cachedPage('disks').data).toEqual(['new']);
+  expect(isInvalidated(cachedPage('disks'))).toBe(false);
   loader.stop();
 });
 
-test('a request replaced by a forced one still answers its waiters but is not cached', async () => {
+test('a stream of forced loads still lands data, newest last', async () => {
+  const { fetch, calls } = manualFetch();
+  const apply = vi.fn();
+  const loader = createPageLoader({ key: 'disks', fetch, apply });
+
+  loader.start();
+  let last;
+  for (let i = 0; i < 6; i++) {
+    last = loader.load({ force: true });
+    calls[i].resolve([i]);
+    await flush();
+    expect(calls).toHaveLength(i + 2);
+  }
+  calls[6].resolve([6]);
+  expect(await last).toBe(true);
+
+  expect(calls.some((call) => call.signal.aborted)).toBe(false);
+  expect(apply.mock.calls.map(([data]) => data[0])).toEqual([1, 3, 5, 6]);
+  expect(cachedPage('disks').data).toEqual([6]);
+  loader.stop();
+});
+
+test('a forced request starts once the one it replaces settles, so the older never lands last', async () => {
   const { fetch, calls } = manualFetch();
   const older = fetchIntoCache('disks', fetch);
   const newer = fetchIntoCache('disks', fetch, { force: true });
-  expect(calls).toHaveLength(2);
+  const joined = fetchIntoCache('disks', fetch, { force: true });
+  expect(joined.promise).toBe(newer.promise);
+  expect(newer.startedAt).toBeUndefined();
+
+  // nobody waits on the older one any more, but the newer has not run yet
+  older.release();
+  expect(calls).toHaveLength(1);
   expect(calls[0].signal.aborted).toBe(false);
 
-  calls[1].resolve(['new']);
-  await newer.promise;
   calls[0].resolve(['old']);
   expect(await older.promise).toEqual(['old']);
+  await flush();
+  expect(calls).toHaveLength(2);
+  expect(newer.startedAt).toBeDefined();
+
+  calls[1].resolve(['new']);
+  expect(await newer.promise).toEqual(['new']);
   expect(cachedPage('disks').data).toEqual(['new']);
-  older.release();
   newer.release();
+  joined.release();
+});
+
+test('a forced load joins a follow-up another page queued', async () => {
+  const { fetch, calls } = manualFetch();
+  const running = fetchIntoCache('disks', fetch);
+  const queued = fetchIntoCache('disks', fetch, { force: true });
+  const plain = fetchIntoCache('disks', fetch);
+  expect(plain.promise).toBe(queued.promise);
+
+  calls[0].resolve(['old']);
+  await flush();
+  calls[1].resolve(['new']);
+  expect(await plain.promise).toEqual(['new']);
+  expect(calls).toHaveLength(2);
+  for (const request of [running, queued, plain]) request.release();
 });
 
 test("a page left behind does not clear the next page's header", () => {

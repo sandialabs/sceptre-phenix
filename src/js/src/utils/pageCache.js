@@ -15,17 +15,18 @@ const inflight = new Map();
 // so a stuck server call does not linger in the background.
 export const BACKGROUND_TIMEOUT_MS = 2 * 60 * 1000;
 
-// Returns { data, at, meta, invalidatedSeq } or undefined: at is when it was
-// loaded (ms), meta how fresh it is (a FreshnessMeta), and invalidatedSeq,
-// when set, the seq of a websocket message that changed it since.
+// Returns { data, at, meta, invalidatedSeq, superseded } or undefined: at is
+// when it was loaded (ms), meta how fresh it is (a FreshnessMeta),
+// invalidatedSeq, when set, the seq of a websocket message that changed it
+// since, and superseded whether a reload was forced while it loaded.
 export function cachedPage(key) {
   return cache.get(key);
 }
 
 // Caches data for key, with the freshness meta of the load that got it; data
 // without one is taken as read now. A change announced after the load's seq
-// keeps the entry invalidated.
-export function cachePage(key, data, meta) {
+// keeps the entry invalidated, as does superseded.
+export function cachePage(key, data, meta, { superseded = false } = {}) {
   const fresh =
     meta ?? Object.assign(new FreshnessMeta(), { observedAt: Date.now() });
   const previous = cache.get(key);
@@ -36,68 +37,38 @@ export function cachePage(key, data, meta) {
       ? previous.invalidatedSeq
       : undefined;
 
-  cache.set(key, { data, at: Date.now(), meta: fresh, invalidatedSeq });
+  cache.set(key, {
+    data,
+    at: Date.now(),
+    meta: fresh,
+    invalidatedSeq,
+    superseded,
+  });
 }
 
 // Whether a websocket message has changed the cached data since it loaded.
 export function isInvalidated(entry) {
-  return entry?.invalidatedSeq !== undefined;
+  return entry?.invalidatedSeq !== undefined || !!entry?.superseded;
 }
 
 export function isLoadingPage(key) {
   return inflight.has(key);
 }
 
-// Starts fetch(signal, meta) for key, or joins the request already running
-// for it, and caches the result. fetch passes meta (a FreshnessMeta) with its
-// requests, which fill it in. Returns a handle with the result promise, when
-// the request was sent, its meta, and release(), which a page calls when it
-// stops waiting on the result. force starts a new request even when one is
-// running, for data that changed since it was sent: the older one's result is
-// then not cached.
+// Starts fetch(signal, meta) for key, or joins the request already loading it,
+// and caches the result; meta is a FreshnessMeta its requests fill in. Returns
+// a handle with the result promise, start time, meta and release(), called when
+// a page stops waiting. force never joins a running request: it queues one that
+// starts once that settles, and the older result is cached as out of date.
 export function fetchIntoCache(key, fetch, { force = false } = {}) {
   let entry = inflight.get(key);
 
-  if (entry && force) {
-    entry.superseded = true;
-    inflight.delete(key);
-    if (entry.waiting === 0) entry.controller.abort();
-    entry = undefined;
-  }
-
   // an abandoned request that timed out is not worth joining
   if (!entry || entry.controller.signal.aborted) {
-    const controller = new AbortController();
-    const meta = new FreshnessMeta();
-    entry = {
-      controller,
-      meta,
-      waiting: 0,
-      expired: false,
-      superseded: false,
-      startedAt: Date.now(),
-    };
-
-    // the executor runs fetch now, turning a synchronous throw into a rejection
-    entry.promise = new Promise((resolve) =>
-      resolve(fetch(controller.signal, meta)),
-    )
-      .then((data) => {
-        if (!controller.signal.aborted && !entry.superseded)
-          cachePage(key, data, meta);
-        return data;
-      })
-      .finally(() => {
-        clearTimeout(entry.timer);
-        if (inflight.get(key) === entry) inflight.delete(key);
-      });
-
-    entry.timer = setTimeout(() => {
-      entry.expired = true;
-      if (entry.waiting === 0) controller.abort();
-    }, BACKGROUND_TIMEOUT_MS);
-
-    inflight.set(key, entry);
+    entry = startRequest(key, fetch);
+  } else if (force && entry.started) {
+    entry.superseded = true;
+    entry = startRequest(key, fetch, entry.promise);
   }
 
   entry.waiting++;
@@ -105,19 +76,70 @@ export function fetchIntoCache(key, fetch, { force = false } = {}) {
   let released = false;
   return {
     promise: entry.promise,
-    // when the shared request was sent, which may be before this call
-    startedAt: entry.startedAt,
+    key,
+    seq: entry.seq,
+    // when the request was sent, which may be before this call or, for one
+    // still queued, later
+    get startedAt() {
+      return entry.startedAt;
+    },
     meta: entry.meta,
     release() {
       if (released) return;
       released = true;
       entry.waiting--;
-      // nobody is left waiting on a request that has run too long or been
-      // replaced
-      if (entry.waiting === 0 && (entry.expired || entry.superseded))
-        entry.controller.abort();
+      // nobody is left waiting on a request that has already run too long
+      if (entry.waiting === 0 && entry.expired) entry.controller.abort();
     },
   };
+}
+
+let requestSeq = 0;
+
+// Runs fetch for key now, or once the request after settles, as the request
+// the inflight map shares.
+function startRequest(key, fetch, after) {
+  const controller = new AbortController();
+  const meta = new FreshnessMeta();
+  const entry = {
+    controller,
+    meta,
+    seq: ++requestSeq,
+    waiting: 0,
+    expired: false,
+    superseded: false,
+    started: false,
+    startedAt: undefined,
+  };
+
+  const run = () => {
+    if (controller.signal.aborted)
+      throw controller.signal.reason ?? new DOMException('', 'AbortError');
+    entry.started = true;
+    entry.startedAt = Date.now();
+    entry.timer = setTimeout(() => {
+      entry.expired = true;
+      if (entry.waiting === 0) controller.abort();
+    }, BACKGROUND_TIMEOUT_MS);
+    return fetch(controller.signal, meta);
+  };
+
+  // the executor runs fetch now, turning a synchronous throw into a rejection
+  entry.promise = (
+    after ? after.then(run, run) : new Promise((resolve) => resolve(run()))
+  )
+    .then((data) => {
+      if (!controller.signal.aborted)
+        cachePage(key, data, meta, { superseded: entry.superseded });
+      return data;
+    })
+    .finally(() => {
+      clearTimeout(entry.timer);
+      if (inflight.get(key) === entry) inflight.delete(key);
+    });
+
+  inflight.set(key, entry);
+  return entry;
 }
 
 // The data cached for key when it loaded less than maxAge ms ago (by default
