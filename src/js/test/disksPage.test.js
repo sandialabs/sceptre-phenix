@@ -86,6 +86,22 @@ describe('the disk list', () => {
     expect(urls()).toEqual(['disks?refresh=true', 'disks']);
   });
 
+  it('keeps a refresh rescan for the request that runs after another load replaces it', async () => {
+    await opened();
+    axios.get.mockClear();
+
+    // the refresh's load is replaced before its queued request starts
+    loaderSpy.load = vi.fn(async () => false);
+    await loaderSpy.options.refresh();
+    expect(axios.get).not.toHaveBeenCalled();
+
+    const fetch = () =>
+      loaderSpy.options.fetch(new AbortController().signal, undefined);
+    await fetch();
+    await fetch();
+    expect(urls()).toEqual(['disks?refresh=true', 'disks']);
+  });
+
   it('reloads when the server reports its images changed', async () => {
     const ctx = await opened();
 

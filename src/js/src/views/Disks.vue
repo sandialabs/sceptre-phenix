@@ -407,6 +407,10 @@
   // src/go/api/disk/details.go
   const UPLOAD_TYPES = ['.qcow2', '.qc2', '_rootfs.tgz', '.hdd', '.iso'];
 
+  // a header refresh asked the server to inspect every image again; the next
+  // disk list request to start takes it, whichever load that request serves
+  let rescanPending = false;
+
   export default {
     components: { DiskWarning, JobProgress },
     setup() {
@@ -418,24 +422,22 @@
       };
     },
     async created() {
-      this.rescan = false;
       this.loader = createPageLoader({
         key: 'disks',
-        fetch: (signal, meta) =>
-          pageFetchers.disks(signal, meta, { rescan: this.rescan }),
+        fetch: (signal, meta) => {
+          const rescan = rescanPending;
+          rescanPending = false;
+          return pageFetchers.disks(signal, meta, { rescan });
+        },
         apply: (disks) => {
           this.disks = disks;
           this.loaded = true;
         },
         // the header button has the server inspect every image again, not
         // just the ones that changed
-        refresh: async () => {
-          this.rescan = true;
-          try {
-            return await this.loader.load({ force: true });
-          } finally {
-            this.rescan = false;
-          }
+        refresh: () => {
+          rescanPending = true;
+          return this.loader.load({ force: true });
         },
       });
       this.loader.start();
