@@ -173,7 +173,7 @@ textbox to find VMs by:
   to negate search term(s) (i.e. `not running`)
 
 * ipv4 address - VMs in a specific subnet can be found by entering the
-  subnet (i.e `192.168.2.0/30`)
+  subnet (i.e `192.168.1.0/30`)
 
 * other fields (i.e. name, taps, tags) - All other fields will be
   searched for a keyword contained within the field
@@ -210,7 +210,7 @@ phenix vm info <experiment name> --label <label>
 ### From the Web-UI
 
 The Web-UI has no single control for a subnet's captures. Enter the subnet in
-the search box, such as `192.168.2.0/30`, to list the VMs in it. Then click an
+the search box, such as `192.168.1.0/30`, to list the VMs in it. Then click an
 address in a VM's `IP` column, or a tap in its `Taps` column, to start a
 capture on that interface (see [Packet Capture](vms.md#packet-capture)).
 
@@ -261,7 +261,7 @@ Experiment component can be searched by:
   to negate search term(s) (i.e. `not dnb`)
 
 * ipv4 address - VMs in a specific subnet can be found by entering the
-  subnet (i.e `192.168.2.0/30`)
+  subnet (i.e `192.168.1.0/30`)
 
 * other fields (i.e. VM, host, disk)
 
