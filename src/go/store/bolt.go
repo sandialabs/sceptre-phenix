@@ -83,7 +83,9 @@ func (b *BoltDB) open() error {
 
 	b.db, err = bbolt.Open(b.path, boltFileMode, &bbolt.Options{NoFreelistSync: true}) //nolint:exhaustruct // partial initialization
 	if err != nil {
-		return err
+		b.mu.Unlock()
+
+		return fmt.Errorf("opening BoltDB file %s: %w", b.path, err)
 	}
 
 	return nil
@@ -199,7 +201,9 @@ func (b *BoltDB) Create(c *Config) error {
 }
 
 func (b *BoltDB) Update(c *Config) error {
-	_ = b.open()
+	if err := b.open(); err != nil {
+		return err
+	}
 
 	defer func() { _ = b.Close() }()
 
@@ -226,12 +230,14 @@ func (b *BoltDB) Patch(*Config, map[string]any) error {
 }
 
 func (b *BoltDB) Delete(c *Config) error {
-	_ = b.open()
+	if err := b.open(); err != nil {
+		return err
+	}
 
 	defer func() { _ = b.Close() }()
 
 	if err := b.ensureBucket(c.Kind); err != nil {
-		return nil
+		return err
 	}
 
 	err := b.db.Update(func(tx *bbolt.Tx) error {
