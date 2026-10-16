@@ -220,6 +220,11 @@ func TestMeshReadScript(t *testing.T) {
 		}
 	}
 
+	// Remote nodes run Linux; BSD dd, as on macOS, has no skip_bytes or count_bytes.
+	if exec.CommandContext(t.Context(), "dd", "if=/dev/null", "iflag=skip_bytes,count_bytes", "status=none").Run() != nil {
+		t.Skip("dd does not support iflag=skip_bytes,count_bytes")
+	}
+
 	path := filepath.Join(t.TempDir(), "vm-0.pcap")
 
 	data := make([]byte, 3000)
