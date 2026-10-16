@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -636,9 +637,9 @@ func TestZipFilesStopsAtTheLimitWhenAFileGrows(t *testing.T) { //nolint:parallel
 	}
 }
 
-// With SkipFailed, a file that grows before or while it is archived is left
-// out and reported, and no more of it than planned is read or written.
-func TestZipPlanLeavesOutAFileThatGrows(t *testing.T) { //nolint:paralleltest // replaces package state
+// With SkipFailed, a file that grows before or while it is archived keeps its
+// planned size of it in the archive, and MISSING.txt says it was cut short.
+func TestZipPlanKeepsThePlannedPartOfAFileThatGrows(t *testing.T) { //nolint:paralleltest // replaces package state
 	big := string(make([]byte, 40<<10)) // more than one io.Copy buffer
 	useFilesDir(t, "grow", map[string]string{"before.gz": "alpha", "during.gz": big, "c.log": "gamma"})
 	useListedFiles(t)
@@ -657,12 +658,12 @@ func TestZipPlanLeavesOutAFileThatGrows(t *testing.T) { //nolint:paralleltest //
 		bytesIn int64
 		current string
 		grown   bool
-		failed  = map[string]error{}
+		outcome = map[string]error{}
 	)
 
 	archived, err := plan.Write(t.Context(), &buf, experiment.ZipHooks{
 		OnStart: func(p string) { current = p },
-		OnFile:  func(p string, err error) { failed[p] = err },
+		OnFile:  func(p string, err error) { outcome[p] = err },
 		OnBytes: func(n int64) {
 			bytesIn += n
 
@@ -678,14 +679,18 @@ func TestZipPlanLeavesOutAFileThatGrows(t *testing.T) { //nolint:paralleltest //
 		t.Fatal(err)
 	}
 
-	if !slices.Equal(archived, []string{"c.log"}) {
+	if !slices.Equal(archived, []string{"before.gz", "during.gz", "c.log"}) {
 		t.Errorf("archived %v", archived)
 	}
 
 	for _, p := range []string{"before.gz", "during.gz"} {
-		if !errors.Is(failed[p], experiment.ErrDownloadTooLarge) {
-			t.Errorf("%s: %v, want ErrDownloadTooLarge", p, failed[p])
+		if !errors.Is(outcome[p], experiment.ErrFileTruncated) {
+			t.Errorf("%s: %v, want ErrFileTruncated", p, outcome[p])
 		}
+	}
+
+	if outcome["c.log"] != nil {
+		t.Errorf("c.log: %v", outcome["c.log"])
 	}
 
 	if bytesIn > plan.Total {
@@ -694,5 +699,53 @@ func TestZipPlanLeavesOutAFileThatGrows(t *testing.T) { //nolint:paralleltest //
 
 	if int64(buf.Len()) > limits.MaxBytes {
 		t.Errorf("wrote %d bytes, over the %d byte limit", buf.Len(), limits.MaxBytes)
+	}
+
+	archive, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]string{}
+
+	for _, f := range archive.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+
+		if err != nil {
+			t.Fatalf("%s: %v", f.Name, err)
+		}
+
+		got[f.Name] = string(data)
+	}
+
+	if got["before.gz"] != "alpha" || got["during.gz"] != big || got["c.log"] != "gamma" || len(got) != 4 {
+		t.Errorf("archive holds %d entries; before.gz %q, %d bytes of during.gz", len(got), got["before.gz"],
+			len(got["during.gz"]))
+	}
+
+	notes := got["MISSING.txt"]
+	for _, want := range []string{
+		"changed while archiving",
+		"before.gz: changed while archiving; only the first 5 bytes were included",
+		fmt.Sprintf("during.gz: changed while archiving; only the first %d bytes were included", len(big)),
+	} {
+		if !strings.Contains(notes, want) {
+			t.Errorf("MISSING.txt lacks %q: %q", want, notes)
+		}
+	}
+
+	if strings.Contains(notes, "could not be added") {
+		t.Errorf("MISSING.txt says a file was left out: %q", notes)
+	}
+
+	// without SkipFailed a grown file fails the archive
+	if _, err := plan.Write(t.Context(), io.Discard, experiment.ZipHooks{}); !errors.Is(err, experiment.ErrDownloadTooLarge) {
+		t.Errorf("Write without SkipFailed = %v, want ErrDownloadTooLarge", err)
 	}
 }

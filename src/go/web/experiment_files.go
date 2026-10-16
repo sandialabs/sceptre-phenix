@@ -374,7 +374,7 @@ func ArchiveExperimentFiles(w http.ResponseWriter, r *http.Request) {
 
 // archiveFiles writes the plan's archive to <job dir>/<exp>-files.zip.partial,
 // then renames it to <exp>-files.zip, or <exp>-files-incomplete.zip when a
-// file was left out, and makes it the job's artifact. When the job is
+// file was left out or cut short, and makes it the job's artifact. When the job is
 // canceled, or no file could be archived, the partial file is removed.
 func archiveFiles(ctx context.Context, run *job.Run, plan experiment.ZipPlan) error {
 	dir, err := run.Dir()
@@ -389,15 +389,19 @@ func archiveFiles(ctx context.Context, run *job.Run, plan experiment.ZipPlan) er
 		return fmt.Errorf("creating archive: %w", err)
 	}
 
+	var truncated bool
+
 	archived, err := plan.Write(ctx, f, experiment.ZipHooks{
 		OnStart: run.ItemStarted,
 		OnFile: func(path string, err error) {
-			if err != nil {
+			// a truncated file's bytes are in the archive, so it is audited as sent
+			if err != nil && !errors.Is(err, experiment.ErrFileTruncated) {
 				run.ItemFailed(path, err)
 
 				return
 			}
 
+			truncated = truncated || err != nil
 			run.ItemSucceeded(path, nil)
 		},
 		OnBytes:    run.AddBytes,
@@ -419,7 +423,7 @@ func archiveFiles(ctx context.Context, run *job.Run, plan experiment.ZipPlan) er
 	}
 
 	var (
-		incomplete = len(archived) < len(plan.Paths)
+		incomplete = len(archived) < len(plan.Paths) || truncated
 		final      = plan.Name + "-files.zip"
 	)
 

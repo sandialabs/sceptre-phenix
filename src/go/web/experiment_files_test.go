@@ -2,6 +2,7 @@ package web
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -18,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"phenix/api/experiment"
 	"phenix/api/job"
 	"phenix/util/common"
 	"phenix/util/file"
@@ -863,6 +865,54 @@ func TestArchiveExperimentFilesLeavesOutFailures(t *testing.T) {
 		"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.job.id": j.ID,
 		"phenix.file.count": 1,
 	})
+}
+
+// A file that grew since the plan keeps its planned size in the archive and
+// counts as archived, but the archive is incomplete and MISSING.txt says so.
+func TestArchiveFilesCutsShortAGrownFile(t *testing.T) {
+	useExperimentFilesDir(t, map[string]string{"a.log": "alpha", "b.log": "beta"})
+	useTestFiles(t)
+
+	registry := useJobs(t)
+	server := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+	events := captureAudit(t)
+
+	plan, err := experiment.PlanZip("test-experiment", []string{"a.log", "b.log"}, experiment.ZipLimits{
+		MaxFiles: 2, MaxBytes: 1 << 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	local := filepath.Join(common.PhenixBase, "images", "test-experiment", "files", "a.log")
+	if err := os.WriteFile(local, []byte("alpha and more"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	started, err := registry.Start(job.Spec{
+		Kind: archiveKind, Owner: "alice", Experiment: "test-experiment", Items: plan.Paths,
+		Run: func(ctx context.Context, run *job.Run) error { return archiveFiles(ctx, run, plan) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	j := waitJob(t, registry, started.ID)
+	if j.Status != job.StatusSucceeded || j.Artifact == nil || !j.Artifact.Incomplete ||
+		j.Artifact.Name != "test-experiment-files-incomplete.zip" {
+		t.Fatalf("job %s, artifact %+v", j.Status, j.Artifact)
+	}
+
+	got := zipEntries(t, readBody(t, do(t, http.MethodGet, server+"/api/v1/jobs/"+j.ID+"/artifact", "")))
+	if got["a.log"] != "alpha" || got["b.log"] != "beta" || len(got) != 3 ||
+		!strings.Contains(got["MISSING.txt"], "a.log: changed while archiving; only the first 5 bytes were included") {
+		t.Errorf("zip holds %v", got)
+	}
+
+	// its bytes reached the user, so it is audited as downloaded
+	if n := countAudit(events(), "file-download", "success", nil); n != 2 {
+		t.Errorf("%d files audited as downloaded, want 2", n)
+	}
 }
 
 // A canceled archive job leaves no archive behind.

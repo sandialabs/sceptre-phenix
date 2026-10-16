@@ -30,6 +30,10 @@ var (
 	// ErrDownloadTooLarge is returned by ZipFiles when the files asked for exceed
 	// its limits in number or total size, or one grows past its checked size.
 	ErrDownloadTooLarge = errors.New("download too large")
+
+	// ErrFileTruncated tells ZipHooks.OnFile that a file grew since the plan, so
+	// only its planned size of it was archived.
+	ErrFileTruncated = errors.New("changed while archiving")
 )
 
 // cleanFilePath returns filePath if it is a clean path relative to the
@@ -202,12 +206,13 @@ type ZipPlan struct {
 type ZipHooks struct {
 	// called before each file is archived
 	OnStart func(path string)
-	// called after each file, with the error that kept it out, if any
+	// called after each file, with the error that kept it out, if any, or one
+	// wrapping ErrFileTruncated
 	OnFile func(path string, err error)
 	// called with the bytes of each chunk of a file read
 	OnBytes func(n int64)
-	// archive the other files when one fails, listing those that failed, and
-	// why, in a MISSING.txt entry
+	// archive the other files when one fails, and the planned size of one that
+	// grew, listing both, and why, in a MISSING.txt entry
 	SkipFailed bool
 }
 
@@ -291,18 +296,17 @@ func PlanZip(name string, paths []string, limits ZipLimits) (ZipPlan, error) {
 	return plan, nil
 }
 
-// Write writes the zip archive of the plan's files to w, one at a time from
-// the headnode's copy, and returns the paths archived, each flushed to w once
-// complete, including on a failure. A file it cannot archive fails the
-// archive, unless hooks.SkipFailed, when it is left out and listed in a
-// MISSING.txt entry with the reason; so does a file grown past its planned
-// size, with no more than that size of it written. It stops with ctx's error
-// once ctx is done, leaving w with a partial archive.
+// Write writes the zip archive of the plan's files to w, one at a time from the
+// headnode's copy, and returns the paths archived, each flushed to w once done,
+// including on a failure. A file it cannot archive, or one grown past its planned
+// size, fails the archive unless hooks.SkipFailed. It stops with ctx's error once
+// ctx is done, leaving w with a partial archive.
 func (p ZipPlan) Write(ctx context.Context, w io.Writer, hooks ZipHooks) ([]string, error) {
 	var (
 		archive  = zip.NewWriter(w)
 		archived = make([]string, 0, len(p.Paths))
 		missing  strings.Builder
+		changed  strings.Builder
 	)
 
 	for _, filePath := range p.Paths {
@@ -314,8 +318,10 @@ func (p ZipPlan) Write(ctx context.Context, w io.Writer, hooks ZipHooks) ([]stri
 			hooks.OnStart(filePath)
 		}
 
-		err := addToZip(ctx, archive, p.Name, filePath, p.Sizes[filePath], hooks.OnBytes)
-		if err == nil {
+		err := addToZip(ctx, archive, p.Name, filePath, p.Sizes[filePath], hooks.OnBytes, hooks.SkipFailed)
+
+		truncated := errors.Is(err, ErrFileTruncated)
+		if err == nil || truncated {
 			// a file counts as sent only once its bytes reach w
 			if flushErr := archive.Flush(); flushErr != nil {
 				return archived, fmt.Errorf("writing zip archive: %w", flushErr)
@@ -330,8 +336,12 @@ func (p ZipPlan) Write(ctx context.Context, w io.Writer, hooks ZipHooks) ([]stri
 			hooks.OnFile(filePath, err)
 		}
 
-		if err == nil {
+		if err == nil || truncated {
 			archived = append(archived, filePath)
+
+			if truncated {
+				fmt.Fprintf(&changed, "%s: %v\n", filePath, err)
+			}
 
 			continue
 		}
@@ -343,10 +353,21 @@ func (p ZipPlan) Write(ctx context.Context, w io.Writer, hooks ZipHooks) ([]stri
 		fmt.Fprintf(&missing, "%s: %v\n", filePath, err)
 	}
 
-	if missing.Len() > 0 {
+	if missing.Len() > 0 || changed.Len() > 0 {
+		var notes []string
+
+		if missing.Len() > 0 {
+			notes = append(notes, "These files could not be added to the archive:\n\n"+missing.String())
+		}
+
+		if changed.Len() > 0 {
+			notes = append(notes, "These files changed while archiving, so the archive holds only part of each:\n\n"+
+				changed.String())
+		}
+
 		entry, err := archive.Create(missingEntry)
 		if err == nil {
-			_, err = io.WriteString(entry, "These files could not be added to the archive:\n\n"+missing.String())
+			_, err = io.WriteString(entry, strings.Join(notes, "\n"))
 		}
 
 		if err != nil {
@@ -362,11 +383,12 @@ func (p ZipPlan) Write(ctx context.Context, w io.Writer, hooks ZipHooks) ([]stri
 	return archived, nil
 }
 
-// addToZip copies the experiment's file (a clean path) into the archive,
-// telling onBytes, if not nil, of each chunk read, and stopping once ctx is
-// done. A file grown past the planned size fails with ErrDownloadTooLarge,
-// having written no more than size bytes of it.
-func addToZip(ctx context.Context, archive *zip.Writer, name, clean string, size int64, onBytes func(n int64)) error {
+// addToZip copies at most size bytes of the experiment's file into the archive.
+// A grown file fails with ErrDownloadTooLarge, or with keepPrefix is archived
+// as its first size bytes and fails with ErrFileTruncated.
+func addToZip(
+	ctx context.Context, archive *zip.Writer, name, clean string, size int64, onBytes func(n int64), keepPrefix bool,
+) error {
 	local, err := fetchFile(name, clean)
 	if err != nil {
 		return err
@@ -384,7 +406,7 @@ func addToZip(ctx context.Context, archive *zip.Writer, name, clean string, size
 		return fmt.Errorf("reading %s: %w", clean, err)
 	}
 
-	if info.Size() > size {
+	if info.Size() > size && !keepPrefix {
 		return grewError(clean, size)
 	}
 
@@ -409,6 +431,10 @@ func addToZip(ctx context.Context, archive *zip.Writer, name, clean string, size
 
 	// a byte past the planned size, read but not archived, means it grew
 	if n, _ := f.Read(make([]byte, 1)); n > 0 {
+		if keepPrefix {
+			return fmt.Errorf("%w; only the first %d bytes were included", ErrFileTruncated, size)
+		}
+
 		return grewError(clean, size)
 	}
 

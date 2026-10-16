@@ -517,9 +517,10 @@ these your role allows:
   `<experiment name>-files.zip` archive in a [background job](jobs.md), whose
   progress shows in the toolbar and the
   [jobs menu](web-ui.md#background-jobs-menu), and downloads it once built. A
-  file the server cannot fetch is left out: the archive is then named
-  `<experiment name>-files-incomplete.zip`, lists each missing file and why in
-  its `MISSING.txt`, and downloads only when you click
+  file the server cannot fetch is left out, and one that grows after you ask
+  holds only the part it had then: the archive is then named
+  `<experiment name>-files-incomplete.zip`, lists each such file and why in its
+  `MISSING.txt`, and downloads only when you click
   `Download incomplete archive` and confirm. If you leave the page meanwhile,
   download the archive from the jobs menu, within the hour.
 * `Delete (N)` asks to confirm once for all of them, with `Delete N Files` as
@@ -548,7 +549,9 @@ instead, with the same limits and checks. A file that cannot be fetched, such
 as one a mesh node no longer has, is left out rather than failing the whole
 archive: the job ends `partial`, the archive is named
 `<experiment name>-files-incomplete.zip`, and a `MISSING.txt` entry in it lists
-each file left out and why. The finished archive downloads, resumably, from
+each file left out and why. A file that grows after the request is archived
+only up to the size it had then: it counts as archived, but the archive is still
+named `-files-incomplete.zip` and `MISSING.txt` says so. The finished archive downloads, resumably, from
 `GET /api/v1/jobs/<id>/artifact` for an hour, and canceling the job leaves no
 archive.
 
