@@ -1,6 +1,8 @@
 package store
 
 import (
+	"errors"
+	"io/fs"
 	"path/filepath"
 	"testing"
 	"time"
@@ -33,8 +35,8 @@ func TestBoltDBOpenFailure(t *testing.T) {
 			for range 2 {
 				select {
 				case err := <-done:
-					if err == nil {
-						t.Fatal("expected an error opening the BoltDB file")
+					if !errors.Is(err, fs.ErrNotExist) {
+						t.Fatalf("expected the BoltDB open error, got %v", err)
 					}
 				case <-time.After(5 * time.Second):
 					t.Fatal("call blocked after a failed open")

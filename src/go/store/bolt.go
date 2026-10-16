@@ -208,7 +208,7 @@ func (b *BoltDB) Update(c *Config) error {
 	defer func() { _ = b.Close() }()
 
 	if _, err := b.get(c.Kind, c.Metadata.Name); err != nil {
-		return ErrNotExist
+		return fmt.Errorf("getting config: %w", err)
 	}
 
 	c.Metadata.Updated = time.Now().Format(time.RFC3339)
@@ -236,15 +236,9 @@ func (b *BoltDB) Delete(c *Config) error {
 
 	defer func() { _ = b.Close() }()
 
-	if err := b.ensureBucket(c.Kind); err != nil {
-		return err
-	}
-
 	err := b.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Kind))
-		v := b.Get([]byte(c.Metadata.Name))
-
-		if v == nil {
+		if b == nil || b.Get([]byte(c.Metadata.Name)) == nil {
 			return ErrNotExist
 		}
 
