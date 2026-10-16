@@ -333,6 +333,10 @@ func (e ExperimentSpec) SnapshotName(node string) string {
 	return fmt.Sprintf("%s_%s_%s_snapshot", mm.Headnode(), e.ExperimentNameF, node)
 }
 
+func (e ExperimentSpec) DriveSnapshotName(node string, drive int) string {
+	return DriveSnapshotName(e.SnapshotName(node), drive)
+}
+
 type ExperimentStatus struct {
 	StartTimeF string            `json:"startTime" mapstructure:"startTime" structs:"startTime" yaml:"startTime"`
 	SchedulesF map[string]string `json:"schedules" mapstructure:"schedules" structs:"schedules" yaml:"schedules"`

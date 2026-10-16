@@ -449,52 +449,48 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 		}
 	}
 
-	if o.disk != "" {
-		var disk string
+	if strings.TrimSpace(o.disk) != "" {
+		// Should only be one row of data since we filtered by VM name. Multiple
+		// disks are space-separated.
+		var (
+			disks     = strings.Fields(info[0]["disks"])
+			requested = strings.Fields(o.disk)
+		)
 
-		if len(o.injects) == 0 {
-			disk = o.disk
-		} else {
-			// Should only be one row of data since we filtered by VM name.
-			disks := info[0]["disks"]
+		// Only do injects if this VM was originally deployed with a disk snapshot.
+		if len(o.injects) > 0 && len(disks) > 0 && strings.Contains(disks[0], "_snapshot") {
+			old := newDiskConfig(disks[0])
+			newDisk := newDiskConfig(requested[0])
 
-			// Only do injects if this VM was originally deployed with a disk snapshot.
-			if strings.Contains(disks, "_snapshot") {
-				old := newDiskConfig(disks)
-				newDisk := newDiskConfig(o.disk)
-
-				// Delete disk snapshot file across cluster
-				err := deleteFile(old.base)
-				if err != nil {
-					return fmt.Errorf("deleting old disk snapshot: %w", err)
-				}
-
-				cmd.Command = fmt.Sprintf("disk snapshot %s %s", newDisk.path, old.base)
-
-				err = mmcli.ErrorResponse(mmcli.Run(cmd))
-				if err != nil {
-					return fmt.Errorf(
-						"snapshotting disk for VM %s in namespace %s: %w",
-						o.vm,
-						o.ns,
-						err,
-					)
-				}
-
-				err = inject(old.base, o.injectPart, o.injects...)
-				if err != nil {
-					return err
-				}
-
-				// Use disk cache mode if provided by user. Otherwise, use original disk
-				// cache mode.
-				disk = old.string(newDisk.cache)
-			} else {
-				disk = o.disk
+			// Delete disk snapshot file across cluster
+			err := deleteFile(old.base)
+			if err != nil {
+				return fmt.Errorf("deleting old disk snapshot: %w", err)
 			}
+
+			cmd.Command = fmt.Sprintf("disk snapshot %s %s", newDisk.path, old.base)
+
+			err = mmcli.ErrorResponse(mmcli.Run(cmd))
+			if err != nil {
+				return fmt.Errorf(
+					"snapshotting disk for VM %s in namespace %s: %w",
+					o.vm,
+					o.ns,
+					err,
+				)
+			}
+
+			err = inject(old.base, o.injectPart, o.injects...)
+			if err != nil {
+				return err
+			}
+
+			// Use disk interface and cache mode if provided by user. Otherwise, use
+			// the original disk's.
+			requested[0] = old.string(newDisk.iface, newDisk.cache)
 		}
 
-		cmd.Command = "vm config disk " + disk
+		cmd.Command = "vm config disk " + mergeRedeployDisks(disks, requested)
 
 		err := mmcli.ErrorResponse(mmcli.Run(cmd))
 		if err != nil {
@@ -1693,6 +1689,16 @@ func inject(disk string, part int, injects ...string) error {
 	}
 
 	return nil
+}
+
+// mergeRedeployDisks returns the disk config for a redeployed VM. A single
+// requested disk replaces only the first current disk, keeping the rest.
+func mergeRedeployDisks(current, requested []string) string {
+	if len(requested) == 1 && len(current) > 1 {
+		requested = append(requested, current[1:]...)
+	}
+
+	return strings.Join(requested, " ")
 }
 
 // Ugh... replicating `file.DeleteFile` here to avoid cyclical dependency
