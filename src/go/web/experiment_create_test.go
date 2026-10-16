@@ -10,6 +10,7 @@ import (
 
 	"phenix/store"
 	"phenix/types"
+	"phenix/web/rbac"
 )
 
 // testTopology is the stored config of topology test-topology, with one VM.
@@ -93,7 +94,11 @@ func TestCreateExperimentAnnotations(t *testing.T) {
 			useTestStore(t, testTopology())
 			useExperimentFilesDir(t, nil)
 
-			server := serveAs(t, "alice", testRole("experiments", "create")).URL
+			role := combinedRole(
+				testRole("experiments", "create"),
+				testRole("vms/forwards", "create", "test-experiment/*"),
+			)
+			server := serveAs(t, "alice", role).URL
 
 			resp := do(t, http.MethodPost, server+"/api/v1/experiments", tc.body)
 			if body := readBody(t, resp); resp.StatusCode != tc.status || !strings.Contains(body, tc.message) {
@@ -131,6 +136,67 @@ func TestCreateExperimentAnnotations(t *testing.T) {
 
 			if got := nodes[0].Annotations(); !maps.EqualFunc(got, tc.wantNode, reflect.DeepEqual) {
 				t.Errorf("node annotations = %#v, want %#v", got, tc.wantNode)
+			}
+		})
+	}
+}
+
+// Request-supplied autotunnel annotations create port forwards when the
+// experiment starts, so they require permission to create forwards to its VMs.
+func TestCreateExperimentAutotunnelRequiresForwards(t *testing.T) {
+	const (
+		autotunnel = `{"name": "test-experiment", "topology": "test-topology",
+			"node_annotations": {"phenix/startup-autotunnel": ["9000:127.0.0.1:8080"]}}`
+		other = `{"name": "test-experiment", "topology": "test-topology",
+			"node_annotations": {"vrouter/enable-ssh": "IF0"}}`
+	)
+
+	create := testRole("experiments", "create")
+
+	tests := map[string]struct {
+		role   rbac.Role
+		body   string
+		status int
+	}{
+		"with forward permission": {
+			role:   combinedRole(create, testRole("vms/forwards", "create", "test-experiment/test-vm")),
+			body:   autotunnel,
+			status: http.StatusNoContent,
+		},
+		"without forward permission": {
+			role:   create,
+			body:   autotunnel,
+			status: http.StatusForbidden,
+		},
+		"forward permission for another VM": {
+			role:   combinedRole(create, testRole("vms/forwards", "create", "test-experiment/other-vm")),
+			body:   autotunnel,
+			status: http.StatusForbidden,
+		},
+		"no autotunnel annotation": {
+			role:   create,
+			body:   other,
+			status: http.StatusNoContent,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			useTestStore(t, testTopology())
+			useExperimentFilesDir(t, nil)
+
+			server := serveAs(t, "alice", tc.role).URL
+
+			resp := do(t, http.MethodPost, server+"/api/v1/experiments", tc.body)
+			if body := readBody(t, resp); resp.StatusCode != tc.status {
+				t.Fatalf("got %d %q, want %d", resp.StatusCode, body, tc.status)
+			}
+
+			c, _ := store.NewConfig("experiment/test-experiment")
+
+			err := store.Get(c)
+			if stored := err == nil; stored != (tc.status == http.StatusNoContent) {
+				t.Errorf("experiment stored = %v, want %v (err %v)", stored, !stored, err)
 			}
 		})
 	}

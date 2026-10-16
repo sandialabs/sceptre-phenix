@@ -262,6 +262,31 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := nodeAnnotations[autotunnelAnnotation]; ok {
+		vms, err := topologyVMs(req.GetTopology())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+
+			return
+		}
+
+		if denied := forwardDeniedVM(role, req.GetName(), vms); denied != "" {
+			plog.Warn(
+				plog.TypeSecurity,
+				"creating port forwards not allowed",
+				"user",
+				middleware.UserFromContext(ctx),
+				"exp",
+				req.GetName(),
+				"vm",
+				denied,
+			)
+			http.Error(w, "forbidden", http.StatusForbidden)
+
+			return
+		}
+	}
+
 	if err := cache.LockExperimentForCreation(req.GetName()); err != nil {
 		plog.Error(
 			plog.TypeSystem,
@@ -1647,7 +1672,25 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.GetAnnotations() != nil {
-		opts = append(opts, vm.UpdateWithAnnotations(req.GetAnnotations().AsMap()))
+		annotations := req.GetAnnotations().AsMap()
+
+		if changesAutotunnel(expName, name, annotations) && forwardDeniedVM(role, expName, []string{name}) != "" {
+			plog.Warn(
+				plog.TypeSecurity,
+				"creating port forwards not allowed",
+				"user",
+				middleware.UserFromContext(ctx),
+				"exp",
+				expName,
+				"vm",
+				name,
+			)
+			http.Error(w, "forbidden", http.StatusForbidden)
+
+			return
+		}
+
+		opts = append(opts, vm.UpdateWithAnnotations(annotations))
 	}
 
 	if err := vm.Update(opts...); err != nil {

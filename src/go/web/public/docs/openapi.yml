@@ -669,6 +669,8 @@ paths:
                     phenix/default-apps must be a boolean,
                     phenix/startup-autotunnel a list of strings, and
                     vrouter/vyos-password and vrouter/enable-ssh strings.
+                    phenix/startup-autotunnel needs the `vms/forwards`
+                    `create` permission on `<exp>/<vm>` for every VM.
                   type: object
                   additionalProperties: {}
                 annotations:
@@ -687,7 +689,9 @@ paths:
         "400":
           description: invalid request, such as an annotation phenix rejects
         "403":
-          description: forbidden
+          description: >-
+            forbidden, including a phenix/startup-autotunnel node annotation
+            without permission to create port forwards to every VM
         "409":
           description: phenix is already acting on an experiment with this name
   "/experiments/{name}":
@@ -2862,6 +2866,8 @@ paths:
                   description: >-
                     replaces all of the VM's annotations; `{}` removes them.
                     Apps read most annotations when the experiment starts.
+                    Setting phenix/startup-autotunnel to a new value needs the
+                    `vms/forwards` `create` permission on `<exp>/<vm>`.
       responses:
         "200":
           description: successful operation
@@ -2876,7 +2882,9 @@ paths:
             disk whose name minimega cannot use (white space, quotes, a
             backslash, `#`, `$`, `,`, glob characters or a control character)
         "403":
-          description: forbidden
+          description: >-
+            forbidden, including setting phenix/startup-autotunnel without
+            permission to create port forwards to the VM
     delete:
       tags:
         - Virtual Machines
