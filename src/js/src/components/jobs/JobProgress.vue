@@ -241,6 +241,11 @@ succeed list each item's outcome.
     overflow-wrap: anywhere;
   }
 
+  /* Bulma's info blue gives white text only 3.5:1; its dark shade gives 5.3:1 */
+  .job-status.tag.is-info {
+    background-color: #296fa8;
+  }
+
   .job-progress .progress {
     margin-bottom: 0.25rem;
   }
