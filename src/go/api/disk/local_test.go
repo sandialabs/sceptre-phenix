@@ -142,6 +142,27 @@ func TestGetImageShowsImageWhoseBackingChainIsUnreadable(t *testing.T) {
 	}
 }
 
+func TestGetImageFindsBackingImageOnceItAppears(t *testing.T) {
+	useFakeQemuImg(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "over.qc2")
+	writeFile(t, path, "x")
+	writeFile(t, path+".backing", "base.qc2")
+
+	got, err := GetImage(path)
+	if err != nil || len(got.BackingImages) != 0 {
+		t.Fatalf("GetImage with its backing image missing = %+v, %v; want the image alone", got, err)
+	}
+
+	writeFile(t, filepath.Join(dir, "base.qc2"), "y")
+
+	got, err = GetImage(path)
+	if want := []string{filepath.Join(dir, "base.qc2")}; err != nil || !reflect.DeepEqual(got.BackingImages, want) {
+		t.Fatalf("GetImage once its backing image exists = %+v, %v; want backing images %q", got, err, want)
+	}
+}
+
 func TestWatchDebouncesImageChanges(t *testing.T) {
 	const debounce = 100 * time.Millisecond
 
