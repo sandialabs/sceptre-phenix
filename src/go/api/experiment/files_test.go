@@ -593,3 +593,106 @@ func TestZipPlanWriteStopsWhenCanceled(t *testing.T) { //nolint:paralleltest // 
 		t.Errorf("Write = %v, want context.Canceled", err)
 	}
 }
+
+// growFile appends n bytes to the experiment's file.
+func growFile(t *testing.T, exp, p string, n int) {
+	t.Helper()
+
+	local := filepath.Join(common.PhenixBase, "images", exp, "files", p)
+
+	f, err := os.OpenFile(local, os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // test file
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer f.Close()
+
+	if _, err := f.Write(make([]byte, n)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A file that grows after the plan cannot push the streamed archive past the
+// limit.
+func TestZipFilesStopsAtTheLimitWhenAFileGrows(t *testing.T) { //nolint:paralleltest // replaces package state
+	useFilesDir(t, "grow", map[string]string{"a.gz": "alpha"})
+	useListedFiles(t)
+
+	limits := experiment.ZipLimits{MaxFiles: 2, MaxBytes: 4096}
+
+	var buf bytes.Buffer
+
+	_, err := experiment.ZipFiles("grow", []string{"a.gz"}, limits, func() io.Writer {
+		growFile(t, "grow", "a.gz", 1<<20)
+
+		return &buf
+	})
+	if !errors.Is(err, experiment.ErrDownloadTooLarge) {
+		t.Errorf("ZipFiles = %v, want ErrDownloadTooLarge", err)
+	}
+
+	if int64(buf.Len()) > limits.MaxBytes {
+		t.Errorf("wrote %d bytes, over the %d byte limit", buf.Len(), limits.MaxBytes)
+	}
+}
+
+// With SkipFailed, a file that grows before or while it is archived is left
+// out and reported, and no more of it than planned is read or written.
+func TestZipPlanLeavesOutAFileThatGrows(t *testing.T) { //nolint:paralleltest // replaces package state
+	big := string(make([]byte, 40<<10)) // more than one io.Copy buffer
+	useFilesDir(t, "grow", map[string]string{"before.gz": "alpha", "during.gz": big, "c.log": "gamma"})
+	useListedFiles(t)
+
+	limits := experiment.ZipLimits{MaxFiles: 3, MaxBytes: 64 << 10}
+
+	plan, err := experiment.PlanZip("grow", []string{"before.gz", "during.gz", "c.log"}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	growFile(t, "grow", "before.gz", 1<<20)
+
+	var (
+		buf     bytes.Buffer
+		bytesIn int64
+		current string
+		grown   bool
+		failed  = map[string]error{}
+	)
+
+	archived, err := plan.Write(t.Context(), &buf, experiment.ZipHooks{
+		OnStart: func(p string) { current = p },
+		OnFile:  func(p string, err error) { failed[p] = err },
+		OnBytes: func(n int64) {
+			bytesIn += n
+
+			if current == "during.gz" && !grown {
+				grown = true
+
+				growFile(t, "grow", "during.gz", 1<<20)
+			}
+		},
+		SkipFailed: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Equal(archived, []string{"c.log"}) {
+		t.Errorf("archived %v", archived)
+	}
+
+	for _, p := range []string{"before.gz", "during.gz"} {
+		if !errors.Is(failed[p], experiment.ErrDownloadTooLarge) {
+			t.Errorf("%s: %v, want ErrDownloadTooLarge", p, failed[p])
+		}
+	}
+
+	if bytesIn > plan.Total {
+		t.Errorf("read %d bytes, planned %d", bytesIn, plan.Total)
+	}
+
+	if int64(buf.Len()) > limits.MaxBytes {
+		t.Errorf("wrote %d bytes, over the %d byte limit", buf.Len(), limits.MaxBytes)
+	}
+}
