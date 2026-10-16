@@ -142,7 +142,8 @@ create experiment card uses (see
 row, or add one of the annotations phēnix knows or a custom one. `Save`
 replaces the VM's annotations with the list and `Cancel` discards the changes.
 The server refuses a value of the wrong type for an annotation the default apps
-read and names the key. Annotations are saved to the experiment, not to the
+read and names the key. Setting `phenix/startup-autotunnel` to a new value
+requires a role that may create port forwards to the VM. Annotations are saved to the experiment, not to the
 Topology config, and can be changed while the experiment runs, but apps read
 most of them when the experiment starts, so most changes take effect the next
 time it starts.
