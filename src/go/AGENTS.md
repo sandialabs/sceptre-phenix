@@ -8,7 +8,7 @@ under `src/go/`.
 - `cmd/`: Cobra commands; `api/`: domain operations; `types/`: versioned
   resources and schemas.
 - `app/`: built-in and user app execution; `scheduler/`: VM placement.
-- `store/`: BoltDB/etcd abstraction; `web/`: REST, websocket, RBAC, and UI
+- `store/`: BoltDB store abstraction; `web/`: REST, websocket, RBAC, and UI
   serving; `util/mm/`: minimega integration.
 
 ## Commands
@@ -51,7 +51,7 @@ the root target does.
   spec) and `types/version/schemas/v*.yaml` for each kind's spec. Edit the
   YAML, never a Go string. A prek hook lints them with
   `scripts/api-docs.sh lint-schemas` (rules in `types/redocly.yaml`).
-- Preserve persisted BoltDB/etcd compatibility. A kind decodes only at its
+- Preserve persisted BoltDB compatibility. A kind decodes only at its
   version in `types/version.StoredVersion`; there are no config upgraders.
 - RBAC changes require generated policy, migrations when needed, and migration
   tests. Keep CLI, REST, websocket, and UI authorization equivalent.

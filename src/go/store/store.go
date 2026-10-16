@@ -16,12 +16,10 @@ type (
 
 const (
 	ComponentConfigs Component = "configs"
-	ComponentStore   Component = "store"
 )
 
 // Store is the interface that identifies all the required functionality for a
-// config store. Not all functions are required to be implemented. If not
-// implemented, they should return an error stating such.
+// config store.
 type Store interface {
 	// Init is used to initialize a config store with options generic to all store
 	// implementations.
@@ -46,18 +44,13 @@ type Store interface {
 	// revision.
 	Update(*Config) error
 
-	// Patch modifies the given config in the store with the given data if the
-	// config already exists.
-	Patch(*Config, map[string]any) error
-
 	// Delete removes the given config from the config store. When
 	// Config.IfRevision is not zero, it returns ErrConflict unless the stored
 	// config is at that revision.
 	Delete(*Config) error
 
-	// IsInitialized checks if the given phenix components have been
-	// initialized. This is used to avoid re-initializing the store or
-	// default configs.
+	// IsInitialized checks if the given phenix component has been initialized.
+	// This is used to avoid re-initializing the default configs.
 	IsInitialized(Component) bool
 
 	// InitializeComponent marks the given phenix component as initialized in
