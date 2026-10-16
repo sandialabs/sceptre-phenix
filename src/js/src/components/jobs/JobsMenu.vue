@@ -131,6 +131,11 @@ its panel aria-modal although the panel is no dialog.
     color: whitesmoke;
   }
 
+  /* one column, not the two _general.scss gives every list */
+  .jobs-list {
+    columns: auto;
+  }
+
   .jobs-entry + .jobs-entry {
     border-top: 1px solid #dbdbdb;
     margin-top: 0.5rem;
