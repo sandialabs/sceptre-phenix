@@ -1543,14 +1543,6 @@
     },
 
     computed: {
-      filteredData() {
-        return this.search.vms.filter((vm) => {
-          return (
-            vm.toLowerCase().indexOf(this.search.filter.toLowerCase()) >= 0
-          );
-        });
-      },
-
       vncWidth() {
         return this.activeTab == 2 ? this.vncZoom * 50 : 200;
       },
@@ -1682,11 +1674,6 @@
         this.updateFiles();
       }, 250),
 
-      switchPagination(enabled) {
-        this.table.isPaginated = enabled;
-        this.updateTable();
-      },
-
       updateTable() {
         let number = this.table.currentPage;
         let size = this.table.perPage;
@@ -1742,7 +1729,6 @@
           hasModalCard: true,
           props: {
             vmName: vm.name,
-            experiment: this.$route.params.id,
             tags: vm.tags,
           },
         });
@@ -2007,9 +1993,9 @@
                     });
 
                     this.experiment.vms = [...vms];
-                  }
 
-                  break;
+                    break;
+                  }
                 }
 
                 break;
@@ -2502,26 +2488,6 @@
         } catch (err) {
           useErrorNotification(err);
         }
-      },
-
-      snapshots(vm) {
-        axiosInstance
-          .get(
-            'experiments/' +
-              this.$route.params.id +
-              '/vms/' +
-              vm.name +
-              '/snapshots',
-          )
-          .then((response) => {
-            if (response.data.snapshots.length > 0) {
-              return true;
-            }
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-            this.isWaiting = false;
-          });
       },
 
       captureSnapshot(name) {
@@ -3599,7 +3565,7 @@
           axiosInstance.post(url).catch((err) => useErrorNotification(err));
         }
 
-        this.resetOpticalDiscModal;
+        this.resetOpticalDiscModal();
       },
 
       resetExpModal() {
@@ -4068,11 +4034,6 @@
           active: false,
           vm: [],
           actionsQueue: [],
-          name: null,
-          cpus: null,
-          ram: null,
-          disk: null,
-          inject: false,
         },
         diskImageModal: {
           active: false,
@@ -4120,12 +4081,11 @@
           kill: 2,
           redeploy: 3,
           createBacking: 4,
-          createSnapshot: 5,
+          captureSnapshot: 5,
           restart: 6,
           shutdown: 7,
           resetState: 8,
           createMemorySnapshot: 9,
-          recordScreenshots: 10,
         },
         searchHistory: [],
         searchHistoryLength: 10,
@@ -4181,7 +4141,6 @@
         netflow: {
           tooltip: 'Start Netflow Capture',
           capturing: false,
-          socket: null,
           data: '',
         },
         features: [],

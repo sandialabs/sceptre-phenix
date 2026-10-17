@@ -41,18 +41,13 @@ ui:
 It is important to distinguish between the **System Configuration** and the **Data Store**:
 
 * **System Configuration (`config.yaml`)**: Configures the phēnix *daemon* itself. It controls *how* the service runs (e.g., log levels, API ports, storage backend connection strings).
-* **Data Store (BoltDB/etcd)**: Stores the *application state*. It holds *what* phēnix manages (e.g., defined experiments, topologies, user accounts, active VM states).
+* **Data Store (BoltDB)**: Stores the *application state*. It holds *what* phēnix manages (e.g., defined experiments, topologies, user accounts, active VM states).
 
 Deleting `config.yaml` resets daemon behavior to defaults. Deleting the Data Store results in data loss (experiments, users, etc.).
 
 ## Store Configuration
 
-The phenix tool uses a key-value data store. By default it uses bbolt but also supports etcd.
-
-* **bbolt (Default)**: No external dependencies, but only accessible on a single machine.
-* **etcd**: Allows running `phenix` on multiple machines accessing the same data, but requires an external `etcd` service.
-
-To use `etcd`, configure the store endpoint (e.g. `etcd://localhost:2379`) via the config file or `phenix settings set`.
+The phenix tool uses a bbolt key-value data store, a single file with no external dependencies that is only accessible on one machine. Set its path with the `bolt://` store endpoint (e.g. `bolt:///etc/phenix/store.bdb`).
 
 ## Managing Settings
 
@@ -85,6 +80,7 @@ The following global flags are supported by all `phenix` subcommands:
 
 | Flag | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
+| `--base-dir.builder-templates` | `string` | `<base-dir.phenix>/builder/templates` | Directory of the Builder template files that `phenix ui` reads at start as read-only server collections of node templates. See [Template files on the server](builder/administration.md#template-files-on-the-server). |
 | `--base-dir.injects` | `string` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages topology injects into. The `phenix ui` server reports its value to the CLI, and the flag on the `phenix workflow apply` command line overrides it. See [Workflow](workflow.md). |
 | `--base-dir.minimega` | `string` | `/tmp/minimega` | Base minimega directory. |
 | `--base-dir.phenix` | `string` | `/phenix` | Base phēnix directory. |
@@ -100,7 +96,7 @@ The following global flags are supported by all `phenix` subcommands:
 | `--log.system.max-size` | `int` | `100` | Maximum size in megabytes of the system log file before rotation. |
 | `--log.system.path` | `string` | `/var/log/phenix/phenix.log` | Path to persistent system log in JSON Lines format, with one JSON object per line. |
 | `--mount-dir` | `string` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts. |
-| `--store.endpoint` | `string` | `bolt:///etc/phenix/store.bdb` | Endpoint for the storage service. |
+| `--store.endpoint` | `string` | `bolt:///etc/phenix/store.bdb` | BoltDB store endpoint (`bolt://<path>`). |
 | `--unix-socket` | `string` | `/tmp/phenix.sock` | phēnix unix socket to listen on (`ui` subcommand) or connect to. |
 | `--use-gre-mesh` | — | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. See [GRE Mesh](gre-mesh.md). |
 
@@ -118,11 +114,12 @@ The following global flags are supported by all `phenix` subcommands:
 | `log.system.max-age` | `PHENIX_LOG_SYSTEM_MAX_AGE` | `90` | Max age in days to retain old logs. |
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI. **(Restart Required)** |
-| `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable. Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). **(Restart Required)** |
+| `ui.features` | `PHENIX_UI_FEATURES` | `""` | Optional UI features to enable. Separate them with commas in the `--features` flag, with spaces in `PHENIX_UI_FEATURES`, and as a YAML list in the configuration file. Currently supports `vm-mount`, which enables transferring files to and from a running VM (see [Mount a VM](vms.md#mount-a-vm)). **(Restart Required)** |
 | `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). **(Restart Required)** |
 | `mount-dir` | `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory used for VM filesystem mounts created via `phenix vm mount`. See [Mount a VM](vms.md#mount-a-vm). |
 | `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`. The phēnix server's value is used unless `--base-dir.injects` is given; see [Workflow](workflow.md#settings). Use an absolute path. **(Restart Required)** |
 | `base-dir.topologies` | `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Directory where `phenix workflow apply NAME` looks for `NAME` when `NAME` isn't an existing path. Use an absolute path. See [Workflow](workflow.md). |
+| `base-dir.builder-templates` | `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Directory of the Builder template files (`*.yaml`, `*.yml`, `*.json`) that `phenix ui` reads at start as read-only server collections of node templates. Use an absolute path. See [Template files on the server](builder/administration.md#template-files-on-the-server). **(Restart Required)** |
 
 ## Web UI Session Timeout
 

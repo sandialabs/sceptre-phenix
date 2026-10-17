@@ -12,7 +12,6 @@ import (
 
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mitchellh/mapstructure"
 
 	"phenix/api/config"
 	"phenix/app"
@@ -21,7 +20,6 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	"phenix/types/version"
-	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
@@ -95,6 +93,11 @@ func hookCreate(exp *types.Experiment, c *store.Config) error {
 	if err != nil {
 		return fmt.Errorf("initializing experiment: %w", err)
 	}
+
+	// The notes of the nodes become VM notes here, at creation only. An update
+	// or a start does not change the labels, so notes edited in the VM Labels
+	// dialog stay.
+	seedNodeNotes(exp.Spec.Topology(), time.Now())
 
 	if common.BridgeMode == common.BridgeModeAuto {
 		if len(c.Metadata.Name) > MaxBridgeNameLength {
@@ -313,7 +316,7 @@ func Get(name string) (*types.Experiment, error) {
 // which case the default value of `/phenix/experiments/{name}` is used for the
 // experiment base directory. It returns any errors encountered while creating
 // the experiment.
-func Create(ctx context.Context, opts ...CreateOption) error {
+func Create(opts ...CreateOption) error {
 	o := newCreateOptions(opts...)
 
 	if o.name == "" {
@@ -951,24 +954,6 @@ func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool) error 
 	return nil
 }
 
-func Status(name string) (*v1.ExperimentStatus, error) {
-	c, _ := store.NewConfig("experiment/" + name)
-
-	err := store.Get(c)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get experiment status from store: %w", err)
-	}
-
-	var status v1.ExperimentStatus
-
-	err = mapstructure.Decode(c.Status, &status)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode experiment status: %w", err)
-	}
-
-	return &status, nil
-}
-
 func Running(name string) bool {
 	var err error
 	c, _ := store.NewConfig("experiment/" + name)
@@ -1000,20 +985,8 @@ func Save(opts ...SaveOption) error {
 		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
-	if o.spec == nil {
-		if o.saveNilSpec {
-			c.Spec = nil
-		}
-	} else {
+	if o.spec != nil {
 		c.Spec = structs.MapDefaultCase(o.spec, structs.CASESNAKE)
-	}
-
-	if o.status == nil {
-		if o.saveNilStatus {
-			c.Status = nil
-		}
-	} else {
-		c.Status = structs.MapDefaultCase(o.status, structs.CASESNAKE)
 	}
 
 	err = store.Update(c)

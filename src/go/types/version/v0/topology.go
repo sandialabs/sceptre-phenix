@@ -50,7 +50,7 @@ func (t *TopologySpec) BootableNodes() []ifaces.NodeSpec {
 	return bootable
 }
 
-func (t *TopologySpec) SchedulableNodes(platform string) []ifaces.NodeSpec {
+func (t *TopologySpec) SchedulableNodes() []ifaces.NodeSpec {
 	if t == nil {
 		return nil
 	}
@@ -148,10 +148,8 @@ func (TopologySpec) HasCommands() bool {
 	return false
 }
 
-func (t *TopologySpec) Init() error {
+func (t *TopologySpec) Init() {
 	t.SetDefaults()
-
-	return nil
 }
 
 func (t *TopologySpec) SetDefaults() {

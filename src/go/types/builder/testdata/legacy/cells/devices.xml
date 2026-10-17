@@ -1,0 +1,91 @@
+<mxGraphModel dx="786" dy="589" grid="1" gridSize="10" page="1" experimentVars="[{&quot;name&quot;:&quot;DEFAULT_MEMORY&quot;,&quot;value&quot;:&quot;2048&quot;},{&quot;name&quot;:&quot;DEFAULT_VCPU&quot;,&quot;value&quot;:&quot;1&quot;},{&quot;name&quot;:&quot;DEFAULT_VM_IMAGE&quot;,&quot;value&quot;:&quot;ubuntu.qc2&quot;},{&quot;name&quot;:&quot;DEFAULT_ROUTER_IMAGE&quot;,&quot;value&quot;:&quot;vyos.qc2&quot;}]">
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+    <object label="router-1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;router-1&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;router&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="2">
+      <mxCell style="image;html=1;image=/router_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="40" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="firewall-1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;firewall-1&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;firewall&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="3">
+      <mxCell style="image;html=1;image=/firewall_grey_vm.png" vertex="1" parent="1">
+        <mxGeometry x="200" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="desktop-1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;desktop-1&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;desktop&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="4">
+      <mxCell style="image;html=1;image=/desktop_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="360" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="server-1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;server-1&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="5">
+      <mxCell style="image;html=1;image=/server_red_vm.png" vertex="1" parent="1">
+        <mxGeometry x="520" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="mobile-1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;mobile-1&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;mobile&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="6">
+      <mxCell style="image;html=1;image=/mobile_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="680" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <Object label="imported-1" schemaVars="{&quot;type&quot;:&quot;Firewall&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;imported-1&quot;},&quot;hardware&quot;:{&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;fw.qc2&quot;}]},&quot;annotations&quot;:{&quot;owner&quot;:&quot;ops&quot;},&quot;labels&quot;:{&quot;zone&quot;:&quot;dmz&quot;}}" id="7">
+      <mxCell style="shape=image;verticalLabelPosition=bottom;image=stencils/virtual_machines/firewall_grey_vm.png" vertex="1" parent="1">
+        <mxGeometry x="40" y="200" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </Object>
+    <object label="hil-1" schemaVars="{&quot;type&quot;:&quot;HIL&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;hil-1&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;,&quot;external&quot;:true}" id="8">
+      <mxCell style="image;html=1;image=/server_external_vm.png" vertex="1" parent="1">
+        <mxGeometry x="200" y="200" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="boxed-1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;boxed-1&quot;,&quot;vm_type&quot;:&quot;container&quot;}}" id="9">
+      <mxCell style="image;html=1;image=/grapheditor/stencils/virtual_machines/server_container_vm.png" vertex="1" parent="1">
+        <mxGeometry x="360" y="200" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="remote-1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;remote-1&quot;}}" id="10">
+      <mxCell style="image;html=1;image=https://example.com/icons/Router_Red.PNG" vertex="1" parent="1">
+        <mxGeometry x="520" y="200" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="cloud-1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;cloud-1&quot;},&quot;hardware&quot;:{&quot;os_type&quot;:&quot;windows&quot;}}" id="11">
+      <mxCell style="image;html=1;image=/cloud.png" vertex="1" parent="1">
+        <mxGeometry x="680" y="200" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="Edge Router" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;edge-1&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;router&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="12">
+      <mxCell style="image;html=1;image=/router_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="40" y="360" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="web server 1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;web server 1&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="13">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="200" y="360" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="from label" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{},&quot;device&quot;:&quot;desktop&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="14">
+      <mxCell style="image;html=1;image=/desktop_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="360" y="360" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="dup" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;dup&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="15">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="520" y="360" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="DUP" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;DUP&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;desktop&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="16">
+      <mxCell style="image;html=1;image=/desktop_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="680" y="360" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;&quot;},&quot;device&quot;:&quot;server&quot;}" id="17">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="40" y="520" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="tagged-1" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;tagged-1&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;,&quot;annotations&quot;:[{&quot;key&quot;:&quot;owner&quot;,&quot;value&quot;:&quot;ops&quot;},{&quot;key&quot;:&quot;owner&quot;,&quot;value&quot;:&quot;net&quot;},{&quot;key&quot;:&quot;tier&quot;,&quot;value&quot;:1},&quot;stray&quot;,{&quot;key&quot;:7,&quot;value&quot;:&quot;x&quot;},{&quot;key&quot;:&quot;no-value&quot;}],&quot;labels&quot;:&quot;not-a-list&quot;}" id="18">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="200" y="520" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+  </root>
+</mxGraphModel>

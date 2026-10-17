@@ -2,21 +2,12 @@ package config
 
 import "phenix/store"
 
-type DataType int
-
-const (
-	DataTypeUnknown DataType = iota
-	DataTypeJSON
-	DataTypeYAML
-)
-
 type CreateOption func(*createOptions)
 
 type createOptions struct {
 	config   *store.Config
 	path     string
 	data     []byte
-	dataType DataType
 	validate bool
 }
 
@@ -42,17 +33,9 @@ func CreateFromPath(p string) CreateOption {
 	}
 }
 
-func CreateFromJSON(d []byte) CreateOption {
-	return func(o *createOptions) {
-		o.data = d
-		o.dataType = DataTypeJSON
-	}
-}
-
 func CreateFromYAML(d []byte) CreateOption {
 	return func(o *createOptions) {
 		o.data = d
-		o.dataType = DataTypeYAML
 	}
 }
 

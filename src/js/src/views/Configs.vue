@@ -1,5 +1,9 @@
 <template>
-  <ConfigsList v-if="!editorActive" @edit="handleEdit" @create="handleCreate" />
+  <ConfigsList
+    v-if="!editorActive"
+    :focus-config="returnTo"
+    @edit="handleEdit"
+    @create="handleCreate" />
   <component
     ref="editor"
     :is="editorComponent"
@@ -18,12 +22,14 @@
     },
     data() {
       return {
-        isWaiting: false,
         editorActive: false,
         editorMode: null,
         editorConfig: null,
 
         editorComponent: null,
+        // The config whose edit button focus returns to when the editor
+        // closes (see ConfigsList's focusConfig).
+        returnTo: '',
       };
     },
     async beforeRouteLeave() {
@@ -50,11 +56,13 @@
         this.editorActive = false;
       },
       handleEdit(config) {
+        this.returnTo = `${config.kind}/${config.metadata.name}`;
         this.editorActive = true;
         this.editorMode = 'edit';
         this.editorConfig = config;
       },
       handleCreate() {
+        this.returnTo = '';
         this.editorActive = true;
         this.editorMode = 'create';
         this.editorConfig = null;

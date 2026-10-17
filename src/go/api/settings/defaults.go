@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -60,16 +61,6 @@ var DefaultSettings = []v2.Setting{ //nolint:gochecknoglobals // global constant
 	{Category: settingCategoryLogging, Name: "MaxFileAge", Type: v2.SettingValueInt, Value: formatInt(DefaultLogMaxFileAge)},
 }
 
-func GetDefault(category, name string) (v2.Setting, bool) {
-	for _, setting := range DefaultSettings {
-		if setting.Category == category && setting.Name == name {
-			return setting, true
-		}
-	}
-
-	return v2.Setting{}, false
-}
-
 func SetDefaults() error {
 	for _, spec := range DefaultSettings {
 		// create ignores if the setting exists already
@@ -115,6 +106,19 @@ func setMissingDefaults(existing []types.Setting) ([]types.Setting, error) {
 		}
 
 		err := store.Create(&c)
+		if errors.Is(err, store.ErrExist) {
+			// Another request stored it after the list was read, as requests
+			// to a new server do. The stored value is the one that counts.
+			stored, getErr := GetSetting(spec.Category, spec.Name)
+			if getErr != nil {
+				return nil, getErr
+			}
+
+			fullSettings = append(fullSettings, *stored)
+
+			continue
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("storing setting %s: %w", settingName, err)
 		}

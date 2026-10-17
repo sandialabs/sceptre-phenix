@@ -1,0 +1,9 @@
+{
+  "go": 41.5,
+  "js": {
+    "lines": 68.6,
+    "statements": 68.5,
+    "functions": 61.2,
+    "branches": 71.2
+  }
+}

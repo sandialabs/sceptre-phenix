@@ -272,6 +272,11 @@ func (g *General) SetDoNotBoot(b bool) {
 	g.DoNotBootF = &b
 }
 
+// Notes returns nil: v0 nodes have no notes.
+func (General) Notes() []string {
+	return nil
+}
+
 type Hardware struct {
 	CPUF    string   `json:"cpu"           mapstructure:"cpu"     structs:"cpu"     yaml:"cpu"`
 	VCPUF   int      `json:"vcpus,string"  mapstructure:"vcpus"   structs:"vcpus"   yaml:"vcpus"`

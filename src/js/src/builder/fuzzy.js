@@ -1,0 +1,351 @@
+// Matching for the command palette: how well a query matches a title, and
+// which letters matched. The palette uses this to rank and highlight results.
+//
+// Each word of the query must occur in the text, case-insensitive. A word at
+// the start of the text ranks first, then a word at the start of a word, then
+// a word anywhere. When a word is missing, the letters of the query must
+// occur in order ("grp" finds "Group selection"), ranked by how close
+// together they are. A word can also start one of the item's aliases, which
+// are words that stand for its name ("export" for Download). It then counts
+// as a word of the title. Keywords and a node's fields (its addresses, image
+// and others) match only by words, and rank below any match on the title. A
+// field can have a rank: of two items found by their fields, the one found by
+// the field of the lower rank comes first (fieldOrder). As a last resort, the
+// words can be spread over the title, the aliases and the keywords.
+
+// What starts a word, besides the start of the text.
+const BOUNDARY = /[\s\-_.:/,›·()@#=]/;
+
+// Score bands, so every title match outranks every field match, and every
+// field match a title matched letter by letter.
+const WORDS = 1000;
+const FIELD = 600;
+const LETTERS = 500;
+const KEYWORD = 50;
+
+function merge(ranges) {
+  const out = [];
+
+  for (const range of [...ranges].sort((a, b) => a[0] - b[0])) {
+    const last = out[out.length - 1];
+
+    if (last && range[0] <= last[1]) {
+      last[1] = Math.max(last[1], range[1]);
+    } else {
+      out.push([range[0], range[1]]);
+    }
+  }
+
+  return out;
+}
+
+const SURROGATE = /[\ud800-\udfff]/;
+
+// Text in lower case, with where the letter behind each of its UTF-16 units
+// starts and ends in the text (null when the units match one to one).
+function lowerCase(text) {
+  const value = String(text || '');
+  const lower = value.toLowerCase();
+
+  if (lower.length === value.length && !SURROGATE.test(value)) {
+    return { lower, starts: null, ends: null };
+  }
+
+  const starts = [];
+  const ends = [];
+  let joined = '';
+
+  for (let at = 0; at < value.length; ) {
+    const letter = String.fromCodePoint(value.codePointAt(at));
+    const low = letter.toLowerCase();
+
+    for (let unit = 0; unit < low.length; unit++) {
+      starts.push(at);
+      ends.push(at + letter.length);
+    }
+    joined += low;
+    at += letter.length;
+  }
+
+  return {
+    lower: joined.length === lower.length ? lower : joined,
+    starts,
+    ends,
+  };
+}
+
+// Ranges of lowerCase(text).lower as ranges of whole letters of the text.
+function originalRanges({ starts, ends }, ranges) {
+  return starts
+    ? merge(ranges.map(([start, end]) => [starts[start], ends[end - 1]]))
+    : ranges;
+}
+
+function wordsOf(query) {
+  return String(query || '')
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+// The value of a word that starts an alias: the same as a word found at the
+// start of a word, as far into the text as that penalty goes.
+const ALIAS_GRADE = 200;
+const ALIAS_SCORE = 150;
+
+// Every word as a substring: {score, grade, ranges}, or null. The grade is
+// the score without its penalty for words further into the text. A word that
+// is not in the text may start one of the aliases instead, which marks no
+// range.
+function byWords(text, words, aliases = []) {
+  const lowered = lowerCase(text);
+  const found = wordsIn(lowered.lower, words, aliases);
+
+  return found && { ...found, ranges: originalRanges(lowered, found.ranges) };
+}
+
+// byWords for text that is already lower case.
+function wordsIn(lower, words, aliases = []) {
+  const ranges = [];
+  let score = 0;
+  let grade = 0;
+
+  for (const word of words) {
+    let at = lower.indexOf(word);
+    let boundary = -1;
+
+    for (let from = at; from >= 0; from = lower.indexOf(word, from + 1)) {
+      if (from === 0 || BOUNDARY.test(lower[from - 1])) {
+        boundary = from;
+        break;
+      }
+    }
+
+    if (at < 0) {
+      if (!aliases.some((alias) => alias.startsWith(word))) {
+        return null;
+      }
+
+      grade += ALIAS_GRADE;
+      score += ALIAS_SCORE;
+      continue;
+    }
+
+    at = boundary >= 0 ? boundary : at;
+
+    const worth = at === 0 ? 300 : boundary >= 0 ? 200 : 100;
+
+    grade += worth;
+    score += worth - Math.min(at, 50);
+    ranges.push([at, at + word.length]);
+  }
+
+  return { score, grade, ranges: merge(ranges) };
+}
+
+// The letters in order: {score, ranges}, or null.
+function byLetters(text, letters) {
+  const lowered = lowerCase(text);
+  const { lower } = lowered;
+  const ranges = [];
+  let first = -1;
+  let gaps = 0;
+  let next = 0;
+
+  for (const letter of letters) {
+    const at = lower.indexOf(letter, next);
+
+    if (at < 0) {
+      return null;
+    }
+
+    if (first < 0) {
+      first = at;
+    } else {
+      gaps += at - next;
+    }
+
+    ranges.push([at, at + letter.length]);
+    next = at + letter.length;
+  }
+
+  return {
+    score: Math.max(1, 100 - gaps * 5 - first),
+    ranges: originalRanges(lowered, merge(ranges)),
+  };
+}
+
+// The title, aliases and keywords of each item, in lower case, for the last
+// resort of matchItem. Items do not change, so each is joined once.
+const keywordTexts = new WeakMap();
+
+function keywordText(item) {
+  if (!item.aliases?.length && !item.keywords?.length) {
+    return '';
+  }
+
+  let text = keywordTexts.get(item);
+
+  if (text === undefined) {
+    text = [item.title, ...(item.aliases || []), ...(item.keywords || [])]
+      .join(' ')
+      .toLowerCase();
+    keywordTexts.set(item, text);
+  }
+
+  return text;
+}
+
+// The title, with its aliases, by words.
+function titleMatch(item, words) {
+  const title = byWords(item.title, words, item.aliases || []);
+
+  return (
+    title && {
+      score: WORDS + title.score,
+      grade: WORDS + title.grade,
+      ranges: title.ranges,
+    }
+  );
+}
+
+// The title letter by letter.
+function lettersMatch(item, words) {
+  const letters = byLetters(item.title, words.join(''));
+
+  return letters && { score: LETTERS + letters.score, ranges: letters.ranges };
+}
+
+/**
+ * How well `query` matches the name of an item: its title (with its aliases)
+ * by words, else letter by letter. matchItem with `name: false` matches the
+ * rest, so a caller can list every name match first.
+ *
+ * @param {object} item as for matchItem
+ * @param {string} query
+ * @returns {{score: number, ranges: number[][], grade?: number}|null}
+ */
+export function matchName(item, query) {
+  const words = wordsOf(query);
+
+  return words.length
+    ? titleMatch(item, words) || lettersMatch(item, words)
+    : { score: 0, ranges: [] };
+}
+
+/**
+ * How well `query` matches an item: first its title (with its aliases), then
+ * its fields (for a node: hostname, image, addresses...), then its title,
+ * aliases and keywords together. An empty query matches everything with score
+ * 0. Ranges are [start, end) of the matched text.
+ *
+ * @param {object} item
+ * @param {string} item.title
+ * @param {string[]} [item.aliases] lower-case single words that stand for
+ *   the title, matched as words of it without saying so
+ * @param {{label: string, value: string}[]} [item.fields] what else the item
+ *   is found by, named so the palette can say which one matched
+ * @param {string[]} [item.keywords] more words, matched without saying so
+ * @param {string} query
+ * @param {object} [options] name: false skips the title by words and by
+ *   letters (matchName)
+ * @returns {{score: number, ranges: number[][], grade?: number,
+ *   field?: object}|null} `field` ({label, value, ranges}) is set when a
+ *   field matched and the title did not. `grade` is set when the title
+ *   matched by words. It is the score without the penalty for words further
+ *   in, so it is equal for titles that differ only in the position of their
+ *   words.
+ */
+export function matchItem(item, query, { name = true } = {}) {
+  const words = wordsOf(query);
+
+  if (!words.length) {
+    return { score: 0, ranges: [] };
+  }
+
+  const title = name && titleMatch(item, words);
+
+  if (title) {
+    return title;
+  }
+
+  let best = null;
+
+  for (const field of item.fields || []) {
+    const rank = field.rank ?? 0;
+
+    // A field of a lower rank goes first (see fieldOrder).
+    if (best && rank > best.rank) {
+      continue;
+    }
+
+    const found = byWords(field.value, words);
+
+    if (found && (!best || rank < best.rank || found.score > best.score)) {
+      best = { ...found, field, rank };
+    }
+  }
+
+  if (best) {
+    return {
+      score: Math.min(FIELD + Math.round(best.score / 10), WORDS - 1),
+      ranges: [],
+      field: { ...best.field, ranges: best.ranges },
+    };
+  }
+
+  const letters = name && lettersMatch(item, words);
+
+  if (letters) {
+    return letters;
+  }
+
+  // Each word in the title, an alias or a keyword: "save png" finds
+  // Download PNG by a keyword and a word of its title.
+  const keywords = keywordText(item);
+
+  return keywords && wordsIn(keywords, words)
+    ? { score: KEYWORD, ranges: [] }
+    : null;
+}
+
+/**
+ * The order of two field matches of matchItem: the lower `rank` (0 when
+ * left out) first. Any other pair is equal here, and their scores order them.
+ *
+ * @param {object} a a match
+ * @param {object} b a match
+ * @returns {number} below 0 when a goes first, above 0 when b does, else 0
+ */
+export function fieldOrder(a, b) {
+  return a.field && b.field ? (a.field.rank ?? 0) - (b.field.rank ?? 0) : 0;
+}
+
+/**
+ * Splits text into runs for display, marking the matched ones.
+ *
+ * @param {string} text
+ * @param {number[][]} [ranges] from matchItem
+ * @returns {{text: string, match: boolean}[]}
+ */
+export function highlightParts(text, ranges = []) {
+  const value = String(text ?? '');
+  const parts = [];
+  let last = 0;
+
+  for (const [start, end] of ranges) {
+    if (start > last) {
+      parts.push({ text: value.slice(last, start), match: false });
+    }
+
+    parts.push({ text: value.slice(start, end), match: true });
+    last = end;
+  }
+
+  if (last < value.length) {
+    parts.push({ text: value.slice(last), match: false });
+  }
+
+  return parts;
+}

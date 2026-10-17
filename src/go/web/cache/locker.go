@@ -19,12 +19,6 @@ func UnlockExperiment(name string) {
 	Unlock(key)
 }
 
-func IsVMLocked(exp, name string) Status {
-	key := fmt.Sprintf("vm|%s/%s", exp, name)
-
-	return Locked(key)
-}
-
 func UnlockVM(exp, name string) {
 	key := fmt.Sprintf("vm|%s/%s", exp, name)
 
@@ -49,21 +43,6 @@ func LockExperimentForUpdate(name string) error {
 	}
 
 	return nil
-}
-
-// LockBuilderTopology locks a Builder topology for creation or update.
-//
-// Builder names a topology and the experiment built from it identically, so
-// this deliberately takes that name's experiment lock: a topology save has to
-// serialize against the experiment Builder endpoints, which write both halves.
-// The reported status therefore names the experiment holding the lock.
-func LockBuilderTopology(name string) error {
-	return LockExperimentForUpdate(name)
-}
-
-// UnlockBuilderTopology releases the lock taken by LockBuilderTopology.
-func UnlockBuilderTopology(name string) {
-	UnlockExperiment(name)
 }
 
 func LockExperimentForDeletion(name string) error {

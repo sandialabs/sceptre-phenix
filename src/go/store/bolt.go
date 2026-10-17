@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"sync"
@@ -33,16 +32,16 @@ func (b *BoltDB) Init(opts ...Option) error {
 	}
 
 	if u.Scheme != "bolt" {
-		return fmt.Errorf("invalid scheme '%s' for BoltDB endpoint", u.Scheme)
+		return fmt.Errorf("invalid scheme '%s' for store endpoint: only bolt:// is supported", u.Scheme)
 	}
 
 	b.path = u.Host + u.Path
 
-	if err := b.InitializeComponent(ComponentStore); err != nil {
-		return fmt.Errorf("initializing component %s: %w", ComponentStore, err)
+	if err := b.open(); err != nil {
+		return fmt.Errorf("initializing BoltDB store: %w", err)
 	}
 
-	return nil
+	return b.Close()
 }
 
 func (b *BoltDB) IsInitialized(component Component) bool {
@@ -79,12 +78,16 @@ func (b *BoltDB) InitializeComponent(component Component) error {
 func (b *BoltDB) open() error {
 	b.mu.Lock()
 
-	var err error
-
-	b.db, err = bbolt.Open(b.path, boltFileMode, &bbolt.Options{NoFreelistSync: true}) //nolint:exhaustruct // partial initialization
+	db, err := bbolt.Open(b.path, boltFileMode, &bbolt.Options{NoFreelistSync: true}) //nolint:exhaustruct // partial initialization
 	if err != nil {
-		return err
+		// The lock is held only while the database is open, so release it when
+		// opening fails. Callers do not call Close in that case.
+		b.mu.Unlock()
+
+		return fmt.Errorf("opening BoltDB file %s: %w", b.path, err)
 	}
+
+	b.db = db
 
 	return nil
 }
@@ -96,7 +99,10 @@ func (b *BoltDB) Close() error {
 		return nil
 	}
 
-	return b.db.Close()
+	db := b.db
+	b.db = nil
+
+	return db.Close()
 }
 
 func (b *BoltDB) List(kinds ...string) (Configs, error) {
@@ -186,7 +192,7 @@ func (b *BoltDB) Create(c *Config) error {
 
 	c.Metadata.Updated = now
 
-	v, err := json.Marshal(c)
+	v, err := c.StoredJSON()
 	if err != nil {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
@@ -199,7 +205,9 @@ func (b *BoltDB) Create(c *Config) error {
 }
 
 func (b *BoltDB) Update(c *Config) error {
-	_ = b.open()
+	if err := b.open(); err != nil {
+		return err
+	}
 
 	defer func() { _ = b.Close() }()
 
@@ -209,7 +217,7 @@ func (b *BoltDB) Update(c *Config) error {
 
 	c.Metadata.Updated = time.Now().Format(time.RFC3339)
 
-	v, err := json.Marshal(c)
+	v, err := c.StoredJSON()
 	if err != nil {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
@@ -221,12 +229,10 @@ func (b *BoltDB) Update(c *Config) error {
 	return nil
 }
 
-func (b *BoltDB) Patch(*Config, map[string]any) error {
-	return errors.New("boltDB.Patch not implemented")
-}
-
 func (b *BoltDB) Delete(c *Config) error {
-	_ = b.open()
+	if err := b.open(); err != nil {
+		return err
+	}
 
 	defer func() { _ = b.Close() }()
 

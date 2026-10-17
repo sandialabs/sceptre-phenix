@@ -1157,11 +1157,6 @@
         }
       },
 
-      color(d) {
-        const scale = d3.scaleOrdinal(d3.schemeCategory10);
-        return scale(d);
-      },
-
       drag(simulation) {
         function dragstarted(event) {
           if (!event.active) simulation.alphaTarget(0.3).restart();
@@ -1362,7 +1357,6 @@
           hasModalCard: true,
           props: {
             vmName: vm,
-            experiment: this.$route.params.id,
             tags: tags,
           },
           events: {
@@ -1490,7 +1484,6 @@
           overrideStrokeStyle: false,
           strokeStyle: '',
         },
-        chordData: null,
       };
     },
     computed: {

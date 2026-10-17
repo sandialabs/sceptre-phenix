@@ -32,6 +32,11 @@ const (
 	defaultMaxLogSize    = 100
 	defaultMaxLogBackups = 3
 	defaultMaxLogAge     = 90
+
+	// builderTemplatesSubdir is the directory below base-dir.phenix that holds
+	// the template files of the Builder, unless base-dir.builder-templates
+	// sets another directory.
+	builderTemplatesSubdir = "builder/templates"
 )
 
 var (
@@ -152,6 +157,11 @@ var rootCmd = &cobra.Command{
 			common.PhenixBase,
 			"topologies",
 		)
+		common.BuilderTemplatesBase = derivedBaseDir( //nolint:reassign // configuration injection
+			getEffectiveString("base-dir.builder-templates", cmd.Flags().Changed("base-dir.builder-templates")),
+			common.PhenixBase,
+			builderTemplatesSubdir,
+		)
 		common.MinimegaBase = getEffectiveString( //nolint:reassign // configuration injection
 			"base-dir.minimega",
 			cmd.Flags().Changed("base-dir.minimega"),
@@ -169,12 +179,8 @@ var rootCmd = &cobra.Command{
 
 		common.StoreEndpoint = endpoint //nolint:reassign // configuration injection
 
-		// Initialize storage backend if not already done
-		if !store.IsInitialized(store.ComponentStore) {
-			err := store.Init(store.Endpoint(endpoint))
-			if err != nil {
-				return fmt.Errorf("initializing storage: %w", err)
-			}
+		if err := store.Init(store.Endpoint(endpoint)); err != nil {
+			return fmt.Errorf("initializing storage: %w", err)
 		}
 
 		// Initialize default configs if not already done
@@ -414,6 +420,12 @@ func init() {
 	rootCmd.PersistentFlags().
 		String("base-dir.topologies", "", "base directory for topology directories (default: <base-dir.phenix>/topologies)")
 	rootCmd.PersistentFlags().
+		String(
+			"base-dir.builder-templates", "",
+			"directory of the Builder template files phenix ui reads at start "+
+				"(default: <base-dir.phenix>/builder/templates)",
+		)
+	rootCmd.PersistentFlags().
 		StringVar(&mountDir, "mount-dir", "", "base directory for VM filesystem mounts (default: <base-dir.phenix>/mounts)")
 	rootCmd.PersistentFlags().
 		StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
@@ -448,7 +460,7 @@ func init() {
 	}
 
 	rootCmd.PersistentFlags().
-		StringVar(&storeEndpoint, "store.endpoint", defaultStore, "endpoint for storage service")
+		StringVar(&storeEndpoint, "store.endpoint", defaultStore, "BoltDB store endpoint (bolt://<path>)")
 	rootCmd.PersistentFlags().
 		String("log.system.path", defaultLogPath, "path to system log (JSON format)")
 

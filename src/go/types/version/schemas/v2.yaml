@@ -280,7 +280,7 @@ components:
               example: kvm
             snapshot:
               type: boolean
-              default: false
+              default: true
               example: false
               nullable: true
             do_not_boot:
@@ -288,6 +288,18 @@ components:
               default: false
               example: false
               nullable: true
+            notes:
+              description: >-
+                Notes about the node. phenix copies them to the VM's notes when an experiment is created.
+              type: array
+              maxItems: 100
+              items:
+                type: string
+                minLength: 1
+                maxLength: 4096
+              example:
+              - Domain controller for the corporate network.
+              - Reset the administrator password before each run.
         hardware:
           type: object
           required:
@@ -308,7 +320,7 @@ components:
               oneOf:
               - type: integer
               - type: string
-              default: 1024
+              default: 512
               example: 8192
             os_type:
               type: string
@@ -609,6 +621,18 @@ components:
               - ""
               default: vm
               example: vm
+            notes:
+              description: >-
+                Notes about the device. phenix copies them to the device's labels, as notes, when an experiment is
+                created.
+              type: array
+              maxItems: 100
+              items:
+                type: string
+                minLength: 1
+                maxLength: 4096
+              example:
+              - Physical PLC on the test bench.
         hardware:
           type: object
           nullable: true
@@ -629,7 +653,7 @@ components:
               oneOf:
               - type: integer
               - type: string
-              default: 1024
+              default: 512
               example: 8192
             os_type:
               type: string

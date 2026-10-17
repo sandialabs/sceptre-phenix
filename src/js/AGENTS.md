@@ -27,10 +27,42 @@ npm ci
 | Development server       | `npm run dev`                   |
 | Focused Vitest           | `npm test -- test/rbac.test.js` |
 | All Vitest               | `npm test`                      |
+| Contract tests only      | `npm run test:contract`         |
+| Vitest with coverage     | `npm run test:coverage`         |
 | Production build         | `npm run build`                 |
 | Format, then review diff | `npm run format`                |
+| Unused files and exports | `npm run knip`                  |
 
 The development server needs a backend on `localhost:3000`.
+
+ESLint and knip fail on dead code: unused props, data, emits, refs,
+exports, files, and dependencies. Remove the dead code. Do not add an inline
+disable or a knip ignore entry to hide it.
+
+`npm test` runs two Vitest projects, set in `vite.config.js`: `contract`,
+the suites of pure functions listed there, in shared workers without
+per-file isolation, and `unit`, every other test file, each in a fresh
+worker. A suite that mocks a module, stubs a global, or leaves storage,
+timers or module state behind goes in `unit`. The contract suites must pass
+in any order: `npx vitest run --project contract --sequence.shuffle`.
+`test/unit-setup.js` mocks `@/utils/axios.js` and `@/store.js` for every
+`unit` file. A file mocks the module again for other values, or calls
+`vi.unmock` for the real module. Shared HTML helpers (`textOf`, `tag`,
+`tagOf`, `attribute`) are in `test/builder/fixtures.js`, and
+`renderWithStore` is in `test/builder/render.js` (`unit` files only).
+
+Test what a component does with `@vue/test-utils` in a `unit` file that
+starts with `// @vitest-environment happy-dom`: mount it, use `trigger` and
+`setValue`, and check focus, emitted events and the DOM. Use the server
+render for static output only, and keep each file in one environment.
+happy-dom has no layout, so test sizes, positions and the Vue Flow canvas in
+Playwright. In `contract` suites, use `fast-check` properties for rules that
+hold for every input (round trips, order, idempotence). Pass options to each
+`fc.assert` call. Do not call `fc.configureGlobal`.
+
+The build compresses Builder's files with Brotli quality 9;
+`PHENIX_BROTLI_QUALITY` (a whole number from 0 to 11) changes it, and the
+Docker and Podman builds set 11 (see `plugins/builder-assets.js`).
 
 ## UI Conventions
 
@@ -53,21 +85,33 @@ server on another port (see the port rule in the root `AGENTS.md`):
 ```bash
 cd e2e
 npm ci
-npx playwright install --with-deps chromium
+npx playwright install --with-deps chromium firefox
 # against `phenix ui --listen-endpoint 127.0.0.1:3080`
 E2E_BASE_URL=http://127.0.0.1:3080 npx playwright test
 ```
 
-Default smoke tests need only a server. `routes.spec.js` also runs an
-axe-core WCAG 2.x A/AA scan on every route; fix violations in the UI
-(accessible names, contrast, ARIA) rather than excluding rules. Lifecycle tests additionally need
-minimega, VM images, and a topology (`E2E_LIFECYCLE=1`). Auth suites require a
-matching `VITE_AUTH` build and signing key. See `e2e/README.md`; report missing
-prerequisites instead of silently skipping checks.
+`routes.spec.js` also runs an axe-core WCAG 2.x A/AA scan on every route; fix
+violations in the UI (accessible names, contrast, ARIA) rather than excluding
+rules. Lifecycle tests additionally need minimega, VM images, and a topology
+(`E2E_LIFECYCLE=1`). Auth suites require a matching `VITE_AUTH` build and
+signing key. See `e2e/README.md`; report missing prerequisites instead of
+silently skipping checks.
+
+Axe scans run only in Chromium. Do not run them in Firefox. The Firefox
+project (`@cross-browser` tests) is only for browser-compatibility tests.
+
+Before changing the Builder (`src/builder/`, `src/components/builder/`,
+`src/views/Builder.vue`, or the `builder*` e2e specs), read
+[`../../skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md),
+then the reference its routing table names for the task.
 
 ## CI
 
-`.github/workflows/frontend.yml` runs Vitest and builds the UI, then builds and
-starts a real backend for Playwright smoke tests. Keep Node versions, npm cache
-lockfiles, auth build mode, backend startup, and path filters aligned with local
-commands.
+`.github/workflows/frontend.yml` runs knip and Vitest, builds the UI and a
+real backend once for each `VITE_AUTH` mode, then runs the Playwright tests
+in parallel jobs, each against its own server (see `e2e/README.md`). It
+builds and runs the Playwright tests only for a change that can affect the
+browser, as its `changes` job decides. A change to unit tests under `test/`
+alone runs Vitest only. Keep Node versions, npm cache lockfiles, auth build
+mode, backend startup, path filters, and that job's path list aligned with
+local commands.

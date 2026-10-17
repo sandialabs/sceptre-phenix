@@ -18,12 +18,10 @@ type PauseMetadata struct {
 	FailStages []string `mapstructure:"failStages"`
 }
 
-func (p *PauseMetadata) Validate() error {
+func (p *PauseMetadata) Validate() {
 	if p.Duration == "" {
 		p.Duration = "10s"
 	}
-
-	return nil
 }
 
 type Pause struct {
@@ -91,9 +89,7 @@ func (p Pause) pause(ctx context.Context, stage Action) error {
 		return fmt.Errorf("decoding pause component metadata: %w", err)
 	}
 
-	if err := md.Validate(); err != nil {
-		return fmt.Errorf("validating pause component metadata: %w", err)
-	}
+	md.Validate()
 
 	d, err := time.ParseDuration(md.Duration)
 	if err != nil {

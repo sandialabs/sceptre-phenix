@@ -108,6 +108,8 @@ type NodeGeneral interface {
 	Snapshot() *bool
 	SetSnapshot(bool)
 	DoNotBoot() *bool
+	// Notes returns the node's notes (general.notes), in order.
+	Notes() []string
 
 	SetDoNotBoot(bool)
 }

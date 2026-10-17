@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -107,7 +106,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if !dryRun {
-		if err := executeWorkflowPlan(ctx, plan, spec, branch, tags, prep, target); err != nil {
+		if err := executeWorkflowPlan(plan, spec, branch, tags, prep, target); err != nil {
 			return err
 		}
 	}
@@ -254,7 +253,6 @@ func workflowWebError(err error, message string) *weberror.WebError {
 // executeWorkflowPlan carries out plan with what prep resolved. exp is the
 // experiment mapped to branch, which the update actions act on.
 func executeWorkflowPlan(
-	ctx context.Context,
 	plan workflow.Plan,
 	spec workflow.Spec,
 	branch, tags string,
@@ -265,7 +263,7 @@ func executeWorkflowPlan(
 	case workflow.ActionNone:
 		// Nothing to carry out; the response gives the reason.
 	case workflow.ActionCreate, workflow.ActionCreateAndStart:
-		return createFromWorkflow(ctx, spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart)
+		return createFromWorkflow(spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart)
 	case workflow.ActionUpdate, workflow.ActionUpdateAndStart, workflow.ActionRestart:
 		return updateFromWorkflow(exp, spec, tags, prep, plan.Action)
 	}
@@ -276,7 +274,6 @@ func executeWorkflowPlan(
 // createFromWorkflow creates the experiment auto.create names from what prep
 // resolved, maps it to branch, tags it and starts it when start is true.
 func createFromWorkflow(
-	ctx context.Context,
 	spec workflow.Spec,
 	branch, tags string,
 	prep workflow.Prepared,
@@ -313,7 +310,7 @@ func createFromWorkflow(
 		experiment.CreateWithGREMesh(spec.UseGREMesh),
 	}
 
-	err = experiment.Create(ctx, opts...)
+	err = experiment.Create(opts...)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to create new experiment")
 
@@ -430,6 +427,28 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		scope   = vars["branch"]
 	)
 
+	// The parse replaces ${NAME} references with the environment variables of
+	// the server, and a parse error quotes the text it failed on. Thus only a
+	// caller who may create or update configs gets to the parse. The checks for
+	// the named config below still apply.
+	if !role.Allowed("configs", "create") && !role.Allowed("configs", "update") {
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating or updating config not allowed",
+			"user",
+			user,
+		)
+
+		err := weberror.NewWebError(
+			nil,
+			"creating or updating configs not allowed for %s",
+			user,
+		)
+
+		return err.SetStatus(http.StatusForbidden)
+	}
+
 	dryRun, err := parseDryRun(r.URL.Query())
 	if err != nil {
 		return err
@@ -541,15 +560,8 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to update config %s", name)
 		}
 	} else {
-		if !role.Allowed("configs", "create") {
-			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-			err := weberror.NewWebError(
-				nil,
-				"creating configs not allowed for %s",
-				user,
-			)
-
-			return err.SetStatus(http.StatusForbidden)
+		if !role.Allowed("configs", "create", name) {
+			return configForbidden(ctx, "creating", name)
 		}
 
 		cfg, err = createOrValidate(cfg, dryRun)
