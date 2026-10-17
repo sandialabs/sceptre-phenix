@@ -1,4 +1,7 @@
+import { Buffer } from 'node:buffer';
+
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 
 import {
   ICON_FILE_NOT_CONVERTED,
@@ -1122,5 +1125,33 @@ describe('making an icon of a file', () => {
     expect(
       (await rasterizeIcon(file('icon.png', 'image/png'), deps)).data,
     ).toBe(base64Of(output));
+  });
+});
+
+describe('icon data, for any bytes and text', () => {
+  test('bytes encoded as icon data decode to the same bytes', () => {
+    fc.assert(
+      fc.property(fc.uint8Array({ minLength: 1, maxLength: 600 }), (bytes) => {
+        expect(decodeIconData(encodeIconData(bytes))).toEqual(bytes);
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  test('text decodes only when it is the one encoding of its bytes', () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[A-Za-z0-9+/]{0,12}(={0,2})$/),
+        (text) => {
+          const bytes = decodeIconData(text);
+
+          if (bytes) {
+            expect(encodeIconData(bytes)).toBe(text);
+            expect(Buffer.from(bytes)).toEqual(Buffer.from(text, 'base64'));
+          }
+        },
+      ),
+      { numRuns: 500 },
+    );
   });
 });
