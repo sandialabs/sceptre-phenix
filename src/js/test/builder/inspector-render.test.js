@@ -38,9 +38,7 @@ import {
   inspectorTarget,
   uiSchemaForKind,
 } from '@/builder/adapters/forms.js';
-import { isIconKey } from '@/builder/catalog.js';
 import { createFormValidator } from '@/builder/form-validator.js';
-import { ICON_ORDER, iconLabel } from '@/builder/iconLabels.js';
 import { iconLibrary } from '@/builder/iconLibrary.js';
 import { indexIcons } from '@/builder/icons.js';
 import { addNode, updateNetwork, updateNode } from '@/builder/model.js';
@@ -1979,17 +1977,10 @@ describe('the Icon field', () => {
       updateNode(doc, alpha.id, { device: { icon: 'plc' } }),
     patch: entry ? { icons: { plc: entry } } : {},
   });
-  // The Icon field rendered with `options`, and its own state.
+  // The Icon field rendered with `options` (its menu, used, is in
+  // inspector-icon-field.test.js).
   async function iconField(options = {}) {
-    const iconControls = [];
-    const html = await renderInspector({ ...options, iconControls });
-    const [control] = iconControls;
-
-    return {
-      html,
-      state: control.setupState,
-      data: () => control.setupState.jsonforms.core.data,
-    };
+    return { html: await renderInspector(options) };
   }
 
   afterEach(() => {
@@ -2023,71 +2014,8 @@ describe('the Icon field', () => {
     expect(html).not.toContain('data-testid="icon-dialog"');
   });
 
-  test('lists Default, the built-in icons by their labels, then Custom icon…', async () => {
-    const { state } = await iconField();
-    const offered = ICON_ORDER.filter(isIconKey);
-
-    expect(state.items.map((item) => item.id)).toEqual([
-      'default',
-      ...offered,
-      'custom-icon',
-    ]);
-    expect(state.items.map((item) => item.label)).toEqual([
-      'Default (Server)',
-      ...offered.map(iconLabel),
-      'Custom icon…',
-    ]);
-    // Each built-in icon is drawn beside its label.
-    expect(state.items[1].icon).toBe(offered[0]);
-    // The icon the device draws is the one checked.
-    expect(
-      state.items.filter((item) => item.checked).map((item) => item.id),
-    ).toEqual(['linux']);
-    expect(state.items.at(-1)).toMatchObject({
-      separator: true,
-      checked: false,
-    });
-  });
-
-  // An icon drawing draws one icon or the other: no Default.
-  test('an icon drawing has no Default', async () => {
-    let drawing;
-    const { state } = await iconField({
-      change: ({ doc }) => {
-        const added = addNode(doc, { kind: 'icon', iconKey: 'router' });
-
-        drawing = added.node;
-
-        return added.doc;
-      },
-      select: () => drawing.id,
-    });
-
-    expect(state.items[0].id).not.toBe('default');
-    expect(state.items.find((item) => item.checked).id).toBe('router');
-  });
-
-  test('a built-in icon chosen removes the custom icon, and Custom icon… opens the dialog', async () => {
-    const { state, data } = await iconField(withIcon({ data: ICON_DATA }));
-
-    state.onSelect(state.items.find((item) => item.id === 'custom-icon'));
-    expect(state.open).toBe(true);
-    state.use({ name: 'rtu' });
-    expect(state.open).toBe(false);
-    expect(data().icon).toBe('rtu');
-
-    // The icon chosen already, while a custom icon is in use, takes its
-    // place too.
-    state.onSelect(state.items.find((item) => item.id === 'server'));
-    expect(data().icon).toBeUndefined();
-    expect(data().iconKey).toBe('server');
-
-    state.onSelect(state.items.find((item) => item.id === 'firewall'));
-    expect(data().iconKey).toBe('firewall');
-  });
-
-  test('shows a custom icon and its name, checked in the menu', async () => {
-    const { html, state } = await iconField(withIcon({ data: ICON_DATA }));
+  test('shows a custom icon and its name', async () => {
+    const { html } = await iconField(withIcon({ data: ICON_DATA }));
     const [image] = images(html);
 
     expect(images(html)).toHaveLength(1);
@@ -2101,9 +2029,6 @@ describe('the Icon field', () => {
       /data-testid="inspector-icon-name"[^>]*>plc<\/span>/,
     );
     expect(textOf(fieldOf(html, 'icon'))).toContain('plc (custom icon)');
-    expect(state.items.filter((item) => item.checked)).toEqual([
-      expect.objectContaining({ id: 'custom-icon', description: 'plc' }),
-    ]);
   });
 
   test('shows an icon of the icon library the diagram carries no copy of', async () => {
