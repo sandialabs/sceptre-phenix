@@ -13,10 +13,8 @@ import (
 	"phenix/store"
 )
 
-// An archive of several configs is a zip attachment however large it is (it
-// once set its headers only after the zip writer's 4 KiB buffer had gone
-// out), holds the configs the role may get, and answers a config that cannot
-// be read with an error rather than a broken archive.
+// An archive of several configs is a zip attachment however large, holds the configs the role may get,
+// and answers an unreadable config with an error rather than a broken archive.
 func TestDownloadConfigsArchive(t *testing.T) {
 	// notes the zip writer cannot compress, so the archive passes its buffer
 	notes := make([]byte, 8192)

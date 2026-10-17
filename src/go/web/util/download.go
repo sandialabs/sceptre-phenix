@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var (
@@ -40,12 +39,6 @@ type Download struct {
 	// binary file from being labeled, and compressed, as text.
 	ContentType string
 
-	// Live marks a file still being written, such as a running capture: it
-	// gets no validators (ETag or Last-Modified), so a resumed download
-	// starts over rather than splicing two versions of the file, and is never
-	// cached.
-	Live bool
-
 	// MaxSize, when positive, refuses a larger file with ErrTooLarge before
 	// anything is sent.
 	MaxSize int64
@@ -71,7 +64,7 @@ type Served struct {
 // If-Modified-Since), HEAD requests and 416 responses work as net/http
 // implements them. The file is streamed from disk, never read into memory.
 //
-// Unless d.Live, the response carries a strong ETag (see FileETag) and the
+// The response carries a strong ETag (see FileETag) and the
 // file's modification time, with Cache-Control "private, no-cache": a client
 // may keep the file but must revalidate it, and a browser or curl resumes an
 // interrupted download only while the file is unchanged. If Digests knows the
@@ -120,26 +113,18 @@ func ServeOpenFile(w http.ResponseWriter, r *http.Request, f *os.File, d Downloa
 		header.Set("Content-Type", ct)
 	}
 
-	var modtime time.Time
+	header.Set("Cache-Control", "private, no-cache")
+	header.Set("ETag", FileETag(info))
 
-	if d.Live {
-		header.Set("Cache-Control", "no-store")
-	} else {
-		header.Set("Cache-Control", "private, no-cache")
-		header.Set("ETag", FileETag(info))
-
-		// the whole file's checksum, if known (RFC 9530): it holds for a
-		// range too, so a resumed download can be verified
-		if sum, ok := Digests.Lookup(d.Path, info); ok {
-			header.Set("Repr-Digest", reprDigest(sum))
-		}
-
-		modtime = info.ModTime()
+	// the whole file's checksum, if known (RFC 9530): it holds for a range
+	// too, so a resumed download can be verified
+	if sum, ok := Digests.Lookup(d.Path, info); ok {
+		header.Set("Repr-Digest", reprDigest(sum))
 	}
 
 	sw := &statusWriter{ResponseWriter: w, status: 0}
 
-	http.ServeContent(sw, r, d.Name, modtime, f)
+	http.ServeContent(sw, r, d.Name, info.ModTime(), f)
 
 	return Served{Info: info, Status: sw.status, Started: started(r, sw.status, header, info.Size())}, nil
 }

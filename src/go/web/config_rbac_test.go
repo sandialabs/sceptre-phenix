@@ -60,73 +60,46 @@ func wantNoConfig(t *testing.T, name string) {
 	}
 }
 
-// POST /configs checks configs create against the new config's Kind/name, so
-// a role limited to topologies cannot create User or Role configs.
+// POST /configs and the workflow upsert check configs create against the new
+// config's Kind/name, so a role limited to topologies cannot create User or Role configs.
 //
 //nolint:paralleltest // replaces the store
 func TestCreateConfigChecksKind(t *testing.T) {
-	storetest.Use(t)
-
-	for _, tc := range []struct {
-		name, body string
-		want       int
-	}{
-		{"User config", configJSON("User", "intruder"), http.StatusForbidden},
-		{"lowercase user kind", configJSON("user", "intruder"), http.StatusForbidden},
-		{"Role config", configJSON("Role", "intruder"), http.StatusForbidden},
-		{"topology", revisionTestTopology, http.StatusCreated},
-	} {
-		w := httptest.NewRecorder()
-		req := roleRequest(http.MethodPost, "/api/v1/configs", tc.body, nil, topologyConfigs("create"))
-
-		if got := handlerStatus(t, w, CreateConfig(w, req)); got != tc.want {
-			t.Errorf("%s: status %d, want %d", tc.name, got, tc.want)
-		}
-	}
-
-	wantNoConfig(t, "user/intruder")
-	wantNoConfig(t, "role/intruder")
-}
-
-// POST /workflow/configs/{branch} checks a new config's Kind/name as POST
-// /configs does.
-//
-//nolint:paralleltest // replaces the store
-func TestWorkflowUpsertConfigChecksKind(t *testing.T) {
-	storetest.Use(t)
-
 	vars := map[string]string{"branch": "main"}
 
-	for _, tc := range []struct {
-		name, body string
-		want       int
+	for _, route := range []struct {
+		name, target string
+		handler      func(http.ResponseWriter, *http.Request) error
+		created      int
 	}{
-		{"User config", configJSON("User", "intruder"), http.StatusForbidden},
-		{"Role config", configJSON("Role", "intruder"), http.StatusForbidden},
-		{"topology", revisionTestTopology, http.StatusCreated},
+		{"POST /configs", "/api/v1/configs", CreateConfig, http.StatusCreated},
+		{"workflow upsert dry run", "/api/v1/workflow/configs/main?dryRun=true", WorkflowUpsertConfig, http.StatusOK},
+		{"workflow upsert", "/api/v1/workflow/configs/main", WorkflowUpsertConfig, http.StatusCreated},
 	} {
-		for _, dryRun := range []bool{true, false} {
-			target := "/api/v1/workflow/configs/main"
-			if dryRun {
-				target += "?dryRun=true"
+		t.Run(route.name, func(t *testing.T) {
+			storetest.Use(t)
+
+			for _, tc := range []struct {
+				name, body string
+				want       int
+			}{
+				{"User config", configJSON("User", "intruder"), http.StatusForbidden},
+				{"lowercase user kind", configJSON("user", "intruder"), http.StatusForbidden},
+				{"Role config", configJSON("Role", "intruder"), http.StatusForbidden},
+				{"topology", revisionTestTopology, route.created},
+			} {
+				w := httptest.NewRecorder()
+				req := roleRequest(http.MethodPost, route.target, tc.body, vars, topologyConfigs("create"))
+
+				if got := handlerStatus(t, w, route.handler(w, req)); got != tc.want {
+					t.Errorf("%s: status %d, want %d", tc.name, got, tc.want)
+				}
 			}
 
-			w := httptest.NewRecorder()
-			req := roleRequest(http.MethodPost, target, tc.body, vars, topologyConfigs("create"))
-
-			want := tc.want
-			if dryRun && want == http.StatusCreated {
-				want = http.StatusOK
-			}
-
-			if got := handlerStatus(t, w, WorkflowUpsertConfig(w, req)); got != want {
-				t.Errorf("%s (dry run %t): status %d, want %d", tc.name, dryRun, got, want)
-			}
-		}
+			wantNoConfig(t, "user/intruder")
+			wantNoConfig(t, "role/intruder")
+		})
 	}
-
-	wantNoConfig(t, "user/intruder")
-	wantNoConfig(t, "role/intruder")
 }
 
 // A PUT that renames a config, or changes its kind, needs configs create for

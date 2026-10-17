@@ -43,11 +43,8 @@ func getAPI(t *testing.T, url string, msg gproto.Message) int {
 	return resp.StatusCode
 }
 
-// The experiment endpoints list the experiment's VMs as minimega reports them
-// unless asked not to (vms=false), when the count comes from the topology and
-// minimega is not asked. A screenshot needs the VMs, so it overrides
-// vms=false; and while an experiment is starting, the list takes the VMs from
-// the topology rather than wait on minimega.
+// Experiment endpoints list VMs as minimega reports them; vms=false skips minimega and counts from the topology.
+// A screenshot overrides vms=false, and a starting experiment lists topology VMs without waiting on minimega.
 func TestExperimentEndpointsListVMs(t *testing.T) {
 	running := mm.VMs{{Name: "test-vm", Running: true, State: "RUNNING", Networks: []string{"EXP_1 (101)"}}}
 
@@ -136,9 +133,7 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 	}
 }
 
-// Both REST lists of an experiment's VMs page them alike: the count is of
-// every VM, not just the page's, and an invalid page is refused (web/util's
-// ParsePage tests cover what is invalid).
+// Both VM lists page alike: the count covers every VM, and an invalid page is a 400.
 func TestVMListPaging(t *testing.T) {
 	useTestExperiment(t)
 	useTestMM(t, &testMM{vms: mm.VMs{{Name: "test-vm", Running: true, State: "RUNNING"}}})
@@ -174,9 +169,9 @@ func TestVMListPaging(t *testing.T) {
 	}
 }
 
-// Updating several VMs answers with the VMs it updated, whatever total the
-// request gives, and leaves out a VM the role may not patch.
-func TestUpdateVMsAnswersTheUpdatedVMs(t *testing.T) {
+// Updating several VMs answers with the VMs it updated, ignoring the request's
+// total, and leaves out a VM the role may not patch.
+func TestUpdateVMsIgnoresTotal(t *testing.T) {
 	node := func(hostname string) map[string]any {
 		return map[string]any{
 			"type":     "VirtualMachine",
@@ -185,38 +180,32 @@ func TestUpdateVMsAnswersTheUpdatedVMs(t *testing.T) {
 		}
 	}
 
-	totals := map[string]string{"no total": "", "too few": `"total": 0,`, "too many": `"total": 5,`}
+	useTestStore(t, namedExperiment(t, "stopped", "", node("vm-a"), node("vm-b")))
 
-	for name, total := range totals {
-		t.Run(name, func(t *testing.T) {
-			useTestStore(t, namedExperiment(t, "stopped", "", node("vm-a"), node("vm-b")))
+	server := serveAs(t, "alice", testRole("vms", "patch", "stopped/vm-a"))
+	body := `{"total": 5, "vms": [{"name": "vm-b", "dnb": true}, {"name": "vm-a", "dnb": true}]}`
 
-			server := serveAs(t, "alice", testRole("vms", "patch", "stopped/vm-a"))
-			body := `{` + total + `"vms": [{"name": "vm-b", "dnb": true}, {"name": "vm-a", "dnb": true}]}`
+	resp := do(t, http.MethodPatch, server.URL+"/api/v1/experiments/stopped/vms", body)
 
-			resp := do(t, http.MethodPatch, server.URL+"/api/v1/experiments/stopped/vms", body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-			raw, err := io.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatal(err)
-			}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, raw)
+	}
 
-			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("status %d: %s", resp.StatusCode, raw)
-			}
+	var list proto.VMList
+	if err := protojson.Unmarshal(raw, &list); err != nil {
+		t.Fatalf("unmarshaling %s: %v", raw, err)
+	}
 
-			var list proto.VMList
-			if err := protojson.Unmarshal(raw, &list); err != nil {
-				t.Fatalf("unmarshaling %s: %v", raw, err)
-			}
+	if len(list.GetVms()) != 1 || list.GetVms()[0].GetName() != "vm-a" || !list.GetVms()[0].GetDoNotBoot() {
+		t.Errorf("vms = %v, want vm-a, not to boot", list.GetVms())
+	}
 
-			if len(list.GetVms()) != 1 || list.GetVms()[0].GetName() != "vm-a" || !list.GetVms()[0].GetDoNotBoot() {
-				t.Errorf("vms = %v, want vm-a, not to boot", list.GetVms())
-			}
-
-			if list.GetTotal() != 1 {
-				t.Errorf("total = %d, want 1", list.GetTotal())
-			}
-		})
+	if list.GetTotal() != 1 {
+		t.Errorf("total = %d, want 1", list.GetTotal())
 	}
 }

@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/net/websocket"
 
+	"phenix/util/polltest"
 	"phenix/web/rbac"
 )
 
@@ -136,23 +137,12 @@ func waitConsoleEnded(t *testing.T, console *consoleSession) {
 func waitConsoleClients(t *testing.T, console *consoleSession, n int) {
 	t.Helper()
 
-	deadline := time.Now().Add(consoleTestTimeout)
-
-	for {
+	polltest.Until(t, fmt.Sprintf("%d websockets attached to console %d", n, console.pid), func() bool {
 		console.mu.Lock()
-		attached := len(console.clients)
-		console.mu.Unlock()
+		defer console.mu.Unlock()
 
-		if attached == n {
-			return
-		}
-
-		if time.Now().After(deadline) {
-			t.Fatalf("%d websockets attached to console %d, want %d", attached, console.pid, n)
-		}
-
-		time.Sleep(time.Millisecond)
-	}
+		return len(console.clients) == n
+	})
 }
 
 // idleTimer returns what the console's running idle timer passes expire once

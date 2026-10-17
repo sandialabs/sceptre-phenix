@@ -27,11 +27,8 @@ import (
 	"phenix/web/rbac"
 )
 
-// The API contract: each route contractRoutes lists is driven through the
-// router phenix ui serves, in each auth mode, with and without the
-// permissions it needs, behind a base path, and with the inputs it refuses.
-// A new API route adds a row there, and its path to openapi.yml, which
-// TestRouterMatchesOpenAPI checks.
+// The API contract drives each contractRoutes route through phenix ui's router in each auth mode, with and without
+// its permissions, behind a base path and with refused inputs; a new route adds a row there and its openapi.yml path.
 
 // The experiment, VM, disk image and topology of the contract fixture, the
 // topology's revision, and an experiment it does not have.
@@ -60,12 +57,8 @@ func serveContractAs(t *testing.T, role rbac.Role, set func(*serverOptions)) *ht
 	})
 }
 
-// contractFixture is what the contract's routes act on: test-experiment,
-// running, with test-vm, mounted with the file etc/hostname, and the files
-// a.log and a.pcap; the disk image test-disk.qc2; the demo topology at
-// revision 5; bob's job on test-experiment, finished, with a 3-byte
-// artifact; and, made on demand, each user's capture token and console.
-// minimega is the fake, answering every command with an empty success.
+// contractFixture: running test-experiment with test-vm mounted (etc/hostname), files a.log and a.pcap, test-disk.qc2,
+// demo at revision 5, bob's finished job (3-byte artifact), on-demand capture tokens and consoles; fake minimega says ok.
 type contractFixture struct {
 	jobs     *job.Registry
 	bobsJob  job.Job
@@ -387,12 +380,8 @@ func signedJWT(t *testing.T, user, key string, exp time.Time) string {
 	return signed
 }
 
-// Each route needs a session of a user who still holds it: without a token
-// it answers 403, and with a token it cannot trust 401. Behind a proxy that
-// names its user (--proxy-auth-header), the proxy must name the token's.
-// Behind a proxy that checks the token itself (proxy-jwt), the token must be
-// in the header and name a user who holds it, and with authentication off,
-// every request passes.
+// Each route needs a held session: no token is 403, an untrusted one 401, and a --proxy-auth-header proxy must name the
+// token's user; proxy-jwt needs the token in the header naming a user who holds it; with auth off, every request passes.
 func TestContractAuth(t *testing.T) {
 	bearer := func(token string) []string { return []string{"X-Phenix-Auth-Token", "Bearer " + token} }
 
@@ -522,11 +511,8 @@ func TestContractAuth(t *testing.T) {
 	}
 }
 
-// Each route refuses a role that lacks any one of the permissions it needs,
-// or has one of them only for another experiment, VM, disk image or config,
-// with 403 (or the route's hidden status) and the route's error body, and
-// lets a role with exactly those permissions past RBAC, with the response's
-// sequence number.
+// Each route refuses a role missing any needed permission, or holding one only for another experiment, VM, disk or config,
+// with 403 (or its hidden status) and its error body, and lets exactly those permissions past RBAC with a sequence number.
 func TestContractRBAC(t *testing.T) {
 	for _, route := range contractRoutes() {
 		if len(route.need) == 0 {
@@ -576,10 +562,8 @@ func TestContractRBAC(t *testing.T) {
 	}
 }
 
-// otherNames returns, for each of the roles that names the fixture's things,
-// the roles with only that one's names changed: to another experiment, disk
-// image or config, and, when it names test-vm, to another VM of the
-// experiment. Each is keyed by the changed role's resource and the change.
+// otherNames returns, for each role naming the fixture's things, the roles with its names changed to another experiment,
+// disk or config, and, if it names test-vm, to another VM of the experiment; keyed by that role's resource and the change.
 func otherNames(roles []rbac.Role) map[string]rbac.Role {
 	changes := map[string]*strings.Replacer{
 		"another experiment, disk or config": strings.NewReplacer(
@@ -707,9 +691,8 @@ func contractAdmin() rbac.Role {
 	}}}}
 }
 
-// useGlobalAdmin stores the global-admin role, which every request has with
-// authentication off and over the Unix socket. The server keeps that role
-// for 30 seconds across tests, so every test stores this one.
+// useGlobalAdmin stores the global-admin role every request has with auth off and over the Unix socket;
+// the server keeps that role for 30 seconds across tests, so every test stores this one.
 func useGlobalAdmin(t *testing.T) {
 	t.Helper()
 
@@ -721,13 +704,8 @@ func useGlobalAdmin(t *testing.T) {
 	})
 }
 
-// The routes answer the requests they refuse with the documented status and
-// body: unknown things, and other users' tokens and consoles, 404, methods a
-// path does not take 405, bad input 400, conflicts 409, stale config
-// revisions 412 and unsatisfiable ranges 416, as text or a weberror's JSON;
-// and a current config revision 304. Each status is one openapi.yml documents
-// for the route, or, for the 404 of an unknown path and the 405, in its
-// description of errors.
+// Refusals get openapi.yml's status for the route (405 and unknown paths' 404 in its errors text), as text or weberror JSON:
+// unknown things, others' tokens or consoles 404, bad input 400, conflict 409, stale revision 412, bad range 416; current revision 304.
 func TestContractErrors(t *testing.T) {
 	const (
 		exp    = "/api/v1/experiments/" + contractExp
@@ -973,11 +951,8 @@ func TestContractJSONContentType(t *testing.T) {
 	}
 }
 
-// Behind a proxy that serves phenix under a base path, and strips it from
-// requests, the URLs the server gives clients reach it through the proxy:
-// job and config locations carry the base path, a capture token's URL,
-// relative to it, opens WebShark on the capture, and WebShark's pages name
-// it.
+// Behind a base-path proxy that strips it, server-given URLs work through the proxy: job and config locations carry the
+// base path, a capture token's relative URL opens WebShark on the capture, and WebShark's pages name the base path.
 func TestContractBasePath(t *testing.T) {
 	const base = "/phenix/"
 
@@ -1075,10 +1050,8 @@ func TestContractBasePath(t *testing.T) {
 	}
 }
 
-// The routes outside the API's authentication answer without credentials,
-// with their own statuses: health, features, version and tunneler downloads,
-// and the WebShark routes, whose capture name or stream token is their
-// credential.
+// Routes outside API auth answer without credentials, with their own statuses: health, features, version, tunneler
+// downloads, and WebShark, whose capture name or stream token is the route's credential.
 func TestContractPublicRoutes(t *testing.T) {
 	useContractFixture(t)
 

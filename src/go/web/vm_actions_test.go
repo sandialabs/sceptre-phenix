@@ -14,9 +14,8 @@ import (
 	"phenix/web/cache"
 )
 
-// fakeVMAction makes the named action's minimega call record the VMs it is
-// taken on and fail on those in fail, for the rest of the test; block, if not
-// nil, holds each call until it is closed.
+// fakeVMAction records the VMs the named action touches and fails those in fail;
+// block, if set, holds each call until closed.
 func fakeVMAction(t *testing.T, action string, fail map[string]error, block chan struct{}) *[]string {
 	t.Helper()
 

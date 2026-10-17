@@ -346,7 +346,6 @@ func (c grantChecker) serveSharkCapture(
 		Path:        f.Name(),
 		Name:        saveAs,
 		ContentType: "application/octet-stream",
-		Live:        false,
 		MaxSize:     0,
 	})
 	if err != nil {

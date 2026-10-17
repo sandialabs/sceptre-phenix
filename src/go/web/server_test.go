@@ -78,9 +78,8 @@ func TestRouterServesTheUI(t *testing.T) {
 	}
 }
 
-// An OPTIONS request is answered without running the route's handler, which
-// serves whatever method reaches it; with CORS allowed, preflights of the
-// routes the Unix socket serves as well are answered too.
+// OPTIONS is answered without running the route's handler; with CORS on, the Unix socket's
+// routes get preflights too.
 func TestRouterAnswersOptions(t *testing.T) {
 	for name, cors := range map[string]bool{"without CORS": false, "with CORS": true} {
 		t.Run(name, func(t *testing.T) {

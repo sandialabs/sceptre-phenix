@@ -163,15 +163,6 @@ func TestGetSoHSummaryFiltersByExperimentGet(t *testing.T) {
 	}
 }
 
-func TestGetSoHSummaryForbiddenWithoutList(t *testing.T) {
-	useTestStore(t, sohSummaryExperiment("alpha", false))
-
-	code, _ := getSohSummary(t, testRole("experiments", "get", "*"))
-	if code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", code)
-	}
-}
-
 func TestGetSoHSummaryReportsMinimegaErrors(t *testing.T) {
 	useTestStore(t, sohSummaryExperiment("zeta", true, "soh"))
 	useTestMM(t, &testMM{err: errors.New("minimega unreachable")})

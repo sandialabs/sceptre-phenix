@@ -136,9 +136,8 @@ func TestUpdateVMWithoutGetOmitsAnnotations(t *testing.T) {
 	}
 }
 
-// Setting a VM's autotunnel annotation creates port forwards when the
-// experiment starts, so it requires permission to create forwards to the VM.
-// Keeping the value the VM already has does not.
+// Setting a VM's autotunnel annotation needs permission to create forwards to the VM;
+// keeping its current value does not.
 func TestUpdateVMAutotunnelRequiresForwards(t *testing.T) {
 	tests := map[string]struct {
 		current map[string]any

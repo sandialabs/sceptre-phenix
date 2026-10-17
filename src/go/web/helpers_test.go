@@ -53,10 +53,8 @@ func combinedRole(roles ...rbac.Role) rbac.Role {
 	return combined
 }
 
-// testMM is the minimega of these tests: every node is the headnode, and it
-// answers with the VMs, captures and VM states it holds. It counts VM
-// listings, experiment capture listings, VM state reads and capture stops. Any
-// other mm.MM method panics through the nil embedded interface.
+// testMM is the test minimega: every node is the headnode, and it serves the VMs, captures and
+// states it holds, counting calls. Other mm.MM methods panic.
 type testMM struct {
 	mm.MM
 
@@ -286,10 +284,8 @@ func useTestExperiment(t *testing.T) {
 	}))
 }
 
-// testFiles is the cluster's listing of test-experiment's files, records the
-// deletions asked of it, and copies files from mesh nodes as the test says.
-// Any other file.ClusterFiles method panics through the nil embedded
-// interface.
+// testFiles is the cluster file listing of test-experiment; it records deletions and copies as
+// the test says. Other file.ClusterFiles methods panic.
 type testFiles struct {
 	file.ClusterFiles
 
@@ -336,9 +332,7 @@ func useTestFiles(t *testing.T, paths ...string) *testFiles {
 	return fake
 }
 
-// useExperimentFilesDir makes a temporary directory the phenix base for the
-// rest of the test, with the given contents in test-experiment's files
-// directory.
+// useExperimentFilesDir makes a temp dir the phenix base, with contents in test-experiment's files directory.
 func useExperimentFilesDir(t *testing.T, files map[string]string) {
 	t.Helper()
 
@@ -377,11 +371,8 @@ func testPublic() fstest.MapFS {
 // it has looked up, by name, for every later request of the process.
 var roleNames atomic.Int64 //nolint:gochecknoglobals // unique across tests
 
-// serveAs serves the server's routes over testPublic, with the API taking
-// every request as one from user with role, as dev authentication does. It
-// adds the role to the test's store, installing one if the test has none, so
-// the test stores its own configs with useTestStore, before or after, rather
-// than installing a different store.
+// serveAs serves the routes over testPublic, taking every API request as user with role (dev auth);
+// it adds the role to the test's store, installing one if needed.
 func serveAs(t *testing.T, user string, role rbac.Role) *httptest.Server {
 	t.Helper()
 

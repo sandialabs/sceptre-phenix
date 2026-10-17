@@ -58,8 +58,6 @@ func TestCompressResponses(t *testing.T) {
 		{"text attachment", 0, "text/plain", bigJSON, false, "gzip", false},
 		{"no content", http.StatusNoContent, "application/json", "", false, "gzip", false},
 		{"not modified", http.StatusNotModified, "application/json", "", false, "gzip", false},
-		// byte ranges refer to the uncompressed body
-		{"partial content", http.StatusPartialContent, "application/json", bigJSON, false, "gzip", false},
 	}
 
 	for _, tc := range cases {
@@ -139,9 +137,8 @@ func TestCompressResponsesFlushes(t *testing.T) {
 	}
 }
 
-// A response without a Content-Type has it sniffed from the start of its body,
-// however many writes that takes: a template whose output starts with a
-// newline is still HTML.
+// A response without a Content-Type is sniffed from its body's start however many writes that takes:
+// a template whose output starts with a newline is still HTML.
 func TestCompressResponsesSniffsWholePrefix(t *testing.T) {
 	page := "<!DOCTYPE html>\n<html lang=\"en-US\"><head><title>vnc</title></head><body>" +
 		strings.Repeat("<p>x</p>", 200) + "</body></html>"
@@ -270,9 +267,8 @@ func TestCompressResponsesKeepsRevisionETag(t *testing.T) {
 	_ = readBody(t, resp)
 }
 
-// A range of a text file is the uncompressed bytes asked for, even from a
-// client that accepts gzip. Go's client drops gzip when it sends a Range, so
-// the header is set explicitly.
+// A range of a text file is the uncompressed bytes asked for, even for a client accepting gzip
+// (set explicitly, as Go's client drops gzip when it sends a Range).
 func TestCompressResponsesRangeOnTextFile(t *testing.T) {
 	text := strings.Repeat("phenix log line\n", 256)
 

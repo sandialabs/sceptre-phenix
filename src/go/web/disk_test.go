@@ -1,12 +1,10 @@
 package web
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -40,11 +38,8 @@ type diskFiles struct {
 	runs    func() int      // the times qemu-img has run
 }
 
-// useDiskFilesDir makes a new folder the minimega files directory, as
-// <PhenixBase>/images, until the test ends, puts the fake qemu-img first on
-// PATH, and has the fake minimega answer every command with an empty success.
-// The commands it reports sent leave out phenix's own questions about the
-// files directory.
+// useDiskFilesDir makes a new <PhenixBase>/images the minimega files directory, puts the fake qemu-img first on PATH,
+// and has fake minimega answer every command with an empty success; the commands it reports leave out files-dir lookups.
 func useDiskFilesDir(t *testing.T) diskFiles {
 	t.Helper()
 
@@ -189,10 +184,8 @@ func fullPaths(disks []listedDisk) []string {
 	return paths
 }
 
-// useDiskExperiments stores exp-a, running, whose VM boots from a nested
-// image backed by the files directory's a.qc2, and from o.qc2 outside it; and
-// exp-b, stopped, whose VMs boot from b-only.qc2 outside it, a missing image
-// and a nested image with the same name as exp-a's.
+// useDiskExperiments stores running exp-a, booting from a nested image backed by the files directory's a.qc2 and from
+// o.qc2 outside it, and stopped exp-b, booting from b-only.qc2 outside it, a missing image and exp-a's nested image name.
 func useDiskExperiments(t *testing.T) diskFiles {
 	t.Helper()
 
@@ -811,24 +804,9 @@ func TestUploadDiskRefusesWhatItCannotSave(t *testing.T) {
 	upload := func(t *testing.T, field, filename string) *http.Response {
 		t.Helper()
 
-		var body bytes.Buffer
+		body, contentType := formUpload(t, field, filename, "uploaded")
 
-		form := multipart.NewWriter(&body)
-
-		part, err := form.CreateFormFile(field, filename)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if _, err := part.Write([]byte("uploaded")); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := form.Close(); err != nil {
-			t.Fatal(err)
-		}
-
-		return do(t, http.MethodPost, server, body.String(), "Content-Type", form.FormDataContentType())
+		return do(t, http.MethodPost, server, string(body), "Content-Type", contentType)
 	}
 
 	before := tree(t, dir)
@@ -896,6 +874,7 @@ func TestRedeployRefusesABadRequestFirst(t *testing.T) {
 		"no body":                    "",
 		"malformed":                  `{"disk": `,
 		"a disk minimega cannot use": `{"disk": "a b.qc2"}`,
+		"a disk with a comma":        `{"disk": "a,b.qc2"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			resp := do(t, http.MethodPost, server, request)
@@ -935,21 +914,14 @@ func TestUpdateVMsRefusesAnUnusableDiskWhole(t *testing.T) {
 	}
 }
 
-// A VM's disk must be a path minimega can boot from: one argument, with
-// nothing it would expand or read as a disk option.
-func TestVMDiskMustSuitMinimega(t *testing.T) {
+// Patching a VM's disk refuses a path minimega cannot boot from, naming what
+// it cannot take.
+func TestPatchVMRefusesADiskMinimegaCannotUse(t *testing.T) {
 	useAnnotatedVMExperiment(t)
 
 	resp := patchVM(t, vmRole("get", "patch"), `{"disk": "win/a b.qc2"}`)
 	if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "contains ' '") {
-		t.Errorf("patching a VM's disk to a name with a space: status %d: %s; want 400 naming the space", resp.StatusCode, body)
-	}
-
-	server := serveAs(t, "alice", testRole("vms/redeploy", "update", "test-experiment/test-vm")).URL
-
-	resp = do(t, http.MethodPost, server+"/api/v1/experiments/test-experiment/vms/test-vm/redeploy", `{"disk": "a,b.qc2"}`)
-	if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "contains ','") {
-		t.Errorf("redeploying a VM from a name with a comma: status %d: %s; want 400 naming the comma", resp.StatusCode, body)
+		t.Errorf("status %d: %s; want 400 naming the space", resp.StatusCode, body)
 	}
 }
 

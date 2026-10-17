@@ -895,7 +895,6 @@ func serveMountFile(w http.ResponseWriter, r *http.Request, basePath, path strin
 		Path:        path,
 		Name:        filepath.Base(path),
 		ContentType: "application/octet-stream",
-		Live:        false,
 		MaxSize:     0,
 	})
 	if err != nil {
