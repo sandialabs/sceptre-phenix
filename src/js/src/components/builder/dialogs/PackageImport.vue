@@ -204,7 +204,7 @@
     (box || continueButton.value)?.focus();
   }
 
-  defineExpose({ continueButton, focusFirst });
+  defineExpose({ focusFirst });
 </script>
 
 <style scoped>

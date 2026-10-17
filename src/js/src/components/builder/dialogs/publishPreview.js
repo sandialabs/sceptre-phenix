@@ -36,7 +36,6 @@ export const PREVIEW_DELAY_MS = 300;
  *   read: the draft is read only, or the dialog shows a result
  * @param {function(): boolean} [options.publishable] false while the
  *   dialog keeps Publish unavailable (the checks' errors, for example)
- * @param {number} [options.delay] the pause, in milliseconds
  * @returns {{preview: object, status: object, refresh: function(): Promise<void>,
  *   schedule: function(): void, close: function(): void}} preview holds
  *   loading, changes, issues (errors, then warnings), error and blocked.
@@ -47,7 +46,6 @@ export function usePublishPreview({
   previewPublish,
   idle,
   publishable = () => true,
-  delay = PREVIEW_DELAY_MS,
 }) {
   const preview = reactive({
     loading: true,
@@ -144,7 +142,7 @@ export function usePublishPreview({
 
     runs += 1;
     preview.loading = true;
-    timer = setTimeout(refresh, delay);
+    timer = setTimeout(refresh, PREVIEW_DELAY_MS);
   }
 
   // The dialog closed: nothing more is read, and no answer is shown.

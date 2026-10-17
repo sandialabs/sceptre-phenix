@@ -512,7 +512,6 @@ describe('a publication that fails part way', () => {
     expect(store.error).toBe(
       'Publish finished with failures. Some configs were written.',
     );
-    expect(wrapper.emitted('published')).toBeUndefined();
 
     await byId(result, 'publish-retry').trigger('click');
     await flushPromises();

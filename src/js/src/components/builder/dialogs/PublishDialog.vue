@@ -489,7 +489,7 @@
     name: { type: String, default: '' },
   });
 
-  const emit = defineEmits(['close', 'published', 'open-draft']);
+  const emit = defineEmits(['close', 'open-draft']);
 
   const store = useBuilderStore();
   const busy = ref(false);
@@ -714,14 +714,13 @@
     bySeverity(previewIssues.value, store.doc),
   );
   // A result keeps its errors and warnings as issues, each with its code
-  // (errorIssues and warningIssues, see readPublishResult), beside their
-  // messages alone.
+  // (errorIssues and warningIssues, see readPublishResult).
   const resultIssues = computed(() =>
     issueEntries(
       store.doc,
       responseIssues({
-        errors: result.value?.errorIssues ?? result.value?.errors,
-        warnings: result.value?.warningIssues ?? result.value?.warnings,
+        errors: result.value?.errorIssues,
+        warnings: result.value?.warningIssues,
       }),
     ),
   );
@@ -890,10 +889,6 @@
 
     result.value = published;
 
-    if (published.ok) {
-      emit('published', published);
-    }
-
     // The result replaces the form, and the button that had focus with it.
     await nextTick();
     resultSummary.value?.focus();
@@ -920,8 +915,6 @@
     await nextTick();
     store.goToIssue(issue);
   }
-
-  defineExpose({ buildIntent, form, result });
 </script>
 
 <style scoped>

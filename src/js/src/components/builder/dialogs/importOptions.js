@@ -42,7 +42,7 @@ export function includesHint(includes, name = '') {
  * @param {string[]} taken the names of the stored topologies
  * @returns {string} "site-copy", then "site-copy-2"
  */
-export function proposedName(base, mode, taken = []) {
+export function proposedName(base, mode, taken) {
   const suffix = mode === 'combine' ? 'combined' : 'copy';
 
   return uniqueName(`${configName(base) || 'topology'}-${suffix}`, taken);
@@ -56,7 +56,7 @@ export function proposedName(base, mode, taken = []) {
  * @param {string[]} taken the names of the stored topologies
  * @returns {string}
  */
-export function newNameProblem(name, taken = []) {
+export function newNameProblem(name, taken) {
   const problem = configNameProblem('topology', name);
 
   if (problem) {
