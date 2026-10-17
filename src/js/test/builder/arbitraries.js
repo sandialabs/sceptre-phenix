@@ -10,7 +10,7 @@ import {
   connect,
   createDocument,
   groupNodes,
-  moveNode,
+  moveNodes,
   removeElements,
   removeInterface,
   setParent,
@@ -233,7 +233,9 @@ export function applyOp(doc, edit, counter) {
     case 'move': {
       const node = pick(nodes, edit.node);
 
-      return node ? moveNode(doc, node.id, at(edit.x, edit.y)) : doc;
+      return node
+        ? moveNodes(doc, [{ id: node.id, position: at(edit.x, edit.y) }])
+        : doc;
     }
     default:
       throw new Error(`unknown op ${edit.op}`);

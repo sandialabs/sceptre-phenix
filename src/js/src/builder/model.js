@@ -2905,18 +2905,6 @@ export function dropStaleRoutes(before, after) {
 }
 
 /**
- * Moves a single node.
- *
- * @param {object} doc
- * @param {string} id
- * @param {{x: number, y: number}} position
- * @returns {object} document
- */
-export function moveNode(doc, id, position) {
-  return moveNodes(doc, [{ id, position }]);
-}
-
-/**
  * Moves several nodes at once so a multi-node drag or keyboard nudge is a
  * single history commit.
  *

@@ -176,7 +176,6 @@ import {
   removeLinePoint,
   removeNetworks,
   removeTemplate,
-  renameInterface,
   renumberLayer,
   resizedBox,
   resizeNode,
@@ -3927,10 +3926,6 @@ export const useBuilderStore = defineStore('builder', {
       return entry !== null;
     },
 
-    moveNode(id, position) {
-      this.moveNodes([{ id, position }]);
-    },
-
     /**
      * Nudges the current selection by a delta, as one commit.
      *
@@ -4212,17 +4207,6 @@ export const useBuilderStore = defineStore('builder', {
         handle
           ? `Removed interface ${handle.name} from ${nodeLabel(node)}`
           : 'Removed interface',
-      );
-    },
-
-    renameInterface(nodeId, handleId, name) {
-      if (this.refuseIncluded(nodeId)) {
-        return;
-      }
-
-      this.commit(
-        renameInterface(this.doc, nodeId, handleId, name),
-        `Renamed interface to ${name}`,
       );
     },
 

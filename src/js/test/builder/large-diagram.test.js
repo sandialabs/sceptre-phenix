@@ -19,7 +19,7 @@ import {
   connect,
   createDocument,
   groupNodes,
-  moveNode,
+  moveNodes,
 } from '@/builder/model.js';
 import { diagramCounts } from '@/builder/diagramText.js';
 import { keepUnchanged } from '@/builder/stable.js';
@@ -148,7 +148,9 @@ describe('work on a large diagram', () => {
     const before = withSelection(base, [first.id]);
     const clicked = keepUnchanged(withSelection(base, [second.id]), before);
     const moved = keepUnchanged(
-      toFlowNodes(moveNode(small, second.id, { x: -400, y: -400 })),
+      toFlowNodes(
+        moveNodes(small, [{ id: second.id, position: { x: -400, y: -400 } }]),
+      ),
       base,
     );
 

@@ -511,7 +511,6 @@ describe('store', () => {
     store.updateNode(fixture.bravo.id, { device: { hostname: 'x' } });
     store.addInterface(fixture.bravo.id, {});
     store.removeInterface(fixture.bravo.id, handle);
-    store.renameInterface(fixture.bravo.id, handle, 'eth9');
     store.updateNetwork(fixture.network.id, { name: 'LAN' });
     store.removeNetwork(fixture.network.id);
 

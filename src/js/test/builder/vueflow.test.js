@@ -46,7 +46,7 @@ import {
   DEFAULT_NETWORK_COLORS,
   groupNodes,
   LINE_STYLES,
-  moveNode,
+  moveNodes,
   removeElements,
   updateEdge,
   updateNetwork,
@@ -1219,7 +1219,10 @@ describe('handing Vue Flow only what changed', () => {
   test('an edit changes only the nodes it touched', () => {
     const { doc, alpha, bravo } = sampleDocument();
     const before = toFlowNodes(doc);
-    const moved = after(before, moveNode(doc, alpha.id, { x: 48, y: 96 }));
+    const moved = after(
+      before,
+      moveNodes(doc, [{ id: alpha.id, position: { x: 48, y: 96 } }]),
+    );
     const removed = after(before, removeElements(doc, { nodes: [bravo.id] }));
     const added = addNode(doc, { kind: 'note', text: 'later' });
 
