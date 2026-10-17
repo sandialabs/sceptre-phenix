@@ -1,19 +1,15 @@
+// @vitest-environment happy-dom
 // The Inspector's unapplied edits before Save now (settle) and before the
-// diagram is left or read whole (saveUnapplied, see leave.js).
+// diagram is left or read whole (saveUnapplied, see leave.js), mounted.
 
-import { describe, expect, test, vi } from 'vitest';
-import { UPDATE_DATA } from '@jsonforms/core';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
 
-import BuilderInspector from '@/components/builder/BuilderInspector.vue';
 import {
   INSPECTOR_ICON_LIBRARY,
   INSPECTOR_ICONS,
-  INSPECTOR_LOCAL_PROBLEMS,
 } from '@/components/builder/inspector/control.js';
-import {
-  INSPECTOR_COLLAPSE,
-  resetCollapsed,
-} from '@/components/builder/inspector/collapse.js';
+import { resetCollapsed } from '@/components/builder/inspector/collapse.js';
 
 import { inspectorTarget } from '@/builder/adapters/forms.js';
 import { savedAutomatically } from '@/builder/history.js';
@@ -22,52 +18,49 @@ import { indexIcons } from '@/builder/icons.js';
 import { addNode, findNode, moveNodes, updateNode } from '@/builder/model.js';
 
 import { experimentNodeSpec, sampleDocument } from './fixtures.js';
+import {
+  actionsShown,
+  disclosureOf,
+  fieldAt,
+  formData,
+  keydown,
+  mountInspector,
+  submitWithEnter,
+  sendFormData,
+  type,
+} from './inspector-mount.js';
 import { ICON_DATA } from './png.js';
-import { renderWithStore } from './render.js';
 
-// The Inspector rendered on the server, open on `node` (its watchers run once);
-// `edit` changes the form's data as JSON Forms sends it, after `prepare`.
+enableAutoUnmount(afterEach);
+afterEach(resetCollapsed);
+
+// The Inspector mounted on `node` of `doc`; `edit` changes the form's data,
+// which JSON Forms then sends, after `prepare` sets up the store.
 async function openInspector(doc, node, edit, prepare = () => {}) {
-  // A connection has ends.
-  const type = node.sourceNodeId ? 'edge' : 'node';
-  const { store, instances } = await renderWithStore(BuilderInspector, {
-    capture: { inspector: BuilderInspector },
-    prepare(store) {
-      // The draft as loaded, so an undo goes back to it.
-      store.commit(doc, '');
-      store.select({ [`${type}s`]: [node.id] });
-    },
-  });
-  const [instance] = instances.inspector;
+  const { wrapper, store } = await mountInspector({ doc, element: node });
 
   prepare(store);
+  await flushPromises();
 
-  const selection = { type, id: node.id };
+  const selection = { type: node.sourceNodeId ? 'edge' : 'node', id: node.id };
   const data = JSON.parse(
     JSON.stringify(inspectorTarget(store.doc, selection).data),
   );
 
-  edit(data, instance.provides);
-  instance.setupState.onChange({ data, errors: [] });
+  edit(data);
+  await sendFormData(wrapper, data);
 
   return {
+    wrapper,
     store,
-    settle: instance.exposed.settle,
-    saveUnapplied: instance.exposed.saveUnapplied,
-    // The Inspector's own state: the Position fields' text, and the
-    // middleware JSON Forms runs every change of its data through.
-    setup: instance.setupState,
-    errors: () => instance.exposed.errors.value,
+    settle: () => wrapper.vm.settle(),
+    saveUnapplied: () => wrapper.vm.saveUnapplied(),
+    errors: () => wrapper.vm.errors,
     spec: () => inspectorTarget(store.doc, selection)?.data.spec,
-    // As a renderer reports rows that are not in the working copy.
-    report: (path, found) =>
-      instance.provides[INSPECTOR_LOCAL_PROBLEMS](path, found),
     // The custom icons that the Icon field's Custom icon… item and its
     // dialog work with.
-    icons: instance.provides[INSPECTOR_ICONS],
-    library: instance.provides[INSPECTOR_ICON_LIBRARY],
-    // The sections and entries the user collapsed (see collapse.js).
-    collapse: instance.provides[INSPECTOR_COLLAPSE],
+    icons: wrapper.vm.$.provides[INSPECTOR_ICONS],
+    library: wrapper.vm.$.provides[INSPECTOR_ICON_LIBRARY],
   };
 }
 
@@ -131,22 +124,25 @@ describe.each([
     expect(store.canRedo).toBe(false);
   });
 
-  // Rows a renderer keeps out of the working copy must not be lost unsaid.
+  // Rows a renderer keeps out of the working copy must not be lost unsaid:
+  // Memory holds text it cannot read, which it does not commit.
   test('rows a renderer holds back keep the edits back until fixed', async () => {
     const opened = await editedInspector();
-    const { report, errors, description } = opened;
+    const { wrapper, errors, description } = opened;
     const problem = {
       path: 'spec.hardware.memory',
       message: 'Memory must be a whole number',
     };
+    const memory = fieldAt(wrapper, 'spec.hardware.memory');
+    const shown = memory.element.value;
 
-    report('spec.hardware.memory', [problem]);
+    await memory.setValue('lots');
 
     expect(opened[method]()).toEqual(heldBack);
     expect(description()).not.toBe('Edited');
     expect(errors()).toContainEqual(problem);
 
-    report('spec.hardware.memory', []);
+    await memory.setValue(shown);
 
     expect(errors()).toEqual([]);
     expect(opened[method]()).toBe(done);
@@ -204,26 +200,29 @@ describe('settling unapplied edits before a save', () => {
   // So the fields that need attention show.
   test('the collapsed sections and entries with the errors expand', async () => {
     const { doc, alpha } = sampleDocument();
-    const { settle, collapse } = await openInspector(doc, alpha, (data) => {
+    const { wrapper, settle } = await openInspector(doc, alpha, (data) => {
       data.spec.network.interfaces[0].mac = 'zz';
     });
+    const expanded = (path) =>
+      disclosureOf(wrapper, path).attributes('aria-expanded');
 
+    // Innermost first, as each stays clickable while what holds it is open.
     for (const path of [
-      'spec.network',
-      'spec.network.interfaces',
       'spec.network.interfaces.0',
+      'spec.network.interfaces',
+      'spec.network',
       'spec.hardware',
     ]) {
-      collapse.setCollapsed(path, true);
+      await disclosureOf(wrapper, path).trigger('click');
+      expect(expanded(path)).toBe('false');
     }
 
     expect(settle()).toBe('1 field needs attention');
-    expect(collapse.isCollapsed('spec.network')).toBe(false);
-    expect(collapse.isCollapsed('spec.network.interfaces')).toBe(false);
-    expect(collapse.isCollapsed('spec.network.interfaces.0')).toBe(false);
-    expect(collapse.isCollapsed('spec.hardware')).toBe(true);
-
-    resetCollapsed();
+    await flushPromises();
+    expect(expanded('spec.network')).toBe('true');
+    expect(expanded('spec.network.interfaces')).toBe('true');
+    expect(expanded('spec.network.interfaces.0')).toBe('true');
+    expect(expanded('spec.hardware')).toBe('false');
   });
 
   // While a conflict is resolved, the store refuses every edit; the typed
@@ -326,18 +325,17 @@ describe('saving unapplied edits before leaving or reading the diagram', () => {
   // change a field just committed.
   test('a change JSON Forms has not sent yet is saved too', async () => {
     const { doc, alpha } = sampleDocument();
-    const { store, setup, saveUnapplied } = await openInspector(
+    const { wrapper, store, saveUnapplied } = await openInspector(
       doc,
       alpha,
       () => {},
     );
     const selection = { type: 'node', id: alpha.id };
-    const data = JSON.parse(
-      JSON.stringify(inspectorTarget(store.doc, selection).data),
-    );
+    const memory = fieldAt(wrapper, 'spec.hardware.memory').element;
 
-    data.spec.hardware = { ...data.spec.hardware, memory: 4096 };
-    setup.middleware({ data: {} }, { type: UPDATE_DATA }, () => ({ data }));
+    // Memory commits, and the reload comes before JSON Forms' next update.
+    memory.value = '4096';
+    memory.dispatchEvent(new Event('change', { bubbles: true }));
 
     expect(saveUnapplied()).toBeNull();
     expect(
@@ -349,11 +347,12 @@ describe('saving unapplied edits before leaving or reading the diagram', () => {
   });
 
   test('a position typed and not moved to is saved in the same edit', async () => {
-    const { store, alpha, setup, saveUnapplied, description } =
+    const { wrapper, store, alpha, saveUnapplied, description } =
       await editedInspector();
     const version = store.historyVersion;
 
-    setup.position = { x: ' 40 ', y: '-12.6' };
+    await wrapper.get('#inspector-position-x').setValue(' 40 ');
+    await wrapper.get('#inspector-position-y').setValue('-12.6');
 
     expect(saveUnapplied()).toBeNull();
     expect(store.historyVersion).toBe(version + 1);
@@ -362,10 +361,11 @@ describe('saving unapplied edits before leaving or reading the diagram', () => {
   });
 
   test('a position that is no number is named, and the valid edits saved', async () => {
-    const { store, alpha, setup, saveUnapplied, description } =
+    const { wrapper, store, alpha, saveUnapplied, description } =
       await editedInspector();
 
-    setup.position = { x: '4O', y: '0' };
+    await wrapper.get('#inspector-position-x').setValue('4O');
+    await wrapper.get('#inspector-position-y').setValue('0');
 
     expect(saveUnapplied()).toEqual({
       title: 'Device alpha',
@@ -399,9 +399,13 @@ describe("a device's look is applied without Apply", () => {
 
   test('a fill color chosen in the form is on the device at once, named in Undo', async () => {
     const { doc, alpha } = sampleDocument();
-    const { store, settle, setup } = await openInspector(doc, alpha, (data) => {
-      data.fillColor = '#2f6fbf';
-    });
+    const { wrapper, store, settle } = await openInspector(
+      doc,
+      alpha,
+      (data) => {
+        data.fillColor = '#2f6fbf';
+      },
+    );
     const version = store.historyVersion;
 
     expect(lookOf(store, alpha).fillColor).toBe('#2f6fbf');
@@ -409,7 +413,7 @@ describe("a device's look is applied without Apply", () => {
       'Changed the fill color of Device alpha to #2f6fbf',
     );
     // Nothing is left for Apply or a save to apply.
-    expect(setup.dirty).toBe(false);
+    expect(actionsShown(wrapper)).toBe(false);
     expect(settle()).toBe('');
     expect(store.historyVersion).toBe(version);
 
@@ -461,9 +465,13 @@ describe("a device's look is applied without Apply", () => {
   // icon library resolves: the document carries no copy for it.
   test('a custom icon chosen in its dialog is on the device at once, by its name', async () => {
     const { doc, alpha } = sampleDocument();
-    const { store, settle, setup } = await openInspector(doc, alpha, (data) => {
-      data.icon = 'plc';
-    });
+    const { wrapper, store, settle } = await openInspector(
+      doc,
+      alpha,
+      (data) => {
+        data.icon = 'plc';
+      },
+    );
     const device = () => findNode(store.doc, alpha.id).device;
 
     expect(device().icon).toBe('plc');
@@ -475,7 +483,7 @@ describe("a device's look is applied without Apply", () => {
       'Changed the custom icon of Device alpha to plc',
     );
     // Nothing is left for Apply or a save to apply.
-    expect(setup.dirty).toBe(false);
+    expect(actionsShown(wrapper)).toBe(false);
     expect(settle()).toBe('');
 
     store.undo();
@@ -553,7 +561,7 @@ describe("a device's look is applied without Apply", () => {
     const filled = updateNode(doc, alpha.id, {
       device: { fillColor: '#2f6fbf' },
     });
-    const { store, errors, settle, setup } = await openInspector(
+    const { wrapper, store, errors, settle } = await openInspector(
       filled,
       alpha,
       (data) => {
@@ -575,7 +583,7 @@ describe("a device's look is applied without Apply", () => {
     ]);
     // The bad color stays in the form as an unapplied edit, which a save
     // does not apply.
-    expect(setup.dirty).toBe(true);
+    expect(actionsShown(wrapper)).toBe(true);
     expect(settle()).toBe('1 field needs attention');
     expect(lookOf(store, alpha).fillColor).toBe('#2f6fbf');
 
@@ -593,7 +601,7 @@ describe("a device's look is applied without Apply", () => {
 
   test('other edits made with it stay unapplied until Apply or a save', async () => {
     const { doc, alpha } = sampleDocument();
-    const { store, settle, spec, setup } = await openInspector(
+    const { wrapper, store, settle, spec } = await openInspector(
       doc,
       alpha,
       (data) => {
@@ -604,7 +612,7 @@ describe("a device's look is applied without Apply", () => {
 
     expect(lookOf(store, alpha).fillColor).toBe('#1f7a5a');
     expect(spec().general.description).not.toBe('Edited');
-    expect(setup.dirty).toBe(true);
+    expect(actionsShown(wrapper)).toBe(true);
 
     expect(settle()).toBe('');
     expect(spec().general.description).toBe('Edited');
@@ -616,7 +624,7 @@ describe("a device's look is applied without Apply", () => {
   // color in the form is not put back by another edit or by Apply.
   test('a color changed elsewhere is not put back by an edit of another field', async () => {
     const { doc, alpha } = sampleDocument();
-    const { store, settle, spec, setup } = await openInspector(
+    const { wrapper, store, settle, spec } = await openInspector(
       doc,
       alpha,
       (data) => {
@@ -625,31 +633,32 @@ describe("a device's look is applied without Apply", () => {
       },
     );
     const device = () => findNode(store.doc, alpha.id).device;
-    const formData = () => JSON.parse(JSON.stringify(setup.draft));
+    const stale = formData(wrapper);
 
     expect(device().fillColor).toBe('#2f6fbf');
     store.commit(
       updateNode(store.doc, alpha.id, { device: { fillColor: '#ffd400' } }),
       'Changed elsewhere',
     );
+    await flushPromises();
 
-    const edited = formData();
+    const edited = formData(wrapper);
 
-    expect(edited.fillColor).toBe('#2f6fbf');
+    expect(stale.fillColor).toBe('#2f6fbf');
+    // The working copy moves onto the device as it is now.
+    expect(edited.fillColor).toBe('#ffd400');
     edited.spec.general.description = 'Edited again';
-    setup.onChange({ data: edited, errors: [] });
+    await sendFormData(wrapper, edited);
 
     expect(device().fillColor).toBe('#ffd400');
     expect(store.history.undoLabel()).toBe('Changed elsewhere');
     expect(settle()).toBe('');
     expect(spec().general.description).toBe('Edited again');
     expect(device().fillColor).toBe('#ffd400');
+    await flushPromises();
 
     // A new icon chosen then is applied alone.
-    setup.onChange({
-      data: { ...formData(), iconKey: 'router' },
-      errors: [],
-    });
+    await sendFormData(wrapper, { ...formData(wrapper), iconKey: 'router' });
 
     expect(device()).toMatchObject({ iconKey: 'router', fillColor: '#ffd400' });
     expect(store.history.undoLabel()).toBe(
@@ -661,7 +670,7 @@ describe("a device's look is applied without Apply", () => {
   // edit, for Apply once it is resolved.
   test('a look the store refuses stays unapplied', async () => {
     const { doc, alpha } = sampleDocument();
-    const { store, settle, setup } = await openInspector(
+    const { wrapper, store, settle } = await openInspector(
       doc,
       alpha,
       (data) => {
@@ -674,7 +683,7 @@ describe("a device's look is applied without Apply", () => {
     const device = () => findNode(store.doc, alpha.id).device;
 
     expect('fillColor' in device()).toBe(false);
-    expect(setup.dirty).toBe(true);
+    expect(actionsShown(wrapper)).toBe(true);
     expect(settle()).toBe('the conflict is not resolved');
 
     store.resolvingConflict = false;
@@ -714,7 +723,7 @@ describe('the look of every kind is applied without Apply', () => {
 
   test("a switch's colors, its network's color and line style, and its icon size", async () => {
     const { doc, sw } = sampleDocument();
-    const { store, settle, setup, label } = await changed(doc, sw, {
+    const { wrapper, store, settle, label } = await changed(doc, sw, {
       fillColor: '#6b6f18',
       outlineColor: '#a3273f',
       color: '#123456',
@@ -732,7 +741,7 @@ describe('the look of every kind is applied without Apply', () => {
     // The network's line style is in the look too.
     expect(store.doc.networks[0].lineStyle).toBe('dotted');
     expect(label()).toBe('Changed the edge color of Network EXP to #123456');
-    expect(setup.dirty).toBe(false);
+    expect(actionsShown(wrapper)).toBe(false);
     expect(settle()).toBe('');
 
     // The look was one edit, so one Undo takes it back.
@@ -744,7 +753,7 @@ describe('the look of every kind is applied without Apply', () => {
 
   test("a switch's line style alone is one Undo step, and its name waits for Apply", async () => {
     const { doc, sw } = sampleDocument();
-    const { store, settle, setup, label } = await changed(doc, sw, {
+    const { wrapper, store, settle, label } = await changed(doc, sw, {
       name: 'LAN',
       lineStyle: 'dash-dot',
     });
@@ -752,7 +761,7 @@ describe('the look of every kind is applied without Apply', () => {
     expect(store.doc.networks[0].lineStyle).toBe('dash-dot');
     expect(store.doc.networks[0].name).toBe('EXP');
     expect(label()).toBe('Changed the line style of Network EXP to Dash-dot');
-    expect(setup.dirty).toBe(true);
+    expect(actionsShown(wrapper)).toBe(true);
     expect(settle()).toBe('');
     expect(store.doc.networks[0].name).toBe('LAN');
 
@@ -763,14 +772,14 @@ describe('the look of every kind is applied without Apply', () => {
 
   test("a connection's label, color and line style", async () => {
     const { doc, edge } = sampleDocument();
-    const { store, setup, label } = await changed(doc, edge, {
+    const { wrapper, store, label } = await changed(doc, edge, {
       label: 'uplink',
     });
     const now = () => store.doc.edges.find((entry) => entry.id === edge.id);
 
     expect(now().label).toBe('uplink');
     expect(label()).toMatch(/^Changed the label of Connection .* to "uplink"$/);
-    expect(setup.dirty).toBe(false);
+    expect(actionsShown(wrapper)).toBe(false);
 
     const styled = await changed(doc, edge, {
       color: '#a3273f',
@@ -794,7 +803,7 @@ describe('the look of every kind is applied without Apply', () => {
       kind: 'line',
       position: { x: 40, y: 40 },
     });
-    const { store, settle, setup, label } = await changed(drawn, node, {
+    const { wrapper, store, settle, label } = await changed(drawn, node, {
       label: 'Uplink',
       color: '#2f6fbf',
       lineStyle: 'dotted',
@@ -808,7 +817,7 @@ describe('the look of every kind is applied without Apply', () => {
     });
     expect(line().points).toEqual(node.line.points);
     expect(label()).toBe('Changed the label of Line to "Uplink"');
-    expect(setup.dirty).toBe(false);
+    expect(actionsShown(wrapper)).toBe(false);
     expect(settle()).toBe('');
 
     // The three fields were one change, so one Undo takes them back.
@@ -819,7 +828,7 @@ describe('the look of every kind is applied without Apply', () => {
     const refused = await changed(drawn, node, { color: 'red' });
 
     expect('color' in findNode(refused.store.doc, node.id).line).toBe(false);
-    expect(refused.setup.dirty).toBe(true);
+    expect(actionsShown(refused.wrapper)).toBe(true);
   });
 
   test("a group's color, border pattern, icon and icon size", async () => {
@@ -829,7 +838,7 @@ describe('the look of every kind is applied without Apply', () => {
       title: 'Site',
       icon: 'plc',
     });
-    const { store, settle, setup, label } = await changed(grouped, node, {
+    const { wrapper, store, settle, label } = await changed(grouped, node, {
       title: 'Plant',
       color: '#2f6fbf',
       borderStyle: 'double',
@@ -849,7 +858,7 @@ describe('the look of every kind is applied without Apply', () => {
     expect(group().title).toBe('Site');
     expect(label()).toBe('Changed the color of Group to #2f6fbf');
     // The title waits for Apply.
-    expect(setup.dirty).toBe(true);
+    expect(actionsShown(wrapper)).toBe(true);
     expect(settle()).toBe('');
     expect(group().title).toBe('Plant');
   });
@@ -874,7 +883,7 @@ describe('the look of every kind is applied without Apply', () => {
       borderStyle: 'dashed',
     });
     expect(findNode(shaped.store.doc, shape.node.id).shape.label).toBeFalsy();
-    expect(shaped.setup.dirty).toBe(true);
+    expect(actionsShown(shaped.wrapper)).toBe(true);
 
     const icon = addNode(doc, { kind: 'icon', iconKey: 'router' });
     const iconed = await changed(icon.doc, icon.node, { icon: 'plc' });
@@ -885,7 +894,7 @@ describe('the look of every kind is applied without Apply', () => {
     });
     expect(findNode(iconed.store.doc, icon.node.id).icon.iconKey).toBeFalsy();
     expect(iconed.label()).toBe('Changed the custom icon of Icon to plc');
-    expect(iconed.setup.dirty).toBe(false);
+    expect(actionsShown(iconed.wrapper)).toBe(false);
   });
 
   // Choosing a built-in icon over a custom one changes both keys in one
@@ -895,7 +904,7 @@ describe('the look of every kind is applied without Apply', () => {
     const custom = updateNode(doc, alpha.id, {
       device: { iconKey: 'linux', icon: 'plc' },
     });
-    const { store, setup, label } = await changed(custom, alpha, {
+    const { wrapper, store, label } = await changed(custom, alpha, {
       iconKey: 'firewall',
       icon: undefined,
     });
@@ -904,7 +913,7 @@ describe('the look of every kind is applied without Apply', () => {
     expect(device().iconKey).toBe('firewall');
     expect(device().icon).toBeFalsy();
     expect(label()).toBe('Changed the icon of Device alpha to Firewall');
-    expect(setup.dirty).toBe(false);
+    expect(actionsShown(wrapper)).toBe(false);
 
     store.undo();
     expect(device()).toMatchObject({ iconKey: 'linux', icon: 'plc' });
@@ -931,21 +940,12 @@ describe('the look of every kind is applied without Apply', () => {
     '%s line style stepped to with keys is applied on Enter',
     async (_, which, steps, named) => {
       const sample = sampleDocument();
-      const { store, setup, label } = await changed(
+      const { wrapper, store, label } = await changed(
         sample.doc,
         sample[which],
         {},
       );
-      const select = {
-        tagName: 'SELECT',
-        closest: () => ({ dataset: { path: 'lineStyle' } }),
-      };
-      const key = (name) => setup.onFieldKey({ key: name, target: select });
-      const choose = (lineStyle) =>
-        setup.onChange({
-          data: { ...JSON.parse(JSON.stringify(setup.draft)), lineStyle },
-          errors: [],
-        });
+      const select = fieldAt(wrapper, 'lineStyle');
       // What carries the line style: the connection, or the switch's network.
       const styled = () =>
         which === 'edge'
@@ -954,13 +954,13 @@ describe('the look of every kind is applied without Apply', () => {
       const before = styled();
 
       for (const step of steps) {
-        key('ArrowDown');
-        choose(step);
+        await select.trigger('keydown', { key: 'ArrowDown' });
+        await select.setValue(step);
       }
       expect('lineStyle' in styled()).toBe(false);
-      expect(setup.dirty).toBe(false);
+      expect(actionsShown(wrapper)).toBe(false);
 
-      key('Enter');
+      await select.trigger('keydown', { key: 'Enter' });
       expect(styled().lineStyle).toBe(steps.at(-1));
       expect(label()).toMatch(named);
 
@@ -970,96 +970,95 @@ describe('the look of every kind is applied without Apply', () => {
   );
 
   // Text typed in a look field brings up no Apply; Escape puts back the text
-  // committed last. `field` is what the handlers read of an <input>.
+  // committed last, and is the field's own.
   test('text typed in a label shows no Apply, and Escape puts it back', async () => {
-    const { doc, edge } = sampleDocument();
-    const { setup } = await changed(doc, edge, {});
-    const field = {
-      tagName: 'INPUT',
-      type: 'text',
-      readOnly: false,
-      value: 'uplink',
-      closest: () => ({ dataset: { path: 'label' } }),
-      dispatchEvent: () => setup.onFieldInput({ target: field }),
-    };
-    const escape = {
-      key: 'Escape',
-      target: field,
-      preventDefault: vi.fn(),
-      stopPropagation: vi.fn(),
-    };
+    const { doc, edge, sw } = sampleDocument();
+    const { wrapper } = await changed(doc, edge, {});
+    const field = fieldAt(wrapper, 'label');
+    const reached = vi.fn();
 
-    vi.stubGlobal('requestAnimationFrame', () => 0);
-    setup.form = { contains: (node) => node === field };
-    setup.onFieldFocus({ target: field });
+    field.element.focus();
+    await field.setValue('uplink');
+    await type(field, 'uplink 2');
+    expect(wrapper.vm.typing).toBe(true);
+    expect(wrapper.vm.typingInstant).toBe(true);
+    expect(actionsShown(wrapper)).toBe(false);
 
-    field.value = 'uplink 2';
-    setup.onFieldInput({ target: field });
-    expect(setup.typing).toBe(true);
-    expect(setup.typingInstant).toBe(true);
-    expect(setup.changed).toBe(false);
+    document.addEventListener('keydown', reached);
 
-    setup.onFieldKey(escape);
-    expect(field.value).toBe('uplink');
-    expect(setup.typing).toBe(false);
-    expect(escape.stopPropagation).toHaveBeenCalled();
+    try {
+      const escape = keydown(field, 'Escape');
 
-    // With nothing typed, Escape is the Inspector's own, as before.
-    const again = { ...escape, stopPropagation: vi.fn() };
+      await flushPromises();
+      expect(field.element.value).toBe('uplink');
+      expect(wrapper.vm.typing).toBe(false);
+      expect(escape.defaultPrevented).toBe(true);
+      expect(reached).not.toHaveBeenCalled();
 
-    setup.onFieldKey(again);
-    expect(again.stopPropagation).not.toHaveBeenCalled();
+      // With nothing typed, Escape is the Inspector's own, as before.
+      keydown(field, 'Escape');
+      expect(reached).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', reached);
+    }
 
     // Text typed in a field that waits for Apply brings up Apply.
-    field.closest = () => ({ dataset: { path: 'name' } });
-    field.value = 'eth9';
-    setup.onFieldInput({ target: field });
-    expect(setup.typingInstant).toBe(false);
-    expect(setup.changed).toBe(true);
-    vi.unstubAllGlobals();
+    const named = await changed(doc, sw, {});
+    const name = fieldAt(named.wrapper, 'name');
+
+    name.element.focus();
+    await type(name, 'eth9');
+    expect(named.wrapper.vm.typingInstant).toBe(false);
+    expect(actionsShown(named.wrapper)).toBe(true);
   });
 });
 
 // The form loads a changed element again only while it holds nothing of the
-// user's; the tests call onDocumentChange, as watchers do not run on the server.
+// user's; the document's watch sees each change made elsewhere.
 describe('a document change while the form holds the user’s work', () => {
   async function typing() {
     const { doc, alpha } = sampleDocument();
     const opened = await openInspector(doc, alpha, () => {});
+    const description = fieldAt(opened.wrapper, 'spec.general.description');
 
-    return { ...opened, alpha, resets: opened.setup.resets };
+    return { ...opened, alpha, description, resets: opened.wrapper.vm.resets };
   }
 
-  // Commits a change made elsewhere, and has the Inspector see it.
-  function changeElsewhere({ store, setup }, change, label) {
-    const before = store.doc;
-
+  // Commits a change made elsewhere, and lets the Inspector see it.
+  async function changeElsewhere({ store }, change, label) {
     store.commit(change(store.doc), label);
-    setup.onDocumentChange(store.doc, before);
+    await flushPromises();
   }
+
+  // How often the form loaded the element's data (see reset), which no
+  // element shows.
+  const resetsOf = ({ wrapper }) => wrapper.vm.resets;
+  const iconName = ({ wrapper }) =>
+    wrapper.get('[data-testid="inspector-icon-name"]').text();
 
   test('text being typed is kept when a layout moves the node, and applying records it', async () => {
     const opened = await typing();
-    const { store, setup, settle, spec, alpha, resets } = opened;
+    const { wrapper, store, settle, spec, alpha, resets, description } = opened;
 
     // A field holds text it has not committed.
-    setup.typing = true;
-    changeElsewhere(
+    description.element.focus();
+    await type(description, 'Typed');
+    await changeElsewhere(
       opened,
       (doc) => moveNodes(doc, [{ id: alpha.id, position: { x: 480, y: 320 } }]),
       'Applied ELK layered layout',
     );
 
     // The form was not loaded again, so the field keeps its text.
-    expect(setup.resets).toBe(resets);
-    expect(setup.typing).toBe(true);
+    expect(resetsOf(opened)).toBe(resets);
+    expect(wrapper.vm.typing).toBe(true);
+    expect(description.element.value).toBe('Typed');
 
     // The field commits its text as focus leaves it.
-    const data = JSON.parse(JSON.stringify(setup.draft));
-
-    data.spec.general = { ...data.spec.general, description: 'Typed' };
-    setup.onChange({ data, errors: [] });
-    setup.typing = false;
+    await description.trigger('change');
+    description.element.blur();
+    await flushPromises();
+    expect(wrapper.vm.typing).toBe(false);
 
     expect(settle()).toBe('');
     expect(spec().general.description).toBe('Typed');
@@ -1072,79 +1071,83 @@ describe('a document change while the form holds the user’s work', () => {
 
   test('a field changed elsewhere shows in the form, and applying keeps it', async () => {
     const opened = await typing();
-    const { store, setup, settle, spec, alpha, resets } = opened;
+    const { wrapper, store, settle, spec, alpha, resets, description } = opened;
 
-    setup.typing = true;
-    changeElsewhere(
+    description.element.focus();
+    await type(description, 'Typed');
+    await changeElsewhere(
       opened,
       (doc) => updateNode(doc, alpha.id, { device: { iconKey: 'router' } }),
       'Changed the icon of Device alpha to Router',
     );
 
-    expect(setup.resets).toBe(resets);
-    expect(setup.draft.iconKey).toBe('router');
-    expect(setup.dirty).toBe(false);
+    expect(resetsOf(opened)).toBe(resets);
+    expect(iconName(opened)).toBe('Router');
+    expect(formData(wrapper).iconKey).toBe('router');
+    expect(wrapper.vm.dirty).toBe(false);
 
-    const data = JSON.parse(JSON.stringify(setup.draft));
-
-    data.spec.general = { ...data.spec.general, description: 'Typed' };
-    setup.onChange({ data, errors: [] });
+    await description.trigger('change');
 
     expect(settle()).toBe('');
     expect(spec().general.description).toBe('Typed');
     expect(findNode(store.doc, alpha.id).device.iconKey).toBe('router');
   });
 
+  // Text that commits to no change (Memory's default with a space) still
+  // brought up Apply, which then holds focus.
   test('focus on Apply or Cancel keeps the working copy too', async () => {
     const opened = await typing();
-    const { setup, alpha, resets } = opened;
+    const { wrapper, alpha } = opened;
+    const memory = fieldAt(wrapper, 'spec.hardware.memory');
 
-    setup.held = true;
-    changeElsewhere(
+    memory.element.focus();
+    await type(memory, `${memory.element.value} `);
+    expect(actionsShown(wrapper)).toBe(true);
+
+    const apply = wrapper.get('[data-testid="inspector-apply"]');
+
+    apply.element.focus();
+    await flushPromises();
+    expect(wrapper.vm.dirty).toBe(false);
+
+    const resets = resetsOf(opened);
+
+    await changeElsewhere(
       opened,
       (doc) => updateNode(doc, alpha.id, { device: { iconKey: 'router' } }),
       'Changed the icon of Device alpha to Router',
     );
 
-    expect(setup.resets).toBe(resets);
-    expect(setup.held).toBe(true);
-    expect(setup.draft.iconKey).toBe('router');
+    expect(resetsOf(opened)).toBe(resets);
+    expect(wrapper.vm.held).toBe(true);
+    expect(actionsShown(wrapper)).toBe(true);
+    expect(document.activeElement).toBe(apply.element);
+    expect(iconName(opened)).toBe('Router');
   });
 
   // Enter applies with focus still in the field; the form shows the value
   // as the document took it (a VLAN takes its network's name).
   test('a value Apply commits shows as the document took it, with focus still in its field', async () => {
     const { doc, bravo } = sampleDocument();
-    const { store, setup, spec } = await openInspector(doc, bravo, (data) => {
-      data.spec.network.interfaces[0].vlan = 'exp';
-    });
-    const before = store.doc;
-    const vlan = () => setup.draft.spec.network.interfaces[0].vlan;
+    const { wrapper, store, spec } = await openInspector(doc, bravo, () => {});
+    const path = 'spec.network.interfaces.0.vlan';
+    const field = fieldAt(wrapper, path);
+    const vlan = () => formData(wrapper).spec.network.interfaces[0].vlan;
 
-    setup.typing = true;
-    // Apply reads where focus is, which a server render has no document
-    // for.
-    vi.stubGlobal('document', { activeElement: null });
-
-    try {
-      await setup.apply();
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    field.element.focus();
+    await type(field, 'exp');
+    expect(actionsShown(wrapper)).toBe(true);
+    await submitWithEnter(wrapper, field);
 
     expect(store.history.undoLabel()).toBe(
       'Updated device bravo and connected eth0 to network EXP',
     );
     expect(spec().network.interfaces[0].vlan).toBe('EXP');
+    // The document change has reached the form, with focus in the field.
     expect(vlan()).toBe('EXP');
-    expect(setup.dirty).toBe(false);
-
-    // The document change reaches the form while focus is in the field.
-    setup.typing = true;
-    setup.onDocumentChange(store.doc, before);
-
-    expect(vlan()).toBe('EXP');
-    expect(setup.dirty).toBe(false);
+    expect(fieldAt(wrapper, path).element.value).toBe('EXP');
+    expect(document.activeElement).toBe(fieldAt(wrapper, path).element);
+    expect(actionsShown(wrapper)).toBe(false);
 
     // Undo takes the edit back, VLAN and connection.
     store.undo();
@@ -1156,32 +1159,40 @@ describe('a document change while the form holds the user’s work', () => {
   test('a value a save applies shows as the document took it too', async () => {
     for (const save of ['settle', 'saveUnapplied']) {
       const { doc, bravo } = sampleDocument();
-      const opened = await openInspector(doc, bravo, (data) => {
-        data.spec.network.interfaces[0].vlan = 'exp';
-      });
-      const { setup, spec } = opened;
+      const opened = await openInspector(doc, bravo, () => {});
+      const { wrapper, spec } = opened;
+      const path = 'spec.network.interfaces.0.vlan';
+      const field = fieldAt(wrapper, path);
 
-      setup.typing = true;
+      // The field commits as a save does first, with focus still in it.
+      field.element.focus();
+      await type(field, 'exp');
+      await field.trigger('change');
       opened[save]();
+      await flushPromises();
 
       expect(spec().network.interfaces[0].vlan, save).toBe('EXP');
-      expect(setup.draft.spec.network.interfaces[0].vlan, save).toBe('EXP');
-      expect(setup.dirty, save).toBe(false);
+      expect(formData(wrapper).spec.network.interfaces[0].vlan, save).toBe(
+        'EXP',
+      );
+      expect(fieldAt(wrapper, path).element.value, save).toBe('EXP');
+      expect(actionsShown(wrapper), save).toBe(false);
+      wrapper.unmount();
     }
   });
 
   test('with nothing of the user’s in it, the form loads the element again', async () => {
     const opened = await typing();
-    const { setup, alpha, resets } = opened;
+    const { alpha, resets } = opened;
 
-    changeElsewhere(
+    await changeElsewhere(
       opened,
       (doc) => updateNode(doc, alpha.id, { device: { iconKey: 'router' } }),
       'Changed the icon of Device alpha to Router',
     );
 
-    expect(setup.resets).toBe(resets + 1);
-    expect(setup.draft.iconKey).toBe('router');
+    expect(resetsOf(opened)).toBe(resets + 1);
+    expect(iconName(opened)).toBe('Router');
   });
 });
 
@@ -1189,35 +1200,45 @@ describe('a document change while the form holds the user’s work', () => {
 describe('the Position fields', () => {
   test('take a number with spaces around it, and ArrowUp and ArrowDown step to the next whole pixel', async () => {
     const { doc, alpha } = sampleDocument();
-    const { setup } = await openInspector(doc, alpha, () => {});
-    const press = (key, axis = 'x') => {
-      const event = { key, preventDefault: vi.fn() };
+    const { wrapper, store } = await openInspector(doc, alpha, () => {});
+    const x = wrapper.get('#inspector-position-x');
+    const y = wrapper.get('#inspector-position-y');
+    const move = wrapper.get('[data-testid="inspector-move"]');
+    const press = async (key, field = x) => {
+      const event = keydown(field, key);
 
-      setup.stepPosition(event, axis);
+      await flushPromises();
 
       return event;
     };
 
-    setup.position = { x: ' 3 ', y: '0' };
-    expect(setup.canMove).toBe(true);
-    expect(setup.moveTo).toEqual({ x: 3, y: 0 });
-    expect(setup.shownPosition('x')).toBe(3);
+    await x.setValue(' 3 ');
+    await y.setValue('0');
+    expect(move.attributes('aria-disabled')).toBe('false');
+    expect(x.attributes('aria-valuenow')).toBe('3');
 
     // Text that is no number is not moved to, nor stepped.
-    setup.position = { x: '3px', y: '0' };
-    expect(setup.canMove).toBe(false);
-    expect(setup.shownPosition('x')).toBeUndefined();
-    expect(press('ArrowUp').preventDefault).not.toHaveBeenCalled();
-    expect(setup.position.x).toBe('3px');
+    await x.setValue('3px');
+    expect(move.attributes('aria-disabled')).toBe('true');
+    expect(x.attributes('aria-valuenow')).toBeUndefined();
+    expect((await press('ArrowUp')).defaultPrevented).toBe(false);
+    expect(x.element.value).toBe('3px');
 
-    setup.position = { x: ' 480.5 ', y: '' };
-    press('ArrowUp');
-    expect(setup.position.x).toBe('481');
-    press('ArrowDown');
-    press('ArrowDown');
-    expect(setup.position.x).toBe('479');
+    await x.setValue(' 480.5 ');
+    await y.setValue('');
+    expect((await press('ArrowUp')).defaultPrevented).toBe(true);
+    expect(x.element.value).toBe('481');
+    expect((await press('ArrowDown')).defaultPrevented).toBe(true);
+    await press('ArrowDown');
+    expect(x.element.value).toBe('479');
     // An empty field steps from 0.
-    press('ArrowDown', 'y');
-    expect(setup.position.y).toBe('-1');
+    await press('ArrowDown', y);
+    expect(y.element.value).toBe('-1');
+
+    // Move takes the node to the whole pixels typed.
+    await x.setValue(' 3 ');
+    await y.setValue('0');
+    await move.trigger('click');
+    expect(findNode(store.doc, alpha.id).position).toEqual({ x: 3, y: 0 });
   });
 });
