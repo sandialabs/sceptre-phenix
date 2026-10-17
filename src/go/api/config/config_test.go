@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/api/config"
 	"phenix/store"
@@ -41,10 +41,8 @@ func TestListError(t *testing.T) {
 
 	store.DefaultStore = m //nolint:reassign // mocking
 
-	_, err := config.List("blech")
-	if err == nil {
-		t.Log("expected error")
-		t.FailNow()
+	if _, err := config.List("blech"); err == nil {
+		t.Error(`config.List("blech") error = nil, want an error`)
 	}
 }
 
@@ -75,10 +73,8 @@ metadata:
 	t.Setenv("BRANCH_NAME", "foobar")
 	options := []config.CreateOption{config.CreateFromYAML([]byte(cfg))}
 
-	_, err := config.Create(options...)
-	if err != nil {
-		t.Log(err)
-		t.FailNow()
+	if _, err := config.Create(options...); err != nil {
+		t.Errorf("config.Create(YAML naming ${BRANCH_NAME}) error = %v, want nil", err)
 	}
 }
 
@@ -124,14 +120,11 @@ func TestEditKeepsStrings(t *testing.T) {
 	storetest.Use(t, m)
 
 	if _, err := config.Edit("scenario/exact", false); err != nil {
-		t.Fatalf("Edit returned error: %v", err)
+		t.Fatalf("config.Edit(scenario/exact) error = %v", err)
 	}
 
-	got, _ := json.Marshal(saved)
-	want, _ := json.Marshal(stored())
-
-	if string(got) != string(want) {
-		t.Fatalf("saved %s, want %s", got, want)
+	if diff := cmp.Diff(stored(), saved); diff != "" {
+		t.Errorf("config.Edit(scenario/exact) saved config mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -217,15 +210,15 @@ func TestUpdateRenameRunsRenameHooks(t *testing.T) {
 
 			switch {
 			case test.hookErr != nil && !errors.Is(err, test.hookErr):
-				t.Errorf("Update error = %v, want the hook's", err)
+				t.Errorf("config.Update(scenario/old) error = %v, want %v", err, test.hookErr)
 			case test.deleteErr != nil && !errors.Is(err, test.deleteErr):
-				t.Errorf("Update error = %v, want the store's", err)
+				t.Errorf("config.Update(scenario/old) error = %v, want %v", err, test.deleteErr)
 			case test.hookErr == nil && test.deleteErr == nil && err != nil:
-				t.Errorf("Update returned error: %v", err)
+				t.Errorf("config.Update(scenario/old) error = %v, want nil", err)
 			}
 
 			if !slices.Equal(stages, test.stages) {
-				t.Errorf("hook stages = %q, want %q", stages, test.stages)
+				t.Errorf("config.Update(scenario/old) hook stages = %q, want %q", stages, test.stages)
 			}
 		})
 	}
@@ -238,9 +231,15 @@ func TestCreateDefaultNamesABuiltinConfig(t *testing.T) {
 	defer ctrl.Finish()
 
 	m := store.NewMockStore(ctrl)
+	type stored struct {
+		Kind, Name string
+		RoleName   any
+	}
+
 	m.EXPECT().Create(gomock.Any()).DoAndReturn(func(c *store.Config) error {
-		if c.Kind != "Role" || c.Metadata.Name != "builder" || c.Spec["roleName"] != "Builder" {
-			t.Errorf("CreateDefault stored %s with %v", c.FullName(), c.Spec)
+		got := stored{Kind: c.Kind, Name: c.Metadata.Name, RoleName: c.Spec["roleName"]}
+		if diff := cmp.Diff(stored{Kind: "Role", Name: "builder", RoleName: "Builder"}, got); diff != "" {
+			t.Errorf("config.CreateDefault(role, builder) stored config mismatch (-want +got):\n%s", diff)
 		}
 
 		return nil
@@ -249,11 +248,11 @@ func TestCreateDefaultNamesABuiltinConfig(t *testing.T) {
 	storetest.Use(t, m)
 
 	if _, err := config.CreateDefault("role", "builder"); err != nil {
-		t.Fatalf("CreateDefault(role, builder) returned error: %v", err)
+		t.Errorf("config.CreateDefault(role, builder) error = %v, want nil", err)
 	}
 
 	if _, err := config.CreateDefault("Role", "no-such-role"); err == nil {
-		t.Fatal("CreateDefault of a config the defaults do not hold returned no error")
+		t.Error("config.CreateDefault(Role, no-such-role) error = nil, want an error")
 	}
 }
 
@@ -262,7 +261,7 @@ func TestCreateDefaultNamesABuiltinConfig(t *testing.T) {
 // no expectations, so any store call fails the test.
 func TestWorkflowIsNotAConfigKind(t *testing.T) {
 	if slices.ContainsFunc(config.AllKinds, func(kind string) bool { return strings.EqualFold(kind, "Workflow") }) {
-		t.Fatalf("AllKinds = %v, includes Workflow", config.AllKinds)
+		t.Errorf("config.AllKinds = %v, want no Workflow", config.AllKinds)
 	}
 
 	ctrl := gomock.NewController(t)
@@ -273,13 +272,13 @@ func TestWorkflowIsNotAConfigKind(t *testing.T) {
 	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore test double
 
 	if _, err := config.List("workflow"); err == nil {
-		t.Error(`List("workflow") returned no error`)
+		t.Error(`config.List("workflow") error = nil, want an error`)
 	}
 
 	doc := "apiVersion: phenix.sandia.gov/v0\nkind: Workflow\nmetadata:\n  name: wf\nspec:\n  topology: helloworld\n"
 
 	_, err := config.Create(config.CreateFromYAML([]byte(doc)), config.CreateWithValidation())
 	if !errors.Is(err, types.ErrValidationFailed) {
-		t.Errorf("Create(Workflow config) error = %v, want ErrValidationFailed", err)
+		t.Errorf("config.Create(Workflow config) error = %v, want ErrValidationFailed", err)
 	}
 }

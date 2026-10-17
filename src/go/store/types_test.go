@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,7 +30,7 @@ func TestNewConfigKindCaseInsensitive(t *testing.T) {
 			}
 
 			if cfg.Kind != tt.expectKind {
-				t.Fatalf("NewConfig(%q) kind = %q, want %q", tt.input, cfg.Kind, tt.expectKind)
+				t.Errorf("NewConfig(%q) kind = %q, want %q", tt.input, cfg.Kind, tt.expectKind)
 			}
 		})
 	}
@@ -51,22 +52,21 @@ func TestConfigFullNameKindCaseInsensitive(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ConfigFullName(tt.input...)
 			if got != tt.expect {
-				t.Fatalf("ConfigFullName(%v) = %q, want %q", tt.input, got, tt.expect)
+				t.Errorf("ConfigFullName(%q) = %q, want %q", tt.input, got, tt.expect)
 			}
 		})
 	}
 }
 
 func TestNewConfigRejectsUnknownKind(t *testing.T) {
-	_, err := NewConfig("notakind/test")
-	if err == nil {
-		t.Fatal("NewConfig should reject unknown kinds")
+	if _, err := NewConfig("notakind/test"); err == nil {
+		t.Error(`NewConfig("notakind/test") error = nil, want an error`)
 	}
 }
 
-// asJSON is value as JSON, so values read from YAML and made in Go compare
-// equal when they hold the same numbers.
-func asJSON(t *testing.T, value any) string {
+// asJSON is value as decoded JSON, so values read from YAML and made in Go
+// compare equal when they hold the same numbers.
+func asJSON(t *testing.T, value any) any {
 	t.Helper()
 
 	data, err := json.Marshal(value)
@@ -74,7 +74,12 @@ func asJSON(t *testing.T, value any) string {
 		t.Fatalf("encoding %T: %v", value, err)
 	}
 
-	return string(data)
+	var decoded any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("decoding the JSON of %T: %v", value, err)
+	}
+
+	return decoded
 }
 
 // ExactYAML writes what yaml.Marshal writes, but double quotes each string
@@ -99,18 +104,19 @@ func TestExactYAMLMarshalsLikeYAML(t *testing.T) {
 		t.Fatalf("yaml.Marshal returned error: %v", err)
 	}
 
-	got, err := yaml.Marshal(ExactYAML(plain))
-	if err != nil || string(got) != string(want) {
-		t.Fatalf("YAML = %v\n%s\nwant\n%s", err, got, want)
+	if got, err := yaml.Marshal(ExactYAML(plain)); err != nil {
+		t.Errorf("yaml.Marshal(ExactYAML(plain)) error = %v", err)
+	} else if diff := cmp.Diff(string(want), string(got)); diff != "" {
+		t.Errorf("yaml.Marshal(ExactYAML(plain)) mismatch with yaml.Marshal(plain) (-want +got):\n%s", diff)
 	}
 
 	changed := map[string]any{
 		"\nkey": []any{"\n", "\n a", "\ta\nb"}, "k": map[string]string{"v": "\n\n a\n"}, "a\nb": "c\n",
 	}
 
-	got, err = yaml.Marshal(ExactYAML(changed))
+	got, err := yaml.Marshal(ExactYAML(changed))
 	if err != nil {
-		t.Fatalf("yaml.Marshal returned error: %v", err)
+		t.Fatalf("yaml.Marshal(ExactYAML(changed)) error = %v", err)
 	}
 
 	var loaded any
@@ -118,8 +124,8 @@ func TestExactYAMLMarshalsLikeYAML(t *testing.T) {
 		t.Fatalf("YAML does not load: %v\n%s", err, got)
 	}
 
-	if asJSON(t, loaded) != asJSON(t, changed) {
-		t.Fatalf("YAML loads as %s, want %s\n%s", asJSON(t, loaded), asJSON(t, changed), got)
+	if diff := cmp.Diff(asJSON(t, changed), asJSON(t, loaded)); diff != "" {
+		t.Errorf("yaml.Marshal(ExactYAML(changed)) loads back mismatched (-want +got):\n%s\n%s", diff, got)
 	}
 }
 
@@ -151,40 +157,70 @@ func TestConfigYAMLLoadsAsTheConfig(t *testing.T) {
 		}
 	}
 
-	for _, text := range []string{"\n", "\nfirst", "\n\n  indented\n", "\tfirst\nsecond", "\n\tfirst"} {
-		want := config(text)
+	for _, test := range []struct{ name, text string }{
+		{name: "a line break", text: "\n"},
+		{name: "a line break then text", text: "\nfirst"},
+		{name: "blank lines then indented text", text: "\n\n  indented\n"},
+		{name: "a tab then lines", text: "\tfirst\nsecond"},
+		{name: "a line break then a tab", text: "\n\tfirst"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-		for _, value := range []any{want, &want} {
-			data, err := yaml.Marshal(value)
-			if err != nil {
-				t.Fatalf("yaml.Marshal returned error: %v", err)
-			}
+			want := config(test.text)
 
-			var loaded Config
-			if err := yaml.Unmarshal(data, &loaded); err != nil {
-				t.Fatalf("YAML of %q does not load: %v\n%s", text, err, data)
-			}
+			for _, value := range []any{want, &want} {
+				data, err := yaml.Marshal(value)
+				if err != nil {
+					t.Errorf("yaml.Marshal(%T) error = %v", value, err)
 
-			if asJSON(t, loaded) != asJSON(t, want) {
-				t.Fatalf("YAML of %q loads as %s, want %s\n%s", text, asJSON(t, loaded), asJSON(t, want), data)
+					continue
+				}
+
+				var loaded Config
+				if err := yaml.Unmarshal(data, &loaded); err != nil {
+					t.Errorf("YAML of %T does not load: %v\n%s", value, err, data)
+
+					continue
+				}
+
+				if diff := cmp.Diff(asJSON(t, want), asJSON(t, loaded)); diff != "" {
+					t.Errorf("YAML of %T loads back mismatched (-want +got):\n%s\n%s", value, diff, data)
+				}
 			}
-		}
+		})
 	}
 
 	empty := Config{Version: "phenix.sandia.gov/v1", Kind: "Role", Metadata: ConfigMetadata{Name: "r"}}
 	emptyMaps := empty
 	emptyMaps.Metadata.Annotations, emptyMaps.Spec, emptyMaps.Status = Annotations{}, map[string]any{}, map[string]any{}
 
-	for _, c := range []Config{config("one\ntwo\n"), config("plain"), empty, emptyMaps} {
-		want, err := yaml.Marshal(fieldsOnly(c))
-		if err != nil {
-			t.Fatalf("yaml.Marshal returned error: %v", err)
-		}
+	for _, test := range []struct {
+		name   string
+		config Config
+	}{
+		{name: "lines", config: config("one\ntwo\n")},
+		{name: "plain text", config: config("plain")},
+		{name: "empty", config: empty},
+		{name: "empty maps", config: emptyMaps},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-		got, err := yaml.Marshal(c)
-		if err != nil || string(got) != string(want) {
-			t.Fatalf("YAML = %v\n%s\nwant\n%s", err, got, want)
-		}
+			want, err := yaml.Marshal(fieldsOnly(test.config))
+			if err != nil {
+				t.Fatalf("yaml.Marshal(fieldsOnly) error = %v", err)
+			}
+
+			got, err := yaml.Marshal(test.config)
+			if err != nil {
+				t.Fatalf("yaml.Marshal(Config) error = %v", err)
+			}
+
+			if diff := cmp.Diff(string(want), string(got)); diff != "" {
+				t.Errorf("yaml.Marshal(Config) mismatch with yaml.Marshal(fieldsOnly) (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -258,8 +294,8 @@ func TestStructuredAnnotationIsAMapOnTheWire(t *testing.T) {
 	want := Annotations{"keep": "v", "builder-doc": structuredReference}
 
 	for name, config := range map[string]*Config{"JSON": fromJSON, "YAML": fromYAML} {
-		if !reflect.DeepEqual(config.Metadata.Annotations, want) {
-			t.Fatalf("annotations loaded from %s = %v, want %v", name, config.Metadata.Annotations, want)
+		if diff := cmp.Diff(want, config.Metadata.Annotations); diff != "" {
+			t.Errorf("annotations loaded from %s mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 
@@ -272,77 +308,101 @@ func TestStructuredAnnotationIsAMapOnTheWire(t *testing.T) {
 
 	// The config and a pointer to it write the map, and what they write
 	// loads as the config.
-	for _, value := range []any{*fromJSON, fromYAML} {
-		jsonOut, err := json.Marshal(value)
-		if err != nil {
-			t.Fatalf("json.Marshal(%T) returned error: %v", value, err)
-		}
+	for _, test := range []struct {
+		name  string
+		value any
+	}{
+		{name: "config", value: *fromJSON},
+		{name: "pointer", value: fromYAML},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-		yamlOut, err := yaml.Marshal(value)
-		if err != nil {
-			t.Fatalf("yaml.Marshal(%T) returned error: %v", value, err)
-		}
+			jsonOut, err := json.Marshal(test.value)
+			if err != nil {
+				t.Fatalf("json.Marshal(%T) error = %v", test.value, err)
+			}
 
-		if got := wireAnnotations(t, jsonOut, json.Unmarshal); !reflect.DeepEqual(got, nested) {
-			t.Fatalf("JSON of %T has annotations %v, want the nested map\n%s", value, got, jsonOut)
-		}
+			yamlOut, err := yaml.Marshal(test.value)
+			if err != nil {
+				t.Fatalf("yaml.Marshal(%T) error = %v", test.value, err)
+			}
 
-		if got := wireAnnotations(t, yamlOut, yaml.Unmarshal); !reflect.DeepEqual(got, nested) {
-			t.Fatalf("YAML of %T has annotations %v, want the nested map\n%s", value, got, yamlOut)
-		}
+			if diff := cmp.Diff(nested, wireAnnotations(t, jsonOut, json.Unmarshal)); diff != "" {
+				t.Errorf("json.Marshal(%T) annotations mismatch (-want +got):\n%s\n%s", test.value, diff, jsonOut)
+			}
 
-		var back Config
-		if err := json.Unmarshal(jsonOut, &back); err != nil || !reflect.DeepEqual(back, *fromJSON) {
-			t.Fatalf("JSON of %T loads as %+v (%v), want the config\n%s", value, back, err, jsonOut)
-		}
+			if diff := cmp.Diff(nested, wireAnnotations(t, yamlOut, yaml.Unmarshal)); diff != "" {
+				t.Errorf("yaml.Marshal(%T) annotations mismatch (-want +got):\n%s\n%s", test.value, diff, yamlOut)
+			}
 
-		back = Config{}
-		if err := yaml.Unmarshal(yamlOut, &back); err != nil || !reflect.DeepEqual(back.Metadata, fromJSON.Metadata) {
-			t.Fatalf("YAML of %T loads as %+v (%v), want the config\n%s", value, back, err, yamlOut)
-		}
+			var back Config
+			if err := json.Unmarshal(jsonOut, &back); err != nil {
+				t.Errorf("JSON of %T does not load: %v\n%s", test.value, err, jsonOut)
+			} else if diff := cmp.Diff(*fromJSON, back); diff != "" {
+				t.Errorf("JSON of %T loads back mismatched (-want +got):\n%s", test.value, diff)
+			}
+
+			back = Config{}
+			if err := yaml.Unmarshal(yamlOut, &back); err != nil {
+				t.Errorf("YAML of %T does not load: %v\n%s", test.value, err, yamlOut)
+			} else if diff := cmp.Diff(fromJSON.Metadata, back.Metadata); diff != "" {
+				t.Errorf("YAML of %T loads back mismatched metadata (-want +got):\n%s", test.value, diff)
+			}
+		})
 	}
 
 	// So do the metadata and the annotations on their own, which other
 	// resources embed.
-	for _, value := range []any{fromJSON.Metadata, fromJSON.Metadata.Annotations} {
-		wrap := map[string]any{"annotations": value}
-		if metadata, ok := value.(ConfigMetadata); ok {
-			wrap = map[string]any{"metadata": metadata}
-		}
+	for _, test := range []struct {
+		name  string
+		value any
+	}{
+		{name: "metadata", value: fromJSON.Metadata},
+		{name: "annotations", value: fromJSON.Metadata.Annotations},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-		jsonOut, err := json.Marshal(wrap)
-		if err != nil {
-			t.Fatalf("json.Marshal(%T) returned error: %v", value, err)
-		}
-
-		yamlOut, err := yaml.Marshal(wrap)
-		if err != nil {
-			t.Fatalf("yaml.Marshal(%T) returned error: %v", value, err)
-		}
-
-		for encoding, got := range map[string]map[string]any{
-			"JSON": decodeAny(t, jsonOut, json.Unmarshal), "YAML": decodeAny(t, yamlOut, yaml.Unmarshal),
-		} {
-			if metadata, ok := got["metadata"].(map[string]any); ok {
-				got = metadata
+			wrap := map[string]any{"annotations": test.value}
+			if metadata, ok := test.value.(ConfigMetadata); ok {
+				wrap = map[string]any{"metadata": metadata}
 			}
 
-			if !reflect.DeepEqual(got["annotations"], any(nested)) {
-				t.Fatalf("%s of %T has annotations %v, want the nested map", encoding, value, got["annotations"])
+			jsonOut, err := json.Marshal(wrap)
+			if err != nil {
+				t.Fatalf("json.Marshal(%T) error = %v", test.value, err)
 			}
-		}
+
+			yamlOut, err := yaml.Marshal(wrap)
+			if err != nil {
+				t.Fatalf("yaml.Marshal(%T) error = %v", test.value, err)
+			}
+
+			for encoding, got := range map[string]map[string]any{
+				"JSON": decodeAny(t, jsonOut, json.Unmarshal), "YAML": decodeAny(t, yamlOut, yaml.Unmarshal),
+			} {
+				if metadata, ok := got["metadata"].(map[string]any); ok {
+					got = metadata
+				}
+
+				if diff := cmp.Diff(any(nested), got["annotations"]); diff != "" {
+					t.Errorf("%s of %T annotations mismatch (-want +got):\n%s", encoding, test.value, diff)
+				}
+			}
+		})
 	}
 
 	// The YAML is written as a block of plain text sub-keys.
 	yamlOut, err := yaml.Marshal(fromYAML)
 	if err != nil {
-		t.Fatalf("yaml.Marshal returned error: %v", err)
+		t.Fatalf("yaml.Marshal(config) error = %v", err)
 	}
 
 	block := "        builder-doc:\n            digest: sha256:aa\n            id: bb\n" +
 		"            path: /phenix/topologies/site/builder.yaml\n        keep: v\n"
 	if !strings.Contains(string(yamlOut), block) {
-		t.Fatalf("YAML = \n%s\nwant it to hold\n%s", yamlOut, block)
+		t.Errorf("yaml.Marshal(config) = \n%s\nwant it to hold\n%s", yamlOut, block)
 	}
 }
 
@@ -421,32 +481,32 @@ func TestStructuredAnnotationValues(t *testing.T) {
 
 			for encoding, loaded := range map[string]Config{"JSON": fromJSON, "YAML": fromYAML} {
 				if got := loaded.Metadata.Annotations["builder-doc"]; got != test.memory {
-					t.Fatalf("builder-doc loaded from %s = %q, want %q", encoding, got, test.memory)
+					t.Errorf("builder-doc loaded from %s = %q, want %q", encoding, got, test.memory)
 				}
 
-				jsonOut, err := json.Marshal(loaded)
-				if err != nil {
-					t.Fatalf("json.Marshal returned error: %v", err)
-				}
-
-				if got := wireAnnotations(t, jsonOut, json.Unmarshal)["builder-doc"]; !reflect.DeepEqual(got, test.wire) {
-					t.Fatalf("builder-doc in JSON = %#v, want %#v\n%s", got, test.wire, jsonOut)
+				if jsonOut, err := json.Marshal(loaded); err != nil {
+					t.Errorf("json.Marshal(config from %s) error = %v", encoding, err)
+				} else if diff := cmp.Diff(test.wire, wireAnnotations(t, jsonOut, json.Unmarshal)["builder-doc"]); diff != "" {
+					t.Errorf("json.Marshal(config from %s) builder-doc mismatch (-want +got):\n%s\n%s", encoding, diff, jsonOut)
 				}
 
 				yamlOut, err := yaml.Marshal(loaded)
 				if err != nil {
-					t.Fatalf("yaml.Marshal returned error: %v", err)
+					t.Errorf("yaml.Marshal(config from %s) error = %v", encoding, err)
+
+					continue
 				}
 
-				if got := wireAnnotations(t, yamlOut, yaml.Unmarshal)["builder-doc"]; !reflect.DeepEqual(got, test.wire) {
-					t.Fatalf("builder-doc in YAML = %#v, want %#v\n%s", got, test.wire, yamlOut)
+				if diff := cmp.Diff(test.wire, wireAnnotations(t, yamlOut, yaml.Unmarshal)["builder-doc"]); diff != "" {
+					t.Errorf("yaml.Marshal(config from %s) builder-doc mismatch (-want +got):\n%s\n%s", encoding, diff, yamlOut)
 				}
 
 				// What is written loads as what was loaded.
 				var back Config
-				if err := yaml.Unmarshal(yamlOut, &back); err != nil ||
-					asJSON(t, back.Metadata.Annotations) != asJSON(t, loaded.Metadata.Annotations) {
-					t.Fatalf("YAML loads as %v (%v), want %v\n%s", back.Metadata.Annotations, err, loaded.Metadata.Annotations, yamlOut)
+				if err := yaml.Unmarshal(yamlOut, &back); err != nil {
+					t.Errorf("YAML of the config from %s does not load: %v\n%s", encoding, err, yamlOut)
+				} else if diff := cmp.Diff(asJSON(t, loaded.Metadata.Annotations), asJSON(t, back.Metadata.Annotations)); diff != "" {
+					t.Errorf("YAML of the config from %s loads back mismatched (-want +got):\n%s\n%s", encoding, diff, yamlOut)
 				}
 			}
 		})
@@ -456,19 +516,19 @@ func TestStructuredAnnotationValues(t *testing.T) {
 	// plain annotation.
 	var coerced Config
 	if err := yaml.Unmarshal([]byte("metadata:\n  annotations:\n    plain: 42\n    builder-doc:\n      id: 42\n"), &coerced); err != nil {
-		t.Fatalf("YAML does not load: %v", err)
-	}
-
-	if want := (Annotations{"plain": "42", "builder-doc": `{"id":"42"}`}); !reflect.DeepEqual(coerced.Metadata.Annotations, want) {
-		t.Fatalf("annotations = %v, want %v", coerced.Metadata.Annotations, want)
+		t.Errorf("YAML with numbers does not load: %v", err)
+	} else if diff := cmp.Diff(Annotations{"plain": "42", "builder-doc": `{"id":"42"}`}, coerced.Metadata.Annotations); diff != "" {
+		t.Errorf("annotations of YAML with numbers mismatch (-want +got):\n%s", diff)
 	}
 
 	// An alias to a map is the map.
 	var aliased Config
 
 	withAlias := "ref: &ref\n  id: bb\nmetadata:\n  annotations:\n    builder-doc: *ref\n"
-	if err := yaml.Unmarshal([]byte(withAlias), &aliased); err != nil || aliased.Metadata.Annotations["builder-doc"] != `{"id":"bb"}` {
-		t.Fatalf("an aliased map loads as %v (%v), want the map", aliased.Metadata.Annotations, err)
+	if err := yaml.Unmarshal([]byte(withAlias), &aliased); err != nil {
+		t.Errorf("YAML with an alias does not load: %v", err)
+	} else if got := aliased.Metadata.Annotations["builder-doc"]; got != `{"id":"bb"}` {
+		t.Errorf("builder-doc of an aliased map = %q, want %q", got, `{"id":"bb"}`)
 	}
 
 	for name, test := range map[string]struct{ json, yaml, key string }{
@@ -481,45 +541,62 @@ func TestStructuredAnnotationValues(t *testing.T) {
 		"a map sub-key":                   {json: `{"builder-doc": {"id": {"a": "b"}}}`, yaml: "builder-doc:\n      id:\n        a: b\n", key: "builder-doc"},
 		"a number sub-key in JSON":        {json: `{"builder-doc": {"id": 42}}`, yaml: "builder-doc:\n      id: [42]\n", key: "builder-doc"},
 	} {
-		var loaded Config
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-		if err := json.Unmarshal([]byte(config(test.json)), &loaded); err == nil || !strings.Contains(err.Error(), "annotation "+test.key) {
-			t.Errorf("%s: JSON error = %v, want one naming annotation %s", name, err, test.key)
-		}
+			var loaded Config
 
-		yamlConfig := "metadata:\n  annotations:\n    " + test.yaml
-		if err := yaml.Unmarshal([]byte(yamlConfig), &loaded); err == nil || !strings.Contains(err.Error(), "annotation "+test.key) {
-			t.Errorf("%s: YAML error = %v, want one naming annotation %s", name, err, test.key)
-		}
+			err := json.Unmarshal([]byte(config(test.json)), &loaded)
+			if err == nil || !strings.Contains(err.Error(), "annotation "+test.key) {
+				t.Errorf("json.Unmarshal(%s) error = %v, want one naming annotation %s", test.json, err, test.key)
+			}
+
+			yamlConfig := "metadata:\n  annotations:\n    " + test.yaml
+
+			err = yaml.Unmarshal([]byte(yamlConfig), &loaded)
+			if err == nil || !strings.Contains(err.Error(), "annotation "+test.key) {
+				t.Errorf("yaml.Unmarshal(%q) error = %v, want one naming annotation %s", test.yaml, err, test.key)
+			}
+		})
 	}
 
 	// Of several annotations that do not load, the first in key order is named.
 	for range 8 {
 		var several Config
 
+		failed := false
+
 		err := json.Unmarshal([]byte(config(`{"z": 1, "builder-doc": 2, "a": 3, "m": "text"}`)), &several)
 		if err == nil || !strings.Contains(err.Error(), "annotation a:") {
-			t.Fatalf("JSON error = %v, want one naming annotation a", err)
+			t.Errorf("json.Unmarshal(several bad annotations) error = %v, want one naming annotation a", err)
+
+			failed = true
 		}
 
 		err = yaml.Unmarshal([]byte("metadata:\n  annotations:\n    z: [1]\n    builder-doc: [2]\n    a: [3]\n    m: text\n"), &several)
 		if err == nil || !strings.Contains(err.Error(), "annotation a:") {
-			t.Fatalf("YAML error = %v, want one naming annotation a", err)
+			t.Errorf("yaml.Unmarshal(several bad annotations) error = %v, want one naming annotation a", err)
+
+			failed = true
+		}
+
+		if failed {
+			break
 		}
 	}
 
 	// Annotations that are not a map at all.
 	var loaded Config
 	if err := json.Unmarshal([]byte(config(`["a"]`)), &loaded); err == nil {
-		t.Error("a list of annotations loads from JSON")
+		t.Error("json.Unmarshal(a list of annotations) error = nil, want an error")
 	}
 
 	if err := yaml.Unmarshal([]byte("metadata:\n  annotations: [a]\n"), &loaded); err == nil {
-		t.Error("a list of annotations loads from YAML")
+		t.Error("yaml.Unmarshal(a list of annotations) error = nil, want an error")
 	}
 
 	if _, err := NewConfigFromYAML([]byte("metadata:\n  annotations:\n    note:\n      a: b\n")); !errors.Is(err, ErrInvalidFormat) {
-		t.Errorf("NewConfigFromYAML error = %v, want ErrInvalidFormat", err)
+		t.Errorf("NewConfigFromYAML(a map under note) error = %v, want ErrInvalidFormat", err)
 	}
 }
 
@@ -571,36 +648,43 @@ func TestAnnotationsDecodeIntoExistingConfig(t *testing.T) {
 			want: nil,
 		},
 	} {
-		for encoding, decode := range map[string]func(any) error{
-			"JSON": func(target any) error { return json.Unmarshal([]byte(test.json), target) },
-			"YAML": func(target any) error { return yaml.Unmarshal([]byte(test.yaml), target) },
-		} {
-			config := loaded()
-			if err := decode(&config); err != nil {
-				t.Fatalf("%s from %s: decoding returned error: %v", test.name, encoding, err)
-			}
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-			if !reflect.DeepEqual(config.Metadata.Annotations, test.want) {
-				t.Errorf("%s from %s: annotations = %v, want %v", test.name, encoding, config.Metadata.Annotations, test.want)
-			}
+			for encoding, decode := range map[string]func(any) error{
+				"JSON": func(target any) error { return json.Unmarshal([]byte(test.json), target) },
+				"YAML": func(target any) error { return yaml.Unmarshal([]byte(test.yaml), target) },
+			} {
+				config := loaded()
+				if err := decode(&config); err != nil {
+					t.Errorf("decoding %s into a loaded config error = %v", encoding, err)
 
-			// A plain map gives the same keys, where it can decode the text.
-			if test.name == "the structured key" {
-				continue
-			}
+					continue
+				}
 
-			var plain plainConfig
+				if diff := cmp.Diff(test.want, config.Metadata.Annotations); diff != "" {
+					t.Errorf("annotations decoded from %s mismatch (-want +got):\n%s", encoding, diff)
+				}
 
-			plain.Metadata.Annotations = map[string]string{"old": "x", "builder-doc": `{"id":"aa"}`}
-			if err := decode(&plain); err != nil {
-				t.Fatalf("%s from %s: decoding with plain annotations returned error: %v", test.name, encoding, err)
-			}
+				// A plain map gives the same keys, where it can decode the text.
+				if test.name == "the structured key" {
+					continue
+				}
 
-			if !reflect.DeepEqual(Annotations(plain.Metadata.Annotations), config.Metadata.Annotations) {
-				t.Errorf("%s from %s: annotations = %v, a plain map gives %v",
-					test.name, encoding, config.Metadata.Annotations, plain.Metadata.Annotations)
+				var plain plainConfig
+
+				plain.Metadata.Annotations = map[string]string{"old": "x", "builder-doc": `{"id":"aa"}`}
+				if err := decode(&plain); err != nil {
+					t.Errorf("decoding %s with plain annotations error = %v", encoding, err)
+
+					continue
+				}
+
+				if diff := cmp.Diff(Annotations(plain.Metadata.Annotations), config.Metadata.Annotations); diff != "" {
+					t.Errorf("annotations decoded from %s mismatch with a plain map (-plain +got):\n%s", encoding, diff)
+				}
 			}
-		}
+		})
 	}
 }
 
@@ -632,8 +716,8 @@ func TestStoredJSONKeepsAnnotationsAsStrings(t *testing.T) {
 		t.Fatalf("the stored JSON does not load with plain annotations: %v\n%s", err, stored)
 	}
 
-	if want := map[string]string{"keep": "v", "builder-doc": structuredReference}; !reflect.DeepEqual(plain.Metadata.Annotations, want) {
-		t.Fatalf("stored annotations = %v, want %v", plain.Metadata.Annotations, want)
+	if diff := cmp.Diff(map[string]string{"keep": "v", "builder-doc": structuredReference}, plain.Metadata.Annotations); diff != "" {
+		t.Errorf("StoredJSON() annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	// The JSON of the config itself is not readable that way: that is why the
@@ -644,53 +728,83 @@ func TestStoredJSONKeepsAnnotationsAsStrings(t *testing.T) {
 	}
 
 	if err := json.Unmarshal(wire, &plain); err == nil {
-		t.Fatalf("the JSON of the config loads with plain annotations:\n%s", wire)
+		t.Errorf("json.Unmarshal(the JSON of the config, plain annotations) error = nil, want an error\n%s", wire)
 	}
 
 	var back Config
-	if err := json.Unmarshal(stored, &back); err != nil || !reflect.DeepEqual(back, *config) {
-		t.Fatalf("the stored JSON loads as %+v (%v), want the config", back, err)
+	if err := json.Unmarshal(stored, &back); err != nil {
+		t.Errorf("the stored JSON does not load: %v", err)
+	} else if diff := cmp.Diff(*config, back); diff != "" {
+		t.Errorf("the stored JSON loads back mismatched (-want +got):\n%s", diff)
 	}
 
 	// Without a structured annotation the stored JSON is the config's JSON,
 	// field for field, whatever is empty.
-	for _, annotations := range []Annotations{nil, {}, {"keep": "v", "builder-experiment": `{"draftId":"d"}`}} {
-		for _, spec := range []map[string]any{nil, {"nodes": []any{}}} {
-			other := *config
-			other.Metadata.Annotations, other.Spec, other.Status = annotations, spec, spec
+	for _, annotations := range []struct {
+		name  string
+		value Annotations
+	}{
+		{name: "nil annotations", value: nil},
+		{name: "empty annotations", value: Annotations{}},
+		{name: "text annotations", value: Annotations{"keep": "v", "builder-experiment": `{"draftId":"d"}`}},
+	} {
+		for _, spec := range []struct {
+			name  string
+			value map[string]any
+		}{
+			{name: "nil spec", value: nil},
+			{name: "a spec", value: map[string]any{"nodes": []any{}}},
+		} {
+			t.Run(annotations.name+" and "+spec.name, func(t *testing.T) {
+				t.Parallel()
 
-			stored, err := other.StoredJSON()
-			if err != nil {
-				t.Fatalf("StoredJSON returned error: %v", err)
-			}
+				other := *config
+				other.Metadata.Annotations, other.Spec, other.Status = annotations.value, spec.value, spec.value
 
-			if want := asJSON(t, other); string(stored) != want {
-				t.Fatalf("stored JSON = %s, want the JSON of the config %s", stored, want)
-			}
+				stored, err := other.StoredJSON()
+				if err != nil {
+					t.Fatalf("StoredJSON() error = %v", err)
+				}
+
+				want, err := json.Marshal(other)
+				if err != nil {
+					t.Fatalf("json.Marshal(config) error = %v", err)
+				}
+
+				if diff := cmp.Diff(string(want), string(stored)); diff != "" {
+					t.Errorf("StoredJSON() mismatch with the JSON of the config (-want +got):\n%s", diff)
+				}
+			})
 		}
 	}
 
 	// Every field of a config is stored.
 	if got, want := reflect.TypeFor[storedConfig]().NumField(), reflect.TypeFor[Config]().NumField(); got != want {
-		t.Fatalf("storedConfig has %d fields, Config has %d", got, want)
+		t.Errorf("storedConfig has %d fields, want %d as Config has", got, want)
 	}
 
 	if got, want := reflect.TypeFor[storedMetadata]().NumField(), reflect.TypeFor[ConfigMetadata]().NumField(); got != want {
-		t.Fatalf("storedMetadata has %d fields, ConfigMetadata has %d", got, want)
+		t.Errorf("storedMetadata has %d fields, want %d as ConfigMetadata has", got, want)
 	}
 }
 
 // TestWorkflowIsNotAStoredKind proves the Workflow schema did not make
 // workflow configs addressable in the store.
 func TestWorkflowIsNotAStoredKind(t *testing.T) {
-	for _, name := range []string{"workflow/wf", "Workflow/wf", "WORKFLOW/wf"} {
-		if _, err := NewConfig(name); err == nil {
-			t.Errorf("NewConfig(%q) returned no error", name)
-		}
+	for _, test := range []struct{ name, config string }{
+		{name: "lowercase", config: "workflow/wf"},
+		{name: "capitalized", config: "Workflow/wf"},
+		{name: "uppercase", config: "WORKFLOW/wf"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := NewConfig(test.config); err == nil {
+				t.Errorf("NewConfig(%q) error = nil, want an error", test.config)
+			}
 
-		if got := ConfigFullName(name); got != "" {
-			t.Errorf("ConfigFullName(%q) = %q, want empty", name, got)
-		}
+			if got := ConfigFullName(test.config); got != "" {
+				t.Errorf("ConfigFullName(%q) = %q, want empty", test.config, got)
+			}
+		})
 	}
 
 	if got := ConfigFullName("Workflow", "wf"); got != "" {

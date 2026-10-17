@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -32,6 +31,8 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 	const digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 	topology := func(name, reference string) string {
+		t.Helper()
+
 		path := filepath.Join(t.TempDir(), name+".yaml")
 		body := "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: " + name +
 			"\n  annotations:\n    builder-doc:\n" + reference + "spec:\n  nodes: []\n"
@@ -93,9 +94,11 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 		"YAML": reference(yaml.Unmarshal),
 		"JSON": reference(json.Unmarshal, "-o", "json"),
 	} {
-		if diff := cmp.Diff(want, got); diff != "" {
-			t.Errorf("config get as %s builder-doc mismatch (-want +got):\n%s", name, diff)
-		}
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("config get as %s builder-doc mismatch (-want +got):\n%s", name, diff)
+			}
+		})
 	}
 
 	// An editor that points the reference at another file.
@@ -114,8 +117,8 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 	}
 
 	want["path"] = "/phenix/topologies/site/other.yml"
-	if got := reference(yaml.Unmarshal); !reflect.DeepEqual(got, want) {
-		t.Fatalf("config get after the edit shows builder-doc = %#v, want %#v", got, want)
+	if diff := cmp.Diff(want, reference(yaml.Unmarshal)); diff != "" {
+		t.Errorf("config get after the edit builder-doc mismatch (-want +got):\n%s", diff)
 	}
 
 	// The Topology config hook refuses a relative path even without validation.
@@ -168,16 +171,22 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 	}
 
 	topologies, err := config.List("topology")
-	if err != nil || len(topologies) != 1 || topologies[0].Metadata.Name != "pump-station" {
-		t.Fatalf("topologies = %v, %v, want only pump-station, from the config file", topologies, err)
+	if err != nil {
+		t.Fatalf("config.List(topology) error = %v", err)
+	}
+
+	if diff := cmp.Diff([]string{"pump-station"}, configNames(topologies)); diff != "" {
+		t.Fatalf("config.List(topology) names mismatch, want only the config file's (-want +got):\n%s", diff)
 	}
 
 	if topologies[0].HasAnnotation(builder.DocumentAnnotation) {
 		t.Error("the topology names a Builder document, which config create never publishes")
 	}
 
-	if scenarios, err := config.List("scenario"); err != nil || len(scenarios) != 0 {
-		t.Errorf("scenarios = %v, %v, want none: a package's Scenario config is not created", scenarios, err)
+	if scenarios, err := config.List("scenario"); err != nil {
+		t.Errorf("config.List(scenario) error = %v", err)
+	} else if len(scenarios) != 0 {
+		t.Errorf("config.List(scenario) = %v, want none: a package's Scenario config is not created", scenarios)
 	}
 
 	if created := logs.Records(t, plogtest.Message("configuration created")); len(created) != 1 {
@@ -193,7 +202,7 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 	}
 
 	if !slices.Equal(paths, documents) {
-		t.Errorf("skipped documents %v, want one log line for each of %v", paths, documents)
+		t.Errorf("logged skipped documents = %v, want one log line for each of %v", paths, documents)
 	}
 
 	got := map[string]string{}
@@ -208,26 +217,37 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 		}
 	}
 
-	if !reflect.DeepEqual(got, skipped) {
-		t.Errorf("skipped %v, want %v", got, skipped)
+	if diff := cmp.Diff(skipped, got); diff != "" {
+		t.Errorf("logged skipped Builder files mismatch (-want +got):\n%s", diff)
 	}
 
 	// Named on the command line, a Builder document is an error, with or without
 	// validation, and files named after it are not read.
-	for _, args := range [][]string{{documents[0]}, {documents[1], "--skip-validation"}, {documents[0], directory}} {
-		err := run(args...)
+	for _, test := range []struct {
+		name string
+		args []string
+	}{
+		{name: "a JSON document", args: []string{documents[0]}},
+		{name: "a YAML document without validation", args: []string{documents[1], "--skip-validation"}},
+		{name: "a document before a directory", args: []string{documents[0], directory}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := run(test.args...)
 
-		want := args[0] + ` is a Builder document, not a configuration: upload it in the Builder, ` +
-			`or send it to the Builder REST API (/api/v1/builder/drafts), and publish it to create its topology`
-		if err == nil || err.Error() != want {
-			t.Errorf("config create %v: error = %v, want %q", args, err, want)
-		}
+			want := test.args[0] + ` is a Builder document, not a configuration: upload it in the Builder, ` +
+				`or send it to the Builder REST API (/api/v1/builder/drafts), and publish it to create its topology`
+			if err == nil || err.Error() != want {
+				t.Errorf("config create %v error = %v, want %q", test.args, err, want)
+			}
+		})
 	}
 
 	for path, kind := range skipped {
-		if err := run(path); err == nil || err.Error() != wantBuilderFileRefusal(path, kind) {
-			t.Errorf("config create %s: error = %v, want %q", path, err, wantBuilderFileRefusal(path, kind))
-		}
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			if err := run(path); err == nil || err.Error() != wantBuilderFileRefusal(path, kind) {
+				t.Errorf("config create %s error = %v, want %q", path, err, wantBuilderFileRefusal(path, kind))
+			}
+		})
 	}
 
 	service, err := builder.New()
@@ -235,18 +255,32 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 		t.Fatalf("builder.New returned error: %v", err)
 	}
 
-	if published, err := service.ListPublishedDocuments(t.Context()); err != nil || len(published) != 0 {
-		t.Errorf("published documents = %v, %v, want none", published, err)
+	if published, err := service.ListPublishedDocuments(t.Context()); err != nil {
+		t.Errorf("ListPublishedDocuments() error = %v", err)
+	} else if len(published) != 0 {
+		t.Errorf("ListPublishedDocuments() = %v, want none", published)
 	}
 
-	if topologies, err := config.List("topology"); err != nil || len(topologies) != 1 {
-		t.Errorf("topologies = %v, %v, want still only pump-station", topologies, err)
+	if topologies, err := config.List("topology"); err != nil {
+		t.Errorf("config.List(topology) error = %v", err)
+	} else if diff := cmp.Diff([]string{"pump-station"}, configNames(topologies)); diff != "" {
+		t.Errorf("config.List(topology) names mismatch, want still only pump-station (-want +got):\n%s", diff)
 	}
 
 	other := writeTestFile(t, t.TempDir(), "other.json", []byte(`{"$schema": "https://json-schema.org/draft/2020-12/schema"}`))
 	if err := run(other); err == nil || !strings.HasPrefix(err.Error(), "Unable to create configuration from "+other) {
-		t.Errorf("config create of a file that is no config: error = %v, want the humanized failure", err)
+		t.Errorf("config create %s (no config) error = %v, want the humanized failure", other, err)
 	}
+}
+
+// configNames returns the name of each config.
+func configNames(configs store.Configs) []string {
+	names := make([]string, 0, len(configs))
+	for _, c := range configs {
+		names = append(names, c.Metadata.Name)
+	}
+
+	return names
 }
 
 // writeBuilderFiles writes Builder documents and other Builder files to directory and
@@ -261,6 +295,8 @@ func writeBuilderFiles(t *testing.T, directory string) ([]string, map[string]str
 	}
 
 	asJSON := func(name string) []byte {
+		t.Helper()
+
 		var generic any
 		if err := yaml.Unmarshal(docsExample(t, name), &generic); err != nil {
 			t.Fatalf("decoding the docs example %s: %v", name, err)

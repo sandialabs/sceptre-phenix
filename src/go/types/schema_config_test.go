@@ -60,10 +60,10 @@ func TestConfigSchemaBuilderDocumentAnnotation(t *testing.T) {
 
 			switch {
 			case test.refused == "" && err != nil:
-				t.Fatalf("ValidateConfigSpec returned error: %v", err)
+				t.Errorf("ValidateConfigSpec(config) error = %v, want nil", err)
 			case test.refused != "" && (!errors.Is(err, types.ErrValidationFailed) ||
 				!strings.Contains(err.Error(), test.refused) || !strings.Contains(err.Error(), "builder-doc")):
-				t.Fatalf("ValidateConfigSpec error = %v, want a validation failure of builder-doc holding %q", err, test.refused)
+				t.Errorf("ValidateConfigSpec(config) error = %v, want a validation failure of builder-doc holding %q", err, test.refused)
 			}
 		})
 	}

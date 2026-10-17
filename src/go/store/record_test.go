@@ -26,18 +26,16 @@ func TestValidateRecordNamespace(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateRecordNamespace(tt.namespace)
 
-			if tt.valid && err != nil {
-				t.Fatalf("ValidateRecordNamespace(%q) returned error: %v", tt.namespace, err)
+			if tt.valid {
+				if err != nil {
+					t.Errorf("ValidateRecordNamespace(%q) error = %v, want nil", tt.namespace, err)
+				}
+
+				return
 			}
 
-			if !tt.valid {
-				if err == nil {
-					t.Fatalf("ValidateRecordNamespace(%q) should have returned an error", tt.namespace)
-				}
-
-				if !errors.Is(err, ErrInvalidRecordNamespace) {
-					t.Fatalf("ValidateRecordNamespace(%q) error = %v, want ErrInvalidRecordNamespace", tt.namespace, err)
-				}
+			if !errors.Is(err, ErrInvalidRecordNamespace) {
+				t.Errorf("ValidateRecordNamespace(%q) error = %v, want ErrInvalidRecordNamespace", tt.namespace, err)
 			}
 		})
 	}
@@ -66,18 +64,16 @@ func TestValidateRecordKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateRecordKey(tt.key)
 
-			if tt.valid && err != nil {
-				t.Fatalf("ValidateRecordKey(%q) returned error: %v", tt.key, err)
+			if tt.valid {
+				if err != nil {
+					t.Errorf("ValidateRecordKey(%q) error = %v, want nil", tt.key, err)
+				}
+
+				return
 			}
 
-			if !tt.valid {
-				if err == nil {
-					t.Fatalf("ValidateRecordKey(%q) should have returned an error", tt.key)
-				}
-
-				if !errors.Is(err, ErrInvalidRecordKey) {
-					t.Fatalf("ValidateRecordKey(%q) error = %v, want ErrInvalidRecordKey", tt.key, err)
-				}
+			if !errors.Is(err, ErrInvalidRecordKey) {
+				t.Errorf("ValidateRecordKey(%q) error = %v, want ErrInvalidRecordKey", tt.key, err)
 			}
 		})
 	}
@@ -89,12 +85,12 @@ func TestCopyRecordValue(t *testing.T) {
 	copied := CopyRecordValue(value)
 	copied[0] = 'D'
 
-	if value[0] != 'd' {
-		t.Fatal("CopyRecordValue must not share the original backing array")
+	if string(value) != "draft" {
+		t.Errorf("after changing CopyRecordValue(%q), the original = %q, want draft", "draft", value)
 	}
 
-	if CopyRecordValue(nil) != nil {
-		t.Fatal("CopyRecordValue(nil) should return nil")
+	if got := CopyRecordValue(nil); got != nil {
+		t.Errorf("CopyRecordValue(nil) = %q, want nil", got)
 	}
 }
 

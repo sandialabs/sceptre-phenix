@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,22 +30,16 @@ func TestEmbeddedOpenAPISchemas(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			schema, err := GetVersionedSchemaForKind(test.kind, test.version)
-			if err != nil {
-				t.Fatalf("get schema: %v", err)
+			if schema, err := GetVersionedSchemaForKind(test.kind, test.version); err != nil {
+				t.Errorf("GetVersionedSchemaForKind(%s, %s) error = %v", test.kind, test.version, err)
+			} else if schema["type"] != "object" {
+				t.Errorf("GetVersionedSchemaForKind(%s, %s) type = %v, want object", test.kind, test.version, schema["type"])
 			}
 
-			if schema["type"] != "object" {
-				t.Fatalf("schema type = %v, want object", schema["type"])
-			}
-
-			validator, err := GetVersionedValidatorForKind(test.kind, test.version)
-			if err != nil {
-				t.Fatalf("get validator: %v", err)
-			}
-
-			if validator == nil {
-				t.Fatal("validator is nil")
+			if validator, err := GetVersionedValidatorForKind(test.kind, test.version); err != nil {
+				t.Errorf("GetVersionedValidatorForKind(%s, %s) error = %v", test.kind, test.version, err)
+			} else if validator == nil {
+				t.Errorf("GetVersionedValidatorForKind(%s, %s) = nil, want a validator", test.kind, test.version)
 			}
 		})
 	}
@@ -55,7 +50,7 @@ func TestGetVersionedSchemaForKindRejectsEmptyKind(t *testing.T) {
 
 	_, err := GetVersionedSchemaForKind("", "v1")
 	if !errors.Is(err, ErrInvalidKind) {
-		t.Fatalf("error = %v, want ErrInvalidKind", err)
+		t.Errorf(`GetVersionedSchemaForKind("", v1) error = %v, want ErrInvalidKind`, err)
 	}
 }
 
@@ -63,7 +58,7 @@ func TestReadSchemaFileRejectsUnknownVersion(t *testing.T) {
 	t.Parallel()
 
 	if _, err := ReadSchemaFile("unknown"); err == nil {
-		t.Fatal("expected an error for an unknown schema version")
+		t.Error("ReadSchemaFile(unknown) error = nil, want an error")
 	}
 }
 
@@ -78,7 +73,7 @@ func TestEmbeddedOpenAPISchemasHaveNoEmptyKeywords(t *testing.T) {
 
 			data, err := ReadSchemaFile(version)
 			if err != nil {
-				t.Fatalf("read schema: %v", err)
+				t.Fatalf("ReadSchemaFile(%s) error = %v", version, err)
 			}
 
 			var api struct {
@@ -88,11 +83,11 @@ func TestEmbeddedOpenAPISchemasHaveNoEmptyKeywords(t *testing.T) {
 			}
 
 			if err := yaml.Unmarshal(data, &api); err != nil {
-				t.Fatalf("parse schema: %v", err)
+				t.Fatalf("parsing the %s schema file: %v", version, err)
 			}
 
 			for _, path := range emptyKeywords(api.Components.Schemas, "components.schemas") {
-				t.Errorf("%s: empty keyword in the %s schema file", path, version)
+				t.Errorf("the %s schema file has an empty keyword at %s", version, path)
 			}
 		})
 	}
@@ -140,11 +135,11 @@ func TestWorkflowIsSchemaOnly(t *testing.T) {
 	}
 
 	if _, err := GetStoredSpecForKind("Workflow"); err == nil {
-		t.Error("GetStoredSpecForKind(Workflow) returned no error")
+		t.Error("GetStoredSpecForKind(Workflow) error = nil, want an error")
 	}
 
 	if _, err := GetVersionedSpecForKind("Workflow", "v0"); err == nil {
-		t.Error("GetVersionedSpecForKind(Workflow, v0) returned no error")
+		t.Error("GetVersionedSpecForKind(Workflow, v0) error = nil, want an error")
 	}
 
 	if _, err := GetVersionedValidatorForKind("Workflow", LATEST_VERSION); !errors.Is(err, ErrInvalidKind) {
@@ -153,7 +148,7 @@ func TestWorkflowIsSchemaOnly(t *testing.T) {
 
 	// GET /api/v1/schemas/workflow/v0 capitalizes the kind, so it serves the schema.
 	if _, err := GetVersionedSchemaForKind("workflow", "v0"); err != nil {
-		t.Errorf("GetVersionedSchemaForKind(workflow, v0) error = %v", err)
+		t.Errorf("GetVersionedSchemaForKind(workflow, v0) error = %v, want nil", err)
 	}
 }
 
@@ -189,10 +184,12 @@ func TestWorkflowSchemaKeywords(t *testing.T) {
 		t.Errorf("Workflow required = %v, want %v", root.Required, want)
 	}
 
+	closedFalse := false
 	closed := map[string]*openapi3.Schema{"Workflow": root, "spec": spec, "spec.auto": auto, "spec.vlanRange": vlanRange}
 	for path, schema := range closed {
-		if has := schema.AdditionalProperties.Has; has == nil || *has || schema.AdditionalProperties.Schema != nil {
-			t.Errorf("%s: additionalProperties is not false", path)
+		got := closedProperties{Has: schema.AdditionalProperties.Has, Schema: schema.AdditionalProperties.Schema != nil}
+		if diff := cmp.Diff(closedProperties{Has: &closedFalse, Schema: false}, got); diff != "" {
+			t.Errorf("%s additionalProperties is not false (-want +got):\n%s", path, diff)
 		}
 	}
 
@@ -234,9 +231,18 @@ func TestWorkflowSchemaKeywords(t *testing.T) {
 	}
 
 	var schemaErr *openapi3.SchemaError
-	if err := deployMode.VisitJSON("none"); !errors.As(err, &schemaErr) || schemaErr.SchemaField != "pattern" {
-		t.Errorf("spec.deployMode accepts none, or rejects it for another reason: %v", err)
+	if err := deployMode.VisitJSON("none"); !errors.As(err, &schemaErr) {
+		t.Errorf("spec.deployMode VisitJSON(none) error = %v, want an *openapi3.SchemaError", err)
+	} else if schemaErr.SchemaField != "pattern" {
+		t.Errorf("spec.deployMode VisitJSON(none) schema field = %q, want pattern", schemaErr.SchemaField)
 	}
+}
+
+// closedProperties is what additionalProperties holds: whether it is set, and
+// whether it has a schema.
+type closedProperties struct {
+	Has    *bool
+	Schema bool
 }
 
 // TestWorkflowSchemaDocumented proves the Workflow schema and every property

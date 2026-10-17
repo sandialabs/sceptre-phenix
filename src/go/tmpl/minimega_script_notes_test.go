@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/tmpl"
 	v1 "phenix/types/version/v1"
 )
@@ -40,7 +42,7 @@ func minimegaScript(t *testing.T, labels map[string]string) []string {
 	var script bytes.Buffer
 
 	if err := tmpl.GenerateFromTemplate("minimega_script.tmpl", spec, &script); err != nil {
-		t.Fatalf("GenerateFromTemplate() error = %v", err)
+		t.Fatalf("GenerateFromTemplate(minimega_script.tmpl) error = %v", err)
 	}
 
 	return strings.Split(script.String(), "\n")
@@ -78,7 +80,7 @@ func TestMinimegaScriptTagEscapes(t *testing.T) {
 		t.Fatalf("the script has no tags followed by the launch:\n%s", strings.Join(lines, "\n"))
 	}
 
-	if got := lines[first : first+len(want)]; !slices.Equal(got, want) {
-		t.Errorf("tag lines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	if diff := cmp.Diff(want, lines[first:first+len(want)]); diff != "" {
+		t.Errorf("minimega script tag lines mismatch (-want +got):\n%s", diff)
 	}
 }

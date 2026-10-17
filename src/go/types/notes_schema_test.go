@@ -64,11 +64,11 @@ func TestNodeNotesSchemaAccepts(t *testing.T) {
 		for name, notes := range cases {
 			t.Run(ver+"/"+name, func(t *testing.T) {
 				if err := types.ValidateSchema("minimega_node", ver, vmNodeWithNotes(notes)); err != nil {
-					t.Errorf("minimega_node: ValidateSchema() error = %v", err)
+					t.Errorf("ValidateSchema(minimega_node, %s, node) error = %v, want nil", ver, err)
 				}
 
 				if err := types.ValidateSchema("external_node", ver, externalNodeWithNotes(notes)); err != nil {
-					t.Errorf("external_node: ValidateSchema() error = %v", err)
+					t.Errorf("ValidateSchema(external_node, %s, node) error = %v, want nil", ver, err)
 				}
 
 				topology := map[string]any{
@@ -76,7 +76,7 @@ func TestNodeNotesSchemaAccepts(t *testing.T) {
 				}
 
 				if err := types.ValidateSchema("Topology", ver, topology); err != nil {
-					t.Errorf("Topology: ValidateSchema() error = %v", err)
+					t.Errorf("ValidateSchema(Topology, %s, topology) error = %v, want nil", ver, err)
 				}
 			})
 		}
@@ -125,11 +125,19 @@ func TestNodeNotesSchemaRejects(t *testing.T) {
 	for _, ver := range noteVersions() {
 		for _, tc := range cases {
 			t.Run(ver+"/"+tc.name, func(t *testing.T) {
-				err := types.ValidateSchema("minimega_node", ver, vmNodeWithNotes(tc.notes))
-				assertSchemaError(t, err, tc.wantPointer, tc.wantField)
+				err := checkSchemaError(types.ValidateSchema("minimega_node", ver, vmNodeWithNotes(tc.notes)), tc.wantPointer, tc.wantField)
+				if err != nil {
+					t.Errorf("ValidateSchema(minimega_node, %s, node): %v", ver, err)
+				}
 
-				err = types.ValidateSchema("external_node", ver, externalNodeWithNotes(tc.notes))
-				assertSchemaError(t, err, tc.wantPointer, tc.wantField)
+				err = checkSchemaError(
+					types.ValidateSchema("external_node", ver, externalNodeWithNotes(tc.notes)),
+					tc.wantPointer,
+					tc.wantField,
+				)
+				if err != nil {
+					t.Errorf("ValidateSchema(external_node, %s, node): %v", ver, err)
+				}
 
 				// In a topology, a node is one of the two node schemas, so the
 				// error names the node rather than the note.
@@ -137,7 +145,7 @@ func TestNodeNotesSchemaRejects(t *testing.T) {
 
 				err = types.ValidateSchema("Topology", ver, topology)
 				if !errors.Is(err, types.ErrValidationFailed) {
-					t.Errorf("Topology: ValidateSchema() error = %v, want ErrValidationFailed", err)
+					t.Errorf("ValidateSchema(Topology, %s, topology) error = %v, want ErrValidationFailed", ver, err)
 				}
 			})
 		}

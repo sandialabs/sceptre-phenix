@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/api/settings"
 	"phenix/store"
@@ -38,10 +39,14 @@ func TestPasswordSettingsStoredByAnotherRequest(t *testing.T) {
 
 	got, err := settings.GetPasswordSettings()
 	if err != nil {
-		t.Fatalf("GetPasswordSettings returned error: %v", err)
+		t.Fatalf("GetPasswordSettings() error = %v", err)
 	}
 
-	if !got.SymbolReq || got.MinLength != settings.DefaultPasswordMinLength {
-		t.Errorf("GetPasswordSettings = %+v, want the stored SymbolReq and the default length", got)
+	want := settings.PasswordSettings{
+		LowercaseReq: true, UppercaseReq: false, NumberReq: true, SymbolReq: true,
+		MinLength: settings.DefaultPasswordMinLength,
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GetPasswordSettings() mismatch (-want +got):\n%s", diff)
 	}
 }

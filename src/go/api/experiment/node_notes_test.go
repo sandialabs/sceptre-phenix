@@ -40,7 +40,7 @@ func TestNoteLabelsKeysAndOrder(t *testing.T) {
 	}
 
 	if !maps.Equal(got, want) {
-		t.Fatalf("noteLabels() = %v, want %v", got, want)
+		t.Errorf("noteLabels(nil, three notes) = %v, want %v", got, want)
 	}
 }
 
@@ -51,7 +51,7 @@ func TestNoteLabelsKeepOrderAcrossSeconds(t *testing.T) {
 	got := noteLabels(nil, notes, at)
 
 	if _, ok := got["__notes_2026-10-09T11:34:57.000Z"]; !ok {
-		t.Errorf("noteLabels() = %v, want a key for 11:34:57.000", got)
+		t.Errorf("noteLabels(nil, %q) = %v, want a key for 11:34:57.000", notes, got)
 	}
 
 	if order := notesInKeyOrder(got); !slices.Equal(order, notes) {
@@ -75,7 +75,7 @@ func TestNoteLabelsNeverOverwrite(t *testing.T) {
 	}
 
 	if !maps.Equal(got, want) {
-		t.Fatalf("noteLabels() = %v, want %v", got, want)
+		t.Errorf("noteLabels(labels holding the second key, three notes) = %v, want %v", got, want)
 	}
 }
 
@@ -112,17 +112,19 @@ func TestNoteLabelsSkipHeldNotes(t *testing.T) {
 			},
 		},
 	} {
-		got := noteLabels(test.labels, test.notes, noteTime())
-		if !maps.Equal(got, test.want) {
-			t.Fatalf("%s: noteLabels() = %v, want %v", test.name, got, test.want)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			got := noteLabels(test.labels, test.notes, noteTime())
+			if !maps.Equal(got, test.want) {
+				t.Fatalf("noteLabels(%v, %q) = %v, want %v", test.labels, test.notes, got, test.want)
+			}
 
-		// Once the node holds every copy, none is added again.
-		maps.Copy(test.labels, got)
+			// Once the node holds every copy, none is added again.
+			maps.Copy(test.labels, got)
 
-		if again := noteLabels(test.labels, test.notes, noteTime()); again != nil {
-			t.Errorf("%s: noteLabels() with every note held = %v, want nil", test.name, again)
-		}
+			if again := noteLabels(test.labels, test.notes, noteTime()); again != nil {
+				t.Errorf("noteLabels(%v, %q) with every note held = %v, want nil", test.labels, test.notes, again)
+			}
+		})
 	}
 }
 
