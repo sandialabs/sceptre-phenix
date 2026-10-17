@@ -10,7 +10,6 @@ a CI-built binary, a container, or a full range node.
 | ------------------------------ | -------------------------------------------------------------------------------------------- | ------------------- |
 | `routes.spec.js`               | just a running server (empty store is fine)                                                  | yes                 |
 | `forms.spec.js`                | just a running server                                                                        | yes                 |
-| `builder.spec.js`              | just a running server                                                                        | yes                 |
 | `experiment-lifecycle.spec.js` | minimega, VM images, a topology (`E2E_LIFECYCLE=1`)                                          | no (needs minimega) |
 | `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`, `E2E_AUTH_MODE=enabled`       | yes (own job)       |
 | `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`, `E2E_AUTH_MODE=proxy` | yes (own job)       |
