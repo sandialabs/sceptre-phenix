@@ -28,7 +28,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all check-protoc clean generate generate-builder-schema generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test test-cover
+.PHONY: all check-protoc clean deadcode deadcode-tests generate generate-builder-schema generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test test-cover
 .DEFAULT_GOAL := help
 
 help:
@@ -40,6 +40,8 @@ help:
 	@echo "Development targets:"
 	@echo "  all                - Run all tools (test)"
 	@echo "  test               - Run unit tests"
+	@echo "  deadcode           - Fail on functions that nothing reaches, not even tests"
+	@echo "  deadcode-tests     - List functions that only tests reach (advice only)"
 	@echo ""
 	@echo "NOTE: Linting/formatting (golangci-lint) is handled by 'prek' from"
 	@echo "      the repository root, not by this Makefile. Run 'make lint'"
@@ -87,6 +89,39 @@ generate-builder-schema:
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
 	go test -v -race ./...
+
+# deadcode v0.50.0 needs Go 1.26, so let go download that toolchain when it is older.
+DEADCODE       := GOTOOLCHAIN=auto go run golang.org/x/tools/cmd/deadcode@v0.50.0
+DEADCODE_FMT   := {{range .Funcs}}{{printf "%s.%s %s\n" $$.Path .Name .Position}}{{end}}
+DEADCODE_ALLOW := .deadcode-allow
+
+# Each line of output is "<package path>.<func> <file:line:col>". The first
+# field is what $(DEADCODE_ALLOW) lists.
+deadcode:
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
+	@found=$$($(DEADCODE) -test -f '$(DEADCODE_FMT)' ./...) || exit 1; \
+	result=$$(printf '%s\n' "$$found" | awk -v list=$(DEADCODE_ALLOW) ' \
+		BEGIN { while ((getline line < list) > 0) if (line !~ /^(#|$$)/) { split(line, f, " "); allow[f[1]] = 0 } } \
+		NF && ($$1 in allow) { allow[$$1] = 1; next } \
+		NF { print "unreachable: " $$0 } \
+		END { for (k in allow) if (!allow[k]) print "not reported, remove from " list ": " k }') || exit 1; \
+	if [ -n "$$result" ]; then \
+		printf '%s\n' "$$result"; \
+		echo "Remove the dead functions, or add each to $(DEADCODE_ALLOW) with a reason."; \
+		exit 1; \
+	fi; \
+	echo "deadcode: no unreachable functions"
+
+# Functions that only tests reach. Test helper packages (*test) are left out.
+deadcode-tests:
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
+	@prod=$$($(DEADCODE) -f '$(DEADCODE_FMT)' ./...) || exit 1; \
+	test=$$($(DEADCODE) -test -f '$(DEADCODE_FMT)' ./...) || exit 1; \
+	{ printf '%s\n' "$$test"; echo '--'; printf '%s\n' "$$prod"; } | awk ' \
+		$$0 == "--" { prod = 1; next } \
+		!prod { dead[$$1]; next } \
+		{ pkg = $$1; sub(/\.[^\/]*$$/, "", pkg) } \
+		NF && !($$1 in dead) && pkg !~ /test(\/|$$)/ { print "reached only from tests: " $$0 }'
 
 test-cover:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))

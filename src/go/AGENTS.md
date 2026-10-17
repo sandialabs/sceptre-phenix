@@ -22,6 +22,8 @@ Run from `src/go/`:
 | Go tests with coverage | `make test-cover` |
 | Non-fixing lint | `make check` |
 | Format / fixing lint | `make format` / `make lint` |
+| Dead code check | `make deadcode` |
+| Code that only tests reach (advice) | `make deadcode-tests` |
 | Generate all outputs | `make generate` |
 | Build Linux binary | `make phenix` |
 
@@ -53,6 +55,10 @@ the root target does.
 - Follow `.golangci.yml` and `gofmt`; Go and Makefiles use tabs.
 - Return operational and validation errors using existing patterns; do not
   silently recover.
+- Remove dead code. `make deadcode` fails on a function that nothing reaches,
+  not even a test. Add a function to `.deadcode-allow` only when code outside
+  this module or reflection uses it. Keep the list short and put a reason
+  above each entry.
 - Use `phenix/util/plog` for core logs with the correct `LogType` and structured
   key/value fields.
 - Consult [minimega API docs](https://sandia-minimega.github.io/minimega/reference/minimega/) and
@@ -78,7 +84,7 @@ Follow the Go wiki [TestComments](https://go.dev/wiki/TestComments) in Go tests:
 
 ## CI
 
-`.github/workflows/ci.yml` generates artifacts, runs `make check`, and executes
-race-enabled tests. Go changes can also trigger `.github/workflows/frontend.yml`
-because browser smoke tests build and run the backend. Keep workflow paths,
-Go/tool versions, and local commands aligned.
+`.github/workflows/ci.yml` generates artifacts, runs `make check`, executes
+race-enabled tests, and runs `make deadcode`. Go changes can also trigger
+`.github/workflows/frontend.yml` because browser smoke tests build and run the
+backend. Keep workflow paths, Go/tool versions, and local commands aligned.

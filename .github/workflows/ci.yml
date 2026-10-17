@@ -58,6 +58,9 @@ jobs:
       - name: Run tests with coverage
         working-directory: src/go
         run: make test-cover
+      - name: Check for dead code
+        working-directory: src/go
+        run: make deadcode
       # Coverage below the minimum in .github/coverage-minimums.json warns
       # but does not fail the job.
       - name: Summarize coverage
