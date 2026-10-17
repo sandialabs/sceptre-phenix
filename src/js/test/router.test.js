@@ -1,6 +1,5 @@
-// Where the router sends a visit: to sign in when no one is signed in, to a
-// page the role may use when it may not use the one asked for, and anywhere
-// when the server runs without authentication.
+// Where the router sends a visit: to sign in when signed out, to a page the
+// role may use instead of one it may not, and anywhere without auth.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { NavigationFailureType, isNavigationFailure } from 'vue-router';

@@ -1,6 +1,5 @@
-// What the app starts for a signed-in user, and tears down on sign-out, is
-// followed across every sign-in and sign-out, whether the page loaded signed
-// in or not.
+// What the app starts for a signed-in user and tears down on sign-out, across
+// every sign-in and sign-out, whether the page loaded signed in or not.
 import { describe, expect, it } from 'vitest';
 import { nextTick, ref } from 'vue';
 

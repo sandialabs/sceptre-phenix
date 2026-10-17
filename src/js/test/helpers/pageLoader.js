@@ -1,11 +1,5 @@
-// Stand-ins for src/utils/pageLoader.js, each a vi.mock factory. vi.mock runs
-// before a test file's imports, so a file loads this module with vi.hoisted:
-//
-//   const loader = await vi.hoisted(() => import('./helpers/pageLoader.js'));
-//   vi.mock('@/utils/pageLoader.js', loader.idle);
-//
-// It imports only vitest, so loading it that early loads no module a test
-// mocks.
+// vi.mock factories standing in for src/utils/pageLoader.js; load with
+// vi.hoisted. It imports only vitest, so it loads no module a test mocks.
 import { vi } from 'vitest';
 
 // a loader that loads nothing: the page shows the state it is given
@@ -40,9 +34,8 @@ export async function withoutLoading(render) {
   }
 }
 
-// The options the last page's loader was made with, and that loader's load(),
-// for the capturing and fetching loaders. A test may set load before the
-// page is made, to answer as it likes.
+// The last page loader's options and load(), for the capturing and fetching
+// loaders; a test may set load before the page is made, to answer as it likes.
 export const loaderSpy = { options: null, load: null };
 
 // forgets the loader the last page made
@@ -64,9 +57,8 @@ export async function capturing(original) {
   };
 }
 
-// The real module, whose loaders record their options and whose load()
-// fetches as the real one does, without the cache or apply(): it resolves
-// to the data.
+// The real module, its loaders recording their options and load() fetching as
+// the real one does, without the cache or apply(): it resolves to the data.
 export async function fetching(original) {
   return {
     ...(await original()),

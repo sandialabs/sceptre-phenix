@@ -82,16 +82,6 @@ describe('verdict', () => {
     expect(verdict(summary())).toBe('healthy');
   });
 
-  it('is checks failing for a few failing hosts', () => {
-    const s = summary({
-      hosts: 40,
-      hosts_with_errors: 2,
-      checks: { total: 320, passing: 318, failing: 2 },
-    });
-    expect(verdict(s)).toBe('failing');
-    expect(verdictLabel(s)).toBe('checks failing');
-  });
-
   it('is degraded when a VM that should run is down', () => {
     const vms = { ...summary().vms, running: 23, notrunning: 1 };
     expect(verdict(summary({ vms }))).toBe('degraded');
@@ -112,17 +102,16 @@ describe('verdict', () => {
     expect(verdict(summary({ vms }))).toBe('healthy');
   });
 
-  it('is degraded when a fifth of the hosts fail checks', () => {
+  it('is checks failing for a few failing hosts, degraded from a fifth of them', () => {
     const at = (failingHosts) =>
-      verdict(
-        summary({
-          hosts: 10,
-          hosts_with_errors: failingHosts,
-          checks: { total: 100, passing: 90, failing: 10 },
-        }),
-      );
-    expect(at(1)).toBe('failing');
-    expect(at(2)).toBe('degraded');
+      summary({
+        hosts: 10,
+        hosts_with_errors: failingHosts,
+        checks: { total: 100, passing: 90, failing: 10 },
+      });
+    expect(verdict(at(1))).toBe('failing');
+    expect(verdictLabel(at(1))).toBe('checks failing');
+    expect(verdict(at(2))).toBe('degraded');
   });
 
   it('is degraded when under 90% of reachability pairs pass', () => {

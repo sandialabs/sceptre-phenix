@@ -1,6 +1,5 @@
-// The Experiments page's create card: rendered to a string with the real Buefy
-// components, and its options exercised with a plain object standing in for
-// the component instance.
+// The Experiments page's create card, rendered with the real Buefy and run on
+// a plain object standing in for the component instance.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, resetMocks } = await vi.hoisted(

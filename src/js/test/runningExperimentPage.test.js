@@ -1,6 +1,5 @@
-// The running experiment page: how it shows the experiment it loads and lists
-// its VMs over the websocket, what it asks for again after the websocket
-// reconnects, and what it does with websocket traffic that is not its own.
+// The running experiment page: the experiment it loads, its VMs over the
+// websocket, what it reloads on reconnect, and traffic that is not its own.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, capturing, loaderSpy, modules, resetMocks, ws } =

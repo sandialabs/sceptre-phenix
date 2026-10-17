@@ -1,6 +1,5 @@
-// The State of Health page: what it shows above and around the graph, the
-// layout it draws, the SOH runs it follows from the broker's `apps/soh`
-// messages, and its SVG and GEXF downloads.
+// The State of Health page: what surrounds the graph, its layout, the SOH runs
+// it follows from `apps/soh` messages, and its SVG and GEXF downloads.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, fetching, modules, notify, resetMocks, saver } =

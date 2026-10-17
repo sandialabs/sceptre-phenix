@@ -1,18 +1,5 @@
-// Stand-ins for the modules pages reach RBAC, the server, error reports, the
-// store, the websocket, file downloads and their loader through, and the
-// state tests set and read on them. vi.mock runs before a test file's
-// imports, so a file loads this module with vi.hoisted and hands each
-// module's factory to vi.mock:
-//
-//   const { axios, modules, resetMocks } = await vi.hoisted(
-//     () => import('./helpers/mocks.js'),
-//   );
-//   vi.mock('@/utils/axios.js', modules.axios);
-//
-//   beforeEach(() => resetMocks());
-//
-// Loaded that early, it must not import a module a test mocks: it imports
-// only vitest and helpers that do the same.
+// vi.mock stand-ins for what pages reach RBAC, the server, the store and the
+// websocket through. Load with vi.hoisted; it imports only vitest and helpers.
 import { vi } from 'vitest';
 
 import { idle, resetLoader } from './pageLoader.js';
@@ -41,6 +28,10 @@ export const notify = { error: vi.fn(), show: vi.fn() };
 // the lasting notifications opened outside a component (utils/notify.js),
 // such as the outcome of an operation that did not fully succeed
 export const notices = { open: vi.fn() };
+
+// the options of the notification last opened, and the text of its message
+export const lastNotice = () => notices.open.mock.lastCall[0];
+export const noticeText = () => JSON.stringify(lastNotice().message.children);
 
 // what usePhenixStore() returns after resetMocks()
 export const STORE_DEFAULTS = {
@@ -100,10 +91,8 @@ export const modules = {
   pageLoader: idle,
 };
 
-// Undoes what a test set: every role may do anything, no request, error
-// report, download or websocket traffic has been made, no page has made a
-// loader, and the store holds exactly `store` (STORE_DEFAULTS unless given;
-// {} for an empty store), so a key a test added is gone.
+// Undoes what a test set: every role allowed, no calls or traffic, no loader,
+// and the store holds just `store` (STORE_DEFAULTS unless given; {} empty).
 export function resetMocks({ store: fields = STORE_DEFAULTS } = {}) {
   rbac.allowed = allowAll;
   for (const fn of [

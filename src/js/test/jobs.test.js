@@ -1,6 +1,5 @@
-// The background jobs store: what the server lists, kept current by the
-// websocket in revision order, reloaded after a reconnect, and the requests
-// that start, cancel and dismiss jobs.
+// The background jobs store: the server's list, kept in revision order by the
+// websocket and after a reconnect, and the start, cancel and dismiss requests.
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

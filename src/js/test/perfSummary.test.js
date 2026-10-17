@@ -1,6 +1,5 @@
-// perf/summary.mjs turns the CI perf job's size-limit and Lighthouse CI
-// output into the job summary, the perf-summary artifact and the final
-// budget gate (see perf/README.md).
+// perf/summary.mjs: the CI perf job's summary, perf-summary artifact and
+// budget gate, from size-limit and Lighthouse CI output (see perf/README.md).
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';

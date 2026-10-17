@@ -1,12 +1,18 @@
 // How the running experiment page runs the VM actions its details modal,
-// Actions column, and selection toolbar ask for, and what its VM table and
-// details modal show.
+// Actions column and selection toolbar ask for, and its VM table and modal.
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notices, notify, rbac, resetMocks } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const {
+  axios,
+  lastNotice,
+  modules,
+  notices,
+  noticeText,
+  notify,
+  rbac,
+  resetMocks,
+} = await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -31,6 +37,7 @@ import { namedList } from '@/utils/plural.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { flush } from './helpers/async.js';
 import { lastAlert, lastConfirm, toasts } from './helpers/buefy.js';
+import { disk } from './helpers/fixtures.js';
 import { denyOnly } from './helpers/permissions.js';
 import {
   labeledControls,
@@ -567,9 +574,8 @@ describe('actions on VMs', () => {
   // 'gone' is not in the table
   const selection = ['web', 'off', 'held', 'persistent', 'db', 'gone'];
 
-  // The server's answers to a bulk action: the job it starts, finished, and
-  // the job read whole, each VM with the outcome `outcomes` gives it
-  // (succeeded unless named), a succeeded one with its VM.
+  // Answers a bulk action with a finished job; VMs named in `outcomes` get that
+  // outcome, the rest succeed.
   const answerJob = (outcomes = {}) => {
     const items = (vms) =>
       vms.map((name) => {
@@ -697,11 +703,9 @@ describe('actions on VMs', () => {
 
     expect(toasts(ctx)).toEqual([]);
     expect(notices.open).toHaveBeenCalledTimes(1);
-    const { message, indefinite } = notices.open.mock.lastCall[0];
+    const { message, indefinite } = lastNotice();
     expect(indefinite).toBe(true);
-    const text = JSON.stringify(message.children, (_, v) =>
-      typeof v === 'function' ? undefined : v,
-    );
+    const text = noticeText();
     expect(text).toContain('Restarted 1 of 3 VMs; 2 failed');
     expect(text).toContain('persistent: vm persistent is locked');
     expect(text).toContain('Retry failed (1)');
@@ -755,19 +759,22 @@ describe('actions on VMs', () => {
     expect(ctx.$buefy.dialog.alert).not.toHaveBeenCalled();
   });
 
-  it('waits while the job runs, not just until the first VM is done', async () => {
+  it('keeps waiting while the job is running', async () => {
     // the job store's poll while it waits
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-    const ctx = page({ experiment: { name: 'demo', vms } });
-    axios.post.mockResolvedValue({
-      data: { id: 'j1', status: 'running', items: [], revision: 1 },
-    });
+    try {
+      const ctx = page({ experiment: { name: 'demo', vms } });
+      axios.post.mockResolvedValue({
+        data: { id: 'j1', status: 'running', items: [], revision: 1 },
+      });
 
-    ctx.restartVm(['web', 'db']);
-    lastConfirm(ctx).onConfirm();
-    await flush();
-    expect(ctx.isWaiting).toBe(true);
-    vi.useRealTimers();
+      ctx.restartVm(['web', 'db']);
+      lastConfirm(ctx).onConfirm();
+      await flush();
+      expect(ctx.isWaiting).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reports a job that could not start and stops waiting', async () => {
@@ -814,9 +821,7 @@ describe('actions on VMs', () => {
     // one summary, not a notification for each failure
     expect(notify.error).not.toHaveBeenCalled();
     expect(notices.open).toHaveBeenCalledTimes(1);
-    expect(
-      JSON.stringify(notices.open.mock.lastCall[0].message.children),
-    ).toContain('Snapshotted 1 of 2 VMs; 1 failed');
+    expect(noticeText()).toContain('Snapshotted 1 of 2 VMs; 1 failed');
 
     ctx.captureSnapshot('web');
     await flush();
@@ -965,14 +970,6 @@ describe('actions on VMs', () => {
     stubBrowser();
     // the netflow check that creating the page makes
     axios.get.mockRejectedValue(new Error('no netflow'));
-    const disk = (fullPath, relativePath = '') => ({
-      kind: 'VM',
-      name: fullPath.replace(/^.*\//, ''),
-      fullPath,
-      relativePath,
-      outsideFilesDir: !relativePath,
-      readOnly: !relativePath,
-    });
     const redeploying = (name, path) => ({
       name,
       cpus: 2,
@@ -1200,10 +1197,8 @@ describe('the selection toolbar', () => {
     expect(await toolbar({ vmSelectedArray: [] })).toEqual([]);
   });
 
-  // The page showing web and db, both selected and both running or not,
-  // after its buttons labeled `labels` are clicked in turn, each on the page
-  // as the click before left it: the dialog or modal the clicks opened, how
-  // many VMs they skipped, and the page's state and HTML.
+  // Renders web and db (selected, running or not), clicks the `labels` buttons
+  // in turn, and returns the dialog or modal, skipped count, state and HTML.
   async function click(labels, { running = true, ...data } = {}) {
     const vms = ['web', 'db'].map((name) => ({
       name,

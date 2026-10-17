@@ -61,9 +61,8 @@ describe('SVG serialization', () => {
     expect(out.height).toBe(150 + 56 + 40 + 20);
     expect(out.svg).toContain(`viewBox="0 0 ${out.width} ${out.height}"`);
     expect(out.svg).toContain(`width="${out.width}" height="${out.height}"`);
-    // Zoom 2 x 1.5 px per unit; the pan cancels out once the box is fitted,
-    // leaving the box's corner (10, -5) at the graph area's left edge and
-    // under the 56 px title.
+    // Zoom 2 x 1.5 px per unit; the fitted box puts its corner (10, -5) at the
+    // graph area's left edge, under the 56 px title.
     const x = (out.width - 300) / 2 - 10 * 3;
     expect(out.svg).toContain(
       `<g transform="translate(${x},${56 + 5 * 3}) scale(3)">`,

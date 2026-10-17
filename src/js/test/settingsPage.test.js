@@ -1,6 +1,5 @@
-// The Settings page: it loads the server's settings into a form, offers to
-// reset or save only once something changed, and keeps unsaved edits when
-// the settings are loaded again.
+// The Settings page: loads the settings into a form, offers reset and save
+// only after a change, and keeps unsaved edits when the settings reload.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, resetMocks, switchable } = await vi.hoisted(

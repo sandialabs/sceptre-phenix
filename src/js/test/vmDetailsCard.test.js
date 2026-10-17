@@ -1,8 +1,5 @@
-// Renders the VM details card and the VM table's Actions buttons to strings
-// with the real Buefy components: the storage section's backing chain and
-// CD-ROM, the capture buttons' icon and spinner, the Network box's buttons,
-// the annotations, and the header's description and links. The annotation
-// editor runs with a plain object standing in for the component instance.
+// Renders the VM details card and the Actions buttons with real Buefy; the
+// annotation editor runs on a plain object.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { modules, rbac, resetMocks } = await vi.hoisted(
@@ -16,7 +13,7 @@ import { icon, library } from '@fortawesome/fontawesome-svg-core';
 import { faSharkFin } from '@/utils/icons.js';
 import VmDetailsCard from '@/components/experiment/VmDetailsCard.vue';
 import VmRowActions from '@/components/experiment/VmRowActions.vue';
-import { vm as makeVm } from './helpers/fixtures.js';
+import { disk, vm as makeVm } from './helpers/fixtures.js';
 import { allowAll, denyOnly } from './helpers/permissions.js';
 import { renderSSR, textOf, tooltipButtons } from './helpers/render.js';
 
@@ -61,12 +58,9 @@ describe('VmDetailsCard storage', () => {
       tooltipButtons(html.slice(html.indexOf('vm-cdrom'))).filter(
         (b) => b.label === 'Outside the standard images directory',
       );
-    const inside = {
+    const inside = disk('/phenix/images/isos/tools.iso', 'isos/tools.iso', {
       kind: 'ISO',
-      fullPath: '/phenix/images/isos/tools.iso',
-      relativePath: 'isos/tools.iso',
-      outsideFilesDir: false,
-    };
+    });
     let html = await card({
       vm: { ...vm, cdRom: inside.fullPath },
       cdRomDisk: inside,
@@ -76,12 +70,7 @@ describe('VmDetailsCard storage', () => {
     expect(html).toContain('title="/phenix/images/isos/tools.iso"');
     expect(warnings(html)).toEqual([]);
 
-    const outside = {
-      kind: 'ISO',
-      fullPath: '/data/isos/tools.iso',
-      relativePath: '',
-      outsideFilesDir: true,
-    };
+    const outside = disk('/data/isos/tools.iso', '', { kind: 'ISO' });
     html = await card({
       vm: { ...vm, cdRom: outside.fullPath },
       cdRomDisk: outside,
@@ -106,12 +95,7 @@ describe('VmDetailsCard storage', () => {
   });
 
   it('names the disk by its label, warning of one outside the files directory', async () => {
-    const inside = {
-      name: 'web_snap.qc2',
-      fullPath: '/phenix/images/web/web_snap.qc2',
-      relativePath: 'web/web_snap.qc2',
-      outsideFilesDir: false,
-    };
+    const inside = disk('/phenix/images/web/web_snap.qc2', 'web/web_snap.qc2');
     let html = await card({
       vm: { ...vm, disk: inside.fullPath },
       disk: inside,
@@ -122,12 +106,7 @@ describe('VmDetailsCard storage', () => {
       'Outside the standard images directory',
     );
 
-    const outside = {
-      name: 'web.img',
-      fullPath: '/data/vms/web.img',
-      relativePath: '',
-      outsideFilesDir: true,
-    };
+    const outside = disk('/data/vms/web.img');
     html = await card({
       vm: { ...vm, disk: outside.fullPath },
       disk: outside,

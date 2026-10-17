@@ -1,6 +1,5 @@
-// The Users page offers to create an API token for the signed-in user to a
-// role that may patch that user, and for another user only to a role that may
-// also create that user's tokens.
+// The Users page's Create token button, offered for the users the role may
+// create a token for (rbac.test.js tests that rule).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, rbac, resetMocks } = await vi.hoisted(
@@ -49,18 +48,5 @@ describe('the Users page token button', () => {
   it('is offered for the signed-in user to a role that may patch them', async () => {
     rbac.allowed = allowOnly(['users', 'patch']);
     expect(await tokenButtons()).toEqual(['alice']);
-  });
-
-  it("is offered for another user only with that user's users/tokens create", async () => {
-    rbac.allowed = allowOnly(
-      ['users', 'patch'],
-      ['users/tokens', 'create', 'bob'],
-    );
-    expect(await tokenButtons()).toEqual(['alice', 'bob']);
-  });
-
-  it('is not offered for a user the role may not patch', async () => {
-    rbac.allowed = allowOnly(['users/tokens', 'create']);
-    expect(await tokenButtons()).toEqual([]);
   });
 });

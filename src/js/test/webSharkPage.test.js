@@ -1,21 +1,14 @@
-// The WebShark page: its pickers, what it asks the server, its frame, and its
-// URL. Most tests run its options on a plain object standing in for the
-// component; the rendering tests use the real Buefy components.
+// The WebShark page: pickers, server requests, frame and URL. Most tests run
+// its options on a plain object; rendering tests use the real Buefy.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const rbac = vi.hoisted(() => ({ allowed: () => true }));
-vi.mock('@/utils/rbac.js', () => ({
-  roleAllowed: (...args) => rbac.allowed(...args),
-}));
-
-const axios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-
-const notify = vi.hoisted(() => vi.fn());
-vi.mock('@/utils/errorNotif.js', () => ({ useErrorNotification: notify }));
-
-const store = vi.hoisted(() => ({}));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
+const { axios, modules, notify, rbac, resetMocks, store } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
 
 import { cachePage, clearPageCache } from '@/utils/pageCache.js';
 import { experimentKey } from '@/utils/pageData.js';
@@ -23,6 +16,7 @@ import { fileTarget } from '@/utils/webshark.js';
 import WebShark from '@/views/WebShark.vue';
 import { flush } from './helpers/async.js';
 import { makeContext } from './helpers/context.js';
+import { denyOnly } from './helpers/permissions.js';
 import { renderSSR } from './helpers/render.js';
 
 // what the mocked server answers each GET with, by URL
@@ -56,18 +50,17 @@ const SERVER = {
 };
 
 beforeEach(() => {
-  rbac.allowed = () => true;
-  Object.assign(store, {
-    features: ['webshark'],
-    featuresLoaded: true,
-    token: 'jwt.token',
+  resetMocks({
+    store: {
+      features: ['webshark'],
+      featuresLoaded: true,
+      token: 'jwt.token',
+    },
   });
-  axios.get.mockReset();
   axios.get.mockImplementation(async (url) => {
     if (!(url in SERVER)) throw new Error(`unexpected GET ${url}`);
     return { data: SERVER[url] };
   });
-  axios.post.mockReset();
   axios.post.mockImplementation(async (_, body) => ({
     data: {
       capture: body.path
@@ -77,7 +70,6 @@ beforeEach(() => {
       title: 'a capture',
     },
   }));
-  notify.mockReset();
 });
 
 afterEach(() => {
@@ -148,9 +140,10 @@ describe('the pickers', () => {
   });
 
   it('leave out what the role may not open', async () => {
-    rbac.allowed = (resource, verb, name) =>
-      !(resource === 'experiments/files' && verb === 'get') &&
-      !(resource === 'vms/captures' && name === 'exp1/db');
+    rbac.allowed = denyOnly(
+      ['experiments/files', 'get'],
+      ['vms/captures', '*', 'exp1/db'],
+    );
     const ctx = await opened({ exp: 'exp1' });
     expect(ctx.liveOptions.map((t) => t.label)).toEqual(['web · IF1']);
     expect(ctx.fileOptions).toEqual([]);
@@ -167,7 +160,7 @@ describe('the pickers', () => {
       return { data: SERVER[url] };
     });
     const ctx = await opened({ exp: 'exp1' });
-    expect(notify).toHaveBeenCalledWith(err);
+    expect(notify.error).toHaveBeenCalledWith(err);
     expect(ctx.liveOptions).toEqual([]);
     expect(ctx.fileOptions).toHaveLength(3);
   });
@@ -239,7 +232,7 @@ describe('opening a capture', () => {
     });
     axios.post.mockRejectedValue(err);
     const ctx = await opened({ exp: 'exp1', vm: 'web', iface: '3' });
-    expect(notify).toHaveBeenCalledWith(err);
+    expect(notify.error).toHaveBeenCalledWith(err);
     expect(ctx.capture).toBe(null);
     expect(ctx.opening).toBe(false);
     expect(ctx.emptyText).toBe(
@@ -250,7 +243,7 @@ describe('opening a capture', () => {
   it('refuses an answer that names no capture', async () => {
     axios.post.mockResolvedValue({ data: {} });
     const ctx = await opened({ exp: 'exp1', file: 'caps/a.pcap' });
-    expect(notify).toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalled();
     expect(ctx.capture).toBe(null);
   });
 
@@ -405,7 +398,7 @@ describe('Copy Wireshark command', () => {
     axios.post.mockRejectedValue(err);
     await ctx.copyWiresharkCommand();
     expect(writeText).not.toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledWith(err);
+    expect(notify.error).toHaveBeenCalledWith(err);
     const [{ message, type }] = ctx.$buefy.toast.open.mock.calls[0];
     expect(type).toBe('is-danger');
     expect(message).toContain("You don't have permission");

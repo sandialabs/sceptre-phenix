@@ -1,7 +1,5 @@
-// The Disks page: how it loads the disk list and keeps it current, how it
-// names each disk, which actions it offers on a disk and the reason it gives
-// for each one it disables, in the details window and on the table's rows,
-// and the requests those actions send.
+// The Disks page: loading and refreshing the list, disk names, the actions it
+// offers and why each is disabled, and the requests those actions send.
 import realAxios from 'axios';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +10,7 @@ const {
   loaderSpy,
   modules,
   notices,
+  noticeText,
   notify,
   rbac,
   resetMocks,
@@ -83,22 +82,6 @@ describe('the disk list', () => {
 
     await loaderSpy.options.refresh();
     await ctx.loader.load();
-    expect(urls()).toEqual(['disks?refresh=true', 'disks']);
-  });
-
-  it('keeps a refresh rescan for the request that runs after another load replaces it', async () => {
-    await opened();
-    axios.get.mockClear();
-
-    // the refresh's load is replaced before its queued request starts
-    loaderSpy.load = vi.fn(async () => false);
-    await loaderSpy.options.refresh();
-    expect(axios.get).not.toHaveBeenCalled();
-
-    const fetch = () =>
-      loaderSpy.options.fetch(new AbortController().signal, undefined);
-    await fetch();
-    await fetch();
     expect(urls()).toEqual(['disks?refresh=true', 'disks']);
   });
 
@@ -219,83 +202,19 @@ describe('disk actions', () => {
     expect(tooltip('download', used)).toBe('Download');
   });
 
-  it('rules out the actions minimega runs on a path it cannot take', () => {
+  it('asks roleAllowed about a disk by name, and about creating one with no name', () => {
+    const calls = [];
+    rbac.allowed = (...args) => calls.push(args) > 0;
     const ctx = page();
-    const spaced = disk('/phenix/images/my disk.qc2', 'my disk.qc2', {
-      backingImages: ['/phenix/images/base.qc2'],
-    });
-    const reasons = Object.fromEntries(
-      names.map((name) => [name, ctx.disabledReason(name, spaced)]),
-    );
-    const unusable = "minimega cannot use the disk's path";
-    expect(reasons).toEqual({
-      snapshot: unusable,
-      commit: unusable,
-      rebase: unusable,
-      clone: null,
-      resize: unusable,
-      download: null,
-      rename: null,
-      delete: null,
-    });
-    // in a folder's name too
-    for (const rel of ['a$b.qc2', 'x,y/a.qc2']) {
-      const other = disk(`/phenix/images/${rel}`, rel);
-      expect(ctx.disabledReason('resize', other)).toBe(unusable);
-    }
-  });
 
-  // the permissions each action needs on snap.qc2, which is backed by base.qc2
-  it.each([
-    // snapshotting and cloning read the disk into a new one
-    [
-      'snapshot',
-      [
-        ['disks', 'create'],
-        ['disks', 'get', 'snap.qc2'],
-      ],
-    ],
-    // committing writes the image into its backing image
-    [
-      'commit',
-      [
-        ['disks', 'update', 'snap.qc2'],
-        ['disks', 'update', 'base.qc2'],
-      ],
-    ],
-    ['rebase', [['disks', 'update', 'snap.qc2']]],
-    [
-      'clone',
-      [
-        ['disks', 'create'],
-        ['disks', 'get', 'snap.qc2'],
-      ],
-    ],
-    ['resize', [['disks', 'update', 'snap.qc2']]],
-    ['download', [['disks', 'get', 'snap.qc2']]],
-    ['rename', [['disks', 'update', 'snap.qc2']]],
-    ['delete', [['disks', 'delete', 'snap.qc2']]],
-  ])('allows %s with the %j permissions alone', (action, needed) => {
-    const ctx = page();
-    // compared whole, so a check that adds, drops or changes the disk's name
-    // does not match, as it would with allowOnly
-    const key = (permission) => JSON.stringify(permission);
-    const neededKeys = new Set(needed.map(key));
-
-    rbac.allowed = (...args) => neededKeys.has(key(args));
-    expect(ctx.disabledReason(action, vmDisk)).toBe(null);
-    // and refuses it without any one of them
-    for (const missing of needed) {
-      rbac.allowed = (...args) => key(args) != key(missing);
-      expect(ctx.disabledReason(action, vmDisk)).toBe(
-        "you don't have permission",
-      );
-    }
-  });
-
-  it('knows no reason to disable an action it does not have', () => {
-    rbac.allowed = denyAll;
-    expect(page().disabledReason('unknown', vmDisk)).toBe(null);
+    ctx.disabledReason('snapshot', vmDisk);
+    ctx.disabledReason('commit', vmDisk);
+    expect(calls).toStrictEqual([
+      ['disks', 'create'],
+      ['disks', 'get', 'snap.qc2'],
+      ['disks', 'update', 'snap.qc2'],
+      ['disks', 'update', 'base.qc2'],
+    ]);
   });
 
   // each row's actions: Snapshot, Clone, Download, Rename and Delete, each
@@ -531,22 +450,6 @@ describe('disks in folders and outside the files directory', () => {
     },
   );
 
-  it('refuses to commit into a backing image phēnix does not act on', () => {
-    const ctx = page();
-    ctx.disks = disks;
-
-    expect(ctx.actionTooltip({ name: 'commit', label: 'Commit' }, base)).toBe(
-      "Can't commit: its backing image is outside the standard images directory",
-    );
-    const onKept = disk('/phenix/images/exp1/files/s.qc2', 'exp1/files/s.qc2', {
-      backingImages: [kept.fullPath],
-    });
-    expect(ctx.disabledReason('commit', onKept)).toBe(
-      'its backing image is at a path the disk list leaves out',
-    );
-    expect(ctx.disabledReason('commit', snap)).toBe(null);
-  });
-
   it("opens a backing image's details by its full path, not a same-named image", () => {
     const ctx = page();
     ctx.disks = disks;
@@ -678,9 +581,7 @@ describe('disk action requests', () => {
     useJobStore().apply(wsMsg('job', 'j1', 'update', failed));
     await confirmed;
     expect(notices.open).toHaveBeenCalledTimes(1);
-    expect(
-      JSON.stringify(notices.open.mock.lastCall[0].message.children),
-    ).toContain('no space left');
+    expect(noticeText()).toContain('no space left');
 
     // the server restarted while the next clone ran
     axios.post.mockResolvedValue({

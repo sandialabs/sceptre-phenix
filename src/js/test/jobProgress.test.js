@@ -1,6 +1,5 @@
-// A background job's progress, as the jobs menu and the pages show it: its
-// status in words and color, a bar, a status line read out as it changes,
-// and the buttons to cancel, download and dismiss it.
+// A background job's progress in the jobs menu and pages: its status in words
+// and color, a bar, a status line read out as it changes, and its buttons.
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

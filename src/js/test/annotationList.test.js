@@ -1,7 +1,5 @@
-// The editable list of annotations on the create experiment card and the VM
-// details card: a row per annotation with its problem or its description
-// under it, and a menu that adds a known annotation not in the list yet or a
-// custom one. The list is a v-model: every change is a new list.
+// The annotation list (a v-model: each change is a new list) of the create and
+// VM details cards: each row, its problem or description, and the add menu.
 import { describe, expect, it, vi } from 'vitest';
 
 import AnnotationList from '@/components/AnnotationList.vue';
@@ -40,9 +38,8 @@ const props = (modelValue, extra) => ({
 const render = (modelValue, extra, data) =>
   renderSSR(AnnotationList, props(modelValue, extra), { data });
 
-// Each row as drawn: its key (fixed, or in brackets when it is typed in),
-// how its value is entered, and the line under it, marked when it names a
-// problem.
+// Each row as drawn: its key (in brackets when typed in), how its value is
+// entered, and the line under it, marked when it names a problem.
 async function rows(modelValue, extra) {
   const html = await render(modelValue, extra);
   return [

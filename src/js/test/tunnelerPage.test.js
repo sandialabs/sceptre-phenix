@@ -1,6 +1,5 @@
-// The Tunneler page lists the tunneler builds the server has installed, from
-// GET /downloads/tunneler, and says so when it has none or none could be
-// listed.
+// The Tunneler page lists the builds GET /downloads/tunneler returns, and says
+// so when there are none or none could be listed.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import Tunneler from '@/views/Tunneler.vue';

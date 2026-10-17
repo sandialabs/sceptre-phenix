@@ -1,8 +1,8 @@
-// Audit events are log lines of type AUDIT whose ECS fields are part of the
-// message, so the Logs page filters them by type and finds them by field.
+// The Logs page: it subscribes to log lines while open, filters them by type,
+// and finds AUDIT events by the ECS fields in their message.
 import { beforeEach, expect, it, vi } from 'vitest';
 
-const { capturing, modules, resetMocks } = await vi.hoisted(
+const { capturing, modules, resetMocks, ws } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
 );
 vi.mock('@/utils/websocket', modules.websocket);
@@ -32,15 +32,41 @@ const LOGS = [
   { level: 'WARN', type: 'SECURITY', msg: 'capture grant revoked' },
 ];
 
-async function logsPage() {
+async function opened() {
   const ctx = pageContext(Logs);
   await Logs.created.call(ctx);
+  return ctx;
+}
+
+async function logsPage() {
+  const ctx = await opened();
   ctx.logs = LOGS;
   ctx.logsVersion++;
   return ctx;
 }
 
+const actions = () =>
+  ws.sent
+    .filter((msg) => msg.resource.type === 'log')
+    .map((msg) => msg.resource.action);
+
 beforeEach(() => resetMocks());
+
+// the server sends log lines only to websocket clients that subscribed
+it('subscribes to log lines while open, and again after a reconnect', async () => {
+  const ctx = await opened();
+
+  expect(actions()).toEqual(['subscribe']);
+  expect(ws.handlers).toEqual([ctx.handleWs]);
+
+  ws.reconnect.forEach((f) => f());
+  expect(actions()).toEqual(['subscribe', 'subscribe']);
+
+  Logs.beforeUnmount.call(ctx);
+  expect(actions()).toEqual(['subscribe', 'subscribe', 'unsubscribe']);
+  expect(ws.reconnect).toHaveLength(0);
+  expect(ws.handlers).toHaveLength(0);
+});
 
 it('offers AUDIT among the log types', async () => {
   const ctx = await logsPage();

@@ -1,7 +1,5 @@
-// A route-level page run without mounting it (see context.js), with the
-// router, Buefy and events it reaches for recorded. A test file using this
-// mocks the modules the page reaches the server through first (see
-// mocks.js).
+// A route-level page run unmounted (see context.js), recording the router,
+// Buefy and events; mock the modules it reaches the server through first.
 import { vi } from 'vitest';
 
 import { flush } from './async.js';

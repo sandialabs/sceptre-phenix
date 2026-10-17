@@ -1,6 +1,5 @@
-// The Experiments page: its table, its search, and the rows it keeps up to
-// date from websocket messages, including experiments it has not loaded yet
-// (created by a workflow, the Configs page or the CLI).
+// The Experiments page: its table, its search, and rows kept current from the
+// websocket, even for experiments it has not loaded (workflow, Configs, CLI).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, capturing, loaderSpy, modules, resetMocks } = await vi.hoisted(

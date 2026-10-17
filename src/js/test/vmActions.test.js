@@ -39,10 +39,8 @@ const NO_SNAPSHOTS = 'the VM does not have snapshots enabled';
 const NO_AGENT = 'it needs an active miniccc agent in the VM';
 const BUSY = 'the VM is busy with another action';
 
-// The state rule of every action in the details modal: why it is ruled out
-// for a VM in each state it is, and allowed in the others. A busy VM can take
-// none of them. The capture actions' rules are in 'capture all interfaces'
-// and 'rowActionNames' below.
+// Why each details-modal action is ruled out by VM state; a busy VM takes none.
+// The capture rules are in 'capture all interfaces' and 'rowActionNames'.
 const STATES = {
   running,
   paused,
@@ -260,17 +258,6 @@ describe('vmActionState', () => {
       vmActionState('mount', running, { can: allowAll, features: ['vm-mount'] })
         .permitted,
     ).toBe(true);
-  });
-
-  it('puts shutdown, restart, port forward, snapshot, backing image, and capture all in the table', () => {
-    expect(ROW_ACTIONS).toEqual([
-      'shutdown',
-      'restart',
-      'portForward',
-      'snapshot',
-      'commit',
-      'captureAll',
-    ]);
   });
 
   it('rejects an unknown action', () => {

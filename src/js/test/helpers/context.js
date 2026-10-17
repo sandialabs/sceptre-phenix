@@ -2,11 +2,8 @@
 // stands in for the component instance.
 import { createApp, ssrContextKey } from 'vue';
 
-// The stand-in carries `fields` (props, $route, $emit and the like), the
-// component's and its mixins' methods bound to it, its computed properties as
-// getters (and setters), and its setup() bindings and data(), which see all
-// of those. A field named like a method, computed property, binding or data
-// key replaces it, so a test can stub one method and run the rest.
+// The stand-in has `fields`, bound methods, computed getters (and setters),
+// setup() bindings and data(); a field replaces a member of the same name.
 export function makeContext(component, fields = {}) {
   const parts = [...(component.mixins ?? []), component];
   const ctx = { ...fields };
@@ -38,9 +35,8 @@ export function makeContext(component, fields = {}) {
   return ctx;
 }
 
-// The component's setup() bindings. Tests compile components for the server,
-// where setup() also notes the component in the render's context, so it runs
-// inside an app that provides one.
+// The component's setup() bindings, run inside an app that provides the SSR
+// context, since server-compiled setup() notes the component there.
 export function runSetup(component, props = {}) {
   if (!component.setup) return {};
   const app = createApp({});

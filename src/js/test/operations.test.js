@@ -1,6 +1,5 @@
-// The shared operation feedback: whether an action can be taken and why not,
-// which of a selection it skips, one confirm dialog for it, and one summary
-// of how it went.
+// Shared operation feedback: whether an action can be taken and why not, what
+// a selection skips, one confirm dialog, and one summary of how it went.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/utils/notify.js', () => ({ openNotification: vi.fn() }));
