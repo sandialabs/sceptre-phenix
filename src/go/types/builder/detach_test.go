@@ -2,10 +2,11 @@ package builder_test
 
 import (
 	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store"
 	"phenix/types/builder"
@@ -32,55 +33,52 @@ func TestCombineIncludes(t *testing.T) {
 	doc := keptDocument(t)
 
 	if got := nodeByHostname(t, doc, "dns").Device.IncludedFrom; got != "lab-dns" {
-		t.Fatalf("dns is included from %q before combining, want lab-dns", got)
+		t.Fatalf("dns IncludedFrom before CombineIncludes() = %q, want lab-dns", got)
 	}
-
-	before := asJSON(t, doc.Nodes)
 
 	doc.CombineIncludes()
 
-	for _, node := range doc.DeviceNodes() {
-		if node.Device.IncludedFrom != "" {
-			t.Errorf("%s is still marked as included from %q", node.Device.Hostname, node.Device.IncludedFrom)
-		}
-	}
+	// Nothing but the marks and the includes changes: the source still names
+	// the topology, and the nodes are where they were.
+	want := keptDocument(t)
+	want.Metadata.Name = "site"
+	want.Source.Kind = builder.SourceKindTopology
+	want.Source.Name = "site"
+	want.Source.IncludeTopologies = []string{"site-b", "/srv/extra.yml"}
+	want.Source.UnresolvedIncludes = nil
 
-	if want := []string{"site-b", "/srv/extra.yml"}; !reflect.DeepEqual(doc.Source.IncludeTopologies, want) {
-		t.Errorf("included topologies = %v, want %v", doc.Source.IncludeTopologies, want)
-	}
-
-	if doc.Source.UnresolvedIncludes != nil {
-		t.Errorf("unresolved includes = %v, want none", doc.Source.UnresolvedIncludes)
-	}
-
-	// Nothing but the marks changes: the source still names the topology,
-	// and the nodes are where they were.
-	if doc.Source.Kind != builder.SourceKindTopology || doc.Source.Name != "site" || doc.Metadata.Name != "site" {
-		t.Errorf("source = %s, name = %q, want the topology still named", asJSON(t, doc.Source), doc.Metadata.Name)
-	}
-
-	unmarked := keptDocument(t)
-	for i := range unmarked.Nodes {
-		if device := unmarked.Nodes[i].Device; device != nil {
+	for i := range want.Nodes {
+		if device := want.Nodes[i].Device; device != nil {
 			device.IncludedFrom = ""
 		}
 	}
 
-	if after := asJSON(t, doc.Nodes); after != asJSON(t, unmarked.Nodes) || after == before {
-		t.Errorf("nodes after combining = %s, want those of the import without their marks", after)
+	if diff := cmp.Diff(want, doc); diff != "" {
+		t.Errorf("CombineIncludes() mismatch (-want +got):\n%s", diff)
+	}
+
+	if cmp.Equal(keptDocument(t).Nodes, doc.Nodes) {
+		t.Error("CombineIncludes() left the nodes unchanged, want their marks removed")
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("combined document is invalid: %v", err)
+		t.Errorf("Validate() of the combined document = %v, want nil", err)
 	}
 
 	// The combined document is the one an import that combines generates.
 	root, load := combineFixture()
 	generated, _ := documentFromConfigWith(t, root, builder.WithTopologyLoader(load), builder.WithCombinedIncludes())
 
-	if !reflect.DeepEqual(doc.Nodes, generated.Nodes) || !reflect.DeepEqual(doc.Edges, generated.Edges) ||
-		!reflect.DeepEqual(doc.Source.IncludeTopologies, generated.Source.IncludeTopologies) {
-		t.Errorf("combined afterwards = %s, combined on import = %s", asJSON(t, doc), asJSON(t, generated))
+	if diff := cmp.Diff(generated.Nodes, doc.Nodes); diff != "" {
+		t.Errorf("nodes of CombineIncludes() and of an import that combines mismatch (-import +combined):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(generated.Edges, doc.Edges); diff != "" {
+		t.Errorf("edges of CombineIncludes() and of an import that combines mismatch (-import +combined):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(generated.Source.IncludeTopologies, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("includes of CombineIncludes() and of an import that combines mismatch (-import +combined):\n%s", diff)
 	}
 }
 
@@ -93,20 +91,23 @@ func TestCombineIncludesWithoutUnresolved(t *testing.T) {
 	doc, _ := documentFromConfigWith(t, root, builder.WithTopologyLoader(storeLoader(dns)))
 	doc.CombineIncludes()
 
-	if doc.Source.IncludeTopologies != nil || nodeByHostname(t, doc, "dns").Device.IncludedFrom != "" {
-		t.Errorf("includes = %v, dns = %s, want no include and no mark",
-			doc.Source.IncludeTopologies, asJSON(t, nodeByHostname(t, doc, "dns")))
+	if doc.Source.IncludeTopologies != nil {
+		t.Errorf("CombineIncludes() includes = %v, want none", doc.Source.IncludeTopologies)
+	}
+
+	if got := nodeByHostname(t, doc, "dns").Device.IncludedFrom; got != "" {
+		t.Errorf("CombineIncludes() dns IncludedFrom = %q, want none", got)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("combined document is invalid: %v", err)
+		t.Errorf("Validate() of the combined document = %v, want nil", err)
 	}
 
 	manual := builder.NewDocument("drawn")
 	manual.CombineIncludes()
 
 	if manual.Source != nil {
-		t.Errorf("source = %s, want a document without one left without one", asJSON(t, manual.Source))
+		t.Errorf("CombineIncludes() of a document without a source: source = %s, want none", asJSON(t, manual.Source))
 	}
 }
 
@@ -121,12 +122,14 @@ func TestDetach(t *testing.T) {
 		t.Fatalf("source = %s, want every field a detached document loses set", asJSON(t, source))
 	}
 
-	nodes := asJSON(t, doc.Nodes)
+	wantMetadata := doc.Metadata
+	wantMetadata.Name = "site-copy"
+	wantMetadata.ID = builder.DocumentID("site-copy")
 
 	doc.Detach("site-copy")
 
-	if doc.Metadata.Name != "site-copy" || doc.Metadata.ID != builder.DocumentID("site-copy") {
-		t.Errorf("name = %q, id = %q, want site-copy and its document ID", doc.Metadata.Name, doc.Metadata.ID)
+	if diff := cmp.Diff(wantMetadata, doc.Metadata); diff != "" {
+		t.Errorf("Detach(site-copy) metadata mismatch (-want +got):\n%s", diff)
 	}
 
 	want := &builder.Source{
@@ -136,28 +139,35 @@ func TestDetach(t *testing.T) {
 		UnresolvedIncludes: []string{"site-b", "/srv/extra.yml"},
 		Warnings:           source.Warnings,
 	}
-	if !reflect.DeepEqual(doc.Source, want) {
-		t.Errorf("source = %s, want %s", asJSON(t, doc.Source), asJSON(t, want))
+	if diff := cmp.Diff(want, doc.Source); diff != "" {
+		t.Errorf("Detach(site-copy) source mismatch (-want +got):\n%s", diff)
 	}
 
 	// A copy keeps its included nodes read only.
-	if asJSON(t, doc.Nodes) != nodes || nodeByHostname(t, doc, "dns").Device.IncludedFrom != "lab-dns" {
-		t.Errorf("nodes = %s, want them unchanged", asJSON(t, doc.Nodes))
+	if diff := cmp.Diff(keptDocument(t).Nodes, doc.Nodes); diff != "" {
+		t.Errorf("Detach(site-copy) nodes mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := nodeByHostname(t, doc, "dns").Device.IncludedFrom; got != "lab-dns" {
+		t.Errorf("Detach(site-copy) dns IncludedFrom = %q, want lab-dns", got)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("detached document is invalid: %v", err)
+		t.Errorf("Validate() of the detached document = %v, want nil", err)
 	}
 
 	// It publishes as a topology of its own, with the includes it had.
 	topology, err := doc.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
-	if nodes, _ := topology.Spec["nodes"].([]any); len(nodes) != 1 ||
-		!reflect.DeepEqual(topology.Spec["includeTopologies"], want.IncludeTopologies) {
-		t.Errorf("published topology = %s, want the one own node and the three includes", asJSON(t, topology.Spec))
+	if nodes, _ := topology.Spec["nodes"].([]any); len(nodes) != 1 {
+		t.Errorf("ToTopology() = %d nodes, want the one own node: %s", len(nodes), asJSON(t, topology.Spec))
+	}
+
+	if diff := cmp.Diff(want.IncludeTopologies, topology.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("ToTopology() includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -174,16 +184,16 @@ func TestDetachCombined(t *testing.T) {
 		IncludeTopologies: []string{"site-b", "/srv/extra.yml"},
 		Warnings:          warnings,
 	}
-	if !reflect.DeepEqual(doc.Source, want) {
-		t.Errorf("source = %s, want %s", asJSON(t, doc.Source), asJSON(t, want))
+	if diff := cmp.Diff(want, doc.Source); diff != "" {
+		t.Errorf("Detach(site-combined) source mismatch (-want +got):\n%s", diff)
 	}
 
-	if doc.Metadata.ID != builder.DocumentID("site-combined") {
-		t.Errorf("id = %q, want the ID of a document named site-combined", doc.Metadata.ID)
+	if got, want := doc.Metadata.ID, builder.DocumentID("site-combined"); got != want {
+		t.Errorf("Detach(site-combined) ID = %q, want %q", got, want)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("detached document is invalid: %v", err)
+		t.Errorf("Validate() of the detached document = %v, want nil", err)
 	}
 }
 
@@ -194,20 +204,20 @@ func TestNoteCopiedFrom(t *testing.T) {
 	doc.Metadata.Notes = []string{"Owned by the water team."}
 
 	if !doc.NoteCopiedFrom("riverside-water") {
-		t.Fatal("NoteCopiedFrom(riverside-water) = false, want the note added")
+		t.Error("NoteCopiedFrom(riverside-water) = false, want true")
 	}
 
 	if doc.NoteCopiedFrom("riverside-water") {
-		t.Error("NoteCopiedFrom added the same note twice")
+		t.Error("NoteCopiedFrom(riverside-water) a second time = true, want false")
 	}
 
 	want := []string{"Owned by the water team.", "Copied from riverside-water"}
-	if !reflect.DeepEqual(doc.Metadata.Notes, want) {
-		t.Errorf("notes = %q, want %q", doc.Metadata.Notes, want)
+	if diff := cmp.Diff(want, doc.Metadata.Notes); diff != "" {
+		t.Errorf("NoteCopiedFrom(riverside-water) notes mismatch (-want +got):\n%s", diff)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("document with the note is invalid: %v", err)
+		t.Errorf("Validate() of the document with the note = %v, want nil", err)
 	}
 
 	full := builder.NewDocument("full")
@@ -215,19 +225,28 @@ func TestNoteCopiedFrom(t *testing.T) {
 		full.Metadata.Notes = append(full.Metadata.Notes, fmt.Sprintf("note %d", i))
 	}
 
-	for name, doc := range map[string]*builder.Document{
-		"":            builder.NewDocument("blank"),
-		" ":           builder.NewDocument("space"),
-		"bad\x00name": builder.NewDocument("control"),
-		strings.Repeat("n", builder.MaxDiagramNoteBytes): builder.NewDocument("long"),
-		"site": full,
+	// Each document is named for the case.
+	for _, test := range []struct {
+		name string
+		doc  *builder.Document
+	}{
+		{name: "", doc: builder.NewDocument("blank")},
+		{name: " ", doc: builder.NewDocument("space")},
+		{name: "bad\x00name", doc: builder.NewDocument("control")},
+		{name: strings.Repeat("n", builder.MaxDiagramNoteBytes), doc: builder.NewDocument("long")},
+		{name: "site", doc: full},
 	} {
-		before := slices.Clone(doc.Metadata.Notes)
+		t.Run(test.doc.Metadata.Name, func(t *testing.T) {
+			before := slices.Clone(test.doc.Metadata.Notes)
 
-		if doc.NoteCopiedFrom(name) || !reflect.DeepEqual(doc.Metadata.Notes, before) {
-			t.Errorf("%s: NoteCopiedFrom(%.20q) changed the notes to %d notes, want them unchanged",
-				doc.Metadata.Name, name, len(doc.Metadata.Notes))
-		}
+			if test.doc.NoteCopiedFrom(test.name) {
+				t.Errorf("NoteCopiedFrom(%.20q) = true, want false", test.name)
+			}
+
+			if diff := cmp.Diff(before, test.doc.Metadata.Notes); diff != "" {
+				t.Errorf("NoteCopiedFrom(%.20q) notes mismatch (-want +got):\n%s", test.name, diff)
+			}
+		})
 	}
 }
 
@@ -237,8 +256,8 @@ func TestDetachWithoutSource(t *testing.T) {
 	doc := builder.NewDocument("drawn")
 	doc.Detach("redrawn")
 
-	if doc.Metadata.Name != "redrawn" || doc.Metadata.ID != builder.DocumentID("redrawn") || doc.Source != nil {
-		t.Errorf("document = %s, want it renamed and without a source", asJSON(t, doc))
+	if diff := cmp.Diff(builder.NewDocument("redrawn"), doc); diff != "" {
+		t.Errorf("Detach(redrawn) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -258,21 +277,27 @@ func TestFromLegacyTopologyCombinesIncludes(t *testing.T) {
 	doc, warnings, err := builder.FromLegacyTopology(config,
 		builder.WithTopologyLoader(storeLoader(shared)), builder.WithCombinedIncludes())
 	if err != nil {
-		t.Fatalf("FromLegacyTopology returned error: %v", err)
+		t.Fatalf("FromLegacyTopology(site): %v", err)
 	}
 
 	checkLegacyDocument(t, doc, warnings)
 
-	dns, mail := nodeByHostname(t, doc, "dns"), nodeByHostname(t, doc, "mail")
-	if dns.Device.IncludedFrom != "" || mail.Device.IncludedFrom != "" ||
-		dns.Position != (builder.Position{X: 880, Y: 112}) {
-		t.Errorf("dns = %s, mail = %s, want the document's own nodes, dns where the diagram has it",
-			asJSON(t, dns), asJSON(t, mail))
+	for _, hostname := range []string{"dns", "mail"} {
+		if got := nodeByHostname(t, doc, hostname).Device.IncludedFrom; got != "" {
+			t.Errorf("FromLegacyTopology() %s IncludedFrom = %q, want none", hostname, got)
+		}
 	}
 
-	if !reflect.DeepEqual(doc.Source.IncludeTopologies, []string{"gone"}) || doc.Source.UnresolvedIncludes != nil {
-		t.Errorf("includes = %v, unresolved = %v, want only the include that could not be read",
-			doc.Source.IncludeTopologies, doc.Source.UnresolvedIncludes)
+	if got, want := nodeByHostname(t, doc, "dns").Position, (builder.Position{X: 880, Y: 112}); got != want {
+		t.Errorf("FromLegacyTopology() dns position = %+v, want %+v where the diagram has it", got, want)
+	}
+
+	if diff := cmp.Diff([]string{"gone"}, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromLegacyTopology() includes mismatch (-want +got):\n%s", diff)
+	}
+
+	if doc.Source.UnresolvedIncludes != nil {
+		t.Errorf("FromLegacyTopology() unresolved includes = %v, want none", doc.Source.UnresolvedIncludes)
 	}
 
 	for _, want := range []string{
@@ -281,7 +306,7 @@ func TestFromLegacyTopologyCombinesIncludes(t *testing.T) {
 		"1 node of the topology was not in the legacy diagram and was placed below it: mail.",
 	} {
 		if !containsSubstring(warnings, want) {
-			t.Errorf("warnings = %q, want one containing %q", warnings, want)
+			t.Errorf("FromLegacyTopology() warnings = %q, want one containing %q", warnings, want)
 		}
 	}
 }

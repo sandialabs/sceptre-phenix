@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/types/builder"
 )
 
@@ -226,11 +228,11 @@ func pixels(t *testing.T, data []byte) []color.NRGBA {
 
 func TestIconID(t *testing.T) {
 	if got := builder.IconID(iconFixture(t)); got != iconFixtureID {
-		t.Fatalf("IconID of the fixture = %q, want %q", got, iconFixtureID)
+		t.Errorf("IconID(fixture) = %q, want %q", got, iconFixtureID)
 	}
 
-	if !builder.IsDigest(builder.IconID(nil)) {
-		t.Fatalf("IconID of nothing %q does not have the form of a digest", builder.IconID(nil))
+	if id := builder.IconID(nil); !builder.IsDigest(id) {
+		t.Errorf("IsDigest(IconID(nil)) = false for %q, want true", id)
 	}
 }
 
@@ -285,31 +287,31 @@ func TestValidateIconPNGAccepts(t *testing.T) {
 
 			width, height, err := builder.ValidateIconPNG(test.data)
 			if err != nil {
-				t.Fatalf("refused (%s): %v", pngKinds(t, test.data), err)
+				t.Fatalf("ValidateIconPNG(%s) error = %v, want nil", pngKinds(t, test.data), err)
 			}
 
 			if width != test.width || height != test.height {
-				t.Fatalf("size = %d x %d, want %d x %d", width, height, test.width, test.height)
+				t.Errorf("ValidateIconPNG() = %d x %d, want %d x %d", width, height, test.width, test.height)
 			}
 
 			if !bytes.Equal(test.data, before) {
-				t.Fatal("the image was changed")
+				t.Error("ValidateIconPNG() changed the image, want it unchanged")
 			}
 		})
 	}
 
 	if got := len(largest); got != builder.MaxIconBytes {
-		t.Fatalf("the largest icon is %d bytes, want %d", got, builder.MaxIconBytes)
+		t.Errorf("len(largestIcon()) = %d, want %d", got, builder.MaxIconBytes)
 	}
 
 	if got := builder.IconID(largest); got != largestIconID {
-		t.Fatalf("the largest icon is %s, want the icon the corpus holds, %s", got, largestIconID)
+		t.Errorf("IconID(largestIcon()) = %s, want the icon the corpus holds, %s", got, largestIconID)
 	}
 
 	// Refused for its length, before anything of it is read.
-	if _, _, err := builder.ValidateIconPNG(append(largest, 0)); err == nil ||
-		!strings.Contains(err.Error(), "the image is 40961 bytes; the limit is 40960") {
-		t.Fatalf("an icon of one byte more: %v", err)
+	const tooLong = "the image is 40961 bytes; the limit is 40960"
+	if _, _, err := builder.ValidateIconPNG(append(largest, 0)); err == nil || !strings.Contains(err.Error(), tooLong) {
+		t.Errorf("ValidateIconPNG(largest icon and one byte) error = %v, want one containing %q", err, tooLong)
 	}
 }
 
@@ -385,19 +387,19 @@ func TestValidateIconPNGRefuses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			width, height, err := builder.ValidateIconPNG(test.data)
 			if err == nil {
-				t.Fatalf("accepted, as %d x %d", width, height)
+				t.Fatalf("ValidateIconPNG() = %d x %d, nil, want an error", width, height)
 			}
 
 			if !errors.Is(err, builder.ErrInvalidIcon) {
-				t.Fatalf("error %v does not wrap ErrInvalidIcon", err)
+				t.Errorf("ValidateIconPNG() error = %v, want one wrapping ErrInvalidIcon", err)
 			}
 
 			if !strings.Contains(err.Error(), test.wantMsg) {
-				t.Fatalf("error %q does not contain %q", err.Error(), test.wantMsg)
+				t.Errorf("ValidateIconPNG() error = %q, want one containing %q", err.Error(), test.wantMsg)
 			}
 
 			if width != 0 || height != 0 {
-				t.Fatalf("a refused image has the size %d x %d", width, height)
+				t.Errorf("ValidateIconPNG() = %d x %d with an error, want 0 x 0", width, height)
 			}
 		})
 	}
@@ -423,31 +425,35 @@ func TestNormalizeIconPNG(t *testing.T) {
 	)
 	loose = append(loose, "trailing bytes"...)
 
-	if _, _, err := builder.ValidateIconPNG(loose); err == nil {
-		t.Fatal("the loose PNG is accepted as it is")
+	if width, height, err := builder.ValidateIconPNG(loose); err == nil {
+		t.Errorf("ValidateIconPNG(loose PNG) = %d x %d, nil, want an error", width, height)
 	}
 
 	normalized, err := builder.NormalizeIconPNG(loose)
 	if err != nil {
-		t.Fatalf("NormalizeIconPNG: %v", err)
+		t.Fatalf("NormalizeIconPNG(loose PNG): %v", err)
 	}
 
 	if width, height, err := builder.ValidateIconPNG(normalized); err != nil || width != 3 || height != 2 {
-		t.Fatalf("the normalized PNG is %d x %d, %v", width, height, err)
+		t.Errorf("ValidateIconPNG(normalized) = %d x %d, %v, want 3 x 2, nil", width, height, err)
 	}
 
 	if got := pngKinds(t, normalized); got != "IHDR IDAT IEND" {
-		t.Fatalf("the normalized PNG holds the chunks %s", got)
+		t.Errorf("chunks of NormalizeIconPNG(loose PNG) = %s, want IHDR IDAT IEND", got)
 	}
 
-	if got, want := pixels(t, normalized), pixels(t, strict); fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("the pixels changed:\nwant %v\ngot  %v", want, got)
+	if diff := cmp.Diff(pixels(t, strict), pixels(t, normalized)); diff != "" {
+		t.Errorf("pixels of NormalizeIconPNG(loose PNG) mismatch (-want +got):\n%s", diff)
 	}
 
 	// The same pixels give the same bytes, so the same icon id.
 	again, err := builder.NormalizeIconPNG(normalized)
-	if err != nil || !bytes.Equal(again, normalized) {
-		t.Fatalf("normalizing twice changed the bytes (%v)", err)
+	if err != nil {
+		t.Fatalf("NormalizeIconPNG(normalized): %v", err)
+	}
+
+	if diff := cmp.Diff(normalized, again); diff != "" {
+		t.Errorf("NormalizeIconPNG(normalized) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -481,18 +487,20 @@ func TestNormalizeIconPNGFormats(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			normalized, err := builder.NormalizeIconPNG(encodePNG(t, test.img))
 			if err != nil {
-				t.Fatalf("NormalizeIconPNG: %v", err)
+				t.Fatalf("NormalizeIconPNG(): %v", err)
 			}
 
 			bounds := test.img.Bounds()
 
+			// The pixel is found by the width, so a wrong size stops the test.
 			width, height, err := builder.ValidateIconPNG(normalized)
 			if err != nil || width != bounds.Dx() || height != bounds.Dy() {
-				t.Fatalf("the normalized PNG of %d bytes is %d x %d, %v", len(normalized), width, height, err)
+				t.Fatalf("ValidateIconPNG(normalized, %d bytes) = %d x %d, %v, want %d x %d, nil",
+					len(normalized), width, height, err, bounds.Dx(), bounds.Dy())
 			}
 
 			if got := pixels(t, normalized)[test.at.Y*width+test.at.X]; got != test.want {
-				t.Fatalf("pixel %v = %v, want %v", test.at, got, test.want)
+				t.Errorf("pixel %v of NormalizeIconPNG() = %v, want %v", test.at, got, test.want)
 			}
 		})
 	}
@@ -529,15 +537,15 @@ func TestNormalizeIconPNGRefuses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			normalized, err := builder.NormalizeIconPNG(test.data)
 			if err == nil {
-				t.Fatalf("normalized to %d bytes", len(normalized))
+				t.Fatalf("NormalizeIconPNG() = %d bytes, nil, want an error", len(normalized))
 			}
 
 			if !errors.Is(err, builder.ErrInvalidIcon) {
-				t.Fatalf("error %v does not wrap ErrInvalidIcon", err)
+				t.Errorf("NormalizeIconPNG() error = %v, want one wrapping ErrInvalidIcon", err)
 			}
 
 			if !strings.Contains(err.Error(), test.wantMsg) {
-				t.Fatalf("error %q does not contain %q", err.Error(), test.wantMsg)
+				t.Errorf("NormalizeIconPNG() error = %q, want one containing %q", err.Error(), test.wantMsg)
 			}
 		})
 	}
@@ -568,35 +576,54 @@ func distinctIcons(t *testing.T, count int) map[string]builder.Icon {
 func TestIconNameProblem(t *testing.T) {
 	const charset = `must be 1 to 64 letters, digits, "_", "@", "." or "-"`
 
-	for _, name := range []string{
-		"a", "plc", "PLC", "plc-2", "plc_2", "alice@site", "v1.2", "...", ".hidden", "-", "_", "@",
-		strings.Repeat("n", builder.MaxIconNameBytes),
-	} {
-		if problem := builder.IconNameProblem(name); problem != "" {
-			t.Errorf("IconNameProblem(%q) = %q, want none", name, problem)
-		}
+	valid := []struct{ desc, name string }{
+		{desc: "one letter", name: "a"},
+		{desc: "lower case", name: "plc"},
+		{desc: "upper case", name: "PLC"},
+		{desc: "a hyphen", name: "plc-2"},
+		{desc: "an underscore", name: "plc_2"},
+		{desc: "an at sign", name: "alice@site"},
+		{desc: "a dot", name: "v1.2"},
+		{desc: "three dots", name: "..."},
+		{desc: "a leading dot", name: ".hidden"},
+		{desc: "only a hyphen", name: "-"},
+		{desc: "only an underscore", name: "_"},
+		{desc: "only an at sign", name: "@"},
+		{desc: "the longest name", name: strings.Repeat("n", builder.MaxIconNameBytes)},
 	}
 
-	for _, test := range []struct{ name, want string }{
-		{name: "", want: `icon name "" ` + charset},
-		{name: strings.Repeat("n", builder.MaxIconNameBytes+1), want: charset},
-		{name: "plc icon", want: `icon name "plc icon" ` + charset},
-		{name: "plc/icon", want: charset},
-		{name: iconFixtureID, want: charset},
-		{name: "ñandú", want: charset},
-		{name: "tab\there", want: `icon name "tab\there" ` + charset},
-		{name: ".", want: `icon name "." must not be "." or ".."`},
-		{name: "..", want: `icon name ".." must not be "." or ".."`},
-	} {
-		if problem := builder.IconNameProblem(test.name); !strings.Contains(problem, test.want) {
-			t.Errorf("IconNameProblem(%q) = %q, want %q", test.name, problem, test.want)
-		}
+	for _, test := range valid {
+		t.Run(test.desc, func(t *testing.T) {
+			if problem := builder.IconNameProblem(test.name); problem != "" {
+				t.Errorf("IconNameProblem(%q) = %q, want none", test.name, problem)
+			}
+		})
+	}
+
+	invalid := []struct{ desc, name, want string }{
+		{desc: "empty", name: "", want: `icon name "" ` + charset},
+		{desc: "one byte too long", name: strings.Repeat("n", builder.MaxIconNameBytes+1), want: charset},
+		{desc: "a space", name: "plc icon", want: `icon name "plc icon" ` + charset},
+		{desc: "a slash", name: "plc/icon", want: charset},
+		{desc: "an icon id", name: iconFixtureID, want: charset},
+		{desc: "not ASCII", name: "ñandú", want: charset},
+		{desc: "a tab", name: "tab\there", want: `icon name "tab\there" ` + charset},
+		{desc: "one dot", name: ".", want: `icon name "." must not be "." or ".."`},
+		{desc: "two dots", name: "..", want: `icon name ".." must not be "." or ".."`},
+	}
+
+	for _, test := range invalid {
+		t.Run(test.desc, func(t *testing.T) {
+			if problem := builder.IconNameProblem(test.name); !strings.Contains(problem, test.want) {
+				t.Errorf("IconNameProblem(%q) = %q, want one containing %q", test.name, problem, test.want)
+			}
+		})
 	}
 }
 
 func TestValidateIconsAccepts(t *testing.T) {
 	if issues := builder.ValidateIcons(nil, "icons"); len(issues) != 0 {
-		t.Fatalf("no icons: %v", issues)
+		t.Errorf("ValidateIcons(nil, icons) = %v, want no issues", issues)
 	}
 
 	icons := distinctIcons(t, builder.MaxDocumentIcons-2)
@@ -606,7 +633,7 @@ func TestValidateIconsAccepts(t *testing.T) {
 	icons[iconFixtureName] = builder.Icon{Data: iconFixtureData}
 
 	if issues := builder.ValidateIcons(icons, "icons"); len(issues) != 0 {
-		t.Fatalf("%d icons: %v", len(icons), issues)
+		t.Errorf("ValidateIcons(%d icons, icons) = %v, want no issues", len(icons), issues)
 	}
 }
 
@@ -713,15 +740,15 @@ func TestValidateIconsRefuses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			issues := builder.ValidateIcons(test.icons, "library.icons")
 			if len(issues) != 1 {
-				t.Fatalf("got %d issues, want 1: %v", len(issues), issues)
+				t.Fatalf("ValidateIcons(library.icons) = %d issues %v, want 1", len(issues), issues)
 			}
 
 			if issues[0].Path != "library.icons" {
-				t.Fatalf("issue path = %q, want the path given", issues[0].Path)
+				t.Errorf("ValidateIcons(library.icons) issue path = %q, want library.icons", issues[0].Path)
 			}
 
 			if !strings.Contains(issues[0].Message, test.wantMsg) {
-				t.Fatalf("issue %q does not contain %q", issues[0].Message, test.wantMsg)
+				t.Errorf("ValidateIcons(library.icons) issue message = %q, want one containing %q", issues[0].Message, test.wantMsg)
 			}
 		})
 	}
@@ -735,21 +762,24 @@ func TestValidateIconsIsStable(t *testing.T) {
 		iconFixtureName: {Data: iconFixtureData},
 	}
 
-	first := fmt.Sprint(builder.ValidateIcons(icons, "icons"))
+	issues := builder.ValidateIcons(icons, "icons")
+	first := fmt.Sprint(issues)
 
 	// A malformed key is reported once, and the icon of a valid one with
 	// valid data not at all.
 	if strings.Count(first, `"a b"`) != 1 || strings.Contains(first, iconFixtureName) {
-		t.Fatalf("unexpected issues: %s", first)
+		t.Errorf("ValidateIcons() = %s, want one issue naming \"a b\" and none naming %s", first, iconFixtureName)
 	}
 
 	if !strings.Contains(first, `icon name "a b"`) || strings.Index(first, `"a b"`) > strings.Index(first, `"b"`) {
-		t.Fatalf("issues are not in key order: %s", first)
+		t.Errorf("ValidateIcons() = %s, want the issues in key order", first)
 	}
 
 	for range 20 {
-		if again := fmt.Sprint(builder.ValidateIcons(icons, "icons")); again != first {
-			t.Fatalf("issues changed between runs:\n%s\n%s", first, again)
+		if diff := cmp.Diff(issues, builder.ValidateIcons(icons, "icons")); diff != "" {
+			t.Errorf("ValidateIcons() changed between runs (-first +again):\n%s", diff)
+
+			break
 		}
 	}
 }

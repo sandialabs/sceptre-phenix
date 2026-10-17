@@ -5,11 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/types/builder"
 	"phenix/util"
@@ -18,42 +19,41 @@ import (
 func TestDecodeFixture(t *testing.T) {
 	doc := loadDocumentFixture(t, "document.json")
 
-	if doc.Schema != builder.SchemaURI {
-		t.Fatalf("schema = %q, want %q", doc.Schema, builder.SchemaURI)
+	type header struct {
+		Schema   string
+		Revision int
+		Nodes    int
 	}
 
-	if doc.Revision != builder.SchemaRevision {
-		t.Fatalf("revision = %d, want %d", doc.Revision, builder.SchemaRevision)
-	}
+	want := header{Schema: builder.SchemaURI, Revision: builder.SchemaRevision, Nodes: 5}
+	got := header{Schema: doc.Schema, Revision: doc.Revision, Nodes: len(doc.Nodes)}
 
-	if got, want := len(doc.Nodes), 5; got != want {
-		t.Fatalf("decoded %d nodes, want %d", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Decode(document.json) mismatch (-want +got):\n%s", diff)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("fixture document is invalid: %v", err)
+		t.Errorf("Validate() of document.json = %v, want nil", err)
 	}
 }
 
 func TestDecodeReaderRejectsTrailingContent(t *testing.T) {
 	valid, err := os.ReadFile(filepath.Join("testdata", "document.json"))
 	if err != nil {
-		t.Fatalf("reading fixture: %v", err)
+		t.Fatalf("reading document.json: %v", err)
 	}
 
 	reader := strings.NewReader(string(valid) + "\n" + string(valid))
 
-	if _, err := builder.DecodeReader(reader); err == nil {
-		t.Fatal("expected an error for concatenated documents, got nil")
-	} else if !strings.Contains(err.Error(), "trailing content") {
-		t.Fatalf("error %q does not mention trailing content", err.Error())
+	if _, err := builder.DecodeReader(reader); !errors.Is(err, util.ErrTrailingJSON) {
+		t.Errorf("DecodeReader(two documents) error = %v, want %v", err, util.ErrTrailingJSON)
 	}
 }
 
 func TestDecodeRejects(t *testing.T) {
 	valid, err := os.ReadFile(filepath.Join("testdata", "document.json"))
 	if err != nil {
-		t.Fatalf("reading fixture: %v", err)
+		t.Fatalf("reading document.json: %v", err)
 	}
 
 	tests := []struct {
@@ -64,6 +64,8 @@ func TestDecodeRejects(t *testing.T) {
 		// wantCode is the code of an issue the error lists, when it is a
 		// validation error.
 		wantCode builder.Code
+		// wantTypeError is whether the error is the decoder's for a value of the wrong type.
+		wantTypeError bool
 	}{
 		{
 			name:     "unknown field",
@@ -94,27 +96,27 @@ func TestDecodeRejects(t *testing.T) {
 		{
 			name:    "concatenated documents",
 			data:    string(valid) + string(valid),
-			wantMsg: "trailing content",
+			wantErr: util.ErrTrailingJSON,
 		},
 		{
 			name:    "trailing object",
 			data:    string(valid) + `{"$schema":"x"}`,
-			wantMsg: "trailing content",
+			wantErr: util.ErrTrailingJSON,
 		},
 		{
 			name:    "trailing number",
 			data:    string(valid) + " 5",
-			wantMsg: "trailing content",
+			wantErr: util.ErrTrailingJSON,
 		},
 		{
 			name:    "trailing null",
 			data:    string(valid) + " null",
-			wantMsg: "trailing content",
+			wantErr: util.ErrTrailingJSON,
 		},
 		{
 			name:    "trailing garbage",
 			data:    string(valid) + " nope",
-			wantMsg: "trailing content",
+			wantErr: util.ErrTrailingJSON,
 		},
 		{
 			name:    "trailing brace",
@@ -129,9 +131,9 @@ func TestDecodeRejects(t *testing.T) {
 		{
 			// The editor checks no type of the revision, which is the
 			// decoder's to refuse.
-			name:    "wrong type",
-			data:    strings.Replace(string(valid), `"revision": 1`, `"revision": "one"`, 1),
-			wantMsg: "decoding builder document",
+			name:          "wrong type",
+			data:          strings.Replace(string(valid), `"revision": 1`, `"revision": "one"`, 1),
+			wantTypeError: true,
 		},
 		{
 			// The key is the icon's name: an entry has no name of its own.
@@ -167,21 +169,26 @@ func TestDecodeRejects(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := builder.Decode([]byte(test.data))
 			if err == nil {
-				t.Fatal("expected an error, got nil")
+				t.Fatal("Decode() error = nil, want an error")
 			}
 
 			if test.wantErr != nil && !errors.Is(err, test.wantErr) {
-				t.Fatalf("error %v does not wrap %v", err, test.wantErr)
+				t.Errorf("Decode() error = %v, want %v", err, test.wantErr)
 			}
 
 			if test.wantMsg != "" && !strings.Contains(err.Error(), test.wantMsg) {
-				t.Fatalf("error %q does not contain %q", err.Error(), test.wantMsg)
+				t.Errorf("Decode() error = %q, want one containing %q", err.Error(), test.wantMsg)
+			}
+
+			var typeErr *json.UnmarshalTypeError
+			if test.wantTypeError && !errors.As(err, &typeErr) {
+				t.Errorf("Decode() error = %v, want a *json.UnmarshalTypeError", err)
 			}
 
 			if test.wantCode != "" && !slices.ContainsFunc(builder.ErrorIssues(err), func(issue builder.Issue) bool {
 				return issue.Code == test.wantCode
 			}) {
-				t.Fatalf("error %v lists no issue of code %s", err, test.wantCode)
+				t.Errorf("Decode() error = %v, want one listing an issue of code %s", err, test.wantCode)
 			}
 		})
 	}
@@ -304,28 +311,29 @@ func TestDecodeReportsWrongShapesAsIssues(t *testing.T) {
 
 			_, err = builder.Decode(data)
 			if err == nil {
-				t.Fatal("Decode accepted the document")
+				t.Fatal("Decode() error = nil, want an error")
 			}
 
 			var invalid *builder.ValidationError
 
 			if test.want == nil {
-				if errors.As(err, &invalid) || !strings.Contains(err.Error(), "decoding builder document") {
-					t.Fatalf("error = %v, want the decoder's own", err)
+				var typeErr *json.UnmarshalTypeError
+				if errors.As(err, &invalid) || !errors.As(err, &typeErr) {
+					t.Errorf("Decode() error = %v, want the decoder's own *json.UnmarshalTypeError", err)
 				}
 
 				return
 			}
 
 			if !errors.As(err, &invalid) || !errors.Is(err, builder.ErrInvalidDocument) {
-				t.Fatalf("error = %v, want a validation error", err)
+				t.Fatalf("Decode() error = %v, want a validation error", err)
 			}
 
 			got := make([]string, 0, len(invalid.Issues))
 
 			for _, issue := range invalid.Issues {
 				if issue.Severity != builder.SeverityError {
-					t.Errorf("issue %+v is not an error", issue)
+					t.Errorf("Decode() issue %+v severity = %q, want %q", issue, issue.Severity, builder.SeverityError)
 				}
 
 				got = append(got, string(issue.Code)+" "+issue.Path+": "+issue.Message)
@@ -335,8 +343,8 @@ func TestDecodeReportsWrongShapesAsIssues(t *testing.T) {
 
 			want := slices.Sorted(slices.Values(test.want))
 
-			if !slices.Equal(got, want) {
-				t.Fatalf("issues:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Decode() issues mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -345,28 +353,28 @@ func TestDecodeReportsWrongShapesAsIssues(t *testing.T) {
 func TestParseValidates(t *testing.T) {
 	valid, err := os.ReadFile(filepath.Join("testdata", "document.json"))
 	if err != nil {
-		t.Fatalf("reading fixture: %v", err)
+		t.Fatalf("reading document.json: %v", err)
 	}
 
 	if _, err := builder.Parse(valid); err != nil {
-		t.Fatalf("Parse of valid fixture: %v", err)
+		t.Errorf("Parse(document.json) error = %v, want nil", err)
 	}
 
 	broken := strings.Replace(string(valid), `"id": "`+idNetExp+`"`, `"id": ""`, 1)
 
 	_, err = builder.Parse([]byte(broken))
 	if err == nil {
-		t.Fatal("expected an error, got nil")
+		t.Fatal("Parse(network without an ID) error = nil, want an error")
 	}
 
 	if !errors.Is(err, builder.ErrInvalidDocument) {
-		t.Fatalf("error %v does not wrap ErrInvalidDocument", err)
+		t.Errorf("Parse(network without an ID) error = %v, want %v", err, builder.ErrInvalidDocument)
 	}
 
 	var validationErr *builder.ValidationError
 
 	if !errors.As(err, &validationErr) || len(validationErr.Issues) == 0 {
-		t.Fatalf("expected a *ValidationError with issues, got %v", err)
+		t.Errorf("Parse(network without an ID) error = %v, want a *ValidationError with issues", err)
 	}
 }
 
@@ -384,21 +392,21 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		t.Fatalf("Decode: %v", err)
 	}
 
-	if !reflect.DeepEqual(doc, decoded) {
-		t.Fatalf("round trip changed the document:\nbefore: %s\nafter: %s",
-			asJSON(t, doc), asJSON(t, decoded))
+	if diff := cmp.Diff(doc, decoded); diff != "" {
+		t.Errorf("Decode(Encode(doc)) mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestNewDocumentIsValid(t *testing.T) {
 	doc := builder.NewDocument("fresh")
 
-	if doc.Metadata.ID != builder.DocumentID("fresh") || doc.Metadata.Name != "fresh" {
-		t.Fatalf("metadata = %+v, want the name fresh and its document ID %q", doc.Metadata, builder.DocumentID("fresh"))
+	want := builder.Metadata{ID: builder.DocumentID("fresh"), Name: "fresh"}
+	if diff := cmp.Diff(want, doc.Metadata); diff != "" {
+		t.Errorf("NewDocument(fresh).Metadata mismatch (-want +got):\n%s", diff)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("new document is invalid: %v", err)
+		t.Errorf("Validate() of NewDocument(fresh) = %v, want nil", err)
 	}
 }
 
@@ -414,10 +422,10 @@ func TestContentDigestIsStable(t *testing.T) {
 	}
 
 	if first != second {
-		t.Fatalf("digest depends on map order: %q != %q", first, second)
+		t.Errorf("ContentDigest() in another map order = %q, want %q", second, first)
 	}
 
 	if !strings.HasPrefix(first, "sha256:") {
-		t.Fatalf("digest %q is not prefixed with the hash algorithm", first)
+		t.Errorf("ContentDigest() = %q, want one prefixed with sha256:", first)
 	}
 }

@@ -2,12 +2,14 @@ package builder_test
 
 import (
 	"errors"
-	"reflect"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	"phenix/types"
@@ -15,25 +17,43 @@ import (
 	"phenix/util/common"
 )
 
+// ignoreDigest leaves out the digest of a source, which a test cannot know.
+var ignoreDigest = cmpopts.IgnoreFields(builder.Source{}, "Digest") //nolint:gochecknoglobals // test option
+
+// vlanAlias returns a pointer to alias, as a network holds its VLAN alias.
+func vlanAlias(alias int) *int {
+	return &alias
+}
+
 func TestFromTopologyConfig(t *testing.T) {
 	config := loadConfig(t, "topology.json")
 	doc, warnings := documentFromConfig(t, config)
 
 	if len(warnings) != 0 {
-		t.Fatalf("unexpected warnings: %v", warnings)
+		t.Errorf("FromConfig(builder-fixture) warnings = %q, want none", warnings)
 	}
 
-	if doc.Schema != builder.SchemaURI || doc.Revision != builder.SchemaRevision {
-		t.Fatalf("document is not versioned: %s/%d", doc.Schema, doc.Revision)
+	type version struct {
+		Schema   string
+		Revision int
 	}
 
-	if doc.Metadata.ID != builder.DocumentID("builder-fixture") {
-		t.Fatalf("document ID = %q, want deterministic ID", doc.Metadata.ID)
+	gotVersion := version{Schema: doc.Schema, Revision: doc.Revision}
+	if diff := cmp.Diff(version{Schema: builder.SchemaURI, Revision: builder.SchemaRevision}, gotVersion); diff != "" {
+		t.Errorf("FromConfig(builder-fixture) version mismatch (-want +got):\n%s", diff)
 	}
 
-	if doc.Source == nil || doc.Source.Kind != builder.SourceKindTopology ||
-		doc.Source.Name != "builder-fixture" || doc.Source.APIVersion != config.Version {
-		t.Fatalf("unexpected source metadata: %s", asJSON(t, doc.Source))
+	if got, want := doc.Metadata.ID, builder.DocumentID("builder-fixture"); got != want {
+		t.Errorf("FromConfig(builder-fixture) document ID = %q, want %q", got, want)
+	}
+
+	wantSource := &builder.Source{
+		Kind:       builder.SourceKindTopology,
+		Name:       "builder-fixture",
+		APIVersion: config.Version,
+	}
+	if diff := cmp.Diff(wantSource, doc.Source, ignoreDigest); diff != "" {
+		t.Errorf("FromConfig(builder-fixture) source mismatch (-want +got):\n%s", diff)
 	}
 
 	wantDevices := []string{"host-a", "router", "sensor", "standalone"}
@@ -44,8 +64,8 @@ func TestFromTopologyConfig(t *testing.T) {
 		gotDevices = append(gotDevices, node.Device.Hostname)
 	}
 
-	if !reflect.DeepEqual(gotDevices, wantDevices) {
-		t.Fatalf("device order = %v, want %v", gotDevices, wantDevices)
+	if diff := cmp.Diff(wantDevices, gotDevices); diff != "" {
+		t.Errorf("FromConfig(builder-fixture) device order mismatch (-want +got):\n%s", diff)
 	}
 
 	wantNetworks := []string{"EXP", "MGMT", "SENSOR"}
@@ -56,28 +76,28 @@ func TestFromTopologyConfig(t *testing.T) {
 		gotNetworks = append(gotNetworks, network.Name)
 	}
 
-	if !reflect.DeepEqual(gotNetworks, wantNetworks) {
-		t.Fatalf("networks = %v, want %v", gotNetworks, wantNetworks)
+	if diff := cmp.Diff(wantNetworks, gotNetworks); diff != "" {
+		t.Errorf("FromConfig(builder-fixture) networks mismatch (-want +got):\n%s", diff)
 	}
 
 	// Every non-empty VLAN gets exactly one switch hub, including the
 	// single-ended MGMT and SENSOR VLANs.
 	if got := len(doc.SwitchNodes()); got != 3 {
-		t.Fatalf("switch count = %d, want 3", got)
+		t.Errorf("FromConfig(builder-fixture) = %d switches, want 3", got)
 	}
 
 	for _, node := range doc.SwitchNodes() {
 		if doc.NetworkByID(node.Switch.NetworkID) == nil {
-			t.Fatalf("switch %q references an unknown network", node.ID)
+			t.Errorf("FromConfig(builder-fixture) switch %q network = %q, want a known network", node.ID, node.Switch.NetworkID)
 		}
 	}
 
 	if got := len(doc.Edges); got != 4 {
-		t.Fatalf("edge count = %d, want 4: %s", got, asJSON(t, doc.Edges))
+		t.Errorf("FromConfig(builder-fixture) = %d edges, want 4: %s", got, asJSON(t, doc.Edges))
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("generated document is invalid: %v", err)
+		t.Errorf("Validate() of the generated document = %v, want nil", err)
 	}
 }
 
@@ -85,30 +105,29 @@ func TestFromTopologyConfigPreservesIncludedTopologies(t *testing.T) {
 	config := loadConfig(t, "topology.json")
 	config.Spec["includeTopologies"] = []any{"shared-services", "monitoring"}
 
+	want := []string{"shared-services", "monitoring"}
+
 	doc, warnings := documentFromConfig(t, config)
-	if !reflect.DeepEqual(doc.Source.IncludeTopologies, []string{"shared-services", "monitoring"}) {
-		t.Fatalf("included topologies = %v", doc.Source.IncludeTopologies)
+	if diff := cmp.Diff(want, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromConfig() included topologies mismatch (-want +got):\n%s", diff)
 	}
 
 	// Without a loader none of them is resolved.
-	if !reflect.DeepEqual(doc.Source.UnresolvedIncludes, []string{"shared-services", "monitoring"}) {
-		t.Fatalf("unresolved includes = %v, want both", doc.Source.UnresolvedIncludes)
+	if diff := cmp.Diff(want, doc.Source.UnresolvedIncludes); diff != "" {
+		t.Errorf("FromConfig() unresolved includes mismatch (-want +got):\n%s", diff)
 	}
 
 	if len(warnings) != 1 {
-		t.Fatalf("warnings = %v, want one visualization warning", warnings)
+		t.Errorf("FromConfig() warnings = %q, want one visualization warning", warnings)
 	}
 
 	topology, err := doc.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
-	if !reflect.DeepEqual(
-		topology.Spec["includeTopologies"],
-		[]string{"shared-services", "monitoring"},
-	) {
-		t.Fatalf("published includes = %v", topology.Spec["includeTopologies"])
+	if diff := cmp.Diff(want, topology.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("ToTopology() includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -119,35 +138,25 @@ func TestFromTopologyConfigPreservesNodeSemantics(t *testing.T) {
 	router := nodeByHostname(t, doc, "router")
 
 	if got := builder.DeviceNodeID("router"); router.ID != got {
-		t.Fatalf("router node ID = %q, want %q", router.ID, got)
+		t.Errorf("router node ID = %q, want %q", router.ID, got)
 	}
 
-	general, ok := router.Device.Spec["general"].(map[string]any)
-	if !ok {
-		t.Fatalf("router spec has no general section: %s", asJSON(t, router.Device.Spec))
+	if general, ok := router.Device.Spec["general"].(map[string]any); !ok {
+		t.Errorf("router spec = %s, want a general section", asJSON(t, router.Device.Spec))
+	} else if general["description"] != "core router" {
+		t.Errorf("router description = %v, want %q", general["description"], "core router")
 	}
 
-	if general["description"] != "core router" {
-		t.Fatalf("description = %v, want %q", general["description"], "core router")
+	if annotations, ok := router.Device.Spec["annotations"].(map[string]any); !ok {
+		t.Errorf("router spec = %s, want its annotations", asJSON(t, router.Device.Spec))
+	} else if extension, ok := annotations["vendor/extension"].(map[string]any); !ok || extension["nested"] != true {
+		t.Errorf("router annotations = %s, want the unknown key vendor/extension kept", asJSON(t, annotations))
 	}
 
-	annotations, ok := router.Device.Spec["annotations"].(map[string]any)
-	if !ok {
-		t.Fatalf("annotations were dropped: %s", asJSON(t, router.Device.Spec))
-	}
-
-	extension, ok := annotations["vendor/extension"].(map[string]any)
-	if !ok || extension["nested"] != true {
-		t.Fatalf("unknown annotation keys were not preserved: %s", asJSON(t, annotations))
-	}
-
-	network, ok := router.Device.Spec["network"].(map[string]any)
-	if !ok {
-		t.Fatalf("network section missing: %s", asJSON(t, router.Device.Spec))
-	}
-
-	if routes, ok := network["routes"].([]any); !ok || len(routes) != 1 {
-		t.Fatalf("routes were dropped: %s", asJSON(t, network))
+	if network, ok := router.Device.Spec["network"].(map[string]any); !ok {
+		t.Errorf("router spec = %s, want a network section", asJSON(t, router.Device.Spec))
+	} else if routes, ok := network["routes"].([]any); !ok || len(routes) != 1 {
+		t.Errorf("router network = %s, want its one route", asJSON(t, network))
 	}
 
 	wantHandles := []builder.InterfaceHandle{
@@ -156,17 +165,16 @@ func TestFromTopologyConfigPreservesNodeSemantics(t *testing.T) {
 		{ID: builder.InterfaceHandleID("router", "eth2", 2), Name: "eth2", Index: 2},
 	}
 
-	if !reflect.DeepEqual(router.Device.Interfaces, wantHandles) {
-		t.Fatalf("interface handles = %s, want %s",
-			asJSON(t, router.Device.Interfaces), asJSON(t, wantHandles))
+	if diff := cmp.Diff(wantHandles, router.Device.Interfaces); diff != "" {
+		t.Errorf("router interface handles mismatch (-want +got):\n%s", diff)
 	}
 
 	if router.Device.IconKey != "linux" {
-		t.Fatalf("icon key = %q, want linux", router.Device.IconKey)
+		t.Errorf("router icon key = %q, want linux", router.Device.IconKey)
 	}
 
 	if !builder.IsIconKey(router.Device.IconKey) {
-		t.Fatalf("icon key %q is not in the registry", router.Device.IconKey)
+		t.Errorf("IsIconKey(%q) = false, want true", router.Device.IconKey)
 	}
 }
 
@@ -177,12 +185,12 @@ func TestFromTopologyConfigLeavesUnconnectedInterfaces(t *testing.T) {
 	standalone := nodeByHostname(t, doc, "standalone")
 
 	if len(standalone.Device.Interfaces) != 1 {
-		t.Fatalf("expected one handle, got %s", asJSON(t, standalone.Device.Interfaces))
+		t.Errorf("standalone interface handles = %s, want one", asJSON(t, standalone.Device.Interfaces))
 	}
 
 	for _, edge := range doc.Edges {
 		if edge.SourceNodeID == standalone.ID || edge.TargetNodeID == standalone.ID {
-			t.Fatalf("unconnected node was connected: %s", asJSON(t, edge))
+			t.Errorf("FromConfig() edge %s connects standalone, want it unconnected", asJSON(t, edge))
 		}
 	}
 
@@ -191,7 +199,7 @@ func TestFromTopologyConfigLeavesUnconnectedInterfaces(t *testing.T) {
 	ifaces, _ := network["interfaces"].([]any)
 
 	if len(ifaces) != 1 {
-		t.Fatalf("unconnected interface was dropped: %s", asJSON(t, standalone.Device.Spec))
+		t.Errorf("standalone spec = %s, want its one interface", asJSON(t, standalone.Device.Spec))
 	}
 }
 
@@ -201,26 +209,25 @@ func TestFromConfigIsDeterministic(t *testing.T) {
 	first, _ := documentFromConfig(t, config)
 	second, _ := documentFromConfig(t, config)
 
-	if !reflect.DeepEqual(first, second) {
-		t.Fatalf("generation is not deterministic:\nfirst: %s\nsecond: %s",
-			asJSON(t, first), asJSON(t, second))
+	if diff := cmp.Diff(first, second); diff != "" {
+		t.Errorf("FromConfig() twice mismatch (-first +second):\n%s", diff)
 	}
 
 	// Positions are laid out deterministically, devices first.
 	devices := first.DeviceNodes()
 
-	if devices[0].Position.X != 0 || devices[0].Position.Y != 0 {
-		t.Fatalf("first device position = %v, want origin", devices[0].Position)
+	if got := devices[0].Position; got != (builder.Position{}) {
+		t.Errorf("first device position = %+v, want the origin", got)
 	}
 
 	if devices[1].Position.X <= devices[0].Position.X {
-		t.Fatalf("devices are not laid out left to right: %s", asJSON(t, devices))
+		t.Errorf("device positions = %s, want them laid out left to right", asJSON(t, devices))
 	}
 
 	switches := first.SwitchNodes()
 
 	if switches[0].Position.Y <= devices[0].Position.Y {
-		t.Fatalf("switches must be laid out below devices: %s", asJSON(t, switches))
+		t.Errorf("switch positions = %s, want them below the devices", asJSON(t, switches))
 	}
 }
 
@@ -228,62 +235,63 @@ func TestFromExperimentConfig(t *testing.T) {
 	config := loadConfig(t, "experiment.json")
 	doc, warnings := documentFromConfig(t, config)
 
-	if doc.Source == nil || doc.Source.Kind != builder.SourceKindExperiment {
-		t.Fatalf("unexpected source: %s", asJSON(t, doc.Source))
+	wantSource := &builder.Source{
+		Kind:        builder.SourceKindExperiment,
+		Name:        "builder-experiment",
+		APIVersion:  config.Version,
+		Topology:    "builder-fixture",
+		Annotations: config.Metadata.Annotations,
+		Warnings:    warnings,
+	}
+	if diff := cmp.Diff(wantSource, doc.Source, ignoreDigest); diff != "" {
+		t.Errorf("FromConfig(builder-experiment) source mismatch (-want +got):\n%s", diff)
 	}
 
-	if doc.Source.Topology != "builder-fixture" {
-		t.Fatalf("source topology = %q, want builder-fixture", doc.Source.Topology)
-	}
-
-	if !reflect.DeepEqual(doc.Source.Warnings, warnings) {
-		t.Fatalf("warnings are not recorded on the document: %v vs %v", doc.Source.Warnings, warnings)
-	}
-
-	exp := doc.NetworkByName("EXP")
-	if exp == nil || exp.Alias == nil || *exp.Alias != 101 {
-		t.Fatalf("EXP alias was not imported: %s", asJSON(t, doc.Networks))
+	wantEXP := &builder.Network{ID: builder.NetworkID("EXP"), Name: "EXP", Alias: vlanAlias(101)}
+	if diff := cmp.Diff(wantEXP, doc.NetworkByName("EXP")); diff != "" {
+		t.Errorf("FromConfig(builder-experiment) EXP network mismatch (-want +got):\n%s", diff)
 	}
 
 	// An alias of 0 means "unassigned" in phenix.
-	sensor := doc.NetworkByName("SENSOR")
-	if sensor == nil || sensor.Alias != nil {
-		t.Fatalf("SENSOR alias should be unset: %s", asJSON(t, sensor))
+	wantSENSOR := &builder.Network{ID: builder.NetworkID("SENSOR"), Name: "SENSOR"}
+	if diff := cmp.Diff(wantSENSOR, doc.NetworkByName("SENSOR")); diff != "" {
+		t.Errorf("FromConfig(builder-experiment) SENSOR network mismatch (-want +got):\n%s", diff)
 	}
 
 	// A VLAN alias with no attached interface still becomes a canonical
 	// network, but gets no switch hub.
-	reserved := doc.NetworkByName("RESERVED")
-	if reserved == nil || reserved.Alias == nil || *reserved.Alias != 250 {
-		t.Fatalf("RESERVED alias was not imported: %s", asJSON(t, doc.Networks))
+	wantRESERVED := &builder.Network{ID: builder.NetworkID("RESERVED"), Name: "RESERVED", Alias: vlanAlias(250)}
+	if diff := cmp.Diff(wantRESERVED, doc.NetworkByName("RESERVED")); diff != "" {
+		t.Errorf("FromConfig(builder-experiment) RESERVED network mismatch (-want +got):\n%s", diff)
 	}
 
 	for _, node := range doc.SwitchNodes() {
-		if node.Switch.NetworkID == reserved.ID {
-			t.Fatal("an empty VLAN must not get a switch hub")
+		if node.Switch.NetworkID == wantRESERVED.ID {
+			t.Errorf("FromConfig(builder-experiment) switch %q is on the empty VLAN RESERVED, want none", node.ID)
 		}
 	}
 
 	if got := len(doc.SwitchNodes()); got != 2 {
-		t.Fatalf("switch count = %d, want 2 (EXP and SENSOR)", got)
+		t.Errorf("FromConfig(builder-experiment) = %d switches, want 2 (EXP and SENSOR)", got)
 	}
 
 	// Without a resolver, nothing tells that the scenario is stored.
-	if len(doc.Scenarios) != 0 ||
-		!containsSubstring(warnings, `scenario "builder-scenario" is not a stored Scenario config`) {
-		t.Fatalf("scenarios = %q with warnings %v, want none listed and a warning", doc.Scenarios, warnings)
+	if len(doc.Scenarios) != 0 {
+		t.Errorf("FromConfig(builder-experiment) scenarios = %q, want none", doc.Scenarios)
 	}
 
-	if !containsSubstring(warnings, "VLAN range minimum") {
-		t.Fatalf("expected a warning about the VLAN range, got %v", warnings)
-	}
-
-	if !containsSubstring(warnings, "not represented in the builder document: baseDir, defaultBridge") {
-		t.Fatalf("expected a warning about unrepresented experiment fields, got %v", warnings)
+	for _, want := range []string{
+		`scenario "builder-scenario" is not a stored Scenario config`,
+		"VLAN range minimum",
+		"not represented in the builder document: baseDir, defaultBridge",
+	} {
+		if !containsSubstring(warnings, want) {
+			t.Errorf("FromConfig(builder-experiment) warnings = %q, want one containing %q", warnings, want)
+		}
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("generated document is invalid: %v", err)
+		t.Errorf("Validate() of the generated document = %v, want nil", err)
 	}
 }
 
@@ -295,44 +303,48 @@ func TestFromStoredExperiment(t *testing.T) {
 
 	for _, node := range doc.DeviceNodes() {
 		if external, stored := node.Device.Spec["external"]; !stored || external != nil {
-			t.Fatalf("device %q spec should carry external: null as phenix stores it", node.Device.Hostname)
+			t.Errorf("device %q spec external = %v (present %t), want null as phenix stores it",
+				node.Device.Hostname, external, stored)
 		}
 
 		want := nodeByHostname(t, fromTopology, node.Device.Hostname).Device.IconKey
 		if node.Device.IconKey != want {
-			t.Fatalf("device %q icon key = %q, want %q as generated from its topology",
+			t.Errorf("device %q icon key = %q, want %q as generated from its topology",
 				node.Device.Hostname, node.Device.IconKey, want)
 		}
 	}
 
 	if got := len(doc.DeviceNodes()); got != 4 {
-		t.Fatalf("device count = %d, want 4", got)
+		t.Errorf("FromConfig(stored-experiment) = %d devices, want 4", got)
 	}
 
-	exp := doc.NetworkByName("EXP")
-	if exp == nil || exp.Alias == nil || *exp.Alias != 101 {
-		t.Fatalf("EXP alias was not imported: %s", asJSON(t, doc.Networks))
+	if exp := doc.NetworkByName("EXP"); exp == nil {
+		t.Errorf("FromConfig(stored-experiment) networks = %s, want EXP", asJSON(t, doc.Networks))
+	} else if diff := cmp.Diff(vlanAlias(101), exp.Alias); diff != "" {
+		t.Errorf("FromConfig(stored-experiment) EXP alias mismatch (-want +got):\n%s", diff)
 	}
 
 	listed, _, err := builder.FromConfig(storedExperiment(t), builder.WithScenarioResolver(
 		func(name string) (bool, error) { return name == "builder-scenario", nil },
 	))
-	if err != nil || !reflect.DeepEqual(listed.Scenarios, []string{"builder-scenario"}) {
-		t.Fatalf("scenarios = %v (%v), want the stored scenario the experiment names", listed, err)
+	if err != nil {
+		t.Errorf("FromConfig(stored-experiment, WithScenarioResolver) error = %v, want nil", err)
+	} else if diff := cmp.Diff([]string{"builder-scenario"}, listed.Scenarios); diff != "" {
+		t.Errorf("FromConfig(stored-experiment, WithScenarioResolver) scenarios mismatch (-want +got):\n%s", diff)
 	}
 
 	// The projected topology is one phenix can read back.
 	config, _, err := doc.ToTopologyConfig("builder-fixture")
 	if err != nil {
-		t.Fatalf("ToTopologyConfig: %v", err)
+		t.Fatalf("ToTopologyConfig(builder-fixture): %v", err)
 	}
 
 	if _, err := types.DecodeTopologyFromConfig(*config); err != nil {
-		t.Fatalf("DecodeTopologyFromConfig of the projection: %v", err)
+		t.Errorf("DecodeTopologyFromConfig() of the projection = %v, want nil", err)
 	}
 
 	if err := types.ValidateConfigSpec(*config); err != nil {
-		t.Fatalf("the projection fails the phenix topology schema: %v", err)
+		t.Errorf("ValidateConfigSpec() of the projection = %v, want nil", err)
 	}
 }
 
@@ -360,7 +372,7 @@ func TestFromStartedExperimentDropsAppInjections(t *testing.T) {
 
 			topology, ok := config.Spec["topology"].(map[string]any)
 			if !ok {
-				t.Fatalf("stored experiment has no topology: %s", asJSON(t, config.Spec))
+				t.Fatalf("stored experiment spec = %s, want a topology", asJSON(t, config.Spec))
 			}
 
 			own := []any{
@@ -380,20 +392,21 @@ func TestFromStartedExperimentDropsAppInjections(t *testing.T) {
 
 			doc, warnings := documentFromConfig(t, config)
 
-			if got := nodeByHostname(t, doc, "router").Device.Spec["injections"]; !reflect.DeepEqual(got, own) {
-				t.Fatalf("router injections = %s, want the topology's own %s", asJSON(t, got), asJSON(t, own))
+			if diff := cmp.Diff(own, nodeByHostname(t, doc, "router").Device.Spec["injections"]); diff != "" {
+				t.Errorf("router injections mismatch, want the topology's own (-want +got):\n%s", diff)
 			}
 
 			if got, ok := nodeByHostname(t, doc, "host-a").Device.Spec["injections"]; ok {
-				t.Fatalf("host-a injections = %s, want none", asJSON(t, got))
+				t.Errorf("host-a injections = %s, want none", asJSON(t, got))
 			}
 
 			if containsSubstring(warnings, "inject") {
-				t.Fatalf("warnings = %v, want the app injections dropped silently", warnings)
+				t.Errorf("FromConfig() warnings = %q, want the app injections dropped silently", warnings)
 			}
 
 			if got, _ := router["injections"].([]any); len(got) != len(own)+2 {
-				t.Fatalf("the experiment config was changed: %s", asJSON(t, router["injections"]))
+				t.Errorf("FromConfig() changed the experiment config router injections to %s, want them unchanged",
+					asJSON(t, router["injections"]))
 			}
 		})
 	}
@@ -401,29 +414,30 @@ func TestFromStartedExperimentDropsAppInjections(t *testing.T) {
 
 func TestFromExperimentSkipsBlankZeroVLANAlias(t *testing.T) {
 	config := loadConfig(t, "experiment.json")
+
 	vlans, ok := config.Spec["vlans"].(map[string]any)
 	if !ok {
-		t.Fatal("fixture has no VLAN map")
+		t.Fatal("experiment.json has no VLAN map")
 	}
 
 	aliases, ok := vlans["aliases"].(map[string]any)
 	if !ok {
-		t.Fatal("fixture has no VLAN aliases")
+		t.Fatal("experiment.json has no VLAN aliases")
 	}
 
 	aliases[""] = 0
 
 	doc, warnings := documentFromConfig(t, config)
-	if doc.NetworkByName("") != nil {
-		t.Fatal("blank VLAN alias created a network")
+	if network := doc.NetworkByName(""); network != nil {
+		t.Errorf("NetworkByName(\"\") = %s, want nil", asJSON(t, network))
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("generated document is invalid: %v", err)
+		t.Errorf("Validate() of the generated document = %v, want nil", err)
 	}
 
-	if !containsSubstring(warnings, `VLAN alias name "" is invalid`) {
-		t.Fatalf("warnings = %v, want blank VLAN warning", warnings)
+	if want := `VLAN alias name "" is invalid`; !containsSubstring(warnings, want) {
+		t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
 	}
 }
 
@@ -436,11 +450,11 @@ func TestFromExperimentWithoutScenarioName(t *testing.T) {
 	doc, warnings := documentFromConfig(t, config)
 
 	if len(doc.Scenarios) != 0 {
-		t.Fatalf("scenarios = %q, want none", doc.Scenarios)
+		t.Errorf("FromConfig() scenarios = %q, want none", doc.Scenarios)
 	}
 
-	if !containsSubstring(warnings, "the experiment's scenario is not a stored Scenario config and was not attached") {
-		t.Fatalf("warnings = %v, want one about the scenario", warnings)
+	if want := "the experiment's scenario is not a stored Scenario config and was not attached"; !containsSubstring(warnings, want) {
+		t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
 	}
 }
 
@@ -449,7 +463,7 @@ func TestFromConfigWarnings(t *testing.T) {
 
 	nodes, ok := config.Spec["nodes"].([]any)
 	if !ok {
-		t.Fatalf("fixture has no nodes")
+		t.Fatalf("topology.json has no nodes")
 	}
 
 	config.Spec["nodes"] = append(nodes,
@@ -473,16 +487,16 @@ func TestFromConfigWarnings(t *testing.T) {
 		"has no name",
 	} {
 		if !containsSubstring(warnings, want) {
-			t.Fatalf("expected a warning containing %q, got %v", want, warnings)
+			t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
 		}
 	}
 
 	if doc.FindDevice("ROUTER") == nil {
-		t.Fatal("the first node with a hostname should be kept")
+		t.Error("FindDevice(ROUTER) = nil, want the first node with the hostname kept")
 	}
 
 	if got := len(doc.DeviceNodes()); got != 5 {
-		t.Fatalf("device count = %d, want 5", got)
+		t.Errorf("FromConfig() = %d devices, want 5", got)
 	}
 }
 
@@ -499,37 +513,37 @@ func TestFromConfigCaseVariantVLANs(t *testing.T) {
 
 	doc, warnings := documentFromConfig(t, config)
 
-	if !containsSubstring(warnings, `VLAN "exp" differs only by case from VLAN "EXP"`) {
-		t.Fatalf("expected a case-variant warning, got %v", warnings)
+	if want := `VLAN "exp" differs only by case from VLAN "EXP"`; !containsSubstring(warnings, want) {
+		t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
 	}
 
 	// minimega VLAN names are case sensitive: EXP and exp are two isolated
 	// segments, so they must stay two networks, each with its own switch.
 	if got := len(doc.Networks); got != 4 {
-		t.Fatalf("network count = %d, want 4 (EXP and exp are different VLANs)", got)
+		t.Errorf("FromConfig() = %d networks, want 4 (EXP and exp are different VLANs)", got)
 	}
 
 	upper, lower := doc.NetworkByName("EXP"), doc.NetworkByName("exp")
 	if upper == nil || lower == nil || upper.ID == lower.ID {
-		t.Fatalf("EXP and exp must be distinct networks: %s", asJSON(t, doc.Networks))
+		t.Errorf("FromConfig() networks = %s, want EXP and exp distinct", asJSON(t, doc.Networks))
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("generated document is invalid: %v", err)
+		t.Errorf("Validate() of the generated document = %v, want nil", err)
 	}
 
 	// Publishing unchanged keeps each interface on its own VLAN.
 	topology, err := doc.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
 	if vlan := specInterface(t, specNode(t, topology, "lower-case-vlan"), "eth0")["vlan"]; vlan != "exp" {
-		t.Fatalf("lower-case-vlan eth0 vlan = %v, want exp", vlan)
+		t.Errorf("ToTopology() lower-case-vlan eth0 vlan = %v, want exp", vlan)
 	}
 
 	if vlan := specInterface(t, specNode(t, topology, "host-a"), "eth0")["vlan"]; vlan != "EXP" {
-		t.Fatalf("host-a eth0 vlan = %v, want EXP", vlan)
+		t.Errorf("ToTopology() host-a eth0 vlan = %v, want EXP", vlan)
 	}
 }
 
@@ -542,19 +556,23 @@ func TestFromExperimentKeepsCaseVariantVLANAliases(t *testing.T) {
 
 	doc, _ := documentFromConfig(t, config)
 
-	upper, lower := doc.NetworkByName("EXP"), doc.NetworkByName("exp")
-	if upper == nil || upper.Alias == nil || *upper.Alias != 101 ||
-		lower == nil || lower.Alias == nil || *lower.Alias != 102 {
-		t.Fatalf("both case variants must keep their alias: %s", asJSON(t, doc.Networks))
+	for name, want := range map[string]int{"EXP": 101, "exp": 102} {
+		if network := doc.NetworkByName(name); network == nil {
+			t.Errorf("FromConfig() networks = %s, want %s", asJSON(t, doc.Networks), name)
+		} else if diff := cmp.Diff(vlanAlias(want), network.Alias); diff != "" {
+			t.Errorf("FromConfig() %s alias mismatch (-want +got):\n%s", name, diff)
+		}
 	}
 
 	topology, err := doc.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
-	if topology.VLANAliases["EXP"] != 101 || topology.VLANAliases["exp"] != 102 {
-		t.Fatalf("published aliases = %v", topology.VLANAliases)
+	for name, want := range map[string]int{"EXP": 101, "exp": 102} {
+		if got := topology.VLANAliases[name]; got != want {
+			t.Errorf("ToTopology() alias of %s = %d, want %d (aliases %v)", name, got, want, topology.VLANAliases)
+		}
 	}
 }
 
@@ -588,27 +606,28 @@ func TestFromConfigUpgradesOlderVersions(t *testing.T) {
 
 	doc, _, err := builder.FromConfig(config)
 	if err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		t.Fatalf("FromConfig(legacy): %v", err)
 	}
 
-	node := doc.FindDevice("legacy-node")
-	if node == nil {
-		t.Fatalf("upgraded document has no node: %s", asJSON(t, doc))
+	if doc.FindDevice("legacy-node") == nil {
+		t.Errorf("FromConfig(legacy) = %s, want the node legacy-node", asJSON(t, doc))
 	}
 
 	if doc.NetworkByName("EXP") == nil {
-		t.Fatalf("upgraded document has no EXP network: %s", asJSON(t, doc.Networks))
+		t.Errorf("FromConfig(legacy) networks = %s, want EXP", asJSON(t, doc.Networks))
 	}
 }
 
 func TestFromConfigChecksKind(t *testing.T) {
 	for kind, want := range map[string]error{"topology": nil, "Scenario": builder.ErrUnsupportedKind} {
-		config := loadConfig(t, "topology.json")
-		config.Kind = kind
+		t.Run(kind, func(t *testing.T) {
+			config := loadConfig(t, "topology.json")
+			config.Kind = kind
 
-		if _, _, err := builder.FromConfig(config); !errors.Is(err, want) {
-			t.Errorf("FromConfig of kind %q: error %v, want %v", kind, err, want)
-		}
+			if _, _, err := builder.FromConfig(config); !errors.Is(err, want) {
+				t.Errorf("FromConfig(kind %q) error = %v, want %v", kind, err, want)
+			}
+		})
 	}
 }
 
@@ -622,19 +641,26 @@ func TestFromConfigEmptyTopology(t *testing.T) {
 
 	doc, warnings, err := builder.FromConfig(config)
 	if err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		t.Fatalf("FromConfig(empty): %v", err)
 	}
 
 	if len(warnings) != 0 {
-		t.Fatalf("unexpected warnings: %v", warnings)
+		t.Errorf("FromConfig(empty) warnings = %q, want none", warnings)
 	}
 
-	if len(doc.Nodes) != 0 || len(doc.Networks) != 0 || len(doc.Edges) != 0 {
-		t.Fatalf("expected an empty document, got %s", asJSON(t, doc))
+	type contents struct {
+		Nodes    []builder.Node
+		Networks []builder.Network
+		Edges    []builder.Edge
+	}
+
+	got := contents{Nodes: doc.Nodes, Networks: doc.Networks, Edges: doc.Edges}
+	if diff := cmp.Diff(contents{}, got, cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("FromConfig(empty) mismatch (-want +got):\n%s", diff)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("empty document is invalid: %v", err)
+		t.Errorf("Validate() of the empty document = %v, want nil", err)
 	}
 }
 
@@ -734,71 +760,73 @@ func TestFromTopologyConfigAddsIncludedTopologies(t *testing.T) {
 
 	doc, warnings, err := builder.FromConfig(root, builder.WithTopologyLoader(storeLoader(shared, monitoring)))
 	if err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		t.Fatalf("FromConfig(builder-fixture): %v", err)
 	}
 
-	if len(warnings) != 1 || !strings.HasPrefix(warnings[0],
-		"Added 3 nodes from included topologies shared-services (2 nodes) and monitoring (1 node).") {
-		t.Fatalf("warnings = %q, want one summary of the included nodes", warnings)
+	const summary = "Added 3 nodes from included topologies shared-services (2 nodes) and monitoring (1 node)."
+	if len(warnings) != 1 || !strings.HasPrefix(warnings[0], summary) {
+		t.Errorf("FromConfig(builder-fixture) warnings = %q, want one starting %q", warnings, summary)
 	}
 
 	// Only the direct include is the topology's own reference.
-	if !reflect.DeepEqual(doc.Source.IncludeTopologies, []string{"shared-services"}) {
-		t.Fatalf("included topologies = %v", doc.Source.IncludeTopologies)
+	if diff := cmp.Diff([]string{"shared-services"}, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromConfig(builder-fixture) included topologies mismatch (-want +got):\n%s", diff)
 	}
 
 	if doc.Source.UnresolvedIncludes != nil {
-		t.Fatalf("unresolved includes = %v, want none: every include was read", doc.Source.UnresolvedIncludes)
+		t.Errorf("FromConfig(builder-fixture) unresolved includes = %v, want none: every include was read",
+			doc.Source.UnresolvedIncludes)
 	}
 
 	for hostname, want := range map[string]string{
 		"router": "", "host-a": "", "dns": "shared-services", "ntp": "shared-services", "collector": "monitoring",
 	} {
 		if got := nodeByHostname(t, doc, hostname).Device.IncludedFrom; got != want {
-			t.Fatalf("%s is included from %q, want %q", hostname, got, want)
+			t.Errorf("%s IncludedFrom = %q, want %q", hostname, got, want)
 		}
 	}
 
 	// Included devices join the topology's own switches, and bring their own.
 	for hostname, want := range map[string]string{"dns": "EXP", "ntp": "SERVICES", "collector": "MGMT"} {
 		if got := connectedSwitch(doc, nodeByHostname(t, doc, hostname), "eth0"); got != want {
-			t.Fatalf("%s eth0 is connected to %q, want %q", hostname, got, want)
+			t.Errorf("%s eth0 network = %q, want %q", hostname, got, want)
 		}
 	}
 
 	if got := len(doc.SwitchNodes()); got != 4 {
-		t.Fatalf("switch count = %d, want 4 (EXP, MGMT, SENSOR and SERVICES)", got)
+		t.Errorf("FromConfig(builder-fixture) = %d switches, want 4 (EXP, MGMT, SENSOR and SERVICES)", got)
 	}
 
 	// The topology's own devices come first; each included topology starts
 	// a row of its own.
 	devices := doc.DeviceNodes()
 	if devices[3].Device.Hostname != "standalone" || devices[4].Device.Hostname != "collector" {
-		t.Fatalf("device order: %s", asJSON(t, devices))
+		t.Errorf("FromConfig(builder-fixture) devices = %s, want standalone fourth and collector fifth", asJSON(t, devices))
 	}
 
 	if devices[4].Position.Y <= devices[3].Position.Y || devices[4].Position.X != 0 ||
 		devices[5].Position.Y <= devices[4].Position.Y {
-		t.Fatalf("included topologies do not start rows of their own: %s", asJSON(t, devices))
+		t.Errorf("FromConfig(builder-fixture) devices = %s, want each included topology in a row of its own",
+			asJSON(t, devices))
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("generated document is invalid: %v", err)
+		t.Errorf("Validate() of the generated document = %v, want nil", err)
 	}
 
 	// Publishing writes the reference, never the included devices, so phenix
 	// does not find their hostnames twice when it merges the includes back.
 	topology, err := doc.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
 	if nodes, _ := topology.Spec["nodes"].([]any); len(nodes) != 4 {
-		t.Fatalf("published %d nodes, want the topology's own 4: %s", len(nodes), asJSON(t, topology.Spec))
+		t.Errorf("ToTopology() = %d nodes, want the topology's own 4: %s", len(nodes), asJSON(t, topology.Spec))
 	}
 
-	if !reflect.DeepEqual(topology.Spec["includeTopologies"], []string{"shared-services"}) {
-		t.Fatalf("published includes = %v", topology.Spec["includeTopologies"])
+	if diff := cmp.Diff([]string{"shared-services"}, topology.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("ToTopology() includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -812,7 +840,7 @@ func TestFromTopologyConfigReportsIncludeProblems(t *testing.T) {
 
 	doc, warnings, err := builder.FromConfig(root, builder.WithTopologyLoader(storeLoader(clash, loop, self)))
 	if err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		t.Fatalf("FromConfig(builder-fixture): %v", err)
 	}
 
 	for _, want := range []string{
@@ -826,28 +854,28 @@ func TestFromTopologyConfigReportsIncludeProblems(t *testing.T) {
 		"Added 3 nodes from included topologies clash (1 node), loop (1 node) and self (1 node).",
 	} {
 		if !containsSubstring(warnings, want) {
-			t.Fatalf("expected a warning containing %q, got %q", want, warnings)
+			t.Errorf("FromConfig(builder-fixture) warnings = %q, want one containing %q", warnings, want)
 		}
 	}
 
 	// A cycle is not an include whose nodes are missing: only the topology
 	// that could not be read is.
-	if !reflect.DeepEqual(doc.Source.UnresolvedIncludes, []string{"missing"}) {
-		t.Fatalf("unresolved includes = %v, want only missing", doc.Source.UnresolvedIncludes)
+	if diff := cmp.Diff([]string{"missing"}, doc.Source.UnresolvedIncludes); diff != "" {
+		t.Errorf("FromConfig(builder-fixture) unresolved includes mismatch (-want +got):\n%s", diff)
 	}
 
 	if router := nodeByHostname(t, doc, "router"); router.Device.IncludedFrom != "" {
-		t.Fatalf("the topology's own router was replaced by an included one: %s", asJSON(t, router))
+		t.Errorf("router = %s, want the topology's own router, not an included one", asJSON(t, router))
 	}
 
 	for _, hostname := range []string{"shared-name", "looped", "self-node"} {
 		if nodeByHostname(t, doc, hostname).Device.IncludedFrom == "" {
-			t.Fatalf("%s is not marked as included", hostname)
+			t.Errorf("%s IncludedFrom = \"\", want the include it came from", hostname)
 		}
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("generated document is invalid: %v", err)
+		t.Errorf("Validate() of the generated document = %v, want nil", err)
 	}
 }
 
@@ -858,7 +886,7 @@ func TestFromExperimentConfigMarksIncludedNodes(t *testing.T) {
 	// topology when it created the experiment, and kept the reference.
 	topology, ok := config.Spec["topology"].(map[string]any)
 	if !ok {
-		t.Fatal("fixture has no topology")
+		t.Fatal("experiment.json has no topology")
 	}
 
 	topology["includeTopologies"] = []any{"sensors"}
@@ -873,45 +901,50 @@ func TestFromExperimentConfigMarksIncludedNodes(t *testing.T) {
 
 	doc, warnings := documentFromConfigWith(t, config, builder.WithTopologyLoader(storeLoader(root, sensors)))
 
-	if !containsSubstring(warnings, "Marked 1 experiment node as coming from included topology sensors (1 node).") {
-		t.Fatalf("expected a summary of the marked nodes, got %q", warnings)
+	for _, want := range []string{
+		"Marked 1 experiment node as coming from included topology sensors (1 node).",
+		`included topology "sensors" defines node "router", which duplicates a hostname in the topology itself; ` +
+			"phenix rejects duplicate hostnames",
+	} {
+		if !containsSubstring(warnings, want) {
+			t.Errorf("FromConfig(builder-experiment) warnings = %q, want one containing %q", warnings, want)
+		}
 	}
 
 	if got := nodeByHostname(t, doc, "sensor").Device.IncludedFrom; got != "sensors" {
-		t.Fatalf("sensor is included from %q, want sensors", got)
+		t.Errorf("sensor IncludedFrom = %q, want sensors", got)
 	}
 
 	// The root topology's own router is never taken for the included one, and the clash is reported.
 	if got := nodeByHostname(t, doc, "router").Device.IncludedFrom; got != "" {
-		t.Fatalf("the root topology's router is marked as included from %q", got)
-	}
-
-	if !containsSubstring(warnings,
-		`included topology "sensors" defines node "router", which duplicates a hostname in the topology itself; `+
-			"phenix rejects duplicate hostnames") {
-		t.Fatalf("expected a warning about the router clash, got %q", warnings)
+		t.Errorf("router IncludedFrom = %q, want none: it is the root topology's", got)
 	}
 
 	// The experiment is shown as it is: a node the included topology gained
 	// since is not added, and nothing is duplicated.
 	if doc.FindDevice("added-later") != nil || len(doc.DeviceNodes()) != 3 {
-		t.Fatalf("experiment devices changed: %s", asJSON(t, doc.DeviceNodes()))
+		t.Errorf("FromConfig(builder-experiment) devices = %s, want the experiment's 3 and not added-later",
+			asJSON(t, doc.DeviceNodes()))
 	}
 
 	projection, err := doc.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
 	nodes, _ := projection.Spec["nodes"].([]any)
 	for _, entry := range nodes {
 		if node, _ := entry.(map[string]any); specString(node, "general", "hostname") == "sensor" {
-			t.Fatalf("publishing copied the included sensor into the topology: %s", asJSON(t, projection.Spec))
+			t.Errorf("ToTopology() = %s, want the included sensor left out", asJSON(t, projection.Spec))
 		}
 	}
 
-	if len(nodes) != 2 || !reflect.DeepEqual(projection.Spec["includeTopologies"], []string{"sensors"}) {
-		t.Fatalf("projection = %s, want router, host-a and the sensors include", asJSON(t, projection.Spec))
+	if len(nodes) != 2 {
+		t.Errorf("ToTopology() = %d nodes, want router and host-a: %s", len(nodes), asJSON(t, projection.Spec))
+	}
+
+	if diff := cmp.Diff([]string{"sensors"}, projection.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("ToTopology() includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 
 	// A node that neither the root nor a readable include defines is marked as from the unreadable
@@ -982,24 +1015,27 @@ func TestFromExperimentConfigMarksIncludedNodes(t *testing.T) {
 
 				for _, want := range tc.warnings {
 					if !containsSubstring(warnings, want) {
-						t.Fatalf("expected a warning containing %q, got %q", want, warnings)
+						t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
 					}
 				}
 
 				for hostname, want := range tc.want {
 					if got := nodeByHostname(t, doc, hostname).Device.IncludedFrom; got != want {
-						t.Fatalf("%s is included from %q, want %q", hostname, got, want)
+						t.Errorf("%s IncludedFrom = %q, want %q", hostname, got, want)
 					}
 				}
 
 				projection, err := doc.ToTopology()
 				if err != nil {
-					t.Fatalf("ToTopology: %v", err)
+					t.Fatalf("ToTopology(): %v", err)
 				}
 
-				if nodes, _ := projection.Spec["nodes"].([]any); len(nodes) != 2 ||
-					!reflect.DeepEqual(projection.Spec["includeTopologies"], tc.includes) {
-					t.Fatalf("projection = %s, want router, host-a and the includes", asJSON(t, projection.Spec))
+				if nodes, _ := projection.Spec["nodes"].([]any); len(nodes) != 2 {
+					t.Errorf("ToTopology() = %d nodes, want router and host-a: %s", len(nodes), asJSON(t, projection.Spec))
+				}
+
+				if diff := cmp.Diff(tc.includes, projection.Spec["includeTopologies"]); diff != "" {
+					t.Errorf("ToTopology() includeTopologies mismatch (-want +got):\n%s", diff)
 				}
 			})
 		}
@@ -1013,7 +1049,7 @@ func TestFromExperimentConfigWithoutRootTopology(t *testing.T) {
 
 	topology, ok := config.Spec["topology"].(map[string]any)
 	if !ok {
-		t.Fatal("fixture has no topology")
+		t.Fatal("experiment.json has no topology")
 	}
 
 	topology["includeTopologies"] = []any{"sensors", "missing"}
@@ -1031,13 +1067,13 @@ func TestFromExperimentConfigWithoutRootTopology(t *testing.T) {
 			"and publishing the topology copies them into it",
 	} {
 		if !containsSubstring(warnings, want) {
-			t.Fatalf("expected a warning containing %q, got %q", want, warnings)
+			t.Errorf("FromConfig(builder-experiment) warnings = %q, want one containing %q", warnings, want)
 		}
 	}
 
 	for hostname, want := range map[string]string{"sensor": "sensors", "router": "", "host-a": ""} {
 		if got := nodeByHostname(t, doc, hostname).Device.IncludedFrom; got != want {
-			t.Fatalf("%s is included from %q, want %q", hostname, got, want)
+			t.Errorf("%s IncludedFrom = %q, want %q", hostname, got, want)
 		}
 	}
 }
@@ -1054,7 +1090,7 @@ func TestFromTopologyConfigIncludedTwice(t *testing.T) {
 
 	doc, warnings, err := builder.FromConfig(root, builder.WithTopologyLoader(storeLoader(left, right, shared)))
 	if err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		t.Fatalf("FromConfig(builder-fixture): %v", err)
 	}
 
 	want := []string{
@@ -1063,22 +1099,23 @@ func TestFromTopologyConfigIncludedTwice(t *testing.T) {
 		"Added 3 nodes from included topologies left (1 node), shared (1 node) and right (1 node).",
 	}
 
+	// Each warning goes on past the text the test knows, so only its start is compared.
 	if len(warnings) != len(want) {
-		t.Fatalf("warnings = %q, want %q", warnings, want)
-	}
-
-	for i := range want {
-		if !strings.HasPrefix(warnings[i], want[i]) {
-			t.Fatalf("warning %d = %q, want %q", i, warnings[i], want[i])
+		t.Errorf("FromConfig(builder-fixture) warnings = %q, want %d starting %q", warnings, len(want), want)
+	} else {
+		for i := range want {
+			if !strings.HasPrefix(warnings[i], want[i]) {
+				t.Errorf("FromConfig(builder-fixture) warning = %q, want one starting %q", warnings[i], want[i])
+			}
 		}
 	}
 
 	if got := nodeByHostname(t, doc, "shared-node").Device.IncludedFrom; got != "shared" {
-		t.Fatalf("shared-node is included from %q, want shared", got)
+		t.Errorf("shared-node IncludedFrom = %q, want shared", got)
 	}
 
 	if doc.Source.UnresolvedIncludes != nil {
-		t.Fatalf("unresolved includes = %v, want none", doc.Source.UnresolvedIncludes)
+		t.Errorf("FromConfig(builder-fixture) unresolved includes = %v, want none", doc.Source.UnresolvedIncludes)
 	}
 }
 
@@ -1099,41 +1136,47 @@ func TestCheckIncludes(t *testing.T) {
 
 	report, err := builder.CheckIncludes("root", spec, storeLoader(services, storage))
 	if err != nil {
-		t.Fatalf("CheckIncludes: %v", err)
+		t.Fatalf("CheckIncludes(root): %v", err)
 	}
 
 	wantClashes := []builder.HostnameClash{
 		{Include: "services", Hostname: "DB"},
 		{Include: "storage", Hostname: "web"},
 	}
-	if !reflect.DeepEqual(report.Clashes, wantClashes) {
-		t.Fatalf("clashes = %+v, want %+v", report.Clashes, wantClashes)
+	if diff := cmp.Diff(wantClashes, report.Clashes); diff != "" {
+		t.Errorf("CheckIncludes(root) clashes mismatch (-want +got):\n%s", diff)
 	}
 
 	if len(report.Unreadable) != 1 || report.Unreadable[0].Name != "missing" ||
 		!errors.Is(report.Unreadable[0].Err, store.ErrNotExist) {
-		t.Fatalf("unreadable = %+v, want the missing include", report.Unreadable)
+		t.Errorf("CheckIncludes(root) unreadable = %+v, want the missing include with %v",
+			report.Unreadable, store.ErrNotExist)
 	}
 
 	// phenix's schema refuses a single character, which an older phenix
 	// stored, and phenix refuses an all-digit hostname in an experiment.
+	// Each reason goes on with phenix's own words, so only its start is compared.
 	wantRefused := []builder.RefusedHostname{
 		{Include: "services", Reason: "hostname 'x' is 1 character long: "},
 		{Include: "storage", Reason: "hostname '007' is all digits: "},
 	}
 	if len(report.Refused) != len(wantRefused) {
-		t.Fatalf("refused = %+v, want services' x and storage's 007", report.Refused)
-	}
-
-	for i, want := range wantRefused {
-		if got := report.Refused[i]; got.Include != want.Include || !strings.HasPrefix(got.Reason, want.Reason) {
-			t.Fatalf("refused %d = %+v, want %+v", i, got, want)
+		t.Errorf("CheckIncludes(root) refused = %+v, want services' x and storage's 007", report.Refused)
+	} else {
+		for i, want := range wantRefused {
+			if got := report.Refused[i]; got.Include != want.Include || !strings.HasPrefix(got.Reason, want.Reason) {
+				t.Errorf("CheckIncludes(root) refused = %+v, want one starting %+v", got, want)
+			}
 		}
 	}
 
 	clean, err := builder.CheckIncludes("root", map[string]any{"nodes": []any{}}, storeLoader())
-	if err != nil || len(clean.Clashes) != 0 || len(clean.Unreadable) != 0 || len(clean.Refused) != 0 {
-		t.Fatalf("a topology without includes: %+v, %v", clean, err)
+	if err != nil {
+		t.Fatalf("CheckIncludes(root without includes): %v", err)
+	}
+
+	if diff := cmp.Diff(builder.IncludeReport{}, clean, cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("CheckIncludes(root without includes) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1142,27 +1185,28 @@ func TestFromConfigWithoutLoaderKeepsIncludesUnresolved(t *testing.T) {
 
 	topology, ok := config.Spec["topology"].(map[string]any)
 	if !ok {
-		t.Fatal("fixture has no topology")
+		t.Fatal("experiment.json has no topology")
 	}
 
 	topology["includeTopologies"] = []any{"sensors"}
 
 	doc, warnings := documentFromConfig(t, config)
 
-	if !containsSubstring(warnings, "includes 1 other topologies that were not resolved") {
-		t.Fatalf("expected a warning about unresolved includes, got %q", warnings)
+	if want := "includes 1 other topologies that were not resolved"; !containsSubstring(warnings, want) {
+		t.Errorf("FromConfig(builder-experiment) warnings = %q, want one containing %q", warnings, want)
 	}
 
 	for _, node := range doc.DeviceNodes() {
 		if node.Device.IncludedFrom != "" {
-			t.Fatalf("%s was marked without a loader", node.Device.Hostname)
+			t.Errorf("%s IncludedFrom = %q without a loader, want none", node.Device.Hostname, node.Device.IncludedFrom)
 		}
 	}
 
 	// An experiment holds every node, so it never lists an include as
 	// unresolved.
 	if doc.Source.UnresolvedIncludes != nil {
-		t.Fatalf("unresolved includes = %v, want none for an experiment", doc.Source.UnresolvedIncludes)
+		t.Errorf("FromConfig(builder-experiment) unresolved includes = %v, want none for an experiment",
+			doc.Source.UnresolvedIncludes)
 	}
 }
 
@@ -1223,14 +1267,14 @@ func TestFromTopologyConfigCombinesIncludes(t *testing.T) {
 
 	doc, warnings, err := builder.FromConfig(root, builder.WithTopologyLoader(load), builder.WithCombinedIncludes())
 	if err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		t.Fatalf("FromConfig(site): %v", err)
 	}
 
 	hostnames := make([]string, 0, len(doc.DeviceNodes()))
 
 	for _, node := range doc.DeviceNodes() {
 		if node.Device.IncludedFrom != "" {
-			t.Errorf("%s is still marked as included from %q", node.Device.Hostname, node.Device.IncludedFrom)
+			t.Errorf("%s IncludedFrom = %q, want none", node.Device.Hostname, node.Device.IncludedFrom)
 		}
 
 		hostnames = append(hostnames, node.Device.Hostname)
@@ -1238,16 +1282,16 @@ func TestFromTopologyConfigCombinesIncludes(t *testing.T) {
 
 	// The nodes keep the order of a plain import: the topology's own, then
 	// each included topology's.
-	if want := []string{"gateway", "mail", "web", "dns"}; !reflect.DeepEqual(hostnames, want) {
-		t.Fatalf("devices = %v, want %v", hostnames, want)
+	if diff := cmp.Diff([]string{"gateway", "mail", "web", "dns"}, hostnames); diff != "" {
+		t.Errorf("FromConfig(site) devices mismatch (-want +got):\n%s", diff)
 	}
 
-	if want := []string{"site-b", "/srv/extra.yml"}; !reflect.DeepEqual(doc.Source.IncludeTopologies, want) {
-		t.Errorf("included topologies = %v, want %v", doc.Source.IncludeTopologies, want)
+	if diff := cmp.Diff([]string{"site-b", "/srv/extra.yml"}, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromConfig(site) included topologies mismatch (-want +got):\n%s", diff)
 	}
 
 	if doc.Source.UnresolvedIncludes != nil {
-		t.Errorf("unresolved includes = %v, want none: they are the document's includes now",
+		t.Errorf("FromConfig(site) unresolved includes = %v, want none: they are the document's includes now",
 			doc.Source.UnresolvedIncludes)
 	}
 
@@ -1259,29 +1303,33 @@ func TestFromTopologyConfigCombinesIncludes(t *testing.T) {
 		combinedSummary,
 		combinedKept,
 	}
-	if !reflect.DeepEqual(warnings, want) || !reflect.DeepEqual(doc.Source.Warnings, want) {
-		t.Errorf("warnings = %q (on the source %q), want %q", warnings, doc.Source.Warnings, want)
+	if diff := cmp.Diff(want, warnings); diff != "" {
+		t.Errorf("FromConfig(site) warnings mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(want, doc.Source.Warnings); diff != "" {
+		t.Errorf("FromConfig(site) source warnings mismatch (-want +got):\n%s", diff)
 	}
 
 	if got := connectedSwitch(doc, nodeByHostname(t, doc, "dns"), "eth0"); got != "MGMT" {
-		t.Errorf("dns eth0 is connected to %q, want MGMT", got)
+		t.Errorf("dns eth0 network = %q, want MGMT", got)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("combined document is invalid: %v", err)
+		t.Errorf("Validate() of the combined document = %v, want nil", err)
 	}
 
 	topology, err := doc.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
 	if nodes, _ := topology.Spec["nodes"].([]any); len(nodes) != 4 {
-		t.Errorf("published %d nodes, want all 4: %s", len(nodes), asJSON(t, topology.Spec))
+		t.Errorf("ToTopology() = %d nodes, want all 4: %s", len(nodes), asJSON(t, topology.Spec))
 	}
 
-	if want := []string{"site-b", "/srv/extra.yml"}; !reflect.DeepEqual(topology.Spec["includeTopologies"], want) {
-		t.Errorf("published includes = %v, want %v", topology.Spec["includeTopologies"], want)
+	if diff := cmp.Diff([]string{"site-b", "/srv/extra.yml"}, topology.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("ToTopology() includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1294,29 +1342,32 @@ func TestFromTopologyConfigCombinesEveryInclude(t *testing.T) {
 	doc, warnings, err := builder.FromConfig(root,
 		builder.WithTopologyLoader(storeLoader(dns)), builder.WithCombinedIncludes())
 	if err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		t.Fatalf("FromConfig(site): %v", err)
 	}
 
 	want := []string{
 		"Copied 1 node from included topology lab-dns (1 node). They are ordinary nodes of this diagram now: " +
 			"changes here do not reach that topology, and later changes there do not reach this diagram.",
 	}
-	if !reflect.DeepEqual(warnings, want) {
-		t.Errorf("warnings = %q, want %q", warnings, want)
+	if diff := cmp.Diff(want, warnings); diff != "" {
+		t.Errorf("FromConfig(site) warnings mismatch (-want +got):\n%s", diff)
 	}
 
-	if doc.Source.IncludeTopologies != nil || doc.Source.UnresolvedIncludes != nil {
-		t.Errorf("includes = %v, unresolved = %v, want neither",
-			doc.Source.IncludeTopologies, doc.Source.UnresolvedIncludes)
+	if doc.Source.IncludeTopologies != nil {
+		t.Errorf("FromConfig(site) included topologies = %v, want none", doc.Source.IncludeTopologies)
+	}
+
+	if doc.Source.UnresolvedIncludes != nil {
+		t.Errorf("FromConfig(site) unresolved includes = %v, want none", doc.Source.UnresolvedIncludes)
 	}
 
 	topology, err := doc.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
-	if _, included := topology.Spec["includeTopologies"]; included {
-		t.Errorf("published topology still includes %v", topology.Spec["includeTopologies"])
+	if included, ok := topology.Spec["includeTopologies"]; ok {
+		t.Errorf("ToTopology() includeTopologies = %v, want none", included)
 	}
 
 	// One include that cannot be read is named in the singular.
@@ -1327,11 +1378,11 @@ func TestFromTopologyConfigCombinesEveryInclude(t *testing.T) {
 
 	kept := "Included topology site-b was not combined and stays in includeTopologies: publishing keeps the reference."
 	if len(warnings) != 2 || warnings[1] != kept {
-		t.Errorf("warnings = %q, want the unreadable include and %q", warnings, kept)
+		t.Errorf("FromConfig(site including site-b) warnings = %q, want the unreadable include and %q", warnings, kept)
 	}
 
-	if !reflect.DeepEqual(doc.Source.IncludeTopologies, []string{"site-b"}) {
-		t.Errorf("included topologies = %v, want site-b kept", doc.Source.IncludeTopologies)
+	if diff := cmp.Diff([]string{"site-b"}, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromConfig(site including site-b) included topologies mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1343,18 +1394,20 @@ func TestFromTopologyConfigCombineWithoutLoader(t *testing.T) {
 	doc, warnings := documentFromConfigWith(t, root, builder.WithCombinedIncludes())
 
 	if got := len(doc.DeviceNodes()); got != 1 {
-		t.Errorf("devices = %d, want only the topology's own", got)
+		t.Errorf("FromConfig(site) = %d devices, want only the topology's own", got)
 	}
 
 	// Each include once, in the order the topology lists them.
-	want := []string{"corp-services", "site-b", "/srv/extra.yml"}
-	if !reflect.DeepEqual(doc.Source.IncludeTopologies, want) || doc.Source.UnresolvedIncludes != nil {
-		t.Errorf("includes = %v, unresolved = %v, want %v and none",
-			doc.Source.IncludeTopologies, doc.Source.UnresolvedIncludes, want)
+	if diff := cmp.Diff([]string{"corp-services", "site-b", "/srv/extra.yml"}, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromConfig(site) included topologies mismatch (-want +got):\n%s", diff)
 	}
 
-	if !containsSubstring(warnings, "Included topologies corp-services, site-b and /srv/extra.yml were not combined") {
-		t.Errorf("warnings = %q, want one naming the includes that were kept", warnings)
+	if doc.Source.UnresolvedIncludes != nil {
+		t.Errorf("FromConfig(site) unresolved includes = %v, want none", doc.Source.UnresolvedIncludes)
+	}
+
+	if want := "Included topologies corp-services, site-b and /srv/extra.yml were not combined"; !containsSubstring(warnings, want) {
+		t.Errorf("FromConfig(site) warnings = %q, want one containing %q", warnings, want)
 	}
 }
 
@@ -1369,28 +1422,28 @@ func TestFromTopologyConfigRecordsUnresolvedIncludes(t *testing.T) {
 
 	doc, warnings := documentFromConfigWith(t, root, builder.WithTopologyLoader(storeLoader(services, dns)))
 
-	if want := []string{"deep-gone", "nested-gone", "site-b"}; !reflect.DeepEqual(doc.Source.UnresolvedIncludes, want) {
-		t.Errorf("unresolved includes = %v, want %v", doc.Source.UnresolvedIncludes, want)
+	if diff := cmp.Diff([]string{"deep-gone", "nested-gone", "site-b"}, doc.Source.UnresolvedIncludes); diff != "" {
+		t.Errorf("FromConfig(site) unresolved includes mismatch (-want +got):\n%s", diff)
 	}
 
 	want := []string{"corp-services", "site-b", "nested-gone", "site"}
-	if !reflect.DeepEqual(doc.Source.IncludeTopologies, want) {
-		t.Errorf("included topologies = %v, want %v", doc.Source.IncludeTopologies, want)
+	if diff := cmp.Diff(want, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromConfig(site) included topologies mismatch (-want +got):\n%s", diff)
 	}
 
 	// A plain import says nothing new: the marks and the summary are as
 	// they were.
 	if !containsSubstring(warnings, "Added 2 nodes from included topologies corp-services (1 node) and lab-dns (1 node).") ||
 		containsSubstring(warnings, "combined") || containsSubstring(warnings, "Copied") {
-		t.Errorf("warnings = %q, want the summary of a plain import", warnings)
+		t.Errorf("FromConfig(site) warnings = %q, want the summary of a plain import", warnings)
 	}
 
 	if got := nodeByHostname(t, doc, "dns").Device.IncludedFrom; got != "lab-dns" {
-		t.Errorf("dns is included from %q, want lab-dns", got)
+		t.Errorf("dns IncludedFrom = %q, want lab-dns", got)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("generated document is invalid: %v", err)
+		t.Errorf("Validate() of the generated document = %v, want nil", err)
 	}
 }
 
@@ -1417,24 +1470,25 @@ func TestFromTopologyConfigListsIncludesPastTheLimit(t *testing.T) {
 	load := storeLoader(configs...)
 
 	kept, _ := documentFromConfigWith(t, root, builder.WithTopologyLoader(load))
-	if !reflect.DeepEqual(kept.Source.UnresolvedIncludes, names[limit:]) {
-		t.Fatalf("unresolved includes = %v, want the %d past the limit", kept.Source.UnresolvedIncludes, extra)
+	if diff := cmp.Diff(names[limit:], kept.Source.UnresolvedIncludes); diff != "" {
+		t.Errorf("FromConfig(site) unresolved includes mismatch, want the %d past the limit (-want +got):\n%s", extra, diff)
 	}
 
 	combined, warnings := documentFromConfigWith(t, root, builder.WithTopologyLoader(load), builder.WithCombinedIncludes())
-	if !reflect.DeepEqual(combined.Source.IncludeTopologies, names[limit:]) {
-		t.Fatalf("included topologies = %v, want the %d past the limit", combined.Source.IncludeTopologies, extra)
+	if diff := cmp.Diff(names[limit:], combined.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromConfig(site, combined) included topologies mismatch, want the %d past the limit (-want +got):\n%s",
+			extra, diff)
 	}
 
 	if got := len(combined.DeviceNodes()); got != limit+1 {
-		t.Errorf("devices = %d, want the topology's own and the %d that were read", got, limit)
+		t.Errorf("FromConfig(site, combined) = %d devices, want the topology's own and the %d that were read", got, limit)
 	}
 
 	// A long list is cut: eight names, then how many more.
 	want := "Included topologies " + strings.Join(names[limit:limit+7], ", ") + ", " + names[limit+7] +
 		" and 12 more were not combined and stay in includeTopologies: publishing keeps the references."
 	if !slices.Contains(warnings, want) {
-		t.Errorf("warnings = %q, want %q", warnings[len(warnings)-1], want)
+		t.Errorf("FromConfig(site, combined) warnings = %q, want one of %q", warnings, want)
 	}
 }
 
@@ -1443,7 +1497,7 @@ func TestFromTopologyConfigListsIncludesPastTheLimit(t *testing.T) {
 func TestFromExperimentConfigRefusesCombine(t *testing.T) {
 	_, _, err := builder.FromConfig(loadConfig(t, "experiment.json"), builder.WithCombinedIncludes())
 	if !errors.Is(err, builder.ErrCombineExperiment) {
-		t.Fatalf("FromConfig error = %v, want ErrCombineExperiment", err)
+		t.Errorf("FromConfig(builder-experiment, WithCombinedIncludes) error = %v, want %v", err, builder.ErrCombineExperiment)
 	}
 }
 
@@ -1451,7 +1505,7 @@ func TestIncludeCount(t *testing.T) {
 	topology := includeFixture("site", nil, map[string]string{"gateway": "EXP"})
 
 	if got := builder.IncludeCount(topology); got != 0 {
-		t.Errorf("a topology without includes: count = %d, want 0", got)
+		t.Errorf("IncludeCount(topology without includes) = %d, want 0", got)
 	}
 
 	// Only the entries an import would use count; each entry counts, also
@@ -1459,14 +1513,14 @@ func TestIncludeCount(t *testing.T) {
 	topology.Spec["includeTopologies"] = []any{"corp-services", "", "has space", 7, "lab-dns", "corp-services"}
 
 	if got := builder.IncludeCount(topology); got != 3 {
-		t.Errorf("count = %d, want 3", got)
+		t.Errorf("IncludeCount(topology) = %d, want 3", got)
 	}
 
 	lower := topology
 	lower.Kind = "topology"
 
 	if got := builder.IncludeCount(lower); got != 3 {
-		t.Errorf("kind in lower case: count = %d, want 3", got)
+		t.Errorf("IncludeCount(kind in lower case) = %d, want 3", got)
 	}
 
 	// An older apiVersion is upgraded first, as an import upgrades it, and
@@ -1475,12 +1529,12 @@ func TestIncludeCount(t *testing.T) {
 	older.Version = "phenix.sandia.gov/v0"
 
 	imported, _ := documentFromConfig(t, older)
-	if want := []string{"corp-services", "lab-dns"}; !reflect.DeepEqual(imported.Source.IncludeTopologies, want) {
-		t.Errorf("a v0 topology imports with includes %v, want %v", imported.Source.IncludeTopologies, want)
+	if diff := cmp.Diff([]string{"corp-services", "lab-dns"}, imported.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromConfig(v0 topology) included topologies mismatch (-want +got):\n%s", diff)
 	}
 
 	if got := builder.IncludeCount(older); got != 2 {
-		t.Errorf("a v0 topology: count = %d, want 2", got)
+		t.Errorf("IncludeCount(v0 topology) = %d, want 2", got)
 	}
 
 	experiment := loadConfig(t, "experiment.json")
@@ -1492,8 +1546,10 @@ func TestIncludeCount(t *testing.T) {
 	scenario.Kind = "Scenario"
 
 	for _, config := range []store.Config{experiment, scenario} {
-		if got := builder.IncludeCount(config); got != 0 {
-			t.Errorf("%s: count = %d, want 0", config.Kind, got)
-		}
+		t.Run(config.Kind, func(t *testing.T) {
+			if got := builder.IncludeCount(config); got != 0 {
+				t.Errorf("IncludeCount(%s) = %d, want 0", config.Kind, got)
+			}
+		})
 	}
 }

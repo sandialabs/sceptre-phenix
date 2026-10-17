@@ -1,13 +1,14 @@
 package builder_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/types/builder"
 )
@@ -37,7 +38,7 @@ const (
 func TestCodesAreUniqueDottedAndDescribed(t *testing.T) {
 	codes := builder.Codes()
 	if len(codes) == 0 {
-		t.Fatal("the registry holds no code")
+		t.Fatal("Codes() = [], want the registered codes")
 	}
 
 	seen := make(map[builder.Code]bool, len(codes))
@@ -45,13 +46,13 @@ func TestCodesAreUniqueDottedAndDescribed(t *testing.T) {
 	for _, info := range codes {
 		switch {
 		case seen[info.Code]:
-			t.Errorf("code %s is registered twice", info.Code)
+			t.Errorf("Codes() holds code %s twice, want it once", info.Code)
 		case !codePattern.MatchString(string(info.Code)):
-			t.Errorf("code %q is not dotted lowercase words", info.Code)
+			t.Errorf("Codes() holds code %q, want dotted lowercase words", info.Code)
 		case info.Severity != builder.SeverityError && info.Severity != builder.SeverityWarning:
-			t.Errorf("code %s has severity %q, want error or warning", info.Code, info.Severity)
+			t.Errorf("code %s severity = %q, want error or warning", info.Code, info.Severity)
 		case strings.TrimSpace(info.Description) == "" || !strings.HasSuffix(info.Description, "."):
-			t.Errorf("code %s has description %q, want a sentence", info.Code, info.Description)
+			t.Errorf("code %s description = %q, want a sentence", info.Code, info.Description)
 		}
 
 		seen[info.Code] = true
@@ -61,12 +62,12 @@ func TestCodesAreUniqueDottedAndDescribed(t *testing.T) {
 		}
 
 		if issue := builder.NewIssue(info.Code, "nodes[0]", "x"); issue.Severity != info.Severity {
-			t.Errorf("NewIssue(%s) has severity %q, want %q", info.Code, issue.Severity, info.Severity)
+			t.Errorf("NewIssue(%s, \"nodes[0]\", \"x\").Severity = %q, want %q", info.Code, issue.Severity, info.Severity)
 		}
 	}
 
-	if _, ok := builder.LookupCode("node.hostname.unheard-of"); ok {
-		t.Error("LookupCode found a code the registry does not hold")
+	if found, ok := builder.LookupCode("node.hostname.unheard-of"); ok {
+		t.Errorf("LookupCode(node.hostname.unheard-of) = %+v, true, want false", found)
 	}
 }
 
@@ -82,7 +83,7 @@ func TestValidationIssuesCarryRegisteredCodes(t *testing.T) {
 
 	issues := builder.ErrorIssues(err)
 	if len(issues) == 0 {
-		t.Fatalf("Validate = %v, want issues", err)
+		t.Fatalf("Validate() = %v, want issues", err)
 	}
 
 	located := map[string]bool{}
@@ -90,7 +91,8 @@ func TestValidationIssuesCarryRegisteredCodes(t *testing.T) {
 	for _, issue := range issues {
 		info, ok := builder.LookupCode(issue.Code)
 		if !ok || issue.Severity != info.Severity {
-			t.Errorf("issue %+v has a code the registry does not hold, or another severity", issue)
+			t.Errorf("Validate() issue %+v: LookupCode(%s) = %+v, %t, want the code registered with severity %q",
+				issue, issue.Code, info, ok, issue.Severity)
 		}
 
 		switch {
@@ -103,15 +105,16 @@ func TestValidationIssuesCarryRegisteredCodes(t *testing.T) {
 		}
 	}
 
-	if len(located) != 3 {
-		t.Fatalf("issues %+v do not each name their node, edge and network", issues)
+	want := map[string]bool{"node": true, "edge": true, "network": true}
+	if diff := cmp.Diff(want, located); diff != "" {
+		t.Errorf("Validate() issues %+v located at their node, edge and network mismatch (-want +got):\n%s", issues, diff)
 	}
 }
 
 func TestFrontendCodesMatchRegistry(t *testing.T) {
 	want, err := builder.CodesJSON()
 	if err != nil {
-		t.Fatalf("encoding the registry: %v", err)
+		t.Fatalf("CodesJSON(): %v", err)
 	}
 
 	if *updateFrontendSchema {
@@ -125,8 +128,9 @@ func TestFrontendCodesMatchRegistry(t *testing.T) {
 		t.Fatalf("reading %s: %v", frontendCodes, err)
 	}
 
-	if !bytes.Equal(got, want) {
-		t.Fatalf("%s is out of date; regenerate it with make generate-builder-schema (or make generate) in src/go", frontendCodes)
+	if diff := cmp.Diff(string(want), string(got)); diff != "" {
+		t.Errorf("%s is out of date; regenerate it with make generate-builder-schema (or make generate) in src/go "+
+			"(-want +got):\n%s", frontendCodes, diff)
 	}
 
 	var decoded map[string]struct {
@@ -134,8 +138,12 @@ func TestFrontendCodesMatchRegistry(t *testing.T) {
 		Description string `json:"description"`
 	}
 
-	if err := json.Unmarshal(got, &decoded); err != nil || len(decoded) != len(builder.Codes()) {
-		t.Fatalf("%s holds %d codes (%v), want %d", frontendCodes, len(decoded), err, len(builder.Codes()))
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatalf("decoding %s: %v", frontendCodes, err)
+	}
+
+	if len(decoded) != len(builder.Codes()) {
+		t.Errorf("%s holds %d codes, want %d", frontendCodes, len(decoded), len(builder.Codes()))
 	}
 }
 
@@ -183,7 +191,8 @@ func TestDocsCodeTableMatchesRegistry(t *testing.T) {
 		table = "\n" + want + "\n"
 	}
 
-	if table != "\n"+want+"\n" {
-		t.Fatalf("the table of codes in %s is out of date; regenerate it with make generate-builder-schema in src/go", docsCodes)
+	if diff := cmp.Diff("\n"+want+"\n", table); diff != "" {
+		t.Errorf("the table of codes in %s is out of date; regenerate it with make generate-builder-schema in src/go "+
+			"(-want +got):\n%s", docsCodes, diff)
 	}
 }

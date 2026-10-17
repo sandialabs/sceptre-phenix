@@ -5,36 +5,59 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/types/builder"
 )
 
 func TestParseSubnet(t *testing.T) {
-	valid := map[string]string{
-		"10.1.0.0/24":      "10.1.0.0/24",
-		"0.0.0.0/0":        "0.0.0.0/0",
-		"192.0.2.4/31":     "192.0.2.4/31",
-		"192.0.2.7/32":     "192.0.2.7/32",
-		"172.16.0.0/12":    "172.16.0.0/12",
-		"255.255.255.0/24": "255.255.255.0/24",
+	valid := []struct {
+		name, text, want string
+	}{
+		{name: "24-bit prefix", text: "10.1.0.0/24", want: "10.1.0.0/24"},
+		{name: "default route", text: "0.0.0.0/0", want: "0.0.0.0/0"},
+		{name: "31-bit point to point", text: "192.0.2.4/31", want: "192.0.2.4/31"},
+		{name: "single host", text: "192.0.2.7/32", want: "192.0.2.7/32"},
+		{name: "12-bit private prefix", text: "172.16.0.0/12", want: "172.16.0.0/12"},
+		{name: "all ones network", text: "255.255.255.0/24", want: "255.255.255.0/24"},
 	}
 
-	for text, want := range valid {
-		prefix, ok := builder.ParseSubnet(text)
-		if !ok || prefix.String() != want {
-			t.Errorf("ParseSubnet(%q) = %v, %t; want %s", text, prefix, ok, want)
-		}
+	for _, test := range valid {
+		t.Run(test.name, func(t *testing.T) {
+			prefix, ok := builder.ParseSubnet(test.text)
+			if !ok || prefix.String() != test.want {
+				t.Errorf("ParseSubnet(%q) = %v, %t, want %s, true", test.text, prefix, ok, test.want)
+			}
+		})
 	}
 
-	invalid := []string{
-		"", "10.1.0.0", "10.1.0.1/24", "10.1.0.0/33", "10.1.0.0/024", "10.1.0.0/+24",
-		"10.1.0.0/-0", "10.01.0.0/16", " 10.1.0.0/24", "10.1.0.0/24 ", "2001:db8::/64",
-		"::ffff:10.1.0.0/120", "10.1.0.0/", "/24", "10.1.0/24", "256.0.0.0/8",
+	invalid := []struct {
+		name, text string
+	}{
+		{name: "empty", text: ""},
+		{name: "no prefix length", text: "10.1.0.0"},
+		{name: "host bits set", text: "10.1.0.1/24"},
+		{name: "prefix length over 32", text: "10.1.0.0/33"},
+		{name: "prefix length with a leading zero", text: "10.1.0.0/024"},
+		{name: "prefix length with a plus sign", text: "10.1.0.0/+24"},
+		{name: "negative zero prefix length", text: "10.1.0.0/-0"},
+		{name: "octet with a leading zero", text: "10.01.0.0/16"},
+		{name: "leading space", text: " 10.1.0.0/24"},
+		{name: "trailing space", text: "10.1.0.0/24 "},
+		{name: "IPv6", text: "2001:db8::/64"},
+		{name: "IPv4-mapped IPv6", text: "::ffff:10.1.0.0/120"},
+		{name: "empty prefix length", text: "10.1.0.0/"},
+		{name: "no address", text: "/24"},
+		{name: "three octets", text: "10.1.0/24"},
+		{name: "octet over 255", text: "256.0.0.0/8"},
 	}
 
-	for _, text := range invalid {
-		if prefix, ok := builder.ParseSubnet(text); ok {
-			t.Errorf("ParseSubnet(%q) = %v; want no subnet", text, prefix)
-		}
+	for _, test := range invalid {
+		t.Run(test.name, func(t *testing.T) {
+			if prefix, ok := builder.ParseSubnet(test.text); ok {
+				t.Errorf("ParseSubnet(%q) = %v, true, want no subnet", test.text, prefix)
+			}
+		})
 	}
 }
 
@@ -61,14 +84,16 @@ func TestIsSubnetHost(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		subnet, ok := builder.ParseSubnet(test.subnet)
-		if !ok {
-			t.Fatalf("ParseSubnet(%q) failed", test.subnet)
-		}
+		t.Run(test.addr+" in "+test.subnet, func(t *testing.T) {
+			subnet, ok := builder.ParseSubnet(test.subnet)
+			if !ok {
+				t.Fatalf("ParseSubnet(%q) = _, false, want a subnet", test.subnet)
+			}
 
-		if got := builder.IsSubnetHost(subnet, netip.MustParseAddr(test.addr)); got != test.want {
-			t.Errorf("IsSubnetHost(%s, %s) = %t; want %t", test.subnet, test.addr, got, test.want)
-		}
+			if got := builder.IsSubnetHost(subnet, netip.MustParseAddr(test.addr)); got != test.want {
+				t.Errorf("IsSubnetHost(%s, %s) = %t, want %t", test.subnet, test.addr, got, test.want)
+			}
+		})
 	}
 }
 
@@ -84,33 +109,33 @@ func TestToTopologyOmitsNetworkAddressing(t *testing.T) {
 	}
 
 	if err := addressed.Validate(); err != nil {
-		t.Fatalf("Validate: %v", err)
+		t.Errorf("Validate() of the addressed document = %v, want nil", err)
 	}
 
 	want, err := plain.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology() of the plain document: %v", err)
 	}
 
 	got, err := addressed.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology() of the addressed document: %v", err)
 	}
 
-	if asJSON(t, got) != asJSON(t, want) {
-		t.Fatalf("the subnet or the gateway changed the topology:\nwant: %s\ngot:  %s", asJSON(t, want), asJSON(t, got))
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ToTopology() of the addressed document mismatch (-want +got):\n%s", diff)
 	}
 
 	config, _, err := addressed.ToTopologyConfig("addressed")
 	if err != nil {
-		t.Fatalf("ToTopologyConfig: %v", err)
+		t.Fatalf("ToTopologyConfig(addressed): %v", err)
 	}
 
 	encoded := asJSON(t, config)
 
 	for _, text := range []string{"192.0.2.", `"subnet"`} {
 		if strings.Contains(encoded, text) {
-			t.Fatalf("the topology holds %s: %s", text, encoded)
+			t.Errorf("ToTopologyConfig(addressed) = %s, want no %s", encoded, text)
 		}
 	}
 }
