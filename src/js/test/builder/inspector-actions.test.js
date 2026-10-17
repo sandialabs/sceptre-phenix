@@ -268,6 +268,22 @@ describe('the Diagram section’s notes', () => {
     expect(document.activeElement).toBe(add().element);
   });
 
+  // A diagram from a file can hold an empty list of notes, which the first
+  // write of the notes drops.
+  test('a box emptied takes its row also in a diagram whose notes are an empty list', async () => {
+    const { wrapper, box, add, notes } = await openNotes([]);
+
+    // Typed, then emptied, so the box changes.
+    await press(add());
+    await type(box(1), 'x');
+    await box(1).setValue('');
+
+    expect(wrapper.find('[data-testid="inspector-note-1"]').exists()).toBe(
+      false,
+    );
+    expect(notes()).toBeUndefined();
+  });
+
   test('text the server would refuse shows an error, and the diagram keeps the note as saved', async () => {
     const { wrapper, box, notes } = await openNotes(['Saved']);
 
