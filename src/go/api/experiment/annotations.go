@@ -69,6 +69,10 @@ func validateDefaultAppAnnotation(key string, value any) error {
 				key,
 			)
 		}
+	case "phenix/startup-via-cc":
+		if s, ok := value.(string); ok && strings.TrimSpace(s) == "" {
+			return fmt.Errorf("node annotation %q must be true or false", key)
+		}
 	case "vrouter/vyos-password", "vrouter/enable-ssh":
 		if _, ok := value.(string); !ok {
 			return fmt.Errorf("node annotation %q must be a string", key)

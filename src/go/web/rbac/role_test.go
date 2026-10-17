@@ -41,6 +41,7 @@ func newTestRole(t *testing.T) Role {
 				{Resources: []string{"**"}, ResourceNames: []string{"*"}, Verbs: []string{"watch"}},
 				{Resources: []string{"things"}, ResourceNames: []string{"*", "!thing1"}, Verbs: []string{"*"}},
 				{Resources: []string{"items"}, ResourceNames: []string{"item*"}, Verbs: []string{"*"}},
+				{Resources: []string{"notes"}, ResourceNames: []string{"note!"}, Verbs: []string{"get"}},
 			},
 		},
 	}
@@ -116,6 +117,9 @@ func TestRoleAllowed(t *testing.T) {
 		{"delete item", "items", "delete", []string{"item"}, true},
 		{"delete item1", "items", "delete", []string{"item1"}, true},
 		{"delete non-item", "items", "delete", []string{"thing"}, false},
+		// only a leading "!" negates
+		{"get note!", "notes", "get", []string{"note!"}, true},
+		{"get note", "notes", "get", []string{"note"}, false},
 	}
 
 	for _, tt := range tests {
@@ -255,7 +259,7 @@ func genRolePolicy() *rapid.Generator[*v1.PolicySpec] {
 
 		var names []string
 		if rapid.IntRange(0, 4).Draw(t, "unnamed") > 0 {
-			patterns := []string{"*", "a", "b", "a*", "*/*", "a/*", "!a", "!b*", "!a/b", "!*"}
+			patterns := []string{"*", "a", "b", "a*", "*/*", "a/*", "!a", "!b*", "!a/b", "!*", "a!", "!!a"}
 			names = rapid.SliceOfN(rapid.SampledFrom(patterns), 1, 3).Draw(t, "names")
 		}
 
@@ -327,7 +331,7 @@ func rolePolicies(spec *v1.RoleSpec) []string {
 func TestRoleAllowedAgreesWithItsPolicies(t *testing.T) {
 	t.Parallel()
 
-	queries := [][]string{nil, {"a"}, {"b"}, {"a/b"}, {"ab", "b/a"}, {"b", "a/b"}}
+	queries := [][]string{nil, {"a"}, {"b"}, {"a/b"}, {"ab", "b/a"}, {"b", "a/b"}, {"a!"}, {"!a"}}
 
 	rapid.Check(t, func(t *rapid.T) {
 		spec := &v1.RoleSpec{Name: "r", Policies: rapid.SliceOfN(genRolePolicy(), 0, 4).Draw(t, "policies")}

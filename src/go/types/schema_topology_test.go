@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"pgregory.net/rapid"
 
@@ -52,6 +53,11 @@ func topologyConfig(node map[string]any) store.Config {
 
 func withHostname(node map[string]any, hostname string) map[string]any {
 	node["general"].(map[string]any)["hostname"] = hostname
+	return node
+}
+
+func withDelayTimer(node map[string]any, timer string) map[string]any {
+	node["delay"] = map[string]any{"timer": timer}
 	return node
 }
 
@@ -105,6 +111,25 @@ func TestTopologySchema(t *testing.T) {
 		{
 			name: "63-character hostname is valid",
 			node: withHostname(validNode(), strings.Repeat("a", 63)),
+		},
+		{
+			name: "delay timer in minutes is valid",
+			node: withDelayTimer(validNode(), "5m"),
+		},
+		{
+			// The Go structs write an unset timer as timer:"".
+			name: "empty delay timer is valid",
+			node: withDelayTimer(validNode(), ""),
+		},
+		{
+			name:    "delay timer without a unit is rejected",
+			node:    withDelayTimer(validNode(), "5"),
+			wantErr: true,
+		},
+		{
+			name:    "delay timer with an unknown unit is rejected",
+			node:    withDelayTimer(validNode(), "1x"),
+			wantErr: true,
 		},
 		{
 			name: "invalid vm_type is rejected",
@@ -317,6 +342,44 @@ func TestTopologySchemaHostnameProperties(t *testing.T) {
 
 		if err, want := schema.VisitJSON(spec), schemaTopologyHostnameOK(hostname); (err == nil) != want {
 			t.Fatalf("Topology schema on hostname %q (%d bytes) error = %v, want valid %t", hostname, len(hostname), err, want)
+		}
+	})
+}
+
+// genSchemaTopologyTimer draws delay timers from a few parts of Go duration
+// syntax, mixed with parts it rejects; the numbers stay too small to overflow.
+func genSchemaTopologyTimer() *rapid.Generator[string] {
+	return rapid.Custom(func(t *rapid.T) string {
+		var timer strings.Builder
+
+		timer.WriteString(rapid.SampledFrom([]string{"", "+", "-"}).Draw(t, "sign"))
+
+		for range rapid.IntRange(0, 3).Draw(t, "parts") {
+			timer.WriteString(rapid.SampledFrom([]string{"0", "1", "12", "1.5", ".5", "5.", ".", " "}).Draw(t, "number"))
+			timer.WriteString(rapid.SampledFrom([]string{"ns", "us", "µs", "μs", "ms", "s", "m", "h", "", "x", "S"}).Draw(t, "unit"))
+		}
+
+		return timer.String()
+	})
+}
+
+// The Topology schema accepts a delay timer exactly when it is empty or
+// [time.ParseDuration] reads it, as the timer delay does.
+func TestTopologySchemaDelayTimerProperties(t *testing.T) {
+	t.Parallel()
+
+	schema, err := version.GetVersionedValidatorForKind("Topology", version.LATEST_VERSION)
+	if err != nil {
+		t.Fatalf("GetVersionedValidatorForKind(Topology, %s) error = %v", version.LATEST_VERSION, err)
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		timer := genSchemaTopologyTimer().Draw(t, "timer")
+		spec := map[string]any{"nodes": []any{withDelayTimer(validNode(), timer)}}
+
+		_, parseErr := time.ParseDuration(timer)
+		if err, want := schema.VisitJSON(spec), timer == "" || parseErr == nil; (err == nil) != want {
+			t.Fatalf("Topology schema on delay timer %q error = %v, want valid %t", timer, err, want)
 		}
 	})
 }

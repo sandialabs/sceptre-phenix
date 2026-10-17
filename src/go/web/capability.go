@@ -76,7 +76,7 @@ func newCaptureSecret(stream bool, base string) string {
 
 	for _, e := range captureExtensions {
 		for _, suffix := range []string{e + ".gz", e} {
-			if len(base) > len(suffix) && strings.EqualFold(base[len(base)-len(suffix):], suffix) {
+			if len(base) >= len(suffix) && strings.EqualFold(base[len(base)-len(suffix):], suffix) {
 				stem, ext = base[:len(base)-len(suffix)], base[len(base)-len(suffix):]
 
 				break

@@ -3,6 +3,7 @@ package freshness_test
 import (
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -38,6 +39,7 @@ func TestMatchRevision(t *testing.T) {
 		{ifMatch: `"r4", W/"r5"`, rev: 5},
 		{ifMatch: `"abc"`, rev: 5},
 		{ifMatch: `"r0"`, rev: 0},
+		{ifMatch: `"r007"`, rev: 7},
 		{ifMatch: `r5`, rev: 5, bad: true},
 		{ifMatch: `"r5`, rev: 5, bad: true},
 		{ifMatch: `"r5", *`, rev: 5, bad: true},
@@ -62,7 +64,7 @@ type revisionTag struct {
 }
 
 // genRevisionTag draws a well-formed entity tag: a strong revision tag as ETag writes it,
-// or one that names no revision (weak, revision 0, or another opaque value).
+// or one that names no revision (weak, revision 0, a zero-padded number, or another opaque value).
 func genRevisionTag() *rapid.Generator[revisionTag] {
 	return rapid.Custom(func(t *rapid.T) revisionTag {
 		rev := rapid.OneOf(rapid.Uint64Range(1, 4), rapid.Uint64Min(1)).Draw(t, "rev")
@@ -71,6 +73,7 @@ func genRevisionTag() *rapid.Generator[revisionTag] {
 			{text: freshness.ETag(rev), rev: rev},
 			{text: "W/" + freshness.ETag(rev)},
 			{text: `"r0"`},
+			{text: `"r0` + strconv.FormatUint(rev, 10) + `"`},
 			{text: `"rx"`},
 			{text: `"abc"`},
 			{text: `""`},

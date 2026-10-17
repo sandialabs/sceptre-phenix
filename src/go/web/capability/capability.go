@@ -8,10 +8,12 @@
 package capability
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -270,7 +272,7 @@ func (r *Registry) RevokeWhere(match func(Grant) bool) int {
 }
 
 // List returns the user's grants for the experiment exp that have not ended,
-// oldest first.
+// oldest first, and by ID among those minted at once.
 func (r *Registry) List(user, exp string) []Grant {
 	now := r.now()
 
@@ -287,7 +289,9 @@ func (r *Registry) List(user, exp string) []Grant {
 		}
 	}
 
-	slices.SortFunc(list, func(a, b Grant) int { return a.Created.Compare(b.Created) })
+	slices.SortFunc(list, func(a, b Grant) int {
+		return cmp.Or(a.Created.Compare(b.Created), strings.Compare(a.ID, b.ID))
+	})
 
 	return list
 }

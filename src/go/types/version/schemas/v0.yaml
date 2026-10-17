@@ -156,7 +156,9 @@ components:
               title: Default Bridge
               description: >-
                 The bridge the experiment's VMs attach to by default; defaults to
-                phenix, is at most 15 characters (the Linux interface name
-                limit), and unless it is phenix no other experiment may use it.
+                phenix, is at most 15 ASCII letters, digits, '_', '@', '.' or '-'
+                (the Linux interface name limit is 15 bytes), and unless it is
+                phenix no other experiment may use it.
               nullable: true
               maxLength: 15
+              pattern: '^[a-zA-Z0-9_@.-]*$'

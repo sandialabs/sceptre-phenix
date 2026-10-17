@@ -618,6 +618,12 @@ func (n Node) validate() error {
 		)
 	}
 
+	if n.DelayF != nil && n.DelayF.TimerF != "" {
+		if _, err := time.ParseDuration(n.DelayF.TimerF); err != nil {
+			return fmt.Errorf("delay timer %q is not a duration such as 5m: %w", n.DelayF.TimerF, err)
+		}
+	}
+
 	if n.NetworkF == nil {
 		return nil
 	}

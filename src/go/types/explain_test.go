@@ -557,6 +557,39 @@ func TestExplainValidationErrorRepeatedJSONKey(t *testing.T) {
 	assertLines(t, types.ExplainValidationError([]byte(explainRepeatedSpecJSON), err), want)
 }
 
+// TestExplainValidationErrorRawJSONKey explains pretty-printed JSON whose key
+// holds raw text YAML reads differently from encoding/json, on its own line.
+func TestExplainValidationErrorRawJSONKey(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{name: "next line and line separator", key: "a\u0085b\u2028c", want: `spec (line 6): * (at vlans.a\u0085b\u2028c)`},
+		{name: "DEL and U+FFFE", key: "a\x7fb\ufffe", want: `spec (line 6): * (at vlans.a\x7fb\ufffe)`},
+		{name: "invalid UTF-8", key: "a\xffb", want: "spec (line 6): * (at vlans.a\ufffdb)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "{\n  \"apiVersion\": \"phenix.sandia.gov/v0\",\n  \"kind\": \"Workflow\",\n  \"metadata\": {},\n" +
+				"  \"spec\": {\n    \"vlans\": {\"" + tt.key + "\": \"x\"}\n  }\n}\n"
+
+			var doc map[string]any
+			if err := json.Unmarshal([]byte(src), &doc); err != nil {
+				t.Fatalf("json.Unmarshal(%q) error = %v", src, err)
+			}
+
+			err := types.ValidateSchema("Workflow", "v0", doc)
+			if !errors.Is(err, types.ErrValidationFailed) {
+				t.Fatalf("ValidateSchema(Workflow) error = %v, want a validation error", err)
+			}
+
+			assertLines(t, types.ExplainValidationError([]byte(src), err), []string{tt.want})
+		})
+	}
+}
+
 // explainWithinDeadline returns types.ExplainValidationError(src, err), or
 // fails the test when the call has not returned within explainAliasDeadline.
 // A search that walks every path through YAML aliases would otherwise run
@@ -648,19 +681,15 @@ func TestSpecSchemasHaveNoDocumentKeys(t *testing.T) {
 	}
 }
 
-// explainYAMLReadable reports whether s, raw in a JSON source, is still text to a YAML
-// parser: encoding/json leaves DEL, C1 controls and U+FFFE/U+FFFF as they are.
-func explainYAMLReadable(s string) bool {
-	return !strings.ContainsFunc(s, func(r rune) bool { return r >= 0x7f && r <= 0x9f || r == 0xfffe || r == 0xffff })
-}
-
 // genExplainKey draws a mapping key from pieces that YAML, JSON or a terminal treat specially.
 func genExplainKey() *rapid.Generator[string] {
 	piece := rapid.OneOf(
 		rapid.SampledFrom([]string{
 			"a", "\n", "\r", "\t", "\x1b", "\ufeff", ":", "#", "\"", "'", " ", "<<", "&a", "*a", "- ", "[", "{", "é", "%",
+			// left raw by encoding/json, but not text to a YAML parser
+			"\x7f", "\u0085", "\u009f", "\ufffe", "\uffff",
 		}),
-		rapid.StringN(1, 1, -1).Filter(explainYAMLReadable),
+		rapid.StringN(1, 1, -1),
 	)
 
 	return rapid.Custom(func(t *rapid.T) string {

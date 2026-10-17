@@ -54,6 +54,7 @@ func TestIsLoopback(t *testing.T) {
 		"https://127.0.0.1:3000/healthz":    true,
 		"https://[::1]:3000/healthz":        true,
 		"https://localhost/healthz":         true,
+		"https://LocalHost:3000/healthz":    true,
 		"https://phenix.example.com/readyz": false,
 		"https://10.0.0.5/readyz":           false,
 	}
@@ -79,13 +80,13 @@ func genHealthcheckHost() *rapid.Generator[healthcheckHost] {
 		ip := fmt.Sprintf("%d.%d.%d.%d", first, rest[0], rest[1], rest[2])
 
 		// 0.0.0.0 alone is every address, which the check reaches on loopback
-		return healthcheckHost{host: ip, loopback: first == 127 || ip == "0.0.0.0"}
+		return healthcheckHost{host: ip, loopback: first == 127 || ip == anyIPv4}
 	})
-	name := rapid.Map(rapid.StringMatching(`[a-z][a-z0-9-]{0,8}(\.[a-z]{2,4}){0,2}`), func(host string) healthcheckHost {
-		return healthcheckHost{host: host, loopback: host == "localhost"}
+	name := rapid.Map(rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9-]{0,8}(\.[a-zA-Z]{2,4}){0,2}`), func(host string) healthcheckHost {
+		return healthcheckHost{host: host, loopback: strings.EqualFold(host, "localhost")}
 	})
 	fixed := rapid.SampledFrom([]healthcheckHost{
-		{"", true}, {"0.0.0.0", true}, {"::", true}, {"::1", true}, {"localhost", true}, {"::ffff:127.0.0.2", true},
+		{"", true}, {anyIPv4, true}, {"::", true}, {"::1", true}, {"localhost", true}, {"LOCALHOST", true}, {"::ffff:127.0.0.2", true},
 		{"fe80::1", false}, {"2001:db8::7", false}, {"::2", false}, {"localhost.example.com", false},
 	})
 
@@ -126,7 +127,7 @@ func TestHealthURLProperties(t *testing.T) {
 
 		// a wildcard becomes loopback; any other host is kept as it was
 		switch host.host {
-		case "", "0.0.0.0", "::":
+		case "", anyIPv4, "::":
 		default:
 			if u.Hostname() != host.host {
 				t.Fatalf("healthURL(%q, %t, %t) = %q, want host %q", endpoint, useTLS, ready, got, host.host)

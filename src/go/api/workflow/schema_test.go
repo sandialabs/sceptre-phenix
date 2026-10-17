@@ -573,6 +573,43 @@ func TestValidateDocumentDefaultBridgeLength(t *testing.T) {
 			pointer: []string{"spec", "defaultBridge"},
 			field:   fieldMaxLength,
 		},
+		{
+			// 8 characters but 16 bytes, over the Linux limit
+			name:    "multi-byte characters",
+			src:     docWithSpec("defaultBridge: " + strings.Repeat("é", 8)),
+			pointer: []string{"spec", "defaultBridge"},
+			field:   fieldPattern,
+		},
+	})
+}
+
+// The schema accepts a defaultBridge only when Spec.Validate does, so a bridge
+// name is never accepted by one and refused by the other.
+func TestValidateDocumentDefaultBridgeProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		char := rapid.SampledFrom([]string{"b", "B", "0", "-", "_", ".", "@", "é", " ", "/"})
+		length := rapid.OneOf(rapid.IntRange(0, 3), rapid.IntRange(experiment.MaxBridgeNameLength/2, experiment.MaxBridgeNameLength+1))
+		chars := make([]string, length.Draw(t, "length"))
+		for i := range chars {
+			chars[i] = char.Draw(t, "char")
+		}
+
+		bridge := strings.Join(chars, "")
+
+		err := workflow.ValidateDocument(schemaDoc(map[string]any{"defaultBridge": bridge}))
+		if err == nil {
+			if specErr := (workflow.Spec{DefaultBridge: bridge}).Validate(); specErr != nil {
+				t.Fatalf("ValidateDocument(defaultBridge %q) accepts it, but Spec.Validate() error = %v", bridge, specErr)
+			}
+		}
+
+		// letters, digits and _@.- up to the limit are accepted
+		plain := !strings.ContainsAny(bridge, "é /") && len(bridge) <= experiment.MaxBridgeNameLength
+		if (err == nil) != plain {
+			t.Fatalf("ValidateDocument(defaultBridge %q) error = %v, want valid %t", bridge, err, plain)
+		}
 	})
 }
 

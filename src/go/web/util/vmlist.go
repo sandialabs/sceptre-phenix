@@ -152,18 +152,25 @@ func sortByDelay(vms mm.VMs, nodes NodeIndex, asc bool) {
 	})
 }
 
+// delayLess orders delays by text, except that timers, which sort together,
+// put those that parse first by duration and then the rest by text.
 func delayLess(a, b string) bool {
 	ta, aTimer := strings.CutPrefix(a, "timer:")
 	tb, bTimer := strings.CutPrefix(b, "timer:")
 
-	if aTimer && bTimer {
-		da, errA := time.ParseDuration(ta)
-		db, errB := time.ParseDuration(tb)
-
-		if errA == nil && errB == nil {
-			return da < db
-		}
+	if !aTimer || !bTimer {
+		return a < b
 	}
 
-	return a < b
+	da, errA := time.ParseDuration(ta)
+	db, errB := time.ParseDuration(tb)
+
+	switch {
+	case errA == nil && errB == nil:
+		return da < db
+	case (errA == nil) != (errB == nil):
+		return errA == nil
+	default:
+		return a < b
+	}
 }

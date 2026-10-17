@@ -156,7 +156,9 @@ three options available to set, but on only one option can be set:
    start either through the phēnix UI or command line (the latter can be by
    phēnix or minimega commands).
 
-1. `timer` is a string that is set as a delay in minutes; e.g., `5m`.
+1. `timer` is a
+   [Golang duration string](https://pkg.go.dev/time#ParseDuration) such as
+   `30s`, `5m`, or `1h30m`. A timer that is not a duration is rejected.
 
 1. `c2` requires minimega command and control. Note in the example below that
    the hostname `AD1` will be delayed starting until the VM `host-00` has

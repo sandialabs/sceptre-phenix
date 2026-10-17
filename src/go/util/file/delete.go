@@ -197,7 +197,12 @@ func listingPattern(dir string, names []string) (string, bool) {
 		return "/" + dir, true
 	}
 
-	return "/" + path.Join(dir, prefix) + "*", true
+	if dir != "" {
+		dir += "/"
+	}
+
+	// joined by hand: path.Join would clean away a prefix of "." or ".."
+	return "/" + dir + prefix + "*", true
 }
 
 // present reports whether a listing shows name: the file itself, or something

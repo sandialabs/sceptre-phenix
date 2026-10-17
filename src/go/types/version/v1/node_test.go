@@ -100,6 +100,22 @@ func TestNodeValidate(t *testing.T) {
 			substr:  "the gateway is ignored",
 		},
 		{
+			name: "internal node, delay timer that parses",
+			node: Node{GeneralF: &General{HostnameF: "test-node"}, DelayF: &Delay{TimerF: "1h30m"}},
+		},
+		{
+			name:    "internal node, delay timer without a unit",
+			node:    Node{GeneralF: &General{HostnameF: "test-node"}, DelayF: &Delay{TimerF: "5"}},
+			wantErr: true,
+			substr:  "is not a duration",
+		},
+		{
+			name:    "internal node, delay timer too long for a duration",
+			node:    Node{GeneralF: &General{HostnameF: "test-node"}, DelayF: &Delay{TimerF: "9999999999h"}},
+			wantErr: true,
+			substr:  "is not a duration",
+		},
+		{
 			name: "internal node, gateway on static interface is allowed",
 			node: nodeWithIfaces(
 				&Interface{

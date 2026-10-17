@@ -327,7 +327,7 @@ func genSpecBoolPtr() *rapid.Generator[*bool] {
 func genSpecSpec() *rapid.Generator[workflow.Spec] {
 	name := rapid.StringMatching(`[a-z0-9-]{0,6}`)
 	id := rapid.IntRange(0, 4094)
-	bridge := rapid.StringMatching(`[a-z0-9]{0,` + strconv.Itoa(experiment.MaxBridgeNameLength) + `}`)
+	bridge := rapid.StringMatching(`[a-zA-Z0-9_@.-]{0,` + strconv.Itoa(experiment.MaxBridgeNameLength) + `}`)
 
 	return rapid.Custom(func(t *rapid.T) workflow.Spec {
 		spec := workflow.Spec{

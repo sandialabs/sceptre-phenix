@@ -900,8 +900,13 @@ func trustworthyOrigin(r *http.Request) bool {
 // forwardedHTTPS reports whether a Forwarded header (RFC 7239) says the
 // client's request came over HTTPS, as the first proxy it passed saw it.
 func forwardedHTTPS(forwarded string) bool {
-	first, _, _ := strings.Cut(forwarded, ",")
-	for pair := range strings.SplitSeq(first, ";") {
+	first, _ := cutUnquoted(forwarded, ',')
+
+	for first != "" {
+		var pair string
+
+		pair, first = cutUnquoted(first, ';')
+
 		k, v, _ := strings.Cut(strings.TrimSpace(pair), "=")
 		if strings.EqualFold(k, "proto") {
 			return strings.EqualFold(strings.Trim(v, `"`), "https")
@@ -909,4 +914,23 @@ func forwardedHTTPS(forwarded string) bool {
 	}
 
 	return false
+}
+
+// cutUnquoted slices s around its first sep outside a quoted string, whose
+// backslash escapes the character after it (RFC 7230 quoted-pair).
+func cutUnquoted(s string, sep byte) (string, string) {
+	quoted := false
+
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case quoted && c == '\\':
+			i++
+		case c == '"':
+			quoted = !quoted
+		case !quoted && c == sep:
+			return s[:i], s[i+1:]
+		}
+	}
+
+	return s, ""
 }

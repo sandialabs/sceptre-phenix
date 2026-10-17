@@ -67,7 +67,7 @@ let resourceNameAllowed = (policy, name) => {
   // a policy that names no resources can arrive with null resource names
   for (const n of policy.resourceNames ?? []) {
     let negate = n.startsWith('!');
-    let n2 = n.replace('!', '');
+    let n2 = negate ? n.slice(1) : n;
 
     if (filepathMatch(n2, name)) {
       if (negate) {

@@ -99,7 +99,7 @@ spec:                              # required; {} applies every default
   vlanRange:
     min: 100                       # 0 leaves that end of the range unset
     max: 200
-  defaultBridge: phenix            # at most 15 characters (the Linux interface-name limit)
+  defaultBridge: phenix            # at most 15 of a-z A-Z 0-9 _ @ . - (the Linux interface-name limit)
 ```
 
 Experiments are mapped to a branch by their `phenix.workflow/branch`
