@@ -1,10 +1,10 @@
+// @vitest-environment happy-dom
 // Upload refuses a template file and names Import templates, while a diagram
-// with its own templates still uploads; rendered on the server.
+// with its own templates still uploads; mounted and driven as a user would.
 
-import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { createSSRApp, h } from 'vue';
-import { renderToString } from 'vue/server-renderer';
+import { afterEach, describe, expect, test } from 'vitest';
 import { createPinia } from 'pinia';
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
 import YAML from 'js-yaml';
 
 import UploadDialog from '@/components/builder/dialogs/UploadDialog.vue';
@@ -31,89 +31,117 @@ const FILE = {
   ],
 };
 
-// Opens the dialog, submits `text` from the source given, and returns the
-// dialog's bindings, the store, and the events it emitted.
-async function submitted(text, source = 'text') {
+enableAutoUnmount(afterEach);
+
+// Opens the dialog in the page, as Builder does.
+function open() {
   const pinia = createPinia();
-  const emitted = { uploaded: vi.fn(), close: vi.fn() };
-  const app = createSSRApp({
-    render: () =>
-      h(UploadDialog, {
-        onUploaded: emitted.uploaded,
-        onClose: emitted.close,
-      }),
-  });
-  let bindings = null;
-
-  app.use(pinia);
-  app.mixin({
-    created() {
-      if (this.$.type === UploadDialog) {
-        bindings = this.$.setupState;
-      }
-    },
-  });
-
   const store = useBuilderStore(pinia);
+  const wrapper = mount(UploadDialog, {
+    attachTo: document.body,
+    global: { plugins: [pinia] },
+  });
 
-  await renderToString(app);
-  bindings.form.source = source;
-  bindings.form.text = text;
-  if (source === 'file') {
-    bindings.form.file = 'read';
-    bindings.form.fileName = 'plant.yaml';
-  }
-
-  const before = store.doc;
-
-  await bindings.submit();
-
-  return { bindings, store, emitted, before };
+  return { wrapper, store, before: store.doc };
 }
 
-// A refusal moves focus to the control of its source.
-beforeEach(() => {
-  vi.stubGlobal('document', { getElementById: () => null });
+// Chooses `name` with `text` in the file field, as the file picker does.
+async function chooseFile(wrapper, name, text) {
+  const field = wrapper.get('[data-testid="upload-file"]');
 
-  return () => vi.unstubAllGlobals();
-});
+  Object.defineProperty(field.element, 'files', {
+    configurable: true,
+    value: [new File([text], name, { type: 'application/yaml' })],
+  });
+  await field.trigger('change');
+  await flushPromises();
+}
+
+// Pastes `text`, then selects Upload.
+async function paste(wrapper, text) {
+  await wrapper.get('input[value="text"]').setValue();
+  await wrapper.get('[data-testid="upload-text"]').setValue(text);
+  await wrapper.get('[data-testid="upload-submit"]').trigger('click');
+  await flushPromises();
+}
+
+const errorOf = (wrapper) => wrapper.find('[data-testid="upload-error"]');
 
 describe('Upload and a template file', () => {
   test('a file that names the template file schema is refused, and the error names Import templates', async () => {
-    const { bindings, store, emitted, before } = await submitted(
-      YAML.dump(FILE),
-      'file',
-    );
+    const { wrapper, store, before } = open();
 
-    expect(bindings.error.text).toBe(REFUSED);
-    expect(bindings.invalid('file')).toBe('true');
-    expect(emitted.uploaded).not.toHaveBeenCalled();
-    expect(emitted.close).not.toHaveBeenCalled();
+    await chooseFile(wrapper, 'plant.yaml', YAML.dump(FILE));
+    await wrapper.get('[data-testid="upload-submit"]').trigger('click');
+    await flushPromises();
+
+    expect(errorOf(wrapper).text()).toBe(REFUSED);
+    expect(
+      wrapper.get('[data-testid="upload-file"]').attributes('aria-invalid'),
+    ).toBe('true');
+    expect(wrapper.emitted('uploaded')).toBeUndefined();
+    expect(wrapper.emitted('close')).toBeUndefined();
     expect(store.doc).toBe(before);
   });
 
-  test('pasted text with a list of templates and no schema is refused too', async () => {
+  test('pasted text with a list of templates and no schema is refused too, and focus moves to the text', async () => {
     const { $schema: _, ...unnamed } = FILE;
-    const { bindings, emitted } = await submitted(JSON.stringify(unnamed));
+    const { wrapper } = open();
 
-    expect(bindings.error.text).toBe(REFUSED);
-    expect(bindings.invalid('text')).toBe('true');
-    expect(emitted.uploaded).not.toHaveBeenCalled();
+    await paste(wrapper, JSON.stringify(unnamed));
+
+    const text = wrapper.get('[data-testid="upload-text"]');
+
+    expect(errorOf(wrapper).text()).toBe(REFUSED);
+    expect(text.attributes('aria-invalid')).toBe('true');
+    expect(text.attributes('aria-describedby')).toBe('upload-error');
+    expect(document.activeElement).toBe(text.element);
+    expect(wrapper.emitted('uploaded')).toBeUndefined();
   });
 
   test('a diagram that carries its own templates uploads as a new draft', async () => {
     const { doc } = sampleDocument();
-    const { bindings, store, emitted } = await submitted(
+    const { wrapper, store } = open();
+
+    await paste(
+      wrapper,
       JSON.stringify({
         ...doc,
         templates: [{ ...server, id: '3f1c6f7e-2b9a-4c1d-9e8f-0a1b2c3d4e5f' }],
       }),
     );
 
-    expect(bindings.error.text).toBe('');
-    expect(emitted.uploaded).toHaveBeenCalledTimes(1);
+    expect(errorOf(wrapper).exists()).toBe(false);
+    expect(wrapper.emitted('uploaded')).toEqual([[{}]]);
+    expect(wrapper.emitted('close')).toHaveLength(1);
     expect(store.doc.templates.map((template) => template.name)).toEqual([
       'Server',
     ]);
+  });
+});
+
+describe('the Upload dialog, from the keyboard', () => {
+  test('opens as a modal dialog with focus on it, and Escape asks to close it', async () => {
+    const { wrapper } = open();
+    const dialog = wrapper.get('dialog');
+
+    expect(dialog.element.open).toBe(true);
+    expect(document.activeElement).toBe(dialog.element);
+
+    await dialog.trigger('keydown', { key: 'Escape' });
+    expect(wrapper.emitted('close')).toHaveLength(1);
+  });
+
+  test('choosing another source clears the error of the last one', async () => {
+    const { wrapper } = open();
+
+    await wrapper.get('[data-testid="upload-submit"]').trigger('click');
+    await flushPromises();
+    expect(errorOf(wrapper).text()).toBe('Choose a file to upload.');
+    expect(document.activeElement?.id).toBe('upload-file');
+
+    await wrapper.get('input[value="text"]').setValue();
+    expect(errorOf(wrapper).exists()).toBe(false);
+    expect(wrapper.find('[data-testid="upload-file"]').exists()).toBe(false);
   });
 });

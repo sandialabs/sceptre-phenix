@@ -45,6 +45,15 @@ in any order: `npx vitest run --project contract --sequence.shuffle`.
 `tagOf`, `attribute`) are in `test/builder/fixtures.js`, and
 `renderWithStore` is in `test/builder/render.js` (`unit` files only).
 
+Test what a component does with `@vue/test-utils` in a `unit` file that
+starts with `// @vitest-environment happy-dom`: mount it, use `trigger` and
+`setValue`, and check focus, emitted events and the DOM. Use the server
+render for static output only, and keep each file in one environment.
+happy-dom has no layout, so test sizes, positions and the Vue Flow canvas in
+Playwright. In `contract` suites, use `fast-check` properties for rules that
+hold for every input (round trips, order, idempotence). Pass options to each
+`fc.assert` call. Do not call `fc.configureGlobal`.
+
 The build compresses Builder's files with Brotli quality 9;
 `PHENIX_BROTLI_QUALITY` (a whole number from 0 to 11) changes it, and the
 Docker and Podman builds set 11 (see `plugins/builder-assets.js`).
