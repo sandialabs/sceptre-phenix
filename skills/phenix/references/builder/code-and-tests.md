@@ -8,7 +8,7 @@ build rules in full, and how to test.
 | Area | Files |
 |---|---|
 | Document model, validation, generation, publishing to configs, schemas | `src/go/types/builder/` (`document.go`, `validate.go`, `schema.go`, `generate.go`, `detach.go`, `topology.go`, `yaml.go`, `codes.go`, `customicons.go`, `template.go`, `templatefile.go`, `layerset.go`, `layerset_schema.go`, `layersetfile.go`, `package.go`, `legacy_xml.go`, `legacy.go`) |
-| Drafts, snapshots, published documents, libraries, preflight | `src/go/api/builder/` (`service.go`, `published.go`, `chunks.go`, `limits.go`, `icons.go`, `templates.go`, `templatefiles.go`, `layersets.go`, `scope.go`, `config_hook.go`, `file.go`, `publish.go`, `changes.go`, `preflight.go`) |
+| Drafts, snapshots, published documents, libraries, preflight | `src/go/api/builder/` (`service.go`, `published.go`, `chunks.go`, `limits.go`, `icons.go`, `templates.go`, `templatefiles.go`, `layersets.go`, `config_hook.go`, `file.go`, `publish.go`, `changes.go`, `preflight.go`) |
 | HTTP routes and authorization | `src/go/web/builder*.go` (see [api.md](api.md#routes)). `builder_assets.go` serves the editor's files |
 | Builder role and its start-up check | `src/go/api/config/default/builder.yml`, `src/go/web/rbac/migrations.go`, `src/go/web/init.go` |
 | `builder-doc` codec | `src/go/store/types.go` |
@@ -102,18 +102,18 @@ positions off the grid (`builder-editing.spec.js` reloads one).
 - Go, from `src/go`: `go test ./api/builder ./types/builder ./store ./web
   ./web/rbac`. The `api/builder` and `web` tests share the in-memory record
   store `store/recordtest/memrecord`, with hooks (`BeforeCreate`,
-  `BeforeUpdate`, `AfterWrite`, `FailDelete`, `FailPrefixDelete`, `Stamp`).
-  Tests that edit stored records use its methods (`Count`, `Keys`,
-  `SetValue`, `Drop`, `RewriteLocked`), not its fields.
+  `BeforeUpdate`, `FailDelete`, `FailPrefixDelete`, `Stamp`). Tests that
+  edit stored records use its methods (`Count`, `Keys`, `SetValue`,
+  `Drop`), not its fields.
 - Go fixtures for roles are in `web/builder_fixtures_test.go`:
   `builderUserRole` (the Builder and every config verb, as the built-in
   Builder role), `builderOnlyRole` (the Builder and no config permission),
   `builderConfigsOnlyRole` (every config verb, no Builder),
   `nonBuilderRole(policies…)` and `builtinRole(t, name)` (a role of
-  `api/config/default`). `builderAccessCallers` builds the permission
-  matrix of a route that needs only `builder` `use`: no identity, a
-  configs-only role and Global Viewer get 403, and a Builder-only role and
-  Global Admin are allowed.
+  `api/config/default`). `runBuilderAccessCases` runs a table of callers
+  against a route. `TestBuilderRoutesNeedTheBuilder` in
+  `web/builder_test.go` checks that every Builder route refuses no
+  identity, a configs-only role and Global Viewer with 403.
 - Template copies are tested in `test/builder/template-links.test.js`, and
   the library UI in `library-render.test.js`.
 - Unit, from `src/js`: `npx vitest run test/builder`. `npm test` runs two
