@@ -30,6 +30,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **VM Snapshots**: VMs with multiple drives now get a disk snapshot for every drive instead of only the first, and redeploying such a VM with a new disk keeps its additional drives. Resetting a VM's disk state now resets every drive. ([#145](https://github.com/sandialabs/sceptre-phenix/issues/145))
 - **Topology Builder**:
   - **Annotation Loss**: Saving a topology replaced the config's entire metadata annotation map, discarding every annotation other than `builder-xml`.
   - **Crash on Invalid Input**: A schema-invalid topology crashed the handlers with a nil-pointer dereference instead of returning a validation error.

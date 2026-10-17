@@ -60,6 +60,9 @@ modal. Click the `create backing image` button as shown in the screenshot below.
 
 ![screenshot](images/vms_backing_image.png)
 
+A backing image is created from the VM's first drive only. Additional drives
+are not included.
+
 ### From the Command Line Binary
 
 There is currently no CLI subcommand to create backing images from running VMs. This operation is available through the Web-UI and the REST API (`POST /api/vms/commit`).
@@ -360,7 +363,7 @@ Click the `reset disk state` button as shown in the screenshot below.
 
 ### From the Command Line Binary
 
-To reset the first disk to the initial pre-boot state, run the following command.
+To reset every disk to the initial pre-boot state, run the following command.
 
 ```shell
 phenix vm reset-disk <experiment name> [vm name] [--label <label>]

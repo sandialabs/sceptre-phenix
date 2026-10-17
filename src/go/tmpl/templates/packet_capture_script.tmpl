@@ -2,8 +2,11 @@
 
 {{- range .Exp.Topology.FindNodesWithLabels "soh-elastic-server" }}
 ## VM: {{ .General.Hostname }} ##
-{{ $firstDrive := index .Hardware.Drives 0 }}
-disk snapshot {{ $firstDrive.Image }} {{ $.Exp.SnapshotName .General.Hostname }} 
+{{- $hostname := .General.Hostname }}
+{{- range $i, $drive := .Hardware.Drives }}
+disk snapshot {{ $drive.Image }} {{ $.Exp.DriveSnapshotName $hostname $i }}
+{{- end }}
+{{- $firstDrive := index .Hardware.Drives 0 }}
 {{- if gt (len .Injections) 0 }}
 disk inject {{ $.Exp.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} files {{ .FileInjects $.Exp.BaseDir }}
 {{- end }}
@@ -25,8 +28,11 @@ vm launch {{ .General.VMType }} {{ .General.Hostname }}
 
 {{- range .Exp.Topology.FindNodesWithLabels "soh-monitor-node" }}
 ## VM: {{ .General.Hostname }} ##
-        {{ $firstDrive := index .Hardware.Drives 0 }}
-disk snapshot {{ $firstDrive.Image }} {{ $.Exp.SnapshotName .General.Hostname }} 
+        {{- $hostname := .General.Hostname }}
+        {{- range $i, $drive := .Hardware.Drives }}
+disk snapshot {{ $drive.Image }} {{ $.Exp.DriveSnapshotName $hostname $i }}
+        {{- end }}
+        {{- $firstDrive := index .Hardware.Drives 0 }}
         {{- if gt (len .Injections) 0 }}
 disk inject {{ $.Exp.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} files {{ .FileInjects $.Exp.BaseDir }}
         {{- end }}

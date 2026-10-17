@@ -2,7 +2,6 @@ package mm
 
 import (
 	"errors"
-	"fmt"
 	"maps"
 	"path/filepath"
 	"sort"
@@ -315,9 +314,16 @@ type BlockDumpResponse struct {
 type diskConfig struct {
 	path  string
 	base  string
+	iface string
 	cache string
 }
 
+// diskCacheModes are the QEMU cache modes minimega accepts in a diskspec.
+var diskCacheModes = map[string]bool{ //nolint:gochecknoglobals // constant lookup table
+	"none": true, "writeback": true, "unsafe": true, "directsync": true, "writethrough": true,
+}
+
+// newDiskConfig parses a minimega diskspec of the form path[,interface][,cache].
 func newDiskConfig(c string) diskConfig {
 	tokens := strings.Split(c, ",")
 
@@ -326,21 +332,35 @@ func newDiskConfig(c string) diskConfig {
 		base: filepath.Base(tokens[0]),
 	}
 
-	if len(tokens) > 1 {
-		cfg.cache = tokens[1]
+	for _, token := range tokens[1:] {
+		if diskCacheModes[token] {
+			cfg.cache = token
+		} else {
+			cfg.iface = token
+		}
 	}
 
 	return cfg
 }
 
-func (d diskConfig) string(cache string) string {
-	if cache != "" {
-		return fmt.Sprintf("%s,%s", d.path, cache)
+// string returns the diskspec, with a non-empty iface or cache overriding the
+// parsed one.
+func (d diskConfig) string(iface, cache string) string {
+	if iface == "" {
+		iface = d.iface
 	}
 
-	if d.cache != "" {
-		return fmt.Sprintf("%s,%s", d.path, d.cache)
+	if cache == "" {
+		cache = d.cache
 	}
 
-	return d.path
+	parts := []string{d.path}
+
+	for _, token := range []string{iface, cache} {
+		if token != "" {
+			parts = append(parts, token)
+		}
+	}
+
+	return strings.Join(parts, ",")
 }
