@@ -239,7 +239,7 @@ func TestDecodePackageRefusesUnknownFields(t *testing.T) {
 		"in a config": func(value map[string]any) {
 			value["scenarios"].(map[string]any)["pkg-scenario"].(map[string]any)["status"] = map[string]any{}
 		},
-		"in a config's metadata": func(value map[string]any) {
+		"in the metadata of a config": func(value map[string]any) {
 			value["topologies"].(map[string]any)["pkg-shared"].(map[string]any)["metadata"].(map[string]any)["created"] = "now"
 		},
 		"in an image": func(value map[string]any) {

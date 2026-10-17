@@ -144,7 +144,7 @@ func TestLayerSetIssues(t *testing.T) {
 	}
 
 	if diff := cmp.Diff([]string{"set.name"}, paths); diff != "" {
-		t.Errorf(`LayerSet.Issues("set") of a set without a name paths mismatch (-want +got):\n%s`, diff)
+		t.Errorf("LayerSet.Issues(\"set\") of a set without a name paths mismatch (-want +got):\n%s", diff)
 	}
 }
 

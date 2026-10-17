@@ -800,6 +800,10 @@ func TestFromTopologyConfigAddsIncludedTopologies(t *testing.T) {
 	// The topology's own devices come first; each included topology starts
 	// a row of its own.
 	devices := doc.DeviceNodes()
+	if len(devices) < 6 {
+		t.Fatalf("FromConfig(builder-fixture) = %d devices, want at least 6", len(devices))
+	}
+
 	if devices[3].Device.Hostname != "standalone" || devices[4].Device.Hostname != "collector" {
 		t.Errorf("FromConfig(builder-fixture) devices = %s, want standalone fourth and collector fifth", asJSON(t, devices))
 	}

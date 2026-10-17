@@ -932,15 +932,15 @@ func TestPublishTopologyConfigSkipsAddressesNotAssigned(t *testing.T) {
 	for name, test := range map[string]struct {
 		router, host map[string]any
 	}{
-		"DHCP":             {router: map[string]any{"proto": "dhcp", "address": "10.0.0.2"}, host: nil},
-		"manual":           {router: map[string]any{"proto": "manual", "address": "10.0.0.2", "mask": 24}, host: nil},
-		"blank address":    {router: map[string]any{"address": " "}, host: map[string]any{"address": " "}},
-		"blank MAC":        {router: map[string]any{"mac": ""}, host: map[string]any{"mac": ""}},
-		"unreadable":       {router: map[string]any{"address": "10.0.0.256"}, host: map[string]any{"address": "10.0.0.256"}},
-		"mask and gateway": {router: map[string]any{"gateway": "10.0.0.254"}, host: map[string]any{"gateway": "10.0.0.254"}},
-		"U+FEFF":           {router: map[string]any{"address": "\ufeff10.0.0.2"}, host: nil},
-		"U+0085":           {router: map[string]any{"address": "10.0.0.2\u0085"}, host: nil},
-		"no-break space":   {router: map[string]any{"address": "\u00a010.0.0.2"}, host: nil},
+		"DHCP":                {router: map[string]any{"proto": "dhcp", "address": "10.0.0.2"}, host: nil},
+		"manual":              {router: map[string]any{"proto": "manual", "address": "10.0.0.2", "mask": 24}, host: nil},
+		"blank address":       {router: map[string]any{"address": " "}, host: map[string]any{"address": " "}},
+		"blank MAC":           {router: map[string]any{"mac": ""}, host: map[string]any{"mac": ""}},
+		"unreadable":          {router: map[string]any{"address": "10.0.0.256"}, host: map[string]any{"address": "10.0.0.256"}},
+		"mask and gateway":    {router: map[string]any{"gateway": "10.0.0.254"}, host: map[string]any{"gateway": "10.0.0.254"}},
+		"byte order mark":     {router: map[string]any{"address": "\ufeff10.0.0.2"}, host: nil},
+		"next line character": {router: map[string]any{"address": "10.0.0.2\u0085"}, host: nil},
+		"no-break space":      {router: map[string]any{"address": "\u00a010.0.0.2"}, host: nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := withInterfaces(t, map[string][]map[string]any{
@@ -966,11 +966,11 @@ func TestPublishTopologyConfigSkipsAddressesNotAssignedAsTyped(t *testing.T) {
 			router: map[string]any{"proto": "\tManual ", "address": "10.0.0.2"},
 			host:   nil,
 		},
-		"MAC after U+FEFF": {
+		"MAC after a byte order mark": {
 			router: map[string]any{"mac": "\ufeffaa:bb:cc:dd:ee:ff"},
 			host:   map[string]any{"mac": "aa:bb:cc:dd:ee:ff"},
 		},
-		"MAC before U+0085": {
+		"MAC before a next line character": {
 			router: map[string]any{"mac": "aa:bb:cc:dd:ee:ff\u0085"},
 			host:   map[string]any{"mac": "aa:bb:cc:dd:ee:ff"},
 		},

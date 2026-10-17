@@ -1031,18 +1031,31 @@ func TestSchemaLayers(t *testing.T) {
 
 	// The pattern accepts the labels Document.Validate accepts, and refuses
 	// the blank ones and those with control characters.
-	for label, valid := range map[string]bool{
-		"Control": true, " Basic control ": true, "Zone \u00e9": true, "\u00a0x": true,
-		"": false, " ": false, "\u00a0": false, "\u2003\u0085": false, "Basic\tcontrol": false, "a\nb": false,
+	for name, test := range map[string]struct {
+		label string
+		valid bool
+	}{
+		"word":                       {label: "Control", valid: true},
+		"padded words":               {label: " Basic control ", valid: true},
+		"accented letter":            {label: "Zone \u00e9", valid: true},
+		"no-break space then letter": {label: "\u00a0x", valid: true},
+		"empty":                      {label: "", valid: false},
+		"space":                      {label: " ", valid: false},
+		"no-break space":             {label: "\u00a0", valid: false},
+		"em space and next line":     {label: "\u2003\u0085", valid: false},
+		"tab":                        {label: "Basic\tcontrol", valid: false},
+		"newline":                    {label: "a\nb", valid: false},
 	} {
-		doc := loadDocumentFixture(t, "document.json")
-		doc.Layers = []builder.Layer{{ID: layerID(1), Label: label}}
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			doc.Layers = []builder.Layer{{ID: layerID(1), Label: test.label}}
 
-		err := doc.Validate()
-		if matcher.MatchString(label) != valid || (err == nil) != valid {
-			t.Errorf("layer label %q: pattern match = %t, Validate() error = %v, want valid = %t",
-				label, matcher.MatchString(label), err, valid)
-		}
+			err := doc.Validate()
+			if matcher.MatchString(test.label) != test.valid || (err == nil) != test.valid {
+				t.Errorf("layer label %q: pattern match = %t, Validate() error = %v, want valid = %t",
+					test.label, matcher.MatchString(test.label), err, test.valid)
+			}
+		})
 	}
 
 	// The messages give the range of a layer ID.
