@@ -663,13 +663,16 @@ func ResetDiskState(expName, vmName string) error {
 		cmdPrefix = "mesh send " + node
 	}
 
+	instanceDir := fmt.Sprintf("%s/%s", common.MinimegaBase, status[0]["id"])
+
 	// minimega names the instance snapshot of each disk disk-<index>.qcow2.
 	for i, disk := range disks {
 		var (
 			origSnap = strings.Split(disk, ",")[0]
 			diskName = fmt.Sprintf("disk-%d.qcow2", i)
-			finalDst = fmt.Sprintf("%s/%s/%s", common.MinimegaBase, status[0]["id"], diskName)
-			tmpSnap  = fmt.Sprintf("%s_%s_%s", expName, vmName, diskName)
+			finalDst = fmt.Sprintf("%s/%s", instanceDir, diskName)
+			// Absolute, so minimega creates it beside finalDst instead of in its files root.
+			tmpSnap = fmt.Sprintf("%s/reset-%s", instanceDir, diskName)
 		)
 
 		// Create a snapshot of the original snapshot
@@ -687,8 +690,7 @@ func ResetDiskState(expName, vmName string) error {
 		}
 
 		// Move the snapshot to the vm instance path
-		tmpSnapFullPath := fmt.Sprintf("%s/%s", filepath.Dir(origSnap), tmpSnap)
-		cmd.Command = fmt.Sprintf("%s shell mv %s %s", cmdPrefix, tmpSnapFullPath, finalDst)
+		cmd.Command = fmt.Sprintf("%s shell mv %s %s", cmdPrefix, tmpSnap, finalDst)
 
 		err = mmcli.ErrorResponse(mmcli.Run(cmd))
 		if err != nil {
