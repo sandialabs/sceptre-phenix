@@ -109,9 +109,9 @@ then the reference its routing table names for the task.
 
 `.github/workflows/frontend.yml` runs knip and Vitest, builds the UI and a
 real backend once for each `VITE_AUTH` mode, then runs the Playwright tests
-in parallel jobs, each against its own server (see `e2e/README.md`). It builds and runs
-the Playwright tests only for a change that can affect the browser, as its
-`changes` job decides; a change to unit tests under `test/` alone runs
-Vitest only. Keep Node
-versions, npm cache lockfiles, auth build mode, backend startup, path
-filters, and that job's path list aligned with local commands.
+in parallel jobs, each against its own server (see `e2e/README.md`). It
+builds and runs the Playwright tests only for a change that can affect the
+browser, as its `changes` job decides. A change to unit tests under `test/`
+alone runs Vitest only. Keep Node versions, npm cache lockfiles, auth build
+mode, backend startup, path filters, and that job's path list aligned with
+local commands.

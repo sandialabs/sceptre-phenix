@@ -1,6 +1,5 @@
-// Knip finds unused files, exports and dependencies (npm run knip).
-// Its plugins read the entry points from vite.config.js (with the Vitest
-// projects and test/unit-setup.js).
+// Knip finds unused files, exports and dependencies (npm run knip). Its
+// plugins read the entry points from vite.config.js and its Vitest projects.
 export default {
   workspaces: {
     '.': {
