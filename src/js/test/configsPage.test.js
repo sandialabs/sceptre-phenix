@@ -1,5 +1,6 @@
 // The Configs page: viewer, uploads, downloads, deletes, and the editor's save
 // and edit-loss guard. Configs are named Kind/name, so kinds may share names.
+import fc from 'fast-check';
 import { flushPromises } from '@vue/test-utils';
 import { h, nextTick } from 'vue';
 import { RouterView } from 'vue-router';
@@ -361,6 +362,70 @@ describe('the config list', () => {
       ]);
     });
 
+    const base = fc.stringMatching(/^[a-z0-9 ._-]{1,8}$/);
+    const valid = fc.mixedCase(fc.constantFrom('yaml', 'yml', 'json'));
+    const endsValid = (name) => /\.(yaml|yml|json)$/i.test(name);
+
+    // returns how many times this file name was sent to the server
+    async function sends(name) {
+      const wrapper = await list();
+      const before = axios.post.mock.calls.length;
+      try {
+        await upload(wrapper, file(name));
+        return axios.post.mock.calls.length - before;
+      } finally {
+        wrapper.unmount();
+      }
+    }
+
+    it('send any file whose name ends in .yaml, .yml or .json, in any case', async () => {
+      axios.post.mockResolvedValue({});
+      await fc.assert(
+        fc.asyncProperty(base, valid, async (name, ext) => {
+          expect(await sends(`${name}.${ext}`)).toBe(1);
+        }),
+        { numRuns: 15 },
+      );
+    });
+
+    it('refuse a file whose name has no yaml, yml or json in it', async () => {
+      const name = fc
+        .tuple(base, fc.stringMatching(/^[a-zA-Z]{0,5}$/))
+        .map(([b, e]) => `${b}.${e}`)
+        .filter((n) => !/yaml|yml|json/i.test(n));
+      await fc.assert(
+        fc.asyncProperty(name, async (n) => {
+          expect(await sends(n)).toBe(0);
+        }),
+        { numRuns: 15 },
+      );
+    });
+
+    // ConfigsList.vue's uploadFile leaves .yaml and .yml unanchored
+    it.fails(
+      'send a file only when its name ends in .yaml, .yml or .json',
+      async () => {
+        axios.post.mockResolvedValue({});
+        const ext = fc.oneof(
+          valid,
+          fc.stringMatching(/^[a-zA-Z]{0,5}$/),
+          fc
+            .tuple(
+              fc.constantFrom('yaml', 'yml'),
+              fc.stringMatching(/^[a-z.]{1,4}$/),
+            )
+            .map(([e, s]) => e + s),
+        );
+        await fc.assert(
+          fc.asyncProperty(base, ext, async (name, e) => {
+            const full = `${name}.${e}`;
+            expect(await sends(full)).toBe(endsValid(full) ? 1 : 0);
+          }),
+          { numRuns: 15, examples: [['web', 'yml.txt']] },
+        );
+      },
+    );
+
     // the explained lines and a hint indented under one, as the server sends
     const validation = [
       'nodes[0] "ADServer" (line 14): property "image" is missing',
@@ -403,6 +468,43 @@ describe('the config list', () => {
       expect(notify.error).toHaveBeenCalledWith(err);
       expect(openModal(wrapper)).toBeNull();
     });
+  });
+
+  it('finds the configs whose name holds the search as plain text, in any case', async () => {
+    // few letters, so searches often match, with a regular expression's own
+    const text = (max) => fc.stringMatching(new RegExp(`^[aAb.*(]{0,${max}}$`));
+    const configs = fc.uniqueArray(
+      fc.record({
+        kind: fc.constantFrom('Topology', 'Scenario'),
+        metadata: fc.record({ name: text(3).filter(Boolean) }),
+      }),
+      { selector: (c) => `${c.kind}/${c.metadata.name}`, maxLength: 6 },
+    );
+    const shown = (wrapper) =>
+      tableRows(wrapper)
+        .map(
+          (r) =>
+            `${textOf(r.Kind)}/${textOf(r.Name.find('.is-clickable > div'))}`,
+        )
+        .sort();
+    await fc.assert(
+      fc.asyncProperty(configs, text(2), async (rows, search) => {
+        const wrapper = await list(rows);
+        await wrapper
+          .find('input[placeholder="Find a Config"]')
+          .setValue(search);
+        expect(shown(wrapper)).toEqual(
+          rows
+            .filter((c) =>
+              c.metadata.name.toLowerCase().includes(search.toLowerCase()),
+            )
+            .map((c) => `${c.kind}/${c.metadata.name}`)
+            .sort(),
+        );
+        wrapper.unmount();
+      }),
+      { numRuns: 12 },
+    );
   });
 
   it("offers each row the actions the role has on that config's Kind/name", async () => {

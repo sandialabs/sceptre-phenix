@@ -1,5 +1,6 @@
 // The experiment Files tab (ExperimentFilesTab.vue): listing, opening,
 // selecting, downloading and deleting files, and the pages that hold it.
+import fc from 'fast-check';
 import { flushPromises, RouterLinkStub } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,9 +20,11 @@ import { h } from 'vue';
 
 import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
 import FileSelectionActions from '@/components/experiment/FileSelectionActions.vue';
+import { keepListed } from '@/utils/experimentFiles.js';
 import { useJobStore } from '@/utils/jobs.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
+import { pathSegment } from './helpers/arbitraries.js';
 import { deferredGets, never } from './helpers/async.js';
 import { httpError, wsMsg } from './helpers/fixtures.js';
 import {
@@ -38,6 +41,11 @@ import {
   tableHeader,
   toasts,
 } from './helpers/mount.js';
+
+// a file's path in the experiment's files folder
+const filePath = fc
+  .array(pathSegment, { minLength: 1, maxLength: 3 })
+  .map((parts) => parts.join('/'));
 
 const row = (path, extra) => ({
   name: path.split('/').pop(),
@@ -319,6 +327,40 @@ describe('selecting files', () => {
     const header = headerBox(await listing([]));
     expect([header.checked, header.disabled]).toEqual([false, true]);
   });
+
+  it('keeps the selected paths still listed, in order, the same array when all are', () => {
+    // selections may repeat a path or name one only in another case
+    const cases = fc.uniqueArray(fc.string(), { maxLength: 8 }).chain((paths) =>
+      fc.tuple(
+        fc.subarray(paths).map((listed) => listed.map((p) => row(p))),
+        fc.array(
+          fc.constantFrom(
+            ...paths,
+            ...paths.map((p) => p.toUpperCase()),
+            'gone.log',
+          ),
+          { maxLength: 10 },
+        ),
+      ),
+    );
+    const count = (list, path) => list.filter((p) => p === path).length;
+    fc.assert(
+      fc.property(cases, ([files, selected]) => {
+        const kept = keepListed(selected, files);
+        const isListed = (path) => files.some((f) => f.path === path);
+
+        expect(kept.every(isListed)).toBe(true);
+        // kept is selected with some paths dropped, in the same order
+        let i = 0;
+        for (const path of selected) if (path === kept[i]) i++;
+        expect(i).toBe(kept.length);
+        for (const path of selected.filter(isListed)) {
+          expect(count(kept, path)).toBe(count(selected, path));
+        }
+        expect(kept === selected).toBe(kept.length === selected.length);
+      }),
+    );
+  });
 });
 
 describe('opening a file', () => {
@@ -346,11 +388,9 @@ describe('opening a file', () => {
     expect(tab.emitted('waiting')).toEqual([[true], [false]]);
 
     await tab.find('.modal-card-foot button').trigger('click');
-    expect(tab.vm.fileViewerModal).toEqual({
-      active: false,
-      title: null,
-      contents: null,
-    });
+    expect(tab.find('.modal').element.style.display).toBe('none');
+    expect(tab.find('.modal-card-title').text()).toBe('');
+    expect(tab.find('.file-viewer').element.value).toBe('');
   });
 
   it.each([
@@ -396,6 +436,34 @@ describe('opening a file', () => {
     );
   });
 
+  it('downloads any file by a URL its name and path read back from intact', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    await fc.assert(
+      fc.asyncProperty(filePath, async (path) => {
+        const tab = await listing([path]);
+        // by attribute value: happy-dom refuses a selector escaping a quote
+        const label = `Download ${row(path).name}`;
+        await tab
+          .findAll('button')
+          .find((b) => b.attributes('aria-label') === label)
+          .trigger('click');
+
+        const url = new URL(open.mock.lastCall[0], 'http://phenix.test/');
+        const [name, ...dir] = url.pathname.split('/').toReversed();
+        expect(dir.toReversed().join('/')).toBe(
+          '/api/v1/experiments/exp1/files',
+        );
+        expect(decodeURIComponent(name)).toBe(row(path).name);
+        expect(Object.fromEntries(url.searchParams)).toEqual({
+          path,
+          token: 't',
+        });
+        tab.unmount();
+      }),
+      { numRuns: 20 },
+    );
+  });
+
   it('opens capture files on the WebShark page', async () => {
     store.features = ['webshark'];
     const tab = await listing([
@@ -435,8 +503,10 @@ describe('opening a file', () => {
     store.features = features;
     rbac.allowed = allowed;
     const tab = await listing(['a.pcap']);
-    expect(tab.vm.canOpenInWebShark).toBe(false);
     expect(byLabel(tab, 'Open a.pcap in WebShark').exists()).toBe(false);
+    expect(tab.find('td[data-label="Name"] .is-clickable').exists()).toBe(
+      false,
+    );
   });
 });
 
@@ -568,6 +638,44 @@ describe('deleting the selected files', () => {
     expect(checked(tab)).toEqual(['scorch/run-0/b.json', 'c.pcap']);
     expect(rowPaths(tab)).toHaveLength(2);
     expect(toasts()).toHaveLength(0);
+  });
+
+  it('drops the rows the server deleted and keeps the rest it was asked for selected', async () => {
+    // the files listed, those selected, and those of them the server deletes
+    const cases = fc
+      .uniqueArray(filePath, { minLength: 1, maxLength: 6 })
+      .chain((paths) =>
+        fc.tuple(
+          fc.constant(paths),
+          fc
+            .subarray(paths, { minLength: 1 })
+            .chain((selected) =>
+              fc.tuple(fc.constant(selected), fc.subarray(selected)),
+            ),
+        ),
+      );
+    await fc.assert(
+      fc.asyncProperty(cases, async ([paths, [selected, deleted]]) => {
+        resetMocks();
+        document.body.innerHTML = '';
+        const left = (path) => !deleted.includes(path);
+        const failed = selected
+          .filter(left)
+          .map((path) => ({ path, error: 'busy' }));
+        axios.post.mockResolvedValue({ data: { deleted, failed } });
+        const tab = await deleting(selected, paths);
+        await confirmDialog();
+
+        expect(rowPaths(tab)).toEqual(paths.filter(left));
+        expect(checked(tab)).toEqual(
+          paths.filter((path) => selected.includes(path) && left(path)),
+        );
+        expect(toasts()).toHaveLength(failed.length ? 0 : 1);
+        expect(notices.open).toHaveBeenCalledTimes(failed.length ? 1 : 0);
+        tab.unmount();
+      }),
+      { numRuns: 10 },
+    );
   });
 
   it('names the first eight failures and counts the rest', async () => {
@@ -936,9 +1044,17 @@ describe('the experiment pages', () => {
       expect(tabs).toEqual([
         { paginateKey, filter: 'web-server', category: 'Packet Capture' },
       ]);
-      expect(page.vm.fileCategories).toEqual(['Packet Capture', 'Unknown']);
-      expect(page.vm.searchHistory).toEqual(['web-server']);
-      expect(page.vm.isWaiting).toBe(true);
+      const categories = page.find(
+        'select[aria-label="Filter files by category"]',
+      );
+      expect(categories.findAll('option').map((o) => o.text())).toEqual([
+        'Packet Capture',
+        'Unknown',
+      ]);
+      expect(
+        page.findComponent({ name: 'BAutocomplete' }).props('data'),
+      ).toEqual(['web-server']);
+      expect(page.find('.loading-overlay.is-active').exists()).toBe(true);
       // the tab holds the file list, not the page
       expect(page.vm.files).toBeUndefined();
     },

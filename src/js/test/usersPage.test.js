@@ -10,8 +10,8 @@ vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/websocket.js', modules.websocket);
-vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 
+import { clearPageCache } from '@/utils/pageCache.js';
 import Users from '@/views/Users.vue';
 import { mountPage } from './helpers/mount.js';
 import { allowOnly } from './helpers/permissions.js';
@@ -20,21 +20,21 @@ const user = (username) => ({
   username,
   first_name: '',
   last_name: '',
-  role_name: 'Experiment Admin',
+  role: { name: 'Experiment Admin' },
 });
 
 beforeEach(() => {
+  clearPageCache();
   resetMocks();
-  axios.get.mockResolvedValue({ data: {} });
+  axios.get.mockImplementation(async (url) => ({
+    data: url === 'users' ? { users: [user('alice'), user('bob')] } : {},
+  }));
 });
 
 describe('the Users page token button', () => {
   it('is offered for the signed-in user to a role that may patch them', async () => {
     rbac.allowed = allowOnly(['users', 'patch']);
-    const page = await mountPage(Users, {
-      route: '/users',
-      data: { users: [user('alice'), user('bob')], loaded: true },
-    });
+    const page = await mountPage(Users, { route: '/users' });
 
     expect(
       page

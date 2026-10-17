@@ -8,6 +8,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -24,13 +25,16 @@ const fixture = (name) => path.join(fixtures, name);
 const script = fileURLToPath(new URL('../perf/summary.mjs', import.meta.url));
 const meta = { baseRef: 'main', generatedAt: '2026-10-13T00:00:00.000Z' };
 
+// the fixtures' inputs, read once, as a fresh copy for each caller to change
+const loaded = {};
 function inputs({ baseline = false } = {}) {
-  return loadInputs({
+  loaded[baseline] ??= loadInputs({
     sizePath: fixture('size-limit.json'),
     assertPath: fixture('assertion-results.json'),
     manifestPath: fixture('manifest.json'),
     baselinePath: baseline ? fixture('baseline.json') : undefined,
   });
+  return structuredClone(loaded[baseline]);
 }
 
 function lighthouseFailure(level) {
@@ -46,6 +50,15 @@ function lighthouseFailure(level) {
     url: 'http://127.0.0.1:3000/experiments',
   };
 }
+
+// every table row keeps its column count (8 for sizes, 11 for routes)
+const tableIntact = (md) =>
+  md
+    .split('\n')
+    .filter((line) => line.startsWith('|'))
+    .every((line) =>
+      [8, 11].includes(line.replace(/\\\|/g, '').split('|').length),
+    );
 
 describe('buildSummary', () => {
   it('passes when every budget passes, with no baseline', () => {
@@ -169,11 +182,63 @@ describe('buildSummary', () => {
     expect(summary.baseline).toEqual({ commit: null, runUrl: null });
     const md = renderMarkdown(summary);
     expect(md).not.toMatch(/<script|<img|javascript:/);
-    // every table row keeps its column count
-    for (const line of md.split('\n').filter((l) => l.startsWith('|'))) {
-      const cells = line.replace(/\\\|/g, '').split('|').length;
-      expect(cells === 8 || cells === 11).toBe(true);
-    }
+    expect(tableIntact(md)).toBe(true);
+  });
+
+  it('takes only finite numbers, and no markup, from any baseline', () => {
+    const hostile = fc.oneof(
+      fc.anything(),
+      fc.constantFrom('<script>', 'javascript:alert(1)', 'x|y', NaN, Infinity),
+    );
+    const name = fc.constantFrom(
+      'Entry JS (loaded on every page)',
+      'Entry CSS',
+    );
+    const baseline = fc.record(
+      {
+        commit: hostile,
+        runUrl: hostile,
+        size: fc.record({
+          rows: fc.array(fc.record({ name, size: hostile })),
+        }),
+        lighthouse: fc.record({
+          routes: fc.array(
+            fc.record({
+              path: fc.constant('/experiments'),
+              performance: hostile,
+              lcp: hostile,
+              totalByteWeight: hostile,
+            }),
+          ),
+        }),
+      },
+      { requiredKeys: [] },
+    );
+    const finite = (value) => value === null || Number.isFinite(value);
+    fc.assert(
+      fc.property(baseline, (hostileBaseline) => {
+        const data = inputs();
+        data.baseline = hostileBaseline;
+        const summary = buildSummary(data, meta);
+        for (const row of summary.size.rows) {
+          expect(finite(row.baseSize) && finite(row.delta)).toBe(true);
+        }
+        const base = summary.lighthouse.routes[0].base ?? {};
+        expect(Object.values(base).every(finite)).toBe(true);
+        const md = renderMarkdown(summary);
+        expect(md).not.toMatch(/[<>]|javascript:/);
+        expect(tableIntact(md)).toBe(true);
+      }),
+    );
+  });
+
+  it.each([
+    ['rows', { size: { rows: {} } }],
+    ['routes', { lighthouse: { routes: 5 } }],
+  ])('ignores a baseline whose %s are not a list', (_, baseline) => {
+    const data = inputs();
+    data.baseline = baseline;
+    expect(() => buildSummary(data, meta)).not.toThrow();
   });
 
   it('escapes a | and markup in budget names', () => {
@@ -184,14 +249,53 @@ describe('buildSummary', () => {
     expect(escapeCell('a|b')).toBe('a\\|b');
   });
 
-  it('limits annotations to 10', () => {
-    const data = inputs();
-    data.assertions = Array.from({ length: 12 }, () =>
-      lighthouseFailure('error'),
+  it('keeps tables, list items and annotations whole, whatever the names', () => {
+    const text = fc.string({ unit: 'binary' });
+    fc.assert(
+      fc.property(text, fc.oneof(fc.webUrl(), text), (name, url) => {
+        const data = inputs({ baseline: true });
+        data.size[0] = { ...data.size[0], name, passed: false };
+        data.lhrs = { [url]: Object.values(data.lhrs)[0] };
+        data.assertions = [{ ...lighthouseFailure('error'), url }];
+        const summary = buildSummary(data, meta);
+        const md = renderMarkdown(summary);
+        expect(tableIntact(md)).toBe(true);
+        const items = md.split('\n').filter((l) => l.startsWith('- '));
+        expect(items).toHaveLength(1);
+        expect(md).not.toMatch(/[<>]/);
+        const lines = annotations(summary);
+        expect(lines).toHaveLength(2);
+        for (const line of lines) {
+          expect(line).toMatch(/^::error title=Perf budget::[^\r\n]*$/);
+        }
+      }),
     );
-    const lines = annotations(buildSummary(data, meta));
-    expect(lines).toHaveLength(11);
-    expect(lines[10]).toBe('::error title=Perf budget::and 2 more');
+  });
+
+  it('shows at most 10 annotations and counts the rest', () => {
+    fc.assert(
+      fc.property(fc.nat(15), fc.nat(15), fc.nat(3), (over, errors, warns) => {
+        const data = inputs();
+        data.size = Array.from({ length: over }, (_, i) => ({
+          name: `chunk ${i}`,
+          size: 2,
+          sizeLimit: 1,
+          passed: false,
+        }));
+        data.assertions = [
+          ...Array.from({ length: errors }, () => lighthouseFailure('error')),
+          ...Array.from({ length: warns }, () => lighthouseFailure('warn')),
+        ];
+        const lines = annotations(buildSummary(data, meta));
+        const total = over + errors;
+        expect(lines).toHaveLength(Math.min(total, 11));
+        if (total > 10) {
+          expect(lines.at(-1)).toBe(
+            `::error title=Perf budget::and ${total - 10} more`,
+          );
+        }
+      }),
+    );
   });
 });
 
@@ -231,6 +335,27 @@ describe('loadInputs', () => {
       a: { from: 'results' },
       b: { from: 'results' },
     });
+
+    const segment = fc.constantFrom(
+      '..',
+      '.',
+      '',
+      'outside',
+      'results',
+      'lhr.json',
+      outside,
+    );
+    fc.assert(
+      fc.property(fc.array(segment, { maxLength: 5 }), (segments) => {
+        const jsonPath = segments.join('/');
+        fs.writeFileSync(
+          manifest,
+          JSON.stringify([{ url: 'a', isRepresentativeRun: true, jsonPath }]),
+        );
+        const read = loadInputs({ manifestPath: manifest }).lhrs.a;
+        expect([undefined, 'results']).toContain(read?.from);
+      }),
+    );
   });
 });
 

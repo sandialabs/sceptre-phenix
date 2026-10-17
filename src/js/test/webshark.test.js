@@ -1,5 +1,6 @@
 // WebShark's helpers: which files it opens, its URLs, the Wireshark command,
 // and who may use it (the pages that open captures have their own tests).
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, rbac, resetMocks } = await vi.hoisted(
@@ -24,6 +25,34 @@ import {
 import { allowOnly } from './helpers/permissions.js';
 
 beforeEach(() => resetMocks());
+
+// The words a POSIX shell reads from a command line of single-quoted words,
+// backslash escapes and plain words; throws on anything else unquoted.
+function shellWords(line) {
+  const words = [];
+  let word = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === "'") {
+      const end = line.indexOf("'", i + 1);
+      if (end < 0) throw new Error(`unterminated quote in ${line}`);
+      word = (word ?? '') + line.slice(i + 1, end);
+      i = end;
+    } else if (c === '\\') {
+      word = (word ?? '') + line[++i];
+    } else if (c === ' ') {
+      if (word !== null) words.push(word);
+      word = null;
+    } else if (/[\w./:|-]/.test(c)) {
+      word = (word ?? '') + c;
+    } else {
+      throw new Error(`unquoted ${JSON.stringify(c)} in ${line}`);
+    }
+  }
+  return word === null ? words : [...words, word];
+}
+
+const anyText = fc.string({ unit: 'binary' });
 
 describe('capture files', () => {
   it.each([
@@ -64,6 +93,19 @@ describe('webSharkURL', () => {
     );
     expect(webSharkURL('x.pcap', { embed: false })).toBe(
       '/igor/range-1/phenix/webshark/embed?capture=x.pcap',
+    );
+  });
+
+  it('reads back as any capture name', () => {
+    fc.assert(
+      fc.property(fc.string({ unit: 'grapheme' }), fc.boolean(), (c, embed) => {
+        const url = new URL(webSharkURL(c, { embed }), 'http://h');
+        expect(url.pathname).toBe('/webshark/embed');
+        expect([...url.searchParams]).toEqual([
+          ['capture', c],
+          ...(embed ? [['embed', '1']] : []),
+        ]);
+      }),
     );
   });
 });
@@ -107,6 +149,53 @@ describe('queryTarget', () => {
     });
     expect(exp).toBe('e1');
     expect(target.path).toBe('a.pcap');
+  });
+
+  it('names the same target again from the query the target gives', () => {
+    const name = fc.string({ minLength: 1 });
+    // the router gives a repeated parameter as an array
+    const param = (arb) =>
+      fc.oneof(arb, fc.array(arb, { minLength: 1, maxLength: 2 }));
+    const fileQuery = fc.record({ exp: param(name), file: param(name) });
+    const liveQuery = fc.record({
+      exp: param(name),
+      vm: param(name),
+      iface: param(fc.stringMatching(/^\d{1,6}$/)),
+    });
+    const value = fc.oneof(
+      fc.constant(null),
+      fc.string(),
+      fc.nat().map(String),
+      fc.array(fc.option(fc.string()), { maxLength: 2 }),
+    );
+    const anyQuery = fc.record(
+      { exp: value, file: value, vm: value, iface: value },
+      { requiredKeys: [] },
+    );
+    const roundTrips = (q) => {
+      const { exp, target } = queryTarget(q);
+      expect(queryTarget({ exp, ...target.query })).toEqual({ exp, target });
+    };
+
+    fc.assert(
+      fc.property(fileQuery, (q) => {
+        expect(queryTarget(q).target.live).toBe(false);
+        roundTrips(q);
+      }),
+    );
+    fc.assert(
+      fc.property(liveQuery, (q) => {
+        const { target } = queryTarget(q);
+        expect(target.live).toBe(true);
+        expect(target.query.iface).toBe(String(target.iface));
+        roundTrips(q);
+      }),
+    );
+    fc.assert(
+      fc.property(anyQuery, (q) => {
+        if (queryTarget(q).target) roundTrips(q);
+      }),
+    );
   });
 });
 
@@ -155,6 +244,26 @@ describe('the Wireshark command', () => {
     );
   });
 
+  it('streams any URL as the one word curl is given', () => {
+    fc.assert(
+      fc.property(anyText, (url) => {
+        expect(shellWords(wiresharkCommand(url))).toEqual([
+          'curl',
+          '-fsSN',
+          '--max-redirs',
+          '0',
+          '-L',
+          url,
+          '|',
+          'wireshark',
+          '-k',
+          '-i',
+          '-',
+        ]);
+      }),
+    );
+  });
+
   it("asks the server for a stream token of the VM interface's capture", async () => {
     const token = {
       token: 'pcs_abc',
@@ -171,6 +280,24 @@ describe('the Wireshark command', () => {
   it('names the same capture for the CLI', () => {
     expect(captureStreamCLI("it's", 'web', 2)).toBe(
       "phenix vm capture stream 'it'\\''s' 'web' 2 | wireshark -k -i -",
+    );
+    fc.assert(
+      fc.property(anyText, anyText, fc.nat(), (exp, vm, iface) => {
+        expect(shellWords(captureStreamCLI(exp, vm, iface))).toEqual([
+          'phenix',
+          'vm',
+          'capture',
+          'stream',
+          exp,
+          vm,
+          String(iface),
+          '|',
+          'wireshark',
+          '-k',
+          '-i',
+          '-',
+        ]);
+      }),
     );
   });
 });

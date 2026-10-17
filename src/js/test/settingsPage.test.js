@@ -1,5 +1,7 @@
 // The Settings page: loads the settings into a form, offers reset and save
 // only after a change, and keeps unsaved edits when the settings reload.
+import { isDeepStrictEqual } from 'node:util';
+import fc from 'fast-check';
 import { flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -63,6 +65,39 @@ const switchOf = (page, text) =>
     .find((sw) => textOf(sw) === text)
     .find('input');
 
+// each setting's switch, by its text, and number box, by its label's id
+const SWITCHES = {
+  'Require a lowercase letter': ['password_settings', 'lowercase_req'],
+  'Require an uppercase letter': ['password_settings', 'uppercase_req'],
+  'Require a number': ['password_settings', 'number_req'],
+  'Require a symbol': ['password_settings', 'symbol_req'],
+  'Log out users after period of inactivity': ['timeout_settings', 'enabled'],
+};
+const NUMBERS = {
+  'settings-password-min-length': ['password_settings', 'min_length'],
+  'settings-idle-timeout': ['timeout_settings', 'timeout_min'],
+  'settings-idle-warning': ['timeout_settings', 'warning_min'],
+  'settings-log-max-size': ['logging_settings', 'max_file_size'],
+  'settings-log-max-rotations': ['logging_settings', 'max_file_rotations'],
+  'settings-log-max-age': ['logging_settings', 'max_file_age'],
+};
+
+// the settings the form shows
+function form(page) {
+  const shown = {
+    password_settings: {},
+    timeout_settings: {},
+    logging_settings: {},
+  };
+  for (const [text, [group, key]] of Object.entries(SWITCHES)) {
+    shown[group][key] = switchOf(page, text).element.checked;
+  }
+  for (const [id, [group, key]] of Object.entries(NUMBERS)) {
+    shown[group][key] = Number(control(page, id).element.value);
+  }
+  return shown;
+}
+
 const button = (page, text) =>
   page.findAll('button').find((b) => textOf(b) === text);
 
@@ -108,7 +143,7 @@ describe('the Settings page', () => {
     expect(buttons(page)).toEqual(CHANGED);
 
     await button(page, 'Reset Form').trigger('click');
-    expect(page.vm.settings_obj).toEqual(settings());
+    expect(form(page)).toEqual(settings());
     expect(on(page)).toEqual(['Require a lowercase letter']);
     expect(buttons(page)).toEqual(UNCHANGED);
   });
@@ -145,6 +180,99 @@ describe('the Settings page', () => {
     axios.get.mockImplementationOnce(never);
     const next = await mountSettings();
     expect(minLength(next).element.value).toBe('12');
+  });
+
+  it('saves exactly the edits made to any settings', async () => {
+    const minutes = fc.integer({ min: 1, max: 240 }).map((n) => n / 2);
+    const FIELDS = {
+      password_settings: {
+        lowercase_req: fc.boolean(),
+        uppercase_req: fc.boolean(),
+        number_req: fc.boolean(),
+        symbol_req: fc.boolean(),
+        min_length: fc.integer({ min: 4, max: 32 }),
+      },
+      timeout_settings: {
+        enabled: fc.boolean(),
+        timeout_min: minutes,
+        warning_min: minutes,
+      },
+      logging_settings: {
+        max_file_size: fc.nat(1000),
+        max_file_rotations: fc.nat(100),
+        max_file_age: fc.nat(1000),
+      },
+    };
+    // settings, each field drawn from pick(arb, group, key)
+    const fieldsArb = (pick) =>
+      fc.record(
+        Object.fromEntries(
+          Object.entries(FIELDS).map(([group, fields]) => [
+            group,
+            fc.record(
+              Object.fromEntries(
+                Object.entries(fields).map(([key, arb]) => [
+                  key,
+                  pick(arb, group, key),
+                ]),
+              ),
+              { noNullPrototype: true },
+            ),
+          ]),
+        ),
+        { noNullPrototype: true },
+      );
+    // the settings loaded, then the same or other values typed over them
+    const loadedAndEdited = fieldsArb((arb) => arb).chain((loaded) =>
+      fc.tuple(
+        fc.constant(loaded),
+        fc.oneof(
+          fc.constant(structuredClone(loaded)),
+          fieldsArb((arb, g, k) => fc.oneof(fc.constant(loaded[g][k]), arb)),
+        ),
+      ),
+    );
+
+    await fc.assert(
+      fc.asyncProperty(loadedAndEdited, async ([loaded, edited]) => {
+        clearPageCache();
+        axios.post.mockReset().mockResolvedValue({});
+        const page = await open(structuredClone(loaded));
+        expect(form(page)).toEqual(loaded);
+
+        for (const [text, [group, key]] of Object.entries(SWITCHES)) {
+          await switchOf(page, text).setValue(edited[group][key]);
+        }
+        // the idle times can be changed only while idle logout is on
+        const want = structuredClone(edited);
+        if (!edited.timeout_settings.enabled) {
+          want.timeout_settings = {
+            ...loaded.timeout_settings,
+            enabled: false,
+          };
+        }
+        for (const [id, [group, key]] of Object.entries(NUMBERS)) {
+          const input = control(page, id);
+          expect(input.element.disabled).toBe(
+            group === 'timeout_settings' && !edited.timeout_settings.enabled,
+          );
+          if (!input.element.disabled) {
+            await input.setValue(String(edited[group][key]));
+          }
+        }
+        expect(form(page)).toEqual(want);
+
+        const changed = !isDeepStrictEqual(want, loaded);
+        expect(buttons(page)).toEqual(changed ? CHANGED : UNCHANGED);
+        await page.find('form').trigger('submit');
+        await flushPromises();
+        expect(axios.post.mock.calls.map(([, sent]) => sent)).toEqual(
+          changed ? [want] : [],
+        );
+        page.unmount();
+      }),
+      { numRuns: 15 },
+    );
   });
 
   it('keeps the edits and reports a save that fails', async () => {

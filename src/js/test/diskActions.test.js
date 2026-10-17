@@ -1,5 +1,6 @@
 // Which disk actions a role may take on a disk in its current state, and why
 // not, as the Disks page's details window and rows show them.
+import fc from 'fast-check';
 import { describe, expect, it, vi } from 'vitest';
 
 const { modules } = await vi.hoisted(() => import('./helpers/mocks.js'));
@@ -13,6 +14,7 @@ import {
   diskDisabledReason,
   diskRunningText,
 } from '@/utils/diskActions.js';
+import { diskListArb } from './helpers/arbitraries.js';
 import { disk } from './helpers/fixtures.js';
 
 const base = disk('/phenix/images/base.qc2', 'base.qc2', { kind: 'VM' });
@@ -154,8 +156,77 @@ describe('diskDisabledReason', () => {
     }
   });
 
-  it('knows no reason against an action it does not have', () => {
-    expect(reason('unknown', snap, () => false)).toBe(null);
+  // a disk list, one of its disks in any state, and a role
+  const cases = diskListArb()
+    .filter((list) => list.length > 0)
+    .chain((list) =>
+      fc.record({
+        list: fc.constant(list),
+        disk: fc.record({
+          listed: fc.constantFrom(...list),
+          readOnly: fc.boolean(),
+          inUse: fc.boolean(),
+          kind: fc.constantFrom('VM', 'ISO', 'Kernel'),
+          experiments: fc.array(
+            fc.record({ name: fc.string(), running: fc.boolean() }),
+            { maxLength: 3 },
+          ),
+        }),
+        action: fc.constantFrom(...Object.keys(DISK_ACTION_RULES)),
+        can: fc.func(fc.boolean()),
+      }),
+    );
+
+  it("refuses for want of permission only what the disk's state allows", () => {
+    const NO = "you don't have permission";
+    fc.assert(
+      fc.property(
+        cases,
+        ({ list, disk: { listed, ...state }, action, can }) => {
+          const d = { ...listed, ...state };
+          const always = diskDisabledReason(action, d, {
+            disks: list,
+            can: all,
+          });
+          // the answers the role gave to every permission asked of it
+          const asked = [];
+          const got = diskDisabledReason(action, d, {
+            disks: list,
+            can: (...args) => (asked.push(can(...args)), asked.at(-1)),
+          });
+          const none = () => false;
+
+          if (d.readOnly) {
+            expect(got).toMatch(/^the disk is (outside|at a path)/);
+          }
+          if (always === null) {
+            expect(got).toBe(asked.every(Boolean) ? null : NO);
+            expect(
+              diskDisabledReason(action, d, { disks: list, can: none }),
+            ).toBe(NO);
+          } else {
+            expect(got).toBe(always);
+          }
+
+          const label = action[0].toUpperCase() + action.slice(1);
+          const offered = (role) =>
+            diskActionState({ name: action, label }, d, {
+              disks: list,
+              can: role,
+            });
+          expect(offered(all)).toMatchObject({
+            permitted: true,
+            disabled: always !== null,
+            reason: always && `Can't ${action}: ${always}`,
+          });
+          expect(offered(none)).toMatchObject({
+            permitted: always !== null,
+            disabled: true,
+            reason: `Can't ${action}: ${always ?? NO}`,
+          });
+        },
+      ),
+    );
   });
 });
 

@@ -1,5 +1,6 @@
 // Which VM actions the running experiment page offers, for which VM states and
 // roles, and how it colors a VM's state.
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,6 +9,7 @@ import {
   ROW_ACTIONS,
   rowActionNames,
   TOOL_ACTIONS,
+  VM_ACTIONS,
   captureTargets,
   partitionVMsForAction,
   skippedVMsText,
@@ -17,6 +19,7 @@ import {
   vmStateInfo,
   vmStateType,
 } from '@/components/experiment/vmActions.js';
+import { applyStopCaptureUpdate } from '@/utils/captures.js';
 import { allowAll, allowOnly, denyAll } from './helpers/permissions.js';
 
 const running = {
@@ -122,6 +125,30 @@ const SELECTION_ACTIONS = [
   'memorySnapshot',
 ];
 
+// a VM in any mix of the states the rules read, on a few interfaces
+const networkArb = fc.constantFrom(
+  'dmz (1)',
+  'MGMT (2)',
+  'disconnected',
+  'plain',
+  '',
+);
+const vmArb = fc.record({
+  name: fc.constantFrom('a', 'b', 'c', 'd'),
+  state: fc.oneof(
+    fc.constantFrom('RUNNING', 'paused', 'Paused', 'QUIT', 'BUILDING', ''),
+    fc.string({ maxLength: 8 }),
+  ),
+  running: fc.boolean(),
+  snapshot: fc.boolean(),
+  ccActive: fc.boolean(),
+  busy: fc.boolean(),
+  cdRom: fc.constantFrom(undefined, '/iso/a.iso'),
+  networks: fc.array(networkArb, { maxLength: 3 }),
+  captures: fc.array(fc.record({ interface: fc.nat(3) }), { maxLength: 3 }),
+});
+const actionArb = fc.constantFrom(...Object.keys(VM_ACTIONS));
+
 describe('the state rules', () => {
   it('cover every action of the details modal', () => {
     expect(Object.keys(RULES).sort()).toEqual(
@@ -147,6 +174,68 @@ describe('the state rules', () => {
       );
     },
   );
+
+  it('give every button a reason exactly when it is disabled', () => {
+    fc.assert(
+      fc.property(
+        actionArb,
+        vmArb,
+        fc.boolean(),
+        fc.func(fc.boolean()),
+        fc.subarray(['vm-mount']),
+        (name, vm, external, can, features) => {
+          const opts = { can, features };
+          const button = vmActionState(name, { ...vm, external }, opts);
+          expect(button.disabled).toBe(button.reason !== null);
+          if (!button.permitted) expect(button.disabled).toBe(true);
+          if (external) {
+            expect(button.permitted).toBe(false);
+            expect(button.reason).toMatch(/: external nodes are not VMs$/);
+          }
+          if (button.reason) expect(button.reason).toMatch(/^Can't \S.*: \S/);
+          if (vm.busy && button.permitted) {
+            expect(button.reason?.endsWith(`: ${BUSY}`)).toBe(true);
+          }
+          // a permitted action on an idle VM is enabled unless its rule says no
+          if (button.permitted && !vm.busy) {
+            expect(button.disabled).toBe(!!VM_ACTIONS[name].blocked(vm));
+          }
+        },
+      ),
+    );
+  });
+
+  // the table's checkboxes leave external nodes out of a selection
+  it('skip a VM in a selection exactly when its button says why', () => {
+    const shown = fc.uniqueArray(vmArb, { selector: (vm) => vm.name });
+    const picked = fc.shuffledSubarray(['a', 'b', 'c', 'd', 'gone']);
+    fc.assert(
+      fc.property(actionArb, shown, picked, (name, vms, names) => {
+        const { allowed, skipped } = partitionVMsForAction(name, names, vms);
+        const flat = [...allowed, ...skipped.flatMap((group) => group.names)];
+        expect(flat.toSorted()).toEqual(names.toSorted());
+        expect(allowed).toEqual(names.filter((n) => allowed.includes(n)));
+
+        const reasons = new Map(
+          skipped.flatMap((g) => g.names.map((n) => [n, g.reason])),
+        );
+        for (const vmName of names) {
+          const vm = vms.find((v) => v.name === vmName);
+          const reason = reasons.get(vmName);
+          if (!vm) {
+            expect(reason).toBe('the VM is not shown in the table');
+            continue;
+          }
+          const button = vmActionState(name, vm, {
+            can: allowAll,
+            features: ['vm-mount'],
+          });
+          expect(button.disabled).toBe(!!reason);
+          if (reason) expect(button.reason.endsWith(`: ${reason}`)).toBe(true);
+        }
+      }),
+    );
+  });
 });
 
 describe('vmStateInfo', () => {
@@ -185,6 +274,37 @@ describe('vmStateInfo', () => {
       label: 'Weird',
     });
     expect(vmStateInfo({})).toMatchObject({ type: null, label: 'Unknown' });
+  });
+
+  it('reads a state in any case alike, busy before external before delayed', () => {
+    const colors = ['is-success', 'is-warning', 'is-danger', 'is-info', null];
+    fc.assert(
+      fc.property(
+        vmArb,
+        fc.record({
+          dnb: fc.boolean(),
+          external: fc.boolean(),
+          delayed_start: fc.constantFrom(undefined, '', '5m'),
+        }),
+        (target, extra) => {
+          const vm = { ...target, ...extra };
+          const info = vmStateInfo(vm);
+          expect(vmStateInfo({ ...vm, state: vm.state.toLowerCase() })).toEqual(
+            info,
+          );
+          expect(colors).toContain(info.type);
+          expect(info.label).toEqual(expect.any(String));
+          expect(info.label).not.toBe('');
+          if (vm.busy) expect(info.label).toBe('Busy');
+          else if (vm.external) expect(info.label).toBe('External');
+          else if (vm.state.toUpperCase() === 'BUILDING') {
+            expect(info.label).toBe(
+              vm.delayed_start ? 'Delayed start' : 'Building',
+            );
+          }
+        },
+      ),
+    );
   });
 
   it("gives the table's name tag the state's color, and none for gray", () => {
@@ -306,6 +426,40 @@ describe('vmInterfaces', () => {
     ]);
   });
 
+  it("reads back each network's alias and VLAN, in order", () => {
+    const alias = fc.string({ maxLength: 8 }).filter((a) => a.trimEnd() === a);
+    const iface = fc.oneof(
+      fc.record({ alias, vlan: fc.nat(4094) }),
+      fc.record({
+        alias: fc.oneof(
+          fc.constantFrom('disconnected', 'Disconnected', ''),
+          alias.filter((a) => !/\(\d+\)$/.test(a)),
+        ),
+      }),
+    );
+    fc.assert(
+      fc.property(fc.array(iface, { maxLength: 4 }), (ifaces) => {
+        const networks = ifaces.map(({ alias, vlan }) =>
+          vlan === undefined ? alias : `${alias} (${vlan})`,
+        );
+        expect(vmInterfaces({ networks })).toEqual(
+          ifaces.map(({ alias, vlan }, index) =>
+            expect.objectContaining({
+              index,
+              network: (vlan === undefined
+                ? alias || 'unknown'
+                : alias
+              ).toLowerCase(),
+              vlan: vlan === undefined ? null : String(vlan),
+              disconnected:
+                vlan === undefined && alias.toLowerCase() === 'disconnected',
+            }),
+          ),
+        );
+      }),
+    );
+  });
+
   it('handles a VM without networks or captures', () => {
     expect(vmInterfaces({})).toEqual([]);
     expect(vmInterfaces({ networks: ['a (1)'], captures: null })).toHaveLength(
@@ -328,6 +482,30 @@ describe('capture all interfaces', () => {
     expect(captureTargets(vm, [])).toEqual([0, 2]);
     expect(captureTargets(vm, [{ interface: 0 }, { interface: 2 }])).toEqual(
       [],
+    );
+  });
+
+  it('targets the connected interfaces, in order, until each is captured', () => {
+    fc.assert(
+      fc.property(vmArb, fc.nat(3), (target, n) => {
+        const vm = { ...target, running: true, busy: false };
+        const ifaces = vmInterfaces(vm);
+        const connected = ifaces
+          .filter((i) => !i.disconnected)
+          .map((i) => i.index);
+        const targets = captureTargets(vm);
+        expect(captureTargets(vm, [])).toEqual(connected);
+        expect(targets.every((i) => !ifaces[i].capturing)).toBe(true);
+        expect(connected.filter((i) => targets.includes(i))).toEqual(targets);
+        // stopping interface n's capture makes it a target if it is connected
+        const stopped = applyStopCaptureUpdate(vm.captures, { interface: n });
+        expect(captureTargets(vm, stopped)).toEqual(
+          connected.filter((i) => i === n || targets.includes(i)),
+        );
+        expect(
+          vmActionState('captureAll', vm, { can: allowAll }).disabled,
+        ).toBe(!targets.length);
+      }),
     );
   });
 

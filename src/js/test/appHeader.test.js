@@ -1,5 +1,6 @@
 // The header: a link to each page the role may open, the page's load state
 // beside the button that reloads it, and the background jobs menu.
+import fc from 'fast-check';
 import { nextTick } from 'vue';
 import { flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
@@ -37,7 +38,6 @@ beforeEach(() => {
     updatedAt: null,
     observedAt: null,
     failed: false,
-    stale: false,
     staleReason: null,
     resource: null,
   });
@@ -226,7 +226,6 @@ describe('the refresh status', () => {
       {
         updatedAt: NOW,
         observedAt: NOW - 3 * minute,
-        stale: true,
         staleReason: 'server',
       },
       {
@@ -387,6 +386,41 @@ describe('the refresh status', () => {
       ).toBe('');
     },
   );
+
+  it('gives an age that reads back within half a minute of the data, wherever the server read it', async () => {
+    // any age up to three hours, often near where the label changes form
+    const ageMs = fc.oneof(
+      fc.nat(3 * 60 * minute),
+      fc
+        .constantFrom(minute, 60 * minute)
+        .chain((edge) => fc.integer({ min: edge - 1000, max: edge + 1000 })),
+    );
+    await fc.assert(
+      fc.asyncProperty(ageMs, fc.boolean(), async (ms, byServer) => {
+        Object.assign(pageStatus, {
+          refresh: () => {},
+          updatedAt: byServer ? NOW : NOW - ms,
+          observedAt: byServer ? NOW - ms : null,
+        });
+        const refresh = await mountComponent(RefreshStatus);
+        const label = textOf(refresh.find('.refresh-label'));
+        refresh.unmount();
+
+        const [, justNow, minutes, time] =
+          /^Updated (?:(just now)|(\d+) min ago|(.+))$/.exec(label);
+        if (justNow) expect(ms).toBeLessThan(minute);
+        else if (minutes) {
+          expect(Math.abs(minutes * minute - ms)).toBeLessThanOrEqual(30_500);
+          expect(Number(minutes)).toBeGreaterThan(0);
+          expect(Number(minutes)).toBeLessThan(60);
+        } else {
+          expect(time).toBe(new Date(NOW - ms).toLocaleTimeString());
+          expect(ms).toBeGreaterThan(59 * minute);
+        }
+      }),
+      { numRuns: 20 },
+    );
+  });
 
   it('is left out on a page with nothing to reload, and when signed out', async () => {
     store.role = role('Viewer', ['experiments', 'list']);

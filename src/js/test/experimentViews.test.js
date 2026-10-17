@@ -1,6 +1,7 @@
 // The stopped experiment page, the VM tiles, and the VM labels and mount
 // browser modals.
 import { flushPromises } from '@vue/test-utils';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, capturing, loaderSpy, modules, rbac, resetMocks, ws } =
@@ -19,6 +20,7 @@ import VMtilesView from '@/views/experiment/VMtilesView.vue';
 import VMLabelsModal from '@/components/VMLabelsModal.vue';
 import VMMountBrowserModal from '@/components/VMMountBrowserModal.vue';
 import { never } from './helpers/async.js';
+import { pathSegment } from './helpers/arbitraries.js';
 import { disk, wsMsg } from './helpers/fixtures.js';
 import {
   byLabel,
@@ -259,30 +261,76 @@ describe('StoppedExperiment', () => {
     });
   });
 
-  it('keeps the latest searches, each once, up to its cap', async () => {
-    const page = await stopped(undefined, {
-      searchName: ' vm-new ',
-      searchHistory: Array.from({ length: 10 }, (_, i) => `vm-${i}`),
+  describe('search history', () => {
+    // the page with this history, and its history once a search finds VMs
+    async function searching(searchHistory) {
+      const page = await stopped(undefined, { searchHistory });
+      const search = async (text) => {
+        await page.find('.autocomplete input').setValue(text);
+        // the test answers the search, so drop the debounced load every page shares
+        StoppedExperiment.methods.searchVMs.cancel();
+        loaderSpy.options.apply({
+          name: 'exp1',
+          vms: [{ name: 'vm-new' }],
+          vm_count: 1,
+          vlans: [],
+        });
+        await flushPromises();
+        return page.findComponent({ name: 'BAutocomplete' }).props('data');
+      };
+      return { page, search };
+    }
+    const term = fc.constantFrom(
+      ...Array.from({ length: 13 }, (_, i) => `vm-${i}`),
+    );
+
+    it('keeps each search once, adding a new one, up to its cap', async () => {
+      const searches = fc.array(
+        fc.oneof(
+          term,
+          term.map((t) => ` ${t} `),
+          fc.constantFrom('', 'ab'),
+        ),
+        { minLength: 1, maxLength: 4 },
+      );
+      await fc.assert(
+        fc.asyncProperty(
+          // full or nearly so, now and then
+          fc.oneof(
+            fc.uniqueArray(term, { maxLength: 10 }),
+            fc.uniqueArray(term, { minLength: 9, maxLength: 10 }),
+          ),
+          searches,
+          async (before, typed) => {
+            const { page, search } = await searching(before.toSorted());
+            // the page changes its history in place, so keep copies
+            let last = [...before];
+            for (const text of typed) {
+              const history = await search(text);
+              const kept = text.trim();
+              expect(new Set(history).size).toBe(history.length);
+              expect(history.length).toBeLessThanOrEqual(10);
+              if (kept.length >= 4 && !last.includes(kept)) {
+                expect(history).toContain(kept);
+                expect(history).toHaveLength(Math.min(last.length + 1, 10));
+              }
+              last = [...history];
+            }
+            page.unmount();
+          },
+        ),
+        { numRuns: 20 },
+      );
     });
-    const history = () =>
-      page.findComponent({ name: 'BAutocomplete' }).props('data');
-    // a search the server found VMs for
-    const found = async () => {
-      loaderSpy.options.apply({
-        name: 'exp1',
-        vms: [{ name: 'vm-new' }],
-        vm_count: 1,
-        vlans: [],
-      });
-      await flushPromises();
-    };
 
-    await found();
-    expect(history()).toHaveLength(10);
-    expect(history()).toContain('vm-new');
-
-    await found();
-    expect(history().filter((s) => s == 'vm-new')).toHaveLength(1);
+    // A bug: StoppedExperiment.vue:896 drops one before it knows the search
+    // is kept, so a full history should come back whole.
+    it('drops the last of a full history on a load with no search', async () => {
+      const full = Array.from({ length: 10 }, (_, i) => `vm-${i}`);
+      expect(await (await searching(full)).search('')).toEqual(
+        full.slice(0, 9),
+      );
+    });
   });
 });
 
@@ -323,6 +371,55 @@ describe('VMtilesView', () => {
     expect(
       (await tiles('/experiment/exp1', '[')).tiles.map((tile) => tile.name),
     ).toEqual(['vm[1]']);
+  });
+
+  it("finds the routed experiment's VMs by any part of their names, in any case, sorted", async () => {
+    const name = fc.stringMatching(/^[a-cA-C1[(.éÉ]{1,4}$/);
+    const others = fc.uniqueArray(name, { maxLength: 6 });
+    const vmsAndSearch = fc
+      .tuple(others, others)
+      .chain(([mine, theirs]) =>
+        fc.tuple(
+          fc.constant(mine),
+          fc.constant(theirs),
+          fc.oneof(
+            fc.stringMatching(/^[a-cA-C1[(.éÉ]{0,2}$/),
+            ...mine.map((n) => fc.nat(n.length).map((i) => n.slice(i, i + 2))),
+          ),
+        ),
+      );
+    await fc.assert(
+      fc.asyncProperty(vmsAndSearch, async ([mine, theirs, search]) => {
+        const page = await mountComponent(VMtilesView, {
+          route: '/experiment/exp1',
+          data: {
+            vms: [
+              ...mine.map((n) => ({ experiment: 'exp1', name: n })),
+              ...theirs.map((n) => ({ experiment: 'exp2', name: n })),
+            ],
+          },
+        });
+        await page.find('.autocomplete input').setValue(search);
+        const lower = (n) => n.toLowerCase();
+        const want = mine
+          .filter((n) => lower(n).includes(lower(search)))
+          .sort((a, b) => (lower(a) > lower(b)) - (lower(a) < lower(b)));
+        expect(page.findAll('.tile.is-child p.title').map(textOf)).toEqual(
+          want,
+        );
+        page.unmount();
+      }),
+      { numRuns: 20 },
+    );
+  });
+
+  // A bug: VMtilesView.vue:141 matches `exp_vm` though the tile shows
+  // `exp/vm`, so this should find exp1/vm2 and exp1/vm[1].
+  it("finds every experiment's VMs by exp_vm, not the exp/vm on their tiles", async () => {
+    expect((await tiles('/vmtiles', 'exp1/')).tiles).toEqual([]);
+    expect((await tiles('/vmtiles', 'exp1_')).tiles.map((t) => t.name)).toEqual(
+      ['exp1/vm2', 'exp1/vm[1]'],
+    );
   });
 
   it("shows every experiment's VMs under their experiment's name", async () => {
@@ -418,6 +515,27 @@ describe('VMMountBrowserModal', () => {
       ]);
       expect(crumbs(wrapper)).toHaveLength(i + 1);
     }
+  });
+
+  it('names each part of any path in a crumb that opens the path up to it', async () => {
+    const segment = pathSegment.filter((s) => !/\s/.test(s));
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(segment, { minLength: 1, maxLength: 4 }),
+        fc.nat(),
+        async (parts, n) => {
+          const wrapper = await browser('/' + parts.join('/'));
+          expect(crumbs(wrapper).map(textOf)).toEqual(['mnt', ...parts]);
+          const i = n % parts.length;
+          await crumbs(wrapper).at(i).find('a').trigger('click');
+          expect(axios.get.mock.lastCall[1].params.path).toBe(
+            '/' + parts.slice(0, i).join('/'),
+          );
+          wrapper.unmount();
+        },
+      ),
+      { numRuns: 20 },
+    );
   });
 
   it('shows only the mount at its root', async () => {

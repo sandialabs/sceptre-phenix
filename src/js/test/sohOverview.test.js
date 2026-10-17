@@ -1,6 +1,7 @@
 // The State of Health overview: how it judges each experiment's health, the
 // line and filters above its table, and the page itself.
 import { flushPromises } from '@vue/test-utils';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, capturing, loaderSpy, modules, notify, rbac, resetMocks, ws } =
@@ -14,6 +15,8 @@ vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/utils/pageLoader.js', capturing);
 
 import {
+  FILTERS,
+  VERDICTS,
   filterCounts,
   overview,
   problemCount,
@@ -256,6 +259,194 @@ describe('summaries', () => {
   });
 });
 
+// usually `value`, now and then one of `other`
+const often = (value, other) =>
+  fc.oneof(
+    { weight: 4, arbitrary: fc.constant(value) },
+    { weight: 1, arbitrary: other },
+  );
+const countsArb = fc
+  .record({ total: fc.nat(300), failing: often(0, fc.nat(300)) })
+  .map(({ total, failing }) => {
+    const bad = Math.min(failing, total);
+    return { total, passing: total - bad, failing: bad };
+  });
+const vmsArb = fc
+  .record({
+    known: often(true, fc.constant(false)),
+    running: fc.nat(30),
+    failing: fc.nat(30),
+    notrunning: often(0, fc.nat(3)),
+    notdeploy: often(0, fc.nat(3)),
+    notboot: fc.nat(3),
+    external: fc.nat(3),
+    delayed: fc.nat(3),
+  })
+  .map((v) => ({
+    ...v,
+    failing: Math.min(v.failing, v.running),
+    total:
+      v.running +
+      v.notrunning +
+      v.notdeploy +
+      v.notboot +
+      v.external +
+      v.delayed,
+  }));
+// a summary as GET /soh gives it, mostly of a running experiment with results
+const summaryArb = fc
+  .record({
+    configured: often(true, fc.constant(false)),
+    up: often(
+      ['started', true],
+      fc.constantFrom(['stopped', false], ['starting', false]),
+    ),
+    soh_initialized: often(true, fc.constant(false)),
+    soh_running: fc.boolean(),
+    vms: vmsArb,
+    hosts: fc.nat(30),
+    hosts_with_errors: often(0, fc.nat(30)),
+    checks: countsArb,
+    reachability: countsArb,
+  })
+  .map(({ up: [status, running], hosts, hosts_with_errors, ...rest }) =>
+    summary({
+      ...rest,
+      status,
+      running,
+      hosts,
+      hosts_with_errors: Math.min(hosts, hosts_with_errors),
+    }),
+  );
+const rank = (s) => VERDICTS[verdict(s)].rank;
+
+describe('any summary', () => {
+  it('never reads better for a VM down, a host failing or a check failing', () => {
+    const worse = [
+      (s) => ({ ...s, vms: { ...s.vms, notrunning: s.vms.notrunning + 1 } }),
+      (s) => ({
+        ...s,
+        hosts: s.hosts + 1,
+        hosts_with_errors: s.hosts_with_errors + 1,
+      }),
+      (s) => ({
+        ...s,
+        checks: {
+          ...s.checks,
+          total: s.checks.total + 1,
+          failing: s.checks.failing + 1,
+        },
+      }),
+      (s) => ({
+        ...s,
+        reachability: {
+          ...s.reachability,
+          total: s.reachability.total + 1,
+          failing: s.reachability.failing + 1,
+        },
+      }),
+    ];
+    fc.assert(
+      fc.property(summaryArb, fc.constantFrom(...worse), (s, worsen) => {
+        expect(rank(worsen(s))).toBeLessThanOrEqual(rank(s));
+        if (verdict(s) === 'healthy') {
+          expect(s.checks.failing + vmsDown(s)).toBe(0);
+        }
+      }),
+    );
+  });
+
+  it('puts every experiment in one filter, and sums the line over running ones', () => {
+    fc.assert(
+      fc.property(fc.array(summaryArb, { maxLength: 8 }), (list) => {
+        const counts = filterCounts(list);
+        expect(counts.all).toBe(list.length);
+        expect(counts.attention + counts.healthy + counts.nodata).toBe(
+          list.length,
+        );
+        const line = overview(list);
+        const running = list.filter((s) => s.running);
+        expect(line.total).toBe(list.length);
+        expect(line.active).toBeLessThanOrEqual(running.length);
+        // the problems the rows count are the failing checks and down VMs
+        const failing = running.reduce((n, s) => n + s.checks.failing, 0);
+        expect(line.vmsDown + failing).toBe(
+          list.reduce((n, s) => n + problemCount(s), 0),
+        );
+        expect(line.hostsFailing).toBeLessThanOrEqual(
+          running.reduce((n, s) => n + s.hosts, 0),
+        );
+      }),
+    );
+  });
+
+  it('splits the VM bar into positive segments that add up to the VMs counted', () => {
+    const order = ['ok', 'failing', 'down', 'delayed', 'notboot', 'external'];
+    fc.assert(
+      fc.property(summaryArb, (s) => {
+        const segments = vmSegments(s);
+        if (!s.running || !s.vms.known) {
+          expect(segments).toEqual([]);
+          return;
+        }
+        expect(segments.every((g) => g.count > 0)).toBe(true);
+        const keys = segments.map((g) => g.key);
+        expect(keys).toEqual(order.filter((k) => keys.includes(k)));
+        const { total, notboot, external, delayed } = s.vms;
+        expect(segments.reduce((n, g) => n + g.count, 0)).toBe(total);
+        expect(total - notboot - external - delayed).toBe(
+          s.vms.running + vmsDown(s),
+        );
+      }),
+    );
+  });
+
+  it('draws any sparkline inside its box, higher for more failures', () => {
+    const box = fc.record({
+      width: fc.integer({ min: 10, max: 400 }),
+      height: fc.integer({ min: 10, max: 100 }),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(fc.nat(500), { minLength: 1 }),
+        box,
+        (values, { width, height }) => {
+          const points = sparkPoints(values, width, height);
+          expect(points).toHaveLength(values.length);
+          points.forEach(([x, y], i) => {
+            expect(x).toBeGreaterThanOrEqual(0);
+            expect(x).toBeLessThanOrEqual(width);
+            expect(y).toBeGreaterThanOrEqual(2);
+            expect(y).toBeLessThanOrEqual(height - 2);
+            if (i > 0) expect(x).toBeGreaterThan(points[i - 1][0]);
+            for (let j = 0; j < i; j++) {
+              if (values[j] < values[i])
+                expect(y).toBeLessThanOrEqual(points[j][1]);
+            }
+          });
+          if (values.length > 1) expect(points.at(-1)[0]).toBe(width);
+        },
+      ),
+    );
+  });
+
+  it('takes the trend from the newest runs, oldest first', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.nat(50)),
+        fc.integer({ min: 1, max: 30 }),
+        (failing, count) => {
+          const history = failing.map((n) => ({ failing: n }));
+          const out = trend(summary({ history }), count);
+          expect(out).toHaveLength(Math.min(count, failing.length));
+          if (out.length)
+            expect(failing.slice(failing.length - out.length)).toEqual(out);
+        },
+      ),
+    );
+  });
+});
+
 // the page showing these summaries, as loaded unless `data` says otherwise
 const page = (experiments, data) =>
   mountComponent(SohOverview, {
@@ -309,6 +500,36 @@ describe('SohOverview view', () => {
     await filterButton(wrapper, 'All').trigger('click');
     await wrapper.find('input[placeholder="Find an Experiment"]').setValue('B');
     expect(names(wrapper)).toEqual(['b']);
+  });
+
+  it('sorts any rows worst first and shows each filter its share', async () => {
+    const byName = (rows, name) => rows.find((r) => r.name === name);
+    await fc.assert(
+      fc.asyncProperty(fc.array(summaryArb, { maxLength: 6 }), async (list) => {
+        const rows = list.map((s, i) => ({ ...s, name: `exp-${i}` }));
+        const wrapper = await page(rows);
+        try {
+          const shown = names(wrapper);
+          expect([...shown].sort()).toEqual(rows.map((r) => r.name));
+          const ranks = shown.map((name) => rank(byName(rows, name)));
+          expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+
+          const counts = filterCounts(rows);
+          for (const filter of FILTERS) {
+            await filterButton(wrapper, filter.label).trigger('click');
+            const kept = names(wrapper);
+            expect(kept).toHaveLength(counts[filter.key]);
+            for (const name of kept) {
+              const key = verdict(byName(rows, name));
+              expect(filter.verdicts ?? [key]).toContain(key);
+            }
+          }
+        } finally {
+          wrapper.unmount();
+        }
+      }),
+      { numRuns: 15 },
+    );
   });
 
   it('says why the table is empty', async () => {

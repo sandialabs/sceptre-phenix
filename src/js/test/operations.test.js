@@ -1,5 +1,6 @@
 // Shared operation feedback: whether an action can be taken and why not, what
 // a selection skips, one confirm dialog, and one summary of how it went.
+import fc from 'fast-check';
 import { nextTick } from 'vue';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,10 +9,12 @@ import {
   actionState,
   confirmOperation,
   errorText,
+  errorLine,
   isRetryable,
   notifyOutcome,
   outcomeFromJob,
   outcomeFromSettled,
+  outcomeLines,
   outcomeTitle,
   partitionForAction,
   skippedText,
@@ -31,6 +34,23 @@ const realBuefy = async () =>
   (await mountComponent({ template: '<div />' })).vm.$buefy;
 
 const restart = { name: 'restart', label: 'Restart', icon: 'sync-alt' };
+
+const nameArb = fc.constantFrom('a', 'b', 'c', 'd', 'e', 'f');
+
+// an operation's items, each name once, in these statuses
+const outcomeItems = (
+  statuses = ['succeeded', 'failed', 'skipped', 'canceled'],
+) =>
+  fc.uniqueArray(
+    fc.record({
+      name: fc.stringMatching(/^[a-z][a-z0-9]{0,4}$/),
+      status: fc.constantFrom(...statuses),
+      error: fc.option(fc.stringMatching(/^[a-z]{0,6}$/)),
+      retryable: fc.boolean(),
+    }),
+    { selector: (item) => item.name, maxLength: 20, size: 'medium' },
+  );
+const withStatus = (items, status) => items.filter((i) => i.status === status);
 
 describe('actionState', () => {
   it.each([
@@ -126,6 +146,32 @@ describe('partitionForAction and skippedText', () => {
     ).toBe(want);
   });
 
+  it('splits every name once, keeping their order, by the reason each is skipped for', () => {
+    // each known name's reason to skip it, or null to act on it
+    const known = fc.dictionary(nameArb, fc.option(fc.constantFrom('x', 'y')));
+    fc.assert(
+      fc.property(fc.array(nameArb), known, (names, reasons) => {
+        const reasonOf = (name) =>
+          name in reasons ? reasons[name] : 'the run is not listed';
+        const { allowed, skipped } = partitionForAction(
+          names,
+          (name) => (name in reasons ? { name } : undefined),
+          (item) => reasons[item.name],
+          'the run is not listed',
+        );
+        expect(allowed).toEqual(names.filter((name) => !reasonOf(name)));
+        expect(skipped.map((group) => group.reason)).toEqual([
+          ...new Set(names.map(reasonOf).filter(Boolean)),
+        ]);
+        for (const { reason, names: list } of skipped) {
+          expect(list).toEqual(
+            names.filter((name) => reasonOf(name) === reason),
+          );
+        }
+      }),
+    );
+  });
+
   it('joins several reasons, and leaves a reason of another subject as is', () => {
     expect(
       skippedText(
@@ -185,7 +231,7 @@ describe('confirmOperation', () => {
   });
 });
 
-describe('errorText', () => {
+describe('errorText and errorLine', () => {
   it.each([
     ['a string', 'experiment not found', 'experiment not found', []],
     ['an Error', new Error('Network Error'), 'Network Error', []],
@@ -208,6 +254,72 @@ describe('errorText', () => {
     ['nothing', undefined, 'Unknown error', []],
   ])('reads %s', (_, err, title, steps) => {
     expect(errorText(err)).toEqual({ title, steps });
+  });
+
+  // a step of an error chain as the server words it
+  const stepText = fc.stringMatching(/^[a-z0-9]+(?:[ ./-][a-z0-9]+){0,3}$/);
+  // an error and the errors it wraps, as hashicorp/go-multierror nests them
+  const { chain } = fc.letrec((tie) => ({
+    chain: fc.record({
+      text: stepText,
+      causes: fc.oneof(
+        { maxDepth: 3 },
+        fc.constant([]),
+        fc.array(tie('chain'), { minLength: 1, maxLength: 3 }),
+      ),
+    }),
+  }));
+  // what Go's fmt.Errorf("%s: %w") over go-multierror's ListFormatFunc writes
+  const goError = ({ text, causes }) => {
+    if (!causes.length) return text;
+    const n = causes.length;
+    const list = causes.map((cause) => `* ${goError(cause)}`).join('\n\t');
+    return `${text}: ${n} error${n === 1 ? '' : 's'} occurred:\n\t${list}\n\n`;
+  };
+  const steps = ({ text, causes }) => [text, ...causes.flatMap(steps)];
+
+  it('reads every step of a nested chain, outermost first', () => {
+    fc.assert(
+      fc.property(chain, (err) => {
+        const [title, ...rest] = steps(err);
+        expect(errorText(goError(err))).toEqual({ title, steps: rest });
+        expect(errorLine(httpError(500, { message: goError(err) }))).toBe(
+          [title, ...rest].join(': '),
+        );
+      }),
+    );
+  });
+
+  it('reads anything thrown or answered without throwing, as isRetryable does', () => {
+    // no own toString, valueOf or __proto__, which no error or JSON body has
+    const any = fc.anything({
+      key: fc.string().filter((k) => !/^(__proto__|toString|valueOf)$/.test(k)),
+    });
+    const answer = fc.record(
+      { status: any, statusText: any, data: any },
+      { requiredKeys: [], noNullPrototype: true },
+    );
+    const thrown = fc.oneof(
+      any,
+      fc.record(
+        {
+          message: any,
+          code: any,
+          request: any,
+          isAxiosError: any,
+          response: fc.oneof(answer, any),
+        },
+        { requiredKeys: [], noNullPrototype: true },
+      ),
+    );
+    fc.assert(
+      fc.property(thrown, (err) => {
+        const { title, steps: rest } = errorText(err);
+        expect(title).toMatch(/\S/);
+        for (const step of rest) expect(step).toMatch(/\S/);
+        expect(typeof isRetryable(err)).toBe('boolean');
+      }),
+    );
   });
 });
 
@@ -272,6 +384,71 @@ describe('outcomes', () => {
       canceled: 1,
       retryable: ['b'],
     });
+  });
+
+  it('counts each finished item once, and only failures as worth retrying', () => {
+    const statuses = ['succeeded', 'failed', 'skipped', 'canceled'];
+    fc.assert(
+      fc.property(outcomeItems([...statuses, 'pending', 'running']), (list) => {
+        const counts = summarizeOutcome(list);
+        for (const status of statuses) {
+          expect(counts[status]).toBe(withStatus(list, status).length);
+        }
+        expect(counts.retryable).toEqual(
+          withStatus(list, 'failed')
+            .filter((item) => item.retryable)
+            .map((item) => item.name),
+        );
+      }),
+    );
+  });
+
+  it('sums them up in a title whose counts add up to the whole', () => {
+    const titled = /^Restarted (?:(\d+) of )?(\d+) VMs?(?:; (.+))?$/;
+    fc.assert(
+      fc.property(outcomeItems(), (list) => {
+        const title = outcomeTitle({
+          verbPast: 'Restarted',
+          noun: 'VM',
+          items: list,
+        });
+        const [, ok, total, rest] = title.match(titled);
+        const named = (rest ?? '')
+          .split(', ')
+          .filter(Boolean)
+          .map((part) => part.split(' '));
+        expect(Number(total)).toBe(list.length);
+        expect(Number(ok ?? total)).toBe(withStatus(list, 'succeeded').length);
+        expect(ok === undefined).toBe(!named.length);
+        for (const [count, status] of named) {
+          expect(Number(count)).toBe(withStatus(list, status).length);
+        }
+        expect(named.map(([, status]) => status)).toEqual(
+          ['failed', 'skipped', 'canceled'].filter(
+            (s) => withStatus(list, s).length,
+          ),
+        );
+      }),
+    );
+  });
+
+  it(`names the first ${LISTED_FAILURES} failures and skips, in order, and counts the rest`, () => {
+    fc.assert(
+      fc.property(outcomeItems(), (list) => {
+        const unsuccessful = list.filter((item) =>
+          ['failed', 'skipped'].includes(item.status),
+        );
+        const lines = outcomeLines(list);
+        const listed = unsuccessful.slice(0, LISTED_FAILURES);
+        expect(lines.slice(0, listed.length)).toEqual(
+          listed.map((item) => `${item.name}: ${item.error || item.status}`),
+        );
+        const more = unsuccessful.length - LISTED_FAILURES;
+        expect(lines.slice(listed.length)).toEqual(
+          more > 0 ? [`and ${more} more`] : [],
+        );
+      }),
+    );
   });
 
   it.each([

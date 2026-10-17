@@ -1,5 +1,6 @@
 // The Tunneler page lists the builds GET /downloads/tunneler returns, and says
 // so when there are none or none could be listed.
+import fc from 'fast-check';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import Tunneler from '@/views/Tunneler.vue';
@@ -71,6 +72,28 @@ describe('the Tunneler page', () => {
     );
     expect(rows[3].link.attributes('href')).toBe(
       '/downloads/tunneler/tunneler%20custom',
+    );
+  });
+
+  it('links each build of any name to that one file', async () => {
+    const dir = '/downloads/tunneler/';
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.string({ unit: 'binary', minLength: 1 }), { maxLength: 4 }),
+        async (files) => {
+          const page = await open(json({ files }));
+          const links = shown(page).rows.map(({ link }) => link.attributes());
+          page.unmount();
+
+          const names = links.map(({ href }) => href.replace(dir, ''));
+          for (const name of names) expect(name).not.toMatch(/[/?#]/);
+          expect(names.map(decodeURIComponent)).toEqual(files);
+          expect(links.map((a) => a['aria-label'])).toEqual(
+            files.map((f) => `Download ${f}`),
+          );
+        },
+      ),
+      { numRuns: 15 },
     );
   });
 

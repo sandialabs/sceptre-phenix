@@ -19,16 +19,12 @@ import { FreshnessMeta, setWsDown } from '@/utils/freshness.js';
 import { useErrorNotification } from '@/utils/errorNotif.js';
 import { usePhenixStore } from '@/store.js';
 import { createPinia, setActivePinia } from 'pinia';
+import fc from 'fast-check';
 import { beforeEach, test, expect, vi } from 'vitest';
-import { memoryStorage } from './helpers/storage.js';
 import { flush } from './helpers/async.js';
 
 vi.mock('@/utils/errorNotif.js', () => ({ useErrorNotification: vi.fn() }));
 vi.mock('@/router', () => ({ default: { replace: vi.fn() } }));
-
-// the store reads the saved login from web storage when it is created
-vi.stubGlobal('localStorage', memoryStorage());
-vi.stubGlobal('sessionStorage', memoryStorage());
 
 beforeEach(() => {
   clearPageCache();
@@ -251,6 +247,59 @@ test('a stream of forced loads still lands data, newest last', async () => {
   loader.stop();
 });
 
+test('applies only the newest load, whatever order the answers come in', async () => {
+  const loads = fc.integer({ min: 1, max: 6 });
+  const order = (n) =>
+    fc.shuffledSubarray([...Array(n).keys()], { minLength: n, maxLength: n });
+  await fc.assert(
+    fc.asyncProperty(loads.chain(order), async (answerOrder) => {
+      const { fetch, calls } = manualFetch();
+      const apply = vi.fn();
+      const loader = createPageLoader({ fetch, apply });
+      const done = [loader.start()];
+      while (done.length < answerOrder.length) done.push(loader.load());
+
+      for (const i of answerOrder) calls[i].resolve(i);
+      const newest = answerOrder.length - 1;
+      expect(await Promise.all(done)).toEqual(done.map((_, i) => i === newest));
+      expect(apply.mock.calls.map(([data]) => data)).toEqual([newest]);
+      loader.stop();
+    }),
+  );
+});
+
+test('a cached page lands newer data only, ending on the last request, however loads and answers interleave', async () => {
+  const step = fc.constantFrom('load', 'force', 'answer');
+  await fc.assert(
+    fc.asyncProperty(fc.array(step, { maxLength: 10 }), async (steps) => {
+      clearPageCache();
+      const { fetch, calls } = manualFetch();
+      const apply = vi.fn();
+      const loader = createPageLoader({ key: 'disks', fetch, apply });
+      const done = [loader.start()];
+      let answered = 0;
+      const answer = async () => {
+        calls[answered].resolve([answered++]);
+        await flush();
+      };
+      for (const s of steps) {
+        if (s !== 'answer') done.push(loader.load({ force: s === 'force' }));
+        else if (answered < calls.length) await answer();
+      }
+      while (answered < calls.length) await answer();
+      await Promise.all(done);
+
+      const landed = apply.mock.calls.map(([data]) => data[0]);
+      expect(landed).toEqual([...new Set(landed)].sort((a, b) => a - b));
+      expect(landed.at(-1)).toBe(calls.length - 1);
+      expect(cachedPage('disks').data).toEqual([calls.length - 1]);
+      expect(pageStatus.loading).toBe(false);
+      loader.stop();
+    }),
+    { numRuns: 40 },
+  );
+});
+
 test('a forced request starts once the one it replaces settles, so the older never lands last', async () => {
   const { fetch, calls } = manualFetch();
   const older = fetchIntoCache('disks', fetch);
@@ -362,7 +411,7 @@ test('signing out drops cached pages and cancels their background loads', async 
 // a FreshnessMeta as a load's responses fill it in
 const loadMeta = (fields) => Object.assign(new FreshnessMeta(), fields);
 
-test("a page is told the cached and the fresh data's seq and age", async () => {
+test("a page is told the cached and the fresh data's seq", async () => {
   cachePage('hosts', ['cached'], loadMeta({ seq: 5, observedAt: 1000 }));
   const apply = vi.fn();
   const loader = createPageLoader({
@@ -375,29 +424,18 @@ test("a page is told the cached and the fresh data's seq and age", async () => {
   });
 
   const done = loader.start();
-  expect(apply).toHaveBeenCalledWith(['cached'], {
-    requestedAt: expect.any(Number),
-    seq: 5,
-    observedAt: 1000,
-    stale: false,
-  });
-  expect(pageStatus.observedAt).toBe(1000);
+  expect(apply).toHaveBeenCalledWith(['cached'], { seq: 5 });
+  expect(pageStatus).toMatchObject({ observedAt: 1000, staleReason: null });
 
   await done;
-  expect(apply).toHaveBeenLastCalledWith(['fresh'], {
-    requestedAt: expect.any(Number),
-    seq: 9,
-    observedAt: 2000,
-    stale: true,
-  });
+  expect(apply).toHaveBeenLastCalledWith(['fresh'], { seq: 9 });
   // the server served earlier data
   expect(pageStatus).toMatchObject({
     observedAt: 2000,
-    stale: true,
     staleReason: 'server',
   });
   loader.stop();
-  expect(pageStatus).toMatchObject({ observedAt: null, stale: false });
+  expect(pageStatus).toMatchObject({ observedAt: null, staleReason: null });
 });
 
 test('a cached page changed by a live update shows as out of date until it reloads', async () => {
@@ -414,14 +452,11 @@ test('a cached page changed by a live update shows as out of date until it reloa
     apply: () => {},
   });
   const done = loader.start();
-  expect(pageStatus).toMatchObject({
-    stale: true,
-    staleReason: 'invalidated',
-  });
+  expect(pageStatus.staleReason).toBe('invalidated');
 
   calls[0].resolve(['fresh']);
   await done;
-  expect(pageStatus.stale).toBe(false);
+  expect(pageStatus.staleReason).toBe(null);
   loader.stop();
 });
 

@@ -1,5 +1,6 @@
 // Each table's Paginate toggle is remembered in this browser, under the
 // table's name, for every user of it.
+import fc from 'fast-check';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,8 +28,9 @@ import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import Hosts from '@/views/Hosts.vue';
 import Users from '@/views/Users.vue';
-import { mountComponent } from './helpers/mount.js';
-import { blockedStorage } from './helpers/storage.js';
+import { disk } from './helpers/fixtures.js';
+import { mountComponent, tableRows, textOf } from './helpers/mount.js';
+import { blockedStorage, memoryStorage } from './helpers/storage.js';
 
 beforeEach(() => {
   setActivePinia(createPinia());
@@ -81,6 +83,30 @@ describe('paginate preference', () => {
     });
   });
 
+  it('reads back the setting last saved for each table', () => {
+    const name = fc.oneof(
+      fc.constantFrom('disks', 'hosts', 'stopped-vms'),
+      fc.string({ maxLength: 3 }),
+    );
+    fc.assert(
+      fc.property(
+        fc.array(fc.tuple(name, fc.anything())),
+        name,
+        (saves, other) => {
+          vi.stubGlobal('localStorage', memoryStorage());
+          const last = new Map();
+          for (const [table, on] of saves) {
+            savePaginate(table, on);
+            last.set(table, Boolean(on));
+          }
+          for (const table of [...last.keys(), other]) {
+            expect(loadPaginate(table)).toBe(last.get(table) ?? false);
+          }
+        },
+      ),
+    );
+  });
+
   it('starts unpaginated when storage is unavailable', () => {
     vi.stubGlobal('localStorage', blockedStorage());
 
@@ -89,13 +115,90 @@ describe('paginate preference', () => {
   });
 });
 
+// more rows than a page holds, so each page offers its Paginate toggle
+const ROWS = 11;
+const rows = (row) => Array.from({ length: ROWS }, (_, i) => row(i));
+const host = (i) => ({
+  name: `node${i}`,
+  cpus: 4,
+  load: ['0.1', '0.2', '0.3'],
+  memused: 1024,
+  memtotal: 4096,
+  diskusage: { diskphenix: 10, diskminimega: 20 },
+  bandwidth: '0 MB/s',
+  vms: 0,
+  uptime: 60,
+});
+
+// Clicks a page's Paginate toggle.
+async function togglePaginate(wrapper) {
+  const toggle = wrapper
+    .findAll('label.switch')
+    .find((label) => textOf(label) === 'Paginate');
+  const input = toggle.find('input');
+  await input.setValue(!input.element.checked);
+}
+
+describe('the pages with a Paginate toggle', () => {
+  it.each([
+    [
+      'configs',
+      ConfigsList,
+      '/configs/',
+      {
+        configs: rows((i) => ({
+          kind: 'Topology',
+          metadata: { name: `t${i}`, updated: '2025-01-02T03:04:05Z' },
+        })),
+      },
+    ],
+    [
+      'disks',
+      Disks,
+      '/disks/',
+      {
+        disks: rows((i) => disk(`/phenix/images/d${i}.qc2`, `d${i}.qc2`)),
+      },
+    ],
+    ['hosts', Hosts, '/hosts', { hosts: rows(host) }],
+    [
+      'users',
+      Users,
+      '/users',
+      {
+        users: rows((i) => ({
+          username: `u${i}`,
+          first_name: '',
+          last_name: '',
+          role_name: 'Viewer',
+        })),
+      },
+    ],
+  ])('remember theirs as %s', async (name, component, route, data) => {
+    const key = `phenix.paginate.${name}`;
+    const page = () =>
+      mountComponent(component, { route, data: { ...data, loaded: true } });
+
+    const first = await page();
+    expect(tableRows(first)).toHaveLength(ROWS);
+    await togglePaginate(first);
+    expect(localStorage.getItem(key)).toBe('true');
+    expect(tableRows(first)).toHaveLength(10);
+    first.unmount();
+
+    // opened again, the page pages until the toggle is clicked off
+    const again = await page();
+    expect(tableRows(again)).toHaveLength(10);
+    await togglePaginate(again);
+    expect(localStorage.getItem(key)).toBe('false');
+    expect(tableRows(again)).toHaveLength(ROWS);
+  });
+});
+
+// tables whose toggle needs a running experiment or its files to show
 describe('the tables with a Paginate toggle', () => {
   it.each([
-    ['configs', ConfigsList],
-    ['disks', Disks],
     ['experiments', Experiments],
-    ['hosts', Hosts],
-    ['users', Users],
     ['stopped-vms', StoppedExperiment],
     ['running-vms', RunningExperiment],
     // each experiment page names its Files tab's table

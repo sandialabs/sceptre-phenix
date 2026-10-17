@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import {
   applyStopCaptureUpdate,
@@ -16,6 +17,35 @@ describe('applyStopCaptureUpdate', () => {
   test.each([0, 1])('stopping interface %i leaves the other running', (n) => {
     expect(applyStopCaptureUpdate(captures, { interface: n })).toEqual(
       captures.filter((c) => c.interface != n),
+    );
+  });
+
+  // a VM's captures, on a few interfaces, now and then two on one
+  const capturesArb = fc.array(
+    fc.record({ interface: fc.nat(4), filename: fc.string() }),
+    { maxLength: 8 },
+  );
+  const isSubsequence = (sub, list) =>
+    list.reduce((i, c) => i + (c === sub[i]), 0) === sub.length;
+
+  test('stops only that interface, keeping the rest in order', () => {
+    fc.assert(
+      fc.property(capturesArb, fc.nat(5), (captures, n) => {
+        const left = applyStopCaptureUpdate(captures, { interface: n });
+        expect(isInterfaceCapturing(left, n)).toBe(false);
+        expect(isSubsequence(left, captures)).toBe(true);
+        expect(captures.length - left.length).toBe(
+          captures.filter((c) => c.interface === n).length,
+        );
+        for (let m = 0; m <= 5; m++) {
+          if (m !== n) {
+            expect(isInterfaceCapturing(left, m)).toBe(
+              isInterfaceCapturing(captures, m),
+            );
+          }
+        }
+        expect(applyStopCaptureUpdate(left, { interface: n })).toEqual(left);
+      }),
     );
   });
 

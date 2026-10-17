@@ -1,5 +1,6 @@
 // The annotation list (a v-model: each change is a new list) of the create and
 // VM details cards: each row, its problem or description, and the add menu.
+import fc from 'fast-check';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AnnotationList from '@/components/AnnotationList.vue';
@@ -124,25 +125,7 @@ describe('an annotation list', () => {
     ]);
   });
 
-  it('offers only the known annotations not in the list yet, then a custom one', async () => {
-    expect(
-      menu(
-        await list([
-          known('phenix/default-apps'),
-          custom(' vrouter/enable-ssh '),
-        ]),
-      ),
-    ).toEqual({
-      entries: [
-        'phenix/startup-autotunnel',
-        'phenix/startup-via-cc',
-        'vrouter/vyos-password',
-        'Custom annotation',
-      ],
-      divided: true,
-      opens: 'bottom',
-    });
-
+  it('offers a custom annotation alone once every known one is listed, and an experiment list its own', async () => {
     const all = NODE_ANNOTATIONS.map((e) => annotationRow(e));
     expect(menu(await list(all))).toMatchObject({
       entries: ['Custom annotation'],
@@ -160,8 +143,36 @@ describe('an annotation list', () => {
     ]);
   });
 
-  it('opens its menu upward when there is no room for it below', async () => {
-    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
+  it('offers, for any rows, the known annotations they lack, then a custom one', async () => {
+    const keys = NODE_ANNOTATIONS.map((e) => e.key);
+    // a known row, or a custom one with a key typed with space around it
+    const rowArb = fc.oneof(
+      fc.constantFrom(...keys).map((key) => ({ key })),
+      fc.record({
+        key: fc.constantFrom(...keys, 'team'),
+        space: fc.stringMatching(/^ {0,2}$/),
+      }),
+    );
+    await fc.assert(
+      fc.asyncProperty(fc.array(rowArb, { maxLength: 6 }), async (picked) => {
+        const wrapper = await list(
+          picked.map(({ key, space }) =>
+            space === undefined ? known(key) : custom(space + key + space),
+          ),
+        );
+        const lacking = keys.filter((k) => !picked.some((r) => r.key === k));
+        expect(menu(wrapper)).toEqual({
+          entries: [...lacking, 'Custom annotation'],
+          divided: lacking.length > 0,
+          opens: 'bottom',
+        });
+        wrapper.unmount();
+      }),
+      { numRuns: 20 },
+    );
+  });
+
+  describe('its menu', () => {
     // where the menu opens once its trigger, this far down, is clicked
     const opensAt = async (top) => {
       const wrapper = await list([]);
@@ -171,11 +182,56 @@ describe('an annotation list', () => {
         bottom: top + 30,
       });
       await trigger.trigger('click');
-      return menu(wrapper).opens;
+      const { opens } = menu(wrapper);
+      wrapper.unmount();
+      return opens;
     };
 
-    expect(await opensAt(100)).toBe('bottom');
-    expect(await opensAt(700)).toBe('top');
+    it('opens upward when there is no room for it below', async () => {
+      vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
+      expect(await opensAt(100)).toBe('bottom');
+      expect(await opensAt(700)).toBe('top');
+    });
+
+    // the menu's max-height in AnnotationList.vue
+    const MENU = 360;
+
+    it('opens upward from the first pixel too few for it below', async () => {
+      vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
+      // the trigger is 30 high, so this leaves exactly MENU below it
+      const fits = 800 - MENU - 30;
+      expect(await opensAt(fits)).toBe('bottom');
+      expect(await opensAt(fits + 1)).toBe('top');
+    });
+
+    it('opens upward only when there is too little room below and more above', async () => {
+      const height = vi.spyOn(window, 'innerHeight', 'get');
+      const room = fc.integer({ min: 0, max: 1500 });
+      const short = fc.integer({ min: 0, max: MENU - 1 });
+      // the room above and below the trigger, and which way the menu opens
+      const layout = fc.oneof(
+        fc
+          .tuple(room, fc.integer({ min: MENU, max: 1500 }))
+          .map(([above, below]) => ({ above, below, opens: 'bottom' })),
+        short.chain((below) =>
+          fc.oneof(
+            fc
+              .integer({ min: below + 1, max: below + 1500 })
+              .map((above) => ({ above, below, opens: 'top' })),
+            fc
+              .integer({ min: 0, max: below })
+              .map((above) => ({ above, below, opens: 'bottom' })),
+          ),
+        ),
+      );
+      await fc.assert(
+        fc.asyncProperty(layout, async ({ above, below, opens }) => {
+          height.mockReturnValue(above + 30 + below);
+          expect(await opensAt(above)).toBe(opens);
+        }),
+        { numRuns: 30 },
+      );
+    });
   });
 
   describe('changes', () => {

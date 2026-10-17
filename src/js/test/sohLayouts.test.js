@@ -1,9 +1,11 @@
 // The State of Health layout registry and the layouts themselves.
+import fc from 'fast-check';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DEFAULT_LAYOUT,
   GROUPS_MAX_NODES,
+  LAYOUTS,
   LAYOUT_STORAGE_KEY,
   layoutOptions,
   readLayoutPref,
@@ -125,6 +127,31 @@ describe('layout registry', () => {
     expect(r.id).toBe('force');
     expect(r.notice).toMatch(/Showing Force/);
   });
+
+  it('draws a choice exactly when the selector offers it', () => {
+    const id = fc.oneof(
+      fc.constantFrom(...LAYOUTS.map((l) => l.id)),
+      fc.string(),
+    );
+    const count = fc.oneof(
+      fc.nat(5000),
+      fc.integer({ min: -2, max: 2 }).map((d) => GROUPS_MAX_NODES + d),
+    );
+    fc.assert(
+      fc.property(id, count, (choice, nodes) => {
+        const options = layoutOptions(nodes);
+        expect(options.filter((o) => o.disabled).map((o) => o.id)).toEqual(
+          nodes > GROUPS_MAX_NODES ? ['groups'] : [],
+        );
+        const offered = options.find((o) => o.id === choice);
+        expect(resolveLayout(choice, nodes)).toEqual(
+          offered?.disabled
+            ? { id: 'force', notice: `${offered.reason}. Showing Force.` }
+            : { id: offered ? choice : 'force', notice: '' },
+        );
+      }),
+    );
+  });
 });
 
 describe('layout preference', () => {
@@ -135,6 +162,17 @@ describe('layout preference', () => {
     saveLayoutPref('elk');
     expect(storage.getItem(LAYOUT_STORAGE_KEY)).toBe('elk');
     expect(readLayoutPref()).toBe('elk');
+  });
+
+  it('reads back any saved choice it knows, and the default for the rest', () => {
+    const known = LAYOUTS.map((l) => l.id);
+    fc.assert(
+      fc.property(fc.oneof(fc.constantFrom(...known), fc.string()), (id) => {
+        vi.stubGlobal('localStorage', memoryStorage());
+        saveLayoutPref(id);
+        expect(readLayoutPref()).toBe(known.includes(id) ? id : 'force');
+      }),
+    );
   });
 
   it.each([
@@ -158,8 +196,8 @@ describe('layout preference', () => {
 describe('layouts', () => {
   // the layout's output, as the page gets it; a failure fails the test
   // rather than falling back to force
-  async function layout(id) {
-    const run = await runLayout(id, input, {
+  async function layout(id, graph = input) {
+    const run = await runLayout(id, graph, {
       onError: (err) => {
         throw err;
       },
@@ -184,6 +222,79 @@ describe('layouts', () => {
       }
     },
   );
+
+  // A graph as GET /soh gives it: VMs, routers and firewalls, each wired to
+  // some VLANs; a connected one also has a core router on every VLAN.
+  const graphArb = (connected) =>
+    fc
+      .integer({ min: connected ? 1 : 0, max: 4 })
+      .map((vlans) => Array.from({ length: vlans }, (_, i) => 100 + i))
+      .chain((vlanIds) =>
+        fc.tuple(
+          fc.constant(vlanIds),
+          fc.array(
+            fc.record({
+              image: fc.constantFrom('linux', 'linux', 'router', 'firewall'),
+              on: fc.subarray(vlanIds, { minLength: connected ? 1 : 0 }),
+            }),
+            { maxLength: 12 },
+          ),
+        ),
+      )
+      .map(([vlanIds, drawn]) => {
+        const vms = connected
+          ? [...drawn, { image: 'router', on: vlanIds }]
+          : drawn;
+        const nodes = [
+          ...vlanIds.map((id) => ({ id, label: `vlan${id}`, image: 'switch' })),
+          ...vms.map(({ image }, id) => ({ id, label: `vm${id}`, image })),
+        ];
+        const edges = vms.flatMap((vm, i) =>
+          vm.on.map((v) => ({ id: `${i}-${v}`, source: i, target: v })),
+        );
+        return layoutInput(nodes, edges);
+      });
+
+  it.each([
+    ['radial', true],
+    ['layered', false],
+    ['groups', false],
+    ['elk', false],
+  ])(
+    '%s places the nodes of any graph at finite, distinct positions (connected: %s)',
+    async (id, connected) => {
+      await fc.assert(
+        fc.asyncProperty(graphArb(connected), async (graph) => {
+          const { positions, groups = [] } = await layout(id, graph);
+          const seen = new Set();
+          for (const n of graph.nodes) {
+            const p = positions.get(n.id);
+            expect(Number.isFinite(p?.x) && Number.isFinite(p?.y)).toBe(true);
+            seen.add(`${Math.round(p.x)},${Math.round(p.y)}`);
+          }
+          expect(seen.size).toBe(graph.nodes.length);
+          for (const g of groups) {
+            for (const m of g.members) expect(positions.has(m)).toBe(true);
+          }
+        }),
+        { numRuns: 20 },
+      );
+    },
+  );
+
+  // radial.js:54 pulls every component's root onto the center ring
+  it.fails('radial keeps components it cannot reach apart', async () => {
+    const graph = layoutInput(
+      [
+        { id: 0, label: 'a', image: 'linux' },
+        { id: 1, label: 'b', image: 'linux' },
+      ],
+      [],
+    );
+    const { positions } = await layout('radial', graph);
+    const [a, b] = [0, 1].map((id) => positions.get(id));
+    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(1);
+  });
 
   it('packs single-homed hosts into VLAN blocks in the layered layouts', async () => {
     for (const id of ['layered', 'elk']) {

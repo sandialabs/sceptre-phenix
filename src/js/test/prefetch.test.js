@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import fc from 'fast-check';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import {
   lazyRouteLoaders,
@@ -21,34 +22,40 @@ describe('lazyRouteLoaders', () => {
 });
 
 describe('prefetchSequentially', () => {
-  test('loads one chunk at a time and survives failures', async () => {
-    const events = [];
-    const loader = (name, fail) => async () => {
-      events.push('start ' + name);
-      await Promise.resolve();
-      events.push('end ' + name);
-      if (fail) throw new Error('offline');
-    };
-    await prefetchSequentially([loader('a', true), loader('b')]);
-    expect(events).toEqual(['start a', 'end a', 'start b', 'end b']);
+  test('loads one chunk at a time, in order, and survives failures', async () => {
+    const outcome = fc.constantFrom('loads', 'rejects', 'throws');
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(outcome, { maxLength: 6 }),
+        async (outcomes) => {
+          const events = [];
+          const loaders = outcomes.map((how, i) => () => {
+            events.push(`start ${i}`);
+            if (how === 'throws') throw new Error('bad chunk');
+            return Promise.resolve().then(() => {
+              events.push(`end ${i}`);
+              if (how === 'rejects') throw new Error('offline');
+            });
+          });
+          await prefetchSequentially(loaders);
+          expect(events).toEqual(
+            outcomes.flatMap((how, i) =>
+              how === 'throws' ? [`start ${i}`] : [`start ${i}`, `end ${i}`],
+            ),
+          );
+        },
+      ),
+    );
   });
 });
 
 describe('schedulePrefetch', () => {
+  beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
-
-  // a browser without idle callbacks (Safari), whose page is in this state
-  function withoutIdleCallbacks(readyState) {
-    vi.useFakeTimers();
-    vi.stubGlobal('requestIdleCallback', undefined);
-    vi.stubGlobal('document', { readyState });
-    const win = { addEventListener: vi.fn() };
-    vi.stubGlobal('window', win);
-    return win;
-  }
 
   test('waits for the browser to be idle', () => {
     const load = vi.fn(() => Promise.resolve());
@@ -61,27 +68,33 @@ describe('schedulePrefetch', () => {
     expect(load).toHaveBeenCalledOnce();
   });
 
+  // happy-dom, like Safari, has no idle callbacks
   test('without idle callbacks, waits for the page to finish loading', () => {
-    const win = withoutIdleCallbacks('interactive');
+    vi.spyOn(document, 'readyState', 'get').mockReturnValue('interactive');
     const load = vi.fn(() => Promise.resolve());
 
     schedulePrefetch([load]);
     vi.runAllTimers();
     expect(load).not.toHaveBeenCalled();
 
-    const [event, onLoad] = win.addEventListener.mock.calls[0];
-    expect(event).toBe('load');
-    onLoad();
+    window.dispatchEvent(new Event('load'));
+    window.dispatchEvent(new Event('load'));
     vi.runAllTimers();
     expect(load).toHaveBeenCalledOnce();
   });
 
   test('without idle callbacks, starts soon if the page already loaded', () => {
-    const win = withoutIdleCallbacks('complete');
+    expect(document.readyState).toBe('complete');
+    const addEventListener = vi.spyOn(window, 'addEventListener');
     const load = vi.fn(() => Promise.resolve());
 
     schedulePrefetch([load]);
-    expect(win.addEventListener).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+    expect(addEventListener).not.toHaveBeenCalledWith(
+      'load',
+      expect.anything(),
+      expect.anything(),
+    );
     vi.runAllTimers();
     expect(load).toHaveBeenCalledOnce();
   });
