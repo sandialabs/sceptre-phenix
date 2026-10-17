@@ -57,4 +57,20 @@ jobs:
           fi
       - name: Run tests with coverage
         working-directory: src/go
-        run: make test
+        run: make test-cover
+      - name: Summarize coverage
+        if: ${{ !cancelled() && hashFiles('src/go/coverage.out') != '' }}
+        working-directory: src/go
+        run: |
+          {
+            echo '### Go coverage'
+            echo
+            echo "Total statements: $(go tool cover -func=coverage.out | tail -n 1 | awk '{print $NF}')"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage
+        if: ${{ !cancelled() && hashFiles('src/go/coverage.out') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-go
+          path: src/go/coverage.out
+          retention-days: 14

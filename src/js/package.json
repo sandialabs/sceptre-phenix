@@ -11,7 +11,8 @@
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
     "test": "vitest run",
-    "test:contract": "vitest run --project contract"
+    "test:contract": "vitest run --project contract",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",
@@ -56,6 +57,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^5.2.3",
+    "@vitest/coverage-v8": "^5.0.2",
     "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/test-utils": "^2.5.1",
     "eslint": "^10.9.1",

@@ -28,6 +28,7 @@ npm ci
 | Focused Vitest           | `npm test -- test/rbac.test.js` |
 | All Vitest               | `npm test`                      |
 | Contract tests only      | `npm run test:contract`         |
+| Vitest with coverage     | `npm run test:coverage`         |
 | Production build         | `npm run build`                 |
 | Format, then review diff | `npm run format`                |
 

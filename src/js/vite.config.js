@@ -124,6 +124,12 @@ export default defineConfig(({ mode }) => {
     // A contract maxWorkers would make Vitest run the projects one by one.
     test: {
       exclude: TEST_EXCLUDE,
+      // Measured only with --coverage (npm run test:coverage), as CI does.
+      coverage: {
+        provider: 'v8',
+        include: ['src/**'],
+        reporter: ['text-summary', 'json-summary', 'html'],
+      },
       projects: [
         {
           extends: true,
