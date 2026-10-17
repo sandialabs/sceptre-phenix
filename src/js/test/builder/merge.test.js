@@ -96,12 +96,6 @@ describe('mergeDocuments', () => {
     expect(merged.label).toBe('alpha-2');
     expect(merged.device.hostname).toBe('alpha-2');
     expect(merged.device.spec.general.hostname).toBe('alpha-2');
-    expect(result.mineChanges.map((change) => change.label)).toEqual([
-      'alpha position',
-    ]);
-    expect(result.theirChanges.map((change) => change.label)).toContain(
-      'alpha name',
-    );
   });
 
   test('a field both sides changed to different values clashes; a device name is one choice', () => {

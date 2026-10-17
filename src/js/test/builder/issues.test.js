@@ -7,7 +7,6 @@ import {
   issueCounts,
   issueEntries,
   issueField,
-  issueGroups,
   issueNodeId,
   issueTarget,
   issuesAbout,
@@ -134,17 +133,13 @@ describe('diagram checks', () => {
     expect(nodeIssueSummaries(doc, issues).get(bravo.id).text).toContain(
       of('bravo', 'alpha'),
     );
-    expect(
-      issueGroups(doc, issues).nodes.map((group) => [
-        group.title,
-        group.issues
-          .filter((entry) => entry.blocksPublish)
-          .map((entry) => entry.text),
-      ]),
-    ).toEqual([
-      ['Device alpha', [of('alpha', 'bravo')]],
-      ['Device bravo', [of('bravo', 'alpha')]],
-    ]);
+    const blocking = (id) =>
+      issuesAbout(doc, issues, { type: 'node', id })
+        .filter((entry) => entry.blocksPublish)
+        .map((entry) => entry.text);
+
+    expect(blocking(alpha.id)).toEqual([of('alpha', 'bravo')]);
+    expect(blocking(bravo.id)).toEqual([of('bravo', 'alpha')]);
     // Bravo's unconnected eth0 is the third warning.
     expect(issueCounts(issues)).toEqual({
       errors: 0,
@@ -235,45 +230,6 @@ describe('diagram checks', () => {
       ]),
     );
     expect(ofDiagram.some((entry) => entry.nodeId || entry.edgeId)).toBe(false);
-  });
-
-  test('the dialog groups issues by node, then connection, then diagram', () => {
-    const { doc, issues, alpha, bravo, edge } = brokenSample();
-    const groups = issueGroups(doc, issues);
-
-    // In diagram order, each named as the issue texts name it.
-    expect(groups.nodes.map((group) => [group.id, group.title])).toEqual(
-      expect.arrayContaining([
-        [alpha.id, 'Device alpha #1'],
-        [bravo.id, 'Device alpha #2'],
-      ]),
-    );
-    expect(
-      groups.nodes.map((group) => group.id).indexOf(alpha.id),
-    ).toBeLessThan(groups.nodes.map((group) => group.id).indexOf(bravo.id));
-    expect(groups.edges).toEqual([
-      expect.objectContaining({
-        id: edge.id,
-        title: 'Connection #1',
-        issues: [
-          expect.objectContaining({
-            level: 'error',
-            text: 'unknown network "n-gone"',
-          }),
-        ],
-      }),
-    ]);
-    expect(groups.diagram.map((entry) => entry.text)).toContain(
-      'Network LONE: network "LONE" has no switch on the canvas: add a switch for it, change each VLAN that names it, or use Remove network',
-    );
-
-    // Every issue is listed once.
-    const listed =
-      groups.nodes.flatMap((group) => group.issues).length +
-      groups.edges.flatMap((group) => group.issues).length +
-      groups.diagram.length;
-
-    expect(listed).toBe(issues.length);
   });
 });
 

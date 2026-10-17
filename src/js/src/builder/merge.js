@@ -251,10 +251,15 @@ function fieldLabel(path) {
     .join(' ');
 }
 
-function shorten(text, most = 80) {
+// The most characters of a value that a choice shows, the ellipsis included.
+const SHORT_TEXT_MOST = 80;
+
+function shorten(text) {
   const flat = String(text).replace(/\s+/g, ' ').trim();
 
-  return flat.length > most ? `${flat.slice(0, most - 1)}…` : flat;
+  return flat.length > SHORT_TEXT_MOST
+    ? `${flat.slice(0, SHORT_TEXT_MOST - 1)}…`
+    : flat;
 }
 
 function rounded(value) {
@@ -461,16 +466,10 @@ function createRun(choices, docs) {
   return {
     choices: choices || {},
     clashes: [],
-    mine: [],
-    theirs: [],
     nodes,
     connections: {
       mine: connectionsOf(mine, base),
       theirs: connectionsOf(theirs, base),
-    },
-
-    note(side, at) {
-      this[side].push({ key: at.key, label: nameOf(at) });
     },
 
     // The position of the clash about the node or interface at `at` when
@@ -694,14 +693,10 @@ function mergeValue(base, mine, theirs, at, run) {
   const whole = !itemwise(base, mine, theirs, at);
 
   if (whole && sameValue(base, mine)) {
-    run.note('theirs', at);
-
     return theirs;
   }
 
   if (whole && sameValue(base, theirs)) {
-    run.note('mine', at);
-
     return mine;
   }
 
@@ -995,14 +990,10 @@ function mergeItem(base, mine, theirs, at, run) {
 
   if (base === undefined) {
     if (mine === undefined) {
-      run.note('theirs', at);
-
       return theirs;
     }
 
     if (theirs === undefined) {
-      run.note('mine', at);
-
       return mine;
     }
   } else if (mine === undefined || theirs === undefined) {
@@ -1022,8 +1013,6 @@ function mergeItem(base, mine, theirs, at, run) {
     if (!sameValue(base, kept)) {
       return run.clash(base, mine, theirs, at);
     }
-
-    run.note(keeper === 'mine' ? 'theirs' : 'mine', at);
 
     return undefined;
   }
@@ -1295,15 +1284,12 @@ export function droppedText(dropped = []) {
  * @param {object} theirs the server's version
  * @param {Object<string, 'mine'|'theirs'>} [choices] the version kept for
  *   each clash, by its key. A clash without a choice keeps theirs.
- * @returns {{doc: object, clashes: object[], mineChanges: object[],
- *   theirChanges: object[], dropped: object[], base: object, mine: object,
- *   theirs: object}}
+ * @returns {{doc: object, clashes: object[], dropped: object[],
+ *   base: object, mine: object, theirs: object}}
  *   - doc: the merged document.
  *   - clashes: each clash, with a stable key, its element and field, a label
  *     (element and field), the base, mine and theirs values, how each choice
  *     shows its value (mineText, theirsText) and a summary.
- *   - mineChanges, theirChanges: the changes taken from each side
- *     ({key, label}).
  *   - dropped: the connections dropped because the choices deleted what they
  *     connect ({key, label}, see droppedText).
  *   - base, mine, theirs: the three versions, to merge again with the
@@ -1335,8 +1321,6 @@ export function mergeDocuments(base, mine, theirs, choices = {}) {
   return {
     doc,
     clashes: run.clashes,
-    mineChanges: run.mine,
-    theirChanges: run.theirs,
     dropped,
     base,
     mine,

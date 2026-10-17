@@ -217,69 +217,6 @@ export function issuesAbout(doc, issues, selection) {
   ).map((entry) => ({ ...entry, text: issueText(doc, entry) }));
 }
 
-/**
- * The checks dialog's lists: the issues about each node and each connection,
- * in diagram order, and the issues about neither. Each issue has its text.
- * In the list of a node or connection, the text leaves out the name that
- * heads the list. Errors come first in every list.
- *
- * @param {object} doc
- * @param {object[]} issues
- * @returns {{nodes: {id: string, title: string, issues: object[]}[],
- *   edges: {id: string, title: string, issues: object[]}[],
- *   diagram: object[]}}
- */
-export function issueGroups(doc, issues) {
-  const about = { nodes: new Map(), edges: new Map() };
-  const diagram = [];
-
-  issues.forEach((entry) => {
-    const nodeId = issueNodeId(doc, entry);
-    const [collection, id] = nodeId
-      ? ['nodes', nodeId]
-      : ['edges', entry.edgeId || ''];
-
-    if (!id) {
-      diagram.push({ ...entry, text: issueText(doc, entry) });
-
-      return;
-    }
-
-    about[collection].set(id, [
-      ...(about[collection].get(id) || []),
-      { ...entry, text: ownText(doc, entry) },
-    ]);
-  });
-
-  const groups = (collection) => {
-    const seen = new Set();
-
-    return (doc?.[collection] || []).flatMap((element, index) => {
-      const entries = about[collection].get(element.id);
-
-      if (!entries || seen.has(element.id)) {
-        return [];
-      }
-
-      seen.add(element.id);
-
-      return [
-        {
-          id: element.id,
-          title: elementTitle(doc, collection, index),
-          issues: byLevel(entries),
-        },
-      ];
-    });
-  };
-
-  return {
-    nodes: groups('nodes'),
-    edges: groups('edges'),
-    diagram: byLevel(diagram),
-  };
-}
-
 // --- one shape for every list ------------------------------------------------
 
 const SEVERITIES = ['error', 'warning'];
@@ -564,8 +501,7 @@ function issueElement(doc, issue, target) {
 }
 
 // The position of an issue in the lists: by its node, in diagram order, then
-// by its connection, then the issues about neither, as issueGroups orders
-// them.
+// by its connection, then the issues about neither.
 function diagramRank(doc, entry) {
   const target = entry.target ?? issueTarget(doc, entry);
   const index = target
@@ -586,19 +522,14 @@ function diagramRank(doc, entry) {
  *
  * @param {object} doc
  * @param {Array<string|object>} issues
- * @param {{publishing?: boolean, defaultSeverity?: 'error'|'warning'}}
- *   [options] see toIssue
+ * @param {{publishing?: boolean}} [options] see toIssue
  * @returns {object[]} each issue with `text` (its message, with names in
  *   place of the element indexes), `element` ("Device web-01", or '') and
  *   `target` (see issueTarget)
  */
-export function issueEntries(
-  doc,
-  issues = [],
-  { publishing = false, defaultSeverity = 'error' } = {},
-) {
+export function issueEntries(doc, issues = [], { publishing = false } = {}) {
   return issues.map((entry) => {
-    const issue = toIssue(entry, defaultSeverity, { publishing });
+    const issue = toIssue(entry, 'error', { publishing });
     const target = issueTarget(doc, issue);
 
     return {
