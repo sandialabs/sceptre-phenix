@@ -1,5 +1,5 @@
 // The drafts page's Icons tab and its preview dialog, rendered on the server,
-// and the download of an icon as the PNG file the server stores.
+// and saveIconFile; icons-tab-actions.test.js uses the tab.
 
 import { describe, expect, test, vi } from 'vitest';
 import { createSSRApp, h } from 'vue';
@@ -8,7 +8,6 @@ import { renderToString } from 'vue/server-renderer';
 import BuilderIcons from '@/components/builder/BuilderIcons.vue';
 import IconPreviewDialog from '@/components/builder/dialogs/IconPreviewDialog.vue';
 
-import { builtinIcons } from '@/builder/builtinIcons.js';
 import { saveIconFile } from '@/builder/icons.js';
 
 import { tags, textOf } from './fixtures.js';
@@ -70,22 +69,20 @@ function libraryWith(state = {}) {
   };
 }
 
-// Renders a component and returns its HTML and setup bindings; `state` sets
-// bindings, such as the list Show shows, before it renders.
+// Renders a component and returns its HTML; `state` sets bindings, such as
+// the list Show shows, before it renders.
 async function render(component, props = {}, state = {}) {
   const app = createSSRApp({ render: () => h(component, props) });
-  let bindings = null;
 
   app.mixin({
     created() {
       if (this.$.type === component) {
-        bindings = this.$.setupState;
-        Object.assign(bindings, state);
+        Object.assign(this.$.setupState, state);
       }
     },
   });
 
-  return { html: await renderToString(app), bindings };
+  return { html: await renderToString(app) };
 }
 
 // The card of an icon, as HTML.
@@ -228,39 +225,6 @@ describe('the Icons tab', () => {
     // Loading is of the server's icons only.
     expect(loading.html).not.toContain('data-testid="icons-tab-loading"');
   });
-
-  test('Download saves the PNG as the server stores it, named after the icon', async () => {
-    const save = vi.fn();
-    const { bindings } = await render(BuilderIcons, {
-      library: libraryWith({ icons: ICONS }),
-      save,
-    });
-
-    bindings.download(ICONS[0]);
-
-    const [[blob, fileName]] = save.mock.calls;
-
-    expect(fileName).toBe('hmi.png');
-    expect(blob.type).toBe('image/png');
-    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(
-      bytesOf(ICON_DATA),
-    );
-    expect(bindings.status.text).toBe('Saved hmi.png.');
-  });
-
-  test('showIcon opens the preview of an icon by any of its names, or says there is none', async () => {
-    const library = libraryWith({ icons: ICONS });
-    const { bindings } = await render(BuilderIcons, { library });
-
-    expect(await bindings.showIcon('OLD-HMI')).toBe(true);
-    expect(library.ensure).toHaveBeenCalled();
-    expect(bindings.previewing.name).toBe('hmi');
-
-    bindings.previewing = null;
-    expect(await bindings.showIcon('pump')).toBe(false);
-    expect(bindings.previewing).toBeNull();
-    expect(bindings.error.text).toBe('The server has no icon named pump.');
-  });
 });
 
 describe('the built-in icons in the Icons tab', () => {
@@ -285,36 +249,6 @@ describe('the built-in icons in the Icons tab', () => {
 
     expect(server.html).toContain('data-testid="icons-list"');
     expect(server.html).not.toContain('builtin-icons-list');
-  });
-
-  test('an upload and showIcon show the server icons, where the icon is', async () => {
-    const { bindings } = await render(BuilderIcons, {
-      library: libraryWith({ icons: ICONS }),
-    });
-
-    expect(bindings.showing).toBe('builtin');
-    expect(await bindings.showIcon('hmi')).toBe(true);
-    expect(bindings.showing).toBe('server');
-
-    bindings.showing = 'builtin';
-    await bindings.onUploaded({ icon: ICONS[0] });
-    expect(bindings.showing).toBe('server');
-  });
-
-  test('lists every built-in icon, which the filter narrows by label or key', async () => {
-    const { bindings } = await render(BuilderIcons, {
-      library: libraryWith({ icons: ICONS }),
-    });
-
-    expect(bindings.builtinShown).toEqual(builtinIcons());
-    bindings.filterText = 'FIRE';
-    expect(bindings.builtinShown.map((icon) => icon.key)).toEqual(['firewall']);
-    expect(bindings.filterCount).toBe(
-      `1 of ${builtinIcons().length} icons shown.`,
-    );
-    // The server list keeps its own count.
-    bindings.showing = 'server';
-    expect(bindings.filterCount).toBe('0 of 2 icons shown.');
   });
 });
 

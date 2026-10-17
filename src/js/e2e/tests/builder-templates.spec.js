@@ -2272,61 +2272,6 @@ test('collections group templates of the library, and selected templates are add
   expectNoFatal(issues);
 });
 
-test('the library’s cards are selected in ranges with Shift, and Delete asks about them', async ({
-  page,
-  request,
-  builder,
-  tracker,
-  issues,
-}, testInfo) => {
-  // A collection of its own, which no other test's templates join.
-  const seeded = await seedTemplates(
-    request,
-    tracker,
-    ['alfa', 'bravo', 'charlie', 'delta'].map((part, index) => ({
-      name: `Range ${part}`,
-      description: '',
-      device: unitDevice(`range-${index}`),
-    })),
-    { collection: { name: uniqueName(testInfo, 'range-set') } },
-  );
-  const { ids } = seeded;
-  const library = templateLibrary(page);
-
-  await builder.open();
-  await library.tab.click();
-  await library.show.selectOption(seeded.collection);
-  await expect(library.list.locator(':scope > li')).toHaveCount(4);
-
-  await test.step('Shift and a checkbox select the cards between it and the one last pressed', async () => {
-    await library.select(ids[0]).check();
-    await library.select(ids[2]).click({ modifiers: ['Shift'] });
-    await expect(library.count).toHaveText('3 of 4 selected');
-    await expect.soft(library.select(ids[1])).toBeChecked();
-    await expect.soft(library.select(ids[3])).not.toBeChecked();
-  });
-
-  await test.step('on a card, Escape clears, and Space then Shift+End select a range', async () => {
-    await library.card(ids[0]).focus();
-    await page.keyboard.press('Escape');
-    await expect(library.count).toHaveText('0 of 4 selected');
-    await page.keyboard.press('Space');
-    await page.keyboard.press('Shift+End');
-    await expect.soft(library.card(ids[3])).toBeFocused();
-    await expect(library.count).toHaveText('4 of 4 selected');
-  });
-
-  await test.step('Delete asks to delete the selected templates, and Cancel keeps them', async () => {
-    await page.keyboard.press('Delete');
-    await expect(library.confirm).toHaveAccessibleName('Delete 4 templates?');
-    await library.cancel.click();
-    await expect(library.confirm).toHaveCount(0);
-    await expect(library.count).toHaveText('4 of 4 selected');
-  });
-
-  expectNoFatal(issues);
-});
-
 test('a collection shows what it is and its templates, which are taken out of it, and it is renamed and deleted, and its templates deleted at once', async ({
   page,
   builder,

@@ -194,49 +194,6 @@ describe('the Node Templates tab', () => {
     ).toEqual(['plc', 'hmi', 'rtu']);
   });
 
-  // The command palette shows a collection through showList (see
-  // openTemplateLibrary in Builder.vue).
-  test('showList shows a collection and focuses Show, and keeps the list for an unknown value', async () => {
-    const { instances } = await renderWithStore(BuilderTemplates, {
-      capture: { tab: BuilderTemplates },
-      prepare(store) {
-        store.templates = library();
-      },
-    });
-
-    const focus = vi.fn();
-    const getElementById = vi.fn(() => ({ focus }));
-
-    vi.stubGlobal('document', { getElementById });
-
-    try {
-      const { exposed, setupState } = instances.tab[0];
-
-      expect(await exposed.showList('c2')).toBe(true);
-      expect(setupState.shown).toBe('c2');
-      expect(getElementById).toHaveBeenCalledWith('templates-show');
-      expect(focus).toHaveBeenCalledOnce();
-
-      focus.mockClear();
-
-      expect(await exposed.showList('gone')).toBe(false);
-      expect(await exposed.showList('preloaded:c2')).toBe(false);
-      expect(setupState.shown).toBe('c2');
-      expect(focus).not.toHaveBeenCalled();
-
-      expect(await exposed.showList(SHOW_BUILTIN)).toBe(true);
-      expect(setupState.shown).toBe(SHOW_BUILTIN);
-      expect(setupState.items.map((item) => item.id)).toEqual(
-        BUILTIN_TEMPLATES.map((item) => item.id),
-      );
-
-      expect(await exposed.showList('')).toBe(true);
-      expect(setupState.shown).toBe('');
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
   test('a card names its template, says what is known of it, and has Edit and Delete', async () => {
     const { html } = await tab();
     const [card, next] = html.split('<li ').slice(1);

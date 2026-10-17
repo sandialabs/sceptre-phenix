@@ -2786,51 +2786,6 @@ test.describe('import', () => {
 // --- drafts landing ----------------------------------------------------------
 
 test.describe('drafts landing', () => {
-  test('collection tabs move with the arrow keys', async ({
-    page,
-    builder,
-  }) => {
-    await builder.open();
-
-    // The five tabs every user has.
-    const ids = ['drafts', 'published', 'templates', 'layers', 'icons'];
-    const tabs = ids.map((id) => page.getByTestId(`drafts-tab-${id}`));
-    const panels = ids.map((id) => page.locator(`#panel-${id}`));
-
-    async function expectActive(index) {
-      for (const [i, tab] of tabs.entries()) {
-        await expect(tab).toHaveAttribute('aria-selected', String(i === index));
-        await expect(tab).toHaveAttribute('tabindex', i === index ? '0' : '-1');
-        await expect(panels[i]).toBeVisible({ visible: i === index });
-      }
-      await expect(tabs[index]).toBeFocused();
-    }
-
-    await expect(
-      page.getByRole('tablist', { name: 'Builder collections' }),
-    ).toBeVisible();
-    await tabs[0].focus();
-    await expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
-
-    await page.keyboard.press('ArrowRight');
-    await expectActive(1);
-    await page.keyboard.press('ArrowRight');
-    await expectActive(2);
-    await page.keyboard.press('ArrowRight');
-    await expectActive(3);
-    await page.keyboard.press('ArrowRight');
-    await expectActive(4);
-    await page.keyboard.press('ArrowRight');
-    await expectActive(0);
-    await page.keyboard.press('ArrowLeft');
-    await expectActive(4);
-    await page.keyboard.press('ArrowLeft');
-    await expectActive(3);
-
-    await tabs[0].click();
-    await expectActive(0);
-  });
-
   // There is no Refresh button: the landing reads its lists again when the
   // page comes back into view, quietly and once for the pair of events.
   test('the lists refresh when the page comes back into view, and Delete asks, then removes a draft', async ({

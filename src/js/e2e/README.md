@@ -92,6 +92,11 @@ server clean. Builder works over plain HTTP from any host, which one
 `builder-integration.spec.js` test checks by routing a non-local host name to
 the server.
 
+What one component does with keys, focus and selection needs no layout, and
+is tested in Vitest instead (`src/js/test/builder/`, see `src/js/AGENTS.md`).
+A spec keeps what needs a browser and a server: the API, CSS and layout, the
+canvas, and journeys across views.
+
 A test checks one state, or one journey whose steps lead from one to the
 next, such as a dialog opened, used and closed by keyboard, and stays under
 about 300 lines. It starts from the state it checks: it seeds a draft through
