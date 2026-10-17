@@ -17,7 +17,6 @@
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",
     "@fortawesome/fontawesome-svg-core": "^6.7.2",
-    "@fortawesome/free-regular-svg-icons": "^6.7.2",
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@fortawesome/vue-fontawesome": "^3.0.8",
     "@hpcc-js/wasm-graphviz": "1.29.1",
@@ -45,7 +44,6 @@
     "js-yaml": "^4.3.2",
     "lodash-es": "^4.17.21",
     "minimatch": "^10.0.1",
-    "mitt": "^3.0.1",
     "openapi-sampler": "^1.6.1",
     "pinia": "^4.0.3",
     "sass": "^1.87.0",
