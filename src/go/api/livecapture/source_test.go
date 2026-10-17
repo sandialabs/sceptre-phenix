@@ -1,13 +1,11 @@
 package livecapture
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +13,8 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
@@ -26,33 +26,27 @@ func TestFileSourceRead(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "a.pcap")
 
 	if err := os.WriteFile(path, []byte("0123456789"), 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing the capture file: %v", err)
 	}
 
 	src := &fileSource{path: path, f: nil, buf: nil}
 	defer src.Close()
 
-	got, err := src.Read(2, 4)
-	if err != nil || string(got) != "2345" {
-		t.Fatalf("Read(2, 4) = %q, %v; want 2345", got, err)
-	}
-
-	got, err = src.Read(8, 4)
-	if err != nil || string(got) != "89" {
-		t.Fatalf("Read(8, 4) = %q, %v; want 89", got, err)
-	}
-
-	got, err = src.Read(10, 4)
-	if err != nil || len(got) != 0 {
-		t.Fatalf("Read(10, 4) = %q, %v; want nothing", got, err)
+	for _, tt := range []struct {
+		off, n int
+		want   string
+	}{{2, 4, "2345"}, {8, 4, "89"}, {10, 4, ""}} {
+		if got, err := src.Read(int64(tt.off), tt.n); err != nil || string(got) != tt.want {
+			t.Errorf("Read(%d, %d) = %q, %v; want %q, nil", tt.off, tt.n, got, err, tt.want)
+		}
 	}
 
 	if err := os.Truncate(path, 4); err != nil {
-		t.Fatal(err)
+		t.Fatalf("truncating the capture file: %v", err)
 	}
 
 	if _, err := src.Read(10, 4); !errors.Is(err, errTruncated) {
-		t.Fatalf("Read of a shrunk file = %v, want errTruncated", err)
+		t.Errorf("Read(10, 4) of a file shrunk to 4 bytes error = %v, want %v", err, errTruncated)
 	}
 }
 
@@ -87,7 +81,7 @@ func TestMeshSourceRead(t *testing.T) { //nolint:paralleltest // uses the fake m
 
 	src, err := newMeshSource("compute1", "/phenix/images/exp/files/vm-0.pcap")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("newMeshSource(compute1, /phenix/images/exp/files/vm-0.pcap) error = %v", err)
 	}
 
 	type result struct {
@@ -104,17 +98,21 @@ func TestMeshSourceRead(t *testing.T) { //nolint:paralleltest // uses the fake m
 
 	select {
 	case got := <-read:
-		if got.err != nil || !bytes.Equal(got.data, []byte{0, 1, 2, 0xff}) {
-			t.Fatalf("Read = %v, %v; want the decoded bytes", got.data, got.err)
+		if got.err != nil {
+			t.Errorf("Read(24, 1024) error = %v", got.err)
+		}
+
+		if diff := cmp.Diff([]byte{0, 1, 2, 0xff}, got.data); diff != "" {
+			t.Errorf("Read(24, 1024) mismatch (-want +got):\n%s", diff)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("the mesh read waited for another minimega command")
+		t.Fatal("Read(24, 1024) still waiting after 5s, want it not held up by another minimega command")
 	}
 
 	release()
 
 	if err := <-held; err != nil {
-		t.Fatalf("holding command failed: %v", err)
+		t.Errorf("holding minimega command error = %v", err)
 	}
 
 	// the command minimega runs: the script is one argument and the path,
@@ -128,7 +126,7 @@ func TestMeshSourceRead(t *testing.T) { //nolint:paralleltest // uses the fake m
 	}
 
 	if !strings.HasPrefix(sent, "mesh send compute1 shell sh -c ") {
-		t.Fatalf("unexpected command %q", sent)
+		t.Fatalf("Read(24, 1024) sent minimega %q, want a command starting %q", sent, "mesh send compute1 shell sh -c ")
 	}
 
 	minicli.Reset()
@@ -141,14 +139,16 @@ func TestMeshSourceRead(t *testing.T) { //nolint:paralleltest // uses the fake m
 
 	cmd, err := minicli.Compile(sent)
 	if err != nil {
-		t.Fatalf("minimega cannot parse %q: %v", sent, err)
+		t.Fatalf("minicli.Compile(%q) error = %v", sent, err)
 	}
 
-	args := cmd.ListArgs["args"]
-	want := []string{"sh", "-c", meshReadScript, "phenix", "/phenix/images/exp/files/vm-0.pcap", "24", "1024"}
+	if host := cmd.StringArgs["host"]; host != "compute1" {
+		t.Errorf("minicli.Compile(%q) host = %q, want %q", sent, host, "compute1")
+	}
 
-	if cmd.StringArgs["host"] != "compute1" || !slices.Equal(args, want) {
-		t.Fatalf("minimega would run %q on %q, want %q", args, cmd.StringArgs["host"], want)
+	want := []string{"sh", "-c", meshReadScript, "phenix", "/phenix/images/exp/files/vm-0.pcap", "24", "1024"}
+	if diff := cmp.Diff(want, cmd.ListArgs["args"]); diff != "" {
+		t.Errorf("minicli.Compile(%q) args mismatch (-want +got):\n%s", sent, diff)
 	}
 }
 
@@ -164,12 +164,12 @@ func TestMeshSourceRefusesUnsafePaths(t *testing.T) {
 		"/phenix/images/exp/files/$(reboot).pcap",
 	} {
 		if _, err := newMeshSource("compute1", path); !errors.Is(err, ErrUnsafePath) {
-			t.Errorf("newMeshSource(%q) = %v, want ErrUnsafePath", path, err)
+			t.Errorf("newMeshSource(compute1, %q) error = %v, want %v", path, err, ErrUnsafePath)
 		}
 	}
 
 	if _, err := newMeshSource("compute1 shell reboot", "/a.pcap"); !errors.Is(err, ErrUnsafePath) {
-		t.Errorf("unsafe host accepted: %v", err)
+		t.Errorf("newMeshSource(%q, /a.pcap) error = %v, want %v", "compute1 shell reboot", err, ErrUnsafePath)
 	}
 }
 
@@ -196,7 +196,7 @@ func TestMeshReadScript(t *testing.T) {
 	}
 
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing the capture file: %v", err)
 	}
 
 	for _, tt := range []struct{ off, n int }{{0, 24}, {24, 1000}, {2500, 1000}, {3000, 10}} {
@@ -204,17 +204,22 @@ func TestMeshReadScript(t *testing.T) {
 			t.Context(), "sh", "-c", meshReadScript, "phenix", path, strconv.Itoa(tt.off), strconv.Itoa(tt.n),
 		).Output()
 		if err != nil {
-			t.Fatalf("script failed: %v", err)
+			t.Errorf("meshReadScript(offset %d, count %d) error = %v", tt.off, tt.n, err)
+
+			continue
 		}
 
 		got, err := decodeRange(string(out))
 		if err != nil {
-			t.Fatal(err)
+			t.Errorf("decodeRange(meshReadScript(offset %d, count %d)) error = %v", tt.off, tt.n, err)
+
+			continue
 		}
 
-		want := data[min(tt.off, len(data)):min(tt.off+tt.n, len(data))]
-		if !bytes.Equal(got, want) {
-			t.Fatalf("off %d n %d: got %d bytes, want %d", tt.off, tt.n, len(got), len(want))
+		from, to := min(tt.off, len(data)), min(tt.off+tt.n, len(data))
+		if diff := cmp.Diff(data[from:to], got, cmpopts.EquateEmpty()); diff != "" {
+			t.Errorf("meshReadScript(offset %d, count %d) mismatch with file bytes %d to %d (-want +got):\n%s",
+				tt.off, tt.n, from, to, diff)
 		}
 	}
 }

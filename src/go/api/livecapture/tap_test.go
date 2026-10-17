@@ -19,6 +19,7 @@ import (
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store"
 	"phenix/util/mm"
@@ -135,7 +136,7 @@ func useFakeCluster(t *testing.T, remote bool) *fakeCluster {
 
 	for iface := range 2 {
 		if err := os.WriteFile(c.path(iface), nil, 0o600); err != nil {
-			t.Fatal(err)
+			t.Fatalf("creating the capture file of interface %d: %v", iface, err)
 		}
 	}
 
@@ -196,13 +197,13 @@ func (c *fakeCluster) write(t *testing.T, b []byte) {
 
 	f, err := os.OpenFile(c.path(0), os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("opening the capture file: %v", err)
 	}
 
 	defer f.Close()
 
 	if _, err := f.Write(b); err != nil {
-		t.Fatal(err)
+		t.Fatalf("appending to the capture file: %v", err)
 	}
 }
 
@@ -221,7 +222,7 @@ func waitFor(t *testing.T, tap *Tap, what string, ok func(State) bool) {
 		select {
 		case <-st.Changed:
 		case <-deadline:
-			t.Fatalf("timed out waiting for %s; state %+v", what, st)
+			t.Fatalf("Tap.State() = %+v after 5s, want %s", st, what)
 		}
 	}
 }
@@ -278,15 +279,16 @@ func TestTapFollowsCapture(t *testing.T) { //nolint:paralleltest // replaces pac
 
 			tap, err := Open("exp", "vm", 0)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("Open(exp, vm, 0) error = %v", err)
 			}
 
 			defer tap.Release()
 
 			waitFor(t, tap, "the first record", func(st State) bool { return st.CaughtUp })
 
+			// only whole records are readable
 			if got, want := tap.State().Size, int64(len(header)+len(one)); got != want {
-				t.Fatalf("got %d readable bytes, want %d: only whole records", got, want)
+				t.Errorf("Tap.State().Size = %d, want %d", got, want)
 			}
 
 			s := collect(tap, false)
@@ -301,24 +303,29 @@ func TestTapFollowsCapture(t *testing.T) { //nolint:paralleltest // replaces pac
 			select {
 			case err := <-s.done:
 				if err != nil {
-					t.Fatalf("stream ended with %v, want nil once the capture stops", err)
+					t.Errorf("Stream(fromNow false) after the capture stops error = %v, want nil", err)
 				}
 			case <-time.After(5 * time.Second):
-				t.Fatal("stream did not end when the capture stopped")
+				t.Fatal("Stream(fromNow false) still running 5s after the capture stopped")
 			}
 
 			want := bytes.Join([][]byte{header, one, two}, nil)
-			if !bytes.Equal(s.out.Bytes(), want) {
-				t.Fatalf("streamed %d bytes, want the %d of the whole capture", s.out.Len(), len(want))
+			if diff := cmp.Diff(want, s.out.Bytes()); diff != "" {
+				t.Errorf("Stream(fromNow false) bytes mismatch (-want +got):\n%s", diff)
 			}
 
-			if s.sends[0] != fileHeaderLen {
-				t.Fatalf("first send is %d bytes, want the file header alone", s.sends[0])
+			// the file header is sent alone
+			if len(s.sends) == 0 || s.sends[0] != fileHeaderLen {
+				t.Errorf("Stream(fromNow false) send sizes = %v, want the first to be %d", s.sends, fileHeaderLen)
 			}
 
 			whole, err := io.ReadAll(io.NewSectionReader(tap, 0, tap.State().Size))
-			if err != nil || !bytes.Equal(whole, want) {
-				t.Fatalf("reading the Tap: %v; equal %v", err, bytes.Equal(whole, want))
+			if err != nil {
+				t.Errorf("reading the whole Tap error = %v", err)
+			}
+
+			if diff := cmp.Diff(want, whole); diff != "" {
+				t.Errorf("reading the whole Tap mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -337,7 +344,7 @@ func TestTapStreamFromNow(t *testing.T) { //nolint:paralleltest // replaces pack
 
 	tap, err := Open("exp", "vm", 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
 	}
 
 	defer tap.Release()
@@ -351,7 +358,7 @@ func TestTapStreamFromNow(t *testing.T) { //nolint:paralleltest // replaces pack
 	select {
 	case <-s.started:
 	case <-time.After(5 * time.Second):
-		t.Fatal("stream sent no file header")
+		t.Fatal("Stream(fromNow true) sent no file header within 5s")
 	}
 
 	cluster.write(t, fresh)
@@ -362,11 +369,12 @@ func TestTapStreamFromNow(t *testing.T) { //nolint:paralleltest // replaces pack
 	cluster.capturing.Store(false)
 
 	if err := <-s.done; err != nil {
-		t.Fatal(err)
+		t.Errorf("Stream(fromNow true) after the capture stops error = %v, want nil", err)
 	}
 
-	if want := append(append([]byte{}, header...), fresh...); !bytes.Equal(s.out.Bytes(), want) {
-		t.Fatalf("streamed %d bytes, want the header and the new record (%d)", s.out.Len(), len(want))
+	// the header and the new record
+	if diff := cmp.Diff(append(append([]byte{}, header...), fresh...), s.out.Bytes()); diff != "" {
+		t.Errorf("Stream(fromNow true) bytes mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -376,7 +384,7 @@ func TestTapStopsOnCorruptCapture(t *testing.T) { //nolint:paralleltest // repla
 
 	tap, err := Open("exp", "vm", 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
 	}
 
 	defer tap.Release()
@@ -384,7 +392,7 @@ func TestTapStopsOnCorruptCapture(t *testing.T) { //nolint:paralleltest // repla
 	waitFor(t, tap, "the Tap to give up", func(st State) bool { return st.Done })
 
 	if err := <-collect(tap, false).done; !errors.Is(err, errNotPcap) {
-		t.Fatalf("stream ended with %v, want errNotPcap", err)
+		t.Errorf("Stream(fromNow false) of a corrupt capture error = %v, want %v", err, errNotPcap)
 	}
 }
 
@@ -398,48 +406,51 @@ func TestOpenSharesOneTapPerRunningCapture(t *testing.T) { //nolint:paralleltest
 	// would recreate its namespace
 	cluster.running.Store(false)
 
-	if _, err := Open("exp", "vm", 0); !errors.Is(err, ErrNotCapturing) || cluster.lookups.Load() != 0 {
-		t.Fatalf("Open in a stopped experiment = %v after %d lookups; want ErrNotCapturing, minimega not asked",
-			err, cluster.lookups.Load())
+	if _, err := Open("exp", "vm", 0); !errors.Is(err, ErrNotCapturing) {
+		t.Errorf("Open(exp, vm, 0) in a stopped experiment error = %v, want %v", err, ErrNotCapturing)
+	}
+
+	if n := cluster.lookups.Load(); n != 0 {
+		t.Errorf("GetVMCaptures calls after Open() in a stopped experiment = %d, want 0", n)
 	}
 
 	cluster.running.Store(true)
 
 	first, err := Open("exp", "vm", 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
 	}
 
 	defer first.Release()
 
 	second, err := Open("exp", "vm", 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("second Open(exp, vm, 0) error = %v", err)
 	}
 
 	defer second.Release()
 
 	if first != second {
-		t.Fatal("a second reader of the same capture got a Tap of its own")
+		t.Errorf("second Open(exp, vm, 0) = %p, want the first Tap %p", second, first)
 	}
 
 	if n := cluster.lookups.Load(); n != 1 {
-		t.Fatalf("asked minimega for the capture %d times, want once", n)
+		t.Errorf("GetVMCaptures calls after two Open(exp, vm, 0) = %d, want 1", n)
 	}
 
 	other, err := Open("exp", "vm", 1)
 	if err != nil {
-		t.Fatalf("another interface: %v", err)
+		t.Fatalf("Open(exp, vm, 1) error = %v", err)
 	}
 
 	defer other.Release()
 
 	if other == first {
-		t.Fatal("another interface shares the first interface's Tap")
+		t.Errorf("Open(exp, vm, 1) = %p, the Tap of interface 0; want a Tap of its own", other)
 	}
 
 	if _, err := Open("exp", "vm", 2); !errors.Is(err, ErrNotCapturing) {
-		t.Fatalf("Open of an interface not captured = %v, want ErrNotCapturing", err)
+		t.Errorf("Open(exp, vm, 2) of an interface not captured error = %v, want %v", err, ErrNotCapturing)
 	}
 }
 
@@ -450,14 +461,14 @@ func TestOpenKeepsAStoppedCaptureUntilItExpires(t *testing.T) { //nolint:paralle
 
 	tap, err := Open("exp", "vm", 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
 	}
 
 	waitFor(t, tap, "the record", func(st State) bool { return st.CaughtUp && st.Size > fileHeaderLen })
 
 	spool := tap.spool
 	if _, err := os.Stat(spool); err != nil {
-		t.Fatalf("remote capture has no spool: %v", err)
+		t.Errorf("os.Stat(spool of a remote capture) error = %v", err)
 	}
 
 	// the capture stops: the finished Tap still serves all of it
@@ -468,7 +479,7 @@ func TestOpenKeepsAStoppedCaptureUntilItExpires(t *testing.T) { //nolint:paralle
 
 	again, err := Open("exp", "vm", 0)
 	if err != nil || again != tap {
-		t.Fatalf("Open of a stopped capture = %p, %v; want the finished Tap %p", again, err, tap)
+		t.Fatalf("Open(exp, vm, 0) of a stopped capture = %p, %v; want the finished Tap %p, nil", again, err, tap)
 	}
 
 	idleGrace = 50 * time.Millisecond
@@ -487,7 +498,7 @@ func TestOpenKeepsAStoppedCaptureUntilItExpires(t *testing.T) { //nolint:paralle
 	})
 
 	if _, err := Open("exp", "vm", 0); !errors.Is(err, ErrNotCapturing) {
-		t.Fatalf("Open after expiry = %v, want ErrNotCapturing", err)
+		t.Errorf("Open(exp, vm, 0) after the Tap expires error = %v, want %v", err, ErrNotCapturing)
 	}
 }
 
@@ -503,7 +514,7 @@ func TestCloseAllStopsEveryTap(t *testing.T) { //nolint:paralleltest // replaces
 
 	tap, err := Open("exp", "vm", 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
 	}
 
 	defer tap.Release()
@@ -519,7 +530,7 @@ func TestCloseAllStopsEveryTap(t *testing.T) { //nolint:paralleltest // replaces
 	select {
 	case <-waiting:
 	case <-time.After(5 * time.Second):
-		t.Fatal("the Tap stopped reading its capture")
+		t.Fatal("Tap made no mesh read within 5s, want it to keep reading its capture")
 	}
 
 	closed := make(chan struct{})
@@ -541,33 +552,34 @@ func TestCloseAllStopsEveryTap(t *testing.T) { //nolint:paralleltest // replaces
 	select {
 	case <-closed:
 	case <-time.After(5 * time.Second):
-		t.Fatal("CloseAll did not return once the read did")
+		t.Fatal("CloseAll() still running 5s after the mesh read returned")
 	}
 
 	// a reader still holding the Tap gets what was read, then its stream ends
 	select {
 	case err := <-s.done:
 		if err != nil {
-			t.Fatalf("stream ended with %v, want nil", err)
+			t.Errorf("Stream(fromNow false) after CloseAll() error = %v, want nil", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("stream did not end")
+		t.Fatal("Stream(fromNow false) still running 5s after CloseAll()")
 	}
 
-	if want := append(append([]byte{}, header...), one...); !bytes.Equal(s.out.Bytes(), want) {
-		t.Fatalf("streamed %d bytes, want the %d read before closing", s.out.Len(), len(want))
+	// what was read before closing
+	if diff := cmp.Diff(append(append([]byte{}, header...), one...), s.out.Bytes()); diff != "" {
+		t.Errorf("Stream(fromNow false) bytes mismatch (-want +got):\n%s", diff)
 	}
 
 	// the capture is still running: the next reader follows it afresh
 	again, err := Open("exp", "vm", 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Open(exp, vm, 0) after CloseAll() error = %v", err)
 	}
 
 	defer again.Release()
 
 	if again == tap {
-		t.Fatal("Open after CloseAll returned the closed Tap")
+		t.Errorf("Open(exp, vm, 0) after CloseAll() = %p, the closed Tap; want a new one", again)
 	}
 }
 
@@ -586,23 +598,23 @@ func TestRemoveStaleSpools(t *testing.T) {
 	} {
 		path := filepath.Join(tmp, name)
 		if err := os.WriteFile(path, []byte("spooled"), 0o600); err != nil {
-			t.Fatal(err)
+			t.Fatalf("writing %s: %v", name, err)
 		}
 
 		at := started.Add(-age)
 		if err := os.Chtimes(path, at, at); err != nil {
-			t.Fatal(err)
+			t.Fatalf("setting the times of %s: %v", name, err)
 		}
 	}
 
 	removed, err := RemoveStaleSpools(started)
 	if err != nil || removed != 1 {
-		t.Fatalf("removed %d spools (%v), want 1", removed, err)
+		t.Errorf("RemoveStaleSpools(start time) = %d, %v; want 1, nil", removed, err)
 	}
 
 	entries, err := os.ReadDir(tmp)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.ReadDir(TMPDIR) error = %v", err)
 	}
 
 	left := make([]string, 0, len(entries))
@@ -610,7 +622,7 @@ func TestRemoveStaleSpools(t *testing.T) {
 		left = append(left, e.Name())
 	}
 
-	if strings.Join(left, " ") != "other-1.pcap phenix-capture-2.pcap" {
-		t.Errorf("left %v", left)
+	if diff := cmp.Diff([]string{"other-1.pcap", "phenix-capture-2.pcap"}, left); diff != "" {
+		t.Errorf("files left after RemoveStaleSpools(start time) mismatch (-want +got):\n%s", diff)
 	}
 }

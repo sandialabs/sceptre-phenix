@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/util/mm"
@@ -14,65 +16,52 @@ import (
 )
 
 func TestParseNetflowLine(t *testing.T) {
+	flow := func(proto int, src string, sport int, dst string, dport, packets, bytes int) map[string]any {
+		return map[string]any{
+			"proto": proto, "src": src, "sport": sport, "dst": dst, "dport": dport, "packets": packets, "bytes": bytes,
+		}
+	}
+
 	tests := []struct {
-		name  string
-		line  string
-		ok    bool
-		src   string
-		sport int
-		dst   string
-		dport int
+		name string
+		line string
+		want map[string]any // nil when the line is refused
 	}{
 		{
-			name:  "IPv4 flow",
-			line:  "0 0 6 10.0.0.1:1234 <-> 10.0.0.2:443 2 2048",
-			ok:    true,
-			src:   "10.0.0.1",
-			dst:   "10.0.0.2",
-			sport: 1234,
-			dport: 443,
+			name: "IPv4 flow",
+			line: "0 0 6 10.0.0.1:1234 <-> 10.0.0.2:443 2 2048",
+			want: flow(6, "10.0.0.1", 1234, "10.0.0.2", 443, 2, 2048),
 		},
 		{
-			name:  "IPv6 flow",
-			line:  "0 0 17 [2001:db8::1]:53 <-> [2001:db8::2]:5353 3 4096",
-			ok:    true,
-			src:   "2001:db8::1",
-			dst:   "2001:db8::2",
-			sport: 53,
-			dport: 5353,
+			name: "IPv6 flow",
+			line: "0 0 17 [2001:db8::1]:53 <-> [2001:db8::2]:5353 3 4096",
+			want: flow(17, "2001:db8::1", 53, "2001:db8::2", 5353, 3, 4096),
 		},
 		{
-			name:  "unbracketed IPv6 flow",
-			line:  "0 0 6 fe80::1:22 <-> fe80::2:443 2 2048",
-			ok:    true,
-			src:   "fe80::1",
-			dst:   "fe80::2",
-			sport: 22,
-			dport: 443,
+			name: "unbracketed IPv6 flow",
+			line: "0 0 6 fe80::1:22 <-> fe80::2:443 2 2048",
+			want: flow(6, "fe80::1", 22, "fe80::2", 443, 2, 2048),
 		},
-		{name: "truncated flow", line: "0 0 6 10.0.0.1:1234", ok: false},
-		{name: "wrong delimiter", line: "0 0 6 10.0.0.1:1234 => 10.0.0.2:443 2 2048", ok: false},
-		{name: "invalid endpoint", line: "0 0 6 broken <-> 10.0.0.2:443 2 2048", ok: false},
-		{name: "non-IP hostname endpoint", line: "0 0 6 example.com:80 <-> 10.0.0.2:443 2 2048", ok: false},
-		{name: "out of range port", line: "0 0 6 10.0.0.1:70000 <-> 10.0.0.2:443 2 2048", ok: false},
-		{name: "negative port", line: "0 0 6 10.0.0.1:-1 <-> 10.0.0.2:443 2 2048", ok: false},
-		{name: "invalid proto", line: "0 0 300 10.0.0.1:1234 <-> 10.0.0.2:443 2 2048", ok: false},
-		{name: "negative packet count", line: "0 0 6 10.0.0.1:1234 <-> 10.0.0.2:443 -1 2048", ok: false},
-		{name: "invalid count", line: "0 0 6 10.0.0.1:1234 <-> 10.0.0.2:443 packets 2048", ok: false},
+		{name: "truncated flow", line: "0 0 6 10.0.0.1:1234"},
+		{name: "wrong delimiter", line: "0 0 6 10.0.0.1:1234 => 10.0.0.2:443 2 2048"},
+		{name: "invalid endpoint", line: "0 0 6 broken <-> 10.0.0.2:443 2 2048"},
+		{name: "non-IP hostname endpoint", line: "0 0 6 example.com:80 <-> 10.0.0.2:443 2 2048"},
+		{name: "out of range port", line: "0 0 6 10.0.0.1:70000 <-> 10.0.0.2:443 2 2048"},
+		{name: "negative port", line: "0 0 6 10.0.0.1:-1 <-> 10.0.0.2:443 2 2048"},
+		{name: "invalid proto", line: "0 0 300 10.0.0.1:1234 <-> 10.0.0.2:443 2 2048"},
+		{name: "negative packet count", line: "0 0 6 10.0.0.1:1234 <-> 10.0.0.2:443 -1 2048"},
+		{name: "invalid count", line: "0 0 6 10.0.0.1:1234 <-> 10.0.0.2:443 packets 2048"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			flow, ok := parseNetflowLine(test.line)
-			if ok != test.ok {
-				t.Fatalf("parseNetflowLine() ok = %v, want %v", ok, test.ok)
+			got, ok := parseNetflowLine(test.line)
+			if want := test.want != nil; ok != want {
+				t.Errorf("parseNetflowLine(%q) ok = %t, want %t", test.line, ok, want)
 			}
-			if !ok {
-				return
-			}
-			if flow["src"] != test.src || flow["dst"] != test.dst || flow["sport"] != test.sport || flow["dport"] != test.dport {
-				t.Fatalf("parseNetflowLine() endpoints = %v:%v -> %v:%v, want %s:%d -> %s:%d",
-					flow["src"], flow["sport"], flow["dst"], flow["dport"], test.src, test.sport, test.dst, test.dport)
+
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("parseNetflowLine(%q) mismatch (-want +got):\n%s", test.line, diff)
 			}
 		})
 	}
@@ -130,12 +119,16 @@ func useNetflows(t *testing.T, running ...string) *meshMM {
 	storetest.Use(t)
 
 	for _, name := range running {
-		c, _ := store.NewConfig("experiment/" + name)
+		c, err := store.NewConfig("experiment/" + name)
+		if err != nil {
+			t.Fatalf("store.NewConfig(experiment/%s) error = %v", name, err)
+		}
+
 		c.Spec = map[string]any{"experimentName": name, "defaultBridge": "br0"}
 		c.Status = map[string]any{"startTime": "2026-01-01T00:00:00Z", "schedules": map[string]any{"vm": "node1"}}
 
 		if err := store.Create(c); err != nil {
-			t.Fatal(err)
+			t.Fatalf("storing experiment %s: %v", name, err)
 		}
 	}
 
@@ -190,15 +183,17 @@ func TestStartingOneNetflowDoesNotBlockOthers(t *testing.T) {
 	polltest.Within(t, "the start asking the mesh", func() { <-fake.entered })
 
 	polltest.Within(t, "reading and stopping the other experiment's capture", func() {
-		if GetNetflow("b") != nil || GetNetflow("a") != nil {
-			t.Error("a capture that is not running was returned")
+		for _, exp := range []string{"a", "b"} {
+			if flow := GetNetflow(exp); flow != nil {
+				t.Errorf("GetNetflow(%s) of a capture not running = %v, want nil", exp, flow)
+			}
 		}
 
 		stopHook("b")
 	})
 
 	if err := StartNetflow("a"); !errors.Is(err, ErrNetflowAlreadyStarted) {
-		t.Errorf("second start returned %v, want %v", err, ErrNetflowAlreadyStarted)
+		t.Errorf("second StartNetflow(a) error = %v, want %v", err, ErrNetflowAlreadyStarted)
 	}
 
 	fake.release()
@@ -208,11 +203,11 @@ func TestStartingOneNetflowDoesNotBlockOthers(t *testing.T) {
 	polltest.Within(t, "the start finishing", func() { err = <-started })
 
 	if err != nil {
-		t.Fatalf("starting: %v", err)
+		t.Fatalf("StartNetflow(a) error = %v", err)
 	}
 
 	if GetNetflow("a") == nil {
-		t.Error("the started capture is not returned")
+		t.Error("GetNetflow(a) after StartNetflow(a) = nil, want the started capture")
 	}
 }
 
@@ -236,13 +231,13 @@ func TestStopHookDuringStartAbandonsIt(t *testing.T) {
 	polltest.Within(t, "the start finishing", func() { err = <-started })
 
 	if !errors.Is(err, ErrExperimentNotRunning) {
-		t.Errorf("start returned %v, want %v", err, ErrExperimentNotRunning)
+		t.Errorf("StartNetflow(a) stopped while starting error = %v, want %v", err, ErrExperimentNotRunning)
 	}
 
 	netflowMu.RLock()
 	defer netflowMu.RUnlock()
 
 	if len(netflows) != 0 {
-		t.Errorf("netflows = %v, want none", netflows)
+		t.Errorf("netflow registry after an abandoned StartNetflow(a) = %v, want empty", netflows)
 	}
 }

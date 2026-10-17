@@ -10,6 +10,9 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"phenix/api/workflow"
 )
 
@@ -800,14 +803,14 @@ func TestStagingLeftovers(t *testing.T) {
 
 			got, err := workflow.StagingLeftovers(base, "foo")
 			if err != nil {
-				t.Fatalf("StagingLeftovers: %v", err)
+				t.Fatalf("StagingLeftovers(%q, foo) error = %v", base, err)
 			}
 
 			// The paths lie under the directory that holds the entries, with
 			// every symlink resolved, and are sorted.
 			resolved, err := filepath.EvalSymlinks(target)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("filepath.EvalSymlinks(%q) error = %v", target, err)
 			}
 
 			want := make([]string, 0, len(tt.leftovers))
@@ -817,20 +820,20 @@ func TestStagingLeftovers(t *testing.T) {
 
 			slices.Sort(want)
 
-			if !slices.Equal(got, want) {
-				t.Errorf("StagingLeftovers = %q, want %q", got, want)
+			if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("StagingLeftovers(%q, foo) mismatch (-want +got):\n%s", base, diff)
 			}
 
 			for _, path := range got {
 				if !strings.HasPrefix(path, resolved+string(filepath.Separator)) {
-					t.Errorf("StagingLeftovers path %s does not lie under the resolved target %s", path, resolved)
+					t.Errorf("StagingLeftovers(%q, foo) returned %s, want a path under the resolved target %s", base, path, resolved)
 				}
 			}
 
 			// Nothing is removed.
 			for _, entry := range tt.leftovers {
 				if _, err := os.Lstat(filepath.Join(base, entry)); err != nil {
-					t.Errorf("%s: %v, want it kept", entry, err)
+					t.Errorf("os.Lstat(%q) after StagingLeftovers() error = %v, want the leftover kept", entry, err)
 				}
 			}
 		})

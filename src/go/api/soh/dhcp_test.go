@@ -2,11 +2,11 @@ package soh
 
 import (
 	"context"
-	"reflect"
-	"slices"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	v1 "phenix/types/version/v1"
 	"phenix/util/mm"
@@ -86,26 +86,39 @@ func TestWaitForDHCPPollsOnceForAllInterfaces(t *testing.T) { //nolint:parallelt
 
 	wg.Wait()
 
+	// one poll answers for both interfaces
 	if fake.calls != 4 {
-		t.Fatalf("asked minimega %d times, want 4 (one per poll for both interfaces)", fake.calls)
+		t.Errorf("waitForDHCP(host, eth2, eth3) GetVMIPv4 calls = %d, want 4", fake.calls)
 	}
 
-	if wg.ErrCount != 0 || len(wg.States) != 2 {
-		t.Fatalf("states = %+v, want two successes", wg.States)
+	if diff := cmp.Diff([]bool{false, false}, stateFailures(wg)); diff != "" {
+		t.Errorf("waitForDHCP(host, eth2, eth3) states failed mismatch (-want +got):\n%s", diff)
 	}
 
-	want := map[string]string{"eth2": "10.0.1.1", "eth3": "10.0.2.1"}
-	if got := s.hostIPs["host"]; !reflect.DeepEqual(got, want) {
-		t.Fatalf("hostIPs = %v, want %v", got, want)
+	wantIPs := map[string]map[string]string{"host": {"eth2": "10.0.1.1", "eth3": "10.0.2.1"}}
+	if diff := cmp.Diff(wantIPs, s.hostIPs); diff != "" {
+		t.Errorf("waitForDHCP(host, eth2, eth3) hostIPs mismatch (-want +got):\n%s", diff)
 	}
 
-	if s.addrHosts["10.0.1.1"] != "host" || s.addrHosts["10.0.2.1"] != "host" {
-		t.Fatalf("addrHosts = %v", s.addrHosts)
+	wantHosts := map[string]string{"192.168.0.1": "static", "10.0.1.1": "host", "10.0.2.1": "host"}
+	if diff := cmp.Diff(wantHosts, s.addrHosts); diff != "" {
+		t.Errorf("waitForDHCP(host, eth2, eth3) addrHosts mismatch (-want +got):\n%s", diff)
 	}
 
-	if !slices.Equal(s.vlans["A"], []string{"10.0.1.1"}) || !slices.Equal(s.vlans["B"], []string{"10.0.2.1"}) {
-		t.Fatalf("vlans = %v", s.vlans)
+	wantVLANs := map[string][]string{"A": {"10.0.1.1"}, "B": {"10.0.2.1"}}
+	if diff := cmp.Diff(wantVLANs, s.vlans); diff != "" {
+		t.Errorf("waitForDHCP(host, eth2, eth3) vlans mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// stateFailures reports, for each state the group recorded, whether it is an error.
+func stateFailures(wg *mm.StateGroup) []bool {
+	failures := make([]bool, 0, len(wg.States))
+	for _, state := range wg.States {
+		failures = append(failures, state.Err != nil)
+	}
+
+	return failures
 }
 
 func TestWaitForDHCPTimesOutPerInterface(t *testing.T) { //nolint:paralleltest // replaces package globals
@@ -125,7 +138,12 @@ func TestWaitForDHCPTimesOutPerInterface(t *testing.T) { //nolint:paralleltest /
 		{idx: 5, iface: &v1.Interface{NameF: "eth5", ProtoF: "dhcp"}},
 	})
 
-	if wg.ErrCount != 2 || len(wg.States) != 3 {
-		t.Fatalf("states = %+v, want eth0's success and a timeout for each of the others", wg.States)
+	// eth0's success, then a timeout for each of the others
+	if diff := cmp.Diff([]bool{false, true, true}, stateFailures(wg)); diff != "" {
+		t.Errorf("waitForDHCP(host, eth0, eth1, eth5) states failed mismatch (-want +got):\n%s", diff)
+	}
+
+	if wg.ErrCount != 2 {
+		t.Errorf("waitForDHCP(host, eth0, eth1, eth5) ErrCount = %d, want 2", wg.ErrCount)
 	}
 }
