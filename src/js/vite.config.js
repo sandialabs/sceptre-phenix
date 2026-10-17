@@ -34,6 +34,7 @@ const CONTRACT_TESTS = [
   'test/builder/history.test.js',
   'test/builder/icons.test.js',
   'test/builder/issues.test.js',
+  'test/builder/keymap-properties.test.js',
   'test/builder/large-diagram.test.js',
   'test/builder/layer-look.test.js',
   'test/builder/layer-matchers.test.js',

@@ -886,6 +886,12 @@ export function eventToKey(event, platform = currentPlatform()) {
   let key;
   const code = String(event.code || '');
 
+  // 'Shift+5' is the 5 above the letters (matchesKey), so no spec names a
+  // numpad digit pressed with Shift.
+  if (event.shiftKey && /^Numpad[0-9]$/.test(code)) {
+    return '';
+  }
+
   if (asciiLetter(event.key) && !event.altKey) {
     key = event.key.toUpperCase();
   } else if (/^Key[A-Z]$/.test(code)) {
