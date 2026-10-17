@@ -82,7 +82,7 @@ token. A role without the permission a route needs gets `403`, except on the
 routes that answer `404` so as not to reveal another user's job, console or
 capture token. An unknown path under `/api/v1` answers `404`, and a method a
 path does not take `405`, before any authentication. An `OPTIONS` request
-answers `204` without running the route, or `200` with `--allow-cors`.
+answers `204`, also before authentication, without running the route.
 
 With `--jwt-signing-key proxy-jwt`, where the proxy in front of phēnix checks
 the token, phēnix reads the token only from the `X-Phenix-Auth-Token` header,

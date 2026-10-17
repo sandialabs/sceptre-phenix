@@ -280,7 +280,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
 
-	// Health endpoints sit outside /api/v1, and so outside its auth, CORS,
+	// Health endpoints sit outside /api/v1, and so outside its auth,
 	// compression and request logging: probes need no credentials, and only
 	// their output fields depend on the request's.
 	probes := newHealthHandlers()
@@ -366,7 +366,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 		http.Error(w, "no such API route", http.StatusNotFound)
 	})
 
-	// OPTIONS method needed for CORS
+	// API routes take OPTIONS, which AnswerOptions answers with 204
 	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/builder/topologies", weberror.ErrorHandler(CreateBuilderTopology)).
@@ -570,7 +570,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	api.HandleFunc("/settings/password", GetPasswordRequirements).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings/timeout", GetTimeoutSettings).Methods("GET", "OPTIONS")
 
-	// with OPTIONS, as every API route takes it for CORS preflights
+	// with OPTIONS, as every API route takes it
 	for _, r := range socketRoutes() {
 		api.Handle(r.path, r.handler).Methods(append(r.methods, "OPTIONS")...)
 	}
@@ -579,12 +579,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	// uncompressed response
 	api.Use(CompressResponses)
 
-	if o.allowCORS {
-		plog.Info(plog.TypeSystem, "CORS is enabled on HTTP API endpoints")
-		api.Use(middleware.AllowCORS)
-	} else {
-		api.Use(middleware.AnswerOptions)
-	}
+	api.Use(middleware.AnswerOptions)
 
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
 	// after Auth, so a refused request takes no sequence number

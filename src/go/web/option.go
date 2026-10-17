@@ -19,9 +19,8 @@ const defaultJWTLifetime = 24 * time.Hour
 type ServerOption func(*serverOptions)
 
 type serverOptions struct {
-	endpoint  string
-	users     []string
-	allowCORS bool
+	endpoint string
+	users    []string
 
 	tlsKeyPath string
 	tlsCrtPath string
@@ -114,12 +113,6 @@ func ServeWithUsers(u []string) ServerOption {
 		if len(u) > 0 {
 			o.users = u
 		}
-	}
-}
-
-func ServeWithCORS(c bool) ServerOption {
-	return func(o *serverOptions) {
-		o.allowCORS = c
 	}
 }
 
