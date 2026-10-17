@@ -50,6 +50,9 @@ import { sampleDocument, tags, textOf } from './fixtures.js';
 import { renderWithStore } from './render.js';
 import { ICON_DATA } from './png.js';
 
+// One validator for every form here: ajv compiles each schema once.
+const formValidator = createFormValidator();
+
 // Renders the device form as BuilderInspector does; a renderer count guard
 // fails runaway recursion, and `provides` stands in for the Inspector's.
 async function renderDeviceForm(
@@ -96,7 +99,7 @@ async function renderDeviceForm(
           spec: data.spec,
         }),
         renderers,
-        ajv: createFormValidator(),
+        ajv: formValidator,
         readonly,
       }),
   });
@@ -760,13 +763,15 @@ describe('the layer section', () => {
     ),
   });
 
-  test('is above the connection points of a device, and names every placeholder layer', async () => {
+  test('is above the connection points of a device, names every placeholder layer, and has Edit layers… after the select', async () => {
     const html = await renderInspector({ change: atLayer(2) });
     const section = html.indexOf('data-testid="inspector-layer"');
     const select = tags(html, 'select').find((tag) =>
       tag.includes('id="inspector-layer-select"'),
     );
     const options = html.slice(section).match(/<select[\s\S]*?<\/select>/)[0];
+    const layerSection = html.slice(section);
+    const [button] = tags(layerSection, 'button');
 
     expect(section).toBeGreaterThan(html.indexOf('</form>'));
     expect(section).toBeLessThan(html.indexOf('Connection points'));
@@ -785,6 +790,12 @@ describe('the layer section', () => {
       'Layer 0',
     ]);
     expect(select).toContain('value="2"');
+    expect(button).toContain('data-testid="inspector-layer-edit"');
+    expect(button).toContain('aria-haspopup="dialog"');
+    expect(textOf(layerSection)).toContain('Edit layers…');
+    expect(layerSection.indexOf('</select>')).toBeLessThan(
+      layerSection.indexOf('inspector-layer-edit'),
+    );
   });
 
   test('names the diagram’s layers, and the node’s own ID when the diagram does not have it', async () => {
@@ -828,19 +839,6 @@ describe('the layer section', () => {
     expect(field).toContain('readonly');
     expect(field).toContain('value="Layer 2"');
     expect(html).not.toContain('data-testid="inspector-layer-edit"');
-  });
-
-  test('has Edit layers…, which opens a dialog, after the select', async () => {
-    const html = await renderInspector();
-    const section = html.slice(html.indexOf('data-testid="inspector-layer"'));
-    const [button] = tags(section, 'button');
-
-    expect(button).toContain('data-testid="inspector-layer-edit"');
-    expect(button).toContain('aria-haspopup="dialog"');
-    expect(textOf(section)).toContain('Edit layers…');
-    expect(section.indexOf('</select>')).toBeLessThan(
-      section.indexOf('inspector-layer-edit'),
-    );
   });
 
   test('the diagram says how many layers it has, with Edit layers… unless it is read-only', async () => {
@@ -1738,10 +1736,8 @@ describe('held commit', () => {
 
 // The subject line names the element alone. Only the bundled fallback is
 // mentioned, in plain words, by the schema error the store sets for it.
-test('the Inspector says which schema it uses only when it is not the server', async () => {
-  const served = await renderInspector({
-    schema: { schemaSource: 'server', schemaError: '' },
-  });
+test('the Inspector shows the schema error only when there is one', async () => {
+  const served = await renderInspector({ schema: { schemaError: '' } });
 
   expect(served).toMatch(
     /class="builder-inspector__subject"[^>]*>Device alpha</,
@@ -1751,7 +1747,6 @@ test('the Inspector says which schema it uses only when it is not the server', a
 
   const bundled = await renderInspector({
     schema: {
-      schemaSource: 'bundled',
       schemaError:
         "Could not load this server's form fields. The Inspector shows the fields built into the Builder instead.",
     },
@@ -1937,7 +1932,7 @@ describe('colors, line styles and group fields', () => {
             schema: schemaForKind(builderSchemaV1, 'edge'),
             uischema: uiSchemaForKind(builderSchemaV1, 'edge'),
             renderers: inspectorRenderers,
-            ajv: createFormValidator(),
+            ajv: formValidator,
           }),
       });
 

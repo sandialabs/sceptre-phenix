@@ -33,7 +33,6 @@ const CONTRACT_TESTS = [
   'test/builder/group-notes.test.js',
   'test/builder/history.test.js',
   'test/builder/icons.test.js',
-  'test/builder/inspector-notes.test.js',
   'test/builder/issues.test.js',
   'test/builder/large-diagram.test.js',
   'test/builder/layer-look.test.js',

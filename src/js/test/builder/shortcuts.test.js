@@ -35,10 +35,6 @@ import {
 
 import { memoryStorage } from './fixtures.js';
 
-function noStorage() {
-  return { getItem: () => null, setItem: () => {} };
-}
-
 // The shortcut settings a Storage holds.
 function saved(storage) {
   return JSON.parse(storage.getItem(SHORTCUTS_STORAGE_KEY) || 'null');
@@ -64,12 +60,12 @@ function press(key, { code = '', mod = false, ...rest } = {}) {
 
 beforeEach(() => {
   setPlatform('mac');
-  loadShortcutSettings(noStorage());
+  loadShortcutSettings(memoryStorage());
 });
 
 afterEach(() => {
   setPlatform(null);
-  loadShortcutSettings(noStorage());
+  loadShortcutSettings(memoryStorage());
 });
 
 describe('the sheet', () => {
@@ -325,7 +321,7 @@ describe('the recorder', () => {
       '. types a character in text fields, where Command palette works too, so its shortcut needs Ctrl or Alt.',
     );
     expect(
-      assignShortcut('palette.open', '/', { storage: noStorage() }).ok,
+      assignShortcut('palette.open', '/', { storage: memoryStorage() }).ok,
     ).toBe(false);
     expect(commandKeys('palette.open')).toEqual(['Mod+K']);
   });
@@ -349,7 +345,7 @@ describe('the recorder', () => {
       'Option+E types a character in text fields, where Command palette works too, so its shortcut needs ⌘ or ⌃. Press another shortcut.',
     );
     expect(
-      assignShortcut('palette.open', 'Alt+E', { storage: noStorage() }).ok,
+      assignShortcut('palette.open', 'Alt+E', { storage: memoryStorage() }).ok,
     ).toBe(false);
     expect(commandKeys('palette.open')).toEqual(['Mod+K']);
 

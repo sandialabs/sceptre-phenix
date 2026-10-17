@@ -53,7 +53,7 @@ import { builderSchemaV1 } from '@/builder/schema.js';
 import { useBuilderStore } from '@/builder/store.js';
 import { validateDocument } from '@/builder/validate.js';
 
-import { sampleDocument, tags } from './fixtures.js';
+import { errorsOf, sampleDocument, tags } from './fixtures.js';
 import { createMemoryStore } from './memory-store.js';
 import { renderWithStore } from './render.js';
 
@@ -83,9 +83,6 @@ function includedDocument() {
     bravoEdge: connected.edge,
   };
 }
-
-const errorsOf = (doc) =>
-  validateDocument(doc).filter((issue) => issue.level === 'error');
 
 describe('decoding and validation', () => {
   test('a generated document with an included device is accepted', () => {

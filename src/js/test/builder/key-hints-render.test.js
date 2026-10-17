@@ -16,20 +16,16 @@ import {
 } from '@/builder/keymap.js';
 import { useBuilderStore } from '@/builder/store.js';
 
-import { sampleDocument } from './fixtures.js';
-
-function noStorage() {
-  return { getItem: () => null, setItem: () => {} };
-}
+import { memoryStorage, sampleDocument } from './fixtures.js';
 
 beforeEach(() => {
   setPlatform('mac');
-  loadShortcutSettings(noStorage());
+  loadShortcutSettings(memoryStorage());
 });
 
 afterEach(() => {
   setPlatform(null);
-  loadShortcutSettings(noStorage());
+  loadShortcutSettings(memoryStorage());
 });
 
 describe('the header’s Shortcuts button', () => {
@@ -89,7 +85,7 @@ describe('the header’s Shortcuts button', () => {
   });
 
   test('shows the user’s key, and none while the sheet has no key', async () => {
-    setShortcut('shortcuts.open', ['Mod+/'], noStorage());
+    setShortcut('shortcuts.open', ['Mod+/'], memoryStorage());
     expect(caps(button(await render(), 'editor-shortcuts'))).toEqual([
       '⌘',
       '/',
@@ -97,8 +93,8 @@ describe('the header’s Shortcuts button', () => {
 
     // The default key is one character, which the single-key switch turns
     // off.
-    loadShortcutSettings(noStorage());
-    setSingleKeyShortcuts(false, noStorage());
+    loadShortcutSettings(memoryStorage());
+    setSingleKeyShortcuts(false, memoryStorage());
 
     const off = button(await render(), 'editor-shortcuts');
 
@@ -167,20 +163,24 @@ describe('the toolbar’s menus', () => {
     );
 
     // Without keys, the tooltips say only what the menus do.
-    setShortcut('structure.layout', [], noStorage());
-    setShortcut('structure.autoGroup.network', [], noStorage());
+    setShortcut('structure.layout', [], memoryStorage());
+    setShortcut('structure.autoGroup.network', [], memoryStorage());
     expect(await tips()).toEqual({
       layout: 'Change layout',
       autoGroup: 'Group the ungrouped nodes automatically',
     });
 
-    setShortcut('structure.autoGroup.network', ['Mod+Shift+U'], noStorage());
+    setShortcut(
+      'structure.autoGroup.network',
+      ['Mod+Shift+U'],
+      memoryStorage(),
+    );
     expect((await tips()).autoGroup).toBe(
       'Group the ungrouped nodes automatically. ⇧⌘U groups by network',
     );
 
     // The layout's tooltip gives the user's keys for Auto layout.
-    setShortcut('structure.layout', ['Mod+Shift+Y'], noStorage());
+    setShortcut('structure.layout', ['Mod+Shift+Y'], memoryStorage());
     expect((await tips()).layout).toBe('Change layout (⇧⌘Y)');
   });
 });

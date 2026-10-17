@@ -48,13 +48,9 @@ import {
 } from '@/builder/model.js';
 import { nodeAccessibleName } from '@/builder/diagramText.js';
 import { selectionItemName } from '@/builder/selection.js';
-import { validateDocument } from '@/builder/validate.js';
 
-import { sampleDocument } from './fixtures.js';
+import { errorsOf, sampleDocument } from './fixtures.js';
 import { ICON_DATA } from './png.js';
-
-const errorsOf = (doc) =>
-  validateDocument(doc).filter((entry) => entry.level === 'error');
 
 // A custom icon of the server's icon library, which an icon node names.
 const ICON_NAME = 'plc';

@@ -43,15 +43,11 @@ import {
   validateIcons,
 } from '@/builder/validate.js';
 
-import { sampleDocument, testId } from './fixtures.js';
+import { errorsOf, sampleDocument, testId } from './fixtures.js';
 import { base64Of, ICON_DATA, ICON_KEY, png } from './png.js';
 
-function errorsFor(doc) {
-  return validateDocument(doc).filter((issue) => issue.level === 'error');
-}
-
 function paths(doc) {
-  return errorsFor(doc).map((issue) => issue.path);
+  return errorsOf(doc).map((issue) => issue.path);
 }
 
 // A new document whose metadata holds the given fields too.
@@ -65,7 +61,7 @@ describe('document validation', () => {
   test('a well formed document has no errors', () => {
     const { doc } = sampleDocument();
 
-    expect(errorsFor(doc)).toEqual([]);
+    expect(errorsOf(doc)).toEqual([]);
   });
 
   test('the schema URI and revision are checked', () => {
@@ -113,7 +109,7 @@ describe('document validation', () => {
     for (const [from, to] of spans) {
       for (let code = from; code <= to; code += 1) {
         const note = String.fromCodePoint(code);
-        const valid = errorsFor(withMetadata({ notes: [note] })).length === 0;
+        const valid = errorsOf(withMetadata({ notes: [note] })).length === 0;
 
         if (accepts(note) !== valid) {
           differ.push(`U+${code.toString(16).toUpperCase().padStart(4, '0')}`);
@@ -139,9 +135,9 @@ describe('document validation', () => {
     const { metadata, ...rest } = createDocument();
 
     // Left out, it is empty, as Go decodes it, and has no id.
-    expect(errorsFor(rest).map(({ path, message }) => [path, message])).toEqual(
-      [['metadata.id', 'document ID is required']],
-    );
+    expect(errorsOf(rest).map(({ path, message }) => [path, message])).toEqual([
+      ['metadata.id', 'document ID is required'],
+    ]);
     expect(paths({ ...rest, metadata: { ...metadata, id: 'doc-1' } })).toEqual([
       'metadata.id',
     ]);
@@ -150,7 +146,7 @@ describe('document validation', () => {
   // validateUser and validateTime in validate.go, message for message.
   test('the creator and the last editor are bounded text', () => {
     const errors = (key, value) =>
-      errorsFor(withMetadata({ [key]: value })).map(({ path, message }) => [
+      errorsOf(withMetadata({ [key]: value })).map(({ path, message }) => [
         path,
         message,
       ]);
@@ -190,7 +186,7 @@ describe('document validation', () => {
 
   test('the creation time and the last edit time have one form', () => {
     const errors = (key, value) =>
-      errorsFor(withMetadata({ [key]: value })).map(({ path, message }) => [
+      errorsOf(withMetadata({ [key]: value })).map(({ path, message }) => [
         path,
         message,
       ]);
@@ -216,7 +212,7 @@ describe('document validation', () => {
     // There is no rule between the four: an editor without a time, and a
     // creation after the last edit, are valid.
     expect(
-      errorsFor(
+      errorsOf(
         withMetadata({
           updatedBy: 'bob',
           createdAt: '2026-10-02T00:00:00Z',
@@ -266,7 +262,7 @@ describe('document validation', () => {
       source: { kind: 'topology', name: 'core', annotations },
     });
     const messages = (annotations) =>
-      errorsFor(annotated(annotations)).map((issue) => issue.message);
+      errorsOf(annotated(annotations)).map((issue) => issue.message);
     const many = Object.fromEntries(
       Array.from({ length: MAX_ANNOTATIONS + 1 }, (_, i) => [`n${i}`, '']),
     );
@@ -349,7 +345,7 @@ describe('document validation', () => {
     };
 
     expect(
-      errorsFor(broken)
+      errorsOf(broken)
         .map((issue) => issue.message)
         .join(' '),
     ).toMatch(/switch/i);
@@ -375,7 +371,7 @@ describe('document validation', () => {
       edges: [edge, { ...edge, id: 'e-dup' }],
     };
 
-    expect(errorsFor(broken).length).toBeGreaterThan(0);
+    expect(errorsOf(broken).length).toBeGreaterThan(0);
   });
 
   // A spec is free-form, and a file or a legacy diagram edited by hand may
@@ -401,11 +397,11 @@ describe('document validation', () => {
 
     for (const interfaces of ['x', 7, true, { eth0: {} }, [null], ['x', 5]]) {
       // A device without connection points has nothing to match.
-      expect(errorsFor(withInterfaces(interfaces, []))).toEqual([]);
+      expect(errorsOf(withInterfaces(interfaces, []))).toEqual([]);
       expect(() => parseDocument(withInterfaces(interfaces, []))).not.toThrow();
       // One with a connection point is told that the list lacks its entry.
       expect(
-        errorsFor(withInterfaces(interfaces)).map((issue) => issue.message),
+        errorsOf(withInterfaces(interfaces)).map((issue) => issue.message),
       ).toEqual([
         'interface "eth0" has no matching entry in the node\'s Interfaces',
       ]);
@@ -424,7 +420,7 @@ describe('document validation', () => {
     };
 
     expect(
-      errorsFor(broken)
+      errorsOf(broken)
         .map((issue) => issue.message)
         .join(' '),
     ).toMatch(/icon/i);
@@ -454,7 +450,7 @@ describe('document validation', () => {
     };
 
     expect(
-      errorsFor(broken).map(({ path, message }) => ({ path, message })),
+      errorsOf(broken).map(({ path, message }) => ({ path, message })),
     ).toEqual([
       {
         path: 'nodes[1].device.interfaces[0].name',
@@ -475,7 +471,7 @@ describe('document validation', () => {
 
     expect(bravo).toBeTruthy();
     expect(warnings.length).toBeGreaterThan(0);
-    expect(errorsFor(doc)).toEqual([]);
+    expect(errorsOf(doc)).toEqual([]);
   });
 });
 
@@ -525,7 +521,7 @@ describe('interface VLANs and drive images', () => {
         nodeId: bravo.id,
       },
     ]);
-    expect(errorsFor(doc)).toEqual([]);
+    expect(errorsOf(doc)).toEqual([]);
   });
 
   // Typing a VLAN in another case connects the interface to that network
@@ -577,7 +573,7 @@ describe('interface VLANs and drive images', () => {
         blocksPublish: true,
       },
     ]);
-    expect(errorsFor(sampleDocument().doc)).toEqual([]);
+    expect(errorsOf(sampleDocument().doc)).toEqual([]);
     expect(unconnected(withVLAN('EXP'))).toEqual([
       {
         level: 'warning',
@@ -650,7 +646,7 @@ describe('interface VLANs and drive images', () => {
         blocksPublish: undefined,
       },
     ]);
-    expect(errorsFor(doc)).toEqual([]);
+    expect(errorsOf(doc)).toEqual([]);
 
     // A device with no connection points at all is checked too.
     const bare = withBravo((_, node) => {
@@ -702,7 +698,7 @@ describe('interface VLANs and drive images', () => {
     expect(
       warningsOf(doc, { disks: ['other.qc2'] }).map((issue) => issue.nodeId),
     ).toEqual([alpha.id, bravo.id, bravo.id, bravo.id]);
-    expect(errorsFor(doc)).toEqual([]);
+    expect(errorsOf(doc)).toEqual([]);
   });
 
   test('an external node and an included device are not checked', () => {
@@ -789,7 +785,7 @@ describe('interface VLANs and drive images', () => {
     const refused = (hostname, why, options) => {
       const doc = renamed(hostname, options);
 
-      expect(errorsFor(doc)).toEqual([]);
+      expect(errorsOf(doc)).toEqual([]);
       expect(findings(doc)).toEqual([
         {
           level: 'warning',
@@ -954,7 +950,7 @@ describe('IP and MAC addresses that two interfaces use', () => {
         nodeId: bravo.id,
       },
     ]);
-    expect(errorsFor(doc)).toEqual([]);
+    expect(errorsOf(doc)).toEqual([]);
   });
 
   // As the server compares them (interfaceIP and interfaceMAC in
@@ -1472,7 +1468,7 @@ describe('scenarios', () => {
   test('a document that lists scenarios reopens with them', () => {
     const doc = withScenarios(['plant-ntp', 'plant-attack']);
 
-    expect(errorsFor(doc)).toEqual([]);
+    expect(errorsOf(doc)).toEqual([]);
     expect(parseDocument(doc).scenarios).toEqual(['plant-ntp', 'plant-attack']);
   });
 });
@@ -1499,7 +1495,7 @@ describe('layers', () => {
     doc.layers = [{ id: 3, label: 'Operations' }];
     doc.nodes[at].device.layer = 42;
 
-    expect(errorsFor(doc)).toEqual([]);
+    expect(errorsOf(doc)).toEqual([]);
   });
 });
 

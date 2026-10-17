@@ -35,8 +35,8 @@ import {
 import { sha256Hex } from '@/builder/digest.js';
 import { addNode, createDocument } from '@/builder/model.js';
 import bundle from '@/builder/schema/builder-v1.schema.json';
-import { validateDocument } from '@/builder/validate.js';
 
+import { errorsOf } from './fixtures.js';
 import {
   FIXTURE_CHUNKS,
   GRAY,
@@ -456,9 +456,6 @@ function libraryOf(icons) {
 
   return { lookup: (name) => index.get(String(name).toLowerCase()) || null };
 }
-
-const errorsOf = (doc) =>
-  validateDocument(doc).filter((issue) => issue.level === 'error');
 
 describe('iconSrc', () => {
   const PREFIX = 'data:image/png;base64,';

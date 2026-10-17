@@ -33,23 +33,16 @@ import {
   templatesFull,
   templateText,
 } from '@/builder/templates.js';
-import {
-  MAX_TEMPLATES,
-  templateIssues,
-  validateDocument,
-} from '@/builder/validate.js';
+import { MAX_TEMPLATES, templateIssues } from '@/builder/validate.js';
 import { paletteNode } from '@/components/builder/paletteDnd.js';
 
-import { sampleDocument } from './fixtures.js';
+import { errorsOf, sampleDocument } from './fixtures.js';
 import { ICON_DATA } from './png.js';
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 // A copy of the custom icon named plc, as a diagram carries one.
 const PLC = { data: ICON_DATA };
-
-const errorsOf = (doc) =>
-  validateDocument(doc).filter((issue) => issue.level === 'error');
 
 const iface = (name, vlan) => ({
   name,

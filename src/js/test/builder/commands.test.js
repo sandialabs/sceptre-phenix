@@ -51,13 +51,9 @@ import {
 } from '@/builder/model.js';
 import { nextPosition, paletteNode } from '@/components/builder/paletteDnd.js';
 
-import { sampleDocument, withTemplates } from './fixtures.js';
+import { memoryStorage, sampleDocument, withTemplates } from './fixtures.js';
 
 const PLATFORMS = ['mac', 'other'];
-
-function noStorage() {
-  return { getItem: () => null, setItem: () => {} };
-}
 
 function fakeStore(overrides = {}) {
   const { doc } = sampleDocument();
@@ -224,12 +220,12 @@ function mod(platform) {
 }
 
 beforeEach(() => {
-  loadShortcutSettings(noStorage());
+  loadShortcutSettings(memoryStorage());
 });
 
 afterEach(() => {
   setPlatform(null);
-  loadShortcutSettings(noStorage());
+  loadShortcutSettings(memoryStorage());
   vi.unstubAllGlobals();
 });
 
@@ -1342,10 +1338,10 @@ describe('keys and hints', () => {
   });
 
   test('follow the user’s keys and the single-key switch', () => {
-    setShortcut('structure.layout', ['Mod+Shift+L'], noStorage());
-    setShortcut('edit.undo', [], noStorage());
+    setShortcut('structure.layout', ['Mod+Shift+L'], memoryStorage());
+    setShortcut('edit.undo', [], memoryStorage());
     // Local keys are the controls' own, and cannot change.
-    setShortcut('edit.delete', ['Mod+Shift+D'], noStorage());
+    setShortcut('edit.delete', ['Mod+Shift+D'], memoryStorage());
 
     expect(shortcutLabel('structure.layout', { platform: 'mac' })).toBe('⇧⌘L');
     expect(shortcutLabel('edit.undo', { platform: 'mac' })).toBe('');
@@ -1354,7 +1350,7 @@ describe('keys and hints', () => {
       'Backspace',
     ]);
 
-    setSingleKeyShortcuts(false, noStorage());
+    setSingleKeyShortcuts(false, memoryStorage());
     expect(commandKeys('shortcuts.open')).toEqual([]);
     expect(commandKeys('view.fit')).toEqual([]);
     expect(commandKeys('view.fit', { all: true })).toEqual(['Shift+1']);
@@ -1422,14 +1418,14 @@ describe('keys and hints', () => {
   });
 
   test('the canvas hint follows the key of the shortcut sheet', () => {
-    setShortcut('shortcuts.open', ['Mod+/'], noStorage());
+    setShortcut('shortcuts.open', ['Mod+/'], memoryStorage());
     expect(canvasHints({ readOnly: false, platform: 'mac' }).canvas).toMatch(
       /command palette\. ⌘\/ lists every shortcut\.$/,
     );
 
     // Without a key, it names the button that opens the sheet.
-    loadShortcutSettings(noStorage());
-    setSingleKeyShortcuts(false, noStorage());
+    loadShortcutSettings(memoryStorage());
+    setSingleKeyShortcuts(false, memoryStorage());
 
     for (const readOnly of [false, true]) {
       const { canvas } = canvasHints({ readOnly, platform: 'other' });
@@ -1513,7 +1509,7 @@ describe('the Snap to grid command', () => {
         shortcutConflicts('view.snapToGrid', 'Alt+Shift+J', { platform }),
       ).toEqual([]);
 
-      setShortcut('view.snapToGrid', ['Alt+Shift+J'], noStorage());
+      setShortcut('view.snapToGrid', ['Alt+Shift+J'], memoryStorage());
       expect(commandKeys('view.snapToGrid', { platform })).toEqual([
         'Alt+Shift+J',
       ]);
@@ -1763,8 +1759,8 @@ describe('the dispatcher', () => {
     const ctx = context();
 
     // As if the key had been given before the recorder refused it.
-    setShortcut('palette.open', ['/'], noStorage());
-    setShortcut('draft.save', ['Shift+1'], noStorage());
+    setShortcut('palette.open', ['/'], memoryStorage());
+    setShortcut('draft.save', ['Shift+1'], memoryStorage());
 
     const slash = keydown(t.field, '/', 'Slash');
     expect(dispatch(slash, ctx, t)).toBe(null);
@@ -1793,8 +1789,8 @@ describe('the dispatcher', () => {
 
     // As if the keys had been given before the recorder refused them: ⌥E
     // is the acute accent's dead key, and ⌥⇧/ types ¿.
-    setShortcut('palette.open', ['Alt+E'], noStorage());
-    setShortcut('draft.save', ['Alt+Shift+/'], noStorage());
+    setShortcut('palette.open', ['Alt+E'], memoryStorage());
+    setShortcut('draft.save', ['Alt+Shift+/'], memoryStorage());
 
     const acute = keydown(t.field, 'Dead', 'KeyE', { altKey: true });
     expect(dispatch(acute, ctx, t)).toBe(null);
@@ -1814,7 +1810,7 @@ describe('the dispatcher', () => {
     expect(
       dispatch(keydown(t.button, 'Dead', 'KeyE', { altKey: true }), ctx, t),
     ).toBe('palette.open');
-    setShortcut('palette.open', ['Ctrl+Alt+E'], noStorage());
+    setShortcut('palette.open', ['Ctrl+Alt+E'], memoryStorage());
     const ctrl = keydown(t.field, 'Dead', 'KeyE', {
       altKey: true,
       ctrlKey: true,
@@ -1829,7 +1825,7 @@ describe('the dispatcher', () => {
     const t = targets();
     const ctx = context();
 
-    setShortcut('palette.open', ['Alt+E'], noStorage());
+    setShortcut('palette.open', ['Alt+E'], memoryStorage());
 
     const alt = keydown(t.field, 'e', 'KeyE', { altKey: true });
     expect(dispatch(alt, ctx, t)).toBe('palette.open');
@@ -2029,7 +2025,7 @@ describe('the dispatcher', () => {
     const t = targets();
     const ctx = context();
 
-    setShortcut('structure.layout', ['Mod+Shift+L'], noStorage());
+    setShortcut('structure.layout', ['Mod+Shift+L'], memoryStorage());
     expect(
       dispatch(
         keydown(t.button, 'L', 'KeyL', { ctrlKey: true, shiftKey: true }),
@@ -2039,7 +2035,7 @@ describe('the dispatcher', () => {
     ).toBe('structure.layout');
     expect(ctx.store.layout).toHaveBeenCalledOnce();
 
-    setSingleKeyShortcuts(false, noStorage());
+    setSingleKeyShortcuts(false, memoryStorage());
     const question = keydown(t.button, '?', 'Slash', { shiftKey: true });
 
     expect(dispatch(question, ctx, t)).toBe(null);

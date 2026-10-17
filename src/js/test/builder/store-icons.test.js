@@ -9,9 +9,8 @@ import { iconLibrary } from '@/builder/iconLibrary.js';
 import { indexIcons, MAX_DOCUMENT_ICONS } from '@/builder/icons.js';
 import { findNode, updateNode } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
-import { validateDocument } from '@/builder/validate.js';
 
-import { sampleDocument } from './fixtures.js';
+import { errorsOf, sampleDocument } from './fixtures.js';
 import { base64Of, ICON_DATA, png } from './png.js';
 
 // An icon of its own bytes.
@@ -23,9 +22,6 @@ function iconOf(index) {
 
 const PLC = { data: ICON_DATA };
 const OTHER = iconOf(1).entry;
-
-const errorsOf = (doc) =>
-  validateDocument(doc).filter((issue) => issue.level === 'error');
 
 // Makes the Builder's icon library hold these icons, as a read of it would.
 function serverHas(icons) {

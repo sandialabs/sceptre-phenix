@@ -46,17 +46,13 @@ import {
 } from '@/builder/templates.js';
 import { validateDocument } from '@/builder/validate.js';
 
-import { sampleDocument } from './fixtures.js';
+import { errorsOf, sampleDocument } from './fixtures.js';
 
 const PLANT = [
   { id: 4, label: 'Business' },
   { id: 2, label: 'Supervisory control' },
   { id: 1, label: 'Control' },
 ];
-
-function errorsFor(doc) {
-  return validateDocument(doc).filter((issue) => issue.level === 'error');
-}
 
 // The layers of a diagram: each an ID and a label, the highest ID at the
 // top of the By layer layout.
@@ -276,7 +272,7 @@ describe('the layers of a document', () => {
     const set = setLayers(doc, [...PLANT].reverse());
 
     expect(set.layers).toEqual(PLANT);
-    expect(errorsFor(set)).toEqual([]);
+    expect(errorsOf(set)).toEqual([]);
     expect(setLayers(set, PLANT)).toBe(set);
     expect(JSON.stringify(setLayers(set, []))).toBe(JSON.stringify(doc));
     expect(setLayers(doc, [])).toBe(doc);
@@ -424,7 +420,7 @@ describe('the layer of a node', () => {
     expect(findNode(set, alpha.id).device.layer).toBe(0);
     expect(findNode(set, sw.id).switch.layer).toBe(42);
     expect(nodeLayer(findNode(set, alpha.id))).toBe(0);
-    expect(errorsFor(set)).toEqual([]);
+    expect(errorsOf(set)).toEqual([]);
 
     // None leaves the document as it was, byte for byte.
     const cleared = setNodeLayer(setNodeLayer(set, alpha.id, null), sw.id, '');
@@ -521,7 +517,7 @@ describe('the layer of a node', () => {
     expect(hub.node.switch.layer).toBe(3);
     expect('layer' in other.node.device).toBe(false);
     expect('layer' in otherHub.node.switch).toBe(false);
-    expect(errorsFor(otherHub.doc)).toEqual([]);
+    expect(errorsOf(otherHub.doc)).toEqual([]);
   });
 
   test('a copy keeps it', () => {

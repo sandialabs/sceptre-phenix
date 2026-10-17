@@ -34,12 +34,8 @@ import {
 import { shortcutGroups } from '@/builder/shortcuts.js';
 import { useBuilderStore } from '@/builder/store.js';
 
-import { sampleDocument, tags, testId } from './fixtures.js';
+import { memoryStorage, sampleDocument, tags, testId } from './fixtures.js';
 import { renderWithStore } from './render.js';
-
-function noStorage() {
-  return { getItem: () => null, setItem: () => {} };
-}
 
 // A store with what the forms use; connect and setParent change the document
 // as the Builder store's do and say whether they did.
@@ -577,7 +573,7 @@ function chosen(html, id) {
 }
 
 describe('Add connection and Move to group', () => {
-  afterEach(() => loadShortcutSettings(noStorage()));
+  afterEach(() => loadShortcutSettings(memoryStorage()));
 
   // The Inspector beside the canvas, on the node `id` of `doc`.
   async function inspector(doc, id, { readOnly = false } = {}) {
@@ -647,8 +643,8 @@ describe('Add connection and Move to group', () => {
     expect(rows).toContainEqual(['dialog.connect', 'Add']);
     expect(rows).toContainEqual(['dialog.regroup', 'Structure']);
 
-    setShortcut('dialog.connect', ['Alt+Shift+C'], noStorage());
-    setShortcut('dialog.regroup', ['Alt+Shift+G'], noStorage());
+    setShortcut('dialog.connect', ['Alt+Shift+C'], memoryStorage());
+    setShortcut('dialog.regroup', ['Alt+Shift+G'], memoryStorage());
     const { doc, alpha } = sampleDocument();
     const [connect, regroup] = headButtons(await inspector(doc, alpha.id));
 

@@ -65,7 +65,7 @@ import { BUILTIN_TEMPLATES } from '@/builder/catalog.js';
 import { nodeOptionsFromTemplate } from '@/builder/templates.js';
 import { validateDocument } from '@/builder/validate.js';
 
-import { sampleDocument } from './fixtures.js';
+import { errorsOf, sampleDocument } from './fixtures.js';
 import { ICON_DATA, ICON_KEY } from './png.js';
 
 describe('document shape', () => {
@@ -2060,9 +2060,6 @@ describe('the notes of a diagram', () => {
 // Presentation fields of nodes, networks and connections: none is set unless
 // asked for, and one emptied again leaves no key.
 describe('colors, line styles and group fields', () => {
-  const errorsOf = (doc) =>
-    validateDocument(doc).filter((issue) => issue.level !== 'warning');
-
   test('a new node, network or connection has none of them', () => {
     const { doc, alpha, sw, network, edge } = sampleDocument();
     const group = addNode(doc, { kind: 'group', title: 'Core' }).node;

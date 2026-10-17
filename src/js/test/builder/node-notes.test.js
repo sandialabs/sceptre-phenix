@@ -11,7 +11,10 @@ import { createPinia, setActivePinia } from 'pinia';
 // The image downloads' module and the editor's store reach the API client,
 // which needs a browser; nothing here sends a request.
 
-import { isMultilineList } from '@/components/builder/inspector/control.js';
+import {
+  isMultilineList,
+  labelWholeValue,
+} from '@/components/builder/inspector/control.js';
 import NodeNotes from '@/components/builder/nodes/NodeNotes.vue';
 
 import {
@@ -520,6 +523,36 @@ describe('notes in the Inspector', () => {
     );
     expect(isMultilineList('notes')).toBe(true);
     expect(isMultilineList('spec.general.notes')).toBe(true);
+    expect(isMultilineList('spec.commands')).toBe(false);
+    expect(isMultilineList('spec.hardware.drives')).toBe(false);
+    expect(isMultilineList(undefined)).toBe(false);
+  });
+
+  test('labelWholeValue adds options to the control it labels', () => {
+    const control = { type: 'Control', scope: '#', options: { focus: true } };
+    const layout = { type: 'VerticalLayout', elements: [control] };
+
+    expect(labelWholeValue(control, 'Note 1', { multi: true })).toEqual({
+      type: 'Control',
+      scope: '#',
+      label: 'Note 1',
+      options: { focus: true, multi: true },
+    });
+    expect(labelWholeValue(layout, 'Note 2', { multi: true })).toEqual({
+      type: 'VerticalLayout',
+      elements: [
+        {
+          type: 'Control',
+          scope: '#',
+          label: 'Note 2',
+          options: { focus: true, multi: true },
+        },
+      ],
+    });
+    expect(labelWholeValue(control, 'Command 1')).toEqual({
+      ...control,
+      label: 'Command 1',
+    });
   });
 
   test("a switch's notes are applied with its network's fields, in one change, and emptied to none", () => {

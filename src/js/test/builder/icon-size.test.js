@@ -814,14 +814,18 @@ describe('a node’s Icon size in the Inspector', () => {
       expect(select).toMatch(
         new RegExp(`aria-describedby="[^"]*\\b${noteId}\\b`),
       );
-
-      resetSettings(null);
-      const off = await openInspector(doc, { id });
-
-      expect(notesOf(off.html)).toEqual([]);
-      expect(fieldSelect(off.html)).not.toContain('-note');
     },
   );
+
+  test('a device says nothing about it when the setting is off', async () => {
+    const sample = iconDocument();
+    const { id } = sample.node.device;
+    const doc = updateNode(sample.doc, id, { device: { iconSize: 'medium' } });
+    const { html } = await openInspector(doc, { id });
+
+    expect(notesOf(html)).toEqual([]);
+    expect(fieldSelect(html)).not.toContain('-note');
+  });
 
   test('a note has no Icon size, and so no note', async () => {
     const sample = iconDocument();

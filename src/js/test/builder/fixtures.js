@@ -10,8 +10,14 @@ import {
   createDocument,
 } from '@/builder/model.js';
 import { paletteTemplateGroups, templateByKey } from '@/builder/templates.js';
+import { validateDocument } from '@/builder/validate.js';
 
 let counter = 0;
+
+// The errors validateDocument reports for doc, without its warnings.
+export function errorsOf(doc) {
+  return validateDocument(doc).filter((issue) => issue.level === 'error');
+}
 
 // A deterministic version 4 UUID ending in a counter (validate.js wants
 // UUIDs).
