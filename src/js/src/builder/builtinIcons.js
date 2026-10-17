@@ -97,16 +97,11 @@ export function builtinIconSvg({
  *
  * @param {{key: string, label: string}} icon a built-in icon
  * @param {string} markup its drawing (see builtinIconSvg)
- * @param {{saveAs: Function, BlobCtor?: Function}} deps saveAs from
- *   file-saver, and the Blob constructor
+ * @param {{saveAs: Function}} deps saveAs from file-saver
  * @returns {string} the file's name, or '' when there is no drawing, which
  *   is not saved
  */
-export function saveBuiltinIconFile(
-  icon,
-  markup,
-  { saveAs, BlobCtor = globalThis.Blob },
-) {
+export function saveBuiltinIconFile(icon, markup, { saveAs }) {
   if (!isIconKey(icon?.key) || !markup) {
     return '';
   }
@@ -114,7 +109,7 @@ export function saveBuiltinIconFile(
   const fileName = `${icon.key}.svg`;
 
   saveAs(
-    new BlobCtor([builtinIconSvg({ markup, label: iconLabel(icon.key) })], {
+    new Blob([builtinIconSvg({ markup, label: iconLabel(icon.key) })], {
       type: 'image/svg+xml',
     }),
     fileName,

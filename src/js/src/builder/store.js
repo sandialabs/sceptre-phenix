@@ -4528,10 +4528,9 @@ export const useBuilderStore = defineStore('builder', {
      * pattern belongs to autoGroupByPattern. Here it does nothing.
      *
      * @param {string} [strategy] a GROUPING_STRATEGIES id
-     * @param {object} [options] for the layout
      * @returns {Promise<object[]|null>} the groups made, or null
      */
-    async autoGroup(strategy = 'network', options = {}) {
+    async autoGroup(strategy = 'network') {
       if (strategy === 'pattern') {
         return null;
       }
@@ -4547,7 +4546,7 @@ export const useBuilderStore = defineStore('builder', {
         return null;
       }
 
-      return makeGroups(this, planned, groupingPhrase(strategy), options);
+      return makeGroups(this, planned, groupingPhrase(strategy), {});
     },
 
     /**

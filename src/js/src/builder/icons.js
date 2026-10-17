@@ -671,12 +671,11 @@ export function embedIcons(doc, library = null) {
  * "<name>.png".
  *
  * @param {{name: string, data: string}} icon as the library lists it
- * @param {{saveAs: Function, BlobCtor?: Function}} deps saveAs from
- *   file-saver, and the Blob constructor
+ * @param {{saveAs: Function}} deps saveAs from file-saver
  * @returns {string} the file's name, or '' for an icon whose name or data
  *   is not an icon's, which is not saved
  */
-export function saveIconFile(icon, { saveAs, BlobCtor = globalThis.Blob }) {
+export function saveIconFile(icon, { saveAs }) {
   const bytes = decodeIconData(icon?.data);
 
   if (!bytes || !isIconName(icon?.name)) {
@@ -685,7 +684,7 @@ export function saveIconFile(icon, { saveAs, BlobCtor = globalThis.Blob }) {
 
   const fileName = `${icon.name}.png`;
 
-  saveAs(new BlobCtor([bytes], { type: 'image/png' }), fileName);
+  saveAs(new Blob([bytes], { type: 'image/png' }), fileName);
 
   return fileName;
 }

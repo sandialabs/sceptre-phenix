@@ -2523,12 +2523,6 @@
   font-weight: 600;
 }
 
-.builder-palette__hint {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--bx-text-muted);
-}
-
 /* The Help link on the drafts landing and in the editor header: a link
    drawn as a button, in the button's colors rather than a link's. */
 .builder-help-link,

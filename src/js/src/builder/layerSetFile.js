@@ -193,21 +193,17 @@ export function layerSetFileText(file) {
  * @param {object} options
  * @param {{lookup: Function}|null} [options.library] the icon library
  * @param {Function} options.saveAs the saver (file-saver's saveAs)
- * @param {Function} [options.BlobCtor]
  * @returns {{fileName: string, file: object, message: string}} what was
  *   saved, and what the page says of it
  */
-export function downloadLayerSetFile(
-  set,
-  { library = null, saveAs, BlobCtor = globalThis.Blob } = {},
-) {
+export function downloadLayerSetFile(set, { library = null, saveAs } = {}) {
   const { file, missing, left } = layerSetFileOf(set, library);
   const fileName = layerSetFileName(set?.name);
 
   // As saveText in exporters.js saves text. That module reads the page's
   // stores, which this one stays clear of.
   saveAs(
-    new BlobCtor([layerSetFileText(file)], {
+    new Blob([layerSetFileText(file)], {
       type: 'text/yaml;charset=utf-8',
     }),
     fileName,

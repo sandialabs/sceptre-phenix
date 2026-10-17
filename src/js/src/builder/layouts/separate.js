@@ -168,25 +168,24 @@ function placeInTurn(boxes) {
 }
 
 /**
- * Moves boxes apart until none overlaps another, with `gap` between any
+ * Moves boxes apart until none overlaps another, with BOX_GAP between any
  * two. Each box moves as little as the pass finds. The result is the same
  * for the same boxes in the same order.
  *
  * @param {Array<{id: string, width: number, height: number}>} items
  * @param {Map<string, {x: number, y: number}>} centres each box's centre,
  *   by id
- * @param {number} [gap]
  * @returns {Map<string, {x: number, y: number}>} each box's top-left
  *   corner, by id
  */
-export function separateBoxes(items, centres, gap = BOX_GAP) {
+export function separateBoxes(items, centres) {
   const boxes = items.map((item, index) => ({
     id: item.id,
     index,
     x: centres.get(item.id).x,
     y: centres.get(item.id).y,
-    width: item.width + gap,
-    height: item.height + gap,
+    width: item.width + BOX_GAP,
+    height: item.height + BOX_GAP,
   }));
 
   if (boxes.length > 1) {
@@ -198,8 +197,8 @@ export function separateBoxes(items, centres, gap = BOX_GAP) {
     boxes.map((box) => [
       box.id,
       {
-        x: box.x - (box.width - gap) / 2,
-        y: box.y - (box.height - gap) / 2,
+        x: box.x - (box.width - BOX_GAP) / 2,
+        y: box.y - (box.height - BOX_GAP) / 2,
       },
     ]),
   );

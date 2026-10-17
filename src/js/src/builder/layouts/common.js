@@ -101,11 +101,10 @@ export function snap(value, grid = GRID) {
 
 /**
  * @param {number} value
- * @param {number} [grid]
  * @returns {number} the least value on the grid that is not less
  */
-export function snapUp(value, grid = GRID) {
-  return Math.ceil(value / grid) * grid;
+export function snapUp(value) {
+  return Math.ceil(value / GRID) * GRID;
 }
 
 /**
