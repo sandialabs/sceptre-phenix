@@ -34,7 +34,7 @@
 /src/go/                @activeshadow @glattercj @GhostofGoes @nblair2 @jacdavi @cmulk
 /src/go/api/scorch/     @nblair2 @activeshadow @GhostofGoes
 /src/go/api/workflow/   @glattercj @cmulk
-# Vendored noVNC, xterm.js, and mxGraph, owned by whoever updates them.
+# Vendored noVNC and xterm.js, and the built UI, owned by whoever updates them.
 /src/go/web/public/     @GhostofGoes @nblair2 @jacdavi @activeshadow
 
 # Web UI
