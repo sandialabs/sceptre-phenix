@@ -24,18 +24,21 @@ import {
   fitGroups,
   groupMinimumSize,
   groupNodes,
+  insertLinePoint,
   LOOK_KEYS,
   lookOf,
   MAX_DIAGRAM_NOTE_BYTES,
   MAX_DIAGRAM_NOTES,
   metadataOf,
   moveNodes,
+  nearestSegment,
   networkOfSwitch,
   nextInterfaceName,
   nodeComment,
   nodeLabel,
   removeElements,
   removeInterface,
+  removeLinePoint,
   removeNetworks,
   renameInterface,
   sameButStamp,
@@ -66,8 +69,10 @@ import {
 import { copySelection, pasteClipboard } from '@/builder/clipboard.js';
 import { BUILTIN_TEMPLATES } from '@/builder/catalog.js';
 import { nodeOptionsFromTemplate } from '@/builder/templates.js';
+import { decodeDocument } from '@/builder/decode.js';
 import { validateDocument } from '@/builder/validate.js';
 
+import { applyOp, documentOp, makeCounter, scaffold } from './arbitraries.js';
 import { errorsOf, sampleDocument } from './fixtures.js';
 import { ICON_DATA, ICON_KEY } from './png.js';
 
@@ -2589,5 +2594,181 @@ describe('snapping a point', () => {
       ),
       { numRuns: 200 },
     );
+  });
+});
+
+describe('a document after any edits', () => {
+  // What every edit must keep true, or a message saying what broke.
+  function brokenRule(doc) {
+    const errors = validateDocument(doc).filter(
+      (issue) => issue.level === 'error',
+    );
+
+    if (errors.length) {
+      return `invalid: ${errors[0].path} ${errors[0].message}`;
+    }
+
+    const ids = [...doc.nodes, ...doc.edges, ...doc.networks].map(
+      (entry) => entry.id,
+    );
+
+    if (new Set(ids).size !== ids.length) {
+      return 'an id is used twice';
+    }
+
+    const byId = new Map(doc.nodes.map((node) => [node.id, node]));
+
+    for (const node of doc.nodes) {
+      const seen = new Set();
+
+      for (let at = node; at.parentId; at = byId.get(at.parentId)) {
+        if (byId.get(at.parentId)?.kind !== 'group') {
+          return `${at.id} is in no group`;
+        }
+        if (seen.has(at.id)) {
+          return `${node.id} is in a cycle of groups`;
+        }
+        seen.add(at.id);
+      }
+    }
+
+    if (
+      doc.edges.some(
+        (edge) => !byId.has(edge.sourceNodeId) || !byId.has(edge.targetNodeId),
+      )
+    ) {
+      return 'a connection has a missing end';
+    }
+
+    expect(decodeDocument(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+
+    return '';
+  }
+
+  // Whether a node's box lies inside its group's box.
+  function insideGroup(doc, id) {
+    const node = doc.nodes.find((entry) => entry.id === id);
+    const group = doc.nodes.find((entry) => entry.id === node?.parentId);
+
+    if (!group) {
+      return true;
+    }
+    const size = sizeOf(node);
+    const room = sizeOf(group);
+
+    return (
+      node.position.x >= group.position.x &&
+      node.position.y >= group.position.y &&
+      node.position.x + size.width <= group.position.x + room.width &&
+      node.position.y + size.height <= group.position.y + room.height
+    );
+  }
+
+  test('stays valid, with unique ids, real groups and connected ends', () => {
+    fc.assert(
+      fc.property(
+        fc.array(documentOp, { minLength: 1, maxLength: 40 }),
+        (edits) => {
+          const counter = makeCounter();
+          let doc = scaffold(counter);
+
+          expect(brokenRule(doc)).toBe('');
+          for (const edit of edits) {
+            const before = doc;
+
+            doc = applyOp(doc, edit, counter);
+            expect(brokenRule(doc)).toBe('');
+            if (edit.op === 'parent' && doc !== before) {
+              const moved = before.nodes[edit.node % before.nodes.length];
+
+              expect(insideGroup(doc, moved.id)).toBe(true);
+            }
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+describe('the points of a line, for any line', () => {
+  const spot = fc.record({
+    x: fc.integer({ min: -100, max: 100 }),
+    y: fc.integer({ min: -100, max: 100 }),
+  });
+  const points = fc.array(spot, { minLength: 2, maxLength: 10 });
+
+  test('a bend added and then removed leaves the line as it was', () => {
+    fc.assert(
+      fc.property(points, spot, spot, fc.nat(), (path, at, bend, pick) => {
+        const counter = makeCounter();
+        const id = counter.id();
+        const doc = addNode(createDocument({ id: counter.id() }), {
+          id,
+          kind: 'line',
+          position: at,
+          points: path,
+        }).doc;
+        const index = 1 + (pick % (path.length - 1));
+        const bent = insertLinePoint(doc, id, index, bend);
+
+        expect(findNode(bent, id).line.points).toHaveLength(path.length + 1);
+        expect(findNode(removeLinePoint(bent, id, index), id)).toEqual(
+          findNode(doc, id),
+        );
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  // How far a point is from the segment that ends at point `index`.
+  function distanceTo(path, index, point) {
+    const from = path[index - 1];
+    const to = path[index];
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = dx * dx + dy * dy;
+    const along = length
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            ((point.x - from.x) * dx + (point.y - from.y) * dy) / length,
+          ),
+        )
+      : 0;
+
+    return Math.hypot(
+      from.x + along * dx - point.x,
+      from.y + along * dy - point.y,
+    );
+  }
+
+  test('the nearest segment is a segment, no farther than the one a point is on', () => {
+    fc.assert(
+      fc.property(
+        points,
+        fc.nat(),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (path, pick, t) => {
+          const on = 1 + (pick % (path.length - 1));
+          const from = path[on - 1];
+          const to = path[on];
+          const point = {
+            x: from.x + (to.x - from.x) * t,
+            y: from.y + (to.y - from.y) * t,
+          };
+          const found = nearestSegment(path, point);
+
+          expect(found).toBeGreaterThanOrEqual(1);
+          expect(found).toBeLessThanOrEqual(path.length - 1);
+          expect(distanceTo(path, found, point)).toBeLessThanOrEqual(
+            distanceTo(path, on, point) + 1e-9,
+          );
+        },
+      ),
+      { numRuns: 300 },
+    );
+    expect(nearestSegment([{ x: 0, y: 0 }], { x: 5, y: 5 })).toBe(1);
   });
 });
