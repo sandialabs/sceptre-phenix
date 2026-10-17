@@ -15,7 +15,6 @@
         class="builder-node-editor-toc__link"
         :class="{ 'is-active': entry.key === active }"
         :aria-current="entry.key === active ? 'location' : undefined"
-        :data-key="entry.key"
         @click="$emit('go', entry.key)">
         <span class="builder-node-editor-toc__label"
           >{{ entry.label

@@ -40,7 +40,6 @@
           v-for="(dependency, index) in group.items"
           :key="dependencyKey(dependency)"
           class="builder-package__item"
-          :data-status="dependency.status"
           :data-testid="`upload-package-item-${dependency.kind}-${dependency.name}`">
           <span
             :id="`upload-package-name-${group.kind}-${index}`"

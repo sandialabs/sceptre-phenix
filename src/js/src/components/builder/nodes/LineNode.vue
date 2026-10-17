@@ -102,8 +102,6 @@
         :stroke-dasharray="data.dashArray"
         :marker-start="line.startArrow ? `url(#${arrowId})` : undefined"
         :marker-end="line.endArrow ? `url(#${arrowId})` : undefined"
-        :data-start-arrow="line.startArrow ? 'true' : undefined"
-        :data-end-arrow="line.endArrow ? 'true' : undefined"
         pointer-events="none" />
     </svg>
     <span
@@ -129,7 +127,6 @@
         }"
         :title="capitalize(linePointName(data.node, index))"
         :data-line="id"
-        :data-point="index"
         :data-testid="`line-point-${index}`"
         tabindex="-1"
         aria-hidden="true"

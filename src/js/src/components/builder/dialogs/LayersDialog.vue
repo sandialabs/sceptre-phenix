@@ -223,9 +223,7 @@
             data-testid="layers-set-description" />
         </div>
         <div class="builder-field">
-          <span id="layers-set-icon-label" class="builder-layers-dialog__label">
-            Icon
-          </span>
+          <span class="builder-layers-dialog__label">Icon</span>
           <layer-icon-picker
             id="layers-set-icon"
             :icon-key="local.iconKey"

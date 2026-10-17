@@ -161,7 +161,6 @@
             :key="result.name"
             class="builder-preflight__result"
             :data-status="result.status"
-            :data-check="result.name"
             data-testid="preflight-result">
             <h4 class="builder-preflight__heading">
               <builder-icon :name="STATUS_ICONS[result.status]" :size="14" />

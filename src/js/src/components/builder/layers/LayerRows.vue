@@ -171,7 +171,6 @@
               v-for="(matcher, index) in matcherRows(row)"
               :key="matcher.key"
               class="builder-layer-rows__matcher"
-              :data-matcher-path="matcher.path || undefined"
               data-testid="layer-matcher">
               <input
                 type="text"
