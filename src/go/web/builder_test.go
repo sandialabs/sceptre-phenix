@@ -530,8 +530,11 @@ func TestBuilderRegistersOnUnusedStore(t *testing.T) {
 				}
 			}
 
-			harness.as(builderAlice, nil).mustDo("GET /builder/drafts",
-				builderRequest{method: http.MethodGet, path: "/builder/drafts"}, http.StatusOK)
+			if err := builderStatusError(harness.as(builderAlice, nil).do(
+				builderRequest{method: http.MethodGet, path: "/builder/drafts"},
+			), http.StatusOK); err != nil {
+				t.Errorf("GET /builder/drafts: %v", err)
+			}
 		})
 	}
 }
@@ -1750,7 +1753,9 @@ func TestBuilderUnreadableDraft(t *testing.T) {
 
 	path := "/builder/drafts/" + bad.ID
 
-	peer.mustDo("reading it", builderRequest{method: http.MethodGet, path: path}, http.StatusInternalServerError)
+	if err := builderStatusError(peer.do(builderRequest{method: http.MethodGet, path: path}), http.StatusInternalServerError); err != nil {
+		t.Errorf("GET %s (a damaged draft): %v", path, err)
+	}
 
 	recorder := peer.mustDo("deleting it at a stale ETag", builderRequest{
 		method: http.MethodDelete, path: path, ifMatch: bad.ETag,
@@ -1759,9 +1764,9 @@ func TestBuilderUnreadableDraft(t *testing.T) {
 		t.Errorf("DELETE %s at a stale ETag: ETag header = %q, want the listed %q", path, current, listing.Damaged[0].ETag)
 	}
 
-	peer.mustDo(
-		"deleting it",
+	if err := builderStatusError(peer.do(
 		builderRequest{method: http.MethodDelete, path: path, ifMatch: listing.Damaged[0].ETag},
-		http.StatusNoContent,
-	)
+	), http.StatusNoContent); err != nil {
+		t.Errorf("DELETE %s at the listed ETag: %v", path, err)
+	}
 }

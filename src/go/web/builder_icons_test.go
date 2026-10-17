@@ -556,37 +556,44 @@ func TestBuilderResponseHeaders(t *testing.T) {
 		// With every permission, and with no identity at all: the headers
 		// do not depend on how the request is answered.
 		for _, user := range []string{builderAlice, ""} {
-			recorder := harness.do(builderRequest{method: op.method, path: path, body: `{}`, user: user})
-			what := fmt.Sprintf("%s %s as %q (%d)", op.method, op.template, user, recorder.Code)
-			header := recorder.Header()
-
-			switch {
-			case strings.HasPrefix(op.template, builderIconsRoute):
-				icons++
-
-				want := map[string]string{
-					"X-Content-Type-Options": builderNoSniff, "Content-Security-Policy": builderIconCSP, "ETag": "",
-				}
-				if diff := cmp.Diff(want, builderTestHeader(header, want)); diff != "" {
-					t.Errorf("%s headers mismatch (-want +got):\n%s", what, diff)
-				}
-			case strings.HasPrefix(op.template, "/builder/"), op.template == "/schemas/builder/v1",
-				op.template == "/schemas/builder/templates/v1", op.template == "/schemas/builder/package/v1",
-				op.template == builderLayerSetSchemaPath:
-				builder++
-
-				// No Content-Security-Policy outside the icon library.
-				want := map[string]string{"X-Content-Type-Options": builderNoSniff, "Content-Security-Policy": ""}
-				if diff := cmp.Diff(want, builderTestHeader(header, want)); diff != "" {
-					t.Errorf("%s headers mismatch (-want +got):\n%s", what, diff)
-				}
-			default:
-				others++
-
-				if len(header.Values("X-Content-Type-Options")) != 0 || len(header.Values("Content-Security-Policy")) != 0 {
-					t.Errorf("%s: a route outside the Builder carries its headers: %v", what, header)
-				}
+			name := op.method + " " + op.template + " as nobody"
+			if user != "" {
+				name = op.method + " " + op.template + " as " + user
 			}
+
+			t.Run(name, func(t *testing.T) {
+				recorder := harness.do(builderRequest{method: op.method, path: path, body: `{}`, user: user})
+				what := fmt.Sprintf("%s %s as %q (%d)", op.method, op.template, user, recorder.Code)
+				header := recorder.Header()
+
+				switch {
+				case strings.HasPrefix(op.template, builderIconsRoute):
+					icons++
+
+					want := map[string]string{
+						"X-Content-Type-Options": builderNoSniff, "Content-Security-Policy": builderIconCSP, "ETag": "",
+					}
+					if diff := cmp.Diff(want, builderTestHeader(header, want)); diff != "" {
+						t.Errorf("%s headers mismatch (-want +got):\n%s", what, diff)
+					}
+				case strings.HasPrefix(op.template, "/builder/"), op.template == "/schemas/builder/v1",
+					op.template == "/schemas/builder/templates/v1", op.template == "/schemas/builder/package/v1",
+					op.template == builderLayerSetSchemaPath:
+					builder++
+
+					// No Content-Security-Policy outside the icon library.
+					want := map[string]string{"X-Content-Type-Options": builderNoSniff, "Content-Security-Policy": ""}
+					if diff := cmp.Diff(want, builderTestHeader(header, want)); diff != "" {
+						t.Errorf("%s headers mismatch (-want +got):\n%s", what, diff)
+					}
+				default:
+					others++
+
+					if len(header.Values("X-Content-Type-Options")) != 0 || len(header.Values("Content-Security-Policy")) != 0 {
+						t.Errorf("%s: a route outside the Builder carries its headers: %v", what, header)
+					}
+				}
+			})
 		}
 	}
 

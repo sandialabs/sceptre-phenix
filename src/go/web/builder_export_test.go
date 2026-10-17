@@ -478,14 +478,13 @@ func TestBuilderExportTopologyNamesSharedAddresses(t *testing.T) {
 
 			// The shared address blocker is at the first device that uses it.
 			last := response.PublishBlockers[len(response.PublishBlockers)-1]
-			if diff := cmp.Diff(
-				issueSummary{Code: bdoc.CodeInterfaceIPShared, Message: shared}, issueSummary{Code: last.Code, Message: last.Message},
-			); diff != "" {
-				t.Errorf("last publish blocker mismatch (-want +got):\n%s", diff)
+			want := bdoc.Issue{
+				Code: bdoc.CodeInterfaceIPShared, Severity: bdoc.SeverityError, Message: shared,
+				Path:   "nodes[0].device.spec.network.interfaces[0].address",
+				NodeID: bdoc.DeviceNodeID("aa"), Field: "spec.network.interfaces.0.address",
 			}
-
-			if last.Field != "spec.network.interfaces.0.address" || last.NodeID == "" {
-				t.Errorf("last publish blocker at node %q field %q, want aa's eth0 address", last.NodeID, last.Field)
+			if diff := cmp.Diff(want, last); diff != "" {
+				t.Errorf("last publish blocker mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

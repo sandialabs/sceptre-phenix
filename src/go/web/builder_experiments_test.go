@@ -359,9 +359,11 @@ func TestBuilderListDocumentsNamesExperiment(t *testing.T) {
 		{what: "a file row", target: "file", want: ""},
 		{what: "a document no draft published", target: "plain", want: ""},
 	} {
-		if err := rowExperimentError(rows[tt.target], tt.want); err != nil {
-			t.Errorf("GET /builder/documents row %s, %s: %v", tt.target, tt.what, err)
-		}
+		t.Run(tt.what, func(t *testing.T) {
+			if err := rowExperimentError(rows[tt.target], tt.want); err != nil {
+				t.Errorf("GET /builder/documents row %s: %v", tt.target, err)
+			}
+		})
 	}
 
 	got := map[string]any{

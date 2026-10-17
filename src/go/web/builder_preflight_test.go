@@ -219,7 +219,7 @@ func TestBuilderPreflightRoutePermissions(t *testing.T) {
 			name: "without configs get", user: builderAlice, role: builderRole(preflightLister()),
 			request: capacity, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
 		},
-		{name: "another user's draft", user: builderBob, role: builderUserRole(), request: capacity, status: http.StatusOK},
+		{name: "a draft of another user", user: builderBob, role: builderUserRole(), request: capacity, status: http.StatusOK},
 		{
 			name: "a draft that does not exist", user: builderAlice,
 			request: builderRequest{method: http.MethodPost, path: "/builder/drafts/id-missing/preflight", body: `{}`},

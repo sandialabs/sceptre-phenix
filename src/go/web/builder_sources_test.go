@@ -683,6 +683,14 @@ func builderNameAndNotes() cmp.Options {
 	}
 }
 
+// ignoreCopiedSourceDetails ignores what a copy keeps of how it was read,
+// leaving the fields that would link it to a config.
+func ignoreCopiedSourceDetails() cmp.Options {
+	return cmp.Options{
+		cmpopts.IgnoreFields(bdoc.Source{}, "ImportedAt", "IncludeTopologies", "UnresolvedIncludes", "Warnings"),
+	}
+}
+
 // TestBuilderGenerateCopy asserts a copy is a plain import's document linked
 // to no config, while the response still names the topology that was read.
 func TestBuilderGenerateCopy(t *testing.T) {
@@ -696,8 +704,8 @@ func TestBuilderGenerateCopy(t *testing.T) {
 		t.Errorf("generating Topology/root: source kind = %q, want %q", plain.Source.Kind, bdoc.SourceKindTopology)
 	}
 
-	if copied.Source.Kind != bdoc.SourceKindManual || copied.Source.Name != "" {
-		t.Errorf("copying Topology/root: source = %+v, want a manual source linked to nothing", copied.Source)
+	if diff := cmp.Diff(&bdoc.Source{Kind: bdoc.SourceKindManual}, copied.Source, ignoreCopiedSourceDetails()); diff != "" {
+		t.Errorf("copying Topology/root: source mismatch (-want +got):\n%s", diff)
 	}
 
 	if diff := cmp.Diff(plain.Nodes, copied.Nodes); diff != "" {
@@ -869,8 +877,8 @@ func TestBuilderGenerateLegacyTopologyChoices(t *testing.T) {
 		t.Errorf("copying Topology/sample: metadata mismatch (-want +got):\n%s", diff)
 	}
 
-	if copied.Source.Kind != bdoc.SourceKindManual || copied.Source.Name != "" || copied.Source.Digest != "" {
-		t.Errorf("copying Topology/sample: source = %+v, want a legacy conversion linked to nothing", copied.Source)
+	if diff := cmp.Diff(&bdoc.Source{Kind: bdoc.SourceKindManual}, copied.Source, ignoreCopiedSourceDetails()); diff != "" {
+		t.Errorf("copying Topology/sample: source mismatch (-want +got):\n%s", diff)
 	}
 
 	if got, want := legacyPosition(t, copied, "server-device-5"), (bdoc.Position{X: 1280, Y: 512}); got != want {

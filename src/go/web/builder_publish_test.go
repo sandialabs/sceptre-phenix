@@ -160,21 +160,24 @@ func TestBuilderPublishReportsPartialFailure(t *testing.T) {
 		t.Fatalf("publishing partial: stages = %+v and errors = %+v, want 2 stages and 1 error", response.Stages, response.Errors)
 	}
 
-	if response.Errors[0].Code != bdoc.CodePublishStageFailed {
-		t.Errorf("publishing partial: error code = %q, want %q", response.Errors[0].Code, bdoc.CodePublishStageFailed)
+	wantStages := []builderPublishStage{
+		{Name: builderPublishStageDocument, Status: "created"},
+		{Name: builderPublishStageTopology, Status: bapi.PublishFailed},
+	}
+	if diff := cmp.Diff(wantStages, response.Stages, ignorePublishStageDetails()); diff != "" {
+		t.Errorf("publishing partial: stages mismatch (-want +got):\n%s", diff)
 	}
 
-	if got, want := response.Errors[0].Message, response.Stages[1].Message; got != want {
-		t.Errorf("publishing partial: error message = %q, want the failed stage's %q", got, want)
+	// The error is the failed stage's message.
+	wantErrors := []issueSummary{{Code: bdoc.CodePublishStageFailed, Message: response.Stages[1].Message}}
+	if diff := cmp.Diff(wantErrors, issueSummaries(response.Errors)); diff != "" {
+		t.Errorf("publishing partial: errors mismatch (-want +got):\n%s", diff)
 	}
+}
 
-	if got := response.Stages[0].Name; got != builderPublishStageDocument {
-		t.Errorf("publishing partial: first stage = %q, want %q", got, builderPublishStageDocument)
-	}
-
-	if got := response.Stages[1].Status; got != bapi.PublishFailed {
-		t.Errorf("publishing partial: second stage status = %q, want %q", got, bapi.PublishFailed)
-	}
+// ignorePublishStageDetails compares only the name and status of a stage.
+func ignorePublishStageDetails() cmp.Options {
+	return cmp.Options{cmpopts.IgnoreFields(builderPublishStage{}, "Message", "Config")}
 }
 
 func TestBuilderPublishReportsExperimentPartialFailure(t *testing.T) {
@@ -203,20 +206,13 @@ func TestBuilderPublishReportsExperimentPartialFailure(t *testing.T) {
 		t.Errorf("publishing partial-experiment: draft publication = %+v, want none", meta.Publication)
 	}
 
-	if len(response.Stages) != 3 {
-		t.Fatalf("publishing partial-experiment: stages = %+v, want 3", response.Stages)
+	wantStages := []builderPublishStage{
+		{Name: builderPublishStageDocument, Status: "created"},
+		{Name: builderPublishStageTopology, Status: "created"},
+		{Name: builderPublishStageExperiment, Status: bapi.PublishFailed},
 	}
-
-	if got := response.Stages[1].Name; got != builderPublishStageTopology {
-		t.Errorf("publishing partial-experiment: second stage = %q, want %q", got, builderPublishStageTopology)
-	}
-
-	if got := response.Stages[2].Name; got != builderPublishStageExperiment {
-		t.Errorf("publishing partial-experiment: third stage = %q, want %q", got, builderPublishStageExperiment)
-	}
-
-	if got := response.Stages[2].Status; got != bapi.PublishFailed {
-		t.Errorf("publishing partial-experiment: third stage status = %q, want %q", got, bapi.PublishFailed)
+	if diff := cmp.Diff(wantStages, response.Stages, ignorePublishStageDetails()); diff != "" {
+		t.Errorf("publishing partial-experiment: stages mismatch (-want +got):\n%s", diff)
 	}
 }
 
