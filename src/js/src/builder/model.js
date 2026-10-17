@@ -3704,8 +3704,8 @@ export function keyResizedSize(doc, id, key, step, options = {}) {
 export function resizedBox(doc, id, box, options = {}) {
   const node = findNode(doc, id);
   const least = MINIMUM_SIZES[node?.kind] || GROUP_MIN_SIZE;
-  let left = Math.round(box.x);
-  let top = Math.round(box.y);
+  let left = onStep(box.x, 0);
+  let top = onStep(box.y, 0);
   let right = left + Math.max(least.width, Math.round(box.width));
   let bottom = top + Math.max(least.height, Math.round(box.height));
   const members = (doc?.nodes || []).filter((entry) => entry.parentId === id);

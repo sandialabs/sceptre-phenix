@@ -41,6 +41,7 @@ import {
   removeLinePoint,
   removeNetworks,
   renameInterface,
+  resizedBox,
   sameButStamp,
   savedStamp,
   scenarioApps,
@@ -2590,6 +2591,37 @@ describe('snapping a point', () => {
           const bend = snappedLinePoint(line, { x, y }, { size, snap });
 
           expect(Object.is(bend.x, -0) || Object.is(bend.y, -0)).toBe(false);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  test('a box a resize leaves never lands on -0 either', () => {
+    const counter = makeCounter();
+    const id = counter.id();
+    const doc = addNode(createDocument({ id: counter.id() }), {
+      id,
+      kind: 'shape',
+      position: { x: 0, y: 0 },
+    }).doc;
+
+    fc.assert(
+      fc.property(
+        coordinate,
+        coordinate,
+        fc.double({ min: 0, max: 400, noNaN: true }),
+        (x, y, side) => {
+          const { position } = resizedBox(doc, id, {
+            x,
+            y,
+            width: side,
+            height: side,
+          });
+
+          expect(Object.is(position.x, -0) || Object.is(position.y, -0)).toBe(
+            false,
+          );
         },
       ),
       { numRuns: 200 },
