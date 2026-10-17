@@ -48,7 +48,7 @@
           <button
             class="button is-dark"
             :disabled="!canClearAll"
-            @click="clearAll">
+            @click="clearAll()">
             <b-icon icon="eraser" />
             <span>Clear all</span>
           </button>
