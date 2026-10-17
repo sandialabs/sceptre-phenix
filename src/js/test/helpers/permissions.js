@@ -1,8 +1,5 @@
-// Roles for the mocked roleAllowed(resource, verb, name) in mocks.js, as
-// predicates: rbac.allowed = denyOnly(['disks']). roles.js instead builds
-// role objects for the real rbac.js.
-//
-// It imports nothing, so mocks.js may load it through vi.hoisted.
+// Roles for the mocked roleAllowed in mocks.js, as predicates (roles.js builds
+// roles for the real rbac.js). It imports nothing, so vi.hoisted may load it.
 
 // a role that may do anything
 export const allowAll = () => true;
@@ -11,8 +8,7 @@ export const allowAll = () => true;
 export const denyAll = () => false;
 
 // A permission is [resource, verb, name]; a part left out, or '*', matches
-// anything: ['disks'] is every verb on disks, ['*', 'delete'] is deleting
-// anything.
+// anything: ['disks'] is every verb on disks, ['*', 'delete'] any delete.
 const matches = ([r, v, n], resource, verb, name) =>
   (r === undefined || r === '*' || r === resource) &&
   (v === undefined || v === '*' || v === verb) &&

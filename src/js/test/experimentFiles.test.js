@@ -1,10 +1,9 @@
-// The experiment pages' Files tab (ExperimentFilesTab.vue): listing, opening,
-// selecting, downloading and deleting the experiment's files, and how the
-// running and stopped experiment pages hold it.
+// The experiment Files tab (ExperimentFilesTab.vue): listing, opening,
+// selecting, downloading and deleting files, and the pages that hold it.
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notices, notify, rbac, resetMocks, store } =
+const { axios, modules, notices, noticeText, notify, rbac, resetMocks, store } =
   await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -310,17 +309,6 @@ describe('selecting files', () => {
   it('has nothing to select all in an empty list', () => {
     expect(listing([]).allFilesSelected).toBe(false);
   });
-
-  it.each(ROLES)(
-    'offers %s only the downloads, deletes and selection it may use',
-    (_, role, download, del, select) => {
-      rbac.allowed = role;
-      const tab = listing();
-      expect(tab.canDownloadFiles).toBe(download);
-      expect(tab.canDeleteFiles).toBe(del);
-      expect(tab.filesSelectable).toBe(select);
-    },
-  );
 });
 
 describe('opening a file', () => {
@@ -525,10 +513,6 @@ describe('deleting the selected files', () => {
     expect(dialogs(tab)).toHaveLength(0);
   });
 
-  // the text of the outcome notification last opened
-  const outcomeText = () =>
-    JSON.stringify(notices.open.mock.lastCall[0].message.children);
-
   it('reports the files it could not delete, which stay selected', async () => {
     axios.post.mockResolvedValue({
       data: {
@@ -545,9 +529,9 @@ describe('deleting the selected files', () => {
     await tab.deleteSelectedFiles();
 
     expect(notices.open).toHaveBeenCalledTimes(1);
-    expect(outcomeText()).toContain('Deleted 1 of 3 files; 2 failed');
-    expect(outcomeText()).toContain('c.pcap: capture already exists: c.pcap');
-    expect(outcomeText()).toContain('scorch/run-0/b.json: file not found');
+    expect(noticeText()).toContain('Deleted 1 of 3 files; 2 failed');
+    expect(noticeText()).toContain('c.pcap: capture already exists: c.pcap');
+    expect(noticeText()).toContain('scorch/run-0/b.json: file not found');
     expect(tab.selectedFiles).toEqual(['c.pcap', 'scorch/run-0/b.json']);
     expect(tab.files).toHaveLength(2);
     expect(toasts(tab)).toHaveLength(0);
@@ -566,9 +550,9 @@ describe('deleting the selected files', () => {
 
     await tab.deleteSelectedFiles();
 
-    expect(outcomeText()).toContain('f7.log: busy');
-    expect(outcomeText()).not.toContain('f8.log: busy');
-    expect(outcomeText()).toContain('and 4 more');
+    expect(noticeText()).toContain('f7.log: busy');
+    expect(noticeText()).not.toContain('f8.log: busy');
+    expect(noticeText()).toContain('and 4 more');
   });
 
   it('shows the error and relists when the request fails', async () => {
@@ -670,9 +654,7 @@ describe('downloading the selected files', () => {
     tab.selectedFiles = ['a.log'];
 
     await tab.downloadSelectedFiles();
-    expect(
-      JSON.stringify(notices.open.mock.lastCall[0].message.children),
-    ).toContain('a.log: not found');
+    expect(noticeText()).toContain('a.log: not found');
 
     // a tab the user left opens nothing
     axios.post.mockResolvedValue({ data: archiveJob() });

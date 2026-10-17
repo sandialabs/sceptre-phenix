@@ -1,6 +1,5 @@
-// The app's router view mounts a page afresh when its path parameters change,
-// so another experiment's link never leaves the first experiment's page in
-// place, and keeps it when only the query changes.
+// The router view remounts a page when its path parameters change, so another
+// experiment's link never keeps the old page, and keeps it on query changes.
 import { describe, expect, it } from 'vitest';
 
 import { viewKey } from '@/utils/viewKey.js';

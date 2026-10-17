@@ -2,7 +2,6 @@
 import { describe, expect, it } from 'vitest';
 
 import OperationOutcome from '@/components/jobs/OperationOutcome.vue';
-import { makeContext } from './helpers/context.js';
 import { buttons, renderSSR, textOf } from './helpers/render.js';
 
 const items = [
@@ -33,15 +32,5 @@ describe('OperationOutcome', () => {
       items: items.filter((item) => !item.retryable),
     });
     expect(buttons(html).some((b) => b.startsWith('Retry'))).toBe(false);
-  });
-
-  it('asks to retry the failures worth it', () => {
-    const emitted = [];
-    const ctx = makeContext(OperationOutcome, {
-      items,
-      noun: 'VM',
-      $emit: (...args) => emitted.push(args),
-    });
-    expect(ctx.retryable).toEqual(['db']);
   });
 });

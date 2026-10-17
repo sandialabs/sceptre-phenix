@@ -3,8 +3,7 @@
 export const flush = () => new Promise((resolve) => setTimeout(resolve));
 
 // Has the mock `get` (such as axios.get) wait on each call until the test
-// answers it. Returns the calls in order, each its URL with the resolve and
-// reject of its answer.
+// answers it; returns the calls in order: URL, resolve and reject.
 export function deferredGets(get) {
   const calls = [];
   get.mockImplementation((url) => {

@@ -1,6 +1,5 @@
-// How pages name and offer the images in the disk list the Disks page shows:
-// the VM details' backing image chain, the disk and CD-ROM pickers' options
-// and the warnings beside a VM's disk.
+// How pages name and offer disk-list images: the VM details' backing chain,
+// the disk and CD-ROM pickers' options, and the warnings beside a VM's disk.
 import { readFileSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,9 +31,8 @@ import {
 import { pageFetchers } from '@/utils/pageData.js';
 import { disk } from './helpers/fixtures.js';
 
-// web_snap.qc2 is backed by the hardened image in the jammy folder, which is
-// backed by an image outside the files directory; another jammy.qc2 is at
-// the top of the files directory
+// web_snap.qc2 is backed by the jammy folder's hardened image, backed by one
+// outside the files directory; another jammy.qc2 is at the directory's top.
 const disks = [
   disk('/phenix/images/web_snap.qc2', 'web_snap.qc2', {
     backingImages: [
@@ -162,10 +160,8 @@ describe('diskOptions', () => {
 });
 
 describe('minimegaSafe', () => {
-  // The server's rule: minimegaSafe in src/go/api/disk/paths.go refuses "$"
-  // and "," besides what file.CommandSafe in src/go/util/file/delete.go
-  // refuses: the characters of its globMeta, control characters
-  // (unicode.IsControl) and white space (unicode.IsSpace).
+  // The server's rule (src/go/api/disk/paths.go): "$" and "," plus what
+  // file.CommandSafe refuses: globMeta, control and white space characters.
   const goSource = (path) =>
     readFileSync(new URL(`../../go/${path}`, import.meta.url), 'utf8');
   const fileSource = goSource('util/file/delete.go');

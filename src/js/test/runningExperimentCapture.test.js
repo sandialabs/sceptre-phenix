@@ -1,12 +1,9 @@
-// How the running experiment page starts packet captures (one interface, or
-// every interface of a VM from the Actions column) with a spinner while it
-// waits, picks a CD-ROM, and finds and shows a VM's disk, its backing image
-// chain and its CD-ROM's ISO image.
+// The running experiment page: packet captures, the CD-ROM picker, and the VM
+// details disk and backing chain.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notices, notify, rbac, resetMocks } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const { axios, modules, notices, noticeText, notify, rbac, resetMocks } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -18,6 +15,7 @@ vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 import { cachePage, clearPageCache } from '@/utils/pageCache.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { flush } from './helpers/async.js';
+import { disk } from './helpers/fixtures.js';
 import { denyOnly } from './helpers/permissions.js';
 import {
   labeledControls,
@@ -135,9 +133,7 @@ describe('capturing all interfaces', () => {
     // one summary, naming the failure
     expect(notify.error).not.toHaveBeenCalled();
     expect(notices.open).toHaveBeenCalledTimes(1);
-    expect(
-      JSON.stringify(notices.open.mock.lastCall[0].message.children),
-    ).toContain('interface 2: capture already exists');
+    expect(noticeText()).toContain('interface 2: capture already exists');
     expect(ctx.captureAllPending.web).toBeUndefined();
   });
 
@@ -197,13 +193,8 @@ describe('the CD-ROM picker', () => {
 
   // ISO images inside the files directory /images, one in a folder and one
   // minimega cannot take, and a same-named one outside it
-  const iso = (fullPath, relativePath = '') => ({
-    kind: 'ISO',
-    name: fullPath.replace(/^.*\//, ''),
-    fullPath,
-    relativePath,
-    outsideFilesDir: !relativePath,
-  });
+  const iso = (fullPath, relativePath) =>
+    disk(fullPath, relativePath, { kind: 'ISO' });
   const isos = [
     iso('/images/virtio.iso', 'virtio.iso'),
     iso('/images/tools.iso', 'tools.iso'),
@@ -369,36 +360,14 @@ describe('the CD-ROM picker', () => {
 
 describe("the VM details' disk and backing image chain", () => {
   const disks = [
-    {
-      kind: 'VM',
-      name: 'web_snap.qc2',
-      fullPath: '/images/web/web_snap.qc2',
-      relativePath: 'web/web_snap.qc2',
+    disk('/images/web/web_snap.qc2', 'web/web_snap.qc2', {
       backingImages: ['/images/jammy/jammy.qc2', '/data/vms/jammy.qc2'],
-    },
-    {
-      kind: 'VM',
-      name: 'jammy.qc2',
-      fullPath: '/images/jammy/jammy.qc2',
-      relativePath: 'jammy/jammy.qc2',
+    }),
+    disk('/images/jammy/jammy.qc2', 'jammy/jammy.qc2', {
       backingImages: ['/data/vms/jammy.qc2'],
-    },
-    {
-      kind: 'VM',
-      name: 'jammy.qc2',
-      fullPath: '/data/vms/jammy.qc2',
-      relativePath: '',
-      outsideFilesDir: true,
-      backingImages: [],
-    },
-    {
-      kind: 'ISO',
-      name: 'tools.iso',
-      fullPath: '/images/isos/tools.iso',
-      relativePath: 'isos/tools.iso',
-      outsideFilesDir: false,
-      backingImages: [],
-    },
+    }),
+    disk('/data/vms/jammy.qc2'),
+    disk('/images/isos/tools.iso', 'isos/tools.iso', { kind: 'ISO' }),
   ];
 
   it("shows the open VM's disk and its chain, each by its label", async () => {

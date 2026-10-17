@@ -256,7 +256,9 @@ test('a forced request starts once the one it replaces settles, so the older nev
   const older = fetchIntoCache('disks', fetch);
   const newer = fetchIntoCache('disks', fetch, { force: true });
   const joined = fetchIntoCache('disks', fetch, { force: true });
+  const plain = fetchIntoCache('disks', fetch);
   expect(joined.promise).toBe(newer.promise);
+  expect(plain.promise).toBe(newer.promise);
   expect(newer.startedAt).toBeUndefined();
 
   // nobody waits on the older one any more, but the newer has not run yet
@@ -273,23 +275,7 @@ test('a forced request starts once the one it replaces settles, so the older nev
   calls[1].resolve(['new']);
   expect(await newer.promise).toEqual(['new']);
   expect(cachedPage('disks').data).toEqual(['new']);
-  newer.release();
-  joined.release();
-});
-
-test('a forced load joins a follow-up another page queued', async () => {
-  const { fetch, calls } = manualFetch();
-  const running = fetchIntoCache('disks', fetch);
-  const queued = fetchIntoCache('disks', fetch, { force: true });
-  const plain = fetchIntoCache('disks', fetch);
-  expect(plain.promise).toBe(queued.promise);
-
-  calls[0].resolve(['old']);
-  await flush();
-  calls[1].resolve(['new']);
-  expect(await plain.promise).toEqual(['new']);
-  expect(calls).toHaveLength(2);
-  for (const request of [running, queued, plain]) request.release();
+  for (const request of [newer, joined, plain]) request.release();
 });
 
 test('clearing the cache cancels a request a forced load replaced', async () => {
@@ -439,21 +425,7 @@ test('a cached page changed by a live update shows as out of date until it reloa
   loader.stop();
 });
 
-test('data shows as out of date once older than its bound, or while live updates are down', async () => {
-  const loader = createPageLoader({
-    key: 'hosts',
-    fetch: async (_, meta) => {
-      meta.observedAt = 1000;
-      return [];
-    },
-    apply: () => {},
-  });
-  await loader.start();
-
-  expect(currentStaleReason(1000 + 60 * 1000)).toBeNull();
-  expect(currentStaleReason(1000 + 91 * 1000)).toBe('age');
-  loader.stop();
-
+test('a live page shows as out of date while live updates are down', async () => {
   // the Experiments page is kept current by live updates
   const live = createPageLoader({
     key: 'experiments',

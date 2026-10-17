@@ -1,15 +1,12 @@
 // WebShark's helpers: which files it opens, its URLs, the Wireshark command,
-// and who may use it. The pages that open captures in it have their own
-// tests.
+// and who may use it (the pages that open captures have their own tests).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const rbac = vi.hoisted(() => ({ allowed: () => true }));
-vi.mock('@/utils/rbac.js', () => ({
-  roleAllowed: (...args) => rbac.allowed(...args),
-}));
-
-const axios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
+const { axios, modules, rbac, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
 
 import {
   canUseWebShark,
@@ -24,11 +21,9 @@ import {
   webSharkURL,
   wiresharkCommand,
 } from '@/utils/webshark.js';
+import { allowOnly } from './helpers/permissions.js';
 
-beforeEach(() => {
-  rbac.allowed = () => true;
-  axios.post.mockReset();
-});
+beforeEach(() => resetMocks());
 
 describe('capture files', () => {
   it.each([
@@ -188,12 +183,11 @@ describe('who may use WebShark', () => {
   });
 
   it('needs to get experiment files or list VM captures', () => {
-    const only = (resource, verb) => (r, v) => r === resource && v === verb;
-    rbac.allowed = only('experiments/files', 'get');
+    rbac.allowed = allowOnly(['experiments/files', 'get']);
     expect(canUseWebShark()).toBe(true);
-    rbac.allowed = only('vms/captures', 'list');
+    rbac.allowed = allowOnly(['vms/captures', 'list']);
     expect(canUseWebShark()).toBe(true);
-    rbac.allowed = only('experiments/files', 'list');
+    rbac.allowed = allowOnly(['experiments/files', 'list']);
     expect(canUseWebShark()).toBe(false);
   });
 });

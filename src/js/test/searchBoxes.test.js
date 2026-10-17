@@ -1,6 +1,5 @@
-// Every page's search box looks the same, with the search icon on its left
-// and the width Buefy gives it, and offers to clear the search only while
-// there is one. Each page is rendered with the real Buefy components.
+// Every page's search box, rendered with real Buefy: the same look (icon left,
+// Buefy's width), and a clear button only while there is a search.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, resetMocks } = await vi.hoisted(

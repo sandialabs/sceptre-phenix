@@ -1,6 +1,5 @@
-// The SCORCH page: rows for experiments created while it is open, the run
-// button that waits for the server to report the run, and the rows it keeps
-// current from websocket messages.
+// The SCORCH page: rows for experiments created while open, the run button
+// that waits for the server's report, and rows kept current by the websocket.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, rbac, resetMocks } = await vi.hoisted(

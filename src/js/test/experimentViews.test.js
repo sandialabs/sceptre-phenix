@@ -19,7 +19,7 @@ import VMLabelsModal from '@/components/VMLabelsModal.vue';
 import VMMountBrowserModal from '@/components/VMMountBrowserModal.vue';
 import { flush } from './helpers/async.js';
 import { makeContext } from './helpers/context.js';
-import { wsMsg } from './helpers/fixtures.js';
+import { disk, wsMsg } from './helpers/fixtures.js';
 import { pageContext } from './helpers/page.js';
 import { denyAll, denyOnly } from './helpers/permissions.js';
 import {
@@ -48,32 +48,29 @@ describe('StoppedExperiment', () => {
     return ctx;
   }
 
-  it('applies VM updates only for its own experiment', () => {
+  it.each([
+    [
+      'VM updates',
+      (exp) =>
+        wsMsg('experiment/vm', `${exp}/vm1`, 'update', {
+          name: 'vm1',
+          host: 'b',
+        }),
+    ],
+    [
+      'schedules',
+      (exp) =>
+        wsMsg('experiment', exp, 'schedule', {
+          schedule: [{ vm: 'vm1', host: 'b' }],
+        }),
+    ],
+  ])('applies %s only for its own experiment', (_, message) => {
     const ctx = stopped([{ name: 'vm1', host: 'a' }]);
-    const update = (exp) =>
-      wsMsg('experiment/vm', `${exp}/vm1`, 'update', {
-        name: 'vm1',
-        host: 'b',
-      });
 
-    ctx.handleWs(update('exp2'));
+    ctx.handleWs(message('exp2'));
     expect(ctx.experiment.vms[0].host).toBe('a');
 
-    ctx.handleWs(update('exp1'));
-    expect(ctx.experiment.vms[0].host).toBe('b');
-  });
-
-  it('applies schedules only for its own experiment', () => {
-    const ctx = stopped([{ name: 'vm1', host: 'a' }]);
-    const schedule = (exp) =>
-      wsMsg('experiment', exp, 'schedule', {
-        schedule: [{ vm: 'vm1', host: 'b' }],
-      });
-
-    ctx.handleWs(schedule('exp2'));
-    expect(ctx.experiment.vms[0].host).toBe('a');
-
-    ctx.handleWs(schedule('exp1'));
+    ctx.handleWs(message('exp1'));
     expect(ctx.experiment.vms[0].host).toBe('b');
   });
 
@@ -128,16 +125,6 @@ describe('StoppedExperiment', () => {
   });
 
   describe('VM disks', () => {
-    // a disk as GET disks lists it: inside the files directory when given its
-    // path within it, else outside it
-    const disk = (fullPath, relativePath = '') => ({
-      kind: 'VM',
-      name: fullPath.replace(/^.*\//, ''),
-      fullPath,
-      relativePath,
-      outsideFilesDir: !relativePath,
-      readOnly: !relativePath,
-    });
     const disks = [
       disk('/phenix/images/win/web.qc2', 'win/web.qc2'),
       disk('/phenix/images/web.qc2', 'web.qc2'),
@@ -185,9 +172,8 @@ describe('StoppedExperiment', () => {
       );
     });
 
-    // The Disk column of the page showing `vms`, given the disk list (left
-    // unloaded when undefined): each VM's picker options or text, and the
-    // warnings beside it.
+    // The Disk column of the page showing `vms`, given the disk list (unloaded
+    // when undefined): each VM's picker options or text and its warnings.
     async function diskColumn(data) {
       // the page's own lists never arrive
       axios.get.mockReturnValue(new Promise(() => {}));

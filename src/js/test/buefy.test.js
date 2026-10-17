@@ -1,8 +1,5 @@
-// installBuefy registers only the Buefy components the UI uses. A b-* tag with
-// no registered component renders as an unknown element in production builds
-// (Vue only warns in development), so every template's b-* elements are
-// checked, whether or not a test renders them. installBuefy also sets the
-// defaults Buefy lacks, such as a name for the modal close button.
+// installBuefy registers only the Buefy components in use, so every b-* tag is
+// checked, rendered or not: prod leaves an unknown one blank (dev only warns).
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { createApp } from 'vue';

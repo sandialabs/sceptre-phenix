@@ -81,7 +81,7 @@ export async function schedulableHostNames() {
 
 // Whether an experiment (as the experiment list or a websocket experiment
 // message carries it) has the SCORCH app configured.
-export const hasScorch = (exp) => (exp?.apps ?? []).includes('scorch');
+const hasScorch = (exp) => (exp?.apps ?? []).includes('scorch');
 
 // Whether the SCORCH page lists an experiment: it has SCORCH configured and
 // the role may see it and its runs.

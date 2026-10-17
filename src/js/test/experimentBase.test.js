@@ -1,7 +1,5 @@
-// An experiment's page shows its running or its stopped view. It knows which
-// from the link that opened it or from data other pages already loaded, and
-// only asks the server when it has neither; the view it shows corrects a
-// stale guess once its own data arrives.
+// An experiment's page picks its running or stopped view from the link or
+// cached data, asks only if neither says, and fixes a stale guess on load.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, resetMocks, store } = await vi.hoisted(
@@ -11,9 +9,8 @@ vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
 
-// Stand-ins for the views, each drawing its name. When views.found is set,
-// the view shown finds the experiment running or not, as the real views do
-// once their data arrives, and says so.
+// Stand-ins for the views, each drawing its name; with views.found set, the
+// view shown reports the experiment running or not, as the real ones do.
 const views = vi.hoisted(() => ({
   found: undefined,
   standIn: (name) => ({

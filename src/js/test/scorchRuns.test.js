@@ -1,10 +1,18 @@
-// An experiment's SCORCH runs page: starting every run one after another,
-// stopping them, clearing and cleaning up runs, and the run buttons that spin
-// until the server reports over the websocket that a run started or stopped.
+// The SCORCH runs page: Start/Stop all, Clear, Cleanup and the run buttons
+// that spin until the websocket reports a run started or stopped.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notices, notify, rbac, resetMocks, switchable } =
-  await vi.hoisted(() => import('./helpers/mocks.js'));
+const {
+  axios,
+  modules,
+  lastNotice,
+  notices,
+  noticeText,
+  notify,
+  rbac,
+  resetMocks,
+  switchable,
+} = await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -310,17 +318,14 @@ describe('Clear', () => {
     await ctx.clearAll();
     expect(notify.error).not.toHaveBeenCalled();
     expect(notices.open).toHaveBeenCalledTimes(1);
-    const { message } = notices.open.mock.lastCall[0];
-    const text = JSON.stringify(message.children, (_, v) =>
-      typeof v === 'function' ? undefined : v,
-    );
+    const text = noticeText();
     expect(text).toContain('Cleared 0 of 2 runs; 2 failed');
     expect(text).toContain('0: busy');
     expect(text).toContain('1: forbidden');
 
     axios.post.mockResolvedValue({});
-    await message.children
-      .find((child) => child.type === 'button')
+    await lastNotice()
+      .message.children.find((child) => child.type === 'button')
       .props.onClick();
     expect(sent().at(-1)).toBe(`POST ${url(0, 'clear')}`);
   });

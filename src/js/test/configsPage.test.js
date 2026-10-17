@@ -1,6 +1,5 @@
-// The Configs page: the viewer, uploads, downloads and deletes on the list,
-// and the editor's saving and its guard against losing edits. Configs are
-// named by Kind/name, so two kinds may share a name.
+// The Configs page: viewer, uploads, downloads, deletes, and the editor's save
+// and edit-loss guard. Configs are named Kind/name, so kinds may share names.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, rbac, resetMocks, saver } = await vi.hoisted(

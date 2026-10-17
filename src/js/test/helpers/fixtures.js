@@ -1,7 +1,5 @@
-// Builders for the data pages are given: disks, VMs, websocket messages and
-// failed requests.
-//
-// It imports nothing a test mocks, so any test file may use it.
+// Builders for disks, VMs, websocket messages and failed requests; it imports
+// nothing a test mocks, so any test file may use it.
 
 const basename = (path) => path.slice(path.lastIndexOf('/') + 1);
 

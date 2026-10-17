@@ -25,7 +25,6 @@ import {
   experimentKey,
   experimentList,
   fetchRunningExperiment,
-  hasScorch,
   pageFetchers,
   preloadPages,
   schedulableHostNames,
@@ -284,19 +283,13 @@ describe('live updates of cached pages', () => {
 });
 
 describe('the SCORCH page', () => {
-  it('knows SCORCH experiments by the apps they carry', () => {
-    expect(hasScorch({ apps: ['ntp', 'scorch'] })).toBe(true);
-    expect(hasScorch({ apps: ['ntp'] })).toBe(false);
-    expect(hasScorch({})).toBe(false);
-    expect(hasScorch(undefined)).toBe(false);
-  });
-
   it('asks only SCORCH experiments for their pipelines', async () => {
     cachePage('experiments', [
       { name: 'a', apps: ['scorch'] },
       { name: 'b', apps: ['ntp'] },
       { name: 'c', apps: ['scorch', 'soh'] },
       { name: 'd', apps: [] },
+      { name: 'e' },
     ]);
     const pipelines = {
       a: { pipelines: [{ name: 'first' }], running: 2, app_running: true },

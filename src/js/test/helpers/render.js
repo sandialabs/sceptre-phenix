@@ -49,10 +49,8 @@ const IconName = {
   },
 };
 
-// Buefy's table learns its columns once mounted in a browser, so on the
-// server it draws neither headers nor rows. These stand-ins draw a plain
-// table instead: a header cell per column, then a row per item with each
-// column's cell from its slot. tableRows below reads the rows back.
+// Buefy tables draw nothing on the server, so these stand-ins draw a header
+// cell per column and a row per item; tableRows reads them back.
 const ROW = Symbol('table row');
 
 const TableRow = {
@@ -128,12 +126,8 @@ const Layers = {
   },
 };
 
-// The HTML of `component` rendered with `props`. Options:
-//   route: where the app's router is, as a path or a location
-//   data: state set over the component's data()
-//   tables: draw b-table with the stand-ins above
-//   instances: an array that collects every component instance rendered,
-//     so a test can call the handlers the render wired up
+// Server-renders `component` with `props`. Options: route, data (over data()),
+// tables (b-table stand-ins), instances (collects every instance rendered).
 export async function renderSSR(
   component,
   props = {},
@@ -189,9 +183,8 @@ export const textOf = (html) =>
 // whether a tag's attributes make it disabled
 const disabledAttr = (attrs) => /(^|\s)disabled(\s|=|$)/.test(attrs);
 
-// Each button in rendered HTML, in order: its text, or its aria-label when
-// it has none, then marked ' (submits)' when it submits its form,
-// ' (spinning)' while it spins and ' (disabled)' when disabled.
+// Each button in rendered HTML: its text or aria-label, plus ' (submits)',
+// ' (spinning)' or ' (disabled)' when it submits, spins or is disabled.
 export const buttons = (html) =>
   [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].map(
     ([, attrs, inner]) =>
@@ -245,9 +238,8 @@ export const labeledControls = (html) =>
       )?.[1] ?? null,
   }));
 
-// Each button or link a tooltip wraps, in order: the tooltip's text, the
-// button's aria-label, whether it is disabled, and its opening tag's
-// attributes.
+// Each button or link a tooltip wraps: the tooltip text, aria-label, whether
+// it is disabled, and its opening tag's attributes.
 export const tooltipButtons = (html) =>
   [
     ...html.matchAll(
@@ -260,9 +252,8 @@ export const tooltipButtons = (html) =>
     attrs,
   }));
 
-// What pages reach for in a browser while they are created: listeners on the
-// window and document, localStorage and the location. Undone by
-// vi.unstubAllGlobals().
+// What pages reach for in a browser while created (window and document
+// listeners, localStorage, location); undone by vi.unstubAllGlobals().
 export function stubBrowser() {
   const target = {
     addEventListener: () => {},

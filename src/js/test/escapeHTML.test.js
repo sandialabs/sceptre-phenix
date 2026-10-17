@@ -1,6 +1,5 @@
-// escapeHTML serves every page that puts user, file or server text in the
-// HTML Buefy renders; the Files tab's delete confirmation and error
-// notifications (errorNotif.test.js) show it at work.
+// escapeHTML guards user, file and server text in the HTML Buefy renders; the
+// Files tab's delete confirmation and errorNotif.test.js show it at work.
 import { expect, it } from 'vitest';
 
 import { escapeHTML } from '@/utils/escapeHTML.js';

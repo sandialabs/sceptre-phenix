@@ -1,6 +1,5 @@
-// How errors are shown: a notification that names the failure, then each
-// step of the server's error chain that led to it, the innermost cause last
-// and in bold.
+// How errors are shown: a notification naming the failure, then each step of
+// the server's error chain that led to it, the innermost cause last in bold.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/utils/notify.js', () => ({ openNotification: vi.fn() }));

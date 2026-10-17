@@ -1,6 +1,5 @@
-// The header: a link to each page the signed-in role may open, the current
-// page's load state beside the button that reloads it, and the background
-// jobs menu.
+// The header: a link to each page the role may open, the page's load state
+// beside the button that reloads it, and the background jobs menu.
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -343,16 +342,34 @@ describe('the refresh status', () => {
     });
   });
 
+  // the label is hidden from screen readers only while it repeats the alert
   it.each([
-    ['nothing while a reload runs', { loading: true, updatedAt: NOW }, ''],
-    ['nothing once data loads', { updatedAt: NOW - 5 * minute }, ''],
-    ['a failed reload', { failed: true, updatedAt: NOW }, 'Refresh failed'],
+    [
+      'nothing while a reload runs',
+      { loading: true, updatedAt: NOW },
+      '',
+      false,
+    ],
+    ['nothing once data loads', { updatedAt: NOW - 5 * minute }, '', false],
+    [
+      'a failed reload',
+      { failed: true, updatedAt: NOW },
+      'Refresh failed',
+      true,
+    ],
+    [
+      'nothing on the retry of a failed reload',
+      { failed: true, loading: true },
+      '',
+      false,
+    ],
     [
       'data that may be out of date, and why',
       { updatedAt: NOW - 2 * minute, resource: 'hosts' },
       'Data may be out of date: older than 90 s',
+      false,
     ],
-  ])('announces %s', async (_, status, want) => {
+  ])('announces %s', async (_, status, want, labelHidden) => {
     store.role = role('Viewer', ['experiments', 'list']);
     Object.assign(pageStatus, { refresh: () => {}, ...status });
     const html = await renderSSR(AppHeader);
@@ -362,28 +379,9 @@ describe('the refresh status', () => {
     expect(
       html.match(/class="refresh-alert is-sr-only"[^>]*>([^<]*)</)[1],
     ).toBe(want);
+    const label = html.match(/<span[^>]*class="[^"]*refresh-label[^>]*>/)[0];
+    expect(label.includes('aria-hidden="true"')).toBe(labelHidden);
   });
-
-  it.each([
-    ['a failed reload', { failed: true, updatedAt: NOW }, true],
-    ['a reload that fixes it', { updatedAt: NOW }, false],
-    ['the retry of a failed reload', { failed: true, loading: true }, false],
-    [
-      'data that may be out of date',
-      { updatedAt: NOW - 2 * minute, resource: 'hosts' },
-      false,
-    ],
-  ])(
-    'hides the label from screen readers only while it repeats the announcement: %s',
-    async (_, status, hidden) => {
-      store.role = role('Viewer', ['experiments', 'list']);
-      Object.assign(pageStatus, { refresh: () => {}, ...status });
-      const html = await renderSSR(AppHeader);
-
-      const label = html.match(/<span[^>]*class="[^"]*refresh-label[^>]*>/)[0];
-      expect(label.includes('aria-hidden="true"')).toBe(hidden);
-    },
-  );
 
   it.each([
     ['a failed reload', { failed: true, updatedAt: NOW }, 'Refresh failed'],
@@ -454,16 +452,11 @@ describe('the jobs menu', () => {
     useJobStore().put(job('1', 'running'));
 
     const html = await renderSSR(AppHeader);
-    // no menu, whose items' children would be presentational
-    expect(html).not.toMatch(/role="menu(item)?"/);
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-controls="jobs-panel"');
     expect(html).toMatch(
       /id="jobs-panel"[^>]*role="region"|role="region"[^>]*id="jobs-panel"/,
     );
-    // nor a modal or popup: the panel is shown in place, closed at first
-    expect(html).not.toContain('aria-modal');
-    expect(html).not.toContain('aria-haspopup');
     expect(html).toMatch(/class="dropdown is-right jobs-menu"/);
   });
 

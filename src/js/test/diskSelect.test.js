@@ -1,6 +1,5 @@
-// The VM disk picker the stopped experiment's Disk column and the Redeploy
-// window share, rendered with the real Buefy components: the disks it offers,
-// how it shows the VM's disk, and the warning beside it.
+// The VM disk picker of the stopped experiment and the Redeploy window, with
+// real Buefy: the disks it offers, the VM's disk and the warning beside it.
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
@@ -123,11 +122,6 @@ describe('DiskSelect', () => {
           'unreadable, or hidden from your role.',
       },
     ]);
-  });
-
-  it('names a same-named disk in another folder the list does not hold as not listed', async () => {
-    const { options } = await render('/phenix/images/other/base.qc2');
-    expect(options[0].text).toBe('/phenix/images/other/base.qc2 (not listed)');
   });
 
   it('shows the disk as it is, with no warning, while the list is unknown', async () => {

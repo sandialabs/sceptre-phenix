@@ -1,7 +1,5 @@
-// A stand-in for the $buefy a page opens dialogs, modals and toasts through,
-// and readers for what it was asked to show.
-//
-// It imports only vitest, so mocks.js and page.js may load it early.
+// A stand-in for the $buefy pages open dialogs, modals and toasts through,
+// and readers for them; it imports only vitest, so it may be loaded early.
 import { vi } from 'vitest';
 
 // $buefy with every programmatic API the pages call recorded

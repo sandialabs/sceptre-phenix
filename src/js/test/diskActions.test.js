@@ -46,12 +46,6 @@ describe('diskDisabledReason', () => {
       'the disk is at a path the disk list leaves out',
     ],
     [
-      'a path minimega cannot take',
-      disk('/phenix/images/my disk.qc2', 'my disk.qc2', { kind: 'VM' }),
-      'resize',
-      "minimega cannot use the disk's path",
-    ],
-    [
       'a disk a running experiment uses',
       { ...snap, inUse: true, experiments: [{ name: 'a', running: true }] },
       'delete',
@@ -79,11 +73,44 @@ describe('diskDisabledReason', () => {
     expect(reason(action, d)).toBe(want);
   });
 
-  it('refuses to commit into a read-only backing image', () => {
-    const kept = { ...base, readOnly: true, outsideFilesDir: true };
-    expect(
-      diskDisabledReason('commit', snap, { disks: [kept, snap], can: all }),
-    ).toBe('its backing image is outside the standard images directory');
+  it('rules out the actions minimega runs on a path it cannot take', () => {
+    const spaced = disk('/phenix/images/my disk.qc2', 'my disk.qc2', {
+      backingImages: ['/phenix/images/base.qc2'],
+    });
+    const reasons = Object.fromEntries(
+      Object.keys(DISK_ACTION_RULES).map((a) => [a, reason(a, spaced)]),
+    );
+    const unusable = "minimega cannot use the disk's path";
+    expect(reasons).toEqual({
+      snapshot: unusable,
+      commit: unusable,
+      rebase: unusable,
+      clone: null,
+      resize: unusable,
+      download: null,
+      rename: null,
+      delete: null,
+    });
+    // in a folder's name too
+    for (const rel of ['a$b.qc2', 'x,y/a.qc2']) {
+      expect(reason('resize', disk(`/phenix/images/${rel}`, rel))).toBe(
+        unusable,
+      );
+    }
+  });
+
+  it('refuses to commit into a read-only backing image, found by its full path', () => {
+    const commit = (...list) =>
+      diskDisabledReason('commit', snap, { disks: [...list, snap], can: all });
+
+    expect(commit({ ...base, readOnly: true, outsideFilesDir: true })).toBe(
+      'its backing image is outside the standard images directory',
+    );
+    expect(commit({ ...base, readOnly: true })).toBe(
+      'its backing image is at a path the disk list leaves out',
+    );
+    // a read-only disk of the same name elsewhere is not the backing image
+    expect(commit(disk('/data/vms/base.qc2'), base)).toBe(null);
   });
 
   it.each([
@@ -108,7 +135,10 @@ describe('diskDisabledReason', () => {
         ['get', 'snap.qc2'],
       ],
     ],
+    ['rebase', [['update', 'snap.qc2']]],
+    ['resize', [['update', 'snap.qc2']]],
     ['download', [['get', 'snap.qc2']]],
+    ['rename', [['update', 'snap.qc2']]],
     ['delete', [['delete', 'snap.qc2']]],
   ])('needs %s permissions %j', (action, needed) => {
     const key = (verb, name) => `${verb}/${name}`;
