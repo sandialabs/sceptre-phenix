@@ -294,9 +294,11 @@ func TestStructuredAnnotationIsAMapOnTheWire(t *testing.T) {
 	want := Annotations{"keep": "v", "builder-doc": structuredReference}
 
 	for name, config := range map[string]*Config{"JSON": fromJSON, "YAML": fromYAML} {
-		if diff := cmp.Diff(want, config.Metadata.Annotations); diff != "" {
-			t.Errorf("annotations loaded from %s mismatch (-want +got):\n%s", name, diff)
-		}
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(want, config.Metadata.Annotations); diff != "" {
+				t.Errorf("annotations loaded from %s mismatch (-want +got):\n%s", name, diff)
+			}
+		})
 	}
 
 	nested := map[string]any{

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/util"
 )
 
@@ -39,8 +41,10 @@ func TestDecodeJSONStrict(t *testing.T) {
 				t.Errorf("DecodeJSONStrict(%q) error = %v, want failure %t", tt.input, err, tt.fails)
 			case errors.Is(err, util.ErrTrailingJSON) != tt.trailing:
 				t.Errorf("DecodeJSONStrict(%q) error = %v, want trailing content %t", tt.input, err, tt.trailing)
-			case err == nil && got != value{Name: "a"}:
-				t.Errorf("DecodeJSONStrict(%q) decoded %+v, want %+v", tt.input, got, value{Name: "a"})
+			case err == nil:
+				if diff := cmp.Diff(value{Name: "a"}, got); diff != "" {
+					t.Errorf("DecodeJSONStrict(%q) mismatch (-want +got):\n%s", tt.input, diff)
+				}
 			}
 		})
 	}
