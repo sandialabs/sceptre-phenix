@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -195,7 +196,8 @@ func TestGetExperimentsPartialIsStale(t *testing.T) {
 		t.Errorf("GET %s experiment names mismatch (-want +got):\n%s", path, diff)
 	}
 
-	if got := resp.Header.Get(freshness.HeaderStale); got != "true" {
+	got := resp.Header.Get(freshness.HeaderStale)
+	if stale, _ := strconv.ParseBool(got); !stale {
 		t.Errorf("GET %s %s = %q, want true", path, freshness.HeaderStale, got)
 	}
 }
