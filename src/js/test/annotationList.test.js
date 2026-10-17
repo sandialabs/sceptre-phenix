@@ -1,6 +1,6 @@
 // The annotation list (a v-model: each change is a new list) of the create and
 // VM details cards: each row, its problem or description, and the add menu.
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AnnotationList from '@/components/AnnotationList.vue';
 import {
@@ -10,8 +10,11 @@ import {
   EXPERIMENT_ANNOTATIONS,
   NODE_ANNOTATIONS,
 } from '@/utils/experimentAnnotations.js';
-import { makeContext } from './helpers/context.js';
-import { renderSSR, textOf } from './helpers/render.js';
+import { byLabel, mountComponent, textOf } from './helpers/mount.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const entry = (key) => NODE_ANNOTATIONS.find((e) => e.key === key);
 const known = (key, value) => ({
@@ -25,70 +28,66 @@ const custom = (key, value = 'v') => ({
 });
 
 // a node annotation list holding these rows
-const props = (modelValue, extra) => ({
-  modelValue,
-  idPrefix: 'node-annotations',
-  label: 'Annotations for Every VM',
-  help: 'Added to every VM',
-  catalog: NODE_ANNOTATIONS,
-  custom: CUSTOM_NODE_ANNOTATION,
-  ...extra,
-});
-
-const render = (modelValue, extra, data) =>
-  renderSSR(AnnotationList, props(modelValue, extra), { data });
+const list = (modelValue, extra) =>
+  mountComponent(AnnotationList, {
+    props: {
+      modelValue,
+      idPrefix: 'node-annotations',
+      label: 'Annotations for Every VM',
+      help: 'Added to every VM',
+      catalog: NODE_ANNOTATIONS,
+      custom: CUSTOM_NODE_ANNOTATION,
+      ...extra,
+    },
+  });
 
 // Each row as drawn: its key (in brackets when typed in), how its value is
 // entered, and the line under it, marked when it names a problem.
-async function rows(modelValue, extra) {
-  const html = await render(modelValue, extra);
-  return [
-    ...html.matchAll(
-      /<div class="annotation-\w+ annotation-row"[\s\S]*?<\/p>/g,
-    ),
-  ].map(([row]) => {
-    const fixed = row.match(/<code class="annotation-key"[^>]*>([^<]*)</);
-    const typed = row.match(
-      /aria-label="Annotation \d+ key" value(?:="([^"]*)")?/,
-    );
-    const [, tag, attrs] = row.match(/<(select|input)\b([^>]*value"[^>]*)>/);
-    const [, problem, line] = row.match(
-      /<p class="help( is-danger)? annotation-help"[^>]*>([\s\S]*)<\/p>/,
-    );
+const rows = (wrapper) =>
+  wrapper.findAll('.annotation-row').map((row) => {
+    const fixed = row.find('code.annotation-key');
+    const value = row.find('.annotation-value select, .annotation-value input');
+    const line = row.find('.annotation-help');
     return {
-      key: fixed ? fixed[1] : `[${typed[1] ?? ''}]`,
+      key: fixed.exists()
+        ? textOf(fixed)
+        : `[${row.find('.annotation-key input').element.value}]`,
       value:
-        tag === 'select' ? 'true or false' : attrs.match(/type="(\w+)"/)[1],
-      line: (problem ? 'problem: ' : '') + textOf(line),
+        value.element.tagName === 'SELECT'
+          ? 'true or false'
+          : value.attributes('type'),
+      line: (line.classes('is-danger') ? 'problem: ' : '') + textOf(line),
     };
   });
-}
+
+// the add menu's entries, which the dropdown moves to the page body
+const menuItems = (wrapper) => [
+  ...wrapper
+    .findComponent({ name: 'BDropdown' })
+    .vm.$refs.dropdownMenu.querySelectorAll('.annotation-add-item'),
+];
 
 // the menu's entries in order, whether a line divides them, and which way
 // the menu opens
-async function menu(modelValue, extra, data) {
-  const html = await render(modelValue, extra, data);
+const menu = (wrapper) => {
+  const [first] = menuItems(wrapper);
   return {
-    entries: [
-      ...html.matchAll(
-        /annotation-add-item[^>]*>(?:<!--\[-->)?<b[^>]*>([^<]*)</g,
-      ),
-    ].map(([, name]) => name),
-    divided: html.includes('dropdown-divider'),
-    opens: html.match(/class="dropdown [^"]*is-(top|bottom)-right/)[1],
+    entries: menuItems(wrapper).map((item) => textOf(item.querySelector('b'))),
+    divided: Boolean(first.parentElement.querySelector('.dropdown-divider')),
+    opens: wrapper.find('.dropdown').classes('is-top-right') ? 'top' : 'bottom',
   };
-}
+};
 
 describe('an annotation list', () => {
   it('draws each row with an input suited to it, and says what it does', async () => {
-    expect(
-      await rows([
-        known('phenix/default-apps'),
-        known('vrouter/vyos-password', 'secret'),
-        known('phenix/startup-autotunnel', '8080'),
-        custom('team', 'red'),
-      ]),
-    ).toEqual([
+    const wrapper = await list([
+      known('phenix/default-apps'),
+      known('vrouter/vyos-password', 'secret'),
+      known('phenix/startup-autotunnel', '8080'),
+      custom('team', 'red'),
+    ]);
+
+    expect(rows(wrapper)).toEqual([
       {
         key: 'phenix/default-apps',
         value: 'true or false',
@@ -114,11 +113,12 @@ describe('an annotation list', () => {
 
   it("puts a row's problem in place of its description", async () => {
     // annotationErrors decides which rows have a problem; this shows where
-    const lines = (
-      await rows([custom(''), known('phenix/default-apps', false)])
-    ).map((row) => row.line);
+    const wrapper = await list([
+      custom(''),
+      known('phenix/default-apps', false),
+    ]);
 
-    expect(lines).toEqual([
+    expect(rows(wrapper).map((row) => row.line)).toEqual([
       'problem: Enter a key',
       entry('phenix/default-apps').description,
     ]);
@@ -126,10 +126,12 @@ describe('an annotation list', () => {
 
   it('offers only the known annotations not in the list yet, then a custom one', async () => {
     expect(
-      await menu([
-        known('phenix/default-apps'),
-        custom(' vrouter/enable-ssh '),
-      ]),
+      menu(
+        await list([
+          known('phenix/default-apps'),
+          custom(' vrouter/enable-ssh '),
+        ]),
+      ),
     ).toEqual({
       entries: [
         'phenix/startup-autotunnel',
@@ -142,7 +144,7 @@ describe('an annotation list', () => {
     });
 
     const all = NODE_ANNOTATIONS.map((e) => annotationRow(e));
-    expect(await menu(all)).toMatchObject({
+    expect(menu(await list(all))).toMatchObject({
       entries: ['Custom annotation'],
       divided: false,
     });
@@ -152,24 +154,24 @@ describe('an annotation list', () => {
       catalog: EXPERIMENT_ANNOTATIONS,
       custom: CUSTOM_EXPERIMENT_ANNOTATION,
     };
-    expect((await menu([], experiment)).entries).toEqual([
+    expect(menu(await list([], experiment)).entries).toEqual([
       'phenix.workflow/tags',
       'Custom annotation',
     ]);
   });
 
   it('opens its menu upward when there is no room for it below', async () => {
-    // the menu's trigger, this far down an 800 pixel window
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
+    // where the menu opens once its trigger, this far down, is clicked
     const opensAt = async (top) => {
-      const ctx = makeContext(AnnotationList, props([]));
-      vi.stubGlobal('window', { innerHeight: 800 });
-      ctx.placeMenu({
-        currentTarget: {
-          getBoundingClientRect: () => ({ top, bottom: top + 30 }),
-        },
+      const wrapper = await list([]);
+      const trigger = wrapper.find('.dropdown-trigger button');
+      vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue({
+        top,
+        bottom: top + 30,
       });
-      vi.unstubAllGlobals();
-      return (await menu([], {}, { menuUp: ctx.menuUp })).opens;
+      await trigger.trigger('click');
+      return menu(wrapper).opens;
     };
 
     expect(await opensAt(100)).toBe('bottom');
@@ -179,26 +181,26 @@ describe('an annotation list', () => {
   describe('changes', () => {
     // the list with two rows, and each new list it asks for; the rows it was
     // given must stay as they were
-    function list() {
+    async function twoRows() {
       const given = [known('phenix/default-apps'), custom('team')];
       const before = structuredClone(given);
-      const $emit = vi.fn();
-      const ctx = makeContext(AnnotationList, { ...props(given), $emit });
+      const wrapper = await list(given);
       const lists = () => {
         expect(given).toEqual(before);
-        return $emit.mock.calls.map(([event, value]) => {
-          expect(event).toBe('update:modelValue');
-          return value;
-        });
+        return wrapper.emitted('update:modelValue').map(([value]) => value);
       };
-      return { ctx, given, lists };
+      return { wrapper, given, lists };
     }
 
-    it('add a known annotation with its default, or an empty custom one', () => {
-      const { ctx, given, lists } = list();
+    it('add a known annotation with its default, or an empty custom one', async () => {
+      const { wrapper, given, lists } = await twoRows();
+      const click = (name) =>
+        menuItems(wrapper)
+          .find((item) => textOf(item.querySelector('b')) === name)
+          .click();
 
-      ctx.add(entry('phenix/startup-via-cc'));
-      ctx.add(CUSTOM_NODE_ANNOTATION);
+      click('phenix/startup-via-cc');
+      click('Custom annotation');
 
       const [withKnown, withCustom] = lists();
       expect(withKnown.slice(0, 2)).toEqual(given);
@@ -211,11 +213,11 @@ describe('an annotation list', () => {
       expect(withCustom[2]).toMatchObject({ known: false, key: '', value: '' });
     });
 
-    it("change a row's key or value", () => {
-      const { ctx, given, lists } = list();
+    it("change a row's key or value", async () => {
+      const { wrapper, given, lists } = await twoRows();
 
-      ctx.update(1, { key: 'owner' });
-      ctx.update(0, { value: true });
+      await byLabel(wrapper, 'Annotation 2 key').setValue('owner');
+      await byLabel(wrapper, 'phenix/default-apps value').setValue('true');
 
       expect(lists()).toEqual([
         [given[0], { ...given[1], key: 'owner' }],
@@ -223,10 +225,10 @@ describe('an annotation list', () => {
       ]);
     });
 
-    it('remove a row', () => {
-      const { ctx, given, lists } = list();
+    it('remove a row', async () => {
+      const { wrapper, given, lists } = await twoRows();
 
-      ctx.remove(0);
+      await byLabel(wrapper, 'Remove phenix/default-apps').trigger('click');
       expect(lists()).toEqual([[given[1]]]);
     });
   });

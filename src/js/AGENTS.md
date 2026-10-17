@@ -79,20 +79,26 @@ prerequisites instead of silently skipping checks.
 
 ## Unit Tests
 
-Vitest runs in Node without a DOM: tests render components with
-`test/helpers/render.js` (server-side rendering with the real Buefy) and run
-their options on a plain object with `test/helpers/context.js`. Do not add
-`@vue/test-utils` or jsdom. Shared helpers live in `test/helpers/`:
+Vitest runs in happy-dom (`vite.config.js`); a test needing Node file URLs or
+no DOM starts `// @vitest-environment node`. `test/setup.js` gives each test
+an empty `localStorage`, clears the page body and unmounts every wrapper.
+Shared helpers live in `test/helpers/`:
 
+- Mount with `mount.js`: `mountComponent` (props, data, route, stubs) and
+  `mountPage` (also answers the requests the page made as it opened), both
+  with the real Buefy and the app's named routes. Its readers (`textOf`,
+  `byLabel`, `buttons`, `tableRows`, `tooltipButtons`, `dialogs`,
+  `confirmDialog`, `toasts`) read what the page draws.
+- Act as a user: click and type with `trigger()` and `setValue()`, then
+  `await flushPromises()` for requests and `await nextTick()` for re-renders.
+  Assert on the DOM and `emitted()`, not on methods called by hand.
 - Page tests load `mocks.js` with `vi.hoisted`, hand its `modules.*`
   factories to `vi.mock`, and call `resetMocks()` in `beforeEach`, passing
   the store the test needs (`resetMocks({ store: {} })`). Add a stand-in for
   a newly mocked module there rather than in one test file.
 - Roles for the mocked `roleAllowed` are `permissions.js` predicates
   (`allowAll`, `denyAll`, `allowOnly`, `denyOnly`); `roles.js` builds role
-  objects for the real `rbac.js`.
-- Build pages with `page.js` (`pageContext`, `openPage`), read their dialogs
-  and toasts with `buefy.js`, and build disks, VMs, websocket messages and
+  objects for the real `rbac.js`. Build disks, VMs, websocket messages and
   failed requests with `fixtures.js`.
 - Write repeated permission or state cases as `it.each` tables, each row
   checking both the allowed and the refused case.

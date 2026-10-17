@@ -10,38 +10,15 @@ export async function idle(original) {
   return { ...(await original()), createPageLoader: idleLoader };
 }
 
-let loading = true;
-
-// The real module, whose loaders load as the real ones do except while
-// withoutLoading runs.
-export async function switchable(original) {
-  const real = await original();
-  return {
-    ...real,
-    createPageLoader: (options) =>
-      loading ? real.createPageLoader(options) : idleLoader(),
-  };
-}
-
-// Runs render with idle loaders: a page rendered by it shows the state it is
-// given rather than loading its own.
-export async function withoutLoading(render) {
-  loading = false;
-  try {
-    return await render();
-  } finally {
-    loading = true;
-  }
-}
-
-// The last page loader's options and load(), for the capturing and fetching
-// loaders; a test may set load before the page is made, to answer as it likes.
-export const loaderSpy = { options: null, load: null };
+// The last capturing or fetching loader's options and load(); a test may set
+// load first, to answer as it likes, and loading for a load in flight.
+export const loaderSpy = { options: null, load: null, loading: false };
 
 // forgets the loader the last page made
 export function resetLoader() {
   loaderSpy.options = null;
   loaderSpy.load = null;
+  loaderSpy.loading = false;
 }
 
 // the real module, whose loaders record their options and load nothing:
@@ -52,7 +29,13 @@ export async function capturing(original) {
     createPageLoader: (options) => {
       loaderSpy.options = options;
       loaderSpy.load ??= vi.fn();
-      return { ...idleLoader(), load: (...args) => loaderSpy.load(...args) };
+      return {
+        ...idleLoader(),
+        load: (...args) => loaderSpy.load(...args),
+        get loading() {
+          return loaderSpy.loading;
+        },
+      };
     },
   };
 }

@@ -1,5 +1,7 @@
 // The SCORCH runs page: Start/Stop all, Clear, Cleanup and the run buttons
 // that spin until the websocket reports a run started or stopped.
+import { flushPromises } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -11,7 +13,7 @@ const {
   notify,
   rbac,
   resetMocks,
-  switchable,
+  ws,
 } = await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/rbac.js', modules.rbac);
@@ -21,16 +23,14 @@ vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/store.js', modules.store);
 // its terminal needs a browser
 vi.mock('@/components/MiniTerminal.vue', modules.stub);
-vi.mock('@/utils/pageLoader.js', switchable);
 
+import ScorchRun from '@/components/scorch/ScorchRun.vue';
 import { clearPageCache } from '@/utils/pageCache.js';
 import ScorchRuns from '@/views/ScorchRuns.vue';
-import { flush, never } from './helpers/async.js';
+import { never } from './helpers/async.js';
 import { wsMsg } from './helpers/fixtures.js';
-import { openPage } from './helpers/page.js';
-import { withoutLoading } from './helpers/pageLoader.js';
+import { buttons, mountPage, textOf, toasts } from './helpers/mount.js';
 import { denyOnly } from './helpers/permissions.js';
-import { buttons, renderSSR } from './helpers/render.js';
 
 const url = (run, action = '') =>
   `experiments/exp1/scorch/pipelines/${run}${action && `/${action}`}`;
@@ -52,17 +52,20 @@ async function open(runs, running = -1) {
       })),
     },
   });
-  const ctx = await openPage(ScorchRuns, { id: 'exp1' });
+  const wrapper = await mountPage(ScorchRuns, { route: '/scorch/exp1' });
   expect(axios.get).toHaveBeenCalledWith(
     'experiments/exp1/scorch/pipelines',
     expect.objectContaining({ headers: { Accept: 'application/json' } }),
   );
-  return ctx;
+  return wrapper;
 }
 
 // what the server reports over the websocket about a run
-const report = (ctx, action, run, result) =>
-  ctx.handle(wsMsg('apps/scorch', `exp1/${run}`, action, result));
+const report = (action, run, result) => {
+  for (const handler of ws.handlers) {
+    handler(wsMsg('apps/scorch', `exp1/${run}`, action, result));
+  }
+};
 
 // the requests sent to start, stop, clear and clean up runs, in order
 const sent = () =>
@@ -79,21 +82,29 @@ const sent = () =>
     .sort(([a], [b]) => a - b)
     .map(([, request]) => request);
 
-// the page's buttons as its state has it, the header's and then each run's
-async function pageButtons(ctx) {
-  const html = await withoutLoading(() =>
-    renderSSR(
-      ScorchRuns,
-      {},
-      {
-        route: '/scorch/exp1',
-        data: { runs: ctx.runs, expStatus: ctx.expStatus },
-      },
-    ),
-  );
-  const [header, ...runs] = html.split('<hr').slice(0, -1);
-  return { header: buttons(header), runs: runs.map(buttons) };
+const runs = (wrapper) => wrapper.findAllComponents(ScorchRun);
+
+// the page's buttons once it has drawn its state, the header's and then
+// each run's
+async function pageButtons(wrapper) {
+  await nextTick();
+  return {
+    header: buttons(wrapper.find('.runs-header')),
+    runs: runs(wrapper).map(buttons),
+  };
 }
+
+// clicks the button with this text or aria-label, in the header or a run
+async function click(where, label) {
+  await where
+    .findAll('button')
+    .find((b) => textOf(b) === label || b.attributes('aria-label') === label)
+    .trigger('click');
+}
+
+// clicks a run's start or stop button
+const runButton = (wrapper, run) =>
+  runs(wrapper)[run].find('.run-status button[aria-label$=" this run"]');
 
 beforeEach(() => {
   clearPageCache();
@@ -106,16 +117,16 @@ afterEach(() => vi.useRealTimers());
 
 describe('Start all', () => {
   it('starts the runs one after another, each once the one before ends', async () => {
-    const ctx = await open([{}, {}, {}]);
-    expect((await pageButtons(ctx)).header).toEqual([
+    const wrapper = await open([{}, {}, {}]);
+    expect((await pageButtons(wrapper)).header).toEqual([
       'Start all',
       'Stop all (disabled)',
       'Clear all (disabled)',
     ]);
 
-    ctx.startAll();
+    await click(wrapper, 'Start all');
     expect(sent()).toEqual([`POST ${url(0)}`]);
-    const waiting = await pageButtons(ctx);
+    const waiting = await pageButtons(wrapper);
     expect(waiting.header).toEqual([
       'Start all (disabled)',
       'Stop all',
@@ -128,14 +139,14 @@ describe('Start all', () => {
       'start this run (spinning) (disabled)',
     ]);
 
-    report(ctx, 'start', 0);
+    report('start', 0);
     expect(sent()).toHaveLength(1);
-    report(ctx, 'success', 0);
+    report('success', 0);
     expect(sent()).toEqual([`POST ${url(0)}`, `POST ${url(1)}`]);
 
     // a failed run is reported, and the next still starts
-    report(ctx, 'start', 1);
-    report(ctx, 'error', 1, { error: 'component cc failed' });
+    report('start', 1);
+    report('error', 1, { error: 'component cc failed' });
     expect(notify.show).toHaveBeenCalledWith('component cc failed');
     expect(sent()).toEqual([
       `POST ${url(0)}`,
@@ -143,30 +154,30 @@ describe('Start all', () => {
       `POST ${url(2)}`,
     ]);
 
-    report(ctx, 'start', 2);
-    report(ctx, 'success', 2);
+    report('start', 2);
+    report('success', 2);
     expect(sent()).toHaveLength(3);
-    expect((await pageButtons(ctx)).header[0]).toBe('Start all');
+    expect((await pageButtons(wrapper)).header[0]).toBe('Start all');
   });
 
   it('lets a run already running finish first', async () => {
-    const ctx = await open([{}, {}, {}], 1);
+    const wrapper = await open([{}, {}, {}], 1);
 
-    ctx.startAll();
+    await click(wrapper, 'Start all');
     expect(sent()).toEqual([]);
 
-    report(ctx, 'success', 1);
+    report('success', 1);
     expect(sent()).toEqual([`POST ${url(0)}`]);
-    report(ctx, 'start', 0);
-    report(ctx, 'success', 0);
+    report('start', 0);
+    report('success', 0);
     expect(sent()).toEqual([`POST ${url(0)}`, `POST ${url(2)}`]);
   });
 
   it('moves on to the next run when no report of a start comes', async () => {
-    const ctx = await open([{}, {}]);
+    const wrapper = await open([{}, {}]);
     vi.useFakeTimers();
 
-    ctx.startAll();
+    await click(wrapper, 'Start all');
     vi.advanceTimersByTime(15000);
     expect(sent()).toEqual([`POST ${url(0)}`, `POST ${url(1)}`]);
   });
@@ -174,14 +185,14 @@ describe('Start all', () => {
 
 describe('Stop all', () => {
   it('stops the running run and drops the runs waiting to start', async () => {
-    const ctx = await open([{}, {}, {}], 1);
-    ctx.startAll();
+    const wrapper = await open([{}, {}, {}], 1);
+    await click(wrapper, 'Start all');
 
-    ctx.stopAll();
+    await click(wrapper, 'Stop all');
     expect(sent()).toEqual([`DELETE ${url(1)}`]);
-    report(ctx, 'success', 1);
+    report('success', 1);
     expect(sent()).toHaveLength(1);
-    expect((await pageButtons(ctx)).header).toEqual([
+    expect((await pageButtons(wrapper)).header).toEqual([
       'Start all',
       'Stop all (disabled)',
       'Clear all (disabled)',
@@ -191,62 +202,67 @@ describe('Stop all', () => {
 
 describe("a run's start and stop button", () => {
   it('spins until the server reports the run started, then stopped', async () => {
-    const ctx = await open([{}]);
-    const runButton = async () => (await pageButtons(ctx)).runs[0].at(-1);
-    expect(await runButton()).toBe('start this run');
+    const wrapper = await open([{}]);
+    const shown = async () => (await pageButtons(wrapper)).runs[0].at(-1);
+    expect(await shown()).toBe('start this run');
 
-    ctx.scorchControl('exp1', 0);
-    // pressing it again while it spins sends nothing more
-    ctx.scorchControl('exp1', 0);
+    await runButton(wrapper, 0).trigger('click');
+    // its button is disabled, and the page itself ignores a second press
+    runs(wrapper)[0].props('controller')('exp1', 0);
     expect(sent()).toEqual([`POST ${url(0)}`]);
-    expect(await runButton()).toBe('start this run (spinning) (disabled)');
+    expect(await shown()).toBe('start this run (spinning) (disabled)');
 
-    report(ctx, 'start', 0);
-    expect(await runButton()).toBe('stop this run');
+    report('start', 0);
+    expect(await shown()).toBe('stop this run');
 
-    ctx.scorchControl('exp1', 0);
+    await runButton(wrapper, 0).trigger('click');
     expect(sent()).toEqual([`POST ${url(0)}`, `DELETE ${url(0)}`]);
-    expect(await runButton()).toBe('stop this run (spinning) (disabled)');
+    expect(await shown()).toBe('stop this run (spinning) (disabled)');
 
-    report(ctx, 'success', 0);
-    expect(await runButton()).toBe('start this run');
+    report('success', 0);
+    expect(await shown()).toBe('start this run');
   });
 
   it('stops spinning after 15 seconds without a report', async () => {
-    const ctx = await open([{}]);
+    const wrapper = await open([{}]);
     vi.useFakeTimers();
 
-    ctx.scorchControl('exp1', 0);
+    await runButton(wrapper, 0).trigger('click');
     vi.advanceTimersByTime(14999);
-    expect((await pageButtons(ctx)).runs[0].at(-1)).toBe(
+    expect((await pageButtons(wrapper)).runs[0].at(-1)).toBe(
       'start this run (spinning) (disabled)',
     );
     vi.advanceTimersByTime(1);
     vi.useRealTimers();
-    expect((await pageButtons(ctx)).runs[0].at(-1)).toBe('start this run');
+    expect((await pageButtons(wrapper)).runs[0].at(-1)).toBe('start this run');
   });
 
   it('stops spinning and reports a request that fails', async () => {
     const err = new Error('forbidden');
     axios.post.mockRejectedValue(err);
-    const ctx = await open([{}]);
+    const wrapper = await open([{}]);
 
-    ctx.scorchControl('exp1', 0);
-    await flush();
+    await runButton(wrapper, 0).trigger('click');
+    await flushPromises();
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect((await pageButtons(ctx)).runs[0].at(-1)).toBe('start this run');
+    expect((await pageButtons(wrapper)).runs[0].at(-1)).toBe('start this run');
   });
 });
 
 describe('Clear', () => {
   it("forgets an idle run's statuses, back on its first loop", async () => {
-    const ctx = await open([
-      { pipeline: nodes('success', 'failure') },
+    const wrapper = await open([
+      {
+        pipeline: [
+          ...nodes('success', 'failure'),
+          { name: 'loop', exp: 'exp1', run: 0, loop: 0, status: 'success' },
+        ],
+      },
       {},
       { pipeline: nodes('running') },
     ]);
-    report(ctx, 'start', 2);
-    expect((await pageButtons(ctx)).runs.map((run) => run[0])).toEqual([
+    report('start', 2);
+    expect((await pageButtons(wrapper)).runs.map((run) => run[0])).toEqual([
       'Clear',
       // nothing to clear
       'Clear (disabled)',
@@ -256,17 +272,20 @@ describe('Clear', () => {
 
     // viewing the run's second loop
     axios.get.mockResolvedValue({ data: { pipeline: nodes('success') } });
-    ctx.componentDetail({ name: 'loop', exp: 'exp1', run: 0, loop: 0 });
-    await flush();
+    await runs(wrapper)[0]
+      .findAll('.pipeline-node-label')
+      .find((label) => label.text() === 'loop')
+      .trigger('click');
+    await flushPromises();
     expect(axios.get).toHaveBeenLastCalledWith(url(0, '1'), {
       headers: { Accept: 'application/json' },
     });
 
     const cleared = Promise.withResolvers();
     axios.post.mockReturnValue(cleared.promise);
-    ctx.clearRun('exp1', 0);
+    await click(runs(wrapper)[0], 'Clear');
     expect(sent()).toEqual([`POST ${url(0, 'clear')}`]);
-    expect((await pageButtons(ctx)).runs[0]).toEqual([
+    expect((await pageButtons(wrapper)).runs[0]).toEqual([
       'Return to the previous loop',
       'Clear (disabled)',
       'start this run',
@@ -274,7 +293,7 @@ describe('Clear', () => {
 
     axios.get.mockResolvedValue({ data: { pipeline: nodes('unknown') } });
     cleared.resolve({});
-    await flush();
+    await flushPromises();
     expect(axios.get).toHaveBeenLastCalledWith(url(0, '0'), {
       headers: { Accept: 'application/json' },
     });
@@ -282,20 +301,19 @@ describe('Clear', () => {
 
   it('all clears every run that can be cleared', async () => {
     axios.post.mockResolvedValue({});
-    const ctx = await open([
+    const wrapper = await open([
       { pipeline: nodes('success') },
       {},
       { pipeline: nodes('failure') },
     ]);
 
-    await ctx.clearAll();
+    await click(wrapper, 'Clear all');
+    await flushPromises();
     expect(sent()).toEqual([
       `POST ${url(0, 'clear')}`,
       `POST ${url(2, 'clear')}`,
     ]);
-    expect(ctx.$buefy.toast.open).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Cleared 2 runs' }),
-    );
+    expect(toasts().map((toast) => toast.text)).toEqual(['Cleared 2 runs']);
   });
 
   it('all says in one summary which runs it could not clear, and retries them', async () => {
@@ -310,12 +328,13 @@ describe('Clear', () => {
           response: { status: 403, data: 'forbidden' },
         }),
       );
-    const ctx = await open([
+    const wrapper = await open([
       { pipeline: nodes('success') },
       { pipeline: nodes('failure') },
     ]);
 
-    await ctx.clearAll();
+    await click(wrapper, 'Clear all');
+    await flushPromises();
     expect(notify.error).not.toHaveBeenCalled();
     expect(notices.open).toHaveBeenCalledTimes(1);
     const text = noticeText();
@@ -333,18 +352,19 @@ describe('Clear', () => {
   it('reports a clear the server refuses', async () => {
     const err = new Error('forbidden');
     axios.post.mockRejectedValue(err);
-    const ctx = await open([{ pipeline: nodes('success') }]);
+    const wrapper = await open([{ pipeline: nodes('success') }]);
 
-    await ctx.clearRun('exp1', 0);
+    await click(runs(wrapper)[0], 'Clear');
+    await flushPromises();
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect((await pageButtons(ctx)).runs[0][0]).toBe('Clear');
+    expect((await pageButtons(wrapper)).runs[0][0]).toBe('Clear');
   });
 
   it('is offered only to roles that may start runs', async () => {
     rbac.allowed = denyOnly(['experiments/trigger', 'create']);
-    const ctx = await open([{ pipeline: nodes('success') }]);
+    const wrapper = await open([{ pipeline: nodes('success') }]);
 
-    expect(await pageButtons(ctx)).toEqual({
+    expect(await pageButtons(wrapper)).toEqual({
       header: ['Stop all (disabled)'],
       runs: [['start this run']],
     });
@@ -353,28 +373,28 @@ describe('Clear', () => {
 
 describe('Cleanup', () => {
   it("runs only a run's cleanup stage, and waits while any run is busy", async () => {
-    const ctx = await open([{ hasCleanup: true }, {}]);
-    expect((await pageButtons(ctx)).runs).toEqual([
+    const wrapper = await open([{ hasCleanup: true }, {}]);
+    expect((await pageButtons(wrapper)).runs).toEqual([
       ['Clear (disabled)', 'Cleanup', 'start this run'],
       // a run without cleanup components has no Cleanup
       ['Clear (disabled)', 'start this run'],
     ]);
 
-    ctx.cleanupRun('exp1', 0);
+    await click(runs(wrapper)[0], 'Cleanup');
     expect(sent()).toEqual([`POST ${url(0, 'cleanup')}`]);
-    expect((await pageButtons(ctx)).runs[0]).toEqual([
+    expect((await pageButtons(wrapper)).runs[0]).toEqual([
       'Clear (disabled)',
       'Cleanup (disabled)',
       'start this run (spinning) (disabled)',
     ]);
 
-    report(ctx, 'start', 0);
-    expect((await pageButtons(ctx)).runs[0][1]).toBe('Cleanup (disabled)');
-    report(ctx, 'success', 0);
-    expect((await pageButtons(ctx)).runs[0][1]).toBe('Cleanup');
+    report('start', 0);
+    expect((await pageButtons(wrapper)).runs[0][1]).toBe('Cleanup (disabled)');
+    report('success', 0);
+    expect((await pageButtons(wrapper)).runs[0][1]).toBe('Cleanup');
 
     // another run's start holds it too
-    ctx.scorchControl('exp1', 1);
-    expect((await pageButtons(ctx)).runs[0][1]).toBe('Cleanup (disabled)');
+    await runButton(wrapper, 1).trigger('click');
+    expect((await pageButtons(wrapper)).runs[0][1]).toBe('Cleanup (disabled)');
   });
 });

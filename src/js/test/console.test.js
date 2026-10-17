@@ -1,5 +1,6 @@
 // The minimega console session: kept between visits to the Console page,
 // remembered for a reload or another tab, and ended on logout.
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const axios = vi.hoisted(() => ({
@@ -69,10 +70,9 @@ vi.mock('@xterm/addon-attach', () => ({
   },
 }));
 
-import { flush } from './helpers/async.js';
-import { makeContext } from './helpers/context.js';
 import { httpError } from './helpers/fixtures.js';
-import { blockedStorage, memoryStorage } from './helpers/storage.js';
+import { mountComponent, textOf } from './helpers/mount.js';
+import { blockedStorage } from './helpers/storage.js';
 
 class FakeWebSocket {
   static instances = [];
@@ -85,22 +85,6 @@ class FakeWebSocket {
 
   close() {
     this.closed = true;
-  }
-}
-
-class FakeElement {
-  parent = null;
-  children = new Set();
-
-  appendChild(child) {
-    child.parent?.children.delete(child);
-    child.parent = this;
-    this.children.add(child);
-  }
-
-  remove() {
-    this.parent?.children.delete(this);
-    this.parent = null;
   }
 }
 
@@ -123,8 +107,6 @@ beforeEach(async () => {
   axios.delete.mockResolvedValue({ status: 204 });
 
   vi.stubGlobal('WebSocket', FakeWebSocket);
-  vi.stubGlobal('document', { createElement: () => new FakeElement() });
-  vi.stubGlobal('localStorage', memoryStorage());
   vi.stubGlobal('location', { protocol: 'https:', host: 'phenix.test' });
 
   consoleSession = await import('@/utils/consoleSession.js');
@@ -155,20 +137,20 @@ describe('opening the console', () => {
 
   it('keeps the console open when the page is left, and shows it again', async () => {
     const session = await consoleTerminal.openConsole();
-    const page = new FakeElement();
+    const page = document.createElement('div');
     session.mount(page);
     expect(xterm.terminals[0].opened).toBe(1);
 
     session.unmount();
-    expect(page.children.size).toBe(0);
+    expect(page.childElementCount).toBe(0);
     expect(FakeWebSocket.instances[0].closed).toBe(false);
     expect(xterm.terminals[0].disposed).toBe(false);
 
     // the next visit gets the same terminal, and nothing is asked of the server
     expect(await consoleTerminal.openConsole()).toBe(session);
-    const again = new FakeElement();
+    const again = document.createElement('div');
     session.mount(again);
-    expect(again.children.has(session.element)).toBe(true);
+    expect(session.element.parentElement).toBe(again);
     expect(xterm.terminals).toHaveLength(1);
     expect(xterm.terminals[0].opened).toBe(1);
     expect(axios.post).toHaveBeenCalledTimes(1);
@@ -221,7 +203,7 @@ describe('opening the console', () => {
 describe('a console session', () => {
   it('attaches the terminal once the socket opens and sends its size', async () => {
     const session = await consoleTerminal.openConsole();
-    session.mount(new FakeElement());
+    session.mount(document.createElement('div'));
     const states = [];
     session.onChange((state) => states.push(state));
 
@@ -237,12 +219,12 @@ describe('a console session', () => {
 
   it('ends when the server closes it, so the next visit starts afresh', async () => {
     const session = await consoleTerminal.openConsole();
-    session.mount(new FakeElement());
+    session.mount(document.createElement('div'));
     FakeWebSocket.instances[0].onopen();
 
     axios.get.mockRejectedValue(notFound());
     FakeWebSocket.instances[0].onclose({ code: 1000 });
-    await flush();
+    await flushPromises();
     expect(axios.get).toHaveBeenCalledWith('console/42');
     expect(session.state).toBe('ended');
     expect(xterm.terminals[0].written.join('')).toContain('[console ended]');
@@ -263,7 +245,7 @@ describe('a console session', () => {
     FakeWebSocket.instances[0].onopen();
     axios.get.mockRejectedValue(notFound());
     FakeWebSocket.instances[0].onclose({ code: 1000 });
-    await flush();
+    await flushPromises();
 
     expect(session.disposed).toBe(true);
     expect(xterm.terminals[0].disposed).toBe(true);
@@ -271,9 +253,9 @@ describe('a console session', () => {
 
   it('keeps a console whose connection was lost for the next visit to check', async () => {
     const session = await consoleTerminal.openConsole();
-    session.mount(new FakeElement());
+    session.mount(document.createElement('div'));
     FakeWebSocket.instances[0].onclose({ code: 1006 });
-    await flush();
+    await flushPromises();
 
     expect(axios.get).not.toHaveBeenCalled();
     expect(session.state).toBe('lost');
@@ -286,13 +268,13 @@ describe('a console session', () => {
 
   it('keeps a console that dropped a websocket too slow for its output', async () => {
     const session = await consoleTerminal.openConsole();
-    session.mount(new FakeElement());
+    session.mount(document.createElement('div'));
     FakeWebSocket.instances[0].onopen();
 
     // the server closes a websocket it drops normally, as when a console ends
     axios.get.mockResolvedValue({ data: { pid: 42 } });
     FakeWebSocket.instances[0].onclose({ code: 1000 });
-    await flush();
+    await flushPromises();
 
     expect(axios.get).toHaveBeenCalledWith('console/42');
     expect(session.state).toBe('lost');
@@ -305,12 +287,12 @@ describe('a console session', () => {
   it('keeps a console the server could not be asked about', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const session = await consoleTerminal.openConsole();
-    session.mount(new FakeElement());
+    session.mount(document.createElement('div'));
     FakeWebSocket.instances[0].onopen();
 
     axios.get.mockRejectedValue(httpError(502));
     FakeWebSocket.instances[0].onclose({ code: 1000 });
-    await flush();
+    await flushPromises();
 
     expect(session.state).toBe('lost');
     expect(consoleSession.rememberedConsolePid('alice')).toBe(42);
@@ -320,7 +302,7 @@ describe('a console session', () => {
 
   it('writes nothing to a session let go while the server was asked', async () => {
     const session = await consoleTerminal.openConsole();
-    session.mount(new FakeElement());
+    session.mount(document.createElement('div'));
     FakeWebSocket.instances[0].onopen();
 
     let answer;
@@ -333,7 +315,7 @@ describe('a console session', () => {
     session.unmount();
     session.dispose();
     answer(notFound());
-    await flush();
+    await flushPromises();
 
     expect(xterm.terminals[0].written.join('')).not.toContain('[console');
     // an ended console is still forgotten, so the next visit starts afresh
@@ -401,66 +383,56 @@ describe('the Console page', () => {
   let Console;
 
   beforeEach(async () => {
-    vi.stubGlobal('window', {
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    });
     Console = (await import('@/views/Console.vue')).default;
   });
 
-  function page() {
-    const ctx = makeContext(Console, { $refs: { host: new FakeElement() } });
-    Console.created.call(ctx);
-    return ctx;
-  }
+  // the terminal the page shows, if any
+  const terminal = (page) => page.find('.console-terminal');
 
   it('says it is starting the console only while it does', async () => {
-    const first = page();
-    Console.mounted.call(first);
-    expect(first.message).toBe('Starting console…');
+    const started = Promise.withResolvers();
+    axios.post.mockReturnValue(started.promise);
+    const first = await mountComponent(Console);
+    expect(textOf(first.find('h1'))).toBe('Starting console…');
 
-    await flush();
-    const shown = first.session;
-    expect(first.message).toBe(null);
-    expect(first.$refs.host.children.has(shown.element)).toBe(true);
-    Console.beforeUnmount.call(first);
-    expect(first.$refs.host.children.size).toBe(0);
+    started.resolve({ data: { pid: 42 } });
+    await flushPromises();
+    expect(first.find('h1').exists()).toBe(false);
+    expect(terminal(first).exists()).toBe(true);
+    const shown = terminal(first).element;
+    first.unmount();
+    expect(shown.parentElement).toBe(null);
 
     // coming back shows the same console straight away
-    const second = page();
-    Console.mounted.call(second);
-    expect(second.session).toBe(shown);
-    expect(second.message).toBe(null);
-    expect(second.$refs.host.children.has(shown.element)).toBe(true);
+    const second = await mountComponent(Console);
+    expect(terminal(second).element).toBe(shown);
+    expect(second.find('h1').exists()).toBe(false);
     expect(axios.post).toHaveBeenCalledTimes(1);
-    Console.beforeUnmount.call(second);
   });
 
   it('offers a new console once this one has ended', async () => {
-    const ctx = page();
-    Console.mounted.call(ctx);
-    await flush();
-    const ended = ctx.session;
+    const page = await mountComponent(Console);
+    await flushPromises();
+    const ended = consoleSession.currentConsole();
 
     axios.get.mockRejectedValue(notFound());
     FakeWebSocket.instances[0].onclose({ code: 1000 });
-    await flush();
-    expect(ctx.state).toBe('ended');
+    await flushPromises();
+    const restart = page.find('button');
+    expect(textOf(restart)).toBe('Start a new console');
 
     axios.post.mockResolvedValue({ data: { pid: 43 } });
-    ctx.restart();
+    await restart.trigger('click');
     expect(ended.disposed).toBe(true);
-    await flush();
-    expect(ctx.session.pid).toBe(43);
-    Console.beforeUnmount.call(ctx);
+    await flushPromises();
+    expect(consoleSession.currentConsole().pid).toBe(43);
+    expect(terminal(page).exists()).toBe(true);
   });
 
   it('explains a console the server does not offer', async () => {
     axios.post.mockRejectedValue(httpError(405));
-    const ctx = page();
-    Console.mounted.call(ctx);
-    await flush();
-    expect(ctx.message).toBe('Console access is not configured.');
-    Console.beforeUnmount.call(ctx);
+    const page = await mountComponent(Console);
+    await flushPromises();
+    expect(textOf(page.find('h1'))).toBe('Console access is not configured.');
   });
 });

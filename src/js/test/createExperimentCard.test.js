@@ -1,5 +1,7 @@
-// The Experiments page's create card, rendered with the real Buefy and run on
-// a plain object standing in for the component instance.
+// The Experiments page's create card: its fields, help and checks, the
+// scenarios it loads for a topology, and the request it emits.
+import { flushPromises } from '@vue/test-utils';
+import { h, withDirectives } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, resetMocks } = await vi.hoisted(
@@ -16,36 +18,65 @@ import {
   customNodeValue,
   experimentAnnotationsPayload,
   MANAGED_EXPERIMENT_ANNOTATIONS,
-  NODE_ANNOTATIONS,
   nodeAnnotationsPayload,
 } from '@/utils/experimentAnnotations.js';
 import { never } from './helpers/async.js';
-import { renderSSR } from './helpers/render.js';
+import { byLabel, mountComponent, mountPage, textOf } from './helpers/mount.js';
 
-// the card while its topology list is still loading
-function render(props) {
-  axios.get.mockImplementation(never);
-  return renderSSR(CreateExperimentCard, props);
+// Has axios.get answer each URL from `answers`: data, or a promise of it;
+// a URL not there never answers.
+function answer(answers) {
+  axios.get.mockImplementation(async (url) =>
+    url in answers ? { data: await answers[url] } : never(),
+  );
 }
 
-const { computed, methods } = CreateExperimentCard;
+// the card, once its topology list has loaded (or not, when it never does)
+const card = (options) => mountPage(CreateExperimentCard, options);
 
-beforeEach(() => resetMocks({ store: {} }));
+const nameInput = (wrapper) =>
+  wrapper.find('input[aria-labelledby="create-exp-name"]');
+
+const select = (wrapper, id) =>
+  wrapper.find(`select[aria-labelledby="create-exp-${id}"]`);
+
+// the scenario field's placeholder, and its other options
+const scenarioField = (wrapper) => {
+  const scenario = select(wrapper, 'scenario');
+  return {
+    placeholder: textOf(scenario.find('option[hidden]')),
+    options: scenario.findAll('option:not([hidden])').map(textOf),
+  };
+};
+
+async function choose(wrapper, id, value) {
+  await select(wrapper, id).setValue(value);
+  await flushPromises();
+}
+
+// the message under the field holding this control, or null
+const message = (control, field = '.field') => {
+  const help = control.element.closest(field).querySelector('p.help');
+  return help ? textOf(help) : null;
+};
+
+beforeEach(() => {
+  resetMocks({ store: {} });
+  axios.get.mockImplementation(never);
+});
 
 describe('CreateExperimentCard', () => {
   it('shows the scenario field before a topology is chosen', async () => {
-    const html = await render();
+    const wrapper = await card();
 
-    expect(html).toMatch(/<label id="create-exp-scenario"[^>]*>/);
-    const select = html.match(
-      /<select[^>]*aria-labelledby="create-exp-scenario"[^>]*>[\s\S]*?<\/select>/,
-    )[0];
-    expect(select).toContain('disabled');
-    expect(select).toContain('Select a topology first');
+    expect(wrapper.find('label#create-exp-scenario').exists()).toBe(true);
+    expect(select(wrapper, 'scenario').element.disabled).toBe(true);
+    expect(scenarioField(wrapper).placeholder).toBe('Select a topology first');
   });
 
   it('puts a small help button right after each label', async () => {
-    const html = await render();
+    const wrapper = await card();
+    const labels = wrapper.findAll('label.label');
 
     for (const label of [
       'Experiment Name',
@@ -58,195 +89,251 @@ describe('CreateExperimentCard', () => {
       'Annotations for Every VM',
       'Experiment Annotations',
     ]) {
-      const after = html.slice(html.indexOf(`>${label}</label>`));
-      expect(after, label).toMatch(
-        // the tooltip's hidden text comes first, then its trigger
-        new RegExp(
-          `^>${label}</label><div[^>]*b-tooltip[^>]*>(?:(?!<label)[\\s\\S])*?` +
-            `<div class="tooltip-trigger"[^>]*><!--\\[-->` +
-            `<button type="button" class="field-help-button" ` +
-            `aria-label="About ${label}"[^>]*><span class="icon is-small"`,
-        ),
+      const tooltip = labels.find((l) => textOf(l) === label).element
+        .nextElementSibling;
+      expect(tooltip.classList, label).toContain('b-tooltip');
+      const help = tooltip.querySelector('.tooltip-trigger').firstElementChild;
+      const button = `button[type="button"].field-help-button[aria-label="About ${label}"]`;
+      expect(help.matches(button), label).toBe(true);
+      expect(help.firstElementChild.matches('.icon.is-small'), label).toBe(
+        true,
       );
     }
   });
 
   it('links to the docs section on creating experiments', async () => {
-    const html = await render();
+    const link = (await card()).find('a.create-exp-docs');
 
-    const link = html.match(/<a[^>]*create-exp-docs[^>]*>/)[0];
-    expect(link).toContain(
-      'href="https://phenix.sceptre.dev/latest/experiments/#create-a-new-experiment"',
-    );
-    expect(link).toContain('target="_blank"');
-    expect(link).toContain('rel="noopener"');
+    expect(link.attributes()).toMatchObject({
+      href: 'https://phenix.sceptre.dev/latest/experiments/#create-a-new-experiment',
+      target: '_blank',
+      rel: 'noopener',
+    });
   });
 
   it('names the options section Advanced Options', async () => {
-    const html = await render();
+    const wrapper = await card();
 
-    expect(html).toContain('>Advanced Options<');
-    expect(html).not.toMatch(/>\s*Options\s*</);
+    expect(textOf(wrapper.find('.create-exp-advanced-toggle'))).toBe(
+      'Advanced Options',
+    );
+    expect(wrapper.findAll('*').map(textOf)).not.toContain('Options');
   });
 
   it('hides the bridge name in auto bridge mode', async () => {
-    const html = await render({ options: { 'bridge-mode': 'auto' } });
+    const wrapper = await card({
+      props: { options: { 'bridge-mode': 'auto' } },
+    });
 
-    expect(html).not.toContain('Default Bridge Name');
+    expect(textOf(wrapper)).not.toContain('Default Bridge Name');
   });
 
-  it('focuses the name input once mounted', () => {
-    const { mounted } = CreateExperimentCard.directives.focus;
-    const input = { tagName: 'INPUT', focus: vi.fn() };
-    mounted(input);
-    expect(input.focus).toHaveBeenCalled();
-
+  it('focuses the name input once mounted', async () => {
+    const wrapper = await card({ attachTo: document.body });
     // on a Buefy field, the input inside it
-    const inner = { focus: vi.fn() };
-    mounted({ tagName: 'DIV', querySelector: () => inner });
-    expect(inner.focus).toHaveBeenCalled();
+    expect(document.activeElement).toBe(nameInput(wrapper).element);
+
+    const { focus } = CreateExperimentCard.directives;
+    const plain = await mountComponent(
+      { render: () => withDirectives(h('input'), [[focus]]) },
+      { attachTo: document.body },
+    );
+    expect(document.activeElement).toBe(plain.element);
   });
 
-  it('says why the scenario field is not ready', () => {
-    const placeholder = (ctx) =>
-      computed.scenarioPlaceholder.call({ scenarioNames: [], ...ctx });
+  it('says why the scenario field is not ready', async () => {
+    const empty = Promise.withResolvers();
+    answer({
+      topologies: { topologies: ['t', 'u'] },
+      'topologies/t/scenarios': empty.promise,
+      'topologies/u/scenarios': { scenarios: { s: [] } },
+    });
+    const wrapper = await card();
 
-    expect(placeholder({ topology: null })).toBe('Select a topology first');
-    expect(placeholder({ topology: 't', scenariosLoading: true })).toBe(
-      'Loading scenarios…',
-    );
-    expect(placeholder({ topology: 't' })).toBe(
+    await choose(wrapper, 'topology', 't');
+    expect(scenarioField(wrapper).placeholder).toBe('Loading scenarios…');
+    empty.resolve({});
+    await flushPromises();
+    expect(scenarioField(wrapper).placeholder).toBe(
       'No scenarios for this topology',
     );
-    expect(placeholder({ topology: 't', scenarioNames: ['s'] })).toBe('None');
+
+    await choose(wrapper, 'topology', 'u');
+    expect(scenarioField(wrapper)).toEqual({
+      placeholder: 'None',
+      options: ['None', 's'],
+    });
   });
 
   it("loads the chosen topology's scenarios and their apps", async () => {
-    axios.get.mockResolvedValue({ data: { scenarios: { s1: ['a', 'b'] } } });
-    const ctx = { topology: 'topo', scenario: 'old', scenarios: {} };
+    const scenarios = Promise.withResolvers();
+    answer({
+      topologies: { topologies: ['old', 'topo'] },
+      'topologies/old/scenarios': { scenarios: { s0: [] } },
+      'topologies/topo/scenarios': scenarios.promise,
+    });
+    const wrapper = await card();
+    await choose(wrapper, 'topology', 'old');
+    await choose(wrapper, 'scenario', 's0');
 
-    const loading = methods.loadScenarios.call(ctx, 'topo');
-    expect(ctx.scenariosLoading).toBe(true);
-    expect(ctx.scenario).toBe(null);
-    await loading;
+    await choose(wrapper, 'topology', 'topo');
+    const field = select(wrapper, 'scenario');
+    expect(field.element.parentElement.classList).toContain('is-loading');
+    // the placeholder shows only while no scenario is chosen
+    expect(scenarioField(wrapper)).toEqual({
+      placeholder: 'Loading scenarios…',
+      options: [],
+    });
+    scenarios.resolve({ scenarios: { s1: ['a', 'b'] } });
+    await flushPromises();
 
     expect(axios.get).toHaveBeenCalledWith('topologies/topo/scenarios');
-    expect(ctx.scenarios).toEqual({
-      s1: [
-        { name: 'a', disabled: false },
-        { name: 'b', disabled: false },
-      ],
-    });
-    expect(ctx.scenariosLoading).toBe(false);
+    expect(field.element.parentElement.classList).not.toContain('is-loading');
+    await choose(wrapper, 'scenario', 's1');
+    expect(
+      wrapper
+        .findAll('.create-exp-apps .tag')
+        .map((tag) => [textOf(tag), tag.attributes('aria-pressed')]),
+    ).toEqual([
+      ['a', 'true'],
+      ['b', 'true'],
+    ]);
   });
 
   it('ignores scenarios for a topology no longer chosen', async () => {
-    const answer = Promise.withResolvers();
-    axios.get.mockReturnValue(answer.promise);
-    const ctx = { topology: 'first', scenarios: {} };
+    const stale = Promise.withResolvers();
+    answer({
+      topologies: { topologies: ['first', 'second'] },
+      'topologies/first/scenarios': stale.promise,
+    });
+    const wrapper = await card();
 
-    const loading = methods.loadScenarios.call(ctx, 'first');
-    ctx.topology = 'second';
-    answer.resolve({ data: { scenarios: { stale: ['a'] } } });
-    await loading;
+    await choose(wrapper, 'topology', 'first');
+    await choose(wrapper, 'topology', 'second');
+    stale.resolve({ scenarios: { stale: ['a'] } });
+    await flushPromises();
 
-    expect(ctx.scenarios).toEqual({});
+    expect(scenarioField(wrapper)).toEqual({
+      placeholder: 'Loading scenarios…',
+      options: [],
+    });
   });
 
-  it('checks names as the server does', () => {
-    const nameError = (name, ctx = {}) =>
-      computed.nameError.call({
-        name,
-        experimentNames: ['taken'],
-        bridgeMode: 'manual',
-        ...ctx,
+  it('checks names as the server does', async () => {
+    const nameError = async (name, options) => {
+      const wrapper = await card({
+        props: { experimentNames: ['taken'], options },
       });
+      await nameInput(wrapper).setValue(name);
+      return message(nameInput(wrapper));
+    };
 
-    expect(nameError('')).toBe(null);
-    expect(nameError('ok-name')).toBe(null);
-    expect(nameError('has space')).toMatch(/spaces/);
-    expect(nameError('taken')).toMatch(/already exists/);
+    expect(await nameError('')).toBe(null);
+    expect(await nameError('ok-name')).toBe(null);
+    expect(await nameError('has space')).toMatch(/spaces/);
+    expect(await nameError('taken')).toMatch(/already exists/);
     for (const reserved of ['create', 'all', 'MiniMega', '__phenix__']) {
-      expect(nameError(reserved)).toMatch(/reserved/);
+      expect(await nameError(reserved)).toMatch(/reserved/);
     }
-    expect(nameError('sixteen-chars-xx', { bridgeMode: 'auto' })).toMatch(
-      /15 characters/,
+    expect(
+      await nameError('sixteen-chars-xx', { 'bridge-mode': 'auto' }),
+    ).toMatch(/15 characters/);
+  });
+
+  it('needs both ends of a VLAN range, in order', async () => {
+    const wrapper = await card();
+    const vlanError = async (min, max) => {
+      if (min !== null) {
+        await byLabel(wrapper, 'VLAN range minimum').setValue(min);
+      }
+      if (max !== null) {
+        await byLabel(wrapper, 'VLAN range maximum').setValue(max);
+      }
+      return message(
+        byLabel(wrapper, 'VLAN range minimum'),
+        '.create-exp-vlans',
+      );
+    };
+
+    expect(await vlanError(null, null)).toBe(null);
+    expect(await vlanError('100', null)).toMatch(/both/);
+    expect(await vlanError(null, '200')).toBe(null);
+    expect(await vlanError('200', '100')).toMatch(/below/);
+  });
+
+  // a card with topology topo and its scenario s1, whose apps are a and b
+  async function filled() {
+    answer({
+      topologies: { topologies: ['topo'] },
+      'topologies/topo/scenarios': { scenarios: { s1: ['a', 'b'] } },
+    });
+    const wrapper = await card();
+    await nameInput(wrapper).setValue('exp');
+    await choose(wrapper, 'topology', 'topo');
+    return wrapper;
+  }
+
+  // adds the annotation with this menu entry to the list at this index
+  async function addAnnotation(wrapper, list, entry) {
+    const item = wrapper
+      .findAllComponents({ name: 'AnnotationList' })
+      .at(list)
+      .findAllComponents({ name: 'BDropdownItem' })
+      .find((i) => textOf(i.find('b')) === entry);
+    await item.trigger('click');
+  }
+
+  const create = (wrapper) =>
+    wrapper
+      .findAll('footer button')
+      .find((b) => textOf(b) === 'Create Experiment')
+      .trigger('click');
+
+  it('sends the annotations with the request', async () => {
+    const wrapper = await filled();
+    await choose(wrapper, 'scenario', 's1');
+    // b-tag emits clicks on its text only
+    await wrapper.find('.create-exp-apps .tag span').trigger('click');
+    await wrapper
+      .find('input[aria-labelledby="create-exp-branch"]')
+      .setValue(' main ');
+    await addAnnotation(wrapper, 0, 'phenix/default-apps');
+    await addAnnotation(wrapper, 0, 'phenix/startup-autotunnel');
+    await byLabel(wrapper, 'phenix/startup-autotunnel value').setValue(
+      '8080:80, 2222:22',
     );
-  });
+    await addAnnotation(wrapper, 1, 'Custom annotation');
+    await byLabel(wrapper, 'Annotation 1 key').setValue('team');
+    await byLabel(wrapper, 'team value').setValue('red');
 
-  it('needs both ends of a VLAN range, in order', () => {
-    const vlanError = (vlanMin, vlanMax) =>
-      computed.vlanError.call({ vlanMin, vlanMax });
-
-    expect(vlanError(null, null)).toBe(null);
-    expect(vlanError(100, 200)).toBe(null);
-    expect(vlanError(100, null)).toMatch(/both/);
-    expect(vlanError(200, 100)).toMatch(/below/);
-  });
-
-  it('sends the annotations with the request', () => {
-    const $emit = vi.fn();
-    const tunnels = {
-      ...annotationRow(NODE_ANNOTATIONS[1]),
-      value: '8080:80, 2222:22',
-    };
-    const ctx = {
-      $emit,
-      valid: true,
-      name: 'exp',
-      topology: 'topo',
-      scenario: 's1',
-      scenarioApps: [
-        { name: 'a', disabled: true },
-        { name: 'b', disabled: false },
+    await create(wrapper);
+    expect(wrapper.emitted('create')).toEqual([
+      [
+        {
+          name: 'exp',
+          topology: 'topo',
+          scenario: 's1',
+          vlan_min: 0,
+          vlan_max: 0,
+          workflow_branch: 'main',
+          deploy_mode: '',
+          disabled_apps: ['a'],
+          default_bridge: '',
+          node_annotations: {
+            'phenix/default-apps': false,
+            'phenix/startup-autotunnel': ['8080:80', '2222:22'],
+          },
+          annotations: { team: 'red' },
+        },
       ],
-      vlanMin: null,
-      vlanMax: null,
-      branch: ' main ',
-      deployMode: '',
-      bridge: '',
-      nodeAnnotations: [annotationRow(NODE_ANNOTATIONS[0]), tunnels],
-      annotations: [
-        { ...annotationRow({ type: 'text' }), key: 'team', value: 'red' },
-      ],
-    };
-
-    methods.create.call(ctx);
-
-    expect($emit).toHaveBeenCalledWith('create', {
-      name: 'exp',
-      topology: 'topo',
-      scenario: 's1',
-      vlan_min: 0,
-      vlan_max: 0,
-      workflow_branch: 'main',
-      deploy_mode: '',
-      disabled_apps: ['a'],
-      default_bridge: '',
-      node_annotations: {
-        'phenix/default-apps': false,
-        'phenix/startup-autotunnel': ['8080:80', '2222:22'],
-      },
-      annotations: { team: 'red' },
-    });
+    ]);
   });
 
-  it('leaves annotations out of the request when there are none', () => {
-    const $emit = vi.fn();
-    methods.create.call({
-      $emit,
-      valid: true,
-      name: 'exp',
-      topology: 'topo',
-      scenario: null,
-      scenarioApps: [],
-      branch: '',
-      bridge: '',
-      nodeAnnotations: [],
-      annotations: [],
-    });
+  it('leaves annotations out of the request when there are none', async () => {
+    const wrapper = await filled();
 
-    const request = $emit.mock.calls[0][1];
+    await create(wrapper);
+    const [[request]] = wrapper.emitted('create');
     expect(request).not.toHaveProperty('node_annotations');
     expect(request).not.toHaveProperty('annotations');
   });

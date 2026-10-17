@@ -3,8 +3,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import Tunneler from '@/views/Tunneler.vue';
-import { pageContext } from './helpers/page.js';
-import { renderSSR, tableRows, textOf } from './helpers/render.js';
+import { never } from './helpers/async.js';
+import { mountPage, tableRows, textOf } from './helpers/mount.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -16,10 +16,9 @@ async function open(answer) {
   });
   vi.stubGlobal('fetch', fetch);
 
-  const ctx = pageContext(Tunneler);
-  await Tunneler.created.call(ctx);
+  const page = await mountPage(Tunneler, { route: '/tunneler' });
   expect(fetch).toHaveBeenCalledWith('/downloads/tunneler');
-  return ctx;
+  return page;
 }
 
 const json = (body) =>
@@ -27,44 +26,23 @@ const json = (body) =>
     headers: { 'Content-Type': 'application/json' },
   });
 
-// the page's HTML once its list has been read into ctx
-const page = (ctx) =>
-  renderSSR(
-    Tunneler,
-    {},
-    {
-      route: '/tunneler',
-      tables: true,
-      data: {
-        downloads: ctx.downloads,
-        loaded: ctx.loaded,
-        failed: ctx.failed,
-        notInstalled: ctx.notInstalled,
-      },
-    },
-  );
-
-// what the page shows under its downloads heading: the table's rows, or else
-// its message
-async function shown(ctx) {
-  const html = await page(ctx);
-  const below = html.slice(html.indexOf('</h1>'), html.indexOf('<hr'));
-  const body = below.includes('<tbody>')
-    ? below.slice(below.indexOf('<tbody>'), below.indexOf('</tbody>'))
-    : below;
+// what the page shows under its downloads heading: the table's body, or else
+// its message, and the table's rows
+function shown(page) {
+  const body = page.find('#downloads tbody');
   return {
-    text: textOf(body),
-    rows: tableRows(below).map((row) => ({
+    text: textOf(body.exists() ? body : page.find('#downloads p')),
+    rows: tableRows(page).map((row) => ({
       os: textOf(row.OS),
       arch: textOf(row.Architecture),
-      link: row.Download.match(/<a[^>]*>/)[0],
+      link: row.Download.find('a'),
     })),
   };
 }
 
 describe('the Tunneler page', () => {
   it('links to each installed build, named by its platform', async () => {
-    const ctx = await open(
+    const page = await open(
       json({
         files: [
           'phenix-tunneler-darwin-arm64',
@@ -74,7 +52,7 @@ describe('the Tunneler page', () => {
         ],
       }),
     );
-    const { rows } = await shown(ctx);
+    const { rows } = shown(page);
 
     expect(rows.map(({ os, arch }) => `${os} ${arch}`.trim())).toEqual([
       'MacOS arm64',
@@ -82,16 +60,17 @@ describe('the Tunneler page', () => {
       'Windows amd64',
       'tunneler custom',
     ]);
-    expect(rows[1].link).toMatch(
-      /href="\/downloads\/tunneler\/phenix-tunneler-linux-amd64"/,
+    const linux = rows[1].link;
+    expect(linux.attributes('href')).toBe(
+      '/downloads/tunneler/phenix-tunneler-linux-amd64',
     );
     // saved as a file, not opened
-    expect(rows[1].link).toMatch(/\sdownload[\s>]/);
-    expect(rows[1].link).toContain(
-      'aria-label="Download phenix-tunneler-linux-amd64"',
+    expect(linux.attributes('download')).toBeDefined();
+    expect(linux.attributes('aria-label')).toBe(
+      'Download phenix-tunneler-linux-amd64',
     );
-    expect(rows[3].link).toContain(
-      'href="/downloads/tunneler/tunneler%20custom"',
+    expect(rows[3].link.attributes('href')).toBe(
+      '/downloads/tunneler/tunneler%20custom',
     );
   });
 
@@ -124,24 +103,24 @@ describe('the Tunneler page', () => {
       'Could not list the tunneler downloads',
     ],
   ])('%s', async (_, answer, message) => {
-    const { text, rows } = await shown(await open(answer));
+    const { text, rows } = shown(await open(answer));
     expect(text).toBe(message);
     expect(rows).toEqual([]);
   });
 
   it('puts the downloads before the quick start', async () => {
-    const html = await page(await open(json({ files: [] })));
-    expect(html.indexOf('id="downloads"')).toBeGreaterThan(-1);
-    expect(html.indexOf('id="downloads"')).toBeLessThan(
-      html.indexOf('id="quick-start"'),
-    );
-    expect(textOf(html)).toContain('downloaded via the table above');
+    const page = await open(json({ files: [] }));
+    const downloads = page.find('#downloads').element;
+    expect(
+      downloads.compareDocumentPosition(page.find('#quick-start').element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(textOf(page)).toContain('downloaded via the table above');
   });
 
   it('says it is loading until the list arrives', async () => {
-    vi.stubGlobal('fetch', () => new Promise(() => {}));
-    const ctx = pageContext(Tunneler);
-    Tunneler.created.call(ctx);
-    expect((await shown(ctx)).text).toBe('Loading downloads…');
+    vi.stubGlobal('fetch', never);
+    const page = await mountPage(Tunneler, { route: '/tunneler' });
+    expect(shown(page).text).toBe('Loading downloads…');
   });
 });

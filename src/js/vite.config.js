@@ -85,8 +85,12 @@ export default defineConfig(({ mode }) => {
       },
     },
     // vitest: the Playwright suite in e2e/ and the perf/ tooling have their own runners
+    // tests run in happy-dom unless a file starts `// @vitest-environment node`
     test: {
       exclude: ['e2e/**', 'perf/**', 'node_modules/**', 'dist/**'],
+      environment: 'happy-dom',
+      setupFiles: ['test/setup.js'],
+      environmentOptions: { happyDOM: { url: 'http://phenix.test/' } },
     },
   };
 });

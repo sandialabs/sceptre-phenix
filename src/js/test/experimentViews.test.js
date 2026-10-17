@@ -1,52 +1,59 @@
 // The stopped experiment page, the VM tiles, and the VM labels and mount
 // browser modals.
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, rbac, resetMocks } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const { axios, capturing, loaderSpy, modules, rbac, resetMocks, ws } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/websocket', modules.websocket);
 // the pages' lists come from the tests
-vi.mock('@/utils/pageLoader.js', modules.pageLoader);
+vi.mock('@/utils/pageLoader.js', capturing);
 
+import DiskSelect from '@/components/experiment/DiskSelect.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import VMtilesView from '@/views/experiment/VMtilesView.vue';
 import VMLabelsModal from '@/components/VMLabelsModal.vue';
 import VMMountBrowserModal from '@/components/VMMountBrowserModal.vue';
-import { flush } from './helpers/async.js';
-import { makeContext } from './helpers/context.js';
+import { never } from './helpers/async.js';
 import { disk, wsMsg } from './helpers/fixtures.js';
-import { pageContext } from './helpers/page.js';
-import { denyAll, denyOnly } from './helpers/permissions.js';
 import {
-  renderSSR,
-  stubBrowser,
+  byLabel,
+  confirmDialog,
+  dialogs,
+  mountComponent,
+  mountPage,
   tableRows,
   textOf,
+  toasts,
   tooltipButtons,
-} from './helpers/render.js';
+} from './helpers/mount.js';
+import { allowAll, denyAll, denyOnly } from './helpers/permissions.js';
 
 beforeEach(() => {
   resetMocks({ store: { token: 't', features: [], role: null } });
-  stubBrowser();
+  // the pages' own lists never arrive
+  axios.get.mockImplementation(never);
 });
 
-afterEach(() => {
-  vi.useRealTimers();
-  vi.unstubAllGlobals();
-});
+const button = (wrapper, text) =>
+  wrapper.findAll('button').find((b) => textOf(b) === text);
 
 describe('StoppedExperiment', () => {
   // the page on experiment exp1, with these VMs once it has loaded
-  function stopped(vms) {
-    const ctx = pageContext(StoppedExperiment, { id: 'exp1' });
-    if (vms) ctx.experiment = { name: 'exp1', vms };
-    return ctx;
-  }
+  const stopped = (vms, data) =>
+    mountPage(StoppedExperiment, {
+      route: '/experiment/exp1',
+      data: { ...(vms && { experiment: { name: 'exp1', vms } }), ...data },
+    });
+
+  const publish = (msg) => {
+    for (const handler of ws.handlers) handler(msg);
+    return flushPromises();
+  };
 
   it.each([
     [
@@ -64,29 +71,37 @@ describe('StoppedExperiment', () => {
           schedule: [{ vm: 'vm1', host: 'b' }],
         }),
     ],
-  ])('applies %s only for its own experiment', (_, message) => {
-    const ctx = stopped([{ name: 'vm1', host: 'a' }]);
+  ])('applies %s only for its own experiment', async (_, message) => {
+    const page = await stopped([{ name: 'vm1', host: 'a' }], {
+      hosts: ['a', 'b'],
+    });
+    const host = () => byLabel(page, 'Host for VM vm1').element.value;
 
-    ctx.handleWs(message('exp2'));
-    expect(ctx.experiment.vms[0].host).toBe('a');
+    await publish(message('exp2'));
+    expect(host()).toBe('a');
 
-    ctx.handleWs(message('exp1'));
-    expect(ctx.experiment.vms[0].host).toBe('b');
+    await publish(message('exp1'));
+    expect(host()).toBe('b');
   });
 
-  it('ignores publishes before the experiment has loaded', () => {
-    const ctx = stopped();
-    expect(() =>
-      ctx.handleWs(
-        wsMsg('experiment/vm', 'exp1/vm1', 'update', { name: 'vm1' }),
-      ),
-    ).not.toThrow();
-    expect(ctx.$buefy.toast.open).not.toHaveBeenCalled();
+  it('ignores publishes before the experiment has loaded', async () => {
+    await stopped();
+    await publish(
+      wsMsg('experiment/vm', 'exp1/vm1', 'update', { name: 'vm1' }),
+    );
+    expect(toasts()).toEqual([]);
   });
 
-  it('checks file listing permission for the routed experiment', () => {
-    rbac.allowed = vi.fn(denyAll);
-    expect(stopped().canListFiles).toBe(false);
+  it.each([
+    ['shows', allowAll, ['VMs', 'Files']],
+    ['hides', denyAll, ['VMs']],
+  ])('%s the Files tab by file listing permission', async (_, role, want) => {
+    rbac.allowed = vi.fn(role);
+    const page = await stopped();
+    const tabs = page
+      .findAll('.tabs li')
+      .filter((li) => li.element.style.display !== 'none');
+    expect(tabs.map(textOf)).toEqual(want);
     expect(rbac.allowed).toHaveBeenCalledWith(
       'experiments/files',
       'list',
@@ -98,30 +113,31 @@ describe('StoppedExperiment', () => {
     axios.patch.mockResolvedValue({
       data: { vms: [{ name: 'vm2', dnb: true }] },
     });
-    const ctx = stopped([
+    const page = await stopped([
       { name: 'vm1', dnb: false },
       { name: 'vm2', dnb: false },
     ]);
-    ctx.selectedRows = ['vm2'];
+    const boxes = () => page.findAll('td input[type="checkbox"]');
+    await boxes().at(1).setValue(true);
 
-    ctx.setBoot(true);
+    await byLabel(page, 'Set selected VMs to not boot').trigger('click');
     expect(axios.patch).toHaveBeenCalledWith('experiments/exp1/vms', {
       vms: [{ name: 'vm2', dnb: true }],
       total: 1,
     });
     // rows picked one by one are cleared too, not only a whole-page pick
-    expect(ctx.selectedRows).toEqual([]);
+    expect(boxes().map((box) => box.element.checked)).toEqual([false, false]);
+    expect(byLabel(page, 'Set selected VMs to not boot').exists()).toBe(false);
 
-    await flush();
-    expect(ctx.experiment.vms).toEqual([
-      { name: 'vm1', dnb: false },
-      { name: 'vm2', dnb: true },
+    await flushPromises();
+    expect(
+      tableRows(page).map((cells) =>
+        cells.Boot.find('[data-icon="bolt"]').classes(),
+      ),
+    ).toEqual([['boot'], ['dnb']]);
+    expect(toasts().map((t) => t.text)).toEqual([
+      'The selected VM was set to not boot',
     ]);
-    expect(ctx.$buefy.toast.open).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: 'The selected VM was set to not boot',
-      }),
-    );
   });
 
   describe('VM disks', () => {
@@ -137,36 +153,44 @@ describe('StoppedExperiment', () => {
     ];
 
     it("lists the disks this experiment's VMs can use, keeping each one whole", async () => {
-      axios.get.mockResolvedValue({ data: { disks } });
-      const ctx = stopped();
+      axios.get.mockImplementation(async (url) =>
+        url === 'disks' ? { data: { disks } } : never(),
+      );
+      const page = await stopped(vms);
 
-      ctx.updateDisks();
       expect(axios.get).toHaveBeenCalledWith('disks', {
         params: { expName: 'exp1' },
       });
-      await flush();
-      expect(ctx.disks).toEqual(disks);
+      expect(page.findComponent(DiskSelect).props('disks')).toEqual(disks);
     });
 
-    it("assigns the picked disk's full path, naming it safely in the confirmation", () => {
-      axios.patch.mockReturnValue(new Promise(() => {}));
-      const ctx = stopped([{ name: 'web', disk: '' }]);
-      ctx.$buefy.dialog = { confirm: vi.fn() };
-      ctx.disks = disks;
-      const confirmation = () => ctx.$buefy.dialog.confirm.mock.lastCall[0];
+    it("assigns the picked disk's full path, naming it safely in the confirmation", async () => {
+      axios.patch.mockImplementation(never);
+      const odd = '/data/<img src=x onerror=alert(1)>.img';
+      const page = await stopped(
+        [
+          { name: 'web', disk: '' },
+          { name: '<b>vm</b>', disk: '' },
+        ],
+        { disks: [...disks, disk(odd)] },
+      );
+      const message = () =>
+        dialogs().at(-1).querySelector('.media-content p > div').innerHTML;
 
-      ctx.assignDisk('web', '/phenix/images/win/web.qc2');
-      expect(confirmation().message).toBe(
+      await byLabel(page, 'Disk for VM web').setValue(
+        '/phenix/images/win/web.qc2',
+      );
+      expect(message()).toBe(
         'This will assign the win/web.qc2 disk image to the web VM.',
       );
-      confirmation().onConfirm();
+      await confirmDialog();
       expect(axios.patch).toHaveBeenCalledWith('experiments/exp1/vms/web', {
         disk: '/phenix/images/win/web.qc2',
       });
 
       // names from files and topologies are text, never markup
-      ctx.assignDisk('<b>vm</b>', '/data/<img src=x onerror=alert(1)>.img');
-      expect(confirmation().message).toBe(
+      await byLabel(page, 'Disk for VM <b>vm</b>').setValue(odd);
+      expect(message()).toBe(
         'This will assign the /data/&lt;img src=x onerror=alert(1)&gt;.img ' +
           'disk image to the &lt;b&gt;vm&lt;/b&gt; VM.',
       );
@@ -175,32 +199,20 @@ describe('StoppedExperiment', () => {
     // The Disk column of the page showing `vms`, given the disk list (unloaded
     // when undefined): each VM's picker options or text and its warnings.
     async function diskColumn(data) {
-      // the page's own lists never arrive
-      axios.get.mockReturnValue(new Promise(() => {}));
-      const html = await renderSSR(
-        StoppedExperiment,
-        {},
-        {
-          route: '/experiment/exp1',
-          data: { experiment: { name: 'exp1', vms }, ...data },
-          tables: true,
-        },
-      );
+      const page = await stopped(vms, data);
       return Object.fromEntries(
         // the rows are in the VMs' order
-        tableRows(html).map((cells, row) => {
-          const { name } = vms[row];
-          const select = cells.disk.match(/<select\b[\s\S]*?<\/select>/)?.[0];
+        tableRows(page).map((cells, row) => {
+          const select = cells.Disk.find('select');
           return [
-            name,
+            vms[row].name,
             {
-              shown: select
-                ? [...select.matchAll(/<option\b([^>]*)>([^<]*)</g)].map(
-                    ([, attrs, text]) =>
-                      textOf(text) + (/\sdisabled/.test(attrs) ? ' (x)' : ''),
-                  )
-                : textOf(cells.disk.split('<span class="disk-warning"')[0]),
-              warnings: tooltipButtons(cells.disk).map((b) => b.label),
+              shown: select.exists()
+                ? select
+                    .findAll('option')
+                    .map((o) => textOf(o) + (o.element.disabled ? ' (x)' : ''))
+                : textOf(cells.Disk.find('span[title]')),
+              warnings: tooltipButtons(cells.Disk).map((b) => b.label),
             },
           ];
         }),
@@ -247,18 +259,30 @@ describe('StoppedExperiment', () => {
     });
   });
 
-  it('keeps the latest searches, each once, up to its cap', () => {
-    const ctx = stopped();
-    ctx.searchHistory = Array.from({ length: 10 }, (_, i) => `vm-${i}`);
+  it('keeps the latest searches, each once, up to its cap', async () => {
+    const page = await stopped(undefined, {
+      searchName: ' vm-new ',
+      searchHistory: Array.from({ length: 10 }, (_, i) => `vm-${i}`),
+    });
+    const history = () =>
+      page.findComponent({ name: 'BAutocomplete' }).props('data');
+    // a search the server found VMs for
+    const found = async () => {
+      loaderSpy.options.apply({
+        name: 'exp1',
+        vms: [{ name: 'vm-new' }],
+        vm_count: 1,
+        vlans: [],
+      });
+      await flushPromises();
+    };
 
-    ctx.searchName = ' vm-new ';
-    ctx.addSearchHistory();
-    expect(ctx.searchHistory).toHaveLength(10);
-    expect(ctx.searchHistory).toContain('vm-new');
+    await found();
+    expect(history()).toHaveLength(10);
+    expect(history()).toContain('vm-new');
 
-    ctx.searchName = 'vm-new';
-    ctx.addSearchHistory();
-    expect(ctx.searchHistory.filter((s) => s == 'vm-new')).toHaveLength(1);
+    await found();
+    expect(history().filter((s) => s == 'vm-new')).toHaveLength(1);
   });
 });
 
@@ -273,22 +297,16 @@ describe('VMtilesView', () => {
   // the page's heading and its tiles: the name on each, what its picture
   // says, and whether the picture opens the VM's console
   async function tiles(route, searchName = '') {
-    vi.useFakeTimers();
-    const html = await renderSSR(
-      VMtilesView,
-      {},
-      { route, data: { vms, searchName } },
-    );
+    const page = await mountComponent(VMtilesView, {
+      route,
+      data: { vms, searchName },
+    });
     return {
-      heading: textOf(html.match(/<h3>[\s\S]*?<\/h3>/)[0]),
-      tiles: [
-        ...html.matchAll(
-          /<p class="title"[^>]*>([^<]*)<\/p><figure[^>]*>([\s\S]*?)<\/figure>/g,
-        ),
-      ].map(([, name, figure]) => ({
-        name: name.trim(),
-        alt: textOf(figure.match(/alt="([^"]*)"/)[1]),
-        console: /<a\b[^>]*href="[^"]*\/vnc\?token=t"/.test(figure),
+      heading: textOf(page.find('h3')),
+      tiles: page.findAll('.tile.is-child').map((tile) => ({
+        name: textOf(tile.find('p.title')),
+        alt: tile.find('img').attributes('alt'),
+        console: tile.find('a[href*="/vnc?token=t"]').exists(),
       })),
     };
   }
@@ -327,60 +345,82 @@ describe('VMtilesView', () => {
 });
 
 describe('VMLabelsModal', () => {
-  const modal = (tags = {}) =>
-    makeContext(VMLabelsModal, {
-      experiment: 'exp1',
-      vmName: 'vm1',
-      tags,
-      $emit: vi.fn(),
+  // a label and a note, so the modal adds no blank rows, which it would save
+  const NOTE = { __notes_1: 'n' };
+
+  // it resizes its notes before b-table draws them, which throws
+  beforeEach(() => {
+    vi.spyOn(VMLabelsModal.methods, 'resizeNoteTextArea').mockReturnValue();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  const modal = (tags) =>
+    mountComponent(VMLabelsModal, {
+      props: { experiment: 'exp1', vmName: 'vm1', tags: { ...NOTE, ...tags } },
     });
 
   it('saves to the experiment it was given and closes on 200', async () => {
     axios.patch.mockResolvedValue({ status: 200, statusText: '' });
-    const ctx = modal();
-    ctx.workingTags = [{ key: 'k', value: 'v' }];
+    const labels = await modal({ old: 'x' });
+    const [key, value] = labels.findAll('table').at(1).findAll('td input');
+    await key.setValue('k');
+    await value.setValue('v');
 
-    ctx.save();
-    await flush();
+    await button(labels, 'Save').trigger('click');
+    await flushPromises();
 
     expect(axios.patch).toHaveBeenCalledWith('experiments/exp1/vms/vm1', {
       tag_update_mode: 'SET',
-      tags: { k: 'v' },
+      tags: { k: 'v', ...NOTE },
     });
-    expect(ctx.$emit).toHaveBeenCalledWith('saved');
-    expect(ctx.$emit).toHaveBeenCalledWith('close');
+    expect(labels.emitted('saved')).toEqual([[]]);
+    expect(labels.emitted('close')).toEqual([[]]);
   });
 
-  it('closes without saving when nothing changed', () => {
-    const ctx = modal({ k: 'v' });
-    ctx.workingTags = [{ key: 'k', value: 'v' }];
+  it('closes without saving when nothing changed', async () => {
+    const labels = await modal({ k: 'v' });
 
-    ctx.save();
+    await button(labels, 'Save').trigger('click');
     expect(axios.patch).not.toHaveBeenCalled();
-    expect(ctx.$emit).toHaveBeenCalledWith('close');
+    expect(labels.emitted('close')).toEqual([[]]);
   });
 });
 
 describe('VMMountBrowserModal', () => {
-  const parts = (currentPath) => {
-    const ctx = makeContext(VMMountBrowserModal, {
-      targetExp: 'exp1',
-      targetVm: 'vm1',
-    });
-    ctx.currentPath = currentPath;
-    return ctx.pathParts;
-  };
-
-  it('links each crumb to its own position in the path', () => {
-    expect(parts('/a/a/b')).toEqual([
-      { part: 'mnt', upTo: '/' },
-      { part: 'a', upTo: '/a' },
-      { part: 'a', upTo: '/a/a' },
-      { part: 'b', upTo: '/a/a/b' },
-    ]);
+  beforeEach(() => {
+    axios.post.mockImplementation(never);
+    axios.delete.mockResolvedValue({});
   });
 
-  it('shows only the mount at its root', () => {
-    expect(parts('/')).toEqual([{ part: 'mnt', upTo: '/' }]);
+  const browser = (currentPath) =>
+    mountComponent(VMMountBrowserModal, {
+      props: { targetExp: 'exp1', targetVm: 'vm1' },
+      data: { currentPath },
+    });
+
+  const crumbs = (wrapper) => wrapper.findAll('.breadcrumb li');
+
+  it('links each crumb to its own position in the path', async () => {
+    const wrapper = await browser('/a/a/b');
+    expect(crumbs(wrapper).map(textOf)).toEqual(['mnt', 'a', 'a', 'b']);
+    expect(crumbs(wrapper).at(-1).classes()).toContain('is-active');
+
+    // the path each crumb opens
+    for (const [i, path] of [
+      [2, '/a/a'],
+      [1, '/a'],
+      [0, '/'],
+    ]) {
+      await crumbs(wrapper).at(i).find('a').trigger('click');
+      expect(axios.get.mock.lastCall).toEqual([
+        'experiments/exp1/vms/vm1/files',
+        { params: { path } },
+      ]);
+      expect(crumbs(wrapper)).toHaveLength(i + 1);
+    }
+  });
+
+  it('shows only the mount at its root', async () => {
+    expect(crumbs(await browser('/')).map(textOf)).toEqual(['mnt']);
   });
 });

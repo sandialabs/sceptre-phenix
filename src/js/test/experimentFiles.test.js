@@ -1,5 +1,6 @@
 // The experiment Files tab (ExperimentFilesTab.vue): listing, opening,
 // selecting, downloading and deleting files, and the pages that hold it.
+import { flushPromises, RouterLinkStub } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,21 +19,25 @@ import { h } from 'vue';
 
 import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
 import FileSelectionActions from '@/components/experiment/FileSelectionActions.vue';
+import { useJobStore } from '@/utils/jobs.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
-import { deferredGets, flush } from './helpers/async.js';
-import { dialogs, toasts } from './helpers/buefy.js';
+import { deferredGets, never } from './helpers/async.js';
 import { httpError, wsMsg } from './helpers/fixtures.js';
-import { useJobStore } from '@/utils/jobs.js';
-import { pageContext } from './helpers/page.js';
 import {
   allowAll,
   allowOnly,
   denyAll,
   denyOnly,
 } from './helpers/permissions.js';
-import { renderSSR, stubBrowser, tableRows, textOf } from './helpers/render.js';
-import { memoryStorage } from './helpers/storage.js';
+import {
+  byLabel,
+  confirmDialog,
+  dialogs,
+  mountComponent,
+  tableHeader,
+  toasts,
+} from './helpers/mount.js';
 
 const row = (path, extra) => ({
   name: path.split('/').pop(),
@@ -48,32 +53,44 @@ const answer = (names, categories = ['Unknown']) => ({
   },
 });
 
-// a Files tab on experiment exp1, with its dialogs and toasts recorded
-const filesTab = (fields = {}) =>
-  pageContext(ExperimentFilesTab, {
-    id: 'exp1',
-    fields: {
-      paginateKey: 'test-files',
-      filter: '',
-      category: null,
-      $nextTick: () => Promise.resolve(),
-      ...fields,
-    },
+// mounts `component` on exp1's page
+const mountOn = (component, options) =>
+  mountComponent(component, { route: '/experiment/exp1', ...options });
+
+// a Files tab on experiment exp1, with this state
+const filesTab = (state, props) =>
+  mountOn(ExperimentFilesTab, {
+    props: { paginateKey: 'running-files', ...props },
+    data: state,
   });
 
-// a Files tab already listing these paths; asking for the list again is
-// only recorded
-function listing(paths = ['a.log', 'scorch/run-0/b.json', 'c.pcap']) {
-  const tab = filesTab({
-    files: paths.map((p) => row(p)),
-    updateFiles: vi.fn(),
-  });
-  tab.filesTable.total = paths.length;
+// A Files tab already listing these files (rows, or paths for rows), with
+// this state; asking for the list again is only recorded.
+async function listing(
+  files = ['a.log', 'scorch/run-0/b.json', 'c.pcap'],
+  state,
+) {
+  files = files.map((f) => (typeof f == 'string' ? row(f) : f));
+  const tab = await filesTab({ files, filesLoaded: true, ...state });
+  tab.vm.filesTable.total = files.length;
+  axios.get.mockReturnValue(never());
+  await flushPromises();
   return tab;
 }
 
-const emitted = (tab, event) =>
-  tab.$emit.mock.calls.filter(([name]) => name == event).map(([, v]) => v);
+const cells = (tab, label) =>
+  tab.findAll(`tbody td[data-label="${label}"]`).map((td) => td.text());
+const boxes = (tab) =>
+  tab.findAll('tbody td input[type="checkbox"]').map((i) => i.element);
+const rowPaths = (tab) => boxes(tab).map((box) => box.value);
+const checked = (tab) =>
+  boxes(tab)
+    .filter((box) => box.checked)
+    .map((box) => box.value);
+const headerBox = (tab) => tab.find('thead input[type="checkbox"]').element;
+const emptyText = (tab) => tab.find('tbody').text();
+const relisted = () =>
+  axios.get.mock.calls.some(([url]) => url == 'experiments/exp1/files');
 
 // Roles, and whether each may download the experiment's files, delete them,
 // and so select them.
@@ -96,20 +113,21 @@ beforeEach(() => {
   setActivePinia(createPinia());
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => vi.restoreAllMocks());
 
 describe('listing files', () => {
-  it('asks for the search, sort and page the table shows', () => {
-    axios.get.mockResolvedValue(answer([]));
-    const tab = filesTab({ filter: 'a&b' });
+  it('asks for the search, sort and page the table shows', async () => {
+    axios.get.mockResolvedValue({ data: { files: [], total: 11 } });
+    const tab = await filesTab({}, { filter: 'a&b' });
 
-    tab.updateFiles();
+    await tab.vm.reload();
     expect(axios.get).toHaveBeenLastCalledWith('experiments/exp1/files', {
       params: { filter: 'a&b', sortCol: 'date', sortDir: 'desc' },
     });
 
-    tab.filesTable.isPaginated = true;
-    tab.onFilesPageChange(2);
+    await flushPromises();
+    await tab.find('.files-paginate input').setValue(true);
+    await byLabel(tab, 'Next page').trigger('click');
     expect(axios.get).toHaveBeenLastCalledWith('experiments/exp1/files', {
       params: {
         filter: 'a&b',
@@ -120,7 +138,12 @@ describe('listing files', () => {
       },
     });
 
-    tab.onFilesSort('size', 'asc');
+    await tableHeader(tab, 'Size').trigger('click');
+    expect(axios.get.mock.calls.at(-1)[1].params).toMatchObject({
+      sortCol: 'size',
+      sortDir: 'desc',
+    });
+    await tableHeader(tab, 'Size').trigger('click');
     expect(axios.get.mock.calls.at(-1)[1].params).toMatchObject({
       sortCol: 'size',
       sortDir: 'asc',
@@ -129,67 +152,65 @@ describe('listing files', () => {
 
   it('keeps the newest answer when an older one arrives last', async () => {
     const pending = deferredGets(axios.get);
-    const tab = filesTab({ filter: 'o' });
+    const tab = await filesTab({}, { filter: 'o' });
 
-    tab.updateFiles();
-    tab.filter = 'ol';
-    tab.updateFiles();
+    await tab.vm.reload();
+    await tab.setProps({ filter: 'ol' });
+    await tab.vm.reload();
 
     pending[1].resolve(answer(['old.pcap']));
-    await flush();
+    await flushPromises();
     pending[0].resolve(answer(['old.pcap', 'other.log']));
-    await flush();
+    await flushPromises();
 
-    expect(tab.files.map((f) => f.name)).toEqual(['old.pcap']);
-    expect(tab.filesTable.total).toBe(1);
+    expect(cells(tab, 'Name')).toEqual(['old.pcap']);
+    expect(tab.vm.filesTable.total).toBe(1);
   });
 
   it('does not report the failure of a replaced request', async () => {
     const pending = deferredGets(axios.get);
-    const tab = filesTab();
+    const tab = await filesTab();
 
-    tab.updateFiles();
-    tab.updateFiles();
+    await tab.vm.reload();
+    await tab.vm.reload();
 
     pending[0].reject(new Error('Network Error'));
     pending[1].resolve(answer(['a.pcap']));
-    await flush();
+    await flushPromises();
 
     expect(notify.error).not.toHaveBeenCalled();
-    expect(tab.files.map((f) => f.name)).toEqual(['a.pcap']);
+    expect(cells(tab, 'Name')).toEqual(['a.pcap']);
   });
 
   it('reports a list that fails to load, and stops saying it is loading', async () => {
     const err = new Error('forbidden');
     axios.get.mockRejectedValue(err);
-    const tab = filesTab();
+    const tab = await filesTab();
 
-    tab.updateFiles();
-    await flush();
+    await tab.vm.reload();
+    await flushPromises();
 
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(tab.filesLoaded).toBe(true);
+    expect(emptyText(tab)).toBe('This experiment has no files yet');
   });
 
   it('treats a null file list as empty', async () => {
-    const tab = filesTab();
-    tab.selectedFiles = ['a.log'];
+    const tab = await filesTab({ selectedFiles: ['a.log'] });
     axios.get.mockResolvedValue({ data: { files: null } });
 
-    expect(tab.filesEmptyText).toBe('Loading files…');
-    tab.updateFiles();
-    await flush();
+    expect(emptyText(tab)).toBe('Loading files…');
+    await tab.vm.reload();
+    await flushPromises();
 
-    expect(tab.files).toEqual([]);
-    expect(tab.selectedFiles).toEqual([]);
-    expect(tab.filesTable.total).toBe(0);
-    expect(tab.filesLoaded).toBe(true);
-    expect(tab.filesEmptyText).toBe('This experiment has no files yet');
+    expect(tab.findAll('tbody tr td[data-label="Name"]')).toHaveLength(0);
+    expect(tab.find('.file-selection-actions').exists()).toBe(false);
+    expect(tab.vm.filesTable.total).toBe(0);
+    expect(emptyText(tab)).toBe('This experiment has no files yet');
   });
 
-  it('does not request files without permission to list them', () => {
+  it('does not request files without permission to list them', async () => {
     rbac.allowed = vi.fn(denyAll);
-    filesTab().updateFiles();
+    await (await filesTab()).vm.reload();
     expect(axios.get).not.toHaveBeenCalled();
     expect(rbac.allowed).toHaveBeenCalledWith(
       'experiments/files',
@@ -199,7 +220,7 @@ describe('listing files', () => {
   });
 
   it('shows the picked category and offers every category seen', async () => {
-    const tab = filesTab({ category: 'Packet Capture' });
+    const tab = await filesTab({}, { category: 'Packet Capture' });
     axios.get.mockResolvedValueOnce({
       data: {
         files: [
@@ -211,53 +232,47 @@ describe('listing files', () => {
       },
     });
 
-    tab.updateFiles();
-    await flush();
+    await tab.vm.reload();
+    await flushPromises();
 
-    expect(tab.files.map((f) => f.name)).toEqual(['a.pcap']);
-    expect(tab.filesTable.total).toBe(3);
-    expect(emitted(tab, 'categories')).toEqual([['Packet Capture', 'Unknown']]);
-    expect(tab.filesEmptyText).toBe('No files match your search');
+    expect(cells(tab, 'Name')).toEqual(['a.pcap']);
+    expect(tab.vm.filesTable.total).toBe(3);
+    expect(tab.emitted('categories')).toEqual([
+      [['Packet Capture', 'Unknown']],
+    ]);
+    expect(tab.vm.filesEmptyText).toBe('No files match your search');
 
     // categories seen before stay on offer
     axios.get.mockResolvedValueOnce(answer(['d.json'], ['Scorch Artifact']));
-    tab.updateFiles();
-    await flush();
-    expect(emitted(tab, 'categories')[1]).toEqual([
-      'Packet Capture',
-      'Scorch Artifact',
-      'Unknown',
+    await tab.vm.reload();
+    await flushPromises();
+    expect(tab.emitted('categories')[1]).toEqual([
+      ['Packet Capture', 'Scorch Artifact', 'Unknown'],
     ]);
   });
 
   it('reports only searches that found files, for the search history', async () => {
-    const tab = filesTab();
-    axios.get.mockResolvedValue(answer(['a.log']));
-    tab.updateFiles();
-    await flush();
-    expect(emitted(tab, 'found')).toHaveLength(0);
+    const tab = await filesTab();
+    const search = async (filter, names) => {
+      axios.get.mockResolvedValue(answer(names));
+      await tab.setProps({ filter });
+      await tab.vm.reload();
+      await flushPromises();
+      return tab.emitted('found')?.length ?? 0;
+    };
 
-    tab.filter = 'a.l';
-    tab.updateFiles();
-    await flush();
-    expect(emitted(tab, 'found')).toHaveLength(1);
-
-    axios.get.mockResolvedValue(answer([]));
-    tab.filter = 'zzz';
-    tab.updateFiles();
-    await flush();
-    expect(emitted(tab, 'found')).toHaveLength(1);
+    expect(await search('', ['a.log'])).toBe(0);
+    expect(await search('a.l', ['a.log'])).toBe(1);
+    expect(await search('zzz', [])).toBe(1);
   });
 
   it("waits for the page's new search to arrive before reloading", async () => {
     axios.get.mockResolvedValue(answer([]));
-    const tick = Promise.withResolvers();
-    const tab = filesTab({ $nextTick: () => tick.promise });
+    const tab = await filesTab();
 
-    const done = tab.reload();
+    tab.setProps({ filter: 'new' });
+    const done = tab.vm.reload();
     expect(axios.get).not.toHaveBeenCalled();
-    tab.filter = 'new';
-    tick.resolve();
     await done;
 
     expect(axios.get.mock.calls[0][1].params.filter).toBe('new');
@@ -267,58 +282,54 @@ describe('listing files', () => {
 describe('selecting files', () => {
   it('keeps only the selected rows the new list still shows', async () => {
     axios.get.mockResolvedValue(answer(['a.log', 'd.log']));
-    const tab = filesTab();
-    tab.selectedFiles = ['a.log', 'gone.log'];
+    const tab = await filesTab({ selectedFiles: ['a.log', 'gone.log'] });
 
-    tab.updateFiles();
-    await flush();
-    expect(tab.selectedFiles).toEqual(['a.log']);
+    await tab.vm.reload();
+    await flushPromises();
+    expect(checked(tab)).toEqual(['a.log']);
 
     // a selection the list still shows in full is kept as it is
-    const kept = tab.selectedFiles;
-    tab.updateFiles();
-    await flush();
-    expect(tab.selectedFiles).toBe(kept);
+    const kept = tab.vm.selectedFiles;
+    await tab.vm.reload();
+    await flushPromises();
+    expect(tab.vm.selectedFiles).toBe(kept);
   });
 
-  it('selects and clears every row shown from the header checkbox', () => {
-    const tab = listing();
-    expect(tab.allFilesSelected).toBe(false);
-    expect(tab.someFilesSelected).toBe(false);
+  it('selects and clears every row shown from the header checkbox', async () => {
+    const tab = await listing();
+    const header = headerBox(tab);
+    expect([header.checked, header.indeterminate]).toEqual([false, false]);
 
-    tab.selectedFiles = ['a.log'];
-    expect(tab.someFilesSelected).toBe(true);
+    await tab.find('tbody input[value="a.log"]').setValue(true);
+    expect(header.indeterminate).toBe(true);
 
-    tab.allFilesSelected = true;
-    expect(tab.selectedFiles).toEqual([
-      'a.log',
-      'scorch/run-0/b.json',
-      'c.pcap',
-    ]);
-    expect(tab.allFilesSelected).toBe(true);
-    expect(tab.someFilesSelected).toBe(false);
+    await tab.find('thead input').setValue(true);
+    expect(checked(tab)).toEqual(['a.log', 'scorch/run-0/b.json', 'c.pcap']);
+    expect([header.checked, header.indeterminate]).toEqual([true, false]);
 
-    tab.allFilesSelected = false;
-    expect(tab.selectedFiles).toEqual([]);
+    await tab.find('thead input').setValue(false);
+    expect(checked(tab)).toEqual([]);
 
-    tab.selectedFiles = ['c.pcap'];
-    tab.clearFileSelection();
-    expect(tab.selectedFiles).toEqual([]);
+    await tab.find('tbody input[value="c.pcap"]').setValue(true);
+    await byLabel(tab, 'clear the selection').trigger('click');
+    expect(checked(tab)).toEqual([]);
   });
 
-  it('has nothing to select all in an empty list', () => {
-    expect(listing([]).allFilesSelected).toBe(false);
+  it('has nothing to select all in an empty list', async () => {
+    const header = headerBox(await listing([]));
+    expect([header.checked, header.disabled]).toEqual([false, true]);
   });
 });
 
 describe('opening a file', () => {
   it('shows plain text in the viewer, with the page waiting meanwhile', async () => {
-    axios.get.mockResolvedValue({ data: '{"a":1}' });
-    const tab = filesTab();
+    const tab = await listing([row('scorch/a b.json', { plainText: true })]);
+    const pending = deferredGets(axios.get);
 
-    tab.viewFile(row('scorch/a b.json'));
-    expect(emitted(tab, 'waiting')).toEqual([true]);
-    await flush();
+    await byLabel(tab, 'View a b.json').trigger('click');
+    expect(tab.emitted('waiting')).toEqual([[true]]);
+    pending[0].resolve({ data: '{"a":1}' });
+    await flushPromises();
 
     expect(axios.get).toHaveBeenCalledWith(
       'experiments/exp1/files/a%20b.json',
@@ -328,15 +339,14 @@ describe('opening a file', () => {
         responseType: 'text',
       },
     );
-    expect(tab.fileViewerModal).toEqual({
-      active: true,
-      title: 'scorch/a b.json',
-      contents: '{\n  "a": 1\n}',
-    });
-    expect(emitted(tab, 'waiting')).toEqual([true, false]);
+    expect(tab.find('.modal.is-active .modal-card-title').text()).toBe(
+      'scorch/a b.json',
+    );
+    expect(tab.find('.file-viewer').element.value).toBe('{\n  "a": 1\n}');
+    expect(tab.emitted('waiting')).toEqual([[true], [false]]);
 
-    tab.resetFileViewerModal();
-    expect(tab.fileViewerModal).toEqual({
+    await tab.find('.modal-card-foot button').trigger('click');
+    expect(tab.vm.fileViewerModal).toEqual({
       active: false,
       title: null,
       contents: null,
@@ -354,53 +364,63 @@ describe('opening a file', () => {
     ['shows invalid JSON as it is', 'bad.json', '{"a":', '{"a":'],
     ['shows nothing for a missing body', 'x.json', undefined, ''],
   ])('%s', async (_, name, body, contents) => {
+    const tab = await listing([row(name, { plainText: true })]);
     axios.get.mockResolvedValue({ data: body });
-    const tab = filesTab();
 
-    tab.viewFile(row(name));
-    await flush();
-    expect(tab.fileViewerModal.contents).toBe(contents);
+    await byLabel(tab, `View ${name}`).trigger('click');
+    await flushPromises();
+    expect(tab.find('.file-viewer').element.value).toBe(contents);
   });
 
   it('reports a file it cannot read, and stops the page waiting', async () => {
+    const tab = await listing([row('gone.log', { plainText: true })]);
     const err = new Error('not found');
     axios.get.mockRejectedValue(err);
-    const tab = filesTab();
 
-    tab.viewFile(row('gone.log'));
-    await flush();
+    await byLabel(tab, 'View gone.log').trigger('click');
+    await flushPromises();
 
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(tab.fileViewerModal.active).toBe(false);
-    expect(emitted(tab, 'waiting')).toEqual([true, false]);
+    expect(tab.find('.modal.is-active').exists()).toBe(false);
+    expect(tab.emitted('waiting')).toEqual([[true], [false]]);
   });
 
-  it('downloads a file with the token in the query, its name escaped', () => {
-    const open = vi.fn();
-    vi.stubGlobal('window', { open });
-    filesTab().downloadFile(row('logs/run #1?.log'));
+  it('downloads a file with the token in the query, its name escaped', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const tab = await listing(['logs/run #1?.log']);
+
+    await byLabel(tab, 'Download run #1?.log').trigger('click');
     expect(open).toHaveBeenCalledWith(
       '/api/v1/experiments/exp1/files/run%20%231%3F.log?path=logs%2Frun+%231%3F.log&token=t',
       '_blank',
     );
   });
 
-  it('opens capture files on the WebShark page', () => {
+  it('opens capture files on the WebShark page', async () => {
     store.features = ['webshark'];
-    const tab = filesTab();
-    const link = {
+    const tab = await listing([
+      'caps/web_0.pcap',
+      'old.PCAPNG.gz',
+      'notes.txt',
+      row('run.pcap', { isDir: true }),
+    ]);
+    const webShark = (name) => byLabel(tab, `Open ${name} in WebShark`);
+
+    expect(webShark('web_0.pcap').attributes('href')).toBe(
+      '/packets?exp=exp1&file=caps/web_0.pcap',
+    );
+    expect(webShark('old.PCAPNG.gz').exists()).toBe(true);
+
+    await tab.find('td[data-label="Name"] .is-clickable div').trigger('click');
+    await flushPromises();
+    expect(tab.router.currentRoute.value).toMatchObject({
       name: 'webshark',
       query: { exp: 'exp1', file: 'caps/web_0.pcap' },
-    };
-    expect(tab.webSharkLink(row('caps/web_0.pcap'))).toEqual(link);
-    expect(tab.webSharkLink(row('old.PCAPNG.gz'))).not.toBe(null);
-
-    tab.openFileInWebShark(row('caps/web_0.pcap'));
-    expect(tab.$router.push).toHaveBeenCalledWith(link);
+    });
 
     // not other files, or a directory named like a capture
-    expect(tab.webSharkLink(row('notes.txt'))).toBe(null);
-    expect(tab.webSharkLink(row('run.pcap', { isDir: true }))).toBe(null);
+    expect(webShark('notes.txt').exists()).toBe(false);
+    expect(webShark('run.pcap').exists()).toBe(false);
   });
 
   it.each([
@@ -411,106 +431,121 @@ describe('opening a file', () => {
       ['webshark'],
       denyOnly(['experiments/files', 'get', 'exp1']),
     ],
-  ])('opens nothing in WebShark when %s', (_, features, allowed) => {
+  ])('opens nothing in WebShark when %s', async (_, features, allowed) => {
     store.features = features;
     rbac.allowed = allowed;
-    const tab = filesTab();
-    expect(tab.canOpenInWebShark).toBe(false);
-    expect(tab.webSharkLink(row('a.pcap'))).toBe(null);
+    const tab = await listing(['a.pcap']);
+    expect(tab.vm.canOpenInWebShark).toBe(false);
+    expect(byLabel(tab, 'Open a.pcap in WebShark').exists()).toBe(false);
   });
 });
 
 describe('deleting a file', () => {
-  it('names the file in the confirmation, escaped', () => {
-    const tab = listing(['scorch/<b>x</b>.log']);
-    tab.confirmDeleteFile(tab.files[0]);
-    const [dialog] = dialogs(tab);
-    expect(dialog.type).toBe('is-danger');
-    expect(dialog.confirmText).toBe('Delete');
-    expect(dialog.message).toContain('&lt;b&gt;x&lt;/b&gt;.log');
-    expect(dialog.message).toContain('scorch/&lt;b&gt;x&lt;/b&gt;.log');
-    expect(dialog.message).not.toContain('<b>x</b>');
+  it('names the file in the confirmation, escaped', async () => {
+    const tab = await listing(['scorch/<b>x</b>.log']);
+    await tab.find('.file-delete').trigger('click');
+
+    const [dialog] = dialogs();
+    const confirm = dialog.querySelector('footer .button:last-child');
+    expect(confirm.classList).toContain('is-danger');
+    expect(confirm.textContent).toBe('Delete');
+    const message = dialog.querySelector('.media-content').innerHTML;
+    expect(message).toContain('&lt;b&gt;x&lt;/b&gt;.log');
+    expect(message).toContain('scorch/&lt;b&gt;x&lt;/b&gt;.log');
+    expect(message).not.toContain('<b>x</b>');
   });
 
   it('deletes after confirming, spinning until done, then relists', async () => {
     const request = Promise.withResolvers();
     axios.delete.mockReturnValue(request.promise);
-    const tab = listing();
-    tab.selectedFiles = ['scorch/run-0/b.json', 'a.log'];
+    const tab = await listing(undefined, {
+      selectedFiles: ['scorch/run-0/b.json', 'a.log'],
+    });
 
-    tab.confirmDeleteFile(tab.files[1]);
-    dialogs(tab)[0].onConfirm();
+    await byLabel(tab, 'Delete b.json').trigger('click');
+    await confirmDialog();
 
     expect(axios.delete).toHaveBeenCalledWith('experiments/exp1/files/b.json', {
       params: { path: 'scorch/run-0/b.json' },
     });
-    expect(tab.isDeletingFile(tab.files[1])).toBe(true);
+    expect(byLabel(tab, 'Delete b.json').classes()).toContain('is-loading');
 
     request.resolve({ status: 204 });
-    await flush();
+    await flushPromises();
 
-    expect(tab.deletingFiles).toEqual([]);
-    expect(tab.files.map((f) => f.path)).toEqual(['a.log', 'c.pcap']);
-    expect(tab.filesTable.total).toBe(2);
-    expect(tab.selectedFiles).toEqual(['a.log']);
-    expect(toasts(tab)[0].type).toBe('is-success');
-    expect(tab.updateFiles).toHaveBeenCalled();
+    expect(tab.find('.file-delete.is-loading').exists()).toBe(false);
+    expect(rowPaths(tab)).toEqual(['a.log', 'c.pcap']);
+    expect(tab.vm.filesTable.total).toBe(2);
+    expect(checked(tab)).toEqual(['a.log']);
+    expect(toasts()[0].type).toBe('is-success');
+    expect(relisted()).toBe(true);
   });
 
   it('keeps the row and shows the error when the delete fails', async () => {
     const err = new Error('capture still in progress');
     axios.delete.mockRejectedValue(err);
-    const tab = listing();
+    const tab = await listing();
 
-    await tab.deleteFile(tab.files[2]);
+    await byLabel(tab, 'Delete c.pcap').trigger('click');
+    await confirmDialog();
 
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(tab.files).toHaveLength(3);
-    expect(tab.deletingFiles).toEqual([]);
-    expect(tab.updateFiles).not.toHaveBeenCalled();
+    expect(rowPaths(tab)).toHaveLength(3);
+    expect(tab.find('.file-delete.is-loading').exists()).toBe(false);
+    expect(relisted()).toBe(false);
   });
 
-  it('does not delete the same file twice at once', () => {
-    axios.delete.mockReturnValue(new Promise(() => {}));
-    const tab = listing();
-    tab.deleteFile(tab.files[0]);
-    tab.deleteFile(tab.files[0]);
+  it('does not delete the same file twice at once', async () => {
+    axios.delete.mockReturnValue(never());
+    const tab = await listing();
+    for (let i = 0; i < 2; i++) {
+      await byLabel(tab, 'Delete a.log').trigger('click');
+      await confirmDialog();
+    }
     expect(axios.delete).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('deleting the selected files', () => {
+  // the tab listing the files, these selected, its toolbar's Delete clicked
+  async function deleting(selectedFiles, paths) {
+    const tab = await listing(paths, { selectedFiles });
+    await tab.find('.file-delete-selected').trigger('click');
+    return tab;
+  }
+
   it('confirms once with the count, then deletes them together', async () => {
     axios.post.mockResolvedValue({
       data: { deleted: ['a.log', 'c.pcap'], failed: [] },
     });
-    const tab = listing();
-    tab.selectedFiles = ['a.log', 'c.pcap'];
+    const tab = await deleting(['a.log', 'c.pcap']);
 
-    tab.confirmDeleteSelectedFiles();
-    expect(dialogs(tab)).toHaveLength(1);
-    expect(dialogs(tab)[0].message).toContain('2 selected files');
-    expect(dialogs(tab)[0].confirmText).toBe('Delete 2 Files');
+    expect(dialogs()).toHaveLength(1);
+    expect(dialogs()[0].textContent).toContain('2 selected files');
+    expect(dialogs()[0].querySelector('footer .is-danger').textContent).toBe(
+      'Delete 2 Files',
+    );
 
-    const pending = dialogs(tab)[0].onConfirm();
-    expect(tab.filesBulkDeleting).toBe(true);
-    await pending;
+    dialogs()[0].querySelector('footer .is-danger').click();
+    await tab.vm.$nextTick();
+    expect(tab.find('.file-delete-selected').classes()).toContain('is-loading');
+    await flushPromises();
 
     expect(axios.post).toHaveBeenCalledWith('experiments/exp1/files/delete', {
       paths: ['a.log', 'c.pcap'],
     });
-    expect(tab.filesBulkDeleting).toBe(false);
-    expect(tab.files.map((f) => f.path)).toEqual(['scorch/run-0/b.json']);
-    expect(tab.selectedFiles).toEqual([]);
-    expect(toasts(tab)[0].message).toBe('Deleted 2 files');
+    expect(tab.find('.file-selection-actions').exists()).toBe(false);
+    expect(cells(tab, 'Name')).toEqual(['b.json']);
+    expect(rowPaths(tab)).toEqual(['scorch/run-0/b.json']);
+    expect(toasts()[0].text).toBe('Deleted 2 files');
     expect(notify.show).not.toHaveBeenCalled();
-    expect(tab.updateFiles).toHaveBeenCalled();
+    expect(relisted()).toBe(true);
   });
 
-  it('asks nothing when nothing is selected', () => {
-    const tab = listing();
-    tab.confirmDeleteSelectedFiles();
-    expect(dialogs(tab)).toHaveLength(0);
+  it('asks nothing when nothing is selected', async () => {
+    const tab = await listing();
+    tab.vm.confirmDeleteSelectedFiles();
+    expect(dialogs()).toHaveLength(0);
   });
 
   it('reports the files it could not delete, which stay selected', async () => {
@@ -523,18 +558,16 @@ describe('deleting the selected files', () => {
         ],
       },
     });
-    const tab = listing();
-    tab.selectedFiles = ['a.log', 'c.pcap', 'scorch/run-0/b.json'];
-
-    await tab.deleteSelectedFiles();
+    const tab = await deleting(['a.log', 'c.pcap', 'scorch/run-0/b.json']);
+    await confirmDialog();
 
     expect(notices.open).toHaveBeenCalledTimes(1);
     expect(noticeText()).toContain('Deleted 1 of 3 files; 2 failed');
     expect(noticeText()).toContain('c.pcap: capture already exists: c.pcap');
     expect(noticeText()).toContain('scorch/run-0/b.json: file not found');
-    expect(tab.selectedFiles).toEqual(['c.pcap', 'scorch/run-0/b.json']);
-    expect(tab.files).toHaveLength(2);
-    expect(toasts(tab)).toHaveLength(0);
+    expect(checked(tab)).toEqual(['scorch/run-0/b.json', 'c.pcap']);
+    expect(rowPaths(tab)).toHaveLength(2);
+    expect(toasts()).toHaveLength(0);
   });
 
   it('names the first eight failures and counts the rest', async () => {
@@ -545,10 +578,8 @@ describe('deleting the selected files', () => {
         failed: paths.map((path) => ({ path, error: 'busy' })),
       },
     });
-    const tab = listing(paths);
-    tab.selectedFiles = paths;
-
-    await tab.deleteSelectedFiles();
+    await deleting(paths, paths);
+    await confirmDialog();
 
     expect(noticeText()).toContain('f7.log: busy');
     expect(noticeText()).not.toContain('f8.log: busy');
@@ -558,15 +589,15 @@ describe('deleting the selected files', () => {
   it('shows the error and relists when the request fails', async () => {
     const err = new Error('forbidden');
     axios.post.mockRejectedValue(err);
-    const tab = listing();
-    tab.selectedFiles = ['a.log'];
-
-    await tab.deleteSelectedFiles();
+    const tab = await deleting(['a.log']);
+    await confirmDialog();
 
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(tab.files).toHaveLength(3);
-    expect(tab.filesBulkDeleting).toBe(false);
-    expect(tab.updateFiles).toHaveBeenCalled();
+    expect(rowPaths(tab)).toHaveLength(3);
+    expect(tab.find('.file-delete-selected').classes()).not.toContain(
+      'is-loading',
+    );
+    expect(relisted()).toBe(true);
   });
 });
 
@@ -590,38 +621,41 @@ describe('downloading the selected files', () => {
   const downloads = () =>
     vi.spyOn(useJobStore(), 'downloadArtifact').mockImplementation(() => {});
 
+  // the tab with these files selected, and its toolbar's Download button
+  async function selected(selectedFiles) {
+    const tab = await listing(undefined, { selectedFiles });
+    return { tab, download: tab.find('.file-download-selected') };
+  }
+
   it('builds the archive in a job and downloads it when done', async () => {
-    const download = downloads();
+    const saved = downloads();
     axios.post.mockResolvedValue({
       data: archiveJob({ status: 'running', artifact: undefined, revision: 1 }),
     });
+    const { tab, download } = await selected(['a.log', 'c.pcap']);
     axios.get.mockResolvedValue({ data: archiveJob() });
-    const tab = listing();
-    tab.selectedFiles = ['a.log', 'c.pcap'];
 
-    const pending = tab.downloadSelectedFiles();
-    expect(tab.filesDownloading).toBe(true);
-    expect(tab.filesBusy).toBe(true);
-    await flush();
+    await download.trigger('click');
+    expect(download.attributes('disabled')).toBeDefined();
+    expect(tab.vm.filesBusy).toBe(true);
+    await flushPromises();
     expect(axios.post).toHaveBeenCalledWith(
       'experiments/exp1/files/archive',
       { paths: ['a.log', 'c.pcap'] },
       undefined,
     );
-    expect(tab.archiveJob.status).toBe('running');
+    expect(tab.vm.archiveJob.status).toBe('running');
 
     // the job's websocket update says it finished
     useJobStore().apply(wsMsg('job', 'j1', 'update', archiveJob()));
-    await pending;
+    await flushPromises();
 
-    expect(download).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'j1' }),
-    );
-    expect(tab.filesDownloading).toBe(false);
+    expect(saved).toHaveBeenCalledWith(expect.objectContaining({ id: 'j1' }));
+    expect(download.attributes('disabled')).toBeUndefined();
   });
 
   it('leaves an incomplete archive for an explicit click', async () => {
-    const download = downloads();
+    const saved = downloads();
     const incomplete = archiveJob({
       status: 'partial',
       artifact: {
@@ -631,172 +665,160 @@ describe('downloading the selected files', () => {
       },
     });
     axios.post.mockResolvedValue({ data: incomplete });
+    const { tab, download } = await selected(['a.log', 'c.pcap']);
     axios.get.mockResolvedValue({ data: incomplete });
-    const tab = listing();
-    tab.selectedFiles = ['a.log', 'c.pcap'];
 
-    await tab.downloadSelectedFiles();
+    await download.trigger('click');
+    await flushPromises();
 
-    expect(download).not.toHaveBeenCalled();
-    expect(tab.archiveJob.artifact.incomplete).toBe(true);
+    expect(saved).not.toHaveBeenCalled();
+    expect(tab.vm.archiveJob.artifact.incomplete).toBe(true);
   });
 
   it('sums up an archive that could not be built, and one left behind downloads nothing', async () => {
-    const download = downloads();
+    const saved = downloads();
     const failed = archiveJob({
       status: 'failed',
       artifact: undefined,
       items: [{ name: 'a.log', status: 'failed', error: 'not found' }],
     });
     axios.post.mockResolvedValue({ data: failed });
+    const { tab, download } = await selected(['a.log']);
     axios.get.mockResolvedValue({ data: failed });
-    const tab = listing();
-    tab.selectedFiles = ['a.log'];
 
-    await tab.downloadSelectedFiles();
+    await download.trigger('click');
+    await flushPromises();
     expect(noticeText()).toContain('a.log: not found');
 
     // a tab the user left opens nothing
     axios.post.mockResolvedValue({ data: archiveJob() });
     axios.get.mockResolvedValue({ data: archiveJob() });
-    tab.unmounted = true;
-    await tab.downloadSelectedFiles();
-    expect(download).not.toHaveBeenCalled();
+    download.trigger('click');
+    tab.unmount();
+    await flushPromises();
+    expect(saved).not.toHaveBeenCalled();
   });
 
   it('shows a request it cannot start', async () => {
     const err = httpError(413, 'download too large');
     axios.post.mockRejectedValue(err);
-    const tab = listing();
-    tab.selectedFiles = ['a.log'];
+    const { download } = await selected(['a.log']);
 
-    await tab.downloadSelectedFiles();
+    await download.trigger('click');
+    await flushPromises();
 
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(tab.filesDownloading).toBe(false);
+    expect(download.attributes('disabled')).toBeUndefined();
   });
 
   it('waits for a download or delete in progress', async () => {
-    const tab = listing();
-    tab.selectedFiles = ['a.log'];
-    tab.filesBulkDeleting = true;
-    await tab.downloadSelectedFiles();
-    await tab.deleteSelectedFiles();
+    const tab = await listing(undefined, {
+      selectedFiles: ['a.log'],
+      filesBulkDeleting: true,
+    });
+    await tab.vm.downloadSelectedFiles();
+    await tab.vm.deleteSelectedFiles();
     expect(axios.post).not.toHaveBeenCalled();
   });
 });
 
-// The tab rendered with the real Buefy components. Buefy's table draws its
-// rows only in a browser, so the row tests draw it with renderSSR's stand-in.
 describe('rendering', () => {
-  // the tab on exp1, with some of its state (data and table fields) set
-  function render(state = {}, { table = {}, tables = false } = {}) {
-    const tab = {
-      ...ExperimentFilesTab,
-      setup(props) {
-        const bindings = ExperimentFilesTab.setup(props);
-        Object.assign(bindings.filesTable, table);
-        return bindings;
-      },
-    };
-    return renderSSR(
-      tab,
-      { paginateKey: 'running-files' },
-      { route: '/experiment/exp1', data: state, tables },
-    );
-  }
-
-  // what each button or link in a cell is for, in order
-  const buttons = (cell) =>
-    [...cell.matchAll(/<(?:a|button)\b([^>]*)>/g)].map(([, attrs]) => {
-      const label = attrs.match(/aria-label="([^"]*)"/)?.[1];
-      const href = attrs.match(/href="([^"]*)"/)?.[1];
-      if (attrs.includes('aria-hidden="true"')) return '(space)';
-      return href ? `${label} -> ${href}` : label;
-    });
+  // what each button or link in a row's Actions cell is for, in order
+  const actions = (tab, i) =>
+    tab
+      .findAll('tbody td[data-label="Actions"]')
+      [i].findAll('a, button')
+      .map((el) => {
+        if (el.attributes('aria-hidden') == 'true') return '(space)';
+        const label = el.attributes('aria-label');
+        const href = el.attributes('href');
+        return href ? `${label} -> ${href}` : label;
+      });
 
   it('has no toolbar while nothing is checked and one page holds all', async () => {
-    const html = await render();
-    expect(html).not.toContain('files-bar');
-    expect(html).not.toContain('Paginate');
-    expect(html).toContain('class="b-table');
-    expect(textOf(html)).toContain('Loading files…');
+    const tab = await filesTab();
+    expect(tab.find('.files-bar').exists()).toBe(false);
+    expect(tab.text()).not.toContain('Paginate');
+    expect(tab.find('.b-table').exists()).toBe(true);
+    expect(emptyText(tab)).toBe('Loading files…');
   });
 
   it('offers Paginate once the files fill more than a page', async () => {
-    const html = await render({}, { table: { total: 11 } });
-    expect(html).toContain('class="files-bar"');
-    expect(html).toContain('Paginate');
-    expect(html).not.toContain('file-selection-actions');
+    const tab = await listing([]);
+    tab.vm.filesTable.total = 11;
+    await tab.vm.$nextTick();
+    expect(tab.find('.files-bar').exists()).toBe(true);
+    expect(tab.find('.files-bar').text()).toContain('Paginate');
+    expect(tab.find('.file-selection-actions').exists()).toBe(false);
   });
 
   it("keeps the page's Paginate setting under its own key", async () => {
-    const storage = memoryStorage();
-    storage.setItem('phenix.paginate.running-files', 'true');
-    vi.stubGlobal('localStorage', storage);
-
-    const html = await render({}, { table: { total: 11 } });
-    expect(html).toMatch(/<input type="checkbox"[^>]*checked>/);
-    expect(html).toContain('class="pagination');
+    localStorage.setItem('phenix.paginate.running-files', 'true');
+    const tab = await listing([]);
+    tab.vm.filesTable.total = 11;
+    await tab.vm.$nextTick();
+    expect(tab.find('.files-paginate input').element.checked).toBe(true);
+    expect(tab.find('.pagination').exists()).toBe(true);
   });
 
   it('shows the selection toolbar while files are checked', async () => {
-    const html = await render({
-      files: [row('a.log')],
-      selectedFiles: ['a.log'],
-    });
-    expect(html).toContain('file-selection-actions');
-    expect(html).toContain('Download (1)');
-    expect(html).toContain('Delete (1)');
+    const tab = await listing(['a.log'], { selectedFiles: ['a.log'] });
+    expect(tab.find('.file-selection-actions').exists()).toBe(true);
+    expect(tab.find('.file-download-selected').text()).toBe('Download (1)');
+    expect(tab.find('.file-delete-selected').text()).toBe('Delete (1)');
   });
 
   it('gives each row the button that opens it, then download and delete', async () => {
     store.features = ['webshark'];
-    const html = await render(
-      {
-        files: [
-          row('caps/a.pcap'),
-          row('notes.txt', { plainText: true }),
-          row('disk.img'),
-        ],
-      },
-      { tables: true },
-    );
-    const [capture, text, other] = tableRows(html);
+    const tab = await listing([
+      'caps/a.pcap',
+      row('notes.txt', { plainText: true }),
+      'disk.img',
+    ]);
 
-    expect(buttons(capture.actions)).toEqual([
-      'Open a.pcap in WebShark -> /packets?exp=exp1&amp;file=caps/a.pcap',
+    expect(actions(tab, 0)).toEqual([
+      'Open a.pcap in WebShark -> /packets?exp=exp1&file=caps/a.pcap',
       'Download a.pcap',
       'Delete a.pcap',
     ]);
-    expect(capture.actions).toContain('data-icon="shark-fin"');
-    expect(buttons(text.actions)).toEqual([
+    expect(
+      byLabel(tab, 'Open a.pcap in WebShark')
+        .find('[data-icon="shark-fin"]')
+        .exists(),
+    ).toBe(true);
+    expect(actions(tab, 1)).toEqual([
       'View notes.txt',
       'Download notes.txt',
       'Delete notes.txt',
     ]);
     // an unseen button keeps the download buttons in line
-    expect(buttons(other.actions)).toEqual([
+    expect(actions(tab, 2)).toEqual([
       '(space)',
       'Download disk.img',
       'Delete disk.img',
     ]);
 
     // the name opens the file the same way
-    expect(textOf(capture.name)).toBe('Open in WebShark a.pcap');
-    expect(textOf(text.name)).toBe('view file notes.txt');
-    expect(other.name).not.toContain('is-clickable');
-    expect(capture.path).toContain('/phenix/images/exp1/files/caps/a.pcap');
+    const names = tab
+      .findAll('tbody td[data-label="Name"]')
+      .map((td) => td.findAll('.tooltip-content, .is-clickable'))
+      .map((parts) => parts.map((part) => part.text()));
+    expect(names).toEqual([
+      ['Open in WebShark', 'a.pcap'],
+      ['view file', 'notes.txt'],
+      [],
+    ]);
+    expect(tab.find('tbody td[data-label="Path"]').text()).toContain(
+      '/phenix/images/exp1/files/caps/a.pcap',
+    );
   });
 
   it.each(ROLES)(
     "leaves out the checkboxes and deletes %s can't use",
     async (_, role, download, del, select) => {
       rbac.allowed = role;
-      const [cells] = tableRows(
-        await render({ files: [row('a.log')] }, { tables: true }),
-      );
-      const shown = buttons(cells.actions);
+      const tab = await listing(['a.log']);
+      const shown = actions(tab, 0);
       if (download)
         expect(shown).toEqual([
           '(space)',
@@ -804,17 +826,17 @@ describe('rendering', () => {
           ...(del ? ['Delete a.log'] : []),
         ]);
       expect(shown.includes('Delete a.log')).toBe(del);
-      expect(cells.multiselect !== undefined).toBe(select);
+      expect(rowPaths(tab).length > 0).toBe(select);
     },
   );
 
   it('spins the delete button at work and holds the others', async () => {
     const toolbar = async (props) =>
-      (await renderSSR(FileSelectionActions, { count: 2, ...props }))
-        .match(/<button[^>]*>/g)
-        .map((button) => ({
-          loading: button.includes('is-loading'),
-          disabled: button.includes('disabled'),
+      (await mountOn(FileSelectionActions, { props: { count: 2, ...props } }))
+        .findAll('button')
+        .map((b) => ({
+          loading: b.classes('is-loading'),
+          disabled: b.element.disabled,
         }));
     const idle = { loading: false, disabled: false };
     const held = { loading: false, disabled: true };
@@ -837,22 +859,26 @@ describe('rendering', () => {
   });
 
   it("shows the archive job's progress", async () => {
-    const html = await renderSSR(FileSelectionActions, {
-      count: 2,
-      canDownload: true,
-      downloading: true,
-      archive: {
-        id: 'j1',
-        title: 'Archive 2 files of exp1',
-        kind: 'files.archive',
-        status: 'running',
-        cancelable: true,
-        progress: { done: 1, total: 2, bytes: 5, bytesTotal: 10 },
-        items: [],
+    const toolbar = await mountOn(FileSelectionActions, {
+      props: {
+        count: 2,
+        canDownload: true,
+        downloading: true,
+        archive: {
+          id: 'j1',
+          title: 'Archive 2 files of exp1',
+          kind: 'files.archive',
+          status: 'running',
+          cancelable: true,
+          progress: { done: 1, total: 2, bytes: 5, bytesTotal: 10 },
+          items: [],
+        },
       },
     });
-    expect(textOf(html)).toContain('1 of 2 files done');
-    expect(html).toContain('aria-label="Cancel Archive 2 files of exp1"');
+    expect(toolbar.text()).toContain('1 of 2 files done');
+    expect(byLabel(toolbar, 'Cancel Archive 2 files of exp1').exists()).toBe(
+      true,
+    );
   });
 });
 
@@ -873,10 +899,9 @@ describe('the experiment pages', () => {
   ];
 
   // the page on exp1 with its Files tab open, and what passed between them
-  async function renderPage(view, state) {
-    stubBrowser();
+  async function mountPage(view, state) {
     // the page's own lists never arrive
-    axios.get.mockReturnValue(new Promise(() => {}));
+    axios.get.mockReturnValue(never());
 
     const tabs = [];
     const FilesTab = {
@@ -888,57 +913,46 @@ describe('the experiment pages', () => {
         this.$emit('found');
         this.$emit('waiting', true);
       },
+      methods: { reload: vi.fn() },
       render: () => h('div'),
     };
-    let page;
-    await renderSSR(
-      {
-        ...view,
-        components: { ...view.components, ExperimentFilesTab: FilesTab },
-        mixins: [
-          ...view.mixins,
-          {
-            created() {
-              page = this;
-            },
-          },
-        ],
+    const page = await mountOn(view, {
+      data: {
+        activeTab: 1,
+        experiment: { name: 'exp1', vms: [] },
+        fileCategory: 'Packet Capture',
+        ...state,
       },
-      {},
-      {
-        route: '/experiment/exp1',
-        data: {
-          activeTab: 1,
-          experiment: { name: 'exp1', vms: [] },
-          fileCategory: 'Packet Capture',
-          ...state,
-        },
-      },
-    );
-    return { page, tabs };
+      stubs: { ExperimentFilesTab: FilesTab, RouterLink: RouterLinkStub },
+    });
+    return { page, tabs, reload: FilesTab.methods.reload };
   }
 
   it.each(pages)(
     '%s passes the tab its search and category, and takes its news',
     async (_, view, paginateKey, search) => {
-      const { page, tabs } = await renderPage(view, search);
+      const { page, tabs } = await mountPage(view, search);
 
       expect(tabs).toEqual([
         { paginateKey, filter: 'web-server', category: 'Packet Capture' },
       ]);
-      expect(page.fileCategories).toEqual(['Packet Capture', 'Unknown']);
-      expect(page.searchHistory).toEqual(['web-server']);
-      expect(page.isWaiting).toBe(true);
+      expect(page.vm.fileCategories).toEqual(['Packet Capture', 'Unknown']);
+      expect(page.vm.searchHistory).toEqual(['web-server']);
+      expect(page.vm.isWaiting).toBe(true);
       // the tab holds the file list, not the page
-      expect(page.files).toBeUndefined();
+      expect(page.vm.files).toBeUndefined();
     },
   );
 
-  it.each(pages)('%s reloads the tab when the category changes', (_, view) => {
-    const reload = vi.fn();
-    const page = { $refs: { filesTab: { reload } }, fileCategory: null };
-    view.methods.assignCategory.call(page, 'Unknown');
-    expect(page.fileCategory).toBe('Unknown');
-    expect(reload).toHaveBeenCalled();
-  });
+  it.each(pages)(
+    '%s reloads the tab when the category changes',
+    async (_, view) => {
+      const { page, reload } = await mountPage(view, {});
+      await page
+        .find('select[aria-label="Filter files by category"]')
+        .setValue('Unknown');
+      expect(page.vm.fileCategory).toBe('Unknown');
+      expect(reload).toHaveBeenCalled();
+    },
+  );
 });

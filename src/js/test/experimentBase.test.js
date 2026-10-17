@@ -1,6 +1,7 @@
 // An experiment's page picks its running or stopped view from the link or
 // cached data, asks only if neither says, and fixes a stale guess on load.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, resetMocks, store } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
@@ -9,16 +10,18 @@ vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
 
-// Stand-ins for the views, each drawing its name; with views.found set, the
-// view shown reports the experiment running or not, as the real ones do.
+// Stand-ins for the views, each drawing its name and noting it in views.shown;
+// with views.found set, it reports the experiment running or not.
 const views = vi.hoisted(() => ({
   found: undefined,
+  shown: [],
   standIn: (name) => ({
     // what the page's import() resolves to, as for the real views
     __esModule: true,
     default: {
       emits: ['running'],
       created() {
+        views.shown.push(name);
         if (views.found !== undefined) this.$emit('running', views.found);
       },
       render: () => name,
@@ -35,39 +38,21 @@ vi.mock('@/views/experiment/VMtilesView.vue', () => views.standIn('VM tiles'));
 
 import { cachedPage, cachePage, clearPageCache } from '@/utils/pageCache.js';
 import Base from '@/views/experiment/Base.vue';
-import { flush } from './helpers/async.js';
-import { renderSSR, textOf } from './helpers/render.js';
+import { mountPage } from './helpers/mount.js';
 
-// The page on exp1, opened by a link with this history state: what it
-// shows, and its state, to see what it shows once its view changes.
-async function open(historyState = null) {
-  vi.stubGlobal('window', { history: { state: historyState } });
-  let page;
-  const html = await renderSSR(
-    {
-      ...Base,
-      setup(props, ctx) {
-        page = Base.setup(props, ctx);
-        return page;
-      },
-    },
-    {},
-    { route: '/experiment/exp1' },
-  );
-  return { text: textOf(html), page };
+// the page on exp1, opened by a link with this history state, once the view
+// it picked has loaded
+function open(historyState = null) {
+  window.history.replaceState(historyState, '');
+  return mountPage(Base, { route: '/experiment/exp1' });
 }
-
-// what the page shows now, as its state has it
-const shownNow = async (page) =>
-  textOf(await renderSSR({ ...Base, setup: () => page }));
 
 beforeEach(() => {
   clearPageCache();
   resetMocks({ store: { role: { name: 'Experiment Admin' } } });
   views.found = undefined;
+  views.shown = [];
 });
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe("an experiment's page", () => {
   it.each([
@@ -117,15 +102,15 @@ describe("an experiment's page", () => {
     async (_, historyState, cached, shown) => {
       for (const [key, data] of Object.entries(cached)) cachePage(key, data);
 
-      expect((await open(historyState)).text).toBe(shown);
+      expect((await open(historyState)).text()).toBe(shown);
       expect(axios.get).not.toHaveBeenCalled();
     },
   );
 
   it('shows a VM viewer the VM tiles of a running experiment', async () => {
     store.role = { name: 'VM Viewer' };
-    expect((await open({ running: true })).text).toBe('VM tiles');
-    expect((await open({ running: false })).text).toBe('stopped view');
+    expect((await open({ running: true })).text()).toBe('VM tiles');
+    expect((await open({ running: false })).text()).toBe('stopped view');
   });
 
   it('asks the server when nothing says whether it runs, for the running view to reuse', async () => {
@@ -133,8 +118,8 @@ describe("an experiment's page", () => {
     axios.get.mockReturnValue(answer.promise);
     cachePage('experiments', [{ name: 'exp2', running: true }]);
 
-    const { text, page } = await open();
-    expect(text).toBe('Loading experiment…');
+    const page = await open();
+    expect(page.text()).toBe('Loading experiment…');
     expect(axios.get).toHaveBeenCalledWith('experiments/exp1', {
       signal: expect.any(AbortSignal),
       // reports the response's freshness into the cache entry
@@ -143,15 +128,15 @@ describe("an experiment's page", () => {
     });
 
     answer.resolve({ data: { name: 'exp1', running: true } });
-    await flush();
-    expect(await shownNow(page)).toBe('running view');
+    await flushPromises();
+    expect(page.text()).toBe('running view');
     // kept as the running view's data, without the VMs it lists itself
     expect(cachedPage('experiment/exp1').data).toEqual({
       name: 'exp1',
       running: true,
       vms: [],
     });
-    expect((await open()).text).toBe('running view');
+    expect((await open()).text()).toBe('running view');
     expect(axios.get).toHaveBeenCalledTimes(1);
   });
 
@@ -159,10 +144,9 @@ describe("an experiment's page", () => {
     const err = new Error('not found');
     axios.get.mockRejectedValue(err);
 
-    const { page } = await open();
-    await flush();
+    const page = await open();
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(await shownNow(page)).toBe('Could not load the experiment');
+    expect(page.text()).toBe('Could not load the experiment');
   });
 
   it.each([
@@ -172,9 +156,9 @@ describe("an experiment's page", () => {
     'switches views when the one shown finds the link wrong (link: %o)',
     async (historyState, running, guessed, shown) => {
       views.found = running;
-      const { text, page } = await open(historyState);
-      expect(text).toBe(guessed);
-      expect(await shownNow(page)).toBe(shown);
+      const page = await open(historyState);
+      expect(views.shown).toEqual([guessed, shown]);
+      expect(page.text()).toBe(shown);
     },
   );
 });

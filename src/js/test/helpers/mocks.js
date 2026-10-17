@@ -7,7 +7,7 @@ import { allowAll } from './permissions.js';
 
 // the other page loaders, for a file to mock pageLoader.js with instead of
 // modules.pageLoader
-export { capturing, fetching, loaderSpy, switchable } from './pageLoader.js';
+export { capturing, fetching, loaderSpy } from './pageLoader.js';
 
 // roleAllowed(resource, verb, name), and the checks built on it, answer with
 // rbac.allowed; set it to a predicate from permissions.js

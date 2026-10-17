@@ -1,15 +1,17 @@
 // The State of Health overview: how it judges each experiment's health, the
 // line and filters above its table, and the page itself.
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notify, rbac, resetMocks } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const { axios, capturing, loaderSpy, modules, notify, rbac, resetMocks, ws } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/websocket', modules.websocket);
+// the page shows the summaries it is given; its loads are recorded
+vi.mock('@/utils/pageLoader.js', capturing);
 
 import {
   filterCounts,
@@ -23,22 +25,19 @@ import {
   vmSegments,
   vmsDown,
 } from '@/utils/sohOverview.js';
-import { createLiveRows } from '@/utils/liveRows.js';
-import { cachePage, clearPageCache } from '@/utils/pageCache.js';
 import { pageStatus } from '@/utils/pageLoader.js';
 import SohOverview, {
   PROBLEMS_SHOWN,
   RELOAD_DELAY_MS,
 } from '@/views/SohOverview.vue';
 import { wsMsg } from './helpers/fixtures.js';
-import { pageContext } from './helpers/page.js';
-import { denyOnly } from './helpers/permissions.js';
 import {
-  renderSSR,
+  mountComponent,
   tableRows,
   textOf,
   tooltipButtons,
-} from './helpers/render.js';
+} from './helpers/mount.js';
+import { denyOnly } from './helpers/permissions.js';
 
 // every test starts with a user who may do anything
 beforeEach(() => resetMocks({ store: { role: { name: 'Global Admin' } } }));
@@ -257,23 +256,41 @@ describe('summaries', () => {
   });
 });
 
+// the page showing these summaries, as loaded unless `data` says otherwise
+const page = (experiments, data) =>
+  mountComponent(SohOverview, {
+    route: '/soh',
+    data: { experiments, loaded: true, ...data },
+  });
+
+// the experiment each row names, in order
+const names = (wrapper) =>
+  tableRows(wrapper).map((cells) => textOf(cells.Experiment.find('a')));
+
+const filterButton = (wrapper, label) =>
+  wrapper.findAll('.filters button').find((b) => textOf(b).startsWith(label));
+
+const publish = (msg) => {
+  for (const handler of ws.handlers) handler(msg);
+  return flushPromises();
+};
+
+// the Run SOH button of each row: its label, and whether it is disabled or spins
+const runButtons = (wrapper) =>
+  tableRows(wrapper).map((cells) => {
+    const [run] = tooltipButtons(cells.Actions);
+    return { ...run, spinning: run.control.classes('is-loading') };
+  });
+
 describe('SohOverview view', () => {
   afterEach(() => {
     vi.useRealTimers();
-    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    pageStatus.fresh = false;
   });
 
-  const view = (experiments) =>
-    pageContext(SohOverview, {
-      fields: {
-        experiments,
-        liveRows: createLiveRows(),
-        loader: { load: vi.fn(), loading: false },
-      },
-    });
-
-  it('filters rows by verdict and name', () => {
-    const ctx = view([
+  it('filters rows by verdict and name', async () => {
+    const wrapper = await page([
       summary({ name: 'a', configured: false }),
       summary({ name: 'b' }),
       summary({
@@ -283,82 +300,93 @@ describe('SohOverview view', () => {
       }),
     ]);
 
-    ctx.filter = 'attention';
-    expect(ctx.rows.map((r) => r.name)).toEqual(['c']);
+    await filterButton(wrapper, 'Needs attention').trigger('click');
+    expect(names(wrapper)).toEqual(['c']);
 
-    ctx.filter = 'nodata';
-    expect(ctx.rows.map((r) => r.name)).toEqual(['a']);
+    await filterButton(wrapper, 'No SOH data').trigger('click');
+    expect(names(wrapper)).toEqual(['a']);
 
-    ctx.filter = 'all';
-    ctx.searchName = 'B';
-    expect(ctx.rows.map((r) => r.name)).toEqual(['b']);
+    await filterButton(wrapper, 'All').trigger('click');
+    await wrapper.find('input[placeholder="Find an Experiment"]').setValue('B');
+    expect(names(wrapper)).toEqual(['b']);
   });
 
-  it('says why the table is empty', () => {
-    const ctx = view([]);
-    ctx.loaded = true;
+  it('says why the table is empty', async () => {
+    const empty = await page([]);
+    const emptyText = (wrapper) => textOf(wrapper.find('tbody'));
     // an empty cached copy still reads as loading until this visit's load
-    expect(ctx.emptyText).toBe('Loading state of health…');
+    expect(emptyText(empty)).toBe('Loading state of health…');
     pageStatus.fresh = true;
-    expect(ctx.emptyText).toBe('No experiments found');
+    await flushPromises();
+    expect(emptyText(empty)).toBe('No experiments found');
     pageStatus.fresh = false;
 
-    ctx.experiments = [summary()];
-    ctx.filter = 'attention';
-    expect(ctx.emptyText).toBe('No experiments in Needs attention');
+    const healthy = await page([summary()]);
+    await filterButton(healthy, 'Needs attention').trigger('click');
+    expect(emptyText(healthy)).toBe('No experiments in Needs attention');
   });
 
-  it('sorts the SoH column worst first', () => {
-    const ctx = view([]);
-    const rows = [
+  it('sorts the SoH column worst first', async () => {
+    const wrapper = await page([
       summary({ name: 'healthy' }),
       summary({ name: 'none', configured: false }),
       summary({ name: 'down', vms: { ...summary().vms, notrunning: 1 } }),
-    ];
-    rows.sort((a, b) => ctx.sortByVerdict(a, b, true));
-    expect(rows.map((r) => r.name)).toEqual(['down', 'healthy', 'none']);
+    ]);
+    expect(names(wrapper)).toEqual(['down', 'healthy', 'none']);
   });
 
-  it('runs SOH only when it can and says why not', () => {
-    const ctx = view([]);
-    const row = summary();
+  it('runs SOH only when it can and says why not', async () => {
     axios.post.mockResolvedValue({});
+    const wrapper = await page([summary()]);
+    const [run] = runButtons(wrapper);
 
-    expect(ctx.runBlocked(row)).toBe('');
-    ctx.runSoh(row);
+    expect(run).toMatchObject({
+      label: 'Run SOH on ot-substation',
+      disabled: false,
+    });
+    await run.control.trigger('click');
     expect(axios.post).toHaveBeenCalledWith(
       'experiments/ot-substation/trigger',
       null,
       { params: { apps: 'soh' } },
     );
-    expect(row.pending).toBe(true);
-    expect(ctx.runBlocked(row)).toBe('SOH is running');
-    ctx.settle(row);
+    expect(runButtons(wrapper)).toMatchObject([
+      { label: 'SOH is running', disabled: true, spinning: true },
+    ]);
 
-    expect(ctx.runBlocked(summary({ configured: false }))).toMatch(
-      /not in the scenario/,
-    );
-    expect(ctx.runBlocked(summary({ running: false }))).toMatch(/not running/);
-    expect(ctx.runBlocked(summary({ soh_initialized: false }))).toMatch(
-      /first checks/,
-    );
+    const blocked = await page([
+      summary({ name: 'a', configured: false }),
+      summary({ name: 'b', running: false }),
+      summary({ name: 'c', soh_initialized: false }),
+    ]);
+    // sorted waiting first, then not configured
+    expect(runButtons(blocked).map((b) => [b.label, b.disabled])).toEqual([
+      ['The experiment is not running', true],
+      ['SOH is still running its first checks', true],
+      ['The soh app is not in the scenario', true],
+    ]);
 
     rbac.allowed = denyOnly(['experiments/trigger']);
-    expect(ctx.runBlocked(summary())).toMatch(/may not run SOH/);
     axios.post.mockClear();
-    ctx.runSoh(summary());
+    const denied = await page([summary()]);
+    const [refused] = runButtons(denied);
+    expect(refused).toMatchObject({ disabled: true });
+    expect(refused.label).toMatch(/may not run SOH/);
+    // the click handler refuses too, were the button enabled
+    refused.control.element.removeAttribute('disabled');
+    await refused.control.trigger('click');
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('marks a row running and reloads when its soh run finishes', () => {
+  it('marks a row running and reloads when its soh run finishes', async () => {
     vi.useFakeTimers();
-    const row = summary();
-    const ctx = view([row]);
+    const wrapper = await page([summary()]);
+    const lastCheck = () => textOf(tableRows(wrapper)[0]['Last Check']);
 
-    ctx.handleWs(wsMsg('apps/soh', 'ot-substation', 'start'));
-    expect(row.soh_running).toBe(true);
+    await publish(wsMsg('apps/soh', 'ot-substation', 'start'));
+    expect(lastCheck()).toContain('running now…');
 
-    ctx.handleWs(
+    await publish(
       wsMsg('apps/soh', 'ot-substation', 'error', { error: 'boom' }),
     );
     expect(notify.show).toHaveBeenCalledWith(
@@ -367,115 +395,121 @@ describe('SohOverview view', () => {
     );
 
     // several updates, one reload
-    ctx.handleWs(wsMsg('apps/soh', 'ot-substation', 'success'));
+    await publish(wsMsg('apps/soh', 'ot-substation', 'success'));
     vi.advanceTimersByTime(RELOAD_DELAY_MS);
-    expect(ctx.loader.load).toHaveBeenCalledTimes(1);
+    expect(loaderSpy.load).toHaveBeenCalledTimes(1);
   });
 
-  it('reloads for VM state changes of running experiments only', () => {
+  it('reloads for VM state changes of running experiments only', async () => {
     vi.useFakeTimers();
-    const ctx = view([
+    await page([
       summary({ name: 'up' }),
       summary({ name: 'down', running: false, status: 'stopped' }),
     ]);
     const vm = (name, action) => wsMsg('experiment/vm', name, action);
 
-    ctx.handleWs(vm('down/vm1', 'start'));
-    ctx.handleWs(vm('up/vm1', 'cdrom-inserted'));
+    await publish(vm('down/vm1', 'start'));
+    await publish(vm('up/vm1', 'cdrom-inserted'));
     vi.advanceTimersByTime(RELOAD_DELAY_MS);
-    expect(ctx.loader.load).not.toHaveBeenCalled();
+    expect(loaderSpy.load).not.toHaveBeenCalled();
 
-    ctx.handleWs(vm('up/vm1', 'stop'));
+    await publish(vm('up/vm1', 'stop'));
     vi.advanceTimersByTime(RELOAD_DELAY_MS);
-    expect(ctx.loader.load).toHaveBeenCalledTimes(1);
+    expect(loaderSpy.load).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    ['polls a running SOH run while the page is in view', false, true, 1],
-    ['skips a poll while its tab is hidden', true, true, 0],
-    ['skips a poll while its window is out of focus', false, false, 0],
-  ])('%s', (_, hidden, focused, loads) => {
-    vi.stubGlobal('document', { hidden, hasFocus: () => focused });
-    const ctx = view([summary({ soh_running: true })]);
+  // RUNNING_POLL_MS in SohOverview.vue
+  const POLL_MS = 15000;
 
-    ctx.pollRunning();
-    expect(ctx.loader.load).toHaveBeenCalledTimes(loads);
+  // how often the page reloads over one poll interval
+  async function polls(
+    run,
+    { hidden = false, focused = true, loading = false } = {},
+  ) {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(hidden);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(focused);
+    await page([summary(run)]);
+    loaderSpy.loading = loading;
+
+    vi.advanceTimersByTime(POLL_MS);
+    return loaderSpy.load.mock.calls.length;
+  }
+
+  it.each([
+    ['polls a running SOH run while the page is in view', {}, 1],
+    ['skips a poll while its tab is hidden', { hidden: true }, 0],
+    ['skips a poll while its window is out of focus', { focused: false }, 0],
+  ])('%s', async (_, view, loads) => {
+    expect(await polls({ soh_running: true }, view)).toBe(loads);
   });
 
   it.each([
     ['skips a poll with no run going', {}, false, 0],
     ['polls a run just asked for', { pending: true }, false, 1],
     ['skips a poll while a load is in flight', { soh_running: true }, true, 0],
-  ])('%s', (_, run, loading, loads) => {
-    vi.stubGlobal('document', { hidden: false, hasFocus: () => true });
-    const ctx = view([summary(run)]);
-    ctx.loader.loading = loading;
-
-    ctx.pollRunning();
-    expect(ctx.loader.load).toHaveBeenCalledTimes(loads);
+  ])('%s', async (_, run, loading, loads) => {
+    expect(await polls(run, { loading })).toBe(loads);
   });
 
-  it('shows experiment start progress without reloading', () => {
-    const row = summary({ running: false, status: 'stopped' });
-    const ctx = view([row]);
+  it('shows experiment start progress without reloading', async () => {
+    const wrapper = await page([
+      summary({ running: false, status: 'stopped' }),
+    ]);
+    const status = () => tableRows(wrapper)[0]['Experiment Status'];
     const exp = (action, result) =>
       wsMsg('experiment', 'ot-substation', action, result);
 
-    ctx.handleWs(exp('starting'));
-    expect(row.status).toBe('starting');
-    ctx.handleWs(exp('progress', { percent: 0.4 }));
-    expect(row.percent).toBe(0.4);
-    expect(ctx.loader.load).not.toHaveBeenCalled();
+    await publish(exp('starting'));
+    expect(status().find('progress').exists()).toBe(true);
+    await publish(exp('progress', { percent: 0.4 }));
+    expect(status().find('progress').element.value).toBe(40);
+    expect(loaderSpy.load).not.toHaveBeenCalled();
   });
 
-  it('lists the first problems until asked for all', () => {
+  it('lists the first problems until asked for all', async () => {
     const failing_checks = Array.from({ length: 8 }, (_, i) => ({
       host: `h${i}`,
       check: 'process',
       error: 'missing',
       time: '2026-09-28T14:00:00Z',
     }));
-    const row = summary({
-      failing_checks,
-      checks: { total: 20, passing: 12, failing: 8 },
+    const row = (name, failing) =>
+      summary({
+        name,
+        failing_checks,
+        checks: { total: 20, passing: 12, failing },
+      });
+    const wrapper = await page([row('a', 8), row('b', 60)], {
+      opened: ['a', 'b'],
     });
-    const ctx = view([row]);
+    const detail = (i) => wrapper.findAll('tr.detail').at(i);
+    const shown = (i) => detail(i).findAll('.problems tbody tr');
+    const hint = (i) => textOf(detail(i).find('.hint'));
 
-    expect(ctx.shownProblems(row)).toHaveLength(PROBLEMS_SHOWN);
-    expect(ctx.hiddenProblems(row)).toBe(8 - PROBLEMS_SHOWN);
-    expect(ctx.truncated(row)).toBe(false);
+    expect(shown(0)).toHaveLength(PROBLEMS_SHOWN);
+    expect(hint(0)).toMatch(/^Show all 8 problems ·/);
+    expect(hint(0)).not.toContain('this list stops');
 
-    ctx.showAll[row.name] = true;
-    expect(ctx.shownProblems(row)).toHaveLength(8);
-    expect(ctx.hiddenProblems(row)).toBe(0);
+    await detail(0).find('.hint a').trigger('click');
+    expect(shown(0)).toHaveLength(8);
+    expect(hint(0)).not.toContain('Show all');
 
-    row.checks.failing = 60;
-    expect(ctx.truncated(row)).toBe(true);
+    expect(hint(1)).toContain('this list stops at the newest 8 failing checks');
   });
 
-  it('describes the VM bar for rows without VM states', () => {
-    const ctx = view([]);
+  it('describes the VM bar for rows without VM states', async () => {
+    const wrapper = await page([
+      summary({ name: 'a', running: false, status: 'stopped' }),
+      summary({ name: 'b', vms: { known: false, total: 1 } }),
+    ]);
     expect(
-      ctx.healthCaption(summary({ running: false, status: 'stopped' })),
-    ).toBe('24 VMs, not running');
-    expect(
-      ctx.healthCaption(summary({ vms: { known: false, total: 1 } })),
-    ).toBe('1 VM, states unavailable');
+      tableRows(wrapper).map((cells) => textOf(cells['VM Health'])),
+    ).toEqual(['24 VMs, not running', '1 VM, states unavailable']);
   });
 });
 
-// The page rendered with the real Buefy components, showing its cached copy
-// while the fresh load never answers.
 describe('rendering', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    axios.get.mockReturnValue(new Promise(() => {}));
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-    clearPageCache();
-  });
-
   const experiments = () => [
     summary({
       name: 'ics-water-plant',
@@ -497,51 +531,75 @@ describe('rendering', () => {
     { name: 'dns-lab', configured: false, running: false, vms: { total: 6 } },
   ];
 
-  const render = (options) =>
-    renderSSR(SohOverview, {}, { route: '/soh', ...options });
-
-  it('shows the cached summary line and filter counts at once', async () => {
-    cachePage('soh', experiments());
-
-    const html = await render();
-    const text = textOf(html);
+  it('shows the summary line and filter counts', async () => {
+    const wrapper = await page(experiments());
+    const text = textOf(wrapper);
 
     expect(text).toContain(
       'SOH active on 2 of 3 experiments · 1 host failing checks · 1 VM down',
     );
-    expect(text).toMatch(/All 3 Needs attention 1 Healthy 1 No SOH data 1/);
-    expect(html).toContain('class="attn count"');
-    expect(html).toContain('placeholder="Find an Experiment"');
-    expect(text).toContain('External / HIL');
+    expect(wrapper.findAll('.filters button').map(textOf)).toEqual([
+      'All 3',
+      'Needs attention 1',
+      'Healthy 1',
+      'No SOH data 1',
+    ]);
+    expect(wrapper.find('.count.attn').exists()).toBe(true);
+    expect(
+      wrapper.find('input[placeholder="Find an Experiment"]').exists(),
+    ).toBe(true);
+    expect(textOf(wrapper.find('.legend'))).toContain('External / HIL');
   });
 
   it('says when VM states may be out of date', async () => {
-    cachePage('soh', [
+    const wrapper = await page([
       summary({ vms_stale: true, vms_observed_at: '2026-10-14T10:00:00Z' }),
     ]);
+    const stale = wrapper.find('.vms-stale');
+    expect(textOf(stale)).toBe('states may be out of date');
+    expect(stale.attributes('title')).toMatch(
+      /^minimega was busy; showing the VM states/,
+    );
+  });
 
-    const html = await render({ tables: true });
-    expect(textOf(html)).toContain('states may be out of date');
-    expect(html).toContain('title="minimega was busy; showing the VM states');
+  it('shows each load, keeping rows changed since the server read it', async () => {
+    const wrapper = await page([], { loaded: false });
+    const lastCheck = () =>
+      tableRows(wrapper).map((cells) => textOf(cells['Last Check']));
+
+    loaderSpy.options.apply(experiments(), { seq: 1 });
+    await flushPromises();
+    expect(textOf(wrapper)).toContain(
+      'SOH active on 2 of 3 experiments · 1 host failing checks · 1 VM down',
+    );
+    expect(names(wrapper)).toEqual([
+      'ics-water-plant',
+      'ot-substation',
+      'dns-lab',
+    ]);
+
+    await publish(wsMsg('apps/soh', 'ot-substation', 'start', undefined, 5));
+    loaderSpy.options.apply(experiments(), { seq: 3 });
+    await flushPromises();
+    expect(lastCheck()[1]).toContain('running now…');
+    expect(lastCheck()[0]).not.toContain('running now…');
   });
 
   it('shows no summary line before the first load', async () => {
-    const html = await render();
-    expect(html).not.toContain('SOH active on');
-    expect(html).not.toContain('class="legend"');
+    const wrapper = await page([], { loaded: false });
+    expect(textOf(wrapper)).not.toContain('SOH active on');
+    expect(wrapper.find('.legend').exists()).toBe(false);
   });
 
   it('draws a row per experiment with its health', async () => {
-    cachePage('soh', experiments());
-
-    const html = await render({ tables: true });
-    const rows = tableRows(html).map((cells) => {
+    const wrapper = await page(experiments());
+    const rows = tableRows(wrapper).map((cells) => {
       const [run] = tooltipButtons(cells.Actions);
       return {
-        link: cells.name.match(/href="([^"]*)"/)[1],
-        name: textOf(cells.name),
-        verdict: textOf(cells.verdict),
-        checks: textOf(cells.checks),
+        link: cells.Experiment.find('a').attributes('href'),
+        name: cells.Experiment.findAll('a, .sub').map(textOf).join(' '),
+        verdict: textOf(cells.SoH),
+        checks: cells.Checks.findAll('.big, .sub, .dash').map(textOf).join(' '),
         run: run.disabled ? 'blocked' : run.label,
       };
     });

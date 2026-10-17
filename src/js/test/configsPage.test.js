@@ -1,34 +1,47 @@
 // The Configs page: viewer, uploads, downloads, deletes, and the editor's save
 // and edit-loss guard. Configs are named Kind/name, so kinds may share names.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
+import { h, nextTick } from 'vue';
+import { RouterView } from 'vue-router';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notify, rbac, resetMocks, saver } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const {
+  axios,
+  capturing,
+  loaderSpy,
+  modules,
+  notify,
+  rbac,
+  resetMocks,
+  saver,
+} = await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('file-saver', modules.fileSaver);
 vi.mock('@/store.js', modules.store);
 // the list comes from the tests
-vi.mock('@/utils/pageLoader.js', modules.pageLoader);
+vi.mock('@/utils/pageLoader.js', capturing);
 // the editor's Ace loads in a browser
 vi.mock('@/utils/loadAce.js', () => ({ loadAce: () => Promise.resolve() }));
 
+import AceEditor from '@/components/configs/AceEditor.vue';
 import ConfigsEditor from '@/components/configs/ConfigsEditor.vue';
 import ConfigsList from '@/components/configs/ConfigsList.vue';
 import { clearConfigCache } from '@/utils/configCache.js';
 import Configs from '@/views/Configs.vue';
-import { deferredGets, flush } from './helpers/async.js';
-import { dialogs, fakeBuefy, toasts } from './helpers/buefy.js';
-import { makeContext } from './helpers/context.js';
+import { deferredGets, never } from './helpers/async.js';
 import {
-  openModal,
-  renderSSR,
-  stubBrowser,
+  byLabel,
+  buttons,
+  confirmDialog,
+  dialogs,
+  mountComponent,
+  mountPage,
   tableRows,
   textOf,
-} from './helpers/render.js';
+  toasts,
+} from './helpers/mount.js';
 
 // two list rows sharing a name
 const topology = {
@@ -49,74 +62,89 @@ const full = (row, spec = {}, annotations) => ({
 });
 
 beforeEach(() => {
-  stubBrowser();
   clearConfigCache();
   resetMocks({ store: {} });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+// the open modal, or null; a closed b-modal stays in place, hidden
+const openModal = (wrapper) =>
+  wrapper
+    .findAll('.modal.is-active')
+    .find((modal) => modal.element.style.display !== 'none') ?? null;
+
+// clicks the button with this text
+async function click(where, text) {
+  await where
+    .findAll('button')
+    .find((b) => textOf(b) === text)
+    .trigger('click');
+  await flushPromises();
+}
+
+// the title, message and confirm button of a Buefy dialog
+const dialogText = (dialog) => ({
+  title: textOf(dialog.querySelector('.modal-card-title')),
+  message: textOf(dialog.querySelector('.media-content')),
+  confirmText: textOf(dialog.querySelector('footer .button:last-child')),
+});
 
 describe('the config list', () => {
   // the list showing these rows
-  function list(configs = [topology, scenario]) {
-    const ctx = makeContext(ConfigsList, {
-      $emit: vi.fn(),
-      $buefy: fakeBuefy(),
+  const list = (configs = [topology, scenario]) =>
+    mountPage(ConfigsList, {
+      route: '/configs/',
+      data: { configs, loaded: true },
     });
-    ctx.configs = configs;
-    ctx.loaded = true;
-    return ctx;
-  }
 
-  // the page as the list's state has it
-  const render = (ctx) =>
-    renderSSR(
-      ConfigsList,
-      {},
-      {
-        route: '/configs/',
-        tables: true,
-        data: {
-          configs: ctx.configs,
-          loaded: true,
-          viewer: ctx.viewer,
-          downloading: ctx.downloading,
-        },
-      },
-    );
+  // the cells of the row of this kind
+  const row = (wrapper, kind) =>
+    tableRows(wrapper).find((cells) => textOf(cells.Kind) === kind);
+
+  const kinds = (wrapper) => tableRows(wrapper).map((r) => textOf(r.Kind));
+
+  // opens the viewer by clicking the config's name
+  const view = (wrapper, kind) =>
+    row(wrapper, kind).Name.find('.is-clickable > div').trigger('click');
+
+  const download = (wrapper, kind) =>
+    byLabel(row(wrapper, kind).Actions, 'Download config web').trigger('click');
+
+  // selects every config with the header's checkbox
+  const selectAll = (wrapper) =>
+    wrapper.find('thead input[type="checkbox"]').setValue(true);
 
   // the open viewer: its title, its text, and whether its download spins
-  function viewer(html) {
-    const modal = openModal(html);
+  function viewer(wrapper) {
+    const modal = openModal(wrapper);
     if (!modal) return null;
     return {
-      title: textOf(modal.match(/modal-card-title[^>]*>([\s\S]*?)<\/p>/)[1]),
-      text: textOf(modal.match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/)[1]),
-      downloading:
-        /class="[^"]*is-loading[^"]*" aria-label="Download config"/.test(modal),
+      title: textOf(modal.find('.modal-card-title')),
+      text: modal.find('textarea').element.value,
+      downloading: byLabel(modal, 'Download config').classes('is-loading'),
     };
   }
 
   // whether each row's download button spins, by kind
-  const rowSpinners = (html) =>
+  const rowSpinners = (wrapper) =>
     Object.fromEntries(
-      tableRows(html).map((row) => [
-        textOf(row.kind),
-        /<button[^>]*is-loading[^>]*aria-label="Download config/.test(
-          row.Actions,
-        ),
+      tableRows(wrapper).map((cells) => [
+        textOf(cells.Kind),
+        byLabel(cells.Actions, 'Download config web').classes('is-loading'),
       ]),
     );
+
+  // whether the table shows it is waiting on a change
+  const waiting = (wrapper) => wrapper.find('.loading-overlay').exists();
 
   describe('viewer', () => {
     it('opens at once and shows the config opened last, however late another answers', async () => {
       const requests = deferredGets(axios.get);
       const answer = (url) => requests.find((r) => r.url == url);
-      const ctx = list();
+      const wrapper = await list();
 
-      ctx.viewConfig(topology);
-      ctx.viewConfig(scenario);
-      expect(viewer(await render(ctx))).toEqual({
+      await view(wrapper, 'Topology');
+      await view(wrapper, 'Scenario');
+      expect(viewer(wrapper)).toEqual({
         title: 'Scenario/web',
         text: 'Loading…',
         downloading: false,
@@ -128,13 +156,13 @@ describe('the config list', () => {
       answer('configs/Scenario/web').resolve({
         data: full(scenario, { apps: [{ name: 'soh' }] }),
       });
-      await flush();
+      await flushPromises();
       answer('configs/Topology/web').resolve({
         data: full(topology, { nodes: [] }),
       });
-      await flush();
+      await flushPromises();
 
-      const shown = viewer(await render(ctx));
+      const shown = viewer(wrapper);
       expect(shown.title).toBe('Scenario/web');
       expect(shown.text).toContain('kind: Scenario');
       expect(shown.text).toContain('name: soh');
@@ -145,10 +173,11 @@ describe('the config list', () => {
       axios.get.mockResolvedValue({
         data: full(topology, {}, { 'builder-xml': '<mxGraphModel/>' }),
       });
-      const ctx = list();
+      const wrapper = await list();
 
-      await ctx.viewConfig(topology);
-      const { text } = viewer(await render(ctx));
+      await view(wrapper, 'Topology');
+      await flushPromises();
+      const { text } = viewer(wrapper);
       expect(text).toContain('builder-xml: <SNIPPED>');
       expect(text).not.toContain('mxGraphModel');
     });
@@ -156,11 +185,12 @@ describe('the config list', () => {
     it('closes and reports a config that fails to load', async () => {
       const err = new Error('forbidden');
       axios.get.mockRejectedValue(err);
-      const ctx = list();
+      const wrapper = await list();
 
-      await ctx.viewConfig(topology);
+      await view(wrapper, 'Topology');
+      await flushPromises();
       expect(notify.error).toHaveBeenCalledWith(err);
-      expect(viewer(await render(ctx))).toBeNull();
+      expect(viewer(wrapper)).toBeNull();
     });
   });
 
@@ -169,10 +199,11 @@ describe('the config list', () => {
       const answer = Promise.withResolvers();
       axios.post.mockReturnValue(answer.promise);
       axios.get.mockResolvedValue({ data: full(topology) });
-      const ctx = list();
-      await ctx.viewConfig(topology);
+      const wrapper = await list();
+      await view(wrapper, 'Topology');
+      await flushPromises();
 
-      ctx.download([topology]);
+      await download(wrapper, 'Topology');
       expect(axios.post).toHaveBeenCalledWith(
         'configs/download',
         '["Topology/web"]',
@@ -184,26 +215,29 @@ describe('the config list', () => {
           responseType: 'blob',
         },
       );
-      let html = await render(ctx);
-      expect(rowSpinners(html)).toEqual({ Topology: true, Scenario: false });
-      expect(viewer(html).downloading).toBe(true);
+      expect(rowSpinners(wrapper)).toEqual({ Topology: true, Scenario: false });
+      expect(viewer(wrapper).downloading).toBe(true);
 
       answer.resolve({ data: 'kind: Topology\n' });
-      await flush();
+      await flushPromises();
       const [[blob, fileName]] = saver.saveAs.mock.calls;
       expect(fileName).toBe('Topology-web.yml');
       expect(await blob.text()).toBe('kind: Topology\n');
-      html = await render(ctx);
-      expect(rowSpinners(html)).toEqual({ Topology: false, Scenario: false });
-      expect(viewer(html).downloading).toBe(false);
+      expect(rowSpinners(wrapper)).toEqual({
+        Topology: false,
+        Scenario: false,
+      });
+      expect(viewer(wrapper).downloading).toBe(false);
     });
 
     it('save several configs as one zip', async () => {
       const zip = new Blob(['PK']);
       axios.post.mockResolvedValue({ data: zip });
+      const wrapper = await list();
 
-      list().download([topology, scenario]);
-      await flush();
+      await selectAll(wrapper);
+      await byLabel(wrapper, 'Download selected configs').trigger('click');
+      await flushPromises();
       expect(axios.post.mock.calls[0][1]).toBe(
         '["Topology/web","Scenario/web"]',
       );
@@ -213,107 +247,118 @@ describe('the config list', () => {
     it('report a failure and stop spinning', async () => {
       const err = new Error('forbidden');
       axios.post.mockRejectedValue(err);
-      const ctx = list();
+      const wrapper = await list();
 
-      ctx.download([topology]);
-      await flush();
+      await download(wrapper, 'Topology');
+      await flushPromises();
       expect(notify.error).toHaveBeenCalledWith(err);
       expect(saver.saveAs).not.toHaveBeenCalled();
-      expect(rowSpinners(await render(ctx)).Topology).toBe(false);
+      expect(rowSpinners(wrapper).Topology).toBe(false);
     });
   });
 
   describe('deletes', () => {
     it('remove one config by its Kind/name after confirming, leaving its namesake', async () => {
       axios.delete.mockResolvedValue({});
-      const ctx = list();
+      const wrapper = await list();
 
-      ctx.deleteConfigs([topology]);
-      expect(dialogs(ctx)[0]).toMatchObject({
-        title: 'Delete the Config',
-        message:
-          'This will delete the Topology/web config. Are you sure you want to do this?',
-        confirmText: 'Delete',
-      });
+      await byLabel(
+        row(wrapper, 'Topology').Actions,
+        'Delete config web',
+      ).trigger('click');
+      expect(dialogs().map(dialogText)).toEqual([
+        {
+          title: 'Delete the Config',
+          message:
+            'This will delete the Topology/web config. Are you sure you want to do this?',
+          confirmText: 'Delete',
+        },
+      ]);
       expect(axios.delete).not.toHaveBeenCalled();
 
-      dialogs(ctx)[0].onConfirm();
+      await confirmDialog();
       expect(axios.delete).toHaveBeenCalledWith('configs/Topology/web');
-      await flush();
-
-      expect(ctx.configs).toEqual([scenario]);
-      expect(toasts(ctx)[0].message).toBe(
+      expect(kinds(wrapper)).toEqual(['Scenario']);
+      expect(toasts()[0].text).toBe(
         'The Topology/web config has been deleted.',
       );
-      expect(tableRows(await render(ctx)).map((r) => textOf(r.kind))).toEqual([
-        'Scenario',
-      ]);
     });
 
     it('remove several configs after one confirmation', async () => {
       axios.delete.mockResolvedValue({});
-      const ctx = list();
+      const wrapper = await list();
 
-      ctx.deleteConfigs([topology, scenario]);
-      expect(dialogs(ctx)[0]).toMatchObject({
+      await selectAll(wrapper);
+      await byLabel(wrapper, 'Delete selected configs').trigger('click');
+      expect(dialogText(dialogs()[0])).toMatchObject({
         title: 'Delete the Configs',
         message:
           'This will delete 2 configs. Are you sure you want to do this?',
       });
-      dialogs(ctx)[0].onConfirm();
-      await flush();
+      await confirmDialog();
 
       expect(axios.delete.mock.calls).toEqual([
         ['configs/Topology/web'],
         ['configs/Scenario/web'],
       ]);
-      expect(ctx.configs).toEqual([]);
-      expect(toasts(ctx)[0].message).toBe('The configs have been deleted.');
+      expect(kinds(wrapper)).toEqual([]);
+      expect(toasts()[0].text).toBe('The configs have been deleted.');
     });
 
     it('keep the row and report a delete the server refuses', async () => {
       const err = new Error('forbidden');
       axios.delete.mockRejectedValue(err);
-      const ctx = list();
+      const wrapper = await list();
 
-      ctx.deleteConfigs([topology]);
-      dialogs(ctx)[0].onConfirm();
-      await flush();
+      await byLabel(
+        row(wrapper, 'Topology').Actions,
+        'Delete config web',
+      ).trigger('click');
+      await confirmDialog();
 
       expect(notify.error).toHaveBeenCalledWith(err);
-      expect(ctx.configs).toEqual([topology, scenario]);
-      expect(ctx.isWaiting).toBe(false);
+      expect(kinds(wrapper)).toEqual(['Scenario', 'Topology']);
+      expect(waiting(wrapper)).toBe(false);
     });
   });
 
   describe('uploads', () => {
     const file = (name) => new File(['kind: Topology\n'], name);
 
+    // picks this file in the upload window
+    async function upload(wrapper, picked) {
+      await byLabel(wrapper, 'Upload a new config').trigger('click');
+      const input = openModal(wrapper).find('input[type="file"]');
+      Object.defineProperty(input.element, 'files', { value: [picked] });
+      await input.trigger('change');
+    }
+
     it('send a YAML or JSON file, then list the configs again', async () => {
       axios.post.mockResolvedValue({});
-      const ctx = list();
-      ctx.loader = { load: vi.fn() };
-      ctx.isUploaderModalActive = true;
+      const wrapper = await list();
 
-      ctx.uploadFile(file('web.yml'));
+      await upload(wrapper, file('web.yml'));
       const [url, form] = axios.post.mock.calls[0];
       expect(url).toBe('configs');
       expect(form.get('fileupload').name).toBe('web.yml');
-      expect(ctx.isUploaderModalActive).toBe(false);
-      await flush();
+      expect(openModal(wrapper)).toBeNull();
+      await flushPromises();
 
-      expect(toasts(ctx)[0].message).toBe('The file web.yml was uploaded');
-      expect(ctx.loader.load).toHaveBeenCalled();
+      expect(toasts()[0].text).toBe('The file web.yml was uploaded');
+      expect(loaderSpy.load).toHaveBeenCalled();
     });
 
-    it('refuse any other file', () => {
-      const ctx = list();
-      ctx.uploadFile(file('notes.txt'));
+    it('refuse any other file', async () => {
+      const wrapper = await list();
+
+      await upload(wrapper, file('notes.txt'));
       expect(axios.post).not.toHaveBeenCalled();
-      expect(toasts(ctx)[0]).toMatchObject({
-        message: 'Valid file types are .yaml, .yml, and .json',
-        type: 'is-danger',
-      });
+      expect(toasts()).toEqual([
+        {
+          text: 'Valid file types are .yaml, .yml, and .json',
+          type: 'is-danger',
+        },
+      ]);
     });
 
     // the explained lines and a hint indented under one, as the server sends
@@ -323,36 +368,24 @@ describe('the config list', () => {
     ].join('\n');
 
     it('show why the server refused a config in the error dialog', async () => {
-      const ctx = list();
+      const wrapper = await list();
       axios.post.mockRejectedValueOnce({
         response: { status: 400, data: { metadata: { validation } } },
       });
-      ctx.uploadFile(file('bad.yaml'));
-      await flush();
+      await upload(wrapper, file('bad.yaml'));
+      await flushPromises();
 
-      expect(ctx.error).toEqual({
-        modal: true,
-        title: 'Validation Error',
-        msg: validation,
-      });
+      const modal = openModal(wrapper);
+      expect(textOf(modal.find('.modal-card-title'))).toBe('Validation Error');
+      const text = byLabel(modal, 'Validation errors');
+      expect(text.attributes('readonly')).toBeDefined();
+      expect(text.attributes('style')).toContain('font-family: monospace');
+      expect(text.element.value).toBe(validation);
       expect(notify.error).not.toHaveBeenCalled();
       expect(notify.show).not.toHaveBeenCalled();
 
-      const html = await renderSSR(
-        ConfigsList,
-        {},
-        { route: '/configs/', tables: true, data: { error: ctx.error } },
-      );
-      const [, attrs, text] =
-        html.match(
-          /<textarea([^>]*aria-label="Validation errors"[^>]*)>([^<]*)<\/textarea>/,
-        ) ?? [];
-      expect(attrs).toContain(' readonly');
-      expect(attrs).toContain('font-family:monospace');
-      expect(text).toBe(validation.replaceAll('"', '&quot;'));
-
-      ctx.resetErrorModal();
-      expect(ctx.error).toEqual({ modal: false, title: null, msg: null });
+      await click(modal, 'Exit');
+      expect(openModal(wrapper)).toBeNull();
     });
 
     it.each([
@@ -362,13 +395,13 @@ describe('the config list', () => {
       ],
       ['a network error', new Error('Network Error')],
     ])('report %s as an error', async (_, err) => {
-      const ctx = list();
+      const wrapper = await list();
       axios.post.mockRejectedValueOnce(err);
-      ctx.uploadFile(file('web.json'));
-      await flush();
+      await upload(wrapper, file('web.json'));
+      await flushPromises();
 
       expect(notify.error).toHaveBeenCalledWith(err);
-      expect(ctx.error.modal).toBe(false);
+      expect(openModal(wrapper)).toBeNull();
     });
   });
 
@@ -376,120 +409,187 @@ describe('the config list', () => {
     rbac.allowed = (resource, verb, name) =>
       resource === 'configs' &&
       (verb === 'get' || name === 'Scenario/web' || name === undefined);
-    const rows = tableRows(await render(list()));
+    const wrapper = await list();
 
-    const actions = (row) =>
-      [...row.Actions.matchAll(/aria-label="(\w+) config/g)].map((m) => m[1]);
-    expect(rows.map(actions)).toEqual([
-      ['Download'],
-      ['Edit', 'Download', 'Delete'],
+    const actions = (cells) =>
+      cells.Actions.findAll('button').map(
+        (b) => b.attributes('aria-label').split(' ')[0],
+      );
+    expect(actions(row(wrapper, 'Topology'))).toEqual(['Download']);
+    expect(actions(row(wrapper, 'Scenario'))).toEqual([
+      'Edit',
+      'Download',
+      'Delete',
     ]);
   });
 });
 
 describe('the config editor', () => {
+  // Ace needs a browser; a stand-in takes its place
+  const stubs = { AceEditor: true };
+
   // the editor opened on a config, as the page mounts it
-  async function editor(mode = 'edit', editorConfig = topology) {
-    const ctx = makeContext(ConfigsEditor, {
-      mode,
-      editorConfig,
-      $emit: vi.fn(),
-      $buefy: fakeBuefy(),
-    });
-    ConfigsEditor.created.call(ctx);
-    ConfigsEditor.mounted.call(ctx);
-    await flush();
-    return ctx;
+  const editor = (mode = 'edit', editorConfig = topology) =>
+    mountPage(ConfigsEditor, { props: { mode, editorConfig }, stubs });
+
+  // the text in the editor, and typing over it
+  const text = (wrapper) => wrapper.findComponent(AceEditor).props('value');
+  async function type(wrapper, str) {
+    wrapper.findComponent(AceEditor).vm.$emit('update:value', str);
+    await nextTick();
   }
 
   // an editor with the config open and its text changed
   async function edited() {
     axios.get.mockResolvedValue({ data: full(topology, { nodes: [] }) });
-    const ctx = await editor();
-    ctx.config.str = ctx.config.str.replace('nodes: []', 'nodes: [a]');
-    return ctx;
+    const wrapper = await editor();
+    await type(wrapper, text(wrapper).replace('nodes: []', 'nodes: [a]'));
+    return wrapper;
   }
 
-  const closed = (ctx) =>
-    ctx.$emit.mock.calls.filter(([event]) => event === 'is-done');
+  const closed = (wrapper) => wrapper.emitted('is-done') ?? [];
 
   it('opens a config the viewer loaded without loading it again', async () => {
     axios.get.mockResolvedValue({ data: full(topology, { nodes: [] }) });
-    const list = makeContext(ConfigsList, { $emit: vi.fn() });
-    await list.viewConfig(topology);
+    const list = await mountPage(ConfigsList, {
+      route: '/configs/',
+      data: { configs: [topology], loaded: true },
+    });
+    await tableRows(list)[0].Name.find('.is-clickable > div').trigger('click');
+    await flushPromises();
 
-    const ctx = await editor();
+    const wrapper = await editor();
     expect(axios.get).toHaveBeenCalledTimes(1);
-    expect(ctx.config.str).toContain('kind: Topology');
-    expect(ctx.editor.isLoading).toBe(false);
+    expect(text(wrapper)).toContain('kind: Topology');
+    expect(wrapper.find('.loading-overlay').exists()).toBe(false);
   });
 
   describe('leaving', () => {
-    // leaving the Configs page with this editor open
-    const leave = (ctx) =>
-      Configs.beforeRouteLeave.call({
-        editorActive: true,
-        $refs: { editor: ctx },
+    // the router view, drawing nothing off the Configs page
+    const Host = {
+      render() {
+        return this.$route.name === 'configs' ? h(RouterView) : null;
+      },
+    };
+
+    // The Configs page in a router view, as the app shows it, so leaving
+    // the page runs its route guard; `open` opens its editor.
+    async function configsPage(open) {
+      const app = await mountComponent(Host, { stubs });
+      app.router.addRoute({
+        path: '/configs/',
+        name: 'configs',
+        component: Configs,
       });
+      await app.router.push('/configs/');
+      await flushPromises();
+      if (!open) return { app };
+      await open(app.findComponent(ConfigsList));
+      await vi.waitFor(() =>
+        expect(app.findComponent(ConfigsEditor).exists()).toBe(true),
+      );
+      await flushPromises();
+      return { app, editor: app.findComponent(ConfigsEditor) };
+    }
+
+    // leaves for the Experiments page; resolves to the route then shown
+    async function leave(app) {
+      const left = app.router.push('/experiments');
+      await flushPromises();
+      return left;
+    }
+
+    const route = (app) => app.router.currentRoute.value.name;
+
+    // lists the topology, then clicks its Edit button
+    async function editTopology(list) {
+      loaderSpy.options.apply([topology]);
+      await nextTick();
+      await byLabel(list, 'Edit config web').trigger('click');
+    }
 
     it('closes without asking when nothing was edited', async () => {
       axios.get.mockResolvedValue({ data: full(topology) });
 
-      for (const ctx of [await editor(), await editor('create', null)]) {
-        expect(await leave(ctx)).toBe(true);
-        expect(dialogs(ctx)).toEqual([]);
-        expect(closed(ctx)).toEqual([['is-done', '']]);
+      for (const open of [
+        editTopology,
+        (list) => byLabel(list, 'Create a new config').trigger('click'),
+      ]) {
+        const { app, editor } = await configsPage(open);
+        await leave(app);
+        expect(route(app)).toBe('experiments');
+        expect(dialogs()).toEqual([]);
+        expect(closed(editor)).toEqual([['']]);
+        app.unmount();
       }
     });
 
     it('asks before dropping edits, and stays on Cancel', async () => {
-      const ctx = await edited();
+      axios.get.mockResolvedValue({ data: full(topology, { nodes: [] }) });
+      const { app, editor } = await configsPage(editTopology);
+      await type(editor, text(editor).replace('nodes: []', 'nodes: [a]'));
 
-      const canceled = leave(ctx);
-      expect(dialogs(ctx)[0].title).toBe('Edits in Progress');
-      dialogs(ctx)[0].onCancel();
-      expect(await canceled).toBe(false);
-      expect(closed(ctx)).toEqual([]);
+      const canceled = leave(app);
+      await flushPromises();
+      expect(dialogText(dialogs()[0]).title).toBe('Edits in Progress');
+      dialogs()[0].querySelector('footer .button:first-child').click();
+      await canceled;
+      expect(route(app)).toBe('configs');
+      expect(closed(editor)).toEqual([]);
 
-      const left = leave(ctx);
-      dialogs(ctx)[1].onConfirm();
-      expect(await left).toBe(true);
-      expect(closed(ctx)).toEqual([['is-done', '']]);
+      await vi.waitFor(() => expect(dialogs()).toEqual([]));
+      const left = leave(app);
+      await flushPromises();
+      await confirmDialog();
+      await left;
+      expect(route(app)).toBe('experiments');
+      expect(closed(editor)).toEqual([['']]);
     });
 
     it('lets the page go without the editor open', async () => {
-      expect(await Configs.beforeRouteLeave.call({ editorActive: false })).toBe(
-        true,
-      );
+      const { app } = await configsPage();
+
+      await leave(app);
+      expect(route(app)).toBe('experiments');
     });
 
     it('asks before a browser reload only with edits', async () => {
+      // whether the editor asked to keep the page
+      const reload = () => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
       axios.get.mockResolvedValue({ data: full(topology, { nodes: [] }) });
       const unchanged = await editor();
-      const event = { preventDefault: vi.fn() };
-      unchanged.handlePageReload(event);
-      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(reload()).toBe(false);
+      unchanged.unmount();
 
-      (await edited()).handlePageReload(event);
-      expect(event.preventDefault).toHaveBeenCalled();
+      await edited();
+      expect(reload()).toBe(true);
     });
   });
 
   describe('saving', () => {
+    // clicks Save, then confirms
+    async function save(wrapper) {
+      await click(wrapper, 'Save');
+      await confirmDialog();
+    }
+
     it('overwrites the config under its Kind/name after confirming, then closes', async () => {
       axios.put.mockResolvedValue({});
-      const ctx = await edited();
+      const wrapper = await edited();
 
-      ctx.saveConfig();
-      expect(dialogs(ctx)[0].title).toBe('Modify the Config');
-      dialogs(ctx)[0].onConfirm();
-      await flush();
+      await click(wrapper, 'Save');
+      expect(dialogText(dialogs()[0]).title).toBe('Modify the Config');
+      await confirmDialog();
 
       const [url, body] = axios.put.mock.calls[0];
       expect(url).toBe('configs/Topology/web');
       expect(JSON.parse(body).spec).toEqual({ nodes: ['a'] });
-      expect(closed(ctx)).toEqual([
-        ['is-done', 'config Topology/web has been edited'],
+      expect(closed(wrapper)).toEqual([
+        ['config Topology/web has been edited'],
       ]);
     });
 
@@ -503,23 +603,21 @@ describe('the config editor', () => {
       // confirmed
       async function saved() {
         axios.get.mockResolvedValue({ data: full(revised, { nodes: [] }) });
-        const ctx = await editor('edit', revised);
-        ctx.config.str = ctx.config.str.replace('nodes: []', 'nodes: [a]');
-        ctx.saveConfig();
-        dialogs(ctx)[0].onConfirm();
-        await flush();
-        return ctx;
+        const wrapper = await editor('edit', revised);
+        await type(wrapper, text(wrapper).replace('nodes: []', 'nodes: [a]'));
+        await save(wrapper);
+        return wrapper;
       }
 
       const ifMatch = (call) => call[2].headers['If-Match'];
 
       it('is saved only if unchanged since it was opened', async () => {
         axios.put.mockResolvedValue({});
-        const ctx = await saved();
+        const wrapper = await saved();
 
         expect(ifMatch(axios.put.mock.calls[0])).toBe('"r7"');
-        expect(closed(ctx)).toEqual([
-          ['is-done', 'config Topology/web has been edited'],
+        expect(closed(wrapper)).toEqual([
+          ['config Topology/web has been edited'],
         ]);
       });
 
@@ -527,23 +625,11 @@ describe('the config editor', () => {
         axios.put.mockRejectedValueOnce({
           response: { status: 412, data: { metadata: { revision: '9' } } },
         });
-        const ctx = await saved();
+        const wrapper = await saved();
 
-        expect(ctx.conflict).toMatchObject({
-          modal: true,
-          name: 'Topology/web',
-          from: 7,
-          to: 9,
-        });
-        expect(closed(ctx)).toEqual([]);
+        expect(closed(wrapper)).toEqual([]);
         expect(notify.error).not.toHaveBeenCalled();
-
-        const html = await renderSSR(
-          ConfigsEditor,
-          { mode: 'edit', editorConfig: revised },
-          { data: { conflict: ctx.conflict } },
-        );
-        expect(textOf(openModal(html))).toBe(
+        expect(textOf(openModal(wrapper))).toBe(
           'Config Changed Topology/web changed since you opened it ' +
             '(revision 7 → 9). Reload it (your edits are lost) ' +
             'Overwrite anyway Cancel',
@@ -551,18 +637,18 @@ describe('the config editor', () => {
 
         // overwriting sends the same config without the precondition
         axios.put.mockResolvedValueOnce({});
-        await ctx.overwriteConflicted();
+        await click(openModal(wrapper), 'Overwrite anyway');
         expect(axios.put).toHaveBeenCalledTimes(2);
         expect(ifMatch(axios.put.mock.calls[1])).toBeUndefined();
         expect(axios.put.mock.calls[1][1]).toBe(axios.put.mock.calls[0][1]);
-        expect(closed(ctx)).toHaveLength(1);
+        expect(closed(wrapper)).toHaveLength(1);
       });
 
       it('reloads the newer config, dropping the edits', async () => {
         axios.put.mockRejectedValueOnce({
           response: { status: 412, data: { metadata: { revision: '9' } } },
         });
-        const ctx = await saved();
+        const wrapper = await saved();
 
         axios.get.mockResolvedValue({
           data: full(
@@ -570,12 +656,14 @@ describe('the config editor', () => {
             { nodes: ['b'] },
           ),
         });
-        ctx.reloadConflicted();
-        await flush();
+        await click(openModal(wrapper), 'Reload it (your edits are lost)');
 
-        expect(ctx.conflict.modal).toBe(false);
-        expect(ctx.loadedRevision).toBe(9);
-        expect(ctx.config.str).toContain('- b');
+        expect(openModal(wrapper)).toBeNull();
+        expect(text(wrapper)).toContain('- b');
+        // the next save is made against the reloaded revision
+        axios.put.mockResolvedValue({});
+        await save(wrapper);
+        expect(ifMatch(axios.put.mock.calls.at(-1))).toBe('"r9"');
       });
     });
 
@@ -585,64 +673,65 @@ describe('the config editor', () => {
         'save',
         async (err) => {
           axios.put.mockRejectedValue(err);
-          const ctx = await edited();
-          ctx.saveConfig();
-          dialogs(ctx)[0].onConfirm();
-          return ctx;
+          const wrapper = await edited();
+          await save(wrapper);
+          return wrapper;
         },
       ],
       [
         'create',
         async (err) => {
           axios.post.mockRejectedValue(err);
-          const ctx = await editor('create', null);
-          ctx.config.str = 'kind: Topology\nmetadata:\n  name: db\n';
-          ctx.createConfig();
-          return ctx;
+          // the kind's template never arrives
+          axios.get.mockImplementation(never);
+          const wrapper = await editor('create', null);
+          await type(wrapper, 'kind: Topology\nmetadata:\n  name: db\n');
+          await click(wrapper, 'Create');
+          return wrapper;
         },
       ],
     ];
 
-    // the editor's error window, as the editor's state has it
-    async function errorWindow(ctx) {
-      const html = await renderSSR(
-        ConfigsEditor,
-        { mode: ctx.mode, editorConfig: ctx.editorConfig },
-        { data: { error: ctx.error } },
+    // the editor's error window: its title, text and buttons
+    function errorWindow(wrapper) {
+      const modal = openModal(wrapper);
+      return (
+        modal &&
+        [
+          textOf(modal.find('.modal-card-title')),
+          modal.find('textarea').element.value,
+          ...buttons(modal.find('footer')),
+        ].join(' ')
       );
-      const modal = openModal(html);
-      return modal && textOf(modal);
     }
 
     it.each(saves)(
       'shows why the server refused a %s, keeping the editor open',
-      async (_, save) => {
+      async (_, failed) => {
         const err = {
           response: {
             data: { metadata: { validation: 'spec.nodes: expected object' } },
           },
         };
-        const ctx = await save(err);
-        await flush();
+        const wrapper = await failed(err);
 
-        expect(await errorWindow(ctx)).toBe(
+        expect(errorWindow(wrapper)).toBe(
           'Validation Error spec.nodes: expected object Exit',
         );
         expect(notify.error).not.toHaveBeenCalled();
-        expect(closed(ctx)).toEqual([]);
+        expect(closed(wrapper)).toEqual([]);
       },
     );
 
     it.each(saves)(
       'reports any other failed %s as usual, keeping the editor open',
-      async (_, save) => {
+      async (_, failed) => {
         const err = new Error('Network Error');
-        const ctx = await save(err);
-        await flush();
+        const wrapper = await failed(err);
 
         expect(notify.error).toHaveBeenCalledWith(err);
-        expect(await errorWindow(ctx)).toBeNull();
-        expect(closed(ctx)).toEqual([]);
+        expect(errorWindow(wrapper)).toBeNull();
+        expect(closed(wrapper)).toEqual([]);
       },
     );
   });

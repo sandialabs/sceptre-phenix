@@ -1,8 +1,9 @@
 // The SCORCH page: rows for experiments created while open, the run button
 // that waits for the server's report, and rows kept current by the websocket.
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notify, rbac, resetMocks } = await vi.hoisted(
+const { axios, modules, notify, rbac, resetMocks, ws } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
 );
 vi.mock('@/utils/rbac.js', modules.rbac);
@@ -10,35 +11,63 @@ vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 // its terminal needs a browser
 vi.mock('@/components/MiniTerminal.vue', modules.stub);
 
-import { createLiveRows } from '@/utils/liveRows.js';
+import { nextTick } from 'vue';
+
 import Scorch from '@/views/Scorch.vue';
-import { flush } from './helpers/async.js';
+import { never } from './helpers/async.js';
 import { wsMsg } from './helpers/fixtures.js';
-import { pageContext } from './helpers/page.js';
+import {
+  byLabel,
+  confirmDialog,
+  dialogs,
+  mountPage,
+  tableRows,
+  textOf,
+  toasts,
+} from './helpers/mount.js';
 import { denyOnly } from './helpers/permissions.js';
 
-// the page, listing these rows
-function page(experiments = []) {
-  return pageContext(Scorch, {
-    fields: { experiments, liveRows: createLiveRows() },
-  });
-}
+// the page, listing these rows and holding these terminals
+const page = (experiments = [], terminals = {}) =>
+  mountPage(Scorch, { route: '/scorch', data: { experiments, terminals } });
 
 // a started experiment whose SCORCH pipeline has two named runs
-const row = (scorch = {}) => ({
+const row = (scorch = {}, extra = {}) => ({
   name: 'exp1',
   running: true,
   status: 'started',
   scorch: { running: false, run: -1, runs: ['first', 'second'], ...scorch },
   terminal: false,
+  ...extra,
 });
 
 const scorchMsg = (action, run = 0, result) =>
   wsMsg('apps/scorch', `exp1/${run}`, action, result);
 const expMsg = (action, result) => wsMsg('experiment', 'exp1', action, result);
+
+// passes a websocket message to the page, and waits for it to draw
+async function handle(msg) {
+  for (const handler of ws.handlers) handler(msg);
+  await flushPromises();
+}
+
+// what each row shows: its name, both statuses and the SCORCH button
+const shown = (wrapper) =>
+  tableRows(wrapper).map((cells) => {
+    const button = cells['Scorch Status'].find('button');
+    return {
+      name: textOf(cells.Experiment.find('a')),
+      status: textOf(cells['Experiment Status'].find('.tag')),
+      scorch: textOf(cells['Scorch Status'].find('.tag')),
+      button: button.exists() ? button.attributes('aria-label') : null,
+      spinning: button.exists() && button.classes('is-loading'),
+      terminal: cells.Terminal.find('button').exists(),
+    };
+  });
 
 beforeEach(() => resetMocks({ store: {} }));
 
@@ -51,160 +80,191 @@ describe('a created experiment', () => {
     axios.get.mockResolvedValue({
       data: { app_running: false, running: -1, pipelines: [{ name: 'first' }] },
     });
-    const ctx = page();
+    const wrapper = await page();
 
-    ctx.handle(expMsg('create', created));
-    await flush();
+    await handle(expMsg('create', created));
 
     expect(axios.get.mock.calls[0][0]).toBe(
       'experiments/exp1/scorch/pipelines',
     );
-    expect(ctx.experiments).toEqual([
+    expect(shown(wrapper)).toEqual([
       {
-        ...created,
+        name: 'exp1',
         status: 'stopped',
-        scorch: { running: false, run: -1, runs: ['first'], pending: false },
+        scorch: 'stopped',
+        button: 'Start first',
+        spinning: false,
+        terminal: false,
       },
     ]);
-    expect(ctx.$buefy.toast.open).toHaveBeenCalled();
+    expect(byLabel(wrapper, 'Start experiment exp1').exists()).toBe(true);
+    expect(toasts().map((t) => t.text)).toEqual([
+      'The exp1 experiment has been created.',
+    ]);
   });
 
   it('is left out when the SCORCH list would not show it', async () => {
-    const ctx = page();
-    ctx.handle(expMsg('create', { name: 'b', apps: ['soh'] }));
+    const wrapper = await page();
+    await handle(expMsg('create', { name: 'b', apps: ['soh'] }));
 
     rbac.allowed = denyOnly(['experiments/apps']);
-    ctx.handle(expMsg('create', created));
-    await flush();
+    await handle(expMsg('create', created));
 
     expect(axios.get).not.toHaveBeenCalled();
-    expect(ctx.experiments).toEqual([]);
+    expect(tableRows(wrapper)).toEqual([]);
   });
 });
 
 describe('the run button', () => {
-  it('spins until the server reports the run started, then stopped', () => {
-    axios.post.mockReturnValue(new Promise(() => {}));
-    axios.delete.mockReturnValue(new Promise(() => {}));
-    const exp = row();
-    const ctx = page([exp]);
-    expect(ctx.scorchControlLabel(exp)).toBe('Start first');
+  // the SCORCH button of the only row, found again after each change
+  const scorchButton = (wrapper) =>
+    tableRows(wrapper)[0]['Scorch Status'].find('button');
 
-    ctx.scorchControl(exp);
+  it('spins until the server reports the run started, then stopped', async () => {
+    axios.post.mockReturnValue(never());
+    axios.delete.mockReturnValue(never());
+    const wrapper = await page([row()]);
+    expect(scorchButton(wrapper).attributes('aria-label')).toBe('Start first');
+
+    await scorchButton(wrapper).trigger('click');
     expect(axios.post).toHaveBeenCalledWith(
       'experiments/exp1/scorch/pipelines/0',
     );
-    expect(exp.scorch.pending).toBe(true);
-    // a second press while it spins does nothing
-    ctx.scorchControl(exp);
+    expect(shown(wrapper)[0].spinning).toBe(true);
+    // a second press while it spins does nothing, even past the disabled button
+    const spinning = scorchButton(wrapper);
+    expect(spinning.attributes('disabled')).toBeDefined();
+    spinning.element.disabled = false;
+    await spinning.trigger('click');
     expect(axios.post).toHaveBeenCalledTimes(1);
 
-    ctx.handle(scorchMsg('start', 1));
-    expect(exp.scorch).toMatchObject({ running: true, run: 1, pending: false });
-    expect(ctx.scorchControlLabel(exp)).toBe('Stop second');
+    await handle(scorchMsg('start', 1));
+    expect(shown(wrapper)[0]).toMatchObject({
+      scorch: 'running',
+      button: 'Stop second',
+      spinning: false,
+    });
 
-    ctx.scorchControl(exp);
+    await scorchButton(wrapper).trigger('click');
     expect(axios.delete).toHaveBeenCalledWith(
       'experiments/exp1/scorch/pipelines/1',
     );
-    ctx.handle(scorchMsg('success', 1));
-    expect(exp.scorch).toMatchObject({ running: false, pending: false });
+    await handle(scorchMsg('success', 1));
+    expect(shown(wrapper)[0]).toMatchObject({
+      scorch: 'stopped',
+      spinning: false,
+    });
   });
 
-  it('stops spinning when no report comes', () => {
+  it('stops spinning when no report comes', async () => {
+    axios.post.mockReturnValue(never());
+    const wrapper = await page([row()]);
     vi.useFakeTimers();
-    axios.post.mockReturnValue(new Promise(() => {}));
-    const exp = row();
 
-    page([exp]).scorchControl(exp);
+    await scorchButton(wrapper).trigger('click');
+    expect(shown(wrapper)[0].spinning).toBe(true);
     vi.runOnlyPendingTimers();
-    expect(exp.scorch.pending).toBe(false);
+    await nextTick();
+    expect(shown(wrapper)[0].spinning).toBe(false);
   });
 
   it('stops spinning and reports a request that fails', async () => {
     const err = new Error('forbidden');
     axios.post.mockRejectedValue(err);
-    const exp = row();
+    const wrapper = await page([row()]);
 
-    page([exp]).scorchControl(exp);
-    await flush();
-    expect(exp.scorch.pending).toBe(false);
+    await scorchButton(wrapper).trigger('click');
+    await flushPromises();
+    expect(shown(wrapper)[0].spinning).toBe(false);
     expect(notify.error).toHaveBeenCalledWith(err);
   });
 
-  it('reports a failed run', () => {
-    const exp = row({ running: true, run: 0 });
-    page([exp]).handle(scorchMsg('error', 0, { error: 'component cc failed' }));
+  it('reports a failed run', async () => {
+    const wrapper = await page([row({ running: true, run: 0 })]);
+    await handle(scorchMsg('error', 0, { error: 'component cc failed' }));
 
-    expect(exp.scorch.running).toBe(false);
+    expect(shown(wrapper)[0].scorch).toBe('stopped');
     expect(notify.show).toHaveBeenCalledWith('component cc failed');
   });
 });
 
 describe('experiment messages', () => {
-  it('keep the SCORCH state over a start, and end the run on a stop', () => {
-    const ctx = page([row({ run: 0 })]);
-    ctx.terminals.exp1 = { name: 'cc' };
+  it('keep the SCORCH state over a start, and end the run on a stop', async () => {
+    const wrapper = await page(
+      [row({ running: true, run: 0 }, { terminal: true })],
+      { exp1: { name: 'cc' } },
+    );
 
-    ctx.handle(expMsg('start', { name: 'exp1', running: true }));
-    expect(ctx.experiments[0]).toMatchObject({
-      status: 'started',
-      scorch: { runs: ['first', 'second'], run: 0 },
-    });
+    await handle(expMsg('start', { name: 'exp1', running: true }));
+    expect(shown(wrapper)).toEqual([
+      {
+        name: 'exp1',
+        status: 'started',
+        scorch: 'running',
+        button: 'Stop first',
+        spinning: false,
+        terminal: true,
+      },
+    ]);
 
-    ctx.experiments[0].scorch.running = true;
-    ctx.experiments[0].terminal = true;
-    ctx.handle(expMsg('stop', { name: 'exp1', running: false }));
-    expect(ctx.experiments[0]).toMatchObject({
-      status: 'stopped',
-      scorch: { running: false, runs: ['first', 'second'] },
-      terminal: false,
-    });
-    expect(ctx.terminals).toEqual({});
+    await handle(expMsg('stop', { name: 'exp1', running: false }));
+    expect(shown(wrapper)).toEqual([
+      {
+        name: 'exp1',
+        status: 'stopped',
+        scorch: 'stopped',
+        button: 'Start first',
+        spinning: false,
+        terminal: false,
+      },
+    ]);
+    expect(wrapper.vm.terminals).toEqual({});
   });
 
-  it('drop the row of a deleted experiment', () => {
-    const ctx = page([row()]);
-    ctx.handle(expMsg('delete'));
-    expect(ctx.experiments).toEqual([]);
+  it('drop the row of a deleted experiment', async () => {
+    const wrapper = await page([row()]);
+    await handle(expMsg('delete'));
+    expect(tableRows(wrapper)).toEqual([]);
   });
 });
 
 describe('the experiment button', () => {
   it.each([
-    [true, 'Stop the Experiment', 'Stop', 'stop'],
-    [false, 'Start the Experiment', 'Start', 'start'],
+    [true, 'Stop experiment a<b>', 'Stop the Experiment', 'Stop', 'stop'],
+    [false, 'Start experiment a<b>', 'Start the Experiment', 'Start', 'start'],
   ])(
     'asks once, naming the experiment escaped, then sends the request (running: %s)',
-    async (running, title, confirmText, path) => {
+    async (running, label, title, confirmText, path) => {
       axios.post.mockResolvedValue({});
-      const exp = { ...row(), name: 'a<b>', running };
-      const ctx = page([exp]);
+      const wrapper = await page([row({}, { name: 'a<b>', running })]);
 
-      const done = ctx.expControl(exp);
-      const dialog = ctx.$buefy.dialog.confirm.mock.lastCall[0];
-      expect(dialog).toMatchObject({ title, confirmText });
-      expect(dialog.message).toBe(
+      await byLabel(wrapper, label).trigger('click');
+      const [dialog] = dialogs();
+      expect(textOf(dialog.querySelector('.modal-card-title'))).toBe(title);
+      expect(textOf(dialog.querySelector('footer .button:last-child'))).toBe(
+        confirmText,
+      );
+      expect(dialog.querySelector('.media-content div').innerHTML).toBe(
         `<p>This will ${path} the a&lt;b&gt; experiment.</p>`,
       );
-      dialog.onConfirm();
-      await done;
+      await confirmDialog();
       expect(axios.post).toHaveBeenCalledWith(`experiments/a<b>/${path}`);
     },
   );
 
   it('sends nothing when canceled, and reports a refused request', async () => {
-    const ctx = page([row()]);
-    let done = ctx.expControl(row());
-    ctx.$buefy.dialog.confirm.mock.lastCall[0].onCancel();
-    await done;
+    const wrapper = await page([row()]);
+    const button = byLabel(wrapper, 'Stop experiment exp1');
+
+    await button.trigger('click');
+    dialogs().at(-1).querySelector('footer .button:first-child').click();
+    await flushPromises();
     expect(axios.post).not.toHaveBeenCalled();
 
     const err = new Error('forbidden');
     axios.post.mockRejectedValue(err);
-    done = ctx.expControl(row());
-    ctx.$buefy.dialog.confirm.mock.lastCall[0].onConfirm();
-    await done;
+    await button.trigger('click');
+    await confirmDialog();
     expect(notify.error).toHaveBeenCalledWith(err);
   });
 });

@@ -1,5 +1,6 @@
 // A background job's progress in the jobs menu and pages: its status in words
 // and color, a bar, a status line read out as it changes, and its buttons.
+import { flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,11 +13,15 @@ vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 
 import JobProgress from '@/components/jobs/JobProgress.vue';
 import { useJobStore } from '@/utils/jobs.js';
-import { flush } from './helpers/async.js';
-import { lastConfirm } from './helpers/buefy.js';
 import { httpError } from './helpers/fixtures.js';
-import { pageContext } from './helpers/page.js';
-import { buttons, renderSSR, textOf } from './helpers/render.js';
+import {
+  buttons,
+  byLabel,
+  confirmDialog,
+  dialogs,
+  mountComponent,
+  textOf,
+} from './helpers/mount.js';
 
 const job = (fields = {}) => ({
   id: 'j1',
@@ -34,13 +39,11 @@ const job = (fields = {}) => ({
   ...fields,
 });
 
-const render = (props) => renderSSR(JobProgress, props);
-const liveLine = (html) =>
-  textOf(
-    html.match(
-      /<p class="job-status-line" aria-live="polite"[^>]*>([\s\S]*?)<\/p>/,
-    )[1],
-  );
+const render = (props) => mountComponent(JobProgress, { props });
+const liveLine = (wrapper) =>
+  textOf(wrapper.find('.job-status-line[aria-live="polite"]'));
+const button = (wrapper, text) =>
+  wrapper.findAll('button').find((b) => textOf(b) === text);
 
 beforeEach(() => {
   resetMocks();
@@ -49,20 +52,22 @@ beforeEach(() => {
 
 describe('JobProgress', () => {
   it('shows a running job with its bytes, and can cancel it', async () => {
-    const html = await render({ job: job() });
-    expect(html).toContain('Running');
-    expect(html).toMatch(
-      /<progress[^>]*aria-label="Archive 3 files of exp progress"/,
+    const progress = await render({ job: job() });
+    expect(textOf(progress.find('.job-status'))).toBe('Running');
+    expect(
+      byLabel(progress, 'Archive 3 files of exp progress').element.tagName,
+    ).toBe('PROGRESS');
+    expect(liveLine(progress)).toBe('1 of 3 files done (1.5 KiB of 3.0 KiB)');
+    expect(buttons(progress)).toEqual(['Cancel']);
+    expect(byLabel(progress, 'Cancel Archive 3 files of exp').exists()).toBe(
+      true,
     );
-    expect(liveLine(html)).toBe('1 of 3 files done (1.5 KiB of 3.0 KiB)');
-    expect(buttons(html)).toEqual(['Cancel']);
-    expect(html).toContain('aria-label="Cancel Archive 3 files of exp"');
   });
 
   it('says a cancel is under way', async () => {
-    const html = await render({ job: job({ cancelRequested: true }) });
-    expect(liveLine(html)).toMatch(/stopping after the ones in progress$/);
-    expect(buttons(html)).toEqual(['Canceling… (disabled)']);
+    const progress = await render({ job: job({ cancelRequested: true }) });
+    expect(liveLine(progress)).toMatch(/stopping after the ones in progress$/);
+    expect(buttons(progress)).toEqual(['Canceling… (disabled)']);
   });
 
   it.each([
@@ -74,15 +79,14 @@ describe('JobProgress', () => {
   ])(
     'names a %s job in words, not color alone',
     async (status, label, type) => {
-      const html = await render({ job: job({ status }) });
-      expect(html).toMatch(
-        new RegExp(`<span class="tag ${type}[^"]*"[^>]*>[\\s\\S]*?${label}`),
-      );
+      const tag = (await render({ job: job({ status }) })).find('.tag');
+      expect(tag.classes()).toContain(type);
+      expect(textOf(tag)).toBe(label);
     },
   );
 
   it('offers a finished archive for download, and dismissal', async () => {
-    const html = await render({
+    const progress = await render({
       job: job({
         status: 'succeeded',
         artifact: { name: 'exp-files.zip', size: 10 },
@@ -90,8 +94,8 @@ describe('JobProgress', () => {
         progress: { done: 1, total: 1 },
       }),
     });
-    expect(buttons(html)).toEqual(['Download', 'Dismiss']);
-    expect(liveLine(html)).toBe('1 of 1 file succeeded');
+    expect(buttons(progress)).toEqual(['Download', 'Dismiss']);
+    expect(liveLine(progress)).toBe('1 of 1 file succeeded');
   });
 
   it("warns before downloading an incomplete archive, and lists the job's outcome", async () => {
@@ -108,19 +112,18 @@ describe('JobProgress', () => {
       ],
       progress: { done: 2, total: 2 },
     });
-    const html = await render({ job: partial });
-    expect(buttons(html)).toContain('Download incomplete archive');
-    expect(liveLine(html)).toBe('1 of 2 files succeeded, 1 failed');
-    expect(textOf(html)).toContain('b.log : not found');
+    const progress = await render({ job: partial });
+    expect(buttons(progress)).toContain('Download incomplete archive');
+    expect(liveLine(progress)).toBe('1 of 2 files succeeded, 1 failed');
+    expect(textOf(progress)).toContain('b.log: not found');
 
     const download = vi
       .spyOn(useJobStore(), 'downloadArtifact')
       .mockImplementation(() => {});
-    const ctx = pageContext(JobProgress, { fields: { job: partial } });
-    ctx.download();
+    await button(progress, 'Download incomplete archive').trigger('click');
     expect(download).not.toHaveBeenCalled();
-    expect(lastConfirm(ctx).message).toContain('MISSING.txt');
-    lastConfirm(ctx).onConfirm();
+    expect(textOf(dialogs()[0])).toContain('MISSING.txt');
+    await confirmDialog();
     expect(download).toHaveBeenCalledWith(partial);
   });
 
@@ -132,11 +135,11 @@ describe('JobProgress', () => {
       items: [{ name: 'a.qc2', status: 'failed', error: 'no space left' }],
       progress: { done: 1, total: 1 },
     });
-    const html = await render({ job: failed });
-    expect(liveLine(html)).toBe(
+    const progress = await render({ job: failed });
+    expect(liveLine(progress)).toBe(
       '0 of 1 disk image succeeded, 1 failed, every item failed, no space left',
     );
-    expect(textOf(html)).toContain('a.qc2 : no space left');
+    expect(textOf(progress)).toContain('a.qc2: no space left');
 
     const menu = await render({ job: failed, compact: true });
     expect(liveLine(menu)).toMatch(/no space left$/);
@@ -151,36 +154,39 @@ describe('JobProgress', () => {
       progress: { done: 1000, total: 1000 },
       revision: 4,
     });
-    expect(liveLine(await render({ job: shortened }))).toBe(
-      '1000 of 1000 VMs done',
-    );
-
     axios.get.mockResolvedValue({ data: { ...shortened, itemsOmitted: 0 } });
-    const ctx = pageContext(JobProgress, { fields: { job: shortened } });
-    JobProgress.mounted.call(ctx);
-    await flush();
+
+    const progress = await render({ job: shortened });
+    expect(liveLine(progress)).toBe('1000 of 1000 VMs done');
+    await flushPromises();
     expect(axios.get).toHaveBeenCalledWith('jobs/j1');
     expect(useJobStore().jobs.j1.itemsOmitted).toBe(0);
   });
 
   it('cancels and dismisses through the server, and reports a failure', async () => {
-    const ctx = pageContext(JobProgress, { fields: { job: job() } });
+    const progress = await render({ job: job() });
     axios.post.mockResolvedValue({
       data: job({ cancelRequested: true, revision: 2 }),
     });
-    await ctx.cancel();
+    await button(progress, 'Cancel').trigger('click');
+    await flushPromises();
     expect(axios.post).toHaveBeenCalledWith('jobs/j1/cancel');
     expect(useJobStore().jobs.j1.cancelRequested).toBe(true);
 
+    const done = job({ status: 'canceled' });
+    await progress.setProps({ job: done });
     axios.delete.mockRejectedValue(
       httpError(409, 'job is still queued or running'),
     );
-    await ctx.dismiss();
+    await button(progress, 'Dismiss').trigger('click');
+    await flushPromises();
     expect(notify.error).toHaveBeenCalled();
-    expect(ctx.$emit).not.toHaveBeenCalled();
+    expect(progress.emitted('dismissed')).toBeUndefined();
 
     axios.delete.mockResolvedValue({});
-    await ctx.dismiss();
-    expect(ctx.$emit).toHaveBeenCalledWith('dismissed', ctx.job);
+    await button(progress, 'Dismiss').trigger('click');
+    await flushPromises();
+    expect(axios.delete).toHaveBeenCalledWith('jobs/j1');
+    expect(progress.emitted('dismissed')).toEqual([[done]]);
   });
 });

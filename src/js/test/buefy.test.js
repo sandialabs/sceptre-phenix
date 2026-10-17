@@ -8,7 +8,7 @@ import { expect, test } from 'vitest';
 
 import { installBuefy } from '@/utils/buefy.js';
 
-import { renderSSR } from './helpers/render.js';
+import { mountComponent } from './helpers/mount.js';
 
 const SRC = join(import.meta.dirname, '..', 'src');
 
@@ -77,10 +77,9 @@ test.each(FILES.map((file) => [relative(SRC, file), file]))(
 );
 
 test('names the modal close button Close', async () => {
-  const html = await renderSSR({
+  const modal = await mountComponent({
     template: '<b-modal :model-value="true"><p>x</p></b-modal>',
   });
-  const close = html.match(/<button[^>]*\bmodal-close\b[^>]*>/g);
-  expect(close).toHaveLength(1);
-  expect(close[0]).toContain('aria-label="Close"');
+  const close = modal.findAll('button.modal-close');
+  expect(close.map((b) => b.attributes('aria-label'))).toEqual(['Close']);
 });

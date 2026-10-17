@@ -1,10 +1,9 @@
 // The Experiments page: its table, its search, and rows kept current from the
 // websocket, even for experiments it has not loaded (workflow, Configs, CLI).
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, capturing, loaderSpy, modules, resetMocks } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const { axios, capturing, loaderSpy, modules, resetMocks, ws } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/store.js', modules.store);
@@ -14,45 +13,47 @@ vi.mock('@/utils/pageData.js', () => ({ pageFetchers: {} }));
 
 import Experiments from '@/views/Experiments.vue';
 import { never } from './helpers/async.js';
-import { pageContext } from './helpers/page.js';
-import { renderSSR, tableRows, textOf } from './helpers/render.js';
+import { mountPage, tableRows, textOf, toasts } from './helpers/mount.js';
 
+let reloadSoon;
 beforeEach(() => {
   resetMocks({ store: { token: 't', features: [], role: null } });
   axios.get.mockImplementation(never);
+  reloadSoon = vi
+    .spyOn(Experiments.methods, 'reloadSoon')
+    .mockImplementation(() => {});
 });
 
-function page(experiments) {
-  const ctx = pageContext(Experiments, { fields: { reloadSoon: vi.fn() } });
-  Experiments.created.call(ctx);
-  ctx.experiments = experiments;
-  return ctx;
-}
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+const page = (experiments = []) =>
+  mountPage(Experiments, {
+    route: '/experiments',
+    data: { experiments, loaded: true },
+  });
+
+// what the server sends the page over the websocket
+const send = (msg) => {
+  for (const handler of ws.handlers) handler(msg);
+};
 
 describe('the table', () => {
-  const experiments = [
-    {
-      name: 'exp1',
-      status: 'stopped',
-      topology: 'topo-a',
-      scenario: 'scn-a',
-      vm_count: 3,
-    },
-    { name: 'exp2', status: 'stopped', topology: 'topo-b', vm_count: 1 },
-  ];
-
   it('lists each experiment with its topology and scenario', async () => {
-    const html = await renderSSR(
-      Experiments,
-      {},
+    const wrapper = await page([
       {
-        route: '/experiments',
-        data: { experiments, loaded: true },
-        tables: true,
+        name: 'exp1',
+        status: 'stopped',
+        topology: 'topo-a',
+        scenario: 'scn-a',
+        vm_count: 3,
       },
-    );
-    const rows = tableRows(html).map((cells) =>
-      ['name', 'topology', 'scenario'].map((field) => textOf(cells[field])),
+      { name: 'exp2', status: 'stopped', topology: 'topo-b', vm_count: 1 },
+    ]);
+
+    const rows = tableRows(wrapper).map((cells) =>
+      ['Name', 'Topology', 'Scenario'].map((label) => textOf(cells[label])),
     );
     expect(rows).toEqual([
       ['exp1', 'topo-a', 'scn-a'],
@@ -61,62 +62,63 @@ describe('the table', () => {
   });
 
   it('sorts by each column but the VLAN range and actions', async () => {
-    const html = await renderSSR(
-      Experiments,
-      {},
-      { route: '/experiments', tables: true },
-    );
-    const headers = [...html.matchAll(/<th ([^>]*)>/g)].map(([, attrs]) => ({
-      field: attrs.match(/data-field="([^"]*)"/)?.[1],
+    const wrapper = await page();
+
+    const headers = wrapper.findAll('thead th').map((th) => ({
+      label: textOf(th),
       // sortable, with the sort arrow beside the label
-      sorts:
-        attrs.includes('data-sortable') &&
-        attrs.includes('header-class="sort-inline"'),
+      sorts: th.classes('is-sortable') && th.classes('sort-inline'),
     }));
     expect(headers).toEqual([
-      { field: 'name', sorts: true },
-      { field: 'status', sorts: true },
-      { field: 'topology', sorts: true },
-      { field: 'scenario', sorts: true },
-      { field: 'start_time', sorts: true },
-      { field: 'vm_count', sorts: true },
-      { field: 'vlan_range', sorts: false },
-      { field: undefined, sorts: false },
+      { label: 'Name', sorts: true },
+      { label: 'Status', sorts: true },
+      { label: 'Topology', sorts: true },
+      { label: 'Scenario', sorts: true },
+      { label: 'Start Time', sorts: true },
+      { label: 'VMs', sorts: true },
+      { label: 'VLANs', sorts: false },
+      { label: 'Actions', sorts: false },
     ]);
   });
 
-  it('searches names literally', () => {
-    const ctx = page([{ name: 'a(1', start_time: '' }, { name: 'b' }]);
-    ctx.searchName = 'a(';
-    expect(ctx.filteredExperiments.map((e) => e.name)).toEqual(['a(1']);
+  it('searches names literally', async () => {
+    const wrapper = await page([
+      { name: 'a(1', status: 'stopped', start_time: '' },
+      { name: 'b', status: 'stopped' },
+    ]);
+
+    await wrapper
+      .find('input[placeholder="Find an Experiment"]')
+      .setValue('a(');
+    expect(tableRows(wrapper).map((cells) => textOf(cells.Name))).toEqual([
+      'a(1',
+    ]);
   });
 });
 
 describe('websocket messages', () => {
-  it('add an unknown starting experiment at once and reload the list', () => {
-    const ctx = page([{ name: 'old', status: 'stopped' }]);
+  it('add an unknown starting experiment at once and reload the list', async () => {
+    const wrapper = await page([{ name: 'old', status: 'stopped' }]);
 
-    ctx.handleWs({
-      resource: { type: 'experiment', name: 'new', action: 'starting' },
-    });
+    send({ resource: { type: 'experiment', name: 'new', action: 'starting' } });
 
-    expect(ctx.experiments.map((e) => [e.name, e.status])).toEqual([
+    expect(wrapper.vm.experiments.map((e) => [e.name, e.status])).toEqual([
       ['old', 'stopped'],
       ['new', 'starting'],
     ]);
-    expect(ctx.reloadSoon).toHaveBeenCalled();
+    expect(reloadSoon).toHaveBeenCalled();
   });
 
-  it('fill a row known only from messages with the loaded details', () => {
-    const ctx = page([]);
+  it('fill a row known only from messages with the loaded details', async () => {
+    const wrapper = await page();
 
     // the progress message came after the server read the list (seq 10)
-    ctx.handleWs({
+    send({
       resource: { type: 'experiment', name: 'new', action: 'progress' },
       result: { percent: 0.5 },
       seq: 20,
     });
-    expect(ctx.experiments[0]).toMatchObject({
+    expect(wrapper.vm.experiments[0]).toMatchObject({
       name: 'new',
       status: 'starting',
       percent: 50,
@@ -136,7 +138,7 @@ describe('websocket messages', () => {
       { seq: 10 },
     );
 
-    expect(ctx.experiments).toEqual([
+    expect(wrapper.vm.experiments).toEqual([
       {
         name: 'new',
         status: 'starting',
@@ -147,57 +149,55 @@ describe('websocket messages', () => {
     ]);
   });
 
-  it('take a list the server read after a change over the row it changed', () => {
-    const ctx = page([{ name: 'demo', status: 'started' }]);
+  it('take a list the server read after a change over the row it changed', async () => {
+    const wrapper = await page([{ name: 'demo', status: 'started' }]);
 
-    ctx.handleWs({
+    send({
       resource: { type: 'experiment', name: 'demo', action: 'stop' },
       result: { name: 'demo', running: false },
       seq: 20,
     });
-    const shown = ctx.experiments[0];
+    const shown = wrapper.vm.experiments[0];
 
     // read before the stop: the row the message changed stays
     loaderSpy.options.apply([{ name: 'demo', status: 'started' }], { seq: 15 });
-    expect(ctx.experiments[0]).toBe(shown);
+    expect(wrapper.vm.experiments[0]).toBe(shown);
 
     // read after it (say the experiment was started again from the CLI)
     loaderSpy.options.apply([{ name: 'demo', status: 'started' }], { seq: 25 });
-    expect(ctx.experiments[0].status).toBe('started');
+    expect(wrapper.vm.experiments[0].status).toBe('started');
   });
 
-  it('reload the list when an experiment config is created elsewhere', () => {
-    const ctx = page([]);
+  it('reload the list when an experiment config is created elsewhere', async () => {
+    await page();
 
-    ctx.handleWs({
+    send({
       resource: { type: 'config', name: 'Experiment/new', action: 'create' },
     });
 
-    expect(ctx.reloadSoon).toHaveBeenCalled();
+    expect(reloadSoon).toHaveBeenCalled();
   });
 
-  it('add no second row for an experiment already listed', () => {
-    const ctx = page([{ name: 'new', status: 'stopped' }]);
+  it('add no second row for an experiment already listed', async () => {
+    const wrapper = await page([{ name: 'new', status: 'stopped' }]);
 
-    ctx.handleWs({
+    send({
       resource: { type: 'experiment', name: 'new', action: 'create' },
       result: { name: 'new' },
     });
 
-    expect(ctx.experiments).toHaveLength(1);
-    expect(ctx.reloadSoon).not.toHaveBeenCalled();
+    expect(wrapper.vm.experiments).toHaveLength(1);
+    expect(reloadSoon).not.toHaveBeenCalled();
   });
 
-  it('report delayed VMs from the started experiment', () => {
-    const ctx = page([{ name: 'exp1' }]);
+  it('report delayed VMs from the started experiment', async () => {
+    await page([{ name: 'exp1', status: 'stopped' }]);
 
-    ctx.handleWs({
+    send({
       resource: { type: 'experiment', name: 'exp1', action: 'start' },
       result: { name: 'exp1', delayed_vms: 2 },
     });
 
-    expect(ctx.$buefy.toast.open.mock.calls[0][0].message).toContain(
-      'with 2 delayed VMs',
-    );
+    expect(toasts()[0].text).toContain('with 2 delayed VMs');
   });
 });
