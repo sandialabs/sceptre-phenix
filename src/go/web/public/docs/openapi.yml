@@ -33,7 +33,7 @@ info:
     route says it answers 404 so as not to reveal another user's job, console
     or token. An unknown `/api/v1` path is a 404 and a method a path does not
     take is a 405, both before authentication, and an `OPTIONS` request
-    answers 204 (200 with `--allow-cors`) without running the route. With
+    answers 204, also before authentication, without running the route. With
     `--jwt-signing-key proxy-jwt` the token is read only from the header, and
     a missing or malformed one answers 400; with auth disabled, every request
     acts as global-admin. Behind a proxy serving phenix under a base path
@@ -579,6 +579,8 @@ paths:
             successful operation; `X-Phenix-Stale` is also set when stored
             experiments that could not be read are left out
           headers:
+            X-Phenix-Seq:
+              $ref: "#/components/headers/Seq"
             X-Phenix-Observed-At:
               $ref: "#/components/headers/ObservedAt"
             X-Phenix-Stale:
@@ -769,6 +771,8 @@ paths:
             successful operation; `vms` holds the page asked for and
             `vm_count` how many VMs match, before paging
           headers:
+            X-Phenix-Seq:
+              $ref: "#/components/headers/Seq"
             X-Phenix-Observed-At:
               $ref: "#/components/headers/ObservedAt"
             X-Phenix-Stale:
@@ -1309,6 +1313,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/Files"
           headers:
+            X-Phenix-Seq:
+              $ref: "#/components/headers/Seq"
             X-Phenix-Observed-At:
               $ref: "#/components/headers/ObservedAt"
         "400":
@@ -2573,6 +2579,8 @@ paths:
         "200":
           description: successful operation
           headers:
+            X-Phenix-Seq:
+              $ref: "#/components/headers/Seq"
             X-Phenix-Observed-At:
               $ref: "#/components/headers/ObservedAt"
             X-Phenix-Stale:
@@ -4016,6 +4024,8 @@ paths:
         "200":
           description: successful operation
           headers:
+            X-Phenix-Seq:
+              $ref: "#/components/headers/Seq"
             X-Phenix-Observed-At:
               $ref: "#/components/headers/ObservedAt"
             X-Phenix-Stale:
@@ -4046,6 +4056,8 @@ paths:
             successful operation; the headers report the oldest VM states in
             the response, and whether any are earlier states
           headers:
+            X-Phenix-Seq:
+              $ref: "#/components/headers/Seq"
             X-Phenix-Observed-At:
               $ref: "#/components/headers/ObservedAt"
             X-Phenix-Stale:
@@ -4961,6 +4973,8 @@ paths:
         "200":
           description: successful operation
           headers:
+            X-Phenix-Seq:
+              $ref: "#/components/headers/Seq"
             X-Phenix-Observed-At:
               $ref: "#/components/headers/ObservedAt"
           content:
@@ -9660,7 +9674,8 @@ components:
       schema:
         type: string
   headers:
-    # Ordering and freshness, on every API response (see the description).
+    # Ordering and freshness (see the description). Seq is on every API
+    # response; it is listed on the live reads clients order against /ws.
     Seq:
       description: >-
         this process's sequence number, taken as the request started; orders

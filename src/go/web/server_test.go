@@ -78,42 +78,27 @@ func TestRouterServesTheUI(t *testing.T) {
 	}
 }
 
-// OPTIONS is answered without running the route's handler; with CORS on, the Unix socket's
-// routes get preflights too.
+// OPTIONS is answered with 204, before authentication, without running the
+// route's handler, including on the routes the Unix socket also serves.
 func TestRouterAnswersOptions(t *testing.T) {
-	for name, cors := range map[string]bool{"without CORS": false, "with CORS": true} {
-		t.Run(name, func(t *testing.T) {
-			registry := useJobs(t)
-			j := waitJob(t, registry, startTestJob(t, registry, "alice", "", nil, "").ID)
+	registry := useJobs(t)
+	j := waitJob(t, registry, startTestJob(t, registry, "alice", "", nil, "").ID)
 
-			original := o
-			t.Cleanup(func() { o = original })
+	servers := map[string]string{
+		"as alice":      serveAs(t, "alice", testRole("options", "list")).URL,
+		"without token": serveRouter(t, testPublic(), testJWTKey).URL,
+	}
 
-			o.allowCORS = cors
-
-			server := serveAs(t, "alice", testRole("options", "list")).URL
-
-			// as documented: 204, or 200 when CORS is allowed
-			want := http.StatusNoContent
-			if cors {
-				want = http.StatusOK
+	for name, server := range servers {
+		for _, path := range []string{"/api/v1/jobs/" + j.ID, "/api/v1/jobs"} {
+			if resp := do(t, http.MethodOptions, server+path, ""); resp.StatusCode != http.StatusNoContent {
+				t.Errorf("OPTIONS %s %s = %d, want %d", path, name, resp.StatusCode, http.StatusNoContent)
 			}
+		}
+	}
 
-			for _, path := range []string{"/api/v1/jobs/" + j.ID, "/api/v1/jobs"} {
-				resp := do(t, http.MethodOptions, server+path, "")
-				if resp.StatusCode != want {
-					t.Errorf("OPTIONS %s = %d, want %d", path, resp.StatusCode, want)
-				}
-
-				if got := resp.Header.Get("Access-Control-Allow-Origin") != ""; got != cors {
-					t.Errorf("OPTIONS %s has Access-Control-Allow-Origin = %t, want %t", path, got, cors)
-				}
-			}
-
-			if _, ok := registry.Get(j.ID); !ok {
-				t.Errorf("Registry.Get(%s) after OPTIONS /api/v1/jobs/%s found no job, want it kept", j.ID, j.ID)
-			}
-		})
+	if _, ok := registry.Get(j.ID); !ok {
+		t.Errorf("Registry.Get(%s) after OPTIONS /api/v1/jobs/%s found no job, want it kept", j.ID, j.ID)
 	}
 }
 
