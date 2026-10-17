@@ -392,11 +392,18 @@ func TestShutdownRejectsEmptyNames(t *testing.T) {
 //nolint:paralleltest // replaces minimega
 func TestResetDiskState(t *testing.T) {
 	const (
-		disk     = "/phenix/images/" + testExp + "_vm1_snapshot"
-		tmpSnap  = testExp + "_vm1_disk-0.qcow2"
-		disk1    = "/phenix/images/" + testExp + "_vm1_snapshot_1"
-		tmpSnap1 = testExp + "_vm1_disk-1.qcow2"
-		disks    = disk + ",writeback " + disk1 + ",virtio,writeback"
+		disk  = "/phenix/images/" + testExp + "_vm1_snapshot"
+		disk1 = "/phenix/images/data/" + testExp + "_vm1_snapshot_1"
+		disks = disk + ",writeback " + disk1 + ",virtio,writeback"
+	)
+
+	// The fake minimega sets common.MinimegaBase as it starts. The temporary
+	// snapshots are beside the instance disks they replace.
+	mmtest.Use(t, nil)
+
+	var (
+		tmpSnap  = common.MinimegaBase + "/5/reset-disk-0.qcow2"
+		tmpSnap1 = common.MinimegaBase + "/5/reset-disk-1.qcow2"
 	)
 
 	columns := []string{"host", "name", "id", "state", "disks", "snapshot"}
@@ -416,7 +423,7 @@ func TestResetDiskState(t *testing.T) {
 				return []string{
 					"vm info", "version", "capture", "vm kill vm1",
 					"mesh send compute1 disk snapshot " + disk + " " + tmpSnap,
-					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
+					"mesh send compute1 shell mv " + tmpSnap + " " + dir + "/disk-0.qcow2",
 					"vm start vm1",
 				}
 			},
@@ -428,7 +435,7 @@ func TestResetDiskState(t *testing.T) {
 				// with no mesh prefix, the commands start with a space
 				return []string{
 					"vm info", " disk snapshot " + disk + " " + tmpSnap,
-					" shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2", "vm start vm1",
+					" shell mv " + tmpSnap + " " + dir + "/disk-0.qcow2", "vm start vm1",
 				}
 			},
 		},
@@ -439,9 +446,9 @@ func TestResetDiskState(t *testing.T) {
 				return []string{
 					"vm info", "version", "capture", "vm kill vm1",
 					"mesh send compute1 disk snapshot " + disk + " " + tmpSnap,
-					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
+					"mesh send compute1 shell mv " + tmpSnap + " " + dir + "/disk-0.qcow2",
 					"mesh send compute1 disk snapshot " + disk1 + " " + tmpSnap1,
-					"mesh send compute1 shell mv /phenix/images/" + tmpSnap1 + " " + dir + "/disk-1.qcow2",
+					"mesh send compute1 shell mv " + tmpSnap1 + " " + dir + "/disk-1.qcow2",
 					"vm start vm1",
 				}
 			},
@@ -453,9 +460,9 @@ func TestResetDiskState(t *testing.T) {
 				return []string{
 					"vm info",
 					" disk snapshot " + disk + " " + tmpSnap,
-					" shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
+					" shell mv " + tmpSnap + " " + dir + "/disk-0.qcow2",
 					" disk snapshot " + disk1 + " " + tmpSnap1,
-					" shell mv /phenix/images/" + tmpSnap1 + " " + dir + "/disk-1.qcow2",
+					" shell mv " + tmpSnap1 + " " + dir + "/disk-1.qcow2",
 					"vm start vm1",
 				}
 			},
@@ -496,7 +503,7 @@ func TestResetDiskState(t *testing.T) {
 				return []string{
 					"vm info",
 					"mesh send compute1 disk snapshot " + disk + " " + tmpSnap,
-					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
+					"mesh send compute1 shell mv " + tmpSnap + " " + dir + "/disk-0.qcow2",
 					"mesh send compute1 disk snapshot " + disk1 + " " + tmpSnap1,
 				}
 			},
@@ -504,15 +511,15 @@ func TestResetDiskState(t *testing.T) {
 		{
 			name:    "does not start a VM whose second disk it could not move",
 			row:     []string{"compute1", "vm1", "5", "QUIT", disks, "true"},
-			failOn:  "mesh send compute1 shell mv /phenix/images/" + tmpSnap1,
+			failOn:  "mesh send compute1 shell mv " + tmpSnap1,
 			wantErr: errAny,
 			wantSent: func(dir string) []string {
 				return []string{
 					"vm info",
 					"mesh send compute1 disk snapshot " + disk + " " + tmpSnap,
-					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
+					"mesh send compute1 shell mv " + tmpSnap + " " + dir + "/disk-0.qcow2",
 					"mesh send compute1 disk snapshot " + disk1 + " " + tmpSnap1,
-					"mesh send compute1 shell mv /phenix/images/" + tmpSnap1 + " " + dir + "/disk-1.qcow2",
+					"mesh send compute1 shell mv " + tmpSnap1 + " " + dir + "/disk-1.qcow2",
 				}
 			},
 		},
