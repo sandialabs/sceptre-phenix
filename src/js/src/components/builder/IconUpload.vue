@@ -104,7 +104,7 @@
 <script>
   // The files the file chooser offers. What makes a file an image is that
   // the browser can draw it, not its name or its type.
-  export const ICON_FILE_ACCEPT =
+  const ICON_FILE_ACCEPT =
     '.png,.jpg,.jpeg,.gif,.webp,.svg,image/png,image/jpeg,image/gif,image/webp,image/svg+xml';
 
   // What a refused name says beside the name rule.

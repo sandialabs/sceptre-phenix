@@ -99,7 +99,7 @@ export const INSPECTOR_FIELD_NOTES = Symbol('inspector-field-notes');
  * @param {import('vue').ComputedRef<object>|(() => object)} control
  * @returns {import('vue').ComputedRef<string>}
  */
-export function useFieldNote(control) {
+function useFieldNote(control) {
   const notes = inject(INSPECTOR_FIELD_NOTES, () => ref(() => ''), true);
 
   return computed(() => unref(notes)?.(toValue(control)?.path) || '');

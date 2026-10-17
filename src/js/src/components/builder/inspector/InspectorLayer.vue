@@ -128,7 +128,7 @@
   }
 
   // What the layer says of a node at no layer.
-  export const LAYER_NONE = 'None';
+  const LAYER_NONE = 'None';
 
   /**
    * The choices of the layer select: the layers given, and the node's own
