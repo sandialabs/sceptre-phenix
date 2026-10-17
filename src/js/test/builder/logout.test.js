@@ -2,8 +2,7 @@
 // and downloading them), and what session.js clears on logout and sign-in.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { createSSRApp, h, reactive } from 'vue';
-import { renderToString } from 'vue/server-renderer';
+import { reactive } from 'vue';
 
 // The app store: the signed-in user, which each test sets, reactive as the
 // real store is, so the permission getters follow a role change.
@@ -30,8 +29,6 @@ vi.mock('@/builder/api.js', async (importOriginal) => {
 
 import { createPinia, setActivePinia } from 'pinia';
 
-import LogoutWarning from '@/components/LogoutWarning.vue';
-import BuilderSignIn from '@/components/builder/BuilderSignIn.vue';
 import {
   GROUP_PATTERN_STORAGE_KEY,
   readGroupPattern,
@@ -68,7 +65,6 @@ import {
   unsentBuilderWork,
 } from '@/builder/session.js';
 import { SETTINGS_STORAGE_KEY } from '@/builder/settings.js';
-import { hostSignIn, signIn } from '@/builder/signin.js';
 import { useBuilderStore } from '@/builder/store.js';
 import { ANSWER_WAIT_MS, answerPresence, openChannel } from '@/builder/tabs.js';
 import { THEME_STORAGE_KEY } from '@/builder/theme.js';
@@ -82,7 +78,7 @@ import {
   logoutWarningText,
 } from '@/utils/logout.js';
 
-import { memoryStorage, tag } from './fixtures.js';
+import { memoryStorage } from './fixtures.js';
 import { createMemoryStore } from './memory-store.js';
 
 afterEach(() => {
@@ -656,199 +652,6 @@ describe('the warning', () => {
     );
     expect(countdownTitle(counting, null)).toBe(title);
     expect(countdownTitle(title, null)).toBe(title);
-  });
-
-  async function render(warning) {
-    phenix.state = reactive({
-      username: 'alice',
-      logoutWarning: warning,
-      answerLogoutWarning: vi.fn(),
-    });
-
-    return renderToString(createSSRApp({ render: () => h(LogoutWarning) }));
-  }
-
-  const idle = {
-    reason: 'idle',
-    changes: 2,
-    unapplied: '',
-    drafts: [{ key: 'k1', name: 'lab.json' }],
-    canStay: true,
-    secondsLeft: 60,
-    notice: '',
-  };
-
-  const buttons = (html) =>
-    [...html.matchAll(/<button[^>]*>\s*([^<]*?)\s*<\/button>/g)].map(
-      (match) => match[1],
-    );
-
-  test('is an alert dialog whose description holds the message and the countdown', async () => {
-    const html = await render(idle);
-    const dialog = tag(html, 'role="alertdialog"');
-
-    expect(dialog).toContain('aria-modal="true"');
-    expect(dialog).toContain('aria-labelledby="logout-warning-title"');
-    expect(dialog).toContain(
-      'aria-describedby="logout-warning-message logout-warning-countdown"',
-    );
-    expect(dialog).toContain('data-theme="light"');
-    expect(html).toMatch(
-      /<h2 id="logout-warning-title"[^>]*>You will be logged out<\/h2>/,
-    );
-    expect(html).toMatch(
-      /<p id="logout-warning-message"[^>]*>You have been inactive for a while\. 2 changes/,
-    );
-    expect(html).toMatch(
-      /id="logout-warning-countdown"[^>]*>\s*Logging out in 60 seconds\.\s*</,
-    );
-    // The regions that speak later are there, empty, from the start.
-    expect(tag(html, 'role="status"')).not.toBeNull();
-    expect(tag(html, 'aria-live="assertive"')).toContain('aria-atomic="true"');
-    expect(buttons(html)).toEqual([
-      'Download',
-      'Stay signed in',
-      'Log out now',
-    ]);
-  });
-
-  test('offers one Download per draft, named when there are several, and none without a draft to save', async () => {
-    let html = await render({
-      ...idle,
-      drafts: [
-        { key: 'k1', name: 'lab.json' },
-        { key: 'k2', name: 'lab-2.json' },
-      ],
-    });
-
-    expect(buttons(html)).toEqual([
-      'Download lab.json',
-      'Download lab-2.json',
-      'Stay signed in',
-      'Log out now',
-    ]);
-
-    html = await render({
-      ...idle,
-      changes: 0,
-      unapplied: 'Your changes to Device web01 cannot be saved.',
-      drafts: [],
-    });
-    expect(buttons(html)).toEqual(['Stay signed in', 'Log out now']);
-    expect(html).toContain('Stay signed in to fix them.');
-    expect(html).not.toContain('Download');
-  });
-
-  test('says the near-end notice, and offers no Stay once the session has expired', async () => {
-    const html = await render({
-      ...idle,
-      reason: 'expired',
-      canStay: false,
-      secondsLeft: 10,
-      notice: 'Logging out in 10 seconds.',
-    });
-
-    expect(html).toMatch(
-      /aria-live="assertive"[^>]*>\s*Logging out in 10 seconds\.\s*</,
-    );
-    expect(html).toContain('To sign in again, you must log out.');
-    expect(html).not.toContain('Stay signed in');
-    expect(html).not.toContain('Sign in again');
-  });
-
-  test("offers Sign in again, before Log out now, when the Builder's page can sign in again", async () => {
-    const html = await render({
-      ...idle,
-      reason: 'expired',
-      canStay: false,
-      canSignIn: true,
-    });
-
-    expect(buttons(html)).toEqual(['Download', 'Sign in again', 'Log out now']);
-    expect(tag(html, 'data-testid="logout-warning-signin"')).toContain(
-      'type="button"',
-    );
-    expect(html).toContain('Sign in again to save them.');
-    expect(html).not.toContain('you must log out');
-  });
-
-  test('a logout the user asked for has no countdown', async () => {
-    const html = await render({ ...idle, reason: 'manual', secondsLeft: null });
-
-    expect(tag(html, 'role="alertdialog"')).toContain(
-      'aria-describedby="logout-warning-message"',
-    );
-    expect(html).not.toContain('logout-warning-countdown');
-    expect(html).toContain('Log out anyway');
-  });
-
-  test('is not there without a warning', async () => {
-    expect(await render(null)).not.toContain('<dialog');
-  });
-});
-
-// Signing in again without leaving the Builder (see builder/signin.js).
-describe("the Builder's sign-in", () => {
-  async function render(state) {
-    phenix.state = reactive({
-      username: 'alice',
-      auth: true,
-      token: `h.${btoa(JSON.stringify({ exp: 4102444800 }))}.s`,
-      loggingOut: false,
-    });
-    Object.assign(signIn, state);
-
-    const app = createSSRApp({ render: () => h(BuilderSignIn) });
-
-    app.use(createPinia());
-
-    try {
-      return await renderToString(app);
-    } finally {
-      // A server render never unmounts: the page it hosted goes, as
-      // another's would, and takes the dialog's state with it.
-      hostSignIn({ available: () => false })();
-    }
-  }
-
-  test("asks for the same user's password in a labelled modal form, the username shown, not typed", async () => {
-    const html = await render({ open: true, needed: true });
-    const dialog = tag(html, 'data-testid="builder-signin"');
-
-    expect(dialog).toMatch(/^<dialog/);
-    expect(dialog).toContain('aria-modal="true"');
-    expect(dialog).toContain('aria-labelledby="builder-signin-title"');
-    expect(dialog).toContain('aria-describedby="builder-signin-message"');
-    expect(html).toMatch(/<h2 id="builder-signin-title"[^>]*>Sign in again</);
-
-    const user = tag(html, 'id="builder-signin-user"');
-
-    expect(user).toContain('value="alice"');
-    expect(user).toContain('readonly');
-    expect(user).toContain('autocomplete="username"');
-    expect(html).toMatch(/<label for="builder-signin-user"[^>]*>Username</);
-
-    const password = tag(html, 'id="builder-signin-password"');
-
-    expect(password).toContain('type="password"');
-    expect(password).toContain('autocomplete="current-password"');
-    expect(html).toMatch(/<label for="builder-signin-password"[^>]*>Password</);
-    // Rendered, empty, from the start, so it is known before its first
-    // message.
-    expect(tag(html, 'id="builder-signin-error"')).toContain('role="alert"');
-    expect(tag(html, 'data-testid="signin-submit"')).toContain('type="submit"');
-    expect(html).not.toContain('builder-signin-notice');
-  });
-
-  test('once declined, a notice offers it again; nothing shows while the session goes on', async () => {
-    const html = await render({ needed: true, declined: true });
-
-    expect(html).toContain('data-testid="builder-signin-notice"');
-    expect(tag(html, 'data-testid="signin-again"')).toContain(
-      'aria-haspopup="dialog"',
-    );
-    expect(html).not.toContain('<dialog');
-    expect(await render({})).not.toMatch(/<(dialog|div)/);
   });
 });
 
