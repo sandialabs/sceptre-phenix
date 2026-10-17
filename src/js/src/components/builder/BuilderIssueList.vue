@@ -51,7 +51,7 @@
             </p>
           </div>
           <button
-            v-if="canGoTo && issue.target"
+            v-if="issue.target"
             type="button"
             class="builder-button builder-issue__go"
             :aria-label="goToName(issue)"
@@ -85,8 +85,6 @@
     // not share them.
     idPrefix: { type: String, required: true },
     testid: { type: String, default: 'issues' },
-    // Whether Go to is offered.
-    canGoTo: { type: Boolean, default: true },
   });
 
   defineEmits(['go']);

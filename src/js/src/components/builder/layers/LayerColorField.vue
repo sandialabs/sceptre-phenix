@@ -21,7 +21,7 @@
         :value="color || '#808080'"
         :disabled="readOnly"
         :aria-label="`Choose ${lowerFirst(label)}`"
-        :data-testid="`${testid}-picker`"
+        data-testid="layer-color-picker"
         @change="choose($event.target.value)" />
       <input
         :id="id"
@@ -36,7 +36,7 @@
         :aria-label="label"
         :aria-invalid="error ? 'true' : undefined"
         :aria-describedby="error ? `${id}-error` : undefined"
-        :data-testid="testid"
+        data-testid="layer-color"
         @input="typed = $event.target.value"
         @change="commit($event.target.value)" />
       <button
@@ -44,7 +44,7 @@
         type="button"
         class="builder-button builder-layer-color__remove"
         :aria-label="`Remove ${lowerFirst(label)}`"
-        :data-testid="`${testid}-remove`"
+        data-testid="layer-color-remove"
         @click="choose('')">
         <builder-icon name="close" :size="12" />
       </button>
@@ -53,7 +53,7 @@
       v-if="error"
       :id="`${id}-error`"
       class="builder-dialog__error builder-layer-color__error"
-      :data-testid="`${testid}-error`">
+      data-testid="layer-color-error">
       {{ error }}
     </p>
   </div>
@@ -74,7 +74,6 @@
     label: { type: String, required: true },
     id: { type: String, required: true },
     readOnly: { type: Boolean, default: false },
-    testid: { type: String, default: 'layer-color' },
   });
 
   const emit = defineEmits(['change', 'status']);

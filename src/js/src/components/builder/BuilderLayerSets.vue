@@ -271,11 +271,6 @@
   import { effectiveLayerList } from '@/builder/model.js';
   import { useBuilderStore } from '@/builder/store.js';
 
-  const props = defineProps({
-    // Saves a file (file-saver's saveAs).
-    save: { type: Function, default: saveAs },
-  });
-
   // lost-focus: focus would fall to <body>, so the view focuses the tab.
   const emit = defineEmits(['lost-focus']);
 
@@ -427,7 +422,7 @@
     try {
       const { message } = downloadLayerSetFile(set, {
         library: iconLibrary,
-        saveAs: props.save,
+        saveAs,
       });
 
       status.set(message);

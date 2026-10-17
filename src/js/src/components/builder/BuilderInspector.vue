@@ -625,16 +625,6 @@
     // The id of the heading that names the Inspector's section: its own,
     // which the template variant does not show.
     labelledby: { type: String, default: 'inspector-title' },
-    // Where the layer of a device or a switch shows: 'section', in a
-    // section of its own above the connection points, or 'look', as a
-    // field of the form after the node's look fields. '' is the variant's
-    // place: 'section' on the canvas, 'look' in the template editor and
-    // the Node Editor.
-    layer: {
-      type: String,
-      default: '',
-      validator: (value) => ['', 'section', 'look'].includes(value),
-    },
   });
 
   const host = props.host || useBuilderStore();
@@ -642,7 +632,9 @@
   const editor = props.variant === 'editor';
   // The Inspector beside the canvas, not one in a dialog.
   const side = !template && !editor;
-  const layerPlace = props.layer || (side ? 'section' : 'look');
+  // Where the layer of a device or a switch shows: 'section', in a section
+  // of its own on the canvas, else 'look', as a field after the look fields.
+  const layerPlace = side ? 'section' : 'look';
   // The ids of the parts the Inspector names. A dialog's Inspector is on
   // the page with the one beside the canvas, so each has its own.
   const idPrefix = side ? 'inspector' : template ? 'template' : 'node-editor';
@@ -2058,7 +2050,7 @@
   };
 
   // The layer of the device or switch shown: what InspectorLayer shows, in
-  // its section or in the form (see the layer prop). The template editor's
+  // its section or in the form (see layerPlace). The template editor's
   // layers are a copy of the diagram's, so it has no Edit layers….
   const layerState = computed(() => {
     const locked = Boolean(host.readOnly || lock.value.all);

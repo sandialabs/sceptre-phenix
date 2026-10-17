@@ -16,19 +16,16 @@
 // InspectorTooltip.vue renders it, so that showing, moving and hiding it
 // re-renders only the tooltip, not the field.
 
-import { unref } from 'vue';
-
 import { useFixedTooltip, whenPointed } from '../fixedTooltip.js';
 
 // Hides the field tooltip showing, if any.
 let hideShown = null;
 
 /**
- * @param {import('vue').MaybeRef<string|object>|(() => string|object)} text
- *   the tooltip's content: a text, or what InspectorTooltip draws ({path,
- *   text}). None shows no tooltip
+ * @param {() => object|null} getContent the tooltip's content, what
+ *   InspectorTooltip draws ({path, text}). None shows no tooltip
  */
-export function useFieldTooltip(text) {
+export function useFieldTooltip(getContent) {
   // Whether the pointer showed the tooltip, and not keyboard focus.
   let pointed = false;
   const { tip, setTipEl, showTip, scheduleHide, hideTip } = useFixedTooltip({
@@ -42,7 +39,7 @@ export function useFieldTooltip(text) {
    * @param {Event} [event] the mouseenter that shows it (see whenPointed)
    */
   function show(anchor, event) {
-    const content = typeof text === 'function' ? text() : unref(text);
+    const content = getContent();
 
     if (!content || !anchor) {
       return;

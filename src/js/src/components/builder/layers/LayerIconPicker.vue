@@ -23,7 +23,6 @@
       menu-label="Icon"
       :testid="testid"
       :aria-label="`${label}: ${name}`"
-      :aria-describedby="describedby || undefined"
       @select="onSelect">
       <builder-icon
         v-if="shown.key || shown.src"
@@ -63,7 +62,6 @@
     // Show the icon's name in the button, not only its picture.
     wide: { type: Boolean, default: false },
     id: { type: String, default: undefined },
-    describedby: { type: String, default: '' },
     testid: { type: String, default: 'layer-icon' },
   });
 

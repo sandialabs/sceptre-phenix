@@ -273,38 +273,18 @@ describe('the template variant', () => {
     expect(html).not.toContain('inspector-layer-edit');
   });
 
-  // The canvas shows it in a section of its own, after the form. Its layer
-  // prop puts it in the form there too, as the template editor does.
-  test('the layer prop says where the layer shows', async () => {
+  // The canvas shows it in a section of its own, after the form.
+  test('the canvas shows the layer in a section of its own', async () => {
     const { doc, node } = oneLayeredDevice();
-    const inForm = (html) => {
-      const form = html.slice(html.indexOf('<form'), html.indexOf('</form>'));
+    const { html } = await openInspector({ host: fakeHost(doc, node.id) });
+    const form = html.slice(html.indexOf('<form'), html.indexOf('</form>'));
 
-      return form.includes('data-testid="inspector-layer"');
-    };
-    const canvas = await openInspector({ host: fakeHost(doc, node.id) });
-    const look = await openInspector({
-      host: fakeHost(doc, node.id),
-      layer: 'look',
-    });
-    const section = await openInspector({
-      ...props(fakeHost(doc, node.id)),
-      layer: 'section',
-    });
-
-    expect(inForm(canvas.html)).toBe(false);
-    expect(canvas.html).toMatch(
+    expect(form).not.toContain('data-testid="inspector-layer"');
+    expect(html).toMatch(
       /<h3[^>]*><label for="inspector-layer-select"[^>]*>Layer<\/label><\/h3>/,
     );
-    expect(inForm(look.html)).toBe(true);
-    expect(look.html.match(/data-testid="inspector-layer"/g)).toHaveLength(1);
-    expect(inForm(section.html)).toBe(false);
-    expect(section.html).toContain('id="template-layer-select"');
-    // Edit layers… shows wherever the layers are the diagram's: not in
-    // the template editor.
-    expect(canvas.html).toContain('data-testid="inspector-layer-edit"');
-    expect(look.html).toContain('data-testid="inspector-layer-edit"');
-    expect(section.html).not.toContain('inspector-layer-edit');
+    // Edit layers… shows wherever the layers are the diagram's.
+    expect(html).toContain('data-testid="inspector-layer-edit"');
   });
 
   test('a read-only host locks every field', async () => {

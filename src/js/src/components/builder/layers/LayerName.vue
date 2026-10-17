@@ -15,8 +15,6 @@
   Layer select, whose own text names the layer: the swatch then shows in
   both themes.
 
-  The default slot replaces the title, for a title with more in it.
-
   A layer's custom icon comes from the diagram's `icons` or else from the
   server's icon library: the `library` prop, or else the library that the
   Inspector or the layers editor provides (INSPECTOR_ICON_LIBRARY). Thus
@@ -38,7 +36,7 @@
       class="builder-layer-name__icon"
       :name="iconKey || 'image'"
       :src="src"
-      :size="size"
+      :size="16"
       data-testid="layer-name-icon" />
     <span
       v-if="color"
@@ -46,7 +44,7 @@
       aria-hidden="true"
       data-testid="layer-name-swatch" />
     <span v-if="!bare" class="builder-layer-name__title">
-      <slot>{{ title }}</slot>
+      {{ layer.label }}
     </span>
   </span>
 </template>
@@ -63,8 +61,6 @@
   const props = defineProps({
     // {id, label, iconKey?, icon?, color?}
     layer: { type: Object, required: true },
-    // What names the layer: its label when left out.
-    text: { type: String, default: '' },
     // The custom icons a diagram carries (its `icons`), which go before the
     // server's icon library's.
     icons: { type: Object, default: null },
@@ -73,10 +69,7 @@
     library: { type: Object, default: null },
     // Only the icon and the swatch (see above).
     bare: { type: Boolean, default: false },
-    size: { type: Number, default: 16 },
   });
-
-  const title = computed(() => props.text || props.layer.label);
 
   const provided = useInspectorIconLibrary();
   const look = computed(() =>

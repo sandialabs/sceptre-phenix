@@ -569,8 +569,8 @@
     ];
   }
 
-  function textOf(matcher, field, text) {
-    return text ?? typed[`${matcher.key}:${field}`] ?? matcher[field];
+  function textOf(matcher, field) {
+    return typed[`${matcher.key}:${field}`] ?? matcher[field];
   }
 
   function matcherProblem(field, value) {
