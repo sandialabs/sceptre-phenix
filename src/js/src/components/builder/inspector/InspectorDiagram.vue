@@ -710,7 +710,7 @@
   }
 
   // Writes the rows into the diagram as one undo step and always drops blank
-  // rows; a row whose text cannot be written keeps its box and its error.
+  // rows. A row whose text cannot be written keeps its box and its error.
   function writeNotes() {
     store.setDiagramNotes(
       rows.value.map(noteOf).filter((note) => note !== null),

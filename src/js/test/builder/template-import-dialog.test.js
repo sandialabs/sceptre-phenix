@@ -37,7 +37,7 @@ beforeEach(() => {
   iconLibrary.state.index = indexIcons([]);
 });
 
-// Opens the dialog in the page over a library of `collections`; the library
+// Opens the dialog in the page over a library of `collections`. The library
 // takes the templates through `create`.
 function open({ collections = [], create = async () => {} } = {}) {
   const pinia = createPinia();

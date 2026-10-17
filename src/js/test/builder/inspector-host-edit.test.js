@@ -229,8 +229,8 @@ describe('the editor variant', () => {
 // The Node Editor commits the look to its host at once, as the Inspector
 // does (see inspector-settle.test.js for every kind).
 describe('the editor variant applies the look at once', () => {
-  // A custom icon is named; the document carries no copy of it. A color is
-  // typed in its field; a custom icon comes from the server's library.
+  // A custom icon is named. The document carries no copy of it. A color is
+  // typed in its field. A custom icon comes from the server's library.
   test.each([
     ['device', 'fillColor', { hostname: 'plc' }, '#2f6fbf', 'fill color'],
     ['device', 'icon', { hostname: 'plc' }, 'plc', 'custom icon'],

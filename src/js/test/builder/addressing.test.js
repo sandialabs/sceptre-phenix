@@ -835,7 +835,7 @@ describe('addressing rules, for any address and subnet', () => {
     );
   });
 
-  // Subnets over the first suggestions (10.1.0.0/24 on), and others; 20 of
+  // Subnets over the first suggestions (10.1.0.0/24 on), and others. 20 of
   // them cannot cover all of 10.0.0.0/8, so there is always a suggestion.
   const nearby = fc
     .tuple(

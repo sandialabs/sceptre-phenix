@@ -20,7 +20,7 @@ export function selectionOf(element) {
 }
 
 // Mounts `component` (the Inspector by default) with `doc` loaded, so undo
-// returns to it, and `element` selected; `prepare` sets the store up first.
+// returns to it, and `element` selected. `prepare` sets the store up first.
 export async function mountInspector({
   doc,
   element,

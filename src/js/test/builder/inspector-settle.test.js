@@ -34,7 +34,7 @@ import { ICON_DATA } from './png.js';
 enableAutoUnmount(afterEach);
 afterEach(resetCollapsed);
 
-// The Inspector mounted on `node` of `doc`; `edit` changes the form's data,
+// The Inspector mounted on `node` of `doc`. `edit` changes the form's data,
 // which JSON Forms then sends, after `prepare` sets up the store.
 async function openInspector(doc, node, edit, prepare = () => {}) {
   const { wrapper, store } = await mountInspector({ doc, element: node });
@@ -1014,7 +1014,7 @@ describe('the look of every kind is applied without Apply', () => {
 });
 
 // The form loads a changed element again only while it holds nothing of the
-// user's; the document's watch sees each change made elsewhere.
+// user's. The document's watch sees each change made elsewhere.
 describe('a document change while the form holds the user’s work', () => {
   async function typing() {
     const { doc, alpha } = sampleDocument();

@@ -58,7 +58,7 @@ function setRole(resources) {
 
 enableAutoUnmount(afterEach);
 
-// Mounts the list with the real Buefy; a row's Builder tag is a router-link,
+// Mounts the list with the real Buefy. A row's Builder tag is a router-link,
 // and the test has no router.
 function mountList(warnings = []) {
   return mount(ConfigsList, {

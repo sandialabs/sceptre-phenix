@@ -1,5 +1,5 @@
 // The drafts page's Icons tab and its preview dialog, rendered on the server,
-// and saveIconFile; icons-tab-actions.test.js uses the tab.
+// and saveIconFile. icons-tab-actions.test.js uses the tab.
 
 import { describe, expect, test, vi } from 'vitest';
 import { createSSRApp, h } from 'vue';
@@ -69,7 +69,7 @@ function libraryWith(state = {}) {
   };
 }
 
-// Renders a component and returns its HTML; `state` sets bindings, such as
+// Renders a component and returns its HTML. `state` sets bindings, such as
 // the list Show shows, before it renders.
 async function render(component, props = {}, state = {}) {
   const app = createSSRApp({ render: () => h(component, props) });

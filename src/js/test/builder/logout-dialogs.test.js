@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The logout warning and the Builder's sign-in, mounted and driven as a user
-// would; logout.test.js holds the logout flow and the session's storage.
+// would. logout.test.js holds the logout flow and the session's storage.
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { reactive } from 'vue';
@@ -48,7 +48,7 @@ describe('the warning', () => {
     notice: '',
   };
 
-  // Mounts the warning with none shown; the app store's answer closes it.
+  // Mounts the warning with none shown. The app store's answer closes it.
   function mountWarning() {
     phenix.state = reactive({
       username: 'alice',

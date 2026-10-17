@@ -20,7 +20,7 @@ import { base64Of, ICON_DATA, png } from './png.js';
 const OTHER = base64Of(png(3, 2, [9, 9, 9, 255]));
 const BAD_NAME = `Enter a name for the icon. ${ICON_NAME_HINT}`;
 
-// hmi and pump the user may change; valve is the server's own.
+// hmi and pump the user may change. Valve is the server's own.
 const ICONS = [
   ...['hmi', 'pump'].map((name) => ({
     name,

@@ -1,6 +1,6 @@
 // The Inspector on a host other than the Builder store, and its 'template'
 // variant (see BuilderInspector.vue and dialogs/TemplateDialog.vue), as
-// rendered; editing it is in inspector-host-edit.test.js.
+// rendered. Editing it is in inspector-host-edit.test.js.
 
 import { describe, expect, test } from 'vitest';
 import { createSSRApp, h } from 'vue';

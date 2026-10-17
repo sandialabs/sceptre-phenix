@@ -57,7 +57,7 @@ async function openIconField({ change, readOnly = false } = {}) {
   };
 }
 
-// The alpha device names the custom icon plc; the diagram carries copies of
+// The alpha device names the custom icon plc. The diagram carries copies of
 // plc and rtu.
 const withCustomIcon = ({ doc, alpha }) => ({
   doc: updateNode(doc, alpha.id, { device: { icon: 'plc' } }),

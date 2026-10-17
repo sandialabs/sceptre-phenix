@@ -357,7 +357,7 @@ describe('ranges mark whole letters of the original text', () => {
   const loneSurrogate =
     /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 
-  // Ranges sorted, apart, inside the text; runs whole letters that join back.
+  // Ranges sorted, apart, inside the text. Runs whole letters that join back.
   const wellFormed = (text, ranges) => {
     ranges.forEach(([start, end], i) => {
       expect(start).toBeGreaterThanOrEqual(i ? ranges[i - 1][1] + 1 : 0);

@@ -43,7 +43,7 @@ describe('the Inspector’s diagram Icon size', () => {
     expect(store.history.entries).toHaveLength(steps + 1);
     expect(label()).toBe("Changed the diagram's icon size to Large");
 
-    // Each size the arrow keys step to is held; a modifier alone keeps it
+    // Each size the arrow keys step to is held. A modifier alone keeps it
     // held, and Enter applies the last, as one step.
     await select().trigger('keydown', { key: 'ArrowUp' });
     await select().setValue('medium');

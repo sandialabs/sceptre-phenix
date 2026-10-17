@@ -199,7 +199,7 @@ describe('focus scopes', () => {
     expect(scope(t.button, false)).toBe('landing');
     expect(scope(t.field, false)).toBe('field');
     // A checkbox of the drafts landing selects a card and takes no typed
-    // text; one in the editor is a field of the Inspector's form.
+    // text. One in the editor is a field of the Inspector's form.
     expect(scope(t.checkbox, false)).toBe('landing');
     expect(scope(t.checkbox)).toBe('field');
   });
@@ -267,7 +267,7 @@ describe('the dispatcher', () => {
         return [dispatch(event, ctx), event.defaultPrevented];
       };
 
-      // Mod+K and Mod+S work in text fields; the editing keys do not.
+      // Mod+K and Mod+S work in text fields. The editing keys do not.
       expect(run(t.field, 'k', 'KeyK', mod(platform))).toEqual([
         'palette.open',
         true,
@@ -376,7 +376,7 @@ describe('the dispatcher', () => {
     expect(readOnly.store.addNode).not.toHaveBeenCalled();
     expect(readOnly.store.announce).toHaveBeenCalledWith(READ_ONLY);
 
-    // A letter alone is for the canvas only; the single-key switch turns
+    // A letter alone is for the canvas only. The single-key switch turns
     // it off.
     expect(takesLetters('add.device')).toBe(true);
     expect(takesLetters('view.zoomIn')).toBe(true);
@@ -523,7 +523,7 @@ describe('the dispatcher', () => {
     expect(ctx.view.openPalette).not.toHaveBeenCalled();
     expect(ctx.store.saveNow).not.toHaveBeenCalled();
 
-    // Elsewhere, the key is the palette's; with ⌘ or ⌃ too, it types
+    // Elsewhere, the key is the palette's. With ⌘ or ⌃ too, it types
     // nothing in the field either.
     expect(
       dispatch(keydown(t.button, 'Dead', 'KeyE', { altKey: true }), ctx),
@@ -697,8 +697,8 @@ describe('the dispatcher', () => {
         ),
       ).toBe(null);
 
-      // Settings opens from the drafts page and from the app header too;
-      // the layout and Auto-group are the editor's alone.
+      // Settings opens from the drafts page and from the app header too.
+      // The layout and Auto-group are the editor's alone.
       const landing = context({ view: { editing: false } });
       expect(run(t.button, 'S', landing)).toEqual(['settings.open', true]);
       expect(run(t.outside, 'S', landing)).toEqual(['settings.open', true]);

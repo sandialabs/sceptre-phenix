@@ -24,8 +24,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-// The sample diagram with every interface connected, which publishes; or as
-// it is, with an interface that has no VLAN, which Publish refuses.
+// The sample diagram with every interface connected, which publishes. Or the
+// diagram as it is, with an interface that has no VLAN, which Publish refuses.
 function diagram({ publishable }) {
   const { doc, sw, bravo } = sampleDocument();
 
@@ -498,7 +498,7 @@ describe('a publication that fails part way', () => {
       'Error: experiment publication failed',
     );
 
-    // Under a heading that counts the errors; it names no element of the
+    // Under a heading that counts the errors. It names no element of the
     // diagram, so it has no Go to.
     const reported = byId(result, 'publish-result-issues');
 

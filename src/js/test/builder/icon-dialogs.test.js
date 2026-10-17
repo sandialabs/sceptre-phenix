@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Download embeds the custom icons after reading the library, and Upload
-// holds on icon warnings; each dialog is mounted and driven as a user would.
+// holds on icon warnings. Each dialog is mounted and driven as a user would.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
@@ -129,7 +129,7 @@ describe('the Download dialog', () => {
 
 describe('the Upload dialog', () => {
   // Opens the dialog and uploads `doc` as pasted text, as upload-dialog.test.js
-  // does; resolves to the dialog, the store, and its draft before the upload.
+  // does. Resolves to the dialog, the store, and its draft before the upload.
   async function upload(doc) {
     const { wrapper, store } = open(UploadDialog);
     const before = store.doc;
