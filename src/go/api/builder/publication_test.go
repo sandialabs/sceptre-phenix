@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"phenix/store"
 	"phenix/store/recordtest/memrecord"
 )
@@ -33,11 +36,11 @@ func TestMarkPublishedRetryIsIdempotent(t *testing.T) {
 
 	published, err := h.service.MarkPublished(ctx, markPublishedRequest(meta, observed))
 	if err != nil {
-		t.Fatalf("MarkPublished returned error: %v", err)
+		t.Fatalf("MarkPublished(%s) returned error: %v", meta.ID, err)
 	}
 
 	if published.Revision == observed {
-		t.Fatal("a successful publication must advance the record revision")
+		t.Errorf("MarkPublished(%s) revision = %d, want it advanced from %d", meta.ID, published.Revision, observed)
 	}
 
 	retries := map[string]int64{
@@ -50,16 +53,16 @@ func TestMarkPublishedRetryIsIdempotent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			retried, err := h.service.MarkPublished(ctx, markPublishedRequest(meta, expected))
 			if err != nil {
-				t.Fatalf("retrying an identical publication returned error: %s", fmtErr(err))
+				t.Fatalf("MarkPublished(%s) retry returned error: %s", meta.ID, fmtErr(err))
 			}
 
-			switch {
-			case retried.Revision != published.Revision:
-				t.Fatalf("retry revision = %d, want the unchanged %d", retried.Revision, published.Revision)
-			case retried.Dirty():
-				t.Fatal("a retried publication must leave the draft clean")
-			case retried.Publication.PublishedAt != published.Publication.PublishedAt:
-				t.Fatal("a retry must not rewrite the publication timestamp")
+			// The retry changes nothing: not the revision, nor the publication and its time.
+			if diff := cmp.Diff(published, retried); diff != "" {
+				t.Errorf("MarkPublished(%s) retry mismatch (-want +got):\n%s", meta.ID, diff)
+			}
+
+			if retried.Dirty() {
+				t.Errorf("MarkPublished(%s) retry Dirty() = true, want false", meta.ID)
 			}
 		})
 	}
@@ -73,7 +76,7 @@ func TestMarkPublishedRetryWithDifferentDetailsConflicts(t *testing.T) {
 	observed := meta.Revision
 
 	if _, err := h.service.MarkPublished(ctx, markPublishedRequest(meta, observed)); err != nil {
-		t.Fatalf("MarkPublished returned error: %v", err)
+		t.Fatalf("MarkPublished(%s) returned error: %v", meta.ID, err)
 	}
 
 	tests := map[string]func(*MarkPublishedRequest){
@@ -92,7 +95,7 @@ func TestMarkPublishedRetryWithDifferentDetailsConflicts(t *testing.T) {
 			mutate(&req)
 
 			if _, err := h.service.MarkPublished(ctx, req); !errors.Is(err, ErrConflict) {
-				t.Fatalf("MarkPublished error = %s, want ErrConflict for a stale revision", fmtErr(err))
+				t.Errorf("MarkPublished(%s) with a stale revision error = %s, want ErrConflict", meta.ID, fmtErr(err))
 			}
 		})
 	}
@@ -130,7 +133,7 @@ func TestPublicationTargetValidation(t *testing.T) {
 			mutate(&req)
 
 			if _, err := h.service.MarkPublished(ctx, req); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("MarkPublished error = %s, want ErrInvalid", fmtErr(err))
+				t.Errorf("MarkPublished(%s) error = %s, want ErrInvalid", meta.ID, fmtErr(err))
 			}
 		})
 	}
@@ -143,7 +146,7 @@ func TestDirtyTracksThePublishedSnapshot(t *testing.T) {
 	meta := createTestDraft(t, h, "topo")
 
 	if !meta.Dirty() {
-		t.Fatal("a never published draft must be dirty")
+		t.Error("CreateDraft(topo) Dirty() = false, want true for a never published draft")
 	}
 
 	published, err := h.service.MarkPublished(ctx, MarkPublishedRequest{
@@ -153,21 +156,34 @@ func TestDirtyTracksThePublishedSnapshot(t *testing.T) {
 		ExperimentTarget: "exp-1", ScenarioTarget: "", DocumentID: "",
 	})
 	if err != nil {
-		t.Fatalf("MarkPublished returned error: %v", err)
+		t.Fatalf("MarkPublished(%s) returned error: %v", meta.ID, err)
 	}
 
-	switch {
-	case published.Dirty():
-		t.Fatal("a published draft at its current snapshot must be clean")
-	case published.Publication.Mode != PublishModeTopologyExperiment || published.Publication.TopologyTarget != "topo":
-		t.Fatalf("publication = %+v, want the operation it was published with", published.Publication)
+	if published.Dirty() {
+		t.Errorf("MarkPublished(%s) Dirty() = true, want false at the published snapshot", meta.ID)
+	}
+
+	want := &PublicationState{
+		Mode: PublishModeTopologyExperiment, TopologyTarget: "topo", TopologyAction: TopologyActionUpdate,
+		ExperimentTarget: "exp-1", SnapshotID: meta.History[0].ID, Digest: meta.History[0].Digest,
+		Revision: meta.Revision, PublishedBy: testActor,
+	}
+
+	if diff := publicationDiff(want, published.Publication); diff != "" {
+		t.Errorf("MarkPublished(%s) publication mismatch (-want +got):\n%s", meta.ID, diff)
 	}
 
 	edited := appendTestSnapshot(t, h, published, "topo-v2", testActor)
 
 	if !edited.Dirty() {
-		t.Fatal("an edited draft must be dirty")
+		t.Errorf("AppendSnapshot(%s) after publishing Dirty() = false, want true", meta.ID)
 	}
+}
+
+// publicationDiff returns how two publications differ, as cmp.Diff does, in
+// all but the publication time, which the test clock sets.
+func publicationDiff(want, got *PublicationState) string {
+	return cmp.Diff(want, got, cmpopts.IgnoreFields(PublicationState{}, "PublishedAt"))
 }
 
 // publicationOf returns the stored publication state as a generic map, so tests
@@ -237,7 +253,7 @@ func TestTamperedPublicationStateIsRejected(t *testing.T) {
 			tamperDraft(t, h, meta, func(raw map[string]any) { raw["publication"] = state })
 
 			if _, err := h.service.GetDraft(ctx, meta.ID); !errors.Is(err, ErrCorrupt) {
-				t.Fatalf("GetDraft error = %s, want ErrCorrupt", fmtErr(err))
+				t.Errorf("GetDraft(%s) error = %s, want ErrCorrupt", meta.ID, fmtErr(err))
 			}
 		})
 	}
@@ -253,11 +269,11 @@ func TestUntamperedPublicationStateIsAccepted(t *testing.T) {
 
 	stored, err := h.service.GetDraft(ctx, meta.ID)
 	if err != nil {
-		t.Fatalf("GetDraft of a well formed publication returned error: %s", fmtErr(err))
+		t.Fatalf("GetDraft(%s) of a well formed publication returned error: %s", meta.ID, fmtErr(err))
 	}
 
 	if stored.Dirty() {
-		t.Fatal("a draft published at its current snapshot must be clean")
+		t.Errorf("GetDraft(%s) Dirty() = true, want false for a draft published at its current snapshot", meta.ID)
 	}
 
 	// A publication whose snapshot was deleted from the history is kept, and
@@ -268,11 +284,15 @@ func TestUntamperedPublicationStateIsAccepted(t *testing.T) {
 	tamperDraft(t, h, stored, func(raw map[string]any) { raw["publication"] = deleted })
 
 	if stored, err = h.service.GetDraft(ctx, meta.ID); err != nil {
-		t.Fatalf("GetDraft of a publication of a deleted snapshot returned error: %s", fmtErr(err))
+		t.Fatalf("GetDraft(%s) of a publication of a deleted snapshot returned error: %s", meta.ID, fmtErr(err))
 	}
 
-	if stored.Publication == nil || !stored.Dirty() {
-		t.Fatalf("publication = %+v, dirty %t; want it kept and the draft dirty", stored.Publication, stored.Dirty())
+	if stored.Publication == nil {
+		t.Errorf("GetDraft(%s) publication = nil, want the publication of the deleted snapshot kept", meta.ID)
+	}
+
+	if !stored.Dirty() {
+		t.Errorf("GetDraft(%s) Dirty() = false, want true when no snapshot it holds was published", meta.ID)
 	}
 }
 
@@ -287,7 +307,7 @@ func TestPruningKeepsAnAgedOutPublication(t *testing.T) {
 
 	meta, err := h.service.MarkPublished(ctx, markPublishedRequest(meta, meta.Revision))
 	if err != nil {
-		t.Fatalf("MarkPublished returned error: %v", err)
+		t.Fatalf("MarkPublished(%s) returned error: %v", meta.ID, err)
 	}
 
 	want := meta.Publication
@@ -298,32 +318,50 @@ func TestPruningKeepsAnAgedOutPublication(t *testing.T) {
 
 	stored, err := h.service.GetDraft(ctx, meta.ID)
 	if err != nil {
-		t.Fatalf("GetDraft returned error: %s", fmtErr(err))
+		t.Fatalf("GetDraft(%s) returned error: %s", meta.ID, fmtErr(err))
 	}
 
-	switch {
-	case stored.hasSnapshot(published):
-		t.Fatal("the published snapshot should have aged out of the history")
-	case stored.Publication == nil || stored.Publication.SnapshotID != published ||
-		stored.Publication.DocumentID != want.DocumentID || !stored.Publication.PublishedAt.Equal(want.PublishedAt):
-		t.Fatalf("publication = %+v, want it kept as %+v", stored.Publication, want)
-	case !stored.Dirty():
-		t.Fatal("a draft whose published snapshot aged out must be dirty")
+	if stored.hasSnapshot(published) {
+		t.Errorf("GetDraft(%s) history holds the published snapshot %s, want it aged out", meta.ID, published)
+	}
+
+	if diff := cmp.Diff(want, stored.Publication); diff != "" {
+		t.Errorf("GetDraft(%s) publication mismatch (-want +got):\n%s", meta.ID, diff)
+	}
+
+	if !stored.Dirty() {
+		t.Errorf("GetDraft(%s) Dirty() = false, want true when the published snapshot aged out", meta.ID)
 	}
 
 	// The drafts list reads the kept publication too, rather than listing the
 	// draft as damaged.
 	drafts, damaged, err := h.service.ListDraftsWithDamaged(ctx)
-	if err != nil || len(drafts) != 1 || len(damaged) != 0 || drafts[0].Publication == nil {
-		t.Fatalf("ListDraftsWithDamaged = %+v, %+v, %v; want the draft listed with its publication", drafts, damaged, err)
+	if err != nil {
+		t.Fatalf("ListDraftsWithDamaged returned error: %s", fmtErr(err))
+	}
+
+	if len(damaged) != 0 {
+		t.Errorf("ListDraftsWithDamaged damaged = %+v, want none", damaged)
+	}
+
+	if len(drafts) != 1 {
+		t.Errorf("ListDraftsWithDamaged = %d drafts, want 1", len(drafts))
+	} else if diff := cmp.Diff(want, drafts[0].Publication); diff != "" {
+		t.Errorf("ListDraftsWithDamaged publication mismatch (-want +got):\n%s", diff)
 	}
 
 	republished, err := h.service.MarkPublished(ctx, markPublishedRequest(stored, stored.Revision))
 	if err != nil {
-		t.Fatalf("MarkPublished after pruning returned error: %s", fmtErr(err))
+		t.Fatalf("MarkPublished(%s) after pruning returned error: %s", meta.ID, fmtErr(err))
 	}
 
-	if republished.Publication.SnapshotID != stored.Current().ID || republished.Dirty() {
-		t.Fatalf("publication = %+v, dirty %t; want the current snapshot published", republished.Publication, republished.Dirty())
+	if republished.Publication == nil {
+		t.Errorf("MarkPublished(%s) after pruning publication = nil, want the current snapshot", meta.ID)
+	} else if got := republished.Publication.SnapshotID; got != stored.Current().ID {
+		t.Errorf("MarkPublished(%s) after pruning snapshot = %s, want the current %s", meta.ID, got, stored.Current().ID)
+	}
+
+	if republished.Dirty() {
+		t.Errorf("MarkPublished(%s) after pruning Dirty() = true, want false", meta.ID)
 	}
 }

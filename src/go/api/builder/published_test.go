@@ -1,12 +1,14 @@
 package builder
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/types/builder"
 )
@@ -25,6 +27,24 @@ func publishTestDocument(t *testing.T, h *testHarness, target string, data []byt
 	return doc
 }
 
+// publishedDiff returns how two published documents differ, as cmp.Diff does,
+// leaving out what the test cannot know: the payload, its ID, the time and the
+// revision.
+func publishedDiff(want, got *PublishedDocument) string {
+	return cmp.Diff(want, got, cmpopts.IgnoreUnexported(PublishedDocument{}), cmpopts.IgnoreFields(
+		PublishedDocument{}, "CompressedSize", "ChunkDigests", "PayloadID", "CreatedAt", "Revision",
+	))
+}
+
+// publishedTestDocument is what publishTestDocument stores for data.
+func publishedTestDocument(h *testHarness, target string, data []byte) *PublishedDocument {
+	return &PublishedDocument{
+		ID: PublishedDocumentID(target, digestOf(data)), Digest: digestOf(data), Size: int64(len(data)),
+		ChunkSize: h.service.chunkSize, Target: target, Kind: "Topology", DraftID: "draft-1", SnapshotID: "snap-1",
+		CreatedBy: testActor, Schema: builder.SchemaURI,
+	}
+}
+
 func TestPublishedDocumentRoundTrip(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -32,30 +52,25 @@ func TestPublishedDocumentRoundTrip(t *testing.T) {
 	data := testRandomDocument(t, "topo", 4000)
 	doc := publishTestDocument(t, h, "topo", data)
 
-	switch {
-	case doc.Digest != digestOf(data):
-		t.Fatal("published digest must be the document digest")
-	case doc.ID != PublishedDocumentID("topo", doc.Digest):
-		t.Fatalf("published ID = %q, want it content addressed", doc.ID)
-	case doc.Size != int64(len(data)):
-		t.Fatalf("size = %d, want %d", doc.Size, len(data))
-	case len(doc.ChunkDigests) < 2:
-		t.Fatalf("chunks = %d, want a multi-chunk payload", len(doc.ChunkDigests))
-	case doc.CreatedBy != testActor || doc.Target != "topo" || doc.Kind != "Topology":
-		t.Fatalf("published document = %+v, want provenance recorded", doc)
+	if diff := publishedDiff(publishedTestDocument(h, "topo", data), doc); diff != "" {
+		t.Errorf("PutPublishedDocument(topo) mismatch (-want +got):\n%s", diff)
+	}
+
+	if len(doc.ChunkDigests) < 2 {
+		t.Errorf("PutPublishedDocument(topo) chunks = %d, want a multi-chunk payload", len(doc.ChunkDigests))
 	}
 
 	fetched, fetchedData, err := h.service.GetPublishedDocumentData(ctx, doc.ID)
 	if err != nil {
-		t.Fatalf("GetPublishedDocumentData returned error: %v", err)
+		t.Fatalf("GetPublishedDocumentData(%s) returned error: %v", doc.ID, err)
 	}
 
-	if !bytes.Equal(fetchedData, data) {
-		t.Fatal("published document bytes changed in the store")
+	if diff := cmp.Diff(string(data), string(fetchedData)); diff != "" {
+		t.Errorf("GetPublishedDocumentData(%s) data mismatch (-want +got):\n%s", doc.ID, diff)
 	}
 
-	if fetched.SnapshotID != "snap-1" || fetched.DraftID != "draft-1" {
-		t.Fatalf("published document = %+v, want the draft link preserved", fetched)
+	if diff := cmp.Diff(doc, fetched, cmpopts.IgnoreUnexported(PublishedDocument{})); diff != "" {
+		t.Errorf("GetPublishedDocumentData(%s) document mismatch (-want +got):\n%s", doc.ID, diff)
 	}
 
 	parsed, err := builder.Decode(fetchedData)
@@ -63,8 +78,8 @@ func TestPublishedDocumentRoundTrip(t *testing.T) {
 		t.Fatalf("decoding published document returned error: %v", err)
 	}
 
-	if parsed.Metadata.ID != builder.DocumentID("topo") {
-		t.Fatalf("decoded document ID = %q, want %q", parsed.Metadata.ID, builder.DocumentID("topo"))
+	if got, want := parsed.Metadata.ID, builder.DocumentID("topo"); got != want {
+		t.Errorf("GetPublishedDocumentData(%s) document ID = %q, want %q", doc.ID, got, want)
 	}
 }
 
@@ -77,8 +92,8 @@ func TestPublishedDocumentReferenceRoundTrip(t *testing.T) {
 	doc := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo", 2000))
 	ref := doc.Reference()
 
-	if ref != (DocumentReference{Digest: doc.Digest, ID: doc.ID}) {
-		t.Fatalf("reference = %+v, want the digest and the ID of %+v", ref, doc)
+	if diff := cmp.Diff(DocumentReference{Digest: doc.Digest, ID: doc.ID}, ref); diff != "" {
+		t.Errorf("Reference() mismatch (-want +got):\n%s", diff)
 	}
 
 	encoded, err := ref.EncodeReference()
@@ -86,36 +101,42 @@ func TestPublishedDocumentReferenceRoundTrip(t *testing.T) {
 		t.Fatalf("EncodeReference returned error: %v", err)
 	}
 
-	if want := `{"digest":"` + doc.Digest + `","id":"` + doc.ID + `"}`; encoded != want {
-		t.Fatalf("annotation value = %q, want the compact JSON %q", encoded, want)
+	// The annotation value is the compact JSON of the reference.
+	if diff := cmp.Diff(`{"digest":"`+doc.Digest+`","id":"`+doc.ID+`"}`, encoded); diff != "" {
+		t.Errorf("EncodeReference() mismatch (-want +got):\n%s", diff)
 	}
 
 	decoded, err := DecodeReference(encoded)
 	if err != nil {
-		t.Fatalf("DecodeReference returned error: %v", err)
+		t.Fatalf("DecodeReference(%s) returned error: %v", encoded, err)
 	}
 
-	if decoded != ref || !decoded.Names(doc) {
-		t.Fatalf("decoded reference = %+v, want %+v, which names the document", decoded, ref)
+	if diff := cmp.Diff(ref, decoded); diff != "" {
+		t.Errorf("DecodeReference(%s) mismatch (-want +got):\n%s", encoded, diff)
+	}
+
+	if !decoded.Names(doc) {
+		t.Errorf("DecodeReference(%s).Names(%s) = false, want true", encoded, doc.ID)
 	}
 
 	stored, verified, err := h.service.GetPublishedDocumentData(ctx, decoded.StoredID("topo"))
 	if err != nil {
-		t.Fatalf("GetPublishedDocumentData returned error: %v", err)
+		t.Fatalf("GetPublishedDocumentData(%s) returned error: %v", decoded.StoredID("topo"), err)
 	}
 
-	if !bytes.Equal(verified, testRandomDocument(t, "topo", 2000)) {
-		t.Fatal("verified document bytes do not match what was published")
+	data := testRandomDocument(t, "topo", 2000)
+
+	if diff := cmp.Diff(string(data), string(verified)); diff != "" {
+		t.Errorf("GetPublishedDocumentData(%s) data mismatch (-want +got):\n%s", doc.ID, diff)
 	}
 
 	if _, err := builder.Parse(verified); err != nil {
-		t.Fatalf("the verified document must parse: %v", err)
+		t.Errorf("builder.Parse(GetPublishedDocumentData(%s)) returned error: %v", doc.ID, err)
 	}
 
 	// The record holds what the reference no longer does.
-	if stored.Schema != builder.SchemaURI || stored.DraftID != "draft-1" || stored.SnapshotID != "snap-1" ||
-		stored.Size != int64(len(verified)) || stored.CreatedBy != testActor {
-		t.Fatalf("stored document = %+v, want its schema, draft, snapshot, size and author recorded", stored)
+	if diff := publishedDiff(publishedTestDocument(h, "topo", data), stored); diff != "" {
+		t.Errorf("GetPublishedDocumentData(%s) document mismatch (-want +got):\n%s", doc.ID, diff)
 	}
 }
 
@@ -146,13 +167,17 @@ func TestReferenceStoredID(t *testing.T) {
 		{name: "all three", ref: DocumentReference{Digest: digest, ID: id, Path: file}, want: id},
 		{name: "none", ref: DocumentReference{}, want: ""},
 	} {
-		if got := test.ref.StoredID("topo"); got != test.want {
-			t.Errorf("%s: StoredID = %q, want %q", test.name, got, test.want)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := test.ref.StoredID("topo"); got != test.want {
+				t.Errorf("%+v.StoredID(topo) = %q, want %q", test.ref, got, test.want)
+			}
+		})
 	}
 
 	if other := (DocumentReference{Digest: digest}).StoredID("other"); other == derived || other == "" {
-		t.Errorf("a digest names %q for another topology, want an ID of its own", other)
+		t.Errorf("StoredID(other) of a digest = %q, want an ID of its own, not %q or none", other, derived)
 	}
 }
 
@@ -184,16 +209,18 @@ func TestReferenceNames(t *testing.T) {
 		{name: "no document", ref: doc.Reference(), doc: nil, want: false},
 		{name: "another digest", ref: DocumentReference{Digest: other.Digest, ID: doc.ID}, doc: doc, want: false},
 		{name: "another digest alone", ref: DocumentReference{Digest: other.Digest}, doc: doc, want: false},
-		{name: "another document's ID", ref: DocumentReference{ID: other.ID}, doc: doc, want: false},
-		{name: "another document's ID and this digest", ref: DocumentReference{Digest: doc.Digest, ID: other.ID}, doc: doc, want: false},
+		{name: "ID of another document", ref: DocumentReference{ID: other.ID}, doc: doc, want: false},
+		{name: "ID of another document and this digest", ref: DocumentReference{Digest: doc.Digest, ID: other.ID}, doc: doc, want: false},
 		// The digest of a document published to another topology derives that
 		// topology's own document, never this one.
 		{name: "the same content of another topology", ref: DocumentReference{Digest: doc.Digest}, doc: copied, want: true},
-		{name: "another topology's reference", ref: doc.Reference(), doc: copied, want: false},
+		{name: "reference of another topology", ref: doc.Reference(), doc: copied, want: false},
 	} {
-		if got := test.ref.Names(test.doc); got != test.want {
-			t.Errorf("%s: Names = %t, want %t", test.name, got, test.want)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.ref.Names(test.doc); got != test.want {
+				t.Errorf("%+v.Names(document) = %t, want %t", test.ref, got, test.want)
+			}
+		})
 	}
 }
 
@@ -209,20 +236,25 @@ func TestPublishedDocumentIsImmutableAndIdempotent(t *testing.T) {
 
 	// The same document, whose record is stored again, unchanged, to say it
 	// was published again (see TestRepublishedDocumentIsNotAnOrphan).
-	if first.ID != second.ID || first.PayloadID != second.PayloadID ||
-		!first.CreatedAt.Equal(second.CreatedAt) || second.Revision <= first.Revision {
-		t.Fatalf("republishing identical content produced %+v then %+v", first, second)
+	if diff := cmp.Diff(first, second, cmpopts.IgnoreUnexported(PublishedDocument{}),
+		cmpopts.IgnoreFields(PublishedDocument{}, "Revision")); diff != "" {
+		t.Errorf("PutPublishedDocument(topo) of the same content mismatch (-want +got):\n%s", diff)
 	}
 
-	if h.store.Count(NamespaceChunks) != chunks {
-		t.Fatal("republishing identical content must not write new chunks")
+	if second.Revision <= first.Revision {
+		t.Errorf("PutPublishedDocument(topo) of the same content revision = %d, want more than %d",
+			second.Revision, first.Revision)
+	}
+
+	if got := h.store.Count(NamespaceChunks); got != chunks {
+		t.Errorf("PutPublishedDocument(topo) of the same content left %d chunks, want the %d already stored", got, chunks)
 	}
 
 	// Identical content published to a different target is a separate document.
 	other := publishTestDocument(t, h, "other-topo", data)
 
 	if other.ID == first.ID {
-		t.Fatal("documents of different targets must not share an ID")
+		t.Errorf("PutPublishedDocument(other-topo) ID = %s, want an ID other than that of topo", other.ID)
 	}
 }
 
@@ -235,8 +267,10 @@ func TestPublishedDocumentDataDetectsCorruptionAndLoss(t *testing.T) {
 	data := testRandomDocument(t, "topo", 2000)
 	doc := publishTestDocument(t, h, "topo", data)
 
-	if _, read, err := h.service.GetPublishedDocumentData(ctx, doc.ID); err != nil || !bytes.Equal(read, data) {
-		t.Fatalf("GetPublishedDocumentData error = %s, want the published bytes", fmtErr(err))
+	if _, read, err := h.service.GetPublishedDocumentData(ctx, doc.ID); err != nil {
+		t.Errorf("GetPublishedDocumentData(%s) returned error: %s", doc.ID, fmtErr(err))
+	} else if diff := cmp.Diff(string(data), string(read)); diff != "" {
+		t.Errorf("GetPublishedDocumentData(%s) data mismatch (-want +got):\n%s", doc.ID, diff)
 	}
 
 	// A reference that pins another digest does not name the document, so
@@ -245,19 +279,19 @@ func TestPublishedDocumentDataDetectsCorruptionAndLoss(t *testing.T) {
 	mismatched.Digest = "sha256:" + strings.Repeat("0", 64)
 
 	if mismatched.Names(doc) {
-		t.Fatal("a reference with a mismatched digest names the document")
+		t.Errorf("%+v.Names(%s) = true, want false for a mismatched digest", mismatched, doc.ID)
 	}
 
 	h.store.Drop(NamespaceChunks, chunkKey(publishedPayloadScope(doc.ID, doc.PayloadID), 0))
 
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("GetPublishedDocumentData with a missing chunk error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("GetPublishedDocumentData(%s) with a missing chunk error = %s, want ErrCorrupt", doc.ID, fmtErr(err))
 	}
 
 	h.store.Drop(NamespacePublished, doc.ID)
 
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("GetPublishedDocumentData of a deleted document error = %s, want ErrNotFound", fmtErr(err))
+		t.Errorf("GetPublishedDocumentData(%s) of a deleted document error = %s, want ErrNotFound", doc.ID, fmtErr(err))
 	}
 }
 
@@ -283,11 +317,11 @@ func TestPutPublishedDocumentRemovesTheChunksOfAFailedWrite(t *testing.T) {
 		Target: "other", Kind: "Topology", Actor: testActor, Document: other, DraftID: "", SnapshotID: "",
 	})
 	if !errors.Is(err, refused) {
-		t.Fatalf("PutPublishedDocument error = %s, want the store error", fmtErr(err))
+		t.Errorf("PutPublishedDocument(other) error = %s, want the store error", fmtErr(err))
 	}
 
 	if chunks := chunkKeysOf(h, publishedScope(otherID)); len(chunks) != 0 {
-		t.Fatalf("chunks = %v, want the refused write's chunks removed", chunks)
+		t.Errorf("PutPublishedDocument(other) left chunks %v, want the refused write's chunks removed", chunks)
 	}
 }
 
@@ -301,28 +335,32 @@ func TestPutPublishedDocumentRepairsCorruptContent(t *testing.T) {
 	h.store.Drop(NamespaceChunks, chunkKey(publishedPayloadScope(doc.ID, doc.PayloadID), 0))
 
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("GetPublishedDocumentData with a lost chunk error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("GetPublishedDocumentData(%s) with a lost chunk error = %s, want ErrCorrupt", doc.ID, fmtErr(err))
 	}
 
 	// Publishing the same content again replaces the corrupt copy instead of
 	// returning it.
 	repaired := publishTestDocument(t, h, "topo", data)
 
-	if repaired.ID != doc.ID || repaired.PayloadID == doc.PayloadID {
-		t.Fatalf("republished document = %+v, want %s stored again with a new payload", repaired, doc.ID)
+	if repaired.ID != doc.ID {
+		t.Errorf("PutPublishedDocument(topo) of corrupt content ID = %s, want %s", repaired.ID, doc.ID)
+	}
+
+	if repaired.PayloadID == doc.PayloadID {
+		t.Errorf("PutPublishedDocument(topo) of corrupt content payload = %s, want a new payload", repaired.PayloadID)
 	}
 
 	_, verified, err := h.service.GetPublishedDocumentData(ctx, repaired.ID)
 	if err != nil {
-		t.Fatalf("GetPublishedDocumentData of the repaired document returned error: %s", fmtErr(err))
+		t.Fatalf("GetPublishedDocumentData(%s) of the repaired document returned error: %s", repaired.ID, fmtErr(err))
 	}
 
-	if !bytes.Equal(verified, data) {
-		t.Fatal("the repaired document holds different content")
+	if diff := cmp.Diff(string(data), string(verified)); diff != "" {
+		t.Errorf("GetPublishedDocumentData(%s) of the repaired document mismatch (-want +got):\n%s", repaired.ID, diff)
 	}
 
 	if chunks := chunkKeysOf(h, publishedPayloadScope(doc.ID, doc.PayloadID)); len(chunks) != 0 {
-		t.Fatalf("chunks of the corrupt copy = %v, want none", chunks)
+		t.Errorf("chunks of the corrupt copy = %v, want none", chunks)
 	}
 }
 
@@ -345,22 +383,32 @@ func TestDeletingPublishedDocumentKeepsConcurrentCopies(t *testing.T) {
 		return nil
 	}
 
-	if removed, err := h.service.DeleteTargetDocuments(ctx, "topo"); err != nil || removed != 1 {
-		t.Fatalf("DeleteTargetDocuments = %d, %s; want the document removed", removed, fmtErr(err))
+	removed, err := h.service.DeleteTargetDocuments(ctx, "topo")
+	if err != nil {
+		t.Fatalf("DeleteTargetDocuments(topo) returned error: %s", fmtErr(err))
+	}
+
+	if removed != 1 {
+		t.Errorf("DeleteTargetDocuments(topo) = %d, want 1", removed)
 	}
 
 	h.store.FailDelete = nil
 
-	if second == nil || second.PayloadID == first.PayloadID {
-		t.Fatalf("republished document = %+v, want a new payload", second)
+	if second == nil {
+		t.Fatal("no document was published again during DeleteTargetDocuments(topo)")
+	}
+
+	if second.PayloadID == first.PayloadID {
+		t.Errorf("republished document payload = %s, want a new payload", second.PayloadID)
 	}
 
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, second.ID); err != nil {
-		t.Fatalf("the copy published during the delete must stay readable: %s", fmtErr(err))
+		t.Errorf("GetPublishedDocumentData(%s) of the copy published during the delete returned error: %s",
+			second.ID, fmtErr(err))
 	}
 
 	if chunks := chunkKeysOf(h, publishedPayloadScope(first.ID, first.PayloadID)); len(chunks) != 0 {
-		t.Fatalf("chunks of the deleted document = %v, want none", chunks)
+		t.Errorf("chunks of the deleted document = %v, want none", chunks)
 	}
 
 	// A document deleted and stored again after a listing saw it is not the
@@ -380,15 +428,24 @@ func TestDeletingPublishedDocumentKeepsConcurrentCopies(t *testing.T) {
 		return nil
 	}
 
-	removed, err := h.service.DeleteSupersededDocuments(ctx, "topo", current.ID)
-	if err != nil || removed != 0 {
-		t.Fatalf("DeleteSupersededDocuments = %d, %s; want the replaced document skipped", removed, fmtErr(err))
+	removed, err = h.service.DeleteSupersededDocuments(ctx, "topo", current.ID)
+	if err != nil {
+		t.Fatalf("DeleteSupersededDocuments(topo, %s) returned error: %s", current.ID, fmtErr(err))
+	}
+
+	if removed != 0 {
+		t.Errorf("DeleteSupersededDocuments(topo, %s) = %d, want the replaced document skipped", current.ID, removed)
 	}
 
 	h.store.FailDelete = nil
 
+	if third == nil {
+		t.Fatalf("no document was stored again during DeleteSupersededDocuments(topo, %s)", current.ID)
+	}
+
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, third.ID); err != nil {
-		t.Fatalf("the copy stored after the listing must stay readable: %s", fmtErr(err))
+		t.Errorf("GetPublishedDocumentData(%s) of the copy stored after the listing returned error: %s",
+			third.ID, fmtErr(err))
 	}
 }
 
@@ -409,39 +466,40 @@ func TestDeleteSupersededDocuments(t *testing.T) {
 
 	removed, err := h.service.DeleteSupersededDocuments(ctx, "topo", second.ID)
 	if err != nil {
-		t.Fatalf("DeleteSupersededDocuments returned error: %v", err)
+		t.Fatalf("DeleteSupersededDocuments(topo, %s) returned error: %v", second.ID, err)
 	}
 
 	if removed != 1 {
-		t.Fatalf("removed %d documents, want 1", removed)
+		t.Errorf("DeleteSupersededDocuments(topo, %s) = %d, want 1", second.ID, removed)
 	}
 
 	if _, err := h.service.GetPublishedDocument(ctx, first.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("superseded document error = %s, want ErrNotFound", fmtErr(err))
+		t.Errorf("GetPublishedDocument(%s) of the superseded document error = %s, want ErrNotFound", first.ID, fmtErr(err))
 	}
 
 	if _, err := h.service.GetPublishedDocument(ctx, second.ID); err != nil {
-		t.Fatalf("the kept document must survive: %v", err)
+		t.Errorf("GetPublishedDocument(%s) of the kept document returned error: %v", second.ID, err)
 	}
 
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, inFlight.ID); err != nil {
-		t.Fatalf("a document stored within the grace period must survive: %s", fmtErr(err))
+		t.Errorf("GetPublishedDocumentData(%s) of a document within the grace period returned error: %s",
+			inFlight.ID, fmtErr(err))
 	}
 
 	if _, err := h.service.GetPublishedDocument(ctx, otherTarget.ID); err != nil {
-		t.Fatalf("documents of other targets must survive: %v", err)
+		t.Errorf("GetPublishedDocument(%s) of another target returned error: %v", otherTarget.ID, err)
 	}
 
 	if chunks := chunkKeysOf(h, publishedScope(first.ID)); len(chunks) != 0 {
-		t.Fatalf("chunks of the superseded document = %v, want none", chunks)
+		t.Errorf("chunks of the superseded document = %v, want none", chunks)
 	}
 
 	if chunks := chunkKeysOf(h, publishedScope(second.ID)); len(chunks) == 0 {
-		t.Fatal("chunks of the kept document must survive")
+		t.Error("chunks of the kept document = none, want them kept")
 	}
 
 	if _, err := h.service.DeleteSupersededDocuments(ctx, "", second.ID); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("DeleteSupersededDocuments without a target error = %s, want ErrInvalid", fmtErr(err))
+		t.Errorf("DeleteSupersededDocuments(\"\", %s) error = %s, want ErrInvalid", second.ID, fmtErr(err))
 	}
 }
 
@@ -459,26 +517,30 @@ func TestDeleteTargetDocuments(t *testing.T) {
 	other := publishTestDocument(t, h, "other", testRandomDocument(t, "other-v1", 1200))
 
 	removed, err := h.service.DeleteTargetDocuments(ctx, "topo")
-	if err != nil || removed != 2 {
-		t.Fatalf("DeleteTargetDocuments = %d, %s; want 2 removed", removed, fmtErr(err))
+	if err != nil {
+		t.Fatalf("DeleteTargetDocuments(topo) returned error: %s", fmtErr(err))
+	}
+
+	if removed != 2 {
+		t.Errorf("DeleteTargetDocuments(topo) = %d, want 2", removed)
 	}
 
 	for _, doc := range []*PublishedDocument{old, recent} {
 		if _, err := h.service.GetPublishedDocument(ctx, doc.ID); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("document %s error = %s, want ErrNotFound", doc.ID, fmtErr(err))
+			t.Errorf("GetPublishedDocument(%s) error = %s, want ErrNotFound", doc.ID, fmtErr(err))
 		}
 
 		if chunks := chunkKeysOf(h, publishedScope(doc.ID)); len(chunks) != 0 {
-			t.Fatalf("chunks of document %s = %v, want none", doc.ID, chunks)
+			t.Errorf("chunks of document %s = %v, want none", doc.ID, chunks)
 		}
 	}
 
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, other.ID); err != nil {
-		t.Fatalf("documents of other targets must survive: %s", fmtErr(err))
+		t.Errorf("GetPublishedDocumentData(%s) of another target returned error: %s", other.ID, fmtErr(err))
 	}
 
 	if _, err := h.service.DeleteTargetDocuments(ctx, ""); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("DeleteTargetDocuments without a target error = %s, want ErrInvalid", fmtErr(err))
+		t.Errorf("DeleteTargetDocuments(\"\") error = %s, want ErrInvalid", fmtErr(err))
 	}
 }
 
@@ -498,8 +560,10 @@ func TestCleanupOrphanedDocuments(t *testing.T) {
 
 	// A document is stored before the config that references it, so a recent
 	// one may be a publication still in flight.
-	if removed, err := h.service.CleanupOrphanedDocuments(ctx, live); err != nil || removed != 0 {
-		t.Fatalf("CleanupOrphanedDocuments of a recent document = %d, %s; want it kept", removed, fmtErr(err))
+	if removed, err := h.service.CleanupOrphanedDocuments(ctx, live); err != nil {
+		t.Errorf("CleanupOrphanedDocuments of a recent document returned error: %s", fmtErr(err))
+	} else if removed != 0 {
+		t.Errorf("CleanupOrphanedDocuments of a recent document = %d, want 0", removed)
 	}
 
 	h.passOrphanGracePeriod()
@@ -510,19 +574,19 @@ func TestCleanupOrphanedDocuments(t *testing.T) {
 	}
 
 	if removed != 1 {
-		t.Fatalf("removed %d documents, want 1", removed)
+		t.Errorf("CleanupOrphanedDocuments = %d, want 1", removed)
 	}
 
 	if chunks := chunkKeysOf(h, publishedScope(orphan.ID)); len(chunks) != 0 {
-		t.Fatalf("chunks of the orphaned document = %v, want none", chunks)
+		t.Errorf("chunks of the orphaned document = %v, want none", chunks)
 	}
 
 	if _, err := h.service.GetPublishedDocument(ctx, orphan.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("orphaned document error = %s, want ErrNotFound", fmtErr(err))
+		t.Errorf("GetPublishedDocument(%s) of the orphaned document error = %s, want ErrNotFound", orphan.ID, fmtErr(err))
 	}
 
 	if _, err := h.service.GetPublishedDocument(ctx, keep.ID); err != nil {
-		t.Fatalf("referenced document must survive: %v", err)
+		t.Errorf("GetPublishedDocument(%s) of the referenced document returned error: %v", keep.ID, err)
 	}
 }
 
@@ -546,17 +610,20 @@ func TestCleanupOrphanedDocumentsKeepsOnlyATopologysOwn(t *testing.T) {
 		{Target: "copy", ID: DocumentReference{ID: superseded.ID}.StoredID("copy")},
 	}
 
-	if removed, err := h.service.CleanupOrphanedDocuments(ctx, live); err != nil || removed != 1 {
-		t.Fatalf("CleanupOrphanedDocuments = %d, %s; want the document another topology names removed", removed, fmtErr(err))
+	if removed, err := h.service.CleanupOrphanedDocuments(ctx, live); err != nil {
+		t.Errorf("CleanupOrphanedDocuments returned error: %s", fmtErr(err))
+	} else if removed != 1 {
+		t.Errorf("CleanupOrphanedDocuments = %d, want the document another topology names removed", removed)
 	}
 
 	if _, err := h.service.GetPublishedDocument(ctx, superseded.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("the superseded document error = %s, want ErrNotFound", fmtErr(err))
+		t.Errorf("GetPublishedDocument(%s) of the superseded document error = %s, want ErrNotFound",
+			superseded.ID, fmtErr(err))
 	}
 
 	for _, doc := range []*PublishedDocument{byDigest, current} {
 		if _, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID); err != nil {
-			t.Fatalf("the document of topology %s must survive: %s", doc.Target, fmtErr(err))
+			t.Errorf("GetPublishedDocumentData(%s) of topology %s returned error: %s", doc.ID, doc.Target, fmtErr(err))
 		}
 	}
 }
@@ -574,22 +641,26 @@ func TestRepublishedDocumentIsNotAnOrphan(t *testing.T) {
 
 	reused := publishTestDocument(t, h, "topo", data)
 	if reused.PayloadID != old.PayloadID {
-		t.Fatalf("republished document = %+v, want the existing one %+v", reused, old)
+		t.Errorf("PutPublishedDocument(topo) again payload = %s, want the existing %s", reused.PayloadID, old.PayloadID)
 	}
 
-	if removed, err := h.service.CleanupOrphanedDocuments(ctx, nil); err != nil || removed != 0 {
-		t.Fatalf("CleanupOrphanedDocuments after the republish = %d, %s; want it kept", removed, fmtErr(err))
+	if removed, err := h.service.CleanupOrphanedDocuments(ctx, nil); err != nil {
+		t.Errorf("CleanupOrphanedDocuments after the republish returned error: %s", fmtErr(err))
+	} else if removed != 0 {
+		t.Errorf("CleanupOrphanedDocuments after the republish = %d, want 0", removed)
 	}
 
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, reused.ID); err != nil {
-		t.Fatalf("the republished document: %v", err)
+		t.Errorf("GetPublishedDocumentData(%s) of the republished document returned error: %v", reused.ID, err)
 	}
 
 	// Once it is old again, it is an orphan like any other.
 	h.passOrphanGracePeriod()
 
-	if removed, err := h.service.CleanupOrphanedDocuments(ctx, nil); err != nil || removed != 1 {
-		t.Fatalf("CleanupOrphanedDocuments later = %d, %s; want it removed", removed, fmtErr(err))
+	if removed, err := h.service.CleanupOrphanedDocuments(ctx, nil); err != nil {
+		t.Errorf("CleanupOrphanedDocuments later returned error: %s", fmtErr(err))
+	} else if removed != 1 {
+		t.Errorf("CleanupOrphanedDocuments later = %d, want 1", removed)
 	}
 }
 
@@ -607,8 +678,10 @@ func TestCleanupOrphanedChunks(t *testing.T) {
 
 	// Chunks are written before the metadata that references them, so recent
 	// ones may belong to a write still in flight.
-	if removed, err := h.service.CleanupOrphanedChunks(ctx); err != nil || removed != 0 {
-		t.Fatalf("CleanupOrphanedChunks of recent chunks = %d, %s; want them kept", removed, fmtErr(err))
+	if removed, err := h.service.CleanupOrphanedChunks(ctx); err != nil {
+		t.Errorf("CleanupOrphanedChunks of recent chunks returned error: %s", fmtErr(err))
+	} else if removed != 0 {
+		t.Errorf("CleanupOrphanedChunks of recent chunks = %d, want 0", removed)
 	}
 
 	h.passOrphanGracePeriod()
@@ -622,19 +695,19 @@ func TestCleanupOrphanedChunks(t *testing.T) {
 	}
 
 	if removed != len(orphanManifest.ChunkDigests) {
-		t.Fatalf("removed %d chunks, want %d", removed, len(orphanManifest.ChunkDigests))
+		t.Errorf("CleanupOrphanedChunks = %d, want %d", removed, len(orphanManifest.ChunkDigests))
 	}
 
-	if h.store.Count(NamespaceChunks) != live+len(recent.ChunkDigests) {
-		t.Fatalf("chunks = %d, want %d live and %d recent", h.store.Count(NamespaceChunks), live, len(recent.ChunkDigests))
+	if got := h.store.Count(NamespaceChunks); got != live+len(recent.ChunkDigests) {
+		t.Errorf("chunks after CleanupOrphanedChunks = %d, want %d live and %d recent", got, live, len(recent.ChunkDigests))
 	}
 
 	if _, err := h.service.GetCurrentDocument(ctx, draft.ID); err != nil {
-		t.Fatalf("draft content must survive chunk cleanup: %v", err)
+		t.Errorf("GetCurrentDocument(%s) after chunk cleanup returned error: %v", draft.ID, err)
 	}
 
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID); err != nil {
-		t.Fatalf("published content must survive chunk cleanup: %v", err)
+		t.Errorf("GetPublishedDocumentData(%s) after chunk cleanup returned error: %v", doc.ID, err)
 	}
 }
 
@@ -667,12 +740,17 @@ func TestCleanupOrphanedChunksKeepsInFlightWrites(t *testing.T) {
 
 	h.store.BeforeUpdate = nil
 
-	if !ran || cleanupErr != nil || removed != 0 {
-		t.Fatalf("cleanup during the append = ran %v, removed %d, %s; want nothing removed", ran, removed, fmtErr(cleanupErr))
+	switch {
+	case !ran:
+		t.Error("CleanupOrphanedChunks did not run during the append")
+	case cleanupErr != nil:
+		t.Errorf("CleanupOrphanedChunks during the append returned error: %s", fmtErr(cleanupErr))
+	case removed != 0:
+		t.Errorf("CleanupOrphanedChunks during the append = %d, want 0", removed)
 	}
 
 	if _, err := h.service.GetCurrentDocument(ctx, meta.ID); err != nil {
-		t.Fatalf("the appended snapshot must stay readable: %s", fmtErr(err))
+		t.Errorf("GetCurrentDocument(%s) of the appended snapshot returned error: %s", meta.ID, fmtErr(err))
 	}
 }
 
@@ -703,13 +781,14 @@ func TestPublishedDocumentValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := h.service.PutPublishedDocument(ctx, tt.req); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("PutPublishedDocument error = %s, want ErrInvalid", fmtErr(err))
+				t.Errorf("PutPublishedDocument(%q, %q, %q) error = %s, want ErrInvalid",
+					tt.req.Target, tt.req.Kind, tt.req.Actor, fmtErr(err))
 			}
 		})
 	}
 
 	if _, err := h.service.GetPublishedDocument(ctx, "missing-document"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("GetPublishedDocument error = %s, want ErrNotFound", fmtErr(err))
+		t.Errorf("GetPublishedDocument(missing-document) error = %s, want ErrNotFound", fmtErr(err))
 	}
 }
 
@@ -721,7 +800,7 @@ func TestMarkPublishedLinksPublishedDocument(t *testing.T) {
 
 	snapshot, err := h.service.GetCurrentDocument(ctx, meta.ID)
 	if err != nil {
-		t.Fatalf("GetCurrentDocument returned error: %v", err)
+		t.Fatalf("GetCurrentDocument(%s) returned error: %v", meta.ID, err)
 	}
 
 	doc, err := h.service.PutPublishedDocument(ctx, PutPublishedDocumentRequest{
@@ -729,7 +808,7 @@ func TestMarkPublishedLinksPublishedDocument(t *testing.T) {
 		Document: snapshot.Data, DraftID: meta.ID, SnapshotID: snapshot.Manifest.ID,
 	})
 	if err != nil {
-		t.Fatalf("PutPublishedDocument returned error: %v", err)
+		t.Fatalf("PutPublishedDocument(topo) returned error: %v", err)
 	}
 
 	published, err := h.service.MarkPublished(ctx, MarkPublishedRequest{
@@ -739,18 +818,24 @@ func TestMarkPublishedLinksPublishedDocument(t *testing.T) {
 		ExperimentTarget: "", ScenarioTarget: "", DocumentID: doc.ID,
 	})
 	if err != nil {
-		t.Fatalf("MarkPublished returned error: %v", err)
+		t.Fatalf("MarkPublished(%s) returned error: %v", meta.ID, err)
 	}
 
-	if published.Publication.DocumentID != doc.ID {
-		t.Fatalf("publication documentID = %q, want %q", published.Publication.DocumentID, doc.ID)
+	want := &PublicationState{
+		Mode: PublishModeTopology, TopologyTarget: "topo", TopologyAction: TopologyActionCreate,
+		SnapshotID: snapshot.Manifest.ID, Digest: snapshot.Manifest.Digest, Revision: meta.Revision,
+		DocumentID: doc.ID, PublishedBy: testActor,
+	}
+
+	if diff := publicationDiff(want, published.Publication); diff != "" {
+		t.Errorf("MarkPublished(%s) publication mismatch (-want +got):\n%s", meta.ID, diff)
 	}
 
 	if doc.Digest != snapshot.Manifest.Digest {
-		t.Fatal("published document digest must match the published snapshot digest")
+		t.Errorf("PutPublishedDocument(topo) digest = %s, want the snapshot digest %s", doc.Digest, snapshot.Manifest.Digest)
 	}
 
 	if published.Dirty() {
-		t.Fatal("draft must be clean immediately after publishing its current snapshot")
+		t.Errorf("MarkPublished(%s) Dirty() = true, want false right after publishing the current snapshot", meta.ID)
 	}
 }
