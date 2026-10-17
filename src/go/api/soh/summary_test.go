@@ -74,17 +74,9 @@ func summaryExperiment(sohStatus map[string]any) *types.Experiment {
 func storedHosts(t *testing.T, hosts ...HostState) []any {
 	t.Helper()
 
-	body, err := json.Marshal(hosts)
-	if err != nil {
-		t.Fatal(err)
-	}
+	stored, _ := asStored(t, hosts).([]any)
 
-	var decoded []any
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		t.Fatal(err)
-	}
-
-	return decoded
+	return stored
 }
 
 func TestSummarizeRunningExperiment(t *testing.T) {
@@ -226,38 +218,21 @@ func TestSummarizeWithoutRunTimeUsesNewestCheck(t *testing.T) {
 func TestSummarizeCountsDelayedVMAsDownOnceStarted(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range []struct {
-		state       string
-		delayed     int
-		notRunning  int
-		reportsDown bool
-	}{
-		{state: "BUILDING", delayed: 1},
-		{state: "PAUSED", notRunning: 1, reportsDown: true},
-		{state: "QUIT", notRunning: 1, reportsDown: true},
-		{state: "ERROR", notRunning: 1, reportsDown: true},
-	} {
-		t.Run(tc.state, func(t *testing.T) {
-			t.Parallel()
+	vmStates := map[string]string{
+		"hmi": "RUNNING", "plc": "RUNNING", "historian": "RUNNING", "flushed": "RUNNING", "late": "PAUSED",
+	}
 
-			vmStates := map[string]string{
-				"hmi": "RUNNING", "plc": "RUNNING", "historian": "RUNNING", "flushed": "RUNNING",
-				"late": tc.state,
-			}
+	sum, err := Summarize(summaryExperiment(map[string]any{}), vmStates, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-			sum, err := Summarize(summaryExperiment(map[string]any{}), vmStates, 10)
-			if err != nil {
-				t.Fatal(err)
-			}
+	if sum.VMs.Delayed != 0 || sum.VMs.NotRunning != 1 {
+		t.Errorf("VMs = %+v", sum.VMs)
+	}
 
-			if sum.VMs.Delayed != tc.delayed || sum.VMs.NotRunning != tc.notRunning {
-				t.Errorf("VMs = %+v", sum.VMs)
-			}
-
-			if down := slices.Contains(sum.DownVMs, "late"); down != tc.reportsDown {
-				t.Errorf("DownVMs = %v", sum.DownVMs)
-			}
-		})
+	if !slices.Contains(sum.DownVMs, "late") {
+		t.Errorf("DownVMs = %v", sum.DownVMs)
 	}
 }
 

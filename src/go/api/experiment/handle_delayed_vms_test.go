@@ -17,10 +17,7 @@ import (
 	"phenix/util/polltest"
 )
 
-// delayedMM is a test double for mm.MM answering ActiveC2Clients from a set
-// of active clients that tests change between checks, and counting
-// ClearNamespace calls. Any other method panics through the nil embedded
-// interface.
+// delayedMM answers ActiveC2Clients from a set tests change, and counts ClearNamespace calls; other methods panic.
 type delayedMM struct {
 	mm.MM
 
@@ -77,9 +74,8 @@ func (m *delayedMM) clears() int {
 	return m.cleared
 }
 
-// useDelayedMM installs a delayedMM, with no client active, and a fake
-// minimega that fails `vm start` for the VMs in fail. It returns the double
-// and a function listing the commands minimega was sent.
+// useDelayedMM installs a delayedMM and a fake minimega failing vm start for the VMs in fail;
+// returns the double and a lister of the commands sent.
 func useDelayedMM(t *testing.T, fail ...string) (*delayedMM, func() []mmtest.Command) {
 	t.Helper()
 

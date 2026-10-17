@@ -22,9 +22,8 @@ import (
 	"phenix/util/mm/mmtest"
 )
 
-// useFilesDir makes a new folder the minimega files directory until the test
-// ends, as <PhenixBase>/images with no minimega answering, with an empty
-// experiment store, and returns it.
+// useFilesDir makes a new <PhenixBase>/images the files directory until the test ends,
+// with no minimega answering and an empty experiment store, and returns it.
 func useFilesDir(t *testing.T) string {
 	t.Helper()
 
@@ -100,9 +99,8 @@ func listed(t *testing.T, expName string) map[string]Details {
 	return byPath
 }
 
-// The listing searches the files directory's folders at any depth, down to
-// maxDepth, leaving out what experiments and minimega keep there, and every
-// file that is not an image.
+// The listing searches the files directory's folders down to maxDepth, leaving out
+// what experiments and minimega keep there and every file that is not an image.
 func TestGetImagesSearchesFolders(t *testing.T) {
 	for name, symlinked := range map[string]bool{"files directory": false, "files directory is a symlink": true} {
 		t.Run(name, func(t *testing.T) {
@@ -196,9 +194,8 @@ func TestGetImagesSearchesFolders(t *testing.T) {
 	}
 }
 
-// Topologies name images anywhere, of any extension; each is listed, with the
-// images backing it, when phenix can read it, and every image is matched to
-// the experiments using it by full path.
+// Topology images of any path or extension are listed with their backing images when
+// readable, and matched to the experiments using them by full path.
 func TestGetImagesListsTopologyImages(t *testing.T) {
 	calls := useFakeQemuImg(t)
 
@@ -296,10 +293,8 @@ func TestGetImagesListsTopologyImages(t *testing.T) {
 	}
 }
 
-// Without qemu-img, minimega lists the files directory one folder at a time
-// and inspects each image; phenix only asks it about folders and images it
-// can name in one argument, and not about what it sees as something other
-// than a regular file.
+// Without qemu-img, minimega lists and inspects the files directory folder by folder; phenix
+// asks only about paths it can name in one argument, not what it sees as non-regular files.
 func TestGetImagesThroughMinimega(t *testing.T) {
 	dir := useFilesDir(t)
 	outside := t.TempDir()

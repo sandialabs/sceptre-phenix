@@ -87,9 +87,8 @@ func TestRestore(t *testing.T) {
 				lockedAt = -1
 			)
 
-			// Once Restore clones the VM's config, another VM config sequence
-			// waits for the namespace's lock and records how many commands
-			// minimega had received when it got it.
+			// Once Restore clones the VM's config, a second VM config sequence waits for the lock
+			// and records how many commands had been sent.
 			received = mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
 				switch {
 				case strings.HasPrefix(cmd.Base, "vm flush "):

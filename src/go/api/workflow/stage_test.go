@@ -758,11 +758,8 @@ func TestStagingLeftovers(t *testing.T) {
 		tokenB = "234567ABCDEFGHIJKLMNOPQRST"
 	)
 
-	// Entries next to injects/foo that are not leftovers of the name foo: the
-	// siblings of other names, suffixes of the wrong length or with a
-	// character outside A to Z and 2 to 7, and, last, the staging copy of the
-	// name foo.old-x. The lowercase suffix matches no token in any case, so a
-	// case-insensitive file system does not merge it with a leftover.
+	// Not leftovers of foo: other names, suffixes of the wrong length or outside A-Z and 2-7, and foo.old-x's
+	// staging copy, whose lowercase suffix matches no token even on a case-insensitive file system.
 	others := []string{
 		"foo/keep.txt", "bar/keep.txt", ".bar.tmp-" + tokenA + "/a", ".bar.old-" + tokenB + "/a",
 		".foobar.tmp-" + tokenA + "/a", ".foo.other/a", "foo.tmp-" + tokenA + "/a",

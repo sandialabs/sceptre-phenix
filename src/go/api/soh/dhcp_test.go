@@ -31,14 +31,11 @@ func (m *dhcpMM) GetVMIPv4(...mm.Option) ([]string, error) {
 	return reply, nil
 }
 
-func TestWaitForDHCPPollsOnceForAllInterfaces(t *testing.T) { //nolint:paralleltest // replaces package globals
-	fake := &dhcpMM{replies: [][]string{
-		nil,
-		{"", "10.0.0.2", "10.0.1.1"}, // idx 1 is static; no address for idx 3 yet
-		{"", "10.0.0.2", "10.0.1.1"}, // still none
-		{"", "10.0.0.2", "10.0.1.1", "10.0.2.1"},
-	}}
+// useDHCP makes minimega answer with replies, as dhcpMM does, polled every millisecond until the test ends.
+func useDHCP(t *testing.T, replies ...[]string) *dhcpMM {
+	t.Helper()
 
+	fake := &dhcpMM{replies: replies}
 	originalMM, originalInterval := mm.DefaultMM, dhcpPollInterval
 
 	mm.DefaultMM = fake //nolint:reassign // install test double
@@ -48,6 +45,17 @@ func TestWaitForDHCPPollsOnceForAllInterfaces(t *testing.T) { //nolint:parallelt
 		mm.DefaultMM = originalMM //nolint:reassign // restore default
 		dhcpPollInterval = originalInterval
 	})
+
+	return fake
+}
+
+func TestWaitForDHCPPollsOnceForAllInterfaces(t *testing.T) { //nolint:paralleltest // replaces package globals
+	fake := useDHCP(t,
+		nil,
+		[]string{"", "10.0.0.2", "10.0.1.1"}, // idx 1 is static; no address for idx 3 yet
+		[]string{"", "10.0.0.2", "10.0.1.1"}, // still none
+		[]string{"", "10.0.0.2", "10.0.1.1", "10.0.2.1"},
+	)
 
 	s := newSOH()
 	s.md.c2Timeout = time.Minute
@@ -101,17 +109,7 @@ func TestWaitForDHCPPollsOnceForAllInterfaces(t *testing.T) { //nolint:parallelt
 }
 
 func TestWaitForDHCPTimesOutPerInterface(t *testing.T) { //nolint:paralleltest // replaces package globals
-	fake := &dhcpMM{replies: [][]string{{"10.0.0.1"}}}
-
-	originalMM, originalInterval := mm.DefaultMM, dhcpPollInterval
-
-	mm.DefaultMM = fake //nolint:reassign // install test double
-	dhcpPollInterval = time.Millisecond
-
-	t.Cleanup(func() {
-		mm.DefaultMM = originalMM //nolint:reassign // restore default
-		dhcpPollInterval = originalInterval
-	})
+	useDHCP(t, []string{"10.0.0.1"})
 
 	s := newSOH()
 	s.md.c2Timeout = 20 * time.Millisecond

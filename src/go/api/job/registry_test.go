@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"phenix/util/polltest"
 )
 
 // fakeClock is a clock tests move by hand.
@@ -83,42 +85,29 @@ func newTestRegistry(t *testing.T, opts ...Option) *Registry {
 func wait(t *testing.T, r *Registry, id string) Job {
 	t.Helper()
 
-	deadline := time.Now().Add(5 * time.Second)
+	var j Job
 
-	for time.Now().Before(deadline) {
-		j, ok := r.Get(id)
-		if !ok {
+	polltest.Until(t, "job "+id+" finishes", func() bool {
+		var ok bool
+		if j, ok = r.Get(id); !ok {
 			t.Fatalf("job %s is gone", id)
 		}
 
-		if j.Status.Terminal() {
-			return j
-		}
+		return j.Status.Terminal()
+	})
 
-		time.Sleep(time.Millisecond)
-	}
-
-	t.Fatalf("job %s did not finish", id)
-
-	return Job{}
+	return j
 }
 
 // waitStatus waits for the job to reach status.
 func waitStatus(t *testing.T, r *Registry, id string, status Status) {
 	t.Helper()
 
-	deadline := time.Now().Add(5 * time.Second)
+	polltest.Until(t, fmt.Sprintf("job %s is %s", id, status), func() bool {
+		j, _ := r.Get(id)
 
-	for time.Now().Before(deadline) {
-		if j, _ := r.Get(id); j.Status == status {
-			return
-		}
-
-		time.Sleep(time.Millisecond)
-	}
-
-	j, _ := r.Get(id)
-	t.Fatalf("job %s is %s, want %s", id, j.Status, status)
+		return j.Status == status
+	})
 }
 
 // outcomes runs the items through run as the map says: "ok", "fail" or
@@ -408,10 +397,6 @@ func TestLimitsQueueJobs(t *testing.T) {
 		}
 	}
 
-	if s := r.Stats(); s.Running != 2 || s.Queued != 3 {
-		t.Errorf("stats %+v, want 2 running and 3 queued", s)
-	}
-
 	if _, err := r.Cancel(a3.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -568,23 +553,13 @@ func TestRetention(t *testing.T) {
 
 	// sent once the finishing job's lock is released
 	want := fmt.Sprint([]string{started.ID, ids[0]})
-	deadline := time.Now().Add(5 * time.Second)
 
-	for {
+	polltest.Until(t, "removal notifications for "+want, func() bool {
 		n.mu.Lock()
-		got := fmt.Sprint(n.gone)
-		n.mu.Unlock()
+		defer n.mu.Unlock()
 
-		if got == want {
-			return
-		}
-
-		if time.Now().After(deadline) {
-			t.Fatalf("removal notifications for %v, want %v", got, want)
-		}
-
-		time.Sleep(time.Millisecond)
-	}
+		return fmt.Sprint(n.gone) == want
+	})
 }
 
 // Progress is sent at most every interval, while status changes and the
@@ -663,18 +638,11 @@ func TestThrottledProgressIsSentLater(t *testing.T) {
 
 	defer close(release)
 
-	deadline := time.Now().Add(5 * time.Second)
-
-	for time.Now().Before(deadline) {
+	polltest.Until(t, "the held back progress update is sent", func() bool {
 		got := n.of(started.ID)
-		if last := got[len(got)-1]; last.Progress.Bytes == 2 {
-			return
-		}
 
-		time.Sleep(time.Millisecond)
-	}
-
-	t.Error("the held back progress update was never sent")
+		return got[len(got)-1].Progress.Bytes == 2
+	})
 }
 
 // Snapshots are copies: changing one changes nothing in the registry.
@@ -804,14 +772,11 @@ func TestRemoveStaleArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, held.ID)); err == nil || time.Now().After(deadline) {
-			break
-		}
+	polltest.Until(t, "the running job's folder exists", func() bool {
+		_, err := os.Stat(filepath.Join(dir, held.ID))
 
-		time.Sleep(time.Millisecond)
-	}
+		return err == nil
+	})
 
 	for _, name := range []string{"j0123456789abcdef", "jABCDEF0123456789", "notes"} {
 		if err := os.Mkdir(filepath.Join(dir, name), 0o750); err != nil {
@@ -834,9 +799,8 @@ func TestRemoveStaleArtifacts(t *testing.T) {
 	}
 }
 
-// A job that would have to wait is refused, adding nothing, once its owner or
-// everyone has as many jobs waiting as the queue limits allow; one that can
-// run at once is not.
+// A job that would have to wait is refused once its owner, or everyone, has the most jobs waiting; one that
+// can run now is not.
 func TestQueueLimitsRefuseJobs(t *testing.T) {
 	t.Parallel()
 
@@ -875,9 +839,5 @@ func TestQueueLimitsRefuseJobs(t *testing.T) {
 		case tc.want != "" && (err != nil || j.Status != tc.want):
 			t.Errorf("%s's job: %s, %v, want %s", tc.owner, j.Status, err, tc.want)
 		}
-	}
-
-	if s := r.Stats(); s.Running != 2 || s.Queued != 2 {
-		t.Errorf("stats %+v, want 2 running and 2 queued", s)
 	}
 }

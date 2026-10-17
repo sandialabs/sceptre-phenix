@@ -10,6 +10,7 @@ import (
 	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/util/mm"
+	"phenix/util/polltest"
 )
 
 func TestParseNetflowLine(t *testing.T) {
@@ -168,25 +169,6 @@ func useNetflows(t *testing.T, running ...string) *meshMM {
 	return fake
 }
 
-// within fails the test if fn does not return within 2 seconds.
-func within(t *testing.T, what string, fn func()) {
-	t.Helper()
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		fn()
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("%s took longer than 2s", what)
-	}
-}
-
 // stopHook runs the netflow stop hook for exp.
 func stopHook(exp string) {
 	for _, hook := range hooks["stop"] {
@@ -194,9 +176,8 @@ func stopHook(exp string) {
 	}
 }
 
-// While one experiment's capture waits on the mesh to start, other
-// experiments' captures can be read and stopped, and a second start of the
-// same capture is refused.
+// While one capture waits on the mesh to start, other experiments' captures can be read and stopped,
+// and a second start is refused.
 //
 //nolint:paralleltest // replaces the store, minimega and the netflow registry
 func TestStartingOneNetflowDoesNotBlockOthers(t *testing.T) {
@@ -206,9 +187,9 @@ func TestStartingOneNetflowDoesNotBlockOthers(t *testing.T) {
 
 	go func() { started <- StartNetflow("a") }()
 
-	within(t, "the start asking the mesh", func() { <-fake.entered })
+	polltest.Within(t, "the start asking the mesh", func() { <-fake.entered })
 
-	within(t, "reading and stopping the other experiment's capture", func() {
+	polltest.Within(t, "reading and stopping the other experiment's capture", func() {
 		if GetNetflow("b") != nil || GetNetflow("a") != nil {
 			t.Error("a capture that is not running was returned")
 		}
@@ -224,7 +205,7 @@ func TestStartingOneNetflowDoesNotBlockOthers(t *testing.T) {
 
 	var err error
 
-	within(t, "the start finishing", func() { err = <-started })
+	polltest.Within(t, "the start finishing", func() { err = <-started })
 
 	if err != nil {
 		t.Fatalf("starting: %v", err)
@@ -245,14 +226,14 @@ func TestStopHookDuringStartAbandonsIt(t *testing.T) {
 
 	go func() { started <- StartNetflow("a") }()
 
-	within(t, "the start asking the mesh", func() { <-fake.entered })
-	within(t, "the stop hook", func() { stopHook("a") })
+	polltest.Within(t, "the start asking the mesh", func() { <-fake.entered })
+	polltest.Within(t, "the stop hook", func() { stopHook("a") })
 
 	fake.release()
 
 	var err error
 
-	within(t, "the start finishing", func() { err = <-started })
+	polltest.Within(t, "the start finishing", func() { err = <-started })
 
 	if !errors.Is(err, ErrExperimentNotRunning) {
 		t.Errorf("start returned %v, want %v", err, ErrExperimentNotRunning)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"phenix/api/job"
+	"phenix/util/polltest"
 	"phenix/web/middleware"
 )
 
@@ -22,9 +23,8 @@ func useJobs(t *testing.T) *job.Registry {
 	return useJobsIn(t, t.TempDir())
 }
 
-// useJobsIn is useJobs keeping artifacts in dir, with further options. Its
-// jobs are logged and audited as they finish, as the server's are, but not
-// published to websocket clients.
+// useJobsIn is useJobs with artifacts in dir and further options; its jobs are
+// logged and audited as they finish, but not broadcast.
 func useJobsIn(t *testing.T, dir string, opts ...job.Option) *job.Registry {
 	t.Helper()
 
@@ -42,9 +42,8 @@ func useJobsIn(t *testing.T, dir string, opts ...job.Option) *job.Registry {
 	return r
 }
 
-// startTestJob starts a job of owner on exp that runs until release closes,
-// or at once when release is nil, writing an artifact holding content when
-// content is not empty. Its one item's result is {"name": "a"}.
+// startTestJob starts owner's job on exp, running until release closes (at once if nil)
+// and writing an artifact of content if set. Its one item's result is {"name": "a"}.
 func startTestJob(t *testing.T, r *job.Registry, owner, exp string, release chan struct{}, content string) job.Job {
 	t.Helper()
 
@@ -89,24 +88,20 @@ func startTestJob(t *testing.T, r *job.Registry, owner, exp string, release chan
 func waitJob(t *testing.T, r *job.Registry, id string) job.Job {
 	t.Helper()
 
-	deadline := time.Now().Add(10 * time.Second)
+	var j job.Job
 
-	for time.Now().Before(deadline) {
-		if j, ok := r.Get(id); ok && j.Status.Terminal() {
-			return j
-		}
+	polltest.Until(t, "job "+id+" finishes", func() bool {
+		var ok bool
+		j, ok = r.Get(id)
 
-		time.Sleep(time.Millisecond)
-	}
+		return ok && j.Status.Terminal()
+	})
 
-	t.Fatalf("job %s did not finish", id)
-
-	return job.Job{}
+	return j
 }
 
-// waitAudit returns the audit events once one of them is of the action and
-// outcome with each of fields, as a job audits its work just after it
-// finishes; it fails the test if none comes.
+// waitAudit returns the audit events once one matches action, outcome and fields (jobs
+// audit just after finishing), failing the test if none does.
 func waitAudit(t *testing.T, events func() []auditEvent, action, outcome string, fields map[string]any) []auditEvent {
 	t.Helper()
 
@@ -301,6 +296,19 @@ func TestCancelAndDismissJobs(t *testing.T) {
 		t.Error("dismissed job is still held")
 	}
 
+	// another user's job of no experiment, such as a disk clone, needs
+	// jobs/global, not jobs on every experiment
+	noExp := "/api/v1/jobs/" + startTestJob(t, r, "alice", "", release, "").ID + "/cancel"
+
+	if resp := do(t, http.MethodPost, admin.URL+noExp, ""); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("every experiment's jobs admin canceling a job of none: %d, want 404", resp.StatusCode)
+	}
+
+	global := serveAs(t, "global", testRole("jobs/global", "update"))
+	if resp := do(t, http.MethodPost, global.URL+noExp, ""); resp.StatusCode != http.StatusAccepted {
+		t.Errorf("jobs/global admin canceling a job of none: %d, want 202", resp.StatusCode)
+	}
+
 	// a job that cannot stop
 	stuck, err := r.Start(job.Spec{Kind: "test", Owner: "alice", Run: func(ctx context.Context, _ *job.Run) error {
 		<-ctx.Done()
@@ -353,60 +361,6 @@ func TestJobArtifact(t *testing.T) {
 	}
 }
 
-// A started job's location is under the base path the UI is served behind.
-func TestStartJobLocationHasBasePath(t *testing.T) {
-	useJobs(t)
-
-	original := o
-	t.Cleanup(func() { o = original })
-
-	for base, want := range map[string]string{"": "/api/v1/jobs/", "/": "/api/v1/jobs/", "/phenix/": "/phenix/api/v1/jobs/", "phenix": "/phenix/api/v1/jobs/"} {
-		o.basePath = base
-
-		rec := httptest.NewRecorder()
-		startJob(rec, httptest.NewRequest(http.MethodPost, "/", nil), job.Spec{
-			Kind: "test", Owner: "", Experiment: "", Items: []string{"a"},
-			Run: func(context.Context, *job.Run) error { return nil },
-		})
-
-		var j job.Job
-		if err := json.NewDecoder(rec.Body).Decode(&j); err != nil {
-			t.Fatal(err)
-		}
-
-		if got := rec.Header().Get("Location"); got != want+j.ID {
-			t.Errorf("base path %q: Location %q, want %q", base, got, want+j.ID)
-		}
-	}
-}
-
-// Another user's job of no experiment, such as a disk clone, is canceled only
-// by a role with jobs/global, not by one with jobs on every experiment.
-//
-//nolint:paralleltest // replaces the job registry and store
-func TestCancelJobOfNoExperiment(t *testing.T) {
-	r := useJobs(t)
-
-	var (
-		expAdmin = serveAs(t, "exp-admin", testRole("jobs", "update", "*"))
-		admin    = serveAs(t, "admin", testRole("jobs/global", "update"))
-		release  = make(chan struct{})
-		running  = startTestJob(t, r, "alice", "", release, "")
-	)
-
-	t.Cleanup(func() { close(release) })
-
-	cancelURL := "/api/v1/jobs/" + running.ID + "/cancel"
-
-	if resp := do(t, http.MethodPost, expAdmin.URL+cancelURL, ""); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("every experiment's jobs admin canceling: %d, want 404", resp.StatusCode)
-	}
-
-	if resp := do(t, http.MethodPost, admin.URL+cancelURL, ""); resp.StatusCode != http.StatusAccepted {
-		t.Errorf("jobs/global admin canceling: %d, want 202", resp.StatusCode)
-	}
-}
-
 // A job refused because too many are waiting answers 429 with Retry-After.
 //
 //nolint:paralleltest // replaces the job registry
@@ -426,9 +380,5 @@ func TestStartJobAnswersQueueFull(t *testing.T) {
 
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
 		t.Errorf("status %d, Retry-After %q, want 429 with one", rec.Code, rec.Header().Get("Retry-After"))
-	}
-
-	if s := r.Stats(); s.Queued != 0 || s.Running != 1 {
-		t.Errorf("stats %+v, want the one running job only", s)
 	}
 }

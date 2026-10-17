@@ -52,9 +52,8 @@ func (r recorder) Cleanup(context.Context) error {
 	return nil
 }
 
-// useMinimega points mmcli at a fake minimega answering `version` (failing
-// while busy is set), with minimega's version not yet known, and returns the
-// commands it received.
+// useMinimega fakes minimega's version (failing while busy is set), forgets the cached version, and
+// returns the commands received.
 func useMinimega(t *testing.T, busy *atomic.Bool) func() []mmtest.Command {
 	t.Helper()
 

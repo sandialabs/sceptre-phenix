@@ -111,13 +111,6 @@ type Filter struct {
 	Active bool
 }
 
-// Stats counts a registry's jobs.
-type Stats struct {
-	Queued   int `json:"queued"`
-	Running  int `json:"running"`
-	Finished int `json:"finished"`
-}
-
 // Registry holds jobs in memory. It is safe for concurrent use.
 type Registry struct {
 	mu sync.Mutex
@@ -436,18 +429,6 @@ func (r *Registry) Sweep() {
 
 	for _, f := range send {
 		f()
-	}
-}
-
-// Stats counts the registry's jobs.
-func (r *Registry) Stats() Stats {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return Stats{
-		Queued:   len(r.queue),
-		Running:  r.running,
-		Finished: len(r.jobs) - len(r.queue) - r.running,
 	}
 }
 

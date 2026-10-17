@@ -13,8 +13,8 @@ import (
 // a qcow2 when its name ends in .qc2 or .qcow2, and raw otherwise. An image
 // with a sidecar <image>.backing file is backed by the image that file names,
 // relative to the image's folder or absolute, which the chain reports joined
-// onto that folder without cleaning, as qemu-img does. The chain of an image
-// named broken.* cannot be read, nor can a chain naming a missing file.
+// onto that folder without cleaning, as qemu-img does. A chain naming a
+// missing file cannot be read.
 const fakeQemuImg = `#!/bin/sh
 echo "$*" >> "$FAKE_QEMU_IMG_CALLS"
 chain=false
@@ -35,9 +35,6 @@ if [ "$chain" = false ]; then
 	echo
 	exit
 fi
-case ${image##*/} in
-broken.*) echo "could not open backing file" >&2; exit 1 ;;
-esac
 out=[$(info "$image") || exit 1
 while [ -f "$image.backing" ]; do
 	read -r backing < "$image.backing"
