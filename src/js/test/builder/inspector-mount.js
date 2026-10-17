@@ -13,7 +13,7 @@ import { builderSchemaV1 } from '@/builder/schema.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 // What store.select takes for `element`: a connection has ends.
-export function selectionOf(element) {
+function selectionOf(element) {
   return element.sourceNodeId
     ? { edges: [element.id] }
     : { nodes: [element.id] };

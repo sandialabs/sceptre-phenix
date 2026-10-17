@@ -13,7 +13,7 @@ import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 export const BUILDER_ASSET_LIST = 'builder-assets.json';
 
 // The environment variable that sets the Brotli quality, 0 to 11.
-export const BROTLI_QUALITY_VARIABLE = 'PHENIX_BROTLI_QUALITY';
+const BROTLI_QUALITY_VARIABLE = 'PHENIX_BROTLI_QUALITY';
 
 // The Brotli quality without PHENIX_BROTLI_QUALITY. Measured on Builder's
 // files (7 files, 3.1 MB), quality 9 takes 74 ms and writes 786 kB of

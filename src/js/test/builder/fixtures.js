@@ -132,7 +132,7 @@ export function sampleDocument() {
 
 // A node spec as an experiment stores it (zero values kept, so null or empty
 // fields), which phenix accepts and the Inspector's schema does not.
-export function experimentNodeSpec(hostname = 'host-00') {
+export function experimentNodeSpec() {
   return {
     advanced: null,
     annotations: null,
@@ -143,7 +143,7 @@ export function experimentNodeSpec(hostname = 'host-00') {
     general: {
       description: '',
       do_not_boot: null,
-      hostname,
+      hostname: 'host-00',
       snapshot: null,
       vm_type: 'kvm',
     },

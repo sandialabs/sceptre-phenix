@@ -9,7 +9,7 @@ import { sampleDocument, withTemplates } from './fixtures.js';
 
 export const PLATFORMS = ['mac', 'other'];
 
-export function fakeStore(overrides = {}) {
+function fakeStore(overrides = {}) {
   const { doc } = sampleDocument();
   const store = {
     doc,
@@ -55,7 +55,7 @@ export function fakeStore(overrides = {}) {
   return withTemplates(store);
 }
 
-export function fakeView(overrides = {}) {
+function fakeView(overrides = {}) {
   const view = {
     editing: true,
     showMinimap: true,

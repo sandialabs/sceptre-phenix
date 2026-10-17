@@ -69,7 +69,7 @@ function adler32(bytes) {
 
 // Pixel bytes (under 65536) as uncompressed pixel chunk data, 15 bytes longer
 // than they are, as customicons_test.go stores pixels.
-export function stored(raw) {
+function stored(raw) {
   const bytes = Buffer.from(raw);
   // The header of the last block: its length and the complement of it.
   const block = Buffer.alloc(5, 1);

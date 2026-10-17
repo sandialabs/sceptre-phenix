@@ -9,18 +9,15 @@ import { useBuilderStore } from '@/builder/store.js';
 // `capture` maps names to components whose instances come back by that name.
 export async function renderWithStore(
   component,
-  { props, slots, prepare, provides = [], capture = {} } = {},
+  { props, prepare, capture = {} } = {},
 ) {
   const pinia = createPinia();
-  const app = createSSRApp({ render: () => h(component, props, slots) });
+  const app = createSSRApp({ render: () => h(component, props) });
   const instances = Object.fromEntries(
     Object.keys(capture).map((name) => [name, []]),
   );
 
   app.use(pinia);
-  for (const [key, value] of provides) {
-    app.provide(key, value);
-  }
   app.mixin({
     created() {
       for (const [name, type] of Object.entries(capture)) {
