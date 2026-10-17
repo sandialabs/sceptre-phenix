@@ -83,6 +83,11 @@ beforeEach(() =>
         resourceNames: ['item*'],
         verbs: ['*'],
       },
+      {
+        resources: ['notes'],
+        resourceNames: ['note!'],
+        verbs: ['get'],
+      },
     ],
   }),
 );
@@ -177,6 +182,11 @@ test('resourceName mid-wildcard', () => {
   expect(roleAllowed('items', 'delete', 'item')).toBe(true);
   expect(roleAllowed('items', 'delete', 'item1')).toBe(true);
   expect(roleAllowed('items', 'delete', 'thing')).toBe(false);
+});
+
+test('only a leading ! negates a resourceName', () => {
+  expect(roleAllowed('notes', 'get', 'note!')).toBe(true);
+  expect(roleAllowed('notes', 'get', 'note')).toBe(false);
 });
 
 test('allows nothing when no one is signed in', () => {
@@ -277,7 +287,7 @@ const segment = (chars) =>
   fc.string({ unit: fc.constantFrom(...chars), minLength: 1, maxLength: 3 });
 // a resource name: an experiment, a VM, or a VM within an experiment, at
 // times with a trailing slash
-const nameArb = (chars = 'ab.-') =>
+const nameArb = (chars = 'ab.-!') =>
   fc
     .tuple(
       fc.array(segment(chars), { minLength: 1, maxLength: 2 }),
@@ -285,7 +295,7 @@ const nameArb = (chars = 'ab.-') =>
     )
     .map(([s, slash]) => s.join('/') + (slash ? '/' : ''));
 const patternArb = fc
-  .array(segment('ab.-*?'), { minLength: 1, maxLength: 2 })
+  .array(segment('ab.-*?!'), { minLength: 1, maxLength: 2 })
   .map((s) => s.join('/'));
 const RESOURCES = ['vms', 'vms/start', 'experiments'];
 const VERBS = ['get', 'patch'];

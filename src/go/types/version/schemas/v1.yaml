@@ -918,8 +918,9 @@ components:
           properties:
             timer:
               title: "Timer"
-              description: "Duration to wait before starting the node."
+              description: "Duration to wait before starting the node, in Go duration syntax such as 5m or 1h30m."
               type: string
+              pattern: '^$|^[-+]?(0|(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$'
               example: 5m
             user:
               title: "User"
@@ -1196,8 +1197,9 @@ components:
           properties:
             timer:
               title: "Timer"
-              description: "Duration to wait before starting the node."
+              description: "Duration to wait before starting the node, in Go duration syntax such as 5m or 1h30m."
               type: string
+              pattern: '^$|^[-+]?(0|(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$'
               example: 5m
             user:
               title: "User"

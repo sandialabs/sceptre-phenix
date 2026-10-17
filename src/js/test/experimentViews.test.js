@@ -590,12 +590,44 @@ describe('VMLabelsModal', () => {
     expect(heights()).toEqual(['40px', '60px']);
   });
 
-  it('closes without saving when nothing changed', async () => {
-    const labels = await modal({ k: 'v' });
+  it.each([
+    ['a label', { k: 'v' }],
+    ['a hidden tag', { k: 'v', __sohStyle: 'fill: red' }],
+  ])(
+    'closes without saving when nothing changed on a VM with %s',
+    async (_, tags) => {
+      const labels = await modal(tags);
 
-    await button(labels, 'Save').trigger('click');
-    expect(axios.patch).not.toHaveBeenCalled();
-    expect(labels.emitted('close')).toEqual([[]]);
+      await button(labels, 'Save').trigger('click');
+      expect(axios.patch).not.toHaveBeenCalled();
+      expect(labels.emitted('close')).toEqual([[]]);
+    },
+  );
+
+  it('keeps the hidden tags it does not show, such as a node style', async () => {
+    axios.patch.mockResolvedValue({ status: 200, statusText: '' });
+    const hiddenKey = fc
+      .string({ minLength: 1, maxLength: 8 })
+      .map((s) => '__' + s)
+      .filter((k) => !k.startsWith('__notes_') && k !== '__proto__');
+    await fc.assert(
+      fc.asyncProperty(
+        fc.dictionary(hiddenKey, fc.string(), { maxKeys: 3 }),
+        async (hidden) => {
+          axios.patch.mockClear();
+          const labels = await modal({ old: 'x', ...hidden });
+          await labels.findAll('table').at(1).find('td input').setValue('new');
+          await button(labels, 'Save').trigger('click');
+          expect(axios.patch.mock.lastCall[1].tags).toEqual({
+            new: 'x',
+            ...NOTE,
+            ...hidden,
+          });
+          labels.unmount();
+        },
+      ),
+      { numRuns: 20 },
+    );
   });
 });
 

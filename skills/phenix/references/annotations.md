@@ -14,7 +14,8 @@ copy of the topology; the Topology config is unchanged, and a VM that already
 has the key keeps its value. Creation rejects a value of the wrong type for the
 default apps' annotations below (a non-boolean `phenix/default-apps`, a
 `phenix/startup-autotunnel` that is not a list of strings, a non-string
-`vrouter/*` value), which the apps would otherwise ignore silently.
+`vrouter/*` value), which the apps would otherwise ignore silently, and a blank
+`phenix/startup-via-cc`, which the startup app would read as true.
 
 One VM's annotations in an existing experiment can be read and replaced, even
 while it runs, with `GET` and `PATCH /experiments/{exp}/vms/{name}` (see
@@ -62,7 +63,8 @@ When truthy, the startup app drops its disk injections for that node and
 instead delivers and runs the generated startup scripts over minimega's C2
 (miniccc) channel. The value may be a bool, a number (`0` is false), or a
 string (`false`/`0`, case-insensitively, are false; any other string is true);
-an absent annotation means false.
+an absent annotation means false. Creating an experiment or changing a VM's
+annotations rejects a blank string.
 
 C2 delivery is also used automatically when the node's first drive sets
 `inject_partition: 0`, and is skipped entirely for `do_not_boot` nodes.

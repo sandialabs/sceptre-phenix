@@ -28,6 +28,12 @@ func TestNormalizeFileServerEndpoint(t *testing.T) {
 		{name: "missing port", value: "localhost", wantErr: true},
 		{name: "invalid port", value: "127.0.0.1:notaport", wantErr: true},
 		{name: "port out of range", value: "99999", wantErr: true},
+		{name: "padded zero", value: "00", wantErr: true},
+		{name: "signed zero", value: "-0", wantErr: true},
+		{name: "plus sign", value: "+80", wantErr: true},
+		{name: "host and zero port", value: "127.0.0.1:0", wantErr: true},
+		{name: "host and signed port", value: "127.0.0.1:+80", wantErr: true},
+		{name: "padded port", value: "080", endpoint: "127.0.0.1:080"},
 	}
 
 	for _, tt := range tests {
@@ -66,26 +72,16 @@ func genFileserverEndpointPort() *rapid.Generator[fileserverEndpointPort] {
 			return fileserverEndpointPort{spelled: rapid.StringMatching(`[0-9]{0,2}[a-z][a-z0-9]{0,3}`).Draw(t, "spelled")}
 		}
 
-		n := rapid.OneOf(rapid.IntRange(-2, 70000), rapid.SampledFrom([]int{0, 65535, 65536})).Draw(t, "n")
-		spelled := strconv.Itoa(max(n, -n))
+		n := rapid.OneOf(rapid.IntRange(0, 70000), rapid.SampledFrom([]int{0, 1, 65535, 65536})).Draw(t, "n")
+		sign := rapid.SampledFrom([]string{"", "", "+", "-"}).Draw(t, "sign")
+		spelled := sign + strings.Repeat("0", rapid.IntRange(0, 2).Draw(t, "zeros")) + strconv.Itoa(n)
 
-		// "0" turns the file server off, so 0 has no other spelling
-		if n != 0 {
-			spelled = strings.Repeat("0", rapid.IntRange(0, 2).Draw(t, "zeros")) + spelled
-		}
-
-		if n < 0 {
-			spelled = "-" + spelled
-		} else if n > 0 && rapid.Bool().Draw(t, "plus") {
-			spelled = "+" + spelled
-		}
-
-		return fileserverEndpointPort{spelled: spelled, valid: n >= 0 && n <= 65535}
+		return fileserverEndpointPort{spelled: spelled, valid: sign == "" && n >= 1 && n <= 65535}
 	})
 }
 
-// A host and port is kept as given when the port is in range, a bare port
-// listens on localhost, and surrounding space changes nothing.
+// A host and port is kept as given when the port is plain digits in 1-65535,
+// a bare port listens on localhost, and surrounding space changes nothing.
 func TestNormalizeFileServerEndpointProperties(t *testing.T) {
 	t.Parallel()
 
@@ -111,11 +107,12 @@ func TestNormalizeFileServerEndpointProperties(t *testing.T) {
 		}
 
 		got, err = normalizeFileServerEndpoint(space + port.spelled + space)
-		if port.valid && (err != nil || got != want) {
+		// "0" alone turns the file server off
+		if (port.valid || port.spelled == "0") && (err != nil || got != want) {
 			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, %v, want %q", space+port.spelled+space, got, err, want)
 		}
 
-		if !port.valid && err == nil {
+		if !port.valid && port.spelled != "0" && err == nil {
 			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, want an error", space+port.spelled+space, got)
 		}
 	})

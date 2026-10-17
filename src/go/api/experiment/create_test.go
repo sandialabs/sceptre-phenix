@@ -54,6 +54,8 @@ func TestCreateRejectsInvalidOptions(t *testing.T) {
 			want: `"vrouter/vyos-password"`,
 		},
 		{name: "enable ssh not a string", opts: withNodeAnnotation("vrouter/enable-ssh", true), want: `"vrouter/enable-ssh"`},
+		// a blank value would turn on C2 startup delivery for every VM
+		{name: "startup via C2 blank", opts: withNodeAnnotation("phenix/startup-via-cc", " "), want: `"phenix/startup-via-cc"`},
 	}
 
 	for _, tc := range tests {

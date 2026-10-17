@@ -194,17 +194,24 @@ func TestSelectVMsPagesPartitionTheList(t *testing.T) {
 	})
 }
 
-// genVMListDelay draws the delays sortByDelay compares, with timers that parse.
+// genVMListDelay draws the delays sortByDelay compares, including timers stored
+// before the schema checked them, which do not parse.
 func genVMListDelay() *rapid.Generator[string] {
 	timer := rapid.Custom(func(t *rapid.T) string {
 		n := rapid.IntRange(0, 120).Draw(t, "n")
 
-		spellings := []string{fmt.Sprintf("%ds", n), fmt.Sprintf("%dm", n), (time.Duration(n) * time.Second).String()}
+		spellings := []string{
+			fmt.Sprintf("%ds", n),
+			fmt.Sprintf("%dm", n),
+			(time.Duration(n) * time.Second).String(),
+			fmt.Sprintf("%dx", n),
+			strconv.Itoa(n),
+		}
 
 		return "timer:" + rapid.SampledFrom(spellings).Draw(t, "unit")
 	})
 
-	return rapid.OneOf(rapid.Just(""), rapid.Just("user"), rapid.Just("cc:ten"), rapid.Just("cc:nine"), timer)
+	return rapid.OneOf(rapid.Just(""), rapid.Just("user"), rapid.Just("cc:ten"), rapid.Just("cc:nine"), rapid.Just("timer:"), timer, timer)
 }
 
 // delayLess must be a strict weak order, or [sort.SliceStable] may misorder VMs.
@@ -212,7 +219,10 @@ func TestDelayLessIsStrictWeakOrder(t *testing.T) {
 	t.Parallel()
 
 	rapid.Check(t, func(t *rapid.T) {
-		d := []string{genVMListDelay().Draw(t, "a"), genVMListDelay().Draw(t, "b"), genVMListDelay().Draw(t, "c")}
+		// a few close timers, one invalid, so that half the checks hit their mix
+		near := rapid.SampledFrom([]string{"timer:1m", "timer:1x", "timer:2s", "timer:60s"})
+		gen := rapid.SampledFrom([]*rapid.Generator[string]{genVMListDelay(), near}).Draw(t, "gen")
+		d := []string{gen.Draw(t, "a"), gen.Draw(t, "b"), gen.Draw(t, "c")}
 		equiv := func(x, y string) bool { return !delayLess(x, y) && !delayLess(y, x) }
 
 		for _, p := range [][3]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {

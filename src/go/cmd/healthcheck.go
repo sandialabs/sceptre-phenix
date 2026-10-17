@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,7 +20,12 @@ import (
 	"phenix/web/health"
 )
 
-const defaultHealthcheckTimeout = 5 * time.Second
+const (
+	defaultHealthcheckTimeout = 5 * time.Second
+
+	// anyIPv4 is the listen host for every IPv4 address.
+	anyIPv4 = "0.0.0.0"
+)
 
 var errUnhealthy = errors.New("phenix is not healthy")
 
@@ -97,7 +103,7 @@ func healthURL(endpoint string, useTLS, ready bool) (string, error) {
 	}
 
 	switch host {
-	case "", "0.0.0.0":
+	case "", anyIPv4:
 		host = "127.0.0.1"
 	case "::":
 		host = "::1"
@@ -124,7 +130,7 @@ func isLoopback(target string) bool {
 		return false
 	}
 
-	if u.Hostname() == "localhost" {
+	if strings.EqualFold(u.Hostname(), "localhost") {
 		return true
 	}
 

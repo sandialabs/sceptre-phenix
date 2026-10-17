@@ -599,6 +599,8 @@ func TestSharkCaptureNamesKeepTheirExtension(t *testing.T) {
 		"vm-0.cap":         {"vm-0-", ".cap"},
 		"no-extension":     {"no-extension-", ""},
 		"dir.pcap/file.gz": {"dir.pcap/file.gz-", ""},
+		".pcap":            {"-", ".pcap"},
+		".pcap.gz":         {"-", ".pcap.gz"},
 	} {
 		name := newCaptureSecret(false, base)
 
@@ -629,6 +631,8 @@ func TestTrustworthyOrigin(t *testing.T) {
 		{"phenix.example.com", map[string]string{"Forwarded": `For="[2001:db8::1]"; Proto="HTTPS"`}, true},
 		{"phenix.example.com", map[string]string{"Forwarded": "proto=http, proto=https"}, false},
 		{"phenix.example.com", map[string]string{"Forwarded": "for=192.0.2.1"}, false},
+		{"phenix.example.com", map[string]string{"Forwarded": `for=192.0.2.1;host="a;proto=https"`}, false},
+		{"phenix.example.com", map[string]string{"Forwarded": `host="a,b";proto=https`}, true},
 	} {
 		req := httptest.NewRequest(http.MethodGet, "/webshark/", nil)
 		req.Host = tc.host
@@ -652,8 +656,8 @@ func TestSharkCaptureNamesKeepTheirExtensionProperties(t *testing.T) {
 	t.Parallel()
 
 	rapid.Check(t, func(t *rapid.T) {
-		// a stem that is not itself an extension, as path.Base gives
-		stem := rapid.StringMatching(`[a-zA-Z0-9][a-zA-Z0-9._-]{0,7}`).Draw(t, "stem")
+		// a stem, which may be empty or an extension itself, as path.Base gives
+		stem := rapid.StringMatching(`[a-zA-Z0-9._-]{0,8}`).Draw(t, "stem")
 		ext := rapid.SampledFrom([]string{
 			"", ".pcap", ".PCAPNG", ".cap", ".pcap.gz", ".Cap.GZ", ".pcapng.gz", ".gz", ".txt", ".pcap.txt", ".gz.pcap",
 		}).Draw(t, "ext")
@@ -702,7 +706,10 @@ func genWebsharkForwarded() *rapid.Generator[websharkForwarded] {
 		https := false
 
 		for _, param := range params {
-			value := rapid.SampledFrom([]string{"192.0.2.1", `"[2001:db8::1]:80"`, "_hidden", "a.example", "unknown"}).Draw(t, "value")
+			value := rapid.SampledFrom([]string{
+				"192.0.2.1", `"[2001:db8::1]:80"`, "_hidden", "a.example", "unknown",
+				`"a;proto=https"`, `"a,proto=https"`, `"a\";proto=https"`,
+			}).Draw(t, "value")
 
 			if param == "proto" {
 				value = rapid.SampledFrom([]string{"http", "https", "HTTPS", "Https", "wss", "httpss"}).Draw(t, "proto")
@@ -740,7 +747,7 @@ func genWebsharkForwarded() *rapid.Generator[websharkForwarded] {
 }
 
 // Only the first proxy's proto counts, whatever the case, quoting, order or
-// spacing of its parameters.
+// spacing of its parameters, and a quoted value never splits an element.
 func TestForwardedHTTPSProperties(t *testing.T) {
 	t.Parallel()
 

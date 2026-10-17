@@ -56,7 +56,8 @@ func ParseIfMatch(value string) ([]uint64, bool, error) {
 			continue
 		}
 
-		if rev, err := strconv.ParseUint(opaque[1:], 10, 64); err == nil && rev > 0 {
+		// only the form ETag writes names a revision, so "r007" is not revision 7
+		if rev, err := strconv.ParseUint(opaque[1:], 10, 64); err == nil && rev > 0 && ETag(rev) == tag {
 			revs = append(revs, rev)
 		}
 	}

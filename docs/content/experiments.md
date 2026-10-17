@@ -253,10 +253,11 @@ To change one VM's annotations after the experiment is created, use the
 
 A value of the wrong type for an annotation the default apps read is rejected,
 naming the annotation: `phenix/default-apps` must be `true` or `false`,
-`phenix/startup-autotunnel` a list of port forwards, and `vrouter/vyos-password`
-and `vrouter/enable-ssh` strings. Because `phenix/startup-autotunnel` creates
-port forwards, giving it in the Web-UI or API requires a role that may create
-port forwards to every VM the experiment deploys (external nodes excluded).
+`phenix/startup-autotunnel` a list of port forwards, `phenix/startup-via-cc`
+not blank, and `vrouter/vyos-password` and `vrouter/enable-ssh` strings.
+Because `phenix/startup-autotunnel` creates port forwards, giving it in the
+Web-UI or API requires a role that may create port forwards to every VM the
+experiment deploys (external nodes excluded).
 
 ```bash
 # For every VM, deliver startup scripts over C2 and create a port forward from 8080 to its port 80

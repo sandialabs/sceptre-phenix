@@ -176,6 +176,9 @@ func TestListingPattern(t *testing.T) {
 		{".", []string{"*a", "*b"}, "/", true},
 		{"exp/files", []string{"exp/files/a1", "exp/files/a2"}, "/exp/files/a*", true},
 		{"ex p", []string{"ex p/a"}, "", false},
+		{"exp", []string{"exp/.a", "exp/.b"}, "/exp/.*", true},
+		{"exp", []string{"exp/..a", "exp/..b"}, "/exp/..*", true},
+		{".", []string{"..a", "..b"}, "/..*", true},
 	} {
 		got, ok := listingPattern(tc.dir, tc.names)
 		if got != tc.want || ok != tc.ok {
@@ -184,10 +187,10 @@ func TestListingPattern(t *testing.T) {
 	}
 }
 
-// genDeleteBase draws a file name with glob and command-line syntax. It never starts with ".":
-// [path.Join] cleans a "." or ".." base here, and listingPattern mishandles a "." or ".." prefix.
+// genDeleteBase draws a file name with glob and command-line syntax, never "." or "..",
+// which a cleaned path has no base of.
 func genDeleteBase() *rapid.Generator[string] {
-	return rapid.StringMatching(`[ab_][ab_*?\[{ \\.]{0,4}`)
+	return rapid.StringMatching(`[ab_.][ab_*?\[{ \\.]{0,4}`).Filter(func(s string) bool { return s != "." && s != ".." })
 }
 
 // The listing pattern of names in one directory is the directory itself or a glob whose only

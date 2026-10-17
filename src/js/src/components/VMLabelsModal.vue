@@ -183,6 +183,12 @@
           finalTags[row.key] = row.value;
         }
 
+        // SET replaces every tag, so keep the hidden ones this modal does not show
+        for (const [key, value] of Object.entries(this.tags)) {
+          if (!key.startsWith('__') || key.startsWith(NOTES_KEY)) continue;
+          if (!(key in finalTags)) finalTags[key] = value;
+        }
+
         let update = { tag_update_mode: 'SET', tags: finalTags };
 
         if (isEqual(finalTags, this.tags)) {

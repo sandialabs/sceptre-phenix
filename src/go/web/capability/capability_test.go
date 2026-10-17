@@ -287,6 +287,32 @@ func TestRevokeWhereAndList(t *testing.T) {
 	}
 }
 
+func TestListOrdersGrantsMintedAtOnceByID(t *testing.T) {
+	c := newClock()
+	r := New(10, 10, c.Now)
+
+	want := make([]string, 0, 8)
+
+	for i := range 8 {
+		want = append(want, r.Mint(fmt.Sprintf("token-%d", i), viewGrant(c)).ID)
+	}
+
+	slices.Sort(want)
+
+	for range 20 {
+		list := r.List("alice", "test-experiment")
+		got := make([]string, len(list))
+
+		for i, g := range list {
+			got[i] = g.ID
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatalf("List(alice, test-experiment) of grants minted at once mismatch (-want by ID +got):\n%s", diff)
+		}
+	}
+}
+
 func TestUpdate(t *testing.T) {
 	c := newClock()
 	r := New(10, 10, c.Now)
