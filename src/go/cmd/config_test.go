@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
@@ -92,8 +93,8 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 		"YAML": reference(yaml.Unmarshal),
 		"JSON": reference(json.Unmarshal, "-o", "json"),
 	} {
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("config get as %s shows builder-doc = %#v, want %#v", name, got, want)
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("config get as %s builder-doc mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 

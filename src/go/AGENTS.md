@@ -58,6 +58,23 @@ the root target does.
   [source](https://github.com/sandia-minimega/minimega) before changing code
   that constructs commands or depends on minimega behavior.
 
+## Test Style
+
+Follow the Go wiki [TestComments](https://go.dev/wiki/TestComments) in Go tests:
+
+- Do not use assert libraries, and do not write helpers that only wrap a
+  comparison and a fail. A check helper returns an error or a diff for the
+  test to report.
+- Use `t.Error` for independent checks. Use `t.Fatal` only when the test cannot
+  continue, or inside a `t.Run` subtest. Run table cases as `t.Run` subtests.
+- Compare whole values with `cmp.Diff` from `github.com/google/go-cmp` and
+  print the result as `(-want +got)`. Compare decoded data, not marshaled JSON
+  or YAML.
+- Check errors with `errors.Is` or `errors.As`, not with error text.
+- Print the actual value before the expected one:
+  `Func(input) = got, want want`.
+- Call `t.Helper` in every test helper.
+
 ## CI
 
 `.github/workflows/ci.yml` generates artifacts, runs `make check`, and executes
