@@ -1,12 +1,13 @@
 package mm
 
 import (
-	"reflect"
+	"maps"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 )
@@ -90,6 +91,22 @@ func hostNames(hosts Hosts) []string {
 	return names
 }
 
+// hostRole is the part of a Host that says what the node is used for.
+type hostRole struct {
+	Name                  string
+	Headnode, Schedulable bool
+}
+
+func hostRoles(hosts Hosts) []hostRole {
+	roles := make([]hostRole, 0, len(hosts))
+
+	for _, host := range hosts {
+		roles = append(roles, hostRole{Name: host.Name, Headnode: host.Headnode, Schedulable: host.Schedulable})
+	}
+
+	return roles
+}
+
 func TestGetClusterHostsReusesCurrentNamespace(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	received := useFakeMinimega(t, fakeMesh{
 		head:    "head",
@@ -100,7 +117,7 @@ func TestGetClusterHostsReusesCurrentNamespace(t *testing.T) { //nolint:parallel
 
 	hosts, err := Minimega{}.GetClusterHosts(false)
 	if err != nil {
-		t.Fatalf("GetClusterHosts: %v", err)
+		t.Fatalf("GetClusterHosts(false) error = %v", err)
 	}
 
 	want := []string{
@@ -110,29 +127,26 @@ func TestGetClusterHostsReusesCurrentNamespace(t *testing.T) { //nolint:parallel
 		phenixHostsNS + ": host",
 	}
 
-	if got := hostCommands(received()); !reflect.DeepEqual(got, want) {
-		t.Fatalf("sent %q, want %q", got, want)
+	if diff := cmp.Diff(want, hostCommands(received())); diff != "" {
+		t.Errorf("GetClusterHosts(false) sent commands mismatch (-want +got):\n%s", diff)
 	}
 
-	if got := hostNames(hosts); !reflect.DeepEqual(got, []string{"compute1", "compute2", "head"}) {
-		t.Fatalf("hosts = %q", got)
+	wantRoles := []hostRole{
+		{Name: "compute1", Headnode: false, Schedulable: true},
+		{Name: "compute2", Headnode: false, Schedulable: true},
+		{Name: "head", Headnode: true, Schedulable: false},
 	}
 
-	head := hosts[2]
-	if !head.Headnode || head.Schedulable {
-		t.Fatalf("head = %#v, want an unschedulable headnode", head)
-	}
-
-	if !hosts[0].Schedulable || hosts[0].Headnode {
-		t.Fatalf("compute1 = %#v, want a schedulable compute node", hosts[0])
+	if diff := cmp.Diff(wantRoles, hostRoles(hosts)); diff != "" {
+		t.Errorf("GetClusterHosts(false) mismatch (-want +got):\n%s", diff)
 	}
 
 	if got := (Minimega{}).Headnode(); got != "head" {
-		t.Fatalf("Headnode() = %q, want %q", got, "head")
+		t.Errorf("Headnode() = %q, want %q", got, "head")
 	}
 
 	if got := mmtest.Count(received(), "host"); got != 2 {
-		t.Fatalf("Headnode() sent its own host command (%d in all)", got)
+		t.Errorf("Headnode() after GetClusterHosts sent host commands, %d in all, want 2", got)
 	}
 }
 
@@ -159,17 +173,17 @@ func TestGetClusterHostsRecreatesChangedNamespace(t *testing.T) { //nolint:paral
 			received := useFakeMinimega(t, mesh.reply)
 
 			if _, err := (Minimega{}).GetClusterHosts(true); err != nil {
-				t.Fatalf("GetClusterHosts: %v", err)
+				t.Fatalf("GetClusterHosts(true) error = %v", err)
 			}
 
 			cmds := hostCommands(received())
 
 			if got := mmtest.Count(received(), "clear namespace "+phenixHostsNS); got != 1 {
-				t.Fatalf("sent %q, want one clear namespace", cmds)
+				t.Errorf("GetClusterHosts(true) sent %d clear namespace commands, want 1: %q", got, cmds)
 			}
 
-			if last := cmds[len(cmds)-1]; last != phenixHostsNS+": host" {
-				t.Fatalf("sent %q, want host in the recreated namespace last", cmds)
+			if want := phenixHostsNS + ": host"; len(cmds) == 0 || cmds[len(cmds)-1] != want {
+				t.Errorf("GetClusterHosts(true) sent %q, want %q last", cmds, want)
 			}
 		})
 	}
@@ -187,16 +201,19 @@ func TestGetClusterHostsSingleNode(t *testing.T) { //nolint:paralleltest // shar
 	for _, schedOnly := range []bool{true, false} {
 		hosts, err := Minimega{}.GetClusterHosts(schedOnly)
 		if err != nil {
-			t.Fatalf("GetClusterHosts(%t): %v", schedOnly, err)
+			t.Errorf("GetClusterHosts(%t) error = %v", schedOnly, err)
+
+			continue
 		}
 
-		if len(hosts) != 1 || hosts[0].Name != "node01" || !hosts[0].Headnode || !hosts[0].Schedulable {
-			t.Fatalf("GetClusterHosts(%t) = %#v, want the schedulable headnode", schedOnly, hosts)
+		want := []hostRole{{Name: "node01", Headnode: true, Schedulable: true}}
+		if diff := cmp.Diff(want, hostRoles(hosts)); diff != "" {
+			t.Errorf("GetClusterHosts(%t) mismatch (-want +got):\n%s", schedOnly, diff)
 		}
 	}
 
 	if got := mmtest.Count(received(), "clear namespace"); got != 0 {
-		t.Fatalf("cleared the namespace %d times, want 0", got)
+		t.Errorf("GetClusterHosts on a single node sent %d clear namespace commands, want 0", got)
 	}
 }
 
@@ -207,11 +224,11 @@ func TestGetClusterHostsSchedOnlyLeavesOutHeadnode(t *testing.T) { //nolint:para
 
 	hosts, err := Minimega{}.GetClusterHosts(true)
 	if err != nil {
-		t.Fatalf("GetClusterHosts: %v", err)
+		t.Errorf("GetClusterHosts(true) error = %v", err)
 	}
 
-	if got := hostNames(hosts); !reflect.DeepEqual(got, []string{"compute1"}) {
-		t.Fatalf("hosts = %q, want only the compute node", got)
+	if diff := cmp.Diff([]string{"compute1"}, hostNames(hosts)); diff != "" {
+		t.Errorf("GetClusterHosts(true) host names mismatch (-want +got):\n%s", diff)
 	}
 
 	// With no compute node answering, nothing is schedulable.
@@ -219,7 +236,7 @@ func TestGetClusterHostsSchedOnlyLeavesOutHeadnode(t *testing.T) { //nolint:para
 
 	hosts, err = Minimega{}.GetClusterHosts(true)
 	if err != nil || hosts != nil {
-		t.Fatalf("GetClusterHosts = %#v, %v; want nil hosts", hosts, err)
+		t.Errorf("GetClusterHosts(true) with no compute node = %#v, %v; want nil, nil", hosts, err)
 	}
 }
 
@@ -230,26 +247,30 @@ func TestGetClusterHostsReusesRecentListForDisplay(t *testing.T) { //nolint:para
 
 	first, read, err := Minimega{}.GetClusterHostsObserved(t.Context(), false)
 	if err != nil || !read.Known || read.At.IsZero() {
-		t.Fatalf("GetClusterHostsObserved: %+v, %v", read, err)
+		t.Fatalf("GetClusterHostsObserved(false) = %+v, %v; want a known read", read, err)
 	}
 
 	sent := len(received())
 
 	second, reused, err := Minimega{}.GetClusterHostsObserved(t.Context(), false)
 	if err != nil {
-		t.Fatalf("GetClusterHostsObserved: %v", err)
+		t.Fatalf("GetClusterHostsObserved(false) again error = %v", err)
 	}
 
 	if got := len(received()); got != sent {
-		t.Fatalf("a second call within %v sent %d more commands", clusterHostsTTL, got-sent)
+		t.Errorf("GetClusterHostsObserved(false) again within %v sent %d more commands, want 0", clusterHostsTTL, got-sent)
 	}
 
 	if !reused.At.Equal(read.At) {
-		t.Fatalf("reused list observed at %v, want the first read's %v", reused.At, read.At)
+		t.Errorf("GetClusterHostsObserved(false) again observed at %v, want the first read's %v", reused.At, read.At)
 	}
 
-	if !reflect.DeepEqual(first, second) {
-		t.Fatalf("reused list %#v differs from %#v", second, first)
+	if diff := cmp.Diff(first, second); diff != "" {
+		t.Errorf("GetClusterHostsObserved(false) again mismatch (-first +second):\n%s", diff)
+	}
+
+	if len(second) == 0 {
+		t.Fatal("GetClusterHostsObserved(false) again returned no hosts")
 	}
 
 	// Callers get their own copies.
@@ -257,17 +278,17 @@ func TestGetClusterHostsReusesRecentListForDisplay(t *testing.T) { //nolint:para
 	second[0].Name = "changed"
 
 	third, _ := Minimega{}.GetClusterHosts(false)
-	if !reflect.DeepEqual(first, third) {
-		t.Fatalf("changing a returned list changed the shared one: %#v", third)
+	if diff := cmp.Diff(first, third); diff != "" {
+		t.Errorf("GetClusterHosts(false) after changing a returned list mismatch (-want +got):\n%s", diff)
 	}
 
 	// Scheduling always asks minimega.
 	if _, err := (Minimega{}).GetClusterHosts(true); err != nil {
-		t.Fatalf("GetClusterHosts: %v", err)
+		t.Errorf("GetClusterHosts(true) error = %v", err)
 	}
 
 	if got := mmtest.Count(received(), "host"); got != 4 {
-		t.Fatalf("sent %d host commands, want 4 (two runs)", got)
+		t.Errorf("GetClusterHosts(true) brought the host commands to %d, want 4 (two runs)", got)
 	}
 
 	// Once the list is old, it is read again.
@@ -276,11 +297,11 @@ func TestGetClusterHostsReusesRecentListForDisplay(t *testing.T) { //nolint:para
 	recentHosts.mu.Unlock()
 
 	if _, err := (Minimega{}).GetClusterHosts(false); err != nil {
-		t.Fatalf("GetClusterHosts: %v", err)
+		t.Errorf("GetClusterHosts(false) after %v error = %v", clusterHostsTTL, err)
 	}
 
 	if got := mmtest.Count(received(), "host"); got != 6 {
-		t.Fatalf("sent %d host commands, want 6 (three runs)", got)
+		t.Errorf("GetClusterHosts(false) after %v brought the host commands to %d, want 6 (three runs)", clusterHostsTTL, got)
 	}
 }
 
@@ -306,22 +327,30 @@ func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralle
 	for _, schedOnly := range []bool{false, true} {
 		hosts, err := Minimega{}.GetClusterHosts(schedOnly)
 		if err != nil {
-			t.Fatalf("GetClusterHosts(%t): %v", schedOnly, err)
+			t.Errorf("GetClusterHosts(%t) error = %v", schedOnly, err)
+
+			continue
 		}
 
 		names := []string{"compute1", "compute2", "head"}
+		wantUsage := maps.Clone(want)
+
 		if schedOnly {
 			names = names[:2]
+			delete(wantUsage, "head")
 		}
 
-		if got := hostNames(hosts); !reflect.DeepEqual(got, names) {
-			t.Fatalf("GetClusterHosts(%t) = %q, want %q", schedOnly, got, names)
+		if diff := cmp.Diff(names, hostNames(hosts)); diff != "" {
+			t.Errorf("GetClusterHosts(%t) host names mismatch (-want +got):\n%s", schedOnly, diff)
 		}
 
+		got := make(map[string]DiskUsage, len(hosts))
 		for _, host := range hosts {
-			if host.DiskUsage != want[host.Name] {
-				t.Errorf("host %s disk usage = %#v, want %#v", host.Name, host.DiskUsage, want[host.Name])
-			}
+			got[host.Name] = host.DiskUsage
+		}
+
+		if diff := cmp.Diff(wantUsage, got); diff != "" {
+			t.Errorf("GetClusterHosts(%t) disk usage by host mismatch (-want +got):\n%s", schedOnly, diff)
 		}
 	}
 
@@ -333,7 +362,7 @@ func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralle
 		"shell ":                    1,
 	} {
 		if got := mmtest.Count(cmds, prefix); got != want {
-			t.Errorf("sent %d %q commands, want %d", got, prefix, want)
+			t.Errorf("GetClusterHosts(false) then (true) sent %d %q commands, want %d", got, prefix, want)
 		}
 	}
 }
@@ -344,19 +373,19 @@ func TestGetClusterHostsErrorIsNotReused(t *testing.T) { //nolint:paralleltest /
 	for range 2 {
 		hosts, err := Minimega{}.GetClusterHosts(false)
 		if err == nil || hosts == nil || len(hosts) != 0 {
-			t.Fatalf("GetClusterHosts = %#v, %v; want an empty list and an error", hosts, err)
+			t.Errorf("GetClusterHosts(false) with no host answering = %#v, %v; want an empty list and an error", hosts, err)
 		}
 	}
 
 	if got := mmtest.Count(received(), "host"); got != 2 {
-		t.Fatalf("sent %d host commands, want 2", got)
+		t.Errorf("GetClusterHosts(false) twice with no host answering sent %d host commands, want 2", got)
 	}
 }
 
 func TestSameHostSet(t *testing.T) {
 	t.Parallel()
 
-	for _, test := range []struct {
+	for _, tc := range []struct {
 		a, b []string
 		want bool
 	}{
@@ -369,8 +398,8 @@ func TestSameHostSet(t *testing.T) {
 		{[]string{"a", "b"}, []string{"a", "c"}, false},
 		{[]string{"node1"}, []string{"node11"}, false},
 	} {
-		if got := sameHostSet(test.a, test.b); got != test.want {
-			t.Errorf("sameHostSet(%q, %q) = %t, want %t", test.a, test.b, got, test.want)
+		if got := sameHostSet(tc.a, tc.b); got != tc.want {
+			t.Errorf("sameHostSet(%q, %q) = %t, want %t", tc.a, tc.b, got, tc.want)
 		}
 	}
 }

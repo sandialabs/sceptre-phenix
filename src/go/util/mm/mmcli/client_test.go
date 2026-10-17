@@ -63,18 +63,14 @@ func TestRunReportsLostConnectionAndRedials(t *testing.T) {
 	broken := NewCommand()
 	broken.Command = "break"
 
+	// miniclient reports a close it saw itself as "server disconnected", with no sentinel to match.
 	err := ErrorResponse(Run(broken))
-	if err == nil {
-		t.Fatal("ErrorResponse returned nil for a lost connection")
-	}
-
-	if !strings.Contains(err.Error(), "no response from minimega") &&
-		!strings.Contains(err.Error(), "server disconnected") {
-		t.Fatalf("unexpected error text: %v", err)
+	if !errors.Is(err, ErrNoResponse) && (err == nil || !strings.Contains(err.Error(), "server disconnected")) {
+		t.Errorf("ErrorResponse(Run(break)) = %v, want %v or miniclient's server disconnected", err, ErrNoResponse)
 	}
 
 	if _, err := SingleResponse(Run(broken)); err == nil {
-		t.Fatal("SingleResponse returned nil error for a lost connection")
+		t.Error("SingleResponse(Run(break)) error = nil, want a lost connection")
 	}
 
 	healthy := NewCommand()
@@ -82,11 +78,11 @@ func TestRunReportsLostConnectionAndRedials(t *testing.T) {
 
 	got, err := SingleResponse(Run(healthy))
 	if err != nil {
-		t.Fatalf("command after a lost connection failed instead of redialing: %v", err)
+		t.Fatalf("SingleResponse(Run(version)) after a lost connection error = %v, want a redial", err)
 	}
 
 	if got != "ok" {
-		t.Fatalf("got %q, want %q", got, "ok")
+		t.Errorf("SingleResponse(Run(version)) after a lost connection = %q, want %q", got, "ok")
 	}
 }
 
@@ -140,21 +136,21 @@ func TestRunTimesOutWithoutDisturbingOtherCommands(t *testing.T) {
 	// errors.Is, not a substring match: the sentinel must survive the response channel's
 	// round trip as a string (see reconstructErr).
 	if !errors.Is(err, ErrTimeout) {
-		t.Fatalf("expected a timeout error, got %v", err)
+		t.Errorf("ErrorResponse(Run(hang, %v timeout)) = %v, want %v", testTimeout, err, ErrTimeout)
 	}
 
 	if elapsed > maxWait {
-		t.Fatalf("timeout took %v, want under %v", elapsed, maxWait)
+		t.Errorf("Run(hang, %v timeout) took %v, want under %v", testTimeout, elapsed, maxWait)
 	}
 
 	got := <-done
 
 	if got.err != nil {
-		t.Fatalf("concurrent command failed because of an unrelated timeout: %v", got.err)
+		t.Errorf("SingleResponse(Run(slow)) beside a timeout error = %v, want nil", got.err)
 	}
 
 	if got.body != "slow-ok" {
-		t.Fatalf("concurrent command got %q, want %q: its response was truncated", got.body, "slow-ok")
+		t.Errorf("SingleResponse(Run(slow)) beside a timeout = %q, want %q", got.body, "slow-ok")
 	}
 }
 

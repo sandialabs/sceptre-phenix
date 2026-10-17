@@ -32,14 +32,14 @@ func TestGetTunnelsFiltersBySourcePort(t *testing.T) { //nolint:paralleltest // 
 
 	cmds := received()
 	if len(cmds) != 1 {
-		t.Fatalf("sent %v, want one tunnel listing", cmds)
+		t.Fatalf("GetTunnels(vm1, 50001 to 127.0.0.1:22) sent %v, want one tunnel listing", cmds)
 	}
 
 	for _, part := range []string{
 		`.filter 'src port'=50001 `, `.filter 'dst port'=22 `, `.filter dst=127.0.0.1 `, " cc tunnel list vm1",
 	} {
 		if !strings.Contains(cmds[0].Raw, part) {
-			t.Errorf("tunnel listing %q lacks %q", cmds[0].Raw, part)
+			t.Errorf("GetTunnels(vm1, 50001 to 127.0.0.1:22) sent %q, want it to contain %q", cmds[0].Raw, part)
 		}
 	}
 }
@@ -68,11 +68,11 @@ func TestTunnelsOfHeadnodeVMIgnoreOtherNodes(t *testing.T) { //nolint:parallelte
 	}
 
 	if err := (Minimega{}).CreateTunnel(opts...); err != nil {
-		t.Fatalf("CreateTunnel: %v", err)
+		t.Errorf("CreateTunnel(vm1, 50001 to 127.0.0.1:22) error = %v", err)
 	}
 
 	if err := (Minimega{}).CloseTunnel(opts...); err != nil {
-		t.Fatalf("CloseTunnel: %v", err)
+		t.Errorf("CloseTunnel(vm1, 50001 to 127.0.0.1:22) error = %v", err)
 	}
 
 	var closed bool
@@ -84,7 +84,7 @@ func TestTunnelsOfHeadnodeVMIgnoreOtherNodes(t *testing.T) { //nolint:parallelte
 	}
 
 	if !closed {
-		t.Fatalf("sent %v, want tunnel 3 closed in namespace exp", received())
+		t.Errorf("CloseTunnel(vm1, 50001 to 127.0.0.1:22) sent %v, want tunnel 3 closed in namespace exp", received())
 	}
 }
 
@@ -105,7 +105,7 @@ func TestCreateTunnelReportsOwnerError(t *testing.T) { //nolint:paralleltest // 
 	)
 	if err == nil || !strings.Contains(err.Error(), "bind: address already in use") ||
 		strings.Contains(err.Error(), "vm not found") {
-		t.Fatalf("CreateTunnel error = %v, want only the headnode's bind error", err)
+		t.Errorf("CreateTunnel(vm1, 50001 to :22) error = %v, want only the headnode's bind error", err)
 	}
 }
 
@@ -118,10 +118,16 @@ func TestMeshSendPutsNamespaceInside(t *testing.T) { //nolint:paralleltest // sh
 		{"exp", "head", `.record false namespace "exp" tap delete t1`},
 	} {
 		if err := (Minimega{}).MeshSend(tc.ns, tc.host, "tap delete t1"); err != nil {
-			t.Fatalf("MeshSend(%q, %q): %v", tc.ns, tc.host, err)
+			t.Errorf("MeshSend(%q, %q) error = %v", tc.ns, tc.host, err)
+
+			continue
 		}
 
 		cmds := received()
+		if len(cmds) == 0 {
+			t.Fatalf("MeshSend(%q, %q) sent nothing", tc.ns, tc.host)
+		}
+
 		if got := cmds[len(cmds)-1].Raw; got != tc.want {
 			t.Errorf("MeshSend(%q, %q) sent %q, want %q", tc.ns, tc.host, got, tc.want)
 		}
@@ -139,6 +145,6 @@ func TestMeshSendReportsError(t *testing.T) { //nolint:paralleltest // shares th
 
 	err := (Minimega{}).MeshSend("exp", "compute1", "tap delete t1")
 	if err == nil || !strings.Contains(err.Error(), "tap not found") {
-		t.Fatalf("MeshSend error = %v, want the remote node's error", err)
+		t.Errorf("MeshSend(exp, compute1) error = %v, want the remote node's error", err)
 	}
 }

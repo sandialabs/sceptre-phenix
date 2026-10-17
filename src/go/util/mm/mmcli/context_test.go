@@ -68,20 +68,20 @@ func TestRunContextGivesUpWaiting(t *testing.T) {
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) || !errors.Is(err, ErrNotSent) {
-			t.Errorf("RunContext returned %v, want %v and %v", err, context.Canceled, ErrNotSent)
+			t.Errorf("RunContext(canceled ctx, waiting) = %v, want %v and %v", err, context.Canceled, ErrNotSent)
 		}
 	case <-time.After(maxWait):
-		t.Fatal("RunContext kept waiting after its context was canceled")
+		t.Fatal("RunContext(canceled ctx, waiting) kept waiting after its context was canceled")
 	}
 
 	unhold()
 
 	if err := ErrorResponse(Run(command("after"))); err != nil {
-		t.Fatalf("the next command failed: %v", err)
+		t.Errorf("Run(after) error = %v", err)
 	}
 
 	if n := mmtest.Count(received(), "waiting"); n != 0 {
-		t.Errorf("minimega received the command that gave up %d times, want 0", n)
+		t.Errorf("RunContext(canceled ctx, waiting) sent the command %d times, want 0", n)
 	}
 }
 
@@ -94,14 +94,14 @@ func TestRunTabularContextGivesUpWaiting(t *testing.T) {
 		rows := giveUp(t, func(ctx context.Context) []map[string]string {
 			rows, err := RunTabularCheckedContext(ctx, command("checked"), nil)
 			if !errors.Is(err, context.Canceled) {
-				t.Errorf("got error %v, want %v", err, context.Canceled)
+				t.Errorf("RunTabularCheckedContext(canceled ctx, checked) error = %v, want %v", err, context.Canceled)
 			}
 
 			return rows
 		})
 
 		if len(rows) != 0 {
-			t.Errorf("got rows %v, want none", rows)
+			t.Errorf("RunTabularCheckedContext(canceled ctx, checked) = %v, want no rows", rows)
 		}
 	})
 
@@ -109,13 +109,13 @@ func TestRunTabularContextGivesUpWaiting(t *testing.T) {
 		if rows := giveUp(t, func(ctx context.Context) []map[string]string {
 			return RunTabularContext(ctx, command("logged"))
 		}); len(rows) != 0 {
-			t.Errorf("got rows %v, want none", rows)
+			t.Errorf("RunTabularContext(canceled ctx, logged) = %v, want no rows", rows)
 		}
 	})
 
 	for _, name := range []string{"checked", "logged"} {
 		if n := mmtest.Count(received(), name); n != 0 {
-			t.Errorf("minimega received the %s command that gave up %d times, want 0", name, n)
+			t.Errorf("the %s command that gave up was sent %d times, want 0", name, n)
 		}
 	}
 }
@@ -152,12 +152,14 @@ func TestRunContextDoneSendsNothing(t *testing.T) {
 
 	for range 20 {
 		if err := ErrorResponse(RunContext(ctx, command("late"))); !errors.Is(err, context.Canceled) {
-			t.Fatalf("RunContext returned %v, want %v", err, context.Canceled)
+			t.Errorf("RunContext(canceled ctx, late) = %v, want %v", err, context.Canceled)
+
+			break
 		}
 	}
 
 	if n := mmtest.Count(received(), "late"); n != 0 {
-		t.Errorf("minimega received %d commands whose context was done, want 0", n)
+		t.Errorf("RunContext(canceled ctx, late) sent the command %d times, want 0", n)
 	}
 }
 
@@ -171,12 +173,13 @@ func TestRunContextDeadlineIsATimeout(t *testing.T) {
 
 	err := ErrorResponse(RunContext(ctx, command("waiting")))
 	if !errors.Is(err, ErrTimeout) || !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, ErrNotSent) {
-		t.Fatalf("RunContext returned %v, want %v, %v and %v", err, ErrTimeout, context.DeadlineExceeded, ErrNotSent)
+		t.Errorf("RunContext(%v deadline, waiting) = %v, want %v, %v and %v",
+			testTimeout, err, ErrTimeout, context.DeadlineExceeded, ErrNotSent)
 	}
 
 	_, err = RunTabularCheckedContext(ctx, command("tabular"), nil)
 	if !errors.Is(err, ctx.Err()) {
-		t.Fatalf("RunTabularCheckedContext returned %v, want %v", err, ctx.Err())
+		t.Errorf("RunTabularCheckedContext(expired ctx, tabular) error = %v, want %v", err, ctx.Err())
 	}
 }
 
@@ -193,7 +196,7 @@ func TestRunContextGivesUpWaitingAfterTheDefault(t *testing.T) {
 
 	err := ErrorResponse(RunContext(context.Background(), command("waiting")))
 	if !errors.Is(err, ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("RunContext returned %v, want %v alone", err, ErrTimeout)
+		t.Errorf("RunContext(background ctx, waiting) past DefaultWaitTimeout = %v, want %v alone", err, ErrTimeout)
 	}
 }
 
@@ -222,7 +225,7 @@ func TestRunAbandonsAHungCommand(t *testing.T) {
 
 	// sent, so not ErrNotSent
 	if err := ErrorResponse(Run(command("hang"))); !errors.Is(err, ErrTimeout) || errors.Is(err, ErrNotSent) {
-		t.Fatalf("Run returned %v, want %v alone", err, ErrTimeout)
+		t.Errorf("Run(hang) past DefaultCommandTimeout = %v, want %v alone", err, ErrTimeout)
 	}
 
 	done := make(chan string, 1)
@@ -235,9 +238,9 @@ func TestRunAbandonsAHungCommand(t *testing.T) {
 	select {
 	case got := <-done:
 		if got != "ok" {
-			t.Fatalf("next command got %q, want ok", got)
+			t.Errorf("SingleResponse(Run(next)) after a hung command = %q, want %q", got, "ok")
 		}
 	case <-time.After(maxWait):
-		t.Fatal("the next command waited behind the hung one")
+		t.Fatal("Run(next) waited behind the hung command")
 	}
 }

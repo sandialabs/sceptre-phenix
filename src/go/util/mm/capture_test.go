@@ -2,10 +2,11 @@ package mm
 
 import (
 	"errors"
-	"slices"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/util/mm/mmtest"
 )
@@ -59,19 +60,16 @@ func TestStopVMCapture(t *testing.T) { //nolint:paralleltest // shares the fake 
 
 			err := (Minimega{}).StopVMCapture(append([]Option{NS("exp"), VMName("vm")}, tc.opts...)...)
 			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("StopVMCapture = %v, want %v", err, tc.wantErr)
+				t.Errorf("StopVMCapture() error = %v, want %v", err, tc.wantErr)
 			}
 
-			cmds := received()
-
-			if got := mmtest.Bases(cmds); !slices.Equal(got, tc.want) {
-				t.Fatalf("sent %q, want %q", got, tc.want)
+			want := make([]mmtest.Command, 0, len(tc.want))
+			for _, base := range tc.want {
+				want = append(want, mmtest.Command{Namespace: "exp", Base: base})
 			}
 
-			for _, cmd := range cmds {
-				if cmd.Namespace != "exp" {
-					t.Fatalf("%q sent in namespace %q, want exp", cmd.Base, cmd.Namespace)
-				}
+			if diff := cmp.Diff(want, received(), ignoreRaw, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("StopVMCapture() sent commands mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

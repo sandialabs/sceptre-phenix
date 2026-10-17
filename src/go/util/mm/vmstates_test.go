@@ -1,11 +1,11 @@
 package mm
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 )
@@ -46,17 +46,18 @@ func TestGetVMStates(t *testing.T) { //nolint:paralleltest // shares the fake mi
 
 			switch {
 			case tc.wantErr == "" && err != nil:
-				t.Fatalf("GetVMStates: %v", err)
+				t.Errorf("GetVMStates(exp) error = %v, want nil", err)
 			case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)):
-				t.Fatalf("GetVMStates = %v, %v; want an error containing %q", states, err, tc.wantErr)
+				t.Errorf("GetVMStates(exp) error = %v, want one containing %q", err, tc.wantErr)
 			}
 
-			if !reflect.DeepEqual(states, tc.want) {
-				t.Fatalf("GetVMStates = %v, want %v", states, tc.want)
+			if diff := cmp.Diff(tc.want, states); diff != "" {
+				t.Errorf("GetVMStates(exp) mismatch (-want +got):\n%s", diff)
 			}
 
-			if cmds := received(); len(cmds) != 1 || cmds[0].Namespace != "exp" {
-				t.Fatalf("sent %+v, want one command in namespace exp", cmds)
+			want := []mmtest.Command{{Namespace: "exp", Base: vmInfoSummaryCmd}}
+			if diff := cmp.Diff(want, received(), ignoreRaw); diff != "" {
+				t.Errorf("GetVMStates(exp) sent commands mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

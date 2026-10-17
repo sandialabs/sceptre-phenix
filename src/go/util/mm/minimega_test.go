@@ -1,8 +1,9 @@
 package mm
 
 import (
-	"slices"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 )
@@ -21,13 +22,13 @@ func TestConnectVMInterface(t *testing.T) { //nolint:paralleltest // shares the 
 			opts := append([]Option{NS("exp"), VMName("test-vm"), ConnectInterface(1), ConnectVLAN("EXP_1")}, tc.opts...)
 
 			if err := (Minimega{}).ConnectVMInterface(opts...); err != nil {
-				t.Fatalf("ConnectVMInterface: %v", err)
+				t.Errorf("ConnectVMInterface() error = %v", err)
 			}
 
 			want := []mmtest.Command{{Raw: `.record false namespace "exp" ` + tc.want, Namespace: "exp", Base: tc.want}}
 
-			if got := received(); !slices.Equal(got, want) {
-				t.Fatalf("sent %+v, want %+v", got, want)
+			if diff := cmp.Diff(want, received()); diff != "" {
+				t.Errorf("ConnectVMInterface() sent commands mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
