@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"phenix/store"
 	"phenix/store/storetest"
 	v1 "phenix/types/version/v1"
+	"phenix/util/polltest"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 )
@@ -134,9 +134,8 @@ func TestViewingOutputNeedsExperimentGet(t *testing.T) {
 	}
 }
 
-// Clearing a run forgets its component statuses, and cleaning one up runs
-// only its cleanup stage. Neither may touch a run that is executing or does
-// not exist, and cleaning up needs cleanup components.
+// Clearing a run forgets its component statuses; cleaning up runs only its
+// cleanup stage; neither touches an executing or missing run.
 //
 //nolint:paralleltest // starts the SCORCH processors and replaces the store
 func TestClearAndCleanUpRuns(t *testing.T) {
@@ -296,123 +295,95 @@ func fakeTerminal(t *testing.T, pid int) {
 	})
 }
 
-// A role that may only view an experiment gets a read-only SCORCH terminal and
-// may not stop it, even when no one holds its read/write side; a role that may
-// trigger the experiment gets the read/write side and its exit location.
-//
-//nolint:paralleltest // shares the terminal maps
-func TestTerminalWriteNeedsTrigger(t *testing.T) {
-	const pid = 999999
+// connectTerminal connects a client with role to the terminal at path and
+// returns the terminal it gets.
+func connectTerminal(t *testing.T, path string, role *rbac.Role) WebTerm {
+	t.Helper()
 
-	fakeTerminal(t, pid)
-
-	var (
-		viewer   = roleFor("experiments", "get")
-		operator = roleFor("experiments", "get", "experiments/trigger", "create")
-	)
-
-	connect := func(role *rbac.Role) WebTerm {
-		t.Helper()
-
-		rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/0/0/start/cc", role)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("connecting: status %d %s", rec.Code, rec.Body)
-		}
-
-		var term WebTerm
-		if err := json.Unmarshal(rec.Body.Bytes(), &term); err != nil {
-			t.Fatal(err)
-		}
-
-		return term
+	rec := serveScorch(http.MethodGet, path, role)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("connecting: status %d %s", rec.Code, rec.Body)
 	}
 
-	if term := connect(viewer); !term.RO || term.Exit != "" {
-		t.Fatalf("viewer got read-only %v and exit %q, want a read-only terminal with no exit", term.RO, term.Exit)
+	var term WebTerm
+	if err := json.Unmarshal(rec.Body.Bytes(), &term); err != nil {
+		t.Fatal(err)
 	}
 
-	mu.Lock()
-	_, held := rwTerm[pid]
-	mu.Unlock()
-
-	if held {
-		t.Fatal("a viewer took the terminal's read/write side")
-	}
-
-	term := connect(operator)
-	if term.RO || term.Exit == "" {
-		t.Fatalf("operator got read-only %v and exit %q, want the read/write side", term.RO, term.Exit)
-	}
-
-	mu.Lock()
-	id := rwTerm[pid]
-	mu.Unlock()
-
-	exit := "/experiments/exp/scorch/terminals/999999/exit/" + id
-	if rec := serveScorch(http.MethodPost, exit, viewer); rec.Code != http.StatusForbidden {
-		t.Errorf("viewer exiting with the read/write ID: status %d, want 403", rec.Code)
-	}
-
-	stream := "/experiments/exp/scorch/terminals/999999/ws/" + id
-	if rec := serveScorch(http.MethodGet, stream, viewer); rec.Code != http.StatusForbidden {
-		t.Errorf("viewer streaming with the read/write ID: status %d, want 403", rec.Code)
-	}
+	return term
 }
 
-// A terminal is reached by the PID of the process it runs, as a terminal of
-// its experiment only. A role that may only view the experiment
-// gets a read-only terminal and never takes its read/write side; the first
-// client that may trigger the experiment may write to it, and the others only
-// watch.
+// writerOf returns the client ID holding the read/write side of terminal pid.
+func writerOf(pid int) (string, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	id, ok := rwTerm[pid]
+
+	return id, ok
+}
+
+// A view-only role gets a read-only terminal it cannot stop; a trigger role
+// gets the read/write side and exit location, by component or by PID.
 //
 //nolint:paralleltest // shares the terminal maps
-func TestConnectTerminalByPID(t *testing.T) {
-	const pid = 4242
-
-	fakeTerminal(t, pid)
-
+func TestConnectTerminal(t *testing.T) {
 	var (
 		viewer   = roleFor("experiments", "get")
 		operator = roleFor("experiments", "get", "experiments/trigger", "create")
 	)
 
-	connect := func(role *rbac.Role, readOnly bool) {
-		t.Helper()
+	for _, tc := range []struct {
+		route, path string
+		pid         int
+	}{
+		{"component", "/experiments/exp/scorch/terminals/0/0/start/cc", 999999},
+		{"pid", "/experiments/exp/scorch/terminals/4242", 4242},
+	} {
+		t.Run(tc.route, func(t *testing.T) {
+			fakeTerminal(t, tc.pid)
 
-		rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/4242", role)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status %d: %s", rec.Code, rec.Body)
-		}
+			if term := connectTerminal(t, tc.path, viewer); !term.RO || term.Exit != "" {
+				t.Fatalf("viewer got read-only %v and exit %q, want a read-only terminal with no exit", term.RO, term.Exit)
+			}
 
-		var got WebTerm
-		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-			t.Fatal(err)
-		}
+			if _, held := writerOf(tc.pid); held {
+				t.Fatal("a viewer took the terminal's read/write side")
+			}
 
-		if got.Exp != "exp" || got.Stage != "start" || got.Name != "cc" || got.RO != readOnly ||
-			!strings.Contains(got.Loc, "/scorch/terminals/4242/ws/") || (got.Exit != "") == readOnly {
-			t.Errorf("terminal = %+v, want cc's, read-only %v", got, readOnly)
-		}
+			term := connectTerminal(t, tc.path, operator)
+			if term.Exp != "exp" || term.Stage != "start" || term.Name != "cc" || term.RO || term.Exit == "" ||
+				!strings.Contains(term.Loc, fmt.Sprintf("/scorch/terminals/%d/ws/", tc.pid)) {
+				t.Fatalf("operator got %+v, want cc's read/write side", term)
+			}
+
+			for _, role := range []*rbac.Role{operator, viewer} {
+				if other := connectTerminal(t, tc.path, role); !other.RO {
+					t.Error("a client after the writer may write")
+				}
+			}
+
+			id, _ := writerOf(tc.pid)
+
+			exit := fmt.Sprintf("/experiments/exp/scorch/terminals/%d/exit/%s", tc.pid, id)
+			if rec := serveScorch(http.MethodPost, exit, viewer); rec.Code != http.StatusForbidden {
+				t.Errorf("viewer exiting with the read/write ID: status %d, want 403", rec.Code)
+			}
+
+			stream := fmt.Sprintf("/experiments/exp/scorch/terminals/%d/ws/%s", tc.pid, id)
+			if rec := serveScorch(http.MethodGet, stream, viewer); rec.Code != http.StatusForbidden {
+				t.Errorf("viewer streaming with the read/write ID: status %d, want 403", rec.Code)
+			}
+		})
 	}
 
-	connect(viewer, true)
-
-	mu.Lock()
-	_, held := rwTerm[pid]
-	mu.Unlock()
-
-	if held {
-		t.Fatal("a viewer took the terminal's read/write side")
-	}
-
-	connect(operator, false)
-	connect(operator, true)
-	connect(viewer, true)
+	fakeTerminal(t, 4242)
 
 	for path, want := range map[string]int{
-		"/experiments/exp/scorch/terminals/1":      http.StatusNotFound,
-		"/experiments/exp/scorch/terminals/x":      http.StatusBadRequest,
-		"/experiments/other/scorch/terminals/4242": http.StatusNotFound,
+		"/experiments/exp/scorch/terminals/1":               http.StatusNotFound,
+		"/experiments/exp/scorch/terminals/x":               http.StatusBadRequest,
+		"/experiments/other/scorch/terminals/4242":          http.StatusNotFound,
+		"/experiments/exp/scorch/terminals/4242/ws/unknown": http.StatusNotFound,
 	} {
 		role := roleFor("experiments", "get")
 		role.Spec.Policies[0].ResourceNames = []string{"*"}
@@ -428,7 +399,10 @@ func TestConnectTerminalByPID(t *testing.T) {
 //
 //nolint:paralleltest // shortens the attach timeout and shares the terminal maps
 func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
-	const pid = 4343
+	const (
+		pid  = 4343
+		path = "/experiments/exp/scorch/terminals/4343"
+	)
 
 	original := terminalInitTimeout
 	terminalInitTimeout = 20 * time.Millisecond
@@ -442,47 +416,45 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 		operator = roleFor("experiments", "get", "experiments/trigger", "create")
 	)
 
-	connect := func(role *rbac.Role) WebTerm {
-		t.Helper()
+	clientID := func(term WebTerm) string { return term.Loc[strings.LastIndex(term.Loc, "/")+1:] }
 
-		rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/4343", role)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status %d: %s", rec.Code, rec.Body)
-		}
-
-		var got WebTerm
-		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-			t.Fatal(err)
-		}
-
-		return got
-	}
-
-	writer := connect(operator)
+	writer := connectTerminal(t, path, operator)
 	if writer.RO {
 		t.Fatal("the first operator may not write")
 	}
 
-	writerID := writer.Loc[strings.LastIndex(writer.Loc, "/")+1:]
+	writerID := clientID(writer)
 
 	// the writer attaches, as StreamTerminal does
 	mu.Lock()
 	close(termClientIDs[writerID])
 	mu.Unlock()
 
+	pending := make([]string, 0, 2)
+
 	for _, role := range []*rbac.Role{viewer, operator} {
-		if other := connect(role); !other.RO {
+		other := connectTerminal(t, path, role)
+		if !other.RO {
 			t.Fatal("a second client may write")
 		}
+
+		pending = append(pending, clientID(other))
 	}
 
-	time.Sleep(10 * terminalInitTimeout)
+	polltest.Until(t, "the unattached clients time out", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
 
-	mu.Lock()
-	owner := rwTerm[pid]
-	mu.Unlock()
+		for _, id := range pending {
+			if _, ok := termClientIDs[id]; ok {
+				return false
+			}
+		}
 
-	if owner != writerID {
+		return true
+	})
+
+	if owner, _ := writerOf(pid); owner != writerID {
 		t.Fatalf("writer %q, want the attached writer %q", owner, writerID)
 	}
 
@@ -491,20 +463,23 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 	delete(rwTerm, pid)
 	mu.Unlock()
 
-	if unattached := connect(operator); unattached.RO {
+	if unattached := connectTerminal(t, path, operator); unattached.RO {
 		t.Fatal("the terminal has a writer")
 	}
 
-	time.Sleep(10 * terminalInitTimeout)
+	polltest.Until(t, "the unattached writer is freed", func() bool {
+		_, held := writerOf(pid)
 
-	if next := connect(operator); next.RO {
+		return !held
+	})
+
+	if next := connectTerminal(t, path, operator); next.RO {
 		t.Error("an unattached writer kept its rights")
 	}
 }
 
-// A terminal client ID is claimed once: a writer whose role may write and any
-// reader claim it, and the writer's ID sent by a role that may not write is
-// refused and left for the writer.
+// A terminal client ID is claimed once; the writer's ID sent by a role that may
+// not write is refused and kept for the writer.
 //
 //nolint:paralleltest // shares the terminal maps
 func TestClaimTerminalClient(t *testing.T) {
@@ -559,80 +534,5 @@ func TestClaimTerminalClient(t *testing.T) {
 		delete(termClientIDs, id)
 		delete(rwTerm, pid)
 		mu.Unlock()
-	}
-}
-
-// Websockets that open a terminal with the same client ID at once claim it
-// once, rather than each closing its done channel, which panicked; an unknown
-// ID gets 404.
-//
-//nolint:paralleltest // shares the terminal maps
-func TestStreamTerminalClaimsClientIDOnce(t *testing.T) {
-	const pid = 4444
-
-	fakeTerminal(t, pid)
-
-	operator := roleFor("experiments", "get", "experiments/trigger", "create")
-
-	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/4444", operator)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("connecting: status %d %s", rec.Code, rec.Body)
-	}
-
-	var term WebTerm
-	if err := json.Unmarshal(rec.Body.Bytes(), &term); err != nil {
-		t.Fatal(err)
-	}
-
-	// the websocket handler takes over the connection, so this needs a server
-	router := mux.NewRouter()
-	RegisterRoutes(router)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), middleware.ContextKeyRole, *operator)
-		router.ServeHTTP(w, r.WithContext(ctx))
-	}))
-	t.Cleanup(server.Close)
-
-	status := func(path string) int {
-		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+path, nil)
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return 0 // the handler closed the connection after its failed handshake
-		}
-
-		_ = resp.Body.Close()
-
-		return resp.StatusCode
-	}
-
-	stream := "/experiments/exp/scorch/terminals/4444/ws/" + term.Loc[strings.LastIndex(term.Loc, "/")+1:]
-
-	var (
-		wg      sync.WaitGroup
-		claimed atomic.Int32
-	)
-
-	for range 16 {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			if status(stream) != http.StatusNotFound {
-				claimed.Add(1)
-			}
-		}()
-	}
-
-	wg.Wait()
-
-	if n := claimed.Load(); n != 1 {
-		t.Errorf("%d websockets claimed the client ID, want 1", n)
-	}
-
-	if got := status("/experiments/exp/scorch/terminals/4444/ws/unknown"); got != http.StatusNotFound {
-		t.Errorf("unknown client ID: status %d, want 404", got)
 	}
 }

@@ -15,28 +15,6 @@ import (
 	bt "phenix/web/broker/brokertypes"
 )
 
-// withinTimeout is how long within waits.
-const withinTimeout = 2 * time.Second
-
-// within fails the test if fn does not return within withinTimeout.
-func within(t *testing.T, what string, fn func()) {
-	t.Helper()
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		fn()
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(withinTimeout):
-		t.Fatalf("%s took longer than %v", what, withinTimeout)
-	}
-}
-
 // fakeConn is a client connection that takes every frame at once. Data
 // messages arrive on frames, control frames on controls.
 type fakeConn struct {

@@ -5,29 +5,13 @@ import (
 	"errors"
 	"net"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
+
+	"phenix/util/polltest"
 )
-
-// within fails the test if fn does not return within 2 seconds.
-func within(t *testing.T, what string, fn func()) {
-	t.Helper()
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		fn()
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("%s took longer than 2s", what)
-	}
-}
 
 // fastConn is a viewer's websocket that takes every write at once.
 type fastConn struct {
@@ -147,7 +131,7 @@ func TestSlowReadOnlyTerminalDoesNotStallThePTY(t *testing.T) {
 
 	// one chunk at a time, each read before the next is written, so the
 	// reader queues each on its own
-	within(t, "the terminal's client getting all its output", func() {
+	polltest.Within(t, "the terminal's client getting all its output", func() {
 		for i := range chunks {
 			if _, err := w.Write(chunk); err != nil {
 				t.Error(err)
@@ -156,7 +140,7 @@ func TestSlowReadOnlyTerminalDoesNotStallThePTY(t *testing.T) {
 			}
 
 			for len(rw.String()) < (i+1)*len(chunk) {
-				time.Sleep(time.Millisecond)
+				runtime.Gosched()
 			}
 		}
 	})
@@ -171,7 +155,7 @@ func TestSlowReadOnlyTerminalDoesNotStallThePTY(t *testing.T) {
 
 	_ = w.Close()
 
-	within(t, "the PTY reader ending", func() { <-read })
+	polltest.Within(t, "the PTY reader ending", func() { <-read })
 }
 
 // A terminal exiting tells its read-only viewers without writing to them
@@ -212,12 +196,12 @@ func TestTerminalExitDoesNotWriteUnderLock(t *testing.T) {
 		waitReadOnly(term, ro)
 	}()
 
-	within(t, "the history write starting", func() { <-slow.writing })
+	polltest.Within(t, "the history write starting", func() { <-slow.writing })
 
 	close(term.Done)
 
-	within(t, "the exit being queued", func() { <-waited })
-	within(t, "taking the terminal lock", func() {
+	polltest.Within(t, "the exit being queued", func() { <-waited })
+	polltest.Within(t, "taking the terminal lock", func() {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -228,7 +212,7 @@ func TestTerminalExitDoesNotWriteUnderLock(t *testing.T) {
 
 	ro.leave()
 
-	within(t, "the viewer ending", func() { <-served })
+	polltest.Within(t, "the viewer ending", func() { <-served })
 }
 
 // serve stops at the first failed write, and closes the connection.
@@ -241,7 +225,7 @@ func TestViewerStopsOnWriteError(t *testing.T) {
 	v.offer([]byte("a"))
 	v.offer([]byte("b"))
 
-	within(t, "serving", v.serve)
+	polltest.Within(t, "serving", v.serve)
 
 	if conn.writes != 1 || !v.isGone() {
 		t.Errorf("writes = %d, gone = %v; want 1 write, gone", conn.writes, v.isGone())

@@ -41,9 +41,8 @@ func newTestRole(t *testing.T) Role {
 	}
 }
 
-// TestRoleAllowed verifies resource, verb, and resource name matching, for a
-// role built with its policy index (stored and user roles) and for a role
-// literal without one, which Allowed must not index: roles are shared.
+// TestRoleAllowed checks matching for indexed and unindexed (literal) roles;
+// Allowed must not index a literal, since roles are shared.
 func TestRoleAllowed(t *testing.T) {
 	literal := newTestRole(t)
 	roles := map[string]*Role{"indexed": newRole(literal.Spec, nil), "unindexed": &literal}
@@ -129,9 +128,8 @@ func TestRoleAllowed(t *testing.T) {
 	}
 }
 
-// Scoping a default role to a user's experiments scopes every policy that
-// names no resources, also those after a policy that keeps its own names,
-// such as Experiment Admin's disks and hosts policies.
+// Scoping a default role to a user's experiments scopes every unnamed policy,
+// also those after a named one.
 //
 //nolint:paralleltest // replaces the store
 func TestSetResourceNamesScopesEveryUnnamedPolicy(t *testing.T) {

@@ -152,8 +152,8 @@ func TestExpiry(t *testing.T) {
 		t.Fatal("Done is still open after Expires")
 	}
 
-	if r.Len() != 0 {
-		t.Fatalf("%d grants kept after expiry", r.Len())
+	if len(r.grants) != 0 {
+		t.Fatalf("%d grants kept after expiry", len(r.grants))
 	}
 }
 
@@ -243,8 +243,8 @@ func TestRevokeWhereAndList(t *testing.T) {
 	}
 
 	n := r.RevokeWhere(func(g Grant) bool { return g.User == "alice" })
-	if n != 2 || !isDone(a) || !isDone(b) || r.Len() != 1 {
-		t.Fatalf("revoked %d, %d left", n, r.Len())
+	if n != 2 || !isDone(a) || !isDone(b) || len(r.grants) != 1 {
+		t.Fatalf("revoked %d, %d left", n, len(r.grants))
 	}
 
 	if list := r.List("alice", "test-experiment"); len(list) != 0 {
@@ -306,8 +306,8 @@ func TestEviction(t *testing.T) {
 	b2 := mint("b2", "ob")
 	c1 := mint("c1", "arol")
 
-	if !isDone(b1) || isDone(a1) || isDone(a3) || isDone(b2) || isDone(c1) || r.Len() != 4 {
-		t.Fatalf("overall: done b1 %t, a1 %t, a3 %t, %d kept", isDone(b1), isDone(a1), isDone(a3), r.Len())
+	if !isDone(b1) || isDone(a1) || isDone(a3) || isDone(b2) || isDone(c1) || len(r.grants) != 4 {
+		t.Fatalf("overall: done b1 %t, a1 %t, a3 %t, %d kept", isDone(b1), isDone(a1), isDone(a3), len(r.grants))
 	}
 }
 
@@ -351,7 +351,7 @@ func TestConcurrentUse(t *testing.T) {
 
 	wg.Wait()
 
-	if r.Len() != 0 || uses.Load() == 0 {
-		t.Fatalf("%d grants left, %d uses", r.Len(), uses.Load())
+	if len(r.grants) != 0 || uses.Load() == 0 {
+		t.Fatalf("%d grants left, %d uses", len(r.grants), uses.Load())
 	}
 }

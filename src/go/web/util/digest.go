@@ -26,14 +26,14 @@ const (
 	// digestBuffer is the read size for hashing a file.
 	digestBuffer = 1 << 20
 
-	// checksumWait is how long ServeChecksum waits for a hash it starts
-	// before answering 202, so a small file's checksum comes back at once.
-	checksumWait = time.Second
-
 	// checksumRetry is the Retry-After, in seconds, of a 202 from
 	// ServeChecksum.
 	checksumRetry = "5"
 )
+
+// checksumWait is how long ServeChecksum waits for a hash it starts before
+// answering 202, so a small file's checksum comes back at once.
+var checksumWait = time.Second //nolint:gochecknoglobals // tests shorten it
 
 // ErrChangedWhileHashing is returned for a file that changed while its
 // checksum was computed; its checksum is not kept.

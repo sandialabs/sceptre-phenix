@@ -7,10 +7,8 @@ import (
 	bt "phenix/web/broker/brokertypes"
 )
 
-// A client tracks which VMs in view are running from the broadcasts it is
-// sent: the running flag of the VM a message carries, else what the message's
-// action implies. An experiment stopping stops all of its VMs. A reply to the
-// client's own request changes nothing tracked.
+// A client tracks running VMs in view from broadcasts (the carried VM's flag,
+// else the action; an experiment stop stops all); its own replies change nothing.
 func TestClientTracksRunningVMs(t *testing.T) {
 	vm := func(name, action string) *bt.Resource { return bt.NewResource("experiment/vm", name, action) }
 	experiment := func(action string) *bt.Resource { return bt.NewResource("experiment", "exp", action) }

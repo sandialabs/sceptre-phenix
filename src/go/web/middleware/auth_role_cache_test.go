@@ -59,9 +59,8 @@ func useRoles(t *testing.T, roles map[string]string) *roleStore {
 	return s
 }
 
-// The no-auth and dev-auth modes give every request the same stored role:
-// they look it up once and reuse it, and answer 500 without caching the
-// failure when it cannot be found.
+// No-auth and dev-auth look up one stored role once and reuse it; a missing
+// role answers 500, uncached.
 //
 //nolint:paralleltest // replaces the store and the fixed role cache
 func TestFixedRoleModes(t *testing.T) {

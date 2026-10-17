@@ -14,6 +14,9 @@ import (
 	v1 "phenix/types/version/v1"
 )
 
+// passwordCost is the bcrypt cost of stored password hashes.
+var passwordCost = bcrypt.DefaultCost //nolint:gochecknoglobals // tests lower it
+
 /*
 version: v1
 kind: User
@@ -66,7 +69,7 @@ func NewUser(u, p string) *User {
 // CreateUser stores a new user u with password p. It returns an error wrapping
 // store.ErrExist when the user exists.
 func CreateUser(u, p string) (*User, error) {
-	hashed, err := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(p), passwordCost)
 	if err != nil {
 		return nil, fmt.Errorf("hashing password: %w", err)
 	}
@@ -182,7 +185,7 @@ func (u User) UpdatePassword(old, newPass string) error {
 		return err
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPass), passwordCost)
 	if err != nil {
 		return fmt.Errorf("generating password hash: %w", err)
 	}

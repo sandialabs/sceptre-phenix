@@ -5,31 +5,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"phenix/api/experiment"
 	"phenix/util/mm"
+	"phenix/util/polltest"
 	ft "phenix/web/forward/forwardtypes"
 )
-
-// within fails the test if fn does not return within 2 seconds.
-func within(t *testing.T, what string, fn func()) {
-	t.Helper()
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		fn()
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("%s took longer than 2s", what)
-	}
-}
 
 // gatedMM is a minimega whose tunnel commands wait on a gate, telling entered
 // when one starts.
@@ -115,19 +96,19 @@ func TestReapingDoesNotHoldForwards(t *testing.T) {
 		reapForwards()
 	}()
 
-	within(t, "the reaper asking minimega", func() { <-fake.entered })
+	polltest.Within(t, "the reaper asking minimega", func() { <-fake.entered })
 
-	within(t, "listing the other experiment's forwards", func() {
+	polltest.Within(t, "listing the other experiment's forwards", func() {
 		if got := listForwards(t, "b", "vm"); len(got) != 1 || got[0] != qemuB.ToKey() {
 			t.Errorf("forwards = %v, want %s", got, qemuB.ToKey())
 		}
 	})
 
-	within(t, "stopping the other experiment", func() { dropExperimentForwards("b") })
+	polltest.Within(t, "stopping the other experiment", func() { dropExperimentForwards("b") })
 
 	fake.release()
 
-	within(t, "the reaper finishing", func() { <-reaped })
+	polltest.Within(t, "the reaper finishing", func() { <-reaped })
 
 	// minimega listed no tunnels for a, so the reaper dropped its forward
 	if got := reapAll(); len(got) != 0 {
@@ -143,7 +124,7 @@ func TestCreateTunnelGivesUpAfterBoundedPorts(t *testing.T) {
 	fake.createErr = errors.New("listen tcp :50001: bind: address already in use")
 	fake.release()
 
-	within(t, "creating the forward", func() {
+	polltest.Within(t, "creating the forward", func() {
 		if err := createPortForward("exp", "vm", "0", "", "22", "u"); err == nil {
 			t.Error("created a forward with every port busy")
 		}
@@ -161,9 +142,8 @@ func TestCreateTunnelGivesUpAfterBoundedPorts(t *testing.T) {
 	}
 }
 
-// An experiment stopping while one of its forwards is being created drops
-// the forward. Its tunnel went with the experiment's VMs, and closing it would
-// recreate the experiment's minimega namespace.
+// Stopping an experiment during a forward's creation drops it; closing its
+// tunnel would recreate the namespace.
 //
 //nolint:paralleltest // replaces the store, minimega and the forwards
 func TestStopDuringCreateDropsTheForward(t *testing.T) {
@@ -173,14 +153,14 @@ func TestStopDuringCreateDropsTheForward(t *testing.T) {
 
 	go func() { created <- createPortForward("exp", "vm", "0", "", "22", "u") }()
 
-	within(t, "creating the tunnel", func() { <-fake.entered })
-	within(t, "stopping the experiment", func() { dropExperimentForwards("exp") })
+	polltest.Within(t, "creating the tunnel", func() { <-fake.entered })
+	polltest.Within(t, "stopping the experiment", func() { dropExperimentForwards("exp") })
 
 	fake.release()
 
 	var err error
 
-	within(t, "the create returning", func() { err = <-created })
+	polltest.Within(t, "the create returning", func() { err = <-created })
 
 	if !errors.Is(err, experiment.ErrExperimentNotRunning) {
 		t.Errorf("create returned %v, want %v", err, experiment.ErrExperimentNotRunning)

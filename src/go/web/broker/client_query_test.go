@@ -90,9 +90,8 @@ func TestParseVMListQuery(t *testing.T) {
 	}
 }
 
-// dialTestClient starts a client with role on a test WebSocket server, running
-// its read and write loops, and returns the server side client and the dialed
-// connection.
+// dialTestClient serves a client with role over a test WebSocket and returns
+// it with the dialed connection.
 func dialTestClient(t *testing.T, role rbac.Role) (*Client, *websocket.Conn) {
 	t.Helper()
 
@@ -245,9 +244,8 @@ func useExperiment(t *testing.T, nodes ...map[string]any) {
 	}
 }
 
-// A VM list request answers with the page of the experiment's VMs the client
-// may list, sorted and paged as asked, and puts that page in view for
-// screenshots.
+// A VM list answers with the page of VMs the client may list, sorted and
+// paged, and puts it in view.
 //
 //nolint:paralleltest // replaces the store
 func TestListVMs(t *testing.T) {

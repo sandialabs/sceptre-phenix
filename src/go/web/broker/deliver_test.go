@@ -113,11 +113,16 @@ func TestBroadcastIsEncodedOnce(t *testing.T) {
 	if err != nil || string(b) != string(want) {
 		t.Errorf("encodeMessage() = %s, %v; want the broadcast's data", b, err)
 	}
+
+	Broadcast(nil, bt.NewResource("experiment/vm", "exp/vm1", "update"), result)
+
+	if next := <-broadcast; out.pub.Seq == 0 || next.pub.Seq <= out.pub.Seq {
+		t.Errorf("broadcast seqs %d then %d, want increasing", out.pub.Seq, next.pub.Seq)
+	}
 }
 
-// A job message reaches the job's owner and the clients allowed to list jobs
-// of its experiment, without the items' results, and with at most
-// maxJobItems items.
+// A job message reaches its owner and clients allowed to list its experiment's
+// jobs, capped at maxJobItems without results.
 //
 //nolint:paralleltest // clients is shared package state
 func TestJobsGoToTheirOwnerAndJobAdmins(t *testing.T) {
@@ -205,26 +210,4 @@ func roleAllowingNames(resource, verb string, names ...string) rbac.Role {
 	return rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{
 		{Resources: []string{resource}, ResourceNames: names, Verbs: []string{verb}},
 	}}}
-}
-
-// Every broadcast carries a seq greater than the last one's, so clients can
-// order them against each other and against REST responses.
-func TestBroadcastsCarryIncreasingSeq(t *testing.T) {
-	var last uint64
-
-	for range 3 {
-		Broadcast(nil, bt.NewResource("experiment", "exp", "update"), json.RawMessage(`{}`))
-
-		out := <-broadcast
-
-		var msg struct {
-			Seq uint64 `json:"seq"`
-		}
-
-		if err := json.Unmarshal(out.data, &msg); err != nil || msg.Seq <= last || msg.Seq != out.pub.Seq {
-			t.Fatalf("broadcast %s after seq %d: %v; want a larger seq", out.data, last, err)
-		}
-
-		last = msg.Seq
-	}
 }

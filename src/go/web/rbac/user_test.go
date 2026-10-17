@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"phenix/store"
 	"phenix/store/storetest"
 )
@@ -13,6 +15,11 @@ import (
 //nolint:paralleltest // replaces the store
 func TestCreateUserExisting(t *testing.T) {
 	storetest.Use(t)
+
+	original := passwordCost
+	passwordCost = bcrypt.MinCost
+
+	t.Cleanup(func() { passwordCost = original })
 
 	if _, err := CreateUser("dave", "first"); err != nil {
 		t.Fatal(err)

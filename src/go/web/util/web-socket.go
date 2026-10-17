@@ -1,7 +1,6 @@
 package util
 
 import (
-	"context"
 	"io"
 	"net"
 	"time"
@@ -14,14 +13,6 @@ import (
 // proxyDialTimeout bounds connecting to the VNC or forward endpoint.
 const proxyDialTimeout = 10 * time.Second
 
-// dialProxy connects to the endpoint a websocket is proxied to; replaced in
-// tests.
-//
-//nolint:gochecknoglobals // see above
-var dialProxy = func(ctx context.Context, endpoint string) (net.Conn, error) {
-	return (&net.Dialer{Timeout: proxyDialTimeout}).DialContext(ctx, "tcp", endpoint) //nolint:exhaustruct // partial initialization
-}
-
 // Taken (almost) as-is from minimega/miniweb.
 
 func ConnectWSHandler(endpoint string) func(*websocket.Conn) {
@@ -31,8 +22,9 @@ func ConnectWSHandler(endpoint string) func(*websocket.Conn) {
 		ws.PayloadType = websocket.BinaryFrame
 
 		// connect to the remote host
-		// a client that leaves while connecting stops the dial
-		remote, err := dialProxy(ws.Request().Context(), endpoint)
+		dialer := &net.Dialer{Timeout: proxyDialTimeout} //nolint:exhaustruct // partial initialization
+
+		remote, err := dialer.DialContext(ws.Request().Context(), "tcp", endpoint)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "dialing websocket", "err", err)
 

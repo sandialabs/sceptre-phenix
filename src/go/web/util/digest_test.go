@@ -202,6 +202,11 @@ func TestServeChecksum(t *testing.T) {
 
 // Not parallel: it holds every one of Digests' hashers.
 func TestServeChecksumAnswers202WhileHashing(t *testing.T) {
+	original := checksumWait
+	checksumWait = 10 * time.Millisecond
+
+	t.Cleanup(func() { checksumWait = original })
+
 	path := downloadFile(t, "contents")
 
 	for range cap(Digests.hashers) {

@@ -11,9 +11,8 @@ import (
 	"phenix/store"
 )
 
-// GetPipelines lists each run's pipeline, saying whether it can be cleaned up
-// on its own, with the run executing, whether the SCORCH app is running and
-// the experiment's status, so the SCORCH pages need no other request.
+// GetPipelines lists each run's pipeline with cleanup, running run, app and
+// experiment status.
 //
 //nolint:paralleltest // starts the SCORCH processors and replaces the store
 func TestGetPipelines(t *testing.T) {
@@ -143,9 +142,8 @@ func TestGetPipeline(t *testing.T) {
 	}
 }
 
-// A break component waiting for attention in a nested loop marks the loops
-// above it unstable. If a loop above it can no longer be read, the update
-// fails and the pipelines keep being served.
+// A break waiting in a nested loop marks the loops above it unstable; an
+// unreadable loop fails the update and pipelines stay served.
 func TestBreakMarksTheLoopsAboveIt(t *testing.T) {
 	useScorch(t, map[string]any{"name": "looped", "start": []string{"a"}, "loop": map[string]any{"start": []string{"b"}}})
 
