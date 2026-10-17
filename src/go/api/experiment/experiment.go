@@ -12,7 +12,6 @@ import (
 
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mitchellh/mapstructure"
 
 	"phenix/api/config"
 	"phenix/app"
@@ -21,7 +20,6 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	"phenix/types/version"
-	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
@@ -954,24 +952,6 @@ func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool) error 
 	}
 
 	return nil
-}
-
-func Status(name string) (*v1.ExperimentStatus, error) {
-	c, _ := store.NewConfig("experiment/" + name)
-
-	err := store.Get(c)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get experiment status from store: %w", err)
-	}
-
-	var status v1.ExperimentStatus
-
-	err = mapstructure.Decode(c.Status, &status)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode experiment status: %w", err)
-	}
-
-	return &status, nil
 }
 
 func Running(name string) bool {

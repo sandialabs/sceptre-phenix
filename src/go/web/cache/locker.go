@@ -19,12 +19,6 @@ func UnlockExperiment(name string) {
 	Unlock(key)
 }
 
-func IsVMLocked(exp, name string) Status {
-	key := fmt.Sprintf("vm|%s/%s", exp, name)
-
-	return Locked(key)
-}
-
 func UnlockVM(exp, name string) {
 	key := fmt.Sprintf("vm|%s/%s", exp, name)
 
