@@ -49,6 +49,7 @@ import {
   setScenarios,
   setViewport,
   sizeOf,
+  snappedLinePoint,
   snappedPoint,
   sourceAnnotations,
   specInterfaceFor,
@@ -2530,6 +2531,13 @@ describe('snapping a point', () => {
 
     expect(Object.is(point.x, 0)).toBe(true);
     expect(Object.is(snappedPoint({}, { x: -0, y: 0 }, true).x, 0)).toBe(true);
+    const bend = snappedLinePoint(
+      { position: { x: 0, y: 0 } },
+      { x: -0.3, y: 0.2 },
+      { size: 16 },
+    );
+
+    expect(Object.is(bend.x, 0)).toBe(true);
   });
 
   const coordinate = fc.oneof(
@@ -2561,6 +2569,25 @@ describe('snapping a point', () => {
         },
       ),
       { numRuns: 300 },
+    );
+  });
+
+  test('a point of a line never lands on -0 either', () => {
+    fc.assert(
+      fc.property(
+        coordinate,
+        coordinate,
+        fc.integer({ min: -50, max: 50 }),
+        fc.integer({ min: 4, max: 200 }),
+        fc.boolean(),
+        (x, y, at, size, snap) => {
+          const line = { position: { x: at, y: -at } };
+          const bend = snappedLinePoint(line, { x, y }, { size, snap });
+
+          expect(Object.is(bend.x, -0) || Object.is(bend.y, -0)).toBe(false);
+        },
+      ),
+      { numRuns: 200 },
     );
   });
 });

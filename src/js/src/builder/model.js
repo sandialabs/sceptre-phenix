@@ -3173,7 +3173,7 @@ export function snappedLinePoint(node, point, grid) {
   const size = snapStep({ grid }, grid?.snap === true);
   const origin = node?.position || { x: 0, y: 0 };
   const snap = (value, start) =>
-    size > 0 ? onStep(start + value, size) - start : Math.round(value);
+    size > 0 ? onStep(start + value, size) - start : onStep(value, 0);
 
   return { x: snap(point.x, origin.x), y: snap(point.y, origin.y) };
 }
