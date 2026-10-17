@@ -136,8 +136,6 @@ func Start(opts ...ServerOption) error {
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
-	router.HandleFunc("/builder", GetBuilder).Methods("GET")
-	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
 
 	plog.Info(plog.TypeSystem, "setting up assets")
 
@@ -154,10 +152,6 @@ func Start(opts ...ServerOption) error {
 	)
 
 	router.PathPrefix("/assets/").Handler(
-		http.FileServer(assets),
-	)
-
-	router.PathPrefix("/grapheditor/").Handler(
 		http.FileServer(assets),
 	)
 
@@ -198,14 +192,6 @@ func Start(opts ...ServerOption) error {
 	api := router.PathPrefix("/api/v1").Subrouter()
 
 	// OPTIONS method needed for CORS
-	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/builder/topologies", weberror.ErrorHandler(CreateBuilderTopology)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(GetBuilderTopology)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(UpdateBuilderTopology)).
-		Methods("PUT", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")
@@ -221,10 +207,6 @@ func Start(opts ...ServerOption) error {
 
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(UpdateExperimentFromBuilder)).
-		Methods("PUT", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(UpdateExperiment)).

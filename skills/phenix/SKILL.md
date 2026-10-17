@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
 license: GPL-3.0-only
 ---
 
@@ -21,7 +21,6 @@ Detailed references and examples, loaded only when needed:
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
-| Graphical topology Builder: diagram model, translation to configs, endpoints, gotchas | [`references/builder.md`](references/builder.md) |
 | Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
@@ -135,16 +134,6 @@ Lifecycle: `create` → `schedule` (assign VMs to cluster hosts) → `start`
 An experiment also tracks runtime `status` (start time, per-VM schedule,
 per-app state, allocated VLANs) once started. The same fields are editable
 through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
-
-## Topology Builder
-
-Builder is the graphical topology editor at `/builder`, backed by an mxGraph
-XML model stored on the topology config in the `builder-xml` annotation.
-
-**Read [`references/builder.md`](references/builder.md)** before creating,
-editing, or translating a diagram. It carries the task routing table, the
-endpoints and payloads, the diagram-to-config translation rules, and the
-gotchas.
 
 ## CLI Overview
 

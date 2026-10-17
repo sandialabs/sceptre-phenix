@@ -6,10 +6,6 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Topology Builder**:
-  - **Topology Endpoints**: Added `POST /api/v1/builder/topologies` and `PUT /api/v1/builder/topologies/{name}` to create and save a topology and its diagram without touching an experiment; both refuse the write while an experiment built from that topology is running.
-  - **Default Disk Images**: Added the `$DEFAULT_VM_IMAGE` and `$DEFAULT_ROUTER_IMAGE` experiment variables, which set the disk image new VM and router nodes are created with.
-  - **API Documentation**: Documented the Builder routes in `openapi.yml`, which previously carried none of them.
 - **Documentation Sources**: Consolidate the phēnix MkDocs site into this repository so documentation changes can ship with the code they describe.
 - **Workflow CLI**: Added `phenix workflow apply <DIR|NAME>`, which deploys a topology directory (`phenix-configs/`, `phenix-injects/` and `phenix.yml`) in one command. `-n, --dry-run` validates everything and changes nothing, and `-f, --force` allows restarting a running experiment. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Settings**: Added `base-dir.injects` and `base-dir.topologies`, the directories `phenix workflow apply` stages injects in and looks up topology directories in. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
@@ -20,9 +16,6 @@ All notable changes to this project will be documented in this file.
 
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, and form controls, labelled the config selection checkboxes, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, and code colours, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
-- **Topology Builder**:
-  - **mxGraph**: Updated the vendored mxGraph from 4.1.0 to 4.2.2, the final release before the project was archived. Upstream changed the modifier that deletes a cell together with its connected edges from Shift to Ctrl.
-  - **Editor**: The sidebar node palettes now open expanded, the export dialog offers only the XML and SVG formats the server can produce, and the Help button opens the phēnix documentation instead of the defunct `minimega.org`.
 - **Topology validation**: Reject the node hostnames `all`, all-digit names, and `phenix` on Windows nodes, and warn about hostnames that may cause problems.
 - **Topology schema**: Require node hostnames to be at least 2 characters long.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
@@ -30,20 +23,8 @@ All notable changes to this project will be documented in this file.
 
 ### Removed
 
+- **Legacy Builder**: Removed the mxGraph Builder at `/builder` and its routes (`POST /builder/save`, `/api/v1/builder/topologies`, `/api/v1/experiments/builder`). See [Legacy Builder](https://phenix.sceptre.dev/latest/builder/legacy/).
 - **etcd Store (breaking)**: Removed the etcd data store, so `etcd://` store endpoints are no longer accepted; use a `bolt://` endpoint.
-
-### Fixed
-
-- **Topology Builder**:
-  - **Annotation Loss**: Saving a topology replaced the config's entire metadata annotation map, discarding every annotation other than `builder-xml`.
-  - **Crash on Invalid Input**: A schema-invalid topology crashed the handlers with a nil-pointer dereference instead of returning a validation error.
-  - **VLAN Aliases**: Updating an experiment replaced its whole alias map, discarding the IDs phēnix had allocated automatically; aliases are now rebuilt from the saved topology.
-  - **Missing Node Icons**: Diagrams lost the stencil directory on every `image=` style, so nodes rendered as missing images. All three import paths, including Edit Diagram, now restore it.
-  - **Node Types**: Importing JSON overwrote each node's phēnix `type` with `kvm` or `container`; icon selection now reads `general.vm_type` and `type` keeps a schema-valid role.
-  - **Downloads**: `POST /builder/save` served percent-encoded text as `text/plain` with a malformed attachment filename, and accepted empty or unsupported requests.
-  - **Authorization**: Using a scenario now requires update permission on it, creating a topology authorizes the named topology rather than the `configs` resource as a whole, and requests missing a name, topology, or diagram are rejected before the data store is touched.
-  - **Scenario Membership**: Adding a topology to a scenario now matches names exactly rather than by substring, and no longer creates duplicate or empty entries.
-  - **Clipped Dialogs and Panels**: Dialog buttons rendered outside their dialogs, dialog content rendered underneath pinned button rows, and the format panel cut off its buttons, option rows and tab title. The About dialog also drew a redundant corner close image next to its own Close button.
 
 ### Fixed
 

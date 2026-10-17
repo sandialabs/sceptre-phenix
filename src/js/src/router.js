@@ -127,7 +127,6 @@ const router = createRouter({
     },
 
     //static paths
-    { path: '/builder?token=:token', name: 'builder' },
     { path: '/version', name: 'version' },
     { path: '/features', name: 'features' },
     { path: '/api/v1/options', name: 'options' },

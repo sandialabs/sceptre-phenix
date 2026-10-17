@@ -186,28 +186,18 @@
         axiosInstance
           .get('configs/' + name, { headers: { Accept: 'application/json' } })
           .then((response) => {
-            if (this.isBuilderTopology(response.data)) {
-              this.$buefy.dialog.alert({
-                title: 'Built by Builder',
-                message: 'This configuration can only be edited in Builder',
-                confirmText: 'OK',
-                type: 'is-warning',
-                hasIcon: true,
-              });
-            } else {
-              this.config.obj = response.data;
-              this.config.str = this.getConfigStr('yaml');
+            this.config.obj = response.data;
+            this.config.str = this.getConfigStr('yaml');
 
-              if (this.config.obj.kind == 'Experiment') {
-                if (
-                  this.config.obj.status &&
-                  this.config.obj.status.startTime !== ''
-                ) {
-                  this.expStart = true;
-                }
+            if (this.config.obj.kind == 'Experiment') {
+              if (
+                this.config.obj.status &&
+                this.config.obj.status.startTime !== ''
+              ) {
+                this.expStart = true;
               }
-              this.editor.lang = 'yaml';
             }
+            this.editor.lang = 'yaml';
             this.editor.isLoading = false;
           })
           .catch((err) => {
@@ -496,14 +486,6 @@
           });
 
         this.isWaiting = false;
-      },
-      isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
-        }
-        return false;
       },
     },
     computed: {

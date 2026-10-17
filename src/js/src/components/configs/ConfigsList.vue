@@ -254,16 +254,10 @@
             </div>
           </b-tooltip>
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
         </template>
         <template v-else>
           {{ props.row.metadata.name }}
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
         </template>
       </b-table-column>
 
@@ -452,15 +446,6 @@
       // Matches store.Config.FullName, the name the server authorizes.
       configFullName(cfg) {
         return `${cfg.kind}/${cfg.metadata.name}`;
-      },
-      isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
-        }
-
-        return false;
       },
       download(configList) {
         const configs = configList.map(this.configFullName);

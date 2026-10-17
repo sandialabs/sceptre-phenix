@@ -56,14 +56,6 @@ are only available to Global Administrator or Global Viewer.
         >Scorch</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && roleAllowed('experiments', 'list')"
-        tag="a"
-        :href="builderLoc()"
-        target="_blank"
-        class="navbar-item"
-        >Builder</b-navbar-item
-      >
-      <b-navbar-item
         v-if="auth && roleAllowed('miniconsole', 'post')"
         tag="router-link"
         :to="{ name: 'console' }"
@@ -143,14 +135,6 @@ are only available to Global Administrator or Global Viewer.
             }
           }
         });
-      },
-
-      builderLoc() {
-        const phenixStore = usePhenixStore();
-        return this.$router.resolve({
-          name: 'builder',
-          params: { token: phenixStore.token },
-        }).href;
       },
     },
   };
