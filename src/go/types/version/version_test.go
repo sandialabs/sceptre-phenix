@@ -3,6 +3,7 @@ package version
 import (
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -46,6 +47,109 @@ func TestEmbeddedOpenAPISchemas(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigSchemasDocumented(t *testing.T) {
+	t.Parallel()
+
+	for _, schemaVersion := range []string{"v0", "v1", "v2"} {
+		t.Run(schemaVersion, func(t *testing.T) {
+			t.Parallel()
+
+			data, err := ReadSchemaFile(schemaVersion)
+			if err != nil {
+				t.Fatalf("ReadSchemaFile(%s) error = %v", schemaVersion, err)
+			}
+
+			doc, err := openapi3.NewLoader().LoadFromData(data)
+			if err != nil {
+				t.Fatalf("LoadFromData(%s schema) error = %v", schemaVersion, err)
+			}
+
+			if err := doc.Validate(t.Context()); err != nil {
+				t.Fatalf("Validate(%s schema) error = %v", schemaVersion, err)
+			}
+
+			for name, ref := range doc.Components.Schemas {
+				if ref == nil || ref.Value == nil {
+					t.Errorf("%s schema %s has no schema", schemaVersion, name)
+
+					continue
+				}
+
+				for _, problem := range undocumentedSchema(name, ref.Value) {
+					t.Errorf("%s schema %s", schemaVersion, problem)
+				}
+			}
+		})
+	}
+}
+
+// undocumentedSchema describes what schema, at path, and the properties under
+// it lack of a title, a description, or for a scalar an example, default or enum.
+func undocumentedSchema(path string, schema *openapi3.Schema) []string {
+	var problems []string
+
+	if schema.Title == "" {
+		problems = append(problems, path+" has no title")
+	}
+
+	if schema.Description == "" {
+		problems = append(problems, path+" has no description")
+	}
+
+	return append(problems, undocumentedSchemaProperties(path, schema)...)
+}
+
+// undocumentedSchemaProperties is undocumentedSchema for the properties, items
+// and branches under schema.
+func undocumentedSchemaProperties(path string, schema *openapi3.Schema) []string {
+	var problems []string
+
+	for name, ref := range schema.Properties {
+		propertyPath := path + "." + name
+
+		if ref == nil || ref.Value == nil {
+			problems = append(problems, propertyPath+" has no schema")
+
+			continue
+		}
+
+		property := ref.Value
+
+		if property.Title == "" {
+			problems = append(problems, propertyPath+" has no title")
+		}
+
+		if property.Description == "" {
+			problems = append(problems, propertyPath+" has no description")
+		}
+
+		if property.Type == openapi3.TypeString ||
+			property.Type == openapi3.TypeInteger ||
+			property.Type == openapi3.TypeNumber ||
+			property.Type == openapi3.TypeBoolean {
+			if property.Example == nil && property.Default == nil && len(property.Enum) == 0 {
+				problems = append(problems, propertyPath+" has no example, default, or enum")
+			}
+		}
+
+		problems = append(problems, undocumentedSchemaProperties(propertyPath, property)...)
+	}
+
+	if schema.Items != nil && schema.Items.Value != nil {
+		problems = append(problems, undocumentedSchemaProperties(path+"[]", schema.Items.Value)...)
+	}
+
+	for _, branches := range [][]*openapi3.SchemaRef{schema.AllOf, schema.AnyOf, schema.OneOf} {
+		for index, ref := range branches {
+			if ref != nil && ref.Value != nil {
+				problems = append(problems, undocumentedSchemaProperties(path+"["+strconv.Itoa(index)+"]", ref.Value)...)
+			}
+		}
+	}
+
+	return problems
 }
 
 func TestGetVersionedSchemaForKindRejectsEmptyKind(t *testing.T) {
@@ -174,53 +278,5 @@ func TestWorkflowSchemaKeywords(t *testing.T) {
 	var schemaErr *openapi3.SchemaError
 	if err := deployMode.VisitJSON("none"); !errors.As(err, &schemaErr) || schemaErr.SchemaField != "pattern" {
 		t.Errorf("spec.deployMode accepts none, or rejects it for another reason: %v", err)
-	}
-}
-
-// TestWorkflowSchemaDocumented proves the Workflow schema and every property
-// under it carry a title and a description, which the API docs and the schema
-// served at GET /api/v1/schemas/workflow/v0 show. The count pins that the walk
-// reaches the nested auto and vlanRange properties.
-func TestWorkflowSchemaDocumented(t *testing.T) {
-	t.Parallel()
-
-	root, err := GetVersionedValidatorForKind("Workflow", "v0")
-	if err != nil {
-		t.Fatalf("GetVersionedValidatorForKind(Workflow, v0) error = %v", err)
-	}
-
-	var (
-		visited int
-		walk    func(path string, schema *openapi3.Schema)
-	)
-
-	walk = func(path string, schema *openapi3.Schema) {
-		visited++
-
-		if schema.Title == "" {
-			t.Errorf("%s has no title", path)
-		}
-
-		if schema.Description == "" {
-			t.Errorf("%s has no description", path)
-		}
-
-		for name, ref := range schema.Properties {
-			if ref == nil || ref.Value == nil {
-				t.Errorf("%s.%s has no schema", path, name)
-
-				continue
-			}
-
-			walk(path+"."+name, ref.Value)
-		}
-	}
-
-	walk("Workflow", root)
-
-	// The schema itself, its 4 top-level properties, the 9 spec properties,
-	// the 3 auto properties and the 2 vlanRange properties.
-	if want := 1 + 4 + 9 + 3 + 2; visited != want {
-		t.Errorf("walked %d schemas, want %d", visited, want)
 	}
 }

@@ -6,6 +6,8 @@ paths: {}
 components:
   schemas:
     Image:
+      title: "Image"
+      description: "Schema describing the Image resource."
       type: object
       required:
       - format
@@ -15,19 +17,55 @@ components:
       - variant
       properties:
         compress:
+          title: "Compress"
+          description: "Whether to compress the disk image after creating it."
           type: boolean
           default: false
           example: false
-        deb_append:
-          type: string
-          example: --components=main,restricted
+        components:
+          title: "Components"
+          description: "Distribution components from which to install packages."
+          type: array
+          nullable: true
+          items:
+            type: string
+          example:
+          - main
+          - restricted
+        kernel:
+          title: "Kernel"
+          description: "Kernel command-line arguments included in the image."
+          type: array
+          nullable: true
+          items:
+            type: string
+          example:
+          - net.ifnames=0
+        no_virtuals:
+          title: "No Virtuals"
+          description: "Whether to omit virtual packages when resolving packages."
+          type: boolean
+          default: false
+          example: false
         format:
+          title: "Format"
+          description: "Output disk image format."
           type: string
+          enum:
+          - raw
+          - qcow2
+          - vmdk
+          - vdi
+          - vhdx
           example: qcow2
         mirror:
+          title: "Mirror"
+          description: "URL of the distribution mirror used to build the image."
           type: string
           example: http://us.archive.ubuntu.com/ubuntu/
         overlays:
+          title: "Overlays"
+          description: "Overlay directories applied while building the image."
           type: array
           nullable: true
           items:
@@ -35,6 +73,8 @@ components:
           example:
           - /phenix/vmdb/overlays/example-overlay
         packages:
+          title: "Packages"
+          description: "Additional packages installed in the image."
           type: array
           nullable: true
           items:
@@ -43,13 +83,19 @@ components:
           - isc-dhcp-client
           - openssh-server
         ramdisk:
+          title: "Ramdisk"
+          description: "Whether to build a kernel and initrd alongside the disk image."
           type: boolean
           default: false
           example: false
         release:
+          title: "Release"
+          description: "Distribution release used to build the image."
           type: string
           example: focal
         script_order:
+          title: "Script Order"
+          description: "Script names in the order they run during the image build."
           type: array
           nullable: true
           items:
@@ -57,6 +103,8 @@ components:
           example:
           - POSTBUILD_APT_CLEANUP
         scripts:
+          title: "Scripts"
+          description: "Named scripts available to the image build."
           type: object
           nullable: true
           additionalProperties:
@@ -64,32 +112,52 @@ components:
           example:
             POSTBUILD_APT_CLEANUP: |
               apt clean || apt-get clean || echo "unable to clean apt cache"
+        skip_default_packages:
+          title: "Skip Default Packages"
+          description: "Whether to omit the image builder default packages."
+          type: boolean
+          default: false
+          example: false
         size:
+          title: "Size"
+          description: "Target size of the generated disk image."
           type: string
           example: 10G
         variant:
+          title: "Variant"
+          description: "Distribution variant used to build the image."
           type: string
           example: minbase
     Role:
+      title: "Role"
+      description: "Schema describing the Role resource."
       type: object
       required:
       - policies
       - roleName
       properties:
         policies:
+          title: "Policies"
+          description: "Access policies assigned to this role."
           type: array
           items:
             type: object
             properties:
               resources:
+                title: "Resources"
+                description: "Resource types covered by this policy."
                 type: array
                 items:
                   type: string
               resourceNames:
+                title: "Resource Names"
+                description: "Resource names covered by this policy."
                 type: array
                 items:
                   type: string
               verbs:
+                title: "Verbs"
+                description: "Actions allowed on the listed resources."
                 type: array
                 items:
                   type: string
@@ -103,9 +171,13 @@ components:
             - list
             - get
         roleName:
+          title: "Role Name"
+          description: "Name assigned to this role."
           type: string
           example: Example Role
     User:
+      title: "User"
+      description: "Schema describing the User resource."
       type: object
       required:
       - first_name
@@ -113,40 +185,76 @@ components:
       - username
       properties:
         first_name:
+          title: "First Name"
+          description: "User given name."
           type: string
           example: John
         last_name:
+          title: "Last Name"
+          description: "User family name."
           type: string
           example: Doe
         password:
+          title: "Password"
+          description: "Password supplied for account creation or sign-in."
           type: string
           example: '<encrypted password>'
           readOnly: true
         rbac:
+          title: "RBAC"
+          description: "Role-based access control settings assigned to this user."
           allOf:
           - $ref: "#/components/schemas/Role"
           readOnly: true
         username:
+          title: "Username"
+          description: "Username used to identify the account."
           type: string
           example: johndoe@example.com
     Topology:
+      title: "Topology"
+      description: "Schema describing the Topology resource."
       type: object
-      required:
-      - nodes
+      anyOf:
+      - required:
+        - nodes
+      - required:
+        - includeTopologies
       properties:
+        includeTopologies:
+          title: "Included Topologies"
+          description: >-
+            Topology configs or file paths to merge into this topology. A
+            single value is read as a list of one.
+          nullable: true
+          anyOf:
+          - type: array
+            items:
+              type: string
+          - type: string
+          example:
+          - /phenix/topologies/common.yml
+          - shared-topology
         nodes:
+          title: "Nodes"
+          description: "Nodes that make up the topology."
           type: array
           items:
             oneOf:
             - $ref: '#/components/schemas/minimega_node'
             - $ref: '#/components/schemas/external_node'
+    # --8<-- [start:Scenario]
     Scenario:
+      title: "Scenario"
+      description: "Schema describing the Scenario resource."
       type: object
       nullable: true
       required:
       - apps
       properties:
         apps:
+          title: "Apps"
+          description: "Applications configured for this scenario."
           type: array
           nullable: true
           items:
@@ -155,12 +263,18 @@ components:
             - name
             properties:
               name:
+                title: "Name"
+                description: "Name used to identify this resource or entry."
                 type: string
                 example: example-app
               assetDir:
+                title: "Asset Directory"
+                description: "Directory containing assets made available to the application."
                 type: string
                 example: /phenix/topologies/example-topo/assets
               metadata:
+                title: "Metadata"
+                description: "Application-specific settings shared across its hosts."
                 type: object
                 nullable: true
                 additionalProperties: true
@@ -168,12 +282,26 @@ components:
                   setting0: true
                   setting1: 42
                   setting2: universe key
+              runPeriodically:
+                title: "Run Periodically"
+                description: "Interval at which the application running stage repeats."
+                type: string
+                example: 30s
               disabled:
+                title: "Disabled"
+                description: "Whether to skip this application."
                 type: boolean
                 default: false
                 example: false
                 nullable: true
+              fromScenario:
+                title: "From Scenario"
+                description: "Scenario inherited by this application configuration."
+                type: string
+                example: base-scenario
               hosts:
+                title: "Hosts"
+                description: "Host-specific application settings."
                 type: array
                 items:
                   type: object
@@ -181,9 +309,13 @@ components:
                   - hostname
                   properties:
                     hostname:
+                      title: "Hostname"
+                      description: "Hostname used to identify the node."
                       type: string
                       example: example-host
                     metadata:
+                      title: "Metadata"
+                      description: "Application-specific settings for this host."
                       type: object
                       nullable: true
                       additionalProperties: true
@@ -191,27 +323,46 @@ components:
                         setting0: true
                         setting1: 42
                         setting2: universe key
+    # --8<-- [end:Scenario]
     Experiment:
+      title: "Experiment"
+      description: "Schema describing the Experiment resource."
       type: object
       required:
       - topology
       properties:
         topology:
-          $ref: "#/components/schemas/Topology"
+          title: "Topology"
+          description: "Topology configuration embedded in or referenced by this resource."
+          allOf:
+          - $ref: "#/components/schemas/Topology"
         scenario:
-          $ref: "#/components/schemas/Scenario"
+          title: "Scenario"
+          description: "Scenario configuration embedded in or referenced by this resource."
+          type: object
+          nullable: true
+          allOf:
+          - $ref: "#/components/schemas/Scenario"
         baseDir:
+          title: "Base Dir"
+          description: "Working directory used by the experiment."
           type: string
           example: /phenix/topologies/example-topo
         experimentName:
+          title: "Experiment Name"
+          description: "Name of the experiment."
           type: string
           example: example-exp
           readOnly: true
         vlans:
+          title: "VLANs"
+          description: "VLAN IDs and aliases allocated to the experiment."
           type: object
           nullable: true
           properties:
             aliases:
+              title: "Aliases"
+              description: "Mapping from VLAN aliases to VLAN IDs."
               type: object
               nullable: true
               additionalProperties:
@@ -219,17 +370,50 @@ components:
               example:
                 MGMT: 200
             min:
+              title: "Min"
+              description: "Lowest VLAN ID available to the experiment."
+              example: 1
               type: integer
             max:
+              title: "Max"
+              description: "Highest VLAN ID available to the experiment."
+              example: 1
               type: integer
-        schedule:
+        schedules:
+          title: "Schedules"
+          description: "Mapping from VM hostnames to cluster hosts."
           type: object
           nullable: true
           additionalProperties:
             type: string
           example:
             ADServer: compute1
+        defaultBridge:
+          title: "Default Bridge"
+          description: "Bridge used for experiment VM interfaces by default."
+          type: string
+          nullable: true
+          maxLength: 15
+          example: phenix
+        deployMode:
+          title: "Deploy Mode"
+          description: "Cluster hosts eligible to run experiment VMs."
+          type: string
+          nullable: true
+          enum:
+          - all
+          - no-headnode
+          - only-headnode
+          example: all
+        useGREMesh:
+          title: "Use GRE Mesh"
+          description: "Whether cluster hosts use a GRE mesh for this experiment."
+          type: boolean
+          nullable: true
+          example: false
     minimega_node:
+      title: "Minimega Node"
+      description: "Schema describing the Minimega Node resource."
       type: object
       required:
       - type
@@ -237,6 +421,8 @@ components:
       - hardware
       properties:
         type:
+          title: "Type"
+          description: "Node role or resource type."
           type: string
           enum:
           - VirtualMachine
@@ -245,12 +431,33 @@ components:
           - Switch
           default: VirtualMachine
           example: VirtualMachine
+        annotations:
+          title: "Annotations"
+          description: "Free-form annotations associated with this node."
+          type: object
+          nullable: true
+          additionalProperties: true
+          example:
+            app: web
+        labels:
+          title: "Labels"
+          description: "String labels used to select or group nodes."
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+          example:
+            tier: frontend
         general:
+          title: "General"
+          description: "General node settings."
           type: object
           required:
           - hostname
           properties:
             hostname:
+              title: "Hostname"
+              description: "Hostname used to identify the node."
               # 2 to 63 letters, digits, and interior hyphens. Guest operating
               # systems phenix configures reject 1-character hostnames.
               #
@@ -268,9 +475,13 @@ components:
               pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$'
               example: ADServer
             description:
+              title: "Description"
+              description: "Human-readable description of this resource or entry."
               type: string
               example: Active Directory Server
             vm_type:
+              title: "VM Type"
+              description: "Virtualization type used to run the node."
               type: string
               enum:
               - kvm
@@ -279,38 +490,48 @@ components:
               default: kvm
               example: kvm
             snapshot:
+              title: "Snapshot"
+              description: "Whether to take a VM disk snapshot."
               type: boolean
               default: false
               example: false
               nullable: true
             do_not_boot:
+              title: "Do Not Boot"
+              description: "Whether to leave the node powered off when the experiment starts."
               type: boolean
               default: false
               example: false
               nullable: true
         hardware:
+          title: "Hardware"
+          description: "Virtual hardware assigned to the node."
           type: object
           required:
           - os_type
           - drives
           properties:
             cpu:
+              title: "CPU"
+              description: "CPU model presented to the virtual machine."
               type: string
               default: Broadwell
               example: Broadwell
             vcpus:
-              oneOf:
-              - type: integer
-              - type: string
+              title: "Virtual CPUs"
+              description: "Number of virtual CPUs assigned to the node."
+              type: integer
               default: 1
               example: 4
             memory:
-              oneOf:
-              - type: integer
-              - type: string
+              title: "Memory"
+              description: "Amount of memory assigned to the node."
+              type: integer
               default: 1024
               example: 8192
             os_type:
+              title: "OS Type"
+              description: "Guest operating system type."
               type: string
               enum:
               - centos
@@ -324,6 +545,8 @@ components:
               default: linux
               example: windows
             drives:
+              title: "Drives"
+              description: "Disk drives attached to the node."
               type: array
               minItems: 1
               items:
@@ -332,10 +555,14 @@ components:
                 - image
                 properties:
                   image:
+                    title: "Image"
+                    description: "Disk image used for this drive."
                     type: string
                     minLength: 1
                     example: ubuntu.qc2
                   interface:
+                    title: "Interface"
+                    description: "Bus interface type for the disk drive."
                     type: string
                     enum:
                     - ahci
@@ -350,6 +577,8 @@ components:
                     default: ide
                     example: ide
                   cache_mode:
+                    title: "Cache Mode"
+                    description: "Disk cache mode used by the virtual machine."
                     type: string
                     enum:
                     - none
@@ -361,17 +590,23 @@ components:
                     default: writeback
                     example: writeback
                   inject_partition:
+                    title: "Inject Partition"
+                    description: "Disk partition used for file injection."
                     type: integer
                     default: 1
                     example: 2
                     nullable: true
         network:
+          title: "Network"
+          description: "Network settings associated with this node."
           type: object
           nullable: true
           required:
           - interfaces
           properties:
             interfaces:
+              title: "Interfaces"
+              description: "Network interfaces attached to the node."
               type: array
               nullable: true
               items:
@@ -381,6 +616,8 @@ components:
                 - $ref: '#/components/schemas/dhcp_iface'
                 - $ref: '#/components/schemas/serial_iface'
             routes:
+              title: "Routes"
+              description: "Static routes configured for the node."
               type: array
               nullable: true
               items:
@@ -390,17 +627,25 @@ components:
                 - next
                 properties:
                   destination:
+                    title: "Destination"
+                    description: "Destination network or address for this route or rule."
                     type: string
                     example: 192.168.0.0/24
                   next:
+                    title: "Next"
+                    description: "Next-hop address for this route."
                     type: string
                     example: 192.168.1.254
                   cost:
+                    title: "Cost"
+                    description: "Route cost used when selecting a path."
                     type: integer
                     default: 1
                     example: 1
                     nullable: true
             ospf:
+              title: "OSPF"
+              description: "Open Shortest Path First routing settings."
               type: object
               nullable: true
               required:
@@ -408,9 +653,13 @@ components:
               - areas
               properties:
                 router_id:
+                  title: "Router Id"
+                  description: "Router ID advertised by OSPF."
                   type: string
                   example: 0.0.0.1
                 areas:
+                  title: "Areas"
+                  description: "OSPF areas configured on this node."
                   type: array
                   items:
                     type: object
@@ -419,10 +668,14 @@ components:
                     - area_networks
                     properties:
                       area_id:
+                        title: "Area Id"
+                        description: "Identifier of this OSPF area."
                         type: integer
                         example: 1
                         default: 1
                       area_networks:
+                        title: "Area Networks"
+                        description: "Networks advertised in this OSPF area."
                         type: array
                         items:
                           type: object
@@ -430,21 +683,31 @@ components:
                           - network
                           properties:
                             network:
+                              title: "Network"
+                              description: "IP network advertised in this OSPF area."
                               type: string
                               example: 10.1.25.0/24
                 dead_interval:
+                  title: "Dead Interval"
+                  description: "OSPF dead interval in seconds."
                   type: integer
                   nullable: true
                   example: 40
                 hello_interval:
+                  title: "Hello Interval"
+                  description: "OSPF hello interval in seconds."
                   type: integer
                   nullable: true
                   example: 10
                 retransmission_interval:
+                  title: "Retransmission Interval"
+                  description: "OSPF retransmission interval in seconds."
                   type: integer
                   nullable: true
                   example: 5
             rulesets:
+              title: "Rulesets"
+              description: "Firewall rulesets configured on the node."
               type: array
               nullable: true
               items:
@@ -455,12 +718,18 @@ components:
                 - rules
                 properties:
                   name:
+                    title: "Name"
+                    description: "Name used to identify this resource or entry."
                     type: string
                     example: OutToDMZ
                   description:
+                    title: "Description"
+                    description: "Human-readable description of this resource or entry."
                     type: string
                     example: From Corp to the DMZ network
                   default:
+                    title: "Default"
+                    description: "Default action applied when no rule matches."
                     type: string
                     enum:
                     - accept
@@ -468,6 +737,8 @@ components:
                     - reject
                     example: drop
                   rules:
+                    title: "Rules"
+                    description: "Firewall rules evaluated in this ruleset."
                     type: array
                     items:
                       type: object
@@ -477,12 +748,18 @@ components:
                       - protocol
                       properties:
                         id:
+                          title: "Id"
+                          description: "Unique identifier of this resource."
                           type: integer
                           example: 10
                         description:
+                          title: "Description"
+                          description: "Human-readable description of this resource or entry."
                           type: string
                           example: Allow UDP 10.1.26.80 ==> 10.2.25.0/24:123
                         action:
+                          title: "Action"
+                          description: "Action performed when the firewall rule matches."
                           type: string
                           enum:
                           - accept
@@ -490,6 +767,8 @@ components:
                           - reject
                           example: accept
                         protocol:
+                          title: "Protocol"
+                          description: "Network protocol matched by this rule."
                           type: string
                           enum:
                           - tcp
@@ -502,30 +781,70 @@ components:
                           default: tcp
                           example: tcp
                         source:
+                          title: "Source"
+                          description: "Source address and optional port matched by this rule."
                           type: object
                           nullable: true
                           required:
                           - address
                           properties:
                             address:
+                              title: "Address"
+                              description: "IP address or network address for this interface or rule."
                               type: string
                               example: 10.1.24.60
                             port:
+                              title: "Port"
+                              description: "Port number associated with this address or service."
                               type: integer
                               example: 3389
                         destination:
+                          title: "Destination"
+                          description: "Destination network or address for this route or rule."
                           type: object
                           nullable: true
                           required:
                           - address
                           properties:
                             address:
+                              title: "Address"
+                              description: "IP address or network address for this interface or rule."
                               type: string
                               example: 10.1.24.60
                             port:
+                              title: "Port"
+                              description: "Port number associated with this address or service."
                               type: integer
                               example: 3389
+                        stateful:
+                          title: "Stateful"
+                          description: "Whether the firewall rule tracks connection state."
+                          type: boolean
+                          example: true
+            nat:
+              title: "Nat"
+              description: "Network address translation mappings for this node."
+              type: array
+              nullable: true
+              items:
+                type: object
+                properties:
+                  in:
+                    title: "In"
+                    description: "Internal networks or interfaces mapped by this NAT rule."
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - 10.0.0.0/24
+                  out:
+                    title: "Out"
+                    description: "External interface used by this NAT rule."
+                    type: string
+                    example: eth0
         injections:
+          title: "Injections"
+          description: "Files to copy into the node disk before boot."
           type: array
           nullable: true
           items:
@@ -535,42 +854,102 @@ components:
             - dst
             properties:
               src:
+                title: "Source"
+                description: "Source file copied into the node disk."
                 type: string
                 example: foo.xml
               dst:
+                title: "Destination"
+                description: "Destination path for the injected file."
                 type: string
                 example: /etc/phenix/foo.xml
               description:
+                title: "Description"
+                description: "Human-readable description of this resource or entry."
                 type: string
                 example: phenix config file
               permissions:
+                title: "Permissions"
+                description: "File permissions to set on the injected file."
                 type: string
                 example: '0664'
+        deletions:
+          title: "Deletions"
+          description: "Files to remove from the node disk before boot."
+          type: array
+          nullable: true
+          items:
+            type: object
+            required:
+            - path
+            properties:
+              path:
+                title: "Path"
+                description: "Path to remove from the node disk."
+                type: string
+                minLength: 1
+                example: /etc/obsolete.conf
+              description:
+                title: "Description"
+                description: "Human-readable description of this resource or entry."
+                type: string
+                example: Remove the obsolete configuration file
+        overrides:
+          title: "Overrides"
+          description: "Minimega VM settings overridden for this node."
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+          example:
+            memory: "4096"
         delay:
+          title: "Delay"
+          description: "Conditions that delay the node start."
           type: object
           nullable: true
           properties:
             timer:
+              title: "Timer"
+              description: "Duration to wait before starting the node, in Go duration syntax such as 5m or 1h30m."
               type: string
+              pattern: '^$|^[-+]?(0|(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$'
               example: 5m
             user:
+              title: "User"
+              description: "Whether node start requires user confirmation."
+              example: false
               type: boolean
             c2:
+              title: "C2"
+              description: "Command-and-control hosts whose availability can release the delay."
               type: array
               nullable: true
               items:
                 type: object
                 properties:
                   hostname:
+                    title: "Hostname"
+                    description: "Hostname used to identify the node."
+                    example: node-01
                     type: string
                   useUUID:
+                    title: "Use UUID"
+                    description: "Whether to match the command-and-control host by UUID."
+                    example: false
                     type: boolean
         advanced:
+          title: "Advanced"
+          description: "Additional minimega VM settings."
           type: object
           nullable: true
           additionalProperties:
             type: string
+          example:
+            rtc.utc: "true"
         commands:
+          title: "Commands"
+          description: "Minimega commands to run for this node."
           type: array
           nullable: true
           items:
@@ -578,6 +957,8 @@ components:
           example:
           - exec df -h
     external_node:
+      title: "External Node"
+      description: "Schema describing the External Node resource."
       type: object
       required:
       - external
@@ -585,23 +966,55 @@ components:
       - general
       properties:
         external:
+          title: "External"
+          description: "Marks this node as an external host outside minimega."
+          example: true
           type: boolean
+          enum:
+          - true
+        annotations:
+          title: "Annotations"
+          description: "Free-form annotations associated with this node."
+          type: object
+          nullable: true
+          additionalProperties: true
+          example:
+            physical: true
+        labels:
+          title: "Labels"
+          description: "String labels used to select or group nodes."
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+          example:
+            tier: endpoint
         type:
+          title: "Type"
+          description: "Node role or resource type."
           type: string
           default: HIL
           example: HIL
         general:
+          title: "General"
+          description: "General node settings."
           type: object
           required:
           - hostname
           properties:
             hostname:
+              title: "Hostname"
+              description: "Hostname used to identify the node."
               type: string
               example: ADServer
             description:
+              title: "Description"
+              description: "Human-readable description of this resource or entry."
               type: string
               example: Active Directory Server
             vm_type:
+              title: "VM Type"
+              description: "Virtualization type used to run the node."
               type: string
               enum:
               - vm
@@ -610,28 +1023,34 @@ components:
               default: vm
               example: vm
         hardware:
+          title: "Hardware"
+          description: "Virtual hardware assigned to the node."
           type: object
           nullable: true
           required:
           - os_type
           properties:
             cpu:
+              title: "CPU"
+              description: "CPU model presented to the virtual machine."
               type: string
               default: Broadwell
               example: Broadwell
             vcpus:
-              oneOf:
-              - type: integer
-              - type: string
+              title: "Virtual CPUs"
+              description: "Number of virtual CPUs assigned to the node."
+              type: integer
               default: 1
               example: 4
             memory:
-              oneOf:
-              - type: integer
-              - type: string
+              title: "Memory"
+              description: "Amount of memory assigned to the node."
+              type: integer
               default: 1024
               example: 8192
             os_type:
+              title: "OS Type"
+              description: "Guest operating system type."
               type: string
               enum:
               - centos
@@ -645,12 +1064,16 @@ components:
               default: linux
               example: windows
         network:
+          title: "Network"
+          description: "Network settings associated with this node."
           type: object
           nullable: true
           required:
           - interfaces
           properties:
             interfaces:
+              title: "Interfaces"
+              description: "Network interfaces attached to the node."
               type: array
               items:
                 type: object
@@ -658,9 +1081,13 @@ components:
                 - name
                 properties:
                   name:
+                    title: "Name"
+                    description: "Name used to identify this resource or entry."
                     type: string
                     example: eth0
                   proto:
+                    title: "Protocol"
+                    description: "Network configuration protocol used by the interface."
                     type: string
                     enum:
                     - static
@@ -670,75 +1097,225 @@ components:
                     default: dhcp
                     example: static
                   address:
+                    title: "Address"
+                    description: "IP address or network address for this interface or rule."
                     type: string
                     format: ipv4
                     example: 192.168.1.100
                   mask:
+                    title: "Mask"
+                    description: "IPv4 network prefix length."
                     type: integer
                     minimum: 0
                     maximum: 32
                     default: 24
                     example: 24
                   gateway:
+                    title: "Gateway"
+                    description: "Default gateway for the interface."
                     type: string
                     format: ipv4
                     example: 192.168.1.1
                   vlan:
+                    title: "VLAN"
+                    description: "VLAN alias or identifier assigned to the interface."
                     type: string
                     example: EXP-1
+        injections:
+          title: "Injections"
+          description: "Files to copy into the node disk before boot."
+          type: array
+          nullable: true
+          items:
+            type: object
+            required:
+            - src
+            - dst
+            properties:
+              src:
+                title: "Source"
+                description: "Source file copied into the node disk."
+                type: string
+                minLength: 1
+                example: ./config.txt
+              dst:
+                title: "Destination"
+                description: "Destination path for the injected file."
+                type: string
+                minLength: 1
+                example: /etc/config.txt
+              description:
+                title: "Description"
+                description: "Human-readable description of this resource or entry."
+                type: string
+                example: Inject endpoint config
+              permissions:
+                title: "Permissions"
+                description: "File permissions to set on the injected file."
+                type: string
+                example: '0644'
+        deletions:
+          title: "Deletions"
+          description: "Files to remove from the node disk before boot."
+          type: array
+          nullable: true
+          items:
+            type: object
+            required:
+            - path
+            properties:
+              path:
+                title: "Path"
+                description: "Path to remove from the node disk."
+                type: string
+                minLength: 1
+                example: /tmp/obsolete
+              description:
+                title: "Description"
+                description: "Human-readable description of this resource or entry."
+                type: string
+                example: Remove obsolete endpoint file
+        overrides:
+          title: "Overrides"
+          description: "Minimega VM settings overridden for this node."
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+        delay:
+          title: "Delay"
+          description: "Conditions that delay the node start."
+          type: object
+          nullable: true
+          properties:
+            timer:
+              title: "Timer"
+              description: "Duration to wait before starting the node, in Go duration syntax such as 5m or 1h30m."
+              type: string
+              pattern: '^$|^[-+]?(0|(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$'
+              example: 5m
+            user:
+              title: "User"
+              description: "Whether node start requires user confirmation."
+              type: boolean
+              example: true
+            c2:
+              title: "C2"
+              description: "Command-and-control hosts whose availability can release the delay."
+              type: array
+              items:
+                type: object
+                properties:
+                  hostname:
+                    title: "Hostname"
+                    description: "Hostname used to identify the node."
+                    type: string
+                    example: c2-server
+                  useUUID:
+                    title: "Use UUID"
+                    description: "Whether to match the command-and-control host by UUID."
+                    type: boolean
+                    example: false
+        advanced:
+          title: "Advanced"
+          description: "Additional minimega VM settings."
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+        commands:
+          title: "Commands"
+          description: "Minimega commands to run for this node."
+          type: array
+          nullable: true
+          items:
+            type: string
+          example:
+          - exec hostname
     iface:
+      title: "Interface"
+      description: "Schema describing the Iface resource."
       type: object
       required:
       - name
       - vlan
       properties:
         name:
+          title: "Name"
+          description: "Name used to identify this resource or entry."
           type: string
           example: eth0
         vlan:
+          title: "VLAN"
+          description: "VLAN alias or identifier assigned to the interface."
           type: string
           example: EXP-1
         autostart:
+          title: "Autostart"
+          description: "Whether to bring the interface up when the node starts."
+          example: true
           type: boolean
           default: true
         mac:
+          title: "MAC"
+          description: "MAC address assigned to the interface."
           type: string
           example: 00:11:22:33:44:55
           pattern: '^$|^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]){2}$'
         mtu:
+          title: "MTU"
+          description: "Maximum transmission unit for the interface."
           type: integer
           default: 1500
           example: 1500
         bridge:
+          title: "Bridge"
+          description: "Minimega bridge to which the interface connects."
+          example: phenix
           type: string
           default: phenix
         driver:
+          title: "Driver"
+          description: "Virtual network adapter model."
           type: string
           example: e1000
         qinq:
+          title: "QinQ"
+          description: "Whether to enable VLAN stacking on the interface."
+          example: false
           type: boolean
           default: false
     iface_address:
+      title: "Interface Address"
+      description: "Schema describing the Iface Address resource."
       type: object
       required:
       - address
       - mask
       properties:
         address:
+          title: "Address"
+          description: "IP address or network address for this interface or rule."
           type: string
           format: ipv4
           example: 192.168.1.100
         mask:
+          title: "Mask"
+          description: "IPv4 network prefix length."
           type: integer
           minimum: 0
           maximum: 32
           default: 24
           example: 24
         gateway:
+          title: "Gateway"
+          description: "Default gateway for the interface."
           type: string
           format: ipv4
           example: 192.168.1.1
         dns:
+          title: "DNS Servers"
+          description: "DNS server address or addresses for the interface."
           nullable: true
           oneOf:
           - type: string
@@ -749,17 +1326,25 @@ components:
           - 192.168.1.1
           - 192.168.1.2
     iface_rulesets:
+      title: "Interface Rulesets"
+      description: "Schema describing the Iface Rulesets resource."
       type: object
       properties:
         ruleset_out:
+          title: "Ruleset Out"
+          description: "Outbound firewall ruleset applied to the interface."
           type: string
           example: OutToInet
           pattern: '^[\w-]*$'
         ruleset_in:
+          title: "Ruleset In"
+          description: "Inbound firewall ruleset applied to the interface."
           type: string
           example: InFromInet
           pattern: '^[\w-]*$'
     static_iface:
+      title: "Static Interface"
+      description: "Schema describing the Static Iface resource."
       allOf:
       - $ref: '#/components/schemas/iface'
       - $ref: '#/components/schemas/iface_address'
@@ -769,12 +1354,16 @@ components:
       - proto
       properties:
         type:
+          title: "Type"
+          description: "Node role or resource type."
           type: string
           enum:
           - ethernet
           default: ethernet
           example: ethernet
         proto:
+          title: "Protocol"
+          description: "Network configuration protocol used by the interface."
           type: string
           enum:
           - static
@@ -782,6 +1371,8 @@ components:
           default: static
           example: static
     dhcp_iface:
+      title: "DHCP Interface"
+      description: "Schema describing the Dhcp Iface resource."
       allOf:
       - $ref: '#/components/schemas/iface'
       - $ref: '#/components/schemas/iface_rulesets'
@@ -790,12 +1381,16 @@ components:
       - proto
       properties:
         type:
+          title: "Type"
+          description: "Node role or resource type."
           type: string
           enum:
           - ethernet
           default: ethernet
           example: ethernet
         proto:
+          title: "Protocol"
+          description: "Network configuration protocol used by the interface."
           type: string
           enum:
           - dhcp
@@ -803,6 +1398,8 @@ components:
           default: dhcp
           example: dhcp
     serial_iface:
+      title: "Serial Interface"
+      description: "Schema describing the Serial Iface resource."
       allOf:
       - $ref: '#/components/schemas/iface'
       - $ref: '#/components/schemas/iface_address'
@@ -815,24 +1412,32 @@ components:
       - device
       properties:
         type:
+          title: "Type"
+          description: "Node role or resource type."
           type: string
           enum:
           - serial
           default: serial
           example: serial
         proto:
+          title: "Protocol"
+          description: "Network configuration protocol used by the interface."
           type: string
           enum:
           - static
           default: static
           example: static
         udp_port:
+          title: "UDP Port"
+          description: "UDP port used by this serial interface."
           type: integer
           minimum: 0
           maximum: 65535
           default: 8989
           example: 8989
         baud_rate:
+          title: "Baud Rate"
+          description: "Serial communication speed in bits per second."
           type: integer
           enum:
           - 110
@@ -852,6 +1457,8 @@ components:
           default: 9600
           example: 9600
         device:
+          title: "Device"
+          description: "Serial device path used by this interface."
           type: string
           default: /dev/ttyS0
           example: /dev/ttyS0

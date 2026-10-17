@@ -41,18 +41,13 @@ ui:
 It is important to distinguish between the **System Configuration** and the **Data Store**:
 
 * **System Configuration (`config.yaml`)**: Configures the phēnix *daemon* itself. It controls *how* the service runs (e.g., log levels, API ports, storage backend connection strings).
-* **Data Store (BoltDB/etcd)**: Stores the *application state*. It holds *what* phēnix manages (e.g., defined experiments, topologies, user accounts, active VM states).
+* **Data Store (BoltDB)**: Stores the *application state*. It holds *what* phēnix manages (e.g., defined experiments, topologies, user accounts, active VM states).
 
 Deleting `config.yaml` resets daemon behavior to defaults. Deleting the Data Store results in data loss (experiments, users, etc.).
 
 ## Store Configuration
 
-The phenix tool uses a key-value data store. By default it uses bbolt but also supports etcd.
-
-* **bbolt (Default)**: No external dependencies, but only accessible on a single machine.
-* **etcd**: Allows running `phenix` on multiple machines accessing the same data, but requires an external `etcd` service.
-
-To use `etcd`, configure the store endpoint (e.g. `etcd://localhost:2379`) via the config file or `phenix settings set`.
+The phenix tool uses a bbolt key-value data store, a single file with no external dependencies that is only accessible on one machine. Set its path with the `bolt://` store endpoint (e.g. `bolt:///etc/phenix/store.bdb`).
 
 ## Managing Settings
 
@@ -100,7 +95,7 @@ The following global flags are supported by all `phenix` subcommands:
 | `--log.system.max-size` | `int` | `100` | Maximum size in megabytes of the system log file before rotation. |
 | `--log.system.path` | `string` | `/var/log/phenix/phenix.log` | Path to persistent system log in JSON Lines format, with one JSON object per line. |
 | `--mount-dir` | `string` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts. |
-| `--store.endpoint` | `string` | `bolt:///etc/phenix/store.bdb` | Endpoint for the storage service. |
+| `--store.endpoint` | `string` | `bolt:///etc/phenix/store.bdb` | BoltDB store endpoint (`bolt://<path>`). |
 | `--unix-socket` | `string` | `/tmp/phenix.sock` | phēnix unix socket to listen on (`ui` subcommand) or connect to. |
 | `--use-gre-mesh` | — | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. See [GRE Mesh](gre-mesh.md). |
 
@@ -135,6 +130,11 @@ no `config.yaml` or restart involved.
 | Log out idle users | Disabled | Enables the idle timeout. |
 | Idle timeout (minutes) | `30` | Minutes of inactivity before an idle user is logged out. |
 | Warning before logout (minutes) | `3` | How long before logout to warn the user. |
+
+The page opens on the settings it last loaded, so there is nothing to wait for;
+the refresh button in the header reloads them. `Reset Form` discards any unsaved
+changes and puts the loaded settings back, and both `Reset Form` and
+`Save Changes` stay disabled until you change something.
 
 ## phēnix Apps Environment Variables
 

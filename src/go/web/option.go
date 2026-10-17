@@ -19,9 +19,8 @@ const defaultJWTLifetime = 24 * time.Hour
 type ServerOption func(*serverOptions)
 
 type serverOptions struct {
-	endpoint  string
-	users     []string
-	allowCORS bool
+	endpoint string
+	users    []string
 
 	tlsKeyPath string
 	tlsCrtPath string
@@ -40,6 +39,8 @@ type serverOptions struct {
 	proxyAuthHeader string
 
 	features map[string]bool
+
+	websharkDir string
 
 	unixSocketGID int
 }
@@ -67,6 +68,11 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 
 	if _, err := os.Stat("downloads/tunneler"); err == nil {
 		so.features["tunneler-download"] = true
+	}
+
+	if dir, ok := findWebShark(); ok {
+		so.websharkDir = dir
+		so.features["webshark"] = true
 	}
 
 	return so
@@ -107,12 +113,6 @@ func ServeWithUsers(u []string) ServerOption {
 		if len(u) > 0 {
 			o.users = u
 		}
-	}
-}
-
-func ServeWithCORS(c bool) ServerOption {
-	return func(o *serverOptions) {
-		o.allowCORS = c
 	}
 }
 
@@ -174,16 +174,8 @@ func ServeWithProxyAuthHeader(h string) ServerOption {
 
 func ServeWithFeatures(f []string) ServerOption {
 	return func(o *serverOptions) {
-		if f == nil {
-			for k, v := range o.features {
-				if !v {
-					delete(o.features, k)
-				}
-			}
-		} else {
-			for _, feature := range f {
-				o.features[feature] = false
-			}
+		for _, feature := range f {
+			o.features[feature] = true
 		}
 	}
 }

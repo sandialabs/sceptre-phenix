@@ -191,8 +191,6 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
-	case CREATE, DELETE:
-		// TODO: implement
 	}
 }
 

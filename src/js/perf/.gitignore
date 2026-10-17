@@ -1,0 +1,8 @@
+node_modules/
+.lighthouseci/
+lighthouse-results/
+# written by the CI perf job (see README.md)
+size-limit.json
+perf-summary.json
+perf-summary.md
+baseline/

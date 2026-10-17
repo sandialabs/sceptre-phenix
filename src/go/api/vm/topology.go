@@ -1,10 +1,13 @@
 package vm
 
 import (
+	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	"phenix/api/experiment"
+	"phenix/types"
 	"phenix/util/cache"
 	"phenix/util/mm"
 )
@@ -24,17 +27,64 @@ type edge struct {
 	Length int `json:"length"`
 }
 
-func Topology(exp string, ignore []string) (topology, error) {
-	vms, err := List(exp)
+// topologySearchTTL bounds how long an experiment's topology search index is
+// kept. The index is keyed by the experiment's store revision, which every
+// edit, start and stop changes, so the bound only limits the memory it holds;
+// VM details minimega changes without a store write (an IP a VM takes by DHCP)
+// show once it expires.
+const topologySearchTTL = 30 * time.Second
+
+// topologySearchKey is the cache key of the experiment's search index.
+func topologySearchKey(exp *types.Experiment) string {
+	return fmt.Sprintf("experiment|%s|search|r%d", exp.Metadata.Name, exp.Metadata.Revision)
+}
+
+// TopologySearchIndex returns the experiment's topology search index, from the
+// cache while the experiment is unchanged, or built (and cached) anew.
+func TopologySearchIndex(exp string) (TopologySearch, error) {
+	stored, err := experiment.Get(exp)
 	if err != nil {
-		return topology{}, fmt.Errorf("getting VMs: %w", err)
+		return TopologySearch{}, fmt.Errorf("getting experiment %s: %w", exp, err)
+	}
+
+	if val, ok := cache.Get(topologySearchKey(stored)); ok {
+		if search, ok := val.(TopologySearch); ok {
+			return search, nil
+		}
+	}
+
+	_, search, err := topologyFor(context.Background(), stored, nil)
+
+	return search, err
+}
+
+// Topology returns the experiment's network topology. Once ctx is done, its
+// minimega commands give up (see mm.Context) and it returns an error wrapping
+// ctx's error.
+func Topology(ctx context.Context, exp string, ignore []string) (topology, error) {
+	stored, err := experiment.Get(exp)
+	if err != nil {
+		return topology{}, fmt.Errorf("getting VMs: getting experiment %s: %w", exp, err)
+	}
+
+	topo, _, err := topologyFor(ctx, stored, ignore)
+
+	return topo, err
+}
+
+// topologyFor is Topology for an experiment read from the store, also
+// returning its search index, which is cached unless ctx is done.
+func topologyFor(ctx context.Context, stored *types.Experiment, ignore []string) (topology, TopologySearch, error) {
+	vms := ListFor(ctx, stored)
+	if err := ctx.Err(); err != nil {
+		return topology{}, TopologySearch{}, fmt.Errorf("listing VMs of experiment %s: %w", stored.Metadata.Name, err)
 	}
 
 	var (
 		networks = make(map[string]mm.VM)
 		search   TopologySearch
 
-		cacheKey = fmt.Sprintf("experiment|%s|search", exp)
+		cacheKey = topologySearchKey(stored)
 		cached   bool
 
 		nodes  []mm.VM
@@ -104,15 +154,8 @@ func Topology(exp string, ignore []string) (topology, error) {
 	}
 
 	if !cached {
-		// TODO: cache with expire?
-		_ = cache.Set(cacheKey, search)
+		_ = cache.SetWithExpire(cacheKey, search, topologySearchTTL)
 	}
 
-	topo := topology{Nodes: nodes, Edges: edges} //nolint:exhaustruct // partial initialization
-
-	if exp, err := experiment.Get(exp); err == nil {
-		topo.Running = exp.Running()
-	}
-
-	return topo, nil
+	return topology{Nodes: nodes, Edges: edges, Running: stored.Running()}, search, nil
 }

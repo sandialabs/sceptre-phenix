@@ -28,6 +28,10 @@ const (
 	DefaultMaxBackups        = 3
 	MaxJSONErrorCount        = 3
 	MaxMissingFileIterations = 3
+
+	// fileHandlerName names the system log file's handler, which audit
+	// records reach whatever the log level.
+	fileHandlerName = "filelogger"
 )
 
 var (
@@ -90,7 +94,7 @@ func AddFileHandler(fname string, opts FileHandlerOpts) {
 			return a
 		},
 	}
-	handler.AddHandler("filelogger", slog.NewJSONHandler(&fileLogger, slogOpts))
+	handler.AddHandler(fileHandlerName, slog.NewJSONHandler(&fileLogger, slogOpts))
 
 	// change to a go thread for main release .. in case has to build
 	loadCache()
@@ -245,6 +249,8 @@ func (log *LogEntry) UnmarshalJSON(data []byte) error { //nolint:funlen // compl
 			}
 
 			log.Message = msg
+		case auditTimestampKey:
+			// the file's own time says when; keep the entry's text short
 		case "traceback":
 			if tb, ok := value.(string); ok {
 				traceback = tb
@@ -743,25 +749,6 @@ func checkCacheIntegrity() (bool, error) {
 	_ = saveCacheNoBlock()
 
 	return true, nil
-}
-
-func (c *Cache) RemoveDeletedFiles() {
-	logFiles := getLogFilesInDirectory()
-
-	var fileIDremove []int
-
-	for fileID, fileInfo := range c.FileMap {
-		if !slices.Contains(logFiles, fileInfo.Filename) {
-			fileIDremove = append(fileIDremove, fileID)
-			delete(c.FileMap, fileID)
-		}
-	}
-
-	for key, cacheHit := range c.Cache {
-		if slices.Contains(fileIDremove, cacheHit.File) {
-			delete(c.Cache, key)
-		}
-	}
 }
 
 func (c *Cache) AddMissingFiles() {

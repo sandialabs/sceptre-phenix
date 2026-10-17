@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -9,9 +10,11 @@ import (
 
 	"phenix/api/config"
 	"phenix/api/settings"
+	"phenix/store"
 	"phenix/util/plog"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -76,6 +79,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -142,11 +146,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := rbac.NewUser(req.Username, req.Password)
-
-	user.Spec.FirstName = req.FirstName
-	user.Spec.LastName = req.LastName
-
+	// check the role before storing anything, so an unknown role leaves no user
 	uRole, err := rbac.RoleFromConfig(req.RoleName)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "role not found", "role", req.RoleName)
@@ -164,7 +164,33 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		[]string{verbGet, verbPatch},
 	)
 
-	_ = user.SetRole(uRole)
+	user, err := rbac.CreateUser(req.Username, req.Password)
+	if errors.Is(err, store.ErrExist) {
+		http.Error(w, "user already exists", http.StatusConflict)
+
+		return
+	}
+
+	if err != nil {
+		plog.Error(plog.TypeSystem, "creating user", "user", req.Username, "err", err)
+		http.Error(w, "error creating user", http.StatusInternalServerError)
+
+		return
+	}
+
+	user.Spec.FirstName = req.FirstName
+	user.Spec.LastName = req.LastName
+
+	if err := user.SetRole(uRole); err != nil {
+		plog.Error(plog.TypeSystem, "setting user role", "user", req.Username, "err", err)
+
+		// do not leave a user without a role behind
+		_ = config.Delete("user/" + req.Username)
+
+		http.Error(w, "error setting user role", http.StatusInternalServerError)
+
+		return
+	}
 
 	resp := userFromRBAC(*user)
 
@@ -192,6 +218,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		req.Username,
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	//nolint:gosec // XSS via taint analysis
 	_, _ = w.Write(body)
 }
@@ -242,6 +269,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -434,6 +462,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -477,6 +506,8 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	revokeCaptureGrants("user deleted", func(g capability.Grant) bool { return g.User == uname }, "user", uname)
 
 	broker.Broadcast(
 		bt.NewRequestPolicy(resourceUsers, "delete", uname),

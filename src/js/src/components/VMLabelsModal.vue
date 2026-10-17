@@ -12,8 +12,9 @@
               class="textarea has-fixed-size"
               rows="1"
               v-model="props.row.value"
-              @input="resizeNoteTextArea(`note${props.index}`)"
-              @keypress="(evt) => noteKeyHandler(evt, `note${props.index}`)"
+              @input="(evt) => resizeNoteTextArea(evt.target)"
+              @keypress="noteKeyHandler"
+              @vue:mounted="({ el }) => resizeNoteTextArea(el)"
               :ref="`note${props.index}`"></textarea>
           </template>
           <template v-else>
@@ -98,7 +99,7 @@
   export default {
     props: {
       vmName: String,
-      experiment: String,
+      experiment: { type: String, required: true },
       tags: Object,
     },
 
@@ -120,28 +121,19 @@
           this.workingTags.push({ key: key, value: value });
         }
       }
-      // start with blank space
+      // start with blank space; b-table draws its rows after its columns, so
+      // nothing can be focused yet
       if (this.workingTags.length == 0) {
-        this.addTag();
+        this.workingTags.push({ key: '', value: '' });
       }
       if (this.workingNotes.length == 0) {
-        this.addNote();
+        this.workingNotes.push(this.blankNote());
       }
-
-      this.$nextTick(() => {
-        for (let i = 0; i < this.workingNotes.length; i++) {
-          this.resizeNoteTextArea(`note${i}`);
-        }
-      });
     },
 
     methods: {
       canEdit() {
-        return roleAllowed(
-          'vms',
-          'patch',
-          this.$route.params.id + '/' + this.vmName,
-        );
+        return roleAllowed('vms', 'patch', this.experiment + '/' + this.vmName);
       },
       deleteTag(row) {
         this.workingTags = this.workingTags.filter((e) => e !== row);
@@ -155,28 +147,27 @@
       deleteNote(row) {
         this.workingNotes = this.workingNotes.filter((e) => e !== row);
       },
+      blankNote() {
+        return { key: NOTES_KEY + new Date().toISOString(), value: '' };
+      },
       addNote() {
-        this.workingNotes.push({
-          key: NOTES_KEY + new Date().toISOString(),
-          value: '',
-        });
+        this.workingNotes.push(this.blankNote());
         this.$nextTick(() => {
           this.$refs[`note${this.workingNotes.length - 1}`].focus();
         });
       },
-      resizeNoteTextArea(ref) {
-        const textArea = this.$refs[ref];
+      resizeNoteTextArea(textArea) {
         textArea.style.height = 'auto';
         this.$nextTick(() => {
           textArea.style.height = textArea.scrollHeight + 'px';
         });
       },
-      noteKeyHandler(evt, ref) {
+      noteKeyHandler(evt) {
         if (evt.key === 'Enter' && evt.shiftKey) {
           this.addNote();
           evt.preventDefault();
         } else {
-          this.resizeNoteTextArea(ref);
+          this.resizeNoteTextArea(evt.target);
         }
       },
       save() {
@@ -186,26 +177,32 @@
           finalTags[row.key] = row.value;
         }
 
+        // a note with no text is left out
         for (const row of this.workingNotes) {
-          if (row.key == '' || row.key in finalTags) continue;
+          if (row.value.trim() == '' || row.key in finalTags) continue;
           finalTags[row.key] = row.value;
+        }
+
+        // SET replaces every tag, so keep the hidden ones this modal does not show
+        for (const [key, value] of Object.entries(this.tags)) {
+          if (!key.startsWith('__') || key.startsWith(NOTES_KEY)) continue;
+          if (!(key in finalTags)) finalTags[key] = value;
         }
 
         let update = { tag_update_mode: 'SET', tags: finalTags };
 
         if (isEqual(finalTags, this.tags)) {
-          console.log('No change made. Closing');
           this.$emit('close');
           return;
         }
 
         axiosInstance
           .patch(
-            'experiments/' + this.$route.params.id + '/vms/' + this.vmName,
+            'experiments/' + this.experiment + '/vms/' + this.vmName,
             update,
           )
           .then((response) => {
-            if (response.statusText === 'OK') {
+            if (response.status === 200) {
               this.$emit('saved');
               this.$emit('close');
             }

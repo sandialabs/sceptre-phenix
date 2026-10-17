@@ -12,6 +12,7 @@ import (
 
 	"phenix/api/settings"
 	"phenix/util/plog"
+	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -168,6 +169,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		u.LastName(),
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -361,6 +363,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	plog.Info(plog.TypeSecurity, "user signed in", "user", u.Username())
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -385,6 +388,13 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusInternalServerError)
 
 		return
+	}
+
+	// the capture grants given under the session end with it
+	if token != "" {
+		revokeCaptureGrants("signed out", func(g capability.Grant) bool {
+			return g.User == u.Username() && g.Session == token
+		}, "user", u.Username())
 	}
 
 	plog.Info(plog.TypeSecurity, "user logged out", "user", u.Username())
@@ -412,6 +422,21 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 			uname,
 			"action",
 			"users/patch/"+uname,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	// a token for another user lets its holder act as that user
+	if requester := middleware.UserFromContext(ctx); uname != requester && !role.Allowed("users/tokens", "create", uname) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating a token for another user not allowed",
+			"user",
+			requester,
+			"username",
+			uname,
 		)
 		http.Error(w, "forbidden", http.StatusForbidden)
 
@@ -503,6 +528,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 
 	plog.Info(plog.TypeSecurity, "create token for user", "user", u.Username())
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -550,5 +576,6 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }

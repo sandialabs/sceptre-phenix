@@ -14,6 +14,9 @@ import (
 	v1 "phenix/types/version/v1"
 )
 
+// passwordCost is the bcrypt cost of stored password hashes.
+var passwordCost = bcrypt.DefaultCost //nolint:gochecknoglobals // tests lower it
+
 /*
 version: v1
 kind: User
@@ -55,9 +58,20 @@ type User struct {
 }
 
 func NewUser(u, p string) *User {
-	hashed, err := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
+	user, err := CreateUser(u, p)
 	if err != nil {
 		return nil
+	}
+
+	return user
+}
+
+// CreateUser stores a new user u with password p. It returns an error wrapping
+// store.ErrExist when the user exists.
+func CreateUser(u, p string) (*User, error) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(p), passwordCost)
+	if err != nil {
+		return nil, fmt.Errorf("hashing password: %w", err)
 	}
 
 	spec := &v1.UserSpec{ //nolint:exhaustruct // partial initialization
@@ -73,10 +87,10 @@ func NewUser(u, p string) *User {
 	}
 
 	if err := store.Create(c); err != nil {
-		return nil
+		return nil, fmt.Errorf("storing user %s: %w", u, err)
 	}
 
-	return &User{Spec: spec, config: c}
+	return &User{Spec: spec, config: c}, nil
 }
 
 func GetUsers() ([]*User, error) {
@@ -171,7 +185,7 @@ func (u User) UpdatePassword(old, newPass string) error {
 		return err
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPass), passwordCost)
 	if err != nil {
 		return fmt.Errorf("generating password hash: %w", err)
 	}
@@ -280,7 +294,7 @@ func (u User) Role() (Role, error) {
 		return *disabled, nil
 	}
 
-	return Role{Spec: u.Spec.Role}, nil //nolint:exhaustruct // partial initialization
+	return *newRole(u.Spec.Role, nil), nil
 }
 
 func (u *User) SetRole(role *Role) error {

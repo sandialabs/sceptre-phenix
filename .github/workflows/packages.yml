@@ -9,6 +9,8 @@ on:
       - 'docs/**'
       - '.github/workflows/docs.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     branches: ['main']
     paths-ignore:
       - 'docs/**'
@@ -20,12 +22,13 @@ env:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   # Never cancel an in-progress tag build (release), but do cancel stale
   # in-progress runs for the same branch/PR when new commits supersede them.
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   build-and-publish:
+    if: github.event.action != 'closed'
     name: Build and Publish Docker & Debian Packages
     runs-on: ubuntu-latest
     permissions:
@@ -123,13 +126,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: gh release create "$RELEASE_TAG" build/deb/*.deb --generate-notes
-    outputs:
-      image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 
   # Mirrors the Docker build so the Containerfile can't silently drift, then
   # runs the finished image to catch a container that builds but cannot start.
   # Nothing is published: the image only ever exists on the runner.
   build-podman:
+    if: github.event.action != 'closed'
     name: Build and Smoke Test Podman Image
     runs-on: ubuntu-latest
     timeout-minutes: 90

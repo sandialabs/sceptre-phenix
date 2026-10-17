@@ -2,7 +2,6 @@ package web
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -10,7 +9,6 @@ import (
 	"inet.af/netaddr"
 
 	"phenix/api/vm"
-	"phenix/util/cache"
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -46,16 +44,25 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	topo, err := vm.Topology(name, ignore)
+	topo, err := vm.Topology(ctx, name, ignore)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		http.Error(w, "unable to get experiment topology", http.StatusBadRequest)
+
+		return
 	}
 
 	body, err := json.Marshal(topo)
 	if err != nil {
 		http.Error(w, "unable to convert topology", http.StatusInternalServerError)
+
+		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -87,23 +94,14 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheKey := fmt.Sprintf("experiment|%s|search", name)
+	search, err := vm.TopologySearchIndex(name)
+	if err != nil {
+		http.Error(w, "error getting experiment topology", http.StatusBadRequest)
 
-	val, ok := cache.Get(cacheKey)
-	if !ok {
-		if _, err := vm.Topology(name, nil); err != nil {
-			http.Error(w, "error getting experiment topology", http.StatusBadRequest)
-
-			return
-		}
-
-		val, _ = cache.Get(cacheKey)
+		return
 	}
 
-	var (
-		search, _ = val.(vm.TopologySearch)
-		nodes     []int
-	)
+	var nodes []int
 
 	// TODO: how to handle multiple terms? AND or OR?
 
@@ -152,5 +150,6 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }

@@ -169,12 +169,8 @@ var rootCmd = &cobra.Command{
 
 		common.StoreEndpoint = endpoint //nolint:reassign // configuration injection
 
-		// Initialize storage backend if not already done
-		if !store.IsInitialized(store.ComponentStore) {
-			err := store.Init(store.Endpoint(endpoint))
-			if err != nil {
-				return fmt.Errorf("initializing storage: %w", err)
-			}
+		if err := store.Init(store.Endpoint(endpoint)); err != nil {
+			return fmt.Errorf("initializing storage: %w", err)
 		}
 
 		// Initialize default configs if not already done
@@ -245,7 +241,7 @@ func argsWithUsage(validate cobra.PositionalArgs) cobra.PositionalArgs {
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }
 
@@ -448,7 +444,7 @@ func init() {
 	}
 
 	rootCmd.PersistentFlags().
-		StringVar(&storeEndpoint, "store.endpoint", defaultStore, "endpoint for storage service")
+		StringVar(&storeEndpoint, "store.endpoint", defaultStore, "BoltDB store endpoint (bolt://<path>)")
 	rootCmd.PersistentFlags().
 		String("log.system.path", defaultLogPath, "path to system log (JSON format)")
 

@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/gorilla/mux"
+	"pgregory.net/rapid"
 
 	"phenix/api/config"
 	"phenix/store"
@@ -419,6 +421,59 @@ func TestAddScenarioTopology(t *testing.T) {
 	if got := scenario.Metadata.Annotations["topology"]; got != "alpha,beta" {
 		t.Fatalf("topology annotation = %q, want %q", got, "alpha,beta")
 	}
+}
+
+// builderTopologyAnnotation is the scenario annotation that lists its topologies.
+const builderTopologyAnnotation = "topology"
+
+// builderScenarioTopologies returns the names a scenario's topology annotation lists.
+func builderScenarioTopologies(scenario *store.Config) []string {
+	var names []string
+
+	for name := range strings.SplitSeq(scenario.Metadata.Annotations[builderTopologyAnnotation], ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
+		}
+	}
+
+	return names
+}
+
+// Adding a topology appends it to the listed names unless they hold it already, and adding
+// it again changes nothing, whatever spacing and empty entries the annotation starts with.
+func TestAddScenarioTopologyProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		scenario := &store.Config{}
+
+		if rapid.Bool().Draw(t, "annotated") {
+			entries := rapid.SliceOfN(rapid.SampledFrom([]string{"alpha", " beta", "gamma ", "", "  "}), 0, 4).Draw(t, "entries")
+			scenario.Metadata.Annotations = store.Annotations{builderTopologyAnnotation: strings.Join(entries, ",")}
+		}
+
+		for _, topology := range rapid.SliceOfN(rapid.SampledFrom([]string{"alpha", "beta", "gamma", "delta"}), 1, 6).Draw(t, "added") {
+			before := builderScenarioTopologies(scenario)
+			want := before
+
+			if !slices.Contains(before, topology) {
+				want = append(slices.Clone(before), topology)
+			}
+
+			addScenarioTopology(scenario, topology)
+			after := scenario.Metadata.Annotations[builderTopologyAnnotation]
+
+			if got := builderScenarioTopologies(scenario); !slices.Equal(got, want) {
+				t.Fatalf("addScenarioTopology(%q) to %q = %q, want names %q", topology, before, got, want)
+			}
+
+			addScenarioTopology(scenario, topology)
+
+			if again := scenario.Metadata.Annotations[builderTopologyAnnotation]; again != after {
+				t.Fatalf("addScenarioTopology(%q) twice = %q, want %q as after once", topology, again, after)
+			}
+		}
+	})
 }
 
 func TestGetBuilderScenarioRequiresGetAndUpdate(t *testing.T) {

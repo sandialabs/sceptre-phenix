@@ -8,6 +8,10 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
+
 	"phenix/store"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
@@ -333,6 +337,74 @@ func TestStartupPreStartLinuxDomainScriptUsesC2(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(mmDir, "exp1", "linux1-domain.sh")); err != nil {
 		t.Fatalf("expected staged domain script: %v", err)
 	}
+}
+
+// startupCommand is a node command and whether the startup app generated it for that node.
+type startupCommand struct {
+	cmd   string
+	stale bool
+}
+
+// genStartupCommand draws a command the startup app generated for host in exp1, or one of another host or
+// experiment, or a user's command.
+func genStartupCommand(host string) *rapid.Generator[startupCommand] {
+	exp1 := &types.Experiment{Spec: &v1.ExperimentSpec{ExperimentNameF: "exp1"}}
+	exp2 := &types.Experiment{Spec: &v1.ExperimentSpec{ExperimentNameF: "exp2"}}
+
+	return rapid.Custom(func(t *rapid.T) startupCommand {
+		if rapid.Bool().Draw(t, "user") {
+			return startupCommand{cmd: rapid.SampledFrom([]string{
+				"exec df -h", "send exp1/notes.txt", "exec-once bash /tmp/miniccc/files/exp1/" + host + "-custom.sh",
+			}).Draw(t, "cmd")}
+		}
+
+		owner := rapid.SampledFrom([]string{host, host + "-x", "other"}).Draw(t, "owner")
+		exp := rapid.SampledFrom([]*types.Experiment{exp1, exp2}).Draw(t, "exp")
+		script := rapid.SampledFrom(startupC2ScriptNames(owner)).Draw(t, "script")
+		executor := rapid.SampledFrom([]startupC2Executor{startupC2Linux, startupC2Windows}).Draw(t, "executor")
+
+		send, exec, _ := startupC2Commands(exp, filepath.Join("/startup", script), executor)
+		cmd := rapid.SampledFrom([]string{send, exec}).Draw(t, "cmd")
+
+		return startupCommand{cmd: cmd, stale: owner == host && exp == exp1}
+	})
+}
+
+// removeStartupC2Commands drops exactly the commands generated for the node, keeps the rest in order, and
+// changes nothing when run again.
+func TestRemoveStartupC2CommandsProperties(t *testing.T) {
+	t.Parallel()
+
+	exp := &types.Experiment{Spec: &v1.ExperimentSpec{ExperimentNameF: "exp1"}}
+
+	rapid.Check(t, func(t *rapid.T) {
+		host := rapid.SampledFrom([]string{"linux1", "win1", "a-b"}).Draw(t, "host")
+		commands := rapid.SliceOfN(genStartupCommand(host), 0, 8).Draw(t, "commands")
+
+		node := &v1.Node{GeneralF: &v1.General{HostnameF: host}}
+
+		var want []string
+
+		for _, c := range commands {
+			node.CommandsF = append(node.CommandsF, c.cmd)
+
+			if !c.stale {
+				want = append(want, c.cmd)
+			}
+		}
+
+		removeStartupC2Commands(exp, node)
+
+		if diff := cmp.Diff(want, node.CommandsF, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("removeStartupC2Commands(%s) commands mismatch (-want +got):\n%s", host, diff)
+		}
+
+		removeStartupC2Commands(exp, node)
+
+		if diff := cmp.Diff(want, node.CommandsF, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("removeStartupC2Commands(%s) run again mismatch (-want +got):\n%s", host, diff)
+		}
+	})
 }
 
 // newStartupTestNode builds a minimal VM node with a real test disk path.

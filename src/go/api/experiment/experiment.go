@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
-	"path"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mitchellh/mapstructure"
 
 	"phenix/api/config"
 	"phenix/app"
@@ -21,9 +21,9 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	"phenix/types/version"
-	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/file"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 	"phenix/util/notes"
@@ -39,9 +39,11 @@ const (
 
 	// ReservedName is the experiment name [Create] refuses in any letter case.
 	ReservedName = "all"
-
-	c2CheckInterval = 5 * time.Second
 )
+
+// c2CheckInterval is how often the C2 clients C2-delayed VMs wait on are
+// checked.
+var c2CheckInterval = 5 * time.Second //nolint:gochecknoglobals // shortened by tests
 
 var (
 	ErrExperimentNotFound   = errors.New("experiment not found")
@@ -307,6 +309,26 @@ func Get(name string) (*types.Experiment, error) {
 	return exp, nil
 }
 
+// validateName rejects experiment names phenix or minimega reserve.
+func validateName(name string) error {
+	if name == "" {
+		return errors.New("no experiment name provided")
+	}
+
+	switch strings.ToLower(name) {
+	case ReservedName:
+		return fmt.Errorf("cannot use '%s' for experiment name", ReservedName)
+	case "minimega", "__phenix__":
+		// An experiment runs in the minimega namespace of the same name.
+		// minimega's default namespace is `minimega` (stopping the experiment
+		// would clear it), and phenix uses `__phenix__` to reach every cluster
+		// host.
+		return fmt.Errorf("cannot use '%s' for experiment name: reserved minimega namespace", name)
+	}
+
+	return nil
+}
+
 // Create uses the provided arguments to create a new experiment. The
 // `scenarioName` argument can be an empty string, in which case no scenario is
 // used for the experiment. The `baseDir` argument can be an empty string, in
@@ -316,12 +338,8 @@ func Get(name string) (*types.Experiment, error) {
 func Create(ctx context.Context, opts ...CreateOption) error {
 	o := newCreateOptions(opts...)
 
-	if o.name == "" {
-		return errors.New("no experiment name provided")
-	}
-
-	if strings.ToLower(o.name) == ReservedName {
-		return fmt.Errorf("cannot use '%s' for experiment name", ReservedName)
+	if err := validateName(o.name); err != nil {
+		return err
 	}
 
 	if o.topology == "" {
@@ -330,6 +348,10 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 
 	if len(o.defaultBridge) > MaxBridgeNameLength {
 		return fmt.Errorf("default bridge name must be %d characters or less", MaxBridgeNameLength)
+	}
+
+	if err := validateCreateAnnotations(o.annotations, o.nodeAnnotations); err != nil {
+		return err
 	}
 
 	var (
@@ -349,6 +371,9 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 	if err2 != nil {
 		return fmt.Errorf("decoding topology from config: %w", err2)
 	}
+
+	// topo is the experiment's own copy; the topology config is not saved
+	applyNodeAnnotations(topo, o.nodeAnnotations)
 
 	meta := store.ConfigMetadata{ //nolint:exhaustruct // partial initialization
 		Name: o.name,
@@ -714,13 +739,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			}
 		}
 
-		schedule := make(map[string]string)
-
-		for _, vm := range mm.GetVMInfo(mm.NS(exp.Spec.ExperimentName())) {
-			schedule[vm.Name] = vm.Host
-		}
-
-		exp.Status.SetSchedule(schedule)
+		exp.Status.SetSchedule(mm.GetVMHosts(mm.NS(exp.Spec.ExperimentName())))
 
 		var vlans map[string]int
 		vlans, err = mm.GetVLANs(mm.NS(exp.Spec.ExperimentName()))
@@ -742,7 +761,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	if o.errChan == nil {
 		if !o.dryrun {
 			if exp.Spec.Topology().HasCommands() {
-				err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), ccScript)
+				err = mm.ReadC2ScriptFromFile(exp.Spec.ExperimentName(), ccScript)
 				if err != nil {
 					errors := multierror.Append(
 						nil,
@@ -807,7 +826,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 			if !o.dryrun {
 				if exp.Spec.Topology().HasCommands() {
-					err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), ccScript)
+					err = mm.ReadC2ScriptFromFile(exp.Spec.ExperimentName(), ccScript)
 					if err != nil {
 						o.errChan <- fmt.Errorf("reading minimega cc script: %w", err)
 
@@ -951,24 +970,10 @@ func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool) error 
 	return nil
 }
 
-func Status(name string) (*v1.ExperimentStatus, error) {
-	c, _ := store.NewConfig("experiment/" + name)
-
-	err := store.Get(c)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get experiment status from store: %w", err)
-	}
-
-	var status v1.ExperimentStatus
-
-	err = mapstructure.Decode(c.Status, &status)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode experiment status: %w", err)
-	}
-
-	return &status, nil
-}
-
+// Running reports whether the experiment is running. Check it before asking
+// minimega about an experiment that may be stopped: any command sent to a
+// namespace creates it if it doesn't exist, and a namespace keeps the cluster
+// hosts it was created with, which the experiment's next start would reuse.
 func Running(name string) bool {
 	var err error
 	c, _ := store.NewConfig("experiment/" + name)
@@ -1000,20 +1005,8 @@ func Save(opts ...SaveOption) error {
 		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
-	if o.spec == nil {
-		if o.saveNilSpec {
-			c.Spec = nil
-		}
-	} else {
+	if o.spec != nil {
 		c.Spec = structs.MapDefaultCase(o.spec, structs.CASESNAKE)
-	}
-
-	if o.status == nil {
-		if o.saveNilStatus {
-			c.Status = nil
-		}
-	} else {
-		c.Status = structs.MapDefaultCase(o.status, structs.CASESNAKE)
 	}
 
 	err = store.Update(c)
@@ -1066,13 +1059,6 @@ func Reconfigure(name string) error {
 	err = config.Update(c.FullName(), c)
 	if err != nil {
 		return fmt.Errorf("updating experiment config: %w", err)
-	}
-
-	// Try deleting the minimega bridge associated with this experiment if we're
-	// not using the GRE mesh, just in case we were using it prior. Ignore any
-	// errors since they will occur if GRE wasn't being used.
-	if !exp.Spec.UseGREMesh() {
-		_ = mm.MeshSend(name, "", "ns del-bridge "+exp.Spec.DefaultBridge())
 	}
 
 	return nil
@@ -1239,41 +1225,38 @@ func Delete(name string) error {
 	return errors //nolint:wrapcheck // returning multierror
 }
 
-func Files(name, filter string) (file.Files, error) {
-	return file.GetExperimentFiles(name, filter) //nolint:wrapcheck // passthrough
+// FilesObserved lists the experiment's files matching filter, also reporting
+// when the listing was read from minimega. The listing may be a few seconds
+// old (see file.InvalidateExperimentFiles). It returns an error, not a partial
+// listing, when a cluster node could not be listed, or when ctx ended while
+// the listing waited for minimega (see file.GetExperimentFilesObserved).
+func FilesObserved(ctx context.Context, name, filter string) (file.Files, freshness.Observation, error) {
+	return file.GetExperimentFilesObserved(ctx, name, filter) //nolint:wrapcheck // passthrough
 }
 
-func File(name, filePath string) ([]byte, error) {
-	files, err := file.GetExperimentFiles(name, "")
+// InvalidateFiles makes the next FilesObserved call list the experiment's files anew,
+// for after phenix changes them.
+func InvalidateFiles(name string) {
+	file.InvalidateExperimentFiles(name)
+}
+
+// LocalFile returns the headnode path of one of the experiment's files, by its
+// path relative to the experiment's files directory as listed (see
+// FilesObserved), copying it to the headnode first if only a mesh node has it.
+// It refuses a pcap a running capture is still writing (a *CaptureWritingError,
+// which wraps mm.ErrCaptureExists).
+func LocalFile(name, filePath string) (string, error) {
+	clean, err := cleanFilePath(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("getting list of experiment files: %w", err)
+		return "", err
 	}
 
-	for _, c := range mm.GetExperimentCaptures(mm.NS(name)) {
-		if strings.Contains(c.Filepath, path.Base(filePath)) {
-			return nil, mm.ErrCaptureExists
-		}
+	err = captureChecker(name)(clean)
+	if err != nil {
+		return "", err
 	}
 
-	for _, f := range files {
-		if filePath == f.Path {
-			headnode, _ := os.Hostname()
-
-			_ = file.CopyFile(fmt.Sprintf("/%s/files/%s", name, f.Path), headnode, nil)
-
-			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f.Path)
-
-			var data []byte
-			data, err = os.ReadFile(path)
-			if err != nil {
-				return nil, fmt.Errorf("reading contents of file: %w", err)
-			}
-
-			return data, nil
-		}
-	}
-
-	return nil, errors.New("file not found")
+	return fetchFile(name, clean)
 }
 
 func deleteC2AndSnapshots(exp *types.Experiment) error {
@@ -1303,9 +1286,13 @@ func deleteSnapshots(exp *types.Experiment) error {
 	// including the hostname we ensure that only snapshots created for
 	// experiments by this headnode get deleted. This is important when multiple
 	// headnodes exist for a single minimega cluster.
+	//
+	// The snapshots are deleted together, by their exact names (see
+	// file.DeleteExistingFiles).
 	var (
-		expName  = exp.Metadata.Name
-		headnode = mm.Headnode()
+		expName   = exp.Metadata.Name
+		headnode  = mm.Headnode()
+		snapshots []string
 	)
 
 	for _, node := range exp.Spec.Topology().Nodes() {
@@ -1314,17 +1301,12 @@ func deleteSnapshots(exp *types.Experiment) error {
 		}
 
 		hostname := node.General().Hostname()
-		snapshot := fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname)
+		snapshots = append(snapshots, fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname))
+	}
 
-		err := file.DeleteFile(snapshot)
-		if err != nil {
-			return fmt.Errorf(
-				"deleting snapshot file for VM %s in experiment %s: %w",
-				hostname,
-				expName,
-				err,
-			)
-		}
+	err := file.DeleteExistingFiles(snapshots)
+	if err != nil {
+		return fmt.Errorf("deleting snapshot files for experiment %s: %w", expName, err)
 	}
 
 	return nil
@@ -1358,15 +1340,17 @@ func handleDelayedVMs(
 		}(host, delay)
 	}
 
-	for host, others := range c2s {
+	if len(c2s) > 0 {
 		wg.Add(1)
 
-		go func(host string, others map[string]bool) {
+		go func() {
 			defer wg.Done()
-			if err := waitForC2(ctx, ns, host, others); err != nil {
+
+			// at most one error per C2-delayed VM, so errChan has room for them
+			for _, err := range waitForC2(ctx, ns, c2s) {
 				errChan <- err
 			}
-		}(host, others)
+		}()
 	}
 
 	wg.Wait()
@@ -1419,53 +1403,106 @@ func waitForTimeDelay(ctx context.Context, ns, host string, delay time.Duration)
 	return nil
 }
 
-func waitForC2(
-	ctx context.Context,
-	ns, host string,
-	others map[string]bool,
-) error {
-	ticker := time.NewTicker(c2CheckInterval)
+// waitForC2 starts each C2-delayed VM (keyed by name in c2s, with the VMs it
+// waits on and whether each one's client is identified by UUID) once the C2
+// clients of all the VMs it waits on are active. It returns the errors from
+// starting them, and the context's error once for each VM still waiting when
+// the context is done.
+//
+// One loop serves every C2-delayed VM in the namespace, and each check asks
+// minimega about all the clients still waited on at once (mm.ActiveC2Clients).
+func waitForC2(ctx context.Context, ns string, c2s map[string]map[string]bool) []error {
+	var (
+		pending = maps.Clone(c2s)
+		errs    []error
+		ticker  = time.NewTicker(c2CheckInterval)
+	)
+
 	defer ticker.Stop()
 
-	for {
+	for len(pending) > 0 {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			for range pending {
+				errs = append(errs, ctx.Err())
+			}
+
+			return errs
 		case <-ticker.C:
+		}
+
+		active := mm.ActiveC2Clients(ns, waitedOnC2Clients(pending))
+
+		for _, host := range slices.Sorted(maps.Keys(pending)) {
+			others := pending[host]
+
 			done := true
 
 			for other, useUUID := range others {
-				opts := []mm.C2Option{
-					mm.C2NS(ns),
-					mm.C2VM(other),
-					mm.C2Timeout(1 * time.Second),
-				}
-
-				if useUUID {
-					opts = append(opts, mm.C2IDClientsByUUID())
-				}
-
-				if mm.IsC2ClientActive(opts...) != nil {
+				if !active[mm.C2ClientRef{VM: other, ByUUID: useUUID}] {
 					done = false
 
 					break
 				}
 			}
 
-			if done {
-				cmd := mmcli.NewNamespacedCommand(ns)
-				cmd.Command = "vm start " + host
-
-				err := mmcli.ErrorResponse(mmcli.Run(cmd))
-				if err != nil {
-					return NewDelayedVMError(host, err, "starting VM %s", host)
-				}
-
-				notes.AddInfo(ctx, true, fmt.Sprintf("C2 delayed VM %s started", host))
-				pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
-
-				return nil
+			if !done {
+				continue
 			}
+
+			delete(pending, host)
+
+			cmd := mmcli.NewNamespacedCommand(ns)
+			cmd.Command = "vm start " + host
+
+			err := mmcli.ErrorResponse(mmcli.Run(cmd))
+			if err != nil {
+				errs = append(errs, NewDelayedVMError(host, err, "starting VM %s", host))
+
+				continue
+			}
+
+			notes.AddInfo(ctx, true, fmt.Sprintf("C2 delayed VM %s started", host))
+			pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
 		}
 	}
+
+	return errs
+}
+
+// waitedOnC2Clients lists, once each, the C2 clients the pending VMs wait on.
+func waitedOnC2Clients(pending map[string]map[string]bool) []mm.C2ClientRef {
+	seen := make(map[mm.C2ClientRef]struct{})
+
+	var refs []mm.C2ClientRef
+
+	for _, others := range pending {
+		for other, useUUID := range others {
+			ref := mm.C2ClientRef{VM: other, ByUUID: useUUID}
+
+			if _, ok := seen[ref]; ok {
+				continue
+			}
+
+			seen[ref] = struct{}{}
+			refs = append(refs, ref)
+		}
+	}
+
+	slices.SortFunc(refs, func(a, b mm.C2ClientRef) int {
+		if c := strings.Compare(a.VM, b.VM); c != 0 {
+			return c
+		}
+
+		switch {
+		case a.ByUUID == b.ByUUID:
+			return 0
+		case b.ByUUID:
+			return -1
+		default:
+			return 1
+		}
+	})
+
+	return refs
 }

@@ -3,22 +3,21 @@
 </template>
 
 <script>
-  import axiosInstance from '@/utils/axios.js';
+  import { markRaw } from 'vue';
+
   import { usePhenixStore } from '@/store.js';
 
   import { Terminal } from '@xterm/xterm';
-  import { FitAddon } from '@xterm/addon-fit';
   import { AttachAddon } from '@xterm/addon-attach';
 
   import '@xterm/xterm/css/xterm.css';
 
   export default {
-    props: ['wsPath', 'resizePath'],
+    props: ['wsPath'],
     data() {
       return {
         socket: null,
         term: null,
-        fit: null,
         attach: null,
       };
     },
@@ -30,49 +29,33 @@
     },
 
     beforeUnmount() {
-      window.removeEventListener('resize', this.handleResize);
       this.teardownSocket();
+      if (this.term) {
+        this.term.dispose();
+        this.term = null;
+      }
     },
 
     mounted() {
-      const term = new Terminal();
-
-      this.fit = new FitAddon();
-      term.loadAddon(this.fit);
+      // xterm objects are markRaw: deep reactive proxies around their
+      // internals only add overhead to every write
+      const term = markRaw(new Terminal());
 
       term.open(this.$refs.xterm);
-
-      if (this.resizePath === undefined) {
-        term.resize(80, 30);
-      } else {
-        term.onResize((size) => {
-          var url =
-            this.resizePath + '?cols=' + size.cols + '&rows=' + size.rows;
-          axiosInstance.post(url).catch((err) => {
-            console.log(err);
-          });
-        });
-
-        this.fit.fit();
-        window.addEventListener('resize', this.handleResize);
-      }
+      term.resize(80, 30);
 
       this.term = term;
       this.setupTerminal();
     },
     methods: {
       setupTerminal() {
-        this.socket = new WebSocket(this.getWsUrl());
+        this.socket = markRaw(new WebSocket(this.getWsUrl()));
 
         // the attach addon throws on input if it is loaded before the
         // socket is open, so wait for onopen to wire it up
         this.socket.onopen = () => {
-          this.attach = new AttachAddon(this.socket);
+          this.attach = markRaw(new AttachAddon(this.socket));
           this.term.loadAddon(this.attach);
-
-          if (this.resizePath !== undefined) {
-            this.fit.fit();
-          }
         };
 
         this.socket.onerror = () => {
@@ -108,11 +91,6 @@
 
         let proto = window.location.protocol == 'https:' ? 'wss://' : 'ws://';
         return proto + window.location.host + path;
-      },
-      handleResize() {
-        if (this.fit) {
-          this.fit.fit();
-        }
       },
     },
   };

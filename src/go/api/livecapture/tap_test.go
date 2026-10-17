@@ -1,0 +1,628 @@
+package livecapture
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/activeshadow/libminimega/minicli"
+	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
+
+	"phenix/store"
+	"phenix/util/mm"
+	"phenix/util/mm/mmtest"
+	"phenix/util/polltest"
+)
+
+// fakeCluster fakes minimega and the store for "exp" capturing "vm" interfaces 0 and 1 into dir; compute1
+// reports those files under /phenix/images/exp/files, and they are read from dir through a fake minimega.
+type fakeCluster struct {
+	mm.MM
+
+	dir       string
+	host      string
+	running   atomic.Bool
+	capturing atomic.Bool
+	lookups   atomic.Int32 // of the VM's captures
+
+	mu      sync.Mutex
+	release chan struct{} // while set, mesh reads wait for it to close
+	waiting chan struct{} // closed once a mesh read waits on release
+}
+
+func (c *fakeCluster) GetVMCaptures(...mm.Option) []mm.Capture {
+	c.lookups.Add(1)
+
+	if !c.capturing.Load() {
+		return nil
+	}
+
+	return []mm.Capture{
+		{VM: "vm", Interface: 0, Filepath: c.capturePath(0)},
+		{VM: "vm", Interface: 1, Filepath: c.capturePath(1)},
+	}
+}
+
+func (c *fakeCluster) GetVMHost(...mm.Option) (string, error) {
+	return c.host, nil
+}
+
+func (c *fakeCluster) IsHeadnode(host string) bool {
+	return host == "headnode"
+}
+
+// path is where the interface's capture file is.
+func (c *fakeCluster) path(iface int) string {
+	return filepath.Join(c.dir, fmt.Sprintf("vm-%d.pcap", iface))
+}
+
+// capturePath is where minimega reports the interface's capture file.
+func (c *fakeCluster) capturePath(iface int) string {
+	if c.host == "headnode" {
+		return c.path(iface)
+	}
+
+	return fmt.Sprintf("/phenix/images/exp/files/vm-%d.pcap", iface)
+}
+
+// meshRead answers a mesh read of compute1's file, as meshReadScript would.
+func (c *fakeCluster) meshRead(cmd mmtest.Command) []*minicli.Response {
+	fields := strings.Fields(cmd.Base)
+
+	if !strings.HasPrefix(cmd.Base, "mesh send compute1 shell sh -c ") || len(fields) < 3 {
+		return []*minicli.Response{{Host: "head", Error: "unexpected command " + cmd.Base}}
+	}
+
+	c.mu.Lock()
+	release := c.release
+
+	if c.waiting != nil {
+		close(c.waiting)
+		c.waiting = nil
+	}
+	c.mu.Unlock()
+
+	if release != nil {
+		<-release
+	}
+
+	path := filepath.Join(c.dir, filepath.Base(fields[len(fields)-3]))
+	off, _ := strconv.Atoi(fields[len(fields)-2])
+	n, _ := strconv.Atoi(fields[len(fields)-1])
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []*minicli.Response{{Host: "compute1", Error: err.Error()}}
+	}
+
+	data = data[min(off, len(data)):min(off+n, len(data))]
+
+	return []*minicli.Response{mmtest.Text("compute1", base64.StdEncoding.EncodeToString(data))}
+}
+
+// stall makes mesh reads wait, as a read of a node that does not answer
+// does, until release is called. waiting is closed once a read is waiting.
+func (c *fakeCluster) stall() (<-chan struct{}, func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.release, c.waiting = make(chan struct{}), make(chan struct{})
+
+	return c.waiting, sync.OnceFunc(func() { close(c.release) })
+}
+
+// useFakeCluster fakes a cluster capturing on the headnode or another node, with short timings. An unused
+// Tap is kept until the test ends; set idleGrace before a Release to expire it sooner.
+func useFakeCluster(t *testing.T, remote bool) *fakeCluster {
+	t.Helper()
+
+	c := &fakeCluster{dir: t.TempDir(), host: "headnode"}
+	if remote {
+		c.host = "compute1"
+	}
+
+	for iface := range 2 {
+		if err := os.WriteFile(c.path(iface), nil, 0o600); err != nil {
+			t.Fatalf("creating the capture file of interface %d: %v", iface, err)
+		}
+	}
+
+	c.running.Store(true)
+	c.capturing.Store(true)
+
+	ctrl := gomock.NewController(t)
+
+	st := store.NewMockStore(ctrl)
+	st.EXPECT().Get(gomock.Any()).DoAndReturn(func(cfg *store.Config) error {
+		status := map[string]any{}
+		if c.running.Load() {
+			status["startTime"] = "2024-01-01T00:00:00Z"
+		}
+
+		*cfg = store.Config{
+			Version:  "phenix.sandia.gov/v1",
+			Kind:     "Experiment",
+			Metadata: store.ConfigMetadata{Name: "exp"},
+			Spec: map[string]any{
+				"experimentName": "exp",
+				"topology":       map[string]any{"nodes": []map[string]any{}},
+			},
+			Status: status,
+		}
+
+		return nil
+	}).AnyTimes()
+
+	var (
+		originalStore = store.DefaultStore
+		originalMM    = mm.DefaultMM
+		polls         = [4]time.Duration{localPoll, remotePoll, activeCheck, idleGrace}
+	)
+
+	store.DefaultStore = st //nolint:reassign // install test double
+	mm.DefaultMM = c        //nolint:reassign // install test double
+
+	mmtest.Use(t, c.meshRead)
+
+	t.Cleanup(func() {
+		// stop following before what it reads is put back
+		CloseAll()
+
+		store.DefaultStore = originalStore //nolint:reassign // restore default
+		mm.DefaultMM = originalMM          //nolint:reassign // restore default
+		localPoll, remotePoll, activeCheck, idleGrace = polls[0], polls[1], polls[2], polls[3]
+	})
+
+	localPoll, remotePoll, activeCheck, idleGrace = 5*time.Millisecond, 5*time.Millisecond, 20*time.Millisecond, time.Hour
+
+	return c
+}
+
+// write appends to the file minimega captures interface 0 to.
+func (c *fakeCluster) write(t *testing.T, b []byte) {
+	t.Helper()
+
+	f, err := os.OpenFile(c.path(0), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("opening the capture file: %v", err)
+	}
+
+	defer f.Close()
+
+	if _, err := f.Write(b); err != nil {
+		t.Fatalf("appending to the capture file: %v", err)
+	}
+}
+
+// waitFor waits for the Tap to reach a state.
+func waitFor(t *testing.T, tap *Tap, what string, ok func(State) bool) {
+	t.Helper()
+
+	deadline := time.After(5 * time.Second)
+
+	for {
+		st := tap.State()
+		if ok(st) {
+			return
+		}
+
+		select {
+		case <-st.Changed:
+		case <-deadline:
+			t.Fatalf("Tap.State() = %+v after 5s, want %s", st, what)
+		}
+	}
+}
+
+// stream is a Stream of a Tap into a buffer. out and sends are only read
+// once done has returned.
+type stream struct {
+	done    chan error    // what Stream returned
+	started chan struct{} // closed once the file header has been sent
+	out     bytes.Buffer
+	sends   []int // the length of each send
+}
+
+// collect streams the Tap into a buffer until it returns.
+func collect(tap *Tap, fromNow bool) *stream {
+	s := &stream{done: make(chan error, 1), started: make(chan struct{})}
+
+	go func() {
+		s.done <- tap.Stream(context.Background(), fromNow, func(b []byte) error {
+			s.out.Write(b)
+			s.sends = append(s.sends, len(b))
+
+			if len(s.sends) == 1 {
+				close(s.started)
+			}
+
+			return nil
+		})
+	}()
+
+	return s
+}
+
+func TestTapFollowsCapture(t *testing.T) { //nolint:paralleltest // replaces package state
+	for _, remote := range []bool{false, true} {
+		name := "headnode"
+		if remote {
+			name = "remote node"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			cluster := useFakeCluster(t, remote)
+
+			var (
+				header = pcapFile(binary.LittleEndian, 0xa1b2c3d4)
+				one    = record(binary.LittleEndian, 60)
+				two    = record(binary.LittleEndian, 1500)
+			)
+
+			// minimega has written the header, one record and part of the next
+			cluster.write(t, header)
+			cluster.write(t, one)
+			cluster.write(t, two[:700])
+
+			tap, err := Open("exp", "vm", 0)
+			if err != nil {
+				t.Fatalf("Open(exp, vm, 0) error = %v", err)
+			}
+
+			defer tap.Release()
+
+			waitFor(t, tap, "the first record", func(st State) bool { return st.CaughtUp })
+
+			// only whole records are readable
+			if got, want := tap.State().Size, int64(len(header)+len(one)); got != want {
+				t.Errorf("Tap.State().Size = %d, want %d", got, want)
+			}
+
+			s := collect(tap, false)
+
+			cluster.write(t, two[700:])
+			waitFor(t, tap, "the second record", func(st State) bool {
+				return st.Size == int64(len(header)+len(one)+len(two))
+			})
+
+			cluster.capturing.Store(false)
+
+			select {
+			case err := <-s.done:
+				if err != nil {
+					t.Errorf("Stream(fromNow false) after the capture stops error = %v, want nil", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("Stream(fromNow false) still running 5s after the capture stopped")
+			}
+
+			want := bytes.Join([][]byte{header, one, two}, nil)
+			if diff := cmp.Diff(want, s.out.Bytes()); diff != "" {
+				t.Errorf("Stream(fromNow false) bytes mismatch (-want +got):\n%s", diff)
+			}
+
+			// the file header is sent alone
+			if len(s.sends) == 0 || s.sends[0] != fileHeaderLen {
+				t.Errorf("Stream(fromNow false) send sizes = %v, want the first to be %d", s.sends, fileHeaderLen)
+			}
+
+			whole, err := io.ReadAll(io.NewSectionReader(tap, 0, tap.State().Size))
+			if err != nil {
+				t.Errorf("reading the whole Tap error = %v", err)
+			}
+
+			if diff := cmp.Diff(want, whole); diff != "" {
+				t.Errorf("reading the whole Tap mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestTapStreamFromNow(t *testing.T) { //nolint:paralleltest // replaces package state
+	cluster := useFakeCluster(t, false)
+
+	var (
+		header = pcapFile(binary.BigEndian, 0xa1b2c3d4)
+		old    = record(binary.BigEndian, 100)
+		fresh  = record(binary.BigEndian, 200)
+	)
+
+	cluster.write(t, append(header, old...))
+
+	tap, err := Open("exp", "vm", 0)
+	if err != nil {
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
+	}
+
+	defer tap.Release()
+
+	// what was captured before the stream starts is skipped, what comes after
+	// is streamed
+	waitFor(t, tap, "the backlog", func(st State) bool { return st.CaughtUp })
+
+	s := collect(tap, true)
+
+	select {
+	case <-s.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stream(fromNow true) sent no file header within 5s")
+	}
+
+	cluster.write(t, fresh)
+	waitFor(t, tap, "the new record", func(st State) bool {
+		return st.Size == int64(len(header)+len(old)+len(fresh))
+	})
+
+	cluster.capturing.Store(false)
+
+	if err := <-s.done; err != nil {
+		t.Errorf("Stream(fromNow true) after the capture stops error = %v, want nil", err)
+	}
+
+	// the header and the new record
+	if diff := cmp.Diff(append(append([]byte{}, header...), fresh...), s.out.Bytes()); diff != "" {
+		t.Errorf("Stream(fromNow true) bytes mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestTapStopsOnCorruptCapture(t *testing.T) { //nolint:paralleltest // replaces package state
+	cluster := useFakeCluster(t, false)
+	cluster.write(t, bytes.Repeat([]byte{0x0a}, 64))
+
+	tap, err := Open("exp", "vm", 0)
+	if err != nil {
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
+	}
+
+	defer tap.Release()
+
+	waitFor(t, tap, "the Tap to give up", func(st State) bool { return st.Done })
+
+	if err := <-collect(tap, false).done; !errors.Is(err, errNotPcap) {
+		t.Errorf("Stream(fromNow false) of a corrupt capture error = %v, want %v", err, errNotPcap)
+	}
+}
+
+func TestOpenSharesOneTapPerRunningCapture(t *testing.T) { //nolint:paralleltest // replaces package state
+	cluster := useFakeCluster(t, true)
+
+	// no check of a running capture's state, which would ask minimega too
+	activeCheck = time.Hour
+
+	// a stopped experiment has no captures, and asking minimega about one
+	// would recreate its namespace
+	cluster.running.Store(false)
+
+	if _, err := Open("exp", "vm", 0); !errors.Is(err, ErrNotCapturing) {
+		t.Errorf("Open(exp, vm, 0) in a stopped experiment error = %v, want %v", err, ErrNotCapturing)
+	}
+
+	if n := cluster.lookups.Load(); n != 0 {
+		t.Errorf("GetVMCaptures calls after Open() in a stopped experiment = %d, want 0", n)
+	}
+
+	cluster.running.Store(true)
+
+	first, err := Open("exp", "vm", 0)
+	if err != nil {
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
+	}
+
+	defer first.Release()
+
+	second, err := Open("exp", "vm", 0)
+	if err != nil {
+		t.Fatalf("second Open(exp, vm, 0) error = %v", err)
+	}
+
+	defer second.Release()
+
+	if first != second {
+		t.Errorf("second Open(exp, vm, 0) = %p, want the first Tap %p", second, first)
+	}
+
+	if n := cluster.lookups.Load(); n != 1 {
+		t.Errorf("GetVMCaptures calls after two Open(exp, vm, 0) = %d, want 1", n)
+	}
+
+	other, err := Open("exp", "vm", 1)
+	if err != nil {
+		t.Fatalf("Open(exp, vm, 1) error = %v", err)
+	}
+
+	defer other.Release()
+
+	if other == first {
+		t.Errorf("Open(exp, vm, 1) = %p, the Tap of interface 0; want a Tap of its own", other)
+	}
+
+	if _, err := Open("exp", "vm", 2); !errors.Is(err, ErrNotCapturing) {
+		t.Errorf("Open(exp, vm, 2) of an interface not captured error = %v, want %v", err, ErrNotCapturing)
+	}
+}
+
+func TestOpenKeepsAStoppedCaptureUntilItExpires(t *testing.T) { //nolint:paralleltest // replaces package state
+	cluster := useFakeCluster(t, true)
+	cluster.write(t, pcapFile(binary.LittleEndian, 0xa1b2c3d4))
+	cluster.write(t, record(binary.LittleEndian, 42))
+
+	tap, err := Open("exp", "vm", 0)
+	if err != nil {
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
+	}
+
+	waitFor(t, tap, "the record", func(st State) bool { return st.CaughtUp && st.Size > fileHeaderLen })
+
+	spool := tap.spool
+	if _, err := os.Stat(spool); err != nil {
+		t.Errorf("os.Stat(spool of a remote capture) error = %v", err)
+	}
+
+	// the capture stops: the finished Tap still serves all of it
+	cluster.capturing.Store(false)
+	waitFor(t, tap, "the capture to stop", func(st State) bool { return st.Done })
+
+	tap.Release()
+
+	again, err := Open("exp", "vm", 0)
+	if err != nil || again != tap {
+		t.Fatalf("Open(exp, vm, 0) of a stopped capture = %p, %v; want the finished Tap %p, nil", again, err, tap)
+	}
+
+	idleGrace = 50 * time.Millisecond
+
+	again.Release()
+
+	// expiry drops the Tap from the registry before removing its spool, so wait for both
+	polltest.Until(t, "the unused Tap expires and its spool is removed", func() bool {
+		registryMu.Lock()
+		_, held := registry["exp/vm/0"]
+		registryMu.Unlock()
+
+		_, err := os.Stat(spool)
+
+		return !held && os.IsNotExist(err)
+	})
+
+	if _, err := Open("exp", "vm", 0); !errors.Is(err, ErrNotCapturing) {
+		t.Errorf("Open(exp, vm, 0) after the Tap expires error = %v, want %v", err, ErrNotCapturing)
+	}
+}
+
+func TestCloseAllStopsEveryTap(t *testing.T) { //nolint:paralleltest // replaces package state
+	cluster := useFakeCluster(t, true)
+
+	var (
+		header = pcapFile(binary.LittleEndian, 0xa1b2c3d4)
+		one    = record(binary.LittleEndian, 42)
+	)
+
+	cluster.write(t, append(header, one...))
+
+	tap, err := Open("exp", "vm", 0)
+	if err != nil {
+		t.Fatalf("Open(exp, vm, 0) error = %v", err)
+	}
+
+	defer tap.Release()
+
+	waitFor(t, tap, "the record", func(st State) bool { return st.CaughtUp })
+
+	s := collect(tap, false)
+
+	// the node stops answering while the Tap is reading from it
+	waiting, release := cluster.stall()
+	defer release()
+
+	select {
+	case <-waiting:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Tap made no mesh read within 5s, want it to keep reading its capture")
+	}
+
+	closed := make(chan struct{})
+
+	go func() {
+		CloseAll()
+		close(closed)
+	}()
+
+	// the spool goes at once, without waiting for that read
+	polltest.Until(t, "the spool is removed while a read is in flight", func() bool {
+		_, err := os.Stat(tap.spool)
+
+		return os.IsNotExist(err)
+	})
+
+	release()
+
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("CloseAll() still running 5s after the mesh read returned")
+	}
+
+	// a reader still holding the Tap gets what was read, then its stream ends
+	select {
+	case err := <-s.done:
+		if err != nil {
+			t.Errorf("Stream(fromNow false) after CloseAll() error = %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stream(fromNow false) still running 5s after CloseAll()")
+	}
+
+	// what was read before closing
+	if diff := cmp.Diff(append(append([]byte{}, header...), one...), s.out.Bytes()); diff != "" {
+		t.Errorf("Stream(fromNow false) bytes mismatch (-want +got):\n%s", diff)
+	}
+
+	// the capture is still running: the next reader follows it afresh
+	again, err := Open("exp", "vm", 0)
+	if err != nil {
+		t.Fatalf("Open(exp, vm, 0) after CloseAll() error = %v", err)
+	}
+
+	defer again.Release()
+
+	if again == tap {
+		t.Errorf("Open(exp, vm, 0) after CloseAll() = %p, the closed Tap; want a new one", again)
+	}
+}
+
+// RemoveStaleSpools deletes the capture spools last written before the time
+// given, leaving newer spools and other temporary files.
+func TestRemoveStaleSpools(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	started := time.Now()
+
+	for name, age := range map[string]time.Duration{
+		"phenix-capture-1.pcap": time.Hour,
+		"phenix-capture-2.pcap": -time.Minute,
+		"other-1.pcap":          time.Hour,
+	} {
+		path := filepath.Join(tmp, name)
+		if err := os.WriteFile(path, []byte("spooled"), 0o600); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+
+		at := started.Add(-age)
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatalf("setting the times of %s: %v", name, err)
+		}
+	}
+
+	removed, err := RemoveStaleSpools(started)
+	if err != nil || removed != 1 {
+		t.Errorf("RemoveStaleSpools(start time) = %d, %v; want 1, nil", removed, err)
+	}
+
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatalf("os.ReadDir(TMPDIR) error = %v", err)
+	}
+
+	left := make([]string, 0, len(entries))
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+
+	if diff := cmp.Diff([]string{"other-1.pcap", "phenix-capture-2.pcap"}, left); diff != "" {
+		t.Errorf("files left after RemoveStaleSpools(start time) mismatch (-want +got):\n%s", diff)
+	}
+}

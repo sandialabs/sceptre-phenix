@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "runUrl": "https://github.com/sandialabs/sceptre-phenix/actions/runs/123",
+  "size": {
+    "status": "ok",
+    "rows": [
+      { "name": "Entry JS (loaded on every page)", "size": 149000 },
+      { "name": "Entry CSS", "size": 48074 }
+    ]
+  },
+  "lighthouse": {
+    "status": "ok",
+    "routes": [
+      {
+        "path": "/experiments",
+        "performance": 0.95,
+        "lcp": 900,
+        "totalByteWeight": 600000
+      }
+    ]
+  }
+}

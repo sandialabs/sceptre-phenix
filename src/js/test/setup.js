@@ -1,0 +1,18 @@
+// Runs before every test file; files that opt into node get no DOM.
+import { afterEach, beforeEach } from 'vitest';
+
+import { memoryStorage } from './helpers/storage.js';
+
+if (typeof document !== 'undefined') {
+  const { enableAutoUnmount } = await import('@vue/test-utils');
+
+  // Node's own localStorage shadows happy-dom's, so each test gets an empty one
+  beforeEach(() => {
+    globalThis.localStorage = memoryStorage();
+  });
+  // registered first so it runs last: the Buefy dialogs and toasts on the body
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+  enableAutoUnmount(afterEach);
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,11 +29,6 @@ import (
 const (
 	VVerbose  int = 1
 	VVVerbose int = 2
-)
-
-var (
-	ErrMinicccNotFound   = errors.New("miniccc executable not found")
-	ErrProtonukeNotFound = errors.New("protonuke executable not found")
 )
 
 const miniccc = "miniccc"
@@ -338,11 +334,10 @@ func List() ([]types.Image, error) {
 	return images, nil
 }
 
-// Update retrieves the named image configuration file from the store and will
-// update scripts. First, it will verify the script is present on disk. If so,
-// it will remove the existing script from the configuration file and update the
-// file with updated. It will return any errors encountered during the process
-// of creating a new image configuration, decoding it, or updating it in the
+// Update retrieves the named image configuration file from the store and
+// rereads each of its scripts that is present on disk, keeping the order the
+// scripts run in. It will return any errors encountered during the process of
+// creating a new image configuration, decoding it, or updating it in the
 // store.
 func Update(name string) error {
 	c, err := store.NewConfig("image/" + name)
@@ -360,23 +355,61 @@ func Update(name string) error {
 		return fmt.Errorf("decoding image spec: %w", err)
 	}
 
-	scripts := img.Scripts
+	reread := make(map[string]bool)
 
-	if len(scripts) > 0 {
-		for k := range scripts {
-			if _, statErr := os.Stat(k); statErr == nil {
-				delete(img.Scripts, k)
-				img.ScriptOrder = slices.DeleteFunc(img.ScriptOrder, func(script string) bool {
-					return script == k
-				})
+	// refresh replaces a configured script found on disk with its contents, once.
+	refresh := func(k string) (bool, error) {
+		if _, ok := img.Scripts[k]; !ok || reread[k] {
+			return false, nil
+		}
 
-				err = addScriptToImage(&img, k, "")
-				if err != nil {
-					return fmt.Errorf("adding script %s to image config: %w", k, err)
-				}
-			}
+		// a script that is not a file on disk, such as a URL, keeps its contents
+		if !fileExists(k) {
+			return false, nil
+		}
+
+		script, err := readScript(k)
+		if err != nil {
+			return false, fmt.Errorf("adding script %s to image config: %w", k, err)
+		}
+
+		img.Scripts[k] = script
+		reread[k] = true
+
+		return true, nil
+	}
+
+	// A reread script keeps its first place in the order, or goes last if it had none.
+	order := make([]string, 0, len(img.ScriptOrder))
+
+	for _, k := range img.ScriptOrder {
+		if reread[k] {
+			continue
+		}
+
+		if _, err = refresh(k); err != nil {
+			return err
+		}
+
+		order = append(order, k)
+	}
+
+	for _, k := range slices.Sorted(maps.Keys(img.Scripts)) {
+		if slices.Contains(order, k) {
+			continue
+		}
+
+		ok, err := refresh(k)
+		if err != nil {
+			return err
+		}
+
+		if ok {
+			order = append(order, k)
 		}
 	}
+
+	img.ScriptOrder = order
 
 	c.Spec = structs.MapDefaultCase(img, structs.CASESNAKE)
 
@@ -656,58 +689,74 @@ func InjectMiniExe(exe, disk, svc string) error { //nolint:funlen // complex log
 
 func addScriptToImage(img *v1.Image, name, script string) error {
 	if script == "" {
-		u, err := url.Parse(name)
-		if err != nil {
-			return fmt.Errorf("parsing script path: %w", err)
+		var err error
+
+		if script, err = readScript(name); err != nil {
+			return err
 		}
-
-		// Default to file scheme if no scheme provided.
-		if u.Scheme == "" {
-			u.Scheme = "file"
-		}
-
-		var (
-			loc  = u.Host + u.Path
-			body io.ReadCloser
-		)
-
-		switch u.Scheme {
-		case "http", "https":
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, name, nil)
-			if err != nil {
-				return fmt.Errorf("creating request for script: %w", err)
-			}
-
-			var resp *http.Response
-			resp, err = http.DefaultClient.Do(req) //nolint:bodyclose,gosec // body is closed below, SSRF via taint analysis
-			if err != nil {
-				return fmt.Errorf("getting script via HTTP(s): %w", err)
-			}
-
-			body = resp.Body
-		case "file":
-			body, err = os.Open(loc) //nolint:gosec // Path traversal via taint analysis
-			if err != nil {
-				return fmt.Errorf("opening script file: %w", err)
-			}
-		default:
-			return fmt.Errorf("scheme %s not supported for scripts", u.Scheme)
-		}
-
-		defer func() { _ = body.Close() }()
-
-		contents, err := io.ReadAll(body)
-		if err != nil {
-			return fmt.Errorf("processing script %s: %w", name, err)
-		}
-
-		script = string(contents)
 	}
 
 	img.Scripts[name] = script
 	img.ScriptOrder = append(img.ScriptOrder, name)
 
 	return nil
+}
+
+// fileExists reports whether [os.Stat] finds path.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+
+	return err == nil
+}
+
+// readScript reads the script at name, a file path or an HTTP(S) URL.
+func readScript(name string) (string, error) {
+	u, err := url.Parse(name)
+	if err != nil {
+		return "", fmt.Errorf("parsing script path: %w", err)
+	}
+
+	// Default to file scheme if no scheme provided.
+	if u.Scheme == "" {
+		u.Scheme = "file"
+	}
+
+	var (
+		loc  = u.Host + u.Path
+		body io.ReadCloser
+	)
+
+	switch u.Scheme {
+	case "http", "https":
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, name, nil)
+		if err != nil {
+			return "", fmt.Errorf("creating request for script: %w", err)
+		}
+
+		var resp *http.Response
+		resp, err = http.DefaultClient.Do(req) //nolint:bodyclose,gosec // body is closed below, SSRF via taint analysis
+		if err != nil {
+			return "", fmt.Errorf("getting script via HTTP(s): %w", err)
+		}
+
+		body = resp.Body
+	case "file":
+		body, err = os.Open(loc) //nolint:gosec // Path traversal via taint analysis
+		if err != nil {
+			return "", fmt.Errorf("opening script file: %w", err)
+		}
+	default:
+		return "", fmt.Errorf("scheme %s not supported for scripts", u.Scheme)
+	}
+
+	defer func() { _ = body.Close() }()
+
+	contents, err := io.ReadAll(body)
+	if err != nil {
+		return "", fmt.Errorf("processing script %s: %w", name, err)
+	}
+
+	return string(contents), nil
 }
 
 func inject(disk string, injects ...string) error {

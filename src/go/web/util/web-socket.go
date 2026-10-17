@@ -1,14 +1,17 @@
 package util
 
 import (
-	"context"
 	"io"
 	"net"
+	"time"
 
 	"golang.org/x/net/websocket"
 
 	"phenix/util/plog"
 )
+
+// proxyDialTimeout bounds connecting to the VNC or forward endpoint.
+const proxyDialTimeout = 10 * time.Second
 
 // Taken (almost) as-is from minimega/miniweb.
 
@@ -19,7 +22,9 @@ func ConnectWSHandler(endpoint string) func(*websocket.Conn) {
 		ws.PayloadType = websocket.BinaryFrame
 
 		// connect to the remote host
-		remote, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", endpoint) //nolint:exhaustruct // partial initialization
+		dialer := &net.Dialer{Timeout: proxyDialTimeout} //nolint:exhaustruct // partial initialization
+
+		remote, err := dialer.DialContext(ws.Request().Context(), "tcp", endpoint)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "dialing websocket", "err", err)
 

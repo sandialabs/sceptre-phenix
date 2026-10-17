@@ -32,7 +32,7 @@ func findCaptureSubcommand(t *testing.T, name string) *cobra.Command {
 }
 
 // captureCmdTestMM is a test double for mm.MM used by the vm capture CLI
-// tests below. Embedding the (nil) mm.MM interface means any method call
+// tests. Embedding the (nil) mm.MM interface means any method call
 // this test doesn't stub will panic, which is fine since these tests only
 // ever exercise the capture-related methods.
 type captureCmdTestMM struct {

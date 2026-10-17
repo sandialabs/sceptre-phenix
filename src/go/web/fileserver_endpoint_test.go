@@ -1,6 +1,13 @@
 package web
 
-import "testing"
+import (
+	"net"
+	"strconv"
+	"strings"
+	"testing"
+
+	"pgregory.net/rapid"
+)
 
 func TestNormalizeFileServerEndpoint(t *testing.T) {
 	tests := []struct {
@@ -21,6 +28,12 @@ func TestNormalizeFileServerEndpoint(t *testing.T) {
 		{name: "missing port", value: "localhost", wantErr: true},
 		{name: "invalid port", value: "127.0.0.1:notaport", wantErr: true},
 		{name: "port out of range", value: "99999", wantErr: true},
+		{name: "padded zero", value: "00", wantErr: true},
+		{name: "signed zero", value: "-0", wantErr: true},
+		{name: "plus sign", value: "+80", wantErr: true},
+		{name: "host and zero port", value: "127.0.0.1:0", wantErr: true},
+		{name: "host and signed port", value: "127.0.0.1:+80", wantErr: true},
+		{name: "padded port", value: "080", endpoint: "127.0.0.1:080"},
 	}
 
 	for _, tt := range tests {
@@ -42,4 +55,65 @@ func TestNormalizeFileServerEndpoint(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fileserverEndpointPort is a port as the option spells it, and whether it is
+// a port number a listener takes.
+type fileserverEndpointPort struct {
+	spelled string
+	valid   bool
+}
+
+// genFileserverEndpointPort draws numbers in and out of the port range, zero
+// padded or signed at times, and words that are no number.
+func genFileserverEndpointPort() *rapid.Generator[fileserverEndpointPort] {
+	return rapid.Custom(func(t *rapid.T) fileserverEndpointPort {
+		if rapid.Bool().Draw(t, "word") {
+			return fileserverEndpointPort{spelled: rapid.StringMatching(`[0-9]{0,2}[a-z][a-z0-9]{0,3}`).Draw(t, "spelled")}
+		}
+
+		n := rapid.OneOf(rapid.IntRange(0, 70000), rapid.SampledFrom([]int{0, 1, 65535, 65536})).Draw(t, "n")
+		sign := rapid.SampledFrom([]string{"", "", "+", "-"}).Draw(t, "sign")
+		spelled := sign + strings.Repeat("0", rapid.IntRange(0, 2).Draw(t, "zeros")) + strconv.Itoa(n)
+
+		return fileserverEndpointPort{spelled: spelled, valid: sign == "" && n >= 1 && n <= 65535}
+	})
+}
+
+// A host and port is kept as given when the port is plain digits in 1-65535,
+// a bare port listens on localhost, and surrounding space changes nothing.
+func TestNormalizeFileServerEndpointProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		port := genFileserverEndpointPort().Draw(t, "port")
+		host := rapid.SampledFrom([]string{"", "127.0.0.1", "localhost", "0.0.0.0", "::1", "phenix.example"}).Draw(t, "host")
+		space := rapid.SampledFrom([]string{"", " ", "\t", " \n"}).Draw(t, "space")
+
+		value := net.JoinHostPort(host, port.spelled)
+
+		got, err := normalizeFileServerEndpoint(space + value + space)
+		if port.valid && (err != nil || got != value) {
+			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, %v, want %q", space+value+space, got, err, value)
+		}
+
+		if !port.valid && err == nil {
+			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, want an error", space+value+space, got)
+		}
+
+		want := net.JoinHostPort("127.0.0.1", port.spelled)
+		if port.spelled == "0" {
+			want = ""
+		}
+
+		got, err = normalizeFileServerEndpoint(space + port.spelled + space)
+		// "0" alone turns the file server off
+		if (port.valid || port.spelled == "0") && (err != nil || got != want) {
+			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, %v, want %q", space+port.spelled+space, got, err, want)
+		}
+
+		if !port.valid && port.spelled != "0" && err == nil {
+			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, want an error", space+port.spelled+space, got)
+		}
+	})
 }

@@ -8,7 +8,7 @@ under `src/go/`.
 - `cmd/`: Cobra commands; `api/`: domain operations; `types/`: versioned
   resources and schemas.
 - `app/`: built-in and user app execution; `scheduler/`: VM placement.
-- `store/`: BoltDB/etcd abstraction; `web/`: REST, websocket, RBAC, and UI
+- `store/`: BoltDB store abstraction; `web/`: REST, websocket, RBAC, and UI
   serving; `util/mm/`: minimega integration.
 
 ## Commands
@@ -21,7 +21,8 @@ Run from `src/go/`:
 | All Go tests | `go test -race ./...` or `make test` |
 | Non-fixing lint | `make check` |
 | Format / fixing lint | `make format` / `make lint` |
-| Generate all outputs | `make generate` |
+| Generate Go outputs | `make generate` |
+| Render the API reference (`/docs/`) | `make api-docs` |
 | Build Linux binary | `make phenix` |
 
 Use targeted package tests first. `make check` here does not generate files;
@@ -30,13 +31,27 @@ the root target does.
 ## Generation and Compatibility
 
 - Run `make generate` after protobuf, store-interface, or RBAC policy changes.
-- Never manually edit `store/mock.go`, `web/proto/*.pb.go`, or
-  `web/rbac/known_policy.go`; include regenerated outputs in the change.
+- Never manually edit `store/mock.go`, `web/proto/*.pb.go`,
+  `web/rbac/known_policy.go`, or `web/public/docs/index.html`. They are
+  gitignored build outputs, not part of the change.
+- Generators must be deterministic and write only gitignored files: the root
+  `make check-generated` (run by `ci.yml`) generates everything twice and fails
+  on differing output or on new or changed tracked files. Pin generator tool
+  versions; the Redocly CLI that renders `openapi.yml` is pinned only in
+  `scripts/api-docs.sh`.
+- `openapi.yml` must stay valid OpenAPI: a prek hook runs
+  `scripts/api-docs.sh lint web/public/docs/openapi.yml` (from the repository
+  root) when it changes.
 - Preserve bundled third-party assets under `web/public/` unless explicitly
   upgrading or replacing them.
 - Config changes must keep versioned structs, interfaces, YAML/JSON tags,
   OpenAPI schemas, upgrades, examples, and API output aligned.
-- Preserve old config upgrades and persisted BoltDB/etcd compatibility.
+- Config schemas are OpenAPI YAML files embedded with `//go:embed`:
+  `types/schemas/config.yaml` for the envelope (apiVersion, kind, metadata,
+  spec) and `types/version/schemas/v*.yaml` for each kind's spec. Edit the
+  YAML, never a Go string. A prek hook lints them with
+  `scripts/api-docs.sh lint-schemas` (rules in `types/redocly.yaml`).
+- Preserve old config upgrades and persisted BoltDB compatibility.
 - RBAC changes require generated policy, migrations when needed, and migration
   tests. Keep CLI, REST, websocket, and UI authorization equivalent.
 - API route changes require domain behavior, `web/server.go`, RBAC,
@@ -49,13 +64,53 @@ the root target does.
   silently recover.
 - Use `phenix/util/plog` for core logs with the correct `LogType` and structured
   key/value fields.
+- A web handler for a security-relevant action (reading captures or files,
+  consoles and remote sessions, changing disks or files) logs it with
+  `phenix/web/audit`: `Denied` at each RBAC refusal, `Failure` when the
+  authorized operation fails, and `Success` once it works. Add a new action to
+  the action table in `docs/content/logging.md`.
+- A new cache or reused result must name its bound and invalidation in the
+  registry in `util/freshness/doc.go`, and report its age with
+  `freshness.SetObserved` when it serves minimega data. A failed minimega read
+  is an error or an explicit unknown flag, never an empty success.
+- Code serving a web request, websocket or background job passes its
+  context to minimega, so a command still waiting for the shared connection
+  gives up once the client leaves or the job is canceled: `mm.Context(ctx)`
+  (or `mm.C2Context`) for `util/mm`, the `ctx` argument of `api/vm`,
+  `api/soh` and the `util/file` listings, and `mmcli.RunContext` and the
+  `...Context` tabular helpers for direct commands. An action of several commands checks the context only until its
+  first change, and work shared with other callers or broadcast to them uses
+  `context.WithoutCancel`. A handler whose request ended writes nothing and
+  logs it at debug level (`requestGone`, `requestCanceled` in `web/`). CLI
+  commands, startup and background loops keep plain `mmcli.Run`.
+- Check parsers, sanitizers, round trips and list invariants with
+  `pgregory.net/rapid` properties beside the table tests. Keep each property
+  fast, never pin a seed, and name generators after their test file.
 - Consult [minimega API docs](https://sandia-minimega.github.io/minimega/reference/minimega/) and
   [source](https://github.com/sandia-minimega/minimega) before changing code
   that constructs commands or depends on minimega behavior.
 
+## API Contract Tests
+
+`web/contract_test.go` drives each API route through the router `phenix ui`
+serves: auth modes, RBAC, base path, and error statuses and bodies. A new or
+changed route adds a row to `contractRoutes` (with the permissions it needs)
+and its error cases to `TestContractErrors`, and goes in
+`web/public/docs/openapi.yml`. `TestRouterMatchesOpenAPI` fails for a route
+the router serves that `openapi.yml` lacks, or the reverse: every route that
+names its methods is documented, websockets (as a `GET` answering `101`, with
+the message protocol in its description), UI pages and routes outside
+`/api/v1` included. Only a route of any method, which serves the UI's own
+files, stays out, through `routesOfAnyMethod` with the reason.
+`types/openapi_test.go` requires every schema and property in `openapi.yml`
+to have a title and a description, and every scalar property an example,
+default or enum. A route the Unix socket serves gets a case in
+`TestContractSocket`.
+
 ## CI
 
 `.github/workflows/ci.yml` generates artifacts, runs `make check`, and executes
-race-enabled tests. Go changes can also trigger `.github/workflows/frontend.yml`
+race-enabled tests; its `generated` job runs `make check-generated` from the
+repository root. Go changes can also trigger `.github/workflows/frontend.yml`
 because browser smoke tests build and run the backend. Keep workflow paths,
 Go/tool versions, and local commands aligned.

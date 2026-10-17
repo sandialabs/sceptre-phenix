@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dagrejs/dagre": "3.1.1",
     "@fortawesome/fontawesome-svg-core": "^6.7.2",
     "@fortawesome/free-regular-svg-icons": "^6.7.2",
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
@@ -25,10 +26,10 @@
     "buefy": "^1.0.1",
     "bulma": "^0.9.4",
     "d3": "^7.9.0",
+    "elkjs": "0.12.0",
     "file-saver": "^2.0.5",
     "js-yaml": "^4.1.0",
     "lodash-es": "^4.17.21",
-    "minimatch": "^10.0.1",
     "mitt": "^3.0.1",
     "openapi-sampler": "^1.6.1",
     "pinia": "^3.0.1",
@@ -36,15 +37,19 @@
     "string-width": "^7.2.0",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0",
-    "vue-virtual-scroller": "^2.0.0-beta.8"
+    "vue-virtual-scroller": "^2.0.0-beta.8",
+    "webcola": "3.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/test-utils": "2.5.1",
     "eslint": "^10.9.1",
     "eslint-plugin-vue": "^10.10.0",
+    "fast-check": "4.10.2",
     "globals": "^17.11.0",
+    "happy-dom": "20.14.5",
     "prettier": "^3.5.3",
     "vite": "^6.2.4",
     "vite-plugin-vue-devtools": "^7.7.2",

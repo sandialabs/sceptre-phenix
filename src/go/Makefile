@@ -6,8 +6,6 @@ DATE   := $(shell date -u)
 
 SOURCES   := $(shell find . -name '*.go')
 UISOURCES := $(shell find web -name '*.go' -not -path 'web/rbac/known_policy.go')
-CONFIGS   := $(shell find api/config/default -name '*')
-TEMPLATES := $(shell find tmpl/templates -name '*')
 
 TUNNELSOURCES := $(shell find tunneler -name '*.go' )
 
@@ -28,7 +26,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all check-protoc clean generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test
+.PHONY: all api-docs check-protoc clean generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test
 .DEFAULT_GOAL := help
 
 help:
@@ -50,6 +48,7 @@ help:
 	@echo "  generate-mocks     - Generate mocks"
 	@echo "  generate-protobuf  - Generate protobufs"
 	@echo "  go-generate        - Run go generate"
+	@echo "  api-docs           - Render the API reference (web/public/docs/index.html)"
 	@echo ""
 	@echo "Installation targets:"
 	@echo "  install            - Install Go module dependencies"
@@ -101,8 +100,12 @@ bin/mockgen:
 bin/protoc-gen-go:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go
 
-web/public/docs/index.html: web/public/docs/openapi.yml
-	npx @redocly/cli build-docs web/public/docs/openapi.yml -o web/public/docs/index.html --title 'phenix API'
+api-docs: web/public/docs/index.html
+
+# The Redocly version is pinned in scripts/api-docs.sh, shared with every
+# other place that renders the API reference.
+web/public/docs/index.html: web/public/docs/openapi.yml ../../scripts/api-docs.sh
+	../../scripts/api-docs.sh build web/public/docs/openapi.yml web/public/docs/index.html
 
 web/public/index.html:
 	$(MAKE) -C ../js dist/index.html

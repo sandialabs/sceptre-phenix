@@ -124,9 +124,27 @@ func (n *Netflow) Close() {
 	_ = n.Conn.Close()
 }
 
+type netflowState int
+
+const (
+	netflowStarting netflowState = iota
+	netflowRunning
+	netflowStopping
+)
+
+// netflowEntry is an experiment's netflow capture. Its flow is set once the
+// capture is running.
+type netflowEntry struct {
+	flow  *Netflow
+	state netflowState
+}
+
+// netflowMu guards netflows, and only it: the mesh commands that start and
+// stop captures run without it, so one experiment's capture never waits on
+// another's.
 var (
-	netflows  = make(map[string]*Netflow) //nolint:gochecknoglobals // package level registry
-	netflowMu sync.RWMutex                //nolint:gochecknoglobals // package level registry
+	netflows  = make(map[string]*netflowEntry) //nolint:gochecknoglobals // package level registry
+	netflowMu sync.RWMutex                     //nolint:gochecknoglobals // package level registry
 
 	ErrNetflowNotStarted     = errors.New("netflow not started for experiment")
 	ErrNetflowAlreadyStarted = errors.New("netflow already started for experiment")
@@ -137,56 +155,106 @@ func init() { //nolint:gochecknoinits // package level setup
 	// Delete netflow captures when experiments are stopped.
 	RegisterHook("stop", func(_, name string) {
 		netflowMu.Lock()
-		defer netflowMu.Unlock()
+		entry, ok := netflows[name]
+		delete(netflows, name)
+		netflowMu.Unlock()
 
-		if flow, ok := netflows[name]; ok {
-			// We don't need to worry about instructing minimega to delete the netflow
-			// capture since that will happen as part of the minimega namespace for
-			// this experiment being cleared.
-			flow.Close()
-
-			delete(netflows, name)
+		// We don't need to worry about instructing minimega to delete the netflow
+		// capture since that will happen as part of the minimega namespace for
+		// this experiment being cleared. A capture still starting sees its entry
+		// gone and closes itself.
+		if ok && entry.flow != nil {
+			entry.flow.Close()
 		}
 	})
 }
 
+// GetNetflow returns the experiment's running netflow capture, or nil.
 func GetNetflow(exp string) *Netflow {
 	netflowMu.RLock()
 	defer netflowMu.RUnlock()
 
-	if flow, ok := netflows[exp]; ok {
-		return flow
+	if entry, ok := netflows[exp]; ok && entry.state == netflowRunning {
+		return entry.flow
 	}
 
 	return nil
 }
 
-func StartNetflow(exp string) error {
+// forgetNetflow removes entry from the registry, unless it was replaced.
+func forgetNetflow(exp string, entry *netflowEntry) {
 	netflowMu.Lock()
 	defer netflowMu.Unlock()
 
+	if netflows[exp] == entry {
+		delete(netflows, exp)
+	}
+}
+
+func StartNetflow(exp string) error {
+	// reserve the experiment's capture before any I/O
+	netflowMu.Lock()
+
 	if _, ok := netflows[exp]; ok {
+		netflowMu.Unlock()
+
 		return ErrNetflowAlreadyStarted
 	}
 
-	spec, err := Get(exp)
+	entry := &netflowEntry{flow: nil, state: netflowStarting}
+	netflows[exp] = entry
+
+	netflowMu.Unlock()
+
+	flow, err := startNetflow(exp)
 	if err != nil {
-		return ErrExperimentNotFound
+		forgetNetflow(exp, entry)
+
+		return err
 	}
 
-	if !spec.Running() {
+	netflowMu.Lock()
+
+	// the experiment stopped while the capture was starting
+	if netflows[exp] != entry {
+		netflowMu.Unlock()
+
+		flow.Close()
+
 		return ErrExperimentNotRunning
 	}
 
+	entry.flow = flow
+	entry.state = netflowRunning
+
+	netflowMu.Unlock()
+
+	go readNetflow(exp, flow)
+
+	return nil
+}
+
+// startNetflow asks every cluster node to send the experiment's netflow to a
+// new UDP listener.
+func startNetflow(exp string) (*Netflow, error) {
+	spec, err := Get(exp)
+	if err != nil {
+		return nil, ErrExperimentNotFound
+	}
+
+	if !spec.Running() {
+		return nil, ErrExperimentNotRunning
+	}
+
 	if spec.Spec.DefaultBridge() == "phenix" {
-		return ErrNetflowPhenixBridge
+		return nil, ErrNetflowPhenixBridge
 	}
 
 	cluster, _ := ClusterNodes(exp)
 
 	conn, err := net.ListenUDP("udp4", nil)
 	if err != nil {
-		return fmt.Errorf("creating UDP listener: %w", err)
+		return nil, fmt.Errorf("creating UDP listener: %w", err)
 	}
 
 	addr := strings.Split(conn.LocalAddr().String(), ":")
@@ -195,7 +263,7 @@ func StartNetflow(exp string) error {
 	// capture is being configured.
 	if err := mm.MeshSend(exp, mm.Headnode(), "capture netflow mode ascii"); err != nil {
 		_ = conn.Close()
-		return fmt.Errorf("setting netflow capture mode: %w", err)
+		return nil, fmt.Errorf("setting netflow capture mode: %w", err)
 	}
 
 	cmd := fmt.Sprintf(
@@ -208,47 +276,45 @@ func StartNetflow(exp string) error {
 		err = mm.MeshSend(exp, node, cmd)
 		if err != nil {
 			_ = conn.Close()
-			return fmt.Errorf("starting netflow capture on node %s: %w", node, err)
+			return nil, fmt.Errorf("starting netflow capture on node %s: %w", node, err)
 		}
 	}
 
-	flow := NewNetflow(spec.Spec.DefaultBridge(), conn)
-	netflows[exp] = flow
+	return NewNetflow(spec.Spec.DefaultBridge(), conn), nil
+}
 
-	go func() {
-		// minimega sends each netflow packet as one datagram of newline-terminated
-		// records. Reading per datagram bounds memory and keeps a malformed
-		// datagram from bleeding into the next one.
-		buf := make([]byte, netflowMaxDatagramSize)
+// readNetflow publishes the capture's records until its connection closes.
+func readNetflow(exp string, flow *Netflow) {
+	// minimega sends each netflow packet as one datagram of newline-terminated
+	// records. Reading per datagram bounds memory and keeps a malformed
+	// datagram from bleeding into the next one.
+	buf := make([]byte, netflowMaxDatagramSize)
 
-		for {
-			n, err := conn.Read(buf)
-			if err != nil {
-				if !errors.Is(err, net.ErrClosed) {
-					plog.Warn(plog.TypeSystem, "reading netflow capture", "exp", exp, "err", err)
-				}
-
-				return
+	for {
+		n, err := flow.Conn.Read(buf)
+		if err != nil {
+			if !errors.Is(err, net.ErrClosed) {
+				plog.Warn(plog.TypeSystem, "reading netflow capture", "exp", exp, "err", err)
 			}
 
-			for line := range strings.SplitSeq(string(buf[:n]), "\n") {
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-
-				body, ok := parseNetflowLine(line)
-				if !ok {
-					plog.Debug(plog.TypeSystem, "dropping malformed netflow line", "exp", exp, "line", line)
-					continue
-				}
-
-				flow.Publish(body)
-			}
+			return
 		}
-	}()
 
-	return nil
+		for line := range strings.SplitSeq(string(buf[:n]), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			body, ok := parseNetflowLine(line)
+			if !ok {
+				plog.Debug(plog.TypeSystem, "dropping malformed netflow line", "exp", exp, "line", line)
+				continue
+			}
+
+			flow.Publish(body)
+		}
+	}
 }
 
 func parseNetflowLine(line string) (map[string]any, bool) {
@@ -262,8 +328,8 @@ func parseNetflowLine(line string) (map[string]any, bool) {
 		return nil, false
 	}
 
-	srcHost, srcPortText, err := net.SplitHostPort(fields[3])
-	if err != nil || net.ParseIP(srcHost) == nil {
+	srcHost, srcPortText, ok := splitAddr(fields[3])
+	if !ok || net.ParseIP(srcHost) == nil {
 		return nil, false
 	}
 	srcPort, err := strconv.Atoi(srcPortText)
@@ -271,8 +337,8 @@ func parseNetflowLine(line string) (map[string]any, bool) {
 		return nil, false
 	}
 
-	dstHost, dstPortText, err := net.SplitHostPort(fields[5])
-	if err != nil || net.ParseIP(dstHost) == nil {
+	dstHost, dstPortText, ok := splitAddr(fields[5])
+	if !ok || net.ParseIP(dstHost) == nil {
 		return nil, false
 	}
 	dstPort, err := strconv.Atoi(dstPortText)
@@ -300,28 +366,57 @@ func parseNetflowLine(line string) (map[string]any, bool) {
 	}, true
 }
 
+// splitAddr splits a netflow address into host and port. It accepts the
+// bracketed form ("[2001:db8::1]:53") and, falling back to the last colon,
+// an unbracketed IPv6 host ("fe80::1:22") so the host keeps its colons.
+func splitAddr(addr string) (string, string, bool) {
+	if host, port, err := net.SplitHostPort(addr); err == nil {
+		return host, port, true
+	}
+
+	i := strings.LastIndex(addr, ":")
+	if i < 0 {
+		return "", "", false
+	}
+
+	return addr[:i], addr[i+1:], true
+}
+
 func StopNetflow(exp string) error {
 	netflowMu.Lock()
-	defer netflowMu.Unlock()
 
-	flow, ok := netflows[exp]
-	if !ok {
+	entry, ok := netflows[exp]
+	if !ok || entry.state != netflowRunning {
+		netflowMu.Unlock()
+
 		return ErrNetflowNotStarted
 	}
 
+	entry.state = netflowStopping
+
+	netflowMu.Unlock()
+
 	cluster, _ := ClusterNodes(exp)
 
-	cmd := "capture netflow delete bridge " + flow.Bridge
+	cmd := "capture netflow delete bridge " + entry.flow.Bridge
 
 	for _, node := range cluster {
 		err := mm.MeshSend(exp, node, cmd)
 		if err != nil {
+			netflowMu.Lock()
+			if netflows[exp] == entry {
+				entry.state = netflowRunning
+			}
+			netflowMu.Unlock()
+
 			return fmt.Errorf("deleting netflow capture on node %s: %w", node, err)
 		}
 	}
 
-	flow.Close()
-	delete(netflows, exp)
+	forgetNetflow(exp, entry)
+
+	// the stop hook may have closed it already; closing twice is safe
+	entry.flow.Close()
 
 	return nil
 }

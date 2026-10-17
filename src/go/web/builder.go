@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -310,7 +309,7 @@ func publishBuilderExperiment(name, action string) *weberror.WebError {
 		body,
 	)
 
-	vms, _ := vm.List(name)
+	vms, _ := vm.List(context.Background(), name)
 
 	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {
@@ -399,20 +398,9 @@ func mergeBuilderVLANAliases(
 }
 
 // builderTopologyLocation returns the absolute path a created Builder topology
-// is readable at. o.basePath is the prefix the UI is served behind and is
-// normalized to start and end with "/", so prefer it over assuming the API is
-// mounted at the server root.
+// is readable at.
 func builderTopologyLocation(name string) string {
-	base := o.basePath
-	if !strings.HasPrefix(base, "/") {
-		base = "/" + base
-	}
-
-	if !strings.HasSuffix(base, "/") {
-		base += "/"
-	}
-
-	return base + "api/v1/builder/topologies/" + url.PathEscape(name)
+	return apiLocation("builder/topologies/" + url.PathEscape(name))
 }
 
 // publishBuilderTopology broadcasts a topology config summary after a Builder
@@ -933,9 +921,7 @@ func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
-		builderFilenameForm: name,
-	}))
+	w.Header().Set("Content-Disposition", util.Attachment(name))
 	plog.Info(plog.TypeAction, "downloading builder file", "file", name, "format", format)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader([]byte(data)))
 }

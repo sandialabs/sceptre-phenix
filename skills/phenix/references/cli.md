@@ -10,7 +10,7 @@ has a matching config-file key and `PHENIX_*` env var):
 
 | Flag | Config key / Env var | Default | Description |
 |---|---|---|---|
-| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`) |
+| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://<path>`) |
 | `--base-dir.phenix` | `base-dir.phenix` / `PHENIX_BASE_DIR_PHENIX` | `/phenix` | Base phēnix data directory |
 | `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
 | `--base-dir.injects` | `base-dir.injects` / `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Where `phenix workflow apply` stages `phenix-injects/` (as `<base-dir.injects>/<name>`). The server's value wins over the CLI's own unless the flag is given; see the `injects` step in [`workflow.md`](workflow.md). Use an absolute path |
@@ -55,6 +55,11 @@ phenix config delete <kind>/<name> ...              # delete one or more specifi
 phenix config delete all [kind]                     # delete every stored config, or every config of one kind
 ```
 
+Stored configs carry `metadata.revision`, set by the store on every write and
+ignored on input. `config edit` refuses to save if the config was written
+while the editor was open ("changed while you were editing it"); run it again
+to edit the newer version.
+
 ## `phenix experiment` — experiment lifecycle
 
 ```bash
@@ -62,7 +67,8 @@ phenix experiment list
 phenix experiment apps                              # list available apps
 phenix experiment schedulers                        # list scheduling algorithms
 phenix experiment create <exp> -t <topology> [-s <scenario>] [-d <base-dir>] \
-  [--disabled-apps app1,app2] [--vlan-min N] [--vlan-max N] [-b <bridge>]
+  [--disabled-apps app1,app2] [--vlan-min N] [--vlan-max N] [-b <bridge>] \
+  [--annotation key=value ...] [--node-annotation key=value ...]
 phenix experiment edit <exp> [--force]              # --force overrides the running-experiment check
 phenix experiment delete <exp> [-f|--force]          # -f stops a running experiment before deleting it
 phenix experiment schedule <exp> <algorithm>         # e.g. round-robin, isolate-experiment, subnet-compute
@@ -77,6 +83,16 @@ phenix experiment scorch <exp> [-r|--run <id>]      # start SCORCH run <id> (def
 
 `-t`/`-s` accept either the name of an already-stored config or a path to a
 YAML/JSON file (in which case it's auto-created as a config first).
+
+`--annotation` (repeatable) adds an experiment metadata annotation; `topology`
+and `scenario` are set by phenix and rejected. `--node-annotation`
+(repeatable) adds an annotation to every VM in the experiment's own copy of the
+topology, leaving the Topology config unchanged; a VM that already has the key
+keeps its value. Its value `true` or `false` becomes a boolean and a JSON list
+or object keeps that type (`--node-annotation
+'phenix/startup-autotunnel=["8080:80"]'`); anything else, numbers included,
+stays a string. The annotations the default apps read are in
+[`annotations.md`](annotations.md).
 
 `start all` starts every stopped experiment. `--dry-run` (also on `restart`)
 does everything except call out to minimega, which isolates config and
@@ -114,6 +130,20 @@ phenix workflow apply <DIR|NAME> -c <file>          # --config: workflow config,
 The argument, the directory layout, the steps, the workflow config, and the
 troubleshooting table are in [`workflow.md`](workflow.md).
 
+## `phenix job` — follow the running server's background jobs
+
+```bash
+phenix job list [--experiment X] [--kind K] [--active] [-o json]  # every user's jobs, newest first
+phenix job get <ID> [-o json]       # the job and each item's outcome, error and retryable flag
+phenix job cancel <ID>              # queued: canceled at once; running: stops when its work notices
+phenix job wait <ID> [--timeout D]  # poll every second; exit 0 succeeded, 2 partial, 1 failed/canceled/timeout
+```
+
+Talks to `phenix ui` over `--unix-socket` as Global Admin; without a server it
+fails with `phenix ui is not running (no socket at ...)`. Jobs are started only
+from the web UI or REST API (the CLI's `vm` and disk commands run in-process and
+are not jobs); see [`jobs.md`](jobs.md).
+
 ## `phenix vm` — manage running VMs within an experiment
 
 ```bash
@@ -128,9 +158,10 @@ phenix vm net connect <exp> <vm> <iface index> <vlan id>
 phenix vm net disconnect <exp> <vm> <iface index>
 phenix vm capture start <exp> <vm> <iface index> <output file>
 phenix vm capture start-subnet <exp> <subnet>
-phenix vm capture stop <exp> <vm>
+phenix vm capture stop <exp> <vm> [iface]           # iface name or index stops only that one
 phenix vm capture stop-subnet <exp> <subnet>
 phenix vm capture stop-all <exp>
+phenix vm capture stream <exp> <vm> <iface> [-o file] [--from-now]  # running capture as pcap, e.g. | wireshark -k -i -
 phenix vm memory-snapshot <exp> <vm> <path>
 phenix vm mount <exp> <vm> [host path]               # mount a running VM's filesystem on the headnode
 phenix vm unmount <exp> <vm>
@@ -204,8 +235,9 @@ phenix mm <minimega args>...     # pass raw commands to (or attach to) minimega
 phenix settings list|get|set|unset [key] [value]
 phenix settings db ...            # legacy BoltDB-backed settings
 phenix ui                         # run the phenix web UI/API server
+phenix healthcheck [--ready] [--url URL] [-o json]  # probe the UI server's /healthz (or /readyz); exit 0 on 200
 phenix util app-json <exp>        # print the experiment JSON a user app receives on stdin
-phenix util role-table            # print the permissions/roles table
+phenix util role-table            # print every permission phenix checks, and which roles allow it
 phenix completion bash|zsh|fish|powershell
 phenix version
 ```

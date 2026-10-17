@@ -135,6 +135,10 @@ func (n *Node) SetLabels(m map[string]string) {
 	n.LabelsF = m
 }
 
+func (n *Node) SetAnnotations(m map[string]any) {
+	n.AnnotationsF = m
+}
+
 func (n *Node) AddAnnotation(k string, i any) {
 	if n.AnnotationsF == nil {
 		n.AnnotationsF = make(map[string]any)
@@ -612,6 +616,12 @@ func (n Node) validate() error {
 			"node", n.GeneralF.HostnameF,
 			"reason", warning,
 		)
+	}
+
+	if n.DelayF != nil && n.DelayF.TimerF != "" {
+		if _, err := time.ParseDuration(n.DelayF.TimerF); err != nil {
+			return fmt.Errorf("delay timer %q is not a duration such as 5m: %w", n.DelayF.TimerF, err)
+		}
 	}
 
 	if n.NetworkF == nil {

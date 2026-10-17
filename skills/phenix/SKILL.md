@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow, job).'
 license: GPL-3.0-only
 ---
 
@@ -18,6 +18,7 @@ Detailed references and examples, loaded only when needed:
 |---|---|
 | Global flags, every subcommand and flag | [`references/cli.md`](references/cli.md) |
 | REST auth modes and the full route table | [`references/web-api.md`](references/web-api.md) |
+| Background jobs (bulk VM actions, file archives, disk clones): statuses, routes, RBAC, `phenix job` | [`references/jobs.md`](references/jobs.md) |
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
@@ -182,16 +183,18 @@ are run with `docker exec` rather than a host-installed binary:
 
 ```bash
 docker exec phenix phenix experiment list   # no -it for scripted/agentic use
+docker exec phenix phenix healthcheck --ready  # is minimega, the store and disk OK?
 ```
 
 For interactive human use, `make install-wrapper` installs
 `scripts/phenix-wrapper.sh` as `/usr/local/bin/phenix` so shell completion and
 TTY allocation work. See `README.md` ("Running with Docker").
 
-**Local binary (development):** `make build` produces `bin/phenix`; run any
-subcommand from it, typically against a local `bolt://` store and a local
-`minimega`. See `README.md` ("Local Development") for prerequisites and
-`make help` for targets.
+**Local binary (development):** `make build` produces `bin/phenix`, which
+also serves the API reference at `/docs/`; run any subcommand from it,
+typically against a local `bolt://` store and a local `minimega`. See
+`README.md` ("Local Development") for prerequisites and `make help` for
+targets.
 
 ## Querying the Web API
 
@@ -200,15 +203,17 @@ default, with every route under `/api/v1`. Auth is off unless
 `--jwt-signing-key` is set (it is empty by default and in the bundled compose
 file), in which case the server serves every request as `global-admin` and
 plain `curl http://localhost:3000/api/v1/experiments` works. When a key is
-set, log in and send the JWT in the custom `X-Phenix-Auth-Token` header:
+set, log in and send the JWT in the custom `X-Phenix-Auth-Token` header as
+`Bearer <jwt>`:
 
 ```bash
 TOKEN=$(curl -s -u admin:password http://localhost:3000/api/v1/login | jq -r .token)
-curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
+curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experiments
 ```
 
 [`references/web-api.md`](references/web-api.md) has the route table, the
-`?token=` query-parameter alternative, and proxy/dev auth modes.
+`?token=` query-parameter alternative, proxy/dev auth modes, config revisions
+(`ETag`/`If-Match`), and the `X-Phenix-Seq` ordering and freshness headers.
 
 ## Gotchas
 
@@ -218,7 +223,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
   "config not found" further down the pipeline.
 - **`vm_type` default is `kvm`, not `container`** — do not assume container semantics
   unless the topology explicitly sets `general.vm_type: container`.
-- **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
+- **Store endpoint changes the whole world.** `--store.endpoint` (a `bolt://` path) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
   "no configs found" rather than an obvious connection error.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
@@ -253,7 +258,7 @@ The other gotchas of `phenix workflow apply` are in
 | `expects the configuration kind to be one of [...]` | Kind in `<kind>/<name>` is misspelled or unsupported. Kinds are case-insensitive but must be one of `topology, scenario, experiment, image, user, role` (plus `all` where supported). |
 | `Unable to create configuration from <path>` | File isn't valid YAML/JSON, fails schema validation, or path doesn't exist. Schema failures are followed by explained lines naming the item, its hostname or name, and the line. Try `--skip-validation` to isolate schema vs. parse errors. |
 | Experiment `create` succeeds but `start` fails to boot VMs | Re-run with `phenix experiment start --dry-run <exp>` to see what would be sent to minimega, check `phenix vm info <exp>` and minimega directly via `phenix mm <cmd>`, and verify the disk images referenced in the topology exist (`phenix image list` for image configs, `GET /api/v1/disks` for disk files present on the headnode). |
-| Web API calls return 401 | That server has a JWT signing key configured, so auth is on: send a current token in `X-Phenix-Auth-Token` (or `?token=`), not in `Authorization` — standard bearer-token tooling silently 401s. Re-login if the token expired. A server started without a signing key never returns 401. |
+| Web API calls return 401 | That server has a JWT signing key configured, so auth is on: send a current token as `X-Phenix-Auth-Token: Bearer <jwt>` (or `?token=`), not in `Authorization` — standard bearer-token tooling silently 401s. Re-login if the token expired. A server started without a signing key never returns 401. |
 | `configuration not updated` after `phenix config edit` | No changes were saved in the editor — this is expected, not an error. |
 | Settings changes via `phenix settings set` don't seem to apply | Command-line flags always win over the config file; unset the flag or use `phenix settings unset <key>` to fall back to the file/env value. |
 
