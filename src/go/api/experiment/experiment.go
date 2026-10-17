@@ -985,20 +985,8 @@ func Save(opts ...SaveOption) error {
 		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
-	if o.spec == nil {
-		if o.saveNilSpec {
-			c.Spec = nil
-		}
-	} else {
+	if o.spec != nil {
 		c.Spec = structs.MapDefaultCase(o.spec, structs.CASESNAKE)
-	}
-
-	if o.status == nil {
-		if o.saveNilStatus {
-			c.Status = nil
-		}
-	} else {
-		c.Status = structs.MapDefaultCase(o.status, structs.CASESNAKE)
 	}
 
 	err = store.Update(c)

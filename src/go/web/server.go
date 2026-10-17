@@ -448,11 +448,6 @@ func Start(opts ...ServerOption) error {
 	addRoutesToRouter(api, workflowRoutes...)
 	addRoutesToRouter(api, optionRoutes...)
 
-	if o.allowCORS {
-		plog.Info(plog.TypeSystem, "CORS is enabled on HTTP API endpoints")
-		api.Use(middleware.AllowCORS)
-	}
-
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
 
 	switch o.logMiddleware {
