@@ -413,14 +413,11 @@ async function publishTopology(
 }
 
 // Whether `response` answers a `method` request for the API path that ends
-// in `suffix`, with the query string `search` when that is given.
-function isApi(response, method, suffix, search) {
-  const url = new URL(response.url());
-
+// in `suffix`.
+function isApi(response, method, suffix) {
   return (
     response.request().method() === method &&
-    url.pathname.endsWith(`${API}${suffix}`) &&
-    (search === undefined || url.search === search)
+    new URL(response.url()).pathname.endsWith(`${API}${suffix}`)
   );
 }
 
@@ -459,10 +456,8 @@ function isPublishResponse(response) {
 }
 
 // Resolves with the page's next response of that kind; see isApi().
-function waitForApi(page, method, suffix, search) {
-  return page.waitForResponse((response) =>
-    isApi(response, method, suffix, search),
-  );
+function waitForApi(page, method, suffix) {
+  return page.waitForResponse((response) => isApi(response, method, suffix));
 }
 
 // The header's counts, as read: "1 device, 0 switches, …".
@@ -1328,7 +1323,6 @@ async function userMaker({ browser, playwright }, testInfo) {
 
   return {
     nonce,
-    admin,
 
     // Makes a user of the built-in Builder role, and signs them in.
     async user(part) {
@@ -1358,14 +1352,11 @@ async function userMaker({ browser, playwright }, testInfo) {
         sessionStorage.setItem('phenix.auth', 'true');
       }, session);
       const page = await context.newPage();
-      const issues = [];
-      attachCapture(page, issues);
 
       const user = {
         username,
         context,
         page,
-        issues,
         api: await signedClient(playwright, baseURL, session.token),
       };
       users.push(user);
@@ -1592,7 +1583,6 @@ module.exports = {
   publishTopology,
   readLibrary,
   seedConfig,
-  seedDraft,
   seedIcon,
   seedLayerSet,
   seedTemplates,
