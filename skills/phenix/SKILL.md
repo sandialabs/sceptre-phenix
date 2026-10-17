@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams and drafts, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, the Builder (the web topology editor), or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
 license: GPL-3.0-only
 ---
 
@@ -21,6 +21,7 @@ Detailed references and examples, loaded only when needed:
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
+| The Builder, the web topology editor: its routes, RBAC, formats, `builder-doc`, code and tests | [`references/builder.md`](references/builder.md), an index of the references under `references/builder/` and of the user docs |
 | Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
@@ -50,9 +51,14 @@ external/physical nodes) and their hardware, network interfaces, and boot
 behavior. Key node fields (see [`examples/topology.yaml`](examples/topology.yaml)
 for a complete, copyable two-node topology):
 
-- `type`: `VirtualMachine | Firewall | Router | Switch`
+- `type`: `VirtualMachine | Firewall | Router | Switch`. The `vrouter` app
+  configures routing and rulesets only on `Router` and `Firewall` nodes whose
+  `hardware.os_type` is `minirouter`, `vyatta`, or `vyos` (`linux` there is
+  deprecated: it writes a Vyatta config into the image)
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
-  `general.do_not_boot`, `general.snapshot`
+  `general.do_not_boot`, `general.snapshot`, `general.notes` (up to 100 strings;
+  creating an experiment copies them into the node's labels as `__notes_<time>`
+  keys, which minimega sets as VM tags and the UI shows as the VM's notes)
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos | other`
 - `hardware.vcpus`, `hardware.memory`, `hardware.drives[].image` (disk image name/path)
 - `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|dhcp|manual`
@@ -134,6 +140,26 @@ Lifecycle: `create` → `schedule` (assign VMs to cluster hosts) → `start`
 An experiment also tracks runtime `status` (start time, per-VM schedule,
 per-app state, allocated VLANs) once started. The same fields are editable
 through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
+
+## Builder
+
+The Builder is the web topology editor at `/builder`. Its REST API is below
+`/api/v1/builder/`, and scripts use it: there is no `phenix builder`
+command. Drafts save on the server apart from configs. Only Publish writes
+Topology and Experiment configs, and it adds the topology to the `topology`
+annotation of each Scenario the diagram lists. A topology names its
+diagram in the `builder-doc` annotation, the one annotation that is a map
+(`digest`, `id`, `path`). Import converts the `builder-xml` diagrams of the
+removed legacy Builder. One RBAC permission, `builder` `use`, gives a role
+the Builder and every draft, template, layer set and icon on the server.
+Import, Publish and published diagrams also need the `configs` permissions
+of the configs they read or write. Global Viewer has no Builder.
+
+The user docs are in `docs/content/builder/`. The site
+[phenix.sceptre.dev/latest/builder](https://phenix.sceptre.dev/latest/builder/)
+shows them only after a release that includes them. For any Builder task, **read [`references/builder.md`](references/builder.md)**
+first. It maps the docs pages, the code and the rules, and its routing
+table names the reference under `references/builder/` to read next.
 
 ## CLI Overview
 

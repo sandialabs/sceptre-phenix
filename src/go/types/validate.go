@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
 
@@ -77,19 +78,29 @@ func ValidateSchema(name, ver string, value any) error {
 	return nil
 }
 
-func ValidateConfig(c store.Config) error {
+// configSchema is the Config schema of [OpenAPI], loaded and validated once.
+var configSchema = sync.OnceValues(func() (*openapi3.Schema, error) { //nolint:gochecknoglobals // parsed once per process
 	t, err := openapi3.NewLoader().LoadFromData(OpenAPI)
 	if err != nil {
-		return fmt.Errorf("loading OpenAPI schema for configs: %w", err)
+		return nil, fmt.Errorf("loading OpenAPI schema for configs: %w", err)
 	}
 
 	if err := t.Validate(context.Background()); err != nil {
-		return fmt.Errorf("validating OpenAPI schema for configs: %w", err)
+		return nil, fmt.Errorf("validating OpenAPI schema for configs: %w", err)
 	}
 
 	ref, ok := t.Components.Schemas["Config"]
 	if !ok {
-		return errors.New("no schema definition found for configs")
+		return nil, errors.New("no schema definition found for configs")
+	}
+
+	return ref.Value, nil
+})
+
+func ValidateConfig(c store.Config) error {
+	schema, err := configSchema()
+	if err != nil {
+		return err
 	}
 
 	// FIXME: using JSON marshal/unmarshal to get Go types converted to JSON
@@ -102,7 +113,7 @@ func ValidateConfig(c store.Config) error {
 
 	_ = json.Unmarshal(data, &spec)
 
-	if err := ref.Value.VisitJSON(spec); err != nil {
+	if err := schema.VisitJSON(spec); err != nil {
 		return fmt.Errorf("%w: %w", ErrValidationFailed, err)
 	}
 

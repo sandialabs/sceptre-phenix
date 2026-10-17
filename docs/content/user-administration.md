@@ -141,6 +141,16 @@ available roles and their access rights.
 
 Key: E - experiment resource, V - VM resource, U - user resource
 
+The built-in **Builder** role is for users of the [Builder](builder/index.md),
+the web topology editor. It holds `builder` `use`, which gives the Builder
+and all its drafts, templates, layer sets and icons. It also controls
+Topology, Scenario and Experiment configs, and can list, get, create and
+update experiments. Global Viewer does not have `builder` `use`, so it has
+no Builder. Its policies
+are in
+[Builder (`builder`)](#builder-builder), and
+[The Builder role](builder/administration.md#the-builder-role) explains them.
+
 ### Resources
 
 #### Resource: `experiments`
@@ -462,6 +472,21 @@ Key: E - experiment resource, V - VM resource, U - user resource
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
+Resource names are `<Kind>/<name>`, such as `Topology/riverside-water`.
+`Topology/*` covers every topology, and `*/*` covers every config, User and
+Role configs included. phēnix also checks create and update against the kind
+and name of the config in the request body. So a role scoped to `Topology/*`
+cannot create or overwrite a User or Role config.
+
+#### Resource: `builder`
+
+|      |      |
+|------|------|
+| Verb | use |
+| Desc | use the Builder: read and change every Builder draft, template, layer set and icon (see [Builder permissions](builder/administration.md#permissions)) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
 #### Resource: `settings`
 
 |      |      |
@@ -558,6 +583,70 @@ spec:
     verbs:
     - post
     - delete
+```
+
+#### Builder (`builder`)
+
+phenix creates this role at start when the store does not have it, and adds
+to a stored `builder` role the `builder` `use` policy that it lacks (see
+[The Builder role](builder/administration.md#the-builder-role)).
+
+```yaml
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: builder
+spec:
+  roleName: Builder
+  policies:
+  # Only the config kinds the Builder reads and publishes: User and Role
+  # configs hold accounts and permissions.
+  - resources:
+    - configs
+    resourceNames:
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+    - delete
+  # Read and change every draft, template, icon and layer set.
+  - resources:
+    - builder
+    verbs:
+    - use
+  - resources:
+    - schemas
+    resourceNames:
+    - "*"
+    verbs:
+    - get
+  - resources:
+    - topologies
+    - scenarios
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - experiments
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+  - resources:
+    - disks
+    resourceNames:
+    - "*"
+    verbs:
+    - list
 ```
 
 #### Experiment Admin (`experiment-admin`)

@@ -16,6 +16,14 @@ func TestDerivedBaseDir(t *testing.T) {
 	}{
 		{name: "unset injects", value: "", phenixBase: "/phenix", sub: "injects", want: "/phenix/injects"},
 		{name: "unset topologies", value: "", phenixBase: "/phenix", sub: "topologies", want: "/phenix/topologies"},
+		{
+			name: "unset builder templates", value: "", phenixBase: "/srv/phenix", sub: builderTemplatesSubdir,
+			want: "/srv/phenix/builder/templates",
+		},
+		{
+			name: "explicit builder templates", value: "/data/templates", phenixBase: "/phenix", sub: builderTemplatesSubdir,
+			want: "/data/templates",
+		},
 		{name: "phenix base with trailing slash", value: "", phenixBase: "/srv/phenix/", sub: "injects", want: "/srv/phenix/injects"},
 		{name: "explicit absolute value", value: "/data/injects", phenixBase: "/phenix", sub: "injects", want: "/data/injects"},
 		{name: "explicit value is verbatim", value: "topologies/", phenixBase: "/phenix", sub: "topologies", want: "topologies/"},
@@ -49,6 +57,13 @@ func TestBaseDirFlags(t *testing.T) {
 			env:   "PHENIX_BASE_DIR_TOPOLOGIES",
 			sub:   "topologies",
 			usage: "base directory for topology directories (default: <base-dir.phenix>/topologies)",
+		},
+		{
+			flag: "base-dir.builder-templates",
+			env:  "PHENIX_BASE_DIR_BUILDER_TEMPLATES",
+			sub:  "builder-templates",
+			usage: "directory of the Builder template files phenix ui reads at start " +
+				"(default: <base-dir.phenix>/builder/templates)",
 		},
 	}
 

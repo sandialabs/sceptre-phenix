@@ -1,0 +1,75 @@
+{
+  "description": "The device templates every template library starts with, as BuiltinTemplates in template.go returns them. A template's description is its own text and is never written into a node, so each spec's description is empty. Read by TestBuiltinTemplatesMatchFixture and, for the editor's palette templates, model.test.js.",
+  "templates": [
+    {
+      "id": "server",
+      "name": "Server",
+      "description": "Generic Linux server",
+      "device": {
+        "iconKey": "server",
+        "spec": {
+          "type": "VirtualMachine",
+          "general": { "hostname": "server", "description": "", "vm_type": "kvm" },
+          "hardware": { "os_type": "linux", "drives": [{ "image": "ubuntu.qc2" }] },
+          "network": { "interfaces": [] }
+        }
+      }
+    },
+    {
+      "id": "workstation",
+      "name": "Workstation",
+      "description": "Operator workstation",
+      "device": {
+        "iconKey": "desktop",
+        "spec": {
+          "type": "VirtualMachine",
+          "general": { "hostname": "workstation", "description": "", "vm_type": "kvm" },
+          "hardware": { "os_type": "windows", "drives": [{ "image": "windows10.qc2" }] },
+          "network": { "interfaces": [] }
+        }
+      }
+    },
+    {
+      "id": "router",
+      "name": "Router",
+      "description": "Layer 3 router",
+      "device": {
+        "iconKey": "router",
+        "spec": {
+          "type": "Router",
+          "general": { "hostname": "router", "description": "", "vm_type": "kvm" },
+          "hardware": { "os_type": "minirouter", "drives": [{ "image": "minirouter.qc2" }] },
+          "network": { "interfaces": [] }
+        }
+      }
+    },
+    {
+      "id": "firewall",
+      "name": "Firewall",
+      "description": "Perimeter firewall",
+      "device": {
+        "iconKey": "firewall",
+        "spec": {
+          "type": "Firewall",
+          "general": { "hostname": "firewall", "description": "", "vm_type": "kvm" },
+          "hardware": { "os_type": "vyos", "drives": [{ "image": "vyos.qc2" }] },
+          "network": { "interfaces": [] }
+        }
+      }
+    },
+    {
+      "id": "external",
+      "name": "External device",
+      "description": "Hardware in the loop device",
+      "device": {
+        "iconKey": "external",
+        "spec": {
+          "external": true,
+          "type": "HIL",
+          "general": { "hostname": "external", "description": "" },
+          "network": { "interfaces": [] }
+        }
+      }
+    }
+  ]
+}

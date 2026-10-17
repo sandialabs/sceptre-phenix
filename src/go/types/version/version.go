@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"gopkg.in/yaml.v3"
@@ -151,21 +152,11 @@ func GetVersionedSchemaForKind(kind, version string) (map[string]any, error) {
 }
 
 // GetVersionedValidatorForKind returns a pointer to the `openapi3.Schema`
-// validator corresponding to the given kind and version.
+// validator corresponding to the given kind and version. Callers must not modify it.
 func GetVersionedValidatorForKind(kind, version string) (*openapi3.Schema, error) {
-	schemaText, err := ReadSchemaFile(version)
+	t, err := loadOpenAPI(version)
 	if err != nil {
 		return nil, err
-	}
-
-	t, err := openapi3.NewLoader().LoadFromData(schemaText)
-	if err != nil {
-		return nil, fmt.Errorf("loading OpenAPI schema for version %s: %w", version, err)
-	}
-
-	err = t.Validate(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("validating OpenAPI schema for version %s: %w", version, err)
 	}
 
 	ref, ok := t.Components.Schemas[kind]
@@ -179,6 +170,43 @@ func GetVersionedValidatorForKind(kind, version string) (*openapi3.Schema, error
 	}
 
 	return ref.Value, nil
+}
+
+//nolint:gochecknoglobals // each embedded schema file is parsed once per process
+var (
+	openAPIMu     sync.Mutex
+	openAPILoaded = map[string]func() (*openapi3.T, error){}
+)
+
+// loadOpenAPI loads and validates the embedded schema file of version once.
+func loadOpenAPI(version string) (*openapi3.T, error) {
+	schemaText, err := ReadSchemaFile(version)
+	if err != nil {
+		return nil, err
+	}
+
+	openAPIMu.Lock()
+
+	load, ok := openAPILoaded[version]
+	if !ok {
+		load = sync.OnceValues(func() (*openapi3.T, error) {
+			t, err := openapi3.NewLoader().LoadFromData(schemaText)
+			if err != nil {
+				return nil, fmt.Errorf("loading OpenAPI schema for version %s: %w", version, err)
+			}
+
+			if err := t.Validate(context.Background()); err != nil {
+				return nil, fmt.Errorf("validating OpenAPI schema for version %s: %w", version, err)
+			}
+
+			return t, nil
+		})
+		openAPILoaded[version] = load
+	}
+
+	openAPIMu.Unlock()
+
+	return load()
 }
 
 // ReadSchemaFile reads the embedded OpenAPI schema YAML file for the given version.

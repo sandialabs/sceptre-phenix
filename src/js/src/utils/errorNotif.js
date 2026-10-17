@@ -15,12 +15,13 @@ export async function useErrorNotification(error) {
       message = `${message}<br><b>Cause:</b> ${cause}`;
     }
   } else if (error.response.data) {
-    // if the error is for an invalid token, log the user out
+    // if the error is for an invalid token, log the user out (after a
+    // warning, when Builder holds changes the server does not have)
     if (
       error.response.status === 401 &&
       String(error.response.data).toLowerCase().includes('invalid')
     ) {
-      usePhenixStore().logout();
+      usePhenixStore().requestLogout('expired');
       message = 'Token was invalid. Logging out';
     } else {
       message = `<b>Error:</b> ${error.response.data}`;

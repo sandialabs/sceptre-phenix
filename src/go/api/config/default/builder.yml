@@ -1,0 +1,55 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: builder
+spec:
+  roleName: Builder
+  policies:
+  # Only the config kinds the Builder reads and publishes: User and Role
+  # configs hold accounts and permissions.
+  - resources:
+    - configs
+    resourceNames:
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+    - delete
+  # Read and change every draft, template, icon and layer set.
+  - resources:
+    - builder
+    verbs:
+    - use
+  - resources:
+    - schemas
+    resourceNames:
+    - "*"
+    verbs:
+    - get
+  - resources:
+    - topologies
+    - scenarios
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - experiments
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+  - resources:
+    - disks
+    resourceNames:
+    - "*"
+    verbs:
+    - list

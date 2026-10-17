@@ -2,16 +2,19 @@
 // settings save, and the config viewer/editor (using a config the test
 // creates and removes itself).
 const { test, expect } = require('@playwright/test');
-const { attachCapture, settle, fatalOf, gotoSeeded } = require('./helpers');
+const {
+  attachCapture,
+  fatalOf,
+  expectTextContrast,
+  visit,
+} = require('./helpers');
 
 test('users: create and delete a user via modal', async ({ page }) => {
   const issues = [];
   attachCapture(page, issues);
-  await gotoSeeded(page, '/users');
-  await settle(page);
-
   // clean leftover from previous runs
   await page.request.delete('/api/v1/users/e2e-user').catch(() => {});
+  await visit(page, '/users');
 
   await page.locator('p.control button.button.is-light').click();
   await expect(
@@ -25,6 +28,30 @@ test('users: create and delete a user via modal', async ({ page }) => {
   await modal.locator('input[type="password"]').nth(0).fill('Testpass1!');
   await modal.locator('input[type="password"]').nth(1).fill('Testpass1!');
   await modal.locator('select').selectOption('Global Viewer');
+
+  // A name the list does not show yet is refused with 409: the dialog keeps
+  // what was typed, says so on its User Name field, and a toast announces it.
+  const create = '**/api/v1/users';
+  await page.route(create, (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({
+          status: 409,
+          contentType: 'text/plain',
+          body: 'user e2e-user already exists\n',
+        })
+      : route.fallback(),
+  );
+  await page.getByRole('button', { name: 'Create User' }).click();
+  await expect(modal.getByText('User already exists')).toBeVisible();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'User already exists' }),
+  ).toBeVisible();
+  await expectTextContrast(page, '.modal-card', 'the Create a New User dialog');
+  await expect(modal.locator('input[type="text"]').nth(0)).toBeFocused();
+  await expect(modal.locator('input[type="password"]').nth(1)).toHaveValue(
+    'Testpass1!',
+  );
+  await page.unroute(create);
 
   await page.getByRole('button', { name: 'Create User' }).click();
   // success path must close the modal
@@ -49,8 +76,13 @@ test('users: create and delete a user via modal', async ({ page }) => {
 test('settings: load and save round-trip', async ({ page }) => {
   const issues = [];
   attachCapture(page, issues);
-  await gotoSeeded(page, '/settings');
-  await settle(page);
+  const loaded = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname.endsWith('/api/v1/settings'),
+  );
+  await visit(page, '/settings');
+  await loaded;
 
   await page.getByRole('button', { name: 'Save Changes' }).click();
   await expect(page.getByText('Settings updated')).toBeVisible({
@@ -83,15 +115,14 @@ test('configs: view a config and open the editor', async ({ page }) => {
   const created = await page.request.post('/api/v1/configs', { data: fixture });
   expect(created.ok(), await created.text()).toBeTruthy();
 
-  await gotoSeeded(page, '/configs/');
-  await settle(page);
+  await visit(page, '/configs/');
 
   const row = page.locator('tr').filter({ hasText: 'e2e-viewer-role' });
   await row.getByText('e2e-viewer-role', { exact: true }).click();
-  await settle(page, 1500);
 
   // viewer opens; Edit switches to the Ace-based editor
-  await page.getByRole('button', { name: /edit/i }).first().click();
+  const viewer = page.getByRole('dialog', { name: 'Role/e2e-viewer-role' });
+  await viewer.getByRole('button', { name: 'Edit Config' }).click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
 
   await page.request
@@ -107,8 +138,7 @@ test('configs: schema selection generates a config template', async ({
 }) => {
   const issues = [];
   attachCapture(page, issues);
-  await gotoSeeded(page, '/configs/');
-  await settle(page);
+  await visit(page, '/configs/');
 
   await page.getByRole('button', { name: 'Create a new config' }).click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });

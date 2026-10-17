@@ -68,6 +68,10 @@ func CreateBridge(opts ...Option) error {
 	return DefaultMM.CreateBridge(opts...)
 }
 
+func GetBridges(hosts ...string) (map[string][]string, error) {
+	return DefaultMM.GetBridges(hosts...)
+}
+
 func CreateTunnel(opts ...Option) error {
 	return DefaultMM.CreateTunnel(opts...)
 }

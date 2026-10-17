@@ -1,0 +1,50 @@
+{
+  "description": "Template names that templatefile.go (TemplateFile.Issues) and the front end's templateFile.js (templateFileIssues and uniqueTemplateNames) must compare alike: two names of one template file are the same when they are equal ignoring case once the white space Go's strings.TrimSpace trims around them is gone. Each case lists the names of a file's templates, in order; duplicate says whether the last is refused as the name of an earlier one. Read by TestTemplateFileNamesCorpus and template-file.test.js.",
+  "cases": [
+    {
+      "name": "the same name in another case",
+      "names": ["PLC", "plc"],
+      "duplicate": true
+    },
+    {
+      "name": "spaces around a name",
+      "names": ["plc", "  plc "],
+      "duplicate": true
+    },
+    {
+      "name": "U+0085 after a name, which Go trims and String.prototype.trim keeps",
+      "names": ["plc", "plc\u0085"],
+      "duplicate": true
+    },
+    {
+      "name": "U+0085 before a name in another case",
+      "names": ["PLC", "\u0085plc"],
+      "duplicate": true
+    },
+    {
+      "name": "U+00A0 and U+3000 around a name",
+      "names": ["plc", " plc　"],
+      "duplicate": true
+    },
+    {
+      "name": "U+FEFF before a name, which String.prototype.trim trims and Go keeps",
+      "names": ["plc", "﻿plc"],
+      "duplicate": false
+    },
+    {
+      "name": "U+FEFF after a name",
+      "names": ["PLC", "plc﻿"],
+      "duplicate": false
+    },
+    {
+      "name": "U+200B after a name, which neither trims",
+      "names": ["plc", "plc​"],
+      "duplicate": false
+    },
+    {
+      "name": "different names",
+      "names": ["PLC", "HMI"],
+      "duplicate": false
+    }
+  ]
+}

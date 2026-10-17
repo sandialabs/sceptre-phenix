@@ -25,13 +25,24 @@ configuration resources, experiments, VMs, images, VLANs, settings, apps,
 SCORCH, minimega integration, or cyber-range workflows, read
 [`skills/phenix/SKILL.md`](skills/phenix/SKILL.md). For `phenix image`, `Image`
 configs, build scripts, overlays, or vmdb2 work, also read
-[`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md). Use code as final
-authority when guidance differs, and update the skills when behavior changes.
+[`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md).
+For the Builder, the web topology editor (its routes, drafts, publishing,
+or its code in `src/go/api/builder/`, `src/go/types/builder/`,
+`src/go/web/builder*.go`, `src/js/src/builder/`,
+`src/js/src/components/builder/`, or `src/js/src/views/Builder.vue`), also
+read [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md),
+the Builder index, then the reference under `skills/phenix/references/builder/`
+that its routing table names for the task.
+Use code as final authority when guidance differs, and update the skills when
+behavior changes.
 
 `SKILL.md` stays broad and always loaded; deep, area-specific material lives in
-`skills/phenix/references/` and is read only when that area is in scope. Put
-new detail in the matching reference file rather than growing `SKILL.md`, and
-leave a one-line pointer to it from `SKILL.md`.
+`skills/phenix/references/` and is read only when that area is in scope — for
+example [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md)
+for the Builder, itself an index of the task references in
+`skills/phenix/references/builder/`. Put new detail in the matching reference
+file rather than growing `SKILL.md` or that index, and leave a one-line
+pointer to it from `SKILL.md`.
 
 ## Architecture
 
@@ -43,7 +54,9 @@ leave a one-line pointer to it from `SKILL.md`.
 - `src/js/src/views/` contains pages, `components/` reusable UI, and `utils/`
   shared helpers. `router.js`, `store.js`, and `main.js` wire the app.
 - The Vite server proxies `/api/v1`, `/version`, and `/features` to
-  `localhost:3000`. Root builds copy `src/js/dist/` into `src/go/web/public/`.
+  `localhost:3000`. Root builds copy `src/js/dist/`, including the build's
+  `builder-assets.json` and the `.br` and `.gz` copies beside Builder's
+  files, into `src/go/web/public/`.
 - `src/go/web/public/` holds what `//go:embed all:public` in
   `src/go/web/assets.go` embeds: the copied UI build and the bundled noVNC
   and xterm.js. It is excluded from every formatting and lint hook in
@@ -108,6 +121,7 @@ When changing a capability, inspect every applicable surface:
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
 | Log or error message text | Docs and skill text that quotes it, such as the Troubleshooting sections in `docs/content/` and `skills/phenix/references/` |
+| Builder behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder*.go`, `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/Builder.vue`, the `builder-*` e2e specs, and the Builder skill references ([`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) and the reference its routing table names for the area) |
 
 Preserve v1/v2 config upgrades, persisted BoltDB data, RBAC migrations, and
 public API compatibility unless a breaking change is deliberate and documented.
@@ -137,6 +151,7 @@ and pass it explicitly, for example
 | Config interfaces and fields | `src/go/types/interfaces/`, `src/go/types/version/` |
 | YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
+| Builder | [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) (the index of `skills/phenix/references/builder/`), `src/go/api/builder/`, `src/go/web/builder*.go`, `src/js/src/builder/` |
 | Narrative docs source | [`docs/`](docs/) |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
 | minimega commands and behavior | [API docs](https://sandia-minimega.github.io/minimega/reference/minimega/), [source](https://github.com/sandia-minimega/minimega) |
@@ -171,8 +186,9 @@ image, documentation, or topology details.
 ## CI and Release Safety
 
 GitHub Actions is path-scoped: `ci.yml` generates, lints, and tests Go;
-`frontend.yml` runs Vitest, builds UI/backend, and runs Playwright smoke tests;
-`examples.yml` checks Go/Python examples; `packages.yml` builds Docker, Debian,
+`frontend.yml` runs Vitest and, for changes that can affect the browser (the
+paths its `changes` job lists), builds UI/backend and runs Playwright smoke
+tests; `examples.yml` checks Go/Python examples; `packages.yml` builds Docker, Debian,
 and Podman outputs; `docs.yml` builds the documentation site for pull requests
 and publishes it to GitHub Pages from `main`. `lint.yml` runs every prek hook
 on all changes. Update affected path filters, inputs, generated artifacts,

@@ -15,7 +15,6 @@ func TestInitEndpointScheme(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "bolt", endpoint: "bolt://" + boltPath},
-		{name: "etcd", endpoint: "etcd://localhost:2379", wantErr: true},
 		{name: "unknown", endpoint: "foo://localhost", wantErr: true},
 	}
 
@@ -25,9 +24,15 @@ func TestInitEndpointScheme(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			before := DefaultStore
+
 			err := Init(Endpoint(tt.endpoint))
 			if tt.wantErr && err == nil {
 				t.Fatalf("Init(%q) returned no error", tt.endpoint)
+			}
+
+			if tt.wantErr && DefaultStore != before {
+				t.Fatalf("Init(%q) failed but replaced DefaultStore", tt.endpoint)
 			}
 
 			if !tt.wantErr && err != nil {

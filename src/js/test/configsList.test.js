@@ -3,6 +3,7 @@ import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import axiosInstance from '@/utils/axios.js';
 import { useErrorNotification } from '@/utils/errorNotif';
+import { roleAllowed } from '@/utils/rbac.js';
 import ConfigsList from '@/components/configs/ConfigsList.vue';
 
 // The real modules import the Pinia store, the router or Buefy, which need a
@@ -83,6 +84,8 @@ function render(error, warnings) {
   for (const name of otherBuefyComponents) {
     app.component(name, { render: () => null });
   }
+  // A row's Builder tag is a router-link, and the test has no router.
+  app.component('router-link', { render: () => null });
   return renderToString(app);
 }
 
@@ -138,8 +141,8 @@ describe('ConfigsList upload errors', () => {
     const html = await render(openDialog, warnings);
     const closedHtml = await render(closedDialog, warnings);
 
-    // Every Buefy tag has a stub, so Vue warned about nothing, not even
-    // "Failed to resolve component".
+    // Every Buefy tag and router-link has a stub, so Vue warned about
+    // nothing, not even "Failed to resolve component".
     expect(warnings).toEqual([]);
     // Each render ran created(), which only fetches the config list.
     expect(axiosInstance.get.mock.calls).toEqual([['configs'], ['configs']]);
@@ -155,5 +158,33 @@ describe('ConfigsList upload errors', () => {
     expect(text).toBe(validation.replaceAll('"', '&quot;'));
 
     expect(closedHtml).not.toContain('<textarea');
+  });
+});
+
+describe('ConfigsList Builder control', () => {
+  const built = {
+    kind: 'Topology',
+    metadata: { name: 'site', annotations: { 'builder-doc': '{}' } },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('a role with the Builder gets the link into it', () => {
+    roleAllowed.mockImplementation(() => true);
+    const vm = newConfigsList();
+
+    expect(vm.builderControl(built)).toBe('open');
+    expect(vm.tagControl(built)).toBe('open');
+    expect(roleAllowed).toHaveBeenCalledWith('builder', 'use');
+  });
+
+  test('a role without the Builder gets no link, whatever configs it may read', () => {
+    roleAllowed.mockImplementation((resource) => resource !== 'builder');
+    const vm = newConfigsList();
+
+    expect(vm.builderControl(built)).toBe('');
+    expect(vm.tagControl(built)).toBe('');
   });
 });

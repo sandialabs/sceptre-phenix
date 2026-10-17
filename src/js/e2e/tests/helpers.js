@@ -1,4 +1,6 @@
 // Shared helpers for the phenix UI smoke tests.
+const { expect } = require('@playwright/test');
+const AxeBuilder = require('@axe-core/playwright').default;
 
 // Attach console/network/pageerror capture to a page; findings pushed into `issues`.
 function attachCapture(page, issues) {
@@ -64,6 +66,20 @@ async function gotoSeeded(page, path) {
   await page.goto(path);
 }
 
+// Opens a route once the app has mounted, loading it again if the first load
+// redirected elsewhere.
+async function visit(page, path) {
+  await page.goto(path);
+  await page.waitForFunction(
+    () => (document.querySelector('#app')?.childElementCount || 0) > 0,
+  );
+
+  const want = new URL(path, page.url()).pathname;
+  if (new URL(page.url()).pathname !== want) {
+    await page.goto(path);
+  }
+}
+
 // Unsigned JWT good enough for proxy mode (the server intentionally parses
 // proxy-supplied tokens without verifying the signature).
 function unsignedJwt(username) {
@@ -71,4 +87,28 @@ function unsignedJwt(username) {
   return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: username, exp: 9999999999 })}.sig`;
 }
 
-module.exports = { attachCapture, settle, fatalOf, gotoSeeded, unsignedJwt };
+// Fails when text in `selector` has less contrast than WCAG 1.4.3 asks for,
+// as axe-core measures it; `label` names the element.
+async function expectTextContrast(page, selector, label) {
+  const { violations } = await new AxeBuilder({ page })
+    .include(selector)
+    .withRules(['color-contrast'])
+    .analyze();
+  const failures = violations.flatMap((violation) =>
+    violation.nodes.map(
+      (node) =>
+        `${node.target.join(' ')}: ${node.any.map((check) => check.message).join('; ')}`,
+    ),
+  );
+  expect(failures, `text contrast in ${label}`).toEqual([]);
+}
+
+module.exports = {
+  attachCapture,
+  settle,
+  fatalOf,
+  gotoSeeded,
+  unsignedJwt,
+  expectTextContrast,
+  visit,
+};

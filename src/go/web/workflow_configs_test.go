@@ -14,9 +14,7 @@ import (
 	"github.com/golang/mock/gomock"
 
 	"phenix/store"
-	v1 "phenix/types/version/v1"
 	"phenix/web/middleware"
-	"phenix/web/rbac"
 	"phenix/web/weberror"
 )
 
@@ -349,7 +347,16 @@ func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 					)
 				}
 
-				if !reflect.DeepEqual(dryErr, realErr) {
+				// Compare what the client gets: DeepEqual never finds wrapped multierror causes equal.
+				var realWerr *weberror.WebError
+				if !errors.As(realErr, &realWerr) {
+					t.Fatalf("expected a *weberror.WebError from the real upsert, got %v", realErr)
+				}
+
+				got := []any{werr.Status, werr.Message, werr.Cause, werr.SystemMetadata, werr.UserMetadata}
+				want := []any{realWerr.Status, realWerr.Message, realWerr.Cause, realWerr.SystemMetadata, realWerr.UserMetadata}
+
+				if !reflect.DeepEqual(got, want) {
 					t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
 				}
 			})
@@ -462,20 +469,23 @@ func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
 	}
 }
 
+// TestWorkflowUpsertConfigForbidden refuses a dry run as the real upsert for a
+// role limited to other configs.
 func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 	for _, query := range []string{"?dryRun=true", ""} {
 		for _, exists := range []bool{false, true} {
-			t.Run(fmt.Sprintf("query %q, exists=%t", query, exists), func(t *testing.T) {
+			t.Run(fmt.Sprintf("query %q, exists=%t, other configs only", query, exists), func(t *testing.T) {
 				t.Setenv("BRANCH_NAME", "")
 
 				m := installValidationTestStore(t)
 				expectUpsertExists(m, workflowTestKey("topology/main-topo"), exists)
 
-				// A role with no policies. Role.Allowed needs a non-nil Spec.
 				req := upsertTestRequest(t, query, upsertTestTopology)
-				req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, rbac.Role{Spec: &v1.RoleSpec{}}))
+				req = req.WithContext(context.WithValue(
+					req.Context(), middleware.ContextKeyRole, configsRoleOn([]string{"Topology/other"}, "create", "update"),
+				))
 
-				want := "creating configs not allowed for test-user"
+				want := "creating config Topology/main-topo not allowed for test-user"
 				if exists {
 					want = "updating config Topology/main-topo not allowed for test-user"
 				}
