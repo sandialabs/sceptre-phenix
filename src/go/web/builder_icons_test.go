@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/gorilla/mux"
 
 	bapi "phenix/api/builder"
@@ -71,16 +74,17 @@ func (h *builderHarness) postIcon(user, name string, data []byte) *httptest.Resp
 	})
 }
 
-// iconRequest makes a request of one icon as alice with role.
-func (h *builderHarness) iconRequest(method, name, body string, role *rbac.Role) *httptest.ResponseRecorder {
-	h.t.Helper()
+// iconRequest makes a request of one icon as alice with role, and reports an
+// answer that is not JSON to t.
+func (h *builderHarness) iconRequest(t *testing.T, method, name, body string, role *rbac.Role) *httptest.ResponseRecorder {
+	t.Helper()
 
 	recorder := h.do(builderRequest{
 		method: method, path: builderIconsRoute + "/" + name, body: body, user: builderAlice, role: role,
 	})
 
 	if err := builderJSONError(recorder); err != nil {
-		h.t.Errorf("%s %s: %v", method, name, err)
+		t.Errorf("%s %s: %v", method, name, err)
 	}
 
 	return recorder
@@ -126,9 +130,17 @@ func TestBuilderIconLibrary(t *testing.T) {
 	// A raw read, so an empty library is seen to be a list and not null.
 	empty := harness.do(builderRequest{method: http.MethodGet, path: builderIconsRoute, user: builderAlice, role: user})
 
-	if got, want := strings.TrimSpace(empty.Body.String()),
-		`{"icons":[],"maxIcons":2000}`; empty.Code != http.StatusOK || got != want {
-		t.Fatalf("the empty list = %d %s, want %s", empty.Code, got, want)
+	if empty.Code != http.StatusOK {
+		t.Errorf("GET %s of an empty library: status = %d, want %d", builderIconsRoute, empty.Code, http.StatusOK)
+	}
+
+	var emptyList map[string]any
+	if err := json.Unmarshal(empty.Body.Bytes(), &emptyList); err != nil {
+		t.Fatalf("decoding the empty list %s: %v", empty.Body, err)
+	}
+
+	if diff := cmp.Diff(map[string]any{"icons": []any{}, "maxIcons": float64(2000)}, emptyList); diff != "" {
+		t.Errorf("GET %s of an empty library mismatch (-want +got):\n%s", builderIconsRoute, diff)
 	}
 
 	upload := builderIconPNG(t, 3, 2, 1)
@@ -141,13 +153,17 @@ func TestBuilderIconLibrary(t *testing.T) {
 		Aliases: []string{}, Data: data, CanRename: true, CanDelete: true,
 	}
 
-	if fmt.Sprint(icon) != fmt.Sprint(want) || icon.Created.IsZero() {
-		t.Fatalf("the new icon = %+v, want %+v", icon, want)
+	if diff := cmp.Diff(want, icon); diff != "" {
+		t.Errorf("POST %s (PLC) mismatch (-want +got):\n%s", builderIconsRoute, diff)
+	}
+
+	if icon.Created.IsZero() {
+		t.Errorf("POST %s (PLC): created = %v, want a time", builderIconsRoute, icon.Created)
 	}
 
 	// A document accepts the icon under its name.
 	if issues := bdoc.ValidateIcons(map[string]bdoc.Icon{icon.Name: {Data: icon.Data}}, "icons"); len(issues) != 0 {
-		t.Fatalf("a document refuses the icon: %v", issues)
+		t.Errorf("ValidateIcons(the new icon) = %v, want no issues", issues)
 	}
 }
 
@@ -159,9 +175,14 @@ func TestBuilderIconNameIsTaken(t *testing.T) {
 
 	taken := harness.postIcon(builderBob, "Plc", builderIconPNG(t, 3, 2, 2))
 
-	if taken.Code != http.StatusConflict ||
-		builderRefusal(t, taken).Message != `icon name "Plc" is taken by an icon alice uploaded. Choose another name` {
-		t.Fatalf("other bytes under a taken name = %d %s, want 409", taken.Code, taken.Body)
+	if taken.Code != http.StatusConflict {
+		t.Errorf("POST %s (other bytes as Plc): status = %d, want %d: %s", builderIconsRoute, taken.Code, http.StatusConflict, taken.Body)
+	}
+
+	const message = `icon name "Plc" is taken by an icon alice uploaded. Choose another name`
+
+	if got := builderRefusal(t, taken).Message; got != message {
+		t.Errorf("POST %s (other bytes as Plc): message = %q, want %q", builderIconsRoute, got, message)
 	}
 }
 
@@ -180,37 +201,50 @@ func TestBuilderIconRenameAndDelete(t *testing.T) {
 		method: http.MethodPut, path: builderIconsRoute + "/plc", body: `{"name":"plc-2"}`,
 	}, http.StatusOK, &moved)
 
-	if moved.Name != "plc-2" || moved.ID != icon.ID {
-		t.Fatalf("the renamed icon = %+v", moved)
+	want := icon
+	want.Name, want.Aliases = "plc-2", []string{"PLC"}
+
+	if diff := cmp.Diff(want, moved, cmpopts.IgnoreFields(builderIconResponse{}, "Updated")); diff != "" {
+		t.Errorf("PUT %s/plc (plc-2) mismatch (-want +got):\n%s", builderIconsRoute, diff)
 	}
 
-	list := harness.icons(builderAlice, user)
-	if len(list.Icons) != 1 || list.Icons[0].Name != "plc-2" || list.MaxIcons != bapi.MaxIcons {
-		t.Fatalf("the list = %+v, want the icon and the library limit", list)
+	wantList := builderIconListResponse{Icons: []builderIconResponse{moved}, MaxIcons: bapi.MaxIcons}
+	if diff := cmp.Diff(wantList, harness.icons(builderAlice, user)); diff != "" {
+		t.Errorf("GET %s after the rename mismatch (-want +got):\n%s", builderIconsRoute, diff)
 	}
 
-	deleted := harness.iconRequest(http.MethodDelete, "PLC", "", user)
-	if deleted.Code != http.StatusNoContent || deleted.Body.Len() != 0 {
-		t.Fatalf("deleting the icon = %d %q, want an empty 204", deleted.Code, deleted.Body)
+	deleted := harness.iconRequest(t, http.MethodDelete, "PLC", "", user)
+	if deleted.Code != http.StatusNoContent {
+		t.Errorf("DELETE %s/PLC: status = %d, want %d", builderIconsRoute, deleted.Code, http.StatusNoContent)
 	}
 
-	assertIconChangesLogged(t, logs, base64.StdEncoding.EncodeToString(upload))
+	if deleted.Body.Len() != 0 {
+		t.Errorf("DELETE %s/PLC: body = %q, want none", builderIconsRoute, deleted.Body)
+	}
+
+	if err := iconChangesLogError(t, logs, base64.StdEncoding.EncodeToString(upload)); err != nil {
+		t.Errorf("logging the icon changes: %v", err)
+	}
 }
 
-// assertIconChangesLogged asserts the log says once who added, renamed and
-// deleted an icon, and never holds the image, whose base64 is data.
-func assertIconChangesLogged(t *testing.T, logs *plogtest.Logs, data string) {
+// iconChangesLogError reports a log that does not say once who added, renamed
+// and deleted an icon, or holds the image, whose base64 is data.
+func iconChangesLogError(t *testing.T, logs *plogtest.Logs, data string) error {
 	t.Helper()
 
+	var errs []error
+
 	for _, message := range []string{"added builder icon", "renamed builder icon", "deleted builder icon"} {
-		if len(logs.Records(t, plogtest.Message(message))) != 1 {
-			t.Errorf("the log does not say %q once: %s", message, logs)
+		if got := len(logs.Records(t, plogtest.Message(message))); got != 1 {
+			errs = append(errs, fmt.Errorf("the log says %q %d times, want once: %s", message, got, logs))
 		}
 	}
 
 	if strings.Contains(logs.String(), data) || strings.Contains(logs.String(), data[:24]) {
-		t.Errorf("the log holds the image: %s", logs)
+		errs = append(errs, fmt.Errorf("the log holds the image: %s", logs))
 	}
+
+	return errors.Join(errs...)
 }
 
 // TestBuilderIconLibraryIsBounded refuses an icon beyond the library limit
@@ -237,9 +271,15 @@ func TestBuilderIconLibraryIsBounded(t *testing.T) {
 
 	recorder := harness.postIcon(builderBob, "one-too-many", builderIconPNG(t, 1, 1, bapi.MaxIcons))
 
-	if recorder.Code != http.StatusUnprocessableEntity ||
-		builderRefusal(t, recorder).Message != "icon library is full: it holds at most 2000 icons" {
-		t.Fatalf("the 2001st icon = %d %s, want 422 and the library full", recorder.Code, recorder.Body)
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Errorf("POST %s (the 2001st icon): status = %d, want %d: %s",
+			builderIconsRoute, recorder.Code, http.StatusUnprocessableEntity, recorder.Body)
+	}
+
+	const message = "icon library is full: it holds at most 2000 icons"
+
+	if got := builderRefusal(t, recorder).Message; got != message {
+		t.Errorf("POST %s (the 2001st icon): message = %q, want %q", builderIconsRoute, got, message)
 	}
 }
 
@@ -256,12 +296,24 @@ func TestBuilderIconUploadIsNormalized(t *testing.T) {
 	}, http.StatusCreated, &icon)
 
 	stored, err := base64.StdEncoding.DecodeString(icon.Data)
-	if err != nil || bytes.Contains(stored, []byte("script")) || icon.ID != bdoc.IconID(stored) || icon.ID == bdoc.IconID(loose) {
-		t.Fatalf("the stored icon = %+v (%v), want the pixels of the upload alone", icon, err)
+	if err != nil {
+		t.Fatalf("decoding the stored icon %+v: %v", icon, err)
+	}
+
+	if bytes.Contains(stored, []byte("script")) {
+		t.Errorf("POST %s (a loose PNG) stored %q, want the pixels of the upload alone", builderIconsRoute, stored)
+	}
+
+	if want := bdoc.IconID(stored); icon.ID != want {
+		t.Errorf("POST %s (a loose PNG): id = %q, want %q of the stored pixels", builderIconsRoute, icon.ID, want)
+	}
+
+	if icon.ID == bdoc.IconID(loose) {
+		t.Errorf("POST %s (a loose PNG): id = %q, want other than the id of the upload", builderIconsRoute, icon.ID)
 	}
 
 	if again := harness.postIcon(builderAlice, "loose", loose); again.Code != http.StatusOK {
-		t.Fatalf("the same upload again: status = %d, want %d", again.Code, http.StatusOK)
+		t.Errorf("POST %s (the same upload again): status = %d, want %d", builderIconsRoute, again.Code, http.StatusOK)
 	}
 }
 
@@ -338,21 +390,22 @@ func TestBuilderIconRequests(t *testing.T) {
 			}
 
 			if recorder.Code != tt.status {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, tt.status, recorder.Body)
+				t.Errorf("POST %s: status = %d, want %d: %s", builderIconsRoute, recorder.Code, tt.status, recorder.Body)
 			}
 
 			if got := builderRefusal(t, recorder).Message; got != tt.message {
-				t.Fatalf("message = %q, want %q", got, tt.message)
+				t.Errorf("POST %s: message = %q, want %q", builderIconsRoute, got, tt.message)
 			}
 
 			if got := harness.store.Count(bapi.NamespaceIcons); got != 0 {
-				t.Fatalf("a refused upload left %d records", got)
+				t.Errorf("POST %s: a refused upload left %d records, want 0", builderIconsRoute, got)
 			}
 
 			// Neither the answer nor the log repeats the image that was sent.
 			for _, sent := range []string{"alert", "onload", valid} {
 				if strings.Contains(recorder.Body.String(), sent) || strings.Contains(logs.String(), sent) {
-					t.Fatalf("the answer or the log repeats %q of the request: %s | %s", sent, recorder.Body, logs)
+					t.Errorf("POST %s: the answer or the log repeats %q of the request: %s | %s",
+						builderIconsRoute, sent, recorder.Body, logs)
 				}
 			}
 		})
@@ -365,7 +418,7 @@ func TestBuilderIconRename(t *testing.T) {
 	harness := newBuilderHarness(t)
 	user := builderUserRole()
 
-	addBuilderIcon(t, harness, "plc", builderIconPNG(t, 1, 1, 1))
+	added := addBuilderIcon(t, harness, "plc", builderIconPNG(t, 1, 1, 1))
 
 	for _, tt := range []struct {
 		name, icon, body string
@@ -379,11 +432,17 @@ func TestBuilderIconRename(t *testing.T) {
 		},
 		{name: "an icon nobody has", icon: "scada", body: `{"name":"x"}`, status: http.StatusNotFound, message: "icon not found"},
 	} {
-		recorder := harness.iconRequest(http.MethodPut, tt.icon, tt.body, user)
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := harness.iconRequest(t, http.MethodPut, tt.icon, tt.body, user)
 
-		if recorder.Code != tt.status || builderRefusal(t, recorder).Message != tt.message {
-			t.Errorf("%s: %d %s, want %d %q", tt.name, recorder.Code, recorder.Body, tt.status, tt.message)
-		}
+			if recorder.Code != tt.status {
+				t.Errorf("PUT %s/%s: status = %d, want %d: %s", builderIconsRoute, tt.icon, recorder.Code, tt.status, recorder.Body)
+			}
+
+			if got := builderRefusal(t, recorder).Message; got != tt.message {
+				t.Errorf("PUT %s/%s: message = %q, want %q", builderIconsRoute, tt.icon, got, tt.message)
+			}
+		})
 	}
 
 	var icon builderIconResponse
@@ -392,8 +451,11 @@ func TestBuilderIconRename(t *testing.T) {
 		method: http.MethodPut, path: builderIconsRoute + "/plc", body: `{"name":"PLC"}`,
 	}, http.StatusOK, &icon)
 
-	if icon.Name != "PLC" || len(icon.Aliases) != 0 {
-		t.Fatalf("a change of case = %+v", icon)
+	want := added
+	want.Name = "PLC"
+
+	if diff := cmp.Diff(want, icon, cmpopts.IgnoreFields(builderIconResponse{}, "Updated")); diff != "" {
+		t.Errorf("PUT %s/plc (a change of case) mismatch (-want +got):\n%s", builderIconsRoute, diff)
 	}
 }
 
@@ -415,21 +477,34 @@ func TestBuilderIconNotFound(t *testing.T) {
 		"a%20b",
 	} {
 		for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
-			recorder := harness.iconRequest(method, icon, `{"name":"renamed"}`, builderUserRole())
+			t.Run(method+" "+icon, func(t *testing.T) {
+				recorder := harness.iconRequest(t, method, icon, `{"name":"renamed"}`, builderUserRole())
 
-			if recorder.Code != http.StatusNotFound || builderRefusal(t, recorder).Message != "icon not found" {
-				t.Errorf("%s %s = %d %s, want 404 icon not found", method, icon, recorder.Code, recorder.Body)
-			}
+				if recorder.Code != http.StatusNotFound {
+					t.Errorf("%s %s: status = %d, want %d: %s", method, icon, recorder.Code, http.StatusNotFound, recorder.Body)
+				}
 
-			// The answer never repeats the path.
-			if len(icon) > 8 && strings.Contains(recorder.Body.String(), icon[:8]) {
-				t.Errorf("%s %s: the answer repeats the path: %s", method, icon, recorder.Body)
-			}
+				if got := builderRefusal(t, recorder).Message; got != "icon not found" {
+					t.Errorf("%s %s: message = %q, want %q", method, icon, got, "icon not found")
+				}
+
+				// The answer never repeats the path.
+				if len(icon) > 8 && strings.Contains(recorder.Body.String(), icon[:8]) {
+					t.Errorf("%s %s: the answer repeats the path: %s", method, icon, recorder.Body)
+				}
+			})
 		}
 	}
 
-	if list := harness.icons(builderAlice, builderUserRole()); len(list.Icons) != 1 || list.Icons[0].Name != "kept" {
-		t.Fatalf("the library lists %+v, want the one that was kept", list.Icons)
+	listed := harness.icons(builderAlice, builderUserRole()).Icons
+
+	names := make([]string, 0, len(listed))
+	for _, icon := range listed {
+		names = append(names, icon.Name)
+	}
+
+	if want := []string{"kept"}; !slices.Equal(names, want) {
+		t.Errorf("GET %s lists %q, want %q", builderIconsRoute, names, want)
 	}
 }
 
@@ -489,28 +564,21 @@ func TestBuilderResponseHeaders(t *testing.T) {
 			case strings.HasPrefix(op.template, builderIconsRoute):
 				icons++
 
-				if got := header.Get("X-Content-Type-Options"); got != builderNoSniff {
-					t.Errorf("%s: X-Content-Type-Options = %q, want %q", what, got, builderNoSniff)
+				want := map[string]string{
+					"X-Content-Type-Options": builderNoSniff, "Content-Security-Policy": builderIconCSP, "ETag": "",
 				}
-
-				if got := header.Get("Content-Security-Policy"); got != builderIconCSP {
-					t.Errorf("%s: Content-Security-Policy = %q, want %q", what, got, builderIconCSP)
-				}
-
-				if got := header.Get("ETag"); got != "" {
-					t.Errorf("%s: ETag = %q, want none", what, got)
+				if diff := cmp.Diff(want, builderTestHeader(header, want)); diff != "" {
+					t.Errorf("%s headers mismatch (-want +got):\n%s", what, diff)
 				}
 			case strings.HasPrefix(op.template, "/builder/"), op.template == "/schemas/builder/v1",
 				op.template == "/schemas/builder/templates/v1", op.template == "/schemas/builder/package/v1",
 				op.template == builderLayerSetSchemaPath:
 				builder++
 
-				if got := header.Get("X-Content-Type-Options"); got != builderNoSniff {
-					t.Errorf("%s: X-Content-Type-Options = %q, want %q", what, got, builderNoSniff)
-				}
-
-				if got := header.Get("Content-Security-Policy"); got != "" {
-					t.Errorf("%s: Content-Security-Policy = %q, want none outside the icon library", what, got)
+				// No Content-Security-Policy outside the icon library.
+				want := map[string]string{"X-Content-Type-Options": builderNoSniff, "Content-Security-Policy": ""}
+				if diff := cmp.Diff(want, builderTestHeader(header, want)); diff != "" {
+					t.Errorf("%s headers mismatch (-want +got):\n%s", what, diff)
 				}
 			default:
 				others++
@@ -525,7 +593,8 @@ func TestBuilderResponseHeaders(t *testing.T) {
 	// Two users times each method: five icon operations and their OPTIONS,
 	// and at least 45 others.
 	if icons != 2*10 || builder < 2*45 || others != 2 {
-		t.Fatalf("checked %d icon, %d other Builder and %d other responses", icons, builder, others)
+		t.Errorf("checked %d icon, %d other Builder and %d other responses, want %d, at least %d and %d",
+			icons, builder, others, 2*10, 2*45, 2)
 	}
 
 	// The routes that answer with what a user uploaded or drew are among
@@ -567,21 +636,21 @@ func TestBuilderResponseHeaders(t *testing.T) {
 		{http.MethodGet, "/no-such-route", http.StatusNotFound, false, false},
 		{http.MethodPatch, "/configs/x/x", http.StatusMethodNotAllowed, false, false},
 	} {
-		recorder := harness.do(builderRequest{method: tt.method, path: tt.path, user: builderAlice})
-		what := fmt.Sprintf("%s %s (%d)", tt.method, tt.path, recorder.Code)
-		header := recorder.Header()
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			recorder := harness.do(builderRequest{method: tt.method, path: tt.path, user: builderAlice})
 
-		if recorder.Code != tt.status {
-			t.Errorf("%s: status = %d, want %d", what, recorder.Code, tt.status)
-		}
+			if recorder.Code != tt.status {
+				t.Errorf("%s %s: status = %d, want %d", tt.method, tt.path, recorder.Code, tt.status)
+			}
 
-		if got, want := header.Get("X-Content-Type-Options"), map[bool]string{true: builderNoSniff}[tt.builder]; got != want {
-			t.Errorf("%s: X-Content-Type-Options = %q, want %q", what, got, want)
-		}
-
-		if got, want := header.Get("Content-Security-Policy"), map[bool]string{true: builderIconCSP}[tt.iconsCSP]; got != want {
-			t.Errorf("%s: Content-Security-Policy = %q, want %q", what, got, want)
-		}
+			want := map[string]string{
+				"X-Content-Type-Options":  map[bool]string{true: builderNoSniff}[tt.builder],
+				"Content-Security-Policy": map[bool]string{true: builderIconCSP}[tt.iconsCSP],
+			}
+			if diff := cmp.Diff(want, builderTestHeader(recorder.Header(), want)); diff != "" {
+				t.Errorf("%s %s headers mismatch (-want +got):\n%s", tt.method, tt.path, diff)
+			}
+		})
 	}
 
 	// The headers are also on what a later middleware, such as
@@ -594,9 +663,12 @@ func TestBuilderResponseHeaders(t *testing.T) {
 
 	refused := harness.do(builderRequest{method: http.MethodGet, path: builderIconsRoute, user: builderAlice})
 
-	if refused.Code != http.StatusUnauthorized ||
-		refused.Header().Get("X-Content-Type-Options") != builderNoSniff ||
-		refused.Header().Get("Content-Security-Policy") != builderIconCSP {
-		t.Fatalf("a request refused before the route = %d %v, want 401 with both headers", refused.Code, refused.Header())
+	if refused.Code != http.StatusUnauthorized {
+		t.Errorf("GET %s refused before the route: status = %d, want %d", builderIconsRoute, refused.Code, http.StatusUnauthorized)
+	}
+
+	want := map[string]string{"X-Content-Type-Options": builderNoSniff, "Content-Security-Policy": builderIconCSP}
+	if diff := cmp.Diff(want, builderTestHeader(refused.Header(), want)); diff != "" {
+		t.Errorf("GET %s refused before the route headers mismatch (-want +got):\n%s", builderIconsRoute, diff)
 	}
 }

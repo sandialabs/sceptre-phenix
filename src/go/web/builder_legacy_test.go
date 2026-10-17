@@ -7,13 +7,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gopkg.in/yaml.v3"
 
 	bapi "phenix/api/builder"
@@ -58,8 +59,12 @@ func legacySampleTopology(t *testing.T) store.Config {
 		} `json:"posts"`
 	}
 
-	if err := json.Unmarshal(legacySampleFile(t, "sample-capture.json"), &capture); err != nil || len(capture.Posts) != 1 {
+	if err := json.Unmarshal(legacySampleFile(t, "sample-capture.json"), &capture); err != nil {
 		t.Fatalf("decoding the capture: %v", err)
+	}
+
+	if len(capture.Posts) != 1 {
+		t.Fatalf("the capture holds %d posts, want 1", len(capture.Posts))
 	}
 
 	var saved struct {
@@ -136,17 +141,18 @@ func convertBuilderLegacy(
 	t.Helper()
 
 	recorder := postBuilderLegacy(t, harness, nil, request)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
+	if err := builderStatusError(recorder, http.StatusOK); err != nil {
+		t.Fatalf("POST /builder/legacy: %v", err)
 	}
 
-	if recorder.Header().Get("ETag") != "" {
-		t.Error("a conversion stores nothing, but carries an entity tag")
+	// A conversion stores nothing.
+	if got := recorder.Header().Get("ETag"); got != "" {
+		t.Errorf("POST /builder/legacy: ETag = %q, want none", got)
 	}
 
 	var response legacyResponse
 
-	harness.decode(recorder, &response)
+	decodeBuilderAnswer(t, recorder, &response)
 
 	document, err := bdoc.Parse(response.Document)
 	if err != nil {
@@ -156,6 +162,7 @@ func convertBuilderLegacy(
 	return response, document
 }
 
+// legacyPosition returns the position of the device hostname of document.
 func legacyPosition(t *testing.T, document *bdoc.Document, hostname string) bdoc.Position {
 	t.Helper()
 
@@ -178,47 +185,70 @@ func TestBuilderConvertLegacyDiagram(t *testing.T) {
 	response, document := convertBuilderLegacy(t, harness, map[string]any{"content": sample, "name": " branch-office "})
 
 	if response.Source != nil {
-		t.Errorf("source = %+v, want none for a diagram that came without a topology", response.Source)
+		t.Errorf("POST /builder/legacy (a bare diagram): source = %+v, want none", response.Source)
 	}
 
 	want := []string{legacyAddedSwitch, legacyLeftOutLine, legacyDecorations}
-	if !slices.Equal(response.Warnings, want) || !slices.Equal(document.Source.Warnings, want) {
-		t.Errorf("warnings = %q and %q in the document, want %q", response.Warnings, document.Source.Warnings, want)
+	if diff := cmp.Diff(want, response.Warnings); diff != "" {
+		t.Errorf("POST /builder/legacy (a bare diagram): warnings mismatch (-want +got):\n%s", diff)
 	}
 
-	if document.Metadata.Name != "branch-office" || document.Source.Kind != bdoc.SourceKindManual ||
-		document.Source.Name != "" || document.Source.Digest != "" {
-		t.Errorf("name = %q, source = %+v, want the name asked for and a source that names no config",
-			document.Metadata.Name, document.Source)
+	if got := document.Metadata.Name; got != "branch-office" {
+		t.Errorf("POST /builder/legacy (a bare diagram): name = %q, want %q", got, "branch-office")
+	}
+
+	// A source that names no config, with the warnings.
+	wantSource := &bdoc.Source{Kind: bdoc.SourceKindManual, Warnings: want}
+	if diff := cmp.Diff(wantSource, document.Source, cmpopts.IgnoreFields(bdoc.Source{}, "ImportedAt")); diff != "" {
+		t.Errorf("POST /builder/legacy (a bare diagram): document source mismatch (-want +got):\n%s", diff)
 	}
 
 	imported, err := time.Parse(time.RFC3339, document.Source.ImportedAt)
 	if err != nil || imported.Before(before) || imported.After(time.Now().UTC()) {
-		t.Errorf("importedAt = %q, want the time of the request", document.Source.ImportedAt)
+		t.Errorf("POST /builder/legacy (a bare diagram): importedAt = %q (%v), want the time of the request",
+			document.Source.ImportedAt, err)
 	}
 
 	if got := legacyPosition(t, document, "router-device-0"); got != (bdoc.Position{X: 80, Y: 112}) {
-		t.Errorf("router position = %+v, want the diagram's", got)
+		t.Errorf("legacyPosition(router-device-0) = %+v, want %+v of the diagram", got, bdoc.Position{X: 80, Y: 112})
 	}
 
 	// Without a name, and with a blank one, the document gets the default.
-	for _, request := range []map[string]any{{"content": sample}, {"content": "\xef\xbb\xbf \n" + sample, "name": "  "}} {
-		if _, unnamed := convertBuilderLegacy(t, harness, request); unnamed.Metadata.Name != "legacy-diagram" {
-			t.Errorf("name = %q, want the default", unnamed.Metadata.Name)
-		}
+	for _, tt := range []struct {
+		name    string
+		request map[string]any
+	}{
+		{name: "no name", request: map[string]any{"content": sample}},
+		{name: "a blank name", request: map[string]any{"content": "\xef\xbb\xbf \n" + sample, "name": "  "}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, unnamed := convertBuilderLegacy(t, harness, tt.request); unnamed.Metadata.Name != "legacy-diagram" {
+				t.Errorf("POST /builder/legacy (%s): name = %q, want %q", tt.name, unnamed.Metadata.Name, "legacy-diagram")
+			}
+		})
 	}
 
 	// An empty diagram is converted too.
 	empty, blank := convertBuilderLegacy(t, harness, map[string]any{"content": "<mxGraphModel/>"})
-	if len(blank.Nodes) != 0 || !slices.Equal(empty.Warnings, []string{"The diagram has no nodes."}) {
-		t.Errorf("an empty diagram gave %d nodes and the warnings %q", len(blank.Nodes), empty.Warnings)
+	if len(blank.Nodes) != 0 {
+		t.Errorf("POST /builder/legacy (an empty diagram) made %d nodes, want 0", len(blank.Nodes))
+	}
+
+	if diff := cmp.Diff([]string{"The diagram has no nodes."}, empty.Warnings); diff != "" {
+		t.Errorf("POST /builder/legacy (an empty diagram): warnings mismatch (-want +got):\n%s", diff)
 	}
 
 	// Converting reads no config and writes none.
-	if harness.configWrites != 0 || len(harness.configs) != 1 || harness.configGets != gets ||
-		len(harness.configLists) != lists {
-		t.Errorf("writes = %d, configs = %d, gets = %d, lists = %v, want no config read or written",
-			harness.configWrites, len(harness.configs), harness.configGets, harness.configLists)
+	type configUse struct {
+		Writes, Configs, Gets int
+		Lists                 []string
+	}
+
+	wantUse := configUse{Configs: 1, Gets: gets, Lists: harness.configLists[:lists]}
+	gotUse := configUse{Writes: harness.configWrites, Configs: len(harness.configs), Gets: harness.configGets, Lists: harness.configLists}
+
+	if diff := cmp.Diff(wantUse, gotUse); diff != "" {
+		t.Errorf("POST /builder/legacy: config use mismatch, want no config read or written (-want +got):\n%s", diff)
 	}
 
 	// The document is what a draft is made from, with the token of a bare
@@ -232,12 +262,16 @@ func TestBuilderConvertLegacyDiagram(t *testing.T) {
 
 	_, refusal := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"sample","action":"update"}}`, http.StatusConflict)
-	if refusal != "topology sample is not the source this draft was loaded from" {
-		t.Errorf("refusal = %q, want the draft refused as not loaded from the topology", refusal)
+	if want := "topology sample is not the source this draft was loaded from"; refusal != want {
+		t.Errorf("publishing the draft of a bare diagram over topology sample: refusal = %q, want %q", refusal, want)
 	}
 
-	if harness.configWrites != 0 || harness.configs[0].HasAnnotation(bapi.DocumentAnnotation) {
-		t.Error("the refused publication changed the topology")
+	if harness.configWrites != 0 {
+		t.Errorf("the refused publication wrote %d configs, want 0", harness.configWrites)
+	}
+
+	if harness.configs[0].HasAnnotation(bapi.DocumentAnnotation) {
+		t.Errorf("the refused publication left %s on the topology", bapi.DocumentAnnotation)
 	}
 }
 
@@ -281,32 +315,45 @@ func TestBuilderConvertLegacyTopology(t *testing.T) {
 			// The name is that of the topology, whatever the request says.
 			response, document := convertBuilderLegacy(t, harness, map[string]any{"content": content, "name": "ignored"})
 
-			source := response.Source
-			if source == nil || source.FullName != "Topology/sample" || source.Stored ||
-				source.Builder != bdoc.LegacyXMLAnnotation || source.Digest != digest {
-				t.Fatalf("source = %+v, want the uploaded topology with its legacy diagram and digest", source)
+			// The uploaded topology, with its legacy diagram and digest.
+			wantSource := &builderSourceResponse{
+				Kind: builderKindTopology, Name: "sample", FullName: "Topology/sample", APIVersion: "phenix.sandia.gov/v1",
+				Builder: bdoc.LegacyXMLAnnotation, Digest: digest, Generatable: true,
+			}
+			if diff := cmp.Diff(
+				wantSource,
+				response.Source,
+				cmpopts.IgnoreFields(builderSourceResponse{}, "Created", "Updated"),
+			); diff != "" {
+				t.Errorf("POST /builder/legacy (%s): source mismatch (-want +got):\n%s", name, diff)
 			}
 
-			if document.Metadata.Name != "sample" || document.Source.Kind != bdoc.SourceKindTopology ||
-				document.Source.Name != "sample" || document.Source.Digest != digest {
-				t.Errorf("name = %q, source = %+v, want those of the topology", document.Metadata.Name, document.Source)
+			if got := document.Metadata.Name; got != "sample" {
+				t.Errorf("POST /builder/legacy (%s): name = %q, want %q", name, got, "sample")
 			}
 
-			if want := map[string]string{"team": "ops"}; !reflect.DeepEqual(document.Source.Annotations, want) {
-				t.Errorf("annotations = %v, want %v without the diagram", document.Source.Annotations, want)
+			// The annotations are the topology's without the diagram.
+			wantDocumentSource := &bdoc.Source{
+				Kind: bdoc.SourceKindTopology, Name: "sample", APIVersion: "phenix.sandia.gov/v1", Digest: digest,
+				Annotations: map[string]string{"team": "ops"},
+				Warnings:    []string{legacyAddedSwitch, legacyLeftOutLine, legacyDecorations},
+			}
+			if diff := cmp.Diff(wantDocumentSource, document.Source, cmpopts.IgnoreFields(bdoc.Source{}, "ImportedAt")); diff != "" {
+				t.Errorf("POST /builder/legacy (%s): document source mismatch (-want +got):\n%s", name, diff)
 			}
 
 			if got := legacyPosition(t, document, "client-1"); got != (bdoc.Position{X: 80, Y: 832}) {
-				t.Errorf("client position = %+v, want the diagram's", got)
+				t.Errorf("legacyPosition(client-1) = %+v, want %+v of the diagram", got, bdoc.Position{X: 80, Y: 832})
 			}
 
 			want := []string{legacyAddedSwitch, legacyLeftOutLine, legacyDecorations}
-			if !slices.Equal(response.Warnings, want) {
-				t.Errorf("warnings = %q, want %q", response.Warnings, want)
+			if diff := cmp.Diff(want, response.Warnings); diff != "" {
+				t.Errorf("POST /builder/legacy (%s): warnings mismatch (-want +got):\n%s", name, diff)
 			}
 
 			if harness.configWrites != 0 || harness.configGets != 0 {
-				t.Errorf("writes = %d, gets = %d, want no config read or written", harness.configWrites, harness.configGets)
+				t.Errorf("POST /builder/legacy (%s): config writes = %d, gets = %d, want none",
+					name, harness.configWrites, harness.configGets)
 			}
 		})
 	}
@@ -332,17 +379,22 @@ func TestBuilderConvertLegacyTopologyResolvesIncludes(t *testing.T) {
 	role := builderRole(builderPolicy([]string{"configs"}, []string{"*"}, []string{"get", "create"}))
 
 	recorder := postBuilderLegacy(t, harness, role, map[string]any{"content": string(content)})
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
+	if err := builderStatusError(recorder, http.StatusOK); err != nil {
+		t.Fatalf("POST /builder/legacy (a topology including shared): %v", err)
 	}
 
 	var response legacyResponse
 
 	harness.decode(recorder, &response)
 
-	if !strings.Contains(strings.Join(response.Warnings, "\n"), `included topology "shared" could not be read`) ||
-		strings.Contains(string(response.Document), `"dns"`) {
-		t.Errorf("warnings = %q, want the include refused and its node left out", response.Warnings)
+	const refused = `included topology "shared" could not be read`
+
+	if !strings.Contains(strings.Join(response.Warnings, "\n"), refused) {
+		t.Errorf("POST /builder/legacy (a topology including shared): warnings = %q, want %q among them", response.Warnings, refused)
+	}
+
+	if strings.Contains(string(response.Document), `"dns"`) {
+		t.Errorf("POST /builder/legacy (a topology including shared): the document holds the included node dns, want it left out")
 	}
 }
 
@@ -446,16 +498,22 @@ func TestBuilderConvertLegacyRequests(t *testing.T) {
 			recorder := harness.do(builderRequest{
 				method: http.MethodPost, path: "/builder/legacy", body: body, user: builderAlice,
 			})
-			if recorder.Code != test.status {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, test.status, recorder.Body)
+			if err := builderStatusError(recorder, test.status); err != nil {
+				t.Errorf("POST /builder/legacy: %v", err)
 			}
 
-			var refusal builderErrorBody
+			refusal := builderRefusal(t, recorder)
 
-			harness.decode(recorder, &refusal)
+			if test.message == "" {
+				return
+			}
 
-			if test.message != "" && (refusal.Message != test.message || refusal.Cause != "") {
-				t.Errorf("refusal = %+v, want the message %q and no cause", refusal, test.message)
+			if refusal.Message != test.message {
+				t.Errorf("POST /builder/legacy: message = %q, want %q", refusal.Message, test.message)
+			}
+
+			if refusal.Cause != "" {
+				t.Errorf("POST /builder/legacy: cause = %q, want none", refusal.Cause)
 			}
 		})
 	}
@@ -471,27 +529,29 @@ func TestBuilderConvertLegacyRequiresGetAndCreate(t *testing.T) {
 		"get only":    {"list", "get", "update", "delete"},
 		"create only": {"list", "create", "update", "delete"},
 	} {
-		role := builderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, verbs))
+		t.Run(name, func(t *testing.T) {
+			role := builderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, verbs))
 
-		recorder := postBuilderLegacy(t, harness, role, request)
-		if recorder.Code != http.StatusForbidden {
-			t.Errorf("%s: status = %d, want %d: %s", name, recorder.Code, http.StatusForbidden, recorder.Body)
-		}
+			recorder := postBuilderLegacy(t, harness, role, request)
+			if err := builderStatusError(recorder, http.StatusForbidden); err != nil {
+				t.Errorf("POST /builder/legacy with configs %q: %v", verbs, err)
+			}
 
-		if strings.Contains(recorder.Body.String(), "mxGraphModel") {
-			t.Errorf("%s: the refusal repeats the content", name)
-		}
+			if strings.Contains(recorder.Body.String(), "mxGraphModel") {
+				t.Errorf("POST /builder/legacy with configs %q: the refusal repeats the content: %s", verbs, recorder.Body)
+			}
+		})
 	}
 
 	role := builderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"get", "create"}))
-	if recorder := postBuilderLegacy(t, harness, role, request); recorder.Code != http.StatusOK {
-		t.Errorf("get and create: status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
+	if err := builderStatusError(postBuilderLegacy(t, harness, role, request), http.StatusOK); err != nil {
+		t.Errorf("POST /builder/legacy with configs get and create: %v", err)
 	}
 
 	// Without an identity at all.
 	recorder := harness.do(builderRequest{method: http.MethodPost, path: "/builder/legacy", body: `{"content":"<root/>"}`})
 	if recorder.Code != http.StatusForbidden {
-		t.Errorf("anonymous: status = %d, want %d", recorder.Code, http.StatusForbidden)
+		t.Errorf("POST /builder/legacy without an identity: status = %d, want %d", recorder.Code, http.StatusForbidden)
 	}
 }
 
@@ -522,22 +582,25 @@ func TestBuilderConvertLegacyNeverRepeatsContent(t *testing.T) {
 			`schemaVars="{&quot;general&quot;:{&quot;hostname&quot;:&quot;` + secret + `&quot;}}">` +
 			`<mxCell vertex="1" parent="0"/></object></root></mxGraphModel>`,
 	} {
-		recorder := postBuilderLegacy(t, harness, nil, map[string]any{"content": content})
+		t.Run(name, func(t *testing.T) {
+			recorder := postBuilderLegacy(t, harness, nil, map[string]any{"content": content})
 
-		converted := recorder.Code == http.StatusOK
-		if !converted && recorder.Code != http.StatusUnprocessableEntity {
-			t.Errorf("%s: status = %d: %s", name, recorder.Code, recorder.Body)
-		}
+			converted := recorder.Code == http.StatusOK
+			if !converted && recorder.Code != http.StatusUnprocessableEntity {
+				t.Errorf("POST /builder/legacy: status = %d, want %d or %d: %s",
+					recorder.Code, http.StatusOK, http.StatusUnprocessableEntity, recorder.Body)
+			}
 
-		if !converted && strings.Contains(recorder.Body.String(), secret) {
-			t.Errorf("%s: the refusal repeats the content: %s", name, recorder.Body)
-		}
+			if !converted && strings.Contains(recorder.Body.String(), secret) {
+				t.Errorf("POST /builder/legacy: the refusal repeats the content: %s", recorder.Body)
+			}
 
-		if logged := logs.String(); strings.Contains(logged, secret) {
-			t.Errorf("%s: the log repeats the content: %s", name, logged)
-		}
+			if logged := logs.String(); strings.Contains(logged, secret) {
+				t.Errorf("POST /builder/legacy: the log repeats the content: %s", logged)
+			}
 
-		logs.Take(t, nil)
+			logs.Take(t, nil)
+		})
 	}
 
 	// What a conversion logs: who, which kind of input, and how many
@@ -545,9 +608,16 @@ func TestBuilderConvertLegacyNeverRepeatsContent(t *testing.T) {
 	convertBuilderLegacy(t, harness, map[string]any{"content": string(legacySampleFile(t, "sample.xml"))})
 
 	records := logs.Take(t, plogtest.Message("converted legacy builder diagram"))
-	if len(records) != 1 || records[0]["user"] != builderAlice || records[0]["kind"] != "diagram" ||
-		records[0]["warnings"] != float64(3) {
-		t.Errorf("logged %v, want one record with the user, the kind and the number of warnings", records)
+
+	logged := make([]map[string]any, 0, len(records))
+	for _, record := range records {
+		logged = append(logged, map[string]any{"user": record["user"], "kind": record["kind"], "warnings": record["warnings"]})
+	}
+
+	// One record with the user, the kind and the number of warnings.
+	want := []map[string]any{{"user": builderAlice, "kind": "diagram", "warnings": float64(3)}}
+	if diff := cmp.Diff(want, logged); diff != "" {
+		t.Errorf("POST /builder/legacy (the sample diagram): log mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -566,19 +636,43 @@ func TestBuilderConvertLegacyLeavesTheEnvironmentAlone(t *testing.T) {
 	harness := newBuilderHarness(t)
 	response, document := convertBuilderLegacy(t, harness, map[string]any{"content": content})
 
-	spec := document.FindDevice("host").Device.Spec
-	if commands := spec["commands"]; !reflect.DeepEqual(commands, []any{"cd $HOME", "echo ${HOME}"}) {
-		t.Errorf("commands = %v, want them as the diagram has them", commands)
+	node := document.FindDevice("host")
+	if node == nil {
+		t.Fatalf("the document has no device host")
 	}
 
-	if vcpus := spec["hardware"].(map[string]any)["vcpus"]; vcpus != "1" {
-		t.Errorf("vcpus = %v, want the legacy default", vcpus)
+	spec := node.Device.Spec
+
+	// The commands as the diagram has them.
+	if diff := cmp.Diff([]any{"cd $HOME", "echo ${HOME}"}, spec["commands"]); diff != "" {
+		t.Errorf("POST /builder/legacy: commands mismatch (-want +got):\n%s", diff)
+	}
+
+	hardware, _ := spec["hardware"].(map[string]any)
+	if vcpus := hardware["vcpus"]; vcpus != "1" {
+		t.Errorf("POST /builder/legacy: vcpus = %v, want the legacy default 1", vcpus)
 	}
 
 	want := []string{"Used the legacy defaults for variables the diagram does not define: $DEFAULT_VCPU = 1."}
-	if !slices.Equal(response.Warnings, want) {
-		t.Errorf("warnings = %q, want %q", response.Warnings, want)
+	if diff := cmp.Diff(want, response.Warnings); diff != "" {
+		t.Errorf("POST /builder/legacy: warnings mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// legacyBuilders returns the builder annotation each source carries, in order.
+func legacyBuilders(sources []builderSourceResponse) []string {
+	builders := make([]string, 0, len(sources))
+	for _, source := range sources {
+		builders = append(builders, source.Builder)
+	}
+
+	return builders
+}
+
+// isDocumentReference reports whether key is the document reference, which a
+// test decodes on its own, to leave it out of a comparison of annotations.
+func isDocumentReference(key, _ string) bool {
+	return key == bapi.DocumentAnnotation
 }
 
 // TestBuilderGenerateConvertsLegacyTopology imports a legacy topology, stored
@@ -587,9 +681,10 @@ func TestBuilderGenerateConvertsLegacyTopology(t *testing.T) {
 	topology := legacySampleTopology(t)
 	harness := newBuilderHarness(t, topology)
 
+	// The topology is marked as a legacy one.
 	groups := builderListSources(t, harness, nil)
-	if len(groups.Topologies) != 1 || groups.Topologies[0].Builder != bdoc.LegacyXMLAnnotation {
-		t.Fatalf("sources = %+v, want the topology marked as a legacy one", groups.Topologies)
+	if diff := cmp.Diff([]string{bdoc.LegacyXMLAnnotation}, legacyBuilders(groups.Topologies)); diff != "" {
+		t.Errorf("GET /builder/sources: builders of the topologies mismatch (-want +got):\n%s", diff)
 	}
 
 	content, err := json.Marshal(topology)
@@ -601,32 +696,51 @@ func TestBuilderGenerateConvertsLegacyTopology(t *testing.T) {
 	uploaded := builderJSON(t, map[string]string{"content": string(content)})
 
 	for name, body := range map[string]string{"stored": stored, "a config file": uploaded} {
-		var response builderGenerateResponse
+		t.Run(name, func(t *testing.T) {
+			var response builderGenerateResponse
 
-		harness.doDecode(builderRequest{
-			method: http.MethodPost, path: "/builder/generate", body: body, user: builderAlice,
-		}, http.StatusOK, &response)
+			recorder := harness.do(builderRequest{method: http.MethodPost, path: "/builder/generate", body: body, user: builderAlice})
+			if err := builderStatusError(recorder, http.StatusOK); err != nil {
+				t.Fatalf("POST /builder/generate %s: %v", body, err)
+			}
 
-		document, err := bdoc.Parse(response.Document)
-		if err != nil {
-			t.Fatalf("%s: the generated document is not valid: %v", name, err)
-		}
+			decodeBuilderAnswer(t, recorder, &response)
 
-		if response.Source.Builder != bdoc.LegacyXMLAnnotation || response.Source.Stored != (body == stored) {
-			t.Errorf("%s: source = %+v, want it marked as a legacy topology", name, response.Source)
-		}
+			document, err := bdoc.Parse(response.Document)
+			if err != nil {
+				t.Fatalf("bdoc.Parse(the generated document) error: %v", err)
+			}
 
-		if got := legacyPosition(t, document, "server-device-5"); got != (bdoc.Position{X: 1280, Y: 512}) {
-			t.Errorf("%s: position = %+v, want the diagram's", name, got)
-		}
+			// Marked as a legacy topology.
+			wantSource := builderSourceResponse{
+				Kind: builderKindTopology, Name: "sample", FullName: "Topology/sample", APIVersion: "phenix.sandia.gov/v1",
+				Digest: document.Source.Digest, Stored: body == stored, Builder: bdoc.LegacyXMLAnnotation, Generatable: true,
+			}
+			if diff := cmp.Diff(
+				wantSource,
+				response.Source,
+				cmpopts.IgnoreFields(builderSourceResponse{}, "Created", "Updated"),
+			); diff != "" {
+				t.Errorf("POST /builder/generate %s: source mismatch (-want +got):\n%s", name, diff)
+			}
 
-		if want := []string{legacyAddedSwitch, legacyLeftOutLine, legacyDecorations}; !slices.Equal(response.Warnings, want) {
-			t.Errorf("%s: warnings = %q, want %q", name, response.Warnings, want)
-		}
+			if got := legacyPosition(t, document, "server-device-5"); got != (bdoc.Position{X: 1280, Y: 512}) {
+				t.Errorf("legacyPosition(server-device-5) = %+v, want %+v of the diagram", got, bdoc.Position{X: 1280, Y: 512})
+			}
 
-		if document.Source.Kind != bdoc.SourceKindTopology || document.Source.ImportedAt == "" {
-			t.Errorf("%s: source = %+v, want the topology's with the time of the import", name, document.Source)
-		}
+			want := []string{legacyAddedSwitch, legacyLeftOutLine, legacyDecorations}
+			if diff := cmp.Diff(want, response.Warnings); diff != "" {
+				t.Errorf("POST /builder/generate %s: warnings mismatch (-want +got):\n%s", name, diff)
+			}
+
+			if got := document.Source.Kind; got != bdoc.SourceKindTopology {
+				t.Errorf("POST /builder/generate %s: document source kind = %q, want %q", name, got, bdoc.SourceKindTopology)
+			}
+
+			if document.Source.ImportedAt == "" {
+				t.Errorf("POST /builder/generate %s: importedAt is empty, want the time of the import", name)
+			}
+		})
 	}
 
 	// A topology the Builder has published is generated from its spec: the
@@ -634,8 +748,12 @@ func TestBuilderGenerateConvertsLegacyTopology(t *testing.T) {
 	harness.configs[0].Metadata.Annotations[bapi.DocumentAnnotation] = `{"digest":"sha256:` + strings.Repeat("0", 64) + `"}`
 
 	document, warnings := postBuilderGenerate(t, harness, nil, stored)
-	if got := legacyPosition(t, document, "server-device-5"); got == (bdoc.Position{X: 1280, Y: 512}) || len(warnings) != 0 {
-		t.Errorf("position = %+v, warnings = %q, want the layout of a plain import", got, warnings)
+	if got := legacyPosition(t, document, "server-device-5"); got == (bdoc.Position{X: 1280, Y: 512}) {
+		t.Errorf("legacyPosition(server-device-5) of a published topology = %+v, want the layout of a plain import", got)
+	}
+
+	if len(warnings) != 0 {
+		t.Errorf("POST /builder/generate of a published topology: warnings = %q, want none", warnings)
 	}
 
 	// Only a topology holds a legacy diagram.
@@ -643,8 +761,9 @@ func TestBuilderGenerateConvertsLegacyTopology(t *testing.T) {
 	experiment.Metadata.Annotations = store.Annotations{bdoc.LegacyXMLAnnotation: "<mxGraphModel/>"}
 	harness.configs = append(harness.configs, experiment)
 
-	if groups := builderListSources(t, harness, nil); len(groups.Experiments) != 1 || groups.Experiments[0].Builder != "" {
-		t.Errorf("experiments = %+v, want none marked as a legacy topology", groups.Experiments)
+	// No experiment is marked as a legacy topology.
+	if diff := cmp.Diff([]string{""}, legacyBuilders(builderListSources(t, harness, nil).Experiments)); diff != "" {
+		t.Errorf("GET /builder/sources: builders of the experiments mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -675,8 +794,12 @@ func TestBuilderPublishReplacesLegacyDiagram(t *testing.T) {
 			publishBuilderDraft(t, harness, draft,
 				`{"mode":"topology","topology":{"name":"sample","action":"create"}}`, http.StatusConflict)
 
-			if harness.configWrites != 0 || !harness.configs[0].HasAnnotation(bdoc.LegacyXMLAnnotation) {
-				t.Fatal("a refused publication changed the legacy topology")
+			if harness.configWrites != 0 {
+				t.Errorf("a refused publication wrote %d configs, want 0", harness.configWrites)
+			}
+
+			if !harness.configs[0].HasAnnotation(bdoc.LegacyXMLAnnotation) {
+				t.Errorf("a refused publication removed %s from the topology", bdoc.LegacyXMLAnnotation)
 			}
 
 			response, _ := publishBuilderDraft(t, harness, draft, intent, http.StatusOK)
@@ -690,7 +813,8 @@ func TestBuilderPublishReplacesLegacyDiagram(t *testing.T) {
 			}
 
 			if count != 1 {
-				t.Errorf("warnings = %+v, want %q once, of code %s", response.Warnings, legacyReplaced, bdoc.CodePublishLegacyReplaced)
+				t.Errorf("publishing %s: warnings = %+v, want %q once, of code %s",
+					intent, response.Warnings, legacyReplaced, bdoc.CodePublishLegacyReplaced)
 			}
 
 			published, err := harness.getConfig("Topology/sample")
@@ -698,23 +822,24 @@ func TestBuilderPublishReplacesLegacyDiagram(t *testing.T) {
 				t.Fatalf("the published topology is missing: %v", err)
 			}
 
+			// The legacy diagram is gone; the team and the document reference stay.
 			annotations := published.Metadata.Annotations
-			if _, legacy := annotations[bdoc.LegacyXMLAnnotation]; legacy || annotations["team"] != "ops" || len(annotations) != 2 {
-				t.Errorf("annotations = %v, want the legacy diagram gone, and the team and the document reference", annotations)
+			if diff := cmp.Diff(store.Annotations{"team": "ops"}, annotations, cmpopts.IgnoreMapEntries(isDocumentReference)); diff != "" {
+				t.Errorf("publishing %s: annotations mismatch (-want +got):\n%s", intent, diff)
 			}
 
 			if _, err := bapi.DecodeReference(annotations[bapi.DocumentAnnotation]); err != nil {
-				t.Errorf("the document reference is not valid: %v", err)
+				t.Errorf("bapi.DecodeReference(the document reference) error: %v", err)
 			}
 
 			if got := topologyHostnames(t, harness, "sample"); len(got) != 5 {
-				t.Errorf("nodes = %v, want the five of the topology", got)
+				t.Errorf("topologyHostnames(sample) = %v, want the five of the topology", got)
 			}
 
 			// The sources list it as a Builder topology, and Import reads its spec.
 			groups := builderListSources(t, harness, nil)
-			if len(groups.Topologies) != 1 || groups.Topologies[0].Builder != bapi.DocumentAnnotation {
-				t.Errorf("sources = %+v, want the topology marked as a Builder one", groups.Topologies)
+			if diff := cmp.Diff([]string{bapi.DocumentAnnotation}, legacyBuilders(groups.Topologies)); diff != "" {
+				t.Errorf("GET /builder/sources: builders of the topologies mismatch (-want +got):\n%s", diff)
 			}
 
 			// Publishing again, after an edit, updates it as any Builder topology,
@@ -723,11 +848,11 @@ func TestBuilderPublishReplacesLegacyDiagram(t *testing.T) {
 
 			again, _ := publishBuilderDraft(t, harness, edited, update, http.StatusOK)
 			if slices.Contains(bdoc.IssueMessages(again.Warnings), legacyReplaced) {
-				t.Errorf("warnings of the second publication = %q, want none of a legacy diagram", again.Warnings)
+				t.Errorf("publishing again: warnings = %q, want none of a legacy diagram", again.Warnings)
 			}
 
 			if got := topologyHostnames(t, harness, "sample"); !slices.Contains(got, "added") {
-				t.Errorf("nodes = %v, want the edit published", got)
+				t.Errorf("topologyHostnames(sample) = %v, want added among them", got)
 			}
 		})
 	}
@@ -748,12 +873,18 @@ func TestBuilderPublishRemovesUnreadableLegacyDiagram(t *testing.T) {
 
 	document, warnings := postBuilderGenerate(t, harness, nil, `{"source":"Topology/sample"}`)
 	if len(warnings) == 0 || !strings.HasPrefix(warnings[0], unread) {
-		t.Fatalf("import warnings = %q, want the diagram reported as not read", warnings)
+		t.Errorf("POST /builder/generate: warnings = %q, want the first to start %q", warnings, unread)
 	}
 
-	groups := builderListSources(t, harness, nil)
-	if len(groups.Topologies) != 1 || groups.Topologies[0].Digest != document.Source.Digest {
-		t.Errorf("sources = %+v, want the digest %s of the import", groups.Topologies, document.Source.Digest)
+	topologies := builderListSources(t, harness, nil).Topologies
+
+	digests := make([]string, 0, len(topologies))
+	for _, source := range topologies {
+		digests = append(digests, source.Digest)
+	}
+
+	if diff := cmp.Diff([]string{document.Source.Digest}, digests); diff != "" {
+		t.Errorf("GET /builder/sources: digests of the topologies mismatch, want that of the import (-want +got):\n%s", diff)
 	}
 
 	draft := createBuilderPublishDraft(t, harness, document, "Topology/sample")
@@ -761,9 +892,12 @@ func TestBuilderPublishRemovesUnreadableLegacyDiagram(t *testing.T) {
 	response, _ := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"sample","action":"update"}}`, http.StatusOK)
 
-	if !slices.Contains(response.Warnings, bdoc.NewIssue(bdoc.CodePublishLegacyRemoved, "", removed)) ||
-		slices.Contains(bdoc.IssueMessages(response.Warnings), legacyReplaced) {
-		t.Errorf("warnings = %q, want %q and nothing of a replaced diagram", response.Warnings, removed)
+	if !slices.Contains(response.Warnings, bdoc.NewIssue(bdoc.CodePublishLegacyRemoved, "", removed)) {
+		t.Errorf("publishing: warnings = %q, want %q among them", response.Warnings, removed)
+	}
+
+	if slices.Contains(bdoc.IssueMessages(response.Warnings), legacyReplaced) {
+		t.Errorf("publishing: warnings = %q, want nothing of a replaced diagram", response.Warnings)
 	}
 
 	published, err := harness.getConfig("Topology/sample")
@@ -771,10 +905,17 @@ func TestBuilderPublishRemovesUnreadableLegacyDiagram(t *testing.T) {
 		t.Fatalf("the published topology is missing: %v", err)
 	}
 
-	annotations := published.Metadata.Annotations
-	if _, legacy := annotations[bdoc.LegacyXMLAnnotation]; legacy || annotations["team"] != "ops" ||
-		!published.HasAnnotation(bapi.DocumentAnnotation) {
-		t.Errorf("annotations = %v, want the diagram gone, the team kept and the document reference", annotations)
+	// The diagram is gone and the team kept.
+	if diff := cmp.Diff(
+		store.Annotations{"team": "ops"},
+		published.Metadata.Annotations,
+		cmpopts.IgnoreMapEntries(isDocumentReference),
+	); diff != "" {
+		t.Errorf("publishing: annotations mismatch (-want +got):\n%s", diff)
+	}
+
+	if !published.HasAnnotation(bapi.DocumentAnnotation) {
+		t.Errorf("publishing: annotations = %v, want %s among them", published.Metadata.Annotations, bapi.DocumentAnnotation)
 	}
 }
 
@@ -904,12 +1045,19 @@ func TestBuilderPublishKeepsLegacyTopology(t *testing.T) {
 
 			_, refusal := publishBuilderDraft(t, harness, draft, update, http.StatusConflict)
 			if refusal != test.refusal {
-				t.Errorf("refusal = %q, want %q", refusal, test.refusal)
+				t.Errorf("publishing %s: refusal = %q, want %q", update, refusal, test.refusal)
 			}
 
-			if !reflect.DeepEqual(harness.configs[0], before) || harness.configWrites != 0 ||
-				harness.store.Count(bapi.NamespacePublished) != 0 {
-				t.Errorf("the refused publication wrote something: %+v", harness.configs[0].Metadata.Annotations)
+			if diff := cmp.Diff(before, harness.configs[0]); diff != "" {
+				t.Errorf("the refused publication changed the topology (-want +got):\n%s", diff)
+			}
+
+			if harness.configWrites != 0 {
+				t.Errorf("the refused publication wrote %d configs, want 0", harness.configWrites)
+			}
+
+			if got := harness.store.Count(bapi.NamespacePublished); got != 0 {
+				t.Errorf("the refused publication stored %d published records, want 0", got)
 			}
 		})
 	}

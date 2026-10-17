@@ -142,7 +142,7 @@ func TestBuilderTemplateFileIconsAreReadOnly(t *testing.T) {
 		{http.MethodPut, `{"name":"rtu-renamed"}`},
 		{http.MethodDelete, ""},
 	} {
-		recorder := harness.iconRequest(request.method, "rtu-icon", request.body, builderUserRole())
+		recorder := harness.iconRequest(t, request.method, "rtu-icon", request.body, builderUserRole())
 		if recorder.Code != http.StatusForbidden {
 			t.Errorf("%s rtu-icon: status = %d, want %d: %s", request.method, recorder.Code, http.StatusForbidden, recorder.Body)
 		}

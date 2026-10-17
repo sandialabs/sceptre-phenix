@@ -6,6 +6,10 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	bdoc "phenix/types/builder"
 )
@@ -60,6 +64,30 @@ func builderLayerSets(t *testing.T, recorder *httptest.ResponseRecorder) builder
 	return list
 }
 
+// builderLayerSetSummary is what the layer set tests check of a library.
+type builderLayerSetSummary struct {
+	IDs                  []string
+	Builtin              []bool
+	DefaultID            *string
+	Damaged              int
+	MaxSets, MaxMatchers int
+}
+
+// summarizeBuilderLayerSets returns the summary of list.
+func summarizeBuilderLayerSets(list builderLayerSetListResponse) builderLayerSetSummary {
+	summary := builderLayerSetSummary{
+		DefaultID: list.DefaultID, Damaged: list.Damaged,
+		MaxSets: list.Limits.LayerSets, MaxMatchers: list.Limits.Matchers,
+	}
+
+	for _, set := range list.LayerSets {
+		summary.IDs = append(summary.IDs, set.ID)
+		summary.Builtin = append(summary.Builtin, set.Builtin)
+	}
+
+	return summary
+}
+
 func TestBuilderLayerSetLibrary(t *testing.T) {
 	harness := newBuilderHarness(t)
 	alice := harness.as(builderAlice, builderUserRole())
@@ -67,9 +95,12 @@ func TestBuilderLayerSetLibrary(t *testing.T) {
 	// The library starts with the built-in set only, and no default.
 	list := builderLayerSets(t, alice.mustDo("list", builderRequest{method: http.MethodGet, path: builderLayerSetsRoute}, http.StatusOK))
 
-	if len(list.LayerSets) != 1 || list.LayerSets[0].ID != bdoc.BuiltinPurdueLayerSetID || !list.LayerSets[0].Builtin ||
-		list.DefaultID != nil || list.Damaged != 0 || list.Limits.LayerSets != 200 || list.Limits.Matchers != 16 {
-		t.Fatalf("the new library is %+v", list)
+	wantList := builderLayerSetSummary{
+		IDs: []string{bdoc.BuiltinPurdueLayerSetID}, Builtin: []bool{true},
+		MaxSets: 200, MaxMatchers: 16,
+	}
+	if diff := cmp.Diff(wantList, summarizeBuilderLayerSets(list)); diff != "" {
+		t.Errorf("GET %s of a new library mismatch (-want +got):\n%s", builderLayerSetsRoute, diff)
 	}
 
 	created := alice.mustDo("create", builderRequest{
@@ -77,18 +108,45 @@ func TestBuilderLayerSetLibrary(t *testing.T) {
 	}, http.StatusCreated)
 
 	set := builderLayerSet(t, created)
-	if set.ID == "" || set.Builtin || set.Version != 1 || set.ETag != `"1"` || created.Header().Get("ETag") != `"1"` ||
-		set.CreatedBy != builderAlice || set.UpdatedBy != builderAlice || set.Created.IsZero() ||
-		set.MatchConflict != bdoc.MatchConflictHighest || !set.LayerOutlines || len(set.Layers) != 2 ||
-		set.Layers[0].Matchers["general.hostname"] != "^hmi-" || set.Layers[0].Color != "#15803d" {
-		t.Fatalf("the created set is %+v", set)
+	if set.ID == "" {
+		t.Fatalf("POST %s: id = %q, want one", builderLayerSetsRoute, set.ID)
+	}
+
+	layerID := func(id int) *int { return &id }
+	want := builderLayerSetResponse{
+		ID: set.ID, Name: "Plant levels", Description: "Levels of the plant.", IconKey: "plc",
+		MatchConflict: bdoc.MatchConflictHighest, LayerOutlines: true,
+		Layers: []bdoc.Layer{
+			{
+				ID: layerID(2), Label: "Supervisory control", IconKey: "desktop", Color: "#15803d",
+				Matchers: map[string]string{"general.hostname": "^hmi-"},
+			},
+			{ID: layerID(1), Label: "Field devices"},
+		},
+		Version: 1, ETag: `"1"`, CreatedBy: builderAlice, UpdatedBy: builderAlice,
+	}
+
+	if diff := cmp.Diff(want, set, cmpopts.IgnoreFields(builderLayerSetResponse{}, "Created", "Updated")); diff != "" {
+		t.Errorf("POST %s mismatch (-want +got):\n%s", builderLayerSetsRoute, diff)
+	}
+
+	if set.Created.IsZero() {
+		t.Errorf("POST %s: created = %v, want a time", builderLayerSetsRoute, set.Created)
+	}
+
+	if got := created.Header().Get("ETag"); got != `"1"` {
+		t.Errorf("POST %s: ETag header = %q, want %q", builderLayerSetsRoute, got, `"1"`)
 	}
 
 	path := builderLayerSetsRoute + "/" + set.ID
 
 	read := alice.mustDo("get", builderRequest{method: http.MethodGet, path: path}, http.StatusOK)
-	if got := builderLayerSet(t, read); got.ID != set.ID || read.Header().Get("ETag") != `"1"` {
-		t.Fatalf("GET returned %+v with ETag %q", got, read.Header().Get("ETag"))
+	if got := builderLayerSet(t, read); got.ID != set.ID {
+		t.Errorf("GET %s: id = %q, want %q", path, got.ID, set.ID)
+	}
+
+	if got := read.Header().Get("ETag"); got != `"1"` {
+		t.Errorf("GET %s: ETag header = %q, want %q", path, got, `"1"`)
 	}
 }
 
@@ -108,34 +166,61 @@ func TestBuilderLayerSetChanges(t *testing.T) {
 		method: http.MethodPut, path: path, body: builderLayerSetBody(t, "Plant levels, changed"), ifMatch: `"1"`,
 	}, http.StatusOK)
 
-	if got := builderLayerSet(t, changed); got.Version != 2 || got.Name != "Plant levels, changed" ||
-		got.UpdatedBy != builderBob || got.CreatedBy != builderAlice || changed.Header().Get("ETag") != `"2"` {
-		t.Fatalf("PUT returned %+v with ETag %q", got, changed.Header().Get("ETag"))
+	want := set
+	want.Name, want.Version, want.ETag, want.UpdatedBy = "Plant levels, changed", 2, `"2"`, builderBob
+
+	if diff := cmp.Diff(want, builderLayerSet(t, changed), cmpopts.IgnoreFields(builderLayerSetResponse{}, "Updated")); diff != "" {
+		t.Errorf("PUT %s as bob mismatch (-want +got):\n%s", path, diff)
+	}
+
+	if got := changed.Header().Get("ETag"); got != `"2"` {
+		t.Errorf("PUT %s as bob: ETag header = %q, want %q", path, got, `"2"`)
 	}
 
 	// A stale If-Match is refused with the current entity tag.
-	stale := alice.mustDo("stale put", builderRequest{
+	stale := alice.do(builderRequest{
 		method: http.MethodPut, path: path, body: builderLayerSetBody(t, "Other"), ifMatch: `"1"`,
-	}, http.StatusPreconditionFailed)
-
-	if got := builderRefusal(t, stale).Code; got != string(bdoc.CodeLayerSetStale) || stale.Header().Get("ETag") != `"2"` {
-		t.Fatalf("a stale PUT has the code %q and ETag %q", got, stale.Header().Get("ETag"))
+	})
+	if err := builderStatusError(stale, http.StatusPreconditionFailed); err != nil {
+		t.Errorf("PUT %s at a stale If-Match: %v", path, err)
 	}
 
-	alice.mustDo("put without If-Match", builderRequest{
+	if got := builderRefusal(t, stale).Code; got != string(bdoc.CodeLayerSetStale) {
+		t.Errorf("PUT %s at a stale If-Match: code = %q, want %q", path, got, bdoc.CodeLayerSetStale)
+	}
+
+	if got := stale.Header().Get("ETag"); got != `"2"` {
+		t.Errorf("PUT %s at a stale If-Match: ETag header = %q, want %q", path, got, `"2"`)
+	}
+
+	if err := builderStatusError(alice.do(builderRequest{
 		method: http.MethodPut, path: path, body: builderLayerSetBody(t, "Other"),
-	}, http.StatusBadRequest)
+	}), http.StatusBadRequest); err != nil {
+		t.Errorf("PUT %s without If-Match: %v", path, err)
+	}
 
 	// The list holds the new set after the built-in one.
 	list := builderLayerSets(t, bob.mustDo("list", builderRequest{method: http.MethodGet, path: builderLayerSetsRoute}, http.StatusOK))
-	if len(list.LayerSets) != 2 || list.LayerSets[1].ID != set.ID || list.LayerSets[1].Version != 2 {
-		t.Fatalf("the library is %+v", list)
+
+	wantList := []string{bdoc.BuiltinPurdueLayerSetID, set.ID}
+	if diff := cmp.Diff(wantList, summarizeBuilderLayerSets(list).IDs); diff != "" {
+		t.Errorf("GET %s: sets mismatch (-want +got):\n%s", builderLayerSetsRoute, diff)
+	}
+
+	if len(list.LayerSets) == 2 && list.LayerSets[1].Version != 2 {
+		t.Errorf("GET %s: version of %s = %d, want 2", builderLayerSetsRoute, set.ID, list.LayerSets[1].Version)
 	}
 
 	// Any user may delete a set another user added.
 	bob.mustDo("delete", builderRequest{method: http.MethodDelete, path: path}, http.StatusNoContent)
-	alice.mustDo("get after delete", builderRequest{method: http.MethodGet, path: path}, http.StatusNotFound)
-	alice.mustDo("delete again", builderRequest{method: http.MethodDelete, path: path}, http.StatusNotFound)
+
+	if err := builderStatusError(alice.do(builderRequest{method: http.MethodGet, path: path}), http.StatusNotFound); err != nil {
+		t.Errorf("GET %s after a delete: %v", path, err)
+	}
+
+	if err := builderStatusError(alice.do(builderRequest{method: http.MethodDelete, path: path}), http.StatusNotFound); err != nil {
+		t.Errorf("DELETE %s again: %v", path, err)
+	}
 }
 
 func TestBuilderBuiltinLayerSetIsReadOnly(t *testing.T) {
@@ -144,20 +229,37 @@ func TestBuilderBuiltinLayerSetIsReadOnly(t *testing.T) {
 	path := builderLayerSetsRoute + "/" + bdoc.BuiltinPurdueLayerSetID
 
 	read := caller.mustDo("get", builderRequest{method: http.MethodGet, path: path}, http.StatusOK)
-	if set := builderLayerSet(t, read); !set.Builtin || set.Name != "Purdue Model" || len(set.Layers) != 7 ||
-		!set.Created.IsZero() || set.CreatedBy != "" {
-		t.Fatalf("the built-in set is %+v", set)
+	set := builderLayerSet(t, read)
+
+	type builtin struct {
+		Builtin   bool
+		Name      string
+		Layers    int
+		Created   time.Time
+		CreatedBy string
+	}
+
+	want := builtin{Builtin: true, Name: "Purdue Model", Layers: 7}
+	got := builtin{Builtin: set.Builtin, Name: set.Name, Layers: len(set.Layers), Created: set.Created, CreatedBy: set.CreatedBy}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GET %s mismatch (-want +got):\n%s", path, diff)
 	}
 
 	for _, request := range []builderRequest{
 		{method: http.MethodPut, path: path, body: builderLayerSetBody(t, "Mine"), ifMatch: `"1"`},
 		{method: http.MethodDelete, path: path},
 	} {
-		refused := caller.mustDo(request.method, request, http.StatusForbidden)
+		t.Run(request.method, func(t *testing.T) {
+			refused := caller.do(request)
+			if err := builderStatusError(refused, http.StatusForbidden); err != nil {
+				t.Errorf("%s %s: %v", request.method, path, err)
+			}
 
-		if got := builderRefusal(t, refused).Code; got != string(bdoc.CodeLayerSetReadOnly) {
-			t.Fatalf("%s of the built-in set has the code %q", request.method, got)
-		}
+			if got := builderRefusal(t, refused).Code; got != string(bdoc.CodeLayerSetReadOnly) {
+				t.Errorf("%s %s: code = %q, want %q", request.method, path, got, bdoc.CodeLayerSetReadOnly)
+			}
+		})
 	}
 }
 
@@ -173,30 +275,54 @@ func TestBuilderLayerSetRefusals(t *testing.T) {
 		},
 	})
 
-	refused := caller.mustDo("invalid", builderRequest{method: http.MethodPost, path: builderLayerSetsRoute, body: invalid},
-		http.StatusUnprocessableEntity)
+	refused := caller.do(builderRequest{method: http.MethodPost, path: builderLayerSetsRoute, body: invalid})
+	if err := builderStatusError(refused, http.StatusUnprocessableEntity); err != nil {
+		t.Errorf("POST %s (an invalid set): %v", builderLayerSetsRoute, err)
+	}
 
 	body := builderRefusal(t, refused)
-	if body.Code != string(bdoc.CodeLayerSetInvalid) || len(body.Issues) != 2 ||
-		body.Issues[0].Code != bdoc.CodeLayerMatcherPatternInvalid ||
-		body.Issues[0].Path != "layers[0].matchers.general.hostname" || body.Issues[1].Code != bdoc.CodeLayerIDDuplicate {
-		t.Fatalf("an invalid set is refused with %+v", body)
+	if body.Code != string(bdoc.CodeLayerSetInvalid) {
+		t.Errorf("POST %s (an invalid set): code = %q, want %q", builderLayerSetsRoute, body.Code, bdoc.CodeLayerSetInvalid)
 	}
 
-	caller.mustDo("unknown field", builderRequest{
+	codes := make([]bdoc.Code, 0, len(body.Issues))
+	for _, issue := range body.Issues {
+		codes = append(codes, issue.Code)
+	}
+
+	wantCodes := []bdoc.Code{bdoc.CodeLayerMatcherPatternInvalid, bdoc.CodeLayerIDDuplicate}
+	if diff := cmp.Diff(wantCodes, codes); diff != "" {
+		t.Errorf("POST %s (an invalid set): issue codes mismatch (-want +got):\n%s", builderLayerSetsRoute, diff)
+	}
+
+	const matcherPath = "layers[0].matchers.general.hostname"
+
+	if len(body.Issues) > 0 && body.Issues[0].Path != matcherPath {
+		t.Errorf("POST %s (an invalid set): path of the first issue = %q, want %q", builderLayerSetsRoute, body.Issues[0].Path, matcherPath)
+	}
+
+	if err := builderStatusError(caller.do(builderRequest{
 		method: http.MethodPost, path: builderLayerSetsRoute, body: `{"name":"Plant","layers":[],"colour":"red"}`,
-	}, http.StatusBadRequest)
+	}), http.StatusBadRequest); err != nil {
+		t.Errorf("POST %s (an unknown field): %v", builderLayerSetsRoute, err)
+	}
 
 	for _, path := range []string{"/missing", "/a.b", "/builtin:other"} {
-		caller.mustDo("get "+path, builderRequest{method: http.MethodGet, path: builderLayerSetsRoute + path}, http.StatusNotFound)
+		if err := builderStatusError(caller.do(builderRequest{
+			method: http.MethodGet, path: builderLayerSetsRoute + path,
+		}), http.StatusNotFound); err != nil {
+			t.Errorf("GET %s%s: %v", builderLayerSetsRoute, path, err)
+		}
 	}
 
-	caller.mustDo("put missing", builderRequest{
+	if err := builderStatusError(caller.do(builderRequest{
 		method: http.MethodPut, path: builderLayerSetsRoute + "/missing", body: builderLayerSetBody(t, "Plant"), ifMatch: `"1"`,
-	}, http.StatusNotFound)
+	}), http.StatusNotFound); err != nil {
+		t.Errorf("PUT %s/missing: %v", builderLayerSetsRoute, err)
+	}
 
 	if harness.store.Count("builder.layersets") != 0 {
-		t.Fatalf("a refusal stored %v", harness.store.Keys("builder.layersets"))
+		t.Errorf("the refusals stored %v, want nothing", harness.store.Keys("builder.layersets"))
 	}
 }
 
@@ -212,12 +338,16 @@ func TestBuilderLayerSetLibraryFull(t *testing.T) {
 		}
 	}
 
-	refused := harness.as(builderAlice, nil).mustDo("one more", builderRequest{
+	refused := harness.as(builderAlice, nil).do(builderRequest{
 		method: http.MethodPost, path: builderLayerSetsRoute, body: builderLayerSetBody(t, "One more"),
-	}, http.StatusRequestEntityTooLarge)
+	})
+	if err := builderStatusError(refused, http.StatusRequestEntityTooLarge); err != nil {
+		t.Errorf("POST %s (one set more than the library holds): %v", builderLayerSetsRoute, err)
+	}
 
 	if got := builderRefusal(t, refused).Code; got != string(bdoc.CodeLayerSetLibraryFull) {
-		t.Fatalf("a full library refuses with the code %q", got)
+		t.Errorf("POST %s (one set more than the library holds): code = %q, want %q",
+			builderLayerSetsRoute, got, bdoc.CodeLayerSetLibraryFull)
 	}
 }
 
@@ -227,12 +357,16 @@ func TestBuilderDefaultLayerSet(t *testing.T) {
 	bob := harness.as(builderBob, builderUserRole())
 	path := builderLayerSetsRoute + "/default"
 
-	readDefault := func(caller builderCaller) *string {
+	readDefault := func(t *testing.T, caller builderCaller) *string {
 		t.Helper()
 
 		var answer builderLayerSetDefault
 
-		recorder := caller.mustDo("get default", builderRequest{method: http.MethodGet, path: path}, http.StatusOK)
+		recorder := caller.do(builderRequest{method: http.MethodGet, path: path})
+		if err := builderStatusError(recorder, http.StatusOK); err != nil {
+			t.Fatalf("GET %s as %s: %v", path, caller.user, err)
+		}
+
 		if err := json.Unmarshal(recorder.Body.Bytes(), &answer); err != nil {
 			t.Fatalf("decoding the default: %v", err)
 		}
@@ -240,40 +374,52 @@ func TestBuilderDefaultLayerSet(t *testing.T) {
 		return answer.ID
 	}
 
-	if got := readDefault(alice); got != nil {
-		t.Fatalf("the first default is %q, want null", *got)
+	purdue := bdoc.BuiltinPurdueLayerSetID
+
+	if diff := cmp.Diff((*string)(nil), readDefault(t, alice)); diff != "" {
+		t.Errorf("GET %s at first mismatch (-want +got):\n%s", path, diff)
 	}
 
 	alice.mustDo("choose", builderRequest{
-		method: http.MethodPut, path: path, body: `{"id":"` + bdoc.BuiltinPurdueLayerSetID + `"}`,
+		method: http.MethodPut, path: path, body: `{"id":"` + purdue + `"}`,
 	}, http.StatusOK)
 
-	if got := readDefault(alice); got == nil || *got != bdoc.BuiltinPurdueLayerSetID {
-		t.Fatalf("the default after a choice is %v", got)
+	if diff := cmp.Diff(&purdue, readDefault(t, alice)); diff != "" {
+		t.Errorf("GET %s after a choice mismatch (-want +got):\n%s", path, diff)
 	}
 
 	// Every user reads the one default of the server, in the list too.
 	list := builderLayerSets(t, bob.mustDo("list", builderRequest{method: http.MethodGet, path: builderLayerSetsRoute}, http.StatusOK))
-	if list.DefaultID == nil || *list.DefaultID != bdoc.BuiltinPurdueLayerSetID {
-		t.Fatalf("the list names the default %v", list.DefaultID)
+	if diff := cmp.Diff(&purdue, list.DefaultID); diff != "" {
+		t.Errorf("GET %s as bob: defaultId mismatch (-want +got):\n%s", builderLayerSetsRoute, diff)
 	}
 
-	if got := readDefault(bob); got == nil || *got != bdoc.BuiltinPurdueLayerSetID {
-		t.Fatalf("the default another user reads is %v", got)
+	if diff := cmp.Diff(&purdue, readDefault(t, bob)); diff != "" {
+		t.Errorf("GET %s as bob mismatch (-want +got):\n%s", path, diff)
 	}
 
-	refused := alice.mustDo("choose missing", builderRequest{method: http.MethodPut, path: path, body: `{"id":"missing"}`},
-		http.StatusUnprocessableEntity)
+	refused := alice.do(builderRequest{method: http.MethodPut, path: path, body: `{"id":"missing"}`})
+	if err := builderStatusError(refused, http.StatusUnprocessableEntity); err != nil {
+		t.Errorf("PUT %s (a missing set): %v", path, err)
+	}
+
 	if got := builderRefusal(t, refused).Code; got != string(bdoc.CodeLayerSetDefaultUnknown) {
-		t.Fatalf("a missing default refuses with the code %q", got)
+		t.Errorf("PUT %s (a missing set): code = %q, want %q", path, got, bdoc.CodeLayerSetDefaultUnknown)
 	}
 
 	for _, body := range []string{`{"id":null}`, `{"id":""}`, `{}`} {
-		bob.mustDo("clear "+body, builderRequest{method: http.MethodPut, path: path, body: body}, http.StatusOK)
+		t.Run("clear with "+body, func(t *testing.T) {
+			if err := builderStatusError(
+				bob.do(builderRequest{method: http.MethodPut, path: path, body: body}),
+				http.StatusOK,
+			); err != nil {
+				t.Fatalf("PUT %s %s: %v", path, body, err)
+			}
 
-		if got := readDefault(alice); got != nil {
-			t.Fatalf("the default after %s is %q, want null", body, *got)
-		}
+			if diff := cmp.Diff((*string)(nil), readDefault(t, alice)); diff != "" {
+				t.Errorf("GET %s after PUT %s mismatch (-want +got):\n%s", path, body, diff)
+			}
+		})
 	}
 
 	// A set that was deleted is no default.
@@ -285,7 +431,7 @@ func TestBuilderDefaultLayerSet(t *testing.T) {
 	alice.mustDo("delete", builderRequest{method: http.MethodDelete, path: builderLayerSetsRoute + "/" + created.ID},
 		http.StatusNoContent)
 
-	if got := readDefault(alice); got != nil {
-		t.Fatalf("the default after its set was deleted is %q, want null", *got)
+	if diff := cmp.Diff((*string)(nil), readDefault(t, alice)); diff != "" {
+		t.Errorf("GET %s after its set was deleted mismatch (-want +got):\n%s", path, diff)
 	}
 }

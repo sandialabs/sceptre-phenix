@@ -325,6 +325,15 @@ func builderJSONError(recorder *httptest.ResponseRecorder) error {
 	return nil
 }
 
+// builderStatusError reports an answer whose status is not status.
+func builderStatusError(recorder *httptest.ResponseRecorder, status int) error {
+	if recorder.Code != status {
+		return fmt.Errorf("status = %d, want %d: %s", recorder.Code, status, recorder.Body)
+	}
+
+	return nil
+}
+
 // builderErrorBody is the answer of a Builder route to a refused request.
 type builderErrorBody struct {
 	Code     string            `json:"code"`

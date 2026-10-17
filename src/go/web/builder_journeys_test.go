@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // TestBuilderJourneyBuilderUsersShareEverything follows alice and bob, who
@@ -43,8 +46,14 @@ func TestBuilderJourneyBuilderUsersShareEverything(t *testing.T) {
 
 	if !slices.ContainsFunc(listing.Drafts, func(listed builderDraftResponse) bool {
 		return listed.ID == draft.ID && listed.CreatedBy == builderAlice
-	}) || len(listing.Damaged) != 1 || listing.Damaged[0].ID != damaged.ID || listing.Damaged[0].CreatedBy != builderAlice {
-		t.Fatalf("bob lists %+v, want alice's draft and her damaged draft", listing)
+	}) {
+		t.Errorf("GET /builder/drafts as bob lists %+v, want alice's draft %s among them", listing.Drafts, draft.ID)
+	}
+
+	wantDamaged := []builderDamagedDraftResponse{{ID: damaged.ID, CreatedBy: builderAlice, ETag: damagedETag}}
+	if diff := cmp.Diff(wantDamaged, listing.Damaged,
+		cmpopts.IgnoreFields(builderDamagedDraftResponse{}, "Title", "Updated")); diff != "" {
+		t.Errorf("GET /builder/drafts as bob: damaged drafts mismatch (-want +got):\n%s", diff)
 	}
 
 	var opened, saved builderDraftResponse
@@ -56,9 +65,12 @@ func TestBuilderJourneyBuilderUsersShareEverything(t *testing.T) {
 		body: `{"document":` + string(builderDocument(t, "edited")) + `}`,
 	}, http.StatusCreated, &saved)
 
-	bob.mustDo("bob deleting alice's damaged draft", builderRequest{
+	if recorder := bob.do(builderRequest{
 		method: http.MethodDelete, path: "/builder/drafts/" + damaged.ID, ifMatch: damagedETag,
-	}, http.StatusNoContent)
+	}); recorder.Code != http.StatusNoContent {
+		t.Errorf("DELETE /builder/drafts/%s (alice's damaged draft) as bob: status = %d, want %d: %s",
+			damaged.ID, recorder.Code, http.StatusNoContent, recorder.Body)
+	}
 
 	if _, _, err := harness.service.AddIcon(context.Background(), builderAlice, "plc", builderIconPNG(t, 1, 1, 31)); err != nil {
 		t.Fatalf("adding alice's icon: %v", err)
@@ -67,22 +79,37 @@ func TestBuilderJourneyBuilderUsersShareEverything(t *testing.T) {
 	bob.mustDo("bob renaming alice's icon", builderRequest{
 		method: http.MethodPut, path: builderIconsRoute + "/plc", body: `{"name":"plc-2"}`,
 	}, http.StatusOK)
-	bob.mustDo("bob deleting alice's icon", builderRequest{
-		method: http.MethodDelete, path: builderIconsRoute + "/plc-2",
-	}, http.StatusNoContent)
+
+	if recorder := bob.do(
+		builderRequest{method: http.MethodDelete, path: builderIconsRoute + "/plc-2"},
+	); recorder.Code != http.StatusNoContent {
+		t.Errorf("DELETE %s/plc-2 (alice's icon) as bob: status = %d, want %d: %s",
+			builderIconsRoute, recorder.Code, http.StatusNoContent, recorder.Body)
+	}
 
 	var seen builderDraftResponse
 
 	alice.doDecode(builderRequest{method: http.MethodGet, path: path}, http.StatusOK, &seen)
 
-	if seen.ETag != saved.ETag || seen.Snapshots != 2 || seen.CreatedBy != builderAlice ||
-		seen.LastModifiedBy != builderBob {
-		t.Fatalf("alice opened %+v, want bob's version of her draft", seen)
+	type version struct {
+		ETag, CreatedBy, LastModifiedBy string
+		Snapshots                       int
+	}
+
+	// Bob's version of her draft.
+	want := version{ETag: saved.ETag, CreatedBy: builderAlice, LastModifiedBy: builderBob, Snapshots: 2}
+	got := version{ETag: seen.ETag, CreatedBy: seen.CreatedBy, LastModifiedBy: seen.LastModifiedBy, Snapshots: seen.Snapshots}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GET %s as alice mismatch (-want +got):\n%s", path, diff)
 	}
 
 	bob.mustDo("bob deleting alice's draft", builderRequest{
 		method: http.MethodDelete, path: path, ifMatch: saved.ETag,
 	}, http.StatusNoContent)
 
-	alice.mustDo("alice after bob deleted her draft", builderRequest{method: http.MethodGet, path: path}, http.StatusNotFound)
+	if recorder := alice.do(builderRequest{method: http.MethodGet, path: path}); recorder.Code != http.StatusNotFound {
+		t.Errorf("GET %s as alice after bob deleted it: status = %d, want %d: %s",
+			path, recorder.Code, http.StatusNotFound, recorder.Body)
+	}
 }

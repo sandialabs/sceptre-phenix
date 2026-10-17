@@ -4,11 +4,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/api/disk"
 	"phenix/store"
@@ -79,28 +83,28 @@ func buildBuilderPackage(
 	var response builderPackageResponse
 
 	if recorder.Code == http.StatusOK {
-		harness.decode(recorder, &response)
+		decodeBuilderAnswer(t, recorder, &response)
 	}
 
 	return recorder.Code, response
 }
 
-// builderPackageWarnings returns each warning by its message, failing the test
-// for one that is not a warning with a registered code.
-func builderPackageWarnings(t *testing.T, warnings []bdoc.Issue) map[string]bdoc.Code {
-	t.Helper()
-
+// builderPackageWarnings returns each warning by its message, and an error
+// for each one that is not a warning with a registered code.
+func builderPackageWarnings(warnings []bdoc.Issue) (map[string]bdoc.Code, error) {
 	byMessage := make(map[string]bdoc.Code, len(warnings))
+
+	var errs []error
 
 	for _, warning := range warnings {
 		if _, known := bdoc.LookupCode(warning.Code); !known || warning.Severity != bdoc.SeverityWarning {
-			t.Errorf("warning %+v is not a warning with a registered code", warning)
+			errs = append(errs, fmt.Errorf("warning %+v is not a warning with a registered code", warning))
 		}
 
 		byMessage[warning.Message] = warning.Code
 	}
 
-	return byMessage
+	return byMessage, errors.Join(errs...)
 }
 
 // builderPackageRefusal sends body to the package route at path and returns
@@ -113,7 +117,7 @@ func builderPackageRefusal(t *testing.T, harness *builderHarness, path, body str
 	var refusal builderErrorBody
 
 	if recorder.Code != http.StatusOK {
-		harness.decode(recorder, &refusal)
+		decodeBuilderAnswer(t, recorder, &refusal)
 	}
 
 	return recorder.Code, refusal
@@ -174,46 +178,49 @@ func TestBuilderBuildPackageWithEverySection(t *testing.T) {
 
 	status, response := buildBuilderPackage(t, harness, nil, document, "scenarios", "topologies", "icons", "images")
 	if status != http.StatusOK {
-		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+		t.Fatalf("POST /builder/package with every section: status = %d, want %d", status, http.StatusOK)
 	}
 
 	pkg := response.Package
 	if err := pkg.Validate(); err != nil {
-		t.Fatalf("the package is not valid: %v", err)
+		t.Errorf("Validate(the package) error: %v", err)
 	}
 
-	if _, ok := pkg.Scenarios["pkg-sc"]; !ok || len(pkg.Scenarios) != 1 {
-		t.Fatalf("scenarios = %v, want pkg-sc", pkg.Scenarios)
+	if got, want := slices.Sorted(maps.Keys(pkg.Scenarios)), []string{"pkg-sc"}; !slices.Equal(got, want) {
+		t.Errorf("POST /builder/package with every section: scenarios = %q, want %q", got, want)
 	}
 
+	// The scenario's own annotations, and none of the Builder's.
 	carried := pkg.Scenarios["pkg-sc"]
-	if carried.Metadata.Annotations["keep"] != "yes" || carried.Metadata.Annotations["topology"] != "topo" {
-		t.Errorf("annotations = %v, want the scenario's own", carried.Metadata.Annotations)
+	if diff := cmp.Diff(map[string]string{"keep": "yes", "topology": "topo"}, carried.Metadata.Annotations); diff != "" {
+		t.Errorf("POST /builder/package with every section: annotations of pkg-sc mismatch (-want +got):\n%s", diff)
 	}
 
-	if _, builderOwn := carried.Metadata.Annotations[bapiDocumentAnnotationForTest]; builderOwn {
-		t.Errorf("annotations = %v, want none of the Builder's", carried.Metadata.Annotations)
-	}
-
-	if _, ok := pkg.Topologies["pkg-inc"]; !ok || len(pkg.Topologies) != 1 {
-		t.Fatalf("topologies = %v, want pkg-inc", pkg.Topologies)
+	if got, want := slices.Sorted(maps.Keys(pkg.Topologies)), []string{"pkg-inc"}; !slices.Equal(got, want) {
+		t.Errorf("POST /builder/package with every section: topologies = %q, want %q", got, want)
 	}
 
 	if want := []string{"pkg-sc-app"}; !slices.Equal(pkg.Requirements.Apps, want) {
-		t.Errorf("apps = %v, want %v", pkg.Requirements.Apps, want)
+		t.Errorf("POST /builder/package with every section: apps = %q, want %q", pkg.Requirements.Apps, want)
 	}
 
-	if len(pkg.Requirements.Images) != 1 || pkg.Requirements.Images[0].Name != builderPackageImage ||
-		!slices.Equal(pkg.Requirements.Images[0].UsedBy, []string{builderPackageHost}) {
-		t.Errorf("images = %+v, want %s used by %s", pkg.Requirements.Images, builderPackageImage, builderPackageHost)
+	wantImages := []bdoc.PackageImage{{Name: builderPackageImage, UsedBy: []string{builderPackageHost}}}
+	if diff := cmp.Diff(wantImages, pkg.Requirements.Images); diff != "" {
+		t.Errorf("POST /builder/package with every section: images mismatch (-want +got):\n%s", diff)
 	}
 
+	// A copy of the library's icon.
 	icon, ok := pkg.Document.Icons[builderPackageIcon]
-	if !ok || icon.Data != base64.StdEncoding.EncodeToString(builderIconPNG(t, 4, 4, 7)) {
-		t.Errorf("icons = %v, want a copy of the library's %s", pkg.Document.Icons, builderPackageIcon)
+	if !ok {
+		t.Errorf("POST /builder/package with every section: icons = %v, want %s among them", pkg.Document.Icons, builderPackageIcon)
+	} else if want := base64.StdEncoding.EncodeToString(builderIconPNG(t, 4, 4, 7)); icon.Data != want {
+		t.Errorf("POST /builder/package with every section: data of icon %s = %q, want %q", builderPackageIcon, icon.Data, want)
 	}
 
-	warnings := builderPackageWarnings(t, response.Warnings)
+	warnings, err := builderPackageWarnings(response.Warnings)
+	if err != nil {
+		t.Errorf("POST /builder/package with every section: %v", err)
+	}
 	unreadableScenario := "Scenario config pkg-gone does not exist on this server, or your role cannot read it: " +
 		"the package names it but does not carry it."
 	unreadableTopology := "Included topology pkg-hidden does not exist on this server, or your role cannot read it: " +
@@ -229,7 +236,8 @@ func TestBuilderBuildPackageWithEverySection(t *testing.T) {
 		{message: filePath, code: bdoc.CodePackageIncludeFilePath},
 	} {
 		if got, found := warnings[want.message]; !found || got != want.code {
-			t.Errorf("warnings = %+v, want %q with the code %s", response.Warnings, want.message, want.code)
+			t.Errorf("POST /builder/package with every section: warnings = %+v, want %q with the code %s",
+				response.Warnings, want.message, want.code)
 		}
 	}
 }
@@ -239,37 +247,50 @@ func TestBuilderBuildPackageWithNoSection(t *testing.T) {
 
 	status, response := buildBuilderPackage(t, harness, nil, document)
 	if status != http.StatusOK {
-		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+		t.Fatalf("POST /builder/package with no section: status = %d, want %d", status, http.StatusOK)
+	}
+
+	// Nothing but the document.
+	type carried struct {
+		Scenarios, Topologies map[string]bdoc.PackageConfig
+		Icons                 map[string]bdoc.Icon
 	}
 
 	pkg := response.Package
-	if pkg.Scenarios != nil || pkg.Topologies != nil || pkg.Document.Icons != nil {
-		t.Errorf("the package carries %v, %v and %v, want nothing but the document",
-			pkg.Scenarios, pkg.Topologies, pkg.Document.Icons)
+	if diff := cmp.Diff(carried{}, carried{Scenarios: pkg.Scenarios, Topologies: pkg.Topologies, Icons: pkg.Document.Icons}); diff != "" {
+		t.Errorf("POST /builder/package with no section: carried mismatch (-want +got):\n%s", diff)
 	}
 
 	// What it needs is listed all the same, with the apps of a scenario read but not carried.
-	if want := []string{"pkg-sc", "pkg-gone"}; !slices.Equal(pkg.Requirements.Scenarios, want) {
-		t.Errorf("scenarios = %v, want %v", pkg.Requirements.Scenarios, want)
+	type needs struct {
+		Scenarios, Topologies, Apps, Icons []string
+		Images                             int
 	}
 
-	if want := []string{"pkg-inc", "pkg-hidden", "/phenix/x.yml"}; !slices.Equal(pkg.Requirements.Topologies, want) {
-		t.Errorf("topologies = %v, want %v", pkg.Requirements.Topologies, want)
+	wantNeeds := needs{
+		Scenarios: []string{"pkg-sc", "pkg-gone"}, Topologies: []string{"pkg-inc", "pkg-hidden", "/phenix/x.yml"},
+		Apps: []string{"pkg-sc-app"}, Icons: []string{builderPackageIcon},
+	}
+	gotNeeds := needs{
+		Scenarios: pkg.Requirements.Scenarios, Topologies: pkg.Requirements.Topologies, Apps: pkg.Requirements.Apps,
+		Icons: pkg.Requirements.Icons, Images: len(pkg.Requirements.Images),
 	}
 
-	if want := []string{"pkg-sc-app"}; !slices.Equal(pkg.Requirements.Apps, want) {
-		t.Errorf("apps = %v, want %v", pkg.Requirements.Apps, want)
+	if diff := cmp.Diff(wantNeeds, gotNeeds); diff != "" {
+		t.Errorf("POST /builder/package with no section: requirements mismatch (-want +got):\n%s", diff)
 	}
 
-	if len(pkg.Requirements.Images) != 0 || !slices.Equal(pkg.Requirements.Icons, []string{builderPackageIcon}) {
-		t.Errorf("requirements = %+v, want no images and the icon", pkg.Requirements)
+	warnings, err := builderPackageWarnings(response.Warnings)
+	if err != nil {
+		t.Errorf("POST /builder/package with no section: %v", err)
 	}
 
-	want := "Scenario config pkg-gone does not exist on this server, or your role cannot read it: " +
-		"the package lists none of its apps."
-	if warnings := builderPackageWarnings(t, response.Warnings); len(warnings) != 1 ||
-		warnings[want] != bdoc.CodePackageConfigUnreadable {
-		t.Errorf("warnings = %+v, want only %q with the code %s", response.Warnings, want, bdoc.CodePackageConfigUnreadable)
+	want := map[string]bdoc.Code{
+		"Scenario config pkg-gone does not exist on this server, or your role cannot read it: " +
+			"the package lists none of its apps.": bdoc.CodePackageConfigUnreadable,
+	}
+	if diff := cmp.Diff(want, warnings); diff != "" {
+		t.Errorf("POST /builder/package with no section: warnings mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -277,23 +298,25 @@ func TestBuilderBuildPackageRefusals(t *testing.T) {
 	harness, document := newBuilderPackageHarness(t)
 
 	for _, include := range [][]string{{"nodes"}, {"icons", "icons"}} {
-		if status, _ := buildBuilderPackage(t, harness, nil, document, include...); status != http.StatusBadRequest {
-			t.Errorf("include %v: status = %d, want %d", include, status, http.StatusBadRequest)
-		}
+		t.Run("include "+strings.Join(include, " and "), func(t *testing.T) {
+			if status, _ := buildBuilderPackage(t, harness, nil, document, include...); status != http.StatusBadRequest {
+				t.Errorf("POST /builder/package including %q: status = %d, want %d", include, status, http.StatusBadRequest)
+			}
+		})
 	}
 
 	invalid := builderPackageDocument(t, nil, nil)
 	invalid.Nodes = nil
 
 	if status, _ := buildBuilderPackage(t, harness, nil, invalid); status != http.StatusUnprocessableEntity {
-		t.Errorf("an invalid document: status = %d, want %d", status, http.StatusUnprocessableEntity)
+		t.Errorf("POST /builder/package of an invalid document: status = %d, want %d", status, http.StatusUnprocessableEntity)
 	}
 
 	recorder := harness.do(builderRequest{
 		method: http.MethodPost, path: "/builder/package", body: `{"document": {}, "extra": 1}`, user: builderAlice,
 	})
 	if recorder.Code != http.StatusBadRequest {
-		t.Errorf("an unknown field: status = %d, want %d", recorder.Code, http.StatusBadRequest)
+		t.Errorf("POST /builder/package with an unknown field: status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
 }
 
@@ -316,30 +339,41 @@ func TestBuilderBuildPackageHidesUnreadableConfigs(t *testing.T) {
 			role:    builderRole(builderPolicy([]string{"configs"}, []string{"Scenario/*", "Topology/pkg-hidden"}, []string{"list", "get"}), kinds),
 			include: []string{"topologies"}, hidden: []string{"Included topology pkg-inc", "Included topology pkg-hidden"},
 		},
-		"without the kinds' list": {
+		"without the list permission of the kinds": {
 			role:    builderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list", "get"})),
 			include: []string{"scenarios", "topologies"}, hidden: []string{"Scenario config pkg-sc", "Included topology pkg-inc"},
 		},
 	} {
-		status, response := buildBuilderPackage(t, harness, test.role, document, test.include...)
-		if status != http.StatusOK || response.Package.Scenarios != nil || response.Package.Topologies != nil {
-			t.Fatalf("%s: status = %d, package carries %v and %v, want nothing read", name, status,
-				response.Package.Scenarios, response.Package.Topologies)
-		}
-
-		// The apps of a scenario the role may not read are not listed either.
-		if apps := response.Package.Requirements.Apps; slices.Contains(test.hidden, "Scenario config pkg-sc") && len(apps) != 0 {
-			t.Errorf("%s: apps = %q, want none", name, apps)
-		}
-
-		warnings := builderPackageWarnings(t, response.Warnings)
-
-		for _, hidden := range test.hidden {
-			what, config, _ := strings.Cut(hidden, " pkg-")
-			if want := builderUnreadableWarning(what, "pkg-"+config); warnings[want] != bdoc.CodePackageConfigUnreadable {
-				t.Errorf("%s: warnings = %+v, want %q", name, response.Warnings, want)
+		t.Run(name, func(t *testing.T) {
+			status, response := buildBuilderPackage(t, harness, test.role, document, test.include...)
+			if status != http.StatusOK {
+				t.Fatalf("POST /builder/package including %q: status = %d, want %d", test.include, status, http.StatusOK)
 			}
-		}
+
+			// Nothing read.
+			if response.Package.Scenarios != nil || response.Package.Topologies != nil {
+				t.Errorf("POST /builder/package including %q: the package carries %v and %v, want nothing",
+					test.include, response.Package.Scenarios, response.Package.Topologies)
+			}
+
+			// The apps of a scenario the role may not read are not listed either.
+			if apps := response.Package.Requirements.Apps; slices.Contains(test.hidden, "Scenario config pkg-sc") && len(apps) != 0 {
+				t.Errorf("POST /builder/package including %q: apps = %q, want none", test.include, apps)
+			}
+
+			warnings, err := builderPackageWarnings(response.Warnings)
+			if err != nil {
+				t.Errorf("POST /builder/package including %q: %v", test.include, err)
+			}
+
+			for _, hidden := range test.hidden {
+				what, config, _ := strings.Cut(hidden, " pkg-")
+				if want := builderUnreadableWarning(what, "pkg-"+config); warnings[want] != bdoc.CodePackageConfigUnreadable {
+					t.Errorf("POST /builder/package including %q: warnings = %+v, want %q with the code %s",
+						test.include, response.Warnings, want, bdoc.CodePackageConfigUnreadable)
+				}
+			}
+		})
 	}
 }
 
@@ -355,11 +389,20 @@ func TestBuilderBuildPackageRefusesWhatWouldNotLoad(t *testing.T) {
 	})
 
 	status, refusal := builderPackageRefusal(t, harness, "/builder/package", body)
-	if status != http.StatusUnprocessableEntity || refusal.Code != string(bdoc.CodePackageInvalid) ||
-		!slices.ContainsFunc(refusal.Issues, func(issue bdoc.Issue) bool {
-			return issue.Code == bdoc.CodePackageConfigSpecMissing && issue.Path == "scenarios.pkg-nospec.spec"
-		}) {
-		t.Errorf("status = %d, refusal = %+v, want 422 %s naming the config without a spec", status, refusal, bdoc.CodePackageInvalid)
+	if status != http.StatusUnprocessableEntity {
+		t.Errorf("POST /builder/package carrying pkg-nospec: status = %d, want %d", status, http.StatusUnprocessableEntity)
+	}
+
+	if refusal.Code != string(bdoc.CodePackageInvalid) {
+		t.Errorf("POST /builder/package carrying pkg-nospec: code = %q, want %q", refusal.Code, bdoc.CodePackageInvalid)
+	}
+
+	// An issue names the config without a spec.
+	if !slices.ContainsFunc(refusal.Issues, func(issue bdoc.Issue) bool {
+		return issue.Code == bdoc.CodePackageConfigSpecMissing && issue.Path == "scenarios.pkg-nospec.spec"
+	}) {
+		t.Errorf("POST /builder/package carrying pkg-nospec: issues = %+v, want %s at scenarios.pkg-nospec.spec",
+			refusal.Issues, bdoc.CodePackageConfigSpecMissing)
 	}
 }
 
@@ -377,20 +420,27 @@ func TestBuilderPackageRefusesTooMuch(t *testing.T) {
 	request := builderJSON(t, map[string]any{"document": document, "include": []string{"scenarios"}})
 
 	status, refusal := builderPackageRefusal(t, harness, "/builder/package", request)
-	if status != http.StatusRequestEntityTooLarge || refusal.Code != string(bdoc.CodePackageTooLarge) {
-		t.Errorf("building a package that carries pkg-big: %d %+v, want %d with the code %s",
-			status, refusal, http.StatusRequestEntityTooLarge, bdoc.CodePackageTooLarge)
+	if status != http.StatusRequestEntityTooLarge {
+		t.Errorf("POST /builder/package carrying pkg-big: status = %d, want %d", status, http.StatusRequestEntityTooLarge)
+	}
+
+	if refusal.Code != string(bdoc.CodePackageTooLarge) {
+		t.Errorf("POST /builder/package carrying pkg-big: code = %q, want %q", refusal.Code, bdoc.CodePackageTooLarge)
 	}
 
 	if status, _ := buildBuilderPackage(t, harness, nil, document); status != http.StatusOK {
-		t.Errorf("building a package that only names pkg-big: status = %d, want %d", status, http.StatusOK)
+		t.Errorf("POST /builder/package naming pkg-big: status = %d, want %d", status, http.StatusOK)
 	}
 
 	status, refusal = builderPackageRefusal(t, harness, "/builder/package/resolve",
 		`{"$schema": "`+strings.Repeat("x", bdoc.MaxPackageBytes)+`"}`)
-	if status != http.StatusRequestEntityTooLarge || refusal.Code != string(bdoc.CodePackageTooLarge) {
-		t.Errorf("resolving a body larger than the limit: %d %+v, want %d with the code %s",
-			status, refusal, http.StatusRequestEntityTooLarge, bdoc.CodePackageTooLarge)
+	if status != http.StatusRequestEntityTooLarge {
+		t.Errorf("POST /builder/package/resolve of a body above the limit: status = %d, want %d",
+			status, http.StatusRequestEntityTooLarge)
+	}
+
+	if refusal.Code != string(bdoc.CodePackageTooLarge) {
+		t.Errorf("POST /builder/package/resolve of a body above the limit: code = %q, want %q", refusal.Code, bdoc.CodePackageTooLarge)
 	}
 }
 
@@ -404,20 +454,26 @@ func TestBuilderBuildPackageLeavesOutWhatCannotBeListed(t *testing.T) {
 
 	status, response := buildBuilderPackage(t, harness, nil, builderPackageDocument(t, []string{"pkg-odd"}, nil), "scenarios")
 	if status != http.StatusOK {
-		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+		t.Fatalf("POST /builder/package carrying pkg-odd: status = %d, want %d", status, http.StatusOK)
 	}
 
-	if apps := response.Package.Requirements.Apps; !slices.Equal(apps, []string{"ok-app"}) {
-		t.Errorf("apps = %q, want ok-app", apps)
+	if apps, want := response.Package.Requirements.Apps, []string{"ok-app"}; !slices.Equal(apps, want) {
+		t.Errorf("POST /builder/package carrying pkg-odd: apps = %q, want %q", apps, want)
+	}
+
+	warnings, err := builderPackageWarnings(response.Warnings)
+	if err != nil {
+		t.Errorf("POST /builder/package carrying pkg-odd: %v", err)
 	}
 
 	want := `The package does not list app "bad\napp": it must not contain control characters.`
-	if builderPackageWarnings(t, response.Warnings)[want] != bdoc.CodePackageRequirementLeftOut {
-		t.Errorf("warnings = %+v, want %q with the code %s", response.Warnings, want, bdoc.CodePackageRequirementLeftOut)
+	if warnings[want] != bdoc.CodePackageRequirementLeftOut {
+		t.Errorf("POST /builder/package carrying pkg-odd: warnings = %+v, want %q with the code %s",
+			response.Warnings, want, bdoc.CodePackageRequirementLeftOut)
 	}
 
 	if status, _ := resolveBuilderPackage(t, harness, nil, response.Package); status != http.StatusOK {
-		t.Errorf("resolving the package: status = %d, want %d", status, http.StatusOK)
+		t.Errorf("POST /builder/package/resolve of the package: status = %d, want %d", status, http.StatusOK)
 	}
 }
 
@@ -449,7 +505,7 @@ func resolveBuilderPackage(
 
 	var response builderPackageResolveResponse
 
-	harness.decode(recorder, &response)
+	decodeBuilderAnswer(t, recorder, &response)
 
 	dependencies := map[string]builderPackageDependency{}
 	for _, dependency := range response.Dependencies {
@@ -553,13 +609,15 @@ func TestBuilderResolvePackage(t *testing.T) {
 
 	status, dependencies := resolveBuilderPackage(t, harness, nil, pkg)
 	if status != http.StatusOK {
-		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+		t.Fatalf("POST /builder/package/resolve: status = %d, want %d", status, http.StatusOK)
 	}
 
-	for key, want := range map[string]struct {
-		status   string
-		packaged bool
-	}{
+	type dependency struct {
+		Status   string
+		Packaged bool
+	}
+
+	want := map[string]dependency{
 		"scenario/pkg-same":            {builderDependencyPresent, true},
 		"scenario/pkg-diff":            {builderDependencyDifferent, true},
 		"scenario/pkg-new":             {builderDependencyMissing, true},
@@ -575,25 +633,26 @@ func TestBuilderResolvePackage(t *testing.T) {
 		"app/pkg-app":                  {builderDependencyPresent, false},
 		"app/ghost-app":                {builderDependencyMissing, false},
 		"file//phenix/injects/a.boot":  {builderDependencyUnknown, false},
-	} {
-		got, ok := dependencies[key]
-		if !ok {
-			t.Errorf("%s is not listed", key)
+	}
 
-			continue
-		}
-
-		if got.Status != want.status || got.Packaged != want.packaged {
-			t.Errorf("%s = %s (packaged %t), want %s (packaged %t)", key, got.Status, got.Packaged, want.status, want.packaged)
+	got := make(map[string]dependency, len(want))
+	for key := range want {
+		if listed, ok := dependencies[key]; ok {
+			got[key] = dependency{Status: listed.Status, Packaged: listed.Packaged}
 		}
 	}
 
-	if got := dependencies["image//phenix/images/"+builderPackageImage].Detail; got != "Used by "+builderPackageHost+"." {
-		t.Errorf("the image's detail = %q, want the device that uses it", got)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("POST /builder/package/resolve: dependencies mismatch (-want +got):\n%s", diff)
+	}
+
+	// The detail names the device that uses the image.
+	if got, want := dependencies["image//phenix/images/"+builderPackageImage].Detail, "Used by "+builderPackageHost+"."; got != want {
+		t.Errorf("POST /builder/package/resolve: detail of image /phenix/images/%s = %q, want %q", builderPackageImage, got, want)
 	}
 
 	if harness.configWrites != 0 {
-		t.Fatalf("resolving a package wrote %d configs, want none", harness.configWrites)
+		t.Errorf("POST /builder/package/resolve wrote %d configs, want none", harness.configWrites)
 	}
 }
 
@@ -686,12 +745,13 @@ func TestBuilderResolvePackageAsTheRoleMayList(t *testing.T) {
 
 			status, dependencies := resolveBuilderPackage(t, harness, test.role, pkg)
 			if status != http.StatusOK {
-				t.Fatalf("status = %d, want %d", status, http.StatusOK)
+				t.Fatalf("POST /builder/package/resolve: status = %d, want %d", status, http.StatusOK)
 			}
 
 			for key, want := range test.want {
 				if got := dependencies[key]; got.Status != want[0] || !strings.HasPrefix(got.Detail, want[1]) {
-					t.Errorf("%s = %s (%q), want %s (%q)", key, got.Status, got.Detail, want[0], want[1])
+					t.Errorf("POST /builder/package/resolve: %s = %s (%q), want %s (detail starting %q)",
+						key, got.Status, got.Detail, want[0], want[1])
 				}
 			}
 		})
@@ -733,17 +793,29 @@ func TestBuilderResolvePackageRefusals(t *testing.T) {
 		},
 		"a document of a schema": {body: string(builderDocument(t, "x"))},
 	} {
-		status, refusal := builderPackageRefusal(t, harness, "/builder/package/resolve", test.body)
-		if status != http.StatusUnprocessableEntity || refusal.Code != string(bdoc.CodePackageInvalid) ||
-			(test.issue != "" && !slices.ContainsFunc(refusal.Issues, func(issue bdoc.Issue) bool { return issue.Code == test.issue })) {
-			t.Errorf("%s: %d %+v, want %d %s with issue %q", name, status, refusal, http.StatusUnprocessableEntity,
-				bdoc.CodePackageInvalid, test.issue)
-		}
+		t.Run(name, func(t *testing.T) {
+			status, refusal := builderPackageRefusal(t, harness, "/builder/package/resolve", test.body)
+			if status != http.StatusUnprocessableEntity {
+				t.Errorf("POST /builder/package/resolve: status = %d, want %d", status, http.StatusUnprocessableEntity)
+			}
+
+			if refusal.Code != string(bdoc.CodePackageInvalid) {
+				t.Errorf("POST /builder/package/resolve: code = %q, want %q", refusal.Code, bdoc.CodePackageInvalid)
+			}
+
+			if test.issue != "" && !slices.ContainsFunc(refusal.Issues, func(issue bdoc.Issue) bool { return issue.Code == test.issue }) {
+				t.Errorf("POST /builder/package/resolve: issues = %+v, want one of the code %s", refusal.Issues, test.issue)
+			}
+		})
 	}
 
 	status, refusal := builderPackageRefusal(t, harness, "/builder/package/resolve", `{} {}`)
-	if status != http.StatusBadRequest || refusal.Code != string(bdoc.CodeRequestInvalid) {
-		t.Errorf("two JSON values: %d %+v, want %d with the code %s", status, refusal, http.StatusBadRequest, bdoc.CodeRequestInvalid)
+	if status != http.StatusBadRequest {
+		t.Errorf("POST /builder/package/resolve of two JSON values: status = %d, want %d", status, http.StatusBadRequest)
+	}
+
+	if refusal.Code != string(bdoc.CodeRequestInvalid) {
+		t.Errorf("POST /builder/package/resolve of two JSON values: code = %q, want %q", refusal.Code, bdoc.CodeRequestInvalid)
 	}
 }
 
@@ -769,9 +841,17 @@ func TestBuilderPackageConfigLeavesOutTheBuilders(t *testing.T) {
 		t.Fatalf("encoding the config: %v", err)
 	}
 
-	want := `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology","metadata":{"name":"pkg",` +
-		`"annotations":{"team":"plant"}},"spec":{"nodes":[]}}`
-	if string(encoded) != want {
-		t.Fatalf("the packaged config = %s, want %s", encoded, want)
+	var got map[string]any
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatalf("decoding the packaged config %s: %v", encoded, err)
+	}
+
+	want := map[string]any{
+		"apiVersion": "phenix.sandia.gov/v1", "kind": "Topology",
+		"metadata": map[string]any{"name": "pkg", "annotations": map[string]any{"team": "plant"}},
+		"spec":     map[string]any{"nodes": []any{}},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("builderPackageConfig(topology pkg) mismatch (-want +got):\n%s", diff)
 	}
 }
