@@ -1,6 +1,7 @@
 // The SCORCH runs page: Start/Stop all, Clear, Cleanup and the run buttons
 // that spin until the websocket reports a run started or stopped.
 import { flushPromises } from '@vue/test-utils';
+import fc from 'fast-check';
 import { nextTick } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -160,6 +161,63 @@ describe('Start all', () => {
     expect((await pageButtons(wrapper)).header[0]).toBe('Start all');
   });
 
+  it('starts each run not running once, in order, whatever each run reports', async () => {
+    // each run's reports once started: maybe a start, then how it ended
+    const reports = fc.array(
+      fc.tuple(fc.boolean(), fc.constantFrom('success', 'error')),
+      { minLength: 1, maxLength: 5 },
+    );
+    const setup = reports.chain((ends) =>
+      fc.tuple(
+        fc.constant(ends),
+        fc.integer({ min: -1, max: ends.length - 1 }),
+      ),
+    );
+    await fc.assert(
+      fc.asyncProperty(setup, async ([ends, running]) => {
+        resetMocks({ store: {} });
+        clearPageCache();
+        axios.post.mockImplementation(never);
+        const wrapper = await open(
+          ends.map(() => ({})),
+          running,
+        );
+
+        await click(wrapper, 'Start all');
+        if (running >= 0) report('success', running);
+        for (const [i, [started, end]] of ends.entries()) {
+          if (i === running) continue;
+          if (started) report('start', i);
+          report(end, i);
+        }
+
+        expect(sent()).toEqual(
+          ends.map((_, i) => `POST ${url(i)}`).filter((_, i) => i !== running),
+        );
+        expect((await pageButtons(wrapper)).header).toEqual([
+          'Start all',
+          'Stop all (disabled)',
+          'Clear all (disabled)',
+        ]);
+        wrapper.unmount();
+      }),
+      { numRuns: 20 },
+    );
+  });
+
+  // ScorchRuns.vue:414 settles a refused start without starting the next run
+  it.fails(
+    'moves on to the next run when the server refuses a start',
+    async () => {
+      axios.post.mockRejectedValueOnce(new Error('forbidden'));
+      const wrapper = await open([{}, {}]);
+
+      await click(wrapper, 'Start all');
+      await flushPromises();
+      expect(sent()).toEqual([`POST ${url(0)}`, `POST ${url(1)}`]);
+    },
+  );
+
   it('lets a run already running finish first', async () => {
     const wrapper = await open([{}, {}, {}], 1);
 
@@ -207,10 +265,11 @@ describe("a run's start and stop button", () => {
     expect(await shown()).toBe('start this run');
 
     await runButton(wrapper, 0).trigger('click');
-    // its button is disabled, and the page itself ignores a second press
-    runs(wrapper)[0].props('controller')('exp1', 0);
-    expect(sent()).toEqual([`POST ${url(0)}`]);
     expect(await shown()).toBe('start this run (spinning) (disabled)');
+    // a second press does nothing, even past the disabled button
+    runButton(wrapper, 0).element.disabled = false;
+    await runButton(wrapper, 0).trigger('click');
+    expect(sent()).toEqual([`POST ${url(0)}`]);
 
     report('start', 0);
     expect(await shown()).toBe('stop this run');

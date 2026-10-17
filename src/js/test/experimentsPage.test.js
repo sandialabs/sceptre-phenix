@@ -1,5 +1,6 @@
 // The Experiments page: its table, its search, and rows kept current from the
 // websocket, even for experiments it has not loaded (workflow, Configs, CLI).
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, capturing, loaderSpy, modules, resetMocks, ws } =
@@ -15,17 +16,15 @@ import Experiments from '@/views/Experiments.vue';
 import { never } from './helpers/async.js';
 import { mountPage, tableRows, textOf, toasts } from './helpers/mount.js';
 
-let reloadSoon;
 beforeEach(() => {
   resetMocks({ store: { token: 't', features: [], role: null } });
   axios.get.mockImplementation(never);
-  reloadSoon = vi
-    .spyOn(Experiments.methods, 'reloadSoon')
-    .mockImplementation(() => {});
+  // the page waits a moment before it reloads the list
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 const page = (experiments = []) =>
@@ -35,9 +34,33 @@ const page = (experiments = []) =>
   });
 
 // what the server sends the page over the websocket
-const send = (msg) => {
+const send = async (wrapper, msg) => {
   for (const handler of ws.handlers) handler(msg);
+  await wrapper.vm.$nextTick();
 };
+
+// the list requests the page has made, once its wait is over
+const reloads = () => {
+  vi.advanceTimersByTime(250);
+  return loaderSpy.load.mock.calls;
+};
+
+// Each row's name and status, and its topology, VM count and VLANs when
+// `details`; a starting experiment shows its progress in place of a tag.
+const shown = (wrapper, details) =>
+  tableRows(wrapper).map((cells) => {
+    const tag = cells.Status.find('.tag');
+    const status = tag.exists()
+      ? textOf(tag)
+      : `starting ${textOf(cells.Status.find('.progress-value'))}`;
+    return [
+      textOf(cells.Name),
+      status,
+      ...(details ? ['Topology', 'VMs', 'VLANs'] : []).map((label) =>
+        textOf(cells[label]),
+      ),
+    ];
+  });
 
 describe('the table', () => {
   it('lists each experiment with its topology and scenario', async () => {
@@ -94,36 +117,72 @@ describe('the table', () => {
       'a(1',
     ]);
   });
+
+  it('finds the experiments with any part of their names, in any case', async () => {
+    const chars = /^[aA1(.[]{1,4}$/;
+    const listAndSearch = fc
+      .uniqueArray(fc.stringMatching(chars), { maxLength: 6 })
+      .chain((names) =>
+        fc.tuple(
+          fc.constant(names),
+          fc.oneof(
+            fc.stringMatching(/^[aA1(.[]{0,2}$/),
+            ...names.map((n) => fc.nat(n.length).map((i) => n.slice(i, i + 2))),
+          ),
+        ),
+      );
+    await fc.assert(
+      fc.asyncProperty(listAndSearch, async ([names, search]) => {
+        const wrapper = await page(
+          names.map((name) => ({ name, status: 'stopped' })),
+        );
+        await wrapper
+          .find('input[placeholder="Find an Experiment"]')
+          .setValue(search);
+        const found = (n) => n.toLowerCase().includes(search.toLowerCase());
+        expect(
+          tableRows(wrapper)
+            .map((cells) => textOf(cells.Name))
+            .toSorted(),
+        ).toEqual(names.filter(found).toSorted());
+        wrapper.unmount();
+      }),
+      { numRuns: 20 },
+    );
+  });
 });
 
 describe('websocket messages', () => {
   it('add an unknown starting experiment at once and reload the list', async () => {
     const wrapper = await page([{ name: 'old', status: 'stopped' }]);
 
-    send({ resource: { type: 'experiment', name: 'new', action: 'starting' } });
+    await send(wrapper, {
+      resource: { type: 'experiment', name: 'new', action: 'starting' },
+    });
+    await send(wrapper, {
+      resource: { type: 'experiment', name: 'newer', action: 'starting' },
+    });
 
-    expect(wrapper.vm.experiments.map((e) => [e.name, e.status])).toEqual([
+    expect(shown(wrapper)).toEqual([
+      ['new', 'starting 0%'],
+      ['newer', 'starting 0%'],
       ['old', 'stopped'],
-      ['new', 'starting'],
     ]);
-    expect(reloadSoon).toHaveBeenCalled();
+    // one request covers both
+    expect(reloads()).toEqual([[{ force: true }]]);
   });
 
   it('fill a row known only from messages with the loaded details', async () => {
     const wrapper = await page();
 
     // the progress message came after the server read the list (seq 10)
-    send({
+    await send(wrapper, {
       resource: { type: 'experiment', name: 'new', action: 'progress' },
       result: { percent: 0.5 },
       seq: 20,
     });
-    expect(wrapper.vm.experiments[0]).toMatchObject({
-      name: 'new',
-      status: 'starting',
-      percent: 50,
-      partial: true,
-    });
+    // with no details yet, not even its VLANs
+    expect(shown(wrapper, true)).toEqual([['new', 'starting 50%', '', '', '']]);
 
     loaderSpy.options.apply(
       [
@@ -137,63 +196,60 @@ describe('websocket messages', () => {
       ],
       { seq: 10 },
     );
+    await wrapper.vm.$nextTick();
 
-    expect(wrapper.vm.experiments).toEqual([
-      {
-        name: 'new',
-        status: 'starting',
-        percent: 50,
-        topology: 'Topo',
-        vm_count: 7,
-      },
+    expect(shown(wrapper, true)).toEqual([
+      ['new', 'starting 50%', 'topo', '7', '- ()'],
     ]);
   });
 
   it('take a list the server read after a change over the row it changed', async () => {
     const wrapper = await page([{ name: 'demo', status: 'started' }]);
 
-    send({
+    await send(wrapper, {
       resource: { type: 'experiment', name: 'demo', action: 'stop' },
       result: { name: 'demo', running: false },
       seq: 20,
     });
-    const shown = wrapper.vm.experiments[0];
+    // a list read at seq, saying the experiment runs
+    const listAt = async (seq) => {
+      loaderSpy.options.apply([{ name: 'demo', status: 'started' }], { seq });
+      await wrapper.vm.$nextTick();
+      return shown(wrapper);
+    };
 
     // read before the stop: the row the message changed stays
-    loaderSpy.options.apply([{ name: 'demo', status: 'started' }], { seq: 15 });
-    expect(wrapper.vm.experiments[0]).toBe(shown);
-
+    expect(await listAt(15)).toEqual([['demo', 'stopped']]);
     // read after it (say the experiment was started again from the CLI)
-    loaderSpy.options.apply([{ name: 'demo', status: 'started' }], { seq: 25 });
-    expect(wrapper.vm.experiments[0].status).toBe('started');
+    expect(await listAt(25)).toEqual([['demo', 'started']]);
   });
 
   it('reload the list when an experiment config is created elsewhere', async () => {
-    await page();
+    const wrapper = await page();
 
-    send({
+    await send(wrapper, {
       resource: { type: 'config', name: 'Experiment/new', action: 'create' },
     });
 
-    expect(reloadSoon).toHaveBeenCalled();
+    expect(reloads()).toEqual([[{ force: true }]]);
   });
 
   it('add no second row for an experiment already listed', async () => {
     const wrapper = await page([{ name: 'new', status: 'stopped' }]);
 
-    send({
+    await send(wrapper, {
       resource: { type: 'experiment', name: 'new', action: 'create' },
       result: { name: 'new' },
     });
 
-    expect(wrapper.vm.experiments).toHaveLength(1);
-    expect(reloadSoon).not.toHaveBeenCalled();
+    expect(shown(wrapper)).toEqual([['new', 'stopped']]);
+    expect(reloads()).toEqual([]);
   });
 
   it('report delayed VMs from the started experiment', async () => {
-    await page([{ name: 'exp1', status: 'stopped' }]);
+    const wrapper = await page([{ name: 'exp1', status: 'stopped' }]);
 
-    send({
+    await send(wrapper, {
       resource: { type: 'experiment', name: 'exp1', action: 'start' },
       result: { name: 'exp1', delayed_vms: 2 },
     });

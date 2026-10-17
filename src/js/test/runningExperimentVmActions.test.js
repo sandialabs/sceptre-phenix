@@ -1,6 +1,7 @@
 // How the running experiment page runs the VM actions its details modal,
 // Actions column and selection toolbar ask for, and its VM table and modal.
 import { flushPromises, mount } from '@vue/test-utils';
+import fc from 'fast-check';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -886,35 +887,42 @@ describe('actions on VMs', () => {
     expect(alerts()).toEqual([]);
   });
 
-  it("asks about one VM from its row's actions, then runs a job for it", async () => {
-    const page = await showing();
+  it("asks about one VM from its row's actions or its details, then runs a job for it", async () => {
+    const page = await open({
+      experiment: { name: 'demo', vms },
+      expModal: { active: true, vm: vms[0] },
+    });
     answerJob();
-    const rowActions = page
-      .findAllComponents(VmRowActions)
-      .find((actions) => actions.props('vm').name === 'web');
-    const pick = async (action) => {
-      rowActions.vm.$emit('action', action);
+    const web = vmRows(page).find((cells) => nodeOf(cells) === 'web');
+    const row = (action) => web.Actions.find(`.vm-row-${action}`);
+    const details = (action) =>
+      page.findComponent(VmDetailsCard).find(`.vm-action-${action}`);
+    const pick = async (button) => {
+      await button.trigger('click');
       await flushPromises();
       return questions().at(-1);
     };
 
-    expect(asked(await pick('shutdown'))).toMatchObject({
+    expect(asked(await pick(row('shutdown')))).toMatchObject({
       title: 'Shut Down the VM',
       message: '<p>This will shut down the web VM.</p>',
     });
-    expect(titleOf(await pick('resetDisk'))).toBe("Reset the VM's Disk");
-    expect(asked(await pick('kill'))).toMatchObject({
+    expect(titleOf(await pick(details('resetDisk')))).toBe(
+      "Reset the VM's Disk",
+    );
+    expect(asked(await pick(details('kill')))).toMatchObject({
       title: 'Kill the VM',
       confirmText: 'KILL IT!',
     });
-    expect(asked(await pick('snapshot'))).toMatchObject({
+    expect(asked(await pick(row('snapshot')))).toMatchObject({
       title: 'Create a VM Snapshot',
       message: '<p>This will create a snapshot of the web VM.</p>',
     });
-    expect(asked(await pick('restart'))).toMatchObject({
+    expect(asked(await pick(row('restart')))).toMatchObject({
       title: 'Restart the VM',
       message: '<p>This will restart the web VM.</p>',
     });
+    expect(questions()).toHaveLength(5);
     expect(alerts()).toEqual([]);
 
     await confirmDialog();
@@ -925,6 +933,63 @@ describe('actions on VMs', () => {
         undefined,
       ],
     ]);
+  });
+
+  it('asks about and runs a job for the VMs the rule allows, of any selection', async () => {
+    const jobs = [
+      ['Start selected VMs', 'start'],
+      ['Pause selected VMs', 'pause'],
+      ['Restart selected VMs', 'restart'],
+      ['Shut down selected VMs', 'shutdown'],
+      ['Kill selected VMs', 'kill'],
+      ['Reset disk state of selected VMs', 'resetDisk'],
+    ];
+    const picked = fc.shuffledSubarray(selection, { minLength: 1 });
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom(...jobs),
+        picked,
+        async ([label, action], names) => {
+          document.body.innerHTML = '';
+          resetMocks();
+          setActivePinia(createPinia());
+          const page = await showing();
+          answerJob();
+          const { allowed, skipped } = partitionVMsForAction(
+            action,
+            names,
+            vms,
+          );
+
+          await act(page, label, names);
+          if (!allowed.length) {
+            expect(questions()).toEqual([]);
+            expect(textOf(alerts()[0].querySelector('.media-content'))).toBe(
+              skippedVMsText(skipped),
+            );
+          } else {
+            expect(alerts()).toEqual([]);
+            const message = messageOf(questions()[0]);
+            expect(message).toContain(namedList(allowed, 'VM'));
+            expect(message).toContain(skippedVMsText(skipped));
+            await confirmDialog();
+          }
+          expect(axios.post.mock.calls).toEqual(
+            allowed.length
+              ? [
+                  [
+                    'experiments/demo/vms/actions',
+                    { action, vms: allowed },
+                    undefined,
+                  ],
+                ]
+              : [],
+          );
+          page.unmount();
+        },
+      ),
+      { numRuns: 8 },
+    );
   });
 
   it('keeps waiting while the job is running', async () => {

@@ -3,7 +3,7 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, fetching, modules, notify, resetMocks, saver, ws } =
+const { axios, fetching, loaderSpy, modules, notify, resetMocks, saver, ws } =
   await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -14,7 +14,8 @@ vi.mock('@/utils/pageLoader.js', fetching);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('file-saver', modules.fileSaver);
 
-import { GROUPS_MAX_NODES } from '@/utils/soh/layouts.js';
+import { layoutInput } from '@/utils/soh/graph.js';
+import { GROUPS_MAX_NODES, runLayout } from '@/utils/soh/layouts.js';
 import StateOfHealth from '@/views/StateOfHealth.vue';
 import { buttons, mountComponent, toasts } from './helpers/mount.js';
 import { sohFixture } from './sohFixture.js';
@@ -32,6 +33,17 @@ const big = Array.from({ length: GROUPS_MAX_NODES + 1 }, (_, id) => ({
 // the radio button that picks this layout
 const layoutButton = (page, label) => page.find(`[aria-label="${label}"]`);
 
+// the layout buttons: the label of each, and whether it is chosen or off
+const layoutButtons = (page) =>
+  page.findAll('.soh-layout-seg .control').map((c) => ({
+    label: c.attributes('aria-label'),
+    chosen: c.find('label').classes('is-selected'),
+    off: c.find('label').classes('is-disabled'),
+  }));
+
+// the line under the layout buttons: the chosen one's hint, or a spinner's
+const layoutHint = (page) => page.find('.soh-layout-hint').text();
+
 beforeEach(() => {
   resetMocks({ store: { token: 't', features: [], role: null } });
 });
@@ -43,14 +55,6 @@ afterEach(() => {
 
 describe('rendering', () => {
   const { nodes, edges } = sohFixture();
-
-  // the layout buttons: the label of each, and whether it is chosen or off
-  const layoutButtons = (page) =>
-    page.findAll('.soh-layout-seg .control').map((c) => ({
-      label: c.attributes('aria-label'),
-      chosen: c.find('label').classes('is-selected'),
-      off: c.find('label').classes('is-disabled'),
-    }));
 
   it('counts the VMs and VLANs the filter shows', async () => {
     const counts = async (state) =>
@@ -208,25 +212,35 @@ describe('SOH runs', () => {
 });
 
 describe('downloading the graph', () => {
-  // The page with the fixture graph drawn in the layered layout, and a
-  // function that downloads it from the menu in a format.
-  async function drawn(svg = {}, state) {
-    const { nodes, edges } = sohFixture();
-    const page = await open({ nodes, edges, running: true, ...state });
-    page.vm.graph = {
-      svg: { node: () => svg, interrupt: () => page.vm.graph.svg },
-      layoutId: 'layered',
-      nodes: nodes.map((n, i) => ({ id: n.id, x: i, y: 2 * i })),
+  // The page attached to the document, so that it draws the load it is
+  // given in the layered layout, and a function that downloads it in a format.
+  async function drawn(state = {}) {
+    localStorage.setItem('phenix.soh.layout', 'layered');
+    const page = await mountComponent(StateOfHealth, {
+      route: '/soh/demo',
+      attachTo: document.body,
+    });
+    // a circle per node once it is drawn
+    const load = (more) => {
+      const state = { started: true, ...sohFixture(), ...more };
+      loaderSpy.options.apply(state);
+      return vi.waitFor(() =>
+        expect(document.querySelectorAll('#graph circle')).toHaveLength(
+          state.nodes.length,
+        ),
+      );
     };
-    return async (format) => {
+    await load(state);
+    const download = async (format) => {
       const item = page
         .findAll('.soh-download-item')
         .find((i) => i.find('b').text() == format);
       await item.trigger('click');
       // the exporters load on first use
-      await vi.waitFor(() => expect(page.vm.exporting).toBe(false));
+      await vi.waitFor(() => expect(saver.saveAs).toHaveBeenCalled());
       return saver.saveAs.mock.calls[0];
     };
+    return Object.assign(download, { page, load });
   }
 
   it("saves the graph with the experiment's VMs and the positions shown", async () => {
@@ -244,7 +258,18 @@ describe('downloading the graph', () => {
     const xml = await blob.text();
     expect(xml).toContain('experiment demo: 19 VMs and 4 VLANs');
     expect(xml).toContain('<attvalue for="host" value="compute7"/>');
-    expect(xml).toContain('<viz:position x="1" y="-2" z="0"/>');
+    // where the layered layout put each node, with Gephi's y axis up
+    const { nodes, edges } = sohFixture();
+    const { result } = await runLayout('layered', layoutInput(nodes, edges));
+    const round = (v) => Math.round(v * 100) / 100;
+    for (const n of nodes) {
+      const { x, y } = result.positions.get(n.id);
+      expect(xml).toMatch(
+        new RegExp(
+          `<node id="${n.id}"(?:(?!</node>)[^])*<viz:position x="${round(x)}" y="${round(-y)}" z="0"/>`,
+        ),
+      );
+    }
   });
 
   it('saves it without VM details the user may not read', async () => {
@@ -256,37 +281,25 @@ describe('downloading the graph', () => {
     );
   });
 
-  // the drawn graph's <svg>, as much of it as the SVG export reads: one
-  // empty layer, not zoomed, and no <defs>
-  function svgElement() {
-    const layer = {
-      children: [],
-      childNodes: [],
-      getBBox: () => ({ x: 0, y: 0, width: 200, height: 100 }),
-      cloneNode: () => ({ ...layer, setAttribute() {}, removeAttribute() {} }),
-    };
-    return {
-      querySelector: (selector) => (selector == ':scope > g' ? layer : null),
-      viewBox: { baseVal: null },
-      clientWidth: 800,
-    };
-  }
-
   it('titles the SVG with the experiment, what the filter shows, the layout and the time', async () => {
     const now = new Date(2026, 8, 30, 12, 0, 0);
     vi.useFakeTimers({ now, toFake: ['Date'] });
-    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '' }));
+    // the OS and VLAN icons the export embeds
     vi.stubGlobal(
-      'XMLSerializer',
-      class {
-        serializeToString() {
-          return '';
-        }
-      },
+      'fetch',
+      vi.fn(async () => new Response(new Blob(['icon']))),
+    );
+    axios.get.mockResolvedValue({ data: {} });
+    const download = await drawn();
+    await download.page
+      .find('input[type="radio"][value="running"]')
+      .setValue(true);
+    expect(axios.get).toHaveBeenCalledWith(
+      'experiments/demo/soh?statusFilter=running',
+      expect.anything(),
     );
     // the server sends only the nodes the filter shows
-    const download = await drawn(svgElement(), {
-      radioButton: 'running',
+    await download.load({
       nodes: sohFixture().nodes.filter(
         (n) => n.status === 'running' || n.image === 'switch',
       ),
@@ -300,6 +313,7 @@ describe('downloading the graph', () => {
     expect(svg).toContain(
       `>6 VMs · 4 VLANs · filter: Running · layout: Layered · ${now.toLocaleString()}<`,
     );
+    expect(svg).not.toContain('/src/assets/imgs/');
   });
 });
 
@@ -307,16 +321,20 @@ describe('the layout drawn', () => {
   // the page lays out the graph and stops short of drawing it, as the
   // document has no #graph
 
-  it('draws Force instead of VLAN groups for a graph too big for it, saying why', async () => {
-    const page = await open({ nodes: big, edges: [], layout: 'groups' });
+  it('draws Force instead of VLAN groups for a graph too big for it, saying why once', async () => {
+    localStorage.setItem('phenix.soh.layout', 'groups');
+    const page = await open();
 
-    await page.vm.generateGraph();
+    // two loads of the graph, one notice
+    for (let i = 0; i < 2; i++) {
+      loaderSpy.options.apply({ started: true, nodes: big, edges: [] });
+      await flushPromises();
+    }
     const notice =
       'VLAN groups is off above 300 nodes (this graph has 301): it would ' +
       'take many seconds to compute. Showing Force.';
-    expect(page.vm.layoutNotice).toBe(notice);
     expect(toasts()).toEqual([{ text: notice, type: 'is-warning' }]);
-    expect(page.vm.layoutBusy).toBe(false);
+    expect(layoutHint(page)).not.toBe('Computing layout…');
   });
 
   // The page from modules loaded afresh, and the layout libraries it has
@@ -362,13 +380,15 @@ describe('the layout drawn', () => {
       ['ELK layered', ['dagre', 'webcola', 'elkjs']],
     ]) {
       await layoutButton(page, layout).find('input').setValue(true);
-      await vi.waitFor(() => expect(page.vm.layoutBusy).toBe(false));
+      await vi.waitFor(() =>
+        expect(layoutHint(page)).not.toBe('Computing layout…'),
+      );
       await flushPromises();
       expect(libraries, layout).toEqual(loaded);
     }
     // and each layout ran without falling back to Force
     expect(notify.error.mock.calls.map(([e]) => e.message)).toEqual([]);
-    expect(page.vm.layout).toBe('elk');
+    expect(layoutButtons(page).find((b) => b.chosen).label).toBe('ELK layered');
     expect(toasts()).toEqual([]);
   });
 });

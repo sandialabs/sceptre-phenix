@@ -3,6 +3,7 @@
 // the disk and CD-ROM pickers' options, and the warnings beside a VM's disk.
 import { readFileSync } from 'node:fs';
 
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, resetMocks } = await vi.hoisted(
@@ -16,13 +17,14 @@ import {
   backingChain,
   diskLabel,
   diskList,
-  DISK_LIST_REUSE_MS,
   diskOptions,
   diskWarning,
   filesDir,
+  findDisk,
   isoDisks,
   minimegaSafe,
 } from '@/utils/diskChain.js';
+import { RESOURCES } from '@/utils/freshness.js';
 import {
   cachePage,
   cachedPage,
@@ -30,6 +32,7 @@ import {
   fetchIntoCache,
 } from '@/utils/pageCache.js';
 import { pageFetchers } from '@/utils/pageData.js';
+import { diskListArb, pathSegment } from './helpers/arbitraries.js';
 import { disk } from './helpers/fixtures.js';
 
 // web_snap.qc2 is backed by the jammy folder's hardened image, backed by one
@@ -98,6 +101,28 @@ describe('backingChain', () => {
     expect(backingChain(disks, '')).toEqual([]);
     expect(backingChain(null, '/phenix/images/web_snap.qc2')).toEqual([]);
   });
+
+  it("names each backing image by a tail of its path, whatever the list's order", () => {
+    const lists = diskListArb().chain((list) =>
+      fc.tuple(
+        fc.constant(list),
+        fc.shuffledSubarray(list, { minLength: list.length }),
+      ),
+    );
+    fc.assert(
+      fc.property(lists, ([list, shuffled]) => {
+        for (const { fullPath, backingImages } of list) {
+          const chain = backingChain(list, fullPath);
+          expect(chain).toHaveLength(backingImages.length);
+          chain.forEach((name, i) => {
+            const image = backingImages[i];
+            expect(name === image || image.endsWith(`/${name}`)).toBe(true);
+          });
+          expect(backingChain(shuffled, fullPath)).toEqual(chain);
+        }
+      }),
+    );
+  });
 });
 
 describe('diskOptions', () => {
@@ -158,6 +183,30 @@ describe('diskOptions', () => {
   it('is empty without disks', () => {
     expect(diskOptions(null)).toEqual({ inside: [], outside: [] });
   });
+
+  it('offers every disk once, in its group, sorted, disabled when unsafe', () => {
+    fc.assert(
+      fc.property(diskListArb(), (list) => {
+        const { inside, outside } = diskOptions(list);
+        const values = [...inside, ...outside].map((option) => option.value);
+        expect(values.toSorted()).toEqual(
+          list.map((d) => d.fullPath).toSorted(),
+        );
+        for (const group of [inside, outside]) {
+          const labels = group.map((o) => diskLabel(findDisk(list, o.value)));
+          labels.slice(1).forEach((label, i) => {
+            expect(labels[i].localeCompare(label)).toBeLessThanOrEqual(0);
+          });
+          for (const option of group) {
+            const listed = findDisk(list, option.value);
+            expect(option.outside).toBe(listed.outsideFilesDir);
+            expect(option.disabled).toBe(!minimegaSafe(option.value));
+            expect(option.label.startsWith(diskLabel(listed))).toBe(true);
+          }
+        }
+      }),
+    );
+  });
 });
 
 describe('minimegaSafe', () => {
@@ -177,6 +226,15 @@ describe('minimegaSafe', () => {
       code,
     ) ||
     (code >= 0x2000 && code <= 0x200a);
+  const refused = (char) => {
+    const code = char.codePointAt(0);
+    return (
+      globMeta.includes(char) ||
+      '$,'.includes(char) ||
+      control(code) ||
+      space(code)
+    );
+  };
 
   it('mirrors the rule the server applies', () => {
     const commandSafe = fileSource.match(
@@ -194,18 +252,19 @@ describe('minimegaSafe', () => {
     expect(globMeta).toContain('#');
     for (let code = 0; code <= 0x30ff; code++) {
       const char = String.fromCharCode(code);
-      const refused =
-        globMeta.includes(char) ||
-        '$,'.includes(char) ||
-        control(code) ||
-        space(code);
       expect(
         minimegaSafe(`/phenix/images/a${char}b.qc2`),
         `U+${code.toString(16).padStart(4, '0')}`,
-      ).toBe(!refused);
+      ).toBe(!refused(char));
     }
     // not white space to Go, though JavaScript's \s matches it
     expect(minimegaSafe('/phenix/images/a\ufeffb.qc2')).toBe(true);
+    // whole paths of any code points, astral ones included
+    fc.assert(
+      fc.property(fc.string({ unit: 'binary' }), (path) => {
+        expect(minimegaSafe(path)).toBe(![...path].some(refused));
+      }),
+    );
   });
 
   it('takes the paths minimega reads literally', () => {
@@ -227,6 +286,21 @@ describe('filesDir', () => {
   it('is unknown from disks outside it alone, or none', () => {
     expect(filesDir([disks[2]])).toBe('');
     expect(filesDir(null)).toBe('');
+  });
+
+  it('is the directory of any list holding a disk inside it', () => {
+    const dirs = fc
+      .array(pathSegment, { minLength: 1, maxLength: 3 })
+      .map((names) => `/${names.join('/')}`);
+    const lists = dirs.chain((dir) =>
+      fc.tuple(fc.constant(dir), diskListArb(dir)),
+    );
+    fc.assert(
+      fc.property(lists, ([dir, list]) => {
+        const inside = list.some((d) => !d.outsideFilesDir);
+        expect(filesDir(list)).toBe(inside ? dir : '');
+      }),
+    );
   });
 });
 
@@ -275,7 +349,7 @@ describe('diskList', () => {
       'stale',
       () => {
         cachePage('disks', []);
-        vi.advanceTimersByTime(DISK_LIST_REUSE_MS + 1);
+        vi.advanceTimersByTime(RESOURCES.disks.reuseMs + 1);
       },
     ],
   ])('loads the list into the shared cache when it is %s', async (_, setup) => {

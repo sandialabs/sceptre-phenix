@@ -1,6 +1,7 @@
 // A background job's progress in the jobs menu and pages: its status in words
 // and color, a bar, a status line read out as it changes, and its buttons.
 import { flushPromises } from '@vue/test-utils';
+import fc from 'fast-check';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -84,6 +85,40 @@ describe('JobProgress', () => {
       expect(textOf(tag)).toBe(label);
     },
   );
+
+  it("counts a finished job's items by outcome, and only the outcomes it had", async () => {
+    const outcomes = fc.array(
+      fc.constantFrom('succeeded', 'failed', 'skipped', 'canceled'),
+      { minLength: 2, maxLength: 12 },
+    );
+    const line =
+      /^(\d+) of (\d+) files succeeded((?:, \d+ (?:failed|skipped|canceled))*)$/;
+    await fc.assert(
+      fc.asyncProperty(outcomes, async (statuses) => {
+        const items = statuses.map((status, i) => ({ name: `f${i}`, status }));
+        const progress = await render({
+          job: job({
+            status: 'partial',
+            items,
+            progress: { done: items.length, total: items.length },
+          }),
+        });
+        const [, ok, total, rest] = liveLine(progress).match(line);
+        const count = (status) => statuses.filter((s) => s === status).length;
+        expect([Number(ok), Number(total)]).toEqual([
+          count('succeeded'),
+          items.length,
+        ]);
+        expect(rest.split(', ').slice(1)).toEqual(
+          ['failed', 'skipped', 'canceled']
+            .filter((status) => count(status))
+            .map((status) => `${count(status)} ${status}`),
+        );
+        progress.unmount();
+      }),
+      { numRuns: 20 },
+    );
+  });
 
   it('offers a finished archive for download, and dismissal', async () => {
     const progress = await render({
@@ -181,12 +216,12 @@ describe('JobProgress', () => {
     await button(progress, 'Dismiss').trigger('click');
     await flushPromises();
     expect(notify.error).toHaveBeenCalled();
-    expect(progress.emitted('dismissed')).toBeUndefined();
+    expect(useJobStore().jobs.j1).toBeDefined();
 
     axios.delete.mockResolvedValue({});
     await button(progress, 'Dismiss').trigger('click');
     await flushPromises();
     expect(axios.delete).toHaveBeenCalledWith('jobs/j1');
-    expect(progress.emitted('dismissed')).toEqual([[done]]);
+    expect(useJobStore().jobs.j1).toBeUndefined();
   });
 });

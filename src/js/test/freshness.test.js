@@ -1,4 +1,5 @@
 // The freshness rules and how responses report it (utils/freshness.js).
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   FreshnessMeta,
@@ -8,6 +9,7 @@ import {
   RESOURCES,
   staleReason,
 } from '@/utils/freshness.js';
+import { isoTimeArb } from './helpers/arbitraries.js';
 
 describe('readFreshness', () => {
   it('keeps the lowest seq of the responses of one load', () => {
@@ -60,6 +62,86 @@ describe('readFreshness', () => {
     expect(meta).toMatchObject({ seq: 4, observedAt: 50, stale: true });
     expect(mergeFreshness(undefined, meta)).toBeUndefined();
   });
+
+  // one response's freshness headers, each present or not; seq may be junk
+  const response = fc.record(
+    {
+      'x-phenix-seq': fc.oneof(
+        fc.integer({ min: -5, max: 1e6 }).map(String),
+        fc.constantFrom('', 'abc', 'NaN', 'Infinity'),
+      ),
+      'x-phenix-stale': fc.constantFrom('true', 'false'),
+    },
+    { requiredKeys: [] },
+  );
+  const sentAt = fc.integer({ min: 0, max: 1e12 });
+
+  it('reports the lowest seq, the earliest read and any staleness of the parts, in any order', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.tuple(response, sentAt), { minLength: 1, maxLength: 6 }),
+        (parts) => {
+          const meta = new FreshnessMeta();
+          for (const [headers, at] of parts)
+            readFreshness(meta, headers, at, at);
+          const seqs = parts
+            .map(([h]) => Number(h['x-phenix-seq']))
+            .filter((seq) => Number.isFinite(seq) && seq > 0);
+          expect(meta).toEqual({
+            ...new FreshnessMeta(),
+            seq: seqs.length ? Math.min(...seqs) : undefined,
+            observedAt: Math.min(...parts.map(([, at]) => at)),
+            stale: parts.some(([h]) => h['x-phenix-stale'] === 'true'),
+          });
+        },
+      ),
+    );
+  });
+
+  it('is never newer than the response, whatever the clocks say', () => {
+    fc.assert(
+      fc.property(
+        isoTimeArb,
+        isoTimeArb,
+        sentAt,
+        fc.nat(60_000),
+        (observed, { ms: date }, sent, wait) => {
+          const headers = {
+            date: new Date(date).toUTCString(),
+            'x-phenix-observed-at': observed.time,
+          };
+          const meta = readFreshness(
+            new FreshnessMeta(),
+            headers,
+            sent,
+            sent + wait,
+          );
+          // the Date header keeps whole seconds only
+          const age = Math.floor(date / 1000) * 1000 - observed.ms;
+          expect(meta.observedAt).toBe(sent + wait - Math.max(0, age));
+          expect(meta.observedAt).toBeLessThanOrEqual(sent + wait);
+        },
+      ),
+    );
+  });
+
+  const meta = fc
+    .record(
+      { seq: fc.nat(1000), observedAt: fc.nat(1e6), stale: fc.boolean() },
+      { requiredKeys: ['stale'] },
+    )
+    .map((fields) => Object.assign(new FreshnessMeta(), fields));
+
+  it('folds loads in any order and any number of times to the same result', () => {
+    fc.assert(
+      fc.property(meta, meta, (a, b) => {
+        const ab = mergeFreshness(structuredClone(a), b);
+        expect(mergeFreshness(structuredClone(b), a)).toEqual(ab);
+        expect(mergeFreshness(structuredClone(ab), b)).toEqual(ab);
+        expect(mergeFreshness(structuredClone(a), a)).toEqual(a);
+      }),
+    );
+  });
 });
 
 describe('staleReason', () => {
@@ -111,6 +193,50 @@ describe('staleReason', () => {
   ])('%s', (_, state, resource, disconnectedSince, reason) => {
     expect(staleReason(state, resource, now, disconnectedSince)).toBe(reason);
   });
+
+  const state = fc.record(
+    {
+      stale: fc.boolean(),
+      invalidated: fc.boolean(),
+      observedAt: fc.option(fc.integer({ min: 0, max: now }), {
+        nil: undefined,
+      }),
+    },
+    { requiredKeys: [] },
+  );
+  const resource = fc.constantFrom(undefined, ...Object.values(RESOURCES));
+  const disconnectedSince = fc.option(fc.nat(now));
+
+  it('gives the reasons in order: server, invalidated, disconnected, age', () => {
+    fc.assert(
+      fc.property(state, resource, disconnectedSince, (s, r, down) => {
+        const reason = staleReason(s, r, now, down);
+        expect(reason === 'server').toBe(!!s.stale);
+        if (!s.stale) expect(reason === 'invalidated').toBe(!!s.invalidated);
+        if (!s.stale && !s.invalidated) {
+          expect(reason === 'disconnected').toBe(!!r?.live && down !== null);
+        }
+      }),
+    );
+  });
+
+  it('calls data out of date by age only once it is older than its bound, and from then on', () => {
+    const bounded = Object.values(RESOURCES).filter((r) => r.staleAfterMs);
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...bounded),
+        fc.integer({ min: -2, max: 2 }),
+        fc.nat(now),
+        (r, nearBound, older) => {
+          const age = r.staleAfterMs + nearBound;
+          const reason = (a) =>
+            staleReason({ observedAt: now - a }, r, now, null);
+          expect(reason(age)).toBe(age > r.staleAfterMs ? 'age' : null);
+          if (reason(age)) expect(reason(age + older)).toBe('age');
+        },
+      ),
+    );
+  });
 });
 
 describe('resourceFor', () => {
@@ -136,6 +262,30 @@ describe('resourceFor', () => {
     expect(matches(msg('experiment', 'exp10'), 'experiment/exp1')).toBe(false);
     expect(matches(msg('experiment/vm', 'exp10/vm1'), 'experiment/exp1')).toBe(
       false,
+    );
+  });
+
+  it("invalidates an experiment's page for its own messages and no other experiment's", () => {
+    const name = fc.stringMatching(/^[a-z0-9][a-z0-9_.-]{0,6}$/);
+    const about = fc.constantFrom(
+      (exp) => ({ type: 'experiment', name: exp }),
+      (exp) => ({ type: 'experiment/vm', name: `${exp}/vm1`, action: 'stop' }),
+      (exp) => ({ type: 'config', name: `Experiment/${exp}` }),
+    );
+    fc.assert(
+      fc.property(
+        name,
+        name,
+        about,
+        fc.boolean(),
+        (page, exp, msg, stopped) => {
+          const key = stopped
+            ? `experiment/${page}/stopped`
+            : `experiment/${page}`;
+          const [matches] = resourceFor(key).invalidatedBy;
+          expect(matches({ resource: msg(exp) }, key)).toBe(page === exp);
+        },
+      ),
     );
   });
 

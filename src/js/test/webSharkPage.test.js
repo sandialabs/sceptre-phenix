@@ -1,4 +1,5 @@
 // The WebShark page: pickers, server requests, frame and URL.
+import fc from 'fast-check';
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -97,9 +98,9 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-// the page at the URL with this query, with this state
-const opened = (query = {}, data) =>
-  mountPage(WebShark, { route: { name: 'webshark', query }, data });
+// the page at the URL with this query
+const opened = (query = {}) =>
+  mountPage(WebShark, { route: { name: 'webshark', query } });
 
 const experimentPicker = (page) => byLabel(page, 'Experiment');
 const capturePicker = (page) => byLabel(page, 'Capture');
@@ -198,6 +199,78 @@ describe('the pickers', () => {
     expect(notify.error).toHaveBeenCalledWith(err);
     expect(options(capturePicker(page), LIVE)).toEqual([]);
     expect(options(capturePicker(page), FILES)).toHaveLength(3);
+  });
+
+  // exp1's running captures, each VM interface once, and capture file paths
+  const name = fc.string({ unit: 'grapheme', minLength: 1, maxLength: 8 });
+  const liveCaptures = fc.uniqueArray(
+    fc.record({ vm: name, interface: fc.nat(9) }),
+    { selector: (c) => `${c.interface}:${c.vm}`, maxLength: 6 },
+  );
+  const filePaths = fc.uniqueArray(name, { maxLength: 4 });
+  const liveKey = (c) => `live:${c.interface}:${c.vm}`;
+
+  // the page on exp1, whose server lists these captures and files
+  function openedWith(captures, paths) {
+    const files = paths.map((path) => ({ name: 'f.pcap', path, size: 1 }));
+    axios.get.mockImplementation(async (url) => ({
+      data: {
+        ...SERVER,
+        'experiments/exp1/captures': { captures },
+        'experiments/exp1/files': { files },
+      }[url],
+    }));
+    return opened({ exp: 'exp1' });
+  }
+
+  it('list every live capture once, by VM and then interface', async () => {
+    await fc.assert(
+      fc.asyncProperty(liveCaptures, async (captures) => {
+        const page = await openedWith(captures, []);
+        const listed = values(capturePicker(page), LIVE);
+        expect([...listed].sort()).toEqual(captures.map(liveKey).sort());
+        const read = listed.map((key) => key.match(/^live:(\d+):(.*)$/su));
+        read.slice(1).forEach(([, iface, vm], i) => {
+          const [, before, beforeVm] = read[i];
+          const order = beforeVm.localeCompare(vm) || before - iface;
+          expect(order).toBeLessThanOrEqual(0);
+        });
+        page.unmount();
+      }),
+      { numRuns: 20 },
+    );
+  });
+
+  it('put any picked capture in the URL, and open it', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        liveCaptures,
+        filePaths,
+        fc.nat(),
+        async (live, paths, n) => {
+          fc.pre(live.length + paths.length > 0);
+          const page = await openedWith(live, paths);
+          const picks = [
+            ...live.map((c) => [
+              liveKey(c),
+              { vm: c.vm, iface: String(c.interface) },
+              { vm: c.vm, interface: c.interface },
+            ]),
+            ...paths.map((path) => [`file:${path}`, { file: path }, { path }]),
+          ];
+          const [key, inQuery, body] = picks[n % picks.length];
+          await pick(page, key);
+          expect(query(page)).toEqual({ exp: 'exp1', ...inQuery });
+          expect(capturePicker(page).element.value).toBe(key);
+          expect(axios.post).toHaveBeenLastCalledWith(
+            'experiments/exp1/webshark',
+            body,
+          );
+          page.unmount();
+        },
+      ),
+      { numRuns: 20 },
+    );
   });
 
   it('put the picked experiment in the URL and list its captures', async () => {
@@ -505,20 +578,10 @@ describe('rendering', () => {
   });
 
   it('frames the capture from /webshark/ and links to it', async () => {
-    const page = await opened(
-      { exp: 'exp1', vm: 'web', iface: '1' },
-      {
-        exp: 'exp1',
-        selected: {
-          key: 'live:1:web',
-          live: true,
-          label: 'web · IF1',
-          vm: 'web',
-          iface: 1,
-        },
-        capture: { capture: 'exp1/web 1', live: true, title: 'web IF1' },
-      },
-    );
+    axios.post.mockResolvedValue({
+      data: { capture: 'exp1/web 1', live: true, title: 'web IF1' },
+    });
+    const page = await opened({ exp: 'exp1', vm: 'web', iface: '1' });
     expect(frame(page).attributes()).toMatchObject({
       src: '/webshark/embed?capture=exp1%2Fweb%201&embed=1',
       title: 'web IF1',

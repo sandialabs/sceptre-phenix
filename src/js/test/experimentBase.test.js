@@ -1,6 +1,7 @@
 // An experiment's page picks its running or stopped view from the link or
 // cached data, asks only if neither says, and fixes a stale guess on load.
 import { flushPromises } from '@vue/test-utils';
+import fc from 'fast-check';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, resetMocks, store } = await vi.hoisted(
@@ -38,6 +39,7 @@ vi.mock('@/views/experiment/VMtilesView.vue', () => views.standIn('VM tiles'));
 
 import { cachedPage, cachePage, clearPageCache } from '@/utils/pageCache.js';
 import Base from '@/views/experiment/Base.vue';
+import { never } from './helpers/async.js';
 import { mountPage } from './helpers/mount.js';
 
 // the page on exp1, opened by a link with this history state, once the view
@@ -106,6 +108,53 @@ describe("an experiment's page", () => {
       expect(axios.get).not.toHaveBeenCalled();
     },
   );
+
+  it('trusts the link, then the running page, the stopped page and the experiment list, asking only when none says', async () => {
+    const said = fc.constantFrom({ running: true }, { running: false });
+    const sources = fc.record({
+      // a link with no running says nothing, as does none
+      link: fc.constantFrom(null, {}, { running: true }, { running: false }),
+      // a running page entry with no running still decides: the page asks
+      running: fc.option(fc.oneof(said, fc.constant({ name: 'exp1' }))),
+      stopped: fc.boolean(),
+      listed: fc.option(fc.boolean()),
+      viewer: fc.boolean(),
+    });
+    await fc.assert(
+      fc.asyncProperty(
+        sources,
+        async ({ link, running, stopped, listed, viewer }) => {
+          clearPageCache();
+          axios.get.mockReset().mockImplementation(never);
+          store.role = { name: viewer ? 'VM Viewer' : 'Experiment Admin' };
+          if (running) cachePage('experiment/exp1', running);
+          if (stopped) cachePage('experiment/exp1/stopped', { name: 'exp1' });
+          cachePage('experiments', [
+            { name: 'exp2', running: !listed },
+            ...(listed === null ? [] : [{ name: 'exp1', running: listed }]),
+          ]);
+
+          let known = link?.running;
+          if (known === undefined) {
+            if (running) known = running.running;
+            else if (stopped) known = false;
+            else known = listed ?? undefined;
+          }
+          const page = await open(link);
+          if (known === undefined) {
+            expect(page.text()).toBe('Loading experiment…');
+            expect(axios.get).toHaveBeenCalledTimes(1);
+          } else {
+            const view = viewer ? 'VM tiles' : 'running view';
+            expect(page.text()).toBe(known ? view : 'stopped view');
+            expect(axios.get).not.toHaveBeenCalled();
+          }
+          page.unmount();
+        },
+      ),
+      { numRuns: 40 },
+    );
+  });
 
   it('shows a VM viewer the VM tiles of a running experiment', async () => {
     store.role = { name: 'VM Viewer' };

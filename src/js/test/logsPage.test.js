@@ -1,8 +1,9 @@
 // The Logs page: it subscribes to log lines while open, filters them by type,
 // and finds AUDIT events by the ECS fields in their message.
+import fc from 'fast-check';
 import { flushPromises } from '@vue/test-utils';
 import { h } from 'vue';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const { capturing, loaderSpy, modules, resetMocks, ws } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
@@ -69,12 +70,24 @@ const typeItem = (page, type) =>
     .findAll('.dropdown-item')
     .find((item) => textOf(item) === type);
 
+// the item of the level dropdown with this text
+const levelItem = (page, level) =>
+  page
+    .findAll('.dropdown')
+    .at(1)
+    .findAll('.dropdown-item')
+    .find((item) => textOf(item) === level);
+
+const searchBox = (page) =>
+  page.find('input[aria-label="Search log messages"]');
+
 const actions = () =>
   ws.sent
     .filter((msg) => msg.resource.type === 'log')
     .map((msg) => msg.resource.action);
 
 beforeEach(() => resetMocks());
+afterEach(() => vi.useRealTimers());
 
 // the server sends log lines only to websocket clients that subscribed
 it('subscribes to log lines while open, and again after a reconnect', async () => {
@@ -110,10 +123,86 @@ it.each([
 ])('filters by %s', async (_, types, search, want) => {
   const page = await logsPage();
   for (const type of types) await typeItem(page, type).trigger('click');
-  await page.find('input[aria-label="Search log messages"]').setValue(search);
+  await searchBox(page).setValue(search);
 
   // the search applies once typing pauses
   await vi.waitFor(() =>
     expect(shown(page)).toEqual(want.map((i) => LOGS[i].msg)),
+  );
+});
+
+const LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
+const TYPES = ['AUDIT', 'SYSTEM', 'SECURITY'];
+const logArb = fc.record({
+  level: fc.constantFrom(...LEVELS),
+  type: fc.constantFrom(...TYPES),
+  msg: fc
+    .array(fc.constantFrom('disk', 'Disk', 'vm', 'outcome=failure'), {
+      minLength: 1,
+      maxLength: 3,
+    })
+    .map((words) => words.join(' ')),
+});
+
+it('shows the lines that pass the filters, as lines stream in and filters change', async () => {
+  // a step: a streamed line, a type toggled, a level or a search chosen
+  const stepArb = fc.oneof(
+    logArb.map((line) => ({ line })),
+    fc.constantFrom(...TYPES).map((type) => ({ type })),
+    fc.constantFrom(...LEVELS).map((level) => ({ level })),
+    fc
+      .constantFrom('', 'disk', 'DISK VM', 'failure')
+      .map((search) => ({ search })),
+  );
+  await fc.assert(
+    fc.asyncProperty(
+      fc.array(logArb, { maxLength: 4 }),
+      fc.array(stepArb, { minLength: 1, maxLength: 8 }),
+      async (first, steps) => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        resetMocks();
+        const page = await open();
+        loaderSpy.options.apply(
+          first.map((log, i) => ({ id: -1 - i, ...log })),
+        );
+        await flushPromises();
+
+        const logs = [...first];
+        const types = new Set();
+        let level = 'INFO';
+        let search = '';
+        for (const step of steps) {
+          if (step.line) {
+            logs.push(step.line);
+            for (const handler of ws.handlers)
+              handler(wsMsg('log', 'phenix', 'log', step.line));
+          } else if (step.type) {
+            if (!types.delete(step.type)) types.add(step.type);
+            await typeItem(page, step.type).trigger('click');
+          } else if (step.level) {
+            level = step.level;
+            await levelItem(page, level).trigger('click');
+          } else {
+            search = step.search;
+            await searchBox(page).setValue(search);
+            vi.advanceTimersByTime(200);
+          }
+          await flushPromises();
+
+          expect(shown(page)).toEqual(
+            logs
+              .filter(
+                (log) =>
+                  LEVELS.indexOf(log.level) >= LEVELS.indexOf(level) &&
+                  (types.size === 0 || types.has(log.type)) &&
+                  log.msg.toLowerCase().includes(search.toLowerCase()),
+              )
+              .map((log) => log.msg),
+          );
+        }
+        page.unmount();
+      },
+    ),
+    { numRuns: 20 },
   );
 });

@@ -1,6 +1,7 @@
 // The Experiments page's create card: its fields, help and checks, the
 // scenarios it loads for a topology, and the request it emits.
 import { flushPromises } from '@vue/test-utils';
+import fc from 'fast-check';
 import { h, withDirectives } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,9 +16,12 @@ import CreateExperimentCard from '@/components/CreateExperimentCard.vue';
 import {
   annotationErrors,
   annotationRow,
+  annotationRowsFrom,
+  CUSTOM_NODE_ANNOTATION,
   customNodeValue,
   experimentAnnotationsPayload,
   MANAGED_EXPERIMENT_ANNOTATIONS,
+  NODE_ANNOTATIONS,
   nodeAnnotationsPayload,
 } from '@/utils/experimentAnnotations.js';
 import { never } from './helpers/async.js';
@@ -261,6 +265,40 @@ describe('CreateExperimentCard', () => {
     expect(await vlanError('200', '100')).toMatch(/below/);
   });
 
+  it('orders the ends of a VLAN range as numbers', async () => {
+    const wrapper = await card();
+    const vlan = fc.integer({ min: 0, max: 4094 });
+    // a minimum, often where one more digit begins, and a maximum often
+    // next to it
+    const range = fc
+      .oneof(vlan, fc.constantFrom(9, 10, 99, 100, 999, 1000))
+      .chain((min) =>
+        fc.tuple(
+          fc.constant(min),
+          fc.oneof(
+            vlan,
+            fc
+              .constantFrom(min - 1, min, min + 1)
+              .filter((max) => max >= 0 && max <= 4094),
+          ),
+        ),
+      );
+    await fc.assert(
+      fc.asyncProperty(range, async ([min, max]) => {
+        await byLabel(wrapper, 'VLAN range minimum').setValue(String(min));
+        await byLabel(wrapper, 'VLAN range maximum').setValue(String(max));
+        const error = message(
+          byLabel(wrapper, 'VLAN range minimum'),
+          '.create-exp-vlans',
+        );
+        expect(error).toEqual(
+          max < min ? expect.stringMatching(/below/) : null,
+        );
+      }),
+      { numRuns: 30 },
+    );
+  });
+
   // a card with topology topo and its scenario s1, whose apps are a and b
   async function filled() {
     answer({
@@ -349,6 +387,156 @@ describe('experiment annotations', () => {
     expect(customNodeValue('123456')).toBe('123456');
   });
 
+  // JSON lists and objects, with space around them and inside them
+  const json = fc
+    .tuple(
+      fc.oneof(
+        fc.array(fc.jsonValue()),
+        fc.dictionary(fc.string(), fc.jsonValue()),
+      ),
+      fc.constantFrom(undefined, 2, '\t'),
+      fc.stringMatching(/^\s*$/),
+    )
+    .map(([value, indent, pad]) => ({
+      value: JSON.parse(JSON.stringify(value)),
+      text: pad + JSON.stringify(value, null, indent) + pad,
+    }));
+
+  it('reads any JSON list or object back as itself', () => {
+    fc.assert(
+      fc.property(json, ({ value, text }) => {
+        expect(customNodeValue(text)).toEqual(value);
+      }),
+    );
+  });
+
+  it('keeps any other text as it was typed', () => {
+    const text = fc.string({ unit: 'binary' }).filter((s) => {
+      const t = s.trim();
+      return t != 'true' && t != 'false' && !/^[[{]/.test(t);
+    });
+    fc.assert(
+      fc.property(text, (s) => {
+        expect(customNodeValue(s)).toBe(s);
+      }),
+    );
+  });
+
+  it('sends back the annotations a node has when its rows are left as they were', () => {
+    const key = fc.oneof(
+      fc.constantFrom(...NODE_ANNOTATIONS.map((e) => e.key)),
+      fc.string({ minLength: 1 }).filter((s) => s.trim() === s),
+    );
+    const value = fc.oneof(
+      fc.boolean(),
+      fc.string(),
+      fc.array(fc.string()),
+      fc.jsonValue(),
+    );
+    fc.assert(
+      fc.property(fc.dictionary(key, value), (annotations) => {
+        const rows = annotationRowsFrom(
+          annotations,
+          NODE_ANNOTATIONS,
+          CUSTOM_NODE_ANNOTATION,
+        );
+        expect(nodeAnnotationsPayload(rows)).toEqual(annotations);
+      }),
+    );
+  });
+
+  it('reads back, from the text of its row, any value a row can show', () => {
+    const typeOf = (key) => NODE_ANNOTATIONS.find((e) => e.key == key)?.type;
+    const listItem = fc.stringMatching(/^[^,\s](?:[^,]*[^,\s])?$/);
+    // values the row's text keeps the type of: no number, null, or text that
+    // reads as true, false or JSON
+    const valueFor = {
+      boolean: fc.boolean(),
+      list: fc.array(listItem),
+      password: fc.string(),
+      string: fc.string(),
+      text: fc.oneof(
+        fc.boolean(),
+        fc.string().filter((s) => {
+          const t = s.trim();
+          return t != 'true' && t != 'false' && !/^[[{]/.test(t);
+        }),
+        fc
+          .oneof(
+            fc.array(fc.jsonValue()),
+            fc.dictionary(fc.string(), fc.jsonValue()),
+          )
+          .map((v) => JSON.parse(JSON.stringify(v))),
+      ),
+    };
+    const key = fc.oneof(
+      fc.constantFrom(...NODE_ANNOTATIONS.map((e) => e.key)),
+      fc.string({ minLength: 1 }).filter((s) => s.trim() === s && !typeOf(s)),
+    );
+    const entries = fc
+      .uniqueArray(key, { maxLength: 6 })
+      .chain((keys) =>
+        fc.tuple(
+          ...keys.map((k) =>
+            fc.tuple(fc.constant(k), valueFor[typeOf(k) ?? 'text']),
+          ),
+        ),
+      );
+    fc.assert(
+      fc.property(entries, (pairs) => {
+        const annotations = Object.fromEntries(pairs);
+        const rows = annotationRowsFrom(
+          annotations,
+          NODE_ANNOTATIONS,
+          CUSTOM_NODE_ANNOTATION,
+        ).map((row) => ({ ...row, original: undefined }));
+        expect(nodeAnnotationsPayload(rows)).toEqual(annotations);
+      }),
+    );
+  });
+
+  it('keeps the type of a value its row shows as other text, while the row is left as it was', () => {
+    const rows = annotationRowsFrom(
+      { n: 5, none: null, word: 'true', 'phenix/default-apps': 'false' },
+      NODE_ANNOTATIONS,
+      CUSTOM_NODE_ANNOTATION,
+    );
+    expect(nodeAnnotationsPayload(rows)).toEqual({
+      n: 5,
+      none: null,
+      word: 'true',
+      'phenix/default-apps': 'false',
+    });
+    // once the text is typed again, it is read as any typed text
+    const typed = rows.map((row) => ({ ...row, original: undefined }));
+    expect(nodeAnnotationsPayload(typed)).toEqual({
+      n: '5',
+      none: 'null',
+      word: true,
+      'phenix/default-apps': false,
+    });
+  });
+
+  it('sends a typed list as its items, whatever the spacing and empty entries', () => {
+    const item = fc.stringMatching(/^[^,\s](?:[^,]*[^,\s])?$/);
+    const space = fc.stringMatching(/^ *$/);
+    const typed = fc
+      .array(fc.tuple(space, fc.option(item), space))
+      .map((parts) => ({
+        items: parts.flatMap(([, i]) => (i === null ? [] : [i])),
+        text: parts.map(([a, i, b]) => a + (i ?? '') + b).join(','),
+      }));
+    fc.assert(
+      fc.property(typed, ({ items, text }) => {
+        const entry = NODE_ANNOTATIONS.find((e) => e.type == 'list');
+        const row = { ...annotationRow(entry), value: text };
+        expect(nodeAnnotationsPayload([row])).toEqual({
+          'phenix/startup-autotunnel': items,
+        });
+      }),
+    );
+  });
+
   it('builds both request maps from rows', () => {
     const row = (key, type, value) => ({
       ...annotationRow({ key, type }),
@@ -405,5 +593,46 @@ describe('experiment annotations', () => {
       'Enter a value',
       null,
     ]);
+  });
+
+  describe('for any rows', () => {
+    const rowArb = fc.record({
+      key: fc.constantFrom(
+        '',
+        ' ',
+        'a',
+        ' a',
+        'a ',
+        'b',
+        'topology',
+        'scenario',
+      ),
+      type: fc.constantFrom('text', 'string', 'list', 'boolean'),
+      value: fc.oneof(fc.boolean(), fc.constantFrom('', ' ', 'v')),
+    });
+    const rowsArb = fc.array(rowArb, { maxLength: 8 });
+    const errors = (rows) =>
+      annotationErrors(rows, MANAGED_EXPERIMENT_ANNOTATIONS);
+
+    it('judges each row by the rows above it alone', () => {
+      fc.assert(
+        fc.property(rowsArb, fc.nat(), (rows, n) => {
+          const k = n % (rows.length + 1);
+          expect(errors(rows.slice(0, k))).toEqual(errors(rows).slice(0, k));
+        }),
+      );
+    });
+
+    it('calls every row a repeat but the first with its key', () => {
+      fc.assert(
+        fc.property(rowsArb, (rows) => {
+          const keys = rows.map((row) => row.key.trim()).filter(Boolean);
+          const repeats = errors(rows).filter((e) =>
+            e?.endsWith(' is already in the list'),
+          );
+          expect(repeats).toHaveLength(keys.length - new Set(keys).size);
+        }),
+      );
+    });
   });
 });

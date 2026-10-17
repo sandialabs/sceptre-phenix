@@ -1,9 +1,16 @@
 // GEXF 1.3 export of the State of Health graph.
 import { execFileSync } from 'node:child_process';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { buildGexf } from '@/utils/soh/gexf.js';
 import { sohFixture } from './sohFixture.js';
+
+// What XML 1.0 never allows: C0 controls but tab, LF and CR, U+FFFE,
+// U+FFFF and lone surrogates.
+const INVALID_XML =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 // Checks tags nest and close, attributes are quoted and no raw < or & is
 // left in text: enough to catch a broken writer without an XML library.
@@ -337,5 +344,252 @@ describe('GEXF values', () => {
     ]) {
       expect(n).toContain(`<attvalue for="${id}" value="${value}"/>`);
     }
+  });
+});
+
+describe('GEXF of any graph', () => {
+  // text as XML 1.0 allows it, with the characters markup gives meaning to
+  const xmlText = fc.string({
+    unit: fc.oneof(
+      fc.constantFrom(
+        '<',
+        '>',
+        '&',
+        '"',
+        "'",
+        ',',
+        '[',
+        '\\',
+        '\t',
+        '\n',
+        '\r',
+        ' ',
+      ),
+      fc.string({ unit: 'grapheme', minLength: 1, maxLength: 1 }),
+    ),
+  });
+  const parse = (xml) => {
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    expect(doc.querySelector('parsererror')).toBeNull();
+    return doc;
+  };
+  const values = (el) =>
+    Object.fromEntries(
+      [...el.querySelectorAll('attvalue')].map((a) => [
+        a.getAttribute('for'),
+        a.getAttribute('value'),
+      ]),
+    );
+
+  // a GEXF 1.3 list value read back: [a, "b, c"]
+  function readList(text) {
+    const items = [];
+    let rest = text.slice(1, -1);
+    while (rest) {
+      const [all, item] = /^("(?:[^"\\]|\\.)*"|[^,]*)(?:, |$)/.exec(rest);
+      items.push(item.startsWith('"') ? JSON.parse(item) : item);
+      rest = rest.slice(all.length);
+    }
+    return items;
+  }
+
+  // one VM per label, each with these tags, and an edge to a VLAN
+  const exported = (experiment, vms) =>
+    buildGexf({
+      experiment,
+      nodes: [
+        { id: 'v', label: 'lan', image: 'switch', status: 'ignore' },
+        ...vms.map(({ label, tags }, i) => ({
+          id: i,
+          label,
+          image: 'linux',
+          tags,
+        })),
+      ],
+      edges: vms.map((_, i) => ({ id: i, source: i, target: 'v' })),
+    });
+
+  const tags = fc.dictionary(
+    xmlText.filter((k) => !k.startsWith('__')),
+    xmlText,
+    { maxKeys: 3 },
+  );
+
+  it('reads back every label and tag as given', () => {
+    fc.assert(
+      fc.property(
+        xmlText,
+        fc.array(fc.record({ label: xmlText, tags }), { maxLength: 4 }),
+        (experiment, vms) => {
+          const doc = parse(exported(experiment, vms));
+          const nodes = [...doc.querySelectorAll('node')].slice(1);
+          // an empty label is left out
+          expect(nodes.map((n) => n.getAttribute('label') ?? '')).toEqual(
+            vms.map((vm) => vm.label),
+          );
+          nodes.forEach((n, i) => {
+            const list = values(n).tags;
+            const want = Object.entries(vms[i].tags).map(
+              ([k, v]) => `${k}=${v}`,
+            );
+            expect(list === undefined ? [] : readList(list)).toEqual(want);
+          });
+          expect(doc.querySelector('keywords').textContent).toBe(
+            `phenix, state of health, ${experiment}`,
+          );
+        },
+      ),
+    );
+  });
+
+  it('stays well formed for any text', () => {
+    const text = fc.string({ unit: 'binary', maxLength: 12 });
+    const vm = fc.record({
+      label: text,
+      tags: fc.dictionary(text, text, { maxKeys: 3 }),
+    });
+    fc.assert(
+      fc.property(text, fc.array(vm, { maxLength: 4 }), (experiment, vms) => {
+        const xml = exported(experiment, vms);
+        checkWellFormed(xml);
+        expect(xml).not.toMatch(INVALID_XML);
+        parse(xml);
+      }),
+      { numRuns: 25 },
+    );
+  });
+
+  const CATEGORIES = {
+    networking: 'networking',
+    reachability: 'reachability',
+    processes: 'processes',
+    listeners: 'listeners',
+    services: 'services',
+    files: 'files',
+    filesAbsent: 'files_absent',
+    containers: 'containers',
+    customTests: 'custom_tests',
+  };
+
+  it('counts every check once, and lists each failure or how many are left out', () => {
+    const word = fc.stringMatching(/^[a-z0-9 .:/-]{0,40}$/);
+    const check = fc.record({
+      error: fc.oneof(
+        fc.constant(''),
+        word,
+        fc.integer({ min: 1, max: 400 }).map((n) => 'e'.repeat(n)),
+      ),
+      metadata: fc.record({
+        target: word,
+        proc: word,
+        port: word,
+        service: word,
+        path: word,
+        container: word,
+        test: word,
+      }),
+      timestamp: fc.constantFrom('2026-09-28 10:00:00', '2026-09-28 10:00:01'),
+    });
+    const soh = fc.record(
+      Object.fromEntries(
+        Object.keys(CATEGORIES).map((key) => [
+          key,
+          fc.array(check, { maxLength: 30, size: '+1' }),
+        ]),
+      ),
+      { requiredKeys: [] },
+    );
+    fc.assert(
+      fc.property(soh, fc.boolean(), (results, errors) => {
+        const xml = buildGexf({
+          experiment: 'x',
+          nodes: [
+            {
+              id: 1,
+              label: 'web',
+              image: 'linux',
+              soh: { ...results, errors },
+            },
+          ],
+        });
+        // read with a regex: shrinking would run happy-dom out of memory
+        const v = Object.fromEntries(
+          [...xml.matchAll(/<attvalue for="([^"]+)" value="([^"]*)"\/>/g)].map(
+            (m) => m.slice(1),
+          ),
+        );
+        let failed = 0;
+        for (const [key, name] of Object.entries(CATEGORIES)) {
+          const checks = results[key] ?? [];
+          const bad = checks.filter((c) => c.error).length;
+          expect(Number(v[`soh_${name}_ok`])).toBe(checks.length - bad);
+          expect(Number(v[`soh_${name}_failed`])).toBe(bad);
+          failed += bad;
+        }
+        expect(Number(v.soh_failed_total)).toBe(failed);
+        const times = Object.values(results).flatMap((cs) =>
+          cs.map((c) => c.timestamp),
+        );
+        expect(v.soh_last_check).toBe(times.sort().at(-1));
+        expect(v.soh_errors).toBe(String(errors || failed > 0));
+        const listed = v.soh_failures?.split('; ') ?? [];
+        const more = /^…and (\d+) more$/.exec(listed.at(-1) ?? '');
+        expect(listed.length - (more ? 1 : 0) + Number(more?.[1] ?? 0)).toBe(
+          failed,
+        );
+        // at most 2000 characters, then how many more failed
+        expect((v.soh_failures ?? '').length).toBeLessThanOrEqual(2000 + 20);
+        // "files absent <path>: <error, cut at 160 characters>"
+        for (const item of listed) expect(item.length).toBeLessThanOrEqual(215);
+      }),
+    );
+  });
+
+  it('adds one weighted edge for each pair of hosts that sent bytes', () => {
+    const hosts = fc.uniqueArray(
+      fc.constantFrom('10.0.0.1', '10.0.0.2', 'web', '8.8.8.8', '1.1.1.1'),
+      { minLength: 1 },
+    );
+    const bytes = fc.oneof(fc.constant(0), fc.nat(1e6), fc.constant(-5));
+    const matrix = hosts.chain((names) =>
+      fc.tuple(
+        fc.constant(names),
+        fc.array(fc.array(bytes, { maxLength: names.length + 1 }), {
+          maxLength: names.length,
+        }),
+      ),
+    );
+    fc.assert(
+      fc.property(matrix, ([names, flows]) => {
+        const xml = buildGexf({
+          experiment: 'x',
+          nodes: [{ id: 1, label: 'web', image: 'linux' }],
+          vms: [{ name: 'web', ipv4: ['10.0.0.1'] }],
+          hosts: names,
+          flows,
+        });
+        const sent = flows.flatMap((row, i) =>
+          row.filter((b, j) => i !== j && j < names.length && b > 0),
+        );
+        const doc = parse(xml);
+        const weights = [...doc.querySelectorAll('edge[kind="flow"]')].map(
+          (e) => Number(e.getAttribute('weight')),
+        );
+        expect(weights.sort()).toEqual(sent.sort());
+        const ids = [...doc.querySelectorAll('node')].map((n) =>
+          n.getAttribute('id'),
+        );
+        for (const e of doc.querySelectorAll('edge')) {
+          expect(ids).toContain(e.getAttribute('source'));
+          expect(ids).toContain(e.getAttribute('target'));
+        }
+        expect(doc.querySelector('nodes').getAttribute('count')).toBe(
+          String(ids.length),
+        );
+        expect(doc.querySelector('edges').getAttribute('count')).toBe(
+          String(doc.querySelectorAll('edge').length),
+        );
+      }),
+    );
   });
 });

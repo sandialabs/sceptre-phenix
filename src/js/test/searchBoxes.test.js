@@ -1,5 +1,6 @@
 // Every page's search box, drawn with real Buefy: the same look (icon left,
 // Buefy's width), and a clear button only while there is a search.
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, resetMocks } = await vi.hoisted(
@@ -84,6 +85,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   warn.mockRestore();
+  vi.useRealTimers();
 });
 
 describe.each(pages)('%s', (_, page, route, searches) => {
@@ -103,5 +105,27 @@ describe.each(pages)('%s', (_, page, route, searches) => {
       const wrapper = await mountPage(page, { route, data });
       expect(clearButton(wrapper).exists(), JSON.stringify(data)).toBe(true);
     }
+  });
+
+  it('offers to clear any search typed in its box, and clears the box', async () => {
+    const wrapper = await mountPage(page, { route });
+    // the field draws its controls again as the clear button comes and goes
+    const input = () => searchBox(wrapper).find('input');
+    // the experiment pages clear their search after a pause
+    vi.useFakeTimers();
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ minLength: 1 }).filter((s) => s.trim() !== ''),
+        async (text) => {
+          await input().setValue(text);
+          expect(clearButton(wrapper).exists()).toBe(true);
+          await clearButton(wrapper).trigger('click');
+          await vi.runAllTimersAsync();
+          expect(input().element.value).toBe('');
+          expect(clearButton(wrapper).exists()).toBe(false);
+        },
+      ),
+      { numRuns: 5 },
+    );
   });
 });

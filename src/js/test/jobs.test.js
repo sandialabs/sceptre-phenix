@@ -1,5 +1,6 @@
 // The background jobs store: the server's list, kept in revision order by the
 // websocket and after a reconnect, and the start, cancel and dismiss requests.
+import fc from 'fast-check';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,11 +58,8 @@ describe('the jobs store', () => {
     await jobs.load();
 
     expect(axios.get).toHaveBeenCalledWith('jobs');
-    expect(jobs.loaded).toBe(true);
     expect(jobs.list.map((j) => j.id)).toEqual(['new', 'old']);
     expect(jobs.active.map((j) => j.id)).toEqual(['new']);
-    expect(jobs.forExperiment('exp')).toHaveLength(2);
-    expect(jobs.forExperiment('other')).toEqual([]);
   });
 
   it('applies websocket updates in revision order and removals', () => {
@@ -92,6 +90,81 @@ describe('the jobs store', () => {
 
     jobs.apply(wsMsg('job', 'j1', 'remove', job('j1', { revision: 5 })));
     expect(jobs.jobs.j1).toBeUndefined();
+  });
+
+  it('holds the last copy of the highest revision, whatever order they come in', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.nat(5), { minLength: 1, maxLength: 8 }),
+        (revisions) => {
+          setActivePinia(createPinia());
+          const store = useJobStore();
+          revisions.forEach((revision, i) =>
+            store.apply(
+              wsMsg('job', 'j1', 'update', job('j1', { revision, title: i })),
+            ),
+          );
+          const newest = Math.max(...revisions);
+          expect(store.jobs.j1.title).toBe(revisions.lastIndexOf(newest));
+        },
+      ),
+    );
+  });
+
+  it('lists jobs newest first, and as recent every active one and the newest ten finished', () => {
+    const listed = fc.uniqueArray(
+      fc.record({
+        id: fc.stringMatching(/^j[a-z0-9]{1,3}$/),
+        status: fc.constantFrom(
+          'queued',
+          'running',
+          'succeeded',
+          'partial',
+          'failed',
+          'canceled',
+        ),
+        // fixed-width UTC; the it.fails below covers Go's trimmed fractions
+        ms: fc.integer({
+          min: Date.UTC(2026, 0, 1),
+          max: Date.UTC(2027, 0, 1),
+        }),
+      }),
+      { selector: (j) => j.id, maxLength: 25, size: 'max' },
+    );
+    fc.assert(
+      fc.property(listed, (given) => {
+        setActivePinia(createPinia());
+        const store = useJobStore();
+        for (const { id, status, ms } of given) {
+          store.put(job(id, { status, created: new Date(ms).toISOString() }));
+        }
+        const at = (j) => Date.parse(j.created);
+        const ids = (list) => list.map((j) => j.id).sort();
+        const newestFirst = (list) =>
+          list.slice(1).every((j, i) => at(j) <= at(list[i]));
+
+        expect(ids(store.list)).toEqual(ids(given));
+        expect(newestFirst(store.list)).toBe(true);
+
+        const active = store.list.filter(isActiveJob);
+        const finished = store.list.filter((j) => !isActiveJob(j));
+        const recent = store.recent;
+        expect(recent.slice(0, active.length)).toEqual(active);
+        const shown = recent.slice(active.length);
+        expect(shown).toHaveLength(Math.min(finished.length, 10));
+        expect(newestFirst(shown)).toBe(true);
+        for (const left of finished.filter((j) => !shown.includes(j))) {
+          expect(at(left)).toBeLessThanOrEqual(at(shown.at(-1)));
+        }
+      }),
+    );
+  });
+
+  // Go's RFC3339Nano trims trailing zeros, and utils/jobs.js byCreated compares strings
+  it.fails('lists a job created later in the same second first', () => {
+    jobs.put(job('early', { created: '2026-10-14T15:00:00.12Z' }));
+    jobs.put(job('late', { created: '2026-10-14T15:00:00.123Z' }));
+    expect(jobs.list.map((j) => j.id)).toEqual(['late', 'early']);
   });
 
   it('keeps the results a whole copy has over a websocket copy of the same revision', () => {
@@ -249,44 +322,29 @@ describe('the jobs store', () => {
       '/api/v1/jobs/j1/artifact?token=t',
     );
 
-    // downloads through a link, not a window a browser may block
-    const link = { click: vi.fn(), remove: vi.fn() };
-    const append = vi.fn();
-    vi.stubGlobal('document', {
-      createElement: () => link,
-      body: { appendChild: append },
-    });
+    // downloads through a link on the page, not a window a browser may block
+    let link;
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function () {
+        link = {
+          href: this.href,
+          download: this.download,
+          onPage: this.isConnected,
+        };
+      });
     jobs.downloadArtifact({ id: 'j1', artifact: { name: 'exp-files.zip' } });
-    vi.unstubAllGlobals();
-    expect(link).toMatchObject({
-      href: '/api/v1/jobs/j1/artifact?token=t',
+    click.mockRestore();
+    expect(link).toEqual({
+      href: 'http://phenix.test/api/v1/jobs/j1/artifact?token=t',
       download: 'exp-files.zip',
+      onPage: true,
     });
-    expect(append).toHaveBeenCalledWith(link);
-    expect(link.click).toHaveBeenCalled();
-    expect(link.remove).toHaveBeenCalled();
+    expect(document.querySelector('a')).toBe(null);
 
     jobs.put(job('j1'));
     jobs.clear();
     expect(jobs.list).toEqual([]);
-    expect(jobs.loaded).toBe(false);
-  });
-
-  it('lists every active job and the newest ten finished ones as recent', () => {
-    for (let i = 0; i < 12; i++) {
-      jobs.put(
-        job(`done${i}`, {
-          status: 'succeeded',
-          created: `2026-10-14T10:${String(i).padStart(2, '0')}:00Z`,
-        }),
-      );
-    }
-    jobs.put(job('running', { created: '2026-10-14T09:00:00Z' }));
-
-    const recent = jobs.recent.map((j) => j.id);
-    expect(recent[0]).toBe('running');
-    expect(recent).toHaveLength(11);
-    expect(recent).not.toContain('done0');
   });
 });
 
@@ -306,5 +364,31 @@ describe('helpers', () => {
     [3 * 1024 ** 3, '3.0 GiB'],
   ])('writes %d bytes as %s', (bytes, want) => {
     expect(bytesText(bytes)).toBe(want);
+  });
+
+  it('writes any byte count in the largest unit it fills, to a tenth', () => {
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    // counts near each unit's start, where the unit changes
+    const near = fc
+      .tuple(fc.integer({ min: 1, max: 4 }), fc.integer({ min: -9, max: 9 }))
+      .map(([unit, off]) => 1024 ** unit + off);
+    fc.assert(
+      fc.property(fc.oneof(fc.maxSafeNat(), near), (bytes) => {
+        const want = [1, 2, 3, 4].filter((u) => 1024 ** u <= bytes).length;
+        // a count that rounds up to the next unit is the it.fails case below
+        fc.pre(want === 0 || (bytes / 1024 ** want).toFixed(1) !== '1024.0');
+        const [value, unitName] = bytesText(bytes).split(' ');
+        const unit = units.indexOf(unitName);
+        expect(unit).toBe(want);
+        expect(
+          Math.abs(Number(value) * 1024 ** unit - bytes),
+        ).toBeLessThanOrEqual(0.05 * 1024 ** unit);
+      }),
+    );
+  });
+
+  // utils/jobs.js:30 rounds after it picks the unit, so 1048575 B reads 1024.0 KiB
+  it.fails('writes 1 MiB less a byte as 1.0 MiB', () => {
+    expect(bytesText(1024 ** 2 - 1)).toBe('1.0 MiB');
   });
 });

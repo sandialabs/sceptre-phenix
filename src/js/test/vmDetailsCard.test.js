@@ -1,4 +1,5 @@
 // Mounts the VM details card and the Actions buttons with real Buefy.
+import fc from 'fast-check';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 
@@ -390,6 +391,60 @@ describe('VmDetailsCard annotations', () => {
     done(true);
     await nextTick();
     expect(has(wrapper, '.annotation-list')).toBe(false);
+  });
+});
+
+describe('VmDetailsCard annotations, any set of them', () => {
+  // the keys phenix knows, with values of their own type or not, and others
+  const text = fc
+    .string({ minLength: 1, maxLength: 8 })
+    .filter((v) => v.trim());
+  const value = fc.oneof(
+    text,
+    fc.boolean(),
+    fc.integer(),
+    fc.array(text, { minLength: 1, maxLength: 3 }),
+    fc.dictionary(fc.stringMatching(/^[a-z]{1,3}$/), text, { maxKeys: 2 }),
+  );
+  const key = fc.oneof(
+    fc.constantFrom(
+      'phenix/default-apps',
+      'phenix/startup-autotunnel',
+      'phenix/startup-via-cc',
+      'vrouter/vyos-password',
+      'vrouter/enable-ssh',
+    ),
+    fc.stringMatching(/^[a-zA-Z][a-zA-Z0-9./_-]{0,10}$/),
+  );
+  const annotationSet = fc.dictionary(key, value, { minKeys: 1, maxKeys: 5 });
+
+  it('list each one once, by key, and save unchanged as they were', async () => {
+    await fc.assert(
+      fc.asyncProperty(annotationSet, async (set) => {
+        const wrapper = await card({ vm: { ...vm, annotations: set } });
+        const listed = wrapper.findAll('.vm-annotation-key').map((k) => {
+          const shown = k.element.nextElementSibling;
+          return [
+            k.attributes('title'),
+            shown.getAttribute('title') ?? textOf(shown),
+          ];
+        });
+        const keys = listed.map(([k]) => k);
+        expect(keys.toSorted((a, b) => a.localeCompare(b))).toEqual(keys);
+        expect(keys.toSorted()).toEqual(Object.keys(set).sort());
+        for (const [k, shown] of listed) {
+          if (k === 'vrouter/vyos-password') expect(shown).toBe('••••••');
+          else if (typeof set[k] === 'string') expect(shown).toBe(set[k]);
+          else expect(JSON.parse(shown)).toEqual(set[k]);
+        }
+
+        await wrapper.find('.vm-edit-annotations').trigger('click');
+        await wrapper.find('.vm-save-annotations').trigger('click');
+        expect(wrapper.emitted('save-annotations')[0][0]).toEqual(set);
+        wrapper.unmount();
+      }),
+      { numRuns: 12 },
+    );
   });
 });
 

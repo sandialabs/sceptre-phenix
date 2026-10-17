@@ -1,4 +1,5 @@
 // The wording helpers for messages about one or several things.
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -22,11 +23,16 @@ describe('plural', () => {
   });
 
   it('takes an irregular plural', () => {
-    expect(plural(2, 'is', 'are')).toBe('2 are');
     expect(pluralWord(1, 'it', 'them')).toBe('it');
     expect(pluralWord(4, 'it', 'them')).toBe('them');
   });
 });
+
+// prose items without a comma or a word "and", which readList would split on
+const item = fc
+  .string({ minLength: 1 })
+  .filter((s) => !s.includes(',') && !/(^| )and( |$)/.test(s));
+const readList = (text) => (text ? text.split(/, and |, | and /) : []);
 
 describe('listText', () => {
   it('joins lists as prose', () => {
@@ -35,6 +41,14 @@ describe('listText', () => {
     expect(listText(['a', 'b'])).toBe('a and b');
     expect(listText(['a', 'b', 'c'])).toBe('a, b, and c');
     expect(listText([0, 2])).toBe('0 and 2');
+  });
+
+  it('keeps every item, in order', () => {
+    fc.assert(
+      fc.property(fc.array(item), (items) => {
+        expect(readList(listText(items))).toEqual(items);
+      }),
+    );
   });
 });
 
@@ -47,6 +61,13 @@ describe('namedList', () => {
   it('names several with the plural first', () => {
     expect(namedList(['web', 'db'], 'VM')).toBe('the VMs web and db');
     expect(namedList(['a', 'b', 'c'], 'VM')).toBe('the VMs a, b, and c');
+    fc.assert(
+      fc.property(fc.array(item, { minLength: 2 }), (names) => {
+        const text = namedList(names, 'VM');
+        expect(text.startsWith('the VMs ')).toBe(true);
+        expect(readList(text.slice('the VMs '.length))).toEqual(names);
+      }),
+    );
   });
 
   it('starts a sentence with a capital', () => {

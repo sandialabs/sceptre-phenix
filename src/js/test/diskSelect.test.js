@@ -1,10 +1,12 @@
 // The VM disk picker of the stopped experiment and the Redeploy window, with
 // real Buefy: the disks it offers, the VM's disk and the warning beside it.
+import fc from 'fast-check';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
 
 import DiskSelect from '@/components/experiment/DiskSelect.vue';
+import { diskListArb } from './helpers/arbitraries.js';
 import { disk } from './helpers/fixtures.js';
 import { mountComponent, textOf, tooltipButtons } from './helpers/mount.js';
 
@@ -143,6 +145,44 @@ describe('DiskSelect', () => {
       },
     ]);
     expect(warnings).toEqual([]);
+  });
+
+  it("offers every disk once, picks the VM's disk and warns only of one outside or unlisted", async () => {
+    const cases = diskListArb().chain((list) =>
+      fc.tuple(
+        fc.constant(list),
+        fc.constantFrom(
+          '',
+          '/phenix/images/gone.qc2',
+          ...list.map((d) => d.fullPath),
+        ),
+      ),
+    );
+    const sorted = (paths) => paths.toSorted();
+    await fc.assert(
+      fc.asyncProperty(cases, async ([list, path]) => {
+        const { picker, select, options, warnings } = await render(path, list);
+        const listed = list.find((d) => d.fullPath === path);
+
+        expect(sorted(options.map((o) => o.value))).toEqual(
+          sorted([...list.map((d) => d.fullPath), ...(listed ? [] : [path])]),
+        );
+        expect(
+          sorted(options.filter((o) => o.group).map((o) => o.value)),
+        ).toEqual(
+          sorted(list.filter((d) => d.outsideFilesDir).map((d) => d.fullPath)),
+        );
+        expect(select.element.value).toBe(path);
+        const warning =
+          path &&
+          (listed
+            ? listed.outsideFilesDir && OUTSIDE
+            : 'Not in your disk list');
+        expect(warnings.map((w) => w.label)).toEqual(warning ? [warning] : []);
+        picker.unmount();
+      }),
+      { numRuns: 20 },
+    );
   });
 
   it('says so for a VM without a disk', async () => {

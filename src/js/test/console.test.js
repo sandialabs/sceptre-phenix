@@ -1,5 +1,6 @@
 // The minimega console session: kept between visits to the Console page,
 // remembered for a reload or another tab, and ended on logout.
+import fc from 'fast-check';
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -368,6 +369,37 @@ describe('the remembered console', () => {
 
     consoleSession.forgetConsolePid('alice', 8);
     expect(consoleSession.rememberedConsolePid('alice')).toBe(null);
+  });
+
+  it("is each user's own, and forgotten only while a forgotten pid is it", () => {
+    const users = ['alice', 'bob', 'alice.bob'];
+    const step = fc.record({
+      user: fc.constantFrom(...users),
+      pid: fc.option(fc.integer({ min: 1, max: 4 }), { nil: undefined }),
+      forget: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(fc.array(step), (steps) => {
+        users.forEach((user) => consoleSession.forgetConsolePid(user));
+        const remembered = new Map();
+        for (const { user, pid, forget } of steps) {
+          if (forget) {
+            consoleSession.forgetConsolePid(user, pid);
+            if (pid === undefined || remembered.get(user) === pid) {
+              remembered.delete(user);
+            }
+          } else if (pid) {
+            consoleSession.rememberConsolePid(user, pid);
+            remembered.set(user, pid);
+          }
+        }
+        for (const user of users) {
+          expect(consoleSession.rememberedConsolePid(user)).toBe(
+            remembered.get(user) ?? null,
+          );
+        }
+      }),
+    );
   });
 
   it('is ignored when storage is unavailable', () => {

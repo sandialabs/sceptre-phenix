@@ -1,5 +1,6 @@
 // What the app starts for a signed-in user and tears down on sign-out, across
 // every sign-in and sign-out, whether the page loaded signed in or not.
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { nextTick, ref } from 'vue';
 
@@ -54,5 +55,26 @@ describe('followSignIn', () => {
     auth.value = false;
     await nextTick();
     expect(calls).toEqual(['in']);
+  });
+
+  // each step signs in or out, or lets Vue run the watchers
+  const steps = fc.array(fc.oneof(fc.boolean(), fc.constant('tick')), {
+    maxLength: 20,
+  });
+
+  it('alternates start and teardown, started exactly while signed in, over any run of sign-ins', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.boolean(), steps, async (loadedIn, run) => {
+        const { auth, calls, stop } = follow(loadedIn);
+        for (const step of run) {
+          if (step === 'tick') await nextTick();
+          else auth.value = step;
+        }
+        await nextTick();
+        stop();
+        calls.forEach((call, i) => expect(call).toBe(i % 2 ? 'out' : 'in'));
+        expect(calls.at(-1) === 'in').toBe(auth.value);
+      }),
+    );
   });
 });

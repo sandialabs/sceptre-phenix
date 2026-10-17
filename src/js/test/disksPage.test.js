@@ -1,5 +1,6 @@
 // The Disks page: loading and refreshing the list, disk names, the actions it
 // offers and why each is disabled, and the requests those actions send.
+import fc from 'fast-check';
 import { flushPromises } from '@vue/test-utils';
 import realAxios from 'axios';
 import { createPinia, setActivePinia } from 'pinia';
@@ -29,6 +30,7 @@ vi.mock('@/utils/pageLoader.js', fetching);
 import JobProgress from '@/components/jobs/JobProgress.vue';
 import { useJobStore } from '@/utils/jobs.js';
 import Disks from '@/views/Disks.vue';
+import { diskListArb } from './helpers/arbitraries.js';
 import { disk, httpError, wsMsg } from './helpers/fixtures.js';
 import {
   byLabel,
@@ -157,6 +159,52 @@ describe('the disk list', () => {
     expect(
       tableRows(wrapper).map((cells) => textOf(cells['Size on Disk'])),
     ).toEqual(['', '512 B', '900 MiB', '2.1 GiB', '3G']);
+  });
+
+  it('sorts any sizes by their bytes, in IEC or minimega units', async () => {
+    const units = [
+      ['B'],
+      ['KiB', 'K'],
+      ['MiB', 'M'],
+      ['GiB', 'G'],
+      ['TiB', 'T'],
+    ];
+    // a size as the list shows it, with its bytes; unknown sizes count -1
+    const size = fc.oneof(
+      fc.constant({ text: '', bytes: -1 }),
+      fc
+        .record({
+          tenths: fc.nat(20000),
+          power: fc.nat(units.length - 1),
+          minimega: fc.boolean(),
+        })
+        .map(({ tenths, power, minimega }) => ({
+          text: `${(tenths / 10).toFixed(1)}${minimega && power ? '' : ' '}${units[power].at(minimega ? -1 : 0)}`,
+          bytes: (tenths / 10) * 1024 ** power,
+        })),
+    );
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(size, { minLength: 1, maxLength: 6 }),
+        async (sizes) => {
+          const wrapper = await page(
+            sizes.map(({ text }, i) =>
+              disk(`/phenix/images/${i}.qc2`, `${i}.qc2`, { size: text }),
+            ),
+          );
+          await tableHeader(wrapper, 'Size on Disk').trigger('click');
+
+          const order = names(wrapper).map((name) => parseInt(name));
+          const bytes = order.map((i) => sizes[i].bytes);
+          expect(bytes).toEqual(bytes.toSorted((a, b) => a - b));
+          expect(order.toSorted((a, b) => a - b)).toEqual(
+            sizes.map((_, i) => i),
+          );
+          wrapper.unmount();
+        },
+      ),
+      { numRuns: 10 },
+    );
   });
 });
 
@@ -411,6 +459,48 @@ describe('disks in folders and outside the files directory', () => {
     expect(names(wrapper)).toEqual(sorted);
     await tableHeader(wrapper, 'Name').trigger('click');
     expect(names(wrapper)).toEqual(sorted.toReversed());
+  });
+
+  it('finds any disk by any part of its name, in any case, and only disks holding it', async () => {
+    const label = (d) => d.relativePath || d.fullPath;
+    // a disk list, and a part of one disk's label, upper-cased or not
+    const cases = diskListArb()
+      .filter((list) => list.length > 0)
+      .chain((list) =>
+        fc.tuple(
+          fc.constant(list),
+          fc
+            .record({
+              found: fc.constantFrom(...list),
+              ends: fc.tuple(fc.nat(), fc.nat()),
+              upper: fc.boolean(),
+            })
+            .map(({ found, ends, upper }) => {
+              const [a, b] = ends.map((n) => n % (label(found).length + 1));
+              const part = label(found).slice(Math.min(a, b), Math.max(a, b));
+              return { found, query: upper ? part.toUpperCase() : part };
+            }),
+        ),
+      );
+    await fc.assert(
+      fc.asyncProperty(cases, async ([list, { found, query }]) => {
+        const wrapper = await page(list);
+        await wrapper.find('input[placeholder="Find a disk"]').setValue(query);
+
+        const shown = tableRows(wrapper).map(
+          (cells) => cells.Name.find('.disk-label').element.textContent,
+        );
+        expect(shown).toContain(label(found));
+        expect(shown.toSorted()).toEqual(
+          list
+            .map(label)
+            .filter((l) => l.toLowerCase().includes(query.toLowerCase()))
+            .toSorted(),
+        );
+        wrapper.unmount();
+      }),
+      { numRuns: 10 },
+    );
   });
 
   it("shows where a disk is and links its backing chain by each image's full path", async () => {

@@ -102,6 +102,10 @@ Shared helpers live in `test/helpers/`:
   failed requests with `fixtures.js`.
 - Write repeated permission or state cases as `it.each` tables, each row
   checking both the allowed and the refused case.
+- Check escaping, round trips and list invariants as fast-check properties
+  beside the named examples, with the shared arbitraries in
+  `arbitraries.js`. A property that mounts a component lowers `numRuns` to
+  about 20 to keep the file fast.
 
 ## Performance
 

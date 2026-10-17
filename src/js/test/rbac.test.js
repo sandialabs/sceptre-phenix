@@ -1,5 +1,6 @@
 // Which resources and resource names a role's policies allow; mirrors
 // role_test.go.
+import fc from 'fast-check';
 import { roleAllowed, userTokenAllowed } from '@/utils/rbac.js';
 import { usePhenixStore } from '@/store.js';
 import { beforeEach, test, expect, vi } from 'vitest';
@@ -241,4 +242,118 @@ test('a token for another user also needs users/tokens create on them', () => {
   });
   expect(userTokenAllowed('bob')).toBe(true);
   expect(userTokenAllowed('carol')).toBe(false);
+});
+
+// Go's filepath.Match for patterns of literals, * and ?: neither crosses a /
+const goMatch = (pattern, name) =>
+  new RegExp(
+    `^${[...pattern]
+      .map((c) =>
+        c === '*'
+          ? '[^/]*'
+          : c === '?'
+            ? '[^/]'
+            : c.replace(/[.^$+()|[\]{}\\]/, '\\$&'),
+      )
+      .join('')}$`,
+  ).test(name);
+
+// what policy.go and role.go allow
+const nameAllowed = (policy, name) => {
+  const hits = policy.resourceNames.filter((n) =>
+    goMatch(n.replace(/^!/, ''), name),
+  );
+  return hits.length > 0 && !hits.some((n) => n.startsWith('!'));
+};
+const goAllowed = (policies, resource, verb, names) =>
+  policies.some(
+    (p) =>
+      p.resources.some((r) => goMatch(r, resource)) &&
+      p.verbs.some((v) => v === '*' || v === verb) &&
+      (names.length === 0 || names.some((n) => nameAllowed(p, n))),
+  );
+
+const segment = (chars) =>
+  fc.string({ unit: fc.constantFrom(...chars), minLength: 1, maxLength: 3 });
+// a resource name: an experiment, a VM, or a VM within an experiment
+const nameArb = (chars = 'ab.-') =>
+  fc
+    .array(
+      segment(chars).filter((s) => s !== '.' && s !== '..'),
+      { minLength: 1, maxLength: 2 },
+    )
+    .map((s) => s.join('/'));
+const patternArb = fc
+  .array(segment('ab.-*?'), { minLength: 1, maxLength: 2 })
+  .map((s) => s.join('/'));
+const RESOURCES = ['vms', 'vms/start', 'experiments'];
+const VERBS = ['get', 'patch'];
+const policyArb = fc.record({
+  resources: fc.array(
+    fc.constantFrom(...RESOURCES, '*', '**', 'vms/*', '*/start'),
+    { minLength: 1, maxLength: 2 },
+  ),
+  resourceNames: fc.array(
+    fc
+      .tuple(fc.boolean(), patternArb)
+      .map(([negate, p]) => (negate ? `!${p}` : p)),
+    { maxLength: 3 },
+  ),
+  verbs: fc.array(fc.constantFrom(...VERBS, '*'), {
+    minLength: 1,
+    maxLength: 2,
+  }),
+});
+const queryArb = (names = nameArb()) =>
+  fc.record({
+    resource: fc.constantFrom(...RESOURCES),
+    verb: fc.constantFrom(...VERBS),
+    names: fc.array(names, { maxLength: 3 }),
+  });
+
+test('allows what the server allows for any policies and request', () => {
+  fc.assert(
+    fc.property(
+      fc.array(policyArb, { maxLength: 3 }),
+      queryArb(),
+      (policies, { resource, verb, names }) => {
+        signIn({ name: 'Any', policies });
+        expect(roleAllowed(resource, verb, ...names)).toBe(
+          goAllowed(policies, resource, verb, names),
+        );
+      },
+    ),
+  );
+});
+
+test('answers a request the same whether or not it asked before', () => {
+  fc.assert(
+    fc.property(
+      fc.array(policyArb, { maxLength: 3 }),
+      fc.array(queryArb(nameArb('ab')), { minLength: 1, maxLength: 8 }),
+      (policies, queries) => {
+        const ask = ({ resource, verb, names }) =>
+          roleAllowed(resource, verb, ...names);
+        signIn({ name: 'Cached', policies });
+        const answers = queries.map(ask);
+
+        // each asked of a new sign in, whose answers are not yet cached
+        const fresh = queries.map((q) => {
+          signIn({ name: 'Cached', policies });
+          return ask(q);
+        });
+        expect(answers).toEqual(fresh);
+      },
+    ),
+  );
+});
+
+// rbac.js:46 caches by the names joined with commas, so these share an answer
+test.fails('tells one name holding a comma from two names', () => {
+  signIn({
+    name: 'Comma',
+    policies: [{ resources: ['vms'], resourceNames: ['a'], verbs: ['get'] }],
+  });
+  expect(roleAllowed('vms', 'get', 'a,b')).toBe(false);
+  expect(roleAllowed('vms', 'get', 'a', 'b')).toBe(true);
 });

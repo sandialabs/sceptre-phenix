@@ -1,10 +1,10 @@
 // Where the router sends a visit: to sign in when signed out, to a page the
 // role may use instead of one it may not, and anywhere without auth.
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { NavigationFailureType, isNavigationFailure } from 'vue-router';
 import { role } from './helpers/roles.js';
-import { memoryStorage } from './helpers/storage.js';
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal();
@@ -33,9 +33,9 @@ let store;
 
 beforeEach(async () => {
   vi.stubEnv('VITE_AUTH', 'enabled');
-  vi.stubGlobal('localStorage', memoryStorage());
-  vi.stubGlobal('sessionStorage', memoryStorage());
-  vi.stubGlobal('document', { title: '' });
+  // test/setup.js gives each test an empty localStorage
+  sessionStorage.clear();
+  document.title = '';
   toast.mockReset();
 
   // a new router for each test, so every visit starts from nowhere
@@ -47,7 +47,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 // signs in with a token that expires in the given number of seconds
@@ -164,6 +164,30 @@ describe('a signed-in role', () => {
     expect(store.auth).toBe(false);
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringMatching(/expired/) }),
+    );
+  });
+
+  it('is signed out from the second its token expires, and not before', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const expiresIn = fc.oneof(
+      fc.integer({ min: -2, max: 2 }),
+      fc.integer({ min: -1e6, max: 1e6 }),
+    );
+    // any moment, so the token's whole-second exp lands anywhere in a second
+    const moment = fc.integer({
+      min: Date.UTC(2020, 0),
+      max: Date.UTC(2040, 0),
+    });
+    await fc.assert(
+      fc.asyncProperty(moment, expiresIn, async (now, seconds) => {
+        // from a page every visit may open, not the sign-in page logout opens
+        await router.push('/disabled');
+        vi.setSystemTime(now);
+        signIn(experimenter, seconds);
+        const to = await visit('/experiments');
+        expect(to.name).toBe(seconds > 0 ? 'experiments' : 'signin');
+        expect(store.auth).toBe(seconds > 0);
+      }),
     );
   });
 });

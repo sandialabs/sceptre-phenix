@@ -1,5 +1,6 @@
 // How errors are shown: a notification naming the failure, then each step of
 // the server's error chain that led to it, the innermost cause last in bold.
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/utils/notify.js', () => ({ openNotification: vi.fn() }));
@@ -8,6 +9,7 @@ vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
 
 import { openNotification } from '@/utils/notify.js';
 import { showError, useErrorNotification } from '@/utils/errorNotif.js';
+import { errorSteps } from '@/utils/operations.js';
 
 beforeEach(() => {
   openNotification.mockClear();
@@ -25,6 +27,57 @@ const lines = () =>
   [
     ...message().matchAll(/<span class="error-(?:title|step)">(.*?)<\/span>/g),
   ].map(([, html]) => html);
+
+// the notification last shown, read by the page's HTML parser
+function shown() {
+  const box = document.createElement('div');
+  box.innerHTML = message();
+  const text = (selector) =>
+    [...box.querySelectorAll(selector)].map((el) => el.textContent);
+  return {
+    title: text('.error-title')[0],
+    steps: text('.error-step'),
+    bold: text('.error-step b'),
+    tags: [...box.querySelectorAll('*')].map((el) => el.localName),
+  };
+}
+
+// a step's text, which the chain's markers do not split: a '*' only inside a
+// word, as in vms/*
+const stepArb = fc
+  .string({ unit: 'binary', minLength: 1, maxLength: 12 })
+  .filter(
+    (s) =>
+      s === s.trim() && !/[\n\t]|(^|\s)\*|\*(\s|$)|errors? occurred|:$/.test(s),
+  );
+
+// server text full of markup and the chain's markers
+const markupArb = fc
+  .array(
+    fc.oneof(
+      fc.string({ unit: 'binary', maxLength: 4 }),
+      fc.constantFrom(
+        '<b>',
+        '</b>',
+        '<span class="error-step">',
+        '</span>',
+        '<br>',
+        '&lt;',
+        '&amp;',
+        '"',
+        '\n',
+        '\t',
+        ' * ',
+        ': 1 error occurred:\n\t* ',
+      ),
+    ),
+    { maxLength: 8 },
+  )
+  .map((parts) => parts.join(''));
+
+// a step's text as read back from the page: line breaks are <br> elements
+// and tabs em spaces
+const readBack = (text) => text.replace(/\n/g, '').replace(/\t/g, '\u2003');
 
 // a request error with a response from the server
 const failed = ({
@@ -102,6 +155,71 @@ describe('showError', () => {
     showError(title, detail);
     expect(lines()).toEqual(want);
   });
+
+  it('shows each step of any chain, as the server wrote it', () => {
+    fc.assert(
+      fc.property(
+        fc.array(stepArb, { minLength: 1, maxLength: 3 }),
+        fc.array(stepArb, { minLength: 1, maxLength: 3 }),
+        fc.boolean(),
+        (outer, inner, flattened) => {
+          // as Go's multierror formats a chain
+          const n = inner.length;
+          const text =
+            outer.join(': 1 error occurred:\n\t* ') +
+            `: ${n} error${n > 1 ? 's' : ''} occurred:\n\t* ` +
+            inner.join('\n\t* ') +
+            '\n\n';
+          showError(flattened ? text.replace(/\n\t?/g, ' ') : text);
+
+          const [title, ...steps] = [...outer, ...inner];
+          expect(shown()).toMatchObject({
+            title: `Error: ${title}`,
+            steps,
+            bold: [steps.at(-1)],
+          });
+        },
+      ),
+    );
+  });
+
+  it('draws no markup from any server text', () => {
+    fc.assert(
+      fc.property(
+        markupArb,
+        fc.option(markupArb, { nil: undefined }),
+        (title, detail) => {
+          showError(title, detail);
+          const steps = [...errorSteps(title), ...errorSteps(detail)];
+          const head = steps.shift() ?? 'Unknown error';
+          const breaks = [head, ...steps].join('').split('\n').length - 1;
+          const count = (tag) => shown().tags.filter((t) => t === tag).length;
+
+          expect(shown()).toMatchObject({
+            title: `Error: ${readBack(head)}`,
+            steps: steps.map(readBack),
+            bold: steps.slice(-1).map(readBack),
+          });
+          // the alert, the title and one per step
+          expect(count('span')).toBe(2 + steps.length);
+          expect(count('b')).toBe(steps.length ? 2 : 1);
+          expect(count('br')).toBe(breaks);
+          expect(shown().tags).toHaveLength(
+            count('span') + count('b') + breaks,
+          );
+        },
+      ),
+    );
+  });
+
+  // operations.js errorSteps splits on any ' * ', not only one after a marker
+  it.fails('keeps a lone * in a single error whole', () => {
+    showError('role * may not get vms');
+    expect(shown()).toMatchObject({
+      title: 'Error: role * may not get vms',
+      steps: [],
+    });
+  });
 });
 
 describe('useErrorNotification', () => {
@@ -156,6 +274,52 @@ describe('useErrorNotification', () => {
     expect(lines()).toEqual([
       '<b>Error:</b> Error uploading: disk &lt;full&gt;',
     ]);
+  });
+
+  it('shows any error, in each shape a request or caller gives one', async () => {
+    const text = fc.string({ unit: 'binary' });
+    const status = fc.integer({ min: 400, max: 599 });
+    const errorArb = fc.oneof(
+      text,
+      fc.constantFrom(null, undefined),
+      fc.record({ message: text }, { requiredKeys: [] }),
+      fc
+        .oneof(
+          fc.record({
+            status,
+            statusText: text,
+            type: fc.constantFrom('text/plain', 'application/json'),
+            data: fc.oneof(
+              text,
+              fc.record(
+                { message: text, cause: text },
+                { requiredKeys: [], noNullPrototype: true },
+              ),
+            ),
+          }),
+          // no body, but not a JSON one: see the next test
+          fc.record({
+            status,
+            statusText: text,
+            type: fc.constant('text/html'),
+          }),
+        )
+        .map(failed),
+    );
+    await fc.assert(
+      fc.asyncProperty(errorArb, async (error) => {
+        openNotification.mockClear();
+        await useErrorNotification(error);
+        expect(openNotification).toHaveBeenCalledOnce();
+        expect(message()).toMatch(/^<span role="alert">.*<\/span>$/s);
+      }),
+    );
+  });
+
+  // errorNotif.js:22 reads the body's message, so a JSON error without one throws
+  it.fails('shows a JSON error without a body', async () => {
+    await useErrorNotification(failed({ type: 'application/json' }));
+    expect(openNotification).toHaveBeenCalledOnce();
   });
 
   it('says nothing of requests canceled on leaving a page', async () => {

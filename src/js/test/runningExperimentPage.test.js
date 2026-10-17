@@ -1,6 +1,7 @@
 // The running experiment page: the experiment it loads, its VMs over the
 // websocket, what it reloads on reconnect, and traffic that is not its own.
 import { flushPromises, RouterLinkStub } from '@vue/test-utils';
+import fc from 'fast-check';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -81,11 +82,13 @@ describe('loading', () => {
 
     // each list has the server ask minimega for every VM
     await apply(running([{ name: 'vm1' }]));
-    await apply(running([{ name: 'vm1' }]));
+    expect(textOf(page)).not.toContain('Paginate');
+    // the fresh one counts more VMs than a page holds
+    await apply({ ...running([{ name: 'vm1' }]), vm_count: 11 });
 
     expect(vmLists()).toHaveLength(1);
     expect(names(page)).toEqual(['vm1']);
-    expect(page.vm.table.total).toBe(2);
+    expect(textOf(page)).toContain('Paginate');
   });
 
   it('lists the VMs again when the header refreshes the page', async () => {
@@ -154,15 +157,14 @@ describe('after the websocket reconnects', () => {
 describe('websocket traffic', () => {
   it("lists only its own experiment's VMs, and caches the list", async () => {
     const page = await openPage();
-    await apply(running([{ name: 'vm1' }]));
+    await apply(running([]));
 
     await handle(vmList('exp2', [{ name: 'other-vm' }]));
-    expect(names(page)).toEqual(['vm1']);
-    expect(page.vm.vmsLoaded).toBe(false);
+    expect(names(page)).toEqual([]);
+    expect(emptyText(page)).toBe('Loading VMs…');
 
     await handle(vmList('exp1', [{ name: 'web' }]));
     expect(names(page)).toEqual(['web']);
-    expect(page.vm.vmsLoaded).toBe(true);
     expect(
       cachedPage(experimentKey('exp1')).data.vms.map((vm) => vm.name),
     ).toEqual(['web']);
@@ -236,6 +238,55 @@ describe('ordering VM lists against VM changes', () => {
     // a list read after the stop is taken as it is
     await handle(listAt(30, [{ name: 'vm1', state: 'RUNNING' }]));
     expect(states(page)).toEqual(['vm1:RUNNING']);
+  });
+
+  it('shows each VM as its latest news says, by sequence number', async () => {
+    const VMS = ['vm1', 'vm2'];
+    const state = fc.constantFrom('RUNNING', 'QUIT');
+    // a change to one VM, or a list read up to `back` changes ago
+    const step = fc.oneof(
+      fc.record({ vm: fc.constantFrom(...VMS), state }),
+      fc.record({ states: fc.tuple(state, state), back: fc.nat(3) }),
+    );
+    await fc.assert(
+      fc.asyncProperty(fc.array(step, { maxLength: 6 }), async (steps) => {
+        const page = await withVms(
+          VMS.map((name) => ({ name, state: 'RUNNING' })),
+        );
+        // each VM's latest news: the seq it was read or sent at, and its state
+        const news = new Map(
+          VMS.map((vm) => [vm, { seq: 5, state: 'RUNNING' }]),
+        );
+        // changes arrive in order, and a list after the changes it read
+        let seq = 5;
+        let listSeq = 5;
+        for (const { vm, state, states: listed, back } of steps) {
+          if (vm) {
+            news.set(vm, { seq: ++seq, state });
+            const action = state == 'QUIT' ? 'stop' : 'start';
+            await handle(vmMsg(action, { name: vm, state }, seq));
+            continue;
+          }
+          listSeq = Math.max(listSeq, seq - back);
+          VMS.forEach((name, i) => {
+            if (listSeq >= news.get(name).seq) {
+              news.set(name, { seq: listSeq, state: listed[i] });
+            }
+          });
+          await handle(
+            listAt(
+              listSeq,
+              VMS.map((name, i) => ({ name, state: listed[i] })),
+            ),
+          );
+        }
+        expect(states(page)).toEqual(
+          VMS.map((vm) => `${vm}:${news.get(vm).state}`),
+        );
+        page.unmount();
+      }),
+      { numRuns: 20 },
+    );
   });
 
   it('keeps a deleted VM out of a list read before the delete', async () => {

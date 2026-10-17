@@ -1,5 +1,6 @@
 // How each page's data is fetched, shared and preloaded (utils/pageData.js),
 // with the server answered by a mocked axios.
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/utils/axios.js', () => ({ default: { get: vi.fn() } }));
@@ -18,10 +19,9 @@ import {
   invalidatePages,
   isInvalidated,
 } from '@/utils/pageCache.js';
-import { FreshnessMeta } from '@/utils/freshness.js';
+import { FreshnessMeta, RESOURCES } from '@/utils/freshness.js';
 import {
   DEFAULT_LOG_WINDOW,
-  HOST_LIST_REUSE_MS,
   experimentKey,
   experimentList,
   fetchRunningExperiment,
@@ -148,6 +148,26 @@ describe('the Logs page', () => {
     expect(new Set(ids).size).toBe(3);
     expect(logs.map((log) => log.msg)).toEqual(['first', 'second']);
   });
+
+  it('gives every entry of every batch its own id, keeping the rest of it', () => {
+    const log = fc.record({
+      time: fc.constant('2026-09-29T15:00:00Z'),
+      msg: fc.string(),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(fc.array(log, { maxLength: 5 }), { maxLength: 4 }),
+        (batches) => {
+          const keyed = batches.map(withLogIds);
+          const ids = keyed.flat().map((entry) => entry.id);
+          expect(ids.every(Number.isInteger)).toBe(true);
+          expect(new Set(ids).size).toBe(ids.length);
+          const kept = (log) => ({ ...log, id: expect.any(Number) });
+          expect(keyed).toEqual(batches.map((b) => b.map(kept)));
+        },
+      ),
+    );
+  });
 });
 
 describe('the running experiment page', () => {
@@ -208,10 +228,36 @@ describe('the shared lists', () => {
     expect(axiosInstance.get).not.toHaveBeenCalled();
   });
 
+  it('name every schedulable host of any list once, sorted', async () => {
+    const host = fc.record({
+      name: fc.string({ maxLength: 4 }),
+      schedulable: fc.boolean(),
+    });
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(host, { selector: (h) => h.name }),
+        async (hosts) => {
+          clearPageCache();
+          cachePage('hosts', hosts);
+          const names = await schedulableHostNames();
+          const can = new Set(
+            hosts.filter((h) => h.schedulable).map((h) => h.name),
+          );
+          expect(names).toHaveLength(can.size);
+          expect(names.every((n) => can.has(n))).toBe(true);
+          expect([...can].every((n) => names.includes(n))).toBe(true);
+          expect(names.every((n, i) => i === 0 || names[i - 1] <= n)).toBe(
+            true,
+          );
+        },
+      ),
+    );
+  });
+
   it('fetch the hosts into the cache when no list is recent', async () => {
     vi.useFakeTimers();
     cachePage('hosts', [{ name: 'old', schedulable: true }]);
-    vi.advanceTimersByTime(HOST_LIST_REUSE_MS + 1);
+    vi.advanceTimersByTime(RESOURCES.hosts.reuseMs + 1);
     serve({ hosts: { hosts: [{ name: 'new', schedulable: true }] } });
 
     expect(await schedulableHostNames()).toEqual(['new']);
@@ -315,6 +361,58 @@ describe('the SCORCH page', () => {
     expect(exps[1].scorch.running).toBe(false);
     // each experiment's runs page opens with the same answer
     expect(cachedPage(scorchRunsKey('a')).data).toBe(pipelines.a);
+  });
+
+  it('lists the SCORCH experiments the role may get in list order, whatever order their answers come in', async () => {
+    const exps = fc.uniqueArray(
+      fc.record({
+        name: fc.stringMatching(/^[a-z][a-z0-9]{0,3}$/),
+        apps: fc.subarray(['scorch', 'ntp', 'soh']),
+      }),
+      { selector: (exp) => exp.name, maxLength: 6 },
+    );
+    await fc.assert(
+      fc.asyncProperty(
+        exps.chain((list) =>
+          fc.tuple(fc.constant(list), fc.subarray(list.map((e) => e.name))),
+        ),
+        fc.scheduler(),
+        async ([list, denied], s) => {
+          clearPageCache();
+          cachePage('experiments', list);
+          roleAllowed.mockImplementation(
+            (...args) => !denied.includes(args[2]),
+          );
+          const answers = {};
+          axiosInstance.get.mockImplementation((url) => {
+            const name = url.split('/')[1];
+            answers[name] = {
+              pipelines: [{ name: `${name}-run` }],
+              running: 1,
+            };
+            return s.schedule(Promise.resolve({ data: answers[name] }), name);
+          });
+
+          const rows = await s.waitFor(pageFetchers.scorch(undefined));
+
+          const listed = list.filter(
+            (e) => e.apps.includes('scorch') && !denied.includes(e.name),
+          );
+          expect(rows.map((row) => row.name)).toEqual(
+            listed.map((e) => e.name),
+          );
+          for (const row of rows) {
+            expect(row.scorch.runs).toEqual([`${row.name}-run`]);
+            expect(cachedPage(scorchRunsKey(row.name)).data).toBe(
+              answers[row.name],
+            );
+          }
+          expect(Object.keys(answers).sort()).toEqual(
+            listed.map((e) => e.name).sort(),
+          );
+        },
+      ),
+    );
   });
 
   it("leaves the runs page's own request for its answer alone", async () => {
@@ -439,6 +537,41 @@ describe('preloading', () => {
       started[finished++].resolve([]);
     }
     await done;
+  });
+
+  it('never has more than two requests out, and loads each tab once, whatever answers first or fails', async () => {
+    const tabs = Object.keys(pageFetchers).filter((key) => key !== 'vmtiles');
+    await fc.assert(
+      fc.asyncProperty(
+        fc.subarray(tabs),
+        fc.scheduler(),
+        async (failing, s) => {
+          clearPageCache();
+          let out = 0;
+          let most = 0;
+          for (const key of tabs) {
+            pageFetchers[key].mockReset().mockImplementation(() => {
+              most = Math.max(most, ++out);
+              return s.schedule(Promise.resolve(), key).then(() => {
+                out--;
+                if (failing.includes(key)) throw new Error('down');
+                return [key];
+              });
+            });
+          }
+
+          await s.waitFor(preloadPages());
+
+          expect(most).toBe(2);
+          for (const key of tabs) {
+            expect(pageFetchers[key]).toHaveBeenCalledOnce();
+            expect(cachedPage(key)?.data).toEqual(
+              failing.includes(key) ? undefined : [key],
+            );
+          }
+        },
+      ),
+    );
   });
 
   it('starts once the browser is idle, unless saving data', async () => {

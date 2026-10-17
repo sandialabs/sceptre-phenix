@@ -1,5 +1,8 @@
+import fc from 'fast-check';
 import { expect, test } from 'vitest';
+
 import { relativeTime } from '@/utils/relativeTime.js';
+import { isoTimeArb } from './helpers/arbitraries.js';
 
 const now = Date.parse('2026-09-25T12:00:00Z');
 
@@ -24,4 +27,76 @@ test('a time in the future reads as such', () => {
 
 test('an unparsable time gives nothing', () => {
   expect(relativeTime('not a time', now)).toBe('');
+});
+
+const reading =
+  /^(?:just now|(\d+) (minute|hour|day|week|month|year)s? ago|in (\d+) (minute|hour|day|week|month|year)s?)$/;
+const UNIT_ORDER = ['minute', 'hour', 'day', 'week', 'month', 'year'];
+// how long ago a reading says, comparable as [unit rank, count]
+const rank = (text) => {
+  const [, count, unit] = text.match(reading);
+  return unit ? [UNIT_ORDER.indexOf(unit), Number(count)] : [-1, 0];
+};
+const DAY = 24 * 3600;
+// spans in seconds, often a second either side of a unit boundary
+const span = fc.oneof(
+  fc.nat(5 * 365 * DAY),
+  fc
+    .tuple(
+      fc.constantFrom(60, 3600, DAY, 7 * DAY, 30 * DAY, 365 * DAY),
+      fc.integer({ min: 1, max: 3 }),
+      fc.integer({ min: -1, max: 1 }),
+    )
+    .map(([unit, n, off]) => unit * n + off),
+);
+
+test('any text gives nothing or a reading', () => {
+  fc.assert(
+    fc.property(
+      fc.oneof(
+        fc.string(),
+        isoTimeArb.map((t) => t.time),
+      ),
+      (time) => {
+        const text = relativeTime(time, now);
+        expect(text === '' || reading.test(text)).toBe(true);
+      },
+    ),
+  );
+});
+
+test('a time reads the same in any UTC offset', () => {
+  fc.assert(
+    fc.property(isoTimeArb, span, fc.boolean(), ({ time, ms }, s, ahead) => {
+      const at = ms + (ahead ? s : -s) * 1000;
+      expect(relativeTime(time, at)).toBe(
+        relativeTime(new Date(ms).toISOString(), at),
+      );
+    }),
+  );
+});
+
+test('an older time never reads as more recent', () => {
+  const age = fc.tuple(span, fc.nat(999)).map(([s, ms]) => s * 1000 + ms);
+  fc.assert(
+    fc.property(age, age, (a, b) => {
+      const [younger, older] = a <= b ? [a, b] : [b, a];
+      const [ry, cy] = rank(relativeTime(now - younger, now));
+      const [ro, co] = rank(relativeTime(now - older, now));
+      expect(ro > ry || (ro === ry && co >= cy)).toBe(true);
+    }),
+  );
+});
+
+// whole seconds: at a half second Math.round reads the past one unit higher
+test('a time as far ahead reads as the same span in the future', () => {
+  fc.assert(
+    fc.property(span, (s) => {
+      const past = relativeTime(now - s * 1000, now);
+      const future = relativeTime(now + s * 1000, now);
+      expect(future).toBe(
+        past === 'just now' ? past : `in ${past.replace(/ ago$/, '')}`,
+      );
+    }),
+  );
 });
