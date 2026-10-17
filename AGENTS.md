@@ -91,6 +91,7 @@ Docker for full deployments and image builds.
 | Generate mocks, protobufs, and RBAC | `make generate` |
 | Format / fixing lint for Go/examples | `make format` / `make lint` |
 | Generate, then non-fixing lint | `make check` |
+| Dead-code sweep (Go deadcode and knip) | `make deadcode` |
 | Go core and example tests | `make test` |
 | Build UI and `bin/phenix` | `make build` |
 | Build UI only | `make ui` |

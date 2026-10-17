@@ -109,6 +109,8 @@ jobs:
           cache-dependency-path: src/js/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Check for unused code (knip)
+        run: npm run knip
       - name: Run unit tests with coverage
         run: npm run test:coverage
       # Coverage below the minimums in .github/coverage-minimums.json warns

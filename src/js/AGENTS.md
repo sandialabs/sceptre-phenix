@@ -31,8 +31,13 @@ npm ci
 | Vitest with coverage     | `npm run test:coverage`         |
 | Production build         | `npm run build`                 |
 | Format, then review diff | `npm run format`                |
+| Unused files and exports | `npm run knip`                  |
 
 The development server needs a backend on `localhost:3000`.
+
+ESLint and knip fail on dead code: unused props, data, emits, refs,
+exports, files, and dependencies. Remove the dead code. Do not add an inline
+disable or a knip ignore entry to hide it.
 
 `npm test` runs two Vitest projects, set in `vite.config.js`: `contract`,
 the suites of pure functions listed there, in shared workers without
@@ -102,9 +107,9 @@ then the reference its routing table names for the task.
 
 ## CI
 
-`.github/workflows/frontend.yml` runs Vitest, builds the UI and a real backend
-once for each `VITE_AUTH` mode, then runs the Playwright tests in parallel
-jobs, each against its own server (see `e2e/README.md`). It builds and runs
+`.github/workflows/frontend.yml` runs knip and Vitest, builds the UI and a
+real backend once for each `VITE_AUTH` mode, then runs the Playwright tests
+in parallel jobs, each against its own server (see `e2e/README.md`). It builds and runs
 the Playwright tests only for a change that can affect the browser, as its
 `changes` job decides; a change to unit tests under `test/` alone runs
 Vitest only. Keep Node
