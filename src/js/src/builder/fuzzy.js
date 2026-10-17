@@ -39,6 +39,48 @@ function merge(ranges) {
   return out;
 }
 
+const SURROGATE = /[\ud800-\udfff]/;
+
+// Text in lower case, with where the letter behind each of its UTF-16 units
+// starts and ends in the text (null when the units match one to one).
+function lowerCase(text) {
+  const value = String(text || '');
+  const lower = value.toLowerCase();
+
+  if (lower.length === value.length && !SURROGATE.test(value)) {
+    return { lower, starts: null, ends: null };
+  }
+
+  const starts = [];
+  const ends = [];
+  let joined = '';
+
+  for (let at = 0; at < value.length; ) {
+    const letter = String.fromCodePoint(value.codePointAt(at));
+    const low = letter.toLowerCase();
+
+    for (let unit = 0; unit < low.length; unit++) {
+      starts.push(at);
+      ends.push(at + letter.length);
+    }
+    joined += low;
+    at += letter.length;
+  }
+
+  return {
+    lower: joined.length === lower.length ? lower : joined,
+    starts,
+    ends,
+  };
+}
+
+// Ranges of lowerCase(text).lower as ranges of whole letters of the text.
+function originalRanges({ starts, ends }, ranges) {
+  return starts
+    ? merge(ranges.map(([start, end]) => [starts[start], ends[end - 1]]))
+    : ranges;
+}
+
 function wordsOf(query) {
   return String(query || '')
     .toLowerCase()
@@ -57,7 +99,10 @@ const ALIAS_SCORE = 150;
 // is not in the text may start one of the aliases instead, which marks no
 // range.
 function byWords(text, words, aliases = []) {
-  return wordsIn(String(text || '').toLowerCase(), words, aliases);
+  const lowered = lowerCase(text);
+  const found = wordsIn(lowered.lower, words, aliases);
+
+  return found && { ...found, ranges: originalRanges(lowered, found.ranges) };
 }
 
 // byWords for text that is already lower case.
@@ -101,7 +146,8 @@ function wordsIn(lower, words, aliases = []) {
 
 // The letters in order: {score, ranges}, or null.
 function byLetters(text, letters) {
-  const lower = String(text || '').toLowerCase();
+  const lowered = lowerCase(text);
+  const { lower } = lowered;
   const ranges = [];
   let first = -1;
   let gaps = 0;
@@ -120,11 +166,14 @@ function byLetters(text, letters) {
       gaps += at - next;
     }
 
-    ranges.push([at, at + 1]);
-    next = at + 1;
+    ranges.push([at, at + letter.length]);
+    next = at + letter.length;
   }
 
-  return { score: Math.max(1, 100 - gaps * 5 - first), ranges: merge(ranges) };
+  return {
+    score: Math.max(1, 100 - gaps * 5 - first),
+    ranges: originalRanges(lowered, merge(ranges)),
+  };
 }
 
 // The title, aliases and keywords of each item, in lower case, for the last

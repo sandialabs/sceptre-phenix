@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 
 import {
   fieldOrder,
@@ -326,4 +327,83 @@ test('highlightParts splits text into marked and plain runs', () => {
   ]);
   expect(highlightParts('Undo')).toEqual([{ text: 'Undo', match: false }]);
   expect(highlightParts('')).toEqual([]);
+});
+
+describe('ranges mark whole letters of the original text', () => {
+  const marked = (title, query) =>
+    highlightParts(title, matchItem({ title }, query).ranges)
+      .filter((part) => part.match)
+      .map((part) => part.text);
+
+  test('a letter outside the Basic Multilingual Plane is marked whole', () => {
+    expect(matchItem({ title: '😀 x a' }, '😀a').ranges).toEqual([
+      [0, 2],
+      [5, 6],
+    ]);
+    expect(marked('😀 x a', '😀a')).toEqual(['😀', 'a']);
+  });
+
+  test('a letter that is longer in lower case shifts no range after it', () => {
+    expect(marked('İstanbul', 'bul')).toEqual(['bul']);
+    expect(matchItem({ title: 'İx' }, 'x').ranges).toEqual([[1, 2]]);
+    expect(marked('İx', 'İ')).toEqual(['İ']);
+  });
+
+  const letters = fc
+    .array(fc.constantFrom('a', 'b', '😀', '😁', 'İ', ' ', '-', 'x'), {
+      maxLength: 8,
+    })
+    .map((list) => list.join(''));
+  const loneSurrogate =
+    /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+  // Ranges sorted, apart, inside the text; runs whole letters that join back.
+  const wellFormed = (text, ranges) => {
+    ranges.forEach(([start, end], i) => {
+      expect(start).toBeGreaterThanOrEqual(i ? ranges[i - 1][1] + 1 : 0);
+      expect(end).toBeGreaterThan(start);
+      expect(end).toBeLessThanOrEqual(text.length);
+    });
+    const parts = highlightParts(text, ranges);
+
+    expect(parts.map((part) => part.text).join('')).toBe(text);
+    for (const part of parts) {
+      expect(part.text).not.toBe('');
+      expect(part.text).not.toMatch(loneSurrogate);
+    }
+  };
+
+  test('in a title, by words or by letters', () => {
+    fc.assert(
+      fc.property(letters, letters, (title, query) => {
+        const found = matchItem({ title }, query);
+
+        if (found) {
+          wellFormed(title, found.ranges);
+        }
+        const name = matchName({ title }, query);
+
+        if (name) {
+          wellFormed(title, name.ranges);
+        }
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  test('in a field', () => {
+    fc.assert(
+      fc.property(letters, letters, (value, query) => {
+        const found = matchItem(
+          { title: '', fields: [{ label: 'Field', value }] },
+          query,
+        );
+
+        if (found?.field) {
+          wellFormed(value, found.field.ranges);
+        }
+      }),
+      { numRuns: 300 },
+    );
+  });
 });
