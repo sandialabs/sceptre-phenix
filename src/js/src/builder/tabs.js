@@ -709,15 +709,10 @@ export function answerPresence(channel, tab) {
  * no tab answers.
  *
  * @param {object} options channel (openChannel), self (this tab's id, if
- *   it has one), waitMs. setTimeout: for tests
+ *   it has one), waitMs
  * @returns {Promise<Set<string>>}
  */
-export function presentTabs({
-  channel,
-  self = '',
-  waitMs = ANSWER_WAIT_MS,
-  setTimeout: setTimer = (fn, ms) => setTimeout(fn, ms),
-}) {
+export function presentTabs({ channel, self = '', waitMs = ANSWER_WAIT_MS }) {
   const found = new Set();
 
   if (!channel.connected) {
@@ -735,7 +730,7 @@ export function presentTabs({
   channel.post({ type: 'who', from: self });
 
   return new Promise((resolve) => {
-    setTimer(() => {
+    setTimeout(() => {
       stop();
       channel.close();
       resolve(found);

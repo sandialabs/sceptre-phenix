@@ -648,8 +648,6 @@ describe('recovery', () => {
     await mine.commit({ id: 'c1', label: 'one', snapshot: doc });
     await theirs.commit({ id: 'c2', label: 'two', snapshot: doc });
 
-    expect(await mine.recoverAll()).toHaveLength(1);
-    expect(await theirs.recoverAll()).toHaveLength(1);
     expect((await store.all()).map((record) => record.key)).toEqual([
       draftKey('alice', 'd1'),
       draftKey('bob', 'd1'),

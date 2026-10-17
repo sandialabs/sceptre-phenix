@@ -316,10 +316,11 @@ function within(work, ms) {
  * queued in this browser (the open draft's and every other draft's), and
  * the Inspector edits that cannot be applied. The Inspector edits that can
  * be applied are saved first, as leaving saves them. With `send`, the
- * queued changes are sent first, with a wait of at most `wait`. Changes
- * that another open tab holds are not sent here: that tab sends them.
+ * queued changes are sent first, with a wait of at most
+ * LOGOUT_SEND_WAIT_MS. Changes that another open tab holds are not sent
+ * here: that tab sends them.
  *
- * @param {object} options username, send, wait. draftStore, sendQueued and
+ * @param {object} options username, send. draftStore, sendQueued and
  *   openTabs: for tests
  * @returns {Promise<{changes: number, unapplied: string, drafts: object[]}>}
  *   unapplied: a sentence naming the Inspector edits, or ''. drafts: the
@@ -328,7 +329,6 @@ function within(work, ms) {
 export async function unsentBuilderWork({
   username,
   send = false,
-  wait = LOGOUT_SEND_WAIT_MS,
   draftStore = createDraftStore(),
   sendQueued = sendRecords,
   openTabs = otherOpenTabs,
@@ -355,7 +355,7 @@ export async function unsentBuilderWork({
           ? sendOwnRecords(records, username, draftStore, sendQueued, openTabs)
           : null,
       ]),
-      wait,
+      LOGOUT_SEND_WAIT_MS,
     );
   }
 

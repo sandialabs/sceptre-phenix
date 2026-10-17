@@ -90,7 +90,6 @@ export function initialState() {
     status: 'idle',
     pending: 0,
     message: '',
-    lastSavedAt: null,
     etag: null,
     online: true,
     // True while this device cannot store the queue (storage blocked, full
@@ -500,7 +499,7 @@ export function serverCopyOf(envelope) {
  * Creates the autosave queue.
  *
  * @param {object} options api, store, actor, onState, onDraft, now, setTimeout,
- *   clearTimeout, isOnline, addOnlineListener, historyLimit.
+ *   clearTimeout, isOnline, addOnlineListener.
  *   onConflict: called with the server copy (see serverCopyOf) when a save
  *   finds a draft that someone else saved since.
  *   tabs: the other tabs of this browser (builderTabs in tabs.js). A queue
@@ -515,7 +514,6 @@ export function createAutosave(options = {}) {
     store,
     actor = '',
     now = () => new Date().toISOString(),
-    historyLimit = DEFAULT_HISTORY_LIMIT,
     tabs = null,
     signInHere = () => false,
   } = options;
@@ -1076,7 +1074,6 @@ export function createAutosave(options = {}) {
 
       return emit({
         status: 'saved',
-        lastSavedAt: now(),
         etag: record.etag,
       });
     } catch (error) {
@@ -1278,14 +1275,14 @@ export function createAutosave(options = {}) {
   }
 
   function trimEntries() {
-    if (record.entries.length <= historyLimit) {
+    if (record.entries.length <= DEFAULT_HISTORY_LIMIT) {
       return;
     }
 
     const keep = new Set(record.queue.map((op) => op.commitId));
 
     while (
-      record.entries.length > historyLimit &&
+      record.entries.length > DEFAULT_HISTORY_LIMIT &&
       !keep.has(record.entries[0].id)
     ) {
       record.entries.shift();
@@ -1400,17 +1397,6 @@ export function createAutosave(options = {}) {
       const found = await store.get(ownKey(draftId));
 
       return found || null;
-    },
-
-    /** @returns {Promise<object[]>} every local record for this actor */
-    async recoverAll() {
-      if (!store) {
-        return [];
-      }
-
-      const all = await store.all();
-
-      return all.filter((entry) => entry.actor === actor);
     },
 
     /**

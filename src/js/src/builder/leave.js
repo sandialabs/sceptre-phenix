@@ -66,7 +66,6 @@ export function unappliedBlock(unapplied, done) {
  * @param {() => boolean} [options.sessionOver] whether the session has
  *   ended or its token has expired
  * @param {object} [options.background] createBackgroundSaves()
- * @param {number} [options.waitMs]
  * @returns {{unsavedWork: Function, backgroundWork: Function,
  *   mayLeave: Function, mayClose: Function, mayFollowLink: Function,
  *   beforeUnload: Function}}
@@ -78,7 +77,6 @@ export function createLeaveGuard({
   ask,
   sessionOver = () => false,
   background = null,
-  waitMs = LEAVE_SAVE_WAIT_MS,
 }) {
   // Edits the server does not have yet: queued, or being sent.
   function unsavedWork() {
@@ -112,7 +110,7 @@ export function createLeaveGuard({
         all ? background?.flush() : null,
       ]),
       new Promise((resolve) => {
-        timer = setTimeout(resolve, waitMs);
+        timer = setTimeout(resolve, LEAVE_SAVE_WAIT_MS);
       }),
     ]);
     clearTimeout(timer);

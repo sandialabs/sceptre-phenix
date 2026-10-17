@@ -1229,7 +1229,7 @@ export const useBuilderStore = defineStore('builder', {
       return this.queueWork;
     },
 
-    initAutosave({ draftId, etag, entries, cursor, queue, serverHead }) {
+    initAutosave({ draftId, etag, serverHead }) {
       const phenix = usePhenixStore();
 
       this.draftId = draftId;
@@ -1315,17 +1315,10 @@ export const useBuilderStore = defineStore('builder', {
 
       this.autosave.listen();
 
-      // Entries and the queue are left out on purpose unless the caller has
-      // them. attach then keeps the ordered log that this device already
-      // holds for the draft, which recoverLocalHistory reads again.
-      return this.autosave.attach({
-        draftId,
-        etag,
-        entries,
-        cursor,
-        queue,
-        serverHead,
-      });
+      // Entries and the queue are left out on purpose. attach then keeps the
+      // ordered log that this device already holds for the draft, which
+      // recoverLocalHistory reads again.
+      return this.autosave.attach({ draftId, etag, serverHead });
     },
 
     /**
