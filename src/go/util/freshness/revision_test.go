@@ -43,7 +43,7 @@ func TestMatchRevision(t *testing.T) {
 		}
 
 		if _, _, err := freshness.ParseIfMatch(tt.ifMatch); (err != nil) != tt.bad {
-			t.Errorf("ParseIfMatch(%q) err = %v, want malformed %v", tt.ifMatch, err, tt.bad)
+			t.Errorf("ParseIfMatch(%q) error = %v, want malformed %t", tt.ifMatch, err, tt.bad)
 		}
 	}
 }

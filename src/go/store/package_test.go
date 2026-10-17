@@ -25,18 +25,13 @@ func TestInitEndpointScheme(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := Init(Endpoint(tt.endpoint))
-			if tt.wantErr && err == nil {
-				t.Fatalf("Init(%q) returned no error", tt.endpoint)
-			}
-
-			if !tt.wantErr && err != nil {
-				t.Fatalf("Init(%q) returned error: %v", tt.endpoint, err)
+			if err := Init(Endpoint(tt.endpoint)); (err != nil) != tt.wantErr {
+				t.Errorf("Init(%q) error = %v, want error %t", tt.endpoint, err, tt.wantErr)
 			}
 		})
 	}
 
 	if _, err := os.Stat(boltPath); err != nil {
-		t.Fatalf("Init did not create the BoltDB file: %v", err)
+		t.Errorf("os.Stat(%s) after Init(bolt://...) error = %v, want the BoltDB file", boltPath, err)
 	}
 }

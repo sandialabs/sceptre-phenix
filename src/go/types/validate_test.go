@@ -117,14 +117,14 @@ func TestValidateSchemaTopologyIncludes(t *testing.T) {
 			value := map[string]any{"includeTopologies": includes, "nodes": []any{}}
 
 			if err := types.ValidateSchema("Topology", ver, value); err != nil {
-				t.Errorf("%s: includeTopologies %#v: error = %v", ver, includes, err)
+				t.Errorf("ValidateSchema(Topology, %s, includeTopologies %#v) error = %v, want nil", ver, includes, err)
 			}
 		}
 
 		value := map[string]any{"includeTopologies": []any{map[string]any{"name": "x"}}, "nodes": []any{}}
 
 		if err := types.ValidateSchema("Topology", ver, value); !errors.Is(err, types.ErrValidationFailed) {
-			t.Errorf("%s: a list of mappings: error = %v, want ErrValidationFailed", ver, err)
+			t.Errorf("ValidateSchema(Topology, %s, includeTopologies of mappings) error = %v, want %v", ver, err, types.ErrValidationFailed)
 		}
 	}
 }
@@ -135,7 +135,7 @@ func TestValidateSchemaExperimentWithoutScenario(t *testing.T) {
 	value := map[string]any{"topology": map[string]any{"nodes": []any{}}, "scenario": nil}
 
 	if err := types.ValidateSchema("Experiment", "v2", value); err != nil {
-		t.Errorf("error = %v", err)
+		t.Errorf("ValidateSchema(Experiment, v2, scenario null) error = %v, want nil", err)
 	}
 }
 

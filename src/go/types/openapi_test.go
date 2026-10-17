@@ -17,69 +17,78 @@ import (
 func TestOpenAPISchemasValid(t *testing.T) {
 	t.Parallel()
 
-	data, err := os.ReadFile("../web/public/docs/openapi.yml")
+	const path = "../web/public/docs/openapi.yml"
+
+	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read OpenAPI schema: %v", err)
+		t.Fatalf("os.ReadFile(%s) error = %v", path, err)
 	}
 
 	doc, err := openapi3.NewLoader().LoadFromData(data)
 	if err != nil {
-		t.Fatalf("load OpenAPI schema: %v", err)
+		t.Fatalf("LoadFromData(openapi.yml) error = %v", err)
 	}
 
 	if err := doc.Validate(context.Background()); err != nil {
-		t.Fatalf("validate OpenAPI schema: %v", err)
+		t.Fatalf("Validate(openapi.yml) error = %v", err)
 	}
 
 	hostRef := doc.Components.Schemas["Host"]
 	if hostRef == nil || hostRef.Value == nil {
-		t.Fatal("OpenAPI schema Host is missing")
+		t.Fatal("openapi.yml has no Host schema")
 	}
 
 	hostSchema := hostRef.Value
-	assertJSONFieldsInSchema(t, "Host", hostSchema, reflect.TypeFor[mm.Host]())
+	if missing := missingJSONFields(hostSchema, reflect.TypeFor[mm.Host]()); len(missing) != 0 {
+		t.Errorf("openapi.yml Host lacks the mm.Host JSON fields %q", missing)
+	}
+
 	if diskUsage := hostSchema.Properties["diskusage"]; diskUsage != nil && diskUsage.Value != nil {
-		assertJSONFieldsInSchema(t, "Host.diskusage", diskUsage.Value, reflect.TypeFor[mm.DiskUsage]())
+		if missing := missingJSONFields(diskUsage.Value, reflect.TypeFor[mm.DiskUsage]()); len(missing) != 0 {
+			t.Errorf("openapi.yml Host.diskusage lacks the mm.DiskUsage JSON fields %q", missing)
+		}
 	} else {
-		t.Fatal("OpenAPI schema Host.diskusage is missing")
+		t.Error("openapi.yml has no Host.diskusage schema")
 	}
 
 	if load := hostSchema.Properties["load"]; load == nil || load.Value == nil || load.Value.Type != openapi3.TypeArray {
-		t.Error("Host.load is not an array")
+		t.Error("openapi.yml Host.load is not an array")
 	}
 
 	experimentRef := doc.Components.Schemas["Experiment"]
 	if experimentRef == nil || experimentRef.Value == nil {
-		t.Fatal("OpenAPI schema Experiment is missing")
+		t.Fatal("openapi.yml has no Experiment schema")
 	}
 
 	experiment := experimentRef.Value
 	if vms := experiment.Properties["vms"]; vms == nil || vms.Value == nil || vms.Value.Type != openapi3.TypeArray {
-		t.Error("Experiment.vms is not an array")
+		t.Error("openapi.yml Experiment.vms is not an array")
 	}
 
 	for name, ref := range doc.Components.Schemas {
 		if ref == nil || ref.Value == nil {
-			t.Errorf("%s has no schema", name)
+			t.Errorf("openapi.yml %s has no schema", name)
 
 			continue
 		}
 
 		if ref.Value.Title == "" {
-			t.Errorf("%s has no title", name)
+			t.Errorf("openapi.yml %s has no title", name)
 		}
 
 		if ref.Value.Description == "" {
-			t.Errorf("%s has no description", name)
+			t.Errorf("openapi.yml %s has no description", name)
 		}
 	}
 
 	var raw any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		t.Fatalf("parse OpenAPI schema: %v", err)
+		t.Fatalf("yaml.Unmarshal(openapi.yml) error = %v", err)
 	}
 
-	assertOpenAPIPropertiesDocumented(t, "#", raw)
+	for _, problem := range undocumentedProperties("#", raw) {
+		t.Errorf("openapi.yml %s", problem)
+	}
 }
 
 // The config schema, embedded from schemas/config.yaml, is valid OpenAPI
@@ -89,62 +98,68 @@ func TestConfigSchemaDocumented(t *testing.T) {
 
 	doc, err := openapi3.NewLoader().LoadFromData(OpenAPI)
 	if err != nil {
-		t.Fatalf("load config schema: %v", err)
+		t.Fatalf("LoadFromData(config.yaml) error = %v", err)
 	}
 
 	if err := doc.Validate(context.Background()); err != nil {
-		t.Fatalf("validate config schema: %v", err)
+		t.Fatalf("Validate(config.yaml) error = %v", err)
 	}
 
 	var raw any
 	if err := yaml.Unmarshal(OpenAPI, &raw); err != nil {
-		t.Fatalf("parse config schema: %v", err)
+		t.Fatalf("yaml.Unmarshal(config.yaml) error = %v", err)
 	}
 
-	assertOpenAPIPropertiesDocumented(t, "#", raw)
+	for _, problem := range undocumentedProperties("#", raw) {
+		t.Errorf("config.yaml %s", problem)
+	}
 }
 
-func assertJSONFieldsInSchema(t *testing.T, name string, schema *openapi3.Schema, model reflect.Type) {
-	t.Helper()
-
-	if schema == nil {
-		t.Fatalf("OpenAPI schema %s is missing", name)
-	}
+// missingJSONFields returns the JSON name of each field of model that schema
+// has no property for.
+func missingJSONFields(schema *openapi3.Schema, model reflect.Type) []string {
+	var missing []string
 
 	for index := range model.NumField() {
 		field := model.Field(index)
+
 		jsonName := strings.Split(field.Tag.Get("json"), ",")[0]
 		if jsonName == "" {
 			jsonName = field.Name
 		}
 
 		if _, ok := schema.Properties[jsonName]; !ok {
-			t.Errorf("OpenAPI schema %s is missing JSON field %q", name, jsonName)
+			missing = append(missing, jsonName)
 		}
 	}
+
+	return missing
 }
 
-func assertOpenAPIPropertiesDocumented(t *testing.T, path string, value any) {
-	t.Helper()
+// undocumentedProperties describes each property under the decoded YAML value at path
+// that lacks a title, a description, or for a scalar an example, default or enum.
+func undocumentedProperties(path string, value any) []string {
+	var problems []string
 
 	switch node := value.(type) {
 	case map[string]any:
 		if properties, ok := node["properties"].(map[string]any); ok {
 			for name, propertyValue := range properties {
 				propertyPath := path + "." + name
+
 				property, ok := propertyValue.(map[string]any)
 				if !ok {
-					t.Errorf("%s is not a schema object", propertyPath)
+					problems = append(problems, propertyPath+" is not a schema object")
 
 					continue
 				}
 
 				if title, ok := property["title"].(string); !ok || title == "" {
-					t.Errorf("%s has no title", propertyPath)
+					problems = append(problems, propertyPath+" has no title")
 				}
 
 				if description, ok := property["description"].(string); !ok || description == "" {
-					t.Errorf("%s has no description", propertyPath)
+					problems = append(problems, propertyPath+" has no description")
 				}
 
 				switch property["type"] {
@@ -153,22 +168,24 @@ func assertOpenAPIPropertiesDocumented(t *testing.T, path string, value any) {
 					_, hasDefault := property["default"]
 					_, hasEnum := property["enum"]
 					if !hasExample && !hasDefault && !hasEnum {
-						t.Errorf("%s has no example, default, or enum", propertyPath)
+						problems = append(problems, propertyPath+" has no example, default, or enum")
 					}
 				}
 
-				assertOpenAPIPropertiesDocumented(t, propertyPath, property)
+				problems = append(problems, undocumentedProperties(propertyPath, property)...)
 			}
 		}
 
 		for key, child := range node {
 			if key != "properties" {
-				assertOpenAPIPropertiesDocumented(t, path+"/"+key, child)
+				problems = append(problems, undocumentedProperties(path+"/"+key, child)...)
 			}
 		}
 	case []any:
 		for index, item := range node {
-			assertOpenAPIPropertiesDocumented(t, path+"/"+strconv.Itoa(index), item)
+			problems = append(problems, undocumentedProperties(path+"/"+strconv.Itoa(index), item)...)
 		}
 	}
+
+	return problems
 }

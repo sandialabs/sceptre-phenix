@@ -3,13 +3,14 @@ package file
 import (
 	"context"
 	"errors"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
@@ -38,6 +39,17 @@ func (c *listingCache) age(key string, d time.Duration) {
 	c.entries[key] = l
 }
 
+// names returns the name of each file, in order.
+func names(files Files) []string {
+	out := make([]string, 0, len(files))
+
+	for _, f := range files {
+		out = append(out, f.Name)
+	}
+
+	return out
+}
+
 // countingList returns a listing function that counts its calls.
 func countingList(calls *atomic.Int32, files Files) func() (Files, error) {
 	return func() (Files, error) {
@@ -56,23 +68,27 @@ func TestListingCacheReusesUntilExpired(t *testing.T) {
 
 	for range 3 {
 		files, _, err := cache.get("exp/files/", list)
-		if err != nil || len(files) != 1 {
-			t.Fatalf("expected one file, got %v (err %v)", files, err)
+		if err != nil {
+			t.Fatalf("get(exp/files/) error = %v", err)
+		}
+
+		if diff := cmp.Diff([]string{"a.pcap"}, names(files)); diff != "" {
+			t.Errorf("get(exp/files/) mismatch (-want +got):\n%s", diff)
 		}
 	}
 
-	if calls.Load() != 1 {
-		t.Fatalf("expected one listing within the TTL, got %d", calls.Load())
+	if got := calls.Load(); got != 1 {
+		t.Errorf("listings after 3 get(exp/files/) within the TTL = %d, want 1", got)
 	}
 
 	cache.age("exp/files/", cache.ttl)
 
 	if _, _, err := cache.get("exp/files/", list); err != nil {
-		t.Fatal(err)
+		t.Fatalf("get(exp/files/) once expired error = %v", err)
 	}
 
-	if calls.Load() != 2 {
-		t.Fatalf("expected a new listing once expired, got %d listings", calls.Load())
+	if got := calls.Load(); got != 2 {
+		t.Errorf("listings after get(exp/files/) once expired = %d, want 2", got)
 	}
 }
 
@@ -84,8 +100,8 @@ func TestListingCacheKeysByExperiment(t *testing.T) {
 	_ = fill(cache, listingKey("a"), countingList(&calls, nil))
 	_ = fill(cache, listingKey("b"), countingList(&calls, nil))
 
-	if calls.Load() != 2 {
-		t.Fatalf("expected a listing per experiment, got %d", calls.Load())
+	if got := calls.Load(); got != 2 {
+		t.Errorf("listings after filling experiments a and b = %d, want 2", got)
 	}
 }
 
@@ -120,8 +136,8 @@ func TestListingCacheDropsListingInvalidatedInFlight(t *testing.T) {
 
 	_ = fill(cache, "k", countingList(&calls, nil))
 
-	if calls.Load() != 2 {
-		t.Fatalf("expected a new listing after an in-flight invalidate, got %d listings", calls.Load())
+	if got := calls.Load(); got != 2 {
+		t.Errorf("listings after invalidate(k) during the first = %d, want 2", got)
 	}
 }
 
@@ -130,22 +146,23 @@ func TestListingCacheDoesNotReuseFailures(t *testing.T) {
 
 	var calls atomic.Int32
 
+	errUnavailable := errors.New("minimega unavailable")
 	failing := func() (Files, error) {
 		calls.Add(1)
 
-		return nil, errors.New("minimega unavailable")
+		return nil, errUnavailable
 	}
 
-	if _, _, err := cache.get("k", failing); err == nil {
-		t.Fatal("expected the listing's error")
+	if _, _, err := cache.get("k", failing); !errors.Is(err, errUnavailable) {
+		t.Errorf("get(k) with a failing listing error = %v, want %v", err, errUnavailable)
 	}
 
 	if _, _, err := cache.get("k", countingList(&calls, nil)); err != nil {
-		t.Fatalf("expected a fresh listing after a failure, got %v", err)
+		t.Errorf("get(k) after a failure error = %v, want nil", err)
 	}
 
-	if calls.Load() != 2 {
-		t.Fatalf("expected a new listing after a failure, got %d listings", calls.Load())
+	if got := calls.Load(); got != 2 {
+		t.Errorf("listings after get(k) failed then succeeded = %d, want 2", got)
 	}
 
 	// unlike a failure, a success is kept even though its only caller left during it
@@ -159,13 +176,22 @@ func TestListingCacheDoesNotReuseFailures(t *testing.T) {
 		return Files{{Name: "a", Path: "a"}}, nil
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("getContext(kept) whose caller left error = %v", err)
 	}
 
 	var relisted atomic.Int32
 
-	if files, _, err := cache.get("kept", countingList(&relisted, nil)); err != nil || len(files) != 1 || relisted.Load() != 0 {
-		t.Fatalf("listing after = %v, %v with %d new listings; want the first reused", files, err, relisted.Load())
+	files, _, err := cache.get("kept", countingList(&relisted, nil))
+	if err != nil {
+		t.Fatalf("get(kept) error = %v", err)
+	}
+
+	if diff := cmp.Diff([]string{"a"}, names(files)); diff != "" {
+		t.Errorf("get(kept) mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := relisted.Load(); got != 0 {
+		t.Errorf("new listings for get(kept) = %d, want 0", got)
 	}
 }
 
@@ -179,14 +205,22 @@ func TestListingCacheHandsOutCopies(t *testing.T) {
 		}, nil
 	}
 
-	first, _, _ := cache.get("k", list)
+	first, _, err := cache.get("k", list)
+	if err != nil {
+		t.Fatalf("get(k) error = %v", err)
+	}
+
 	first.SortByName(true)
 	first[0].Categories[0] = "changed"
 
-	second, _, _ := cache.get("k", list)
+	second, _, err := cache.get("k", list)
+	if err != nil {
+		t.Fatalf("get(k) again error = %v", err)
+	}
 
-	if second[0].Name != "b" || second[1].Categories[0] != "Unknown" {
-		t.Fatalf("a caller's changes leaked into the cached listing: %+v", second)
+	want, _ := list()
+	if diff := cmp.Diff(want, second, cmpopts.IgnoreUnexported(File{})); diff != "" {
+		t.Errorf("get(k) after the first caller changed its copy mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -203,7 +237,7 @@ func TestListingCachePrunesExpiredListings(t *testing.T) {
 	defer cache.mu.Unlock()
 
 	if _, ok := cache.entries["old"]; ok {
-		t.Fatal("expected the expired listing to be pruned")
+		t.Error("entries after filling new hold the expired old, want it pruned")
 	}
 }
 
@@ -231,19 +265,24 @@ func TestMMClusterFilesFiltersCachedListing(t *testing.T) {
 
 	var files MMClusterFiles
 
-	all, err := files.GetExperimentFiles("exp", "")
-	if err != nil || len(all) != 2 {
-		t.Fatalf("expected both files unfiltered, got %v (err %v)", all, err)
-	}
+	for _, tc := range []struct {
+		filter string
+		want   []string
+	}{
+		{filter: "", want: []string{"vm_eth0.pcap", "notes.txt"}},
+		{filter: "notes", want: []string{"notes.txt"}},
+		{filter: "and", want: []string{}}, // unparsable
+	} {
+		got, err := files.GetExperimentFiles("exp", tc.filter)
+		if err != nil {
+			t.Errorf("GetExperimentFiles(exp, %q) error = %v", tc.filter, err)
 
-	matched, err := files.GetExperimentFiles("exp", "notes")
-	if err != nil || len(matched) != 1 || matched[0].Name != "notes.txt" {
-		t.Fatalf("expected only notes.txt, got %v (err %v)", matched, err)
-	}
+			continue
+		}
 
-	none, err := files.GetExperimentFiles("exp", "and")
-	if err != nil || len(none) != 0 {
-		t.Fatalf("expected nothing for an unparsable filter, got %v (err %v)", none, err)
+		if diff := cmp.Diff(tc.want, names(got), cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+			t.Errorf("GetExperimentFiles(exp, %q) mismatch (-want +got):\n%s", tc.filter, diff)
+		}
 	}
 }
 
@@ -261,8 +300,12 @@ func TestMMClusterFilesSnapshotsFromCachedListing(t *testing.T) {
 	DefaultClusterFiles = MMClusterFiles{}
 
 	snapshots, err := GetExperimentSnapshots("exp")
-	if err != nil || len(snapshots) != 1 || snapshots[0] != "vm__snap" {
-		t.Fatalf("expected only the complete snapshot, got %v (err %v)", snapshots, err)
+	if err != nil {
+		t.Fatalf("GetExperimentSnapshots(exp) error = %v", err)
+	}
+
+	if diff := cmp.Diff([]string{"vm__snap"}, snapshots); diff != "" {
+		t.Errorf("GetExperimentSnapshots(exp) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -305,18 +348,18 @@ func TestDeletingFilesDropsCachedListings(t *testing.T) { //nolint:paralleltest 
 			DefaultClusterFiles = files
 
 			if err := tc.remove(); err != nil {
-				t.Fatal(err)
+				t.Fatalf("%s error = %v", name, err)
 			}
 
-			if !slices.Equal(files.deleted, tc.want) {
-				t.Fatalf("deleted %q, want %q", files.deleted, tc.want)
+			if diff := cmp.Diff(tc.want, files.deleted); diff != "" {
+				t.Errorf("%s deleted files mismatch (-want +got):\n%s", name, diff)
 			}
 
 			experimentListings.mu.Lock()
 			defer experimentListings.mu.Unlock()
 
-			if len(experimentListings.entries) != 0 {
-				t.Fatal("expected the cached listings to be dropped")
+			if n := len(experimentListings.entries); n != 0 {
+				t.Errorf("cached listings after %s = %d, want 0", name, n)
 			}
 		})
 	}
@@ -332,11 +375,11 @@ func TestInvalidateExperimentFiles(t *testing.T) {
 	defer experimentListings.mu.Unlock()
 
 	if _, ok := experimentListings.entries[listingKey("exp")]; ok {
-		t.Fatal("expected the experiment's listing to be dropped")
+		t.Error("InvalidateExperimentFiles(exp) kept exp's listing, want it dropped")
 	}
 
 	if _, ok := experimentListings.entries[listingKey("other")]; !ok {
-		t.Fatal("expected other experiments' listings to be kept")
+		t.Error("InvalidateExperimentFiles(exp) dropped other's listing, want it kept")
 	}
 }
 
@@ -369,7 +412,7 @@ func TestListingErrorsPropagate(t *testing.T) {
 
 	listed, _, err := files.GetExperimentFilesObserved(t.Context(), "exp", "")
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
-		t.Fatalf("listing with a node timing out = %v, %v; want its error", listed, err)
+		t.Errorf("GetExperimentFilesObserved(exp) with a node timing out = %v, %v; want the node's error", listed, err)
 	}
 
 	failing.Store(false)
@@ -377,13 +420,25 @@ func TestListingErrorsPropagate(t *testing.T) {
 	before := time.Now()
 
 	listed, first, err := files.GetExperimentFilesObserved(t.Context(), "exp", "")
-	if err != nil || len(listed) != 1 || first.At.Before(before) || !first.Known {
-		t.Fatalf("listing once the node answers = %v, %+v, %v; want notes.txt, read now", listed, first, err)
+	if err != nil {
+		t.Fatalf("GetExperimentFilesObserved(exp) once the node answers error = %v", err)
+	}
+
+	if diff := cmp.Diff([]string{"notes.txt"}, names(listed)); diff != "" {
+		t.Errorf("GetExperimentFilesObserved(exp) once the node answers mismatch (-want +got):\n%s", diff)
+	}
+
+	if first.At.Before(before) || !first.Known {
+		t.Errorf("GetExperimentFilesObserved(exp) once the node answers observed %+v, want known and at or after %v", first, before)
 	}
 
 	_, again, err := files.GetExperimentFilesObserved(t.Context(), "exp", "")
-	if err != nil || !again.At.Equal(first.At) {
-		t.Fatalf("reused listing observed at %v, %v; want the first's %v", again.At, err, first.At)
+	if err != nil {
+		t.Fatalf("GetExperimentFilesObserved(exp) again error = %v", err)
+	}
+
+	if !again.At.Equal(first.At) {
+		t.Errorf("GetExperimentFilesObserved(exp) again observed at %v, want the first listing's %v", again.At, first.At)
 	}
 }
 
@@ -425,22 +480,26 @@ func TestListingCacheCancelsAListingNoOneWaitsFor(t *testing.T) {
 	cancelJoined()
 
 	if err := <-joinedDone; !errors.Is(err, context.Canceled) {
-		t.Fatalf("the caller that left got %v, want %v", err, context.Canceled)
+		t.Errorf("getContext(k) of the caller that left error = %v, want %v", err, context.Canceled)
 	}
 
 	if err := listCtx.Err(); err != nil {
-		t.Fatalf("the listing's context ended (%v) while its first caller still waited", err)
+		t.Errorf("listing context error while its first caller waits = %v, want nil", err)
 	}
 
 	cancelLeader()
 
 	if err := <-leaderDone; !errors.Is(err, context.Canceled) {
-		t.Fatalf("the first caller got %v, want its listing's %v", err, context.Canceled)
+		t.Errorf("getContext(k) of the first caller error = %v, want its listing's %v", err, context.Canceled)
 	}
 
 	var calls atomic.Int32
 
-	if _, _, err := cache.get("k", countingList(&calls, nil)); err != nil || calls.Load() != 1 {
-		t.Fatalf("call after the canceled listing: err %v, %d listings; want its own", err, calls.Load())
+	if _, _, err := cache.get("k", countingList(&calls, nil)); err != nil {
+		t.Errorf("get(k) after the canceled listing error = %v, want nil", err)
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Errorf("listings for get(k) after the canceled listing = %d, want 1", got)
 	}
 }

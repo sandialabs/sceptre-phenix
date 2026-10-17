@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/app"
 	"phenix/util/mm"
 )
@@ -49,7 +51,7 @@ func installUserApps(t *testing.T, names ...string) string {
 
 		//nolint:gosec // the test app must be executable
 		if err := os.WriteFile(filepath.Join(bin, app.UserAppPrefix+name), []byte(script), 0o755); err != nil {
-			t.Fatalf("writing user app %s: %v", name, err)
+			t.Fatalf("os.WriteFile(%s%s) error = %v", app.UserAppPrefix, name, err)
 		}
 	}
 
@@ -73,33 +75,38 @@ func useCountingMM(t *testing.T) *countingMM {
 	return counting
 }
 
-// checkRuntimeGiven checks the user app saved an experiment holding the
-// runtime countingMM reports.
-func checkRuntimeGiven(t *testing.T, out, name string) {
+// named is a host or VM as a user app is given it, by name alone.
+type named struct {
+	Name string `json:"name"`
+}
+
+// givenRuntime is the runtime part of the experiment a user app is given.
+type givenRuntime struct {
+	Hosts []named `json:"hosts"`
+	VMs   []named `json:"vms"`
+}
+
+// wantRuntime is the runtime countingMM reports.
+var wantRuntime = givenRuntime{ //nolint:gochecknoglobals // shared expectation
+	Hosts: []named{{Name: "compute-0"}},
+	VMs:   []named{{Name: "router"}},
+}
+
+// readGiven returns the runtime of the experiment the user app name saved.
+func readGiven(t *testing.T, out, name string) givenRuntime {
 	t.Helper()
 
 	data, err := os.ReadFile(filepath.Join(out, name+".json"))
 	if err != nil {
-		t.Fatalf("reading what %s was given: %v", name, err)
+		t.Fatalf("os.ReadFile(what %s was given) error = %v", name, err)
 	}
 
-	var given struct {
-		Hosts []struct {
-			Name string `json:"name"`
-		} `json:"hosts"`
-		VMs []struct {
-			Name string `json:"name"`
-		} `json:"vms"`
-	}
-
+	var given givenRuntime
 	if err := json.Unmarshal(data, &given); err != nil {
-		t.Fatalf("decoding what %s was given: %v", name, err)
+		t.Fatalf("json.Unmarshal(what %s was given) error = %v", name, err)
 	}
 
-	if len(given.Hosts) != 1 || given.Hosts[0].Name != "compute-0" ||
-		len(given.VMs) != 1 || given.VMs[0].Name != "router" {
-		t.Fatalf("%s was given %s", name, data)
-	}
+	return given
 }
 
 func TestApplyAppsReadsRuntimeOncePerRun(t *testing.T) {
@@ -116,17 +123,22 @@ func TestApplyAppsReadsRuntimeOncePerRun(t *testing.T) {
 			app.FilterApp(names...),
 		)
 		if err != nil {
-			t.Fatalf("applying apps: %v", err)
+			t.Fatalf("ApplyApps(post-start, %q) run %d error = %v", names, run, err)
 		}
 
-		if hosts, vms := counting.hostCalls.Load(), counting.vmCalls.Load(); hosts != int32(run) || vms != int32(run) {
-			t.Fatalf("after %d runs of %d apps: %d host and %d VM queries, want %d of each",
-				run, len(names), hosts, vms, run)
+		if got := counting.hostCalls.Load(); got != int32(run) {
+			t.Errorf("host queries after %d ApplyApps(post-start, %d apps) = %d, want %d", run, len(names), got, run)
+		}
+
+		if got := counting.vmCalls.Load(); got != int32(run) {
+			t.Errorf("VM queries after %d ApplyApps(post-start, %d apps) = %d, want %d", run, len(names), got, run)
 		}
 	}
 
 	for _, name := range names {
-		checkRuntimeGiven(t, out, name)
+		if diff := cmp.Diff(wantRuntime, readGiven(t, out, name)); diff != "" {
+			t.Errorf("runtime given to %s mismatch (-want +got):\n%s", name, diff)
+		}
 	}
 }
 
@@ -140,18 +152,24 @@ func TestUserAppRunAloneReadsRuntime(t *testing.T) {
 
 	alone := app.GetApp(name)
 	if err := alone.Init(app.Name(name)); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Init(Name(%s)) error = %v", name, err)
 	}
 
 	for run := 1; run <= 2; run++ {
 		if err := alone.Running(context.Background(), exp); err != nil {
-			t.Fatalf("running %s: %v", name, err)
+			t.Fatalf("Running(%s) run %d error = %v", name, run, err)
 		}
 
-		if hosts, vms := counting.hostCalls.Load(), counting.vmCalls.Load(); hosts != int32(run) || vms != int32(run) {
-			t.Fatalf("after %d runs: %d host and %d VM queries, want %d of each", run, hosts, vms, run)
+		if got := counting.hostCalls.Load(); got != int32(run) {
+			t.Errorf("host queries after %d Running(%s) = %d, want %d", run, name, got, run)
+		}
+
+		if got := counting.vmCalls.Load(); got != int32(run) {
+			t.Errorf("VM queries after %d Running(%s) = %d, want %d", run, name, got, run)
 		}
 	}
 
-	checkRuntimeGiven(t, out, name)
+	if diff := cmp.Diff(wantRuntime, readGiven(t, out, name)); diff != "" {
+		t.Errorf("runtime given to %s mismatch (-want +got):\n%s", name, diff)
+	}
 }

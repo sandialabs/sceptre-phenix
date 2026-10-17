@@ -34,7 +34,7 @@ func useLogFile(t *testing.T) string {
 	logFileOnce.Do(func() {
 		dir, err := os.MkdirTemp("", "plog-test-") //nolint:usetesting // outlives the first test; TestMain removes it
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("os.MkdirTemp() error = %v", err)
 		}
 
 		logFilePath = filepath.Join(dir, "phenix.log")

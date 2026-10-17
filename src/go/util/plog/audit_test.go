@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // raiseLevel sets the shared log level for the test, restoring it after.
@@ -31,14 +33,14 @@ func TestAuditReachesFileAtAnyLevel(t *testing.T) {
 
 			logs, err := GetLogs(time.Now().Add(-10*time.Minute), time.Now().Add(time.Minute))
 			if err != nil {
-				t.Fatalf("GetLogs: %v", err)
+				t.Fatalf("GetLogs(last 10 minutes) error = %v", err)
 			}
 
 			var found bool
 
 			for _, l := range logs {
 				if strings.Contains(l.Message, "not audited at "+level) {
-					t.Errorf("an Info record below log.level %s reached the file: %+v", level, l)
+					t.Errorf("GetLogs(last 10 minutes) at log.level %s holds Info record %+v, want it filtered", level, l)
 				}
 
 				if !strings.Contains(l.Message, "audited at "+level) || strings.Contains(l.Message, "not audited") {
@@ -48,33 +50,35 @@ func TestAuditReachesFileAtAnyLevel(t *testing.T) {
 				found = true
 
 				if l.Type != string(TypeAudit) {
-					t.Errorf("type = %q, want %q", l.Type, TypeAudit)
+					t.Errorf("GetLogs(last 10 minutes) audit entry type = %q, want %q", l.Type, TypeAudit)
 				}
 
 				if strings.Contains(l.Message, auditTimestampKey) {
-					t.Errorf("history entry shows the ECS timestamp: %q", l.Message)
+					t.Errorf("GetLogs(last 10 minutes) audit message = %q, want it without %s", l.Message, auditTimestampKey)
 				}
 
 				if !strings.Contains(l.Message, "event.action=test-"+level) {
-					t.Errorf("history entry lost the audit fields: %q", l.Message)
+					t.Errorf("GetLogs(last 10 minutes) audit message = %q, want it with event.action=test-%s", l.Message, level)
 				}
 			}
 
 			if !found {
-				t.Fatalf("audit record not in the log file at log.level %s", level)
+				t.Errorf("GetLogs(last 10 minutes) at log.level %s holds no audit record, want one", level)
 			}
 		})
 	}
 
 	data, err := os.ReadFile(logPath)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.ReadFile(%s) error = %v", logPath, err)
 	}
 
 	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
 		var record map[string]any
 		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			t.Fatalf("log line %q: %v", line, err)
+			t.Errorf("json.Unmarshal(log line %q) error = %v", line, err)
+
+			continue
 		}
 
 		if record[logAttrType] != string(TypeAudit) {
@@ -85,11 +89,11 @@ func TestAuditReachesFileAtAnyLevel(t *testing.T) {
 
 		parsed, err := time.Parse(time.RFC3339Nano, ts)
 		if err != nil || !strings.HasSuffix(ts, "Z") {
-			t.Errorf("@timestamp %q is not RFC 3339 in UTC (%v)", ts, err)
+			t.Errorf("audit record %s = %q (parse error %v), want RFC 3339 in UTC", auditTimestampKey, ts, err)
 		}
 
 		if time.Since(parsed) > time.Minute {
-			t.Errorf("@timestamp %q is not the record's time", ts)
+			t.Errorf("audit record %s = %q, want within a minute of now", auditTimestampKey, ts)
 		}
 	}
 }
@@ -105,11 +109,9 @@ func TestAuditSkipsLevelForOtherHandlers(t *testing.T) {
 	Audit(slog.LevelInfo, "info audit")
 	Audit(slog.LevelError, "error audit", "user.name", "alice")
 
-	if len(got) != 1 {
-		t.Fatalf("UI handler at ERROR got %d records, want only the error audit: %q", len(got), got)
-	}
-
-	if got[0] != "AUDIT error audit user.name=alice" {
-		t.Errorf("UI line = %q, want type AUDIT without the ECS timestamp", got[0])
+	// type AUDIT, without the ECS timestamp
+	want := []string{"AUDIT error audit user.name=alice"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("UI handler at ERROR lines after Audit(Info) and Audit(Error) mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -15,9 +15,11 @@ import (
 func Use(tb testing.TB) {
 	tb.Helper()
 
+	endpoint := "bolt://" + filepath.Join(tb.TempDir(), "store.bdb")
+
 	s := store.NewBoltDB()
-	if err := s.Init(store.Endpoint("bolt://" + filepath.Join(tb.TempDir(), "store.bdb"))); err != nil {
-		tb.Fatalf("initializing store: %v", err)
+	if err := s.Init(store.Endpoint(endpoint)); err != nil {
+		tb.Fatalf("BoltDB.Init(%s) error = %v", endpoint, err)
 	}
 
 	original := store.DefaultStore

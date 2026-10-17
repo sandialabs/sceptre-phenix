@@ -1,11 +1,11 @@
 package file
 
 import (
-	"reflect"
 	"regexp"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 )
@@ -108,20 +108,20 @@ func TestDeleteExistingFiles(t *testing.T) { //nolint:paralleltest // shares the
 
 			switch {
 			case tc.wantErr == "" && err != nil:
-				t.Fatalf("DeleteExistingFiles: %v", err)
+				t.Errorf("DeleteExistingFiles(%q) error = %v, want nil", tc.names, err)
 			case tc.wantErr != "" && (err == nil || !regexp.MustCompile(tc.wantErr).MatchString(err.Error())):
-				t.Fatalf("DeleteExistingFiles error = %v, want one matching %q", err, tc.wantErr)
+				t.Errorf("DeleteExistingFiles(%q) error = %v, want one matching %q", tc.names, err, tc.wantErr)
 			}
 
 			cmds := received()
 
-			if got := mmtest.Bases(cmds); !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("sent\n%q\nwant\n%q", got, tc.want)
+			if diff := cmp.Diff(tc.want, mmtest.Bases(cmds)); diff != "" {
+				t.Errorf("DeleteExistingFiles(%q) commands mismatch (-want +got):\n%s", tc.names, diff)
 			}
 
 			for _, cmd := range cmds {
 				if cmd.Namespace != "" {
-					t.Errorf("%q sent in namespace %q, want none", cmd.Base, cmd.Namespace)
+					t.Errorf("DeleteExistingFiles(%q) sent %q in namespace %q, want none", tc.names, cmd.Base, cmd.Namespace)
 				}
 			}
 		})

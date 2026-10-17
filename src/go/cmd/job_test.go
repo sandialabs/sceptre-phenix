@@ -5,10 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/job"
 	"phenix/util/common"
@@ -54,6 +58,13 @@ func writeJSONBody(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// requestFields compares recorded requests by method, path and query alone.
+var requestFields = cmp.Options{ //nolint:gochecknoglobals // cmp options shared by the tests
+	cmp.AllowUnexported(recordedRequest{}),
+	cmpopts.IgnoreFields(recordedRequest{}, "contentType", "body"),
+	cmpopts.EquateEmpty(),
+}
+
 func TestJobList(t *testing.T) {
 	fake := newFakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeJSONBody(w, map[string][]job.Job{"jobs": {testJob(job.StatusPartial)}})
@@ -61,30 +72,36 @@ func TestJobList(t *testing.T) {
 
 	out, err := runJobCmd(t, fake.socket, "list", "--experiment", "exp1", "--kind", "vms.action", "--active")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("job list --experiment exp1 --kind vms.action --active error = %v", err)
 	}
 
 	for _, want := range []string{"j1", "vms.action", "partial", "2/2", "exp1", "alice"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("table lacks %q:\n%s", want, out)
+			t.Errorf("job list --experiment exp1 --kind vms.action --active = %q, want it to contain %q", out, want)
 		}
 	}
 
-	reqs := fake.recorded()
-	if len(reqs) != 1 || reqs[0].path != "/api/v1/jobs" ||
-		reqs[0].query.Get("experiment") != "exp1" || reqs[0].query.Get("kind") != "vms.action" ||
-		reqs[0].query.Get("active") != "true" {
-		t.Errorf("requests %+v, want one filtered GET /api/v1/jobs", reqs)
+	want := []recordedRequest{{
+		method: http.MethodGet,
+		path:   "/api/v1/jobs",
+		query:  url.Values{"experiment": {"exp1"}, "kind": {"vms.action"}, "active": {"true"}},
+	}}
+	if diff := cmp.Diff(want, fake.recorded(), requestFields); diff != "" {
+		t.Errorf("job list --experiment exp1 --kind vms.action --active requests mismatch (-want +got):\n%s", diff)
 	}
 
 	out, err = runJobCmd(t, fake.socket, "list", "-o", "json")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("job list -o json error = %v", err)
 	}
 
 	var listed []job.Job
-	if err := json.Unmarshal([]byte(out), &listed); err != nil || len(listed) != 1 || listed[0].ID != "j1" {
-		t.Errorf("JSON output %q (%v), want the one job", out, err)
+	if err := json.Unmarshal([]byte(out), &listed); err != nil {
+		t.Fatalf("json.Unmarshal(job list -o json output %q) error = %v", out, err)
+	}
+
+	if diff := cmp.Diff([]job.Job{testJob(job.StatusPartial)}, listed); diff != "" {
+		t.Errorf("job list -o json mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -106,28 +123,34 @@ func TestJobGetAndCancel(t *testing.T) {
 
 	out, err := runJobCmd(t, fake.socket, "get", "j1")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("job get j1 error = %v", err)
 	}
 
 	for _, want := range []string{"Restart 2 VMs", "running", "db", "yes", "vm db is locked with status stopping"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("job output lacks %q:\n%s", want, out)
+			t.Errorf("job get j1 = %q, want it to contain %q", out, want)
 		}
 	}
 
 	if out, err := runJobCmd(t, fake.socket, "cancel", "j1"); err != nil || !strings.Contains(out, "Cancel requested for job j1") {
-		t.Errorf("cancel: %q, %v", out, err)
+		t.Errorf("job cancel j1 = %q, %v; want %q, nil", out, err, "Cancel requested for job j1")
 	}
 
-	if last := fake.recorded()[len(fake.recorded())-1]; last.method != http.MethodPost {
-		t.Errorf("cancel sent %s, want POST", last.method)
+	want := []recordedRequest{
+		{method: http.MethodGet, path: "/api/v1/jobs/j1"},
+		{method: http.MethodPost, path: "/api/v1/jobs/j1/cancel"},
+	}
+	if diff := cmp.Diff(want, fake.recorded(), requestFields); diff != "" {
+		t.Errorf("job get j1, then job cancel j1 requests mismatch (-want +got):\n%s", diff)
 	}
 
 	_, err = runJobCmd(t, fake.socket, "get", "j2")
 
 	var apiErr *workflowAPIError
-	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
-		t.Errorf("unknown job: %v, want a 404", err)
+	if !errors.As(err, &apiErr) {
+		t.Errorf("job get j2 error = %v, want a *workflowAPIError", err)
+	} else if apiErr.Status != http.StatusNotFound {
+		t.Errorf("job get j2 error status = %d, want %d", apiErr.Status, http.StatusNotFound)
 	}
 }
 
@@ -162,7 +185,7 @@ func TestJobWait(t *testing.T) {
 
 			j, err := waitForJob(t.Context(), newJobClient(fake.socket), "j1", time.Millisecond)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("waitForJob(j1) error = %v", err)
 			}
 
 			err = jobOutcome(j)
@@ -173,11 +196,11 @@ func TestJobWait(t *testing.T) {
 			}
 
 			if got != want {
-				t.Errorf("exit code %d (%v), want %d", got, err, want)
+				t.Errorf("exitCode(jobOutcome(%s job)) = %d (error %v), want %d", status, got, err, want)
 			}
 
-			if polls.Load() < 2 {
-				t.Errorf("polled %d times, want until it finished", polls.Load())
+			if n := polls.Load(); n < 2 {
+				t.Errorf("waitForJob(j1) polled %d times, want at least 2: until it finished", n)
 			}
 		})
 	}
@@ -189,8 +212,12 @@ func TestJobWaitTimesOut(t *testing.T) {
 	})
 
 	_, err := runJobCmd(t, fake.socket, "wait", "j1", "--timeout", "50ms")
-	if err == nil || !strings.Contains(err.Error(), "timed out after 50ms") || exitCode(err) != 1 {
-		t.Errorf("wait on a job that never ends: %v, want a timeout with exit code 1", err)
+	if err == nil || !strings.Contains(err.Error(), "timed out after 50ms") {
+		t.Errorf("job wait j1 --timeout 50ms on a running job error = %v, want one containing %q", err, "timed out after 50ms")
+	}
+
+	if got := exitCode(err); got != 1 {
+		t.Errorf("exitCode(job wait j1 --timeout 50ms error) = %d, want 1", got)
 	}
 }
 
@@ -198,7 +225,7 @@ func TestJobCommandsWithoutServer(t *testing.T) {
 	socket := shortSocketPath(t)
 
 	_, err := runJobCmd(t, socket, "list")
-	if err == nil || !strings.Contains(err.Error(), "phenix ui is not running (no socket at "+socket+")") {
-		t.Errorf("list without a server: %v", err)
+	if want := "phenix ui is not running (no socket at " + socket + ")"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("job list without a server error = %v, want one containing %q", err, want)
 	}
 }
