@@ -97,12 +97,13 @@ function baselineIndex(baseline) {
   if (!baseline || typeof baseline !== 'object') {
     return { size, routes, meta: null };
   }
-  for (const row of baseline.size?.rows ?? []) {
+  const list = (x) => (Array.isArray(x) ? x : []);
+  for (const row of list(baseline.size?.rows)) {
     if (row && typeof row.name === 'string' && num(row.size) !== null) {
       size.set(row.name, row.size);
     }
   }
-  for (const route of baseline.lighthouse?.routes ?? []) {
+  for (const route of list(baseline.lighthouse?.routes)) {
     if (route && typeof route.path === 'string') {
       routes.set(route.path, {
         performance: num(route.performance),
