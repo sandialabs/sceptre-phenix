@@ -153,7 +153,7 @@
           v-model="searchName"
           :placeholder="searchPlaceholder"
           icon="search"
-          :data="searchHistory"
+          :data="searchOptions"
           @typing="searchVMs"
           @select="(option) => searchVMs(option)">
           <template #empty>No results found</template>
@@ -592,6 +592,7 @@
   import DiskSelect from '@/components/experiment/DiskSelect.vue';
   import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
   import { debounce } from 'lodash-es';
+  import { addSearch } from '@/utils/searchHistory.js';
   import { tagCount } from '@/utils/tagCount';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import VMLabelsModal from '@/components/VMLabelsModal.vue';
@@ -633,11 +634,21 @@
       };
     },
     beforeUnmount() {
+      this.searchVMs.cancel();
       removeWsHandler(this.handleWs);
       this.loader.stop();
     },
 
     async created() {
+      this.searchVMs = debounce((term) => {
+        this.searchName = term ?? '';
+        if (this.activeTab == 0) {
+          this.updateExperiment();
+          return;
+        }
+
+        this.$refs.filesTab?.reload();
+      }, 250);
       addWsHandler(this.handleWs);
       this.loader = createPageLoader({
         // only the default view is cached, as its request is the same each
@@ -713,22 +724,13 @@
       paginationNeeded() {
         return this.table.total > this.table.perPage;
       },
+
+      searchOptions() {
+        return [...this.searchHistory].sort();
+      },
     },
 
     methods: {
-      searchVMs: debounce(function (term) {
-        if (term === null) {
-          term = '';
-        }
-        this.searchName = term;
-        if (this.activeTab == 0) {
-          this.updateExperiment();
-          return;
-        }
-
-        this.$refs.filesTab?.reload();
-      }, 250),
-
       bootDecorator(vm) {
         if (vm.external) {
           return 'dnb';
@@ -893,11 +895,7 @@
       },
 
       addSearchHistory() {
-        if (this.searchHistory.length >= this.searchHistoryLength) {
-          this.searchHistory.pop();
-        }
-        this.searchHistory.push(this.searchName.trim());
-        this.searchHistory = this.getUniqueItems(this.searchHistory);
+        this.searchHistory = addSearch(this.searchHistory, this.searchName);
       },
 
       start() {
@@ -1490,7 +1488,6 @@
         algorithm: null,
         isWaiting: false, // set while a change is being saved
         searchHistory: [],
-        searchHistoryLength: 10,
         checkAll: false,
         selectedRows: [],
         searchPlaceholder: 'Find a VM',

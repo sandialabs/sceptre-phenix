@@ -123,7 +123,6 @@ describe('the jobs store', () => {
           'failed',
           'canceled',
         ),
-        // fixed-width UTC; the it.fails below covers Go's trimmed fractions
         ms: fc.integer({
           min: Date.UTC(2026, 0, 1),
           max: Date.UTC(2027, 0, 1),
@@ -160,11 +159,52 @@ describe('the jobs store', () => {
     );
   });
 
-  // Go's RFC3339Nano trims trailing zeros, and utils/jobs.js byCreated compares strings
-  it.fails('lists a job created later in the same second first', () => {
+  it('lists a job created later in the same second first', () => {
     jobs.put(job('early', { created: '2026-10-14T15:00:00.12Z' }));
     jobs.put(job('late', { created: '2026-10-14T15:00:00.123Z' }));
     expect(jobs.list.map((j) => j.id)).toEqual(['late', 'early']);
+  });
+
+  it('lists jobs by when they were created, as Go writes the time in any zone', () => {
+    // as Go's RFC3339Nano writes ns nanoseconds past the epoch second s, at
+    // an offset of off minutes: trailing zeros trimmed
+    const goTime = ([s, ns, off]) => {
+      const local = new Date((s + off * 60) * 1000).toISOString().slice(0, 19);
+      const frac = String(ns).padStart(9, '0').replace(/0+$/, '');
+      const zone = off
+        ? `${off < 0 ? '-' : '+'}${new Date(Math.abs(off) * 60000).toISOString().slice(11, 16)}`
+        : 'Z';
+      return `${local}${frac && `.${frac}`}${zone}`;
+    };
+    const second = Date.UTC(2026, 9, 14) / 1000;
+    const instant = fc.tuple(
+      fc.integer({ min: second, max: second + 2 }),
+      fc.oneof(
+        fc.integer({ min: 0, max: 999_999_999 }),
+        fc.constantFrom(0, 120_000_000, 123_000_000, 123_400_000, 123_456_789),
+      ),
+      fc.constantFrom(0, -360, 330, 600),
+    );
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(instant, {
+          selector: ([s, ns]) => `${s}.${ns}`,
+          maxLength: 8,
+        }),
+        (given) => {
+          setActivePinia(createPinia());
+          const store = useJobStore();
+          given.forEach((at, i) =>
+            store.put(job(`j${i}`, { created: goTime(at) })),
+          );
+          const want = given
+            .map((at, i) => [at, `j${i}`])
+            .sort(([[as, an]], [[bs, bn]]) => bs - as || bn - an)
+            .map(([, id]) => id);
+          expect(store.list.map((j) => j.id)).toEqual(want);
+        },
+      ),
+    );
   });
 
   it('keeps the results a whole copy has over a websocket copy of the same revision', () => {
@@ -374,12 +414,12 @@ describe('helpers', () => {
       .map(([unit, off]) => 1024 ** unit + off);
     fc.assert(
       fc.property(fc.oneof(fc.maxSafeNat(), near), (bytes) => {
-        const want = [1, 2, 3, 4].filter((u) => 1024 ** u <= bytes).length;
-        // a count that rounds up to the next unit is the it.fails case below
-        fc.pre(want === 0 || (bytes / 1024 ** want).toFixed(1) !== '1024.0');
         const [value, unitName] = bytesText(bytes).split(' ');
         const unit = units.indexOf(unitName);
-        expect(unit).toBe(want);
+        expect(unit).toBeGreaterThanOrEqual(0);
+        // shown as at least 1 of its unit, and below 1024 unless the largest
+        if (unit > 0) expect(Number(value)).toBeGreaterThanOrEqual(1);
+        if (unit < units.length - 1) expect(Number(value)).toBeLessThan(1024);
         expect(
           Math.abs(Number(value) * 1024 ** unit - bytes),
         ).toBeLessThanOrEqual(0.05 * 1024 ** unit);
@@ -387,8 +427,7 @@ describe('helpers', () => {
     );
   });
 
-  // utils/jobs.js:30 rounds after it picks the unit, so 1048575 B reads 1024.0 KiB
-  it.fails('writes 1 MiB less a byte as 1.0 MiB', () => {
+  it('writes 1 MiB less a byte as 1.0 MiB', () => {
     expect(bytesText(1024 ** 2 - 1)).toBe('1.0 MiB');
   });
 });

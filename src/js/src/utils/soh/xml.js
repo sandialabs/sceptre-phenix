@@ -6,6 +6,9 @@ const INVALID_XML =
   // eslint-disable-next-line no-control-regex
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
+// Whether text holds a character XML 1.0 does not allow.
+export const hasInvalidXml = (text) => String(text).search(INVALID_XML) >= 0;
+
 // Escapes text for use in XML content or a double- or single-quoted
 // attribute. Tabs and line breaks become character references so that
 // attribute values keep them instead of being normalized to spaces.

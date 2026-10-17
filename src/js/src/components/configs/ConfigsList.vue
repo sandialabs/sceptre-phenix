@@ -593,7 +593,7 @@
       },
 
       uploadFile(file) {
-        let ext = /\.yaml|\.yml|\.json$/i;
+        let ext = /\.(yaml|yml|json)$/i;
 
         if (!ext.exec(file.name)) {
           this.$buefy.toast.open({

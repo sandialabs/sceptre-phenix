@@ -1,6 +1,6 @@
 // How an operation on several items went, item by item.
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import OperationOutcome from '@/components/jobs/OperationOutcome.vue';
 import { plural } from '@/utils/plural.js';
@@ -20,7 +20,8 @@ const retryButtons = (wrapper) =>
 
 describe('OperationOutcome', () => {
   it('groups the items by outcome, failures first, with their reasons', async () => {
-    const wrapper = await render({ items, noun: 'VM' });
+    const onRetry = vi.fn();
+    const wrapper = await render({ items, noun: 'VM', onRetry });
     const text = textOf(wrapper);
 
     expect(text.indexOf('Failed: 2 VMs')).toBeLessThan(
@@ -35,10 +36,17 @@ describe('OperationOutcome', () => {
     const [retry] = retryButtons(wrapper);
     expect(retry.text()).toBe('Retry failed (1)');
     await retry.trigger('click');
-    expect(wrapper.emitted('retry')).toEqual([[['db']]]);
+    expect(onRetry.mock.calls).toEqual([[['db']]]);
   });
 
-  it('lists each item once, under its outcome, and retries the failures worth it', async () => {
+  it('offers no retry when nothing can retry', async () => {
+    const wrapper = await render({ items, noun: 'VM' });
+    expect(textOf(wrapper)).toContain('db: vm db is locked');
+    expect(textOf(wrapper)).not.toContain('can retry');
+    expect(retryButtons(wrapper)).toEqual([]);
+  });
+
+  it('lists each item once, under its outcome, and retries the failures worth it when it can', async () => {
     const outcomes = fc.uniqueArray(
       fc.record({
         name: fc.stringMatching(/^[a-z][a-z0-9]{0,4}$/),
@@ -55,8 +63,13 @@ describe('OperationOutcome', () => {
       succeeded: 'Succeeded',
     };
     await fc.assert(
-      fc.asyncProperty(outcomes, async (list) => {
-        const wrapper = await render({ items: list, noun: 'VM' });
+      fc.asyncProperty(outcomes, fc.boolean(), async (list, canRetry) => {
+        const onRetry = vi.fn();
+        const wrapper = await render({
+          items: list,
+          noun: 'VM',
+          onRetry: canRetry ? onRetry : null,
+        });
         const groups = wrapper
           .findAll('.outcome-group')
           .map((group) => [
@@ -74,14 +87,26 @@ describe('OperationOutcome', () => {
             .filter(([, names]) => names.length),
         );
 
-        const worth = list.filter((i) => i.status === 'failed' && i.retryable);
+        const tagged = wrapper
+          .findAll('.outcome-items li')
+          .filter((li) => textOf(li).endsWith('can retry'))
+          .map((li) => textOf(li.find('.outcome-name')));
+        expect(new Set(tagged)).toEqual(
+          new Set(
+            canRetry ? list.filter((i) => i.retryable).map((i) => i.name) : [],
+          ),
+        );
+
+        const worth = canRetry
+          ? list.filter((i) => i.status === 'failed' && i.retryable)
+          : [];
         const [retry] = retryButtons(wrapper);
         expect(retry?.text()).toBe(
           worth.length ? `Retry failed (${worth.length})` : undefined,
         );
         await retry?.trigger('click');
-        expect(wrapper.emitted('retry')).toEqual(
-          worth.length ? [[worth.map((i) => i.name)]] : undefined,
+        expect(onRetry.mock.calls).toEqual(
+          worth.length ? [[worth.map((i) => i.name)]] : [],
         );
         wrapper.unmount();
       }),

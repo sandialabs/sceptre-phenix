@@ -275,14 +275,15 @@ const goAllowed = (policies, resource, verb, names) =>
 
 const segment = (chars) =>
   fc.string({ unit: fc.constantFrom(...chars), minLength: 1, maxLength: 3 });
-// a resource name: an experiment, a VM, or a VM within an experiment
+// a resource name: an experiment, a VM, or a VM within an experiment, at
+// times with a trailing slash
 const nameArb = (chars = 'ab.-') =>
   fc
-    .array(
-      segment(chars).filter((s) => s !== '.' && s !== '..'),
-      { minLength: 1, maxLength: 2 },
+    .tuple(
+      fc.array(segment(chars), { minLength: 1, maxLength: 2 }),
+      fc.boolean(),
     )
-    .map((s) => s.join('/'));
+    .map(([s, slash]) => s.join('/') + (slash ? '/' : ''));
 const patternArb = fc
   .array(segment('ab.-*?'), { minLength: 1, maxLength: 2 })
   .map((s) => s.join('/'));
@@ -348,12 +349,24 @@ test('answers a request the same whether or not it asked before', () => {
   );
 });
 
-// rbac.js:46 caches by the names joined with commas, so these share an answer
-test.fails('tells one name holding a comma from two names', () => {
+test('tells one name holding a comma from two names', () => {
   signIn({
     name: 'Comma',
     policies: [{ resources: ['vms'], resourceNames: ['a'], verbs: ['get'] }],
   });
   expect(roleAllowed('vms', 'get', 'a,b')).toBe(false);
   expect(roleAllowed('vms', 'get', 'a', 'b')).toBe(true);
+});
+
+test('matches dot and empty name segments as the server does', () => {
+  signIn({
+    name: 'Dots',
+    policies: [
+      { resources: ['vms'], resourceNames: ['*', 'exp/*'], verbs: ['get'] },
+    ],
+  });
+  expect(roleAllowed('vms', 'get', '.')).toBe(true);
+  expect(roleAllowed('vms', 'get', '..')).toBe(true);
+  expect(roleAllowed('vms', 'get', 'exp/')).toBe(true);
+  expect(roleAllowed('vms', 'get', 'vm1/')).toBe(false);
 });

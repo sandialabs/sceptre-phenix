@@ -18,15 +18,18 @@ export function compute(graph) {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const root = chooseRoot(graph, adj);
   const { parent } = bfs(adj, root);
+  // each component the root does not reach is a tree from its first node,
+  // hung off the root so it gets a ring of its own instead of the center
+  for (const n of graph.nodes) {
+    if (parent.has(n.id)) continue;
+    for (const [k, v] of bfs(adj, n.id).parent) parent.set(k, v ?? root);
+  }
 
-  // components the root does not reach hang off a virtual root
+  // the real root hangs off a virtual one
   const rows = [{ id: '__root', parent: null }];
   for (const n of graph.nodes) {
     const p = parent.get(n.id);
-    rows.push({
-      id: String(n.id),
-      parent: p === undefined || p === null ? '__root' : String(p),
-    });
+    rows.push({ id: String(n.id), parent: p === null ? '__root' : String(p) });
   }
   const h = stratify()
     .id((d) => d.id)

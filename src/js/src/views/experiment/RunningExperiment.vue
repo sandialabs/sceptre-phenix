@@ -610,7 +610,7 @@
             v-model="search.filter"
             :placeholder="searchPlaceholder"
             icon="search"
-            :data="searchHistory"
+            :data="searchOptions"
             @typing="searchVMs"
             @select="(option) => searchVMs(option)">
             <!-- netflow is filtered in place; there is nothing to list here -->
@@ -1227,6 +1227,7 @@
     skippedVMsText,
     vmStateType,
   } from '@/components/experiment/vmActions.js';
+  import { addSearch } from '@/utils/searchHistory.js';
   import { tagCount } from '@/utils/tagCount';
   import {
     addWsHandler,
@@ -1395,6 +1396,7 @@
 
     async beforeUnmount() {
       this.unmounting = true;
+      this.searchVMs.cancel();
       window.removeEventListener('resize', this.fitNetflowView);
       this.pageResize?.disconnect();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
@@ -1420,6 +1422,20 @@
     },
 
     async created() {
+      this.searchVMs = debounce((term) => {
+        this.search.filter = term ?? '';
+        switch (this.activeTab) {
+          case 0:
+          case 2:
+            // before the first load, apply() lists the VMs with this filter
+            if (this.experiment.name) this.updateTable();
+            break;
+          case 1:
+            this.$refs.filesTab?.reload();
+            break;
+          // the netflow tab filters what it already has (netflowRows)
+        }
+      }, 250);
       addWsHandler(this.handleWs);
       window.addEventListener('resize', this.fitNetflowView);
       document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -1495,6 +1511,10 @@
     },
 
     computed: {
+      searchOptions() {
+        return [...this.searchHistory].sort();
+      },
+
       // the CD-ROM picker's ISO images, by label, those outside the minimega
       // files directory apart
       isoOptions() {
@@ -1700,24 +1720,6 @@
 
         sendWsMsg(msg);
       },
-
-      searchVMs: debounce(function (term) {
-        if (term == null) {
-          term = '';
-        }
-        this.search.filter = term;
-        switch (this.activeTab) {
-          case 0:
-          case 2:
-            // before the first load, apply() lists the VMs with this filter
-            if (this.experiment.name) this.updateTable();
-            break;
-          case 1:
-            this.$refs.filesTab?.reload();
-            break;
-          // the netflow tab filters what it already has (netflowRows)
-        }
-      }, 250),
 
       updateTable() {
         let number = this.table.currentPage;
@@ -3513,11 +3515,7 @@
       },
 
       addSearchHistory() {
-        if (this.searchHistory.length >= this.searchHistoryLength) {
-          this.searchHistory.pop();
-        }
-        this.searchHistory.push(this.search.filter.trim());
-        this.searchHistory = this.getUniqueItems(this.searchHistory);
+        this.searchHistory = addSearch(this.searchHistory, this.search.filter);
       },
 
       showMountDialog(vm) {
@@ -3863,7 +3861,6 @@
         checkAll: false,
         vmSelectedArray: [],
         searchHistory: [],
-        searchHistoryLength: 10,
         searchPlaceholder: 'Find a VM',
         columnToggles: [
           {

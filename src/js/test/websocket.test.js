@@ -115,6 +115,41 @@ describe('messages', () => {
     );
   });
 
+  it('skip a line that is not a JSON object, and reach the lines after it', () => {
+    const seen = [];
+    ws.addWsHandler((msg) => seen.push(msg));
+    ws.connectWebsocket();
+    sockets[0].open();
+    const line = fc.oneof(
+      fc
+        .dictionary(fc.string(), fc.jsonValue(), { maxKeys: 3 })
+        .map((msg) => ({ msg, text: JSON.stringify(msg) })),
+      fc
+        .oneof(
+          fc.constantFrom('null', '42', '"text"', 'true', '{', 'not json'),
+          fc.string().filter((t) => !t.includes('\n') && !t.includes('\r')),
+        )
+        .filter((text) => {
+          try {
+            const v = JSON.parse(text);
+            return v === null || typeof v !== 'object';
+          } catch {
+            return true;
+          }
+        })
+        .map((text) => ({ text })),
+    );
+    fc.assert(
+      fc.property(fc.array(line, { maxLength: 6 }), (lines) => {
+        seen.length = 0;
+        sockets[0].onmessage({ data: lines.map((l) => l.text).join('\n') });
+        expect(seen).toEqual(
+          lines.filter((l) => l.msg).map((l) => JSON.parse(l.text)),
+        );
+      }),
+    );
+  });
+
   it('stop reaching a removed handler, and removing an unknown one leaves the rest', () => {
     const kept = vi.fn();
     const removed = vi.fn();

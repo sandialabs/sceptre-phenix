@@ -1,6 +1,6 @@
 // Mounts components with @vue/test-utils, the real Buefy and the app's named
 // routes, and reads back what they draw; for files run in happy-dom.
-import { flushPromises, mount } from '@vue/test-utils';
+import { createWrapperError, flushPromises, mount } from '@vue/test-utils';
 import { h } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 
@@ -59,9 +59,13 @@ export const textOf = (node) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-// the element with this aria-label
+// the element with this aria-label, compared as text since happy-dom
+// rejects escaped quotes in a selector
 export const byLabel = (wrapper, label) =>
-  wrapper.find(`[aria-label=${JSON.stringify(label)}]`);
+  wrapper
+    .findAll('[aria-label]')
+    .find((el) => el.attributes('aria-label') === label) ??
+  createWrapperError('DOMWrapper');
 
 // whether an element is disabled; Vue drops the attribute when it is not
 const disabled = (el) => el.attributes('disabled') !== undefined;

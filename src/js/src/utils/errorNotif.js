@@ -18,8 +18,8 @@ export async function useErrorNotification(error) {
   if (!('response' in error)) {
     message = errorHTML(error.message);
   } else if (error.response.headers.get('content-type') == 'application/json') {
-    const msg = error.response.data;
-    message = errorHTML(msg.message, msg.cause);
+    const msg = error.response.data ?? {};
+    message = errorHTML(msg.message ?? error.message, msg.cause);
   } else if (error.response.data) {
     // if the error is for an invalid token, log the user out
     if (

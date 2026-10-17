@@ -401,30 +401,26 @@ describe('the config list', () => {
       );
     });
 
-    // ConfigsList.vue's uploadFile leaves .yaml and .yml unanchored
-    it.fails(
-      'send a file only when its name ends in .yaml, .yml or .json',
-      async () => {
-        axios.post.mockResolvedValue({});
-        const ext = fc.oneof(
-          valid,
-          fc.stringMatching(/^[a-zA-Z]{0,5}$/),
-          fc
-            .tuple(
-              fc.constantFrom('yaml', 'yml'),
-              fc.stringMatching(/^[a-z.]{1,4}$/),
-            )
-            .map(([e, s]) => e + s),
-        );
-        await fc.assert(
-          fc.asyncProperty(base, ext, async (name, e) => {
-            const full = `${name}.${e}`;
-            expect(await sends(full)).toBe(endsValid(full) ? 1 : 0);
-          }),
-          { numRuns: 15, examples: [['web', 'yml.txt']] },
-        );
-      },
-    );
+    it('send a file only when its name ends in .yaml, .yml or .json', async () => {
+      axios.post.mockResolvedValue({});
+      const ext = fc.oneof(
+        valid,
+        fc.stringMatching(/^[a-zA-Z]{0,5}$/),
+        fc
+          .tuple(
+            fc.constantFrom('yaml', 'yml'),
+            fc.stringMatching(/^[a-z.]{1,4}$/),
+          )
+          .map(([e, s]) => e + s),
+      );
+      await fc.assert(
+        fc.asyncProperty(base, ext, async (name, e) => {
+          const full = `${name}.${e}`;
+          expect(await sends(full)).toBe(endsValid(full) ? 1 : 0);
+        }),
+        { numRuns: 15, examples: [['web', 'yml.txt']] },
+      );
+    });
 
     // the explained lines and a hint indented under one, as the server sends
     const validation = [
@@ -646,6 +642,17 @@ describe('the config editor', () => {
       await left;
       expect(route(app)).toBe('experiments');
       expect(closed(editor)).toEqual([['']]);
+    });
+
+    it('opens the editor without Vue warnings', async () => {
+      const warn = vi.spyOn(console, 'warn');
+      const { app } = await configsPage((list) =>
+        byLabel(list, 'Create a new config').trigger('click'),
+      );
+      const warnings = [...warn.mock.calls];
+      warn.mockRestore();
+      app.unmount();
+      expect(warnings).toEqual([]);
     });
 
     it('lets the page go without the editor open', async () => {

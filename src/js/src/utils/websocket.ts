@@ -170,7 +170,15 @@ export function onWsReconnect(f: () => void): () => void {
 function globalWsMessageHandler(event: MessageEvent): void {
   event.data.split(/\r?\n/).forEach((data) => {
     if (data) {
-      let msg = JSON.parse(data);
+      let msg;
+      try {
+        msg = JSON.parse(data);
+      } catch (err) {
+        console.error('websocket message is not JSON', err);
+        return;
+      }
+      // a line that is not an object is no message; skip it, not the rest
+      if (msg === null || typeof msg !== 'object') return;
       // debug() is development-only: logging every message retains large
       // payloads (screenshots) in the devtools console
       debug('websocket msg (' + wsListeners.length + ' listeners):\n', msg);

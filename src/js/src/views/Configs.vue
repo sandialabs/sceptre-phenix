@@ -9,6 +9,7 @@
     @is-done="handleDone" />
 </template>
 <script>
+  import { markRaw } from 'vue';
   import ConfigsList from '@/components/configs/ConfigsList.vue';
 
   export default {
@@ -32,9 +33,10 @@
       }
     },
     async mounted() {
-      this.editorComponent = (
-        await import('@/components/configs/ConfigsEditor.vue')
-      ).default;
+      // a component kept in data must not be made reactive
+      this.editorComponent = markRaw(
+        (await import('@/components/configs/ConfigsEditor.vue')).default,
+      );
     },
     methods: {
       handleDone(msg) {

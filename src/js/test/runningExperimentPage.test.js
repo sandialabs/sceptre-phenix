@@ -318,3 +318,33 @@ describe('ordering VM lists against VM changes', () => {
     );
   });
 });
+
+describe('searching', () => {
+  const searchBox = (page) => page.find('.autocomplete input');
+
+  it('lists nothing for a search typed just before the page closes', async () => {
+    const page = await openPage();
+    await apply(running([]));
+    const lists = () => vmLists().filter((m) => m.resource.action == 'list');
+    const before = lists().length;
+
+    await searchBox(page).setValue('vm-1');
+    page.unmount();
+    await vi.runAllTimersAsync();
+    expect(lists()).toHaveLength(before);
+  });
+
+  it('adds a search that found VMs to a full history in place of the oldest', async () => {
+    // oldest first
+    const full = ['zzzz', ...Array.from({ length: 9 }, (_, i) => `vm-${i}`)];
+    const page = await openPage({ searchHistory: full });
+    await apply(running([]));
+
+    await searchBox(page).setValue('aaaa');
+    await vi.runAllTimersAsync();
+    await handle(vmList('exp1', [{ name: 'aaaa' }]));
+    expect(page.findComponent({ name: 'BAutocomplete' }).props('data')).toEqual(
+      ['aaaa', ...full.slice(1)].toSorted(),
+    );
+  });
+});

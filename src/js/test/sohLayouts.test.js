@@ -257,6 +257,7 @@ describe('layouts', () => {
 
   it.each([
     ['radial', true],
+    ['radial', false],
     ['layered', false],
     ['groups', false],
     ['elk', false],
@@ -282,8 +283,7 @@ describe('layouts', () => {
     },
   );
 
-  // radial.js:54 pulls every component's root onto the center ring
-  it.fails('radial keeps components it cannot reach apart', async () => {
+  it('radial keeps components it cannot reach apart', async () => {
     const graph = layoutInput(
       [
         { id: 0, label: 'a', image: 'linux' },

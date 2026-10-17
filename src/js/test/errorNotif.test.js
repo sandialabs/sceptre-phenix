@@ -212,8 +212,7 @@ describe('showError', () => {
     );
   });
 
-  // operations.js errorSteps splits on any ' * ', not only one after a marker
-  it.fails('keeps a lone * in a single error whole', () => {
+  it('keeps a lone * in a single error whole', () => {
     showError('role * may not get vms');
     expect(shown()).toMatchObject({
       title: 'Error: role * may not get vms',
@@ -297,11 +296,12 @@ describe('useErrorNotification', () => {
               ),
             ),
           }),
-          // no body, but not a JSON one: see the next test
+          // no body
           fc.record({
             status,
             statusText: text,
-            type: fc.constant('text/html'),
+            type: fc.constantFrom('text/html', 'application/json'),
+            data: fc.constantFrom(undefined, null),
           }),
         )
         .map(failed),
@@ -316,11 +316,16 @@ describe('useErrorNotification', () => {
     );
   });
 
-  // errorNotif.js:22 reads the body's message, so a JSON error without one throws
-  it.fails('shows a JSON error without a body', async () => {
-    await useErrorNotification(failed({ type: 'application/json' }));
-    expect(openNotification).toHaveBeenCalledOnce();
-  });
+  it.each([undefined, null])(
+    'shows a JSON error with a %s body by its request message',
+    async (data) => {
+      await useErrorNotification(failed({ type: 'application/json', data }));
+      expect(openNotification).toHaveBeenCalledOnce();
+      expect(lines()).toEqual([
+        '<b>Error:</b> Request failed with status code 500',
+      ]);
+    },
+  );
 
   it('says nothing of requests canceled on leaving a page', async () => {
     await useErrorNotification({ code: 'ERR_CANCELED', message: 'canceled' });
