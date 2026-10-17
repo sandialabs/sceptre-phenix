@@ -1,12 +1,12 @@
 package builder_test
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store"
 	"phenix/types/builder"
@@ -19,16 +19,16 @@ func TestTopologyRoundTrip(t *testing.T) {
 
 	first, warnings := documentFromConfig(t, config)
 	if len(warnings) != 0 {
-		t.Fatalf("unexpected import warnings: %v", warnings)
+		t.Errorf("FromConfig(topology.json) warnings = %v, want none", warnings)
 	}
 
 	topology, err := first.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
 	if len(topology.Warnings) != 0 {
-		t.Fatalf("unexpected mapping warnings: %v", topology.Warnings)
+		t.Errorf("ToTopology() warnings = %v, want none", topology.Warnings)
 	}
 
 	// The mapped spec must be semantically identical to the stored one, node for
@@ -37,14 +37,13 @@ func TestTopologyRoundTrip(t *testing.T) {
 		want := storedNode(t, config.Spec, hostname)
 		got := specNode(t, topology, hostname)
 
-		if asJSON(t, got) != asJSON(t, want) {
-			t.Fatalf("node %q changed:\nwant: %s\ngot:  %s",
-				hostname, asJSON(t, want), asJSON(t, got))
+		if diff := cmp.Diff(jsonValue(t, want), jsonValue(t, got)); diff != "" {
+			t.Errorf("ToTopology() node %q mismatch (-want +got):\n%s", hostname, diff)
 		}
 	}
 
 	if got, want := len(topology.Spec["nodes"].([]any)), len(config.Spec["nodes"].([]any)); got != want {
-		t.Fatalf("mapped %d nodes, want %d", got, want)
+		t.Errorf("ToTopology() maps %d nodes, want %d", got, want)
 	}
 
 	republished := store.Config{
@@ -56,7 +55,9 @@ func TestTopologyRoundTrip(t *testing.T) {
 
 	second, _ := documentFromConfig(t, republished)
 
-	assertSameCanvas(t, first, second)
+	if diff := canvasDiff(first, second); diff != "" {
+		t.Errorf("FromConfig(republished topology) canvas mismatch (-want +got):\n%s", diff)
+	}
 }
 
 // TestExperimentRoundTrip covers the experiment import path, including VLAN
@@ -69,12 +70,12 @@ func TestExperimentRoundTrip(t *testing.T) {
 
 	first, _, err := builder.FromConfig(config, stored)
 	if err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		t.Fatalf("FromConfig(experiment.json): %v", err)
 	}
 
 	topology, err := first.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
 	aliases := make(map[string]any, len(topology.VLANAliases))
@@ -100,20 +101,25 @@ func TestExperimentRoundTrip(t *testing.T) {
 
 	second, _, err := builder.FromConfig(republished, stored)
 	if err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		t.Fatalf("FromConfig(republished experiment): %v", err)
 	}
 
-	assertSameCanvas(t, first, second)
+	if diff := canvasDiff(first, second); diff != "" {
+		t.Errorf("FromConfig(republished experiment) canvas mismatch (-want +got):\n%s", diff)
+	}
 
-	if !reflect.DeepEqual(first.Scenarios, []string{"builder-scenario"}) ||
-		!reflect.DeepEqual(first.Scenarios, second.Scenarios) {
-		t.Fatalf("scenarios changed: first %q, second %q", first.Scenarios, second.Scenarios)
+	if diff := cmp.Diff([]string{"builder-scenario"}, first.Scenarios); diff != "" {
+		t.Errorf("FromConfig(experiment.json) scenarios mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(first.Scenarios, second.Scenarios); diff != "" {
+		t.Errorf("FromConfig(republished experiment) scenarios mismatch (-want +got):\n%s", diff)
 	}
 
 	wantAliases := map[string]int{"EXP": 101, "RESERVED": 250}
 
-	if !reflect.DeepEqual(topology.VLANAliases, wantAliases) {
-		t.Fatalf("VLAN aliases = %v, want %v", topology.VLANAliases, wantAliases)
+	if diff := cmp.Diff(wantAliases, topology.VLANAliases); diff != "" {
+		t.Errorf("ToTopology() VLAN aliases mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -126,32 +132,30 @@ func TestDocumentRoundTripThroughJSON(t *testing.T) {
 
 	data, err := builder.Encode(first)
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatalf("Encode(): %v", err)
 	}
 
 	decoded, err := builder.Parse(data)
 	if err != nil {
-		t.Fatalf("Parse: %v", err)
+		t.Fatalf("Parse(Encode()): %v", err)
 	}
 
-	if !reflect.DeepEqual(first, decoded) {
-		t.Fatalf("JSON round trip changed the document:\nbefore: %s\nafter: %s",
-			asJSON(t, first), asJSON(t, decoded))
+	if diff := cmp.Diff(first, decoded); diff != "" {
+		t.Errorf("Parse(Encode()) mismatch (-want +got):\n%s", diff)
 	}
 
 	before, err := first.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
 	after, err := decoded.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology() of the decoded document: %v", err)
 	}
 
-	if asJSON(t, before.Spec) != asJSON(t, after.Spec) {
-		t.Fatalf("mapped spec changed across the JSON round trip:\nbefore: %s\nafter: %s",
-			asJSON(t, before.Spec), asJSON(t, after.Spec))
+	if diff := cmp.Diff(jsonValue(t, before.Spec), jsonValue(t, after.Spec)); diff != "" {
+		t.Errorf("ToTopology() spec of the decoded document mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -164,7 +168,7 @@ func TestLayoutAndRouteRoundTripUnpublished(t *testing.T) {
 	laid, _ := documentFromConfig(t, config)
 
 	if len(laid.Edges) == 0 {
-		t.Fatal("the fixture has no edges to route")
+		t.Fatal("FromConfig(experiment.json) has no edges, want edges to route")
 	}
 
 	laid.Layout = "cards"
@@ -172,43 +176,41 @@ func TestLayoutAndRouteRoundTripUnpublished(t *testing.T) {
 
 	data, err := builder.Encode(laid)
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatalf("Encode(laid): %v", err)
 	}
 
 	decoded, err := builder.Parse(data)
 	if err != nil {
-		t.Fatalf("Parse: %v", err)
+		t.Fatalf("Parse(Encode(laid)): %v", err)
 	}
 
-	if !reflect.DeepEqual(laid, decoded) {
-		t.Fatalf("JSON round trip changed the document:\nbefore: %s\nafter: %s",
-			asJSON(t, laid), asJSON(t, decoded))
+	if diff := cmp.Diff(laid, decoded); diff != "" {
+		t.Errorf("Parse(Encode(laid)) mismatch (-want +got):\n%s", diff)
 	}
 
 	want, err := plain.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology(): %v", err)
 	}
 
 	got, err := decoded.ToTopology()
 	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
+		t.Fatalf("ToTopology() with a layout and a route: %v", err)
 	}
 
-	if asJSON(t, got.Spec) != asJSON(t, want.Spec) {
-		t.Fatalf("layout or route reached the topology:\nwant: %s\ngot:  %s",
-			asJSON(t, want.Spec), asJSON(t, got.Spec))
+	if diff := cmp.Diff(jsonValue(t, want.Spec), jsonValue(t, got.Spec)); diff != "" {
+		t.Errorf("ToTopology() spec with a layout and a route mismatch (-want +got):\n%s", diff)
 	}
 
 	// Absent, neither is written.
 	encoded, err := builder.Encode(plain)
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatalf("Encode(plain): %v", err)
 	}
 
 	for _, key := range []string{`"layout"`, `"route"`} {
 		if strings.Contains(string(encoded), key) {
-			t.Fatalf("a document without %s encodes one: %s", key, encoded)
+			t.Errorf("Encode(plain) = %s, want no %s", encoded, key)
 		}
 	}
 }
@@ -219,66 +221,67 @@ func TestDecoratedDocumentRoundTrip(t *testing.T) {
 	doc := decoratedDocument(t)
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("a document with every field is refused: %v", err)
+		t.Errorf("Validate() of a document with every decoration = %v, want nil", err)
 	}
 
 	data, err := builder.Encode(doc)
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatalf("Encode(): %v", err)
 	}
 
 	for _, key := range append([]string{`"description": "first rack\nsecond line"`}, decorationKeys...) {
 		if !strings.Contains(string(data), key) {
-			t.Fatalf("the encoding has no %s: %s", key, data)
+			t.Errorf("Encode() = %s, want %s in it", data, key)
 		}
 	}
 
 	decoded, err := builder.Parse(data)
 	if err != nil {
-		t.Fatalf("Parse: %v", err)
+		t.Fatalf("Parse(Encode()): %v", err)
 	}
 
-	if !reflect.DeepEqual(doc, decoded) {
-		t.Fatalf("JSON round trip changed the document:\nbefore: %s\nafter: %s",
-			asJSON(t, doc), asJSON(t, decoded))
+	if diff := cmp.Diff(doc, decoded); diff != "" {
+		t.Errorf("Parse(Encode()) mismatch (-want +got):\n%s", diff)
 	}
 
 	again, err := builder.Encode(decoded)
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatalf("Encode(Parse(Encode())): %v", err)
 	}
 
-	if !bytes.Equal(again, data) {
-		t.Fatalf("the document encodes differently after a round trip:\nbefore: %s\nafter: %s", data, again)
+	if diff := cmp.Diff(string(data), string(again)); diff != "" {
+		t.Errorf("Encode(Parse(Encode())) mismatch (-want +got):\n%s", diff)
 	}
 }
 
 // TestFixtureEncodingsArePinned pins the fixture encodings: a stored document is named by their
 // digest, so an unset field must be left out. A digest changes only with its fixture.
 func TestFixtureEncodingsArePinned(t *testing.T) {
-	for name, want := range map[string]struct {
-		size   int
-		digest string
-	}{
+	type encoding struct {
+		Size   int
+		Digest string
+	}
+
+	for name, want := range map[string]encoding{
 		"document.json":        {4678, "sha256:d6829934bf4ecd4e8ab479cce7793ae7747b3cef45c649e1f2ea2527ec6931e8"},
 		"strict-document.json": {3725, "sha256:eff17128b70afc767adcfa33b03eff19fa83f13a596bfdf61c2f1f1465a09c40"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			data, err := builder.Encode(loadDocumentFixture(t, name))
 			if err != nil {
-				t.Fatalf("Encode: %v", err)
+				t.Fatalf("Encode(%s): %v", name, err)
 			}
 
 			sum := sha256.Sum256(data)
+			got := encoding{Size: len(data), Digest: "sha256:" + hex.EncodeToString(sum[:])}
 
-			if got := "sha256:" + hex.EncodeToString(sum[:]); len(data) != want.size || got != want.digest {
-				t.Fatalf("the encoding is %d bytes with digest %s, want %d bytes with %s:\n%s",
-					len(data), got, want.size, want.digest, data)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Encode(%s) mismatch (-want +got):\n%s\nencoding:\n%s", name, diff, data)
 			}
 
 			for _, key := range decorationKeys {
 				if strings.Contains(string(data), key) {
-					t.Fatalf("a document without %s encodes one: %s", key, data)
+					t.Errorf("Encode(%s) = %s, want no %s", name, data, key)
 				}
 			}
 		})
@@ -302,30 +305,29 @@ func TestFixtureEncodingsArePinned(t *testing.T) {
 
 	want, err := builder.Encode(plain)
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatalf("Encode(plain): %v", err)
 	}
 
-	if got, err := builder.Encode(doc); err != nil || !bytes.Equal(got, want) {
-		t.Fatalf("empty fields are written (%v):\n%s", err, got)
+	got, err := builder.Encode(doc)
+	if err != nil {
+		t.Fatalf("Encode(emptied): %v", err)
+	}
+
+	if diff := cmp.Diff(string(want), string(got)); diff != "" {
+		t.Errorf("Encode(emptied) mismatch with Encode(plain) (-want +got):\n%s", diff)
 	}
 }
 
-// assertSameCanvas compares the semantic canvas content of two documents.
-func assertSameCanvas(t *testing.T, first, second *builder.Document) {
-	t.Helper()
-
-	if !reflect.DeepEqual(first.Nodes, second.Nodes) {
-		t.Fatalf("nodes changed:\nfirst:  %s\nsecond: %s",
-			asJSON(t, first.Nodes), asJSON(t, second.Nodes))
+// canvasDiff returns the differences of the semantic canvas content of two documents (-want +got).
+func canvasDiff(want, got *builder.Document) string {
+	type canvas struct {
+		Nodes    []builder.Node
+		Networks []builder.Network
+		Edges    []builder.Edge
 	}
 
-	if !reflect.DeepEqual(first.Networks, second.Networks) {
-		t.Fatalf("networks changed:\nfirst:  %s\nsecond: %s",
-			asJSON(t, first.Networks), asJSON(t, second.Networks))
-	}
-
-	if !reflect.DeepEqual(first.Edges, second.Edges) {
-		t.Fatalf("edges changed:\nfirst:  %s\nsecond: %s",
-			asJSON(t, first.Edges), asJSON(t, second.Edges))
-	}
+	return cmp.Diff(
+		canvas{Nodes: want.Nodes, Networks: want.Networks, Edges: want.Edges},
+		canvas{Nodes: got.Nodes, Networks: got.Networks, Edges: got.Edges},
+	)
 }

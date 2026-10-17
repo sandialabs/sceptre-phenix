@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/types/builder"
 )
@@ -23,18 +24,18 @@ func TestIconKeysRegistry(t *testing.T) {
 		"wireshark", "zeek",
 	}
 
-	if keys := builder.IconKeys(); !slices.Equal(keys, want) {
-		t.Fatalf("icon keys = %v, want %v", keys, want)
+	if diff := cmp.Diff(want, builder.IconKeys()); diff != "" {
+		t.Errorf("IconKeys() mismatch (-want +got):\n%s", diff)
 	}
 
 	for _, key := range want {
 		if !builder.IsIconKey(key) {
-			t.Fatalf("IsIconKey(%q) = false", key)
+			t.Errorf("IsIconKey(%q) = false, want true", key)
 		}
 	}
 
 	if builder.IsIconKey("") {
-		t.Fatal("the empty icon key must not be a registry member")
+		t.Error(`IsIconKey("") = true, want false`)
 	}
 }
 
@@ -66,22 +67,22 @@ func TestValidateIconKeys(t *testing.T) {
 
 			if test.wantMsg == "" {
 				if err != nil {
-					t.Fatalf("icon key %q was rejected: %v", test.key, err)
+					t.Errorf("Validate() with device iconKey %q error = %v, want nil", test.key, err)
 				}
 
 				return
 			}
 
 			if err == nil {
-				t.Fatalf("icon key %q was accepted", test.key)
+				t.Fatalf("Validate() with device iconKey %q error = nil, want an error", test.key)
 			}
 
 			if !strings.Contains(err.Error(), test.wantMsg) {
-				t.Fatalf("error %q does not contain %q", err.Error(), test.wantMsg)
+				t.Errorf("Validate() with device iconKey %q error = %q, want one containing %q", test.key, err.Error(), test.wantMsg)
 			}
 
 			if !strings.Contains(err.Error(), "iconKey") {
-				t.Fatalf("error %q does not name the iconKey path", err.Error())
+				t.Errorf("Validate() with device iconKey %q error = %q, want one naming the iconKey path", test.key, err.Error())
 			}
 		})
 	}
@@ -111,19 +112,22 @@ func TestValidateGroupIconKeys(t *testing.T) {
 
 			if test.wantMsg == "" {
 				if err != nil {
-					t.Fatalf("icon key %q was rejected: %v", test.key, err)
+					t.Errorf("Validate() with group iconKey %q error = %v, want nil", test.key, err)
 				}
 
 				return
 			}
 
 			if err == nil {
-				t.Fatalf("icon key %q was accepted", test.key)
+				t.Fatalf("Validate() with group iconKey %q error = nil, want an error", test.key)
 			}
 
-			if want := "nodes[0].group.iconKey: "; !strings.Contains(err.Error(), want) ||
-				!strings.Contains(err.Error(), test.wantMsg) {
-				t.Fatalf("error %q is not at %q with %q", err.Error(), want, test.wantMsg)
+			if want := "nodes[0].group.iconKey: "; !strings.Contains(err.Error(), want) {
+				t.Errorf("Validate() with group iconKey %q error = %q, want one at %q", test.key, err.Error(), want)
+			}
+
+			if !strings.Contains(err.Error(), test.wantMsg) {
+				t.Errorf("Validate() with group iconKey %q error = %q, want one containing %q", test.key, err.Error(), test.wantMsg)
 			}
 		})
 	}
@@ -132,14 +136,13 @@ func TestValidateGroupIconKeys(t *testing.T) {
 func TestGeneratedIconKeysAreRegistryMembers(t *testing.T) {
 	doc, _, err := builder.FromConfig(loadConfig(t, "topology.json"))
 	if err != nil {
-		t.Fatalf("generating document: %v", err)
+		t.Fatalf("FromConfig(topology.json): %v", err)
 	}
 
 	for _, node := range doc.DeviceNodes() {
 		key := node.Device.IconKey
 		if key != "" && !builder.IsIconKey(key) {
-			t.Fatalf("device %q has icon key %q outside the registry",
-				node.Device.Hostname, key)
+			t.Errorf("FromConfig(topology.json) device %q iconKey = %q, want a registry key", node.Device.Hostname, key)
 		}
 	}
 }
@@ -164,14 +167,21 @@ func TestIconKeyForSpecMatchesFrontEnd(t *testing.T) {
 	}
 
 	for _, test := range table.Cases {
-		got := builder.IconKeyForSpec(test.Spec)
-		if got == "" {
-			// No key is the front end's default icon.
-			got = builder.IconServer
+		spec, err := json.Marshal(test.Spec)
+		if err != nil {
+			t.Fatalf("encoding spec: %v", err)
 		}
 
-		if got != test.IconKey {
-			t.Errorf("icon key of %s = %q, want %q", asJSON(t, test.Spec), got, test.IconKey)
-		}
+		t.Run(string(spec), func(t *testing.T) {
+			got := builder.IconKeyForSpec(test.Spec)
+			if got == "" {
+				// No key is the front end's default icon.
+				got = builder.IconServer
+			}
+
+			if got != test.IconKey {
+				t.Errorf("IconKeyForSpec(%s) = %q, want %q", spec, got, test.IconKey)
+			}
+		})
 	}
 }

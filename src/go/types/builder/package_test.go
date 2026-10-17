@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"phenix/types/builder"
 )
 
@@ -50,7 +53,7 @@ func packageDocument(t *testing.T) *builder.Document {
 
 	document, err := builder.Parse(readDocsExample(t, "pump-station.builder.json"))
 	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
+		t.Fatalf("Parse(pump-station.builder.json): %v", err)
 	}
 
 	document.Scenarios = []string{"pkg-scenario", "pkg-unread"}
@@ -147,48 +150,33 @@ func packageText(t *testing.T, value any) []byte {
 
 func TestNewPackageListsRequirements(t *testing.T) {
 	pkg := samplePackage(t)
-	requirements := pkg.Requirements
 
 	if err := pkg.Validate(); err != nil {
-		t.Fatalf("Validate returned error: %v", err)
+		t.Errorf("Validate() = %v, want nil", err)
 	}
 
-	for _, tt := range []struct {
-		name      string
-		got, want []string
-	}{
-		{name: "scenarios", got: requirements.Scenarios, want: []string{"pkg-scenario", "pkg-unread"}},
-		{name: "topologies", got: requirements.Topologies, want: []string{"pkg-shared"}},
-		{name: "templates", got: requirements.Templates, want: []string{}},
-		{name: "icons", got: requirements.Icons, want: []string{"pkg-icon"}},
-		{name: "apps", got: requirements.Apps, want: []string{"ntp", "vrouter"}},
-		{name: "files", got: requirements.Files, want: []string{
-			"/phenix/assets/ntp", "/phenix/injects/router.boot", "/phenix/injects/shared.boot",
-		}},
-	} {
-		if tt.got == nil || !slices.Equal(tt.got, tt.want) {
-			t.Errorf("requirements.%s = %#v, want %#v", tt.name, tt.got, tt.want)
-		}
+	want := builder.PackageRequirements{
+		Scenarios:  []string{"pkg-scenario", "pkg-unread"},
+		Topologies: []string{"pkg-shared"},
+		Templates:  []string{},
+		Icons:      []string{"pkg-icon"},
+		Images: []builder.PackageImage{
+			{Name: "bennu.qc2", UsedBy: []string{"rtu-01"}},
+			{Name: "minirouter.qc2", UsedBy: []string{"station-rtr"}},
+			{Name: "shared.qc2", UsedBy: []string{"shared-host"}},
+			{Name: "windows10.qc2", UsedBy: []string{"eng-ws-01"}},
+		},
+		Apps:  []string{"ntp", "vrouter"},
+		Files: []string{"/phenix/assets/ntp", "/phenix/injects/router.boot", "/phenix/injects/shared.boot"},
 	}
+	byName := cmpopts.SortSlices(func(a, b builder.PackageImage) bool { return a.Name < b.Name })
 
-	images := map[string][]string{}
-	for _, image := range requirements.Images {
-		images[image.Name] = image.UsedBy
-	}
-
-	want := map[string][]string{
-		"bennu.qc2":      {"rtu-01"},
-		"minirouter.qc2": {"station-rtr"},
-		"shared.qc2":     {"shared-host"},
-		"windows10.qc2":  {"eng-ws-01"},
-	}
-
-	if asJSON(t, images) != asJSON(t, want) {
-		t.Errorf("requirements.images = %s, want %s", asJSON(t, images), asJSON(t, want))
+	if diff := cmp.Diff(want, pkg.Requirements, byName); diff != "" {
+		t.Errorf("NewPackage() requirements mismatch (-want +got):\n%s", diff)
 	}
 
 	if len(pkg.Scenarios) != 1 || len(pkg.Topologies) != 1 {
-		t.Errorf("the package carries %d scenarios and %d topologies, want 1 of each", len(pkg.Scenarios), len(pkg.Topologies))
+		t.Errorf("NewPackage() carries %d scenarios and %d topologies, want 1 of each", len(pkg.Scenarios), len(pkg.Topologies))
 	}
 }
 
@@ -201,38 +189,43 @@ func TestNewPackageCarriesOnlyWhatIsIncluded(t *testing.T) {
 	})
 
 	if err := pkg.Validate(); err != nil {
-		t.Fatalf("Validate returned error: %v", err)
+		t.Errorf("Validate() = %v, want nil", err)
 	}
 
 	if pkg.Scenarios != nil || pkg.Topologies != nil {
-		t.Errorf("the package carries %v and %v, want no config", pkg.Scenarios, pkg.Topologies)
+		t.Errorf("NewPackage() carries %v and %v, want no config", pkg.Scenarios, pkg.Topologies)
 	}
 
 	// The apps of a scenario read but not carried are still listed, and the
 	// files are the document's own.
 	if want := []string{"ntp", "vrouter"}; !slices.Equal(pkg.Requirements.Apps, want) {
-		t.Errorf("apps = %v, want %v", pkg.Requirements.Apps, want)
+		t.Errorf("NewPackage() requirements.apps = %v, want %v", pkg.Requirements.Apps, want)
 	}
 
 	if want := []string{"/phenix/injects/router.boot"}; !slices.Equal(pkg.Requirements.Files, want) {
-		t.Errorf("files = %v, want %v", pkg.Requirements.Files, want)
+		t.Errorf("NewPackage() requirements.files = %v, want %v", pkg.Requirements.Files, want)
 	}
 
-	if pkg.Requirements.Images == nil || len(pkg.Requirements.Images) != 0 {
-		t.Errorf("images = %#v, want an empty list", pkg.Requirements.Images)
+	if diff := cmp.Diff([]builder.PackageImage{}, pkg.Requirements.Images); diff != "" {
+		t.Errorf("NewPackage() requirements.images mismatch (-want +got):\n%s", diff)
 	}
 
-	encoded := string(packageText(t, pkg))
+	value := packageValue(t, pkg)
 
-	for _, want := range []string{`"images":[]`, `"templates":[]`} {
-		if !strings.Contains(encoded, want) {
-			t.Errorf("the package encodes as %s, want %s in it", encoded, want)
+	requirements, ok := value["requirements"].(map[string]any)
+	if !ok {
+		t.Fatalf("encoded package requirements = %v, want an object", value["requirements"])
+	}
+
+	for _, key := range []string{"images", "templates"} {
+		if diff := cmp.Diff([]any{}, requirements[key]); diff != "" {
+			t.Errorf("encoded package requirements.%s mismatch (-want +got):\n%s", key, diff)
 		}
 	}
 
-	for _, unwanted := range []string{`"scenarios":{`, `"topologies":{`} {
-		if strings.Contains(encoded, unwanted) {
-			t.Errorf("the package encodes as %s, want no %s", encoded, unwanted)
+	for _, key := range []string{"scenarios", "topologies"} {
+		if config, ok := value[key]; ok {
+			t.Errorf("encoded package %s = %v, want it left out", key, config)
 		}
 	}
 }
@@ -261,8 +254,16 @@ func TestDecodePackageRefusesUnknownFields(t *testing.T) {
 			change(value)
 
 			_, err := builder.DecodePackage(packageText(t, value))
-			if !errors.Is(err, builder.ErrInvalidPackage) || !strings.Contains(err.Error(), "unknown field") {
-				t.Fatalf("DecodePackage error = %v, want an unknown field refused", err)
+			if err == nil {
+				t.Fatal("DecodePackage() error = nil, want an unknown field refused")
+			}
+
+			if !errors.Is(err, builder.ErrInvalidPackage) {
+				t.Errorf("DecodePackage() error = %v, want one wrapping ErrInvalidPackage", err)
+			}
+
+			if !strings.Contains(err.Error(), "unknown field") {
+				t.Errorf("DecodePackage() error = %q, want one naming an unknown field", err.Error())
 			}
 		})
 	}
@@ -424,7 +425,7 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 
 			pkg, err := builder.DecodePackage(packageText(t, value))
 			if err != nil {
-				t.Fatalf("DecodePackage returned error: %v", err)
+				t.Fatalf("DecodePackage(): %v", err)
 			}
 
 			found := pkg.Issues()
@@ -434,19 +435,20 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 				issues = append(issues, issue.String())
 
 				if info, ok := builder.LookupCode(issue.Code); !ok || issue.Severity != info.Severity {
-					t.Errorf("issue %+v has a code the registry does not hold, or another severity", issue)
+					t.Errorf("Issues() issue %+v: LookupCode(%s) = %+v, %t, want the code registered with severity %q",
+						issue, issue.Code, info, ok, issue.Severity)
 				}
 			}
 
 			if !slices.ContainsFunc(found, func(issue builder.Issue) bool {
 				return strings.HasPrefix(issue.String(), tt.want) && issue.Code == tt.code
 			}) {
-				t.Fatalf("issues = %q (%+v), want one starting %q with the code %s", issues, found, tt.want, tt.code)
+				t.Errorf("Issues() = %q (%+v), want one starting %q with the code %s", issues, found, tt.want, tt.code)
 			}
 
 			var invalid *builder.PackageError
 			if err := pkg.Validate(); !errors.As(err, &invalid) || !errors.Is(err, builder.ErrInvalidPackage) {
-				t.Fatalf("Validate error = %v, want a PackageError", err)
+				t.Errorf("Validate() = %v, want a PackageError wrapping ErrInvalidPackage", err)
 			}
 		})
 	}
@@ -467,7 +469,7 @@ func TestPackageValidateRefusesBuilderAnnotations(t *testing.T) {
 
 	pkg, err := builder.DecodePackage(text)
 	if err != nil {
-		t.Fatalf("DecodePackage returned error: %v", err)
+		t.Fatalf("DecodePackage(): %v", err)
 	}
 
 	var found []string
@@ -484,12 +486,12 @@ func TestPackageValidateRefusesBuilderAnnotations(t *testing.T) {
 		at + `"builder-doc" is a Builder annotation, which a package never carries`,
 		at + `"builder-xml" is a Builder annotation, which a package never carries`,
 	}
-	if !slices.Equal(found, want) {
-		t.Fatalf("issues = %q, want %q", found, want)
+	if diff := cmp.Diff(want, found); diff != "" {
+		t.Errorf("Issues() about annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	if err := pkg.Validate(); !errors.Is(err, builder.ErrInvalidPackage) {
-		t.Fatalf("Validate error = %v, want the package refused", err)
+		t.Errorf("Validate() = %v, want one wrapping ErrInvalidPackage", err)
 	}
 }
 
@@ -503,20 +505,20 @@ func TestDecodePackageGivesDocumentIssuesTheirCodes(t *testing.T) {
 
 	var invalid *builder.PackageError
 	if !errors.As(err, &invalid) || !errors.Is(err, builder.ErrInvalidPackage) {
-		t.Fatalf("DecodePackage error = %v, want a PackageError", err)
+		t.Errorf("DecodePackage() error = %v, want a PackageError wrapping ErrInvalidPackage", err)
 	}
 
 	issues := builder.ErrorIssues(err)
 	if !slices.ContainsFunc(issues, func(issue builder.Issue) bool {
 		return issue.Code == builder.CodeDocumentFieldUnknown && issue.Path == "document.extra"
 	}) {
-		t.Fatalf("issues = %+v, want the unknown field of the document with its code", issues)
+		t.Errorf("ErrorIssues(DecodePackage()) = %+v, want %s at document.extra", issues, builder.CodeDocumentFieldUnknown)
 	}
 }
 
 func TestPackageTrimRequirementsNamesWhatItLeavesOut(t *testing.T) {
 	if warnings := samplePackage(t).TrimRequirements(); len(warnings) != 0 {
-		t.Fatalf("a package that fits gives warnings %+v, want none", warnings)
+		t.Errorf("TrimRequirements() of a package that fits = %+v, want no warnings", warnings)
 	}
 
 	pkg := samplePackage(t)
@@ -536,56 +538,61 @@ func TestPackageTrimRequirementsNamesWhatItLeavesOut(t *testing.T) {
 	)
 
 	if pkg.Validate() == nil {
-		t.Fatal("the test package fits before it is trimmed")
+		t.Fatal("Validate() of the untrimmed test package = nil, want an error")
 	}
 
 	warnings := pkg.TrimRequirements()
 
 	if err := pkg.Validate(); err != nil {
-		t.Fatalf("Validate after TrimRequirements returned error: %v", err)
+		t.Errorf("Validate() after TrimRequirements() = %v, want nil", err)
 	}
 
-	want := []string{
-		`The package does not list disk image "bad\timage.qc2": it must not contain control characters.`,
-		`The package does not list host "bad\rhost" among the users of disk image "good.qc2": ` +
-			`it must not contain control characters.`,
-		fmt.Sprintf(`The package lists at most %d apps, so it does not list 4 more: `+
-			`"app-1000", "app-1001", "app-1002" and 1 more.`, builder.MaxPackageRequirements),
-		`The package does not list file "/phenix/injects/a\nb": it must not contain control characters.`,
-		fmt.Sprintf("The package does not list file %q: it must be at most %d bytes.",
-			strings.Repeat("f", 64)+"...", builder.MaxRequirementBytes),
-	}
-	if got := builder.IssueMessages(warnings); !slices.Equal(got, want) {
-		t.Fatalf("warnings =\n  %s\nwant\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
-	}
-
-	// Each is a warning with its code, at the path of the list it leaves an
-	// entry out of.
-	codes := []struct {
-		code builder.Code
-		path string
-	}{
-		{builder.CodePackageRequirementLeftOut, "requirements.images"},
-		{builder.CodePackageRequirementLeftOut, "requirements.images"},
-		{builder.CodePackageRequirementsTruncated, "requirements.apps"},
-		{builder.CodePackageRequirementLeftOut, "requirements.files"},
-		{builder.CodePackageRequirementLeftOut, "requirements.files"},
-	}
-
-	for i, warning := range warnings {
-		if warning.Code != codes[i].code || warning.Path != codes[i].path || warning.Severity != builder.SeverityWarning {
-			t.Errorf("warning %d = %+v, want a warning of the code %s at %s", i, warning, codes[i].code, codes[i].path)
+	// Each is a warning with its code, at the path of the list it leaves an entry out of.
+	leftOut := func(path, message string) builder.Issue {
+		return builder.Issue{
+			Code: builder.CodePackageRequirementLeftOut, Severity: builder.SeverityWarning, Path: path, Message: message,
 		}
 	}
+	want := []builder.Issue{
+		leftOut("requirements.images",
+			`The package does not list disk image "bad\timage.qc2": it must not contain control characters.`),
+		leftOut("requirements.images",
+			`The package does not list host "bad\rhost" among the users of disk image "good.qc2": `+
+				`it must not contain control characters.`),
+		{
+			Code: builder.CodePackageRequirementsTruncated, Severity: builder.SeverityWarning, Path: "requirements.apps",
+			Message: fmt.Sprintf(`The package lists at most %d apps, so it does not list 4 more: `+
+				`"app-1000", "app-1001", "app-1002" and 1 more.`, builder.MaxPackageRequirements),
+		},
+		leftOut("requirements.files",
+			`The package does not list file "/phenix/injects/a\nb": it must not contain control characters.`),
+		leftOut("requirements.files",
+			fmt.Sprintf("The package does not list file %q: it must be at most %d bytes.",
+				strings.Repeat("f", 64)+"...", builder.MaxRequirementBytes)),
+	}
+	located := cmpopts.IgnoreFields(builder.Issue{}, "NodeID", "EdgeID", "NetworkID", "Field")
 
-	if len(requirements.Apps) != builder.MaxPackageRequirements || slices.Contains(requirements.Files, long) {
-		t.Errorf("apps = %d entries, files = %d entries, want the first %d apps and no long file",
-			len(requirements.Apps), len(requirements.Files), builder.MaxPackageRequirements)
+	if diff := cmp.Diff(want, warnings, located); diff != "" {
+		t.Errorf("TrimRequirements() mismatch (-want +got):\n%s", diff)
+	}
+
+	if len(requirements.Apps) != builder.MaxPackageRequirements {
+		t.Errorf("requirements.apps after TrimRequirements() = %d entries, want the first %d",
+			len(requirements.Apps), builder.MaxPackageRequirements)
+	}
+
+	if slices.Contains(requirements.Files, long) {
+		t.Errorf("requirements.files after TrimRequirements() = %d entries with the long file, want none that long",
+			len(requirements.Files))
+	}
+
+	if len(requirements.Images) == 0 {
+		t.Fatal("requirements.images after TrimRequirements() = none, want good.qc2 last")
 	}
 
 	last := requirements.Images[len(requirements.Images)-1]
-	if last.Name != "good.qc2" || !slices.Equal(last.UsedBy, []string{"host-b"}) {
-		t.Errorf("the last image = %+v, want good.qc2 used by host-b only", last)
+	if diff := cmp.Diff(builder.PackageImage{Name: "good.qc2", UsedBy: []string{"host-b"}}, last); diff != "" {
+		t.Errorf("last of requirements.images after TrimRequirements() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -593,18 +600,18 @@ func TestPackageIsNoDocument(t *testing.T) {
 	text := packageText(t, packageValue(t, samplePackage(t)))
 
 	if builder.IsDocumentText(text) {
-		t.Fatal("IsDocumentText takes a package for a Builder document")
+		t.Error("IsDocumentText(JSON package) = true, want false")
 	}
 
 	if builder.IsDocumentText(readDocsExample(t, "pump-station.package.yaml")) {
-		t.Fatal("IsDocumentText takes a YAML package for a Builder document")
+		t.Error("IsDocumentText(pump-station.package.yaml) = true, want false")
 	}
 }
 
 func TestDocsPackageExampleLoads(t *testing.T) {
 	data, err := builder.JSONFromText(readDocsExample(t, "pump-station.package.yaml"))
 	if err != nil {
-		t.Fatalf("reading the docs example pump-station.package.yaml: %v", err)
+		t.Fatalf("JSONFromText(pump-station.package.yaml): %v", err)
 	}
 
 	pkg, err := builder.DecodePackage(data)
@@ -613,11 +620,11 @@ func TestDocsPackageExampleLoads(t *testing.T) {
 	}
 
 	if err != nil {
-		t.Fatalf("the docs example pump-station.package.yaml does not load: %v", err)
+		t.Fatalf("DecodePackage(pump-station.package.yaml) and Validate(): %v", err)
 	}
 
 	if len(pkg.Scenarios) != 1 || len(pkg.Requirements.Images) == 0 {
-		t.Fatalf("the docs example = %s, want a scenario and disk images", asJSON(t, pkg))
+		t.Errorf("DecodePackage(pump-station.package.yaml) = %s, want a scenario and disk images", asJSON(t, pkg))
 	}
 
 	// It lists what the package of its own document lists.
@@ -628,8 +635,8 @@ func TestDocsPackageExampleLoads(t *testing.T) {
 		Images:         true,
 	})
 
-	if asJSON(t, made.Requirements) != asJSON(t, pkg.Requirements) {
-		t.Fatalf("the docs example lists %s, want %s", asJSON(t, pkg.Requirements), asJSON(t, made.Requirements))
+	if diff := cmp.Diff(made.Requirements, pkg.Requirements); diff != "" {
+		t.Errorf("pump-station.package.yaml requirements mismatch with NewPackage() of its document (-want +got):\n%s", diff)
 	}
 }
 
@@ -649,10 +656,10 @@ func TestDocumentIconNames(t *testing.T) {
 	}
 
 	if got, want := document.IconNames(), []string{"a-icon", "b-icon", "c-icon", "d-icon"}; !slices.Equal(got, want) {
-		t.Errorf("IconNames = %v, want %v", got, want)
+		t.Errorf("IconNames() = %v, want %v", got, want)
 	}
 
-	if got := builder.NewDocument("blank").IconNames(); got == nil || len(got) != 0 {
-		t.Errorf("IconNames of a blank document = %#v, want an empty list", got)
+	if diff := cmp.Diff([]string{}, builder.NewDocument("blank").IconNames()); diff != "" {
+		t.Errorf("IconNames() of a blank document mismatch (-want +got):\n%s", diff)
 	}
 }

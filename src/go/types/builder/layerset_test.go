@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"phenix/types/builder"
 )
 
@@ -22,17 +25,25 @@ layers:
 func TestLayerSetFileIsNoDocument(t *testing.T) {
 	encoded, err := builder.JSONFromYAML([]byte(layerSetFileYAML))
 	if err != nil {
-		t.Fatalf("JSONFromYAML returned error: %v", err)
+		t.Fatalf("JSONFromYAML(layer set file): %v", err)
 	}
 
 	for name, text := range map[string][]byte{"YAML": []byte(layerSetFileYAML), "JSON": encoded} {
-		if !builder.IsLayerSetFileText(text) {
-			t.Errorf("%s: IsLayerSetFileText does not recognize a layer set file", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			if !builder.IsLayerSetFileText(text) {
+				t.Errorf("IsLayerSetFileText(%s layer set file) = false, want true", name)
+			}
 
-		if builder.IsDocumentText(text) || builder.IsTemplateFileText(text) || builder.IsPackageText(text) {
-			t.Errorf("%s: a layer set file is taken for a document, a template file or a package", name)
-		}
+			for fn, is := range map[string]func([]byte) bool{
+				"IsDocumentText":     builder.IsDocumentText,
+				"IsTemplateFileText": builder.IsTemplateFileText,
+				"IsPackageText":      builder.IsPackageText,
+			} {
+				if is(text) {
+					t.Errorf("%s(%s layer set file) = true, want false", fn, name)
+				}
+			}
+		})
 	}
 
 	for name, text := range map[string]string{
@@ -42,9 +53,11 @@ func TestLayerSetFileIsNoDocument(t *testing.T) {
 		"a kind":             layerSetFileYAML + "kind: Topology\n",
 		"a topology config":  "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: x\n",
 	} {
-		if builder.IsLayerSetFileText([]byte(text)) {
-			t.Errorf("%s: IsLayerSetFileText = true, want false", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			if builder.IsLayerSetFileText([]byte(text)) {
+				t.Errorf("IsLayerSetFileText(%s) = true, want false", name)
+			}
+		})
 	}
 }
 
@@ -58,8 +71,11 @@ func TestLayerSetIssues(t *testing.T) {
 
 	set := valid()
 	if err := set.Validate(); err != nil {
-		t.Fatalf("Validate refused a valid set: %v", err)
+		t.Fatalf("LayerSet.Validate() of a valid set = %v, want nil", err)
 	}
+
+	// The cases name the code and path of the issue, not its message.
+	codeAndPath := cmpopts.IgnoreFields(builder.Issue{}, "Severity", "Message", "NodeID", "EdgeID", "NetworkID", "Field")
 
 	for name, test := range map[string]struct {
 		change func(*builder.LayerSet)
@@ -109,9 +125,9 @@ func TestLayerSetIssues(t *testing.T) {
 			set := valid()
 			test.change(&set)
 
-			issues := builder.ErrorIssues(set.Validate())
-			if len(issues) != 1 || issues[0].Code != test.code || issues[0].Path != test.path {
-				t.Fatalf("issues %v, want one %s at %s", issues, test.code, test.path)
+			want := []builder.Issue{{Code: test.code, Path: test.path}}
+			if diff := cmp.Diff(want, builder.ErrorIssues(set.Validate()), codeAndPath); diff != "" {
+				t.Errorf("LayerSet.Validate() issues mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -120,8 +136,15 @@ func TestLayerSetIssues(t *testing.T) {
 	set = valid()
 	set.Name = ""
 
-	if issues := set.Issues("set"); len(issues) != 1 || issues[0].Path != "set.name" {
-		t.Fatalf("issues %v, want one at set.name", issues)
+	issues := set.Issues("set")
+	paths := make([]string, 0, len(issues))
+
+	for _, issue := range issues {
+		paths = append(paths, issue.Path)
+	}
+
+	if diff := cmp.Diff([]string{"set.name"}, paths); diff != "" {
+		t.Errorf(`LayerSet.Issues("set") of a set without a name paths mismatch (-want +got):\n%s`, diff)
 	}
 }
 
@@ -136,40 +159,47 @@ func TestMatcherPatternsFollowGo(t *testing.T) {
 		"plc(?!-1)": false,
 		"[":         false,
 	} {
-		doc := loadDocumentFixture(t, "document.json")
-		doc.Layers = []builder.Layer{{ID: layerID(1), Label: "Control", Matchers: map[string]string{"general.hostname": pattern}}}
+		t.Run(pattern, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			doc.Layers = []builder.Layer{{ID: layerID(1), Label: "Control", Matchers: map[string]string{"general.hostname": pattern}}}
 
-		if err := doc.Validate(); (err == nil) != valid {
-			t.Errorf("pattern %q: Validate error = %v, want valid = %v", pattern, err, valid)
-		}
+			err := doc.Validate()
+
+			switch {
+			case valid && err != nil:
+				t.Errorf("Validate() with matcher pattern %q error = %v, want nil", pattern, err)
+			case !valid && err == nil:
+				t.Errorf("Validate() with matcher pattern %q error = nil, want an error", pattern)
+			}
+		})
 	}
 }
 
 func TestBuiltinLayerSets(t *testing.T) {
 	sets := builder.BuiltinLayerSets()
 	if len(sets) != 1 || sets[0].ID != builder.BuiltinPurdueLayerSetID {
-		t.Fatalf("built-in sets %v, want the Purdue Model only", sets)
+		t.Fatalf("BuiltinLayerSets() = %v, want the Purdue Model only", sets)
 	}
 
 	purdue := sets[0]
 	if err := purdue.Validate(); err != nil {
-		t.Fatalf("the Purdue Model set does not validate: %v", err)
+		t.Errorf("Validate() of the Purdue Model set = %v, want nil", err)
 	}
 
 	if !builder.IsLayerSetID(purdue.ID) {
-		t.Fatalf("%q is not a layer set ID", purdue.ID)
+		t.Errorf("IsLayerSetID(%q) = false, want true", purdue.ID)
 	}
 
 	labels := make([]string, 0, len(purdue.Layers))
 	colors := map[string]bool{}
 
 	for i, layer := range purdue.Layers {
-		if *layer.ID != len(purdue.Layers)-1-i {
-			t.Fatalf("layer %d has ID %d, want the highest ID first", i, *layer.ID)
+		if want := len(purdue.Layers) - 1 - i; *layer.ID != want {
+			t.Errorf("Purdue Model layer %q ID = %d, want %d (the highest ID first)", layer.Label, *layer.ID, want)
 		}
 
 		if layer.IconKey == "" || layer.Color == "" || layer.Matchers != nil {
-			t.Fatalf("layer %d %+v lacks an icon or a color, or has matchers", i, layer)
+			t.Errorf("Purdue Model layer = %+v, want one with an icon and a color and no matchers", layer)
 		}
 
 		labels = append(labels, layer.Label)
@@ -180,35 +210,51 @@ func TestBuiltinLayerSets(t *testing.T) {
 		"L5 Enterprise", "L4 Business", "L3.5 Industrial DMZ", "L3 Operations",
 		"L2 Supervisory control", "L1 Basic control", "L0 Process",
 	}
-	if !slices.Equal(labels, want) || len(colors) != len(want) {
-		t.Fatalf("labels %v and %d colors, want %v, each with its own color", labels, len(colors), want)
+	if diff := cmp.Diff(want, labels); diff != "" {
+		t.Errorf("Purdue Model layer labels mismatch (-want +got):\n%s", diff)
 	}
 
-	if purdue.MatchConflict != builder.MatchConflictLowest || purdue.LayerOutlines {
-		t.Fatalf("options %q, %v, want lowest and no layer outlines", purdue.MatchConflict, purdue.LayerOutlines)
+	if len(colors) != len(want) {
+		t.Errorf("Purdue Model layers have %d colors, want %d, each with its own color", len(colors), len(want))
+	}
+
+	type options struct {
+		MatchConflict string
+		LayerOutlines bool
+	}
+
+	gotOptions := options{MatchConflict: purdue.MatchConflict, LayerOutlines: purdue.LayerOutlines}
+	if diff := cmp.Diff(options{MatchConflict: builder.MatchConflictLowest}, gotOptions); diff != "" {
+		t.Errorf("Purdue Model options mismatch (-want +got):\n%s", diff)
 	}
 
 	// Each call is a copy of its own.
 	*sets[0].Layers[0].ID = 50
-	if *builder.BuiltinLayerSets()[0].Layers[0].ID != 6 {
-		t.Fatal("BuiltinLayerSets returned shared layers")
+	if got := *builder.BuiltinLayerSets()[0].Layers[0].ID; got != 6 {
+		t.Errorf("BuiltinLayerSets() after a change to an earlier result: first layer ID = %d, want 6", got)
 	}
 }
 
 func TestIsLayerSetID(t *testing.T) {
-	for id, want := range map[string]bool{
-		builder.BuiltinPurdueLayerSetID:        true,
-		"6f1c2a8e-4b7d-4e2a-9c3f-1d2e3f4a5b6c": true,
-		"set_1.a":                              true,
-		"":                                     false,
-		"a b":                                  false,
-		"a/b":                                  false,
-		strings.Repeat("a", builder.MaxLayerSetIDBytes):   true,
-		strings.Repeat("a", builder.MaxLayerSetIDBytes+1): false,
+	for _, test := range []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{"the Purdue Model set", builder.BuiltinPurdueLayerSetID, true},
+		{"a UUID", "6f1c2a8e-4b7d-4e2a-9c3f-1d2e3f4a5b6c", true},
+		{"underscores and dots", "set_1.a", true},
+		{"empty", "", false},
+		{"a space", "a b", false},
+		{"a slash", "a/b", false},
+		{"the longest", strings.Repeat("a", builder.MaxLayerSetIDBytes), true},
+		{"one byte too long", strings.Repeat("a", builder.MaxLayerSetIDBytes+1), false},
 	} {
-		if got := builder.IsLayerSetID(id); got != want {
-			t.Errorf("IsLayerSetID(%q) = %v, want %v", id, got, want)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			if got := builder.IsLayerSetID(test.id); got != test.want {
+				t.Errorf("IsLayerSetID(%q) = %v, want %v", test.id, got, test.want)
+			}
+		})
 	}
 }
 
@@ -217,7 +263,7 @@ func TestIsLayerSetID(t *testing.T) {
 func TestLayerSetFileSchemaPropertiesMatchLayerSet(t *testing.T) {
 	schema, err := builder.LayerSetFileSchema()
 	if err != nil {
-		t.Fatalf("LayerSetFileSchema returned error: %v", err)
+		t.Fatalf("LayerSetFileSchema(): %v", err)
 	}
 
 	fields := jsonFields(t, builder.LayerSet{})
@@ -230,8 +276,8 @@ func TestLayerSetFileSchemaPropertiesMatchLayerSet(t *testing.T) {
 
 	slices.Sort(want)
 
-	if got := propertyNames(t, schema); !slices.Equal(got, want) {
-		t.Fatalf("the schema has the properties %v, and a layer set file the fields %v", got, want)
+	if diff := cmp.Diff(want, propertyNames(t, schema)); diff != "" {
+		t.Errorf("LayerSetFileSchema() properties mismatch with the layer set file fields (-want +got):\n%s", diff)
 	}
 }
 
@@ -241,32 +287,52 @@ func TestSchemaLayerMatchers(t *testing.T) {
 	matchers := mapAt(t, mapAt(t, layer, "properties"), "matchers")
 
 	if matchers["maxProperties"] != builder.MaxLayerMatchers {
-		t.Fatalf("matchers allow %v, want %d", matchers["maxProperties"], builder.MaxLayerMatchers)
+		t.Errorf("Schema() layer matchers maxProperties = %v, want %d", matchers["maxProperties"], builder.MaxLayerMatchers)
 	}
 
-	pattern := mapAt(t, matchers, "additionalProperties")
-	if pattern["minLength"] != 1 || pattern["maxLength"] != builder.MaxMatcherPatternBytes {
-		t.Fatalf("a matcher pattern is not 1 to %d characters: %v", builder.MaxMatcherPatternBytes, pattern)
+	value := mapAt(t, matchers, "additionalProperties")
+	wantBounds := map[string]any{"minLength": 1, "maxLength": builder.MaxMatcherPatternBytes}
+	gotBounds := map[string]any{"minLength": value["minLength"], "maxLength": value["maxLength"]}
+
+	if diff := cmp.Diff(wantBounds, gotBounds); diff != "" {
+		t.Errorf("Schema() layer matcher pattern bounds mismatch (-want +got):\n%s", diff)
 	}
 
 	field := mapAt(t, matchers, "propertyNames")
-	matcher := regexp.MustCompile(field["pattern"].(string))
+
+	pattern, ok := field["pattern"].(string)
+	if !ok {
+		t.Fatalf("Schema() layer matcher propertyNames pattern = %v, want a string", field["pattern"])
+	}
+
+	matcher := regexp.MustCompile(pattern)
 
 	// The pattern accepts the fields Document.Validate accepts.
 	for path, valid := range map[string]bool{
 		"general.hostname": true, "network.interfaces.0.vlan": true, "a_b-c": true,
 		"": false, ".a": false, "a.": false, "a..b": false, "a b": false, "a/b": false,
 	} {
-		doc := loadDocumentFixture(t, "document.json")
-		doc.Layers = []builder.Layer{{ID: layerID(1), Label: "Control", Matchers: map[string]string{path: "x"}}}
+		t.Run(path, func(t *testing.T) {
+			if got := matcher.MatchString(path); got != valid {
+				t.Errorf("Schema() matcher field pattern MatchString(%q) = %v, want %v", path, got, valid)
+			}
 
-		if matcher.MatchString(path) != valid || (doc.Validate() == nil) != valid {
-			t.Errorf("matcher field %q: the pattern or Validate does not say valid = %v", path, valid)
-		}
+			doc := loadDocumentFixture(t, "document.json")
+			doc.Layers = []builder.Layer{{ID: layerID(1), Label: "Control", Matchers: map[string]string{path: "x"}}}
+
+			err := doc.Validate()
+
+			switch {
+			case valid && err != nil:
+				t.Errorf("Validate() with matcher field %q error = %v, want nil", path, err)
+			case !valid && err == nil:
+				t.Errorf("Validate() with matcher field %q error = nil, want an error", path)
+			}
+		})
 	}
 
 	options := mapAt(t, mapAt(t, schema, "$defs"), "layerSet")
 	if options["additionalProperties"] != false {
-		t.Fatalf("the layer set options allow unknown keys: %v", options)
+		t.Errorf("Schema() layerSet additionalProperties = %v, want false", options["additionalProperties"])
 	}
 }

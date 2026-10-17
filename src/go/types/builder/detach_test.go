@@ -280,7 +280,9 @@ func TestFromLegacyTopologyCombinesIncludes(t *testing.T) {
 		t.Fatalf("FromLegacyTopology(site): %v", err)
 	}
 
-	checkLegacyDocument(t, doc, warnings)
+	if err := checkLegacyDocument(doc, warnings); err != nil {
+		t.Errorf("FromLegacyTopology(site): %v", err)
+	}
 
 	for _, hostname := range []string{"dns", "mail"} {
 		if got := nodeByHostname(t, doc, hostname).Device.IncludedFrom; got != "" {

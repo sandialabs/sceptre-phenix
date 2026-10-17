@@ -1,7 +1,6 @@
 package builder_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -11,10 +10,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	"phenix/types/builder"
@@ -65,47 +66,51 @@ func convertLegacy(tb testing.TB, content, name string) (*builder.Document, []st
 
 	doc, warnings, err := builder.FromLegacy(decodeLegacy(tb, content), name)
 	if err != nil {
-		tb.Fatalf("FromLegacy returned error: %v", err)
+		tb.Fatalf("FromLegacy(%s): %v", name, err)
 	}
 
-	checkLegacyDocument(tb, doc, warnings)
+	if err := checkLegacyDocument(doc, warnings); err != nil {
+		tb.Errorf("FromLegacy(%s): %v", name, err)
+	}
 
 	if doc.Source.Kind != builder.SourceKindManual || doc.Source.Name != "" || doc.Source.Digest != "" {
-		tb.Fatalf("source = %+v, want one that names no config", doc.Source)
+		tb.Errorf("FromLegacy(%s) source = %+v, want one that names no config", name, doc.Source)
 	}
 
 	return doc, warnings
 }
 
-func checkLegacyDocument(tb testing.TB, doc *builder.Document, warnings []string) {
-	tb.Helper()
-
+// checkLegacyDocument returns an error unless the converted document is valid, carries the warnings
+// returned with it, and parses after it is encoded.
+func checkLegacyDocument(doc *builder.Document, warnings []string) error {
 	if err := doc.Validate(); err != nil {
-		tb.Fatalf("the converted document is not valid: %v", err)
+		return fmt.Errorf("Validate() = %w, want nil", err)
 	}
 
 	if !slices.Equal(doc.Source.Warnings, warnings) {
-		tb.Fatalf("source warnings = %q, want the returned %q", doc.Source.Warnings, warnings)
+		return fmt.Errorf("source warnings = %q, want the returned %q", doc.Source.Warnings, warnings)
 	}
 
 	data, err := builder.Encode(doc)
 	if err != nil {
-		tb.Fatalf("Encode: %v", err)
+		return fmt.Errorf("Encode() = %w, want nil", err)
 	}
 
 	if _, err := builder.Parse(data); err != nil {
-		tb.Fatalf("the encoded document does not parse: %v", err)
+		return fmt.Errorf("Parse(Encode()) = %w, want nil", err)
 	}
+
+	return nil
 }
 
-// checkLegacyGolden compares the document with testdata/legacy/<name>, or
+// legacyGolden returns the encoded document and the content of testdata/legacy/<name>, after it
 // rewrites that file when the test runs with -update-legacy-golden.
-func checkLegacyGolden(t *testing.T, name string, doc *builder.Document) {
+func legacyGolden(t *testing.T, name string, doc *builder.Document) (string, string) {
 	t.Helper()
 
 	data, err := builder.Encode(doc)
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatalf("Encode(): %v", err)
 	}
 
 	data = append(data, '\n')
@@ -116,13 +121,10 @@ func checkLegacyGolden(t *testing.T, name string, doc *builder.Document) {
 			t.Fatalf("writing %s: %v", name, err)
 		}
 
-		return
+		return string(data), string(data)
 	}
 
-	if want := legacyFile(t, name); !bytes.Equal(data, want) {
-		t.Errorf("the document differs from %s (rewrite it with -update-legacy-golden once the change is meant):\n%s",
-			name, data)
-	}
+	return string(data), string(legacyFile(t, name))
 }
 
 // legacySaved is what the legacy Builder posted when it saved the sample captured in
@@ -331,12 +333,14 @@ func legacyTargets(t *testing.T, doc *builder.Document, hostname string) map[str
 	return targets
 }
 
-func wantLegacyWarnings(t *testing.T, got []string, want ...string) {
-	t.Helper()
-
-	if !slices.Equal(got, want) {
-		t.Errorf("warnings:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+// legacyPositions returns the positions of nodes.
+func legacyPositions(nodes []*builder.Node) []builder.Position {
+	positions := make([]builder.Position, 0, len(nodes))
+	for _, node := range nodes {
+		positions = append(positions, node.Position)
 	}
+
+	return positions
 }
 
 // TestLegacySample converts the diagram captured from the legacy Builder
@@ -344,27 +348,39 @@ func wantLegacyWarnings(t *testing.T, got []string, want ...string) {
 func TestLegacySample(t *testing.T) {
 	doc, warnings := convertLegacy(t, string(legacyFile(t, "sample.xml")), "sample")
 
-	checkLegacyGolden(t, "sample.golden.json", doc)
-	wantLegacyWarnings(t, warnings, legacyAddedB, legacyOneLine, legacyDecorations)
+	if got, want := legacyGolden(t, "sample.golden.json", doc); got != want {
+		t.Errorf("FromLegacy(sample.xml) mismatch with sample.golden.json, rewrite it with -update-legacy-golden "+
+			"once the change is meant (-want +got):\n%s", cmp.Diff(want, got))
+	}
+
+	if diff := cmp.Diff([]string{legacyAddedB, legacyOneLine, legacyDecorations}, warnings); diff != "" {
+		t.Errorf("FromLegacy(sample.xml) warnings mismatch (-want +got):\n%s", diff)
+	}
 
 	// What the legacy Builder wrote when it saved: its variables resolved,
 	// values kept as text, its own keys dropped, lists turned into maps.
 	router := nodeByHostname(t, doc, "router-device-0").Device.Spec
-	if got := asJSON(t, router["hardware"]); !strings.Contains(got, `"image": "vyos.qc2"`) ||
-		!strings.Contains(got, `"vcpus": "1"`) || !strings.Contains(got, `"memory": "2048"`) {
-		t.Errorf("router hardware = %s, want the variables resolved as text", got)
+	wantHardware := map[string]any{
+		"drives": []any{map[string]any{"image": "vyos.qc2"}}, "memory": "2048", "os_type": "linux", "vcpus": "1",
+	}
+
+	if diff := cmp.Diff(wantHardware, jsonValue(t, router["hardware"])); diff != "" {
+		t.Errorf("FromLegacy(sample.xml) router-device-0 hardware mismatch (-want +got):\n%s", diff)
 	}
 
 	client := nodeByHostname(t, doc, "client-1").Device.Spec
-	if !reflect.DeepEqual(client["annotations"], map[string]any{"owner": "ops"}) ||
-		!reflect.DeepEqual(client["labels"], map[string]any{"zone": "corp"}) {
-		t.Errorf("annotations = %v, labels = %v, want maps", client["annotations"], client["labels"])
+	if diff := cmp.Diff(map[string]any{"owner": "ops"}, client["annotations"]); diff != "" {
+		t.Errorf("FromLegacy(sample.xml) client-1 annotations mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(map[string]any{"zone": "corp"}, client["labels"]); diff != "" {
+		t.Errorf("FromLegacy(sample.xml) client-1 labels mismatch (-want +got):\n%s", diff)
 	}
 
 	for _, node := range doc.DeviceNodes() {
 		for _, key := range []string{"device", "schema"} {
-			if _, kept := node.Device.Spec[key]; kept {
-				t.Errorf("%s keeps the legacy key %q", node.Device.Hostname, key)
+			if value, kept := node.Device.Spec[key]; kept {
+				t.Errorf("FromLegacy(sample.xml) %s spec %s = %v, want the legacy key dropped", node.Device.Hostname, key, value)
 			}
 		}
 	}
@@ -378,7 +394,7 @@ func TestLegacySampleMatchesLegacySave(t *testing.T) {
 
 	published, _, err := doc.ToTopologyConfig(saved.Name)
 	if err != nil {
-		t.Fatalf("ToTopologyConfig returned error: %v", err)
+		t.Fatalf("ToTopologyConfig(%s): %v", saved.Name, err)
 	}
 
 	// Compared as JSON, which is what both sides store.
@@ -399,19 +415,23 @@ func TestLegacySampleMatchesLegacySave(t *testing.T) {
 		}
 
 		if len(found) != len(list) {
-			t.Fatalf("%d nodes with %d hostnames", len(list), len(found))
+			t.Fatalf("%d nodes have %d hostnames, want one each", len(list), len(found))
 		}
 
 		return found
 	}
 
 	got, want := byHostname(published.Spec["nodes"]), byHostname(saved.Topology["nodes"])
-	if len(want) != 5 || !reflect.DeepEqual(got, want) {
-		t.Errorf("the converted diagram publishes\n%s\nand the legacy Builder saved\n%s", asJSON(t, got), asJSON(t, want))
+	if len(want) != 5 {
+		t.Errorf("the legacy Builder saved %d nodes, want 5", len(want))
 	}
 
-	if len(published.Spec) != 1 {
-		t.Errorf("the published spec holds %v, want only the nodes the legacy Builder saved", slices.Collect(maps.Keys(published.Spec)))
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ToTopologyConfig(%s) nodes mismatch with the legacy save (-want +got):\n%s", saved.Name, diff)
+	}
+
+	if keys := slices.Sorted(maps.Keys(published.Spec)); !slices.Equal(keys, []string{"nodes"}) {
+		t.Errorf("ToTopologyConfig(%s) spec keys = %v, want only the nodes the legacy Builder saved", saved.Name, keys)
 	}
 }
 
@@ -422,36 +442,49 @@ func TestLegacySampleTopology(t *testing.T) {
 
 	doc, warnings, err := builder.FromLegacyTopology(config)
 	if err != nil {
-		t.Fatalf("FromLegacyTopology returned error: %v", err)
+		t.Fatalf("FromLegacyTopology(sample): %v", err)
 	}
 
-	checkLegacyDocument(t, doc, warnings)
-	wantLegacyWarnings(t, warnings, legacyAddedB, legacyOneLine, legacyDecorations)
+	if err := checkLegacyDocument(doc, warnings); err != nil {
+		t.Errorf("FromLegacyTopology(sample): %v", err)
+	}
+
+	if diff := cmp.Diff([]string{legacyAddedB, legacyOneLine, legacyDecorations}, warnings); diff != "" {
+		t.Errorf("FromLegacyTopology(sample) warnings mismatch (-want +got):\n%s", diff)
+	}
 
 	// The digest covers the diagram that was read, not the spec alone.
 	digest, err := builder.ImportDigest(config)
 	if err != nil {
-		t.Fatalf("ImportDigest returned error: %v", err)
+		t.Fatalf("ImportDigest(sample): %v", err)
 	}
 
 	if spec, err := builder.SourceDigest(config); err != nil || spec == digest {
-		t.Fatalf("the digest of the spec alone is %q (%v), want another than %q", spec, err, digest)
+		t.Errorf("SourceDigest(sample) = %q, %v, want another digest than ImportDigest(sample) = %q", spec, err, digest)
 	}
 
+	// The topology with its digest, and its annotations without the diagram.
 	source := doc.Source
-	if source.Kind != builder.SourceKindTopology || source.Name != "sample" || source.Digest != digest ||
-		source.UpdatedAt != config.Metadata.Updated || source.ImportedAt != "" {
-		t.Errorf("source = %+v, want the topology with its digest", source)
+	gotSource := builder.Source{
+		Kind: source.Kind, Name: source.Name, Digest: source.Digest, UpdatedAt: source.UpdatedAt,
+		ImportedAt: source.ImportedAt, Annotations: source.Annotations,
+	}
+	wantSource := builder.Source{
+		Kind: builder.SourceKindTopology, Name: "sample", Digest: digest, UpdatedAt: config.Metadata.Updated,
+		Annotations: map[string]string{"owner": "ops"},
 	}
 
-	if want := map[string]string{"owner": "ops"}; !maps.Equal(source.Annotations, want) {
-		t.Errorf("source annotations = %v, want %v without the diagram", source.Annotations, want)
+	if diff := cmp.Diff(wantSource, gotSource); diff != "" {
+		t.Errorf("FromLegacyTopology(sample) source mismatch (-want +got):\n%s", diff)
 	}
 
 	bare, _ := convertLegacy(t, string(legacyFile(t, "sample.xml")), "sample")
-	if !reflect.DeepEqual(doc.Nodes, bare.Nodes) || !reflect.DeepEqual(doc.Networks, bare.Networks) ||
-		!reflect.DeepEqual(doc.Edges, bare.Edges) || doc.Metadata.ID != bare.Metadata.ID {
-		t.Error("the diagram converted with its topology differs from the diagram converted alone")
+	if diff := canvasDiff(bare, doc); diff != "" {
+		t.Errorf("FromLegacyTopology(sample) canvas mismatch with FromLegacy(sample.xml) (-want +got):\n%s", diff)
+	}
+
+	if doc.Metadata.ID != bare.Metadata.ID {
+		t.Errorf("FromLegacyTopology(sample) ID = %q, want %q as FromLegacy(sample.xml) gives", doc.Metadata.ID, bare.Metadata.ID)
 	}
 }
 
@@ -474,13 +507,17 @@ func TestLegacyCells(t *testing.T) {
 				t.Helper()
 
 				// The settings name the node, and the label does only when they name none.
-				if node := nodeByHostname(t, doc, "edge-1"); node.Label != "edge-1" ||
-					node.Device.Spec["general"].(map[string]any)["hostname"] != "edge-1" {
-					t.Errorf("edge-1 = %s", asJSON(t, node))
+				node := nodeByHostname(t, doc, "edge-1")
+				if node.Label != "edge-1" {
+					t.Errorf("FromLegacy(devices) edge-1 label = %q, want edge-1", node.Label)
+				}
+
+				if got := node.Device.Spec["general"].(map[string]any)["hostname"]; got != "edge-1" {
+					t.Errorf("FromLegacy(devices) edge-1 spec hostname = %v, want edge-1", got)
 				}
 
 				if spec := nodeByHostname(t, doc, "from-label").Device.Spec; spec["general"].(map[string]any)["hostname"] != "from-label" {
-					t.Errorf("from-label spec = %v, want the hostname written into it", spec)
+					t.Errorf("FromLegacy(devices) from-label spec = %v, want the hostname written into it", spec)
 				}
 			},
 		},
@@ -499,7 +536,7 @@ func TestLegacyCells(t *testing.T) {
 
 				// A switch without a VLAN name takes its label.
 				if doc.NetworkByName("labelled") == nil {
-					t.Errorf("networks = %s, want one named by the label of its switch", asJSON(t, doc.Networks))
+					t.Errorf("FromLegacy(switches) networks = %s, want one named by the label of its switch", asJSON(t, doc.Networks))
 				}
 			},
 		},
@@ -524,7 +561,7 @@ func TestLegacyCells(t *testing.T) {
 
 	files, err := filepath.Glob(filepath.Join("testdata", "legacy", "cells", "*.xml"))
 	if err != nil || len(files) != 10 {
-		t.Fatalf("found %d diagrams (%v), want 10", len(files), err)
+		t.Fatalf("filepath.Glob(testdata/legacy/cells/*.xml) = %d diagrams, %v, want 10", len(files), err)
 	}
 
 	for _, file := range files {
@@ -533,14 +570,20 @@ func TestLegacyCells(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			doc, warnings := legacyCells(t, name)
 
-			checkLegacyGolden(t, filepath.Join("cells", name+".golden.json"), doc)
+			golden := filepath.Join("cells", name+".golden.json")
+			if got, want := legacyGolden(t, golden, doc); got != want {
+				t.Errorf("FromLegacy(%s.xml) mismatch with %s, rewrite it with -update-legacy-golden "+
+					"once the change is meant (-want +got):\n%s", name, golden, cmp.Diff(want, got))
+			}
 
 			check, ok := checks[name]
 			if !ok {
 				return
 			}
 
-			wantLegacyWarnings(t, warnings, check.warnings...)
+			if diff := cmp.Diff(check.warnings, warnings); diff != "" {
+				t.Errorf("FromLegacy(%s.xml) warnings mismatch (-want +got):\n%s", name, diff)
+			}
 
 			if check.extra != nil {
 				check.extra(t, doc)
@@ -576,35 +619,51 @@ func TestLegacyInterfacesThatCannotBeRead(t *testing.T) {
 		device("6", "fine", []any{eth0}),
 	), "interfaces")
 
-	wantLegacyWarnings(t, warnings,
+	wantWarnings := []string{
 		"Added a switch for 1 network that had none in the legacy diagram: lan.",
 		"3 nodes have interfaces that could not be read and were left out: mixed, object and text.",
-	)
+	}
+	if diff := cmp.Diff(wantWarnings, warnings); diff != "" {
+		t.Errorf("FromLegacy(interfaces) warnings mismatch (-want +got):\n%s", diff)
+	}
 
 	for hostname, want := range map[string]any{
 		"text": nil, "object": nil, "none": nil, "mixed": []any{eth0}, "fine": []any{eth0},
 	} {
-		network, _ := nodeByHostname(t, doc, hostname).Device.Spec["network"].(map[string]any)
+		t.Run(hostname, func(t *testing.T) {
+			network, _ := nodeByHostname(t, doc, hostname).Device.Spec["network"].(map[string]any)
 
-		got, set := network["interfaces"]
-		if set != (want != nil) || (set && !reflect.DeepEqual(got, want)) {
-			t.Errorf("%s: interfaces = %s, want %s", hostname, asJSON(t, got), asJSON(t, want))
-		}
+			got, set := network["interfaces"]
 
-		// The rest of the settings stay.
-		if _, kept := network["routes"]; !kept {
-			t.Errorf("%s: network = %s, want its routes kept", hostname, asJSON(t, network))
-		}
+			switch {
+			case want == nil && set:
+				t.Errorf("FromLegacy(interfaces) %s interfaces = %s, want none", hostname, asJSON(t, got))
+			case want != nil:
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("FromLegacy(interfaces) %s interfaces mismatch (-want +got):\n%s", hostname, diff)
+				}
+			}
+
+			// The rest of the settings stay.
+			if _, kept := network["routes"]; !kept {
+				t.Errorf("FromLegacy(interfaces) %s network = %s, want its routes kept", hostname, asJSON(t, network))
+			}
+		})
 	}
 
-	if got := legacyTargets(t, doc, "mixed"); len(got) != 1 || got["eth0"] != legacySwitchesOf(doc, "lan")[0].ID {
-		t.Errorf("connections of mixed = %v, want its one interface on the switch of lan", got)
+	if lan := legacySwitchesOf(doc, "lan"); len(lan) == 0 {
+		t.Errorf("FromLegacy(interfaces) has no switch of lan, want one")
+	} else if diff := cmp.Diff(map[string]string{"eth0": lan[0].ID}, legacyTargets(t, doc, "mixed")); diff != "" {
+		t.Errorf("FromLegacy(interfaces) connections of mixed mismatch (-want +got):\n%s", diff)
 	}
 
 	// The device of one such node is named in the warning by its hostname.
 	_, warnings = convertLegacy(t, legacyModel(device("2", "only", "x")), "interfaces")
 
-	wantLegacyWarnings(t, warnings, "1 node has interfaces that could not be read and were left out: only.")
+	want := []string{"1 node has interfaces that could not be read and were left out: only."}
+	if diff := cmp.Diff(want, warnings); diff != "" {
+		t.Errorf("FromLegacy(interfaces of only) warnings mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestLegacyVariables(t *testing.T) {
@@ -626,7 +685,9 @@ func TestLegacyVariables(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, warnings := legacyCells(t, name)
 
-			wantLegacyWarnings(t, warnings, want...)
+			if diff := cmp.Diff(want, warnings); diff != "" {
+				t.Errorf("FromLegacy(%s.xml) warnings mismatch (-want +got):\n%s", name, diff)
+			}
 		})
 	}
 }
@@ -640,7 +701,7 @@ func TestDecodeLegacyForms(t *testing.T) {
 
 	want, _ := convertLegacy(t, plain, "forms")
 	if len(want.Nodes) != 2 || legacyAlias(want, "lan") != 7 {
-		t.Fatalf("the diagram converts into %s", asJSON(t, want))
+		t.Fatalf("FromLegacy(forms) = %s, want 2 nodes and VLAN 7 for lan", asJSON(t, want))
 	}
 
 	for name, content := range map[string]string{
@@ -659,8 +720,8 @@ func TestDecodeLegacyForms(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, _ := convertLegacy(t, content, "forms")
-			if !reflect.DeepEqual(got, want) {
-				t.Errorf("the document differs: %s", asJSON(t, got))
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("FromLegacy(forms with %s) mismatch (-want +got):\n%s", name, diff)
 			}
 		})
 	}
@@ -674,10 +735,12 @@ func TestDecodeLegacyForms(t *testing.T) {
 			doc, warnings := convertLegacy(t, content, "nothing")
 
 			if len(doc.Nodes) != 0 || len(doc.Networks) != 0 || len(doc.Edges) != 0 {
-				t.Errorf("the document holds %s", asJSON(t, doc))
+				t.Errorf("FromLegacy(%s) = %s, want no nodes, networks or edges", name, asJSON(t, doc))
 			}
 
-			wantLegacyWarnings(t, warnings, "The diagram has no nodes.")
+			if diff := cmp.Diff([]string{"The diagram has no nodes."}, warnings); diff != "" {
+				t.Errorf("FromLegacy(%s) warnings mismatch (-want +got):\n%s", name, diff)
+			}
 		})
 	}
 }
@@ -786,15 +849,20 @@ func TestDecodeLegacyRefusals(t *testing.T) {
 
 			var refusal *builder.LegacyError
 			if !errors.As(err, &refusal) || diagram != nil {
-				t.Fatalf("DecodeLegacy = %v, %v, want a refusal", diagram, err)
+				t.Fatalf("DecodeLegacy() = %v, %v, want a LegacyError", diagram, err)
 			}
 
-			if refusal.Reason != test.reason || refusal.Message != test.message || err.Error() != test.message {
-				t.Errorf("refusal = %q %q, want %q %q", refusal.Reason, refusal.Message, test.reason, test.message)
+			want := &builder.LegacyError{Reason: test.reason, Message: test.message}
+			if diff := cmp.Diff(want, refusal); diff != "" {
+				t.Errorf("DecodeLegacy() refusal mismatch (-want +got):\n%s", diff)
+			}
+
+			if err.Error() != test.message {
+				t.Errorf("DecodeLegacy() error = %q, want %q", err.Error(), test.message)
 			}
 
 			if !errors.Is(err, builder.ErrLegacy) {
-				t.Error("a refusal must match ErrLegacy")
+				t.Errorf("DecodeLegacy() error = %v, want one wrapping ErrLegacy", err)
 			}
 		})
 	}
@@ -803,7 +871,7 @@ func TestDecodeLegacyRefusals(t *testing.T) {
 	decodeLegacy(t, nested(32))
 
 	if diagram := decodeLegacy(t, "<root>"+strings.Repeat("<mxCell/>", 10000)+"</root>"); diagram.Cells() != 10000 {
-		t.Errorf("%d cells, want 10000", diagram.Cells())
+		t.Errorf("DecodeLegacy(10000 cells).Cells() = %d, want 10000", diagram.Cells())
 	}
 }
 
@@ -831,75 +899,105 @@ func TestFromLegacyTopologyMerge(t *testing.T) {
 
 	doc, warnings, err := builder.FromLegacyTopology(config)
 	if err != nil {
-		t.Fatalf("FromLegacyTopology returned error: %v", err)
+		t.Fatalf("FromLegacyTopology(site): %v", err)
 	}
 
-	checkLegacyDocument(t, doc, warnings)
+	if err := checkLegacyDocument(doc, warnings); err != nil {
+		t.Errorf("FromLegacyTopology(site): %v", err)
+	}
 
-	wantLegacyWarnings(t, warnings,
+	wantWarnings := []string{
 		"2 nodes of the legacy diagram are not in the topology and were left out: gone and gone-too.",
 		"2 nodes of the topology were not in the legacy diagram and were placed below it: new-1 and new-2.",
 		"Added a switch for 1 network that had none in the legacy diagram: wan.",
 		"1 item has settings that could not be read and was left out: nobody.",
-	)
+	}
+	if diff := cmp.Diff(wantWarnings, warnings); diff != "" {
+		t.Errorf("FromLegacyTopology(site) warnings mismatch (-want +got):\n%s", diff)
+	}
 
 	hostnames := make([]string, 0, 4)
 	for _, node := range doc.DeviceNodes() {
 		hostnames = append(hostnames, node.Device.Hostname)
 	}
 
-	if want := []string{"alpha", "beta", "new-1", "new-2"}; !slices.Equal(hostnames, want) {
-		t.Fatalf("devices = %v, want the topology's %v", hostnames, want)
+	if diff := cmp.Diff([]string{"alpha", "beta", "new-1", "new-2"}, hostnames); diff != "" {
+		t.Errorf("FromLegacyTopology(site) devices mismatch with the topology (-want +got):\n%s", diff)
+	}
+
+	// The diagram places a node and gives it its icon.
+	type placed struct {
+		IconKey  string
+		Position builder.Position
 	}
 
 	// The topology's spec, the diagram's position and icon.
 	alpha := nodeByHostname(t, doc, "alpha")
-	if alpha.Device.Spec["hardware"].(map[string]any)["memory"] != 4096 || alpha.Device.IconKey != "router" ||
-		alpha.Position != (builder.Position{X: 80, Y: 112}) {
-		t.Errorf("alpha = %s, want the topology's spec where the diagram has it", asJSON(t, alpha))
+	if got := alpha.Device.Spec["hardware"].(map[string]any)["memory"]; got != 4096 {
+		t.Errorf("FromLegacyTopology(site) alpha memory = %v, want the topology's 4096", got)
 	}
 
-	if _, kept := alpha.Device.Spec["device"]; kept {
-		t.Error("alpha carries a setting of the diagram")
+	gotAlpha := placed{IconKey: alpha.Device.IconKey, Position: alpha.Position}
+	if diff := cmp.Diff(placed{IconKey: "router", Position: builder.Position{X: 80, Y: 112}}, gotAlpha); diff != "" {
+		t.Errorf("FromLegacyTopology(site) alpha mismatch with the diagram (-want +got):\n%s", diff)
 	}
 
+	if value, kept := alpha.Device.Spec["device"]; kept {
+		t.Errorf("FromLegacyTopology(site) alpha spec device = %v, want no setting of the diagram", value)
+	}
+
+	// Beta is placed by its label, with the icon of its image.
 	beta := nodeByHostname(t, doc, "beta")
-	if beta.Position != (builder.Position{X: 80, Y: 512}) || beta.Device.IconKey != "firewall" {
-		t.Errorf("beta = %s, want it placed by its label, with the icon of its image", asJSON(t, beta))
+	gotBeta := placed{IconKey: beta.Device.IconKey, Position: beta.Position}
+
+	if diff := cmp.Diff(placed{IconKey: "firewall", Position: builder.Position{X: 80, Y: 512}}, gotBeta); diff != "" {
+		t.Errorf("FromLegacyTopology(site) beta mismatch (-want +got):\n%s", diff)
 	}
 
 	// What the diagram does not hold is laid out below everything it does,
 	// from its left edge.
-	if first, second := legacyPosition(t, doc, "new-1"), legacyPosition(t, doc, "new-2"); first != (builder.Position{X: 64, Y: 976}) ||
-		second != (builder.Position{X: 384, Y: 976}) {
-		t.Errorf("new-1 and new-2 are at %+v and %+v, want a row below the diagram", first, second)
+	wantRow := []builder.Position{{X: 64, Y: 976}, {X: 384, Y: 976}}
+	gotRow := []builder.Position{legacyPosition(t, doc, "new-1"), legacyPosition(t, doc, "new-2")}
+
+	if diff := cmp.Diff(wantRow, gotRow); diff != "" {
+		t.Errorf("FromLegacyTopology(site) new-1 and new-2 positions mismatch (-want +got):\n%s", diff)
 	}
 
-	if legacyAlias(doc, "lan") != 42 || legacyAlias(doc, "wan") != 0 {
-		t.Errorf("networks = %s, want the VLAN ID of the diagram as the alias of lan", asJSON(t, doc.Networks))
+	// The VLAN ID of the diagram is the alias of lan.
+	aliases := map[string]int{"lan": legacyAlias(doc, "lan"), "wan": legacyAlias(doc, "wan")}
+	if diff := cmp.Diff(map[string]int{"lan": 42, "wan": 0}, aliases); diff != "" {
+		t.Errorf("FromLegacyTopology(site) aliases mismatch (-want +got):\n%s", diff)
 	}
 
 	// The switch of wan sits between the placed devices of the network.
 	// Beta is the only one, so it is moved down until it is clear of beta.
-	wan := legacySwitchesOf(doc, "wan")
-	if len(wan) != 1 || wan[0].Position != (builder.Position{X: 64, Y: 656}) {
-		t.Errorf("switches of wan = %s", asJSON(t, wan))
+	wan := legacyPositions(legacySwitchesOf(doc, "wan"))
+	if diff := cmp.Diff([]builder.Position{{X: 64, Y: 656}}, wan); diff != "" {
+		t.Errorf("FromLegacyTopology(site) switches of wan mismatch (-want +got):\n%s", diff)
 	}
 
 	digest, err := builder.ImportDigest(config)
 	if err != nil {
-		t.Fatalf("ImportDigest returned error: %v", err)
+		t.Fatalf("ImportDigest(site): %v", err)
 	}
 
-	if doc.Source.Kind != builder.SourceKindTopology || doc.Source.Digest != digest ||
-		!maps.Equal(doc.Source.Annotations, map[string]string{"owner": "ops"}) {
-		t.Errorf("source = %+v, want the topology's, without the diagram among its annotations", doc.Source)
+	// The topology's source, without the diagram among its annotations.
+	gotSource := builder.Source{Kind: doc.Source.Kind, Digest: doc.Source.Digest, Annotations: doc.Source.Annotations}
+	wantSource := builder.Source{
+		Kind: builder.SourceKindTopology, Digest: digest, Annotations: map[string]string{"owner": "ops"},
+	}
+
+	if diff := cmp.Diff(wantSource, gotSource); diff != "" {
+		t.Errorf("FromLegacyTopology(site) source mismatch (-want +got):\n%s", diff)
 	}
 
 	// The topology itself is left as it was.
-	if config.Metadata.Annotations[builder.LegacyXMLAnnotation] != diagram ||
-		!reflect.DeepEqual(config.Spec["nodes"].([]any)[0], legacyNode("alpha", "lan")) {
-		t.Error("the conversion changed the config")
+	if config.Metadata.Annotations[builder.LegacyXMLAnnotation] != diagram {
+		t.Error("FromLegacyTopology(site) changed the builder-xml annotation of the config, want it unchanged")
+	}
+
+	if diff := cmp.Diff(legacyNode("alpha", "lan"), config.Spec["nodes"].([]any)[0]); diff != "" {
+		t.Errorf("FromLegacyTopology(site) changed the config node alpha (-want +got):\n%s", diff)
 	}
 }
 
@@ -910,7 +1008,7 @@ func TestFromLegacyTopologyKeepsPlainImport(t *testing.T) {
 
 	_, plainWarnings := documentFromConfig(t, legacyTopology("site", "", nodes...))
 	if len(plainWarnings) != 1 {
-		t.Fatalf("the plain import warns %q, want one warning of its own", plainWarnings)
+		t.Fatalf("FromConfig(site) warnings = %q, want one warning of its own", plainWarnings)
 	}
 
 	for name, test := range map[string]struct {
@@ -944,7 +1042,7 @@ func TestFromLegacyTopologyKeepsPlainImport(t *testing.T) {
 
 			doc, warnings, err := builder.FromLegacyTopology(legacyTopology("site", test.diagram, nodes...))
 			if err != nil {
-				t.Fatalf("FromLegacyTopology returned error: %v", err)
+				t.Fatalf("FromLegacyTopology(site): %v", err)
 			}
 
 			want := plainWarnings
@@ -952,12 +1050,17 @@ func TestFromLegacyTopologyKeepsPlainImport(t *testing.T) {
 				want = append([]string{test.warning}, plainWarnings...)
 			}
 
-			wantLegacyWarnings(t, warnings, want...)
-			checkLegacyDocument(t, doc, warnings)
+			if diff := cmp.Diff(want, warnings); diff != "" {
+				t.Errorf("FromLegacyTopology(site) warnings mismatch (-want +got):\n%s", diff)
+			}
+
+			if err := checkLegacyDocument(doc, warnings); err != nil {
+				t.Errorf("FromLegacyTopology(site): %v", err)
+			}
 
 			doc.Source.Warnings = plain.Source.Warnings
-			if !reflect.DeepEqual(doc, plain) {
-				t.Errorf("the document differs from the plain import: %s", asJSON(t, doc))
+			if diff := cmp.Diff(plain, doc); diff != "" {
+				t.Errorf("FromLegacyTopology(site) mismatch with FromConfig(site) (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -970,16 +1073,26 @@ func TestFromLegacyTopologyKeepsPlainImport(t *testing.T) {
 	for name, config := range map[string]store.Config{
 		"a plain topology": loadConfig(t, "topology.json"), "an experiment": experiment,
 	} {
-		want, wantWarnings := documentFromConfig(t, config)
+		t.Run(name, func(t *testing.T) {
+			want, wantWarnings := documentFromConfig(t, config)
 
-		got, warnings, err := builder.FromLegacyTopology(config)
-		if err != nil || !reflect.DeepEqual(got, want) || !slices.Equal(warnings, wantWarnings) {
-			t.Errorf("%s: FromLegacyTopology differs from FromConfig (%v)", name, err)
-		}
+			got, warnings, err := builder.FromLegacyTopology(config)
+			if err != nil {
+				t.Fatalf("FromLegacyTopology(%s): %v", name, err)
+			}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("FromLegacyTopology(%s) mismatch with FromConfig (-want +got):\n%s", name, diff)
+			}
+
+			if diff := cmp.Diff(wantWarnings, warnings, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("FromLegacyTopology(%s) warnings mismatch with FromConfig (-want +got):\n%s", name, diff)
+			}
+		})
 	}
 
 	if _, _, err := builder.FromLegacyTopology(store.Config{Kind: "Scenario"}); !errors.Is(err, builder.ErrUnsupportedKind) {
-		t.Errorf("a scenario gave %v, want ErrUnsupportedKind", err)
+		t.Errorf("FromLegacyTopology(Scenario) error = %v, want ErrUnsupportedKind", err)
 	}
 }
 
@@ -1006,20 +1119,40 @@ func TestFromLegacyTopologyResolvesIncludes(t *testing.T) {
 		},
 	))
 	if err != nil {
-		t.Fatalf("FromLegacyTopology returned error: %v", err)
+		t.Fatalf("FromLegacyTopology(site): %v", err)
 	}
 
-	checkLegacyDocument(t, doc, warnings)
-
-	dns, mail := nodeByHostname(t, doc, "dns"), nodeByHostname(t, doc, "mail")
-	if dns.Device.IncludedFrom != "shared" || dns.Position != (builder.Position{X: 880, Y: 112}) ||
-		mail.Device.IncludedFrom != "shared" || mail.Position != (builder.Position{X: 80, Y: 448}) {
-		t.Errorf("dns = %s, mail = %s, want the included nodes, dns where the diagram has it", asJSON(t, dns), asJSON(t, mail))
+	if err := checkLegacyDocument(doc, warnings); err != nil {
+		t.Errorf("FromLegacyTopology(site): %v", err)
 	}
 
-	if !slices.Equal(doc.Source.IncludeTopologies, []string{"shared"}) ||
-		!containsSubstring(warnings, "1 node of the topology was not in the legacy diagram and was placed below it: mail.") {
-		t.Errorf("includes = %v, warnings = %q", doc.Source.IncludeTopologies, warnings)
+	// The included nodes, dns where the diagram has it.
+	type included struct {
+		IncludedFrom string
+		Position     builder.Position
+	}
+
+	got := map[string]included{}
+	for _, hostname := range []string{"dns", "mail"} {
+		node := nodeByHostname(t, doc, hostname)
+		got[hostname] = included{IncludedFrom: node.Device.IncludedFrom, Position: node.Position}
+	}
+
+	want := map[string]included{
+		"dns":  {IncludedFrom: "shared", Position: builder.Position{X: 880, Y: 112}},
+		"mail": {IncludedFrom: "shared", Position: builder.Position{X: 80, Y: 448}},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("FromLegacyTopology(site) included nodes mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]string{"shared"}, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromLegacyTopology(site) includes mismatch (-want +got):\n%s", diff)
+	}
+
+	const placedBelow = "1 node of the topology was not in the legacy diagram and was placed below it: mail."
+	if !containsSubstring(warnings, placedBelow) {
+		t.Errorf("FromLegacyTopology(site) warnings = %q, want one containing %q", warnings, placedBelow)
 	}
 }
 
@@ -1045,10 +1178,13 @@ func TestLegacyAddedSwitchesAreClear(t *testing.T) {
 
 	doc, warnings := convertLegacy(t, legacyModel(cells...), "clear")
 
-	wantLegacyWarnings(t, warnings,
-		"Added a switch for 83 networks that had none in the legacy diagram: "+
+	want := []string{
+		"Added a switch for 83 networks that had none in the legacy diagram: " +
 			"chain, own-00, own-01, own-02, own-03, own-04, own-05, own-06 and 75 more.",
-	)
+	}
+	if diff := cmp.Diff(want, warnings); diff != "" {
+		t.Errorf("FromLegacy(clear) warnings mismatch (-want +got):\n%s", diff)
+	}
 
 	type card struct {
 		node                     *builder.Node
@@ -1075,7 +1211,8 @@ func TestLegacyAddedSwitchesAreClear(t *testing.T) {
 			}
 
 			if first.left < second.right && second.left < first.right && first.top < second.bottom && second.top < first.bottom {
-				t.Fatalf("%s at %+v covers %s at %+v", first.node.Label, first.node.Position, second.node.Label, second.node.Position)
+				t.Errorf("FromLegacy(clear) places %s at %+v over %s at %+v, want them clear",
+					first.node.Label, first.node.Position, second.node.Label, second.node.Position)
 			}
 		}
 	}
@@ -1092,8 +1229,8 @@ func TestLegacyAddedSwitchesAreClear(t *testing.T) {
 		// Those that do not get that far are laid out below everything.
 		"own-00": {X: 0, Y: 18672}, "own-15": {X: 960, Y: 19152},
 	} {
-		if nodes := legacySwitchesOf(doc, network); len(nodes) != 1 || nodes[0].Position != want {
-			t.Errorf("switches of %s = %s, want one at %+v", network, asJSON(t, nodes), want)
+		if diff := cmp.Diff([]builder.Position{want}, legacyPositions(legacySwitchesOf(doc, network))); diff != "" {
+			t.Errorf("FromLegacy(clear) switches of %s mismatch (-want +got):\n%s", network, diff)
 		}
 	}
 }
@@ -1132,9 +1269,25 @@ func TestLegacyGroupsNestOnlySoDeep(t *testing.T) {
 	// The innermost cell holds nothing, so it is a note; the cell that would be too deep joins an
 	// outer group that lies around it.
 	groups := legacyNodes(doc, builder.NodeKindGroup)
-	if len(groups) != 39 || deepest != 32 || groups["group 32"].ParentID != groups["group 31"].ID ||
-		groups["group 33"].ParentID == groups["group 32"].ID {
-		t.Errorf("%d groups nest %d deep, want 39 that nest 32 deep, without group 33 in group 32", len(groups), deepest)
+	if len(groups) != 39 {
+		t.Errorf("FromLegacy(deep) has %d groups, want 39", len(groups))
+	}
+
+	if deepest != 32 {
+		t.Errorf("FromLegacy(deep) nests %d deep, want 32", deepest)
+	}
+
+	g31, g32, g33 := groups["group 31"], groups["group 32"], groups["group 33"]
+	if g31 == nil || g32 == nil || g33 == nil {
+		t.Fatalf("FromLegacy(deep) groups 31, 32 and 33 = %v, %v, %v, want all three", g31, g32, g33)
+	}
+
+	if g32.ParentID != g31.ID {
+		t.Errorf("FromLegacy(deep) group 32 parent = %q, want group 31 %q", g32.ParentID, g31.ID)
+	}
+
+	if g33.ParentID == g32.ID {
+		t.Errorf("FromLegacy(deep) group 33 parent = group 32 %q, want an outer group", g33.ParentID)
 	}
 }
 
@@ -1153,31 +1306,43 @@ func TestHasLegacyDiagram(t *testing.T) {
 		"an experiment":        {"Experiment", store.Annotations{builder.LegacyXMLAnnotation: "<mxGraphModel/>"}, false},
 		"a scenario":           {"Scenario", store.Annotations{builder.LegacyXMLAnnotation: "<mxGraphModel/>"}, false},
 	} {
-		config := store.Config{Kind: test.kind, Metadata: store.ConfigMetadata{Name: "lab", Annotations: test.annotations}}
+		t.Run(name, func(t *testing.T) {
+			config := store.Config{Kind: test.kind, Metadata: store.ConfigMetadata{Name: "lab", Annotations: test.annotations}}
 
-		if got := builder.HasLegacyDiagram(config); got != test.want {
-			t.Errorf("%s: HasLegacyDiagram = %t, want %t", name, got, test.want)
-		}
+			if got := builder.HasLegacyDiagram(config); got != test.want {
+				t.Errorf("HasLegacyDiagram(%s with %v) = %t, want %t", test.kind, test.annotations, got, test.want)
+			}
+		})
 	}
 
-	if builder.LegacyXMLAnnotation != "builder-xml" || !builder.IsBuilderAnnotation(builder.LegacyXMLAnnotation) {
-		t.Error("the legacy annotation must be the Builders' own builder-xml")
+	if builder.LegacyXMLAnnotation != "builder-xml" {
+		t.Errorf("LegacyXMLAnnotation = %q, want builder-xml", builder.LegacyXMLAnnotation)
+	}
+
+	if !builder.IsBuilderAnnotation(builder.LegacyXMLAnnotation) {
+		t.Errorf("IsBuilderAnnotation(%q) = false, want true", builder.LegacyXMLAnnotation)
 	}
 }
 
 func TestLegacyNodeID(t *testing.T) {
 	first := builder.LegacyNodeID(builder.NodeKindSwitch, "20")
 
-	if !builder.IsUUID(first) || first != builder.LegacyNodeID(builder.NodeKindSwitch, "20") {
-		t.Errorf("LegacyNodeID = %q, want a UUID that is the same each time", first)
+	if !builder.IsUUID(first) {
+		t.Errorf("IsUUID(LegacyNodeID(switch, 20)) = false for %q, want true", first)
 	}
 
-	for _, other := range []string{
-		builder.LegacyNodeID(builder.NodeKindGroup, "20"), builder.LegacyNodeID(builder.NodeKindSwitch, "21"),
-		builder.SwitchNodeID("20"), builder.NoteNodeID("legacy/20"),
+	if again := builder.LegacyNodeID(builder.NodeKindSwitch, "20"); again != first {
+		t.Errorf("LegacyNodeID(switch, 20) = %q, then %q, want the same each time", first, again)
+	}
+
+	for name, other := range map[string]string{
+		"LegacyNodeID(group, 20)":  builder.LegacyNodeID(builder.NodeKindGroup, "20"),
+		"LegacyNodeID(switch, 21)": builder.LegacyNodeID(builder.NodeKindSwitch, "21"),
+		"SwitchNodeID(20)":         builder.SwitchNodeID("20"),
+		"NoteNodeID(legacy/20)":    builder.NoteNodeID("legacy/20"),
 	} {
 		if other == first {
-			t.Errorf("LegacyNodeID collides with another ID: %s", first)
+			t.Errorf("%s = %s, want another ID than LegacyNodeID(switch, 20)", name, other)
 		}
 	}
 }
@@ -1223,69 +1388,87 @@ func legacySeeds(tb testing.TB) [][]byte {
 	return seeds
 }
 
-// checkLegacyConversion checks that any input is refused with a LegacyError or converts, alone and
-// over a topology, into the same valid document with no more devices than cells.
-func checkLegacyConversion(t *testing.T, content []byte, topology store.Config) {
-	t.Helper()
-
+// checkLegacyConversion returns an error unless any input is refused with a LegacyError or converts,
+// alone and over a topology, into the same valid document with no more devices than cells.
+func checkLegacyConversion(content []byte, topology store.Config) error {
 	diagram, err := builder.DecodeLegacy(content)
 	if err != nil {
 		var refusal *builder.LegacyError
 		if !errors.As(err, &refusal) || refusal.Message == "" || diagram != nil {
-			t.Fatalf("DecodeLegacy returned %v, %v, want a LegacyError", diagram, err)
+			return fmt.Errorf("DecodeLegacy() = %v, %w, want a LegacyError", diagram, err)
 		}
 
-		return
+		return nil
 	}
 
-	encode := func(doc *builder.Document, warnings []string, err error) []byte {
-		t.Helper()
-
+	encode := func(conversion string, doc *builder.Document, warnings []string, err error) (string, error) {
 		if err != nil {
-			t.Fatalf("the conversion returned error: %v", err)
+			return "", fmt.Errorf("%s error = %w, want nil", conversion, err)
 		}
 
-		checkLegacyDocument(t, doc, warnings)
+		if err := checkLegacyDocument(doc, warnings); err != nil {
+			return "", fmt.Errorf("%s: %w", conversion, err)
+		}
 
 		data, err := builder.Encode(doc)
 		if err != nil {
-			t.Fatalf("Encode: %v", err)
+			return "", fmt.Errorf("Encode(%s) = %w, want nil", conversion, err)
 		}
 
-		return data
+		return string(data), nil
 	}
 
 	first, firstWarnings, err := builder.FromLegacy(diagram, "fuzz")
-	data := encode(first, firstWarnings, err)
+
+	data, err := encode("FromLegacy()", first, firstWarnings, err)
+	if err != nil {
+		return err
+	}
 
 	if devices := len(first.DeviceNodes()); devices > diagram.Cells() {
-		t.Fatalf("%d devices from %d cells", devices, diagram.Cells())
+		return fmt.Errorf("FromLegacy() = %d devices from %d cells, want no more devices than cells", devices, diagram.Cells())
 	}
 
 	again, err := builder.DecodeLegacy(content)
 	if err != nil {
-		t.Fatalf("the second DecodeLegacy returned error: %v", err)
+		return fmt.Errorf("second DecodeLegacy() = %w, want nil", err)
 	}
 
 	second, secondWarnings, err := builder.FromLegacy(again, "fuzz")
-	if !bytes.Equal(data, encode(second, secondWarnings, err)) {
-		t.Fatal("two conversions of one diagram differ")
+
+	secondData, err := encode("FromLegacy() of the second decoding", second, secondWarnings, err)
+	if err != nil {
+		return err
+	}
+
+	if diff := cmp.Diff(data, secondData); diff != "" {
+		return fmt.Errorf("FromLegacy() of two decodings of one diagram mismatch (-first +second):\n%s", diff)
 	}
 
 	// Converting the same decoded diagram again changes nothing either.
 	third, thirdWarnings, err := builder.FromLegacy(diagram, "fuzz")
-	if !bytes.Equal(data, encode(third, thirdWarnings, err)) {
-		t.Fatal("converting a diagram changed it")
+
+	thirdData, err := encode("FromLegacy() again", third, thirdWarnings, err)
+	if err != nil {
+		return err
+	}
+
+	if diff := cmp.Diff(data, thirdData); diff != "" {
+		return fmt.Errorf("FromLegacy() of one decoded diagram twice mismatch (-first +again):\n%s", diff)
 	}
 
 	topology.Metadata.Annotations = store.Annotations{builder.LegacyXMLAnnotation: string(content)}
 
 	merged, mergedWarnings, err := builder.FromLegacyTopology(topology)
-	encode(merged, mergedWarnings, err)
+	if _, err := encode("FromLegacyTopology()", merged, mergedWarnings, err); err != nil {
+		return err
+	}
 
 	if got := len(merged.DeviceNodes()); got != 5 {
-		t.Fatalf("the topology converted into %d devices, want its 5", got)
+		return fmt.Errorf("FromLegacyTopology() = %d devices, want the topology's 5", got)
 	}
+
+	return nil
 }
 
 // FuzzDecodeLegacy feeds arbitrary input to the decoder and the conversion. Run it longer with
@@ -1298,6 +1481,8 @@ func FuzzDecodeLegacy(f *testing.F) {
 	topology := legacySampleTopology(f)
 
 	f.Fuzz(func(t *testing.T, content []byte) {
-		checkLegacyConversion(t, content, topology)
+		if err := checkLegacyConversion(content, topology); err != nil {
+			t.Error(err)
+		}
 	})
 }

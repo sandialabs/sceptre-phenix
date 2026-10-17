@@ -1,14 +1,16 @@
 package builder_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/types/builder"
 )
@@ -34,29 +36,28 @@ func TestProvenanceRoundTrip(t *testing.T) {
 	plain := loadDocumentFixture(t, "document.json")
 	stamped := loadDocumentFixture(t, "document.json")
 
-	if got := plain.Provenance(); got != (builder.Provenance{}) {
-		t.Fatalf("the fixture has provenance %+v, want none", got)
+	if diff := cmp.Diff(builder.Provenance{}, plain.Provenance()); diff != "" {
+		t.Errorf("Provenance() of document.json mismatch (-want +got):\n%s", diff)
 	}
 
 	stamped.SetProvenance(testProvenance())
 
-	if got := stamped.Provenance(); got != testProvenance() {
-		t.Fatalf("Provenance() = %+v, want %+v", got, testProvenance())
+	if diff := cmp.Diff(testProvenance(), stamped.Provenance()); diff != "" {
+		t.Errorf("Provenance() after SetProvenance mismatch (-want +got):\n%s", diff)
 	}
 
 	data, err := builder.Encode(stamped)
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatalf("Encode(stamped): %v", err)
 	}
 
 	decoded, err := builder.Parse(data)
 	if err != nil {
-		t.Fatalf("Parse: %v", err)
+		t.Fatalf("Parse(Encode(stamped)): %v", err)
 	}
 
-	if !reflect.DeepEqual(stamped, decoded) {
-		t.Fatalf("JSON round trip changed the document:\nbefore: %s\nafter: %s",
-			asJSON(t, stamped), asJSON(t, decoded))
+	if diff := cmp.Diff(stamped, decoded); diff != "" {
+		t.Errorf("Parse(Encode(stamped)) mismatch (-want +got):\n%s", diff)
 	}
 
 	// The struct order is the canonical order, which an exported file shows.
@@ -68,7 +69,7 @@ func TestProvenanceRoundTrip(t *testing.T) {
 	} {
 		at := strings.Index(string(data), key)
 		if at <= last {
-			t.Fatalf("%q is not written in metadata order (at %d, after %d):\n%.400s", key, at, last, data)
+			t.Errorf("Encode(stamped) writes %q at %d, want it after %d in metadata order:\n%.400s", key, at, last, data)
 		}
 
 		last = at
@@ -78,24 +79,26 @@ func TestProvenanceRoundTrip(t *testing.T) {
 	stamped.SetProvenance(builder.Provenance{})
 
 	for name, doc := range map[string]*builder.Document{"plain": plain, "cleared": stamped} {
-		encoded, err := builder.Encode(doc)
-		if err != nil {
-			t.Fatalf("Encode(%s): %v", name, err)
-		}
-
-		var raw struct {
-			Metadata map[string]any `json:"metadata"`
-		}
-
-		if err := json.Unmarshal(encoded, &raw); err != nil {
-			t.Fatalf("decoding the %s document: %v", name, err)
-		}
-
-		for _, key := range []string{"createdBy", "createdAt", "updatedBy", "updatedAt"} {
-			if _, ok := raw.Metadata[key]; ok {
-				t.Fatalf("the %s document encodes metadata.%s", name, key)
+		t.Run(name, func(t *testing.T) {
+			encoded, err := builder.Encode(doc)
+			if err != nil {
+				t.Fatalf("Encode(%s): %v", name, err)
 			}
-		}
+
+			var raw struct {
+				Metadata map[string]any `json:"metadata"`
+			}
+
+			if err := json.Unmarshal(encoded, &raw); err != nil {
+				t.Fatalf("decoding Encode(%s): %v", name, err)
+			}
+
+			for _, key := range []string{"createdBy", "createdAt", "updatedBy", "updatedAt"} {
+				if value, ok := raw.Metadata[key]; ok {
+					t.Errorf("Encode(%s) metadata.%s = %v, want it left out", name, key, value)
+				}
+			}
+		})
 	}
 }
 
@@ -107,7 +110,7 @@ func TestProvenanceIsPartOfTheContent(t *testing.T) {
 
 	want, err := builder.Encode(base)
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatalf("Encode(base): %v", err)
 	}
 
 	for name, change := range map[string]func(*builder.Provenance){
@@ -116,20 +119,22 @@ func TestProvenanceIsPartOfTheContent(t *testing.T) {
 		"updatedBy": func(p *builder.Provenance) { p.UpdatedBy = "carol" },
 		"updatedAt": func(p *builder.Provenance) { p.UpdatedAt = "2026-10-01T16:10:01Z" },
 	} {
-		doc := loadDocumentFixture(t, "document.json")
-		provenance := testProvenance()
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			provenance := testProvenance()
 
-		change(&provenance)
-		doc.SetProvenance(provenance)
+			change(&provenance)
+			doc.SetProvenance(provenance)
 
-		got, err := builder.Encode(doc)
-		if err != nil {
-			t.Fatalf("Encode(%s): %v", name, err)
-		}
+			got, err := builder.Encode(doc)
+			if err != nil {
+				t.Fatalf("Encode(doc with another %s): %v", name, err)
+			}
 
-		if string(got) == string(want) {
-			t.Fatalf("changing %s did not change the encoding", name)
-		}
+			if bytes.Equal(got, want) {
+				t.Errorf("Encode(doc with another %s) = the encoding of base, want another", name)
+			}
+		})
 	}
 }
 
@@ -148,7 +153,7 @@ func TestFormatTime(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			got := builder.FormatTime(test.time)
 			if got != test.want {
-				t.Fatalf("FormatTime = %q, want %q", got, test.want)
+				t.Errorf("FormatTime(%v) = %q, want %q", test.time, got, test.want)
 			}
 
 			// What the service writes is always what the validator accepts.
@@ -156,7 +161,7 @@ func TestFormatTime(t *testing.T) {
 			doc.Metadata.CreatedAt, doc.Metadata.UpdatedAt = got, got
 
 			if err := doc.Validate(); err != nil {
-				t.Fatalf("a formatted time is refused: %v", err)
+				t.Errorf("Validate() with createdAt and updatedAt %q error = %v, want nil", got, err)
 			}
 		})
 	}
@@ -168,32 +173,43 @@ func TestSchemaProvenanceProperties(t *testing.T) {
 	metadata := mapAt(t, mapAt(t, mustSchema(t), "$defs"), "metadata")
 	properties := mapAt(t, metadata, "properties")
 
+	// Bounded text without control characters.
+	wantUser := map[string]any{
+		"type": "string", "maxLength": builder.MaxUserBytes, "pattern": mapAt(t, properties, "name")["pattern"],
+	}
+
 	for _, name := range []string{"createdBy", "updatedBy"} {
 		property := mapAt(t, properties, name)
+		got := map[string]any{"type": property["type"], "maxLength": property["maxLength"], "pattern": property["pattern"]}
 
-		if property["type"] != "string" || property["maxLength"] != builder.MaxUserBytes ||
-			property["pattern"] != mapAt(t, properties, "name")["pattern"] {
-			t.Fatalf("%s is not bounded text without control characters: %v", name, property)
+		if diff := cmp.Diff(wantUser, got); diff != "" {
+			t.Errorf("Schema() metadata.%s mismatch (-want +got):\n%s", name, diff)
 		}
+	}
+
+	// A time in the fixed form.
+	wantTime := map[string]any{
+		"type": "string", "format": "date-time",
+		"pattern": `^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`,
 	}
 
 	for _, name := range []string{"createdAt", "updatedAt"} {
 		property := mapAt(t, properties, name)
+		got := map[string]any{"type": property["type"], "format": property["format"], "pattern": property["pattern"]}
 
-		if property["type"] != "string" || property["format"] != "date-time" ||
-			property["pattern"] != `^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$` {
-			t.Fatalf("%s is not a time in the fixed form: %v", name, property)
+		if diff := cmp.Diff(wantTime, got); diff != "" {
+			t.Errorf("Schema() metadata.%s mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 
 	for _, name := range []string{"createdBy", "createdAt", "updatedBy", "updatedAt"} {
 		if containsAny(metadata["required"], name) {
-			t.Fatalf("%s is required", name)
+			t.Errorf("Schema() metadata.required = %v, want no %s", metadata["required"], name)
 		}
 
 		description, _ := mapAt(t, properties, name)["description"].(string)
 		if !strings.Contains(description, "the server sets") {
-			t.Fatalf("the description of %s does not say who sets it: %q", name, description)
+			t.Errorf("Schema() metadata.%s description = %q, want one that says the server sets it", name, description)
 		}
 	}
 }
@@ -205,27 +221,40 @@ func TestSchemaNotesProperty(t *testing.T) {
 	notes := mapAt(t, mapAt(t, metadata, "properties"), "notes")
 	note := mapAt(t, notes, "items")
 
-	if notes["type"] != "array" || notes["maxItems"] != builder.MaxDiagramNotes || containsAny(metadata["required"], "notes") ||
-		note["type"] != "string" || note["minLength"] != 1 || note["maxLength"] != builder.MaxDiagramNoteBytes {
-		t.Fatalf("notes are not an optional, bounded list of bounded text: %v", notes)
+	// A bounded list of bounded text.
+	want := map[string]any{
+		"type": "array", "maxItems": builder.MaxDiagramNotes,
+		"items.type": "string", "items.minLength": 1, "items.maxLength": builder.MaxDiagramNoteBytes,
+	}
+	got := map[string]any{
+		"type": notes["type"], "maxItems": notes["maxItems"],
+		"items.type": note["type"], "items.minLength": note["minLength"], "items.maxLength": note["maxLength"],
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Schema() metadata.notes mismatch (-want +got):\n%s", diff)
+	}
+
+	if containsAny(metadata["required"], "notes") {
+		t.Errorf("Schema() metadata.required = %v, want no notes", metadata["required"])
 	}
 
 	pattern, ok := note["pattern"].(string)
 	if !ok {
-		t.Fatalf("a note has no pattern: %v", note)
+		t.Fatalf("Schema() metadata.notes.items.pattern = %v, want a string", note["pattern"])
 	}
 
 	matcher := regexp.MustCompile(pattern)
 
 	for _, text := range []string{"one", " padded ", "two\nlines", "a\ttab", "é"} {
 		if !matcher.MatchString(text) {
-			t.Fatalf("the note pattern rejects %q", text)
+			t.Errorf("note pattern MatchString(%q) = false, want true", text)
 		}
 	}
 
 	for _, text := range []string{"", " ", "\n\t", "bell\a", "carriage\rreturn", "delete\x7f"} {
 		if matcher.MatchString(text) {
-			t.Fatalf("the note pattern accepts %q", text)
+			t.Errorf("note pattern MatchString(%q) = true, want false", text)
 		}
 	}
 
@@ -244,7 +273,7 @@ func TestSchemaNotesProperty(t *testing.T) {
 			accepted := doc.Validate() == nil
 
 			if matched := matcher.MatchString(text); matched != accepted {
-				t.Errorf("a note of %U: the pattern matches it: %t, Validate accepts it: %t", r, matched, accepted)
+				t.Errorf("note pattern MatchString(%U) = %t, want %t as Validate accepts it", r, matched, accepted)
 			}
 		}
 	}
@@ -263,7 +292,7 @@ func TestDocsExamplesParse(t *testing.T) {
 	}
 
 	if len(examples) == 0 {
-		t.Fatalf("%s holds no Builder document", docsExamples)
+		t.Fatalf("filepath.Glob(%s/*.builder.json) = none, want Builder documents", docsExamples)
 	}
 
 	for _, example := range examples {
@@ -274,7 +303,7 @@ func TestDocsExamplesParse(t *testing.T) {
 			}
 
 			if _, err := builder.Parse(data); err != nil {
-				t.Fatalf("not a valid Builder document: %v", err)
+				t.Errorf("Parse(%s) error = %v, want nil", filepath.Base(example), err)
 			}
 		})
 	}

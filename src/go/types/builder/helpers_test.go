@@ -147,6 +147,25 @@ func asJSON(t *testing.T, value any) string {
 	return string(data)
 }
 
+// jsonValue returns a value as its JSON decodes into plain values, so values that encode alike compare
+// equal.
+func jsonValue(t *testing.T, value any) any {
+	t.Helper()
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshaling value: %v", err)
+	}
+
+	var decoded any
+
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshaling value: %v", err)
+	}
+
+	return decoded
+}
+
 // nodeByHostname returns the device node with the given hostname.
 func nodeByHostname(t *testing.T, doc *builder.Document, hostname string) *builder.Node {
 	t.Helper()
