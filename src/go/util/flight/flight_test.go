@@ -190,9 +190,8 @@ func TestGroupReleasesWaitersOnPanic(t *testing.T) {
 	}
 }
 
-// A caller whose context ends while it waits for another's run returns at
-// once, and the run goes on for the callers still waiting. Once none is left,
-// the run's context is canceled, and a later call runs on its own.
+// A caller whose context ends returns at once while the run goes on for those still waiting; once
+// none is left, the run's context is canceled, and a later call runs on its own.
 func TestGroupCancelsARunNoOneWaitsFor(t *testing.T) {
 	t.Parallel()
 

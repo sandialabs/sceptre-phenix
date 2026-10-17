@@ -30,9 +30,8 @@ import (
 )
 
 const (
-	// captureStreamDirEnv tells a copy of the test binary to be the `phenix
-	// vm capture stream` process, reaching minimega through the directory it
-	// names.
+	// captureStreamDirEnv makes a copy of the test binary the `phenix vm capture stream` process,
+	// reaching minimega through the directory it names.
 	captureStreamDirEnv = "PHENIX_TEST_CAPTURE_STREAM_DIR"
 
 	// captureStreamIgnoreEnv names, by number, a signal that process starts
@@ -43,8 +42,7 @@ const (
 	captureStreamArgsEnv = "PHENIX_TEST_CAPTURE_STREAM_ARGS"
 )
 
-// Streaming a capture from another node spools it in the temporary directory.
-// However the command is stopped, the spool is gone once it exits; a signal
+// However a capture stream from another node is stopped, its spool is gone once it exits; a signal
 // it was started ignoring does not stop it.
 func TestVMCaptureStreamRemovesItsSpool(t *testing.T) {
 	t.Parallel()
@@ -101,9 +99,8 @@ func TestVMCaptureStreamRemovesItsSpool(t *testing.T) {
 	}
 }
 
-// A read of a node that does not answer holds up following the capture. An
-// interrupt still removes the spool at once, and a second one ends the
-// process at once.
+// While a silent node holds up the capture, an interrupt still removes the spool at once, and a
+// second one ends the process at once.
 func TestVMCaptureStreamInterruptedTwice(t *testing.T) {
 	t.Parallel()
 
@@ -289,9 +286,8 @@ func TestVMCaptureStreamToDevNull(t *testing.T) {
 	}
 }
 
-// TestCaptureStreamProcess is not a test: it is the process the tests above
-// start, running `phenix vm capture stream` with the arguments they give it
-// for a capture on another node.
+// TestCaptureStreamProcess is not a test: it is the `phenix vm capture stream` process the tests
+// above start, for a capture on another node.
 func TestCaptureStreamProcess(t *testing.T) {
 	dir := os.Getenv(captureStreamDirEnv)
 	if dir == "" {
@@ -492,8 +488,7 @@ func countSpools(t *testing.T, dir string) int {
 	return len(spools)
 }
 
-// fakeNode is minimega, as the stream process sees it, with the VM's capture
-// on another node. It answers each mesh read of the capture file with that
+// fakeNode is minimega with the VM's capture on another node, answering each mesh read with that
 // byte range of what has been captured so far; a silent node never answers.
 type fakeNode struct {
 	silent bool

@@ -102,10 +102,8 @@ func TestGetMMFullPath(t *testing.T) { //nolint:paralleltest // shares the fake 
 	}
 }
 
-// While one caller waits on a slow minimega for its files directory,
-// FilesDirectoryGiven answers at once, and other GetMMFullPath callers wait
-// for minimega's answer rather than take the fallback, a directory minimega
-// does not use.
+// While minimega is slow to give its files directory, FilesDirectoryGiven answers at once and
+// GetMMFullPath callers wait for the answer rather than take a fallback minimega does not use.
 func TestFilesDirectoryDoesNotWaitOnASlowMinimega(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	var (
 		release = make(chan struct{})
@@ -196,9 +194,8 @@ func TestFilesDirectoryDoesNotWaitOnASlowMinimega(t *testing.T) { //nolint:paral
 	}
 }
 
-// A backing file named relative to its overlay is reported with ".."
-// segments; cleaning them as text is right unless one follows a symlinked
-// directory.
+// A backing file named relative to its overlay has ".." segments; cleaning them as text is right
+// unless one follows a symlinked directory.
 func TestCleanBackingPath(t *testing.T) {
 	t.Parallel()
 

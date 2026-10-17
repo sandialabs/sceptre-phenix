@@ -385,14 +385,6 @@ func Run(c *Command) chan *miniclient.Response {
 	return runShared(context.Background(), c, nil)
 }
 
-// RunStarted is Run, calling started (if not nil) just before the command is
-// sent, once it is no longer waiting behind other commands for the shared
-// connection. started may run with the shared connection's lock held, so it
-// must be quick and must not run minimega commands itself.
-func RunStarted(c *Command, started func()) chan *miniclient.Response {
-	return runShared(context.Background(), c, started)
-}
-
 // RunContext is Run for a request or job that may end first: once ctx is done, a command still
 // waiting for the shared connection gives up unsent (ErrNotSent wrapping ctx's error). A sent
 // command is not interrupted; ctx's deadline, if any, bounds it in place of DefaultCommandTimeout.
@@ -400,7 +392,8 @@ func RunContext(ctx context.Context, c *Command) chan *miniclient.Response {
 	return runShared(ctx, c, nil)
 }
 
-// RunStartedContext is RunContext, calling started as RunStarted does.
+// RunStartedContext is RunContext, calling started (if not nil) just before c is sent; started may
+// run under the shared connection's lock, so it must be quick and run no minimega commands.
 func RunStartedContext(ctx context.Context, c *Command, started func()) chan *miniclient.Response {
 	return runShared(ctx, c, started)
 }

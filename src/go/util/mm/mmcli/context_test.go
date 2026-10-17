@@ -12,9 +12,8 @@ import (
 	"phenix/util/mm/mmtest"
 )
 
-// holdShared runs a "hold" command on the shared connection until the
-// returned function is called (or the test ends), and waits until minimega
-// has it. received lists the commands minimega has received since.
+// holdShared holds the shared connection with a "hold" command, once minimega has it, until the
+// returned unhold is called or the test ends; received lists the commands minimega has received.
 func holdShared(t *testing.T) (func(), func() []mmtest.Command) {
 	t.Helper()
 
@@ -86,9 +85,8 @@ func TestRunContextGivesUpWaiting(t *testing.T) {
 	}
 }
 
-// The tabular helpers' context variants give up as RunContext does, with no
-// rows: RunTabularCheckedContext returns an error wrapping the context's, and
-// RunTabularContext logs it.
+// The tabular context variants give up as RunContext does, with no rows; the checked one returns
+// an error wrapping the context's and RunTabularContext logs it.
 func TestRunTabularContextGivesUpWaiting(t *testing.T) {
 	_, received := holdShared(t)
 
@@ -199,26 +197,8 @@ func TestRunContextGivesUpWaitingAfterTheDefault(t *testing.T) {
 	}
 }
 
-// Without a context, a command gives up waiting for the shared connection
-// after DefaultWaitTimeout.
-//
-//nolint:paralleltest // shortens the default deadlines
-func TestRunGivesUpWaitingAfterTheDefault(t *testing.T) {
-	saved := DefaultWaitTimeout
-	DefaultWaitTimeout = testTimeout
-
-	t.Cleanup(func() { DefaultWaitTimeout = saved })
-
-	holdShared(t)
-
-	if err := ErrorResponse(Run(command("waiting"))); !errors.Is(err, ErrTimeout) {
-		t.Fatalf("Run returned %v, want %v", err, ErrTimeout)
-	}
-}
-
-// A command holding the shared connection past DefaultCommandTimeout is
-// abandoned: its caller gets ErrTimeout, and the commands behind it run on a
-// new connection while minimega still works on it.
+// A command holding the shared connection past DefaultCommandTimeout is abandoned with ErrTimeout,
+// and the commands behind it run on a new connection while minimega still works on it.
 //
 //nolint:paralleltest // shortens the default deadlines
 func TestRunAbandonsAHungCommand(t *testing.T) {

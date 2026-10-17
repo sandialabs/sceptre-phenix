@@ -109,10 +109,8 @@ func TestValidateSchemaRejects(t *testing.T) {
 	}
 }
 
-// TestValidateSchemaTopologyIncludes checks the forms of includeTopologies
-// the topology decoder reads: a list, a single name (a list of one) and null,
-// which a Go topology without includes marshals to. A list of anything but
-// names is refused.
+// includeTopologies may be a list, a single name (a list of one) or null (a Go topology without
+// includes), as the topology decoder reads; a list of anything but names is refused.
 func TestValidateSchemaTopologyIncludes(t *testing.T) {
 	for _, ver := range []string{"v1", "v2"} {
 		for _, includes := range []any{[]string{"base"}, "base", nil} {

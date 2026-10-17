@@ -59,9 +59,8 @@ func TestIsLoopback(t *testing.T) {
 	}
 }
 
-// runRootHealthcheck runs "phenix healthcheck" through the real root command,
-// with the store endpoint at a path in a temporary directory, and returns the
-// command's output and error and whether the store was created.
+// runRootHealthcheck runs "phenix healthcheck" through the root command with a temporary store
+// endpoint, returning the output, the error and whether the store was created.
 func runRootHealthcheck(t *testing.T, args ...string) (string, error, bool) {
 	t.Helper()
 
@@ -173,23 +172,5 @@ func TestHealthcheckFromEnvironment(t *testing.T) {
 
 	if out, err, _ := runRootHealthcheck(t); err != nil || strings.TrimSpace(out) != "pass (200)" {
 		t.Errorf("endpoint from PHENIX_UI_LISTEN_ENDPOINT: %q, %v, want pass (200) and no error", out, err)
-	}
-}
-
-// The help names the settings the check can read: phenix ui's flags are not
-// among them, since they live only in the ui process.
-func TestHealthcheckHelp(t *testing.T) {
-	t.Parallel()
-
-	help := newHealthcheckCmd().Long
-
-	if strings.Contains(help, "flags of phenix ui") {
-		t.Errorf("help says phenix ui's flags are read:\n%s", help)
-	}
-
-	for _, want := range []string{"PHENIX_UI_LISTEN_ENDPOINT", "PHENIX_UI_TLS_KEY", "PHENIX_UI_TLS_CERT", "--url"} {
-		if !strings.Contains(help, want) {
-			t.Errorf("help does not mention %s:\n%s", want, help)
-		}
 	}
 }

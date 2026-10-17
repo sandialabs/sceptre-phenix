@@ -20,9 +20,8 @@ const (
 	maxWait = 5 * time.Second
 )
 
-// useFakeMinimega points the package at the fake minimega (see mmtest.Use),
-// with a shared connection of its own, and returns mmtest.Use's listing of
-// the commands received.
+// useFakeMinimega points the package at the fake minimega (see mmtest.Use) with a fresh shared
+// connection, and returns mmtest.Use's listing of the commands received.
 func useFakeMinimega(t *testing.T, handle mmtest.Handler) func() []mmtest.Command {
 	t.Helper()
 
@@ -51,9 +50,7 @@ func reply(body string) []*minicli.Response {
 	return []*minicli.Response{mmtest.Text("fake", body)}
 }
 
-// A lost connection is an error, not an empty success: miniclient records the
-// failure only in its own error field and closes the response channel having
-// sent nothing. The next command redials.
+// A lost connection is an error, not an empty success; the next command redials.
 func TestRunReportsLostConnectionAndRedials(t *testing.T) {
 	useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
 		if cmd.Base == "break" {
@@ -140,9 +137,8 @@ func TestRunTimesOutWithoutDisturbingOtherCommands(t *testing.T) {
 
 	close(timedOut)
 
-	// errors.Is, not a substring match: the error crosses the response channel
-	// as a plain string, so callers can only branch on the timeout if the
-	// sentinel identity survives the round trip (see reconstructErr).
+	// errors.Is, not a substring match: the sentinel must survive the response channel's
+	// round trip as a string (see reconstructErr).
 	if !errors.Is(err, ErrTimeout) {
 		t.Fatalf("expected a timeout error, got %v", err)
 	}
@@ -162,9 +158,8 @@ func TestRunTimesOutWithoutDisturbingOtherCommands(t *testing.T) {
 	}
 }
 
-// errResponse flattens an error to a string to send it through a response
-// channel; reconstructErr must turn phenix's own sentinels back into errors
-// that match them, so callers can branch on a timeout or a lost connection.
+// reconstructErr turns the strings errResponse sends back into errors matching phenix's own
+// sentinels, so callers can branch on a timeout or a lost connection.
 func TestReconstructErrKeepsSentinelIdentity(t *testing.T) {
 	for _, tc := range []struct {
 		name string

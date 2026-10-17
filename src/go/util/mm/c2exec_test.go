@@ -14,9 +14,8 @@ import (
 	"phenix/util/polltest"
 )
 
-// c2Cluster answers the commands ExecC2Command sends for VMs vm1 and vm2,
-// giving each posted cc command the next ID, and reporting a response to
-// every command.
+// c2Cluster answers ExecC2Command's commands for VMs vm1 and vm2, giving each posted cc command
+// the next ID and reporting a response to every command.
 type c2Cluster struct {
 	mu     sync.Mutex
 	nextID int

@@ -13,30 +13,7 @@ import (
 // A dedicated command (for long-running work such as an experiment's script or
 // launching its VMs) runs while another command holds the shared connection.
 func TestRunDedicatedDoesNotWaitForSharedConnection(t *testing.T) {
-	release := make(chan struct{})
-
-	useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
-		if cmd.Base == "hold" {
-			<-release
-		}
-
-		return reply("ok")
-	})
-
-	// Free the shared connection even if the test fails before it would.
-	unhold := sync.OnceFunc(func() { close(release) })
-	t.Cleanup(unhold)
-
-	held := make(chan error, 1)
-
-	go func() {
-		cmd := NewCommand()
-		cmd.Command = "hold"
-
-		held <- ErrorResponse(Run(cmd))
-	}()
-
-	mmtest.Await(t, "hold")
+	holdShared(t)
 
 	done := make(chan string, 1)
 
@@ -57,15 +34,9 @@ func TestRunDedicatedDoesNotWaitForSharedConnection(t *testing.T) {
 	case <-time.After(maxWait):
 		t.Fatal("dedicated command waited for the shared connection")
 	}
-
-	unhold()
-
-	if err := <-held; err != nil {
-		t.Fatalf("holding command failed: %v", err)
-	}
 }
 
-// RunStarted calls started just before sending the command, once it has
+// RunStartedContext calls started just before sending the command, once it has
 // stopped waiting behind other commands, on both connection types.
 func TestRunStartedNotifiesBeforeSending(t *testing.T) {
 	var (
@@ -93,7 +64,7 @@ func TestRunStartedNotifiesBeforeSending(t *testing.T) {
 	shared := NewCommand()
 	shared.Command = "shared"
 
-	if rows := RunTabularStarted(shared, notify); len(rows) != 0 {
+	if rows := RunTabularStartedContext(t.Context(), shared, notify); len(rows) != 0 {
 		t.Fatalf("unexpected rows %v", rows)
 	}
 
@@ -101,7 +72,7 @@ func TestRunStartedNotifiesBeforeSending(t *testing.T) {
 	private.Command = "private"
 	private.Timeout = maxWait
 
-	if err := ErrorResponse(RunStarted(private, notify)); err != nil {
+	if err := ErrorResponse(RunStartedContext(t.Context(), private, notify)); err != nil {
 		t.Fatalf("private command failed: %v", err)
 	}
 
