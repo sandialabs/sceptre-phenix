@@ -94,8 +94,6 @@ func (b *BoltDB) open() error {
 	// once and saves the list; later opens read it.
 	b.db, err = bbolt.Open(b.path, boltFileMode, nil)
 	if err != nil {
-		// callers only Close after a successful open
-		b.db = nil
 		b.mu.Unlock()
 
 		return err
@@ -121,10 +119,6 @@ func (b *BoltDB) view(fn func(*bbolt.Tx) error) error {
 
 func (b *BoltDB) Close() error {
 	defer b.mu.Unlock()
-
-	if b.db == nil {
-		return nil
-	}
 
 	return b.db.Close()
 }

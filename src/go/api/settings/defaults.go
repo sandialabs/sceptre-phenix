@@ -60,16 +60,6 @@ var DefaultSettings = []v2.Setting{ //nolint:gochecknoglobals // global constant
 	{Category: settingCategoryLogging, Name: "MaxFileAge", Type: v2.SettingValueInt, Value: formatInt(DefaultLogMaxFileAge)},
 }
 
-func GetDefault(category, name string) (v2.Setting, bool) {
-	for _, setting := range DefaultSettings {
-		if setting.Category == category && setting.Name == name {
-			return setting, true
-		}
-	}
-
-	return v2.Setting{}, false
-}
-
 func SetDefaults() error {
 	for _, spec := range DefaultSettings {
 		// create ignores if the setting exists already

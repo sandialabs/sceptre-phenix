@@ -29,7 +29,6 @@ type Outcome string
 const (
 	OutcomeSuccess Outcome = "success"
 	OutcomeFailure Outcome = "failure"
-	OutcomeUnknown Outcome = "unknown"
 )
 
 // Action is an audited action, its ECS event.action.

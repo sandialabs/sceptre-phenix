@@ -18,24 +18,20 @@ var (
 	// ErrQueueFull is returned when starting a job that would have to wait
 	// while its owner, or everyone, already has the most jobs waiting.
 	ErrQueueFull = errors.New("too many jobs are waiting to run; try again once some finish")
-
-	// ErrRetryable marks an error that trying again later may not repeat,
-	// such as a resource busy with another action.
-	ErrRetryable = errors.New("temporary failure")
 	// ErrForbidden is the reason an item the user may not act on is skipped.
 	ErrForbidden = errors.New("you don't have permission")
 )
 
 // Retryable reports whether trying again may succeed where err failed: err is
-// or wraps ErrRetryable or [context.DeadlineExceeded], a network timeout, or an
-// error whose Temporary method returns true. Other errors, ErrForbidden among
-// them, are not.
+// or wraps [context.DeadlineExceeded], a network timeout, or an error whose
+// Temporary method returns true. Other errors, ErrForbidden among them, are
+// not.
 func Retryable(err error) bool {
 	if err == nil || errors.Is(err, ErrForbidden) {
 		return false
 	}
 
-	if errors.Is(err, ErrRetryable) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
 

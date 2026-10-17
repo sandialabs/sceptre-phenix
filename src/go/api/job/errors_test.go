@@ -23,14 +23,13 @@ func TestRetryable(t *testing.T) {
 	}{
 		"nil":                     {nil, false},
 		"plain":                   {errors.New("no such VM"), false},
-		"marked":                  {fmt.Errorf("vm is locked: %w", ErrRetryable), true},
 		"deadline":                {fmt.Errorf("waiting: %w", context.DeadlineExceeded), true},
 		"canceled":                {context.Canceled, false},
 		"network timeout":         {&net.OpError{Op: "dial", Err: &net.DNSError{IsTimeout: true}}, true},
 		"temporary":               {fmt.Errorf("wrapped: %w", temporaryError{temporary: true}), true},
 		"says it is not":          {temporaryError{temporary: false}, false},
 		"forbidden":               {ErrForbidden, false},
-		"forbidden and temporary": {errors.Join(ErrForbidden, ErrRetryable), false},
+		"forbidden and temporary": {errors.Join(ErrForbidden, temporaryError{temporary: true}), false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

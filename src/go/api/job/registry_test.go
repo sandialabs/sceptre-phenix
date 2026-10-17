@@ -237,7 +237,7 @@ func TestItemOutcomes(t *testing.T) {
 		Kind: "test", Owner: "alice", Items: []string{"a", "b", "a", "c"},
 		Run: func(_ context.Context, run *Run) error {
 			run.ItemSucceeded("a", []byte(`{"name":"a"}`))
-			run.ItemFailed("b", fmt.Errorf("locked: %w", ErrRetryable))
+			run.ItemFailed("b", fmt.Errorf("locked: %w", temporaryError{temporary: true}))
 			run.ItemSkipped("c", "you don't have permission")
 			run.ItemSucceeded("unknown", nil)
 
@@ -265,7 +265,7 @@ func TestItemOutcomes(t *testing.T) {
 
 	want := []Item{
 		{Name: "a", Status: ItemSucceeded, Result: []byte(`{"name":"a"}`)},
-		{Name: "b", Status: ItemFailed, Error: "locked: temporary failure", Retryable: true},
+		{Name: "b", Status: ItemFailed, Error: "locked: busy", Retryable: true},
 		{Name: "c", Status: ItemSkipped, Error: "you don't have permission"},
 	}
 

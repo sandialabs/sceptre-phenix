@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // The stats report the broadcast queue, and count clients as they leave and
@@ -30,11 +29,8 @@ func TestCurrentStats(t *testing.T) {
 		broadcast <- encodedPublish{}
 	}
 
-	// the drop counters are process-wide totals other tests add to
-	ignoreDrops := cmpopts.IgnoreFields(Stats{}, "SlowClientsDropped", "LogLinesDropped")
-
 	want := Stats{Clients: 2, Queued: 3, Capacity: brokerChannelBuffer}
-	if diff := cmp.Diff(want, CurrentStats(), ignoreDrops); diff != "" {
+	if diff := cmp.Diff(want, CurrentStats()); diff != "" {
 		t.Errorf("CurrentStats() with 2 clients and 3 broadcasts queued mismatch (-want +got):\n%s", diff)
 	}
 
@@ -44,7 +40,8 @@ func TestCurrentStats(t *testing.T) {
 		t.Errorf("CurrentStats().Clients after forget(a) = %d, want 1", got)
 	}
 
-	dropped := CurrentStats().SlowClientsDropped
+	// slowDropped is a process-wide total other tests add to
+	dropped := slowDropped.Load()
 
 	// b stops reading: once its queue is full, the next broadcast drops it
 	for range cap(b.publish) {
@@ -57,7 +54,7 @@ func TestCurrentStats(t *testing.T) {
 		t.Errorf("CurrentStats().Clients after deliver dropped the slow client = %d, want 0", got)
 	}
 
-	if got := CurrentStats().SlowClientsDropped; got != dropped+1 {
-		t.Errorf("CurrentStats().SlowClientsDropped after deliver dropped the slow client = %d, want %d", got, dropped+1)
+	if got := slowDropped.Load(); got != dropped+1 {
+		t.Errorf("slowDropped after deliver dropped the slow client = %d, want %d", got, dropped+1)
 	}
 }

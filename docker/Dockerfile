@@ -161,7 +161,6 @@ RUN wget --progress=dot:giga -O filebeat.deb https://artifacts.elastic.co/downlo
   && rm filebeat.deb
 
 # Allow the use of PyPI mirrors via build args
-ARG PIP_INDEX="https://pypi.org/"
 ARG PIP_INDEX_URL="https://pypi.org/simple"
 
 # Do this before installing phenix-apps so minimega package is latest version

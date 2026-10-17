@@ -503,3 +503,8 @@ func TestListingCacheCancelsAListingNoOneWaitsFor(t *testing.T) {
 		t.Errorf("listings for get(k) after the canceled listing = %d, want 1", got)
 	}
 }
+
+// get is getContext for a caller that waits however long the listing takes.
+func (c *listingCache) get(key string, list func() (Files, error)) (Files, time.Time, error) {
+	return c.getContext(context.Background(), key, func(context.Context) (Files, error) { return list() })
+}

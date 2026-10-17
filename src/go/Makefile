@@ -6,8 +6,6 @@ DATE   := $(shell date -u)
 
 SOURCES   := $(shell find . -name '*.go')
 UISOURCES := $(shell find web -name '*.go' -not -path 'web/rbac/known_policy.go')
-CONFIGS   := $(shell find api/config/default -name '*')
-TEMPLATES := $(shell find tmpl/templates -name '*')
 
 TUNNELSOURCES := $(shell find tunneler -name '*.go' )
 
