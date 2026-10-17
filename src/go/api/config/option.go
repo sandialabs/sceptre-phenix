@@ -6,7 +6,6 @@ type DataType int
 
 const (
 	DataTypeUnknown DataType = iota
-	DataTypeJSON
 	DataTypeYAML
 )
 
@@ -39,13 +38,6 @@ func CreateFromConfig(c *store.Config) CreateOption {
 func CreateFromPath(p string) CreateOption {
 	return func(o *createOptions) {
 		o.path = p
-	}
-}
-
-func CreateFromJSON(d []byte) CreateOption {
-	return func(o *createOptions) {
-		o.data = d
-		o.dataType = DataTypeJSON
 	}
 }
 

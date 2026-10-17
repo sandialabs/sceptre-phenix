@@ -380,11 +380,6 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 		data := string(o.data)
 
 		switch o.dataType {
-		case DataTypeJSON:
-			c, err = store.NewConfigFromJSON([]byte(data))
-			if err != nil {
-				return nil, fmt.Errorf("creating new config from JSON: %w", err)
-			}
 		case DataTypeYAML:
 			c, err = store.NewConfigFromYAML([]byte(data))
 			if err != nil {
