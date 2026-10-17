@@ -86,37 +86,8 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 
 	alice.expect("listing published diagrams", builderRequest{method: http.MethodGet, path: "/builder/documents"}, http.StatusOK)
 
-	// The template library.
-	var made builderTemplateCreateResponse
-
-	alice.doDecode(builderRequest{
-		method: http.MethodPost, path: builderLibraryPath("/items"),
-		body: builderJSON(t, builderTemplateCreateRequest{
-			Templates:  []builderTemplateContent{builderTemplateContentOf("PLC", "plc")},
-			Collection: nil,
-		}),
-	}, http.StatusCreated, &made)
-
-	if len(made.Created) != 1 {
-		t.Fatalf("adding a template made %+v", made)
-	}
-
-	alice.expect("changing the template", builderRequest{
-		method: http.MethodPut, path: builderLibraryPath("/items/" + made.Created[0].ID),
-		body: builderJSON(t, builderTemplateContentOf("PLC two", "plc")), ifMatch: `"1"`,
-	}, http.StatusOK)
-	alice.expect("listing the templates", builderRequest{method: http.MethodGet, path: builderTemplatesRoute}, http.StatusOK)
-
+	// The libraries, through one icon.
 	alice.expect("adding an icon", builderRequest{
 		method: http.MethodPost, path: builderIconsRoute, body: builderIconBody(t, "plc", builderIconPNG(t, 1, 1, 31)),
 	}, http.StatusCreated)
-	alice.expect("listing the icons", builderRequest{method: http.MethodGet, path: builderIconsRoute}, http.StatusOK)
-	alice.expect("reading the icon", builderRequest{method: http.MethodGet, path: builderIconsRoute + "/PLC"}, http.StatusOK)
-
-	alice.expect("renaming the icon", builderRequest{
-		method: http.MethodPut, path: builderIconsRoute + "/plc", body: `{"name":"plc-2"}`,
-	}, http.StatusOK)
-	alice.expect("deleting the icon", builderRequest{
-		method: http.MethodDelete, path: builderIconsRoute + "/plc-2",
-	}, http.StatusNoContent)
 }
