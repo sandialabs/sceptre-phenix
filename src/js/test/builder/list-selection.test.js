@@ -3,6 +3,7 @@
 
 import { describe, expect, test, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
+import fc from 'fast-check';
 
 import {
   columnsOf,
@@ -12,6 +13,7 @@ import {
   shiftPress,
   useListSelection,
 } from '@/builder/listSelection.js';
+import { rowTarget } from '@/builder/roving.js';
 
 const item = (id) => ({ id, name: `Draft ${id}` });
 const keyOf = (entry) => `key-${entry.id}`;
@@ -636,5 +638,96 @@ describe('the columns of a laid-out list', () => {
     expect(columnsOf(row(0, 40, 80))).toBe(1);
     expect(columnsOf(row())).toBe(1);
     expect(columnsOf(null)).toBe(1);
+  });
+});
+
+describe('moving through a list, for any key and size', () => {
+  const NAMES = ['constructor', 'toString', '__proto__', 'hasOwnProperty'];
+  const moves = [
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'Home',
+    'End',
+  ];
+
+  test('a key named like an Object property moves nowhere', () => {
+    for (const key of NAMES) {
+      expect(rowTarget(key, 0, 1)).toBeUndefined();
+    }
+  });
+
+  test('rowTarget focuses an item of the list or nothing', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(fc.string(), fc.constantFrom(...NAMES, ...moves)),
+        fc.integer({ min: 0, max: 20 }),
+        fc.integer({ min: -1, max: 20 }),
+        fc.constantFrom('horizontal', 'vertical'),
+        (key, index, count, orientation) => {
+          const target = rowTarget(key, index, count, { orientation });
+
+          if (target !== undefined) {
+            expect(Number.isInteger(target)).toBe(true);
+            expect(target).toBeGreaterThanOrEqual(0);
+            expect(target).toBeLessThan(count);
+          }
+        },
+      ),
+      { numRuns: 500 },
+    );
+  });
+
+  const list = fc.integer({ min: 1, max: 30 }).chain((count) =>
+    fc.record({
+      count: fc.constant(count),
+      index: fc.integer({ min: 0, max: count - 1 }),
+      columns: fc.integer({ min: 1, max: 6 }),
+    }),
+  );
+
+  test('listKeyAction stays inside the list', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...moves),
+        fc.boolean(),
+        list,
+        (key, shiftKey, { count, index, columns }) => {
+          const action = listKeyAction(
+            { key, shiftKey },
+            { index, count, columns, platform: 'other' },
+          );
+
+          if (action?.index !== undefined) {
+            expect(action.index).toBeGreaterThanOrEqual(0);
+            expect(action.index).toBeLessThan(count);
+          }
+        },
+      ),
+      { numRuns: 500 },
+    );
+  });
+
+  test('in full rows, Down then Up returns to where it started', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2, max: 8 }),
+        fc.integer({ min: 1, max: 6 }),
+        fc.nat(),
+        (rows, columns, start) => {
+          const count = rows * columns;
+          const index = start % (count - columns);
+          const press = (key, at) =>
+            listKeyAction(
+              { key },
+              { index: at, count, columns, platform: 'other' },
+            ).index;
+
+          expect(press('ArrowUp', press('ArrowDown', index))).toBe(index);
+        },
+      ),
+      { numRuns: 300 },
+    );
   });
 });

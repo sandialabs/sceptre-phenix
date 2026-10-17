@@ -29,13 +29,15 @@ export function rowTarget(
   }
 
   const { next, previous } = KEYS[orientation];
-
-  return {
+  const targets = {
     [next]: (index + 1) % count,
     [previous]: (index - 1 + count) % count,
     Home: 0,
     End: count - 1,
-  }[key];
+  };
+
+  // Own keys only: 'constructor' is a key name too.
+  return Object.hasOwn(targets, key) ? targets[key] : undefined;
 }
 
 /**
