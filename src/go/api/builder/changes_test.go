@@ -2,10 +2,9 @@ package builder
 
 import (
 	"encoding/json"
-	"reflect"
-	"slices"
-	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store"
 )
@@ -103,27 +102,33 @@ func TestDescribePublishChangesOfANewTopology(t *testing.T) {
 		VLANAliases: nil,
 	}
 
-	if !reflect.DeepEqual(changes, want) {
-		t.Fatalf("changes = %+v, want %+v", changes, want)
+	if diff := cmp.Diff(want, changes); diff != "" {
+		t.Errorf("DescribePublishChanges(new topology) mismatch (-want +got):\n%s", diff)
 	}
 
 	// A topology-only publication names no experiment and no VLAN alias, and
 	// an image whose presence is unknown says so with null.
 	encoded, err := json.Marshal(changes)
 	if err != nil {
-		t.Fatalf("encoding the changes: %v", err)
+		t.Fatalf("json.Marshal(changes) returned error: %v", err)
 	}
 
-	for _, part := range []string{`"onServer":null`, `"scenarios":[]`} {
-		if !strings.Contains(string(encoded), part) {
-			t.Errorf("JSON %s does not hold %s", encoded, part)
-		}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal(%s) returned error: %v", encoded, err)
 	}
 
-	for _, part := range []string{`"experiment"`, `"vlanAliases"`} {
-		if strings.Contains(string(encoded), part) {
-			t.Errorf("JSON %s holds %s, want it left out without an experiment", encoded, part)
-		}
+	wantJSON := map[string]any{
+		"topology":  map[string]any{"name": "riverside", "action": "create"},
+		"includes":  []any{map[string]any{"name": "plant-a", "change": "added"}},
+		"scenarios": []any{},
+		"images": []any{
+			map[string]any{"name": "ubuntu.qc2", "change": "added", "devices": []any{"web-1", "web-2"}, "onServer": nil},
+			map[string]any{"name": "vyos.qc2", "change": "added", "devices": []any{"fw"}, "onServer": nil},
+		},
+	}
+	if diff := cmp.Diff(wantJSON, decoded); diff != "" {
+		t.Errorf("JSON of DescribePublishChanges(new topology) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -149,8 +154,8 @@ func TestDescribePublishChangesOfAnUpdate(t *testing.T) {
 		ServerImages:   []string{"ubuntu.qc2", "centos.qc2"},
 	})
 
-	if changes.Topology != (ConfigChange{Name: "riverside", Action: ChangeUpdate}) {
-		t.Errorf("topology = %+v, want an update", changes.Topology)
+	if diff := cmp.Diff(ConfigChange{Name: "riverside", Action: ChangeUpdate}, changes.Topology); diff != "" {
+		t.Errorf("DescribePublishChanges(update).Topology mismatch (-want +got):\n%s", diff)
 	}
 
 	wantIncludes := []IncludeChange{
@@ -158,8 +163,8 @@ func TestDescribePublishChangesOfAnUpdate(t *testing.T) {
 		{Name: "plant-b", Change: ItemRemoved},
 		{Name: "plant-c", Change: ItemAdded},
 	}
-	if !reflect.DeepEqual(changes.Includes, wantIncludes) {
-		t.Errorf("includes = %+v, want %+v", changes.Includes, wantIncludes)
+	if diff := cmp.Diff(wantIncludes, changes.Includes); diff != "" {
+		t.Errorf("DescribePublishChanges(update).Includes mismatch (-want +got):\n%s", diff)
 	}
 
 	wantImages := []ImageChange{
@@ -167,8 +172,8 @@ func TestDescribePublishChangesOfAnUpdate(t *testing.T) {
 		{Name: "old.qc2", Change: ItemRemoved, Devices: []string{"db"}, OnServer: boolPointer(false)},
 		{Name: "ubuntu.qc2", Change: ItemKept, Devices: []string{"web-1"}, OnServer: boolPointer(true)},
 	}
-	if !reflect.DeepEqual(changes.Images, wantImages) {
-		t.Errorf("images = %s, want %s", asJSON(t, changes.Images), asJSON(t, wantImages))
+	if diff := cmp.Diff(wantImages, changes.Images); diff != "" {
+		t.Errorf("DescribePublishChanges(update).Images mismatch (-want +got):\n%s", diff)
 	}
 
 	// A topology that already holds the publication is left as it is.
@@ -177,10 +182,19 @@ func TestDescribePublishChangesOfAnUpdate(t *testing.T) {
 		Scenarios: nil, Experiment: nil, ServerImages: nil,
 	})
 
-	if held.Topology.Action != ChangeUnchanged ||
-		slices.ContainsFunc(held.Includes, func(include IncludeChange) bool { return include.Change != ItemKept }) ||
-		slices.ContainsFunc(held.Images, func(image ImageChange) bool { return image.Change != ItemKept }) {
-		t.Errorf("changes of a held topology = %s, want it unchanged with everything kept", asJSON(t, held))
+	wantHeld := &PublishChanges{
+		Topology:  ConfigChange{Name: "riverside", Action: ChangeUnchanged},
+		Includes:  []IncludeChange{{Name: "plant-a", Change: ItemKept}, {Name: "plant-b", Change: ItemKept}},
+		Scenarios: []ScenarioAnnotation{},
+		Images: []ImageChange{
+			{Name: "old.qc2", Change: ItemKept, Devices: []string{"db"}, OnServer: nil},
+			{Name: "ubuntu.qc2", Change: ItemKept, Devices: []string{"web-1"}, OnServer: nil},
+		},
+		Experiment:  nil,
+		VLANAliases: nil,
+	}
+	if diff := cmp.Diff(wantHeld, held); diff != "" {
+		t.Errorf("DescribePublishChanges(held topology) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -204,8 +218,8 @@ func TestDescribePublishChangesOfScenarios(t *testing.T) {
 		{Name: "empty", Change: ScenarioAnnotate},
 		{Name: "water-ops", Change: ScenarioAnnotate},
 	}
-	if !reflect.DeepEqual(changes.Scenarios, want) {
-		t.Fatalf("scenarios = %+v, want %+v", changes.Scenarios, want)
+	if diff := cmp.Diff(want, changes.Scenarios); diff != "" {
+		t.Errorf("DescribePublishChanges(scenarios).Scenarios mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -227,9 +241,12 @@ func TestDescribePublishChangesOfAnExperiment(t *testing.T) {
 		{Name: "it", From: nil, To: intPointer(7), Change: ItemAdded},
 		{Name: "ot", From: nil, To: intPointer(120), Change: ItemAdded},
 	}
-	if created.Experiment == nil || *created.Experiment != (ConfigChange{Name: "lab", Action: ChangeCreate}) ||
-		!reflect.DeepEqual(created.VLANAliases, wantCreated) {
-		t.Errorf("created = %s, want experiment lab created with every alias added", asJSON(t, created))
+	if diff := cmp.Diff(&ConfigChange{Name: "lab", Action: ChangeCreate}, created.Experiment); diff != "" {
+		t.Errorf("DescribePublishChanges(new experiment).Experiment mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(wantCreated, created.VLANAliases); diff != "" {
+		t.Errorf("DescribePublishChanges(new experiment).VLANAliases mismatch (-want +got):\n%s", diff)
 	}
 
 	// Aliases read from JSON are numbers of any kind.
@@ -249,9 +266,12 @@ func TestDescribePublishChangesOfAnExperiment(t *testing.T) {
 		{Name: "it", From: nil, To: intPointer(7), Change: ItemAdded},
 		{Name: "ot", From: intPointer(101), To: intPointer(120), Change: ItemChanged},
 	}
-	if updated.Experiment == nil || updated.Experiment.Action != ChangeUpdate ||
-		!reflect.DeepEqual(updated.VLANAliases, wantUpdated) {
-		t.Errorf("updated = %s, want experiment lab updated with %s", asJSON(t, updated), asJSON(t, wantUpdated))
+	if diff := cmp.Diff(&ConfigChange{Name: "lab", Action: ChangeUpdate}, updated.Experiment); diff != "" {
+		t.Errorf("DescribePublishChanges(stored experiment).Experiment mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(wantUpdated, updated.VLANAliases); diff != "" {
+		t.Errorf("DescribePublishChanges(stored experiment).VLANAliases mismatch (-want +got):\n%s", diff)
 	}
 
 	held := describeChanges(t, PublishState{
@@ -260,18 +280,7 @@ func TestDescribePublishChangesOfAnExperiment(t *testing.T) {
 		ServerImages: nil,
 	})
 
-	if held.Experiment.Action != ChangeUnchanged {
-		t.Errorf("held experiment = %+v, want it unchanged", held.Experiment)
+	if diff := cmp.Diff(&ConfigChange{Name: "lab", Action: ChangeUnchanged}, held.Experiment); diff != "" {
+		t.Errorf("DescribePublishChanges(held experiment).Experiment mismatch (-want +got):\n%s", diff)
 	}
-}
-
-func asJSON(t *testing.T, value any) string {
-	t.Helper()
-
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("encoding %T: %v", value, err)
-	}
-
-	return string(encoded)
 }

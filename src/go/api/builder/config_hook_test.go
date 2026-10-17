@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/api/config"
 	"phenix/store"
 	"phenix/store/recordtest/memrecord"
@@ -156,30 +158,39 @@ func (h *hookTest) topologyUpdated(name string) time.Time {
 	return updated
 }
 
-// assertGone fails unless every doc and its content are gone.
-func (h *hookTest) assertGone(docs ...*PublishedDocument) {
-	h.t.Helper()
+// checkGone returns an error naming every doc that, or whose content, is
+// not gone.
+func (h *hookTest) checkGone(docs ...*PublishedDocument) error {
+	var problems []error
 
 	for _, doc := range docs {
 		if _, err := h.service.GetPublishedDocument(context.Background(), doc.ID); !errors.Is(err, ErrNotFound) {
-			h.t.Errorf("document %s error = %s, want ErrNotFound", doc.ID, fmtErr(err))
+			problems = append(problems, fmt.Errorf("GetPublishedDocument(%s) error = %s, want ErrNotFound", doc.ID, fmtErr(err)))
 		}
 
 		if chunks := chunkKeysOf(&testHarness{store: h.store.Store}, publishedScope(doc.ID)); len(chunks) != 0 {
-			h.t.Errorf("chunks of document %s = %v, want none", doc.ID, chunks)
+			problems = append(problems, fmt.Errorf("chunks of document %s = %v, want none", doc.ID, chunks))
 		}
 	}
+
+	return errors.Join(problems...)
 }
 
-// assertReadable fails unless every doc can be read back whole.
-func (h *hookTest) assertReadable(docs ...*PublishedDocument) {
-	h.t.Helper()
+// checkReadable returns an error naming every doc that cannot be read back
+// whole.
+func (h *hookTest) checkReadable(docs ...*PublishedDocument) error {
+	var problems []error
 
 	for _, doc := range docs {
 		if _, _, err := h.service.GetPublishedDocumentData(context.Background(), doc.ID); err != nil {
-			h.t.Errorf("document %s: %s, want it readable", doc.ID, fmtErr(err))
+			problems = append(
+				problems,
+				fmt.Errorf("GetPublishedDocumentData(%s) returned error: %s, want it readable", doc.ID, fmtErr(err)),
+			)
 		}
 	}
+
+	return errors.Join(problems...)
 }
 
 // TestDeletingTopologyDeletesItsDocuments deletes a topology: its documents go,
@@ -199,17 +210,24 @@ func TestDeletingTopologyDeletesItsDocuments(t *testing.T) {
 	}
 
 	if err := config.Delete("topology/topo"); err != nil {
-		t.Fatalf("Delete returned error: %v", err)
+		t.Fatalf("config.Delete(topology/topo) returned error: %v", err)
 	}
 
-	h.assertGone(old, superseded, current)
-	h.assertReadable(other)
+	if err := h.checkGone(old, superseded, current); err != nil {
+		t.Errorf("after config.Delete(topology/topo):\n%v", err)
+	}
+
+	if err := h.checkReadable(other); err != nil {
+		t.Errorf("after config.Delete(topology/topo):\n%v", err)
+	}
 
 	if err := config.Delete("all"); err != nil {
-		t.Fatalf("Delete all returned error: %v", err)
+		t.Fatalf("config.Delete(all) returned error: %v", err)
 	}
 
-	h.assertGone(other)
+	if err := h.checkGone(other); err != nil {
+		t.Errorf("after config.Delete(all):\n%v", err)
+	}
 }
 
 // TestDeletingTopologyKeepsPublicationInFlight deletes a topology while a
@@ -223,7 +241,7 @@ func TestDeletingTopologyKeepsPublicationInFlight(t *testing.T) {
 		sameSecond bool
 	}{
 		{name: "new content", content: "topo-v2"},
-		{name: "the deleted topology's content", content: "topo-v1"},
+		{name: "the content of the deleted topology", content: "topo-v1"},
 		{name: "new content in the second of the last write", content: "topo-v2", sameSecond: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -246,45 +264,60 @@ func TestDeletingTopologyKeepsPublicationInFlight(t *testing.T) {
 			}
 
 			if err := config.Delete("topology/topo"); err != nil {
-				t.Fatalf("Delete returned error: %v", err)
+				t.Fatalf("config.Delete(topology/topo) returned error: %v", err)
 			}
 
 			if inFlight == nil {
-				t.Fatal("the delete did not list the documents")
+				t.Fatal("config.Delete(topology/topo) did not list the documents")
 			}
 
 			if inFlight.ID != deleted.ID {
-				h.assertGone(deleted)
+				if err := h.checkGone(deleted); err != nil {
+					t.Errorf("after config.Delete(topology/topo):\n%v", err)
+				}
 			}
 
-			h.assertReadable(inFlight)
+			if err := h.checkReadable(inFlight); err != nil {
+				t.Errorf("after config.Delete(topology/topo):\n%v", err)
+			}
 
 			if err := h.writeTopology("topo", inFlight); err != nil {
-				t.Fatalf("the publication could not store the topology again: %v", err)
+				t.Fatalf("storing the topology again for the publication returned error: %v", err)
 			}
 
-			h.assertReadable(inFlight)
+			if err := h.checkReadable(inFlight); err != nil {
+				t.Errorf("after storing the topology again:\n%v", err)
+			}
 
 			// Had the publication failed, nothing would reference the document.
 			if err := config.Delete("topology/topo"); err != nil {
-				t.Fatalf("Delete returned error: %v", err)
+				t.Fatalf("second config.Delete(topology/topo) returned error: %v", err)
 			}
 
 			if test.sameSecond {
 				// Stored no later than the second the topology that named it
 				// was written in, it went with that topology.
-				h.assertGone(inFlight)
+				if err := h.checkGone(inFlight); err != nil {
+					t.Errorf("after the second config.Delete(topology/topo):\n%v", err)
+				}
 
 				return
 			}
 
 			h.now = time.Now().Add(2 * OrphanGracePeriod)
 
-			if removed, err := h.service.CleanupOrphanedDocuments(t.Context(), nil); err != nil || removed != 1 {
-				t.Fatalf("CleanupOrphanedDocuments = %d, %s; want the document removed", removed, fmtErr(err))
+			removed, err := h.service.CleanupOrphanedDocuments(t.Context(), nil)
+			if err != nil {
+				t.Fatalf("CleanupOrphanedDocuments returned error: %s", fmtErr(err))
 			}
 
-			h.assertGone(inFlight)
+			if removed != 1 {
+				t.Errorf("CleanupOrphanedDocuments = %d, want 1 for the in-flight document", removed)
+			}
+
+			if err := h.checkGone(inFlight); err != nil {
+				t.Errorf("after CleanupOrphanedDocuments:\n%v", err)
+			}
 		})
 	}
 }
@@ -323,14 +356,17 @@ func TestRenamingTopologyDeletesItsDocuments(t *testing.T) {
 
 	update("other", "other")
 
-	if kept, err := config.Get("topology/other", false); err != nil || !kept.HasAnnotation(DocumentAnnotation) {
-		t.Fatalf("an update that keeps the name: error = %v, topology %+v; want its document reference kept", err, kept)
+	if kept, err := config.Get("topology/other", false); err != nil {
+		t.Errorf("config.Get(topology/other) after an update that keeps the name returned error: %v", err)
+	} else if !kept.HasAnnotation(DocumentAnnotation) {
+		t.Errorf("config.Get(topology/other) after an update that keeps the name annotations = %v, want the document reference kept",
+			kept.Metadata.Annotations)
 	}
 
 	update("topo", "renamed")
 
 	if _, err := config.Get("topology/topo", false); !errors.Is(err, store.ErrNotExist) {
-		t.Fatalf("topology under its old name: error = %v, want it gone", err)
+		t.Errorf("config.Get(topology/topo) after the rename error = %v, want store.ErrNotExist", err)
 	}
 
 	renamed, err := config.Get("topology/renamed", false)
@@ -339,11 +375,16 @@ func TestRenamingTopologyDeletesItsDocuments(t *testing.T) {
 	}
 
 	if renamed.HasAnnotation(DocumentAnnotation) {
-		t.Errorf("the renamed topology names a document: %q", renamed.Metadata.Annotations[DocumentAnnotation])
+		t.Errorf("config.Get(topology/renamed) document annotation = %q, want none", renamed.Metadata.Annotations[DocumentAnnotation])
 	}
 
-	h.assertGone(old, superseded, current)
-	h.assertReadable(other)
+	if err := h.checkGone(old, superseded, current); err != nil {
+		t.Errorf("after renaming topology topo:\n%v", err)
+	}
+
+	if err := h.checkReadable(other); err != nil {
+		t.Errorf("after renaming topology topo:\n%v", err)
+	}
 }
 
 // TestCreatingTopologyDropsAnotherTopologysDocument stores a copy of a published
@@ -355,18 +396,26 @@ func TestCreatingTopologyDropsAnotherTopologysDocument(t *testing.T) {
 	reference := encodeTestReference(t, doc.Reference())
 
 	for name, named := range map[string]bool{"topo": true, "copy": false} {
-		stored, err := config.Create(config.CreateFromConfig(h.topology(name, reference)), config.CreateWithValidation())
-		if err != nil {
-			t.Fatalf("creating topology %s returned error: %v", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			stored, err := config.Create(config.CreateFromConfig(h.topology(name, reference)), config.CreateWithValidation())
+			if err != nil {
+				t.Fatalf("config.Create(topology %s) returned error: %v", name, err)
+			}
 
-		if stored.HasAnnotation(DocumentAnnotation) != named || !stored.HasAnnotation("kept") {
-			t.Errorf("topology %s annotations = %v; want a document reference: %t, and the others kept",
-				name, stored.Metadata.Annotations, named)
-		}
+			want := store.Annotations{"kept": "yes"}
+			if named {
+				want[DocumentAnnotation] = reference
+			}
+
+			if diff := cmp.Diff(want, stored.Metadata.Annotations); diff != "" {
+				t.Errorf("config.Create(topology %s) annotations mismatch (-want +got):\n%s", name, diff)
+			}
+		})
 	}
 
-	h.assertReadable(doc)
+	if err := h.checkReadable(doc); err != nil {
+		t.Error(err)
+	}
 }
 
 // TestStoringTopologyChecksItsReference stores each kind of document reference:
@@ -415,12 +464,12 @@ func TestStoringTopologyChecksItsReference(t *testing.T) {
 			want:  encode(DocumentReference{Digest: own.Digest, ID: own.ID, Path: file}),
 		},
 		{
-			name:  "another topology's digest and id",
+			name:  "the digest and id of another topology",
 			value: encode(other.Reference()),
 			want:  "",
 		},
 		{
-			name:  "another topology's digest and id with a path",
+			name:  "the digest and id of another topology with a path",
 			value: encode(DocumentReference{Digest: other.Digest, ID: other.ID, Path: file}),
 			want:  encode(DocumentReference{Digest: other.Digest, Path: file}),
 		},
@@ -437,30 +486,40 @@ func TestStoringTopologyChecksItsReference(t *testing.T) {
 		{name: "not json", value: "{", refused: true},
 		{name: "an unknown sub-key", value: `{"id":"` + own.ID + `","draftId":"draft-1"}`, refused: true},
 	} {
-		check := func(t *testing.T, stage string, stored *store.Config, err error) {
-			t.Helper()
-
+		// check returns how the topology a write stored, or the write's error,
+		// differs from what the test wants.
+		check := func(stage string, stored *store.Config, err error) error {
 			if test.refused {
+				var problems []error
+
 				if !errors.Is(err, types.ErrValidationFailed) {
-					t.Fatalf("%s error = %v, want the write refused as invalid", stage, err)
+					problems = append(problems, fmt.Errorf("%s error = %w, want types.ErrValidationFailed", stage, err))
 				}
 
 				if _, getErr := config.Get("topology/topo", false); stage == "create" && !errors.Is(getErr, store.ErrNotExist) {
-					t.Fatalf("%s stored the topology: error = %v", stage, getErr)
+					problems = append(
+						problems,
+						fmt.Errorf("config.Get(topology/topo) after a refused %s error = %w, want store.ErrNotExist", stage, getErr),
+					)
 				}
 
-				return
+				return errors.Join(problems...)
 			}
 
 			if err != nil {
-				t.Fatalf("%s returned error: %v", stage, err)
+				return fmt.Errorf("%s returned error: %w", stage, err)
 			}
 
-			got, named := stored.Metadata.Annotations[DocumentAnnotation]
-			if got != test.want || named != (test.want != "") || !stored.HasAnnotation("kept") {
-				t.Fatalf("%s stored annotations %v, want the document reference %q and the others kept",
-					stage, stored.Metadata.Annotations, test.want)
+			want := store.Annotations{"kept": "yes"}
+			if test.want != "" {
+				want[DocumentAnnotation] = test.want
 			}
+
+			if diff := cmp.Diff(want, stored.Metadata.Annotations); diff != "" {
+				return fmt.Errorf("%s stored annotations mismatch (-want +got):\n%s", stage, diff)
+			}
+
+			return nil
 		}
 
 		for _, validate := range []bool{true, false} {
@@ -479,13 +538,15 @@ func TestStoringTopologyChecksItsReference(t *testing.T) {
 
 				stored, getErr := config.Get("topology/topo", false)
 				if err == nil && getErr != nil {
-					t.Fatalf("getting the created topology returned error: %v", getErr)
+					t.Fatalf("config.Get(topology/topo) after create returned error: %v", getErr)
 				}
 
-				check(t, "create", stored, err)
+				if problem := check("create", stored, err); problem != nil {
+					t.Errorf("config.Create(topology/topo with %s):\n%v", test.name, problem)
+				}
 
 				if !validate && test.refused && !errors.Is(err, ErrInvalid) {
-					t.Fatalf("create error = %v, want the hook's refusal", err)
+					t.Errorf("config.Create(topology/topo with %s) error = %v, want the hook's refusal ErrInvalid", test.name, err)
 				}
 
 				_ = store.Delete(h.topology("topo", ""))
@@ -503,19 +564,23 @@ func TestStoringTopologyChecksItsReference(t *testing.T) {
 
 			stored, getErr := config.Get("topology/topo", false)
 			if getErr != nil {
-				t.Fatalf("getting the updated topology returned error: %v", getErr)
+				t.Fatalf("config.Get(topology/topo) after update returned error: %v", getErr)
 			}
 
-			check(t, "update", stored, err)
+			if problem := check("update", stored, err); problem != nil {
+				t.Errorf("config.Update(topology/topo with %s):\n%v", test.name, problem)
+			}
 
 			if want := encode(own.Reference()); test.refused && stored.Metadata.Annotations[DocumentAnnotation] != want {
-				t.Fatalf("a refused update stored the reference %q, want %q kept",
-					stored.Metadata.Annotations[DocumentAnnotation], want)
+				t.Errorf("refused config.Update(topology/topo with %s) stored the reference %q, want %q kept",
+					test.name, stored.Metadata.Annotations[DocumentAnnotation], want)
 			}
 		})
 	}
 
-	h.assertReadable(own, other)
+	if err := h.checkReadable(own, other); err != nil {
+		t.Error(err)
+	}
 }
 
 // TestRenamingTopologyKeepsItsFile renames topologies that name a Builder file:
@@ -537,33 +602,37 @@ func TestRenamingTopologyKeepsItsFile(t *testing.T) {
 			want: DocumentReference{Digest: doc.Digest, Path: file},
 		},
 	} {
-		if err := h.writeReference(name, test.ref); err != nil {
-			t.Fatalf("storing topology %s returned error: %v", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			if err := h.writeReference(name, test.ref); err != nil {
+				t.Fatalf("storing topology %s returned error: %v", name, err)
+			}
 
-		c, err := config.Get("topology/"+name, false)
-		if err != nil {
-			t.Fatalf("getting topology %s returned error: %v", name, err)
-		}
+			c, err := config.Get("topology/"+name, false)
+			if err != nil {
+				t.Fatalf("config.Get(topology/%s) returned error: %v", name, err)
+			}
 
-		c.Metadata.Name = name + "-renamed"
+			c.Metadata.Name = name + "-renamed"
 
-		if err := config.Update("topology/"+name, c); err != nil {
-			t.Fatalf("renaming topology %s returned error: %v", name, err)
-		}
+			if err := config.Update("topology/"+name, c); err != nil {
+				t.Fatalf("config.Update(topology/%s) renaming it returned error: %v", name, err)
+			}
 
-		renamed, err := config.Get("topology/"+name+"-renamed", false)
-		if err != nil {
-			t.Fatalf("getting the renamed topology returned error: %v", err)
-		}
+			renamed, err := config.Get("topology/"+name+"-renamed", false)
+			if err != nil {
+				t.Fatalf("config.Get(topology/%s-renamed) returned error: %v", name, err)
+			}
 
-		if got, want := renamed.Metadata.Annotations[DocumentAnnotation], encodeTestReference(t, test.want); got != want {
-			t.Errorf("renamed topology %s has the reference %q, want %q", name, got, want)
-		}
+			if got, want := renamed.Metadata.Annotations[DocumentAnnotation], encodeTestReference(t, test.want); got != want {
+				t.Errorf("renamed topology %s document annotation = %q, want %q", name, got, want)
+			}
+		})
 	}
 
 	// The document was published to the old name, which no topology has now.
-	h.assertGone(doc)
+	if err := h.checkGone(doc); err != nil {
+		t.Errorf("after the renames:\n%v", err)
+	}
 }
 
 // TestDeletingTopologyNeverTouchesItsFile deletes topologies that name a digest,
@@ -595,14 +664,21 @@ func TestDeletingTopologyNeverTouchesItsFile(t *testing.T) {
 
 	for _, name := range []string{"by-digest", "with-file", "file-only"} {
 		if err := config.Delete("topology/" + name); err != nil {
-			t.Fatalf("deleting topology %s returned error: %v", name, err)
+			t.Fatalf("config.Delete(topology/%s) returned error: %v", name, err)
 		}
 	}
 
-	h.assertGone(byDigest, withFile)
+	if err := h.checkGone(byDigest, withFile); err != nil {
+		t.Errorf("after the deletes:\n%v", err)
+	}
 
-	if got, err := os.ReadFile(file); err != nil || !bytes.Equal(got, content) {
-		t.Fatalf("the builder file after the deletes = %q, %v; want it untouched", got, err)
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("os.ReadFile(builder file) after the deletes returned error: %v", err)
+	}
+
+	if !bytes.Equal(got, content) {
+		t.Errorf("os.ReadFile(builder file) after the deletes = %q, want %q untouched", got, content)
 	}
 }
 
@@ -628,12 +704,17 @@ func TestLeaveTopologyDocuments(t *testing.T) {
 
 	for _, name := range []string{"left", "other"} {
 		if err := config.Delete("topology/" + name); err != nil {
-			t.Fatalf("Delete returned error: %v", err)
+			t.Fatalf("config.Delete(topology/%s) returned error: %v", name, err)
 		}
 	}
 
-	h.assertReadable(docs["left"])
-	h.assertGone(docs["other"])
+	if err := h.checkReadable(docs["left"]); err != nil {
+		t.Errorf("after deleting a left topology:\n%v", err)
+	}
+
+	if err := h.checkGone(docs["other"]); err != nil {
+		t.Errorf("after deleting a topology that is not left:\n%v", err)
+	}
 
 	restore()
 
@@ -643,11 +724,13 @@ func TestLeaveTopologyDocuments(t *testing.T) {
 
 	for _, name := range []string{"left", "later"} {
 		if err := config.Delete("topology/" + name); err != nil {
-			t.Fatalf("Delete returned error: %v", err)
+			t.Fatalf("config.Delete(topology/%s) returned error: %v", name, err)
 		}
 	}
 
-	h.assertGone(docs["left"], docs["later"])
+	if err := h.checkGone(docs["left"], docs["later"]); err != nil {
+		t.Errorf("after restore:\n%v", err)
+	}
 }
 
 // TestDeletingTopologyWhenDocumentsCannotBeDeleted asserts a failure to
@@ -663,14 +746,16 @@ func TestDeletingTopologyWhenDocumentsCannotBeDeleted(t *testing.T) {
 	h.store.FailDelete = func(string, string) error { return errors.New("injected delete failure") }
 
 	if err := config.Delete("topology/topo"); err != nil {
-		t.Fatalf("Delete returned error: %v", err)
+		t.Errorf("config.Delete(topology/topo) returned error: %v", err)
 	}
 
 	if _, err := config.Get("topology/topo", false); !errors.Is(err, store.ErrNotExist) {
-		t.Fatalf("topology error = %v, want it deleted", err)
+		t.Errorf("config.Get(topology/topo) after the delete error = %v, want store.ErrNotExist", err)
 	}
 
-	h.assertReadable(doc)
+	if err := h.checkReadable(doc); err != nil {
+		t.Error(err)
+	}
 }
 
 // TestDeleteConfigDocuments removes the documents of one config stored before
@@ -702,42 +787,52 @@ func TestDeleteConfigDocuments(t *testing.T) {
 	removed, err := h.service.DeleteConfigDocuments(ctx, DeletedConfig{
 		Kind: "topology", Name: "topo", DocumentID: current.ID, Updated: time.Time{},
 	})
-	if err != nil || removed != 1 {
-		t.Fatalf("DeleteConfigDocuments without a written time = %d, %s; want the old document removed",
-			removed, fmtErr(err))
+	if err != nil {
+		t.Errorf("DeleteConfigDocuments(no written time) returned error: %s", fmtErr(err))
+	} else if removed != 1 {
+		t.Errorf("DeleteConfigDocuments(no written time) = %d, want 1 for the old document", removed)
 	}
 
 	removed, err = h.service.DeleteConfigDocuments(ctx, deleted)
-	if err != nil || removed != 2 {
-		t.Fatalf("DeleteConfigDocuments = %d, %s; want 2 removed", removed, fmtErr(err))
+	if err != nil {
+		t.Errorf("DeleteConfigDocuments(%+v) returned error: %s", deleted, fmtErr(err))
+	} else if removed != 2 {
+		t.Errorf("DeleteConfigDocuments(%+v) = %d, want 2", deleted, removed)
 	}
 
 	for _, doc := range []*PublishedDocument{old, superseded, current} {
 		if _, err := h.service.GetPublishedDocument(ctx, doc.ID); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("document %s error = %s, want ErrNotFound", doc.ID, fmtErr(err))
+			t.Errorf("GetPublishedDocument(%s) error = %s, want ErrNotFound", doc.ID, fmtErr(err))
 		}
 	}
 
 	for _, doc := range []*PublishedDocument{inFlight, other, experiment} {
 		if _, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID); err != nil {
-			t.Fatalf("document %s must survive: %s", doc.ID, fmtErr(err))
+			t.Errorf("GetPublishedDocumentData(%s) returned error: %s, want the document kept", doc.ID, fmtErr(err))
 		}
 	}
 
 	h.passOrphanGracePeriod()
 
-	if removed, err := h.service.DeleteConfigDocuments(ctx, deleted); err != nil || removed != 1 {
-		t.Fatalf("DeleteConfigDocuments past the grace period = %d, %s; want 1 removed", removed, fmtErr(err))
+	if removed, err := h.service.DeleteConfigDocuments(ctx, deleted); err != nil {
+		t.Errorf("DeleteConfigDocuments(%+v) past the grace period returned error: %s", deleted, fmtErr(err))
+	} else if removed != 1 {
+		t.Errorf("DeleteConfigDocuments(%+v) past the grace period = %d, want 1", deleted, removed)
 	}
 
-	for _, invalid := range []DeletedConfig{
-		{Kind: "Topology", Name: "", DocumentID: "", Updated: written},
-		{Kind: "Unknown", Name: "topo", DocumentID: "", Updated: written},
-		{Kind: "Topology", Name: "topo", DocumentID: "not an id", Updated: written},
+	for _, test := range []struct {
+		name    string
+		invalid DeletedConfig
+	}{
+		{name: "no name", invalid: DeletedConfig{Kind: "Topology", Name: "", DocumentID: "", Updated: written}},
+		{name: "unknown kind", invalid: DeletedConfig{Kind: "Unknown", Name: "topo", DocumentID: "", Updated: written}},
+		{name: "malformed document id", invalid: DeletedConfig{Kind: "Topology", Name: "topo", DocumentID: "not an id", Updated: written}},
 	} {
-		if _, err := h.service.DeleteConfigDocuments(ctx, invalid); !errors.Is(err, ErrInvalid) {
-			t.Fatalf("DeleteConfigDocuments(%+v) error = %s, want ErrInvalid", invalid, fmtErr(err))
-		}
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := h.service.DeleteConfigDocuments(ctx, test.invalid); !errors.Is(err, ErrInvalid) {
+				t.Errorf("DeleteConfigDocuments(%+v) error = %s, want ErrInvalid", test.invalid, fmtErr(err))
+			}
+		})
 	}
 }
 
@@ -763,7 +858,7 @@ func TestDeleteConfigDocumentsInTheSecondOfTheLastWrite(t *testing.T) {
 		docs []stored
 	}{
 		{
-			name: "the config's document and those before it go",
+			name: "the document of the config and those before it go",
 			docs: []stored{
 				{content: "earlier", at: -time.Second},
 				{content: "superseded", at: 100 * time.Millisecond},
@@ -773,7 +868,7 @@ func TestDeleteConfigDocumentsInTheSecondOfTheLastWrite(t *testing.T) {
 			},
 		},
 		{
-			name: "the config's document stored the second before",
+			name: "the document of the config stored the second before",
 			docs: []stored{
 				{content: "superseded", at: -300 * time.Millisecond},
 				{content: "current", at: -200 * time.Millisecond, named: true},
@@ -781,7 +876,7 @@ func TestDeleteConfigDocumentsInTheSecondOfTheLastWrite(t *testing.T) {
 			},
 		},
 		{
-			name: "the config's document published again in a later second",
+			name: "the document of the config published again in a later second",
 			docs: []stored{
 				{content: "earlier", at: -time.Second},
 				{content: "superseded", at: 100 * time.Millisecond, kept: true},
@@ -834,18 +929,23 @@ func TestDeleteConfigDocumentsInTheSecondOfTheLastWrite(t *testing.T) {
 				}
 			}
 
-			if removed, err := h.service.DeleteConfigDocuments(ctx, deleted); err != nil || removed != want {
-				t.Fatalf("DeleteConfigDocuments = %d, %s; want %d removed", removed, fmtErr(err), want)
+			removed, err := h.service.DeleteConfigDocuments(ctx, deleted)
+			if err != nil {
+				t.Fatalf("DeleteConfigDocuments(%+v) returned error: %s", deleted, fmtErr(err))
+			}
+
+			if removed != want {
+				t.Errorf("DeleteConfigDocuments(%+v) = %d, want %d", deleted, removed, want)
 			}
 
 			for i, doc := range test.docs {
 				_, _, err := h.service.GetPublishedDocumentData(ctx, docs[i].ID)
 				if doc.kept && err != nil {
-					t.Errorf("document %q: %s, want it kept", doc.content, fmtErr(err))
+					t.Errorf("GetPublishedDocumentData(document %q) returned error: %s, want it kept", doc.content, fmtErr(err))
 				}
 
 				if !doc.kept && !errors.Is(err, ErrNotFound) {
-					t.Errorf("document %q: error = %s, want it removed", doc.content, fmtErr(err))
+					t.Errorf("GetPublishedDocumentData(document %q) error = %s, want ErrNotFound", doc.content, fmtErr(err))
 				}
 			}
 		})
@@ -855,16 +955,25 @@ func TestDeleteConfigDocumentsInTheSecondOfTheLastWrite(t *testing.T) {
 func TestConfigUpdated(t *testing.T) {
 	t.Parallel()
 
-	want := time.Date(2026, time.September, 30, 12, 0, 5, 0, time.UTC)
+	second := time.Date(2026, time.September, 30, 12, 0, 5, 0, time.UTC)
 
-	for _, updated := range []string{"2026-09-30T12:00:05Z", "2026-09-30T14:00:05+02:00", "2026-09-30T12:00:05.25Z"} {
-		got := configUpdated(&store.Config{Metadata: store.ConfigMetadata{Updated: updated}})
-		if !got.Equal(want) {
-			t.Errorf("configUpdated(%q) = %s, want %s", updated, got, want)
-		}
-	}
+	for _, test := range []struct {
+		name    string
+		updated string
+		want    time.Time
+	}{
+		{name: "UTC", updated: "2026-09-30T12:00:05Z", want: second},
+		{name: "offset", updated: "2026-09-30T14:00:05+02:00", want: second},
+		{name: "fraction of a second", updated: "2026-09-30T12:00:05.25Z", want: second},
+		{name: "no updated time", updated: "", want: time.Time{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	if got := configUpdated(&store.Config{}); !got.IsZero() {
-		t.Errorf("configUpdated without an updated time = %s, want zero", got)
+			got := configUpdated(&store.Config{Metadata: store.ConfigMetadata{Updated: test.updated}})
+			if !got.Equal(test.want) {
+				t.Errorf("configUpdated(%q) = %s, want %s", test.updated, got, test.want)
+			}
+		})
 	}
 }

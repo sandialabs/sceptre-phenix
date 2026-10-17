@@ -46,8 +46,8 @@ func TestCreateDraftAndReadCurrentDocument(t *testing.T) {
 		t.Fatalf("GetCurrentDocument returned error: %v", err)
 	}
 
-	if !sameContent(t, snapshot.Data, data) {
-		t.Fatal("current document bytes do not match the stored document")
+	if diff := contentDiff(t, data, snapshot.Data); diff != "" {
+		t.Errorf("GetCurrentDocument(draft) content mismatch (-want +got):\n%s", diff)
 	}
 
 	doc, err := snapshot.Decode()
@@ -238,8 +238,8 @@ func TestAppendSnapshotAdvancesHistoryAndRecordsActor(t *testing.T) {
 		t.Fatalf("GetCurrentDocument returned error: %v", err)
 	}
 
-	if !sameContent(t, current.Data, testDocument(t, "topo-v2", 0)) {
-		t.Fatal("current document is not the appended snapshot")
+	if diff := contentDiff(t, testDocument(t, "topo-v2", 0), current.Data); diff != "" {
+		t.Errorf("GetCurrentDocument(draft) content mismatch with the appended snapshot (-want +got):\n%s", diff)
 	}
 
 	first, err := h.service.GetSnapshot(ctx, meta.ID, updated.History[0].ID)
@@ -247,8 +247,8 @@ func TestAppendSnapshotAdvancesHistoryAndRecordsActor(t *testing.T) {
 		t.Fatalf("GetSnapshot returned error: %v", err)
 	}
 
-	if !sameContent(t, first.Data, testDocument(t, "topo", 0)) {
-		t.Fatal("older snapshot content changed")
+	if diff := contentDiff(t, testDocument(t, "topo", 0), first.Data); diff != "" {
+		t.Errorf("GetSnapshot(first snapshot) content mismatch (-want +got):\n%s", diff)
 	}
 
 	if _, err := h.service.GetSnapshot(ctx, meta.ID, "nope"); !errors.Is(err, ErrNotFound) {
@@ -451,8 +451,8 @@ func TestMoveCursorAndRedoBranchTruncation(t *testing.T) {
 		t.Fatalf("GetCurrentDocument returned error: %v", err)
 	}
 
-	if !sameContent(t, current.Data, testDocument(t, "v2", 0)) {
-		t.Fatal("cursor move did not change the current document")
+	if diff := contentDiff(t, testDocument(t, "v2", 0), current.Data); diff != "" {
+		t.Errorf("GetCurrentDocument(draft) after the cursor move content mismatch (-want +got):\n%s", diff)
 	}
 
 	// Appending from a moved cursor discards the redo branch and its chunks.
@@ -935,9 +935,12 @@ func TestDraftsSurviveServiceRestartOnBoltDB(t *testing.T) {
 		t.Fatalf("GetCurrentDocument after restart returned error: %v", err)
 	}
 
-	if !sameContent(t, snapshot.Data, testRandomDocument(t, "topo-v2", 40000)) ||
-		documentProvenance(t, snapshot.Data).UpdatedBy != testPeer {
-		t.Fatal("document content did not survive the restart")
+	if diff := contentDiff(t, testRandomDocument(t, "topo-v2", 40000), snapshot.Data); diff != "" {
+		t.Errorf("GetCurrentDocument(draft) after restart content mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := documentProvenance(t, snapshot.Data).UpdatedBy; got != testPeer {
+		t.Errorf("GetCurrentDocument(draft) after restart UpdatedBy = %q, want %q", got, testPeer)
 	}
 
 	if len(snapshot.Manifest.ChunkDigests) < 2 {

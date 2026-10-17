@@ -1,7 +1,6 @@
 package builder
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"strconv"
@@ -9,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store/recordtest/memrecord"
 	"phenix/types/builder"
@@ -108,14 +109,14 @@ func stampedDocument(t *testing.T, data []byte, provenance builder.Provenance) [
 	return stamped
 }
 
-// sameContent reports whether two encoded documents differ in nothing but
-// the four fields the service sets when it stores a snapshot.
-func sameContent(t *testing.T, got, want []byte) bool {
+// contentDiff returns how two encoded documents differ, as cmp.Diff does,
+// in all but the four fields the service sets when it stores a snapshot.
+func contentDiff(t *testing.T, want, got []byte) string {
 	t.Helper()
 
 	var none builder.Provenance
 
-	return bytes.Equal(stampedDocument(t, got, none), stampedDocument(t, want, none))
+	return cmp.Diff(string(stampedDocument(t, want, none)), string(stampedDocument(t, got, none)))
 }
 
 // stampAt is what a save by actor leaves in a document at the test clock's

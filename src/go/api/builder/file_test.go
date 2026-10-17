@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
 
 	"phenix/types/builder"
@@ -124,16 +125,21 @@ func TestReadDocumentFile(t *testing.T) {
 
 			file, err := files.read(path)
 			if err != nil {
-				t.Fatalf("ReadDocumentFile returned error: %v", err)
+				t.Fatalf("ReadDocumentFile(%s) returned error: %v", path, err)
 			}
 
-			if !bytes.Equal(file.Data, canonical) || file.Digest != digestOf(canonical) {
-				t.Fatalf("file = %d bytes with digest %s, want the canonical document with digest %s",
-					len(file.Data), file.Digest, digestOf(canonical))
+			if diff := cmp.Diff(string(canonical), string(file.Data)); diff != "" {
+				t.Errorf("ReadDocumentFile(%s).Data mismatch with the canonical document (-want +got):\n%s", path, diff)
 			}
 
-			if file.Document == nil || file.Document.Metadata.Name != "site" {
-				t.Fatalf("document = %+v, want the document named site", file.Document)
+			if want := digestOf(canonical); file.Digest != want {
+				t.Errorf("ReadDocumentFile(%s).Digest = %s, want the canonical document digest %s", path, file.Digest, want)
+			}
+
+			if file.Document == nil {
+				t.Errorf("ReadDocumentFile(%s).Document = nil, want the document named site", path)
+			} else if got := file.Document.Metadata.Name; got != "site" {
+				t.Errorf("ReadDocumentFile(%s).Document name = %q, want site", path, got)
 			}
 
 			raw, err := os.ReadFile(path)
@@ -142,7 +148,11 @@ func TestReadDocumentFile(t *testing.T) {
 			}
 
 			if name != "canonical JSON" && file.Digest == digestOf(raw) {
-				t.Fatal("the digest is the digest of the file's bytes")
+				t.Errorf(
+					"ReadDocumentFile(%s).Digest = %s, the digest of the file bytes, want the canonical document digest",
+					path,
+					file.Digest,
+				)
 			}
 		})
 	}
@@ -185,11 +195,11 @@ func TestReadDocumentFileRefusals(t *testing.T) {
 			path: secret, reason: DocumentFileOutside, is: ErrInvalid,
 			said: "Builder file %s is outside " + files.root + ", the directory phenix reads Builder files from.",
 		},
-		"the root's parent": {
+		"the parent of the root": {
 			path:   files.write(filepath.Join(filepath.Dir(files.root), "beside.json"), valid),
 			reason: DocumentFileOutside, is: ErrInvalid,
 		},
-		"a sibling whose name starts with the root's": {
+		"a sibling whose name starts with the root name": {
 			path: filepath.Dir(files.root) + "/phenix-other/x.json", reason: DocumentFileOutside, is: ErrInvalid,
 		},
 		"below the excluded directory": {
@@ -289,35 +299,39 @@ func TestReadDocumentFileRefusals(t *testing.T) {
 
 			var fileErr *DocumentFileError
 
-			if !errors.As(err, &fileErr) || file != nil {
-				t.Fatalf("ReadDocumentFile = %+v, %v; want a DocumentFileError", file, err)
+			if file != nil {
+				t.Errorf("ReadDocumentFile(%s) = %+v, want nil", test.path, file)
+			}
+
+			if !errors.As(err, &fileErr) {
+				t.Fatalf("ReadDocumentFile(%s) error = %v, want a *DocumentFileError", test.path, err)
 			}
 
 			want := DocumentFileError{Reason: test.reason, Path: test.path, Root: files.root, Topology: ""}
-			if *fileErr != want {
-				t.Fatalf("error = %+v, want %+v", *fileErr, want)
+			if diff := cmp.Diff(want, *fileErr); diff != "" {
+				t.Errorf("ReadDocumentFile(%s) error mismatch (-want +got):\n%s", test.path, diff)
 			}
 
 			if !errors.Is(err, test.is) {
-				t.Fatalf("error %q does not match %v", err, test.is)
+				t.Errorf("ReadDocumentFile(%s) error = %q, want %v", test.path, err, test.is)
 			}
 
 			if said := strings.ReplaceAll(test.said, "%s", test.path); said != "" && err.Error() != said {
-				t.Fatalf("error = %q, want %q", err, said)
+				t.Errorf("ReadDocumentFile(%s) error = %q, want %q", test.path, err, said)
 			}
 
-			if errors.Unwrap(errors.Unwrap(err)) != nil {
-				t.Fatalf("error %q wraps a cause", err)
+			if cause := errors.Unwrap(errors.Unwrap(err)); cause != nil {
+				t.Errorf("ReadDocumentFile(%s) error %q wraps the cause %v, want none", test.path, err, cause)
 			}
 
 			if strings.Contains(err.Error(), fileMarker) {
-				t.Fatalf("error %q repeats what the file holds", err)
+				t.Errorf("ReadDocumentFile(%s) error = %q, want it not to repeat what the file holds", test.path, err)
 			}
 		})
 	}
 
 	if logged := logs.String(); strings.Contains(logged, fileMarker) {
-		t.Fatalf("the log repeats what a file holds: %s", logged)
+		t.Errorf("log after ReadDocumentFile refusals = %s, want it not to repeat what a file holds", logged)
 	}
 }
 
@@ -337,15 +351,25 @@ func TestReadDocumentFileHidesOtherFiles(t *testing.T) {
 		var fileErr *DocumentFileError
 
 		_, err := files.read(path)
-		if !errors.As(err, &fileErr) || fileErr.Reason != DocumentFileMissing || !errors.Is(err, ErrNotFound) {
-			t.Fatalf("below %s: ReadDocumentFile returned %v, want the file missing", name, err)
+		if !errors.As(err, &fileErr) {
+			t.Errorf("ReadDocumentFile(%s) error = %v, want a *DocumentFileError", path, err)
+
+			continue
+		}
+
+		if fileErr.Reason != DocumentFileMissing {
+			t.Errorf("ReadDocumentFile(%s) reason = %q, want %q", path, fileErr.Reason, DocumentFileMissing)
+		}
+
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("ReadDocumentFile(%s) error = %v, want ErrNotFound", path, err)
 		}
 
 		said[name] = strings.ReplaceAll(err.Error(), path, "%s")
 	}
 
 	if said["disk.qc2"] != said["nodisk.qc2"] {
-		t.Fatalf("below a file: %q, below nothing: %q, want the same sentence", said["disk.qc2"], said["nodisk.qc2"])
+		t.Errorf("ReadDocumentFile below a file = %q, want %q as below nothing", said["disk.qc2"], said["nodisk.qc2"])
 	}
 }
 
@@ -366,8 +390,10 @@ func TestReadDocumentFileUnreadable(t *testing.T) {
 
 	var fileErr *DocumentFileError
 
-	if _, err := files.read(path); !errors.As(err, &fileErr) || fileErr.Reason != DocumentFileUnreadable {
-		t.Fatalf("ReadDocumentFile returned %v, want the file unreadable", err)
+	if _, err := files.read(path); !errors.As(err, &fileErr) {
+		t.Errorf("ReadDocumentFile(file of mode 0) error = %v, want a *DocumentFileError", err)
+	} else if fileErr.Reason != DocumentFileUnreadable {
+		t.Errorf("ReadDocumentFile(file of mode 0) reason = %q, want %q", fileErr.Reason, DocumentFileUnreadable)
 	}
 }
 
@@ -378,20 +404,20 @@ func TestReadDocumentFileDirectories(t *testing.T) {
 	path := files.write(files.path("site.json"), testDocument(t, "site", 0))
 	guest := files.write(filepath.Join(files.excluded, "vm", "guest.json"), testDocument(t, "site", 0))
 
-	reason := func(root string, excluded []string, path string) DocumentFileReason {
-		t.Helper()
-
+	// reason returns the reason ReadDocumentFile refuses path, or the error it
+	// returns that is not a *DocumentFileError.
+	reason := func(root string, excluded []string, path string) (DocumentFileReason, error) {
 		_, err := ReadDocumentFile(root, excluded, path)
 		if err == nil {
-			return ""
+			return "", nil
 		}
 
 		var fileErr *DocumentFileError
 		if !errors.As(err, &fileErr) {
-			t.Fatalf("ReadDocumentFile returned %v, want a DocumentFileError", err)
+			return "", err
 		}
 
-		return fileErr.Reason
+		return fileErr.Reason, nil
 	}
 
 	t.Chdir(filepath.Dir(files.root))
@@ -421,12 +447,20 @@ func TestReadDocumentFileDirectories(t *testing.T) {
 		"no root":                 {root: "", path: path, want: DocumentFileOutside},
 		"a root that is missing":  {root: files.root + "/gone", path: files.root + "/gone/site.json", want: DocumentFileMissing},
 		"a root that is a file":   {root: path, path: path + "/site.json", want: DocumentFileUnreadable},
-		"the file system's root":  {root: "/", excluded: []string{files.excluded}, path: path},
+		"the file system root":    {root: "/", excluded: []string{files.excluded}, path: path},
 		"excluded from that root": {root: "/", excluded: []string{files.excluded}, path: guest, want: DocumentFileOutside},
 	} {
-		if got := reason(test.root, test.excluded, test.path); got != test.want {
-			t.Errorf("%s: reason = %q, want %q", name, got, test.want)
-		}
+		t.Run(name, func(t *testing.T) {
+			got, err := reason(test.root, test.excluded, test.path)
+			if err != nil {
+				t.Fatalf("ReadDocumentFile(%q, %q, %q) error = %v, want nil or a *DocumentFileError",
+					test.root, test.excluded, test.path, err)
+			}
+
+			if got != test.want {
+				t.Errorf("ReadDocumentFile(%q, %q, %q) reason = %q, want %q", test.root, test.excluded, test.path, got, test.want)
+			}
+		})
 	}
 }
 
@@ -438,11 +472,11 @@ func TestDocumentFileErrorDigest(t *testing.T) {
 	err := error(&DocumentFileError{Reason: DocumentFileDigest, Path: "/phenix/site.yaml", Root: "", Topology: "site"})
 
 	if want := "Builder file /phenix/site.yaml does not match the digest topology site records for it."; err.Error() != want {
-		t.Fatalf("error = %q, want %q", err, want)
+		t.Errorf("DocumentFileError{Reason: DocumentFileDigest}.Error() = %q, want %q", err, want)
 	}
 
 	if !errors.Is(err, ErrInvalid) {
-		t.Fatalf("error %q does not match ErrInvalid", err)
+		t.Errorf("DocumentFileError{Reason: DocumentFileDigest} = %q, want it to match ErrInvalid", err)
 	}
 }
 
@@ -452,22 +486,36 @@ func TestParseDocumentText(t *testing.T) {
 	canonical := testDocument(t, "site", 0)
 
 	for name, text := range map[string][]byte{"JSON": canonical, "YAML": documentYAML(t, canonical)} {
-		file, err := ParseDocumentText(text)
-		if err != nil {
-			t.Fatalf("%s: ParseDocumentText returned error: %v", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			file, err := ParseDocumentText(text)
+			if err != nil {
+				t.Fatalf("ParseDocumentText(%s) returned error: %v", name, err)
+			}
 
-		if !bytes.Equal(file.Data, canonical) || file.Digest != digestOf(canonical) || file.Document.Metadata.Name != "site" {
-			t.Fatalf("%s: file = %d bytes with digest %s, want the canonical document", name, len(file.Data), file.Digest)
-		}
+			if diff := cmp.Diff(string(canonical), string(file.Data)); diff != "" {
+				t.Errorf("ParseDocumentText(%s).Data mismatch with the canonical document (-want +got):\n%s", name, diff)
+			}
+
+			if want := digestOf(canonical); file.Digest != want {
+				t.Errorf("ParseDocumentText(%s).Digest = %s, want the canonical document digest %s", name, file.Digest, want)
+			}
+
+			if got := file.Document.Metadata.Name; got != "site" {
+				t.Errorf("ParseDocumentText(%s) document name = %q, want site", name, got)
+			}
+		})
 	}
 
 	// A name a config file would have expanded stays as it is written.
 	t.Setenv("BUILDER_FILE_TEST", "expanded")
 
 	file, err := ParseDocumentText(bytes.Replace(canonical, []byte(`"site"`), []byte(`"${BUILDER_FILE_TEST}"`), 1))
-	if err != nil || file.Document.Metadata.Name != "${BUILDER_FILE_TEST}" {
-		t.Fatalf("ParseDocumentText = %+v, %v; want the name kept as it is written", file, err)
+	if err != nil {
+		t.Fatalf("ParseDocumentText(document named ${BUILDER_FILE_TEST}) returned error: %v", err)
+	}
+
+	if got := file.Document.Metadata.Name; got != "${BUILDER_FILE_TEST}" {
+		t.Errorf("ParseDocumentText(document named ${BUILDER_FILE_TEST}) name = %q, want it kept as it is written", got)
 	}
 
 	for name, test := range map[string]struct {
@@ -484,9 +532,19 @@ func TestParseDocumentText(t *testing.T) {
 			text: append(bytes.Clone(canonical), bytes.Repeat([]byte(" "), MaxDocumentBytes)...), is: ErrTooLarge, reason: "limit is",
 		},
 	} {
-		file, err := ParseDocumentText(test.text)
-		if file != nil || !errors.Is(err, test.is) || !strings.Contains(err.Error(), test.reason) {
-			t.Errorf("%s: ParseDocumentText = %+v, %v; want an error matching %v that says %q", name, file, err, test.is, test.reason)
-		}
+		t.Run(name, func(t *testing.T) {
+			file, err := ParseDocumentText(test.text)
+			if file != nil {
+				t.Errorf("ParseDocumentText(%s) = %+v, want nil", name, file)
+			}
+
+			if !errors.Is(err, test.is) {
+				t.Errorf("ParseDocumentText(%s) error = %v, want %v", name, err, test.is)
+			}
+
+			if err != nil && !strings.Contains(err.Error(), test.reason) {
+				t.Errorf("ParseDocumentText(%s) error = %q, want it to say %q", name, err, test.reason)
+			}
+		})
 	}
 }

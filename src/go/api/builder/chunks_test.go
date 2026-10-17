@@ -18,39 +18,46 @@ func TestBuildPayloadSplitsAndDigests(t *testing.T) {
 		t.Fatalf("buildPayload returned error: %v", err)
 	}
 
-	switch {
-	case load.digest != digestOf(data):
-		t.Fatal("payload digest must be the digest of the uncompressed document")
-	case load.size != int64(len(data)):
-		t.Fatalf("payload size = %d, want %d", load.size, len(data))
-	case len(load.chunks) != len(load.chunkDigests):
-		t.Fatal("every chunk must have a digest")
-	case len(load.chunks) < 2:
-		t.Fatalf("chunks = %d, want a multi-chunk payload with a %d byte chunk size", len(load.chunks), h.service.chunkSize)
+	if want := digestOf(data); load.digest != want {
+		t.Errorf("buildPayload(data).digest = %q, want the uncompressed document digest %q", load.digest, want)
+	}
+
+	if load.size != int64(len(data)) {
+		t.Errorf("buildPayload(data).size = %d, want %d", load.size, len(data))
+	}
+
+	if len(load.chunks) < 2 {
+		t.Errorf("buildPayload(data) made %d chunks, want a multi-chunk payload with a %d byte chunk size",
+			len(load.chunks), h.service.chunkSize)
+	}
+
+	if len(load.chunks) != len(load.chunkDigests) {
+		t.Fatalf("buildPayload(data) made %d chunks and %d chunk digests, want one digest per chunk",
+			len(load.chunks), len(load.chunkDigests))
 	}
 
 	var total int
 
 	for i, chunk := range load.chunks {
 		if i < len(load.chunks)-1 && len(chunk) != h.service.chunkSize {
-			t.Fatalf("chunk %d is %d bytes, want %d", i, len(chunk), h.service.chunkSize)
+			t.Errorf("buildPayload(data) chunk %d is %d bytes, want %d", i, len(chunk), h.service.chunkSize)
 		}
 
-		if digestOf(chunk) != load.chunkDigests[i] {
-			t.Fatalf("chunk %d digest does not match its manifest entry", i)
+		if got := digestOf(chunk); got != load.chunkDigests[i] {
+			t.Errorf("digest of chunk %d = %q, want its manifest entry %q", i, got, load.chunkDigests[i])
 		}
 
 		total += len(chunk)
 	}
 
 	if int64(total) != load.compressedSize {
-		t.Fatalf("chunk bytes = %d, want the compressed size %d", total, load.compressedSize)
+		t.Errorf("buildPayload(data) chunk bytes = %d, want the compressed size %d", total, load.compressedSize)
 	}
 }
 
 func TestBuildPayloadRejectsOversizedDocuments(t *testing.T) {
 	if _, err := buildPayload(bytes.Repeat([]byte("a"), MaxDocumentBytes+1), ChunkBytes); !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("buildPayload error = %s, want ErrTooLarge", fmtErr(err))
+		t.Errorf("buildPayload(%d bytes) error = %s, want ErrTooLarge", MaxDocumentBytes+1, fmtErr(err))
 	}
 }
 
@@ -58,39 +65,39 @@ func TestChunkKeyLayout(t *testing.T) {
 	key := chunkKey(snapshotScope("draft-1", "snap-1"), 3)
 
 	if key != "drafts/draft-1/snap-1/000003" {
-		t.Fatalf("chunkKey = %q, want drafts/draft-1/snap-1/000003", key)
+		t.Errorf("chunkKey(draft-1/snap-1, 3) = %q, want drafts/draft-1/snap-1/000003", key)
 	}
 
 	if scope := chunkPayloadScopeOf(key); scope != "drafts/draft-1/snap-1/" {
-		t.Fatalf("chunkPayloadScopeOf = %q, want drafts/draft-1/snap-1/", scope)
+		t.Errorf("chunkPayloadScopeOf(%q) = %q, want drafts/draft-1/snap-1/", key, scope)
 	}
 
-	if !strings.HasPrefix(key, draftScope("draft-1")) {
-		t.Fatalf("chunk key %q must live under the whole draft scope so it can be deleted with one prefix", key)
+	if scope := draftScope("draft-1"); !strings.HasPrefix(key, scope) {
+		t.Errorf("chunkKey(draft-1/snap-1, 3) = %q, want it under the whole draft scope %q so one prefix deletes it", key, scope)
 	}
 
 	// Two snapshots of identical content never share a chunk key, which is what
 	// makes it safe for a losing writer to delete its own chunks.
 	if other := chunkKey(snapshotScope("draft-1", "snap-2"), 3); other == key {
-		t.Fatal("snapshots of the same draft must not share chunk keys")
+		t.Errorf("chunkKey(draft-1/snap-2, 3) = %q, want it to differ from the key of snap-1", other)
 	}
 
 	if scope := chunkPayloadScopeOf("not/a/chunk/key/at/all"); scope != "" {
-		t.Fatalf("chunkPayloadScopeOf of a malformed key = %q, want an empty scope", scope)
+		t.Errorf("chunkPayloadScopeOf(malformed key) = %q, want an empty scope", scope)
 	}
 
 	if scope := chunkPayloadScopeOf("drafts//snap/000000"); scope != "" {
-		t.Fatalf("chunkPayloadScopeOf of a key with an empty segment = %q, want an empty scope", scope)
+		t.Errorf("chunkPayloadScopeOf(key with an empty segment) = %q, want an empty scope", scope)
 	}
 
 	published := chunkKey(publishedPayloadScope("doc-1", "payload-1"), 0)
 
 	if published != "published/doc-1/payload-1/000000" {
-		t.Fatalf("published chunk key = %q, want published/doc-1/payload-1/000000", published)
+		t.Errorf("chunkKey(doc-1/payload-1, 0) = %q, want published/doc-1/payload-1/000000", published)
 	}
 
-	if !strings.HasPrefix(published, publishedScope("doc-1")) {
-		t.Fatalf("published chunk key %q must live under its document scope", published)
+	if scope := publishedScope("doc-1"); !strings.HasPrefix(published, scope) {
+		t.Errorf("chunkKey(doc-1/payload-1, 0) = %q, want it under its document scope %q", published, scope)
 	}
 }
 
@@ -104,12 +111,16 @@ func TestReadPayloadDetectsMissingChunk(t *testing.T) {
 
 	_, err := h.service.readPayload("snapshot", manifest.ID, scope, manifest)
 	if !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("readPayload error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("readPayload(missing chunk) error = %s, want ErrCorrupt", fmtErr(err))
 	}
 
 	var corrupt *CorruptError
-	if !errors.As(err, &corrupt) || !strings.Contains(corrupt.Reason, "missing") {
-		t.Fatalf("readPayload error = %s, want a missing chunk reason", fmtErr(err))
+	if !errors.As(err, &corrupt) {
+		t.Fatalf("readPayload(missing chunk) error = %s, want a *CorruptError", fmtErr(err))
+	}
+
+	if !strings.Contains(corrupt.Reason, "missing") {
+		t.Errorf("readPayload(missing chunk) error reason = %q, want it to mention missing", corrupt.Reason)
 	}
 }
 
@@ -137,7 +148,7 @@ func TestReadPayloadDetectsReorderedChunks(t *testing.T) {
 
 	_, err = h.service.readPayload("snapshot", manifest.ID, scope, manifest)
 	if !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("readPayload with swapped chunks error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("readPayload(swapped chunks) error = %s, want ErrCorrupt", fmtErr(err))
 	}
 }
 
@@ -160,7 +171,7 @@ func TestReadPayloadDetectsModifiedChunk(t *testing.T) {
 	h.store.SetValue(NamespaceChunks, key, modified)
 
 	if _, err := h.service.readPayload("snapshot", manifest.ID, scope, manifest); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("readPayload with a modified chunk error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("readPayload(modified chunk) error = %s, want ErrCorrupt", fmtErr(err))
 	}
 }
 
@@ -177,13 +188,13 @@ func TestReadPayloadRejectsGzipBomb(t *testing.T) {
 
 	_, err := h.service.readPayload("snapshot", manifest.ID, scope, manifest)
 	if !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("readPayload of a gzip bomb error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("readPayload(gzip bomb) error = %s, want ErrCorrupt", fmtErr(err))
 	}
 
 	// A manifest claiming more than the document limit is refused outright.
 	manifest.Size = MaxDocumentBytes + 1
 	if _, err := h.service.readPayload("snapshot", manifest.ID, scope, manifest); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("readPayload with an oversized declared size error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("readPayload(oversized declared size) error = %s, want ErrCorrupt", fmtErr(err))
 	}
 }
 
@@ -236,11 +247,11 @@ func TestReadPayloadRejectsMalformedManifests(t *testing.T) {
 
 			var corrupt *CorruptError
 			if !errors.As(err, &corrupt) {
-				t.Fatalf("readPayload error = %s, want *CorruptError", fmtErr(err))
+				t.Fatalf("readPayload(%s) error = %s, want a *CorruptError", tt.name, fmtErr(err))
 			}
 
 			if !strings.Contains(corrupt.Reason, tt.contains) {
-				t.Fatalf("reason = %q, want it to mention %q", corrupt.Reason, tt.contains)
+				t.Errorf("readPayload(%s) error reason = %q, want it to mention %q", tt.name, corrupt.Reason, tt.contains)
 			}
 		})
 	}
@@ -248,7 +259,7 @@ func TestReadPayloadRejectsMalformedManifests(t *testing.T) {
 
 func TestDecompressRejectsNonGzipData(t *testing.T) {
 	if _, err := decompress("snapshot", "id", []byte("not gzip"), 8); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("decompress error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("decompress(non-gzip data) error = %s, want ErrCorrupt", fmtErr(err))
 	}
 }
 
@@ -267,7 +278,7 @@ func TestDecompressRejectsTruncatedStream(t *testing.T) {
 	truncated := buf.Bytes()[:buf.Len()-16]
 
 	if _, err := decompress("snapshot", "id", truncated, 4096); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("decompress of a truncated stream error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("decompress(truncated stream) error = %s, want ErrCorrupt", fmtErr(err))
 	}
 }
 
@@ -288,7 +299,7 @@ func TestWriteChunksReusesExistingChunks(t *testing.T) {
 	}
 
 	if len(created) != len(load.chunks) {
-		t.Fatalf("created %d chunks, want %d", len(created), len(load.chunks))
+		t.Errorf("writeChunks(new payload) created %d chunks, want %d", len(created), len(load.chunks))
 	}
 
 	again, err := h.service.writeChunks(scope, load)
@@ -297,6 +308,6 @@ func TestWriteChunksReusesExistingChunks(t *testing.T) {
 	}
 
 	if len(again) != 0 {
-		t.Fatalf("second writeChunks created %v, want it to reuse the immutable chunks", again)
+		t.Errorf("second writeChunks(same payload) created %v, want none because it reuses the immutable chunks", again)
 	}
 }

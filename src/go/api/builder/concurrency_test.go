@@ -1,12 +1,14 @@
 package builder
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // TestConcurrentIdenticalAppendKeepsWinnerReadable lets a writer commit the same
@@ -45,33 +47,42 @@ func TestConcurrentIdenticalAppendKeepsWinnerReadable(t *testing.T) {
 		Document: document, Summary: "loser",
 	})
 
-	switch {
-	case winnerErr != nil:
-		t.Fatalf("the winning append returned error: %v", winnerErr)
-	case !raced:
+	if winnerErr != nil {
+		t.Fatalf("winning AppendSnapshot returned error: %v", winnerErr)
+	}
+
+	if !raced {
 		t.Fatal("the test did not interleave the two appends")
-	case !errors.Is(err, ErrConflict):
-		t.Fatalf("the losing append error = %s, want ErrConflict", fmtErr(err))
-	case loser != nil:
-		t.Fatal("a losing append must not return metadata")
+	}
+
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("losing AppendSnapshot error = %s, want ErrConflict", fmtErr(err))
+	}
+
+	if loser != nil {
+		t.Errorf("losing AppendSnapshot = %+v, want no metadata", loser)
 	}
 
 	current, err := h.service.GetCurrentDocument(ctx, meta.ID)
 	if err != nil {
-		t.Fatalf("the winner's document must stay readable: %v", err)
+		t.Fatalf("GetCurrentDocument(draft) of the winner returned error: %v", err)
 	}
 
-	if !sameContent(t, current.Data, document) || documentProvenance(t, current.Data).UpdatedBy != testPeer {
-		t.Fatal("the winner's document content changed")
+	if diff := contentDiff(t, document, current.Data); diff != "" {
+		t.Errorf("GetCurrentDocument(draft) content mismatch with the winner (-want +got):\n%s", diff)
 	}
 
-	if current.Manifest.ID != winner.History[winner.Cursor].ID {
-		t.Fatal("the current snapshot is not the winner's snapshot")
+	if got := documentProvenance(t, current.Data).UpdatedBy; got != testPeer {
+		t.Errorf("GetCurrentDocument(draft) UpdatedBy = %q, want the winner %q", got, testPeer)
+	}
+
+	if want := winner.History[winner.Cursor].ID; current.Manifest.ID != want {
+		t.Errorf("GetCurrentDocument(draft) snapshot = %q, want the winner's snapshot %q", current.Manifest.ID, want)
 	}
 
 	// The winner's chunks survived; the loser's are gone.
 	if keys := chunkKeysOf(h, snapshotScope(meta.ID, current.Manifest.ID)); len(keys) == 0 {
-		t.Fatal("the winner's chunks were removed by the loser's cleanup")
+		t.Error("chunks of the winner's snapshot = none, want them kept by the loser's cleanup")
 	}
 
 	want := 0
@@ -80,7 +91,7 @@ func TestConcurrentIdenticalAppendKeepsWinnerReadable(t *testing.T) {
 	}
 
 	if keys := chunkKeysOf(h, draftScope(meta.ID)); len(keys) != want {
-		t.Fatalf("draft holds %d chunks, want %d: the losing attempt leaked chunks", len(keys), want)
+		t.Errorf("draft holds %d chunks, want %d: the losing attempt leaked chunks", len(keys), want)
 	}
 }
 
@@ -122,12 +133,12 @@ func TestConcurrentAppendsElectExactlyOneWinner(t *testing.T) {
 			winners++
 		case errors.Is(errs[i], ErrConflict):
 		default:
-			t.Fatalf("writer %d error = %s, want nil or ErrConflict", i, fmtErr(errs[i]))
+			t.Errorf("AppendSnapshot of writer %d error = %s, want nil or ErrConflict", i, fmtErr(errs[i]))
 		}
 	}
 
 	if winners != 1 {
-		t.Fatalf("%d writers succeeded, want exactly 1", winners)
+		t.Errorf("%d concurrent AppendSnapshot calls succeeded, want exactly 1", winners)
 	}
 
 	stored, err := h.service.GetDraft(ctx, meta.ID)
@@ -136,16 +147,16 @@ func TestConcurrentAppendsElectExactlyOneWinner(t *testing.T) {
 	}
 
 	if len(stored.History) != 2 {
-		t.Fatalf("history length = %d, want the single winning append", len(stored.History))
+		t.Errorf("GetDraft(draft) history length = %d, want 2 with the single winning append", len(stored.History))
 	}
 
 	current, err := h.service.GetCurrentDocument(ctx, meta.ID)
 	if err != nil {
-		t.Fatalf("the winning document must be readable: %v", err)
+		t.Fatalf("GetCurrentDocument(draft) of the winner returned error: %v", err)
 	}
 
-	if !sameContent(t, current.Data, document) {
-		t.Fatal("the winning document content changed")
+	if diff := contentDiff(t, document, current.Data); diff != "" {
+		t.Errorf("GetCurrentDocument(draft) content mismatch with the winner (-want +got):\n%s", diff)
 	}
 
 	want := 0
@@ -154,7 +165,7 @@ func TestConcurrentAppendsElectExactlyOneWinner(t *testing.T) {
 	}
 
 	if keys := chunkKeysOf(h, draftScope(meta.ID)); len(keys) != want {
-		t.Fatalf("draft holds %d chunks, want %d: losing attempts leaked chunks", len(keys), want)
+		t.Errorf("draft holds %d chunks, want %d: losing attempts leaked chunks", len(keys), want)
 	}
 }
 
@@ -194,40 +205,46 @@ func TestConcurrentPublishKeepsWinnerReadable(t *testing.T) {
 
 	doc, err := h.service.PutPublishedDocument(ctx, req)
 
-	switch {
-	case winnerErr != nil:
-		t.Fatalf("the winning publish returned error: %v", winnerErr)
-	case !raced:
+	if winnerErr != nil {
+		t.Fatalf("winning PutPublishedDocument returned error: %v", winnerErr)
+	}
+
+	if !raced {
 		t.Fatal("the test did not interleave the two publications")
-	case err != nil:
-		t.Fatalf("the losing publish returned error: %s", fmtErr(err))
-	case doc.ID != winner.ID || doc.PayloadID != winner.PayloadID || doc.Revision != winner.Revision:
-		t.Fatalf("the losing publish returned %+v, want the winner %+v", doc, winner)
+	}
+
+	if err != nil {
+		t.Fatalf("losing PutPublishedDocument returned error: %s", fmtErr(err))
+	}
+
+	if diff := cmp.Diff(winner, doc, cmpopts.IgnoreUnexported(PublishedDocument{})); diff != "" {
+		t.Errorf("losing PutPublishedDocument mismatch with the winner (-want +got):\n%s", diff)
 	}
 
 	if len(loserKeys) != len(winner.ChunkDigests) {
-		t.Fatalf("the loser wrote %d chunks, want %d", len(loserKeys), len(winner.ChunkDigests))
+		t.Errorf("losing PutPublishedDocument wrote %d chunks, want %d", len(loserKeys), len(winner.ChunkDigests))
 	}
 
 	// The loser's private scope is gone and the winner's is untouched.
 	remaining := chunkKeysOf(h, publishedScope(winner.ID))
 	if len(remaining) != len(winner.ChunkDigests) {
-		t.Fatalf("document holds %d chunks, want the winner's %d", len(remaining), len(winner.ChunkDigests))
+		t.Errorf("published document holds %d chunks, want the winner's %d", len(remaining), len(winner.ChunkDigests))
 	}
 
+	scope := publishedPayloadScope(winner.ID, winner.PayloadID)
 	for _, key := range remaining {
-		if !strings.HasPrefix(key, publishedPayloadScope(winner.ID, winner.PayloadID)) {
-			t.Fatalf("chunk %q does not belong to the winner's payload scope", key)
+		if !strings.HasPrefix(key, scope) {
+			t.Errorf("published document chunk %q is outside the winner's payload scope %q", key, scope)
 		}
 	}
 
 	_, data, err := h.service.GetPublishedDocumentData(ctx, winner.ID)
 	if err != nil {
-		t.Fatalf("the winner's document must stay readable after the loser cleaned up: %v", err)
+		t.Fatalf("GetPublishedDocumentData(winner) after the loser cleaned up returned error: %v", err)
 	}
 
-	if !bytes.Equal(data, req.Document) {
-		t.Fatal("the winner's published content changed")
+	if diff := cmp.Diff(string(req.Document), string(data)); diff != "" {
+		t.Errorf("GetPublishedDocumentData(winner) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -257,15 +274,16 @@ func TestWriteChunksCleansUpPartialFailures(t *testing.T) {
 
 	created, err := h.service.writeChunks(scope, load)
 
-	switch {
-	case err == nil:
-		t.Fatal("writeChunks must fail when the store rejects a chunk")
-	case created != nil:
-		t.Fatalf("writeChunks returned %v, want no keys after cleaning up", created)
+	if err == nil {
+		t.Error("writeChunks(store rejects a chunk) error = nil, want an error")
+	}
+
+	if created != nil {
+		t.Errorf("writeChunks(store rejects a chunk) = %v, want no keys after cleaning up", created)
 	}
 
 	if keys := chunkKeysOf(h, scope); len(keys) != 0 {
-		t.Fatalf("chunks after a partial failure = %v, want none", keys)
+		t.Errorf("chunks after a partial writeChunks failure = %v, want none", keys)
 	}
 
 	// A cleanup failure on top of the write failure is reported, not swallowed.
@@ -279,6 +297,6 @@ func TestWriteChunksCleansUpPartialFailures(t *testing.T) {
 
 	_, err = h.service.writeChunks(scope, load)
 	if !errors.Is(err, ErrCleanup) {
-		t.Fatalf("writeChunks error = %s, want it to also report the cleanup failure", fmtErr(err))
+		t.Errorf("writeChunks(store rejects a chunk and its cleanup) error = %s, want ErrCleanup", fmtErr(err))
 	}
 }

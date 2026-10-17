@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/store/recordtest/memrecord"
 )
 
@@ -22,6 +24,38 @@ func deleteTestSnapshot(t *testing.T, h *testHarness, meta *DraftMetadata, snaps
 	}
 
 	return updated
+}
+
+// historyState is what a history edit leaves in a draft's metadata.
+type historyState struct {
+	History        []string
+	Cursor         int
+	Current        string
+	CanRedo        bool
+	Publication    string
+	Dirty          bool
+	LastModifiedBy string
+}
+
+func historyStateOf(meta *DraftMetadata) historyState {
+	state := historyState{
+		History: make([]string, 0, len(meta.History)), Cursor: meta.Cursor, Current: "", CanRedo: meta.CanRedo(),
+		Publication: "", Dirty: meta.Dirty(), LastModifiedBy: meta.LastModifiedBy,
+	}
+
+	for i := range meta.History {
+		state.History = append(state.History, meta.History[i].ID)
+	}
+
+	if current := meta.Current(); current != nil {
+		state.Current = current.ID
+	}
+
+	if meta.Publication != nil {
+		state.Publication = meta.Publication.SnapshotID
+	}
+
+	return state
 }
 
 // TestDeleteSnapshot deletes snapshots before and after the cursor, in a history
@@ -48,7 +82,7 @@ func TestDeleteSnapshot(t *testing.T) {
 	published := publishTestDocument(t, h, "topo", saved.Data)
 
 	if published.Digest != saved.Manifest.Digest {
-		t.Fatalf("published digest = %s, want the snapshot's %s", published.Digest, saved.Manifest.Digest)
+		t.Errorf("PutPublishedDocument(snapshot bytes).Digest = %s, want the snapshot's %s", published.Digest, saved.Manifest.Digest)
 	}
 
 	meta = appendTestSnapshot(t, h, meta, "topo-v1", testActor)
@@ -61,60 +95,75 @@ func TestDeleteSnapshot(t *testing.T) {
 		t.Fatalf("MoveCursor returned error: %v", err)
 	}
 
-	v1, same, v3 := meta.History[1], meta.History[2], meta.History[3]
+	if len(meta.History) != 4 {
+		t.Fatalf("MoveCursor returned a history of %d snapshots, want 4", len(meta.History))
+	}
+
+	first, v1, same, v3 := meta.History[0], meta.History[1], meta.History[2], meta.History[3]
 
 	// Each save is stamped with its own time, so two saves of the same
 	// content are two documents.
 	if v1.Digest == same.Digest {
-		t.Fatal("the two saves of the same content share a digest, so the second was not stamped")
+		t.Errorf("digest of the second save of the same content = %s, want it to differ from the first because it is stamped", same.Digest)
 	}
 
 	again, err := h.service.GetCurrentDocument(ctx, meta.ID)
-	if err != nil || !sameContent(t, again.Data, saved.Data) {
-		t.Fatalf("the second save does not hold the content of the first: %s", fmtErr(err))
+	if err != nil {
+		t.Fatalf("GetCurrentDocument(draft) at the second save returned error: %s", fmtErr(err))
+	}
+
+	if diff := contentDiff(t, saved.Data, again.Data); diff != "" {
+		t.Errorf("GetCurrentDocument(draft) at the second save content mismatch with the first (-want +got):\n%s", diff)
 	}
 
 	// A snapshot before the cursor: the cursor keeps pointing at the same
 	// snapshot, and the publication naming the deleted snapshot is kept.
 	meta = deleteTestSnapshot(t, h, meta, v1.ID, testPeer)
 
-	switch {
-	case len(meta.History) != 3 || meta.Cursor != 1 || meta.Current().ID != same.ID:
-		t.Fatalf("history %d, cursor %d at %s; want 3 and 1 at %s", len(meta.History), meta.Cursor, meta.Current().ID, same.ID)
-	case meta.Publication == nil || meta.Publication.SnapshotID != v1.ID || !meta.Dirty():
-		t.Fatalf("publication = %+v, dirty %t; want it kept and the draft dirty", meta.Publication, meta.Dirty())
-	case meta.LastModifiedBy != testPeer:
-		t.Fatalf("last modified by %q, want %q", meta.LastModifiedBy, testPeer)
+	want := historyState{
+		History: []string{first.ID, same.ID, v3.ID}, Cursor: 1, Current: same.ID, CanRedo: true,
+		Publication: v1.ID, Dirty: true, LastModifiedBy: testPeer,
+	}
+	if diff := cmp.Diff(want, historyStateOf(meta)); diff != "" {
+		t.Errorf("DeleteSnapshot(before the cursor) mismatch (-want +got):\n%s", diff)
 	}
 
 	if chunks := chunkKeysOf(h, snapshotScope(meta.ID, v1.ID)); len(chunks) != 0 {
-		t.Fatalf("chunks of the deleted snapshot = %v, want none", chunks)
+		t.Errorf("chunks of the deleted snapshot = %v, want none", chunks)
 	}
 
 	if _, err := h.service.GetSnapshot(ctx, meta.ID, v1.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("GetSnapshot of the deleted snapshot error = %s, want ErrNotFound", fmtErr(err))
+		t.Errorf("GetSnapshot(deleted snapshot) error = %s, want ErrNotFound", fmtErr(err))
 	}
 
 	// Chunks are never shared: the snapshot and the published document of
 	// the same content keep theirs.
 	if _, err := h.service.GetSnapshot(ctx, meta.ID, same.ID); err != nil {
-		t.Fatalf("GetSnapshot of the same content returned error: %s", fmtErr(err))
+		t.Errorf("GetSnapshot(snapshot of the same content) returned error: %s", fmtErr(err))
 	}
 
 	if _, _, err := h.service.GetPublishedDocumentData(ctx, published.ID); err != nil {
-		t.Fatalf("GetPublishedDocumentData returned error: %s", fmtErr(err))
+		t.Errorf("GetPublishedDocumentData(published) returned error: %s", fmtErr(err))
 	}
 
 	// A snapshot after the cursor, in the redo branch.
 	meta = deleteTestSnapshot(t, h, meta, v3.ID, testActor)
 
-	if len(meta.History) != 2 || meta.Cursor != 1 || meta.Current().ID != same.ID || meta.CanRedo() {
-		t.Fatalf("history %d, cursor %d at %s; want 2 and 1 at %s", len(meta.History), meta.Cursor, meta.Current().ID, same.ID)
+	want = historyState{
+		History: []string{first.ID, same.ID}, Cursor: 1, Current: same.ID, CanRedo: false,
+		Publication: v1.ID, Dirty: true, LastModifiedBy: testActor,
+	}
+	if diff := cmp.Diff(want, historyStateOf(meta)); diff != "" {
+		t.Errorf("DeleteSnapshot(after the cursor) mismatch (-want +got):\n%s", diff)
 	}
 
 	stored, err := h.service.GetDraft(ctx, meta.ID)
-	if err != nil || stored.Revision != meta.Revision || stored.Publication == nil {
-		t.Fatalf("GetDraft = %+v, %s; want the returned draft", stored, fmtErr(err))
+	if err != nil {
+		t.Fatalf("GetDraft returned error: %s", fmtErr(err))
+	}
+
+	if diff := cmp.Diff(meta, stored); diff != "" {
+		t.Errorf("GetDraft mismatch with the draft DeleteSnapshot returned (-want +got):\n%s", diff)
 	}
 }
 
@@ -141,13 +190,15 @@ func TestDeleteSnapshotRefusals(t *testing.T) {
 				DraftID: meta.ID, Actor: testActor, ExpectedRevision: tt.revision, SnapshotID: tt.snapshot,
 			})
 			if !errors.Is(err, tt.want) {
-				t.Fatalf("DeleteSnapshot error = %s, want %v", fmtErr(err), tt.want)
+				t.Errorf("DeleteSnapshot(%s) error = %s, want %v", tt.name, fmtErr(err), tt.want)
 			}
 		})
 	}
 
-	if stored, err := h.service.GetDraft(ctx, meta.ID); err != nil || stored.Revision != meta.Revision {
-		t.Fatalf("GetDraft = %+v, %s; want the draft untouched", stored, fmtErr(err))
+	if stored, err := h.service.GetDraft(ctx, meta.ID); err != nil {
+		t.Errorf("GetDraft after refused deletes returned error: %s", fmtErr(err))
+	} else if stored.Revision != meta.Revision {
+		t.Errorf("GetDraft after refused deletes revision = %d, want %d of the untouched draft", stored.Revision, meta.Revision)
 	}
 
 	// Removing the chunks after the metadata write is only a cleanup failure.
@@ -162,8 +213,16 @@ func TestDeleteSnapshotRefusals(t *testing.T) {
 	updated, err := h.service.DeleteSnapshot(ctx, DeleteSnapshotRequest{
 		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, SnapshotID: meta.History[0].ID,
 	})
-	if !errors.Is(err, ErrCleanup) || updated == nil || len(updated.History) != 1 {
-		t.Fatalf("DeleteSnapshot = %+v, %s; want the updated draft and ErrCleanup", updated, fmtErr(err))
+	if !errors.Is(err, ErrCleanup) {
+		t.Errorf("DeleteSnapshot(chunk deletes fail) error = %s, want ErrCleanup", fmtErr(err))
+	}
+
+	if updated == nil {
+		t.Fatal("DeleteSnapshot(chunk deletes fail) = nil, want the updated draft")
+	}
+
+	if len(updated.History) != 1 {
+		t.Errorf("DeleteSnapshot(chunk deletes fail) history length = %d, want 1", len(updated.History))
 	}
 }
 
@@ -192,6 +251,7 @@ func TestCreateDraftRejectsMetadataOverLimit(t *testing.T) {
 	}
 
 	if _, err := encodeDraft(meta); !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("encodeDraft error = %s, want ErrTooLarge for metadata past %d bytes", fmtErr(err), MaxMetadataBytes)
+		t.Errorf("encodeDraft(%d snapshots of 256 chunks) error = %s, want ErrTooLarge for metadata past %d bytes",
+			MaxSnapshots, fmtErr(err), MaxMetadataBytes)
 	}
 }

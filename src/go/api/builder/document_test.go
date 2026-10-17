@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store/recordtest/memrecord"
 	"phenix/types/builder"
@@ -115,7 +117,7 @@ func TestServiceRejectsInvalidDocuments(t *testing.T) {
 				Document: tt.document, Summary: "", ID: "",
 			})
 			if !errors.Is(err, tt.is) || !errors.Is(err, ErrInvalid) {
-				t.Fatalf("CreateDraft error = %s, want %v", fmtErr(err), tt.is)
+				t.Errorf("CreateDraft(%s) error = %s, want %v and ErrInvalid", tt.name, fmtErr(err), tt.is)
 			}
 
 			_, err = h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
@@ -123,7 +125,7 @@ func TestServiceRejectsInvalidDocuments(t *testing.T) {
 				Document: tt.document, Summary: "",
 			})
 			if !errors.Is(err, tt.is) || !errors.Is(err, ErrInvalid) {
-				t.Fatalf("AppendSnapshot error = %s, want %v", fmtErr(err), tt.is)
+				t.Errorf("AppendSnapshot(%s) error = %s, want %v and ErrInvalid", tt.name, fmtErr(err), tt.is)
 			}
 
 			_, err = h.service.PutPublishedDocument(ctx, PutPublishedDocumentRequest{
@@ -131,19 +133,22 @@ func TestServiceRejectsInvalidDocuments(t *testing.T) {
 				Document: tt.document, DraftID: "", SnapshotID: "",
 			})
 			if !errors.Is(err, tt.is) || !errors.Is(err, ErrInvalid) {
-				t.Fatalf("PutPublishedDocument error = %s, want %v", fmtErr(err), tt.is)
+				t.Errorf("PutPublishedDocument(%s) error = %s, want %v and ErrInvalid", tt.name, fmtErr(err), tt.is)
 			}
 		})
 	}
 
 	// Nothing invalid reached the store.
-	switch {
-	case h.store.Count(NamespacePublished) != 0:
-		t.Fatal("an invalid document must never be published")
-	case h.store.Count(NamespaceDrafts) != drafts:
-		t.Fatal("an invalid document must never create a draft")
-	case h.store.Count(NamespaceChunks) != chunks:
-		t.Fatal("an invalid document must never write chunks")
+	if got := h.store.Count(NamespacePublished); got != 0 {
+		t.Errorf("published records after invalid documents = %d, want 0", got)
+	}
+
+	if got := h.store.Count(NamespaceDrafts); got != drafts {
+		t.Errorf("draft records after invalid documents = %d, want %d", got, drafts)
+	}
+
+	if got := h.store.Count(NamespaceChunks); got != chunks {
+		t.Errorf("chunk records after invalid documents = %d, want %d", got, chunks)
 	}
 
 	stored, err := h.service.GetDraft(ctx, meta.ID)
@@ -151,8 +156,9 @@ func TestServiceRejectsInvalidDocuments(t *testing.T) {
 		t.Fatalf("GetDraft returned error: %v", err)
 	}
 
-	if stored.Revision != meta.Revision || stored.Title != meta.Title || len(stored.History) != 1 {
-		t.Fatal("invalid documents must not modify draft metadata")
+	// Only a create or append call returns a stamp.
+	if diff := cmp.Diff(meta, stored, cmpopts.IgnoreFields(DraftMetadata{}, "Stamp")); diff != "" {
+		t.Errorf("GetDraft after invalid documents mismatch with the untouched draft (-want +got):\n%s", diff)
 	}
 }
 
@@ -181,8 +187,8 @@ func TestDocumentsAreCanonicalizedBeforeStorage(t *testing.T) {
 	// the service wrote, whatever encoding the caller sent.
 	stamped := stampedDocument(t, canonical, *meta.Stamp)
 
-	if meta.History[0].Digest != digestOf(stamped) {
-		t.Fatal("stored digest must be the digest of the canonical encoding")
+	if want := digestOf(stamped); meta.History[0].Digest != want {
+		t.Errorf("CreateDraft(compact document) digest = %s, want the canonical encoding digest %s", meta.History[0].Digest, want)
 	}
 
 	snapshot, err := h.service.GetCurrentDocument(ctx, meta.ID)
@@ -190,8 +196,8 @@ func TestDocumentsAreCanonicalizedBeforeStorage(t *testing.T) {
 		t.Fatalf("GetCurrentDocument returned error: %v", err)
 	}
 
-	if !bytes.Equal(snapshot.Data, stamped) {
-		t.Fatal("stored bytes must be the canonical encoding, not the caller's encoding")
+	if diff := cmp.Diff(string(stamped), string(snapshot.Data)); diff != "" {
+		t.Errorf("GetCurrentDocument(draft) mismatch with the canonical encoding (-want +got):\n%s", diff)
 	}
 
 	// Decode hands over the document the service parsed once, then decodes
@@ -206,8 +212,12 @@ func TestDocumentsAreCanonicalizedBeforeStorage(t *testing.T) {
 		t.Fatalf("second Decode returned error: %v", err)
 	}
 
-	if first == second || !reflect.DeepEqual(first, second) {
-		t.Fatal("each Decode must return an equal document of its own")
+	if first == second {
+		t.Error("Snapshot.Decode returned the same document twice, want a document of its own for each call")
+	}
+
+	if diff := cmp.Diff(first, second); diff != "" {
+		t.Errorf("second Snapshot.Decode mismatch with the first (-want +got):\n%s", diff)
 	}
 
 	// Publishing canonicalizes too, so the same content is content addressed the
@@ -228,8 +238,12 @@ func TestDocumentsAreCanonicalizedBeforeStorage(t *testing.T) {
 		t.Fatalf("PutPublishedDocument returned error: %v", err)
 	}
 
-	if fromCompact.ID != fromCanonical.ID || fromCompact.Digest != digestOf(canonical) {
-		t.Fatalf("published documents = %s and %s, want one content addressed document", fromCompact.ID, fromCanonical.ID)
+	if fromCompact.ID != fromCanonical.ID {
+		t.Errorf("PutPublishedDocument(compact).ID = %s, want %s of the canonical encoding", fromCompact.ID, fromCanonical.ID)
+	}
+
+	if want := digestOf(canonical); fromCompact.Digest != want {
+		t.Errorf("PutPublishedDocument(compact).Digest = %s, want the canonical encoding digest %s", fromCompact.Digest, want)
 	}
 }
 
@@ -246,7 +260,7 @@ func TestDraftTitleFollowsDocumentName(t *testing.T) {
 	}
 
 	if meta.Title != "topo" {
-		t.Fatalf("title = %q, want the document name %q", meta.Title, "topo")
+		t.Errorf("CreateDraft(document topo).Title = %q, want the document name %q", meta.Title, "topo")
 	}
 
 	renamed, err := h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
@@ -258,7 +272,7 @@ func TestDraftTitleFollowsDocumentName(t *testing.T) {
 	}
 
 	if renamed.Title != "topo-renamed" {
-		t.Fatalf("title after rename = %q, want %q", renamed.Title, "topo-renamed")
+		t.Errorf("AppendSnapshot(document topo-renamed).Title = %q, want %q", renamed.Title, "topo-renamed")
 	}
 
 	// A document without a name falls back to the caller supplied title.
@@ -276,7 +290,7 @@ func TestDraftTitleFollowsDocumentName(t *testing.T) {
 	}
 
 	if fallback.Title != "Fallback Title" {
-		t.Fatalf("title = %q, want the caller supplied title", fallback.Title)
+		t.Errorf("CreateDraft(unnamed document).Title = %q, want the caller supplied title %q", fallback.Title, "Fallback Title")
 	}
 }
 
@@ -292,16 +306,18 @@ func TestEncodeDocumentValidates(t *testing.T) {
 
 	_, err := EncodeDocument(doc)
 	if !errors.Is(err, ErrInvalid) {
-		t.Fatalf("EncodeDocument error = %s, want ErrInvalid", fmtErr(err))
+		t.Errorf("EncodeDocument(note without a note) error = %s, want ErrInvalid", fmtErr(err))
 	}
 
 	var invalid *ValidationError
-	if !errors.As(err, &invalid) || invalid.Cause == nil {
-		t.Fatalf("EncodeDocument error = %s, want a *ValidationError carrying its cause", fmtErr(err))
+	if !errors.As(err, &invalid) {
+		t.Errorf("EncodeDocument(note without a note) error = %s, want a *ValidationError", fmtErr(err))
+	} else if invalid.Cause == nil {
+		t.Errorf("EncodeDocument(note without a note) error = %s, want a *ValidationError carrying its cause", fmtErr(err))
 	}
 
 	if !errors.Is(err, builder.ErrInvalidDocument) {
-		t.Fatalf("EncodeDocument error = %s, want the document validation failure to remain matchable", fmtErr(err))
+		t.Errorf("EncodeDocument(note without a note) error = %s, want builder.ErrInvalidDocument to remain matchable", fmtErr(err))
 	}
 }
 
@@ -331,11 +347,14 @@ func TestStoredContentIsParsedAfterIntegrityChecks(t *testing.T) {
 
 	_, err = h.service.GetCurrentDocument(ctx, meta.ID)
 	if !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("GetCurrentDocument error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("GetCurrentDocument(draft of a non-builder payload) error = %s, want ErrCorrupt", fmtErr(err))
 	}
 
 	var corrupt *CorruptError
-	if !errors.As(err, &corrupt) || !strings.Contains(corrupt.Reason, "not a valid builder document") {
-		t.Fatalf("GetCurrentDocument error = %s, want it to report an unparsable stored document", fmtErr(err))
+	if !errors.As(err, &corrupt) {
+		t.Errorf("GetCurrentDocument(draft of a non-builder payload) error = %s, want a *CorruptError", fmtErr(err))
+	} else if !strings.Contains(corrupt.Reason, "not a valid builder document") {
+		t.Errorf("GetCurrentDocument(draft of a non-builder payload) error reason = %q, want it to report an unparsable stored document",
+			corrupt.Reason)
 	}
 }
