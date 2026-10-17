@@ -1,15 +1,20 @@
 package builder
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	"phenix/store/recordtest/memrecord"
@@ -87,6 +92,10 @@ func mustAddTemplates(t *testing.T, h *testHarness, templates ...builder.Templat
 		return err
 	})
 
+	if len(ids) != len(templates) {
+		t.Fatalf("AddTemplates of %d templates returned the ids %q", len(templates), ids)
+	}
+
 	return ids
 }
 
@@ -101,6 +110,75 @@ func templateIDs(library *TemplateLibrary) []string {
 	return ids
 }
 
+// libraryNames returns the names of the templates of a library, in order.
+func libraryNames(library *TemplateLibrary) []string {
+	names := make([]string, 0, len(library.Templates))
+
+	for i := range library.Templates {
+		names = append(names, library.Templates[i].Name)
+	}
+
+	return names
+}
+
+// libraryIcons returns the custom icon names of the templates of a library,
+// in order.
+func libraryIcons(library *TemplateLibrary) []string {
+	icons := make([]string, 0, len(library.Templates))
+
+	for i := range library.Templates {
+		icons = append(icons, library.Templates[i].Device.Icon)
+	}
+
+	return icons
+}
+
+// collectionNames returns the names of the collections of a library, in order.
+func collectionNames(library *TemplateLibrary) []string {
+	names := make([]string, 0, len(library.Collections))
+
+	for i := range library.Collections {
+		names = append(names, library.Collections[i].Name)
+	}
+
+	return names
+}
+
+// authors is who added an item of the library and who last changed it.
+type authors struct {
+	CreatedBy string
+	UpdatedBy string
+}
+
+// templateAuthors returns the authors of a template, or none for a template
+// the library does not hold.
+func templateAuthors(library *TemplateLibrary, id string) authors {
+	if template := library.Template(id); template != nil {
+		return authors{CreatedBy: template.CreatedBy, UpdatedBy: template.UpdatedBy}
+	}
+
+	return authors{}
+}
+
+// collectionAuthors returns the authors of a collection, or none for a
+// collection the library does not hold.
+func collectionAuthors(library *TemplateLibrary, id string) authors {
+	if collection := library.Collection(id); collection != nil {
+		return authors{CreatedBy: collection.CreatedBy, UpdatedBy: collection.UpdatedBy}
+	}
+
+	return authors{}
+}
+
+// ignoreTimes ignores the times of the templates and collections of a library,
+// which a test checks on their own.
+func ignoreTimes() cmp.Options {
+	return cmp.Options{
+		cmpopts.IgnoreFields(LibraryTemplate{}, "Created", "Updated"),
+		cmpopts.IgnoreFields(TemplateCollection{}, "Created", "Updated"),
+	}
+}
+
 // libraryRecord returns the stored record of the library.
 func libraryRecord(t *testing.T, h *testHarness) store.Record {
 	t.Helper()
@@ -113,22 +191,49 @@ func libraryRecord(t *testing.T, h *testHarness) store.Record {
 	return record
 }
 
-// refusal returns the reason of a refused library change, and whether it
-// is a limit.
-func refusal(t *testing.T, err error) (string, bool) {
+// decodedLibraryRecord returns the stored record of the library, decoded.
+func decodedLibraryRecord(t *testing.T, h *testHarness) map[string]any {
 	t.Helper()
 
+	var stored map[string]any
+
+	if err := json.Unmarshal(libraryRecord(t, h).Value, &stored); err != nil {
+		t.Fatalf("the library record is not JSON: %v", err)
+	}
+
+	return stored
+}
+
+// refusalOf returns the LibraryError err is, or an error that says why err is
+// not a refusal that matches ErrInvalid, or ErrTooLarge for a limit.
+func refusalOf(err error) (LibraryError, error) {
 	var refused *LibraryError
 
 	if !errors.As(err, &refused) {
-		t.Fatalf("error = %v, want a LibraryError", err)
+		return LibraryError{}, fmt.Errorf("error = %w, want a LibraryError", err)
 	}
 
-	if want := map[bool]error{true: ErrTooLarge, false: ErrInvalid}[refused.Limit]; !errors.Is(err, want) {
-		t.Fatalf("error = %v, want it to match %v", err, want)
+	want := ErrInvalid
+	if refused.Limit {
+		want = ErrTooLarge
 	}
 
-	return refused.Reason, refused.Limit
+	if !errors.Is(err, want) {
+		return *refused, fmt.Errorf("error = %w, want it to match %w", err, want)
+	}
+
+	return *refused, nil
+}
+
+// refusalDiff returns how err differs from the refusal want, or "" when it is
+// that refusal.
+func refusalDiff(want LibraryError, err error) string {
+	got, problem := refusalOf(err)
+	if problem != nil {
+		return problem.Error()
+	}
+
+	return cmp.Diff(want, got)
 }
 
 // TestLibraryStartsEmpty asserts a server with no record has an empty
@@ -137,16 +242,13 @@ func TestLibraryStartsEmpty(t *testing.T) {
 	h := newHarness(t)
 	library := mustLibrary(t, h)
 
-	if library.Revision != 0 || !library.Updated.IsZero() || library.UpdatedBy != "" {
-		t.Fatalf("a new library = %+v, want no revision and no times", library)
-	}
-
-	if library.Templates == nil || len(library.Templates) != 0 || library.Collections == nil || len(library.Collections) != 0 {
-		t.Fatalf("a new library holds %q and %v, want empty lists", templateIDs(library), library.Collections)
+	want := &TemplateLibrary{Templates: []LibraryTemplate{}, Collections: []TemplateCollection{}}
+	if diff := cmp.Diff(want, library); diff != "" {
+		t.Errorf("GetLibrary() of a new server mismatch (-want +got):\n%s", diff)
 	}
 
 	if got := h.store.Count(NamespaceTemplates); got != 0 {
-		t.Fatalf("reading wrote %d library records, want 0", got)
+		t.Errorf("after GetLibrary() the store holds %d library records, want 0", got)
 	}
 
 	// A change that changes nothing writes nothing either.
@@ -156,8 +258,12 @@ func TestLibraryStartsEmpty(t *testing.T) {
 		return nil
 	})
 
-	if unchanged.Revision != 0 || h.store.Count(NamespaceTemplates) != 0 {
-		t.Fatalf("a change of nothing wrote a record: revision %d", unchanged.Revision)
+	if unchanged.Revision != 0 {
+		t.Errorf("UpdateLibrary(delete nothing) revision = %d, want 0", unchanged.Revision)
+	}
+
+	if got := h.store.Count(NamespaceTemplates); got != 0 {
+		t.Errorf("after UpdateLibrary(delete nothing) the store holds %d library records, want 0", got)
 	}
 }
 
@@ -168,49 +274,60 @@ func TestLibraryFirstChangeCreatesTheRecord(t *testing.T) {
 
 	ids := mustAddTemplates(t, h, testTemplate("PLC"))
 
-	if keys := h.store.Keys(NamespaceTemplates); len(keys) != 1 || keys[0] != LibraryKey {
-		t.Fatalf("library records = %q, want only %q", keys, LibraryKey)
+	if diff := cmp.Diff([]string{LibraryKey}, h.store.Keys(NamespaceTemplates)); diff != "" {
+		t.Errorf("library record keys mismatch (-want +got):\n%s", diff)
 	}
 
 	for _, namespace := range []string{NamespaceDrafts, NamespaceChunks, NamespacePublished, NamespaceIcons} {
 		if got := h.store.Count(namespace); got != 0 {
-			t.Errorf("%s holds %d records, want 0", namespace, got)
+			t.Errorf("Count(%s) = %d, want 0", namespace, got)
 		}
 	}
 
 	record := libraryRecord(t, h)
 	library := mustLibrary(t, h)
 
-	if got := templateIDs(library); !slices.Equal(got, ids) {
-		t.Fatalf("the library holds %q, want %q", got, ids)
+	if diff := cmp.Diff(ids, templateIDs(library)); diff != "" {
+		t.Errorf("GetLibrary() template ids mismatch (-want +got):\n%s", diff)
 	}
 
-	if library.Revision != record.Revision || library.Updated.IsZero() || library.UpdatedBy != testActor ||
-		library.Updated.Location() != time.UTC {
-		t.Fatalf("the stored library = revision %d, updated %v by %q", library.Revision, library.Updated, library.UpdatedBy)
+	wantLibrary := &TemplateLibrary{Revision: record.Revision, UpdatedBy: testActor}
+	ignore := cmpopts.IgnoreFields(TemplateLibrary{}, "Templates", "Collections", "Updated")
+
+	if diff := cmp.Diff(wantLibrary, library, ignore); diff != "" {
+		t.Errorf("GetLibrary() mismatch (-want +got):\n%s", diff)
+	}
+
+	if library.Updated.IsZero() || library.Updated.Location() != time.UTC {
+		t.Errorf("GetLibrary() updated = %v, want the time of the change in UTC", library.Updated)
 	}
 
 	added := library.Template(ids[0])
-
-	if added.Name != "PLC" || added.Version != 1 || added.Created.IsZero() || !added.Created.Equal(added.Updated) ||
-		added.CreatedBy != testActor || added.UpdatedBy != testActor {
-		t.Fatalf("the new template = %+v, want version 1 and the time and user that added it", added)
+	if added == nil {
+		t.Fatalf("GetLibrary() holds no template %q", ids[0])
 	}
 
-	var stored map[string]json.RawMessage
+	want := LibraryTemplate{Template: testTemplate("PLC"), Version: 1, CreatedBy: testActor, UpdatedBy: testActor}
+	want.ID = ids[0]
 
-	if err := json.Unmarshal(record.Value, &stored); err != nil {
-		t.Fatalf("the library record is not JSON: %v", err)
+	if diff := cmp.Diff(want, *added, ignoreTimes()); diff != "" {
+		t.Errorf("GetLibrary() new template mismatch (-want +got):\n%s", diff)
 	}
 
-	for _, field := range []string{"templates", "collections", "updated", "updatedBy"} {
-		if _, ok := stored[field]; !ok {
-			t.Errorf("the library record has no %q", field)
-		}
+	if added.Created.IsZero() || !added.Created.Equal(added.Updated) {
+		t.Errorf("GetLibrary() new template created %v, updated %v, want both the time it was added",
+			added.Created, added.Updated)
 	}
 
-	if len(stored) != 4 || string(stored["collections"]) != "[]" {
-		t.Errorf("the library record = %s, want four fields and an empty list of collections", record.Value)
+	stored := decodedLibraryRecord(t, h)
+
+	wantFields := []string{"collections", "templates", "updated", "updatedBy"}
+	if diff := cmp.Diff(wantFields, slices.Sorted(maps.Keys(stored))); diff != "" {
+		t.Errorf("library record fields mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]any{}, stored["collections"]); diff != "" {
+		t.Errorf("library record collections mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -224,12 +341,17 @@ func TestLibraryRefusesSource(t *testing.T) {
 
 	ids := mustAddTemplates(t, h, copied)
 
-	if source := mustLibrary(t, h).Template(ids[0]).Source; source != nil {
-		t.Fatalf("an added template keeps the source %+v", source)
+	added := mustLibrary(t, h).Template(ids[0])
+	if added == nil {
+		t.Fatalf("GetLibrary() holds no template %q", ids[0])
 	}
 
-	if strings.Contains(string(libraryRecord(t, h).Value), `"source"`) {
-		t.Fatalf("the library record names a source: %s", libraryRecord(t, h).Value)
+	if added.Source != nil {
+		t.Errorf("AddTemplates(template with a source) kept the source %+v, want none", added.Source)
+	}
+
+	if value := libraryRecord(t, h).Value; bytes.Contains(value, []byte(`"source"`)) {
+		t.Errorf("library record = %s, want no source", value)
 	}
 
 	_, err := h.service.UpdateLibrary(context.Background(), testActor, func(library *TemplateLibrary) error {
@@ -238,8 +360,8 @@ func TestLibraryRefusesSource(t *testing.T) {
 		return nil
 	})
 
-	if reason, limit := refusal(t, err); reason != "template 0 names a source" || limit {
-		t.Fatalf("a template with a source is refused with %q", reason)
+	if diff := refusalDiff(LibraryError{Reason: "template 0 names a source"}, err); diff != "" {
+		t.Errorf("UpdateLibrary(set a source) refusal mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -248,12 +370,12 @@ func TestLibraryRefusesSource(t *testing.T) {
 func TestBuiltinIDsAreNotServerIDs(t *testing.T) {
 	for _, template := range builder.BuiltinTemplates() {
 		if strings.HasPrefix(template.ID, serverIDPrefix) {
-			t.Errorf("the built-in ID %q starts as the IDs of the server's items do", template.ID)
+			t.Errorf("BuiltinTemplates() ID = %q, want no prefix %q", template.ID, serverIDPrefix)
 		}
 	}
 
 	if id := serverID("template", "server.yaml", "server"); !strings.HasPrefix(id, serverIDPrefix) {
-		t.Fatalf("serverID returned %q, want the prefix %q", id, serverIDPrefix)
+		t.Errorf("serverID(template, server.yaml, server) = %q, want the prefix %q", id, serverIDPrefix)
 	}
 }
 
@@ -273,18 +395,30 @@ func TestLibraryAddTemplates(t *testing.T) {
 		t.Fatalf("AddTemplates returned error: %v", err)
 	}
 
-	// Each gets a new id, whatever it came with, and they go last, in order.
-	if len(ids) != 2 || ids[0] == ids[1] || ids[0] == "server" ||
-		!slices.Equal(templateIDs(library), append(slices.Clone(earlier), ids...)) {
-		t.Fatalf("AddTemplates gave %q in %q", ids, templateIDs(library))
+	// The ids are indexed below.
+	if len(ids) != 2 {
+		t.Fatalf("AddTemplates(One, Two) = %q, want two ids", ids)
 	}
 
-	if library.Template(ids[0]).Name != "One" || library.Template(ids[1]).Name != "Two" || first.ID != "server" {
-		t.Fatalf("the new templates = %+v", library.Templates[1:])
+	// Each gets a new id, whatever it came with, and they go last, in order.
+	if ids[0] == ids[1] || ids[0] == "server" {
+		t.Errorf("AddTemplates(One with id server, Two) = %q, want two new ids", ids)
+	}
+
+	if diff := cmp.Diff(append(slices.Clone(earlier), ids...), templateIDs(library)); diff != "" {
+		t.Errorf("template ids after AddTemplates mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]string{"Earlier", "One", "Two"}, libraryNames(library)); diff != "" {
+		t.Errorf("template names after AddTemplates mismatch (-want +got):\n%s", diff)
+	}
+
+	if first.ID != "server" {
+		t.Errorf("after AddTemplates its argument has the id %q, want server", first.ID)
 	}
 
 	if added, err := library.AddTemplates(nil, h.service.NewID); err != nil || len(added) != 0 {
-		t.Fatalf("adding no template = %q, %v, want nothing", added, err)
+		t.Errorf("AddTemplates(nil) = %q, %v, want no ids and no error", added, err)
 	}
 
 	tests := []struct {
@@ -334,13 +468,16 @@ func TestLibraryAddTemplates(t *testing.T) {
 
 			_, err := library.AddTemplates(tt.templates, h.service.NewID)
 
-			if reason, limit := refusal(t, err); !strings.HasPrefix(reason, tt.want) || limit != tt.limit {
-				t.Fatalf("refused with %q (limit %v), want %q", reason, limit, tt.want)
+			if got, problem := refusalOf(err); problem != nil {
+				t.Errorf("AddTemplates(%s) %v", tt.name, problem)
+			} else if !strings.HasPrefix(got.Reason, tt.want) || got.Limit != tt.limit {
+				t.Errorf("AddTemplates(%s) refusal = %q (limit %v), want %q (limit %v)",
+					tt.name, got.Reason, got.Limit, tt.want, tt.limit)
 			}
 
 			// A refusal leaves the library as it was.
 			if got := templateIDs(library); len(got) != 0 {
-				t.Fatalf("a refused change left %q", got)
+				t.Errorf("after a refused AddTemplates(%s) the library holds %q, want nothing", tt.name, got)
 			}
 		})
 	}
@@ -352,13 +489,13 @@ func TestLibraryAddTemplates(t *testing.T) {
 	if _, err := library.AddTemplates(
 		[]builder.Template{testTemplate("X")}, func() (string, error) { return "", broken },
 	); !errors.Is(err, broken) {
-		t.Fatalf("a failing id source = %v, want its error", err)
+		t.Errorf("AddTemplates(failing id source) = %v, want %v", err, broken)
 	}
 
 	if _, err := library.AddTemplates(
 		[]builder.Template{testTemplate("X")}, func() (string, error) { return earlier[0], nil },
 	); err == nil || errors.Is(err, ErrInvalid) {
-		t.Fatalf("an id the library has = %v, want an error that is not the caller's", err)
+		t.Errorf("AddTemplates(id source giving %q) = %v, want an error that is not ErrInvalid", earlier[0], err)
 	}
 }
 
@@ -378,15 +515,35 @@ func TestLibraryReplaceTemplate(t *testing.T) {
 	})
 
 	after := updated.Template(ids[0])
-
-	// The content changed: one version more, and the time of the change.
-	if after.ID != ids[0] || after.Name != "PLC two" || after.Description != "" || after.Version != before.Version+1 ||
-		after.ETag() != `"2"` || !after.Created.Equal(before.Created) || !after.Updated.After(before.Updated) {
-		t.Fatalf("the replaced template = %+v, was %+v", after, before)
+	if after == nil {
+		t.Fatalf("after ReplaceTemplate the library holds no template %q", ids[0])
 	}
 
-	if updated.Template("ignored") != nil || updated.Template(ids[1]).Version != 1 {
-		t.Fatalf("replacing one template changed another: %q", templateIDs(updated))
+	// The content changed: one version more, and the time of the change.
+	want := LibraryTemplate{
+		Template: content, Version: before.Version + 1, Created: before.Created,
+		CreatedBy: testActor, UpdatedBy: testActor,
+	}
+	want.ID = ids[0]
+
+	if diff := cmp.Diff(want, *after, cmpopts.IgnoreFields(LibraryTemplate{}, "Updated")); diff != "" {
+		t.Errorf("ReplaceTemplate(%q) mismatch (-want +got):\n%s", ids[0], diff)
+	}
+
+	if !after.Updated.After(before.Updated) {
+		t.Errorf("ReplaceTemplate(%q) updated = %v, want after %v", ids[0], after.Updated, before.Updated)
+	}
+
+	if got := after.ETag(); got != `"2"` {
+		t.Errorf("ETag() after ReplaceTemplate = %s, want \"2\"", got)
+	}
+
+	if updated.Template("ignored") != nil {
+		t.Errorf("ReplaceTemplate(%q, content with id ignored) added a template ignored", ids[0])
+	}
+
+	if other := updated.Template(ids[1]); other == nil || other.Version != 1 {
+		t.Errorf("after ReplaceTemplate(%q) the other template = %+v, want it at version 1", ids[0], other)
 	}
 
 	// The same content again changes nothing, and writes nothing.
@@ -396,9 +553,12 @@ func TestLibraryReplaceTemplate(t *testing.T) {
 		return library.ReplaceTemplate(ids[0], content)
 	})
 
-	if same.Revision != revision || same.Template(ids[0]).Version != after.Version ||
-		libraryRecord(t, h).Revision != revision || !same.Updated.Equal(updated.Updated) {
-		t.Fatalf("replacing with the same content wrote revision %d, version %d", same.Revision, same.Template(ids[0]).Version)
+	if diff := cmp.Diff(updated, same); diff != "" {
+		t.Errorf("ReplaceTemplate(%q, same content) mismatch (-want +got):\n%s", ids[0], diff)
+	}
+
+	if got := libraryRecord(t, h).Revision; got != revision {
+		t.Errorf("after ReplaceTemplate(%q, same content) the record revision = %d, want %d", ids[0], got, revision)
 	}
 
 	library := mustLibrary(t, h)
@@ -406,28 +566,31 @@ func TestLibraryReplaceTemplate(t *testing.T) {
 	// A built-in template is not in the library.
 	for _, id := range []string{"no-such", "router"} {
 		if err := library.ReplaceTemplate(id, content); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("replacing %s, which the library does not hold = %v, want ErrNotFound", id, err)
+			t.Errorf("ReplaceTemplate(%q) = %v, want ErrNotFound", id, err)
 		}
 	}
 
 	if err := library.ReplaceTemplate("no-such", content); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("replacing a template the library does not hold = %v, want ErrNotFound", err)
+		t.Errorf("ReplaceTemplate(no-such) = %v, want ErrNotFound", err)
 	}
 
 	err := library.ReplaceTemplate(ids[0], testTemplate(""))
 
-	if reason, limit := refusal(t, err); reason != "template.name: template name is required" || limit {
-		t.Fatalf("an invalid replacement is refused with %q", reason)
+	if diff := refusalDiff(LibraryError{Reason: "template.name: template name is required"}, err); diff != "" {
+		t.Errorf("ReplaceTemplate(%q, no name) refusal mismatch (-want +got):\n%s", ids[0], diff)
 	}
 
 	err = library.ReplaceTemplate(ids[0], iconTemplate("Drawn", "two words"))
 
-	if reason, _ := refusal(t, err); !strings.HasPrefix(reason, `template.device.icon: icon name "two words" must be`) {
-		t.Fatalf("an icon that is not an icon name is refused with %q", reason)
+	const wantIcon = `template.device.icon: icon name "two words" must be`
+	if got, problem := refusalOf(err); problem != nil {
+		t.Errorf("ReplaceTemplate(%q, icon two words) %v", ids[0], problem)
+	} else if !strings.HasPrefix(got.Reason, wantIcon) {
+		t.Errorf("ReplaceTemplate(%q, icon two words) refusal = %q, want it to start %q", ids[0], got.Reason, wantIcon)
 	}
 
-	if library.Template(ids[0]).Name != "PLC two" {
-		t.Fatalf("a refused replacement changed the template: %+v", library.Template(ids[0]))
+	if got := library.Template(ids[0]); got == nil || got.Name != "PLC two" {
+		t.Errorf("after refused ReplaceTemplate(%q) the template = %+v, want it named PLC two", ids[0], got)
 	}
 }
 
@@ -450,12 +613,17 @@ func TestLibraryCreatorAndUpdater(t *testing.T) {
 		return err
 	})
 
-	if plc := added.Template(ids[0]); plc.CreatedBy != testActor || plc.UpdatedBy != testActor {
-		t.Fatalf("a new template = %+v, want it created and updated by %s", plc, testActor)
+	want := map[string]authors{
+		"template":   {CreatedBy: testActor, UpdatedBy: testActor},
+		"collection": {CreatedBy: testActor, UpdatedBy: testActor},
+	}
+	got := map[string]authors{
+		"template":   templateAuthors(added, ids[0]),
+		"collection": collectionAuthors(added, collection),
 	}
 
-	if floor := added.Collection(collection); floor.CreatedBy != testActor || floor.UpdatedBy != testActor {
-		t.Fatalf("a new collection = %+v, want it created and updated by %s", floor, testActor)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("authors of a new template and collection mismatch (-want +got):\n%s", diff)
 	}
 
 	// Another user changes the content: the updater is that user.
@@ -466,23 +634,27 @@ func TestLibraryCreatorAndUpdater(t *testing.T) {
 
 		return library.ReplaceCollection(collection, CollectionContent{Name: "Floor two", Description: "", TemplateIDs: ids[:1]})
 	})
-	if err != nil || changed.UpdatedBy != testPeer {
-		t.Fatalf("UpdateLibrary as %s = updated by %q, %v", testPeer, changed.UpdatedBy, err)
+	if err != nil {
+		t.Fatalf("UpdateLibrary as %s returned error: %v", testPeer, err)
 	}
 
-	for what, item := range map[string][2]string{
-		"the template":     {changed.Template(ids[0]).CreatedBy, changed.Template(ids[0]).UpdatedBy},
-		"the collection":   {changed.Collection(collection).CreatedBy, changed.Collection(collection).UpdatedBy},
-		"an unchanged one": {changed.Template(ids[1]).CreatedBy, changed.Template(ids[1]).UpdatedBy},
-	} {
-		want := [2]string{testActor, testPeer}
-		if what == "an unchanged one" {
-			want = [2]string{testActor, testActor}
-		}
+	if changed.UpdatedBy != testPeer {
+		t.Errorf("UpdateLibrary as %s updated by = %q, want %q", testPeer, changed.UpdatedBy, testPeer)
+	}
 
-		if item != want {
-			t.Errorf("%s was created and updated by %q, want %q", what, item, want)
-		}
+	want = map[string]authors{
+		"the template":     {CreatedBy: testActor, UpdatedBy: testPeer},
+		"the collection":   {CreatedBy: testActor, UpdatedBy: testPeer},
+		"an unchanged one": {CreatedBy: testActor, UpdatedBy: testActor},
+	}
+	got = map[string]authors{
+		"the template":     templateAuthors(changed, ids[0]),
+		"the collection":   collectionAuthors(changed, collection),
+		"an unchanged one": templateAuthors(changed, ids[1]),
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("authors after UpdateLibrary as %s mismatch (-want +got):\n%s", testPeer, diff)
 	}
 }
 
@@ -503,16 +675,31 @@ func TestLibraryCollections(t *testing.T) {
 	})
 
 	first := created.Collection(collection)
+	if first == nil {
+		t.Fatalf("after AddCollection the library holds no collection %q", collection)
+	}
 
-	if first == nil || first.Name != "Plant floor" || first.Description != "PLCs" ||
-		!slices.Equal(first.TemplateIDs, []string{ids[1], ids[0]}) || first.Version != 1 || first.ETag() != `"1"` ||
-		first.Created.IsZero() || !first.Created.Equal(first.Updated) {
-		t.Fatalf("the new collection = %+v", first)
+	want := TemplateCollection{
+		ID: collection, Name: "Plant floor", Description: "PLCs", TemplateIDs: []string{ids[1], ids[0]},
+		Version: 1, CreatedBy: testActor, UpdatedBy: testActor,
+	}
+
+	if diff := cmp.Diff(want, *first, ignoreTimes()); diff != "" {
+		t.Errorf("AddCollection(Plant floor) mismatch (-want +got):\n%s", diff)
+	}
+
+	if first.Created.IsZero() || !first.Created.Equal(first.Updated) {
+		t.Errorf("AddCollection(Plant floor) created %v, updated %v, want both the time it was added",
+			first.Created, first.Updated)
+	}
+
+	if got := first.ETag(); got != `"1"` {
+		t.Errorf("ETag() of a new collection = %s, want \"1\"", got)
 	}
 
 	// A collection is not a change of its templates.
-	if template := created.Template(ids[1]); template.Version != 1 {
-		t.Fatalf("adding a collection changed its template: %+v", template)
+	if template := created.Template(ids[1]); template == nil || template.Version != 1 {
+		t.Errorf("after AddCollection its template = %+v, want it at version 1", template)
 	}
 
 	h.now.Add(10)
@@ -522,10 +709,21 @@ func TestLibraryCollections(t *testing.T) {
 	})
 
 	second := replaced.Collection(collection)
+	if second == nil {
+		t.Fatalf("after ReplaceCollection the library holds no collection %q", collection)
+	}
 
-	if second.Name != "Floor" || second.Description != "" || !slices.Equal(second.TemplateIDs, []string{ids[0]}) ||
-		second.Version != 2 || !second.Created.Equal(first.Created) || !second.Updated.After(first.Updated) {
-		t.Fatalf("the replaced collection = %+v, was %+v", second, first)
+	want = TemplateCollection{
+		ID: collection, Name: "Floor", TemplateIDs: []string{ids[0]},
+		Version: 2, Created: first.Created, CreatedBy: testActor, UpdatedBy: testActor,
+	}
+
+	if diff := cmp.Diff(want, *second, cmpopts.IgnoreFields(TemplateCollection{}, "Updated")); diff != "" {
+		t.Errorf("ReplaceCollection(Floor) mismatch (-want +got):\n%s", diff)
+	}
+
+	if !second.Updated.After(first.Updated) {
+		t.Errorf("ReplaceCollection(Floor) updated = %v, want after %v", second.Updated, first.Updated)
 	}
 
 	// An empty collection is one, and encodes its list as a list.
@@ -533,30 +731,45 @@ func TestLibraryCollections(t *testing.T) {
 		return library.ReplaceCollection(collection, CollectionContent{Name: "Floor", Description: "", TemplateIDs: nil})
 	})
 
-	if got := emptied.Collection(collection); got.Version != 3 || got.TemplateIDs == nil || len(got.TemplateIDs) != 0 ||
-		!strings.Contains(string(libraryRecord(t, h).Value), `"templateIds":[]`) {
-		t.Fatalf("the emptied collection = %+v", got)
+	want = TemplateCollection{
+		ID: collection, Name: "Floor", TemplateIDs: []string{}, Version: 3, CreatedBy: testActor, UpdatedBy: testActor,
+	}
+
+	if got := emptied.Collection(collection); got == nil {
+		t.Errorf("after ReplaceCollection(no templates) the library holds no collection %q", collection)
+	} else if diff := cmp.Diff(want, *got, ignoreTimes()); diff != "" {
+		t.Errorf("ReplaceCollection(no templates) mismatch (-want +got):\n%s", diff)
+	}
+
+	stored, _ := decodedLibraryRecord(t, h)["collections"].([]any)
+	if len(stored) != 1 {
+		t.Fatalf("library record collections = %v, want one", stored)
+	}
+
+	storedCollection, _ := stored[0].(map[string]any)
+	if diff := cmp.Diff([]any{}, storedCollection["templateIds"]); diff != "" {
+		t.Errorf("library record templateIds of an empty collection mismatch (-want +got):\n%s", diff)
 	}
 
 	same := mustUpdate(t, h, func(library *TemplateLibrary) error {
 		return library.ReplaceCollection(collection, CollectionContent{Name: "Floor", Description: "", TemplateIDs: []string{}})
 	})
 
-	if same.Revision != emptied.Revision || same.Collection(collection).Version != 3 {
-		t.Fatalf("replacing a collection with the same content wrote revision %d", same.Revision)
+	if diff := cmp.Diff(emptied, same); diff != "" {
+		t.Errorf("ReplaceCollection(same content) mismatch (-want +got):\n%s", diff)
 	}
 
 	library := mustLibrary(t, h)
 
 	err := library.ReplaceCollection("no-such", CollectionContent{Name: "X", Description: "", TemplateIDs: nil})
 	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("replacing a collection the library does not hold = %v, want ErrNotFound", err)
+		t.Errorf("ReplaceCollection(no-such) = %v, want ErrNotFound", err)
 	}
 
 	if _, err := library.AddCollection(
 		CollectionContent{Name: "X", Description: "", TemplateIDs: nil}, func() (string, error) { return collection, nil },
 	); err == nil || errors.Is(err, ErrInvalid) {
-		t.Fatalf("an id the library has = %v, want an error that is not the caller's", err)
+		t.Errorf("AddCollection(id source giving %q) = %v, want an error that is not ErrInvalid", collection, err)
 	}
 }
 
@@ -626,18 +839,18 @@ func TestLibraryCollectionRefusals(t *testing.T) {
 
 			_, err := library.AddCollection(tt.content, h.service.NewID)
 
-			if reason, limit := refusal(t, err); reason != tt.want || limit {
-				t.Fatalf("AddCollection refused with %q (limit %v), want %q", reason, limit, tt.want)
+			if diff := refusalDiff(LibraryError{Reason: tt.want}, err); diff != "" {
+				t.Errorf("AddCollection(%s) refusal mismatch (-want +got):\n%s", tt.name, diff)
 			}
 
 			err = library.ReplaceCollection(collection, tt.content)
 
-			if reason, _ := refusal(t, err); reason != tt.want {
-				t.Fatalf("ReplaceCollection refused with %q, want %q", reason, tt.want)
+			if diff := refusalDiff(LibraryError{Reason: tt.want}, err); diff != "" {
+				t.Errorf("ReplaceCollection(%s) refusal mismatch (-want +got):\n%s", tt.name, diff)
 			}
 
-			if len(library.Collections) != 1 || library.Collections[0].Name != "Floor" {
-				t.Fatalf("a refused change left %+v", library.Collections)
+			if diff := cmp.Diff([]string{"Floor"}, collectionNames(library)); diff != "" {
+				t.Errorf("collection names after refused changes mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -679,23 +892,34 @@ func TestLibraryDeletePrunesCollections(t *testing.T) {
 	})
 
 	if templates != 2 || collections != 1 {
-		t.Fatalf("Delete removed %d templates and %d collections, want 2 and 1", templates, collections)
+		t.Errorf("Delete(two templates and one collection) = %d, %d, want 2, 1", templates, collections)
+	}
+
+	if deleted.Collection(single) != nil {
+		t.Errorf("after Delete the library still holds the collection %q", single)
 	}
 
 	kept := deleted.Collection(both)
-
-	if deleted.Collection(single) != nil || kept == nil || !slices.Equal(kept.TemplateIDs, []string{ids[0]}) {
-		t.Fatalf("after the delete the collections = %+v", deleted.Collections)
+	if kept == nil {
+		t.Fatalf("after Delete the library holds no collection %q", both)
 	}
 
 	// Losing a template is a change of the collection's content.
-	if kept.Version != 2 || !kept.Updated.After(kept.Created) {
-		t.Fatalf("the pruned collection = %+v, want version 2 and the time of the delete", kept)
+	want := TemplateCollection{
+		ID: both, Name: "Both", TemplateIDs: []string{ids[0]}, Version: 2, CreatedBy: testActor, UpdatedBy: testActor,
+	}
+
+	if diff := cmp.Diff(want, *kept, ignoreTimes()); diff != "" {
+		t.Errorf("pruned collection after Delete mismatch (-want +got):\n%s", diff)
+	}
+
+	if !kept.Updated.After(kept.Created) {
+		t.Errorf("pruned collection updated = %v, want after its creation %v", kept.Updated, kept.Created)
 	}
 
 	// The templates of the deleted collection stay in the library.
-	if deleted.Template(ids[2]) == nil || deleted.Template(ids[1]) != nil || deleted.Template(ids[3]) != nil {
-		t.Fatalf("after the delete the library holds %q", templateIDs(deleted))
+	if diff := cmp.Diff([]string{ids[0], ids[2]}, templateIDs(deleted)); diff != "" {
+		t.Errorf("template ids after Delete mismatch (-want +got):\n%s", diff)
 	}
 
 	// The same delete again removes nothing and writes nothing.
@@ -705,8 +929,12 @@ func TestLibraryDeletePrunesCollections(t *testing.T) {
 		return nil
 	})
 
-	if templates != 0 || collections != 0 || again.Revision != deleted.Revision {
-		t.Fatalf("the same delete again removed %d and %d at revision %d", templates, collections, again.Revision)
+	if templates != 0 || collections != 0 {
+		t.Errorf("Delete(the same items again) = %d, %d, want 0, 0", templates, collections)
+	}
+
+	if again.Revision != deleted.Revision {
+		t.Errorf("Delete(the same items again) revision = %d, want %d", again.Revision, deleted.Revision)
 	}
 }
 
@@ -723,15 +951,12 @@ func TestLibraryTemplateIcons(t *testing.T) {
 
 	library := mustLibrary(t, h)
 
-	if one, two := library.Template(ids[0]), library.Template(ids[1]); one.Device.Icon != "plc" ||
-		two.Device.Icon != "Not-uploaded" {
-		t.Fatalf("the templates name the icons %q and %q", one.Device.Icon, two.Device.Icon)
+	if diff := cmp.Diff([]string{"plc", "Not-uploaded", ""}, libraryIcons(library)); diff != "" {
+		t.Errorf("template icons mismatch (-want +got):\n%s", diff)
 	}
 
-	value := string(libraryRecord(t, h).Value)
-
-	if strings.Contains(value, `"icons"`) || strings.Contains(value, "iVBOR") {
-		t.Fatalf("the library record carries an image: %s", value)
+	if value := libraryRecord(t, h).Value; bytes.Contains(value, []byte(`"icons"`)) || bytes.Contains(value, []byte("iVBOR")) {
+		t.Errorf("library record = %s, want no image", value)
 	}
 
 	// Renaming or deleting the icon leaves the templates as they are: the
@@ -744,9 +969,18 @@ func TestLibraryTemplateIcons(t *testing.T) {
 		t.Fatalf("DeleteIcon returned error: %v", err)
 	}
 
-	if after := mustLibrary(t, h); after.Template(ids[0]).Device.Icon != "plc" ||
-		after.Revision != library.Revision {
-		t.Fatalf("changing the icon library changed the template library: %+v", after.Template(ids[0]))
+	after := mustLibrary(t, h)
+
+	if diff := cmp.Diff([]string{"plc", "Not-uploaded", ""}, libraryIcons(after)); diff != "" {
+		t.Errorf("template icons after RenameIcon and DeleteIcon mismatch (-want +got):\n%s", diff)
+	}
+
+	if after.Revision != library.Revision {
+		t.Errorf("library revision after RenameIcon and DeleteIcon = %d, want %d", after.Revision, library.Revision)
+	}
+
+	if after.Template(ids[0]) == nil {
+		t.Errorf("after RenameIcon and DeleteIcon the library holds no template %q", ids[0])
 	}
 }
 
@@ -765,6 +999,7 @@ func TestLibraryLimits(t *testing.T) {
 
 	ids := mustAddTemplates(t, h, fill...)
 
+	// The next template is refused only in a full library.
 	if library := mustLibrary(t, h); len(library.Templates) != MaxLibraryTemplates {
 		t.Fatalf("the library holds %d templates, want %d", len(library.Templates), MaxLibraryTemplates)
 	}
@@ -775,8 +1010,8 @@ func TestLibraryLimits(t *testing.T) {
 		return err
 	})
 
-	if reason, limit := refusal(t, err); reason != "a library holds at most 200 templates" || !limit {
-		t.Fatalf("the 201st template is refused with %q (limit %v)", reason, limit)
+	if diff := refusalDiff(LibraryError{Reason: "a library holds at most 200 templates", Limit: true}, err); diff != "" {
+		t.Errorf("UpdateLibrary(add the 201st template) refusal mismatch (-want +got):\n%s", diff)
 	}
 
 	// A collection of every template is the largest one.
@@ -801,25 +1036,26 @@ func TestLibraryLimits(t *testing.T) {
 		return err
 	})
 
-	if reason, limit := refusal(t, err); reason != "a library holds at most 50 collections" || !limit {
-		t.Fatalf("the 51st collection is refused with %q (limit %v)", reason, limit)
+	if diff := refusalDiff(LibraryError{Reason: "a library holds at most 50 collections", Limit: true}, err); diff != "" {
+		t.Errorf("UpdateLibrary(add the 51st collection) refusal mismatch (-want +got):\n%s", diff)
 	}
 
 	library := mustLibrary(t, h)
 	first := library.Collections[0].ID
 
 	if err := library.ReplaceCollection(first, CollectionContent{Name: "All", Description: "", TemplateIDs: all}); err != nil {
-		t.Fatalf("a collection of %d templates is refused: %v", len(all), err)
+		t.Errorf("ReplaceCollection(%d templates) = %v, want no error", len(all), err)
 	}
 
 	err = library.ReplaceCollection(first, CollectionContent{Name: "All", Description: "", TemplateIDs: append(slices.Clone(all), "x")})
 
-	if reason, limit := refusal(t, err); reason != "a collection holds at most 200 templates" || !limit {
-		t.Fatalf("a collection of 201 templates is refused with %q (limit %v)", reason, limit)
+	if diff := refusalDiff(LibraryError{Reason: "a collection holds at most 200 templates", Limit: true}, err); diff != "" {
+		t.Errorf("ReplaceCollection(201 templates) refusal mismatch (-want +got):\n%s", diff)
 	}
 
 	if len(library.Templates) != MaxLibraryTemplates || len(library.Collections) != MaxLibraryCollections {
-		t.Fatalf("the limits were not reached: %d templates, %d collections", len(library.Templates), len(library.Collections))
+		t.Errorf("the library holds %d templates and %d collections, want %d and %d",
+			len(library.Templates), len(library.Collections), MaxLibraryTemplates, MaxLibraryCollections)
 	}
 }
 
@@ -839,6 +1075,7 @@ func TestLibraryRecordLimit(t *testing.T) {
 
 	record := libraryRecord(t, h)
 
+	// The next template is refused only in a library just below the limit.
 	if len(record.Value) > MaxMetadataBytes || len(record.Value) < MaxMetadataBytes-each {
 		t.Fatalf("the library record is %d bytes, want it just below %d", len(record.Value), MaxMetadataBytes)
 	}
@@ -849,17 +1086,24 @@ func TestLibraryRecordLimit(t *testing.T) {
 		return err
 	})
 
-	reason, limit := refusal(t, err)
-	if !strings.HasPrefix(reason, "a library takes at most 524288 bytes, and this one would take ") || !limit {
-		t.Fatalf("a library over 512 KiB is refused with %q (limit %v)", reason, limit)
+	// The words of the error are checked below.
+	got, problem := refusalOf(err)
+	if problem != nil {
+		t.Fatalf("UpdateLibrary(a library over 512 KiB) %v", problem)
+	}
+
+	const wantReason = "a library takes at most 524288 bytes, and this one would take "
+	if !strings.HasPrefix(got.Reason, wantReason) || !got.Limit {
+		t.Errorf("UpdateLibrary(a library over 512 KiB) refusal = %q (limit %v), want %q (limit true)",
+			got.Reason, got.Limit, wantReason)
 	}
 
 	if strings.Contains(err.Error(), "pppp") {
-		t.Fatalf("the refusal repeats the library: %.200s", err)
+		t.Errorf("UpdateLibrary(a library over 512 KiB) = %.200s, want an error that does not repeat the library", err)
 	}
 
-	if libraryRecord(t, h).Revision != record.Revision {
-		t.Fatal("a refused change wrote the library")
+	if got := libraryRecord(t, h).Revision; got != record.Revision {
+		t.Errorf("after a refused UpdateLibrary the record revision = %d, want %d", got, record.Revision)
 	}
 }
 
@@ -870,8 +1114,11 @@ func TestUpdateLibraryRetriesOnConflict(t *testing.T) {
 		t.Run(fmt.Sprintf("first write %v", first), func(t *testing.T) {
 			h := newHarness(t)
 
+			want := []string{"Racer", "Mine"}
 			if !first {
 				mustAddTemplates(t, h, testTemplate("Earlier"))
+
+				want = slices.Insert(want, 0, "Earlier")
 			}
 
 			// Another request of the owner lands between this one's read and
@@ -895,20 +1142,17 @@ func TestUpdateLibraryRetriesOnConflict(t *testing.T) {
 				return err
 			})
 
-			names := make([]string, 0, len(library.Templates))
-			for i := range library.Templates {
-				names = append(names, library.Templates[i].Name)
+			if runs != 2 {
+				t.Errorf("UpdateLibrary ran its change %d times, want 2", runs)
 			}
 
-			if runs != 2 || !slices.Contains(names, "Racer") || names[len(names)-1] != "Mine" ||
-				strings.Count(strings.Join(names, ","), "Mine") != 1 {
-				t.Fatalf("after %d runs the library holds %q, want the racer's template and then mine, once", runs, names)
+			// The racer's template, and then mine, once.
+			if diff := cmp.Diff(want, libraryNames(library)); diff != "" {
+				t.Errorf("UpdateLibrary(add Mine) template names mismatch (-want +got):\n%s", diff)
 			}
 
-			if stored := mustLibrary(t, h); stored.Revision != library.Revision ||
-				!slices.Equal(templateIDs(stored), templateIDs(library)) {
-				t.Fatalf("the stored library = %q at %d, returned %q at %d",
-					templateIDs(stored), stored.Revision, templateIDs(library), library.Revision)
+			if diff := cmp.Diff(library, mustLibrary(t, h)); diff != "" {
+				t.Errorf("GetLibrary() after UpdateLibrary mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -947,16 +1191,22 @@ func TestUpdateLibraryGivesUp(t *testing.T) {
 		return err
 	})
 
-	if !errors.Is(err, ErrBusy) || runs != maxLibraryAttempts || maxLibraryAttempts != 5 {
-		t.Fatalf("after %d runs: %v, want ErrBusy after 5", runs, err)
+	if !errors.Is(err, ErrBusy) {
+		t.Errorf("UpdateLibrary(always raced) = %v, want ErrBusy", err)
+	}
+
+	if maxLibraryAttempts != 5 {
+		t.Errorf("maxLibraryAttempts = %d, want 5", maxLibraryAttempts)
+	}
+
+	if runs != maxLibraryAttempts {
+		t.Errorf("UpdateLibrary(always raced) ran its change %d times, want %d", runs, maxLibraryAttempts)
 	}
 
 	h.store.BeforeUpdate = nil
 
-	for _, template := range mustLibrary(t, h).Templates {
-		if template.Name == "Mine" {
-			t.Fatal("a change that gave up was written")
-		}
+	if names := libraryNames(mustLibrary(t, h)); slices.Contains(names, "Mine") {
+		t.Errorf("after UpdateLibrary gave up the library holds %q, want no Mine", names)
 	}
 }
 
@@ -986,7 +1236,7 @@ func TestUpdateLibraryConcurrent(t *testing.T) {
 				}
 
 				if !errors.Is(err, ErrBusy) {
-					t.Errorf("writer %d: %v", i, err)
+					t.Errorf("UpdateLibrary(writer %d) = %v, want no error or ErrBusy", i, err)
 
 					return
 				}
@@ -999,13 +1249,13 @@ func TestUpdateLibraryConcurrent(t *testing.T) {
 	library := mustLibrary(t, h)
 
 	if len(library.Templates) != writers {
-		t.Fatalf("the library holds %q, want one template of each writer", templateIDs(library))
+		t.Errorf("the library holds %q, want one template of each of %d writers", templateIDs(library), writers)
 	}
 
 	seen := map[string]bool{}
 	for _, id := range templateIDs(library) {
 		if seen[id] {
-			t.Fatalf("template id %q is used twice", id)
+			t.Errorf("the library holds the template id %q twice, want each once", id)
 		}
 
 		seen[id] = true
@@ -1031,8 +1281,12 @@ func TestUpdateLibraryStoreFailures(t *testing.T) {
 
 	h.store.BeforeCreate = refuse
 
-	if _, err := add("One"); !errors.Is(err, full) || h.store.Count(NamespaceTemplates) != 0 {
-		t.Fatalf("a refused first write = %v, want the store's error and no record", err)
+	if _, err := add("One"); !errors.Is(err, full) {
+		t.Errorf("UpdateLibrary(refused first write) = %v, want %v", err, full)
+	}
+
+	if got := h.store.Count(NamespaceTemplates); got != 0 {
+		t.Errorf("after a refused first write the store holds %d library records, want 0", got)
 	}
 
 	h.store.BeforeCreate = nil
@@ -1048,18 +1302,13 @@ func TestUpdateLibraryStoreFailures(t *testing.T) {
 	h.store.BeforeUpdate = refuse
 
 	if _, err := add("Three"); !errors.Is(err, full) {
-		t.Fatalf("a refused update = %v, want the store's error", err)
+		t.Errorf("UpdateLibrary(refused update) = %v, want %v", err, full)
 	}
 
 	h.store.BeforeUpdate = nil
 
-	names := make([]string, 0, 2)
-	for _, template := range mustLibrary(t, h).Templates {
-		names = append(names, template.Name)
-	}
-
-	if !slices.Equal(names, []string{"One", "Two"}) {
-		t.Fatalf("the library holds %q, want One and Two", names)
+	if diff := cmp.Diff([]string{"One", "Two"}, libraryNames(mustLibrary(t, h))); diff != "" {
+		t.Errorf("template names after a refused update mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1091,7 +1340,7 @@ func TestLibraryReadFailure(t *testing.T) {
 	}
 
 	if library, err := service.GetLibrary(ctx); !errors.Is(err, down) || library != nil {
-		t.Fatalf("GetLibrary = %v, %v, want the store's error", library, err)
+		t.Errorf("GetLibrary() = %v, %v, want nil and %v", library, err, down)
 	}
 
 	runs := 0
@@ -1104,8 +1353,16 @@ func TestLibraryReadFailure(t *testing.T) {
 		return nil
 	})
 
-	if !errors.Is(err, down) || errors.Is(err, ErrBusy) || runs != 0 || libraryRecord(t, h).Revision != revision {
-		t.Fatalf("UpdateLibrary = %v after %d runs, want the store's error and the record as it was", err, runs)
+	if !errors.Is(err, down) || errors.Is(err, ErrBusy) {
+		t.Errorf("UpdateLibrary(unreadable library) = %v, want %v and not ErrBusy", err, down)
+	}
+
+	if runs != 0 {
+		t.Errorf("UpdateLibrary(unreadable library) ran its change %d times, want 0", runs)
+	}
+
+	if got := libraryRecord(t, h).Revision; got != revision {
+		t.Errorf("after UpdateLibrary(unreadable library) the record revision = %d, want %d", got, revision)
 	}
 }
 
@@ -1118,16 +1375,16 @@ func TestUpdateLibraryRequests(t *testing.T) {
 	cancel()
 
 	if _, err := h.service.UpdateLibrary(canceled, testActor, nothing); !errors.Is(err, context.Canceled) {
-		t.Errorf("UpdateLibrary with a canceled context = %v", err)
+		t.Errorf("UpdateLibrary(canceled context) = %v, want context.Canceled", err)
 	}
 
 	if _, err := h.service.GetLibrary(canceled); !errors.Is(err, context.Canceled) {
-		t.Errorf("GetLibrary with a canceled context = %v", err)
+		t.Errorf("GetLibrary(canceled context) = %v, want context.Canceled", err)
 	}
 
 	for _, user := range []string{"", strings.Repeat("u", MaxOwnerLength+1), "a\nb"} {
 		if _, err := h.service.UpdateLibrary(ctx, user, nothing); !errors.Is(err, ErrInvalid) {
-			t.Errorf("UpdateLibrary by actor %.20q = %v, want ErrInvalid", user, err)
+			t.Errorf("UpdateLibrary(actor %.20q) = %v, want ErrInvalid", user, err)
 		}
 	}
 
@@ -1142,8 +1399,12 @@ func TestUpdateLibraryRequests(t *testing.T) {
 
 		return refused
 	})
-	if err != refused || h.store.Count(NamespaceTemplates) != 0 { //nolint:errorlint // the very error, not one wrapping it
-		t.Fatalf("a refused change = %v, want the change's own error and no record", err)
+	if err != refused { //nolint:errorlint // the very error, not one wrapping it
+		t.Errorf("UpdateLibrary(change that fails) = %v, want the change's own error", err)
+	}
+
+	if got := h.store.Count(NamespaceTemplates); got != 0 {
+		t.Errorf("after UpdateLibrary(change that fails) the store holds %d library records, want 0", got)
 	}
 
 	mustAddTemplates(t, h, testTemplate("PLC"))
@@ -1155,8 +1416,8 @@ func TestUpdateLibraryRequests(t *testing.T) {
 		return nil
 	})
 
-	if reason, limit := refusal(t, err); reason != "template 0 is not a valid template" || limit {
-		t.Fatalf("an invalid library is refused with %q", reason)
+	if diff := refusalDiff(LibraryError{Reason: "template 0 is not a valid template"}, err); diff != "" {
+		t.Errorf("UpdateLibrary(clear a name) refusal mismatch (-want +got):\n%s", diff)
 	}
 
 	// The actor of a change is recorded.
@@ -1165,8 +1426,16 @@ func TestUpdateLibraryRequests(t *testing.T) {
 
 		return nil
 	})
-	if err != nil || library.UpdatedBy != testPeer || len(library.Templates) != 0 {
-		t.Fatalf("a change by another actor = %+v, %v", library, err)
+	if err != nil {
+		t.Fatalf("UpdateLibrary as %s returned error: %v", testPeer, err)
+	}
+
+	if library.UpdatedBy != testPeer {
+		t.Errorf("UpdateLibrary as %s updated by = %q, want %q", testPeer, library.UpdatedBy, testPeer)
+	}
+
+	if got := templateIDs(library); len(got) != 0 {
+		t.Errorf("UpdateLibrary(delete all) left %q, want nothing", got)
 	}
 }
 
@@ -1175,11 +1444,7 @@ func TestUpdateLibraryRequests(t *testing.T) {
 func libraryValue(t *testing.T, h *testHarness, edit func(library map[string]any)) []byte {
 	t.Helper()
 
-	var library map[string]any
-
-	if err := json.Unmarshal(libraryRecord(t, h).Value, &library); err != nil {
-		t.Fatalf("decoding the library record: %v", err)
-	}
+	library := decodedLibraryRecord(t, h)
 
 	edit(library)
 
@@ -1366,19 +1631,32 @@ func TestLibraryRefusesDamagedRecords(t *testing.T) {
 			library, err := h.service.GetLibrary(ctx)
 
 			if tt.valid {
-				if err != nil || library.Collections == nil {
-					t.Fatalf("GetLibrary = %v, want the library", err)
+				if err != nil {
+					t.Fatalf("GetLibrary(%s) returned error: %v", tt.name, err)
+				}
+
+				if library.Collections == nil {
+					t.Errorf("GetLibrary(%s) collections = nil, want an empty list", tt.name)
 				}
 
 				return
 			}
 
-			if !errors.Is(err, ErrCorrupt) || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("GetLibrary = %v, want ErrCorrupt saying %q", err, tt.want)
+			// The words of the error are checked below.
+			if err == nil {
+				t.Fatalf("GetLibrary(%s) = %+v, want ErrCorrupt", tt.name, library)
+			}
+
+			if !errors.Is(err, ErrCorrupt) {
+				t.Errorf("GetLibrary(%s) = %v, want ErrCorrupt", tt.name, err)
+			}
+
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("GetLibrary(%s) = %v, want it to say %q", tt.name, err, tt.want)
 			}
 
 			if strings.Contains(err.Error(), damagedLibrarySecret) {
-				t.Fatalf("the error repeats what the record holds: %v", err)
+				t.Errorf("GetLibrary(%s) = %v, want an error that does not repeat the record", tt.name, err)
 			}
 
 			// A damaged library is not changed, and not replaced by an empty
@@ -1393,8 +1671,16 @@ func TestLibraryRefusesDamagedRecords(t *testing.T) {
 				return nil
 			})
 
-			if !errors.Is(err, ErrCorrupt) || runs != 0 || libraryRecord(t, h).Revision != revision {
-				t.Fatalf("UpdateLibrary = %v after %d runs, want ErrCorrupt and the record as it was", err, runs)
+			if !errors.Is(err, ErrCorrupt) {
+				t.Errorf("UpdateLibrary(%s) = %v, want ErrCorrupt", tt.name, err)
+			}
+
+			if runs != 0 {
+				t.Errorf("UpdateLibrary(%s) ran its change %d times, want 0", tt.name, runs)
+			}
+
+			if got := libraryRecord(t, h).Revision; got != revision {
+				t.Errorf("after UpdateLibrary(%s) the record revision = %d, want %d", tt.name, got, revision)
 			}
 		})
 	}
@@ -1409,15 +1695,21 @@ func TestLibrarySurvivesCleanup(t *testing.T) {
 	revision := libraryRecord(t, h).Revision
 
 	if _, err := h.service.CleanupOrphanedChunks(ctx); err != nil {
-		t.Fatalf("CleanupOrphanedChunks returned error: %v", err)
+		t.Errorf("CleanupOrphanedChunks() returned error: %v", err)
 	}
 
 	if _, err := h.service.CleanupOrphanedDocuments(ctx, nil); err != nil {
-		t.Fatalf("CleanupOrphanedDocuments returned error: %v", err)
+		t.Errorf("CleanupOrphanedDocuments() returned error: %v", err)
 	}
 
-	if library := mustLibrary(t, h); library.Template(ids[0]) == nil || library.Revision != revision {
-		t.Fatalf("after the cleanups the library holds %q at revision %d", templateIDs(library), library.Revision)
+	library := mustLibrary(t, h)
+
+	if diff := cmp.Diff(ids, templateIDs(library)); diff != "" {
+		t.Errorf("template ids after the cleanups mismatch (-want +got):\n%s", diff)
+	}
+
+	if library.Revision != revision {
+		t.Errorf("library revision after the cleanups = %d, want %d", library.Revision, revision)
 	}
 }
 
@@ -1426,15 +1718,26 @@ func TestLibraryErrorWords(t *testing.T) {
 	limit := newLibraryLimitErrorf("a library holds at most %d templates", 200)
 
 	if got, want := invalid.Error(), "builder: invalid request: template library: template 3 is wrong"; got != want {
-		t.Errorf("Error() = %q, want %q", got, want)
+		t.Errorf("newLibraryErrorf().Error() = %q, want %q", got, want)
 	}
 
 	if got, want := limit.Error(), "builder: payload too large: template library: a library holds at most 200 templates"; got != want {
-		t.Errorf("Error() = %q, want %q", got, want)
+		t.Errorf("newLibraryLimitErrorf().Error() = %q, want %q", got, want)
 	}
 
-	if !errors.Is(invalid, ErrInvalid) || errors.Is(invalid, ErrTooLarge) || !errors.Is(limit, ErrTooLarge) ||
-		errors.Is(limit, ErrInvalid) {
-		t.Errorf("a refusal matches ErrInvalid, and a limit ErrTooLarge, and neither both")
+	if !errors.Is(invalid, ErrInvalid) {
+		t.Errorf("errors.Is(%v, ErrInvalid) = false, want true", invalid)
+	}
+
+	if errors.Is(invalid, ErrTooLarge) {
+		t.Errorf("errors.Is(%v, ErrTooLarge) = true, want false", invalid)
+	}
+
+	if !errors.Is(limit, ErrTooLarge) {
+		t.Errorf("errors.Is(%v, ErrTooLarge) = false, want true", limit)
+	}
+
+	if errors.Is(limit, ErrInvalid) {
+		t.Errorf("errors.Is(%v, ErrInvalid) = true, want false", limit)
 	}
 }

@@ -47,23 +47,33 @@ func TestDocumentNameRulesAgreeWithDraftTitles(t *testing.T) {
 		Actor: testActor, Title: "", SourceToken: "",
 		Document: testDocument(t, longest, 0), Summary: "", ID: "",
 	}); err != nil {
-		t.Fatalf("CreateDraft with a %d-byte name returned error: %v", MaxTitleLength, err)
+		t.Errorf("CreateDraft(a %d-byte name) returned error: %v", MaxTitleLength, err)
 	}
 
-	for _, name := range []string{strings.Repeat("n", MaxTitleLength+1), "my\ttopology"} {
-		doc := builder.NewDocument(name)
-		if _, err := EncodeDocument(doc); !errors.Is(err, ErrInvalid) {
-			t.Fatalf("EncodeDocument(%.20q) error = %s, want ErrInvalid", name, fmtErr(err))
-		}
+	tests := []struct {
+		name    string
+		docName string
+	}{
+		{name: "a name one byte too long", docName: strings.Repeat("n", MaxTitleLength+1)},
+		{name: "a tab in the name", docName: "my\ttopology"},
+	}
 
-		_, err := h.service.CreateDraft(ctx, CreateDraftRequest{
-			Actor: testActor, Title: "", SourceToken: "",
-			Document: namedDocument(t, name), Summary: "", ID: "",
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := builder.NewDocument(tt.docName)
+			if _, err := EncodeDocument(doc); !errors.Is(err, ErrInvalid) {
+				t.Errorf("EncodeDocument(NewDocument(%.20q)) = %s, want ErrInvalid", tt.docName, fmtErr(err))
+			}
+
+			_, err := h.service.CreateDraft(ctx, CreateDraftRequest{
+				Actor: testActor, Title: "", SourceToken: "",
+				Document: namedDocument(t, tt.docName), Summary: "", ID: "",
+			})
+
+			var invalid *builder.ValidationError
+			if !errors.As(err, &invalid) {
+				t.Errorf("CreateDraft(%.20q) = %s, want a *builder.ValidationError", tt.docName, fmtErr(err))
+			}
 		})
-
-		var invalid *builder.ValidationError
-		if !errors.As(err, &invalid) {
-			t.Fatalf("CreateDraft(%.20q) error = %s, want the document validator's error", name, fmtErr(err))
-		}
 	}
 }
