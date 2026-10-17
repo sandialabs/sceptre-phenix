@@ -16,6 +16,9 @@ const {
   waitForApi,
 } = require('./builder-support');
 
+// These tests do not check how announcements are paced (see README).
+test.use({ announceHold: 100 });
+
 const SNAPSHOTS = '**/api/v1/builder/drafts/*/snapshots';
 const DRAFT_ROUTES = '**/api/v1/builder/drafts/**';
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;

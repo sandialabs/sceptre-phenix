@@ -34,6 +34,9 @@ const {
   watchDraftCreates,
 } = require('./builder-support');
 
+// These tests do not check how announcements are paced (see README).
+test.use({ announceHold: 100 });
+
 const API_VERSION = 'phenix.sandia.gov/v1';
 
 // --- local helpers -----------------------------------------------------------

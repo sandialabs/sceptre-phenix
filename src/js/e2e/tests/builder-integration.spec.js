@@ -19,6 +19,9 @@ const {
   watchDraftCreates,
 } = require('./builder-support');
 
+// These tests do not check how announcements are paced (see README).
+test.use({ announceHold: 100 });
+
 function topology(name, annotations) {
   return {
     apiVersion: 'phenix.sandia.gov/v1',

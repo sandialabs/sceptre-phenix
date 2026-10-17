@@ -11,6 +11,9 @@ const {
   visit,
 } = require('./builder-support');
 
+// These tests do not check how announcements are paced (see README).
+test.use({ announceHold: 100 });
+
 const VIEWPORTS = [
   { width: 2560, height: 1440 },
   { width: 1920, height: 1080 },

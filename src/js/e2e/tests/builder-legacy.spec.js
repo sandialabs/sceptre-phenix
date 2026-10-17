@@ -16,6 +16,9 @@ const {
   watchDraftCreates,
 } = require('./builder-support');
 
+// These tests do not check how announcements are paced (see README).
+test.use({ announceHold: 100 });
+
 // A legacy Builder diagram, the same bytes as the Go tests' sample
 // (src/go/types/builder/testdata/legacy/sample.xml).
 const SAMPLE = fs.readFileSync(

@@ -22,6 +22,9 @@ const {
   uniqueName,
 } = require('./builder-support');
 
+// These tests do not check how announcements are paced (see README).
+test.use({ announceHold: 100 });
+
 const V2 = 'phenix.sandia.gov/v2';
 
 // --- local helpers -----------------------------------------------------------

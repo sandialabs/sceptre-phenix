@@ -20,6 +20,9 @@ const {
   uniqueName,
 } = require('./builder-support');
 
+// These tests do not check how announcements are paced (see README).
+test.use({ announceHold: 100 });
+
 // The card of a listed draft or published diagram, by its id.
 function cardOf(page, id) {
   return page
