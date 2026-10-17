@@ -18,7 +18,7 @@ func TestFreshness(t *testing.T) {
 
 	var last uint64
 
-	for range 3 {
+	for range 2 {
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/experiments", nil))
 

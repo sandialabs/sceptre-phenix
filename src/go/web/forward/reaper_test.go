@@ -118,11 +118,8 @@ func listForwards(t *testing.T, exp, vm string) []string {
 	return keys
 }
 
-// Listing a VM's forwards drops those whose tunnel minimega no longer lists.
-// A forward's tunnel matches on each destination part the forward sets, the
-// host case-insensitively, and on its own source port, so another user's
-// tunnel to the same destination does not keep it. QEMU forwards need no
-// tunnel.
+// Listing a VM's forwards drops those without a matching minimega tunnel (by
+// destination, host case-insensitively, and source port); QEMU forwards need none.
 //
 //nolint:paralleltest // replaces the store, minimega and the forwards
 func TestListingForwardsDropsClosedTunnels(t *testing.T) {
@@ -161,11 +158,8 @@ func TestListingForwardsDropsClosedTunnels(t *testing.T) {
 	}
 }
 
-// Reaping asks minimega for the tunnels of running experiments' VMs only, once
-// per VM with tunnel-backed forwards. A request reaps only the VM it is about;
-// the background reaper reaps them all. A stopped experiment's forwards are
-// left to its stop hook, since listing its tunnels would recreate its
-// minimega namespace.
+// Reaping lists tunnels once per running experiment's VM with tunnel forwards; a
+// stopped experiment is left to its stop hook (listing would recreate its namespace).
 //
 //nolint:paralleltest // replaces the store, minimega and the forwards
 func TestReapingAsksMinimegaOnlyWhenNeeded(t *testing.T) {

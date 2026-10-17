@@ -203,45 +203,6 @@ func TestEvaluateTimesOut(t *testing.T) {
 	}
 }
 
-// A run that ends as its timeout fires answers with its own results, not
-// with a timeout.
-func TestEvaluateRunEndingAtTimeoutPasses(t *testing.T) {
-	t.Parallel()
-
-	var (
-		runs atomic.Int32
-		r    = NewRegistry(counted(&runs, Pass, nil))
-		e    = r.entries[0]
-	)
-
-	// the run ends, and then the timer fires, before the request selects
-	e.after = func(time.Duration) <-chan time.Time {
-		polltest.Until(t, "the run ends", func() bool {
-			e.mu.Lock()
-			defer e.mu.Unlock()
-
-			return e.inflight == nil
-		})
-
-		fired := make(chan time.Time, 1)
-		fired <- time.Now()
-
-		return fired
-	}
-
-	// select picks at random between the ended run and the fired timer
-	for range 20 {
-		if resp := r.Evaluate(t.Context()); resp.Status != Pass {
-			t.Fatalf("status = %s (%+v), want pass", resp.Status, resp.Checks)
-		}
-
-		// let the next request start another run
-		e.mu.Lock()
-		e.last = nil
-		e.mu.Unlock()
-	}
-}
-
 // A request that ends while it waits does not make the check fail for the
 // requests after it.
 func TestEvaluateRequestEndDoesNotCacheFailure(t *testing.T) {

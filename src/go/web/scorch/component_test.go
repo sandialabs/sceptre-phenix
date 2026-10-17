@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"phenix/util/polltest"
 )
 
 // startComponents starts the SCORCH processors, once for all tests, as
@@ -50,7 +52,7 @@ func TestSlowComponentViewerDoesNotBlockUpdates(t *testing.T) {
 
 	var want strings.Builder
 
-	within(t, "sending the updates", func() {
+	polltest.Within(t, "sending the updates", func() {
 		for i := range 2 * viewerQueue {
 			line := strconv.Itoa(i) + "\n"
 			want.WriteString(line)
@@ -61,7 +63,7 @@ func TestSlowComponentViewerDoesNotBlockUpdates(t *testing.T) {
 		UpdateComponent(update(cmp, statusSuccess, ""))
 	})
 
-	within(t, "the fast viewer's output ending", func() { <-fastConn.closed })
+	polltest.Within(t, "the fast viewer's output ending", func() { <-fastConn.closed })
 
 	if got := fastConn.String(); got != want.String()+finishedMarker {
 		t.Errorf("fast viewer got %d bytes, want %d", len(got), want.Len()+len(finishedMarker))
@@ -92,7 +94,7 @@ func TestFinishedComponentReplaysOutputThenCloses(t *testing.T) {
 
 	wsRequests <- wsRequest{key: componentKey(cmp), v: v}
 
-	within(t, "serving the viewer", v.serve)
+	polltest.Within(t, "serving the viewer", v.serve)
 
 	if got, want := conn.String(), "one\ntwo\n"+finishedMarker; got != want {
 		t.Errorf("viewer got %q, want %q", got, want)

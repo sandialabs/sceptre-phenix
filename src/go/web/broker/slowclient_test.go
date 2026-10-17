@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -95,18 +96,18 @@ func TestSlowClientDoesNotDelayOthers(t *testing.T) {
 	// in batches the fast client is let to keep up with: its writer is a
 	// goroutine like any other
 	for range 4 {
-		within(t, "broadcasting a batch", func() {
+		polltest.Within(t, "broadcasting a batch", func() {
 			for range batch {
 				Broadcast(nil, bt.NewResource("experiment", strconv.Itoa(sent), "update"), nil)
 				sent++
 			}
 		})
 
-		within(t, "the fast client receiving its batch", func() {
+		polltest.Within(t, "the fast client receiving its batch", func() {
 			for len(got) < sent {
 				got = append(got, fastConn.messages()...)
 
-				time.Sleep(time.Millisecond)
+				runtime.Gosched()
 			}
 		})
 	}
@@ -117,8 +118,8 @@ func TestSlowClientDoesNotDelayOthers(t *testing.T) {
 		}
 	}
 
-	within(t, "dropping the slow client", func() { <-slow.done })
-	within(t, "closing the slow client's connection", func() { <-slowConn.closed })
+	polltest.Within(t, "dropping the slow client", func() { <-slow.done })
+	polltest.Within(t, "closing the slow client's connection", func() { <-slowConn.closed })
 
 	select {
 	case f := <-slowConn.controls:
@@ -159,7 +160,7 @@ func TestDroppingAClientDoesNotWaitForItsWrite(t *testing.T) {
 
 	cli.publish <- encodedPublish{data: []byte("{}")}
 
-	within(t, "the write starting", func() { <-conn.writing })
+	polltest.Within(t, "the write starting", func() { <-conn.writing })
 
 	start := time.Now()
 
@@ -169,12 +170,11 @@ func TestDroppingAClientDoesNotWaitForItsWrite(t *testing.T) {
 		t.Errorf("drop took %v", d)
 	}
 
-	within(t, "the stuck write ending", func() { <-wrote })
+	polltest.Within(t, "the stuck write ending", func() { <-wrote })
 }
 
-// Log lines never wait on the broker: with its loop stopped, logging goes on,
-// and the lines that did not fit are counted, then announced to the clients
-// showing logs once the loop runs again.
+// Logging never blocks on the broker; lines that do not fit are counted and
+// announced once the loop runs.
 //
 //nolint:paralleltest // swaps the broker's clients and log queue
 func TestLoggingNeverBlocksTheBroker(t *testing.T) {
@@ -196,7 +196,7 @@ func TestLoggingNeverBlocksTheBroker(t *testing.T) {
 
 	dropped := logsDropped.Load()
 
-	within(t, "logging with the broker stopped", func() {
+	polltest.Within(t, "logging with the broker stopped", func() {
 		for i := range lines {
 			plog.Warn(plog.TypeSystem, "line", "n", i)
 		}
@@ -223,7 +223,7 @@ func TestLoggingNeverBlocksTheBroker(t *testing.T) {
 		state int
 	)
 
-	within(t, "the reader receiving the lines", func() {
+	polltest.Within(t, "the reader receiving the lines", func() {
 		for len(got)+state < logBufferSize+3 {
 			out, _ := (<-reader.publish).(encodedPublish)
 			if out.pub.Resource.Type == "experiment" {
@@ -277,7 +277,7 @@ func TestPingDoesNotRaceShutdown(t *testing.T) {
 
 		cli.publish <- encodedPublish{data: []byte("{}")}
 
-		within(t, "a ping", func() {
+		polltest.Within(t, "a ping", func() {
 			for f := range conn.controls {
 				if f.kind == websocket.PingMessage {
 					return
@@ -287,7 +287,7 @@ func TestPingDoesNotRaceShutdown(t *testing.T) {
 
 		cli.shutdown(websocket.CloseNormalClosure, "")
 
-		within(t, "the write loop ending", func() { <-wrote })
+		polltest.Within(t, "the write loop ending", func() { <-wrote })
 	}
 }
 
@@ -335,13 +335,10 @@ func vmListReplies(conn *fakeConn) []string {
 	return names
 }
 
-// While a VM list waits on minimega, the client's other requests are still
-// read, and so are its pongs.
-//
-//nolint:paralleltest // replaces the store and the client's dependencies
-func TestReadKeepsReadingWhileAListIsSlow(t *testing.T) {
-	useExperiment(t)
-	withDeps(t)
+// gateVMs holds each VM list's minimega read until release, signaling entered
+// as one starts waiting, and answers with vms.
+func gateVMs(t *testing.T, vms ...mm.VM) (<-chan struct{}, func()) {
+	t.Helper()
 
 	var (
 		entered = make(chan struct{}, 1)
@@ -352,36 +349,17 @@ func TestReadKeepsReadingWhileAListIsSlow(t *testing.T) {
 	t.Cleanup(release)
 
 	deps.vms = func(context.Context, *types.Experiment) ([]mm.VM, freshness.Observation) {
-		entered <- struct{}{}
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+
 		<-gate
 
-		return nil, freshness.Observed(time.Now())
+		return slices.Clone(vms), freshness.Observed(time.Now())
 	}
 
-	conn := newFakeConn(t)
-	c := startFakeClient(t, conn, roleAllowing("vms", "list"))
-
-	conn.reads <- listRequest("exp")
-
-	within(t, "the list asking minimega", func() { <-entered })
-
-	conn.reads <- []byte(`{"resource": {"type": "log", "name": "phenix", "action": "subscribe"}}`)
-
-	polltest.Until(t, "the logs subscription is read", c.logsSubscribed.Load)
-
-	release()
-
-	var got []string
-
-	polltest.Until(t, "the list reply", func() bool {
-		got = append(got, vmListReplies(conn)...)
-
-		return len(got) > 0
-	})
-
-	if !slices.Equal(got, []string{"exp"}) {
-		t.Errorf("VM list replies = %v, want [exp]", got)
-	}
+	return entered, release
 }
 
 // Of the VM lists asked for while one is answered, however many, only the
@@ -393,14 +371,9 @@ func TestListRequestsAreLatestWins(t *testing.T) {
 	withDeps(t)
 
 	var (
-		entered = make(chan struct{}, 1)
-		gate    = make(chan struct{})
-		release = sync.OnceFunc(func() { close(gate) })
-		mu      sync.Mutex
-		asked   []string
+		mu    sync.Mutex
+		asked []string
 	)
-
-	t.Cleanup(release)
 
 	deps.experiment = func(name string) (*types.Experiment, error) {
 		mu.Lock()
@@ -410,24 +383,19 @@ func TestListRequestsAreLatestWins(t *testing.T) {
 		return experiment.Get("exp")
 	}
 
-	first := true
-
-	deps.vms = func(context.Context, *types.Experiment) ([]mm.VM, freshness.Observation) {
-		if first {
-			first = false
-			entered <- struct{}{}
-			<-gate
-		}
-
-		return nil, freshness.Observed(time.Now())
-	}
+	entered, release := gateVMs(t)
 
 	conn := newFakeConn(t)
 	c := startFakeClient(t, conn, roleAllowing("vms", "list"))
 
 	conn.reads <- listRequest("first")
 
-	within(t, "the first list asking minimega", func() { <-entered })
+	polltest.Within(t, "the first list asking minimega", func() { <-entered })
+
+	// the client keeps reading while the list waits
+	conn.reads <- []byte(`{"resource": {"type": "log", "name": "phenix", "action": "subscribe"}}`)
+
+	polltest.Until(t, "the logs subscription is read", c.logsSubscribed.Load)
 
 	// more than the worker's queue would hold
 	for i := range 2 * clientJobQueue {
@@ -477,14 +445,9 @@ func TestUnsubscribeOutlastsPendingLists(t *testing.T) {
 	withDeps(t)
 
 	var (
-		entered = make(chan struct{}, 1)
-		gate    = make(chan struct{})
-		release = sync.OnceFunc(func() { close(gate) })
-		mu      sync.Mutex
-		asked   []string
+		mu    sync.Mutex
+		asked []string
 	)
-
-	t.Cleanup(release)
 
 	deps.experiment = func(name string) (*types.Experiment, error) {
 		mu.Lock()
@@ -494,12 +457,7 @@ func TestUnsubscribeOutlastsPendingLists(t *testing.T) {
 		return experiment.Get("exp")
 	}
 
-	deps.vms = func(context.Context, *types.Experiment) ([]mm.VM, freshness.Observation) {
-		entered <- struct{}{}
-		<-gate
-
-		return []mm.VM{{Name: "vm1", Running: true}}, freshness.Observed(time.Now())
-	}
+	entered, release := gateVMs(t, mm.VM{Name: "vm1", Running: true})
 
 	shots := make(chan string, 8)
 
@@ -518,7 +476,7 @@ func TestUnsubscribeOutlastsPendingLists(t *testing.T) {
 
 	conn.reads <- listRequest("running")
 
-	within(t, "the first list asking minimega", func() { <-entered })
+	polltest.Within(t, "the first list asking minimega", func() { <-entered })
 
 	conn.reads <- listRequest("queued")
 
@@ -556,7 +514,7 @@ func TestUnsubscribeOutlastsPendingLists(t *testing.T) {
 
 	var shot string
 
-	within(t, "the screenshot of the list's VM", func() { shot = <-shots })
+	polltest.Within(t, "the screenshot of the list's VM", func() { shot = <-shots })
 
 	if shot != "after/vm1" || len(shots) != 0 {
 		t.Errorf("screenshots asked for = %s and %d more, want after/vm1 only", shot, len(shots))
@@ -597,47 +555,33 @@ func TestScreenshotWaitEndsWithTheClient(t *testing.T) {
 		c.pushScreenshots()
 	}()
 
-	within(t, "the first screenshot", func() { <-entered })
+	polltest.Within(t, "the first screenshot", func() { <-entered })
 
 	c.shutdown(websocket.CloseNormalClosure, "")
 
-	within(t, "the screenshots giving up", func() { <-pushed })
+	polltest.Within(t, "the screenshots giving up", func() { <-pushed })
 
 	if len(entered) != 0 {
 		t.Error("asked for the second screenshot after the client left")
 	}
 }
 
-// A VM list orders before a VM change broadcast while minimega was being read
-// for it: the list's seq is taken before the read, so a client keeps the
-// change rather than the list's older view of the VM.
+// A VM list's seq is taken before the minimega read, so a broadcast during it
+// orders after the list.
 //
 //nolint:paralleltest // replaces the store and the client's dependencies
 func TestListSeqPrecedesBroadcastDuringRead(t *testing.T) {
 	useExperiment(t)
 	withDeps(t)
 
-	var (
-		entered = make(chan struct{}, 1)
-		gate    = make(chan struct{})
-		release = sync.OnceFunc(func() { close(gate) })
-	)
-
-	t.Cleanup(release)
-
-	deps.vms = func(context.Context, *types.Experiment) ([]mm.VM, freshness.Observation) {
-		entered <- struct{}{}
-		<-gate
-
-		return nil, freshness.Observed(time.Now())
-	}
+	entered, release := gateVMs(t)
 
 	conn := newFakeConn(t)
 	startFakeClient(t, conn, roleAllowing("vms", "list"))
 
 	conn.reads <- listRequest("exp")
 
-	within(t, "the list asking minimega", func() { <-entered })
+	polltest.Within(t, "the list asking minimega", func() { <-entered })
 
 	Broadcast(nil, bt.NewResource("experiment/vm", "exp/vm1", "stop"), json.RawMessage(`{"name":"vm1"}`))
 

@@ -16,9 +16,7 @@ func testRoleSpec() *v1.RoleSpec {
 	}
 }
 
-// Every way of getting a role builds its policy index once, so the copies
-// handed to request contexts and broker clients share it rather than each
-// Allowed call building its own.
+// Every way of getting a role builds its policy index once, so copies share it.
 //
 //nolint:paralleltest // replaces the store
 func TestRolesCarryAPolicyIndex(t *testing.T) {

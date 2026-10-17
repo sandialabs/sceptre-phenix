@@ -75,10 +75,38 @@ func policy(resource string, names []string, verbs ...string) *v1.PolicySpec {
 	return &v1.PolicySpec{Resources: []string{resource}, ResourceNames: names, Verbs: verbs}
 }
 
-// The experiment files migrations let stored Experiment Admin and Experiment
-// User roles, and users with those roles, upload experiment files, and only
-// Experiment Admins delete them. A user's new permission keeps the user's
-// experiment scope. Running them again changes nothing.
+func role(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
+	return &v1.RoleSpec{Name: name, Policies: policies}
+}
+
+// checkMigration runs the migrations twice and checks after each pass that the
+// stored roles and user roles are exactly want.
+func checkMigration(t *testing.T, want map[string][]*v1.PolicySpec, migrations ...func() error) {
+	t.Helper()
+
+	for _, pass := range []string{"first", "repeated"} {
+		for _, migrate := range migrations {
+			if err := migrate(); err != nil {
+				t.Fatalf("%s migration: %v", pass, err)
+			}
+		}
+
+		got := storedPolicies(t)
+
+		for name, policies := range want {
+			if !reflect.DeepEqual(got[name], policies) {
+				t.Errorf("%s migration: %s policies = %s, want %s", pass, name, describe(got[name]), describe(policies))
+			}
+		}
+
+		if len(got) != len(want) {
+			t.Errorf("%s migration: %d roles and user roles stored, want %d", pass, len(got), len(want))
+		}
+	}
+}
+
+// The experiment files migrations let Experiment Admin/User roles and their
+// users upload files, and only Admins delete, keeping a user's experiment scope.
 //
 //nolint:paralleltest // replaces the store
 func TestEnsureExperimentFilesPermissions(t *testing.T) {
@@ -88,10 +116,6 @@ func TestEnsureExperimentFilesPermissions(t *testing.T) {
 		scopedAB    = policy("experiments", []string{"exp-a", "exp-b"}, "get")
 		scopedA     = policy("experiments", []string{"exp-a"}, "get")
 	)
-
-	role := func(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
-		return &v1.RoleSpec{Name: name, Policies: policies}
-	}
 
 	user := func(name string, role *v1.RoleSpec) *v1.UserSpec {
 		return &v1.UserSpec{Username: name, Role: role}
@@ -146,32 +170,11 @@ func TestEnsureExperimentFilesPermissions(t *testing.T) {
 		"user viewer":  {experiments},
 	}
 
-	for _, pass := range []string{"first", "repeated"} {
-		if err := EnsureExperimentFilesCreatePermission(); err != nil {
-			t.Fatalf("%s create migration: %v", pass, err)
-		}
-
-		if err := EnsureExperimentFilesDeletePermission(); err != nil {
-			t.Fatalf("%s delete migration: %v", pass, err)
-		}
-
-		got := storedPolicies(t)
-
-		for name, policies := range want {
-			if !reflect.DeepEqual(got[name], policies) {
-				t.Errorf("%s migration: %s policies = %s, want %s", pass, name, describe(got[name]), describe(policies))
-			}
-		}
-
-		if len(got) != len(want) {
-			t.Errorf("%s migration: %d roles and user roles stored, want %d", pass, len(got), len(want))
-		}
-	}
+	checkMigration(t, want, EnsureExperimentFilesCreatePermission, EnsureExperimentFilesDeletePermission)
 }
 
-// The jobs migration lets stored Experiment Admin roles, and users with that
-// role, act on other users' jobs of their experiments; other roles are left
-// alone. Running it again changes nothing.
+// The jobs migration lets Experiment Admin roles and their users act on others'
+// jobs of their experiments.
 //
 //nolint:paralleltest // replaces the store
 func TestEnsureJobsPermission(t *testing.T) {
@@ -180,10 +183,6 @@ func TestEnsureJobsPermission(t *testing.T) {
 		scopedA     = policy("experiments", []string{"exp-a"}, "get")
 		jobVerbs    = []string{"list", "get", "update", "delete"}
 	)
-
-	role := func(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
-		return &v1.RoleSpec{Name: name, Policies: policies}
-	}
 
 	useStore(t,
 		[]*v1.RoleSpec{
@@ -206,25 +205,11 @@ func TestEnsureJobsPermission(t *testing.T) {
 		"user user":             {scopedA},
 	}
 
-	for _, pass := range []string{"first", "repeated"} {
-		if err := EnsureJobsPermission(); err != nil {
-			t.Fatalf("%s migration: %v", pass, err)
-		}
-
-		got := storedPolicies(t)
-
-		for name, policies := range want {
-			if !reflect.DeepEqual(got[name], policies) {
-				t.Errorf("%s migration: %s policies = %s, want %s", pass, name, describe(got[name]), describe(policies))
-			}
-		}
-	}
+	checkMigration(t, want, EnsureJobsPermission)
 }
 
-// The subnet capture migration lets stored roles, and users' roles, that may
-// start subnet captures stop them too, on the same names, leaving roles that
-// already may, or that may not start them, alone. Running it again changes
-// nothing.
+// The subnet capture migration lets roles that may start subnet captures stop
+// them on the same names.
 //
 //nolint:paralleltest // replaces the store
 func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
@@ -245,10 +230,6 @@ func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
 		stopAll   = policy("*/*", nil, "delete")
 		otherExps = policy("experiments/*", nil, "create")
 	)
-
-	role := func(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
-		return &v1.RoleSpec{Name: name, Policies: policies}
-	}
 
 	useStore(t,
 		[]*v1.RoleSpec{
@@ -281,25 +262,11 @@ func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
 		"user patterned":         {startSome, policy(captureSubnetResource, []string{"exp-b"}, "delete")},
 	}
 
-	for _, pass := range []string{"first", "repeated"} {
-		if err := EnsureCaptureSubnetStopPermission(); err != nil {
-			t.Fatalf("%s migration: %v", pass, err)
-		}
-
-		got := storedPolicies(t)
-
-		for name, policies := range want {
-			if !reflect.DeepEqual(got[name], policies) {
-				t.Errorf("%s migration: %s policies = %s, want %s", pass, name, describe(got[name]), describe(policies))
-			}
-		}
-	}
+	checkMigration(t, want, EnsureCaptureSubnetStopPermission)
 }
 
-// The Experiment Viewer mount migration scopes the unnamed vms/mount policy of
-// users given the role before every unnamed policy was scoped on assignment to
-// the names of their VM policy. The stored role, users whose mount policy is
-// scoped, and other roles are left alone. Running it again changes nothing.
+// The Experiment Viewer migration scopes a user's unnamed vms/mount policy to
+// the names of their VM policy.
 //
 //nolint:paralleltest // replaces the store
 func TestEnsureExperimentViewerMountScope(t *testing.T) {
@@ -312,10 +279,6 @@ func TestEnsureExperimentViewerMountScope(t *testing.T) {
 		hosts = policy("hosts", []string{"*"}, "list")
 		mount = func(names []string) *v1.PolicySpec { return policy(mountResource, names, "post", "delete") }
 	)
-
-	role := func(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
-		return &v1.RoleSpec{Name: name, Policies: policies}
-	}
 
 	useStore(t,
 		[]*v1.RoleSpec{role(experimentViewerRole, viewing(nil), hosts, mount(nil))},
@@ -335,19 +298,7 @@ func TestEnsureExperimentViewerMountScope(t *testing.T) {
 		"user other":             {viewing(scopedA), hosts, mount(nil)},
 	}
 
-	for _, pass := range []string{"first", "repeated"} {
-		if err := EnsureExperimentViewerMountScope(); err != nil {
-			t.Fatalf("%s migration: %v", pass, err)
-		}
-
-		got := storedPolicies(t)
-
-		for name, policies := range want {
-			if !reflect.DeepEqual(got[name], policies) {
-				t.Errorf("%s migration: %s policies = %s, want %s", pass, name, describe(got[name]), describe(policies))
-			}
-		}
-	}
+	checkMigration(t, want, EnsureExperimentViewerMountScope)
 
 	user, err := GetUser("legacy")
 	if err != nil {
@@ -368,9 +319,8 @@ func describe(policies []*v1.PolicySpec) string {
 	return "[" + strings.Join(out, "; ") + "]"
 }
 
-// The null resource names migration removes the resourceNames: null stored in
-// role and user policies, keeping named policies and the rest of the config.
-// Running it again changes nothing.
+// The null resource names migration removes stored resourceNames: null from
+// role and user policies, keeping the rest of the config.
 //
 //nolint:paralleltest // replaces the store
 func TestDropNullResourceNames(t *testing.T) {

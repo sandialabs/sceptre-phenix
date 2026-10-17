@@ -292,14 +292,6 @@ func (r *Registry) List(user, exp string) []Grant {
 	return list
 }
 
-// Len returns how many grants are kept.
-func (r *Registry) Len() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return len(r.grants)
-}
-
 // sweep drops the grants that can no longer be used, nor have anything open.
 func (r *Registry) sweep(now time.Time) {
 	for k, e := range r.grants {

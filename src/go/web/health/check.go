@@ -45,8 +45,7 @@ type Registry struct {
 // per request.
 type entry struct {
 	check Check
-	now   func() time.Time                     // the clock of the TTL, replaced by tests
-	after func(time.Duration) <-chan time.Time // the timeout's timer, replaced by tests
+	now   func() time.Time // the clock of the TTL, replaced by tests
 
 	mu       sync.Mutex
 	last     map[string][]Result
@@ -60,7 +59,7 @@ func NewRegistry(checks ...Check) *Registry {
 	r := &Registry{entries: make([]*entry, 0, len(checks))}
 
 	for _, c := range checks {
-		r.entries = append(r.entries, &entry{check: c, now: time.Now, after: time.After}) //nolint:exhaustruct // zero state
+		r.entries = append(r.entries, &entry{check: c, now: time.Now}) //nolint:exhaustruct // zero state
 	}
 
 	return r
@@ -146,7 +145,7 @@ func (e *entry) get(ctx context.Context) map[string][]Result {
 
 	e.mu.Unlock()
 
-	timedOut := e.after(e.check.Timeout - time.Since(started))
+	timedOut := time.After(e.check.Timeout - time.Since(started))
 
 	select {
 	case <-done:

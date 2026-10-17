@@ -63,6 +63,40 @@ func capture(t *testing.T) func() []string {
 	}
 }
 
+// onlyEvent returns the one audit record logged, decoded.
+func onlyEvent(t *testing.T, events func() []string) map[string]any {
+	t.Helper()
+
+	lines := events()
+	if len(lines) != 1 {
+		t.Fatalf("got %d audit records, want 1: %q", len(lines), lines)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &got); err != nil {
+		t.Fatal(err)
+	}
+
+	return got
+}
+
+// checkEvent checks that a record has the fields of want and none of absent.
+func checkEvent(t *testing.T, got, want map[string]any, absent []string) {
+	t.Helper()
+
+	for k, v := range want {
+		if !reflect.DeepEqual(got[k], v) {
+			t.Errorf("%s = %#v, want %#v", k, got[k], v)
+		}
+	}
+
+	for _, k := range absent {
+		if _, ok := got[k]; ok {
+			t.Errorf("%s = %#v, want it absent", k, got[k])
+		}
+	}
+}
+
 func request(role rbac.Role) *http.Request {
 	r := httptest.NewRequest(http.MethodDelete, "/api/v1/x?token=secret", nil)
 	r.RemoteAddr = "192.0.2.10:4242"
@@ -127,18 +161,10 @@ func TestEvents(t *testing.T) {
 
 			c.log()
 
-			lines := events()
-			if len(lines) != 1 {
-				t.Fatalf("got %d audit records, want 1: %q", len(lines), lines)
-			}
+			got := onlyEvent(t, events)
 
-			if strings.Contains(lines[0], "token") || strings.Contains(lines[0], "secret") {
-				t.Errorf("record carries the URL query: %s", lines[0])
-			}
-
-			var got map[string]any
-			if err := json.Unmarshal([]byte(lines[0]), &got); err != nil {
-				t.Fatal(err)
+			if line := events()[0]; strings.Contains(line, "token") || strings.Contains(line, "secret") {
+				t.Errorf("record carries the URL query: %s", line)
 			}
 
 			want := map[string]any{
@@ -164,17 +190,7 @@ func TestEvents(t *testing.T) {
 
 			maps.Copy(want, c.want)
 
-			for k, v := range want {
-				if !reflect.DeepEqual(got[k], v) {
-					t.Errorf("%s = %#v, want %#v", k, got[k], v)
-				}
-			}
-
-			for _, k := range c.absent {
-				if _, ok := got[k]; ok {
-					t.Errorf("%s = %#v, want it absent", k, got[k])
-				}
-			}
+			checkEvent(t, got, want, c.absent)
 		})
 	}
 }
@@ -187,94 +203,55 @@ func TestEventWithoutRoleOrInterface(t *testing.T) {
 
 	audit.Denied(r, audit.DiskDownload, "downloading disk not allowed", audit.Fields{Reason: "not owner"})
 
-	lines := events()
-	if len(lines) != 1 {
-		t.Fatalf("got %d audit records, want 1", len(lines))
-	}
-
-	var got map[string]any
-	if err := json.Unmarshal([]byte(lines[0]), &got); err != nil {
-		t.Fatal(err)
-	}
-
-	if got["user.name"] != "" || got["source.ip"] != "@" || got["event.reason"] != "not owner" {
-		t.Errorf("user.name %q, source.ip %q, event.reason %q", got["user.name"], got["source.ip"], got["event.reason"])
-	}
-
-	for _, k := range []string{"user.roles", "network.forwarded_ip", "phenix.vm.interface", "file.path"} {
-		if _, ok := got[k]; ok {
-			t.Errorf("%s present: %v", k, got[k])
-		}
-	}
+	checkEvent(t, onlyEvent(t, events),
+		map[string]any{"user.name": "", "source.ip": "@", "event.reason": "not owner"},
+		[]string{"user.roles", "network.forwarded_ip", "phenix.vm.interface", "file.path"},
+	)
 }
 
-func TestBackgroundEvent(t *testing.T) {
-	events := capture(t)
-
-	audit.Background("bob", audit.ConsoleEnd, "minimega console ended", audit.OutcomeSuccess, audit.Fields{
-		PID: 42, Extra: []any{"phenix.console.end_reason", "idle"},
-	})
-
-	lines := events()
-	if len(lines) != 1 {
-		t.Fatalf("got %d audit records, want 1", len(lines))
+func TestBackgroundEvents(t *testing.T) {
+	cases := []struct {
+		name   string
+		log    func()
+		want   map[string]any
+		absent []string
+	}{
+		{
+			name: "success",
+			log: func() {
+				audit.Background("bob", audit.ConsoleEnd, "minimega console ended", audit.OutcomeSuccess, audit.Fields{
+					PID: 42, Extra: []any{"phenix.console.end_reason", "idle"},
+				})
+			},
+			want: map[string]any{
+				"user.name": "bob", "event.action": "console-end", "event.outcome": "success",
+				"process.pid": float64(42), "phenix.console.end_reason": "idle",
+			},
+			absent: []string{"source.ip", "url.path", "http.request.method"},
+		},
+		{
+			name: "failure",
+			log: func() {
+				audit.BackgroundFailure("bob", audit.DiskClone, "cloning disk failed", audit.Fields{
+					File: "/files/a.qc2", Target: "/files/b.qc2",
+				}, errors.New("disk full"))
+			},
+			want: map[string]any{
+				"level": "WARN", "user.name": "bob", "event.action": "disk-clone", "event.outcome": "failure",
+				"error.message": "disk full", "file.path": "/files/a.qc2", "phenix.file.target_path": "/files/b.qc2",
+			},
+			absent: []string{"event.reason", "source.ip", "url.path"},
+		},
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(lines[0]), &got); err != nil {
-		t.Fatal(err)
-	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			events := capture(t)
 
-	want := map[string]any{
-		"user.name": "bob", "event.action": "console-end", "event.outcome": "success",
-		"process.pid": float64(42), "phenix.console.end_reason": "idle",
-	}
+			c.log()
 
-	for k, v := range want {
-		if got[k] != v {
-			t.Errorf("%s = %#v, want %#v", k, got[k], v)
-		}
-	}
-
-	for _, k := range []string{"source.ip", "url.path", "http.request.method"} {
-		if _, ok := got[k]; ok {
-			t.Errorf("background event has %s", k)
-		}
-	}
-}
-
-func TestBackgroundFailureEvent(t *testing.T) {
-	events := capture(t)
-
-	audit.BackgroundFailure("bob", audit.DiskClone, "cloning disk failed", audit.Fields{
-		File: "/files/a.qc2", Target: "/files/b.qc2",
-	}, errors.New("disk full"))
-
-	lines := events()
-	if len(lines) != 1 {
-		t.Fatalf("got %d audit records, want 1", len(lines))
-	}
-
-	var got map[string]any
-	if err := json.Unmarshal([]byte(lines[0]), &got); err != nil {
-		t.Fatal(err)
-	}
-
-	want := map[string]any{
-		"level": "WARN", "user.name": "bob", "event.action": "disk-clone", "event.outcome": "failure",
-		"error.message": "disk full", "file.path": "/files/a.qc2", "phenix.file.target_path": "/files/b.qc2",
-	}
-
-	for k, v := range want {
-		if got[k] != v {
-			t.Errorf("%s = %#v, want %#v", k, got[k], v)
-		}
-	}
-
-	for _, k := range []string{"event.reason", "source.ip", "url.path"} {
-		if _, ok := got[k]; ok {
-			t.Errorf("background failure has %s: %v", k, got[k])
-		}
+			checkEvent(t, onlyEvent(t, events), c.want, c.absent)
+		})
 	}
 }
 
@@ -285,8 +262,5 @@ func TestGrantUserOverridesContext(t *testing.T) {
 
 	audit.Success(r, audit.CaptureWebSharkRead, "read capture", audit.Fields{User: "carol"})
 
-	lines := events()
-	if len(lines) != 1 || !strings.Contains(lines[0], `"user.name":"carol"`) {
-		t.Errorf("records = %q, want one for carol", lines)
-	}
+	checkEvent(t, onlyEvent(t, events), map[string]any{"user.name": "carol"}, nil)
 }

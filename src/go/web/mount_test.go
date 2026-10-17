@@ -1,10 +1,8 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,9 +19,8 @@ import (
 	"phenix/web/rbac"
 )
 
-// useTestMount turns the vm-mount feature on and mounts test-vm of
-// test-experiment, with files in it, beside an unmounted sibling test-vm2
-// whose name test-vm's is a prefix of.
+// useTestMount turns vm-mount on and mounts test-vm of test-experiment with files,
+// beside an unmounted sibling test-vm2 that test-vm's name prefixes.
 func useTestMount(t *testing.T) string {
 	t.Helper()
 
@@ -98,6 +95,7 @@ func TestMountFileRequestsStayWithinTheMount(t *testing.T) {
 		"list a .. named directory":            {"", "..foo", http.StatusOK},
 		"list the directory holding the mount": {"", "..", http.StatusBadRequest},
 		"list a sibling mount":                 {"", "../test-vm2", http.StatusBadRequest},
+		"list a missing sibling":               {"", "../no-such-vm", http.StatusBadRequest},
 		"list outside the mounts":              {"", "../../..", http.StatusBadRequest},
 	}
 
@@ -265,25 +263,6 @@ func mountStatus(method, url string) int {
 	return resp.StatusCode
 }
 
-// within fails the test if fn does not return within 2 seconds.
-func within(t *testing.T, what string, fn func()) {
-	t.Helper()
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		fn()
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("%s took longer than 2s", what)
-	}
-}
-
 // mountStateOf returns the state of the mount at key, and whether there is one.
 func mountStateOf(key string) (mountState, int, bool) {
 	activeMountsMu.RLock()
@@ -309,11 +288,11 @@ func TestMountingOneVMDoesNotBlockOthers(t *testing.T) {
 
 	go func() { first <- mountStatus(http.MethodPost, api+"test-vm2/mount") }()
 
-	within(t, "the mount starting", func() { <-g.entered })
+	polltest.Within(t, "the mount starting", func() { <-g.entered })
 
 	go func() { second <- mountStatus(http.MethodPost, api+"test-vm2/mount") }()
 
-	within(t, "listing another VM's mounted files", func() {
+	polltest.Within(t, "listing another VM's mounted files", func() {
 		if code := mountStatus(http.MethodGet, api+"test-vm/files?path=etc"); code != http.StatusOK {
 			t.Errorf("listing files: status %d, want 200", code)
 		}
@@ -331,7 +310,7 @@ func TestMountingOneVMDoesNotBlockOthers(t *testing.T) {
 
 	g.release()
 
-	within(t, "the mounts answering", func() {
+	polltest.Within(t, "the mounts answering", func() {
 		if a, b := <-first, <-second; a != http.StatusOK || b != http.StatusOK {
 			t.Errorf("mount statuses = %d, %d; want 200, 200", a, b)
 		}
@@ -378,7 +357,7 @@ func TestUnmountWaitsOnlyForItsOwnDownloads(t *testing.T) {
 		return state == mountUnmounting
 	})
 
-	within(t, "requests for another VM and this one", func() {
+	polltest.Within(t, "requests for another VM and this one", func() {
 		if code := mountStatus(http.MethodPost, api+"test-vm2/mount"); code != http.StatusOK {
 			t.Errorf("mounting another VM: status %d, want 200", code)
 		}
@@ -394,7 +373,7 @@ func TestUnmountWaitsOnlyForItsOwnDownloads(t *testing.T) {
 
 	download.RUnlock()
 
-	within(t, "the unmount answering", func() {
+	polltest.Within(t, "the unmount answering", func() {
 		if code := <-unmounted; code != http.StatusOK {
 			t.Errorf("unmount status %d, want 200", code)
 		}
@@ -427,7 +406,7 @@ func TestUnmountGivesUpOnABusyMount(t *testing.T) {
 	api := mountServer(t)
 	events := captureAudit(t)
 
-	within(t, "the unmount giving up", func() {
+	polltest.Within(t, "the unmount giving up", func() {
 		if code := mountStatus(http.MethodDelete, api+"test-vm/unmount"); code != http.StatusConflict {
 			t.Errorf("unmount status %d, want 409", code)
 		}
@@ -525,19 +504,9 @@ func TestUploadMountFile(t *testing.T) {
 	upload := func(t *testing.T, path, field string) *http.Response {
 		t.Helper()
 
-		var body bytes.Buffer
+		body, contentType := formUpload(t, field, "notes.txt", "uploaded")
 
-		form := multipart.NewWriter(&body)
-
-		part, err := form.CreateFormFile(field, "notes.txt")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		_, _ = part.Write([]byte("uploaded"))
-		_ = form.Close()
-
-		return do(t, http.MethodPut, server+url.QueryEscape(path), body.String(), "Content-Type", form.FormDataContentType())
+		return do(t, http.MethodPut, server+url.QueryEscape(path), string(body), "Content-Type", contentType)
 	}
 
 	for name, tc := range map[string]struct{ path, field string }{
@@ -578,9 +547,8 @@ func TestUploadMountFile(t *testing.T) {
 	})
 }
 
-// A symlink in the guest's mounted file system that leads out of the mount,
-// to an absolute path or up past the mount, is not followed by a listing, a
-// download, an upload or a copy; one that stays in the mount is.
+// A guest symlink leading out of the mount is not followed by listing, download, upload or copy;
+// one inside is.
 func TestMountFileRequestsDoNotFollowSymlinksOut(t *testing.T) {
 	useTestExperiment(t)
 	useTestMM(t, &testMM{})
@@ -624,17 +592,12 @@ func TestMountFileRequestsDoNotFollowSymlinksOut(t *testing.T) {
 			t.Errorf("copying into %s: status %d", path, resp.StatusCode)
 		}
 
-		var body bytes.Buffer
-
-		form := multipart.NewWriter(&body)
-		part, _ := form.CreateFormFile("file", "notes.txt")
-		_, _ = part.Write([]byte("uploaded"))
-		_ = form.Close()
+		body, contentType := formUpload(t, "file", "notes.txt", "uploaded")
 
 		server := serveAs(t, "alice", mountRole()).URL
 		resp = do(t, http.MethodPut,
 			server+"/api/v1/experiments/test-experiment/vms/test-vm/files/upload?path="+path,
-			body.String(), "Content-Type", form.FormDataContentType())
+			string(body), "Content-Type", contentType)
 
 		if resp.StatusCode == http.StatusOK {
 			t.Errorf("uploading into %s: status %d", path, resp.StatusCode)
@@ -651,19 +614,14 @@ func TestMountFileRequestsDoNotFollowSymlinksOut(t *testing.T) {
 	}
 }
 
-// A path outside the mount is refused the same way whether or not it exists,
-// so the listing and upload routes do not tell which server paths exist.
+// An upload outside the mount is refused the same way whether or not the path
+// exists, so it does not tell which server paths exist (as listing does not).
 func TestMountPathsOutsideTellNothing(t *testing.T) {
 	base := useTestMount(t)
 	server := serveAs(t, "alice", mountRole()).URL + "/api/v1/experiments/test-experiment/vms/test-vm/files"
 
 	for _, path := range []string{"../test-vm2", "../no-such-vm"} {
-		resp := requestMount(t, http.MethodGet, "", url.Values{"path": {path}})
-		if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest {
-			t.Errorf("listing %s: status %d: %s, want 400", path, resp.StatusCode, body)
-		}
-
-		resp = do(t, http.MethodPut, server+"/upload?path="+url.QueryEscape(path), "")
+		resp := do(t, http.MethodPut, server+"/upload?path="+url.QueryEscape(path), "")
 		if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("uploading to %s: status %d: %s, want 400", path, resp.StatusCode, body)
 		}

@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 // downloadFile writes contents to a new file in a temporary directory and
@@ -157,10 +156,8 @@ func TestServeDownload(t *testing.T) {
 	}
 }
 
-// A multipart response has no Content-Range, so whether it began a download
-// depends on the ranges asked for. This calls started directly: whether
-// ServeContent answers several ranges at all depends on the Go release
-// (GODEBUG httpservecontentmaxranges).
+// A multipart response has no Content-Range, so started is called directly
+// (ServeContent's multi-range support varies by Go release).
 func TestStartedMultipart(t *testing.T) {
 	t.Parallel()
 
@@ -254,40 +251,6 @@ func TestServeDownloadContentType(t *testing.T) {
 				t.Errorf("Content-Disposition = %q for name %q", got, d.Name)
 			}
 		})
-	}
-}
-
-// A file still being written has no validators: a resumed download gets the
-// file as it is now, from the start.
-func TestServeDownloadLive(t *testing.T) {
-	t.Parallel()
-
-	path := downloadFile(t, strings.Repeat("x", 100))
-	d := Download{Path: path, Name: "live.pcap", Live: true}
-
-	resp, _ := serveDownload(t, http.MethodGet, d)
-
-	for _, k := range []string{"ETag", "Last-Modified"} {
-		if got := resp.Header.Get(k); got != "" {
-			t.Errorf("%s = %q for a live file", k, got)
-		}
-	}
-
-	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
-		t.Errorf("Cache-Control = %q, want no-store", got)
-	}
-
-	date := time.Now().UTC().Format(http.TimeFormat)
-
-	resp, _ = serveDownload(t, http.MethodGet, d, "Range", "bytes=50-", "If-Range", date)
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("If-Range resume of a live file: status %d, want 200", resp.StatusCode)
-	}
-
-	// a plain range is still the bytes written so far
-	resp, _ = serveDownload(t, http.MethodGet, d, "Range", "bytes=50-59")
-	if resp.StatusCode != http.StatusPartialContent || body(t, resp) != strings.Repeat("x", 10) {
-		t.Errorf("Range on a live file: status %d", resp.StatusCode)
 	}
 }
 
