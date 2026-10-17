@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 
 import {
   layoutChanges,
@@ -21,6 +22,7 @@ import {
 } from '@/builder/layouts/standard.js';
 import { nextPosition } from '@/components/builder/paletteDnd.js';
 
+import { applyOps, documentOp, makeCounter, scaffold } from './arbitraries.js';
 import { sampleDocument } from './fixtures.js';
 
 describe('automatic layout', () => {
@@ -487,5 +489,72 @@ describe('what a layout leaves in the document', () => {
     });
     expect(restoreLayoutChanges(laid, changes)).toEqual(doc);
     expect(layoutChanges(doc, doc)).toBeNull();
+  });
+});
+
+describe('undoing a layout, for any layout', () => {
+  const spot = fc.record({
+    x: fc.integer({ min: -400, max: 400 }),
+    y: fc.integer({ min: -400, max: 400 }),
+  });
+  const box = fc.record({
+    width: fc.integer({ min: 40, max: 400 }),
+    height: fc.integer({ min: 40, max: 400 }),
+  });
+  const route = fc.array(spot, { minLength: 2, maxLength: 4 });
+  const choice = fc.constantFrom(undefined, 'elk', 'dagre', 'tiers');
+  // What a layout gives each element: by fc.nat() modulo the count, or nothing.
+  const laid = fc.array(
+    fc.record({ at: fc.nat(), spot, box: fc.option(box), route }),
+    { maxLength: 8 },
+  );
+
+  // The document with the layout's geometry for the elements it names.
+  function laidOut(doc, picks) {
+    const positions = {};
+    const sizes = {};
+    const routes = {};
+
+    for (const { at, spot: position, box: size, route: drawn } of picks) {
+      const node = doc.nodes[at % doc.nodes.length];
+      const edge = doc.edges.length ? doc.edges[at % doc.edges.length] : null;
+
+      positions[node.id] = position;
+      if (size) {
+        sizes[node.id] = size;
+      }
+      if (edge) {
+        routes[edge.id] = drawn;
+      }
+    }
+
+    return withGeometry(doc, { positions, sizes, routes });
+  }
+
+  test('puts back every position, size, route and the layout choice', () => {
+    fc.assert(
+      fc.property(
+        fc.array(documentOp, { maxLength: 6 }),
+        laid,
+        choice,
+        laid,
+        choice,
+        (edits, earlier, first, picks, second) => {
+          const counter = makeCounter();
+          const built = applyOps(scaffold(counter), edits, counter);
+          const before = withLayoutChoice(laidOut(built, earlier), first);
+          const after = withLayoutChoice(laidOut(before, picks), second);
+          const changes = layoutChanges(before, after);
+
+          if (!changes) {
+            expect(after).toEqual(before);
+
+            return;
+          }
+          expect(restoreLayoutChanges(after, changes)).toEqual(before);
+        },
+      ),
+      { numRuns: 100 },
+    );
   });
 });
