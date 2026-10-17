@@ -675,7 +675,7 @@ func requireConflict(t *testing.T, op string, err error, expected, actual int64)
 	t.Helper()
 
 	var conflict *RecordConflictError
-	if !errors.As(err, &conflict) {
+	if !errors.As(err, &conflict) || !errors.Is(err, ErrRecordConflict) {
 		t.Fatalf("%s error = %v, want *RecordConflictError", op, err)
 	}
 

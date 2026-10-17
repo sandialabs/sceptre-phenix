@@ -76,14 +76,6 @@ func (err *WebError) WithCode(code string) *WebError {
 	return err
 }
 
-// WithIssues sets the problems the failure is made of (see
-// [WebError.Issues]).
-func (err *WebError) WithIssues(issues any) *WebError {
-	err.Issues = issues
-
-	return err
-}
-
 func (err WebError) Error() string {
 	if err.Cause == "" {
 		return err.Message

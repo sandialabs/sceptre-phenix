@@ -228,14 +228,6 @@ func isRecordNameRune(r rune) bool {
 	return isRecordNameStart(r) || r == '-' || r == '_' || r == '.'
 }
 
-// Clone returns a deep copy of the record.
-func (r Record) Clone() Record {
-	clone := r
-	clone.Value = CopyRecordValue(r.Value)
-
-	return clone
-}
-
 func (e *RecordNotExistError) Error() string {
 	return fmt.Sprintf("%v: namespace %q, key %q", ErrRecordNotExist, e.Namespace, e.Key)
 }

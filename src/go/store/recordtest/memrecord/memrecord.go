@@ -72,7 +72,7 @@ func (s *Store) ListRecords(namespace, prefix string) (store.Records, error) {
 
 	for key, record := range s.records[namespace] {
 		if strings.HasPrefix(key, prefix) {
-			records = append(records, record.Clone())
+			records = append(records, clone(record))
 		}
 	}
 
@@ -108,7 +108,7 @@ func (s *Store) GetRecord(namespace, key string) (store.Record, error) {
 		return store.Record{}, store.NewRecordNotExistError(namespace, key)
 	}
 
-	return record.Clone(), nil
+	return clone(record), nil
 }
 
 func (s *Store) CreateRecord(namespace, key string, value []byte) (store.Record, error) {
@@ -146,7 +146,7 @@ func (s *Store) CreateRecord(namespace, key string, value []byte) (store.Record,
 
 	s.records[namespace][key] = record
 
-	return record.Clone(), nil
+	return clone(record), nil
 }
 
 func (s *Store) UpdateRecord(namespace, key string, value []byte, expectedRevision int64) (store.Record, error) {
@@ -186,7 +186,7 @@ func (s *Store) UpdateRecord(namespace, key string, value []byte, expectedRevisi
 
 	s.records[namespace][key] = record
 
-	return record.Clone(), nil
+	return clone(record), nil
 }
 
 func (s *Store) DeleteRecord(namespace, key string, expectedRevision int64) error {
@@ -313,4 +313,10 @@ func validate(namespace, key string) error {
 	}
 
 	return store.ValidateRecordKey(key) //nolint:wrapcheck // the store's own error, as a real store returns it
+}
+
+func clone(record store.Record) store.Record {
+	record.Value = store.CopyRecordValue(record.Value)
+
+	return record
 }

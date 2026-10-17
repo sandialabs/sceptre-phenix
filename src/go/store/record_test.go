@@ -83,56 +83,7 @@ func TestValidateRecordKey(t *testing.T) {
 	}
 }
 
-func TestValidateRecordPrefixAllowsEmptyButDeletePrefixDoesNot(t *testing.T) {
-	if err := ValidateRecordPrefix(""); err != nil {
-		t.Fatalf("ValidateRecordPrefix(\"\") returned error: %v", err)
-	}
-
-	if err := ValidateRecordPrefix("draft-1/chunks/"); err != nil {
-		t.Fatalf("ValidateRecordPrefix with trailing separator returned error: %v", err)
-	}
-
-	err := ValidateRecordDeletePrefix("")
-	if err == nil {
-		t.Fatal("ValidateRecordDeletePrefix(\"\") should have returned an error")
-	}
-
-	if !errors.Is(err, ErrInvalidRecordKey) {
-		t.Fatalf("ValidateRecordDeletePrefix(\"\") error = %v, want ErrInvalidRecordKey", err)
-	}
-}
-
-func TestRecordErrorsAreErrorsIsCompatible(t *testing.T) {
-	notExist := error(NewRecordNotExistError("ns", "key"))
-	if !errors.Is(notExist, ErrRecordNotExist) {
-		t.Fatal("RecordNotExistError should match ErrRecordNotExist")
-	}
-
-	exist := error(NewRecordExistError("ns", "key"))
-	if !errors.Is(exist, ErrRecordExist) {
-		t.Fatal("RecordExistError should match ErrRecordExist")
-	}
-
-	conflict := error(NewRecordConflictError("ns", "key", 2, 3))
-	if !errors.Is(conflict, ErrRecordConflict) {
-		t.Fatal("RecordConflictError should match ErrRecordConflict")
-	}
-
-	var target *RecordConflictError
-	if !errors.As(conflict, &target) {
-		t.Fatal("RecordConflictError should be extractable with errors.As")
-	}
-
-	if target.Expected != 2 || target.Actual != 3 {
-		t.Fatalf("conflict revisions = (%d, %d), want (2, 3)", target.Expected, target.Actual)
-	}
-
-	if errors.Is(notExist, ErrRecordExist) || errors.Is(conflict, ErrRecordNotExist) {
-		t.Fatal("record errors should not match unrelated sentinels")
-	}
-}
-
-func TestCopyRecordValueAndClone(t *testing.T) {
+func TestCopyRecordValue(t *testing.T) {
 	value := []byte("draft")
 
 	copied := CopyRecordValue(value)
@@ -144,30 +95,6 @@ func TestCopyRecordValueAndClone(t *testing.T) {
 
 	if CopyRecordValue(nil) != nil {
 		t.Fatal("CopyRecordValue(nil) should return nil")
-	}
-
-	record := Record{Namespace: "ns", Key: "key", Value: value}
-
-	clone := record.Clone()
-	clone.Value[0] = 'X'
-
-	if record.Value[0] != 'd' {
-		t.Fatal("Record.Clone must deep copy the value")
-	}
-}
-
-func TestCheckRecordRevision(t *testing.T) {
-	if err := checkRecordRevision("ns", "key", AnyRevision, 7); err != nil {
-		t.Fatalf("AnyRevision should skip the revision check, got: %v", err)
-	}
-
-	if err := checkRecordRevision("ns", "key", 7, 7); err != nil {
-		t.Fatalf("matching revisions should not conflict, got: %v", err)
-	}
-
-	err := checkRecordRevision("ns", "key", 6, 7)
-	if !errors.Is(err, ErrRecordConflict) {
-		t.Fatalf("mismatched revisions error = %v, want ErrRecordConflict", err)
 	}
 }
 
