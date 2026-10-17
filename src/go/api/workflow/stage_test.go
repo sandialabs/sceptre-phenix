@@ -761,12 +761,13 @@ func TestStagingLeftovers(t *testing.T) {
 	// Entries next to injects/foo that are not leftovers of the name foo: the
 	// siblings of other names, suffixes of the wrong length or with a
 	// character outside A to Z and 2 to 7, and, last, the staging copy of the
-	// name foo.old-x.
+	// name foo.old-x. No entry has the name of a leftover in a different case,
+	// because the macOS file system ignores case.
 	others := []string{
 		"foo/keep.txt", "bar/keep.txt", ".bar.tmp-" + tokenA + "/a", ".bar.old-" + tokenB + "/a",
 		".foobar.tmp-" + tokenA + "/a", ".foo.other/a", "foo.tmp-" + tokenA + "/a",
 		".foo.tmp-AAAA/a", ".foo.old-" + tokenA + "x/a", ".foo.tmp-ABCDEFGHIJKLMNOPQRSTUVWXY1/a",
-		".foo.old-ABCDEFGHIJKLMNOPQRSTUVWXY8/a", ".foo.tmp-abcdefghijklmnopqrstuvwxyz/a",
+		".foo.old-ABCDEFGHIJKLMNOPQRSTUVWXY8/a", ".foo.tmp-zyxwvutsrqponmlkjihgfedcba/a",
 		".foo.old-x.tmp-" + tokenB + "/a",
 	}
 
