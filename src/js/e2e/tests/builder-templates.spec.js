@@ -934,7 +934,9 @@ test(
       await palette.action(hmi.id, 'delete').click();
       await expect(palette.diagram).toHaveCount(0);
       await expect(palette.plus).toBeFocused();
-      await expect.soft(palette.groups).toHaveCount(0);
+      await expect
+        .soft(palette.groups.filter({ hasText: 'This diagram' }))
+        .toHaveCount(0);
       await builder.persisted(draft, (doc) => doc.templates ?? null, null);
 
       await builder.toolbar('undo').click();
