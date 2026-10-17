@@ -2,13 +2,13 @@ package mm
 
 import (
 	"errors"
-	"maps"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/activeshadow/libminimega/miniclient"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmcli"
 )
@@ -37,25 +37,29 @@ func bridgeOutput(host string, bridges ...string) *minicli.Response {
 
 func TestBridgeNames(t *testing.T) {
 	names, err := bridgeNames(bridgeResponses(bridgeOutput("h1", "phenix", "lab", "phenix")))
-	if err != nil || !slices.Equal(names, []string{"lab", "phenix"}) {
-		t.Fatalf("bridgeNames = %v, %v, want lab and phenix", names, err)
+	if err != nil {
+		t.Errorf("bridgeNames(phenix, lab, phenix) returned error: %v", err)
+	} else if want := []string{"lab", "phenix"}; !slices.Equal(names, want) {
+		t.Errorf("bridgeNames(phenix, lab, phenix) = %q, want %q", names, want)
 	}
 
 	names, err = bridgeNames(bridgeResponses(bridgeOutput("h1")))
-	if err != nil || len(names) != 0 {
-		t.Fatalf("bridgeNames of a host without bridges = %v, %v, want none", names, err)
+	if err != nil {
+		t.Errorf("bridgeNames(no bridges) returned error: %v", err)
+	} else if len(names) != 0 {
+		t.Errorf("bridgeNames(no bridges) = %q, want none", names)
 	}
 
 	_, err = bridgeNames(bridgeResponses(&minicli.Response{Host: "h2", Error: "exec: \"ovs-vsctl\": not found\n"}))
-	if err == nil || err.Error() != `exec: "ovs-vsctl": not found` {
-		t.Fatalf("bridgeNames of an error = %v, want the error", err)
+	if want := `exec: "ovs-vsctl": not found`; err == nil || err.Error() != want {
+		t.Errorf("bridgeNames(ovs-vsctl not found) error = %v, want %q", err, want)
 	}
 
 	empty := make(chan *miniclient.Response)
 	close(empty)
 
 	if _, err = bridgeNames(empty); !errors.Is(err, errNoBridgeList) {
-		t.Fatalf("bridgeNames without an answer = %v, want %v", err, errNoBridgeList)
+		t.Errorf("bridgeNames(no answer) error = %v, want %v", err, errNoBridgeList)
 	}
 }
 
@@ -77,19 +81,20 @@ func TestListBridgesSendsOnlyTheListing(t *testing.T) {
 
 	bridges, err := listBridges([]string{"head", "h2"}, func(host string) bool { return host == "head" }, run)
 	if err != nil {
-		t.Fatalf("listBridges: %v", err)
+		t.Fatalf("listBridges(head, h2) returned error: %v", err)
 	}
 
-	want := []string{
+	wantSent := []string{
 		".record false shell ovs-vsctl --timeout=5 list-br",
 		".record false mesh send h2 shell ovs-vsctl --timeout=5 list-br",
 	}
-	if !slices.Equal(sent, want) {
-		t.Fatalf("sent %q, want only %q", sent, want)
+	if diff := cmp.Diff(wantSent, sent); diff != "" {
+		t.Errorf("listBridges(head, h2) sent mismatch (-want +got):\n%s", diff)
 	}
 
-	if !maps.EqualFunc(bridges, map[string][]string{"head": {"phenix"}, "h2": {"lab", "phenix"}}, slices.Equal) {
-		t.Fatalf("bridges = %v, want phenix on head and lab and phenix on h2", bridges)
+	want := map[string][]string{"head": {"phenix"}, "h2": {"lab", "phenix"}}
+	if diff := cmp.Diff(want, bridges); diff != "" {
+		t.Errorf("listBridges(head, h2) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -105,11 +110,11 @@ func TestListBridgesFailsOnAnyHost(t *testing.T) {
 	}
 
 	_, err := listBridges([]string{"h1", "h2"}, func(string) bool { return false }, run)
-	if err == nil || !strings.Contains(err.Error(), "listing the bridges of host h1: h1 not found in mesh") {
-		t.Fatalf("listBridges = %v, want h1's error", err)
+	if want := "listing the bridges of host h1: h1 not found in mesh"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("listBridges(h1, h2) error = %v, want one containing %q", err, want)
 	}
 
 	if want := []string{".record false mesh send h1 shell ovs-vsctl --timeout=5 list-br"}; !slices.Equal(sent, want) {
-		t.Fatalf("sent %q, want only %q", sent, want)
+		t.Errorf("listBridges(h1, h2) sent %q, want only %q", sent, want)
 	}
 }

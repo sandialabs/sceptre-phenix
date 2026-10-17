@@ -2,10 +2,12 @@ package rbac
 
 import (
 	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/config"
 	"phenix/store"
@@ -97,12 +99,13 @@ func TestBuiltinBuilderRole(t *testing.T) {
 
 	role := mustRole(t, "builder")
 
-	if role.Spec.Name != "Builder" || !reflect.DeepEqual(role.Spec.Policies, builderRolePolicies()) {
-		t.Fatalf("the built-in Builder role is %q with %s", role.Spec.Name, policiesText(role.Spec.Policies))
+	want := &v1.RoleSpec{Name: "Builder", Policies: builderRolePolicies()}
+	if diff := cmp.Diff(want, role.Spec); diff != "" {
+		t.Errorf("RoleFromConfig(builder) spec mismatch (-want +got):\n%s", diff)
 	}
 
-	if mustRole(t, "Builder").config.Metadata.Name != "builder" {
-		t.Fatal("the role is not found by its role name")
+	if got := mustRole(t, "Builder").config.Metadata.Name; got != "builder" {
+		t.Errorf("RoleFromConfig(Builder) config name = %q, want builder", got)
 	}
 
 	// The configs the Builder reads and publishes, by full name and by verb
@@ -115,7 +118,7 @@ func TestBuiltinBuilderRole(t *testing.T) {
 			}
 
 			if !role.Allowed("configs", verb, names...) {
-				t.Errorf("the Builder role does not allow configs %s %v", verb, names)
+				t.Errorf("Builder role Allowed(configs, %s, %q) = false, want true", verb, names)
 			}
 		}
 
@@ -123,7 +126,7 @@ func TestBuiltinBuilderRole(t *testing.T) {
 		// password hashes and the permissions of every user.
 		for _, name := range []string{"User/alice", "Role/builder", "Role/global-admin"} {
 			if role.Allowed("configs", verb, name) {
-				t.Errorf("the Builder role allows configs %s %s", verb, name)
+				t.Errorf("Builder role Allowed(configs, %s, %s) = true, want false", verb, name)
 			}
 		}
 	}
@@ -146,7 +149,7 @@ func TestBuiltinBuilderRole(t *testing.T) {
 		}
 
 		if !role.Allowed(check.resource, check.verb, names...) {
-			t.Errorf("the Builder role does not allow %s %s %v", check.resource, check.verb, names)
+			t.Errorf("Builder role Allowed(%s, %s, %q) = false, want true", check.resource, check.verb, names)
 		}
 	}
 
@@ -156,7 +159,7 @@ func TestBuiltinBuilderRole(t *testing.T) {
 		{"builder", "list"}, {"builder", "get"}, {"builder", "update"}, {"builder", "delete"},
 	} {
 		if role.Allowed(check.resource, check.verb) {
-			t.Errorf("the Builder role allows %s %s", check.resource, check.verb)
+			t.Errorf("Builder role Allowed(%s, %s) = true, want false", check.resource, check.verb)
 		}
 	}
 
@@ -178,19 +181,19 @@ func TestBuiltinBuilderRole(t *testing.T) {
 	slices.Sort(users)
 
 	if want := []string{"Builder", "Global Admin"}; !slices.Equal(users, want) {
-		t.Errorf("the built-in roles that may use the Builder are %q, want %q", users, want)
+		t.Errorf("built-in roles Allowed(builder, use) = %q, want %q", users, want)
 	}
 
 	if mustRole(t, "global-viewer").Allowed(builderResource, builderUseVerb) {
-		t.Error("the Global Viewer role may use the Builder")
+		t.Error("Global Viewer role Allowed(builder, use) = true, want false")
 	}
 
 	if err := EnsureBuilderRolePermissions(); err != nil {
-		t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
+		t.Fatalf("EnsureBuilderRolePermissions() returned error: %v", err)
 	}
 
 	if len(counting.writes) != 0 {
-		t.Fatalf("the migration wrote %q to a new store", counting.writes)
+		t.Errorf("EnsureBuilderRolePermissions() on a new store wrote %q, want none", counting.writes)
 	}
 }
 
@@ -207,16 +210,16 @@ func TestEnsureBuilderRoleCreatesMissingRole(t *testing.T) {
 
 	for range 2 {
 		if err := EnsureBuilderRolePermissions(); err != nil {
-			t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
+			t.Fatalf("EnsureBuilderRolePermissions() returned error: %v", err)
 		}
 	}
 
 	if want := []string{"create Role/builder"}; !slices.Equal(counting.writes, want) {
-		t.Fatalf("the migration wrote %q, want %q", counting.writes, want)
+		t.Errorf("EnsureBuilderRolePermissions() twice wrote %q, want %q", counting.writes, want)
 	}
 
-	if role := mustRole(t, "Builder"); !reflect.DeepEqual(role.Spec.Policies, builderRolePolicies()) {
-		t.Fatalf("the Builder role made at start has %s", policiesText(role.Spec.Policies))
+	if diff := cmp.Diff(builderRolePolicies(), mustRole(t, "Builder").Spec.Policies); diff != "" {
+		t.Errorf("Builder role policies after EnsureBuilderRolePermissions() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -262,11 +265,12 @@ func TestEnsureBuilderRolePermissions(t *testing.T) {
 	counting.writes = nil
 
 	if err := EnsureBuilderRolePermissions(); err != nil {
-		t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
+		t.Fatalf("EnsureBuilderRolePermissions() returned error: %v", err)
 	}
 
-	if want := []string{"update Role/builder", "update User/alice"}; !sameWrites(counting.writes, want) {
-		t.Fatalf("the migration wrote %q, want %q", counting.writes, want)
+	wantWrites := []string{"update Role/builder", "update User/alice"}
+	if diff := cmp.Diff(wantWrites, counting.writes, cmpopts.SortSlices(strings.Compare)); diff != "" {
+		t.Errorf("EnsureBuilderRolePermissions() writes mismatch (-want +got):\n%s", diff)
 	}
 
 	stored, err := config.Get("role/builder", false)
@@ -276,9 +280,16 @@ func TestEnsureBuilderRolePermissions(t *testing.T) {
 
 	added := &v1.PolicySpec{Resources: []string{"builder"}, ResourceNames: nil, Verbs: []string{"use"}}
 
-	if policies, _ := stored.Spec["policies"].([]any); len(policies) != 3 || !reflect.DeepEqual(policies[:2], made) ||
-		!reflect.DeepEqual(mustRole(t, "builder").Spec.Policies[2], added) {
-		t.Fatalf("the Builder role's policies are %v, want %v and the Builder policy", policies, made)
+	if policies, _ := stored.Spec["policies"].([]any); len(policies) != 3 {
+		t.Errorf("stored Builder role has %d policies %v, want %v and the Builder policy", len(policies), policies, made)
+	} else if diff := cmp.Diff(made, policies[:2]); diff != "" {
+		t.Errorf("stored Builder role policies kept mismatch (-want +got):\n%s", diff)
+	}
+
+	if policies := mustRole(t, "builder").Spec.Policies; len(policies) != 3 {
+		t.Errorf("RoleFromConfig(builder) has %d policies (%s), want 3", len(policies), policiesText(policies))
+	} else if diff := cmp.Diff(added, policies[2]); diff != "" {
+		t.Errorf("RoleFromConfig(builder) added policy mismatch (-want +got):\n%s", diff)
 	}
 
 	user, err := GetUser("alice")
@@ -286,18 +297,20 @@ func TestEnsureBuilderRolePermissions(t *testing.T) {
 		t.Fatalf("GetUser returned error: %v", err)
 	}
 
-	if policies := user.Spec.Role.Policies; len(policies) != 3 || !reflect.DeepEqual(policies[2], added) {
-		t.Errorf("alice after the migration: %s", policiesText(policies))
+	if policies := user.Spec.Role.Policies; len(policies) != 3 {
+		t.Errorf("GetUser(alice) role has %d policies (%s), want 3", len(policies), policiesText(policies))
+	} else if diff := cmp.Diff(added, policies[2]); diff != "" {
+		t.Errorf("GetUser(alice) added policy mismatch (-want +got):\n%s", diff)
 	}
 
 	counting.writes = nil
 
 	if err := EnsureBuilderRolePermissions(); err != nil {
-		t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
+		t.Fatalf("EnsureBuilderRolePermissions() returned error: %v", err)
 	}
 
 	if len(counting.writes) != 0 {
-		t.Fatalf("running the migration again wrote %q", counting.writes)
+		t.Errorf("EnsureBuilderRolePermissions() again wrote %q, want none", counting.writes)
 	}
 }
 
@@ -306,19 +319,24 @@ func TestEnsureBuilderRolePermissions(t *testing.T) {
 func TestEnsureBuilderRoleKeepsWildcards(t *testing.T) {
 	counting := useDefaultConfigs(t)
 
-	for _, policy := range []map[string]any{
-		{"resources": []any{"builder"}, "verbs": []any{"*"}},
-		{"resources": []any{"*"}, "verbs": []any{"*"}},
+	for _, tc := range []struct {
+		name   string
+		policy map[string]any
+	}{
+		{name: "builder any verb", policy: map[string]any{"resources": []any{"builder"}, "verbs": []any{"*"}}},
+		{name: "any resource any verb", policy: map[string]any{"resources": []any{"*"}, "verbs": []any{"*"}}},
 	} {
-		setBuilderPolicies(t, counting, []any{policy})
+		t.Run(tc.name, func(t *testing.T) {
+			setBuilderPolicies(t, counting, []any{tc.policy})
 
-		if err := EnsureBuilderRolePermissions(); err != nil {
-			t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
-		}
+			if err := EnsureBuilderRolePermissions(); err != nil {
+				t.Fatalf("EnsureBuilderRolePermissions() returned error: %v", err)
+			}
 
-		if len(counting.writes) != 0 {
-			t.Fatalf("the migration wrote %q to a role with %v", counting.writes, policy)
-		}
+			if len(counting.writes) != 0 {
+				t.Errorf("EnsureBuilderRolePermissions() with policy %v wrote %q, want none", tc.policy, counting.writes)
+			}
+		})
 	}
 }
 
@@ -333,18 +351,12 @@ func TestEnsureBuilderRoleWithoutSpec(t *testing.T) {
 	}
 
 	if err := EnsureBuilderRolePermissions(); err != nil {
-		t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
+		t.Fatalf("EnsureBuilderRolePermissions() returned error: %v", err)
 	}
 
 	if stored := mustRole(t, "builder"); !stored.Allowed(builderResource, builderUseVerb) {
-		t.Fatalf("the role written back has %s", policiesText(stored.Spec.Policies))
+		t.Errorf("Allowed(builder, use) of the role written back = false, want true; policies %s", policiesText(stored.Spec.Policies))
 	}
-}
-
-// sameWrites reports whether two lists of writes hold the same writes, in
-// any order.
-func sameWrites(got, want []string) bool {
-	return slices.Equal(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(want)))
 }
 
 // policiesText returns policies as text for a failure message.
