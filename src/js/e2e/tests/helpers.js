@@ -128,6 +128,33 @@ async function createConfig(request, config) {
   base.expect(created.ok(), await created.text()).toBe(true);
 }
 
+// A disk as the server's disk list returns it; one with no relativePath is
+// outside the minimega files directory.
+const diskImage = (fullPath, relativePath, overrides = {}) => ({
+  kind: 'VM',
+  name: fullPath.split('/').pop(),
+  fullPath,
+  relativePath,
+  outsideFilesDir: !relativePath,
+  readOnly: !relativePath,
+  size: '1.0 MiB',
+  virtualSize: '10 GiB',
+  experiments: [],
+  backingImages: [],
+  inUse: false,
+  ...overrides,
+});
+
+// Answers the page's disk list requests (GET /api/v1/disks, any query) with `disks`.
+const standInDisks = (page, disks) =>
+  page.route(
+    (url) => url.pathname.endsWith('/api/v1/disks'),
+    (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({ json: { disks } })
+        : route.continue(),
+  );
+
 // Unsigned JWT good enough for proxy mode (the server intentionally parses
 // proxy-supplied tokens without verifying the signature).
 function unsignedJwt(username) {
@@ -146,5 +173,7 @@ module.exports = {
   roleConfig,
   createConfig,
   deleteConfig,
+  diskImage,
+  standInDisks,
   unsignedJwt,
 };

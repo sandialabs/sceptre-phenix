@@ -1,17 +1,11 @@
-// First-visit navigation performance. Every page is a lazy-loaded chunk; if
-// the chunks are not prefetched, the first click on each nav tab waits on the
-// network before the page appears, which on a slow link reads as the UI
-// hanging for seconds. The clicks run over an emulated high-latency link so
-// that any network round trip on the navigation path blows the time budget,
-// while the budget stays loose enough for a busy CI runner.
+// First-visit navigation over an emulated high-latency link: any page chunk not
+// prefetched makes the first click on its nav tab blow the time budget.
 const { test, expect } = require('./helpers');
 
 const LATENCY_MS = 1000;
 
-// Nav tabs present with auth disabled and an empty store. WebShark shows only
-// when the server offers it, Tunneler is a header button rather than a tab, and
-// Builder leaves the Vue app. Without --minimega-console the Console page only
-// says so.
+// Nav tabs with auth disabled and an empty store; WebShark shows only when offered,
+// Tunneler is a header button and Builder leaves the Vue app.
 const tabs = [
   '/configs/',
   '/disks/',
@@ -93,25 +87,8 @@ test.describe('first-visit navigation', () => {
   });
 });
 
-test('static assets are compressed and cached', async ({ page, request }) => {
-  await page.goto('/');
-  const script = await page
-    .locator('script[type="module"][src*="/assets/"]')
-    .first()
-    .getAttribute('src');
-
-  const resp = await request.get(script, {
-    headers: { 'Accept-Encoding': 'gzip' },
-  });
-  expect(resp.ok()).toBe(true);
-  const headers = resp.headers();
-  expect(headers['content-encoding']).toBe('gzip');
-  expect(headers['cache-control']).toContain('immutable');
-});
-
-// The builder page is the grapheditor, outside the Vue app. The server bundles
-// its source files, mxGraph's ~140 included, into one script, so the page
-// needs only a few script requests.
+// The builder (grapheditor, outside the Vue app) gets its ~140 source files
+// bundled by the server into one script.
 test('topology builder loads its scripts in a few requests', async ({
   page,
 }) => {

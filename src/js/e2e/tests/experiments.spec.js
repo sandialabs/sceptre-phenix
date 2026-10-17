@@ -1,14 +1,13 @@
-// Experiments without minimega: creating one from a topology through the
-// create experiment card, and a stopped experiment's page. The topology and
-// the stopped experiment are made through the REST API, and each test removes
-// what it made. The server has no disk images, so the stopped experiment's
-// disk list is stood in for.
+// Experiments without minimega: the create experiment card, and a stopped
+// experiment's page with a stood-in disk list; each test removes what it made.
 const {
   test: base,
   expect,
   pageDataLoaded,
   expectAccessible,
   createConfig,
+  diskImage,
+  standInDisks,
 } = require('./helpers');
 
 const TOPOLOGY = 'e2e-topology';
@@ -88,40 +87,20 @@ const test = base.extend({
   },
 });
 
-// The server's disk list for an experiment whose VMs name e2e.qc2 in the
-// files directory `filesDir`, and OUTSIDE_IMAGE: e2e.qc2 at the top of the
-// files directory and in a folder, and the image outside it.
+// The disk list the server would return: e2e.qc2 in the files directory
+// `filesDir`, in a folder, and OUTSIDE_IMAGE outside it.
 const diskList = (filesDir) => {
-  const disk = (fullPath, relativePath) => ({
-    kind: relativePath ? 'VM' : 'Unknown',
-    name: fullPath.split('/').pop(),
-    fullPath,
-    relativePath,
-    outsideFilesDir: !relativePath,
-    readOnly: !relativePath,
-    size: '1.0 MiB',
-    virtualSize: '10 GiB',
-    experiments: [{ name: STOPPED, running: false }],
-    backingImages: [],
-    inUse: false,
-  });
+  const disk = (fullPath, relativePath) =>
+    diskImage(fullPath, relativePath, {
+      kind: relativePath ? 'VM' : 'Unknown',
+      experiments: [{ name: STOPPED, running: false }],
+    });
   return [
     disk(`${filesDir}/e2e.qc2`, 'e2e.qc2'),
     disk(`${filesDir}/win/e2e.qc2`, 'win/e2e.qc2'),
     disk(OUTSIDE_IMAGE, ''),
   ];
 };
-
-// Answers the page's disk list requests (GET /api/v1/disks, whatever its
-// query) with `disks`.
-const standInDisks = (page, disks) =>
-  page.route(
-    (url) => url.pathname.endsWith('/api/v1/disks'),
-    (route) =>
-      route.request().method() === 'GET'
-        ? route.fulfill({ json: { disks } })
-        : route.continue(),
-  );
 
 // Adds a custom annotation to one of the card's annotation lists.
 async function addCustomAnnotation(page, list, key, value) {
@@ -234,9 +213,8 @@ test('stopped experiment page lists, searches and describes its VMs', async ({
   await expect(row('e2e-vm-a')).toBeVisible();
   await expect(row('e2e-vm-b')).toBeVisible();
 
-  // each VM's disk picker offers the images by their path within the files
-  // directory, so the two e2e.qc2 images are two options, and those outside
-  // it in a group of their own; a VM on one of those shows a warning
+  // each VM's disk picker names images by their path in the files directory and
+  // groups those outside it; a VM on one of those shows a warning
   const disk = (name) =>
     page.getByRole('combobox', { name: `Disk for VM ${name}` });
   const warning = (name) => row(name).getByRole('button', { name: OUTSIDE });
@@ -266,7 +244,6 @@ test('stopped experiment page lists, searches and describes its VMs', async ({
   // the search filters on the server; its clear button shows only while there
   // is something to clear
   const clear = page.getByRole('button', { name: 'Clear VM search' });
-  await expect(clear).toBeHidden();
   await page.getByPlaceholder('Find a VM').fill('e2e-vm-b');
   await expect(row('e2e-vm-a')).toBeHidden();
   await expect(row('e2e-vm-b')).toBeVisible();

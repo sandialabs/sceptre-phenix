@@ -143,7 +143,9 @@ func TestHandlerShowsOutputOnlyWhenAuthenticated(t *testing.T) {
 func TestHandlerExcludesChecks(t *testing.T) {
 	t.Parallel()
 
-	for _, target := range []string{"/readyz?exclude=minimega", "/readyz?exclude=other,minimega"} {
+	for _, target := range []string{
+		"/readyz?exclude=minimega", "/readyz?exclude=other,minimega", "/readyz?exclude=other&exclude=minimega",
+	} {
 		body := decode(t, serve(t, http.MethodGet, target, true, fixed("minimega", Fail), fixed("store", Pass)))
 
 		checks, _ := body["checks"].(map[string]any)

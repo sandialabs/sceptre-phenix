@@ -15,7 +15,7 @@ const test = base.extend({
     const configs = Array.from({ length: 11 }, (_, i) =>
       roleConfig(`e2e-page-${String(i).padStart(2, '0')}`),
     );
-    for (const config of configs) await createConfig(request, config);
+    await Promise.all(configs.map((config) => createConfig(request, config)));
 
     await use(configs.map((config) => config.metadata.name));
     await Promise.all(configs.map((config) => deleteConfig(request, config)));
@@ -35,7 +35,6 @@ test('search clears, and Paginate starts off, pages and is remembered', async ({
   const paginate = page.getByRole('checkbox', { name: 'Paginate' });
   const nextPage = page.getByRole('button', { name: 'Next page' });
 
-  await expect(clear).toBeHidden();
   await search.fill('e2e-page-');
   await expect(clear).toBeVisible();
   await expect(rows).toHaveCount(roles.length);

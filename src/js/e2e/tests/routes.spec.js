@@ -1,12 +1,16 @@
 // Render every route with auth disabled and fail on any JS error or any
 // WCAG 2.2 AA violation reported by axe-core.
 // Works against an empty store; no experiment or configs required.
-const { test, expect, expectAccessible } = require('./helpers');
+const {
+  test,
+  expect,
+  expectAccessible,
+  diskImage,
+  standInDisks,
+} = require('./helpers');
 
-// Pages that load data say in the header's visible label when the load has
-// finished (it fails on Hosts without minimega); the rest show what they
-// found. A failure is also in a screen-reader-only status, so the label is
-// matched by its class rather than by text alone.
+// The header's visible refresh label once a page's data has loaded (it fails on
+// Hosts without minimega); a screen-reader status repeats it, hence the class.
 const dataLoaded = (page) =>
   page
     .locator('.refresh-label')
@@ -73,38 +77,19 @@ for (const r of routes) {
   });
 }
 
-// The Disks page as it shows images in folders and outside the minimega files
-// directory, which the empty store never lists: the server's disk list is
-// stood in for.
+// The Disks page with images in folders and outside the files directory, which
+// the empty store never lists, from a stood-in disk list.
 test('route /disks/ with images in folders and outside the files directory', async ({
   page,
 }) => {
-  const disk = (fullPath, relativePath, backingImages = []) => ({
-    kind: 'VM',
-    name: fullPath.split('/').pop(),
-    fullPath,
-    relativePath,
-    outsideFilesDir: !relativePath,
-    readOnly: !relativePath,
-    size: '1.0 MiB',
-    virtualSize: '10 GiB',
-    experiments: [],
-    backingImages,
-    inUse: false,
-  });
   // three images named e2e.qc2, the one in a folder backed by the one outside
-  const disks = [
-    disk('/phenix/images/win/e2e.qc2', 'win/e2e.qc2', ['/data/vms/e2e.qc2']),
-    disk('/phenix/images/e2e.qc2', 'e2e.qc2'),
-    disk('/data/vms/e2e.qc2', ''),
-  ];
-  await page.route(
-    (url) => url.pathname.endsWith('/api/v1/disks'),
-    (route) =>
-      route.request().method() === 'GET'
-        ? route.fulfill({ json: { disks } })
-        : route.continue(),
-  );
+  await standInDisks(page, [
+    diskImage('/phenix/images/win/e2e.qc2', 'win/e2e.qc2', {
+      backingImages: ['/data/vms/e2e.qc2'],
+    }),
+    diskImage('/phenix/images/e2e.qc2', 'e2e.qc2'),
+    diskImage('/data/vms/e2e.qc2', ''),
+  ]);
 
   await page.goto('/disks/');
   await expect(dataLoaded(page)).toBeVisible();
@@ -130,9 +115,8 @@ test('route /disks/ with images in folders and outside the files directory', asy
   await expect(explanation).toBeVisible();
   await expectAccessible(page, '/disks/ with images');
 
-  // and on a click, which does not open the disk's details as a click
-  // elsewhere on its row does; it sits on the page body, where the table
-  // cannot clip it
+  // and on a click, which does not open the disk's details as a click elsewhere
+  // on its row does; it sits on the page body, where the table cannot clip it
   await page.keyboard.press('Escape');
   await expect(explanation).toBeHidden();
   await outside.click();
@@ -156,9 +140,8 @@ test('route /disks/ with images in folders and outside the files directory', asy
   await details.getByRole('button', { name: '/data/vms/e2e.qc2' }).click();
   await expect(title).toHaveText('/data/vms/e2e.qc2');
 
-  // Escape hides the Location row's explanation and leaves the window open:
-  // it still takes a click, which a closing window would not. With no
-  // explanation showing, Escape closes the window.
+  // Escape hides the Location row's explanation but leaves the window open (it
+  // still takes a click); with no explanation showing, Escape closes the window.
   const shown = page.locator('.disk-warning-content:visible');
   const where = details.getByRole('button', {
     name: 'Outside the standard images directory',
