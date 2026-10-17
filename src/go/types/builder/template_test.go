@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/types/builder"
 )
 
@@ -76,6 +78,8 @@ func deviceOfBytes(t *testing.T, size int) builder.TemplateDevice {
 }
 
 func TestTemplateIssuesAccepts(t *testing.T) {
+	largest := deviceOfBytes(t, builder.MaxTemplateDeviceBytes)
+
 	tests := map[string]func(*builder.Template){
 		"every field": func(*builder.Template) {},
 		"no description, icon or colors": func(tpl *builder.Template) {
@@ -90,7 +94,7 @@ func TestTemplateIssuesAccepts(t *testing.T) {
 		"a custom icon name of 64 bytes": func(tpl *builder.Template) { tpl.Device.Icon = strings.Repeat("n", 64) },
 		"a name of 128 bytes":            func(tpl *builder.Template) { tpl.Name = strings.Repeat("é", 64) },
 		"a description of 1024 bytes":    func(tpl *builder.Template) { tpl.Description = strings.Repeat("d", 1024) },
-		"a device of 16384 bytes":        func(tpl *builder.Template) { tpl.Device = deviceOfBytes(t, builder.MaxTemplateDeviceBytes) },
+		"a device of 16384 bytes":        func(tpl *builder.Template) { tpl.Device = largest },
 		// As for a device node, the spec is not checked against the phenix
 		// schema: only that it names the device.
 		"a spec that is only a hostname": func(tpl *builder.Template) {
@@ -104,13 +108,15 @@ func TestTemplateIssuesAccepts(t *testing.T) {
 			mutate(&template)
 
 			if issues := template.Issues("templates[0]"); len(issues) != 0 {
-				t.Fatalf("unexpected issues: %v", issues)
+				t.Errorf("Issues(templates[0]) = %v, want none", issues)
 			}
 		})
 	}
 }
 
 func TestTemplateIssuesRefuses(t *testing.T) {
+	tooLarge := deviceOfBytes(t, builder.MaxTemplateDeviceBytes+1)
+
 	tests := []struct {
 		name     string
 		mutate   func(*builder.Template)
@@ -239,7 +245,7 @@ func TestTemplateIssuesRefuses(t *testing.T) {
 		},
 		{
 			name:     "a device of 16385 bytes",
-			mutate:   func(tpl *builder.Template) { tpl.Device = deviceOfBytes(t, builder.MaxTemplateDeviceBytes+1) },
+			mutate:   func(tpl *builder.Template) { tpl.Device = tooLarge },
 			wantPath: ".device",
 			wantMsg:  "template device must take at most 16384 bytes as JSON, not 16385",
 		},
@@ -252,15 +258,15 @@ func TestTemplateIssuesRefuses(t *testing.T) {
 
 			issues := template.Issues("library.templates[3]")
 			if len(issues) != 1 {
-				t.Fatalf("got %d issues, want 1: %v", len(issues), issues)
+				t.Fatalf("Issues(library.templates[3]) = %v, want 1 issue", issues)
 			}
 
 			if want := "library.templates[3]" + test.wantPath; issues[0].Path != want {
-				t.Fatalf("issue path = %q, want %q", issues[0].Path, want)
+				t.Errorf("Issues(library.templates[3]) path = %q, want %q", issues[0].Path, want)
 			}
 
 			if !strings.Contains(issues[0].Message, test.wantMsg) {
-				t.Fatalf("issue %q does not contain %q", issues[0].Message, test.wantMsg)
+				t.Errorf("Issues(library.templates[3]) message = %q, want it to contain %q", issues[0].Message, test.wantMsg)
 			}
 		})
 	}
@@ -283,7 +289,7 @@ func TestValidateTemplates(t *testing.T) {
 	second.ID = idTemplate2
 
 	if err := withTemplates(t, sampleTemplate(), second).Validate(); err != nil {
-		t.Fatalf("two templates are refused: %v", err)
+		t.Errorf("Validate() with two templates error = %v, want nil", err)
 	}
 
 	most := make([]builder.Template, builder.MaxTemplates)
@@ -293,7 +299,7 @@ func TestValidateTemplates(t *testing.T) {
 	}
 
 	if err := withTemplates(t, most...).Validate(); err != nil {
-		t.Fatalf("%d templates are refused: %v", len(most), err)
+		t.Errorf("Validate() with %d templates error = %v, want nil", len(most), err)
 	}
 
 	tests := []struct {
@@ -377,19 +383,19 @@ func TestValidateTemplates(t *testing.T) {
 			var invalid *builder.ValidationError
 
 			if !errors.As(err, &invalid) {
-				t.Fatalf("expected a *ValidationError, got %v", err)
+				t.Fatalf("Validate() error = %v, want a *ValidationError", err)
 			}
 
 			if len(invalid.Issues) != 1 {
-				t.Fatalf("got %d issues, want 1: %v", len(invalid.Issues), invalid.Issues)
+				t.Fatalf("Validate() issues = %v, want 1 issue", invalid.Issues)
 			}
 
 			if invalid.Issues[0].Path != test.wantPath {
-				t.Fatalf("issue path = %q, want %q", invalid.Issues[0].Path, test.wantPath)
+				t.Errorf("Validate() issue path = %q, want %q", invalid.Issues[0].Path, test.wantPath)
 			}
 
 			if !strings.Contains(invalid.Issues[0].Message, test.wantMsg) {
-				t.Fatalf("issue %q does not contain %q", invalid.Issues[0].Message, test.wantMsg)
+				t.Errorf("Validate() issue message = %q, want it to contain %q", invalid.Issues[0].Message, test.wantMsg)
 			}
 		})
 	}
@@ -408,13 +414,17 @@ func TestDecodeNormalizesTemplateSpecs(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	hardware, _ := decoded.Templates[0].Device.Spec["hardware"].(map[string]any)
-	if vcpus, ok := hardware["vcpus"].(int); !ok || vcpus != 2 {
-		t.Fatalf("vcpus = %#v, want the int 2", hardware["vcpus"])
+	if len(decoded.Templates) != 1 {
+		t.Fatalf("Parse(Encode(doc)) templates = %v, want 1 template", decoded.Templates)
 	}
 
-	if want := sampleTemplate(); !reflect.DeepEqual(decoded.Templates[0], want) {
-		t.Fatalf("the decoded template differs:\nwant: %s\ngot:  %s", asJSON(t, want), asJSON(t, decoded.Templates[0]))
+	hardware, _ := decoded.Templates[0].Device.Spec["hardware"].(map[string]any)
+	if vcpus, ok := hardware["vcpus"].(int); !ok || vcpus != 2 {
+		t.Errorf("Parse(Encode(doc)) template hardware.vcpus = %#v, want the int 2", hardware["vcpus"])
+	}
+
+	if diff := cmp.Diff(sampleTemplate(), decoded.Templates[0]); diff != "" {
+		t.Errorf("Parse(Encode(doc)) template mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -450,19 +460,19 @@ func TestTemplateDeviceFollowsDevice(t *testing.T) {
 	// it was included from.
 	for _, own := range []string{"hostname", "interfaces", "includedFrom"} {
 		if _, ok := want[own]; !ok {
-			t.Fatalf("Device has no %q field any more", own)
+			t.Errorf("Device has no %q field, want it to keep its own", own)
 		}
 
 		delete(want, own)
 	}
 
-	if got := jsonFields(t, builder.TemplateDevice{}); !reflect.DeepEqual(got, want) {
-		t.Fatalf("TemplateDevice does not follow Device:\nDevice (less its own): %v\nTemplateDevice:        %v", want, got)
+	if diff := cmp.Diff(want, jsonFields(t, builder.TemplateDevice{})); diff != "" {
+		t.Errorf("TemplateDevice fields mismatch with Device less its own (-want +got):\n%s", diff)
 	}
 
 	for _, name := range []string{"iconKey", "icon", "outlineColor", "fillColor", "spec"} {
 		if _, ok := want[name]; !ok {
-			t.Fatalf("Device has no %q field", name)
+			t.Errorf("Device has no %q field, want one", name)
 		}
 	}
 }
@@ -483,13 +493,11 @@ func TestBuiltinTemplatesMatchFixture(t *testing.T) {
 
 	got := builder.BuiltinTemplates()
 
-	if !reflect.DeepEqual(got, fixture.Templates) {
-		t.Fatalf("BuiltinTemplates() differs from the fixture:\nfixture: %s\ngot:     %s",
-			asJSON(t, fixture.Templates), asJSON(t, got))
+	if diff := cmp.Diff(fixture.Templates, got); diff != "" {
+		t.Errorf("BuiltinTemplates() mismatch with builtin-templates.json (-want +got):\n%s", diff)
 	}
 
-	// Also as each is written, since DeepEqual takes an absent key and an
-	// empty one for the same.
+	// Also as each is written, since the structs take an absent key and an empty one for the same.
 	var raw struct {
 		Templates []json.RawMessage `json:"templates"`
 	}
@@ -498,17 +506,19 @@ func TestBuiltinTemplatesMatchFixture(t *testing.T) {
 		t.Fatalf("decoding the fixture: %v", err)
 	}
 
-	for i, template := range got {
-		var want, have any
+	if len(raw.Templates) != len(got) {
+		t.Fatalf("BuiltinTemplates() has %d templates, want the %d of the fixture", len(got), len(raw.Templates))
+	}
 
-		encoded, err := json.Marshal(template)
-		if err != nil {
-			t.Fatalf("encoding %q: %v", template.ID, err)
+	for i, template := range got {
+		var want any
+
+		if err := json.Unmarshal(raw.Templates[i], &want); err != nil {
+			t.Fatalf("decoding fixture template %q: %v", template.ID, err)
 		}
 
-		if json.Unmarshal(raw.Templates[i], &want) != nil || json.Unmarshal(encoded, &have) != nil ||
-			!reflect.DeepEqual(have, want) {
-			t.Fatalf("built-in template %q encodes as %s, and the fixture has %s", template.ID, encoded, raw.Templates[i])
+		if diff := cmp.Diff(want, jsonValue(t, template)); diff != "" {
+			t.Errorf("json.Marshal(built-in template %q) mismatch with the fixture (-want +got):\n%s", template.ID, diff)
 		}
 	}
 }
@@ -521,37 +531,39 @@ func TestBuiltinTemplates(t *testing.T) {
 		ids[i] = template.ID
 
 		if issues := template.Issues("builtin"); len(issues) != 0 {
-			t.Fatalf("built-in template %q is not valid: %v", template.ID, issues)
+			t.Errorf("built-in template %q Issues(builtin) = %v, want none", template.ID, issues)
 		}
 
 		// A device made from one is named after it.
 		general, _ := template.Device.Spec["general"].(map[string]any)
 		if general["hostname"] != template.ID {
-			t.Fatalf("built-in template %q names its device %v", template.ID, general["hostname"])
+			t.Errorf("built-in template %q general.hostname = %v, want %q", template.ID, general["hostname"], template.ID)
 		}
 
 		// The template's description is its own: nothing copies it into
 		// the node.
 		if general["description"] != "" {
-			t.Fatalf("built-in template %q writes the description %q", template.ID, general["description"])
+			t.Errorf("built-in template %q general.description = %q, want empty", template.ID, general["description"])
 		}
 
 		if template.Device.IconKey == "" || !builder.IsIconKey(template.Device.IconKey) {
-			t.Fatalf("built-in template %q has the icon key %q", template.ID, template.Device.IconKey)
+			t.Errorf("built-in template %q icon key = %q, want a built-in one", template.ID, template.Device.IconKey)
 		}
 	}
 
-	if got, want := strings.Join(ids, " "), "server workstation router firewall external"; got != want {
-		t.Fatalf("built-in templates are %q, want %q", got, want)
+	// The checks below index the templates by this order.
+	if diff := cmp.Diff([]string{"server", "workstation", "router", "firewall", "external"}, ids); diff != "" {
+		t.Fatalf("BuiltinTemplates() IDs mismatch (-want +got):\n%s", diff)
 	}
 
 	firewall := templates[3].Device.Spec
 	hardware, _ := firewall["hardware"].(map[string]any)
-	drives, _ := hardware["drives"].([]any)
 
-	if firewall["type"] != "Firewall" || hardware["os_type"] != "vyos" || len(drives) != 1 ||
-		!reflect.DeepEqual(drives[0], map[string]any{"image": "vyos.qc2"}) {
-		t.Fatalf("the Firewall template is %s", asJSON(t, firewall))
+	want := map[string]any{"type": "Firewall", "os_type": "vyos", "drives": []any{map[string]any{"image": "vyos.qc2"}}}
+	got := map[string]any{"type": firewall["type"], "os_type": hardware["os_type"], "drives": hardware["drives"]}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("BuiltinTemplates() firewall spec mismatch (-want +got):\n%s", diff)
 	}
 
 	// Each call returns templates of its own.
@@ -559,9 +571,12 @@ func TestBuiltinTemplates(t *testing.T) {
 	general["hostname"] = "changed"
 	templates[1].Name = "changed"
 
-	if !reflect.DeepEqual(builder.BuiltinTemplates()[0].Device.Spec["general"], map[string]any{
-		"hostname": "server", "description": "", "vm_type": "kvm",
-	}) || builder.BuiltinTemplates()[1].Name != "Workstation" {
-		t.Fatal("BuiltinTemplates returns shared state")
+	wantGeneral := map[string]any{"hostname": "server", "description": "", "vm_type": "kvm"}
+	if diff := cmp.Diff(wantGeneral, builder.BuiltinTemplates()[0].Device.Spec["general"]); diff != "" {
+		t.Errorf("BuiltinTemplates() server general after changing an earlier result mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := builder.BuiltinTemplates()[1].Name; got != "Workstation" {
+		t.Errorf("BuiltinTemplates() workstation name after changing an earlier result = %q, want Workstation", got)
 	}
 }

@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store"
 	"phenix/types/builder"
@@ -22,7 +23,7 @@ func TestSourceDigestContract(t *testing.T) {
 	}
 
 	if !strings.HasPrefix(digest, "sha256:") || len(digest) != len("sha256:")+64 {
-		t.Fatalf("digest %q is not a sha256 digest", digest)
+		t.Errorf("SourceDigest(topology.json) = %q, want a sha256 digest", digest)
 	}
 
 	again, err := builder.SourceDigest(loadConfig(t, "topology.json"))
@@ -31,7 +32,7 @@ func TestSourceDigestContract(t *testing.T) {
 	}
 
 	if again != digest {
-		t.Fatalf("digest is not deterministic: %q != %q", again, digest)
+		t.Errorf("SourceDigest(topology.json) a second time = %q, want %q", again, digest)
 	}
 
 	// Mutable bookkeeping must not affect the digest.
@@ -47,7 +48,8 @@ func TestSourceDigestContract(t *testing.T) {
 	}
 
 	if stableDigest != digest {
-		t.Fatal("digest changed after mutating status, timestamps, or annotations")
+		t.Errorf("SourceDigest(topology.json with other status, timestamps and annotations) = %q, want %q",
+			stableDigest, digest)
 	}
 
 	// Identity and spec must affect the digest.
@@ -67,7 +69,8 @@ func TestSourceDigestContract(t *testing.T) {
 			}
 
 			if changedDigest == digest {
-				t.Fatalf("digest did not change after mutating %s", name)
+				t.Errorf("SourceDigest(topology.json with another %s) = %q, the digest of topology.json, want another",
+					name, changedDigest)
 			}
 		})
 	}
@@ -82,24 +85,22 @@ func TestFromConfigRecordsSourceDigestAndUpdatedAt(t *testing.T) {
 			doc, _ := documentFromConfig(t, config)
 
 			if doc.Source == nil {
-				t.Fatal("generated document has no source")
+				t.Fatalf("FromConfig(%s) source = nil, want one", fixture)
 			}
 
-			want, err := builder.SourceDigest(config)
+			digest, err := builder.SourceDigest(config)
 			if err != nil {
 				t.Fatalf("SourceDigest: %v", err)
 			}
 
-			if doc.Source.Digest != want {
-				t.Fatalf("source digest = %q, want %q", doc.Source.Digest, want)
-			}
+			type stamps struct{ Digest, UpdatedAt, ImportedAt string }
 
-			if doc.Source.UpdatedAt != "2026-08-28T12:00:00Z" {
-				t.Fatalf("source updatedAt = %q, want the config timestamp", doc.Source.UpdatedAt)
-			}
+			// The import time is left to the caller.
+			want := stamps{Digest: digest, UpdatedAt: "2026-08-28T12:00:00Z"}
+			got := stamps{Digest: doc.Source.Digest, UpdatedAt: doc.Source.UpdatedAt, ImportedAt: doc.Source.ImportedAt}
 
-			if doc.Source.ImportedAt != "" {
-				t.Fatalf("source importedAt = %q, want it left to the caller", doc.Source.ImportedAt)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("FromConfig(%s) source mismatch (-want +got):\n%s", fixture, diff)
 			}
 		})
 	}
@@ -125,53 +126,74 @@ func TestFromConfigKeepsAnnotationsButTheBuilders(t *testing.T) {
 	doc, warnings := documentFromConfig(t, config)
 
 	want := map[string]string{"owner": "alice", "notes": "two\nlines"}
-	if !reflect.DeepEqual(doc.Source.Annotations, want) {
-		t.Fatalf("annotations = %v, want %v", doc.Source.Annotations, want)
+	if diff := cmp.Diff(want, doc.Source.Annotations); diff != "" {
+		t.Errorf("FromConfig(topology.json) source annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	if containsSubstring(warnings, "annotation") {
-		t.Fatalf("warnings = %q, want none about annotations", warnings)
+		t.Errorf("FromConfig(topology.json) warnings = %q, want none about annotations", warnings)
 	}
 
 	// Annotations are not part of the source's identity, except the legacy diagram: the digest of an
 	// import tells one diagram from another, and from none.
 	withDiagram := doc.Source.Digest
 
-	if want, err := builder.ImportDigest(config); err != nil || withDiagram != want || withDiagram == plain {
-		t.Fatalf("source digest = %q, want %q (%v), which is not %q", withDiagram, want, err, plain)
+	importDigest, err := builder.ImportDigest(config)
+	if err != nil {
+		t.Fatalf("ImportDigest: %v", err)
+	}
+
+	if withDiagram != importDigest {
+		t.Errorf("FromConfig(topology.json with a diagram) source digest = %q, want ImportDigest %q", withDiagram, importDigest)
+	}
+
+	if withDiagram == plain {
+		t.Errorf("FromConfig(topology.json with a diagram) source digest = %q, the digest without annotations, want another",
+			withDiagram)
 	}
 
 	config.Metadata.Annotations["builder-xml"] = "<mxGraphModel/>"
 
 	if doc, _ := documentFromConfig(t, config); doc.Source.Digest == withDiagram || doc.Source.Digest == plain {
-		t.Fatalf("source digest = %q, want one of its own for another diagram", doc.Source.Digest)
+		t.Errorf("FromConfig(topology.json with another diagram) source digest = %q, want one of its own", doc.Source.Digest)
 	}
 
 	delete(config.Metadata.Annotations, "builder-xml")
 
 	if doc, _ := documentFromConfig(t, config); doc.Source.Digest != plain {
-		t.Fatalf("source digest = %q, want %q, the digest without annotations", doc.Source.Digest, plain)
+		t.Errorf("FromConfig(topology.json without a diagram) source digest = %q, want %q, the digest without annotations",
+			doc.Source.Digest, plain)
 	}
 
 	// An experiment keeps the topology and scenario it names.
 	experiment, _ := documentFromConfig(t, loadConfig(t, "experiment.json"))
 
 	want = map[string]string{"topology": "builder-fixture", "scenario": "builder-scenario"}
-	if !reflect.DeepEqual(experiment.Source.Annotations, want) {
-		t.Fatalf("experiment annotations = %v, want %v", experiment.Source.Annotations, want)
+	if diff := cmp.Diff(want, experiment.Source.Annotations); diff != "" {
+		t.Errorf("FromConfig(experiment.json) source annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	// Only the Builders' own: none are kept, and the field is left out.
 	config.Metadata.Annotations = store.Annotations{"builder-xml": "<mxGraphModel/>"}
 	doc, _ = documentFromConfig(t, config)
 
+	if doc.Source.Annotations != nil {
+		t.Errorf("FromConfig(topology.json with only builder-xml) source annotations = %v, want nil", doc.Source.Annotations)
+	}
+
 	encoded, err := json.Marshal(doc.Source)
 	if err != nil {
 		t.Fatalf("encoding the source: %v", err)
 	}
 
-	if doc.Source.Annotations != nil || strings.Contains(string(encoded), `"annotations"`) {
-		t.Fatalf("source = %s, want no annotations", encoded)
+	var written map[string]any
+
+	if err := json.Unmarshal(encoded, &written); err != nil {
+		t.Fatalf("decoding the source: %v", err)
+	}
+
+	if value, ok := written["annotations"]; ok {
+		t.Errorf("json.Marshal(source) annotations = %v, want the field left out", value)
 	}
 }
 
@@ -197,19 +219,19 @@ func TestFromConfigLeavesOutAnnotationsPastTheBounds(t *testing.T) {
 	doc, warnings := documentFromConfig(t, config)
 
 	if got := len(doc.Source.Annotations); got != builder.MaxAnnotations {
-		t.Fatalf("kept %d annotations, want %d", got, builder.MaxAnnotations)
+		t.Errorf("FromConfig kept %d annotations, want %d", got, builder.MaxAnnotations)
 	}
 
 	// In key order: every n### but the last two, which are past the count.
 	for _, key := range []string{"n000", "n099"} {
 		if _, ok := doc.Source.Annotations[key]; !ok {
-			t.Errorf("annotation %q was left out", key)
+			t.Errorf("FromConfig left out annotation %q, want it kept", key)
 		}
 	}
 
 	for _, key := range []string{" ", "bad\nkey", "a-large", "n100", "n101", "topology", "builder-xml"} {
 		if _, ok := doc.Source.Annotations[key]; ok {
-			t.Errorf("annotation %q was kept", key)
+			t.Errorf("FromConfig kept annotation %q, want it left out", key)
 		}
 	}
 
@@ -226,12 +248,12 @@ func TestFromConfigLeavesOutAnnotationsPastTheBounds(t *testing.T) {
 		"at most 100 annotations of 256 KiB in all",
 	} {
 		if !strings.Contains(found, part) {
-			t.Errorf("warning %q does not contain %q", found, part)
+			t.Errorf("FromConfig warning = %q, want it to contain %q", found, part)
 		}
 	}
 
 	if strings.Contains(found, strings.Repeat("k", 100)) || strings.Contains(found, "builder-xml") {
-		t.Errorf("warning %q names a key in full or the Builder's own", found)
+		t.Errorf("FromConfig warning = %q, want no key named in full and not the Builder's own", found)
 	}
 }
 
@@ -268,11 +290,11 @@ func TestValidateBoundsAnnotations(t *testing.T) {
 
 			err := doc.Validate()
 			if err == nil {
-				t.Fatal("expected an error, got nil")
+				t.Fatal("Validate() = nil, want an error")
 			}
 
 			if !strings.Contains(err.Error(), "source.annotations: ") || !strings.Contains(err.Error(), test.wantMsg) {
-				t.Fatalf("error %q does not contain %q", err.Error(), test.wantMsg)
+				t.Errorf("Validate() error = %q, want it to contain source.annotations and %q", err.Error(), test.wantMsg)
 			}
 		})
 	}
@@ -284,7 +306,7 @@ func TestValidateBoundsAnnotations(t *testing.T) {
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("annotations at the bounds were refused: %v", err)
+		t.Errorf("Validate() with annotations at the bounds error = %v, want nil", err)
 	}
 }
 
@@ -292,17 +314,19 @@ func TestValidateRejectsMalformedSourceDigest(t *testing.T) {
 	for _, digest := range []string{
 		"nope", "sha256:", "sha256:abc", "md5:" + strings.Repeat("a", 64), "sha256:" + strings.Repeat("A", 64),
 	} {
-		doc := loadDocumentFixture(t, "document.json")
-		doc.Source.Digest = digest
+		t.Run(digest, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			doc.Source.Digest = digest
 
-		err := doc.Validate()
-		if err == nil {
-			t.Fatalf("digest %q was accepted", digest)
-		}
+			err := doc.Validate()
+			if err == nil {
+				t.Fatalf("Validate() with source digest %q = nil, want an error", digest)
+			}
 
-		if !strings.Contains(err.Error(), "malformed source digest") {
-			t.Fatalf("error %q does not report a malformed digest", err.Error())
-		}
+			if !strings.Contains(err.Error(), "malformed source digest") {
+				t.Errorf("Validate() with source digest %q error = %q, want a malformed digest", digest, err.Error())
+			}
+		})
 	}
 }
 
@@ -318,7 +342,7 @@ func TestValidateAcceptsSourceDigestAndUpdatedAt(t *testing.T) {
 	doc.Source.UpdatedAt = "2026-08-28T12:00:00Z"
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("document with a source digest is invalid: %v", err)
+		t.Errorf("Validate() with a source digest and updatedAt error = %v, want nil", err)
 	}
 }
 
@@ -349,16 +373,16 @@ func TestFromExperimentListsStoredScenario(t *testing.T) {
 		t.Fatalf("FromConfig: %v", err)
 	}
 
-	if !reflect.DeepEqual(doc.Scenarios, []string{"builder-scenario"}) {
-		t.Fatalf("scenarios = %q, want [builder-scenario]", doc.Scenarios)
+	if diff := cmp.Diff([]string{"builder-scenario"}, doc.Scenarios); diff != "" {
+		t.Errorf("FromConfig(experiment.json) scenarios mismatch (-want +got):\n%s", diff)
 	}
 
-	if !reflect.DeepEqual(asked, []string{"builder-scenario"}) {
-		t.Fatalf("resolver asked about %q, want only builder-scenario", asked)
+	if diff := cmp.Diff([]string{"builder-scenario"}, asked); diff != "" {
+		t.Errorf("FromConfig(experiment.json) resolver lookups mismatch (-want +got):\n%s", diff)
 	}
 
 	if containsSubstring(warnings, "scenario") {
-		t.Fatalf("warnings = %q, want none about the scenario", warnings)
+		t.Errorf("FromConfig(experiment.json) warnings = %q, want none about the scenario", warnings)
 	}
 
 	data, err := builder.Encode(doc)
@@ -366,8 +390,14 @@ func TestFromExperimentListsStoredScenario(t *testing.T) {
 		t.Fatalf("Encode: %v", err)
 	}
 
-	if strings.Contains(string(data), `"apps"`) {
-		t.Fatalf("document holds scenario content:\n%s", data)
+	var encoded any
+
+	if err := json.Unmarshal(data, &encoded); err != nil {
+		t.Fatalf("decoding the document: %v", err)
+	}
+
+	if findKey(encoded, "apps") {
+		t.Errorf("Encode(FromConfig(experiment.json)) holds scenario apps, want none:\n%s", data)
 	}
 }
 
@@ -382,18 +412,21 @@ func TestFromExperimentWarnsOfScenarioNotStored(t *testing.T) {
 		"not found":   {builder.WithScenarioResolver(scenarioResolver(&asked, "other"))},
 		"no resolver": nil,
 	} {
-		doc, warnings, err := builder.FromConfig(loadConfig(t, "experiment.json"), options...)
-		if err != nil {
-			t.Fatalf("%s: FromConfig: %v", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			doc, warnings, err := builder.FromConfig(loadConfig(t, "experiment.json"), options...)
+			if err != nil {
+				t.Fatalf("FromConfig: %v", err)
+			}
 
-		if len(doc.Scenarios) != 0 {
-			t.Errorf("%s: scenarios = %q, want none", name, doc.Scenarios)
-		}
+			if len(doc.Scenarios) != 0 {
+				t.Errorf("FromConfig(experiment.json) scenarios = %q, want none", doc.Scenarios)
+			}
 
-		if !containsSubstring(warnings, want) || !containsSubstring(doc.Source.Warnings, want) {
-			t.Errorf("%s: warnings = %q, source warnings = %q, want %q", name, warnings, doc.Source.Warnings, want)
-		}
+			if !containsSubstring(warnings, want) || !containsSubstring(doc.Source.Warnings, want) {
+				t.Errorf("FromConfig(experiment.json) warnings = %q, source warnings = %q, want both to hold %q",
+					warnings, doc.Source.Warnings, want)
+			}
+		})
 	}
 }
 
@@ -414,29 +447,31 @@ func TestFromExperimentScenarioLookups(t *testing.T) {
 			warning:    "the experiment's scenario is not a stored Scenario config and was not attached",
 		},
 	} {
-		config := loadConfig(t, "experiment.json")
-		config.Metadata.Annotations["scenario"] = test.annotation
+		t.Run(name, func(t *testing.T) {
+			config := loadConfig(t, "experiment.json")
+			config.Metadata.Annotations["scenario"] = test.annotation
 
-		if test.annotation == "" {
-			delete(config.Metadata.Annotations, "scenario")
-		}
+			if test.annotation == "" {
+				delete(config.Metadata.Annotations, "scenario")
+			}
 
-		var asked []string
+			var asked []string
 
-		doc, warnings, err := builder.FromConfig(
-			config, builder.WithScenarioResolver(scenarioResolver(&asked, test.annotation)),
-		)
-		if err != nil {
-			t.Fatalf("%s: FromConfig: %v", name, err)
-		}
+			doc, warnings, err := builder.FromConfig(
+				config, builder.WithScenarioResolver(scenarioResolver(&asked, test.annotation)),
+			)
+			if err != nil {
+				t.Fatalf("FromConfig: %v", err)
+			}
 
-		if len(asked) != 0 || len(doc.Scenarios) != 0 {
-			t.Errorf("%s: asked about %q and listed %q, want neither", name, asked, doc.Scenarios)
-		}
+			if len(asked) != 0 || len(doc.Scenarios) != 0 {
+				t.Errorf("FromConfig asked about %q and listed %q, want neither", asked, doc.Scenarios)
+			}
 
-		if !containsSubstring(warnings, test.warning) {
-			t.Errorf("%s: warnings = %q, want %q", name, warnings, test.warning)
-		}
+			if !containsSubstring(warnings, test.warning) {
+				t.Errorf("FromConfig warnings = %q, want %q", warnings, test.warning)
+			}
+		})
 	}
 }
 
@@ -450,7 +485,7 @@ func TestFromExperimentFailsWhenScenarioLookupFails(t *testing.T) {
 		builder.WithScenarioResolver(func(string) (bool, error) { return false, failure }),
 	)
 	if !errors.Is(err, failure) {
-		t.Fatalf("FromConfig error = %v, want the resolver's", err)
+		t.Errorf("FromConfig(experiment.json) error = %v, want the resolver error %v", err, failure)
 	}
 }
 
@@ -468,6 +503,6 @@ func TestFromTopologyListsNoScenario(t *testing.T) {
 	}
 
 	if len(asked) != 0 || len(doc.Scenarios) != 0 {
-		t.Fatalf("asked about %q and listed %q, want neither", asked, doc.Scenarios)
+		t.Errorf("FromConfig(topology.json) asked about %q and listed %q, want neither", asked, doc.Scenarios)
 	}
 }

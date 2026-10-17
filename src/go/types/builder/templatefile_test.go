@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/types/builder"
 )
@@ -104,22 +107,31 @@ func TestParseTemplateFileReadsYAMLAndJSONAlike(t *testing.T) {
 		t.Fatalf("ParseTemplateFile(YAML) returned error: %v", err)
 	}
 
-	if fromYAML.Name != "Plant floor" || fromYAML.Description != "Devices of the plant's control network." {
-		t.Fatalf("collection = %q, %q", fromYAML.Name, fromYAML.Description)
+	type collection struct{ Name, Description string }
+
+	wantCollection := collection{Name: "Plant floor", Description: "Devices of the plant's control network."}
+	if diff := cmp.Diff(wantCollection, collection{fromYAML.Name, fromYAML.Description}); diff != "" {
+		t.Errorf("ParseTemplateFile(YAML) collection mismatch (-want +got):\n%s", diff)
 	}
 
-	if len(fromYAML.Templates) != 2 || fromYAML.Templates[0].Name != "PLC" || fromYAML.Templates[1].Name != "HMI" {
-		t.Fatalf("templates = %+v, want PLC then HMI", fromYAML.Templates)
+	names := make([]string, 0, len(fromYAML.Templates))
+	for _, template := range fromYAML.Templates {
+		names = append(names, template.Name)
+	}
+
+	// The checks below read the first template.
+	if diff := cmp.Diff([]string{"PLC", "HMI"}, names); diff != "" {
+		t.Fatalf("ParseTemplateFile(YAML) template names mismatch (-want +got):\n%s", diff)
 	}
 
 	// Numbers come back as a document's do: an integer is an int.
 	hardware, _ := fromYAML.Templates[0].Device.Spec["hardware"].(map[string]any)
 	if vcpus, ok := hardware["vcpus"].(int); !ok || vcpus != 2 {
-		t.Fatalf("hardware.vcpus = %#v, want the int 2", hardware["vcpus"])
+		t.Errorf("ParseTemplateFile(YAML) PLC hardware.vcpus = %#v, want the int 2", hardware["vcpus"])
 	}
 
-	if fromYAML.Icons[iconFixtureName].Data != iconFixtureData {
-		t.Fatalf("icons = %v, want the fixture icon", fromYAML.Icons)
+	if diff := cmp.Diff(map[string]builder.Icon{iconFixtureName: {Data: iconFixtureData}}, fromYAML.Icons); diff != "" {
+		t.Errorf("ParseTemplateFile(YAML) icons mismatch (-want +got):\n%s", diff)
 	}
 
 	encoded, err := json.Marshal(fromYAML)
@@ -132,18 +144,15 @@ func TestParseTemplateFileReadsYAMLAndJSONAlike(t *testing.T) {
 		t.Fatalf("ParseTemplateFile(JSON) returned error: %v", err)
 	}
 
-	again, err := json.Marshal(fromJSON)
-	if err != nil {
-		t.Fatalf("encoding the file again: %v", err)
+	if diff := cmp.Diff(jsonValue(t, fromYAML), jsonValue(t, fromJSON)); diff != "" {
+		t.Errorf("ParseTemplateFile(JSON) mismatch with ParseTemplateFile(YAML) (-yaml +json):\n%s", diff)
 	}
 
-	if string(again) != string(encoded) {
-		t.Fatalf("JSON and YAML read differently:\n%s\n%s", again, encoded)
-	}
+	type made struct{ ID, Name, Icon string }
 
 	template := fromJSON.Templates[0].Template("t1")
-	if template.ID != "t1" || template.Name != "PLC" || template.Device.Icon != iconFixtureName {
-		t.Fatalf("Template = %+v", template)
+	if diff := cmp.Diff(made{"t1", "PLC", iconFixtureName}, made{template.ID, template.Name, template.Device.Icon}); diff != "" {
+		t.Errorf("Template(t1) of the PLC mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -167,7 +176,7 @@ func TestParseTemplateFileRefusesWhatYAMLMayNotHold(t *testing.T) {
 
 	_, err := builder.ParseTemplateFile([]byte("$schema: x\nname: &n Plant\n"))
 	if !errors.Is(err, builder.ErrUnsupportedYAML) {
-		t.Fatalf("an anchor: error = %v, want ErrUnsupportedYAML", err)
+		t.Errorf("ParseTemplateFile(text with an anchor) error = %v, want ErrUnsupportedYAML", err)
 	}
 }
 
@@ -194,11 +203,11 @@ func TestParseTemplateFileRefusesUnknownFields(t *testing.T) {
 
 			switch {
 			case !errors.Is(err, builder.ErrInvalidTemplateFile):
-				t.Fatalf("ParseTemplateFile error = %v, want ErrInvalidTemplateFile", err)
+				t.Errorf("ParseTemplateFile error = %v, want ErrInvalidTemplateFile", err)
 			case errors.As(err, &refused):
-				t.Fatalf("ParseTemplateFile refused an unknown field as invalid content: %v", err)
+				t.Errorf("ParseTemplateFile error = %v, a TemplateFileError, want the unknown field refused before validation", err)
 			case !strings.Contains(err.Error(), "unknown field"):
-				t.Fatalf("ParseTemplateFile error = %v, want it to name the unknown field", err)
+				t.Errorf("ParseTemplateFile error = %v, want it to name the unknown field", err)
 			}
 		})
 	}
@@ -337,7 +346,7 @@ func TestParseTemplateFileValidates(t *testing.T) {
 			issues := templateFileIssues(t, templateFileJSON(t, value))
 
 			if !slices.ContainsFunc(issues, func(issue string) bool { return strings.HasPrefix(issue, tt.want) }) {
-				t.Fatalf("issues = %q, want one starting %q", issues, tt.want)
+				t.Errorf("ParseTemplateFile issues = %q, want one starting %q", issues, tt.want)
 			}
 		})
 	}
@@ -390,7 +399,7 @@ func TestTemplateFileNamesCorpus(t *testing.T) {
 
 			if !tt.Duplicate {
 				if err != nil {
-					t.Fatalf("ParseTemplateFile returned error: %v, want the names taken as different", err)
+					t.Errorf("ParseTemplateFile(templates named %q) error = %v, want the names taken as different", tt.Names, err)
 				}
 
 				return
@@ -399,7 +408,7 @@ func TestTemplateFileNamesCorpus(t *testing.T) {
 			issues := templateFileIssues(t, templateFileJSON(t, value))
 
 			if !slices.ContainsFunc(issues, func(issue string) bool { return strings.HasPrefix(issue, want) }) {
-				t.Fatalf("issues = %q, want one starting %q", issues, want)
+				t.Errorf("ParseTemplateFile(templates named %q) issues = %q, want one starting %q", tt.Names, issues, want)
 			}
 		})
 	}
@@ -414,8 +423,12 @@ func TestParseTemplateFileTakesIconsTheFileDoesNotCarry(t *testing.T) {
 		t.Fatalf("ParseTemplateFile returned error: %v", err)
 	}
 
-	if file.Templates[0].Device.Icon != iconFixtureName || len(file.Icons) != 0 {
-		t.Fatalf("file = %+v, want the template to name an icon the file does not carry", file)
+	if got := file.Templates[0].Device.Icon; got != iconFixtureName {
+		t.Errorf("ParseTemplateFile(file without icons) template icon = %q, want %q", got, iconFixtureName)
+	}
+
+	if len(file.Icons) != 0 {
+		t.Errorf("ParseTemplateFile(file without icons) icons = %v, want none", file.Icons)
 	}
 }
 
@@ -424,17 +437,17 @@ func TestParseTemplateFileRefusesTooMuchText(t *testing.T) {
 
 	_, err := builder.ParseTemplateFile(text)
 	if !errors.Is(err, builder.ErrInvalidTemplateFile) || !strings.Contains(err.Error(), "the limit is") {
-		t.Fatalf("ParseTemplateFile error = %v, want the size refused", err)
+		t.Errorf("ParseTemplateFile(text past the limit) error = %v, want ErrInvalidTemplateFile naming the limit", err)
 	}
 }
 
 func TestTemplateFileIsNoDocument(t *testing.T) {
 	if builder.IsDocumentText([]byte(templateFileYAML)) {
-		t.Fatal("IsDocumentText takes a template file for a Builder document")
+		t.Error("IsDocumentText(template file) = true, want false")
 	}
 
 	if !builder.IsDocumentText([]byte(`{"$schema": "` + builder.SchemaURI + `"}`)) {
-		t.Fatal("IsDocumentText no longer recognizes a Builder document")
+		t.Error("IsDocumentText(document schema) = false, want true")
 	}
 }
 
@@ -445,7 +458,7 @@ func TestDocsTemplateFileExampleLoads(t *testing.T) {
 	}
 
 	if len(file.Templates) == 0 {
-		t.Fatal("the docs example holds no template")
+		t.Error("ParseTemplateFile(node-templates.yaml) templates = none, want some")
 	}
 }
 
@@ -459,7 +472,7 @@ func TestParseTemplateFileKeepsIconSize(t *testing.T) {
 	}
 
 	if got := fromJSON.Templates[0].Template("t1").Device.IconSize; got != builder.IconSizeLarge {
-		t.Fatalf("iconSize = %q, want %q", got, builder.IconSizeLarge)
+		t.Errorf("ParseTemplateFile(JSON) template iconSize = %q, want %q", got, builder.IconSizeLarge)
 	}
 
 	const icon = "      icon: plc-icon\n"
@@ -472,37 +485,40 @@ func TestParseTemplateFileKeepsIconSize(t *testing.T) {
 	}
 
 	if got := fromYAML.Templates[0].Device.IconSize; got != builder.IconSizeMedium {
-		t.Fatalf("iconSize = %q, want %q", got, builder.IconSizeMedium)
+		t.Errorf("ParseTemplateFile(YAML) template iconSize = %q, want %q", got, builder.IconSizeMedium)
 	}
 
 	// It is written back as it was read.
-	encoded, err := json.Marshal(fromYAML.Templates[0].Device)
-	if err != nil || !strings.Contains(string(encoded), `"iconSize":"medium"`) {
-		t.Fatalf("the device encodes as %s, %v; want its icon size", encoded, err)
+	written := writtenObject(t, fromYAML.Templates[0].Device)
+	if got := written["iconSize"]; got != "medium" {
+		t.Errorf("json.Marshal(device) iconSize = %v, want medium", got)
 	}
 }
 
 func TestParseTemplateFileKeepsLayer(t *testing.T) {
 	// Layer 0 is a layer, not none, so it is kept too.
 	for _, layer := range []int{0, 3, builder.MaxLayerID} {
-		value := templateFileValue()
-		value["templates"].([]any)[0].(map[string]any)["device"].(map[string]any)["layer"] = layer
+		t.Run(strconv.Itoa(layer), func(t *testing.T) {
+			value := templateFileValue()
+			value["templates"].([]any)[0].(map[string]any)["device"].(map[string]any)["layer"] = layer
 
-		parsed, err := builder.ParseTemplateFile(templateFileJSON(t, value))
-		if err != nil {
-			t.Fatalf("ParseTemplateFile returned error: %v", err)
-		}
+			parsed, err := builder.ParseTemplateFile(templateFileJSON(t, value))
+			if err != nil {
+				t.Fatalf("ParseTemplateFile returned error: %v", err)
+			}
 
-		device := parsed.Templates[0].Template("t1").Device
-		if device.Layer == nil || *device.Layer != layer {
-			t.Fatalf("layer = %v, want %d", device.Layer, layer)
-		}
+			device := parsed.Templates[0].Template("t1").Device
+			if device.Layer == nil {
+				t.Errorf("ParseTemplateFile(layer %d) template layer = nil, want %d", layer, layer)
+			} else if *device.Layer != layer {
+				t.Errorf("ParseTemplateFile(layer %d) template layer = %d, want %d", layer, *device.Layer, layer)
+			}
 
-		// It is written back as it was read.
-		encoded, err := json.Marshal(device)
-		if want := fmt.Sprintf(`"layer":%d`, layer); err != nil || !strings.Contains(string(encoded), want) {
-			t.Fatalf("the device encodes as %s, %v; want its layer", encoded, err)
-		}
+			// It is written back as it was read.
+			if got := writtenObject(t, device)["layer"]; got != float64(layer) {
+				t.Errorf("json.Marshal(device) layer = %v, want %d", got, layer)
+			}
+		})
 	}
 
 	// A template without a layer writes none.
@@ -511,8 +527,25 @@ func TestParseTemplateFileKeepsLayer(t *testing.T) {
 		t.Fatalf("ParseTemplateFile returned error: %v", err)
 	}
 
-	encoded, err := json.Marshal(parsed.Templates[0].Template("t1").Device)
-	if err != nil || strings.Contains(string(encoded), `"layer"`) {
-		t.Fatalf("the device encodes as %s, %v; want no layer", encoded, err)
+	if got, ok := writtenObject(t, parsed.Templates[0].Template("t1").Device)["layer"]; ok {
+		t.Errorf("json.Marshal(device without a layer) layer = %v, want it left out", got)
 	}
+}
+
+// writtenObject returns a value as its JSON encoding decodes into an object.
+func writtenObject(t *testing.T, value any) map[string]any {
+	t.Helper()
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("encoding %T: %v", value, err)
+	}
+
+	var object map[string]any
+
+	if err := json.Unmarshal(data, &object); err != nil {
+		t.Fatalf("decoding %s: %v", data, err)
+	}
+
+	return object
 }

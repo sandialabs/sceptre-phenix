@@ -8,11 +8,12 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/types/builder"
 )
@@ -32,42 +33,26 @@ var updateFrontendSchema = flag.Bool( //nolint:gochecknoglobals // test flag
 func TestSchemaHeader(t *testing.T) {
 	schema := mustSchema(t)
 
-	if got := schema["$id"]; got != builder.SchemaURI {
-		t.Fatalf("$id = %v, want %q", got, builder.SchemaURI)
+	want := map[string]any{
+		"$id":                                 builder.SchemaURI,
+		"$schema":                             builder.SchemaDialect,
+		"properties.$schema.const":            builder.SchemaURI,
+		"properties.revision.const":           builder.SchemaRevision,
+		"properties.metadata.$ref":            "#/$defs/metadata",
+		"additionalProperties":                false,
+		"$defs.metadata.required":             []any{"id"},
+		"$defs.metadata.additionalProperties": false,
 	}
-
-	if got := schema["$schema"]; got != builder.SchemaDialect {
-		t.Fatalf("$schema = %v, want %q", got, builder.SchemaDialect)
-	}
-
-	properties := mapAt(t, schema, "properties")
-
-	schemaProperty := mapAt(t, properties, "$schema")
-	if got := schemaProperty["const"]; got != builder.SchemaURI {
-		t.Fatalf("properties.$schema.const = %v, want %q", got, builder.SchemaURI)
-	}
-
-	revision := mapAt(t, properties, "revision")
-	if got := revision["const"]; got != builder.SchemaRevision {
-		t.Fatalf("properties.revision.const = %v, want %d", got, builder.SchemaRevision)
-	}
-
-	if got := schema["additionalProperties"]; got != false {
-		t.Fatalf("additionalProperties = %v, want false", got)
+	if diff := cmp.Diff(want, schemaValues(schema, want)); diff != "" {
+		t.Errorf("Schema() header mismatch (-want +got):\n%s", diff)
 	}
 
 	for _, required := range []string{
 		"$schema", "revision", "metadata", "nodes", "networks", "edges", "viewport", "grid",
 	} {
 		if !containsAny(schema["required"], required) {
-			t.Fatalf("required does not include %q: %v", required, schema["required"])
+			t.Errorf("Schema() required = %v, want it to include %q", schema["required"], required)
 		}
-	}
-
-	metadata := mapAt(t, mapAt(t, schema, "$defs"), "metadata")
-	if mapAt(t, properties, "metadata")["$ref"] != "#/$defs/metadata" || !reflect.DeepEqual(metadata["required"], []any{"id"}) ||
-		metadata["additionalProperties"] != false {
-		t.Fatalf("metadata is not a required object that needs only its id: %v", metadata)
 	}
 }
 
@@ -112,7 +97,7 @@ func TestSchemaDocumentsEveryProperty(t *testing.T) {
 			}
 
 			if schema["$id"] != tc.uri {
-				t.Fatalf("$id = %v, want %s", schema["$id"], tc.uri)
+				t.Errorf("%s schema $id = %v, want %s", tc.name, schema["$id"], tc.uri)
 			}
 
 			var missing []string
@@ -131,7 +116,8 @@ func TestSchemaDocumentsEveryProperty(t *testing.T) {
 
 			if len(missing) > 0 {
 				slices.Sort(missing)
-				t.Fatalf("these lack a title, a description or examples:\n  %s", strings.Join(missing, "\n  "))
+				t.Errorf("%s schema has these without a title, a description or examples:\n  %s",
+					tc.name, strings.Join(missing, "\n  "))
 			}
 		})
 	}
@@ -183,7 +169,7 @@ func TestSchemaDefinesBuilderStructures(t *testing.T) {
 		def := mapAt(t, defs, name)
 
 		if def["type"] == "object" && def["additionalProperties"] != false {
-			t.Fatalf("$defs.%s does not forbid additional properties", name)
+			t.Errorf("Schema() $defs.%s.additionalProperties = %v, want false", name, def["additionalProperties"])
 		}
 	}
 
@@ -195,18 +181,23 @@ func TestSchemaDefinesBuilderStructures(t *testing.T) {
 		"label", "color", "lineStyle", "route",
 	} {
 		if _, ok := edgeProps[name]; !ok {
-			t.Fatalf("edge schema has no %q property", name)
+			t.Errorf("Schema() $defs.edge has no %q property", name)
 		}
 	}
 
-	route := mapAt(t, edgeProps, "route")
-	if route["minItems"] != 2 || mapAt(t, route, "items")["$ref"] != "#/$defs/position" {
-		t.Fatalf("edge route is not a list of at least two positions: %v", route)
+	// A list of at least two positions.
+	wantRoute := map[string]any{"minItems": 2, "items.$ref": "#/$defs/position"}
+	if diff := cmp.Diff(wantRoute, schemaValues(mapAt(t, edgeProps, "route"), wantRoute)); diff != "" {
+		t.Errorf("Schema() $defs.edge.properties.route mismatch (-want +got):\n%s", diff)
 	}
 
-	layout := mapAt(t, mapAt(t, mustSchema(t), "properties"), "layout")
-	if layout["type"] != "string" || containsAny(mustSchema(t)["required"], "layout") {
-		t.Fatalf("document layout is not an optional string: %v", layout)
+	// An optional string.
+	if layout := mapAt(t, mapAt(t, mustSchema(t), "properties"), "layout"); layout["type"] != "string" {
+		t.Errorf("Schema() properties.layout.type = %v, want string", layout["type"])
+	}
+
+	if required := mustSchema(t)["required"]; containsAny(required, "layout") {
+		t.Errorf("Schema() required = %v, want it without layout", required)
 	}
 
 	iconKey := mapAt(t, defs, "iconKey")
@@ -217,12 +208,12 @@ func TestSchemaDefinesBuilderStructures(t *testing.T) {
 	}
 
 	if len(enum) != len(builder.IconKeys())+1 {
-		t.Fatalf("iconKey enum %v does not match registry %v", enum, builder.IconKeys())
+		t.Errorf("Schema() $defs.iconKey.enum = %v, want the registry %v and one more", enum, builder.IconKeys())
 	}
 
 	for _, key := range builder.IconKeys() {
 		if !containsAny(iconKey["enum"], key) {
-			t.Fatalf("iconKey enum is missing %q", key)
+			t.Errorf("Schema() $defs.iconKey.enum = %v, want it to include %q", enum, key)
 		}
 	}
 }
@@ -239,17 +230,6 @@ func propertyNames(t *testing.T, def map[string]any) []string {
 func TestSchemaPropertiesMatchDocument(t *testing.T) {
 	schema := mustSchema(t)
 	defs := mapAt(t, schema, "$defs")
-
-	// A field of the document or its metadata left out when empty cannot be required, and the
-	// others are always written.
-	requiredUnlessOmitted := func(name string, def map[string]any, fields map[string]string) {
-		for field, declaration := range fields {
-			required, omitted := containsAny(def["required"], field), strings.Contains(declaration, ",omitempty")
-			if required == omitted {
-				t.Fatalf("%s.%s: required = %t, but the struct omits it when empty = %t", name, field, required, omitted)
-			}
-		}
-	}
 
 	for name, value := range map[string]any{
 		"metadata":       builder.Metadata{},
@@ -271,26 +251,53 @@ func TestSchemaPropertiesMatchDocument(t *testing.T) {
 		"layerSet":       builder.DocumentLayerSet{},
 		"layerSetSource": builder.LayerSetSource{},
 	} {
-		fields := jsonFields(t, value)
-		want := slices.Sorted(maps.Keys(fields))
+		t.Run(name, func(t *testing.T) {
+			fields := jsonFields(t, value)
+			want := slices.Sorted(maps.Keys(fields))
 
-		if got := propertyNames(t, mapAt(t, defs, name)); !slices.Equal(got, want) {
-			t.Fatalf("$defs.%s has the properties %v, and its Go type the fields %v", name, got, want)
-		}
+			if diff := cmp.Diff(want, propertyNames(t, mapAt(t, defs, name))); diff != "" {
+				t.Errorf("Schema() $defs.%s properties mismatch with the %T fields (-want +got):\n%s", name, value, diff)
+			}
 
-		if name == "metadata" {
-			requiredUnlessOmitted(name, mapAt(t, defs, name), fields)
-		}
+			if name != "metadata" {
+				return
+			}
+
+			if wrong := requiredButOmitted(mapAt(t, defs, name), fields); len(wrong) > 0 {
+				t.Errorf("Schema() $defs.metadata required = %v, want the fields the struct always writes: %s",
+					mapAt(t, defs, name)["required"], strings.Join(wrong, "; "))
+			}
+		})
 	}
 
 	fields := jsonFields(t, builder.Document{})
 	want := slices.Sorted(maps.Keys(fields))
 
-	if got := propertyNames(t, schema); !slices.Equal(got, want) {
-		t.Fatalf("the schema has the root properties %v, and Document the fields %v", got, want)
+	if diff := cmp.Diff(want, propertyNames(t, schema)); diff != "" {
+		t.Errorf("Schema() root properties mismatch with the Document fields (-want +got):\n%s", diff)
 	}
 
-	requiredUnlessOmitted("document", schema, fields)
+	if wrong := requiredButOmitted(schema, fields); len(wrong) > 0 {
+		t.Errorf("Schema() required = %v, want the fields Document always writes: %s",
+			schema["required"], strings.Join(wrong, "; "))
+	}
+}
+
+// requiredButOmitted returns the fields whose being required in def does not match being written
+// always: a field left out when empty cannot be required, and the others are always written.
+func requiredButOmitted(def map[string]any, fields map[string]string) []string {
+	var wrong []string
+
+	for field, declaration := range fields {
+		required, omitted := containsAny(def["required"], field), strings.Contains(declaration, ",omitempty")
+		if required == omitted {
+			wrong = append(wrong, fmt.Sprintf("%s required = %t, omitempty = %t", field, required, omitted))
+		}
+	}
+
+	slices.Sort(wrong)
+
+	return wrong
 }
 
 // TestSchemaPresentationFields pins the schema of the presentation fields,
@@ -299,7 +306,7 @@ func TestSchemaPresentationFields(t *testing.T) {
 	schema := mustSchema(t)
 	defs := mapAt(t, schema, "$defs")
 
-	for path, want := range map[string]string{
+	want := map[string]string{
 		"device.icon":                 "#/$defs/iconRef",
 		"device.outlineColor":         "#/$defs/hexColor",
 		"device.fillColor":            "#/$defs/hexColor",
@@ -329,38 +336,43 @@ func TestSchemaPresentationFields(t *testing.T) {
 		"node.shape":                  "#/$defs/shape",
 		"node.icon":                   "#/$defs/iconNode",
 		"node.line":                   "#/$defs/line",
-	} {
-		def, property, _ := strings.Cut(path, ".")
+	}
 
-		if got := mapAt(t, mapAt(t, mapAt(t, defs, def), "properties"), property)["$ref"]; got != want {
-			t.Fatalf("%s refers to %v, want %s", path, got, want)
-		}
+	got := make(map[string]string, len(want))
+
+	for path := range want {
+		def, property, _ := strings.Cut(path, ".")
+		got[path], _ = mapAt(t, mapAt(t, mapAt(t, defs, def), "properties"), property)["$ref"].(string)
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Schema() presentation field references mismatch (-want +got):\n%s", diff)
 	}
 
 	edgeStyle := mapAt(t, mapAt(t, mapAt(t, defs, "edge"), "properties"), "lineStyle")
-	if got := collectRefs(edgeStyle); !slices.Equal(got, []string{"#/$defs/lineStyle"}) {
-		t.Fatalf("edge.lineStyle refers to %v", got)
+	if diff := cmp.Diff([]string{"#/$defs/lineStyle"}, collectRefs(edgeStyle)); diff != "" {
+		t.Errorf("Schema() $defs.edge.properties.lineStyle references mismatch (-want +got):\n%s", diff)
 	}
 
-	// Free text: a string and nothing that bounds it, besides what documents
-	// it.
-	if got := mapAt(t, mapAt(t, mapAt(t, defs, "group"), "properties"), "description"); got["type"] != "string" ||
-		len(got) != len([]string{"type", "title", "description", "examples"}) {
-		t.Fatalf("group.description is not free text: %v", got)
+	// Free text: a string and nothing that bounds it, besides what documents it.
+	description := mapAt(t, mapAt(t, mapAt(t, defs, "group"), "properties"), "description")
+	if description["type"] != "string" || len(description) != len([]string{"type", "title", "description", "examples"}) {
+		t.Errorf("Schema() $defs.group.properties.description = %v, want free text", description)
 	}
 
-	unresolved := mapAt(t, mapAt(t, mapAt(t, defs, "source"), "properties"), "unresolvedIncludes")
+	// A list of topology names.
 	included := mapAt(t, mapAt(t, mapAt(t, defs, "source"), "properties"), "includeTopologies")
+	wantUnresolved := map[string]any{"type": "array", "items.pattern": mapAt(t, included, "items")["pattern"], "items.minLength": 1}
+	unresolved := mapAt(t, mapAt(t, mapAt(t, defs, "source"), "properties"), "unresolvedIncludes")
 
-	if unresolved["type"] != "array" || mapAt(t, unresolved, "items")["pattern"] != mapAt(t, included, "items")["pattern"] ||
-		mapAt(t, unresolved, "items")["minLength"] != 1 {
-		t.Fatalf("unresolvedIncludes is not a list of topology names: %v", unresolved)
+	if diff := cmp.Diff(wantUnresolved, schemaValues(unresolved, wantUnresolved)); diff != "" {
+		t.Errorf("Schema() $defs.source.properties.unresolvedIncludes mismatch (-want +got):\n%s", diff)
 	}
 
 	// None of them is required.
 	for _, name := range []string{"templates", "icons", "layers"} {
 		if containsAny(schema["required"], name) {
-			t.Fatalf("the schema requires %q", name)
+			t.Errorf("Schema() required = %v, want it without %q", schema["required"], name)
 		}
 	}
 }
@@ -370,13 +382,12 @@ func TestSchemaPresentationFields(t *testing.T) {
 func TestSchemaStyles(t *testing.T) {
 	defs := mapAt(t, mustSchema(t), "$defs")
 
-	for name, want := range map[string][]any{
-		"lineStyle":   {"", "solid", "dashed", "dotted", "dash-dot"},
-		"borderStyle": {"", "solid", "dashed", "dotted", "double"},
-	} {
-		if got := mapAt(t, defs, name)["enum"]; !reflect.DeepEqual(got, want) {
-			t.Fatalf("%s enum = %v, want %v", name, got, want)
-		}
+	want := map[string]any{
+		"lineStyle.enum":   []any{"", "solid", "dashed", "dotted", "dash-dot"},
+		"borderStyle.enum": []any{"", "solid", "dashed", "dotted", "double"},
+	}
+	if diff := cmp.Diff(want, schemaValues(defs, want)); diff != "" {
+		t.Errorf("Schema() style enums mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -385,33 +396,36 @@ func TestSchemaStyles(t *testing.T) {
 func TestSchemaVisualNodes(t *testing.T) {
 	defs := mapAt(t, mustSchema(t), "$defs")
 
-	shape := mapAt(t, defs, "shape")
-	figure := mapAt(t, mapAt(t, shape, "properties"), "shape")
-
-	if !reflect.DeepEqual(shape["required"], []any{"shape"}) ||
-		!reflect.DeepEqual(figure["enum"], []any{"rectangle", "circle"}) {
-		t.Fatalf("a shape does not require a rectangle or a circle: %v", shape)
+	// A required rectangle or circle.
+	wantShape := map[string]any{"required": []any{"shape"}, "properties.shape.enum": []any{"rectangle", "circle"}}
+	if diff := cmp.Diff(wantShape, schemaValues(mapAt(t, defs, "shape"), wantShape)); diff != "" {
+		t.Errorf("Schema() $defs.shape mismatch (-want +got):\n%s", diff)
 	}
 
 	branches, ok := mapAt(t, defs, "iconNode")["oneOf"].([]any)
 	if !ok || len(branches) != 2 {
-		t.Fatalf("an icon node does not name exactly one icon: %v", mapAt(t, defs, "iconNode"))
+		t.Fatalf("Schema() $defs.iconNode = %v, want a oneOf of two branches", mapAt(t, defs, "iconNode"))
 	}
 
+	// Each branch requires a non-empty icon key or icon.
 	for i, key := range []string{"iconKey", "icon"} {
 		branch, _ := branches[i].(map[string]any)
-		if !reflect.DeepEqual(branch["required"], []any{key}) ||
-			mapAt(t, mapAt(t, branch, "properties"), key)["minLength"] != 1 {
-			t.Fatalf("icon node branch %d does not require a non-empty %s: %v", i, key, branch)
+		want := map[string]any{"required": []any{key}, "properties." + key + ".minLength": 1}
+
+		if diff := cmp.Diff(want, schemaValues(branch, want)); diff != "" {
+			t.Errorf("Schema() $defs.iconNode.oneOf branch for %s mismatch (-want +got):\n%s", key, diff)
 		}
 	}
 
-	line := mapAt(t, defs, "line")
-	points := mapAt(t, mapAt(t, line, "properties"), "points")
-
-	if !reflect.DeepEqual(line["required"], []any{"points"}) || points["minItems"] != builder.MinLinePoints ||
-		points["maxItems"] != builder.MaxLinePoints || mapAt(t, points, "items")["$ref"] != "#/$defs/position" {
-		t.Fatalf("a line is not a bounded list of positions: %v", line)
+	// A bounded list of positions.
+	wantLine := map[string]any{
+		"required":                     []any{"points"},
+		"properties.points.minItems":   builder.MinLinePoints,
+		"properties.points.maxItems":   builder.MaxLinePoints,
+		"properties.points.items.$ref": "#/$defs/position",
+	}
+	if diff := cmp.Diff(wantLine, schemaValues(mapAt(t, defs, "line"), wantLine)); diff != "" {
+		t.Errorf("Schema() $defs.line mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -452,24 +466,26 @@ func TestSchemaPresentationPatterns(t *testing.T) {
 	}
 
 	for name, test := range patterns {
-		pattern, ok := test.pattern.(string)
-		if !ok {
-			t.Fatalf("%s has no pattern", name)
-		}
-
-		matcher := regexp.MustCompile(pattern)
-
-		for _, text := range test.yes {
-			if !matcher.MatchString(text) {
-				t.Fatalf("the %s pattern rejects %q", name, text)
+		t.Run(name, func(t *testing.T) {
+			pattern, ok := test.pattern.(string)
+			if !ok {
+				t.Fatalf("Schema() %s pattern = %v, want a string", name, test.pattern)
 			}
-		}
 
-		for _, text := range test.no {
-			if matcher.MatchString(text) {
-				t.Fatalf("the %s pattern accepts %q", name, text)
+			matcher := regexp.MustCompile(pattern)
+
+			for _, text := range test.yes {
+				if !matcher.MatchString(text) {
+					t.Errorf("%s pattern %q matches %q = false, want true", name, pattern, text)
+				}
 			}
-		}
+
+			for _, text := range test.no {
+				if matcher.MatchString(text) {
+					t.Errorf("%s pattern %q matches %q = true, want false", name, pattern, text)
+				}
+			}
+		})
 	}
 }
 
@@ -480,58 +496,62 @@ func TestSchemaBoundsIconsAndTemplates(t *testing.T) {
 	defs := mapAt(t, schema, "$defs")
 	root := mapAt(t, schema, "properties")
 
-	icons := mapAt(t, root, "icons")
-	if icons["maxProperties"] != builder.MaxDocumentIcons || mapAt(t, icons, "additionalProperties")["$ref"] != "#/$defs/icon" {
-		t.Fatalf("icons is not a bounded map of icons: %v", icons)
+	// A bounded map of icons.
+	wantIcons := map[string]any{"maxProperties": builder.MaxDocumentIcons, "additionalProperties.$ref": "#/$defs/icon"}
+	if diff := cmp.Diff(wantIcons, schemaValues(mapAt(t, root, "icons"), wantIcons)); diff != "" {
+		t.Errorf("Schema() properties.icons mismatch (-want +got):\n%s", diff)
 	}
 
 	icon := mapAt(t, defs, "icon")
 	iconProps := mapAt(t, icon, "properties")
 
 	if !containsAny(icon["required"], "data") {
-		t.Fatalf("an icon does not require its data: %v", icon["required"])
+		t.Errorf("Schema() $defs.icon.required = %v, want it to include data", icon["required"])
 	}
 
 	// The key is the icon's name: an entry holds its data alone.
-	if _, named := iconProps["name"]; named || len(iconProps) != 1 {
-		t.Fatalf("an icon holds more than its data: %v", iconProps)
+	if diff := cmp.Diff([]string{"data"}, slices.Sorted(maps.Keys(iconProps))); diff != "" {
+		t.Errorf("Schema() $defs.icon properties mismatch (-want +got):\n%s", diff)
 	}
 
 	// The base64 text of the largest icon.
 	if got := mapAt(t, iconProps, "data")["maxLength"]; got != 54616 {
-		t.Fatalf("icon data maxLength = %v, want 54616", got)
+		t.Errorf("Schema() $defs.icon.properties.data.maxLength = %v, want 54616", got)
 	}
 
-	templates := mapAt(t, root, "templates")
-	if templates["maxItems"] != builder.MaxTemplates || mapAt(t, templates, "items")["$ref"] != "#/$defs/template" {
-		t.Fatalf("templates is not a bounded list of templates: %v", templates)
+	// A bounded list of templates.
+	wantTemplates := map[string]any{"maxItems": builder.MaxTemplates, "items.$ref": "#/$defs/template"}
+	if diff := cmp.Diff(wantTemplates, schemaValues(mapAt(t, root, "templates"), wantTemplates)); diff != "" {
+		t.Errorf("Schema() properties.templates mismatch (-want +got):\n%s", diff)
 	}
 
 	template := mapAt(t, defs, "template")
 	for _, required := range []string{"id", "name", "device"} {
 		if !containsAny(template["required"], required) {
-			t.Fatalf("a template does not require %q: %v", required, template["required"])
+			t.Errorf("Schema() $defs.template.required = %v, want it to include %q", template["required"], required)
 		}
 	}
 
-	templateProps := mapAt(t, template, "properties")
-	if name := mapAt(t, templateProps, "name"); name["minLength"] != 1 || name["maxLength"] != builder.MaxTemplateNameBytes {
-		t.Fatalf("template name is not bounded: %v", name)
+	wantTemplate := map[string]any{
+		"properties.name.minLength":        1,
+		"properties.name.maxLength":        builder.MaxTemplateNameBytes,
+		"properties.description.maxLength": builder.MaxTemplateDescriptionBytes,
 	}
-
-	if got := mapAt(t, templateProps, "description")["maxLength"]; got != builder.MaxTemplateDescriptionBytes {
-		t.Fatalf("template description maxLength = %v, want %d", got, builder.MaxTemplateDescriptionBytes)
+	if diff := cmp.Diff(wantTemplate, schemaValues(template, wantTemplate)); diff != "" {
+		t.Errorf("Schema() $defs.template bounds mismatch (-want +got):\n%s", diff)
 	}
 
 	// A template's spec is a device's.
 	templateDevice := mapAt(t, defs, "templateDevice")
-	if !reflect.DeepEqual(templateDevice["required"], []any{"spec"}) {
-		t.Fatalf("a template device does not require only its spec: %v", templateDevice["required"])
+	if diff := cmp.Diff([]any{"spec"}, templateDevice["required"]); diff != "" {
+		t.Errorf("Schema() $defs.templateDevice.required mismatch (-want +got):\n%s", diff)
 	}
 
-	if got, want := mapAt(t, mapAt(t, templateDevice, "properties"), "spec"),
-		mapAt(t, mapAt(t, mapAt(t, defs, "device"), "properties"), "spec"); !reflect.DeepEqual(got, want) {
-		t.Fatalf("a template's spec is not a device's:\nwant: %v\ngot:  %v", want, got)
+	if diff := cmp.Diff(
+		mapAt(t, mapAt(t, mapAt(t, defs, "device"), "properties"), "spec"),
+		mapAt(t, mapAt(t, templateDevice, "properties"), "spec"),
+	); diff != "" {
+		t.Errorf("Schema() $defs.templateDevice spec mismatch with $defs.device spec (-want +got):\n%s", diff)
 	}
 }
 
@@ -541,7 +561,7 @@ func TestSchemaDiscriminatesNodeKinds(t *testing.T) {
 
 	branches, ok := node["allOf"].([]any)
 	if !ok || len(branches) != 7 {
-		t.Fatalf("node schema has no per-kind branches: %v", node["allOf"])
+		t.Errorf("Schema() $defs.node.allOf = %v, want 7 per-kind branches", node["allOf"])
 	}
 
 	seen := map[string]bool{}
@@ -549,7 +569,9 @@ func TestSchemaDiscriminatesNodeKinds(t *testing.T) {
 	for _, entry := range branches {
 		branch, ok := entry.(map[string]any)
 		if !ok {
-			t.Fatalf("branch is not an object: %v", entry)
+			t.Errorf("Schema() $defs.node.allOf branch = %v, want an object", entry)
+
+			continue
 		}
 
 		condition := mapAt(t, mapAt(t, branch, "if"), "properties")
@@ -557,7 +579,7 @@ func TestSchemaDiscriminatesNodeKinds(t *testing.T) {
 
 		then := mapAt(t, branch, "then")
 		if !containsAny(then["required"], kind) {
-			t.Fatalf("branch for kind %q does not require its payload: %v", kind, then)
+			t.Errorf("Schema() $defs.node branch for kind %q requires %v, want its payload", kind, then["required"])
 		}
 
 		seen[kind] = true
@@ -565,7 +587,7 @@ func TestSchemaDiscriminatesNodeKinds(t *testing.T) {
 
 	for _, kind := range []string{"device", "switch", "note", "group", "shape", "icon", "line"} {
 		if !seen[kind] {
-			t.Fatalf("node schema does not discriminate kind %q", kind)
+			t.Errorf("Schema() $defs.node has no branch for kind %q", kind)
 		}
 	}
 }
@@ -581,7 +603,7 @@ func TestSchemaHasNoUnresolvedReferences(t *testing.T) {
 			}
 
 			if bytes.Contains(data, []byte("#/components/")) {
-				t.Fatal("the schema still contains OpenAPI component references")
+				t.Errorf("%s schema contains OpenAPI component references, want none", tc.name)
 			}
 
 			var schema map[string]any
@@ -594,19 +616,19 @@ func TestSchemaHasNoUnresolvedReferences(t *testing.T) {
 
 			refs := collectRefs(schema)
 			if len(refs) == 0 {
-				t.Fatal("the schema contains no references")
+				t.Errorf("%s schema contains no references, want some", tc.name)
 			}
 
 			for _, ref := range refs {
 				name, local := strings.CutPrefix(ref, "#/$defs/")
 				if _, held := defs[name]; !local || !held {
-					t.Errorf("reference %q does not resolve within the schema", ref)
+					t.Errorf("%s schema reference %q does not resolve within the schema", tc.name, ref)
 				}
 			}
 
 			for _, name := range tc.holds {
 				if _, held := defs[name]; !held {
-					t.Errorf("the schema does not hold $defs/%s", name)
+					t.Errorf("%s schema has no $defs/%s", tc.name, name)
 				}
 			}
 		})
@@ -624,14 +646,14 @@ func TestSchemaJSONIsDeterministicAndValidJSON(t *testing.T) {
 		t.Fatalf("marshaling schema: %v", err)
 	}
 
-	if !bytes.Equal(first, second) {
-		t.Fatal("SchemaJSON is not deterministic")
+	if diff := cmp.Diff(string(first), string(second)); diff != "" {
+		t.Errorf("SchemaJSON() differs between calls (-first +second):\n%s", diff)
 	}
 
 	var decoded map[string]any
 
 	if err := json.Unmarshal(first, &decoded); err != nil {
-		t.Fatalf("schema is not valid JSON: %v", err)
+		t.Errorf("json.Unmarshal(SchemaJSON()) error = %v, want nil", err)
 	}
 }
 
@@ -652,10 +674,11 @@ func TestFrontendSchemaBundleMatchesSchemaJSON(t *testing.T) {
 		t.Fatalf("reading %s: %v", frontendSchemaBundle, err)
 	}
 
-	if !bytes.Equal(got, want) {
-		t.Fatalf(
-			"%s is out of date; regenerate it with make generate-builder-schema (or make generate) in src/go",
-			frontendSchemaBundle,
+	if diff := cmp.Diff(string(want), string(got)); diff != "" {
+		t.Errorf(
+			"%s mismatch with SchemaJSON() (-want +got); regenerate it with make generate-builder-schema "+
+				"(or make generate) in src/go:\n%s",
+			frontendSchemaBundle, diff,
 		)
 	}
 }
@@ -665,7 +688,7 @@ func TestSchemaReturnsIndependentCopies(t *testing.T) {
 	first["$id"] = "mutated"
 
 	if got := mustSchema(t)["$id"]; got != builder.SchemaURI {
-		t.Fatalf("Schema returned shared state: $id = %v", got)
+		t.Errorf("Schema() $id after changing an earlier result = %v, want %q", got, builder.SchemaURI)
 	}
 }
 
@@ -678,20 +701,21 @@ func TestBundleOpenAPIDefsConvertsNullableSchemas(t *testing.T) {
 	external := mapAt(t, defs, builder.PhenixDefPrefix+"external_node")
 	hardware := mapAt(t, mapAt(t, external, "properties"), "hardware")
 
-	if !containsAny(hardware["type"], "object") ||
-		!containsAny(hardware["type"], "null") {
-		t.Fatalf("nullable object type was not converted: %v", hardware["type"])
+	for _, kind := range []string{"object", "null"} {
+		if !containsAny(hardware["type"], kind) {
+			t.Errorf("PhenixDefs() external_node hardware type = %v, want it to include %q", hardware["type"], kind)
+		}
 	}
 
 	address := mapAt(t, defs, builder.PhenixDefPrefix+"iface_address")
 	dns := mapAt(t, mapAt(t, address, "properties"), "dns")
-	variants, ok := dns["anyOf"].([]any)
-	if !ok || len(variants) != 2 {
-		t.Fatalf("nullable oneOf schema was not wrapped: %v", dns)
+
+	if variants, ok := dns["anyOf"].([]any); !ok || len(variants) != 2 {
+		t.Errorf("PhenixDefs() iface_address dns = %v, want the nullable oneOf wrapped in an anyOf of two", dns)
 	}
 
 	if findKey(defs, "nullable") {
-		t.Fatal("bundled schema still contains the OpenAPI nullable keyword")
+		t.Error("PhenixDefs() holds the OpenAPI nullable keyword, want none")
 	}
 }
 
@@ -717,6 +741,25 @@ func mapAt(t *testing.T, parent map[string]any, key string) map[string]any {
 	}
 
 	return value
+}
+
+// schemaValues returns the values of a schema object at the dot-separated paths that are the keys of
+// want, nil where a path is absent, to compare several keywords at once.
+func schemaValues(object map[string]any, want map[string]any) map[string]any {
+	got := make(map[string]any, len(want))
+
+	for path := range want {
+		var value any = object
+
+		for key := range strings.SplitSeq(path, ".") {
+			parent, _ := value.(map[string]any)
+			value = parent[key]
+		}
+
+		got[path] = value
+	}
+
+	return got
 }
 
 // containsAny reports whether an any-typed list contains the given string.
@@ -787,13 +830,16 @@ func TestSchemaGeometryBounds(t *testing.T) {
 		def := mapAt(t, mapAt(t, mapAt(t, defs, path[0]), "properties"), path[1])
 
 		if _, hasMinimum := def["minimum"]; def["exclusiveMinimum"] != 0 || hasMinimum {
-			t.Errorf("%s.%s = %v, want exclusiveMinimum 0 and no minimum", path[0], path[1], def)
+			t.Errorf("Schema() $defs.%s.properties.%s = %v, want exclusiveMinimum 0 and no minimum", path[0], path[1], def)
 		}
 	}
 
+	// An integer from MinGridSize to MaxGridSize.
+	wantSize := map[string]any{"type": "integer", "minimum": builder.MinGridSize, "maximum": builder.MaxGridSize}
 	size := mapAt(t, mapAt(t, mapAt(t, defs, "grid"), "properties"), "size")
-	if size["type"] != "integer" || size["minimum"] != builder.MinGridSize || size["maximum"] != builder.MaxGridSize {
-		t.Errorf("grid size schema = %v, want an integer from %d to %d", size, builder.MinGridSize, builder.MaxGridSize)
+
+	if diff := cmp.Diff(wantSize, schemaValues(size, wantSize)); diff != "" {
+		t.Errorf("Schema() $defs.grid.properties.size mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -801,13 +847,13 @@ func TestSchemaSourceCarriesDigestAndUpdatedAt(t *testing.T) {
 	defs := mapAt(t, mustSchema(t), "$defs")
 	source := mapAt(t, mapAt(t, defs, "source"), "properties")
 
-	digest := mapAt(t, source, "digest")
-	if got := digest["pattern"]; got != `^sha256:[0-9a-f]{64}$` {
-		t.Fatalf("source digest pattern = %v", got)
+	const want = `^sha256:[0-9a-f]{64}$`
+	if got := mapAt(t, source, "digest")["pattern"]; got != want {
+		t.Errorf("Schema() $defs.source.properties.digest.pattern = %v, want %s", got, want)
 	}
 
 	if _, ok := source["updatedAt"]; !ok {
-		t.Fatal("source schema has no updatedAt property")
+		t.Error("Schema() $defs.source has no updatedAt property")
 	}
 }
 
@@ -817,34 +863,42 @@ func TestSchemaScenarios(t *testing.T) {
 	scenarios := mapAt(t, mapAt(t, schema, "properties"), "scenarios")
 
 	if containsAny(schema["required"], "scenarios") {
-		t.Fatal("scenarios is required")
+		t.Errorf("Schema() required = %v, want it without scenarios", schema["required"])
 	}
 
-	if scenarios["type"] != "array" || scenarios["maxItems"] != builder.MaxScenarios || scenarios["uniqueItems"] != true {
-		t.Fatalf("scenarios is not a list of at most %d distinct items: %v", builder.MaxScenarios, scenarios)
+	// A list of distinct names of 1 to MaxScenarioNameBytes characters.
+	want := map[string]any{
+		"type":            "array",
+		"maxItems":        builder.MaxScenarios,
+		"uniqueItems":     true,
+		"items.type":      "string",
+		"items.minLength": 1,
+		"items.maxLength": builder.MaxScenarioNameBytes,
+	}
+	if diff := cmp.Diff(want, schemaValues(scenarios, want)); diff != "" {
+		t.Errorf("Schema() properties.scenarios mismatch (-want +got):\n%s", diff)
 	}
 
 	name := mapAt(t, scenarios, "items")
-	if name["type"] != "string" || name["minLength"] != 1 || name["maxLength"] != builder.MaxScenarioNameBytes {
-		t.Fatalf("a scenario name is not a string of 1 to %d characters: %v", builder.MaxScenarioNameBytes, name)
-	}
 
 	pattern, ok := name["pattern"].(string)
 	if !ok {
-		t.Fatalf("a scenario name has no pattern: %v", name)
+		t.Fatalf("Schema() properties.scenarios.items.pattern = %v, want a string", name["pattern"])
 	}
 
 	matcher := regexp.MustCompile(pattern)
 
 	for _, valid := range []string{"ntp", "Ab_9@x.y-z"} {
 		if !matcher.MatchString(valid) || !builder.IsConfigName(valid) {
-			t.Errorf("scenario name %q is refused", valid)
+			t.Errorf("scenario name %q: pattern match = %t, IsConfigName = %t, want both true",
+				valid, matcher.MatchString(valid), builder.IsConfigName(valid))
 		}
 	}
 
 	for _, invalid := range []string{"", "two words", "Scenario/ntp", "ntp\n"} {
 		if matcher.MatchString(invalid) || builder.IsConfigName(invalid) {
-			t.Errorf("scenario name %q is accepted", invalid)
+			t.Errorf("scenario name %q: pattern match = %t, IsConfigName = %t, want both false",
+				invalid, matcher.MatchString(invalid), builder.IsConfigName(invalid))
 		}
 	}
 }
@@ -860,7 +914,7 @@ func TestSchemaBundlesPhenixV1(t *testing.T) {
 
 	for _, name := range components {
 		if _, ok := defs[builder.PhenixDefPrefix+name]; !ok {
-			t.Fatalf("$defs is missing %s%s", builder.PhenixDefPrefix, name)
+			t.Errorf("Schema() has no $defs/%s%s", builder.PhenixDefPrefix, name)
 		}
 	}
 
@@ -868,7 +922,7 @@ func TestSchemaBundlesPhenixV1(t *testing.T) {
 	// bundled for.
 	for name := range defs {
 		if strings.HasPrefix(name, "phenix.v2.") {
-			t.Fatalf("$defs bundles %s, which no part of a document refers to", name)
+			t.Errorf("Schema() bundles $defs/%s, which no part of a document refers to", name)
 		}
 	}
 
@@ -878,7 +932,7 @@ func TestSchemaBundlesPhenixV1(t *testing.T) {
 
 	variants, ok := spec["oneOf"].([]any)
 	if !ok || len(variants) != 2 {
-		t.Fatalf("device spec is not a node variant union: %v", spec)
+		t.Errorf("Schema() $defs.device.properties.spec = %v, want a oneOf of two node variants", spec)
 	}
 
 	for _, entry := range variants {
@@ -888,7 +942,7 @@ func TestSchemaBundlesPhenixV1(t *testing.T) {
 		}
 
 		if reference, _ := variant["$ref"].(string); !strings.Contains(reference, builder.PhenixDefPrefix) {
-			t.Fatalf("device spec variant %q is not a v1 node schema", reference)
+			t.Errorf("Schema() device spec variant $ref = %q, want a v1 node schema", reference)
 		}
 	}
 }
@@ -910,7 +964,7 @@ func TestPhenixDefsRewritesReferences(t *testing.T) {
 
 			for name, def := range defs {
 				if !strings.HasPrefix(name, bundle.prefix) {
-					t.Fatalf("definition %q is not namespaced", name)
+					t.Errorf("PhenixDefs() definition %q, want the prefix %q", name, bundle.prefix)
 				}
 
 				for _, reference := range collectRefs(def) {
@@ -918,18 +972,18 @@ func TestPhenixDefsRewritesReferences(t *testing.T) {
 
 					want := "#/$defs/" + bundle.prefix
 					if !strings.HasPrefix(reference, want) {
-						t.Fatalf("definition %q holds reference %q, want prefix %q", name, reference, want)
+						t.Errorf("PhenixDefs() definition %q holds reference %q, want prefix %q", name, reference, want)
 					}
 
 					if _, ok := defs[strings.TrimPrefix(reference, "#/$defs/")]; !ok {
-						t.Fatalf("reference %q does not resolve inside the bundle", reference)
+						t.Errorf("PhenixDefs() reference %q does not resolve inside the bundle", reference)
 					}
 				}
 			}
 
 			// static_iface, for one, refers to iface through allOf.
 			if references == 0 {
-				t.Fatal("the bundle holds no references")
+				t.Error("PhenixDefs() holds no references, want some")
 			}
 		})
 	}
@@ -941,30 +995,36 @@ func TestSchemaLayers(t *testing.T) {
 	schema := mustSchema(t)
 	defs := mapAt(t, schema, "$defs")
 
-	layers := mapAt(t, mapAt(t, schema, "properties"), "layers")
-	if layers["type"] != "array" || layers["maxItems"] != builder.MaxLayers ||
-		mapAt(t, layers, "items")["$ref"] != "#/$defs/layer" {
-		t.Fatalf("layers is not a list of at most %d layers: %v", builder.MaxLayers, layers)
+	// A list of at most MaxLayers layers.
+	wantLayers := map[string]any{"type": "array", "maxItems": builder.MaxLayers, "items.$ref": "#/$defs/layer"}
+	if diff := cmp.Diff(wantLayers, schemaValues(mapAt(t, mapAt(t, schema, "properties"), "layers"), wantLayers)); diff != "" {
+		t.Errorf("Schema() properties.layers mismatch (-want +got):\n%s", diff)
 	}
 
-	id := mapAt(t, defs, "layerId")
-	if id["type"] != "integer" || id["minimum"] != 0 || id["maximum"] != builder.MaxLayerID {
-		t.Fatalf("a layer ID is not an integer from 0 to %d: %v", builder.MaxLayerID, id)
+	// An integer from 0 to MaxLayerID.
+	wantID := map[string]any{"type": "integer", "minimum": 0, "maximum": builder.MaxLayerID}
+	if diff := cmp.Diff(wantID, schemaValues(mapAt(t, defs, "layerId"), wantID)); diff != "" {
+		t.Errorf("Schema() $defs.layerId mismatch (-want +got):\n%s", diff)
 	}
 
 	layer := mapAt(t, defs, "layer")
-	if !containsAny(layer["required"], "id") || !containsAny(layer["required"], "label") {
-		t.Fatalf("a layer does not require its ID and label: %v", layer)
+	for _, required := range []string{"id", "label"} {
+		if !containsAny(layer["required"], required) {
+			t.Errorf("Schema() $defs.layer.required = %v, want it to include %q", layer["required"], required)
+		}
 	}
 
+	// A string of 1 to MaxLayerLabelBytes characters.
 	label := mapAt(t, mapAt(t, layer, "properties"), "label")
-	if label["type"] != "string" || label["minLength"] != 1 || label["maxLength"] != builder.MaxLayerLabelBytes {
-		t.Fatalf("a layer label is not a string of 1 to %d characters: %v", builder.MaxLayerLabelBytes, label)
+	wantLabel := map[string]any{"type": "string", "minLength": 1, "maxLength": builder.MaxLayerLabelBytes}
+
+	if diff := cmp.Diff(wantLabel, schemaValues(label, wantLabel)); diff != "" {
+		t.Errorf("Schema() $defs.layer.properties.label mismatch (-want +got):\n%s", diff)
 	}
 
 	pattern, ok := label["pattern"].(string)
 	if !ok {
-		t.Fatalf("a layer label has no pattern: %v", label)
+		t.Fatalf("Schema() $defs.layer.properties.label.pattern = %v, want a string", label["pattern"])
 	}
 
 	matcher := regexp.MustCompile(pattern)
@@ -978,8 +1038,10 @@ func TestSchemaLayers(t *testing.T) {
 		doc := loadDocumentFixture(t, "document.json")
 		doc.Layers = []builder.Layer{{ID: layerID(1), Label: label}}
 
-		if matcher.MatchString(label) != valid || (doc.Validate() == nil) != valid {
-			t.Errorf("layer label %q: the pattern or Validate does not say valid = %v", label, valid)
+		err := doc.Validate()
+		if matcher.MatchString(label) != valid || (err == nil) != valid {
+			t.Errorf("layer label %q: pattern match = %t, Validate() error = %v, want valid = %t",
+				label, matcher.MatchString(label), err, valid)
 		}
 	}
 
@@ -989,6 +1051,6 @@ func TestSchemaLayers(t *testing.T) {
 
 	want := fmt.Sprintf("from 0 to %d", builder.MaxLayerID)
 	if issues := builder.ErrorIssues(doc.Validate()); len(issues) != 1 || !strings.Contains(issues[0].Message, want) {
-		t.Fatalf("issues %v do not say %q", issues, want)
+		t.Errorf("Validate() of layer %d issues = %v, want one that says %q", builder.MaxLayerID+1, issues, want)
 	}
 }
