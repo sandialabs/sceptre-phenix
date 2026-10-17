@@ -2,6 +2,7 @@
 // zoom, where the ticks are for a pan, and the selected nodes' extent.
 
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 
 import {
   RULER_SPACING,
@@ -162,5 +163,57 @@ describe('rulerExtent', () => {
         { x: 100, y: 200, width: 60, height: 30 },
       ]),
     ).toEqual({ x: { start: 10, end: 160 }, y: { start: -20, end: 230 } });
+  });
+});
+
+describe('rulers, for any zoom and pan', () => {
+  const zoom = fc.double({ min: 0.05, max: 16, noNaN: true });
+
+  test('the step keeps numbers apart and is 1, 2 or 5 times a power of ten', () => {
+    fc.assert(
+      fc.property(zoom, fc.integer({ min: 1, max: 400 }), (scale, spacing) => {
+        const step = rulerStep(scale, spacing);
+        const mantissa = step / 10 ** Math.floor(Math.log10(step));
+
+        expect(step).toBeGreaterThanOrEqual((spacing / scale) * (1 - 1e-9));
+        expect(
+          [1, 2, 5].some((factor) => Math.abs(mantissa - factor) < 1e-9),
+        ).toBe(true);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  test('the ticks are in order on the ruler, never -0, and the small ticks repeat from its start', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -5000, max: 5000, noNaN: true }),
+        zoom,
+        fc.integer({ min: 0, max: 4000 }),
+        (offset, scale, length) => {
+          const { ticks, minorSize, minorOffset } = rulerTicks({
+            offset,
+            zoom: scale,
+            length,
+          });
+
+          // Rounding may put the first or last tick a hair off the ruler.
+          const wrong = ticks.filter(
+            (tick, i) =>
+              tick.at < -1e-6 ||
+              tick.at > length + 1e-6 ||
+              Object.is(tick.value, -0) ||
+              tick.label === '-0' ||
+              (i > 0 && tick.value <= ticks[i - 1].value),
+          );
+
+          expect(ticks.length).toBeLessThanOrEqual(200);
+          expect(wrong).toEqual([]);
+          expect(minorOffset).toBeGreaterThanOrEqual(0);
+          expect(minorOffset).toBeLessThan(minorSize);
+        },
+      ),
+      { numRuns: 300 },
+    );
   });
 });

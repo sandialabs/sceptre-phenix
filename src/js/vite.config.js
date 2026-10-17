@@ -48,6 +48,7 @@ const CONTRACT_TESTS = [
   'test/builder/palette-sections.test.js',
   'test/builder/panes.test.js',
   'test/builder/routes.test.js',
+  'test/builder/rulers.test.js',
   'test/builder/scenario-summary.test.js',
   'test/builder/schema-examples.test.js',
   'test/builder/schema.test.js',
