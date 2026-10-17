@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 
 import {
   changesFrom,
@@ -21,6 +22,9 @@ import {
   withLayerRelabeled,
 } from '@/builder/model.js';
 
+import { canonicalJSON } from '@/builder/digest.js';
+
+import { applyOps, documentOp, makeCounter, scaffold } from './arbitraries.js';
 import { sampleDocument, testId } from './fixtures.js';
 
 const applyChoices = (result, choices) =>
@@ -1111,6 +1115,108 @@ describe('merge helpers', () => {
     expect(clashNote(2, 'alice')).not.toMatch(/\bchanges?\b/);
     expect(clashNote(0, 'another tab')).toBe(
       "Your changes and another tab's cannot be merged as they are. Review and merge shows why.",
+    );
+  });
+});
+
+describe('merge laws, for any edits', () => {
+  const edits = fc.array(documentOp, { maxLength: 12 });
+
+  // A base after edits A, and mine and theirs after edits B and C on it.
+  const versions = fc.tuple(edits, edits, edits).map(([a, b, c]) => {
+    const counter = makeCounter();
+    const base = applyOps(scaffold(counter), a, counter);
+
+    return {
+      base,
+      mine: applyOps(base, b, counter),
+      theirs: applyOps(base, c, counter),
+    };
+  });
+  const same = (a, b) => expect(canonicalJSON(a)).toBe(canonicalJSON(b));
+
+  test('a side that changed nothing takes the other side whole', () => {
+    fc.assert(
+      fc.property(versions, ({ base, mine, theirs }) => {
+        const ours = mergeDocuments(base, mine, base);
+        const others = mergeDocuments(base, base, theirs);
+
+        expect(ours.clashes).toEqual([]);
+        same(ours.doc, mine);
+        expect(others.clashes).toEqual([]);
+        same(others.doc, theirs);
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  test('merging a version with itself gives that version', () => {
+    fc.assert(
+      fc.property(versions, ({ mine }) => {
+        const merged = mergeDocuments(mine, mine, mine);
+
+        expect(merged.clashes).toEqual([]);
+        same(merged.doc, mine);
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  test('changes no version it merges', () => {
+    fc.assert(
+      fc.property(versions, ({ base, mine, theirs }) => {
+        const before = [base, mine, theirs].map(canonicalJSON);
+
+        mergeDocuments(base, mine, theirs);
+        expect([base, mine, theirs].map(canonicalJSON)).toEqual(before);
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  test('swapping the sides finds the same clashes, and keeps the same elements without one', () => {
+    const elements = (doc) =>
+      [...doc.nodes, ...doc.edges, ...doc.networks]
+        .map((entry) => entry.id)
+        .sort();
+
+    fc.assert(
+      fc.property(versions, ({ base, mine, theirs }) => {
+        const one = mergeDocuments(base, mine, theirs);
+        const two = mergeDocuments(base, theirs, mine);
+        const keys = (result) =>
+          result.clashes.map((clash) => clash.key).sort();
+
+        expect(keys(two)).toEqual(keys(one));
+        if (!one.clashes.length) {
+          expect(elements(two.doc)).toEqual(elements(one.doc));
+        }
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  // Scenario names with no two the same but for case.
+  const names = fc.uniqueArray(
+    fc.constantFrom('a', 'B', 'b', 'c', 'D', 'd', 'e'),
+    {
+      maxLength: 5,
+      selector: (name) => name.toLowerCase(),
+    },
+  );
+  const folded = (list) => list.map((name) => name.toLowerCase()).sort();
+
+  test('mergeScenarios takes a changed side whole, never twice, either way round', () => {
+    fc.assert(
+      fc.property(names, names, names, (base, mine, theirs) => {
+        expect(mergeScenarios(base, base, theirs)).toEqual(theirs);
+        expect(folded(mergeScenarios(base, mine, base))).toEqual(folded(mine));
+        const merged = folded(mergeScenarios(base, mine, theirs));
+
+        expect(new Set(merged).size).toBe(merged.length);
+        expect(folded(mergeScenarios(base, theirs, mine))).toEqual(merged);
+      }),
+      { numRuns: 300 },
     );
   });
 });
