@@ -632,8 +632,7 @@
   const editor = props.variant === 'editor';
   // The Inspector beside the canvas, not one in a dialog.
   const side = !template && !editor;
-  // Where the layer of a device or a switch shows: 'section', in a section
-  // of its own on the canvas, else 'look', as a field after the look fields.
+  // The layer shows in its own section beside the canvas, else after the look fields.
   const layerPlace = side ? 'section' : 'look';
   // The ids of the parts the Inspector names. A dialog's Inspector is on
   // the page with the one beside the canvas, so each has its own.
