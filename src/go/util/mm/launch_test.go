@@ -2,12 +2,12 @@ package mm
 
 import (
 	"fmt"
-	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 )
@@ -63,21 +63,18 @@ func TestLaunchVMs(t *testing.T) { //nolint:paralleltest // shares the fake mini
 
 			switch {
 			case tc.wantErr == "" && err != nil:
-				t.Fatalf("LaunchVMs: %v", err)
+				t.Errorf("LaunchVMs(exp, %q) error = %v, want nil", tc.vms, err)
 			case tc.wantErr != "" && (err == nil || !regexp.MustCompile(tc.wantErr).MatchString(err.Error())):
-				t.Fatalf("LaunchVMs error = %v, want one matching %q", err, tc.wantErr)
+				t.Errorf("LaunchVMs(exp, %q) error = %v, want one matching %q", tc.vms, err, tc.wantErr)
 			}
 
-			cmds := received()
-
-			if got := mmtest.Bases(cmds); !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("sent %q, want %q", got, tc.want)
+			want := make([]mmtest.Command, 0, len(tc.want))
+			for _, base := range tc.want {
+				want = append(want, mmtest.Command{Namespace: "exp", Base: base})
 			}
 
-			for _, cmd := range cmds {
-				if cmd.Namespace != "exp" {
-					t.Fatalf("%q sent in namespace %q, want exp", cmd.Base, cmd.Namespace)
-				}
+			if diff := cmp.Diff(want, received(), ignoreRaw); diff != "" {
+				t.Errorf("LaunchVMs(exp, %q) sent commands mismatch (-want +got):\n%s", tc.vms, diff)
 			}
 		})
 	}
@@ -89,8 +86,8 @@ func TestVMStartBatches(t *testing.T) {
 	got := vmStartBatches([]string{"a", "b", "all", "c", "d[1-2]", "e,f", "g h", "h"})
 	want := [][]string{{"a", "b"}, {"all"}, {"c"}, {"d[1-2]"}, {"e,f"}, {"g h"}, {"h"}}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("vmStartBatches = %q, want %q", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("vmStartBatches(names to keep apart) mismatch (-want +got):\n%s", diff)
 	}
 
 	many := make([]string, maxVMStartBatch+1)
@@ -99,13 +96,19 @@ func TestVMStartBatches(t *testing.T) {
 	}
 
 	batches := vmStartBatches(many)
-	if len(batches) != 2 || len(batches[0]) != maxVMStartBatch || len(batches[1]) != 1 {
-		t.Fatalf("%d names batched as %d batches, want %d and 1", len(many), len(batches), maxVMStartBatch)
+
+	sizes := make([]int, 0, len(batches))
+	for _, batch := range batches {
+		sizes = append(sizes, len(batch))
+	}
+
+	if diff := cmp.Diff([]int{maxVMStartBatch, 1}, sizes); diff != "" {
+		t.Errorf("vmStartBatches(%d names) batch sizes mismatch (-want +got):\n%s", len(many), diff)
 	}
 
 	long := []string{strings.Repeat("x", maxVMStartTarget-1), "y"}
 	if batches := vmStartBatches(long); len(batches) != 2 {
-		t.Fatalf("names longer than a target list together batched as %d batches, want 2", len(batches))
+		t.Errorf("vmStartBatches(names longer than a target list together) = %d batches, want 2", len(batches))
 	}
 }
 
@@ -154,11 +157,11 @@ func TestGetLaunchProgress(t *testing.T) { //nolint:paralleltest // shares the f
 
 			progress, err := (Minimega{}).GetLaunchProgress("exp", tc.expected)
 			if err != nil || progress != tc.want {
-				t.Fatalf("GetLaunchProgress = %v, %v; want %v", progress, err, tc.want)
+				t.Errorf("GetLaunchProgress(exp, %d) = %v, %v; want %v, nil", tc.expected, progress, err, tc.want)
 			}
 
-			if got := mmtest.Bases(received()); !reflect.DeepEqual(got, tc.wantCmds) {
-				t.Fatalf("sent %q, want %q", got, tc.wantCmds)
+			if diff := cmp.Diff(tc.wantCmds, mmtest.Bases(received())); diff != "" {
+				t.Errorf("GetLaunchProgress(exp, %d) sent commands mismatch (-want +got):\n%s", tc.expected, diff)
 			}
 		})
 	}

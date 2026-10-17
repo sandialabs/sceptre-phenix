@@ -1,7 +1,6 @@
 package mm
 
 import (
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
@@ -117,15 +117,15 @@ func TestExecC2Command(t *testing.T) { //nolint:paralleltest // shares the fake 
 
 			id, err := (Minimega{}).ExecC2Command(append([]C2Option{C2NS("exp")}, tc.opts...)...)
 			if err != nil {
-				t.Fatalf("ExecC2Command: %v", err)
+				t.Fatalf("ExecC2Command() error = %v", err)
 			}
 
 			if tc.wantID != "" && id != tc.wantID {
-				t.Fatalf("ExecC2Command = %q, want the command's ID %s", id, tc.wantID)
+				t.Errorf("ExecC2Command() = %q, want %q", id, tc.wantID)
 			}
 
-			if got := ccSequence(received()); !slices.Equal(got, tc.want) {
-				t.Fatalf("sent %q, want %q", got, tc.want)
+			if diff := cmp.Diff(tc.want, ccSequence(received())); diff != "" {
+				t.Errorf("ExecC2Command() sent cc commands mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -137,16 +137,20 @@ func TestWaitForC2ResponseDeletesTheCommand(t *testing.T) { //nolint:paralleltes
 
 	id, err := (Minimega{}).ExecC2Command(C2NS("exp"), C2VM("vm1"), C2Command("hostname"))
 	if err != nil {
-		t.Fatalf("ExecC2Command: %v", err)
+		t.Fatalf("ExecC2Command(hostname) error = %v", err)
 	}
 
 	if _, err := (Minimega{}).WaitForC2Response(C2NS("exp"), C2CommandID(id)); err != nil {
-		t.Fatalf("WaitForC2Response: %v", err)
+		t.Errorf("WaitForC2Response(%s) error = %v", id, err)
 	}
 
 	cmds := ccSequence(received())
-	if last := cmds[len(cmds)-1]; last != "cc delete command "+id {
-		t.Fatalf("last cc command %q, want the waited command deleted", last)
+	if len(cmds) == 0 {
+		t.Fatal("ExecC2Command and WaitForC2Response sent no cc commands")
+	}
+
+	if last, want := cmds[len(cmds)-1], "cc delete command "+id; last != want {
+		t.Errorf("WaitForC2Response(%s) sent %q last, want %q", id, last, want)
 	}
 }
 
@@ -179,7 +183,7 @@ func TestExecC2CommandSerializesFilterPerNamespace(t *testing.T) { //nolint:para
 				C2NS("exp"), C2VM(vm), C2IDClientsByUUID(), C2Command("hostname"),
 			)
 			if err != nil {
-				t.Errorf("ExecC2Command %s: %v", vm, err)
+				t.Errorf("ExecC2Command(%s) error = %v", vm, err)
 			}
 		}()
 	}
@@ -193,13 +197,16 @@ func TestExecC2CommandSerializesFilterPerNamespace(t *testing.T) { //nolint:para
 
 	seq := ccSequence(received())
 	if len(seq) != 3*callers {
-		t.Fatalf("sent %d filter/exec/clear commands, want %d: %q", len(seq), 3*callers, seq)
+		t.Fatalf("%d concurrent ExecC2Command calls sent %d filter/exec/clear commands, want %d: %q",
+			callers, len(seq), 3*callers, seq)
 	}
 
 	for i := 0; i < len(seq); i += 3 {
 		if !strings.HasPrefix(seq[i], "cc filter uuid=") || seq[i+1] != "cc exec hostname" ||
 			seq[i+2] != clearCCFilterCmd {
-			t.Fatalf("filter, exec and clear interleaved at %d: %q", i, seq)
+			t.Errorf("%d concurrent ExecC2Command calls interleaved filter, exec and clear: %q", callers, seq)
+
+			break
 		}
 	}
 }
@@ -215,16 +222,17 @@ func TestExecC2CommandLeavesFilterAfterTimeout(t *testing.T) { //nolint:parallel
 		C2NS("exp"), C2VM("vm1"), C2Command("hostname"), C2Timeout(50*time.Millisecond),
 	)
 	if err == nil || !strings.Contains(err.Error(), "timeout running 'cc exec hostname'") {
-		t.Fatalf("ExecC2Command error = %v, want a timeout", err)
+		t.Errorf("ExecC2Command(hostname, 50ms timeout) error = %v, want a timeout", err)
 	}
 
 	// The unanswered exec may still be posted; clearing the filter now could
 	// let it reach every VM.
-	if got, want := ccSequence(received()), []string{"cc filter uuid=uuid-vm1", "cc exec hostname"}; !slices.Equal(got, want) {
-		t.Fatalf("sent %q after an unanswered exec, want %q", got, want)
+	want := []string{"cc filter uuid=uuid-vm1", "cc exec hostname"}
+	if diff := cmp.Diff(want, ccSequence(received())); diff != "" {
+		t.Errorf("ExecC2Command(hostname, 50ms timeout) sent cc commands mismatch (-want +got):\n%s", diff)
 	}
 
 	if got := ccLocks.refs("exp"); got != 0 {
-		t.Fatalf("namespace's cc lock has %d holders after the timeout, want 0", got)
+		t.Errorf("ccLocks.refs(exp) after ExecC2Command timed out = %d, want 0", got)
 	}
 }

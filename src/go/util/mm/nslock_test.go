@@ -2,13 +2,13 @@ package mm
 
 import (
 	"regexp"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
@@ -58,8 +58,8 @@ func TestKeyedMutex(t *testing.T) {
 
 	<-done
 
-	if !slices.Equal(order, []string{"first", "second"}) {
-		t.Fatalf("held the lock in the order %q, want the waiter after the holder", order)
+	if diff := cmp.Diff([]string{"first", "second"}, order); diff != "" {
+		t.Errorf("keyedMutex.lock(a) holders order mismatch (-want +got):\n%s", diff)
 	}
 
 	k.mu.Lock()
@@ -67,7 +67,7 @@ func TestKeyedMutex(t *testing.T) {
 	k.mu.Unlock()
 
 	if left != 0 {
-		t.Fatalf("%d keys left after every lock was released, want 0", left)
+		t.Errorf("keyedMutex has %d keys after every lock was released, want 0", left)
 	}
 }
 
@@ -107,7 +107,7 @@ func TestRedeployVMSequencesDoNotInterleave(t *testing.T) { //nolint:paralleltes
 			defer wg.Done()
 
 			if err := (Minimega{}).RedeployVM(NS("exp"), VMName(vm), CPU(2)); err != nil {
-				t.Errorf("RedeployVM %s: %v", vm, err)
+				t.Errorf("RedeployVM(%s) error = %v", vm, err)
 			}
 		}()
 	}
@@ -125,13 +125,13 @@ func TestRedeployVMSequencesDoNotInterleave(t *testing.T) { //nolint:paralleltes
 		switch {
 		case strings.HasPrefix(cmd.Base, "vm config clone "):
 			if current != "" {
-				t.Fatalf("config for %s cloned while %s's sequence was open", cmd.Base, current)
+				t.Fatalf("concurrent RedeployVM sent %q while %s's sequence was open", cmd.Base, current)
 			}
 
 			current = strings.TrimPrefix(cmd.Base, "vm config clone ")
 		case strings.HasPrefix(cmd.Base, "vm launch kvm "):
 			if vm := strings.TrimPrefix(cmd.Base, "vm launch kvm "); vm != current {
-				t.Fatalf("%s queued while %s's sequence was open", vm, current)
+				t.Fatalf("concurrent RedeployVM queued %s while %s's sequence was open", vm, current)
 			}
 		case cmd.Base == vmLaunchCmd:
 			current = ""
@@ -153,11 +153,11 @@ func TestKillAndRedeployFlushOnlyTheirVM(t *testing.T) { //nolint:paralleltest /
 	})
 
 	if err := (Minimega{}).KillVM(NS("exp"), VMName("a")); err != nil {
-		t.Fatalf("KillVM: %v", err)
+		t.Errorf("KillVM(a) error = %v", err)
 	}
 
 	if err := (Minimega{}).RedeployVM(NS("exp"), VMName("b")); err != nil {
-		t.Fatalf("RedeployVM: %v", err)
+		t.Errorf("RedeployVM(b) error = %v", err)
 	}
 
 	var flushes []string
@@ -168,8 +168,8 @@ func TestKillAndRedeployFlushOnlyTheirVM(t *testing.T) { //nolint:paralleltest /
 		}
 	}
 
-	if len(flushes) != 2 || flushes[0] != "vm flush a" || flushes[1] != "vm flush b" {
-		t.Fatalf("sent flushes %q, want only `vm flush a` and `vm flush b`", flushes)
+	if diff := cmp.Diff([]string{"vm flush a", "vm flush b"}, flushes); diff != "" {
+		t.Errorf("KillVM(a) and RedeployVM(b) sent flushes mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -187,7 +187,7 @@ func TestKillVMReportsFlushFailure(t *testing.T) { //nolint:paralleltest // shar
 
 	err := (Minimega{}).KillVM(NS("exp"), VMName("a"))
 	if err == nil || !strings.Contains(err.Error(), "vm not found: a") {
-		t.Fatalf("KillVM error = %v, want the flush's vm not found", err)
+		t.Errorf("KillVM(a) error = %v, want the flush's vm not found", err)
 	}
 }
 
@@ -217,7 +217,7 @@ func TestReadC2ScriptHoldsNamespaceCCLock(t *testing.T) { //nolint:paralleltest 
 	polltest.Until(t, "the cc script is read", reading.Load)
 
 	if got := ccLocks.refs("exp"); got != 1 {
-		t.Fatalf("namespace's cc lock has %d holders while its cc script runs, want 1", got)
+		t.Errorf("ccLocks.refs(exp) while ReadC2ScriptFromFile runs = %d, want 1", got)
 	}
 
 	// Another namespace's cc lock is free meanwhile.
@@ -226,10 +226,10 @@ func TestReadC2ScriptHoldsNamespaceCCLock(t *testing.T) { //nolint:paralleltest 
 	finish()
 
 	if err := <-done; err != nil {
-		t.Fatalf("ReadC2ScriptFromFile: %v", err)
+		t.Errorf("ReadC2ScriptFromFile(exp, /exp-cc.mm) error = %v", err)
 	}
 
 	if got := ccLocks.refs("exp"); got != 0 {
-		t.Fatalf("namespace's cc lock has %d holders after its cc script ran, want 0", got)
+		t.Errorf("ccLocks.refs(exp) after ReadC2ScriptFromFile = %d, want 0", got)
 	}
 }

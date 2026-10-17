@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 )
@@ -29,10 +30,10 @@ func TestRunDedicatedDoesNotWaitForSharedConnection(t *testing.T) {
 	select {
 	case got := <-done:
 		if got != "ok" {
-			t.Fatalf("dedicated command got %q, want %q", got, "ok")
+			t.Errorf("SingleResponse(RunDedicated(vm launch)) = %q, want %q", got, "ok")
 		}
 	case <-time.After(maxWait):
-		t.Fatal("dedicated command waited for the shared connection")
+		t.Fatal("RunDedicated(vm launch) waited for the shared connection")
 	}
 }
 
@@ -53,7 +54,7 @@ func TestRunStartedNotifiesBeforeSending(t *testing.T) {
 			sent = append(sent, cmd.Base)
 			mu.Unlock()
 		default:
-			t.Errorf("command %q sent before started was called", cmd.Base)
+			t.Errorf("%q was sent before its started func was called", cmd.Base)
 		}
 
 		return reply("ok")
@@ -65,7 +66,7 @@ func TestRunStartedNotifiesBeforeSending(t *testing.T) {
 	shared.Command = "shared"
 
 	if rows := RunTabularStartedContext(t.Context(), shared, notify); len(rows) != 0 {
-		t.Fatalf("unexpected rows %v", rows)
+		t.Errorf("RunTabularStartedContext(shared) = %v, want no rows", rows)
 	}
 
 	private := NewCommand()
@@ -73,13 +74,13 @@ func TestRunStartedNotifiesBeforeSending(t *testing.T) {
 	private.Timeout = maxWait
 
 	if err := ErrorResponse(RunStartedContext(t.Context(), private, notify)); err != nil {
-		t.Fatalf("private command failed: %v", err)
+		t.Errorf("RunStartedContext(private) error = %v", err)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	if len(sent) != 2 {
-		t.Fatalf("sent %v, want both commands", sent)
+	if diff := cmp.Diff([]string{"shared", "private"}, sent); diff != "" {
+		t.Errorf("commands sent after their started func mismatch (-want +got):\n%s", diff)
 	}
 }

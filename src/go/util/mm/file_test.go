@@ -64,12 +64,12 @@ func TestGetMMFullPath(t *testing.T) { //nolint:paralleltest // shares the fake 
 	}
 
 	if got := mmtest.Count(received(), "args"); got != 1 {
-		t.Fatalf("asked minimega for its args %d times, want once", got)
+		t.Errorf("GetMMFullPath with minimega not answering sent %d args commands, want 1", got)
 	}
 
 	select {
 	case <-FilesDirectoryGiven():
-		t.Fatal("files directory reported given while minimega was not answering")
+		t.Error("FilesDirectoryGiven() is closed while minimega was not answering")
 	default:
 	}
 
@@ -80,25 +80,25 @@ func TestGetMMFullPath(t *testing.T) { //nolint:paralleltest // shares the fake 
 	given := FilesDirectoryGiven()
 
 	for range 2 {
-		if got := GetMMFullPath("win/win10.qcow2"); got != "/srv/files/win/win10.qcow2" {
-			t.Fatalf("GetMMFullPath with minimega answering = %q, want /srv/files/win/win10.qcow2", got)
+		if got, want := GetMMFullPath("win/win10.qcow2"), "/srv/files/win/win10.qcow2"; got != want {
+			t.Errorf("GetMMFullPath(%q) with minimega answering = %q, want %q", "win/win10.qcow2", got, want)
 		}
 	}
 
 	select {
 	case <-given:
 	default:
-		t.Fatal("files directory not reported given once minimega gave it")
+		t.Error("FilesDirectoryGiven() is not closed once minimega gave its files directory")
 	}
 
 	answering.Store(false)
 
-	if got := GetMMFullPath(""); got != "/srv/files" {
-		t.Fatalf("GetMMFullPath(\"\") after minimega answered = %q, want /srv/files", got)
+	if got, want := GetMMFullPath(""), "/srv/files"; got != want {
+		t.Errorf("GetMMFullPath(%q) after minimega answered = %q, want %q", "", got, want)
 	}
 
 	if got := mmtest.Count(received(), "args"); got != 2 {
-		t.Fatalf("asked minimega for its args %d times, want twice", got)
+		t.Errorf("GetMMFullPath sent %d args commands in all, want 2", got)
 	}
 }
 
@@ -139,28 +139,22 @@ func TestFilesDirectoryDoesNotWaitOnASlowMinimega(t *testing.T) { //nolint:paral
 	select {
 	case <-asked:
 	case <-time.After(5 * time.Second):
-		t.Fatal("minimega was not asked")
+		t.Fatal("GetMMFullPath(a.qc2) did not ask minimega for its args")
 	}
 
-	within := func(what string, fn func()) {
-		t.Helper()
+	given := make(chan struct{})
 
-		done := make(chan struct{})
+	go func() {
+		_ = FilesDirectoryGiven()
+		close(given)
+	}()
 
-		go func() {
-			fn()
-			close(done)
-		}()
-
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			close(release)
-			t.Fatalf("%s waited on minimega", what)
-		}
+	select {
+	case <-given:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("FilesDirectoryGiven() waited on a slow minimega")
 	}
-
-	within("FilesDirectoryGiven", func() { _ = FilesDirectoryGiven() })
 
 	second := make(chan string, 1)
 
@@ -170,27 +164,27 @@ func TestFilesDirectoryDoesNotWaitOnASlowMinimega(t *testing.T) { //nolint:paral
 	select {
 	case got := <-second:
 		close(release)
-		t.Fatalf("another caller answered %q before minimega did", got)
+		t.Fatalf("GetMMFullPath(b.qc2) = %q before minimega answered, want it to wait", got)
 	case <-time.After(200 * time.Millisecond):
 	}
 
 	close(release)
 
-	if got := <-first; got != "/srv/files/a.qc2" {
-		t.Errorf("the asking caller got %q, want minimega's answer", got)
+	if got, want := <-first, "/srv/files/a.qc2"; got != want {
+		t.Errorf("GetMMFullPath(a.qc2) asking minimega = %q, want %q", got, want)
 	}
 
 	select {
 	case got := <-second:
-		if got != "/srv/files/b.qc2" {
-			t.Errorf("another caller got %q, want minimega's answer, not the fallback under %s", got, base)
+		if want := "/srv/files/b.qc2"; got != want {
+			t.Errorf("GetMMFullPath(b.qc2) waiting on minimega = %q, want %q, not the fallback under %s", got, want, base)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("another caller still waits after minimega answered")
+		t.Fatal("GetMMFullPath(b.qc2) still waits after minimega answered")
 	}
 
-	if got := GetMMFullPath("a.qc2"); got != "/srv/files/a.qc2" {
-		t.Errorf("after the answer: %q", got)
+	if got, want := GetMMFullPath("a.qc2"), "/srv/files/a.qc2"; got != want {
+		t.Errorf("GetMMFullPath(a.qc2) after minimega answered = %q, want %q", got, want)
 	}
 }
 

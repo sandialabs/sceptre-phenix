@@ -29,8 +29,9 @@ func TestVMTargetErrorResponse(t *testing.T) {
 	t.Parallel()
 
 	for name, tc := range map[string]struct {
-		errs []string
-		want string // substring of the error, "" for none
+		errs    []string
+		want    string // substring of the error, "" for none
+		notWant string // substring the error must not have, "" for any
 	}{
 		"owner succeeds, others not found": {
 			errs: []string{"", "vm not found: vm1", "vm not found: vm1"},
@@ -41,23 +42,28 @@ func TestVMTargetErrorResponse(t *testing.T) {
 			want: "vm not found: vm1",
 		},
 		"owner fails": {
-			errs: []string{"VM state error: vm1", "vm not found: vm1"},
-			want: "VM state error: vm1",
+			errs:    []string{"VM state error: vm1", "vm not found: vm1"},
+			want:    "VM state error: vm1",
+			notWant: "not found",
 		},
 		"other error beside a success": {
 			errs: []string{"", "bind: address already in use"},
 			want: "bind: address already in use",
 		},
 	} {
-		err := VMTargetErrorResponse(responsesOf(tc.errs...))
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-		switch {
-		case tc.want == "" && err != nil:
-			t.Errorf("%s: error %v, want none", name, err)
-		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
-			t.Errorf("%s: error %v, want one containing %q", name, err, tc.want)
-		case tc.want == "VM state error: vm1" && strings.Contains(err.Error(), "not found"):
-			t.Errorf("%s: error %v also reports the nodes without the VM", name, err)
-		}
+			err := VMTargetErrorResponse(responsesOf(tc.errs...))
+
+			switch {
+			case tc.want == "" && err != nil:
+				t.Errorf("VMTargetErrorResponse(%q) = %v, want nil", tc.errs, err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+				t.Errorf("VMTargetErrorResponse(%q) = %v, want one containing %q", tc.errs, err, tc.want)
+			case tc.notWant != "" && strings.Contains(err.Error(), tc.notWant):
+				t.Errorf("VMTargetErrorResponse(%q) = %v, want one without %q", tc.errs, err, tc.notWant)
+			}
+		})
 	}
 }

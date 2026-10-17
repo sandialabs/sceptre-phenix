@@ -3,12 +3,12 @@ package mm
 import (
 	"context"
 	"errors"
-	"reflect"
 	"regexp"
 	"testing"
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
@@ -67,19 +67,14 @@ func TestActiveC2ClientsChecksAllVMsWithTwoCommands(t *testing.T) { //nolint:par
 		{VM: "gone", ByUUID: false}: false,
 	}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ActiveC2Clients = %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ActiveC2Clients(exp, %+v) mismatch (-want +got):\n%s", refs, diff)
 	}
 
-	cmds := received()
-	if len(cmds) != 2 || mmtest.Count(cmds, vmInfoCmd) != 1 || mmtest.Count(cmds, ccClientCmd) != 1 {
-		t.Fatalf("sent %v, want one vm info and one cc client", cmds)
-	}
+	wantCmds := []mmtest.Command{{Namespace: "exp", Base: vmInfoCmd}, {Namespace: "exp", Base: ccClientCmd}}
 
-	for _, cmd := range cmds {
-		if cmd.Namespace != "exp" {
-			t.Fatalf("%q sent in namespace %q, want exp", cmd.Base, cmd.Namespace)
-		}
+	if diff := cmp.Diff(wantCmds, received(), ignoreRaw, sortCommands); diff != "" {
+		t.Errorf("ActiveC2Clients(exp, %+v) sent commands mismatch (-want +got):\n%s", refs, diff)
 	}
 }
 
@@ -112,7 +107,7 @@ func TestActiveC2ClientsMatchesC2Client(t *testing.T) { //nolint:paralleltest //
 		want := Minimega{}.IsC2ClientActive(opts...) == nil
 
 		if got := (Minimega{}).ActiveC2Clients("exp", []C2ClientRef{ref})[ref]; got != want {
-			t.Errorf("ActiveC2Clients(%+v) = %t, IsC2ClientActive says %t", ref, got, want)
+			t.Errorf("ActiveC2Clients(exp, %+v) = %t, want %t as IsC2ClientActive reports", ref, got, want)
 		}
 	}
 }
@@ -137,43 +132,50 @@ func TestC2ClientUsesNarrowVMInfo(t *testing.T) { //nolint:paralleltest // share
 		C2NS("exp"), C2VM("vm1"), C2Context(context.Background()), C2IDClientsByUUID(),
 	))
 	if err != nil {
-		t.Fatalf("c2Client: %v", err)
+		t.Fatalf("c2Client(vm1 by UUID) error = %v", err)
 	}
 
 	if name != "vm1" || uuid != "uuid-lower" {
-		t.Fatalf("c2Client = %q, %q; want the exact name match", name, uuid)
+		t.Errorf("c2Client(vm1 by UUID) = %q, %q; want %q, %q", name, uuid, "vm1", "uuid-lower")
 	}
 
 	cmds := received()
 
-	if len(cmds) != 2 {
-		t.Fatalf("sent %v, want only a vm info and a cc client", cmds)
+	if diff := cmp.Diff([]string{vmInfoCmd, ccClientCmd}, mmtest.Bases(cmds)); diff != "" {
+		t.Fatalf("c2Client(vm1 by UUID) sent commands mismatch (-want +got):\n%s", diff)
 	}
 
 	if want := `.record false namespace "exp" .columns "name","uuid" .filter name=vm1 vm info`; cmds[0].Raw != want {
-		t.Fatalf("vm info command = %q, want %q", cmds[0].Raw, want)
+		t.Errorf("c2Client(vm1 by UUID) sent %q, want %q", cmds[0].Raw, want)
 	}
 }
 
-func TestIsC2ClientActiveGivesUpAtTimeoutOrCancel(t *testing.T) { //nolint:paralleltest // shares the fake minimega
-	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
-		if cmd.Base == vmInfoCmd {
-			return []*minicli.Response{mmtest.Tabular("head", []string{"name", "uuid"}, []string{"vm1", "uuid-1"})}
-		}
+// vm1WithoutClient answers `vm info` with vm1, which has no client registered.
+func vm1WithoutClient(cmd mmtest.Command) []*minicli.Response {
+	if cmd.Base == vmInfoCmd {
+		return []*minicli.Response{mmtest.Tabular("head", []string{"name", "uuid"}, []string{"vm1", "uuid-1"})}
+	}
 
-		return nil // no client registered
-	})
+	return nil
+}
+
+func TestIsC2ClientActiveGivesUpAtTimeout(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	useFakeMinimega(t, vm1WithoutClient)
 
 	start := time.Now()
 
 	err := Minimega{}.IsC2ClientActive(C2NS("exp"), C2VM("vm1"), C2Timeout(20*time.Millisecond))
 	if !errors.Is(err, ErrC2ClientNotActive) {
-		t.Fatalf("IsC2ClientActive = %v, want ErrC2ClientNotActive", err)
+		t.Errorf("IsC2ClientActive(vm1, 20ms timeout) = %v, want %v", err, ErrC2ClientNotActive)
 	}
 
 	if elapsed := time.Since(start); elapsed >= c2ActiveCheckInterval {
-		t.Fatalf("gave up after %v, want at the timeout", elapsed)
+		t.Errorf("IsC2ClientActive(vm1, 20ms timeout) gave up after %v, want before the next check at %v", elapsed, c2ActiveCheckInterval)
 	}
+}
+
+func TestIsC2ClientActiveGivesUpOnCancel(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	received := useFakeMinimega(t, vm1WithoutClient)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error, 1)
@@ -187,11 +189,11 @@ func TestIsC2ClientActiveGivesUpAtTimeoutOrCancel(t *testing.T) { //nolint:paral
 	canceled := time.Now()
 
 	if err := <-errc; !errors.Is(err, context.Canceled) {
-		t.Fatalf("IsC2ClientActive = %v, want context.Canceled", err)
+		t.Errorf("IsC2ClientActive(vm1, canceled ctx) = %v, want %v", err, context.Canceled)
 	}
 
 	if elapsed := time.Since(canceled); elapsed >= c2ActiveCheckInterval/2 {
-		t.Fatalf("returned %v after the context was canceled", elapsed)
+		t.Errorf("IsC2ClientActive(vm1, canceled ctx) returned %v after the cancel, want under %v", elapsed, c2ActiveCheckInterval/2)
 	}
 }
 

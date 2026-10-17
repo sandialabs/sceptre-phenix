@@ -1,8 +1,6 @@
 package mm
 
 import (
-	"encoding/json"
-	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -10,6 +8,7 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
@@ -37,6 +36,16 @@ func (v fakeVM) row() []string {
 		"uuid-" + v.name, v.name, "RUNNING", v.uptime, "[EXP (101)]", "[mega_tap1]",
 		"[10.0.0.1]", "2048", "2", v.disk + ",virtio,writeback", snapshot, "", `{"a":"b"}`,
 	}
+}
+
+func vmNames(vms VMs) []string {
+	names := make([]string, 0, len(vms))
+
+	for _, vm := range vms {
+		names = append(names, vm.Name)
+	}
+
+	return names
 }
 
 // vmInfoCluster answers the commands GetVMInfo sends for the given VMs.
@@ -105,34 +114,38 @@ func TestGetVMInfoCommandsAndDiskCache(t *testing.T) { //nolint:paralleltest // 
 	vms := Minimega{}.GetVMInfo(NS("exp"))
 	vms.SortByName(true)
 
-	if len(vms) != 3 {
-		t.Fatalf("got %d VMs, want 3", len(vms))
+	// The fields GetVMInfo fills from the fake's answers, by VM.
+	type listed struct {
+		Captures []Capture
+		Disk     string
+		CCActive bool
+		IPv4     []string
+		Uptime   float64
+		RAM      int
 	}
 
-	wantCaptures := map[string][]Capture{
-		"a": {{VM: "a", Interface: 0, Filepath: "/a0.pcap"}, {VM: "a", Interface: 1, Filepath: "/a1.pcap"}},
-		"b": {{VM: "b", Interface: 1, Filepath: "/b1.pcap"}},
-		"c": nil,
+	ip := []string{"10.0.0.1"}
+	want := map[string]listed{
+		"a": {
+			Captures: []Capture{{VM: "a", Interface: 0, Filepath: "/a0.pcap"}, {VM: "a", Interface: 1, Filepath: "/a1.pcap"}},
+			Disk:     "/base/snap-a", CCActive: true, IPv4: ip, Uptime: 3600, RAM: 2048,
+		},
+		"b": {
+			Captures: []Capture{{VM: "b", Interface: 1, Filepath: "/b1.pcap"}},
+			Disk:     "/base/snap-b", CCActive: false, IPv4: ip, Uptime: 3600, RAM: 2048,
+		},
+		"c": {Captures: nil, Disk: "plain-c", CCActive: false, IPv4: ip, Uptime: 3600, RAM: 2048},
 	}
 
-	wantDisks := map[string]string{"a": "/base/snap-a", "b": "/base/snap-b", "c": "plain-c"}
-
+	got := make(map[string]listed, len(vms))
 	for _, vm := range vms {
-		if !reflect.DeepEqual(vm.Captures, wantCaptures[vm.Name]) {
-			t.Errorf("VM %s captures = %#v, want %#v", vm.Name, vm.Captures, wantCaptures[vm.Name])
+		got[vm.Name] = listed{
+			Captures: vm.Captures, Disk: vm.Disk, CCActive: vm.CCActive, IPv4: vm.IPv4, Uptime: vm.Uptime, RAM: vm.RAM,
 		}
+	}
 
-		if vm.Disk != wantDisks[vm.Name] {
-			t.Errorf("VM %s disk = %q, want %q", vm.Name, vm.Disk, wantDisks[vm.Name])
-		}
-
-		if vm.CCActive != (vm.Name == "a") {
-			t.Errorf("VM %s ccActive = %v", vm.Name, vm.CCActive)
-		}
-
-		if !reflect.DeepEqual(vm.IPv4, []string{"10.0.0.1"}) || vm.Uptime != 3600 || vm.RAM != 2048 {
-			t.Errorf("VM %s parsed wrong: %#v", vm.Name, vm)
-		}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GetVMInfo(exp) mismatch (-want +got):\n%s", diff)
 	}
 
 	cmds := received()
@@ -146,16 +159,19 @@ func TestGetVMInfoCommandsAndDiskCache(t *testing.T) { //nolint:paralleltest // 
 		"mesh send compute1 disk info": 1,
 	} {
 		if got := mmtest.Count(cmds, prefix); got != want {
-			t.Errorf("sent %d %q commands, want %d (all: %v)", got, prefix, want, cmds)
+			t.Errorf("GetVMInfo(exp) sent %d %q commands, want %d (all: %v)", got, prefix, want, cmds)
 		}
+	}
+
+	if len(cmds) != 6 {
+		t.Errorf("GetVMInfo(exp) sent %d commands, want 6 (all: %v)", len(cmds), cmds)
 	}
 
 	// Listing again reuses the snapshot disk details and headnode.
 	_ = Minimega{}.GetVMInfo(NS("exp"))
 
-	cmds = received()
-	if got := len(cmds); got != 9 {
-		t.Errorf("second listing sent %d more commands, want 3 (all: %v)", got-6, cmds)
+	if more := len(received()) - len(cmds); more != 3 {
+		t.Errorf("GetVMInfo(exp) again sent %d more commands, want 3 (all: %v)", more, received())
 	}
 
 	// A relaunched VM (a much younger uptime) is asked about again.
@@ -167,7 +183,7 @@ func TestGetVMInfoCommandsAndDiskCache(t *testing.T) { //nolint:paralleltest // 
 	_ = Minimega{}.GetVMInfo(NS("exp"))
 
 	if got := mmtest.Count(received(), "mesh send compute1 disk info"); got != 2 {
-		t.Errorf("relaunched VM's disk was asked about %d times, want 2", got)
+		t.Errorf("GetVMInfo(exp) after a relaunch asked about compute1's disk %d times in all, want 2", got)
 	}
 
 	// Killing VMs forgets everything known about the namespace.
@@ -175,7 +191,7 @@ func TestGetVMInfoCommandsAndDiskCache(t *testing.T) { //nolint:paralleltest // 
 	_ = Minimega{}.GetVMInfo(NS("exp"))
 
 	if got := mmtest.Count(received(), "disk info"); got != 2 {
-		t.Errorf("headnode VM's disk was asked about %d times after a kill, want 2", got)
+		t.Errorf("GetVMInfo(exp) after KillVM(b) asked about the headnode VM's disk %d times in all, want 2", got)
 	}
 }
 
@@ -213,15 +229,13 @@ func TestGetVMInfoNamesTheImageBehindASnapshot(t *testing.T) { //nolint:parallel
 		"plain":    "/f/plain.qc2",
 	}
 
-	vms := Minimega{}.GetVMInfo(NS("exp"))
-	if len(vms) != len(want) {
-		t.Fatalf("got %d VMs, want %d", len(vms), len(want))
+	got := make(map[string]string)
+	for _, vm := range (Minimega{}).GetVMInfo(NS("exp")) {
+		got[vm.Name] = vm.Disk
 	}
 
-	for _, vm := range vms {
-		if vm.Disk != want[vm.Name] {
-			t.Errorf("VM %s disk = %q, want %q", vm.Name, vm.Disk, want[vm.Name])
-		}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GetVMInfo(exp) disks by VM mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -284,24 +298,24 @@ func TestGetVMInfoMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest //
 	wg.Wait()
 
 	if err := <-held; err != nil {
-		t.Fatalf("holding command failed: %v", err)
+		t.Errorf("holding command error = %v", err)
 	}
 
 	if got := mmtest.Count(received(), vmInfoCmd); got != 1 {
-		t.Fatalf("sent %d vm info commands for %d concurrent callers, want 1", got, callers)
+		t.Errorf("%d concurrent GetVMInfo(exp) calls sent %d vm info commands, want 1", callers, got)
 	}
 
-	for i, vms := range results {
-		if len(vms) != 1 || vms[0].Name != "a" {
-			t.Fatalf("caller %d got %#v", i, vms)
+	for _, vms := range results {
+		if diff := cmp.Diff([]string{"a"}, vmNames(vms)); diff != "" {
+			t.Fatalf("concurrent GetVMInfo(exp) VM names mismatch (-want +got):\n%s", diff)
 		}
 	}
 
 	// Each caller has its own copy.
 	results[0][0].IPv4[0] = "changed"
 
-	if results[1][0].IPv4[0] != "10.0.0.1" {
-		t.Fatal("callers share a result's slices")
+	if got := results[1][0].IPv4[0]; got != "10.0.0.1" {
+		t.Errorf("another caller's IPv4[0] after one changed its result = %q, want %q", got, "10.0.0.1")
 	}
 }
 
@@ -321,7 +335,7 @@ func TestHeadnodeIsLookedUpOncePerTTL(t *testing.T) { //nolint:paralleltest // s
 	})
 
 	if got := (Minimega{}).Headnode(); got != "head" {
-		t.Fatalf("Headnode() = %q, want %q", got, "head")
+		t.Errorf("Headnode() = %q, want %q", got, "head")
 	}
 
 	age := func(d time.Duration) {
@@ -335,12 +349,12 @@ func TestHeadnodeIsLookedUpOncePerTTL(t *testing.T) { //nolint:paralleltest // s
 
 	for range 2 {
 		if got := (Minimega{}).Headnode(); got != "head" {
-			t.Fatalf("Headnode() = %q, want %q", got, "head")
+			t.Errorf("Headnode() within the TTL = %q, want %q", got, "head")
 		}
 	}
 
 	if got := mmtest.Count(received(), "host"); got != 1 {
-		t.Fatalf("sent %d host commands within the TTL, want 1", got)
+		t.Errorf("Headnode() within the TTL sent %d host commands in all, want 1", got)
 	}
 
 	// Expired: looked up again, and a failed lookup keeps the last known name.
@@ -349,11 +363,11 @@ func TestHeadnodeIsLookedUpOncePerTTL(t *testing.T) { //nolint:paralleltest // s
 	failing.Store(true)
 
 	if got := (Minimega{}).Headnode(); got != "head" {
-		t.Fatalf("Headnode() after a failed lookup = %q, want the last known %q", got, "head")
+		t.Errorf("Headnode() after a failed lookup = %q, want the last known %q", got, "head")
 	}
 
 	if got := mmtest.Count(received(), "host"); got != 2 {
-		t.Fatalf("sent %d host commands after the TTL, want 2", got)
+		t.Errorf("Headnode() after the TTL sent %d host commands in all, want 2", got)
 	}
 }
 
@@ -377,23 +391,27 @@ func TestNarrowVMQueries(t *testing.T) { //nolint:paralleltest // shares the fak
 		}
 	})
 
-	hosts := Minimega{}.GetVMHosts(NS("exp"))
-	if want := map[string]string{"a": "compute1", "b": "compute2"}; !reflect.DeepEqual(hosts, want) {
-		t.Fatalf("GetVMHosts = %v, want %v", hosts, want)
+	want := map[string]string{"a": "compute1", "b": "compute2"}
+	if diff := cmp.Diff(want, Minimega{}.GetVMHosts(NS("exp"))); diff != "" {
+		t.Errorf("GetVMHosts(exp) mismatch (-want +got):\n%s", diff)
 	}
 
 	ips, err := Minimega{}.GetVMIPv4(NS("exp"), VMName("a"))
-	if err != nil || !reflect.DeepEqual(ips, []string{"10.0.0.1", ""}) {
-		t.Fatalf("GetVMIPv4 = %#v, %v", ips, err)
+	if err != nil {
+		t.Errorf("GetVMIPv4(a) error = %v", err)
 	}
 
-	if _, err := (Minimega{}).GetVMIPv4(NS("exp"), VMName("missing")); err == nil {
-		t.Fatal("GetVMIPv4 found a missing VM")
+	if diff := cmp.Diff([]string{"10.0.0.1", ""}, ips); diff != "" {
+		t.Errorf("GetVMIPv4(a) mismatch (-want +got):\n%s", diff)
+	}
+
+	if ips, err := (Minimega{}).GetVMIPv4(NS("exp"), VMName("missing")); err == nil {
+		t.Errorf("GetVMIPv4(missing) = %q, nil; want an error", ips)
 	}
 
 	for _, cmd := range received() {
 		if !strings.Contains(cmd.Raw, ".columns") {
-			t.Fatalf("sent a vm info without columns: %q", cmd.Raw)
+			t.Errorf("GetVMHosts or GetVMIPv4 sent %q, want a vm info with columns", cmd.Raw)
 		}
 	}
 }
@@ -401,25 +419,22 @@ func TestNarrowVMQueries(t *testing.T) { //nolint:paralleltest // shares the fak
 func TestCloneVMsKeepsNilAndCopies(t *testing.T) {
 	t.Parallel()
 
-	if cloneVMs(nil) != nil {
-		t.Fatal("cloneVMs(nil) is not nil")
+	if got := cloneVMs(nil); got != nil {
+		t.Errorf("cloneVMs(nil) = %#v, want nil", got)
 	}
 
 	vms := VMs{{Name: "a", IPv4: []string{"1.1.1.1"}, Tags: map[string]string{"k": "v"}}, {Name: "b"}}
 	clone := cloneVMs(vms)
 
-	before, _ := json.Marshal(vms)
-	after, _ := json.Marshal(clone)
-
-	if string(before) != string(after) {
-		t.Fatalf("clone marshals differently:\n%s\n%s", before, after)
+	if diff := cmp.Diff(vms, clone); diff != "" {
+		t.Fatalf("cloneVMs(vms) mismatch (-want +got):\n%s", diff)
 	}
 
 	clone[0].IPv4[0] = "changed"
 	clone[0].Tags["k"] = "changed"
 
 	if vms[0].IPv4[0] != "1.1.1.1" || vms[0].Tags["k"] != "v" {
-		t.Fatal("clone shares slices or maps with the original")
+		t.Errorf("changing cloneVMs(vms) changed vms[0] to IPv4 %q, tags %v", vms[0].IPv4, vms[0].Tags)
 	}
 }
 
@@ -434,8 +449,8 @@ func TestParseList(t *testing.T) {
 		"[a, , c]":  {"a", "", "c"},
 		"[EXP (1)]": {"EXP (1)"},
 	} {
-		if got := parseList(in); !reflect.DeepEqual(got, want) {
-			t.Errorf("parseList(%q) = %#v, want %#v", in, got, want)
+		if diff := cmp.Diff(want, parseList(in)); diff != "" {
+			t.Errorf("parseList(%q) mismatch (-want +got):\n%s", in, diff)
 		}
 	}
 }
@@ -469,7 +484,7 @@ func TestVMLaunchSameAs(t *testing.T) {
 		"unknown":    {unknown, false},
 	} {
 		if got := base.sameAs(tc.other); got != tc.want {
-			t.Errorf("%s: sameAs = %v, want %v", name, got, tc.want)
+			t.Errorf("base.sameAs(%s launch %+v) = %v, want %v", name, tc.other, got, tc.want)
 		}
 	}
 }
@@ -482,7 +497,7 @@ func TestDiskUsageCommandAndParse(t *testing.T) {
 		`1=$(df /tmp/minimega | awk '{print $(NF-1)}' | tail -1)"`
 
 	if cmd != want {
-		t.Fatalf("diskUsageCommand =\n%s\nwant\n%s", cmd, want)
+		t.Errorf("diskUsageCommand(/phenix, /tmp/minimega) =\n%s\nwant\n%s", cmd, want)
 	}
 
 	for resp, want := range map[string]map[int]float64{
@@ -492,8 +507,8 @@ func TestDiskUsageCommandAndParse(t *testing.T) {
 		"":            {},
 		"0=1% 7=2%":   {0: 1},
 	} {
-		if got := parseDiskUsage(resp, 2); !reflect.DeepEqual(got, want) {
-			t.Errorf("parseDiskUsage(%q) = %v, want %v", resp, got, want)
+		if diff := cmp.Diff(want, parseDiskUsage(resp, 2)); diff != "" {
+			t.Errorf("parseDiskUsage(%q, 2) mismatch (-want +got):\n%s", resp, diff)
 		}
 	}
 }
@@ -518,20 +533,20 @@ func TestGetVMInfoObservedReportsErrors(t *testing.T) { //nolint:paralleltest //
 
 	vms, obs := Minimega{}.GetVMInfoObserved(NS("exp"))
 	if obs.Known || obs.Err == nil || !strings.Contains(obs.Err.Error(), "not answering") {
-		t.Fatalf("observation = %+v, want unknown with minimega's error", obs)
+		t.Errorf("GetVMInfoObserved(exp) observation = %+v, want unknown with minimega's error", obs)
 	}
 
 	if obs.At.Before(before) || obs.At.After(time.Now()) {
-		t.Errorf("observed at %v, not during the call", obs.At)
+		t.Errorf("GetVMInfoObserved(exp) observed at %v, want during the call from %v", obs.At, before)
 	}
 
-	if len(vms) != 1 || vms[0].Name != "b" {
-		t.Errorf("VMs = %v, want the headnode's b", vms)
+	if diff := cmp.Diff([]string{"b"}, vmNames(vms)); diff != "" {
+		t.Errorf("GetVMInfoObserved(exp) VM names mismatch (-want +got):\n%s", diff)
 	}
 
 	// GetVMInfo has no error to return; it logs it and answers what it read
-	if vms := (Minimega{}).GetVMInfo(NS("exp")); len(vms) != 1 {
-		t.Errorf("GetVMInfo = %v, want the headnode's b", vms)
+	if diff := cmp.Diff([]string{"b"}, vmNames(Minimega{}.GetVMInfo(NS("exp")))); diff != "" {
+		t.Errorf("GetVMInfo(exp) VM names mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -561,6 +576,6 @@ func TestGetVMInfoObservedWhenRead(t *testing.T) { //nolint:paralleltest // shar
 	defer mu.Unlock()
 
 	if !obs.Known || obs.Err != nil || obs.At.IsZero() || obs.At.After(firstCommand) {
-		t.Errorf("observation = %+v with the first command at %v, want known, at or before it", obs, firstCommand)
+		t.Errorf("GetVMInfoObserved(exp) observation = %+v with the first command at %v, want known, at or before it", obs, firstCommand)
 	}
 }

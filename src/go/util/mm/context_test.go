@@ -3,13 +3,13 @@ package mm
 import (
 	"context"
 	"errors"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
@@ -73,14 +73,14 @@ func TestGetVMInfoGivesUpWithItsContext(t *testing.T) { //nolint:paralleltest //
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("GetVMInfoObserved reported %v, want %v", err, context.Canceled)
+			t.Errorf("GetVMInfoObserved(canceled ctx) error = %v, want %v", err, context.Canceled)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("GetVMInfoObserved kept waiting after its context was canceled")
+		t.Fatal("GetVMInfoObserved(canceled ctx) kept waiting after its context was canceled")
 	}
 
-	if got := mmtest.Bases(received()); !slices.Equal(got, []string{"hold"}) {
-		t.Fatalf("minimega received %q, want only the hold", got)
+	if diff := cmp.Diff([]string{"hold"}, mmtest.Bases(received())); diff != "" {
+		t.Errorf("GetVMInfoObserved(canceled ctx) sent commands mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestChangesFinishOnceStarted(t *testing.T) { //nolint:paralleltest // share
 			})
 
 			if err := tc.call(ctx); err != nil {
-				t.Fatalf("the call failed: %v", err)
+				t.Errorf("call canceled at %q error = %v", tc.first, err)
 			}
 
 			var got []string
@@ -140,8 +140,8 @@ func TestChangesFinishOnceStarted(t *testing.T) { //nolint:paralleltest // share
 				}
 			}
 
-			if !slices.Equal(got, tc.want) {
-				t.Fatalf("minimega received %q, want %q", got, tc.want)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("call canceled at %q sent commands mismatch (-want +got):\n%s", tc.first, diff)
 			}
 		})
 	}
@@ -158,33 +158,33 @@ func TestReadsReportTheirContextEnding(t *testing.T) { //nolint:paralleltest // 
 	opts := []Option{NS("exp"), VMName("vm1"), Context(ctx)}
 
 	reads := map[string]func() error{
-		"state": func() error {
+		"GetVMState": func() error {
 			_, err := GetVMState(opts...)
 
 			return err
 		},
-		"host": func() error {
+		"GetVMHost": func() error {
 			_, err := GetVMHost(opts...)
 
 			return err
 		},
-		"screenshot": func() error {
+		"GetVMScreenshot": func() error {
 			_, err := GetVMScreenshot(opts...)
 
 			return err
 		},
-		"capture stop": func() error { return StopVMCapture(opts...) },
-		"redeploy":     func() error { return RedeployVM(opts...) },
+		"StopVMCapture": func() error { return StopVMCapture(opts...) },
+		"RedeployVM":    func() error { return RedeployVM(opts...) },
 	}
 
 	for name, read := range reads {
 		if err := read(); !errors.Is(err, context.Canceled) {
-			t.Errorf("%s: got %v, want %v", name, err, context.Canceled)
+			t.Errorf("%s(vm1, canceled ctx) error = %v, want %v", name, err, context.Canceled)
 		}
 	}
 
 	if got := received(); len(got) != 0 {
-		t.Fatalf("minimega received %q, want nothing", mmtest.Bases(got))
+		t.Errorf("reads with a canceled ctx sent %q, want nothing", mmtest.Bases(got))
 	}
 }
 
@@ -224,7 +224,7 @@ func TestCloseTunnelGivesUpWithItsContext(t *testing.T) { //nolint:paralleltest 
 			})
 
 			if err := CloseTunnel(NS("exp"), VMName("vm1"), Context(ctx)); !errors.Is(err, context.Canceled) {
-				t.Fatalf("CloseTunnel reported %v, want %v", err, context.Canceled)
+				t.Errorf("CloseTunnel(vm1) canceled at %q error = %v, want %v", tc.cancelOn, err, context.Canceled)
 			}
 
 			var closes []string
@@ -235,8 +235,8 @@ func TestCloseTunnelGivesUpWithItsContext(t *testing.T) { //nolint:paralleltest 
 				}
 			}
 
-			if !slices.Equal(closes, tc.want) {
-				t.Fatalf("minimega received closes %q, want %q", closes, tc.want)
+			if diff := cmp.Diff(tc.want, closes); diff != "" {
+				t.Errorf("CloseTunnel(vm1) canceled at %q sent closes mismatch (-want +got):\n%s", tc.cancelOn, diff)
 			}
 		})
 	}
@@ -259,16 +259,16 @@ func TestClusterHostsGiveUpWithTheirContext(t *testing.T) { //nolint:paralleltes
 	})
 
 	if _, _, err := (Minimega{}).GetClusterHostsObserved(ctx, false); !errors.Is(err, context.Canceled) {
-		t.Fatalf("GetClusterHostsObserved reported %v, want %v", err, context.Canceled)
+		t.Errorf("GetClusterHostsObserved(ctx canceled at mesh list peers) error = %v, want %v", err, context.Canceled)
 	}
 
 	want := []string{"minimega: host", "mesh list peers"}
-	if got := hostCommands(received()); !slices.Equal(got, want) {
-		t.Fatalf("minimega received %q, want %q", got, want)
+	if diff := cmp.Diff(want, hostCommands(received())); diff != "" {
+		t.Errorf("GetClusterHostsObserved(ctx canceled at mesh list peers) sent commands mismatch (-want +got):\n%s", diff)
 	}
 
 	if _, _, ok := recentHosts.get(); ok {
-		t.Fatal("the list that gave up was kept for later callers")
+		t.Error("GetClusterHostsObserved(ctx canceled at mesh list peers) kept its partial list for later callers")
 	}
 }
 
@@ -293,10 +293,10 @@ func TestGetVMInfoReportsFollowUpsThatGaveUp(t *testing.T) { //nolint:parallelte
 
 	vms, err := (Minimega{}).getVMInfo(NewOptions(NS("exp"), Context(ctx)), nil)
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("getVMInfo = %v, %v; want %v", vms, err, context.Canceled)
+		t.Errorf("getVMInfo(ctx canceled at vm info) = %v, %v; want %v", vms, err, context.Canceled)
 	}
 
 	if n := mmtest.Count(received(), captureCmd); n != 0 {
-		t.Fatalf("minimega received %d capture listings, want none", n)
+		t.Errorf("getVMInfo(ctx canceled at vm info) sent %d capture listings, want 0", n)
 	}
 }

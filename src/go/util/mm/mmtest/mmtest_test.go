@@ -1,10 +1,10 @@
 package mmtest_test
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
@@ -27,22 +27,23 @@ func TestFakeAnswersAndRecordsCommands(t *testing.T) {
 	info.Columns = []string{"name", "src port"}
 	info.Filters = []string{"'src port'=22", "name=vm1"}
 
-	if rows := mmcli.RunTabular(info); len(rows) != 1 || rows[0]["name"] != "vm1" {
-		t.Fatalf("vm info rows = %v, want vm1's", rows)
+	wantRows := []map[string]string{{"name": "vm1", "src port": "22"}}
+	if diff := cmp.Diff(wantRows, mmcli.RunTabular(info)); diff != "" {
+		t.Errorf("RunTabular(vm info) mismatch (-want +got):\n%s", diff)
 	}
 
 	version := mmcli.NewCommand()
 	version.Command = "version"
 
 	if err := mmcli.ErrorResponse(mmcli.Run(version)); err != nil {
-		t.Fatalf("unanswered command failed: %v", err)
+		t.Errorf("Run(version) with no answer from the handler error = %v, want nil", err)
 	}
 
 	quit := mmcli.NewCommand()
 	quit.Command = "quit"
 
 	if err := mmcli.ErrorResponse(mmcli.Run(quit)); err == nil {
-		t.Fatal("command answered by a disconnect succeeded")
+		t.Error("Run(quit) answered by Disconnect error = nil, want a lost connection")
 	}
 
 	want := []mmtest.Command{
@@ -51,16 +52,16 @@ func TestFakeAnswersAndRecordsCommands(t *testing.T) {
 		{Raw: quit.String(), Namespace: "", Base: "quit"},
 	}
 
-	if got := received(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("received\n%+v\nwant\n%+v", got, want)
+	if diff := cmp.Diff(want, received()); diff != "" {
+		t.Errorf("received() mismatch (-want +got):\n%s", diff)
 	}
 
-	if got := mmtest.Bases(want); !reflect.DeepEqual(got, []string{"vm info", "version", "quit"}) {
-		t.Fatalf("Bases = %q", got)
+	if diff := cmp.Diff([]string{"vm info", "version", "quit"}, mmtest.Bases(want)); diff != "" {
+		t.Errorf("Bases(%+v) mismatch (-want +got):\n%s", want, diff)
 	}
 
 	if got := mmtest.Count(want, "v"); got != 2 {
-		t.Fatalf("Count(v) = %d, want 2", got)
+		t.Errorf("Count(%+v, %q) = %d, want 2", want, "v", got)
 	}
 
 	mmtest.Await(t, "quit")

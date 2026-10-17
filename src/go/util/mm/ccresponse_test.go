@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
@@ -127,15 +128,15 @@ func TestWaitForResponseSharesPolling(t *testing.T) { //nolint:paralleltest // s
 
 	for i, err := range errs {
 		if err != nil {
-			t.Fatalf("waiter %d: %v", i, err)
+			t.Errorf("waitForResponse(exp, %s) error = %v", fake.ids[i], err)
 		}
 	}
 
 	polls := int(fake.polls.Load())
 
 	// at most one poll per interval for all the waiters together
-	if limit := int(elapsed/interval) + 2; polls > limit || polls >= count/2 {
-		t.Fatalf("%d waiters polled %d times in %v, want at most %d", count, polls, elapsed, limit)
+	if limit := min(int(elapsed/interval)+2, count/2-1); polls > limit {
+		t.Errorf("%d waitForResponse callers polled %d times in %v, want at most %d", count, polls, elapsed, limit)
 	}
 
 	t.Logf("%d waiters, %d polls in %v", count, polls, elapsed)
@@ -152,14 +153,17 @@ func TestWaitForResponseSingleCommandIsFiltered(t *testing.T) { //nolint:paralle
 	useFastPolling(t, time.Millisecond)
 
 	if err := waitForResponse(context.Background(), "exp", "7", time.Second); err != nil {
-		t.Fatalf("waitForResponse: %v", err)
+		t.Errorf("waitForResponse(exp, 7) error = %v", err)
 	}
 
-	cmds := received()
+	want := []mmtest.Command{{
+		Raw:       `.record false namespace "exp" .columns "id","responses" .filter id=7 cc commands`,
+		Namespace: "exp",
+		Base:      "cc commands",
+	}}
 
-	want := `.record false namespace "exp" .columns "id","responses" .filter id=7 cc commands`
-	if len(cmds) != 1 || cmds[0].Raw != want {
-		t.Fatalf("sent %v, want only %q", cmds, want)
+	if diff := cmp.Diff(want, received()); diff != "" {
+		t.Errorf("waitForResponse(exp, 7) sent commands mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -178,17 +182,17 @@ func TestWaitForResponseTimesOut(t *testing.T) { //nolint:paralleltest // shares
 
 	err := waitForResponse(context.Background(), "exp", "1", 50*time.Millisecond)
 	if err == nil || err.Error() != "timeout waiting for response for command 1" {
-		t.Fatalf("waitForResponse = %v, want a timeout", err)
+		t.Errorf("waitForResponse(exp, 1, 50ms) error = %v, want a timeout", err)
 	}
 
 	if got := waiters("exp"); got != 1 {
-		t.Fatalf("%d waiters left, want only the other command's", got)
+		t.Errorf("waiters(exp) after waitForResponse(exp, 1) timed out = %d, want 1", got)
 	}
 
 	fake.answered.Store(true)
 
 	if err := <-errc; err != nil {
-		t.Fatalf("other waiter: %v", err)
+		t.Errorf("waitForResponse(exp, 2) error = %v", err)
 	}
 }
 
@@ -208,7 +212,7 @@ func TestWaitForResponseCanceled(t *testing.T) { //nolint:paralleltest // shares
 	cancel()
 
 	if err := <-errc; !errors.Is(err, context.Canceled) {
-		t.Fatalf("waitForResponse = %v, want context.Canceled", err)
+		t.Errorf("waitForResponse(exp, 1) canceled while waiting = %v, want %v", err, context.Canceled)
 	}
 
 	waitForNoPollers(t)
@@ -217,16 +221,16 @@ func TestWaitForResponseCanceled(t *testing.T) { //nolint:paralleltest // shares
 	sent := len(received())
 
 	if err := waitForResponse(ctx, "exp", "1", time.Minute); !errors.Is(err, context.Canceled) {
-		t.Fatalf("waitForResponse = %v, want context.Canceled", err)
+		t.Errorf("waitForResponse(canceled ctx, exp, 1) = %v, want %v", err, context.Canceled)
 	}
 
 	err := waitForResponse(context.Background(), "exp", "1", 0)
 	if err == nil || err.Error() != "timeout waiting for response for command 1" {
-		t.Fatalf("waitForResponse = %v, want a timeout", err)
+		t.Errorf("waitForResponse(exp, 1, 0 timeout) error = %v, want a timeout", err)
 	}
 
 	if got := len(received()); got != sent {
-		t.Fatalf("sent %d commands after giving up", got-sent)
+		t.Errorf("waitForResponse with a canceled ctx or no time left sent %d commands, want 0", got-sent)
 	}
 }
 
@@ -246,7 +250,7 @@ func TestWaitForResponseNamespacesPollSeparately(t *testing.T) { //nolint:parall
 			defer wg.Done()
 
 			if err := waitForResponse(context.Background(), ns, "1", time.Second); err != nil {
-				t.Errorf("waitForResponse(%s): %v", ns, err)
+				t.Errorf("waitForResponse(%s, 1) error = %v", ns, err)
 			}
 		}()
 	}
@@ -259,7 +263,7 @@ func TestWaitForResponseNamespacesPollSeparately(t *testing.T) { //nolint:parall
 		seen[cmd.Namespace] = true
 	}
 
-	if !seen["a"] || !seen["b"] {
-		t.Fatalf("polled namespaces %v, want a and b", seen)
+	if diff := cmp.Diff(map[string]bool{"a": true, "b": true}, seen); diff != "" {
+		t.Errorf("waitForResponse(a, 1) and waitForResponse(b, 1) polled namespaces mismatch (-want +got):\n%s", diff)
 	}
 }
