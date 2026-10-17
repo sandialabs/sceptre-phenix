@@ -2640,9 +2640,12 @@ describe('a document after any edits', () => {
       return 'a connection has a missing end';
     }
 
-    expect(decodeDocument(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+    // Read back the same, keys in the same order.
+    const text = JSON.stringify(doc);
 
-    return '';
+    return JSON.stringify(decodeDocument(JSON.parse(text))) === text
+      ? ''
+      : 'the document reads back changed';
   }
 
   // Whether a node's box lies inside its group's box.
