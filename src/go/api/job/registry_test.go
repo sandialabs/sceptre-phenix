@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/util/polltest"
 )
@@ -146,6 +150,7 @@ func TestFinalStatus(t *testing.T) {
 			items:   []string{"a", "b"},
 			results: map[string]string{"a": "ok", "b": "ok"},
 			status:  StatusSucceeded,
+			item:    map[string]ItemStatus{"a": ItemSucceeded, "b": ItemSucceeded},
 		},
 		"some fail": {
 			items:   []string{"a", "b"},
@@ -157,13 +162,14 @@ func TestFinalStatus(t *testing.T) {
 			items:   []string{"a", "b"},
 			results: map[string]string{"a": "ok", "b": "skip"},
 			status:  StatusPartial,
-			item:    map[string]ItemStatus{"b": ItemSkipped},
+			item:    map[string]ItemStatus{"a": ItemSucceeded, "b": ItemSkipped},
 		},
 		"all fail": {
 			items:   []string{"a", "b"},
 			results: map[string]string{"a": "fail", "b": "fail"},
 			status:  StatusFailed,
 			jobErr:  "every item failed",
+			item:    map[string]ItemStatus{"a": ItemFailed, "b": ItemFailed},
 		},
 		"run error without items": {
 			err:    errors.New("disk full"),
@@ -189,27 +195,34 @@ func TestFinalStatus(t *testing.T) {
 
 			started, err := r.Start(Spec{Kind: "test", Owner: "alice", Items: tc.items, Run: outcomes(tc.results, tc.err)})
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("Start() error = %v", err)
 			}
 
 			j := wait(t, r, started.ID)
 
-			if j.Status != tc.status || j.Error != tc.jobErr {
-				t.Errorf("job is %s (%q), want %s (%q)", j.Status, j.Error, tc.status, tc.jobErr)
+			if j.Status != tc.status {
+				t.Errorf("finished job Status = %s, want %s", j.Status, tc.status)
+			}
+
+			if j.Error != tc.jobErr {
+				t.Errorf("finished job Error = %q, want %q", j.Error, tc.jobErr)
 			}
 
 			if j.Progress.Done != j.Progress.Total {
-				t.Errorf("progress %d/%d, want all done", j.Progress.Done, j.Progress.Total)
+				t.Errorf("finished job Progress = %d/%d, want all done", j.Progress.Done, j.Progress.Total)
 			}
 
-			if j.Finished == nil || j.Started == nil {
-				t.Error("finished job lacks its start or finish time")
+			if j.Started == nil || j.Finished == nil {
+				t.Errorf("finished job Started = %v, Finished = %v, want both set", j.Started, j.Finished)
 			}
 
+			got := make(map[string]ItemStatus, len(j.Items))
 			for _, item := range j.Items {
-				if want, ok := tc.item[item.Name]; ok && item.Status != want {
-					t.Errorf("item %s is %s, want %s", item.Name, item.Status, want)
-				}
+				got[item.Name] = item.Status
+			}
+
+			if diff := cmp.Diff(tc.item, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("finished job item statuses mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -232,11 +245,20 @@ func TestItemOutcomes(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
-	if len(started.Items) != 3 || started.Progress.Total != 3 {
-		t.Fatalf("items %v (total %d), want a, b and c once each", started.Items, started.Progress.Total)
+	names := make([]string, 0, len(started.Items))
+	for _, item := range started.Items {
+		names = append(names, item.Name)
+	}
+
+	if diff := cmp.Diff([]string{"a", "b", "c"}, names); diff != "" {
+		t.Errorf("Start(items a, b, a, c) item names mismatch (-want +got):\n%s", diff)
+	}
+
+	if started.Progress.Total != 3 {
+		t.Errorf("Start(items a, b, a, c) Progress.Total = %d, want 3", started.Progress.Total)
 	}
 
 	j := wait(t, r, started.ID)
@@ -247,12 +269,8 @@ func TestItemOutcomes(t *testing.T) {
 		{Name: "c", Status: ItemSkipped, Error: "you don't have permission"},
 	}
 
-	for i, item := range j.Items {
-		w := want[i]
-		if item.Name != w.Name || item.Status != w.Status || item.Error != w.Error ||
-			item.Retryable != w.Retryable || string(item.Result) != string(w.Result) {
-			t.Errorf("item %d = %+v, want %+v", i, item, w)
-		}
+	if diff := cmp.Diff(want, j.Items); diff != "" {
+		t.Errorf("finished job items mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -279,18 +297,22 @@ func TestCancel(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
 	<-first
 
 	canceling, err := r.Cancel(started.ID)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Cancel(running job) error = %v", err)
 	}
 
-	if !canceling.CancelRequested || canceling.Status != StatusRunning {
-		t.Errorf("canceling job is %s, cancel requested %t", canceling.Status, canceling.CancelRequested)
+	if canceling.Status != StatusRunning {
+		t.Errorf("Cancel(running job) Status = %s, want %s", canceling.Status, StatusRunning)
+	}
+
+	if !canceling.CancelRequested {
+		t.Error("Cancel(running job) CancelRequested = false, want true")
 	}
 
 	close(release)
@@ -298,21 +320,25 @@ func TestCancel(t *testing.T) {
 	j := wait(t, r, started.ID)
 
 	if j.Status != StatusCanceled {
-		t.Errorf("status %s, want canceled", j.Status)
+		t.Errorf("canceled job Status = %s, want %s", j.Status, StatusCanceled)
 	}
 
-	for name, want := range map[int]ItemStatus{0: ItemSucceeded, 1: ItemCanceled, 2: ItemCanceled} {
-		if j.Items[name].Status != want {
-			t.Errorf("item %s is %s, want %s", j.Items[name].Name, j.Items[name].Status, want)
-		}
+	got := make(map[string]ItemStatus, len(j.Items))
+	for _, item := range j.Items {
+		got[item.Name] = item.Status
+	}
+
+	want := map[string]ItemStatus{"a": ItemSucceeded, "b": ItemCanceled, "c": ItemCanceled}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("canceled job item statuses mismatch (-want +got):\n%s", diff)
 	}
 
 	if _, err := r.Cancel(started.ID); !errors.Is(err, ErrFinished) {
-		t.Errorf("canceling a finished job: %v, want ErrFinished", err)
+		t.Errorf("Cancel(finished job) error = %v, want %v", err, ErrFinished)
 	}
 
 	if _, err := r.Cancel("jnope"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("canceling an unknown job: %v, want ErrNotFound", err)
+		t.Errorf("Cancel(%q) error = %v, want %v", "jnope", err, ErrNotFound)
 	}
 }
 
@@ -328,33 +354,33 @@ func TestCancelNotCancelable(t *testing.T) {
 		return nil
 	}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
 	if _, err := r.Cancel(started.ID); !errors.Is(err, ErrNotCancelable) {
-		t.Errorf("Cancel = %v, want ErrNotCancelable", err)
+		t.Errorf("Cancel(job that cannot be canceled) error = %v, want %v", err, ErrNotCancelable)
 	}
 
 	if err := r.Remove(started.ID); !errors.Is(err, ErrActive) {
-		t.Errorf("removing a running job: %v, want ErrActive", err)
+		t.Errorf("Remove(running job) error = %v, want %v", err, ErrActive)
 	}
 
 	close(release)
 
 	if j := wait(t, r, started.ID); j.Status != StatusSucceeded {
-		t.Errorf("status %s, want succeeded", j.Status)
+		t.Errorf("finished job Status = %s, want %s", j.Status, StatusSucceeded)
 	}
 
 	if err := r.Remove(started.ID); err != nil {
-		t.Errorf("removing a finished job: %v", err)
+		t.Errorf("Remove(finished job) error = %v, want nil", err)
 	}
 
 	if _, ok := r.Get(started.ID); ok {
-		t.Error("removed job is still listed")
+		t.Error("Get(removed job) ok = true, want false")
 	}
 
 	if err := r.Remove(started.ID); !errors.Is(err, ErrNotFound) {
-		t.Errorf("removing it again: %v, want ErrNotFound", err)
+		t.Errorf("Remove(removed job) error = %v, want %v", err, ErrNotFound)
 	}
 }
 
@@ -379,7 +405,7 @@ func TestLimitsQueueJobs(t *testing.T) {
 			return nil
 		}})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("Start(%s's job %s) error = %v", owner, name, err)
 		}
 
 		return j
@@ -391,18 +417,26 @@ func TestLimitsQueueJobs(t *testing.T) {
 	c1 := start("carol", "c1")
 	a3 := start("alice", "a3")
 
-	for j, want := range map[*Job]Status{&a1: StatusRunning, &a2: StatusQueued, &b1: StatusRunning, &c1: StatusQueued, &a3: StatusQueued} {
-		if j.Status != want {
-			t.Errorf("%s started %s, want %s", j.Title, j.Status, want)
-		}
+	got := map[string]Status{}
+	for _, j := range []Job{a1, a2, b1, c1, a3} {
+		got[j.Title] = j.Status
+	}
+
+	want := map[string]Status{
+		"a1": StatusRunning, "a2": StatusQueued, "b1": StatusRunning, "c1": StatusQueued, "a3": StatusQueued,
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Start() statuses by title mismatch (-want +got):\n%s", diff)
 	}
 
 	if _, err := r.Cancel(a3.ID); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Cancel(queued job) error = %v", err)
 	}
 
-	if j, _ := r.Get(a3.ID); j.Status != StatusCanceled || j.Started != nil {
-		t.Errorf("canceled queued job is %s, started %v", j.Status, j.Started)
+	if j, _ := r.Get(a3.ID); j.Status != StatusCanceled {
+		t.Errorf("canceled queued job Status = %s, want %s", j.Status, StatusCanceled)
+	} else if j.Started != nil {
+		t.Errorf("canceled queued job Started = %v, want nil", j.Started)
 	}
 
 	// alice's next job waits for alice's slot, carol's for the global one
@@ -410,7 +444,7 @@ func TestLimitsQueueJobs(t *testing.T) {
 	waitStatus(t, r, a2.ID, StatusRunning)
 
 	if j, _ := r.Get(c1.ID); j.Status != StatusQueued {
-		t.Errorf("c1 is %s while two jobs run, want queued", j.Status)
+		t.Errorf("c1 Status while two jobs run = %s, want %s", j.Status, StatusQueued)
 	}
 
 	close(release["b1"])
@@ -443,7 +477,7 @@ func TestListFilters(t *testing.T) {
 			return nil
 		}})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("Start(%s %s job in %s) error = %v", owner, kind, exp, err)
 		}
 
 		clock.Advance(time.Second)
@@ -467,14 +501,18 @@ func TestListFilters(t *testing.T) {
 		"kind":              {Filter{Kind: "files.archive"}, []string{active.ID}},
 		"active":            {Filter{Active: true}, []string{bobs.ID, active.ID}},
 	} {
-		got := make([]string, 0, len(tc.want))
-		for _, j := range r.List(tc.filter) {
-			got = append(got, j.ID)
-		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-		if fmt.Sprint(got) != fmt.Sprint(tc.want) {
-			t.Errorf("%s: listed %v, want %v", name, got, tc.want)
-		}
+			got := make([]string, 0, len(tc.want))
+			for _, j := range r.List(tc.filter) {
+				got = append(got, j.ID)
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("List(%+v) IDs mismatch (-want +got):\n%s", tc.filter, diff)
+			}
+		})
 	}
 }
 
@@ -506,30 +544,32 @@ func TestRetention(t *testing.T) {
 		return run.SetArtifact(path, "out.zip", false)
 	}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
 	j := wait(t, r, started.ID)
-	if j.Artifact == nil || j.Artifact.Size != 3 || j.Artifact.Name != "out.zip" {
-		t.Fatalf("artifact %+v, want out.zip of 3 bytes", j.Artifact)
+
+	wantArtifact := &Artifact{Name: "out.zip", Size: 3}
+	if diff := cmp.Diff(wantArtifact, j.Artifact, cmpopts.IgnoreFields(Artifact{}, "Path")); diff != "" {
+		t.Errorf("finished job Artifact mismatch (-want +got):\n%s", diff)
 	}
 
 	clock.Advance(DefaultRetention - time.Second)
 	r.Sweep()
 
 	if _, ok := r.Get(started.ID); !ok {
-		t.Fatal("job forgotten before its retention ended")
+		t.Error("Get(job within its retention) ok = false, want true")
 	}
 
 	clock.Advance(time.Second)
 	r.Sweep()
 
 	if _, ok := r.Get(started.ID); ok {
-		t.Fatal("job kept after its retention")
+		t.Error("Get(job past its retention) ok = true, want false")
 	}
 
 	if _, err := os.Stat(filepath.Join(dir, started.ID)); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("artifact folder left behind: %v", err)
+		t.Errorf("os.Stat(artifact folder of a forgotten job) error = %v, want %v", err, os.ErrNotExist)
 	}
 
 	// three finished jobs, two kept
@@ -538,7 +578,7 @@ func TestRetention(t *testing.T) {
 	for range 3 {
 		j, err := r.Start(Spec{Kind: "test", Owner: "alice", Run: withArtifact})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("Start() error = %v", err)
 		}
 
 		wait(t, r, j.ID)
@@ -548,17 +588,17 @@ func TestRetention(t *testing.T) {
 	}
 
 	if _, ok := r.Get(ids[0]); ok {
-		t.Error("oldest finished job kept beyond the most kept")
+		t.Error("Get(oldest of three finished jobs, two kept) ok = true, want false")
 	}
 
 	// sent once the finishing job's lock is released
-	want := fmt.Sprint([]string{started.ID, ids[0]})
+	want := []string{started.ID, ids[0]}
 
-	polltest.Until(t, "removal notifications for "+want, func() bool {
+	polltest.Until(t, fmt.Sprintf("removal notifications for %v", want), func() bool {
 		n.mu.Lock()
 		defer n.mu.Unlock()
 
-		return fmt.Sprint(n.gone) == want
+		return slices.Equal(n.gone, want)
 	})
 }
 
@@ -583,35 +623,40 @@ func TestNotificationsThrottleProgress(t *testing.T) {
 		return nil
 	}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
 	close(release)
 
 	j := wait(t, r, started.ID)
 	if j.Progress.Bytes != 1000 {
-		t.Errorf("bytes %d, want 1000", j.Progress.Bytes)
+		t.Errorf("finished job Progress.Bytes = %d, want 1000", j.Progress.Bytes)
 	}
 
 	got := n.of(started.ID)
 
 	// running, at most one progress update within the hour, then succeeded
 	if len(got) < 2 || len(got) > 3 {
-		t.Fatalf("%d notifications, want running, at most one progress and succeeded", len(got))
+		t.Fatalf("notifications = %d, want 2 or 3 (running, at most one progress, succeeded)", len(got))
 	}
 
-	if got[0].Status != StatusRunning || got[len(got)-1].Status != StatusSucceeded {
-		t.Errorf("first notification %s, last %s", got[0].Status, got[len(got)-1].Status)
+	if got[0].Status != StatusRunning {
+		t.Errorf("first notification Status = %s, want %s", got[0].Status, StatusRunning)
+	}
+
+	last := got[len(got)-1]
+	if last.Status != StatusSucceeded {
+		t.Errorf("last notification Status = %s, want %s", last.Status, StatusSucceeded)
+	}
+
+	if last.Progress.Bytes != 1000 {
+		t.Errorf("last notification Progress.Bytes = %d, want 1000", last.Progress.Bytes)
 	}
 
 	for i := 1; i < len(got); i++ {
 		if got[i].Revision <= got[i-1].Revision {
-			t.Errorf("revision %d follows %d", got[i].Revision, got[i-1].Revision)
+			t.Errorf("notification Revision = %d after %d, want it to grow", got[i].Revision, got[i-1].Revision)
 		}
-	}
-
-	if last := got[len(got)-1]; last.Progress.Bytes != 1000 {
-		t.Errorf("final notification has %d bytes, want 1000", last.Progress.Bytes)
 	}
 }
 
@@ -633,7 +678,7 @@ func TestThrottledProgressIsSentLater(t *testing.T) {
 		return nil
 	}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
 	defer close(release)
@@ -641,7 +686,7 @@ func TestThrottledProgressIsSentLater(t *testing.T) {
 	polltest.Until(t, "the held back progress update is sent", func() bool {
 		got := n.of(started.ID)
 
-		return got[len(got)-1].Progress.Bytes == 2
+		return len(got) > 0 && got[len(got)-1].Progress.Bytes == 2
 	})
 }
 
@@ -656,7 +701,7 @@ func TestSnapshotsAreCopies(t *testing.T) {
 		Run: outcomes(map[string]string{"a": "ok"}, nil),
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
 	j := wait(t, r, started.ID)
@@ -667,16 +712,28 @@ func TestSnapshotsAreCopies(t *testing.T) {
 	j.Finished = nil
 
 	again, _ := r.Get(started.ID)
-	if again.Items[0].Status != ItemSucceeded || again.Items[0].Result[0] != '{' ||
-		again.Params["action"] != "start" || again.Finished == nil {
-		t.Errorf("changing a snapshot changed the registry: %+v", again)
+
+	if again.Items[0].Status != ItemSucceeded {
+		t.Errorf("Get() after changing a snapshot: Items[0].Status = %s, want %s", again.Items[0].Status, ItemSucceeded)
+	}
+
+	if want := `{"name":"a"}`; string(again.Items[0].Result) != want {
+		t.Errorf("Get() after changing a snapshot: Items[0].Result = %s, want %s", again.Items[0].Result, want)
+	}
+
+	if again.Params["action"] != "start" {
+		t.Errorf("Get() after changing a snapshot: Params[action] = %q, want %q", again.Params["action"], "start")
+	}
+
+	if again.Finished == nil {
+		t.Error("Get() after changing a snapshot: Finished = nil, want set")
 	}
 
 	listed := r.List(Filter{})
 	listed[0].Items[0].Name = "b"
 
 	if again, _ := r.Get(started.ID); again.Items[0].Name != "a" {
-		t.Error("changing a listed job changed the registry")
+		t.Errorf("Get() after changing a listed job: Items[0].Name = %q, want %q", again.Items[0].Name, "a")
 	}
 }
 
@@ -720,14 +777,23 @@ func TestConcurrentItems(t *testing.T) {
 		return nil
 	}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
 	j := wait(t, r, started.ID)
 
+	type outcome struct {
+		Succeeded, Failed int
+		Bytes             int64
+		Status            Status
+	}
+
 	succeeded, failed, _, _ := j.Counts()
-	if succeeded != 100 || failed != 100 || j.Progress.Bytes != 200 || j.Status != StatusPartial {
-		t.Errorf("%d succeeded, %d failed, %d bytes, %s; want 100, 100, 200, partial", succeeded, failed, j.Progress.Bytes, j.Status)
+	got := outcome{Succeeded: succeeded, Failed: failed, Bytes: j.Progress.Bytes, Status: j.Status}
+	want := outcome{Succeeded: 100, Failed: 100, Bytes: 200, Status: StatusPartial}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("finished job outcome mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -741,11 +807,17 @@ func TestPanicFailsTheJob(t *testing.T) {
 		panic("boom")
 	}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
-	if j := wait(t, r, started.ID); j.Status != StatusFailed || j.Error == "" {
-		t.Errorf("job is %s (%q), want failed with an error", j.Status, j.Error)
+	j := wait(t, r, started.ID)
+
+	if j.Status != StatusFailed {
+		t.Errorf("panicking job Status = %s, want %s", j.Status, StatusFailed)
+	}
+
+	if j.Error == "" {
+		t.Error(`panicking job Error = "", want the panic`)
 	}
 }
 
@@ -769,7 +841,7 @@ func TestRemoveStaleArtifacts(t *testing.T) {
 		return nil
 	}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Start() error = %v", err)
 	}
 
 	polltest.Until(t, "the running job's folder exists", func() bool {
@@ -780,22 +852,29 @@ func TestRemoveStaleArtifacts(t *testing.T) {
 
 	for _, name := range []string{"j0123456789abcdef", "jABCDEF0123456789", "notes"} {
 		if err := os.Mkdir(filepath.Join(dir, name), 0o750); err != nil {
-			t.Fatal(err)
+			t.Fatalf("os.Mkdir(%s) error = %v", name, err)
 		}
 	}
 
 	removed, err := r.RemoveStaleArtifacts()
-	if err != nil || removed != 1 {
-		t.Fatalf("RemoveStaleArtifacts = %d, %v; want 1", removed, err)
+	if err != nil {
+		t.Errorf("RemoveStaleArtifacts() error = %v, want nil", err)
 	}
 
-	for name, want := range map[string]bool{
-		held.ID: true, "j0123456789abcdef": false, "jABCDEF0123456789": true, "notes": true,
-	} {
+	if removed != 1 {
+		t.Errorf("RemoveStaleArtifacts() = %d, want 1", removed)
+	}
+
+	want := map[string]bool{held.ID: true, "j0123456789abcdef": false, "jABCDEF0123456789": true, "notes": true}
+	got := make(map[string]bool, len(want))
+
+	for name := range want {
 		_, err := os.Stat(filepath.Join(dir, name))
-		if got := err == nil; got != want {
-			t.Errorf("%s kept: %t, want %t", name, got, want)
-		}
+		got[name] = err == nil
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("RemoveStaleArtifacts() folders kept mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -820,24 +899,28 @@ func TestQueueLimitsRefuseJobs(t *testing.T) {
 		}})
 	}
 
+	// in order: each job counts against the limits of those after it
 	for _, tc := range []struct {
+		desc  string
 		owner string
 		want  Status
 	}{
-		{"alice", StatusRunning},
-		{"alice", StatusQueued},
-		{"alice", ""}, // alice has a job waiting
-		{"bob", StatusRunning},
-		{"bob", StatusQueued},
-		{"carol", ""}, // two jobs are waiting
+		{"alice's first job", "alice", StatusRunning},
+		{"alice's second job", "alice", StatusQueued},
+		{"alice's third job, one of hers waiting", "alice", ""},
+		{"bob's first job", "bob", StatusRunning},
+		{"bob's second job", "bob", StatusQueued},
+		{"carol's job, two waiting", "carol", ""},
 	} {
 		j, err := start(tc.owner)
 
 		switch {
 		case tc.want == "" && !errors.Is(err, ErrQueueFull):
-			t.Errorf("%s's job: %v, want ErrQueueFull", tc.owner, err)
-		case tc.want != "" && (err != nil || j.Status != tc.want):
-			t.Errorf("%s's job: %s, %v, want %s", tc.owner, j.Status, err, tc.want)
+			t.Errorf("Start(%s) error = %v, want %v", tc.desc, err, ErrQueueFull)
+		case tc.want != "" && err != nil:
+			t.Errorf("Start(%s) error = %v, want nil", tc.desc, err)
+		case tc.want != "" && j.Status != tc.want:
+			t.Errorf("Start(%s) Status = %s, want %s", tc.desc, j.Status, tc.want)
 		}
 	}
 }

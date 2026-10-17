@@ -42,9 +42,9 @@ func TestResolve(t *testing.T) {
 
 		switch {
 		case want == "" && !errors.Is(err, ErrNotManaged):
-			t.Errorf("Resolve(%q) = %q, %v; want ErrNotManaged", p, got, err)
+			t.Errorf("Resolve(%q) = %q, %v; want error %v", p, got, err, ErrNotManaged)
 		case want != "" && (err != nil || got != want):
-			t.Errorf("Resolve(%q) = %q, %v; want %q", p, got, err, want)
+			t.Errorf("Resolve(%q) = %q, %v; want %q, nil", p, got, err, want)
 		}
 	}
 }
@@ -61,7 +61,7 @@ func TestValidateMinimegaPath(t *testing.T) {
 	for _, bad := range []string{" ", "\t", "\n", " ", "#", `"`, "'", "`", `\`, "*", "?", "[", "{", "$", ",", "\x00"} {
 		err := ValidateMinimegaPath("/f/a" + bad + "b.qc2")
 		if !errors.Is(err, ErrUnsafeName) || !strings.Contains(err.Error(), "contains") {
-			t.Errorf("ValidateMinimegaPath with %q = %v, want ErrUnsafeName naming it", bad, err)
+			t.Errorf("ValidateMinimegaPath(%q) = %v, want %v saying what it contains", "/f/a"+bad+"b.qc2", err, ErrUnsafeName)
 		}
 	}
 }
@@ -99,11 +99,11 @@ func TestValidPathsReachMinimegaWhole(t *testing.T) {
 		accepted++
 
 		if !whole {
-			t.Errorf("minimega reads %q as %v (%v), not the paths %q and %q", name, cmd, err, src, dst)
+			t.Errorf("minicli.Compile(disk snapshot %q %q) = %v, %v; want the two paths whole", src, dst, cmd, err)
 		}
 	}
 
 	if accepted == 0 || splits == 0 {
-		t.Fatalf("%d names accepted and %d refused names split; want some of each", accepted, splits)
+		t.Errorf("names accepted = %d, refused names minimega splits = %d; want some of each", accepted, splits)
 	}
 }

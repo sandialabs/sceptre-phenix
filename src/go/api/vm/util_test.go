@@ -23,7 +23,7 @@ func TestCopyEndsWhileProgressIsPending(t *testing.T) {
 	src := filepath.Join(dir, "src")
 
 	if err := os.WriteFile(src, bytes.Repeat([]byte("x"), 64<<10), 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.WriteFile(%s) error = %v", src, err)
 	}
 
 	for i := range 50 {
@@ -40,13 +40,13 @@ func TestCopyEndsWhileProgressIsPending(t *testing.T) {
 		}()
 
 		if err := c.copy(context.Background(), src, filepath.Join(dir, "dst")); err != nil {
-			t.Fatalf("copy %d: %v", i, err)
+			t.Fatalf("copier.copy(src, dst) error = %v (copy %d of 50)", err, i+1)
 		}
 
 		select {
 		case <-read:
 		case <-time.After(2 * time.Second):
-			t.Fatalf("copy %d left its subscription open", i)
+			t.Fatalf("copier.copy(src, dst) left its subscription open (copy %d of 50)", i+1)
 		}
 	}
 }

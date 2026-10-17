@@ -1,9 +1,10 @@
 package vm_test
 
 import (
-	"reflect"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/api/vm"
 	"phenix/util/cache"
@@ -54,7 +55,7 @@ func TestTopology(t *testing.T) {
 
 	topo, err := vm.Topology(t.Context(), testExp, []string{"MGMT"})
 	if err != nil {
-		t.Fatalf("Topology: %v", err)
+		t.Fatalf("Topology(%q, [MGMT]) error = %v", testExp, err)
 	}
 
 	// each VM and the switch of the VLAN they share, leaving out the ignored one
@@ -63,40 +64,67 @@ func TestTopology(t *testing.T) {
 		nodes = append(nodes, node.Name)
 	}
 
-	if want := []string{"a", "EXP_1", "b"}; !reflect.DeepEqual(nodes, want) || !topo.Running {
-		t.Errorf("Topology has nodes %q (running %t), want %q (running)", nodes, topo.Running, want)
+	if diff := cmp.Diff([]string{"a", "EXP_1", "b"}, nodes); diff != "" {
+		t.Errorf("Topology(%q, [MGMT]) node names mismatch (-want +got):\n%s", testExp, diff)
 	}
 
-	if len(topo.Edges) != 2 || topo.Edges[0].Target != 1 || topo.Edges[1].Target != 1 {
-		t.Errorf("Topology has edges %+v, want both VMs joined to the switch", topo.Edges)
+	if !topo.Running {
+		t.Errorf("Topology(%q, [MGMT]).Running = false, want true", testExp)
+	}
+
+	// both VMs joined to the switch
+	targets := make([]int, 0, len(topo.Edges))
+	for _, edge := range topo.Edges {
+		targets = append(targets, edge.Target)
+	}
+
+	if diff := cmp.Diff([]int{1, 1}, targets); diff != "" {
+		t.Errorf("Topology(%q, [MGMT]) edge targets mismatch (-want +got):\n%s", testExp, diff)
 	}
 
 	// keyed by the experiment's revision
 	const key = "experiment|" + testExp + "|search|r7"
 
 	search, _ := fake.vals[key].(vm.TopologySearch)
-	if want := []int{0, 2}; !reflect.DeepEqual(search.VLAN["EXP_1"], want) || search.VLAN["MGMT"] != nil {
-		t.Errorf("search index has VLANs %v, want EXP_1 on %v only", search.VLAN, want)
+	if diff := cmp.Diff(map[string][]int{"EXP_1": {0, 2}}, search.VLAN); diff != "" {
+		t.Errorf("cached search index VLAN mismatch (-want +got):\n%s", diff)
 	}
 
 	// VM details change when the experiment starts or stops or its VMs are
 	// edited, so the index expires soon
 	if ttl := fake.ttls[key]; ttl <= 0 || ttl > time.Minute {
-		t.Errorf("search index cached for %v, want a short expiry", ttl)
+		t.Errorf("search index cache expiry = %v, want more than 0 and at most %v", ttl, time.Minute)
 	}
 
-	if _, err := vm.Topology(t.Context(), testExp, nil); err != nil || fake.sets != 1 {
-		t.Errorf("second Topology: %v after caching the index %d times, want it reused", err, fake.sets)
+	if _, err := vm.Topology(t.Context(), testExp, nil); err != nil {
+		t.Errorf("Topology(%q, nil) error = %v", testExp, err)
 	}
 
-	if search, err := vm.TopologySearchIndex(testExp); err != nil || fake.sets != 1 || search.Hostname["a"] != 0 {
-		t.Errorf("TopologySearchIndex = %+v, %v after caching the index %d times, want the cached one", search, err, fake.sets)
+	if fake.sets != 1 {
+		t.Errorf("search index cache sets after a second Topology() = %d, want 1", fake.sets)
+	}
+
+	search, err = vm.TopologySearchIndex(testExp)
+	if err != nil {
+		t.Errorf("TopologySearchIndex(%q) error = %v", testExp, err)
+	}
+
+	if a, ok := search.Hostname["a"]; !ok || a != 0 {
+		t.Errorf("TopologySearchIndex(%q).Hostname[a] = %d, %t; want 0, true", testExp, a, ok)
+	}
+
+	if fake.sets != 1 {
+		t.Errorf("search index cache sets after TopologySearchIndex() = %d, want 1", fake.sets)
 	}
 
 	// an edited experiment has a new revision, so its index is built anew
 	stored.experiment.Metadata.Revision = 8
 
-	if _, err := vm.TopologySearchIndex(testExp); err != nil || fake.sets != 2 {
-		t.Errorf("TopologySearchIndex after an edit: %v after caching the index %d times, want it rebuilt", err, fake.sets)
+	if _, err := vm.TopologySearchIndex(testExp); err != nil {
+		t.Errorf("TopologySearchIndex(%q) after an edit error = %v", testExp, err)
+	}
+
+	if fake.sets != 2 {
+		t.Errorf("search index cache sets after an edit = %d, want 2", fake.sets)
 	}
 }

@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io/fs"
@@ -9,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // leftovers returns the names in dir other than the given ones.
@@ -17,7 +20,7 @@ func leftovers(t *testing.T, dir string, keep ...string) []string {
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.ReadDir(%s) error = %v", dir, err)
 	}
 
 	var names []string
@@ -53,24 +56,28 @@ func TestCloneFile(t *testing.T) {
 	}
 
 	if err := os.WriteFile(src, content, 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.WriteFile(%s) error = %v", src, err)
 	}
 
 	if err := cloneFile(t.Context(), src, dst, func(n int64) { copied.Add(n) }); err != nil {
-		t.Fatal(err)
+		t.Fatalf("cloneFile(a.qc2, b.qc2) error = %v", err)
 	}
 
 	got, err := os.ReadFile(dst)
-	if err != nil || string(got) != string(content) {
-		t.Fatalf("clone differs from its source (%v)", err)
+	if err != nil {
+		t.Fatalf("os.ReadFile(%s) error = %v", dst, err)
+	}
+
+	if !bytes.Equal(got, content) {
+		t.Errorf("cloneFile(a.qc2, b.qc2) wrote %d bytes that differ from the %d of the source", len(got), len(content))
 	}
 
 	if copied.Load() != int64(len(content)) {
-		t.Errorf("progress reported %d bytes, want %d", copied.Load(), len(content))
+		t.Errorf("cloneFile(a.qc2, b.qc2) reported %d bytes copied, want %d", copied.Load(), len(content))
 	}
 
 	if left := leftovers(t, dir, "a.qc2", "b.qc2"); len(left) != 0 {
-		t.Errorf("clone left %v behind", left)
+		t.Errorf("cloneFile(a.qc2, b.qc2) left %v behind, want nothing", left)
 	}
 }
 
@@ -86,11 +93,11 @@ func TestCloneFileCanceled(t *testing.T) {
 	// sparse, so the test writes little to the disk
 	f, err := os.Create(src)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.Create(%s) error = %v", src, err)
 	}
 
 	if err := f.Truncate(8 * cloneChunk); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Truncate(%d) error = %v", 8*cloneChunk, err)
 	}
 
 	_ = f.Close()
@@ -100,11 +107,11 @@ func TestCloneFileCanceled(t *testing.T) {
 
 	err = cloneFile(ctx, src, dst, func(int64) { cancel() })
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("cloneFile = %v, want context.Canceled", err)
+		t.Errorf("cloneFile(a.qc2, b.qc2) canceled after its first chunk: error = %v, want %v", err, context.Canceled)
 	}
 
 	if left := leftovers(t, dir, "a.qc2"); len(left) != 0 {
-		t.Errorf("canceled clone left %v behind", left)
+		t.Errorf("canceled cloneFile(a.qc2, b.qc2) left %v behind, want nothing", left)
 	}
 }
 
@@ -128,13 +135,12 @@ func TestCloneFileDestinationAppears(t *testing.T) {
 		}
 	})
 	if !errors.Is(err, ErrExists) {
-		t.Fatalf("cloneFile = %v, want ErrExists", err)
+		t.Errorf("cloneFile(a.qc2, b.qc2 made while it runs) error = %v, want %v", err, ErrExists)
 	}
 
-	holds(t, dst, "someone else's")
-
-	if left := leftovers(t, dir, "a.qc2", "b.qc2"); len(left) != 0 {
-		t.Errorf("clone left %v behind", left)
+	want := map[string]string{"a.qc2": "source", "b.qc2": "someone else's"}
+	if diff := cmp.Diff(want, dirFiles(t, dir)); diff != "" {
+		t.Errorf("files after cloneFile(a.qc2, b.qc2 made while it runs) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -159,7 +165,7 @@ func TestRemoveStalePartials(t *testing.T) {
 		path := filepath.Join(dir, p)
 
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-			t.Fatal(err)
+			t.Fatalf("os.MkdirAll(%s) error = %v", filepath.Dir(p), err)
 		}
 
 		writeFile(t, path, "x")
@@ -171,15 +177,19 @@ func TestRemoveStalePartials(t *testing.T) {
 
 	future := time.Now().Add(time.Hour)
 	if err := os.Chtimes(running, future, future); err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.Chtimes(%s) error = %v", running, err)
 	}
 
 	removed, err := RemoveStalePartials(dir, time.Now().Add(time.Minute))
-	if err != nil || removed != 2 {
-		t.Fatalf("RemoveStalePartials = %d, %v; want 2", removed, err)
+	if err != nil {
+		t.Errorf("RemoveStalePartials(dir, in a minute) error = %v, want nil", err)
 	}
 
-	for p, want := range map[string]bool{
+	if removed != 2 {
+		t.Errorf("RemoveStalePartials(dir, in a minute) = %d, want 2", removed)
+	}
+
+	want := map[string]bool{
 		".ubuntu.qc2.partial-0123456789abcdef":    false,
 		"lab/.win.qcow2.partial-fedcba9876543210": false,
 		"ubuntu.qc2.partial-0123456789abcdef":     true,
@@ -187,15 +197,20 @@ func TestRemoveStalePartials(t *testing.T) {
 		".hidden/.x.qc2.partial-0123456789abcdef": true,
 		".new.qc2.partial-00112233445566ff":       true,
 		"ubuntu.qc2":                              true,
-	} {
+	}
+	got := make(map[string]bool, len(want))
+
+	for p := range want {
 		_, err := os.Stat(filepath.Join(dir, p))
-		if exists := err == nil; exists != want {
-			t.Errorf("%s exists: %t, want %t", p, exists, want)
-		}
+		got[p] = err == nil
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("RemoveStalePartials(dir, in a minute) files kept mismatch (-want +got):\n%s", diff)
 	}
 
 	if n, err := RemoveStalePartials(filepath.Join(dir, "missing"), time.Now()); n != 0 || err != nil {
-		t.Errorf("a missing files directory: %d, %v", n, err)
+		t.Errorf("RemoveStalePartials(missing folder, now) = %d, %v; want 0, nil", n, err)
 	}
 }
 
@@ -230,18 +245,19 @@ func TestCloneDiskContextFallsBack(t *testing.T) {
 	t.Cleanup(func() { DefaultDiskFiles = original })
 
 	if err := CloneDiskContext(t.Context(), "a.qc2", "b.qc2", nil); err != nil {
-		t.Fatal(err)
+		t.Errorf("CloneDiskContext(a.qc2, b.qc2) error = %v, want nil", err)
 	}
 
-	if len(fake.cloned) != 1 || fake.cloned[0][1] != filepath.Join(dir, "b.qc2") {
-		t.Errorf("cloned %v, want a.qc2 to b.qc2", fake.cloned)
+	want := [][2]string{{filepath.Join(dir, "a.qc2"), filepath.Join(dir, "b.qc2")}}
+	if diff := cmp.Diff(want, fake.cloned); diff != "" {
+		t.Errorf("CloneDiskContext(a.qc2, b.qc2) CloneDisk calls mismatch (-want +got):\n%s", diff)
 	}
 
 	if err := CloneDiskContext(t.Context(), "a.qc2", "a.qc2", nil); !errors.Is(err, ErrExists) {
-		t.Errorf("onto an existing image: %v, want ErrExists", err)
+		t.Errorf("CloneDiskContext(a.qc2, existing a.qc2) error = %v, want %v", err, ErrExists)
 	}
 
 	if err := CloneDiskContext(t.Context(), "missing.qc2", "c.qc2", nil); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("a missing image: %v, want fs.ErrNotExist", err)
+		t.Errorf("CloneDiskContext(missing.qc2, c.qc2) error = %v, want %v", err, fs.ErrNotExist)
 	}
 }
