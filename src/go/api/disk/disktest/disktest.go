@@ -57,7 +57,7 @@ func UseFakeQemuImg(tb testing.TB) func() int {
 	calls := filepath.Join(dir, "calls")
 
 	if err := os.WriteFile(filepath.Join(dir, "qemu-img"), []byte(fakeQemuImg), 0o700); err != nil {
-		tb.Fatal(err)
+		tb.Fatalf("writing the fake qemu-img: %v", err)
 	}
 
 	tb.Setenv("FAKE_QEMU_IMG_CALLS", calls)

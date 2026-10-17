@@ -19,22 +19,16 @@ const (
 // errAny is the wanted error of a case that expects an error of any kind.
 var errAny = errors.New("any error")
 
-// checkErr fails the test unless err is want: nil for none, errAny for any
-// error, or else an error that wraps want.
-func checkErr(t *testing.T, err, want error) {
-	t.Helper()
-
+// errMatches reports whether err is want: nil for none, errAny for any error,
+// or else an error that wraps want.
+func errMatches(err, want error) bool {
 	switch {
 	case want == nil:
-		if err != nil {
-			t.Fatalf("got error %v, want none", err)
-		}
+		return err == nil
 	case errors.Is(want, errAny):
-		if err == nil {
-			t.Fatal("got no error, want one")
-		}
-	case !errors.Is(err, want):
-		t.Fatalf("got error %v, want %v", err, want)
+		return err != nil
+	default:
+		return errors.Is(err, want)
 	}
 }
 

@@ -3,10 +3,12 @@ package disk
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/disk/disktest"
 )
@@ -27,7 +29,7 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.WriteFile(%s) error = %v", path, err)
 	}
 }
 
@@ -36,43 +38,44 @@ func TestGetImageInspectsOnlyChangedImages(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "a.qc2")
 	writeFile(t, path, "one")
 
+	want := Details{
+		Kind: VMImage, Name: "a.qc2", FullPath: path, OutsideFilesDir: true, ReadOnly: true,
+		Size: "2.0 KiB", VirtualSize: "1.0 GiB", BackingImages: []string{},
+	}
+
 	for range 3 {
 		got, err := GetImage(path)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("GetImage(%s) error = %v", path, err)
 		}
 
-		want := Details{
-			Kind: VMImage, Name: "a.qc2", FullPath: path, OutsideFilesDir: true, ReadOnly: true,
-			Size: "2.0 KiB", VirtualSize: "1.0 GiB", BackingImages: []string{},
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("GetImage = %+v, want %+v", got, want)
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("GetImage(%s) mismatch (-want +got):\n%s", path, diff)
 		}
 	}
 
 	if got := calls(); got != 1 {
-		t.Fatalf("unchanged image inspected %d times, want 1", got)
+		t.Errorf("qemu-img runs for GetImage(%s) of an unchanged image three times = %d, want 1", path, got)
 	}
 
 	writeFile(t, path, "changed")
 
 	if _, err := GetImage(path); err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetImage(%s) error = %v", path, err)
 	}
 
 	if got := calls(); got != 2 {
-		t.Fatalf("changed image not inspected again (%d inspections)", got)
+		t.Errorf("qemu-img runs once the image changed = %d, want 2", got)
 	}
 
 	ClearCache()
 
 	if _, err := GetImage(path); err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetImage(%s) error = %v", path, err)
 	}
 
 	if got := calls(); got != 3 {
-		t.Fatalf("ClearCache did not force inspection (%d inspections)", got)
+		t.Errorf("qemu-img runs after ClearCache() = %d, want 3", got)
 	}
 }
 
@@ -102,23 +105,33 @@ func TestGetImageReportsLockedImagesInUse(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "a.qc2")
 			writeFile(t, path, "x")
 
-			if got, err := GetImage(path); err != nil || got.InUse {
-				t.Fatalf("GetImage of an unlocked image = %+v, %v; want it not in use", got, err)
+			got, err := GetImage(path)
+			if err != nil {
+				t.Fatalf("GetImage(unlocked image) error = %v", err)
+			}
+
+			if got.InUse {
+				t.Errorf("GetImage(unlocked image).InUse = true, want false")
 			}
 
 			f, err := os.OpenFile(path, os.O_RDWR, 0)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("os.OpenFile(%s) error = %v", path, err)
 			}
 
 			defer f.Close()
 
 			if err := lock(int(f.Fd())); err != nil {
-				t.Fatal(err)
+				t.Fatalf("taking a %s on %s: %v", name, path, err)
 			}
 
-			if got, err := GetImage(path); err != nil || !got.InUse {
-				t.Fatalf("GetImage of a locked image = %+v, %v; want it in use", got, err)
+			got, err = GetImage(path)
+			if err != nil {
+				t.Fatalf("GetImage(image under a %s) error = %v", name, err)
+			}
+
+			if !got.InUse {
+				t.Errorf("GetImage(image under a %s).InUse = false, want true", name)
 			}
 		})
 	}
@@ -133,19 +146,32 @@ func TestGetImageFindsBackingImageOnceItAppears(t *testing.T) {
 	writeFile(t, path+".backing", "base.qc2")
 
 	got, err := GetImage(path)
-	if err != nil || got.Name != "over.qc2" || len(got.BackingImages) != 0 {
-		t.Fatalf("GetImage with its backing image missing = %+v, %v; want the image alone", got, err)
+	if err != nil {
+		t.Fatalf("GetImage(image with its backing image missing) error = %v", err)
+	}
+
+	if got.Name != "over.qc2" {
+		t.Errorf("GetImage(image with its backing image missing).Name = %q, want %q", got.Name, "over.qc2")
+	}
+
+	if diff := cmp.Diff([]string(nil), got.BackingImages, cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("GetImage(image with its backing image missing).BackingImages mismatch (-want +got):\n%s", diff)
 	}
 
 	if n := calls(); n != 2 {
-		t.Fatalf("qemu-img ran %d times, want the chain then the image alone", n)
+		t.Errorf("qemu-img runs = %d, want 2 (the chain, then the image alone)", n)
 	}
 
 	writeFile(t, filepath.Join(dir, "base.qc2"), "y")
 
 	got, err = GetImage(path)
-	if want := []string{filepath.Join(dir, "base.qc2")}; err != nil || !reflect.DeepEqual(got.BackingImages, want) {
-		t.Fatalf("GetImage once its backing image exists = %+v, %v; want backing images %q", got, err, want)
+	if err != nil {
+		t.Fatalf("GetImage(image once its backing image exists) error = %v", err)
+	}
+
+	want := []string{filepath.Join(dir, "base.qc2")}
+	if diff := cmp.Diff(want, got.BackingImages); diff != "" {
+		t.Errorf("GetImage(image once its backing image exists).BackingImages mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -158,7 +184,7 @@ func TestWatchDebouncesImageChanges(t *testing.T) {
 	changes := make(chan struct{}, 10)
 
 	if err := Watch(t.Context(), dir, debounce, func() { changes <- struct{}{} }); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Watch(%s) error = %v", dir, err)
 	}
 
 	for i := range 5 {
@@ -168,7 +194,7 @@ func TestWatchDebouncesImageChanges(t *testing.T) {
 	select {
 	case <-changes:
 	case <-time.After(5 * time.Second):
-		t.Fatal("no change reported")
+		t.Fatal("Watch() reported no change within 5s of writing an image")
 	}
 
 	writeFile(t, filepath.Join(dir, "notes.txt"), "not an image")
@@ -177,7 +203,7 @@ func TestWatchDebouncesImageChanges(t *testing.T) {
 	// it; the second period leaves room for the timer and scheduling to lag
 	select {
 	case <-changes:
-		t.Fatal("reported the burst of writes more than once, or a file that is not an image")
+		t.Error("Watch() reported the burst of writes more than once, or a file that is not an image")
 	case <-time.After(2 * debounce):
 	}
 }

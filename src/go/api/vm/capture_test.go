@@ -3,10 +3,11 @@ package vm_test
 import (
 	"context"
 	"errors"
-	"reflect"
+	"fmt"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/api/vm"
 	"phenix/util/mm"
@@ -31,13 +32,6 @@ func useCaptureVM(t *testing.T, fake *fakeMM, networks ...string) *fakeMM {
 func TestStartCapture(t *testing.T) {
 	boom := errors.New("boom")
 
-	// forVM starts a capture with StartCaptureForVM and the given VM details
-	forVM := func(v *mm.VM) func(context.Context, string, string, int, string) error {
-		return func(ctx context.Context, exp, name string, iface int, out string) error {
-			return vm.StartCaptureForVM(ctx, v, exp, name, iface, out)
-		}
-	}
-
 	given := runningVM("test-vm", "EXP_1 (101)", "EXP_2 (102)")
 
 	stopped := given
@@ -45,7 +39,8 @@ func TestStartCapture(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		start      func(ctx context.Context, exp, vm string, iface int, out string) error // default StartCapture
+		forVM      bool   // start with StartCaptureForVM and details, not StartCapture
+		details    *mm.VM // the VM details given to StartCaptureForVM
 		exp, vm    string
 		iface      int
 		out        string
@@ -83,12 +78,12 @@ func TestStartCapture(t *testing.T) {
 		},
 		{
 			name:  "uses the VM details it is given without looking the VM up",
-			start: forVM(&given), exp: testExp, vm: "test-vm", iface: 1, out: "out.pcap",
+			forVM: true, details: &given, exp: testExp, vm: "test-vm", iface: 1, out: "out.pcap",
 			reported: mm.VMs{}, wantStarts: 1,
 		},
 		{
 			name:  "rejects missing VM details",
-			start: forVM(nil), exp: testExp, vm: "test-vm", out: "out.pcap", wantErr: errAny,
+			forVM: true, exp: testExp, vm: "test-vm", out: "out.pcap", wantErr: errAny,
 		},
 	}
 
@@ -99,15 +94,29 @@ func TestStartCapture(t *testing.T) {
 				fake.vms = test.reported
 			}
 
-			start := test.start
-			if start == nil {
-				start = vm.StartCapture
+			args := fmt.Sprintf("%q, %q, %d, %q", test.exp, test.vm, test.iface, test.out)
+			call := "StartCapture(" + args + ")"
+
+			var err error
+
+			if test.forVM {
+				details := "VM details"
+				if test.details == nil {
+					details = "nil"
+				}
+
+				call = "StartCaptureForVM(" + details + ", " + args + ")"
+				err = vm.StartCaptureForVM(t.Context(), test.details, test.exp, test.vm, test.iface, test.out)
+			} else {
+				err = vm.StartCapture(t.Context(), test.exp, test.vm, test.iface, test.out)
 			}
 
-			checkErr(t, start(t.Context(), test.exp, test.vm, test.iface, test.out), test.wantErr)
+			if !errMatches(err, test.wantErr) {
+				t.Errorf("%s error = %v, want %v", call, err, test.wantErr)
+			}
 
 			if fake.starts != test.wantStarts {
-				t.Errorf("started %d captures, want %d", fake.starts, test.wantStarts)
+				t.Errorf("%s minimega capture starts = %d, want %d", call, fake.starts, test.wantStarts)
 			}
 		})
 	}
@@ -116,11 +125,6 @@ func TestStartCapture(t *testing.T) {
 func TestStopCaptures(t *testing.T) {
 	boom := errors.New("boom")
 
-	// one stops the capture on one interface with StopCapture
-	one := func(iface int) func(ctx context.Context, exp, vm string) error {
-		return func(ctx context.Context, exp, name string) error { return vm.StopCapture(ctx, exp, name, iface) }
-	}
-
 	both := []mm.Capture{
 		{VM: "test-vm", Interface: 0, Filepath: "test-experiment/files/0.pcap"},
 		{VM: "test-vm", Interface: 1, Filepath: "test-experiment/files/1.pcap"},
@@ -128,7 +132,8 @@ func TestStopCaptures(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		stop      func(ctx context.Context, exp, vm string) error // default StopCaptures
+		one       bool // stop iface's capture with StopCapture, not all with StopCaptures
+		iface     int
 		exp, vm   string
 		captures  []mm.Capture
 		stopErr   error
@@ -136,29 +141,32 @@ func TestStopCaptures(t *testing.T) {
 		wantStops int
 	}{
 		{name: "stops every interface's capture", exp: testExp, vm: "test-vm", captures: both, wantStops: 1},
-		{name: "stops one interface's capture", stop: one(1), exp: testExp, vm: "test-vm", captures: both, wantStops: 1},
+		{name: "stops one interface's capture", one: true, iface: 1, exp: testExp, vm: "test-vm", captures: both, wantStops: 1},
 		{name: "rejects an empty experiment name", vm: "test-vm", captures: both, wantErr: errAny},
 		{name: "rejects an empty VM name", exp: testExp, captures: both, wantErr: errAny},
 		{
-			name: "rejects an empty experiment name for one interface", stop: one(0), vm: "test-vm", captures: both,
+			name: "rejects an empty experiment name for one interface", one: true, vm: "test-vm", captures: both,
 			wantErr: errAny,
 		},
 		{
-			name: "rejects an empty VM name for one interface", stop: one(0), exp: testExp, captures: both,
+			name: "rejects an empty VM name for one interface", one: true, exp: testExp, captures: both,
 			wantErr: errAny,
 		},
-		{name: "rejects an interface below 0", stop: one(-1), exp: testExp, vm: "test-vm", captures: both, wantErr: errAny},
+		{
+			name: "rejects an interface below 0", one: true, iface: -1, exp: testExp, vm: "test-vm", captures: both,
+			wantErr: errAny,
+		},
 		{name: "reports a VM with no captures", exp: testExp, vm: "test-vm", wantErr: vm.ErrNoCaptures},
 		{
 			name: "reports an interface with no capture, leaving the others",
-			stop: one(0), exp: testExp, vm: "test-vm", captures: both[1:], wantErr: vm.ErrNoCaptures,
+			one:  true, exp: testExp, vm: "test-vm", captures: both[1:], wantErr: vm.ErrNoCaptures,
 		},
 		{
 			name: "returns minimega's error", exp: testExp, vm: "test-vm", captures: both,
 			stopErr: boom, wantErr: boom, wantStops: 1,
 		},
 		{
-			name: "returns minimega's error for one interface", stop: one(0), exp: testExp, vm: "test-vm",
+			name: "returns minimega's error for one interface", one: true, exp: testExp, vm: "test-vm",
 			captures: both, stopErr: boom, wantErr: boom, wantStops: 1,
 		},
 	}
@@ -167,15 +175,25 @@ func TestStopCaptures(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			fake := useCaptureVM(t, &fakeMM{captures: test.captures, stopErr: test.stopErr})
 
-			stop := test.stop
-			if stop == nil {
-				stop = vm.StopCaptures
+			var (
+				call string
+				err  error
+			)
+
+			if test.one {
+				call = fmt.Sprintf("StopCapture(%q, %q, %d)", test.exp, test.vm, test.iface)
+				err = vm.StopCapture(t.Context(), test.exp, test.vm, test.iface)
+			} else {
+				call = fmt.Sprintf("StopCaptures(%q, %q)", test.exp, test.vm)
+				err = vm.StopCaptures(t.Context(), test.exp, test.vm)
 			}
 
-			checkErr(t, stop(t.Context(), test.exp, test.vm), test.wantErr)
+			if !errMatches(err, test.wantErr) {
+				t.Errorf("%s error = %v, want %v", call, err, test.wantErr)
+			}
 
 			if fake.stops != test.wantStops {
-				t.Errorf("stopped captures %d times, want %d", fake.stops, test.wantStops)
+				t.Errorf("%s minimega capture stops = %d, want %d", call, fake.stops, test.wantStops)
 			}
 		})
 	}
@@ -210,19 +228,24 @@ func TestResolveInterface(t *testing.T) {
 
 			v, err := vm.Get(t.Context(), testExp, "test-vm")
 			if err != nil {
-				t.Fatalf("Get: %v", err)
+				t.Fatalf("Get(%q, %q) error = %v", testExp, "test-vm", err)
 			}
 
 			got, err := vm.ResolveInterface(v, test.id)
-			if (err != nil) != test.wantErr || got != test.want {
-				t.Errorf("ResolveInterface(%q) = %d, %v, want %d (error %t)",
-					test.id, got, err, test.want, test.wantErr)
+
+			switch {
+			case test.wantErr && err == nil:
+				t.Errorf("ResolveInterface(test-vm, %q) = %d, nil; want an error", test.id, got)
+			case !test.wantErr && err != nil:
+				t.Errorf("ResolveInterface(test-vm, %q) error = %v, want nil", test.id, err)
+			case got != test.want:
+				t.Errorf("ResolveInterface(test-vm, %q) = %d, want %d", test.id, got, test.want)
 			}
 		})
 	}
 
-	if _, err := vm.ResolveInterface(nil, "0"); err == nil {
-		t.Error("ResolveInterface accepted missing VM details")
+	if got, err := vm.ResolveInterface(nil, "0"); err == nil {
+		t.Errorf("ResolveInterface(nil, %q) = %d, nil; want an error", "0", got)
 	}
 }
 
@@ -309,14 +332,17 @@ func TestCaptureSubnet(t *testing.T) {
 			})
 
 			got, err := vm.CaptureSubnet(t.Context(), testExp, test.subnet, test.vms)
-			checkErr(t, err, test.wantErr)
+			if !errMatches(err, test.wantErr) {
+				t.Errorf("CaptureSubnet(%q, %q, %q) error = %v, want %v", testExp, test.subnet, test.vms, err, test.wantErr)
+			}
 
-			if !reflect.DeepEqual(got, test.want) {
-				t.Errorf("CaptureSubnet = %v, want %v", got, test.want)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("CaptureSubnet(%q, %q, %q) mismatch (-want +got):\n%s", testExp, test.subnet, test.vms, diff)
 			}
 
 			if fake.starts != test.wantStarts {
-				t.Errorf("started %d captures, want %d", fake.starts, test.wantStarts)
+				t.Errorf("CaptureSubnet(%q, %q, %q) minimega capture starts = %d, want %d",
+					testExp, test.subnet, test.vms, fake.starts, test.wantStarts)
 			}
 
 			// one listing of the experiment's captures, if any started
@@ -326,7 +352,8 @@ func TestCaptureSubnet(t *testing.T) {
 			}
 
 			if fake.captureListings != wantListings {
-				t.Errorf("listed captures %d times, want %d", fake.captureListings, wantListings)
+				t.Errorf("CaptureSubnet(%q, %q, %q) minimega capture listings = %d, want %d",
+					testExp, test.subnet, test.vms, fake.captureListings, wantListings)
 			}
 		})
 	}
@@ -371,19 +398,23 @@ func TestStopCaptureSubnet(t *testing.T) {
 			})
 
 			got, err := vm.StopCaptureSubnet(t.Context(), testExp, test.subnet, test.vms)
-			checkErr(t, err, test.wantErr)
+			if !errMatches(err, test.wantErr) {
+				t.Errorf("StopCaptureSubnet(%q, %q, %q) error = %v, want %v", testExp, test.subnet, test.vms, err, test.wantErr)
+			}
 
-			if !reflect.DeepEqual(got, test.want) {
-				t.Errorf("StopCaptureSubnet = %v, want %v", got, test.want)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("StopCaptureSubnet(%q, %q, %q) mismatch (-want +got):\n%s", testExp, test.subnet, test.vms, diff)
 			}
 
 			if fake.stops != test.wantStops {
-				t.Errorf("stopped captures %d times, want %d", fake.stops, test.wantStops)
+				t.Errorf("StopCaptureSubnet(%q, %q, %q) minimega capture stops = %d, want %d",
+					testExp, test.subnet, test.vms, fake.stops, test.wantStops)
 			}
 
 			// the VM list already holds each VM's captures
 			if fake.vmCaptureListings != 0 {
-				t.Errorf("listed a VM's captures %d times, want none", fake.vmCaptureListings)
+				t.Errorf("StopCaptureSubnet(%q, %q, %q) minimega VM capture listings = %d, want 0",
+					testExp, test.subnet, test.vms, fake.vmCaptureListings)
 			}
 		})
 	}
@@ -392,8 +423,8 @@ func TestStopCaptureSubnet(t *testing.T) {
 // Stopping a VM's captures lists them once, however many it stops.
 func TestStopCapturesListsCapturesOnce(t *testing.T) {
 	for name, stop := range map[string]func(ctx context.Context) error{
-		"all":           func(ctx context.Context) error { return vm.StopCaptures(ctx, testExp, "test-vm") },
-		"one interface": func(ctx context.Context) error { return vm.StopCapture(ctx, testExp, "test-vm", 1) },
+		"StopCaptures": func(ctx context.Context) error { return vm.StopCaptures(ctx, testExp, "test-vm") },
+		"StopCapture":  func(ctx context.Context) error { return vm.StopCapture(ctx, testExp, "test-vm", 1) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			useExperiment(t, startTime, vmNode("test-vm", vmIface("IF0", "EXP_1", ""), vmIface("IF1", "EXP_2", "")))
@@ -413,7 +444,7 @@ func TestStopCapturesListsCapturesOnce(t *testing.T) {
 			})
 
 			if err := stop(t.Context()); err != nil {
-				t.Fatal(err)
+				t.Fatalf("%s(%q, test-vm) error = %v", name, testExp, err)
 			}
 
 			var listings int
@@ -425,7 +456,8 @@ func TestStopCapturesListsCapturesOnce(t *testing.T) {
 			}
 
 			if listings != 1 {
-				t.Errorf("minimega received %q, want one capture listing", mmtest.Bases(received()))
+				t.Errorf("%s(%q, test-vm) capture listings = %d, want 1 (minimega received %q)",
+					name, testExp, listings, mmtest.Bases(received()))
 			}
 		})
 	}
@@ -434,12 +466,12 @@ func TestStopCapturesListsCapturesOnce(t *testing.T) {
 // Subnet captures stop trying once their context is done, and a failure as it ends stops the rest.
 func TestSubnetCapturesGiveUpWithTheirContext(t *testing.T) {
 	calls := map[string]func(ctx context.Context) error{
-		"start": func(ctx context.Context) error {
+		"CaptureSubnet": func(ctx context.Context) error {
 			_, err := vm.CaptureSubnet(ctx, testExp, "10.0.0.0/24", nil)
 
 			return err
 		},
-		"stop": func(ctx context.Context) error {
+		"StopCaptureSubnet": func(ctx context.Context) error {
 			_, err := vm.StopCaptureSubnet(ctx, testExp, "", nil)
 
 			return err
@@ -453,10 +485,12 @@ func TestSubnetCapturesGiveUpWithTheirContext(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
 
-			checkErr(t, call(ctx), context.Canceled)
+			if err := call(ctx); !errors.Is(err, context.Canceled) {
+				t.Errorf("%s(canceled context) error = %v, want %v", name, err, context.Canceled)
+			}
 
-			if fake.starts+fake.stops != 0 {
-				t.Fatalf("tried %d captures, want none", fake.starts+fake.stops)
+			if got := fake.starts + fake.stops; got != 0 {
+				t.Errorf("%s(canceled context) minimega capture calls = %d, want 0", name, got)
 			}
 		})
 
@@ -469,10 +503,12 @@ func TestSubnetCapturesGiveUpWithTheirContext(t *testing.T) {
 				startErr: boom, stopErr: boom, onCapture: cancel,
 			})
 
-			checkErr(t, call(ctx), context.Canceled)
+			if err := call(ctx); !errors.Is(err, context.Canceled) {
+				t.Errorf("%s(context canceled by the first capture) error = %v, want %v", name, err, context.Canceled)
+			}
 
-			if fake.starts+fake.stops != 1 {
-				t.Fatalf("tried %d captures, want only the first", fake.starts+fake.stops)
+			if got := fake.starts + fake.stops; got != 1 {
+				t.Errorf("%s(context canceled by the first capture) minimega capture calls = %d, want 1", name, got)
 			}
 		})
 	}

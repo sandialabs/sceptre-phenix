@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"syscall"
@@ -14,6 +13,8 @@ import (
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/activeshadow/structs"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	"phenix/store/storetest"
@@ -39,7 +40,7 @@ func useFilesDir(t *testing.T) string {
 
 	dir := filepath.Join(base, "images")
 	if err := os.Mkdir(dir, 0o750); err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.Mkdir(%s) error = %v", dir, err)
 	}
 
 	return dir
@@ -58,7 +59,7 @@ func storeExperiments(t *testing.T, exps ...types.Experiment) {
 			Status:   structs.MapDefaultCase(exp.Status, structs.CASESNAKE),
 		})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("store.Create(experiment %s) error = %v", exp.Metadata.Name, err)
 		}
 	}
 }
@@ -70,7 +71,7 @@ func writeImages(t *testing.T, paths ...string) {
 
 	for _, p := range paths {
 		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-			t.Fatal(err)
+			t.Fatalf("os.MkdirAll(%s) error = %v", filepath.Dir(p), err)
 		}
 
 		writeFile(t, p, p)
@@ -83,7 +84,7 @@ func listed(t *testing.T, expName string) map[string]Details {
 
 	images, err := GetImages(expName)
 	if err != nil {
-		t.Fatalf("GetImages(%q): %v", expName, err)
+		t.Fatalf("GetImages(%q) error = %v", expName, err)
 	}
 
 	byPath := make(map[string]Details, len(images))
@@ -113,11 +114,11 @@ func TestGetImagesSearchesFolders(t *testing.T) {
 			if symlinked {
 				folder = filepath.Join(filepath.Dir(dir), "real-images")
 				if err := os.Rename(dir, folder); err != nil {
-					t.Fatal(err)
+					t.Fatalf("os.Rename(%s, %s) error = %v", dir, folder, err)
 				}
 
 				if err := os.Symlink(folder, dir); err != nil {
-					t.Fatal(err)
+					t.Fatalf("os.Symlink(%s, %s) error = %v", folder, dir, err)
 				}
 			}
 
@@ -146,14 +147,12 @@ func TestGetImagesSearchesFolders(t *testing.T) {
 				"gone.qc2": "missing.qc2",
 			} {
 				if err := os.Symlink(target, filepath.Join(folder, link)); err != nil {
-					t.Fatal(err)
+					t.Fatalf("os.Symlink(%s, %s) error = %v", target, link, err)
 				}
 			}
 
-			want := slices.Concat(kept, []string{"link.qc2"})
-
 			if err := syscall.Mkfifo(filepath.Join(folder, "pipe.qc2"), 0o600); err != nil {
-				t.Fatal(err)
+				t.Fatalf("syscall.Mkfifo(pipe.qc2) error = %v", err)
 			}
 
 			// one folder phenix cannot read leaves the rest listed; root reads it
@@ -161,34 +160,25 @@ func TestGetImagesSearchesFolders(t *testing.T) {
 				writeImages(t, filepath.Join(folder, "locked", "x.qc2"))
 
 				if err := os.Chmod(filepath.Join(folder, "locked"), 0); err != nil {
-					t.Fatal(err)
+					t.Fatalf("os.Chmod(locked, 0) error = %v", err)
 				}
 
 				t.Cleanup(func() { _ = os.Chmod(filepath.Join(folder, "locked"), 0o750) })
 			}
 
-			images := listed(t, "")
-
-			wantPaths := make([]string, 0, len(want))
-			for _, rel := range want {
-				wantPaths = append(wantPaths, filepath.Join(dir, rel))
+			want := make(map[string]Details, len(kept)+1)
+			for _, rel := range slices.Concat(kept, []string{"link.qc2"}) {
+				path := filepath.Join(dir, rel)
+				want[path] = Details{Kind: VMImage, Name: filepath.Base(rel), FullPath: path, RelativePath: rel}
 			}
 
-			slices.Sort(wantPaths)
+			tools := want[filepath.Join(dir, "tools.iso")]
+			tools.Kind = ISOImage
+			want[tools.FullPath] = tools
 
-			if got := slices.Sorted(maps.Keys(images)); !slices.Equal(got, wantPaths) {
-				t.Fatalf("listed %q,\nwant %q", got, wantPaths)
-			}
-
-			for _, rel := range want {
-				image := images[filepath.Join(dir, rel)]
-				if image.RelativePath != rel || image.Name != filepath.Base(rel) || image.OutsideFilesDir || image.ReadOnly {
-					t.Errorf("%s: %+v, want it inside the files directory at %s", rel, image, rel)
-				}
-			}
-
-			if got := images[filepath.Join(dir, "tools.iso")].Kind; got != ISOImage {
-				t.Errorf("tools.iso kind = %v, want ISO", got)
+			ignore := cmpopts.IgnoreFields(Details{}, "Size", "VirtualSize", "Experiments", "BackingImages", "InUse")
+			if diff := cmp.Diff(want, listed(t, ""), ignore); diff != "" {
+				t.Errorf("GetImages(%q) mismatch (-want +got):\n%s", "", diff)
 			}
 		})
 	}
@@ -215,7 +205,7 @@ func TestGetImagesListsTopologyImages(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "win", "child.qc2.backing"), "../base.qc2")
 
 	if err := syscall.Mkfifo(filepath.Join(outside, "pipe.qc2"), 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("syscall.Mkfifo(pipe.qc2) error = %v", err)
 	}
 
 	storeExperiments(t,
@@ -230,66 +220,56 @@ func TestGetImagesListsTopologyImages(t *testing.T) {
 		expB = ExperimentUse{Name: "exp-b", Running: false}
 	)
 
-	type image struct {
-		rel         string
-		outside     bool
-		readOnly    bool
-		kind        Kind
-		backing     []string
-		experiments []ExperimentUse
-	}
+	inside := func(rel string, readOnly bool, kind Kind, backing []string, uses ...ExperimentUse) Details {
+		path := dir + "/" + rel
 
-	want := map[string]image{
-		dir + "/base.qc2": {rel: "base.qc2", kind: VMImage, experiments: []ExperimentUse{expA}},
-		dir + "/win/child.qc2": {
-			rel:         "win/child.qc2",
-			kind:        VMImage,
-			backing:     []string{dir + "/base.qc2"},
-			experiments: []ExperimentUse{expA},
-		},
-		dir + "/other/base.qc2":       {rel: "other/base.qc2", kind: VMImage, experiments: []ExperimentUse{expB}},
-		dir + "/sub/x.qc2":            {rel: "sub/x.qc2", kind: VMImage, experiments: []ExperimentUse{expA}},
-		dir + "/exp-a/files/snap.hdd": {rel: "exp-a/files/snap.hdd", readOnly: true, kind: VMImage, experiments: []ExperimentUse{expA}},
-		outside + "/o.img":            {outside: true, readOnly: true, kind: UNKNOWN, experiments: []ExperimentUse{expA}},
-		outside + "/b-only.qc2":       {outside: true, readOnly: true, kind: VMImage, experiments: []ExperimentUse{expB}},
-	}
-
-	images := listed(t, "")
-
-	if got, wantPaths := slices.Sorted(maps.Keys(images)), slices.Sorted(maps.Keys(want)); !slices.Equal(got, wantPaths) {
-		t.Fatalf("listed %q,\nwant %q", got, wantPaths)
-	}
-
-	for path, w := range want {
-		got := images[path]
-
-		if got.RelativePath != w.rel || got.OutsideFilesDir != w.outside || got.ReadOnly != w.readOnly || got.Kind != w.kind {
-			t.Errorf("%s: %+v, want %+v", path, got, w)
+		return Details{
+			Kind: kind, Name: filepath.Base(rel), FullPath: path, RelativePath: rel,
+			ReadOnly: readOnly, BackingImages: backing, Experiments: uses,
 		}
+	}
 
-		if !slices.Equal(got.BackingImages, w.backing) || !reflect.DeepEqual(got.Experiments, w.experiments) {
-			t.Errorf("%s: backing %q, experiments %+v; want %q, %+v", path, got.BackingImages, got.Experiments, w.backing, w.experiments)
+	away := func(name string, kind Kind, uses ...ExperimentUse) Details {
+		path := outside + "/" + name
+
+		return Details{
+			Kind: kind, Name: name, FullPath: path, OutsideFilesDir: true, ReadOnly: true, Experiments: uses,
 		}
+	}
+
+	want := map[string]Details{
+		dir + "/base.qc2":             inside("base.qc2", false, VMImage, nil, expA),
+		dir + "/win/child.qc2":        inside("win/child.qc2", false, VMImage, []string{dir + "/base.qc2"}, expA),
+		dir + "/other/base.qc2":       inside("other/base.qc2", false, VMImage, nil, expB),
+		dir + "/sub/x.qc2":            inside("sub/x.qc2", false, VMImage, nil, expA),
+		dir + "/exp-a/files/snap.hdd": inside("exp-a/files/snap.hdd", true, VMImage, nil, expA),
+		outside + "/o.img":            away("o.img", UNKNOWN, expA),
+		outside + "/b-only.qc2":       away("b-only.qc2", VMImage, expB),
+	}
+
+	opts := cmp.Options{cmpopts.IgnoreFields(Details{}, "Size", "VirtualSize", "InUse"), cmpopts.EquateEmpty()}
+	if diff := cmp.Diff(want, listed(t, ""), opts); diff != "" {
+		t.Errorf("GetImages(%q) mismatch (-want +got):\n%s", "", diff)
 	}
 
 	// once per image phenix can read, and never for the others
 	if got := calls(); got != len(want) {
-		t.Errorf("qemu-img ran %d times, want %d", got, len(want))
+		t.Errorf("qemu-img runs for GetImages(%q) = %d, want %d", "", got, len(want))
 	}
 
 	// one experiment's listing leaves out the images only others name
-	images = listed(t, "exp-b")
+	images := listed(t, "exp-b")
 
 	if _, ok := images[outside+"/o.img"]; ok {
-		t.Error("exp-b's listing has an image only exp-a names")
+		t.Errorf("GetImages(%q) lists o.img, which only exp-a names", "exp-b")
 	}
 
-	if got := images[outside+"/b-only.qc2"].Experiments; !reflect.DeepEqual(got, []ExperimentUse{expB}) {
-		t.Errorf("exp-b's listing: b-only.qc2 experiments = %+v", got)
+	if diff := cmp.Diff([]ExperimentUse{expB}, images[outside+"/b-only.qc2"].Experiments); diff != "" {
+		t.Errorf("GetImages(%q) b-only.qc2 Experiments mismatch (-want +got):\n%s", "exp-b", diff)
 	}
 
 	if _, err := GetImages("nope"); !errors.Is(err, store.ErrNotExist) {
-		t.Errorf("GetImages of an unknown experiment: %v, want store.ErrNotExist", err)
+		t.Errorf("GetImages(%q) error = %v, want %v", "nope", err, store.ErrNotExist)
 	}
 }
 
@@ -307,16 +287,16 @@ func TestGetImagesThroughMinimega(t *testing.T) {
 	// qemu-img would block on the FIFO, holding up minimega; a.qc2 and the
 	// other images phenix cannot see are still inspected
 	if err := syscall.Mkfifo(dir+"/pipe.qc2", 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("syscall.Mkfifo(pipe.qc2) error = %v", err)
 	}
 
 	for link, target := range map[string]string{"gone.qc2": "nowhere.qc2", "win/link.qc2": "../exp1/kept.qc2"} {
 		if err := os.MkdirAll(filepath.Dir(dir+"/"+link), 0o750); err != nil {
-			t.Fatal(err)
+			t.Fatalf("os.MkdirAll(%s) error = %v", filepath.Dir(link), err)
 		}
 
 		if err := os.Symlink(target, dir+"/"+link); err != nil {
-			t.Fatal(err)
+			t.Fatalf("os.Symlink(%s, %s) error = %v", target, link, err)
 		}
 	}
 
@@ -361,31 +341,28 @@ func TestGetImagesThroughMinimega(t *testing.T) {
 		return nil
 	})
 
-	images := listed(t, "")
-
-	for path, rel := range map[string]string{
-		dir + "/a.qc2":           "a.qc2",
-		dir + "/win/10/a.qc2":    "win/10/a.qc2",
-		dir + "/exp1/kept.qc2":   "exp1/kept.qc2",
-		dir + "/win/win10.qcow2": "win/win10.qcow2",
-		dir + "/win/link.qc2":    "win/link.qc2",
-		outside + "/o.img":       "",
-	} {
-		if image := images[path]; image.RelativePath != rel || image.OutsideFilesDir != (rel == "") {
-			t.Errorf("%s: %+v, want relative path %q", path, image, rel)
-		}
+	inside := func(rel string) Details {
+		return Details{Kind: VMImage, Name: filepath.Base(rel), FullPath: dir + "/" + rel, RelativePath: rel}
 	}
 
-	if len(images) != 6 {
-		t.Errorf("listed %q, want 6 images", slices.Sorted(maps.Keys(images)))
+	inUse := inside("win/10/a.qc2")
+	inUse.InUse = true
+
+	backed := inside("win/win10.qcow2")
+	backed.BackingImages = []string{dir + "/a.qc2"}
+
+	want := map[string]Details{
+		dir + "/a.qc2":           inside("a.qc2"),
+		dir + "/win/10/a.qc2":    inUse,
+		dir + "/exp1/kept.qc2":   inside("exp1/kept.qc2"),
+		dir + "/win/win10.qcow2": backed,
+		dir + "/win/link.qc2":    inside("win/link.qc2"),
+		outside + "/o.img":       {Kind: UNKNOWN, Name: "o.img", FullPath: outside + "/o.img", OutsideFilesDir: true},
 	}
 
-	if got := images[dir+"/win/win10.qcow2"].BackingImages; !slices.Equal(got, []string{dir + "/a.qc2"}) {
-		t.Errorf("win10.qcow2 backing images = %q, want [%s/a.qc2]", got, dir)
-	}
-
-	if !images[dir+"/win/10/a.qc2"].InUse || images[outside+"/o.img"].Kind != UNKNOWN {
-		t.Errorf("minimega's details not kept: %+v, %+v", images[dir+"/win/10/a.qc2"], images[outside+"/o.img"])
+	opts := cmp.Options{cmpopts.IgnoreFields(Details{}, "ReadOnly", "Size", "VirtualSize", "Experiments"), cmpopts.EquateEmpty()}
+	if diff := cmp.Diff(want, listed(t, ""), opts); diff != "" {
+		t.Errorf("GetImages(%q) through minimega mismatch (-want +got):\n%s", "", diff)
 	}
 
 	var sent []string
@@ -396,7 +373,7 @@ func TestGetImagesThroughMinimega(t *testing.T) {
 		}
 	}
 
-	want := []string{
+	wantSent := []string{
 		"file list",
 		"disk info " + dir + "/a.qc2 recursive",
 		"file list win",
@@ -409,8 +386,8 @@ func TestGetImagesThroughMinimega(t *testing.T) {
 		"disk info " + outside + "/o.img recursive",
 	}
 
-	if !slices.Equal(sent, want) {
-		t.Errorf("sent %q,\nwant %q", sent, want)
+	if diff := cmp.Diff(wantSent, sent); diff != "" {
+		t.Errorf("GetImages(%q) minimega commands mismatch (-want +got):\n%s", "", diff)
 	}
 }
 
@@ -427,12 +404,12 @@ func TestGetImagesWithRealQemuImg(t *testing.T) {
 
 	for _, folder := range []string{dir + "/sub/deeper", outside + "/dir"} {
 		if err := os.MkdirAll(folder, 0o750); err != nil {
-			t.Fatal(err)
+			t.Fatalf("os.MkdirAll(%s) error = %v", folder, err)
 		}
 	}
 
 	if err := os.Symlink(outside+"/dir", dir+"/sub/sym"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.Symlink(dir, sub/sym) error = %v", err)
 	}
 
 	// minimega names a snapshot's backing file relative to the snapshot
@@ -456,32 +433,36 @@ func TestGetImagesWithRealQemuImg(t *testing.T) {
 		dir + "/base.qc2", dir + "/snap.qcow2", dir + "/sub/base.qc2", dir + "/sub/deeper/snap.qc2", dir + "/tools.iso",
 	}
 
-	if got := slices.Sorted(maps.Keys(images)); !slices.Equal(got, wantPaths) {
-		t.Fatalf("listed %q,\nwant %q", got, wantPaths)
+	if diff := cmp.Diff(wantPaths, slices.Sorted(maps.Keys(images))); diff != "" {
+		t.Errorf("GetImages(%q) paths mismatch (-want +got):\n%s", "", diff)
 	}
 
 	for _, snap := range []string{"snap.qcow2", "sub/deeper/snap.qc2"} {
-		if got := images[dir+"/"+snap].BackingImages; !slices.Equal(got, []string{dir + "/base.qc2"}) {
-			t.Errorf("%s backing images = %q, want [%s/base.qc2]", snap, got, dir)
+		if diff := cmp.Diff([]string{dir + "/base.qc2"}, images[dir+"/"+snap].BackingImages); diff != "" {
+			t.Errorf("GetImages(%q) %s BackingImages mismatch (-want +got):\n%s", "", snap, diff)
 		}
 	}
 
-	if images[dir+"/tools.iso"].Kind != ISOImage || images[dir+"/base.qc2"].VirtualSize != "1.0 GiB" {
-		t.Errorf("unexpected details: %+v", images)
+	if got := images[dir+"/tools.iso"].Kind; got != ISOImage {
+		t.Errorf("GetImages(%q) tools.iso Kind = %v, want %v", "", got, ISOImage)
+	}
+
+	if got := images[dir+"/base.qc2"].VirtualSize; got != "1.0 GiB" {
+		t.Errorf("GetImages(%q) base.qc2 VirtualSize = %q, want %q", "", got, "1.0 GiB")
 	}
 
 	// "../" after a symlinked folder leaves the link's target, not sub/
 	over, err := GetImage("sub/sym/over.qc2")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetImage(%q) error = %v", "sub/sym/over.qc2", err)
 	}
 
 	want, err := filepath.EvalSymlinks(outside + "/base.qc2")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("filepath.EvalSymlinks(base.qc2) error = %v", err)
 	}
 
-	if !slices.Equal(over.BackingImages, []string{want}) {
-		t.Errorf("over.qc2 backing images = %q, want [%s]", over.BackingImages, want)
+	if diff := cmp.Diff([]string{want}, over.BackingImages); diff != "" {
+		t.Errorf("GetImage(%q).BackingImages mismatch (-want +got):\n%s", "sub/sym/over.qc2", diff)
 	}
 }

@@ -1,12 +1,13 @@
 package vm_test
 
 import (
-	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/vm"
 	"phenix/util/file"
@@ -108,28 +109,33 @@ func TestRestore(t *testing.T) {
 			})
 
 			err := vm.Restore("exp", "vm1", test.snap)
-			if (err != nil) != test.wantErr {
-				t.Fatalf("Restore returned %v, want error %t", err, test.wantErr)
+
+			switch {
+			case test.wantErr && err == nil:
+				t.Errorf("Restore(%q, %q, %q) error = nil, want an error", "exp", "vm1", test.snap)
+			case !test.wantErr && err != nil:
+				t.Errorf("Restore(%q, %q, %q) error = %v, want nil", "exp", "vm1", test.snap, err)
 			}
 
 			other.Wait()
 
 			sent := received()
 
-			if got := mmtest.Bases(sent); !slices.Equal(got, test.want) {
-				t.Fatalf("sent %q, want %q", got, test.want)
+			if diff := cmp.Diff(test.want, mmtest.Bases(sent), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("Restore(%q, %q, %q) minimega commands mismatch (-want +got):\n%s", "exp", "vm1", test.snap, diff)
 			}
 
 			for _, cmd := range sent {
 				if cmd.Namespace != "exp" {
-					t.Errorf("sent %q in namespace %q, want exp", cmd.Base, cmd.Namespace)
+					t.Errorf("Restore(%q, %q, %q) sent %q in namespace %q, want %q",
+						"exp", "vm1", test.snap, cmd.Base, cmd.Namespace, "exp")
 				}
 			}
 
 			// no other VM config sequence runs in the namespace from the clone
 			// until Restore returns
 			if len(sent) > 0 && lockedAt != len(sent) {
-				t.Errorf("another VM config sequence locked the namespace after %d of %d commands",
+				t.Errorf("another VM config sequence locked namespace exp after %d of the %d commands Restore sent, want after all",
 					lockedAt, len(sent))
 			}
 		})

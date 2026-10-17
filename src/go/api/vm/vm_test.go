@@ -1,8 +1,9 @@
 package vm_test
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
@@ -133,40 +134,42 @@ func TestGetAndList(t *testing.T) {
 
 			got, err := vm.Get(t.Context(), testExp, "web")
 			if err != nil {
-				t.Fatalf("Get: %v", err)
+				t.Fatalf("Get(%q, %q) error = %v", testExp, "web", err)
 			}
 
-			if !reflect.DeepEqual(*got, wantGet) {
-				t.Errorf("Get = %+v\nwant %+v", *got, wantGet)
+			if diff := cmp.Diff(wantGet, *got); diff != "" {
+				t.Errorf("Get(%q, %q) mismatch (-want +got):\n%s", testExp, "web", diff)
 			}
 
 			listed, err := vm.List(t.Context(), testExp)
 			if err != nil {
-				t.Fatalf("List: %v", err)
+				t.Fatalf("List(%q) error = %v", testExp, err)
 			}
 
-			if !reflect.DeepEqual(listed, []mm.VM{test.want}) {
-				t.Errorf("List = %+v\nwant %+v", listed, []mm.VM{test.want})
+			if diff := cmp.Diff([]mm.VM{test.want}, listed); diff != "" {
+				t.Errorf("List(%q) mismatch (-want +got):\n%s", testExp, diff)
 			}
 
 			exp, err := experiment.Get(testExp)
 			if err != nil {
-				t.Fatalf("getting the experiment: %v", err)
+				t.Fatalf("experiment.Get(%q) error = %v", testExp, err)
 			}
 
 			reads := stored.gets
 
 			gotFor, err := vm.GetFor(t.Context(), exp, "web")
-			if err != nil || !reflect.DeepEqual(*gotFor, wantGet) {
-				t.Errorf("GetFor = %+v, %v\nwant %+v", gotFor, err, wantGet)
+			if err != nil {
+				t.Errorf("GetFor(%s, %q) error = %v", testExp, "web", err)
+			} else if diff := cmp.Diff(wantGet, *gotFor); diff != "" {
+				t.Errorf("GetFor(%s, %q) mismatch (-want +got):\n%s", testExp, "web", diff)
 			}
 
-			if listedFor := vm.ListFor(t.Context(), exp); !reflect.DeepEqual(listedFor, listed) {
-				t.Errorf("ListFor = %+v\nwant %+v", listedFor, listed)
+			if diff := cmp.Diff(listed, vm.ListFor(t.Context(), exp)); diff != "" {
+				t.Errorf("ListFor(%s) mismatch with List (-want +got):\n%s", testExp, diff)
 			}
 
-			if stored.gets != reads {
-				t.Errorf("GetFor and ListFor read the store %d times, want none", stored.gets-reads)
+			if got := stored.gets - reads; got != 0 {
+				t.Errorf("store reads by GetFor and ListFor = %d, want 0", got)
 			}
 		})
 	}
@@ -178,7 +181,7 @@ func TestGetAndListRejectUnknownNames(t *testing.T) {
 
 	exp, err := experiment.Get(testExp)
 	if err != nil {
-		t.Fatalf("getting the experiment: %v", err)
+		t.Fatalf("experiment.Get(%q) error = %v", testExp, err)
 	}
 
 	tests := []struct {
@@ -193,19 +196,19 @@ func TestGetAndListRejectUnknownNames(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			if got, err := vm.Get(t.Context(), test.exp, test.vm); err == nil {
-				t.Errorf("Get = %+v, want an error", got)
+				t.Errorf("Get(%q, %q) = %+v, nil; want an error", test.exp, test.vm, got)
 			}
 
 			if test.exp != testExp {
 				if got, err := vm.List(t.Context(), test.exp); err == nil {
-					t.Errorf("List = %+v, want an error", got)
+					t.Errorf("List(%q) = %+v, nil; want an error", test.exp, got)
 				}
 
 				return
 			}
 
 			if got, err := vm.GetFor(t.Context(), exp, test.vm); err == nil {
-				t.Errorf("GetFor = %+v, want an error", got)
+				t.Errorf("GetFor(%s, %q) = %+v, nil; want an error", testExp, test.vm, got)
 			}
 		})
 	}
@@ -260,26 +263,26 @@ func TestListOfRunningExperiment(t *testing.T) {
 
 			listed, err := vm.List(t.Context(), testExp)
 			if err != nil {
-				t.Fatalf("List: %v", err)
+				t.Fatalf("List(%q) error = %v", testExp, err)
 			}
 
-			if got := states(listed); !reflect.DeepEqual(got, test.want) {
-				t.Errorf("List = %q, want %q", got, test.want)
+			if diff := cmp.Diff(test.want, states(listed)); diff != "" {
+				t.Errorf("List(%q) name/state/host mismatch (-want +got):\n%s", testExp, diff)
 			}
 
 			exp, err := experiment.Get(testExp)
 			if err != nil {
-				t.Fatalf("getting the experiment: %v", err)
+				t.Fatalf("experiment.Get(%q) error = %v", testExp, err)
 			}
 
 			// ListConfigured keeps every VM, without minimega's state
 			want := []string{"web//compute2", "dnb//", "ext/EXTERNAL/"}
-			if got := states(vm.ListConfigured(*exp)); !reflect.DeepEqual(got, want) {
-				t.Errorf("ListConfigured = %q, want %q", got, want)
+			if diff := cmp.Diff(want, states(vm.ListConfigured(*exp))); diff != "" {
+				t.Errorf("ListConfigured(%s) name/state/host mismatch (-want +got):\n%s", testExp, diff)
 			}
 
 			if n, err := vm.Count(testExp); err != nil || n != 3 {
-				t.Errorf("Count = %d, %v, want 3", n, err)
+				t.Errorf("Count(%q) = %d, %v; want 3, nil", testExp, n, err)
 			}
 		})
 	}
@@ -302,10 +305,13 @@ func TestConnect(t *testing.T) {
 			useExperiment(t, startTime, vmNode("web", vmIface("IF0", "EXP_1", "")))
 			fake := useMM(t, &fakeMM{})
 
-			checkErr(t, vm.Connect(test.exp, test.vm, 0, "EXP_2"), test.wantErr)
+			if err := vm.Connect(test.exp, test.vm, 0, "EXP_2"); !errMatches(err, test.wantErr) {
+				t.Errorf("Connect(%q, %q, 0, %q) error = %v, want %v", test.exp, test.vm, "EXP_2", err, test.wantErr)
+			}
 
 			if fake.connects != test.wantConnects {
-				t.Errorf("connected %d times, want %d", fake.connects, test.wantConnects)
+				t.Errorf("Connect(%q, %q, 0, %q) minimega connects = %d, want %d",
+					test.exp, test.vm, "EXP_2", fake.connects, test.wantConnects)
 			}
 		})
 	}

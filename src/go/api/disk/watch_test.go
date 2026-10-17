@@ -21,7 +21,7 @@ func TestWatchSeesFolders(t *testing.T) {
 			dir := t.TempDir()
 			for _, folder := range []string{"win/10", "exp/files", ".hidden"} {
 				if err := os.MkdirAll(filepath.Join(dir, folder), 0o750); err != nil {
-					t.Fatal(err)
+					t.Fatalf("os.MkdirAll(%s) error = %v", folder, err)
 				}
 			}
 
@@ -29,14 +29,14 @@ func TestWatchSeesFolders(t *testing.T) {
 			if symlinked {
 				watched = filepath.Join(t.TempDir(), "images")
 				if err := os.Symlink(dir, watched); err != nil {
-					t.Fatal(err)
+					t.Fatalf("os.Symlink(%s, %s) error = %v", dir, watched, err)
 				}
 			}
 
 			changes := make(chan struct{}, 10)
 
 			if err := Watch(t.Context(), watched, debounce, func() { changes <- struct{}{} }); err != nil {
-				t.Fatal(err)
+				t.Fatalf("Watch(%s) error = %v", watched, err)
 			}
 
 			reported := func(what string) {
@@ -45,7 +45,7 @@ func TestWatchSeesFolders(t *testing.T) {
 				select {
 				case <-changes:
 				case <-time.After(5 * time.Second):
-					t.Fatalf("no change reported after %s", what)
+					t.Fatalf("Watch() reported no change within 5s of %s", what)
 				}
 			}
 
@@ -53,7 +53,7 @@ func TestWatchSeesFolders(t *testing.T) {
 			reported("writing an image in a folder")
 
 			if err := os.MkdirAll(filepath.Join(dir, "new", "a", "b"), 0o750); err != nil {
-				t.Fatal(err)
+				t.Fatalf("os.MkdirAll(new/a/b) error = %v", err)
 			}
 
 			writeFile(t, filepath.Join(dir, "new", "a", "b", "x.qc2"), "x")
@@ -69,12 +69,12 @@ func TestWatchSeesFolders(t *testing.T) {
 			// the further periods leave room for the timer and scheduling to lag
 			select {
 			case <-changes:
-				t.Fatal("reported a change in a folder the listing leaves out")
+				t.Error("Watch() reported a change in a folder the listing leaves out")
 			case <-time.After(4 * debounce):
 			}
 
 			if err := os.Rename(filepath.Join(dir, "new"), filepath.Join(dir, "moved")); err != nil {
-				t.Fatal(err)
+				t.Fatalf("os.Rename(new, moved) error = %v", err)
 			}
 
 			reported("renaming a folder")
@@ -83,7 +83,7 @@ func TestWatchSeesFolders(t *testing.T) {
 			reported("writing an image in a renamed folder")
 
 			if err := os.RemoveAll(filepath.Join(dir, "moved")); err != nil {
-				t.Fatal(err)
+				t.Fatalf("os.RemoveAll(moved) error = %v", err)
 			}
 
 			reported("removing a folder")

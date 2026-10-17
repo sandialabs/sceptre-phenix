@@ -1,8 +1,10 @@
 package vm_test
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/vm"
 	"phenix/store"
@@ -21,7 +23,7 @@ func savedNode(t *testing.T, spec map[string]any) ifaces.NodeSpec { //nolint:ire
 		Spec:     spec,
 	})
 	if err != nil {
-		t.Fatalf("decoding the saved experiment: %v", err)
+		t.Fatalf("types.DecodeExperimentFromConfig(saved experiment) error = %v", err)
 	}
 
 	return exp.Spec.Topology().FindNodeByName("router")
@@ -123,38 +125,39 @@ func TestUpdate(t *testing.T) {
 			fake := useMM(t, &fakeMM{})
 
 			opts := append([]vm.UpdateOption{vm.UpdateExperiment(testExp), vm.UpdateVM("router")}, test.opts...)
-			checkErr(t, vm.Update(opts...), test.wantErr)
+			if err := vm.Update(opts...); !errMatches(err, test.wantErr) {
+				t.Errorf("Update() error = %v, want %v", err, test.wantErr)
+			}
 
 			if fake.tagUpdates != test.wantTagUpdates {
-				t.Errorf("updated minimega's tags %d times, want %d", fake.tagUpdates, test.wantTagUpdates)
+				t.Errorf("Update() minimega tag updates = %d, want %d", fake.tagUpdates, test.wantTagUpdates)
 			}
 
 			if test.wantErr != nil {
 				if len(stored.saved) != 0 {
-					t.Errorf("saved the experiment %d times, want never", len(stored.saved))
+					t.Errorf("Update() experiment saves = %d, want 0", len(stored.saved))
 				}
 
 				return
 			}
 
 			if len(stored.saved) != 1 {
-				t.Fatalf("saved the experiment %d times, want once", len(stored.saved))
+				t.Fatalf("Update() experiment saves = %d, want 1", len(stored.saved))
 			}
 
 			saved := savedNode(t, stored.saved[0])
 
 			if got := saved.Hardware().VCPU(); got != test.wantCPUs {
-				t.Errorf("saved %d CPUs, want %d", got, test.wantCPUs)
+				t.Errorf("Update() saved VCPU() = %d, want %d", got, test.wantCPUs)
 			}
 
-			if got := saved.Labels(); !reflect.DeepEqual(got, test.wantLabels) {
-				t.Errorf("saved labels %v, want %v", got, test.wantLabels)
+			if diff := cmp.Diff(test.wantLabels, saved.Labels()); diff != "" {
+				t.Errorf("Update() saved Labels() mismatch (-want +got):\n%s", diff)
 			}
 
 			// nil and empty both mean no annotations
-			if got := saved.Annotations(); (len(got) > 0 || len(test.wantAnnotations) > 0) &&
-				!reflect.DeepEqual(got, test.wantAnnotations) {
-				t.Errorf("saved annotations %v, want %v", got, test.wantAnnotations)
+			if diff := cmp.Diff(test.wantAnnotations, saved.Annotations(), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("Update() saved Annotations() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

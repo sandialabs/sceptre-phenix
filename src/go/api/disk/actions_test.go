@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // Cloning and renaming an image never replace a file, whether the kernel
@@ -34,20 +36,25 @@ func TestCopiesAndRenamesNeverReplace(t *testing.T) {
 			writeFile(t, taken, "b")
 
 			if err := tc.act(src, taken); !errors.Is(err, tc.refusal) {
-				t.Errorf("onto an existing file: %v, want %v", err, tc.refusal)
+				t.Errorf("%s(a.qc2, existing b.qc2) error = %v, want %v", name, err, tc.refusal)
 			}
 
-			holds(t, src, "a")
-			holds(t, taken, "b")
+			want := map[string]string{"a.qc2": "a", "b.qc2": "b"}
+			if diff := cmp.Diff(want, dirFiles(t, dir)); diff != "" {
+				t.Errorf("files after %s(a.qc2, existing b.qc2) mismatch (-want +got):\n%s", name, diff)
+			}
 
 			if err := tc.act(src, dst); err != nil {
-				t.Fatal(err)
+				t.Fatalf("%s(a.qc2, c.qc2) error = %v", name, err)
 			}
 
-			holds(t, dst, "a")
+			want = map[string]string{"b.qc2": "b", "c.qc2": "a"}
+			if !tc.removes {
+				want["a.qc2"] = "a"
+			}
 
-			if _, err := os.Stat(src); tc.removes != errors.Is(err, fs.ErrNotExist) {
-				t.Errorf("after the action, the source: %v", err)
+			if diff := cmp.Diff(want, dirFiles(t, dir)); diff != "" {
+				t.Errorf("files after %s(a.qc2, c.qc2) mismatch (-want +got):\n%s", name, diff)
 			}
 		})
 	}
@@ -62,7 +69,7 @@ func TestCloneRefusesAFIFO(t *testing.T) {
 	fifo := filepath.Join(dir, "a.qc2")
 
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("syscall.Mkfifo(%s) error = %v", fifo, err)
 	}
 
 	cloned := make(chan error, 1)
@@ -72,23 +79,36 @@ func TestCloneRefusesAFIFO(t *testing.T) {
 	select {
 	case err := <-cloned:
 		if !errors.Is(err, ErrNotManaged) {
-			t.Errorf("CloneDisk = %v, want ErrNotManaged", err)
+			t.Errorf("CloneDisk(FIFO, b.qc2) error = %v, want %v", err, ErrNotManaged)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("CloneDisk blocked opening a FIFO")
+		t.Fatal("CloneDisk(FIFO, b.qc2) blocked opening the FIFO")
 	}
 
 	if _, err := os.Lstat(filepath.Join(dir, "b.qc2")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("CloneDisk left a copy: %v", err)
+		t.Errorf("os.Lstat(b.qc2) after CloneDisk(FIFO, b.qc2) error = %v, want %v", err, fs.ErrNotExist)
 	}
 }
 
-// holds fails the test unless the file at path holds content.
-func holds(t *testing.T, path, content string) {
+// dirFiles returns the contents of each file in dir, by name.
+func dirFiles(t *testing.T, dir string) map[string]string {
 	t.Helper()
 
-	b, err := os.ReadFile(path)
-	if err != nil || string(b) != content {
-		t.Errorf("%s holds %q (%v), want %q", path, b, err, content)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("os.ReadDir(%s) error = %v", dir, err)
 	}
+
+	files := make(map[string]string, len(entries))
+
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatalf("os.ReadFile(%s) error = %v", e.Name(), err)
+		}
+
+		files[e.Name()] = string(b)
+	}
+
+	return files
 }

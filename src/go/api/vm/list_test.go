@@ -2,9 +2,11 @@ package vm_test
 
 import (
 	"errors"
-	"slices"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
@@ -41,14 +43,12 @@ func TestListForObservedKeepsConfiguredVMsWhenUnknown(t *testing.T) {
 
 	exp, err := experiment.Get(testExp)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("experiment.Get(%q) error = %v", testExp, err)
 	}
 
 	at := time.Now()
-	fake := &observingMM{
-		fakeMM: fakeMM{vms: mm.VMs{runningVM("a")}},
-		obs:    freshness.Observation{At: at, Known: false, Err: errors.New("compute1: timed out")},
-	}
+	unknown := freshness.Observation{At: at, Known: false, Err: errors.New("compute1: timed out")}
+	fake := &observingMM{fakeMM: fakeMM{vms: mm.VMs{runningVM("a")}}, obs: unknown}
 
 	original := mm.DefaultMM
 	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore test double
@@ -56,22 +56,27 @@ func TestListForObservedKeepsConfiguredVMsWhenUnknown(t *testing.T) {
 	mm.DefaultMM = fake //nolint:reassign // install test double
 
 	vms, obs := vm.ListForObserved(t.Context(), exp)
-	if obs.Known || !obs.At.Equal(at) {
-		t.Errorf("observation = %+v, want minimega's unknown one", obs)
+	if diff := cmp.Diff(unknown, obs, cmpopts.EquateErrors()); diff != "" {
+		t.Errorf("ListForObserved(%s) observation mismatch (-want +got):\n%s", testExp, diff)
 	}
 
-	if names := vmNames(vms); !slices.Equal(names, []string{"a", "b"}) {
-		t.Fatalf("VMs = %v, want a and b", names)
+	if diff := cmp.Diff([]string{"a", "b"}, vmNames(vms)); diff != "" {
+		t.Fatalf("ListForObserved(%s) VM names mismatch (-want +got):\n%s", testExp, diff)
 	}
 
-	if !vms[0].Running || vms[1].Running || vms[1].State != "" {
-		t.Errorf("a = %+v, b = %+v; want a running and b with no state", vms[0], vms[1])
+	if !vms[0].Running {
+		t.Errorf("ListForObserved(%s) a.Running = false, want true", testExp)
+	}
+
+	if vms[1].Running || vms[1].State != "" {
+		t.Errorf("ListForObserved(%s) b Running, State = %t, %q; want false, \"\"", testExp, vms[1].Running, vms[1].State)
 	}
 
 	// a known answer drops the VM minimega does not run, as not deployed
 	fake.obs = freshness.Observed(at)
 
-	if vms, _ := vm.ListForObserved(t.Context(), exp); !slices.Equal(vmNames(vms), []string{"a"}) {
-		t.Errorf("VMs with a known answer = %v, want only a", vmNames(vms))
+	vms, _ = vm.ListForObserved(t.Context(), exp)
+	if diff := cmp.Diff([]string{"a"}, vmNames(vms)); diff != "" {
+		t.Errorf("ListForObserved(%s) with a known answer VM names mismatch (-want +got):\n%s", testExp, diff)
 	}
 }
