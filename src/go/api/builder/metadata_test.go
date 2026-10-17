@@ -371,35 +371,31 @@ func TestUntrustedStringsAreBounded(t *testing.T) {
 	tests := map[string]CreateDraftRequest{
 		"oversized actor": {
 			Actor: strings.Repeat("a", MaxOwnerLength+1),
-			Title: "", SourceToken: "", Document: document, Summary: "", ID: "",
+			Title: "", SourceToken: "", Document: document, Summary: "",
 		},
 		"oversized title": {
 			Actor: testActor, Title: strings.Repeat("t", MaxTitleLength+1),
-			SourceToken: "", Document: document, Summary: "", ID: "",
+			SourceToken: "", Document: document, Summary: "",
 		},
 		"oversized source token": {
 			Actor: testActor, Title: "",
-			SourceToken: strings.Repeat("s", MaxSourceTokenLength+1), Document: document, Summary: "", ID: "",
+			SourceToken: strings.Repeat("s", MaxSourceTokenLength+1), Document: document, Summary: "",
 		},
 		"oversized summary": {
 			Actor: testActor, Title: "", SourceToken: "",
-			Document: document, Summary: long, ID: "",
+			Document: document, Summary: long,
 		},
 		"actor with control characters": {
 			Actor: "alice\x00", Title: "", SourceToken: "",
-			Document: document, Summary: "", ID: "",
+			Document: document, Summary: "",
 		},
 		"actor with invalid utf-8": {
 			Actor: "alice\xff", Title: "", SourceToken: "",
-			Document: document, Summary: "", ID: "",
-		},
-		"caller supplied id with a path segment": {
-			Actor: testActor, Title: "", SourceToken: "",
-			Document: document, Summary: "", ID: "../escape",
+			Document: document, Summary: "",
 		},
 		"empty actor": {
 			Actor: "", Title: "", SourceToken: "",
-			Document: document, Summary: "", ID: "",
+			Document: document, Summary: "",
 		},
 	}
 
@@ -440,7 +436,7 @@ func TestGeneratedIdentifiersAreValidated(t *testing.T) {
 
 	_, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "",
-		Document: testDocument(t, "topo", 0), Summary: "", ID: "",
+		Document: testDocument(t, "topo", 0), Summary: "",
 	})
 	if !errors.Is(err, ErrInvalid) {
 		t.Errorf("CreateDraft with the generated ID ../escape error = %s, want ErrInvalid", fmtErr(err))

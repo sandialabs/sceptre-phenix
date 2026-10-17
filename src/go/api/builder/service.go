@@ -92,8 +92,6 @@ type CreateDraftRequest struct {
 	// and canonicalized before anything is stored.
 	Document []byte
 	Summary  string
-	// ID optionally sets the draft ID. When empty an ID is generated.
-	ID string
 }
 
 // AppendSnapshotRequest appends a new snapshot to a draft, truncating any redo
@@ -122,8 +120,6 @@ type MoveCursorRequest struct {
 	ExpectedRevision int64
 	Index            int
 	SnapshotID       string
-	// UseIndex selects Index even when SnapshotID is empty and Index is zero.
-	UseIndex bool
 }
 
 // DeleteSnapshotRequest removes one snapshot from a draft's history.
@@ -446,7 +442,7 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 		return nil, err
 	}
 
-	draftID, err := s.draftID(req.ID)
+	draftID, err := s.draftID()
 	if err != nil {
 		return nil, err
 	}
@@ -878,17 +874,11 @@ func (s *Service) DeleteDraft(ctx context.Context, draftID, actor string, expect
 	return nil
 }
 
-// draftID returns the requested draft ID, or a validated generated one.
-func (s *Service) draftID(requested string) (string, error) {
-	draftID := requested
-
-	if draftID == "" {
-		generated, err := s.newID()
-		if err != nil {
-			return "", err
-		}
-
-		draftID = generated
+// draftID returns a validated generated draft ID.
+func (s *Service) draftID() (string, error) {
+	draftID, err := s.newID()
+	if err != nil {
+		return "", err
 	}
 
 	if err := validateID("draftID", draftID); err != nil {
@@ -1112,10 +1102,6 @@ func isPublishRetry(meta *DraftMetadata, req MarkPublishedRequest) bool {
 }
 
 func validateCreateRequest(req CreateDraftRequest) error {
-	if err := validateOptionalID("draftID", req.ID); err != nil {
-		return err
-	}
-
 	for _, field := range []struct {
 		name     string
 		value    string

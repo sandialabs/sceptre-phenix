@@ -330,7 +330,6 @@ func (b *builderAPI) createDraft(w http.ResponseWriter, r *http.Request) error {
 		Origin:      source.origin,
 		Document:    document,
 		Summary:     request.Summary,
-		ID:          "",
 	})
 
 	meta, err = builderMutation(
@@ -702,7 +701,6 @@ func (b *builderAPI) updateCursor(w http.ResponseWriter, r *http.Request) error 
 		ExpectedRevision: meta.Revision,
 		Index:            0,
 		SnapshotID:       request.SnapshotID,
-		UseIndex:         request.Index != nil,
 	}
 
 	if request.Index != nil {

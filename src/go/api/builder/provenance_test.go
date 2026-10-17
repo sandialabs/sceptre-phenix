@@ -130,7 +130,7 @@ func TestCreateDraftKeepsTheCreatorADocumentNames(t *testing.T) {
 
 			meta, err := h.service.CreateDraft(context.Background(), CreateDraftRequest{
 				Actor: testActor, Title: "", SourceToken: "", SourceFile: "",
-				Forked: nil, Origin: nil, Document: claimedDocument(t, "topo", test.claim), Summary: "", ID: "",
+				Forked: nil, Origin: nil, Document: claimedDocument(t, "topo", test.claim), Summary: "",
 			})
 			if err != nil {
 				t.Fatalf("CreateDraft returned error: %v", err)
@@ -287,7 +287,7 @@ func TestCursorDeleteAndPublishStampNoDocument(t *testing.T) {
 
 	// Undo, as another user, later.
 	meta, err := h.service.MoveCursor(ctx, MoveCursorRequest{
-		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Index: 1, SnapshotID: "", UseIndex: true,
+		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Index: 1, SnapshotID: "",
 	})
 	if err != nil {
 		t.Fatalf("MoveCursor returned error: %v", err)
@@ -387,7 +387,7 @@ func TestCreateDraftKeepsAnUnchangedCopy(t *testing.T) {
 
 			meta, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 				Actor: testActor, Title: "", SourceToken: "builder-doc/abc", SourceFile: "",
-				Forked: nil, Origin: originOf(origin), Document: body, Summary: "", ID: "",
+				Forked: nil, Origin: originOf(origin), Document: body, Summary: "",
 			})
 			if err != nil {
 				t.Fatalf("CreateDraft returned error: %v", err)
@@ -496,7 +496,7 @@ func TestCreateDraftStampsAChangedCopy(t *testing.T) {
 
 			meta, err := h.service.CreateDraft(context.Background(), CreateDraftRequest{
 				Actor: testActor, Title: "", SourceToken: "builder-doc/abc", SourceFile: "",
-				Forked: nil, Origin: originOf(origin), Document: test.body, Summary: "", ID: "",
+				Forked: nil, Origin: originOf(origin), Document: test.body, Summary: "",
 			})
 			if err != nil {
 				t.Fatalf("CreateDraft returned error: %v", err)
@@ -532,7 +532,7 @@ func TestCreateDraftWithoutAnOriginStampsAnEqualDocument(t *testing.T) {
 
 	meta, err := h.service.CreateDraft(context.Background(), CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "", SourceFile: "",
-		Forked: nil, Origin: nil, Document: origin, Summary: "", ID: "",
+		Forked: nil, Origin: nil, Document: origin, Summary: "",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft returned error: %v", err)
@@ -553,7 +553,7 @@ func TestCreateDraftWithoutAnOriginStampsAnEqualDocument(t *testing.T) {
 	// An origin that is not a digest is a caller's mistake, never ignored.
 	_, err = h.service.CreateDraft(context.Background(), CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "", SourceFile: "",
-		Forked: nil, Origin: &DocumentOrigin{Digest: "abc"}, Document: origin, Summary: "", ID: "",
+		Forked: nil, Origin: &DocumentOrigin{Digest: "abc"}, Document: origin, Summary: "",
 	})
 	if !errors.Is(err, ErrInvalid) {
 		t.Errorf("CreateDraft with the origin digest abc error = %s, want ErrInvalid", fmtErr(err))
@@ -584,7 +584,7 @@ func TestMalformedProvenanceRefusesTheRequest(t *testing.T) {
 
 			_, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 				Actor: testActor, Title: "", SourceToken: "", SourceFile: "",
-				Forked: nil, Origin: nil, Document: document, Summary: "", ID: "",
+				Forked: nil, Origin: nil, Document: document, Summary: "",
 			})
 			if !errors.Is(err, ErrInvalid) {
 				t.Errorf("CreateDraft error = %s, want ErrInvalid", fmtErr(err))
@@ -641,7 +641,7 @@ func TestStampCountsTowardsTheDocumentLimit(t *testing.T) {
 
 	_, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "", SourceFile: "",
-		Forked: nil, Origin: nil, Document: full, Summary: "", ID: "",
+		Forked: nil, Origin: nil, Document: full, Summary: "",
 	})
 	if !errors.Is(err, ErrTooLarge) {
 		t.Errorf("CreateDraft of a document the stamp pushes over the limit = %s, want ErrTooLarge", fmtErr(err))
@@ -655,7 +655,7 @@ func TestStampCountsTowardsTheDocumentLimit(t *testing.T) {
 	// origin, which is not stamped.
 	copied, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "builder-doc/abc", SourceFile: "",
-		Forked: nil, Origin: originOf(full), Document: full, Summary: "", ID: "",
+		Forked: nil, Origin: originOf(full), Document: full, Summary: "",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft of an unchanged copy at the limit returned error: %s", fmtErr(err))
@@ -693,7 +693,7 @@ func TestStampCountsTowardsTheDocumentLimit(t *testing.T) {
 
 	created, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "", SourceFile: "",
-		Forked: nil, Origin: nil, Document: fits, Summary: "", ID: "",
+		Forked: nil, Origin: nil, Document: fits, Summary: "",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft of a document the stamp fills the limit with returned error: %s", fmtErr(err))
@@ -829,7 +829,7 @@ func TestCreateDraftRecordsTheSourceFile(t *testing.T) {
 
 	meta, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "", SourceFile: name,
-		Forked: nil, Origin: nil, Document: testDocument(t, "topo", 0), Summary: "", ID: "",
+		Forked: nil, Origin: nil, Document: testDocument(t, "topo", 0), Summary: "",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft returned error: %s", fmtErr(err))
@@ -842,7 +842,7 @@ func TestCreateDraftRecordsTheSourceFile(t *testing.T) {
 	meta = appendTestSnapshot(t, h, meta, "topo-v2", testPeer)
 
 	meta, err = h.service.MoveCursor(ctx, MoveCursorRequest{
-		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Index: 0, SnapshotID: "", UseIndex: true,
+		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Index: 0, SnapshotID: "",
 	})
 	if err != nil {
 		t.Fatalf("MoveCursor returned error: %s", fmtErr(err))
@@ -878,7 +878,7 @@ func TestCreateDraftRecordsTheSourceFile(t *testing.T) {
 	} {
 		_, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 			Actor: testActor, Title: "", SourceToken: "", SourceFile: invalid,
-			Forked: nil, Origin: nil, Document: testDocument(t, "refused", 0), Summary: "", ID: "",
+			Forked: nil, Origin: nil, Document: testDocument(t, "refused", 0), Summary: "",
 		})
 		if !errors.Is(err, ErrInvalid) {
 			t.Errorf("CreateDraft with source file %q = %s, want ErrInvalid", invalid, fmtErr(err))

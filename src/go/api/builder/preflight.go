@@ -90,13 +90,10 @@ const (
 	preflightListed = 3
 )
 
-// ErrPreflightUnavailable is what a [PreflightUnavailableError] unwraps to.
-var ErrPreflightUnavailable = errors.New("builder: preflight source unavailable")
-
 // PreflightUnavailableError is what a [PreflightEnvironment] returns for data
 // it may not or cannot read. Either the role of the caller does not allow it,
 // or the service that holds it cannot be reached. Reason says which, in words
-// shown to the caller. It unwraps to [ErrPreflightUnavailable].
+// shown to the caller.
 type PreflightUnavailableError struct {
 	Reason string
 }
@@ -104,9 +101,6 @@ type PreflightUnavailableError struct {
 func (e *PreflightUnavailableError) Error() string {
 	return e.Reason
 }
-
-// Unwrap allows [errors.Is](err, ErrPreflightUnavailable) to succeed.
-func (e *PreflightUnavailableError) Unwrap() error { return ErrPreflightUnavailable }
 
 // NewPreflightUnavailable returns the error that a [PreflightEnvironment]
 // returns for data it may not or cannot read. reason is a lowercase phrase

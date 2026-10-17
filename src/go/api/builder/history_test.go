@@ -89,7 +89,7 @@ func TestDeleteSnapshot(t *testing.T) {
 	meta = appendTestSnapshot(t, h, meta, "topo-v3", testActor)
 
 	meta, err = h.service.MoveCursor(ctx, MoveCursorRequest{
-		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Index: 2, SnapshotID: "", UseIndex: true,
+		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Index: 2, SnapshotID: "",
 	})
 	if err != nil {
 		t.Fatalf("MoveCursor returned error: %v", err)

@@ -176,7 +176,6 @@ func createTestDraft(t *testing.T, h *testHarness, name string) *DraftMetadata {
 		SourceToken: "Topology/" + name,
 		Document:    testDocument(t, name, 0),
 		Summary:     "initial",
-		ID:          "",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft returned error: %v", err)

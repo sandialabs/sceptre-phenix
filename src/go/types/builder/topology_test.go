@@ -1563,32 +1563,6 @@ func TestTopologyNameMatchesPublishDialog(t *testing.T) {
 	}
 }
 
-// TestExportTopologyConfigReturnsVLANAliases checks that an export carries the VLAN aliases the
-// projection found, which a topology config has no place for.
-func TestExportTopologyConfigReturnsVLANAliases(t *testing.T) {
-	t.Parallel()
-
-	doc := loadDocumentFixture(t, "strict-document.json")
-
-	projection, err := doc.ToTopology()
-	if err != nil {
-		t.Fatalf("ToTopology: %v", err)
-	}
-
-	export, err := doc.ExportTopologyConfig("lab")
-	if err != nil {
-		t.Fatalf("ExportTopologyConfig: %v", err)
-	}
-
-	if len(projection.VLANAliases) == 0 {
-		t.Fatal("ToTopology() VLANAliases = none, want the fixture's aliases")
-	}
-
-	if diff := cmp.Diff(projection.VLANAliases, export.VLANAliases); diff != "" {
-		t.Errorf("ExportTopologyConfig(lab) VLANAliases mismatch, want the projection's (-want +got):\n%s", diff)
-	}
-}
-
 // TestToTopologyOmitsVisualNodes checks that shapes, icons and lines, one of them in a group, leave
 // the published topology unchanged.
 func TestToTopologyOmitsVisualNodes(t *testing.T) {

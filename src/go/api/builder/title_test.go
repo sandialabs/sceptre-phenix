@@ -45,7 +45,7 @@ func TestDocumentNameRulesAgreeWithDraftTitles(t *testing.T) {
 
 	if _, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "",
-		Document: testDocument(t, longest, 0), Summary: "", ID: "",
+		Document: testDocument(t, longest, 0), Summary: "",
 	}); err != nil {
 		t.Errorf("CreateDraft(a %d-byte name) returned error: %v", MaxTitleLength, err)
 	}
@@ -67,7 +67,7 @@ func TestDocumentNameRulesAgreeWithDraftTitles(t *testing.T) {
 
 			_, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 				Actor: testActor, Title: "", SourceToken: "",
-				Document: namedDocument(t, tt.docName), Summary: "", ID: "",
+				Document: namedDocument(t, tt.docName), Summary: "",
 			})
 
 			var invalid *builder.ValidationError

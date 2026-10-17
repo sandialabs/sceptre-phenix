@@ -114,7 +114,7 @@ func TestServiceRejectsInvalidDocuments(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 				Actor: testActor, Title: "", SourceToken: "",
-				Document: tt.document, Summary: "", ID: "",
+				Document: tt.document, Summary: "",
 			})
 			if !errors.Is(err, tt.is) || !errors.Is(err, ErrInvalid) {
 				t.Errorf("CreateDraft(%s) error = %s, want %v and ErrInvalid", tt.name, fmtErr(err), tt.is)
@@ -177,7 +177,7 @@ func TestDocumentsAreCanonicalizedBeforeStorage(t *testing.T) {
 
 	meta, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "",
-		Document: compact, Summary: "", ID: "",
+		Document: compact, Summary: "",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft returned error: %v", err)
@@ -253,7 +253,7 @@ func TestDraftTitleFollowsDocumentName(t *testing.T) {
 
 	meta, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "ignored when the document is named",
-		SourceToken: "", Document: testDocument(t, "topo", 0), Summary: "", ID: "",
+		SourceToken: "", Document: testDocument(t, "topo", 0), Summary: "",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft returned error: %v", err)
@@ -283,7 +283,7 @@ func TestDraftTitleFollowsDocumentName(t *testing.T) {
 
 	fallback, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "Fallback Title",
-		SourceToken: "", Document: unnamed, Summary: "", ID: "",
+		SourceToken: "", Document: unnamed, Summary: "",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft with an unnamed document returned error: %v", err)

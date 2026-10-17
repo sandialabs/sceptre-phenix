@@ -67,7 +67,7 @@ func TestCreateDraftAndReadCurrentDocument(t *testing.T) {
 
 	meta, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "Topo A",
-		SourceToken: "Topology/topo-a", Document: data, Summary: "initial", ID: "",
+		SourceToken: "Topology/topo-a", Document: data, Summary: "initial",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft(topo-a) returned error: %v", err)
@@ -472,9 +472,11 @@ func TestFailedWritesRemoveTheirChunks(t *testing.T) {
 		return refused
 	}
 
+	h.service.newID = func() (string, error) { return "other", nil }
+
 	_, err = h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "", SourceToken: "",
-		Document: testDocument(t, "other", 0), Summary: "", ID: "other",
+		Document: testDocument(t, "other", 0), Summary: "",
 	})
 	if !errors.Is(err, refused) {
 		t.Errorf("CreateDraft(other) error = %s, want the store error", fmtErr(err))
@@ -515,7 +517,7 @@ func TestMoveCursorAndRedoBranchTruncation(t *testing.T) {
 
 	moved, err := h.service.MoveCursor(ctx, MoveCursorRequest{
 		DraftID: meta.ID, Actor: testPeer, ExpectedRevision: meta.Revision,
-		Index: 1, SnapshotID: "", UseIndex: true,
+		Index: 1, SnapshotID: "",
 	})
 	if err != nil {
 		t.Fatalf("MoveCursor(%s, 1) returned error: %v", meta.ID, err)
@@ -568,7 +570,7 @@ func TestMoveCursorValidation(t *testing.T) {
 
 	_, err := h.service.MoveCursor(ctx, MoveCursorRequest{
 		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision,
-		Index: 7, SnapshotID: "", UseIndex: true,
+		Index: 7, SnapshotID: "",
 	})
 	if !errors.Is(err, ErrInvalid) {
 		t.Errorf("MoveCursor(%s, 7) out of range error = %s, want ErrInvalid", meta.ID, fmtErr(err))
@@ -576,7 +578,7 @@ func TestMoveCursorValidation(t *testing.T) {
 
 	_, err = h.service.MoveCursor(ctx, MoveCursorRequest{
 		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision,
-		Index: 0, SnapshotID: "unknown", UseIndex: false,
+		Index: 0, SnapshotID: "unknown",
 	})
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("MoveCursor(%s, unknown) error = %s, want ErrNotFound", meta.ID, fmtErr(err))
@@ -584,7 +586,7 @@ func TestMoveCursorValidation(t *testing.T) {
 
 	_, err = h.service.MoveCursor(ctx, MoveCursorRequest{
 		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision + 3,
-		Index: 0, SnapshotID: "", UseIndex: true,
+		Index: 0, SnapshotID: "",
 	})
 	if !errors.Is(err, ErrConflict) {
 		t.Errorf("MoveCursor(%s, 0) with a stale revision error = %s, want ErrConflict", meta.ID, fmtErr(err))
@@ -749,7 +751,7 @@ func TestDocumentSizeLimitRejectedBeforeDurableWrite(t *testing.T) {
 
 	if _, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "big",
-		SourceToken: "", Document: oversized, Summary: "", ID: "",
+		SourceToken: "", Document: oversized, Summary: "",
 	}); !errors.Is(err, ErrTooLarge) {
 		t.Errorf("CreateDraft(big) of an oversized document error = %s, want ErrTooLarge", fmtErr(err))
 	}
@@ -863,7 +865,7 @@ func TestMarkPublishedClearsDirtyAndRequiresCurrentSnapshot(t *testing.T) {
 	// Moving back to the published snapshot makes it clean again.
 	restored, err := h.service.MoveCursor(ctx, MoveCursorRequest{
 		DraftID: meta.ID, Actor: testActor, ExpectedRevision: edited.Revision,
-		Index: 0, SnapshotID: published.Publication.SnapshotID, UseIndex: false,
+		Index: 0, SnapshotID: published.Publication.SnapshotID,
 	})
 	if err != nil {
 		t.Fatalf("MoveCursor(%s, %s) returned error: %v", meta.ID, published.Publication.SnapshotID, err)
@@ -996,7 +998,7 @@ func TestDraftsSurviveServiceRestartOnBoltDB(t *testing.T) {
 
 	meta, err := service.CreateDraft(ctx, CreateDraftRequest{
 		Actor: testActor, Title: "Topo", SourceToken: "Topology/topo",
-		Document: testRandomDocument(t, "topo", 40000), Summary: "initial", ID: "",
+		Document: testRandomDocument(t, "topo", 40000), Summary: "initial",
 	})
 	if err != nil {
 		t.Fatalf("CreateDraft(topo) returned error: %v", err)

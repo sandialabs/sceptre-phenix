@@ -63,9 +63,6 @@ type Topology struct {
 type TopologyExport struct {
 	// Config is the topology config publishing stores.
 	Config *store.Config
-	// VLANAliases maps network names to their integer VLAN alias (see
-	// [Topology.VLANAliases]). A topology config holds none.
-	VLANAliases map[string]int
 	// Warnings collects non-fatal issues found while mapping the document.
 	Warnings []Issue
 	// PublishBlockers are the reasons why a publish refuses Config, although
@@ -392,7 +389,6 @@ func (d *Document) ExportTopologyConfig(name string) (*TopologyExport, error) {
 
 	return &TopologyExport{
 		Config:          projection.config,
-		VLANAliases:     projection.topology.VLANAliases,
 		Warnings:        projection.warnings,
 		PublishBlockers: projection.blockers,
 	}, nil
