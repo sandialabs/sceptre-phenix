@@ -5,10 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/api/experiment"
 	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/util/common"
 )
 
@@ -60,7 +63,7 @@ func TestCreateRejectsInvalidOptions(t *testing.T) {
 			// rejected before the store is read
 			err := experiment.Create(context.Background(), tc.opts...)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("Create error = %v, want one containing %s", err, tc.want)
+				t.Errorf("Create(%s) error = %v, want one containing %s", tc.name, err, tc.want)
 			}
 		})
 	}
@@ -130,7 +133,7 @@ func TestCreateAnnotatesEveryVMAndTheExperiment(t *testing.T) { //nolint:paralle
 	useTestStore(t)
 
 	if err := store.Create(annotationTestTopology()); err != nil {
-		t.Fatal(err)
+		t.Fatalf("storing topology annotated: %v", err)
 	}
 
 	err := experiment.Create(
@@ -144,53 +147,69 @@ func TestCreateAnnotatesEveryVMAndTheExperiment(t *testing.T) { //nolint:paralle
 		}),
 	)
 	if err != nil {
-		t.Fatalf("creating experiment: %v", err)
+		t.Fatalf("Create(annotated) error = %v", err)
 	}
 
 	exp, err := experiment.Get("annotated")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Get(annotated) error = %v", err)
 	}
 
 	if got := exp.Metadata.Annotations["phenix.workflow/tags"]; got != "run=1" {
-		t.Errorf("experiment annotation phenix.workflow/tags = %q, want run=1", got)
+		t.Errorf("Get(annotated) annotation phenix.workflow/tags = %q, want %q", got, "run=1")
 	}
 
 	if got := exp.Metadata.Annotations["topology"]; got != "annotated" {
-		t.Errorf("experiment annotation topology = %q, want annotated", got)
+		t.Errorf("Get(annotated) annotation topology = %q, want %q", got, "annotated")
 	}
 
-	want := map[string]bool{"server": false, "client": true}
-
-	for _, node := range exp.Spec.Topology().Nodes() {
-		hostname := node.General().Hostname()
-
-		defaultApps, _ := node.GetAnnotation("phenix/default-apps")
-		if defaultApps != want[hostname] {
-			t.Errorf("%s: phenix/default-apps = %v, want %v", hostname, defaultApps, want[hostname])
-		}
-
-		if tunnels, ok := node.GetAnnotation("phenix/startup-autotunnel"); !ok {
-			t.Errorf("%s: phenix/startup-autotunnel missing", hostname)
-		} else if list, _ := tunnels.([]any); len(list) != 1 || list[0] != "8080:80" {
-			t.Errorf("%s: phenix/startup-autotunnel = %v", hostname, tunnels)
-		}
+	// a node's own annotation wins over the one given for every node
+	want := map[string]nodeAnnotations{
+		"server": {DefaultApps: false, Autotunnel: []any{"8080:80"}},
+		"client": {DefaultApps: true, Autotunnel: []any{"8080:80"}},
+	}
+	if diff := cmp.Diff(want, annotationsByNode(exp.Spec.Topology().Nodes())); diff != "" {
+		t.Errorf("Get(annotated) node annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	// the topology config itself is left as it was
-	topoC, _ := store.NewConfig("topology/annotated")
+	topoC, err := store.NewConfig("topology/annotated")
+	if err != nil {
+		t.Fatalf("store.NewConfig(topology/annotated) error = %v", err)
+	}
+
 	if err := store.Get(topoC); err != nil {
-		t.Fatal(err)
+		t.Fatalf("store.Get(topology/annotated) error = %v", err)
 	}
 
 	topo, err := types.DecodeTopologyFromConfig(*topoC)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("types.DecodeTopologyFromConfig(topology/annotated) error = %v", err)
 	}
 
-	for _, node := range topo.Nodes() {
-		if _, ok := node.GetAnnotation("phenix/startup-autotunnel"); ok {
-			t.Errorf("topology config node %s was annotated", node.General().Hostname())
-		}
+	wantTopo := map[string]nodeAnnotations{"server": {}, "client": {DefaultApps: true}}
+	if diff := cmp.Diff(wantTopo, annotationsByNode(topo.Nodes())); diff != "" {
+		t.Errorf("topology/annotated node annotations after Create() mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// nodeAnnotations holds the annotations Create sets on a node, nil when the
+// node has none.
+type nodeAnnotations struct {
+	DefaultApps any
+	Autotunnel  any
+}
+
+// annotationsByNode returns each node's nodeAnnotations by hostname.
+func annotationsByNode(nodes []ifaces.NodeSpec) map[string]nodeAnnotations {
+	got := make(map[string]nodeAnnotations, len(nodes))
+
+	for _, node := range nodes {
+		defaultApps, _ := node.GetAnnotation("phenix/default-apps")
+		autotunnel, _ := node.GetAnnotation("phenix/startup-autotunnel")
+
+		got[node.General().Hostname()] = nodeAnnotations{DefaultApps: defaultApps, Autotunnel: autotunnel}
+	}
+
+	return got
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/api/config"
 	"phenix/store"
@@ -138,15 +139,21 @@ func storedAt(revision uint64) func(*store.Config) error {
 // hooks run or anything is written, including on the rename path.
 func TestUpdateIfRevisionConflicts(t *testing.T) {
 	for _, newName := range []string{"a", "renamed"} {
-		m := useMockStore(t)
-		m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(3))
+		t.Run("to "+newName, func(t *testing.T) {
+			m := useMockStore(t)
+			m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(3))
 
-		c, _ := store.NewConfig("topology/" + newName)
-		c.IfRevision = 2
+			c, err := store.NewConfig("topology/" + newName)
+			if err != nil {
+				t.Fatalf("store.NewConfig(%q) error = %v", "topology/"+newName, err)
+			}
 
-		if err := config.Update("topology/a", c); !errors.Is(err, store.ErrConflict) {
-			t.Errorf("update to %s at a stale revision: err = %v, want ErrConflict", newName, err)
-		}
+			c.IfRevision = 2
+
+			if err := config.Update("topology/a", c); !errors.Is(err, store.ErrConflict) {
+				t.Errorf("Update(topology/a, topology/%s at stale revision 2) error = %v, want %v", newName, err, store.ErrConflict)
+			}
+		})
 	}
 }
 
@@ -158,7 +165,7 @@ func TestEditIfRevisionConflicts(t *testing.T) {
 
 	script := "#!/bin/sh\nsed 's/revision: 1$/revision: 2/' \"$1\" > \"$1.new\" && mv \"$1.new\" \"$1\"\n"
 	if err := os.WriteFile(editor, []byte(script), 0o700); err != nil { //nolint:gosec // an executable test editor
-		t.Fatal(err)
+		t.Fatalf("writing the test editor: %v", err)
 	}
 
 	t.Setenv("EDITOR", editor)
@@ -170,7 +177,7 @@ func TestEditIfRevisionConflicts(t *testing.T) {
 	)
 
 	if _, err := config.Edit("topology/a", false); !errors.Is(err, store.ErrConflict) {
-		t.Errorf("edit of a config changed meanwhile: err = %v, want ErrConflict", err)
+		t.Errorf("Edit(topology/a) of a config changed meanwhile error = %v, want %v", err, store.ErrConflict)
 	}
 }
 
@@ -197,10 +204,11 @@ func TestFailedRenameLeavesOnlyTheOldConfig(t *testing.T) {
 	c.IfRevision = 5
 
 	if err := config.Update("topology/a", c); !errors.Is(err, store.ErrConflict) {
-		t.Errorf("rename with a failing delete: err = %v, want ErrConflict", err)
+		t.Errorf("Update(topology/a, topology/b) with a failing delete error = %v, want %v", err, store.ErrConflict)
 	}
 
-	if !slices.Equal(deleted, []string{"b"}) {
-		t.Errorf("deleted %v, want the renamed copy [b]", deleted)
+	// only the renamed copy is removed
+	if diff := cmp.Diff([]string{"b"}, deleted); diff != "" {
+		t.Errorf("Update(topology/a, topology/b) deleted configs mismatch (-want +got):\n%s", diff)
 	}
 }

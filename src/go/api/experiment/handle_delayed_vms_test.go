@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/hashicorp/go-multierror"
 
 	"phenix/util/mm"
@@ -127,20 +129,20 @@ func TestHandleDelayedVMsStartsC2DelayedVMsOnceTheirClientsAreActive(t *testing.
 	polltest.Until(t, "the clients were checked twice", func() bool { return len(fake.checked()) >= 2 })
 
 	if got := received(); len(got) != 0 {
-		t.Fatalf("sent %q before any client was active", mmtest.Bases(got))
+		t.Errorf("handleDelayedVMs() sent %q before any client was active, want nothing", mmtest.Bases(got))
 	}
 
 	want := []mm.C2ClientRef{other, byName, byUUID, solo}
-	if got := fake.checked()[0]; !slices.Equal(got, want) {
-		t.Fatalf("checked %v, want %v", got, want)
+	if diff := cmp.Diff(want, fake.checked()[0]); diff != "" {
+		t.Errorf("handleDelayedVMs() first ActiveC2Clients refs mismatch (-want +got):\n%s", diff)
 	}
 
 	fake.activate(solo, byName)
 
 	mmtest.Await(t, "vm start client1")
 
-	if mmtest.Count(received(), "vm start client2") != 0 {
-		t.Fatal("client2 started before all the clients it waits on were active")
+	if n := mmtest.Count(received(), "vm start client2"); n != 0 {
+		t.Errorf("handleDelayedVMs() sent vm start client2 %d times before all its clients were active, want 0", n)
 	}
 
 	checksBefore := len(fake.checked())
@@ -152,19 +154,17 @@ func TestHandleDelayedVMsStartsC2DelayedVMsOnceTheirClientsAreActive(t *testing.
 	select {
 	case err = <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("handleDelayedVMs did not return once every client was active")
+		t.Fatal("handleDelayedVMs() still running 5s after every client was active")
 	}
 
-	sent := received()
-
-	if got := mmtest.Bases(sent); !slices.Equal(got, []string{"vm start client1", "vm start client2", "vm start late"}) {
-		t.Fatalf("sent %q, want each delayed VM started once", got)
+	// each delayed VM started once, in the experiment's namespace
+	wantSent := []mmtest.Command{
+		{Namespace: "exp", Base: "vm start client1"},
+		{Namespace: "exp", Base: "vm start client2"},
+		{Namespace: "exp", Base: "vm start late"},
 	}
-
-	for _, cmd := range sent {
-		if cmd.Namespace != "exp" {
-			t.Errorf("%q sent in namespace %q, want exp", cmd.Base, cmd.Namespace)
-		}
+	if diff := cmp.Diff(wantSent, received(), cmpopts.IgnoreFields(mmtest.Command{}, "Raw")); diff != "" {
+		t.Errorf("handleDelayedVMs() commands mismatch (-want +got):\n%s", diff)
 	}
 
 	// A VM that fails to start is reported, and the experiment's VMs are
@@ -175,17 +175,21 @@ func TestHandleDelayedVMsStartsC2DelayedVMsOnceTheirClientsAreActive(t *testing.
 	)
 
 	if !errors.As(err, &merr) || len(merr.Errors) != 1 || !errors.As(merr.Errors[0], &delayed) || delayed.VM != "late" {
-		t.Fatalf("error = %v, want late's start error", err)
+		t.Errorf("handleDelayedVMs() error = %v, want one %T for late", err, delayed)
 	}
 
 	if n := fake.clears(); n != 1 {
-		t.Fatalf("cleared the namespace %d times, want once", n)
+		t.Errorf("handleDelayedVMs() ClearNamespace calls = %d, want 1", n)
 	}
 
 	// Checks after client1 started leave out what only it waited on.
 	checks := fake.checked()
-	if last := checks[len(checks)-1]; len(checks) <= checksBefore || !slices.Equal(last, []mm.C2ClientRef{other, byName, byUUID}) {
-		t.Fatalf("last check asked about %v, want solo left out", last)
+	if len(checks) <= checksBefore {
+		t.Fatalf("handleDelayedVMs() ActiveC2Clients calls = %d, want more than the %d before client1 started", len(checks), checksBefore)
+	}
+
+	if diff := cmp.Diff([]mm.C2ClientRef{other, byName, byUUID}, checks[len(checks)-1]); diff != "" {
+		t.Errorf("handleDelayedVMs() last ActiveC2Clients refs mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -206,23 +210,24 @@ func TestHandleDelayedVMsLeavesNamespaceWhenCanceled(t *testing.T) { //nolint:pa
 		map[string]map[string]bool{"a": {"server": false}, "b": {"server": true}},
 	)
 
+	// one error for each waiting VM
 	var merr *multierror.Error
 	if !errors.As(err, &merr) || len(merr.Errors) != 3 {
-		t.Fatalf("error = %v, want one for each waiting VM", err)
-	}
-
-	for _, err := range merr.Errors {
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("error %v, want context.Canceled", err)
+		t.Errorf("handleDelayedVMs(canceled) error = %v, want a %T of 3 errors", err, merr)
+	} else {
+		for _, err := range merr.Errors {
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("handleDelayedVMs(canceled) VM error = %v, want %v", err, context.Canceled)
+			}
 		}
 	}
 
 	if got := received(); len(got) != 0 {
-		t.Fatalf("sent %q after the start was canceled", mmtest.Bases(got))
+		t.Errorf("handleDelayedVMs(canceled) sent %q, want nothing", mmtest.Bases(got))
 	}
 
 	if n := fake.clears(); n != 0 {
-		t.Fatalf("cleared the namespace %d times, want none", n)
+		t.Errorf("handleDelayedVMs(canceled) ClearNamespace calls = %d, want 0", n)
 	}
 }
 
@@ -230,10 +235,14 @@ func TestHandleDelayedVMsWithNothingDelayed(t *testing.T) { //nolint:paralleltes
 	fake, received := useDelayedMM(t)
 
 	if err := handleDelayedVMs(context.Background(), "exp", nil, nil); err != nil {
-		t.Fatalf("error = %v, want nil", err)
+		t.Errorf("handleDelayedVMs(nothing delayed) error = %v, want nil", err)
 	}
 
-	if len(received()) != 0 || fake.clears() != 0 {
-		t.Fatalf("sent %q and cleared the namespace %d times, want nothing", mmtest.Bases(received()), fake.clears())
+	if got := received(); len(got) != 0 {
+		t.Errorf("handleDelayedVMs(nothing delayed) sent %q, want nothing", mmtest.Bases(got))
+	}
+
+	if n := fake.clears(); n != 0 {
+		t.Errorf("handleDelayedVMs(nothing delayed) ClearNamespace calls = %d, want 0", n)
 	}
 }

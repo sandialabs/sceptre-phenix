@@ -3,6 +3,8 @@ package soh
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/store"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
@@ -37,31 +39,37 @@ func TestGetForStoppedExperimentShowsItsTopology(t *testing.T) {
 		Status: &v1.ExperimentStatus{},
 	}
 
+	lan := Node{ID: 3, Label: "LAN", Image: "switch", Status: "ignore"}
+
 	network, err := GetFor(t.Context(), exp, "")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetFor(exp, \"\") error = %v", err)
 	}
 
 	// two VMs plus the LAN switch (MGMT is ignored)
-	if len(network.Nodes) != 3 || len(network.Edges) != 2 {
-		t.Fatalf("got %d nodes, %d edges: %+v", len(network.Nodes), len(network.Edges), network)
+	want := &Network{
+		Nodes: []Node{{ID: 0, Label: "a", Status: "notdeploy"}, lan, {ID: 1, Label: "b", Status: "notboot"}},
+		Edges: []Edge{{ID: 0, Source: 0, Target: 3, Length: defaultEdgeLength}, {ID: 1, Source: 1, Target: 3, Length: defaultEdgeLength}},
 	}
-
-	if network.Nodes[0].Status != "notdeploy" || network.Nodes[1].Status != "ignore" || network.Nodes[2].Status != "notboot" {
-		t.Errorf("unexpected states: %+v", network.Nodes)
+	if diff := cmp.Diff(want, network); diff != "" {
+		t.Errorf("GetFor(exp, \"\") mismatch (-want +got):\n%s", diff)
 	}
 
 	filtered, err := GetFor(t.Context(), exp, "notboot")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetFor(exp, notboot) error = %v", err)
 	}
 
-	if len(filtered.Nodes) != 2 || filtered.Nodes[0].Label != "b" {
-		t.Errorf("status filter not applied: %+v", filtered.Nodes)
+	want = &Network{
+		Nodes: []Node{{ID: 1, Label: "b", Status: "notboot"}, lan},
+		Edges: []Edge{{ID: 0, Source: 1, Target: 3, Length: defaultEdgeLength}},
+	}
+	if diff := cmp.Diff(want, filtered); diff != "" {
+		t.Errorf("GetFor(exp, notboot) mismatch (-want +got):\n%s", diff)
 	}
 
 	hosts, flows, err := GetFlowsFor(exp)
 	if err != nil || hosts != nil || flows != nil {
-		t.Errorf("GetFlowsFor without SoH status = %v, %v, %v", hosts, flows, err)
+		t.Errorf("GetFlowsFor(exp without SoH status) = %v, %v, %v; want nil, nil, nil", hosts, flows, err)
 	}
 }

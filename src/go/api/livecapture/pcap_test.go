@@ -54,11 +54,11 @@ func TestParseHeader(t *testing.T) {
 
 			h, err := parseHeader(tt.b)
 			if !errors.Is(err, tt.err) {
-				t.Fatalf("got error %v, want %v", err, tt.err)
+				t.Errorf("parseHeader(%x) error = %v, want %v", tt.b, err, tt.err)
 			}
 
 			if tt.err == nil && h.order != tt.order {
-				t.Fatalf("got byte order %v, want %v", h.order, tt.order)
+				t.Errorf("parseHeader(%x).order = %v, want %v", tt.b, h.order, tt.order)
 			}
 		})
 	}
@@ -105,11 +105,11 @@ func TestComplete(t *testing.T) {
 
 			got, err := h.complete(tt.b)
 			if !errors.Is(err, tt.err) {
-				t.Fatalf("got error %v, want %v", err, tt.err)
+				t.Errorf("complete(%d bytes of %s) error = %v, want %v", len(tt.b), tt.name, err, tt.err)
 			}
 
 			if got != tt.want {
-				t.Fatalf("got %d whole bytes, want %d", got, tt.want)
+				t.Errorf("complete(%d bytes of %s) = %d, want %d", len(tt.b), tt.name, got, tt.want)
 			}
 		})
 	}

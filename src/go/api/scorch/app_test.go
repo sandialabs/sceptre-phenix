@@ -4,12 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/api/scorch/scorchexe"
 	"phenix/store"
@@ -130,11 +130,11 @@ func TestRunningRunsEveryStageOrOnlyCleanup(t *testing.T) { //nolint:paralleltes
 			earlier := filepath.Join(runDir, "earlier.log")
 
 			if err := os.MkdirAll(runDir, 0o750); err != nil {
-				t.Fatal(err)
+				t.Fatalf("creating the run directory: %v", err)
 			}
 
 			if err := os.WriteFile(earlier, []byte("collected"), 0o600); err != nil {
-				t.Fatal(err)
+				t.Fatalf("writing an earlier run's data: %v", err)
 			}
 
 			ctx := scorchexe.SetRunID(context.Background(), 0)
@@ -143,11 +143,11 @@ func TestRunningRunsEveryStageOrOnlyCleanup(t *testing.T) { //nolint:paralleltes
 			}
 
 			if err := newScorch().Running(ctx, exp); err != nil {
-				t.Fatalf("Running: %v", err)
+				t.Fatalf("Running(run 0, cleanup only %t) error = %v", tc.cleanupOnly, err)
 			}
 
-			if !slices.Equal(*calls, tc.want) {
-				t.Fatalf("stages run = %v, want %v", *calls, tc.want)
+			if diff := cmp.Diff(tc.want, *calls); diff != "" {
+				t.Errorf("Running(run 0, cleanup only %t) stages mismatch (-want +got):\n%s", tc.cleanupOnly, diff)
 			}
 
 			infos, _ := filepath.Glob(filepath.Join(runDir, "scorch-test-scorch-run-0-*.json"))
@@ -156,9 +156,16 @@ func TestRunningRunsEveryStageOrOnlyCleanup(t *testing.T) { //nolint:paralleltes
 
 			if tc.cleanupOnly {
 				// the data an earlier run collected is left as it is
-				if statErr != nil || len(infos) != 0 || len(archives) != 0 || len(received()) != 0 {
-					t.Fatalf("earlier data: %v; recorded %v and archived %v, asking minimega %q; want nothing done",
-						statErr, infos, archives, mmtest.Bases(received()))
+				if statErr != nil {
+					t.Errorf("os.Stat(earlier run's data) after a cleanup-only Running() error = %v, want it kept", statErr)
+				}
+
+				if len(infos) != 0 || len(archives) != 0 {
+					t.Errorf("cleanup-only Running() wrote run info %q and archives %q, want none", infos, archives)
+				}
+
+				if bases := mmtest.Bases(received()); len(bases) != 0 {
+					t.Errorf("cleanup-only Running() sent minimega %q, want nothing", bases)
 				}
 
 				return
@@ -166,15 +173,20 @@ func TestRunningRunsEveryStageOrOnlyCleanup(t *testing.T) { //nolint:paralleltes
 
 			// a whole run starts afresh, then records and archives what it did
 			if statErr == nil {
-				t.Error("kept the data of an earlier run")
+				t.Error("os.Stat(earlier run's data) after a whole Running() error = nil, want it removed")
 			}
 
 			if len(infos) != 1 || len(archives) != 1 {
-				t.Fatalf("recorded %v and archived %v, want one of each", infos, archives)
+				t.Fatalf("whole Running() wrote run info %q and archives %q, want one of each", infos, archives)
 			}
 
-			if info, err := os.ReadFile(infos[0]); err != nil || !strings.Contains(string(info), `"minimega 2.9"`) {
-				t.Errorf("run info %s (%v) does not record minimega's version", info, err)
+			info, err := os.ReadFile(infos[0])
+			if err != nil {
+				t.Fatalf("reading run info: %v", err)
+			}
+
+			if !strings.Contains(string(info), `"minimega 2.9"`) {
+				t.Errorf("run info = %s, want it to record minimega's version %q", info, "minimega 2.9")
 			}
 		})
 	}
@@ -187,20 +199,20 @@ func TestMinimegaVersionAskedUntilItAnswers(t *testing.T) { //nolint:paralleltes
 
 	received := useMinimega(t, &busy)
 
-	if _, err := minimegaVersion(); err == nil {
-		t.Fatal("first call: want the error minimega gave")
+	if v, err := minimegaVersion(); err == nil {
+		t.Errorf("minimegaVersion() while minimega is busy = %q, nil; want the error minimega gave", v)
 	}
 
 	busy.Store(false)
 
-	for range 3 {
-		v, err := minimegaVersion()
-		if err != nil || v != "minimega 2.9" {
-			t.Fatalf("got %q, %v; want the version", v, err)
+	for i := range 3 {
+		if v, err := minimegaVersion(); err != nil || v != "minimega 2.9" {
+			t.Errorf("minimegaVersion() call %d after minimega answers = %q, %v; want %q, nil", i+1, v, err, "minimega 2.9")
 		}
 	}
 
+	// one failure, then cached
 	if n := mmtest.Count(received(), "version"); n != 2 {
-		t.Errorf("minimega asked %d times, want 2 (one failure, then cached)", n)
+		t.Errorf("minimega version commands received = %d, want 2", n)
 	}
 }
