@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-// The toolbar, mounted: one Tab stop that the arrow keys move between its
-// buttons (WAI-ARIA APG toolbar pattern), and what each button and menu
+// The toolbar, mounted: its roving Tab stop and what each button and menu
 // runs. Its overflow and widths need layout, so Playwright tests them.
 
 import { reactive, watch } from 'vue';

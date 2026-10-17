@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 // The command palette, opened as Builder opens it and driven from the
-// keyboard: it filters, moves the highlight, runs a command or asks for its
-// choices step by step, says what it cannot do, and gives focus back.
+// keyboard: filtering, the highlight, steps, running, and focus after it.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';

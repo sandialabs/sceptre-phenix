@@ -34,9 +34,8 @@ import { nextPosition, paletteNode } from '@/components/builder/paletteDnd.js';
 import { PLATFORMS, context } from './command-context.js';
 import { memoryStorage, sampleDocument } from './fixtures.js';
 
-// The app's header and a modal of the app around the Builder, whose editor
-// holds a toolbar button, the canvas with a node and a zoom button, the
-// Inspector's fields and a dialog (closed).
+// The app's header and a modal around the Builder's editor: a toolbar
+// button, the canvas, the Inspector's fields and a closed dialog.
 const PAGE = `
   <header>
     <a href="#drafts" data-testid="outside-link">Drafts</a>

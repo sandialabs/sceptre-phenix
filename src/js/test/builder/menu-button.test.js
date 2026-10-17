@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
-// The menu button, mounted and driven from the keyboard and the pointer: it
-// opens on an item, moves focus between items, chooses one, and closes with
-// focus back on the button (WAI-ARIA APG menu button pattern).
+// The menu button, mounted and driven from the keyboard and the pointer, as
+// the WAI-ARIA APG menu button pattern has it.
 
 import { afterEach, describe, expect, test } from 'vitest';
 import { enableAutoUnmount, mount } from '@vue/test-utils';

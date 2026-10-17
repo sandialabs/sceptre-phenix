@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
-// The shortcut sheet, mounted: its customization records a key from a key
-// press, says whether the key is free, keeps, moves, removes or resets keys,
-// and puts focus back on the row's Change button.
+// The shortcut sheet, mounted: its key recorder, what it says of a key, and
+// how keeping, moving, removing and resetting keys change the keymap.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
