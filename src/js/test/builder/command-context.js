@@ -58,7 +58,6 @@ export function fakeStore(overrides = {}) {
 export function fakeView(overrides = {}) {
   const view = {
     editing: true,
-    dialog: '',
     showMinimap: true,
     showNodeNotes: true,
     snapToGrid: false,

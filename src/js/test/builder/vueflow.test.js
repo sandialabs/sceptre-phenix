@@ -118,14 +118,14 @@ describe('flow nodes', () => {
       type: 'builderShape',
       zIndex: 0,
       style: { width: '120px', height: '120px' },
-      data: { label: 'DMZ', kindLabel: 'Circle' },
+      data: { label: 'DMZ' },
       ariaLabel: 'Circle DMZ',
     });
     expect(find(icon.node.id)).toMatchObject({
       type: 'builderIcon',
       zIndex: device.zIndex,
       style: { width: '64px', height: '64px' },
-      data: { iconKey: 'firewall', iconSrc: '', kindLabel: 'Icon' },
+      data: { iconKey: 'firewall', iconSrc: '' },
       ariaLabel: 'Icon Edge',
     });
     expect(find(line.node.id)).toMatchObject({
@@ -133,7 +133,7 @@ describe('flow nodes', () => {
       zIndex: 0,
       position: { x: 100, y: 100 },
       style: { width: '160px', height: '40px', pointerEvents: 'none' },
-      data: { dashArray: '2 4', kindLabel: 'Line' },
+      data: { dashArray: '2 4' },
       ariaLabel: 'Line uplink, arrowhead at its end',
     });
     expect(device.zIndex).toBeGreaterThan(0);
@@ -169,17 +169,12 @@ describe('flow nodes', () => {
         expect(zOf(selected, id)).toBeLessThan(zOf(selected, sw.id));
       }
     }
-    expect(
-      zOf(toFlowNodes(inside.doc, { selectedIds: drawings }), shape.node.id),
-    ).toBe(zOf(flow, shape.node.id));
 
-    // A selected device is lifted over the rest, as toFlowNodes has it too.
+    // A selected device is lifted over the rest, as nodeZIndex has it.
     const device = withSelection(flow, [alpha.id]);
 
     expect(zOf(device, alpha.id)).toBeGreaterThan(zOf(device, sw.id));
-    expect(zOf(device, alpha.id)).toBe(
-      zOf(toFlowNodes(inside.doc, { selectedIds: [alpha.id] }), alpha.id),
-    );
+    expect(zOf(device, alpha.id)).toBe(nodeZIndex('device', true));
     expect(withSelection(device, [])).toEqual(flow);
 
     // A selected group is lifted with its members, over the nodes outside
@@ -319,7 +314,7 @@ describe('flow nodes', () => {
   // Tab order until it is the canvas's Tab stop.
   test('the wrapper is a toggle button pressed while the node is selected', () => {
     const { doc, alpha, bravo } = sampleDocument();
-    const nodes = toFlowNodes(doc, { selectedIds: [alpha.id] });
+    const nodes = withSelection(toFlowNodes(doc), [alpha.id]);
     const attrs = (id) => nodes.find((node) => node.id === id).domAttributes;
 
     expect(attrs(alpha.id)).toMatchObject({
@@ -347,9 +342,9 @@ describe('flow nodes', () => {
     // The rest are the very same objects, so Vue Flow redraws none of them.
     expect(find(selected, bravo.id)).toBe(find(nodes, bravo.id));
     expect(withSelection(selected, [])).toEqual(nodes);
-    expect(withSelection(toFlowEdges(doc), [edge.id])[0].domAttributes).toEqual(
-      toFlowEdges(doc, { selectedIds: [edge.id] })[0].domAttributes,
-    );
+    expect(
+      withSelection(toFlowEdges(doc), [edge.id])[0].domAttributes,
+    ).toMatchObject({ role: 'button', 'aria-pressed': 'true' });
   });
 
   // The canvas is one Tab stop, which moves as focus does (a roving
@@ -510,7 +505,7 @@ describe('flow edges', () => {
   test('connections take focus and report their selection', () => {
     const { doc, edge: model } = sampleDocument();
     const [plain] = toFlowEdges(doc);
-    const [selected] = toFlowEdges(doc, { selectedIds: [model.id] });
+    const [selected] = withSelection(toFlowEdges(doc), [model.id]);
 
     expect(plain.domAttributes).toMatchObject({
       tabindex: -1,

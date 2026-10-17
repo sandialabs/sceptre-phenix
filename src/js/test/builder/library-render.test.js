@@ -1153,7 +1153,7 @@ describe('the template editor on a template of the library', () => {
 
 describe('the library commands', () => {
   function context({ store = {}, view = {} } = {}) {
-    const fullView = { editing: true, dialog: '', ...view };
+    const fullView = { editing: true, ...view };
 
     for (const name of VIEW_API) {
       fullView[name] ??= vi.fn();

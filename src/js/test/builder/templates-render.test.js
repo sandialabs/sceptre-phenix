@@ -367,7 +367,7 @@ describe('the template editor', () => {
 
 describe('the template commands', () => {
   function context({ store = {}, view = {} } = {}) {
-    const fullView = { editing: true, dialog: '', ...view };
+    const fullView = { editing: true, ...view };
 
     for (const name of VIEW_API) {
       fullView[name] ??= vi.fn();

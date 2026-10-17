@@ -30,7 +30,7 @@ function context(size) {
     });
   }
 
-  const view = { editing: true, dialog: '', icons: [] };
+  const view = { editing: true, icons: [] };
 
   for (const name of VIEW_API) {
     view[name] ??= vi.fn();

@@ -165,7 +165,6 @@ export const PALETTE = [
     id: 'device',
     label: 'Device',
     iconKey: 'server',
-    shape: 'rectangle',
     hint: 'A virtual machine, container or external device',
   },
   {
@@ -173,7 +172,6 @@ export const PALETTE = [
     id: 'switch',
     label: 'Switch',
     iconKey: 'switch',
-    shape: 'hexagon',
     hint: 'A visual hub bound to exactly one network',
   },
   {
@@ -181,7 +179,6 @@ export const PALETTE = [
     id: 'note',
     label: 'Note',
     iconKey: 'sticky-note',
-    shape: 'note',
     hint: 'Free-form annotation with no phenix semantics',
   },
   {
@@ -189,7 +186,6 @@ export const PALETTE = [
     id: 'group',
     label: 'Group',
     iconKey: 'container',
-    shape: 'container',
     hint: 'A container that visually groups member nodes',
   },
   // Drawings: shapes, icons and lines with no phenix semantics. Each of the
@@ -201,7 +197,6 @@ export const PALETTE = [
     id: 'rectangle',
     label: 'Rectangle',
     iconKey: 'rectangle',
-    shape: 'shape',
     options: { shape: 'rectangle' },
     hint: 'A rectangle drawn on the canvas, with no phenix semantics',
   },
@@ -210,7 +205,6 @@ export const PALETTE = [
     id: 'circle',
     label: 'Circle',
     iconKey: 'circle',
-    shape: 'shape',
     options: { shape: 'circle' },
     hint: 'A circle drawn on the canvas, with no phenix semantics',
   },
@@ -219,7 +213,6 @@ export const PALETTE = [
     id: 'icon',
     label: 'Icon',
     iconKey: 'external',
-    shape: 'icon',
     hint: 'A built-in or custom icon drawn on the canvas, with no phenix semantics',
   },
   {
@@ -227,19 +220,18 @@ export const PALETTE = [
     id: 'line',
     label: 'Line',
     iconKey: 'line',
-    shape: 'line',
     hint: 'A line drawn on the canvas, joined to no node or network, with optional arrowheads',
   },
 ];
 
 const KIND_META = {
-  device: { iconKey: 'server', shape: 'rectangle', label: 'Device' },
-  switch: { iconKey: 'switch', shape: 'hexagon', label: 'Switch' },
-  note: { iconKey: 'sticky-note', shape: 'note', label: 'Note' },
-  group: { iconKey: 'container', shape: 'container', label: 'Group' },
-  shape: { iconKey: 'rectangle', shape: 'shape', label: 'Shape' },
-  icon: { iconKey: 'external', shape: 'icon', label: 'Icon' },
-  line: { iconKey: 'line', shape: 'line', label: 'Line' },
+  device: { iconKey: 'server', label: 'Device' },
+  switch: { iconKey: 'switch', label: 'Switch' },
+  note: { iconKey: 'sticky-note', label: 'Note' },
+  group: { iconKey: 'container', label: 'Group' },
+  shape: { iconKey: 'rectangle', label: 'Shape' },
+  icon: { iconKey: 'external', label: 'Icon' },
+  line: { iconKey: 'line', label: 'Line' },
 };
 
 /**
@@ -255,7 +247,7 @@ export function paletteEntry(id) {
 
 /**
  * @param {string} kind
- * @returns {{iconKey: string, shape: string, label: string}}
+ * @returns {{iconKey: string, label: string}}
  */
 export function kindMeta(kind) {
   return KIND_META[kind] || KIND_META.device;

@@ -130,7 +130,6 @@ export const SCOPES = {
 // it, and tests stub it.
 export const VIEW_API = [
   'editing', // boolean: the editor is open (false: the drafts landing)
-  'dialog', // string: the open dialog, '' for none
   // string: the landing's shown tab: drafts, published, templates, layers
   // or icons
   'draftsTab',

@@ -705,9 +705,7 @@ function clone(value) {
 // What each of a device's presentation fields is called in the
 // announcement of its change (see LOOK_KEYS in model.js).
 const LOOK_NAMES = {
-  iconKey: 'icon',
   icon: 'custom icon',
-  iconSize: 'icon size',
   outlineColor: 'outline color',
   fillColor: 'fill color',
 };

@@ -29,7 +29,6 @@ function context({ store = {}, view = {} } = {}) {
   const { doc } = sampleDocument();
   const fullView = {
     editing: true,
-    dialog: '',
     showMinimap: true,
     canZoomIn: true,
     canZoomOut: true,

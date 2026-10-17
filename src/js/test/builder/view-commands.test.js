@@ -23,7 +23,6 @@ function context(view = {}) {
   const { doc } = sampleDocument();
   const fullView = {
     editing: true,
-    dialog: '',
     showMinimap: true,
     showNodeNotes: true,
     showNodeIcons: true,

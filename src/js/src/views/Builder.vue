@@ -3006,9 +3006,6 @@
     get editing() {
       return editing.value;
     },
-    get dialog() {
-      return dialog.value;
-    },
     get draftsTab() {
       return editing.value ? '' : drafts.value?.activeTab || '';
     },

@@ -8,7 +8,7 @@
 // the network it belongs to. Every network gets a stroke pattern and a
 // color, so color alone never shows network membership.
 
-import { kindMeta, nodeIcon, nodeIconKey } from '../catalog.js';
+import { nodeIcon, nodeIconKey } from '../catalog.js';
 import { networkColorToken } from '../colors.js';
 import { iconSrc } from '../icons.js';
 import { stableHash } from '../ids.js';
@@ -16,11 +16,9 @@ import {
   connectionEndLabel,
   deviceHandles,
   deviceTypeLabel,
-  DRAWING_KINDS,
   findNode,
   ICON_SIZE_KINDS,
   includedFrom,
-  kindLabel,
   layerOutlineColor,
   LINE_STYLES,
   nodeComment,
@@ -164,8 +162,7 @@ export function nodeInfoId(nodeId) {
  * @param {object} doc
  * @param {string} networkId
  * @returns {{token: number, pattern: string, autoPattern: string,
- *   dashArray: string|undefined, label: string, color: string,
- *   alias: number|undefined}}
+ *   dashArray: string|undefined, label: string}}
  */
 export function networkStyle(doc, networkId) {
   const index = (doc?.networks || []).findIndex(
@@ -219,8 +216,6 @@ function styleAt(network, networkId, index) {
     autoPattern,
     dashArray: NETWORK_DASH_ARRAYS[pattern],
     label: network?.name || '',
-    color: network?.color || '',
-    alias: network?.alias,
   };
 }
 
@@ -379,7 +374,6 @@ function describedBy(node, issue) {
  * - iconSize: for a device, a switch and a group, the size their icon is
  *   drawn at (see nodeIconSize in model.js): options.iconSize when it is
  *   one of ICON_SIZES.
- * - kindLabel: for a shape, an icon and a line, the name of their kind.
  * - dashArray: for a line, the dash array of its line style.
  * - layerColor: for a device or a switch, the color its outline takes from
  *   its layer when it has none of its own (see layerOutlineColor in
@@ -388,7 +382,7 @@ function describedBy(node, issue) {
  *   of a read-only draft has no handle for a new interface.
  *
  * @param {object} doc
- * @param {object} [options] selectedIds. issues: nodeIssueSummaries by
+ * @param {object} [options] issues: nodeIssueSummaries by
  *   node id. library: the icon library (see iconLibrary.js), whose reactive
  *   state makes nodes follow its changes. Without a library, only the
  *   document's copies resolve. readOnly: the diagram is read only (a
@@ -398,7 +392,6 @@ function describedBy(node, issue) {
  * @returns {object[]}
  */
 export function toFlowNodes(doc, options = {}) {
-  const selected = new Set(options.selectedIds || []);
   const issues = options.issues || new Map();
   const library = options.library || null;
   const readOnly = Boolean(options.readOnly);
@@ -433,18 +426,10 @@ export function toFlowNodes(doc, options = {}) {
       id: node.id,
       type: FLOW_NODE_TYPES[node.kind] || FLOW_NODE_TYPES.device,
       position: relativePosition(doc, node, index.node),
-      selected: selected.has(node.id),
+      selected: false,
       parentNode: node.parentId || undefined,
       expandParent: Boolean(node.parentId),
-      zIndex: nodeZIndex(
-        node.kind,
-        selected.has(node.id),
-        inSelectedGroup(
-          node.parentId,
-          selected,
-          (id) => index.node(id)?.parentId,
-        ),
-      ),
+      zIndex: nodeZIndex(node.kind),
       // A line takes the pointer only on its stroke (see LineNode.vue). It
       // does not take the pointer across the box of its points, over what
       // is under it.
@@ -461,7 +446,7 @@ export function toFlowNodes(doc, options = {}) {
       domAttributes: {
         tabindex: -1,
         role: 'button',
-        'aria-pressed': String(selected.has(node.id)),
+        'aria-pressed': 'false',
         'aria-roledescription': undefined,
         'aria-describedby': describedBy(node, issue),
       },
@@ -473,7 +458,6 @@ export function toFlowNodes(doc, options = {}) {
         iconSize: ICON_SIZE_KINDS.includes(node.kind)
           ? nodeIconSize(doc, node, options.iconSize)
           : undefined,
-        shape: kindMeta(node.kind).shape,
         comment: nodeComment(node),
         typeLabel: node.kind === 'device' ? deviceTypeLabel(node) : undefined,
         includedFrom: includedFrom(node),
@@ -486,9 +470,6 @@ export function toFlowNodes(doc, options = {}) {
         connected:
           node.kind === 'switch' ? connectedDevices(node, index) : undefined,
         handles: handlesFor(doc, node, index),
-        kindLabel: DRAWING_KINDS.includes(node.kind)
-          ? kindLabel(node)
-          : undefined,
         dashArray:
           node.kind === 'line'
             ? lineDashArray(node.line?.lineStyle)
@@ -698,11 +679,9 @@ export function edgeLanes(doc, nodeById) {
  * of its own is drawn in it (data.style), in place of its network's.
  *
  * @param {object} doc
- * @param {object} [options] selectedIds
  * @returns {object[]}
  */
-export function toFlowEdges(doc, options = {}) {
-  const selected = new Set(options.selectedIds || []);
+export function toFlowEdges(doc) {
   // The first of an id, as findNode and findNetwork find it.
   const nodeById = new Map();
 
@@ -748,7 +727,7 @@ export function toFlowEdges(doc, options = {}) {
       target: edge.targetNodeId,
       sourceHandle: edge.sourceHandleId || SWITCH_HANDLE_ID,
       targetHandle: edge.targetHandleId || SWITCH_HANDLE_ID,
-      selected: selected.has(edge.id),
+      selected: false,
       label: edge.label || network?.name || '',
       // Each device end names its interface, because two connections
       // between the same nodes differ only there.
@@ -763,7 +742,7 @@ export function toFlowEdges(doc, options = {}) {
       domAttributes: {
         tabindex: -1,
         role: 'button',
-        'aria-pressed': String(selected.has(edge.id)),
+        'aria-pressed': 'false',
         'aria-roledescription': undefined,
         'aria-describedby': EDGE_HINT_ID,
       },
@@ -1101,11 +1080,11 @@ export function fitZoom(bounds, pane, padding = FIT_PADDING) {
  *   coordinates
  * @param {object} pane box, in screen pixels
  * @param {object[]} [overlays] boxes, in screen pixels
- * @param {number} [padding] Vue Flow's padding, as a share
  * @returns {{top: number, right: number, bottom: number, left: number}}
  */
-export function fitPadding(bounds, pane, overlays = [], padding = FIT_PADDING) {
-  const share = (length) => Math.floor((length - length / (1 + padding)) * 0.5);
+export function fitPadding(bounds, pane, overlays = []) {
+  const share = (length) =>
+    Math.floor((length - length / (1 + FIT_PADDING)) * 0.5);
   const base = {
     top: share(pane.height),
     right: share(pane.width),
