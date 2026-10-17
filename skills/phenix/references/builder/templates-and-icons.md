@@ -181,7 +181,7 @@ Code: `types/builder/layerset.go`, `api/builder/layersets.go`,
   `saveLayerSet`, `deleteLayerSet`, `duplicateLayerSet`,
   `setDefaultLayerSet`, `uploadLayerSetFile`, `applyLayerSet`,
   `updateFromLayerSet`, `unlinkLayerSet`, `saveToLayerSet`,
-  `saveAsNewLayerSet`, `useMatchedLayer` and `withDefaultLayerSet`.
+  `saveAsNewLayerSet` and `withDefaultLayerSet`.
   `saveToLayerSet` refuses when the set has a newer version than the link.
   `saveLayerSet` sends the version the editor opened, so a change made
   meanwhile answers 412.

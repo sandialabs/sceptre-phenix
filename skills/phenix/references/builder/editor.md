@@ -83,7 +83,8 @@ changes.
   `model.js` (the label, "Control (ID 3)" when two layers share it). For a device at a matched layer, the
   first choice names that layer and the field that matched in place of
   None, and Use matched layer removes the chosen layer
-  (`INSPECTOR_LAYER.useMatched`, the store's `useMatchedLayer`). The layer's
+  (`INSPECTOR_LAYER.useMatched`, which calls the store's `setNodeLayer`
+  with null). The layer's
   icon and color show before the select (`LayerName.vue`, which reads
   them through `layerLook` and `hasLayerLook` in `layerLook.js`), because
   native options cannot show them. The `layer` prop of `BuilderInspector.vue`

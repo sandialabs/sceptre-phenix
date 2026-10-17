@@ -126,19 +126,17 @@ export function layerSetIconNames(set) {
  *
  * @param {object} set a set of the library
  * @param {{lookup: Function}|null} [library] the icon library
- * @param {object|null} [icons] copies of icons that win over the
- *   library's, such as a diagram's
  * @returns {{file: object, missing: string[], left: string[]}} file: the
  *   file. missing: the icon names that nothing resolves, which the file
  *   does not carry. left: the icons left out past the most it carries
  */
-export function layerSetFileOf(set, library = null, icons = null) {
+export function layerSetFileOf(set, library = null) {
   const carried = {};
   const missing = [];
   const left = [];
 
   for (const name of layerSetIconNames(set)) {
-    const icon = resolveIcon(name, icons, library);
+    const icon = resolveIcon(name, null, library);
 
     if (!icon || typeof icon.data !== 'string') {
       missing.push(name);

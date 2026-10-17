@@ -72,7 +72,7 @@ const PLANT = readLayerSet({
 });
 
 function library(sets = [PURDUE, PLANT], defaultId = null) {
-  return { layerSets: sets, defaultId, damaged: 0, limits: { layerSets: 200 } };
+  return { layerSets: sets, defaultId, damaged: 0 };
 }
 
 function fakeHttp(responses = {}) {
@@ -133,7 +133,6 @@ describe('the API client', () => {
       layerSets: [{ ...PLANT, matchConflict: 'lowest', layers: [] }],
       defaultId: 'plant',
       damaged: 1,
-      limits: { layerSets: 200 },
     });
     expect(readLayerSet(null)).toBeNull();
   });
@@ -145,10 +144,6 @@ describe('the API client', () => {
         headers: { etag: '"1"' },
       },
       [`put ${layerSetPath('plant')}`]: { data: { ...PLANT, version: 3 } },
-      [`get ${layerSetPath('plant')}`]: {
-        data: PLANT,
-        headers: { etag: '"2"' },
-      },
     });
     const client = createBuilderApi(http);
     const content = { name: 'Plant', layers: PLANT.layers };
@@ -157,25 +152,21 @@ describe('the API client', () => {
     expect((await client.updateLayerSet('plant', content, '"2"')).version).toBe(
       3,
     );
-    expect((await client.getLayerSet('plant')).id).toBe('plant');
     await client.deleteLayerSet('plant');
     expect(http.calls.map((call) => `${call.method} ${call.url}`)).toEqual([
       `post ${LAYER_SETS_PATH}`,
       `put ${layerSetPath('plant')}`,
-      `get ${layerSetPath('plant')}`,
       `delete ${layerSetPath('plant')}`,
     ]);
     expect(http.calls[1].config).toEqual({ headers: { 'If-Match': '"2"' } });
   });
 
-  test('reads and chooses the default set, null for none', async () => {
+  test('chooses the default set, null for none', async () => {
     const http = fakeHttp({
-      [`get ${DEFAULT_LAYER_SET_PATH}`]: { data: { id: null } },
       [`put ${DEFAULT_LAYER_SET_PATH}`]: { data: { id: 'plant' } },
     });
     const client = createBuilderApi(http);
 
-    expect(await client.getDefaultLayerSet()).toBeNull();
     expect(await client.setDefaultLayerSet('plant')).toBe('plant');
     await client.setDefaultLayerSet('');
     expect(http.calls.at(-1).body).toEqual({ id: null });
@@ -212,7 +203,6 @@ describe('the layer set library in the store', () => {
       items: [PURDUE, PLANT],
       defaultId: null,
     });
-    expect(store.layerSets.limits.matchers).toBe(16);
 
     api.listLayerSets.mockRejectedValue(httpError(500));
     await store.fetchLayerSets();
@@ -571,7 +561,7 @@ describe('the open diagram’s copy of a layer set', () => {
   test('a node goes back to the layer its fields match', () => {
     store.applyLayerSet('plant');
     store.setNodeLayer(sample.alpha.id, 1);
-    expect(store.useMatchedLayer(sample.alpha.id)).not.toBeNull();
+    expect(store.setNodeLayer(sample.alpha.id, null)).not.toBeNull();
     expect(announced.at(-1)).toBe(
       'Changed the layer of Device alpha to the matched layer Operations',
     );

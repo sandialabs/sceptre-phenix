@@ -1725,11 +1725,10 @@ export function createBuilderApi(http = axiosInstance) {
      * Reads the layer set library, which every user shares: the built-in
      * sets first, then the others by name. Each set is as readLayerSet
      * gives it. The result also says the default set of the server for new
-     * diagrams, how many stored sets the server cannot read, and the
-     * library's limits.
+     * diagrams, and how many stored sets the server cannot read.
      *
      * @returns {Promise<{layerSets: object[], defaultId: string|null,
-     *   damaged: number, limits: object}>}
+     *   damaged: number}>}
      */
     async listLayerSets() {
       const data = (await http.get(LAYER_SETS_PATH)).data || {};
@@ -1743,21 +1742,7 @@ export function createBuilderApi(http = axiosInstance) {
             ? data.defaultId
             : null,
         damaged: Number.isInteger(data.damaged) ? data.damaged : 0,
-        limits:
-          data.limits && typeof data.limits === 'object' ? data.limits : {},
       };
-    },
-
-    /**
-     * Reads one layer set, with its current ETag.
-     *
-     * @param {string} id
-     * @returns {Promise<object>} the set (see readLayerSet)
-     */
-    async getLayerSet(id) {
-      const response = await http.get(layerSetPath(id));
-
-      return readLayerSet({ ...response.data, etag: readETag(response) });
     },
 
     /**
@@ -1801,16 +1786,6 @@ export function createBuilderApi(http = axiosInstance) {
       await http.delete(layerSetPath(id));
 
       return true;
-    },
-
-    /**
-     * @returns {Promise<string|null>} the ID of the default layer set of the
-     *   server for new diagrams, or null
-     */
-    async getDefaultLayerSet() {
-      const id = (await http.get(DEFAULT_LAYER_SET_PATH)).data?.id;
-
-      return typeof id === 'string' && id !== '' ? id : null;
     },
 
     /**

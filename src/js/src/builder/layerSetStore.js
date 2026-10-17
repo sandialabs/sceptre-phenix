@@ -38,27 +38,14 @@ import {
 } from './model.js';
 import { onBuilderSessionEnd } from './session.js';
 
-// What the library holds at most (the limits of api/builder and
-// types/builder), used until the server says.
-const LAYER_SET_LIMITS = Object.freeze({
-  layerSets: 200,
-  layers: 32,
-  nameBytes: 128,
-  descriptionBytes: 1024,
-  labelBytes: 64,
-  matchers: 16,
-  matcherPathBytes: 128,
-  patternBytes: 256,
-});
-
 /**
  * The layer set library as it is before it is read. status is 'idle'
  * before it is requested, then 'loading', then 'ready' or 'failed' by the
  * result of the last read, with why it failed (error). loaded says whether
  * the rest is what the server answered: the sets (items), the ID of the
- * server's default set (defaultId, null for none), how many stored sets the
- * server cannot read (damaged) and the limits. A read that fails keeps
- * what an earlier read answered.
+ * server's default set (defaultId, null for none) and how many stored sets
+ * the server cannot read (damaged). A read that fails keeps what an earlier
+ * read answered.
  *
  * @returns {object}
  */
@@ -70,7 +57,6 @@ export function emptyLayerSets() {
     items: [],
     defaultId: null,
     damaged: 0,
-    limits: { ...LAYER_SET_LIMITS },
   };
 }
 
@@ -185,7 +171,6 @@ export const layerSetActions = {
           items: library.layerSets,
           defaultId: library.defaultId,
           damaged: library.damaged,
-          limits: { ...LAYER_SET_LIMITS, ...library.limits },
         };
       }
     } catch (error) {
@@ -583,18 +568,6 @@ export const layerSetActions = {
       next,
       `Changed the ${field.join(' and ')} of ${layerName(next, id)}`,
     );
-  },
-
-  /**
-   * Removes the layer chosen for a device, so that it is at the layer its
-   * fields match (see effectiveNodeLayer in model.js), in one undo step.
-   *
-   * @param {string} nodeId
-   * @returns {object|null} the history entry, or null when no layer was
-   *   chosen for it
-   */
-  useMatchedLayer(nodeId) {
-    return this.setNodeLayer(nodeId, null);
   },
 
   /**
