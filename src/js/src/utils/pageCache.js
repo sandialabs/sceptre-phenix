@@ -145,12 +145,12 @@ function startRequest(key, fetch, after) {
   return entry;
 }
 
-// The data cached for key when it loaded less than maxAge ms ago (by default
-// the key's reuse window in freshness.js), is not loading again, and has not
-// changed since; otherwise the result of fetch into the cache, joining the
-// request already running for key.
-export async function recentPage(key, fetch, maxAge) {
-  const reuse = maxAge ?? resourceFor(key)?.reuseMs ?? 0;
+// The data cached for key when it loaded within the key's reuse window in
+// freshness.js, is not loading again, and has not changed since; otherwise
+// the result of fetch into the cache, joining the request already running
+// for key.
+export async function recentPage(key, fetch) {
+  const reuse = resourceFor(key)?.reuseMs ?? 0;
   const cached = cachedPage(key);
   if (
     cached &&

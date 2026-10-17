@@ -1,4 +1,4 @@
-import { EdgeService } from '@/components/pipeline/line.js';
+import { DefaultStyleService } from '@/components/pipeline/line.js';
 
 class Pipeline {
   /**
@@ -8,17 +8,14 @@ class Pipeline {
    * @param {*} starty
    * @param {*} xstep
    * @param {*} ystep
-   * @param {*} lineStyle 线型，目前支持三种线型： default(默认)，line(直线)，bessel(贝塞尔曲线)
    */
-  constructor(nodes, startx, starty, xstep, ystep, lineStyle = 'default') {
+  constructor(nodes, startx, starty, xstep, ystep) {
     this.nodes = nodes;
     this.startx = startx;
     this.starty = starty;
     this.xstep = xstep;
     this.ystep = ystep;
-    this.positionList = new Set();
     this.solvedList = [];
-    this.lineStyle = lineStyle;
     this.sortedList = this.topologicalSorting();
     this.matrix = []; //存放各个顶点的相对坐标
     for (let i = 0; i < nodes.length; i++) {
@@ -86,10 +83,7 @@ class Pipeline {
 
   getLines() {
     let list = [];
-    var drawService = EdgeService.getDrawEdgeService(this.lineStyle, {
-      x: this.xstep,
-      y: this.ystep,
-    });
+    const drawService = new DefaultStyleService(this.xstep, this.ystep);
     for (let i = 0; i < this.nodes.length; i++) {
       let node = this.nodes[i];
       if (!node.next) {

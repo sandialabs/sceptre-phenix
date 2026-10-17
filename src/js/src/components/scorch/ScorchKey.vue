@@ -179,14 +179,6 @@
     fill: #f6b44b;
   }
 
-  .node > circle.aborted {
-    fill: #949393;
-  }
-
-  .node > circle.paused {
-    fill: #24b0d5;
-  }
-
   .node > circle.unknown {
     fill: #686868;
   }

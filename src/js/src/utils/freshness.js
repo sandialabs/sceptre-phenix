@@ -45,7 +45,6 @@ const aboutExperiment = (msg, name) => {
 //
 //   live           the page is kept current by websocket messages, so its
 //                  data may be out of date while the websocket is down
-//   observed       the server reports when it read the data from minimega
 //   reuseMs        how long other pages reuse a cached copy instead of
 //                  asking again (see recentPage)
 //   pollMs         how often the open page reloads
@@ -65,7 +64,6 @@ export const RESOURCES = {
     invalidatedBy: [(msg) => type(msg) === 'config'],
   },
   hosts: {
-    observed: true,
     pollMs: 30 * SECOND,
     reuseMs: MINUTE,
     staleAfterMs: 90 * SECOND,
@@ -82,12 +80,11 @@ export const RESOURCES = {
     invalidatedBy: [(msg) => type(msg) === 'apps/scorch', isExperiment],
   },
   soh: {
-    observed: true,
     staleAfterMs: 5 * MINUTE,
     invalidatedBy: [isExperiment],
   },
   settings: { live: false, staleAfterMs: 10 * MINUTE },
-  vmtiles: { observed: true, pollMs: MINUTE, staleAfterMs: 3 * MINUTE },
+  vmtiles: { pollMs: MINUTE, staleAfterMs: 3 * MINUTE },
 };
 
 // Rules for the keys that name one experiment: its page, running or stopped,
@@ -183,13 +180,9 @@ export function mergeFreshness(meta, from) {
 // here rather than in websocket.ts so the page utilities need not load it.
 let wsDownSince = null;
 
-export function setWsDown(down, now = Date.now()) {
+export function setWsDown(down) {
   if (!down) wsDownSince = null;
-  else wsDownSince ??= now;
-}
-
-export function wsDisconnectedSince() {
-  return wsDownSince;
+  else wsDownSince ??= Date.now();
 }
 
 // Why data may be out of date, or null when it is not:

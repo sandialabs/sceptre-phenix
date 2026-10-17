@@ -93,7 +93,6 @@ succeed list each item's outcome.
       compact: { type: Boolean, default: false },
       dismissible: { type: Boolean, default: true },
     },
-    emits: ['dismissed'],
     data() {
       return { busy: false };
     },
@@ -191,7 +190,6 @@ succeed list each item's outcome.
         this.busy = true;
         try {
           await useJobStore().dismiss(this.job.id);
-          this.$emit('dismissed', this.job);
         } catch (err) {
           useErrorNotification(err);
         } finally {

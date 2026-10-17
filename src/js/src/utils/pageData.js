@@ -10,7 +10,7 @@ import {
   recentPage,
 } from '@/utils/pageCache.js';
 import { whenIdle } from '@/utils/prefetch.js';
-import { FreshnessMeta, mergeFreshness, RESOURCES } from '@/utils/freshness.js';
+import { FreshnessMeta, mergeFreshness } from '@/utils/freshness.js';
 import { roleAllowed } from '@/utils/rbac.js';
 import { usePhenixStore } from '@/store.js';
 
@@ -61,18 +61,11 @@ export async function experimentList(meta) {
   return experiments;
 }
 
-// A host list this recent is reused by pages that only need host names.
-export const HOST_LIST_REUSE_MS = RESOURCES.hosts.reuseMs;
-
 // The names of the hosts VMs can be scheduled on, sorted, from the Hosts
-// page's cached list when it is recent (or its request in flight) rather than
-// a new cluster-wide host scan.
+// page's cached list when it is recent (see the reuse window in freshness.js)
+// or its request in flight, rather than a new cluster-wide host scan.
 export async function schedulableHostNames() {
-  const hosts = await recentPage(
-    'hosts',
-    pageFetchers.hosts,
-    HOST_LIST_REUSE_MS,
-  );
+  const hosts = await recentPage('hosts', pageFetchers.hosts);
   return (hosts ?? [])
     .filter((host) => host.schedulable)
     .map((host) => host.name)

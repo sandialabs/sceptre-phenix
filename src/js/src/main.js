@@ -19,11 +19,11 @@ import {
     faTrash, faDownload, faEdit, faUpload, faPlus, faWindowClose, faFileDownload, faInfoCircle, faHeartbeat,
     faKey, faQuestionCircle, faFire, faChevronDown, faChevronUp, faArrowUp, faSearch, faExclamationCircle,
     faTag, faBolt, faDesktop, faFileAlt, faNetworkWired, faPlay, faBars, faExclamationTriangle, faCircleNodes, faStop,
-    faPlayCircle, faStopCircle, faPause, faDatabase, faSave, faCamera, faHistory, faSkullCrossbones, faUndoAlt, 
+    faPlayCircle, faPause, faDatabase, faSave, faCamera, faHistory, faSkullCrossbones, faUndoAlt, 
     faSyncAlt, faPowerOff, faPencil, faArrowRight, faArrowLeft, faCompactDisc, faCheckCircle, faHdd, faMinus, faTerminal,
-    faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
+    faPaintbrush, faTv, faCircle, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
     faTableColumns, faArrowPointer, faBroom, faEraser, faBook,
-    faServer, faClock, faHourglassHalf, faMicrochip, faMemory, faPlug, faUpRightFromSquare, faCircleDot, faBan,
+    faServer, faClock, faHourglassHalf, faMicrochip, faMemory, faPlug, faUpRightFromSquare, faBan,
     faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRedo
 } from '@fortawesome/free-solid-svg-icons'
 
@@ -32,11 +32,11 @@ library.add(
     faTrash, faDownload, faEdit, faUpload, faPlus, faWindowClose, faFileDownload, faInfoCircle, faHeartbeat,
     faKey, faQuestionCircle, faFire, faChevronDown, faChevronUp, faArrowUp, faSearch, faExclamationCircle,
     faTag, faBolt, faDesktop, faFileAlt, faNetworkWired, faPlay, faBars, faExclamationTriangle, faCircleNodes, faStop,
-    faPlayCircle, faStopCircle, faPause, faDatabase, faSave, faCamera, faHistory, faSkullCrossbones, faUndoAlt, 
+    faPlayCircle, faPause, faDatabase, faSave, faCamera, faHistory, faSkullCrossbones, faUndoAlt, 
     faSyncAlt, faPowerOff, faPencil, faArrowRight, faArrowLeft, faCompactDisc, faCheckCircle, faHdd, faMinus, faTerminal,
-    faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
+    faPaintbrush, faTv, faCircle, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
     faTableColumns, faArrowPointer, faBroom, faEraser, faBook,
-    faServer, faClock, faHourglassHalf, faMicrochip, faMemory, faPlug, faUpRightFromSquare, faCircleDot, faBan,
+    faServer, faClock, faHourglassHalf, faMicrochip, faMemory, faPlug, faUpRightFromSquare, faBan,
     faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRedo
 )
 

@@ -1602,13 +1602,7 @@
       },
 
       isMultiVmSelected() {
-        if (
-          this.vmSelectedArray == undefined ||
-          this.vmSelectedArray.length == 0
-        ) {
-          return false;
-        }
-        return true;
+        return this.vmSelectedArray.length > 0;
       },
     },
 

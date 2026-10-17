@@ -439,7 +439,6 @@
       return {
         logs: markRaw([]), // the loaded logs; filtered in computed
         logsVersion: 0, // bumped on push since `logs` itself is not deeply reactive
-        suppressWatch: false, // if true, watches won't trigger call
         startDate: new Date(),
         endDate: new Date(),
         endNow: true, // if true, ignore `endDate` and also append streaming logs
@@ -455,14 +454,6 @@
 </script>
 
 <style scoped>
-  .b-table {
-    .table {
-      td {
-        vertical-align: middle;
-      }
-    }
-  }
-
   .control :deep(.icon) {
     height: 1.5em !important;
     top: 50%;

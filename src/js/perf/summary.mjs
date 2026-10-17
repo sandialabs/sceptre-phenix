@@ -69,7 +69,6 @@ export function loadInputs({
   return {
     size: readJSON(sizePath),
     assertions: readJSON(assertPath),
-    manifest,
     lhrs,
     baseline: readJSON(baselinePath),
   };
@@ -218,7 +217,7 @@ export function escapeCell(value) {
     .replace(/[\r\n]+/g, ' ');
 }
 
-export function formatBytes(bytes) {
+function formatBytes(bytes) {
   if (bytes === null) {
     return 'n/a';
   }
@@ -285,7 +284,7 @@ function formatValue(auditId, value) {
   return String(value);
 }
 
-export function describeFailure(f) {
+function describeFailure(f) {
   return `${f.path} ${f.auditId}: ${formatValue(f.auditId, f.actual)} (budget ${f.operator} ${formatValue(f.auditId, f.expected)})`;
 }
 

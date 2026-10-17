@@ -21,13 +21,12 @@
         Delete ({{ count }})
       </b-button>
     </b-field>
-    <b-field v-if="archive" class="file-archive">
+    <b-field v-if="archive">
       <job-progress :job="archive" compact :dismissible="false"></job-progress>
     </b-field>
     <b-field>
       <b-tooltip label="clear the selection" type="is-dark" position="is-right">
         <b-button
-          class="file-clear-selection"
           type="is-light"
           icon-left="window-close"
           aria-label="clear the selection"

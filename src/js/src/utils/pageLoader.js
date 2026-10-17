@@ -17,10 +17,9 @@ export const pageStatus = reactive({
   observedAt: null,
   failed: false, // whether the latest load failed
   fresh: false, // whether a load has come back since the page opened
-  // whether the data on screen may be out of date, and why (see
-  // freshness.js staleReason); age and disconnection are judged as the
-  // header redraws, by currentStaleReason
-  stale: false,
+  // why the data on screen may be out of date (see freshness.js
+  // staleReason); age and disconnection are judged as the header redraws,
+  // by currentStaleReason
   staleReason: null,
   resource: null, // the page's cache key, for its freshness rules
 });
@@ -41,7 +40,6 @@ const showFreshness = (meta, fallbackAt, invalidated = false) => {
     { stale: !!meta?.stale, invalidated },
     undefined,
   );
-  pageStatus.stale = pageStatus.staleReason !== null;
 };
 
 const resetStatus = () => {
@@ -50,7 +48,6 @@ const resetStatus = () => {
   pageStatus.observedAt = null;
   pageStatus.failed = false;
   pageStatus.fresh = false;
-  pageStatus.stale = false;
   pageStatus.staleReason = null;
 };
 
@@ -78,10 +75,9 @@ let owner = null;
 //   fetch(signal, meta) resolves to the data; signal aborts the request, and
 //     meta (a FreshnessMeta) goes with its requests, which report how fresh
 //     their responses are into it (see freshness.js).
-//   apply(data, { requestedAt, seq, observedAt, stale }) puts the data on the
-//     page; seq orders it against websocket messages, so updates the page
-//     received since the server read it can be kept (see liveRows.js), and
-//     requestedAt is when it was requested, on the browser's clock.
+//   apply(data, { seq }) puts the data on the page; seq orders it against
+//     websocket messages, so updates the page received since the server
+//     read it can be kept (see liveRows.js).
 //   key is the cache key; pass a function to decide per load, returning
 //     null to skip caching (e.g. for non-default filters), or omit it for
 //     live pages whose cached copy would mislead.
@@ -126,12 +122,7 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
       const cached = k ? cachedPage(k) : undefined;
       if (cached) {
         const meta = cached.meta;
-        apply(cached.data, {
-          requestedAt: cached.at,
-          seq: meta?.seq,
-          observedAt: meta?.observedAt ?? cached.at,
-          stale: !!meta?.stale,
-        });
+        apply(cached.data, { seq: meta?.seq });
         pageStatus.updatedAt = cached.at;
         showFreshness(meta, cached.at, isInvalidated(cached));
       }
@@ -189,12 +180,7 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
         skipped = false;
 
         const meta = request.meta;
-        apply(data, {
-          requestedAt: request.startedAt,
-          seq: meta?.seq,
-          observedAt: meta?.observedAt ?? request.startedAt,
-          stale: !!meta?.stale,
-        });
+        apply(data, { seq: meta?.seq });
 
         if (owner === loader) {
           pageStatus.resource = k;

@@ -62,7 +62,6 @@ function forget(
 export const useJobStore = defineStore('jobs', {
   state: () => ({
     jobs: {},
-    loaded: false,
   }),
 
   getters: {
@@ -76,10 +75,6 @@ export const useJobStore = defineStore('jobs', {
     recent() {
       const finished = this.list.filter((job) => !isActiveJob(job));
       return [...this.active, ...finished.slice(0, RECENT_JOBS)];
-    },
-    // the jobs of one experiment
-    forExperiment() {
-      return (exp) => this.list.filter((job) => job.experiment === exp);
     },
   },
 
@@ -122,7 +117,6 @@ export const useJobStore = defineStore('jobs', {
       for (const id of waiters.keys()) {
         if (!listed.has(id)) this.check(id);
       }
-      this.loaded = true;
     },
 
     // a websocket message: a job changed or is gone
@@ -211,7 +205,6 @@ export const useJobStore = defineStore('jobs', {
     // forgets every job, as on sign-out, failing whatever waits for one
     clear() {
       this.jobs = {};
-      this.loaded = false;
       // canceled on purpose, so error reports leave it out, as for a
       // request canceled when the user leaves a page
       const error = Object.assign(

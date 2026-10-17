@@ -5,12 +5,12 @@
       @close="resetFileViewerModal"
       has-modal-card>
       <div class="modal-card" style="width: 50em">
-        <header class="modal-card-head x-modal-dark">
-          <p class="modal-card-title x-config-text">
+        <header class="modal-card-head">
+          <p class="modal-card-title">
             {{ fileViewerModal.title }}
           </p>
         </header>
-        <section class="modal-card-body x-modal-dark">
+        <section class="modal-card-body">
           <div class="control">
             <textarea
               class="textarea has-fixed-size file-viewer"
@@ -19,7 +19,7 @@
               readonly></textarea>
           </div>
         </section>
-        <footer class="modal-card-foot x-modal-dark buttons is-right">
+        <footer class="modal-card-foot buttons is-right">
           <button class="button is-dark" @click="resetFileViewerModal">
             Exit
           </button>
@@ -181,7 +181,7 @@
             <b-button
               tag="router-link"
               :to="webSharkLink(props.row)"
-              class="button is-light is-small action file-webshark"
+              class="button is-light is-small action"
               :icon-left="captureIcon"
               :aria-label="`Open ${props.row.name} in WebShark`">
             </b-button>
