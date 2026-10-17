@@ -2,10 +2,14 @@ package util
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	v1 "phenix/types/version/v1"
 	"phenix/util/mm"
@@ -138,6 +142,94 @@ func TestSortByDelay(t *testing.T) {
 			}
 		})
 	}
+}
+
+// genVMListVMs draws an experiment's VMs, some hidden from listRole or not booting.
+func genVMListVMs() *rapid.Generator[[]mm.VM] {
+	vm := rapid.Custom(func(t *rapid.T) mm.VM {
+		return mm.VM{
+			Name:      rapid.OneOf(rapid.StringMatching(`[a-z]{1,4}`), rapid.Just("hidden")).Draw(t, "name"),
+			Host:      rapid.SampledFrom([]string{"h1", "h2", "H1"}).Draw(t, "host"),
+			Uptime:    float64(rapid.IntRange(0, 3).Draw(t, "uptime")),
+			DoNotBoot: rapid.Bool().Draw(t, "dnb"),
+		}
+	})
+
+	return rapid.SliceOfDistinct(vm, func(vm mm.VM) string { return vm.Name })
+}
+
+func TestSelectVMsPagesPartitionTheList(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		vms := genVMListVMs().Draw(t, "vms")
+		query := VMQuery{
+			ShowDNB: rapid.Bool().Draw(t, "showDNB"),
+			SortCol: rapid.SampledFrom([]string{"", "name", "host", "uptime"}).Draw(t, "sortCol"),
+			SortAsc: rapid.Bool().Draw(t, "sortAsc"),
+			Size:    rapid.IntRange(1, 5).Draw(t, "size"),
+		}
+
+		all, total := SelectVMs("exp", vms, nil, query, listRole())
+		if total != len(all) {
+			t.Fatalf("SelectVMs(exp, %+v) total = %d, want %d", query, total, len(all))
+		}
+
+		// pages 1, 2, ... hold the unpaged list in order, then nothing
+		var paged mm.VMs
+
+		for query.Page = 1; query.Page <= total/query.Size+1; query.Page++ {
+			page, pageTotal := SelectVMs("exp", vms, nil, query, listRole())
+
+			if pageTotal != total || len(page) > query.Size {
+				t.Fatalf("SelectVMs(exp, %+v) = %d VMs of %d, want at most %d of %d", query, len(page), pageTotal, query.Size, total)
+			}
+
+			paged = append(paged, page...)
+		}
+
+		if diff := cmp.Diff(vmNames(all), vmNames(paged), cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("SelectVMs(exp, %+v) pages mismatch (-unpaged +paged):\n%s", query, diff)
+		}
+	})
+}
+
+// genVMListDelay draws the delays sortByDelay compares, with timers that parse.
+func genVMListDelay() *rapid.Generator[string] {
+	timer := rapid.Custom(func(t *rapid.T) string {
+		n := rapid.IntRange(0, 120).Draw(t, "n")
+
+		spellings := []string{fmt.Sprintf("%ds", n), fmt.Sprintf("%dm", n), (time.Duration(n) * time.Second).String()}
+
+		return "timer:" + rapid.SampledFrom(spellings).Draw(t, "unit")
+	})
+
+	return rapid.OneOf(rapid.Just(""), rapid.Just("user"), rapid.Just("cc:ten"), rapid.Just("cc:nine"), timer)
+}
+
+// delayLess must be a strict weak order, or [sort.SliceStable] may misorder VMs.
+func TestDelayLessIsStrictWeakOrder(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		d := []string{genVMListDelay().Draw(t, "a"), genVMListDelay().Draw(t, "b"), genVMListDelay().Draw(t, "c")}
+		equiv := func(x, y string) bool { return !delayLess(x, y) && !delayLess(y, x) }
+
+		for _, p := range [][3]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
+			a, b, c := d[p[0]], d[p[1]], d[p[2]]
+
+			switch {
+			case delayLess(a, a):
+				t.Fatalf("delayLess(%q, %q) = true, want false", a, a)
+			case delayLess(a, b) && delayLess(b, a):
+				t.Fatalf("delayLess(%q, %q) and delayLess(%q, %q) are both true", a, b, b, a)
+			case delayLess(a, b) && delayLess(b, c) && !delayLess(a, c):
+				t.Fatalf("delayLess(%q, %q) = false, want true after %q < %q < %q", a, c, a, b, c)
+			case equiv(a, b) && equiv(b, c) && !equiv(a, c):
+				t.Fatalf("%q and %q compare equal to %q but not to each other", a, c, b)
+			}
+		}
+	})
 }
 
 func vmNames(vms mm.VMs) []string {

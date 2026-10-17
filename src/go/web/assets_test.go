@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 )
 
 func testAssets() http.FileSystem {
@@ -246,4 +248,64 @@ func TestAcceptsGzip(t *testing.T) {
 			t.Errorf("acceptsGzip(Accept-Encoding %q) = %v, want %v", header, got, want)
 		}
 	}
+}
+
+// genAssetsCoding draws one Accept-Encoding entry for coding, with optional
+// whitespace and a q weight; zero reports whether the weight refuses it.
+func genAssetsCoding(coding string) *rapid.Generator[assetsCoding] {
+	return rapid.Custom(func(t *rapid.T) assetsCoding {
+		ows := rapid.SampledFrom([]string{"", " ", "\t"})
+		entry := ows.Draw(t, "before") + coding + ows.Draw(t, "after")
+
+		zeros := []string{"0", "0.", "0.0", "0.000"}
+		positives := []string{"1", "1.0", "0.001", "0.5"}
+		q := rapid.SampledFrom(append(append([]string{""}, zeros...), positives...)).Draw(t, "q")
+
+		if q != "" {
+			entry += ";" + ows.Draw(t, "semicolon") + rapid.SampledFrom([]string{"q", "Q"}).Draw(t, "qname") + "=" + q
+		}
+
+		return assetsCoding{entry: entry, zero: slices.Contains(zeros, q)}
+	})
+}
+
+type assetsCoding struct {
+	entry string
+	zero  bool
+}
+
+// Other codings, case and optional whitespace leave the verdict to the gzip
+// entry alone: accepted unless its weight is zero.
+func TestAcceptsGzipProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		other := rapid.SampledFrom([]string{"br", "deflate", "identity", "x-gzip", "*", "gzip2"})
+		entries := rapid.SliceOfN(rapid.Custom(func(t *rapid.T) assetsCoding {
+			return genAssetsCoding(other.Draw(t, "coding")).Draw(t, "other")
+		}), 0, 4).Draw(t, "others")
+
+		want := false
+
+		if rapid.Bool().Draw(t, "hasGzip") {
+			gz := genAssetsCoding(rapid.SampledFrom([]string{"gzip", "GZIP", "Gzip"}).Draw(t, "gzip")).Draw(t, "gzipEntry")
+			at := rapid.IntRange(0, len(entries)).Draw(t, "at")
+			entries = slices.Insert(entries, at, gz)
+			want = !gz.zero
+		}
+
+		parts := make([]string, 0, len(entries))
+		for _, e := range entries {
+			parts = append(parts, e.entry)
+		}
+
+		header := strings.Join(parts, ",")
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Accept-Encoding", header)
+
+		if got := acceptsGzip(req); got != want {
+			t.Fatalf("acceptsGzip(Accept-Encoding %q) = %v, want %v", header, got, want)
+		}
+	})
 }

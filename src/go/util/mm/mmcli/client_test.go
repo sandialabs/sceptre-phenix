@@ -1,6 +1,7 @@
 package mmcli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm/mmtest"
 )
@@ -187,6 +189,47 @@ func TestReconstructErrKeepsSentinelIdentity(t *testing.T) {
 	if err := reconstructErr("vm not found: foo"); errors.Is(err, ErrTimeout) {
 		t.Fatal("unrelated message matched ErrTimeout")
 	}
+}
+
+// genClientErr draws an error as this package reports one: a timeout, a wait given up, an
+// ended stream, or minimega's own text.
+func genClientErr() *rapid.Generator[error] {
+	return rapid.Custom(func(t *rapid.T) error {
+		text := rapid.StringMatching(`[a-z]{1,4}(: [a-z]{1,4})?`).Draw(t, "text")
+
+		return rapid.SampledFrom([]error{
+			ErrTimeout,
+			gaveUp(nil),
+			gaveUp(context.Canceled),
+			gaveUp(context.DeadlineExceeded),
+			fmt.Errorf("running minimega command: %w", ErrNoResponse),
+			fmt.Errorf("running minimega command: %w", errors.New(text)),
+			errors.New(text),
+		}).Draw(t, "err")
+	})
+}
+
+// An error flattened into a response and rebuilt by reconstructErr keeps its message and is
+// each of phenix's sentinels exactly when the original was.
+func TestReconstructErrProperties(t *testing.T) {
+	t.Parallel()
+
+	sentinels := []error{ErrTimeout, ErrNoResponse, ErrNotSent, context.Canceled, context.DeadlineExceeded}
+
+	rapid.Check(t, func(t *rapid.T) {
+		err := genClientErr().Draw(t, "err")
+		got := reconstructErr(errResponse(err).Resp[0].Error)
+
+		if got.Error() != err.Error() {
+			t.Fatalf("reconstructErr(%q) message = %q, want the original", err, got)
+		}
+
+		for _, sentinel := range sentinels {
+			if want := errors.Is(err, sentinel); errors.Is(got, sentinel) != want {
+				t.Fatalf("errors.Is(reconstructErr(%q), %v) = %t, want %t", err, sentinel, !want, want)
+			}
+		}
+	})
 }
 
 // TestRunConcurrentCommands covers the serialization around the shared

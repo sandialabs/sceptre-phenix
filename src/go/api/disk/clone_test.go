@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 )
 
 // leftovers returns the names in dir other than the given ones.
@@ -260,4 +264,73 @@ func TestCloneDiskContextFallsBack(t *testing.T) {
 	if err := CloneDiskContext(t.Context(), "missing.qc2", "c.qc2", nil); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("CloneDiskContext(missing.qc2, c.qc2) error = %v, want %v", err, fs.ErrNotExist)
 	}
+}
+
+// cloneChecker is a writer that checks it receives want from its start.
+type cloneChecker struct {
+	want []byte
+	off  int
+	bad  bool
+	sent []int
+}
+
+func (c *cloneChecker) Write(b []byte) (int, error) {
+	if !bytes.Equal(b, c.want[c.off:min(c.off+len(b), len(c.want))]) {
+		c.bad = true
+	}
+
+	c.off += len(b)
+	c.sent = append(c.sent, len(b))
+
+	return len(b), nil
+}
+
+// copyChunks copies every byte in order, a full chunk at a time but for a
+// shorter last one, however the source splits its reads, and reports each
+// chunk it writes and nothing else.
+func TestCopyChunksProperties(t *testing.T) {
+	t.Parallel()
+
+	src := make([]byte, 2*cloneChunk)
+	for i := range src {
+		src[i] = byte(i % 251)
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		size := rapid.OneOf(
+			rapid.IntRange(0, 1000),
+			rapid.SampledFrom([]int{cloneChunk - 1, cloneChunk, cloneChunk + 1, 2 * cloneChunk}),
+		).Draw(t, "size")
+
+		var in io.Reader = bytes.NewReader(src[:size])
+		if rapid.Bool().Draw(t, "short reads") {
+			in = iotest.HalfReader(in)
+		}
+
+		var (
+			out      = &cloneChecker{want: src[:size], off: 0, bad: false, sent: nil}
+			reported []int
+		)
+
+		if err := copyChunks(context.Background(), out, in, func(n int64) { reported = append(reported, int(n)) }); err != nil {
+			t.Fatalf("copyChunks(%d bytes) error = %v", size, err)
+		}
+
+		if out.off != size || out.bad {
+			t.Fatalf("copyChunks(%d bytes) wrote %d bytes, some wrong: %t; want the source bytes", size, out.off, out.bad)
+		}
+
+		want := make([]int, 0, size/cloneChunk+1)
+		for left := size; left > 0; left -= cloneChunk {
+			want = append(want, min(left, cloneChunk))
+		}
+
+		if diff := cmp.Diff(want, out.sent, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("copyChunks(%d bytes) writes mismatch (-want +got):\n%s", size, diff)
+		}
+
+		if diff := cmp.Diff(want, reported, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("copyChunks(%d bytes) progress mismatch (-want +got):\n%s", size, diff)
+		}
+	})
 }

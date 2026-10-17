@@ -2,10 +2,12 @@ package disk
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"pgregory.net/rapid"
 )
 
 // The disk actions act on images inside the files directory, except in the
@@ -106,4 +108,91 @@ func TestValidPathsReachMinimegaWhole(t *testing.T) {
 	if accepted == 0 || splits == 0 {
 		t.Errorf("names accepted = %d, refused names minimega splits = %d; want some of each", accepted, splits)
 	}
+}
+
+// genPathsRel draws a relative path of segments the disk listing treats specially.
+func genPathsRel() *rapid.Generator[string] {
+	segment := rapid.SampledFrom([]string{
+		"a", "win", "x.qc2", "files", "tmp", "miniccc_responses", "saved", "transfer_1", "lost+found",
+		".hidden", "..a", "..", ".", "",
+	})
+
+	return rapid.Map(rapid.SliceOfN(segment, 0, 5), func(segs []string) string {
+		return strings.TrimLeft(strings.Join(segs, "/"), "/")
+	})
+}
+
+// A path Resolve accepts is clean, inside the files directory and accepted
+// again as it is; a relative path resolves as the absolute one it names; and
+// every folder holding an accepted image inside the files directory is accepted.
+func TestResolveProperties(t *testing.T) {
+	dir := useFilesDir(t)
+
+	rapid.Check(t, func(t *rapid.T) {
+		rel := genPathsRel().Draw(t, "rel")
+
+		got, err := Resolve(rel)
+		if err != nil && !errors.Is(err, ErrNotManaged) {
+			t.Fatalf("Resolve(%q) error = %v, want nil or %v", rel, err, ErrNotManaged)
+		}
+
+		abs, absErr := Resolve(dir + "/" + rel)
+		if abs != got || (absErr == nil) != (err == nil) {
+			t.Fatalf("Resolve(%q) = %q, %v; want %q, %v as for Resolve(%q)", dir+"/"+rel, abs, absErr, got, err, rel)
+		}
+
+		if err != nil {
+			return
+		}
+
+		if got != filepath.Clean(got) || !strings.HasPrefix(got, dir+"/") {
+			t.Fatalf("Resolve(%q) = %q, want a clean path under %s", rel, got, dir)
+		}
+
+		if again, err := Resolve(got); again != got || err != nil {
+			t.Fatalf("Resolve(%q) = %q, %v; want %q, nil", got, again, err, got)
+		}
+
+		for folder := filepath.Dir(got); folder != dir; folder = filepath.Dir(folder) {
+			if _, err := Resolve(folder); err != nil {
+				t.Fatalf("Resolve(%q) error = %v, but Resolve(%q) = %q under it", folder, err, rel, got)
+			}
+		}
+	})
+}
+
+// genPathsName draws a file name, most often of characters minimega takes as they are.
+func genPathsName() *rapid.Generator[string] {
+	safe := []rune("aZ0-_.+&=%()|<>;:@!~ü")
+	odd := []rune(" \t 　\"'`\\#*?[]{}$,\x00\n")
+
+	return rapid.OneOf(
+		rapid.StringOfN(rapid.SampledFrom(safe), 1, 8, -1),
+		rapid.StringOfN(rapid.SampledFrom(append(safe, odd...)), 1, 8, -1),
+	)
+}
+
+// Every pair of paths ValidateMinimegaPath accepts reaches minimega as two whole arguments.
+func TestValidPathsReachMinimegaWholeProperties(t *testing.T) {
+	minicli.Reset()
+	t.Cleanup(minicli.Reset)
+
+	minicli.MustRegister(&minicli.Handler{
+		Patterns: []string{"disk snapshot <image> [dst image]"},
+		Call:     func(*minicli.Command, chan<- minicli.Responses) {},
+	})
+
+	rapid.Check(t, func(t *rapid.T) {
+		src := "/f/" + genPathsName().Draw(t, "src")
+		dst := "/f/" + genPathsName().Draw(t, "dst") + ".new"
+
+		if ValidateMinimegaPath(src) != nil || ValidateMinimegaPath(dst) != nil {
+			t.Skip("refused")
+		}
+
+		cmd, err := minicli.Compile("disk snapshot " + src + " " + dst)
+		if err != nil || cmd.StringArgs["image"] != src || cmd.StringArgs["dst"] != dst {
+			t.Fatalf("minicli.Compile(disk snapshot %q %q) = %v, %v; want the two paths whole", src, dst, cmd, err)
+		}
+	})
 }

@@ -2,12 +2,14 @@ package mm
 
 import (
 	"maps"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm/mmtest"
 )
@@ -402,4 +404,75 @@ func TestSameHostSet(t *testing.T) {
 			t.Errorf("sameHostSet(%q, %q) = %t, want %t", tc.a, tc.b, got, tc.want)
 		}
 	}
+}
+
+// clusterhostsHost is a host name as minimega reports it: no leading zeros.
+type clusterhostsHost struct {
+	prefix string
+	num    int
+	rack   int // -1 for none
+}
+
+func genClusterhostsHosts() *rapid.Generator[[]clusterhostsHost] {
+	host := rapid.Custom(func(t *rapid.T) clusterhostsHost {
+		return clusterhostsHost{
+			prefix: rapid.SampledFrom([]string{"node", "n", "gpu"}).Draw(t, "prefix"),
+			num:    rapid.IntRange(0, 120).Draw(t, "num"),
+			rack:   rapid.IntRange(-1, 3).Draw(t, "rack"),
+		}
+	})
+
+	return rapid.SliceOfDistinct(host, func(h clusterhostsHost) clusterhostsHost { return h })
+}
+
+// clusterhostsSpell writes a host's numbers with any number of leading zeros.
+func clusterhostsSpell(t *rapid.T, h clusterhostsHost) string {
+	pad := func(n int) string {
+		return strings.Repeat("0", rapid.IntRange(0, 2).Draw(t, "zeros")) + strconv.Itoa(n)
+	}
+
+	name := h.prefix + pad(h.num)
+	if h.rack >= 0 {
+		name += "-r" + pad(h.rack)
+	}
+
+	return name
+}
+
+// clusterhostsList spells hosts in a shuffled list with some names repeated.
+func clusterhostsList(t *rapid.T, hosts []clusterhostsHost, label string) []string {
+	names := make([]string, 0, 2*len(hosts))
+
+	for _, h := range hosts {
+		for range rapid.IntRange(1, 2).Draw(t, label+" copies") {
+			names = append(names, clusterhostsSpell(t, h))
+		}
+	}
+
+	return rapid.Permutation(names).Draw(t, label)
+}
+
+func TestSameHostSetProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		hosts := genClusterhostsHosts().Draw(t, "hosts")
+		a, b := clusterhostsList(t, hosts, "a"), clusterhostsList(t, hosts, "b")
+
+		if !sameHostSet(a, b) || !sameHostSet(b, a) {
+			t.Fatalf("sameHostSet(%q, %q) = false, want true", a, b)
+		}
+
+		if len(hosts) == 0 {
+			return
+		}
+
+		// leaving out any one host, every spelling of it, makes a different set
+		drop := rapid.IntRange(0, len(hosts)-1).Draw(t, "drop")
+		fewer := clusterhostsList(t, append(hosts[:drop:drop], hosts[drop+1:]...), "fewer")
+
+		if sameHostSet(a, fewer) || sameHostSet(fewer, a) {
+			t.Fatalf("sameHostSet(%q, %q) = true, want false", a, fewer)
+		}
+	})
 }

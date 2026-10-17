@@ -8,6 +8,8 @@ import (
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm/mmtest"
 )
@@ -110,6 +112,73 @@ func TestVMStartBatches(t *testing.T) {
 	if batches := vmStartBatches(long); len(batches) != 2 {
 		t.Errorf("vmStartBatches(names longer than a target list together) = %d batches, want 2", len(batches))
 	}
+}
+
+// genLaunchVMNames draws VM name lists that reach the batch bounds: many short
+// names, long names that fill a target list in a few, or a mix with unbatchable ones.
+func genLaunchVMNames() *rapid.Generator[[]string] {
+	short := rapid.StringMatching(`[a-z][a-z0-9-]{0,7}`)
+	long := rapid.Map(rapid.IntRange(maxVMStartTarget/8, maxVMStartTarget/2), func(n int) string {
+		return strings.Repeat("x", n)
+	})
+	unbatchable := rapid.SampledFrom([]string{"", "all", "e,f", "d[1-2]", "g h", "it's"})
+
+	return rapid.Custom(func(t *rapid.T) []string {
+		name := rapid.SampledFrom([]*rapid.Generator[string]{short, long, rapid.OneOf(short, long, unbatchable)}).Draw(t, "kind")
+		minLen := rapid.SampledFrom([]int{0, maxVMStartBatch}).Draw(t, "minLen")
+
+		return rapid.SliceOfN(name, minLen, 3*maxVMStartBatch).Draw(t, "names")
+	})
+}
+
+func TestVMStartBatchesProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		names := genLaunchVMNames().Draw(t, "names")
+		batches := vmStartBatches(names)
+
+		flat := make([]string, 0, len(names))
+		for _, batch := range batches {
+			flat = append(flat, batch...)
+		}
+
+		if diff := cmp.Diff(names, flat, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("vmStartBatches(names) flattened mismatch (-want +got):\n%s", diff)
+		}
+
+		for i, batch := range batches {
+			target := strings.Join(batch, ",")
+
+			switch {
+			case len(batch) == 0 || len(batch) > maxVMStartBatch:
+				t.Fatalf("vmStartBatches(names) batch %d has %d VMs, want 1 to %d", i, len(batch), maxVMStartBatch)
+			case len(batch) > 1 && !launchAllBatchable(batch):
+				t.Fatalf("vmStartBatches(names) batch %d = %q, want an unbatchable name alone", i, batch)
+			case len(batch) > 1 && len(target) >= maxVMStartTarget:
+				t.Fatalf("vmStartBatches(names) batch %d target list is %d bytes, want under %d", i, len(target), maxVMStartTarget)
+			}
+
+			// a batch is cut short only when the next name would not fit in it
+			if i+1 < len(batches) && launchAllBatchable(batch) && batchableVMName(batches[i+1][0]) {
+				grown := len(target) + 1 + len(batches[i+1][0])
+				if len(batch) < maxVMStartBatch && grown < maxVMStartTarget {
+					t.Fatalf("vmStartBatches(names) split batch %d (%d VMs, %d bytes) before %q, which fits",
+						i, len(batch), len(target), batches[i+1][0])
+				}
+			}
+		}
+	})
+}
+
+func launchAllBatchable(names []string) bool {
+	for _, name := range names {
+		if !batchableVMName(name) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func TestGetLaunchProgress(t *testing.T) { //nolint:paralleltest // shares the fake minimega

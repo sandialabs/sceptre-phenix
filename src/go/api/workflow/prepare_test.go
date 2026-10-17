@@ -2,6 +2,7 @@ package workflow_test
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"net/url"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"pgregory.net/rapid"
 
 	"phenix/api/workflow"
 	"phenix/store"
@@ -1565,4 +1567,79 @@ func TestPreparePendingMatchesStored(t *testing.T) {
 			}
 		})
 	}
+}
+
+// prepareMockStore installs a store mock that answers a read of each of configs, and fails any other read
+// with [store.ErrNotExist]. The test restores the default store.
+func prepareMockStore(t *rapid.T, configs ...store.Config) {
+	m := store.NewMockStore(gomock.NewController(t))
+
+	for _, cfg := range configs {
+		m.EXPECT().Get(gomock.Eq(prepareKey(cfg.FullName()))).SetArg(0, cfg).Return(nil).AnyTimes()
+	}
+
+	m.EXPECT().Get(gomock.Any()).Return(store.ErrNotExist).AnyTimes()
+
+	store.DefaultStore = m //nolint:reassign // install the test double
+}
+
+// genPrepareText draws text that may hold "foo" and the characters a URL query encodes.
+func genPrepareText() *rapid.Generator[string] {
+	part := rapid.OneOf(rapid.StringMatching(`[a-z&=%+?#;, /]{0,4}`), rapid.String())
+
+	return rapid.Custom(func(t *rapid.T) string {
+		middle := rapid.SampledFrom([]string{"", "foo"}).Draw(t, "middle")
+
+		return part.Draw(t, "prefix") + middle + part.Draw(t, "suffix")
+	})
+}
+
+// A dry run that names the directory's configs as pending, by their PendingRef, fails exactly as the real
+// apply with them stored, whatever the scenario's topology annotation, fromScenario and include names hold.
+func TestPreparePendingMatchesStoredProperties(t *testing.T) {
+	original := store.DefaultStore
+	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore the default store
+
+	create := workflow.Spec{Auto: &workflow.Auto{Create: "exp1"}, Topology: "foo", Scenario: "bar"}
+	names := rapid.SampledFrom([]string{"base", "a b", "a&b=c", "100%"})
+
+	rapid.Check(t, func(t *rapid.T) {
+		topology := prepareTopology()
+		if includes := rapid.SliceOfN(names, 0, 2).Draw(t, "includes"); len(includes) > 0 {
+			topology.Spec["includeTopologies"] = includes
+		}
+
+		sources := rapid.SliceOfN(rapid.OneOf(rapid.Just(""), names), 0, 3).Draw(t, "sources")
+		apps := make([]map[string]any, 0, len(sources))
+
+		for i, from := range sources {
+			app := map[string]any{"name": fmt.Sprint("app", i)}
+			if from != "" {
+				app["fromScenario"] = from
+			}
+
+			apps = append(apps, app)
+		}
+
+		scenario := prepareScenario("bar", "", apps...)
+		if rapid.Bool().Draw(t, "annotated") {
+			scenario.Metadata.Annotations = store.Annotations{"topology": genPrepareText().Draw(t, "annotation")}
+		}
+
+		plan := workflow.Plan{Action: rapid.SampledFrom([]workflow.Action{
+			workflow.ActionCreate, workflow.ActionCreateAndStart,
+		}).Draw(t, "action")}
+
+		prepareMockStore(t, topology, scenario)
+
+		_, stored := workflow.Prepare(create, plan, nil)
+
+		prepareMockStore(t)
+
+		refs := []string{workflow.PendingRef(topology), workflow.PendingRef(scenario)}
+
+		if _, dryRun := workflow.Prepare(create, plan, nil, refs...); fmt.Sprint(dryRun) != fmt.Sprint(stored) {
+			t.Fatalf("dry run: Prepare(pending %q) error = %v, want the real apply's %v", refs, dryRun, stored)
+		}
+	})
 }

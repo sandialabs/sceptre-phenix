@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/util/polltest"
 )
@@ -923,4 +925,275 @@ func TestQueueLimitsRefuseJobs(t *testing.T) {
 			t.Errorf("Start(%s) Status = %s, want %s", tc.desc, j.Status, tc.want)
 		}
 	}
+}
+
+// registryStepClock is a clock one nanosecond later at every reading, so the
+// registry's times order its jobs as they started and finished.
+type registryStepClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *registryStepClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.now = c.now.Add(time.Nanosecond)
+
+	return c.now
+}
+
+// registryModelJob is what the registry should hold of a job registryMachine started.
+type registryModelJob struct {
+	owner      string
+	cancelable bool
+	status     Status
+	release    chan error
+}
+
+// registryMachine starts, finishes, cancels and removes jobs in a registry
+// with small limits, and keeps a model of each job's status.
+type registryMachine struct {
+	r *Registry
+
+	perOwner, global, queuedPerOwner, queuedGlobal, maxFinished int
+
+	jobs map[string]*registryModelJob
+	// every job started, oldest first; the queued ones; the finished ones kept, in the order they finished
+	started, queue, finished []string
+}
+
+func (m *registryMachine) count(owner string, status Status) int {
+	var n int
+
+	for _, j := range m.jobs {
+		if j.status == status && (owner == "" || j.owner == owner) {
+			n++
+		}
+	}
+
+	return n
+}
+
+func (m *registryMachine) canStart(owner string) bool {
+	return m.count("", StatusRunning) < m.global && m.count(owner, StatusRunning) < m.perOwner
+}
+
+// finish ends the job in status, starts the queued jobs the limits now allow,
+// oldest first, and forgets the jobs that finished first beyond maxFinished.
+func (m *registryMachine) finish(id string, status Status) {
+	m.jobs[id].status = status
+	m.queue = slices.DeleteFunc(m.queue, func(q string) bool { return q == id })
+	m.finished = append(m.finished, id)
+
+	m.queue = slices.DeleteFunc(m.queue, func(q string) bool {
+		if !m.canStart(m.jobs[q].owner) {
+			return false
+		}
+
+		m.jobs[q].status = StatusRunning
+
+		return true
+	})
+
+	for len(m.finished) > m.maxFinished {
+		delete(m.jobs, m.finished[0])
+		m.finished = m.finished[1:]
+	}
+}
+
+// awaitEnd waits for the registry to finish the job, or forget it.
+func (m *registryMachine) awaitEnd(t *rapid.T, id string) {
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); runtime.Gosched() {
+		if j, ok := m.r.Get(id); !ok || j.Status.Terminal() {
+			return
+		}
+	}
+
+	t.Fatalf("job %s still active 5s after its work was told to end", id)
+}
+
+func (m *registryMachine) start(t *rapid.T) {
+	owner := rapid.SampledFrom([]string{"alice", "bob", "carol"}).Draw(t, "owner")
+	cancelable := rapid.Bool().Draw(t, "cancelable")
+	release := make(chan error, 1)
+
+	j, err := m.r.Start(Spec{Owner: owner, Cancelable: cancelable, Run: func(ctx context.Context, _ *Run) error {
+		select {
+		case err := <-release:
+			return err
+		case <-ctx.Done():
+			return ctx.Err() //nolint:wrapcheck // the registry tells cancellation apart
+		}
+	}})
+
+	queued := 0
+	for _, q := range m.queue {
+		if m.jobs[q].owner == owner {
+			queued++
+		}
+	}
+
+	want := StatusRunning
+
+	switch {
+	case m.canStart(owner):
+	case len(m.queue) < m.queuedGlobal && queued < m.queuedPerOwner:
+		want = StatusQueued
+	default:
+		if !errors.Is(err, ErrQueueFull) {
+			t.Fatalf("Start(%s's job) = %s, %v; want %v", owner, j.Status, err, ErrQueueFull)
+		}
+
+		return
+	}
+
+	if err != nil || j.Status != want {
+		t.Fatalf("Start(%s's job) = %s, %v; want %s, nil", owner, j.Status, err, want)
+	}
+
+	m.jobs[j.ID] = &registryModelJob{owner: owner, cancelable: cancelable, status: want, release: release}
+	m.started = append(m.started, j.ID)
+
+	if want == StatusQueued {
+		m.queue = append(m.queue, j.ID)
+	}
+}
+
+// end lets a running job's work return, with an error or not.
+func (m *registryMachine) end(t *rapid.T) {
+	var running []string
+
+	for _, id := range m.started {
+		if j, ok := m.jobs[id]; ok && j.status == StatusRunning {
+			running = append(running, id)
+		}
+	}
+
+	if len(running) == 0 {
+		t.Skip("no job running")
+	}
+
+	id := rapid.SampledFrom(running).Draw(t, "running job")
+	status := StatusSucceeded
+
+	var err error
+	if rapid.Bool().Draw(t, "fails") {
+		status, err = StatusFailed, errors.New("broke")
+	}
+
+	m.jobs[id].release <- err
+	m.awaitEnd(t, id)
+	m.finish(id, status)
+}
+
+func (m *registryMachine) cancel(t *rapid.T) {
+	if len(m.started) == 0 {
+		t.Skip("no job started")
+	}
+
+	id := rapid.SampledFrom(m.started).Draw(t, "job")
+	j, ok := m.jobs[id]
+
+	var want error
+
+	switch {
+	case !ok:
+		want = ErrNotFound
+	case j.status.Terminal():
+		want = ErrFinished
+	case !j.cancelable:
+		want = ErrNotCancelable
+	}
+
+	if _, err := m.r.Cancel(id); !errors.Is(err, want) {
+		t.Fatalf("Cancel(%s) error = %v, want %v", id, err, want)
+	}
+
+	if want == nil {
+		m.awaitEnd(t, id)
+		m.finish(id, StatusCanceled)
+	}
+}
+
+func (m *registryMachine) remove(t *rapid.T) {
+	if len(m.started) == 0 {
+		t.Skip("no job started")
+	}
+
+	id := rapid.SampledFrom(m.started).Draw(t, "job")
+	j, ok := m.jobs[id]
+
+	var want error
+
+	switch {
+	case !ok:
+		want = ErrNotFound
+	case !j.status.Terminal():
+		want = ErrActive
+	}
+
+	if err := m.r.Remove(id); !errors.Is(err, want) {
+		t.Fatalf("Remove(%s) error = %v, want %v", id, err, want)
+	}
+
+	if want == nil {
+		delete(m.jobs, id)
+		m.finished = slices.DeleteFunc(m.finished, func(f string) bool { return f == id })
+	}
+}
+
+// check compares every job the registry holds, newest first, with the model.
+func (m *registryMachine) check(t *rapid.T) {
+	var want []string
+
+	for _, id := range slices.Backward(m.started) {
+		if j, ok := m.jobs[id]; ok {
+			want = append(want, id+" "+string(j.status))
+		}
+	}
+
+	jobs := m.r.List(Filter{})
+	got := make([]string, 0, len(jobs))
+
+	for _, j := range jobs {
+		got = append(got, j.ID+" "+string(j.Status))
+	}
+
+	if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+		t.Fatalf("List() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// Jobs run as soon as the limits allow, oldest first, are refused once the
+// queue is full, and are forgotten once more than the most kept have finished.
+func TestRegistryProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		m := &registryMachine{
+			perOwner:       rapid.IntRange(1, 2).Draw(t, "per owner"),
+			global:         rapid.IntRange(1, 3).Draw(t, "global"),
+			queuedPerOwner: rapid.IntRange(0, 2).Draw(t, "queued per owner"),
+			queuedGlobal:   rapid.IntRange(0, 3).Draw(t, "queued global"),
+			maxFinished:    rapid.IntRange(0, 3).Draw(t, "max finished"),
+			jobs:           make(map[string]*registryModelJob),
+		}
+
+		clock := &registryStepClock{now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+		m.r = NewRegistry(
+			WithLimits(m.perOwner, m.global), WithQueueLimits(m.queuedPerOwner, m.queuedGlobal),
+			WithMaxFinished(m.maxFinished), WithClock(clock.Now),
+		)
+
+		defer m.r.Shutdown()
+
+		t.Repeat(map[string]func(*rapid.T){
+			"start":  m.start,
+			"end":    m.end,
+			"cancel": m.cancel,
+			"remove": m.remove,
+			"":       m.check,
+		})
+	})
 }

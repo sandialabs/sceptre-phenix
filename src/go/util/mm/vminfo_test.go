@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
@@ -578,4 +580,60 @@ func TestGetVMInfoObservedWhenRead(t *testing.T) { //nolint:paralleltest // shar
 	if !obs.Known || obs.Err != nil || obs.At.IsZero() || obs.At.After(firstCommand) {
 		t.Errorf("GetVMInfoObserved(exp) observation = %+v with the first command at %v, want known, at or before it", obs, firstCommand)
 	}
+}
+
+// A `vm info` list column written from items with no ", " in them parses back to the items.
+func TestParseListProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		item := rapid.StringMatching(`[a ,\[\]]{0,4}`).Filter(func(s string) bool { return !strings.Contains(s, ", ") })
+		items := rapid.SliceOfN(item, 0, 4).Draw(t, "items")
+		column := "[" + strings.Join(items, ", ") + "]"
+
+		want := items
+		if len(items) == 0 || len(items) == 1 && items[0] == "" {
+			want = nil
+		}
+
+		if diff := cmp.Diff(want, parseList(column)); diff != "" {
+			t.Fatalf("parseList(%q) mismatch (-want +got):\n%s", column, diff)
+		}
+	})
+}
+
+// parseDiskUsage reads back each path's usage from the fields diskUsageCommand prints, in any
+// order and spacing, and skips fields for paths df failed for or that no path asked for.
+func TestParseDiskUsageProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		var (
+			count  = rapid.IntRange(0, 4).Draw(t, "count")
+			fields []string
+			want   = make(map[int]float64)
+		)
+
+		for i := range count {
+			switch rapid.IntRange(0, 2).Draw(t, "kind") {
+			case 0:
+				usage := rapid.IntRange(0, 100).Draw(t, "usage")
+				want[i] = float64(usage)
+				fields = append(fields, strconv.Itoa(i)+"="+strconv.Itoa(usage)+"%")
+			case 1:
+				fields = append(fields, strconv.Itoa(i)+"=", strconv.Itoa(i)+"=Use%")
+			}
+		}
+
+		extra := rapid.SliceOfN(rapid.SampledFrom([]string{"-1=5%", "Use%", "x=5%", "=5%"}), 0, 2).Draw(t, "extra")
+		fields = append(fields, extra...)
+		fields = append(fields, strconv.Itoa(count+rapid.IntRange(0, 2).Draw(t, "beyond"))+"=7%")
+
+		fields = rapid.Permutation(fields).Draw(t, "order")
+		resp := strings.Join(fields, rapid.SampledFrom([]string{" ", "  ", "\n", "\t"}).Draw(t, "sep"))
+
+		if diff := cmp.Diff(want, parseDiskUsage(resp, count)); diff != "" {
+			t.Fatalf("parseDiskUsage(%q, %d) mismatch (-want +got):\n%s", resp, count, diff)
+		}
+	})
 }

@@ -5,8 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"pgregory.net/rapid"
+
 	"phenix/store"
 	"phenix/types"
+	"phenix/types/version"
 )
 
 // validNode returns the minimal internal (minimega) node the topology schema
@@ -255,4 +258,65 @@ func TestTopologySchema(t *testing.T) {
 			}
 		})
 	}
+}
+
+// schemaTopologyHostnameOK is the documented hostname rule: 2 to 63 ASCII letters, digits and
+// hyphens, starting and ending with a letter or digit.
+func schemaTopologyHostnameOK(hostname string) bool {
+	alnum := func(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' }
+
+	if len(hostname) < 2 || len(hostname) > 63 || !alnum(hostname[0]) || !alnum(hostname[len(hostname)-1]) {
+		return false
+	}
+
+	for i := range len(hostname) {
+		if !alnum(hostname[i]) && hostname[i] != '-' {
+			return false
+		}
+	}
+
+	return true
+}
+
+// genSchemaTopologyHostname draws hostnames of letters, digits and hyphens near the length
+// limits as well as short ones; a third of them get one other character.
+func genSchemaTopologyHostname() *rapid.Generator[string] {
+	return rapid.Custom(func(t *rapid.T) string {
+		chars := rapid.SampledFrom([]*rapid.Generator[string]{
+			rapid.SampledFrom([]string{"a", "Z", "7"}),
+			rapid.SampledFrom([]string{"a", "Z", "7", "-"}),
+		}).Draw(t, "chars")
+		length := rapid.OneOf(rapid.IntRange(0, 4), rapid.IntRange(61, 65)).Draw(t, "length")
+
+		hostname := make([]string, length)
+		for i := range hostname {
+			hostname[i] = chars.Draw(t, "char")
+		}
+
+		if length > 0 && rapid.IntRange(0, 2).Draw(t, "odd") == 0 {
+			odd := rapid.SampledFrom([]string{"_", ".", "é", " "}).Draw(t, "odd char")
+			hostname[rapid.IntRange(0, length-1).Draw(t, "at")] = odd
+		}
+
+		return strings.Join(hostname, "")
+	})
+}
+
+// The Topology schema accepts a node's hostname exactly when the documented rule does.
+func TestTopologySchemaHostnameProperties(t *testing.T) {
+	t.Parallel()
+
+	schema, err := version.GetVersionedValidatorForKind("Topology", version.LATEST_VERSION)
+	if err != nil {
+		t.Fatalf("GetVersionedValidatorForKind(Topology, %s) error = %v", version.LATEST_VERSION, err)
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		hostname := genSchemaTopologyHostname().Draw(t, "hostname")
+		spec := map[string]any{"nodes": []any{withHostname(validNode(), hostname)}}
+
+		if err, want := schema.VisitJSON(spec), schemaTopologyHostnameOK(hostname); (err == nil) != want {
+			t.Fatalf("Topology schema on hostname %q (%d bytes) error = %v, want valid %t", hostname, len(hostname), err, want)
+		}
+	})
 }

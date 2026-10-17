@@ -1,9 +1,11 @@
 package vm_test
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
@@ -173,6 +175,72 @@ func TestGetAndList(t *testing.T) {
 			}
 		})
 	}
+}
+
+// vmIfaceCount is the number of interfaces of the VM in TestGetFollowsMinimegaInterfaceOrder.
+const vmIfaceCount = 4
+
+// A running VM's interface names and addresses follow the order minimega reports its networks in,
+// whatever that order is, with an address minimega reports taking the topology's place.
+func TestGetFollowsMinimegaInterfaceOrder(t *testing.T) {
+	ifaces := make([]map[string]any, vmIfaceCount)
+	addresses := make([]string, vmIfaceCount)
+
+	for i := range vmIfaceCount {
+		if i%2 == 0 { // the others use DHCP
+			addresses[i] = "10.0.0." + strconv.Itoa(i+1)
+		}
+
+		ifaces[i] = vmIface("IF"+strconv.Itoa(i), "EXP_"+strconv.Itoa(i), addresses[i])
+	}
+
+	useExperiment(t, startTime, vmNode("web", ifaces...))
+	fake := useMM(t, &fakeMM{})
+
+	rapid.Check(t, func(t *rapid.T) {
+		order := rapid.Permutation([]int{0, 1, 2, 3}).Draw(t, "order")
+		reported := rapid.SliceOfN(rapid.SampledFrom([]string{"", "192.168.0.9"}), vmIfaceCount, vmIfaceCount).Draw(t, "reported")
+
+		details := runningVM("web")
+		for _, i := range order {
+			details.Networks = append(details.Networks, "EXP_"+strconv.Itoa(i)+" (10"+strconv.Itoa(i)+")")
+		}
+
+		if rapid.Bool().Draw(t, "reportsAddresses") {
+			details.IPv4 = reported
+		}
+
+		fake.vms = mm.VMs{details}
+
+		got, err := vm.Get(t.Context(), testExp, "web")
+		if err != nil {
+			t.Fatalf("Get(%q, %q) error = %v", testExp, "web", err)
+		}
+
+		wantNames := make([]string, vmIfaceCount)
+		wantAddresses := make([]string, vmIfaceCount)
+
+		for pos, i := range order {
+			wantNames[pos] = "IF" + strconv.Itoa(i)
+			wantAddresses[pos] = addresses[i]
+
+			if details.IPv4 != nil && reported[pos] != "" {
+				wantAddresses[pos] = reported[pos]
+			}
+
+			if idx, err := vm.ResolveInterface(got, "if"+strconv.Itoa(i)); err != nil || idx != pos {
+				t.Errorf("ResolveInterface(Get(%v), %q) = %d, %v; want %d, nil", details.Networks, "if"+strconv.Itoa(i), idx, err, pos)
+			}
+		}
+
+		if diff := cmp.Diff(wantNames, got.IfaceNames); diff != "" {
+			t.Errorf("Get(%v).IfaceNames mismatch (-want +got):\n%s", details.Networks, diff)
+		}
+
+		if diff := cmp.Diff(wantAddresses, got.IPv4); diff != "" {
+			t.Errorf("Get(%v).IPv4 mismatch (-want +got):\n%s", details.Networks, diff)
+		}
+	})
 }
 
 func TestGetAndListRejectUnknownNames(t *testing.T) {

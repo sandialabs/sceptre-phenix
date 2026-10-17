@@ -3,10 +3,13 @@ package workflow_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"pgregory.net/rapid"
 
 	"phenix/api/workflow"
 	"phenix/store"
@@ -382,6 +385,136 @@ func TestNewPlanNameCheckMatchesSchema(t *testing.T) {
 	if len(names) < 4 {
 		t.Errorf("found %d auto.create names in the plan rows, want at least 4", len(names))
 	}
+}
+
+// NewPlan refuses an auto.create name exactly when the config schema does, but for the reserved name all.
+func TestNewPlanNameCheckMatchesSchemaProperties(t *testing.T) {
+	t.Parallel()
+
+	reserved := rapid.Custom(func(t *rapid.T) string { return genSpecRecase(t, "all", "case") })
+	other := rapid.StringOfN(rapid.SampledFrom([]rune("aZ0_@.-/ !é")), 1, 6, -1)
+
+	rapid.Check(t, func(t *rapid.T) {
+		name := rapid.OneOf(reserved, other).Draw(t, "name")
+
+		_, planErr := workflow.NewPlan(workflow.Spec{Auto: &workflow.Auto{Create: name}}, "main", nil, nil)
+		if planErr != nil && !errors.Is(planErr, workflow.ErrInvalidSpec) {
+			t.Fatalf("NewPlan(auto.create %q) error = %v, want nil or ErrInvalidSpec", name, planErr)
+		}
+
+		cfg := store.Config{
+			Version:  "phenix.sandia.gov/v1",
+			Kind:     "Experiment",
+			Metadata: store.ConfigMetadata{Name: name},
+			Spec:     map[string]any{"scenario": "foo"},
+		}
+
+		schemaErr := types.ValidateConfig(cfg)
+		if schemaErr != nil && !errors.Is(schemaErr, types.ErrValidationFailed) {
+			t.Fatalf("ValidateConfig(name %q) error = %v, want nil or ErrValidationFailed", name, schemaErr)
+		}
+
+		wantRefused := schemaErr != nil || strings.EqualFold(name, "all")
+		if (planErr != nil) != wantRefused {
+			t.Fatalf("NewPlan(auto.create %q) error = %v, schema error = %v; want NewPlan to refuse = %t",
+				name, planErr, schemaErr, wantRefused)
+		}
+	})
+}
+
+// genPlanSpec draws a spec with any auto section, and an auto.create among the experiments of genPlanExps.
+func genPlanSpec() *rapid.Generator[workflow.Spec] {
+	return rapid.Custom(func(t *rapid.T) workflow.Spec {
+		if !rapid.Bool().Draw(t, "auto") {
+			return workflow.Spec{}
+		}
+
+		return workflow.Spec{Auto: &workflow.Auto{
+			Create:  rapid.SampledFrom([]string{"", "a", "new", "bad name", "all"}).Draw(t, "create"),
+			Update:  genSpecBoolPtr().Draw(t, "update"),
+			Restart: genSpecBoolPtr().Draw(t, "restart"),
+		}}
+	})
+}
+
+// genPlanExps draws up to 3 experiments with distinct names, each running or not.
+func genPlanExps() *rapid.Generator[[]types.Experiment] {
+	exp := rapid.Custom(func(t *rapid.T) types.Experiment {
+		return planExp(rapid.SampledFrom([]string{"a", "b", "c"}).Draw(t, "name"), rapid.Bool().Draw(t, "running"))
+	})
+
+	return rapid.SliceOfNDistinct(exp, 0, 3, func(e types.Experiment) string { return e.Metadata.Name })
+}
+
+func TestNewPlanProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		spec := genPlanSpec().Draw(t, "spec")
+		mapped := genPlanExps().Draw(t, "mapped")
+		existing := rapid.SliceOfDistinct(rapid.SampledFrom([]string{"a", "b", "new", "x"}), rapid.ID).Draw(t, "existing")
+
+		plan, err := workflow.NewPlan(spec, "main", mapped, existing)
+
+		// neither the order of the mapped experiments nor that of the existing ones matters
+		shuffled, shuffledErr := workflow.NewPlan(spec, "main",
+			rapid.Permutation(mapped).Draw(t, "mappedOrder"), rapid.Permutation(existing).Draw(t, "existingOrder"))
+		if shuffled != plan || fmt.Sprint(shuffledErr) != fmt.Sprint(err) {
+			t.Fatalf("NewPlan() reordered = %+v, %v; want %+v, %v", shuffled, shuffledErr, plan, err)
+		}
+
+		name := spec.ExperimentName()
+
+		switch len(mapped) {
+		case 0:
+			switch {
+			case name == "":
+				if err != nil || plan.Action != workflow.ActionNone || plan.Experiment != "" {
+					t.Fatalf("NewPlan(no auto.create) = %+v, %v; want a none plan", plan, err)
+				}
+			case err == nil:
+				if (plan.Action != workflow.ActionCreate && plan.Action != workflow.ActionCreateAndStart) ||
+					plan.Experiment != name || slices.Contains(existing, name) {
+					t.Fatalf("NewPlan(auto.create %q, existing %q) = %+v, want a create of a new experiment", name, existing, plan)
+				}
+			case slices.Contains(existing, name) && !errors.Is(err, workflow.ErrConflict):
+				t.Fatalf("NewPlan(auto.create %q, existing %q) error = %v, want ErrConflict", name, existing, err)
+			}
+		case 1:
+			exp := mapped[0]
+			allowed := []workflow.Action{workflow.ActionNone, workflow.ActionUpdate, workflow.ActionUpdateAndStart}
+
+			if exp.Running() {
+				allowed = []workflow.Action{workflow.ActionNone, workflow.ActionRestart}
+			}
+
+			if err != nil || plan.Experiment != exp.Metadata.Name || !slices.Contains(allowed, plan.Action) ||
+				(!spec.AutoUpdate() && plan.Action != workflow.ActionNone) {
+				t.Fatalf("NewPlan(mapped %s, running %t) = %+v, %v; want one of %q on it",
+					exp.Metadata.Name, exp.Running(), plan, err, allowed)
+			}
+
+			// once an experiment is mapped, auto.create and the existing experiments play no part
+			creating := workflow.Spec{Auto: &workflow.Auto{Create: "x"}}
+			if spec.Auto != nil {
+				creating.Auto.Update, creating.Auto.Restart = spec.Auto.Update, spec.Auto.Restart
+			}
+
+			if other, err := workflow.NewPlan(creating, "main", mapped, nil); err != nil || other != plan {
+				t.Fatalf("NewPlan(mapped %s) with auto.create x = %+v, %v; want %+v", exp.Metadata.Name, other, err, plan)
+			}
+		default:
+			if !errors.Is(err, workflow.ErrConflict) || plan != (workflow.Plan{}) {
+				t.Fatalf("NewPlan(mapped %q) = %+v, %v; want the zero plan and ErrConflict", experimentNames(mapped), plan, err)
+			}
+
+			for _, exp := range mapped {
+				if !strings.Contains(err.Error(), exp.Metadata.Name) {
+					t.Fatalf("NewPlan(mapped %q) error = %v, want it to name %s", experimentNames(mapped), err, exp.Metadata.Name)
+				}
+			}
+		}
+	})
 }
 
 func TestMapped(t *testing.T) {

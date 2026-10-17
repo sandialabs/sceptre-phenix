@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/store"
 	"phenix/web/capability"
@@ -398,6 +400,37 @@ func TestCreateCaptureTokenRefuses(t *testing.T) {
 	}
 
 	streamToken(t, server)
+}
+
+// captureOps allows stream alone or any mix of WebShark's operations, and grants each
+// asked-for operation once, in the order first asked.
+func TestCaptureOpsProperties(t *testing.T) {
+	t.Parallel()
+
+	known := []capability.Op{capability.OpView, capability.OpDownload, capability.OpWatch}
+
+	rapid.Check(t, func(t *rapid.T) {
+		ops := rapid.SliceOfN(rapid.SampledFrom(append(slices.Clone(known), capability.OpStream, "delete")), 0, 5).Draw(t, "ops")
+
+		allowed := slices.Equal(ops, []capability.Op{capability.OpStream}) ||
+			(len(ops) > 0 && !slices.ContainsFunc(ops, func(op capability.Op) bool { return !slices.Contains(known, op) }))
+
+		granted, err := captureOps(ops)
+		if (err == nil) != allowed {
+			t.Fatalf("captureOps(%q) error = %v, want allowed = %v", ops, err, allowed)
+		}
+
+		if err != nil {
+			return
+		}
+
+		firstAsked := func(a, b capability.Op) int { return slices.Index(ops, a) - slices.Index(ops, b) }
+		distinct := slices.Compact(slices.SortedFunc(slices.Values(ops), firstAsked))
+
+		if !slices.Equal(granted, distinct) {
+			t.Fatalf("captureOps(%q) = %q, want each operation once, in the order first asked: %q", ops, granted, distinct)
+		}
+	})
 }
 
 func TestCaptureTokenStreams(t *testing.T) {

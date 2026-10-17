@@ -1,6 +1,15 @@
 package store
 
-import "testing"
+import (
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+
+	"pgregory.net/rapid"
+
+	"phenix/types/version"
+)
 
 func TestNewConfigKindCaseInsensitive(t *testing.T) {
 	tests := []struct {
@@ -91,4 +100,65 @@ func TestNewConfigClearsRevision(t *testing.T) {
 	} else if c.Metadata.Revision != 0 {
 		t.Errorf("NewConfigFromYAML(revision 7) revision = %d, want 0", c.Metadata.Revision)
 	}
+}
+
+// genTypesKindSpelling spells a stored kind in any mix of cases.
+func genTypesKindSpelling(kind string) *rapid.Generator[string] {
+	return rapid.Custom(func(t *rapid.T) string {
+		var b strings.Builder
+
+		for _, r := range kind {
+			if rapid.Bool().Draw(t, "upper") {
+				b.WriteString(strings.ToUpper(string(r)))
+			} else {
+				b.WriteString(strings.ToLower(string(r)))
+			}
+		}
+
+		return b.String()
+	})
+}
+
+// NewConfig and ConfigFullName agree on which names are configs: a stored kind in any case,
+// "/", and a name with no "/" in it. Both name the config by its canonical kind.
+func TestConfigNameProperties(t *testing.T) {
+	t.Parallel()
+
+	kinds := slices.Sorted(maps.Keys(version.StoredVersion))
+
+	rapid.Check(t, func(t *rapid.T) {
+		kind := rapid.SampledFrom(kinds).Draw(t, "kind")
+		spelled := genTypesKindSpelling(kind).Draw(t, "spelled")
+
+		if rapid.IntRange(0, 4).Draw(t, "unknown") == 0 {
+			kind, spelled = "", spelled+rapid.SampledFrom([]string{"s", "x", "_"}).Draw(t, "suffix")
+		}
+
+		name := rapid.StringMatching(`[a-z/-]{0,4}`).Draw(t, "name")
+		full := spelled + "/" + name
+
+		want := ""
+		if kind != "" && !strings.Contains(name, "/") {
+			want = kind + "/" + name
+		}
+
+		if got := ConfigFullName(full); got != want {
+			t.Fatalf("ConfigFullName(%q) = %q, want %q", full, got, want)
+		}
+
+		if want != "" {
+			if got := ConfigFullName(spelled, name); got != kind+"/"+name {
+				t.Fatalf("ConfigFullName(%q, %q) = %q, want %q", spelled, name, got, kind+"/"+name)
+			}
+		}
+
+		c, err := NewConfig(full)
+		if (err == nil) != (want != "") {
+			t.Fatalf("NewConfig(%q) error = %v, want error %t", full, err, want == "")
+		}
+
+		if err == nil && (c.FullName() != want || c.APIVersion() != version.StoredVersion[kind] || c.APIGroup() != APIGroup) {
+			t.Fatalf("NewConfig(%q) = %s %s, want %s at %s/%s", full, c.FullName(), c.Version, want, APIGroup, version.StoredVersion[kind])
+		}
+	})
 }

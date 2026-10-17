@@ -3,11 +3,15 @@ package experiment
 import (
 	"errors"
 	"net"
+	"net/netip"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/store"
 	"phenix/store/storetest"
@@ -240,4 +244,76 @@ func TestStopHookDuringStartAbandonsIt(t *testing.T) {
 	if len(netflows) != 0 {
 		t.Errorf("netflow registry after an abandoned StartNetflow(a) = %v, want empty", netflows)
 	}
+}
+
+// genNetflowNumber draws a number either side of 0 and hi, or between.
+func genNetflowNumber(hi int) *rapid.Generator[int] {
+	return rapid.OneOf(rapid.IntRange(-2, hi+2), rapid.SampledFrom([]int{-1, 0, hi, hi + 1}))
+}
+
+// genNetflowEndpoint draws an IPv4 or IPv6 host and its port in each form a netflow line gives them.
+func genNetflowEndpoint() *rapid.Generator[[3]string] {
+	return rapid.Custom(func(t *rapid.T) [3]string {
+		var host string
+
+		if rapid.Bool().Draw(t, "v6") {
+			host = netip.AddrFrom16([16]byte(rapid.SliceOfN(rapid.Byte(), 16, 16).Draw(t, "ip"))).String()
+		} else {
+			host = netip.AddrFrom4([4]byte(rapid.SliceOfN(rapid.Byte(), 4, 4).Draw(t, "ip"))).String()
+		}
+
+		port := strconv.Itoa(genNetflowNumber(65535).Draw(t, "port"))
+		addr := host + ":" + port
+
+		if strings.Contains(host, ":") && rapid.Bool().Draw(t, "bracketed") {
+			addr = "[" + host + "]:" + port
+		}
+
+		return [3]string{addr, host, port}
+	})
+}
+
+// A flow line parses to its fields, however it is spaced, exactly when every
+// number in it is in range.
+func TestParseNetflowLineProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		var (
+			proto    = genNetflowNumber(255).Draw(t, "proto")
+			src      = genNetflowEndpoint().Draw(t, "src")
+			dst      = genNetflowEndpoint().Draw(t, "dst")
+			packets  = genNetflowNumber(1<<40).Draw(t, "packets")
+			bytes    = genNetflowNumber(1<<40).Draw(t, "bytes")
+			space    = rapid.SampledFrom([]string{" ", "  ", "\t", " \t "})
+			fields   = []string{"0", "1", strconv.Itoa(proto), src[0], "<->", dst[0], strconv.Itoa(packets), strconv.Itoa(bytes)}
+			sport, _ = strconv.Atoi(src[2])
+			dport, _ = strconv.Atoi(dst[2])
+			line     strings.Builder
+			inRange  = func(n, hi int) bool { return n >= 0 && n <= hi }
+			wantOK   = inRange(proto, 255) && inRange(sport, 65535) && inRange(dport, 65535) && packets >= 0 && bytes >= 0
+			want     map[string]any
+		)
+
+		line.WriteString(space.Draw(t, "lead"))
+
+		for i, f := range fields {
+			line.WriteString(f + space.Draw(t, "space"+strconv.Itoa(i)))
+		}
+
+		if wantOK {
+			want = map[string]any{
+				"proto": proto, "src": src[1], "sport": sport, "dst": dst[1], "dport": dport, "packets": packets, "bytes": bytes,
+			}
+		}
+
+		got, ok := parseNetflowLine(line.String())
+		if ok != wantOK {
+			t.Fatalf("parseNetflowLine(%q) ok = %t, want %t", line.String(), ok, wantOK)
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatalf("parseNetflowLine(%q) mismatch (-want +got):\n%s", line.String(), diff)
+		}
+	})
 }

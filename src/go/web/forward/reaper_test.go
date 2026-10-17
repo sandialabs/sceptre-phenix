@@ -6,11 +6,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/gorilla/mux"
+	"pgregory.net/rapid"
 
 	"phenix/store"
 	"phenix/store/storetest"
@@ -268,4 +271,74 @@ func TestListingForwardsOfOneVM(t *testing.T) {
 	if diff := cmp.Diff([]string{forward("a").ToKey()}, listForwards(t, "exp", "a")); diff != "" {
 		t.Errorf("GET /experiments/exp/vms/a/forwards mismatch (-want +got):\n%s", diff)
 	}
+}
+
+func genReaperListener() *rapid.Generator[ft.Listener] {
+	return rapid.Custom(func(t *rapid.T) ft.Listener {
+		return ft.Listener{
+			Exp:         "exp",
+			VM:          "a",
+			DstHost:     rapid.SampledFrom([]string{"", "router.local", "Router.Local", "10.0.0.1"}).Draw(t, "dst"),
+			DstPort:     rapid.SampledFrom([]int{0, 22, 80}).Draw(t, "dst port"),
+			ClusterPort: rapid.SampledFrom([]int{0, 50001, 50002}).Draw(t, "cluster port"),
+			QEMU:        rapid.Bool().Draw(t, "qemu"),
+		}
+	})
+}
+
+func genReaperTunnels() *rapid.Generator[[]map[string]string] {
+	row := rapid.Custom(func(t *rapid.T) map[string]string {
+		return map[string]string{
+			"vm":       "a",
+			"dst":      rapid.SampledFrom([]string{"ROUTER.LOCAL", "router.local", "10.0.0.1", "other"}).Draw(t, "dst"),
+			"dst port": rapid.SampledFrom([]string{"22", "80", "8080"}).Draw(t, "dst port"),
+			"src port": rapid.SampledFrom([]string{"50001", "50002", "50003"}).Draw(t, "src port"),
+		}
+	})
+
+	return rapid.SliceOfN(row, 0, 4)
+}
+
+// A tunnel is found in any listing order, with more listed or fewer parts set,
+// and when its own tunnel is listed; a QEMU forward needs none.
+func TestForwardExistsProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		l, tunnels := genReaperListener().Draw(t, "listener"), genReaperTunnels().Draw(t, "tunnels")
+		exists := forwardExists(l, tunnels)
+
+		switch {
+		case l.QEMU && !exists:
+			t.Fatalf("forwardExists(%+v, %v) = false, want true for a QEMU forward", l, tunnels)
+		case !l.QEMU && len(tunnels) == 0 && exists:
+			t.Fatalf("forwardExists(%+v, no tunnels) = true, want false", l)
+		}
+
+		if got := forwardExists(l, rapid.Permutation(tunnels).Draw(t, "shuffled")); got != exists {
+			t.Fatalf("forwardExists(%+v, shuffled %v) = %t, want %t", l, tunnels, got, exists)
+		}
+
+		more := append(slices.Clone(tunnels), genReaperTunnels().Draw(t, "more")...)
+		if exists && !forwardExists(l, more) {
+			t.Fatalf("forwardExists(%+v, %v) = false, want true as for its first %d tunnels", l, more, len(tunnels))
+		}
+
+		looser := l
+		looser.DstHost = rapid.SampledFrom([]string{l.DstHost, ""}).Draw(t, "looser dst")
+		looser.DstPort = rapid.SampledFrom([]int{l.DstPort, 0}).Draw(t, "looser dst port")
+		looser.ClusterPort = rapid.SampledFrom([]int{l.ClusterPort, 0}).Draw(t, "looser cluster port")
+
+		if exists && !forwardExists(looser, tunnels) {
+			t.Fatalf("forwardExists(%+v, %v) = false, want true as for %+v", looser, tunnels, l)
+		}
+
+		own := map[string]string{
+			"vm": l.VM, "dst": strings.ToUpper(l.DstHost), "dst port": strconv.Itoa(l.DstPort), "src port": strconv.Itoa(l.ClusterPort),
+		}
+
+		if listed := append(slices.Clone(tunnels), own); !forwardExists(l, listed) {
+			t.Fatalf("forwardExists(%+v, %v) = false, want true with its own tunnel listed", l, listed)
+		}
+	})
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
+	"pgregory.net/rapid"
 
 	"phenix/store"
 	"phenix/store/storetest"
@@ -89,6 +90,53 @@ func TestParseVMListQuery(t *testing.T) {
 			}
 		})
 	}
+}
+
+// clientQueryPage is a page_number or page_size as JSON decodes it, and
+// whether it is a whole number from 1 to util.MaxPageValue.
+type clientQueryPage struct {
+	value any
+	valid bool
+}
+
+func genClientQueryPage() *rapid.Generator[clientQueryPage] {
+	return rapid.Custom(func(t *rapid.T) clientQueryPage {
+		if rapid.Bool().Draw(t, "valid") {
+			edges := rapid.SampledFrom([]int{1, util.MaxPageValue})
+			n := rapid.OneOf(edges, rapid.IntRange(1, 3), rapid.IntRange(1, util.MaxPageValue)).Draw(t, "n")
+
+			return clientQueryPage{value: float64(n), valid: true}
+		}
+
+		n := float64(rapid.IntRange(0, util.MaxPageValue).Draw(t, "n"))
+		invalid := rapid.SampledFrom([]any{
+			nil, "2", true, 0.0, -n, n + 0.5, float64(util.MaxPageValue) + 1, n + float64(util.MaxPageValue) + 1, 1e300,
+		}).Draw(t, "invalid")
+
+		return clientQueryPage{value: invalid, valid: false}
+	})
+}
+
+// A query is paged only when both its page and size are whole numbers from 1
+// to util.MaxPageValue, and then by exactly those.
+func TestParseVMListQueryPaging(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		page, size := genClientQueryPage().Draw(t, "page"), genClientQueryPage().Draw(t, "size")
+
+		payload := map[string]any{"page_number": page.value, "page_size": size.value}
+
+		want := [2]int{}
+		if page.valid && size.valid {
+			want = [2]int{int(page.value.(float64)), int(size.value.(float64))}
+		}
+
+		got := parseVMListQuery(payload)
+		if paging := [2]int{got.Page, got.Size}; paging != want {
+			t.Fatalf("parseVMListQuery(%v) page, size = %v, want %v", payload, paging, want)
+		}
+	})
 }
 
 // dialTestClient serves a client with role over a test WebSocket and returns

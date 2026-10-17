@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/hashicorp/go-multierror"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm"
 	"phenix/util/mm/mmtest"
@@ -245,4 +246,45 @@ func TestHandleDelayedVMsWithNothingDelayed(t *testing.T) { //nolint:paralleltes
 	if n := fake.clears(); n != 0 {
 		t.Errorf("handleDelayedVMs(nothing delayed) ClearNamespace calls = %d, want 0", n)
 	}
+}
+
+// genDelayedPending draws C2-delayed VMs, each waiting on clients that others often share.
+func genDelayedPending() *rapid.Generator[map[string]map[string]bool] {
+	vm := rapid.SampledFrom([]string{"a", "b", "c", "server", "solo"})
+
+	return rapid.MapOfN(rapid.SampledFrom([]string{"d1", "d2", "d3", "d4"}), rapid.MapOfN(vm, rapid.Bool(), 0, 4), 0, 4)
+}
+
+// waitedOnC2Clients lists each client some pending VM waits on once, and no
+// other, ordered by VM with the client named by VM name before the one by UUID.
+func TestWaitedOnC2ClientsProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		pending := genDelayedPending().Draw(t, "pending")
+		got := waitedOnC2Clients(pending)
+
+		want := make(map[mm.C2ClientRef]bool)
+		for _, others := range pending {
+			for vm, byUUID := range others {
+				want[mm.C2ClientRef{VM: vm, ByUUID: byUUID}] = true
+			}
+		}
+
+		for i, ref := range got {
+			if !want[ref] {
+				t.Fatalf("waitedOnC2Clients(%v) = %v, lists %v, which no VM waits on", pending, got, ref)
+			}
+
+			delete(want, ref)
+
+			if i > 0 && (got[i-1].VM > ref.VM || (got[i-1].VM == ref.VM && !ref.ByUUID)) {
+				t.Fatalf("waitedOnC2Clients(%v) = %v, %v out of order after %v", pending, got, ref, got[i-1])
+			}
+		}
+
+		if len(want) != 0 {
+			t.Fatalf("waitedOnC2Clients(%v) = %v, missing %v", pending, got, want)
+		}
+	})
 }

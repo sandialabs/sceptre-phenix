@@ -3,6 +3,8 @@ package util
 import (
 	"errors"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 )
 
 // downloadFile writes contents to a new file in a temporary directory and
@@ -411,3 +414,90 @@ type discardWriter struct {
 func (w discardWriter) Header() http.Header         { return w.header }
 func (w discardWriter) Write(b []byte) (int, error) { return len(b), nil }
 func (w discardWriter) WriteHeader(int)             {}
+
+// genDownloadRange draws a Range header of byte ranges of a 100-byte file:
+// whole, open-ended, suffix and malformed ranges, spaced and padded.
+func genDownloadRange() *rapid.Generator[string] {
+	offset := rapid.OneOf(rapid.IntRange(0, 2), rapid.IntRange(0, 120))
+
+	spec := rapid.Custom(func(t *rapid.T) string {
+		start, end := offset.Draw(t, "start"), offset.Draw(t, "end")
+		pad := rapid.SampledFrom([]string{"", "0", " "}).Draw(t, "pad")
+
+		return rapid.SampledFrom([]string{
+			pad + strconv.Itoa(start) + "-" + strconv.Itoa(start+end),
+			pad + strconv.Itoa(start) + "-",
+			"-" + strconv.Itoa(end),
+			strconv.Itoa(start),
+		}).Draw(t, "spec")
+	})
+
+	return rapid.Custom(func(t *rapid.T) string {
+		unit := rapid.SampledFrom([]string{"bytes=", "bytes=", "items="}).Draw(t, "unit")
+
+		return unit + strings.Join(rapid.SliceOfN(spec, 1, 3).Draw(t, "specs"), rapid.SampledFrom([]string{",", ", "}).Draw(t, "sep"))
+	})
+}
+
+// downloadSentFirstByte reports whether a response sent the file from byte 0.
+// Go 1.25 answers several ranges with the whole file, not multipart.
+func downloadSentFirstByte(t *rapid.T, resp *http.Response) bool {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true
+	case http.StatusPartialContent:
+	default:
+		return false
+	}
+
+	mediaType, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || mediaType != "multipart/byteranges" {
+		return strings.HasPrefix(resp.Header.Get("Content-Range"), "bytes 0-")
+	}
+
+	parts := multipart.NewReader(resp.Body, params["boundary"])
+
+	for {
+		part, err := parts.NextPart()
+		if errors.Is(err, io.EOF) {
+			return false
+		} else if err != nil {
+			t.Fatalf("reading multipart response: %v", err)
+		}
+
+		if strings.HasPrefix(part.Header.Get("Content-Range"), "bytes 0-") {
+			return true
+		}
+	}
+}
+
+// A GET starts a download exactly when its response sends the file's first
+// byte, however the ranges asked for are written; a HEAD never does.
+func TestServeDownloadStartedSendsTheFirstByte(t *testing.T) {
+	t.Parallel()
+
+	d := Download{Path: downloadFile(t, strings.Repeat("0123456789", 10)), Name: "out.pcap"}
+
+	rapid.Check(t, func(t *rapid.T) {
+		method := rapid.SampledFrom([]string{http.MethodGet, http.MethodGet, http.MethodHead}).Draw(t, "method")
+		ranges := genDownloadRange().Draw(t, "range")
+
+		req := httptest.NewRequest(method, "/download", nil)
+		req.Header.Set("Range", ranges)
+
+		rec := httptest.NewRecorder()
+
+		served, err := ServeDownload(rec, req, d)
+		if err != nil {
+			t.Fatalf("ServeDownload(%s, Range %q) error = %v", method, ranges, err)
+		}
+
+		resp := rec.Result()
+		defer func() { _ = resp.Body.Close() }()
+
+		if want := method == http.MethodGet && downloadSentFirstByte(t, resp); served.Started != want {
+			t.Fatalf("ServeDownload(%s, Range %q) = %d %s, Started %t; want %t",
+				method, ranges, resp.StatusCode, resp.Header.Get("Content-Range"), served.Started, want)
+		}
+	})
+}

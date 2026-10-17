@@ -1,11 +1,13 @@
 package rbac
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/activeshadow/structs"
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/store"
 	"phenix/store/storetest"
@@ -398,4 +400,176 @@ func TestDropNullResourceNames(t *testing.T) {
 	if err := types.ValidateConfigSpec(*c); err != nil {
 		t.Errorf("ValidateConfigSpec(migrated role/legacy) error = %v", err)
 	}
+}
+
+// genMigrationsRole draws a role of policies on the resources given, with
+// names that are not negated.
+func genMigrationsRole(resources ...string) *rapid.Generator[*v1.RoleSpec] {
+	p := rapid.Custom(func(t *rapid.T) *v1.PolicySpec {
+		var names []string
+		if rapid.Bool().Draw(t, "named") {
+			names = rapid.SliceOfN(rapid.SampledFrom([]string{"*", "a", "b", "a/*"}), 1, 2).Draw(t, "names")
+		}
+
+		return &v1.PolicySpec{
+			Resources:     rapid.SliceOfN(rapid.SampledFrom(resources), 1, 2).Draw(t, "resources"),
+			ResourceNames: names,
+			Verbs:         rapid.SliceOfN(rapid.SampledFrom([]string{"get", "list", "create", "delete", "*"}), 1, 2).Draw(t, "verbs"),
+		}
+	})
+
+	return rapid.Custom(func(t *rapid.T) *v1.RoleSpec {
+		return &v1.RoleSpec{Name: experimentAdminRole, Policies: rapid.SliceOfN(p, 0, 4).Draw(t, "policies")}
+	})
+}
+
+func migrationsClone(role *v1.RoleSpec) *v1.RoleSpec {
+	out := &v1.RoleSpec{Name: role.Name, Policies: make([]*v1.PolicySpec, len(role.Policies))}
+
+	for i, p := range role.Policies {
+		out.Policies[i] = &v1.PolicySpec{
+			Resources: slices.Clone(p.Resources), ResourceNames: slices.Clone(p.ResourceNames), Verbs: slices.Clone(p.Verbs),
+		}
+	}
+
+	return out
+}
+
+// migrationsAllowed is what the role allows, by resource, verb and name ("" for none).
+func migrationsAllowed(role *v1.RoleSpec) map[[3]string]bool {
+	r := newRole(role, nil)
+	allowed := make(map[[3]string]bool)
+
+	for _, resource := range []string{experimentFilesResource, jobsResource, captureSubnetResource, mountResource, "experiments"} {
+		for _, verb := range []string{"get", "list", "create", "delete", "update"} {
+			allowed[[3]string{resource, verb, ""}] = r.Allowed(resource, verb)
+
+			for _, name := range []string{"a", "b", "a/x"} {
+				allowed[[3]string{resource, verb, name}] = r.Allowed(resource, verb, name)
+			}
+		}
+	}
+
+	return allowed
+}
+
+// migrationsAddedStops checks that addCaptureSubnetStop kept the policies of
+// original, and added a delete only for names some policy could start but not stop on.
+func migrationsAddedStops(t *rapid.T, original, role *v1.RoleSpec) {
+	n := len(original.Policies)
+	if len(role.Policies) < n || !cmp.Equal(original.Policies, role.Policies[:n]) {
+		t.Fatalf("addCaptureSubnetStop(%v) changed the policies it had to %v", rolePolicies(original), rolePolicies(role))
+	}
+
+	allows := func(p *v1.PolicySpec, verb string) bool {
+		return coversCaptureSubnet(p) && (slices.Contains(p.Verbs, verb) || slices.Contains(p.Verbs, "*"))
+	}
+
+	added := role.Policies[n:]
+
+	for i, p := range added {
+		want := &v1.PolicySpec{
+			Resources: []string{captureSubnetResource}, ResourceNames: p.ResourceNames, Verbs: []string{"delete"},
+		}
+
+		var (
+			names     = func(q *v1.PolicySpec) bool { return slices.Equal(q.ResourceNames, p.ResourceNames) }
+			startOnly = func(q *v1.PolicySpec) bool { return names(q) && allows(q, "create") && !allows(q, "delete") }
+			stopped   = func(q *v1.PolicySpec) bool { return names(q) && allows(q, "delete") }
+		)
+
+		if !cmp.Equal(p, want) || slices.ContainsFunc(added[:i], names) ||
+			!slices.ContainsFunc(original.Policies, startOnly) || slices.ContainsFunc(original.Policies, stopped) {
+			t.Fatalf("addCaptureSubnetStop(%v) added %v, want a delete only where a role could start but not stop on its names",
+				rolePolicies(original), rolePolicies(role))
+		}
+	}
+}
+
+// The role helpers of the migrations only ever add access, add what they are
+// for, and change nothing when run again.
+func TestMigrationHelpersProperties(t *testing.T) {
+	t.Parallel()
+
+	// migrate runs f on role, checks it added access only and that a second
+	// run changes nothing, and returns what the role allows after it.
+	migrate := func(t *rapid.T, role *v1.RoleSpec, name string, f func(*v1.RoleSpec) bool) map[[3]string]bool {
+		before := migrationsAllowed(role)
+		original := migrationsClone(role)
+		changed := f(role)
+		after := migrationsAllowed(role)
+
+		for query, ok := range before {
+			if ok && !after[query] {
+				t.Fatalf("%s(%v) no longer allows %q", name, rolePolicies(original), query)
+			}
+		}
+
+		if !changed && !cmp.Equal(original, role) {
+			t.Fatalf("%s(%v) = false, but changed the role to %v", name, rolePolicies(original), rolePolicies(role))
+		}
+
+		again := migrationsClone(role)
+		if f(again) || !cmp.Equal(again, role) {
+			t.Fatalf("%s(%v) again changed it to %v", name, rolePolicies(role), rolePolicies(again))
+		}
+
+		return after
+	}
+
+	t.Run("ensurePolicy", func(t *testing.T) {
+		t.Parallel()
+
+		rapid.Check(t, func(t *rapid.T) {
+			role := genMigrationsRole(experimentFilesResource, jobsResource, captureSubnetResource, "experiments", "*").Draw(t, "role")
+			resource := rapid.SampledFrom([]string{experimentFilesResource, jobsResource, captureSubnetResource}).Draw(t, "resource")
+			verbs := rapid.SliceOfN(rapid.SampledFrom([]string{"list", "create", "delete"}), 1, 2).Draw(t, "verbs")
+			names := rapid.SliceOfN(rapid.SampledFrom([]string{"a", "b"}), 0, 2).Draw(t, "names")
+
+			after := migrate(t, role, "ensurePolicy", func(r *v1.RoleSpec) bool { return ensurePolicy(r, resource, verbs, names) })
+
+			for _, verb := range verbs {
+				for _, name := range append([]string{""}, names...) {
+					if query := [3]string{resource, verb, name}; !after[query] && (name != "" || len(names) == 0) {
+						t.Fatalf("ensurePolicy(%s, %q, %q) left the role without %q", resource, verbs, names, query)
+					}
+				}
+			}
+		})
+	})
+
+	t.Run("addCaptureSubnetStop", func(t *testing.T) {
+		t.Parallel()
+
+		rapid.Check(t, func(t *rapid.T) {
+			role := genMigrationsRole(captureSubnetResource, "exp/*", "*", "experiments").Draw(t, "role")
+			original := migrationsClone(role)
+			after := migrate(t, role, "addCaptureSubnetStop", addCaptureSubnetStop)
+
+			for _, name := range []string{"", "a", "b", "a/x"} {
+				create, del := [3]string{captureSubnetResource, "create", name}, [3]string{captureSubnetResource, "delete", name}
+				if after[create] && !after[del] {
+					t.Fatalf("addCaptureSubnetStop left a role allowing %q without %q", create, del)
+				}
+			}
+
+			migrationsAddedStops(t, original, role)
+		})
+	})
+
+	t.Run("scopeUnnamed", func(t *testing.T) {
+		t.Parallel()
+
+		rapid.Check(t, func(t *rapid.T) {
+			role := genMigrationsRole(mountResource, mountResource, "vms/*", "experiments").Draw(t, "role")
+			before := migrationsAllowed(role)
+			after := migrate(t, role, "scopeUnnamed", func(r *v1.RoleSpec) bool { return scopeUnnamed(r, mountResource) })
+
+			for query, ok := range before {
+				if query[2] == "" && after[query] != ok {
+					t.Fatalf("scopeUnnamed(%s) changed %q from %t", mountResource, query, ok)
+				}
+			}
+		})
+	})
 }

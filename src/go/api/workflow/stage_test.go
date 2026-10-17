@@ -4,14 +4,18 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/api/workflow"
 )
@@ -868,4 +872,304 @@ func TestStagingLeftoversErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// stageNode is a directory entry of a generated injects tree: a file with its content, a symlink with its
+// target, or a directory with its entries.
+type stageNode struct {
+	kind string
+	perm fs.FileMode
+	data string
+	kids map[string]stageNode
+}
+
+// genStageTree draws the entries of a directory, with directories nested up to depth more levels.
+func genStageTree(depth int) *rapid.Generator[map[string]stageNode] {
+	kinds := []string{"file", "link"}
+	if depth > 0 {
+		kinds = append(kinds, "dir")
+	}
+
+	return rapid.Custom(func(t *rapid.T) map[string]stageNode {
+		names := rapid.SliceOfNDistinct(rapid.SampledFrom([]string{"a", "b.txt", ".hidden", "d e"}), 0, 3, rapid.ID).Draw(t, "names")
+		tree := make(map[string]stageNode, len(names))
+
+		for _, name := range names {
+			switch kind := rapid.SampledFrom(kinds).Draw(t, "kind"); kind {
+			case "file":
+				tree[name] = stageNode{
+					kind: kind,
+					perm: rapid.SampledFrom([]fs.FileMode{0o400, 0o600, 0o640, 0o644, 0o755}).Draw(t, "filePerm"),
+					data: rapid.StringMatching(`[a-z\n]{0,8}`).Draw(t, "content"),
+				}
+			case "link":
+				tree[name] = stageNode{kind: kind, data: rapid.SampledFrom([]string{"a", "../b.txt", "/nonexistent"}).Draw(t, "target")}
+			default:
+				tree[name] = stageNode{
+					kind: kind,
+					perm: rapid.SampledFrom([]fs.FileMode{0o500, 0o555, 0o700, 0o750, 0o755}).Draw(t, "dirPerm"),
+					kids: genStageTree(depth-1).Draw(t, "kids"),
+				}
+			}
+		}
+
+		return tree
+	})
+}
+
+// stageWriteTree creates tree in the existing directory dir, setting each directory's mode after its entries.
+func stageWriteTree(dir string, tree map[string]stageNode) error {
+	for name, node := range tree {
+		p := filepath.Join(dir, name)
+
+		var err error
+
+		switch node.kind {
+		case "file":
+			if err = os.WriteFile(p, []byte(node.data), 0o600); err == nil {
+				err = os.Chmod(p, node.perm)
+			}
+		case "link":
+			err = os.Symlink(node.data, p)
+		default:
+			if err = os.Mkdir(p, 0o700); err == nil {
+				err = stageWriteTree(p, node.kids)
+			}
+
+			if err == nil {
+				err = os.Chmod(p, node.perm)
+			}
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// stageWant adds what staging tree under rel must give to want, and returns the number of regular files in it.
+// A directory gains owner access.
+func stageWant(tree map[string]stageNode, rel string, want map[string]string) int {
+	files := 0
+
+	for name, node := range tree {
+		p := path.Join(rel, name)
+
+		switch node.kind {
+		case "file":
+			want[p] = node.perm.String() + " " + node.data
+			files++
+		case "link":
+			want[p] = "-> " + node.data
+		default:
+			want[p] = (node.perm | 0o700 | fs.ModeDir).String()
+			files += stageWant(node.kids, p, want)
+		}
+	}
+
+	return files
+}
+
+// stageSnapshot describes each entry under root as stageWant does.
+func stageSnapshot(root string) (map[string]string, error) {
+	got := map[string]string{}
+
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || p == root {
+			return err
+		}
+
+		rel, _ := filepath.Rel(root, p)
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		switch mode := info.Mode(); {
+		case mode&fs.ModeSymlink != 0:
+			target, err := os.Readlink(p)
+			got[filepath.ToSlash(rel)] = "-> " + target
+
+			return err
+		case mode.IsDir():
+			got[filepath.ToSlash(rel)] = mode.String()
+		default:
+			data, err := os.ReadFile(p)
+			got[filepath.ToSlash(rel)] = mode.String() + " " + string(data)
+
+			return err
+		}
+
+		return nil
+	})
+
+	return got, err
+}
+
+// stageRemove removes the tree at root, first giving each of its directories owner access.
+func stageRemove(root string) error {
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			_ = os.Chmod(p, 0o755)
+		}
+
+		return nil
+	})
+
+	return os.RemoveAll(root)
+}
+
+// StageInjects copies any tree exactly, and a later staging of another tree replaces it, leaving nothing else
+// in base.
+func TestStageInjectsProperties(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	checks := 0
+
+	rapid.Check(t, func(t *rapid.T) {
+		checks++
+
+		dir := filepath.Join(root, strconv.Itoa(checks))
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		defer func() { _ = stageRemove(dir) }()
+
+		name := rapid.SampledFrom([]string{"foo", "v1.2", "a_b"}).Draw(t, "name")
+		base := filepath.Join(dir, "injects")
+
+		for i, label := range []string{"first", "second"} {
+			tree := genStageTree(2).Draw(t, label)
+			perm := rapid.SampledFrom([]fs.FileMode{0o700, 0o750, 0o755}).Draw(t, label+"Perm")
+			src := filepath.Join(dir, label)
+
+			if err := os.Mkdir(src, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := stageWriteTree(src, tree); err != nil {
+				t.Fatalf("writing tree %d: %v", i+1, err)
+			}
+
+			if err := os.Chmod(src, perm); err != nil {
+				t.Fatal(err)
+			}
+
+			files, err := workflow.StageInjects(src, base, name)
+			if err != nil {
+				t.Fatalf("StageInjects(tree %d, %q) error = %v", i+1, name, err)
+			}
+
+			want := map[string]string{}
+			if wantFiles := stageWant(tree, "", want); files != wantFiles {
+				t.Errorf("StageInjects(tree %d, %q) = %d, want %d files", i+1, name, files, wantFiles)
+			}
+
+			got, err := stageSnapshot(filepath.Join(base, name))
+			if err != nil {
+				t.Fatalf("reading staged tree %d: %v", i+1, err)
+			}
+
+			if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("StageInjects(tree %d, %q) staged tree mismatch (-want +got):\n%s", i+1, name, diff)
+			}
+
+			if info, err := os.Stat(filepath.Join(base, name)); err != nil || info.Mode().Perm() != perm {
+				t.Fatalf("StageInjects(tree %d, %q) staged directory = %v, %v; want mode %v", i+1, name, info, err, perm)
+			}
+
+			entries, err := os.ReadDir(base)
+			if err != nil || len(entries) != 1 || entries[0].Name() != name {
+				t.Fatalf("StageInjects(tree %d, %q) left base holding %v (err %v), want only %s", i+1, name, entries, err, name)
+			}
+		}
+	})
+}
+
+// PathWithin agrees with a segment prefix model over clean absolute paths.
+func TestPathWithinProperties(t *testing.T) {
+	t.Parallel()
+
+	segments := rapid.SliceOfN(rapid.SampledFrom([]string{"a", "ab", "a.b", "..a", "a..", "...", "b c"}), 0, 3)
+
+	rapid.Check(t, func(t *rapid.T) {
+		dir := "/" + path.Join(segments.Draw(t, "dir")...)
+		target := "/" + path.Join(segments.Draw(t, "target")...)
+
+		if rapid.Bool().Draw(t, "below") {
+			target = path.Join(dir, path.Join(segments.Draw(t, "below")...))
+		}
+
+		want := target == dir || dir == "/" || strings.HasPrefix(target, dir+"/")
+		if got := workflow.PathWithin(filepath.FromSlash(target), filepath.FromSlash(dir)); got != want {
+			t.Fatalf("PathWithin(%q, %q) = %t, want %t", target, dir, got, want)
+		}
+	})
+}
+
+// StagingLeftovers lists exactly the entries a pattern for name's hidden staging siblings matches.
+func TestStagingLeftoversProperties(t *testing.T) {
+	t.Parallel()
+
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prefix := rapid.SampledFrom([]string{".foo", ".foo.old-x", ".fo", ".foobar", "foo", ".v1.2"})
+	infix := rapid.SampledFrom([]string{".tmp-", ".old-", "-tmp-", ".tmp"})
+	suffix := rapid.OneOf(
+		rapid.StringMatching(`[A-Z2-7]{26}`),
+		rapid.StringMatching(`[A-Z2-7]{25,27}`),
+		rapid.StringMatching(`[a-z0-9]{26}`),
+		rapid.StringMatching(`[A-Z2-7]{26}[.x]`),
+	)
+	entry := rapid.Custom(func(t *rapid.T) string {
+		return prefix.Draw(t, "prefix") + infix.Draw(t, "infix") + suffix.Draw(t, "suffix")
+	})
+
+	checks := 0
+
+	rapid.Check(t, func(t *rapid.T) {
+		name := rapid.SampledFrom([]string{"foo", "foo.old-x", "v1.2"}).Draw(t, "name")
+		entries := rapid.SliceOfNDistinct(entry, 0, 6, strings.ToLower).Draw(t, "entries")
+
+		checks++
+
+		base := filepath.Join(root, strconv.Itoa(checks))
+		if err := os.Mkdir(base, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		defer func() { _ = os.RemoveAll(base) }()
+
+		pattern := regexp.MustCompile(`^\.` + regexp.QuoteMeta(name) + `\.(tmp|old)-[A-Z2-7]{26}$`)
+		want := []string{}
+
+		for _, e := range entries {
+			if err := os.Mkdir(filepath.Join(base, e), 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if pattern.MatchString(e) {
+				want = append(want, filepath.Join(base, e))
+			}
+		}
+
+		slices.Sort(want)
+
+		got, err := workflow.StagingLeftovers(base, name)
+		if err != nil {
+			t.Fatalf("StagingLeftovers(%q) error = %v", name, err)
+		}
+
+		if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("StagingLeftovers(%q) mismatch (-want +got):\n%s", name, diff)
+		}
+	})
 }

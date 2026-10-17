@@ -1,11 +1,14 @@
 package file
 
 import (
+	"path"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm/mmtest"
 )
@@ -179,4 +182,50 @@ func TestListingPattern(t *testing.T) {
 			t.Errorf("listingPattern(%q, %q) = %q, %t; want %q, %t", tc.dir, tc.names, got, ok, tc.want, tc.ok)
 		}
 	}
+}
+
+// genDeleteBase draws a file name with glob and command-line syntax. It never starts with ".":
+// [path.Join] cleans a "." or ".." base here, and listingPattern mishandles a "." or ".." prefix.
+func genDeleteBase() *rapid.Generator[string] {
+	return rapid.StringMatching(`[ab_][ab_*?\[{ \\.]{0,4}`)
+}
+
+// The listing pattern of names in one directory is the directory itself or a glob whose only
+// syntax is a trailing "*", and it lists every name; a directory holding glob syntax is refused.
+func TestListingPatternProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		dir := rapid.SampledFrom([]string{".", "exp", "exp/files", "e*p", "a b"}).Draw(t, "dir")
+		bases := rapid.SliceOfN(genDeleteBase(), 1, 4).Draw(t, "bases")
+
+		names := make([]string, len(bases))
+		for i, base := range bases {
+			names[i] = strings.TrimPrefix(path.Join("/", dir, base), "/")
+		}
+
+		pattern, ok := listingPattern(dir, names)
+		if wantOK := !strings.ContainsAny(dir, globMeta); ok != wantOK {
+			t.Fatalf("listingPattern(%q, %q) = %q, %t; want ok %t", dir, names, pattern, ok, wantOK)
+		}
+
+		if !ok {
+			return
+		}
+
+		if i := strings.IndexAny(strings.TrimSuffix(pattern, "*"), globMeta); i >= 0 {
+			t.Fatalf("listingPattern(%q, %q) = %q, has glob syntax before its end", dir, names, pattern)
+		}
+
+		for _, name := range names {
+			listed, err := path.Match(pattern, "/"+name)
+			if err != nil || !listed && pattern != path.Join("/", dir) {
+				t.Fatalf("listingPattern(%q, %q) = %q, does not list %q", dir, names, pattern, name)
+			}
+		}
+
+		if len(names) == 1 && !strings.ContainsAny(names[0], globMeta) && pattern != "/"+names[0]+"*" {
+			t.Fatalf("listingPattern(%q, %q) = %q, want %q", dir, names, pattern, "/"+names[0]+"*")
+		}
+	})
 }

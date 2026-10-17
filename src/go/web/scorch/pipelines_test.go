@@ -2,13 +2,16 @@ package scorch
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
+	"phenix/api/scorch/scorchmd"
 	"phenix/store"
 )
 
@@ -180,4 +183,36 @@ func TestBreakMarksTheLoopsAboveIt(t *testing.T) {
 	if rec := getLoop1(); rec.Code != http.StatusOK {
 		t.Errorf("GET %s after the failed update = %d %s, want 200", loop1, rec.Code, rec.Body)
 	}
+}
+
+// runLoop finds loop n of a run nested n deep, and no loop the run does not
+// nest or of a run that is not configured.
+func TestRunLoopFindsNestedLoops(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		depths := rapid.SliceOfN(rapid.IntRange(0, 3), 0, 3).Draw(t, "depths")
+		runs := make([]*scorchmd.Loop, len(depths))
+
+		for i, depth := range depths {
+			for loop := depth; loop >= 0; loop-- {
+				runs[i] = &scorchmd.Loop{Name: fmt.Sprintf("run %d loop %d", i, loop), Loop: runs[i]}
+			}
+		}
+
+		run, loop := rapid.IntRange(-1, len(depths)).Draw(t, "run"), rapid.IntRange(-1, 4).Draw(t, "loop")
+		got, err := runLoop(runs, run, loop)
+
+		if run < 0 || run >= len(depths) || loop < 0 || loop > depths[run] {
+			if err == nil {
+				t.Fatalf("runLoop(%v deep, %d, %d) = %+v, want an error", depths, run, loop, got)
+			}
+
+			return
+		}
+
+		if want := fmt.Sprintf("run %d loop %d", run, loop); err != nil || got.Name != want {
+			t.Fatalf("runLoop(%v deep, %d, %d) = %+v, %v; want %s", depths, run, loop, got, err, want)
+		}
+	})
 }

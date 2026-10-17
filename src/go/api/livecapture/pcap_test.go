@@ -3,7 +3,11 @@ package livecapture
 import (
 	"encoding/binary"
 	"errors"
+	"slices"
+	"strconv"
 	"testing"
+
+	"pgregory.net/rapid"
 )
 
 // pcapFile returns a pcap file header in the given byte order.
@@ -113,4 +117,81 @@ func TestComplete(t *testing.T) {
 			}
 		})
 	}
+}
+
+// genPcapRecordLen draws a captured length: small, around minimega's snaplen, or the largest allowed.
+func genPcapRecordLen() *rapid.Generator[int] {
+	return rapid.OneOf(rapid.IntRange(0, 64), rapid.IntRange(1500, 1600), rapid.Just(maxRecordLen))
+}
+
+// pcapRecordAs returns a record of n bytes whose header gives orig as the length on the wire.
+func pcapRecordAs(order binary.ByteOrder, n int, orig uint32) []byte {
+	b := record(order, n)
+	order.PutUint32(b[12:], orig)
+
+	return b
+}
+
+// complete counts the whole records of any prefix of a capture, and stops with
+// errCorrupt at a record header no writer produces once all 16 bytes are in.
+func TestCompleteProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		order := rapid.SampledFrom([]binary.ByteOrder{binary.LittleEndian, binary.BigEndian}).Draw(t, "order")
+		lens := rapid.SliceOfN(genPcapRecordLen(), 0, 6).Draw(t, "lens")
+
+		var (
+			b      []byte
+			bounds = make([]int, 1, len(lens)+1)
+		)
+
+		for i, n := range lens {
+			// orig 0 (unknown) or at least the captured length (cut by the snaplen)
+			orig := rapid.SampledFrom([]int{0, n, n + 100}).Draw(t, "orig"+strconv.Itoa(i))
+			b = append(b, pcapRecordAs(order, n, uint32(orig))...) //nolint:gosec // test sizes are small
+			bounds = append(bounds, len(b))
+		}
+
+		whole := len(b)
+
+		corrupt := rapid.SampledFrom([]string{"", "too long", "captured more than sent"}).Draw(t, "corrupt")
+		switch corrupt {
+		case "too long":
+			incl := rapid.IntRange(maxRecordLen+1, maxRecordLen+1000).Draw(t, "incl")
+			bad := pcapRecordAs(order, 0, uint32(incl)) //nolint:gosec // test sizes are small
+			order.PutUint32(bad[8:], uint32(incl))      //nolint:gosec // test sizes are small
+			b = append(b, bad...)
+		case "captured more than sent":
+			incl := rapid.IntRange(2, 64).Draw(t, "incl")
+			orig := rapid.IntRange(1, incl-1).Draw(t, "short orig")
+			b = append(b, pcapRecordAs(order, incl, uint32(orig))...) //nolint:gosec // test sizes are small
+		}
+
+		// record boundaries, and either side of where the corrupt header is whole
+		edges := append(slices.Clone(bounds), len(b))
+		if corrupt != "" {
+			edges = append(edges, whole+recordHeaderLen-1, whole+recordHeaderLen)
+		}
+
+		cut := rapid.OneOf(rapid.IntRange(0, len(b)), rapid.SampledFrom(edges)).Draw(t, "cut")
+
+		want := 0
+		for _, bound := range bounds {
+			if bound <= cut {
+				want = bound
+			}
+		}
+
+		var wantErr error
+		if corrupt != "" && cut >= whole+recordHeaderLen {
+			wantErr = errCorrupt
+		}
+
+		got, err := pcapHeader{order: order}.complete(b[:cut])
+		if got != want || !errors.Is(err, wantErr) {
+			t.Fatalf("complete(%d of %d bytes, records %v, %q) = %d, %v; want %d, %v",
+				cut, len(b), lens, corrupt, got, err, want, wantErr)
+		}
+	})
 }

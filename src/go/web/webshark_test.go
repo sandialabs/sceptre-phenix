@@ -11,12 +11,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/api/livecapture"
 	"phenix/util/mm"
@@ -639,4 +641,114 @@ func TestTrustworthyOrigin(t *testing.T) {
 			t.Errorf("trustworthyOrigin(Host %s, headers %v) = %t, want %t", tc.host, tc.headers, got, tc.want)
 		}
 	}
+}
+
+// websharkSecret is the random part newCaptureSecret puts in a capture name.
+var websharkSecret = regexp.MustCompile(`^-[a-z2-7]{26}$`)
+
+// A capture name is the file's base with a random part before its capture
+// extension, so WebShark opens the name exactly when it opens the file.
+func TestSharkCaptureNamesKeepTheirExtensionProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		// a stem that is not itself an extension, as path.Base gives
+		stem := rapid.StringMatching(`[a-zA-Z0-9][a-zA-Z0-9._-]{0,7}`).Draw(t, "stem")
+		ext := rapid.SampledFrom([]string{
+			"", ".pcap", ".PCAPNG", ".cap", ".pcap.gz", ".Cap.GZ", ".pcapng.gz", ".gz", ".txt", ".pcap.txt", ".gz.pcap",
+		}).Draw(t, "ext")
+		base := stem + ext
+
+		name := newCaptureSecret(false, base)
+
+		if got, want := isCaptureFile(name), isCaptureFile(base); got != want {
+			t.Fatalf("isCaptureFile(newCaptureSecret(false, %q) = %q) = %t, want %t", base, name, got, want)
+		}
+
+		const secretLen = 27 // "-" and 26 base32 characters
+
+		found := false
+
+		for k := 0; k+secretLen <= len(name) && !found; k++ {
+			found = name[:k]+name[k+secretLen:] == base && websharkSecret.MatchString(name[k:k+secretLen])
+		}
+
+		if !found {
+			t.Fatalf("newCaptureSecret(false, %q) = %q, want %q with -<random> inserted", base, name, base)
+		}
+
+		if again := newCaptureSecret(false, base); again == name {
+			t.Fatalf("newCaptureSecret(false, %q) = %q twice, want a new name each time", base, name)
+		}
+	})
+}
+
+// websharkForwarded is a Forwarded header and whether its first element says
+// proto=https.
+type websharkForwarded struct {
+	header string
+	https  bool
+}
+
+// genWebsharkForwarded draws Forwarded headers of up to three elements.
+func genWebsharkForwarded() *rapid.Generator[websharkForwarded] {
+	keyCase := func(t *rapid.T, key string) string {
+		return rapid.SampledFrom([]string{key, strings.ToUpper(key), strings.ToUpper(key[:1]) + key[1:]}).Draw(t, "case")
+	}
+
+	element := func(t *rapid.T) (string, bool) {
+		params := rapid.SliceOfDistinct(rapid.SampledFrom([]string{"for", "by", "host", "proto", ""}), rapid.ID).Draw(t, "params")
+		pairs := make([]string, 0, len(params))
+		https := false
+
+		for _, param := range params {
+			value := rapid.SampledFrom([]string{"192.0.2.1", `"[2001:db8::1]:80"`, "_hidden", "a.example", "unknown"}).Draw(t, "value")
+
+			if param == "proto" {
+				value = rapid.SampledFrom([]string{"http", "https", "HTTPS", "Https", "wss", "httpss"}).Draw(t, "proto")
+				https = strings.EqualFold(value, "https")
+
+				if rapid.Bool().Draw(t, "quoted") {
+					value = `"` + value + `"`
+				}
+			}
+
+			pair := ""
+			if param != "" {
+				pair = keyCase(t, param) + "=" + value
+			}
+
+			pairs = append(pairs, pair)
+		}
+
+		return strings.Join(pairs, rapid.SampledFrom([]string{";", "; "}).Draw(t, "sep")), https
+	}
+
+	return rapid.Custom(func(t *rapid.T) websharkForwarded {
+		more := rapid.IntRange(0, 2).Draw(t, "more")
+		first, https := element(t)
+		elements := make([]string, 1, 1+more)
+		elements[0] = first
+
+		for range more {
+			e, _ := element(t)
+			elements = append(elements, e)
+		}
+
+		return websharkForwarded{header: strings.Join(elements, rapid.SampledFrom([]string{",", ", "}).Draw(t, "comma")), https: https}
+	})
+}
+
+// Only the first proxy's proto counts, whatever the case, quoting, order or
+// spacing of its parameters.
+func TestForwardedHTTPSProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		f := genWebsharkForwarded().Draw(t, "forwarded")
+
+		if got := forwardedHTTPS(f.header); got != f.https {
+			t.Fatalf("forwardedHTTPS(%q) = %t, want %t", f.header, got, f.https)
+		}
+	})
 }

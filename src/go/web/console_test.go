@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"golang.org/x/net/websocket"
+	"pgregory.net/rapid"
 
 	"phenix/util/polltest"
 	"phenix/web/rbac"
@@ -191,6 +192,42 @@ func TestConsoleHistory(t *testing.T) {
 			t.Errorf("after Write(%q), Bytes() = %q, want %q", step.write, got, step.want)
 		}
 	}
+}
+
+// consoleHistoryModel is what a size-byte history replays of all the output written to it.
+func consoleHistoryModel(all []byte, size int) []byte {
+	if len(all) <= size {
+		return all
+	}
+
+	kept := all[len(all)-size:]
+	if i := bytes.IndexByte(kept, '\n'); i >= 0 {
+		kept = kept[i+1:]
+	}
+
+	return kept
+}
+
+func TestConsoleHistoryProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		size := rapid.IntRange(1, 24).Draw(t, "size")
+		writes := rapid.SliceOfN(rapid.SliceOfN(rapid.SampledFrom([]byte("ab\n")), 0, 3*size), 1, 12).Draw(t, "writes")
+
+		history := newConsoleHistory(size)
+
+		all := make([]byte, 0, len(writes)*3*size)
+
+		for _, output := range writes {
+			history.Write(output)
+			all = append(all, output...)
+
+			if got, want := history.Bytes(), consoleHistoryModel(all, size); !bytes.Equal(got, want) {
+				t.Fatalf("newConsoleHistory(%d) after writes %q: Bytes() = %q, want %q", size, writes, got, want)
+			}
+		}
+	})
 }
 
 func TestConsoleReplaysOutputToAnotherWebSocket(t *testing.T) {
