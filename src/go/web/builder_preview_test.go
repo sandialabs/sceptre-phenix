@@ -74,6 +74,8 @@ func previewDisks(calls *int, names ...string) builderOption {
 }
 
 // builderDryRunState is what a dry run must leave as it was.
+//
+//nolint:unused // cmp.Diff reads the fields by reflection
 type builderDryRunState struct {
 	configs                                                any
 	writes, experiments, broadcasts, documents, configured int

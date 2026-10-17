@@ -555,7 +555,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 // Goroutine is scheduled for each applicable app.
 //
 //nolint:funlen // complex logic
-func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Experiment) error {
+func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Experiment) {
 	if exp.Spec.Scenario() != nil {
 		for _, app := range exp.Spec.Scenario().Apps() {
 			// Don't consider default apps as candidates for running periodically.
@@ -722,6 +722,4 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 			}
 		}
 	}
-
-	return nil
 }

@@ -25,7 +25,6 @@ type testHarness struct {
 	service *Service
 	store   *memrecord.Store
 	now     *atomic.Int64
-	ids     *atomic.Int64
 }
 
 func newHarness(t *testing.T) *testHarness {
@@ -51,7 +50,7 @@ func newHarness(t *testing.T) *testHarness {
 	// with the same wall clock the service reads.
 	fake.Stamp = func() time.Time { return memrecord.Time(now.Load()) }
 
-	return &testHarness{service: service, store: fake, now: now, ids: ids}
+	return &testHarness{service: service, store: fake, now: now}
 }
 
 // testDocument returns a small, decodable document whose content depends on

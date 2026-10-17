@@ -32,7 +32,6 @@ type webEventHub struct {
 }
 
 type webEventClient struct {
-	conn     *websocket.Conn
 	messages chan string
 }
 
@@ -44,8 +43,8 @@ func (h *webEventHub) setTemplate(tmpl *template.Template) {
 	h.mu.Unlock()
 }
 
-func (h *webEventHub) add(conn *websocket.Conn) *webEventClient {
-	client := &webEventClient{conn: conn, messages: make(chan string, 1)}
+func (h *webEventHub) add() *webEventClient {
+	client := &webEventClient{messages: make(chan string, 1)}
 
 	h.mu.Lock()
 	h.clients[client] = struct{}{}
@@ -172,7 +171,7 @@ func newWebHandler() (http.Handler, error) {
 	})
 
 	mux.Handle("/events", websocket.Handler(func(conn *websocket.Conn) {
-		client := webEvents.add(conn)
+		client := webEvents.add()
 		defer webEvents.remove(client)
 
 		for payload := range client.messages {

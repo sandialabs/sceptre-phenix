@@ -236,7 +236,7 @@ func newExperimentCreateCmd() *cobra.Command {
 
 			ctx := notes.Context(context.Background(), false)
 
-			if err := experiment.Create(ctx, opts...); err != nil {
+			if err := experiment.Create(opts...); err != nil {
 				err := util.HumanizeError(err, "%s", "Unable to create the "+args[0]+" experiment")
 
 				return err.Humanized()
@@ -551,15 +551,7 @@ func newExperimentStartCmd() *cobra.Command {
 				if periodic {
 					plog.Info(plog.TypeSystem, "honor-run-periodically flag was passed")
 
-					err := app.PeriodicallyRunApps(ctx, &wg, &exp)
-					if err != nil {
-						plog.Error(
-							plog.TypeSystem,
-							"scheduling experiment apps to run periodically",
-							"err",
-							err,
-						)
-					}
+					app.PeriodicallyRunApps(ctx, &wg, &exp)
 				}
 			}
 

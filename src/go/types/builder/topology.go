@@ -735,6 +735,8 @@ type addressUse struct {
 
 // addressKey is what two interfaces share when their addresses clash: an
 // address of one kind on one network (see [interfaceNetwork]).
+//
+//nolint:unused // map key: Go compares the fields, the code does not read them
 type addressKey struct {
 	// kind is "ip" or "mac".
 	kind string

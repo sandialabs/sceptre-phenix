@@ -1,7 +1,6 @@
 package experiment_test
 
 import (
-	"context"
 	"maps"
 	"slices"
 	"strings"
@@ -77,7 +76,6 @@ func TestCreateCopiesNodeNotesToLabels(t *testing.T) {
 	storetest.Use(t, m)
 
 	err := experiment.Create(
-		context.Background(),
 		experiment.CreateWithName(expName),
 		experiment.CreateWithTopology(topoName),
 		experiment.CreateWithBaseDirectory(t.TempDir()),

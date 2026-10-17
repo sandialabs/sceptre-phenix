@@ -178,7 +178,6 @@ func newBuilderPublishOps() builderPublishOps {
 			aliases map[string]int,
 		) error {
 			return experiment.Create(
-				ctx,
 				experiment.CreateWithName(name),
 				experiment.CreateWithTopology(topology),
 				experiment.CreateWithScenario(scenario),

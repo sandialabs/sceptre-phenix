@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -107,7 +106,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if !dryRun {
-		if err := executeWorkflowPlan(ctx, plan, spec, branch, tags, prep, target); err != nil {
+		if err := executeWorkflowPlan(plan, spec, branch, tags, prep, target); err != nil {
 			return err
 		}
 	}
@@ -254,7 +253,6 @@ func workflowWebError(err error, message string) *weberror.WebError {
 // executeWorkflowPlan carries out plan with what prep resolved. exp is the
 // experiment mapped to branch, which the update actions act on.
 func executeWorkflowPlan(
-	ctx context.Context,
 	plan workflow.Plan,
 	spec workflow.Spec,
 	branch, tags string,
@@ -265,7 +263,7 @@ func executeWorkflowPlan(
 	case workflow.ActionNone:
 		// Nothing to carry out; the response gives the reason.
 	case workflow.ActionCreate, workflow.ActionCreateAndStart:
-		return createFromWorkflow(ctx, spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart)
+		return createFromWorkflow(spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart)
 	case workflow.ActionUpdate, workflow.ActionUpdateAndStart, workflow.ActionRestart:
 		return updateFromWorkflow(exp, spec, tags, prep, plan.Action)
 	}
@@ -276,7 +274,6 @@ func executeWorkflowPlan(
 // createFromWorkflow creates the experiment auto.create names from what prep
 // resolved, maps it to branch, tags it and starts it when start is true.
 func createFromWorkflow(
-	ctx context.Context,
 	spec workflow.Spec,
 	branch, tags string,
 	prep workflow.Prepared,
@@ -313,7 +310,7 @@ func createFromWorkflow(
 		experiment.CreateWithGREMesh(spec.UseGREMesh),
 	}
 
-	err = experiment.Create(ctx, opts...)
+	err = experiment.Create(opts...)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to create new experiment")
 

@@ -174,7 +174,7 @@ type exactYAMLMetadata struct {
 // are, except that it writes the annotations, spec and status as [ExactYAML]
 // makes them, so that the YAML loads as the config. It writes a structured
 // annotation as a map (see [Annotations.MarshalYAML]).
-func (c Config) MarshalYAML() (any, error) {
+func (c Config) MarshalYAML() (any, error) { //nolint:unparam // implements yaml.Marshaler
 	return exactYAMLConfig{
 		Version: c.Version,
 		Kind:    c.Kind,
@@ -267,7 +267,7 @@ func ConfigFullName(name ...string) string {
 type yamlQuoted string
 
 // MarshalYAML implements [yaml.Marshaler].
-func (s yamlQuoted) MarshalYAML() (any, error) {
+func (s yamlQuoted) MarshalYAML() (any, error) { //nolint:unparam // implements yaml.Marshaler
 	return &yaml.Node{Kind: yaml.ScalarNode, Style: yaml.DoubleQuotedStyle, Tag: "!!str", Value: string(s)}, nil
 }
 
@@ -419,7 +419,7 @@ func (a Annotations) MarshalJSON() ([]byte, error) {
 
 // MarshalYAML implements [yaml.Marshaler]. A structured annotation is written
 // as a map of its sub-keys, and every string as [ExactYAML] makes it.
-func (a Annotations) MarshalYAML() (any, error) {
+func (a Annotations) MarshalYAML() (any, error) { //nolint:unparam // implements yaml.Marshaler
 	return ExactYAML(a.wire()), nil
 }
 
