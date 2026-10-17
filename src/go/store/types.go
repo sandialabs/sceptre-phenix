@@ -380,10 +380,6 @@ func structuredValue(value string) (map[string]string, bool) {
 // sub-keys: their compact JSON object, keys sorted, so that the same sub-keys
 // always give the same string.
 func structuredString(sub map[string]string) string {
-	if sub == nil {
-		sub = map[string]string{}
-	}
-
 	// A map of strings always encodes.
 	text, _ := json.Marshal(sub)
 

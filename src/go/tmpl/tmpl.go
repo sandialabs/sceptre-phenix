@@ -80,10 +80,7 @@ func GenerateFromTemplate(name string, data any, w io.Writer) error {
 				return false
 			}
 		},
-		"stringsJoin": strings.Join,
-		"escapeNewline": func(s string) string {
-			return strings.ReplaceAll(s, "\n", "\\n")
-		},
+		"stringsJoin":  strings.Join,
 		"escapeQuoted": escapeQuoted,
 	}
 

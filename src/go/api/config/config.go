@@ -377,18 +377,9 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 	case o.data != nil:
 		var err error
 
-		data := string(o.data)
-
-		switch o.dataType {
-		case DataTypeYAML:
-			c, err = store.NewConfigFromYAML([]byte(data))
-			if err != nil {
-				return nil, fmt.Errorf("creating new config from YAML: %w", err)
-			}
-		case DataTypeUnknown:
-			fallthrough
-		default:
-			return nil, errors.New("unknown data type provided")
+		c, err = store.NewConfigFromYAML(o.data)
+		if err != nil {
+			return nil, fmt.Errorf("creating new config from YAML: %w", err)
 		}
 	default:
 		return nil, errors.New("no config, path, or data provided")
