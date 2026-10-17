@@ -9,12 +9,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/api/experiment"
 	"phenix/store"
@@ -727,4 +729,95 @@ func TestZipPlanKeepsThePlannedPartOfAFileThatGrows(t *testing.T) { //nolint:par
 	if int64(buf.Len()) > limits.MaxBytes {
 		t.Errorf("ZipPlan.Write() of a grown file wrote %d bytes, want at most %d", buf.Len(), limits.MaxBytes)
 	}
+}
+
+// ZipFiles archives each file asked for once, in the order first asked, when
+// all of them are files within the limits, and otherwise refuses before writing.
+func TestZipFilesProperties(t *testing.T) { //nolint:paralleltest // replaces package state
+	files := map[string]string{"a.log": "alpha", "b/c.json": `{"ok":true}`, "d.gz": "gzipped", "e.txt": ""}
+	useFilesDir(t, "exp", files)
+	useListedFiles(t)
+
+	rapid.Check(t, func(t *rapid.T) {
+		// mostly the files, so most draws are archived
+		listed := rapid.SampledFrom([]string{"a.log", "b/c.json", "d.gz", "e.txt"})
+		paths := rapid.SliceOfN(rapid.OneOf(
+			listed, listed, listed,
+			rapid.SampledFrom([]string{"missing.log", "../a.log", "/a.log", "b//c.json", ""}),
+		), 0, 6).Draw(t, "paths")
+		var (
+			unique []string
+			total  int64
+			bad    bool
+		)
+
+		for _, p := range paths {
+			if !slices.Contains(unique, p) {
+				unique = append(unique, p)
+				contents, ok := files[p]
+				bad = bad || !ok
+				total += int64(len(contents))
+			}
+		}
+
+		// limits at, just under or just over what is asked for
+		limits := experiment.ZipLimits{
+			MaxFiles: max(0, len(unique)+rapid.IntRange(-1, 1).Draw(t, "files over")),
+			MaxBytes: max(0, total+rapid.Int64Range(-1, 1).Draw(t, "bytes over")),
+		}
+
+		var buf bytes.Buffer
+
+		started := false
+
+		zipped, err := experiment.ZipFiles("exp", paths, limits, func() io.Writer {
+			started = true
+
+			return &buf
+		})
+
+		if len(unique) == 0 || len(unique) > limits.MaxFiles || bad || total > limits.MaxBytes {
+			if started || !errors.Is(err, experiment.ErrInvalidFilePath) && !errors.Is(err, experiment.ErrFileNotFound) &&
+				!errors.Is(err, experiment.ErrDownloadTooLarge) {
+				t.Fatalf("ZipFiles(exp, %q, %+v) = %q, %v, started %t; want a refusal before writing", paths, limits, zipped, err, started)
+			}
+
+			return
+		}
+
+		if err != nil {
+			t.Fatalf("ZipFiles(exp, %q, %+v) error = %v", paths, limits, err)
+		}
+
+		archive, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+		if err != nil {
+			t.Fatalf("reading the zip of ZipFiles(exp, %q, %+v): %v", paths, limits, err)
+		}
+
+		entries := make([]string, 0, len(archive.File))
+
+		for _, f := range archive.File {
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatalf("opening zip entry %s: %v", f.Name, err)
+			}
+
+			data, err := io.ReadAll(rc)
+			_ = rc.Close()
+
+			if err != nil || string(data) != files[f.Name] {
+				t.Fatalf("zip entry %s = %q, %v; want %q", f.Name, data, err, files[f.Name])
+			}
+
+			entries = append(entries, f.Name)
+		}
+
+		if diff := cmp.Diff(unique, zipped); diff != "" {
+			t.Fatalf("ZipFiles(exp, %q, %+v) zipped mismatch (-want +got):\n%s", paths, limits, diff)
+		}
+
+		if diff := cmp.Diff(unique, entries); diff != "" {
+			t.Fatalf("ZipFiles(exp, %q, %+v) archive entries mismatch (-want +got):\n%s", paths, limits, diff)
+		}
+	})
 }

@@ -2,7 +2,10 @@ package common_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
+
+	"pgregory.net/rapid"
 
 	"phenix/util/common"
 )
@@ -49,4 +52,50 @@ func TestEnvPlaceholder(t *testing.T) {
 	if !slices.EqualFunc(got, want, slices.Equal) {
 		t.Errorf("EnvPlaceholder matches = %q, want %q", got, want)
 	}
+}
+
+// commonEnvSet holds a placeholder of its own, which ParseEnv must not expand again.
+const commonEnvSet = "v:${PHENIX_RAPID_SET}"
+
+// TestParseEnvProperties builds inputs from literal text, which holds no "$", and
+// placeholders, and checks each placeholder is replaced once and the text kept as is.
+func TestParseEnvProperties(t *testing.T) {
+	t.Setenv("PHENIX_RAPID_SET", commonEnvSet)
+	t.Setenv("PHENIX_RAPID_EMPTY", "")
+
+	values := map[string]string{"PHENIX_RAPID_SET": commonEnvSet, "PHENIX_RAPID_EMPTY": ""}
+
+	rapid.Check(t, func(t *rapid.T) {
+		var input, want strings.Builder
+
+		for range rapid.IntRange(0, 6).Draw(t, "tokens") {
+			if rapid.Bool().Draw(t, "literal") {
+				text := rapid.StringMatching(`[a{}: _-]{0,4}`).Draw(t, "text")
+				input.WriteString(text)
+				want.WriteString(text)
+
+				continue
+			}
+
+			name := rapid.SampledFrom([]string{"PHENIX_RAPID_SET", "PHENIX_RAPID_EMPTY", "PHENIX_RAPID_UNSET"}).Draw(t, "name")
+			value, set := values[name]
+
+			placeholder := "${" + name
+			if rapid.Bool().Draw(t, "has default") {
+				def := rapid.StringMatching(`[d:${ ]{0,4}`).Draw(t, "default")
+				placeholder += ":" + def
+
+				if !set {
+					value = def
+				}
+			}
+
+			input.WriteString(placeholder + "}")
+			want.WriteString(value)
+		}
+
+		if got := common.ParseEnv(input.String()); got != want.String() {
+			t.Fatalf("ParseEnv(%q) = %q, want %q", input.String(), got, want.String())
+		}
+	})
 }

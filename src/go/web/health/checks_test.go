@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"runtime/metrics"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +17,7 @@ import (
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 )
 
 // one runs a check once and returns its results.
@@ -401,4 +406,152 @@ func TestUptimeAndGoRuntime(t *testing.T) {
 			t.Errorf("GoRuntime() %s = %+v, want a passing value", key, r)
 		}
 	}
+}
+
+// checksMeasured is what the fake statfs of TestDiskProperties says of a path.
+type checksMeasured struct {
+	stat  DiskStat
+	fails bool
+}
+
+func genChecksMeasured() *rapid.Generator[checksMeasured] {
+	return rapid.Custom(func(t *rapid.T) checksMeasured {
+		if rapid.IntRange(0, 4).Draw(t, "fails") == 0 {
+			return checksMeasured{fails: true}
+		}
+
+		total := rapid.OneOf(rapid.Uint64Range(0, 100), rapid.Uint64()).Draw(t, "total")
+
+		return checksMeasured{stat: DiskStat{
+			Device: rapid.Uint64Range(1, 3).Draw(t, "device"),
+			Total:  total,
+			Avail:  rapid.OneOf(rapid.Uint64Range(0, total), rapid.Uint64()).Draw(t, "avail"),
+		}}
+	})
+}
+
+// The disk check reports, in path order, each unmeasured path and each filesystem
+// once, as a percentage whose status never improves as it fills.
+func TestDiskProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		measured := rapid.SliceOfN(genChecksMeasured(), 0, 6).Draw(t, "paths")
+		paths := make([]DiskPath, len(measured))
+
+		for i := range measured {
+			paths[i] = DiskPath{ID: strconv.Itoa(i), Path: "/p" + strconv.Itoa(i)}
+		}
+
+		statfs := func(path string) (DiskStat, error) {
+			i, _ := strconv.Atoi(strings.TrimPrefix(path, "/p"))
+
+			if measured[i].fails {
+				return DiskStat{}, errors.New("no such file or directory")
+			}
+
+			return measured[i].stat, nil
+		}
+
+		var (
+			wantIDs []string
+			devices = make(map[uint64]bool)
+		)
+
+		for i, m := range measured {
+			if m.fails || !devices[m.stat.Device] {
+				wantIDs = append(wantIDs, strconv.Itoa(i))
+			}
+
+			devices[m.stat.Device] = devices[m.stat.Device] || !m.fails
+		}
+
+		results := Disk(func() []DiskPath { return paths }, statfs).Run(context.Background())[KeyDisk]
+
+		gotIDs := make([]string, len(results))
+		for i, r := range results {
+			gotIDs[i] = r.ComponentID
+		}
+
+		if diff := cmp.Diff(wantIDs, gotIDs, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("Disk(%+v) components mismatch (-want +got):\n%s", measured, diff)
+		}
+
+		for _, a := range results {
+			used, ok := a.ObservedValue.(Float)
+
+			switch {
+			case !ok && a.Status != Warn:
+				t.Fatalf("Disk(%+v) unmeasured %s = %+v, want a warning", measured, a.ComponentID, a)
+			case ok && (used < 0 || used > 100):
+				t.Fatalf("Disk(%+v) %s = %v%%, want 0 to 100", measured, a.ComponentID, used)
+			}
+
+			for _, b := range results {
+				if other, ok2 := b.ObservedValue.(Float); ok && ok2 && used <= other && Worst(a.Status, b.Status) != b.Status {
+					t.Fatalf("Disk(%+v) %s at %v%% is %s, but %s at %v%% is %s", measured, a.ComponentID, used, a.Status,
+						b.ComponentID, other, b.Status)
+				}
+			}
+		}
+	})
+}
+
+func genChecksHistogram() *rapid.Generator[*metrics.Float64Histogram] {
+	return rapid.Custom(func(t *rapid.T) *metrics.Float64Histogram {
+		counts := rapid.SliceOfN(rapid.OneOf(rapid.Just(uint64(0)), rapid.Uint64Range(0, 5)), 2, 6).Draw(t, "counts")
+		buckets := make([]float64, len(counts)+1)
+
+		for i := range buckets {
+			buckets[i] = float64(i) + float64(rapid.IntRange(0, 9).Draw(t, "fraction"))/10
+		}
+
+		if rapid.Bool().Draw(t, "unbounded below") {
+			buckets[0] = math.Inf(-1)
+		}
+
+		if rapid.Bool().Draw(t, "unbounded above") {
+			buckets[len(buckets)-1] = math.Inf(1)
+		}
+
+		return &metrics.Float64Histogram{Counts: counts, Buckets: buckets}
+	})
+}
+
+// A percentile is a finite bucket bound within the buckets that hold samples,
+// and grows with p.
+func TestPercentileProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		h := genChecksHistogram().Draw(t, "histogram")
+		// above 0: the 0th percentile is the first bucket's bound, held or not
+		p, q := rapid.Float64Range(1e-9, 1).Draw(t, "p"), rapid.Float64Range(1e-9, 1).Draw(t, "q")
+		p, q = min(p, q), max(p, q)
+
+		low, high := percentile(h, p), percentile(h, q)
+		if low > high {
+			t.Fatalf("percentile(%+v, %v) = %v, more than percentile at %v = %v", h, p, low, q, high)
+		}
+
+		first := slices.IndexFunc(h.Counts, func(c uint64) bool { return c > 0 })
+		if first < 0 {
+			if low != 0 || high != 0 {
+				t.Fatalf("percentile(%+v, %v and %v) = %v and %v, want 0 without samples", h, p, q, low, high)
+			}
+
+			return
+		}
+
+		last := len(h.Counts) - 1
+		for h.Counts[last] == 0 {
+			last--
+		}
+
+		for _, v := range []float64{low, high} {
+			if math.IsInf(v, 0) || !slices.Contains(h.Buckets, v) || v < h.Buckets[first] || v > h.Buckets[last+1] {
+				t.Fatalf("percentile(%+v, %v or %v) = %v, want a finite bound of buckets %d to %d", h, p, q, v, first, last)
+			}
+		}
+	})
 }

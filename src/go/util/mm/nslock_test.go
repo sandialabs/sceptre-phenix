@@ -9,6 +9,7 @@ import (
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
@@ -69,6 +70,69 @@ func TestKeyedMutex(t *testing.T) {
 	if left != 0 {
 		t.Errorf("keyedMutex has %d keys after every lock was released, want 0", left)
 	}
+}
+
+// From one goroutine, with unlocks called again later: a key is tracked only while held,
+// and a stale unlock never releases the key's next holder.
+func TestKeyedMutexProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		var (
+			k        keyedMutex
+			held     = make(map[string]func())
+			released []func()
+			keys     = []string{"a", "b", "c"}
+		)
+
+		t.Repeat(map[string]func(*rapid.T){
+			"lock": func(t *rapid.T) {
+				key := rapid.SampledFrom(keys).Draw(t, "key")
+				if held[key] != nil {
+					t.Skip("key is held")
+				}
+
+				held[key] = k.lock(key)
+			},
+			"unlock": func(t *rapid.T) {
+				key := rapid.SampledFrom(keys).Draw(t, "key")
+				if held[key] == nil {
+					t.Skip("key is not held")
+				}
+
+				held[key]()
+				released = append(released, held[key])
+				delete(held, key)
+			},
+			"unlock again": func(t *rapid.T) {
+				if len(released) == 0 {
+					t.Skip("nothing released")
+				}
+
+				rapid.SampledFrom(released).Draw(t, "unlock")()
+			},
+			"": func(t *rapid.T) {
+				for _, key := range keys {
+					want := 0
+					if held[key] != nil {
+						want = 1
+					}
+
+					if got := k.refs(key); got != want {
+						t.Fatalf("keyedMutex refs(%q) = %d, want %d", key, got, want)
+					}
+
+					if want == 1 && k.locks[key].mu.TryLock() {
+						t.Fatalf("keyedMutex lock of %q is free while it is held", key)
+					}
+				}
+
+				if len(k.locks) != len(held) {
+					t.Fatalf("keyedMutex tracks %d keys, want the %d held", len(k.locks), len(held))
+				}
+			},
+		})
+	})
 }
 
 var filteredName = regexp.MustCompile(`\.filter name=(\S+) `)

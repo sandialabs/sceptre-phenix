@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/api/job"
 	"phenix/web/cache"
@@ -324,4 +326,50 @@ func TestKillVMNeedsARunningExperiment(t *testing.T) {
 	if len(*acted) != 0 {
 		t.Errorf("DELETE vms/a of a stopped experiment killed %v, want none", *acted)
 	}
+}
+
+// genVMActionsNames draws VM names from a small set, with empty ones, so most lists repeat a name.
+func genVMActionsNames() *rapid.Generator[[]string] {
+	return rapid.SliceOf(rapid.SampledFrom([]string{"", "a", "b", "c", "vm-1", "vm-2"}))
+}
+
+// A bulk action's VMs are the request's names, each once, in the order first
+// named, without empty names.
+func TestUniqueNamesProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		in := genVMActionsNames().Draw(t, "in")
+		before := slices.Clone(in)
+		got := uniqueNames(in)
+
+		if diff := cmp.Diff(before, in); diff != "" {
+			t.Fatalf("input after uniqueNames mismatch (-want +got):\n%s", diff)
+		}
+
+		last := -1
+
+		for i, name := range got {
+			if name == "" || slices.Contains(got[:i], name) {
+				t.Fatalf("uniqueNames(%q) = %q, has %q empty or repeated", in, got, name)
+			}
+
+			first := slices.Index(in, name)
+			if first <= last {
+				t.Fatalf("uniqueNames(%q) = %q, %q is out of first-named order", in, got, name)
+			}
+
+			last = first
+		}
+
+		for _, name := range in {
+			if name != "" && !slices.Contains(got, name) {
+				t.Fatalf("uniqueNames(%q) = %q, missing %q", in, got, name)
+			}
+		}
+
+		if again := uniqueNames(got); !slices.Equal(again, got) {
+			t.Fatalf("uniqueNames(uniqueNames(%q)) = %q, want %q", in, again, got)
+		}
+	})
 }

@@ -3,6 +3,7 @@ package capability
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 )
 
 // clock is a test clock that moves only when told to.
@@ -416,4 +419,241 @@ func TestConcurrentUse(t *testing.T) {
 	if uses.Load() == 0 {
 		t.Error("no concurrent Use succeeded, want some")
 	}
+}
+
+// capabilityMinted is a grant a property minted, with the last time it was
+// used (or minted), its uses, and whether it was revoked or evicted.
+type capabilityMinted struct {
+	token    string
+	grant    Grant
+	lastUsed time.Time
+	uses     int
+	revoked  bool
+	evicted  bool
+}
+
+// over reports whether the grant can no longer be used, nor has anything open, at now.
+func (m *capabilityMinted) over(now time.Time) bool {
+	g := m.grant
+
+	return !now.Before(g.Expires) || g.IdleTimeout > 0 && now.Sub(m.lastUsed) >= g.IdleTimeout ||
+		!g.UseBy.IsZero() && !now.Before(g.UseBy) && m.uses == 0
+}
+
+// capabilityEvict marks the least recently used of the live grants match
+// reports true for as evicted until at most keep are left, and returns the rest.
+func capabilityEvict(live []*capabilityMinted, match func(*capabilityMinted) bool, keep int) []*capabilityMinted {
+	for {
+		oldest, n := -1, 0
+
+		for i, m := range live {
+			if match(m) {
+				n++
+
+				if oldest < 0 || m.lastUsed.Before(live[oldest].lastUsed) {
+					oldest = i
+				}
+			}
+		}
+
+		if n <= keep {
+			return live
+		}
+
+		live[oldest].evicted = true
+		live = slices.Delete(live, oldest, oldest+1)
+	}
+}
+
+// use uses the grant at now for op, checking Use against when a grant is usable.
+func (m *capabilityMinted) use(t *rapid.T, r *Registry, now time.Time, op Op) {
+	g, ended := m.grant, isDone(m.grant)
+
+	expired := !now.Before(g.Expires) || g.IdleTimeout > 0 && now.Sub(m.lastUsed) >= g.IdleTimeout
+	pastUseBy := !g.UseBy.IsZero() && !now.Before(g.UseBy)
+
+	var want error
+
+	switch {
+	case ended || expired || pastUseBy:
+		want = ErrNotFound
+	case !g.Allows(op):
+		want = ErrOperation
+	}
+
+	got, err := r.Use(m.token, op)
+	if !errors.Is(err, want) || (want == nil) != (err == nil) {
+		t.Fatalf("Use(%s, %v) of %+v at %v (ended %t) error = %v, want %v", m.token, op, g, now, ended, err, want)
+	}
+
+	if err == nil {
+		m.uses++
+		m.lastUsed = now
+
+		if got.Uses != m.uses {
+			t.Fatalf("Use(%s, %v).Uses = %d, want %d", m.token, op, got.Uses, m.uses)
+		}
+	}
+
+	// a grant that can no longer be used ends when tried, unless used before its use-by time
+	if (expired || pastUseBy && m.uses == 0) && !isDone(g) {
+		t.Fatalf("Use(%s, %v) of %+v at %v left it open, want it ended", m.token, op, g, now)
+	}
+}
+
+func genCapabilityGrant(now time.Time) *rapid.Generator[Grant] {
+	minutes := func(t *rapid.T, label string, lo int) time.Duration {
+		return time.Duration(rapid.IntRange(lo, 60).Draw(t, label)) * time.Minute
+	}
+
+	return rapid.Custom(func(t *rapid.T) Grant {
+		g := Grant{
+			User:    rapid.SampledFrom([]string{"alice", "bob", "carol"}).Draw(t, "user"),
+			Target:  Target{Exp: rapid.SampledFrom([]string{"e1", "e2"}).Draw(t, "exp")},
+			Ops:     rapid.SliceOfDistinct(rapid.SampledFrom([]Op{OpView, OpDownload, OpWatch, OpStream}), rapid.ID).Draw(t, "ops"),
+			Expires: now.Add(minutes(t, "expires", 1)),
+		}
+
+		if rapid.Bool().Draw(t, "idle") {
+			g.IdleTimeout = minutes(t, "idle timeout", 1)
+		}
+
+		if rapid.Bool().Draw(t, "use by") {
+			g.UseBy = now.Add(minutes(t, "use by", 0))
+		}
+
+		return g
+	})
+}
+
+// A grant is usable until it expires, idles out or passes its use-by time unused,
+// never once ended; the registry keeps its limits and lists the open grants.
+func TestRegistryProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		var (
+			c          = newClock()
+			maxTotal   = rapid.IntRange(1, 4).Draw(t, "maxTotal")
+			maxPerUser = rapid.IntRange(1, 4).Draw(t, "maxPerUser")
+			r          = New(maxTotal, maxPerUser, c.Now)
+			minted     []*capabilityMinted
+		)
+
+		pick := func(t *rapid.T) *capabilityMinted {
+			if len(minted) == 0 {
+				t.Skip("nothing minted")
+			}
+
+			return rapid.SampledFrom(minted).Draw(t, "grant")
+		}
+
+		t.Repeat(map[string]func(*rapid.T){
+			"mint": func(t *rapid.T) {
+				// a second apart, so no two grants were last used at once
+				c.advance(time.Second)
+
+				var (
+					now   = c.Now()
+					token = fmt.Sprintf("token-%d", len(minted))
+					drawn = genCapabilityGrant(now).Draw(t, "grant")
+					live  []*capabilityMinted
+				)
+
+				// Mint sweeps the grants that are over, then evicts down to its limits
+				for _, m := range minted {
+					if !isDone(m.grant) && !m.over(now) {
+						live = append(live, m)
+					}
+				}
+
+				live = capabilityEvict(live, func(m *capabilityMinted) bool { return m.grant.User == drawn.User }, maxPerUser-1)
+				capabilityEvict(live, func(*capabilityMinted) bool { return true }, maxTotal-1)
+
+				g := r.Mint(token, drawn)
+
+				for _, m := range minted {
+					if m.evicted && !isDone(m.grant) {
+						t.Fatalf("Mint(%s) kept %s, the least recently used beyond the limits", token, m.grant.ID)
+					}
+				}
+
+				minted = append(minted, &capabilityMinted{token: token, grant: g, lastUsed: g.Created})
+			},
+			"advance": func(t *rapid.T) {
+				c.advance(time.Duration(rapid.IntRange(0, 20).Draw(t, "minutes")) * time.Minute)
+			},
+			"use": func(t *rapid.T) {
+				m, op := pick(t), rapid.SampledFrom([]Op{OpView, OpDownload, OpWatch, OpStream}).Draw(t, "op")
+
+				c.advance(time.Second)
+				m.use(t, r, c.Now(), op)
+			},
+			"revoke": func(t *rapid.T) {
+				m := pick(t)
+				user := rapid.SampledFrom([]string{m.grant.User, "mallory"}).Draw(t, "user")
+				want := !isDone(m.grant) && user == m.grant.User
+
+				if got := r.Revoke(m.grant.ID, user); got != want {
+					t.Fatalf("Revoke(%s, %s) = %t, want %t", m.grant.ID, user, got, want)
+				}
+
+				if want && !isDone(m.grant) {
+					t.Fatalf("Revoke(%s, %s) left the grant open", m.grant.ID, user)
+				}
+
+				m.revoked = m.revoked || want
+			},
+			"list": func(t *rapid.T) {
+				user := rapid.SampledFrom([]string{"alice", "bob", "carol"}).Draw(t, "user")
+				exp := rapid.SampledFrom([]string{"e1", "e2"}).Draw(t, "exp")
+
+				list := r.List(user, exp)
+				got := make([]string, len(list))
+
+				for i, g := range list {
+					got[i] = g.ID
+				}
+
+				var want []string
+
+				for _, m := range minted {
+					if m.grant.User == user && m.grant.Target.Exp == exp && !isDone(m.grant) {
+						want = append(want, m.grant.ID)
+					}
+				}
+
+				if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+					t.Fatalf("List(%s, %s) mismatch (-open grants, oldest first +listed):\n%s", user, exp, diff)
+				}
+			},
+			"": func(t *rapid.T) {
+				now, open := c.Now(), make(map[string]int)
+
+				for _, m := range minted {
+					if !isDone(m.grant) {
+						open[m.grant.User]++
+						open[""]++
+					} else if !m.revoked && !m.evicted && !m.over(now) {
+						t.Fatalf("grant %s (%+v, %d uses, last used %v) ended at %v, want it open",
+							m.grant.ID, m.grant, m.uses, m.lastUsed, now)
+					}
+				}
+
+				r.mu.Lock()
+				kept := len(r.grants)
+				r.mu.Unlock()
+
+				if kept != open[""] || kept > maxTotal {
+					t.Fatalf("%d grants kept, %d open, want as many and at most %d", kept, open[""], maxTotal)
+				}
+
+				for user, n := range open {
+					if user != "" && n > maxPerUser {
+						t.Fatalf("%d grants of %s open, want at most %d", n, user, maxPerUser)
+					}
+				}
+			},
+		})
+	})
 }

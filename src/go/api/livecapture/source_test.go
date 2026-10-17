@@ -15,6 +15,7 @@ import (
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
@@ -222,4 +223,59 @@ func TestMeshReadScript(t *testing.T) {
 				tt.off, tt.n, from, to, diff)
 		}
 	}
+}
+
+// genSourceName draws a name of the characters safePath allows, sometimes empty or a dot segment.
+func genSourceName() *rapid.Generator[string] {
+	chars := rapid.SampledFrom([]rune("aZ09._+=@,:-"))
+
+	return rapid.OneOf(rapid.StringOfN(chars, 1, 6, -1), rapid.SampledFrom([]string{"", ".", ".."}))
+}
+
+// Every host and path newMeshSource accepts reaches the node's shell whole,
+// after the script, as minimega's parser splits the mesh command.
+func TestMeshSourceArgsProperties(t *testing.T) { //nolint:paralleltest // uses the fake minimega and minicli's registry
+	received := mmtest.Use(t, func(mmtest.Command) []*minicli.Response {
+		return []*minicli.Response{mmtest.Text("node", "")}
+	})
+
+	minicli.Reset()
+	t.Cleanup(minicli.Reset)
+
+	minicli.MustRegister(&minicli.Handler{
+		Patterns: []string{"mesh send <host> shell <args>..."},
+		Call:     func(*minicli.Command, chan<- minicli.Responses) {},
+	})
+
+	rapid.Check(t, func(t *rapid.T) {
+		host := genSourceName().Draw(t, "host")
+		capturePath := "/" + strings.Join(rapid.SliceOfN(genSourceName(), 1, 4).Draw(t, "segments"), "/")
+
+		src, err := newMeshSource(host, capturePath)
+		if err != nil {
+			t.Skip("refused")
+		}
+
+		off, n := rapid.Int64Range(0, 1<<40).Draw(t, "off"), rapid.IntRange(1, 1<<20).Draw(t, "n")
+		if _, err := src.Read(off, n); err != nil {
+			t.Fatalf("Read(%d, %d) of %s on %s error = %v", off, n, capturePath, host, err)
+		}
+
+		bases := mmtest.Bases(received())
+		sent := bases[len(bases)-1]
+
+		cmd, err := minicli.Compile(sent)
+		if err != nil {
+			t.Fatalf("minicli.Compile(%q) error = %v", sent, err)
+		}
+
+		want := []string{"sh", "-c", meshReadScript, "phenix", capturePath, strconv.FormatInt(off, 10), strconv.Itoa(n)}
+		if got := cmd.StringArgs["host"]; got != host {
+			t.Fatalf("minicli.Compile(%q) host = %q, want %q", sent, got, host)
+		}
+
+		if diff := cmp.Diff(want, cmd.ListArgs["args"]); diff != "" {
+			t.Fatalf("minicli.Compile(%q) args mismatch (-want +got):\n%s", sent, diff)
+		}
+	})
 }

@@ -1,6 +1,7 @@
 package health
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"maps"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/version"
 )
@@ -227,4 +229,40 @@ func TestFloatMarshalsWithDecimalPoint(t *testing.T) {
 	if got, err := json.Marshal(Float(math.NaN())); err == nil {
 		t.Errorf("json.Marshal(Float(NaN)) = %s, want an error", got)
 	}
+}
+
+// A finite Float marshals to a plain JSON number with a decimal point that
+// reads back as the same value; NaN and infinities do not marshal.
+func TestFloatMarshalsRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		f := rapid.OneOf(
+			rapid.Float64(),
+			rapid.Map(rapid.IntRange(-1e6, 1e6), func(n int) float64 { return float64(n) }),
+			rapid.SampledFrom([]float64{math.NaN(), math.Inf(1), math.Inf(-1), math.MaxFloat64, math.SmallestNonzeroFloat64}),
+		).Draw(t, "f")
+
+		got, err := json.Marshal(Float(f))
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			if err == nil {
+				t.Fatalf("json.Marshal(Float(%v)) = %s, want an error", f, got)
+			}
+
+			return
+		}
+
+		if err != nil {
+			t.Fatalf("json.Marshal(Float(%v)) error = %v", f, err)
+		}
+
+		var back float64
+		if err := json.Unmarshal(got, &back); err != nil || back != f {
+			t.Fatalf("json.Unmarshal(%s) = %v, %v; want %v", got, back, err, f)
+		}
+
+		if !bytes.ContainsRune(got, '.') || bytes.ContainsAny(got, "eE") {
+			t.Fatalf("json.Marshal(Float(%v)) = %s, want digits with a decimal point", f, got)
+		}
+	})
 }

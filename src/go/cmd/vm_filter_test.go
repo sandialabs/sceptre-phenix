@@ -1,9 +1,15 @@
 package cmd
 
 import (
+	"maps"
+	"regexp"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/cobra"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm"
 )
@@ -308,6 +314,133 @@ func TestVMMatchesAnyLabel_GlobMatchesOneOfMultipleLabels(t *testing.T) {
 	if !matched {
 		t.Fatal("expected glob to match when at least one label matches")
 	}
+}
+
+// genVMFilterLabelArgs draws --label values whose pieces are short and whose
+// commas and blanks fall anywhere.
+func genVMFilterLabelArgs() *rapid.Generator[[]string] {
+	return rapid.SliceOfN(rapid.StringOfN(rapid.RuneFrom([]rune("ab, \t")), 0, 8, -1), 0, 4)
+}
+
+func TestNormalizeVMLabelsProperties(t *testing.T) {
+	t.Parallel()
+
+	dropBlanks := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if r == ',' || r == ' ' || r == '\t' {
+				return -1
+			}
+
+			return r
+		}, s)
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		in := genVMFilterLabelArgs().Draw(t, "in")
+		got := normalizeVMLabels(in)
+
+		for _, piece := range got {
+			if piece == "" || strings.Contains(piece, ",") || strings.TrimSpace(piece) != piece {
+				t.Fatalf("normalizeVMLabels(%q) = %q, has the piece %q", in, got, piece)
+			}
+		}
+
+		// no label text is lost: only commas and the blanks around pieces go
+		if want, kept := dropBlanks(strings.Join(in, "")), dropBlanks(strings.Join(got, "")); kept != want {
+			t.Fatalf("normalizeVMLabels(%q) = %q, keeps %q, want %q", in, got, kept, want)
+		}
+
+		joined := []string{strings.Join(in, ",")}
+		if diff := cmp.Diff(got, normalizeVMLabels(joined)); diff != "" {
+			t.Fatalf("normalizeVMLabels(%q) and normalizeVMLabels(%q) mismatch (-separate +joined):\n%s", in, joined, diff)
+		}
+
+		if again := normalizeVMLabels(got); !slices.Equal(again, got) {
+			t.Fatalf("normalizeVMLabels(%q) = %q, want %q", got, again, got)
+		}
+	})
+}
+
+// vmFilterGlobModel is a case-insensitive shell glob of *, ? and literals as a
+// regular expression, the model vmLabelMatchesLabel is checked against.
+func vmFilterGlobModel(pattern string) *regexp.Regexp {
+	var expr strings.Builder
+
+	for _, r := range pattern {
+		switch r {
+		case '*':
+			expr.WriteString(".*")
+		case '?':
+			expr.WriteString(".")
+		default:
+			expr.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+
+	return regexp.MustCompile("(?is)^" + expr.String() + "$")
+}
+
+func TestVMLabelMatchesLabelProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		label := rapid.StringOfN(rapid.RuneFrom([]rune("aAbB-.")), 0, 5, -1).Draw(t, "label")
+		pattern := rapid.StringOfN(rapid.RuneFrom([]rune("aAbB-.*?")), 0, 5, -1).Draw(t, "pattern")
+
+		got, err := vmLabelMatchesLabel(label, pattern)
+		if want := vmFilterGlobModel(pattern).MatchString(label); err != nil || got != want {
+			t.Fatalf("vmLabelMatchesLabel(%q, %q) = %t, %v; want %t, nil", label, pattern, got, err, want)
+		}
+	})
+}
+
+// genVMFilterVM draws a VM whose labels come from a small set.
+func genVMFilterVM() *rapid.Generator[mm.VM] {
+	return rapid.Custom(func(t *rapid.T) mm.VM {
+		keys := rapid.SliceOfDistinct(rapid.SampledFrom([]string{"a", "B", "ab", "web-1"}), rapid.ID).Draw(t, "labels")
+		tags := make(map[string]string, len(keys))
+
+		for _, key := range keys {
+			tags[key] = "true"
+		}
+
+		return makeVM(tags)
+	})
+}
+
+func TestVMMatchesAnyLabelProperties(t *testing.T) {
+	t.Parallel()
+
+	genLabels := rapid.SliceOfN(rapid.SampledFrom([]string{"a", "A", "b", "AB", "a*", "?", "web-?", "all", "ALL"}), 0, 3)
+
+	rapid.Check(t, func(t *rapid.T) {
+		vmInfo := genVMFilterVM().Draw(t, "vm")
+		first := genLabels.Draw(t, "first")
+		second := genLabels.Draw(t, "second")
+
+		matches := func(labels []string) bool {
+			matched, err := vmMatchesAnyLabel(vmInfo, labels)
+			if err != nil {
+				t.Fatalf("vmMatchesAnyLabel(%v, %q) error = %v", vmInfo.Tags, labels, err)
+			}
+
+			return matched
+		}
+
+		// --label filters are ORed: the filters of two flags match as either does
+		both := slices.Concat(first, second)
+		if got, want := matches(both), matches(first) || matches(second); got != want {
+			t.Fatalf("vmMatchesAnyLabel(%v, %q) = %t, want %t", vmInfo.Tags, both, got, want)
+		}
+
+		if len(first) == 1 && !strings.ContainsAny(first[0], "*?") {
+			want := strings.EqualFold(first[0], "all") ||
+				slices.ContainsFunc(slices.Collect(maps.Keys(vmInfo.Tags)), func(k string) bool { return strings.EqualFold(k, first[0]) })
+			if got := matches(first); got != want {
+				t.Fatalf("vmMatchesAnyLabel(%v, %q) = %t, want %t", vmInfo.Tags, first, got, want)
+			}
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

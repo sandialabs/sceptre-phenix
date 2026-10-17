@@ -11,6 +11,7 @@ import (
 	"github.com/activeshadow/structs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/store"
 	"phenix/store/storetest"
@@ -502,4 +503,160 @@ func TestWriteRunFinishedRecordsTheRunForTheSummary(t *testing.T) { //nolint:par
 			}
 		})
 	}
+}
+
+// summaryStoredAs returns v as it reads back from the store, which keeps JSON.
+func summaryStoredAs(t *rapid.T, v any) any {
+	body, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("json.Marshal(%v) error = %v", v, err)
+	}
+
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal(%s) error = %v", body, err)
+	}
+
+	return decoded
+}
+
+// genSummaryRun draws the summary of a finished run.
+func genSummaryRun() *rapid.Generator[RunSummary] {
+	return rapid.Custom(func(t *rapid.T) RunSummary {
+		return RunSummary{
+			Time:         time.Unix(rapid.Int64Range(0, 1<<32).Draw(t, "time"), 0).UTC().Format(time.RFC3339),
+			Duration:     float64(rapid.IntRange(0, 1e6).Draw(t, "ms")) / 1000,
+			Total:        rapid.IntRange(0, 1000).Draw(t, "total"),
+			Failing:      rapid.IntRange(0, 1000).Draw(t, "failing"),
+			HostsFailing: rapid.IntRange(0, 100).Draw(t, "hosts failing"),
+			HostsDown:    rapid.IntRange(0, 100).Draw(t, "hosts down"),
+		}
+	})
+}
+
+// The summary reads back the newest MaxRunHistory runs appended, oldest first,
+// as they were recorded.
+func TestRunHistoryProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		runs := rapid.SliceOfN(genSummaryRun(), 0, MaxRunHistory+5).Draw(t, "runs")
+
+		var history any
+
+		for _, run := range runs {
+			appended, err := appendRunHistory(history, run)
+			if err != nil {
+				t.Fatalf("appendRunHistory(%v, %+v) error = %v", history, run, err)
+			}
+
+			history = summaryStoredAs(t, appended)
+		}
+
+		sum, err := Summarize(summaryExperiment(map[string]any{"history": history}), nil, 0)
+		if err != nil {
+			t.Fatalf("Summarize(exp with %d runs) error = %v", len(runs), err)
+		}
+
+		want := runs[max(0, len(runs)-MaxRunHistory):]
+		if diff := cmp.Diff(want, sum.History, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("Summarize(exp with %d runs).History mismatch (-want +got):\n%s", len(runs), diff)
+		}
+	})
+}
+
+// genSummaryHosts draws the latest results of distinct hosts, with a few
+// check times so failing checks share them.
+func genSummaryHosts() *rapid.Generator[[]HostState] {
+	state := rapid.Custom(func(t *rapid.T) State {
+		st := State{Timestamp: rapid.SampledFrom([]string{
+			"2026-09-28T14:00:00Z", "2026-09-28T14:01:00Z", "2026-09-28T14:02:00Z",
+		}).Draw(t, "time")}
+
+		if rapid.Bool().Draw(t, "fails") {
+			st.Error = "failed"
+		} else {
+			st.Success = "ok"
+		}
+
+		return st
+	})
+	states := rapid.SliceOfN(state, 0, 2)
+
+	host := rapid.Custom(func(t *rapid.T) HostState {
+		return HostState{
+			Hostname:     rapid.SampledFrom([]string{"hmi", "plc", "historian", "flushed", "spare"}).Draw(t, "host"),
+			Networking:   states.Draw(t, "networking"),
+			Reachability: states.Draw(t, "reachability"),
+			Files:        states.Draw(t, "files"),
+			Services:     states.Draw(t, "services"),
+			Processes:    states.Draw(t, "processes"),
+			Listeners:    states.Draw(t, "listeners"),
+			CustomTests:  states.Draw(t, "custom tests"),
+		}
+	})
+
+	return rapid.SliceOfNDistinct(host, 0, 5, func(h HostState) string { return h.Hostname })
+}
+
+// Summarize counts the checks of a run as the run's own summary does, lists
+// the failing ones newest first, and caps the lists it gives without changing
+// what they begin with.
+func TestSummarizeProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		hosts := genSummaryHosts().Draw(t, "hosts")
+		vmStates := rapid.MapOf(
+			rapid.SampledFrom([]string{"hmi", "plc", "historian", "flushed", "late"}),
+			rapid.SampledFrom([]string{"RUNNING", "PAUSED", "BUILDING"}),
+		).Draw(t, "vm states")
+		maxFailing := rapid.IntRange(0, 6).Draw(t, "max failing")
+
+		exp := summaryExperiment(map[string]any{"hosts": summaryStoredAs(t, hosts)})
+
+		capped, err := Summarize(exp, vmStates, maxFailing)
+		if err != nil {
+			t.Fatalf("Summarize(exp, %v, %d) error = %v", vmStates, maxFailing, err)
+		}
+
+		all, err := Summarize(exp, vmStates, math.MaxInt)
+		if err != nil {
+			t.Fatalf("Summarize(exp, %v, all) error = %v", vmStates, err)
+		}
+
+		byName := make(map[string]HostState, len(hosts))
+		for _, h := range hosts {
+			byName[h.Hostname] = h
+		}
+
+		run := summarizeRun(byName, time.Now(), 0)
+		if got := (RunSummary{Total: all.Checks.Total, Failing: all.Checks.Failing, HostsFailing: all.HostsWithErrors}); got !=
+			(RunSummary{Total: run.Total, Failing: run.Failing, HostsFailing: run.HostsFailing}) {
+			t.Fatalf("Summarize(exp) checks = %+v, want those of summarizeRun(%v) = %+v", got, hosts, run)
+		}
+
+		if all.Checks.Passing+all.Checks.Failing != all.Checks.Total || len(all.FailingChecks) != all.Checks.Failing {
+			t.Fatalf("Summarize(exp) checks = %+v listing %d failing, want them to add up", all.Checks, len(all.FailingChecks))
+		}
+
+		for i := 1; i < len(all.FailingChecks); i++ {
+			if a, b := all.FailingChecks[i-1], all.FailingChecks[i]; a.Time < b.Time || (a.Time == b.Time && a.Host > b.Host) {
+				t.Fatalf("Summarize(exp).FailingChecks = %+v, %+v before %+v", all.FailingChecks, a, b)
+			}
+		}
+
+		if len(capped.FailingChecks) != min(maxFailing, len(all.FailingChecks)) ||
+			len(capped.DownVMs) != min(maxFailing, len(all.DownVMs)) {
+			t.Fatalf("Summarize(exp, %v, %d) lists %d failing checks and %d down VMs, want at most %d of %d and %d",
+				vmStates, maxFailing, len(capped.FailingChecks), len(capped.DownVMs), maxFailing, len(all.FailingChecks), len(all.DownVMs))
+		}
+
+		capped.FailingChecks = append(capped.FailingChecks, all.FailingChecks[len(capped.FailingChecks):]...)
+		capped.DownVMs = append(capped.DownVMs, all.DownVMs[len(capped.DownVMs):]...)
+
+		if diff := cmp.Diff(all, capped); diff != "" {
+			t.Fatalf("Summarize(exp, %v, %d) uncapped mismatch (-all +capped):\n%s", vmStates, maxFailing, diff)
+		}
+	})
 }

@@ -2,15 +2,18 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 )
 
 var bigJSON = `{"vms":[` + strings.Repeat(`{"name":"host","state":"RUNNING"},`, 200) + `{}]}` //nolint:gochecknoglobals // test fixture
@@ -370,4 +373,115 @@ func TestCompressWriterReadFromPassesThrough(t *testing.T) {
 			}
 		})
 	}
+}
+
+// genCompressBody draws a response body of HTML, JSON, text and binary pieces, often past
+// the sniffed prefix and minCompressSize.
+func genCompressBody() *rapid.Generator[string] {
+	pieces := rapid.SampledFrom([]string{
+		"\n", "<!DOCTYPE html>", "<p>x</p>", `{"a":1}`, "\x00\x01\x02", "plain text ", strings.Repeat("y", sniffLen+1),
+	})
+
+	return rapid.Map(rapid.SliceOfN(pieces, 0, 6), func(p []string) string { return strings.Join(p, "") })
+}
+
+// compressServe serves body through CompressResponses to a gzip client, written in the
+// given chunks, each by Write or, where viaReadFrom says so, by ReadFrom.
+func compressServe(contentType string, status int, setLength bool, body string, cuts []int, viaReadFrom []bool) *http.Response {
+	h := CompressResponses(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if contentType != "" {
+			w.Header().Set("Content-Type", contentType)
+		}
+
+		if setLength {
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		}
+
+		if status != 0 {
+			w.WriteHeader(status)
+		}
+
+		start := 0
+		for i, end := range append(cuts, len(body)) {
+			if i < len(viaReadFrom) && viaReadFrom[i] {
+				_, _ = w.(io.ReaderFrom).ReadFrom(strings.NewReader(body[start:end]))
+			} else {
+				_, _ = io.WriteString(w, body[start:end])
+			}
+
+			start = end
+		}
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/vms", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	return rec.Result()
+}
+
+// compressDecoded reads a response's body, gunzipped if it is gzipped.
+func compressDecoded(t *rapid.T, resp *http.Response) string {
+	defer resp.Body.Close()
+
+	r := resp.Body
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		zr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			t.Fatalf("gzip.NewReader(response body) error = %v", err)
+		}
+
+		r = zr
+	}
+
+	body, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading the response body: %v", err)
+	}
+
+	return string(body)
+}
+
+// However a handler splits its body across writes, the client gets the same status, type,
+// encoding and bytes as from one write; an unset type is sniffed from the whole body's start.
+func TestCompressResponsesChunkingProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		contentType := rapid.SampledFrom([]string{"", "", mimeJSON, "text/plain; charset=utf-8", "application/octet-stream"}).
+			Draw(t, "contentType")
+		status := rapid.SampledFrom([]int{0, http.StatusOK, http.StatusCreated, http.StatusNotFound}).Draw(t, "status")
+		setLength := rapid.Bool().Draw(t, "setLength")
+		body := genCompressBody().Draw(t, "body")
+		cuts := rapid.SliceOfDistinct(rapid.IntRange(0, len(body)), func(i int) int { return i }).Draw(t, "cuts")
+		slices.Sort(cuts)
+		viaReadFrom := rapid.SliceOfN(rapid.Bool(), len(cuts)+1, len(cuts)+1).Draw(t, "viaReadFrom")
+
+		whole := compressServe(contentType, status, setLength, body, nil, nil)
+		split := compressServe(contentType, status, setLength, body, cuts, viaReadFrom)
+
+		for _, key := range []string{"Content-Type", "Content-Encoding", "Content-Length"} {
+			if got, want := split.Header.Get(key), whole.Header.Get(key); got != want {
+				t.Fatalf("body split at %v: %s = %q, want %q as from one write", cuts, key, got, want)
+			}
+		}
+
+		if split.StatusCode != whole.StatusCode {
+			t.Fatalf("body split at %v: status = %d, want %d as from one write", cuts, split.StatusCode, whole.StatusCode)
+		}
+
+		if contentType == "" && body != "" {
+			if got, want := split.Header.Get("Content-Type"), http.DetectContentType([]byte(body)); got != want {
+				t.Fatalf("body split at %v: sniffed Content-Type = %q, want %q", cuts, got, want)
+			}
+		}
+
+		for name, resp := range map[string]*http.Response{"one write": whole, "split": split} {
+			if got := compressDecoded(t, resp); got != body {
+				t.Fatalf("body %s at %v: decoded body = %q, want %q", name, cuts, got, body)
+			}
+		}
+	})
 }

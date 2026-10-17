@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/util/freshness"
 )
@@ -86,4 +87,68 @@ func TestObservationOlder(t *testing.T) {
 	if diff := cmp.Diff(want, a.Older(busy), cmpopts.EquateErrors()); diff != "" {
 		t.Errorf("a.Older(busy) mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// genSeqObservation draws observations with few distinct times and errors, so ties,
+// zero times and repeated errors are common.
+func genSeqObservation(base time.Time, errs []error) *rapid.Generator[freshness.Observation] {
+	return rapid.Custom(func(t *rapid.T) freshness.Observation {
+		at := time.Time{}
+		if offset := rapid.IntRange(-1, 3).Draw(t, "offset"); offset >= 0 {
+			at = base.Add(time.Duration(offset) * time.Second)
+		}
+
+		return freshness.Observation{
+			At:    at,
+			Stale: rapid.Bool().Draw(t, "stale"),
+			Known: rapid.Bool().Draw(t, "known"),
+			Err:   rapid.SampledFrom(errs).Draw(t, "err"),
+		}
+	})
+}
+
+// Combining observations in any grouping gives the oldest non-zero time, stale if any part
+// is, known only if every part is, and the first error; Unobserved changes nothing.
+func TestObservationOlderProperties(t *testing.T) {
+	t.Parallel()
+
+	var (
+		base = time.Now()
+		errs = []error{nil, errors.New("busy"), errors.New("down")}
+	)
+
+	rapid.Check(t, func(t *rapid.T) {
+		parts := rapid.SliceOfN(genSeqObservation(base, errs), 1, 6).Draw(t, "parts")
+
+		got := freshness.Unobserved()
+		want := freshness.Observation{Known: true}
+
+		for _, part := range parts {
+			got = got.Older(part)
+
+			if !part.At.IsZero() && (want.At.IsZero() || part.At.Before(want.At)) {
+				want.At = part.At
+			}
+
+			want.Stale = want.Stale || part.Stale
+			want.Known = want.Known && part.Known
+
+			if want.Err == nil {
+				want.Err = part.Err
+			}
+		}
+
+		if diff := cmp.Diff(want, got, cmpopts.EquateErrors()); diff != "" {
+			t.Fatalf("Older over %+v mismatch (-want +got):\n%s", parts, diff)
+		}
+
+		a, b, c := parts[0], parts[len(parts)/2], parts[len(parts)-1]
+		if diff := cmp.Diff(a.Older(b).Older(c), a.Older(b.Older(c)), cmpopts.EquateErrors()); diff != "" {
+			t.Fatalf("(a.Older(b)).Older(c) != a.Older(b.Older(c)) for %+v, %+v, %+v (-left +right):\n%s", a, b, c, diff)
+		}
+
+		if diff := cmp.Diff(a, a.Older(freshness.Unobserved()), cmpopts.EquateErrors()); diff != "" {
+			t.Fatalf("a.Older(Unobserved()) mismatch (-want +got):\n%s", diff)
+		}
+	})
 }

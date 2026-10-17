@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/api/disk"
 	"phenix/api/disk/disktest"
@@ -307,6 +308,135 @@ func TestGetDisksHidesWhatTheRoleCannotSee(t *testing.T) {
 	}
 }
 
+// genDiskChains draws disks inside and outside the files directory, each backed by the
+// whole chain of an earlier one (and maybe a missing image), in any order.
+func genDiskChains(experiments []string) *rapid.Generator[[]disk.Details] {
+	return rapid.Custom(func(t *rapid.T) []disk.Details {
+		n := rapid.IntRange(0, 7).Draw(t, "disks")
+		disks := make([]disk.Details, 0, n)
+
+		for i := range n {
+			d := disk.Details{Name: "d" + strconv.Itoa(i) + ".qc2", OutsideFilesDir: rapid.Bool().Draw(t, "outside")}
+
+			d.FullPath = "/files/" + d.Name
+			if d.OutsideFilesDir {
+				d.FullPath = "/outside/" + d.Name
+			}
+
+			if parent := rapid.IntRange(-1, i-1).Draw(t, "parent"); parent >= 0 {
+				d.BackingImages = append([]string{disks[parent].FullPath}, disks[parent].BackingImages...)
+			} else if rapid.Bool().Draw(t, "missingBase") {
+				d.BackingImages = []string{"/outside/missing.qc2"}
+			}
+
+			uses := rapid.SliceOfDistinct(rapid.SampledFrom(experiments), func(s string) string { return s }).Draw(t, "uses")
+			for _, name := range uses {
+				d.Experiments = append(d.Experiments, disk.ExperimentUse{Name: name, Running: rapid.Bool().Draw(t, "running")})
+			}
+
+			disks = append(disks, d)
+		}
+
+		return rapid.Permutation(disks).Draw(t, "order")
+	})
+}
+
+// visibleDisks shows every disk inside the files directory or used by an experiment the
+// role may get, plus exactly the images those are backed by, each once and cut to the
+// experiments the role may list; the list it was given is left as it was.
+func TestVisibleDisksProperties(t *testing.T) {
+	t.Parallel()
+
+	experiments := []string{"exp-a", "exp-b", "exp-c"}
+	subset := rapid.SliceOfDistinct(rapid.SampledFrom(experiments), func(s string) string { return s })
+
+	rapid.Check(t, func(t *rapid.T) {
+		disks := genDiskChains(experiments).Draw(t, "disks")
+		gettable, listable := subset.Draw(t, "get"), subset.Draw(t, "list")
+		role := rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{
+			{Resources: []string{"experiments"}, ResourceNames: gettable, Verbs: []string{"get"}},
+			{Resources: []string{"experiments"}, ResourceNames: listable, Verbs: []string{"list"}},
+		}}}
+
+		given := make([]disk.Details, len(disks))
+		for i, d := range disks {
+			given[i] = d
+			given[i].Experiments = slices.Clone(d.Experiments)
+		}
+
+		visible := visibleDisks(role, disks)
+
+		if diff := cmp.Diff(given, disks, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("visibleDisks changed the disks it was given (-before +after):\n%s", diff)
+		}
+
+		byPath := make(map[string]disk.Details, len(disks))
+		for _, d := range disks {
+			byPath[d.FullPath] = d
+		}
+
+		shown := make(map[string]bool, len(visible))
+		for _, d := range visible {
+			if _, ok := byPath[d.FullPath]; !ok || shown[d.FullPath] {
+				t.Fatalf("visibleDisks(get %q) = %q, want each of the given disks at most once", gettable, diskChainPaths(visible))
+			}
+
+			shown[d.FullPath] = true
+		}
+
+		base := func(d disk.Details) bool {
+			return !d.OutsideFilesDir ||
+				slices.ContainsFunc(d.Experiments, func(u disk.ExperimentUse) bool { return slices.Contains(gettable, u.Name) })
+		}
+		backsBase := make(map[string]bool)
+
+		for _, d := range disks {
+			if !base(d) {
+				continue
+			}
+
+			if !shown[d.FullPath] {
+				t.Fatalf("visibleDisks(get %q) = %q, want %s, inside or used by a gettable experiment",
+					gettable, diskChainPaths(visible), d.FullPath)
+			}
+
+			for _, backing := range d.BackingImages {
+				backsBase[backing] = true
+			}
+		}
+
+		for _, d := range visible {
+			if !base(byPath[d.FullPath]) && !backsBase[d.FullPath] {
+				t.Fatalf("visibleDisks(get %q) = %q, want %s left out: nothing shown is backed by it",
+					gettable, diskChainPaths(visible), d.FullPath)
+			}
+
+			for _, backing := range d.BackingImages {
+				if _, ok := byPath[backing]; ok && !shown[backing] {
+					t.Fatalf("visibleDisks(get %q) = %q, want %s, which backs %s", gettable, diskChainPaths(visible), backing, d.FullPath)
+				}
+			}
+
+			want := slices.DeleteFunc(slices.Clone(byPath[d.FullPath].Experiments), func(u disk.ExperimentUse) bool {
+				return !slices.Contains(listable, u.Name)
+			})
+			if diff := cmp.Diff(want, d.Experiments, cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("visibleDisks(list %q) %s experiments mismatch (-want +got):\n%s", listable, d.FullPath, diff)
+			}
+		}
+	})
+}
+
+// diskChainPaths returns each disk's full path.
+func diskChainPaths(disks []disk.Details) []string {
+	paths := make([]string, 0, len(disks))
+	for _, d := range disks {
+		paths = append(paths, d.FullPath)
+	}
+
+	return paths
+}
+
 // The disk watch moves to minimega's files directory once minimega gives one
 // other than <PhenixBase>/images, reporting that the list changed.
 func TestWatchFilesDirectoryFollowsMinimega(t *testing.T) {
@@ -357,6 +487,28 @@ func tree(t *testing.T, dir string) map[string]string {
 	}
 
 	return files
+}
+
+// A new image's name becomes an absolute qcow2 path, kept as given once it is one, so
+// normalizing it again changes nothing.
+func TestNormalizeDstDiskProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		src := rapid.SampledFrom([]string{"/files/a.qc2", "/files/win/b.qcow2", "/outside/c.img"}).Draw(t, "src")
+		dst := rapid.SampledFrom([]string{"", "/abs/", "sub/", "../", "./"}).Draw(t, "folder") +
+			rapid.SampledFrom([]string{"new", "new.qc2", "new.qcow2", "new.img", "new.qcow2.bak"}).Draw(t, "name")
+
+		got := normalizeDstDisk(src, dst)
+
+		if !filepath.IsAbs(got) || (!strings.HasSuffix(got, ".qcow2") && !strings.HasSuffix(got, ".qc2")) {
+			t.Fatalf("normalizeDstDisk(%q, %q) = %q, want an absolute .qcow2 or .qc2 path", src, dst, got)
+		}
+
+		if again := normalizeDstDisk(src, got); again != got {
+			t.Fatalf("normalizeDstDisk(%q, %q) = %q, want it unchanged", src, got, again)
+		}
+	})
 }
 
 // The disk actions refuse, before touching anything, paths outside the files

@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/api/vm"
 	"phenix/util/mm"
@@ -247,6 +251,74 @@ func TestResolveInterface(t *testing.T) {
 	if got, err := vm.ResolveInterface(nil, "0"); err == nil {
 		t.Errorf("ResolveInterface(nil, %q) = %d, nil; want an error", "0", got)
 	}
+}
+
+// genCaptureRecase returns s with each letter's case flipped or not, as drawn.
+func genCaptureRecase(t *rapid.T, s, label string) string {
+	flips := rapid.SliceOfN(rapid.Bool(), len(s), len(s)).Draw(t, label)
+
+	b := []byte(s)
+	for i, flip := range flips {
+		switch c := b[i]; {
+		case flip && c >= 'a' && c <= 'z':
+			b[i] = c - 'a' + 'A'
+		case flip && c >= 'A' && c <= 'Z':
+			b[i] = c - 'A' + 'a'
+		}
+	}
+
+	return string(b)
+}
+
+// genCaptureIndex spells the index i as [strconv.Atoi] reads it: plain, zero padded or with a plus sign.
+func genCaptureIndex(t *rapid.T, i int, label string) string {
+	digits := strconv.Itoa(i)
+
+	return rapid.SampledFrom([]string{digits, "0" + digits, "+" + digits}).Draw(t, label)
+}
+
+func TestResolveInterfaceProperties(t *testing.T) {
+	t.Parallel()
+
+	// names that differ only in case resolve to the first of them
+	names := []string{"IF0", "if0", "IF1", "eth0", "ETH0", "mgmt"}
+
+	rapid.Check(t, func(t *rapid.T) {
+		ifaceNames := rapid.SliceOfN(rapid.SampledFrom(names), 0, 6).Draw(t, "ifaceNames")
+		v := &mm.VM{Name: "test-vm", Networks: make([]string, len(ifaceNames)), IfaceNames: ifaceNames}
+
+		for i, name := range ifaceNames {
+			id := genCaptureIndex(t, i, "index")
+			if got, err := vm.ResolveInterface(v, id); err != nil || got != i {
+				t.Fatalf("ResolveInterface(%q, %q) = %d, %v; want %d, nil", ifaceNames, id, got, err, i)
+			}
+
+			id = genCaptureRecase(t, name, "name")
+			first := slices.IndexFunc(ifaceNames, func(n string) bool { return strings.EqualFold(n, name) })
+
+			if got, err := vm.ResolveInterface(v, id); err != nil || got != first {
+				t.Fatalf("ResolveInterface(%q, %q) = %d, %v; want %d, nil", ifaceNames, id, got, err, first)
+			}
+		}
+
+		past := genCaptureIndex(t, rapid.IntRange(len(ifaceNames), len(ifaceNames)+2).Draw(t, "past"), "pastIndex")
+		negative := "-" + strconv.Itoa(rapid.IntRange(1, 3).Draw(t, "negative"))
+
+		for _, id := range []string{past, negative} {
+			if got, err := vm.ResolveInterface(v, id); err == nil {
+				t.Fatalf("ResolveInterface(%q, %q) = %d, nil; want an error", ifaceNames, id, got)
+			}
+		}
+
+		unknown := genCaptureRecase(t, rapid.SampledFrom(names).Draw(t, "unknown"), "unknownCase")
+		if slices.ContainsFunc(ifaceNames, func(n string) bool { return strings.EqualFold(n, unknown) }) {
+			return
+		}
+
+		if got, err := vm.ResolveInterface(v, unknown); err == nil {
+			t.Fatalf("ResolveInterface(%q, %q) = %d, nil; want an error", ifaceNames, unknown, got)
+		}
+	})
 }
 
 // useSubnetVMs makes VMs a-d, running unless stopped: a has two 10.0.0.0/24 addresses and one outside, c one

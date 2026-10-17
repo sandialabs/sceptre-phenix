@@ -1,14 +1,20 @@
 package web
 
 import (
+	"html"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/net/websocket"
+	"pgregory.net/rapid"
+
+	"phenix/web/util"
 )
 
 // getVNCPage stores test-experiment with test-vm, whose vncBanner is banner (none if nil),
@@ -262,5 +268,136 @@ func TestVNCWebSocketAttachIsAudited(t *testing.T) {
 
 	wantAudit(t, events(), "vnc-attach", "success", map[string]any{
 		"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.vm.name": "test-vm",
+	})
+}
+
+// vncBannerCSS finds a banner rule's color in the VNC page's styles.
+var vncBannerCSS = regexp.MustCompile(`(?s)(div|h3)\.banner-(top|bottom) \{[^}]*?\s(background-color|color): ([^;]*);`)
+
+// vncBannerHTML finds a banner's lines in the VNC page, newlines included.
+var vncBannerHTML = regexp.MustCompile(`(?s)<h3 class="banner-(top|bottom)">(.*?)</h3>`)
+
+// genVNCBannerText draws text heavy in markup and newlines; html/template
+// writes NUL as U+FFFD, so there is none.
+func genVNCBannerText() *rapid.Generator[string] {
+	return rapid.StringOf(rapid.OneOf(
+		rapid.SampledFrom([]rune("<>&\"'+=/;:{}()\n\r\t abcAB")),
+		rapid.Rune().Filter(func(r rune) bool { return r != 0 }),
+	))
+}
+
+// vncBannerColor is a banner color in an annotation and the color the page
+// should show for it.
+type vncBannerColor struct {
+	given, shown string
+}
+
+// genVNCBannerColor draws CSS color names and hex colors, kept as they are,
+// and unset, malformed or injected colors, which show fallback.
+func genVNCBannerColor(fallback string) *rapid.Generator[vncBannerColor] {
+	return rapid.Custom(func(t *rapid.T) vncBannerColor {
+		switch rapid.IntRange(0, 2).Draw(t, "kind") {
+		case 0:
+			c := rapid.OneOf(
+				rapid.SampledFrom([]string{"red", "Navy", "rebeccapurple", "transparent", "currentColor"}),
+				rapid.StringMatching(`#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})`),
+			).Draw(t, "css")
+
+			return vncBannerColor{given: c, shown: c}
+		case 1:
+			return vncBannerColor{given: "", shown: fallback}
+		default:
+			c := rapid.OneOf(
+				rapid.StringMatching(`[a-z#0-9]{0,4}[;:(){} "'/\\<>,.!@-][a-z0-9 ;(){}]{0,8}`),
+				rapid.StringMatching(`#([0-9a-f]{1,2}|[0-9a-f]{5}|[0-9a-f]{7}|[0-9a-f]{9})`),
+				rapid.StringMatching(`[a-z]{33,36}`),
+			).Draw(t, "bad")
+
+			return vncBannerColor{given: c, shown: fallback}
+		}
+	})
+}
+
+// The VNC page shows any banner text as text: undoing the page's escaping and
+// line breaks gives the text back, and a banner's colors are CSS colors or
+// the defaults.
+func TestVNCBannerIsTextProperties(t *testing.T) {
+	assets, err := GetAssets()
+	if err != nil {
+		t.Fatalf("GetAssets() error = %v", err)
+	}
+
+	page := util.NewBinaryFileSystem(assets)
+
+	rapid.Check(t, func(t *rapid.T) {
+		var (
+			annotation any
+			want       = map[string]string{}
+			colors     = map[string]string{
+				"div top background-color": defaultBannerBackground, "div bottom background-color": defaultBannerBackground,
+				"h3 top color": defaultBannerText, "h3 bottom color": defaultBannerText,
+			}
+		)
+
+		if rapid.Bool().Draw(t, "map form") {
+			banners := map[string]any{}
+
+			for _, side := range []string{"top", "bottom"} {
+				lines := rapid.SliceOfN(genVNCBannerText(), 0, 3).Draw(t, side+" lines")
+				background := genVNCBannerColor(defaultBannerBackground).Draw(t, side+" background")
+				text := genVNCBannerColor(defaultBannerText).Draw(t, side+" text color")
+
+				banner := make([]any, 0, len(lines))
+				for _, line := range lines {
+					banner = append(banner, line)
+				}
+
+				banners[side+"Banner"] = map[string]any{
+					"banner": banner, "backgroundColor": background.given, "textColor": text.given,
+				}
+
+				if len(lines) > 0 {
+					want[side] = strings.Join(lines, "\n")
+				}
+
+				colors["div "+side+" background-color"] = background.shown
+				colors["h3 "+side+" color"] = text.shown
+			}
+
+			annotation = banners
+		} else {
+			text := genVNCBannerText().Draw(t, "text")
+			annotation, want["top"], want["bottom"] = text, text, text
+		}
+
+		config := newVNCConfig("", "test-experiment", "test-vm", "nonce")
+		config.setBanners("test-vm", annotation)
+
+		rec := httptest.NewRecorder()
+		page.ServeTemplate(rec, "vnc.html", config)
+		body := rec.Body.String()
+
+		got := map[string]string{}
+
+		for _, m := range vncBannerHTML.FindAllStringSubmatch(body, -1) {
+			if markup := strings.ReplaceAll(m[2], "<br>", ""); strings.ContainsAny(markup, "<>") {
+				t.Fatalf("VNC page %s banner for vncBanner %q = %q, want no markup but <br>", m[1], annotation, m[2])
+			}
+
+			got[m[1]] = html.UnescapeString(strings.ReplaceAll(m[2], "<br>", "\n"))
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatalf("VNC page banners for vncBanner %q mismatch (-want +got):\n%s", annotation, diff)
+		}
+
+		gotColors := map[string]string{}
+		for _, m := range vncBannerCSS.FindAllStringSubmatch(body, -1) {
+			gotColors[m[1]+" "+m[2]+" "+m[3]] = m[4]
+		}
+
+		if diff := cmp.Diff(colors, gotColors); diff != "" {
+			t.Fatalf("VNC page banner colors for vncBanner %q mismatch (-want +got):\n%s", annotation, diff)
+		}
 	})
 }

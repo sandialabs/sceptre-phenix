@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"pgregory.net/rapid"
+
 	"phenix/util/polltest"
 )
 
@@ -255,4 +257,67 @@ func (c *failingConn) Close() error {
 	close(c.closed)
 
 	return nil
+}
+
+// A viewer queues copies of what it is offered, up to viewerQueue chunks and
+// until it finishes, and serves exactly those, in order, before it ends.
+func TestViewerQueuesWhatItAccepts(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		var (
+			conn     = newFastConn()
+			v        = newViewer(conn)
+			queued   int
+			finished bool
+			want     bytes.Buffer
+		)
+
+		offer := func(t *rapid.T, b []byte) {
+			sent := bytes.Clone(b)
+
+			got := v.offer(b)
+			if got != (!finished && queued < viewerQueue) {
+				t.Fatalf("offer(%q) with %d queued (finished %t) = %t", b, queued, finished, got)
+			}
+
+			if got {
+				queued++
+
+				want.Write(sent)
+			}
+
+			// what was queued is a copy
+			for i := range b {
+				b[i] = 'x'
+			}
+		}
+
+		t.Repeat(map[string]func(*rapid.T){
+			"offer": func(t *rapid.T) {
+				offer(t, rapid.SliceOfN(rapid.ByteRange('a', 'e'), 0, 4).Draw(t, "chunk"))
+			},
+			"fill": func(t *rapid.T) {
+				for range viewerQueue - queued + rapid.IntRange(0, 1).Draw(t, "past full") {
+					offer(t, []byte("f"))
+				}
+			},
+			"finish": func(*rapid.T) {
+				finished = true
+
+				v.finish()
+			},
+		})
+
+		v.finish()
+		v.serve()
+
+		if got := conn.String(); got != want.String() {
+			t.Fatalf("viewer served %q, want %q", got, want.String())
+		}
+
+		if !v.isGone() {
+			t.Fatal("viewer.serve() returned without the viewer gone")
+		}
+	})
 }

@@ -2,12 +2,14 @@ package health
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/util/polltest"
 )
@@ -85,6 +87,43 @@ func TestWorst(t *testing.T) {
 			t.Errorf("Worst(%s, %s) = %s, want %s", test.a, test.b, got, test.want)
 		}
 	}
+}
+
+// Worst is a join on pass < warn < fail, with any other status counting as
+// fail: commutative, associative and idempotent, with pass as its identity.
+func TestWorstIsAJoin(t *testing.T) {
+	t.Parallel()
+
+	known := []Status{Pass, Warn, Fail}
+	status := rapid.SampledFrom([]Status{Pass, Warn, Fail, "", "unknown", "PASS"})
+
+	rapid.Check(t, func(t *rapid.T) {
+		a, b, c := status.Draw(t, "a"), status.Draw(t, "b"), status.Draw(t, "c")
+		got := Worst(a, b)
+
+		// a status as Worst counts it
+		counted := func(s Status) Status {
+			if slices.Contains(known, s) {
+				return s
+			}
+
+			return Fail
+		}
+
+		switch {
+		case got != counted(a) && got != counted(b):
+			t.Fatalf("Worst(%q, %q) = %q, want one of them as counted", a, b, got)
+		case got != Worst(b, a):
+			t.Fatalf("Worst(%q, %q) = %q, but Worst(%q, %q) = %q", a, b, got, b, a, Worst(b, a))
+		case Worst(got, c) != Worst(a, Worst(b, c)):
+			t.Fatalf("Worst(Worst(%q, %q), %q) = %q, want Worst(%q, Worst(%q, %q)) = %q",
+				a, b, c, Worst(got, c), a, b, c, Worst(a, Worst(b, c)))
+		case Worst(a, a) != counted(a) || Worst(Pass, a) != counted(a):
+			t.Fatalf("Worst(%q, %q) = %q and Worst(pass, %q) = %q, want %q", a, a, Worst(a, a), a, Worst(Pass, a), counted(a))
+		case Worst(got, a) != got || Worst(got, b) != got:
+			t.Fatalf("Worst(%q, %q) = %q is better than one of them", a, b, got)
+		}
+	})
 }
 
 // A run is reused until its TTL passes.

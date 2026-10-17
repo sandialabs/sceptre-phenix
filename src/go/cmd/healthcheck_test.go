@@ -4,16 +4,20 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
+	"pgregory.net/rapid"
 )
 
 func TestHealthURL(t *testing.T) {
@@ -59,6 +63,80 @@ func TestIsLoopback(t *testing.T) {
 			t.Errorf("isLoopback(%q) = %v, want %v", target, got, want)
 		}
 	}
+}
+
+// healthcheckHost is a listen host and whether it names this machine.
+type healthcheckHost struct {
+	host     string
+	loopback bool
+}
+
+// genHealthcheckHost draws listen hosts: IPv4 addresses, DNS names and IPv6 edge cases.
+func genHealthcheckHost() *rapid.Generator[healthcheckHost] {
+	ipv4 := rapid.Custom(func(t *rapid.T) healthcheckHost {
+		first := rapid.SampledFrom([]int{127, 10, 0, 128, 126, 255}).Draw(t, "first")
+		rest := rapid.SliceOfN(rapid.IntRange(0, 255), 3, 3).Draw(t, "rest")
+		ip := fmt.Sprintf("%d.%d.%d.%d", first, rest[0], rest[1], rest[2])
+
+		// 0.0.0.0 alone is every address, which the check reaches on loopback
+		return healthcheckHost{host: ip, loopback: first == 127 || ip == "0.0.0.0"}
+	})
+	name := rapid.Map(rapid.StringMatching(`[a-z][a-z0-9-]{0,8}(\.[a-z]{2,4}){0,2}`), func(host string) healthcheckHost {
+		return healthcheckHost{host: host, loopback: host == "localhost"}
+	})
+	fixed := rapid.SampledFrom([]healthcheckHost{
+		{"", true}, {"0.0.0.0", true}, {"::", true}, {"::1", true}, {"localhost", true}, {"::ffff:127.0.0.2", true},
+		{"fe80::1", false}, {"2001:db8::7", false}, {"::2", false}, {"localhost.example.com", false},
+	})
+
+	return rapid.OneOf(ipv4, name, fixed)
+}
+
+func TestHealthURLProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		host := genHealthcheckHost().Draw(t, "host")
+		port := strconv.Itoa(rapid.IntRange(1, 65535).Draw(t, "port"))
+		useTLS, ready := rapid.Bool().Draw(t, "tls"), rapid.Bool().Draw(t, "ready")
+		endpoint := net.JoinHostPort(host.host, port)
+
+		got, err := healthURL(endpoint, useTLS, ready)
+		if err != nil {
+			t.Fatalf("healthURL(%q, %t, %t) error = %v", endpoint, useTLS, ready, err)
+		}
+
+		u, err := url.Parse(got)
+		if err != nil {
+			t.Fatalf("healthURL(%q, %t, %t) = %q, which does not parse: %v", endpoint, useTLS, ready, got, err)
+		}
+
+		want := url.URL{Scheme: "http", Host: u.Host, Path: "/healthz"}
+		if useTLS {
+			want.Scheme = "https"
+		}
+
+		if ready {
+			want.Path = "/readyz"
+		}
+
+		if diff := cmp.Diff(want, *u); diff != "" || u.Port() != port {
+			t.Fatalf("healthURL(%q, %t, %t) = %q, want port %s (-want +got):\n%s", endpoint, useTLS, ready, got, port, diff)
+		}
+
+		// a wildcard becomes loopback; any other host is kept as it was
+		switch host.host {
+		case "", "0.0.0.0", "::":
+		default:
+			if u.Hostname() != host.host {
+				t.Fatalf("healthURL(%q, %t, %t) = %q, want host %q", endpoint, useTLS, ready, got, host.host)
+			}
+		}
+
+		if loopback := isLoopback(got); loopback != host.loopback {
+			t.Fatalf("isLoopback(%q) = %t, want %t", got, loopback, host.loopback)
+		}
+	})
 }
 
 // runRootHealthcheck runs "phenix healthcheck" through the root command with a temporary store

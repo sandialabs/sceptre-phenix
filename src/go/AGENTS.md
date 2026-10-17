@@ -84,6 +84,9 @@ the root target does.
   `context.WithoutCancel`. A handler whose request ended writes nothing and
   logs it at debug level (`requestGone`, `requestCanceled` in `web/`). CLI
   commands, startup and background loops keep plain `mmcli.Run`.
+- Check parsers, sanitizers, round trips and list invariants with
+  `pgregory.net/rapid` properties beside the table tests. Keep each property
+  fast, never pin a seed, and name generators after their test file.
 - Consult [minimega API docs](https://sandia-minimega.github.io/minimega/reference/minimega/) and
   [source](https://github.com/sandia-minimega/minimega) before changing code
   that constructs commands or depends on minimega behavior.

@@ -11,7 +11,10 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gopkg.in/yaml.v3"
+	"pgregory.net/rapid"
 
 	"phenix/api/experiment"
 	"phenix/api/workflow"
@@ -500,6 +503,58 @@ func TestValidateDocumentDeployMode(t *testing.T) {
 			})
 		})
 	}
+}
+
+// schemaDoc returns a workflow config document with the given spec.
+func schemaDoc(spec map[string]any) map[string]any {
+	return map[string]any{"apiVersion": "phenix.sandia.gov/v0", "kind": "Workflow", "metadata": map[string]any{}, "spec": spec}
+}
+
+// The schema and the experiment code's parser agree on every deployMode, in any letter case.
+func TestValidateDocumentDeployModeProperties(t *testing.T) {
+	t.Parallel()
+
+	affix := rapid.SampledFrom([]string{"", "", " ", "\n", "x", "-"})
+	known := rapid.Custom(func(t *rapid.T) string {
+		mode := rapid.SampledFrom([]string{"all", "no-headnode", "only-headnode"}).Draw(t, "mode")
+
+		return affix.Draw(t, "prefix") + genSpecRecase(t, mode, "case") + affix.Draw(t, "suffix")
+	})
+
+	rapid.Check(t, func(t *rapid.T) {
+		mode := rapid.OneOf(known, rapid.StringMatching(`[a-zA-Z -]{0,14}`)).Draw(t, "deployMode")
+
+		_, parseErr := common.ParseDeployMode(mode)
+		err := workflow.ValidateDocument(schemaDoc(map[string]any{"deployMode": mode}))
+
+		if (err == nil) != (parseErr == nil) {
+			t.Fatalf("ValidateDocument(deployMode %q) error = %v, ParseDeployMode error = %v; want both nil or both not",
+				mode, err, parseErr)
+		}
+	})
+}
+
+// The schema accepts every spec Decode reads, with zero values left out or null and ints as JSON numbers or not.
+func TestValidateDocumentAcceptsDecodableSpecs(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		want := genSpecSpec().Draw(t, "spec")
+		spec := specEncode(t, want, false)
+
+		if err := workflow.ValidateDocument(schemaDoc(spec)); err != nil {
+			t.Fatalf("ValidateDocument(spec %v) error = %v", spec, err)
+		}
+
+		got, err := workflow.Decode(spec)
+		if err != nil {
+			t.Fatalf("Decode(%v) error = %v", spec, err)
+		}
+
+		if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("Decode(%v) mismatch (-want +got):\n%s", spec, diff)
+		}
+	})
 }
 
 // TestValidateDocumentDefaultBridgeLength checks that the schema's bridge name

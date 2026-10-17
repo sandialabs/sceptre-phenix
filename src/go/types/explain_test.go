@@ -1,14 +1,19 @@
 package types_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
+	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
+	"pgregory.net/rapid"
 
 	"phenix/store"
 	"phenix/types"
@@ -641,4 +646,102 @@ func TestSpecSchemasHaveNoDocumentKeys(t *testing.T) {
 			}
 		}
 	}
+}
+
+// explainYAMLReadable reports whether s, raw in a JSON source, is still text to a YAML
+// parser: encoding/json leaves DEL, C1 controls and U+FFFE/U+FFFF as they are.
+func explainYAMLReadable(s string) bool {
+	return !strings.ContainsFunc(s, func(r rune) bool { return r >= 0x7f && r <= 0x9f || r == 0xfffe || r == 0xffff })
+}
+
+// genExplainKey draws a mapping key from pieces that YAML, JSON or a terminal treat specially.
+func genExplainKey() *rapid.Generator[string] {
+	piece := rapid.OneOf(
+		rapid.SampledFrom([]string{
+			"a", "\n", "\r", "\t", "\x1b", "\ufeff", ":", "#", "\"", "'", " ", "<<", "&a", "*a", "- ", "[", "{", "é", "%",
+		}),
+		rapid.StringN(1, 1, -1).Filter(explainYAMLReadable),
+	)
+
+	return rapid.Custom(func(t *rapid.T) string {
+		return strings.Join(rapid.SliceOfN(piece, 1, 4).Draw(t, "pieces"), "")
+	})
+}
+
+// explainYAMLKey writes key as a YAML double-quoted scalar, escaping all but printable ASCII.
+func explainYAMLKey(key string) string {
+	var b strings.Builder
+
+	b.WriteByte('"')
+
+	for _, r := range key {
+		switch {
+		case r == '"' || r == '\\':
+			b.WriteString(`\` + string(r))
+		case r < unicode.MaxASCII && unicode.IsPrint(r):
+			b.WriteRune(r)
+		default:
+			fmt.Fprintf(&b, `\U%08X`, r)
+		}
+	}
+
+	b.WriteByte('"')
+
+	return b.String()
+}
+
+// explainPrintable reports whether every line is printable, so none can break into two.
+func explainPrintable(lines []string) bool {
+	return !slices.ContainsFunc(lines, func(line string) bool {
+		return strings.ContainsFunc(line, func(r rune) bool { return !unicode.IsPrint(r) })
+	})
+}
+
+// An error under any key is explained as the same printable lines whether the source is
+// YAML or single-line JSON, apart from the source line YAML adds, and is placed under spec.
+func TestExplainValidationErrorProperties(t *testing.T) {
+	t.Parallel()
+
+	sourceLine := regexp.MustCompile(` \(line \d+\)`)
+
+	rapid.Check(t, func(t *rapid.T) {
+		key := genExplainKey().Draw(t, "key")
+		doc := map[string]any{
+			"apiVersion": "phenix.sandia.gov/v0",
+			"kind":       "Workflow",
+			"metadata":   map[string]any{},
+			"spec":       map[string]any{"vlans": map[string]any{key: "x"}},
+		}
+
+		err := types.ValidateSchema("Workflow", "v0", doc)
+		if !errors.Is(err, types.ErrValidationFailed) {
+			t.Fatalf("ValidateSchema(Workflow with vlan %q: x) error = %v, want a validation error", key, err)
+		}
+
+		yamlSrc := []byte(explainWorkflowHeader + "spec:\n  vlans:\n    " + explainYAMLKey(key) + ": x\n")
+
+		jsonSrc, jerr := json.Marshal(doc)
+		if jerr != nil {
+			t.Fatalf("json.Marshal(%v) error = %v", doc, jerr)
+		}
+
+		fromYAML := types.ExplainValidationError(yamlSrc, err)
+		fromJSON := types.ExplainValidationError(jsonSrc, err)
+
+		if !explainPrintable(fromYAML) || !explainPrintable(fromJSON) {
+			t.Fatalf("explained lines are not printable:\nYAML %q\nJSON %q", fromYAML, fromJSON)
+		}
+
+		if len(fromJSON) != 1 || !strings.HasPrefix(fromJSON[0], "spec: ") {
+			t.Fatalf("ExplainValidationError(%s) = %q, want one line under spec", jsonSrc, fromJSON)
+		}
+
+		for i, line := range fromYAML {
+			fromYAML[i] = sourceLine.ReplaceAllString(line, "")
+		}
+
+		if diff := cmp.Diff(fromJSON, fromYAML); diff != "" {
+			t.Fatalf("ExplainValidationError of YAML %q and JSON %s differ (-json +yaml):\n%s", yamlSrc, jsonSrc, diff)
+		}
+	})
 }
