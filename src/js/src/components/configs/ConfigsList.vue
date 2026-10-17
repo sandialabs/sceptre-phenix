@@ -91,7 +91,10 @@
           }}
         </button>
         <button
-          v-if="roleAllowed('configs', 'update', configFullName(viewer.config))"
+          v-if="
+            viewer.config &&
+            roleAllowed('configs', 'update', configFullName(viewer.config))
+          "
           class="button is-success"
           @click="$emit('edit', viewer.config)">
           Edit Config
@@ -434,7 +437,7 @@
 
         viewer: {
           isActive: false,
-          config: { kind: null, metadata: { name: null } },
+          config: null,
           title: null,
           obj: null,
           // What the Builder does with the config shown (see
@@ -714,11 +717,8 @@
         }
 
         this.viewer.isActive = false;
-        ((this.viewer.config = {
-          kind: null,
-          metadata: { name: null },
-        }),
-          (this.viewer.title = null));
+        this.viewer.config = null;
+        this.viewer.title = null;
         this.viewer.obj = null;
         this.viewer.builder = '';
       },

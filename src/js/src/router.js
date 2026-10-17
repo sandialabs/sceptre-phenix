@@ -269,7 +269,6 @@ router.beforeEach(async (to, from, next) => {
     }
 
     next();
-    return;
   } else {
     store.next = to;
 
@@ -291,7 +290,6 @@ router.beforeEach(async (to, from, next) => {
         });
     } else {
       next({ name: 'signin' });
-      return;
     }
   }
 });

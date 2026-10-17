@@ -262,10 +262,6 @@
         editor: {
           lang: 'yaml',
           vim: false,
-          options: {
-            useWorker: false,
-            tabSize: 2,
-          },
           isLoading: false,
         },
         config: {
@@ -447,7 +443,6 @@
             this.editor.lang = 'json';
             this.config.obj = this.getConfigObj('yaml');
             this.config.str = this.getConfigStr('json', this.config.obj);
-            return;
           }
         }
       },

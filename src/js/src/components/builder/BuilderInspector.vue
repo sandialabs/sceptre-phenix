@@ -2112,6 +2112,7 @@
     {
       command: 'dialog.connect',
       event: 'connect',
+      run: () => emit('connect'),
       name: 'Add connection',
       icon: 'link',
       kinds: ['device', 'switch'],
@@ -2119,6 +2120,7 @@
     {
       command: 'dialog.regroup',
       event: 'regroup',
+      run: () => emit('regroup'),
       name: 'Move to group',
       icon: 'group',
       kinds: null,
@@ -2144,7 +2146,7 @@
 
   function runHeadAction(action) {
     editorTip.hideTip();
-    emit(action.event);
+    action.run();
   }
 
   const ifacesHint = computed(() =>
