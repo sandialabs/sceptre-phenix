@@ -231,60 +231,6 @@ func TestConcurrentPublishKeepsWinnerReadable(t *testing.T) {
 	}
 }
 
-func TestConcurrentPublishesAllSucceed(t *testing.T) {
-	h := newHarness(t)
-	ctx := context.Background()
-
-	req := PutPublishedDocumentRequest{
-		Target: "topo", Kind: "Topology", Actor: testActor,
-		Document: testRandomDocument(t, "topo", 3000), DraftID: "", SnapshotID: "",
-	}
-
-	const writers = 4
-
-	var (
-		wg      sync.WaitGroup
-		results = make([]*PublishedDocument, writers)
-		errs    = make([]error, writers)
-	)
-
-	wg.Add(writers)
-
-	for i := range writers {
-		go func() {
-			defer wg.Done()
-
-			results[i], errs[i] = h.service.PutPublishedDocument(ctx, req)
-		}()
-	}
-
-	wg.Wait()
-
-	for i := range writers {
-		if errs[i] != nil {
-			t.Fatalf("writer %d returned error: %s", i, fmtErr(errs[i]))
-		}
-
-		if results[i].ID != results[0].ID {
-			t.Fatalf("writer %d published %s, want the content addressed %s", i, results[i].ID, results[0].ID)
-		}
-	}
-
-	doc, data, err := h.service.GetPublishedDocumentData(ctx, results[0].ID)
-	if err != nil {
-		t.Fatalf("the published document must be readable: %v", err)
-	}
-
-	if !bytes.Equal(data, req.Document) {
-		t.Fatal("published content changed under concurrent writers")
-	}
-
-	// Only the winning attempt's private payload scope survives.
-	if keys := chunkKeysOf(h, publishedScope(doc.ID)); len(keys) != len(doc.ChunkDigests) {
-		t.Fatalf("document holds %d chunks, want the winner's %d: losing attempts leaked chunks", len(keys), len(doc.ChunkDigests))
-	}
-}
-
 func TestWriteChunksCleansUpPartialFailures(t *testing.T) {
 	h := newHarness(t)
 

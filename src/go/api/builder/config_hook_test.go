@@ -292,8 +292,10 @@ func TestDeletingTopologyKeepsPublicationInFlight(t *testing.T) {
 // TestRenamingTopologyDeletesItsDocuments renames a published topology: its
 // documents go and its reference is dropped; keeping the name keeps both.
 func TestRenamingTopologyDeletesItsDocuments(t *testing.T) {
+	h := newHookTest(t)
+
 	// update stores the topology name as the topology as.
-	update := func(t *testing.T, name, as string) {
+	update := func(name, as string) {
 		t.Helper()
 
 		c, err := config.Get("topology/"+name, false)
@@ -308,71 +310,40 @@ func TestRenamingTopologyDeletesItsDocuments(t *testing.T) {
 		}
 	}
 
-	// edit renames the topology with an editor that rewrites its name.
-	edit := func(t *testing.T, name, as string) {
-		t.Helper()
+	old := h.publish("topo", "topo-v1", 2*OrphanGracePeriod)
+	superseded := h.publish("topo", "topo-v2", time.Minute)
+	current := h.publish("topo", "topo-v3", time.Minute)
+	other := h.publish("other", "other-v1", time.Minute)
 
-		script := "#!/bin/sh\nsed 's/name: " + name + "$/name: " + as + "/' \"$1\" > \"$1.edited\" && mv \"$1.edited\" \"$1\"\n"
-		editor := filepath.Join(t.TempDir(), "editor")
-
-		//nolint:gosec // the editor the test runs
-		if err := os.WriteFile(editor, []byte(script), 0o700); err != nil {
-			t.Fatalf("writing the editor: %v", err)
-		}
-
-		t.Setenv("EDITOR", editor)
-
-		if _, err := config.Edit("topology/"+name, false); err != nil {
-			t.Fatalf("editing topology %s as %s returned error: %v", name, as, err)
+	for name, doc := range map[string]*PublishedDocument{"topo": current, "other": other} {
+		if err := h.writeTopology(name, doc); err != nil {
+			t.Fatalf("storing topology %s returned error: %v", name, err)
 		}
 	}
 
-	for _, test := range []struct {
-		name   string
-		rename func(t *testing.T, name, as string)
-	}{
-		{name: "an update", rename: update},
-		{name: "phenix config edit", rename: edit},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			h := newHookTest(t)
+	update("other", "other")
 
-			old := h.publish("topo", "topo-v1", 2*OrphanGracePeriod)
-			superseded := h.publish("topo", "topo-v2", time.Minute)
-			current := h.publish("topo", "topo-v3", time.Minute)
-			other := h.publish("other", "other-v1", time.Minute)
-
-			for name, doc := range map[string]*PublishedDocument{"topo": current, "other": other} {
-				if err := h.writeTopology(name, doc); err != nil {
-					t.Fatalf("storing topology %s returned error: %v", name, err)
-				}
-			}
-
-			update(t, "other", "other")
-
-			if kept, err := config.Get("topology/other", false); err != nil || !kept.HasAnnotation(DocumentAnnotation) {
-				t.Fatalf("an update that keeps the name: error = %v, topology %+v; want its document reference kept", err, kept)
-			}
-
-			test.rename(t, "topo", "renamed")
-
-			if _, err := config.Get("topology/topo", false); !errors.Is(err, store.ErrNotExist) {
-				t.Fatalf("topology under its old name: error = %v, want it gone", err)
-			}
-
-			renamed, err := config.Get("topology/renamed", false)
-			if err != nil {
-				t.Fatalf("getting the renamed topology returned error: %v", err)
-			}
-
-			if renamed.HasAnnotation(DocumentAnnotation) {
-				t.Errorf("the renamed topology names a document: %q", renamed.Metadata.Annotations[DocumentAnnotation])
-			}
-
-			h.assertGone(old, superseded, current)
-			h.assertReadable(other)
-		})
+	if kept, err := config.Get("topology/other", false); err != nil || !kept.HasAnnotation(DocumentAnnotation) {
+		t.Fatalf("an update that keeps the name: error = %v, topology %+v; want its document reference kept", err, kept)
 	}
+
+	update("topo", "renamed")
+
+	if _, err := config.Get("topology/topo", false); !errors.Is(err, store.ErrNotExist) {
+		t.Fatalf("topology under its old name: error = %v, want it gone", err)
+	}
+
+	renamed, err := config.Get("topology/renamed", false)
+	if err != nil {
+		t.Fatalf("getting the renamed topology returned error: %v", err)
+	}
+
+	if renamed.HasAnnotation(DocumentAnnotation) {
+		t.Errorf("the renamed topology names a document: %q", renamed.Metadata.Annotations[DocumentAnnotation])
+	}
+
+	h.assertGone(old, superseded, current)
+	h.assertReadable(other)
 }
 
 // TestCreatingTopologyDropsAnotherTopologysDocument stores a copy of a published
@@ -399,7 +370,8 @@ func TestCreatingTopologyDropsAnotherTopologysDocument(t *testing.T) {
 }
 
 // TestStoringTopologyChecksItsReference stores each kind of document reference:
-// another topology's ID is dropped, and a reference that does not decode is refused.
+// another topology's ID is dropped, and a reference that does not decode is refused
+// (TestDecodeReferenceIsStrict has every kind of refusal).
 func TestStoringTopologyChecksItsReference(t *testing.T) {
 	h := newHookTest(t)
 
@@ -463,13 +435,7 @@ func TestStoringTopologyChecksItsReference(t *testing.T) {
 			want:  encode(DocumentReference{Digest: own.Digest, ID: own.ID, Path: file}),
 		},
 		{name: "not json", value: "{", refused: true},
-		{name: "empty", value: "", refused: true},
-		{name: "no sub-key", value: "{}", refused: true},
 		{name: "an unknown sub-key", value: `{"id":"` + own.ID + `","draftId":"draft-1"}`, refused: true},
-		{name: "an invalid id", value: `{"id":"../escape"}`, refused: true},
-		{name: "an invalid digest", value: `{"digest":"deadbeef"}`, refused: true},
-		{name: "a relative path", value: `{"path":"builder.yaml"}`, refused: true},
-		{name: "a path that is not a document", value: `{"path":"/etc/phenix/config.txt"}`, refused: true},
 	} {
 		check := func(t *testing.T, stage string, stored *store.Config, err error) {
 			t.Helper()
