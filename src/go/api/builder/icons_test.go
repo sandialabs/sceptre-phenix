@@ -968,6 +968,10 @@ func TestRenameIconManyTimes(t *testing.T) {
 	}
 
 	final := mustGetIcon(t, h, last)
+	if final.Name != last {
+		t.Errorf("GetIcon(%s) name = %q, want %q", last, final.Name, last)
+	}
+
 	if final.ID != icon.ID {
 		t.Errorf("GetIcon(%s) id = %s, want the icon's %s", last, final.ID, icon.ID)
 	}
@@ -1065,30 +1069,24 @@ func TestRenameIconRefuses(t *testing.T) {
 
 	before := h.store.Keys(NamespaceIcons)
 
-	var taken *IconNameTakenError
-
 	for _, test := range []struct {
 		name, from, to string
-		check          func(error) bool
-		want           string
+		taken          *IconNameTakenError
+		invalidField   string
+		wantErr        error
 	}{
-		{name: "the name of another icon", from: "plc", to: "HMI-OLD", want: "the name taken by bob's hmi-old", check: func(err error) bool {
-			return errors.As(err, &taken) && taken.Icon == "hmi-old" && taken.Owner == testPeer
-		}},
-		{name: "an alias of another icon", from: "plc", to: "Hmi", want: "the name taken by hmi-old", check: func(err error) bool {
-			return errors.As(err, &taken) && taken.Icon == "hmi-old"
-		}},
-		{name: "a name that is none", from: "plc", to: "plc v2", want: "a ValidationError of the icon name", check: func(err error) bool {
-			var invalid *ValidationError
-
-			return errors.As(err, &invalid) && invalid.Field == "icon name"
-		}},
-		{name: "no name", from: "plc", to: "", want: "ErrInvalid", check: func(err error) bool { return errors.Is(err, ErrInvalid) }},
 		{
-			name: "an icon nobody has", from: "scada", to: "scada-2", want: "ErrNotFound",
-			check: func(err error) bool { return errors.Is(err, ErrNotFound) },
+			name: "the name of another icon", from: "plc", to: "HMI-OLD",
+			taken: &IconNameTakenError{Name: "HMI-OLD", Icon: "hmi-old", Owner: testPeer},
 		},
-		{name: "a path", from: "../plc", to: "scada-2", want: "ErrNotFound", check: func(err error) bool { return errors.Is(err, ErrNotFound) }},
+		{
+			name: "an alias of another icon", from: "plc", to: "Hmi",
+			taken: &IconNameTakenError{Name: "Hmi", Icon: "hmi-old", Owner: testPeer},
+		},
+		{name: "a name that is none", from: "plc", to: "plc v2", invalidField: "icon name"},
+		{name: "no name", from: "plc", to: "", wantErr: ErrInvalid},
+		{name: "an icon nobody has", from: "scada", to: "scada-2", wantErr: ErrNotFound},
+		{name: "a path", from: "../plc", to: "scada-2", wantErr: ErrNotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			icon, err := h.service.RenameIcon(ctx, testActor, test.from, test.to)
@@ -1096,8 +1094,23 @@ func TestRenameIconRefuses(t *testing.T) {
 				t.Errorf("RenameIcon(%q, %q) = %+v, want no icon", test.from, test.to, icon)
 			}
 
-			if !test.check(err) {
-				t.Errorf("RenameIcon(%q, %q) error = %v, want %s", test.from, test.to, err, test.want)
+			switch {
+			case test.taken != nil:
+				var taken *IconNameTakenError
+				if !errors.As(err, &taken) {
+					t.Errorf("RenameIcon(%q, %q) error = %v, want an IconNameTakenError", test.from, test.to, err)
+				} else if diff := cmp.Diff(*test.taken, *taken); diff != "" {
+					t.Errorf("RenameIcon(%q, %q) IconNameTakenError mismatch (-want +got):\n%s", test.from, test.to, diff)
+				}
+			case test.invalidField != "":
+				var invalid *ValidationError
+				if !errors.As(err, &invalid) {
+					t.Errorf("RenameIcon(%q, %q) error = %v, want a ValidationError", test.from, test.to, err)
+				} else if invalid.Field != test.invalidField {
+					t.Errorf("RenameIcon(%q, %q) ValidationError field = %q, want %q", test.from, test.to, invalid.Field, test.invalidField)
+				}
+			case !errors.Is(err, test.wantErr):
+				t.Errorf("RenameIcon(%q, %q) error = %v, want %v", test.from, test.to, err, test.wantErr)
 			}
 		})
 	}
