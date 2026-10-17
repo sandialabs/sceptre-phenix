@@ -55,6 +55,7 @@ const CONTRACT_TESTS = [
   'test/builder/selection.test.js',
   'test/builder/separate.test.js',
   'test/builder/stable.test.js',
+  'test/builder/text.test.js',
   'test/builder/theme.test.js',
   'test/builder/validate.test.js',
   'test/builder/vueflow.test.js',
