@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/mux"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v2"
@@ -430,39 +431,45 @@ func TestBuilderUnknownAPIRoutesAnswerJSON(t *testing.T) {
 		Methods("GET", "OPTIONS")
 
 	for _, tt := range paths {
-		recorder := harness.do(builderRequest{method: tt.method, path: tt.path, user: builderAlice})
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			recorder := harness.do(builderRequest{method: tt.method, path: tt.path, user: builderAlice})
 
-		if recorder.Code != http.StatusNotFound {
-			t.Errorf("%s %s: status = %d, want %d", tt.method, tt.path, recorder.Code, http.StatusNotFound)
-		}
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("%s %s: status = %d, want %d", tt.method, tt.path, recorder.Code, http.StatusNotFound)
+			}
 
-		if contentType := recorder.Header().Get("Content-Type"); contentType != mimeJSON {
-			t.Errorf("%s %s: Content-Type = %q, want %q", tt.method, tt.path, contentType, mimeJSON)
-		}
+			if contentType := recorder.Header().Get("Content-Type"); contentType != mimeJSON {
+				t.Errorf("%s %s: Content-Type = %q, want %q", tt.method, tt.path, contentType, mimeJSON)
+			}
 
-		if strings.Contains(recorder.Body.String(), builderSPABody) {
-			t.Errorf("%s %s: the SPA index answered an API request", tt.method, tt.path)
-		}
+			if strings.Contains(recorder.Body.String(), builderSPABody) {
+				t.Errorf("%s %s: the SPA index answered an API request", tt.method, tt.path)
+			}
 
-		var body struct {
-			Message string `json:"message"`
-		}
+			var body struct {
+				Message string `json:"message"`
+			}
 
-		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-			t.Errorf("%s %s: decoding the body: %v", tt.method, tt.path, err)
-		}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatalf("%s %s: decoding the body: %v", tt.method, tt.path, err)
+			}
 
-		if want := "no API route matches this request"; body.Message != want {
-			t.Errorf("%s %s: message = %q, want %q", tt.method, tt.path, body.Message, want)
-		}
+			if want := "no API route matches this request"; body.Message != want {
+				t.Errorf("%s %s: message = %q, want %q", tt.method, tt.path, body.Message, want)
+			}
+		})
 	}
 
 	// The SPA fallback still answers everything outside the API.
 	recorder := httptest.NewRecorder()
 	harness.router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/builder", nil))
 
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), builderSPABody) {
-		t.Errorf("UI route: status = %d, want the SPA index", recorder.Code)
+	if recorder.Code != http.StatusOK {
+		t.Errorf("GET /builder: status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	if !strings.Contains(recorder.Body.String(), builderSPABody) {
+		t.Errorf("GET /builder = %s, want the SPA index", recorder.Body)
 	}
 }
 
@@ -536,38 +543,55 @@ func TestBuilderPublishTopology(t *testing.T) {
 	response, _ := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"topo","action":"create"}}`, http.StatusOK)
 
-	if response.Status != "succeeded" || len(response.Stages) != 3 {
-		t.Fatalf("publish response = %#v", response)
+	if response.Status != "succeeded" {
+		t.Errorf("publishing topo: status = %q, want succeeded: %#v", response.Status, response)
+	}
+
+	if len(response.Stages) != 3 {
+		t.Errorf("publishing topo: %d stages, want 3: %#v", len(response.Stages), response.Stages)
 	}
 
 	topology, err := harness.getConfig("Topology/topo")
 	if err != nil {
-		t.Fatalf("published topology missing: %v", err)
+		t.Fatalf("getConfig(Topology/topo) returned error: %v", err)
 	}
 
 	reference, err := bapi.DecodeReference(topology.Metadata.Annotations[bapi.DocumentAnnotation])
 	if err != nil {
-		t.Fatalf("builder-doc annotation invalid: %v", err)
+		t.Fatalf("DecodeReference(builder-doc annotation) returned error: %v", err)
 	}
 
 	// The annotation holds the document's digest and ID and nothing else:
 	// which draft and snapshot it was published from is on its record.
 	published, err := harness.service.GetPublishedDocument(context.Background(), reference.StoredID("topo"))
 	if err != nil {
-		t.Fatalf("the published document: %v", err)
+		t.Fatalf("GetPublishedDocument(%s) returned error: %v", reference.StoredID("topo"), err)
 	}
 
-	if reference != published.Reference() || reference.Digest != draft.Digest || reference.Path != "" {
-		t.Fatalf("builder-doc annotation = %+v, want the digest and the ID of %+v", reference, published)
+	if diff := cmp.Diff(published.Reference(), reference); diff != "" {
+		t.Errorf("builder-doc annotation mismatch with the published document (-want +got):\n%s", diff)
 	}
 
-	if published.SnapshotID != draft.SnapshotID || published.DraftID != draft.ID || published.Schema != bdoc.SchemaURI {
-		t.Fatalf("published document = %+v, want snapshot %q of draft %q", published, draft.SnapshotID, draft.ID)
+	if diff := cmp.Diff(bapi.DocumentReference{Digest: draft.Digest, ID: reference.ID, Path: ""}, reference); diff != "" {
+		t.Errorf("builder-doc annotation mismatch with the draft (-want +got):\n%s", diff)
 	}
 
-	if meta := mustDraftMeta(t, harness, draft.ID); meta.Dirty() || meta.Publication == nil ||
-		meta.Publication.DocumentID != reference.ID {
-		t.Fatalf("draft publication = %#v", meta.Publication)
+	type origin struct{ SnapshotID, DraftID, Schema string }
+
+	want := origin{SnapshotID: draft.SnapshotID, DraftID: draft.ID, Schema: bdoc.SchemaURI}
+	if diff := cmp.Diff(want, origin{published.SnapshotID, published.DraftID, published.Schema}); diff != "" {
+		t.Errorf("published document %s mismatch (-want +got):\n%s", published.ID, diff)
+	}
+
+	meta := mustDraftMeta(t, harness, draft.ID)
+	if meta.Dirty() {
+		t.Errorf("draft %s is dirty after publishing, want clean", draft.ID)
+	}
+
+	if meta.Publication == nil {
+		t.Errorf("draft %s publication = nil, want document %s", draft.ID, reference.ID)
+	} else if got := meta.Publication.DocumentID; got != reference.ID {
+		t.Errorf("draft %s publication document = %q, want %q", draft.ID, got, reference.ID)
 	}
 }
 
@@ -606,26 +630,24 @@ func TestBuilderCreateDraft(t *testing.T) {
 		body: `{"title":"fallback","sourceToken":"Topology/foo","document":` + string(builderDocument(t, "topo")) + `}`,
 	}, http.StatusCreated, &draft)
 
-	if draft.CreatedBy != builderAlice {
-		t.Errorf("createdBy = %q, want %q", draft.CreatedBy, builderAlice)
-	}
+	type creation struct{ CreatedBy, Title string }
 
 	// The document names itself, so the request title is only a fallback.
-	if draft.Title != "topo" {
-		t.Errorf("title = %q, want %q", draft.Title, "topo")
+	if diff := cmp.Diff(creation{CreatedBy: builderAlice, Title: "topo"}, creation{draft.CreatedBy, draft.Title}); diff != "" {
+		t.Errorf("POST /builder/drafts mismatch (-want +got):\n%s", diff)
 	}
 
 	if draft.ETag == "" || !strings.HasPrefix(draft.ETag, `"`) {
-		t.Errorf("etag = %q, want a quoted entity tag", draft.ETag)
+		t.Errorf("POST /builder/drafts: etag = %q, want a quoted entity tag", draft.ETag)
 	}
 
 	if header := recorder.Header().Get("ETag"); header != draft.ETag {
-		t.Errorf("ETag header = %q, want %q", header, draft.ETag)
+		t.Errorf("POST /builder/drafts: ETag header = %q, want %q", header, draft.ETag)
 	}
 
 	want := "/api/v1/builder/drafts/" + draft.ID
 	if location := recorder.Header().Get("Location"); location != want {
-		t.Errorf("Location = %q, want %q", location, want)
+		t.Errorf("POST /builder/drafts: Location = %q, want %q", location, want)
 	}
 }
 
@@ -654,25 +676,32 @@ func TestBuilderCreateDraftFromPublishedDocument(t *testing.T) {
 		})
 	}
 
-	for _, id := range []string{secret.ID, "missing"} {
-		recorder := create(builderDocTokenPrefix + id)
+	for _, tt := range []struct{ name, id string }{
+		{name: "a document the role may not get", id: secret.ID},
+		{name: "a missing document", id: "missing"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := create(builderDocTokenPrefix + tt.id)
 
-		if recorder.Code != http.StatusNotFound {
-			t.Fatalf("document %s: status = %d, want %d: %s", id, recorder.Code, http.StatusNotFound, recorder.Body)
-		}
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("POST /builder/drafts from document %s: status = %d, want %d: %s",
+					tt.id, recorder.Code, http.StatusNotFound, recorder.Body)
+			}
 
-		if want := "document " + id + " not found"; !strings.Contains(recorder.Body.String(), want) {
-			t.Errorf("document %s: body = %s, want %q", id, recorder.Body, want)
-		}
+			if want := "document " + tt.id + " not found"; !strings.Contains(recorder.Body.String(), want) {
+				t.Errorf("POST /builder/drafts from document %s = %s, want %q", tt.id, recorder.Body, want)
+			}
+		})
 	}
 
 	if count := harness.store.Count(bapi.NamespaceDrafts); count != 0 {
-		t.Fatalf("stored drafts = %d, want 0", count)
+		t.Errorf("stored drafts = %d, want 0", count)
 	}
 
 	recorder := create(builderDocTokenPrefix + public.ID)
 	if recorder.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
+		t.Fatalf("POST /builder/drafts from document %s: status = %d, want %d: %s",
+			public.ID, recorder.Code, http.StatusCreated, recorder.Body)
 	}
 
 	var draft builderDraftResponse
@@ -680,7 +709,8 @@ func TestBuilderCreateDraftFromPublishedDocument(t *testing.T) {
 	harness.decode(recorder, &draft)
 
 	if draft.SourceToken != builderDocTokenPrefix+public.ID {
-		t.Errorf("source token = %q, want %q", draft.SourceToken, builderDocTokenPrefix+public.ID)
+		t.Errorf("POST /builder/drafts from document %s: source token = %q, want %q",
+			public.ID, draft.SourceToken, builderDocTokenPrefix+public.ID)
 	}
 }
 
@@ -724,7 +754,7 @@ func TestBuilderCreateDraftRequests(t *testing.T) {
 			})
 
 			if recorder.Code != tt.status {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, tt.status, recorder.Body)
+				t.Errorf("POST /builder/drafts: status = %d, want %d: %s", recorder.Code, tt.status, recorder.Body)
 			}
 		})
 	}
@@ -745,40 +775,52 @@ func TestBuilderGetDraft(t *testing.T) {
 	})
 
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+		t.Fatalf("GET /builder/drafts/%s: status = %d, want %d", draft.ID, recorder.Code, http.StatusOK)
 	}
 
 	if etag := recorder.Header().Get("ETag"); etag != draft.ETag {
-		t.Errorf("ETag = %q, want %q", etag, draft.ETag)
+		t.Errorf("GET /builder/drafts/%s: ETag = %q, want %q", draft.ID, etag, draft.ETag)
 	}
 
 	var response builderDraftResponse
 	harness.decode(recorder, &response)
-	if len(response.Document) == 0 || len(response.History) != 1 || response.CreatedBy != builderAlice {
-		t.Fatalf("draft envelope is incomplete: %#v", response)
+
+	type envelope struct {
+		HasDocument bool
+		History     int
+		CreatedBy   string
+	}
+
+	want := envelope{HasDocument: true, History: 1, CreatedBy: builderAlice}
+	got := envelope{HasDocument: len(response.Document) != 0, History: len(response.History), CreatedBy: response.CreatedBy}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GET /builder/drafts/%s envelope mismatch (-want +got):\n%s", draft.ID, diff)
 	}
 }
 
 func TestBuilderGetDraftNotFound(t *testing.T) {
 	harness := newBuilderHarness(t)
 
-	paths := []string{
-		"/builder/drafts/id-missing",
+	tests := []struct{ name, path string }{
+		{name: "unknown ID", path: "/builder/drafts/id-missing"},
 		// Identifiers that cannot name a draft never reach the store.
-		"/builder/drafts/bad%20id",
-		"/builder/drafts/" + strings.Repeat("x", 200),
+		{name: "ID with a space", path: "/builder/drafts/bad%20id"},
+		{name: "ID too long", path: "/builder/drafts/" + strings.Repeat("x", 200)},
 	}
 
-	for _, path := range paths {
-		recorder := harness.do(builderRequest{
-			method: http.MethodGet,
-			path:   path,
-			user:   builderAlice,
-		})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := harness.do(builderRequest{
+				method: http.MethodGet,
+				path:   tt.path,
+				user:   builderAlice,
+			})
 
-		if recorder.Code != http.StatusNotFound {
-			t.Errorf("GET %s: status = %d, want %d", path, recorder.Code, http.StatusNotFound)
-		}
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("GET %s: status = %d, want %d", tt.path, recorder.Code, http.StatusNotFound)
+			}
+		})
 	}
 }
 
@@ -789,29 +831,37 @@ func TestBuilderListDrafts(t *testing.T) {
 	older := harness.createDraft(builderAlice, "older")
 	newer := harness.createDraft(builderBob, "newer")
 
+	type listed struct{ ID, CreatedBy string }
+
+	want := []listed{{ID: newer.ID, CreatedBy: builderBob}, {ID: older.ID, CreatedBy: builderAlice}}
+
 	for _, user := range []string{builderAlice, builderCarol} {
-		var listing struct {
-			Drafts  []builderDraftResponse        `json:"drafts"`
-			Damaged []builderDamagedDraftResponse `json:"damaged"`
-		}
+		t.Run(user, func(t *testing.T) {
+			var listing struct {
+				Drafts  []builderDraftResponse        `json:"drafts"`
+				Damaged []builderDamagedDraftResponse `json:"damaged"`
+			}
 
-		harness.decode(harness.as(user, builderOnlyRole()).mustDo("listing drafts as "+user, builderRequest{
-			method: http.MethodGet, path: "/builder/drafts",
-		}, http.StatusOK), &listing)
+			recorder := harness.as(user, builderOnlyRole()).do(builderRequest{method: http.MethodGet, path: "/builder/drafts"})
+			if err := builderStatusError(recorder, http.StatusOK); err != nil {
+				t.Fatalf("GET /builder/drafts as %s: %v", user, err)
+			}
 
-		ids := make([]string, 0, len(listing.Drafts))
-		creators := make([]string, 0, len(listing.Drafts))
+			decodeBuilderAnswer(t, recorder, &listing)
 
-		for _, draft := range listing.Drafts {
-			ids = append(ids, draft.ID)
-			creators = append(creators, draft.CreatedBy)
-		}
+			got := make([]listed, 0, len(listing.Drafts))
+			for _, draft := range listing.Drafts {
+				got = append(got, listed{ID: draft.ID, CreatedBy: draft.CreatedBy})
+			}
 
-		if !slices.Equal(ids, []string{newer.ID, older.ID}) ||
-			!slices.Equal(creators, []string{builderBob, builderAlice}) || len(listing.Damaged) != 0 {
-			t.Errorf("%s lists %v created by %v and damaged %+v, want both drafts, the newer first",
-				user, ids, creators, listing.Damaged)
-		}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("GET /builder/drafts as %s mismatch (-want +got):\n%s", user, diff)
+			}
+
+			if len(listing.Damaged) != 0 {
+				t.Errorf("GET /builder/drafts as %s: damaged = %+v, want none", user, listing.Damaged)
+			}
+		})
 	}
 }
 
@@ -827,8 +877,12 @@ func TestBuilderSnapshotRoundTrip(t *testing.T) {
 		body: `{"summary":"second","document":` + string(builderDocument(t, "second")) + `,"opId":"op-2"}`,
 	}, http.StatusCreated, &saved)
 
-	if saved.ETag == draft.ETag || saved.Snapshots != 2 {
-		t.Errorf("saved = %+v, want 2 snapshots at a new ETag", saved)
+	if saved.ETag == draft.ETag {
+		t.Errorf("POST %s/snapshots: ETag = %q, want a new one", path, saved.ETag)
+	}
+
+	if saved.Snapshots != 2 {
+		t.Errorf("POST %s/snapshots: %d snapshots, want 2", path, saved.Snapshots)
 	}
 
 	// The client's id for the save comes back, so a client that lost the answer can tell it was stored.
@@ -837,16 +891,27 @@ func TestBuilderSnapshotRoundTrip(t *testing.T) {
 	harness.doDecode(builderRequest{method: http.MethodGet, path: path + "/snapshots/current", user: builderAlice},
 		http.StatusOK, &snapshot)
 
-	if !snapshot.Snapshot.Current || snapshot.Snapshot.OpID != "op-2" || !strings.Contains(string(snapshot.Document), "second") {
-		t.Errorf("current snapshot = %+v, want the saved document with opId op-2", snapshot.Snapshot)
+	type current struct {
+		Current bool
+		OpID    string
+	}
+
+	if diff := cmp.Diff(current{Current: true, OpID: "op-2"}, current{snapshot.Snapshot.Current, snapshot.Snapshot.OpID}); diff != "" {
+		t.Errorf("GET %s/snapshots/current mismatch (-want +got):\n%s", path, diff)
+	}
+
+	if !strings.Contains(string(snapshot.Document), "second") {
+		t.Errorf("GET %s/snapshots/current = %s, want the saved document", path, snapshot.Document)
 	}
 
 	harness.doDecode(builderRequest{
 		method: http.MethodPatch, path: path + "/cursor", body: `{"index":0}`, user: builderAlice, ifMatch: saved.ETag,
 	}, http.StatusOK, &moved)
 
-	if moved.Cursor != 0 || moved.Snapshots != 2 {
-		t.Errorf("after undo cursor = %d of %d snapshots, want 0 of 2", moved.Cursor, moved.Snapshots)
+	type position struct{ Cursor, Snapshots int }
+
+	if diff := cmp.Diff(position{Cursor: 0, Snapshots: 2}, position{moved.Cursor, moved.Snapshots}); diff != "" {
+		t.Errorf("PATCH %s/cursor to index 0 mismatch (-want +got):\n%s", path, diff)
 	}
 }
 
@@ -871,8 +936,12 @@ func TestBuilderDeleteSnapshot(t *testing.T) {
 	harness.doDecode(builderRequest{method: http.MethodGet, path: path + "/snapshots", user: builderAlice},
 		http.StatusOK, &history)
 
-	if len(history.Snapshots) != 2 || history.Snapshots[0].CreatedBy != builderAlice {
-		t.Fatalf("history = %+v, want 2 snapshots saved by %s", history, builderAlice)
+	if len(history.Snapshots) != 2 {
+		t.Fatalf("GET %s/snapshots = %+v, want 2 snapshots", path, history)
+	}
+
+	if got := history.Snapshots[0].CreatedBy; got != builderAlice {
+		t.Errorf("GET %s/snapshots: first saved by %q, want %q", path, got, builderAlice)
 	}
 
 	remove := func(snapshot, ifMatch string) builderRequest {
@@ -901,8 +970,16 @@ func TestBuilderDeleteSnapshot(t *testing.T) {
 
 	recorder := harness.doDecode(remove(history.Snapshots[0].ID, saved.ETag), http.StatusOK, &deleted)
 
-	if deleted.Snapshots != 1 || deleted.ETag == saved.ETag || recorder.Header().Get("ETag") != deleted.ETag {
-		t.Fatalf("deleted = %+v with ETag %q, want 1 snapshot and a new ETag", deleted, recorder.Header().Get("ETag"))
+	if deleted.Snapshots != 1 {
+		t.Errorf("DELETE %s/snapshots/%s: %d snapshots, want 1", path, history.Snapshots[0].ID, deleted.Snapshots)
+	}
+
+	if deleted.ETag == saved.ETag {
+		t.Errorf("DELETE %s/snapshots/%s: ETag = %q, want a new one", path, history.Snapshots[0].ID, deleted.ETag)
+	}
+
+	if header := recorder.Header().Get("ETag"); header != deleted.ETag {
+		t.Errorf("DELETE %s/snapshots/%s: ETag header = %q, want %q", path, history.Snapshots[0].ID, header, deleted.ETag)
 	}
 
 	harness.doDecode(builderRequest{method: http.MethodGet, path: path + "/snapshots/" + history.Snapshots[0].ID, user: builderAlice},
@@ -936,7 +1013,7 @@ func TestBuilderCursorRequests(t *testing.T) {
 			})
 
 			if recorder.Code != tt.status {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, tt.status, recorder.Body)
+				t.Errorf("PATCH %s %s: status = %d, want %d: %s", path, tt.body, recorder.Code, tt.status, recorder.Body)
 			}
 		})
 	}
@@ -953,11 +1030,14 @@ func TestBuilderIfMatchRequired(t *testing.T) {
 		document = string(builderDocument(t, "second"))
 	)
 
-	mutations := []builderRequest{
-		{method: http.MethodPost, path: path + "/snapshots", body: `{"document":` + document + `}`},
-		{method: http.MethodPatch, path: path + "/cursor", body: `{"index":0}`},
-		{method: http.MethodDelete, path: path + "/snapshots/current"},
-		{method: http.MethodDelete, path: path},
+	mutations := []struct {
+		name    string
+		request builderRequest
+	}{
+		{"save", builderRequest{method: http.MethodPost, path: path + "/snapshots", body: `{"document":` + document + `}`}},
+		{"move the cursor", builderRequest{method: http.MethodPatch, path: path + "/cursor", body: `{"index":0}`}},
+		{"delete the current snapshot", builderRequest{method: http.MethodDelete, path: path + "/snapshots/current"}},
+		{"delete the draft", builderRequest{method: http.MethodDelete, path: path}},
 	}
 
 	tags := []struct {
@@ -975,16 +1055,18 @@ func TestBuilderIfMatchRequired(t *testing.T) {
 
 	for _, mutation := range mutations {
 		for _, tag := range tags {
-			request := mutation
-			request.user = builderAlice
-			request.ifMatch = tag.ifMatch
+			t.Run(mutation.name+" with a "+tag.name+" tag", func(t *testing.T) {
+				request := mutation.request
+				request.user = builderAlice
+				request.ifMatch = tag.ifMatch
 
-			recorder := harness.do(request)
+				recorder := harness.do(request)
 
-			if recorder.Code != tag.status {
-				t.Errorf("%s %s with a %s tag: status = %d, want %d",
-					request.method, request.path, tag.name, recorder.Code, tag.status)
-			}
+				if recorder.Code != tag.status {
+					t.Errorf("%s %s with a %s tag: status = %d, want %d",
+						request.method, request.path, tag.name, recorder.Code, tag.status)
+				}
+			})
 		}
 	}
 
@@ -996,7 +1078,7 @@ func TestBuilderIfMatchRequired(t *testing.T) {
 	})
 
 	if etag := recorder.Header().Get("ETag"); etag != draft.ETag {
-		t.Errorf("etag = %q, want the unchanged %q", etag, draft.ETag)
+		t.Errorf("GET %s: ETag = %q, want the unchanged %q", path, etag, draft.ETag)
 	}
 }
 
@@ -1005,7 +1087,8 @@ func TestBuilderIfMatchRequired(t *testing.T) {
 func TestBuilderPublishedDocumentsRequireCurrentConfigReference(t *testing.T) {
 	harness := newBuilderHarness(t)
 
-	listDocuments := func() []builderDocumentResponse {
+	// listDocuments returns the IDs of the documents GET /builder/documents lists.
+	listDocuments := func() []string {
 		t.Helper()
 
 		recorder := harness.do(builderRequest{
@@ -1014,7 +1097,7 @@ func TestBuilderPublishedDocumentsRequireCurrentConfigReference(t *testing.T) {
 			user:   builderAlice,
 		})
 		if recorder.Code != http.StatusOK {
-			t.Fatalf("listing documents: status = %d, want %d", recorder.Code, http.StatusOK)
+			t.Fatalf("GET /builder/documents: status = %d, want %d", recorder.Code, http.StatusOK)
 		}
 
 		var response struct {
@@ -1023,7 +1106,12 @@ func TestBuilderPublishedDocumentsRequireCurrentConfigReference(t *testing.T) {
 
 		harness.decode(recorder, &response)
 
-		return response.Documents
+		ids := make([]string, 0, len(response.Documents))
+		for _, document := range response.Documents {
+			ids = append(ids, document.ID)
+		}
+
+		return ids
 	}
 
 	getStatus := func(id string) int {
@@ -1043,58 +1131,58 @@ func TestBuilderPublishedDocumentsRequireCurrentConfigReference(t *testing.T) {
 		Document: builderDocument(t, "current"),
 	})
 	if err != nil {
-		t.Fatalf("PutPublishedDocument returned error: %v", err)
+		t.Fatalf("PutPublishedDocument(current) returned error: %v", err)
 	}
 
 	reference, err := published.Reference().EncodeReference()
 	if err != nil {
-		t.Fatalf("EncodeReference returned error: %v", err)
+		t.Fatalf("EncodeReference(current) returned error: %v", err)
 	}
 
 	topology, err := store.NewConfig("Topology/current-topology")
 	if err != nil {
-		t.Fatalf("NewConfig returned error: %v", err)
+		t.Fatalf("NewConfig(Topology/current-topology) returned error: %v", err)
 	}
 
 	topology.Metadata.Annotations = store.Annotations{bapi.DocumentAnnotation: reference}
 	harness.configs = append(harness.configs, *topology)
 
-	listed := listDocuments()
-	if len(listed) != 1 || listed[0].ID != published.ID {
-		t.Fatalf("listed documents = %#v, want current document %s", listed, published.ID)
+	if diff := cmp.Diff([]string{published.ID}, listDocuments()); diff != "" {
+		t.Errorf("GET /builder/documents mismatch (-want +got):\n%s", diff)
 	}
 
 	if status := getStatus(published.ID); status != http.StatusOK {
-		t.Fatalf("getting current document: status = %d, want %d", status, http.StatusOK)
+		t.Errorf("GET /builder/documents/%s: status = %d, want %d", published.ID, status, http.StatusOK)
 	}
 
 	// Missing annotations hide an otherwise valid immutable record.
 	delete(harness.configs[0].Metadata.Annotations, bapi.DocumentAnnotation)
-	if listed = listDocuments(); len(listed) != 0 {
-		t.Fatalf("listed unreferenced documents = %#v, want none", listed)
+	if listed := listDocuments(); len(listed) != 0 {
+		t.Errorf("GET /builder/documents without the annotation = %q, want none", listed)
 	}
 	if status := getStatus(published.ID); status != http.StatusNotFound {
-		t.Fatalf("getting unreferenced document: status = %d, want %d", status, http.StatusNotFound)
+		t.Errorf("GET /builder/documents/%s without the annotation: status = %d, want %d",
+			published.ID, status, http.StatusNotFound)
 	}
 
 	// Malformed references fail closed without making the listing unavailable.
 	harness.configs[0].Metadata.Annotations[bapi.DocumentAnnotation] = "{"
-	if listed = listDocuments(); len(listed) != 0 {
-		t.Fatalf("listed document with malformed reference = %#v, want none", listed)
+	if listed := listDocuments(); len(listed) != 0 {
+		t.Errorf("GET /builder/documents with a malformed reference = %q, want none", listed)
 	}
 	if status := getStatus(published.ID); status != http.StatusNotFound {
-		t.Fatalf("getting document with malformed reference: status = %d, want %d",
-			status, http.StatusNotFound)
+		t.Errorf("GET /builder/documents/%s with a malformed reference: status = %d, want %d",
+			published.ID, status, http.StatusNotFound)
 	}
 
 	// Deleting the target config makes the document an inaccessible orphan.
 	harness.configs = nil
-	if listed = listDocuments(); len(listed) != 0 {
-		t.Fatalf("listed document for deleted config = %#v, want none", listed)
+	if listed := listDocuments(); len(listed) != 0 {
+		t.Errorf("GET /builder/documents after deleting the config = %q, want none", listed)
 	}
 	if status := getStatus(published.ID); status != http.StatusNotFound {
-		t.Fatalf("getting document for deleted config: status = %d, want %d",
-			status, http.StatusNotFound)
+		t.Errorf("GET /builder/documents/%s after deleting the config: status = %d, want %d",
+			published.ID, status, http.StatusNotFound)
 	}
 
 	// Replacing the annotation exposes only the new immutable document.
@@ -1105,26 +1193,27 @@ func TestBuilderPublishedDocumentsRequireCurrentConfigReference(t *testing.T) {
 		Document: builderDocument(t, "replacement"),
 	})
 	if err != nil {
-		t.Fatalf("PutPublishedDocument replacement returned error: %v", err)
+		t.Fatalf("PutPublishedDocument(replacement) returned error: %v", err)
 	}
 
 	replacementReference, err := replacement.Reference().EncodeReference()
 	if err != nil {
-		t.Fatalf("EncodeReference replacement returned error: %v", err)
+		t.Fatalf("EncodeReference(replacement) returned error: %v", err)
 	}
 
 	topology.Metadata.Annotations[bapi.DocumentAnnotation] = replacementReference
 	harness.configs = append(harness.configs, *topology)
 
-	listed = listDocuments()
-	if len(listed) != 1 || listed[0].ID != replacement.ID {
-		t.Fatalf("listed superseded documents = %#v, want only %s", listed, replacement.ID)
+	if diff := cmp.Diff([]string{replacement.ID}, listDocuments()); diff != "" {
+		t.Errorf("GET /builder/documents after replacing the annotation mismatch (-want +got):\n%s", diff)
 	}
 	if status := getStatus(published.ID); status != http.StatusNotFound {
-		t.Fatalf("getting superseded document: status = %d, want %d", status, http.StatusNotFound)
+		t.Errorf("GET /builder/documents/%s after replacing it: status = %d, want %d",
+			published.ID, status, http.StatusNotFound)
 	}
 	if status := getStatus(replacement.ID); status != http.StatusOK {
-		t.Fatalf("getting replacement document: status = %d, want %d", status, http.StatusOK)
+		t.Errorf("GET /builder/documents/%s, the replacement: status = %d, want %d",
+			replacement.ID, status, http.StatusOK)
 	}
 }
 
@@ -1158,7 +1247,7 @@ func TestBuilderErrorStatuses(t *testing.T) {
 			webErr := builderWebError(tt.err, "unable to do the thing")
 
 			if webErr.Status != tt.status {
-				t.Fatalf("status = %d, want %d", webErr.Status, tt.status)
+				t.Errorf("builderWebError(%v) status = %d, want %d", tt.err, webErr.Status, tt.status)
 			}
 		})
 	}
@@ -1184,30 +1273,46 @@ func TestBuilderSchemaRoutes(t *testing.T) {
 		builderPackageSchemaPath:  bdoc.PackageSchemaJSON,
 		builderLayerSetSchemaPath: bdoc.LayerSetFileSchemaJSON,
 	} {
-		served, err := schema()
-		if err != nil {
-			t.Fatalf("%s: %v", path, err)
-		}
+		t.Run(path, func(t *testing.T) {
+			served, err := schema()
+			if err != nil {
+				t.Fatalf("the schema of %s: %v", path, err)
+			}
 
-		recorder := harness.as(builderAlice, builderOnlyRole()).mustDo(path, builderRequest{method: http.MethodGet, path: path},
-			http.StatusOK)
-		if !bytes.Equal(recorder.Body.Bytes(), served) || recorder.Header().Get("Content-Type") != mimeJSON {
-			t.Errorf("%s: Content-Type %q, want its schema as JSON", path, recorder.Header().Get("Content-Type"))
-		}
+			recorder := harness.as(builderAlice, builderOnlyRole()).do(builderRequest{method: http.MethodGet, path: path})
+			if err := builderStatusError(recorder, http.StatusOK); err != nil {
+				t.Fatalf("GET %s: %v", path, err)
+			}
+
+			if got := recorder.Header().Get("Content-Type"); got != mimeJSON {
+				t.Errorf("GET %s: Content-Type = %q, want %q", path, got, mimeJSON)
+			}
+
+			// The exact bytes served to clients.
+			if diff := cmp.Diff(string(served), recorder.Body.String()); diff != "" {
+				t.Errorf("GET %s schema mismatch (-want +got):\n%s", path, diff)
+			}
+		})
 	}
 
 	other := harness.do(builderRequest{method: http.MethodGet, path: "/schemas/topology/v1", user: builderAlice})
-	if other.Code != http.StatusOK || bytes.Equal(other.Body.Bytes(), want) {
-		t.Errorf("/schemas/topology/v1: status = %d, want the generic Topology schema", other.Code)
+	if other.Code != http.StatusOK {
+		t.Errorf("GET /schemas/topology/v1: status = %d, want %d", other.Code, http.StatusOK)
+	}
+
+	if bytes.Equal(other.Body.Bytes(), want) {
+		t.Error("GET /schemas/topology/v1 = the Builder schema, want the generic Topology schema")
 	}
 
 	// The generic handler answers a kind or version it has no schema for with 404.
 	for _, path := range []string{"/schemas/nope/v1", "/schemas/topology/v9"} {
-		recorder := harness.do(builderRequest{method: http.MethodGet, path: path, user: builderAlice})
+		t.Run(path, func(t *testing.T) {
+			recorder := harness.do(builderRequest{method: http.MethodGet, path: path, user: builderAlice})
 
-		if recorder.Code != http.StatusNotFound {
-			t.Errorf("%s: status = %d, want %d: %s", path, recorder.Code, http.StatusNotFound, recorder.Body)
-		}
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("GET %s: status = %d, want %d: %s", path, recorder.Code, http.StatusNotFound, recorder.Body)
+			}
+		})
 	}
 }
 
@@ -1227,15 +1332,15 @@ func TestBuilderRegisteredBeforeGenericSchema(t *testing.T) {
 	)
 
 	if builderRoutes < 0 {
-		t.Fatal("server.go does not register the Builder routes")
+		t.Error("server.go does not register the Builder routes")
 	}
 
 	if generic < 0 {
-		t.Fatal("server.go does not register the generic schema route")
+		t.Error("server.go does not register the generic schema route")
 	}
 
-	if builderRoutes > generic {
-		t.Fatal("the Builder routes must be registered before /schemas/{kind}/{version}")
+	if builderRoutes >= 0 && generic >= 0 && builderRoutes > generic {
+		t.Error("server.go registers the Builder routes after /schemas/{kind}/{version}, want them before")
 	}
 }
 
@@ -1265,18 +1370,20 @@ func TestBuilderRoutesNeedTheBuilder(t *testing.T) {
 
 			operations++
 
-			for name, caller := range map[string]builderCaller{
-				"no identity":   harness.as("", nil),
-				"Global Viewer": harness.as(builderBob, viewer),
-				"configs only":  harness.as(builderBob, builderConfigsOnlyRole()),
-			} {
-				recorder := caller.do(builderRequest{method: method, path: path, body: `{}`, ifMatch: draft.ETag})
-				if recorder.Code != http.StatusForbidden {
-					t.Errorf("%s %s as %s: status = %d, want 403: %s", method, template, name, recorder.Code, recorder.Body)
-				} else if code := builderRefusal(t, recorder).Code; code != string(bdoc.CodeRequestForbidden) {
-					t.Errorf("%s %s as %s: code = %q, want %q", method, template, name, code, bdoc.CodeRequestForbidden)
+			t.Run(method+" "+template, func(t *testing.T) {
+				for name, caller := range map[string]builderCaller{
+					"no identity":   harness.as("", nil),
+					"Global Viewer": harness.as(builderBob, viewer),
+					"configs only":  harness.as(builderBob, builderConfigsOnlyRole()),
+				} {
+					recorder := caller.do(builderRequest{method: method, path: path, body: `{}`, ifMatch: draft.ETag})
+					if recorder.Code != http.StatusForbidden {
+						t.Errorf("%s %s as %s: status = %d, want 403: %s", method, template, name, recorder.Code, recorder.Body)
+					} else if code := builderRefusal(t, recorder).Code; code != string(bdoc.CodeRequestForbidden) {
+						t.Errorf("%s %s as %s: code = %q, want %q", method, template, name, code, bdoc.CodeRequestForbidden)
+					}
 				}
-			}
+			})
 		}
 
 		return nil
@@ -1286,15 +1393,15 @@ func TestBuilderRoutesNeedTheBuilder(t *testing.T) {
 	}
 
 	if operations < 40 {
-		t.Fatalf("checked %d operations, want every Builder route", operations)
+		t.Errorf("checked %d operations, want every Builder route (at least 40)", operations)
 	}
 
 	if meta := mustDraftMeta(t, harness, draft.ID); meta.ETag() != draft.ETag {
-		t.Fatalf("a refused request changed the draft to %s", meta.ETag())
+		t.Errorf("draft %s ETag = %s after the refused requests, want the unchanged %s", draft.ID, meta.ETag(), draft.ETag)
 	}
 
 	if count := harness.store.Count(bapi.NamespaceDrafts); count != 1 {
-		t.Fatalf("stored drafts = %d, want only the kept one", count)
+		t.Errorf("stored drafts = %d, want only the kept one", count)
 	}
 }
 
@@ -1339,9 +1446,17 @@ func TestBuilderLibrariesNeedOnlyTheBuilder(t *testing.T) {
 
 	for i, request := range requests {
 		what := request.method + " " + request.path
-		if err := builderJSONError(builder.mustDo(what, request, statuses[i])); err != nil {
-			t.Errorf("%s: %v", what, err)
-		}
+
+		t.Run(what, func(t *testing.T) {
+			recorder := builder.do(request)
+			if err := builderStatusError(recorder, statuses[i]); err != nil {
+				t.Fatalf("%s: %v", what, err)
+			}
+
+			if err := builderJSONError(recorder); err != nil {
+				t.Errorf("%s: %v", what, err)
+			}
+		})
 	}
 }
 
@@ -1394,7 +1509,7 @@ func TestBuilderRoutesDocumented(t *testing.T) {
 	}
 
 	if operations == 0 {
-		t.Fatal("no Builder routes were registered")
+		t.Error("checked no operations, want every registered Builder route")
 	}
 }
 
@@ -1446,28 +1561,32 @@ func TestBuilderDocumentDocumented(t *testing.T) {
 	}
 
 	for _, component := range components {
-		documented := slices.Sorted(maps.Keys(component.object.Properties))
+		t.Run(component.name, func(t *testing.T) {
+			t.Parallel()
 
-		if want := jsonFieldNames(component.model); !slices.Equal(documented, want) {
-			t.Errorf("%s documents properties %v, want the JSON fields of %s: %v",
-				component.name, documented, component.model, want)
-		}
+			documented := slices.Sorted(maps.Keys(component.object.Properties))
 
-		for _, name := range documented {
-			property := component.object.Properties[name]
-
-			if strings.TrimSpace(property.Title) == "" {
-				t.Errorf("%s.%s has no title", component.name, name)
+			if diff := cmp.Diff(jsonFieldNames(component.model), documented); diff != "" {
+				t.Errorf("%s properties mismatch with the JSON fields of %s (-want +got):\n%s",
+					component.name, component.model, diff)
 			}
 
-			if strings.TrimSpace(property.Description) == "" {
-				t.Errorf("%s.%s has no description", component.name, name)
-			}
+			for _, name := range documented {
+				property := component.object.Properties[name]
 
-			if property.Example == nil {
-				t.Errorf("%s.%s has no example", component.name, name)
+				if strings.TrimSpace(property.Title) == "" {
+					t.Errorf("%s.%s has no title", component.name, name)
+				}
+
+				if strings.TrimSpace(property.Description) == "" {
+					t.Errorf("%s.%s has no description", component.name, name)
+				}
+
+				if property.Example == nil {
+					t.Errorf("%s.%s has no example", component.name, name)
+				}
 			}
-		}
+		})
 	}
 }
 
@@ -1534,8 +1653,12 @@ func TestBuilderSnapshotCleanupSucceeds(t *testing.T) {
 	harness.store.FailPrefixDelete = builderRefusePrefixDelete
 
 	recorder := harness.doDecode(save("third", rewound.ETag), http.StatusCreated, &saved)
-	if warning := builderWarning(recorder); !strings.Contains(warning, "append snapshot") || saved.ETag == rewound.ETag {
-		t.Errorf("warning = %q, ETag %q, want the operation named and a new ETag", warning, saved.ETag)
+	if warning := builderWarning(recorder); !strings.Contains(warning, "append snapshot") {
+		t.Errorf("POST %s/snapshots with failed cleanup: warning = %q, want the operation append snapshot named", path, warning)
+	}
+
+	if saved.ETag == rewound.ETag {
+		t.Errorf("POST %s/snapshots with failed cleanup: ETag = %q, want a new one", path, saved.ETag)
 	}
 
 	harness.store.FailPrefixDelete = nil
@@ -1560,13 +1683,22 @@ func TestBuilderDeleteDraft(t *testing.T) {
 			}, http.StatusNoContent, nil)
 
 			warning := builderWarning(recorder)
-			if failCleanup != strings.Contains(warning, "delete draft") ||
-				strings.Contains(warning, errBuilderPrefixDelete.Error()) || strings.Contains(warning, draft.ID) {
-				t.Errorf("warning = %q, want only the operation named when cleanup fails", warning)
+			if got := strings.Contains(warning, "delete draft"); got != failCleanup {
+				t.Errorf("DELETE /builder/drafts/%s: warning = %q names the operation: %t, want %t", draft.ID, warning, got, failCleanup)
 			}
 
-			if recorder.Body.Len() != 0 || harness.store.Count(bapi.NamespaceDrafts) != 0 {
-				t.Errorf("body = %q, %d drafts stored, want no body and no draft", recorder.Body, harness.store.Count(bapi.NamespaceDrafts))
+			for _, secret := range []string{errBuilderPrefixDelete.Error(), draft.ID} {
+				if strings.Contains(warning, secret) {
+					t.Errorf("DELETE /builder/drafts/%s: warning = %q, want it without %q", draft.ID, warning, secret)
+				}
+			}
+
+			if recorder.Body.Len() != 0 {
+				t.Errorf("DELETE /builder/drafts/%s = %q, want no body", draft.ID, recorder.Body)
+			}
+
+			if count := harness.store.Count(bapi.NamespaceDrafts); count != 0 {
+				t.Errorf("after DELETE /builder/drafts/%s: %d drafts stored, want none", draft.ID, count)
 			}
 
 			harness.store.FailPrefixDelete = nil
@@ -1593,9 +1725,27 @@ func TestBuilderUnreadableDraft(t *testing.T) {
 	peer := harness.as(builderBob, builderOnlyRole())
 	peer.doDecode(builderRequest{method: http.MethodGet, path: "/builder/drafts"}, http.StatusOK, &listing)
 
-	if len(listing.Drafts) != 1 || listing.Drafts[0].ID != good.ID || len(listing.Damaged) != 1 ||
-		listing.Damaged[0].ID != bad.ID || listing.Damaged[0].Title != "bad" || listing.Damaged[0].ETag == bad.ETag {
-		t.Fatalf("listing = %+v, want %q readable and %q damaged at a new ETag", listing, good.ID, bad.ID)
+	readable := make([]string, 0, len(listing.Drafts))
+	for _, draft := range listing.Drafts {
+		readable = append(readable, draft.ID)
+	}
+
+	if diff := cmp.Diff([]string{good.ID}, readable); diff != "" {
+		t.Errorf("GET /builder/drafts readable drafts mismatch (-want +got):\n%s", diff)
+	}
+
+	if len(listing.Damaged) != 1 {
+		t.Fatalf("GET /builder/drafts damaged = %+v, want %q", listing.Damaged, bad.ID)
+	}
+
+	type damaged struct{ ID, Title string }
+
+	if diff := cmp.Diff(damaged{ID: bad.ID, Title: "bad"}, damaged{listing.Damaged[0].ID, listing.Damaged[0].Title}); diff != "" {
+		t.Errorf("GET /builder/drafts damaged draft mismatch (-want +got):\n%s", diff)
+	}
+
+	if listing.Damaged[0].ETag == bad.ETag {
+		t.Errorf("GET /builder/drafts: damaged draft ETag = %q, want a new one", listing.Damaged[0].ETag)
 	}
 
 	path := "/builder/drafts/" + bad.ID
@@ -1606,7 +1756,7 @@ func TestBuilderUnreadableDraft(t *testing.T) {
 		method: http.MethodDelete, path: path, ifMatch: bad.ETag,
 	}, http.StatusPreconditionFailed)
 	if current := recorder.Header().Get("ETag"); current != listing.Damaged[0].ETag {
-		t.Fatalf("stale delete names ETag %q, want the listed %q", current, listing.Damaged[0].ETag)
+		t.Errorf("DELETE %s at a stale ETag: ETag header = %q, want the listed %q", path, current, listing.Damaged[0].ETag)
 	}
 
 	peer.mustDo(

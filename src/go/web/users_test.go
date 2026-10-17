@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/store"
 	"phenix/store/storetest"
 	v1 "phenix/types/version/v1"
@@ -104,6 +106,16 @@ func postUsers(signup bool, body string) *httptest.ResponseRecorder {
 	return rec
 }
 
+// usersAnswer is the status and body of an answer to a request to create a user.
+type usersAnswer struct {
+	Status int
+	Body   string
+}
+
+func newUsersAnswer(rec *httptest.ResponseRecorder) usersAnswer {
+	return usersAnswer{Status: rec.Code, Body: rec.Body.String()}
+}
+
 // TestCreateUserRefusesAnExistingName refuses an existing name with 409, as
 // an administrator and at signup, and other store errors with 500.
 func TestCreateUserRefusesAnExistingName(t *testing.T) {
@@ -119,25 +131,25 @@ func TestCreateUserRefusesAnExistingName(t *testing.T) {
 			body := `{"username":"alice","password":"Testpass1!","first_name":"Other","last_name":"Name",` +
 				`"role_name":"` + usersTestRole + `"}`
 
-			rec := postUsers(signup, body)
-			if rec.Code != http.StatusConflict || rec.Body.String() != "user alice already exists\n" {
-				t.Fatalf("create = %d %q, want 409 user alice already exists", rec.Code, rec.Body.String())
+			want := usersAnswer{Status: http.StatusConflict, Body: "user alice already exists\n"}
+			if diff := cmp.Diff(want, newUsersAnswer(postUsers(signup, body))); diff != "" {
+				t.Errorf("POST /%s of alice mismatch (-want +got):\n%s", name, diff)
 			}
 
 			user, err := rbac.GetUser("alice")
 			if err != nil {
-				t.Fatalf("GetUser returned error: %v", err)
+				t.Fatalf("GetUser(alice) returned error: %v", err)
 			}
 
-			if user.FirstName() != "Alice" {
-				t.Fatalf("first name = %q, want Alice", user.FirstName())
+			if got := user.FirstName(); got != "Alice" {
+				t.Errorf("GetUser(alice).FirstName() = %q, want Alice", got)
 			}
 
 			s.createErr = errors.New("store is read-only")
 
-			rec = postUsers(signup, strings.ReplaceAll(body, "alice", "bob"))
-			if rec.Code != http.StatusInternalServerError || rec.Body.String() != "error creating user\n" {
-				t.Fatalf("create the store refuses = %d %q, want 500 error creating user", rec.Code, rec.Body.String())
+			want = usersAnswer{Status: http.StatusInternalServerError, Body: "error creating user\n"}
+			if diff := cmp.Diff(want, newUsersAnswer(postUsers(signup, strings.ReplaceAll(body, "alice", "bob")))); diff != "" {
+				t.Errorf("POST /%s of bob to a read-only store mismatch (-want +got):\n%s", name, diff)
 			}
 		})
 	}
@@ -149,11 +161,11 @@ func TestCreateUserWithAnUnknownRoleCreatesNoUser(t *testing.T) {
 
 	rec := postUsers(false, `{"username":"bob","password":"Testpass1!","role_name":"No Such Role"}`)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("create = %d %s, want 400", rec.Code, rec.Body.String())
+		t.Errorf("POST /users of bob with role No Such Role = %d %s, want 400", rec.Code, rec.Body)
 	}
 
 	if _, err := rbac.GetUser("bob"); err == nil {
-		t.Fatal("the refused request created the user")
+		t.Error("GetUser(bob) found the user the refused request named, want an error")
 	}
 }
 
@@ -166,30 +178,38 @@ func TestConfigureUsersWithoutCreatingAUser(t *testing.T) {
 	s.hideUsers = true
 
 	if err := ConfigureUsers([]string{"alice:Otherpass1!:" + usersTestRole}); err != nil {
-		t.Fatalf("ConfigureUsers returned error: %v", err)
+		t.Errorf("ConfigureUsers(alice) returned error: %v", err)
 	}
 
-	if len(logs.Take(t, plogtest.Message("default user already exists"))) != 1 {
-		t.Fatal("ConfigureUsers did not log that alice exists")
+	if got := len(logs.Take(t, plogtest.Message("default user already exists"))); got != 1 {
+		t.Errorf("ConfigureUsers(alice) logged that alice exists %d times, want 1", got)
 	}
 
 	s.hideUsers = false
 
 	alice, err := rbac.GetUser("alice")
 	if err != nil {
-		t.Fatalf("GetUser returned error: %v", err)
+		t.Fatalf("GetUser(alice) returned error: %v", err)
 	}
 
-	if alice.FirstName() != "Alice" || alice.Spec.Role != nil {
-		t.Fatal("ConfigureUsers changed the user that exists")
+	if diff := cmp.Diff(&v1.UserSpec{Username: "alice", FirstName: "Alice"}, alice.Spec); diff != "" {
+		t.Errorf("ConfigureUsers(alice) changed the user that exists (-want +got):\n%s", diff)
 	}
 
 	refused := errors.New("store is read-only")
 	s.createErr = refused
 
 	err = ConfigureUsers([]string{"bob:Testpass1!:" + usersTestRole, "carol:Testpass1!:" + usersTestRole})
-	if !errors.Is(err, refused) || !strings.Contains(err.Error(), "bob") || !strings.Contains(err.Error(), "carol") {
-		t.Fatalf("ConfigureUsers returned %v, want the store's error for bob and carol", err)
+	if !errors.Is(err, refused) {
+		t.Errorf("ConfigureUsers(bob, carol) = %v, want the store's error", err)
+	}
+
+	if err != nil {
+		for _, name := range []string{"bob", "carol"} {
+			if !strings.Contains(err.Error(), name) {
+				t.Errorf("ConfigureUsers(bob, carol) = %v, want it to name %s", err, name)
+			}
+		}
 	}
 }
 
@@ -200,29 +220,40 @@ func TestConfigureUsersSkipsAUserWithoutARole(t *testing.T) {
 	logs := plogtest.Capture(t)
 
 	err := ConfigureUsers([]string{"dave:Davepass1!", "Nonamepass1!", "erin:Testpass1!:" + usersTestRole})
-	if err == nil || !strings.Contains(err.Error(), `default user 1 ("dave")`) ||
-		!strings.Contains(err.Error(), `default user 2 ("")`) {
-		t.Fatalf("ConfigureUsers returned %v, want errors for default users 1 and 2", err)
+	if err == nil {
+		t.Fatal("ConfigureUsers(dave, unnamed, erin) = nil, want errors for default users 1 and 2")
+	}
+
+	for _, want := range []string{`default user 1 ("dave")`, `default user 2 ("")`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("ConfigureUsers(dave, unnamed, erin) = %v, want it to name %s", err, want)
+		}
 	}
 
 	logged := logs.String()
 
 	for _, password := range []string{"Davepass1!", "Nonamepass1!"} {
 		if strings.Contains(logged, password) || strings.Contains(err.Error(), password) {
-			t.Fatalf("ConfigureUsers logged or returned the password %s", password)
+			t.Errorf("ConfigureUsers(dave, unnamed, erin) logged or returned the password %s", password)
 		}
 	}
 
-	if skipped := logs.Take(t, plogtest.Message("skipping default user without a role")); len(skipped) != 2 ||
-		skipped[0]["user"] != "dave" || skipped[1]["user"] != "" {
-		t.Fatalf("skipped = %v, want dave and an unnamed user", skipped)
+	records := logs.Take(t, plogtest.Message("skipping default user without a role"))
+	skipped := make([]any, 0, len(records))
+
+	for _, record := range records {
+		skipped = append(skipped, record["user"])
+	}
+
+	if diff := cmp.Diff([]any{"dave", ""}, skipped); diff != "" {
+		t.Errorf("ConfigureUsers(dave, unnamed, erin) skipped users mismatch (-want +got):\n%s", diff)
 	}
 
 	if _, err := rbac.GetUser("dave"); err == nil {
-		t.Fatal("ConfigureUsers created dave, who has no role")
+		t.Error("GetUser(dave) found dave, who has no role, want an error")
 	}
 
 	if _, err := rbac.GetUser("erin"); err != nil {
-		t.Fatalf("ConfigureUsers did not create erin after the users without a role: %v", err)
+		t.Errorf("GetUser(erin) returned error: %v, want erin created after the users without a role", err)
 	}
 }

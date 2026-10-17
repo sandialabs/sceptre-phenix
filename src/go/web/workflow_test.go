@@ -90,12 +90,16 @@ func TestWorkflowUpsertConfigChecksPermissionBeforeParsing(t *testing.T) {
 
 				if tt.forbidden {
 					if rec.Code != http.StatusForbidden {
-						t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+						t.Errorf("WorkflowUpsertConfig(%s) as %s: status = %d, want %d: %s",
+							query, tt.name, rec.Code, http.StatusForbidden, rec.Body)
 					}
 
-					if strings.Contains(rec.Body.String(), secret) ||
-						!strings.Contains(rec.Body.String(), "creating or updating configs not allowed for test-user") {
-						t.Fatalf("response = %s, want the refusal without the environment variable", rec.Body.String())
+					if strings.Contains(rec.Body.String(), secret) {
+						t.Errorf("WorkflowUpsertConfig(%s) as %s = %s, want no environment variable in it", query, tt.name, rec.Body)
+					}
+
+					if want := "creating or updating configs not allowed for test-user"; !strings.Contains(rec.Body.String(), want) {
+						t.Errorf("WorkflowUpsertConfig(%s) as %s = %s, want the refusal %q", query, tt.name, rec.Body, want)
 					}
 
 					return
@@ -104,7 +108,8 @@ func TestWorkflowUpsertConfigChecksPermissionBeforeParsing(t *testing.T) {
 				// Callers who may write configs still get the parse error, which
 				// they could read through the configs endpoints anyway.
 				if rec.Code == http.StatusForbidden {
-					t.Fatalf("status = %d, want the parse error: %s", rec.Code, rec.Body.String())
+					t.Errorf("WorkflowUpsertConfig(%s) as %s: status = %d, want the parse error: %s",
+						query, tt.name, rec.Code, rec.Body)
 				}
 			})
 		}

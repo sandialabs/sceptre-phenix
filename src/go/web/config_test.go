@@ -4,7 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v3"
 
@@ -113,13 +114,13 @@ func TestConfigWritesCheckTheConfigTheyWrite(t *testing.T) {
 			weberror.ErrorHandler(tt.handler).ServeHTTP(rec, req.WithContext(ctx))
 
 			if rec.Code != tt.status {
-				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.status, rec.Body.String())
+				t.Errorf("%s status = %d, want %d: %s", tt.name, rec.Code, tt.status, rec.Body)
 			}
 		})
 	}
 
 	if want := []string{"Topology/plant", "Topology/site"}; !slices.Equal(written, want) {
-		t.Fatalf("wrote %q, want %q", written, want)
+		t.Errorf("configs written = %q, want %q", written, want)
 	}
 }
 
@@ -176,31 +177,35 @@ func TestConfigYAMLKeepsStrings(t *testing.T) {
 		return rec.Body.Bytes()
 	}
 
-	loads := func(path string, data []byte, name string) {
-		t.Helper()
-
+	// loadProblem reports how data, loaded as YAML, differs from the stored config name.
+	loadProblem := func(data []byte, name string) error {
 		var loaded store.Config
 		if err := yaml.Unmarshal(data, &loaded); err != nil {
-			t.Fatalf("%s does not load: %v\n%s", path, err, data)
+			return fmt.Errorf("does not load: %w\n%s", err, data)
 		}
 
-		got, _ := json.Marshal(loaded)
-		want, _ := json.Marshal(stored(name))
-
-		if string(got) != string(want) {
-			t.Fatalf("%s loads as %s, want %s\n%s", path, got, want, data)
+		if diff := cmp.Diff(stored(name), loaded); diff != "" {
+			return fmt.Errorf("loads mismatch (-want +got):\n%s\n%s", diff, data)
 		}
+
+		return nil
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/configs/scenario/exact?noupgrade=1", nil)
 	req.Header.Set("Accept", "application/x-yaml")
-	loads("GET /configs", serve(GetConfig, mux.SetURLVars(req, map[string]string{"kind": "scenario", "name": "exact"})), "exact")
+
+	got := serve(GetConfig, mux.SetURLVars(req, map[string]string{"kind": "scenario", "name": "exact"}))
+	if err := loadProblem(got, "exact"); err != nil {
+		t.Errorf("GET /configs/scenario/exact: %v", err)
+	}
 
 	download := func(names string) []byte {
 		return serve(DownloadConfigs, httptest.NewRequest(http.MethodPost, "/api/v1/configs/download", strings.NewReader(names)))
 	}
 
-	loads("the download", download(`["Scenario/exact"]`), "exact")
+	if err := loadProblem(download(`["Scenario/exact"]`), "exact"); err != nil {
+		t.Errorf("POST /configs/download of Scenario/exact: %v", err)
+	}
 
 	body := download(`["Scenario/exact","Scenario/other"]`)
 
@@ -210,22 +215,28 @@ func TestConfigYAMLKeepsStrings(t *testing.T) {
 	}
 
 	if len(archive.File) != 2 {
-		t.Fatalf("zip holds %d files, want 2", len(archive.File))
+		t.Errorf("POST /configs/download of two configs: zip holds %d files, want 2", len(archive.File))
 	}
 
 	for _, file := range archive.File {
 		f, err := file.Open()
 		if err != nil {
-			t.Fatalf("opening %s: %v", file.Name, err)
+			t.Errorf("opening %s: %v", file.Name, err)
+
+			continue
 		}
 
 		data, err := io.ReadAll(f)
 		_ = f.Close()
 
 		if err != nil {
-			t.Fatalf("reading %s: %v", file.Name, err)
+			t.Errorf("reading %s: %v", file.Name, err)
+
+			continue
 		}
 
-		loads(file.Name, data, strings.TrimSuffix(strings.TrimPrefix(file.Name, "Scenario-"), ".yml"))
+		if err := loadProblem(data, strings.TrimSuffix(strings.TrimPrefix(file.Name, "Scenario-"), ".yml")); err != nil {
+			t.Errorf("POST /configs/download of two configs: %s %v", file.Name, err)
+		}
 	}
 }
