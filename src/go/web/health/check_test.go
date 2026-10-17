@@ -2,11 +2,12 @@ package health
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/polltest"
 )
@@ -98,15 +99,19 @@ func TestEvaluateReusesRunsWithinTTL(t *testing.T) {
 	r.Evaluate(t.Context())
 	clock.Add(59 * time.Second)
 
-	if resp := r.Evaluate(t.Context()); resp.Status != Pass || runs.Load() != 1 {
-		t.Fatalf("within the TTL: status %s after %d runs, want pass after 1", resp.Status, runs.Load())
+	if got := r.Evaluate(t.Context()).Status; got != Pass {
+		t.Errorf("Evaluate() within the TTL: status = %s, want %s", got, Pass)
+	}
+
+	if got := runs.Load(); got != 1 {
+		t.Errorf("Evaluate() within the TTL: %d runs, want 1", got)
 	}
 
 	clock.Add(time.Second)
 	r.Evaluate(t.Context())
 
-	if runs.Load() != 2 {
-		t.Errorf("after the TTL: %d runs, want 2", runs.Load())
+	if got := runs.Load(); got != 2 {
+		t.Errorf("Evaluate() after the TTL: %d runs, want 2", got)
 	}
 }
 
@@ -140,12 +145,12 @@ func TestEvaluateRunsOnceForConcurrentRequests(t *testing.T) {
 
 	for status := range statuses {
 		if status != Warn {
-			t.Errorf("status = %s, want warn", status)
+			t.Errorf("Evaluate() status = %s, want %s", status, Warn)
 		}
 	}
 
-	if runs.Load() != 1 {
-		t.Errorf("%d runs, want 1", runs.Load())
+	if got := runs.Load(); got != 1 {
+		t.Errorf("Evaluate() concurrently: %d runs, want 1", got)
 	}
 }
 
@@ -167,29 +172,31 @@ func TestEvaluateTimesOut(t *testing.T) {
 	withClock(r)
 
 	start := time.Now()
-	resp := r.Evaluate(t.Context())
+	got := r.Evaluate(t.Context())
 
 	if took := time.Since(start); took > time.Second {
-		t.Errorf("answered after %s, want about the timeout", took)
+		t.Errorf("Evaluate() answered after %s, want about the timeout", took)
 	}
 
-	if resp.Status != Fail {
-		t.Errorf("status = %s, want fail", resp.Status)
+	failure := []Result{{
+		ComponentID:   "test",
+		ComponentType: TypeComponent,
+		Status:        Fail,
+		Time:          "2026-01-01T00:00:00Z",
+		Output:        "timed out after 20ms",
+	}}
+	want := Response{Status: Fail, Checks: map[string][]Result{"test:value": failure, "test:other": failure}}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Evaluate() of a hung check mismatch (-want +got):\n%s", diff)
 	}
 
-	for _, key := range []string{"test:value", "test:other"} {
-		results := resp.Checks[key]
-		if len(results) != 1 || results[0].Status != Fail || !strings.Contains(results[0].Output, "timed out") {
-			t.Errorf("%s = %+v, want one timed out failure", key, results)
-		}
-
-		if results[0].ComponentID != "test" || results[0].ObservedValue != nil {
-			t.Errorf("%s = %+v, want the component and no value", key, results)
-		}
+	if got := r.Evaluate(t.Context()).Status; got != Fail {
+		t.Errorf("Evaluate() while the run hangs: status = %s, want %s", got, Fail)
 	}
 
-	if resp := r.Evaluate(t.Context()); resp.Status != Fail || runs.Load() != 1 {
-		t.Errorf("while the run hangs: status %s after %d runs, want fail after 1", resp.Status, runs.Load())
+	if got := runs.Load(); got != 1 {
+		t.Errorf("Evaluate() while the run hangs: %d runs, want 1", got)
 	}
 
 	close(release)
@@ -198,8 +205,8 @@ func TestEvaluateTimesOut(t *testing.T) {
 		return r.Evaluate(t.Context()).Status == Pass
 	})
 
-	if runs.Load() != 1 {
-		t.Errorf("%d runs, want 1", runs.Load())
+	if got := runs.Load(); got != 1 {
+		t.Errorf("Evaluate() after the late run: %d runs, want 1", got)
 	}
 }
 
@@ -217,18 +224,18 @@ func TestEvaluateRequestEndDoesNotCacheFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	if resp := r.Evaluate(ctx); resp.Status != Fail {
-		t.Errorf("ended request: status %s, want fail", resp.Status)
+	if got := r.Evaluate(ctx).Status; got != Fail {
+		t.Errorf("Evaluate(ended request) status = %s, want %s", got, Fail)
 	}
 
 	close(release)
 
-	if resp := r.Evaluate(t.Context()); resp.Status != Pass {
-		t.Errorf("next request: status %s, want pass", resp.Status)
+	if got := r.Evaluate(t.Context()).Status; got != Pass {
+		t.Errorf("Evaluate(next request) status = %s, want %s", got, Pass)
 	}
 
-	if runs.Load() != 1 {
-		t.Errorf("%d runs, want 1", runs.Load())
+	if got := runs.Load(); got != 1 {
+		t.Errorf("Evaluate() of two requests: %d runs, want 1", got)
 	}
 }
 
@@ -236,19 +243,27 @@ func TestEvaluateReportsPanicAsFailure(t *testing.T) {
 	t.Parallel()
 
 	for name, timeout := range map[string]time.Duration{"cached": time.Second, "per request": 0} {
-		r := NewRegistry(Check{
-			Name:    "test",
-			Keys:    []Key{{Name: "test:value", ComponentID: "", ComponentType: ""}},
-			Timeout: timeout,
-			Run:     func(context.Context) map[string][]Result { panic("boom") },
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			r := NewRegistry(Check{
+				Name:    "test",
+				Keys:    []Key{{Name: "test:value", ComponentID: "", ComponentType: ""}},
+				Timeout: timeout,
+				Run:     func(context.Context) map[string][]Result { panic("boom") },
+			})
+			withClock(r)
+
+			want := Response{Status: Fail, Checks: map[string][]Result{"test:value": {{
+				Status: Fail,
+				Time:   "2026-01-01T00:00:00Z",
+				Output: "check panicked: boom",
+			}}}}
+
+			if diff := cmp.Diff(want, r.Evaluate(t.Context())); diff != "" {
+				t.Errorf("Evaluate() of a panicking check mismatch (-want +got):\n%s", diff)
+			}
 		})
-
-		resp := r.Evaluate(t.Context())
-
-		if results := resp.Checks["test:value"]; resp.Status != Fail || len(results) != 1 ||
-			!strings.Contains(results[0].Output, "boom") {
-			t.Errorf("%s: %+v, want a failure naming the panic", name, resp)
-		}
 	}
 }
 
@@ -264,7 +279,13 @@ func TestEvaluateSkipsExcludedAndDisabledChecks(t *testing.T) {
 
 	r := NewRegistry(failing, disabled)
 
-	if resp := r.Evaluate(t.Context(), "test"); resp.Status != Pass || len(resp.Checks) != 0 || runs.Load() != 0 {
-		t.Errorf("Evaluate(exclude test) = %+v after %d runs, want an empty pass", resp, runs.Load())
+	want := Response{Status: Pass, Checks: map[string][]Result{}}
+
+	if diff := cmp.Diff(want, r.Evaluate(t.Context(), "test")); diff != "" {
+		t.Errorf("Evaluate(exclude test) mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := runs.Load(); got != 0 {
+		t.Errorf("Evaluate(exclude test): %d runs, want 0", got)
 	}
 }

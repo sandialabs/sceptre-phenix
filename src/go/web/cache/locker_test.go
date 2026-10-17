@@ -9,22 +9,22 @@ import (
 
 func TestExperimentStatus(t *testing.T) {
 	if got := ExperimentStatus("status-test", false); got != StatusStopped {
-		t.Errorf("stopped experiment: status = %q, want %q", got, StatusStopped)
+		t.Errorf("ExperimentStatus(status-test, false) = %q, want %q", got, StatusStopped)
 	}
 
 	if got := ExperimentStatus("status-test", true); got != StatusStarted {
-		t.Errorf("running experiment: status = %q, want %q", got, StatusStarted)
+		t.Errorf("ExperimentStatus(status-test, true) = %q, want %q", got, StatusStarted)
 	}
 
 	if err := LockExperimentForStarting("status-test"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("LockExperimentForStarting(status-test) error = %v", err)
 	}
 
 	t.Cleanup(func() { UnlockExperiment("status-test") })
 
 	// what a handler is doing to the experiment wins
 	if got := ExperimentStatus("status-test", false); got != StatusStarting {
-		t.Errorf("locked experiment: status = %q, want %q", got, StatusStarting)
+		t.Errorf("ExperimentStatus(status-test, false) while starting = %q, want %q", got, StatusStarting)
 	}
 }
 
@@ -32,7 +32,7 @@ func TestExperimentStatus(t *testing.T) {
 // always had.
 func TestLockedErrorIsRetryable(t *testing.T) {
 	if err := LockVMForStarting("locked-test", "vm1"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("LockVMForStarting(locked-test, vm1) error = %v", err)
 	}
 
 	t.Cleanup(func() { UnlockVM("locked-test", "vm1") })
@@ -41,14 +41,14 @@ func TestLockedErrorIsRetryable(t *testing.T) {
 
 	var locked *LockedError
 	if !errors.As(err, &locked) {
-		t.Fatalf("LockVMForStopping = %v, want a *LockedError", err)
+		t.Fatalf("LockVMForStopping(locked-test, vm1) error = %v, want a *LockedError", err)
 	}
 
 	if want := "vm vm1 is locked with status starting"; err.Error() != want {
-		t.Errorf("error %q, want %q", err, want)
+		t.Errorf("LockVMForStopping(locked-test, vm1) error = %q, want %q", err, want)
 	}
 
 	if !job.Retryable(err) {
-		t.Error("a held lock is not retryable")
+		t.Errorf("job.Retryable(%v) = false, want true", err)
 	}
 }

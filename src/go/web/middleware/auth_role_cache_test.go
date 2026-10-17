@@ -105,16 +105,16 @@ func TestFixedRoleModes(t *testing.T) {
 				h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 				if rec.Code != tc.status {
-					t.Fatalf("status = %d, want %d", rec.Code, tc.status)
+					t.Errorf("GET / = %d, want %d", rec.Code, tc.status)
 				}
 			}
 
 			if seen != tc.context {
-				t.Errorf("handler saw %q, want %q", seen, tc.context)
+				t.Errorf("GET / handler saw role/user %q, want %q", seen, tc.context)
 			}
 
 			if n := s.lists.Load(); n != tc.lookups {
-				t.Errorf("roles listed %d times, want %d", n, tc.lookups)
+				t.Errorf("3 requests listed the roles %d times, want %d", n, tc.lookups)
 			}
 		})
 	}
@@ -179,11 +179,11 @@ func TestResolveRole(t *testing.T) {
 
 			switch {
 			case tc.role == "" && err == nil:
-				t.Fatalf("got role %q, want an error", role.Spec.Name)
+				t.Errorf("ResolveRole(%q, %q, %q) = role %q, want an error", tc.jwtKey, tc.user, tc.session, role.Spec.Name)
 			case tc.role != "" && err != nil:
-				t.Fatalf("got %v, want role %q", err, tc.role)
+				t.Errorf("ResolveRole(%q, %q, %q) error = %v, want role %q", tc.jwtKey, tc.user, tc.session, err, tc.role)
 			case tc.role != "" && role.Spec.Name != tc.role:
-				t.Fatalf("got role %q, want %q", role.Spec.Name, tc.role)
+				t.Errorf("ResolveRole(%q, %q, %q) = role %q, want %q", tc.jwtKey, tc.user, tc.session, role.Spec.Name, tc.role)
 			}
 		})
 	}

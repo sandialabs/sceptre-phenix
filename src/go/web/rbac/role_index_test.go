@@ -1,7 +1,11 @@
 package rbac
 
 import (
+	"maps"
+	"slices"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	v1 "phenix/types/version/v1"
 )
@@ -29,7 +33,7 @@ func TestRolesCarryAPolicyIndex(t *testing.T) {
 
 	stored, err := GetRoles()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetRoles() error = %v", err)
 	}
 
 	for _, r := range stored {
@@ -38,7 +42,7 @@ func TestRolesCarryAPolicyIndex(t *testing.T) {
 
 	fromConfig, err := RoleFromConfig("test")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("RoleFromConfig(test) error = %v", err)
 	}
 
 	roles["from config"] = *fromConfig
@@ -46,21 +50,22 @@ func TestRolesCarryAPolicyIndex(t *testing.T) {
 	for _, name := range []string{"with-role", "without-role"} {
 		user, err := GetUser(name)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("GetUser(%s) error = %v", name, err)
 		}
 
 		if roles["user "+name], err = user.Role(); err != nil {
-			t.Fatal(err)
+			t.Fatalf("Role() of user %s error = %v", name, err)
 		}
 	}
 
-	if len(roles) != 5 {
-		t.Fatalf("got roles %v, want 5", roles)
+	want := []string{"from config", "stored disabled", "stored test", "user with-role", "user without-role"}
+	if diff := cmp.Diff(want, slices.Sorted(maps.Keys(roles))); diff != "" {
+		t.Errorf("roles gathered mismatch (-want +got):\n%s", diff)
 	}
 
 	for name, r := range roles {
 		if r.mappedPolicies == nil {
-			t.Errorf("%s has no policy index", name)
+			t.Errorf("mappedPolicies of the %s role = nil, want a policy index", name)
 		}
 	}
 }
@@ -78,9 +83,17 @@ func TestRoleDeniesEverything(t *testing.T) {
 		"invalid pattern":            *newRole(invalid, nil),
 		"invalid pattern, unindexed": {Spec: invalid},
 	} {
-		if r.Allowed("vms", "list", "exp_a") || r.Allowed("experiments/start", "update", "exp") {
-			t.Errorf("%s allowed a request", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if r.Allowed("vms", "list", "exp_a") {
+				t.Error("Allowed(vms, list, exp_a) = true, want false")
+			}
+
+			if r.Allowed("experiments/start", "update", "exp") {
+				t.Error("Allowed(experiments/start, update, exp) = true, want false")
+			}
+		})
 	}
 }
 
@@ -95,14 +108,14 @@ func TestAddPolicy(t *testing.T) {
 	r.AddPolicy([]string{"users"}, []string{"bob"}, []string{"get"})
 
 	if !r.Allowed("users", "get", "bob") {
-		t.Error("added policy is not honored")
+		t.Error("Allowed(users, get, bob) after AddPolicy(users, bob, get) = false, want true")
 	}
 
 	if r.Allowed("users", "get", "alice") {
-		t.Error("added policy allowed another name")
+		t.Error("Allowed(users, get, alice) after AddPolicy(users, bob, get) = true, want false")
 	}
 
 	if earlier.Allowed("users", "get", "bob") {
-		t.Error("AddPolicy changed a copy made before it")
+		t.Error("Allowed(users, get, bob) of a copy made before AddPolicy = true, want false")
 	}
 }

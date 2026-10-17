@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // one runs a check once and returns its results.
@@ -35,18 +38,29 @@ func TestDiskThresholds(t *testing.T) {
 
 	tests := map[uint64]Status{89: Pass, 90: Warn, 97: Warn, 98: Fail}
 
-	for used, want := range tests {
-		statfs := func(string) (DiskStat, error) {
-			return DiskStat{Device: 1, Total: 100, Avail: 100 - used}, nil
-		}
+	for used, status := range tests {
+		t.Run(fmt.Sprintf("%d%% used", used), func(t *testing.T) {
+			t.Parallel()
 
-		paths := func() []DiskPath { return []DiskPath{{ID: "files-dir", Path: "/phenix/images"}} }
+			statfs := func(string) (DiskStat, error) {
+				return DiskStat{Device: 1, Total: 100, Avail: 100 - used}, nil
+			}
 
-		result := only(t, one(t, Disk(paths, statfs)), KeyDisk)
+			paths := func() []DiskPath { return []DiskPath{{ID: "files-dir", Path: "/phenix/images"}} }
 
-		if result.Status != want || result.ObservedValue != Float(used) || result.ComponentID != "files-dir" {
-			t.Errorf("%d%% used: %+v, want %s", used, result, want)
-		}
+			want := Result{
+				ComponentID:   "files-dir",
+				ComponentType: TypeSystem,
+				ObservedValue: Float(used),
+				ObservedUnit:  "percent",
+				Status:        status,
+				Output:        fmt.Sprintf("/phenix/images: %d bytes free", 100-used),
+			}
+
+			if diff := cmp.Diff(want, only(t, one(t, Disk(paths, statfs)), KeyDisk)); diff != "" {
+				t.Errorf("Disk() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -71,36 +85,69 @@ func TestDiskFilesystems(t *testing.T) {
 		}
 	}
 
-	results := one(t, Disk(paths, statfs))[KeyDisk]
-
-	if len(results) != 2 || results[0].ComponentID != "files-dir" || results[1].ComponentID != "other" {
-		t.Fatalf("results = %+v, want files-dir and other", results)
+	want := []Result{
+		{
+			ComponentID:   "files-dir",
+			ComponentType: TypeSystem,
+			ObservedValue: Float(50),
+			ObservedUnit:  "percent",
+			Status:        Pass,
+			Output:        "/phenix/images: 500 bytes free",
+		},
+		{
+			ComponentID:   "other",
+			ComponentType: TypeSystem,
+			Status:        Warn,
+			Output:        "measuring /missing: no such file or directory",
+		},
 	}
 
-	if results[1].Status != Warn || results[1].ObservedValue != nil {
-		t.Errorf("unmeasured path = %+v, want a warning without a value", results[1])
+	if diff := cmp.Diff(want, one(t, Disk(paths, statfs))[KeyDisk]); diff != "" {
+		t.Errorf("Disk() mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestQemuImg(t *testing.T) {
 	t.Parallel()
 
-	missing := func(string) (string, error) { return "", errors.New("not found") }
-	found := func(string) (string, error) { return "/usr/bin/qemu-img", nil }
 	version := func(context.Context, string) (string, error) {
 		return "qemu-img version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1)", nil
 	}
 
-	result := only(t, one(t, QemuImg(missing, version)), KeyQemuImg)
-
-	if result.Status != Warn || result.ObservedValue != nil || len(result.AffectedEndpoints) == 0 {
-		t.Errorf("missing qemu-img: %+v, want a warning without a value", result)
+	tests := map[string]struct {
+		lookPath func(string) (string, error)
+		want     Result
+	}{
+		"missing": {
+			lookPath: func(string) (string, error) { return "", errors.New("not found") },
+			want: Result{
+				ComponentID:       "qemu-img",
+				ComponentType:     TypeComponent,
+				Status:            Warn,
+				AffectedEndpoints: []string{"/api/v1/disks"},
+				Output:            "qemu-img not found; phenix inspects disk images through minimega instead",
+			},
+		},
+		"found": {
+			lookPath: func(string) (string, error) { return "/usr/bin/qemu-img", nil },
+			want: Result{
+				ComponentID:   "qemu-img",
+				ComponentType: TypeComponent,
+				ObservedValue: "8.2.2",
+				Status:        Pass,
+				Output:        "/usr/bin/qemu-img: qemu-img version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1)",
+			},
+		},
 	}
 
-	result = only(t, one(t, QemuImg(found, version)), KeyQemuImg)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	if result.Status != Pass || result.ObservedValue != "8.2.2" {
-		t.Errorf("qemu-img: %+v, want version 8.2.2", result)
+			if diff := cmp.Diff(tc.want, only(t, one(t, QemuImg(tc.lookPath, version)), KeyQemuImg)); diff != "" {
+				t.Errorf("QemuImg() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -110,16 +157,25 @@ func TestWebShark(t *testing.T) {
 	dir := t.TempDir()
 	always := func() bool { return true }
 
-	if result := only(t, one(t, WebShark(dir, always)), KeyWebShark); result.Status != Warn {
-		t.Errorf("without index.html: %+v, want a warning", result)
+	missing := only(t, one(t, WebShark(dir, always)), KeyWebShark)
+
+	// the output ends with the platform's stat error
+	want := Result{ComponentID: "webshark", ComponentType: TypeComponent, Status: Warn, AffectedEndpoints: []string{"/webshark/"}}
+	if diff := cmp.Diff(want, missing, cmpopts.IgnoreFields(Result{}, "Output")); diff != "" {
+		t.Errorf("WebShark() without index.html mismatch (-want +got):\n%s", diff)
+	}
+
+	if !strings.HasPrefix(missing.Output, "WebShark build missing: ") {
+		t.Errorf("WebShark() without index.html: Output = %q, want the missing build", missing.Output)
 	}
 
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if result := only(t, one(t, WebShark(dir, always)), KeyWebShark); result.Status != Pass {
-		t.Errorf("with index.html: %+v, want a pass", result)
+	want = Result{ComponentID: "webshark", ComponentType: TypeComponent, Status: Pass}
+	if diff := cmp.Diff(want, only(t, one(t, WebShark(dir, always)), KeyWebShark)); diff != "" {
+		t.Errorf("WebShark() with index.html mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -164,30 +220,61 @@ func TestMinimega(t *testing.T) {
 	mm := &fakeMinimega{size: "3"}
 	check := Minimega(mm.run)
 
-	results := one(t, check)
+	got := one(t, check)
 
-	if r := only(t, results, KeyMinimegaVersion); r.Status != Pass || r.ObservedValue != "2.9" {
-		t.Errorf("version = %+v, want 2.9", r)
+	timing := only(t, got, KeyMinimegaTime)
+	if _, ok := timing.ObservedValue.(Float); !ok {
+		t.Errorf("Minimega() response time = %#v, want a Float of milliseconds", timing.ObservedValue)
 	}
 
-	if r := only(t, results, KeyMinimegaNamespaces); r.Status != Pass || r.ObservedValue != 2 {
-		t.Errorf("namespaces = %+v, want 2", r)
+	// the response time varies
+	got[KeyMinimegaTime][0].ObservedValue = nil
+
+	want := map[string][]Result{
+		KeyMinimegaTime: {{ComponentID: "minimega", ComponentType: TypeComponent, ObservedUnit: "ms", Status: Pass}},
+		KeyMinimegaVersion: {{
+			ComponentID:   "minimega",
+			ComponentType: TypeComponent,
+			ObservedValue: "2.9",
+			Status:        Pass,
+			Output:        "minimega 2.9 abc 2026-01-01",
+		}},
+		KeyMinimegaNamespaces: {{
+			ComponentID:   "minimega",
+			ComponentType: TypeComponent,
+			ObservedValue: 2,
+			ObservedUnit:  "namespaces",
+			Status:        Pass,
+		}},
+		KeyMeshNodes: {{
+			ComponentID:   "minimega-mesh",
+			ComponentType: TypeSystem,
+			ObservedValue: 3,
+			ObservedUnit:  "nodes",
+			Status:        Pass,
+			Output:        "degree 2, peers 1",
+		}},
 	}
 
-	if r := only(t, results, KeyMeshNodes); r.Status != Pass || r.ObservedValue != 3 {
-		t.Errorf("mesh = %+v, want 3 nodes", r)
-	}
-
-	if r := only(t, results, KeyMinimegaTime); r.Status != Pass || r.ObservedUnit != "ms" {
-		t.Errorf("response time = %+v, want a pass in ms", r)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Minimega() mismatch (-want +got):\n%s", diff)
 	}
 
 	// a node leaves
 	mm.size = "2"
 
-	if r := only(t, one(t, check), KeyMeshNodes); r.Status != Warn || r.ObservedValue != 2 ||
-		!strings.Contains(r.Output, "mesh had 3 nodes, now 2") {
-		t.Errorf("smaller mesh = %+v, want a warning", r)
+	wantMesh := Result{
+		ComponentID:       "minimega-mesh",
+		ComponentType:     TypeSystem,
+		ObservedValue:     2,
+		ObservedUnit:      "nodes",
+		Status:            Warn,
+		AffectedEndpoints: minimegaEndpoints,
+		Output:            "mesh had 3 nodes, now 2; degree 2, peers 1",
+	}
+
+	if diff := cmp.Diff(wantMesh, only(t, one(t, check), KeyMeshNodes)); diff != "" {
+		t.Errorf("Minimega() of a smaller mesh mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -197,76 +284,121 @@ func TestMinimegaUnreachable(t *testing.T) {
 	t.Parallel()
 
 	mm := &fakeMinimega{err: errors.New("unable to dial")}
-	results := one(t, Minimega(mm.run))
 
-	for _, key := range []string{KeyMinimegaTime, KeyMinimegaVersion, KeyMinimegaNamespaces, KeyMeshNodes} {
-		r := only(t, results, key)
-
-		if r.Status != Fail || r.ObservedValue != nil || len(r.AffectedEndpoints) == 0 {
-			t.Errorf("%s = %+v, want a failure without a value", key, r)
-		}
+	failure := func(id, componentType string) []Result {
+		return []Result{{
+			ComponentID:       id,
+			ComponentType:     componentType,
+			Status:            Fail,
+			AffectedEndpoints: minimegaEndpoints,
+			Output:            "minimega did not answer: unable to dial",
+		}}
 	}
 
-	if len(mm.commands) != 1 {
-		t.Errorf("commands = %v, want only version", mm.commands)
+	want := map[string][]Result{
+		KeyMinimegaTime:       failure("minimega", TypeComponent),
+		KeyMinimegaVersion:    failure("minimega", TypeComponent),
+		KeyMinimegaNamespaces: failure("minimega", TypeComponent),
+		KeyMeshNodes:          failure("minimega-mesh", TypeSystem),
+	}
+
+	if diff := cmp.Diff(want, one(t, Minimega(mm.run))); diff != "" {
+		t.Errorf("Minimega() of an unreachable minimega mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]string{"version"}, mm.commands); diff != "" {
+		t.Errorf("Minimega() commands mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestStore(t *testing.T) {
 	t.Parallel()
 
-	r := only(t, one(t, Store("bolt", func() error { return nil })), KeyStore)
+	got := only(t, one(t, Store("bolt", func() error { return nil })), KeyStore)
 
-	if r.Status != Pass || r.ComponentID != "bolt" || r.ComponentType != TypeDatastore {
-		t.Errorf("readable store = %+v, want a pass", r)
+	if _, ok := got.ObservedValue.(Float); !ok {
+		t.Errorf("Store() of a readable store: ObservedValue = %#v, want a Float of milliseconds", got.ObservedValue)
 	}
 
-	if _, ok := r.ObservedValue.(Float); !ok {
-		t.Errorf("readable store value = %#v, want milliseconds", r.ObservedValue)
+	// the response time varies
+	got.ObservedValue = nil
+
+	want := Result{ComponentID: "bolt", ComponentType: TypeDatastore, ObservedUnit: "ms", Status: Pass}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Store() of a readable store mismatch (-want +got):\n%s", diff)
 	}
 
-	r = only(t, one(t, Store("bolt", func() error { return errors.New("connection refused") })), KeyStore)
+	want = Result{ComponentID: "bolt", ComponentType: TypeDatastore, Status: Fail, Output: "listing configs: connection refused"}
+	got = only(t, one(t, Store("bolt", func() error { return errors.New("connection refused") })), KeyStore)
 
-	if r.Status != Fail || r.ObservedValue != nil || !strings.Contains(r.Output, "connection refused") {
-		t.Errorf("unreadable store = %+v, want a failure without a value", r)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Store() of an unreadable store mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestBrokerQueue(t *testing.T) {
 	t.Parallel()
 
-	tests := map[int]Status{0: Pass, 74: Pass, 80: Warn}
+	tests := []struct {
+		queued    int
+		status    Status
+		endpoints []string
+	}{
+		{queued: 0, status: Pass},
+		{queued: 74, status: Pass},
+		{queued: 80, status: Warn, endpoints: []string{"/api/v1/ws"}},
+	}
 
-	for queued, want := range tests {
-		stats := func() BrokerStats { return BrokerStats{Clients: 3, Queued: queued, Capacity: 100} }
-		results := one(t, Broker(stats))
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%d queued", tc.queued), func(t *testing.T) {
+			t.Parallel()
 
-		if r := only(t, results, KeyWebsocketQueue); r.Status != want || r.ObservedValue != Float(queued) {
-			t.Errorf("%d queued: %+v, want %s", queued, r, want)
-		}
+			stats := func() BrokerStats { return BrokerStats{Clients: 3, Queued: tc.queued, Capacity: 100} }
 
-		if r := only(t, results, KeyWebsocketClients); r.ObservedValue != 3 {
-			t.Errorf("clients = %+v, want 3", r)
-		}
+			want := map[string][]Result{
+				KeyWebsocketClients: {{
+					ComponentID:   "broker",
+					ComponentType: TypeSystem,
+					ObservedValue: 3,
+					ObservedUnit:  "clients",
+					Status:        Pass,
+				}},
+				KeyWebsocketQueue: {{
+					ComponentID:       "broker",
+					ComponentType:     TypeSystem,
+					ObservedValue:     Float(tc.queued),
+					ObservedUnit:      "percent",
+					Status:            tc.status,
+					AffectedEndpoints: tc.endpoints,
+					Output:            fmt.Sprintf("%d of 100 broadcasts queued", tc.queued),
+				}},
+			}
+
+			if diff := cmp.Diff(want, one(t, Broker(stats))); diff != "" {
+				t.Errorf("Broker(%+v) mismatch (-want +got):\n%s", stats(), diff)
+			}
+		})
 	}
 }
 
 func TestUptimeAndGoRuntime(t *testing.T) {
 	t.Parallel()
 
-	if r := only(t, one(t, Uptime(time.Now().Add(-time.Minute))), KeyUptime); r.ObservedValue != int64(60) {
-		t.Errorf("uptime = %+v, want 60 s", r)
+	want := Result{ComponentType: TypeSystem, ObservedValue: int64(60), ObservedUnit: "s", Status: Pass}
+	if diff := cmp.Diff(want, only(t, one(t, Uptime(time.Now().Add(-time.Minute))), KeyUptime)); diff != "" {
+		t.Errorf("Uptime(a minute ago) mismatch (-want +got):\n%s", diff)
 	}
 
 	results := one(t, GoRuntime())
 
-	if r := only(t, results, KeyGoroutines); r.ObservedValue == nil || r.ObservedValue.(uint64) == 0 {
-		t.Errorf("goroutines = %+v, want some", r)
+	r := only(t, results, KeyGoroutines)
+	if n, ok := r.ObservedValue.(uint64); !ok || n == 0 {
+		t.Errorf("GoRuntime() %s = %+v, want a uint64 count of goroutines", KeyGoroutines, r)
 	}
 
 	for _, key := range []string{KeyHeapObjects, KeyGCPause} {
 		if r := only(t, results, key); r.Status != Pass || r.ObservedValue == nil {
-			t.Errorf("%s = %+v, want a value", key, r)
+			t.Errorf("GoRuntime() %s = %+v, want a passing value", key, r)
 		}
 	}
 }

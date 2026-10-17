@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // clock is a test clock that moves only when told to.
@@ -60,22 +62,25 @@ func TestUse(t *testing.T) {
 
 	minted := r.Mint("router-secret.pcap", viewGrant(c))
 
-	g, err := r.Use("router-secret.pcap", OpView)
+	got, err := r.Use("router-secret.pcap", OpView)
 	if err != nil {
-		t.Fatalf("using the grant: %v", err)
+		t.Fatalf("Use(router-secret.pcap, %v) error = %v", OpView, err)
 	}
 
-	if g.ID != minted.ID || g.User != "alice" || g.Uses != 1 || g.Target.File != "a.pcap" {
-		t.Fatalf("got %+v", g)
+	want := minted
+	want.Uses = 1
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Use(router-secret.pcap, %v) mismatch (-want +got):\n%s", OpView, diff)
 	}
 
 	if _, err := r.Use("router-secret.pcap", OpStream); !errors.Is(err, ErrOperation) {
-		t.Fatalf("an operation not granted: got %v, want ErrOperation", err)
+		t.Errorf("Use(router-secret.pcap, %v) error = %v, want %v", OpStream, err, ErrOperation)
 	}
 
 	for _, token := range []string{"router-secret.pca", "Router-secret.pcap", ""} {
 		if _, err := r.Use(token, OpView); !errors.Is(err, ErrNotFound) {
-			t.Errorf("%q: got %v, want ErrNotFound", token, err)
+			t.Errorf("Use(%q, %v) error = %v, want %v", token, OpView, err, ErrNotFound)
 		}
 	}
 }
@@ -86,8 +91,16 @@ func TestIDIsNotTheToken(t *testing.T) {
 	token := "pcs_abcdefghijklmnopqrstuvwxyz"
 	g := r.Mint(token, viewGrant(newClock()))
 
-	if len(g.ID) != 16 || strings.Contains(token, g.ID) || strings.Contains(g.ID, "abcdef") || g.ID != IDOf(token) {
-		t.Fatalf("ID %q of token %q", g.ID, token)
+	if len(g.ID) != 16 {
+		t.Errorf("Mint(%q).ID = %q, want 16 characters", token, g.ID)
+	}
+
+	if strings.Contains(token, g.ID) || strings.Contains(g.ID, "abcdef") {
+		t.Errorf("Mint(%q).ID = %q, want no part of the token", token, g.ID)
+	}
+
+	if want := IDOf(token); g.ID != want {
+		t.Errorf("Mint(%q).ID = %q, want IDOf(token) %q", token, g.ID, want)
 	}
 }
 
@@ -102,24 +115,24 @@ func TestIdleTimeout(t *testing.T) {
 	c.advance(9 * time.Minute)
 
 	if _, err := r.Use("t", OpView); err != nil {
-		t.Fatalf("before the idle timeout: %v", err)
+		t.Errorf("Use(t, %v) before the idle timeout error = %v", OpView, err)
 	}
 
 	// each use starts the idle timeout again
 	c.advance(9 * time.Minute)
 
 	if _, err := r.Use("t", OpView); err != nil {
-		t.Fatalf("used again before the idle timeout: %v", err)
+		t.Errorf("Use(t, %v) again before the idle timeout error = %v", OpView, err)
 	}
 
 	c.advance(10 * time.Minute)
 
 	if _, err := r.Use("t", OpView); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("after the idle timeout: got %v, want ErrNotFound", err)
+		t.Errorf("Use(t, %v) after the idle timeout error = %v, want %v", OpView, err, ErrNotFound)
 	}
 
 	if !isDone(g) {
-		t.Fatal("an idle grant is not done")
+		t.Error("Done of an idle grant is open, want it closed")
 	}
 }
 
@@ -133,11 +146,11 @@ func TestExpiry(t *testing.T) {
 	c.advance(time.Hour)
 
 	if _, err := r.Use("t", OpView); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("at Expires: got %v, want ErrNotFound", err)
+		t.Errorf("Use(t, %v) at Expires error = %v, want %v", OpView, err, ErrNotFound)
 	}
 
 	if !isDone(g) {
-		t.Fatal("an expired grant is not done")
+		t.Error("Done of an expired grant is open, want it closed")
 	}
 
 	// the grant ends at Expires without being used again
@@ -149,11 +162,15 @@ func TestExpiry(t *testing.T) {
 	select {
 	case <-g.Done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Done is still open after Expires")
+		t.Error("Done is still open 5s after Expires, want it closed")
 	}
 
-	if len(r.grants) != 0 {
-		t.Fatalf("%d grants kept after expiry", len(r.grants))
+	r.mu.Lock()
+	n := len(r.grants)
+	r.mu.Unlock()
+
+	if n != 0 {
+		t.Errorf("%d grants kept after expiry, want 0", n)
 	}
 }
 
@@ -169,7 +186,7 @@ func TestUseBy(t *testing.T) {
 	// any number of times before UseBy
 	for range 3 {
 		if _, err := r.Use("used", OpStream); err != nil {
-			t.Fatalf("before UseBy: %v", err)
+			t.Errorf("Use(used, %v) before UseBy error = %v", OpStream, err)
 		}
 	}
 
@@ -177,21 +194,25 @@ func TestUseBy(t *testing.T) {
 
 	for _, token := range []string{"used", "unused"} {
 		if _, err := r.Use(token, OpStream); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("%s after UseBy: got %v, want ErrNotFound", token, err)
+			t.Errorf("Use(%s, %v) after UseBy error = %v, want %v", token, OpStream, err, ErrNotFound)
 		}
 	}
 
 	// what the used grant opened goes on until it is revoked or expires
 	if isDone(used) {
-		t.Fatal("a used grant is done at UseBy")
+		t.Error("Done of a used grant is closed at UseBy, want it open")
 	}
 
 	if !isDone(unused) {
-		t.Fatal("an unused grant is not done at UseBy")
+		t.Error("Done of an unused grant is open at UseBy, want it closed")
 	}
 
-	if n := r.RevokeWhere(func(g Grant) bool { return g.ID == used.ID }); n != 1 || !isDone(used) {
-		t.Fatalf("revoked %d, done %t", n, isDone(used))
+	if n := r.RevokeWhere(func(g Grant) bool { return g.ID == used.ID }); n != 1 {
+		t.Errorf("RevokeWhere(the used grant) = %d, want 1", n)
+	}
+
+	if !isDone(used) {
+		t.Error("Done of a revoked grant is open, want it closed")
 	}
 }
 
@@ -202,23 +223,27 @@ func TestRevoke(t *testing.T) {
 	g := r.Mint("t", viewGrant(c))
 
 	if r.Revoke(g.ID, "bob") {
-		t.Fatal("bob revoked alice's grant")
+		t.Error("Revoke(alice's grant, bob) = true, want false")
 	}
 
 	if _, err := r.Use("t", OpView); err != nil {
-		t.Fatalf("after another user's revoke: %v", err)
+		t.Errorf("Use(t, %v) after another user's revoke error = %v", OpView, err)
 	}
 
-	if !r.Revoke(g.ID, "alice") || !isDone(g) {
-		t.Fatal("alice could not revoke her grant")
+	if !r.Revoke(g.ID, "alice") {
+		t.Error("Revoke(alice's grant, alice) = false, want true")
+	}
+
+	if !isDone(g) {
+		t.Error("Done of a revoked grant is open, want it closed")
 	}
 
 	if _, err := r.Use("t", OpView); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("after revoke: got %v, want ErrNotFound", err)
+		t.Errorf("Use(t, %v) after revoke error = %v, want %v", OpView, err, ErrNotFound)
 	}
 
 	if r.Revoke(g.ID, "alice") {
-		t.Fatal("revoked twice")
+		t.Error("Revoke(a revoked grant, alice) = true, want false")
 	}
 }
 
@@ -238,17 +263,24 @@ func TestRevokeWhereAndList(t *testing.T) {
 	bobs.User = "bob"
 	r.Mint("c", bobs)
 
-	if list := r.List("alice", "test-experiment"); len(list) != 1 || list[0].ID != a.ID {
-		t.Fatalf("alice's grants for test-experiment: %+v", list)
+	if diff := cmp.Diff([]Grant{a}, r.List("alice", "test-experiment")); diff != "" {
+		t.Errorf("List(alice, test-experiment) mismatch (-want +got):\n%s", diff)
 	}
 
-	n := r.RevokeWhere(func(g Grant) bool { return g.User == "alice" })
-	if n != 2 || !isDone(a) || !isDone(b) || len(r.grants) != 1 {
-		t.Fatalf("revoked %d, %d left", n, len(r.grants))
+	if n := r.RevokeWhere(func(g Grant) bool { return g.User == "alice" }); n != 2 {
+		t.Errorf("RevokeWhere(alice's grants) = %d, want 2", n)
+	}
+
+	if !isDone(a) || !isDone(b) {
+		t.Errorf("Done of alice's revoked grants: a closed %t, b closed %t, want both closed", isDone(a), isDone(b))
+	}
+
+	if n := len(r.grants); n != 1 {
+		t.Errorf("%d grants kept after RevokeWhere(alice's grants), want bob's 1", n)
 	}
 
 	if list := r.List("alice", "test-experiment"); len(list) != 0 {
-		t.Fatalf("revoked grants listed: %+v", list)
+		t.Errorf("List(alice, test-experiment) after revoke = %+v, want none", list)
 	}
 }
 
@@ -265,49 +297,75 @@ func TestUpdate(t *testing.T) {
 		g.ID, g.Done = "changed", nil
 	})
 
-	used, err := r.Use("t", OpView)
-	if err != nil || used.Target.Live || used.Target.Local != "/settled.pcap" || used.ID != g.ID || used.Done != g.Done {
-		t.Fatalf("got %+v, %v", used, err)
+	got, err := r.Use("t", OpView)
+	if err != nil {
+		t.Fatalf("Use(t, %v) after Update error = %v", OpView, err)
 	}
 
-	r.Update("unknown", func(*Grant) { t.Fatal("updated an unknown grant") })
+	// Update keeps the ID and Done channel
+	want := g
+	want.Target.Live, want.Target.Local = false, "/settled.pcap"
+	want.Uses = 1
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Use(t, %v) after Update mismatch (-want +got):\n%s", OpView, diff)
+	}
+
+	r.Update("unknown", func(*Grant) { t.Error("Update(unknown) called f, want no call") })
 }
 
 func TestEviction(t *testing.T) {
 	c := newClock()
 	r := New(4, 2, c.Now)
 
-	mint := func(token, user string) Grant {
+	minted := make(map[string]Grant)
+
+	mint := func(token, user string) {
 		c.advance(time.Second)
 
 		g := viewGrant(c)
-		g.User = token[:1] + user
-
-		return r.Mint(token, g)
+		g.User = user
+		minted[token] = r.Mint(token, g)
 	}
 
-	a1, a2 := mint("a1", "lice"), mint("a2", "lice")
-	b1 := mint("b1", "ob")
+	done := func() map[string]bool {
+		got := make(map[string]bool, len(minted))
+		for token, g := range minted {
+			got[token] = isDone(g)
+		}
+
+		return got
+	}
+
+	mint("a1", "alice")
+	mint("a2", "alice")
+	mint("b1", "bob")
 
 	// alice's least recently used grant goes, not bob's
 	c.advance(time.Second)
 
 	if _, err := r.Use("a1", OpView); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Use(a1, %v) error = %v", OpView, err)
 	}
 
-	a3 := mint("a3", "lice")
+	mint("a3", "alice")
 
-	if !isDone(a2) || isDone(a1) || isDone(b1) || isDone(a3) {
-		t.Fatalf("per user: done a1 %t, a2 %t, a3 %t, b1 %t", isDone(a1), isDone(a2), isDone(a3), isDone(b1))
+	want := map[string]bool{"a1": false, "a2": true, "a3": false, "b1": false}
+	if diff := cmp.Diff(want, done()); diff != "" {
+		t.Errorf("evicted past 2 grants per user mismatch (-want +got):\n%s", diff)
 	}
 
 	// past the total, the least recently used of anyone's goes
-	b2 := mint("b2", "ob")
-	c1 := mint("c1", "arol")
+	mint("b2", "bob")
+	mint("c1", "carol")
 
-	if !isDone(b1) || isDone(a1) || isDone(a3) || isDone(b2) || isDone(c1) || len(r.grants) != 4 {
-		t.Fatalf("overall: done b1 %t, a1 %t, a3 %t, %d kept", isDone(b1), isDone(a1), isDone(a3), len(r.grants))
+	want = map[string]bool{"a1": false, "a2": true, "a3": false, "b1": true, "b2": false, "c1": false}
+	if diff := cmp.Diff(want, done()); diff != "" {
+		t.Errorf("evicted past 4 grants mismatch (-want +got):\n%s", diff)
+	}
+
+	if n := len(r.grants); n != 4 {
+		t.Errorf("%d grants kept, want 4", n)
 	}
 }
 
@@ -351,7 +409,11 @@ func TestConcurrentUse(t *testing.T) {
 
 	wg.Wait()
 
-	if len(r.grants) != 0 || uses.Load() == 0 {
-		t.Fatalf("%d grants left, %d uses", len(r.grants), uses.Load())
+	if n := len(r.grants); n != 0 {
+		t.Errorf("%d grants kept after every grant was revoked, want 0", n)
+	}
+
+	if uses.Load() == 0 {
+		t.Error("no concurrent Use succeeded, want some")
 	}
 }

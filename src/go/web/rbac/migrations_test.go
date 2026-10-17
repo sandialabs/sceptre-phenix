@@ -1,11 +1,11 @@
 package rbac
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/activeshadow/structs"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store"
 	"phenix/store/storetest"
@@ -23,7 +23,7 @@ func useStore(t *testing.T, roles []*v1.RoleSpec, users []*v1.UserSpec) {
 	create := func(name string, spec any) {
 		c, err := store.NewConfig(name)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("NewConfig(%s) error = %v", name, err)
 		}
 
 		c.Spec = structs.MapDefaultCase(spec, structs.CASESNAKE)
@@ -48,12 +48,12 @@ func storedPolicies(t *testing.T) map[string][]*v1.PolicySpec {
 
 	roles, err := GetRoles()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetRoles() error = %v", err)
 	}
 
 	users, err := GetUsers()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetUsers() error = %v", err)
 	}
 
 	policies := make(map[string][]*v1.PolicySpec)
@@ -79,30 +79,17 @@ func role(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
 	return &v1.RoleSpec{Name: name, Policies: policies}
 }
 
-// checkMigration runs the migrations twice and checks after each pass that the
-// stored roles and user roles are exactly want.
-func checkMigration(t *testing.T, want map[string][]*v1.PolicySpec, migrations ...func() error) {
+// migrate runs the migrations and returns the policies stored after them.
+func migrate(t *testing.T, migrations ...func() error) map[string][]*v1.PolicySpec {
 	t.Helper()
 
-	for _, pass := range []string{"first", "repeated"} {
-		for _, migrate := range migrations {
-			if err := migrate(); err != nil {
-				t.Fatalf("%s migration: %v", pass, err)
-			}
-		}
-
-		got := storedPolicies(t)
-
-		for name, policies := range want {
-			if !reflect.DeepEqual(got[name], policies) {
-				t.Errorf("%s migration: %s policies = %s, want %s", pass, name, describe(got[name]), describe(policies))
-			}
-		}
-
-		if len(got) != len(want) {
-			t.Errorf("%s migration: %d roles and user roles stored, want %d", pass, len(got), len(want))
+	for _, m := range migrations {
+		if err := m(); err != nil {
+			t.Fatalf("migrating: %v", err)
 		}
 	}
+
+	return storedPolicies(t)
 }
 
 // The experiment files migrations let Experiment Admin/User roles and their
@@ -170,7 +157,11 @@ func TestEnsureExperimentFilesPermissions(t *testing.T) {
 		"user viewer":  {experiments},
 	}
 
-	checkMigration(t, want, EnsureExperimentFilesCreatePermission, EnsureExperimentFilesDeletePermission)
+	for _, pass := range []string{"first", "repeated"} {
+		if diff := cmp.Diff(want, migrate(t, EnsureExperimentFilesCreatePermission, EnsureExperimentFilesDeletePermission)); diff != "" {
+			t.Errorf("EnsureExperimentFiles{Create,Delete}Permission() %s pass: stored policies mismatch (-want +got):\n%s", pass, diff)
+		}
+	}
 }
 
 // The jobs migration lets Experiment Admin roles and their users act on others'
@@ -205,7 +196,11 @@ func TestEnsureJobsPermission(t *testing.T) {
 		"user user":             {scopedA},
 	}
 
-	checkMigration(t, want, EnsureJobsPermission)
+	for _, pass := range []string{"first", "repeated"} {
+		if diff := cmp.Diff(want, migrate(t, EnsureJobsPermission)); diff != "" {
+			t.Errorf("EnsureJobsPermission() %s pass: stored policies mismatch (-want +got):\n%s", pass, diff)
+		}
+	}
 }
 
 // The subnet capture migration lets roles that may start subnet captures stop
@@ -262,7 +257,11 @@ func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
 		"user patterned":         {startSome, policy(captureSubnetResource, []string{"exp-b"}, "delete")},
 	}
 
-	checkMigration(t, want, EnsureCaptureSubnetStopPermission)
+	for _, pass := range []string{"first", "repeated"} {
+		if diff := cmp.Diff(want, migrate(t, EnsureCaptureSubnetStopPermission)); diff != "" {
+			t.Errorf("EnsureCaptureSubnetStopPermission() %s pass: stored policies mismatch (-want +got):\n%s", pass, diff)
+		}
+	}
 }
 
 // The Experiment Viewer migration scopes a user's unnamed vms/mount policy to
@@ -298,25 +297,29 @@ func TestEnsureExperimentViewerMountScope(t *testing.T) {
 		"user other":             {viewing(scopedA), hosts, mount(nil)},
 	}
 
-	checkMigration(t, want, EnsureExperimentViewerMountScope)
+	for _, pass := range []string{"first", "repeated"} {
+		if diff := cmp.Diff(want, migrate(t, EnsureExperimentViewerMountScope)); diff != "" {
+			t.Errorf("EnsureExperimentViewerMountScope() %s pass: stored policies mismatch (-want +got):\n%s", pass, diff)
+		}
+	}
 
 	user, err := GetUser("legacy")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetUser(legacy) error = %v", err)
 	}
 
-	if r, _ := user.Role(); !r.Allowed(mountResource, "post", "exp-a/vm") || r.Allowed(mountResource, "post", "exp-b/vm") {
-		t.Error("the migrated user may not mount exactly the VMs of exp-a")
-	}
-}
-
-func describe(policies []*v1.PolicySpec) string {
-	out := make([]string, len(policies))
-	for i, p := range policies {
-		out[i] = strings.Join(p.Resources, ",") + " " + strings.Join(p.ResourceNames, ",") + " " + strings.Join(p.Verbs, ",")
+	r, err := user.Role()
+	if err != nil {
+		t.Fatalf("Role() of the migrated user error = %v", err)
 	}
 
-	return "[" + strings.Join(out, "; ") + "]"
+	if !r.Allowed(mountResource, "post", "exp-a/vm") {
+		t.Errorf("Allowed(%s, post, exp-a/vm) of the migrated user = false, want true", mountResource)
+	}
+
+	if r.Allowed(mountResource, "post", "exp-b/vm") {
+		t.Errorf("Allowed(%s, post, exp-b/vm) of the migrated user = true, want false", mountResource)
+	}
 }
 
 // The null resource names migration removes stored resourceNames: null from
@@ -345,60 +348,54 @@ func TestDropNullResourceNames(t *testing.T) {
 	for name, spec := range stored {
 		c, err := store.NewConfig(name)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("NewConfig(%s) error = %v", name, err)
 		}
 
 		c.Spec = spec
 
 		if err := store.Create(c); err != nil {
-			t.Fatal(err)
+			t.Fatalf("creating %s: %v", name, err)
 		}
+	}
+
+	unnamed := map[string]any{"resources": []any{"vms"}, "verbs": []any{"get"}}
+	named := map[string]any{"resources": []any{"hosts"}, "resourceNames": []any{"*"}, "verbs": []any{"list"}}
+	want := map[string]map[string]any{
+		"role/legacy": {"roleName": "Legacy", "policies": []any{unnamed, named}},
+		"user/legacy": {
+			"username": "legacy",
+			"password": "hash",
+			"rbac":     map[string]any{"roleName": "Legacy", "policies": []any{unnamed, named}},
+		},
 	}
 
 	for _, pass := range []string{"first", "repeated"} {
 		if err := DropNullResourceNames(); err != nil {
-			t.Fatalf("%s migration: %v", pass, err)
+			t.Fatalf("DropNullResourceNames() %s pass error = %v", pass, err)
 		}
+
+		got := make(map[string]map[string]any, len(stored))
 
 		for name := range stored {
 			c, _ := store.NewConfig(name)
 			if err := store.Get(c); err != nil {
-				t.Fatal(err)
+				t.Fatalf("getting %s: %v", name, err)
 			}
 
-			list := c.Spec["policies"]
-			if c.Kind == "User" {
-				if c.Spec["password"] != "hash" {
-					t.Errorf("%s migration: %s password = %v, want it kept", pass, name, c.Spec["password"])
-				}
+			got[name] = c.Spec
+		}
 
-				role, _ := c.Spec["rbac"].(map[string]any)
-				list = role["policies"]
-			}
-
-			got, _ := list.([]any)
-			if len(got) != 2 {
-				t.Fatalf("%s migration: %s policies = %#v, want two", pass, name, list)
-			}
-
-			if p, _ := got[0].(map[string]any); p == nil {
-				t.Errorf("%s migration: %s policy = %#v, want a map", pass, name, got[0])
-			} else if names, set := p["resourceNames"]; set {
-				t.Errorf("%s migration: %s unnamed policy resourceNames = %#v, want it left out", pass, name, names)
-			}
-
-			if p, _ := got[1].(map[string]any); !reflect.DeepEqual(p["resourceNames"], []any{"*"}) {
-				t.Errorf("%s migration: %s named policy = %#v, want its names kept", pass, name, got[1])
-			}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("DropNullResourceNames() %s pass: stored specs mismatch (-want +got):\n%s", pass, diff)
 		}
 	}
 
 	c, _ := store.NewConfig("role/legacy")
 	if err := store.Get(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("getting role/legacy: %v", err)
 	}
 
 	if err := types.ValidateConfigSpec(*c); err != nil {
-		t.Errorf("migrated role fails its schema: %v", err)
+		t.Errorf("ValidateConfigSpec(migrated role/legacy) error = %v", err)
 	}
 }

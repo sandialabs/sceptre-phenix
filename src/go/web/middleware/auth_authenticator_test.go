@@ -24,7 +24,7 @@ func useBoltStore(t *testing.T) {
 	s := store.NewBoltDB()
 
 	if err := s.Init(store.Endpoint("bolt://" + filepath.Join(t.TempDir(), "store.bdb"))); err != nil {
-		t.Fatal(err)
+		t.Fatalf("initializing the BoltDB store: %v", err)
 	}
 
 	original := store.DefaultStore
@@ -43,7 +43,7 @@ func signedToken(t *testing.T, user, key string) string {
 		"exp": time.Now().Add(time.Hour).Unix(),
 	}).SignedString([]byte(key))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("signing a token for %s: %v", user, err)
 	}
 
 	return signed
@@ -73,18 +73,18 @@ func TestAuthenticator(t *testing.T) {
 
 	user := rbac.NewUser("alice", "password")
 	if user == nil {
-		t.Fatal("creating user")
+		t.Fatal("NewUser(alice) = nil")
 	}
 
 	role := &rbac.Role{Spec: &v1.RoleSpec{Name: "Global Viewer"}}
 	if err := user.SetRole(role); err != nil {
-		t.Fatal(err)
+		t.Fatalf("SetRole(Global Viewer) error = %v", err)
 	}
 
 	valid := signedToken(t, "alice", testJWTKey)
 
 	if err := user.AddToken(valid, "test"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("AddToken() error = %v", err)
 	}
 
 	unknown := signedToken(t, "alice", "other-key")
@@ -107,32 +107,32 @@ func TestAuthenticator(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		authenticated := Authenticator(test.jwtKey, test.proxy)
-
-		if got := authenticated(test.request); got != test.want {
-			t.Errorf("%s: authenticated = %v, want %v", test.name, got, test.want)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			if got := Authenticator(test.jwtKey, test.proxy)(test.request); got != test.want {
+				t.Errorf("Authenticator(%q, %q)(GET %s) = %v, want %v", test.jwtKey, test.proxy, test.request.URL, got, test.want)
+			}
+		})
 	}
 
 	proxied := request(t, valid, false)
 	proxied.Header.Set("X-Forwarded-User", "alice")
 
 	if !Authenticator(testJWTKey, "X-Forwarded-User")(proxied) {
-		t.Error("proxy with matching user header: not authenticated")
+		t.Error("Authenticator(key, X-Forwarded-User)(a matching user header) = false, want true")
 	}
 
 	// a path Auth lets through without a user still needs one here
 	login := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login?token=garbage", nil)
 
 	if Authenticator(testJWTKey, "")(login) {
-		t.Error("garbage token on a login path: authenticated")
+		t.Error("Authenticator(key, \"\")(GET /login?token=garbage) = true, want false")
 	}
 
 	if err := user.DeleteToken(valid); err != nil {
-		t.Fatal(err)
+		t.Fatalf("DeleteToken() error = %v", err)
 	}
 
 	if Authenticator(testJWTKey, "")(request(t, valid, false)) {
-		t.Error("revoked token: authenticated")
+		t.Error("Authenticator(key, \"\")(a revoked token) = true, want false")
 	}
 }

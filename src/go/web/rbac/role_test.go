@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/api/config"
 	"phenix/store"
 	"phenix/store/storetest"
@@ -117,14 +119,14 @@ func TestRoleAllowed(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			for kind, role := range roles {
 				if got := role.Allowed(tt.resource, tt.verb, tt.names...); got != tt.want {
-					t.Errorf("%s: Allowed(%q, %q, %q) = %v, want %v", kind, tt.resource, tt.verb, tt.names, got, tt.want)
+					t.Errorf("Allowed(%q, %q, %q) of the %s role = %v, want %v", tt.resource, tt.verb, tt.names, kind, got, tt.want)
 				}
 			}
 		})
 	}
 
 	if literal.mappedPolicies != nil {
-		t.Error("Allowed stored a policy index on an unindexed role")
+		t.Error("Allowed() stored a policy index on an unindexed role, want none")
 	}
 }
 
@@ -136,7 +138,7 @@ func TestSetResourceNamesScopesEveryUnnamedPolicy(t *testing.T) {
 	storetest.Use(t)
 
 	if err := config.Init(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("config.Init() error = %v", err)
 	}
 
 	for _, tc := range []struct {
@@ -154,34 +156,36 @@ func TestSetResourceNamesScopesEveryUnnamedPolicy(t *testing.T) {
 			{"vms/mount", "post", "exp-a/vm"},
 		}},
 	} {
-		role, err := RoleFromConfig(tc.role)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if err := role.SetResourceNames("exp-a", "exp-a/*"); err != nil {
-			t.Fatalf("%s: %v", tc.role, err)
-		}
-
-		for _, a := range tc.allowed {
-			if !role.Allowed(a[0], a[1], a[2]) {
-				t.Errorf("%s may not %s %s %s", tc.role, a[1], a[0], a[2])
+		t.Run(tc.role, func(t *testing.T) {
+			role, err := RoleFromConfig(tc.role)
+			if err != nil {
+				t.Fatalf("RoleFromConfig(%s) error = %v", tc.role, err)
 			}
 
-			other := strings.Replace(a[2], "exp-a", "exp-b", 1)
-			if role.Allowed(a[0], a[1], other) {
-				t.Errorf("%s may %s %s %s", tc.role, a[1], a[0], other)
+			if err := role.SetResourceNames("exp-a", "exp-a/*"); err != nil {
+				t.Fatalf("SetResourceNames(exp-a, exp-a/*) error = %v", err)
 			}
-		}
 
-		// a policy that names its resources keeps them
-		if !role.Allowed("hosts", "list", "any-host") {
-			t.Errorf("%s may not list every host", tc.role)
-		}
+			for _, a := range tc.allowed {
+				if !role.Allowed(a[0], a[1], a[2]) {
+					t.Errorf("Allowed(%s, %s, %s) after SetResourceNames(exp-a, exp-a/*) = false, want true", a[0], a[1], a[2])
+				}
+
+				other := strings.Replace(a[2], "exp-a", "exp-b", 1)
+				if role.Allowed(a[0], a[1], other) {
+					t.Errorf("Allowed(%s, %s, %s) after SetResourceNames(exp-a, exp-a/*) = true, want false", a[0], a[1], other)
+				}
+			}
+
+			// a policy that names its resources keeps them
+			if !role.Allowed("hosts", "list", "any-host") {
+				t.Error("Allowed(hosts, list, any-host) after SetResourceNames(exp-a, exp-a/*) = false, want true")
+			}
+		})
 	}
 
 	if err := (&Role{Spec: &v1.RoleSpec{}}).SetResourceNames("["); !errors.Is(err, ErrResourceNameInvalid) {
-		t.Errorf("an invalid name: %v", err)
+		t.Errorf("SetResourceNames([) error = %v, want %v", err, ErrResourceNameInvalid)
 	}
 }
 
@@ -197,31 +201,29 @@ func TestSaveOmitsNullResourceNames(t *testing.T) {
 
 	role, err := RoleFromConfig("Unscoped")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("RoleFromConfig(Unscoped) error = %v", err)
 	}
 
 	if err := role.Save(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Save() error = %v", err)
 	}
 
 	c, _ := store.NewConfig("role/unscoped")
 	if err := store.Get(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("getting role/unscoped: %v", err)
 	}
 
-	policies, _ := c.Spec["policies"].([]any)
-	if len(policies) != 1 {
-		t.Fatalf("stored policies = %#v, want one", c.Spec["policies"])
+	want := map[string]any{
+		"roleName": "Unscoped",
+		"policies": []any{map[string]any{"resources": []any{"vms/forwards"}, "verbs": []any{"create"}}},
 	}
 
-	if p, _ := policies[0].(map[string]any); p == nil {
-		t.Fatalf("stored policy = %#v, want a map", policies[0])
-	} else if names, set := p["resourceNames"]; set {
-		t.Errorf("stored resourceNames = %#v, want it left out", names)
+	if diff := cmp.Diff(want, c.Spec); diff != "" {
+		t.Errorf("Save() stored spec mismatch (-want +got):\n%s", diff)
 	}
 
 	if err := types.ValidateConfigSpec(*c); err != nil {
-		t.Errorf("stored role fails its schema: %v", err)
+		t.Errorf("ValidateConfigSpec(saved role/unscoped) error = %v", err)
 	}
 }
 
@@ -234,7 +236,7 @@ func TestKnownPermissions(t *testing.T) {
 		{"users", "get"}, {"users", "list"}, {"users/roles", "patch"}, {"users/tokens", "create"}, {"configs", "create"},
 	} {
 		if !slices.Contains(Permissions, want) {
-			t.Errorf("Permissions lacks %s %s", want.Resource, want.Verb)
+			t.Errorf("Permissions does not include {%s %s}, want it to", want.Resource, want.Verb)
 		}
 	}
 }
