@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -80,11 +81,11 @@ func TestParseVMListQuery(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var payload map[string]any
 			if err := json.Unmarshal([]byte(tc.payload), &payload); err != nil {
-				t.Fatal(err)
+				t.Fatalf("decoding payload %s: %v", tc.payload, err)
 			}
 
-			if got := parseVMListQuery(payload); got != tc.want {
-				t.Fatalf("parseVMListQuery() = %+v, want %+v", got, tc.want)
+			if diff := cmp.Diff(tc.want, parseVMListQuery(payload)); diff != "" {
+				t.Errorf("parseVMListQuery(%s) mismatch (-want +got):\n%s", tc.payload, diff)
 			}
 		})
 	}
@@ -212,7 +213,7 @@ func TestReadHandlesRequests(t *testing.T) {
 
 			for _, msg := range tc.requests {
 				if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
-					t.Fatalf("writing %s: %v", msg, err)
+					t.Fatalf("conn.WriteMessage(%s) = %v", msg, err)
 				}
 			}
 
@@ -220,12 +221,12 @@ func TestReadHandlesRequests(t *testing.T) {
 		})
 	}
 
-	if got := vmsInView(bystander); !slices.Equal(got, []vmScope{inView}) {
-		t.Errorf("another client's VMs = %v, want %v", got, inView)
+	if diff := cmp.Diff([]vmScope{inView}, vmsInView(bystander), cmp.AllowUnexported(vmScope{})); diff != "" {
+		t.Errorf("after other clients' requests, the bystander's VMs in view mismatch (-want +got):\n%s", diff)
 	}
 
 	if bystander.logsSubscribed.Load() || bystander.screenshotSize() != defaultBrokerScreenshotSize {
-		t.Errorf("another client's logs subscription = %v, screenshot size = %q; want false, %q",
+		t.Errorf("after other clients' requests, the bystander's logs subscription = %v, screenshot size = %q; want false, %q",
 			bystander.logsSubscribed.Load(), bystander.screenshotSize(), defaultBrokerScreenshotSize)
 	}
 }
@@ -240,7 +241,7 @@ func useExperiment(t *testing.T, nodes ...map[string]any) {
 	c.Spec = map[string]any{"experimentName": "exp", "topology": map[string]any{"nodes": nodes}}
 
 	if err := store.Create(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("store.Create(experiment/exp) = %v", err)
 	}
 }
 
@@ -264,41 +265,46 @@ func TestListVMs(t *testing.T) {
 	request := `{"resource": {"type": "experiment/vms", "name": "exp", "action": "list"},
 		"request": {"sort_column": "name", "sort_asc": false, "page_number": 1, "page_size": 2}}`
 	if err := conn.WriteMessage(websocket.TextMessage, []byte(request)); err != nil {
-		t.Fatal(err)
+		t.Fatalf("conn.WriteMessage(%s) = %v", request, err)
 	}
 
 	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatal(err)
+		t.Fatalf("conn.SetReadDeadline() = %v", err)
 	}
 
 	var reply bt.Publish
 	if err := conn.ReadJSON(&reply); err != nil {
-		t.Fatalf("reading the VM list: %v", err)
+		t.Fatalf("reading the reply to %s: %v", request, err)
 	}
 
-	if *reply.Resource != *bt.NewResource("experiment/vms", "exp", "list") {
-		t.Fatalf("reply resource = %+v, want the experiment's VM list", reply.Resource)
+	if diff := cmp.Diff(bt.NewResource("experiment/vms", "exp", "list"), reply.Resource); diff != "" {
+		t.Fatalf("reply to the VM list request: resource mismatch (-want +got):\n%s", diff)
 	}
 
 	var list proto.VMList
 	if err := protojson.Unmarshal(reply.Result, &list); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding the VM list %s: %v", reply.Result, err)
 	}
 
-	names := make([]string, len(list.GetVms()))
+	type page struct {
+		Names []string
+		Total uint32
+	}
+
+	got := page{Names: make([]string, len(list.GetVms())), Total: list.GetTotal()}
 	for i, v := range list.GetVms() {
-		names[i] = v.GetName()
+		got.Names[i] = v.GetName()
 	}
 
 	// do-not-boot VMs are left out unless asked for; the total counts every
 	// VM the page is taken from
-	if !slices.Equal(names, []string{"c", "b"}) || list.GetTotal() != 3 {
-		t.Errorf("VM list = %v of %d, want [c b] of 3", names, list.GetTotal())
+	if diff := cmp.Diff(page{Names: []string{"c", "b"}, Total: 3}, got); diff != "" {
+		t.Errorf("VM list reply to %s mismatch (-want +got):\n%s", request, diff)
 	}
 
 	want := []vmScope{{exp: "exp", name: "c", running: false}, {exp: "exp", name: "b", running: false}}
-	if got := vmsInView(c); !slices.Equal(got, want) {
-		t.Errorf("VMs in view = %v, want %v", got, want)
+	if diff := cmp.Diff(want, vmsInView(c), cmp.AllowUnexported(vmScope{})); diff != "" {
+		t.Errorf("VMs in view after the VM list mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -337,28 +343,33 @@ func TestScreenshotsOfRunningVMs(t *testing.T) {
 
 	resize := `{"resource": {"type": "metadata/screenshot", "action": "resize"}, "request": {"size": "300"}}`
 	if err := conn.WriteMessage(websocket.TextMessage, []byte(resize)); err != nil {
-		t.Fatal(err)
+		t.Fatalf("conn.WriteMessage(%s) = %v", resize, err)
 	}
 
 	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatal(err)
+		t.Fatalf("conn.SetReadDeadline() = %v", err)
 	}
 
 	var reply bt.Publish
 	if err := conn.ReadJSON(&reply); err != nil {
-		t.Fatalf("reading the screenshot: %v", err)
+		t.Fatalf("reading the reply to %s: %v", resize, err)
 	}
 
-	if *reply.Resource != *bt.NewResource("experiment/vm/screenshot", "exp/on", "update") {
-		t.Fatalf("reply resource = %+v, want the running VM's screenshot", reply.Resource)
+	if diff := cmp.Diff(bt.NewResource("experiment/vm/screenshot", "exp/on", "update"), reply.Resource); diff != "" {
+		t.Fatalf("reply to the resize: resource mismatch (-want +got):\n%s", diff)
 	}
 
-	if got := string(reply.Result); got != `{"screenshot":"data:image/png;base64,cG5n"}` {
-		t.Errorf("screenshot = %s", got)
+	var result map[string]any
+	if err := json.Unmarshal(reply.Result, &result); err != nil {
+		t.Fatalf("decoding the screenshot %s: %v", reply.Result, err)
+	}
+
+	if diff := cmp.Diff(map[string]any{"screenshot": "data:image/png;base64,cG5n"}, result); diff != "" {
+		t.Errorf("screenshot reply to the resize mismatch (-want +got):\n%s", diff)
 	}
 
 	if n := fake.calls.Load(); n != 1 {
-		t.Errorf("minimega was asked for %d screenshots, want 1", n)
+		t.Errorf("resize to 300 asked minimega for %d screenshots, want 1", n)
 	}
 }
 
@@ -379,9 +390,9 @@ func TestSendGivesUpOnceClientIsDone(t *testing.T) {
 	select {
 	case ok := <-sent:
 		if ok {
-			t.Fatal("send reported success with no reader")
+			t.Error("Client.send() with no reader after done = true, want false")
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("send blocked after client was done")
+		t.Error("Client.send() still blocked 2s after the client was done, want it to return false")
 	}
 }

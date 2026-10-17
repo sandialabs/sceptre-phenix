@@ -1,12 +1,14 @@
 package forward
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/mux"
 )
 
@@ -23,15 +25,17 @@ func TestTunnelerDownloads(t *testing.T) {
 		path        string
 		noDownloads bool
 		status      int
+		// files is the listing a list route answers; body is a file's contents
+		files       []string
 		body        string
 		disposition string
 	}{
 		"lists the installed builds": {
 			path: "/downloads/tunneler", status: http.StatusOK,
-			body: `{"files":["phenix-tunneler-darwin-arm64","phenix-tunneler-linux-amd64","phenix-tunneler-windows-amd64.exe"]}`,
+			files: []string{"phenix-tunneler-darwin-arm64", "phenix-tunneler-linux-amd64", "phenix-tunneler-windows-amd64.exe"},
 		},
 		"lists none without a downloads directory": {
-			path: "/downloads/tunneler", noDownloads: true, status: http.StatusOK, body: `{"files":[]}`,
+			path: "/downloads/tunneler", noDownloads: true, status: http.StatusOK, files: []string{},
 		},
 		"serves a build as an attachment": {
 			path: "/downloads/tunneler/phenix-tunneler-linux-amd64", status: http.StatusOK, body: "linux",
@@ -62,15 +66,30 @@ func TestTunnelerDownloads(t *testing.T) {
 			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
 
 			if rec.Code != tc.status {
-				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.status, rec.Body)
+				t.Fatalf("GET %s = %d %s, want %d", tc.path, rec.Code, rec.Body, tc.status)
+			}
+
+			if tc.files != nil {
+				var got struct {
+					Files []string `json:"files"`
+				}
+
+				if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+					t.Fatalf("decoding GET %s: %v", tc.path, err)
+				}
+
+				// a JSON null where the route promises an empty list fails here
+				if diff := cmp.Diff(tc.files, got.Files); diff != "" {
+					t.Errorf("GET %s files mismatch (-want +got):\n%s", tc.path, diff)
+				}
 			}
 
 			if tc.body != "" && rec.Body.String() != tc.body {
-				t.Errorf("body = %q, want %q", rec.Body, tc.body)
+				t.Errorf("GET %s body = %q, want %q", tc.path, rec.Body, tc.body)
 			}
 
 			if got := rec.Header().Get("Content-Disposition"); got != tc.disposition {
-				t.Errorf("Content-Disposition = %q, want %q", got, tc.disposition)
+				t.Errorf("GET %s Content-Disposition = %q, want %q", tc.path, got, tc.disposition)
 			}
 		})
 	}
@@ -121,8 +140,10 @@ func TestTunnelerDownloadResumes(t *testing.T) {
 	t.Chdir(dir)
 	installTunnelers(t, filepath.Join(dir, tunnelerDir))
 
+	const path = "/downloads/tunneler/phenix-tunneler-linux-amd64"
+
 	serve := func(method string, header ...string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, "/downloads/tunneler/phenix-tunneler-linux-amd64", nil)
+		req := httptest.NewRequest(method, path, nil)
 		for i := 0; i+1 < len(header); i += 2 {
 			req.Header.Set(header[i], header[i+1])
 		}
@@ -137,12 +158,12 @@ func TestTunnelerDownloadResumes(t *testing.T) {
 	etag := head.Header().Get("ETag")
 
 	if head.Code != http.StatusOK || etag == "" || head.Body.Len() != 0 || head.Header().Get("Content-Length") != "5" {
-		t.Fatalf("HEAD: status %d, ETag %q, %d body bytes, Content-Length %q",
-			head.Code, etag, head.Body.Len(), head.Header().Get("Content-Length"))
+		t.Fatalf("HEAD %s = status %d, ETag %q, %d body bytes, Content-Length %q; want 200, an ETag, no body, 5",
+			path, head.Code, etag, head.Body.Len(), head.Header().Get("Content-Length"))
 	}
 
 	resumed := serve(http.MethodGet, "Range", "bytes=2-", "If-Range", etag)
 	if resumed.Code != http.StatusPartialContent || resumed.Body.String() != "nux" {
-		t.Fatalf("resume: status %d, body %q; want 206 nux", resumed.Code, resumed.Body)
+		t.Errorf("GET %s (Range bytes=2-, If-Range %s) = %d %q, want 206 nux", path, etag, resumed.Code, resumed.Body)
 	}
 }

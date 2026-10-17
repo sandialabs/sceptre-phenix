@@ -8,6 +8,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/gorilla/mux"
 
 	"phenix/store"
@@ -47,7 +49,7 @@ func useForwards(t *testing.T, running []string, tunnels []map[string]string, fo
 		c.Status = map[string]any{"startTime": "2026-01-01T00:00:00Z"}
 
 		if err := store.Create(c); err != nil {
-			t.Fatal(err)
+			t.Fatalf("store.Create(experiment/%s) = %v", name, err)
 		}
 	}
 
@@ -97,7 +99,7 @@ func listForwards(t *testing.T, exp, vm string) []string {
 	router.ServeHTTP(rec, req.WithContext(ctx))
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("listing %s/%s forwards: status %d: %s", exp, vm, rec.Code, rec.Body)
+		t.Fatalf("GET %s = %d %s, want 200", req.URL.Path, rec.Code, rec.Body)
 	}
 
 	var body struct {
@@ -105,7 +107,7 @@ func listForwards(t *testing.T, exp, vm string) []string {
 	}
 
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding GET %s: %v", req.URL.Path, err)
 	}
 
 	keys := make([]string, len(body.Listeners))
@@ -150,9 +152,14 @@ func TestListingForwardsDropsClosedTunnels(t *testing.T) {
 
 			useForwards(t, []string{"exp"}, tc.tunnels, tc.forward)
 
+			var want []string
+			if tc.kept {
+				want = []string{tc.forward.ToKey()}
+			}
+
 			got := listForwards(t, "exp", "a")
-			if kept := slices.Equal(got, []string{tc.forward.ToKey()}); kept != tc.kept {
-				t.Errorf("listed %v, want the forward kept = %v", got, tc.kept)
+			if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("GET /experiments/exp/vms/a/forwards mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -219,8 +226,8 @@ func TestReapingAsksMinimegaOnlyWhenNeeded(t *testing.T) {
 
 		slices.Sort(want)
 
-		if !slices.Equal(got, want) {
-			t.Errorf("%s: forwards = %v, want %v", step.name, got, want)
+		if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+			t.Errorf("%s: forwards mismatch (-want +got):\n%s", step.name, diff)
 		}
 
 		if n := fake.calls - before; n != step.listings {
@@ -258,7 +265,7 @@ func TestListingForwardsOfOneVM(t *testing.T) {
 
 	useForwards(t, []string{"exp"}, nil, forward("a"), forward("ab"))
 
-	if got, want := listForwards(t, "exp", "a"), []string{forward("a").ToKey()}; !slices.Equal(got, want) {
-		t.Errorf("listed %v, want %v", got, want)
+	if diff := cmp.Diff([]string{forward("a").ToKey()}, listForwards(t, "exp", "a")); diff != "" {
+		t.Errorf("GET /experiments/exp/vms/a/forwards mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -66,12 +66,13 @@ func TestSlowComponentViewerDoesNotBlockUpdates(t *testing.T) {
 	polltest.Within(t, "the fast viewer's output ending", func() { <-fastConn.closed })
 
 	if got := fastConn.String(); got != want.String()+finishedMarker {
-		t.Errorf("fast viewer got %d bytes, want %d", len(got), want.Len()+len(finishedMarker))
+		t.Errorf("UpdateComponent(%s) x %d: fast viewer received %d bytes, want %d",
+			cmp, 2*viewerQueue, len(got), want.Len()+len(finishedMarker))
 	}
 
 	// its queue filled behind the write it is stuck in
 	if !drained(slow) {
-		t.Error("the slow viewer was not dropped")
+		t.Errorf("UpdateComponent(%s) x %d: slow viewer's queue still open, want it dropped", cmp, 2*viewerQueue)
 	}
 }
 
@@ -97,7 +98,7 @@ func TestFinishedComponentReplaysOutputThenCloses(t *testing.T) {
 	polltest.Within(t, "serving the viewer", v.serve)
 
 	if got, want := conn.String(), "one\ntwo\n"+finishedMarker; got != want {
-		t.Errorf("viewer got %q, want %q", got, want)
+		t.Errorf("viewer of finished component %s received %q, want %q", cmp, got, want)
 	}
 }
 
@@ -122,7 +123,7 @@ func TestViewerThatLeavesIsForgotten(t *testing.T) {
 	UpdateComponent(update(cmp, statusRunning, "two\n"))
 
 	if _, ok := ws[componentKey(cmp)][v.id]; ok {
-		t.Error("the viewer that left is still listed")
+		t.Errorf("after UpdateComponent(%s), ws[%q] lists viewer %v that left, want it removed", cmp, componentKey(cmp), v.id)
 	}
 
 	UpdateComponent(update(cmp, statusSuccess, ""))

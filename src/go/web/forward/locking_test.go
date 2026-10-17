@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/api/experiment"
 	"phenix/util/mm"
 	"phenix/util/polltest"
@@ -99,8 +101,8 @@ func TestReapingDoesNotHoldForwards(t *testing.T) {
 	polltest.Within(t, "the reaper asking minimega", func() { <-fake.entered })
 
 	polltest.Within(t, "listing the other experiment's forwards", func() {
-		if got := listForwards(t, "b", "vm"); len(got) != 1 || got[0] != qemuB.ToKey() {
-			t.Errorf("forwards = %v, want %s", got, qemuB.ToKey())
+		if diff := cmp.Diff([]string{qemuB.ToKey()}, listForwards(t, "b", "vm")); diff != "" {
+			t.Errorf("GET /experiments/b/vms/vm/forwards while reaping mismatch (-want +got):\n%s", diff)
 		}
 	})
 
@@ -112,7 +114,7 @@ func TestReapingDoesNotHoldForwards(t *testing.T) {
 
 	// minimega listed no tunnels for a, so the reaper dropped its forward
 	if got := reapAll(); len(got) != 0 {
-		t.Errorf("forwards left = %v, want none", got)
+		t.Errorf("reapForwards() left %v, want none", got)
 	}
 }
 
@@ -126,19 +128,19 @@ func TestCreateTunnelGivesUpAfterBoundedPorts(t *testing.T) {
 
 	polltest.Within(t, "creating the forward", func() {
 		if err := createPortForward("exp", "vm", "0", "", "22", "u"); err == nil {
-			t.Error("created a forward with every port busy")
+			t.Error("createPortForward(exp, vm, 0, \"\", 22, u) with every port busy = nil, want an error")
 		}
 	})
 
 	if n := fake.creates.Load(); n != maxTunnelPortAttempts {
-		t.Errorf("tried %d ports, want %d", n, maxTunnelPortAttempts)
+		t.Errorf("createPortForward with every port busy tried %d ports, want %d", n, maxTunnelPortAttempts)
 	}
 
 	forwardsMu.Lock()
 	defer forwardsMu.Unlock()
 
 	if len(forwards) != 0 || len(pending) != 0 {
-		t.Errorf("forwards = %v, pending = %v; want none", forwards, pending)
+		t.Errorf("after a failed createPortForward, forwards = %v, pending = %v; want none", forwards, pending)
 	}
 }
 
@@ -163,17 +165,17 @@ func TestStopDuringCreateDropsTheForward(t *testing.T) {
 	polltest.Within(t, "the create returning", func() { err = <-created })
 
 	if !errors.Is(err, experiment.ErrExperimentNotRunning) {
-		t.Errorf("create returned %v, want %v", err, experiment.ErrExperimentNotRunning)
+		t.Errorf("createPortForward(exp, ...) stopped midway = %v, want %v", err, experiment.ErrExperimentNotRunning)
 	}
 
 	forwardsMu.Lock()
 	defer forwardsMu.Unlock()
 
 	if len(forwards) != 0 || len(pending) != 0 {
-		t.Errorf("forwards = %v, pending = %v; want none", forwards, pending)
+		t.Errorf("after createPortForward of a stopped experiment, forwards = %v, pending = %v; want none", forwards, pending)
 	}
 
 	if n := fake.closes.Load(); n != 0 {
-		t.Errorf("closed %d tunnels of the stopped experiment", n)
+		t.Errorf("createPortForward of a stopped experiment closed %d tunnels, want 0", n)
 	}
 }

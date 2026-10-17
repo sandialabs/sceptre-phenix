@@ -65,11 +65,11 @@ func TestGetScreenshotSizes(t *testing.T) {
 
 		_, err := GetScreenshot("exp", "vm", size)
 		if valid && err != nil {
-			t.Errorf("GetScreenshot at size %q: %v", size, err)
+			t.Errorf("GetScreenshot(exp, vm, %q) = %v, want nil", size, err)
 		}
 
 		if !valid && !errors.Is(err, ErrInvalidScreenshotSize) {
-			t.Errorf("GetScreenshot at size %q: err = %v, want ErrInvalidScreenshotSize", size, err)
+			t.Errorf("GetScreenshot(exp, vm, %q) = %v, want ErrInvalidScreenshotSize", size, err)
 		}
 	}
 }
@@ -115,14 +115,15 @@ func TestGetScreenshotCaches(t *testing.T) {
 		switch {
 		case step.failure != nil || step.missing:
 			if err == nil || (step.failure != nil && !errors.Is(err, step.failure)) {
-				t.Errorf("%s: GetScreenshot() = %q, %v; want the error", step.name, shot, err)
+				t.Errorf("%s: GetScreenshot(exp, %s, %s) = %q, %v; want an error", step.name, step.vm, step.size, shot, err)
 			}
 		case err != nil || string(shot) != step.want:
-			t.Errorf("%s: GetScreenshot() = %q, %v; want %q", step.name, shot, err, step.want)
+			t.Errorf("%s: GetScreenshot(exp, %s, %s) = %q, %v; want %q", step.name, step.vm, step.size, shot, err, step.want)
 		}
 
 		if n := fake.calls.Load(); n != step.calls {
-			t.Errorf("%s: minimega was asked for %d screenshots, want %d", step.name, n, step.calls)
+			t.Errorf("%s: after GetScreenshot(exp, %s, %s), minimega was asked for %d screenshots, want %d",
+				step.name, step.vm, step.size, n, step.calls)
 		}
 	}
 }
@@ -173,11 +174,11 @@ func TestGetScreenshotSharesARequest(t *testing.T) {
 
 	for i := range callers {
 		if errs[i] != nil || string(shots[i]) != "png" {
-			t.Errorf("caller %d: GetScreenshot() = %q, %v; want png", i, shots[i], errs[i])
+			t.Errorf("concurrent caller %d: GetScreenshot(exp, vm, 200) = %q, %v; want png", i, shots[i], errs[i])
 		}
 	}
 
 	if n := fake.calls.Load(); n != 1 {
-		t.Errorf("minimega was asked for %d screenshots, want 1", n)
+		t.Errorf("%d concurrent GetScreenshot(exp, vm, 200) calls asked minimega for %d screenshots, want 1", callers, n)
 	}
 }

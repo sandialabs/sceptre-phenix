@@ -22,7 +22,7 @@ func TestAttachment(t *testing.T) {
 
 		// browsers read back the name as given
 		if _, params, err := mime.ParseMediaType(got); err != nil || params["filename"] != name {
-			t.Errorf("Attachment(%q) parses as %q, %v", name, params["filename"], err)
+			t.Errorf("mime.ParseMediaType(Attachment(%q)) filename = %q, %v; want %q", name, params["filename"], err, name)
 		}
 	}
 }

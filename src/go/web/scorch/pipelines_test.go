@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strconv"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store"
 )
@@ -21,50 +22,44 @@ func TestGetPipelines(t *testing.T) {
 		map[string]any{"name": "attack", "start": []string{"a"}},
 	)
 
-	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines", roleFor("experiments", "get"))
+	const path = "/experiments/exp/scorch/pipelines"
+
+	rec := serveScorch(http.MethodGet, path, roleFor("experiments", "get"))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+		t.Fatalf("GET %s = %d %s, want 200", path, rec.Code, rec.Body)
 	}
 
-	var body struct {
-		Pipelines []struct {
-			Name       string `json:"name"`
-			HasCleanup bool   `json:"hasCleanup"`
-		} `json:"pipelines"`
+	type run struct {
+		Name       string `json:"name"`
+		HasCleanup bool   `json:"hasCleanup"`
+	}
+
+	type pipelines struct {
+		Pipelines  []run          `json:"pipelines"`
 		Running    int            `json:"running"`
 		AppRunning bool           `json:"app_running"`
 		Experiment map[string]any `json:"experiment"`
 	}
 
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
+	var got pipelines
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding GET %s: %v", path, err)
 	}
 
-	type run struct {
-		Name       string
-		HasCleanup bool
+	want := pipelines{
+		Pipelines:  []run{{"setup", true}, {"attack", false}},
+		Running:    3,
+		AppRunning: true,
+		Experiment: map[string]any{"status": "started"},
 	}
 
-	runs := make([]run, len(body.Pipelines))
-	for i, p := range body.Pipelines {
-		runs[i] = run{p.Name, p.HasCleanup}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GET %s mismatch (-want +got):\n%s", path, diff)
 	}
 
-	if want := []run{{"setup", true}, {"attack", false}}; !reflect.DeepEqual(runs, want) {
-		t.Errorf("pipelines = %+v, want %+v", runs, want)
-	}
-
-	if body.Running != 3 || !body.AppRunning {
-		t.Errorf("running = %d, app_running = %v; want run 3 of a running app", body.Running, body.AppRunning)
-	}
-
-	if want := map[string]any{"status": "started"}; !reflect.DeepEqual(body.Experiment, want) {
-		t.Errorf("experiment = %v, want %v", body.Experiment, want)
-	}
-
-	rec = serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines", roleFor("experiments", "list"))
+	rec = serveScorch(http.MethodGet, path, roleFor("experiments", "list"))
 	if rec.Code != http.StatusForbidden {
-		t.Errorf("listing pipelines without experiment get: status %d, want 403", rec.Code)
+		t.Errorf("GET %s with only experiments list = %d, want 403", path, rec.Code)
 	}
 }
 
@@ -100,7 +95,7 @@ func TestGetPipeline(t *testing.T) {
 
 			rec := serveScorch(http.MethodGet, path, roleFor("experiments", "get"))
 			if rec.Code != tc.status {
-				t.Fatalf("status %d, want %d: %s", rec.Code, tc.status, rec.Body)
+				t.Fatalf("GET %s = %d %s, want %d", path, rec.Code, rec.Body, tc.status)
 			}
 
 			if tc.status != http.StatusOK {
@@ -118,25 +113,26 @@ func TestGetPipeline(t *testing.T) {
 			}
 
 			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-				t.Fatal(err)
+				t.Fatalf("decoding GET %s: %v", path, err)
 			}
 
 			if body.Name != tc.name {
-				t.Errorf("name %q, want %q", body.Name, tc.name)
+				t.Errorf("GET %s name = %q, want %q", path, body.Name, tc.name)
 			}
 
 			started := false
 
 			for _, n := range body.Pipeline {
 				if strconv.Itoa(n.Run) != tc.run || strconv.Itoa(n.Loop) != tc.loop {
-					t.Errorf("node %s is of run %d, loop %d", n.Name, n.Run, n.Loop)
+					t.Errorf("GET %s lists node %s of run %d, loop %d; want run %s, loop %s",
+						path, n.Name, n.Run, n.Loop, tc.run, tc.loop)
 				}
 
 				started = started || (n.Name == tc.component && n.Stage == stageStart)
 			}
 
 			if !started {
-				t.Errorf("pipeline %+v does not start component %s", body.Pipeline, tc.component)
+				t.Errorf("GET %s pipeline = %+v, want one starting component %s", path, body.Pipeline, tc.component)
 			}
 		})
 	}
@@ -152,34 +148,36 @@ func TestBreakMarksTheLoopsAboveIt(t *testing.T) {
 	}
 
 	if err := UpdatePipeline(brk); err != nil {
-		t.Fatal(err)
+		t.Fatalf("UpdatePipeline(%+v) = %v, want nil", brk, err)
 	}
 
 	if got := componentStatus(t, 0, stageLoop); got != statusUnstable {
-		t.Fatalf("loop status = %q, want %q", got, statusUnstable)
+		t.Errorf("after UpdatePipeline(%+v), run 0 loop status = %q, want %q", brk, got, statusUnstable)
 	}
 
 	// only loop 1 is built when the experiment is gone
 	DeletePipeline("exp", -1, -1, false)
 
+	const loop1 = "/experiments/exp/scorch/pipelines/0/1"
+
 	getLoop1 := func() *httptest.ResponseRecorder {
-		return serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines/0/1", roleFor("experiments", "get"))
+		return serveScorch(http.MethodGet, loop1, roleFor("experiments", "get"))
 	}
 
 	if rec := getLoop1(); rec.Code != http.StatusOK {
-		t.Fatalf("getting loop 1: %d %s", rec.Code, rec.Body)
+		t.Errorf("GET %s = %d %s, want 200", loop1, rec.Code, rec.Body)
 	}
 
 	c, _ := store.NewConfig("experiment/exp")
 	if err := store.Delete(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("store.Delete(experiment/exp) = %v", err)
 	}
 
 	if err := UpdatePipeline(brk); err == nil {
-		t.Fatal("updating a break whose loop above is gone succeeded")
+		t.Errorf("UpdatePipeline(%+v) with the experiment deleted = nil, want an error", brk)
 	}
 
 	if rec := getLoop1(); rec.Code != http.StatusOK {
-		t.Fatalf("getting loop 1 after the failed update: %d %s", rec.Code, rec.Body)
+		t.Errorf("GET %s after the failed update = %d %s, want 200", loop1, rec.Code, rec.Body)
 	}
 }

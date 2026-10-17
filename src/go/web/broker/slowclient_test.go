@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/websocket"
 
 	"phenix/api/experiment"
@@ -114,7 +115,9 @@ func TestSlowClientDoesNotDelayOthers(t *testing.T) {
 
 	for i, msg := range got {
 		if !strings.Contains(string(msg), fmt.Sprintf(`"name":"%d"`, i)) {
-			t.Fatalf("message %d = %s, want message %d", i, msg, i)
+			t.Errorf("fast client's message %d = %s, want the broadcast named %d", i, msg, i)
+
+			break
 		}
 	}
 
@@ -124,19 +127,19 @@ func TestSlowClientDoesNotDelayOthers(t *testing.T) {
 	select {
 	case f := <-slowConn.controls:
 		if f.kind != websocket.CloseMessage || binary.BigEndian.Uint16(f.data) != websocket.CloseTryAgainLater {
-			t.Errorf("slow client got control frame %d %q, want close %d",
+			t.Errorf("dropped slow client's control frame = %d %q, want close %d",
 				f.kind, f.data, websocket.CloseTryAgainLater)
 		}
 	default:
-		t.Error("slow client was sent no close frame")
+		t.Errorf("dropped slow client was sent no control frame, want close %d", websocket.CloseTryAgainLater)
 	}
 
 	if n := slowDropped.Load() - dropped; n != 1 {
-		t.Errorf("slow clients dropped = %d, want 1", n)
+		t.Errorf("after %d broadcasts, slowDropped grew by %d, want 1", sent, n)
 	}
 
 	if isClosed(fast.done) {
-		t.Error("the fast client was dropped")
+		t.Errorf("after %d broadcasts, the fast client is done, want it kept", sent)
 	}
 }
 
@@ -167,7 +170,7 @@ func TestDroppingAClientDoesNotWaitForItsWrite(t *testing.T) {
 	drop(cli)
 
 	if d := time.Since(start); d > 50*time.Millisecond {
-		t.Errorf("drop took %v", d)
+		t.Errorf("drop(client stuck in a write) took %v, want at most 50ms", d)
 	}
 
 	polltest.Within(t, "the stuck write ending", func() { <-wrote })
@@ -205,7 +208,7 @@ func TestLoggingNeverBlocksTheBroker(t *testing.T) {
 	plog.RemoveHandler("broker-test")
 
 	if n := logsDropped.Load() - dropped; n != lines-logBufferSize {
-		t.Errorf("log lines dropped = %d, want %d", n, lines-logBufferSize)
+		t.Errorf("%d plog.Warn lines with the broker stopped dropped %d, want %d", lines, n, lines-logBufferSize)
 	}
 
 	runBroker(t)
@@ -235,21 +238,26 @@ func TestLoggingNeverBlocksTheBroker(t *testing.T) {
 	})
 
 	if state != 1 || len(got) != logBufferSize+2 {
-		t.Fatalf("reader got %d log lines and %d state messages, want %d and 1", len(got), state, logBufferSize+2)
+		t.Fatalf("subscribed reader received %d log lines and %d state messages, want %d and 1", len(got), state, logBufferSize+2)
 	}
 
 	var skipped plog.LogEntry
 	if err := json.Unmarshal(got[logBufferSize].pub.Result, &skipped); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding the skipped-lines note %s: %v", got[logBufferSize].pub.Result, err)
 	}
 
 	want := fmt.Sprintf("%d log lines skipped", lines-logBufferSize)
 	if !strings.HasPrefix(skipped.Message, want) || skipped.Level != slog.LevelWarn.String() {
-		t.Errorf("skipped note = %s %q, want WARN %q...", skipped.Level, skipped.Message, want)
+		t.Errorf("skipped-lines note = %s %q, want %s %q...", skipped.Level, skipped.Message, slog.LevelWarn, want)
 	}
 
-	if string(got[logBufferSize+1].pub.Result) != `{"msg": "after"}` {
-		t.Errorf("line after the note = %s", got[logBufferSize+1].pub.Result)
+	var after map[string]any
+	if err := json.Unmarshal(got[logBufferSize+1].pub.Result, &after); err != nil {
+		t.Fatalf("decoding the line after the note %s: %v", got[logBufferSize+1].pub.Result, err)
+	}
+
+	if diff := cmp.Diff(map[string]any{"msg": "after"}, after); diff != "" {
+		t.Errorf("BroadcastLog line after the note mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -419,8 +427,13 @@ func TestListRequestsAreLatestWins(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if want := []string{"first", "last"}; !slices.Equal(got, want) || !slices.Equal(asked, want) {
-		t.Errorf("lists answered = %v, store asked for %v; want %v", got, asked, want)
+	want := []string{"first", "last"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("VM list replies mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(want, asked); diff != "" {
+		t.Errorf("experiments the VM lists read mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -503,13 +516,17 @@ func TestUnsubscribeOutlastsPendingLists(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if want := []string{"after"}; !slices.Equal(got, want) || !slices.Equal(asked, []string{"running", "after"}) {
-		t.Errorf("lists answered = %v, store asked for %v; want %v and [running after]", got, asked, want)
+	if diff := cmp.Diff([]string{"after"}, got); diff != "" {
+		t.Errorf("VM list replies mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]string{"running", "after"}, asked); diff != "" {
+		t.Errorf("experiments the VM lists read mismatch (-want +got):\n%s", diff)
 	}
 
 	want := []vmScope{{exp: "after", name: "vm1", running: true}}
-	if inView := vmsInView(c); !slices.Equal(inView, want) {
-		t.Errorf("VMs in view = %v, want %v", inView, want)
+	if diff := cmp.Diff(want, vmsInView(c), cmp.AllowUnexported(vmScope{})); diff != "" {
+		t.Errorf("VMs in view mismatch (-want +got):\n%s", diff)
 	}
 
 	var shot string
@@ -562,7 +579,7 @@ func TestScreenshotWaitEndsWithTheClient(t *testing.T) {
 	polltest.Within(t, "the screenshots giving up", func() { <-pushed })
 
 	if len(entered) != 0 {
-		t.Error("asked for the second screenshot after the client left")
+		t.Error("pushScreenshots() asked for the second screenshot after the client left, want it to stop")
 	}
 }
 
@@ -602,6 +619,6 @@ func TestListSeqPrecedesBroadcastDuringRead(t *testing.T) {
 	})
 
 	if list.Seq == 0 || list.Seq >= stop.pub.Seq {
-		t.Errorf("list seq %d, stop broadcast seq %d; want the list's lower", list.Seq, stop.pub.Seq)
+		t.Errorf("VM list seq = %d, want nonzero and below the broadcast's %d", list.Seq, stop.pub.Seq)
 	}
 }
