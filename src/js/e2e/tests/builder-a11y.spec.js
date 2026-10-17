@@ -1486,13 +1486,14 @@ function axeScans(scheme) {
     },
   );
 
-  for (const { action, title, inspector } of DIALOGS) {
-    test(
-      `the ${title} dialog passes axe and keeps focus inside itself`,
-      { tag },
-      async ({ page, builder, issues }) => {
-        await connectedDraftIn(page, builder, scheme);
+  test(
+    'each editor dialog passes axe and keeps focus inside itself',
+    { tag },
+    async ({ page, builder, issues }) => {
+      test.slow();
+      await connectedDraftIn(page, builder, scheme);
 
+      for (const { action, title, inspector } of DIALOGS) {
         await test.step(`${title} dialog`, () =>
           scanDialog(
             page,
@@ -1503,10 +1504,10 @@ function axeScans(scheme) {
             `${title} dialog (${scheme})`,
             title,
           ));
-        expectNoFatal(issues);
-      },
-    );
-  }
+      }
+      expectNoFatal(issues);
+    },
+  );
 
   test(
     'the Upload dialog passes axe with its legacy source and with the warnings of a conversion',
@@ -2152,9 +2153,9 @@ function axeScans(scheme) {
   }
 
   test(
-    'the Import dialog passes axe and keeps focus inside itself',
+    'the Import dialog passes axe, keeps focus inside itself, and passes with every option and a refused name',
     { tag },
-    async ({ page, builder, issues }) => {
+    async ({ page, builder, issues }, testInfo) => {
       await openWithScheme(page, builder, scheme);
 
       await test.step('Import dialog', () =>
@@ -2165,15 +2166,6 @@ function axeScans(scheme) {
           `Import dialog (${scheme})`,
           'Import topology or experiment',
         ));
-      expectNoFatal(issues);
-    },
-  );
-
-  test(
-    'the Import dialog passes axe with every option and a refused name',
-    { tag },
-    async ({ page, builder, issues }, testInfo) => {
-      await openWithScheme(page, builder, scheme);
 
       // A topology that includes another shows every option of Import, and a
       // refused new name.

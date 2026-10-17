@@ -1691,20 +1691,7 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     await expect(preview.getByTestId('issue')).toHaveCount(0);
     await expect(errors).toHaveCount(1);
 
-    // The server refuses it too, before writing anything.
-    const current = await builder.request.get(draftPath(draft));
-    const refused = await builder.request.post(`${draftPath(draft)}/publish`, {
-      headers: { 'If-Match': current.headers().etag },
-      data: {
-        mode: 'topology',
-        topology: { name: topology, action: 'create' },
-      },
-    });
-    expect(refused.status(), await refused.text()).toBe(422);
-    // Named in the message, which is what the dialog shows.
-    expect((await refused.json()).message).toBe(
-      `topology ${topology} cannot be published: interface "eth0" of device "${disconnected}" has no VLAN: connect it to a network, or type a VLAN for it`,
-    );
+    // Nothing is published (the Go tests check the server's 422 refusal).
     expect(await builder.config('Topology', topology)).toBeNull();
 
     await builder.dialog.getByRole('button', { name: 'Cancel' }).click();
@@ -1790,15 +1777,6 @@ test('an interface with no VLAN or a used address is refused at publish, and its
         'interface "eth1" of "server-2" is not connected on the canvas, and its VLAN "exp" differs from network EXP only in case. phenix treats them as different VLANs, so publishing does not put it on network EXP',
       ]);
 
-    const current = await builder.request.get(draftPath(seeded));
-    const refused = await builder.request.post(`${draftPath(seeded)}/publish`, {
-      headers: { 'If-Match': current.headers().etag },
-      data: { mode: 'topology', topology: { name: other, action: 'create' } },
-    });
-    expect(refused.status(), await refused.text()).toBe(422);
-    expect((await refused.json()).message).toBe(
-      `topology ${other} cannot be published: interface #2 of device "server" has no VLAN: connect it to a network, or type a VLAN for it`,
-    );
     expect(await builder.config('Topology', other)).toBeNull();
   });
 
@@ -1836,17 +1814,8 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     ]);
     await expect(page.getByTestId('publish-submit')).toBeDisabled();
 
-    const current = await builder.request.get(draftPath(seeded));
-    const refused = await builder.request.post(`${draftPath(seeded)}/publish`, {
-      headers: { 'If-Match': current.headers().etag },
-      data: { mode: 'topology', topology: { name: shared, action: 'create' } },
-    });
-    expect(refused.status(), await refused.text()).toBe(422);
     const usedBy =
       'IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of device "server" and interface "eth0" of device "server-2"';
-    expect((await refused.json()).message).toBe(
-      `topology ${shared} cannot be published: ${usedBy}`,
-    );
     await builder.dialog.getByRole('button', { name: 'Cancel' }).click();
 
     // Topology YAML still downloads, and says why Publish refuses it, as

@@ -481,63 +481,14 @@ test('a draft publishes from its card on the drafts page, with the change the se
   expectNoFatal(issues);
 });
 
-test('Publish on the card of a diagram with errors lists them, and Open draft leads to the editor on that draft', async ({
+// The Publish dialog of a draft's card lists the errors, and leaves for the
+// editor on that draft by Go to on an issue or by Open draft.
+test('Publish on the card of a diagram with errors lists them, and Go to and Open draft lead to the editor on that draft', async ({
   page,
   builder,
   issues,
 }, testInfo) => {
-  const blockedName = uniqueName(testInfo, 'card-blocked');
-  const stuck = await builder.seedDraft(blockedDocument(blockedName));
-
-  await builder.open();
-  const dialog = page.getByRole('dialog');
-  await expect(cardOf(page, stuck.id)).toBeVisible();
-
-  await test.step('a diagram with errors lists them, and Open draft leads to the editor on that draft', async () => {
-    const blockedPublish = page.getByTestId(`draft-publish-${stuck.id}`);
-    await blockedPublish.click();
-    await expect(dialog).toBeVisible();
-    await expect
-      .soft(dialog.getByRole('heading', { level: 2 }).first())
-      .toHaveText(`Publish ${blockedName}`);
-    await expect(
-      dialog.locator('.builder-issues li[data-level="error"]'),
-    ).not.toHaveCount(0);
-    await expect.soft(page.getByTestId('publish-submit')).toBeDisabled();
-    await expect
-      .soft(page.getByTestId('publish-open-hint'))
-      .toHaveText('Open the draft to fix the errors. Then publish it.');
-
-    await page.getByTestId('publish-open-draft').click();
-    await expect(builder.canvas).toBeVisible();
-    await expect(dialog).toHaveCount(0);
-    await expect.soft(page.getByRole('heading', { level: 1 })).toBeFocused();
-    await expect.soft(page.getByTestId('builder-name')).toHaveText(blockedName);
-    await builder.expectCounts({
-      devices: 2,
-      switches: 1,
-      networks: 1,
-      links: 1,
-    });
-    await builder.waitSaved();
-
-    // It is an open draft like any other: the Drafts button closes it.
-    await builder.backToDrafts();
-    await expect.soft(page.getByTestId(`draft-open-${stuck.id}`)).toBeFocused();
-    await expect.soft(page.getByTestId('builder-error')).toHaveCount(0);
-  });
-
-  expectNoFatal(issues);
-});
-
-// Go to on an issue opens the editor on that draft, the device selected and
-// the Inspector field the issue names focused.
-test('Go to in the Publish dialog of a draft’s card opens the editor with the field focused', async ({
-  page,
-  builder,
-  issues,
-}, testInfo) => {
-  const name = uniqueName(testInfo, 'card-go-to');
+  const name = uniqueName(testInfo, 'card-blocked');
   // The second device's hostname is "all", which phenix refuses in an
   // experiment, so Publish lists it as an error.
   const document = labDocument(name);
@@ -548,33 +499,70 @@ test('Go to in the Publish dialog of a draft’s card opens the editor with the 
   const draft = await builder.seedDraft(document);
 
   await builder.open();
-  await page.getByTestId(`draft-publish-${draft.id}`).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await expect(page.getByTestId('publish-submit')).toBeDisabled();
+  const publish = page.getByTestId(`draft-publish-${draft.id}`);
+  await expect(cardOf(page, draft.id)).toBeVisible();
 
-  const errors = dialog
-    .getByTestId('publish-checks')
-    .getByTestId('publish-checks-error');
-  await expect(errors.getByTestId('issue-element')).toHaveText(['Device all']);
-  await errors
-    .getByRole('button', { name: /^Go to device all: hostname "all"/ })
-    .click();
+  await test.step('Go to on an issue opens the editor with the field focused', async () => {
+    await publish.click();
+    await expect(dialog).toBeVisible();
+    await expect
+      .soft(dialog.getByRole('heading', { level: 2 }).first())
+      .toHaveText(`Publish ${name}`);
+    await expect(page.getByTestId('publish-submit')).toBeDisabled();
+    await expect
+      .soft(page.getByTestId('publish-open-hint'))
+      .toHaveText('Open the draft to fix the errors. Then publish it.');
 
-  await expect(builder.canvas).toBeVisible();
-  await expect(dialog).toHaveCount(0);
-  await expect.soft(page.getByTestId('builder-name')).toHaveText(name);
-  await expect(builder.canvasItem('all')).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
-  const hostname = builder.inspector
-    .locator('[data-path="hostname"]')
-    .getByRole('textbox');
-  await expect(hostname).toBeFocused();
-  await expect(hostname).toHaveValue('all');
-  await expect(builder).toHaveAnnounced('Hostname in device all');
-  await builder.waitSaved();
+    const errors = dialog
+      .getByTestId('publish-checks')
+      .getByTestId('publish-checks-error');
+    await expect(errors.getByTestId('issue-element')).toHaveText([
+      'Device all',
+    ]);
+    await errors
+      .getByRole('button', { name: /^Go to device all: hostname "all"/ })
+      .click();
+
+    await expect(builder.canvas).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    await expect.soft(page.getByTestId('builder-name')).toHaveText(name);
+    await expect(builder.canvasItem('all')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const hostname = builder.inspector
+      .locator('[data-path="hostname"]')
+      .getByRole('textbox');
+    await expect(hostname).toBeFocused();
+    await expect(hostname).toHaveValue('all');
+    await expect(builder).toHaveAnnounced('Hostname in device all');
+    await builder.waitSaved();
+    await builder.backToDrafts();
+  });
+
+  await test.step('Open draft leads to the editor on that draft', async () => {
+    await publish.click();
+    await expect(dialog).toBeVisible();
+    await page.getByTestId('publish-open-draft').click();
+    await expect(builder.canvas).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    await expect.soft(page.getByRole('heading', { level: 1 })).toBeFocused();
+    await expect.soft(page.getByTestId('builder-name')).toHaveText(name);
+    await builder.expectCounts({
+      devices: 2,
+      switches: 1,
+      networks: 1,
+      links: 2,
+    });
+    await builder.waitSaved();
+
+    // It is an open draft like any other: the Drafts button closes it.
+    await builder.backToDrafts();
+    await expect.soft(page.getByTestId(`draft-open-${draft.id}`)).toBeFocused();
+    await expect.soft(page.getByTestId('builder-error')).toHaveCount(0);
+  });
+
   expectNoFatal(issues);
 });
 
