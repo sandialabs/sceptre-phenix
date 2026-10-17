@@ -7,10 +7,12 @@ import (
 	"hash/crc32"
 	"maps"
 	"net/http"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	bapi "phenix/api/builder"
 	"phenix/store"
@@ -45,11 +47,12 @@ func TestBuilderPublishUpdatePreservesAnnotations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("updated topology missing: %v", err)
 	}
-	if updated.Metadata.Annotations["keep"] != "value" {
-		t.Fatal("unrelated annotation was not preserved")
+	if got := updated.Metadata.Annotations["keep"]; got != "value" {
+		t.Errorf("updating existing: annotation keep = %q, want %q", got, "value")
 	}
+
 	if _, err := bapi.DecodeReference(updated.Metadata.Annotations[bapi.DocumentAnnotation]); err != nil {
-		t.Fatalf("builder document annotation invalid: %v", err)
+		t.Errorf("updating existing: DecodeReference(document annotation) returned error: %v", err)
 	}
 }
 
@@ -65,13 +68,13 @@ func TestBuilderPublishRejectsLegacyAndUnauthorizedTargets(t *testing.T) {
 	// replace it, and its diagram stays.
 	_, refusal := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"legacy","action":"update"}}`, http.StatusConflict)
-	if refusal != "topology legacy is not the source this draft was loaded from" {
-		t.Fatalf("refusal = %q, want the draft refused as not loaded from the topology", refusal)
+	if want := "topology legacy is not the source this draft was loaded from"; refusal != want {
+		t.Errorf("publishing over legacy: refusal = %q, want %q", refusal, want)
 	}
 
-	if harness.configs[0].Metadata.Annotations[bdoc.LegacyXMLAnnotation] != "<mxfile/>" ||
-		harness.configs[0].HasAnnotation(bapi.DocumentAnnotation) {
-		t.Fatalf("annotations = %v, want the legacy diagram untouched", harness.configs[0].Metadata.Annotations)
+	if diff := cmp.Diff(store.Annotations{bdoc.LegacyXMLAnnotation: "<mxfile/>"},
+		harness.configs[0].Metadata.Annotations); diff != "" {
+		t.Errorf("publishing over legacy: annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	role := builderRole(builderPolicy(
@@ -82,7 +85,7 @@ func TestBuilderPublishRejectsLegacyAndUnauthorizedTargets(t *testing.T) {
 	publishBuilderDraftAs(t, harness, draft, role,
 		`{"mode":"topology","topology":{"name":"new","action":"create"}}`, http.StatusForbidden)
 	if harness.configWrites != 0 {
-		t.Fatalf("unauthorized publish wrote %d configs", harness.configWrites)
+		t.Errorf("publishing new without create permission wrote %d configs, want none", harness.configWrites)
 	}
 }
 
@@ -96,19 +99,30 @@ func TestBuilderPublishReportsBroadcastWarning(t *testing.T) {
 	response, _ := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"broadcast","action":"create"}}`, http.StatusOK)
 
-	if !strings.Contains(strings.Join(bdoc.IssueMessages(response.Warnings), " "), "broadcast") ||
-		!slices.ContainsFunc(response.Warnings, func(warning bdoc.Issue) bool {
-			return warning.Code == bdoc.CodePublishBroadcastFailed && warning.Severity == bdoc.SeverityWarning
-		}) {
-		t.Fatalf("warnings = %#v, want a broadcast warning", response.Warnings)
-	}
-	if response.Draft.Publication == nil {
-		t.Fatal("broadcast failure prevented draft publication state")
+	if messages := strings.Join(bdoc.IssueMessages(response.Warnings), " "); !strings.Contains(messages, "broadcast") {
+		t.Errorf("publishing broadcast: warnings = %q, want one about the broadcast", messages)
 	}
 
-	if meta := mustDraftMeta(t, harness, draft.ID); meta.LastModifiedBy != builderAlice ||
-		meta.Publication == nil || meta.Publication.PublishedBy != builderAlice {
-		t.Fatalf("publication audit = %#v, want alice as the publisher", meta)
+	if !slices.ContainsFunc(response.Warnings, func(warning bdoc.Issue) bool {
+		return warning.Code == bdoc.CodePublishBroadcastFailed && warning.Severity == bdoc.SeverityWarning
+	}) {
+		t.Errorf("publishing broadcast: warnings = %+v, want a %s warning", response.Warnings, bdoc.CodePublishBroadcastFailed)
+	}
+
+	if response.Draft.Publication == nil {
+		t.Error("publishing broadcast: draft publication = nil, want it recorded despite the failed broadcast")
+	}
+
+	meta := mustDraftMeta(t, harness, draft.ID)
+	if meta.LastModifiedBy != builderAlice {
+		t.Errorf("publishing broadcast: draft lastModifiedBy = %q, want %q", meta.LastModifiedBy, builderAlice)
+	}
+
+	switch {
+	case meta.Publication == nil:
+		t.Errorf("publishing broadcast: stored publication = nil, want alice as the publisher")
+	case meta.Publication.PublishedBy != builderAlice:
+		t.Errorf("publishing broadcast: publishedBy = %q, want %q", meta.Publication.PublishedBy, builderAlice)
 	}
 }
 
@@ -125,25 +139,41 @@ func TestBuilderPublishReportsPartialFailure(t *testing.T) {
 		body:   `{"mode":"topology","topology":{"name":"partial","action":"create"}}`,
 		user:   builderAlice, ifMatch: draft.ETag,
 	}, http.StatusInternalServerError, &response)
-	if response.Status != "partial" || len(response.Stages) != 2 ||
-		len(response.Errors) != 1 || response.Errors[0].Code != bdoc.CodePublishStageFailed ||
-		response.Errors[0].Message != response.Stages[1].Message {
-		t.Fatalf("partial response = %#v", response)
+	if response.Status != bapi.PublishPartial {
+		t.Errorf("publishing partial: status = %q, want %q", response.Status, bapi.PublishPartial)
 	}
-	if response.Stages[0].Name != builderPublishStageDocument ||
-		response.Stages[1].Status != bapi.PublishFailed {
-		t.Fatalf("partial stages = %#v", response.Stages)
-	}
+
 	if strings.Contains(recorder.Body.String(), "injected config write failure") {
-		t.Fatal("partial response exposed an internal error")
+		t.Errorf("publishing partial = %s, want no internal error in it", recorder.Body)
 	}
 
 	meta, err := harness.service.GetDraft(context.Background(), draft.ID)
 	if err != nil {
 		t.Fatalf("GetDraft returned error: %v", err)
 	}
+
 	if meta.Publication != nil {
-		t.Fatal("partial publication marked draft clean")
+		t.Errorf("publishing partial: draft publication = %+v, want none", meta.Publication)
+	}
+
+	if len(response.Stages) != 2 || len(response.Errors) != 1 {
+		t.Fatalf("publishing partial: stages = %+v and errors = %+v, want 2 stages and 1 error", response.Stages, response.Errors)
+	}
+
+	if response.Errors[0].Code != bdoc.CodePublishStageFailed {
+		t.Errorf("publishing partial: error code = %q, want %q", response.Errors[0].Code, bdoc.CodePublishStageFailed)
+	}
+
+	if got, want := response.Errors[0].Message, response.Stages[1].Message; got != want {
+		t.Errorf("publishing partial: error message = %q, want the failed stage's %q", got, want)
+	}
+
+	if got := response.Stages[0].Name; got != builderPublishStageDocument {
+		t.Errorf("publishing partial: first stage = %q, want %q", got, builderPublishStageDocument)
+	}
+
+	if got := response.Stages[1].Status; got != bapi.PublishFailed {
+		t.Errorf("publishing partial: second stage status = %q, want %q", got, bapi.PublishFailed)
 	}
 }
 
@@ -156,23 +186,37 @@ func TestBuilderPublishReportsExperimentPartialFailure(t *testing.T) {
 		`{"mode":"topology-experiment","topology":{"name":"partial-topology","action":"create"},`+
 			`"experiment":{"name":"partial-experiment","action":"create"}}`, http.StatusInternalServerError)
 
-	if response.Status != "partial" ||
-		len(response.Stages) != 3 ||
-		response.Stages[1].Name != builderPublishStageTopology ||
-		response.Stages[2].Name != builderPublishStageExperiment ||
-		response.Stages[2].Status != bapi.PublishFailed {
-		t.Fatalf("partial response = %#v", response)
+	if response.Status != bapi.PublishPartial {
+		t.Errorf("publishing partial-experiment: status = %q, want %q", response.Status, bapi.PublishPartial)
 	}
 
 	if _, err := harness.getConfig("Topology/partial-topology"); err != nil {
-		t.Fatalf("successful topology stage was not retained: %v", err)
+		t.Errorf("publishing partial-experiment: the published topology = %v, want it kept", err)
 	}
+
 	meta, err := harness.service.GetDraft(context.Background(), draft.ID)
 	if err != nil {
 		t.Fatalf("GetDraft returned error: %v", err)
 	}
+
 	if meta.Publication != nil {
-		t.Fatal("experiment partial failure marked draft clean")
+		t.Errorf("publishing partial-experiment: draft publication = %+v, want none", meta.Publication)
+	}
+
+	if len(response.Stages) != 3 {
+		t.Fatalf("publishing partial-experiment: stages = %+v, want 3", response.Stages)
+	}
+
+	if got := response.Stages[1].Name; got != builderPublishStageTopology {
+		t.Errorf("publishing partial-experiment: second stage = %q, want %q", got, builderPublishStageTopology)
+	}
+
+	if got := response.Stages[2].Name; got != builderPublishStageExperiment {
+		t.Errorf("publishing partial-experiment: third stage = %q, want %q", got, builderPublishStageExperiment)
+	}
+
+	if got := response.Stages[2].Status; got != bapi.PublishFailed {
+		t.Errorf("publishing partial-experiment: third stage status = %q, want %q", got, bapi.PublishFailed)
 	}
 }
 
@@ -180,36 +224,59 @@ func TestBuilderPublishValidatesIntentBeforeWriting(t *testing.T) {
 	harness := newBuilderHarness(t)
 	draft := harness.createDraft(builderAlice, "invalid-intent")
 
-	tests := []string{
-		`{}`,
-		`{"mode":"unknown","topology":{"name":"topo","action":"create"}}`,
-		`{"mode":"topology","topology":{"name":"topo","action":"delete"}}`,
-		`{"mode":"topology","topology":{"name":"topo","action":"create"},"experiment":{"name":"exp","action":"create"}}`,
-		`{"mode":"topology","topology":{"name":"topo","action":"create","unexpected":true}}`,
+	tests := []struct{ name, body string }{
+		{"empty", `{}`},
+		{"unknown mode", `{"mode":"unknown","topology":{"name":"topo","action":"create"}}`},
+		{"delete action", `{"mode":"topology","topology":{"name":"topo","action":"delete"}}`},
+		{
+			"experiment in topology mode",
+			`{"mode":"topology","topology":{"name":"topo","action":"create"},"experiment":{"name":"exp","action":"create"}}`,
+		},
+		{"unknown key", `{"mode":"topology","topology":{"name":"topo","action":"create","unexpected":true}}`},
 		// Names outside the config naming rule, which the experiment would
 		// otherwise refuse only after the topology is written.
-		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
-			`"experiment":{"name":"my exp","action":"create"}}`,
-		`{"mode":"topology","topology":{"name":"topo/x","action":"create"}}`,
+		{
+			"experiment name with a space",
+			`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+				`"experiment":{"name":"my exp","action":"create"}}`,
+		},
+		{"topology name with a slash", `{"mode":"topology","topology":{"name":"topo/x","action":"create"}}`},
 		// A scenario is named only for the experiment of a
 		// topology-and-experiment publication, by its name alone.
-		`{"mode":"topology","topology":{"name":"topo","action":"create"},"scenario":{"name":"sc"}}`,
-		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
-			`"scenario":{"name":"sc","action":"use"},"experiment":{"name":"exp","action":"create"}}`,
-		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
-			`"scenario":{"name":"my sc"},"experiment":{"name":"exp","action":"create"}}`,
-		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
-			`"scenario":{"name":""},"experiment":{"name":"exp","action":"create"}}`,
-		`{"mode":"topology","topology":{"name":"topo","action":"update","expectedDigest":"sha256:` +
-			strings.Repeat("0", 64) + `"}}`,
+		{
+			"scenario in topology mode",
+			`{"mode":"topology","topology":{"name":"topo","action":"create"},"scenario":{"name":"sc"}}`,
+		},
+		{
+			"scenario with an action",
+			`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+				`"scenario":{"name":"sc","action":"use"},"experiment":{"name":"exp","action":"create"}}`,
+		},
+		{
+			"scenario name with a space",
+			`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+				`"scenario":{"name":"my sc"},"experiment":{"name":"exp","action":"create"}}`,
+		},
+		{
+			"empty scenario name",
+			`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+				`"scenario":{"name":""},"experiment":{"name":"exp","action":"create"}}`,
+		},
+		{
+			"expected digest on update",
+			`{"mode":"topology","topology":{"name":"topo","action":"update","expectedDigest":"sha256:` +
+				strings.Repeat("0", 64) + `"}}`,
+		},
 	}
 
-	for _, body := range tests {
-		publishBuilderDraft(t, harness, draft, body, http.StatusBadRequest)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			publishBuilderDraft(t, harness, draft, test.body, http.StatusBadRequest)
+		})
 	}
 
-	if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-		t.Fatal("invalid publication intent had side effects")
+	if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+		t.Errorf("invalid publish requests wrote %d configs and %d published documents, want none", writes, documents)
 	}
 }
 
@@ -250,17 +317,17 @@ func TestBuilderPublishNamesInterfacesWithoutVLAN(t *testing.T) {
 		`interface #2 of device "host"` + fix + `; ` +
 		`interface "eth0" (#3) of device "host"` + fix + `; ` +
 		`2 more interfaces have no VLAN`
-	if body.Message != want {
-		t.Fatalf("message = %q, want %q", body.Message, want)
+	if diff := cmp.Diff(want, body.Message); diff != "" {
+		t.Errorf("publishing no-vlan: message mismatch (-want +got):\n%s", diff)
 	}
 
 	// The cause still lists every one.
 	if !strings.Contains(body.Cause, `interface "eth2" of device "host"`+fix) {
-		t.Fatalf("cause %q does not name eth2", body.Cause)
+		t.Errorf("publishing no-vlan: cause = %q, want it to name eth2", body.Cause)
 	}
 
-	if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-		t.Fatal("a refused publication had side effects")
+	if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+		t.Errorf("publishing no-vlan wrote %d configs and %d published documents, want none", writes, documents)
 	}
 }
 
@@ -312,17 +379,17 @@ func TestBuilderPublishNamesSharedAddresses(t *testing.T) {
 		`MAC address 00:00:00:00:00:01 on VLAN "EXP" is used by ` + users("eth0") + `; ` +
 		`IP address 10.0.0.2 on VLAN "EXP" is used by ` + users("eth1") + `; ` +
 		`1 more address is used more than once`
-	if body.Message != want {
-		t.Fatalf("message = %q, want %q", body.Message, want)
+	if diff := cmp.Diff(want, body.Message); diff != "" {
+		t.Errorf("publishing shared: message mismatch (-want +got):\n%s", diff)
 	}
 
 	// The cause still lists every one.
 	if !strings.Contains(body.Cause, `MAC address 00:00:00:00:00:02 on VLAN "EXP" is used by `+users("eth1")) {
-		t.Fatalf("cause %q does not name the second MAC address", body.Cause)
+		t.Errorf("publishing shared: cause = %q, want it to name the second MAC address", body.Cause)
 	}
 
-	if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-		t.Fatal("a refused publication had side effects")
+	if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+		t.Errorf("publishing shared wrote %d configs and %d published documents, want none", writes, documents)
 	}
 }
 
@@ -346,8 +413,8 @@ func TestBuilderPublishRejectsStaleSource(t *testing.T) {
 
 	publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"generated","action":"create"}}`, http.StatusConflict)
-	if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-		t.Fatal("stale source publication had side effects")
+	if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+		t.Errorf("publishing from a stale source wrote %d configs and %d published documents, want none", writes, documents)
 	}
 }
 
@@ -378,21 +445,23 @@ func TestBuilderPublishAnnotatesListedScenarios(t *testing.T) {
 			} {
 				scenario, err := harness.getConfig("Scenario/" + name)
 				if err != nil {
-					t.Fatalf("scenario %s missing: %v", name, err)
+					t.Errorf("getConfig(Scenario/%s) returned error: %v", name, err)
+
+					continue
 				}
 
 				if got := scenario.Metadata.Annotations["topology"]; got != want {
 					t.Errorf("scenario %s topology annotation = %q, want %q", name, got, want)
 				}
 
-				if scenario.Metadata.Annotations["keep"] != "yes" {
-					t.Errorf("scenario %s lost its other annotations: %v", name, scenario.Metadata.Annotations)
+				if got := scenario.Metadata.Annotations["keep"]; got != "yes" {
+					t.Errorf("scenario %s keep annotation = %q, want %q", name, got, "yes")
 				}
 			}
 
 			// The topology and the three scenarios that changed.
 			if harness.configWrites != 4 {
-				t.Fatalf("config writes = %d, want 4", harness.configWrites)
+				t.Errorf("publishing topo: config writes = %d, want 4", harness.configWrites)
 			}
 
 			stage := builderStageNamed(t, response, builderPublishStageScenario)
@@ -400,12 +469,12 @@ func TestBuilderPublishAnnotatesListedScenarios(t *testing.T) {
 				Name: builderPublishStageScenario, Status: "updated", Config: "",
 				Message: "added topology topo to scenarios sc-a, sc-b, sc-d, and scenario sc-c already names it",
 			}
-			if stage != want {
-				t.Fatalf("scenario stage = %+v, want %+v", stage, want)
+			if diff := cmp.Diff(want, stage); diff != "" {
+				t.Errorf("publishing topo: scenario stage mismatch (-want +got):\n%s", diff)
 			}
 
 			if response.Scenario != nil {
-				t.Fatalf("response scenario = %+v, want none: no experiment scenario was picked", response.Scenario)
+				t.Errorf("publishing topo: scenario = %+v, want none: no experiment scenario was picked", response.Scenario)
 			}
 		})
 	}
@@ -446,8 +515,8 @@ func TestBuilderPublishScenarioStageReports(t *testing.T) {
 			response, _ := publishBuilderDraft(t, harness, draft,
 				`{"mode":"topology","topology":{"name":"topo","action":"create"}}`, http.StatusOK)
 
-			if stage := builderStageNamed(t, response, builderPublishStageScenario); stage != test.want {
-				t.Fatalf("scenario stage = %+v, want %+v", stage, test.want)
+			if diff := cmp.Diff(test.want, builderStageNamed(t, response, builderPublishStageScenario)); diff != "" {
+				t.Errorf("publishing topo: scenario stage mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -459,14 +528,19 @@ func TestBuilderPublishScenarioStageReports(t *testing.T) {
 	response, _ := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"plain","action":"create"}}`, http.StatusOK)
 
-	for _, stage := range response.Stages {
-		if stage.Name == builderPublishStageScenario {
-			t.Fatalf("stages = %+v, want no scenario stage", response.Stages)
-		}
+	if slices.ContainsFunc(response.Stages, func(stage builderPublishStage) bool {
+		return stage.Name == builderPublishStageScenario
+	}) {
+		t.Errorf("publishing plain: stages = %+v, want no scenario stage", response.Stages)
 	}
 
-	if scenario, err := harness.getConfig("Scenario/sc"); err != nil || scenario.Metadata.Annotations["topology"] != "" {
-		t.Fatalf("an unlisted scenario was changed: %+v (%v)", scenario, err)
+	scenario, err := harness.getConfig("Scenario/sc")
+	if err != nil {
+		t.Fatalf("getConfig(Scenario/sc) returned error: %v", err)
+	}
+
+	if got := scenario.Metadata.Annotations["topology"]; got != "" {
+		t.Errorf("publishing plain: unlisted scenario sc topology annotation = %q, want none", got)
 	}
 }
 
@@ -527,12 +601,13 @@ func TestBuilderPublishRefusesScenarioProblems(t *testing.T) {
 
 			_, refusal := publishBuilderDraftAs(t, harness, draft, test.role, test.body, test.status)
 			if !strings.Contains(refusal.Message, test.want) {
-				t.Fatalf("refusal = %q, want %q", refusal.Message, test.want)
+				t.Errorf("publish %s: refusal = %q, want it to say %q", test.body, refusal.Message, test.want)
 			}
 
-			if harness.configWrites != 0 || harness.experimentWrites != 0 ||
-				harness.store.Count(bapi.NamespacePublished) != 0 {
-				t.Fatal("a refused publication had side effects")
+			if configs, experiments, documents := harness.configWrites, harness.experimentWrites,
+				harness.store.Count(bapi.NamespacePublished); configs != 0 || experiments != 0 || documents != 0 {
+				t.Errorf("publish %s wrote %d configs, %d experiments and %d published documents, want none",
+					test.body, configs, experiments, documents)
 			}
 		})
 	}
@@ -592,8 +667,8 @@ func TestBuilderPublishRejectsUnrelatedExperimentUpdate(t *testing.T) {
 	publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology-experiment","topology":{"name":"new-topology","action":"create"},`+
 			`"experiment":{"name":"existing-exp","action":"update"}}`, http.StatusConflict)
-	if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-		t.Fatal("unrelated experiment update had side effects")
+	if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+		t.Errorf("updating unrelated existing-exp wrote %d configs and %d published documents, want none", writes, documents)
 	}
 }
 
@@ -624,8 +699,8 @@ func TestBuilderPublishRejectsRunningExperimentUpdateBeforeWriting(t *testing.T)
 	publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology-experiment","topology":{"name":"source-topology","action":"create"},`+
 			`"experiment":{"name":"running-exp","action":"update"}}`, http.StatusConflict)
-	if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-		t.Fatal("running experiment update had side effects")
+	if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+		t.Errorf("updating running-exp wrote %d configs and %d published documents, want none", writes, documents)
 	}
 }
 
@@ -669,9 +744,10 @@ func TestBuilderPublishUpdatesSourceExperiment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("updated experiment missing: %v", err)
 	}
-	if updated.Metadata.Annotations["topology"] != "source-topology" ||
-		updated.Metadata.Annotations["keep"] != "yes" {
-		t.Fatalf("updated experiment annotations = %#v", updated.Metadata.Annotations)
+	for key, want := range map[string]string{"topology": "source-topology", "keep": "yes"} {
+		if got := updated.Metadata.Annotations[key]; got != want {
+			t.Errorf("updating source-exp: annotation %s = %q, want %q", key, got, want)
+		}
 	}
 
 	exp, err := types.DecodeExperimentFromConfig(*updated)
@@ -679,8 +755,11 @@ func TestBuilderPublishUpdatesSourceExperiment(t *testing.T) {
 		t.Fatalf("DecodeExperimentFromConfig returned error: %v", err)
 	}
 
-	if node := exp.Spec.Topology().FindNodeByName("host"); node == nil || node.Hardware().Memory() != 4096 {
-		t.Fatalf("experiment node host = %#v, want 4096 MB of memory", node)
+	switch node := exp.Spec.Topology().FindNodeByName("host"); {
+	case node == nil:
+		t.Errorf("updating source-exp: node host = nil, want it with 4096 MB of memory")
+	case node.Hardware().Memory() != 4096:
+		t.Errorf("updating source-exp: node host memory = %d, want 4096", node.Hardware().Memory())
 	}
 }
 
@@ -721,13 +800,16 @@ func TestBuilderPublishExperimentUsesPickedScenario(t *testing.T) {
 		t.Fatalf("experiment missing: %v", err)
 	}
 
-	if created.Metadata.Annotations["scenario"] != "sc-b" || harness.experimentWrites != 1 {
-		t.Fatalf("experiment annotations = %v after %d writes, want scenario sc-b",
-			created.Metadata.Annotations, harness.experimentWrites)
+	if got := created.Metadata.Annotations["scenario"]; got != "sc-b" {
+		t.Errorf("publishing exp with sc-b: scenario annotation = %q, want %q", got, "sc-b")
+	}
+
+	if harness.experimentWrites != 1 {
+		t.Errorf("publishing exp with sc-b: experiment writes = %d, want 1", harness.experimentWrites)
 	}
 
 	if response.Scenario == nil || response.Scenario.Name != "sc-b" {
-		t.Fatalf("response scenario = %+v, want sc-b", response.Scenario)
+		t.Errorf("publishing exp with sc-b: scenario = %+v, want sc-b", response.Scenario)
 	}
 
 	meta, err := harness.service.GetDraft(context.Background(), draft.ID)
@@ -736,7 +818,7 @@ func TestBuilderPublishExperimentUsesPickedScenario(t *testing.T) {
 	}
 
 	if meta.Publication == nil || meta.Publication.ScenarioTarget != "sc-b" {
-		t.Fatalf("publication = %+v, want scenario target sc-b", meta.Publication)
+		t.Errorf("publishing exp with sc-b: draft publication = %+v, want scenario target sc-b", meta.Publication)
 	}
 
 	// The scenarios are annotated before the experiment, which phenix creates only
@@ -747,7 +829,7 @@ func TestBuilderPublishExperimentUsesPickedScenario(t *testing.T) {
 	}
 
 	if want := []string{"document", "topology", "scenario", "experiment", "draft"}; !slices.Equal(names, want) {
-		t.Fatalf("stages = %q, want %q", names, want)
+		t.Errorf("publishing exp with sc-b: stages = %q, want %q", names, want)
 	}
 }
 
@@ -771,8 +853,8 @@ func TestBuilderExperimentScenarioRoundTrip(t *testing.T) {
 	harness := newBuilderHarness(t, experiment, *stored)
 	document, warnings := postBuilderGenerate(t, harness, nil, `{"source":"Experiment/exp"}`)
 
-	if !reflect.DeepEqual(document.Scenarios, []string{"sc"}) {
-		t.Fatalf("scenarios = %q with warnings %q, want [sc]", document.Scenarios, warnings)
+	if !slices.Equal(document.Scenarios, []string{"sc"}) {
+		t.Errorf("generating from exp: scenarios = %q with warnings %q, want [sc]", document.Scenarios, warnings)
 	}
 
 	// A device added in the editor, so the update has a topology to write.
@@ -791,16 +873,21 @@ func TestBuilderExperimentScenarioRoundTrip(t *testing.T) {
 		t.Fatalf("experiment missing: %v", err)
 	}
 
-	if updated.Metadata.Annotations["scenario"] != "sc" {
-		t.Fatalf("experiment annotations = %#v", updated.Metadata.Annotations)
+	if got := updated.Metadata.Annotations["scenario"]; got != "sc" {
+		t.Errorf("publishing exp with sc: scenario annotation = %q, want %q", got, "sc")
 	}
 
 	if apps := experimentAppNames(t, updated); !slices.Equal(apps, []string{"app"}) {
-		t.Fatalf("experiment apps = %q, want the stored scenario's", apps)
+		t.Errorf("publishing exp with sc: apps = %q, want the stored scenario's [app]", apps)
 	}
 
-	if scenario, err := harness.getConfig("Scenario/sc"); err != nil || scenario.Metadata.Annotations["topology"] != "topo" {
-		t.Fatalf("scenario = %+v (%v), want topology topo added", scenario, err)
+	scenario, err := harness.getConfig("Scenario/sc")
+	if err != nil {
+		t.Fatalf("getConfig(Scenario/sc) returned error: %v", err)
+	}
+
+	if got := scenario.Metadata.Annotations["topology"]; got != "topo" {
+		t.Errorf("publishing exp with sc: scenario sc topology annotation = %q, want %q", got, "topo")
 	}
 
 	// Published again without a scenario, the experiment has none.
@@ -813,8 +900,12 @@ func TestBuilderExperimentScenarioRoundTrip(t *testing.T) {
 		t.Fatalf("experiment missing: %v", err)
 	}
 
-	if _, ok := cleared.Metadata.Annotations["scenario"]; ok || len(experimentAppNames(t, cleared)) != 0 {
-		t.Fatalf("experiment = %v with apps %q, want no scenario", cleared.Metadata.Annotations, experimentAppNames(t, cleared))
+	if got, ok := cleared.Metadata.Annotations["scenario"]; ok {
+		t.Errorf("publishing exp without a scenario: scenario annotation = %q, want none", got)
+	}
+
+	if apps := experimentAppNames(t, cleared); len(apps) != 0 {
+		t.Errorf("publishing exp without a scenario: apps = %q, want none", apps)
 	}
 }
 
@@ -897,22 +988,22 @@ func TestBuilderGenerateExperimentScenario(t *testing.T) {
 			document, warnings := postBuilderGenerate(t, harness, test.role, test.body)
 
 			if !slices.Equal(document.Scenarios, test.listed) {
-				t.Fatalf("scenarios = %q, want %q", document.Scenarios, test.listed)
+				t.Errorf("generating %s: scenarios = %q, want %q", test.body, document.Scenarios, test.listed)
 			}
 
 			if test.warning == "" && slices.ContainsFunc(warnings, func(warning string) bool {
 				return strings.Contains(warning, "scenario")
 			}) {
-				t.Fatalf("warnings = %q, want none about the scenario", warnings)
+				t.Errorf("generating %s: warnings = %q, want none about the scenario", test.body, warnings)
 			}
 
 			if test.warning != "" && !slices.Contains(warnings, test.warning) {
-				t.Fatalf("warnings = %q, want %q", warnings, test.warning)
+				t.Errorf("generating %s: warnings = %q, want %q", test.body, warnings, test.warning)
 			}
 
 			// The document leaves out warnings it has none of.
 			if !slices.Equal(document.Source.Warnings, warnings) {
-				t.Fatalf("source warnings = %q, want %q", document.Source.Warnings, warnings)
+				t.Errorf("generating %s: source warnings = %q, want %q", test.body, document.Source.Warnings, warnings)
 			}
 
 			data, err := bapi.EncodeDocument(document)
@@ -921,7 +1012,7 @@ func TestBuilderGenerateExperimentScenario(t *testing.T) {
 			}
 
 			if strings.Contains(string(data), "embedded-app") {
-				t.Fatalf("the document holds the experiment's scenario content:\n%s", data)
+				t.Errorf("generating %s = %s, want no content of the experiment's scenario", test.body, data)
 			}
 		})
 	}
@@ -966,37 +1057,47 @@ func TestBuilderPublishResumesAfterScenarioFailure(t *testing.T) {
 	harness.failConfigKind = builderKindScenario
 	failed, _ := publishBuilderDraft(t, harness, draft, body, http.StatusInternalServerError)
 
-	if stage := failed.Stages[len(failed.Stages)-1]; failed.Status != bapi.PublishPartial ||
-		stage.Name != builderPublishStageScenario || stage.Status != bapi.PublishFailed ||
-		stage.Message != "scenario publication failed" {
-		t.Fatalf("failed publication = %+v, want the scenario stage failed last", failed)
+	if failed.Status != bapi.PublishPartial {
+		t.Errorf("publishing with the scenario write failing: status = %q, want %q", failed.Status, bapi.PublishPartial)
+	}
+
+	if len(failed.Stages) == 0 {
+		t.Fatalf("publishing with the scenario write failing: stages = none, want the scenario stage failed last")
+	}
+
+	wantFailed := builderPublishStage{
+		Name: builderPublishStageScenario, Status: bapi.PublishFailed, Message: "scenario publication failed",
+	}
+	if diff := cmp.Diff(wantFailed, failed.Stages[len(failed.Stages)-1],
+		cmpopts.IgnoreFields(builderPublishStage{}, "Config")); diff != "" {
+		t.Errorf("publishing with the scenario write failing: last stage mismatch (-want +got):\n%s", diff)
 	}
 
 	if harness.experimentWrites != 0 {
-		t.Fatalf("experiment writes = %d after the scenario stage failed, want none", harness.experimentWrites)
+		t.Errorf("publishing with the scenario write failing: experiment writes = %d, want none", harness.experimentWrites)
 	}
 
 	harness.failConfigKind = ""
 	published, _ := publishBuilderDraft(t, harness, draft, body, http.StatusOK)
 
 	if stage := builderStageNamed(t, published, builderPublishStageTopology); stage.Status != bapi.PublishSkipped {
-		t.Fatalf("topology stage = %+v, want it skipped", stage)
+		t.Errorf("publishing again: topology stage = %+v, want it skipped", stage)
 	}
 
 	if stage := builderStageNamed(t, published, builderPublishStageScenario); stage.Status != "updated" {
-		t.Fatalf("scenario stage = %+v, want it updated", stage)
+		t.Errorf("publishing again: scenario stage = %+v, want it updated", stage)
 	}
 
 	retried, _ := publishBuilderDraft(t, harness, draft, body, http.StatusOK)
 
-	for _, stage := range retried.Stages {
-		if stage.Status != bapi.PublishSkipped {
-			t.Fatalf("retry stages = %+v, want every stage skipped", retried.Stages)
-		}
+	if slices.ContainsFunc(retried.Stages, func(stage builderPublishStage) bool {
+		return stage.Status != bapi.PublishSkipped
+	}) {
+		t.Errorf("retrying the publication: stages = %+v, want every stage skipped", retried.Stages)
 	}
 
 	if stage := builderStageNamed(t, retried, builderPublishStageScenario); stage.Config != "" {
-		t.Fatalf("retried scenario stage = %+v, want no one config named for two scenarios", stage)
+		t.Errorf("retrying the publication: scenario stage = %+v, want no one config named for two scenarios", stage)
 	}
 
 	topology, err := harness.getConfig("Topology/topo")
@@ -1009,19 +1110,29 @@ func TestBuilderPublishResumesAfterScenarioFailure(t *testing.T) {
 		t.Fatalf("DecodeReference returned error: %v", err)
 	}
 	if _, _, err := harness.service.GetPublishedDocumentData(context.Background(), ref.ID); err != nil {
-		t.Fatalf("referenced published document is unreadable: %v", err)
+		t.Errorf("GetPublishedDocumentData(the topology's document) returned error: %v", err)
 	}
+
 	if count := harness.store.Count(bapi.NamespacePublished); count != 1 {
-		t.Fatalf("published document count = %d, want 1", count)
+		t.Errorf("published documents = %d, want 1", count)
 	}
+
 	// The topology once, then each scenario once.
 	if harness.configWrites != 3 || harness.experimentWrites != 1 {
-		t.Fatalf("writes after retry = configs %d, experiments %d", harness.configWrites, harness.experimentWrites)
+		t.Errorf("writes after the retry = %d configs and %d experiments, want 3 and 1",
+			harness.configWrites, harness.experimentWrites)
 	}
 
 	for _, name := range []string{"sc-a", "sc-b"} {
-		if scenario, err := harness.getConfig("Scenario/" + name); err != nil || scenario.Metadata.Annotations["topology"] != "topo" {
-			t.Fatalf("scenario %s = %+v (%v), want topology topo added", name, scenario, err)
+		scenario, err := harness.getConfig("Scenario/" + name)
+		if err != nil {
+			t.Errorf("getConfig(Scenario/%s) returned error: %v", name, err)
+
+			continue
+		}
+
+		if got := scenario.Metadata.Annotations["topology"]; got != "topo" {
+			t.Errorf("scenario %s topology annotation = %q, want %q", name, got, "topo")
 		}
 	}
 }
@@ -1057,20 +1168,30 @@ func TestBuilderPublishReportsScenariosWrittenBeforeFailure(t *testing.T) {
 	harness.failConfigName = "Scenario/sc-b"
 	failed, _ := publishBuilderDraft(t, harness, draft, body, http.StatusInternalServerError)
 
-	if stage := failed.Stages[len(failed.Stages)-1]; failed.Status != bapi.PublishPartial ||
-		stage.Name != builderPublishStageScenario || stage.Status != bapi.PublishFailed {
-		t.Fatalf("failed publication = %+v, want the scenario stage failed last", failed)
+	if failed.Status != bapi.PublishPartial {
+		t.Errorf("publishing with sc-b failing: status = %q, want %q", failed.Status, bapi.PublishPartial)
+	}
+
+	if len(failed.Stages) == 0 {
+		t.Fatalf("publishing with sc-b failing: stages = none, want the scenario stage failed last")
+	}
+
+	if stage := failed.Stages[len(failed.Stages)-1]; stage.Name != builderPublishStageScenario || stage.Status != bapi.PublishFailed {
+		t.Errorf("publishing with sc-b failing: last stage = %+v, want the scenario stage failed", stage)
 	}
 
 	warning := bdoc.NewIssue(bdoc.CodePublishScenarioPartial, "",
 		"topology topo was added to scenario sc-a before the scenario stage failed")
 	if !slices.Contains(failed.Warnings, warning) {
-		t.Fatalf("warnings = %+v, want %+v", failed.Warnings, warning)
+		t.Errorf("publishing with sc-b failing: warnings = %+v, want %+v", failed.Warnings, warning)
 	}
 
-	if got, want := annotations(), []string{"other,topo", ""}; !slices.Equal(got, want) || harness.experimentWrites != 0 {
-		t.Fatalf("topology annotations = %q with %d experiment writes after the failure, want %q and none",
-			got, harness.experimentWrites, want)
+	if got, want := annotations(), []string{"other,topo", ""}; !slices.Equal(got, want) {
+		t.Errorf("publishing with sc-b failing: topology annotations = %q, want %q", got, want)
+	}
+
+	if harness.experimentWrites != 0 {
+		t.Errorf("publishing with sc-b failing: experiment writes = %d, want none", harness.experimentWrites)
 	}
 
 	harness.failConfigName = ""
@@ -1081,21 +1202,27 @@ func TestBuilderPublishReportsScenariosWrittenBeforeFailure(t *testing.T) {
 		Name: builderPublishStageScenario, Status: "updated", Config: "",
 		Message: "added topology topo to scenario sc-b, and scenario sc-a already names it",
 	}
-	if stage != want {
-		t.Fatalf("scenario stage = %+v, want %+v", stage, want)
+	if diff := cmp.Diff(want, stage); diff != "" {
+		t.Errorf("publishing again: scenario stage mismatch (-want +got):\n%s", diff)
 	}
 
 	if got, want := annotations(), []string{"other,topo", "topo"}; !slices.Equal(got, want) {
-		t.Fatalf("topology annotations = %q after the retry, want %q", got, want)
+		t.Errorf("publishing again: topology annotations = %q, want %q", got, want)
 	}
 
 	// The topology and each scenario once, then the experiment.
 	if harness.configWrites != 3 || harness.experimentWrites != 1 {
-		t.Fatalf("writes after retry = configs %d, experiments %d", harness.configWrites, harness.experimentWrites)
+		t.Errorf("writes after the retry = %d configs and %d experiments, want 3 and 1",
+			harness.configWrites, harness.experimentWrites)
 	}
 
-	if created, err := harness.getConfig("Experiment/exp"); err != nil || created.Metadata.Annotations["scenario"] != "sc-b" {
-		t.Fatalf("experiment = %+v (%v), want scenario sc-b", created, err)
+	created, err := harness.getConfig("Experiment/exp")
+	if err != nil {
+		t.Fatalf("getConfig(Experiment/exp) returned error: %v", err)
+	}
+
+	if got := created.Metadata.Annotations["scenario"]; got != "sc-b" {
+		t.Errorf("publishing again: experiment scenario annotation = %q, want %q", got, "sc-b")
 	}
 }
 
@@ -1113,7 +1240,7 @@ func TestBuilderPublishSwitchesExperimentScenario(t *testing.T) {
 	document, warnings := postBuilderGenerate(t, harness, nil, `{"source":"Experiment/exp"}`)
 
 	if !slices.Equal(document.Scenarios, []string{"sc-a"}) {
-		t.Fatalf("scenarios = %q with warnings %q, want [sc-a]", document.Scenarios, warnings)
+		t.Errorf("generating from exp: scenarios = %q with warnings %q, want [sc-a]", document.Scenarios, warnings)
 	}
 
 	document.Scenarios = append(document.Scenarios, "sc-b")
@@ -1142,43 +1269,45 @@ func TestBuilderPublishSwitchesExperimentScenario(t *testing.T) {
 	first, _ := publishBuilderDraft(t, harness, draft, fmt.Sprintf(body, "create", "sc-a"), http.StatusOK)
 
 	if name, apps := scenarioOf(); name != "sc-a" || !slices.Equal(apps, []string{"sc-a-app"}) {
-		t.Fatalf("experiment scenario = %s with apps %q, want sc-a with its app", name, apps)
+		t.Errorf("publishing exp with sc-a: scenario = %s with apps %q, want sc-a with [sc-a-app]", name, apps)
 	}
 
 	second, _ := publishBuilderDraft(t, harness, first.Draft, fmt.Sprintf(body, "update", "sc-b"), http.StatusOK)
 
 	if name, apps := scenarioOf(); name != "sc-b" || !slices.Equal(apps, []string{"sc-b-app"}) {
-		t.Fatalf("experiment scenario = %s with apps %q, want sc-b with its app", name, apps)
+		t.Errorf("publishing exp with sc-b: scenario = %s with apps %q, want sc-b with [sc-b-app]", name, apps)
 	}
 
 	if stage := builderStageNamed(t, second, builderPublishStageExperiment); stage.Status != "updated" {
-		t.Fatalf("experiment stage = %+v, want it updated", stage)
+		t.Errorf("publishing exp with sc-b: experiment stage = %+v, want it updated", stage)
 	}
 
 	// Both scenarios named the topology since the first publication.
 	if stage := builderStageNamed(t, second, builderPublishStageScenario); stage.Status != bapi.PublishSkipped {
-		t.Fatalf("scenario stage = %+v, want it skipped", stage)
+		t.Errorf("publishing exp with sc-b: scenario stage = %+v, want it skipped", stage)
 	}
 
 	if second.Scenario == nil || second.Scenario.Name != "sc-b" {
-		t.Fatalf("response scenario = %+v, want sc-b", second.Scenario)
+		t.Errorf("publishing exp with sc-b: scenario = %+v, want sc-b", second.Scenario)
 	}
 }
 
 // TestAddTopologyAnnotation adds a topology to a scenario's annotation unless a
 // name of it is the topology, keeping the others byte for byte.
 func TestAddTopologyAnnotation(t *testing.T) {
-	for _, test := range []struct{ value, want string }{
-		{"", "topo"},
-		{"other", "other,topo"},
-		{" a , ,a,", " a , ,a,,topo"},
-		{"xtopo,topology", "xtopo,topology,topo"},
-		{"a, topo ,b", "a, topo ,b"},
-		{"topo", "topo"},
+	for _, test := range []struct{ name, value, want string }{
+		{"empty", "", "topo"},
+		{"another topology", "other", "other,topo"},
+		{"blank names", " a , ,a,", " a , ,a,,topo"},
+		{"names that contain the topology", "xtopo,topology", "xtopo,topology,topo"},
+		{"the topology with spaces", "a, topo ,b", "a, topo ,b"},
+		{"the topology", "topo", "topo"},
 	} {
-		if got := addTopologyAnnotation(test.value, "topo"); got != test.want {
-			t.Errorf("addTopologyAnnotation(%q, %q) = %q, want %q", test.value, "topo", got, test.want)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			if got := addTopologyAnnotation(test.value, "topo"); got != test.want {
+				t.Errorf("addTopologyAnnotation(%q, %q) = %q, want %q", test.value, "topo", got, test.want)
+			}
+		})
 	}
 }
 
@@ -1195,18 +1324,25 @@ func TestBuilderPublishRetryIsIdempotent(t *testing.T) {
 		body:   body, user: builderAlice, ifMatch: `"0"`,
 	})
 	if tooStale.Code != http.StatusPreconditionFailed {
-		t.Fatalf("unrelated stale ETag status = %d, want %d", tooStale.Code, http.StatusPreconditionFailed)
+		t.Errorf("publishing retry with If-Match \"0\": status = %d, want %d", tooStale.Code, http.StatusPreconditionFailed)
 	}
 
 	response, _ := publishBuilderDraft(t, harness, draft, body, http.StatusOK)
 
-	if response.Status != bapi.PublishSucceeded ||
-		!strings.Contains(strings.Join(bdoc.IssueMessages(response.Warnings), " "), "already complete") ||
-		response.Warnings[0].Code != bdoc.CodePublishRetryComplete {
-		t.Fatalf("retry response = %#v", response)
+	if response.Status != bapi.PublishSucceeded {
+		t.Errorf("publishing retry again: status = %q, want %q", response.Status, bapi.PublishSucceeded)
 	}
+
+	if messages := strings.Join(bdoc.IssueMessages(response.Warnings), " "); !strings.Contains(messages, "already complete") {
+		t.Errorf("publishing retry again: warnings = %q, want one saying it is already complete", messages)
+	}
+
+	if len(response.Warnings) == 0 || response.Warnings[0].Code != bdoc.CodePublishRetryComplete {
+		t.Errorf("publishing retry again: warnings = %+v, want the first of code %s", response.Warnings, bdoc.CodePublishRetryComplete)
+	}
+
 	if harness.configWrites != 1 {
-		t.Fatalf("config writes = %d, want 1", harness.configWrites)
+		t.Errorf("publishing retry twice: config writes = %d, want 1", harness.configWrites)
 	}
 }
 
@@ -1217,7 +1353,7 @@ func TestBuilderPublishExperimentWithIncludedTopology(t *testing.T) {
 	document := generateBuilderDocument(t, harness, "Experiment/exp")
 
 	if included := document.FindDevice("inc-host"); included == nil || included.Device.IncludedFrom != "shared" {
-		t.Fatalf("inc-host is not marked as included: %s", builderJSON(t, document))
+		t.Errorf("generating from exp = %s, want inc-host included from shared", builderJSON(t, document))
 	}
 
 	draft := createBuilderPublishDraft(t, harness, document, "Experiment/exp")
@@ -1245,9 +1381,12 @@ func TestBuilderPublishExperimentWithIncludedTopology(t *testing.T) {
 		t.Fatalf("published topology missing: %v", err)
 	}
 
-	if got := hostnames(topology.Spec); !slices.Equal(got, []string{"web"}) ||
-		!reflect.DeepEqual(topology.Spec["includeTopologies"], []string{"shared"}) {
-		t.Fatalf("published topology = %v, want web and the shared include", topology.Spec)
+	if got := hostnames(topology.Spec); !slices.Equal(got, []string{"web"}) {
+		t.Errorf("publishing root: nodes = %q, want [web]", got)
+	}
+
+	if diff := cmp.Diff(any([]string{"shared"}), topology.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("publishing root: includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 
 	updated, err := harness.getConfig("Experiment/exp")
@@ -1256,7 +1395,7 @@ func TestBuilderPublishExperimentWithIncludedTopology(t *testing.T) {
 	}
 
 	if got := hostnames(updated.Spec["topology"]); !slices.Equal(got, []string{"web", "inc-host"}) {
-		t.Fatalf("experiment nodes = %v, want web and the merged inc-host once", got)
+		t.Errorf("publishing exp: nodes = %q, want web and the merged inc-host once", got)
 	}
 }
 
@@ -1337,11 +1476,12 @@ func TestBuilderPublishRejectsIncludedHostnameClash(t *testing.T) {
 
 			want := "topology root cannot be published: node WEB is defined both here and in its included topology shared"
 			if !strings.Contains(reason, want) {
-				t.Fatalf("refusal = %q, want %q", reason, want)
+				t.Errorf("publish %s: refusal = %q, want it to say %q", test.body, reason, want)
 			}
 
 			if harness.configWrites != 0 || harness.experimentWrites != 0 {
-				t.Fatalf("writes = %d configs and %d experiments, want none", harness.configWrites, harness.experimentWrites)
+				t.Errorf("publish %s wrote %d configs and %d experiments, want none",
+					test.body, harness.configWrites, harness.experimentWrites)
 			}
 		})
 	}
@@ -1360,18 +1500,20 @@ func TestBuilderPublishCopyCreatesNewTopology(t *testing.T) {
 	document, _ := postBuilderGenerate(t, harness, nil, `{"source":"Topology/root","copy":true}`)
 
 	// A copy's draft has no source token; one sent all the same is refused too.
-	for _, token := range []string{"", "Topology/root"} {
-		draft := createBuilderPublishDraft(t, harness, document, token)
+	for name, token := range map[string]string{"no source token": "", "the source token": "Topology/root"} {
+		t.Run(name, func(t *testing.T) {
+			draft := createBuilderPublishDraft(t, harness, document, token)
 
-		_, refusal := publishBuilderDraft(t, harness, draft,
-			`{"mode":"topology","topology":{"name":"root","action":"update"}}`, http.StatusConflict)
-		if refusal != "topology root is not the source this draft was loaded from" {
-			t.Fatalf("token %q: refusal = %q, want the copy refused for the topology it was copied from", token, refusal)
-		}
+			_, refusal := publishBuilderDraft(t, harness, draft,
+				`{"mode":"topology","topology":{"name":"root","action":"update"}}`, http.StatusConflict)
+			if want := "topology root is not the source this draft was loaded from"; refusal != want {
+				t.Errorf("publishing the copy over root: refusal = %q, want %q", refusal, want)
+			}
 
-		if harness.configWrites != 0 {
-			t.Fatalf("token %q: the refused update wrote %d configs", token, harness.configWrites)
-		}
+			if harness.configWrites != 0 {
+				t.Errorf("publishing the copy over root wrote %d configs, want none", harness.configWrites)
+			}
+		})
 	}
 
 	draft := createBuilderPublishDraft(t, harness, document, "")
@@ -1379,7 +1521,7 @@ func TestBuilderPublishCopyCreatesNewTopology(t *testing.T) {
 	response, _ := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"root-copy","action":"create"}}`, http.StatusOK)
 	if response.Topology == nil || response.Topology.Name != "root-copy" {
-		t.Fatalf("publish response = %+v, want topology root-copy", response)
+		t.Errorf("publishing the copy as root-copy: topology = %+v, want root-copy", response.Topology)
 	}
 
 	created, err := harness.getConfig("Topology/root-copy")
@@ -1389,13 +1531,16 @@ func TestBuilderPublishCopyCreatesNewTopology(t *testing.T) {
 
 	// The included node stays included: the copy holds the topology's own
 	// node and the reference.
-	if got := topologyHostnames(t, harness, "root-copy"); !reflect.DeepEqual(got, []string{"web"}) ||
-		!reflect.DeepEqual(created.Spec["includeTopologies"], []string{"shared"}) {
-		t.Errorf("topology root-copy = %v, want web and the shared include", created.Spec)
+	if got := topologyHostnames(t, harness, "root-copy"); !slices.Equal(got, []string{"web"}) {
+		t.Errorf("publishing the copy as root-copy: nodes = %q, want [web]", got)
+	}
+
+	if diff := cmp.Diff(any([]string{"shared"}), created.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("publishing the copy as root-copy: includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 
 	if _, err := bapi.DecodeReference(created.Metadata.Annotations[bapi.DocumentAnnotation]); err != nil {
-		t.Errorf("topology root-copy has no builder document: %v", err)
+		t.Errorf("publishing the copy as root-copy: DecodeReference(document annotation) returned error: %v", err)
 	}
 
 	after, err := harness.getConfig("Topology/root")
@@ -1403,12 +1548,12 @@ func TestBuilderPublishCopyCreatesNewTopology(t *testing.T) {
 		t.Fatalf("topology root missing: %v", err)
 	}
 
-	if !reflect.DeepEqual(after, original) {
-		t.Errorf("topology root = %+v, want it unchanged: %+v", after, original)
+	if diff := cmp.Diff(original, after); diff != "" {
+		t.Errorf("publishing the copy as root-copy changed root (-want +got):\n%s", diff)
 	}
 
 	if harness.configWrites != 1 {
-		t.Errorf("config writes = %d, want only the new topology", harness.configWrites)
+		t.Errorf("publishing the copy as root-copy: config writes = %d, want only the new topology", harness.configWrites)
 	}
 }
 
@@ -1416,7 +1561,7 @@ func TestBuilderPublishCopyCreatesNewTopology(t *testing.T) {
 // with no includes, and leaves the sources as they were.
 func TestBuilderPublishCombinedCreatesNewTopology(t *testing.T) {
 	harness := newBuilderHarness(t, includedTopologyFixture(t, "shared")...)
-	before := builderJSON(t, harness.configs)
+	before := builderJSONValue(t, harness.configs)
 
 	document, _ := postBuilderGenerate(t, harness, nil, `{"source":"Topology/root","includes":"combine"}`)
 	draft := createBuilderPublishDraft(t, harness, document, "")
@@ -1431,16 +1576,16 @@ func TestBuilderPublishCombinedCreatesNewTopology(t *testing.T) {
 		t.Fatalf("topology root-combined missing: %v", err)
 	}
 
-	if got := topologyHostnames(t, harness, "root-combined"); !reflect.DeepEqual(got, []string{"inc-host", "web"}) {
-		t.Errorf("nodes of root-combined = %v, want inc-host and web", got)
+	if got := topologyHostnames(t, harness, "root-combined"); !slices.Equal(got, []string{"inc-host", "web"}) {
+		t.Errorf("publishing root-combined: nodes = %q, want [inc-host web]", got)
 	}
 
-	if _, included := created.Spec["includeTopologies"]; included {
-		t.Errorf("root-combined includes %v, want nothing", created.Spec["includeTopologies"])
+	if included, ok := created.Spec["includeTopologies"]; ok {
+		t.Errorf("publishing root-combined: includeTopologies = %v, want none", included)
 	}
 
-	if after := builderJSON(t, harness.configs[:3]); after != before {
-		t.Errorf("the configs it was combined from = %s, want them unchanged: %s", after, before)
+	if diff := cmp.Diff(before, builderJSONValue(t, harness.configs[:3])); diff != "" {
+		t.Errorf("publishing root-combined changed the configs it was combined from (-want +got):\n%s", diff)
 	}
 }
 
@@ -1451,11 +1596,13 @@ func TestBuilderPublishCombinedRefusesKeptIncludeClash(t *testing.T) {
 
 	document, warnings := postBuilderGenerate(t, harness, nil, `{"source":"Topology/root","includes":"combine"}`)
 
-	if !reflect.DeepEqual(document.Source.IncludeTopologies, []string{"later"}) ||
-		!slices.Contains(warnings, "Included topology later was not combined and stays in includeTopologies: "+
-			"publishing keeps the reference.") {
-		t.Fatalf("includes = %v, warnings = %q, want only the include that cannot be read kept",
-			document.Source.IncludeTopologies, warnings)
+	if got := document.Source.IncludeTopologies; !slices.Equal(got, []string{"later"}) {
+		t.Errorf("combining root: includes = %q, want only the include that cannot be read, [later]", got)
+	}
+
+	const kept = "Included topology later was not combined and stays in includeTopologies: publishing keeps the reference."
+	if !slices.Contains(warnings, kept) {
+		t.Errorf("combining root: warnings = %q, want %q", warnings, kept)
 	}
 
 	draft := createBuilderPublishDraft(t, harness, document, "")
@@ -1470,11 +1617,11 @@ func TestBuilderPublishCombinedRefusesKeptIncludeClash(t *testing.T) {
 
 	want := "topology root-combined cannot be published: node INC-HOST is defined both here and in its included topology later"
 	if !strings.Contains(refusal, want) {
-		t.Errorf("refusal = %q, want %q", refusal, want)
+		t.Errorf("publishing root-combined with a clash: refusal = %q, want it to say %q", refusal, want)
 	}
 
 	if harness.configWrites != 0 {
-		t.Errorf("the refused publish wrote %d configs", harness.configWrites)
+		t.Errorf("publishing root-combined with a clash wrote %d configs, want none", harness.configWrites)
 	}
 
 	// Once the clash is gone the draft publishes, and keeps the reference.
@@ -1488,70 +1635,78 @@ func TestBuilderPublishCombinedRefusesKeptIncludeClash(t *testing.T) {
 		t.Fatalf("topology root-combined missing: %v", err)
 	}
 
-	if got := topologyHostnames(t, harness, "root-combined"); !reflect.DeepEqual(got, []string{"inc-host", "web"}) ||
-		!reflect.DeepEqual(created.Spec["includeTopologies"], []string{"later"}) {
-		t.Errorf("topology root-combined = %v, want inc-host, web and the later include", created.Spec)
+	if got := topologyHostnames(t, harness, "root-combined"); !slices.Equal(got, []string{"inc-host", "web"}) {
+		t.Errorf("publishing root-combined: nodes = %q, want [inc-host web]", got)
+	}
+
+	if diff := cmp.Diff(any([]string{"later"}), created.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("publishing root-combined: includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 }
 
 // TestBuilderPublishRefusesIncludedHostnamePhenixRefuses refuses an experiment
 // whose included topology holds a hostname phenix refuses; a topology publishes.
 func TestBuilderPublishRefusesIncludedHostnamePhenixRefuses(t *testing.T) {
+	publications := []struct {
+		name, source, body, experiment string
+		code                           int
+	}{
+		{
+			name: "topology", source: "Topology/root",
+			body: `{"mode":"topology","topology":{"name":"root","action":"update"}}`,
+			code: http.StatusOK,
+		},
+		{
+			name: "experiment create", source: "Topology/root",
+			body: `{"mode":"topology-experiment","topology":{"name":"root","action":"update"},` +
+				`"experiment":{"name":"fresh","action":"create"}}`,
+			experiment: "fresh", code: http.StatusUnprocessableEntity,
+		},
+		{
+			name: "experiment update", source: "Experiment/exp",
+			body: `{"mode":"topology-experiment","topology":{"name":"root","action":"update"},` +
+				`"experiment":{"name":"exp","action":"update"}}`,
+			experiment: "exp", code: http.StatusUnprocessableEntity,
+		},
+	}
+
 	for _, refused := range []struct{ hostname, reason string }{
 		{hostname: "all", reason: "hostname 'all' is reserved: "},
 		{hostname: "x", reason: "hostname 'x' is 1 character long: "},
 	} {
-		for _, test := range []struct {
-			name, source, body, experiment string
-			code                           int
-		}{
-			{
-				name: "topology", source: "Topology/root",
-				body: `{"mode":"topology","topology":{"name":"root","action":"update"}}`,
-				code: http.StatusOK,
-			},
-			{
-				name: "experiment create", source: "Topology/root",
-				body: `{"mode":"topology-experiment","topology":{"name":"root","action":"update"},` +
-					`"experiment":{"name":"fresh","action":"create"}}`,
-				experiment: "fresh", code: http.StatusUnprocessableEntity,
-			},
-			{
-				name: "experiment update", source: "Experiment/exp",
-				body: `{"mode":"topology-experiment","topology":{"name":"root","action":"update"},` +
-					`"experiment":{"name":"exp","action":"update"}}`,
-				experiment: "exp", code: http.StatusUnprocessableEntity,
-			},
-		} {
-			t.Run(refused.hostname+"/"+test.name, func(t *testing.T) {
-				harness := newBuilderHarness(t, includedTopologyFixture(t, "shared")...)
-				document := generateBuilderDocument(t, harness, test.source)
-				draft := createBuilderPublishDraft(t, harness, document, test.source)
+		t.Run(refused.hostname, func(t *testing.T) {
+			for _, test := range publications {
+				t.Run(test.name, func(t *testing.T) {
+					harness := newBuilderHarness(t, includedTopologyFixture(t, "shared")...)
+					document := generateBuilderDocument(t, harness, test.source)
+					draft := createBuilderPublishDraft(t, harness, document, test.source)
 
-				for i := range harness.configs {
-					if harness.configs[i].FullName() == "Topology/shared" {
-						harness.configs[i].Spec = map[string]any{
-							"nodes": []any{includeNode("inc-host"), includeNode(refused.hostname)},
+					for i := range harness.configs {
+						if harness.configs[i].FullName() == "Topology/shared" {
+							harness.configs[i].Spec = map[string]any{
+								"nodes": []any{includeNode("inc-host"), includeNode(refused.hostname)},
+							}
 						}
 					}
-				}
 
-				_, reason := publishBuilderDraft(t, harness, draft, test.body, test.code)
+					_, refusal := publishBuilderDraft(t, harness, draft, test.body, test.code)
 
-				if test.code == http.StatusOK {
-					return
-				}
+					if test.code == http.StatusOK {
+						return
+					}
 
-				want := "experiment " + test.experiment + " cannot be published: in included topology shared, " + refused.reason
-				if !strings.Contains(reason, want) {
-					t.Fatalf("refusal = %q, want %q", reason, want)
-				}
+					want := "experiment " + test.experiment + " cannot be published: in included topology shared, " + refused.reason
+					if !strings.Contains(refusal, want) {
+						t.Errorf("publish %s: refusal = %q, want it to say %q", test.body, refusal, want)
+					}
 
-				if harness.configWrites != 0 || harness.experimentWrites != 0 {
-					t.Fatalf("writes = %d configs and %d experiments, want none", harness.configWrites, harness.experimentWrites)
-				}
-			})
-		}
+					if harness.configWrites != 0 || harness.experimentWrites != 0 {
+						t.Errorf("publish %s wrote %d configs and %d experiments, want none",
+							test.body, harness.configWrites, harness.experimentWrites)
+					}
+				})
+			}
+		})
 	}
 }
 
@@ -1590,11 +1745,12 @@ func TestBuilderPublishExperimentUpdateChecksIncludes(t *testing.T) {
 				`{"mode":"topology-experiment","topology":{"name":"root","action":"update"},`+
 					`"experiment":{"name":"exp","action":"update"}}`, test.status)
 			if !strings.Contains(refusal.Message, test.want) {
-				t.Fatalf("refusal = %q, want %q", refusal.Message, test.want)
+				t.Errorf("updating exp: refusal = %q, want it to say %q", refusal.Message, test.want)
 			}
 
 			if harness.configWrites != 0 || harness.experimentWrites != 0 {
-				t.Fatalf("writes = %d configs and %d experiments, want none", harness.configWrites, harness.experimentWrites)
+				t.Errorf("updating exp wrote %d configs and %d experiments, want none",
+					harness.configWrites, harness.experimentWrites)
 			}
 		})
 	}
@@ -1621,11 +1777,14 @@ func openPublishedBuilderDocument(t *testing.T, harness *builderHarness, topolog
 		t.Fatalf("DecodeReference returned error: %v", err)
 	}
 
+	recorder := harness.do(builderRequest{method: http.MethodGet, path: "/builder/documents/" + ref.ID, user: builderAlice})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET /builder/documents/%s: status = %d, want %d: %s", ref.ID, recorder.Code, http.StatusOK, recorder.Body)
+	}
+
 	var response builderDocumentResponse
 
-	harness.doDecode(builderRequest{
-		method: http.MethodGet, path: "/builder/documents/" + ref.ID, user: builderAlice,
-	}, http.StatusOK, &response)
+	decodeBuilderAnswer(t, recorder, &response)
 
 	document, err := bdoc.Decode(response.Document)
 	if err != nil {
@@ -1727,15 +1886,15 @@ func TestBuilderPublishAgainAfterEdits(t *testing.T) {
 				draft = editBuilderDraft(t, harness, draft, document, hostname)
 				published, _ := publishBuilderDraft(t, harness, draft, update, http.StatusOK)
 
-				if published.Stages[1].Status != "updated" {
-					t.Fatalf("stages = %#v, want the topology updated", published.Stages)
+				if len(published.Stages) < 2 || published.Stages[1].Status != "updated" {
+					t.Errorf("publishing lab with %s: stages = %+v, want the topology updated", hostname, published.Stages)
 				}
 
 				draft = published.Draft
 			}
 
 			if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"aa", "bb", "cc"}) {
-				t.Fatalf("topology nodes = %v, want aa, bb and cc", got)
+				t.Errorf("publishing lab twice: nodes = %q, want [aa bb cc]", got)
 			}
 
 			// Someone else changes the topology, keeping its annotation.
@@ -1750,15 +1909,17 @@ func TestBuilderPublishAgainAfterEdits(t *testing.T) {
 			draft = editBuilderDraft(t, harness, draft, document, "dd")
 			writes := harness.configWrites
 
-			if _, reason := publishBuilderDraft(t, harness, draft, update, http.StatusConflict); reason !=
-				"topology lab changed after this draft published it" {
-				t.Fatalf("refusal = %q, want the topology changed", reason)
+			const changed = "topology lab changed after this draft published it"
+
+			if _, reason := publishBuilderDraft(t, harness, draft, update, http.StatusConflict); reason != changed {
+				t.Errorf("publishing lab after their change: refusal = %q, want %q", reason, changed)
 			}
 
 			other := harness.createDraft(builderAlice, "other")
 			if _, reason := publishBuilderDraft(t, harness, other, update, http.StatusConflict); reason !=
 				"topology lab is not the source this draft was loaded from" {
-				t.Fatalf("refusal = %q, want another draft refused", reason)
+				t.Errorf("publishing another draft over lab: refusal = %q, want %q",
+					reason, "topology lab is not the source this draft was loaded from")
 			}
 
 			// A draft opened from the published diagram after their change may not
@@ -1767,13 +1928,12 @@ func TestBuilderPublishAgainAfterEdits(t *testing.T) {
 			reopened := editBuilderDraft(t, harness,
 				createBuilderPublishDraft(t, harness, opened.document, "builder-doc/"+opened.id), opened.document, "ee")
 
-			if _, reason := publishBuilderDraft(t, harness, reopened, update, http.StatusConflict); reason !=
-				"topology lab changed after this draft published it" {
-				t.Fatalf("refusal = %q, want the topology changed", reason)
+			if _, reason := publishBuilderDraft(t, harness, reopened, update, http.StatusConflict); reason != changed {
+				t.Errorf("publishing a draft reopened after their change: refusal = %q, want %q", reason, changed)
 			}
 
-			if harness.configWrites != writes {
-				t.Fatalf("refused publications wrote %d configs", harness.configWrites-writes)
+			if got := harness.configWrites - writes; got != 0 {
+				t.Errorf("refused publications of lab wrote %d configs, want none", got)
 			}
 		})
 	}
@@ -1799,24 +1959,33 @@ func TestBuilderPublishAgainAfterTopologyDeleted(t *testing.T) {
 	diagram := openPublishedBuilderDocument(t, harness, "range")
 	opened := createBuilderPublishDraft(t, harness, diagram.document, "builder-doc/"+diagram.id)
 
-	for _, draft := range []builderDraftResponse{published.Draft, opened} {
-		current := openPublishedBuilderDocument(t, harness, "range")
+	for _, test := range []struct {
+		name  string
+		draft builderDraftResponse
+	}{
+		{name: "imported draft", draft: published.Draft},
+		{name: "draft opened from the diagram", draft: opened},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			current := openPublishedBuilderDocument(t, harness, "range")
 
-		deleted := harness.do(builderRequest{
-			method: http.MethodDelete, path: "/builder/documents/" + current.id, user: builderAlice,
+			deleted := harness.do(builderRequest{
+				method: http.MethodDelete, path: "/builder/documents/" + current.id, user: builderAlice,
+			})
+			if deleted.Code != http.StatusNoContent {
+				t.Fatalf("DELETE /builder/documents/%s: status = %d, want %d: %s",
+					current.id, deleted.Code, http.StatusNoContent, deleted.Body)
+			}
+
+			again, _ := publishBuilderDraft(t, harness, test.draft, create, http.StatusOK)
+			if len(again.Stages) < 2 || again.Stages[1].Status != "created" {
+				t.Errorf("publishing range again: stages = %+v, want the topology created", again.Stages)
+			}
+
+			if got := topologyHostnames(t, harness, "range"); !slices.Equal(got, []string{"aa", "bb"}) {
+				t.Errorf("publishing range again: nodes = %q, want [aa bb]", got)
+			}
 		})
-		if deleted.Code != http.StatusNoContent {
-			t.Fatalf("deleting the topology: status = %d: %s", deleted.Code, deleted.Body.String())
-		}
-
-		again, _ := publishBuilderDraft(t, harness, draft, create, http.StatusOK)
-		if again.Stages[1].Status != "created" {
-			t.Fatalf("stages = %#v, want the topology created", again.Stages)
-		}
-
-		if got := topologyHostnames(t, harness, "range"); !slices.Equal(got, []string{"aa", "bb"}) {
-			t.Fatalf("topology nodes = %v, want aa and bb", got)
-		}
 	}
 }
 
@@ -1848,20 +2017,26 @@ func TestBuilderPublishForkUpdatesWhatItsDraftPublished(t *testing.T) {
 
 		recorder := forkBuilderDraft(t, harness, builderAlice, nil, original.ID, document)
 		if recorder.Code != http.StatusCreated {
-			t.Fatalf("fork: status = %d: %s", recorder.Code, recorder.Body.String())
+			t.Fatalf("forking %s: status = %d, want %d: %s", original.ID, recorder.Code, http.StatusCreated, recorder.Body)
 		}
 
 		var forked builderDraftResponse
-		harness.decode(recorder, &forked)
+		decodeBuilderAnswer(t, recorder, &forked)
 
 		if forked.SourceToken != original.SourceToken {
-			t.Fatalf("fork source token = %q, want the draft's %q", forked.SourceToken, original.SourceToken)
+			t.Errorf("forking %s: source token = %q, want the draft's %q", original.ID, forked.SourceToken, original.SourceToken)
 		}
 
-		if want := original.Publication; forked.Forked == nil || *forked.Forked != (bapi.ForkedPublication{
-			DocumentID: want.DocumentID, TopologyTarget: want.TopologyTarget, ExperimentTarget: want.ExperimentTarget,
-		}) {
-			t.Fatalf("fork's forked publication = %+v, want the draft's %+v", forked.Forked, want)
+		published := original.Publication
+		if published == nil {
+			t.Fatalf("draft %s has no publication to fork", original.ID)
+		}
+
+		want := &bapi.ForkedPublication{
+			DocumentID: published.DocumentID, TopologyTarget: published.TopologyTarget, ExperimentTarget: published.ExperimentTarget,
+		}
+		if diff := cmp.Diff(want, forked.Forked); diff != "" {
+			t.Errorf("forking %s: forked publication mismatch (-want +got):\n%s", original.ID, diff)
 		}
 
 		return forked
@@ -1891,16 +2066,16 @@ func TestBuilderPublishForkUpdatesWhatItsDraftPublished(t *testing.T) {
 			user: forked.CreatedBy, ifMatch: forked.ETag,
 		})
 		if recorder.Code != http.StatusCreated {
-			t.Fatalf("saving the fork's edit: status = %d: %s", recorder.Code, recorder.Body.String())
+			t.Fatalf("saving the fork's edit: status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
 		}
 
-		harness.decode(recorder, &forked)
+		decodeBuilderAnswer(t, recorder, &forked)
 
 		recorder = harness.do(builderRequest{
 			method: http.MethodPost, path: path + "/publish", body: body, user: forked.CreatedBy, ifMatch: forked.ETag,
 		})
 		if recorder.Code != status {
-			t.Fatalf("publishing the fork: status = %d, want %d: %s", recorder.Code, status, recorder.Body.String())
+			t.Fatalf("publishing the fork %s: status = %d, want %d: %s", body, recorder.Code, status, recorder.Body)
 		}
 
 		return builderRefusal(t, recorder).Message
@@ -1912,7 +2087,7 @@ func TestBuilderPublishForkUpdatesWhatItsDraftPublished(t *testing.T) {
 		publishFork(t, harness, fork(t, harness, original, document), document, update, http.StatusOK)
 
 		if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"aa", "bb"}) {
-			t.Fatalf("topology nodes = %v, want aa and bb", got)
+			t.Errorf("publishing the fork: nodes = %q, want [aa bb]", got)
 		}
 	})
 
@@ -1925,7 +2100,7 @@ func TestBuilderPublishForkUpdatesWhatItsDraftPublished(t *testing.T) {
 				`"experiment":{"name":"exp","action":"update"}}`, http.StatusOK)
 
 		if !slices.Equal(harness.reconfigured, []string{"exp"}) {
-			t.Fatalf("configured = %v, want exp updated", harness.reconfigured)
+			t.Errorf("publishing the fork: configured = %q, want [exp]", harness.reconfigured)
 		}
 	})
 
@@ -1943,11 +2118,11 @@ func TestBuilderPublishForkUpdatesWhatItsDraftPublished(t *testing.T) {
 		writes := harness.configWrites
 		if reason := publishFork(t, harness, draft, &forked, update, http.StatusConflict); reason !=
 			"topology lab is not the source this draft was loaded from" {
-			t.Fatalf("refusal = %q, want the fork refused", reason)
+			t.Errorf("publishing the fork: refusal = %q, want %q", reason, "topology lab is not the source this draft was loaded from")
 		}
 
-		if harness.configWrites != writes {
-			t.Fatalf("the refused fork wrote %d configs", harness.configWrites-writes)
+		if got := harness.configWrites - writes; got != 0 {
+			t.Errorf("publishing the refused fork wrote %d configs, want none", got)
 		}
 	})
 
@@ -1969,7 +2144,7 @@ func TestBuilderPublishForkUpdatesWhatItsDraftPublished(t *testing.T) {
 		if slices.ContainsFunc(listing.Drafts, func(draft builderDraftResponse) bool {
 			return draft.CreatedBy == builderBob
 		}) {
-			t.Fatalf("drafts = %+v, want none created by a refused fork", listing.Drafts)
+			t.Errorf("GET /builder/drafts as bob = %+v, want none created by the refused fork", listing.Drafts)
 		}
 	})
 }
@@ -1989,6 +2164,10 @@ func TestBuilderPublishAfterThePublishedSnapshotAgedOut(t *testing.T) {
 		response, _ := publishBuilderDraft(t, harness, draft, `{"mode":"topology-experiment",`+
 			`"topology":{"name":"lab","action":"create"},"experiment":{"name":"exp","action":"create"}}`, http.StatusOK)
 		published := response.Draft.Publication
+		if published == nil {
+			t.Fatalf("publishing lab and exp: draft publication = nil, want one")
+		}
+
 		draft = response.Draft
 
 		draft = editBuilderDraft(t, harness, draft, document, "bb")
@@ -1998,19 +2177,22 @@ func TestBuilderPublishAfterThePublishedSnapshotAgedOut(t *testing.T) {
 			path: "/builder/drafts/" + draft.ID + "/snapshots/" + published.SnapshotID,
 		})
 		if deleted.Code != http.StatusOK {
-			t.Fatalf("deleting the published snapshot: status = %d: %s", deleted.Code, deleted.Body.String())
+			t.Fatalf("deleting the published snapshot: status = %d, want %d: %s", deleted.Code, http.StatusOK, deleted.Body)
 		}
 
-		harness.decode(deleted, &draft)
+		decodeBuilderAnswer(t, deleted, &draft)
 
-		switch {
-		case draft.Snapshots != 2:
-			t.Fatalf("snapshots = %d, want 2", draft.Snapshots)
-		case draft.Publication == nil || draft.Publication.SnapshotID != published.SnapshotID ||
-			draft.Publication.DocumentID != published.DocumentID:
-			t.Fatalf("publication = %+v, want it kept as %+v", draft.Publication, published)
-		case !draft.Dirty:
-			t.Fatal("a draft whose published snapshot aged out must be dirty")
+		if draft.Snapshots != 2 {
+			t.Errorf("deleting the published snapshot: snapshots = %d, want 2", draft.Snapshots)
+		}
+
+		if draft.Publication == nil || draft.Publication.SnapshotID != published.SnapshotID ||
+			draft.Publication.DocumentID != published.DocumentID {
+			t.Errorf("deleting the published snapshot: publication = %+v, want it kept as %+v", draft.Publication, published)
+		}
+
+		if !draft.Dirty {
+			t.Error("deleting the published snapshot: dirty = false, want true")
 		}
 
 		recorder := harness.do(builderRequest{
@@ -2018,7 +2200,8 @@ func TestBuilderPublishAfterThePublishedSnapshotAgedOut(t *testing.T) {
 			path: "/builder/drafts/" + draft.ID + "/snapshots/" + published.SnapshotID,
 		})
 		if recorder.Code != http.StatusNotFound {
-			t.Fatalf("published snapshot: status = %d, want it gone: %s", recorder.Code, recorder.Body.String())
+			t.Errorf("GET the published snapshot %s: status = %d, want %d: %s",
+				published.SnapshotID, recorder.Code, http.StatusNotFound, recorder.Body)
 		}
 
 		return harness, draft, document
@@ -2029,11 +2212,17 @@ func TestBuilderPublishAfterThePublishedSnapshotAgedOut(t *testing.T) {
 
 		response, _ := publishBuilderDraft(t, harness, draft, update, http.StatusOK)
 
-		switch {
-		case !slices.Equal(harness.reconfigured, []string{"exp"}):
-			t.Fatalf("configured = %v, want exp updated", harness.reconfigured)
-		case response.Draft.Dirty || response.Draft.Publication.SnapshotID != response.Draft.SnapshotID:
-			t.Fatalf("publication = %+v, want the current snapshot published", response.Draft.Publication)
+		if !slices.Equal(harness.reconfigured, []string{"exp"}) {
+			t.Errorf("publishing lab and exp: configured = %q, want [exp]", harness.reconfigured)
+		}
+
+		if response.Draft.Dirty {
+			t.Error("publishing lab and exp: dirty = true, want false")
+		}
+
+		if published := response.Draft.Publication; published == nil || published.SnapshotID != response.Draft.SnapshotID {
+			t.Errorf("publishing lab and exp: publication = %+v, want the current snapshot %s published",
+				published, response.Draft.SnapshotID)
 		}
 	})
 
@@ -2042,20 +2231,20 @@ func TestBuilderPublishAfterThePublishedSnapshotAgedOut(t *testing.T) {
 
 		recorder := forkBuilderDraft(t, harness, builderAlice, nil, draft.ID, document)
 		if recorder.Code != http.StatusCreated {
-			t.Fatalf("fork: status = %d: %s", recorder.Code, recorder.Body.String())
+			t.Fatalf("forking %s: status = %d, want %d: %s", draft.ID, recorder.Code, http.StatusCreated, recorder.Body)
 		}
 
 		var forked builderDraftResponse
-		harness.decode(recorder, &forked)
+		decodeBuilderAnswer(t, recorder, &forked)
 
-		if forked.Forked == nil || forked.Forked.DocumentID != draft.Publication.DocumentID {
-			t.Fatalf("fork's forked publication = %+v, want the draft's %+v", forked.Forked, draft.Publication)
+		if forked.Forked == nil || draft.Publication == nil || forked.Forked.DocumentID != draft.Publication.DocumentID {
+			t.Errorf("forking %s: forked publication = %+v, want the draft's %+v", draft.ID, forked.Forked, draft.Publication)
 		}
 
 		publishBuilderDraft(t, harness, editBuilderDraft(t, harness, forked, document, "cc"), update, http.StatusOK)
 
 		if !slices.Equal(harness.reconfigured, []string{"exp"}) {
-			t.Fatalf("configured = %v, want exp updated", harness.reconfigured)
+			t.Errorf("publishing the fork: configured = %q, want [exp]", harness.reconfigured)
 		}
 	})
 }
@@ -2111,7 +2300,7 @@ func TestBuilderPublishExperimentAgainAfterEdits(t *testing.T) {
 						`"experiment":{"name":"exp","action":"create"}}`, http.StatusOK)
 
 				if harness.experimentWrites != 1 || len(harness.reconfigured) != 0 {
-					t.Fatalf("create: %d experiments created and %v reconfigured, want 1 created, which configures it",
+					t.Errorf("creating exp: %d experiments created and %q configured, want 1 created, which configures it",
 						harness.experimentWrites, harness.reconfigured)
 				}
 
@@ -2139,13 +2328,26 @@ func TestBuilderPublishExperimentAgainAfterEdits(t *testing.T) {
 			failed, _ := publishBuilderDraft(t, harness, draft, update, http.StatusInternalServerError)
 			harness.failReconfigure = false
 
-			if last := failed.Stages[len(failed.Stages)-1]; failed.Status != bapi.PublishPartial ||
-				last.Name != builderPublishStageExperiment || last.Status != bapi.PublishFailed {
-				t.Fatalf("failed configure stage = %#v, want a partial publication with the experiment failed", failed)
+			if failed.Status != bapi.PublishPartial {
+				t.Errorf("publishing with configure failing: status = %q, want %q", failed.Status, bapi.PublishPartial)
 			}
 
-			if after, _ := harness.getConfig("Experiment/exp"); !reflect.DeepEqual(after.Spec, before.Spec) {
-				t.Fatalf("experiment after a failed configure stage = %v, want it as it was", after.Spec)
+			if len(failed.Stages) == 0 {
+				t.Fatalf("publishing with configure failing: stages = none, want the experiment stage failed last")
+			}
+
+			if last := failed.Stages[len(failed.Stages)-1]; last.Name != builderPublishStageExperiment ||
+				last.Status != bapi.PublishFailed {
+				t.Errorf("publishing with configure failing: last stage = %+v, want the experiment stage failed", last)
+			}
+
+			after, err := harness.getConfig("Experiment/exp")
+			if err != nil {
+				t.Fatalf("experiment missing: %v", err)
+			}
+
+			if diff := cmp.Diff(before.Spec, after.Spec); diff != "" {
+				t.Errorf("publishing with configure failing changed the experiment spec (-want +got):\n%s", diff)
 			}
 
 			for _, hostname := range []string{"", "cc"} {
@@ -2154,20 +2356,22 @@ func TestBuilderPublishExperimentAgainAfterEdits(t *testing.T) {
 				}
 
 				published, _ := publishBuilderDraft(t, harness, draft, update, http.StatusOK)
-				if last := published.Stages[len(published.Stages)-2]; last.Name != builderPublishStageExperiment ||
+				if len(published.Stages) < 2 {
+					t.Errorf("publishing lab and exp with %q: stages = %+v, want the experiment updated", hostname, published.Stages)
+				} else if last := published.Stages[len(published.Stages)-2]; last.Name != builderPublishStageExperiment ||
 					last.Status != "updated" {
-					t.Fatalf("stages = %#v, want the experiment updated", published.Stages)
+					t.Errorf("publishing lab and exp with %q: stages = %+v, want the experiment updated", hostname, published.Stages)
 				}
 
 				draft = published.Draft
 			}
 
 			if !slices.Equal(harness.reconfigured, []string{"exp", "exp"}) {
-				t.Fatalf("configured = %v, want exp after each update", harness.reconfigured)
+				t.Errorf("publishing lab and exp twice: configured = %q, want exp after each update", harness.reconfigured)
 			}
 
 			if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"aa", "bb", "cc"}) {
-				t.Fatalf("topology nodes = %v, want aa, bb and cc", got)
+				t.Errorf("publishing lab and exp twice: nodes = %q, want [aa bb cc]", got)
 			}
 		})
 	}
@@ -2203,9 +2407,12 @@ func TestBuilderPublishRepairsDocumentDespiteCleanupFailure(t *testing.T) {
 		user:   builderAlice, ifMatch: published.Draft.ETag,
 	}, http.StatusOK, &response)
 
-	if builderWarning(recorder) == "" || len(response.Warnings) != 1 {
-		t.Fatalf("warning header %q and warnings %v, want the cleanup failure reported",
-			builderWarning(recorder), response.Warnings)
+	if builderWarning(recorder) == "" {
+		t.Errorf("republishing rep: Warning header = none, want the cleanup failure reported")
+	}
+
+	if len(response.Warnings) != 1 {
+		t.Errorf("republishing rep: warnings = %+v, want the cleanup failure alone", response.Warnings)
 	}
 
 	topology, err := harness.getConfig("Topology/rep")
@@ -2219,7 +2426,7 @@ func TestBuilderPublishRepairsDocumentDespiteCleanupFailure(t *testing.T) {
 	}
 
 	if _, _, err := harness.service.GetPublishedDocumentData(context.Background(), ref.StoredID("rep")); err != nil {
-		t.Fatalf("the topology's document after the repair: %v", err)
+		t.Errorf("GetPublishedDocumentData(the repaired document of rep) returned error: %v", err)
 	}
 }
 
@@ -2314,17 +2521,21 @@ func TestBuilderPublishExperimentRefusesOthersChanges(t *testing.T) {
 
 			if _, reason := publishBuilderDraft(t, harness, draft,
 				fmt.Sprintf(bothUpdate, test.experiment), http.StatusConflict); reason != test.reason {
-				t.Fatalf("refusal = %q, want %q", reason, test.reason)
+				t.Errorf("updating %s: refusal = %q, want %q", test.experiment, reason, test.reason)
 			}
 
 			if harness.configWrites != writes || len(harness.reconfigured) != 0 {
-				t.Fatalf("the refused publication wrote %d configs and configured %v",
-					harness.configWrites-writes, harness.reconfigured)
+				t.Errorf("updating %s wrote %d configs and configured %q, want none",
+					test.experiment, harness.configWrites-writes, harness.reconfigured)
 			}
 
-			if exp, _ := harness.getConfig("Experiment/" + test.experiment); !reflect.DeepEqual(
-				exp.Spec["schedules"], map[string]any{"aa": "theirs"}) {
-				t.Fatalf("experiment schedules = %v, want theirs kept", exp.Spec["schedules"])
+			exp, err := harness.getConfig("Experiment/" + test.experiment)
+			if err != nil {
+				t.Fatalf("experiment %s missing: %v", test.experiment, err)
+			}
+
+			if diff := cmp.Diff(any(map[string]any{"aa": "theirs"}), exp.Spec["schedules"]); diff != "" {
+				t.Errorf("updating %s changed their schedules (-want +got):\n%s", test.experiment, diff)
 			}
 		})
 	}
@@ -2356,8 +2567,8 @@ func TestBuilderPublishKeepsExperimentStartedWhileConfiguring(t *testing.T) {
 		t.Fatalf("experiment missing: %v", err)
 	}
 
-	if !reflect.DeepEqual(exp.Status, started) {
-		t.Fatalf("experiment status = %v, want the started one kept", exp.Status)
+	if diff := cmp.Diff(started, exp.Status); diff != "" {
+		t.Errorf("publishing exp with configure failing: status mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -2391,14 +2602,25 @@ func TestBuilderPublishExperimentUpdateRereadsUnderLock(t *testing.T) {
 	harness.lockedExperiment = change(map[string]any{"startTime": "2026-01-01T00:00:00Z"}, "")
 	running, _ := publishBuilderDraft(t, harness, draft, update, http.StatusConflict)
 
-	if last := running.Stages[len(running.Stages)-1]; running.Status != bapi.PublishPartial ||
-		last.Name != builderPublishStageExperiment || last.Status != bapi.PublishFailed ||
-		last.Message != "experiment publication failed: a running experiment cannot be updated" {
-		t.Fatalf("publish to a started experiment = %#v, want the experiment stage failed as running", running)
+	if running.Status != bapi.PublishPartial {
+		t.Errorf("publishing to a started exp: status = %q, want %q", running.Status, bapi.PublishPartial)
+	}
+
+	if len(running.Stages) == 0 {
+		t.Fatalf("publishing to a started exp: stages = none, want the experiment stage failed last")
+	}
+
+	want := builderPublishStage{
+		Name: builderPublishStageExperiment, Status: bapi.PublishFailed,
+		Message: "experiment publication failed: a running experiment cannot be updated",
+	}
+	if diff := cmp.Diff(want, running.Stages[len(running.Stages)-1],
+		cmpopts.IgnoreFields(builderPublishStage{}, "Config")); diff != "" {
+		t.Errorf("publishing to a started exp: last stage mismatch (-want +got):\n%s", diff)
 	}
 
 	if len(harness.reconfigured) != 0 {
-		t.Fatalf("a started experiment was configured: %v", harness.reconfigured)
+		t.Errorf("publishing to a started exp: configured = %q, want none", harness.reconfigured)
 	}
 
 	// Stopped again, it is changed once more after preflight.
@@ -2411,15 +2633,17 @@ func TestBuilderPublishExperimentUpdateRereadsUnderLock(t *testing.T) {
 		t.Fatalf("experiment missing: %v", err)
 	}
 
-	if !reflect.DeepEqual(updated.Status, map[string]any{"apps": map[string]any{"kept": true}}) ||
-		updated.Spec["deployMode"] != "no-headnode" {
-		t.Fatalf("updated experiment status %v and deploy mode %v, want the ones set under the lock",
-			updated.Status, updated.Spec["deployMode"])
+	if diff := cmp.Diff(map[string]any{"apps": map[string]any{"kept": true}}, updated.Status); diff != "" {
+		t.Errorf("publishing exp: status set under the lock mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := updated.Spec["deployMode"]; got != "no-headnode" {
+		t.Errorf("publishing exp: deployMode = %v, want the no-headnode set under the lock", got)
 	}
 
 	topology, _ := updated.Spec["topology"].(map[string]any)
 	if nodes, _ := topology["nodes"].([]any); len(nodes) != 2 {
-		t.Fatalf("updated experiment topology = %v, want nodes aa and bb", topology)
+		t.Errorf("publishing exp: topology = %v, want nodes aa and bb", topology)
 	}
 }
 
@@ -2429,9 +2653,11 @@ func TestBuilderPublishRefusesExperimentNamesBeforeWriting(t *testing.T) {
 	mode := string(common.BridgeMode)
 	t.Cleanup(func() { _ = common.SetBridgeMode(mode) })
 
-	setBridgeMode := func(mode common.BridgingMode) {
+	setBridgeMode := func(t *testing.T, mode common.BridgingMode) {
+		t.Helper()
+
 		if err := common.SetBridgeMode(string(mode)); err != nil {
-			t.Fatalf("SetBridgeMode returned error: %v", err)
+			t.Fatalf("SetBridgeMode(%q) returned error: %v", mode, err)
 		}
 	}
 
@@ -2447,7 +2673,7 @@ func TestBuilderPublishRefusesExperimentNamesBeforeWriting(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			setBridgeMode(test.bridge)
+			setBridgeMode(t, test.bridge)
 			harness := newBuilderHarness(t)
 			draft := harness.createDraft(builderAlice, "names")
 
@@ -2455,17 +2681,18 @@ func TestBuilderPublishRefusesExperimentNamesBeforeWriting(t *testing.T) {
 				`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},`+
 					`"experiment":{"name":"`+test.experiment+`","action":"create"}}`, http.StatusUnprocessableEntity)
 			if !strings.HasPrefix(reason, test.want) {
-				t.Fatalf("refusal = %q, want %q", reason, test.want)
+				t.Errorf("publishing experiment %s: refusal = %q, want it to start with %q", test.experiment, reason, test.want)
 			}
 
-			if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-				t.Fatal("a refused experiment name had side effects")
+			if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+				t.Errorf("publishing experiment %s wrote %d configs and %d published documents, want none",
+					test.experiment, writes, documents)
 			}
 		})
 	}
 
 	// Fifteen characters are allowed.
-	setBridgeMode(common.BridgeModeAuto)
+	setBridgeMode(t, common.BridgeModeAuto)
 	harness := newBuilderHarness(t)
 	publishBuilderDraft(t, harness, harness.createDraft(builderAlice, "names"),
 		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},`+

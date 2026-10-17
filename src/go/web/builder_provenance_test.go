@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
 )
@@ -55,12 +57,12 @@ func getBuilderDraft(t *testing.T, harness *builderHarness, user string, draft b
 	}, http.StatusOK, nil)
 
 	if strings.Contains(recorder.Body.String(), `"stamp"`) {
-		t.Fatalf("reading a draft returned a stamp, though it stored no document: %s", recorder.Body)
+		t.Errorf("GET /builder/drafts/%s answered with a stamp, though it stored no document: %s", draft.ID, recorder.Body)
 	}
 
 	var read builderDraftResponse
 
-	harness.decode(recorder, &read)
+	decodeBuilderAnswer(t, recorder, &read)
 
 	return read
 }
@@ -73,15 +75,15 @@ func TestBuilderDraftResponsesCarryTheStamp(t *testing.T) {
 	created := bdoc.FormatTime(draft.Created)
 	want := bdoc.Provenance{CreatedBy: builderAlice, CreatedAt: created, UpdatedBy: builderAlice, UpdatedAt: created}
 
-	if draft.Stamp == nil || *draft.Stamp != want {
-		t.Fatalf("stamp of the new draft = %+v, want %+v", draft.Stamp, want)
+	if diff := cmp.Diff(&want, draft.Stamp); diff != "" {
+		t.Errorf("creating draft first: stamp mismatch (-want +got):\n%s", diff)
 	}
 
 	saved := saveBuilderDraft(t, harness, builderBob, draft, builderDocument(t, "second"))
 	want.UpdatedBy, want.UpdatedAt = builderBob, bdoc.FormatTime(saved.Updated)
 
-	if saved.Stamp == nil || *saved.Stamp != want {
-		t.Fatalf("stamp of the save = %+v, want %+v", saved.Stamp, want)
+	if diff := cmp.Diff(&want, saved.Stamp); diff != "" {
+		t.Errorf("saving draft first as bob: stamp mismatch (-want +got):\n%s", diff)
 	}
 
 	// The response spells the stamp with the keys of the document's metadata.
@@ -89,13 +91,19 @@ func TestBuilderDraftResponsesCarryTheStamp(t *testing.T) {
 		Stamp map[string]string `json:"stamp"`
 	}
 
-	if err := json.Unmarshal([]byte(builderJSON(t, saved)), &raw); err != nil || len(raw.Stamp) != 4 ||
-		raw.Stamp["updatedBy"] != builderBob {
-		t.Fatalf("stamp = %v (%v), want createdBy, createdAt, updatedBy and updatedAt", raw.Stamp, err)
+	if err := json.Unmarshal([]byte(builderJSON(t, saved)), &raw); err != nil {
+		t.Fatalf("decoding the saved draft: %v", err)
 	}
 
-	if got := builderStamp(t, getBuilderDraft(t, harness, builderAlice, saved).Document); got != want {
-		t.Fatalf("the saved document holds %+v, want the stamp %+v", got, want)
+	wantKeys := map[string]string{
+		"createdBy": want.CreatedBy, "createdAt": want.CreatedAt, "updatedBy": want.UpdatedBy, "updatedAt": want.UpdatedAt,
+	}
+	if diff := cmp.Diff(wantKeys, raw.Stamp); diff != "" {
+		t.Errorf("saving draft first as bob: encoded stamp mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(want, builderStamp(t, getBuilderDraft(t, harness, builderAlice, saved).Document)); diff != "" {
+		t.Errorf("the saved document's stamp mismatch (-want +got):\n%s", diff)
 	}
 
 	path := "/builder/drafts/" + draft.ID
@@ -107,8 +115,13 @@ func TestBuilderDraftResponsesCarryTheStamp(t *testing.T) {
 		method: http.MethodPost, path: path + "/snapshots", body: `{"document":` + invalid + `}`,
 		user: builderAlice, ifMatch: saved.ETag,
 	})
-	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "updatedAt") {
-		t.Fatalf("a save with a malformed updatedAt: status = %d: %s", recorder.Code, recorder.Body)
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a save with updatedAt today: status = %d, want %d: %s",
+			recorder.Code, http.StatusUnprocessableEntity, recorder.Body)
+	}
+
+	if !strings.Contains(recorder.Body.String(), "updatedAt") {
+		t.Errorf("a save with updatedAt today = %s, want it to name updatedAt", recorder.Body)
 	}
 
 	for _, request := range []builderRequest{
@@ -117,8 +130,13 @@ func TestBuilderDraftResponsesCarryTheStamp(t *testing.T) {
 		{method: http.MethodGet, path: path + "/snapshots/current", user: builderAlice},
 		{method: http.MethodPatch, path: path + "/cursor", body: `{"index":0}`, user: builderAlice, ifMatch: saved.ETag},
 	} {
-		if recorder := harness.doDecode(request, http.StatusOK, nil); strings.Contains(recorder.Body.String(), `"stamp"`) {
-			t.Fatalf("%s %s answered with a stamp", request.method, request.path)
+		recorder := harness.do(request)
+		if recorder.Code != http.StatusOK {
+			t.Errorf("%s %s: status = %d, want %d: %s", request.method, request.path, recorder.Code, http.StatusOK, recorder.Body)
+		}
+
+		if strings.Contains(recorder.Body.String(), `"stamp"`) {
+			t.Errorf("%s %s = %s, want no stamp", request.method, request.path, recorder.Body)
 		}
 	}
 }
@@ -145,17 +163,33 @@ func TestBuilderEditAsDraftKeepsThePublishedDocument(t *testing.T) {
 		"sourceToken": builderDocTokenPrefix + reference.ID,
 	})
 
-	if opened.Digest != reference.Digest || opened.Stamp == nil || *opened.Stamp != builderStamp(t, published.Document) {
-		t.Fatalf("draft = digest %s, stamp %+v; want the published %s", opened.Digest, opened.Stamp, reference.Digest)
+	if opened.Digest != reference.Digest {
+		t.Errorf("opening lab as a draft: digest = %s, want the published %s", opened.Digest, reference.Digest)
+	}
+
+	stamp := builderStamp(t, published.Document)
+	if diff := cmp.Diff(&stamp, opened.Stamp); diff != "" {
+		t.Errorf("opening lab as a draft: stamp mismatch (-want +got):\n%s", diff)
 	}
 
 	documents, writes := harness.store.Count(bapi.NamespacePublished), harness.configWrites
 	response, _ := publishBuilderDraft(t, harness, opened, `{"mode":"topology","topology":{"name":"lab","action":"update"}}`,
 		http.StatusOK)
 
-	if response.Stages[1].Status != bapi.PublishSkipped || harness.configWrites != writes ||
-		harness.store.Count(bapi.NamespacePublished) != documents {
-		t.Fatalf("stages = %#v; want nothing written", response.Stages)
+	if len(response.Stages) < 2 {
+		t.Fatalf("republishing lab: stages = %+v, want a topology stage", response.Stages)
+	}
+
+	if got := response.Stages[1].Status; got != bapi.PublishSkipped {
+		t.Errorf("republishing lab: topology stage status = %q, want %q", got, bapi.PublishSkipped)
+	}
+
+	if got := harness.configWrites - writes; got != 0 {
+		t.Errorf("republishing lab wrote %d configs, want none", got)
+	}
+
+	if got := harness.store.Count(bapi.NamespacePublished) - documents; got != 0 {
+		t.Errorf("republishing lab stored %d published documents, want none", got)
 	}
 }
 
@@ -186,8 +220,13 @@ func TestBuilderPublishAfterUndoPublishesTheOlderStamp(t *testing.T) {
 		t.Fatalf("GetPublishedDocumentData returned error: %v", err)
 	}
 
-	if got := builderStamp(t, data); got != first || got.UpdatedBy != builderAlice {
-		t.Fatalf("the published document holds %+v, want the first snapshot's %+v", got, first)
+	got := builderStamp(t, data)
+	if diff := cmp.Diff(first, got); diff != "" {
+		t.Errorf("publishing after the undo: stamp mismatch (-want +got):\n%s", diff)
+	}
+
+	if got.UpdatedBy != builderAlice {
+		t.Errorf("publishing after the undo: stamp updatedBy = %q, want %q", got.UpdatedBy, builderAlice)
 	}
 
 	// The record of the publication is another fact: who published, and when.
@@ -196,9 +235,16 @@ func TestBuilderPublishAfterUndoPublishesTheOlderStamp(t *testing.T) {
 		t.Fatalf("parsing %q: %v", first.UpdatedAt, err)
 	}
 
-	if record.CreatedBy != builderBob || !record.CreatedAt.After(published) || record.Digest != undone.Digest {
-		t.Fatalf("published record = by %s at %s with digest %s; want %s, later than %s, with the snapshot's %s",
-			record.CreatedBy, record.CreatedAt, record.Digest, builderBob, first.UpdatedAt, undone.Digest)
+	if record.CreatedBy != builderBob {
+		t.Errorf("publishing after the undo: record createdBy = %q, want %q", record.CreatedBy, builderBob)
+	}
+
+	if !record.CreatedAt.After(published) {
+		t.Errorf("publishing after the undo: record createdAt = %s, want later than %s", record.CreatedAt, first.UpdatedAt)
+	}
+
+	if record.Digest != undone.Digest {
+		t.Errorf("publishing after the undo: record digest = %s, want the snapshot's %s", record.Digest, undone.Digest)
 	}
 }
 
@@ -211,16 +257,24 @@ func TestBuilderDraftSourceFile(t *testing.T) {
 	document := json.RawMessage(builderDocument(t, "uploaded"))
 	draft := harness.postDraft(builderAlice, map[string]any{"document": document, "sourceFile": name})
 
-	if read := getBuilderDraft(t, harness, builderAlice, draft); draft.SourceFile != name || read.SourceFile != name {
-		t.Fatalf("source file = %q, then %q; want %q", draft.SourceFile, read.SourceFile, name)
+	if draft.SourceFile != name {
+		t.Errorf("creating a draft from %q: source file = %q, want %q", name, draft.SourceFile, name)
+	}
+
+	if read := getBuilderDraft(t, harness, builderAlice, draft); read.SourceFile != name {
+		t.Errorf("reading the draft from %q: source file = %q, want %q", name, read.SourceFile, name)
 	}
 
 	recorder := harness.do(builderRequest{
 		method: http.MethodPost, path: "/builder/drafts", user: builderAlice,
 		body: builderJSON(t, map[string]any{"document": document, "sourceFile": "../pump.json"}),
 	})
-	if refusal := builderRefusal(t, recorder); recorder.Code != http.StatusUnprocessableEntity ||
-		!strings.Contains(refusal.Message+refusal.Cause, "sourceFile") {
-		t.Fatalf("a parent path: status = %d, said %+v; want 422 naming sourceFile", recorder.Code, refusal)
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Errorf("creating a draft from ../pump.json: status = %d, want %d: %s",
+			recorder.Code, http.StatusUnprocessableEntity, recorder.Body)
+	}
+
+	if refusal := builderRefusal(t, recorder); !strings.Contains(refusal.Message+refusal.Cause, "sourceFile") {
+		t.Errorf("creating a draft from ../pump.json: refusal = %+v, want it to name sourceFile", refusal)
 	}
 }

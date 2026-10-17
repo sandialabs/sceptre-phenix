@@ -377,6 +377,20 @@ func builderJSON(t *testing.T, value any) string {
 	return string(data)
 }
 
+// builderJSONValue returns value as JSON decodes it: a deep copy of value to
+// compare with cmp.Diff.
+func builderJSONValue(t *testing.T, value any) any {
+	t.Helper()
+
+	var decoded any
+
+	if err := json.Unmarshal([]byte(builderJSON(t, value)), &decoded); err != nil {
+		t.Fatalf("decoding %T: %v", value, err)
+	}
+
+	return decoded
+}
+
 // builderConfig returns a minimal stored config of the given kind.
 func builderConfig(t *testing.T, kind, name string) store.Config {
 	t.Helper()
@@ -483,7 +497,18 @@ func createBuilderPublishDraft(
 		fields["sourceToken"] = sourceToken[0]
 	}
 
-	return harness.postDraft(builderAlice, fields)
+	recorder := harness.do(builderRequest{
+		method: http.MethodPost, path: "/builder/drafts", body: builderJSON(t, fields), user: builderAlice,
+	})
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("POST /builder/drafts: status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
+	}
+
+	var draft builderDraftResponse
+
+	decodeBuilderAnswer(t, recorder, &draft)
+
+	return draft
 }
 
 // postDraft creates a draft from the fields of a create request as user.

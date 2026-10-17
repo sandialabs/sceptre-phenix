@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gopkg.in/yaml.v2"
 
 	bapi "phenix/api/builder"
@@ -47,7 +49,7 @@ func previewBuilderDraft(
 	var preview builderPublishPreview
 
 	if recorder.Code == http.StatusOK {
-		harness.decode(recorder, &preview)
+		decodeBuilderAnswer(t, recorder, &preview)
 	}
 
 	return recorder, preview
@@ -73,9 +75,10 @@ func previewDisks(calls *int, names ...string) builderOption {
 
 // builderDryRunState is what a dry run must leave as it was.
 type builderDryRunState struct {
-	configs                                                string
+	configs                                                any
 	writes, experiments, broadcasts, documents, configured int
-	etag, publication                                      string
+	etag                                                   string
+	publication                                            *bapi.PublicationState
 }
 
 // dryRunState returns the configs, the write counts and the draft's record.
@@ -85,19 +88,18 @@ func (h *builderHarness) dryRunState(draftID string) builderDryRunState {
 	meta := mustDraftMeta(h.t, h, draftID)
 
 	return builderDryRunState{
-		configs: builderJSON(h.t, h.configs), writes: h.configWrites, experiments: h.experimentWrites,
+		configs: builderJSONValue(h.t, h.configs), writes: h.configWrites, experiments: h.experimentWrites,
 		broadcasts: h.broadcasts, documents: h.store.Count(bapi.NamespacePublished), configured: len(h.reconfigured),
-		etag: meta.ETag(), publication: builderJSON(h.t, meta.Publication),
+		etag: meta.ETag(), publication: meta.Publication,
 	}
 }
 
-// assertDryRunWroteNothing fails the test unless the harness and the draft are as before.
-func (h *builderHarness) assertDryRunWroteNothing(draftID string, before builderDryRunState) {
+// dryRunChanges returns how the harness and the draft differ from before, or
+// "" when they are as they were.
+func (h *builderHarness) dryRunChanges(draftID string, before builderDryRunState) string {
 	h.t.Helper()
 
-	if after := h.dryRunState(draftID); after != before {
-		h.t.Fatalf("a dry run changed %+v\nwas %+v", after, before)
-	}
+	return cmp.Diff(before, h.dryRunState(draftID), cmp.AllowUnexported(builderDryRunState{}))
 }
 
 // TestBuilderPublishDryRunWritesNothing asserts a dry run of a topology and
@@ -128,11 +130,11 @@ func TestBuilderPublishDryRunWritesNothing(t *testing.T) {
 		`{"mode":"topology-experiment","topology":{"name":"root","action":"update"},`+
 			`"scenario":{"name":"water-ops"},"experiment":{"name":"lab","action":"create"},"dryRun":true}`)
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("dry run: status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("dry run of root and lab: status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
 	}
 
 	onServer := true
-	want := &bapi.PublishChanges{
+	want := builderPublishPreview{Status: builderPublishPreviewStatus, Errors: []bdoc.Issue{}, Changes: &bapi.PublishChanges{
 		Topology:  bapi.ConfigChange{Name: "root", Action: bapi.ChangeUpdate},
 		Includes:  []bapi.IncludeChange{{Name: "shared", Change: bapi.ItemKept}},
 		Scenarios: []bapi.ScenarioAnnotation{{Name: "water-ops", Change: bapi.ScenarioAnnotate}},
@@ -141,15 +143,15 @@ func TestBuilderPublishDryRunWritesNothing(t *testing.T) {
 		},
 		Experiment:  &bapi.ConfigChange{Name: "lab", Action: bapi.ChangeCreate},
 		VLANAliases: aliases,
+	}}
+
+	if diff := cmp.Diff(want, preview, cmpopts.IgnoreFields(builderPublishPreview{}, "Warnings")); diff != "" {
+		t.Errorf("dry run of root and lab mismatch (-want +got):\n%s", diff)
 	}
 
-	if preview.Status != builderPublishPreviewStatus || len(preview.Errors) != 0 ||
-		!reflect.DeepEqual(preview.Changes, want) {
-		t.Fatalf("preview = %s, want status preview, no errors and changes %s",
-			recorder.Body.String(), builderJSON(t, want))
+	if diff := harness.dryRunChanges(draft.ID, before); diff != "" {
+		t.Errorf("dry run of root and lab changed the state (-before +after):\n%s", diff)
 	}
-
-	harness.assertDryRunWroteNothing(draft.ID, before)
 }
 
 // TestBuilderPublishDryRunListsRefusals asserts a dry run lists what a
@@ -208,22 +210,29 @@ func TestBuilderPublishDryRunListsRefusals(t *testing.T) {
 
 			recorder, preview := previewBuilderDraft(t, harness, draft, nil, test.body)
 			if recorder.Code != http.StatusOK {
-				t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+				t.Fatalf("dry run %s: status = %d, want %d: %s", test.body, recorder.Code, http.StatusOK, recorder.Body)
 			}
 
-			if preview.Changes != nil || len(preview.Errors) == 0 {
-				t.Fatalf("preview = %s, want no changes and the refusal", recorder.Body.String())
+			if preview.Changes != nil {
+				t.Errorf("dry run %s: changes = %+v, want none", test.body, preview.Changes)
 			}
 
-			refusal := preview.Errors[0]
-			if refusal.Code != test.code || refusal.Severity != bdoc.SeverityError ||
-				!strings.Contains(refusal.Message, test.message) || refusal.NodeID != test.nodeID {
-				t.Fatalf("errors = %+v, want an error of code %s saying %q at node %q",
-					preview.Errors, test.code, test.message, test.nodeID)
+			if len(preview.Errors) == 0 {
+				t.Fatalf("dry run %s: errors = none, want the refusal", test.body)
 			}
 
-			if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-				t.Fatal("a refused dry run had side effects")
+			want := bdoc.Issue{Code: test.code, Severity: bdoc.SeverityError, NodeID: test.nodeID}
+			if diff := cmp.Diff(want, preview.Errors[0],
+				cmpopts.IgnoreFields(bdoc.Issue{}, "Message", "Path", "EdgeID", "NetworkID", "Field")); diff != "" {
+				t.Errorf("dry run %s: first error mismatch (-want +got):\n%s", test.body, diff)
+			}
+
+			if got := preview.Errors[0].Message; !strings.Contains(got, test.message) {
+				t.Errorf("dry run %s: first error message = %q, want it to say %q", test.body, got, test.message)
+			}
+
+			if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+				t.Errorf("dry run %s wrote %d configs and %d published documents, want none", test.body, writes, documents)
 			}
 		})
 	}
@@ -248,10 +257,12 @@ func TestBuilderPublishDryRunListsRefusals(t *testing.T) {
 			body: `{"mode":"topology","topology":{"name":"kept","action":"create"},"dryRun":true,"force":true}`,
 		},
 	} {
-		recorder, _ := previewBuilderDraft(t, harness, test.draft, test.role, test.body)
-		if recorder.Code != test.status {
-			t.Errorf("%s: status = %d, want %d: %s", name, recorder.Code, test.status, recorder.Body.String())
-		}
+		t.Run(name, func(t *testing.T) {
+			recorder, _ := previewBuilderDraft(t, harness, test.draft, test.role, test.body)
+			if recorder.Code != test.status {
+				t.Errorf("dry run %s: status = %d, want %d: %s", test.body, recorder.Code, test.status, recorder.Body)
+			}
+		})
 	}
 }
 
@@ -263,8 +274,12 @@ func TestBuilderPublishDryRunAfterPublishing(t *testing.T) {
 
 	_, before := previewBuilderDraft(t, harness, draft, nil,
 		`{"mode":"topology","topology":{"name":"again","action":"create"},"dryRun":true}`)
-	if before.Changes == nil || before.Changes.Topology.Action != bapi.ChangeCreate {
-		t.Fatalf("preview before publishing = %+v, want the topology created", before)
+
+	switch {
+	case before.Changes == nil:
+		t.Errorf("dry run before publishing = %+v, want changes", before)
+	case before.Changes.Topology.Action != bapi.ChangeCreate:
+		t.Errorf("dry run before publishing: topology action = %q, want %q", before.Changes.Topology.Action, bapi.ChangeCreate)
 	}
 
 	publishBuilderDraft(t, harness, draft,
@@ -272,8 +287,12 @@ func TestBuilderPublishDryRunAfterPublishing(t *testing.T) {
 
 	recorder, after := previewBuilderDraft(t, harness, draft, nil,
 		`{"mode":"topology","topology":{"name":"again","action":"update"},"dryRun":true}`)
-	if after.Changes == nil || after.Changes.Topology.Action != bapi.ChangeUnchanged {
-		t.Fatalf("preview after publishing = %s, want the topology unchanged", recorder.Body.String())
+
+	switch {
+	case after.Changes == nil:
+		t.Errorf("dry run after publishing = %d %s, want changes", recorder.Code, recorder.Body)
+	case after.Changes.Topology.Action != bapi.ChangeUnchanged:
+		t.Errorf("dry run after publishing: topology action = %q, want %q", after.Changes.Topology.Action, bapi.ChangeUnchanged)
 	}
 }
 
@@ -399,8 +418,12 @@ func TestBuilderPublishDryRunComparesDiskImages(t *testing.T) {
 			})
 
 			recorder, preview := previewBuilderDraft(t, harness, draft, test.role, body)
-			if recorder.Code != http.StatusOK || preview.Changes == nil || len(preview.Errors) != 0 {
-				t.Fatalf("dry run: status %d: %s", recorder.Code, recorder.Body.String())
+			if recorder.Code != http.StatusOK || preview.Changes == nil {
+				t.Fatalf("dry run of imaged = %d %s, want %d with changes", recorder.Code, recorder.Body, http.StatusOK)
+			}
+
+			if len(preview.Errors) != 0 {
+				t.Errorf("dry run of imaged: errors = %+v, want none", preview.Errors)
 			}
 
 			want := []bapi.ImageChange{
@@ -418,12 +441,12 @@ func TestBuilderPublishDryRunComparesDiskImages(t *testing.T) {
 				},
 			}
 
-			if !reflect.DeepEqual(preview.Changes.Images, want) {
-				t.Errorf("images = %s, want %s", builderJSON(t, preview.Changes.Images), builderJSON(t, want))
+			if diff := cmp.Diff(want, preview.Changes.Images); diff != "" {
+				t.Errorf("dry run of imaged: images mismatch (-want +got):\n%s", diff)
 			}
 
 			if listed := calls > 0; listed != test.listed {
-				t.Errorf("the server's images were listed %d times, want listed %t", calls, test.listed)
+				t.Errorf("dry run of imaged: disk listings = %d, want listed %t", calls, test.listed)
 			}
 		})
 	}
@@ -439,21 +462,21 @@ func TestBuilderPublishDryRunListsDisksOnlyForImages(t *testing.T) {
 	recorder, preview := previewBuilderDraft(t, harness, plain, nil,
 		`{"mode":"topology","topology":{"name":"plain","action":"create"},"dryRun":true}`)
 	if recorder.Code != http.StatusOK || preview.Changes == nil || len(preview.Changes.Images) != 0 {
-		t.Fatalf("dry run of a draft without images: status %d: %s", recorder.Code, recorder.Body.String())
+		t.Errorf("dry run of plain = %d %s, want %d with changes and no images", recorder.Code, recorder.Body, http.StatusOK)
 	}
 
 	if calls != 0 {
-		t.Fatalf("the server's images were listed %d times for a topology that names none", calls)
+		t.Errorf("dry run of plain: disk listings = %d, want 0 for a topology that names no image", calls)
 	}
 
 	recorder, preview = previewBuilderDraft(t, harness, imaged, nil,
 		`{"mode":"topology","topology":{"name":"imaged","action":"update"},"dryRun":true}`)
 	if recorder.Code != http.StatusOK || preview.Changes == nil || len(preview.Changes.Images) == 0 {
-		t.Fatalf("dry run of a draft with images: status %d: %s", recorder.Code, recorder.Body.String())
+		t.Errorf("dry run of imaged = %d %s, want %d with images", recorder.Code, recorder.Body, http.StatusOK)
 	}
 
 	if calls != 1 {
-		t.Fatalf("the server's images were listed %d times for a topology that names some, want once", calls)
+		t.Errorf("dry runs of plain and imaged: disk listings = %d, want 1", calls)
 	}
 }
 
@@ -478,7 +501,7 @@ func TestBuilderPublishDryRunReusesTheDiskListing(t *testing.T) {
 
 		recorder, preview := previewBuilderDraft(t, harness, draft, role, body)
 		if recorder.Code != http.StatusOK || preview.Changes == nil {
-			t.Fatalf("dry run: status %d: %s", recorder.Code, recorder.Body.String())
+			t.Fatalf("dry run of imaged = %d %s, want %d with changes", recorder.Code, recorder.Body, http.StatusOK)
 		}
 
 		images := map[string]*bool{}
@@ -490,8 +513,8 @@ func TestBuilderPublishDryRunReusesTheDiskListing(t *testing.T) {
 	}
 
 	everything := map[string]*bool{previewKeptImage: &has, previewAddedImage: &has, previewRemovedImage: &lack}
-	if got := onServer(nil); !reflect.DeepEqual(got, everything) {
-		t.Fatalf("images for the full role = %s, want %s", builderJSON(t, got), builderJSON(t, everything))
+	if diff := cmp.Diff(everything, onServer(nil)); diff != "" {
+		t.Errorf("dry run as the full role: images on the server mismatch (-want +got):\n%s", diff)
 	}
 
 	// new.qc2 is on the server but hidden from this role: the shared listing does not show it.
@@ -499,22 +522,22 @@ func TestBuilderPublishDryRunReusesTheDiskListing(t *testing.T) {
 
 	now = now.Add(builderDiskListTTL - time.Second)
 
-	if got := onServer(previewRole(previewKeptImage, previewRemovedImage)); !reflect.DeepEqual(got, byName) {
-		t.Fatalf("images for a role listing some by name = %s, want %s", builderJSON(t, got), builderJSON(t, byName))
+	if diff := cmp.Diff(byName, onServer(previewRole(previewKeptImage, previewRemovedImage))); diff != "" {
+		t.Errorf("dry run as a role listing some images by name: images on the server mismatch (-want +got):\n%s", diff)
 	}
 
 	if calls != 1 {
-		t.Fatalf("the server's images were listed %d times for two dry runs within %s, want once", calls, builderDiskListTTL)
+		t.Errorf("two dry runs within %s: disk listings = %d, want 1", builderDiskListTTL, calls)
 	}
 
 	now = now.Add(time.Second)
 
-	if got := onServer(nil); !reflect.DeepEqual(got, everything) {
-		t.Fatalf("images after the listing expired = %s, want %s", builderJSON(t, got), builderJSON(t, everything))
+	if diff := cmp.Diff(everything, onServer(nil)); diff != "" {
+		t.Errorf("dry run after the listing expired: images on the server mismatch (-want +got):\n%s", diff)
 	}
 
 	if calls != 2 {
-		t.Fatalf("the server's images were listed %d times, want again once the listing is %s old", calls, builderDiskListTTL)
+		t.Errorf("a dry run once the listing is %s old: disk listings = %d, want 2", builderDiskListTTL, calls)
 	}
 }
 
@@ -588,12 +611,12 @@ func previewWhileLocked(
 	}
 
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("dry run: status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("dry run while locked: status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
 	}
 
 	var preview builderPublishPreview
 
-	harness.decode(recorder, &preview)
+	decodeBuilderAnswer(t, recorder, &preview)
 
 	return preview
 }
@@ -636,16 +659,23 @@ func TestBuilderPublishDryRunOfAnExperimentUpdateWritesNothing(t *testing.T) {
 		{Name: "OT", From: &wasOT, To: nil, Change: bapi.ItemRemoved},
 	}
 
-	if len(preview.Errors) != 0 || preview.Changes == nil ||
-		!reflect.DeepEqual(preview.Changes.Experiment, &bapi.ConfigChange{Name: "lab", Action: bapi.ChangeUpdate}) ||
-		!reflect.DeepEqual(preview.Changes.VLANAliases, wantAliases) ||
-		!reflect.DeepEqual(preview.Changes.Scenarios,
-			[]bapi.ScenarioAnnotation{{Name: "already", Change: bapi.ScenarioUnchanged}}) {
-		t.Fatalf("preview = %s, want experiment lab updated, aliases %s and scenario already unchanged",
-			builderJSON(t, preview), builderJSON(t, wantAliases))
+	if len(preview.Errors) != 0 {
+		t.Errorf("dry run of the lab update: errors = %+v, want none", preview.Errors)
 	}
 
-	harness.assertDryRunWroteNothing(edited.ID, before)
+	want := &bapi.PublishChanges{
+		Experiment:  &bapi.ConfigChange{Name: "lab", Action: bapi.ChangeUpdate},
+		VLANAliases: wantAliases,
+		Scenarios:   []bapi.ScenarioAnnotation{{Name: "already", Change: bapi.ScenarioUnchanged}},
+	}
+	if diff := cmp.Diff(want, preview.Changes,
+		cmpopts.IgnoreFields(bapi.PublishChanges{}, "Topology", "Includes", "Images")); diff != "" {
+		t.Errorf("dry run of the lab update: changes mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := harness.dryRunChanges(edited.ID, before); diff != "" {
+		t.Errorf("dry run of the lab update changed the state (-before +after):\n%s", diff)
+	}
 }
 
 // TestBuilderPublishNeedsIfMatch asserts a publication needs a valid If-Match,
@@ -679,18 +709,28 @@ func TestBuilderPublishNeedsIfMatch(t *testing.T) {
 		},
 		"a dry run": {body: `{"mode":"topology","topology":{"name":"ordered","action":"create"},"dryRun":true}`, status: http.StatusOK},
 	} {
-		recorder := harness.do(builderRequest{
-			method: http.MethodPost, path: "/builder/drafts/" + draft.ID + "/publish",
-			body: test.body, user: builderAlice, ifMatch: test.ifMatch,
+		t.Run(name, func(t *testing.T) {
+			recorder := harness.do(builderRequest{
+				method: http.MethodPost, path: "/builder/drafts/" + draft.ID + "/publish",
+				body: test.body, user: builderAlice, ifMatch: test.ifMatch,
+			})
+			if recorder.Code != test.status {
+				t.Errorf("publish %s with If-Match %q: status = %d, want %d: %s",
+					test.body, test.ifMatch, recorder.Code, test.status, recorder.Body)
+			}
+
+			if test.message == "" {
+				return
+			}
+
+			if got := builderRefusal(t, recorder).Message; !strings.Contains(got, test.message) {
+				t.Errorf("publish %s with If-Match %q: message = %q, want it to say %q", test.body, test.ifMatch, got, test.message)
+			}
 		})
-		if recorder.Code != test.status ||
-			(test.message != "" && !strings.Contains(builderRefusal(t, recorder).Message, test.message)) {
-			t.Errorf("%s: status = %d, want %d and %q: %s", name, recorder.Code, test.status, test.message, recorder.Body)
-		}
 	}
 
-	if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-		t.Fatal("a refused publication or a dry run wrote something")
+	if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+		t.Errorf("refused publications and a dry run wrote %d configs and %d published documents, want none", writes, documents)
 	}
 }
 
@@ -715,7 +755,7 @@ func TestBuilderPublishPreviewDocumented(t *testing.T) {
 	}
 
 	if _, ok := spec.Components.Schemas["BuilderPublishRequest"].Properties["dryRun"]; !ok {
-		t.Error("BuilderPublishRequest does not document dryRun")
+		t.Error("openapi.yml BuilderPublishRequest properties lack dryRun, want it documented")
 	}
 
 	for component, value := range map[string]any{
@@ -727,15 +767,17 @@ func TestBuilderPublishPreviewDocumented(t *testing.T) {
 		"BuilderImageChange":        bapi.ImageChange{},
 		"BuilderVLANAliasChange":    bapi.VLANAliasChange{},
 	} {
-		documented := make([]string, 0)
-		for property := range spec.Components.Schemas[component].Properties {
-			documented = append(documented, property)
-		}
+		t.Run(component, func(t *testing.T) {
+			documented := make([]string, 0)
+			for property := range spec.Components.Schemas[component].Properties {
+				documented = append(documented, property)
+			}
 
-		slices.Sort(documented)
+			slices.Sort(documented)
 
-		if want := jsonFieldNames(reflect.TypeOf(value)); !slices.Equal(documented, want) {
-			t.Errorf("%s documents %v, want %v", component, documented, want)
-		}
+			if want := jsonFieldNames(reflect.TypeOf(value)); !slices.Equal(documented, want) {
+				t.Errorf("openapi.yml %s properties = %v, want %v", component, documented, want)
+			}
+		})
 	}
 }
