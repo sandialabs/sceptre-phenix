@@ -24,6 +24,7 @@ import (
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/activeshadow/libminimega/miniclient"
 	"github.com/creack/pty"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/util/common"
 	"phenix/util/mm"
@@ -66,10 +67,12 @@ func TestVMCaptureStreamRemovesItsSpool(t *testing.T) {
 			node := &fakeNode{captured: bytes.Clone(sofar)}
 			stream := startCaptureStream(t, node, captureStreamOptions{ignoring: tt.ignoring})
 
-			stream.expect(t, "the capture so far", sofar)
+			if diff := cmp.Diff(sofar, stream.next(t, len(sofar))); diff != "" {
+				t.Fatalf("vm capture stream wrote the capture so far mismatch (-want +got):\n%s", diff)
+			}
 
 			if n := countSpools(t, stream.dir); n != 1 {
-				stream.failf(t, "found %d spools while streaming, want 1", n)
+				t.Fatalf("spools while vm capture stream streams = %d, want 1", n)
 			}
 
 			if tt.ignoring != nil {
@@ -77,7 +80,10 @@ func TestVMCaptureStreamRemovesItsSpool(t *testing.T) {
 
 				packet := pcapRecord(70)
 				node.capture(packet)
-				stream.expect(t, "a packet captured after the signal", packet)
+
+				if diff := cmp.Diff(packet, stream.next(t, len(packet))); diff != "" {
+					t.Fatalf("vm capture stream wrote the packet captured after %v mismatch (-want +got):\n%s", tt.ignoring, diff)
+				}
 			}
 
 			if tt.stop != nil {
@@ -89,11 +95,11 @@ func TestVMCaptureStreamRemovesItsSpool(t *testing.T) {
 			}
 
 			if err := stream.Wait(); err != nil {
-				t.Fatalf("stream exited with %v, want success\n%s", err, stream.stderr)
+				t.Fatalf("vm capture stream exit error = %v, want nil\n%s", err, stream.stderr)
 			}
 
 			if n := countSpools(t, stream.dir); n != 0 {
-				t.Fatalf("%d spools left behind", n)
+				t.Errorf("spools after vm capture stream exits = %d, want 0", n)
 			}
 		})
 	}
@@ -110,11 +116,11 @@ func TestVMCaptureStreamInterruptedTwice(t *testing.T) {
 	select {
 	case <-node.asked:
 	case <-time.After(10 * time.Second):
-		stream.failf(t, "it never read the capture")
+		t.Fatal("vm capture stream did not read the capture within 10s")
 	}
 
 	if n := countSpools(t, stream.dir); n != 1 {
-		stream.failf(t, "found %d spools while following, want 1", n)
+		t.Fatalf("spools while vm capture stream follows a silent node = %d, want 1", n)
 	}
 
 	stream.signal(t, os.Interrupt)
@@ -123,7 +129,7 @@ func TestVMCaptureStreamInterruptedTwice(t *testing.T) {
 
 	for countSpools(t, stream.dir) != 0 {
 		if time.Now().After(deadline) {
-			stream.failf(t, "spool still there after an interrupt")
+			t.Fatal("vm capture stream kept its spool for 10s after an interrupt, want it removed at once")
 		}
 
 		time.Sleep(time.Millisecond)
@@ -135,11 +141,11 @@ func TestVMCaptureStreamInterruptedTwice(t *testing.T) {
 
 	err := stream.Wait()
 	if !errors.As(err, &exit) {
-		t.Fatalf("stream exited with %v, want it ended by the second interrupt\n%s", err, stream.stderr)
+		t.Fatalf("vm capture stream exit error = %v, want it ended by the second interrupt\n%s", err, stream.stderr)
 	}
 
 	if status, ok := exit.Sys().(syscall.WaitStatus); !ok || status.Signal() != syscall.SIGINT {
-		t.Fatalf("stream exited with %v, want it ended by the second interrupt\n%s", err, stream.stderr)
+		t.Errorf("vm capture stream exit error = %v, want it ended by the second interrupt\n%s", err, stream.stderr)
 	}
 }
 
@@ -154,24 +160,30 @@ func TestVMCaptureStreamFromNowToFile(t *testing.T) {
 		args: []string{"test-experiment", "test-vm", "IF0", "--from-now", "--output", file},
 	})
 
-	stream.expectFile(t, file, "the header", pcapHeader())
+	if diff := cmp.Diff(pcapHeader(), waitForFile(t, file, len(pcapHeader()))); diff != "" {
+		t.Fatalf("vm capture stream --from-now --output wrote the header mismatch (-want +got):\n%s", diff)
+	}
 
 	packet := pcapRecord(70)
 	node.capture(packet)
-	stream.expectFile(t, file, "the header and a packet captured since", append(pcapHeader(), packet...))
+
+	want := append(pcapHeader(), packet...)
+	if diff := cmp.Diff(want, waitForFile(t, file, len(want))); diff != "" {
+		t.Fatalf("vm capture stream --from-now --output wrote the header and a later packet mismatch (-want +got):\n%s", diff)
+	}
 
 	stream.signal(t, os.Interrupt)
 
 	if err := stream.Wait(); err != nil {
-		t.Fatalf("stream exited with %v, want success\n%s", err, stream.stderr)
+		t.Fatalf("vm capture stream --from-now --output exit error = %v, want nil\n%s", err, stream.stderr)
 	}
 
 	if out, err := io.ReadAll(stream.out); err != nil || len(out) != 0 {
-		t.Fatalf("wrote % x to stdout (%v), want nothing", out, err)
+		t.Errorf("vm capture stream --output wrote % x to stdout (read error %v), want nothing", out, err)
 	}
 
 	if n := countSpools(t, stream.dir); n != 0 {
-		t.Fatalf("%d spools left behind", n)
+		t.Errorf("spools after vm capture stream exits = %d, want 0", n)
 	}
 }
 
@@ -220,7 +232,7 @@ func TestVMCaptureStreamRefuses(t *testing.T) {
 			if tt.terminal {
 				ptmx, tty, err := pty.Open()
 				if err != nil {
-					t.Fatalf("opening a terminal: %v", err)
+					t.Fatalf("pty.Open() error = %v", err)
 				}
 
 				t.Cleanup(func() { _, _ = ptmx.Close(), tty.Close() })
@@ -234,21 +246,21 @@ func TestVMCaptureStreamRefuses(t *testing.T) {
 			var exit *exec.ExitError
 
 			if err := stream.Wait(); !errors.As(err, &exit) || exit.ExitCode() != 1 {
-				t.Fatalf("stream exited with %v, want status 1\n%s", err, stream.stderr)
+				t.Fatalf("vm capture stream %q exit error = %v, want status 1\n%s", tt.args, err, stream.stderr)
 			}
 
 			if !strings.Contains(stream.stderr.String(), tt.want) {
-				t.Fatalf("stream logged %q, want %q", stream.stderr, tt.want)
+				t.Errorf("vm capture stream %q logged %q, want it to contain %q", tt.args, stream.stderr, tt.want)
 			}
 
 			select {
 			case <-node.asked:
-				t.Fatal("it read the capture")
+				t.Errorf("vm capture stream %q read the capture, want it refused first", tt.args)
 			default:
 			}
 
 			if n := countSpools(t, stream.dir); n != 0 {
-				t.Fatalf("%d spools left behind", n)
+				t.Errorf("spools after vm capture stream %q exits = %d, want 0", tt.args, n)
 			}
 		})
 	}
@@ -261,7 +273,7 @@ func TestVMCaptureStreamToDevNull(t *testing.T) {
 
 	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.OpenFile(%s) error = %v", os.DevNull, err)
 	}
 
 	t.Cleanup(func() { _ = devNull.Close() })
@@ -272,17 +284,17 @@ func TestVMCaptureStreamToDevNull(t *testing.T) {
 	select {
 	case <-node.asked:
 	case <-time.After(10 * time.Second):
-		stream.failf(t, "it never read the capture")
+		t.Fatal("vm capture stream to /dev/null did not read the capture within 10s")
 	}
 
 	stream.signal(t, os.Interrupt)
 
 	if err := stream.Wait(); err != nil {
-		t.Fatalf("stream exited with %v, want success\n%s", err, stream.stderr)
+		t.Fatalf("vm capture stream to /dev/null exit error = %v, want nil\n%s", err, stream.stderr)
 	}
 
 	if n := countSpools(t, stream.dir); n != 0 {
-		t.Fatalf("%d spools left behind", n)
+		t.Errorf("spools after vm capture stream exits = %d, want 0", n)
 	}
 }
 
@@ -358,7 +370,7 @@ func startCaptureStream(t *testing.T, node *fakeNode, opts captureStreamOptions)
 	// address
 	dir, err := os.MkdirTemp("", "cs") //nolint:usetesting // see above
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.MkdirTemp() error = %v", err)
 	}
 
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
@@ -371,7 +383,7 @@ func startCaptureStream(t *testing.T, node *fakeNode, opts captureStreamOptions)
 	if w == nil {
 		out, w, err = os.Pipe()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("os.Pipe() error = %v", err)
 		}
 
 		t.Cleanup(func() { _ = out.Close() })
@@ -411,48 +423,52 @@ func startCaptureStream(t *testing.T, node *fakeNode, opts captureStreamOptions)
 	stream.Stdout, stream.Stderr = w, stream.stderr
 
 	if err := stream.Start(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("starting vm capture stream %q error = %v", args, err)
 	}
+
+	// a test that fails while it runs ends it and shows what it logged
+	t.Cleanup(func() {
+		if t.Failed() {
+			_ = stream.Process.Kill()
+			_ = stream.Wait()
+
+			t.Logf("vm capture stream %q logged:\n%s", args, stream.stderr)
+		}
+	})
 
 	return stream
 }
 
-// expect reads what the process streams next, which must be want.
-func (s *captureStream) expect(t *testing.T, what string, want []byte) {
+// next returns the n bytes the process streams next.
+func (s *captureStream) next(t *testing.T, n int) []byte {
 	t.Helper()
 
-	got := make([]byte, len(want))
+	got := make([]byte, n)
 
 	_ = s.out.SetReadDeadline(time.Now().Add(10 * time.Second))
 
-	if _, err := io.ReadFull(s.out, got); err != nil {
-		s.failf(t, "reading %s: %v", what, err)
+	if read, err := io.ReadFull(s.out, got); err != nil {
+		t.Fatalf("reading %d bytes from vm capture stream error = %v after % x", n, err, got[:read])
 	}
 
-	if !bytes.Equal(got, want) {
-		s.failf(t, "read % x as %s, want % x", got, what, want)
-	}
+	return got
 }
 
-// expectFile waits for the process to have written want, and only want, to
-// the file.
-func (s *captureStream) expectFile(t *testing.T, path, what string, want []byte) {
+// waitForFile returns what the file at path holds once that is at least n
+// bytes.
+func waitForFile(t *testing.T, path string, n int) []byte {
 	t.Helper()
 
 	deadline := time.Now().Add(10 * time.Second)
 
 	for {
 		got, err := os.ReadFile(path) //nolint:gosec // the test names the file
-		if err == nil && len(got) >= len(want) {
-			if !bytes.Equal(got, want) {
-				s.failf(t, "file holds % x, want %s: % x", got, what, want)
-			}
-
-			return
+		if err == nil && len(got) >= n {
+			return got
 		}
 
 		if time.Now().After(deadline) {
-			s.failf(t, "file holds % x (%v), want %s", got, err, what)
+			t.Fatalf("os.ReadFile(%s) = % x, %v after 10s; want at least %d bytes", path, got, err, n)
 		}
 
 		time.Sleep(time.Millisecond)
@@ -463,18 +479,8 @@ func (s *captureStream) signal(t *testing.T, sig os.Signal) {
 	t.Helper()
 
 	if err := s.Process.Signal(sig); err != nil {
-		s.failf(t, "sending %v: %v", sig, err)
+		t.Fatalf("Signal(%v) to vm capture stream error = %v", sig, err)
 	}
-}
-
-// failf ends the process, then the test, with what the process logged.
-func (s *captureStream) failf(t *testing.T, format string, args ...any) {
-	t.Helper()
-
-	_ = s.Process.Kill()
-	_ = s.Wait()
-
-	t.Fatalf(format+"\n%s", append(args, s.stderr)...)
 }
 
 func countSpools(t *testing.T, dir string) int {
@@ -482,7 +488,7 @@ func countSpools(t *testing.T, dir string) int {
 
 	spools, err := filepath.Glob(filepath.Join(dir, "phenix-capture-*.pcap"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("filepath.Glob(spools in %s) error = %v", dir, err)
 	}
 
 	return len(spools)
@@ -511,7 +517,7 @@ func (n *fakeNode) listen(t *testing.T, dir string) {
 
 	listener, err := net.Listen("unix", filepath.Join(dir, "minimega"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("net.Listen(unix, %s) error = %v", filepath.Join(dir, "minimega"), err)
 	}
 
 	t.Cleanup(func() { _ = listener.Close() })

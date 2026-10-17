@@ -79,12 +79,16 @@ func TestNewConfigClearsRevision(t *testing.T) {
 	body := `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology","metadata":{"name":"a","revision":7}}`
 
 	c, err := NewConfigFromJSON([]byte(body))
-	if err != nil || c.Metadata.Revision != 0 {
-		t.Fatalf("NewConfigFromJSON: revision %v, %v; want 0", c, err)
+	if err != nil {
+		t.Errorf("NewConfigFromJSON(revision 7) error = %v", err)
+	} else if c.Metadata.Revision != 0 {
+		t.Errorf("NewConfigFromJSON(revision 7) revision = %d, want 0", c.Metadata.Revision)
 	}
 
 	c, err = NewConfigFromYAML([]byte("apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: a\n  revision: 7\n"))
-	if err != nil || c.Metadata.Revision != 0 {
-		t.Fatalf("NewConfigFromYAML: revision %v, %v; want 0", c, err)
+	if err != nil {
+		t.Errorf("NewConfigFromYAML(revision 7) error = %v", err)
+	} else if c.Metadata.Revision != 0 {
+		t.Errorf("NewConfigFromYAML(revision 7) revision = %d, want 0", c.Metadata.Revision)
 	}
 }

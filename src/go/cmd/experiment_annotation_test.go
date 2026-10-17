@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"io"
-	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/experiment"
 	"phenix/store"
@@ -48,7 +50,7 @@ func runExperimentCreate(t *testing.T, args ...string) error {
 	}
 
 	if err := store.Create(topology); err != nil {
-		t.Fatal(err)
+		t.Fatalf("store.Create(topology vm-topo) error = %v", err)
 	}
 
 	create := newExperimentCreateCmd()
@@ -132,38 +134,36 @@ func TestExperimentCreateAnnotationFlags(t *testing.T) {
 
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("create = %v, want an error containing %q", err, tt.wantErr)
+					t.Errorf("experiment create exp -t vm-topo %q error = %v, want one containing %q", tt.args, err, tt.wantErr)
 				}
 
 				if _, err := experiment.Get("exp"); !errors.Is(err, store.ErrNotExist) {
-					t.Fatalf("the rejected experiment was stored: %v", err)
+					t.Errorf("experiment.Get(exp) after a rejected create error = %v, want %v", err, store.ErrNotExist)
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("create: %v", err)
+				t.Fatalf("experiment create exp -t vm-topo %q error = %v", tt.args, err)
 			}
 
 			exp, err := experiment.Get("exp")
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("experiment.Get(exp) error = %v", err)
 			}
 
-			if got := exp.Metadata.Annotations; !reflect.DeepEqual(map[string]string(got), tt.wantAnnotations) {
-				t.Errorf("experiment annotations = %v, want %v", got, tt.wantAnnotations)
+			if diff := cmp.Diff(tt.wantAnnotations, map[string]string(exp.Metadata.Annotations)); diff != "" {
+				t.Errorf("experiment create exp -t vm-topo %q annotations mismatch (-want +got):\n%s", tt.args, diff)
 			}
 
 			nodes := exp.Spec.Topology().Nodes()
 			if len(nodes) != 1 {
-				t.Fatalf("experiment has %d nodes, want 1", len(nodes))
+				t.Fatalf("experiment create exp -t vm-topo %q made %d nodes, want 1", tt.args, len(nodes))
 			}
 
-			if got := nodes[0].Annotations(); len(got) != 0 || len(tt.wantNode) != 0 {
-				if !reflect.DeepEqual(got, tt.wantNode) {
-					t.Errorf("VM annotations = %#v, want %#v", got, tt.wantNode)
-				}
+			if diff := cmp.Diff(tt.wantNode, nodes[0].Annotations(), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("experiment create exp -t vm-topo %q VM annotations mismatch (-want +got):\n%s", tt.args, diff)
 			}
 		})
 	}

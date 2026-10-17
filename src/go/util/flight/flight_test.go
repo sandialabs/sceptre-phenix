@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/util/polltest"
 )
 
@@ -58,18 +60,16 @@ func TestGroupMergesCallsBeforeSeal(t *testing.T) {
 	wg.Wait()
 
 	if got := runs.Load(); got != 1 {
-		t.Fatalf("fn ran %d times, want 1", got)
+		t.Errorf("runs of fn for %d Do(k) calls = %d, want 1", callers, got)
 	}
 
-	for i, got := range results {
-		if got != 42 {
-			t.Fatalf("caller %d got %d, want 42", i, got)
-		}
+	if diff := cmp.Diff([]int{42, 42, 42, 42, 42}, results); diff != "" {
+		t.Errorf("Do(k) results of the merged callers mismatch (-want +got):\n%s", diff)
 	}
 
 	// Nothing is kept once the run is done: the next call runs on its own.
 	if got := value(group.Do(context.Background(), "k", func(context.Context, func()) (int, error) { return 7, nil })); got != 7 {
-		t.Fatalf("call after the run got %d, want its own result 7", got)
+		t.Errorf("Do(k) after the run = %d, want its own result 7", got)
 	}
 }
 
@@ -83,49 +83,53 @@ func TestGroupRunsCallAlone(t *testing.T) {
 		"while an identical run has started": {seal: true, key: "k"},
 		"while a run for another key waits":  {seal: false, key: "other"},
 	} {
-		var (
-			group   Group[int]
-			entered = make(chan struct{})
-			release = make(chan struct{})
-			first   = make(chan int, 1)
-			second  = make(chan int, 1)
-		)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-		go func() {
-			first <- value(group.Do(context.Background(), "k", func(_ context.Context, seal func()) (int, error) {
-				if tc.seal {
-					seal()
+			var (
+				group   Group[int]
+				entered = make(chan struct{})
+				release = make(chan struct{})
+				first   = make(chan int, 1)
+				second  = make(chan int, 1)
+			)
+
+			go func() {
+				first <- value(group.Do(context.Background(), "k", func(_ context.Context, seal func()) (int, error) {
+					if tc.seal {
+						seal()
+					}
+
+					close(entered)
+					<-release
+
+					return 1, nil
+				}))
+			}()
+
+			<-entered
+
+			// A started run may have read minimega before this call was made, and a
+			// run for another key answers another question: the call runs alone.
+			go func() {
+				second <- value(group.Do(context.Background(), tc.key, func(context.Context, func()) (int, error) { return 2, nil }))
+			}()
+
+			select {
+			case got := <-second:
+				if got != 2 {
+					t.Errorf("Do(%s) = %d, want its own result 2", tc.key, got)
 				}
-
-				close(entered)
-				<-release
-
-				return 1, nil
-			}))
-		}()
-
-		<-entered
-
-		// A started run may have read minimega before this call was made, and a
-		// run for another key answers another question: the call runs alone.
-		go func() {
-			second <- value(group.Do(context.Background(), tc.key, func(context.Context, func()) (int, error) { return 2, nil }))
-		}()
-
-		select {
-		case got := <-second:
-			if got != 2 {
-				t.Errorf("%s: call got %d, want its own result 2", name, got)
+			case <-time.After(5 * time.Second):
+				t.Errorf("Do(%s) waited for the pending run of k", tc.key)
 			}
-		case <-time.After(5 * time.Second):
-			t.Errorf("%s: call waited for the pending run", name)
-		}
 
-		close(release)
+			close(release)
 
-		if got := <-first; got != 1 {
-			t.Errorf("%s: pending run got %d, want 1", name, got)
-		}
+			if got := <-first; got != 1 {
+				t.Errorf("Do(k) of the pending run = %d, want 1", got)
+			}
+		})
 	}
 }
 
@@ -171,22 +175,22 @@ func TestGroupReleasesWaitersOnPanic(t *testing.T) {
 
 	got := <-joined
 	if !errors.Is(got.err, ErrAborted) {
-		t.Fatalf("waiter got (%d, %v), want ErrAborted", got.val, got.err)
+		t.Errorf("Do(k) of the waiter when the run panics error = %v, want %v", got.err, ErrAborted)
 	}
 
 	if got.val != 0 {
-		t.Fatalf("waiter got %d alongside the error, want the zero value", got.val)
+		t.Errorf("Do(k) of the waiter when the run panics = %d, want the zero value", got.val)
 	}
 
 	// The panic still reaches the caller whose run it was.
 	if r := <-panicked; r != "boom" {
-		t.Fatalf("leader recovered %v, want the original panic", r)
+		t.Errorf("Do(k) of the leader recovered %v, want the original panic %q", r, "boom")
 	}
 
 	// The key is free again: the next call runs on its own and succeeds.
 	val, err := group.Do(context.Background(), "k", func(context.Context, func()) (int, error) { return 9, nil })
 	if err != nil || val != 9 {
-		t.Fatalf("call after the panic got (%d, %v), want (9, nil)", val, err)
+		t.Errorf("Do(k) after the panic = %d, %v; want 9, nil", val, err)
 	}
 }
 
@@ -228,21 +232,21 @@ func TestGroupCancelsARunNoOneWaitsFor(t *testing.T) {
 	cancelJoined()
 
 	if err := <-joinedDone; !errors.Is(err, context.Canceled) {
-		t.Fatalf("the caller that left got %v, want %v", err, context.Canceled)
+		t.Errorf("Do(k) of the caller that left error = %v, want %v", err, context.Canceled)
 	}
 
 	if err := runCtx.Err(); err != nil {
-		t.Fatalf("the run's context ended (%v) while its leader still waited", err)
+		t.Errorf("run context error while its leader waits = %v, want nil", err)
 	}
 
 	cancelLeader()
 
 	if got := <-leaderDone; got != 1 {
-		t.Fatalf("leader got %d, want its run's 1", got)
+		t.Errorf("Do(k) of the leader = %d, want its run's 1", got)
 	}
 
 	if got := value(group.Do(context.Background(), "k", func(context.Context, func()) (int, error) { return 3, nil })); got != 3 {
-		t.Fatalf("call after the canceled run got %d, want its own result 3", got)
+		t.Errorf("Do(k) after the canceled run = %d, want its own result 3", got)
 	}
 }
 
@@ -271,13 +275,13 @@ func TestGroupForget(t *testing.T) {
 	group.Forget("k")
 
 	if got := value(group.Do(context.Background(), "k", func(context.Context, func()) (int, error) { return 2, nil })); got != 2 {
-		t.Errorf("call after Forget got %d, want its own result 2", got)
+		t.Errorf("Do(k) after Forget(k) = %d, want its own result 2", got)
 	}
 
 	close(release)
 
 	if got := <-first; got != 1 {
-		t.Errorf("forgotten run got %d, want 1", got)
+		t.Errorf("Do(k) of the forgotten run = %d, want 1", got)
 	}
 }
 

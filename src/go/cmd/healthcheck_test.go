@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
 )
 
@@ -32,12 +34,12 @@ func TestHealthURL(t *testing.T) {
 	for _, test := range tests {
 		got, err := healthURL(test.endpoint, test.tls, test.ready)
 		if err != nil || got != test.want {
-			t.Errorf("healthURL(%q, %v, %v) = %q, %v, want %q", test.endpoint, test.tls, test.ready, got, err, test.want)
+			t.Errorf("healthURL(%q, %t, %t) = %q, %v; want %q, nil", test.endpoint, test.tls, test.ready, got, err, test.want)
 		}
 	}
 
-	if _, err := healthURL("3000", false, false); err == nil {
-		t.Error("healthURL(3000) succeeded, want an error for an endpoint without a port")
+	if got, err := healthURL("3000", false, false); err == nil {
+		t.Errorf("healthURL(%q, false, false) = %q, nil; want an error for an endpoint without a port", "3000", got)
 	}
 }
 
@@ -123,33 +125,42 @@ func TestHealthcheckCommand(t *testing.T) {
 	out, err, created := runRootHealthcheck(t, "--url", healthServer(t, http.StatusOK, passing))
 
 	if err != nil || strings.TrimSpace(out) != "pass (200)" {
-		t.Errorf("healthy server: %q, %v, want pass (200) and no error", out, err)
+		t.Errorf("phenix healthcheck --url <passing 200> = %q, %v; want %q, nil", out, err, "pass (200)")
 	}
 
 	if created {
-		t.Error("the root command's hooks ran: the store was created")
+		t.Error("phenix healthcheck --url <passing 200> created the store, want the root command's hooks skipped")
 	}
 
 	out, err, _ = runRootHealthcheck(t, "--url", healthServer(t, http.StatusServiceUnavailable, failing))
 
 	if !errors.Is(err, errUnhealthy) {
-		t.Errorf("failing server: error %v, want it to be unhealthy", err)
+		t.Errorf("phenix healthcheck --url <failing 503> error = %v, want %v", err, errUnhealthy)
 	}
 
 	for _, want := range []string{"fail (503)", "minimega:responseTime [minimega]: fail: minimega did not answer"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("failing server: output %q, want it to contain %q", out, want)
+			t.Errorf("phenix healthcheck --url <failing 503> = %q, want it to contain %q", out, want)
 		}
 	}
 
 	if strings.Contains(out, "uptime") {
-		t.Errorf("failing server: output %q lists a passing check", out)
+		t.Errorf("phenix healthcheck --url <failing 503> = %q, want the passing uptime check left out", out)
 	}
 
 	out, _, _ = runRootHealthcheck(t, "--url", healthServer(t, http.StatusServiceUnavailable, failing), "-o", "json")
 
-	if !strings.Contains(out, `"minimega:responseTime"`) {
-		t.Errorf("json output = %q, want the body", out)
+	var gotJSON, wantJSON any
+	if err := json.NewDecoder(strings.NewReader(out)).Decode(&gotJSON); err != nil {
+		t.Errorf("phenix healthcheck --url <failing 503> -o json = %q, want JSON: %v", out, err)
+	}
+
+	if err := json.Unmarshal([]byte(failing), &wantJSON); err != nil {
+		t.Fatalf("json.Unmarshal(failing) error = %v", err)
+	}
+
+	if diff := cmp.Diff(wantJSON, gotJSON); diff != "" {
+		t.Errorf("phenix healthcheck --url <failing 503> -o json mismatch (-want +got):\n%s", diff)
 	}
 
 	// nothing listening
@@ -157,7 +168,7 @@ func TestHealthcheckCommand(t *testing.T) {
 	srv.Close()
 
 	if _, err, _ := runRootHealthcheck(t, "--url", srv.URL, "--timeout", "1s"); !errors.Is(err, errUnhealthy) {
-		t.Errorf("no server: error %v, want it to be unhealthy", err)
+		t.Errorf("phenix healthcheck --url <closed server> error = %v, want %v", err, errUnhealthy)
 	}
 }
 
@@ -165,12 +176,12 @@ func TestHealthcheckCommand(t *testing.T) {
 func TestHealthcheckFromEnvironment(t *testing.T) {
 	srv, err := url.Parse(healthServer(t, http.StatusOK, `{"status":"pass"}`))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("url.Parse(test server URL) error = %v", err)
 	}
 
 	t.Setenv("PHENIX_UI_LISTEN_ENDPOINT", srv.Host)
 
 	if out, err, _ := runRootHealthcheck(t); err != nil || strings.TrimSpace(out) != "pass (200)" {
-		t.Errorf("endpoint from PHENIX_UI_LISTEN_ENDPOINT: %q, %v, want pass (200) and no error", out, err)
+		t.Errorf("phenix healthcheck with PHENIX_UI_LISTEN_ENDPOINT=%s = %q, %v; want %q, nil", srv.Host, out, err, "pass (200)")
 	}
 }

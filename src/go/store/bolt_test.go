@@ -3,11 +3,13 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"go.etcd.io/bbolt"
 )
 
@@ -16,64 +18,94 @@ func newTestBolt(t *testing.T, path string) *BoltDB {
 
 	b, _ := NewBoltDB().(*BoltDB)
 	if err := b.Init(Endpoint("bolt://" + path)); err != nil {
-		t.Fatalf("initializing store: %v", err)
+		t.Fatalf("BoltDB.Init(bolt://%s) error = %v", path, err)
 	}
 
 	return b
+}
+
+// newTestConfig returns a new config for name, given as kind/name.
+func newTestConfig(t *testing.T, name string) *Config {
+	t.Helper()
+
+	c, err := NewConfig(name)
+	if err != nil {
+		t.Fatalf("NewConfig(%q) error = %v", name, err)
+	}
+
+	return c
+}
+
+// listedRevisions returns each config as kind/name@revision, in order.
+func listedRevisions(configs Configs) []string {
+	out := make([]string, 0, len(configs))
+
+	for _, c := range configs {
+		out = append(out, fmt.Sprintf("%s/%s@%d", c.Kind, c.Metadata.Name, c.Metadata.Revision))
+	}
+
+	return out
 }
 
 func TestBoltReadsAndWrites(t *testing.T) {
 	b := newTestBolt(t, filepath.Join(t.TempDir(), "store.bdb"))
 
 	if b.IsInitialized(ComponentConfigs) {
-		t.Fatal("a new store has its configs marked initialized")
+		t.Errorf("IsInitialized(%s) on a new store = true, want false", ComponentConfigs)
 	}
 
 	if err := b.InitializeComponent(ComponentConfigs); err != nil {
-		t.Fatalf("marking configs initialized: %v", err)
+		t.Fatalf("InitializeComponent(%s) error = %v", ComponentConfigs, err)
 	}
 
 	if !b.IsInitialized(ComponentConfigs) {
-		t.Fatal("configs not marked initialized")
+		t.Errorf("IsInitialized(%s) after InitializeComponent = false, want true", ComponentConfigs)
 	}
 
 	if b.IsInitialized(Component("other")) {
-		t.Fatal("a component never initialized is marked initialized")
+		t.Error("IsInitialized(other) never initialized = true, want false")
 	}
 
 	// nothing of this kind has been stored yet
-	missing, _ := NewConfig("topology/none")
+	missing := newTestConfig(t, "topology/none")
 	if err := b.Get(missing); !errors.Is(err, ErrNotExist) {
-		t.Fatalf("get from an empty kind: err = %v, want ErrNotExist", err)
+		t.Errorf("Get(topology/none) from an empty kind error = %v, want %v", err, ErrNotExist)
 	}
 
-	if err := b.Update(missing); !errors.Is(err, ErrNotExist) || missing.Metadata.Updated != "" {
-		t.Fatalf("update in an empty kind: err = %v, updated %q; want ErrNotExist, unchanged",
-			err, missing.Metadata.Updated)
+	if err := b.Update(missing); !errors.Is(err, ErrNotExist) {
+		t.Errorf("Update(topology/none) in an empty kind error = %v, want %v", err, ErrNotExist)
+	}
+
+	if missing.Metadata.Updated != "" {
+		t.Errorf("Update(topology/none) in an empty kind set updated = %q, want it unchanged", missing.Metadata.Updated)
 	}
 
 	if err := b.Delete(missing); !errors.Is(err, ErrNotExist) {
-		t.Fatalf("delete from an empty kind: err = %v, want ErrNotExist", err)
+		t.Errorf("Delete(topology/none) from an empty kind error = %v, want %v", err, ErrNotExist)
 	}
 
 	if configs, err := b.List("Topology"); err != nil || len(configs) != 0 {
-		t.Fatalf("list of an empty kind = %v, %v", configs, err)
+		t.Errorf("List(Topology) of an empty kind = %v, %v; want none, nil", configs, err)
 	}
 
 	for _, name := range []string{"topology/a", "topology/b"} {
-		c, _ := NewConfig(name)
-		if err := b.Create(c); err != nil || c.Metadata.Created == "" || c.Metadata.Updated == "" {
-			t.Fatalf("creating %s: %+v, %v", name, c.Metadata, err)
+		c := newTestConfig(t, name)
+		if err := b.Create(c); err != nil {
+			t.Fatalf("Create(%s) error = %v", name, err)
+		}
+
+		if c.Metadata.Created == "" || c.Metadata.Updated == "" {
+			t.Errorf("Create(%s) metadata = %+v, want created and updated set", name, c.Metadata)
 		}
 	}
 
-	duplicate, _ := NewConfig("topology/a")
+	duplicate := newTestConfig(t, "topology/a")
 	if err := b.Create(duplicate); !errors.Is(err, ErrExist) {
-		t.Fatalf("creating a duplicate: err = %v, want ErrExist", err)
+		t.Errorf("Create(topology/a) of an existing name error = %v, want %v", err, ErrExist)
 	}
 
-	if duplicate.Metadata.Created != "" || duplicate.Metadata.Updated != "" {
-		t.Fatalf("a create of an existing name changed the config's metadata to %+v", duplicate.Metadata)
+	if diff := cmp.Diff(ConfigMetadata{Name: "a"}, duplicate.Metadata); diff != "" {
+		t.Errorf("Create(topology/a) of an existing name changed the metadata (-want +got):\n%s", diff)
 	}
 
 	// gets and updates from many goroutines at once all succeed
@@ -87,14 +119,14 @@ func TestBoltReadsAndWrites(t *testing.T) {
 
 			got, _ := NewConfig("topology/a")
 			if err := b.Get(got); err != nil || got.Metadata.Created == "" {
-				t.Errorf("concurrent get: %+v, %v", got.Metadata, err)
+				t.Errorf("concurrent Get(topology/a) = %+v, %v; want it created, nil", got.Metadata, err)
 
 				return
 			}
 
 			if i%4 == 0 {
 				if err := b.Update(got); err != nil {
-					t.Errorf("concurrent update: %v", err)
+					t.Errorf("concurrent Update(topology/a) error = %v", err)
 				}
 			}
 		}()
@@ -103,17 +135,26 @@ func TestBoltReadsAndWrites(t *testing.T) {
 	wg.Wait()
 
 	configs, err := b.List("Topology", "Scenario")
-	if err != nil || len(configs) != 2 {
-		t.Fatalf("list = %d configs, %v; want 2", len(configs), err)
+	if err != nil {
+		t.Fatalf("List(Topology, Scenario) error = %v", err)
 	}
 
-	gone, _ := NewConfig("topology/b")
+	names := make([]string, 0, len(configs))
+	for _, c := range configs {
+		names = append(names, c.Metadata.Name)
+	}
+
+	if diff := cmp.Diff([]string{"a", "b"}, names); diff != "" {
+		t.Errorf("List(Topology, Scenario) names mismatch (-want +got):\n%s", diff)
+	}
+
+	gone := newTestConfig(t, "topology/b")
 	if err := b.Delete(gone); err != nil {
-		t.Fatalf("deleting: %v", err)
+		t.Fatalf("Delete(topology/b) error = %v", err)
 	}
 
 	if err := b.Get(gone); !errors.Is(err, ErrNotExist) {
-		t.Fatalf("get after delete: err = %v, want ErrNotExist", err)
+		t.Errorf("Get(topology/b) after Delete error = %v, want %v", err, ErrNotExist)
 	}
 }
 
@@ -124,17 +165,17 @@ func TestBoltFailsWithoutItsFile(t *testing.T) {
 	b := newTestBolt(t, filepath.Join(dir, "store.bdb"))
 
 	if err := os.RemoveAll(dir); err != nil {
-		t.Fatal(err)
+		t.Fatalf("os.RemoveAll(%s) error = %v", dir, err)
 	}
 
-	c, _ := NewConfig("topology/a")
+	c := newTestConfig(t, "topology/a")
 
 	operations := map[string]func() error{
-		"create": func() error { return b.Create(c) },
-		"update": func() error { return b.Update(c) },
-		"delete": func() error { return b.Delete(c) },
-		"get":    func() error { return b.Get(c) },
-		"list": func() error {
+		"Create(topology/a)": func() error { return b.Create(c) },
+		"Update(topology/a)": func() error { return b.Update(c) },
+		"Delete(topology/a)": func() error { return b.Delete(c) },
+		"Get(topology/a)":    func() error { return b.Get(c) },
+		"List(Topology)": func() error {
 			_, err := b.List("Topology")
 
 			return err
@@ -144,12 +185,12 @@ func TestBoltFailsWithoutItsFile(t *testing.T) {
 	for range 2 { // an operation that kept the store locked would hang the next
 		for name, operation := range operations {
 			if err := operation(); err == nil {
-				t.Errorf("%s succeeded", name)
+				t.Errorf("%s without the store file error = nil, want one", name)
 			}
 		}
 
 		if b.IsInitialized(ComponentConfigs) {
-			t.Error("configs reported initialized")
+			t.Errorf("IsInitialized(%s) without the store file = true, want false", ComponentConfigs)
 		}
 	}
 }
@@ -162,13 +203,16 @@ func TestBoltOpensStoreWithoutFreelist(t *testing.T) {
 
 	old, err := bbolt.Open(path, boltFileMode, withoutFreelist)
 	if err != nil {
-		t.Fatalf("opening as an earlier release: %v", err)
+		t.Fatalf("bbolt.Open(NoFreelistSync) error = %v", err)
 	}
 
-	c, _ := NewConfig("topology/a")
+	c := newTestConfig(t, "topology/a")
 	c.Metadata.Created = "then"
 
-	v, _ := json.Marshal(c)
+	v, err := json.Marshal(c)
+	if err != nil {
+		t.Fatalf("json.Marshal(topology/a) error = %v", err)
+	}
 
 	err = old.Update(func(tx *bbolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(c.Kind))
@@ -179,44 +223,44 @@ func TestBoltOpensStoreWithoutFreelist(t *testing.T) {
 		return bucket.Put([]byte(c.Metadata.Name), v)
 	})
 	if err != nil {
-		t.Fatalf("writing as an earlier release: %v", err)
+		t.Fatalf("writing topology/a with NoFreelistSync error = %v", err)
 	}
 
 	_ = old.Close()
 
 	b := newTestBolt(t, path)
 
-	got, _ := NewConfig("topology/a")
-	if err := b.Get(got); err != nil || got.Metadata.Created != "then" {
-		t.Fatalf("get = %+v, %v", got.Metadata, err)
+	got := newTestConfig(t, "topology/a")
+	if err := b.Get(got); err != nil {
+		t.Fatalf("Get(topology/a) error = %v", err)
+	}
+
+	if got.Metadata.Created != "then" {
+		t.Errorf("Get(topology/a) created = %q, want %q", got.Metadata.Created, "then")
 	}
 
 	if err := b.Update(got); err != nil {
-		t.Fatalf("update: %v", err)
+		t.Fatalf("Update(topology/a) error = %v", err)
 	}
 
 	again, err := bbolt.Open(path, boltFileMode, withoutFreelist)
 	if err != nil {
-		t.Fatalf("reopening as an earlier release: %v", err)
+		t.Fatalf("bbolt.Open(NoFreelistSync) after the update error = %v", err)
 	}
 
 	defer func() { _ = again.Close() }()
 
+	var read Config
+
 	err = again.View(func(tx *bbolt.Tx) error {
-		var read Config
-
-		if err := json.Unmarshal(tx.Bucket([]byte(c.Kind)).Get([]byte(c.Metadata.Name)), &read); err != nil {
-			return err
-		}
-
-		if read.Metadata.Updated != got.Metadata.Updated {
-			return errors.New("it reads " + read.Metadata.Updated + ", not the update")
-		}
-
-		return nil
+		return json.Unmarshal(tx.Bucket([]byte(c.Kind)).Get([]byte(c.Metadata.Name)), &read)
 	})
 	if err != nil {
-		t.Fatalf("reading as an earlier release: %v", err)
+		t.Fatalf("reading topology/a with NoFreelistSync error = %v", err)
+	}
+
+	if diff := cmp.Diff(got.Metadata, read.Metadata); diff != "" {
+		t.Errorf("topology/a metadata read with NoFreelistSync after Update mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -226,61 +270,96 @@ func TestBoltRevisionsIncreaseAcrossConfigs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store.bdb")
 	b := newTestBolt(t, path)
 
-	a, _ := NewConfig("topology/a")
-	if err := b.Create(a); err != nil || a.Metadata.Revision != 1 {
-		t.Fatalf("create a: revision %d, %v; want 1", a.Metadata.Revision, err)
+	a := newTestConfig(t, "topology/a")
+	if err := b.Create(a); err != nil {
+		t.Fatalf("Create(topology/a) error = %v", err)
 	}
 
-	if err := b.Update(a); err != nil || a.Metadata.Revision != 2 {
-		t.Fatalf("update a: revision %d, %v; want 2", a.Metadata.Revision, err)
+	if a.Metadata.Revision != 1 {
+		t.Errorf("Create(topology/a) revision = %d, want 1", a.Metadata.Revision)
 	}
 
-	s, _ := NewConfig("scenario/b")
-	if err := b.Create(s); err != nil || s.Metadata.Revision != 3 {
-		t.Fatalf("create b: revision %d, %v; want 3", s.Metadata.Revision, err)
+	if err := b.Update(a); err != nil {
+		t.Fatalf("Update(topology/a) error = %v", err)
 	}
 
-	got, _ := NewConfig("topology/a")
-	if err := b.Get(got); err != nil || got.Metadata.Revision != 2 {
-		t.Fatalf("get a: revision %d, %v; want 2", got.Metadata.Revision, err)
+	if a.Metadata.Revision != 2 {
+		t.Errorf("Update(topology/a) revision = %d, want 2", a.Metadata.Revision)
+	}
+
+	s := newTestConfig(t, "scenario/b")
+	if err := b.Create(s); err != nil {
+		t.Fatalf("Create(scenario/b) error = %v", err)
+	}
+
+	if s.Metadata.Revision != 3 {
+		t.Errorf("Create(scenario/b) revision = %d, want 3", s.Metadata.Revision)
+	}
+
+	got := newTestConfig(t, "topology/a")
+	if err := b.Get(got); err != nil {
+		t.Fatalf("Get(topology/a) error = %v", err)
+	}
+
+	if got.Metadata.Revision != 2 {
+		t.Errorf("Get(topology/a) revision = %d, want 2", got.Metadata.Revision)
 	}
 
 	configs, err := b.List("Topology", "Scenario")
-	if err != nil || len(configs) != 2 ||
-		configs[0].Metadata.Revision != 2 || configs[1].Metadata.Revision != 3 {
-		t.Fatalf("list = %+v, %v; want revisions 2 and 3", configs, err)
+	if err != nil {
+		t.Fatalf("List(Topology, Scenario) error = %v", err)
+	}
+
+	if diff := cmp.Diff([]string{"Topology/a@2", "Scenario/b@3"}, listedRevisions(configs)); diff != "" {
+		t.Errorf("List(Topology, Scenario) revisions mismatch (-want +got):\n%s", diff)
 	}
 
 	// a config written before revisions existed reads as revision 0, and gets
 	// the next revision on its next write
-	legacy, _ := NewConfig("topology/legacy")
-	v, _ := json.Marshal(legacy)
+	legacy := newTestConfig(t, "topology/legacy")
+
+	v, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatalf("json.Marshal(topology/legacy) error = %v", err)
+	}
 
 	if err := b.open(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("BoltDB.open() error = %v", err)
 	}
 
 	err = b.put("Topology", "legacy", v)
 	_ = b.Close()
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("BoltDB.put(Topology, legacy) error = %v", err)
 	}
 
-	if err := b.Get(legacy); err != nil || legacy.Metadata.Revision != 0 {
-		t.Fatalf("get legacy: revision %d, %v; want 0", legacy.Metadata.Revision, err)
+	if err := b.Get(legacy); err != nil {
+		t.Fatalf("Get(topology/legacy) error = %v", err)
 	}
 
-	if err := b.Update(legacy); err != nil || legacy.Metadata.Revision != 4 {
-		t.Fatalf("update legacy: revision %d, %v; want 4", legacy.Metadata.Revision, err)
+	if legacy.Metadata.Revision != 0 {
+		t.Errorf("Get(topology/legacy) revision = %d, want 0", legacy.Metadata.Revision)
+	}
+
+	if err := b.Update(legacy); err != nil {
+		t.Fatalf("Update(topology/legacy) error = %v", err)
+	}
+
+	if legacy.Metadata.Revision != 4 {
+		t.Errorf("Update(topology/legacy) revision = %d, want 4", legacy.Metadata.Revision)
 	}
 
 	// the counter is in the file, so another store on it continues from there
 	other := newTestBolt(t, path)
 
-	c, _ := NewConfig("topology/c")
-	if err := other.Create(c); err != nil || c.Metadata.Revision != 5 {
-		t.Fatalf("create through a second store: revision %d, %v; want 5", c.Metadata.Revision, err)
+	c := newTestConfig(t, "topology/c")
+	if err := other.Create(c); err != nil {
+		t.Fatalf("Create(topology/c) through a second store error = %v", err)
+	}
+
+	if c.Metadata.Revision != 5 {
+		t.Errorf("Create(topology/c) through a second store revision = %d, want 5", c.Metadata.Revision)
 	}
 }
 
@@ -289,50 +368,58 @@ func TestBoltRevisionsIncreaseAcrossConfigs(t *testing.T) {
 func TestBoltIfRevision(t *testing.T) {
 	b := newTestBolt(t, filepath.Join(t.TempDir(), "store.bdb"))
 
-	c, _ := NewConfig("topology/a")
+	c := newTestConfig(t, "topology/a")
 	if err := b.Create(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Create(topology/a) error = %v", err)
 	}
 
 	if err := b.Update(c); err != nil { // revision 2
-		t.Fatal(err)
+		t.Fatalf("Update(topology/a) error = %v", err)
 	}
 
-	stale, _ := NewConfig("topology/a")
+	stale := newTestConfig(t, "topology/a")
 	stale.Spec = map[string]any{"edited": true}
 	stale.IfRevision = 1
 
 	if err := b.Update(stale); !errors.Is(err, ErrConflict) {
-		t.Fatalf("update at a stale revision: err = %v, want ErrConflict", err)
+		t.Errorf("Update(topology/a, IfRevision 1) at revision 2 error = %v, want %v", err, ErrConflict)
 	}
 
-	if stale.Metadata.Revision != 0 || stale.Metadata.Updated != "" {
-		t.Fatalf("a refused update changed the config's metadata to %+v", stale.Metadata)
+	if diff := cmp.Diff(ConfigMetadata{Name: "a"}, stale.Metadata); diff != "" {
+		t.Errorf("refused Update(topology/a, IfRevision 1) changed the metadata (-want +got):\n%s", diff)
 	}
 
-	got, _ := NewConfig("topology/a")
-	if err := b.Get(got); err != nil || got.Metadata.Revision != 2 || got.Spec != nil {
-		t.Fatalf("after a refused update the store holds %+v, %v", got, err)
+	got := newTestConfig(t, "topology/a")
+	if err := b.Get(got); err != nil {
+		t.Fatalf("Get(topology/a) after a refused update error = %v", err)
+	}
+
+	if diff := cmp.Diff(c, got); diff != "" {
+		t.Errorf("Get(topology/a) after a refused update mismatch (-want +got):\n%s", diff)
 	}
 
 	if err := b.Delete(stale); !errors.Is(err, ErrConflict) {
-		t.Fatalf("delete at a stale revision: err = %v, want ErrConflict", err)
+		t.Errorf("Delete(topology/a, IfRevision 1) at revision 2 error = %v, want %v", err, ErrConflict)
 	}
 
-	current, _ := NewConfig("topology/a")
+	current := newTestConfig(t, "topology/a")
 	current.IfRevision = 2
 
-	if err := b.Update(current); err != nil || current.Metadata.Revision != 3 {
-		t.Fatalf("update at the current revision: revision %d, %v; want 3", current.Metadata.Revision, err)
+	if err := b.Update(current); err != nil {
+		t.Fatalf("Update(topology/a, IfRevision 2) at revision 2 error = %v", err)
+	}
+
+	if current.Metadata.Revision != 3 {
+		t.Errorf("Update(topology/a, IfRevision 2) revision = %d, want 3", current.Metadata.Revision)
 	}
 
 	current.IfRevision = 3
 
 	if err := b.Delete(current); err != nil {
-		t.Fatalf("delete at the current revision: %v", err)
+		t.Fatalf("Delete(topology/a, IfRevision 3) at revision 3 error = %v", err)
 	}
 
 	if err := b.Get(got); !errors.Is(err, ErrNotExist) {
-		t.Fatalf("get after delete: err = %v, want ErrNotExist", err)
+		t.Errorf("Get(topology/a) after Delete error = %v, want %v", err, ErrNotExist)
 	}
 }

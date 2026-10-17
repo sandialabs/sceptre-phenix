@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"phenix/util/freshness"
 )
 
@@ -35,13 +38,13 @@ func TestSeqIsStrictlyIncreasing(t *testing.T) {
 			for range calls {
 				s := freshness.Seq()
 				if s <= last {
-					t.Errorf("seq went from %d to %d", last, s)
+					t.Errorf("Seq() = %d after %d, want more", s, last)
 
 					return
 				}
 
 				if _, dup := seen.LoadOrStore(s, true); dup {
-					t.Errorf("seq %d given twice", s)
+					t.Errorf("Seq() = %d, which another call returned", s)
 
 					return
 				}
@@ -54,7 +57,7 @@ func TestSeqIsStrictlyIncreasing(t *testing.T) {
 	wg.Wait()
 
 	if s := freshness.Seq(); s < start || s >= 1<<53 {
-		t.Errorf("seq %d is before the clock (%d) or past 2^53", s, start)
+		t.Errorf("Seq() = %d, want at least the clock's %d and below 2^53", s, start)
 	}
 }
 
@@ -65,22 +68,22 @@ func TestObservationOlder(t *testing.T) {
 	a := freshness.Observed(now)
 	b := freshness.Observation{At: now.Add(-time.Minute), Stale: true, Known: false, Err: failed}
 
-	got := a.Older(b)
-	if !got.At.Equal(b.At) || !got.Stale || got.Known || !errors.Is(got.Err, failed) {
-		t.Errorf("a.Older(b) = %+v, want b's time, stale, unknown, with b's error", got)
+	if diff := cmp.Diff(b, a.Older(b), cmpopts.EquateErrors()); diff != "" {
+		t.Errorf("a.Older(b) mismatch (-want +got):\n%s", diff)
 	}
 
-	if got := freshness.Unobserved().Older(a); got != a {
-		t.Errorf("Unobserved().Older(a) = %+v, want a", got)
+	if diff := cmp.Diff(a, freshness.Unobserved().Older(a), cmpopts.EquateErrors()); diff != "" {
+		t.Errorf("Unobserved().Older(a) mismatch (-want +got):\n%s", diff)
 	}
 
-	if got := a.Older(freshness.Unobserved()); got != a {
-		t.Errorf("a.Older(Unobserved()) = %+v, want a", got)
+	if diff := cmp.Diff(a, a.Older(freshness.Unobserved()), cmpopts.EquateErrors()); diff != "" {
+		t.Errorf("a.Older(Unobserved()) mismatch (-want +got):\n%s", diff)
 	}
 
 	// a part served stale with no time of its own still makes the whole stale
 	busy := freshness.Observation{Stale: true, Known: false}
-	if got := a.Older(busy); !got.At.Equal(now) || !got.Stale || got.Known {
-		t.Errorf("a.Older(busy) = %+v, want a's time, stale and unknown", got)
+	want := freshness.Observation{At: now, Stale: true, Known: false, Err: nil}
+	if diff := cmp.Diff(want, a.Older(busy), cmpopts.EquateErrors()); diff != "" {
+		t.Errorf("a.Older(busy) mismatch (-want +got):\n%s", diff)
 	}
 }

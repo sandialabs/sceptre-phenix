@@ -63,59 +63,66 @@ func TestConfigSchemasDocumented(t *testing.T) {
 
 			doc, err := openapi3.NewLoader().LoadFromData(data)
 			if err != nil {
-				t.Fatalf("loading %s schema: %v", schemaVersion, err)
+				t.Fatalf("LoadFromData(%s schema) error = %v", schemaVersion, err)
 			}
 
 			if err := doc.Validate(t.Context()); err != nil {
-				t.Fatalf("validating %s schema: %v", schemaVersion, err)
+				t.Fatalf("Validate(%s schema) error = %v", schemaVersion, err)
 			}
 
 			for name, ref := range doc.Components.Schemas {
 				if ref == nil || ref.Value == nil {
-					t.Errorf("%s has no schema", name)
+					t.Errorf("%s schema %s has no schema", schemaVersion, name)
 
 					continue
 				}
 
-				assertSchemaDocumented(t, name, ref.Value)
+				for _, problem := range undocumentedSchema(name, ref.Value) {
+					t.Errorf("%s schema %s", schemaVersion, problem)
+				}
 			}
 		})
 	}
 }
 
-func assertSchemaDocumented(t *testing.T, path string, schema *openapi3.Schema) {
-	t.Helper()
+// undocumentedSchema describes what schema, at path, and the properties under
+// it lack of a title, a description, or for a scalar an example, default or enum.
+func undocumentedSchema(path string, schema *openapi3.Schema) []string {
+	var problems []string
 
 	if schema.Title == "" {
-		t.Errorf("%s has no title", path)
+		problems = append(problems, path+" has no title")
 	}
 
 	if schema.Description == "" {
-		t.Errorf("%s has no description", path)
+		problems = append(problems, path+" has no description")
 	}
 
-	assertSchemaPropertiesDocumented(t, path, schema)
+	return append(problems, undocumentedSchemaProperties(path, schema)...)
 }
 
-func assertSchemaPropertiesDocumented(t *testing.T, path string, schema *openapi3.Schema) {
-	t.Helper()
+// undocumentedSchemaProperties is undocumentedSchema for the properties, items
+// and branches under schema.
+func undocumentedSchemaProperties(path string, schema *openapi3.Schema) []string {
+	var problems []string
 
 	for name, ref := range schema.Properties {
+		propertyPath := path + "." + name
+
 		if ref == nil || ref.Value == nil {
-			t.Errorf("%s.%s has no schema", path, name)
+			problems = append(problems, propertyPath+" has no schema")
 
 			continue
 		}
 
 		property := ref.Value
-		propertyPath := path + "." + name
 
 		if property.Title == "" {
-			t.Errorf("%s has no title", propertyPath)
+			problems = append(problems, propertyPath+" has no title")
 		}
 
 		if property.Description == "" {
-			t.Errorf("%s has no description", propertyPath)
+			problems = append(problems, propertyPath+" has no description")
 		}
 
 		if property.Type == openapi3.TypeString ||
@@ -123,24 +130,26 @@ func assertSchemaPropertiesDocumented(t *testing.T, path string, schema *openapi
 			property.Type == openapi3.TypeNumber ||
 			property.Type == openapi3.TypeBoolean {
 			if property.Example == nil && property.Default == nil && len(property.Enum) == 0 {
-				t.Errorf("%s has no example, default, or enum", propertyPath)
+				problems = append(problems, propertyPath+" has no example, default, or enum")
 			}
 		}
 
-		assertSchemaPropertiesDocumented(t, propertyPath, property)
+		problems = append(problems, undocumentedSchemaProperties(propertyPath, property)...)
 	}
 
 	if schema.Items != nil && schema.Items.Value != nil {
-		assertSchemaPropertiesDocumented(t, path+"[]", schema.Items.Value)
+		problems = append(problems, undocumentedSchemaProperties(path+"[]", schema.Items.Value)...)
 	}
 
 	for _, branches := range [][]*openapi3.SchemaRef{schema.AllOf, schema.AnyOf, schema.OneOf} {
 		for index, ref := range branches {
 			if ref != nil && ref.Value != nil {
-				assertSchemaPropertiesDocumented(t, path+"["+strconv.Itoa(index)+"]", ref.Value)
+				problems = append(problems, undocumentedSchemaProperties(path+"["+strconv.Itoa(index)+"]", ref.Value)...)
 			}
 		}
 	}
+
+	return problems
 }
 
 func TestGetVersionedSchemaForKindRejectsEmptyKind(t *testing.T) {

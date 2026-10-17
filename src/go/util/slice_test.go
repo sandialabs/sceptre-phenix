@@ -1,8 +1,9 @@
 package util
 
 import (
-	"slices"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestUnique(t *testing.T) {
@@ -10,13 +11,12 @@ func TestUnique(t *testing.T) {
 
 	in := []string{"b", "a", "b", "c", "a"}
 
-	if got, want := Unique(in), []string{"b", "a", "c"}; !slices.Equal(got, want) {
-		t.Errorf("Unique(%v) = %v, want %v", in, got, want)
+	if diff := cmp.Diff([]string{"b", "a", "c"}, Unique(in)); diff != "" {
+		t.Errorf("Unique(%q) mismatch (-want +got):\n%s", in, diff)
 	}
 
-	// the input is left as it is
-	if want := []string{"b", "a", "b", "c", "a"}; !slices.Equal(in, want) {
-		t.Errorf("Unique changed its input to %v", in)
+	if diff := cmp.Diff([]string{"b", "a", "b", "c", "a"}, in); diff != "" {
+		t.Errorf("input after Unique mismatch (-want +got):\n%s", diff)
 	}
 
 	if got := Unique[string](nil); len(got) != 0 {
