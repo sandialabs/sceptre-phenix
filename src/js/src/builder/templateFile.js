@@ -44,28 +44,24 @@ export const TEMPLATE_FILE_SCHEMA_URI =
 // The largest file read (MaxTemplateFileBytes), and the most templates one
 // holds (MaxTemplateFileTemplates), which is the most a collection holds.
 export const MAX_TEMPLATE_FILE_BYTES = 8 * 1024 * 1024;
-export const MAX_TEMPLATE_FILE_TEMPLATES = 200;
+const MAX_TEMPLATE_FILE_TEMPLATES = 200;
 
 // The keys of a template file, and of one of its templates. A template in a
 // file has no id. The place that stores it gives it one.
-export const TEMPLATE_FILE_KEYS = new Set([
+const TEMPLATE_FILE_KEYS = new Set([
   '$schema',
   'name',
   'description',
   'templates',
   'icons',
 ]);
-export const TEMPLATE_FILE_TEMPLATE_KEYS = new Set([
-  'name',
-  'description',
-  'device',
-]);
+const TEMPLATE_FILE_TEMPLATE_KEYS = new Set(['name', 'description', 'device']);
 
 /**
  * Why a template file cannot be read: a sentence, and the issues of a file
  * that was read but is not valid, each {path, message}.
  */
-export class TemplateFileError extends Error {
+class TemplateFileError extends Error {
   /**
    * @param {string} message
    * @param {{path: string, message: string}[]} [issues]
@@ -221,7 +217,7 @@ export function templateFileName(name) {
  * @param {object} file see templateFileOf
  * @returns {string}
  */
-export function templateFileText(file) {
+function templateFileText(file) {
   return YAML.dump(file, { noRefs: true, sortKeys: false, lineWidth: -1 });
 }
 
@@ -271,7 +267,7 @@ export function exportTemplateFile(
  *   to: string}[]}} [notes] see templateFileOf
  * @returns {string}
  */
-export function exportedMessage(
+function exportedMessage(
   fileName,
   templates,
   { missing = [], left = [], renamed = [] } = {},
@@ -358,7 +354,7 @@ export function isTemplateFileValue(value) {
  * @returns {object} the file, without the keys that have no value
  * @throws {TemplateFileError}
  */
-export function decodeTemplateFile(value) {
+function decodeTemplateFile(value) {
   rejectUnknown(value, TEMPLATE_FILE_KEYS, 'file');
   ['$schema', 'name', 'description'].forEach((key) =>
     rejectNonText(value[key], key),

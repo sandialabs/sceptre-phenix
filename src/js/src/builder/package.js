@@ -23,9 +23,9 @@ export const PACKAGE_SCHEMA_URI =
 // it carries, the most entries one list of its requirements holds, and the
 // longest entry. It carries at most MAX_SCENARIOS Scenario configs, the
 // most a document names.
-export const MAX_PACKAGE_TOPOLOGIES = 100;
-export const MAX_PACKAGE_REQUIREMENTS = 1000;
-export const MAX_REQUIREMENT_BYTES = 4096;
+const MAX_PACKAGE_TOPOLOGIES = 100;
+const MAX_PACKAGE_REQUIREMENTS = 1000;
+const MAX_REQUIREMENT_BYTES = 4096;
 
 // The sections a package may carry besides its document, in the order the
 // Download dialog offers them, with the label of each tick.
@@ -38,21 +38,16 @@ export const PACKAGE_SECTIONS = [
 
 // The keys of a package and of its parts: the properties of the package
 // schema (GET /schemas/builder/package/v1).
-export const PACKAGE_KEYS = new Set([
+const PACKAGE_KEYS = new Set([
   '$schema',
   'document',
   'scenarios',
   'topologies',
   'requirements',
 ]);
-export const PACKAGE_CONFIG_KEYS = new Set([
-  'apiVersion',
-  'kind',
-  'metadata',
-  'spec',
-]);
-export const PACKAGE_METADATA_KEYS = new Set(['name', 'annotations']);
-export const REQUIREMENT_KEYS = [
+const PACKAGE_CONFIG_KEYS = new Set(['apiVersion', 'kind', 'metadata', 'spec']);
+const PACKAGE_METADATA_KEYS = new Set(['name', 'annotations']);
+const REQUIREMENT_KEYS = [
   'scenarios',
   'topologies',
   'templates',
@@ -61,7 +56,7 @@ export const REQUIREMENT_KEYS = [
   'apps',
   'files',
 ];
-export const PACKAGE_IMAGE_KEYS = new Set(['name', 'usedBy']);
+const PACKAGE_IMAGE_KEYS = new Set(['name', 'usedBy']);
 
 // The kind of the configs of each list a package may carry.
 const CONFIG_KINDS = { scenarios: 'Scenario', topologies: 'Topology' };
@@ -362,7 +357,7 @@ export function decodePackage(value) {
 
 // The kinds of what a package's diagram needs, in the order the server
 // lists them, with the heading of each group.
-export const DEPENDENCY_GROUPS = [
+const DEPENDENCY_GROUPS = [
   { kind: 'scenario', label: 'Scenario configs' },
   { kind: 'topology', label: 'Included topologies' },
   { kind: 'template', label: 'Templates' },

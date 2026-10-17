@@ -38,7 +38,7 @@ const COLLIDE_STRENGTH = 0.7;
  * @param {number} gap
  * @returns {function} a d3 force
  */
-export function boxCollide(gap) {
+function boxCollide(gap) {
   let nodes = [];
 
   function force() {

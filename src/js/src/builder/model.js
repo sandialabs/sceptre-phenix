@@ -523,7 +523,7 @@ export function layersProblem(layers) {
 }
 
 // The optional text fields of a layer: its icon and its color.
-export const LAYER_LOOK_KEYS = ['iconKey', 'icon', 'color'];
+const LAYER_LOOK_KEYS = ['iconKey', 'icon', 'color'];
 
 /**
  * A layer as a document keeps it: its ID and label, then its icon key,
@@ -778,7 +778,7 @@ export function someNodeOnLayer(doc) {
  * @param {number} id
  * @returns {object|null}
  */
-export function layerOf(doc, id) {
+function layerOf(doc, id) {
   return effectiveLayers(doc).find((layer) => layer.id === id) || null;
 }
 
@@ -1246,7 +1246,7 @@ export function removeLayer(doc, id) {
 export const MAX_LAYER_SET_NAME_BYTES = 128;
 export const MAX_LAYER_SET_DESCRIPTION_BYTES = 1024;
 export const MAX_LAYER_SET_ID_BYTES = 128;
-export const LAYER_SET_ID = /^[A-Za-z0-9_.:-]+$/;
+const LAYER_SET_ID = /^[A-Za-z0-9_.:-]+$/;
 
 export { MATCH_CONFLICT_HIGHEST, MATCH_CONFLICT_LOWEST };
 
@@ -2220,7 +2220,7 @@ export function removeNetworks(doc, ids) {
  * @param {string} networkId
  * @returns {boolean}
  */
-export function networkInUse(doc, networkId) {
+function networkInUse(doc, networkId) {
   if ((doc?.edges || []).some((edge) => edge.networkId === networkId)) {
     return true;
   }
@@ -2857,7 +2857,7 @@ function sameAnchors(a, b) {
  * @param {object} after the same document, changed
  * @returns {object} after, without those routes
  */
-export function dropStaleRoutes(before, after) {
+function dropStaleRoutes(before, after) {
   const edges = after?.edges || [];
 
   if (before === after || !edges.some((edge) => edge.route)) {
@@ -3604,7 +3604,7 @@ export function groupMinimumSize(doc, id, options = {}) {
 // The kinds of nodes that can be resized, with the mouse or the keyboard, and
 // the minimum size of each kind except group: enough for its label, or for an
 // icon to show.
-export const RESIZABLE_KINDS = ['note', 'group', 'shape', 'icon'];
+const RESIZABLE_KINDS = ['note', 'group', 'shape', 'icon'];
 export const MINIMUM_SIZES = {
   note: { width: 80, height: 48 },
   shape: { width: 16, height: 16 },

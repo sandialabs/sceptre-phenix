@@ -26,7 +26,7 @@ export const EXPORT_TOPOLOGY_PATH = 'builder/export/topology';
 // Builder packages (web/builder_package.go): one is made of a document, and
 // one is checked against what this server has.
 export const PACKAGE_PATH = 'builder/package';
-export const RESOLVE_PACKAGE_PATH = 'builder/package/resolve';
+const RESOLVE_PACKAGE_PATH = 'builder/package/resolve';
 export const DOCUMENTS_PATH = 'builder/documents';
 // The server's icon library (web/builder_icons.go).
 const ICONS_PATH = 'builder/icons';

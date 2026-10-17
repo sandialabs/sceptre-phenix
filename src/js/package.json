@@ -10,6 +10,7 @@
     "format:check": "prettier . --check",
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
+    "knip": "knip",
     "test": "vitest run",
     "test:contract": "vitest run --project contract",
     "test:coverage": "vitest run --coverage"
@@ -63,6 +64,7 @@
     "fast-check": "^4.10.2",
     "globals": "^17.11.0",
     "happy-dom": "^21.0.0",
+    "knip": "6.39.0",
     "prettier": "^3.5.3",
     "vite": "^6.2.4",
     "vite-plugin-vue-devtools": "^7.7.2",

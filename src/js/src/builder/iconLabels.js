@@ -5,7 +5,7 @@
 // spelling, wherever it names a built-in icon.
 
 /** Labels of the built-in icon keys, in the order the UI lists them. */
-export const ICON_LABELS = {
+const ICON_LABELS = {
   server: 'Server',
   desktop: 'Desktop',
   laptop: 'Laptop',

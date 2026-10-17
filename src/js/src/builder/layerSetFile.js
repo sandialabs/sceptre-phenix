@@ -32,7 +32,7 @@ export const LAYER_SET_FILE_SCHEMA_URI =
 export const MAX_LAYER_SET_FILE_BYTES = 4 * 1024 * 1024;
 
 // The keys of a layer set file.
-export const LAYER_SET_FILE_KEYS = new Set([
+const LAYER_SET_FILE_KEYS = new Set([
   '$schema',
   'name',
   'description',
@@ -51,7 +51,7 @@ const TEXT_KEYS = ['$schema', 'name', 'description', 'iconKey', 'icon'];
  * Why a layer set file cannot be read: a sentence, and the issues of a file
  * that was read but is not valid, each {code, path, message}.
  */
-export class LayerSetFileError extends Error {
+class LayerSetFileError extends Error {
   /**
    * @param {string} message
    * @param {object[]} [issues]
@@ -389,7 +389,7 @@ export function decodeLayerSetFile(value) {
  * @param {object} file as decodeLayerSetFile returns it
  * @returns {object[]} issues
  */
-export function layerSetFileIssues(file) {
+function layerSetFileIssues(file) {
   const issues = [];
 
   if (file.$schema !== LAYER_SET_FILE_SCHEMA_URI) {

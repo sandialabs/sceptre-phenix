@@ -190,12 +190,7 @@ export const TEMPLATE_KEYS = new Set([
 ]);
 // The library template a document's template was copied from
 // (TemplateSource in template.go).
-export const TEMPLATE_SOURCE_KEYS = new Set([
-  'kind',
-  'id',
-  'version',
-  'digest',
-]);
+const TEMPLATE_SOURCE_KEYS = new Set(['kind', 'id', 'version', 'digest']);
 export const LAYER_KEYS = new Set([
   'id',
   'label',

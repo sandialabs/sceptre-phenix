@@ -119,7 +119,7 @@ export function storedEntry(key, entry) {
 }
 
 // What the localStorage key of an unload copy starts with.
-export const UNLOAD_COPY_PREFIX = 'phenix.builder.unload.';
+const UNLOAD_COPY_PREFIX = 'phenix.builder.unload.';
 
 /**
  * @param {string} key draft record key (see draftKey)

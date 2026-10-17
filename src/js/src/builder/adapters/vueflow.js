@@ -118,7 +118,7 @@ const NETWORK_TOKEN_COUNT = 8;
  * @param {string} [style] one of LINE_STYLES; solid for any other
  * @returns {string|undefined} undefined for a solid line
  */
-export function lineDashArray(style) {
+function lineDashArray(style) {
   return NETWORK_DASH_ARRAYS[style];
 }
 

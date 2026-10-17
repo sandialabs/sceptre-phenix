@@ -18,7 +18,7 @@ export const BUILTIN_ICON_OWNER = 'Built-in';
 export const BUILTIN_ICON_COLOR = '#1b2330';
 
 /** The width and height of a downloaded built-in icon, in pixels. */
-export const BUILTIN_ICON_FILE_SIZE = 96;
+const BUILTIN_ICON_FILE_SIZE = 96;
 
 /**
  * @returns {{key: string, label: string, builtin: true}[]} the built-in

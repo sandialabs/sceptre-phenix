@@ -226,7 +226,7 @@ function dotValue(value) {
  * @returns {{dot: string, names: Map<string, string>}} the graph, and
  *   each item's id by node name
  */
-export function graphOf(items, edges, attributes, roots = []) {
+function graphOf(items, edges, attributes, roots = []) {
   const sorted = [...items].sort(byId);
   const names = new Map(sorted.map((item, index) => [item.id, `n${index}`]));
   const graph = { overlap: 'true', splines: 'false', ...attributes };

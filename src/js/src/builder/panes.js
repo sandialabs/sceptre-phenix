@@ -220,7 +220,7 @@ const MINIMAP_MAX_SHARE = 0.5;
 // and the handle's focus ring on the canvas.
 const MINIMAP_ROOM = 2 * (15 + 1);
 // One arrow key press.
-export const MINIMAP_STEP = 16;
+const MINIMAP_STEP = 16;
 
 /**
  * The widths the minimap may take on a canvas: at most half the canvas's

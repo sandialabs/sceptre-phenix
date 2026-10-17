@@ -57,7 +57,7 @@ export const RETRY_DELAYS = [1000, 2000, 5000, 15000, 30000];
 
 // How many times in a row one operation is sent again after a conflict
 // that left the content as it was.
-export const MAX_REBASES = 2;
+const MAX_REBASES = 2;
 
 /**
  * Save-state text for a failure that retrying cannot fix: the reason from
@@ -185,7 +185,7 @@ export function headOf(envelope) {
  * @param {object|null} b
  * @returns {boolean} whether both are known and the same
  */
-export function sameHead(a, b) {
+function sameHead(a, b) {
   return (
     Boolean(a && b) &&
     a.snapshotId === b.snapshotId &&
@@ -218,7 +218,7 @@ export function sameHead(a, b) {
  * @returns {object|null} the envelope to continue from, or null when the
  *   server does not hold the operation
  */
-export function alreadyStored(op, envelope, confirmed, target = '') {
+function alreadyStored(op, envelope, confirmed, target = '') {
   const head = headOf(envelope);
 
   if (!envelope?.etag || !head) {

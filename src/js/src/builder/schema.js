@@ -461,7 +461,7 @@ const SPEC_TITLES = {
 // fields and its own name joined with dots. A key matches anywhere in the
 // spec. A bound that the served schema sets itself wins. Each bound is the
 // range that phenix and minimega act on.
-export const SPEC_BOUNDS = {
+const SPEC_BOUNDS = {
   // Vyatta and VyOS routers apply 68 to 16000. 0 is how phenix stores no
   // MTU, in experiments and the topologies generated from them.
   mtu: { minimum: 0, maximum: 16000 },
@@ -491,7 +491,7 @@ export const SPEC_BOUNDS = {
 // phenix reads there: a delay timer with Go's time.ParseDuration, and
 // routes and OSPF settings for the routers it configures. These are IPv4
 // only, as its interface addresses are.
-export const SPEC_FORMATS = {
+const SPEC_FORMATS = {
   'delay.timer': 'go-duration',
   'routes.destination': 'ipv4-network',
   'routes.next': 'ipv4',
@@ -539,7 +539,7 @@ function interfaceFieldOrder(properties) {
 // of field names, or a function that gets the properties of the object
 // or alternative and returns such a list, or undefined to keep the
 // schema's order (see fieldOrder).
-export const SPEC_FIELD_ORDER = {
+const SPEC_FIELD_ORDER = {
   drives: ['image', 'inject_partition', 'cache_mode', 'interface'],
   'network.interfaces': interfaceFieldOrder,
 };
@@ -829,7 +829,7 @@ export const ICON_SIZE_TITLES = {
 // The word the Icon size of a device, a switch or a group uses for no size
 // of its own: the node then draws the diagram's (see fieldDefault in
 // adapters/forms.js, which names it).
-export const ICON_SIZE_UNSET = 'Diagram default';
+const ICON_SIZE_UNSET = 'Diagram default';
 
 // What the Icon size of a device, a switch or a group says of itself, after
 // what it sizes ("Size of the group's icon").

@@ -48,7 +48,7 @@ const LOCK_PREFIX = 'phenix-builder-tab:';
 // How long a page waits for the lock of the id sessionStorage kept. The
 // previous page of a reloaded page releases it at once. The tab that a
 // duplicated tab copied it from never releases it.
-export const CLAIM_WAIT_MS = 1500;
+const CLAIM_WAIT_MS = 1500;
 
 // How long, without Web Locks, a tab waits for the others to answer before
 // it takes a queue no tab answered for as a closed tab's.

@@ -684,7 +684,7 @@ const MERGE_NO_THEIRS =
 
 // What the save state says, and the live region once, while a conflict's
 // merge runs (see mergeConflict).
-export const MERGING_TEXT = 'Merging your changes with the server version…';
+const MERGING_TEXT = 'Merging your changes with the server version…';
 
 // How long a merge waits for the server to send the version the unsaved
 // changes started from (see mergeBase). The conflict panel stays hidden

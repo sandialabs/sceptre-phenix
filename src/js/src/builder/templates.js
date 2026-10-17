@@ -443,7 +443,7 @@ export function templateCopyDigest(template) {
  * @param {object} template
  * @returns {boolean}
  */
-export function isLinkable(template) {
+function isLinkable(template) {
   return (
     TEMPLATE_SOURCE_KINDS.includes(template?.source) &&
     typeof template.id === 'string' &&
@@ -829,7 +829,7 @@ export function preloadedGroupLabel(name = '') {
  * @param {object} collection as the library lists it
  * @returns {string}
  */
-export function collectionGroupLabel(collection) {
+function collectionGroupLabel(collection) {
   return collection?.source === 'preloaded'
     ? preloadedGroupLabel(collection.name)
     : collection?.name || '';
