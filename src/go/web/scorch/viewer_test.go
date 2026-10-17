@@ -134,7 +134,7 @@ func TestSlowReadOnlyTerminalDoesNotStallThePTY(t *testing.T) {
 	polltest.Within(t, "the terminal's client getting all its output", func() {
 		for i := range chunks {
 			if _, err := w.Write(chunk); err != nil {
-				t.Error(err)
+				t.Errorf("writing chunk %d to the PTY: %v", i, err)
 
 				return
 			}
@@ -150,7 +150,7 @@ func TestSlowReadOnlyTerminalDoesNotStallThePTY(t *testing.T) {
 	mu.Unlock()
 
 	if kept {
-		t.Error("the stalled read-only viewer is still attached")
+		t.Errorf("readTerm left the stalled read-only viewer %v in roTerms[%d], want it dropped", ro.id, term.Pid)
 	}
 
 	_ = w.Close()
@@ -206,7 +206,7 @@ func TestTerminalExitDoesNotWriteUnderLock(t *testing.T) {
 		defer mu.Unlock()
 
 		if _, ok := roTerms[term.Pid]; ok {
-			t.Error("the exited terminal's viewers are still listed")
+			t.Errorf("waitReadOnly after the terminal exited left roTerms[%d] listed, want it removed", term.Pid)
 		}
 	})
 
@@ -228,13 +228,13 @@ func TestViewerStopsOnWriteError(t *testing.T) {
 	polltest.Within(t, "serving", v.serve)
 
 	if conn.writes != 1 || !v.isGone() {
-		t.Errorf("writes = %d, gone = %v; want 1 write, gone", conn.writes, v.isGone())
+		t.Errorf("viewer.serve() on a failing conn: writes = %d, gone = %v; want 1, true", conn.writes, v.isGone())
 	}
 
 	select {
 	case <-conn.closed:
 	default:
-		t.Error("connection left open")
+		t.Error("viewer.serve() on a failing conn left it open, want it closed")
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 
@@ -127,31 +128,31 @@ func TestPortForwardAttachIsAudited(t *testing.T) {
 
 	ws, err := websocket.Dial("ws"+strings.TrimPrefix(api, "http")+path, "", api)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("websocket.Dial(%s) as bob = %v, want nil", path, err)
 	}
 
 	defer ws.Close()
 
 	if _, err := ws.Write([]byte("ping")); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing ping to %s: %v", path, err)
 	}
 
 	buf := make([]byte, 4)
 	if _, err := io.ReadFull(ws, buf); err != nil || string(buf) != "ping" {
-		t.Fatalf("echo: %q, %v", buf, err)
+		t.Errorf("reading the echo from %s = %q, %v; want ping, nil", path, buf, err)
 	}
 
 	denied := rbac.Role{Spec: &v1.RoleSpec{Name: "None", Policies: nil}}
 
 	resp, err := http.Get(forwardAPI(t, "carol", denied) + path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GET %s as carol: %v", path, err)
 	}
 
 	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("without permission: got %d, want 403", resp.StatusCode)
+		t.Errorf("GET %s as carol without permission = %d, want 403", path, resp.StatusCode)
 	}
 
 	want := map[string]map[string]any{
@@ -162,25 +163,27 @@ func TestPortForwardAttachIsAudited(t *testing.T) {
 		"carol": {"event.outcome": "failure", "event.reason": "forbidden"},
 	}
 
+	// keep the fields want names from each user's first port-forward-attach event
+	got := make(map[string]map[string]any, len(want))
+
 	for _, e := range events() {
 		user, _ := e["user.name"].(string)
 
 		fields, ok := want[user]
-		if !ok || e["event.action"] != "port-forward-attach" {
+		if _, seen := got[user]; seen || !ok || e["event.action"] != "port-forward-attach" {
 			continue
 		}
 
-		for k, v := range fields {
-			if e[k] != v {
-				t.Errorf("%s's event: %s = %v, want %v", user, k, e[k], v)
+		got[user] = make(map[string]any, len(fields))
+		for k := range fields {
+			if v, ok := e[k]; ok {
+				got[user][k] = v
 			}
 		}
-
-		delete(want, user)
 	}
 
-	for user := range want {
-		t.Errorf("no port-forward-attach event for %s among %v", user, events())
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("port-forward-attach audit events for %s mismatch (-want +got):\n%s", path, diff)
 	}
 }
 
@@ -208,7 +211,7 @@ func TestPortForwardAttachMatchesHostAndPort(t *testing.T) {
 		if err == nil {
 			_ = ws.Close()
 
-			t.Errorf("%s attached to the forward to 10.0.0.10 port 2222", path)
+			t.Errorf("websocket.Dial(%s) = nil error, want a refusal: the only forward is to 10.0.0.10 port 2222", path)
 		}
 	}
 }

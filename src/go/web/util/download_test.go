@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // downloadFile writes contents to a new file in a temporary directory and
@@ -40,14 +42,15 @@ func serveDownload(t *testing.T, method string, d Download, header ...string) (*
 
 	served, err := ServeDownload(rec, req, d)
 	if err != nil {
-		t.Fatalf("ServeDownload: %v", err)
+		t.Fatalf("ServeDownload(%s %q) = %v, want nil", method, d.Path, err)
 	}
 
 	resp := rec.Result()
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	if served.Status != resp.StatusCode {
-		t.Errorf("Served.Status = %d, response status %d", served.Status, resp.StatusCode)
+		t.Errorf("ServeDownload(%s %q) Served.Status = %d, want the response status %d",
+			method, d.Path, served.Status, resp.StatusCode)
 	}
 
 	return resp, served
@@ -130,15 +133,15 @@ func TestServeDownload(t *testing.T) {
 
 			resp, served := serveDownload(t, tc.method, d, tc.header...)
 			if resp.StatusCode != tc.wantStatus {
-				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.wantStatus)
+				t.Fatalf("ServeDownload(%s, header %q) status = %d, want %d", tc.method, tc.header, resp.StatusCode, tc.wantStatus)
 			}
 
 			if served.Started != tc.wantStarted {
-				t.Errorf("Started = %v, want %v", served.Started, tc.wantStarted)
+				t.Errorf("ServeDownload(%s, header %q) Started = %v, want %v", tc.method, tc.header, served.Started, tc.wantStarted)
 			}
 
 			if got := resp.Header.Get("Content-Range"); got != tc.wantRange {
-				t.Errorf("Content-Range = %q, want %q", got, tc.wantRange)
+				t.Errorf("ServeDownload(%s, header %q) Content-Range = %q, want %q", tc.method, tc.header, got, tc.wantRange)
 			}
 
 			if tc.wantStatus == http.StatusRequestedRangeNotSatisfiable {
@@ -146,11 +149,11 @@ func TestServeDownload(t *testing.T) {
 			}
 
 			if got := resp.Header.Get("ETag"); got != etag {
-				t.Errorf("ETag = %q, want %q", got, etag)
+				t.Errorf("ServeDownload(%s, header %q) ETag = %q, want %q", tc.method, tc.header, got, etag)
 			}
 
 			if got := body(t, resp); got != tc.wantBody {
-				t.Errorf("body = %q, want %q", got, tc.wantBody)
+				t.Errorf("ServeDownload(%s, header %q) body = %q, want %q", tc.method, tc.header, got, tc.wantBody)
 			}
 		})
 	}
@@ -183,7 +186,7 @@ func TestStartedMultipart(t *testing.T) {
 			req.Header.Set("Range", tc.ranges)
 
 			if got := started(req, http.StatusPartialContent, multipart, 100); got != tc.wantStarted {
-				t.Errorf("started = %v, want %v", got, tc.wantStarted)
+				t.Errorf("started(Range %q, 206 multipart, 100) = %v, want %v", tc.ranges, got, tc.wantStarted)
 			}
 		})
 	}
@@ -206,14 +209,17 @@ func TestServeDownloadHeaders(t *testing.T) {
 		"Last-Modified":          served.Info.ModTime().UTC().Format(http.TimeFormat),
 	}
 
-	for k, v := range want {
-		if got := resp.Header.Get(k); got != v {
-			t.Errorf("%s = %q, want %q", k, got, v)
-		}
+	got := make(map[string]string, len(want))
+	for k := range want {
+		got[k] = resp.Header.Get(k)
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ServeDownload(%q) headers mismatch (-want +got):\n%s", path, diff)
 	}
 
 	if etag := resp.Header.Get("ETag"); !strings.HasPrefix(etag, `"`) || etag != FileETag(served.Info) {
-		t.Errorf("ETag = %q, want the strong %q", etag, FileETag(served.Info))
+		t.Errorf("ServeDownload(%q) ETag = %q, want the strong %q", path, etag, FileETag(served.Info))
 	}
 }
 
@@ -244,11 +250,11 @@ func TestServeDownloadContentType(t *testing.T) {
 
 			resp, _ := serveDownload(t, http.MethodGet, d)
 			if got := resp.Header.Get("Content-Type"); got != tc.want {
-				t.Errorf("Content-Type = %q, want %q", got, tc.want)
+				t.Errorf("ServeDownload(%+v) Content-Type = %q, want %q", tc.d, got, tc.want)
 			}
 
 			if got := resp.Header.Get("Content-Disposition"); (got != "") != (d.Name != "") {
-				t.Errorf("Content-Disposition = %q for name %q", got, d.Name)
+				t.Errorf("ServeDownload(%+v) Content-Disposition = %q, want one only when Name is set", tc.d, got)
 			}
 		})
 	}
@@ -276,18 +282,18 @@ func TestServeDownloadRefuses(t *testing.T) {
 
 			_, err := ServeDownload(rec, httptest.NewRequest(http.MethodGet, "/download", nil), tc.d)
 			if !errors.Is(err, tc.want) {
-				t.Fatalf("ServeDownload = %v, want %v", err, tc.want)
+				t.Errorf("ServeDownload(%+v) = %v, want %v", tc.d, err, tc.want)
 			}
 
 			if rec.Body.Len() != 0 || len(rec.Header()) != 0 {
-				t.Errorf("sent a response before refusing: %v %q", rec.Header(), rec.Body.String())
+				t.Errorf("ServeDownload(%+v) wrote header %v and body %q, want nothing", tc.d, rec.Header(), rec.Body.String())
 			}
 		})
 	}
 
-	if _, err := ServeDownload(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/download", nil),
-		Download{Path: path, MaxSize: 10}); err != nil {
-		t.Errorf("a file of exactly MaxSize: %v", err)
+	exact := Download{Path: path, MaxSize: 10}
+	if _, err := ServeDownload(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/download", nil), exact); err != nil {
+		t.Errorf("ServeDownload(%+v) of a 10 byte file = %v, want nil", exact, err)
 	}
 }
 
@@ -311,7 +317,7 @@ func TestFileETagChangesWithTheFile(t *testing.T) {
 	etag := FileETag(before)
 
 	if again := FileETag(stat()); again != etag {
-		t.Fatalf("ETag of an unchanged file changed: %s, then %s", etag, again)
+		t.Errorf("FileETag(%q) of an unchanged file = %s, want %s", path, again, etag)
 	}
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
@@ -329,7 +335,7 @@ func TestFileETagChangesWithTheFile(t *testing.T) {
 
 	appended := FileETag(stat())
 	if appended == etag {
-		t.Errorf("ETag unchanged after an append: %s", etag)
+		t.Errorf("FileETag(%q) after an append = %s, want a new ETag", path, appended)
 	}
 
 	// replace the file with one of the same size and modification time: only
@@ -348,7 +354,7 @@ func TestFileETagChangesWithTheFile(t *testing.T) {
 	}
 
 	if fileInode(stat()) != 0 && FileETag(stat()) == appended {
-		t.Errorf("ETag unchanged after the file was replaced: %s", appended)
+		t.Errorf("FileETag(%q) after the file was replaced = %s, want a new ETag", path, appended)
 	}
 }
 
@@ -383,17 +389,17 @@ func TestServeDownloadStreams(t *testing.T) {
 	runtime.ReadMemStats(&after)
 
 	if err != nil || served.Status != http.StatusOK {
-		t.Fatalf("ServeDownload = %d, %v", served.Status, err)
+		t.Fatalf("ServeDownload(%q) = %d, %v; want 200, nil", path, served.Status, err)
 	}
 
 	// io.Copy's buffer is 32 KiB
 	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > size/16 {
-		t.Errorf("serving a %d byte file allocated %d bytes", size, allocated)
+		t.Errorf("ServeDownload(%q) of %d bytes allocated %d bytes, want at most %d", path, size, allocated, size/16)
 	}
 
 	resp, _ := serveDownload(t, http.MethodHead, d)
 	if got := resp.Header.Get("Content-Length"); got != strconv.Itoa(size) {
-		t.Errorf("Content-Length = %s, want %d", got, size)
+		t.Errorf("ServeDownload(HEAD %q) Content-Length = %s, want %d", path, got, size)
 	}
 }
 

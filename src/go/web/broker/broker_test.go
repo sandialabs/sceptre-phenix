@@ -25,11 +25,11 @@ func TestErrorResultCarriesMessage(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var result map[string]string
 			if err := json.Unmarshal(errorResult(tc.err), &result); err != nil {
-				t.Fatal(err)
+				t.Fatalf("decoding errorResult(%q): %v", tc.err, err)
 			}
 
 			if got := result["error"]; !strings.HasPrefix(got, tc.want) {
-				t.Fatalf("error = %q, want prefix %q", got, tc.want)
+				t.Errorf("errorResult(%q) error = %q, want prefix %q", tc.err, got, tc.want)
 			}
 		})
 	}

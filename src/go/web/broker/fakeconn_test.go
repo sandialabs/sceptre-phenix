@@ -80,7 +80,7 @@ func (c *fakeConn) nextWriter() (io.WriteCloser, error) {
 	}
 
 	if c.writers.Add(1) > 1 {
-		c.t.Error("two data writers at once")
+		c.t.Error("NextWriter called while another data writer is open, want one at a time")
 	}
 
 	return &fakeWriter{conn: c, buf: bytes.Buffer{}}, nil
@@ -159,7 +159,7 @@ func (c *blockingConn) NextWriter(int) (io.WriteCloser, error) {
 	}
 
 	if c.writers.Add(1) > 1 {
-		c.t.Error("two data writers at once")
+		c.t.Error("NextWriter called while another data writer is open, want one at a time")
 	}
 
 	return &blockingWriter{conn: c}, nil

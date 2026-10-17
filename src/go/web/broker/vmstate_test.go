@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	bt "phenix/web/broker/brokertypes"
 )
 
@@ -90,11 +92,16 @@ func TestClientTracksRunningVMs(t *testing.T) {
 				vm2 = tc.after
 			}
 
-			want := []bool{tc.after, vm2, tc.before}
-			for i, v := range c.vms {
-				if v.running != want[i] {
-					t.Errorf("%s/%s running = %v, want %v", v.exp, v.name, v.running, want[i])
-				}
+			want := map[string]bool{"exp/vm1": tc.after, "exp/vm2": vm2, "other/vm1": tc.before}
+
+			got := make(map[string]bool, len(c.vms))
+			for _, v := range c.vms {
+				got[v.exp+"/"+v.name] = v.running
+			}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("trackVMState(%s %s %s) running mismatch (-want +got):\n%s",
+					tc.resource.Type, tc.resource.Name, tc.resource.Action, diff)
 			}
 		})
 	}

@@ -1,9 +1,11 @@
 package util
 
 import (
-	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"phenix/api/vm"
 	"phenix/store"
@@ -166,7 +168,7 @@ func TestExperimentToProtobuf(t *testing.T) {
 			}
 
 			if n := int(pb.GetVlanCount()); n != len(vlans) {
-				t.Errorf("vlan_count = %d, want %d", n, len(vlans))
+				t.Errorf("converting experiment started at %q: vlan_count = %d, want %d", tc.startTime, n, len(vlans))
 			}
 
 			got := converted{
@@ -185,8 +187,8 @@ func TestExperimentToProtobuf(t *testing.T) {
 				Apps:       pb.GetApps(),
 			}
 
-			if !reflect.DeepEqual(got, want) {
-				t.Errorf("converted\n%+v\nwant\n%+v", got, want)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("converting experiment started at %q mismatch (-want +got):\n%s", tc.startTime, diff)
 			}
 		})
 	}
@@ -197,28 +199,34 @@ func TestVMToProtobuf(t *testing.T) {
 	topo := exp.Spec.Topology()
 
 	tests := []struct {
-		name string
-		vm   string
-		topo ifaces.TopologySpec
-		want vmFields
+		name     string
+		vm       string
+		topo     ifaces.TopologySpec
+		delay    string
+		external bool
 	}{
-		{"takes its node's delay", "timer", topo, vmFields{"timer", "exp", "timer:5m", false}},
-		{"takes its node's external flag", "external", topo, vmFields{"external", "exp", "", true}},
-		{"takes the first node with its name", "plain", topo, vmFields{"plain", "exp", "", false}},
-		{"has no node fields without a node", "missing", topo, vmFields{"missing", "exp", "", false}},
-		{"has no node fields without a topology", "timer", nil, vmFields{"timer", "exp", "", false}},
+		{"takes its node's delay", "timer", topo, "timer:5m", false},
+		{"takes its node's external flag", "external", topo, "", true},
+		{"takes the first node with its name", "plain", topo, "", false},
+		{"has no node fields without a node", "missing", topo, "", false},
+		{"has no node fields without a topology", "timer", nil, "", false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pb := VMToProtobuf("exp", mm.VM{Name: tc.vm, Host: "host", DoNotBoot: true}, tc.topo)
-
-			if got := vmFieldsOf([]*proto.VM{pb})[0]; got != tc.want {
-				t.Errorf("VMToProtobuf() = %+v, want %+v", got, tc.want)
+			want := &proto.VM{
+				Name:         tc.vm,
+				Host:         "host",
+				DoNotBoot:    true,
+				Experiment:   "exp",
+				DelayedStart: tc.delay,
+				External:     tc.external,
 			}
 
-			if pb.GetHost() != "host" || !pb.GetDoNotBoot() {
-				t.Errorf("VMToProtobuf() host = %q, do not boot = %t; want the VM's", pb.GetHost(), pb.GetDoNotBoot())
+			got := VMToProtobuf("exp", mm.VM{Name: tc.vm, Host: "host", DoNotBoot: true}, tc.topo)
+
+			if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("VMToProtobuf(exp, %q) mismatch (-want +got):\n%s", tc.vm, diff)
 			}
 		})
 	}

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/gorilla/mux"
 
 	"phenix/api/scorch/scorchexe"
@@ -116,20 +118,33 @@ func TestViewingOutputNeedsExperimentGet(t *testing.T) {
 	for name, req := range requests {
 		for who, role := range denied {
 			if rec := serveScorch(req.method, req.path, role); rec.Code != http.StatusForbidden {
-				t.Errorf("%s as %s: status %d, want 403", name, who, rec.Code)
+				t.Errorf("%s %s (%s) as %s = %d, want 403", req.method, req.path, name, who, rec.Code)
 			}
 		}
 	}
 
 	viewer := roleFor("experiments", "get")
 
-	for path, want := range map[string]string{
-		"/experiments/exp/scorch/terminals":               `{"terminals":null}`,
-		"/experiments/exp/scorch/components/0/0/start/cc": `{"output":""}`,
+	for path, want := range map[string]map[string]any{
+		"/experiments/exp/scorch/terminals":               {"terminals": nil},
+		"/experiments/exp/scorch/components/0/0/start/cc": {"output": ""},
 	} {
 		rec := serveScorch(http.MethodGet, path, viewer)
-		if rec.Code != http.StatusOK || rec.Body.String() != want {
-			t.Errorf("%s as a viewer: %d %s, want 200 %s", path, rec.Code, rec.Body, want)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s as a viewer = %d %s, want 200", path, rec.Code, rec.Body)
+
+			continue
+		}
+
+		var got map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Errorf("GET %s as a viewer: decoding %q: %v", path, rec.Body, err)
+
+			continue
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("GET %s as a viewer mismatch (-want +got):\n%s", path, diff)
 		}
 	}
 }
@@ -155,19 +170,20 @@ func TestClearAndCleanUpRuns(t *testing.T) {
 	// a component's status shows in its run's pipeline until the run is cleared
 	update := ComponentUpdate{Exp: "exp", Run: 0, Stage: stageStart, CmpName: "a", Status: statusSuccess}
 	if err := UpdatePipeline(update); err != nil {
-		t.Fatal(err)
+		t.Fatalf("UpdatePipeline(%+v) = %v, want nil", update, err)
 	}
 
 	if got := componentStatus(t, 0, "a"); got != statusSuccess {
-		t.Fatalf("status before clearing = %q, want %q", got, statusSuccess)
+		t.Fatalf("after UpdatePipeline(%+v), component a status = %q, want %q", update, got, statusSuccess)
 	}
 
-	if rec := serveScorch(http.MethodPost, "/experiments/exp/scorch/pipelines/0/clear", operator); rec.Code != http.StatusNoContent {
-		t.Fatalf("clearing run 0: %d %s", rec.Code, rec.Body)
+	const clearPath = "/experiments/exp/scorch/pipelines/0/clear"
+	if rec := serveScorch(http.MethodPost, clearPath, operator); rec.Code != http.StatusNoContent {
+		t.Fatalf("POST %s = %d %s, want 204", clearPath, rec.Code, rec.Body)
 	}
 
 	if got := componentStatus(t, 0, "a"); got != statusUnknown {
-		t.Errorf("status after clearing = %q, want %q", got, statusUnknown)
+		t.Errorf("after POST %s, component a status = %q, want %q", clearPath, got, statusUnknown)
 	}
 
 	tests := map[string]struct {
@@ -201,9 +217,11 @@ func TestClearAndCleanUpRuns(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			rec := serveScorch(http.MethodPost, "/experiments/exp/scorch/"+tc.path, tc.role)
+			path := "/experiments/exp/scorch/" + tc.path
+
+			rec := serveScorch(http.MethodPost, path, tc.role)
 			if rec.Code != tc.status || !strings.Contains(rec.Body.String(), tc.message) {
-				t.Errorf("%d %s, want %d with %q", rec.Code, rec.Body, tc.status, tc.message)
+				t.Errorf("POST %s = %d %s, want %d with %q", path, rec.Code, rec.Body, tc.status, tc.message)
 			}
 		})
 	}
@@ -219,7 +237,7 @@ func TestClearAndCleanUpWithoutScorch(t *testing.T) {
 	c.Spec = map[string]any{"experimentName": "plain"}
 
 	if err := store.Create(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("store.Create(experiment/plain) = %v", err)
 	}
 
 	operator := roleFor("experiments", "get", "experiments/trigger", "create")
@@ -231,7 +249,7 @@ func TestClearAndCleanUpWithoutScorch(t *testing.T) {
 		"/experiments/plain/scorch/pipelines/0/cleanup": http.StatusBadRequest,
 	} {
 		if rec := serveScorch(http.MethodPost, path, operator); rec.Code != want {
-			t.Errorf("POST %s: %d %s, want %d", path, rec.Code, rec.Body, want)
+			t.Errorf("POST %s = %d %s, want %d", path, rec.Code, rec.Body, want)
 		}
 	}
 }
@@ -243,7 +261,7 @@ func componentStatus(t *testing.T, run int, name string) string {
 
 	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/pipelines", roleFor("experiments", "get"))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("listing pipelines: %d %s", rec.Code, rec.Body)
+		t.Fatalf("GET /experiments/exp/scorch/pipelines = %d %s, want 200", rec.Code, rec.Body)
 	}
 
 	var body struct {
@@ -256,7 +274,11 @@ func componentStatus(t *testing.T, run int, name string) string {
 	}
 
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding GET /experiments/exp/scorch/pipelines: %v", err)
+	}
+
+	if run >= len(body.Pipelines) {
+		t.Fatalf("GET /experiments/exp/scorch/pipelines lists %d runs, want run %d", len(body.Pipelines), run)
 	}
 
 	for _, n := range body.Pipelines[run].Pipeline {
@@ -265,7 +287,7 @@ func componentStatus(t *testing.T, run int, name string) string {
 		}
 	}
 
-	t.Fatalf("run %d has no component %s", run, name)
+	t.Fatalf("GET /experiments/exp/scorch/pipelines: run %d has no component %s", run, name)
 
 	return ""
 }
@@ -302,12 +324,12 @@ func connectTerminal(t *testing.T, path string, role *rbac.Role) WebTerm {
 
 	rec := serveScorch(http.MethodGet, path, role)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("connecting: status %d %s", rec.Code, rec.Body)
+		t.Fatalf("GET %s = %d %s, want 200", path, rec.Code, rec.Body)
 	}
 
 	var term WebTerm
 	if err := json.Unmarshal(rec.Body.Bytes(), &term); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding GET %s: %v", path, err)
 	}
 
 	return term
@@ -344,22 +366,29 @@ func TestConnectTerminal(t *testing.T) {
 			fakeTerminal(t, tc.pid)
 
 			if term := connectTerminal(t, tc.path, viewer); !term.RO || term.Exit != "" {
-				t.Fatalf("viewer got read-only %v and exit %q, want a read-only terminal with no exit", term.RO, term.Exit)
+				t.Fatalf("GET %s as a viewer = read-only %v, exit %q; want read-only, no exit", tc.path, term.RO, term.Exit)
 			}
 
-			if _, held := writerOf(tc.pid); held {
-				t.Fatal("a viewer took the terminal's read/write side")
+			if id, held := writerOf(tc.pid); held {
+				t.Fatalf("after GET %s as a viewer, writerOf(%d) = %q, true; want none", tc.path, tc.pid, id)
 			}
 
 			term := connectTerminal(t, tc.path, operator)
-			if term.Exp != "exp" || term.Stage != "start" || term.Name != "cc" || term.RO || term.Exit == "" ||
-				!strings.Contains(term.Loc, fmt.Sprintf("/scorch/terminals/%d/ws/", tc.pid)) {
-				t.Fatalf("operator got %+v, want cc's read/write side", term)
+
+			want := WebTerm{Exp: "exp", Stage: "start", Name: "cc"}
+			opts := cmp.Options{cmpopts.IgnoreFields(WebTerm{}, "Loc", "Exit"), cmpopts.IgnoreUnexported(WebTerm{})}
+
+			if diff := cmp.Diff(want, term, opts); diff != "" {
+				t.Fatalf("GET %s as an operator mismatch (-want +got):\n%s", tc.path, diff)
+			}
+
+			if loc := fmt.Sprintf("/scorch/terminals/%d/ws/", tc.pid); term.Exit == "" || !strings.Contains(term.Loc, loc) {
+				t.Fatalf("GET %s as an operator = loc %q, exit %q; want a loc under %q and an exit", tc.path, term.Loc, term.Exit, loc)
 			}
 
 			for _, role := range []*rbac.Role{operator, viewer} {
 				if other := connectTerminal(t, tc.path, role); !other.RO {
-					t.Error("a client after the writer may write")
+					t.Errorf("GET %s after the writer connected = read-only false, want true", tc.path)
 				}
 			}
 
@@ -367,12 +396,12 @@ func TestConnectTerminal(t *testing.T) {
 
 			exit := fmt.Sprintf("/experiments/exp/scorch/terminals/%d/exit/%s", tc.pid, id)
 			if rec := serveScorch(http.MethodPost, exit, viewer); rec.Code != http.StatusForbidden {
-				t.Errorf("viewer exiting with the read/write ID: status %d, want 403", rec.Code)
+				t.Errorf("POST %s as a viewer with the writer's ID = %d, want 403", exit, rec.Code)
 			}
 
 			stream := fmt.Sprintf("/experiments/exp/scorch/terminals/%d/ws/%s", tc.pid, id)
 			if rec := serveScorch(http.MethodGet, stream, viewer); rec.Code != http.StatusForbidden {
-				t.Errorf("viewer streaming with the read/write ID: status %d, want 403", rec.Code)
+				t.Errorf("GET %s as a viewer with the writer's ID = %d, want 403", stream, rec.Code)
 			}
 		})
 	}
@@ -389,7 +418,7 @@ func TestConnectTerminal(t *testing.T) {
 		role.Spec.Policies[0].ResourceNames = []string{"*"}
 
 		if rec := serveScorch(http.MethodGet, path, role); rec.Code != want {
-			t.Errorf("%s: status %d, want %d", path, rec.Code, want)
+			t.Errorf("GET %s = %d, want %d", path, rec.Code, want)
 		}
 	}
 }
@@ -420,7 +449,7 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 
 	writer := connectTerminal(t, path, operator)
 	if writer.RO {
-		t.Fatal("the first operator may not write")
+		t.Fatalf("GET %s as the first operator = read-only true, want false", path)
 	}
 
 	writerID := clientID(writer)
@@ -435,7 +464,7 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 	for _, role := range []*rbac.Role{viewer, operator} {
 		other := connectTerminal(t, path, role)
 		if !other.RO {
-			t.Fatal("a second client may write")
+			t.Fatalf("GET %s after the writer connected = read-only false, want true", path)
 		}
 
 		pending = append(pending, clientID(other))
@@ -455,7 +484,7 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 	})
 
 	if owner, _ := writerOf(pid); owner != writerID {
-		t.Fatalf("writer %q, want the attached writer %q", owner, writerID)
+		t.Fatalf("writerOf(%d) = %q, want the attached writer %q", pid, owner, writerID)
 	}
 
 	// a writer that never attaches frees the terminal for the next client
@@ -464,7 +493,7 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 	mu.Unlock()
 
 	if unattached := connectTerminal(t, path, operator); unattached.RO {
-		t.Fatal("the terminal has a writer")
+		t.Fatalf("GET %s with no writer = read-only true, want false", path)
 	}
 
 	polltest.Until(t, "the unattached writer is freed", func() bool {
@@ -474,7 +503,7 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 	})
 
 	if next := connectTerminal(t, path, operator); next.RO {
-		t.Error("an unattached writer kept its rights")
+		t.Errorf("GET %s after the unattached writer timed out = read-only true, want false", path)
 	}
 }
 
@@ -494,45 +523,53 @@ func TestClaimTerminalClient(t *testing.T) {
 		{"reader that may write", false, true, http.StatusOK, true, true},
 		{"reader that may not write", false, false, http.StatusOK, true, true},
 	} {
-		pid, id, done := 5000+i, fmt.Sprintf("client-%d", i), make(chan struct{})
+		t.Run(tc.name, func(t *testing.T) {
+			pid, id, done := 5000+i, fmt.Sprintf("client-%d", i), make(chan struct{})
 
-		mu.Lock()
-		termClientIDs[id] = done
-		rwTerm[pid] = "other-client"
+			mu.Lock()
+			termClientIDs[id] = done
+			rwTerm[pid] = "other-client"
 
-		if tc.writer {
-			rwTerm[pid] = id
-		}
-		mu.Unlock()
+			if tc.writer {
+				rwTerm[pid] = id
+			}
+			mu.Unlock()
 
-		readOnly, status := claimTerminalClient(pid, id, tc.writable)
-		if status != tc.wantStatus || (status == http.StatusOK && readOnly != tc.wantReadOnly) {
-			t.Errorf("%s: read-only %t, status %d; want %t, %d", tc.name, readOnly, status, tc.wantReadOnly, tc.wantStatus)
-		}
+			t.Cleanup(func() {
+				mu.Lock()
+				delete(termClientIDs, id)
+				delete(rwTerm, pid)
+				mu.Unlock()
+			})
 
-		mu.Lock()
-		_, pending := termClientIDs[id]
-		mu.Unlock()
+			readOnly, status := claimTerminalClient(pid, id, tc.writable)
+			if status != tc.wantStatus || (status == http.StatusOK && readOnly != tc.wantReadOnly) {
+				t.Errorf("claimTerminalClient(%d, %q, %t) = %t, %d; want %t, %d",
+					pid, id, tc.writable, readOnly, status, tc.wantReadOnly, tc.wantStatus)
+			}
 
-		if pending == tc.claimed {
-			t.Errorf("%s: ID still pending %t, want claimed %t", tc.name, pending, tc.claimed)
-		}
+			mu.Lock()
+			_, pending := termClientIDs[id]
+			mu.Unlock()
 
-		if tc.claimed {
+			if pending == tc.claimed {
+				t.Errorf("after claimTerminalClient(%d, %q, %t), ID pending = %t, want %t",
+					pid, id, tc.writable, pending, !tc.claimed)
+			}
+
+			if !tc.claimed {
+				return
+			}
+
 			select {
 			case <-done:
 			default:
-				t.Errorf("%s: the claim did not close done", tc.name)
+				t.Errorf("claimTerminalClient(%d, %q, %t) left the ID's done channel open", pid, id, tc.writable)
 			}
 
 			if _, status := claimTerminalClient(pid, id, tc.writable); status != http.StatusNotFound {
-				t.Errorf("%s: claiming the ID again: status %d, want 404", tc.name, status)
+				t.Errorf("claimTerminalClient(%d, %q, %t) a second time = status %d, want 404", pid, id, tc.writable, status)
 			}
-		}
-
-		mu.Lock()
-		delete(termClientIDs, id)
-		delete(rwTerm, pid)
-		mu.Unlock()
+		})
 	}
 }

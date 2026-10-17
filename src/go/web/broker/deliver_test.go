@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/api/job"
 	v1 "phenix/types/version/v1"
 	bt "phenix/web/broker/brokertypes"
@@ -77,17 +79,13 @@ func TestLogsGoOnlyToSubscribedClientsAllowedToReadThem(t *testing.T) {
 		"not subscribed": {notShowing, []string{"experiment"}},
 		"forbidden":      {forbidden, []string{"experiment"}},
 	} {
-		got := received(tc.c)
-		if len(got) != len(tc.want) {
-			t.Errorf("%s: got %d messages, want %v", name, len(got), tc.want)
-
-			continue
+		var types []string
+		for _, out := range received(tc.c) {
+			types = append(types, out.pub.Resource.Type)
 		}
 
-		for i, out := range got {
-			if out.pub.Resource.Type != tc.want[i] {
-				t.Errorf("%s: message %d is %s, want %s", name, i, out.pub.Resource.Type, tc.want[i])
-			}
+		if diff := cmp.Diff(tc.want, types); diff != "" {
+			t.Errorf("deliver to the %s client: resource types mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 }
@@ -98,26 +96,30 @@ func TestBroadcastIsEncodedOnce(t *testing.T) {
 
 	out := <-broadcast
 
-	want, err := json.Marshal(bt.Publish{
-		Resource: bt.NewResource("experiment/vm", "exp/vm1", "update"), Result: result, Seq: out.pub.Seq,
-	})
-	if err != nil {
-		t.Fatal(err)
+	want := map[string]any{
+		"resource": map[string]any{"type": "experiment/vm", "name": "exp/vm1", "action": "update"},
+		"result":   map[string]any{"name": "vm1", "running": true},
+		"seq":      float64(out.pub.Seq),
 	}
 
-	if string(out.data) != string(want) {
-		t.Errorf("data = %s, want %s", out.data, want)
+	var got map[string]any
+	if err := json.Unmarshal(out.data, &got); err != nil {
+		t.Fatalf("decoding Broadcast(experiment/vm exp/vm1 update) data %s: %v", out.data, err)
 	}
 
-	b, err := encodeMessage(out)
-	if err != nil || string(b) != string(want) {
-		t.Errorf("encodeMessage() = %s, %v; want the broadcast's data", b, err)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Broadcast(experiment/vm exp/vm1 update) data mismatch (-want +got):\n%s", diff)
+	}
+
+	// the bytes are the contract here: encodeMessage reuses the broadcast's encoding
+	if b, err := encodeMessage(out); err != nil || string(b) != string(out.data) {
+		t.Errorf("encodeMessage(broadcast) = %s, %v; want the broadcast's data %s", b, err, out.data)
 	}
 
 	Broadcast(nil, bt.NewResource("experiment/vm", "exp/vm1", "update"), result)
 
 	if next := <-broadcast; out.pub.Seq == 0 || next.pub.Seq <= out.pub.Seq {
-		t.Errorf("broadcast seqs %d then %d, want increasing", out.pub.Seq, next.pub.Seq)
+		t.Errorf("Broadcast seqs = %d then %d, want nonzero and increasing", out.pub.Seq, next.pub.Seq)
 	}
 }
 
@@ -153,9 +155,14 @@ func TestJobsGoToTheirOwnerAndJobAdmins(t *testing.T) {
 		"admin of every experiment": {allExps, true},
 		"admin of the experiment":   {expAdmin, true}, "admin of another experiment": {other2, false},
 	} {
+		wantCount := 0
+		if tc.want {
+			wantCount = 1
+		}
+
 		got := received(tc.c)
-		if (len(got) == 1) != tc.want {
-			t.Errorf("%s: got %d messages, want it: %t", name, len(got), tc.want)
+		if len(got) != wantCount {
+			t.Errorf("PublishJob(j1 of exp1) to the %s client: %d messages, want %d", name, len(got), wantCount)
 
 			continue
 		}
@@ -164,17 +171,20 @@ func TestJobsGoToTheirOwnerAndJobAdmins(t *testing.T) {
 			continue
 		}
 
-		var sent job.Job
-		if err := json.Unmarshal(got[0].pub.Result, &sent); err != nil {
-			t.Fatal(err)
+		if r := got[0].pub.Resource; r.Type != "job" || r.Action != "update" {
+			t.Errorf("PublishJob(j1 of exp1) to the %s client: resource %s %s, want job update", name, r.Type, r.Action)
 		}
 
-		if got[0].pub.Resource.Type != "job" || got[0].pub.Resource.Action != "update" {
-			t.Errorf("%s: resource %+v", name, got[0].pub.Resource)
+		var sent job.Job
+		if err := json.Unmarshal(got[0].pub.Result, &sent); err != nil {
+			t.Errorf("decoding PublishJob(j1 of exp1) to the %s client: %v", name, err)
+
+			continue
 		}
 
 		if len(sent.Items) != maxJobItems || sent.ItemsOmitted != 2 || sent.Items[0].Result != nil {
-			t.Errorf("%s: %d items, %d omitted, result %s", name, len(sent.Items), sent.ItemsOmitted, sent.Items[0].Result)
+			t.Errorf("PublishJob(j1 of exp1, %d items) to the %s client = %d items, %d omitted, first result %s; want %d, 2, none",
+				len(items), name, len(sent.Items), sent.ItemsOmitted, sent.Items[0].Result, maxJobItems)
 		}
 	}
 
@@ -191,9 +201,9 @@ func TestJobsGoToTheirOwnerAndJobAdmins(t *testing.T) {
 		"admin of an experiment": {expAdmin, 0},
 	} {
 		if got := received(tc.c); len(got) != tc.want {
-			t.Errorf("job of no experiment, %s: got %d messages, want %d", name, len(got), tc.want)
+			t.Errorf("PublishJob(j2 of no experiment) to the %s client: %d messages, want %d", name, len(got), tc.want)
 		} else if tc.want == 1 && got[0].pub.Resource.Action != "remove" {
-			t.Errorf("removal sent as %s", got[0].pub.Resource.Action)
+			t.Errorf("PublishJob(j2, removed) to the %s client: action %s, want remove", name, got[0].pub.Resource.Action)
 		}
 	}
 }

@@ -2,9 +2,10 @@ package util
 
 import (
 	"errors"
-	"slices"
 	"strconv"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	v1 "phenix/types/version/v1"
 	"phenix/util/mm"
@@ -83,8 +84,12 @@ func TestSelectVMs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			page, total := SelectVMs("exp", vms, nil, tc.query, listRole())
 
-			if got := vmNames(page); !slices.Equal(got, tc.want) || total != tc.total {
-				t.Fatalf("SelectVMs() = %v, %d; want %v, %d", got, total, tc.want, tc.total)
+			if diff := cmp.Diff(tc.want, vmNames(page)); diff != "" {
+				t.Errorf("SelectVMs(exp, %+v) mismatch (-want +got):\n%s", tc.query, diff)
+			}
+
+			if total != tc.total {
+				t.Errorf("SelectVMs(exp, %+v) total = %d, want %d", tc.query, total, tc.total)
 			}
 		})
 	}
@@ -128,8 +133,8 @@ func TestSortByDelay(t *testing.T) {
 			query := VMQuery{SortCol: "delayed", SortAsc: tc.asc}
 
 			page, _ := SelectVMs("exp", vms, topo, query, listRole())
-			if got := vmNames(page); !slices.Equal(got, tc.want) {
-				t.Fatalf("order = %v, want %v", got, tc.want)
+			if diff := cmp.Diff(tc.want, vmNames(page)); diff != "" {
+				t.Errorf("SelectVMs(exp, %+v) mismatch (-want +got):\n%s", query, diff)
 			}
 		})
 	}
