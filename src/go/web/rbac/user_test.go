@@ -22,19 +22,19 @@ func TestCreateUserExisting(t *testing.T) {
 	t.Cleanup(func() { passwordCost = original })
 
 	if _, err := CreateUser("dave", "first"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("CreateUser(dave, first) error = %v", err)
 	}
 
 	if _, err := CreateUser("dave", "second"); !errors.Is(err, store.ErrExist) {
-		t.Fatalf("second create: %v, want %v", err, store.ErrExist)
+		t.Errorf("CreateUser(dave, second) error = %v, want %v", err, store.ErrExist)
 	}
 
 	user, err := GetUser("dave")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetUser(dave) error = %v", err)
 	}
 
 	if err := user.ValidatePassword("first"); err != nil {
-		t.Errorf("stored password changed: %v", err)
+		t.Errorf("ValidatePassword(first) of the stored user error = %v, want the first password kept", err)
 	}
 }

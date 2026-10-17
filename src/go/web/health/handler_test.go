@@ -3,12 +3,15 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/version"
 )
@@ -85,23 +88,27 @@ func TestHandlerStatusCodes(t *testing.T) {
 	tests := map[Status]int{Pass: http.StatusOK, Warn: http.StatusOK, Fail: http.StatusServiceUnavailable}
 
 	for status, code := range tests {
-		w := serve(t, http.MethodGet, "/readyz", true, fixed("a", Pass), fixed("b", status))
+		t.Run(string(status), func(t *testing.T) {
+			t.Parallel()
 
-		if w.Code != code {
-			t.Errorf("%s: code %d, want %d", status, w.Code, code)
-		}
+			w := serve(t, http.MethodGet, "/readyz", true, fixed("a", Pass), fixed("b", status))
 
-		if got := w.Header().Get("Content-Type"); got != MediaType {
-			t.Errorf("%s: Content-Type %q, want %q", status, got, MediaType)
-		}
+			if w.Code != code {
+				t.Errorf("GET /readyz with a %s check = %d, want %d", status, w.Code, code)
+			}
 
-		if got := w.Header().Get("Cache-Control"); got != "no-store" {
-			t.Errorf("%s: Cache-Control %q, want no-store", status, got)
-		}
+			if got := w.Header().Get("Content-Type"); got != MediaType {
+				t.Errorf("GET /readyz with a %s check: Content-Type = %q, want %q", status, got, MediaType)
+			}
 
-		if body := decode(t, w); body["status"] != string(status) {
-			t.Errorf("%s: body status %v", status, body["status"])
-		}
+			if got := w.Header().Get("Cache-Control"); got != "no-store" {
+				t.Errorf("GET /readyz with a %s check: Cache-Control = %q, want no-store", status, got)
+			}
+
+			if got := decode(t, w)["status"]; got != string(status) {
+				t.Errorf("GET /readyz with a %s check: body status = %v, want %s", status, got, status)
+			}
+		})
 	}
 }
 
@@ -110,8 +117,12 @@ func TestHandlerHeadHasNoBody(t *testing.T) {
 
 	w := serve(t, http.MethodHead, "/healthz", true, fixed("a", Fail))
 
-	if w.Code != http.StatusServiceUnavailable || w.Body.Len() != 0 {
-		t.Errorf("HEAD = %d with %d bytes, want 503 with none", w.Code, w.Body.Len())
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("HEAD /healthz = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+
+	if w.Body.Len() != 0 {
+		t.Errorf("HEAD /healthz body = %q, want none", w.Body.String())
 	}
 }
 
@@ -121,38 +132,51 @@ func TestHandlerShowsOutputOnlyWhenAuthenticated(t *testing.T) {
 	body := decode(t, serve(t, http.MethodGet, "/readyz", false, fixed("a", Pass), fixed("b", Warn)))
 
 	if hasOutput(body) {
-		t.Errorf("unauthenticated body has output: %v", body)
+		t.Errorf("unauthenticated GET /readyz = %v, want no output", body)
 	}
 
-	if notes, _ := body["notes"].([]any); !slices.Contains(notes, any(OutputOmitted)) {
-		t.Errorf("notes = %v, want %q", body["notes"], OutputOmitted)
+	if diff := cmp.Diff([]any{OutputOmitted}, body["notes"]); diff != "" {
+		t.Errorf("unauthenticated GET /readyz notes mismatch (-want +got):\n%s", diff)
 	}
 
 	// the values are not output
 	if checks, _ := body["checks"].(map[string]any); len(checks) != 2 {
-		t.Errorf("checks = %v, want both", body["checks"])
+		t.Errorf("unauthenticated GET /readyz checks = %v, want both", body["checks"])
 	}
 
 	body = decode(t, serve(t, http.MethodGet, "/readyz", true, fixed("a", Pass)))
 
-	if !hasOutput(body) || body["notes"] != nil {
-		t.Errorf("authenticated body = %v, want output and no notes", body)
+	if !hasOutput(body) {
+		t.Errorf("authenticated GET /readyz = %v, want output", body)
+	}
+
+	if notes, ok := body["notes"]; ok {
+		t.Errorf("authenticated GET /readyz notes = %v, want none", notes)
 	}
 }
 
 func TestHandlerExcludesChecks(t *testing.T) {
 	t.Parallel()
 
-	for _, target := range []string{
-		"/readyz?exclude=minimega", "/readyz?exclude=other,minimega", "/readyz?exclude=other&exclude=minimega",
+	for name, target := range map[string]string{
+		"one":      "/readyz?exclude=minimega",
+		"list":     "/readyz?exclude=other,minimega",
+		"repeated": "/readyz?exclude=other&exclude=minimega",
 	} {
-		body := decode(t, serve(t, http.MethodGet, target, true, fixed("minimega", Fail), fixed("store", Pass)))
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-		checks, _ := body["checks"].(map[string]any)
+			body := decode(t, serve(t, http.MethodGet, target, true, fixed("minimega", Fail), fixed("store", Pass)))
 
-		if _, ok := checks["minimega:value"]; ok || checks["store:value"] == nil || body["status"] != "pass" {
-			t.Errorf("%s: %v, want only the store check, passing", target, body)
-		}
+			checks, _ := body["checks"].(map[string]any)
+			if diff := cmp.Diff([]string{"store:value"}, slices.Sorted(maps.Keys(checks))); diff != "" {
+				t.Errorf("GET %s check keys mismatch (-want +got):\n%s", target, diff)
+			}
+
+			if got := body["status"]; got != string(Pass) {
+				t.Errorf("GET %s status = %v, want %s", target, got, Pass)
+			}
+		})
 	}
 }
 
@@ -164,21 +188,18 @@ func TestHandlerReportsVersion(t *testing.T) {
 
 	version.Tag, version.Commit = "v1.2.3", "abc123" //nolint:reassign // test build info
 
-	body := decode(t, serve(t, http.MethodGet, "/healthz", false))
-
 	want := map[string]any{
-		"version": "v1.2.3", "releaseId": "abc123", "serviceId": "phenix",
-		"description": "test readiness", "status": "pass",
+		"version":     "v1.2.3",
+		"releaseId":   "abc123",
+		"serviceId":   "phenix",
+		"description": "test readiness",
+		"status":      "pass",
+		"notes":       []any{OutputOmitted},
+		"checks":      map[string]any{},
 	}
 
-	for key, value := range want {
-		if body[key] != value {
-			t.Errorf("%s = %v, want %v", key, body[key], value)
-		}
-	}
-
-	if checks, ok := body["checks"].(map[string]any); !ok || len(checks) != 0 {
-		t.Errorf("checks = %v, want an empty object", body["checks"])
+	if diff := cmp.Diff(want, decode(t, serve(t, http.MethodGet, "/healthz", false))); diff != "" {
+		t.Errorf("GET /healthz mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -192,15 +213,18 @@ func TestFloatMarshalsWithDecimalPoint(t *testing.T) {
 	for f, want := range tests {
 		got, err := json.Marshal(Result{ObservedValue: f, Status: Pass})
 		if err != nil {
-			t.Fatal(err)
+			t.Errorf("json.Marshal(Result{ObservedValue: Float(%v)}) error = %v", float64(f), err)
+
+			continue
 		}
 
+		// the bytes are the contract: a whole value keeps its decimal point
 		if !strings.Contains(string(got), `"observedValue":`+want+`,`) {
-			t.Errorf("Float(%v) marshals in %s, want observedValue %s", float64(f), got, want)
+			t.Errorf("json.Marshal(Result{ObservedValue: Float(%v)}) = %s, want observedValue %s", float64(f), got, want)
 		}
 	}
 
-	if _, err := json.Marshal(Float(math.NaN())); err == nil {
-		t.Error("NaN marshals, want an error")
+	if got, err := json.Marshal(Float(math.NaN())); err == nil {
+		t.Errorf("json.Marshal(Float(NaN)) = %s, want an error", got)
 	}
 }

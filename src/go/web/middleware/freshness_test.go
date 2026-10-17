@@ -24,13 +24,13 @@ func TestFreshness(t *testing.T) {
 
 		seq, err := strconv.ParseUint(w.Header().Get("X-Phenix-Seq"), 10, 64)
 		if err != nil || seq <= last {
-			t.Fatalf("X-Phenix-Seq = %q after %d, want a larger number", w.Header().Get("X-Phenix-Seq"), last)
+			t.Errorf("GET /api/v1/experiments: X-Phenix-Seq = %q after %d, want a larger number", w.Header().Get("X-Phenix-Seq"), last)
 		}
 
 		last = seq
 
 		if got := w.Header().Get("Cache-Control"); got != "no-cache, private" {
-			t.Errorf("Cache-Control = %q, want no-cache, private", got)
+			t.Errorf("GET /api/v1/experiments: Cache-Control = %q, want no-cache, private", got)
 		}
 	}
 
@@ -38,6 +38,6 @@ func TestFreshness(t *testing.T) {
 	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/experiments?store", nil))
 
 	if got := w.Header().Get("Cache-Control"); got != "no-store" {
-		t.Errorf("Cache-Control = %q, want the handler's no-store", got)
+		t.Errorf("GET /api/v1/experiments?store: Cache-Control = %q, want the handler's no-store", got)
 	}
 }

@@ -9,10 +9,12 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	v1 "phenix/types/version/v1"
 	"phenix/util/plog"
@@ -69,32 +71,29 @@ func onlyEvent(t *testing.T, events func() []string) map[string]any {
 
 	lines := events()
 	if len(lines) != 1 {
-		t.Fatalf("got %d audit records, want 1: %q", len(lines), lines)
+		t.Fatalf("logged %d audit records, want 1: %q", len(lines), lines)
 	}
 
 	var got map[string]any
 	if err := json.Unmarshal([]byte(lines[0]), &got); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding audit record %s: %v", lines[0], err)
 	}
 
 	return got
 }
 
-// checkEvent checks that a record has the fields of want and none of absent.
-func checkEvent(t *testing.T, got, want map[string]any, absent []string) {
-	t.Helper()
+// pick returns the fields of a record named in want or absent, so that
+// comparing it with want also reports absent fields that are present.
+func pick(record, want map[string]any, absent []string) map[string]any {
+	picked := make(map[string]any, len(want))
 
-	for k, v := range want {
-		if !reflect.DeepEqual(got[k], v) {
-			t.Errorf("%s = %#v, want %#v", k, got[k], v)
+	for _, k := range slices.Concat(slices.Collect(maps.Keys(want)), absent) {
+		if v, ok := record[k]; ok {
+			picked[k] = v
 		}
 	}
 
-	for _, k := range absent {
-		if _, ok := got[k]; ok {
-			t.Errorf("%s = %#v, want it absent", k, got[k])
-		}
-	}
+	return picked
 }
 
 func request(role rbac.Role) *http.Request {
@@ -125,7 +124,7 @@ func TestEvents(t *testing.T) {
 		absent  []string
 	}{
 		{
-			name:    "success",
+			name:    "Success",
 			log:     func() { audit.Success(request(admin), audit.FileDelete, "deleted file", f) },
 			level:   "INFO",
 			types:   []any{"deletion"},
@@ -134,7 +133,7 @@ func TestEvents(t *testing.T) {
 			absent:  []string{"event.reason", "error.message"},
 		},
 		{
-			name:    "denied",
+			name:    "Denied",
 			log:     func() { audit.Denied(request(admin), audit.FileDelete, "deleting file not allowed", f) },
 			level:   "WARN",
 			types:   []any{"deletion", "denied"},
@@ -143,7 +142,7 @@ func TestEvents(t *testing.T) {
 			absent:  []string{"error.message"},
 		},
 		{
-			name: "failure",
+			name: "Failure",
 			log: func() {
 				audit.Failure(request(admin), audit.FileDelete, "deleting file failed", f, errors.New("disk full"))
 			},
@@ -164,7 +163,7 @@ func TestEvents(t *testing.T) {
 			got := onlyEvent(t, events)
 
 			if line := events()[0]; strings.Contains(line, "token") || strings.Contains(line, "secret") {
-				t.Errorf("record carries the URL query: %s", line)
+				t.Errorf("audit.%s() record = %s, want no URL query", c.name, line)
 			}
 
 			want := map[string]any{
@@ -190,7 +189,9 @@ func TestEvents(t *testing.T) {
 
 			maps.Copy(want, c.want)
 
-			checkEvent(t, got, want, c.absent)
+			if diff := cmp.Diff(want, pick(got, want, c.absent)); diff != "" {
+				t.Errorf("audit.%s() record mismatch (-want +got):\n%s", c.name, diff)
+			}
 		})
 	}
 }
@@ -203,10 +204,12 @@ func TestEventWithoutRoleOrInterface(t *testing.T) {
 
 	audit.Denied(r, audit.DiskDownload, "downloading disk not allowed", audit.Fields{Reason: "not owner"})
 
-	checkEvent(t, onlyEvent(t, events),
-		map[string]any{"user.name": "", "source.ip": "@", "event.reason": "not owner"},
-		[]string{"user.roles", "network.forwarded_ip", "phenix.vm.interface", "file.path"},
-	)
+	want := map[string]any{"user.name": "", "source.ip": "@", "event.reason": "not owner"}
+	absent := []string{"user.roles", "network.forwarded_ip", "phenix.vm.interface", "file.path"}
+
+	if diff := cmp.Diff(want, pick(onlyEvent(t, events), want, absent)); diff != "" {
+		t.Errorf("audit.Denied() without a role or interface: record mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestBackgroundEvents(t *testing.T) {
@@ -217,7 +220,7 @@ func TestBackgroundEvents(t *testing.T) {
 		absent []string
 	}{
 		{
-			name: "success",
+			name: "Background",
 			log: func() {
 				audit.Background("bob", audit.ConsoleEnd, "minimega console ended", audit.OutcomeSuccess, audit.Fields{
 					PID: 42, Extra: []any{"phenix.console.end_reason", "idle"},
@@ -230,7 +233,7 @@ func TestBackgroundEvents(t *testing.T) {
 			absent: []string{"source.ip", "url.path", "http.request.method"},
 		},
 		{
-			name: "failure",
+			name: "BackgroundFailure",
 			log: func() {
 				audit.BackgroundFailure("bob", audit.DiskClone, "cloning disk failed", audit.Fields{
 					File: "/files/a.qc2", Target: "/files/b.qc2",
@@ -250,7 +253,9 @@ func TestBackgroundEvents(t *testing.T) {
 
 			c.log()
 
-			checkEvent(t, onlyEvent(t, events), c.want, c.absent)
+			if diff := cmp.Diff(c.want, pick(onlyEvent(t, events), c.want, c.absent)); diff != "" {
+				t.Errorf("audit.%s() record mismatch (-want +got):\n%s", c.name, diff)
+			}
 		})
 	}
 }
@@ -262,5 +267,9 @@ func TestGrantUserOverridesContext(t *testing.T) {
 
 	audit.Success(r, audit.CaptureWebSharkRead, "read capture", audit.Fields{User: "carol"})
 
-	checkEvent(t, onlyEvent(t, events), map[string]any{"user.name": "carol"}, nil)
+	want := map[string]any{"user.name": "carol"}
+
+	if diff := cmp.Diff(want, pick(onlyEvent(t, events), want, nil)); diff != "" {
+		t.Errorf("audit.Success(Fields{User: carol}) record mismatch (-want +got):\n%s", diff)
+	}
 }
