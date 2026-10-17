@@ -61,6 +61,11 @@ export function simplifyRoute(points) {
         (sameY(before, last) && sameY(last, point)))
     ) {
       kept[kept.length - 1] = point;
+
+      // A route doubling back would leave the point it started from twice.
+      if (sameX(before, point) && sameY(before, point)) {
+        kept.pop();
+      }
     } else {
       kept.push(point);
     }

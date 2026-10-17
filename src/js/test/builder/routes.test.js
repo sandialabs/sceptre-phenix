@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 
 import {
   fitRoute,
@@ -111,5 +112,83 @@ describe('connection routes', () => {
     expect(handleOffsetY(device, 'a')).toBe(32);
     expect(handleOffsetY(device, 'b')).toBe(64);
     expect(handleOffsetY({ kind: 'switch' }, 'bus')).toBe(36);
+  });
+});
+
+const cell = fc.record({
+  x: fc.integer({ min: 0, max: 3 }),
+  y: fc.integer({ min: 0, max: 3 }),
+});
+const smallRoute = fc.array(cell, { minLength: 1, maxLength: 8 });
+const spot = fc.record({
+  x: fc.integer({ min: -8, max: 8 }),
+  y: fc.integer({ min: -8, max: 8 }),
+});
+
+// A route of stretches across or down, some doubling back or of no length.
+const orthogonalRoute = fc
+  .array(fc.tuple(fc.boolean(), fc.integer({ min: -5, max: 5 })), {
+    minLength: 1,
+    maxLength: 6,
+  })
+  .map((steps) => {
+    const points = [{ x: 0, y: 0 }];
+
+    for (const [across, d] of steps) {
+      const last = points[points.length - 1];
+
+      points.push(
+        across ? { x: last.x + d, y: last.y } : { x: last.x, y: last.y + d },
+      );
+    }
+
+    return points;
+  });
+
+const samePoint = (a, b) => a.x === b.x && a.y === b.y;
+
+describe('connection route properties', () => {
+  test('a route doubling back on itself keeps no repeated point', () => {
+    expect(
+      simplifyRoute([
+        { x: 3, y: 1 },
+        { x: 3, y: 0 },
+        { x: 3, y: 1 },
+        { x: 0, y: 0 },
+      ]),
+    ).toEqual([
+      { x: 3, y: 1 },
+      { x: 0, y: 0 },
+    ]);
+  });
+
+  test('simplifying twice changes nothing, and no point repeats the one before', () => {
+    fc.assert(
+      fc.property(smallRoute, (points) => {
+        const once = simplifyRoute(points);
+
+        expect(simplifyRoute(once)).toEqual(once);
+        expect(
+          once.slice(1).every((point, i) => !samePoint(point, once[i])),
+        ).toBe(true);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  test('a fitted route runs from start to end across and down, and refits to itself', () => {
+    fc.assert(
+      fc.property(orthogonalRoute, spot, spot, (points, start, end) => {
+        // Coincident ends collapse a route to one point, which no longer fits.
+        fc.pre(!samePoint(start, end));
+        const fitted = fitRoute(points, start, end);
+
+        expect(fitted[0]).toEqual(start);
+        expect(fitted.at(-1)).toEqual(end);
+        expect(orthogonal(fitted)).toBe(true);
+        expect(fitRoute(fitted, start, end)).toEqual(fitted);
+      }),
+      { numRuns: 300 },
+    );
   });
 });
