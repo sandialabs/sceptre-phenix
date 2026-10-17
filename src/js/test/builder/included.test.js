@@ -44,7 +44,6 @@ import {
   removalRefusal,
   removeElements,
   removeInterface,
-  renameInterface,
   updateNetwork,
   updateNode,
 } from '@/builder/model.js';
@@ -140,7 +139,6 @@ describe('model', () => {
     const handle = bravo.device.interfaces[0].id;
     expect(addInterface(doc, bravo.id).handle).toBeNull();
     expect(removeInterface(doc, bravo.id, handle)).toBe(doc);
-    expect(renameInterface(doc, bravo.id, handle, 'eth9')).toBe(doc);
   });
 
   test('an included device is never connected differently', () => {

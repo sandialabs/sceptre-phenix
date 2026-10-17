@@ -40,7 +40,7 @@
 //   covers all three, and all three come from the chosen side. A switch's
 //   label is its network's name (namedSwitches in model.js names it again),
 //   so it never clashes. An interface's name is the name of its handle and
-//   its spec entry (see renameInterface in model.js), so it is also one
+//   its spec entry (see reconcileDeviceHandles in model.js), so it is also one
 //   choice.
 // - A connection whose node or device interface is not in the merged
 //   document, because the user chose to delete it, is dropped. The merge
@@ -827,7 +827,7 @@ function objectsAt(value, path) {
 
 // A copy of the device `version` with its interface `handleId` named
 // `name`: the handle, and the spec entries of the old name of the handle
-// (see renameInterface in model.js).
+// (see reconcileDeviceHandles in model.js).
 function withInterfaceName(version, handleId, name) {
   const handles = valueAt(version, HANDLES_PATH);
   const old = objectsAt(version, HANDLES_PATH).find(

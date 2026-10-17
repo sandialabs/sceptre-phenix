@@ -4174,48 +4174,6 @@ export function removeInterface(doc, nodeId, handleId) {
   });
 }
 
-/**
- * Renames an interface, keeping the handle, the spec entry and edges aligned.
- *
- * @param {object} doc
- * @param {string} nodeId
- * @param {string} handleId
- * @param {string} name
- * @returns {object} document
- */
-export function renameInterface(doc, nodeId, handleId, name) {
-  const node = findNode(doc, nodeId);
-  const handle = deviceHandles(node).find((entry) => entry.id === handleId);
-
-  if (!handle || includedFrom(node)) {
-    return doc;
-  }
-
-  const wanted = String(name || '').trim();
-
-  if (!wanted || deviceHandles(node).some((entry) => entry.name === wanted)) {
-    return doc;
-  }
-
-  const copy = JSON.parse(JSON.stringify(node));
-
-  copy.device.interfaces = copy.device.interfaces.map((entry) =>
-    entry.id === handleId ? { ...entry, name: wanted } : entry,
-  );
-
-  if (Array.isArray(copy.device.spec?.network?.interfaces)) {
-    copy.device.spec.network.interfaces =
-      copy.device.spec.network.interfaces.map((iface) =>
-        iface?.name === handle.name ? { ...iface, name: wanted } : iface,
-      );
-  }
-
-  return {
-    ...doc,
-    nodes: doc.nodes.map((entry) => (entry.id === nodeId ? copy : entry)),
-  };
-}
-
 // --- edges -----------------------------------------------------------------
 
 /**

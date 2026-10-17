@@ -40,7 +40,6 @@ import {
   removeInterface,
   removeLinePoint,
   removeNetworks,
-  renameInterface,
   resizedBox,
   sameButStamp,
   savedStamp,
@@ -597,14 +596,6 @@ describe('interfaces', () => {
       document.nodes.find((candidate) => candidate.id === alpha.id);
 
     expect(specInterfaceFor(node(odd), handle.id)).toEqual(entry);
-
-    const renamed = renameInterface(odd, alpha.id, handle.id, 'mgmt0');
-
-    expect(node(renamed).device.spec.network.interfaces).toEqual([
-      null,
-      'x',
-      { ...entry, name: 'mgmt0' },
-    ]);
 
     const removed = removeInterface(odd, alpha.id, handle.id);
 

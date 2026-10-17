@@ -17,7 +17,6 @@ import {
   nodeLabel,
   placeholderLayers,
   removeInterface,
-  renameInterface,
   setDocumentInfo,
   withLayerRelabeled,
 } from '@/builder/model.js';
@@ -847,6 +846,33 @@ describe('interfaces and the connections that use them', () => {
       handles: device.interfaces.map((handle) => handle.name),
       spec: device.spec.network.interfaces.map((iface) => iface.name),
     };
+  }
+
+  // The document with interface `handleId` of device `id` named `name`: its
+  // handle and its spec entry, as the Inspector renames one.
+  function renameInterface(doc, id, handleId, name) {
+    const old = nodeOf(doc, id).device.interfaces.find(
+      (handle) => handle.id === handleId,
+    ).name;
+
+    return changeNode(doc, id, (node) => ({
+      ...node,
+      device: {
+        ...node.device,
+        interfaces: node.device.interfaces.map((handle) =>
+          handle.id === handleId ? { ...handle, name } : handle,
+        ),
+        spec: {
+          ...node.device.spec,
+          network: {
+            ...node.device.spec.network,
+            interfaces: node.device.spec.network.interfaces.map((iface) =>
+              iface.name === old ? { ...iface, name } : iface,
+            ),
+          },
+        },
+      },
+    }));
   }
 
   // The document with the spec interface `name` of device `id` changed.
