@@ -64,11 +64,6 @@ func newListingCache(ttl time.Duration) *listingCache {
 	}
 }
 
-// get is getContext for a caller that waits however long the listing takes.
-func (c *listingCache) get(key string, list func() (Files, error)) (Files, time.Time, error) {
-	return c.getContext(context.Background(), key, func(context.Context) (Files, error) { return list() })
-}
-
 // getContext returns a copy of a recent listing for key, or of one from list,
 // shared with concurrent callers (see flight.Group), with when it started. A
 // failed listing is never reused.

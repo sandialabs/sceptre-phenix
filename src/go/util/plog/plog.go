@@ -34,7 +34,7 @@ type phenixHandler struct {
 
 // NewPhenixHandler creates a new [slog.TextHandler] named "phenix-default"
 // logging to STDERR. This handler will default to a log level of [slog.LevelInfo]
-// until it is changed with the "SetLevel" function.
+// until it is changed with the "SetLevelText" function.
 func NewPhenixHandler(w io.Writer) {
 	if w == nil {
 		w = os.Stderr

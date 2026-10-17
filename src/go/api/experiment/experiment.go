@@ -13,7 +13,6 @@ import (
 
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mitchellh/mapstructure"
 
 	"phenix/api/config"
 	"phenix/app"
@@ -22,7 +21,6 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	"phenix/types/version"
-	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/freshness"
@@ -972,24 +970,6 @@ func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool) error 
 	return nil
 }
 
-func Status(name string) (*v1.ExperimentStatus, error) {
-	c, _ := store.NewConfig("experiment/" + name)
-
-	err := store.Get(c)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get experiment status from store: %w", err)
-	}
-
-	var status v1.ExperimentStatus
-
-	err = mapstructure.Decode(c.Status, &status)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode experiment status: %w", err)
-	}
-
-	return &status, nil
-}
-
 // Running reports whether the experiment is running. Check it before asking
 // minimega about an experiment that may be stopped: any command sent to a
 // namespace creates it if it doesn't exist, and a namespace keeps the cluster
@@ -1025,20 +1005,8 @@ func Save(opts ...SaveOption) error {
 		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
-	if o.spec == nil {
-		if o.saveNilSpec {
-			c.Spec = nil
-		}
-	} else {
+	if o.spec != nil {
 		c.Spec = structs.MapDefaultCase(o.spec, structs.CASESNAKE)
-	}
-
-	if o.status == nil {
-		if o.saveNilStatus {
-			c.Status = nil
-		}
-	} else {
-		c.Status = structs.MapDefaultCase(o.status, structs.CASESNAKE)
 	}
 
 	err = store.Update(c)
@@ -1257,53 +1225,26 @@ func Delete(name string) error {
 	return errors //nolint:wrapcheck // returning multierror
 }
 
-// Files lists the experiment's files matching filter. The listing may be a
-// few seconds old (see file.InvalidateExperimentFiles).
-func Files(name, filter string) (file.Files, error) {
-	return file.GetExperimentFiles(name, filter) //nolint:wrapcheck // passthrough
-}
-
-// FilesObserved is Files, also reporting when the listing was read from
-// minimega. It returns an error, not a partial listing, when a cluster node
-// could not be listed, or when ctx ended while the listing waited for
-// minimega (see file.GetExperimentFilesObserved).
+// FilesObserved lists the experiment's files matching filter, also reporting
+// when the listing was read from minimega. The listing may be a few seconds
+// old (see file.InvalidateExperimentFiles). It returns an error, not a partial
+// listing, when a cluster node could not be listed, or when ctx ended while
+// the listing waited for minimega (see file.GetExperimentFilesObserved).
 func FilesObserved(ctx context.Context, name, filter string) (file.Files, freshness.Observation, error) {
 	return file.GetExperimentFilesObserved(ctx, name, filter) //nolint:wrapcheck // passthrough
 }
 
-// InvalidateFiles makes the next Files call list the experiment's files anew,
+// InvalidateFiles makes the next FilesObserved call list the experiment's files anew,
 // for after phenix changes them.
 func InvalidateFiles(name string) {
 	file.InvalidateExperimentFiles(name)
 }
 
-// File returns the contents of one of the experiment's files, by its path
-// relative to the experiment's files directory as listed (see Files), copying
-// it to the headnode first if only a mesh node has it. It refuses a pcap a
-// running capture is still writing (a *CaptureWritingError, which wraps
-// mm.ErrCaptureExists).
-//
-// Deprecated: File reads the whole file into memory. Use LocalFile and stream
-// the file from its path instead.
-func File(name, filePath string) ([]byte, error) {
-	local, err := LocalFile(name, filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := os.ReadFile(local)
-	if err != nil {
-		return nil, fmt.Errorf("reading contents of file: %w", err)
-	}
-
-	return data, nil
-}
-
 // LocalFile returns the headnode path of one of the experiment's files, by its
-// path relative to the experiment's files directory as listed (see Files),
-// copying it to the headnode first if only a mesh node has it. It refuses a
-// pcap a running capture is still writing (a *CaptureWritingError, which
-// wraps mm.ErrCaptureExists).
+// path relative to the experiment's files directory as listed (see
+// FilesObserved), copying it to the headnode first if only a mesh node has it.
+// It refuses a pcap a running capture is still writing (a *CaptureWritingError,
+// which wraps mm.ErrCaptureExists).
 func LocalFile(name, filePath string) (string, error) {
 	clean, err := cleanFilePath(filePath)
 	if err != nil {

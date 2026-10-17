@@ -126,8 +126,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: gh release create "$RELEASE_TAG" build/deb/*.deb --generate-notes
-    outputs:
-      image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 
   # Mirrors the Docker build so the Containerfile can't silently drift, then
   # runs the finished image to catch a container that builds but cannot start.

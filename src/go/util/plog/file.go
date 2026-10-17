@@ -751,25 +751,6 @@ func checkCacheIntegrity() (bool, error) {
 	return true, nil
 }
 
-func (c *Cache) RemoveDeletedFiles() {
-	logFiles := getLogFilesInDirectory()
-
-	var fileIDremove []int
-
-	for fileID, fileInfo := range c.FileMap {
-		if !slices.Contains(logFiles, fileInfo.Filename) {
-			fileIDremove = append(fileIDremove, fileID)
-			delete(c.FileMap, fileID)
-		}
-	}
-
-	for key, cacheHit := range c.Cache {
-		if slices.Contains(fileIDremove, cacheHit.File) {
-			delete(c.Cache, key)
-		}
-	}
-}
-
 func (c *Cache) AddMissingFiles() {
 	maxIter := MaxMissingFileIterations
 

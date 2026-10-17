@@ -30,11 +30,6 @@ const (
 	VVVerbose int = 2
 )
 
-var (
-	ErrMinicccNotFound   = errors.New("miniccc executable not found")
-	ErrProtonukeNotFound = errors.New("protonuke executable not found")
-)
-
 const miniccc = "miniccc"
 const protonuke = "protonuke"
 

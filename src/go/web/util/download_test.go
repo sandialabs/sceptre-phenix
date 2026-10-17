@@ -48,11 +48,6 @@ func serveDownload(t *testing.T, method string, d Download, header ...string) (*
 	resp := rec.Result()
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
-	if served.Status != resp.StatusCode {
-		t.Errorf("ServeDownload(%s %q) Served.Status = %d, want the response status %d",
-			method, d.Path, served.Status, resp.StatusCode)
-	}
-
 	return resp, served
 }
 
@@ -197,7 +192,12 @@ func TestServeDownloadHeaders(t *testing.T) {
 
 	path := downloadFile(t, "hello")
 
-	resp, served := serveDownload(t, http.MethodGet, Download{Path: path, Name: "a b.json"})
+	resp, _ := serveDownload(t, http.MethodGet, Download{Path: path, Name: "a b.json"})
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("os.Stat(%q) = %v, want nil", path, err)
+	}
 
 	want := map[string]string{
 		"Accept-Ranges":          "bytes",
@@ -206,7 +206,7 @@ func TestServeDownloadHeaders(t *testing.T) {
 		"Content-Length":         "5",
 		"Content-Type":           "application/json",
 		"X-Content-Type-Options": "nosniff",
-		"Last-Modified":          served.Info.ModTime().UTC().Format(http.TimeFormat),
+		"Last-Modified":          info.ModTime().UTC().Format(http.TimeFormat),
 	}
 
 	got := make(map[string]string, len(want))
@@ -218,8 +218,8 @@ func TestServeDownloadHeaders(t *testing.T) {
 		t.Errorf("ServeDownload(%q) headers mismatch (-want +got):\n%s", path, diff)
 	}
 
-	if etag := resp.Header.Get("ETag"); !strings.HasPrefix(etag, `"`) || etag != FileETag(served.Info) {
-		t.Errorf("ServeDownload(%q) ETag = %q, want the strong %q", path, etag, FileETag(served.Info))
+	if etag := resp.Header.Get("ETag"); !strings.HasPrefix(etag, `"`) || etag != FileETag(info) {
+		t.Errorf("ServeDownload(%q) ETag = %q, want the strong %q", path, etag, FileETag(info))
 	}
 }
 
@@ -388,8 +388,8 @@ func TestServeDownloadStreams(t *testing.T) {
 
 	runtime.ReadMemStats(&after)
 
-	if err != nil || served.Status != http.StatusOK {
-		t.Fatalf("ServeDownload(%q) = %d, %v; want 200, nil", path, served.Status, err)
+	if err != nil || !served.Started {
+		t.Fatalf("ServeDownload(%q) = %+v, %v; want a started download, nil", path, served, err)
 	}
 
 	// io.Copy's buffer is 32 KiB

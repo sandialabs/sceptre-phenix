@@ -38,7 +38,7 @@ func configListKinds() []string {
 	return []string{allExperiments, "topology", "scenario", configKindExperiment, commandImage, "user"}
 }
 
-func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
+func configKindArgsValidator(multi bool) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if multi {
 			if len(args) == 0 {
@@ -57,11 +57,7 @@ func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
 				return errors.New("expected an argument in the form of <config kind>/<config name>")
 			}
 
-			kinds := append([]string(nil), configKinds()...)
-
-			if allowAll {
-				kinds = append(kinds, allExperiments)
-			}
+			kinds := configKinds()
 
 			kind := strings.ToLower(tokens[0])
 
@@ -230,7 +226,7 @@ func newConfigGetCmd() *cobra.Command {
 		Short:             "Get a configuration",
 		Long:              desc,
 		Example:           example,
-		Args:              configKindArgsValidator(false, false),
+		Args:              configKindArgsValidator(false),
 		ValidArgsFunction: configGetArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			upgraded := MustGetBool(cmd.Flags(), "show-upgraded")
@@ -408,7 +404,7 @@ func newConfigEditCmd() *cobra.Command {
 		Use:   "edit <kind/name>",
 		Short: "Edit a configuration",
 		Long:  desc,
-		Args:  configKindArgsValidator(false, false),
+		Args:  configKindArgsValidator(false),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			force := MustGetBool(cmd.Flags(), "force")
 
@@ -462,7 +458,7 @@ func newConfigDeleteCmd() *cobra.Command {
 		Aliases: []string{deleteAlias},
 		Short:   "Delete a configuration(s)",
 		Long:    desc,
-		Args:    configKindArgsValidator(true, false),
+		Args:    configKindArgsValidator(true),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, c := range args {
 				err := config.Delete(c)

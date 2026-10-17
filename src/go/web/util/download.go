@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"mime"
 	"net/http"
 	"os"
@@ -46,12 +45,6 @@ type Download struct {
 
 // Served is what ServeDownload sent.
 type Served struct {
-	// Info describes the file as it was when opened.
-	Info fs.FileInfo
-
-	// Status is the response's status code.
-	Status int
-
 	// Started reports whether the response began a download: a GET answered
 	// with the whole file, or with a range from its first byte. Resuming a
 	// download, a HEAD request, and a 304, 412 or 416 response do not, so a
@@ -71,7 +64,7 @@ type Served struct {
 // file's checksum it is sent as Repr-Digest; a download never computes one.
 //
 // It returns an error, having sent nothing, if the file cannot be opened
-// (wrapping the [fs.PathError]), is not a regular file (ErrNotRegular) or is
+// (wrapping the [io/fs.PathError]), is not a regular file (ErrNotRegular) or is
 // larger than d.MaxSize (ErrTooLarge); the caller writes the error response.
 func ServeDownload(w http.ResponseWriter, r *http.Request, d Download) (Served, error) {
 	f, err := os.Open(d.Path)
@@ -126,7 +119,7 @@ func ServeOpenFile(w http.ResponseWriter, r *http.Request, f *os.File, d Downloa
 
 	http.ServeContent(sw, r, d.Name, info.ModTime(), f)
 
-	return Served{Info: info, Status: sw.status, Started: started(r, sw.status, header, info.Size())}, nil
+	return Served{Started: started(r, sw.status, header, info.Size())}, nil
 }
 
 // downloadType is the Content-Type to send for d, or "" to have net/http

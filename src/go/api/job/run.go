@@ -1,7 +1,6 @@
 package job
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,11 +17,6 @@ type Run struct {
 // ID returns the job's ID.
 func (run *Run) ID() string {
 	return run.e.job.ID
-}
-
-// Context returns the job's context, done when the job is canceled.
-func (run *Run) Context() context.Context {
-	return run.e.ctx
 }
 
 // ItemStarted marks the named item running.
@@ -82,11 +76,6 @@ func (run *Run) ItemSkipped(name, reason string) {
 // AddBytes counts n more bytes handled.
 func (run *Run) AddBytes(n int64) {
 	run.progress(func(p *Progress) { p.Bytes += n })
-}
-
-// SetBytesTotal sets the bytes the job expects to handle.
-func (run *Run) SetBytesTotal(n int64) {
-	run.progress(func(p *Progress) { p.BytesTotal = n })
 }
 
 // Dir returns the job's folder in the registry's artifact folder, creating it.

@@ -63,11 +63,6 @@ func WithNotifier(notify Notifier) Option {
 	return func(r *Registry) { r.notify = notify }
 }
 
-// WithRetention keeps finished jobs for d.
-func WithRetention(d time.Duration) Option {
-	return func(r *Registry) { r.retention = d }
-}
-
 // WithMaxFinished keeps at most n finished jobs.
 func WithMaxFinished(n int) Option {
 	return func(r *Registry) { r.maxFinished = n }

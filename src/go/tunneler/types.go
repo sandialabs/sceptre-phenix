@@ -28,8 +28,6 @@ type MessageType string
 
 const (
 	LISTENERS  MessageType = "LISTENERS"
-	CREATE     MessageType = "CREATE"
-	DELETE     MessageType = "DELETE"
 	MOVE       MessageType = "MOVE"
 	ACTIVATE   MessageType = "ACTIVATE"
 	DEACTIVATE MessageType = "DEACTIVATE"

@@ -63,12 +63,9 @@ var (
 	}
 )
 
-// Stats counts the broker's clients, and what it dropped since the process
-// started.
+// Stats counts the broker's clients and queued broadcasts.
 type Stats struct {
-	Clients            int64  `json:"clients"`
-	SlowClientsDropped uint64 `json:"slowClientsDropped"`
-	LogLinesDropped    uint64 `json:"logLinesDropped"`
+	Clients int64 `json:"clients"`
 	// Queued and Capacity are the broadcasts waiting for the broker loop and
 	// how many fit.
 	Queued   int `json:"queued"`
@@ -79,11 +76,9 @@ type Stats struct {
 // goroutine.
 func CurrentStats() Stats {
 	return Stats{
-		Clients:            clientCount.Load(),
-		SlowClientsDropped: slowDropped.Load(),
-		LogLinesDropped:    logsDropped.Load(),
-		Queued:             len(broadcast),
-		Capacity:           cap(broadcast),
+		Clients:  clientCount.Load(),
+		Queued:   len(broadcast),
+		Capacity: cap(broadcast),
 	}
 }
 

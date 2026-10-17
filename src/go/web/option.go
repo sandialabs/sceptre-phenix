@@ -181,16 +181,8 @@ func ServeWithProxyAuthHeader(h string) ServerOption {
 
 func ServeWithFeatures(f []string) ServerOption {
 	return func(o *serverOptions) {
-		if f == nil {
-			for k, v := range o.features {
-				if !v {
-					delete(o.features, k)
-				}
-			}
-		} else {
-			for _, feature := range f {
-				o.features[feature] = false
-			}
+		for _, feature := range f {
+			o.features[feature] = true
 		}
 	}
 }

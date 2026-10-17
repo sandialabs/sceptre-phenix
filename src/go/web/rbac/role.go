@@ -76,10 +76,7 @@ func RoleFromConfig(name string) (*Role, error) {
 // role (request contexts, broker clients) share the index instead of
 // rebuilding it on every Allowed call.
 func newRole(spec *v1.RoleSpec, cfg *store.Config) *Role {
-	r := &Role{Spec: spec, config: cfg, mappedPolicies: nil}
-	r.indexPolicies()
-
-	return r
+	return &Role{Spec: spec, config: cfg, mappedPolicies: mapPolicies(spec)}
 }
 
 func (r Role) Save() error {
@@ -156,8 +153,7 @@ func (r *Role) AddPolicy(res, rn, v []string) {
 	r.Spec.Policies = append(r.Spec.Policies, policy)
 
 	// the index maps resources to policies, so a new policy invalidates it
-	r.mappedPolicies = nil
-	r.indexPolicies()
+	r.mappedPolicies = mapPolicies(r.Spec)
 }
 
 func (r Role) Allowed(resource, verb string, names ...string) bool {
@@ -200,39 +196,22 @@ func (r Role) policiesForResource(resource string) []Policy {
 	return policies
 }
 
-// indexPolicies builds the resource -> policies index if it is missing.
-func (r *Role) indexPolicies() {
-	if r.mappedPolicies != nil || r.Spec == nil {
-		return
-	}
-
-	r.mappedPolicies = mapPolicies(r.Spec)
-}
-
 // mapPolicies indexes the spec's policies by resource pattern. A role with any
 // invalid resource pattern allows nothing, so it maps to an empty (non-nil)
 // index.
 func mapPolicies(spec *v1.RoleSpec) map[string][]Policy {
 	mapped := make(map[string][]Policy)
 
-	var invalid []string
-
 	for _, policy := range spec.Policies {
 		for _, resource := range policy.Resources {
 			// Checking to make sure pattern given in 'resource' is valid. Thus, the
 			// string provided to match it against is useless.
 			if _, err := filepath.Match(resource, "useless"); err != nil {
-				invalid = append(invalid, resource)
-
-				continue
+				return map[string][]Policy{}
 			}
 
 			mapped[resource] = append(mapped[resource], Policy{Spec: policy})
 		}
-	}
-
-	if len(invalid) != 0 {
-		return map[string][]Policy{}
 	}
 
 	return mapped
