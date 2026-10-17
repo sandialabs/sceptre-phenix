@@ -922,18 +922,24 @@ describe('rendering', () => {
   });
 
   it.each(ROLES)(
-    "leaves out the checkboxes and deletes %s can't use",
+    "leaves out the checkboxes, views, downloads and deletes %s can't use",
     async (_, role, download, del, select) => {
       rbac.allowed = role;
-      const tab = await listing(['a.log']);
-      const shown = actions(tab, 0);
-      if (download)
-        expect(shown).toEqual([
-          '(space)',
-          'Download a.log',
-          ...(del ? ['Delete a.log'] : []),
-        ]);
-      expect(shown.includes('Delete a.log')).toBe(del);
+      const tab = await listing(['a.log', row('b.txt', { plainText: true })]);
+      expect(actions(tab, 0)).toEqual([
+        '(space)',
+        ...(download ? ['Download a.log'] : []),
+        ...(del ? ['Delete a.log'] : []),
+      ]);
+      expect(actions(tab, 1)).toEqual([
+        download ? 'View b.txt' : '(space)',
+        ...(download ? ['Download b.txt'] : []),
+        ...(del ? ['Delete b.txt'] : []),
+      ]);
+      // the name opens the file only for a role that may get it
+      expect(
+        tab.findAll('tbody td[data-label="Name"] .is-clickable').length,
+      ).toBe(download ? 1 : 0);
       expect(rowPaths(tab).length > 0).toBe(select);
     },
   );

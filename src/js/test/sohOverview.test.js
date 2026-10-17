@@ -434,7 +434,7 @@ describe('any summary', () => {
     fc.assert(
       fc.property(
         fc.array(fc.nat(50)),
-        fc.integer({ min: 1, max: 30 }),
+        fc.integer({ min: 0, max: 30 }),
         (failing, count) => {
           const history = failing.map((n) => ({ failing: n }));
           const out = trend(summary({ history }), count);

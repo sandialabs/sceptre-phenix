@@ -25,17 +25,25 @@ test('a time in the future reads as such', () => {
   expect(relativeTime('2026-09-25T14:00:00Z', now)).toBe('in 2 hours');
 });
 
+test('a half second rounds the same way ahead and behind', () => {
+  expect(relativeTime(now - 59_500, now)).toBe('1 minute ago');
+  expect(relativeTime(now + 59_500, now)).toBe('in 1 minute');
+});
+
 test('an unparsable time gives nothing', () => {
   expect(relativeTime('not a time', now)).toBe('');
 });
 
+// counts past 999 are digit-grouped, as in "in 7,978 years"
 const reading =
-  /^(?:just now|(\d+) (minute|hour|day|week|month|year)s? ago|in (\d+) (minute|hour|day|week|month|year)s?)$/;
+  /^(?:just now|(\d{1,3}(?:,\d{3})*) (minute|hour|day|week|month|year)s? ago|in (\d{1,3}(?:,\d{3})*) (minute|hour|day|week|month|year)s?)$/;
 const UNIT_ORDER = ['minute', 'hour', 'day', 'week', 'month', 'year'];
 // how long ago a reading says, comparable as [unit rank, count]
 const rank = (text) => {
   const [, count, unit] = text.match(reading);
-  return unit ? [UNIT_ORDER.indexOf(unit), Number(count)] : [-1, 0];
+  return unit
+    ? [UNIT_ORDER.indexOf(unit), Number(count.replaceAll(',', ''))]
+    : [-1, 0];
 };
 const DAY = 24 * 3600;
 // spans in seconds, often a second either side of a unit boundary
@@ -88,15 +96,18 @@ test('an older time never reads as more recent', () => {
   );
 });
 
-// whole seconds: at a half second Math.round reads the past one unit higher
 test('a time as far ahead reads as the same span in the future', () => {
   fc.assert(
-    fc.property(span, (s) => {
-      const past = relativeTime(now - s * 1000, now);
-      const future = relativeTime(now + s * 1000, now);
+    fc.property(span, fc.nat(999), (s, ms) => {
+      const past = relativeTime(now - s * 1000 - ms, now);
+      const future = relativeTime(now + s * 1000 + ms, now);
       expect(future).toBe(
         past === 'just now' ? past : `in ${past.replace(/ ago$/, '')}`,
       );
     }),
   );
+});
+
+test('a count past 999 is digit-grouped', () => {
+  expect(relativeTime('9999-09-25T12:00:00Z', now)).toBe('in 7,978 years');
 });

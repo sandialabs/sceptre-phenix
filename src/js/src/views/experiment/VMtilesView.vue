@@ -133,15 +133,8 @@ to access the VM VNC by clicking on the screenshot.
         const term = (this.searchName ?? '').toLowerCase();
         var data = [];
 
-        for (let i in vms) {
-          let vm = vms[i];
-          let name = vm.name;
-
-          if (!this.exp) {
-            name = vm.experiment + '_' + vm.name;
-          }
-
-          if (name.toLowerCase().includes(term)) {
+        for (const vm of vms) {
+          if (this.vmFullName(vm).toLowerCase().includes(term)) {
             data.push(vm);
           }
         }
@@ -160,26 +153,8 @@ to access the VM VNC by clicking on the screenshot.
       },
 
       filteredData() {
-        let names;
-        let vms = this.getVms;
-
-        if (this.exp) {
-          names = vms.map((vm) => {
-            return vm.name;
-          });
-        } else {
-          names = vms.map((vm) => {
-            return vm.experiment + '_' + vm.name;
-          });
-        }
-        return names.filter((option) => {
-          return (
-            option
-              .toString()
-              .toLowerCase()
-              .indexOf(this.searchName.toLowerCase()) >= 0
-          );
-        });
+        // getVms holds only the VMs whose names match the search
+        return this.getVms.map((vm) => this.vmFullName(vm));
       },
     },
 

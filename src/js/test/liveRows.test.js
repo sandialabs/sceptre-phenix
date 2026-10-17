@@ -201,18 +201,33 @@ it('takes a list read after every change as it is, and forgets those changes', (
   );
 });
 
-// a change made before any seq is ordered after every list, so no list forgets it
-it.fails(
-  "forgets the page's own change before the first list once a newer list loads",
-  () => {
-    const rows = createLiveRows();
-    rows.touch('demo');
-    const loaded = [{ name: 'demo', status: 'started' }];
-    const pending = [{ name: 'demo', status: 'pending' }];
-    rows.merge(loaded, pending, 30);
-    expect(rows.merge(loaded, pending, 31)).toEqual(loaded);
-  },
-);
+it("keeps the page's own change made before any seq over the next list, and forgets it once a newer list loads", () => {
+  const rows = createLiveRows();
+  rows.touch('demo');
+  const loaded = [{ name: 'demo', status: 'started' }];
+  const pending = [{ name: 'demo', status: 'pending' }];
+  expect(rows.merge(loaded, pending, 30)).toEqual(pending);
+  expect(rows.merge(loaded, pending, 31)).toEqual(loaded);
+});
+
+it('forgets every change once two lists with a seq have loaded after it', () => {
+  fc.assert(
+    fc.property(
+      changes,
+      rowsOf('loaded'),
+      rowsOf('current'),
+      fc.nat(30),
+      fc.nat(5),
+      (cs, loaded, current, first, ahead) => {
+        const rows = createLiveRows();
+        for (const [op, n, s] of cs) rows[op](n, s);
+        rows.merge(loaded, current, first);
+        const seq = Math.max(first, ...cs.map(([, , s]) => s ?? 0)) + 1 + ahead;
+        expect(rows.merge(loaded, current, seq)).toEqual(loaded);
+      },
+    ),
+  );
+});
 
 it('merges as if nothing changed after a reset', () => {
   fc.assert(

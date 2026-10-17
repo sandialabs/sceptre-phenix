@@ -23,16 +23,30 @@ export function bytesText(bytes) {
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   let value = bytes ?? 0;
   let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
+  // compares the value as shown, so 1048575 B reads 1.0 MiB, not 1024.0 KiB
+  while (
+    (unit ? Number(value.toFixed(1)) : value) >= 1024 &&
+    unit < units.length - 1
+  ) {
     value /= 1024;
     unit += 1;
   }
   return `${unit ? value.toFixed(1) : value} ${units[unit]}`;
 }
 
+// when a job was created, as [ms, ns past that ms]: Go's RFC3339Nano trims
+// trailing zeros and gives the server's zone, so the text does not sort
+const createdAt = ({ created }) => [
+  Date.parse(created) || 0,
+  Number((/\.\d{3}(\d{1,6})/.exec(created ?? '')?.[1] ?? '').padEnd(6, '0')),
+];
+
 // newest first
-const byCreated = (a, b) =>
-  String(b.created ?? '').localeCompare(String(a.created ?? ''));
+const byCreated = (a, b) => {
+  const [aMs, aNano] = createdAt(a);
+  const [bMs, bNano] = createdAt(b);
+  return bMs - aMs || bNano - aNano;
+};
 
 // whether a copy of a job has every item and their results, as GET
 // jobs/{id} gives it, rather than a websocket message's shortened copy

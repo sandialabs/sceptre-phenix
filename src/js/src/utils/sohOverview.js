@@ -200,7 +200,10 @@ export function problemCount(summary) {
 
 // The failing-check counts of the last `count` runs, oldest first.
 export function trend(summary, count) {
-  return (summary?.history ?? []).slice(-count).map((run) => run.failing ?? 0);
+  const history = summary?.history ?? [];
+  return history
+    .slice(Math.max(0, history.length - count))
+    .map((run) => run.failing ?? 0);
 }
 
 // pixels a sparkline keeps clear above and below its line

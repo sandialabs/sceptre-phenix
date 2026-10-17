@@ -204,6 +204,25 @@ describe('CreateExperimentCard', () => {
     ]);
   });
 
+  it('leaves an app out and back in from anywhere on its tag, or its keys', async () => {
+    answer({
+      topologies: { topologies: ['topo'] },
+      'topologies/topo/scenarios': { scenarios: { s1: ['a'] } },
+    });
+    const wrapper = await card();
+    await choose(wrapper, 'topology', 'topo');
+    await choose(wrapper, 'scenario', 's1');
+    const tag = () => wrapper.find('.create-exp-apps .tag');
+    const pressed = () => tag().attributes('aria-pressed');
+
+    await tag().trigger('click');
+    expect(pressed()).toBe('false');
+    await tag().trigger('keydown', { key: 'Enter' });
+    expect(pressed()).toBe('true');
+    await tag().trigger('keydown', { key: ' ' });
+    expect(pressed()).toBe('false');
+  });
+
   it('ignores scenarios for a topology no longer chosen', async () => {
     const stale = Promise.withResolvers();
     answer({
@@ -330,8 +349,7 @@ describe('CreateExperimentCard', () => {
   it('sends the annotations with the request', async () => {
     const wrapper = await filled();
     await choose(wrapper, 'scenario', 's1');
-    // b-tag emits clicks on its text only
-    await wrapper.find('.create-exp-apps .tag span').trigger('click');
+    await wrapper.find('.create-exp-apps .tag').trigger('click');
     await wrapper
       .find('input[aria-labelledby="create-exp-branch"]')
       .setValue(' main ');

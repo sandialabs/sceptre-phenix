@@ -180,6 +180,23 @@ describe('JobProgress', () => {
     expect(liveLine(menu)).toMatch(/no space left$/);
   });
 
+  it('offers no retry, which a job cannot do, for failures worth retrying', async () => {
+    const progress = await render({
+      job: job({
+        kind: 'vms.action',
+        status: 'partial',
+        items: [
+          { name: 'a', status: 'succeeded' },
+          { name: 'b', status: 'failed', error: 'locked', retryable: true },
+        ],
+        progress: { done: 2, total: 2 },
+      }),
+    });
+    expect(textOf(progress)).toContain('b: locked');
+    expect(textOf(progress)).not.toContain('can retry');
+    expect(button(progress, 'Retry failed (1)')).toBeUndefined();
+  });
+
   it('counts only done items, and reads the whole job, when a copy leaves items out', async () => {
     const shortened = job({
       kind: 'vms.action',

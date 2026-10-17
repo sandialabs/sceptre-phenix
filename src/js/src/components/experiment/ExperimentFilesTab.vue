@@ -105,7 +105,7 @@
         sortable
         header-class="sort-inline"
         v-slot="props">
-        <template v-if="props.row.plainText">
+        <template v-if="props.row.plainText && canDownloadFiles">
           <b-tooltip label="view file" type="is-dark">
             <div class="field is-clickable">
               <div @click="viewFile(props.row)">
@@ -187,7 +187,7 @@
             </b-button>
           </b-tooltip>
           <b-tooltip
-            v-else-if="props.row.plainText"
+            v-else-if="props.row.plainText && canDownloadFiles"
             label="view file"
             type="is-dark">
             <b-button
@@ -205,7 +205,7 @@
               aria-hidden="true">
             </b-button>
           </b-tooltip>
-          <b-tooltip label="download" type="is-dark">
+          <b-tooltip v-if="canDownloadFiles" label="download" type="is-dark">
             <b-button
               class="button is-light is-small action"
               icon-left="file-download"

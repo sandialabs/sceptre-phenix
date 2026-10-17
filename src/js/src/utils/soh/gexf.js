@@ -15,7 +15,7 @@ import {
   isVlan,
   SOH_STYLE_LABEL_KEY,
 } from './graph.js';
-import { escapeXml, xmlAttrs } from './xml.js';
+import { escapeXml, hasInvalidXml, xmlAttrs } from './xml.js';
 
 const GEXF_NS = 'http://gexf.net/1.3';
 const GEXF_VIZ_NS = 'http://gexf.net/1.3/viz';
@@ -79,13 +79,18 @@ const MAX_FAILURE_TEXT = 160; // per failed check
 const MAX_FAILURES_TEXT = 2000; // per host
 
 // A GEXF 1.3 list value: [a, b], with items quoted when they would
-// otherwise be ambiguous.
+// otherwise be ambiguous or hold characters XML cannot carry.
 function gexfList(items) {
   const quote = (v) => {
     const s = String(v);
-    return /^[^\s,[\]"'\\]+(?:\s+[^\s,[\]"'\\]+)*$/.test(s)
-      ? s
-      : JSON.stringify(s);
+    if (/^[^\s,[\]"'\\]+(?:\s+[^\s,[\]"'\\]+)*$/.test(s) && !hasInvalidXml(s)) {
+      return s;
+    }
+    // JSON escapes all of those but U+FFFE and U+FFFF
+    return JSON.stringify(s).replace(
+      /[\uFFFE\uFFFF]/g,
+      (c) => `\\u${c.charCodeAt(0).toString(16)}`,
+    );
   };
   return `[${items.map(quote).join(', ')}]`;
 }

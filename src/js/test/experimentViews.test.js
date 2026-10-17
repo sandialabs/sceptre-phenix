@@ -267,8 +267,8 @@ describe('StoppedExperiment', () => {
       const page = await stopped(undefined, { searchHistory });
       const search = async (text) => {
         await page.find('.autocomplete input').setValue(text);
-        // the test answers the search, so drop the debounced load every page shares
-        StoppedExperiment.methods.searchVMs.cancel();
+        // the test answers the search, so drop the page's debounced load
+        page.vm.searchVMs.cancel();
         loaderSpy.options.apply({
           name: 'exp1',
           vms: [{ name: 'vm-new' }],
@@ -310,6 +310,8 @@ describe('StoppedExperiment', () => {
               const kept = text.trim();
               expect(new Set(history).size).toBe(history.length);
               expect(history.length).toBeLessThanOrEqual(10);
+              // a search it does not add drops nothing
+              expect(history.length).toBeGreaterThanOrEqual(last.length);
               if (kept.length >= 4 && !last.includes(kept)) {
                 expect(history).toContain(kept);
                 expect(history).toHaveLength(Math.min(last.length + 1, 10));
@@ -323,13 +325,46 @@ describe('StoppedExperiment', () => {
       );
     });
 
-    // A bug: StoppedExperiment.vue:896 drops one before it knows the search
-    // is kept, so a full history should come back whole.
-    it('drops the last of a full history on a load with no search', async () => {
+    it('keeps a full history whole on a search it does not add', async () => {
       const full = Array.from({ length: 10 }, (_, i) => `vm-${i}`);
-      expect(await (await searching(full)).search('')).toEqual(
-        full.slice(0, 9),
+      const { search } = await searching(full);
+      for (const text of ['', 'ab', 'vm-9', 'vm-0']) {
+        expect(await search(text)).toEqual(full);
+      }
+    });
+
+    it('drops the oldest search from a full history, not the last by name', async () => {
+      // oldest first
+      const full = ['zzzz', ...Array.from({ length: 9 }, (_, i) => `vm-${i}`)];
+      const { search } = await searching(full);
+      expect(await search('aaaa')).toEqual(
+        ['aaaa', ...full.slice(1)].toSorted(),
       );
+    });
+  });
+
+  describe('debounced search', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('loads nothing for a search typed just before the page closes', async () => {
+      const page = await stopped();
+      vi.useFakeTimers();
+      await page.find('.autocomplete input').setValue('vm-1');
+      page.unmount();
+      loaderSpy.load.mockClear();
+      await vi.runAllTimersAsync();
+      expect(loaderSpy.load).not.toHaveBeenCalled();
+    });
+
+    it('searches on each open page, not only the last one typed in', async () => {
+      const pages = [await stopped(), await stopped()];
+      vi.useFakeTimers();
+      loaderSpy.load.mockClear();
+      for (const page of pages) {
+        await page.find('.autocomplete input').setValue('vm-1');
+      }
+      await vi.runAllTimersAsync();
+      expect(loaderSpy.load).toHaveBeenCalledTimes(2);
     });
   });
 });
@@ -413,12 +448,44 @@ describe('VMtilesView', () => {
     );
   });
 
-  // A bug: VMtilesView.vue:141 matches `exp_vm` though the tile shows
-  // `exp/vm`, so this should find exp1/vm2 and exp1/vm[1].
-  it("finds every experiment's VMs by exp_vm, not the exp/vm on their tiles", async () => {
-    expect((await tiles('/vmtiles', 'exp1/')).tiles).toEqual([]);
-    expect((await tiles('/vmtiles', 'exp1_')).tiles.map((t) => t.name)).toEqual(
+  it("finds every experiment's VMs by the exp/vm on their tiles", async () => {
+    expect((await tiles('/vmtiles', 'exp1/')).tiles.map((t) => t.name)).toEqual(
       ['exp1/vm2', 'exp1/vm[1]'],
+    );
+    expect((await tiles('/vmtiles', 'exp1_')).tiles).toEqual([]);
+  });
+
+  it("offers as matches the names on every experiment's tiles the search finds", async () => {
+    const name = fc.stringMatching(/^[ab_/]{1,3}$/);
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(fc.tuple(fc.constantFrom('e', 'e_a'), name), {
+          maxLength: 6,
+          selector: ([e, n]) => `${e}/${n}`,
+        }),
+        fc.stringMatching(/^[eab_/]{0,3}$/),
+        async (pairs, search) => {
+          const page = await mountComponent(VMtilesView, {
+            route: '/vmtiles',
+            data: {
+              vms: pairs.map(([experiment, name]) => ({ experiment, name })),
+            },
+          });
+          await page.find('.autocomplete input').setValue(search);
+          const shown = page.findAll('.tile.is-child p.title').map(textOf);
+          expect(shown.toSorted()).toEqual(
+            pairs
+              .map(([e, n]) => `${e}/${n}`)
+              .filter((full) => full.includes(search))
+              .toSorted(),
+          );
+          expect(
+            page.findComponent({ name: 'BAutocomplete' }).props('data'),
+          ).toEqual(shown);
+          page.unmount();
+        },
+      ),
+      { numRuns: 20 },
     );
   });
 
@@ -442,13 +509,9 @@ describe('VMtilesView', () => {
 });
 
 describe('VMLabelsModal', () => {
-  // a label and a note, so the modal adds no blank rows, which it would save
+  // a note, which a save keeps as it is
   const NOTE = { __notes_1: 'n' };
 
-  // it resizes its notes before b-table draws them, which throws
-  beforeEach(() => {
-    vi.spyOn(VMLabelsModal.methods, 'resizeNoteTextArea').mockReturnValue();
-  });
   afterEach(() => vi.restoreAllMocks());
 
   const modal = (tags) =>
@@ -472,6 +535,59 @@ describe('VMLabelsModal', () => {
     });
     expect(labels.emitted('saved')).toEqual([[]]);
     expect(labels.emitted('close')).toEqual([[]]);
+  });
+
+  it('opens a VM with no labels or notes on a blank one of each, and saves neither', async () => {
+    const labels = await mountComponent(VMLabelsModal, {
+      props: { experiment: 'exp1', vmName: 'vm1', tags: {} },
+    });
+    expect(labels.findAll('textarea')).toHaveLength(1);
+    expect(labels.findAll('table').at(1).findAll('td input')).toHaveLength(2);
+
+    await button(labels, 'Save').trigger('click');
+    expect(axios.patch).not.toHaveBeenCalled();
+    expect(labels.emitted('close')).toEqual([[]]);
+  });
+
+  it('drops a note cleared of its text', async () => {
+    axios.patch.mockResolvedValue({ status: 200, statusText: '' });
+    const blank = fc
+      .array(fc.constantFrom(' ', '\t', '\n'), { maxLength: 4 })
+      .map((chars) => chars.join(''));
+    await fc.assert(
+      fc.asyncProperty(blank, async (text) => {
+        axios.patch.mockClear();
+        const labels = await modal({ old: 'x' });
+        await labels.find('textarea').setValue(text);
+        await button(labels, 'Save').trigger('click');
+        expect(axios.patch).toHaveBeenCalledWith('experiments/exp1/vms/vm1', {
+          tag_update_mode: 'SET',
+          tags: { old: 'x' },
+        });
+        labels.unmount();
+      }),
+      { numRuns: 20 },
+    );
+  });
+
+  it('sizes each note to its text as it opens, and as it is typed', async () => {
+    // happy-dom lays out nothing: give each line of a note 20px
+    vi.spyOn(
+      HTMLTextAreaElement.prototype,
+      'scrollHeight',
+      'get',
+    ).mockImplementation(function () {
+      return this.value.split('\n').length * 20;
+    });
+    const labels = await modal({ __notes_2: 'a\nb\nc' });
+    await flushPromises();
+    const heights = () =>
+      labels.findAll('textarea').map((t) => t.element.style.height);
+    expect(heights()).toEqual(['20px', '60px']);
+
+    await labels.findAll('textarea').at(0).setValue('a\nb');
+    await flushPromises();
+    expect(heights()).toEqual(['40px', '60px']);
   });
 
   it('closes without saving when nothing changed', async () => {

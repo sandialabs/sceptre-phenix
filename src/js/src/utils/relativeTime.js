@@ -16,12 +16,12 @@ export function relativeTime(time, now = Date.now()) {
   const then = new Date(time).getTime();
   if (Number.isNaN(then)) return '';
 
-  const seconds = Math.round((now - then) / 1000);
-  const abs = Math.abs(seconds);
+  const sign = now < then ? 1 : -1;
+  const abs = Math.round(Math.abs(now - then) / 1000);
 
   for (const [unit, size] of UNITS) {
     if (abs >= size) {
-      return format.format(-Math.trunc(seconds / size), unit);
+      return format.format(sign * Math.trunc(abs / size), unit);
     }
   }
 

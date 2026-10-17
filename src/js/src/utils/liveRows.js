@@ -8,7 +8,8 @@
 // with seq S changed the row after any list tagged with a lower seq was read,
 // and before any list tagged S or higher. A change without a seq (made by the
 // page itself, or from an older server) wins over every list until a list
-// newer than the last seq the page has seen.
+// newer than the last seq the page has seen (or, if it has seen none, newer
+// than the next list with a seq).
 export function createLiveRows() {
   const updatedSeq = new Map();
   const deletedSeq = new Map();
@@ -64,7 +65,11 @@ export function createLiveRows() {
       if (Number.isFinite(listSeq)) {
         latest = Math.max(latest, listSeq);
         for (const seqs of [updatedSeq, deletedSeq]) {
-          for (const [name, seq] of seqs) if (seq <= listSeq) seqs.delete(name);
+          for (const [name, seq] of seqs) {
+            if (seq <= listSeq) seqs.delete(name);
+            // a change made before any seq was seen orders after this list
+            else if (seq === Infinity) seqs.set(name, listSeq + 1);
+          }
         }
       }
 

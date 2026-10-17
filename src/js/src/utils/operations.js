@@ -123,9 +123,16 @@ export function confirmOperation(
 // "1 error occurred:\n\t* cause", so a failure deep in a SCORCH run otherwise
 // reads as one long run-on sentence.
 export function errorSteps(text) {
-  return String(text ?? '')
-    .split(/\s*\d+ errors? occurred:\s*/)
-    .flatMap((part) => part.split(/(?:^|\n)\s*\*\s+|^\*\s+|\s\*\s+(?=\S)/))
+  // bullets come only after a marker, so text before one keeps its " * "
+  const [head, ...lists] = String(text ?? '').split(
+    /\s*\d+ errors? occurred:\s*/,
+  );
+  return [head]
+    .concat(
+      lists.flatMap((list) =>
+        list.split(/(?:^|\n)\s*\*\s+|^\*\s+|\s\*\s+(?=\S)/),
+      ),
+    )
     .map((step) => step.trim().replace(/:$/, '').trim())
     .filter(Boolean);
 }

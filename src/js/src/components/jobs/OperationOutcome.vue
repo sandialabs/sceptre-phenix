@@ -1,8 +1,8 @@
 <!--
 How an operation on several items went, item by item: groups for the ones
 that succeeded, failed, were skipped and were canceled, each failure with
-its reason and whether trying it again may work, and a button to retry
-those that may.
+its reason and, when given onRetry, which ones may work if tried again and a
+button to retry them.
 -->
 <template>
   <div>
@@ -27,7 +27,7 @@ those that may.
           <span class="outcome-name">{{ item.name }}</span>
           <span v-if="item.error">: {{ item.error }}</span>
           <b-tag
-            v-if="item.retryable"
+            v-if="onRetry && item.retryable"
             type="is-info"
             size="is-small"
             class="ml-1">
@@ -37,11 +37,11 @@ those that may.
       </ul>
     </b-collapse>
     <b-button
-      v-if="retryable.length"
+      v-if="onRetry && retryable.length"
       size="is-small"
       icon-left="redo"
       class="mt-1"
-      @click="$emit('retry', retryable)">
+      @click="onRetry(retryable)">
       Retry failed ({{ retryable.length }})
     </b-button>
   </div>
@@ -63,8 +63,10 @@ those that may.
       // { name, status, error, retryable }, as utils/operations.js gives them
       items: { type: Array, required: true },
       noun: { type: String, default: 'item' },
+      // called with the names to retry; a prop, so the button and the
+      // 'can retry' tags show only when something can retry them
+      onRetry: { type: Function, default: null },
     },
-    emits: ['retry'],
     computed: {
       groups() {
         return GROUPS.map((group) => ({

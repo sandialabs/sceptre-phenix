@@ -72,10 +72,11 @@ with the request body; the page sends it. -->
         </b-select>
       </div>
       <b-taglist v-if="scenarioApps.length" class="create-exp-apps">
-        <b-tag
+        <!-- not b-tag, which takes clicks on its text only -->
+        <span
           v-for="(app, index) in scenarioApps"
           :key="app.name"
-          class="is-clickable"
+          class="tag is-clickable"
           :class="{ 'is-success': !app.disabled }"
           role="button"
           tabindex="0"
@@ -86,7 +87,7 @@ with the request body; the page sends it. -->
           @click="toggleApp(index)"
           @keydown.enter.space.prevent="toggleApp(index)">
           {{ app.name }}
-        </b-tag>
+        </span>
       </b-taglist>
       <b-collapse
         class="card create-exp-advanced"

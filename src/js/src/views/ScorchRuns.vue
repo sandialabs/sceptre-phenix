@@ -414,6 +414,7 @@
         request.catch((err) => {
           this.settle(run);
           useErrorNotification(err);
+          this.startNext();
         });
       },
 

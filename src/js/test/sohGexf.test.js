@@ -323,6 +323,12 @@ describe('GEXF values', () => {
     expect(exported({})).not.toContain('for="tags"');
   });
 
+  it('quotes list items holding characters XML cannot carry, so they keep them', () => {
+    expect(exported({ a: 'x\u0001y', b: 'z\uFFFE' })).toContain(
+      '<attvalue for="tags" value="[&quot;a=x\\u0001y&quot;, &quot;b=z\\ufffe&quot;]"/>',
+    );
+  });
+
   it('counts passed and failed checks per category', () => {
     const n = exported(
       {},
@@ -456,6 +462,29 @@ describe('GEXF of any graph', () => {
         parse(xml);
       }),
       { numRuns: 25 },
+    );
+  });
+
+  it('reads back every tag as given, even characters XML cannot carry', () => {
+    const text = fc.string({ unit: 'binary', maxLength: 12 });
+    const vm = fc.record({
+      label: fc.constant('vm'),
+      tags: fc.dictionary(
+        text.filter((k) => !k.startsWith('__')),
+        text,
+        { maxKeys: 3 },
+      ),
+    });
+    fc.assert(
+      fc.property(fc.array(vm, { maxLength: 4 }), (vms) => {
+        const doc = parse(exported('x', vms));
+        const nodes = [...doc.querySelectorAll('node')].slice(1);
+        nodes.forEach((n, i) => {
+          const list = values(n).tags;
+          const want = Object.entries(vms[i].tags).map(([k, v]) => `${k}=${v}`);
+          expect(list === undefined ? [] : readList(list)).toEqual(want);
+        });
+      }),
     );
   });
 

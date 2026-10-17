@@ -162,9 +162,10 @@ describe('Start all', () => {
   });
 
   it('starts each run not running once, in order, whatever each run reports', async () => {
-    // each run's reports once started: maybe a start, then how it ended
+    // each run's reports once started: maybe a start, then how it ended, or
+    // the server refusing to start it
     const reports = fc.array(
-      fc.tuple(fc.boolean(), fc.constantFrom('success', 'error')),
+      fc.tuple(fc.boolean(), fc.constantFrom('success', 'error', 'refused')),
       { minLength: 1, maxLength: 5 },
     );
     const setup = reports.chain((ends) =>
@@ -177,7 +178,11 @@ describe('Start all', () => {
       fc.asyncProperty(setup, async ([ends, running]) => {
         resetMocks({ store: {} });
         clearPageCache();
-        axios.post.mockImplementation(never);
+        axios.post.mockImplementation((path) =>
+          ends.some(([, end], i) => end === 'refused' && path === url(i))
+            ? Promise.reject(new Error('forbidden'))
+            : never(),
+        );
         const wrapper = await open(
           ends.map(() => ({})),
           running,
@@ -186,10 +191,12 @@ describe('Start all', () => {
         await click(wrapper, 'Start all');
         if (running >= 0) report('success', running);
         for (const [i, [started, end]] of ends.entries()) {
-          if (i === running) continue;
+          await flushPromises();
+          if (i === running || end === 'refused') continue;
           if (started) report('start', i);
           report(end, i);
         }
+        await flushPromises();
 
         expect(sent()).toEqual(
           ends.map((_, i) => `POST ${url(i)}`).filter((_, i) => i !== running),
@@ -205,18 +212,20 @@ describe('Start all', () => {
     );
   });
 
-  // ScorchRuns.vue:414 settles a refused start without starting the next run
-  it.fails(
-    'moves on to the next run when the server refuses a start',
-    async () => {
-      axios.post.mockRejectedValueOnce(new Error('forbidden'));
-      const wrapper = await open([{}, {}]);
+  it('moves on to the next run when the server refuses a start', async () => {
+    const err = new Error('forbidden');
+    axios.post.mockRejectedValueOnce(err);
+    const wrapper = await open([{}, {}]);
 
-      await click(wrapper, 'Start all');
-      await flushPromises();
-      expect(sent()).toEqual([`POST ${url(0)}`, `POST ${url(1)}`]);
-    },
-  );
+    await click(wrapper, 'Start all');
+    await flushPromises();
+    expect(notify.error).toHaveBeenCalledWith(err);
+    expect(sent()).toEqual([`POST ${url(0)}`, `POST ${url(1)}`]);
+    expect((await pageButtons(wrapper)).runs.map((run) => run.at(-1))).toEqual([
+      'start this run',
+      'start this run (spinning) (disabled)',
+    ]);
+  });
 
   it('lets a run already running finish first', async () => {
     const wrapper = await open([{}, {}, {}], 1);
