@@ -791,15 +791,28 @@ describe('text that a value was written as reads back as that value', () => {
     ),
     fc.stringMatching(/^[0-9a-fA-FxXoOeE_.+:-]{1,8}$/),
   );
+  // Past 80 columns: printable text that YAML folds (>) or keeps (|), or
+  // text with control characters that it quotes.
+  const word = fc.stringMatching(/^[a-zA-Z0-9:#'",.{}[\]&*!|>%@-]{1,12}$/);
+  const breaks = fc.constantFrom('', ' ', '\n', ' \n ', 'yes', '- x');
+  const textOf = (...parts) =>
+    fc
+      .array(fc.oneof(...parts), { minLength: 30, maxLength: 80 })
+      .map((words) => words.join(' '));
+  const long = fc.oneof(
+    textOf(word, word, breaks),
+    textOf(word, breaks, tricky, fc.string()),
+  );
   const value = fc.dictionary(
     tricky,
     fc.oneof(
       tricky,
+      long,
       fc.integer(),
       fc.double({ noNaN: true, noDefaultInfinity: true }),
       fc.boolean(),
       fc.constant(null),
-      fc.array(tricky, { maxLength: 3 }),
+      fc.array(fc.oneof(tricky, long), { maxLength: 3 }),
       fc.dictionary(tricky, tricky, { maxKeys: 3 }),
     ),
   );
@@ -807,11 +820,8 @@ describe('text that a value was written as reads back as that value', () => {
   test('as YAML', () => {
     fc.assert(
       fc.property(value, (v) => {
-        const text = YAML.dump(v, {
-          noRefs: true,
-          sortKeys: false,
-          lineWidth: -1,
-        });
+        // The options of toYAMLString (exporters.js), which loads the app store.
+        const text = YAML.dump(v, { noRefs: true, sortKeys: false });
 
         expect(canonicalJSON(parseText(text))).toBe(canonicalJSON(v));
       }),
@@ -819,7 +829,7 @@ describe('text that a value was written as reads back as that value', () => {
     );
   });
 
-  test('as JSON, as Download writes it', () => {
+  test('as pretty printed JSON', () => {
     fc.assert(
       fc.property(value, (v) => {
         const text = `${JSON.stringify(v, null, 2)}\n`;

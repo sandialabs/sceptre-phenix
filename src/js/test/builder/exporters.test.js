@@ -18,7 +18,7 @@ import {
   toJSONString,
   toYAMLString,
 } from '@/builder/exporters.js';
-import { parseDocument } from '@/builder/decode.js';
+import { parseDocument, parseText } from '@/builder/decode.js';
 import { lastModified, toGEXF } from '@/builder/gexf.js';
 import { MAX_DOCUMENT_ICONS } from '@/builder/icons.js';
 import {
@@ -224,6 +224,19 @@ describe('document download', () => {
     const { doc } = sampleDocument();
 
     expect(parseDocument(YAML.load(toYAMLString(doc)))).toEqual(doc);
+  });
+
+  test('a long description reads back from either download as it was, keys in order', () => {
+    const { doc: sample } = sampleDocument();
+    const description = `${'A line of words past the fold: yes, # and - too. '.repeat(4)}\n\n${'Then more. '.repeat(12)}`;
+    const doc = { ...sample, metadata: { ...sample.metadata, description } };
+    const yaml = toYAMLString(doc);
+
+    expect(yaml).toContain('description: >-\n');
+    for (const text of [yaml, toJSONString(doc)]) {
+      expect(JSON.stringify(parseText(text))).toBe(JSON.stringify(doc));
+      expect(parseDocument(parseText(text))).toEqual(doc);
+    }
   });
 
   // The creation and save stamps sit in the metadata, where the server's own
