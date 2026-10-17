@@ -7,7 +7,7 @@
 //   - theirs: the server's current document.
 // mergeDocuments combines them field by field. It takes a change made on
 // one side only. Only a field that both sides changed to different values is
-// a clash, which the user settles (applyChoices, and MergeDialog.vue).
+// a clash, which the user settles (MergeDialog.vue).
 //
 // The rules:
 //
@@ -1306,8 +1306,8 @@ export function droppedText(dropped = []) {
  *     ({key, label}).
  *   - dropped: the connections dropped because the choices deleted what they
  *     connect ({key, label}, see droppedText).
- *   - base, mine, theirs: the three versions, which applyChoices merges
- *     again.
+ *   - base, mine, theirs: the three versions, to merge again with the
+ *     user's choices.
  */
 export function mergeDocuments(base, mine, theirs, choices = {}) {
   const [b, m, t] = [base, mine, theirs].map((doc) =>
@@ -1342,18 +1342,6 @@ export function mergeDocuments(base, mine, theirs, choices = {}) {
     mine,
     theirs,
   };
-}
-
-/**
- * The merged document with the version chosen for each clash.
- *
- * @param {object} result mergeDocuments() result
- * @param {Object<string, 'mine'|'theirs'>} choices by clash key. A clash
- *   without a choice keeps theirs.
- * @returns {object} document
- */
-export function applyChoices(result, choices = {}) {
-  return mergeDocuments(result.base, result.mine, result.theirs, choices).doc;
 }
 
 /**

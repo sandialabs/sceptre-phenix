@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
 import {
-  applyChoices,
   changesFrom,
   clashNote,
   droppedText,
@@ -23,6 +22,9 @@ import {
 } from '@/builder/model.js';
 
 import { sampleDocument, testId } from './fixtures.js';
+
+const applyChoices = (result, choices) =>
+  mergeDocuments(result.base, result.mine, result.theirs, choices).doc;
 
 // The document with node `id` changed by `change`.
 function changeNode(doc, id, change) {

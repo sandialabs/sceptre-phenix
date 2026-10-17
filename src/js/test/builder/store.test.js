@@ -2658,7 +2658,6 @@ describe('server data', () => {
     await store.fetchSchema();
 
     expect(store.schema.$id).toBe(builderSchemaV1.$id);
-    expect(store.schemaSource).toBe('bundled');
     // In plain words: no "schema" jargon.
     expect(store.schemaError).toMatch(
       /^Could not load this server's form fields\. .*fields built into the Builder instead/,
@@ -2671,14 +2670,12 @@ describe('server data', () => {
 
     await store.fetchSchema();
 
-    expect(store.schemaSource).toBe('bundled');
     expect(store.schemaError).toBeTruthy();
   });
 
   test('a usable server schema replaces the bundle silently', async () => {
     await store.fetchSchema();
 
-    expect(store.schemaSource).toBe('server');
     expect(store.schemaError).toBe('');
   });
 
@@ -2811,7 +2808,6 @@ describe('server data', () => {
     expect(api.publish).toHaveBeenCalledWith('d1', intent, '"1"');
     expect(api.publish.mock.calls[0][1].document).toBeUndefined();
     expect(result.ok).toBe(true);
-    expect(store.publishResult).toEqual(result);
     // The topology now exists, so the list the next publish chooses create
     // or update from is read again.
     expect(api.getSources).toHaveBeenCalledOnce();
@@ -5269,7 +5265,6 @@ describe('the experiment a draft was published with', () => {
 
     expect(api.publish).toHaveBeenCalledWith('d1', intent, '"1"');
     expect(result.ok).toBe(true);
-    expect(store.publishResult).toEqual(result);
     expect(store.experiment).toBe('');
     expect(store.etag).toBeNull();
     expect(store.draftRecord).toMatchObject({ id: '', digest: '' });

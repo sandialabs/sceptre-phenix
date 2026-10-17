@@ -2452,11 +2452,8 @@
   }
 
   defineExpose({
-    apply,
-    cancel,
     settle,
     saveUnapplied,
-    draft,
     errors,
     changed,
     collapseAll,

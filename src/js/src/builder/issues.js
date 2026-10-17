@@ -15,7 +15,7 @@ import { findNode } from './model.js';
  * @returns {{errors: number, warnings: number, blocking: number}} blocking:
  *   the warnings about what publishing refuses (an interface with no VLAN,
  *   an address that two interfaces use, and a hostname that phenix
- *   refuses). The Publish dialog lists them as errors (see publishChecks).
+ *   refuses). The Publish dialog lists them as errors (see toIssue).
  */
 export function issueCounts(issues = []) {
   const errors = issues.filter((entry) => entry.level === 'error').length;
@@ -303,8 +303,7 @@ const ID_KEYS = { nodes: 'nodeId', edges: 'edgeId', networks: 'networkId' };
  * @param {'error'|'warning'} [defaultSeverity] the severity of a message
  *   alone, or of an issue that states none
  * @param {{publishing?: boolean}} [options] publishing: a warning about what
- *   publishing refuses is an error, as the Publish dialog lists it (see
- *   publishChecks)
+ *   publishing refuses is an error, as the Publish dialog lists it
  * @returns {{severity: 'error'|'warning', message: string, code?: string,
  *   path?: string, nodeId?: string, edgeId?: string, networkId?: string,
  *   field?: string, blocksPublish?: true}}

@@ -834,7 +834,6 @@ export const useBuilderStore = defineStore('builder', {
     layoutRunning: false,
     autoGrouping: false,
     schema: builderSchemaV1,
-    schemaSource: 'bundled',
     schemaError: '',
     // Who made the open draft, as the server recorded it.
     createdBy: '',
@@ -903,7 +902,6 @@ export const useBuilderStore = defineStore('builder', {
     // fetchLayerSets in layerSetStore.js).
     layerSets: emptyLayerSets(),
     publishing: false,
-    publishResult: null,
     // The issues the server listed when it refused the last publish (see
     // responseIssues in issues.js), which the Publish dialog lists.
     publishIssues: [],
@@ -1041,13 +1039,6 @@ export const useBuilderStore = defineStore('builder', {
     selectedNode(state) {
       return state.selection.nodes.length === 1
         ? findNode(state.doc, state.selection.nodes[0])
-        : null;
-    },
-    selectedEdge(state) {
-      return state.selection.edges.length === 1
-        ? (state.doc.edges || []).find(
-            (edge) => edge.id === state.selection.edges[0],
-          )
         : null;
     },
     inspectorSelection(state) {
@@ -2568,13 +2559,11 @@ export const useBuilderStore = defineStore('builder', {
         const usable = isSchemaBundle(payload);
 
         this.schema = normalizeSchemaBundle(payload);
-        this.schemaSource = usable ? 'server' : 'bundled';
         this.schemaError = usable
           ? ''
           : `The server sent form fields this editor does not recognize. ${BUNDLED_FIELDS}`;
       } catch (error) {
         this.schema = builderSchemaV1;
-        this.schemaSource = 'bundled';
         this.schemaError = `${this.describeError(error, "load this server's form fields")} ${BUNDLED_FIELDS}`;
       }
 
@@ -3373,7 +3362,6 @@ export const useBuilderStore = defineStore('builder', {
      * @returns {Promise<object|null>} publish result
      */
     async publish(intent) {
-      this.publishResult = null;
       this.publishIssues = [];
       this.clearError();
 
@@ -3448,8 +3436,6 @@ export const useBuilderStore = defineStore('builder', {
 
           await autosave.setETag(etag);
         }
-
-        this.publishResult = result;
 
         if (stillOpen()) {
           this.rememberDraft(result.draft);

@@ -24,7 +24,6 @@ import {
   overwriteConfirmation,
   publishChangeGroups,
   publishChangesSummary,
-  publishChecks,
   publishLabel,
   publishRefusal,
   replacedScenarioConfig,
@@ -35,9 +34,6 @@ import {
   targetHint,
   updateBlocker,
 } from '@/builder/publish.js';
-import { validateDocument } from '@/builder/validate.js';
-
-import { sampleDocument } from './fixtures.js';
 
 describe('publish intent', () => {
   test('never carries the document', () => {
@@ -1131,50 +1127,6 @@ describe('includes the diagram keeps without showing their nodes', () => {
     expect(keptIncludesText(many.slice(0, 8))).toBe(
       ' The published topology also includes t1, t2, t3, t4, t5, t6, t7 and t8 by reference.',
     );
-  });
-});
-
-describe('publish checks', () => {
-  test('an interface with no VLAN is an error in the Publish dialog only', () => {
-    const { doc } = sampleDocument();
-    const issues = validateDocument(doc);
-    const checks = publishChecks(issues);
-    const blocking = (list) =>
-      list
-        .filter((issue) => issue.level === 'error')
-        .map((issue) => issue.message);
-
-    expect(blocking(issues)).toEqual([]);
-    expect(blocking(checks)).toEqual([
-      'interface "eth0" of "bravo" is not connected to a network and has no VLAN, so it cannot be published: connect it, or type a VLAN for it',
-    ]);
-    expect(checks).toHaveLength(issues.length);
-    expect(checks.filter((issue) => !issue.blocksPublish)).toEqual(
-      issues.filter((issue) => !issue.blocksPublish),
-    );
-  });
-
-  test('an address two interfaces use is an error in the Publish dialog only', () => {
-    const { doc } = sampleDocument();
-
-    // alpha is connected to network EXP, and bravo's VLAN puts it there.
-    for (const node of doc.nodes.filter((entry) => entry.kind === 'device')) {
-      Object.assign(node.device.spec.network.interfaces[0], {
-        vlan: 'EXP',
-        mac: '00:00:00:00:00:01',
-      });
-    }
-
-    const issues = validateDocument(doc);
-    const errors = publishChecks(issues)
-      .filter((issue) => issue.level === 'error')
-      .map((issue) => issue.message);
-
-    expect(issues.filter((issue) => issue.level === 'error')).toEqual([]);
-    expect(errors).toEqual([
-      'MAC address 00:00:00:00:00:01 of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
-      'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"',
-    ]);
   });
 });
 

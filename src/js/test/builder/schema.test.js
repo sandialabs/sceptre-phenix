@@ -10,7 +10,6 @@ import {
   MINIMEGA_NODE_DEF,
   normalizeSchemaBundle,
   orderedFields,
-  resolveRef,
   schemaForKind,
   specDefName,
   SUGGESTIONS_KEYWORD,
@@ -33,15 +32,6 @@ describe('bundled builder schema', () => {
     expect(normalizeSchemaBundle(null)).toBe(builderSchemaV1);
     expect(normalizeSchemaBundle({ definitions: {} })).toBe(builderSchemaV1);
     expect(normalizeSchemaBundle({ $defs: { a: {} } }).$defs.a).toEqual({});
-  });
-
-  test('refs resolve inside the bundle', () => {
-    const resolved = resolveRef(
-      builderSchemaV1,
-      `#/$defs/${MINIMEGA_NODE_DEF}`,
-    );
-
-    expect(resolved.type).toBe('object');
   });
 });
 

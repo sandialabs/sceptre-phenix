@@ -62,21 +62,6 @@ export function normalizeSchemaBundle(payload) {
   return candidate;
 }
 
-/**
- * Resolves a local `#/$defs/...` reference against a bundle.
- *
- * @param {object} bundle
- * @param {string} pointer
- * @returns {object|undefined}
- */
-export function resolveRef(bundle, pointer) {
-  if (typeof pointer !== 'string' || !pointer.startsWith('#/$defs/')) {
-    return undefined;
-  }
-
-  return bundle?.$defs?.[pointer.slice('#/$defs/'.length)];
-}
-
 function omit(value, keys) {
   return Object.fromEntries(
     Object.entries(value).filter(([key]) => !keys.includes(key)),
