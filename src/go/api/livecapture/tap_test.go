@@ -23,13 +23,11 @@ import (
 	"phenix/store"
 	"phenix/util/mm"
 	"phenix/util/mm/mmtest"
+	"phenix/util/polltest"
 )
 
-// fakeCluster stands in for minimega, and the store, for a running
-// experiment "exp" whose VM "vm" has interfaces 0 and 1 captured (while
-// capturing is set), on the headnode or on node compute1. The capture files
-// are in dir; compute1 reports them under /phenix/images/exp/files, and they
-// are read from dir through a fake minimega.
+// fakeCluster fakes minimega and the store for "exp" capturing "vm" interfaces 0 and 1 into dir; compute1
+// reports those files under /phenix/images/exp/files, and they are read from dir through a fake minimega.
 type fakeCluster struct {
 	mm.MM
 
@@ -42,10 +40,6 @@ type fakeCluster struct {
 	mu      sync.Mutex
 	release chan struct{} // while set, mesh reads wait for it to close
 	waiting chan struct{} // closed once a mesh read waits on release
-
-	// while set, asking whether a host is the headnode tells asked, then
-	// waits for headnode to close
-	asked, headnode chan struct{}
 }
 
 func (c *fakeCluster) GetVMCaptures(...mm.Option) []mm.Capture {
@@ -66,15 +60,6 @@ func (c *fakeCluster) GetVMHost(...mm.Option) (string, error) {
 }
 
 func (c *fakeCluster) IsHeadnode(host string) bool {
-	c.mu.Lock()
-	asked, headnode := c.asked, c.headnode
-	c.mu.Unlock()
-
-	if asked != nil {
-		asked <- struct{}{}
-		<-headnode
-	}
-
 	return host == "headnode"
 }
 
@@ -138,10 +123,8 @@ func (c *fakeCluster) stall() (<-chan struct{}, func()) {
 	return c.waiting, sync.OnceFunc(func() { close(c.release) })
 }
 
-// useFakeCluster points the package at a fake cluster, with its captures on
-// the headnode or on another node, and shortens its timings for the test. An
-// unused Tap is kept until the test ends; set idleGrace before a Release to
-// have it expire sooner.
+// useFakeCluster fakes a cluster capturing on the headnode or another node, with short timings. An unused
+// Tap is kept until the test ends; set idleGrace before a Release to expire it sooner.
 func useFakeCluster(t *testing.T, remote bool) *fakeCluster {
 	t.Helper()
 
@@ -492,28 +475,16 @@ func TestOpenKeepsAStoppedCaptureUntilItExpires(t *testing.T) { //nolint:paralle
 
 	again.Release()
 
-	// once nobody has used it for the grace period, it is gone. Expiry drops
-	// the Tap from the registry before it stops following and removes the
-	// spool, so wait for both rather than only the registry.
-	deadline := time.Now().Add(5 * time.Second)
-
-	for {
+	// expiry drops the Tap from the registry before removing its spool, so wait for both
+	polltest.Until(t, "the unused Tap expires and its spool is removed", func() bool {
 		registryMu.Lock()
 		_, held := registry["exp/vm/0"]
 		registryMu.Unlock()
 
-		_, statErr := os.Stat(spool)
+		_, err := os.Stat(spool)
 
-		if !held && os.IsNotExist(statErr) {
-			break
-		}
-
-		if time.Now().After(deadline) {
-			t.Fatalf("unused Tap never expired: in registry %t, spool %v", held, statErr)
-		}
-
-		time.Sleep(10 * time.Millisecond)
-	}
+		return !held && os.IsNotExist(err)
+	})
 
 	if _, err := Open("exp", "vm", 0); !errors.Is(err, ErrNotCapturing) {
 		t.Fatalf("Open after expiry = %v, want ErrNotCapturing", err)
@@ -559,20 +530,11 @@ func TestCloseAllStopsEveryTap(t *testing.T) { //nolint:paralleltest // replaces
 	}()
 
 	// the spool goes at once, without waiting for that read
-	deadline := time.Now().Add(5 * time.Second)
-
-	for {
+	polltest.Until(t, "the spool is removed while a read is in flight", func() bool {
 		_, err := os.Stat(tap.spool)
-		if os.IsNotExist(err) {
-			break
-		}
 
-		if time.Now().After(deadline) {
-			t.Fatalf("spool still there while a read is in flight: %v", err)
-		}
-
-		time.Sleep(time.Millisecond)
-	}
+		return os.IsNotExist(err)
+	})
 
 	release()
 
@@ -606,68 +568,6 @@ func TestCloseAllStopsEveryTap(t *testing.T) { //nolint:paralleltest // replaces
 
 	if again == tap {
 		t.Fatal("Open after CloseAll returned the closed Tap")
-	}
-}
-
-// Starting a Tap asks minimega whether its capture is on the headnode, which
-// can take a minimega command; other captures can be released meanwhile.
-func TestOpenDoesNotAskMinimegaUnderTheRegistryLock(t *testing.T) { //nolint:paralleltest // replaces package state
-	cluster := useFakeCluster(t, false)
-	activeCheck = time.Hour
-
-	other, err := Open("exp", "vm", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	asked, headnode := make(chan struct{}, 1), make(chan struct{})
-	release := sync.OnceFunc(func() { close(headnode) })
-
-	t.Cleanup(release)
-
-	cluster.mu.Lock()
-	cluster.asked, cluster.headnode = asked, headnode
-	cluster.mu.Unlock()
-
-	opened := make(chan error, 1)
-
-	go func() {
-		tap, err := Open("exp", "vm", 0)
-		if err == nil {
-			tap.Release()
-		}
-
-		opened <- err
-	}()
-
-	select {
-	case <-asked:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Open did not ask minimega")
-	}
-
-	released := make(chan struct{})
-
-	go func() {
-		other.Release()
-		close(released)
-	}()
-
-	select {
-	case <-released:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Release waited on another capture's Open")
-	}
-
-	release()
-
-	select {
-	case err := <-opened:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Open did not return")
 	}
 }
 

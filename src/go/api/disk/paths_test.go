@@ -66,9 +66,7 @@ func TestValidateMinimegaPath(t *testing.T) {
 	}
 }
 
-// Every path ValidateMinimegaPath accepts reaches a minimega command as the
-// one argument it was, and minimega's command line would split, unquote or
-// cut short some of the paths it refuses.
+// Each accepted path reaches minimega as one argument; minimega's parser would split or alter some refused ones.
 func TestValidPathsReachMinimegaWhole(t *testing.T) {
 	minicli.Reset()
 	t.Cleanup(minicli.Reset)

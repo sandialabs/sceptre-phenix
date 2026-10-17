@@ -9,9 +9,8 @@ import (
 	"time"
 )
 
-// A copy that finishes while a slow subscriber has not taken its progress
-// ends cleanly: the subscription is closed only once progress stops being
-// sent on it.
+// A copy that ends while a slow subscriber has not taken its progress ends cleanly, closing the
+// subscription only once progress stops being sent on it.
 //
 //nolint:paralleltest // shortens the progress interval
 func TestCopyEndsWhileProgressIsPending(t *testing.T) {

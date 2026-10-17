@@ -38,9 +38,7 @@ func checkErr(t *testing.T, err, want error) {
 	}
 }
 
-// fakeMM stands in for minimega. It reports the same VMs and captures
-// whichever VM a call names, and any mm.MM method it does not define panics
-// through the nil embedded interface.
+// fakeMM fakes minimega, reporting the same VMs and captures for any VM; undefined mm.MM methods panic.
 type fakeMM struct {
 	mm.MM
 
@@ -151,9 +149,8 @@ func (s *fakeStore) Update(cfg *store.Config) error {
 	return nil
 }
 
-// useExperiment makes the store hold only the experiment testExp, with the
-// given topology nodes, running since started unless that is empty. A test may
-// add to the returned store's experiment spec before reading it.
+// useExperiment makes the store hold only testExp with the given nodes, running since started unless it is
+// empty. A test may add to the returned store's experiment spec before reading it.
 func useExperiment(t *testing.T, started string, nodes ...map[string]any) *fakeStore {
 	t.Helper()
 

@@ -11,9 +11,7 @@ import (
 	"phenix/api/disk/disktest"
 )
 
-// useFakeQemuImg puts disktest's fake qemu-img first on PATH, with nothing
-// cached from earlier inspections, and returns a function counting the times
-// it has run.
+// useFakeQemuImg puts the fake qemu-img first on PATH, clears the cache, and returns its call counter.
 func useFakeQemuImg(t *testing.T) func() int {
 	t.Helper()
 
@@ -126,24 +124,8 @@ func TestGetImageReportsLockedImagesInUse(t *testing.T) {
 	}
 }
 
-func TestGetImageShowsImageWhoseBackingChainIsUnreadable(t *testing.T) {
-	calls := useFakeQemuImg(t)
-
-	path := filepath.Join(t.TempDir(), "broken.qc2")
-	writeFile(t, path, "x")
-
-	got, err := GetImage(path)
-	if err != nil || got.Name != "broken.qc2" || len(got.BackingImages) != 0 {
-		t.Fatalf("GetImage = %+v, %v; want the image alone", got, err)
-	}
-
-	if n := calls(); n != 2 {
-		t.Fatalf("qemu-img ran %d times, want the chain then the image alone", n)
-	}
-}
-
 func TestGetImageFindsBackingImageOnceItAppears(t *testing.T) {
-	useFakeQemuImg(t)
+	calls := useFakeQemuImg(t)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "over.qc2")
@@ -151,8 +133,12 @@ func TestGetImageFindsBackingImageOnceItAppears(t *testing.T) {
 	writeFile(t, path+".backing", "base.qc2")
 
 	got, err := GetImage(path)
-	if err != nil || len(got.BackingImages) != 0 {
+	if err != nil || got.Name != "over.qc2" || len(got.BackingImages) != 0 {
 		t.Fatalf("GetImage with its backing image missing = %+v, %v; want the image alone", got, err)
+	}
+
+	if n := calls(); n != 2 {
+		t.Fatalf("qemu-img ran %d times, want the chain then the image alone", n)
 	}
 
 	writeFile(t, filepath.Join(dir, "base.qc2"), "y")
@@ -164,6 +150,8 @@ func TestGetImageFindsBackingImageOnceItAppears(t *testing.T) {
 }
 
 func TestWatchDebouncesImageChanges(t *testing.T) {
+	t.Parallel()
+
 	const debounce = 100 * time.Millisecond
 
 	dir := t.TempDir()

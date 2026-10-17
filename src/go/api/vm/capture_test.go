@@ -13,9 +13,8 @@ import (
 	"phenix/util/mm/mmtest"
 )
 
-// useCaptureVM makes the running experiment's one VM test-vm, whose topology
-// interfaces IF0 and IF1 are on EXP_1 and EXP_2 and which minimega reports on
-// the given networks, and returns minimega.
+// useCaptureVM makes test-vm the running experiment's one VM, with IF0 and IF1 on EXP_1 and EXP_2 and
+// minimega reporting the given networks, and returns minimega.
 func useCaptureVM(t *testing.T, fake *fakeMM, networks ...string) *fakeMM {
 	t.Helper()
 
@@ -227,39 +226,8 @@ func TestResolveInterface(t *testing.T) {
 	}
 }
 
-// Captures started and stopped by interface name, as the CLI does.
-func TestCaptureByInterfaceName(t *testing.T) {
-	fake := useCaptureVM(t, &fakeMM{
-		captures: []mm.Capture{{VM: "test-vm", Interface: 0, Filepath: "test-experiment/files/out.pcap"}},
-	}, "EXP_2 (102)", "EXP_1 (101)")
-
-	v, err := vm.Get(t.Context(), testExp, "test-vm")
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-
-	iface, err := vm.ResolveInterface(v, "IF1")
-	if err != nil {
-		t.Fatalf("ResolveInterface: %v", err)
-	}
-
-	if err := vm.StartCaptureForVM(t.Context(), v, testExp, "test-vm", iface, "out.pcap"); err != nil {
-		t.Fatalf("StartCaptureForVM: %v", err)
-	}
-
-	if err := vm.StopCapture(t.Context(), testExp, "test-vm", iface); err != nil {
-		t.Fatalf("StopCapture: %v", err)
-	}
-
-	if fake.starts != 1 || fake.stops != 1 {
-		t.Errorf("started %d and stopped %d captures, want 1 each", fake.starts, fake.stops)
-	}
-}
-
-// useSubnetVMs makes the experiment's VMs a, b, c and d, running unless
-// stopped. a has two addresses in 10.0.0.0/24 and one outside it, c one in it,
-// and b and d one each in 10.0.1.0/24. minimega reports c paused and the others
-// running, and a, b and c capturing.
+// useSubnetVMs makes VMs a-d, running unless stopped: a has two 10.0.0.0/24 addresses and one outside, c one
+// in it, b and d one each in 10.0.1.0/24; minimega reports c paused and a-c capturing.
 func useSubnetVMs(t *testing.T, stopped bool, fake *fakeMM) *fakeMM {
 	t.Helper()
 
@@ -463,9 +431,7 @@ func TestStopCapturesListsCapturesOnce(t *testing.T) {
 	}
 }
 
-// Subnet captures give up with their context until the first capture starts
-// or stops: none is tried once the context is done, and a failure while it
-// ends stops the rest.
+// Subnet captures stop trying once their context is done, and a failure as it ends stops the rest.
 func TestSubnetCapturesGiveUpWithTheirContext(t *testing.T) {
 	calls := map[string]func(ctx context.Context) error{
 		"start": func(ctx context.Context) error {

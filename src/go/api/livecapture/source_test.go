@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -130,14 +131,24 @@ func TestMeshSourceRead(t *testing.T) { //nolint:paralleltest // uses the fake m
 		t.Fatalf("unexpected command %q", sent)
 	}
 
-	args := lexMinicli(t, sent)
-	want := []string{
-		"mesh", "send", "compute1", "shell", "sh", "-c", meshReadScript,
-		"phenix", "/phenix/images/exp/files/vm-0.pcap", "24", "1024",
+	minicli.Reset()
+	t.Cleanup(minicli.Reset)
+
+	minicli.MustRegister(&minicli.Handler{
+		Patterns: []string{"mesh send <host> shell <args>..."},
+		Call:     func(*minicli.Command, chan<- minicli.Responses) {},
+	})
+
+	cmd, err := minicli.Compile(sent)
+	if err != nil {
+		t.Fatalf("minimega cannot parse %q: %v", sent, err)
 	}
 
-	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
-		t.Fatalf("minimega would run %q, want %q", args, want)
+	args := cmd.ListArgs["args"]
+	want := []string{"sh", "-c", meshReadScript, "phenix", "/phenix/images/exp/files/vm-0.pcap", "24", "1024"}
+
+	if cmd.StringArgs["host"] != "compute1" || !slices.Equal(args, want) {
+		t.Fatalf("minimega would run %q on %q, want %q", args, cmd.StringArgs["host"], want)
 	}
 }
 
@@ -160,54 +171,6 @@ func TestMeshSourceRefusesUnsafePaths(t *testing.T) {
 	if _, err := newMeshSource("compute1 shell reboot", "/a.pcap"); !errors.Is(err, ErrUnsafePath) {
 		t.Errorf("unsafe host accepted: %v", err)
 	}
-}
-
-// lexMinicli splits a command the way minimega's input lexer does: on
-// whitespace, honoring double quotes and backslash escapes.
-func lexMinicli(t *testing.T, s string) []string {
-	t.Helper()
-
-	var (
-		args    []string
-		cur     strings.Builder
-		inQuote bool
-		started bool
-	)
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-
-		switch {
-		case c == '\\':
-			i++
-			if i == len(s) {
-				t.Fatalf("dangling escape in %q", s)
-			}
-
-			cur.WriteByte(s[i])
-		case c == '"':
-			inQuote = !inQuote
-			started = true
-		case c == ' ' && !inQuote:
-			if cur.Len() > 0 || started {
-				args = append(args, cur.String())
-				cur.Reset()
-				started = false
-			}
-		default:
-			cur.WriteByte(c)
-		}
-	}
-
-	if inQuote {
-		t.Fatalf("unterminated quote in %q", s)
-	}
-
-	if cur.Len() > 0 || started {
-		args = append(args, cur.String())
-	}
-
-	return args
 }
 
 // TestMeshReadScript runs the script a remote node runs, on this machine.

@@ -22,9 +22,8 @@ import (
 	"phenix/util/mm"
 )
 
-// listedFiles lists the given experiment files, copies those only a mesh node
-// has to the headnode, and records deletions; any other file.ClusterFiles
-// method panics through the nil embedded interface.
+// listedFiles lists experiment files, copies mesh-only ones to the headnode and records deletions;
+// other ClusterFiles methods panic.
 type listedFiles struct {
 	file.ClusterFiles
 
@@ -115,9 +114,7 @@ func useExperiment(t *testing.T, name string, running bool) {
 	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore test double
 }
 
-// capturingMM reports one capture writing to the named file, counting the
-// times it is asked; any other mm.MM method panics through the nil embedded
-// interface.
+// capturingMM reports one capture writing to path and counts lookups; other mm.MM methods panic.
 type capturingMM struct {
 	mm.MM
 
@@ -348,6 +345,42 @@ func useFilesDir(t *testing.T, exp string, files map[string]string) {
 
 var zipLimits = experiment.ZipLimits{MaxFiles: 10, MaxBytes: 1 << 20} //nolint:gochecknoglobals // test limits
 
+type zipEntry struct {
+	Name   string
+	Method uint16
+	Data   string
+}
+
+// readZip returns the archive's entries in order.
+func readZip(t *testing.T, buf *bytes.Buffer) []zipEntry {
+	t.Helper()
+
+	archive, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("reading zip: %v", err)
+	}
+
+	entries := make([]zipEntry, 0, len(archive.File))
+
+	for _, f := range archive.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+
+		if err != nil {
+			t.Fatalf("%s: %v", f.Name, err)
+		}
+
+		entries = append(entries, zipEntry{Name: f.Name, Method: f.Method, Data: string(data)})
+	}
+
+	return entries
+}
+
 func TestZipFilesArchivesTheFiles(t *testing.T) { //nolint:paralleltest // replaces package state
 	useFilesDir(t, "exp", map[string]string{
 		"a.log":               "alpha",
@@ -368,31 +401,20 @@ func TestZipFilesArchivesTheFiles(t *testing.T) { //nolint:paralleltest // repla
 		t.Errorf("zipped %v, want %v", zipped, want)
 	}
 
-	archive, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-	if err != nil {
-		t.Fatalf("reading zip: %v", err)
-	}
+	entries := readZip(t, &buf)
 
 	want := map[string]string{"a.log": "alpha", "scorch/run-0/b.json": `{"ok":true}`, "c.gz": "gzipped"}
-	if len(archive.File) != len(want) {
-		t.Fatalf("zip has %d files, want %d", len(archive.File), len(want))
+	if len(entries) != len(want) {
+		t.Fatalf("zip has %d files, want %d", len(entries), len(want))
 	}
 
-	for _, f := range archive.File {
-		rc, err := f.Open()
-		if err != nil {
-			t.Fatal(err)
+	for _, e := range entries {
+		if e.Data != want[e.Name] {
+			t.Errorf("%s = %q, want %q", e.Name, e.Data, want[e.Name])
 		}
 
-		got, _ := io.ReadAll(rc)
-		_ = rc.Close()
-
-		if string(got) != want[f.Name] {
-			t.Errorf("%s = %q, want %q", f.Name, got, want[f.Name])
-		}
-
-		if f.Name == "c.gz" && f.Method != zip.Store {
-			t.Errorf("c.gz compressed again (method %d)", f.Method)
+		if e.Name == "c.gz" && e.Method != zip.Store {
+			t.Errorf("c.gz compressed again (method %d)", e.Method)
 		}
 	}
 }
@@ -546,24 +568,14 @@ func TestZipPlanSkipsFailedFiles(t *testing.T) { //nolint:paralleltest // replac
 		t.Errorf("read %d bytes", bytesIn)
 	}
 
-	archive, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	entries := readZip(t, &buf)
+	names := make([]string, 0, len(entries))
 
-	names := make([]string, 0, len(archive.File))
+	for _, e := range entries {
+		names = append(names, e.Name)
 
-	for _, f := range archive.File {
-		names = append(names, f.Name)
-
-		if f.Name == "MISSING.txt" {
-			rc, _ := f.Open()
-			missing, _ := io.ReadAll(rc)
-			_ = rc.Close()
-
-			if !strings.Contains(string(missing), "gone.log: ") {
-				t.Errorf("MISSING.txt does not list gone.log: %q", missing)
-			}
+		if e.Name == "MISSING.txt" && !strings.Contains(e.Data, "gone.log: ") {
+			t.Errorf("MISSING.txt does not list gone.log: %q", e.Data)
 		}
 	}
 
@@ -610,30 +622,6 @@ func growFile(t *testing.T, exp, p string, n int) {
 
 	if _, err := f.Write(make([]byte, n)); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// A file that grows after the plan cannot push the streamed archive past the
-// limit.
-func TestZipFilesStopsAtTheLimitWhenAFileGrows(t *testing.T) { //nolint:paralleltest // replaces package state
-	useFilesDir(t, "grow", map[string]string{"a.gz": "alpha"})
-	useListedFiles(t)
-
-	limits := experiment.ZipLimits{MaxFiles: 2, MaxBytes: 4096}
-
-	var buf bytes.Buffer
-
-	_, err := experiment.ZipFiles("grow", []string{"a.gz"}, limits, func() io.Writer {
-		growFile(t, "grow", "a.gz", 1<<20)
-
-		return &buf
-	})
-	if !errors.Is(err, experiment.ErrDownloadTooLarge) {
-		t.Errorf("ZipFiles = %v, want ErrDownloadTooLarge", err)
-	}
-
-	if int64(buf.Len()) > limits.MaxBytes {
-		t.Errorf("wrote %d bytes, over the %d byte limit", buf.Len(), limits.MaxBytes)
 	}
 }
 
@@ -701,27 +689,10 @@ func TestZipPlanKeepsThePlannedPartOfAFileThatGrows(t *testing.T) { //nolint:par
 		t.Errorf("wrote %d bytes, over the %d byte limit", buf.Len(), limits.MaxBytes)
 	}
 
-	archive, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	got := map[string]string{}
 
-	for _, f := range archive.File {
-		rc, err := f.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		data, err := io.ReadAll(rc)
-		_ = rc.Close()
-
-		if err != nil {
-			t.Fatalf("%s: %v", f.Name, err)
-		}
-
-		got[f.Name] = string(data)
+	for _, e := range readZip(t, &buf) {
+		got[e.Name] = e.Data
 	}
 
 	if got["before.gz"] != "alpha" || got["during.gz"] != big || got["c.log"] != "gamma" || len(got) != 4 {
@@ -744,8 +715,14 @@ func TestZipPlanKeepsThePlannedPartOfAFileThatGrows(t *testing.T) { //nolint:par
 		t.Errorf("MISSING.txt says a file was left out: %q", notes)
 	}
 
-	// without SkipFailed a grown file fails the archive
-	if _, err := plan.Write(t.Context(), io.Discard, experiment.ZipHooks{}); !errors.Is(err, experiment.ErrDownloadTooLarge) {
+	// without SkipFailed a grown file fails the archive, which stays within the limit
+	buf.Reset()
+
+	if _, err := plan.Write(t.Context(), &buf, experiment.ZipHooks{}); !errors.Is(err, experiment.ErrDownloadTooLarge) {
 		t.Errorf("Write without SkipFailed = %v, want ErrDownloadTooLarge", err)
+	}
+
+	if int64(buf.Len()) > limits.MaxBytes {
+		t.Errorf("wrote %d bytes without SkipFailed, over the %d byte limit", buf.Len(), limits.MaxBytes)
 	}
 }
