@@ -1,5 +1,6 @@
 // Node icon sizes: the diagram's and each node's own, how the document keeps
-// them, their Inspector fields, and how the canvas draws each kind.
+// them, their Inspector fields as rendered (choosing in them is in
+// icon-size-select.test.js), and how the canvas draws each kind.
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createSSRApp, h } from 'vue';
@@ -591,7 +592,7 @@ describe('a node drawn on the canvas', () => {
 // The Inspector open on node `id`, or on the diagram section without one.
 async function openInspector(doc, { id = null, readOnly = false } = {}) {
   const { store, html, instances } = await renderWithStore(BuilderInspector, {
-    capture: { inspector: BuilderInspector, diagram: InspectorDiagram },
+    capture: { diagram: InspectorDiagram },
     prepare(store) {
       store.commit(doc, '');
       store.readOnly = readOnly;
@@ -602,7 +603,6 @@ async function openInspector(doc, { id = null, readOnly = false } = {}) {
   return {
     store,
     html,
-    setup: instances.inspector[0].setupState,
     diagram: instances.diagram[0]?.setupState,
   };
 }
@@ -690,93 +690,6 @@ describe('the Inspector’s diagram Icon size', () => {
     );
     expect(html).toContain('id="inspector-icon-size-help"');
   });
-
-  test('chosen with the pointer applies at once, and stepped to with keys once the choice is made', async () => {
-    const { doc } = sampleDocument();
-    const { store, diagram } = await openInspector(doc);
-    const choice = diagram.iconSizeChoice;
-    const steps = store.history.entries.length;
-    const label = () => store.history.undoLabel();
-
-    // A choice from the list with the pointer is one step at once.
-    choice.point();
-    expect(choice.change('large')).toBe(true);
-    expect(store.doc.iconSize).toBe('large');
-    expect(store.history.entries).toHaveLength(steps + 1);
-    expect(label()).toBe("Changed the diagram's icon size to Large");
-
-    // Each size the arrow keys step to is held; a modifier alone keeps it
-    // held, and Enter applies the last, as one step.
-    diagram.onIconSizeKey({ key: 'ArrowUp' });
-    expect(choice.change('medium')).toBe(false);
-    diagram.onIconSizeKey({ key: 'ArrowUp' });
-    expect(choice.change('small')).toBe(false);
-    diagram.onIconSizeKey({ key: 'Shift' });
-    expect(choice.held).toBe('small');
-    expect(store.doc.iconSize).toBe('large');
-    expect(store.history.entries).toHaveLength(steps + 1);
-
-    diagram.onIconSizeKey({ key: 'Enter' });
-    expect(choice.held).toBeNull();
-    expect(store.doc).not.toHaveProperty('iconSize');
-    expect(store.history.entries).toHaveLength(steps + 2);
-    expect(label()).toBe("Changed the diagram's icon size to Small");
-
-    // Focus leaving the select applies the size held (its blur flushes).
-    diagram.onIconSizeKey({ key: 'ArrowDown' });
-    expect(choice.change('medium')).toBe(false);
-    expect(store.doc).not.toHaveProperty('iconSize');
-    expect(choice.flush()).toBe(true);
-    expect(store.doc.iconSize).toBe('medium');
-    expect(store.history.entries).toHaveLength(steps + 3);
-    expect(label()).toBe("Changed the diagram's icon size to Medium");
-
-    // Undo puts the size before back.
-    store.undo();
-    expect(store.doc).not.toHaveProperty('iconSize');
-  });
-
-  // The select's binding does not change when the document's size does
-  // not, so the select is given that size again.
-  test('a size the store refuses leaves the select showing the diagram’s size', async () => {
-    const { doc } = sampleDocument();
-    const { store, diagram } = await openInspector(setIconSize(doc, 'medium'));
-    const select = { value: 'medium' };
-    const steps = store.history.entries.length;
-
-    // The element the template's ref holds in a browser.
-    diagram.iconSizeSelect = select;
-
-    // While a conflict is resolved, a choice with the pointer.
-    store.resolvingConflict = true;
-    select.value = 'large';
-    diagram.iconSizeChoice.point();
-    expect(diagram.iconSizeChoice.change('large')).toBe(false);
-    expect(store.doc.iconSize).toBe('medium');
-    expect(select.value).toBe('medium');
-
-    // In a draft that turned read only, a size stepped to with the keys
-    // shows while it is held, and goes once focus leaves.
-    store.resolvingConflict = false;
-    store.readOnly = true;
-    diagram.onIconSizeKey({ key: 'ArrowDown' });
-    select.value = 'large';
-    expect(diagram.iconSizeChoice.change('large')).toBe(false);
-    expect(select.value).toBe('large');
-    expect(diagram.iconSizeChoice.flush()).toBe(false);
-    expect(select.value).toBe('medium');
-    expect(store.doc.iconSize).toBe('medium');
-    expect(store.error).toBe('This draft is read only.');
-    expect(store.history.entries).toHaveLength(steps);
-
-    // A size taken leaves the select as it is: its binding follows.
-    store.readOnly = false;
-    select.value = 'small';
-    diagram.iconSizeChoice.point();
-    expect(diagram.iconSizeChoice.change('small')).toBe(true);
-    expect(select.value).toBe('small');
-    expect(store.doc).not.toHaveProperty('iconSize');
-  });
 });
 
 describe('a node’s Icon size in the Inspector', () => {
@@ -835,72 +748,5 @@ describe('a node’s Icon size in the Inspector', () => {
     const { html } = await openInspector(note.doc, { id: note.node.id });
 
     expect(notesOf(html)).toEqual([]);
-  });
-
-  // A key on the Icon size select of the form, which onFieldKey reads by
-  // the data path of the field it is in.
-  const select = {
-    tagName: 'SELECT',
-    closest: () => ({ dataset: { path: 'iconSize' } }),
-  };
-
-  // The form's data with an Icon size chosen, as JSON Forms sends it once
-  // the select changes: Diagram default (no size) leaves no key.
-  function choose(setup, size) {
-    const data = JSON.parse(JSON.stringify(setup.draft));
-
-    if (size) {
-      data.iconSize = size;
-    } else {
-      delete data.iconSize;
-    }
-
-    setup.onChange({ data, errors: [] });
-  }
-
-  test('of a device stepped to with keys is applied once the choice is made, Diagram default too', async () => {
-    const { doc, alpha } = sampleDocument();
-    const { store, setup } = await openInspector(doc, { id: alpha.id });
-    const key = (name) => setup.onFieldKey({ key: name, target: select });
-    const device = () => findNode(store.doc, alpha.id).device;
-    const steps = store.history.entries.length;
-
-    key('ArrowDown');
-    choose(setup, 'medium');
-    key('ArrowDown');
-    choose(setup, 'large');
-
-    // Held: the device has no size of its own yet, and nothing waits for
-    // Apply.
-    expect('iconSize' in device()).toBe(false);
-    expect(store.history.entries).toHaveLength(steps);
-    expect(setup.dirty).toBe(false);
-
-    // Enter applies the last size, as one step.
-    key('Enter');
-    expect(device().iconSize).toBe('large');
-    expect(store.history.entries).toHaveLength(steps + 1);
-    expect(store.history.undoLabel()).toBe(
-      'Changed the icon size of Device alpha to Large',
-    );
-
-    // Diagram default, stepped to, is held as well, and Tab applies it: the
-    // device draws the diagram's size again.
-    key('ArrowUp');
-    choose(setup, undefined);
-    expect(device().iconSize).toBe('large');
-    expect(store.history.entries).toHaveLength(steps + 1);
-
-    key('Tab');
-    expect('iconSize' in device()).toBe(false);
-    expect(store.history.entries).toHaveLength(steps + 2);
-    expect(store.history.undoLabel()).toBe(
-      'Changed the icon size of Device alpha to the diagram default',
-    );
-
-    // A size chosen with no key before it is applied at once.
-    choose(setup, 'small');
-    expect(device().iconSize).toBe('small');
-    expect(store.history.entries).toHaveLength(steps + 3);
   });
 });

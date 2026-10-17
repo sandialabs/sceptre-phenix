@@ -1,12 +1,12 @@
 // The diagram's grid size: the server's rule, the store's setGrid, and the
-// Grid size field of the Inspector's Diagram section.
+// Grid size field of the Inspector's Diagram section as rendered (typing in
+// it is in grid-size-field.test.js).
 
 import { describe, expect, test } from 'vitest';
 import { effectScope, nextTick } from 'vue';
 import { createPinia } from 'pinia';
 
 import BuilderInspector from '@/components/builder/BuilderInspector.vue';
-import InspectorDiagram from '@/components/builder/inspector/InspectorDiagram.vue';
 import {
   GRID_SIZE_ERROR,
   useGridSizeField,
@@ -119,8 +119,7 @@ describe("the store's setGrid", () => {
 
 // The Inspector open on the diagram section.
 async function openInspector(doc, { readOnly = false } = {}) {
-  const { store, html, instances } = await renderWithStore(BuilderInspector, {
-    capture: { diagram: InspectorDiagram },
+  const { store, html } = await renderWithStore(BuilderInspector, {
     prepare(store) {
       store.commit(doc, '');
       store.readOnly = readOnly;
@@ -128,7 +127,7 @@ async function openInspector(doc, { readOnly = false } = {}) {
     },
   });
 
-  return { store, html, diagram: instances.diagram[0]?.setupState };
+  return { store, html };
 }
 
 describe('the Inspector’s diagram Grid size', () => {
@@ -168,61 +167,6 @@ describe('the Inspector’s diagram Grid size', () => {
       /data-testid="inspector-grid-size-value"[^>]*>\s*20 pixels\s*</,
     );
     expect(html).toContain('id="inspector-grid-size-help"');
-  });
-
-  test('applies a size the server takes as one step, and keeps other text with an error', async () => {
-    const { doc } = sampleDocument();
-    const { store, diagram } = await openInspector(doc);
-    const steps = store.history.entries.length;
-    // The element the template's ref holds in a browser.
-    const field = { value: '' };
-
-    diagram.gridSizeField = field;
-
-    // Spaces around the number do not refuse it.
-    field.value = ' 24 ';
-    diagram.commitGridSize(field);
-    expect(store.doc.grid.size).toBe(24);
-    expect(store.history.entries).toHaveLength(steps + 1);
-    expect(store.history.undoLabel()).toBe('Changed the grid size to 24');
-    expect(field.value).toBe('24');
-    expect(diagram.gridSizeText).toBe('24');
-    expect(diagram.gridSizeError).toBe('');
-
-    // Text that is no size stays, with an error, and changes nothing. The
-    // input binds that text, so the render that shows the error keeps it.
-    for (const text of ['0', '-8', '3', '201', '12.5', 'abc', '', '1e999']) {
-      field.value = text;
-      diagram.commitGridSize(field);
-      expect(field.value, text).toBe(text);
-      expect(diagram.gridSizeText, text).toBe(text);
-      expect(diagram.gridSizeError, text).toBe(
-        'Grid size must be a whole number from 4 to 200.',
-      );
-      expect(store.doc.grid.size).toBe(24);
-    }
-    expect(store.history.entries).toHaveLength(steps + 1);
-
-    // The same size takes no step, and clears the error.
-    field.value = '24.0';
-    diagram.commitGridSize(field);
-    expect(field.value).toBe('24');
-    expect(diagram.gridSizeText).toBe('24');
-    expect(diagram.gridSizeError).toBe('');
-    expect(store.history.entries).toHaveLength(steps + 1);
-  });
-
-  test('a size the store refuses puts the diagram’s size back in the field', async () => {
-    const { doc } = sampleDocument();
-    const { store, diagram } = await openInspector(doc);
-    const field = { value: '32' };
-
-    diagram.gridSizeField = field;
-    store.resolvingConflict = true;
-    diagram.commitGridSize(field);
-    expect(store.doc.grid.size).toBe(DEFAULT_GRID_SIZE);
-    expect(field.value).toBe(String(DEFAULT_GRID_SIZE));
-    expect(diagram.gridSizeText).toBe(String(DEFAULT_GRID_SIZE));
   });
 });
 
