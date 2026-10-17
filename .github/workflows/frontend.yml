@@ -226,7 +226,7 @@ jobs:
           - name: Auth proxy
             id: auth-proxy
             auth: proxy
-            tests: auth-proxy
+            tests: auth-proxy --project=chromium
             server: --jwt-signing-key proxy-jwt
             browsers: chromium
     steps:

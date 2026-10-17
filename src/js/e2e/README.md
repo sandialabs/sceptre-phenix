@@ -34,7 +34,7 @@ throw-away store and base directory (`--base-dir.phenix`, which
 | Axe scans          | `disabled` | no flags                      | the `@axe` tests, in Chromium only          |
 | Builder multi-user | `disabled` | authentication on             | `builder-multi-user.spec.js`, in Chromium   |
 | Auth enabled       | `enabled`  | authentication on             | `auth-enabled.spec.js`                      |
-| Auth proxy         | `proxy`    | `--jwt-signing-key proxy-jwt` | `auth-proxy.spec.js`                        |
+| Auth proxy         | `proxy`    | `--jwt-signing-key proxy-jwt` | `auth-proxy.spec.js`, in Chromium           |
 
 The builds run, and the seven jobs run their tests, only for a change that
 can affect the browser: `src/js/` outside its unit tests in `src/js/test/`,
@@ -44,12 +44,13 @@ For any other change the builds and the seven jobs report success without
 running a test. On CI, a `test.only` left in a spec fails the run
 (`forbidOnly`).
 
-Every job runs all three projects (below) on its part, except the axe and
-multi-user jobs, which run only the `chromium` project. The multi-user spec
-makes and signs in users of its own, of the built-in Builder role (`userMaker`
-in `tests/builder-support.js`). Builder checks include axe accessibility scans.
-The shards use Playwright's `--shard`, which splits the tests by count, not by
-time.
+The smoke shards and the Auth enabled job run all three projects (below) on
+their part. The axe, multi-user and Auth proxy jobs run only the `chromium`
+project. The multi-user spec makes and signs in users of its own, of the
+built-in Builder role (`userMaker` in `tests/builder-support.js`). Axe scans run
+only in Chromium: `expectAccessible()` and `expectTextContrast()` do nothing in
+Firefox. The shards use Playwright's `--shard`, which splits the tests by count,
+not by time.
 
 Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A/AA
 rule tags) as rendered against the empty store and fails on any violation.
@@ -71,13 +72,16 @@ work:
 | `known-defects` | only `@known-defect` tests, in Chromium, with a 3s expect wait |
 
 Tag a test in its declaration: `test('…', { tag: '@cross-browser' }, …)`.
-`tag` also takes an array of tags. Give the Firefox subset the tests whose
-behavior depends on the browser engine: pointer drag, drag-and-drop, focus
-order, file transfer, clipboard, IndexedDB, and CSS layout. The `@axe` tag
-marks the axe scans of every view and dialog in each theme, and the scans of a
-canvas of filled nodes, of custom icons and of the template editor in each
-theme, which CI runs in a job of their own, in Chromium only. Keep it off other
-tests.
+`tag` also takes an array of tags. The Firefox subset is for browser
+compatibility only. Give it the tests whose behavior depends on the browser
+engine: pointer drag, drag-and-drop, focus order, file transfer, clipboard,
+IndexedDB, and CSS layout. The `@axe` tag marks the axe scans of every view and
+dialog in each theme, and the scans of a canvas of filled nodes, of custom icons
+and of the template editor in each theme, which CI runs in a job of their own,
+in Chromium only. Keep it off other tests, except the keyboard and focus tests
+that sit in the same `axeScans()` block of `builder-a11y.spec.js`. A
+`@cross-browser` test scans only through `expectAccessible()` or
+`expectTextContrast()`, which skip Firefox.
 
 ### Builder specs
 

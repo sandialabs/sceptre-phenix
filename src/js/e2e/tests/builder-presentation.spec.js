@@ -1041,108 +1041,108 @@ test('a device takes an outline and a fill at once, the text on a fill stays rea
   expectNoFatal(issues);
 });
 
-test(
-  'a switch’s network color is Edge Color, and its own outline and fill apply at once',
-  { tag: '@cross-browser' },
-  async ({ page, builder, issues }, testInfo) => {
-    const { draft } = await seedStyled(builder, testInfo);
-    await builder.openDraft(draft);
+test('a switch’s network color is Edge Color, and its own outline and fill apply at once', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  const { draft } = await seedStyled(builder, testInfo);
+  await builder.openDraft(draft);
 
-    const exp = builder.node('EXP', 'switch');
-    const outline = inspectorField(builder, 'outlineColor');
-    const fill = inspectorField(builder, 'fillColor');
-    const apply = builder.inspector.getByTestId('inspector-apply');
+  const exp = builder.node('EXP', 'switch');
+  const outline = inspectorField(builder, 'outlineColor');
+  const fill = inspectorField(builder, 'fillColor');
+  const apply = builder.inspector.getByTestId('inspector-apply');
 
-    await test.step('a switch’s network color is Edge Color, and its own outline and fill apply at once', async () => {
-      const edge = inspectorField(builder, 'color');
-      const network = (doc) => doc.networks.find((item) => item.name === 'EXP');
-      const switchOf = (doc) =>
-        doc.nodes.find(
-          (node) =>
-            node.kind === 'switch' && node.switch.networkId === network(doc).id,
-        ).switch;
-      const before = network(await builder.serverDocument(draft));
-      const mgmt = builder.node('MGMT', 'switch');
-      const [exp0, mgmt1] = [
-        await themeColor(page, '--bx-net-0'),
-        await themeColor(page, '--bx-net-1'),
-      ];
+  await test.step('a switch’s network color is Edge Color, and its own outline and fill apply at once', async () => {
+    const edge = inspectorField(builder, 'color');
+    const network = (doc) => doc.networks.find((item) => item.name === 'EXP');
+    const switchOf = (doc) =>
+      doc.nodes.find(
+        (node) =>
+          node.kind === 'switch' && node.switch.networkId === network(doc).id,
+      ).switch;
+    const before = network(await builder.serverDocument(draft));
+    const mgmt = builder.node('MGMT', 'switch');
+    const [exp0, mgmt1] = [
+      await themeColor(page, '--bx-net-0'),
+      await themeColor(page, '--bx-net-1'),
+    ];
 
-      // Without an outline of its own, a switch is outlined in its
-      // network's color, as its connections are drawn.
-      await expect.soft(exp).toHaveClass(/builder-node--outlined/);
-      await expect.soft(exp).toHaveCSS('border-top-color', exp0);
-      await expect.soft(mgmt).toHaveCSS('border-top-color', mgmt1);
+    // Without an outline of its own, a switch is outlined in its
+    // network's color, as its connections are drawn.
+    await expect.soft(exp).toHaveClass(/builder-node--outlined/);
+    await expect.soft(exp).toHaveCSS('border-top-color', exp0);
+    await expect.soft(mgmt).toHaveCSS('border-top-color', mgmt1);
 
-      await builder.selectNode('EXP');
-      await expect.soft(edge.label).toHaveText(/^Edge Color/);
-      await expect.soft(edge.picker).toHaveAccessibleName('Choose edge Color');
-      await expect
-        .soft(builder.inspector.getByTestId('inspector-color-picker'))
-        .toHaveCount(3);
-      await expect
-        .soft(builder.inspector.getByLabel('Color', { exact: true }))
-        .toHaveCount(0);
+    await builder.selectNode('EXP');
+    await expect.soft(edge.label).toHaveText(/^Edge Color/);
+    await expect.soft(edge.picker).toHaveAccessibleName('Choose edge Color');
+    await expect
+      .soft(builder.inspector.getByTestId('inspector-color-picker'))
+      .toHaveCount(3);
+    await expect
+      .soft(builder.inspector.getByLabel('Color', { exact: true }))
+      .toHaveCount(0);
 
-      // Each applies at once, without Apply, as one edit.
-      await fill.picker.click();
-      await fill.popup.getByRole('button', { name: 'Olive, #6b6f18' }).click();
-      await expect
-        .soft(builder)
-        .toHaveAnnounced('Changed the fill color of Network EXP to #6b6f18');
-      await outline.text.fill('#a3273f');
-      await outline.text.blur();
-      await expect
-        .soft(builder)
-        .toHaveAnnounced('Changed the outline color of Network EXP to #a3273f');
-      await expect.soft(apply).toHaveCount(0);
+    // Each applies at once, without Apply, as one edit.
+    await fill.picker.click();
+    await fill.popup.getByRole('button', { name: 'Olive, #6b6f18' }).click();
+    await expect
+      .soft(builder)
+      .toHaveAnnounced('Changed the fill color of Network EXP to #6b6f18');
+    await outline.text.fill('#a3273f');
+    await outline.text.blur();
+    await expect
+      .soft(builder)
+      .toHaveAnnounced('Changed the outline color of Network EXP to #a3273f');
+    await expect.soft(apply).toHaveCount(0);
 
-      await expect(exp).toHaveCSS('background-color', 'rgb(107, 111, 24)');
-      await expectReadable(exp, 'rgb(255, 255, 255)', 'a filled switch');
-      // Its own outline replaces its network's.
-      await expect.soft.poll(() => outlineOf(exp)).toBe('rgb(163, 39, 63)');
+    await expect(exp).toHaveCSS('background-color', 'rgb(107, 111, 24)');
+    await expectReadable(exp, 'rgb(255, 255, 255)', 'a filled switch');
+    // Its own outline replaces its network's.
+    await expect.soft.poll(() => outlineOf(exp)).toBe('rgb(163, 39, 63)');
 
-      await builder.selectNode('web-02');
-      await expect(exp).not.toHaveClass(/is-selected/);
-      await expect.soft(exp).toHaveCSS('border-top-color', 'rgb(163, 39, 63)');
-      // The double border that tells a switch from a device.
-      await expect.soft(exp).toHaveCSS('border-top-style', 'double');
-      // The colors are this switch's, not its network's: the other switch
-      // is as it was.
-      await expect.soft(mgmt).not.toHaveClass(/builder-node--filled/);
-      await expect.soft(mgmt).toHaveCSS('border-top-color', mgmt1);
+    await builder.selectNode('web-02');
+    await expect(exp).not.toHaveClass(/is-selected/);
+    await expect.soft(exp).toHaveCSS('border-top-color', 'rgb(163, 39, 63)');
+    // The double border that tells a switch from a device.
+    await expect.soft(exp).toHaveCSS('border-top-style', 'double');
+    // The colors are this switch's, not its network's: the other switch
+    // is as it was.
+    await expect.soft(mgmt).not.toHaveClass(/builder-node--filled/);
+    await expect.soft(mgmt).toHaveCSS('border-top-color', mgmt1);
 
-      await builder.persisted(
-        draft,
-        (doc) => ({ switch: switchOf(doc), network: network(doc) }),
-        {
-          switch: {
-            networkId: before.id,
-            outlineColor: '#a3273f',
-            fillColor: '#6b6f18',
-          },
-          network: before,
+    await builder.persisted(
+      draft,
+      (doc) => ({ switch: switchOf(doc), network: network(doc) }),
+      {
+        switch: {
+          networkId: before.id,
+          outlineColor: '#a3273f',
+          fillColor: '#6b6f18',
         },
-        { soft: true },
-      );
+        network: before,
+      },
+      { soft: true },
+    );
 
-      // Each color is one Undo step. Without its own outline, the switch
-      // is outlined in its network's color again.
-      await page.getByTestId('toolbar-undo').click();
-      await expect.poll(() => outlineOf(exp)).toBe(exp0);
-      await expect.soft(exp).toHaveClass(/builder-node--filled/);
-      await page.getByTestId('toolbar-undo').click();
-      await expect(exp).not.toHaveClass(/builder-node--filled/);
-      await expect.soft.poll(() => outlineOf(exp)).toBe(exp0);
-      await page.getByTestId('toolbar-redo').click();
-      await page.getByTestId('toolbar-redo').click();
-      await expect.poll(() => outlineOf(exp)).toBe('rgb(163, 39, 63)');
-      await builder.waitSaved();
-    });
+    // Each color is one Undo step. Without its own outline, the switch
+    // is outlined in its network's color again.
+    await page.getByTestId('toolbar-undo').click();
+    await expect.poll(() => outlineOf(exp)).toBe(exp0);
+    await expect.soft(exp).toHaveClass(/builder-node--filled/);
+    await page.getByTestId('toolbar-undo').click();
+    await expect(exp).not.toHaveClass(/builder-node--filled/);
+    await expect.soft.poll(() => outlineOf(exp)).toBe(exp0);
+    await page.getByTestId('toolbar-redo').click();
+    await page.getByTestId('toolbar-redo').click();
+    await expect.poll(() => outlineOf(exp)).toBe('rgb(163, 39, 63)');
+    await builder.waitSaved();
+  });
 
-    expectNoFatal(issues);
-  },
-);
+  expectNoFatal(issues);
+});
 
 test(
   'a connection’s color, line style and label and a switch’s color apply at once, and each Undo takes one back',

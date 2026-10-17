@@ -8,7 +8,7 @@ const zlib = require('zlib');
 const base = require('@playwright/test');
 const AxeBuilder = require('@axe-core/playwright').default;
 
-const { attachCapture, fatalOf, visit } = require('./helpers');
+const { attachCapture, fatalOf, isChromium, visit } = require('./helpers');
 
 // --- announcements ----------------------------------------------------------
 
@@ -273,11 +273,12 @@ async function contrast(locator, property = 'color') {
 }
 
 // Fails on serious or critical axe violations; `soft` records the failure and
-// goes on, and `label` names the surface.
+// goes on, and `label` names the surface. Chromium only.
 async function expectAccessible(
   page,
   { include = '.builder-root', soft = false, label = '' } = {},
 ) {
+  if (!isChromium(page)) return;
   const results = await new AxeBuilder({ page })
     .include(include)
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])

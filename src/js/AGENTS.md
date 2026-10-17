@@ -82,6 +82,9 @@ rules. Lifecycle tests additionally need minimega, VM images, and a topology
 signing key. See `e2e/README.md`; report missing prerequisites instead of
 silently skipping checks.
 
+Axe scans run only in Chromium. Do not run them in Firefox. The Firefox
+project (`@cross-browser` tests) is only for browser-compatibility tests.
+
 Before changing the Builder (`src/builder/`, `src/components/builder/`,
 `src/views/Builder.vue`, or the `builder*` e2e specs), read
 [`../../skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md),

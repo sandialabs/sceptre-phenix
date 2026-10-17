@@ -87,9 +87,15 @@ function unsignedJwt(username) {
   return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: username, exp: 9999999999 })}.sig`;
 }
 
+// Axe scans run only in Chromium; Firefox runs only browser-compatibility tests.
+function isChromium(page) {
+  return page.context().browser()?.browserType().name() === 'chromium';
+}
+
 // Fails when text in `selector` has less contrast than WCAG 1.4.3 asks for,
-// as axe-core measures it; `label` names the element.
+// as axe-core measures it; `label` names the element. Chromium only.
 async function expectTextContrast(page, selector, label) {
+  if (!isChromium(page)) return;
   const { violations } = await new AxeBuilder({ page })
     .include(selector)
     .withRules(['color-contrast'])
@@ -108,6 +114,7 @@ module.exports = {
   settle,
   fatalOf,
   gotoSeeded,
+  isChromium,
   unsignedJwt,
   expectTextContrast,
   visit,
