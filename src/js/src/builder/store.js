@@ -1315,9 +1315,7 @@ export const useBuilderStore = defineStore('builder', {
 
       this.autosave.listen();
 
-      // Entries and the queue are left out on purpose. attach then keeps the
-      // ordered log that this device already holds for the draft, which
-      // recoverLocalHistory reads again.
+      // Entries and queue are left out so attach keeps this device's log.
       return this.autosave.attach({ draftId, etag, serverHead });
     },
 
