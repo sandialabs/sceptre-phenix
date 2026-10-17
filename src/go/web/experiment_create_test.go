@@ -2,11 +2,12 @@ package web
 
 import (
 	"errors"
-	"maps"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	"phenix/types"
@@ -45,7 +46,7 @@ func TestCreateExperimentAnnotations(t *testing.T) {
 		body     string
 		status   int
 		message  string // in the response
-		wantExp  map[string]string
+		wantExp  store.Annotations
 		wantNode map[string]any
 	}{
 		"workflow branch and typed node annotations": {
@@ -61,7 +62,7 @@ func TestCreateExperimentAnnotations(t *testing.T) {
 				}
 			}`,
 			status: http.StatusNoContent,
-			wantExp: map[string]string{
+			wantExp: store.Annotations{
 				"topology":               "test-topology",
 				"phenix.workflow/tags":   "run=1",
 				"phenix.workflow/branch": "main",
@@ -75,7 +76,7 @@ func TestCreateExperimentAnnotations(t *testing.T) {
 		"none": {
 			body:    `{"name": "test-experiment", "topology": "test-topology"}`,
 			status:  http.StatusNoContent,
-			wantExp: map[string]string{"topology": "test-topology"},
+			wantExp: store.Annotations{"topology": "test-topology"},
 		},
 		"branch given twice": {
 			body: `{
@@ -101,8 +102,14 @@ func TestCreateExperimentAnnotations(t *testing.T) {
 			server := serveAs(t, "alice", role).URL
 
 			resp := do(t, http.MethodPost, server+"/api/v1/experiments", tc.body)
-			if body := readBody(t, resp); resp.StatusCode != tc.status || !strings.Contains(body, tc.message) {
-				t.Fatalf("got %d %q, want %d with %q", resp.StatusCode, body, tc.status, tc.message)
+
+			body := readBody(t, resp)
+			if resp.StatusCode != tc.status {
+				t.Fatalf("POST /api/v1/experiments = %d, want %d: %s", resp.StatusCode, tc.status, body)
+			}
+
+			if !strings.Contains(body, tc.message) {
+				t.Errorf("POST /api/v1/experiments body = %q, want it to contain %q", body, tc.message)
 			}
 
 			c, _ := store.NewConfig("experiment/test-experiment")
@@ -110,32 +117,33 @@ func TestCreateExperimentAnnotations(t *testing.T) {
 			err := store.Get(c)
 			if tc.status != http.StatusNoContent {
 				if !errors.Is(err, store.ErrNotExist) {
-					t.Fatalf("stored an experiment it refused to create: %v", err)
+					t.Errorf("store.Get(experiment/test-experiment) after a refused create error = %v, want %v",
+						err, store.ErrNotExist)
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("store.Get(experiment/test-experiment) error = %v", err)
 			}
 
-			if !maps.Equal(c.Metadata.Annotations, tc.wantExp) {
-				t.Errorf("experiment annotations = %v, want %v", c.Metadata.Annotations, tc.wantExp)
+			if diff := cmp.Diff(tc.wantExp, c.Metadata.Annotations); diff != "" {
+				t.Errorf("POST /api/v1/experiments experiment annotations mismatch (-want +got):\n%s", diff)
 			}
 
 			exp, err := types.DecodeExperimentFromConfig(*c)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("types.DecodeExperimentFromConfig(experiment/test-experiment) error = %v", err)
 			}
 
 			nodes := exp.Spec.Topology().Nodes()
 			if len(nodes) != 1 {
-				t.Fatalf("experiment has %d nodes, want the topology's one", len(nodes))
+				t.Fatalf("POST /api/v1/experiments stored %d nodes, want the topology's 1", len(nodes))
 			}
 
-			if got := nodes[0].Annotations(); !maps.EqualFunc(got, tc.wantNode, reflect.DeepEqual) {
-				t.Errorf("node annotations = %#v, want %#v", got, tc.wantNode)
+			if diff := cmp.Diff(tc.wantNode, nodes[0].Annotations(), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("POST /api/v1/experiments node annotations mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -189,14 +197,19 @@ func TestCreateExperimentAutotunnelRequiresForwards(t *testing.T) {
 
 			resp := do(t, http.MethodPost, server+"/api/v1/experiments", tc.body)
 			if body := readBody(t, resp); resp.StatusCode != tc.status {
-				t.Fatalf("got %d %q, want %d", resp.StatusCode, body, tc.status)
+				t.Fatalf("POST /api/v1/experiments = %d, want %d: %s", resp.StatusCode, tc.status, body)
 			}
 
 			c, _ := store.NewConfig("experiment/test-experiment")
 
 			err := store.Get(c)
-			if stored := err == nil; stored != (tc.status == http.StatusNoContent) {
-				t.Errorf("experiment stored = %v, want %v (err %v)", stored, !stored, err)
+			if tc.status == http.StatusNoContent && err != nil {
+				t.Errorf("store.Get(experiment/test-experiment) after a create error = %v, want nil", err)
+			}
+
+			if tc.status != http.StatusNoContent && !errors.Is(err, store.ErrNotExist) {
+				t.Errorf("store.Get(experiment/test-experiment) after a refused create error = %v, want %v",
+					err, store.ErrNotExist)
 			}
 		})
 	}

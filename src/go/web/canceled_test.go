@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/gorilla/mux"
 
 	"phenix/api/job"
@@ -123,17 +125,17 @@ func TestReadsGiveUpWhenTheClientLeaves(t *testing.T) {
 			select {
 			case <-done:
 			case <-time.After(5 * time.Second):
-				t.Fatal("the handler kept waiting for minimega after its client left")
+				t.Fatalf("GET %s kept waiting for minimega after its client left", tc.path)
 			}
 
 			if rec.Body.Len() != 0 {
-				t.Errorf("the handler wrote %q (status %d) to a client that left", rec.Body.String(), rec.Code)
+				t.Errorf("GET %s wrote %q (status %d) to a client that left, want nothing", tc.path, rec.Body.String(), rec.Code)
 			}
 
 			// leaving out the files directory lookup, if this test made it
 			got := slices.DeleteFunc(mmtest.Bases(received()), func(base string) bool { return base == "args" })
-			if !slices.Equal(got, []string{"hold"}) {
-				t.Errorf("minimega received %q, want only the hold", got)
+			if diff := cmp.Diff([]string{"hold"}, got); diff != "" {
+				t.Errorf("GET %s minimega commands mismatch (-want +got):\n%s", tc.path, diff)
 			}
 		})
 	}
@@ -152,12 +154,13 @@ func TestVMActionsJobGivesUpWhenCanceled(t *testing.T) {
 
 	resp := postVMActions(t, server, "start", "a")
 	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("POST /api/v1/experiments/exp/vms/actions start = %d, want %d: %s",
+			resp.StatusCode, http.StatusAccepted, readBody(t, resp))
 	}
 
 	var started job.Job
 	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding the started job: %v", err)
 	}
 
 	polltest.Until(t, "the VM's action starts", func() bool {
@@ -167,16 +170,20 @@ func TestVMActionsJobGivesUpWhenCanceled(t *testing.T) {
 	})
 
 	if _, err := registry.Cancel(started.ID); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Cancel(%s) = %v", started.ID, err)
 	}
 
 	j := waitJob(t, registry, started.ID)
-	if j.Status != job.StatusCanceled || j.Items[0].Status != job.ItemCanceled {
-		t.Errorf("job %s with item %s, want both canceled", j.Status, j.Items[0].Status)
+	if j.Status != job.StatusCanceled {
+		t.Errorf("canceled job status = %s, want %s", j.Status, job.StatusCanceled)
+	}
+
+	if got := j.Items[0].Status; got != job.ItemCanceled {
+		t.Errorf("canceled job item a status = %s, want %s", got, job.ItemCanceled)
 	}
 
 	if n := mmtest.Count(received(), "vm start"); n != 0 {
-		t.Errorf("minimega received %d vm start commands, want none", n)
+		t.Errorf("canceled job sent %d vm start commands, want none", n)
 	}
 }
 
@@ -243,11 +250,11 @@ func TestVMActionGivingUpWithdrawsItsTransition(t *testing.T) {
 			cancel()
 
 			if err := <-done; !errors.Is(err, context.Canceled) {
-				t.Fatalf("runVMAction = %v, want %v", err, context.Canceled)
+				t.Fatalf("runVMAction(%s) with its context canceled = %v, want %v", action, err, context.Canceled)
 			}
 
-			if got := broadcasts(); !slices.Equal(got, want) {
-				t.Errorf("broadcast %q, want %q", got, want)
+			if diff := cmp.Diff(want, broadcasts(), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("runVMAction(%s) broadcasts mismatch (-want +got):\n%s", action, diff)
 			}
 		})
 	}

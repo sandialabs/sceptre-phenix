@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/job"
 	"phenix/web/cache"
@@ -68,7 +70,7 @@ func postVMActions(t *testing.T, server, action string, vms ...string) *http.Res
 
 	body, err := json.Marshal(vmActionsRequest{Action: action, VMs: vms})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("json.Marshal(%s request) error = %v", action, err)
 	}
 
 	return do(t, http.MethodPost, server+"/api/v1/experiments/exp/vms/actions", string(body))
@@ -86,51 +88,67 @@ func TestRunVMActions(t *testing.T) {
 	)
 
 	if err := cache.LockVMForStarting("exp", "b"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("cache.LockVMForStarting(exp, b) error = %v", err)
 	}
 
 	t.Cleanup(func() { cache.UnlockVM("exp", "b") })
 
+	const path = "/api/v1/experiments/exp/vms/actions"
+
 	resp := postVMActions(t, server, "pause", "a", "b", "c", "a", "")
 	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("POST %s = %d, want %d: %s", path, resp.StatusCode, http.StatusAccepted, readBody(t, resp))
 	}
 
 	var started job.Job
 	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding POST %s: %v", path, err)
 	}
 
-	if started.Kind != "vms.action" || started.Title != "Pause 3 VMs" || started.Params["action"] != "pause" ||
-		started.Experiment != "exp" || len(started.Items) != 3 {
-		t.Errorf("started %+v", started)
+	wantStarted := job.Job{
+		Kind: "vms.action", Owner: "alice", Experiment: "exp", Title: "Pause 3 VMs",
+		Params: map[string]string{"action": "pause"}, Cancelable: true,
+		Progress: job.Progress{Total: 3},
+		Items:    []job.Item{{Name: "a"}, {Name: "b"}, {Name: "c"}},
+	}
+	startedOpts := cmp.Options{
+		cmpopts.IgnoreFields(job.Job{}, "ID", "Status", "Created", "Updated", "Started", "Finished", "Revision"),
+		cmpopts.IgnoreFields(job.Progress{}, "Done", "Bytes"),
+		cmpopts.IgnoreFields(job.Item{}, "Status"),
+	}
+
+	if diff := cmp.Diff(wantStarted, started, startedOpts); diff != "" {
+		t.Errorf("POST %s mismatch (-want +got):\n%s", path, diff)
 	}
 
 	j := waitJob(t, registry, started.ID)
 	if j.Status != job.StatusPartial {
-		t.Errorf("job %s, want partial", j.Status)
+		t.Errorf("job %s status = %s, want %s", j.ID, j.Status, job.StatusPartial)
 	}
 
-	a, b, c := j.Items[0], j.Items[1], j.Items[2]
+	locked := &cache.LockedError{What: "vm", Name: "b", Status: cache.StatusStarting}
+	wantItems := []job.Item{
+		{Name: "a", Status: job.ItemSucceeded},
+		{Name: "b", Status: job.ItemFailed, Error: locked.Error(), Retryable: true},
+		{Name: "c", Status: job.ItemSkipped, Error: job.ErrForbidden.Error()},
+	}
+
+	if diff := cmp.Diff(wantItems, j.Items, cmpopts.IgnoreFields(job.Item{}, "Result")); diff != "" {
+		t.Fatalf("job %s items mismatch (-want +got):\n%s", j.ID, diff)
+	}
 
 	var result struct {
 		Name string `json:"name"`
 	}
 
-	if err := json.Unmarshal(a.Result, &result); a.Status != job.ItemSucceeded || err != nil || result.Name != "a" {
-		t.Errorf("a: %+v (%v)", a, err)
+	if err := json.Unmarshal(j.Items[0].Result, &result); err != nil {
+		t.Errorf("job %s item a result = %s, not a VM: %v", j.ID, j.Items[0].Result, err)
+	} else if result.Name != "a" {
+		t.Errorf("job %s item a result name = %q, want a", j.ID, result.Name)
 	}
 
-	if b.Status != job.ItemFailed || !b.Retryable || b.Error != "vm b is locked with status starting" {
-		t.Errorf("b: %+v", b)
-	}
-
-	if c.Status != job.ItemSkipped || c.Error != "you don't have permission" {
-		t.Errorf("c: %+v", c)
-	}
-
-	if fmt.Sprint(*acted) != "[a]" {
-		t.Errorf("paused %v, want only a", *acted)
+	if diff := cmp.Diff([]string{"a"}, *acted); diff != "" {
+		t.Errorf("paused VMs mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -161,16 +179,16 @@ func TestRunVMActionsRefuses(t *testing.T) {
 		"allowed on none named": {"pause", []string{"b"}, http.StatusForbidden},
 	} {
 		if resp := postVMActions(t, server, tc.action, tc.vms...); resp.StatusCode != tc.want {
-			t.Errorf("%s: status %d, want %d: %s", name, resp.StatusCode, tc.want, readBody(t, resp))
+			t.Errorf("POST vms/actions with %s = %d, want %d: %s", name, resp.StatusCode, tc.want, readBody(t, resp))
 		}
 	}
 
 	if resp := do(t, http.MethodPost, server+"/api/v1/experiments/exp/vms/actions", "{"); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("malformed body: %d", resp.StatusCode)
+		t.Errorf("POST vms/actions with a malformed body = %d, want %d", resp.StatusCode, http.StatusBadRequest)
 	}
 
 	if jobs := registry.List(job.Filter{}); len(jobs) != 0 {
-		t.Errorf("refused requests started %d jobs", len(jobs))
+		t.Errorf("Registry.List() after refused requests = %d jobs, want 0", len(jobs))
 	}
 }
 
@@ -191,23 +209,32 @@ func TestRunVMActionsCanceled(t *testing.T) {
 
 	var started job.Job
 	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding POST vms/actions: %v", err)
 	}
 
-	if resp := do(t, http.MethodPost, server+"/api/v1/jobs/"+started.ID+"/cancel", ""); resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("cancel: %d", resp.StatusCode)
+	cancelURL := "/api/v1/jobs/" + started.ID + "/cancel"
+	if resp := do(t, http.MethodPost, server+cancelURL, ""); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST %s = %d, want %d", cancelURL, resp.StatusCode, http.StatusAccepted)
 	}
 
 	close(block)
 
 	j := waitJob(t, registry, started.ID)
 	if j.Status != job.StatusCanceled {
-		t.Errorf("job %s, want canceled", j.Status)
+		t.Errorf("job %s status = %s, want %s", j.ID, j.Status, job.StatusCanceled)
 	}
 
 	succeeded, _, _, canceled := j.Counts()
-	if succeeded != len(*acted) || succeeded > bulkVMWorkers || succeeded+canceled != len(names) {
-		t.Errorf("%d succeeded and %d canceled after pausing %v", succeeded, canceled, *acted)
+	if succeeded != len(*acted) {
+		t.Errorf("job %s succeeded items = %d, want one per paused VM %v", j.ID, succeeded, *acted)
+	}
+
+	if succeeded > bulkVMWorkers {
+		t.Errorf("job %s succeeded items = %d, want at most the %d in progress", j.ID, succeeded, bulkVMWorkers)
+	}
+
+	if succeeded+canceled != len(names) {
+		t.Errorf("job %s succeeded + canceled items = %d + %d, want %d", j.ID, succeeded, canceled, len(names))
 	}
 }
 
@@ -227,8 +254,18 @@ func TestSingleVMActions(t *testing.T) {
 	)
 
 	resp := do(t, http.MethodPost, allowed+"/api/v1/experiments/exp/vms/a/stop", "")
-	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"name":"a"`) {
-		t.Errorf("stop: %d %s", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("POST vms/a/stop = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var stopped struct {
+		Name string `json:"name"`
+	}
+
+	if body := readBody(t, resp); json.Unmarshal([]byte(body), &stopped) != nil {
+		t.Errorf("POST vms/a/stop = %q, want the VM", body)
+	} else if stopped.Name != "a" {
+		t.Errorf("POST vms/a/stop name = %q, want a", stopped.Name)
 	}
 
 	for name, tc := range map[string]struct {
@@ -242,21 +279,30 @@ func TestSingleVMActions(t *testing.T) {
 		"kill forbidden": {denied, http.MethodDelete, "/a", http.StatusForbidden, "forbidden\n"},
 	} {
 		resp := do(t, tc.method, tc.server+"/api/v1/experiments/exp/vms"+tc.path, "")
-		if body := readBody(t, resp); resp.StatusCode != tc.want || body != tc.body {
-			t.Errorf("%s: %d %q, want %d %q", name, resp.StatusCode, body, tc.want, tc.body)
+		if resp.StatusCode != tc.want {
+			t.Errorf("%s vms%s (%s) = %d, want %d", tc.method, tc.path, name, resp.StatusCode, tc.want)
+		}
+
+		if body := readBody(t, resp); body != tc.body {
+			t.Errorf("%s vms%s (%s) = %q, want %q", tc.method, tc.path, name, body, tc.body)
 		}
 	}
 
 	if err := cache.LockVMForStarting("exp", "a"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("cache.LockVMForStarting(exp, a) error = %v", err)
 	}
+
+	t.Cleanup(func() { cache.UnlockVM("exp", "a") })
 
 	resp = do(t, http.MethodPost, allowed+"/api/v1/experiments/exp/vms/a/stop", "")
-	if body := readBody(t, resp); resp.StatusCode != http.StatusConflict || body != "vm a is locked with status starting\n" {
-		t.Errorf("stop of a locked VM: %d %q", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("POST vms/a/stop of a locked VM = %d, want %d", resp.StatusCode, http.StatusConflict)
 	}
 
-	cache.UnlockVM("exp", "a")
+	locked := &cache.LockedError{What: "vm", Name: "a", Status: cache.StatusStarting}
+	if got, want := readBody(t, resp), locked.Error()+"\n"; got != want {
+		t.Errorf("POST vms/a/stop of a locked VM = %q, want %q", got, want)
+	}
 }
 
 // A VM of a stopped experiment cannot be killed.
@@ -267,11 +313,15 @@ func TestKillVMNeedsARunningExperiment(t *testing.T) {
 	server := serveAs(t, "alice", testRole("vms", "delete", "exp/*")).URL
 
 	resp := do(t, http.MethodDelete, server+"/api/v1/experiments/exp/vms/a", "")
-	if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest || body != "experiment not running\n" {
-		t.Errorf("kill: %d %q", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("DELETE vms/a of a stopped experiment = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+
+	if got, want := readBody(t, resp), "experiment not running\n"; got != want {
+		t.Errorf("DELETE vms/a of a stopped experiment = %q, want %q", got, want)
 	}
 
 	if len(*acted) != 0 {
-		t.Errorf("killed %v", *acted)
+		t.Errorf("DELETE vms/a of a stopped experiment killed %v, want none", *acted)
 	}
 }

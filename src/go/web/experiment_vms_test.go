@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/encoding/protojson"
 	gproto "google.golang.org/protobuf/proto"
 
@@ -31,12 +32,12 @@ func getAPI(t *testing.T, url string, msg gproto.Message) int {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reading GET %s: %v", url, err)
 	}
 
 	if resp.StatusCode == http.StatusOK {
 		if err := protojson.Unmarshal(body, msg); err != nil {
-			t.Fatalf("unmarshaling %s: %v: %s", url, err, body)
+			t.Fatalf("GET %s = %s, not a %T: %v", url, body, msg, err)
 		}
 	}
 
@@ -81,7 +82,7 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 
 			if tt.starting {
 				if err := cache.LockExperimentForStarting("test-experiment"); err != nil {
-					t.Fatal(err)
+					t.Fatalf("cache.LockExperimentForStarting(test-experiment) error = %v", err)
 				}
 
 				startProgress.Store("test-experiment", tt.wantPercent)
@@ -95,39 +96,48 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 			var (
 				server = serveAs(t, "alice", experimentViewerRole()).URL
 				exp    = new(proto.Experiment)
+				path   = "/api/v1/experiments/test-experiment" + tt.query
 			)
 
 			if tt.list {
 				var list proto.ExperimentList
 
-				code := getAPI(t, server+"/api/v1/experiments"+tt.query, &list)
-				if code != http.StatusOK || len(list.GetExperiments()) != 1 {
-					t.Fatalf("got %d: %v", code, list.GetExperiments())
+				path = "/api/v1/experiments" + tt.query
+				if code := getAPI(t, server+path, &list); code != http.StatusOK {
+					t.Fatalf("GET %s = %d, want %d", path, code, http.StatusOK)
+				}
+
+				if n := len(list.GetExperiments()); n != 1 {
+					t.Fatalf("GET %s listed %d experiments, want 1: %v", path, n, list.GetExperiments())
 				}
 
 				exp = list.GetExperiments()[0]
-			} else if code := getAPI(t, server+"/api/v1/experiments/test-experiment"+tt.query, exp); code != http.StatusOK {
-				t.Fatalf("got %d", code)
+			} else if code := getAPI(t, server+path, exp); code != http.StatusOK {
+				t.Fatalf("GET %s = %d, want %d", path, code, http.StatusOK)
 			}
 
 			if n := fake.vmListings.Load(); n != tt.wantListings {
-				t.Errorf("minimega listed VMs %d times, want %d", n, tt.wantListings)
+				t.Errorf("GET %s listed minimega's VMs %d times, want %d", path, n, tt.wantListings)
 			}
 
 			if !exp.GetRunning() {
-				t.Error("experiment not running")
+				t.Errorf("GET %s running = false, want true", path)
 			}
 
-			if len(exp.GetVms()) != tt.wantVMs || exp.GetVmCount() != tt.wantCount {
-				t.Fatalf("got %d VMs of %d, want %d of %d", len(exp.GetVms()), exp.GetVmCount(), tt.wantVMs, tt.wantCount)
+			if got := exp.GetVmCount(); got != tt.wantCount {
+				t.Errorf("GET %s VM count = %d, want %d", path, got, tt.wantCount)
 			}
 
-			if tt.wantVMs == 1 && exp.GetVms()[0].GetState() != tt.wantState {
-				t.Errorf("VM state %q, want %q", exp.GetVms()[0].GetState(), tt.wantState)
+			if got := len(exp.GetVms()); got != tt.wantVMs {
+				t.Errorf("GET %s listed %d VMs, want %d", path, got, tt.wantVMs)
+			} else if tt.wantVMs == 1 {
+				if got := exp.GetVms()[0].GetState(); got != tt.wantState {
+					t.Errorf("GET %s VM state = %q, want %q", path, got, tt.wantState)
+				}
 			}
 
-			if exp.GetPercent() != tt.wantPercent {
-				t.Errorf("percent %v, want %v", exp.GetPercent(), tt.wantPercent)
+			if got := exp.GetPercent(); got != tt.wantPercent {
+				t.Errorf("GET %s percent = %v, want %v", path, got, tt.wantPercent)
 			}
 		})
 	}
@@ -139,7 +149,7 @@ func TestVMListPaging(t *testing.T) {
 	useTestMM(t, &testMM{vms: mm.VMs{{Name: "test-vm", Running: true, State: "RUNNING"}}})
 
 	var (
-		server = serveAs(t, "alice", experimentViewerRole()).URL + "/api/v1/experiments/test-experiment"
+		server = serveAs(t, "alice", experimentViewerRole()).URL
 		exp    proto.Experiment
 		list   proto.VMList
 	)
@@ -150,20 +160,37 @@ func TestVMListPaging(t *testing.T) {
 		msg  gproto.Message
 		page func() (vms, total int)
 	}{
-		{"experiment", "", &exp, func() (int, int) { return len(exp.GetVms()), int(exp.GetVmCount()) }},
-		{"VM list", "/vms", &list, func() (int, int) { return len(list.GetVms()), int(list.GetTotal()) }},
+		{
+			name: "experiment",
+			path: "/api/v1/experiments/test-experiment",
+			msg:  &exp,
+			page: func() (int, int) { return len(exp.GetVms()), int(exp.GetVmCount()) },
+		},
+		{
+			name: "VM list",
+			path: "/api/v1/experiments/test-experiment/vms",
+			msg:  &list,
+			page: func() (int, int) { return len(list.GetVms()), int(list.GetTotal()) },
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if code := getAPI(t, server+tt.path+"?pageNum=2&perPage=1", tt.msg); code != http.StatusOK {
-				t.Fatalf("second page: expected 200, got %d", code)
+			second := tt.path + "?pageNum=2&perPage=1"
+			if code := getAPI(t, server+second, tt.msg); code != http.StatusOK {
+				t.Fatalf("GET %s = %d, want %d", second, code, http.StatusOK)
 			}
 
-			if vms, total := tt.page(); vms != 0 || total != 1 {
-				t.Fatalf("expected an empty second page of 1 VM, got %d VMs of %d", vms, total)
+			vms, total := tt.page()
+			if vms != 0 {
+				t.Errorf("GET %s listed %d VMs, want 0", second, vms)
 			}
 
-			if code := getAPI(t, server+tt.path+"?pageNum=0&perPage=10", tt.msg); code != http.StatusBadRequest {
-				t.Errorf("page 0: expected 400, got %d", code)
+			if total != 1 {
+				t.Errorf("GET %s total = %d, want 1", second, total)
+			}
+
+			invalid := tt.path + "?pageNum=0&perPage=10"
+			if code := getAPI(t, server+invalid, tt.msg); code != http.StatusBadRequest {
+				t.Errorf("GET %s = %d, want %d", invalid, code, http.StatusBadRequest)
 			}
 		})
 	}
@@ -189,23 +216,33 @@ func TestUpdateVMsIgnoresTotal(t *testing.T) {
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reading PATCH /api/v1/experiments/stopped/vms: %v", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d: %s", resp.StatusCode, raw)
+		t.Fatalf("PATCH /api/v1/experiments/stopped/vms = %d, want %d: %s", resp.StatusCode, http.StatusOK, raw)
 	}
 
 	var list proto.VMList
 	if err := protojson.Unmarshal(raw, &list); err != nil {
-		t.Fatalf("unmarshaling %s: %v", raw, err)
+		t.Fatalf("PATCH /api/v1/experiments/stopped/vms = %s, not a VM list: %v", raw, err)
 	}
 
-	if len(list.GetVms()) != 1 || list.GetVms()[0].GetName() != "vm-a" || !list.GetVms()[0].GetDoNotBoot() {
-		t.Errorf("vms = %v, want vm-a, not to boot", list.GetVms())
+	type patched struct {
+		Name      string
+		DoNotBoot bool
 	}
 
-	if list.GetTotal() != 1 {
-		t.Errorf("total = %d, want 1", list.GetTotal())
+	got := make([]patched, 0, len(list.GetVms()))
+	for _, vm := range list.GetVms() {
+		got = append(got, patched{Name: vm.GetName(), DoNotBoot: vm.GetDoNotBoot()})
+	}
+
+	if diff := cmp.Diff([]patched{{Name: "vm-a", DoNotBoot: true}}, got); diff != "" {
+		t.Errorf("PATCH /api/v1/experiments/stopped/vms %s VMs mismatch (-want +got):\n%s", body, diff)
+	}
+
+	if got := list.GetTotal(); got != 1 {
+		t.Errorf("PATCH /api/v1/experiments/stopped/vms %s total = %d, want 1", body, got)
 	}
 }

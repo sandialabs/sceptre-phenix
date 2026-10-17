@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "phenix/types/version/v1"
@@ -42,12 +43,12 @@ func decodeVM(t *testing.T, resp *http.Response) *proto.VM {
 
 	body := readBody(t, resp)
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+		t.Fatalf("%s %s = %d, want %d: %s", resp.Request.Method, resp.Request.URL.Path, resp.StatusCode, http.StatusOK, body)
 	}
 
 	var vm proto.VM
 	if err := protojson.Unmarshal([]byte(body), &vm); err != nil {
-		t.Fatalf("unmarshaling VM: %v", err)
+		t.Fatalf("%s %s = %q, not a VM: %v", resp.Request.Method, resp.Request.URL.Path, body, err)
 	}
 
 	return &vm
@@ -68,19 +69,23 @@ func TestGetVMCarriesAnnotations(t *testing.T) {
 	server := serveAs(t, "alice", vmRole("get", "list")).URL + "/api/v1/experiments/test-experiment/vms"
 
 	vm := decodeVM(t, do(t, http.MethodGet, server+"/test-vm", ""))
-	if got := vm.GetAnnotations().AsMap()["vncBanner"]; got != "hello" {
-		t.Errorf("vncBanner = %v, want hello", got)
+	if diff := cmp.Diff(map[string]any{"vncBanner": "hello"}, vm.GetAnnotations().AsMap()); diff != "" {
+		t.Errorf("GET vms/test-vm annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	resp := do(t, http.MethodGet, server, "")
 
 	var list proto.VMList
 	if err := protojson.Unmarshal([]byte(readBody(t, resp)), &list); err != nil {
-		t.Fatalf("unmarshaling VM list: %v", err)
+		t.Fatalf("GET vms is not a VM list: %v", err)
 	}
 
-	if len(list.GetVms()) != 1 || list.GetVms()[0].GetAnnotations() != nil {
-		t.Errorf("VM list = %v, want one VM without annotations", list.GetVms())
+	if len(list.GetVms()) != 1 {
+		t.Fatalf("GET vms = %v, want one VM", list.GetVms())
+	}
+
+	if got := list.GetVms()[0].GetAnnotations(); got != nil {
+		t.Errorf("GET vms annotations = %v, want none", got)
 	}
 }
 
@@ -96,17 +101,19 @@ func TestUpdateVMReplacesAnnotations(t *testing.T) {
 
 	resp := patchVM(t, role, `{"annotations": {"phenix/startup-autotunnel": ["8080"]}}`)
 
-	got := decodeVM(t, resp).GetAnnotations().AsMap()
-	if len(got) != 1 || got["phenix/startup-autotunnel"] == nil {
-		t.Errorf("annotations = %v, want only phenix/startup-autotunnel", got)
+	want := map[string]any{"phenix/startup-autotunnel": []any{"8080"}}
+	if diff := cmp.Diff(want, decodeVM(t, resp).GetAnnotations().AsMap()); diff != "" {
+		t.Errorf("PATCH vms/test-vm annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	// the replaced annotations are what the next read sees
 	resp = patchVM(t, role, `{"annotations": {}}`)
 
-	vm := decodeVM(t, resp)
-	if vm.GetAnnotations() == nil || len(vm.GetAnnotations().GetFields()) != 0 {
-		t.Errorf("annotations = %v, want an empty object", vm.GetAnnotations())
+	annotations := decodeVM(t, resp).GetAnnotations()
+	if annotations == nil {
+		t.Error("PATCH vms/test-vm with {} has no annotations, want an empty object")
+	} else if n := len(annotations.GetFields()); n != 0 {
+		t.Errorf("PATCH vms/test-vm with {} annotations = %v, want an empty object", annotations)
 	}
 }
 
@@ -117,11 +124,11 @@ func TestUpdateVMRejectsInvalidAnnotations(t *testing.T) {
 
 	body := readBody(t, resp)
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", resp.StatusCode, body)
+		t.Errorf("PATCH vms/test-vm with an invalid annotation = %d, want %d: %s", resp.StatusCode, http.StatusBadRequest, body)
 	}
 
 	if !strings.Contains(body, "phenix/default-apps") {
-		t.Errorf("body %q does not name the annotation", body)
+		t.Errorf("PATCH vms/test-vm with an invalid annotation = %q, want it to name phenix/default-apps", body)
 	}
 }
 
@@ -131,8 +138,8 @@ func TestUpdateVMWithoutGetOmitsAnnotations(t *testing.T) {
 
 	resp := patchVM(t, vmRole("patch"), `{"annotations": {"vncBanner": "new"}}`)
 
-	if vm := decodeVM(t, resp); vm.GetAnnotations() != nil {
-		t.Errorf("annotations = %v, want none", vm.GetAnnotations())
+	if got := decodeVM(t, resp).GetAnnotations(); got != nil {
+		t.Errorf("PATCH vms/test-vm without vms get annotations = %v, want none", got)
 	}
 }
 
@@ -185,7 +192,7 @@ func TestUpdateVMAutotunnelRequiresForwards(t *testing.T) {
 
 			resp := patchVM(t, tc.role, tc.body)
 			if body := readBody(t, resp); resp.StatusCode != tc.status {
-				t.Fatalf("got %d %q, want %d", resp.StatusCode, body, tc.status)
+				t.Errorf("PATCH vms/test-vm %s = %d, want %d: %s", tc.body, resp.StatusCode, tc.status, body)
 			}
 		})
 	}

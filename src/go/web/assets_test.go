@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func testAssets() http.FileSystem {
@@ -15,49 +17,60 @@ func testAssets() http.FileSystem {
 }
 
 func TestStaticHandlerGzipsText(t *testing.T) {
+	const target = "/assets/index-abc123.js"
+
 	h := StaticHandler(testAssets(), true)
 	want := string(testPublic()["assets/index-abc123.js"].Data)
 
 	// twice: the second response comes from the compressed cache
-	for range 2 {
-		resp := get(t, h, "/assets/index-abc123.js", "gzip, deflate, br")
+	for _, name := range []string{"first", "cached"} {
+		t.Run(name, func(t *testing.T) {
+			resp := get(t, h, target, "gzip, deflate, br")
+			defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status = %d", resp.StatusCode)
-		}
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("GET %s = %d, want %d", target, resp.StatusCode, http.StatusOK)
+			}
 
-		if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
-			t.Fatalf("Content-Encoding = %q, want gzip", got)
-		}
+			if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+				t.Fatalf("GET %s Content-Encoding = %q, want gzip", target, got)
+			}
 
-		if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "javascript") {
-			t.Errorf("Content-Type = %q, want javascript", got)
-		}
+			if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "javascript") {
+				t.Errorf("GET %s Content-Type = %q, want javascript", target, got)
+			}
 
-		if got := resp.Header.Get("Vary"); got != "Accept-Encoding" {
-			t.Errorf("Vary = %q, want Accept-Encoding", got)
-		}
+			if got := resp.Header.Get("Vary"); got != "Accept-Encoding" {
+				t.Errorf("GET %s Vary = %q, want Accept-Encoding", target, got)
+			}
 
-		if got := resp.Header.Get("Cache-Control"); got != immutableCacheControl {
-			t.Errorf("Cache-Control = %q, want %q", got, immutableCacheControl)
-		}
+			if got := resp.Header.Get("Cache-Control"); got != immutableCacheControl {
+				t.Errorf("GET %s Cache-Control = %q, want %q", target, got, immutableCacheControl)
+			}
 
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("reading GET %s: %v", target, err)
+			}
 
-		if len(body) >= len(want) {
-			t.Errorf("compressed body is %d bytes, not smaller than %d", len(body), len(want))
-		}
+			if len(body) >= len(want) {
+				t.Errorf("GET %s body = %d bytes, want fewer than the file's %d", target, len(body), len(want))
+			}
 
-		zr, err := gzip.NewReader(bytes.NewReader(body))
-		if err != nil {
-			t.Fatal(err)
-		}
+			zr, err := gzip.NewReader(bytes.NewReader(body))
+			if err != nil {
+				t.Fatalf("GET %s body is not gzip: %v", target, err)
+			}
 
-		plain, _ := io.ReadAll(zr)
-		if string(plain) != want {
-			t.Error("decompressed body does not match the file")
-		}
+			plain, err := io.ReadAll(zr)
+			if err != nil {
+				t.Fatalf("decompressing GET %s: %v", target, err)
+			}
+
+			if diff := cmp.Diff(want, string(plain)); diff != "" {
+				t.Errorf("GET %s decompressed body mismatch (-want +got):\n%s", target, diff)
+			}
+		})
 	}
 }
 
@@ -76,20 +89,25 @@ func TestStaticHandlerPlain(t *testing.T) {
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("status = %d", resp.StatusCode)
+				t.Errorf("GET %s with Accept-Encoding %q = %d, want %d", c.target, c.acceptEncoding, resp.StatusCode, http.StatusOK)
 			}
 
 			if got := resp.Header.Get("Content-Encoding"); got != "" {
-				t.Errorf("Content-Encoding = %q, want none", got)
+				t.Errorf("GET %s with Accept-Encoding %q: Content-Encoding = %q, want none", c.target, c.acceptEncoding, got)
 			}
 
-			body, _ := io.ReadAll(resp.Body)
-			if want := testPublic()[strings.TrimPrefix(c.target, "/")].Data; !bytes.Equal(body, want) {
-				t.Errorf("body is %d bytes, want the file's %d", len(body), len(want))
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("reading GET %s: %v", c.target, err)
+			}
+
+			want := testPublic()[strings.TrimPrefix(c.target, "/")].Data
+			if diff := cmp.Diff(want, body); diff != "" {
+				t.Errorf("GET %s with Accept-Encoding %q body mismatch (-want +got):\n%s", c.target, c.acceptEncoding, diff)
 			}
 
 			if got := resp.Header.Get("Cache-Control"); got != "" {
-				t.Errorf("Cache-Control = %q, want none for non-hashed assets", got)
+				t.Errorf("GET %s from an unhashed handler: Cache-Control = %q, want none", c.target, got)
 			}
 		})
 	}
@@ -114,7 +132,8 @@ func TestStaticHandlerETag(t *testing.T) {
 			etag := resp.Header.Get("ETag")
 			if !strings.HasPrefix(etag, `"`) || !strings.HasSuffix(etag, c.suffix) ||
 				(c.suffix == `"` && strings.HasSuffix(etag, `-gz"`)) {
-				t.Fatalf("ETag = %q, want a quoted hash ending in %s", etag, c.suffix)
+				t.Fatalf("GET %s with Accept-Encoding %q: ETag = %q, want a quoted hash ending in %s",
+					c.target, c.acceptEncoding, etag, c.suffix)
 			}
 
 			// embedded files have no modification time, so the ETag is the
@@ -123,7 +142,7 @@ func TestStaticHandlerETag(t *testing.T) {
 			resp.Body.Close()
 
 			if resp.StatusCode != http.StatusNotModified {
-				t.Errorf("revalidation status = %d, want 304", resp.StatusCode)
+				t.Errorf("GET %s If-None-Match %s = %d, want %d", c.target, etag, resp.StatusCode, http.StatusNotModified)
 			}
 		})
 	}
@@ -133,35 +152,27 @@ func TestStaticHandlerDirectoryIndex(t *testing.T) {
 	h := StaticHandler(testAssets(), false)
 
 	resp := get(t, h, "/docs/", "gzip")
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
-	}
-
-	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
-		t.Errorf("Content-Encoding = %q, want gzip", got)
+		t.Errorf("GET /docs/ = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
 	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
-		t.Errorf("Content-Type = %q, want text/html", got)
+		t.Errorf("GET /docs/ Content-Type = %q, want text/html", got)
 	}
 
-	zr, err := gzip.NewReader(bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if plain, _ := io.ReadAll(zr); !strings.Contains(string(plain), "phenix docs") {
-		t.Error("directory URL did not serve its index.html")
+	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Errorf("GET /docs/ Content-Encoding = %q, want gzip", got)
+	} else if body := readBody(t, resp); !strings.Contains(body, "phenix docs") {
+		t.Errorf("GET /docs/ = %q, want docs/index.html", body)
 	}
 
 	resp = getIfNoneMatch(t, h, "/docs/", "gzip", resp.Header.Get("ETag"))
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNotModified {
-		t.Errorf("revalidation status = %d, want 304", resp.StatusCode)
+		t.Errorf("GET /docs/ If-None-Match = %d, want %d", resp.StatusCode, http.StatusNotModified)
 	}
 
 	// FileServer behavior is kept for a missing trailing slash and for a
@@ -170,15 +181,18 @@ func TestStaticHandlerDirectoryIndex(t *testing.T) {
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusMovedPermanently {
-		t.Errorf("/docs status = %d, want 301 redirect", resp.StatusCode)
+		t.Errorf("GET /docs = %d, want %d", resp.StatusCode, http.StatusMovedPermanently)
 	}
 
 	resp = get(t, h, "/novnc/app/", "gzip")
-	listing, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(listing), "readme.txt") {
-		t.Errorf("/novnc/app/ = %d, want a directory listing", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /novnc/app/ = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	if listing := readBody(t, resp); !strings.Contains(listing, "readme.txt") {
+		t.Errorf("GET /novnc/app/ = %q, want a directory listing with readme.txt", listing)
 	}
 }
 
@@ -201,11 +215,11 @@ func TestStaticHandlerCachesOnlyServedAssets(t *testing.T) {
 			defer resp.Body.Close()
 
 			if resp.StatusCode != c.status {
-				t.Fatalf("status = %d, want %d", resp.StatusCode, c.status)
+				t.Errorf("GET %s = %d, want %d", c.target, resp.StatusCode, c.status)
 			}
 
 			if got := resp.Header.Get("Cache-Control"); got != "" {
-				t.Errorf("Cache-Control = %q, want none", got)
+				t.Errorf("GET %s Cache-Control = %q, want none", c.target, got)
 			}
 		})
 	}
@@ -229,7 +243,7 @@ func TestAcceptsGzip(t *testing.T) {
 		req.Header.Set("Accept-Encoding", header)
 
 		if got := acceptsGzip(req); got != want {
-			t.Errorf("acceptsGzip(%q) = %v, want %v", header, got, want)
+			t.Errorf("acceptsGzip(Accept-Encoding %q) = %v, want %v", header, got, want)
 		}
 	}
 }

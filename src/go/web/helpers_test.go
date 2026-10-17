@@ -18,6 +18,10 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
+	"phenix/api/job"
 	"phenix/store"
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
@@ -51,6 +55,15 @@ func combinedRole(roles ...rbac.Role) rbac.Role {
 	}
 
 	return combined
+}
+
+// startedJobOpts compare a job as a start request answers it, leaving out what
+// the registry sets and what changes as the job runs.
+var startedJobOpts = cmp.Options{ //nolint:gochecknoglobals // shared comparison options
+	cmpopts.IgnoreFields(job.Job{}, "ID", "Title", "Params", "Status", "Created", "Updated",
+		"Started", "Finished", "Revision"),
+	cmpopts.IgnoreFields(job.Progress{}, "Done", "Total", "Bytes"),
+	cmpopts.IgnoreFields(job.Item{}, "Status"),
 }
 
 // testMM is the test minimega: every node is the headnode, and it serves the VMs, captures and
@@ -347,11 +360,11 @@ func useExperimentFilesDir(t *testing.T, files map[string]string) {
 		local := filepath.Join(base, "images", "test-experiment", "files", p)
 
 		if err := os.MkdirAll(filepath.Dir(local), 0o750); err != nil {
-			t.Fatal(err)
+			t.Fatalf("making the folder of experiment file %s: %v", p, err)
 		}
 
 		if err := os.WriteFile(local, []byte(contents), 0o600); err != nil {
-			t.Fatal(err)
+			t.Fatalf("writing experiment file %s: %v", p, err)
 		}
 	}
 }
@@ -421,7 +434,7 @@ func serveRouter(t *testing.T, public fs.FS, jwtKey string) *httptest.Server {
 	o = opts
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("newRouter() error = %v", err)
 	}
 
 	server := httptest.NewServer(router)
@@ -437,7 +450,7 @@ func do(t *testing.T, method, url, body string, header ...string) *http.Response
 
 	req, err := http.NewRequestWithContext(t.Context(), method, url, strings.NewReader(body))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("http.NewRequestWithContext(%s, %s) error = %v", method, url, err)
 	}
 
 	for i := 0; i+1 < len(header); i += 2 {
@@ -446,7 +459,7 @@ func do(t *testing.T, method, url, body string, header ...string) *http.Response
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%s %s error = %v", method, url, err)
 	}
 
 	t.Cleanup(func() { resp.Body.Close() })
@@ -486,7 +499,7 @@ func readBody(t *testing.T, resp *http.Response) string {
 	if resp.Header.Get("Content-Encoding") == "gzip" {
 		zr, err := gzip.NewReader(resp.Body)
 		if err != nil {
-			t.Fatalf("response is not valid gzip: %v", err)
+			t.Fatalf("gzip.NewReader(response body) error = %v", err)
 		}
 
 		r = zr
@@ -494,7 +507,7 @@ func readBody(t *testing.T, resp *http.Response) string {
 
 	body, err := io.ReadAll(r)
 	if err != nil {
-		t.Fatalf("reading body: %v", err)
+		t.Fatalf("reading the response body: %v", err)
 	}
 
 	return string(body)

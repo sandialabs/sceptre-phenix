@@ -74,8 +74,8 @@ func createTestConsole(t *testing.T, api string) int {
 	t.Helper()
 
 	resp := do(t, http.MethodPost, api+"/console", "")
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "application/json" {
-		t.Fatalf("creating console: got %d, %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	if ct := resp.Header.Get("Content-Type"); resp.StatusCode != http.StatusOK || ct != "application/json" {
+		t.Fatalf("POST /console = %d %s, want %d application/json", resp.StatusCode, ct, http.StatusOK)
 	}
 
 	var body struct {
@@ -83,7 +83,7 @@ func createTestConsole(t *testing.T, api string) int {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding POST /console: %v", err)
 	}
 
 	return body.PID
@@ -118,7 +118,7 @@ func readConsoleUntil(t *testing.T, ws *websocket.Conn, want string) {
 		output.Write(buf[:n])
 
 		if err != nil {
-			t.Fatalf("reading console for %q: %v; got %q", want, err, output.String())
+			t.Fatalf("reading the console for %q = %v, having read %q", want, err, output.String())
 		}
 	}
 }
@@ -129,7 +129,7 @@ func waitConsoleEnded(t *testing.T, console *consoleSession) {
 	select {
 	case <-console.done:
 	case <-time.After(consoleTestTimeout):
-		t.Fatalf("console %d did not end", console.pid)
+		t.Fatalf("console %d did not end within %v", console.pid, consoleTestTimeout)
 	}
 }
 
@@ -165,7 +165,7 @@ func echoTestConsole(t *testing.T, ws *websocket.Conn, line string) {
 	t.Helper()
 
 	if _, err := ws.Write([]byte(line + "\n")); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing %q to the console: %v", line, err)
 	}
 
 	readConsoleUntil(t, ws, line+"\r\n"+line+"\r\n")
@@ -174,32 +174,22 @@ func echoTestConsole(t *testing.T, ws *websocket.Conn, line string) {
 func TestConsoleHistory(t *testing.T) {
 	history := newConsoleHistory(16)
 
-	history.Write([]byte("one\n"))
-	history.Write([]byte("two\n"))
+	// each write in turn, and what the 16-byte history then replays
+	for _, step := range []struct{ write, want string }{
+		{"one\n", "one\n"},
+		{"two\n", "one\ntwo\n"},
+		// fills it exactly: nothing dropped yet
+		{"abcd\n\x1b[1", "one\ntwo\nabcd\n\x1b[1"},
+		// wraps: the oldest output goes, and the replay starts at a line
+		{"mfour\n", "abcd\n\x1b[1mfour\n"},
+		// more than it holds at once: only the end is kept
+		{"a very long line\nof output!\n", "of output!\n"},
+	} {
+		history.Write([]byte(step.write))
 
-	if got := string(history.Bytes()); got != "one\ntwo\n" {
-		t.Fatalf("before filling: got %q", got)
-	}
-
-	// fills it exactly: nothing dropped yet
-	history.Write([]byte("abcd\n\x1b[1"))
-
-	if got := string(history.Bytes()); got != "one\ntwo\nabcd\n\x1b[1" {
-		t.Fatalf("filled: got %q", got)
-	}
-
-	// wraps: the oldest output goes, and the replay starts at a line
-	history.Write([]byte("mfour\n"))
-
-	if got := string(history.Bytes()); got != "abcd\n\x1b[1mfour\n" {
-		t.Fatalf("wrapped: got %q", got)
-	}
-
-	// more than it holds at once: only the end is kept
-	history.Write([]byte("a very long line\nof output!\n"))
-
-	if got := string(history.Bytes()); got != "of output!\n" {
-		t.Fatalf("oversized: got %q", got)
+		if got := string(history.Bytes()); got != step.want {
+			t.Errorf("after Write(%q), Bytes() = %q, want %q", step.write, got, step.want)
+		}
 	}
 }
 
@@ -211,11 +201,11 @@ func TestConsoleReplaysOutputToAnotherWebSocket(t *testing.T) {
 
 	first, err := dialTestConsole(t, api, pid)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("dialing console %d: %v", pid, err)
 	}
 
 	if _, err := first.Write([]byte("hello console\n")); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing to console %d: %v", pid, err)
 	}
 
 	readConsoleUntil(t, first, "hello console\r\nhello console\r\n")
@@ -223,14 +213,14 @@ func TestConsoleReplaysOutputToAnotherWebSocket(t *testing.T) {
 	// a second tab gets what the console printed before it attached
 	second, err := dialTestConsole(t, api, pid)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("dialing console %d a second time: %v", pid, err)
 	}
 
 	readConsoleUntil(t, second, "hello console\r\nhello console\r\n")
 
 	// and both get new output, whichever sent the input
 	if _, err := second.Write([]byte("again\n")); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing to console %d from the second websocket: %v", pid, err)
 	}
 
 	readConsoleUntil(t, first, "again\r\nagain\r\n")
@@ -243,7 +233,7 @@ func TestConsoleReplaysOutputToAnotherWebSocket(t *testing.T) {
 
 	third, err := dialTestConsole(t, api, pid)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("dialing console %d a third time: %v", pid, err)
 	}
 
 	readConsoleUntil(t, third, "again\r\nagain\r\n")
@@ -262,7 +252,7 @@ func TestConsoleEndsOnceUnattachedForTheGracePeriod(t *testing.T) {
 
 	ws, err := dialTestConsole(t, api, pid)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("dialing console %d: %v", pid, err)
 	}
 
 	waitConsoleClients(t, console, 1)
@@ -279,7 +269,7 @@ func TestConsoleEndsOnceUnattachedForTheGracePeriod(t *testing.T) {
 
 	ws, err = dialTestConsole(t, api, pid)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("dialing console %d again: %v", pid, err)
 	}
 
 	waitConsoleClients(t, console, 1)
@@ -299,11 +289,11 @@ func TestConsoleEndsOnceUnattachedForTheGracePeriod(t *testing.T) {
 	})
 
 	if n := countAudit(events(), "console-attach", "success", map[string]any{"process.pid": pid}); n != 2 {
-		t.Errorf("%d attaches audited, want 2", n)
+		t.Errorf("console-attach success audit events = %d, want 2", n)
 	}
 
 	if resp := do(t, http.MethodGet, api+"/console/"+strconv.Itoa(pid), ""); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404 for the ended console, got %d", resp.StatusCode)
+		t.Errorf("GET /console/%d after it ended = %d, want %d", pid, resp.StatusCode, http.StatusNotFound)
 	}
 }
 
@@ -319,7 +309,7 @@ func TestConsoleDropsASlowWebSocket(t *testing.T) {
 	// browser behind it stops reading
 	slow, err := console.attach()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("attaching to console %d: %v", pid, err)
 	}
 
 	for i := range consoleClientQueue {
@@ -328,7 +318,7 @@ func TestConsoleDropsASlowWebSocket(t *testing.T) {
 
 	ws, err := dialTestConsole(t, api, pid)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("dialing console %d: %v", pid, err)
 	}
 
 	waitConsoleClients(t, console, 2)
@@ -345,7 +335,7 @@ func TestConsoleDropsASlowWebSocket(t *testing.T) {
 	}
 
 	if queued != consoleClientQueue {
-		t.Fatalf("dropped client had %d chunks queued, want %d", queued, consoleClientQueue)
+		t.Errorf("dropped client's queued chunks = %d, want %d", queued, consoleClientQueue)
 	}
 }
 
@@ -365,12 +355,12 @@ func TestConsoleEndsWhenItsProcessExits(t *testing.T) {
 
 	ws, err := dialTestConsole(t, api, pid)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("dialing console %d: %v", pid, err)
 	}
 
 	// CTRL+D: cat exits
 	if _, err := ws.Write([]byte{4}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing CTRL+D to console %d: %v", pid, err)
 	}
 
 	waitConsoleEnded(t, console)
@@ -382,7 +372,7 @@ func TestConsoleEndsWhenItsProcessExits(t *testing.T) {
 	for {
 		if _, err := ws.Read(buf); err != nil {
 			if !errors.Is(err, io.EOF) {
-				t.Fatalf("expected the websocket to close, got %v", err)
+				t.Errorf("reading the websocket of ended console %d = %v, want %v", pid, err, io.EOF)
 			}
 
 			break
@@ -390,7 +380,7 @@ func TestConsoleEndsWhenItsProcessExits(t *testing.T) {
 	}
 
 	if registry.lookup(pid) != nil {
-		t.Fatal("ended console still registered")
+		t.Errorf("lookup(%d) of the ended console = registered, want nil", pid)
 	}
 
 	got := events()
@@ -400,7 +390,7 @@ func TestConsoleEndsWhenItsProcessExits(t *testing.T) {
 	})
 
 	if _, err := dialTestConsole(t, api, pid); err == nil {
-		t.Fatal("attached to an ended console")
+		t.Errorf("dialing ended console %d = nil error, want it refused", pid)
 	}
 }
 
@@ -413,14 +403,14 @@ func TestDeleteConsoleEndsIt(t *testing.T) {
 
 	resp := do(t, http.MethodDelete, api+"/console/"+strconv.Itoa(pid), "")
 	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", resp.StatusCode)
+		t.Fatalf("DELETE /console/%d = %d, want %d", pid, resp.StatusCode, http.StatusNoContent)
 	}
 
 	// ended by the time the request answers
 	select {
 	case <-console.done:
 	default:
-		t.Fatal("console still running after DELETE")
+		t.Errorf("console %d still running after DELETE answered", pid)
 	}
 
 	got := events()
@@ -432,7 +422,7 @@ func TestDeleteConsoleEndsIt(t *testing.T) {
 
 	resp = do(t, http.MethodDelete, api+"/console/"+strconv.Itoa(pid), "")
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404 deleting it again, got %d", resp.StatusCode)
+		t.Errorf("DELETE /console/%d again = %d, want %d", pid, resp.StatusCode, http.StatusNotFound)
 	}
 }
 
@@ -453,16 +443,16 @@ func TestConsoleIsOnlyItsOwners(t *testing.T) {
 		{http.MethodDelete, path},
 	} {
 		if resp := do(t, tt.method, bob+tt.path, ""); resp.StatusCode != http.StatusNotFound {
-			t.Fatalf("%s %s as another user: expected 404, got %d", tt.method, tt.path, resp.StatusCode)
+			t.Errorf("%s %s as bob = %d, want %d", tt.method, tt.path, resp.StatusCode, http.StatusNotFound)
 		}
 	}
 
 	if _, err := dialTestConsole(t, bob, pid); err == nil {
-		t.Fatal("another user attached to the console")
+		t.Errorf("dialing alice's console %d as bob = nil error, want it refused", pid)
 	}
 
 	if registry.lookup(pid) == nil {
-		t.Fatal("another user ended the console")
+		t.Fatalf("lookup(%d) after bob's requests = nil, want alice's console running", pid)
 	}
 
 	for _, action := range []string{"console-terminate", "console-attach"} {
@@ -471,13 +461,13 @@ func TestConsoleIsOnlyItsOwners(t *testing.T) {
 		})
 	}
 
-	if resp := do(t, http.MethodGet, alice+path, ""); resp.StatusCode != http.StatusOK ||
-		resp.Header.Get("Content-Type") != "application/json" {
-		t.Fatalf("GET as the owner: expected 200 JSON, got %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	resp := do(t, http.MethodGet, alice+path, "")
+	if ct := resp.Header.Get("Content-Type"); resp.StatusCode != http.StatusOK || ct != "application/json" {
+		t.Errorf("GET %s as alice = %d %s, want %d application/json", path, resp.StatusCode, ct, http.StatusOK)
 	}
 
 	if resp := do(t, http.MethodPost, alice+path+"/size?cols=100&rows=40", ""); resp.StatusCode != http.StatusOK {
-		t.Fatalf("resize as the owner: expected 200, got %d", resp.StatusCode)
+		t.Errorf("POST %s/size as alice = %d, want %d", path, resp.StatusCode, http.StatusOK)
 	}
 }
 
@@ -497,18 +487,18 @@ func TestConsoleRoutesNeedPermission(t *testing.T) {
 		{http.MethodDelete, path},
 	} {
 		if resp := do(t, tt.method, viewer+tt.path, ""); resp.StatusCode != http.StatusForbidden {
-			t.Fatalf("%s %s: expected 403, got %d", tt.method, tt.path, resp.StatusCode)
+			t.Errorf("%s %s as a console viewer = %d, want %d", tt.method, tt.path, resp.StatusCode, http.StatusForbidden)
 		}
 	}
 
 	none := consoleAPI(t, "alice", testRole("experiments", "list"))
 
 	if resp := do(t, http.MethodGet, none+path, ""); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("GET: expected 403, got %d", resp.StatusCode)
+		t.Errorf("GET %s without console permission = %d, want %d", path, resp.StatusCode, http.StatusForbidden)
 	}
 
 	if _, err := dialTestConsole(t, none, pid); err == nil {
-		t.Fatal("attached without permission")
+		t.Errorf("dialing console %d without console permission = nil error, want it refused", pid)
 	}
 
 	for _, action := range []string{"console-create", "console-terminate"} {
@@ -530,6 +520,6 @@ func TestCreateConsoleNeedsTheConsoleEnabled(t *testing.T) {
 
 	resp := do(t, http.MethodPost, consoleAPI(t, "alice", consoleRole())+"/console", "")
 	if resp.StatusCode != http.StatusMethodNotAllowed {
-		t.Fatalf("expected 405, got %d", resp.StatusCode)
+		t.Errorf("POST /console with the console disabled = %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)
 	}
 }

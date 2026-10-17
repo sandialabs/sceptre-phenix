@@ -1,7 +1,6 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/websocket"
 
 	"phenix/api/livecapture"
@@ -41,10 +41,11 @@ func TestGetVMCaptureStreamRefuses(t *testing.T) {
 			server := serveAs(t, "alice", tt.role).URL
 			events := captureAudit(t)
 
-			resp := do(t, http.MethodGet,
-				server+"/api/v1/experiments/test-experiment/vms/test-vm/captures/"+tt.iface+"/stream", "")
+			path := "/api/v1/experiments/test-experiment/vms/test-vm/captures/" + tt.iface + "/stream"
+
+			resp := do(t, http.MethodGet, server+path, "")
 			if resp.StatusCode != tt.want {
-				t.Fatalf("expected %d, got %d: %s", tt.want, resp.StatusCode, readBody(t, resp))
+				t.Errorf("GET %s = %d, want %d: %s", path, resp.StatusCode, tt.want, readBody(t, resp))
 			}
 
 			switch got := events(); tt.wantAudit {
@@ -53,11 +54,11 @@ func TestGetVMCaptureStreamRefuses(t *testing.T) {
 			case "failed":
 				e := wantAudit(t, got, "capture-stream", "failure", map[string]any{"user.name": "alice", "phenix.vm.name": "test-vm"})
 				if e != nil && e["error.message"] == nil {
-					t.Errorf("failure without error.message: %v", e)
+					t.Errorf("GET %s capture-stream failure event = %v, want an error.message", path, e)
 				}
 			default:
 				if len(got) != 0 {
-					t.Errorf("audited a request refused before the RBAC check: %v", got)
+					t.Errorf("GET %s audit events = %v, want none before the RBAC check", path, got)
 				}
 			}
 		})
@@ -116,7 +117,7 @@ func followLiveCapture(t *testing.T) {
 
 	tap, err := livecapture.Open("test-experiment", "test-vm", 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("livecapture.Open(test-experiment, test-vm, 0) = %v", err)
 	}
 
 	t.Cleanup(tap.Release)
@@ -127,7 +128,7 @@ func followLiveCapture(t *testing.T) {
 		select {
 		case <-st.Changed:
 		case <-deadline:
-			t.Fatal("capture was never read")
+			t.Fatal("test-vm's capture was not read within 5s")
 		}
 	}
 }
@@ -144,7 +145,7 @@ func openCaptureStream(t *testing.T, url string, overWebSocket bool) func(want [
 	if overWebSocket {
 		conn, resp, err := websocket.DefaultDialer.DialContext(ctx, "ws"+strings.TrimPrefix(url, "http"), nil)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("dialing %s: %v", url, err)
 		}
 
 		resp.Body.Close()
@@ -156,31 +157,50 @@ func openCaptureStream(t *testing.T, url string, overWebSocket bool) func(want [
 			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
 			kind, msg, err := conn.ReadMessage()
-			if err != nil || kind != websocket.BinaryMessage || !bytes.Equal(msg, want) {
-				t.Fatalf("message: %v, type %d, %d bytes; want %s (%d bytes)", err, kind, len(msg), what, len(want))
+			if err != nil {
+				t.Fatalf("reading %s from %s: %v", what, url, err)
+			}
+
+			if kind != websocket.BinaryMessage {
+				t.Fatalf("reading %s from %s = message type %d, want %d", what, url, kind, websocket.BinaryMessage)
+			}
+
+			if diff := cmp.Diff(want, msg); diff != "" {
+				t.Fatalf("reading %s from %s mismatch (-want +got):\n%s", what, url, diff)
 			}
 		}
 	}
 
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext(GET %s) = %v", url, err)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GET %s: %v", url, err)
 	}
 
 	t.Cleanup(func() { resp.Body.Close() })
 
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != pcapContentType {
-		t.Fatalf("got %d %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want %d", url, resp.StatusCode, http.StatusOK)
+	}
+
+	if got := resp.Header.Get("Content-Type"); got != pcapContentType {
+		t.Errorf("GET %s Content-Type = %q, want %q", url, got, pcapContentType)
 	}
 
 	return func(want []byte, what string) {
 		t.Helper()
 
 		got := make([]byte, len(want))
-		if _, err := io.ReadFull(resp.Body, got); err != nil || !bytes.Equal(got, want) {
-			t.Fatalf("reading %s: %v; streamed bytes differ from the capture", what, err)
+		if n, err := io.ReadFull(resp.Body, got); err != nil {
+			t.Fatalf("reading %s from %s = %d bytes, %v; want %d", what, url, n, err, len(want))
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatalf("reading %s from %s mismatch (-want +got):\n%s", what, url, diff)
 		}
 	}
 }

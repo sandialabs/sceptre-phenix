@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -43,18 +44,18 @@ func createUserWithToken(t *testing.T, username string) {
 
 	user, err := rbac.GetUser(username)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rbac.GetUser(%s) = %v", username, err)
 	}
 
 	role := testRole("experiments", "get", "*")
 	role.Spec.Name = "Viewer"
 
 	if err := user.SetRole(&role); err != nil {
-		t.Fatal(err)
+		t.Fatalf("setting %s's role: %v", username, err)
 	}
 
 	if err := user.AddToken(testToken, "test token"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("adding %s's token: %v", username, err)
 	}
 }
 
@@ -89,22 +90,22 @@ func TestConfigAPIHidesUserSecrets(t *testing.T) {
 		req.Header.Set("Accept", accept)
 
 		if err := GetConfig(w, req); err != nil {
-			t.Fatal(err)
+			t.Fatalf("GetConfig(GET user/alice as %s) = %v", accept, err)
 		}
 
 		if found := secretsIn(w.Body.String()); len(found) > 0 {
-			t.Errorf("GET as %s returned %v", accept, found)
+			t.Errorf("GetConfig(GET user/alice as %s) holds %q, want no secrets", accept, found)
 		}
 
 		if !strings.Contains(w.Body.String(), "alice") {
-			t.Errorf("GET as %s left out the username: %s", accept, w.Body.String())
+			t.Errorf("GetConfig(GET user/alice as %s) = %s, want the username", accept, w.Body.String())
 		}
 	}
 
 	for _, body := range []string{`["User/alice"]`, `["User/alice","User/bob"]`} {
 		w := httptest.NewRecorder()
 		if err := DownloadConfigs(w, roleRequest(http.MethodPost, "/api/v1/configs/download", body, nil, viewer)); err != nil {
-			t.Fatal(err)
+			t.Fatalf("DownloadConfigs(%s) = %v", body, err)
 		}
 
 		text := w.Body.String()
@@ -113,9 +114,18 @@ func TestConfigAPIHidesUserSecrets(t *testing.T) {
 			var files strings.Builder
 
 			for _, f := range zr.File {
-				rc, _ := f.Open()
-				b, _ := io.ReadAll(rc)
+				rc, err := f.Open()
+				if err != nil {
+					t.Fatalf("opening %s in DownloadConfigs(%s): %v", f.Name, body, err)
+				}
+
+				b, err := io.ReadAll(rc)
 				_ = rc.Close()
+
+				if err != nil {
+					t.Fatalf("reading %s in DownloadConfigs(%s): %v", f.Name, body, err)
+				}
+
 				files.Write(b)
 			}
 
@@ -123,11 +133,11 @@ func TestConfigAPIHidesUserSecrets(t *testing.T) {
 		}
 
 		if found := secretsIn(text); len(found) > 0 {
-			t.Errorf("download of %s returned %v", body, found)
+			t.Errorf("DownloadConfigs(%s) holds %q, want no secrets", body, found)
 		}
 
 		if !strings.Contains(text, "alice") {
-			t.Errorf("download of %s left out alice: %s", body, text)
+			t.Errorf("DownloadConfigs(%s) = %s, want alice's config", body, text)
 		}
 	}
 }
@@ -157,52 +167,58 @@ func TestUpdateUserConfigKeepsSecrets(t *testing.T) {
 
 	for route, send := range update {
 		for _, injected := range []bool{false, true} {
-			storetest.Use(t)
-			createUserWithToken(t, "alice")
+			t.Run(fmt.Sprintf("%s injected=%t", route, injected), func(t *testing.T) {
+				storetest.Use(t)
+				createUserWithToken(t, "alice")
 
-			w := httptest.NewRecorder()
-			if err := GetConfig(w, roleRequest(http.MethodGet, "/api/v1/configs/user/alice", "", vars, admin)); err != nil {
-				t.Fatal(err)
-			}
+				w := httptest.NewRecorder()
+				if err := GetConfig(w, roleRequest(http.MethodGet, "/api/v1/configs/user/alice", "", vars, admin)); err != nil {
+					t.Fatalf("GetConfig(GET user/alice) = %v", err)
+				}
 
-			var cfg map[string]any
-			if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
-				t.Fatal(err)
-			}
+				var cfg map[string]any
+				if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
+					t.Fatalf("GetConfig(GET user/alice) = %s, not JSON: %v", w.Body.String(), err)
+				}
 
-			spec, _ := cfg["spec"].(map[string]any)
-			spec["first_name"] = "Alicia"
+				spec, _ := cfg["spec"].(map[string]any)
+				spec["first_name"] = "Alicia"
 
-			if injected {
-				spec["password"] = "not-a-hash"
-				spec["tokens"] = map[string]any{"aW5qZWN0ZWQ=": "injected"}
-			}
+				if injected {
+					spec["password"] = "not-a-hash"
+					spec["tokens"] = map[string]any{"aW5qZWN0ZWQ=": "injected"}
+				}
 
-			body, _ := json.Marshal(cfg)
-			if err := send(t, string(body)); err != nil {
-				t.Fatalf("%s (injected %t): %v", route, injected, err)
-			}
+				body, err := json.Marshal(cfg)
+				if err != nil {
+					t.Fatalf("json.Marshal(alice's config) = %v", err)
+				}
 
-			user, err := rbac.GetUser("alice")
-			if err != nil {
-				t.Fatal(err)
-			}
+				if err := send(t, string(body)); err != nil {
+					t.Fatalf("%s of alice's config = %v", route, err)
+				}
 
-			if user.FirstName() != "Alicia" {
-				t.Errorf("%s (injected %t): first name %q, want the update", route, injected, user.FirstName())
-			}
+				user, err := rbac.GetUser("alice")
+				if err != nil {
+					t.Fatalf("rbac.GetUser(alice) = %v", err)
+				}
 
-			if err := user.ValidatePassword(testPassword); err != nil {
-				t.Errorf("%s (injected %t): password not kept: %v", route, injected, err)
-			}
+				if got := user.FirstName(); got != "Alicia" {
+					t.Errorf("%s of alice's config: first name = %q, want Alicia", route, got)
+				}
 
-			if err := user.ValidateToken(testToken); err != nil {
-				t.Errorf("%s (injected %t): token not kept: %v", route, injected, err)
-			}
+				if err := user.ValidatePassword(testPassword); err != nil {
+					t.Errorf("%s of alice's config: ValidatePassword(testPassword) = %v, want the password kept", route, err)
+				}
 
-			if err := user.ValidateToken("injected"); err == nil {
-				t.Errorf("%s (injected %t): the update added a token", route, injected)
-			}
+				if err := user.ValidateToken(testToken); err != nil {
+					t.Errorf("%s of alice's config: ValidateToken(testToken) = %v, want the token kept", route, err)
+				}
+
+				if err := user.ValidateToken("injected"); err == nil {
+					t.Errorf("%s of alice's config: ValidateToken(injected) = nil, want no token added", route)
+				}
+			})
 		}
 	}
 }
@@ -221,29 +237,29 @@ func TestKeepUserSecretsRefusesConcurrentChange(t *testing.T) {
 	}
 
 	if err := store.Get(cfg); err != nil {
-		t.Fatal(err)
+		t.Fatalf("store.Get(User/alice) = %v", err)
 	}
 
 	cfg.Metadata.Revision = 0
 
 	if err := keepUserSecrets("User/alice", cfg); err != nil {
-		t.Fatal(err)
+		t.Fatalf("keepUserSecrets(User/alice) = %v", err)
 	}
 
 	user, err := rbac.GetUser("alice")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rbac.GetUser(alice) = %v", err)
 	}
 
 	if err := user.AddToken("second.token.value", "second token"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("adding alice's second token: %v", err)
 	}
 
 	if err := config.Update("User/alice", cfg); !errors.Is(err, store.ErrConflict) {
-		t.Fatalf("update after a concurrent token change: %v, want %v", err, store.ErrConflict)
+		t.Errorf("config.Update(User/alice) after a concurrent token change = %v, want %v", err, store.ErrConflict)
 	}
 
 	if err := user.ValidateToken("second.token.value"); err != nil {
-		t.Errorf("concurrent token lost: %v", err)
+		t.Errorf("ValidateToken(second token) after the refused update = %v, want the token kept", err)
 	}
 }

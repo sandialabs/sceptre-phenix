@@ -3,10 +3,11 @@ package web
 import (
 	"fmt"
 	"net/http"
-	"slices"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"phenix/util/mm"
 	"phenix/web/proto"
@@ -57,19 +58,21 @@ func TestStopVMCaptures(t *testing.T) {
 			server := serveAs(t, "alice", tt.role).URL
 			events := captureAudit(t)
 
-			resp := do(t, http.MethodDelete, server+"/api/v1/experiments/test-experiment/vms/test-vm/captures"+tt.query, "")
+			path := "/api/v1/experiments/test-experiment/vms/test-vm/captures" + tt.query
+
+			resp := do(t, http.MethodDelete, server+path, "")
 			if resp.StatusCode != tt.want {
-				t.Fatalf("expected %d, got %d: %s", tt.want, resp.StatusCode, readBody(t, resp))
+				t.Errorf("DELETE %s = %d, want %d: %s", path, resp.StatusCode, tt.want, readBody(t, resp))
 			}
 
 			if n := fake.captureStops.Load(); n != tt.wantStops {
-				t.Fatalf("minimega stopped captures %d times, want %d", n, tt.wantStops)
+				t.Errorf("DELETE %s stopped captures %d times, want %d", path, n, tt.wantStops)
 			}
 
 			got := events()
 			if tt.wantOutcome == "" {
 				if len(got) != 0 {
-					t.Errorf("audited a request refused before the RBAC check: %v", got)
+					t.Errorf("DELETE %s audit events = %v, want none before the RBAC check", path, got)
 				}
 
 				return
@@ -78,8 +81,17 @@ func TestStopVMCaptures(t *testing.T) {
 			e := wantAudit(t, got, "capture-stop", tt.wantOutcome, map[string]any{
 				"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.vm.name": "test-vm",
 			})
-			if iface, ok := e["phenix.vm.interface"]; e != nil && fmt.Sprint(iface) != tt.wantIface && (ok || tt.wantIface != "") {
-				t.Errorf("phenix.vm.interface = %v, want %q", iface, tt.wantIface)
+			if e == nil {
+				return
+			}
+
+			iface := ""
+			if v, ok := e["phenix.vm.interface"]; ok {
+				iface = fmt.Sprint(v)
+			}
+
+			if iface != tt.wantIface {
+				t.Errorf("DELETE %s audit phenix.vm.interface = %q, want %q", path, iface, tt.wantIface)
 			}
 		})
 	}
@@ -89,19 +101,20 @@ func TestGetExperimentCaptures(t *testing.T) {
 	tests := map[string]struct {
 		started      string
 		role         rbac.Role
-		wantVMs      []string
+		want         *proto.CaptureList
 		wantListings int32
 	}{
 		// a VM is named exp/vm, like every other VM resource name
 		"of the VMs the role names": {
 			started:      "2024-01-01T00:00:00Z",
 			role:         testRole("experiments/captures", "list", "test-experiment", "test-experiment/vm-a"),
-			wantVMs:      []string{"vm-a"},
+			want:         &proto.CaptureList{Captures: []*proto.Capture{{Vm: "vm-a", Filepath: "/tmp/a.pcap"}}},
 			wantListings: 1,
 		},
 		// asking minimega would recreate the experiment's namespace
 		"none of a stopped experiment": {
 			role: testRole("experiments/captures", "list", "test-experiment", "test-experiment/*"),
+			want: &proto.CaptureList{},
 		},
 	}
 
@@ -120,25 +133,22 @@ func TestGetExperimentCaptures(t *testing.T) {
 
 			body := readBody(t, resp)
 			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+				t.Fatalf("GET /api/v1/experiments/test-experiment/captures = %d, want %d: %s",
+					resp.StatusCode, http.StatusOK, body)
 			}
 
-			var list proto.CaptureList
-			if err := protojson.Unmarshal([]byte(body), &list); err != nil {
-				t.Fatalf("unmarshaling captures: %v", err)
+			list := new(proto.CaptureList)
+			if err := protojson.Unmarshal([]byte(body), list); err != nil {
+				t.Fatalf("GET /api/v1/experiments/test-experiment/captures = %s, not a capture list: %v", body, err)
 			}
 
-			vms := make([]string, 0, len(list.GetCaptures()))
-			for _, c := range list.GetCaptures() {
-				vms = append(vms, c.GetVm())
-			}
-
-			if !slices.Equal(vms, tt.wantVMs) {
-				t.Errorf("captures of %v, want %v", vms, tt.wantVMs)
+			if diff := cmp.Diff(tt.want, list, protocmp.Transform()); diff != "" {
+				t.Errorf("GET /api/v1/experiments/test-experiment/captures mismatch (-want +got):\n%s", diff)
 			}
 
 			if n := fake.captureListings.Load(); n != tt.wantListings {
-				t.Errorf("minimega listed captures %d times, want %d", n, tt.wantListings)
+				t.Errorf("GET /api/v1/experiments/test-experiment/captures listed minimega's captures %d times, want %d",
+					n, tt.wantListings)
 			}
 		})
 	}
@@ -169,14 +179,19 @@ func TestStopCaptureSubnetNeedsDelete(t *testing.T) {
 			server := serveAs(t, "alice", tc.role).URL
 			events := captureAudit(t)
 
-			resp := do(t, http.MethodPost, server+"/api/v1/experiments/test-experiment/stopCaptureSubnet", "not json")
+			const path = "/api/v1/experiments/test-experiment/stopCaptureSubnet"
+
+			resp := do(t, http.MethodPost, server+path, "not json")
 			if resp.StatusCode != tc.wantCode {
-				t.Fatalf("expected %d, got %d: %s", tc.wantCode, resp.StatusCode, readBody(t, resp))
+				t.Errorf("POST %s = %d, want %d: %s", path, resp.StatusCode, tc.wantCode, readBody(t, resp))
 			}
 
 			// a body refused after the RBAC check is not audited
-			if denied := countAudit(events(), "capture-stop", "failure", nil); denied != 0 != (tc.wantCode == http.StatusForbidden) {
-				t.Errorf("%d capture-stop refusals audited for a %d", denied, tc.wantCode)
+			denied := countAudit(events(), "capture-stop", "failure", nil)
+			if forbidden := tc.wantCode == http.StatusForbidden; forbidden && denied == 0 {
+				t.Errorf("POST %s refused by RBAC audited no capture-stop failure, want one", path)
+			} else if !forbidden && denied != 0 {
+				t.Errorf("POST %s audited %d capture-stop failures, want none after the RBAC check", path, denied)
 			}
 		})
 	}

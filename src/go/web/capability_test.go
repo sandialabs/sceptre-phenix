@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	"phenix/web/capability"
@@ -20,6 +22,20 @@ import (
 
 // testJWTKey is the JWT signing key of servers that sign users in.
 const testJWTKey = "test-signing-key"
+
+// grantCmp compares capture grants leaving out their times and where the headnode has the file.
+var grantCmp = cmp.Options{ //nolint:gochecknoglobals // a constant set of options
+	cmpopts.IgnoreFields(capability.Grant{}, "Created", "Expires", "UseBy", "LastUsed", "Checked", "Done"),
+	cmpopts.IgnoreFields(capability.Target{}, "Local"),
+}
+
+// savedGrant is the grant of WebShark to read test-experiment's saved a.pcap, used uses times.
+func savedGrant(id, user string, uses int) capability.Grant {
+	return capability.Grant{
+		ID: id, User: user, Target: capability.Target{Exp: "test-experiment", File: "a.pcap"},
+		Ops: viewOps, IdleTimeout: viewGrantIdle, Uses: uses,
+	}
+}
 
 // useCapRecheck has every use of a capture grant check the user's access
 // again, rather than trusting a check a few seconds old.
@@ -75,7 +91,8 @@ func openSignedIn(t *testing.T, server, session string) sharkCaptureResponse {
 
 	resp := signedIn(t, http.MethodPost, server+"/api/v1/experiments/test-experiment/webshark", `{"path":"a.pcap"}`, session)
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("opening a.pcap: got %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("POST /api/v1/experiments/test-experiment/webshark a.pcap = %d, want %d: %s",
+			resp.StatusCode, http.StatusOK, readBody(t, resp))
 	}
 
 	var capture sharkCaptureResponse
@@ -144,25 +161,25 @@ func TestCaptureGrantRechecksAccess(t *testing.T) {
 
 			capture := openSignedIn(t, server, session)
 			if capture.ID == "" || capture.Expires == "" {
-				t.Fatalf("got %+v, want an ID and expiry", capture)
+				t.Fatalf("POST webshark a.pcap = %+v, want an ID and expiry", capture)
 			}
 
 			url := server + "/webshark/captures/" + capture.Capture
 
 			if resp := do(t, http.MethodGet, url, ""); resp.StatusCode != http.StatusOK {
-				t.Fatalf("before the change: got %d", resp.StatusCode)
+				t.Fatalf("GET the capture before the change = %d, want %d", resp.StatusCode, http.StatusOK)
 			}
 
 			change(t, session)
 
-			for range 2 {
+			for _, use := range []string{"first", "second"} {
 				if resp := do(t, http.MethodGet, url, ""); resp.StatusCode != http.StatusNotFound {
-					t.Fatalf("after the change: got %d, want 404", resp.StatusCode)
+					t.Errorf("GET the capture after the change, %s time = %d, want %d", use, resp.StatusCode, http.StatusNotFound)
 				}
 			}
 
-			if n := len(captureGrants.List("alice", "test-experiment")); n != 0 {
-				t.Fatalf("%d grants left, want the name revoked", n)
+			if list := captureGrants.List("alice", "test-experiment"); len(list) != 0 {
+				t.Errorf("captureGrants.List(alice, test-experiment) = %+v, want the name revoked", list)
 			}
 		})
 	}
@@ -184,25 +201,25 @@ func TestCaptureGrantDevAuth(t *testing.T) {
 	server := serveRouter(t, testPublic(), "dev|alice|global-viewer").URL
 	capture := openInWebShark(t, server, `{"path":"a.pcap"}`)
 
-	for range 2 {
+	for _, use := range []string{"first", "second"} {
 		if resp := do(t, http.MethodGet, server+"/webshark/captures/"+capture.Capture, ""); resp.StatusCode != http.StatusOK {
-			t.Fatalf("got %d", resp.StatusCode)
+			t.Errorf("GET the capture as alice, %s time = %d, want %d", use, resp.StatusCode, http.StatusOK)
 		}
 	}
 
-	list := captureGrants.List("alice", "test-experiment")
-	if len(list) != 1 || list[0].User != "alice" || list[0].ID != capture.ID || list[0].Session != "" {
-		t.Fatalf("alice's grants: %+v", list)
+	want := []capability.Grant{savedGrant(capture.ID, "alice", 2)}
+	if diff := cmp.Diff(want, captureGrants.List("alice", "test-experiment"), grantCmp); diff != "" {
+		t.Errorf("captureGrants.List(alice, test-experiment) mismatch (-want +got):\n%s", diff)
 	}
 
 	// a server signing in another dev user does not honor alice's grant
 	bob := serveRouter(t, testPublic(), "dev|bob|global-viewer").URL
 	if resp := do(t, http.MethodGet, bob+"/webshark/captures/"+capture.Capture, ""); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("as bob's server: got %d, want 404", resp.StatusCode)
+		t.Errorf("GET alice's capture from bob's server = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 
-	if n := len(captureGrants.List("alice", "test-experiment")); n != 0 {
-		t.Fatalf("%d grants left, want the name revoked", n)
+	if list := captureGrants.List("alice", "test-experiment"); len(list) != 0 {
+		t.Errorf("captureGrants.List(alice, test-experiment) after bob's use = %+v, want the name revoked", list)
 	}
 }
 
@@ -218,11 +235,11 @@ func TestCaptureGrantEndsWithSession(t *testing.T) {
 
 	expires, err := time.Parse(time.RFC3339, capture.Expires)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("POST webshark a.pcap expires = %q, not RFC 3339: %v", capture.Expires, err)
 	}
 
 	if ends := sessionExpiry(session); expires.After(ends) || ends.Sub(expires) > time.Second {
-		t.Fatalf("expires %v, want the session's end %v", expires, ends)
+		t.Errorf("POST webshark a.pcap expires = %v, want the session's end %v", expires, ends)
 	}
 }
 
@@ -248,7 +265,7 @@ func TestCaptureGrantProxyUser(t *testing.T) {
 		{"", http.StatusOK},
 	} {
 		if resp := do(t, http.MethodGet, url, "", "X-Remote-User", tc.user); resp.StatusCode != tc.want {
-			t.Errorf("proxy user %q: got %d, want %d", tc.user, resp.StatusCode, tc.want)
+			t.Errorf("GET the capture as proxy user %q = %d, want %d", tc.user, resp.StatusCode, tc.want)
 		}
 	}
 
@@ -270,11 +287,12 @@ func TestCaptureGrantWithoutSignIn(t *testing.T) {
 	capture := openInWebShark(t, server, `{"path":"a.pcap"}`)
 
 	if resp := do(t, http.MethodGet, server+"/webshark/captures/"+capture.Capture, ""); resp.StatusCode != http.StatusOK {
-		t.Fatalf("got %d", resp.StatusCode)
+		t.Errorf("GET the capture without sign-in = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	if list := captureGrants.List("global-admin", "test-experiment"); len(list) != 1 || list[0].Session != "" {
-		t.Fatalf("global-admin's grants: %+v", list)
+	want := []capability.Grant{savedGrant(capture.ID, "global-admin", 1)}
+	if diff := cmp.Diff(want, captureGrants.List("global-admin", "test-experiment"), grantCmp); diff != "" {
+		t.Errorf("captureGrants.List(global-admin, test-experiment) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -288,9 +306,9 @@ func TestCaptureGrantOperations(t *testing.T) {
 
 	_ = do(t, http.MethodGet, server+"/webshark/json?method=download&capture="+capture.Capture, "")
 
-	list := captureGrants.List("alice", "test-experiment")
-	if len(list) != 1 || list[0].ID != capture.ID || list[0].Uses != 1 || list[0].IdleTimeout != viewGrantIdle {
-		t.Fatalf("alice's grants: %+v", list)
+	want := []capability.Grant{savedGrant(capture.ID, "alice", 1)}
+	if diff := cmp.Diff(want, captureGrants.List("alice", "test-experiment"), grantCmp); diff != "" {
+		t.Errorf("captureGrants.List(alice, test-experiment) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -318,7 +336,8 @@ func streamToken(t *testing.T, server string) captureToken {
 
 	resp, token := createCaptureToken(t, server, `{"vm":"test-vm","interface":0,"operations":["stream"]}`)
 	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("got %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("POST capture-tokens for test-vm's stream = %d, want %d: %s",
+			resp.StatusCode, http.StatusCreated, readBody(t, resp))
 	}
 
 	return token
@@ -364,7 +383,7 @@ func TestCreateCaptureTokenRefuses(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			resp, _ := createCaptureToken(t, serveAs(t, "alice", tt.role).URL, tt.body)
 			if resp.StatusCode != tt.want {
-				t.Fatalf("expected %d, got %d: %s", tt.want, resp.StatusCode, readBody(t, resp))
+				t.Errorf("POST capture-tokens %s = %d, want %d: %s", tt.body, resp.StatusCode, tt.want, readBody(t, resp))
 			}
 		})
 	}
@@ -375,7 +394,7 @@ func TestCreateCaptureTokenRefuses(t *testing.T) {
 
 	resp, _ := createCaptureToken(t, server, `{"path":"saved.pcap","operations":["view"]}`)
 	if resp.StatusCode != http.StatusNotImplemented {
-		t.Fatalf("view without WebShark: expected 501, got %d", resp.StatusCode)
+		t.Errorf("POST capture-tokens to view without WebShark = %d, want %d", resp.StatusCode, http.StatusNotImplemented)
 	}
 
 	streamToken(t, server)
@@ -391,17 +410,41 @@ func TestCaptureTokenStreams(t *testing.T) {
 	events := captureAudit(t)
 	token := streamToken(t, server)
 
-	if !strings.HasPrefix(token.Token, "pcs_") || token.ID == "" || token.UseBy == "" || token.Expires == "" ||
-		token.URLs["stream"] != "webshark/streams/"+token.Token || token.Target.VM != "test-vm" ||
-		token.Target.Interface == nil || *token.Target.Interface != 0 || token.Experiment != "test-experiment" {
-		t.Fatalf("unexpected token %+v", token)
+	if !strings.HasPrefix(token.Token, "pcs_") {
+		t.Fatalf("POST capture-tokens token = %q, want a pcs_ token", token.Token)
+	}
+
+	if token.ID == "" || token.UseBy == "" || token.Expires == "" {
+		t.Errorf("POST capture-tokens = %+v, want an ID, use-by and expiry", token)
+	}
+
+	iface := 0
+	want := captureToken{
+		Operations: []capability.Op{capability.OpStream},
+		Experiment: "test-experiment",
+		Target:     captureTokenTarget{Path: "live.pcap", VM: "test-vm", Interface: &iface},
+		URLs:       map[string]string{"stream": "webshark/streams/" + token.Token},
+	}
+
+	ignore := cmpopts.IgnoreFields(captureToken{}, "ID", "Token", "Expires", "UseBy", "LastUsed")
+	if diff := cmp.Diff(want, token, ignore); diff != "" {
+		t.Errorf("POST capture-tokens mismatch (-want +got):\n%s", diff)
 	}
 
 	// listed without the token
 	resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/capture-tokens", "")
-	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || strings.Contains(body, token.Token) ||
-		!strings.Contains(body, token.ID) {
-		t.Fatalf("listing: %d %s", resp.StatusCode, body)
+	body := readBody(t, resp)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET capture-tokens = %d, want %d: %s", resp.StatusCode, http.StatusOK, body)
+	}
+
+	if strings.Contains(body, token.Token) {
+		t.Errorf("GET capture-tokens = %s, want it without the token", body)
+	}
+
+	if !strings.Contains(body, token.ID) {
+		t.Errorf("GET capture-tokens = %s, want the token's ID %s", body, token.ID)
 	}
 
 	url := server + "/" + token.URLs["stream"]
@@ -421,12 +464,12 @@ func TestCaptureTokenStreams(t *testing.T) {
 	bob := serveAs(t, "bob", sharkRole()).URL
 	resp = do(t, http.MethodDelete, bob+"/api/v1/experiments/test-experiment/capture-tokens/"+token.ID, "")
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("bob revoking: got %d, want 404", resp.StatusCode)
+		t.Errorf("DELETE alice's capture token as bob = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 
 	// a WebShark route does not take it
 	if resp := do(t, http.MethodGet, server+"/webshark/captures/"+token.Token, ""); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("as a WebShark capture: got %d, want 403", resp.StatusCode)
+		t.Errorf("GET /webshark/captures/<stream token> = %d, want %d", resp.StatusCode, http.StatusForbidden)
 	}
 
 	got := events()
@@ -436,7 +479,7 @@ func TestCaptureTokenStreams(t *testing.T) {
 
 	// each stream, as the grant's user, though the request names none
 	if n := countAudit(got, "capture-stream", "success", grant); n != 2 {
-		t.Errorf("%d streams audited, want 2", n)
+		t.Errorf("capture-stream success audit events = %d, want 2", n)
 	}
 
 	wantAudit(t, got, "capture-webshark-read", "failure", map[string]any{
@@ -458,24 +501,27 @@ func openStream(t *testing.T, url string, n int) func() {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	t.Cleanup(cancel)
 
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext(GET %s) = %v", url, err)
+	}
 
 	stream, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GET %s: %v", url, err)
 	}
 
 	t.Cleanup(func() { stream.Body.Close() })
 
 	if _, err := io.ReadFull(stream.Body, make([]byte, n)); err != nil {
-		t.Fatalf("reading the header: %v", err)
+		t.Fatalf("reading the header of GET %s: %v", url, err)
 	}
 
 	return func() {
 		t.Helper()
 
 		if _, err := io.ReadAll(stream.Body); err != nil || ctx.Err() != nil {
-			t.Fatalf("the stream did not end: %v %v", err, ctx.Err())
+			t.Errorf("GET %s did not end: read error %v, context %v", url, err, ctx.Err())
 		}
 	}
 }
@@ -498,7 +544,7 @@ func TestCaptureTokenRevokeEndsStream(t *testing.T) {
 
 	resp := do(t, http.MethodDelete, revoke, "")
 	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("revoking: got %d", resp.StatusCode)
+		t.Fatalf("DELETE the capture token = %d, want %d", resp.StatusCode, http.StatusNoContent)
 	}
 
 	wantAudit(t, events(), "capture-token-revoke", "success", map[string]any{
@@ -508,11 +554,11 @@ func TestCaptureTokenRevokeEndsStream(t *testing.T) {
 	ended()
 
 	if resp := do(t, http.MethodGet, server+"/"+token.URLs["stream"], ""); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("after revoking: got %d, want 404", resp.StatusCode)
+		t.Errorf("GET the stream after revoking = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 
 	if resp := do(t, http.MethodDelete, revoke, ""); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("revoking again: got %d, want 404", resp.StatusCode)
+		t.Errorf("DELETE the capture token again = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 }
 
@@ -533,7 +579,7 @@ func TestCaptureTokenRecheckEndsStream(t *testing.T) {
 		`{"vm":"test-vm","interface":0,"operations":["stream"]}`, session,
 	)
 	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("minting: got %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("POST capture-tokens signed in = %d, want %d: %s", resp.StatusCode, http.StatusCreated, readBody(t, resp))
 	}
 
 	var token captureToken
@@ -554,8 +600,8 @@ func TestCaptureTokenRecheckEndsStream(t *testing.T) {
 
 	ended()
 
-	if n := len(captureGrants.List("alice", "test-experiment")); n != 0 {
-		t.Fatalf("%d grants left, want the token revoked", n)
+	if list := captureGrants.List("alice", "test-experiment"); len(list) != 0 {
+		t.Errorf("captureGrants.List(alice, test-experiment) = %+v, want the token revoked", list)
 	}
 }
 
@@ -568,11 +614,11 @@ func TestWebSharkNameDoesNotStream(t *testing.T) {
 	capture := openInWebShark(t, server, `{"vm":"test-vm","interface":0}`)
 
 	if resp := do(t, http.MethodGet, server+"/webshark/streams/"+capture.Capture, ""); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("got %d, want 403", resp.StatusCode)
+		t.Errorf("GET /webshark/streams/<WebShark name> = %d, want %d", resp.StatusCode, http.StatusForbidden)
 	}
 
 	if resp := do(t, http.MethodGet, server+"/webshark/streams/pcs_unknown", ""); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown token: got %d, want 404", resp.StatusCode)
+		t.Errorf("GET /webshark/streams/pcs_unknown = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 }
 
@@ -589,23 +635,23 @@ func TestExperimentStopAndDeleteRevokeGrants(t *testing.T) {
 	revokeOnExperimentStop("stop", "other-experiment")
 
 	if n := len(captureGrants.List("alice", "test-experiment")); n != 2 {
-		t.Fatalf("another experiment's stop left %d grants, want 2", n)
+		t.Errorf("grants of test-experiment after other-experiment stops = %d, want 2", n)
 	}
 
 	revokeOnExperimentStop("stop", "test-experiment")
 
 	if resp := do(t, http.MethodGet, stream, ""); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("stream after stop: got %d, want 404", resp.StatusCode)
+		t.Errorf("GET the stream after the stop = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 
 	if resp := do(t, http.MethodGet, view, ""); resp.StatusCode != http.StatusOK {
-		t.Fatalf("WebShark after stop: got %d, want 200", resp.StatusCode)
+		t.Errorf("GET the WebShark capture after the stop = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
 	revokeOnExperimentDelete("delete", "test-experiment")
 
 	if resp := do(t, http.MethodGet, view, ""); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("WebShark after delete: got %d, want 404", resp.StatusCode)
+		t.Errorf("GET the WebShark capture after the delete = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 }
 
@@ -625,15 +671,15 @@ func TestLogoutRevokesGrants(t *testing.T) {
 	})
 
 	if resp := signedIn(t, http.MethodGet, server+"/api/v1/logout", "", session); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("signing out: got %d", resp.StatusCode)
+		t.Fatalf("GET /api/v1/logout = %d, want %d", resp.StatusCode, http.StatusNoContent)
 	}
 
 	if resp := do(t, http.MethodGet, url, ""); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("after signing out: got %d, want 404", resp.StatusCode)
+		t.Errorf("GET the capture after signing out = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 
-	if list := captureGrants.List("alice", "test-experiment"); len(list) != 1 || list[0].ID != other.ID {
-		t.Fatalf("alice's grants after signing out: %+v", list)
+	if diff := cmp.Diff([]capability.Grant{other}, captureGrants.List("alice", "test-experiment"), grantCmp); diff != "" {
+		t.Errorf("captureGrants.List(alice, test-experiment) after signing out mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -647,11 +693,11 @@ func TestDeleteUserRevokesGrants(t *testing.T) {
 
 	admin := serveAs(t, "admin", testRole("users", "delete", "alice")).URL
 	if resp := do(t, http.MethodDelete, admin+"/api/v1/users/alice", ""); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("deleting alice: got %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("DELETE /api/v1/users/alice = %d, want %d: %s", resp.StatusCode, http.StatusNoContent, readBody(t, resp))
 	}
 
 	if resp := do(t, http.MethodGet, url, ""); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("after deleting the user: got %d, want 404", resp.StatusCode)
+		t.Errorf("GET the capture after deleting alice = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 }
 
@@ -674,16 +720,16 @@ func TestDeleteExperimentFileRevokesGrants(t *testing.T) {
 	files := server + "/api/v1/experiments/test-experiment/files"
 
 	if resp := do(t, http.MethodDelete, files+"/a.pcap?path=a.pcap", ""); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("deleting a.pcap: got %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Errorf("DELETE files/a.pcap = %d, want %d: %s", resp.StatusCode, http.StatusNoContent, readBody(t, resp))
 	}
 
 	if resp := do(t, http.MethodPost, files+"/delete", `{"paths":["b.pcap"]}`); resp.StatusCode != http.StatusOK {
-		t.Fatalf("deleting b.pcap: got %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Errorf("POST files/delete b.pcap = %d, want %d: %s", resp.StatusCode, http.StatusOK, readBody(t, resp))
 	}
 
 	for name, want := range map[string]int{"a.pcap": http.StatusNotFound, "b.pcap": http.StatusNotFound, "c.pcap": http.StatusOK} {
 		if resp := do(t, http.MethodGet, urls[name], ""); resp.StatusCode != want {
-			t.Errorf("%s: got %d, want %d", name, resp.StatusCode, want)
+			t.Errorf("GET the capture of %s = %d, want %d", name, resp.StatusCode, want)
 		}
 	}
 }

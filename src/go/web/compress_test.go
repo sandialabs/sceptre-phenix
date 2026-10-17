@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 var bigJSON = `{"vms":[` + strings.Repeat(`{"name":"host","state":"RUNNING"},`, 200) + `{}]}` //nolint:gochecknoglobals // test fixture
@@ -70,19 +72,19 @@ func TestCompressResponses(t *testing.T) {
 			resp := get(t, apiHandler(tc.status, tc.contentType, tc.body, tc.setLength), target, tc.acceptEncoding)
 
 			if got := resp.Header.Get("Content-Encoding") == "gzip"; got != tc.wantGzip {
-				t.Fatalf("gzip = %v, want %v", got, tc.wantGzip)
+				t.Errorf("GET %s with Accept-Encoding %q: gzipped = %v, want %v", target, tc.acceptEncoding, got, tc.wantGzip)
 			}
 
-			if tc.wantGzip && resp.Header.Get("Content-Length") != "" {
-				t.Errorf("compressed response kept the uncompressed Content-Length")
+			if got := resp.Header.Get("Content-Length"); tc.wantGzip && got != "" {
+				t.Errorf("GET %s gzipped: Content-Length = %s, want none", target, got)
 			}
 
-			if !strings.Contains(resp.Header.Get("Vary"), "Accept-Encoding") {
-				t.Errorf("Vary = %q, want Accept-Encoding", resp.Header.Get("Vary"))
+			if got := resp.Header.Get("Vary"); !strings.Contains(got, "Accept-Encoding") {
+				t.Errorf("GET %s Vary = %q, want Accept-Encoding", target, got)
 			}
 
-			if got := readBody(t, resp); got != tc.body {
-				t.Errorf("body does not round-trip: got %d bytes, want %d", len(got), len(tc.body))
+			if diff := cmp.Diff(tc.body, readBody(t, resp)); diff != "" {
+				t.Errorf("GET %s body mismatch (-want +got):\n%s", target, diff)
 			}
 		})
 	}
@@ -109,11 +111,11 @@ func TestCompressResponsesPassesWebsocketUpgrades(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	if hijackable {
-		t.Fatal("handler got a wrapped writer for an upgrade request")
+		t.Error("CompressResponses gave a websocket upgrade's handler a wrapped writer, want the original")
 	}
 
 	if enc := rec.Header().Get("Content-Encoding"); enc != "" {
-		t.Errorf("Content-Encoding = %q on an upgrade request", enc)
+		t.Errorf("websocket upgrade Content-Encoding = %q, want none", enc)
 	}
 }
 
@@ -124,7 +126,7 @@ func TestCompressResponsesFlushes(t *testing.T) {
 
 		f, ok := w.(http.Flusher)
 		if !ok {
-			t.Fatal("compressing writer is not a Flusher")
+			t.Fatal("CompressResponses writer is not an http.Flusher")
 		}
 
 		f.Flush()
@@ -132,8 +134,8 @@ func TestCompressResponsesFlushes(t *testing.T) {
 	}))
 
 	resp := get(t, h, "/api/v1/logs", "gzip")
-	if got := readBody(t, resp); got != "first chunk\nsecond chunk\n" {
-		t.Errorf("body = %q", got)
+	if got, want := readBody(t, resp), "first chunk\nsecond chunk\n"; got != want {
+		t.Errorf("GET /api/v1/logs flushed between chunks = %q, want %q", got, want)
 	}
 }
 
@@ -159,11 +161,11 @@ func TestCompressResponsesSniffsWholePrefix(t *testing.T) {
 	defer resp.Body.Close()
 
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
-		t.Fatalf("Content-Type = %q, want text/html", ct)
+		t.Errorf("GET /vnc written in two parts: Content-Type = %q, want text/html", ct)
 	}
 
-	if got := readBody(t, resp); got != "\n"+page {
-		t.Fatalf("body changed: got %d bytes, want %d", len(got), len(page)+1)
+	if diff := cmp.Diff("\n"+page, readBody(t, resp)); diff != "" {
+		t.Errorf("GET /vnc body mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -201,15 +203,15 @@ func TestCompressResponsesHeldBackStatus(t *testing.T) {
 			defer resp.Body.Close()
 
 			if resp.StatusCode != tc.code {
-				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.code)
+				t.Errorf("GET / written as %d = %d, want %d", tc.code, resp.StatusCode, tc.code)
 			}
 
 			if tc.flush && !rec.Flushed {
-				t.Fatal("Flush did not reach the client")
+				t.Error("GET / flushed: Flush did not reach the client")
 			}
 
 			if got := readBody(t, resp); got != tc.body {
-				t.Fatalf("body = %q, want %q", got, tc.body)
+				t.Errorf("GET / written as %d %q: body = %q, want %q", tc.code, tc.body, got, tc.body)
 			}
 		})
 	}
@@ -225,24 +227,24 @@ func TestCompressResponsesWeakensValidators(t *testing.T) {
 	}))
 
 	resp := get(t, h, "/api/v1/vms", "gzip")
-	if resp.Header.Get("Content-Encoding") != "gzip" {
-		t.Fatal("response was not compressed")
+	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("GET /api/v1/vms Content-Encoding = %q, want gzip", got)
 	}
 
 	if got := resp.Header.Get("ETag"); got != `W/"abc"` {
-		t.Errorf("ETag = %q, want the weak W/\"abc\"", got)
+		t.Errorf(`GET /api/v1/vms gzipped: ETag = %q, want the weak W/"abc"`, got)
 	}
 
 	if got := resp.Header.Get("Accept-Ranges"); got != "" {
-		t.Errorf("Accept-Ranges = %q on a compressed response", got)
+		t.Errorf("GET /api/v1/vms gzipped: Accept-Ranges = %q, want none", got)
 	}
 
 	if got := resp.Header.Get("Repr-Digest"); got != "" {
-		t.Errorf("Repr-Digest = %q on a compressed response", got)
+		t.Errorf("GET /api/v1/vms gzipped: Repr-Digest = %q, want none", got)
 	}
 
-	if got := readBody(t, resp); got != bigJSON {
-		t.Errorf("body does not round-trip")
+	if diff := cmp.Diff(bigJSON, readBody(t, resp)); diff != "" {
+		t.Errorf("GET /api/v1/vms body mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -256,12 +258,12 @@ func TestCompressResponsesKeepsRevisionETag(t *testing.T) {
 	}))
 
 	resp := get(t, h, "/api/v1/configs/topology/demo", "gzip")
-	if resp.Header.Get("Content-Encoding") != "gzip" {
-		t.Fatal("response was not compressed")
+	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("GET /api/v1/configs/topology/demo Content-Encoding = %q, want gzip", got)
 	}
 
 	if got := resp.Header.Get("ETag"); got != `"r5"` {
-		t.Errorf(`ETag = %q, want the strong "r5"`, got)
+		t.Errorf(`GET /api/v1/configs/topology/demo gzipped: ETag = %q, want the strong "r5"`, got)
 	}
 
 	_ = readBody(t, resp)
@@ -288,15 +290,15 @@ func TestCompressResponsesRangeOnTextFile(t *testing.T) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusPartialContent {
-		t.Fatalf("status = %d, want 206", resp.StatusCode)
+		t.Errorf("GET a.log Range bytes=0-99 = %d, want %d", resp.StatusCode, http.StatusPartialContent)
 	}
 
 	if enc := resp.Header.Get("Content-Encoding"); enc != "" {
-		t.Errorf("Content-Encoding = %q on a range", enc)
+		t.Errorf("GET a.log Range bytes=0-99: Content-Encoding = %q, want none", enc)
 	}
 
-	if got := readBody(t, resp); got != text[:100] {
-		t.Errorf("body = %q, want the first 100 bytes", got)
+	if diff := cmp.Diff(text[:100], readBody(t, resp)); diff != "" {
+		t.Errorf("GET a.log Range bytes=0-99 body mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -339,7 +341,7 @@ func TestCompressWriterReadFromPassesThrough(t *testing.T) {
 
 				rf, ok := w.(io.ReaderFrom)
 				if !ok {
-					t.Fatal("compressing writer is not a ReaderFrom")
+					t.Fatal("CompressResponses writer is not an io.ReaderFrom")
 				}
 
 				_, _ = rf.ReadFrom(bytes.NewReader(data))
@@ -352,18 +354,19 @@ func TestCompressWriterReadFromPassesThrough(t *testing.T) {
 			h.ServeHTTP(rec, req)
 
 			if got := rec.readFrom > 0; got != tc.wantReadFrom {
-				t.Errorf("underlying ReadFrom used = %v, want %v", got, tc.wantReadFrom)
+				t.Errorf("ReadFrom of a %q response used the underlying ReadFrom = %v, want %v",
+					tc.contentType, got, tc.wantReadFrom)
 			}
 
 			resp := rec.Result()
 			defer resp.Body.Close()
 
 			if got := resp.Header.Get("Content-Encoding") == "gzip"; got != tc.wantGzip {
-				t.Errorf("gzip = %v, want %v", got, tc.wantGzip)
+				t.Errorf("ReadFrom of a %q response gzipped = %v, want %v", tc.contentType, got, tc.wantGzip)
 			}
 
-			if got := readBody(t, resp); got != string(data) {
-				t.Errorf("body changed: got %d bytes, want %d", len(got), len(data))
+			if diff := cmp.Diff(data, []byte(readBody(t, resp))); diff != "" {
+				t.Errorf("ReadFrom of a %q response body mismatch (-want +got):\n%s", tc.contentType, diff)
 			}
 		})
 	}

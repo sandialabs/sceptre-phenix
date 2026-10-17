@@ -15,6 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"phenix/api/livecapture"
 	"phenix/util/mm"
 	"phenix/web/capability"
@@ -68,11 +71,11 @@ func useLiveCapture(t *testing.T, fake *testMM) *liveCapture {
 	}
 
 	if err := os.MkdirAll(filepath.Dir(c.path), 0o750); err != nil {
-		t.Fatal(err)
+		t.Fatalf("making the folder of live.pcap: %v", err)
 	}
 
 	if err := os.WriteFile(c.path, nil, 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing live.pcap: %v", err)
 	}
 
 	fake.captures = append(fake.captures, mm.Capture{VM: "test-vm", Interface: 0, Filepath: c.path})
@@ -88,13 +91,13 @@ func (c *liveCapture) write(t *testing.T, b ...[]byte) {
 
 	f, err := os.OpenFile(c.path, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("opening live.pcap: %v", err)
 	}
 
 	defer f.Close()
 
 	if _, err := f.Write(bytes.Join(b, nil)); err != nil {
-		t.Fatal(err)
+		t.Fatalf("appending to live.pcap: %v", err)
 	}
 }
 
@@ -137,7 +140,7 @@ func createSharkCapture(t *testing.T, server, body string) (*http.Response, shar
 
 	if resp.StatusCode == http.StatusOK {
 		if err := json.NewDecoder(resp.Body).Decode(&capture); err != nil {
-			t.Fatalf("decoding capture: %v", err)
+			t.Fatalf("decoding POST webshark %s: %v", body, err)
 		}
 	}
 
@@ -151,7 +154,7 @@ func openInWebShark(t *testing.T, server, body string) sharkCaptureResponse {
 
 	resp, capture := createSharkCapture(t, server, body)
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("got %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("POST webshark %s = %d, want %d: %s", body, resp.StatusCode, http.StatusOK, readBody(t, resp))
 	}
 
 	return capture
@@ -168,31 +171,48 @@ func TestCreateWebSharkCaptureOfSavedFile(t *testing.T) {
 	server := serveAs(t, "alice", sharkRole()).URL
 	events := captureAudit(t)
 
-	capture := openInWebShark(t, server, `{"path":"captures/router.pcap"}`)
-	if capture.Live || capture.Title != "captures/router.pcap" || !strings.HasPrefix(capture.Capture, "router-") ||
-		!strings.HasSuffix(capture.Capture, ".pcap") {
-		t.Fatalf("unexpected response %+v", capture)
+	const body = `{"path":"captures/router.pcap"}`
+
+	capture := openInWebShark(t, server, body)
+	if capture.Live {
+		t.Errorf("POST webshark %s live = true, want false", body)
 	}
 
-	resp := do(t, http.MethodGet, server+"/webshark/captures/"+capture.Capture, "")
-	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || body != contents {
-		t.Fatalf("serving the capture: %d, %d bytes", resp.StatusCode, len(body))
+	if got, want := capture.Title, "captures/router.pcap"; got != want {
+		t.Errorf("POST webshark %s title = %q, want %q", body, got, want)
+	}
+
+	if !strings.HasPrefix(capture.Capture, "router-") || !strings.HasSuffix(capture.Capture, ".pcap") {
+		t.Fatalf("POST webshark %s capture = %q, want router-<random>.pcap", body, capture.Capture)
+	}
+
+	path := "/webshark/captures/" + capture.Capture
+
+	resp := do(t, http.MethodGet, server+path, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET %s = %d, want %d", path, resp.StatusCode, http.StatusOK)
+	}
+
+	if got := readBody(t, resp); got != contents {
+		t.Errorf("GET %s = %d bytes, want the %d of captures/router.pcap", path, len(got), len(contents))
 	}
 
 	// a saved file does not change: resumable against its ETag
 	if etag := resp.Header.Get("ETag"); etag == "" || strings.HasPrefix(etag, "W/") {
-		t.Errorf("ETag = %q, want a strong one", etag)
+		t.Errorf("GET %s ETag = %q, want a strong one", path, etag)
 	}
 
-	resp = do(t, http.MethodGet, server+"/webshark/json?method=download&capture="+capture.Capture, "")
-	if got := resp.Header.Get("Content-Disposition"); got != `attachment; filename=router.pcap` {
-		t.Fatalf("download named %q", got)
+	download := "/webshark/json?method=download&capture=" + capture.Capture
+
+	resp = do(t, http.MethodGet, server+download, "")
+	if got, want := resp.Header.Get("Content-Disposition"), `attachment; filename=router.pcap`; got != want {
+		t.Errorf("GET %s Content-Disposition = %q, want %q", download, got, want)
 	}
 
 	// another name, however close, is not the capture
 	resp = do(t, http.MethodGet, server+"/webshark/captures/"+capture.Capture[1:], "")
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown name: expected 404, got %d", resp.StatusCode)
+		t.Errorf("GET /webshark/captures/%s = %d, want %d", capture.Capture[1:], resp.StatusCode, http.StatusNotFound)
 	}
 
 	// WebShark reads it again as it likes: the view is audited once
@@ -209,7 +229,7 @@ func TestCreateWebSharkCaptureOfSavedFile(t *testing.T) {
 	for op, want := range map[string]int{"view": 1, "download": 1} {
 		file["phenix.capability.op"] = op
 		if n := countAudit(got, "capture-webshark-read", "success", file); n != want {
-			t.Errorf("%d WebShark %s reads audited, want %d", n, op, want)
+			t.Errorf("capture-webshark-read %s audit events = %d, want %d", op, n, want)
 		}
 	}
 }
@@ -252,7 +272,7 @@ func TestCreateWebSharkCaptureRefuses(t *testing.T) {
 
 			resp, _ := createSharkCapture(t, server, tt.body)
 			if resp.StatusCode != tt.want {
-				t.Fatalf("expected %d, got %d: %s", tt.want, resp.StatusCode, readBody(t, resp))
+				t.Fatalf("POST webshark %s = %d, want %d: %s", tt.body, resp.StatusCode, tt.want, readBody(t, resp))
 			}
 
 			got := events()
@@ -263,7 +283,7 @@ func TestCreateWebSharkCaptureRefuses(t *testing.T) {
 			case tt.wantOutcome != "":
 				wantAudit(t, got, "capture-webshark-open", tt.wantOutcome, map[string]any{"user.name": "alice"})
 			case len(got) != 0:
-				t.Errorf("audited a request refused before the RBAC check: %v", got)
+				t.Errorf("POST webshark %s audit events = %v, want none before the RBAC check", tt.body, got)
 			}
 		})
 	}
@@ -272,7 +292,7 @@ func TestCreateWebSharkCaptureRefuses(t *testing.T) {
 
 	resp, _ := createSharkCapture(t, serveAs(t, "alice", sharkRole()).URL, `{"path":"a.pcap"}`)
 	if resp.StatusCode != http.StatusNotImplemented {
-		t.Fatalf("without WebShark: expected 501, got %d", resp.StatusCode)
+		t.Errorf("POST webshark without the webshark feature = %d, want %d", resp.StatusCode, http.StatusNotImplemented)
 	}
 }
 
@@ -282,7 +302,7 @@ func TestCreateWebSharkCaptureOfFileLikeACapture(t *testing.T) {
 	useExperimentFilesDir(t, map[string]string{"a.pcap": string(testPcapHeader())})
 
 	if capture := openInWebShark(t, serveAs(t, "alice", sharkRole()).URL, `{"path":"a.pcap"}`); capture.Live {
-		t.Fatalf("got %+v, want the saved file", capture)
+		t.Errorf("POST webshark {\"path\":\"a.pcap\"} = %+v, want the saved file", capture)
 	}
 }
 
@@ -298,8 +318,12 @@ func TestCreateWebSharkCaptureOfRunningCapture(t *testing.T) {
 	audited := captureAudit(t)
 
 	capture := openInWebShark(t, server, `{"path":"live.pcap"}`)
-	if !capture.Live || !strings.HasPrefix(capture.Capture, "live-") {
-		t.Fatalf("got %+v, want a live capture", capture)
+	if !capture.Live {
+		t.Fatalf("POST webshark {\"path\":\"live.pcap\"} = %+v, want a live capture", capture)
+	}
+
+	if !strings.HasPrefix(capture.Capture, "live-") {
+		t.Errorf("POST webshark {\"path\":\"live.pcap\"} capture = %q, want live-<random>", capture.Capture)
 	}
 
 	wantAudit(t, audited(), "capture-webshark-open", "success", map[string]any{
@@ -307,7 +331,7 @@ func TestCreateWebSharkCaptureOfRunningCapture(t *testing.T) {
 	})
 
 	if n := fake.captureListings.Load(); n != 1 {
-		t.Fatalf("captures listed %d times, want once", n)
+		t.Errorf("POST webshark of a live capture listed captures %d times, want 1", n)
 	}
 
 	followLiveCapture(t)
@@ -315,15 +339,17 @@ func TestCreateWebSharkCaptureOfRunningCapture(t *testing.T) {
 	// only whole records are served
 	whole := len(header) + len(one)
 
-	resp := do(t, http.MethodGet, server+"/webshark/captures/"+capture.Capture, "")
+	path := "/webshark/captures/" + capture.Capture
+
+	resp := do(t, http.MethodGet, server+path, "")
 	if body := readBody(t, resp); len(body) != whole {
-		t.Fatalf("served %d bytes, want the %d of whole records", len(body), whole)
+		t.Errorf("GET %s = %d bytes, want the %d of whole records", path, len(body), whole)
 	}
 
 	// still growing: no validator a resumed download could splice against
 	for _, k := range []string{"ETag", "Last-Modified"} {
 		if got := resp.Header.Get(k); got != "" {
-			t.Errorf("%s = %q for a running capture", k, got)
+			t.Errorf("GET %s of a running capture %s = %q, want none", path, k, got)
 		}
 	}
 
@@ -332,19 +358,21 @@ func TestCreateWebSharkCaptureOfRunningCapture(t *testing.T) {
 
 	events := sharkEvents(ctx, t, server+"/webshark/watch?capture="+capture.Capture)
 
-	if init := <-events; init["kind"] != "init" || init["size"] != float64(whole) {
-		t.Fatalf("first event %v, want init with the size of the whole records", init)
+	noMtime := cmpopts.IgnoreMapEntries(func(k string, _ any) bool { return k == "mtime" })
+
+	if diff := cmp.Diff(map[string]any{"kind": "init", "size": float64(whole)}, <-events, noMtime); diff != "" {
+		t.Errorf("first /webshark/watch event mismatch (-want +got):\n%s", diff)
 	}
 
 	live.write(t, two[100:])
 
 	select {
 	case ev := <-events:
-		if ev["kind"] != "append" || ev["size"] != float64(whole+len(two)) {
-			t.Fatalf("got event %v, want an append of the second record", ev)
+		if diff := cmp.Diff(map[string]any{"kind": "append", "size": float64(whole + len(two))}, ev, noMtime); diff != "" {
+			t.Errorf("/webshark/watch event after the capture grew mismatch (-want +got):\n%s", diff)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("no event when the capture grew")
+		t.Error("/webshark/watch sent no event within 5s of the capture growing, want an append")
 	}
 }
 
@@ -354,16 +382,16 @@ func sharkEvents(ctx context.Context, t *testing.T, url string) <-chan map[strin
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("http.NewRequestWithContext(GET, %s) error = %v", url, err)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GET %s error = %v", url, err)
 	}
 
-	if resp.Header.Get("Content-Type") != "text/event-stream" {
-		t.Fatalf("watch answered %d %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	if got := resp.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("GET %s = %d with Content-Type %q, want text/event-stream", url, resp.StatusCode, got)
 	}
 
 	events := make(chan map[string]any, 8)
@@ -400,11 +428,11 @@ func writeSharkBuild(t *testing.T, files map[string][]byte) string {
 
 	for name, b := range files {
 		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(name)), 0o750); err != nil {
-			t.Fatal(err)
+			t.Fatalf("making the folder of WebShark build file %s: %v", name, err)
 		}
 
 		if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
-			t.Fatal(err)
+			t.Fatalf("writing WebShark build file %s: %v", name, err)
 		}
 	}
 
@@ -416,7 +444,7 @@ func gzipped(t *testing.T, b []byte) []byte {
 
 	gz, err := gzipBytes(b)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("gzipBytes() error = %v", err)
 	}
 
 	return gz
@@ -435,40 +463,66 @@ func TestWebSharkHandlerServesBuild(t *testing.T) {
 
 	for _, target := range []string{"/webshark/", "/webshark/embed?capture=a&embed=1", "/webshark/embed/packets"} {
 		resp := get(t, handler, target, "")
-		if body := readBody(t, resp); resp.StatusCode != http.StatusOK || !strings.Contains(body, "<base") {
-			t.Errorf("%s: got %d %q, want the app", target, resp.StatusCode, body)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s = %d, want %d", target, resp.StatusCode, http.StatusOK)
+		}
+
+		if body := readBody(t, resp); !strings.Contains(body, "<base") {
+			t.Errorf("GET %s = %q, want the app's index.html", target, body)
 		}
 	}
 
 	resp := get(t, handler, "/webshark/main.js", "")
-	if body := readBody(t, resp); body != "main" || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/javascript") {
-		t.Errorf("main.js: got %q as %q", body, resp.Header.Get("Content-Type"))
+	if got, want := readBody(t, resp), "main"; got != want {
+		t.Errorf("GET /webshark/main.js = %q, want %q", got, want)
 	}
+
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/javascript") {
+		t.Errorf("GET /webshark/main.js Content-Type = %q, want text/javascript", got)
+	}
+
+	const wasmPath = "/webshark/assets/wiregasm/wiregasm.wasm"
 
 	// the precompressed copy, sent as it is to a client that takes gzip
-	resp = get(t, handler, "/webshark/assets/wiregasm/wiregasm.wasm", "gzip, br")
-	if body, _ := io.ReadAll(resp.Body); resp.Header.Get("Content-Encoding") != "gzip" ||
-		resp.Header.Get("Content-Type") != "application/wasm" || !bytes.Equal(body, gz) {
-		t.Errorf("wasm with gzip: %q %q, %d bytes", resp.Header.Get("Content-Encoding"),
-			resp.Header.Get("Content-Type"), len(body))
+	resp = get(t, handler, wasmPath, "gzip, br")
+	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Errorf("GET %s with gzip Content-Encoding = %q, want gzip", wasmPath, got)
 	}
 
-	resp = get(t, handler, "/webshark/assets/wiregasm/wiregasm.wasm", "")
-	if body, _ := io.ReadAll(resp.Body); resp.Header.Get("Content-Encoding") != "" || !bytes.Equal(body, wasm) {
-		t.Errorf("wasm without gzip: %q, %d bytes", resp.Header.Get("Content-Encoding"), len(body))
+	if got, want := resp.Header.Get("Content-Type"), "application/wasm"; got != want {
+		t.Errorf("GET %s with gzip Content-Type = %q, want %q", wasmPath, got, want)
+	}
+
+	if body, _ := io.ReadAll(resp.Body); !bytes.Equal(body, gz) {
+		t.Errorf("GET %s with gzip = %d bytes, want the %d of wiregasm.wasm.gz as it is", wasmPath, len(body), len(gz))
+	}
+
+	resp = get(t, handler, wasmPath, "")
+	if got := resp.Header.Get("Content-Encoding"); got != "" {
+		t.Errorf("GET %s without gzip Content-Encoding = %q, want none", wasmPath, got)
+	}
+
+	if body, _ := io.ReadAll(resp.Body); !bytes.Equal(body, wasm) {
+		t.Errorf("GET %s without gzip = %d bytes, want the %d of the decompressed file", wasmPath, len(body), len(wasm))
 	}
 
 	// WebShark's service worker is replaced by one that removes itself
 	resp = get(t, handler, "/webshark/enable-threads.js", "gzip, br")
-	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || !strings.Contains(body, "unregister()") ||
-		strings.Contains(body, "register(src)") ||
-		!strings.HasPrefix(resp.Header.Get("Content-Type"), "text/javascript") {
-		t.Errorf("enable-threads.js: got %d %q as %q", resp.StatusCode, body, resp.Header.Get("Content-Type"))
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /webshark/enable-threads.js = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	if body := readBody(t, resp); !strings.Contains(body, "unregister()") || strings.Contains(body, "register(src)") {
+		t.Errorf("GET /webshark/enable-threads.js = %q, want a service worker that unregisters itself", body)
+	}
+
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/javascript") {
+		t.Errorf("GET /webshark/enable-threads.js Content-Type = %q, want text/javascript", got)
 	}
 
 	for _, target := range []string{"/webshark/missing.js", "/webshark/../main.js", "/other/main.js"} {
 		if resp := get(t, handler, target, "gzip, br"); resp.StatusCode != http.StatusNotFound {
-			t.Errorf("%s: expected 404, got %d", target, resp.StatusCode)
+			t.Errorf("GET %s = %d, want %d", target, resp.StatusCode, http.StatusNotFound)
 		}
 	}
 }
@@ -504,29 +558,34 @@ func TestWebSharkHandlerRebasesUnderBasePath(t *testing.T) {
 			"/webshark/assets/f.woff2":  `'/webshark/'`,
 		} {
 			resp := get(t, handler, target, encoding)
-			if body := readBody(t, resp); resp.StatusCode != http.StatusOK || body != expected {
-				t.Errorf("%s (%q): got %d %q, want %q", target, encoding, resp.StatusCode, body, expected)
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("GET %s with Accept-Encoding %q = %d, want %d", target, encoding, resp.StatusCode, http.StatusOK)
+			}
+
+			if got := readBody(t, resp); got != expected {
+				t.Errorf("GET %s with Accept-Encoding %q = %q, want %q", target, encoding, got, expected)
 			}
 		}
 
 		// a rewritten file has a content-hash ETag, so revalidating it costs a 304
 		etag := get(t, handler, "/webshark/main.js", encoding).Header.Get("ETag")
 		if etag == "" {
-			t.Fatalf("main.js (%q): no ETag", encoding)
+			t.Fatalf("GET /webshark/main.js with Accept-Encoding %q has no ETag, want one", encoding)
 		}
 
 		if resp := getIfNoneMatch(t, handler, "/webshark/main.js", encoding, etag); resp.StatusCode != http.StatusNotModified {
-			t.Errorf("main.js (%q): revalidating %s got %d, want 304", encoding, etag, resp.StatusCode)
+			t.Errorf("GET /webshark/main.js with Accept-Encoding %q and If-None-Match %s = %d, want %d",
+				encoding, etag, resp.StatusCode, http.StatusNotModified)
 		}
 	}
 
 	if resp := get(t, handler, "/webshark/missing.js", "gzip"); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("missing.js: expected 404, got %d", resp.StatusCode)
+		t.Errorf("GET /webshark/missing.js = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 
 	// a base path its scripts cannot take is left alone
-	if body := readBody(t, get(t, WebSharkHandler(dir, `/a"b/`), "/webshark/main.js", "")); body != script {
-		t.Errorf("unusable base path: got %q", body)
+	if got := readBody(t, get(t, WebSharkHandler(dir, `/a"b/`), "/webshark/main.js", "")); got != script {
+		t.Errorf("GET /webshark/main.js under base path /a\"b/ = %q, want %q", got, script)
 	}
 }
 
@@ -543,13 +602,13 @@ func TestSharkCaptureNamesKeepTheirExtension(t *testing.T) {
 
 		if !strings.HasPrefix(name, want[0]) || !strings.HasSuffix(name, want[1]) ||
 			len(name) < len(want[0])+len(want[1])+20 {
-			t.Errorf("%s named %s, want %s<random>%s", base, name, want[0], want[1])
+			t.Errorf("newCaptureSecret(false, %q) = %q, want %s<random>%s", base, name, want[0], want[1])
 		}
 	}
 
 	if token := newCaptureSecret(true, "router.pcap"); !strings.HasPrefix(token, "pcs_") || len(token) < 24 ||
 		strings.Contains(token, "router") {
-		t.Errorf("stream token %s, want pcs_<random>", token)
+		t.Errorf("newCaptureSecret(true, router.pcap) = %q, want pcs_<random>", token)
 	}
 }
 
@@ -577,7 +636,7 @@ func TestTrustworthyOrigin(t *testing.T) {
 		}
 
 		if got := trustworthyOrigin(req); got != tc.want {
-			t.Errorf("%s %v: got %t, want %t", tc.host, tc.headers, got, tc.want)
+			t.Errorf("trustworthyOrigin(Host %s, headers %v) = %t, want %t", tc.host, tc.headers, got, tc.want)
 		}
 	}
 }

@@ -2,8 +2,9 @@ package web
 
 import (
 	"net/http"
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/api/settings"
 )
@@ -14,32 +15,34 @@ func TestSetSettingsRefusesMinLength(t *testing.T) {
 	useTestStore(t)
 
 	if err := settings.SetDefaults(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("settings.SetDefaults() error = %v", err)
 	}
 
 	before, err := settings.GetSettings()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("settings.GetSettings() error = %v", err)
 	}
 
 	server := serveContractAs(t, contractAdmin(), nil).URL
 
-	for _, body := range []string{
-		`{"password_settings":{"uppercase_req":true,"min_length":3},"timeout_settings":{"enabled":true}}`,
-		`{"password_settings":{"uppercase_req":true},"timeout_settings":{"enabled":true}}`,
+	for name, body := range map[string]string{
+		"min length out of range": `{"password_settings":{"uppercase_req":true,"min_length":3},"timeout_settings":{"enabled":true}}`,
+		"no min length":           `{"password_settings":{"uppercase_req":true},"timeout_settings":{"enabled":true}}`,
 	} {
-		resp := do(t, http.MethodPost, server+"/api/v1/settings", body)
-		if resp.StatusCode != http.StatusBadRequest {
-			t.Fatalf("%s: status %d, want 400: %s", body, resp.StatusCode, readBody(t, resp))
-		}
+		t.Run(name, func(t *testing.T) {
+			resp := do(t, http.MethodPost, server+"/api/v1/settings", body)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Errorf("POST /api/v1/settings %s = %d, want %d: %s", body, resp.StatusCode, http.StatusBadRequest, readBody(t, resp))
+			}
 
-		after, err := settings.GetSettings()
-		if err != nil {
-			t.Fatal(err)
-		}
+			after, err := settings.GetSettings()
+			if err != nil {
+				t.Fatalf("settings.GetSettings() error = %v", err)
+			}
 
-		if !reflect.DeepEqual(after, before) {
-			t.Errorf("%s: settings changed to %+v, from %+v", body, after, before)
-		}
+			if diff := cmp.Diff(before, after); diff != "" {
+				t.Errorf("settings after POST /api/v1/settings %s mismatch (-want +got):\n%s", body, diff)
+			}
+		})
 	}
 }
