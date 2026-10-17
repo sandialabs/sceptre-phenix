@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 
 import {
   assignAddresses,
@@ -19,6 +20,7 @@ import {
   suggestSubnet,
 } from '@/builder/addressing.js';
 import { copySelection, pasteClipboard } from '@/builder/clipboard.js';
+import { canonicalJSON } from '@/builder/digest.js';
 import {
   addNode,
   connect,
@@ -751,5 +753,287 @@ describe('networks and connections of the editor', () => {
         gateway: '10.7.0.1',
       }),
     ]);
+  });
+});
+
+describe('addressing rules, for any address and subnet', () => {
+  const address = fc.integer({ min: 0, max: 2 ** 32 - 1 });
+  const aligned = fc
+    .tuple(fc.integer({ min: 0, max: 32 }), address)
+    .map(([bits, at]) => {
+      const size = 2 ** (32 - bits);
+
+      return { base: Math.floor(at / size) * size, bits, size };
+    });
+
+  test('an address or a subnet reads back as written', () => {
+    fc.assert(
+      fc.property(address, aligned, (value, block) => {
+        expect(parseIPv4(formatIPv4(value))).toBe(value);
+        expect(parseSubnet(formatSubnet(block))).toEqual(block);
+      }),
+      { numRuns: 300 },
+    );
+    fc.assert(
+      fc.property(
+        fc.array(fc.nat(255), { minLength: 4, maxLength: 4 }),
+        (octets) => {
+          const text = octets.join('.');
+
+          expect(formatIPv4(parseIPv4(text))).toBe(text);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  test('a subnet whose base has host bits is no subnet', () => {
+    fc.assert(
+      fc.property(aligned, fc.nat(), (block, pick) => {
+        fc.pre(block.bits < 32);
+        const base = block.base + 1 + (pick % (block.size - 1));
+
+        expect(parseSubnet(`${formatIPv4(base)}/${block.bits}`)).toBeNull();
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  test('two subnets overlap, either way round, when one holds the other', () => {
+    const holds = (a, b) =>
+      a.base <= b.base && b.base + b.size <= a.base + a.size;
+
+    fc.assert(
+      fc.property(aligned, aligned, (a, b) => {
+        expect(subnetsOverlap(a, b)).toBe(subnetsOverlap(b, a));
+        expect(subnetsOverlap(a, b)).toBe(holds(a, b) || holds(b, a));
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  test('the next free host is the lowest one, or null only when all are taken', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 24, max: 32 }),
+        address,
+        fc.array(fc.nat(300), { maxLength: 300 }),
+        (bits, at, offsets) => {
+          const size = 2 ** (32 - bits);
+          const block = { base: Math.floor(at / size) * size, bits, size };
+          const { first, last } = hostRange(block);
+          const taken = new Set(offsets.map((offset) => block.base + offset));
+          let lowest = null;
+
+          for (let host = first; host <= last && lowest === null; host += 1) {
+            lowest = taken.has(host) ? null : host;
+          }
+          expect(nextFreeHost(block, taken)).toBe(lowest);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  // Subnets over the first suggestions (10.1.0.0/24 on), and others; 20 of
+  // them cannot cover all of 10.0.0.0/8, so there is always a suggestion.
+  const nearby = fc
+    .tuple(
+      fc.integer({ min: 16, max: 30 }),
+      fc.integer({ min: 1, max: 6 }),
+      fc.nat(2),
+      fc.nat(255),
+    )
+    .map(([bits, second, third, fourth]) => {
+      const size = 2 ** (32 - bits);
+      const at = ((10 * 256 + second) * 256 + third) * 256 + fourth;
+
+      return { base: Math.floor(at / size) * size, bits, size };
+    });
+  const elsewhere = aligned.filter(
+    ({ base, bits, size }) =>
+      bits >= 16 || base + size <= 10 * 2 ** 24 || base >= 11 * 2 ** 24,
+  );
+
+  test('a suggested subnet is a /24 clear of every taken subnet and address', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.oneof(nearby, elsewhere), { maxLength: 20 }),
+        fc.array(
+          fc.oneof(
+            nearby.map((block) => block.base + 1),
+            address,
+          ),
+          {
+            maxLength: 20,
+          },
+        ),
+        (taken, used) => {
+          const block = parseSubnet(suggestSubnet(taken, used));
+
+          expect(block.bits).toBe(24);
+          expect(taken.some((other) => subnetsOverlap(other, block))).toBe(
+            false,
+          );
+          expect(
+            used.some(
+              (value) => value >= block.base && value < block.base + block.size,
+            ),
+          ).toBe(false);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  const mac = fc.uint8Array({ minLength: 6, maxLength: 6 });
+  const hex = (bytes) =>
+    [...bytes].map((byte) => byte.toString(16).padStart(2, '0'));
+
+  test('a random MAC address is local, unicast and not taken', () => {
+    fc.assert(
+      fc.property(
+        fc.array(mac, { minLength: 1, maxLength: 4 }),
+        fc.array(fc.boolean(), { minLength: 4, maxLength: 4 }),
+        (draws, taking) => {
+          let next = 0;
+          // Gives the draws in turn, as a seeded random source would.
+          const fill = (bytes) => {
+            bytes.set(draws[next++ % draws.length]);
+
+            return bytes;
+          };
+          const local = (bytes) => [
+            (bytes[0] & 0xfc) | 0x02,
+            ...bytes.slice(1),
+          ];
+          const taken = new Set(
+            draws
+              .filter((_, i) => taking[i])
+              .map((bytes) => hex(local(bytes)).join('')),
+          );
+          const result = randomMac(taken, fill);
+
+          if (result) {
+            expect(result).toMatch(/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/);
+            expect(parseInt(result.slice(0, 2), 16) & 0x03).toBe(0x02);
+            expect(taken.has(macKey(result))).toBe(false);
+          } else {
+            expect(draws.every((_, i) => taking[i])).toBe(true);
+          }
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  test('a MAC key ignores separators and case, and keys itself', () => {
+    fc.assert(
+      fc.property(
+        mac,
+        fc.constantFrom(':', '-', '.', ''),
+        fc.boolean(),
+        (bytes, separator, upper) => {
+          const text = hex(bytes).join(separator);
+          const key = macKey(upper ? text.toUpperCase() : text);
+
+          expect(key).toBe(hex(bytes).join(''));
+          expect(macKey(key)).toBe(key);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+});
+
+describe('assigning addresses, for any network', () => {
+  const iface = fc.record({
+    proto: fc.constantFrom('static', 'static', 'ospf', 'dhcp'),
+    type: fc.constantFrom('ethernet', 'ethernet', 'serial'),
+    has: fc.option(fc.nat(), { nil: undefined }),
+  });
+  // A network with a subnet of /24 to /32, maybe a gateway, and devices on it
+  // by VLAN, some of whose interfaces have an address.
+  const network = fc
+    .record({
+      bits: fc.integer({ min: 24, max: 32 }),
+      at: fc.integer({ min: 0, max: 2 ** 32 - 1 }),
+      gateway: fc.option(fc.nat(), { nil: undefined }),
+      devices: fc.array(fc.array(iface, { minLength: 1, maxLength: 3 }), {
+        minLength: 1,
+        maxLength: 6,
+      }),
+    })
+    .map(({ bits, at, gateway, devices }) => {
+      const size = 2 ** (32 - bits);
+      const block = { base: Math.floor(at / size) * size, bits, size };
+      const { first, last } = hostRange(block);
+      const host = (n) => formatIPv4(first + (n % (last - first + 1)));
+
+      return {
+        networks: [
+          {
+            id: 'lan',
+            name: 'LAN',
+            subnet: formatSubnet(block),
+            ...(gateway === undefined ? {} : { gateway: host(gateway) }),
+          },
+        ],
+        nodes: devices.map((interfaces, d) => ({
+          id: `d${d}`,
+          kind: 'device',
+          position: { x: 0, y: 0 },
+          device: {
+            hostname: `d${d}`,
+            interfaces: [],
+            spec: {
+              network: {
+                interfaces: interfaces.map(({ proto, type, has }, i) => ({
+                  name: `eth${i}`,
+                  type,
+                  proto,
+                  vlan: 'LAN',
+                  ...(has === undefined ? {} : { address: host(has) }),
+                })),
+              },
+            },
+          },
+        })),
+        edges: [],
+      };
+    });
+  const addressesOf = (doc) =>
+    interfacesOnNetwork(doc, 'lan').map(({ iface }) => iface.address ?? '');
+
+  test('gives free host addresses once, and changes nothing else', () => {
+    fc.assert(
+      fc.property(network, (doc) => {
+        const before = canonicalJSON(doc);
+        const block = parseSubnet(doc.networks[0].subnet);
+        const gateway = parseIPv4(doc.networks[0].gateway);
+        const had = addressesOf(doc);
+        const targets = interfacesOnNetwork(doc, 'lan').filter(({ iface }) =>
+          needsAddress(iface),
+        );
+        const result = assignAddresses(doc, 'lan');
+        const given = result.assigned.map((entry) => parseIPv4(entry.address));
+
+        expect(canonicalJSON(doc)).toBe(before);
+        expect(result.assigned.length + result.left).toBe(targets.length);
+        expect(new Set(given).size).toBe(given.length);
+        for (const value of given) {
+          expect(isSubnetHost(block, value)).toBe(true);
+          expect(value).not.toBe(gateway);
+          expect(had.map(parseIPv4)).not.toContain(value);
+        }
+        addressesOf(result.doc).forEach((value, i) => {
+          if (had[i]) {
+            expect(value).toBe(had[i]);
+          }
+        });
+        expect(assignAddresses(result.doc, 'lan').assigned).toEqual([]);
+      }),
+      { numRuns: 200 },
+    );
   });
 });
