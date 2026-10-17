@@ -119,7 +119,9 @@ func postBuilderLegacy(
 		method: http.MethodPost, path: "/builder/legacy", body: string(body), user: builderAlice, role: role,
 	})
 
-	assertBuilderJSON(t, "POST /builder/legacy", recorder)
+	if err := builderJSONError(recorder); err != nil {
+		t.Errorf("POST /builder/legacy: %v", err)
+	}
 
 	return recorder
 }

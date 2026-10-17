@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gopkg.in/yaml.v3"
 
 	bapi "phenix/api/builder"
@@ -107,6 +110,33 @@ func builderYAML(t *testing.T, data []byte) []byte {
 	return text
 }
 
+// builderRefusalAnswer is the status of a refused request and what it says.
+type builderRefusalAnswer struct {
+	Status  int
+	Message string
+	Cause   string
+}
+
+// refusalAnswerOf returns the status of the answer and what its refusal says.
+func refusalAnswerOf(t *testing.T, recorder *httptest.ResponseRecorder) builderRefusalAnswer {
+	t.Helper()
+
+	said := builderRefusal(t, recorder)
+
+	return builderRefusalAnswer{Status: recorder.Code, Message: said.Message, Cause: said.Cause}
+}
+
+// builderRawAnswer is the status, headers and body of an answer.
+type builderRawAnswer struct {
+	Status int
+	Header http.Header
+	Body   string
+}
+
+func builderRawAnswerOf(recorder *httptest.ResponseRecorder) builderRawAnswer {
+	return builderRawAnswer{Status: recorder.Code, Header: recorder.Header(), Body: recorder.Body.String()}
+}
+
 // TestBuilderTopologyDocument reads a topology's document: the stored one when
 // the reference names one, and otherwise the Builder file at its path.
 func TestBuilderTopologyDocument(t *testing.T) {
@@ -149,12 +179,12 @@ func TestBuilderTopologyDocument(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			recorder := harness.getTopologyDocument(name)
 			if recorder.Code != http.StatusOK {
-				t.Fatalf("status = %d: %s", recorder.Code, recorder.Body)
+				t.Fatalf("GET topology %s document: status = %d, want %d: %s", name, recorder.Code, http.StatusOK, recorder.Body)
 			}
 
 			var response builderDocumentResponse
 
-			harness.decode(recorder, &response)
+			decodeBuilderAnswer(t, recorder, &response)
 
 			want := builderDocumentResponse{
 				Source: test.source, ID: test.id, Digest: test.digest, Size: int64(len(test.document)),
@@ -168,22 +198,22 @@ func TestBuilderTopologyDocument(t *testing.T) {
 				want.CreatedAt, want.CreatedBy = response.CreatedAt, builderAlice
 
 				if response.CreatedAt.IsZero() {
-					t.Error("a stored document has no time")
+					t.Errorf("GET topology %s document: createdAt = zero, want the time it was stored", name)
 				}
 			}
 
-			if got, _ := json.Marshal(response); string(got) != builderJSON(t, want) {
-				t.Fatalf("response = %s, want %s", got, builderJSON(t, want))
+			if diff := cmp.Diff(want, response); diff != "" {
+				t.Errorf("GET topology %s document mismatch (-want +got):\n%s", name, diff)
 			}
 
 			// A file has no ID, author or time, and says so by leaving them out.
 			var fields map[string]json.RawMessage
 
-			harness.decode(recorder, &fields)
+			decodeBuilderAnswer(t, recorder, &fields)
 
 			for _, field := range []string{"id", "createdAt", "createdBy", "draftId", "snapshotId"} {
 				if _, present := fields[field]; present && test.source == "file" {
-					t.Errorf("the response of a file holds %s", field)
+					t.Errorf("GET topology %s document of a file holds %s, want it left out", name, field)
 				}
 			}
 		})
@@ -196,7 +226,7 @@ func TestBuilderTopologyDocument(t *testing.T) {
 	harness.getTopologyDocument("both")
 
 	if harness.fileReads != 0 {
-		t.Fatalf("reading stored documents read %d files", harness.fileReads)
+		t.Errorf("reading stored documents read %d files, want none", harness.fileReads)
 	}
 
 	harness.writeBuilderFile(builderCompactJSON(t, other), "topologies", "site", "site.builder.json")
@@ -205,15 +235,21 @@ func TestBuilderTopologyDocument(t *testing.T) {
 
 	harness.decode(harness.getTopologyDocument("json"), &changed)
 
-	if changed.Digest != builderDocumentDigest(t, other) || harness.fileReads != 1 {
-		t.Fatalf("after the file changed: digest = %s after %d reads, want the new content read once", changed.Digest, harness.fileReads)
+	if want := builderDocumentDigest(t, other); changed.Digest != want {
+		t.Errorf("GET topology json document after the file changed: digest = %s, want %s", changed.Digest, want)
+	}
+
+	if harness.fileReads != 1 {
+		t.Errorf("GET topology json document after the file changed read %d files, want 1", harness.fileReads)
 	}
 
 	// The pinned file no longer has the digest its topology records.
-	recorder := harness.getTopologyDocument("copied")
-	if said := builderRefusal(t, recorder); recorder.Code != http.StatusUnprocessableEntity ||
-		said.Message != "Builder file "+asJSON+" does not match the digest topology copied records for it." || said.Cause != "" {
-		t.Fatalf("a pinned file that changed: status = %d, said %+v", recorder.Code, said)
+	want := builderRefusalAnswer{
+		Status:  http.StatusUnprocessableEntity,
+		Message: "Builder file " + asJSON + " does not match the digest topology copied records for it.",
+	}
+	if diff := cmp.Diff(want, refusalAnswerOf(t, harness.getTopologyDocument("copied"))); diff != "" {
+		t.Errorf("GET topology copied document of a changed pinned file mismatch (-want +got):\n%s", diff)
 	}
 
 	// A damaged stored document is reported, and its file is not read in its place.
@@ -223,8 +259,13 @@ func TestBuilderTopologyDocument(t *testing.T) {
 
 	harness.fileReads = 0
 
-	if recorder := harness.getTopologyDocument("both"); recorder.Code != http.StatusInternalServerError || harness.fileReads != 0 {
-		t.Fatalf("a damaged document: status = %d after %d file reads: %s", recorder.Code, harness.fileReads, recorder.Body)
+	if recorder := harness.getTopologyDocument("both"); recorder.Code != http.StatusInternalServerError {
+		t.Errorf("GET topology both document when damaged: status = %d, want %d: %s",
+			recorder.Code, http.StatusInternalServerError, recorder.Body)
+	}
+
+	if harness.fileReads != 0 {
+		t.Errorf("GET topology both document when damaged read %d files, want none", harness.fileReads)
 	}
 }
 
@@ -287,25 +328,38 @@ func TestBuilderTopologyDocumentRefusals(t *testing.T) {
 			logs.Take(t, nil)
 
 			recorder := harness.getTopologyDocument(name)
-			said := builderRefusal(t, recorder)
 
-			if recorder.Code != test.status || said.Message != strings.ReplaceAll(test.said, "%s", test.path) || said.Cause != "" {
-				t.Fatalf("status = %d, said %+v; want %d and %q", recorder.Code, said, test.status, test.said)
+			want := builderRefusalAnswer{Status: test.status, Message: strings.ReplaceAll(test.said, "%s", test.path)}
+			if diff := cmp.Diff(want, refusalAnswerOf(t, recorder)); diff != "" {
+				t.Errorf("GET topology %s document mismatch (-want +got):\n%s", name, diff)
 			}
 
 			if strings.Contains(recorder.Body.String(), builderFileMarker) {
-				t.Fatalf("the response repeats what the file holds: %s", recorder.Body)
+				t.Errorf("GET topology %s document = %s, want nothing the file holds", name, recorder.Body)
 			}
 
 			logged := logs.String()
 			if strings.Contains(logged, builderFileMarker) {
-				t.Fatalf("the log repeats what the file holds: %s", logged)
+				t.Errorf("the log of GET topology %s document = %s, want nothing the file holds", name, logged)
 			}
 
 			records := logs.Take(t, plogtest.Message(builderFileUnusable))
-			if len(records) != 1 || records[0]["level"] != slog.LevelWarn.String() || records[0]["type"] != string(plog.TypeSystem) ||
-				records[0]["topology"] != name || records[0]["path"] != test.path || records[0]["reason"] != string(test.reason) {
+			if len(records) != 1 {
 				t.Fatalf("logged %v, want one warning with the reason %q", records, test.reason)
+			}
+
+			wantRecord := map[string]any{
+				"level": slog.LevelWarn.String(), "type": string(plog.TypeSystem), "topology": name, "path": test.path,
+				"reason": string(test.reason),
+			}
+			gotRecord := map[string]any{}
+
+			for key := range wantRecord {
+				gotRecord[key] = records[0][key]
+			}
+
+			if diff := cmp.Diff(wantRecord, gotRecord); diff != "" {
+				t.Errorf("logged %s mismatch (-want +got):\n%s", builderFileUnusable, diff)
 			}
 		})
 	}
@@ -347,60 +401,65 @@ func TestBuilderTopologyDocumentNoLeak(t *testing.T) {
 		harness.configs = append(harness.configs, topology)
 	}
 
-	missing := func(name string, recorder *httptest.ResponseRecorder) {
+	// missingDiff returns how the answer differs from the one of a missing topology.
+	missingDiff := func(t *testing.T, name string, recorder *httptest.ResponseRecorder) string {
 		t.Helper()
 
-		said := builderRefusal(t, recorder)
+		want := builderRefusalAnswer{Status: http.StatusNotFound, Message: "builder document of topology " + name + " not found"}
 
-		if recorder.Code != http.StatusNotFound || said.Message != "builder document of topology "+name+" not found" || said.Cause != "" {
-			t.Fatalf("topology %s: status = %d, said %+v; want it not found", name, recorder.Code, said)
-		}
+		return cmp.Diff(want, refusalAnswerOf(t, recorder))
 	}
 
 	names := append(slices.Collect(maps.Keys(unreadable)),
 		"plain", "elsewhere", "dangling", "absent", strings.Repeat("n", bapi.MaxTargetLength+1))
 
 	for _, name := range names {
-		missing(name, harness.getTopologyDocument(name))
+		t.Run(name, func(t *testing.T) {
+			if diff := missingDiff(t, name, harness.getTopologyDocument(name)); diff != "" {
+				t.Errorf("GET topology %s document mismatch (-want +got):\n%s", name, diff)
+			}
+		})
 	}
 
 	if harness.fileReads != 0 {
-		t.Fatalf("topologies that name no file read %d files", harness.fileReads)
+		t.Errorf("topologies that name no file read %d files, want none", harness.fileReads)
 	}
 
 	// A caller who may get other topologies, but not these two.
 	role := builderRole(builderPolicy([]string{"configs"}, []string{"Topology/other"}, []string{"list", "get", "create", "update"}))
 
 	for _, name := range []string{"site", "stored"} {
-		request := builderRequest{
-			method: http.MethodGet, path: "/builder/topologies/" + name + "/document", user: builderBob, role: role,
-		}
+		t.Run(name, func(t *testing.T) {
+			request := builderRequest{
+				method: http.MethodGet, path: "/builder/topologies/" + name + "/document", user: builderBob, role: role,
+			}
 
-		forbidden := harness.do(request)
-		missing(name, forbidden)
+			forbidden := harness.do(request)
+			if diff := missingDiff(t, name, forbidden); diff != "" {
+				t.Errorf("GET topology %s document as bob mismatch (-want +got):\n%s", name, diff)
+			}
 
-		if allowed := harness.getTopologyDocument(name); allowed.Code != http.StatusOK {
-			t.Fatalf("topology %s: status = %d for a caller who may get it: %s", name, allowed.Code, allowed.Body)
-		}
+			if allowed := harness.getTopologyDocument(name); allowed.Code != http.StatusOK {
+				t.Errorf("GET topology %s document as alice: status = %d, want %d: %s", name, allowed.Code, http.StatusOK, allowed.Body)
+			}
 
-		harness.fileReads = 0
+			harness.fileReads = 0
 
-		// The same answer once the topology is gone.
-		harness.configs = slices.DeleteFunc(harness.configs, func(config store.Config) bool {
-			return config.FullName() == "Topology/"+name
+			// The same answer once the topology is gone.
+			harness.configs = slices.DeleteFunc(harness.configs, func(config store.Config) bool {
+				return config.FullName() == "Topology/"+name
+			})
+
+			gone := harness.do(request)
+
+			if diff := cmp.Diff(builderRawAnswerOf(forbidden), builderRawAnswerOf(gone)); diff != "" {
+				t.Errorf("GET topology %s document once gone mismatch with when forbidden (-forbidden +gone):\n%s", name, diff)
+			}
 		})
-
-		gone := harness.do(request)
-
-		if gone.Code != forbidden.Code || gone.Body.String() != forbidden.Body.String() ||
-			!maps.EqualFunc(gone.Header(), forbidden.Header(), slices.Equal) {
-			t.Fatalf("topology %s: a forbidden topology is answered %d %s, a missing one %d %s",
-				name, forbidden.Code, forbidden.Body, gone.Code, gone.Body)
-		}
 	}
 
 	if harness.fileReads != 0 {
-		t.Fatalf("a caller who may not get the topology made the server read %d files", harness.fileReads)
+		t.Errorf("a caller who may not get the topology made the server read %d files, want none", harness.fileReads)
 	}
 
 	// Without the base permission the request is refused before any lookup.
@@ -409,7 +468,7 @@ func TestBuilderTopologyDocumentNoLeak(t *testing.T) {
 	if recorder := harness.do(builderRequest{
 		method: http.MethodGet, path: "/builder/topologies/site/document", user: builderBob, role: none,
 	}); recorder.Code != http.StatusForbidden {
-		t.Fatalf("without configs get: status = %d, want %d", recorder.Code, http.StatusForbidden)
+		t.Errorf("GET topology site document without configs get: status = %d, want %d", recorder.Code, http.StatusForbidden)
 	}
 }
 
@@ -445,15 +504,22 @@ func TestBuilderListDocumentsListsFiles(t *testing.T) {
 
 	recorder := harness.do(builderRequest{method: http.MethodGet, path: "/builder/documents", user: builderAlice, role: role})
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body)
+		t.Fatalf("GET /builder/documents: status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
 	}
 
-	// The experiments are listed for the stored rows, which may name one.
-	if harness.fileReads != 0 || harness.configGets != 0 ||
-		!slices.Equal(harness.configLists, []string{builderKindTopology, kindExperiment}) {
-		t.Fatalf("the listing read %d files, got %d configs and listed %q; "+
-			"want no file read, and the topologies and the experiments listed once each",
-			harness.fileReads, harness.configGets, harness.configLists)
+	// The experiments are listed for the stored rows, which may name one: no
+	// file is read, and the topologies and the experiments are listed once each.
+	type reads struct {
+		FileReads   int
+		ConfigGets  int
+		ConfigLists []string
+	}
+
+	wantReads := reads{ConfigLists: []string{builderKindTopology, kindExperiment}}
+	gotReads := reads{FileReads: harness.fileReads, ConfigGets: harness.configGets, ConfigLists: harness.configLists}
+
+	if diff := cmp.Diff(wantReads, gotReads); diff != "" {
+		t.Errorf("GET /builder/documents reads mismatch (-want +got):\n%s", diff)
 	}
 
 	var response struct {
@@ -468,9 +534,12 @@ func TestBuilderListDocumentsListsFiles(t *testing.T) {
 		rows[target] = row
 	}
 
-	if got := slices.Sorted(maps.Keys(rows)); !slices.Equal(got, []string{"both", "file", "gone", "pinned", "stored"}) ||
-		len(response.Documents) != len(rows) {
-		t.Fatalf("listed %v in %d rows, want one row each for both, file, gone, pinned and stored", got, len(response.Documents))
+	if got, want := slices.Sorted(maps.Keys(rows)), []string{"both", "file", "gone", "pinned", "stored"}; !slices.Equal(got, want) {
+		t.Errorf("GET /builder/documents listed %q, want %q", got, want)
+	}
+
+	if len(response.Documents) != len(rows) {
+		t.Errorf("GET /builder/documents listed %d rows of %d targets, want one row each", len(response.Documents), len(rows))
 	}
 
 	for name, path := range map[string]string{"file": present, "gone": absent, "pinned": absent} {
@@ -478,21 +547,27 @@ func TestBuilderListDocumentsListsFiles(t *testing.T) {
 			"source": "file", "target": name, "kind": builderKindTopology, "config": "Topology/" + name, "path": path,
 		}
 
-		if !maps.Equal(rows[name], want) {
-			t.Errorf("row of %s = %v, want %v", name, rows[name], want)
+		if diff := cmp.Diff(want, rows[name]); diff != "" {
+			t.Errorf("GET /builder/documents row %s mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 
 	for name, document := range map[string]*bapi.PublishedDocument{"stored": stored, "both": both} {
 		row := rows[name]
 
-		if row["source"] != "store" || row["id"] != document.ID || row["digest"] != document.Digest ||
-			row["createdBy"] != builderAlice {
-			t.Errorf("row of %s = %v, want the stored document %s", name, row, document.ID)
+		want := map[string]any{"source": "store", "id": document.ID, "digest": document.Digest, "createdBy": builderAlice}
+		got := map[string]any{}
+
+		for key := range want {
+			got[key] = row[key]
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("GET /builder/documents row %s mismatch (-want +got):\n%s", name, diff)
 		}
 
 		if _, present := row["path"]; present {
-			t.Errorf("row of %s = %v, want no path for a stored document", name, row)
+			t.Errorf("GET /builder/documents row %s = %v, want no path for a stored document", name, row)
 		}
 	}
 }
@@ -517,7 +592,7 @@ func openBuilderFile(t *testing.T, harness *builderHarness, topology string) ope
 
 	var response builderDocumentResponse
 
-	harness.decode(recorder, &response)
+	decodeBuilderAnswer(t, recorder, &response)
 
 	if response.Source != builderDocumentSourceFile {
 		t.Fatalf("the document of topology %s is read from the %s, want its file", topology, response.Source)
@@ -590,7 +665,7 @@ func createBuilderFileDraft(
 	var draft builderDraftResponse
 
 	if recorder.Code == http.StatusCreated {
-		harness.decode(recorder, &draft)
+		decodeBuilderAnswer(t, recorder, &draft)
 	}
 
 	return recorder, draft
@@ -606,12 +681,16 @@ func TestBuilderCreateDraftFromBuilderFile(t *testing.T) {
 	opened := openBuilderFile(t, harness, "site")
 
 	if opened.differs {
-		t.Fatal("the topology differs from the file it was written from")
+		t.Errorf("GET topology site document: topologyDiffers = true, want false for the file it was written from")
 	}
 
 	recorder, draft := createBuilderFileDraft(t, harness, opened.document, opened.token)
-	if recorder.Code != http.StatusCreated || draft.SourceToken != opened.token {
-		t.Fatalf("creating the draft: status = %d, token %q: %s", recorder.Code, draft.SourceToken, recorder.Body)
+	if recorder.Code != http.StatusCreated {
+		t.Errorf("POST /builder/drafts from the file: status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
+	}
+
+	if draft.SourceToken != opened.token {
+		t.Errorf("POST /builder/drafts from the file: source token = %q, want %q", draft.SourceToken, opened.token)
 	}
 
 	stored := builderPublish(t, harness, "stored")
@@ -667,12 +746,14 @@ func TestBuilderCreateDraftFromBuilderFile(t *testing.T) {
 			said: "builder document of topology site/site/" + opened.digest + " not found",
 		},
 	} {
-		recorder, _ := createBuilderFileDraft(t, harness, opened.document, test.token)
-		said := builderRefusal(t, recorder)
+		t.Run(name, func(t *testing.T) {
+			recorder, _ := createBuilderFileDraft(t, harness, opened.document, test.token)
 
-		if recorder.Code != test.status || said.Message != test.said || said.Cause != "" {
-			t.Errorf("%s: status = %d, said %+v; want %d and %q", name, recorder.Code, said, test.status, test.said)
-		}
+			want := builderRefusalAnswer{Status: test.status, Message: test.said}
+			if diff := cmp.Diff(want, refusalAnswerOf(t, recorder)); diff != "" {
+				t.Errorf("POST /builder/drafts with source token %s mismatch (-want +got):\n%s", test.token, diff)
+			}
+		})
 	}
 
 	// A caller who may not get this topology learns nothing of its file.
@@ -689,9 +770,16 @@ func TestBuilderCreateDraftFromBuilderFile(t *testing.T) {
 		body: builderJSON(t, map[string]any{"document": json.RawMessage(data), "sourceToken": opened.token}),
 	})
 
-	if said := builderRefusal(t, recorder); recorder.Code != http.StatusNotFound ||
-		said.Message != "builder document of topology site not found" || harness.fileReads != 0 {
-		t.Fatalf("a caller who may not get the topology: status = %d, said %+v, %d file reads", recorder.Code, said, harness.fileReads)
+	// What a refusal of the token says is compared without its cause.
+	ignoreCause := cmpopts.IgnoreFields(builderRefusalAnswer{}, "Cause")
+
+	want := builderRefusalAnswer{Status: http.StatusNotFound, Message: "builder document of topology site not found"}
+	if diff := cmp.Diff(want, refusalAnswerOf(t, recorder), ignoreCause); diff != "" {
+		t.Errorf("POST /builder/drafts as bob, who may not get the topology, mismatch (-want +got):\n%s", diff)
+	}
+
+	if harness.fileReads != 0 {
+		t.Errorf("POST /builder/drafts as bob, who may not get the topology, read %d files, want none", harness.fileReads)
 	}
 
 	// The file changes after it was opened: the token names what it held.
@@ -704,17 +792,20 @@ func TestBuilderCreateDraftFromBuilderFile(t *testing.T) {
 	harness.writeBuilderFile(otherData, "topologies", "site", "site.builder.yaml")
 
 	recorder, _ = createBuilderFileDraft(t, harness, opened.document, opened.token)
-	if said := builderRefusal(t, recorder); recorder.Code != http.StatusConflict ||
-		said.Message != "The Builder file of topology site changed since it was opened. Open its diagram again." {
-		t.Fatalf("after the file changed: status = %d, said %+v", recorder.Code, said)
+
+	want = builderRefusalAnswer{
+		Status: http.StatusConflict, Message: "The Builder file of topology site changed since it was opened. Open its diagram again.",
+	}
+	if diff := cmp.Diff(want, refusalAnswerOf(t, recorder), ignoreCause); diff != "" {
+		t.Errorf("POST /builder/drafts after the file changed mismatch (-want +got):\n%s", diff)
 	}
 
 	if got := len(harness.store.Keys(bapi.NamespaceDrafts)); got != drafts {
-		t.Fatalf("the refused requests made %d drafts", got-drafts)
+		t.Errorf("the refused requests made %d drafts, want none", got-drafts)
 	}
 
 	if logged := logs.String(); strings.Contains(logged, builderFileMarker) {
-		t.Fatalf("the log repeats what a file holds: %s", logged)
+		t.Errorf("the log = %s, want nothing a file holds", logged)
 	}
 }
 
@@ -724,109 +815,118 @@ func TestBuilderPublishToFileBackedTopology(t *testing.T) {
 	const update = `{"mode":"topology","topology":{"name":"site","action":"update"}}`
 
 	for _, pinned := range []bool{false, true} {
-		harness := newBuilderHarness(t)
-		path := newFileBackedTopology(t, harness, "site", pinned)
+		t.Run(map[bool]string{false: "not pinned", true: "pinned"}[pinned], func(t *testing.T) {
+			harness := newBuilderHarness(t)
+			path := newFileBackedTopology(t, harness, "site", pinned)
 
-		before, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("reading the file: %v", err)
-		}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading the file: %v", err)
+			}
 
-		opened := openBuilderFile(t, harness, "site")
+			opened := openBuilderFile(t, harness, "site")
 
-		recorder, draft := createBuilderFileDraft(t, harness, opened.document, opened.token)
-		if recorder.Code != http.StatusCreated {
-			t.Fatalf("pinned %t: creating the draft: status = %d: %s", pinned, recorder.Code, recorder.Body)
-		}
+			recorder, draft := createBuilderFileDraft(t, harness, opened.document, opened.token)
+			if recorder.Code != http.StatusCreated {
+				t.Fatalf("POST /builder/drafts from the file: status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
+			}
 
-		// Another draft has no part in the topology or its file.
-		unrelated := bdoc.NewDocument("unrelated")
-		stranger := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, unrelated), unrelated, "zz")
-		writes := harness.configWrites
+			// Another draft has no part in the topology or its file.
+			unrelated := bdoc.NewDocument("unrelated")
+			stranger := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, unrelated), unrelated, "zz")
+			writes := harness.configWrites
 
-		if _, reason := publishBuilderDraft(t, harness, stranger, update, http.StatusConflict); reason !=
-			"topology site is not the source this draft was loaded from" || harness.configWrites != writes {
-			t.Fatalf("pinned %t: refusal = %q after %d writes, want another draft refused", pinned, reason, harness.configWrites-writes)
-		}
+			const notSource = "topology site is not the source this draft was loaded from"
+			if _, reason := publishBuilderDraft(t, harness, stranger, update, http.StatusConflict); reason != notSource {
+				t.Errorf("publish of another draft: refusal = %q, want %q", reason, notSource)
+			}
 
-		// The draft holds the file's content: the topology is written, not taken for published.
-		response, _ := publishBuilderDraft(t, harness, draft, update, http.StatusOK)
-		draft = response.Draft
+			if harness.configWrites != writes {
+				t.Errorf("publish of another draft wrote %d configs, want none", harness.configWrites-writes)
+			}
 
-		warning := bdoc.NewIssue(bdoc.CodePublishFileUnchanged, "", "Topology site names the Builder file "+path+
-			", which Publish does not change. Download the diagram and replace the file to keep it in step.")
+			// The draft holds the file's content: the topology is written, not taken for published.
+			response, _ := publishBuilderDraft(t, harness, draft, update, http.StatusOK)
+			draft = response.Draft
 
-		if response.Stages[1].Status != "updated" || !slices.Contains(response.Warnings, warning) {
-			t.Fatalf("pinned %t: stages = %#v, warnings = %q; want the topology updated with the warning",
-				pinned, response.Stages, response.Warnings)
-		}
+			warning := bdoc.NewIssue(bdoc.CodePublishFileUnchanged, "", "Topology site names the Builder file "+path+
+				", which Publish does not change. Download the diagram and replace the file to keep it in step.")
 
-		want := bapi.DocumentReference{Digest: draft.Digest, ID: bapi.PublishedDocumentID("site", draft.Digest), Path: path}
-		if got := builderTopologyReference(t, harness, "site"); got != want || draft.Digest != opened.digest {
-			t.Fatalf("pinned %t: reference = %+v, want %+v", pinned, got, want)
-		}
+			if len(response.Stages) < 2 || response.Stages[1].Status != "updated" {
+				t.Errorf("publish: stages = %#v, want the topology updated", response.Stages)
+			}
 
-		// The topology is read from the store now, and the draft goes on updating it.
-		var current builderDocumentResponse
+			if !slices.Contains(response.Warnings, warning) {
+				t.Errorf("publish: warnings = %q, want %q among them", response.Warnings, warning)
+			}
 
-		harness.decode(harness.getTopologyDocument("site"), &current)
+			want := bapi.DocumentReference{Digest: draft.Digest, ID: bapi.PublishedDocumentID("site", draft.Digest), Path: path}
+			if diff := cmp.Diff(want, builderTopologyReference(t, harness, "site")); diff != "" {
+				t.Errorf("topology site reference after publish mismatch (-want +got):\n%s", diff)
+			}
 
-		if current.Source != builderDocumentSourceStore || current.ID != want.ID {
-			t.Fatalf("pinned %t: the topology's document = %+v, want the stored document", pinned, current)
-		}
+			if draft.Digest != opened.digest {
+				t.Errorf("publish: draft digest = %s, want the file's %s", draft.Digest, opened.digest)
+			}
 
-		draft = editBuilderDraft(t, harness, draft, opened.document, "bb")
-		response, _ = publishBuilderDraft(t, harness, draft, update, http.StatusOK)
+			// The topology is read from the store now, and the draft goes on updating it.
+			var current builderDocumentResponse
 
-		if !slices.Contains(response.Warnings, warning) || builderTopologyReference(t, harness, "site").Path != path {
-			t.Fatalf("pinned %t: warnings = %q, want the file still named, with the warning", pinned, response.Warnings)
-		}
+			decodeBuilderAnswer(t, harness.getTopologyDocument("site"), &current)
 
-		if got := topologyHostnames(t, harness, "site"); !slices.Equal(got, []string{"aa", "bb"}) {
-			t.Fatalf("pinned %t: topology nodes = %v, want aa and bb", pinned, got)
-		}
+			type documentSource struct{ Source, ID string }
 
-		after, err := os.ReadFile(path)
-		if err != nil || !bytes.Equal(after, before) {
-			t.Fatalf("pinned %t: the file was written: %v", pinned, err)
-		}
+			if diff := cmp.Diff(
+				documentSource{Source: builderDocumentSourceStore, ID: want.ID}, documentSource{Source: current.Source, ID: current.ID},
+			); diff != "" {
+				t.Errorf("GET topology site document mismatch (-want +got):\n%s", diff)
+			}
+
+			draft = editBuilderDraft(t, harness, draft, opened.document, "bb")
+			response, _ = publishBuilderDraft(t, harness, draft, update, http.StatusOK)
+
+			if !slices.Contains(response.Warnings, warning) {
+				t.Errorf("publish again: warnings = %q, want %q among them", response.Warnings, warning)
+			}
+
+			if got := builderTopologyReference(t, harness, "site").Path; got != path {
+				t.Errorf("topology site reference path after publishing again = %q, want the file %q", got, path)
+			}
+
+			if got := topologyHostnames(t, harness, "site"); !slices.Equal(got, []string{"aa", "bb"}) {
+				t.Errorf("topology site nodes = %v, want [aa bb]", got)
+			}
+
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading the file: %v", err)
+			}
+
+			if diff := cmp.Diff(string(before), string(after)); diff != "" {
+				t.Errorf("the file was written (-before +after):\n%s", diff)
+			}
+		})
 	}
 }
 
 // TestBuilderPublishFromEditedFileDraft asserts an edited draft opened from a
 // Builder file is refused once the file changes or the topology is not what it publishes.
 func TestBuilderPublishFromEditedFileDraft(t *testing.T) {
-	const update = `{"mode":"topology","topology":{"name":"site","action":"update"}}`
-
 	// open returns an edited draft opened from the file of a new file-backed topology.
 	open := func(pinned bool) (*builderHarness, builderDraftResponse, *bdoc.Document, string) {
+		t.Helper()
+
 		harness := newBuilderHarness(t)
 		path := newFileBackedTopology(t, harness, "site", pinned)
 		opened := openBuilderFile(t, harness, "site")
 
 		recorder, draft := createBuilderFileDraft(t, harness, opened.document, opened.token)
 		if recorder.Code != http.StatusCreated {
-			t.Fatalf("creating the draft: status = %d: %s", recorder.Code, recorder.Body)
+			t.Fatalf("POST /builder/drafts from the file: status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
 		}
 
 		return harness, editBuilderDraft(t, harness, draft, opened.document, "bb"), opened.document, path
 	}
-
-	refused := func(harness *builderHarness, draft builderDraftResponse, name, want string) {
-		t.Helper()
-
-		writes := harness.configWrites
-
-		_, reason := publishBuilderDraft(t, harness, draft, update, http.StatusConflict)
-		if reason != want || harness.configWrites != writes {
-			t.Fatalf("%s: refusal = %q after %d writes, want %q", name, reason, harness.configWrites-writes, want)
-		}
-	}
-
-	const (
-		changed = "topology site or its Builder file changed after this draft was opened from the file"
-		differs = "topology site is not what its Builder file publishes, so this draft cannot update it"
-	)
 
 	// A fork of the draft is tied to the file as the draft is.
 	harness, draft, document, _ := open(true)
@@ -835,14 +935,18 @@ func TestBuilderPublishFromEditedFileDraft(t *testing.T) {
 
 	recorder := forkBuilderDraft(t, harness, builderAlice, nil, draft.ID, document)
 	if recorder.Code != http.StatusCreated {
-		t.Fatalf("forking the draft: status = %d: %s", recorder.Code, recorder.Body)
+		t.Fatalf("POST /builder/drafts forking %s: status = %d, want %d: %s", draft.ID, recorder.Code, http.StatusCreated, recorder.Body)
 	}
 
 	harness.decode(recorder, &fork)
 
-	if response, _ := publishBuilderDraft(t, harness, fork, update, http.StatusOK); response.Stages[1].Status != "updated" ||
-		!slices.Equal(topologyHostnames(t, harness, "site"), []string{"aa", "bb"}) {
-		t.Fatalf("stages = %#v, want the topology updated with aa and bb", response.Stages)
+	if response, _ := publishBuilderDraft(t, harness, fork, fileDraftUpdate, http.StatusOK); len(response.Stages) < 2 ||
+		response.Stages[1].Status != "updated" {
+		t.Errorf("publish of the fork: stages = %#v, want the topology updated", response.Stages)
+	}
+
+	if got := topologyHostnames(t, harness, "site"); !slices.Equal(got, []string{"aa", "bb"}) {
+		t.Errorf("topology site nodes after publishing the fork = %v, want [aa bb]", got)
 	}
 
 	harness, draft, _, path := open(false)
@@ -856,7 +960,9 @@ func TestBuilderPublishFromEditedFileDraft(t *testing.T) {
 		t.Fatalf("writing the file: %v", err)
 	}
 
-	refused(harness, draft, "the file changed", changed)
+	if err := fileDraftRefusalError(t, harness, draft, fileDraftChanged); err != nil {
+		t.Errorf("publish after the file changed: %v", err)
+	}
 
 	harness, draft, _, path = open(false)
 
@@ -864,76 +970,67 @@ func TestBuilderPublishFromEditedFileDraft(t *testing.T) {
 		t.Fatalf("removing the file: %v", err)
 	}
 
-	refused(harness, draft, "the file is gone", changed)
+	if err := fileDraftRefusalError(t, harness, draft, fileDraftChanged); err != nil {
+		t.Errorf("publish after the file is gone: %v", err)
+	}
 
 	harness, draft, _, _ = open(false)
 	editBuilderTopologyByHand(harness, "site")
 
 	if opened := openBuilderFile(t, harness, "site"); !opened.differs {
-		t.Fatal("the document route does not say the topology differs from its file")
+		t.Errorf("GET topology site document after an edit by hand: topologyDiffers = false, want true")
 	}
 
-	refused(harness, draft, "the topology was edited", differs)
+	if err := fileDraftRefusalError(t, harness, draft, fileDraftDiffers); err != nil {
+		t.Errorf("publish after the topology was edited: %v", err)
+	}
 
 	// A file document imported from the topology is refused as any other once
 	// the file changes, whether or not the topology is what the file published.
 	for _, edited := range []bool{false, true} {
-		harness := newBuilderHarness(t)
-		path := newFileBackedTopology(t, harness, "site", false)
+		t.Run(map[bool]string{false: "topology not edited", true: "topology edited"}[edited], func(t *testing.T) {
+			harness := newBuilderHarness(t)
+			path := newFileBackedTopology(t, harness, "site", false)
 
-		var source string
+			source := siteSourceDigest(t, harness, edited)
 
-		for i := range harness.configs {
-			if harness.configs[i].FullName() != "Topology/site" {
-				continue
-			}
+			imported := openBuilderFile(t, harness, "site").document
+			imported.Source = &bdoc.Source{Kind: bdoc.SourceKindTopology, Name: "site", Digest: source}
 
-			if edited {
-				editBuilderTopologyByHand(harness, "site")
-			}
-
-			digest, err := bdoc.SourceDigest(harness.configs[i])
+			data, err := bapi.EncodeDocument(imported)
 			if err != nil {
-				t.Fatalf("SourceDigest returned error: %v", err)
+				t.Fatalf("EncodeDocument returned error: %v", err)
 			}
 
-			source = digest
-		}
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatalf("writing the file: %v", err)
+			}
 
-		imported := openBuilderFile(t, harness, "site").document
-		imported.Source = &bdoc.Source{Kind: bdoc.SourceKindTopology, Name: "site", Digest: source}
+			opened := openBuilderFile(t, harness, "site")
+			if opened.differs != edited {
+				t.Errorf("GET topology site document: topologyDiffers = %t, want %t", opened.differs, edited)
+			}
 
-		data, err := bapi.EncodeDocument(imported)
-		if err != nil {
-			t.Fatalf("EncodeDocument returned error: %v", err)
-		}
+			recorder, draft := createBuilderFileDraft(t, harness, opened.document, opened.token)
+			if recorder.Code != http.StatusCreated {
+				t.Fatalf("POST /builder/drafts from the file: status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
+			}
 
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			t.Fatalf("writing the file: %v", err)
-		}
+			draft = editBuilderDraft(t, harness, draft, opened.document, "bb")
 
-		opened := openBuilderFile(t, harness, "site")
-		if opened.differs != edited {
-			t.Fatalf("edited %t: the document route says the topology differs: %t", edited, opened.differs)
-		}
+			another, err := bapi.EncodeDocument(bdoc.NewDocument("site"))
+			if err != nil {
+				t.Fatalf("EncodeDocument returned error: %v", err)
+			}
 
-		recorder, draft := createBuilderFileDraft(t, harness, opened.document, opened.token)
-		if recorder.Code != http.StatusCreated {
-			t.Fatalf("edited %t: creating the draft: status = %d: %s", edited, recorder.Code, recorder.Body)
-		}
+			if err := os.WriteFile(path, another, 0o600); err != nil {
+				t.Fatalf("writing the file: %v", err)
+			}
 
-		draft = editBuilderDraft(t, harness, draft, opened.document, "bb")
-
-		another, err := bapi.EncodeDocument(bdoc.NewDocument("site"))
-		if err != nil {
-			t.Fatalf("EncodeDocument returned error: %v", err)
-		}
-
-		if err := os.WriteFile(path, another, 0o600); err != nil {
-			t.Fatalf("writing the file: %v", err)
-		}
-
-		refused(harness, draft, "the file of an imported document changed", changed)
+			if err := fileDraftRefusalError(t, harness, draft, fileDraftChanged); err != nil {
+				t.Errorf("publish after the file of an imported document changed: %v", err)
+			}
+		})
 	}
 
 	// A draft holding exactly the document a pinned file names is not taken for
@@ -948,8 +1045,12 @@ func TestBuilderPublishFromEditedFileDraft(t *testing.T) {
 	editBuilderTopologyByHand(harness, "pump")
 
 	recorder, draft = createBuilderFileDraft(t, harness, opened.document, opened.token)
-	if recorder.Code != http.StatusCreated || draft.Digest != opened.digest {
-		t.Fatalf("creating the draft: status = %d, digest %s: %s", recorder.Code, draft.Digest, recorder.Body)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("POST /builder/drafts from the file: status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
+	}
+
+	if draft.Digest != opened.digest {
+		t.Errorf("POST /builder/drafts from the file: digest = %s, want the file's %s", draft.Digest, opened.digest)
 	}
 
 	writes := harness.configWrites
@@ -958,15 +1059,71 @@ func TestBuilderPublishFromEditedFileDraft(t *testing.T) {
 		"update": "topology pump is not what its Builder file publishes, so this draft cannot update it",
 		"create": "config pump already exists. Choose update explicitly",
 	} {
-		if _, reason := publishBuilderDraft(t, harness, draft,
-			`{"mode":"topology","topology":{"name":"pump","action":"`+action+`"}}`, http.StatusConflict); reason != want {
-			t.Fatalf("%s: refusal = %q, want %q", action, reason, want)
-		}
+		t.Run(action, func(t *testing.T) {
+			if _, reason := publishBuilderDraft(t, harness, draft,
+				`{"mode":"topology","topology":{"name":"pump","action":"`+action+`"}}`, http.StatusConflict); reason != want {
+				t.Errorf("publish with action %s: refusal = %q, want %q", action, reason, want)
+			}
+		})
 	}
 
-	if got := topologyHostnames(t, harness, "pump"); !slices.Contains(got, "by-hand") || harness.configWrites != writes {
-		t.Fatalf("topology nodes = %v after %d writes, want the topology left as it was", got, harness.configWrites-writes)
+	if got := topologyHostnames(t, harness, "pump"); !slices.Contains(got, "by-hand") {
+		t.Errorf("topology pump nodes = %v, want by-hand among them, the topology left as it was", got)
 	}
+
+	if harness.configWrites != writes {
+		t.Errorf("the refused publications wrote %d configs, want none", harness.configWrites-writes)
+	}
+}
+
+// The update of topology site that a draft opened from its Builder file
+// publishes, and two refusals of it.
+const (
+	fileDraftUpdate  = `{"mode":"topology","topology":{"name":"site","action":"update"}}`
+	fileDraftChanged = "topology site or its Builder file changed after this draft was opened from the file"
+	fileDraftDiffers = "topology site is not what its Builder file publishes, so this draft cannot update it"
+)
+
+// fileDraftRefusalError publishes the draft as an update of topology site,
+// which must be refused, and reports a refusal other than want or a config written.
+func fileDraftRefusalError(t *testing.T, harness *builderHarness, draft builderDraftResponse, want string) error {
+	t.Helper()
+
+	writes := harness.configWrites
+
+	_, reason := publishBuilderDraft(t, harness, draft, fileDraftUpdate, http.StatusConflict)
+	if reason != want || harness.configWrites != writes {
+		return fmt.Errorf("refusal = %q after %d writes, want %q and none", reason, harness.configWrites-writes, want)
+	}
+
+	return nil
+}
+
+// siteSourceDigest edits topology site by hand when edited, and returns the
+// source digest of the topology.
+func siteSourceDigest(t *testing.T, harness *builderHarness, edited bool) string {
+	t.Helper()
+
+	var source string
+
+	for i := range harness.configs {
+		if harness.configs[i].FullName() != "Topology/site" {
+			continue
+		}
+
+		if edited {
+			editBuilderTopologyByHand(harness, "site")
+		}
+
+		digest, err := bdoc.SourceDigest(harness.configs[i])
+		if err != nil {
+			t.Fatalf("SourceDigest returned error: %v", err)
+		}
+
+		source = digest
+	}
+
+	return source
 }
 
 // editBuilderTopologyByHand adds node by-hand to the topology name, as an edit

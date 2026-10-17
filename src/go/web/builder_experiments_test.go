@@ -2,11 +2,13 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	bapi "phenix/api/builder"
 	"phenix/store"
@@ -62,8 +64,8 @@ func TestBuilderExperimentLinks(t *testing.T) {
 		{name: "no-topology", topology: "", draftID: "d2", documentID: ""},
 	}
 
-	if !slices.Equal(links, want) {
-		t.Fatalf("links = %+v, want %+v", links, want)
+	if diff := cmp.Diff(want, links, cmp.AllowUnexported(builderExperimentLink{})); diff != "" {
+		t.Errorf("builderExperimentLinks(configs) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -140,7 +142,7 @@ func TestBuilderDocumentExperiment(t *testing.T) {
 			t.Parallel()
 
 			if got := builderDocumentExperiment(*test.role, test.links, test.document); got != test.want {
-				t.Fatalf("experiment = %q, want %q", got, test.want)
+				t.Errorf("builderDocumentExperiment(role, links, %+v) = %q, want %q", *test.document, got, test.want)
 			}
 		})
 	}
@@ -198,7 +200,7 @@ func TestBuilderDraftExperiment(t *testing.T) {
 			links: []builderExperimentLink{{name: "exp", topology: "lab", draftID: "d9", documentID: "doc9"}},
 		},
 		{
-			name: "an experiment that records no document is not a draft's without one", role: experimentRole(),
+			name: "an experiment that records no document is not one of a draft without one", role: experimentRole(),
 			meta:  &bapi.DraftMetadata{ID: "d2"},
 			links: []builderExperimentLink{{name: "exp", topology: "lab", draftID: "d1", documentID: ""}},
 		},
@@ -249,7 +251,7 @@ func TestBuilderDraftExperiment(t *testing.T) {
 			t.Parallel()
 
 			if got := builderDraftExperiment(*test.role, test.links, test.meta); got != test.want {
-				t.Fatalf("experiment = %q, want %q", got, test.want)
+				t.Errorf("builderDraftExperiment(role, links, draft %s) = %q, want %q", test.meta.ID, got, test.want)
 			}
 		})
 	}
@@ -316,23 +318,23 @@ func documentRows(t *testing.T, harness *builderHarness, role *rbac.Role) map[st
 	return rows
 }
 
-// checkRowExperiment checks the experiment a listed row names: want, or no
-// field at all when want is empty.
-func checkRowExperiment(t *testing.T, what string, row map[string]any, want string) {
-	t.Helper()
-
+// rowExperimentError reports a listed row that does not name the experiment
+// want, or that has the field at all when want is empty.
+func rowExperimentError(row map[string]any, want string) error {
 	if row == nil {
-		t.Fatalf("%s: the row is not listed", what)
+		return errors.New("the row is not listed")
 	}
 
 	got, present := row["experiment"]
 
 	switch {
 	case want == "" && present:
-		t.Errorf("%s: experiment = %v, want the field left out", what, got)
+		return fmt.Errorf("experiment = %v, want the field left out", got)
 	case want != "" && got != want:
-		t.Errorf("%s: experiment = %v, want %q", what, got, want)
+		return fmt.Errorf("experiment = %v, want %q", got, want)
 	}
+
+	return nil
 }
 
 // TestBuilderListDocumentsNamesExperiment names the experiment of a stored
@@ -348,13 +350,29 @@ func TestBuilderListDocumentsNamesExperiment(t *testing.T) {
 
 	rows := documentRows(t, harness, nil)
 
-	checkRowExperiment(t, "published with an experiment", rows["lab"], "exp")
-	checkRowExperiment(t, "a file row", rows["file"], "")
-	checkRowExperiment(t, "a document no draft published", rows["plain"], "")
+	for _, tt := range []struct {
+		what   string
+		target string
+		want   string
+	}{
+		{what: "published with an experiment", target: "lab", want: "exp"},
+		{what: "a file row", target: "file", want: ""},
+		{what: "a document no draft published", target: "plain", want: ""},
+	} {
+		if err := rowExperimentError(rows[tt.target], tt.want); err != nil {
+			t.Errorf("GET /builder/documents row %s, %s: %v", tt.target, tt.what, err)
+		}
+	}
 
-	if rows["lab"]["source"] != builderDocumentSourceStore || rows["file"]["source"] != builderDocumentSourceFile ||
-		rows["plain"]["id"] != plain.ID {
-		t.Fatalf("rows = %v, want lab and plain stored and file read from its file", rows)
+	got := map[string]any{
+		"lab source": rows["lab"]["source"], "file source": rows["file"]["source"], "plain id": rows["plain"]["id"],
+	}
+	want := map[string]any{
+		"lab source": builderDocumentSourceStore, "file source": builderDocumentSourceFile, "plain id": plain.ID,
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GET /builder/documents rows mismatch (-want +got):\n%s", diff)
 	}
 
 	// The draft publishes the topology again, without the experiment: the
@@ -362,31 +380,52 @@ func TestBuilderListDocumentsNamesExperiment(t *testing.T) {
 	edited := editBuilderDraft(t, harness, lab.draft, lab.document, "bb")
 	again, _ := publishBuilderDraft(t, harness, edited, publishLabUpdate, http.StatusOK)
 
-	if again.Draft.Publication.DocumentID == lab.draft.Publication.DocumentID {
-		t.Fatal("publishing the edit stored no new document")
+	if got := again.Draft.Publication.DocumentID; got == lab.draft.Publication.DocumentID {
+		t.Errorf("publishing the edit: document ID = %s, want a new document", got)
 	}
 
-	checkRowExperiment(t, "published again without it", documentRows(t, harness, nil)["lab"], "exp")
+	if err := rowExperimentError(documentRows(t, harness, nil)["lab"], "exp"); err != nil {
+		t.Errorf("GET /builder/documents row lab, published again without it: %v", err)
+	}
 
 	none, other := experimentRole("other"), experimentRole("other", "second")
-	checkRowExperiment(t, "a role that may not get it", documentRows(t, harness, none)["lab"], "")
+	if err := rowExperimentError(documentRows(t, harness, none)["lab"], ""); err != nil {
+		t.Errorf("GET /builder/documents row lab, as a role that may not get it: %v", err)
+	}
 
 	// A second experiment of the same publication stands in for one the
 	// caller may not get, and comes after it otherwise.
 	harness.configs = append(harness.configs,
 		linkedExperiment(t, "second", "lab", lab.draft.ID, again.Draft.Publication.DocumentID))
 
-	checkRowExperiment(t, "a role that may get the second", documentRows(t, harness, other)["lab"], "second")
-	checkRowExperiment(t, "the one that records the document", documentRows(t, harness, nil)["lab"], "second")
+	if err := rowExperimentError(documentRows(t, harness, other)["lab"], "second"); err != nil {
+		t.Errorf("GET /builder/documents row lab, as a role that may get the second: %v", err)
+	}
+
+	if err := rowExperimentError(documentRows(t, harness, nil)["lab"], "second"); err != nil {
+		t.Errorf("GET /builder/documents row lab, the one that records the document: %v", err)
+	}
 
 	harness.failExperimentListing()
 
 	rows = documentRows(t, harness, nil)
-	checkRowExperiment(t, "the experiments cannot be listed", rows["lab"], "")
+	if err := rowExperimentError(rows["lab"], ""); err != nil {
+		t.Errorf("GET /builder/documents row lab, the experiments cannot be listed: %v", err)
+	}
 
 	if len(rows) != 3 {
-		t.Errorf("listed %d rows, want all 3", len(rows))
+		t.Errorf("GET /builder/documents listed %d rows, want all 3", len(rows))
 	}
+}
+
+// publishOutcome is the status of a publication and the experiment its draft names.
+type publishOutcome struct {
+	Status     bapi.PublishStatus
+	Experiment string
+}
+
+func outcomeOf(response builderPublishResponse) publishOutcome {
+	return publishOutcome{Status: response.Status, Experiment: response.Draft.Experiment}
 }
 
 // TestBuilderPublishAnswersNameExperiment names the experiment in the draft
@@ -396,7 +435,7 @@ func TestBuilderPublishAnswersNameExperiment(t *testing.T) {
 	harness := lab.harness
 
 	if lab.answer.Draft.Experiment != "exp" {
-		t.Fatalf("published: draft experiment = %q, want exp", lab.answer.Draft.Experiment)
+		t.Errorf("publish: draft experiment = %q, want exp", lab.answer.Draft.Experiment)
 	}
 
 	// The answer of a publication that already completed, asked for again.
@@ -404,10 +443,12 @@ func TestBuilderPublishAnswersNameExperiment(t *testing.T) {
 	before.ETag = bapi.RevisionETag(mustDraftMeta(t, harness, lab.draft.ID).Publication.Revision)
 
 	retried, _ := publishBuilderDraft(t, harness, before, publishLabExperiment, http.StatusOK)
-	if !strings.Contains(strings.Join(bdoc.IssueMessages(retried.Warnings), " "), "already complete") ||
-		retried.Draft.Experiment != "exp" {
-		t.Fatalf("retry: warnings %q and draft experiment %q, want the completed publication with exp",
-			retried.Warnings, retried.Draft.Experiment)
+	if !strings.Contains(strings.Join(bdoc.IssueMessages(retried.Warnings), " "), "already complete") {
+		t.Errorf("publish retry: warnings = %q, want the completed publication", retried.Warnings)
+	}
+
+	if retried.Draft.Experiment != "exp" {
+		t.Errorf("publish retry: draft experiment = %q, want exp", retried.Draft.Experiment)
 	}
 
 	// A publication that fails at the topology leaves the draft as it was,
@@ -416,9 +457,8 @@ func TestBuilderPublishAnswersNameExperiment(t *testing.T) {
 	harness.failConfigKind = builderKindTopology
 
 	partial, _ := publishBuilderDraft(t, harness, edited, publishLabUpdate, http.StatusInternalServerError)
-	if partial.Status != bapi.PublishPartial || partial.Draft.Experiment != "exp" {
-		t.Fatalf("partial: status %q and draft experiment %q, want a partial publication with exp",
-			partial.Status, partial.Draft.Experiment)
+	if diff := cmp.Diff(publishOutcome{bapi.PublishPartial, "exp"}, outcomeOf(partial)); diff != "" {
+		t.Errorf("publish failing at the topology mismatch (-want +got):\n%s", diff)
 	}
 
 	harness.failConfigKind = ""
@@ -430,9 +470,8 @@ func TestBuilderPublishAnswersNameExperiment(t *testing.T) {
 	)
 
 	hidden, _ := publishBuilderDraftAs(t, harness, edited, role, publishLabUpdate, http.StatusOK)
-	if hidden.Status != bapi.PublishSucceeded || hidden.Draft.Experiment != "" {
-		t.Fatalf("without experiments get: status %q and draft experiment %q, want a publication that names none",
-			hidden.Status, hidden.Draft.Experiment)
+	if diff := cmp.Diff(publishOutcome{bapi.PublishSucceeded, ""}, outcomeOf(hidden)); diff != "" {
+		t.Errorf("publish without experiments get mismatch (-want +got):\n%s", diff)
 	}
 
 	// The experiments cannot be listed: the publication is not refused.
@@ -441,9 +480,8 @@ func TestBuilderPublishAnswersNameExperiment(t *testing.T) {
 	unlisted := editBuilderDraft(t, harness, hidden.Draft, lab.document, "cc")
 
 	quiet, _ := publishBuilderDraft(t, harness, unlisted, publishLabUpdate, http.StatusOK)
-	if quiet.Status != bapi.PublishSucceeded || quiet.Draft.Experiment != "" {
-		t.Fatalf("experiments not listed: status %q and draft experiment %q, want a publication that names none",
-			quiet.Status, quiet.Draft.Experiment)
+	if diff := cmp.Diff(publishOutcome{bapi.PublishSucceeded, ""}, outcomeOf(quiet)); diff != "" {
+		t.Errorf("publish with experiments not listed mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -453,45 +491,69 @@ func TestBuilderDraftAnswersNameExperiment(t *testing.T) {
 	lab := newPublishedLab(t)
 	harness := lab.harness
 
-	experimentOf := func(what string, role *rbac.Role, draft builderDraftResponse, want string) {
+	// experimentError reads the draft as role and reports an experiment other than want.
+	experimentError := func(role *rbac.Role, draft builderDraftResponse, want string) error {
 		t.Helper()
 
 		got, raw := readBuilderDraftAs(t, harness, builderAlice, role, draft.ID)
 		if _, present := raw["experiment"]; got.Experiment != want || present != (want != "") {
-			t.Errorf("%s: experiment = %q (field present: %t), want %q", what, got.Experiment, present, want)
+			return fmt.Errorf("experiment = %q (field present: %t), want %q", got.Experiment, present, want)
 		}
+
+		return nil
 	}
 
-	experimentOf("the draft that published it", nil, lab.draft, "exp")
+	if err := experimentError(nil, lab.draft, "exp"); err != nil {
+		t.Errorf("GET the draft that published it: %v", err)
+	}
 
 	// "Edit as a draft" of the published diagram, not yet published itself.
 	opened := openPublishedBuilderDocument(t, harness, "lab")
 	fromDocument := createBuilderPublishDraft(t, harness, opened.document, builderDocTokenPrefix+opened.id)
 
-	if fromDocument.Experiment != "exp" || fromDocument.Publication != nil {
-		t.Fatalf("created from the published diagram: experiment = %q and publication %v, want exp and none",
-			fromDocument.Experiment, fromDocument.Publication)
+	if fromDocument.Experiment != "exp" {
+		t.Errorf("POST /builder/drafts from the published diagram: experiment = %q, want exp", fromDocument.Experiment)
 	}
 
-	experimentOf("a draft opened from the published diagram", nil, fromDocument, "exp")
+	if fromDocument.Publication != nil {
+		t.Errorf("POST /builder/drafts from the published diagram: publication = %+v, want none", fromDocument.Publication)
+	}
+
+	if err := experimentError(nil, fromDocument, "exp"); err != nil {
+		t.Errorf("GET a draft opened from the published diagram: %v", err)
+	}
 
 	recorder := forkBuilderDraft(t, harness, builderAlice, nil, lab.draft.ID, lab.document)
 	if recorder.Code != http.StatusCreated {
-		t.Fatalf("fork: status = %d: %s", recorder.Code, recorder.Body)
+		t.Fatalf(
+			"POST /builder/drafts forking %s: status = %d, want %d: %s",
+			lab.draft.ID,
+			recorder.Code,
+			http.StatusCreated,
+			recorder.Body,
+		)
 	}
 
 	var forked builderDraftResponse
 
 	harness.decode(recorder, &forked)
 
-	if forked.Experiment != "exp" || forked.Forked == nil {
-		t.Fatalf("fork: experiment = %q and forked %v, want exp and what the draft published", forked.Experiment, forked.Forked)
+	if forked.Experiment != "exp" {
+		t.Errorf("fork: experiment = %q, want exp", forked.Experiment)
 	}
 
-	experimentOf("a fork", nil, forked, "exp")
+	if forked.Forked == nil {
+		t.Errorf("fork: forked = nil, want what the draft published")
+	}
+
+	if err := experimentError(nil, forked, "exp"); err != nil {
+		t.Errorf("GET a fork: %v", err)
+	}
 
 	none := experimentRole("other")
-	experimentOf("a role that may not get it", none, lab.draft, "")
+	if err := experimentError(none, lab.draft, ""); err != nil {
+		t.Errorf("GET the draft as a role that may not get it: %v", err)
+	}
 
 	// The listing names no experiment.
 	var listing struct {
@@ -501,15 +563,18 @@ func TestBuilderDraftAnswersNameExperiment(t *testing.T) {
 	harness.doDecode(builderRequest{method: http.MethodGet, path: "/builder/drafts", user: builderAlice}, http.StatusOK, &listing)
 
 	if len(listing.Drafts) != 3 {
-		t.Fatalf("listed %d drafts, want 3", len(listing.Drafts))
+		t.Errorf("GET /builder/drafts listed %d drafts, want 3", len(listing.Drafts))
 	}
 
 	for _, row := range listing.Drafts {
 		if _, present := row["experiment"]; present {
-			t.Errorf("listed draft %v names experiment %v, want the listing never to", row["id"], row["experiment"])
+			t.Errorf("GET /builder/drafts: draft %v names experiment %v, want the listing never to", row["id"], row["experiment"])
 		}
 	}
 
 	harness.failExperimentListing()
-	experimentOf("the experiments cannot be listed", nil, lab.draft, "")
+
+	if err := experimentError(nil, lab.draft, ""); err != nil {
+		t.Errorf("GET the draft when the experiments cannot be listed: %v", err)
+	}
 }

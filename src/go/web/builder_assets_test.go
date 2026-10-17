@@ -11,6 +11,8 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // The list the UI build writes. The worker has both copies, elk-api only gzip,
@@ -68,10 +70,20 @@ func builderTestAssets(list string) http.FileSystem {
 	return http.FS(files)
 }
 
+// builderTestHeader returns the values header holds of each key of want.
+func builderTestHeader(header http.Header, want map[string]string) map[string]string {
+	got := make(map[string]string, len(want))
+	for key := range want {
+		got[key] = header.Get(key)
+	}
+
+	return got
+}
+
 func TestBuilderFilesAreTheBuildsList(t *testing.T) {
 	files, err := builderFiles(builderTestAssets(builderTestList))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("builderFiles(the build's list) error: %v", err)
 	}
 
 	want := []string{
@@ -82,7 +94,7 @@ func TestBuilderFilesAreTheBuildsList(t *testing.T) {
 	}
 
 	if !slices.Equal(files, want) {
-		t.Errorf("builderFiles = %q, want %q", files, want)
+		t.Errorf("builderFiles(the build's list) = %q, want %q", files, want)
 	}
 }
 
@@ -95,9 +107,11 @@ func TestBuilderFilesRefusesAMissingOrBadList(t *testing.T) {
 		"not an array":   `{"assets/Builder-A.js": ["br"]}`,
 		"not file names": `[1, 2]`,
 	} {
-		if files, err := builderFiles(builderTestAssets(list)); err == nil {
-			t.Errorf("%s: builderFiles = %q, want an error", name, files)
-		}
+		t.Run(name, func(t *testing.T) {
+			if files, err := builderFiles(builderTestAssets(list)); err == nil {
+				t.Errorf("builderFiles(%q) = %q, want an error", list, files)
+			}
+		})
 	}
 }
 
@@ -128,77 +142,71 @@ func TestBuilderAssetHandler(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		handler := builderAssetHandler(builderTestAssets(c.list))
+		t.Run(c.name, func(t *testing.T) {
+			handler := builderAssetHandler(builderTestAssets(c.list))
 
-		req := httptest.NewRequest(http.MethodGet, c.path, nil)
-		if c.accept != "" {
-			for line := range strings.SplitSeq(c.accept, "\n") {
-				req.Header.Add("Accept-Encoding", line)
+			req := httptest.NewRequest(http.MethodGet, c.path, nil)
+			if c.accept != "" {
+				for line := range strings.SplitSeq(c.accept, "\n") {
+					req.Header.Add("Accept-Encoding", line)
+				}
 			}
-		}
 
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
 
-		res := rec.Result()
+			res := rec.Result()
 
-		body, err := io.ReadAll(res.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("reading the body of GET %s: %v", c.path, err)
+			}
 
-		res.Body.Close()
+			res.Body.Close()
 
-		if res.StatusCode != c.status {
-			t.Errorf("%s: status %d, want %d", c.name, res.StatusCode, c.status)
+			if res.StatusCode != c.status {
+				t.Fatalf("GET %s: status = %d, want %d", c.path, res.StatusCode, c.status)
+			}
 
-			continue
-		}
+			// A Builder file, whatever its encoding, varies with Accept-Encoding.
+			vary := ""
+			if c.cache != "" {
+				vary = "Accept-Encoding"
+			}
 
-		if got := res.Header.Get("Content-Encoding"); got != c.encoding {
-			t.Errorf("%s: Content-Encoding %q, want %q", c.name, got, c.encoding)
-		}
+			wantHeader := map[string]string{"Content-Encoding": c.encoding, "Cache-Control": c.cache, "Vary": vary}
 
-		if got := res.Header.Get("Cache-Control"); got != c.cache {
-			t.Errorf("%s: Cache-Control %q, want %q", c.name, got, c.cache)
-		}
+			want := builderTestScript()
+			if c.encoding != "" {
+				want = builderTestCopy(c.encoding)
+			}
 
-		// A Builder file, whatever its encoding, varies with Accept-Encoding.
-		vary := ""
-		if c.cache != "" {
-			vary = "Accept-Encoding"
-		}
+			if c.status == http.StatusOK {
+				wantHeader["Content-Length"] = strconv.Itoa(len(want))
+			}
 
-		if got := res.Header.Get("Vary"); got != vary {
-			t.Errorf("%s: Vary %q, want %q", c.name, got, vary)
-		}
+			if diff := cmp.Diff(wantHeader, builderTestHeader(res.Header, wantHeader)); diff != "" {
+				t.Errorf("GET %s headers mismatch (-want +got):\n%s", c.path, diff)
+			}
 
-		if c.status != http.StatusOK {
-			continue
-		}
+			if c.status != http.StatusOK {
+				return
+			}
 
-		want := builderTestScript()
-		if c.encoding != "" {
-			want = builderTestCopy(c.encoding)
-		}
+			if diff := cmp.Diff(want, string(body)); diff != "" {
+				t.Errorf("GET %s body mismatch, want the %q copy (-want +got):\n%s", c.path, c.encoding, diff)
+			}
 
-		if string(body) != want {
-			t.Errorf("%s: a body of %d bytes, want the %d of the %q copy", c.name, len(body), len(want), c.encoding)
-		}
+			// The type is the file's own, whatever its encoding.
+			contentType := "text/javascript"
+			if strings.HasSuffix(c.path, ".css") {
+				contentType = "text/css"
+			}
 
-		if got := res.Header.Get("Content-Length"); got != strconv.Itoa(len(want)) {
-			t.Errorf("%s: Content-Length %q, want %d", c.name, got, len(want))
-		}
-
-		// The type is the file's own, whatever its encoding.
-		contentType := "text/javascript"
-		if strings.HasSuffix(c.path, ".css") {
-			contentType = "text/css"
-		}
-
-		if got := res.Header.Get("Content-Type"); !strings.HasPrefix(got, contentType) {
-			t.Errorf("%s: Content-Type %q, want %s", c.name, got, contentType)
-		}
+			if got := res.Header.Get("Content-Type"); !strings.HasPrefix(got, contentType) {
+				t.Errorf("GET %s: Content-Type = %q, want %s", c.path, got, contentType)
+			}
+		})
 	}
 }
 
@@ -207,7 +215,7 @@ func TestBuilderAssetHandler(t *testing.T) {
 func TestBuilderAssetHandlerContentLength(t *testing.T) {
 	handler := builderAssetHandler(builderTestAssets(builderTestList))
 
-	serve := func(method string, header map[string]string) (*http.Response, []byte) {
+	serve := func(t *testing.T, method string, header map[string]string) (*http.Response, []byte) {
 		t.Helper()
 
 		req := httptest.NewRequest(method, builderTestWorker, nil)
@@ -223,7 +231,7 @@ func TestBuilderAssetHandlerContentLength(t *testing.T) {
 
 		raw, err := io.ReadAll(res.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("reading the body of %s %s: %v", method, builderTestWorker, err)
 		}
 
 		return res, raw
@@ -269,26 +277,28 @@ func TestBuilderAssetHandlerContentLength(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		res, raw := serve(c.method, c.header)
+		t.Run(c.name, func(t *testing.T) {
+			res, raw := serve(t, c.method, c.header)
 
-		if res.StatusCode != c.status {
-			t.Errorf("%s: status %d, want %d", c.name, res.StatusCode, c.status)
+			if res.StatusCode != c.status {
+				t.Fatalf("%s %s: status = %d, want %d", c.method, builderTestWorker, res.StatusCode, c.status)
+			}
 
-			continue
-		}
+			// A response without content has no Content-Encoding.
+			wantHeader := map[string]string{"Content-Encoding": c.encoding, "Content-Length": c.length}
 
-		// A response without content has no Content-Encoding.
-		if got := res.Header.Get("Content-Encoding"); got != c.encoding {
-			t.Errorf("%s: Content-Encoding %q, want %q", c.name, got, c.encoding)
-		}
+			if diff := cmp.Diff(wantHeader, builderTestHeader(res.Header, wantHeader)); diff != "" {
+				t.Errorf("%s %s headers mismatch (-want +got):\n%s", c.method, builderTestWorker, diff)
+			}
 
-		if got := res.Header.Get("Content-Length"); got != c.length {
-			t.Errorf("%s: Content-Length %q, want %q", c.name, got, c.length)
-		}
+			if c.body == "" {
+				return
+			}
 
-		if c.body != "" && string(raw) != c.body {
-			t.Errorf("%s: body %q, want %q", c.name, raw, c.body)
-		}
+			if diff := cmp.Diff(c.body, string(raw)); diff != "" {
+				t.Errorf("%s %s body mismatch (-want +got):\n%s", c.method, builderTestWorker, diff)
+			}
+		})
 	}
 }
 
@@ -329,8 +339,15 @@ func TestPreferredEncoding(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		if got := preferredEncoding(c.header, c.offered); got != c.want {
-			t.Errorf("preferredEncoding(%q, %q) = %q, want %q", c.header, c.offered, got, c.want)
+		name := c.header + " offering " + strings.Join(c.offered, " and ")
+		if c.header == "" {
+			name = "no header offering " + strings.Join(c.offered, " and ")
 		}
+
+		t.Run(name, func(t *testing.T) {
+			if got := preferredEncoding(c.header, c.offered); got != c.want {
+				t.Errorf("preferredEncoding(%q, %q) = %q, want %q", c.header, c.offered, got, c.want)
+			}
+		})
 	}
 }

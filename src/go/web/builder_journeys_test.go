@@ -24,7 +24,7 @@ func TestBuilderJourneyBuilderUsersShareEverything(t *testing.T) {
 
 	path := "/builder/drafts/" + draft.ID
 
-	alice.expect("alice publishing her draft as a topology", builderRequest{
+	alice.mustDo("alice publishing her draft as a topology", builderRequest{
 		method: http.MethodPost, path: path + "/publish", ifMatch: draft.ETag,
 		body: `{"mode":"topology","topology":{"name":"plant","action":"create"}}`,
 	}, http.StatusOK)
@@ -56,7 +56,7 @@ func TestBuilderJourneyBuilderUsersShareEverything(t *testing.T) {
 		body: `{"document":` + string(builderDocument(t, "edited")) + `}`,
 	}, http.StatusCreated, &saved)
 
-	bob.expect("bob deleting alice's damaged draft", builderRequest{
+	bob.mustDo("bob deleting alice's damaged draft", builderRequest{
 		method: http.MethodDelete, path: "/builder/drafts/" + damaged.ID, ifMatch: damagedETag,
 	}, http.StatusNoContent)
 
@@ -64,10 +64,10 @@ func TestBuilderJourneyBuilderUsersShareEverything(t *testing.T) {
 		t.Fatalf("adding alice's icon: %v", err)
 	}
 
-	bob.expect("bob renaming alice's icon", builderRequest{
+	bob.mustDo("bob renaming alice's icon", builderRequest{
 		method: http.MethodPut, path: builderIconsRoute + "/plc", body: `{"name":"plc-2"}`,
 	}, http.StatusOK)
-	bob.expect("bob deleting alice's icon", builderRequest{
+	bob.mustDo("bob deleting alice's icon", builderRequest{
 		method: http.MethodDelete, path: builderIconsRoute + "/plc-2",
 	}, http.StatusNoContent)
 
@@ -80,9 +80,9 @@ func TestBuilderJourneyBuilderUsersShareEverything(t *testing.T) {
 		t.Fatalf("alice opened %+v, want bob's version of her draft", seen)
 	}
 
-	bob.expect("bob deleting alice's draft", builderRequest{
+	bob.mustDo("bob deleting alice's draft", builderRequest{
 		method: http.MethodDelete, path: path, ifMatch: saved.ETag,
 	}, http.StatusNoContent)
 
-	alice.expect("alice after bob deleted her draft", builderRequest{method: http.MethodGet, path: path}, http.StatusNotFound)
+	alice.mustDo("alice after bob deleted her draft", builderRequest{method: http.MethodGet, path: path}, http.StatusNotFound)
 }

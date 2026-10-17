@@ -1,16 +1,16 @@
 package web
 
 import (
-	"cmp"
 	"encoding/json"
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gopkg.in/yaml.v3"
 
 	bapi "phenix/api/builder"
@@ -59,7 +59,7 @@ func exportedBuilderTopology(
 	t.Helper()
 
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("export status = %d: %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("POST /builder/export/topology: status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
 
 	var response builderTopologyExportResponse
@@ -86,6 +86,22 @@ func asJSONValue(t *testing.T, value any) any {
 	return decoded
 }
 
+// issueSummary is the code and message of an issue.
+type issueSummary struct {
+	Code    bdoc.Code
+	Message string
+}
+
+// issueSummaries returns the code and message of each issue.
+func issueSummaries(issues []bdoc.Issue) []issueSummary {
+	summaries := make([]issueSummary, 0, len(issues))
+	for _, issue := range issues {
+		summaries = append(summaries, issueSummary{Code: issue.Code, Message: issue.Message})
+	}
+
+	return summaries
+}
+
 // TestBuilderExportTopologyMatchesPublish exports the config a publish writes
 // for the same document, for a view-only role, and writes nothing.
 func TestBuilderExportTopologyMatchesPublish(t *testing.T) {
@@ -104,7 +120,7 @@ func TestBuilderExportTopologyMatchesPublish(t *testing.T) {
 
 	stored, err := harness.getConfig("Topology/Lab-topology-2")
 	if err != nil {
-		t.Fatalf("published topology missing: %v", err)
+		t.Fatalf("getConfig(Topology/Lab-topology-2) after publishing error: %v", err)
 	}
 
 	writes := harness.configWrites
@@ -114,18 +130,22 @@ func TestBuilderExportTopologyMatchesPublish(t *testing.T) {
 
 	response, exported := exportedBuilderTopology(t, harness, exportBuilderTopology(t, harness, document, "", viewer))
 
-	if response.Name != "Lab-topology-2" || len(response.Warnings) != 0 || len(response.PublishBlockers) != 0 {
-		t.Fatalf("export = %+v, want topology Lab-topology-2 with no warnings", response)
+	wantResponse := builderTopologyExportResponse{Name: "Lab-topology-2"}
+	if diff := cmp.Diff(wantResponse, response,
+		cmpopts.IgnoreFields(builderTopologyExportResponse{}, "YAML"), cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("POST /builder/export/topology mismatch (-want +got):\n%s", diff)
 	}
 
-	if exported.Version != stored.Version || exported.Kind != stored.Kind ||
-		exported.Metadata.Name != stored.Metadata.Name || len(exported.Metadata.Annotations) != 0 {
-		t.Fatalf("exported config = %+v, want %s %s/%s without annotations",
-			exported, stored.Version, stored.Kind, stored.Metadata.Name)
+	// The spec is compared below, as JSON decodes it.
+	wantConfig := store.Config{
+		Version: stored.Version, Kind: stored.Kind, Metadata: store.ConfigMetadata{Name: stored.Metadata.Name},
+	}
+	if diff := cmp.Diff(wantConfig, exported, cmpopts.IgnoreFields(store.Config{}, "Spec"), cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("exported config mismatch (-want +got):\n%s", diff)
 	}
 
-	if got, want := asJSONValue(t, exported.Spec), asJSONValue(t, stored.Spec); !reflect.DeepEqual(got, want) {
-		t.Fatalf("exported spec = %s, want the published %s", builderJSON(t, got), builderJSON(t, want))
+	if diff := cmp.Diff(asJSONValue(t, stored.Spec), asJSONValue(t, exported.Spec)); diff != "" {
+		t.Errorf("exported spec mismatch with the published one (-want +got):\n%s", diff)
 	}
 
 	exportedSpec, err := (&bdoc.Topology{Spec: exported.Spec, VLANAliases: nil, Warnings: nil}).SpecV1()
@@ -138,31 +158,51 @@ func TestBuilderExportTopologyMatchesPublish(t *testing.T) {
 		t.Fatalf("published spec is not a v1 topology: %v", err)
 	}
 
-	if !reflect.DeepEqual(exportedSpec, storedSpec) {
-		t.Fatalf("exported v1 topology = %s, want %s", builderJSON(t, exportedSpec), builderJSON(t, storedSpec))
+	if diff := cmp.Diff(storedSpec, exportedSpec); diff != "" {
+		t.Errorf("exported v1 topology mismatch with the published one (-want +got):\n%s", diff)
 	}
 
-	if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"web"}) ||
-		!reflect.DeepEqual(exported.Spec["includeTopologies"], []any{"shared"}) {
-		t.Fatalf("exported spec = %s, want web and the shared include", builderJSON(t, exported.Spec))
+	if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"web"}) {
+		t.Errorf("exported spec hostnames = %q, want [web]", hostnames)
 	}
 
-	if harness.configWrites != writes || harness.store.Count(bapi.NamespacePublished) != documents ||
-		harness.store.Count(bapi.NamespaceDrafts) != drafts {
-		t.Fatal("an export wrote to the store")
+	if diff := cmp.Diff([]any{"shared"}, exported.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("exported spec includeTopologies mismatch (-want +got):\n%s", diff)
+	}
+
+	gotCounts := builderStoreCounts{
+		ConfigWrites: harness.configWrites, Published: harness.store.Count(bapi.NamespacePublished),
+		Drafts: harness.store.Count(bapi.NamespaceDrafts),
+	}
+	wantCounts := builderStoreCounts{ConfigWrites: writes, Published: documents, Drafts: drafts}
+
+	if diff := cmp.Diff(wantCounts, gotCounts); diff != "" {
+		t.Errorf("after an export, the store mismatch (-want +got):\n%s", diff)
 	}
 
 	// Opening a draft takes configs get; listing them is not enough.
 	lister := builderRole(builderPolicy([]string{"configs"}, []string{"*"}, []string{"list"}))
 	if denied := exportBuilderTopology(t, harness, document, "", lister); denied.Code != http.StatusForbidden {
-		t.Fatalf("list-only export status = %d, want %d", denied.Code, http.StatusForbidden)
+		t.Errorf("POST /builder/export/topology as a lister: status = %d, want %d", denied.Code, http.StatusForbidden)
 	}
 
 	// A name the client sends is used.
 	response, exported = exportedBuilderTopology(t, harness, exportBuilderTopology(t, harness, document, "lab@2", nil))
-	if response.Name != "lab@2" || exported.Metadata.Name != "lab@2" {
-		t.Fatalf("export name = %q, config %q, want lab@2", response.Name, exported.Metadata.Name)
+	if response.Name != "lab@2" {
+		t.Errorf("POST /builder/export/topology named lab@2: name = %q, want lab@2", response.Name)
 	}
+
+	if exported.Metadata.Name != "lab@2" {
+		t.Errorf("POST /builder/export/topology named lab@2: config name = %q, want lab@2", exported.Metadata.Name)
+	}
+}
+
+// builderStoreCounts is how many configs were written and documents and
+// drafts are stored.
+type builderStoreCounts struct {
+	ConfigWrites int
+	Published    int
+	Drafts       int
 }
 
 // topologySpecHostnames lists the hostnames of a topology spec's nodes.
@@ -300,26 +340,31 @@ func TestBuilderExportTopologyRefusesAsPublishDoes(t *testing.T) {
 				`{"mode":"topology","topology":{"name":"no-vlan","action":"create"}}`, http.StatusUnprocessableEntity)
 
 			if !strings.HasPrefix(publishRefusal.Message, tt.refusal) {
-				t.Fatalf("publish message = %q, want it to start %q", publishRefusal.Message, tt.refusal)
+				t.Errorf("publish message = %q, want it to start %q", publishRefusal.Message, tt.refusal)
 			}
 
 			recorder := exportBuilderTopology(t, harness, tt.document, "", nil)
 
 			if !tt.exports {
 				if recorder.Code != http.StatusUnprocessableEntity {
-					t.Fatalf("export status = %d, want the publish status %d: %s",
+					t.Fatalf("POST /builder/export/topology: status = %d, want the publish status %d: %s",
 						recorder.Code, http.StatusUnprocessableEntity, recorder.Body)
 				}
 
 				exportErr := builderRefusal(t, recorder)
 
-				if want := cmp.Or(tt.exportRefusal, publishRefusal.Message); exportErr.Message != want {
-					t.Fatalf("export message = %q, want %q", exportErr.Message, want)
+				want := tt.exportRefusal
+				if want == "" {
+					want = publishRefusal.Message
+				}
+
+				if exportErr.Message != want {
+					t.Errorf("POST /builder/export/topology message = %q, want %q", exportErr.Message, want)
 				}
 
 				if tt.exportCause != "" && (!strings.Contains(exportErr.Cause, tt.exportCause) ||
 					strings.Contains(exportErr.Cause, "no VLAN") || strings.Contains(exportErr.Cause, " is used by ")) {
-					t.Fatalf("export cause = %q, want it to hold %q and name no VLAN or shared address",
+					t.Errorf("POST /builder/export/topology cause = %q, want it to hold %q and name no VLAN or shared address",
 						exportErr.Cause, tt.exportCause)
 				}
 
@@ -328,16 +373,18 @@ func TestBuilderExportTopologyRefusesAsPublishDoes(t *testing.T) {
 
 			response, exported := exportedBuilderTopology(t, harness, recorder)
 
-			if want := []string{
-				strings.TrimPrefix(publishRefusal.Message, tt.refusal),
-			}; !slices.Equal(bdoc.IssueMessages(response.PublishBlockers), want) ||
-				!strings.HasSuffix(want[0], "; 1 more interface has no VLAN") ||
-				response.PublishBlockers[0].Code != bdoc.CodeInterfaceVLANMissing {
-				t.Fatalf("publish blockers = %+v, want %q", response.PublishBlockers, want)
+			message := strings.TrimPrefix(publishRefusal.Message, tt.refusal)
+			if !strings.HasSuffix(message, "; 1 more interface has no VLAN") {
+				t.Errorf("publish message = %q, want it to end with the one more interface that has no VLAN", message)
+			}
+
+			want := []issueSummary{{Code: bdoc.CodeInterfaceVLANMissing, Message: message}}
+			if diff := cmp.Diff(want, issueSummaries(response.PublishBlockers)); diff != "" {
+				t.Errorf("POST /builder/export/topology publish blockers mismatch (-want +got):\n%s", diff)
 			}
 
 			if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"host"}) {
-				t.Fatalf("exported spec = %s, want the host", builderJSON(t, exported.Spec))
+				t.Errorf("exported spec hostnames = %q, want [host]", hostnames)
 			}
 		})
 	}
@@ -387,7 +434,7 @@ func TestBuilderExportTopologyNamesSharedAddresses(t *testing.T) {
 				`{"mode":"topology","topology":{"name":"shared","action":"create"}}`, http.StatusUnprocessableEntity)
 
 			if want := refusal + tt.publish; publishRefusal.Message != want {
-				t.Fatalf("publish message = %q, want %q", publishRefusal.Message, want)
+				t.Errorf("publish message = %q, want %q", publishRefusal.Message, want)
 			}
 
 			// The refusal names each problem as an issue at its device.
@@ -396,37 +443,49 @@ func TestBuilderExportTopologyNamesSharedAddresses(t *testing.T) {
 				code = bdoc.CodeInterfaceVLANMissing
 			}
 
-			if publishRefusal.Code != string(bdoc.CodePublishBlocked) || len(publishRefusal.Issues) == 0 ||
-				slices.ContainsFunc(publishRefusal.Issues, func(issue bdoc.Issue) bool {
-					return issue.Code != code || issue.NodeID == "" || issue.Severity != bdoc.SeverityError
-				}) {
-				t.Fatalf("publish refusal = %+v, want code %s and issues of code %s", publishRefusal, bdoc.CodePublishBlocked, code)
+			if publishRefusal.Code != string(bdoc.CodePublishBlocked) {
+				t.Errorf("publish refusal code = %q, want %q", publishRefusal.Code, bdoc.CodePublishBlocked)
+			}
+
+			if len(publishRefusal.Issues) == 0 || slices.ContainsFunc(publishRefusal.Issues, func(issue bdoc.Issue) bool {
+				return issue.Code != code || issue.NodeID == "" || issue.Severity != bdoc.SeverityError
+			}) {
+				t.Errorf("publish refusal issues = %+v, want errors of code %s at their devices", publishRefusal.Issues, code)
 			}
 
 			response, exported := exportedBuilderTopology(t, harness, exportBuilderTopology(t, harness, document, "shared", nil))
 
-			if !slices.Equal(bdoc.IssueMessages(response.PublishBlockers), tt.blockers) {
-				t.Fatalf("publish blockers = %+v, want %q", response.PublishBlockers, tt.blockers)
+			if diff := cmp.Diff(tt.blockers, bdoc.IssueMessages(response.PublishBlockers)); diff != "" {
+				t.Errorf("POST /builder/export/topology publish blocker messages mismatch (-want +got):\n%s", diff)
+			}
+
+			if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"aa", "bb"}) {
+				t.Errorf("exported spec hostnames = %q, want [aa bb]", hostnames)
+			}
+
+			if harness.configWrites != 0 {
+				t.Errorf("the export and the refused publication wrote %d configs, want none", harness.configWrites)
+			}
+
+			if len(response.PublishBlockers) == 0 {
+				return
 			}
 
 			// The first is what Publish's refusal says.
-			if response.PublishBlockers[0].Message != strings.TrimPrefix(publishRefusal.Message, refusal) {
-				t.Fatalf("first publish blocker = %+v, want the publish message %q", response.PublishBlockers[0], publishRefusal.Message)
+			if got, want := response.PublishBlockers[0].Message, strings.TrimPrefix(publishRefusal.Message, refusal); got != want {
+				t.Errorf("first publish blocker message = %q, want the publish message %q", got, want)
 			}
 
 			// The shared address blocker is at the first device that uses it.
 			last := response.PublishBlockers[len(response.PublishBlockers)-1]
-			if last.Code != bdoc.CodeInterfaceIPShared || last.NodeID == "" ||
-				last.Field != "spec.network.interfaces.0.address" {
-				t.Fatalf("shared address blocker = %+v, want one of code %s at aa's eth0", last, bdoc.CodeInterfaceIPShared)
+			if diff := cmp.Diff(
+				issueSummary{Code: bdoc.CodeInterfaceIPShared, Message: shared}, issueSummary{Code: last.Code, Message: last.Message},
+			); diff != "" {
+				t.Errorf("last publish blocker mismatch (-want +got):\n%s", diff)
 			}
 
-			if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"aa", "bb"}) {
-				t.Fatalf("exported spec = %s, want hosts aa and bb", builderJSON(t, exported.Spec))
-			}
-
-			if harness.configWrites != 0 {
-				t.Fatal("the export or the refused publication wrote a config")
+			if last.Field != "spec.network.interfaces.0.address" || last.NodeID == "" {
+				t.Errorf("last publish blocker at node %q field %q, want aa's eth0 address", last.NodeID, last.Field)
 			}
 		})
 	}
@@ -459,7 +518,7 @@ func TestBuilderExportTopologyNamesHostnames(t *testing.T) {
 				`{"mode":"topology","topology":{"name":"hostnames","action":"create"}}`, http.StatusUnprocessableEntity)
 
 			if !strings.HasPrefix(publishRefusal.Message, refusal+tt.reason) {
-				t.Fatalf("publish message = %q, want it to start %q", publishRefusal.Message, refusal+tt.reason)
+				t.Errorf("publish message = %q, want it to start %q", publishRefusal.Message, refusal+tt.reason)
 			}
 
 			recorder := exportBuilderTopology(t, harness, document, "hostnames", nil)
@@ -467,23 +526,36 @@ func TestBuilderExportTopologyNamesHostnames(t *testing.T) {
 			if !tt.exports {
 				exportRefusal := builderRefusal(t, recorder)
 
-				if recorder.Code != http.StatusUnprocessableEntity || exportRefusal.Message != publishRefusal.Message {
-					t.Fatalf("export = %d %q, want 422 and the publish message", recorder.Code, exportRefusal.Message)
+				if recorder.Code != http.StatusUnprocessableEntity {
+					t.Errorf("POST /builder/export/topology: status = %d, want %d", recorder.Code, http.StatusUnprocessableEntity)
+				}
+
+				if exportRefusal.Message != publishRefusal.Message {
+					t.Errorf("POST /builder/export/topology message = %q, want the publish message %q",
+						exportRefusal.Message, publishRefusal.Message)
 				}
 			} else {
 				response, _ := exportedBuilderTopology(t, harness, recorder)
 
-				if want := strings.TrimPrefix(publishRefusal.Message, refusal); !slices.Equal(
-					bdoc.IssueMessages(response.PublishBlockers), []string{want},
-				) || response.PublishBlockers[0].Code != bdoc.CodeNodeHostnameReserved ||
-					!strings.HasSuffix(response.PublishBlockers[0].Path, ".device.hostname") ||
-					response.PublishBlockers[0].NodeID == "" {
-					t.Fatalf("publish blockers = %+v, want %q", response.PublishBlockers, want)
+				want := []issueSummary{
+					{Code: bdoc.CodeNodeHostnameReserved, Message: strings.TrimPrefix(publishRefusal.Message, refusal)},
+				}
+				if diff := cmp.Diff(want, issueSummaries(response.PublishBlockers)); diff != "" {
+					t.Errorf("POST /builder/export/topology publish blockers mismatch (-want +got):\n%s", diff)
+				}
+
+				for _, blocker := range response.PublishBlockers {
+					if !strings.HasSuffix(blocker.Path, ".device.hostname") || blocker.NodeID == "" {
+						t.Errorf("publish blocker at node %q path %q, want the device hostname", blocker.NodeID, blocker.Path)
+					}
 				}
 			}
 
-			if harness.configWrites != 0 || harness.store.Count(bapi.NamespacePublished) != 0 {
-				t.Fatal("the export or the refused publication wrote something")
+			gotCounts := builderStoreCounts{
+				ConfigWrites: harness.configWrites, Published: harness.store.Count(bapi.NamespacePublished),
+			}
+			if diff := cmp.Diff(builderStoreCounts{}, gotCounts); diff != "" {
+				t.Errorf("the export and the refused publication wrote (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -513,14 +585,13 @@ func TestBuilderExportTopologyKeepsStrings(t *testing.T) {
 		t.Fatalf("PublishTopologyConfig returned error: %v", err)
 	}
 
-	if got, want := asJSONValue(t, loaded.Spec), asJSONValue(t, published.Spec); !reflect.DeepEqual(got, want) {
-		t.Fatalf("exported spec = %s, want the published %s\n%s",
-			builderJSON(t, got), builderJSON(t, want), response.YAML)
+	if diff := cmp.Diff(asJSONValue(t, published.Spec), asJSONValue(t, loaded.Spec)); diff != "" {
+		t.Errorf("exported spec mismatch with the published one (-want +got):\n%s\nYAML:\n%s", diff, response.YAML)
 	}
 
 	for _, want := range []string{"- |\n", "plain: |-\n"} {
 		if !strings.Contains(response.YAML, want) {
-			t.Fatalf("exported YAML does not hold %q:\n%s", want, response.YAML)
+			t.Errorf("exported YAML does not hold %q:\n%s", want, response.YAML)
 		}
 	}
 }
@@ -570,8 +641,12 @@ func TestBuilderExportTopologyRequests(t *testing.T) {
 
 			answer := builderRefusal(t, recorder)
 
-			if recorder.Code != tt.status || !strings.Contains(answer.Message+": "+answer.Cause, tt.error) {
-				t.Fatalf("answer = %d %+v, want %d and %q", recorder.Code, answer, tt.status, tt.error)
+			if recorder.Code != tt.status {
+				t.Errorf("POST /builder/export/topology: status = %d, want %d", recorder.Code, tt.status)
+			}
+
+			if said := answer.Message + ": " + answer.Cause; !strings.Contains(said, tt.error) {
+				t.Errorf("POST /builder/export/topology said %q, want it to hold %q", said, tt.error)
 			}
 		})
 	}
@@ -580,7 +655,11 @@ func TestBuilderExportTopologyRequests(t *testing.T) {
 	unnamed := bdoc.NewDocument("!!!")
 
 	response, exported := exportedBuilderTopology(t, harness, exportBuilderTopology(t, harness, unnamed, "", nil))
-	if response.Name != "topology" || exported.Metadata.Name != "topology" {
-		t.Fatalf("export name = %q, config %q, want topology", response.Name, exported.Metadata.Name)
+	if response.Name != "topology" {
+		t.Errorf("POST /builder/export/topology of document !!!: name = %q, want topology", response.Name)
+	}
+
+	if exported.Metadata.Name != "topology" {
+		t.Errorf("POST /builder/export/topology of document !!!: config name = %q, want topology", exported.Metadata.Name)
 	}
 }

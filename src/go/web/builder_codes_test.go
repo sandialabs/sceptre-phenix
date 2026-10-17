@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
 	"phenix/web/weberror"
@@ -58,7 +60,7 @@ func TestBuilderErrorsCarryCodes(t *testing.T) {
 	if !slices.ContainsFunc(body.Issues, func(issue bdoc.Issue) bool {
 		return issue.Code == bdoc.CodeMetadataIDInvalid && issue.Path == "metadata.id" && issue.Severity == bdoc.SeverityError
 	}) {
-		t.Fatalf("issues = %+v, want the document ID refused with its code", body.Issues)
+		t.Errorf("POST /builder/drafts issues = %+v, want the document ID refused with its code", body.Issues)
 	}
 
 	// A draft that changed between a read and a write is a conflict about the
@@ -70,13 +72,37 @@ func TestBuilderErrorsCarryCodes(t *testing.T) {
 		&bapi.ConflictError{Kind: "icon", ID: "plc", Expected: 1, Actual: 2, Reason: ""}, "renaming",
 	))
 
-	for err, want := range map[error]bdoc.Code{draftConflict: bdoc.CodeDraftConflict, iconConflict: bdoc.CodeRequestConflict} {
-		var web *weberror.WebError
+	for _, tt := range []struct {
+		name string
+		err  error
+		want bdoc.Code
+	}{
+		{name: "draft", err: draftConflict, want: bdoc.CodeDraftConflict},
+		{name: "icon", err: iconConflict, want: bdoc.CodeRequestConflict},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var web *weberror.WebError
+			if !errors.As(tt.err, &web) {
+				t.Fatalf("builderCodedError(%v) = %T, want a *weberror.WebError", tt.err, tt.err)
+			}
 
-		if !errors.As(err, &web) || web.Status != http.StatusConflict || web.Code != string(want) {
-			t.Errorf("error %v: answer %+v, want 409 with code %s", err, web, want)
-		}
+			got := builderAnswer{Status: web.Status, Code: web.Code}
+			want := builderAnswer{Status: http.StatusConflict, Code: string(tt.want)}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("builderCodedError(%v) mismatch (-want +got):\n%s", tt.err, diff)
+			}
+		})
 	}
+}
+
+// builderAnswer is the part of an answer a test of its code compares.
+type builderAnswer struct {
+	Status      int
+	Code        string
+	Allow       string
+	ContentType string
+	Body        string
 }
 
 // TestBuilderMethodNotAllowedCarriesCode answers a method no Builder route
@@ -93,17 +119,30 @@ func TestBuilderMethodNotAllowedCarriesCode(t *testing.T) {
 
 	harness.decode(recorder, &body)
 
-	if recorder.Code != http.StatusMethodNotAllowed || body.Code != string(bdoc.CodeRequestMethodNotAllowed) ||
-		body.Message == "" || recorder.Header().Get("Allow") != "GET, POST, OPTIONS" ||
-		recorder.Header().Get("Content-Type") != mimeJSON {
-		t.Fatalf("PATCH /builder/drafts = %d %v %s, want 405, Allow GET, POST, OPTIONS and the code %s",
-			recorder.Code, recorder.Header(), recorder.Body, bdoc.CodeRequestMethodNotAllowed)
+	got := builderAnswer{
+		Status: recorder.Code, Code: body.Code, Allow: recorder.Header().Get("Allow"),
+		ContentType: recorder.Header().Get("Content-Type"),
+	}
+	want := builderAnswer{
+		Status: http.StatusMethodNotAllowed, Code: string(bdoc.CodeRequestMethodNotAllowed), Allow: "GET, POST, OPTIONS",
+		ContentType: mimeJSON,
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("PATCH /builder/drafts mismatch (-want +got):\n%s", diff)
+	}
+
+	if body.Message == "" {
+		t.Errorf("PATCH /builder/drafts message = %q, want one", body.Message)
 	}
 
 	other := harness.do(builderRequest{method: http.MethodPatch, path: "/configs/x/x", user: builderAlice})
 
-	if other.Code != http.StatusMethodNotAllowed || other.Body.Len() != 0 || other.Header().Get("Allow") != "" {
-		t.Fatalf("PATCH /configs/x/x = %d %v %q, want 405 alone", other.Code, other.Header(), other.Body)
+	got = builderAnswer{Status: other.Code, Allow: other.Header().Get("Allow"), Body: other.Body.String()}
+	want = builderAnswer{Status: http.StatusMethodNotAllowed}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("PATCH /configs/x/x mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -116,7 +155,7 @@ func TestNonBuilderErrorsCarryNoCode(t *testing.T) {
 		method: http.MethodGet, path: "/configs/Topology/missing", user: builderAlice,
 	})
 	if recorder.Code < http.StatusBadRequest {
-		t.Fatalf("status = %d, want an error: %s", recorder.Code, recorder.Body)
+		t.Fatalf("GET /configs/Topology/missing: status = %d, want an error: %s", recorder.Code, recorder.Body)
 	}
 
 	var body map[string]any
@@ -124,12 +163,12 @@ func TestNonBuilderErrorsCarryNoCode(t *testing.T) {
 	harness.decode(recorder, &body)
 
 	if _, said := body["message"]; !said {
-		t.Fatalf("answer %v has no message", body)
+		t.Errorf("GET /configs/Topology/missing = %v, want a message", body)
 	}
 
 	for _, key := range []string{"code", "issues"} {
 		if _, found := body[key]; found {
-			t.Errorf("a route outside the Builder answered with %q: %s", key, recorder.Body)
+			t.Errorf("GET /configs/Topology/missing = %s, want no %q", recorder.Body, key)
 		}
 	}
 
@@ -138,10 +177,12 @@ func TestNonBuilderErrorsCarryNoCode(t *testing.T) {
 		method: http.MethodGet, path: "/builder/drafts/missing", user: builderAlice,
 	})
 
-	harness.decode(builder, &body)
+	var builderBody map[string]any
 
-	if body["code"] != string(bdoc.CodeRequestNotFound) {
-		t.Fatalf("a Builder route answered %s, want the code %s", builder.Body, bdoc.CodeRequestNotFound)
+	harness.decode(builder, &builderBody)
+
+	if builderBody["code"] != string(bdoc.CodeRequestNotFound) {
+		t.Errorf("GET /builder/drafts/missing = %s, want the code %s", builder.Body, bdoc.CodeRequestNotFound)
 	}
 }
 
@@ -163,28 +204,34 @@ func TestBuilderPublishRefusalsCarryCodes(t *testing.T) {
 	other := createBuilderPublishDraft(t, harness, second)
 
 	for _, tt := range []struct {
+		name   string
 		body   string
 		status int
 		code   bdoc.Code
 	}{
-		{body: create, status: http.StatusConflict, code: bdoc.CodePublishTopologyExists},
+		{name: "topology exists", body: create, status: http.StatusConflict, code: bdoc.CodePublishTopologyExists},
 		{
+			name:   "topology missing",
 			body:   `{"mode":"topology","topology":{"name":"absent","action":"update"}}`,
 			status: http.StatusConflict, code: bdoc.CodePublishTopologyMissing,
 		},
 		{
+			name:   "topology not the source",
 			body:   `{"mode":"topology","topology":{"name":"codes","action":"update"}}`,
 			status: http.StatusConflict, code: bdoc.CodePublishTopologyNotSource,
 		},
 		{
+			name:   "target invalid",
 			body:   `{"mode":"topology","topology":{"name":"two words","action":"create"}}`,
 			status: http.StatusBadRequest, code: bdoc.CodePublishTargetInvalid,
 		},
 	} {
-		_, refusal := publishBuilderDraftAs(t, harness, other, nil, tt.body, tt.status)
+		t.Run(tt.name, func(t *testing.T) {
+			_, refusal := publishBuilderDraftAs(t, harness, other, nil, tt.body, tt.status)
 
-		if refusal.Code != string(tt.code) {
-			t.Errorf("publish %s: refusal = %+v, want code %s", tt.body, refusal, tt.code)
-		}
+			if refusal.Code != string(tt.code) {
+				t.Errorf("publish %s: refusal code = %q, want %q: %+v", tt.body, refusal.Code, tt.code, refusal)
+			}
+		})
 	}
 }

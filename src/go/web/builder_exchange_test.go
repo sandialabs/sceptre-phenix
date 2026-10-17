@@ -3,17 +3,19 @@ package web
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"reflect"
 	"sync/atomic"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
-// assertBuilderExchange reads the request and recorded answer of an exchange
-// file (the JS tests read the same answers), asks with send, and compares.
-func assertBuilderExchange(t *testing.T, file string, send func(request string) *httptest.ResponseRecorder) {
+// loadBuilderExchange reads the request and recorded answer of an exchange
+// file (the JS tests read the same answers): the request compacted, the answer decoded.
+func loadBuilderExchange(t *testing.T, file string) (string, any) {
 	t.Helper()
 
 	data, err := os.ReadFile(file)
@@ -35,24 +37,27 @@ func assertBuilderExchange(t *testing.T, file string, send func(request string) 
 		t.Fatalf("compacting the recorded request: %v", err)
 	}
 
-	recorder := send(request.String())
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body)
-	}
-
-	var got, want any
-
-	if err := json.Unmarshal(recorder.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decoding the answer: %v", err)
-	}
-
-	if err := json.Unmarshal(exchange.Answer, &want); err != nil {
+	var answer any
+	if err := json.Unmarshal(exchange.Answer, &answer); err != nil {
 		t.Fatalf("decoding the recorded answer: %v", err)
 	}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("the answer is not the one recorded in %s; it answered\n%s", file, recorder.Body)
+	return request.String(), answer
+}
+
+// builderExchangeDiff returns how an answer differs from the recorded one,
+// or an error when it is not a 200 answer of JSON.
+func builderExchangeDiff(recorder *httptest.ResponseRecorder, want any) (string, error) {
+	if recorder.Code != http.StatusOK {
+		return "", fmt.Errorf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
 	}
+
+	var got any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &got); err != nil {
+		return "", fmt.Errorf("decoding the answer: %w", err)
+	}
+
+	return cmp.Diff(want, got), nil
 }
 
 // TestBuilderPreflightAnswersAsRecorded runs the disks and apps checks of a
@@ -77,9 +82,18 @@ func TestBuilderPreflightAnswersAsRecorded(t *testing.T) {
 	document.Scenarios = []string{"ops"}
 	draft := createBuilderPublishDraft(t, harness, document)
 
-	assertBuilderExchange(t, "testdata/builder-preflight-exchange.json", func(request string) *httptest.ResponseRecorder {
-		return postBuilderPreflight(harness, draft, nil, request)
-	})
+	const file = "testdata/builder-preflight-exchange.json"
+
+	request, want := loadBuilderExchange(t, file)
+
+	diff, err := builderExchangeDiff(postBuilderPreflight(harness, draft, nil, request), want)
+	if err != nil {
+		t.Fatalf("POST preflight of %s: %v", file, err)
+	}
+
+	if diff != "" {
+		t.Errorf("POST preflight answer mismatch with %s (-want +got):\n%s", file, diff)
+	}
 }
 
 // TestBuilderPackageAnswersAsRecorded packages a document that names a
@@ -87,7 +101,18 @@ func TestBuilderPreflightAnswersAsRecorded(t *testing.T) {
 func TestBuilderPackageAnswersAsRecorded(t *testing.T) {
 	harness := newBuilderHarness(t)
 
-	assertBuilderExchange(t, "testdata/builder-package-exchange.json", func(request string) *httptest.ResponseRecorder {
-		return harness.do(builderRequest{method: http.MethodPost, path: "/builder/package", body: request, user: builderAlice})
-	})
+	const file = "testdata/builder-package-exchange.json"
+
+	request, want := loadBuilderExchange(t, file)
+
+	diff, err := builderExchangeDiff(harness.do(builderRequest{
+		method: http.MethodPost, path: "/builder/package", body: request, user: builderAlice,
+	}), want)
+	if err != nil {
+		t.Fatalf("POST /builder/package of %s: %v", file, err)
+	}
+
+	if diff != "" {
+		t.Errorf("POST /builder/package answer mismatch with %s (-want +got):\n%s", file, diff)
+	}
 }

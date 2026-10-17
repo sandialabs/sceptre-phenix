@@ -64,7 +64,9 @@ func (h *builderHarness) library(method, path, user, body, ifMatch string) *http
 
 	recorder := h.do(builderRequest{method: method, path: path, body: body, user: user, ifMatch: ifMatch})
 
-	assertBuilderJSON(h.t, method+" "+path, recorder)
+	if err := builderJSONError(recorder); err != nil {
+		h.t.Errorf("%s %s: %v", method, path, err)
+	}
 
 	return recorder
 }

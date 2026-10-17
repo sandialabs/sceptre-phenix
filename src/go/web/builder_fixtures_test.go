@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -237,9 +238,9 @@ func (c builderCaller) do(request builderRequest) *httptest.ResponseRecorder {
 	return c.harness.do(request)
 }
 
-// expect makes the request as the caller and fails the test unless it is
-// answered with status. What names the request in the failure.
-func (c builderCaller) expect(what string, request builderRequest, status int) *httptest.ResponseRecorder {
+// mustDo makes the request as the caller and fails the test unless it is
+// answered with status, for a step later lines depend on. What names it.
+func (c builderCaller) mustDo(what string, request builderRequest, status int) *httptest.ResponseRecorder {
 	c.harness.t.Helper()
 
 	recorder := c.do(request)
@@ -299,7 +300,7 @@ func runBuilderAccessCases(t *testing.T, harness *builderHarness, cases []builde
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := harness.as(tt.user, tt.role).do(tt.request)
 			if recorder.Code != tt.status {
-				t.Fatalf("%s %s: status = %d, want %d: %s",
+				t.Errorf("%s %s: status = %d, want %d: %s",
 					tt.request.method, tt.request.path, recorder.Code, tt.status, recorder.Body)
 			}
 
@@ -308,20 +309,20 @@ func runBuilderAccessCases(t *testing.T, harness *builderHarness, cases []builde
 			}
 
 			if got := builderRefusal(t, recorder).Code; got != string(tt.code) {
-				t.Fatalf("%s %s: code = %q, want %q", tt.request.method, tt.request.path, got, tt.code)
+				t.Errorf("%s %s: code = %q, want %q", tt.request.method, tt.request.path, got, tt.code)
 			}
 		})
 	}
 }
 
-// assertBuilderJSON asserts an answer with a body is JSON. The security
+// builderJSONError reports an answer with a body that is not JSON. The security
 // headers of every route are TestBuilderResponseHeaders's.
-func assertBuilderJSON(t *testing.T, what string, recorder *httptest.ResponseRecorder) {
-	t.Helper()
-
+func builderJSONError(recorder *httptest.ResponseRecorder) error {
 	if got := recorder.Header().Get("Content-Type"); recorder.Body.Len() != 0 && got != mimeJSON {
-		t.Errorf("%s: Content-Type = %q, want %q", what, got, mimeJSON)
+		return fmt.Errorf("Content-Type = %q, want %q", got, mimeJSON)
 	}
+
+	return nil
 }
 
 // builderErrorBody is the answer of a Builder route to a refused request.
@@ -344,6 +345,15 @@ func builderRefusal(t *testing.T, recorder *httptest.ResponseRecorder) builderEr
 	}
 
 	return refusal
+}
+
+// decodeBuilderAnswer unmarshals a recorded answer body into target.
+func decodeBuilderAnswer(t *testing.T, recorder *httptest.ResponseRecorder, target any) {
+	t.Helper()
+
+	if err := json.Unmarshal(recorder.Body.Bytes(), target); err != nil {
+		t.Fatalf("decoding response: %v (body %d bytes)", err, recorder.Body.Len())
+	}
 }
 
 // builderJSON returns value encoded as JSON, as a request body is.
@@ -535,7 +545,7 @@ func editBuilderDraft(
 	}
 
 	var edited builderDraftResponse
-	harness.decode(recorder, &edited)
+	decodeBuilderAnswer(t, recorder, &edited)
 
 	return edited
 }
@@ -575,8 +585,8 @@ func readBuilderDraftAs(
 		raw   map[string]any
 	)
 
-	harness.decode(recorder, &draft)
-	harness.decode(recorder, &raw)
+	decodeBuilderAnswer(t, recorder, &draft)
+	decodeBuilderAnswer(t, recorder, &raw)
 
 	return draft, raw
 }
@@ -623,8 +633,8 @@ func publishBuilderDraftAs(
 		refusal  builderErrorBody
 	)
 
-	harness.decode(recorder, &response)
-	harness.decode(recorder, &refusal)
+	decodeBuilderAnswer(t, recorder, &response)
+	decodeBuilderAnswer(t, recorder, &refusal)
 
 	return response, refusal
 }

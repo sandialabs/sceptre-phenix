@@ -65,14 +65,14 @@ func TestBuilderLayerSetLibrary(t *testing.T) {
 	alice := harness.as(builderAlice, builderUserRole())
 
 	// The library starts with the built-in set only, and no default.
-	list := builderLayerSets(t, alice.expect("list", builderRequest{method: http.MethodGet, path: builderLayerSetsRoute}, http.StatusOK))
+	list := builderLayerSets(t, alice.mustDo("list", builderRequest{method: http.MethodGet, path: builderLayerSetsRoute}, http.StatusOK))
 
 	if len(list.LayerSets) != 1 || list.LayerSets[0].ID != bdoc.BuiltinPurdueLayerSetID || !list.LayerSets[0].Builtin ||
 		list.DefaultID != nil || list.Damaged != 0 || list.Limits.LayerSets != 200 || list.Limits.Matchers != 16 {
 		t.Fatalf("the new library is %+v", list)
 	}
 
-	created := alice.expect("create", builderRequest{
+	created := alice.mustDo("create", builderRequest{
 		method: http.MethodPost, path: builderLayerSetsRoute, body: builderLayerSetBody(t, "Plant levels"),
 	}, http.StatusCreated)
 
@@ -86,7 +86,7 @@ func TestBuilderLayerSetLibrary(t *testing.T) {
 
 	path := builderLayerSetsRoute + "/" + set.ID
 
-	read := alice.expect("get", builderRequest{method: http.MethodGet, path: path}, http.StatusOK)
+	read := alice.mustDo("get", builderRequest{method: http.MethodGet, path: path}, http.StatusOK)
 	if got := builderLayerSet(t, read); got.ID != set.ID || read.Header().Get("ETag") != `"1"` {
 		t.Fatalf("GET returned %+v with ETag %q", got, read.Header().Get("ETag"))
 	}
@@ -97,14 +97,14 @@ func TestBuilderLayerSetChanges(t *testing.T) {
 	alice := harness.as(builderAlice, builderUserRole())
 	bob := harness.as(builderBob, builderUserRole())
 
-	set := builderLayerSet(t, alice.expect("create", builderRequest{
+	set := builderLayerSet(t, alice.mustDo("create", builderRequest{
 		method: http.MethodPost, path: builderLayerSetsRoute, body: builderLayerSetBody(t, "Plant levels"),
 	}, http.StatusCreated))
 
 	path := builderLayerSetsRoute + "/" + set.ID
 
 	// Any user may change a set another user added.
-	changed := bob.expect("put", builderRequest{
+	changed := bob.mustDo("put", builderRequest{
 		method: http.MethodPut, path: path, body: builderLayerSetBody(t, "Plant levels, changed"), ifMatch: `"1"`,
 	}, http.StatusOK)
 
@@ -114,7 +114,7 @@ func TestBuilderLayerSetChanges(t *testing.T) {
 	}
 
 	// A stale If-Match is refused with the current entity tag.
-	stale := alice.expect("stale put", builderRequest{
+	stale := alice.mustDo("stale put", builderRequest{
 		method: http.MethodPut, path: path, body: builderLayerSetBody(t, "Other"), ifMatch: `"1"`,
 	}, http.StatusPreconditionFailed)
 
@@ -122,20 +122,20 @@ func TestBuilderLayerSetChanges(t *testing.T) {
 		t.Fatalf("a stale PUT has the code %q and ETag %q", got, stale.Header().Get("ETag"))
 	}
 
-	alice.expect("put without If-Match", builderRequest{
+	alice.mustDo("put without If-Match", builderRequest{
 		method: http.MethodPut, path: path, body: builderLayerSetBody(t, "Other"),
 	}, http.StatusBadRequest)
 
 	// The list holds the new set after the built-in one.
-	list := builderLayerSets(t, bob.expect("list", builderRequest{method: http.MethodGet, path: builderLayerSetsRoute}, http.StatusOK))
+	list := builderLayerSets(t, bob.mustDo("list", builderRequest{method: http.MethodGet, path: builderLayerSetsRoute}, http.StatusOK))
 	if len(list.LayerSets) != 2 || list.LayerSets[1].ID != set.ID || list.LayerSets[1].Version != 2 {
 		t.Fatalf("the library is %+v", list)
 	}
 
 	// Any user may delete a set another user added.
-	bob.expect("delete", builderRequest{method: http.MethodDelete, path: path}, http.StatusNoContent)
-	alice.expect("get after delete", builderRequest{method: http.MethodGet, path: path}, http.StatusNotFound)
-	alice.expect("delete again", builderRequest{method: http.MethodDelete, path: path}, http.StatusNotFound)
+	bob.mustDo("delete", builderRequest{method: http.MethodDelete, path: path}, http.StatusNoContent)
+	alice.mustDo("get after delete", builderRequest{method: http.MethodGet, path: path}, http.StatusNotFound)
+	alice.mustDo("delete again", builderRequest{method: http.MethodDelete, path: path}, http.StatusNotFound)
 }
 
 func TestBuilderBuiltinLayerSetIsReadOnly(t *testing.T) {
@@ -143,7 +143,7 @@ func TestBuilderBuiltinLayerSetIsReadOnly(t *testing.T) {
 	caller := harness.as(builderAlice, nil)
 	path := builderLayerSetsRoute + "/" + bdoc.BuiltinPurdueLayerSetID
 
-	read := caller.expect("get", builderRequest{method: http.MethodGet, path: path}, http.StatusOK)
+	read := caller.mustDo("get", builderRequest{method: http.MethodGet, path: path}, http.StatusOK)
 	if set := builderLayerSet(t, read); !set.Builtin || set.Name != "Purdue Model" || len(set.Layers) != 7 ||
 		!set.Created.IsZero() || set.CreatedBy != "" {
 		t.Fatalf("the built-in set is %+v", set)
@@ -153,7 +153,7 @@ func TestBuilderBuiltinLayerSetIsReadOnly(t *testing.T) {
 		{method: http.MethodPut, path: path, body: builderLayerSetBody(t, "Mine"), ifMatch: `"1"`},
 		{method: http.MethodDelete, path: path},
 	} {
-		refused := caller.expect(request.method, request, http.StatusForbidden)
+		refused := caller.mustDo(request.method, request, http.StatusForbidden)
 
 		if got := builderRefusal(t, refused).Code; got != string(bdoc.CodeLayerSetReadOnly) {
 			t.Fatalf("%s of the built-in set has the code %q", request.method, got)
@@ -173,7 +173,7 @@ func TestBuilderLayerSetRefusals(t *testing.T) {
 		},
 	})
 
-	refused := caller.expect("invalid", builderRequest{method: http.MethodPost, path: builderLayerSetsRoute, body: invalid},
+	refused := caller.mustDo("invalid", builderRequest{method: http.MethodPost, path: builderLayerSetsRoute, body: invalid},
 		http.StatusUnprocessableEntity)
 
 	body := builderRefusal(t, refused)
@@ -183,15 +183,15 @@ func TestBuilderLayerSetRefusals(t *testing.T) {
 		t.Fatalf("an invalid set is refused with %+v", body)
 	}
 
-	caller.expect("unknown field", builderRequest{
+	caller.mustDo("unknown field", builderRequest{
 		method: http.MethodPost, path: builderLayerSetsRoute, body: `{"name":"Plant","layers":[],"colour":"red"}`,
 	}, http.StatusBadRequest)
 
 	for _, path := range []string{"/missing", "/a.b", "/builtin:other"} {
-		caller.expect("get "+path, builderRequest{method: http.MethodGet, path: builderLayerSetsRoute + path}, http.StatusNotFound)
+		caller.mustDo("get "+path, builderRequest{method: http.MethodGet, path: builderLayerSetsRoute + path}, http.StatusNotFound)
 	}
 
-	caller.expect("put missing", builderRequest{
+	caller.mustDo("put missing", builderRequest{
 		method: http.MethodPut, path: builderLayerSetsRoute + "/missing", body: builderLayerSetBody(t, "Plant"), ifMatch: `"1"`,
 	}, http.StatusNotFound)
 
@@ -212,7 +212,7 @@ func TestBuilderLayerSetLibraryFull(t *testing.T) {
 		}
 	}
 
-	refused := harness.as(builderAlice, nil).expect("one more", builderRequest{
+	refused := harness.as(builderAlice, nil).mustDo("one more", builderRequest{
 		method: http.MethodPost, path: builderLayerSetsRoute, body: builderLayerSetBody(t, "One more"),
 	}, http.StatusRequestEntityTooLarge)
 
@@ -232,7 +232,7 @@ func TestBuilderDefaultLayerSet(t *testing.T) {
 
 		var answer builderLayerSetDefault
 
-		recorder := caller.expect("get default", builderRequest{method: http.MethodGet, path: path}, http.StatusOK)
+		recorder := caller.mustDo("get default", builderRequest{method: http.MethodGet, path: path}, http.StatusOK)
 		if err := json.Unmarshal(recorder.Body.Bytes(), &answer); err != nil {
 			t.Fatalf("decoding the default: %v", err)
 		}
@@ -244,7 +244,7 @@ func TestBuilderDefaultLayerSet(t *testing.T) {
 		t.Fatalf("the first default is %q, want null", *got)
 	}
 
-	alice.expect("choose", builderRequest{
+	alice.mustDo("choose", builderRequest{
 		method: http.MethodPut, path: path, body: `{"id":"` + bdoc.BuiltinPurdueLayerSetID + `"}`,
 	}, http.StatusOK)
 
@@ -253,7 +253,7 @@ func TestBuilderDefaultLayerSet(t *testing.T) {
 	}
 
 	// Every user reads the one default of the server, in the list too.
-	list := builderLayerSets(t, bob.expect("list", builderRequest{method: http.MethodGet, path: builderLayerSetsRoute}, http.StatusOK))
+	list := builderLayerSets(t, bob.mustDo("list", builderRequest{method: http.MethodGet, path: builderLayerSetsRoute}, http.StatusOK))
 	if list.DefaultID == nil || *list.DefaultID != bdoc.BuiltinPurdueLayerSetID {
 		t.Fatalf("the list names the default %v", list.DefaultID)
 	}
@@ -262,14 +262,14 @@ func TestBuilderDefaultLayerSet(t *testing.T) {
 		t.Fatalf("the default another user reads is %v", got)
 	}
 
-	refused := alice.expect("choose missing", builderRequest{method: http.MethodPut, path: path, body: `{"id":"missing"}`},
+	refused := alice.mustDo("choose missing", builderRequest{method: http.MethodPut, path: path, body: `{"id":"missing"}`},
 		http.StatusUnprocessableEntity)
 	if got := builderRefusal(t, refused).Code; got != string(bdoc.CodeLayerSetDefaultUnknown) {
 		t.Fatalf("a missing default refuses with the code %q", got)
 	}
 
 	for _, body := range []string{`{"id":null}`, `{"id":""}`, `{}`} {
-		bob.expect("clear "+body, builderRequest{method: http.MethodPut, path: path, body: body}, http.StatusOK)
+		bob.mustDo("clear "+body, builderRequest{method: http.MethodPut, path: path, body: body}, http.StatusOK)
 
 		if got := readDefault(alice); got != nil {
 			t.Fatalf("the default after %s is %q, want null", body, *got)
@@ -277,12 +277,12 @@ func TestBuilderDefaultLayerSet(t *testing.T) {
 	}
 
 	// A set that was deleted is no default.
-	created := builderLayerSet(t, alice.expect("create", builderRequest{
+	created := builderLayerSet(t, alice.mustDo("create", builderRequest{
 		method: http.MethodPost, path: builderLayerSetsRoute, body: builderLayerSetBody(t, "Plant"),
 	}, http.StatusCreated))
 
-	alice.expect("choose", builderRequest{method: http.MethodPut, path: path, body: `{"id":"` + created.ID + `"}`}, http.StatusOK)
-	alice.expect("delete", builderRequest{method: http.MethodDelete, path: builderLayerSetsRoute + "/" + created.ID},
+	alice.mustDo("choose", builderRequest{method: http.MethodPut, path: path, body: `{"id":"` + created.ID + `"}`}, http.StatusOK)
+	alice.mustDo("delete", builderRequest{method: http.MethodDelete, path: builderLayerSetsRoute + "/" + created.ID},
 		http.StatusNoContent)
 
 	if got := readDefault(alice); got != nil {

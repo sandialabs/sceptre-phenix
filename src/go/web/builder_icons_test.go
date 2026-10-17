@@ -79,7 +79,9 @@ func (h *builderHarness) iconRequest(method, name, body string, role *rbac.Role)
 		method: method, path: builderIconsRoute + "/" + name, body: body, user: builderAlice, role: role,
 	})
 
-	assertBuilderJSON(h.t, method+" "+name, recorder)
+	if err := builderJSONError(recorder); err != nil {
+		h.t.Errorf("%s %s: %v", method, name, err)
+	}
 
 	return recorder
 }
@@ -106,7 +108,9 @@ func addBuilderIcon(t *testing.T, harness *builderHarness, name string, upload [
 		role: builderUserRole(),
 	}, http.StatusCreated, &icon)
 
-	assertBuilderJSON(t, "a new icon", created)
+	if err := builderJSONError(created); err != nil {
+		t.Errorf("a new icon: %v", err)
+	}
 
 	if got := created.Header().Get("ETag"); got != "" {
 		t.Errorf("a new icon: ETag = %q, want none", got)
@@ -329,7 +333,9 @@ func TestBuilderIconRequests(t *testing.T) {
 				method: http.MethodPost, path: builderIconsRoute, body: tt.body, user: builderAlice,
 			})
 
-			assertBuilderJSON(t, tt.name, recorder)
+			if err := builderJSONError(recorder); err != nil {
+				t.Errorf("POST %s: %v", builderIconsRoute, err)
+			}
 
 			if recorder.Code != tt.status {
 				t.Fatalf("status = %d, want %d: %s", recorder.Code, tt.status, recorder.Body)

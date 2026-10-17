@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/api/disk"
 )
 
@@ -64,20 +66,34 @@ func TestBuilderDiskListerSharesOneListing(t *testing.T) {
 	group.Wait()
 
 	if got := calls.Load(); got != 1 {
-		t.Fatalf("%d concurrent requests listed the images %d times, want once", requests, got)
+		t.Errorf("%d concurrent images() calls listed the images %d times, want once", requests, got)
 	}
 
+	want := []disk.Details{{Name: "base.qc2"}}
+
 	for i := range requests {
-		if errs[i] != nil || len(results[i]) != 1 || results[i][0].Name != "base.qc2" {
-			t.Fatalf("request %d got %+v, %v, want the one listing's base.qc2", i, results[i], errs[i])
+		if errs[i] != nil {
+			t.Errorf("concurrent images() call %d error: %v", i, errs[i])
+		}
+
+		if diff := cmp.Diff(want, results[i]); diff != "" {
+			t.Errorf("concurrent images() call %d mismatch (-want +got):\n%s", i, diff)
 		}
 	}
 
 	seconds.Store(int64((builderDiskListTTL - time.Second) / time.Second))
 
-	if images, err := lister.images(); err != nil || len(images) != 1 || calls.Load() != 1 {
-		t.Fatalf("a request within %s got %+v, %v after %d listings, want the first listing reused",
-			builderDiskListTTL, images, err, calls.Load())
+	images, err := lister.images()
+	if err != nil {
+		t.Errorf("images() within %s error: %v", builderDiskListTTL, err)
+	}
+
+	if diff := cmp.Diff(want, images); diff != "" {
+		t.Errorf("images() within %s mismatch (-want +got):\n%s", builderDiskListTTL, diff)
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Errorf("after images() within %s, the images were listed %d times, want the first listing reused", builderDiskListTTL, got)
 	}
 
 	seconds.Store(int64(builderDiskListTTL / time.Second))
@@ -85,24 +101,29 @@ func TestBuilderDiskListerSharesOneListing(t *testing.T) {
 
 	for range 2 {
 		if _, err := lister.images(); err == nil {
-			t.Fatal("a failing listing returned no error")
+			t.Error("images() of a failing listing = nil error, want an error")
 		}
 	}
 
 	if got := calls.Load(); got != 3 {
-		t.Fatalf("the images were listed %d times, want twice more: once the listing expired, and again after it failed", got)
+		t.Errorf("the images were listed %d times, want twice more: once the listing expired, and again after it failed", got)
 	}
 
 	fail.Store(false)
 
 	for range 2 {
-		if images, err := lister.images(); err != nil || len(images) != 1 {
-			t.Fatalf("a listing after a failure got %+v, %v, want base.qc2", images, err)
+		images, err := lister.images()
+		if err != nil {
+			t.Errorf("images() after a failure error: %v", err)
+		}
+
+		if diff := cmp.Diff(want, images); diff != "" {
+			t.Errorf("images() after a failure mismatch (-want +got):\n%s", diff)
 		}
 	}
 
 	if got := calls.Load(); got != 4 {
-		t.Fatalf("the images were listed %d times, want once more after the failure, then reused", got)
+		t.Errorf("the images were listed %d times, want once more after the failure, then reused", got)
 	}
 }
 

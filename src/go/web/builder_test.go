@@ -408,9 +408,7 @@ func (h *builderHarness) do(request builderRequest) *httptest.ResponseRecorder {
 func (h *builderHarness) decode(recorder *httptest.ResponseRecorder, target any) {
 	h.t.Helper()
 
-	if err := json.Unmarshal(recorder.Body.Bytes(), target); err != nil {
-		h.t.Fatalf("decoding response: %v (body %d bytes)", err, recorder.Body.Len())
-	}
+	decodeBuilderAnswer(h.t, recorder, target)
 }
 
 // TestBuilderUnknownAPIRoutesAnswerJSON asserts an unmatched request under
@@ -525,7 +523,7 @@ func TestBuilderRegistersOnUnusedStore(t *testing.T) {
 				}
 			}
 
-			harness.as(builderAlice, nil).expect("GET /builder/drafts",
+			harness.as(builderAlice, nil).mustDo("GET /builder/drafts",
 				builderRequest{method: http.MethodGet, path: "/builder/drafts"}, http.StatusOK)
 		})
 	}
@@ -797,7 +795,7 @@ func TestBuilderListDrafts(t *testing.T) {
 			Damaged []builderDamagedDraftResponse `json:"damaged"`
 		}
 
-		harness.decode(harness.as(user, builderOnlyRole()).expect("listing drafts as "+user, builderRequest{
+		harness.decode(harness.as(user, builderOnlyRole()).mustDo("listing drafts as "+user, builderRequest{
 			method: http.MethodGet, path: "/builder/drafts",
 		}, http.StatusOK), &listing)
 
@@ -1191,7 +1189,7 @@ func TestBuilderSchemaRoutes(t *testing.T) {
 			t.Fatalf("%s: %v", path, err)
 		}
 
-		recorder := harness.as(builderAlice, builderOnlyRole()).expect(path, builderRequest{method: http.MethodGet, path: path},
+		recorder := harness.as(builderAlice, builderOnlyRole()).mustDo(path, builderRequest{method: http.MethodGet, path: path},
 			http.StatusOK)
 		if !bytes.Equal(recorder.Body.Bytes(), served) || recorder.Header().Get("Content-Type") != mimeJSON {
 			t.Errorf("%s: Content-Type %q, want its schema as JSON", path, recorder.Header().Get("Content-Type"))
@@ -1341,7 +1339,9 @@ func TestBuilderLibrariesNeedOnlyTheBuilder(t *testing.T) {
 
 	for i, request := range requests {
 		what := request.method + " " + request.path
-		assertBuilderJSON(t, what, builder.expect(what, request, statuses[i]))
+		if err := builderJSONError(builder.mustDo(what, request, statuses[i])); err != nil {
+			t.Errorf("%s: %v", what, err)
+		}
 	}
 }
 
@@ -1600,16 +1600,16 @@ func TestBuilderUnreadableDraft(t *testing.T) {
 
 	path := "/builder/drafts/" + bad.ID
 
-	peer.expect("reading it", builderRequest{method: http.MethodGet, path: path}, http.StatusInternalServerError)
+	peer.mustDo("reading it", builderRequest{method: http.MethodGet, path: path}, http.StatusInternalServerError)
 
-	recorder := peer.expect("deleting it at a stale ETag", builderRequest{
+	recorder := peer.mustDo("deleting it at a stale ETag", builderRequest{
 		method: http.MethodDelete, path: path, ifMatch: bad.ETag,
 	}, http.StatusPreconditionFailed)
 	if current := recorder.Header().Get("ETag"); current != listing.Damaged[0].ETag {
 		t.Fatalf("stale delete names ETag %q, want the listed %q", current, listing.Damaged[0].ETag)
 	}
 
-	peer.expect(
+	peer.mustDo(
 		"deleting it",
 		builderRequest{method: http.MethodDelete, path: path, ifMatch: listing.Damaged[0].ETag},
 		http.StatusNoContent,
