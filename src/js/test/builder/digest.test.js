@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { webcrypto } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { createHash, webcrypto } from 'node:crypto';
+import fc from 'fast-check';
 import { reactive } from 'vue';
 
 import {
@@ -116,5 +118,60 @@ describe('content digests', () => {
     // Equal content in a new object is digested again, to the same value.
     expect(contentDigestSync({ apps: [], name: 'cached' })).toBe(digest);
     expect(contentDigestSync({ apps: [], name: 'changed' })).not.toBe(digest);
+  });
+});
+
+describe('content digest properties', () => {
+  test('sha256Hex agrees with node:crypto', () => {
+    fc.assert(
+      fc.property(fc.uint8Array({ maxLength: 400 }), (bytes) => {
+        expect(sha256Hex(bytes)).toBe(
+          createHash('sha256').update(bytes).digest('hex'),
+        );
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  test('canonical JSON reads back to the same canonical JSON', () => {
+    fc.assert(
+      fc.property(fc.jsonValue(), (value) => {
+        const text = canonicalJSON(value);
+
+        expect(canonicalJSON(JSON.parse(text))).toBe(text);
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  const object = fc.dictionary(
+    fc.string({ unit: 'binary' }),
+    fc.jsonValue({ maxDepth: 2 }),
+  );
+
+  test('keys are in the order of their UTF-8 bytes', () => {
+    const byBytes = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
+
+    fc.assert(
+      fc.property(object, (value) => {
+        const entries = Object.keys(value)
+          .sort(byBytes)
+          .map((key) => `${canonicalJSON(key)}:${canonicalJSON(value[key])}`);
+
+        expect(canonicalJSON(value)).toBe(`{${entries.join(',')}}`);
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  test('the digest of an object does not depend on the order of its keys', () => {
+    fc.assert(
+      fc.property(object, (value) => {
+        const reversed = Object.fromEntries(Object.entries(value).reverse());
+
+        expect(contentDigestSync(reversed)).toBe(contentDigestSync(value));
+      }),
+      { numRuns: 200 },
+    );
   });
 });
