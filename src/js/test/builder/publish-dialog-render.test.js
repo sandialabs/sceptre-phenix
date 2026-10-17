@@ -1,7 +1,7 @@
-// The Publish dialog as a draft's card on the drafts page opens it, rendered
-// on the server: its title, Open draft, and the hint for diagram errors.
+// The Publish dialog rendered on the server: its titles, Open draft and hints.
+// publish-dialog.test.js drives what publishing changes in a page.
 
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { createPinia } from 'pinia';
@@ -27,45 +27,28 @@ function diagram({ publishable }) {
     : doc;
 }
 
-// `setup` changes the store, `form` the fields, `preview` the dry run, all
-// before the dialog renders; `prefetch` runs after and is awaited.
+// `setup` changes the store and `form` the fields, both before the dialog
+// renders.
 async function render(
   props = {},
-  {
-    publishable = true,
-    setup = () => {},
-    form = null,
-    preview = null,
-    prefetch = null,
-  } = {},
+  { publishable = true, setup = () => {}, form = null } = {},
 ) {
   const pinia = createPinia();
   const app = createSSRApp({ render: () => h(PublishDialog, props) });
 
   app.use(pinia);
 
-  if (form || preview) {
+  if (form) {
     app.mixin({
       created() {
         if (this.$.type === PublishDialog) {
-          Object.assign(this.$.setupState.form, form || {});
-          Object.assign(this.$.setupState.preview, preview || {});
+          Object.assign(this.$.setupState.form, form);
         }
       },
     });
   }
 
   const store = useBuilderStore(pinia);
-
-  if (prefetch) {
-    app.mixin({
-      async serverPrefetch() {
-        if (this.$.type === PublishDialog) {
-          await prefetch(this.$.setupState, store);
-        }
-      },
-    });
-  }
 
   store.doc = diagram({ publishable });
   setup(store);
@@ -367,215 +350,5 @@ describe('the scenarios', () => {
     const html = await render({}, { form: withExperiment });
 
     expect(html).not.toContain('publish-scenario');
-  });
-});
-
-describe('what publishing changes', () => {
-  // A dry run's answer: topology lab is updated, and nothing else changes.
-  const changes = {
-    topology: { name: 'lab', action: 'update' },
-    experiment: null,
-    includes: [],
-    scenarios: [],
-    images: [],
-    vlanAliases: [],
-  };
-  const legacyWarning = {
-    code: 'publish.legacy.replaced',
-    severity: 'warning',
-    message:
-      'The legacy Builder diagram of topology lab was replaced by this diagram.',
-  };
-
-  // The section, from its tag to its polite status line, its last child.
-  // The issue list holds sections of its own, one per severity.
-  function section(html) {
-    const start = html.lastIndexOf(
-      '<section',
-      html.indexOf('data-testid="publish-preview"'),
-    );
-    const end = html.indexOf('data-testid="publish-preview-status"', start);
-
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-
-    return html.slice(start, end);
-  }
-
-  test('lists the dry run’s warnings after its changes, by severity and with their codes', async () => {
-    const html = section(
-      await render(
-        {},
-        { preview: { loading: false, changes, issues: [legacyWarning] } },
-      ),
-    );
-
-    expect(html).toMatch(/^<section[^>]*aria-busy="false"/);
-    expect(textOf(html)).toContain('Updates Topology config lab');
-    expect(html).toContain('data-testid="publish-preview-issues"');
-    expect(html).toContain('data-testid="publish-preview-issues-warning"');
-    expect(html).not.toContain('publish-preview-issues-error');
-    expect(textOf(html)).toContain('1 warning');
-    expect(html).toMatch(/<strong[^>]*>\s*Warning:\s*<\/strong>/);
-    expect(html).toMatch(
-      /data-testid="issue-code"[^>]*>\s*publish\.legacy\.replaced\s*</,
-    );
-    expect(html.indexOf('publish-preview-issues')).toBeGreaterThan(
-      html.indexOf('publish-preview-configs'),
-    );
-  });
-
-  test('while it is read again, keeps the last answer shown, marked busy', async () => {
-    const html = section(
-      await render({}, { preview: { loading: true, changes, issues: [] } }),
-    );
-
-    expect(html).toMatch(/^<section[^>]*aria-busy="true"/);
-    expect(textOf(html)).toContain('Updates Topology config lab');
-    expect(html).not.toContain('Calculating what publishing changes');
-  });
-
-  test('a refusal is listed as errors, with no changes', async () => {
-    const refusal = {
-      code: 'publish.topology.exists',
-      severity: 'error',
-      message: 'config lab already exists',
-    };
-    const html = section(
-      await render(
-        {},
-        {
-          preview: {
-            loading: false,
-            changes: null,
-            issues: [refusal, legacyWarning],
-          },
-        },
-      ),
-    );
-
-    expect(html).toContain('data-testid="publish-preview-issues-error"');
-    expect(html).toContain('data-testid="publish-preview-issues-warning"');
-    expect(textOf(html)).toContain('1 error blocks publishing');
-    expect(html).not.toContain('publish-preview-configs');
-    expect(html).not.toContain('publish-preview-checks');
-  });
-
-  test('a refusal leaves out what the checks list, and says their errors block publishing', async () => {
-    const clash = {
-      code: 'publish.include.clash',
-      severity: 'error',
-      message: 'hostname "bravo" is also a device of included topology plant',
-    };
-    const preview = { loading: false, changes: null, issues: [] };
-    // The server refuses bravo's eth0, which has no VLAN, as the checks do.
-    const setup = (store) => {
-      const bravo = store.doc.nodes.find(
-        (node) => node.device?.hostname === 'bravo',
-      );
-
-      preview.issues = [
-        {
-          code: 'interface.vlan.missing',
-          severity: 'error',
-          message:
-            'interface "eth0" of device "bravo" has no VLAN: connect it to a network, or type a VLAN for it',
-          nodeId: bravo.id,
-        },
-        clash,
-      ];
-    };
-    const html = section(
-      await render({}, { publishable: false, setup, preview }),
-    );
-
-    expect(textOf(html)).toContain(
-      'The errors listed under Checks block publishing.',
-    );
-    expect(textOf(html)).toContain('1 error blocks publishing');
-    expect(textOf(html)).toContain(clash.message);
-    expect(textOf(html)).not.toContain('has no VLAN');
-  });
-
-  test('a problem only the server finds is listed once after a refused Publish, whichever answer came first', async () => {
-    const missing = {
-      code: 'publish.scenario.missing',
-      severity: 'error',
-      message: 'scenario plant-ntp does not exist',
-    };
-
-    for (const refusalFirst of [true, false]) {
-      const html = await render(
-        {},
-        {
-          prefetch: async (bindings, store) => {
-            vi.spyOn(store, 'previewPublish').mockResolvedValue({
-              changes: null,
-              errorIssues: [missing],
-              warningIssues: [],
-            });
-
-            if (refusalFirst) {
-              store.publishIssues = [missing];
-            }
-
-            await bindings.refreshPreview();
-
-            if (!refusalFirst) {
-              store.publishIssues = [missing];
-            }
-          },
-        },
-      );
-      const refusal = html.slice(
-        html.indexOf('data-testid="publish-refusal"'),
-        html.indexOf('data-testid="publish-preview"'),
-      );
-
-      expect(html, `refusal first: ${refusalFirst}`).toContain(
-        'data-testid="publish-refusal"',
-      );
-      expect(textOf(refusal)).toContain(missing.message);
-      expect(textOf(section(html))).not.toContain(missing.message);
-      expect(html).not.toContain('publish-preview-issues');
-      expect(textOf(html).split(missing.message)).toHaveLength(2);
-    }
-  });
-
-  test('a dry run that cannot be read says Publish still works only while it does', async () => {
-    const failure = {
-      failed: true,
-      message: 'Could not read what publishing changes: the server is down.',
-    };
-
-    for (const publishable of [true, false]) {
-      const html = await render(
-        {},
-        {
-          publishable,
-          prefetch: async (bindings, store) => {
-            vi.spyOn(store, 'previewPublish').mockResolvedValue(failure);
-            await bindings.refreshPreview();
-          },
-        },
-      );
-      const [, shown] = section(html).match(
-        /data-testid="publish-preview-error"[^>]*>([\s\S]*?)<\/p>/,
-      );
-      const [submit] = tags(html, 'button').filter((tag) =>
-        tag.includes('data-testid="publish-submit"'),
-      );
-
-      if (publishable) {
-        expect(textOf(shown)).toBe(`${failure.message} You can still publish.`);
-        expect(submit).not.toMatch(/\sdisabled\b/);
-      } else {
-        // The checks' errors keep Publish unavailable, which nothing
-        // contradicts.
-        expect(textOf(shown)).toBe(failure.message);
-        expect(submit).toMatch(/\sdisabled\b/);
-        expect(html).not.toContain('You can still publish');
-      }
-    }
   });
 });
