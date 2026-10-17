@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
+import YAML from 'js-yaml';
 
 import {
   decodeDocument,
@@ -20,6 +22,7 @@ import {
   NOTE_KEYS,
   parseDocument,
   parseImport,
+  parseText,
   SHAPE_KEYS,
   SOURCE_KEYS,
   SWITCH_KEYS,
@@ -27,6 +30,7 @@ import {
   TEMPLATE_KEYS,
   VIEWPORT_KEYS,
 } from '@/builder/decode.js';
+import { canonicalJSON } from '@/builder/digest.js';
 import { addNode, SCHEMA_URI, STAMP_KEYS } from '@/builder/model.js';
 import bundle from '@/builder/schema/builder-v1.schema.json';
 
@@ -754,5 +758,75 @@ describe('parseImport', () => {
         expectedKind: 'Scenario',
       }).code,
     ).toBe('unsupported-kind');
+  });
+});
+
+describe('text that a value was written as reads back as that value', () => {
+  // Strings that YAML could take for something else, or must quote.
+  const tricky = fc.oneof(
+    fc.constantFrom(
+      'yes',
+      'no',
+      'null',
+      '~',
+      '<<',
+      '0x1F',
+      '1_000',
+      '.inf',
+      '.nan',
+      '1e3',
+      '2001-12-14',
+      '12:30:45',
+      '',
+      '{}',
+      '[]',
+      'x\n',
+      ' x ',
+      '\u0085',
+      '\u0000',
+      '\u0007',
+      '\t',
+      '\u001b',
+      '\u007f',
+    ),
+    fc.stringMatching(/^[0-9a-fA-FxXoOeE_.+:-]{1,8}$/),
+  );
+  const value = fc.dictionary(
+    tricky,
+    fc.oneof(
+      tricky,
+      fc.integer(),
+      fc.double({ noNaN: true, noDefaultInfinity: true }),
+      fc.boolean(),
+      fc.constant(null),
+      fc.array(tricky, { maxLength: 3 }),
+      fc.dictionary(tricky, tricky, { maxKeys: 3 }),
+    ),
+  );
+
+  test('as YAML', () => {
+    fc.assert(
+      fc.property(value, (v) => {
+        const text = YAML.dump(v, {
+          noRefs: true,
+          sortKeys: false,
+          lineWidth: -1,
+        });
+
+        expect(canonicalJSON(parseText(text))).toBe(canonicalJSON(v));
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  test('as JSON, as Download writes it', () => {
+    fc.assert(
+      fc.property(value, (v) => {
+        const text = `${JSON.stringify(v, null, 2)}\n`;
+
+        expect(canonicalJSON(parseText(text))).toBe(canonicalJSON(v));
+      }),
+      { numRuns: 300 },
+    );
   });
 });

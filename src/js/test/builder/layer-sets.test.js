@@ -1,7 +1,10 @@
 // Layer sets in the document model: layer matchers, a diagram's layer set
 // options, its copy of a set, outline colors and layer set files.
 
+import { Buffer } from 'node:buffer';
+
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 
 import { nodeColors } from '@/builder/colors.js';
 import { decodeDocument, parseDocument } from '@/builder/decode.js';
@@ -45,6 +48,7 @@ import {
   setLayers,
   setNodeLayer,
   updateLayer,
+  withLayerAdded,
   withLayerSetCopy,
   withLayerUpdated,
 } from '@/builder/model.js';
@@ -621,5 +625,117 @@ describe('a merge of two versions', () => {
     expect(clashes).toEqual([]);
     expect(doc.layerSet).toEqual(mine.layerSet);
     expect(doc.layers).toEqual(mine.layers);
+  });
+});
+
+describe('layer set files and names, for any set', () => {
+  // Text YAML could take for something else, or must quote.
+  const text = fc.constantFrom(
+    'Plant',
+    'yes',
+    'no',
+    'null',
+    '~',
+    '1e3',
+    '0x1F',
+    '2001-12-14',
+    'x: y',
+    '- a',
+    '#c',
+    '[a]',
+    "it's",
+    '"q"',
+    '😀 levels',
+    'İstanbul',
+  );
+  const layerChange = fc.record(
+    {
+      color: fc.constantFrom('#2f6fbf', '#DB2777'),
+      iconKey: fc.constantFrom('plc', 'server'),
+      matchers: fc.constantFrom(
+        { 'general.hostname': '^plc-' },
+        { 'labels.zone': 'a|b', 'general.hostname': '[0-9]+$' },
+      ),
+    },
+    { requiredKeys: [] },
+  );
+  // A set made the way the editor makes one, with the layer helpers. A set
+  // holds at least one layer.
+  const layerSet = fc
+    .record({
+      name: text,
+      description: fc.option(text, { nil: undefined }),
+      matchConflict: fc.constantFrom('lowest', 'highest'),
+      layerOutlines: fc.boolean(),
+      layers: fc.array(fc.tuple(text, layerChange), {
+        minLength: 1,
+        maxLength: 5,
+      }),
+    })
+    .map(({ layers, ...set }) => {
+      let list = [];
+
+      for (const [label, change] of layers) {
+        const added = withLayerAdded(list, label);
+
+        list = withLayerUpdated(added.layers, added.layer.id, change);
+      }
+
+      return { ...set, layers: list };
+    });
+
+  test('a file written as text uploads as the same file', () => {
+    fc.assert(
+      fc.property(layerSet, (set) => {
+        const { file } = layerSetFileOf(set);
+
+        expect(parseLayerSetFile(layerSetFileText(file))).toEqual({
+          ok: true,
+          file,
+        });
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  // Names near the limit, in letters of one to four bytes.
+  const setName = fc.oneof(
+    fc.string({ unit: 'grapheme', maxLength: 20 }),
+    fc
+      .array(fc.constantFrom('a', 'é', '😀', 'İ', ' '), {
+        minLength: 30,
+        maxLength: 140,
+      })
+      .map((letters) => letters.join('')),
+  );
+
+  test('a new name is taken by no set, and stays within the limit', () => {
+    fc.assert(
+      fc.property(
+        setName,
+        fc.array(fc.oneof(text, fc.string({ maxLength: 5 })), {
+          maxLength: 6,
+        }),
+        fc.nat(3),
+        (name, others, copies) => {
+          // The name and as many numbered copies of it are taken already.
+          const taken = [...others];
+
+          for (let n = 0; n < copies; n += 1) {
+            taken.push(uniqueLayerSetName(name, taken).toUpperCase());
+          }
+          const result = uniqueLayerSetName(name, taken);
+          const used = taken.map((entry) => entry.toLowerCase());
+
+          expect(used).not.toContain(result.toLowerCase());
+          if (Buffer.byteLength(name.trim()) <= MAX_LAYER_SET_NAME_BYTES) {
+            expect(Buffer.byteLength(result)).toBeLessThanOrEqual(
+              MAX_LAYER_SET_NAME_BYTES,
+            );
+          }
+        },
+      ),
+      { numRuns: 200 },
+    );
   });
 });
