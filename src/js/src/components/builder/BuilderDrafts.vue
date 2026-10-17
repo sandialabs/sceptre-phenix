@@ -783,9 +783,10 @@
    * button of a damaged draft, switching to its tab first.
    *
    * @param {string} id
+   * @param {string} [testid] the button to focus first, when it is there
    * @returns {Promise<boolean>} whether the button took focus
    */
-  async function focusDraft(id) {
+  async function focusDraft(id, testid) {
     const tab = tabs.value.find((entry) =>
       entry.items.some((item) => item.id === id),
     );
@@ -795,9 +796,12 @@
 
     active.value = tab.id;
     await nextTick();
-    const button = rootEl.value?.querySelector(
-      `[data-testid="draft-open-${CSS.escape(id)}"], [data-testid="draft-delete-${CSS.escape(id)}"]`,
-    );
+    const button =
+      (testid &&
+        rootEl.value?.querySelector(`[data-testid="${CSS.escape(testid)}"]`)) ||
+      rootEl.value?.querySelector(
+        `[data-testid="draft-open-${CSS.escape(id)}"], [data-testid="draft-delete-${CSS.escape(id)}"]`,
+      );
     button?.focus();
 
     return Boolean(button) && document.activeElement === button;
@@ -818,8 +822,9 @@
   // on it can leave its list when the lists are read again (for example,
   // deleted elsewhere). Once its tab no longer holds the draft, focus moves
   // to the card that took its place, or to the tab when none is left (WCAG
-  // 2.4.3). A card that stays can lose the button focus was on instead:
-  // focus then moves to the card's first button. A delete that failed
+  // 2.4.3). A card that stays can lose the button focus was on instead
+  // (a re-sorted card moves): focus then goes back to that button, or to
+  // the card's first button when it is gone. A delete that failed
   // leaves focus alone. The draft is named as on its card, with its time,
   // since many drafts have the same title.
   let deleting = null;
@@ -868,6 +873,7 @@
       id: button.dataset.testid.replace(/^draft-(open|delete)-/, ''),
       tab: active.value,
       index: [...card.parentElement.children].indexOf(card),
+      testid: document.activeElement.dataset?.testid,
     };
   }
 
@@ -894,7 +900,7 @@
       const next = stays
         ? pending
         : items[Math.min(pending.index, items.length - 1)];
-      if (!next || !(await focusDraft(next.id))) {
+      if (!next || !(await focusDraft(next.id, stays && pending.testid))) {
         focusActiveTab();
       }
     },
