@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 
 import {
   addInterface,
@@ -48,6 +49,7 @@ import {
   setScenarios,
   setViewport,
   sizeOf,
+  snappedPoint,
   sourceAnnotations,
   specInterfaceFor,
   specInterfaces,
@@ -2519,5 +2521,46 @@ describe('colors, line styles and group fields', () => {
     });
     // Nothing to paste changes nothing.
     expect(pasteClipboard(doc, { nodes: [] })).toEqual({ doc, nodeIds: [] });
+  });
+});
+
+describe('snapping a point', () => {
+  test('a point just left of zero snaps to 0, not -0', () => {
+    const point = snappedPoint({}, { x: -0.3, y: 0.2 }, false);
+
+    expect(Object.is(point.x, 0)).toBe(true);
+    expect(Object.is(snappedPoint({}, { x: -0, y: 0 }, true).x, 0)).toBe(true);
+  });
+
+  const coordinate = fc.oneof(
+    fc.double({ min: -1e4, max: 1e4, noNaN: true }),
+    fc.constant(-0),
+  );
+
+  test('lands on the grid or a whole pixel, within half a step, never on -0', () => {
+    fc.assert(
+      fc.property(
+        coordinate,
+        coordinate,
+        fc.integer({ min: 4, max: 200 }),
+        fc.boolean(),
+        (x, y, size, snap) => {
+          const doc = { grid: { size } };
+          const step = snap ? size : 1;
+          const point = snappedPoint(doc, { x, y }, snap);
+
+          expect(snappedPoint(doc, point, snap)).toEqual(point);
+          for (const [value, from] of [
+            [point.x, x],
+            [point.y, y],
+          ]) {
+            expect(Object.is(value, -0)).toBe(false);
+            expect(Math.abs(value % step)).toBe(0);
+            expect(Math.abs(value - from)).toBeLessThanOrEqual(step / 2 + 1e-9);
+          }
+        },
+      ),
+      { numRuns: 300 },
+    );
   });
 });

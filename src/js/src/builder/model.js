@@ -73,9 +73,13 @@ export function snapStep(doc, snap) {
   return snap ? doc?.grid?.size || DEFAULT_GRID_SIZE : 0;
 }
 
-// A value on a step of `step`, or a whole pixel for a step of 0.
+// A value on a step of `step`, or a whole pixel for a step of 0. Never -0,
+// which Object.is (stable.js) tells apart from 0.
 function onStep(value, step) {
-  return step > 0 ? Math.round(value / step) * step : Math.round(value);
+  const stepped =
+    step > 0 ? Math.round(value / step) * step : Math.round(value);
+
+  return stepped === 0 ? 0 : stepped;
 }
 
 /**
