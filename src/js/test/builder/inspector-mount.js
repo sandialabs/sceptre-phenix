@@ -1,11 +1,15 @@
 // The Inspector mounted in the page on a new Builder store, for the happy-dom
 // unit files, with helpers that act on its fields as a user does.
 
+import { reactive } from 'vue';
 import { createPinia } from 'pinia';
 import { flushPromises, mount } from '@vue/test-utils';
 import { JsonForms } from '@jsonforms/vue';
 
 import BuilderInspector from '@/components/builder/BuilderInspector.vue';
+import { settleIcons } from '@/builder/icons.js';
+import { addNode, createDocument } from '@/builder/model.js';
+import { builderSchemaV1 } from '@/builder/schema.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 // What store.select takes for `element`: a connection has ends.
@@ -109,4 +113,48 @@ export function disclosureOf(wrapper, path) {
   return wrapper.get(
     `[data-collapse-path="${path}"] [data-testid="inspector-disclosure"]`,
   );
+}
+
+// A host as the template editor makes one: a document, its one node, and a
+// commit that replaces the document, recording commits and announcements.
+export function fakeHost(doc, nodeId, init = {}) {
+  const host = reactive({
+    doc,
+    inspectorSelection: { type: 'node', id: nodeId },
+    schema: builderSchemaV1,
+    schemaError: '',
+    readOnly: false,
+    disks: null,
+    issues: [],
+    canRedo: false,
+    commits: [],
+    said: [],
+    commit(next, label) {
+      host.doc = settleIcons(next, null);
+      host.commits.push(label);
+
+      return true;
+    },
+    announce(message) {
+      host.said.push(message);
+    },
+    addInterface() {},
+    removeInterface() {},
+    remove() {},
+    moveNodes() {},
+    ...init,
+  });
+
+  return host;
+}
+
+// A document that holds one device, as the template editor's does.
+export function oneDevice(options = {}) {
+  const added = addNode(createDocument({ name: 'Scratch' }), {
+    kind: 'device',
+    hostname: 'plc',
+    ...options,
+  });
+
+  return { doc: added.doc, node: added.node };
 }

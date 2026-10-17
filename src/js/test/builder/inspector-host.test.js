@@ -1,8 +1,9 @@
 // The Inspector on a host other than the Builder store, and its 'template'
-// variant (see BuilderInspector.vue and dialogs/TemplateDialog.vue).
+// variant (see BuilderInspector.vue and dialogs/TemplateDialog.vue), as
+// rendered; editing it is in inspector-host-edit.test.js.
 
 import { describe, expect, test } from 'vitest';
-import { createSSRApp, h, reactive } from 'vue';
+import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { createPinia } from 'pinia';
 
@@ -14,51 +15,13 @@ import {
 } from '@/components/builder/inspector/control.js';
 
 import { inspectorTarget } from '@/builder/adapters/forms.js';
-import { settleIcons } from '@/builder/icons.js';
-import {
-  addNode,
-  createDocument,
-  findNode,
-  setNodeLayer,
-} from '@/builder/model.js';
+import { setNodeLayer } from '@/builder/model.js';
 import { builderSchemaV1, schemaForKind } from '@/builder/schema.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument, tags } from './fixtures.js';
+import { fakeHost, oneDevice } from './inspector-mount.js';
 import { ICON_DATA, ICON_KEY } from './png.js';
-
-// A host as the template editor makes one: a document, its one node, and a
-// commit that replaces the document, recording commits and announcements.
-function fakeHost(doc, nodeId, init = {}) {
-  const host = reactive({
-    doc,
-    inspectorSelection: { type: 'node', id: nodeId },
-    schema: builderSchemaV1,
-    schemaError: '',
-    readOnly: false,
-    disks: null,
-    issues: [],
-    canRedo: false,
-    commits: [],
-    said: [],
-    commit(next, label) {
-      host.doc = settleIcons(next, null);
-      host.commits.push(label);
-
-      return true;
-    },
-    announce(message) {
-      host.said.push(message);
-    },
-    addInterface() {},
-    removeInterface() {},
-    remove() {},
-    moveNodes() {},
-    ...init,
-  });
-
-  return host;
-}
 
 // The Inspector rendered on the server with `props` (its watchers run once);
 // `edit` changes the form's data as JSON Forms sends it.
@@ -92,22 +55,8 @@ async function openInspector(props, edit = null) {
   return {
     html,
     store: useBuilderStore(pinia),
-    exposed: instance.exposed,
     provides: instance.provides,
-    // The Inspector's own state: whether Apply and Cancel show.
-    setup: instance.setupState,
   };
-}
-
-// A document that holds one device, as the template editor's does.
-function oneDevice(options = {}) {
-  const added = addNode(createDocument({ name: 'Scratch' }), {
-    kind: 'device',
-    hostname: 'plc',
-    ...options,
-  });
-
-  return { doc: added.doc, node: added.node };
 }
 
 // One device at layer 1.
@@ -137,34 +86,6 @@ describe('the Inspector on a host of its own', () => {
     // The store still holds the empty diagram it starts with.
     expect(store.doc.nodes).toEqual([]);
     expect(store.canUndo).toBe(false);
-  });
-
-  test('applies unapplied edits to the host’s document', async () => {
-    const { doc, alpha } = sampleDocument();
-    const host = fakeHost(doc, alpha.id);
-    const { exposed, store } = await openInspector({ host }, (data) => {
-      data.spec.general = { ...data.spec.general, description: 'Edited' };
-    });
-
-    expect(exposed.changed.value).toBe(true);
-    expect(exposed.settle()).toBe('');
-    expect(findNode(host.doc, alpha.id).device.spec.general.description).toBe(
-      'Edited',
-    );
-    expect(host.commits).toEqual(['Applied changes to Device alpha']);
-    expect(exposed.changed.value).toBe(false);
-    expect(store.doc.nodes).toEqual([]);
-  });
-
-  test('a host that is read only takes no edit', async () => {
-    const { doc, alpha } = sampleDocument();
-    const host = fakeHost(doc, alpha.id, { readOnly: true });
-    const { exposed } = await openInspector({ host }, (data) => {
-      data.spec.general = { ...data.spec.general, description: 'Edited' };
-    });
-
-    expect(exposed.settle()).toBe('');
-    expect(host.commits).toEqual([]);
   });
 
   test('reads the copies of icons the host’s document carries', async () => {
@@ -268,75 +189,6 @@ describe('the template variant', () => {
     expect(
       schemaForKind(builderSchemaV1, 'device', { spec, template: true }),
     ).toBe(template);
-  });
-
-  // Its edits wait for the editor's Save: there is nothing to apply them
-  // with, as there is on the canvas.
-  test('unapplied edits bring up Apply and Cancel on the canvas, not in the template editor', async () => {
-    const { doc, node } = oneDevice();
-    const edit = (data) => {
-      data.hostname = 'historian';
-    };
-    const canvas = await openInspector({ host: fakeHost(doc, node.id) }, edit);
-    const editor = await openInspector(props(fakeHost(doc, node.id)), edit);
-
-    expect(canvas.exposed.changed.value).toBe(true);
-    expect(canvas.setup.pending).toBe(true);
-    expect(editor.exposed.changed.value).toBe(true);
-    expect(editor.setup.pending).toBe(false);
-  });
-
-  // A look field changes the template's working copy at once, as on the
-  // canvas: Save saves the template.
-  test('a look field is committed to the host at once, with nothing left to settle', async () => {
-    const { doc, node } = oneDevice();
-    const host = fakeHost(doc, node.id);
-    const { exposed } = await openInspector(props(host), (data) => {
-      data.iconKey = 'firewall';
-      data.fillColor = '#2f6fbf';
-    });
-    const device = findNode(host.doc, node.id).device;
-
-    expect(device).toMatchObject({ iconKey: 'firewall', fillColor: '#2f6fbf' });
-    expect(host.commits).toEqual([
-      'Changed the icon of Device plc to Firewall',
-    ]);
-    expect(exposed.changed.value).toBe(false);
-    expect(exposed.settle()).toBe('');
-    expect(host.commits).toHaveLength(1);
-  });
-
-  test('settle applies the working copy to the host’s document', async () => {
-    const { doc, node } = oneDevice();
-    const host = fakeHost(doc, node.id);
-    const { exposed } = await openInspector(props(host), (data) => {
-      data.hostname = 'historian';
-      data.spec.hardware = { ...data.spec.hardware, memory: 4096 };
-    });
-
-    expect(exposed.changed.value).toBe(true);
-    expect(exposed.errors.value).toEqual([]);
-    expect(exposed.settle()).toBe('');
-
-    const device = findNode(host.doc, node.id).device;
-
-    expect(device.hostname).toBe('historian');
-    expect(device.spec.general.hostname).toBe('historian');
-    expect(device.spec.hardware.memory).toBe(4096);
-    expect(exposed.changed.value).toBe(false);
-  });
-
-  test('an edit with an error is not applied, and settle says why', async () => {
-    const { doc, node } = oneDevice();
-    const host = fakeHost(doc, node.id);
-    const { exposed } = await openInspector(props(host), (data) => {
-      data.hostname = 'two words';
-    });
-
-    expect(exposed.errors.value).toHaveLength(1);
-    expect(exposed.settle()).toBe('1 field needs attention');
-    expect(findNode(host.doc, node.id).device.hostname).toBe('plc');
-    expect(host.commits).toEqual([]);
   });
 
   // A template is in no diagram: a VLAN names a network of the diagram a
@@ -525,70 +377,6 @@ describe('the editor variant', () => {
       at('data-path="spec.type"'),
     );
     expect(html).toContain('data-testid="inspector-layer-edit"');
-  });
-
-  // The dialog's Apply settles the form: one commit, one undo step. The
-  // Inspector's own bar does not show, but the fields keep their marks.
-  test('edits wait for settle(), which commits them once', async () => {
-    const { doc, alpha } = sampleDocument();
-    const host = fakeHost(doc, alpha.id);
-    const { exposed, provides, setup } = await openInspector(
-      props(host),
-      (data) => {
-        data.spec.general = { ...data.spec.general, description: 'Edited' };
-      },
-    );
-
-    expect(exposed.changed.value).toBe(true);
-    expect(setup.pending).toBe(false);
-    expect(provides[INSPECTOR_CHANGED].value('spec.general.description')).toBe(
-      true,
-    );
-    expect(host.commits).toEqual([]);
-
-    expect(exposed.settle()).toBe('');
-    expect(host.commits).toEqual(['Applied changes to Device alpha']);
-    expect(findNode(host.doc, alpha.id).device.spec.general.description).toBe(
-      'Edited',
-    );
-  });
-});
-
-// The Node Editor commits the look to its host at once, as the Inspector
-// does (see inspector-settle.test.js for every kind).
-describe('the editor variant applies the look at once', () => {
-  const props = (host) => ({
-    host,
-    variant: 'editor',
-    labelledby: 'node-editor-title',
-  });
-
-  // A custom icon is named; the document carries no copy of it.
-  test.each([
-    ['device', 'fillColor', { hostname: 'plc' }, '#2f6fbf', 'fill color'],
-    ['device', 'icon', { hostname: 'plc' }, 'plc', 'custom icon'],
-    ['group', 'color', { title: 'Site' }, '#2f6fbf', 'color'],
-    ['note', 'color', { text: 'Hello' }, '#2f6fbf', 'color'],
-  ])('a %s’s %s', async (kind, key, options, value, name) => {
-    const added = addNode(createDocument({ name: 'Scratch' }), {
-      kind,
-      ...options,
-    });
-    const host = fakeHost(added.doc, added.node.id);
-    const { exposed } = await openInspector(props(host), (data) => {
-      data[key] = value;
-    });
-    const title =
-      kind === 'device' ? 'Device plc' : kind[0].toUpperCase() + kind.slice(1);
-
-    expect(findNode(host.doc, added.node.id)[kind][key]).toBe(value);
-    expect('icons' in host.doc).toBe(false);
-    expect(host.commits).toEqual([
-      `Changed the ${name} of ${title} to ${value}`,
-    ]);
-    expect(exposed.changed.value).toBe(false);
-    expect(exposed.settle()).toBe('');
-    expect(host.commits).toHaveLength(1);
   });
 });
 
