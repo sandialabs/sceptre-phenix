@@ -2,6 +2,7 @@
 // Inspector variant (inspector/collapse.js), and capitalize (text.js).
 
 import { describe, expect, test } from 'vitest';
+import fc from 'fast-check';
 import { effectScope, ref } from 'vue';
 
 import {
@@ -278,5 +279,69 @@ describe('the collapsed state of an Inspector', () => {
     expect(editor.hasErrors('spec.hardware')).toBe(true);
     expect(editor.hasErrors('spec.hardware.drives.1')).toBe(false);
     editor.stop();
+  });
+});
+
+describe('collapsed paths through list edits, for any paths', () => {
+  const LIST = 'spec.a';
+  // Paths in the list, in another list, in one whose name starts the same,
+  // and under a key that is no index.
+  const path = fc
+    .tuple(
+      fc.constantFrom(LIST, 'spec.b', 'spec.ab'),
+      fc.oneof(fc.nat(6), fc.constant('x')),
+      fc.constantFrom('', 'x', 'x.y'),
+    )
+    .map(([list, index, rest]) =>
+      [list, index, rest].filter((part) => part !== '').join('.'),
+    );
+  const paths = fc.array(path, { maxLength: 8 });
+  const sorted = (set) => [...set].sort();
+
+  test('removing an entry just added leaves the paths as they were', () => {
+    fc.assert(
+      fc.property(paths, fc.nat(7), (collapsed, index) => {
+        const inserted = afterInsert(collapsed, LIST, index);
+
+        expect(sorted(afterRemove(inserted, LIST, index))).toEqual(
+          sorted(new Set(collapsed)),
+        );
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  test('moving two entries twice leaves the paths as they were', () => {
+    fc.assert(
+      fc.property(paths, fc.nat(7), fc.nat(7), (collapsed, from, to) => {
+        const moved = afterMove(collapsed, LIST, from, to);
+
+        expect(sorted(afterMove(moved, LIST, from, to))).toEqual(
+          sorted(new Set(collapsed)),
+        );
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  test('removing an entry drops its paths and only them', () => {
+    fc.assert(
+      fc.property(paths, fc.nat(7), (collapsed, index) => {
+        const before = new Set(collapsed);
+        const own = `${LIST}.${index}`;
+        const gone = [...before].filter(
+          (entry) => entry === own || entry.startsWith(`${own}.`),
+        );
+        const after = afterRemove(collapsed, LIST, index);
+
+        expect(after.size).toBe(before.size - gone.length);
+        for (const entry of before) {
+          if (!gone.includes(entry) && !entry.startsWith(`${LIST}.`)) {
+            expect(after.has(entry)).toBe(true);
+          }
+        }
+      }),
+      { numRuns: 300 },
+    );
   });
 });
