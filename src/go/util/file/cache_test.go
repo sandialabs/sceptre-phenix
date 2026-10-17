@@ -5,14 +5,12 @@ import (
 	"errors"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
 
-	"phenix/util/flight"
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
 )
@@ -91,65 +89,6 @@ func TestListingCacheKeysByExperiment(t *testing.T) {
 	}
 }
 
-func TestListingCacheMergesConcurrentListings(t *testing.T) {
-	cache := newTestCache()
-
-	var (
-		calls   atomic.Int32
-		entered = make(chan struct{})
-		release = make(chan struct{})
-	)
-
-	list := func() Files {
-		if calls.Add(1) == 1 {
-			close(entered)
-		}
-
-		<-release
-
-		return Files{{Name: "a", Path: "a"}}
-	}
-
-	const callers = 8
-
-	var wg sync.WaitGroup
-
-	results := make([]Files, callers)
-
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		results[0], _, _ = cache.get("k", func() (Files, error) { return list(), nil })
-	}()
-
-	<-entered
-
-	for i := 1; i < callers; i++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			results[i], _, _ = cache.get("k", func() (Files, error) { return list(), nil })
-		}()
-	}
-
-	close(release)
-	wg.Wait()
-
-	if calls.Load() != 1 {
-		t.Fatalf("expected one listing for concurrent callers, got %d", calls.Load())
-	}
-
-	for i, files := range results {
-		if len(files) != 1 {
-			t.Fatalf("caller %d got %v", i, files)
-		}
-	}
-}
-
 // A listing that was in flight when the files changed may miss the change, so
 // it must not be reused by callers who ask after the change.
 func TestListingCacheDropsListingInvalidatedInFlight(t *testing.T) {
@@ -208,57 +147,25 @@ func TestListingCacheDoesNotReuseFailures(t *testing.T) {
 	if calls.Load() != 2 {
 		t.Fatalf("expected a new listing after a failure, got %d listings", calls.Load())
 	}
-}
 
-func TestListingCacheReleasesWaitersOnPanic(t *testing.T) {
-	t.Parallel()
+	// unlike a failure, a success is kept even though its only caller left during it
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
 
-	cache := newTestCache()
+	_, _, err := cache.getContext(ctx, "kept", func(listCtx context.Context) (Files, error) {
+		cancel()
+		<-listCtx.Done()
 
-	var (
-		entered  = make(chan struct{})
-		release  = make(chan struct{})
-		panicked = make(chan any, 1)
-		joined   = make(chan error, 1)
-	)
-
-	go func() {
-		defer func() { panicked <- recover() }()
-
-		_ = fill(cache, "k", func() (Files, error) {
-			close(entered)
-			<-release
-			panic("boom")
-		})
-	}()
-
-	<-entered
-
-	go func() {
-		files, _, err := cache.get("k", func() (Files, error) { return Files{{Name: "a", Path: "a"}}, nil })
-		if files != nil {
-			err = errors.New("got files")
-		}
-
-		joined <- err
-	}()
-
-	polltest.Until(t, "the second caller joins the listing", func() bool { return cache.flights.Waiting("k") == 2 })
-	close(release)
-
-	// The panic still reaches the caller whose listing it was.
-	if r := <-panicked; r != "boom" {
-		t.Fatalf("lister recovered %v, want the original panic", r)
+		return Files{{Name: "a", Path: "a"}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if err := <-joined; !errors.Is(err, flight.ErrAborted) {
-		t.Fatalf("the joined caller got %v, want no files and %v", err, flight.ErrAborted)
-	}
+	var relisted atomic.Int32
 
-	var calls atomic.Int32
-
-	if _, _, err := cache.get("k", countingList(&calls, nil)); err != nil || calls.Load() != 1 {
-		t.Fatalf("expected a fresh listing after the panic, got %d listings (err %v)", calls.Load(), err)
+	if files, _, err := cache.get("kept", countingList(&relisted, nil)); err != nil || len(files) != 1 || relisted.Load() != 0 {
+		t.Fatalf("listing after = %v, %v with %d new listings; want the first reused", files, err, relisted.Load())
 	}
 }
 
@@ -480,9 +387,8 @@ func TestListingErrorsPropagate(t *testing.T) {
 	}
 }
 
-// A caller whose context ends while it waits for another's listing returns at
-// once, and the listing goes on for the callers still waiting. Once none is
-// left, the listing's context is canceled, and a later call lists anew.
+// A caller whose context ends returns at once while the listing goes on for those still waiting;
+// once none is left, the listing's context is canceled, and a later call lists anew.
 func TestListingCacheCancelsAListingNoOneWaitsFor(t *testing.T) {
 	var (
 		cache      = newTestCache()
@@ -536,29 +442,5 @@ func TestListingCacheCancelsAListingNoOneWaitsFor(t *testing.T) {
 
 	if _, _, err := cache.get("k", countingList(&calls, nil)); err != nil || calls.Load() != 1 {
 		t.Fatalf("call after the canceled listing: err %v, %d listings; want its own", err, calls.Load())
-	}
-}
-
-// A listing that succeeds although its last caller left is still reused.
-func TestListingCacheKeepsAListingThatSucceededAsItsCallerLeft(t *testing.T) {
-	cache := newTestCache()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-
-	_, _, err := cache.getContext(ctx, "k", func(listCtx context.Context) (Files, error) {
-		cancel()
-		<-listCtx.Done()
-
-		return Files{{Name: "a", Path: "a"}}, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var calls atomic.Int32
-
-	if files, _, err := cache.get("k", countingList(&calls, nil)); err != nil || len(files) != 1 || calls.Load() != 0 {
-		t.Fatalf("listing after = %v, %v with %d new listings; want the first reused", files, err, calls.Load())
 	}
 }

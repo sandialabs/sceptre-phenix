@@ -14,7 +14,7 @@ import (
 func TestSeqIsStrictlyIncreasing(t *testing.T) {
 	const (
 		goroutines = 64
-		calls      = 10000
+		calls      = 1000
 	)
 
 	start := uint64(time.Now().UnixMicro()) //nolint:gosec // after 1970

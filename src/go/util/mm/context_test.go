@@ -15,10 +15,8 @@ import (
 	"phenix/util/mm/mmtest"
 )
 
-// holdShared answers commands with handle (nil for an empty success), except
-// a "hold" command it sends itself, which holds the shared minimega connection
-// until the returned function is called or the test ends. It returns the
-// listing of the commands received, as useFakeMinimega does.
+// holdShared answers commands with handle (nil for an empty success) while its own "hold" command
+// holds the shared connection until unhold or the test's end; received is as useFakeMinimega's.
 func holdShared(t *testing.T, handle mmtest.Handler) (func(), func() []mmtest.Command) {
 	t.Helper()
 
@@ -190,84 +188,62 @@ func TestReadsReportTheirContextEnding(t *testing.T) { //nolint:paralleltest // 
 	}
 }
 
-// Closing a VM's tunnels whose context ends before the first close is sent
-// closes none of them: the close gave up, so the call has changed nothing yet
-// and must not go on regardless of its context.
-func TestCloseTunnelGivesUpBeforeTheFirstClose(t *testing.T) { //nolint:paralleltest // shares the fake minimega
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
+// CloseTunnel gives up with its context until a close succeeds: neither a close that gave up nor
+// one minimega answered with an error has changed anything yet.
+func TestCloseTunnelGivesUpWithItsContext(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	for _, tc := range []struct {
+		name     string
+		cancelOn string
+		want     []string
+	}{
+		{name: "cancel before first close", cancelOn: vmInfoCmd, want: nil},
+		{name: "first close errors, then cancel", cancelOn: "cc tunnel close", want: []string{"cc tunnel close vm1 3"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
 
-	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
-		switch base := strings.TrimSpace(cmd.Base); {
-		case strings.HasPrefix(base, "cc tunnel list "):
-			return []*minicli.Response{
-				mmtest.Tabular("head", []string{"vm", "id", "src port", "dst", "dst port"},
-					[]string{"vm1", "3", "50001", "127.0.0.1", "22"},
-					[]string{"vm1", "4", "50002", "127.0.0.1", "22"}),
+			received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+				base := strings.TrimSpace(cmd.Base)
+				if strings.HasPrefix(base, tc.cancelOn) {
+					cancel()
+				}
+
+				switch {
+				case strings.HasPrefix(base, "cc tunnel list "):
+					return []*minicli.Response{
+						mmtest.Tabular("head", []string{"vm", "id", "src port", "dst", "dst port"},
+							[]string{"vm1", "3", "50001", "127.0.0.1", "22"},
+							[]string{"vm1", "4", "50002", "127.0.0.1", "22"}),
+					}
+				case strings.HasPrefix(base, "cc tunnel close"):
+					return []*minicli.Response{{Host: "head", Error: "boom"}}
+				}
+
+				return vm1OnHeadnode(cmd)
+			})
+
+			if err := CloseTunnel(NS("exp"), VMName("vm1"), Context(ctx)); !errors.Is(err, context.Canceled) {
+				t.Fatalf("CloseTunnel reported %v, want %v", err, context.Canceled)
 			}
-		case base == vmInfoCmd:
-			// the last command CloseTunnel's context sees through
-			cancel()
-		}
 
-		return vm1OnHeadnode(cmd)
-	})
+			var closes []string
 
-	err := CloseTunnel(NS("exp"), VMName("vm1"), Context(ctx))
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("CloseTunnel reported %v, want %v", err, context.Canceled)
-	}
+			for _, cmd := range received() {
+				if base := strings.TrimSpace(cmd.Base); strings.HasPrefix(base, "cc tunnel close") {
+					closes = append(closes, base)
+				}
+			}
 
-	for _, cmd := range received() {
-		if strings.Contains(cmd.Base, "cc tunnel close") {
-			t.Fatalf("minimega received %q, want no tunnel closed", mmtest.Bases(received()))
-		}
+			if !slices.Equal(closes, tc.want) {
+				t.Fatalf("minimega received closes %q, want %q", closes, tc.want)
+			}
+		})
 	}
 }
 
-// A close that minimega answered with an error closed nothing, so the call
-// still gives up with its context: the other tunnels are not closed.
-func TestCloseTunnelGoesOnOnlyAfterAClose(t *testing.T) { //nolint:paralleltest // shares the fake minimega
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
-		switch base := strings.TrimSpace(cmd.Base); {
-		case strings.HasPrefix(base, "cc tunnel list "):
-			return []*minicli.Response{
-				mmtest.Tabular("head", []string{"vm", "id", "src port", "dst", "dst port"},
-					[]string{"vm1", "3", "50001", "127.0.0.1", "22"},
-					[]string{"vm1", "4", "50002", "127.0.0.1", "22"}),
-			}
-		case strings.HasPrefix(base, "cc tunnel close"):
-			cancel()
-
-			return []*minicli.Response{{Host: "head", Error: "boom"}}
-		}
-
-		return vm1OnHeadnode(cmd)
-	})
-
-	if err := CloseTunnel(NS("exp"), VMName("vm1"), Context(ctx)); !errors.Is(err, context.Canceled) {
-		t.Fatalf("CloseTunnel reported %v, want %v", err, context.Canceled)
-	}
-
-	var closes []string
-
-	for _, cmd := range received() {
-		if base := strings.TrimSpace(cmd.Base); strings.HasPrefix(base, "cc tunnel close") {
-			closes = append(closes, base)
-		}
-	}
-
-	if !slices.Equal(closes, []string{"cc tunnel close vm1 3"}) {
-		t.Fatalf("minimega received closes %q, want only the first", closes)
-	}
-}
-
-// A cluster host list whose context ends partway gives up with its context's
-// error: it neither takes the mesh check that gave up for a changed mesh (and
-// clears the hosts namespace) nor keeps the partial list for later callers.
+// A cluster host list whose context ends partway gives up with its context's error, neither taking
+// the mesh check that gave up for a changed mesh nor keeping the partial list for later callers.
 func TestClusterHostsGiveUpWithTheirContext(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -296,9 +272,8 @@ func TestClusterHostsGiveUpWithTheirContext(t *testing.T) { //nolint:paralleltes
 	}
 }
 
-// A VM listing whose follow-up reads (captures, snapshot disks) gave up
-// because its context ended after `vm info` was answered reports ctx's error,
-// not a complete listing.
+// A VM listing whose follow-up reads (captures, snapshot disks) gave up after `vm info` was
+// answered reports ctx's error, not a complete listing.
 func TestGetVMInfoReportsFollowUpsThatGaveUp(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

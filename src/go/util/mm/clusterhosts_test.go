@@ -1,7 +1,6 @@
 package mm
 
 import (
-	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -229,20 +228,24 @@ func TestGetClusterHostsReusesRecentListForDisplay(t *testing.T) { //nolint:para
 		head: "head", peers: "compute1", members: "compute1", compute: []string{"compute1"},
 	}.reply)
 
-	first, err := Minimega{}.GetClusterHosts(false)
-	if err != nil {
-		t.Fatalf("GetClusterHosts: %v", err)
+	first, read, err := Minimega{}.GetClusterHostsObserved(t.Context(), false)
+	if err != nil || !read.Known || read.At.IsZero() {
+		t.Fatalf("GetClusterHostsObserved: %+v, %v", read, err)
 	}
 
 	sent := len(received())
 
-	second, err := Minimega{}.GetClusterHosts(false)
+	second, reused, err := Minimega{}.GetClusterHostsObserved(t.Context(), false)
 	if err != nil {
-		t.Fatalf("GetClusterHosts: %v", err)
+		t.Fatalf("GetClusterHostsObserved: %v", err)
 	}
 
 	if got := len(received()); got != sent {
 		t.Fatalf("a second call within %v sent %d more commands", clusterHostsTTL, got-sent)
+	}
+
+	if !reused.At.Equal(read.At) {
+		t.Fatalf("reused list observed at %v, want the first read's %v", reused.At, read.At)
 	}
 
 	if !reflect.DeepEqual(first, second) {
@@ -369,24 +372,5 @@ func TestSameHostSet(t *testing.T) {
 		if got := sameHostSet(test.a, test.b); got != test.want {
 			t.Errorf("sameHostSet(%q, %q) = %t, want %t", test.a, test.b, got, test.want)
 		}
-	}
-}
-
-// A reused host list reports when it was first read, not when it was reused.
-func TestGetClusterHostsObservedReportsReadTime(t *testing.T) { //nolint:paralleltest // shares the fake minimega
-	useFakeMinimega(t, fakeMesh{
-		head: "head", peers: "compute1", members: "compute1", compute: []string{"compute1"},
-	}.reply)
-
-	_, first, err := Minimega{}.GetClusterHostsObserved(context.Background(), false)
-	if err != nil || !first.Known || first.At.IsZero() {
-		t.Fatalf("first read: %+v, %v", first, err)
-	}
-
-	time.Sleep(10 * time.Millisecond)
-
-	_, reused, err := Minimega{}.GetClusterHostsObserved(context.Background(), false)
-	if err != nil || !reused.At.Equal(first.At) {
-		t.Fatalf("reused list observed at %v, %v; want the first read's %v", reused.At, err, first.At)
 	}
 }

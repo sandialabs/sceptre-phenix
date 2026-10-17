@@ -154,9 +154,8 @@ func TestBoltFailsWithoutItsFile(t *testing.T) {
 	}
 }
 
-// A store written without the free page list in the file (NoFreelistSync, as
-// earlier releases wrote it) reads and updates, and stays readable by those
-// releases.
+// A store written without the free page list (NoFreelistSync, as earlier releases wrote it) reads
+// and updates, and stays readable by those releases.
 func TestBoltOpensStoreWithoutFreelist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store.bdb")
 	withoutFreelist := &bbolt.Options{NoFreelistSync: true}

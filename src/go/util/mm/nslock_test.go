@@ -91,9 +91,8 @@ func TestRedeployVMSequencesDoNotInterleave(t *testing.T) { //nolint:paralleltes
 
 	var wg sync.WaitGroup
 
-	// Hold the namespace's VM config until every redeploy waits for it, so
-	// all of them start their sequences at once. Release it even if the test
-	// fails before it would, so every redeploy finishes.
+	// Hold the VM config until every redeploy waits for it, so all start at once; the cleanup
+	// releases it even if the test fails first.
 	unlock := LockVMConfig("exp")
 
 	t.Cleanup(func() {

@@ -14,9 +14,8 @@ import (
 	"phenix/util/common"
 )
 
-// runExperimentCreate runs `phenix experiment create exp -t vm-topo`
-// with args added, against a new store holding the vm-topo topology of one VM
-// named "vm".
+// runExperimentCreate runs `phenix experiment create exp -t vm-topo` with args added, against a
+// new store holding the vm-topo topology of one VM named "vm".
 func runExperimentCreate(t *testing.T, args ...string) error {
 	t.Helper()
 

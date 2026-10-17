@@ -65,16 +65,8 @@ func RunTabularContext(ctx context.Context, cmd *Command) []map[string]string {
 	return RunTabularStartedContext(ctx, cmd, nil)
 }
 
-// RunTabularStarted is RunTabular, calling started as RunStarted does. Errors
-// in the responses are logged and their rows left out, so a failure reads as
-// fewer (or no) rows; use RunTabularChecked to tell the two apart.
-func RunTabularStarted(cmd *Command, started func()) []map[string]string {
-	return RunTabularStartedContext(context.Background(), cmd, started)
-}
-
-// RunTabularStartedContext is RunTabularStarted for a command run on behalf
-// of something that may end first; see RunContext. A command that gave up
-// because ctx is done is logged at debug level, not as an error.
+// RunTabularStartedContext is RunTabularContext, calling started as RunStartedContext does. Response
+// errors are logged (at debug level once ctx is done) and their rows left out; see RunTabularCheckedContext.
 func RunTabularStartedContext(ctx context.Context, cmd *Command, started func()) []map[string]string {
 	res, err := RunTabularCheckedContext(ctx, cmd, started)
 
@@ -96,15 +88,8 @@ func RunTabularStartedContext(ctx context.Context, cmd *Command, started func())
 	return res
 }
 
-// RunTabularChecked is RunTabularStarted, also returning the errors any
-// response reported, joined. The rows are those of the responses without an
-// error, so they may be partial when the error is not nil.
-func RunTabularChecked(cmd *Command, started func()) ([]map[string]string, error) {
-	return RunTabularCheckedContext(context.Background(), cmd, started)
-}
-
-// RunTabularCheckedContext is RunTabularChecked for a command run on behalf
-// of something that may end first; see RunContext.
+// RunTabularCheckedContext is RunTabularStartedContext, also returning the response errors, joined;
+// the rows, from the responses without an error, may then be partial.
 func RunTabularCheckedContext(
 	ctx context.Context,
 	cmd *Command,
