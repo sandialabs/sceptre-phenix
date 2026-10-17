@@ -148,11 +148,7 @@
         <section class="modal-card-body">
           <template v-if="user.token">
             <b-field label="Token">
-              <b-input
-                type="text"
-                ref="clone"
-                v-model="user.token"
-                readonly></b-input>
+              <b-input type="text" v-model="user.token" readonly></b-input>
             </b-field>
 
             <b-button

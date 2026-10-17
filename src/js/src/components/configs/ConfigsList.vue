@@ -219,8 +219,7 @@
       pagination-simple="true"
       pagination-size="is-small"
       default-sort="kind"
-      :loading="isWaiting"
-      ref="cfgTable">
+      :loading="isWaiting">
       <!-- docs currently wrong with checked rows, see: https://github.com/buefy/buefy/issues/4102 -->
       <!-- <b-loading :is-full-page="false" v-model="isWaiting"></b-loading> -->
 
@@ -420,8 +419,6 @@
         ],
         //table
         isPaginated: false,
-        perPage: 10,
-        currentPage: 1,
         selectedConfigs: [],
 
         //uploader modal
