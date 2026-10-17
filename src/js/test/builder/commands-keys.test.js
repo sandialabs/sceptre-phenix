@@ -3,6 +3,7 @@
 // each press is a KeyboardEvent sent to an element of the Builder's markup.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import fc from 'fast-check';
 
 import {
   READ_ONLY,
@@ -21,10 +22,12 @@ import {
   worksInTextFields,
 } from '@/builder/commands.js';
 import {
+  eventToKey,
   loadShortcutSettings,
   setPlatform,
   setShortcut,
   setSingleKeyShortcuts,
+  typesCharacter,
 } from '@/builder/keymap.js';
 import { nextPosition, paletteNode } from '@/components/builder/paletteDnd.js';
 
@@ -749,6 +752,71 @@ describe('the dispatcher', () => {
 
     expect(dispatch(question, ctx)).toBe(null);
     expect(question.defaultPrevented).toBe(false);
+  });
+});
+
+describe('the dispatcher, for any key the user gives the palette', () => {
+  // Physical keys as a US layout types them, without and with Shift.
+  const KEYS = {
+    ...Object.fromEntries(
+      [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((letter) => [
+        `Key${letter}`,
+        [letter.toLowerCase(), letter],
+      ]),
+    ),
+    Digit1: ['1', '!'],
+    Digit7: ['7', '&'],
+    Slash: ['/', '?'],
+    Equal: ['=', '+'],
+    Minus: ['-', '_'],
+    Comma: [',', '<'],
+    Semicolon: [';', ':'],
+  };
+
+  test('a text field keeps it when it types a character, and elsewhere it opens the palette', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...PLATFORMS),
+        fc.constantFrom(...Object.keys(KEYS)),
+        fc.record({
+          shiftKey: fc.boolean(),
+          altKey: fc.boolean(),
+          ctrlKey: fc.boolean(),
+          metaKey: fc.boolean(),
+        }),
+        (platform, code, mods) => {
+          setPlatform(platform);
+          loadShortcutSettings(memoryStorage());
+
+          // On a Mac, Option with a key types another character.
+          const typed =
+            platform === 'mac' && mods.altKey
+              ? 'ø'
+              : KEYS[code][mods.shiftKey ? 1 : 0];
+          const press = (target) => keydown(target, typed, code, mods);
+          const spec = eventToKey(press(document.body), platform);
+
+          // No shortcut has both Ctrl and ⌘ (or Windows), so none is recorded.
+          fc.pre(spec !== '');
+          setShortcut('palette.open', [spec], memoryStorage());
+
+          const t = targets();
+          const ctx = context();
+          const inField = press(t.field);
+          const onButton = press(t.button);
+          const types = typesCharacter(spec, platform);
+
+          expect(dispatch(inField, ctx), spec).toBe(
+            types ? null : 'palette.open',
+          );
+          expect(inField.defaultPrevented, spec).toBe(!types);
+          expect(dispatch(onButton, ctx), spec).toBe('palette.open');
+          expect(onButton.defaultPrevented, spec).toBe(true);
+          expect(ctx.view.openPalette).toHaveBeenCalledTimes(types ? 1 : 2);
+        },
+      ),
+      { numRuns: 300 },
+    );
   });
 });
 
