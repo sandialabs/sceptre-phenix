@@ -203,13 +203,11 @@ func TestHealthNeedsNoToken(t *testing.T) {
 				}
 			}
 		}
-	}
 
-	// the store's location stays out of the response
-	_, body := getHealth(t, server.URL+"/healthz")
-
-	if r := body.Checks[health.KeyStore]; len(r) != 1 || r[0].ComponentID != "bolt" {
-		t.Errorf("liveness store = %+v, want the bolt store", r)
+		// the store check still names its kind of store
+		if r := body.Checks[health.KeyStore]; path == "/healthz" && (len(r) != 1 || r[0].ComponentID != "bolt") {
+			t.Errorf("liveness store = %+v, want the bolt store", r)
+		}
 	}
 }
 

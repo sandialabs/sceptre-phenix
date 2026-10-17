@@ -120,6 +120,17 @@ func TestExperimentFileHandlersForbidden(t *testing.T) {
 	}
 }
 
+// useCapturingExperiment stores test-experiment, with minimega capturing to
+// its file live.pcap.
+func useCapturingExperiment(t *testing.T) {
+	t.Helper()
+
+	useTestExperiment(t)
+	useTestMM(t, &testMM{captures: []mm.Capture{
+		{VM: "test-vm", Interface: 0, Filepath: "/phenix/images/test-experiment/files/live.pcap"},
+	}})
+}
+
 func TestDeleteExperimentFile(t *testing.T) {
 	tests := map[string]struct {
 		path        string
@@ -144,10 +155,7 @@ func TestDeleteExperimentFile(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			useTestExperiment(t)
-			useTestMM(t, &testMM{captures: []mm.Capture{
-				{VM: "test-vm", Interface: 0, Filepath: "/phenix/images/test-experiment/files/live.pcap"},
-			}})
+			useCapturingExperiment(t)
 
 			fake := useTestFiles(t, "scorch/run-0/a.log", "a[1].log", "live.pcap")
 			events := captureAudit(t)
@@ -262,25 +270,7 @@ func TestDownloadExperimentFilesStreamsZip(t *testing.T) {
 		t.Errorf("Accept-Ranges = %q, want none", got)
 	}
 
-	archive, err := zip.NewReader(strings.NewReader(body), int64(len(body)))
-	if err != nil {
-		t.Fatalf("reading zip: %v", err)
-	}
-
-	got := map[string]string{}
-
-	for _, f := range archive.File {
-		rc, err := f.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		data, _ := io.ReadAll(rc)
-		_ = rc.Close()
-		got[f.Name] = string(data)
-	}
-
-	if len(got) != 2 || got["a.log"] != "alpha" || got["scorch/run-0/b.json"] != "{}" {
+	if got := zipEntries(t, body); len(got) != 2 || got["a.log"] != "alpha" || got["scorch/run-0/b.json"] != "{}" {
 		t.Errorf("zip holds %v", got)
 	}
 
@@ -531,10 +521,7 @@ func TestGetExperimentFileRefuses(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			useTestExperiment(t)
-			useTestMM(t, &testMM{captures: []mm.Capture{
-				{VM: "test-vm", Interface: 0, Filepath: "/phenix/images/test-experiment/files/live.pcap"},
-			}})
+			useCapturingExperiment(t)
 			useExperimentFilesDir(t, map[string]string{"live.pcap": "pcap", "scorch/run-0/a.log": "a"})
 			useTestFiles(t, "live.pcap", "scorch/run-0/a.log")
 
@@ -648,10 +635,7 @@ func TestGetExperimentFileChecksumRefuses(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			useTestExperiment(t)
-			useTestMM(t, &testMM{captures: []mm.Capture{
-				{VM: "test-vm", Interface: 0, Filepath: "/phenix/images/test-experiment/files/live.pcap"},
-			}})
+			useCapturingExperiment(t)
 			useExperimentFilesDir(t, map[string]string{"live.pcap": "pcap", "a.log": "a"})
 			useTestFiles(t, "live.pcap", "a.log")
 
@@ -771,10 +755,8 @@ func TestArchiveExperimentFiles(t *testing.T) {
 	}
 }
 
-// An archive is downloaded only by a role that may still get the
-// experiment's files, and every refusal is audited: its owner, once the role
-// loses the permission, a user who may get the job but not the files, and a
-// user who may not even see the job.
+// An archive downloads only for a role that may still get the files; refusals are audited: the owner after losing the
+// permission, a user who may get the job but not the files, and one who may not see the job.
 func TestArchiveDownloadRechecksPermission(t *testing.T) {
 	useExperimentFilesDir(t, map[string]string{"a.log": "alpha"})
 	useTestFiles(t)

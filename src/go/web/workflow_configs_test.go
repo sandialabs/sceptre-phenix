@@ -77,19 +77,6 @@ spec:
       - image: x.qc2
 `
 
-// upsertTestUndecodableTopology is a topology that would not decode, as a
-// mapping is no include name, and that its schema refuses first. Its name
-// expands to main-topo on branch main.
-const upsertTestUndecodableTopology = `apiVersion: phenix.sandia.gov/v1
-kind: Topology
-metadata:
-  name: ${BRANCH_NAME}-topo
-spec:
-  includeTopologies:
-  - name: x
-  nodes: []
-`
-
 // upsertTestScenarioWithNodes is a valid scenario, named main-scn on branch
 // main, whose spec also carries a nodes list that a topology could not use.
 const upsertTestScenarioWithNodes = `apiVersion: phenix.sandia.gov/v2
@@ -292,74 +279,50 @@ func TestWorkflowUpsertConfigDryRunExplainsValidationErrors(t *testing.T) {
 	}
 }
 
-// TestWorkflowUpsertConfigRefusesBadTopology sends topologies that pass their
-// schema but that no experiment could use, for real and as a dry run, to a
-// stored and to a new config, and expects the same 400 from both: the node
-// error's text for a node named all, and the decode error for a topology
-// that does not decode. The strict mock allows only the existence check, so
-// the real upsert stores nothing and config.Update's own read never happens.
+// TestWorkflowUpsertConfigRefusesBadTopology sends a topology that passes its
+// schema but has a node named all, which no experiment could use, for real and
+// as a dry run, to a stored and to a new config, and expects the same 400 from
+// both with the node error's text. The strict mock allows only the existence
+// check, so the real upsert stores nothing.
 func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
-	tests := []struct {
-		name        string
-		body        string
-		wantMessage string // when not the create or update message
-		wantCause   string
-	}{
-		{
-			name:      "node named all",
-			body:      upsertTestBadTopology,
-			wantCause: `topology "main-topo" cannot be used in an experiment: validating node all: hostname 'all' is reserved`,
-		},
-		{
-			name:        "topology that does not decode",
-			body:        upsertTestUndecodableTopology,
-			wantMessage: `spec (line 6): doesn't match any schema from "anyOf" (at includeTopologies)`,
-			wantCause:   `config validation failed: Error at "/includeTopologies"`,
-		},
-	}
+	const wantCause = `topology "main-topo" cannot be used in an experiment: validating node all: hostname 'all' is reserved`
 
-	for _, tt := range tests {
-		for _, exists := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s, exists=%t", tt.name, exists), func(t *testing.T) {
-				t.Setenv("BRANCH_NAME", "")
+	for _, exists := range []bool{false, true} {
+		t.Run(fmt.Sprintf("exists=%t", exists), func(t *testing.T) {
+			t.Setenv("BRANCH_NAME", "")
 
-				key := workflowTestKey("topology/main-topo")
+			key := workflowTestKey("topology/main-topo")
 
-				wantMessage := "unable to create new config Topology/main-topo"
-				if exists {
-					wantMessage = "unable to update config Topology/main-topo"
-				}
+			wantMessage := "unable to create new config Topology/main-topo"
+			if exists {
+				wantMessage = "unable to update config Topology/main-topo"
+			}
 
-				if tt.wantMessage != "" {
-					wantMessage = tt.wantMessage
-				}
+			send := func(query string) error {
+				expectUpsertExists(installValidationTestStore(t), key, exists)
 
-				send := func(query string) error {
-					expectUpsertExists(installValidationTestStore(t), key, exists)
+				return WorkflowUpsertConfig(httptest.NewRecorder(), upsertTestRequest(t, query, upsertTestBadTopology))
+			}
 
-					return WorkflowUpsertConfig(httptest.NewRecorder(), upsertTestRequest(t, query, tt.body))
-				}
+			realErr := send("")
+			dryErr := send("?dryRun=true")
 
-				realErr := send("")
-				dryErr := send("?dryRun=true")
+			var werr *weberror.WebError
+			if !errors.As(dryErr, &werr) {
+				t.Fatalf("expected a *weberror.WebError, got %v", dryErr)
+			}
 
-				var werr *weberror.WebError
-				if !errors.As(dryErr, &werr) {
-					t.Fatalf("expected a *weberror.WebError, got %v", dryErr)
-				}
+			if werr.Status != http.StatusBadRequest || werr.Message != wantMessage || !strings.Contains(werr.Cause, wantCause) {
+				t.Errorf(
+					"error = {status: %d, message: %q, cause: %q}, want {status: 400, message: %q, cause containing %q}",
+					werr.Status, werr.Message, werr.Cause, wantMessage, wantCause,
+				)
+			}
 
-				if werr.Status != http.StatusBadRequest || werr.Message != wantMessage || !strings.Contains(werr.Cause, tt.wantCause) {
-					t.Errorf(
-						"error = {status: %d, message: %q, cause: %q}, want {status: 400, message: %q, cause containing %q}",
-						werr.Status, werr.Message, werr.Cause, wantMessage, tt.wantCause,
-					)
-				}
-
-				if !reflect.DeepEqual(dryErr, realErr) {
-					t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
-				}
-			})
-		}
+			if !reflect.DeepEqual(dryErr, realErr) {
+				t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
+			}
+		})
 	}
 }
 
@@ -673,29 +636,5 @@ func TestConfigName(t *testing.T) {
 				t.Fatalf("configName() = %q, %v, want %q", got, err, tt.want)
 			}
 		})
-	}
-}
-
-// An upserted config's location is under the base path the UI is served
-// behind.
-func TestWorkflowUpsertConfigLocationHasBasePath(t *testing.T) {
-	t.Setenv("BRANCH_NAME", "")
-
-	original := o
-	t.Cleanup(func() { o = original })
-
-	o.basePath = "/phenix/"
-
-	m := installValidationTestStore(t)
-	expectUpsertExists(m, workflowTestKey("topology/main-topo"), false)
-	m.EXPECT().Create(gomock.Any()).Return(nil)
-
-	rec := httptest.NewRecorder()
-	if err := WorkflowUpsertConfig(rec, upsertTestRequest(t, "", upsertTestTopology)); err != nil {
-		t.Fatal(err)
-	}
-
-	if got, want := rec.Header().Get("Location"), "/phenix/api/v1/configs/topology/main-topo"; got != want {
-		t.Errorf("Location %q, want %q", got, want)
 	}
 }

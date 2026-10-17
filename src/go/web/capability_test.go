@@ -450,6 +450,36 @@ func TestCaptureTokenStreams(t *testing.T) {
 	}
 }
 
+// openStream opens the stream at url and reads its header of n bytes; the
+// function it returns fails the test unless the stream then ends.
+func openStream(t *testing.T, url string, n int) func() {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	t.Cleanup(cancel)
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+
+	stream, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { stream.Body.Close() })
+
+	if _, err := io.ReadFull(stream.Body, make([]byte, n)); err != nil {
+		t.Fatalf("reading the header: %v", err)
+	}
+
+	return func() {
+		t.Helper()
+
+		if _, err := io.ReadAll(stream.Body); err != nil || ctx.Err() != nil {
+			t.Fatalf("the stream did not end: %v %v", err, ctx.Err())
+		}
+	}
+}
+
 // Revoking a stream token ends the streams it opened.
 func TestCaptureTokenRevokeEndsStream(t *testing.T) {
 	live := useLiveCapture(t, useWebShark(t))
@@ -460,21 +490,7 @@ func TestCaptureTokenRevokeEndsStream(t *testing.T) {
 	server := serveAs(t, "alice", sharkRole()).URL
 	token := streamToken(t, server)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, server+"/"+token.URLs["stream"], nil)
-
-	stream, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer stream.Body.Close()
-
-	if _, err := io.ReadFull(stream.Body, make([]byte, len(header))); err != nil {
-		t.Fatalf("reading the header: %v", err)
-	}
+	ended := openStream(t, server+"/"+token.URLs["stream"], len(header))
 
 	revoke := server + "/api/v1/experiments/test-experiment/capture-tokens/" + token.ID
 
@@ -489,9 +505,7 @@ func TestCaptureTokenRevokeEndsStream(t *testing.T) {
 		"user.name": "alice", "phenix.capability.id": token.ID, "phenix.experiment.name": "test-experiment",
 	})
 
-	if _, err := io.ReadAll(stream.Body); err != nil || ctx.Err() != nil {
-		t.Fatalf("the stream did not end: %v %v", err, ctx.Err())
-	}
+	ended()
 
 	if resp := do(t, http.MethodGet, server+"/"+token.URLs["stream"], ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("after revoking: got %d, want 404", resp.StatusCode)
@@ -527,21 +541,7 @@ func TestCaptureTokenRecheckEndsStream(t *testing.T) {
 		t.Fatalf("decoding token: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, server+"/"+token.URLs["stream"], nil)
-
-	stream, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer stream.Body.Close()
-
-	if _, err := io.ReadFull(stream.Body, make([]byte, len(header))); err != nil {
-		t.Fatalf("reading the header: %v", err)
-	}
+	ended := openStream(t, server+"/"+token.URLs["stream"], len(header))
 
 	u, err := rbac.GetUser("alice")
 	if err != nil {
@@ -552,9 +552,7 @@ func TestCaptureTokenRecheckEndsStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := io.ReadAll(stream.Body); err != nil || ctx.Err() != nil {
-		t.Fatalf("the stream did not end: %v %v", err, ctx.Err())
-	}
+	ended()
 
 	if n := len(captureGrants.List("alice", "test-experiment")); n != 0 {
 		t.Fatalf("%d grants left, want the token revoked", n)

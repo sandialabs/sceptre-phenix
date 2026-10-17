@@ -24,10 +24,8 @@ import (
 	"phenix/web/rbac"
 )
 
-// holdMinimega points phenix at the fake minimega through the real mm
-// package, and holds the shared minimega connection with a "hold" command
-// until the test ends, so every other command waits for it. It returns the
-// listing of the commands minimega received.
+// holdMinimega points the real mm package at fake minimega and holds the shared connection with a "hold" command
+// until the test ends, so every other command waits; it returns the commands minimega received.
 func holdMinimega(t *testing.T) func() []mmtest.Command {
 	t.Helper()
 
@@ -46,9 +44,8 @@ func holdMinimega(t *testing.T) func() []mmtest.Command {
 		return nil
 	})
 
-	// minimega's files directory is looked up by whoever needs it first,
-	// whatever its context; this is before the hold. Answered with nothing,
-	// it falls back to <PhenixBase>/images, as for the other tests.
+	// look up minimega's files directory before the hold, as whoever needs it first does so whatever its context;
+	// answered with nothing, it falls back to <PhenixBase>/images
 	_ = mm.GetMMFullPath("")
 
 	held := make(chan error, 1)

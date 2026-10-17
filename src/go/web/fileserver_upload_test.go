@@ -3,7 +3,6 @@ package web
 import (
 	"bytes"
 	"context"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,21 +19,10 @@ import (
 func uploadToFileServer(t *testing.T, role rbac.Role, name, contents string) *httptest.ResponseRecorder {
 	t.Helper()
 
-	var body bytes.Buffer
+	body, contentType := formUpload(t, "files", name, contents, "experiment", "test-experiment")
 
-	form := multipart.NewWriter(&body)
-	_ = form.WriteField("experiment", "test-experiment")
-
-	part, err := form.CreateFormFile("files", name)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, _ = part.Write([]byte(contents))
-	_ = form.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/upload", &body)
-	req.Header.Set("Content-Type", form.FormDataContentType())
+	req := httptest.NewRequest(http.MethodPost, "/upload", bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
 
 	ctx := context.WithValue(req.Context(), middleware.ContextKeyUser, "alice")
 	ctx = context.WithValue(ctx, middleware.ContextKeyRole, role)
@@ -45,11 +33,18 @@ func uploadToFileServer(t *testing.T, role rbac.Role, name, contents string) *ht
 	return rec
 }
 
-// Uploading experiment files through the file server is audited per file,
-// refusals included.
+// Uploading experiment files through the file server is audited per file, refusals
+// included, and drops the cached file listing so the Files tab shows the new file at once.
 func TestUploadExperimentFilesIsAudited(t *testing.T) {
 	useTestStore(t, testExperiment(t, ""))
 	useExperimentFilesDir(t, nil)
+
+	var invalidated []string
+
+	original := invalidateExperimentFiles
+	invalidateExperimentFiles = func(exp string) { invalidated = append(invalidated, exp) }
+
+	t.Cleanup(func() { invalidateExperimentFiles = original })
 
 	events := captureAudit(t)
 
@@ -68,33 +63,14 @@ func TestUploadExperimentFilesIsAudited(t *testing.T) {
 		"phenix.file.target_path": target, "file.size": 5,
 	})
 
+	if len(invalidated) != 1 || invalidated[0] != "test-experiment" {
+		t.Errorf("invalidated the listings of %v, want test-experiment's", invalidated)
+	}
+
 	rec = uploadToFileServer(t, testRole("experiments/files", "get", "test-experiment"), "other.txt", "no")
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("upload without permission: status %d", rec.Code)
 	}
 
 	wantDenied(t, events(), "file-upload")
-}
-
-// An upload drops the experiment's cached file listing, so the Files tab
-// shows the new file at once rather than once the listing expires.
-func TestUploadExperimentFilesRefreshesTheListing(t *testing.T) {
-	useTestStore(t, testExperiment(t, ""))
-	useExperimentFilesDir(t, nil)
-
-	var invalidated []string
-
-	original := invalidateExperimentFiles
-	invalidateExperimentFiles = func(exp string) { invalidated = append(invalidated, exp) }
-
-	t.Cleanup(func() { invalidateExperimentFiles = original })
-
-	rec := uploadToFileServer(t, testRole("experiments/files", "create", "test-experiment"), "notes.txt", "hello")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("upload: status %d: %s", rec.Code, rec.Body)
-	}
-
-	if len(invalidated) != 1 || invalidated[0] != "test-experiment" {
-		t.Errorf("invalidated the listings of %v, want test-experiment's", invalidated)
-	}
 }

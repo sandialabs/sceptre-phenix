@@ -759,7 +759,6 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 		Path:        path,
 		Name:        filepath.Base(path),
 		ContentType: "application/octet-stream",
-		Live:        false,
 		MaxSize:     0,
 	})
 	if err != nil {

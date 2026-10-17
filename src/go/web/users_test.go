@@ -122,7 +122,7 @@ func TestConfigureUsersSkipsUnknownRole(t *testing.T) {
 }
 
 // users patch lets a user create their own tokens; a token for another user
-// also needs users/tokens create for that user.
+// also needs users/tokens create for that user (the contract tests cover the rest).
 //
 //nolint:paralleltest // replaces the store
 func TestCreateUserTokenForOtherUser(t *testing.T) {
@@ -144,10 +144,7 @@ func TestCreateUserTokenForOtherUser(t *testing.T) {
 		want         int
 	}{
 		{"own token", "test-user", patch("test-user"), http.StatusOK},
-		{"another user's token", "bob", patch("bob"), http.StatusForbidden},
-		{"another user's token with users/tokens", "bob", combinedRole(patch("bob"), tokens("bob")), http.StatusOK},
 		{"users/tokens for someone else", "bob", combinedRole(patch("bob"), tokens("carol")), http.StatusForbidden},
-		{"users/tokens without patch", "bob", tokens("bob"), http.StatusForbidden},
 	} {
 		w := httptest.NewRecorder()
 		vars := map[string]string{"username": tc.target}

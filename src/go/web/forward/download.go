@@ -78,7 +78,6 @@ func GetTunneler(w http.ResponseWriter, r *http.Request) {
 		Path:        path,
 		Name:        name,
 		ContentType: "application/octet-stream",
-		Live:        false,
 		MaxSize:     0,
 	})
 

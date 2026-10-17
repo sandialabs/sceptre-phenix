@@ -381,7 +381,6 @@ func GetJobArtifact(w http.ResponseWriter, r *http.Request) {
 		Path:        j.Artifact.Path,
 		Name:        j.Artifact.Name,
 		ContentType: "",
-		Live:        false,
 		MaxSize:     0,
 	})
 	if err != nil {

@@ -126,9 +126,8 @@ func sharkRole() rbac.Role {
 	)
 }
 
-// createSharkCapture asks the server for a capture of test-experiment
-// WebShark can open, and returns the response and, if it is a 200, the
-// capture it gives.
+// createSharkCapture requests a WebShark capture of test-experiment, returning the response
+// and, on 200, the capture.
 func createSharkCapture(t *testing.T, server, body string) (*http.Response, sharkCaptureResponse) {
 	t.Helper()
 

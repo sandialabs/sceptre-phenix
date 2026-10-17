@@ -13,9 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// openAPISpec is what the tests read of openapi.yml: each operation's
-// responses, by scope ("api" for a path under /api/v1, "root" for one a
-// path-level server puts at the server root), method and path.
+// openAPISpec maps each openapi.yml operation, keyed by scope (api or root), method and path,
+// to its response statuses.
 type openAPISpec map[string][]string
 
 // openAPIKey is an operation's key in an openAPISpec: scope, method and the
@@ -116,10 +115,8 @@ func (s openAPISpec) documents(method, path string, status int) bool {
 	return false
 }
 
-// routerOperations are the operations of the server's routes, keyed as in an
-// openAPISpec, with every optional feature on, and the paths of the routes of
-// any method. OPTIONS, which every API route takes for CORS preflights, is
-// left out.
+// routerOperations are the router's operations, keyed as in an openAPISpec, with all features on,
+// plus the paths of any-method routes (OPTIONS left out).
 func routerOperations(t *testing.T) (map[string]bool, []string) {
 	t.Helper()
 
@@ -170,9 +167,7 @@ func routerOperations(t *testing.T) (map[string]bool, []string) {
 	return ops, anyMethod
 }
 
-// routesOfAnyMethod are the routes, by path or path prefix, that take any
-// method: the UI's files, which openapi.yml leaves out, and the API's
-// subrouter, whose routes each name their methods.
+// routesOfAnyMethod are routes taking any method: UI files openapi.yml omits, and the API subrouter.
 //
 //nolint:gochecknoglobals // constant table
 var routesOfAnyMethod = map[string]string{
@@ -187,10 +182,8 @@ var routesOfAnyMethod = map[string]string{
 	"/favicon.ico":                   "the UI's icon",
 }
 
-// Every operation the router serves is in openapi.yml, and every operation
-// openapi.yml describes is one the router serves; only the routes of any
-// method, which serve the UI's own files, are left out. The routes the Unix
-// socket serves are among the router's.
+// Every router operation is in openapi.yml and vice versa, except any-method routes;
+// the Unix socket's routes are among the router's.
 func TestRouterMatchesOpenAPI(t *testing.T) {
 	spec := loadOpenAPI(t)
 	router, anyMethod := routerOperations(t)

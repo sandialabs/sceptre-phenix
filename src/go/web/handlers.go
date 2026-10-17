@@ -1343,7 +1343,7 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// a download, streamed from disk and resumable; or the viewer's text
-	d := util.Download{Path: local, Name: file, ContentType: "", Live: false, MaxSize: 0}
+	d := util.Download{Path: local, Name: file, ContentType: "", MaxSize: 0}
 	if preview {
 		d.Name = ""
 		d.ContentType = "text/plain; charset=utf-8"

@@ -9,13 +9,10 @@ import (
 	"testing"
 
 	"golang.org/x/net/websocket"
-
-	"phenix/web/rbac"
 )
 
-// getVNCPage stores test-experiment with one VM, test-vm, whose vncBanner
-// annotation is banner (none when nil), and opens the VM's VNC page as a role
-// that may.
+// getVNCPage stores test-experiment with test-vm, whose vncBanner is banner (none if nil),
+// and opens its VNC page as a permitted role.
 func getVNCPage(t *testing.T, banner any) (*http.Response, string) {
 	t.Helper()
 
@@ -119,9 +116,8 @@ func TestVNCBannerIsText(t *testing.T) {
 	}
 }
 
-// The map form sets only banners: keys naming other page settings, such as
-// where its scripts load from or the token it connects with, are ignored, and
-// colors that are not CSS color names or hex colors fall back to the defaults.
+// The map form sets only banners: other page settings are ignored, and non-CSS colors
+// fall back to defaults.
 func TestVNCBannerMapSetsOnlyBanners(t *testing.T) {
 	_, body := getVNCPage(t, map[string]any{
 		"basePath": "https://attacker.example/",
@@ -200,24 +196,18 @@ func TestVNCPageContentSecurityPolicy(t *testing.T) {
 	}
 }
 
-// The VNC websocket needs the permission its page does.
-func TestVNCWebSocketNeedsPermission(t *testing.T) {
-	for name, role := range map[string]rbac.Role{
-		"other VM":    testRole("vms/vnc", "get", "test-experiment/other-vm"),
-		"no VNC role": testRole("vms", "get", "test-experiment/test-vm"),
-	} {
-		t.Run(name, func(t *testing.T) {
-			server := serveAs(t, "alice", role).URL
-			events := captureAudit(t)
+// A VNC websocket refused for want of vms/vnc is audited (the contract tests
+// cover which roles are refused).
+func TestVNCWebSocketDenialIsAudited(t *testing.T) {
+	server := serveAs(t, "alice", testRole("vms/vnc", "get", "test-experiment/other-vm")).URL
+	events := captureAudit(t)
 
-			resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/vms/test-vm/vnc/ws", "")
-			if resp.StatusCode != http.StatusForbidden {
-				t.Fatalf("expected 403, got %d: %s", resp.StatusCode, readBody(t, resp))
-			}
-
-			wantDenied(t, events(), "vnc-attach")
-		})
+	resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/vms/test-vm/vnc/ws", "")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
+
+	wantDenied(t, events(), "vnc-attach")
 }
 
 // Opening a VM's VNC websocket is audited once it is attached.
