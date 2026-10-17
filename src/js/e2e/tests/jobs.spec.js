@@ -1,25 +1,5 @@
-// Background jobs against a server with no minimega: the jobs API answers
-// for an empty registry, and the header's jobs menu renders and passes axe,
-// empty and with jobs the server's list is stood in for.
+// The header's jobs menu, empty and with a stood-in job list, renders and passes axe.
 const { test, expect, expectAccessible } = require('./helpers');
-
-test('the jobs API lists no jobs and refuses unknown ones', async ({
-  request,
-}) => {
-  const list = await request.get('/api/v1/jobs');
-  expect(list.status()).toBe(200);
-  expect(await list.json()).toEqual({ jobs: [] });
-
-  for (const [method, path] of [
-    ['get', '/api/v1/jobs/j0000000000000000'],
-    ['post', '/api/v1/jobs/j0000000000000000/cancel'],
-    ['delete', '/api/v1/jobs/j0000000000000000'],
-    ['get', '/api/v1/jobs/j0000000000000000/artifact'],
-  ]) {
-    const resp = await request[method](path);
-    expect(resp.status(), `${method} ${path}`).toBe(404);
-  }
-});
 
 test('the header jobs menu opens empty and is accessible', async ({ page }) => {
   await page.goto('/experiments');

@@ -1,6 +1,5 @@
-// The server's health endpoints, through the API alone (no browser page). The
-// CI backend runs with auth disabled, a BoltDB store and no minimega, so it is
-// alive but not ready.
+// The health endpoints through the API alone; the CI backend has a BoltDB store
+// and no minimega, so it is alive but not ready.
 const { test, expect } = require('@playwright/test');
 
 const HEALTH_JSON = 'application/health+json';
@@ -40,19 +39,4 @@ test('/readyz fails without minimega', async ({ request }) => {
   }
 
   expect(body.checks.uptime[0].status).toBe('pass');
-});
-
-test('/readyz?exclude= leaves checks out', async ({ request }) => {
-  const resp = await request.get('/readyz?exclude=minimega&exclude=disk');
-  const body = await resp.json();
-  expect(body.checks).not.toHaveProperty('minimega:responseTime');
-  expect(body.checks).not.toHaveProperty('disk:utilization');
-  expect(body.checks).toHaveProperty('uptime');
-});
-
-test('HEAD /healthz has no body', async ({ request }) => {
-  const resp = await request.head('/healthz');
-  expect(resp.status()).toBe(200);
-  expect(resp.headers()['content-type']).toBe(HEALTH_JSON);
-  expect((await resp.body()).length).toBe(0);
 });

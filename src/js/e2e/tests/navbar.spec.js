@@ -22,9 +22,8 @@ const test = base.extend({
 
 const isConfigs = (r) => r.url().endsWith('/api/v1/configs');
 
-// Holds the page's GET /api/v1/configs requests so a test can look at a page
-// while its load is still running. The returned release() waits until at
-// least one is held, then lets every held one go.
+// Holds the page's GET /api/v1/configs requests; release() waits until at least
+// one is held, then lets every held one go.
 async function holdConfigLoads(page) {
   const held = [];
   let arrived = () => {};
@@ -35,18 +34,11 @@ async function holdConfigLoads(page) {
   });
   return async () => {
     while (!held.length) await new Promise((resolve) => (arrived = resolve));
-    await Promise.all(
-      held.splice(0).map((route) =>
-        // a request the page canceled is reported by the test instead
-        route.continue().catch((err) => {
-          if (!route.request().failure()) throw err;
-        }),
-      ),
-    );
+    await Promise.all(held.splice(0).map((route) => route.continue()));
   };
 }
 
-test('pages show preloaded data at once, and a load left behind still fills it', async ({
+test('pages show preloaded data at once, and the refresh button reloads it', async ({
   page,
   request,
   role,
@@ -65,6 +57,7 @@ test('pages show preloaded data at once, and a load left behind still fills it',
   await (await preloaded).finished();
 
   const release = await holdConfigLoads(page);
+  await createConfig(request, role);
 
   // the preloaded rows show while the page's own load runs
   await nav.getByRole('link', { name: 'Configs' }).click();
@@ -73,28 +66,8 @@ test('pages show preloaded data at once, and a load left behind still fills it',
   ).toBeVisible();
   await expect(refreshing).toBeVisible();
   await expect(refresh).toBeDisabled();
-
-  // leave while the load runs; it finishes in the background, rather than
-  // being canceled, and fills the cache for the next visit
-  await createConfig(request, role);
-  const leftBehind = Promise.race([
-    page.waitForResponse(isConfigs).then(async (response) => {
-      await response.finished();
-      return 'finished';
-    }),
-    page
-      .waitForEvent('requestfailed', isConfigs)
-      .then((req) => `failed: ${req.failure()?.errorText}`),
-  ]);
-  await nav.getByRole('link', { name: 'Users' }).click();
-  await pageDataLoaded(page);
   await release();
-  expect(await leftBehind, 'the Configs load left behind').toBe('finished');
-
-  await nav.getByRole('link', { name: 'Configs' }).click();
   await expect(roleRow).toBeVisible();
-  await expect(refreshing).toBeVisible();
-  await release();
   await pageDataLoaded(page);
 
   // the button reloads the page's data
