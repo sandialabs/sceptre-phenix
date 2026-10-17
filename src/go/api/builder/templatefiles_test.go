@@ -261,8 +261,8 @@ func TestLoadServerTemplatesAddsIcons(t *testing.T) {
 	}
 
 	kept := mustGetIcon(t, h, "taken")
-	if !sameIcon(*kept, *theirs) {
-		t.Errorf("the library's icon became %+v, want %+v kept", kept, theirs)
+	if diff := iconDiff(*theirs, *kept); diff != "" {
+		t.Errorf("GetIcon(taken) after LoadServerTemplates mismatch (-want +got):\n%s", diff)
 	}
 
 	conflicts := logs.Records(

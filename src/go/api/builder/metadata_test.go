@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/store"
 	"phenix/store/recordtest/memrecord"
 	"phenix/types/builder"
@@ -113,20 +115,22 @@ func TestTamperedDraftMetadataIsRejected(t *testing.T) {
 			tamperDraft(t, h, meta, mutate)
 
 			if _, err := h.service.GetDraft(ctx, meta.ID); !errors.Is(err, ErrCorrupt) {
-				t.Fatalf("GetDraft error = %s, want ErrCorrupt", fmtErr(err))
+				t.Errorf("GetDraft(%s) error = %s, want ErrCorrupt", meta.ID, fmtErr(err))
 			}
 
 			// The listing leaves the draft out; orphan cleanup keeps its content.
-			drafts, _, err := h.service.ListDraftsWithDamaged(ctx)
-			if err != nil || len(drafts) != 0 {
-				t.Fatalf("ListDraftsWithDamaged = %d drafts, error %s, want the tampered draft left out",
-					len(drafts), fmtErr(err))
+			if drafts, _, err := h.service.ListDraftsWithDamaged(ctx); err != nil {
+				t.Errorf("ListDraftsWithDamaged returned error: %s", fmtErr(err))
+			} else if len(drafts) != 0 {
+				t.Errorf("ListDraftsWithDamaged = %d drafts, want the tampered draft left out", len(drafts))
 			}
 
 			h.passOrphanGracePeriod()
 
-			if removed, err := h.service.CleanupOrphanedChunks(ctx); err != nil || removed != 0 {
-				t.Fatalf("CleanupOrphanedChunks = %d, %s; want the tampered draft's chunks kept", removed, fmtErr(err))
+			if removed, err := h.service.CleanupOrphanedChunks(ctx); err != nil {
+				t.Errorf("CleanupOrphanedChunks returned error: %s", fmtErr(err))
+			} else if removed != 0 {
+				t.Errorf("CleanupOrphanedChunks = %d, want 0: the chunks of the tampered draft kept", removed)
 			}
 		})
 	}
@@ -150,7 +154,7 @@ func TestTamperedDraftMetadataWithTrailingContentIsRejected(t *testing.T) {
 	}
 
 	if _, err := h.service.GetDraft(ctx, meta.ID); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("GetDraft error = %s, want ErrCorrupt", fmtErr(err))
+		t.Errorf("GetDraft(%s) error = %s, want ErrCorrupt", meta.ID, fmtErr(err))
 	}
 }
 
@@ -209,7 +213,7 @@ func TestTamperedPublishedMetadataIsRejected(t *testing.T) {
 			}
 
 			if _, err := h.service.GetPublishedDocument(ctx, doc.ID); !errors.Is(err, ErrCorrupt) {
-				t.Fatalf("GetPublishedDocument error = %s, want ErrCorrupt", fmtErr(err))
+				t.Errorf("GetPublishedDocument(%s) error = %s, want ErrCorrupt", doc.ID, fmtErr(err))
 			}
 		})
 	}
@@ -248,20 +252,32 @@ func TestDecodeReferenceIsStrict(t *testing.T) {
 				t.Fatalf("EncodeReference returned error: %v", err)
 			}
 
-			if got, err := DecodeReference(encoded); err != nil || got != want {
-				t.Fatalf("DecodeReference(%s) = %+v, %s; want %+v", encoded, got, fmtErr(err), want)
+			got, err := DecodeReference(encoded)
+			if err != nil {
+				t.Fatalf("DecodeReference(%s) returned error: %s", encoded, fmtErr(err))
+			}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("DecodeReference(%s) mismatch (-want +got):\n%s", encoded, diff)
 			}
 		})
 	}
 
-	// The sub-keys are written in a fixed order, and an empty one is left out.
+	// The sub-keys are written in a fixed order, and an empty one is left out:
+	// the exact text is the annotation's encoding.
 	encoded, err := DocumentReference{Digest: digest, ID: id, Path: file}.EncodeReference()
-	if want := `{"digest":"` + digest + `","id":"` + id + `","path":"` + file + `"}`; err != nil || encoded != want {
-		t.Fatalf("EncodeReference = %q, %v; want %q", encoded, err, want)
+	if err != nil {
+		t.Fatalf("EncodeReference(all three) returned error: %v", err)
 	}
 
-	if encoded, err := (DocumentReference{ID: id}).EncodeReference(); err != nil || encoded != `{"id":"`+id+`"}` {
-		t.Fatalf("EncodeReference of an id alone = %q, %v", encoded, err)
+	if diff := cmp.Diff(`{"digest":"`+digest+`","id":"`+id+`","path":"`+file+`"}`, encoded); diff != "" {
+		t.Errorf("EncodeReference(all three) mismatch (-want +got):\n%s", diff)
+	}
+
+	if idOnly, err := (DocumentReference{ID: id}).EncodeReference(); err != nil {
+		t.Errorf("EncodeReference(id) returned error: %v", err)
+	} else if diff := cmp.Diff(`{"id":"`+id+`"}`, idOnly); diff != "" {
+		t.Errorf("EncodeReference(id) mismatch (-want +got):\n%s", diff)
 	}
 
 	for name, value := range map[string]string{
@@ -302,8 +318,13 @@ func TestDecodeReferenceIsStrict(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			if got, err := DecodeReference(value); !errors.Is(err, ErrInvalid) || got != (DocumentReference{}) {
-				t.Fatalf("DecodeReference(%s) = %+v, %s; want ErrInvalid and no reference", value, got, fmtErr(err))
+			got, err := DecodeReference(value)
+			if !errors.Is(err, ErrInvalid) {
+				t.Errorf("DecodeReference(%s) error = %s, want ErrInvalid", value, fmtErr(err))
+			}
+
+			if got != (DocumentReference{}) {
+				t.Errorf("DecodeReference(%s) = %+v, want no reference", value, got)
 			}
 		})
 	}
@@ -336,7 +357,7 @@ func TestDocumentAnnotationIsStructured(t *testing.T) {
 	t.Parallel()
 
 	if !store.StructuredAnnotation(DocumentAnnotation) {
-		t.Fatalf("store.StructuredAnnotation(%q) = false, want the annotation shown as a map", DocumentAnnotation)
+		t.Errorf("store.StructuredAnnotation(%q) = false, want the annotation shown as a map", DocumentAnnotation)
 	}
 }
 
@@ -385,7 +406,7 @@ func TestUntrustedStringsAreBounded(t *testing.T) {
 	for name, req := range tests {
 		t.Run(name, func(t *testing.T) {
 			if _, err := h.service.CreateDraft(ctx, req); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("CreateDraft error = %s, want ErrInvalid", fmtErr(err))
+				t.Errorf("CreateDraft(%s request) error = %s, want ErrInvalid", name, fmtErr(err))
 			}
 		})
 	}
@@ -396,7 +417,7 @@ func TestUntrustedStringsAreBounded(t *testing.T) {
 			Document: document, DraftID: "", SnapshotID: "",
 		})
 		if !errors.Is(err, ErrInvalid) {
-			t.Fatalf("PutPublishedDocument error = %s, want ErrInvalid", fmtErr(err))
+			t.Errorf("PutPublishedDocument with an oversized target error = %s, want ErrInvalid", fmtErr(err))
 		}
 	})
 
@@ -406,7 +427,7 @@ func TestUntrustedStringsAreBounded(t *testing.T) {
 			Document: document, DraftID: "", SnapshotID: "",
 		})
 		if !errors.Is(err, ErrInvalid) {
-			t.Fatalf("PutPublishedDocument error = %s, want ErrInvalid", fmtErr(err))
+			t.Errorf("PutPublishedDocument with an oversized kind error = %s, want ErrInvalid", fmtErr(err))
 		}
 	})
 }
@@ -422,6 +443,6 @@ func TestGeneratedIdentifiersAreValidated(t *testing.T) {
 		Document: testDocument(t, "topo", 0), Summary: "", ID: "",
 	})
 	if !errors.Is(err, ErrInvalid) {
-		t.Fatalf("CreateDraft error = %s, want ErrInvalid for an unusable generated ID", fmtErr(err))
+		t.Errorf("CreateDraft with the generated ID ../escape error = %s, want ErrInvalid", fmtErr(err))
 	}
 }

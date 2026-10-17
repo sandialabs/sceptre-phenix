@@ -14,10 +14,14 @@ import (
 	"image/jpeg"
 	"image/png"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	"phenix/store/recordtest/memrecord"
@@ -59,7 +63,7 @@ func encodeIcon(t *testing.T, img image.Image) []byte {
 	var out bytes.Buffer
 
 	if err := png.Encode(&out, img); err != nil {
-		t.Fatalf("encoding a PNG: %v", err)
+		t.Fatalf("png.Encode returned error: %v", err)
 	}
 
 	return out.Bytes()
@@ -118,21 +122,16 @@ func iconBytes(t *testing.T, icon *LibraryIcon) []byte {
 
 	data, err := base64.StdEncoding.Strict().DecodeString(icon.Data)
 	if err != nil {
-		t.Fatalf("the icon's data is not base64: %v", err)
+		t.Fatalf("decoding the base64 data of icon %s returned error: %v", icon.Name, err)
 	}
 
 	return data
 }
 
-// sameIcon reports whether two icons are equal in every field.
-func sameIcon(got, want LibraryIcon) bool {
-	if !got.Created.Equal(want.Created) || !got.Updated.Equal(want.Updated) || !slices.Equal(got.Aliases, want.Aliases) {
-		return false
-	}
-
-	got.Created, got.Updated, got.Aliases = want.Created, want.Updated, want.Aliases
-
-	return fmt.Sprint(got) == fmt.Sprint(want)
+// iconDiff returns how two icons, or two lists of icons, differ, as cmp.Diff
+// does; no aliases and an empty list of them are equal.
+func iconDiff(want, got any, opts ...cmp.Option) string {
+	return cmp.Diff(want, got, append([]cmp.Option{cmpopts.EquateEmpty()}, opts...)...)
 }
 
 // mustAddIcon adds an icon whose name the library does not have yet.
@@ -145,7 +144,7 @@ func mustAddIcon(t *testing.T, h *testHarness, owner, name string, data []byte) 
 	}
 
 	if !created {
-		t.Fatalf("AddIcon(%q) found the icon in the library, want a new one", name)
+		t.Fatalf("AddIcon(%q) created = false, want a new icon", name)
 	}
 
 	return icon
@@ -188,13 +187,13 @@ func storedValue(t *testing.T, h *testHarness, key string) map[string]any {
 
 	record, err := h.store.GetRecord(NamespaceIcons, key)
 	if err != nil {
-		t.Fatalf("reading the icon record %s: %v", key, err)
+		t.Fatalf("GetRecord(%s) returned error: %v", key, err)
 	}
 
 	var value map[string]any
 
 	if err := json.Unmarshal(record.Value, &value); err != nil {
-		t.Fatalf("the icon record %s is not JSON: %v", key, err)
+		t.Fatalf("decoding icon record %s returned error: %v", key, err)
 	}
 
 	return value
@@ -206,10 +205,19 @@ func iconRecordValue(t *testing.T, icon LibraryIcon) []byte {
 
 	value, err := json.Marshal(icon)
 	if err != nil {
-		t.Fatalf("encoding an icon record: %v", err)
+		t.Fatalf("json.Marshal(icon %s) returned error: %v", icon.Name, err)
 	}
 
 	return value
+}
+
+// iconAuthors is who uploaded an icon and who renamed it last.
+type iconAuthors struct {
+	CreatedBy, UpdatedBy string
+}
+
+func authorsOf(icon *LibraryIcon) iconAuthors {
+	return iconAuthors{CreatedBy: icon.CreatedBy, UpdatedBy: icon.UpdatedBy}
 }
 
 // TestIconCreatorAndUpdater asserts an icon names who uploaded it and who
@@ -219,18 +227,24 @@ func TestIconCreatorAndUpdater(t *testing.T) {
 	ctx := context.Background()
 
 	icon := mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
-	if icon.CreatedBy != testActor || icon.UpdatedBy != testActor {
-		t.Fatalf("a new icon = %+v, want it created and updated by %s", icon, testActor)
+	if diff := cmp.Diff(iconAuthors{CreatedBy: testActor, UpdatedBy: testActor}, authorsOf(icon)); diff != "" {
+		t.Errorf("AddIcon(plc) authors mismatch (-want +got):\n%s", diff)
 	}
 
 	// Another user renames the icon, and is its updater.
 	renamed, err := h.service.RenameIcon(ctx, testPeer, "plc", "plc-2")
-	if err != nil || renamed.CreatedBy != testActor || renamed.UpdatedBy != testPeer {
-		t.Fatalf("RenameIcon by %s = %+v, %v; want it updated by %s", testPeer, renamed, err, testPeer)
+	if err != nil {
+		t.Fatalf("RenameIcon(plc, plc-2) by %s returned error: %v", testPeer, err)
 	}
 
-	if read := mustGetIcon(t, h, "plc"); read.CreatedBy != testActor || read.UpdatedBy != testPeer {
-		t.Fatalf("the renamed icon reads as %+v", read)
+	want := iconAuthors{CreatedBy: testActor, UpdatedBy: testPeer}
+
+	if diff := cmp.Diff(want, authorsOf(renamed)); diff != "" {
+		t.Errorf("RenameIcon(plc, plc-2) by %s authors mismatch (-want +got):\n%s", testPeer, diff)
+	}
+
+	if diff := cmp.Diff(want, authorsOf(mustGetIcon(t, h, "plc"))); diff != "" {
+		t.Errorf("GetIcon(plc) after the rename authors mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -239,7 +253,7 @@ func TestIconLibraryRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	if names := iconNames(t, h); len(names) != 0 {
-		t.Fatalf("a new library lists %q, want nothing", names)
+		t.Errorf("ListIcons of a new library = %q, want nothing", names)
 	}
 
 	upload := iconPixel(t, 1)
@@ -265,22 +279,26 @@ func TestIconLibraryRoundTrip(t *testing.T) {
 		Revision:  icon.Revision,
 	}
 
-	if !sameIcon(*icon, want) {
-		t.Fatalf("AddIcon returned %+v, want %+v", *icon, want)
+	if diff := iconDiff(want, *icon); diff != "" {
+		t.Errorf("AddIcon(PLC-1) mismatch (-want +got):\n%s", diff)
 	}
 
-	if icon.Created.IsZero() || icon.Created.Location().String() != "UTC" || icon.Revision == 0 {
-		t.Fatalf("created = %v, revision %d, want a time in UTC and a revision", icon.Created, icon.Revision)
+	if icon.Created.IsZero() || icon.Created.Location().String() != "UTC" {
+		t.Errorf("AddIcon(PLC-1) created = %v, want a time in UTC", icon.Created)
+	}
+
+	if icon.Revision == 0 {
+		t.Errorf("AddIcon(PLC-1) revision = 0, want a revision")
 	}
 
 	if !bytes.Equal(upload, before) {
-		t.Fatal("AddIcon changed the bytes it was given")
+		t.Error("AddIcon(PLC-1) changed the bytes it was given")
 	}
 
 	// One record, in the library's own namespace, under the name in lower
 	// case.
-	if keys := h.store.Keys(NamespaceIcons); len(keys) != 1 || keys[0] != "name/plc-1" {
-		t.Fatalf("icon records = %q, want only name/plc-1", keys)
+	if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, []string{"name/plc-1"}) {
+		t.Errorf("icon records = %q, want [name/plc-1]", keys)
 	}
 
 	for _, namespace := range []string{NamespaceDrafts, NamespaceChunks, NamespacePublished, NamespaceTemplates} {
@@ -292,28 +310,28 @@ func TestIconLibraryRoundTrip(t *testing.T) {
 	stored := storedValue(t, h, "name/plc-1")
 
 	fields := []string{
-		"kind", "name", "id", "owner", "width", "height", "bytes", "created", "updated", "createdBy", "updatedBy",
-		"aliases", "data",
+		"aliases", "bytes", "created", "createdBy", "data", "height", "id", "kind", "name", "owner", "updated",
+		"updatedBy", "width",
 	}
 
-	for _, field := range fields {
-		if _, ok := stored[field]; !ok {
-			t.Errorf("the icon record has no %q", field)
-		}
+	if diff := cmp.Diff(fields, slices.Sorted(maps.Keys(stored))); diff != "" {
+		t.Errorf("icon record name/plc-1 fields mismatch (-want +got):\n%s", diff)
 	}
 
-	if len(stored) != len(fields) || stored["kind"] != "icon" || stored["name"] != "PLC-1" {
-		t.Errorf("the icon record = %v, want %d fields of an icon named PLC-1", stored, len(fields))
+	wantRecord := map[string]any{"kind": "icon", "name": "PLC-1"}
+	if diff := cmp.Diff(wantRecord, map[string]any{"kind": stored["kind"], "name": stored["name"]}); diff != "" {
+		t.Errorf("icon record name/plc-1 kind and name mismatch (-want +got):\n%s", diff)
 	}
 
-	icons, err := h.service.ListIcons(ctx)
-	if err != nil || len(icons) != 1 || !sameIcon(icons[0], want) {
-		t.Fatalf("ListIcons = %+v, %v; want only %+v", icons, err, want)
+	if icons, err := h.service.ListIcons(ctx); err != nil {
+		t.Errorf("ListIcons returned error: %v", err)
+	} else if diff := iconDiff([]LibraryIcon{want}, icons); diff != "" {
+		t.Errorf("ListIcons mismatch (-want +got):\n%s", diff)
 	}
 
 	// The name is found ignoring case.
-	if got := mustGetIcon(t, h, "plc-1"); !sameIcon(*got, want) {
-		t.Fatalf("GetIcon(plc-1) = %+v, want %+v", got, want)
+	if diff := iconDiff(want, *mustGetIcon(t, h, "plc-1")); diff != "" {
+		t.Errorf("GetIcon(plc-1) mismatch (-want +got):\n%s", diff)
 	}
 
 	// The same bytes under the same name, in any case, are the icon the
@@ -321,24 +339,34 @@ func TestIconLibraryRoundTrip(t *testing.T) {
 	revision := icon.Revision
 
 	again, created, err := h.service.AddIcon(ctx, testPeer, "Plc-1", upload)
-	if err != nil || created || !sameIcon(*again, want) || mustGetIcon(t, h, "PLC-1").Revision != revision {
-		t.Fatalf("adding the same bytes again: %+v, created = %v, err = %v; want the stored icon", again, created, err)
+	if err != nil {
+		t.Errorf("AddIcon(Plc-1) with the same bytes returned error: %v", err)
+	} else if diff := iconDiff(want, *again); diff != "" {
+		t.Errorf("AddIcon(Plc-1) with the same bytes mismatch (-want +got):\n%s", diff)
+	}
+
+	if created {
+		t.Error("AddIcon(Plc-1) with the same bytes created = true, want false")
+	}
+
+	if got := mustGetIcon(t, h, "PLC-1").Revision; got != revision {
+		t.Errorf("GetIcon(PLC-1) revision after adding the same bytes = %d, want %d", got, revision)
 	}
 
 	if err := h.service.DeleteIcon(ctx, testActor, "plc-1"); err != nil {
-		t.Fatalf("DeleteIcon returned error: %v", err)
+		t.Fatalf("DeleteIcon(plc-1) returned error: %v", err)
 	}
 
 	if got := h.store.Count(NamespaceIcons); got != 0 {
-		t.Fatalf("%d icon records after the delete, want 0", got)
+		t.Errorf("%d icon records after DeleteIcon(plc-1), want 0", got)
 	}
 
 	if err := h.service.DeleteIcon(ctx, testActor, "PLC-1"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("deleting it again: %v, want ErrNotFound", err)
+		t.Errorf("DeleteIcon(PLC-1) a second time = %v, want ErrNotFound", err)
 	}
 
 	if _, err := h.service.GetIcon(ctx, "PLC-1"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("reading it after the delete: %v, want ErrNotFound", err)
+		t.Errorf("GetIcon(PLC-1) after the delete = %v, want ErrNotFound", err)
 	}
 }
 
@@ -350,42 +378,69 @@ func TestIconNamesAreUnique(t *testing.T) {
 	plc := mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
 
 	icon, created, err := h.service.AddIcon(ctx, testPeer, "PLC", iconPixel(t, 2))
+	if icon != nil || created {
+		t.Errorf("AddIcon(PLC) with another image = %+v, created %t; want no icon", icon, created)
+	}
+
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("AddIcon(PLC) with another image error = %v, want ErrConflict", err)
+	}
 
 	var taken *IconNameTakenError
 
-	if !errors.As(err, &taken) || !errors.Is(err, ErrConflict) || icon != nil || created ||
-		*taken != (IconNameTakenError{Name: "PLC", Icon: "plc", Owner: testActor}) {
-		t.Fatalf("another image under a taken name: %+v, %v, %v; want the name refused as taken by alice", icon, created, err)
+	if !errors.As(err, &taken) {
+		t.Fatalf("AddIcon(PLC) with another image error = %v, want an IconNameTakenError", err)
 	}
 
-	if got := taken.Sentence(); got != `icon name "PLC" is taken by an icon alice uploaded. Choose another name` {
-		t.Fatalf("the refusal says %q", got)
+	if diff := cmp.Diff(IconNameTakenError{Name: "PLC", Icon: "plc", Owner: testActor}, *taken); diff != "" {
+		t.Errorf("AddIcon(PLC) with another image refusal mismatch (-want +got):\n%s", diff)
+	}
+
+	if got, want := taken.Sentence(), `icon name "PLC" is taken by an icon alice uploaded. Choose another name`; got != want {
+		t.Errorf("IconNameTakenError.Sentence() = %q, want %q", got, want)
 	}
 
 	again, created, err := h.service.AddIcon(ctx, testPeer, "Plc", iconPixel(t, 1))
-	if err != nil || created || again.Owner != testActor || again.Revision != plc.Revision {
-		t.Fatalf("the same image under the name: %+v, %v, %v; want alice's icon", again, created, err)
+	if err != nil {
+		t.Errorf("AddIcon(Plc) with the same image returned error: %v", err)
+	} else if diff := iconDiff(*plc, *again); diff != "" {
+		t.Errorf("AddIcon(Plc) with the same image mismatch (-want +got):\n%s", diff)
+	}
+
+	if created {
+		t.Error("AddIcon(Plc) with the same image created = true, want false")
 	}
 
 	twin := mustAddIcon(t, h, testPeer, "plc-twin", iconPixel(t, 1))
 
-	if twin.ID != plc.ID || twin.Owner != testPeer {
-		t.Fatalf("the same image under another name = %+v, want bob's icon of the same image", twin)
+	wantTwin := *plc
+	wantTwin.Name, wantTwin.Owner, wantTwin.CreatedBy, wantTwin.UpdatedBy = "plc-twin", testPeer, testPeer, testPeer
+
+	if diff := iconDiff(wantTwin, *twin, cmpopts.IgnoreFields(LibraryIcon{}, "Created", "Updated", "Revision")); diff != "" {
+		t.Errorf("AddIcon(plc-twin) with the same image mismatch (-want +got):\n%s", diff)
 	}
 
 	// An alias is a name too.
 	if _, err := h.service.RenameIcon(ctx, testActor, "plc", "plc-2"); err != nil {
-		t.Fatalf("RenameIcon returned error: %v", err)
+		t.Fatalf("RenameIcon(plc, plc-2) returned error: %v", err)
 	}
 
 	_, _, err = h.service.AddIcon(ctx, testPeer, "PLC", iconPixel(t, 3))
-	if !errors.As(err, &taken) || taken.Icon != "plc-2" || taken.Owner != testActor ||
-		taken.Sentence() != `icon name "PLC" is taken: it is another name of icon "plc-2", which alice uploaded. Choose another name` {
-		t.Fatalf("an alias's name: %v, want it refused as another name of plc-2", err)
+	if !errors.As(err, &taken) {
+		t.Errorf("AddIcon(PLC) under an alias error = %v, want an IconNameTakenError", err)
+	} else {
+		if diff := cmp.Diff(IconNameTakenError{Name: "PLC", Icon: "plc-2", Owner: testActor}, *taken); diff != "" {
+			t.Errorf("AddIcon(PLC) under an alias refusal mismatch (-want +got):\n%s", diff)
+		}
+
+		want := `icon name "PLC" is taken: it is another name of icon "plc-2", which alice uploaded. Choose another name`
+		if got := taken.Sentence(); got != want {
+			t.Errorf("IconNameTakenError.Sentence() = %q, want %q", got, want)
+		}
 	}
 
 	if names := iconNames(t, h); !slices.Equal(names, []string{"plc-2", "plc-twin"}) {
-		t.Fatalf("the library lists %q", names)
+		t.Errorf("ListIcons names = %q, want [plc-2 plc-twin]", names)
 	}
 }
 
@@ -430,7 +485,7 @@ func TestAddIconNormalizesLooseImages(t *testing.T) {
 			h := newHarness(t)
 
 			if _, _, err := builder.ValidateIconPNG(test.upload); err == nil {
-				t.Fatal("the upload is a PNG a document accepts: the test proves nothing")
+				t.Fatal("ValidateIconPNG(upload) accepts the upload: the test proves nothing")
 			}
 
 			if len(test.upload) > MaxIconUploadBytes {
@@ -442,77 +497,80 @@ func TestAddIconNormalizesLooseImages(t *testing.T) {
 
 			width, height, err := builder.ValidateIconPNG(stored)
 			if err != nil {
-				t.Fatalf("the stored icon is not one a document accepts: %v", err)
+				t.Fatalf("ValidateIconPNG(stored icon) returned error: %v", err)
 			}
 
-			if icon.ID != builder.IconID(stored) || icon.ID == builder.IconID(test.upload) {
-				t.Fatalf("id = %q, want the ID of the stored bytes, not of the upload", icon.ID)
+			if icon.ID != builder.IconID(stored) {
+				t.Errorf("AddIcon(loose) id = %q, want the ID of the stored bytes %q", icon.ID, builder.IconID(stored))
 			}
 
-			if icon.Width != width || icon.Height != height || icon.Bytes != len(stored) {
-				t.Fatalf("icon = %d x %d, %d bytes; the stored PNG is %d x %d, %d bytes",
-					icon.Width, icon.Height, icon.Bytes, width, height, len(stored))
+			if icon.ID == builder.IconID(test.upload) {
+				t.Errorf("AddIcon(loose) id = %q, the ID of the upload; want the ID of the stored bytes", icon.ID)
+			}
+
+			if got, want := [3]int{icon.Width, icon.Height, icon.Bytes}, [3]int{width, height, len(stored)}; got != want {
+				t.Errorf("AddIcon(loose) width, height and bytes = %v, want the stored PNG's %v", got, want)
 			}
 
 			if bytes.Contains(stored, []byte("script")) || bytes.Contains(stored, []byte("51.5")) {
-				t.Fatal("the stored icon still holds the text of the upload")
+				t.Error("AddIcon(loose) stored an icon that holds the text of the upload")
 			}
 
-			if !samePixels(t, stored, test.from) {
-				t.Fatal("the stored icon does not have the pixels of the upload")
+			if diff := cmp.Diff(iconPixels(t, test.from), iconPixels(t, stored)); diff != "" {
+				t.Errorf("AddIcon(loose) pixels mismatch (-want +got):\n%s", diff)
 			}
 
 			// The same upload under the same name again is the same icon.
 			again, created, err := h.service.AddIcon(context.Background(), testActor, "loose", test.upload)
-			if err != nil || created || again.ID != icon.ID {
-				t.Fatalf("the same upload again: created = %v, err = %v, want icon %s", created, err, icon.ID)
+			if err != nil {
+				t.Errorf("AddIcon(loose) a second time returned error: %v", err)
+			} else if again.ID != icon.ID {
+				t.Errorf("AddIcon(loose) a second time id = %s, want %s", again.ID, icon.ID)
+			}
+
+			if created {
+				t.Error("AddIcon(loose) a second time created = true, want false")
 			}
 
 			// Nothing of the upload but its pixels is in the store.
 			record, err := h.store.GetRecord(NamespaceIcons, "name/loose")
 			if err != nil {
-				t.Fatalf("reading the icon record: %v", err)
+				t.Fatalf("GetRecord(name/loose) returned error: %v", err)
 			}
 
 			if bytes.Contains(record.Value, []byte("script")) {
-				t.Fatal("the record holds the text of the upload")
+				t.Error("icon record name/loose holds the text of the upload")
 			}
 		})
 	}
 }
 
-// samePixels reports whether two PNG files decode to the same image.
-func samePixels(t *testing.T, got, want []byte) bool {
+// iconPixels returns the image a PNG file decodes to, at the origin.
+func iconPixels(t *testing.T, data []byte) *image.NRGBA {
 	t.Helper()
 
-	decode := func(data []byte) *image.NRGBA {
-		img, err := png.Decode(bytes.NewReader(data))
-		if err != nil {
-			t.Fatalf("decoding a PNG: %v", err)
-		}
-
-		bounds := img.Bounds()
-		out := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
-
-		for y := range bounds.Dy() {
-			for x := range bounds.Dx() {
-				out.Set(x, y, img.At(bounds.Min.X+x, bounds.Min.Y+y))
-			}
-		}
-
-		return out
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("png.Decode returned error: %v", err)
 	}
 
-	a, b := decode(got), decode(want)
+	bounds := img.Bounds()
+	out := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 
-	return a.Bounds() == b.Bounds() && bytes.Equal(a.Pix, b.Pix)
+	for y := range bounds.Dy() {
+		for x := range bounds.Dx() {
+			out.Set(x, y, img.At(bounds.Min.X+x, bounds.Min.Y+y))
+		}
+	}
+
+	return out
 }
 
 func TestAddIconRefuses(t *testing.T) {
 	var photo bytes.Buffer
 
 	if err := jpeg.Encode(&photo, image.NewGray(image.Rect(0, 0, 8, 8)), nil); err != nil {
-		t.Fatalf("encoding a JPEG: %v", err)
+		t.Fatalf("jpeg.Encode returned error: %v", err)
 	}
 
 	pixel := iconPixel(t, 4)
@@ -608,26 +666,39 @@ func TestAddIconRefuses(t *testing.T) {
 			h := newHarness(t)
 
 			icon, created, err := h.service.AddIcon(context.Background(), test.owner, test.icon, test.upload)
-			if !errors.Is(err, test.is) || icon != nil || created {
-				t.Fatalf("AddIcon = %+v, %v, %v; want an error matching %v", icon, created, err, test.is)
+			if !errors.Is(err, test.is) {
+				t.Errorf("AddIcon(%q) error = %v, want %v", test.icon, err, test.is)
+			}
+
+			if icon != nil || created {
+				t.Errorf("AddIcon(%q) = %+v, created %t; want no icon", test.icon, icon, created)
 			}
 
 			var invalid *ValidationError
 
-			if test.field != "" && (!errors.As(err, &invalid) || invalid.Field != test.field ||
-				!strings.HasSuffix(invalid.Reason, test.reason)) {
-				t.Fatalf("AddIcon error = %v, want %q %q", err, test.field, test.reason)
+			if test.field != "" {
+				if !errors.As(err, &invalid) {
+					t.Errorf("AddIcon(%q) error = %v, want a ValidationError", test.icon, err)
+				} else if invalid.Field != test.field || !strings.HasSuffix(invalid.Reason, test.reason) {
+					t.Errorf("AddIcon(%q) refused field %q because it %q, want field %q because it ends %q",
+						test.icon, invalid.Field, invalid.Reason, test.field, test.reason)
+				}
 			}
 
 			var limit *TooLargeError
 
-			if errors.Is(test.is, ErrTooLarge) &&
-				(!errors.As(err, &limit) || limit.Limit != MaxIconUploadBytes || limit.What != kindIcon || limit.Size != MaxIconUploadBytes+1) {
-				t.Fatalf("AddIcon error = %v, want the upload limit of an icon", err)
+			if errors.Is(test.is, ErrTooLarge) {
+				want := TooLargeError{What: kindIcon, Size: MaxIconUploadBytes + 1, Limit: MaxIconUploadBytes}
+
+				if !errors.As(err, &limit) {
+					t.Errorf("AddIcon(%q) error = %v, want a TooLargeError", test.icon, err)
+				} else if diff := cmp.Diff(want, *limit); diff != "" {
+					t.Errorf("AddIcon(%q) limit mismatch (-want +got):\n%s", test.icon, diff)
+				}
 			}
 
 			if got := h.store.Count(NamespaceIcons); got != 0 {
-				t.Fatalf("a refused icon left %d records", got)
+				t.Errorf("a refused AddIcon(%q) left %d records, want 0", test.icon, got)
 			}
 		})
 	}
@@ -644,14 +715,24 @@ func TestAddIconAcceptsTheLimits(t *testing.T) {
 	upload := iconWithText(t, plain, text)
 
 	if len(upload) != MaxIconUploadBytes {
-		t.Fatalf("the upload is %d bytes, want the limit", len(upload))
+		t.Fatalf("the upload is %d bytes, want the limit %d", len(upload), MaxIconUploadBytes)
 	}
 
 	icon := mustAddIcon(t, h, testActor, name, upload)
 
-	if icon.Name != name || icon.Width != builder.MaxIconPixels || icon.Height != builder.MaxIconPixels ||
-		icon.Bytes > builder.MaxIconBytes {
-		t.Fatalf("icon = %q, %d x %d, %d bytes", icon.Name, icon.Width, icon.Height, icon.Bytes)
+	type shape struct {
+		Name          string
+		Width, Height int
+	}
+
+	want := shape{Name: name, Width: builder.MaxIconPixels, Height: builder.MaxIconPixels}
+
+	if diff := cmp.Diff(want, shape{Name: icon.Name, Width: icon.Width, Height: icon.Height}); diff != "" {
+		t.Errorf("AddIcon of the largest upload mismatch (-want +got):\n%s", diff)
+	}
+
+	if icon.Bytes > builder.MaxIconBytes {
+		t.Errorf("AddIcon of the largest upload stored %d bytes, want at most %d", icon.Bytes, builder.MaxIconBytes)
 	}
 
 	// Every character a name may hold.
@@ -668,19 +749,29 @@ func TestIconLibraryHoldsAtMost2000Icons(t *testing.T) {
 	plantLibraryIcons(t, h, MaxIcons)
 
 	icon, created, err := h.service.AddIcon(context.Background(), testActor, "one-too-many", iconPixel(t, MaxIcons))
+	if icon != nil || created {
+		t.Errorf("AddIcon(one-too-many) = %+v, created %t; want no icon", icon, created)
+	}
 
 	var invalid *ValidationError
 
-	if !errors.As(err, &invalid) || icon != nil || created || invalid.Reason != "is full: it holds at most 2000 icons" {
-		t.Fatalf("the 2001st icon: %+v, %v, %v; want the library refused as full", icon, created, err)
+	if !errors.As(err, &invalid) {
+		t.Errorf("AddIcon(one-too-many) error = %v, want a ValidationError", err)
+	} else if want := "is full: it holds at most 2000 icons"; invalid.Reason != want {
+		t.Errorf("AddIcon(one-too-many) refused because it %q, want %q", invalid.Reason, want)
 	}
 
-	if _, created, err := h.service.AddIcon(context.Background(), testActor, "icon-0000", iconPixel(t, 0)); err != nil || created {
-		t.Fatalf("an icon of the full library: created = %v, err = %v", created, err)
+	_, created, err = h.service.AddIcon(context.Background(), testActor, "icon-0000", iconPixel(t, 0))
+	if err != nil {
+		t.Errorf("AddIcon(icon-0000) of an icon the full library has returned error: %v", err)
+	}
+
+	if created {
+		t.Error("AddIcon(icon-0000) of an icon the full library has created = true, want false")
 	}
 
 	if err := h.service.DeleteIcon(context.Background(), testActor, "icon-0000"); err != nil {
-		t.Fatalf("DeleteIcon returned error: %v", err)
+		t.Fatalf("DeleteIcon(icon-0000) returned error: %v", err)
 	}
 
 	mustAddIcon(t, h, testPeer, "now-it-fits", iconPixel(t, MaxIcons))
@@ -705,133 +796,137 @@ func TestListIconsOrder(t *testing.T) {
 		mustAddIcon(t, h, []string{testActor, testPeer}[i%2], name, iconPixel(t, i))
 	}
 
-	if names := iconNames(t, h); !slices.Equal(names, []string{"alpha", "Alpha-2", "beta", "Beta-1", "gamma"}) {
-		t.Fatalf("ListIcons = %q, want them by name ignoring case", names)
+	want := []string{"alpha", "Alpha-2", "beta", "Beta-1", "gamma"}
+	if names := iconNames(t, h); !slices.Equal(names, want) {
+		t.Errorf("ListIcons names = %q, want them by name ignoring case %q", names, want)
 	}
+}
+
+// aliasRecord is the decoded record of an old name of an icon.
+func aliasRecord(name, target string) map[string]any {
+	return map[string]any{"kind": "alias", "name": name, "target": target}
 }
 
 // TestRenameIcon renames an icon twice, changes the case of its name, and
 // renames it back to its first name.
 func TestRenameIcon(t *testing.T) {
 	h := newHarness(t)
+	ctx := context.Background()
 	original := mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+	volatile := cmpopts.IgnoreFields(LibraryIcon{}, "Updated", "Revision")
 
 	h.now.Add(10)
 
-	checkFirstRename(t, h, original)
-	third := checkSecondRename(t, h)
-	cased := checkRenameChangingCase(t, h, third)
-
-	// The same name again changes nothing.
-	same, err := h.service.RenameIcon(context.Background(), testActor, "plc", "plc-3")
-	if err != nil || same.Revision != cased.Revision {
-		t.Fatalf("renaming to its own name = %+v, %v; want nothing written", same, err)
-	}
-
-	checkRenameBack(t, h)
-}
-
-// checkFirstRename renames plc to plc-v2 and asserts the icon moved, and plc is
-// an unlisted alias of it.
-func checkFirstRename(t *testing.T, h *testHarness, original *LibraryIcon) {
-	t.Helper()
-
-	renamed, err := h.service.RenameIcon(context.Background(), testActor, "PLC", "plc-v2")
+	// The icon moves, and its old name is an unlisted alias of it.
+	renamed, err := h.service.RenameIcon(ctx, testActor, "PLC", "plc-v2")
 	if err != nil {
-		t.Fatalf("RenameIcon returned error: %v", err)
+		t.Fatalf("RenameIcon(PLC, plc-v2) returned error: %v", err)
 	}
 
-	if renamed.Name != "plc-v2" || !slices.Equal(renamed.Aliases, []string{"plc"}) || renamed.ID != original.ID ||
-		renamed.Owner != testActor || !renamed.Created.Equal(original.Created) || !renamed.Updated.After(original.Updated) {
-		t.Fatalf("the renamed icon = %+v, was %+v", renamed, original)
+	want := *original
+	want.Name, want.Aliases = "plc-v2", []string{"plc"}
+
+	if diff := iconDiff(want, *renamed, volatile); diff != "" {
+		t.Errorf("RenameIcon(PLC, plc-v2) mismatch (-want +got):\n%s", diff)
 	}
 
-	if alias := storedValue(t, h, "name/plc"); fmt.Sprint(alias) != fmt.Sprint(map[string]any{
-		"kind": "alias", "name": "plc", "target": "plc-v2",
-	}) {
-		t.Fatalf("the old name's record = %v, want an alias of plc-v2", alias)
+	if !renamed.Updated.After(original.Updated) {
+		t.Errorf("RenameIcon(PLC, plc-v2) updated = %v, want after %v", renamed.Updated, original.Updated)
 	}
 
-	if got := mustGetIcon(t, h, "plc"); got.Name != "plc-v2" || got.Revision != renamed.Revision {
-		t.Fatalf("the old name names %+v, want the renamed icon", got)
+	if diff := cmp.Diff(aliasRecord("plc", "plc-v2"), storedValue(t, h, "name/plc")); diff != "" {
+		t.Errorf("icon record name/plc after the first rename mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := iconDiff(*renamed, *mustGetIcon(t, h, "plc")); diff != "" {
+		t.Errorf("GetIcon(plc) after the first rename mismatch (-want +got):\n%s", diff)
 	}
 
 	if names := iconNames(t, h); !slices.Equal(names, []string{"plc-v2"}) {
-		t.Fatalf("the library lists %q, want the icon once", names)
+		t.Errorf("ListIcons names after the first rename = %q, want [plc-v2]", names)
 	}
-}
 
-// checkSecondRename renames plc-v2 to PLC-3 and asserts both old names point at
-// the new one. It returns the renamed icon.
-func checkSecondRename(t *testing.T, h *testHarness) *LibraryIcon {
-	t.Helper()
+	// A second rename points both old names at the new one.
+	third, err := h.service.RenameIcon(ctx, testActor, "plc-v2", "PLC-3")
+	if err != nil {
+		t.Fatalf("RenameIcon(plc-v2, PLC-3) returned error: %v", err)
+	}
 
-	third, err := h.service.RenameIcon(context.Background(), testActor, "plc-v2", "PLC-3")
-	if err != nil || !slices.Equal(third.Aliases, []string{"plc", "plc-v2"}) {
-		t.Fatalf("the second rename = %+v, %v", third, err)
+	if want := []string{"plc", "plc-v2"}; !slices.Equal(third.Aliases, want) {
+		t.Errorf("RenameIcon(plc-v2, PLC-3) aliases = %q, want %q", third.Aliases, want)
 	}
 
 	for _, name := range []string{"plc", "plc-v2"} {
-		if alias := storedValue(t, h, iconKey(name)); fmt.Sprint(alias) != fmt.Sprint(map[string]any{
-			"kind": "alias", "name": name, "target": "plc-3",
-		}) {
-			t.Fatalf("the record of %s after two renames = %v, want an alias of plc-3", name, alias)
+		if diff := cmp.Diff(aliasRecord(name, "plc-3"), storedValue(t, h, iconKey(name))); diff != "" {
+			t.Errorf("icon record of %s after two renames mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 
 	if got := mustGetIcon(t, h, "plc"); got.Name != "PLC-3" {
-		t.Fatalf("the first name names %q after two renames, want PLC-3", got.Name)
+		t.Errorf("GetIcon(plc) after two renames name = %q, want PLC-3", got.Name)
 	}
 
-	return third
-}
-
-// checkRenameChangingCase renames PLC-3 to plc-3 in place, with a new revision
-// and the same aliases. It returns the renamed icon.
-func checkRenameChangingCase(t *testing.T, h *testHarness, third *LibraryIcon) *LibraryIcon {
-	t.Helper()
-
+	// A change of case renames the icon in place, with a new revision.
 	keys := h.store.Keys(NamespaceIcons)
 
-	cased, err := h.service.RenameIcon(context.Background(), testActor, "plc-3", "plc-3")
-	if err != nil || cased.Name != "plc-3" || !slices.Equal(cased.Aliases, third.Aliases) || cased.Revision == third.Revision {
-		t.Fatalf("the change of case = %+v, %v", cased, err)
+	cased, err := h.service.RenameIcon(ctx, testActor, "plc-3", "plc-3")
+	if err != nil {
+		t.Fatalf("RenameIcon(plc-3, plc-3) returned error: %v", err)
+	}
+
+	want = *third
+	want.Name = "plc-3"
+
+	if diff := iconDiff(want, *cased, volatile); diff != "" {
+		t.Errorf("RenameIcon(plc-3, plc-3) mismatch (-want +got):\n%s", diff)
+	}
+
+	if cased.Revision == third.Revision {
+		t.Errorf("RenameIcon(plc-3, plc-3) revision = %d, want a new one", cased.Revision)
 	}
 
 	if after := h.store.Keys(NamespaceIcons); !slices.Equal(after, keys) {
-		t.Fatalf("a change of case changed the records from %q to %q", keys, after)
+		t.Errorf("icon records after RenameIcon(plc-3, plc-3) = %q, want them unchanged %q", after, keys)
 	}
 
-	return cased
-}
+	// The same name again changes nothing.
+	if same, err := h.service.RenameIcon(ctx, testActor, "plc", "plc-3"); err != nil {
+		t.Errorf("RenameIcon(plc, plc-3) to its own name returned error: %v", err)
+	} else if diff := iconDiff(*cased, *same); diff != "" {
+		t.Errorf("RenameIcon(plc, plc-3) to its own name mismatch (-want +got):\n%s", diff)
+	}
 
-// checkRenameBack renames plc-3 back to plc, which takes the name back from the
-// alias; the other old names become aliases of plc.
-func checkRenameBack(t *testing.T, h *testHarness) {
-	t.Helper()
+	// Renaming back takes the first name back from the alias; the other old
+	// names become aliases of it.
+	back, err := h.service.RenameIcon(ctx, testActor, "plc-3", "plc")
+	if err != nil {
+		t.Fatalf("RenameIcon(plc-3, plc) returned error: %v", err)
+	}
 
-	back, err := h.service.RenameIcon(context.Background(), testActor, "plc-3", "plc")
-	if err != nil || back.Name != "plc" || !slices.Equal(back.Aliases, []string{"plc-v2", "plc-3"}) {
-		t.Fatalf("renaming back = %+v, %v", back, err)
+	want = *cased
+	want.Name, want.Aliases = "plc", []string{"plc-v2", "plc-3"}
+
+	if diff := iconDiff(want, *back, volatile); diff != "" {
+		t.Errorf("RenameIcon(plc-3, plc) mismatch (-want +got):\n%s", diff)
 	}
 
 	if stored := storedValue(t, h, "name/plc"); stored["kind"] != "icon" {
-		t.Fatalf("the first name's record = %v, want the icon", stored)
+		t.Errorf("icon record name/plc after renaming back = %v, want the icon", stored)
 	}
 
 	for _, name := range []string{"plc-v2", "PLC-3", "plc"} {
 		if got := mustGetIcon(t, h, name); got.Name != "plc" {
-			t.Errorf("%s names %q, want plc", name, got.Name)
+			t.Errorf("GetIcon(%s) after renaming back name = %q, want plc", name, got.Name)
 		}
 	}
 
 	if got := h.store.Count(NamespaceIcons); got != 3 {
-		t.Fatalf("%d records, want the icon and two aliases", got)
+		t.Errorf("%d icon records after renaming back, want the icon and two aliases", got)
 	}
 
 	for _, name := range []string{"plc-v2", "plc-3"} {
-		if alias := storedValue(t, h, iconKey(name)); alias["target"] != "plc" {
-			t.Errorf("the record of %s after renaming back = %v, want an alias of plc", name, alias)
+		if diff := cmp.Diff(aliasRecord(name, "plc"), storedValue(t, h, iconKey(name))); diff != "" {
+			t.Errorf("icon record of %s after renaming back mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 }
@@ -849,14 +944,16 @@ func TestRenameIconManyTimes(t *testing.T) {
 
 	for i := 1; i <= renames; i++ {
 		name := fmt.Sprintf("plc-%d", i)
+		from := names[len(names)-1]
 
-		renamed, err := h.service.RenameIcon(ctx, testActor, names[len(names)-1], name)
+		// Each rename starts from the name the one before it gave.
+		renamed, err := h.service.RenameIcon(ctx, testActor, from, name)
 		if err != nil {
-			t.Fatalf("rename %d returned error: %v", i, err)
+			t.Fatalf("RenameIcon(%s, %s) returned error: %v", from, name, err)
 		}
 
 		if !slices.Equal(renamed.Aliases, names) {
-			t.Fatalf("after rename %d the aliases are %q, want %q", i, renamed.Aliases, names)
+			t.Errorf("RenameIcon(%s, %s) aliases = %q, want %q", from, name, renamed.Aliases, names)
 		}
 
 		names = append(names, name)
@@ -865,27 +962,44 @@ func TestRenameIconManyTimes(t *testing.T) {
 	last := names[len(names)-1]
 
 	for _, name := range names[:renames] {
-		if alias := storedValue(t, h, iconKey(name)); alias["kind"] != "alias" || alias["target"] != last {
-			t.Errorf("the record of %s = %v, want an alias of %s", name, alias, last)
+		if diff := cmp.Diff(aliasRecord(name, last), storedValue(t, h, iconKey(name))); diff != "" {
+			t.Errorf("icon record of %s mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 
+	final := mustGetIcon(t, h, last)
+	if final.ID != icon.ID {
+		t.Errorf("GetIcon(%s) id = %s, want the icon's %s", last, final.ID, icon.ID)
+	}
+
 	for _, name := range names {
-		if got := mustGetIcon(t, h, name); got.Name != last || got.ID != icon.ID {
-			t.Errorf("%s names %+v, want the icon as %s", name, got, last)
+		if diff := iconDiff(*final, *mustGetIcon(t, h, name)); diff != "" {
+			t.Errorf("GetIcon(%s) mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 
 	if got := h.store.Count(NamespaceIcons); got != renames+1 {
-		t.Fatalf("%d records, want the icon and %d aliases", got, renames)
+		t.Errorf("%d icon records, want the icon and %d aliases", got, renames)
 	}
 
 	// The first name is still taken, by the icon it names.
 	var taken *IconNameTakenError
 
-	if _, _, err := h.service.AddIcon(ctx, testPeer, "PLC", iconPixel(t, 2)); !errors.As(err, &taken) || taken.Icon != last {
-		t.Fatalf("adding an icon under the first name = %v, want it taken by %s", err, last)
+	if _, _, err := h.service.AddIcon(ctx, testPeer, "PLC", iconPixel(t, 2)); !errors.As(err, &taken) {
+		t.Errorf("AddIcon(PLC) under the first name error = %v, want an IconNameTakenError", err)
+	} else if taken.Icon != last {
+		t.Errorf("AddIcon(PLC) under the first name is taken by %s, want %s", taken.Icon, last)
 	}
+}
+
+// iconNaming is the name of an icon and its old names.
+type iconNaming struct {
+	Name    string
+	Aliases []string
+}
+
+func namingOf(icon *LibraryIcon) iconNaming {
+	return iconNaming{Name: icon.Name, Aliases: icon.Aliases}
 }
 
 // TestRenameIconRetargetFailure asserts a rename that cannot repoint an older
@@ -897,7 +1011,7 @@ func TestRenameIconRetargetFailure(t *testing.T) {
 	mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
 
 	if _, err := h.service.RenameIcon(ctx, testActor, "plc", "plc-2"); err != nil {
-		t.Fatalf("RenameIcon returned error: %v", err)
+		t.Fatalf("RenameIcon(plc, plc-2) returned error: %v", err)
 	}
 
 	h.store.BeforeUpdate = func(_, key string) error {
@@ -909,27 +1023,31 @@ func TestRenameIconRetargetFailure(t *testing.T) {
 	}
 
 	renamed, err := h.service.RenameIcon(ctx, testActor, "plc-2", "plc-3")
-	if err != nil || renamed.Name != "plc-3" || !slices.Equal(renamed.Aliases, []string{"plc", "plc-2"}) {
-		t.Fatalf("a rename whose retargeting failed = %+v, %v; want the icon renamed", renamed, err)
+	if err != nil {
+		t.Fatalf("RenameIcon(plc-2, plc-3) whose retargeting failed returned error: %v", err)
+	}
+
+	if diff := cmp.Diff(iconNaming{Name: "plc-3", Aliases: []string{"plc", "plc-2"}}, namingOf(renamed)); diff != "" {
+		t.Errorf("RenameIcon(plc-2, plc-3) whose retargeting failed mismatch (-want +got):\n%s", diff)
 	}
 
 	h.store.BeforeUpdate = nil
 
-	if alias := storedValue(t, h, "name/plc"); alias["target"] != "plc-2" {
-		t.Fatalf("the alias that could not be retargeted = %v, want it as it was", alias)
+	if diff := cmp.Diff(aliasRecord("plc", "plc-2"), storedValue(t, h, "name/plc")); diff != "" {
+		t.Errorf("icon record name/plc that could not be retargeted mismatch (-want +got):\n%s", diff)
 	}
 
 	if got := mustGetIcon(t, h, "plc"); got.Name != "plc-3" {
-		t.Fatalf("the first name names %q, want plc-3", got.Name)
+		t.Errorf("GetIcon(plc) name = %q, want plc-3", got.Name)
 	}
 
 	if _, err := h.service.RenameIcon(ctx, testActor, "plc-3", "plc-4"); err != nil {
-		t.Fatalf("RenameIcon returned error: %v", err)
+		t.Fatalf("RenameIcon(plc-3, plc-4) returned error: %v", err)
 	}
 
 	for _, name := range []string{"plc", "plc-2", "plc-3"} {
-		if alias := storedValue(t, h, iconKey(name)); alias["target"] != "plc-4" {
-			t.Errorf("the record of %s after the next rename = %v, want an alias of plc-4", name, alias)
+		if diff := cmp.Diff(aliasRecord(name, "plc-4"), storedValue(t, h, iconKey(name))); diff != "" {
+			t.Errorf("icon record of %s after the next rename mismatch (-want +got):\n%s", name, diff)
 		}
 	}
 }
@@ -938,11 +1056,11 @@ func TestRenameIconRefuses(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 
-	mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+	plc := mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
 	mustAddIcon(t, h, testPeer, "hmi", iconPixel(t, 2))
 
 	if _, err := h.service.RenameIcon(ctx, testPeer, "hmi", "hmi-old"); err != nil {
-		t.Fatalf("RenameIcon returned error: %v", err)
+		t.Fatalf("RenameIcon(hmi, hmi-old) returned error: %v", err)
 	}
 
 	before := h.store.Keys(NamespaceIcons)
@@ -952,35 +1070,53 @@ func TestRenameIconRefuses(t *testing.T) {
 	for _, test := range []struct {
 		name, from, to string
 		check          func(error) bool
+		want           string
 	}{
-		{name: "another icon's name", from: "plc", to: "HMI-OLD", check: func(err error) bool {
+		{name: "the name of another icon", from: "plc", to: "HMI-OLD", want: "the name taken by bob's hmi-old", check: func(err error) bool {
 			return errors.As(err, &taken) && taken.Icon == "hmi-old" && taken.Owner == testPeer
 		}},
-		{name: "another icon's alias", from: "plc", to: "Hmi", check: func(err error) bool {
+		{name: "an alias of another icon", from: "plc", to: "Hmi", want: "the name taken by hmi-old", check: func(err error) bool {
 			return errors.As(err, &taken) && taken.Icon == "hmi-old"
 		}},
-		{name: "a name that is none", from: "plc", to: "plc v2", check: func(err error) bool {
+		{name: "a name that is none", from: "plc", to: "plc v2", want: "a ValidationError of the icon name", check: func(err error) bool {
 			var invalid *ValidationError
 
 			return errors.As(err, &invalid) && invalid.Field == "icon name"
 		}},
-		{name: "no name", from: "plc", to: "", check: func(err error) bool { return errors.Is(err, ErrInvalid) }},
-		{name: "an icon nobody has", from: "scada", to: "scada-2", check: func(err error) bool { return errors.Is(err, ErrNotFound) }},
-		{name: "a path", from: "../plc", to: "scada-2", check: func(err error) bool { return errors.Is(err, ErrNotFound) }},
+		{name: "no name", from: "plc", to: "", want: "ErrInvalid", check: func(err error) bool { return errors.Is(err, ErrInvalid) }},
+		{
+			name: "an icon nobody has", from: "scada", to: "scada-2", want: "ErrNotFound",
+			check: func(err error) bool { return errors.Is(err, ErrNotFound) },
+		},
+		{name: "a path", from: "../plc", to: "scada-2", want: "ErrNotFound", check: func(err error) bool { return errors.Is(err, ErrNotFound) }},
 	} {
-		if icon, err := h.service.RenameIcon(ctx, testActor, test.from, test.to); icon != nil || !test.check(err) {
-			t.Errorf("%s: RenameIcon = %+v, %v", test.name, icon, err)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			icon, err := h.service.RenameIcon(ctx, testActor, test.from, test.to)
+			if icon != nil {
+				t.Errorf("RenameIcon(%q, %q) = %+v, want no icon", test.from, test.to, icon)
+			}
+
+			if !test.check(err) {
+				t.Errorf("RenameIcon(%q, %q) error = %v, want %s", test.from, test.to, err, test.want)
+			}
+		})
 	}
 
 	if after := h.store.Keys(NamespaceIcons); !slices.Equal(after, before) {
-		t.Fatalf("a refused rename changed the records from %q to %q", before, after)
+		t.Errorf("icon records after the refused renames = %q, want them unchanged %q", after, before)
 	}
 
 	// Any user renames the icon of another user, which keeps its uploader.
 	icon, err := h.service.RenameIcon(ctx, testPeer, "plc", "plc-2")
-	if err != nil || icon.Owner != testActor || icon.Name != "plc-2" {
-		t.Fatalf("renaming another user's icon = %+v, %v", icon, err)
+	if err != nil {
+		t.Fatalf("RenameIcon(plc, plc-2) by %s returned error: %v", testPeer, err)
+	}
+
+	want := *plc
+	want.Name, want.Aliases, want.UpdatedBy = "plc-2", []string{"plc"}, testPeer
+
+	if diff := iconDiff(want, *icon, cmpopts.IgnoreFields(LibraryIcon{}, "Updated", "Revision")); diff != "" {
+		t.Errorf("RenameIcon(plc, plc-2) by %s mismatch (-want +got):\n%s", testPeer, diff)
 	}
 }
 
@@ -999,18 +1135,22 @@ func TestRenameIconRace(t *testing.T) {
 	}
 
 	renamed, err := h.service.RenameIcon(context.Background(), testActor, "plc", "plc-2")
-	if !errors.Is(err, ErrConflict) || renamed != nil {
-		t.Fatalf("a rename that lost a race = %+v, %v; want a conflict", renamed, err)
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("RenameIcon(plc, plc-2) that lost a race error = %v, want ErrConflict", err)
+	}
+
+	if renamed != nil {
+		t.Errorf("RenameIcon(plc, plc-2) that lost a race = %+v, want no icon", renamed)
 	}
 
 	h.store.BeforeUpdate = nil
 
 	if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, []string{"name/plc"}) {
-		t.Fatalf("after the lost race the records are %q, want the icon's alone", keys)
+		t.Errorf("icon records after the lost race = %q, want [name/plc]", keys)
 	}
 
-	if got := mustGetIcon(t, h, "plc"); !sameIcon(*got, *icon) {
-		t.Fatalf("after the lost race the icon is %+v, want %+v", got, icon)
+	if diff := iconDiff(*icon, *mustGetIcon(t, h, "plc")); diff != "" {
+		t.Errorf("GetIcon(plc) after the lost race mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1025,7 +1165,7 @@ func TestDeleteIconRemovesAliases(t *testing.T) {
 
 	for _, rename := range [][2]string{{"plc", "plc-2"}, {"plc-2", "plc-3"}, {"hmi", "hmi-2"}} {
 		if _, err := h.service.RenameIcon(ctx, testActor, rename[0], rename[1]); err != nil {
-			t.Fatalf("RenameIcon(%s) returned error: %v", rename[0], err)
+			t.Fatalf("RenameIcon(%s, %s) returned error: %v", rename[0], rename[1], err)
 		}
 	}
 
@@ -1039,11 +1179,11 @@ func TestDeleteIconRemovesAliases(t *testing.T) {
 
 	// A user other than the uploader deletes it.
 	if err := h.service.DeleteIcon(ctx, testPeer, "PLC"); err != nil {
-		t.Fatalf("deleting the icon through its first name: %v", err)
+		t.Fatalf("DeleteIcon(PLC) through its first name returned error: %v", err)
 	}
 
 	if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, []string{"name/hmi", "name/hmi-2"}) {
-		t.Fatalf("after the delete the records are %q, want only the other icon's", keys)
+		t.Errorf("icon records after DeleteIcon(PLC) = %q, want only the other icon's [name/hmi name/hmi-2]", keys)
 	}
 
 	for _, name := range []string{"plc", "plc-2", "plc-3"} {
@@ -1052,8 +1192,12 @@ func TestDeleteIconRemovesAliases(t *testing.T) {
 		}
 	}
 
-	if err := h.service.DeleteIcon(ctx, testActor, "hmi"); err != nil || h.store.Count(NamespaceIcons) != 0 {
-		t.Fatalf("deleting another user's icon = %v, %d records left", err, h.store.Count(NamespaceIcons))
+	if err := h.service.DeleteIcon(ctx, testActor, "hmi"); err != nil {
+		t.Errorf("DeleteIcon(hmi) of another user's icon returned error: %v", err)
+	}
+
+	if got := h.store.Count(NamespaceIcons); got != 0 {
+		t.Errorf("%d icon records after DeleteIcon(hmi), want 0", got)
 	}
 }
 
@@ -1069,11 +1213,11 @@ func TestDeleteIconRefuses(t *testing.T) {
 	}
 
 	if err := h.service.DeleteIcon(ctx, "", "kept"); !errors.Is(err, ErrInvalid) {
-		t.Errorf("DeleteIcon without a caller = %v, want ErrInvalid", err)
+		t.Errorf("DeleteIcon(kept) without a caller = %v, want ErrInvalid", err)
 	}
 
 	if got := h.store.Count(NamespaceIcons); got != 1 {
-		t.Fatalf("%d icon records, want the one that was kept", got)
+		t.Errorf("%d icon records, want the one that was kept", got)
 	}
 }
 
@@ -1083,17 +1227,21 @@ func TestAddIconOverDanglingAlias(t *testing.T) {
 	h := newHarness(t)
 
 	if _, err := h.store.CreateRecord(NamespaceIcons, "name/old", []byte(`{"kind":"alias","name":"old","target":"gone"}`)); err != nil {
-		t.Fatalf("planting the alias: %v", err)
+		t.Fatalf("CreateRecord(name/old) returned error: %v", err)
 	}
 
 	if _, err := h.service.GetIcon(context.Background(), "old"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("GetIcon of a dangling alias = %v, want ErrNotFound", err)
+		t.Errorf("GetIcon(old) of a dangling alias = %v, want ErrNotFound", err)
 	}
 
 	icon := mustAddIcon(t, h, testPeer, "OLD", iconPixel(t, 3))
 
-	if stored := storedValue(t, h, "name/old"); stored["kind"] != "icon" || mustGetIcon(t, h, "old").Revision != icon.Revision {
-		t.Fatalf("the name's record = %v, want the new icon", stored)
+	if stored := storedValue(t, h, "name/old"); stored["kind"] != "icon" {
+		t.Errorf("icon record name/old = %v, want the new icon", stored)
+	}
+
+	if diff := iconDiff(*icon, *mustGetIcon(t, h, "old")); diff != "" {
+		t.Errorf("GetIcon(old) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1190,7 +1338,7 @@ func TestListIconsSkipsDamagedRecords(t *testing.T) {
 			kept := mustAddIcon(t, h, testActor, "kept", good)
 
 			if _, err := h.store.CreateRecord(NamespaceIcons, "name/planted", test.value); err != nil {
-				t.Fatalf("planting the record: %v", err)
+				t.Fatalf("CreateRecord(name/planted) returned error: %v", err)
 			}
 
 			logs := plogtest.Capture(t)
@@ -1200,35 +1348,44 @@ func TestListIconsSkipsDamagedRecords(t *testing.T) {
 				t.Fatalf("ListIcons returned error: %v", err)
 			}
 
-			if len(icons) != 1 || !sameIcon(icons[0], *kept) {
-				t.Fatalf("ListIcons = %+v, want only the icon that was added", icons)
+			if diff := iconDiff([]LibraryIcon{*kept}, icons); diff != "" {
+				t.Errorf("ListIcons mismatch (-want +got):\n%s", diff)
 			}
 
 			logged := logs.Records(t, func(r map[string]any) bool { return r["level"] == slog.LevelError.String() })
-			if len(logged) != 1 || logged[0]["msg"] != "skipping unreadable builder icon" || logged[0]["icon"] != "name/planted" {
-				t.Fatalf("logged %v, want one error naming the record", logged)
+			if len(logged) != 1 {
+				t.Fatalf("ListIcons logged %d errors %v, want 1 naming the record", len(logged), logged)
+			}
+
+			want := map[string]any{"msg": "skipping unreadable builder icon", "icon": "name/planted"}
+			if diff := cmp.Diff(want, map[string]any{"msg": logged[0]["msg"], "icon": logged[0]["icon"]}); diff != "" {
+				t.Errorf("ListIcons logged error mismatch (-want +got):\n%s", diff)
 			}
 
 			if reason, _ := logged[0]["err"].(string); !strings.Contains(reason, test.reason) {
-				t.Fatalf("logged reason %q, want %q", reason, test.reason)
+				t.Errorf("ListIcons logged reason %q, want it to contain %q", reason, test.reason)
 			}
 
 			// What the record holds is never logged.
 			for _, content := range []string{"svg", "alert", "hidden", "iVBOR"} {
 				if strings.Contains(logs.String(), content) {
-					t.Fatalf("the log holds %q of the record: %s", content, logs.String())
+					t.Errorf("ListIcons log holds %q of the record: %s", content, logs.String())
 				}
 			}
 
 			// The name is taken by what cannot be read, which any user
 			// deletes.
-			if icon, created, err := h.service.AddIcon(ctx, testActor, "planted", other); !errors.Is(err, ErrCorrupt) ||
-				icon != nil || created {
-				t.Fatalf("adding an icon of the record's name: %+v, %v, %v; want ErrCorrupt", icon, created, err)
+			icon, created, err := h.service.AddIcon(ctx, testActor, "planted", other)
+			if !errors.Is(err, ErrCorrupt) {
+				t.Errorf("AddIcon(planted) over the damaged record error = %v, want ErrCorrupt", err)
+			}
+
+			if icon != nil || created {
+				t.Errorf("AddIcon(planted) over the damaged record = %+v, created %t; want no icon", icon, created)
 			}
 
 			if err := h.service.DeleteIcon(ctx, testPeer, "planted"); err != nil {
-				t.Fatalf("deleting the damaged record: %v", err)
+				t.Fatalf("DeleteIcon(planted) of the damaged record returned error: %v", err)
 			}
 
 			mustAddIcon(t, h, testActor, "planted", other)
@@ -1251,9 +1408,8 @@ func TestListIconsTrustsOnlyTheImage(t *testing.T) {
 
 	icons := mustListIcons(t, h)
 
-	if len(icons) != 1 || icons[0].Width != 1 || icons[0].Height != 1 || icons[0].Bytes != icon.Bytes ||
-		icons[0].Data != icon.Data {
-		t.Fatalf("ListIcons = %+v, want %+v", icons, *icon)
+	if diff := iconDiff([]LibraryIcon{*icon}, icons, cmpopts.IgnoreFields(LibraryIcon{}, "Revision")); diff != "" {
+		t.Errorf("ListIcons of a record that lies about its image mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1275,8 +1431,18 @@ func TestAddIconRacingUpload(t *testing.T) {
 	}
 
 	second, created, err := h.service.AddIcon(context.Background(), testPeer, "PLC", upload)
-	if err != nil || created || first == nil || !sameIcon(*second, *first) {
-		t.Fatalf("the second upload: %+v, created = %v, err = %v; want %+v", second, created, err, first)
+	if first == nil {
+		t.Fatal("AddIcon(PLC) did not create a record: the test proves nothing")
+	}
+
+	if err != nil {
+		t.Errorf("AddIcon(PLC) of the same image racing another returned error: %v", err)
+	} else if diff := iconDiff(*first, *second); diff != "" {
+		t.Errorf("AddIcon(PLC) of the same image racing another mismatch (-want +got):\n%s", diff)
+	}
+
+	if created {
+		t.Error("AddIcon(PLC) of the same image racing another created = true, want false")
 	}
 
 	h.store.BeforeCreate = func(string, string) error {
@@ -1289,11 +1455,11 @@ func TestAddIconRacingUpload(t *testing.T) {
 	var taken *IconNameTakenError
 
 	if _, _, err := h.service.AddIcon(context.Background(), testPeer, "hmi", iconPixel(t, 11)); !errors.As(err, &taken) {
-		t.Fatalf("another image under a name just taken = %v, want the name refused as taken", err)
+		t.Errorf("AddIcon(hmi) of another image under a name just taken error = %v, want an IconNameTakenError", err)
 	}
 
 	if got := h.store.Count(NamespaceIcons); got != 2 {
-		t.Fatalf("%d icon records, want 2", got)
+		t.Errorf("%d icon records, want 2", got)
 	}
 }
 
@@ -1305,7 +1471,7 @@ func TestIconLibraryStoreFailures(t *testing.T) {
 	h.store.BeforeCreate = func(string, string) error { return full }
 
 	if _, _, err := h.service.AddIcon(ctx, testActor, "plc", iconPixel(t, 10)); !errors.Is(err, full) {
-		t.Fatalf("AddIcon = %v, want the store's error", err)
+		t.Errorf("AddIcon(plc) = %v, want the store's error %v", err, full)
 	}
 
 	h.store.BeforeCreate = nil
@@ -1315,14 +1481,14 @@ func TestIconLibraryStoreFailures(t *testing.T) {
 	h.store.FailDelete = func(string, string) error { return refused }
 
 	if err := h.service.DeleteIcon(ctx, testActor, "plc"); !errors.Is(err, refused) {
-		t.Fatalf("DeleteIcon = %v, want the store's error", err)
+		t.Errorf("DeleteIcon(plc) = %v, want the store's error %v", err, refused)
 	}
 
 	h.store.FailDelete = nil
 
 	// The icon's record goes, and an alias that stays is reported.
 	if _, err := h.service.RenameIcon(ctx, testActor, "plc", "plc-2"); err != nil {
-		t.Fatalf("RenameIcon returned error: %v", err)
+		t.Fatalf("RenameIcon(plc, plc-2) returned error: %v", err)
 	}
 
 	h.store.FailDelete = func(_, key string) error {
@@ -1334,13 +1500,13 @@ func TestIconLibraryStoreFailures(t *testing.T) {
 	}
 
 	if err := h.service.DeleteIcon(ctx, testActor, "plc-2"); !errors.Is(err, ErrCleanup) || !errors.Is(err, refused) {
-		t.Fatalf("DeleteIcon with an alias that cannot be removed = %v, want a cleanup error", err)
+		t.Errorf("DeleteIcon(plc-2) with an alias that cannot be removed = %v, want ErrCleanup wrapping %v", err, refused)
 	}
 
 	h.store.FailDelete = nil
 
 	if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, []string{"name/plc"}) {
-		t.Fatalf("after the failed cleanup the records are %q, want the alias alone", keys)
+		t.Errorf("icon records after the failed cleanup = %q, want the alias alone [name/plc]", keys)
 	}
 
 	// The alias left behind names nothing, and a new icon may take its name.
@@ -1350,22 +1516,22 @@ func TestIconLibraryStoreFailures(t *testing.T) {
 	cancel()
 
 	if _, err := h.service.ListIcons(canceled); !errors.Is(err, context.Canceled) {
-		t.Errorf("ListIcons with a canceled context = %v", err)
+		t.Errorf("ListIcons with a canceled context = %v, want context.Canceled", err)
 	}
 
 	if _, err := h.service.GetIcon(canceled, "plc"); !errors.Is(err, context.Canceled) {
-		t.Errorf("GetIcon with a canceled context = %v", err)
+		t.Errorf("GetIcon(plc) with a canceled context = %v, want context.Canceled", err)
 	}
 
 	if _, _, err := h.service.AddIcon(canceled, testActor, "x", iconPixel(t, 11)); !errors.Is(err, context.Canceled) {
-		t.Errorf("AddIcon with a canceled context = %v", err)
+		t.Errorf("AddIcon(x) with a canceled context = %v, want context.Canceled", err)
 	}
 
 	if _, err := h.service.RenameIcon(canceled, testActor, "plc", "y"); !errors.Is(err, context.Canceled) {
-		t.Errorf("RenameIcon with a canceled context = %v", err)
+		t.Errorf("RenameIcon(plc, y) with a canceled context = %v, want context.Canceled", err)
 	}
 
 	if err := h.service.DeleteIcon(canceled, testActor, "plc"); !errors.Is(err, context.Canceled) {
-		t.Errorf("DeleteIcon with a canceled context = %v", err)
+		t.Errorf("DeleteIcon(plc) with a canceled context = %v, want context.Canceled", err)
 	}
 }

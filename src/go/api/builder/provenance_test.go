@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store/recordtest/memrecord"
 	"phenix/types/builder"
@@ -44,19 +48,30 @@ func snapshotProvenance(t *testing.T, h *testHarness, draftID, snapshotID string
 	return documentProvenance(t, snapshot.Data)
 }
 
-// assertSavedBy checks every snapshot's document names the user and the time,
-// in whole seconds, that its manifest records.
-func assertSavedBy(t *testing.T, h *testHarness, meta *DraftMetadata) {
+// checkSavedBy returns an error naming every snapshot whose document does not
+// name the user and the time, in whole seconds, that its manifest records.
+func checkSavedBy(t *testing.T, h *testHarness, meta *DraftMetadata) error {
 	t.Helper()
+
+	var problems []error
 
 	for _, manifest := range meta.History {
 		got := snapshotProvenance(t, h, meta.ID, manifest.ID)
+		want := [2]string{manifest.CreatedBy, builder.FormatTime(manifest.CreatedAt)}
 
-		if got.UpdatedBy != manifest.CreatedBy || got.UpdatedAt != builder.FormatTime(manifest.CreatedAt) {
-			t.Fatalf("snapshot %s holds updatedBy %q at %q, but was stored by %q at %q",
-				manifest.ID, got.UpdatedBy, got.UpdatedAt, manifest.CreatedBy, builder.FormatTime(manifest.CreatedAt))
+		if saved := [2]string{got.UpdatedBy, got.UpdatedAt}; saved != want {
+			problems = append(problems, fmt.Errorf("snapshot %s updatedBy and updatedAt = %q, want %q as its manifest records",
+				manifest.ID, saved, want))
 		}
 	}
+
+	return errors.Join(problems...)
+}
+
+// documentCreation returns the creator and creation time a draft records of
+// its document.
+func documentCreation(meta *DraftMetadata) [2]string {
+	return [2]string{meta.DocumentCreatedBy, meta.DocumentCreatedAt}
 }
 
 // TestCreateDraftKeepsTheCreatorADocumentNames stamps a new draft: the document's
@@ -121,32 +136,44 @@ func TestCreateDraftKeepsTheCreatorADocumentNames(t *testing.T) {
 				t.Fatalf("CreateDraft returned error: %v", err)
 			}
 
-			switch {
-			case *meta.Stamp != test.want:
-				t.Fatalf("stamp = %+v, want %+v", *meta.Stamp, test.want)
-			case h.now.Load() != 1:
-				t.Fatalf("CreateDraft read the clock %d times, want once", h.now.Load())
-			case !meta.Created.Equal(memrecord.Time(1)) || !meta.Updated.Equal(memrecord.Time(1)) ||
-				!meta.History[0].CreatedAt.Equal(memrecord.Time(1)):
-				t.Fatalf("created %s, updated %s, snapshot %s; want one time for all three",
-					meta.Created, meta.Updated, meta.History[0].CreatedAt)
+			if diff := cmp.Diff(&test.want, meta.Stamp); diff != "" {
+				t.Errorf("CreateDraft stamp mismatch (-want +got):\n%s", diff)
 			}
 
-			if got := snapshotProvenance(t, h, meta.ID, meta.History[0].ID); got != test.want {
-				t.Fatalf("the stored document holds %+v, want %+v", got, test.want)
+			if got := h.now.Load(); got != 1 {
+				t.Errorf("CreateDraft read the clock %d times, want once", got)
 			}
 
-			if meta.DocumentCreatedBy != test.want.CreatedBy || meta.DocumentCreatedAt != test.want.CreatedAt {
-				t.Fatalf("the draft records %q at %q, want what the document was stored with",
-					meta.DocumentCreatedBy, meta.DocumentCreatedAt)
+			// The draft, its update and its snapshot share one time.
+			times := []time.Time{meta.Created, meta.Updated, meta.History[0].CreatedAt}
+			if diff := cmp.Diff([]time.Time{memrecord.Time(1), memrecord.Time(1), memrecord.Time(1)}, times); diff != "" {
+				t.Errorf("CreateDraft created, updated and snapshot times mismatch (-want +got):\n%s", diff)
 			}
 
-			assertSavedBy(t, h, meta)
+			if diff := cmp.Diff(test.want, snapshotProvenance(t, h, meta.ID, meta.History[0].ID)); diff != "" {
+				t.Errorf("provenance of the stored document mismatch (-want +got):\n%s", diff)
+			}
+
+			if got, want := documentCreation(meta), [2]string{test.want.CreatedBy, test.want.CreatedAt}; got != want {
+				t.Errorf("CreateDraft document creator and creation time = %q, want %q as the document was stored", got, want)
+			}
+
+			if err := checkSavedBy(t, h, meta); err != nil {
+				t.Errorf("after CreateDraft:\n%v", err)
+			}
 
 			// A read writes nothing, so it returns no stamp.
 			stored, err := h.service.GetDraft(context.Background(), meta.ID)
-			if err != nil || stored.Stamp != nil || stored.DocumentCreatedBy != test.want.CreatedBy {
-				t.Fatalf("GetDraft = %+v, %s; want no stamp and the recorded creator", stored, fmtErr(err))
+			if err != nil {
+				t.Fatalf("GetDraft(%s) returned error: %s", meta.ID, fmtErr(err))
+			}
+
+			if stored.Stamp != nil {
+				t.Errorf("GetDraft(%s) stamp = %+v, want none", meta.ID, *stored.Stamp)
+			}
+
+			if stored.DocumentCreatedBy != test.want.CreatedBy {
+				t.Errorf("GetDraft(%s) document creator = %q, want %q", meta.ID, stored.DocumentCreatedBy, test.want.CreatedBy)
 			}
 		})
 	}
@@ -175,39 +202,45 @@ func TestAppendSnapshotStampsTheDocument(t *testing.T) {
 	}
 
 	if got := h.now.Load() - ticks; got != 1 {
-		t.Fatalf("AppendSnapshot read the clock %d times, want once", got)
+		t.Errorf("AppendSnapshot read the clock %d times, want once", got)
 	}
 
 	want := stampAt(testActor, 1, testPeer, 2)
 
-	switch {
-	case updated.Stamp == nil || *updated.Stamp != want:
-		t.Fatalf("stamp = %+v, want %+v", updated.Stamp, want)
-	case updated.DocumentCreatedBy != testActor || updated.DocumentCreatedAt != first.CreatedAt:
-		t.Fatalf("the draft now records %q at %q; a save must not change either",
-			updated.DocumentCreatedBy, updated.DocumentCreatedAt)
-	case !updated.Updated.Equal(updated.Current().CreatedAt):
-		t.Fatalf("the draft was updated at %s and its snapshot stored at %s; want one time",
+	if diff := cmp.Diff(&want, updated.Stamp); diff != "" {
+		t.Errorf("AppendSnapshot stamp mismatch (-want +got):\n%s", diff)
+	}
+
+	// A save changes neither the creator nor the creation time.
+	if got, want := documentCreation(updated), [2]string{testActor, first.CreatedAt}; got != want {
+		t.Errorf("AppendSnapshot document creator and creation time = %q, want %q", got, want)
+	}
+
+	if !updated.Updated.Equal(updated.Current().CreatedAt) {
+		t.Errorf("AppendSnapshot updated the draft at %s and stored its snapshot at %s; want one time",
 			updated.Updated, updated.Current().CreatedAt)
 	}
 
-	if got := snapshotProvenance(t, h, meta.ID, updated.Current().ID); got != want {
-		t.Fatalf("the saved document holds %+v, want %+v", got, want)
+	if diff := cmp.Diff(want, snapshotProvenance(t, h, meta.ID, updated.Current().ID)); diff != "" {
+		t.Errorf("provenance of the saved document mismatch (-want +got):\n%s", diff)
 	}
 
 	// The first snapshot is as it was stored.
-	if got := snapshotProvenance(t, h, meta.ID, updated.History[0].ID); got != first {
-		t.Fatalf("the first document now holds %+v, want %+v", got, first)
+	if diff := cmp.Diff(first, snapshotProvenance(t, h, meta.ID, updated.History[0].ID)); diff != "" {
+		t.Errorf("provenance of the first document mismatch (-want +got):\n%s", diff)
 	}
 
 	// The owner saves again: the creator stays, the last editor changes back.
 	updated = appendTestSnapshot(t, h, updated, "topo-v3", testActor)
 
-	if want := stampAt(testActor, 1, testActor, 3); *updated.Stamp != want {
-		t.Fatalf("stamp = %+v, want %+v", *updated.Stamp, want)
+	want = stampAt(testActor, 1, testActor, 3)
+	if diff := cmp.Diff(&want, updated.Stamp); diff != "" {
+		t.Errorf("AppendSnapshot(topo-v3) stamp mismatch (-want +got):\n%s", diff)
 	}
 
-	assertSavedBy(t, h, updated)
+	if err := checkSavedBy(t, h, updated); err != nil {
+		t.Errorf("after AppendSnapshot(topo-v3):\n%v", err)
+	}
 }
 
 // TestCursorDeleteAndPublishStampNoDocument checks that undo, redo, snapshot
@@ -232,18 +265,22 @@ func TestCursorDeleteAndPublishStampNoDocument(t *testing.T) {
 	before := digests(meta)
 	second := snapshotProvenance(t, h, meta.ID, meta.History[1].ID)
 
-	unchanged := func(step string, after *DraftMetadata) {
-		t.Helper()
+	// unchanged returns an error naming what a step that stored no document
+	// stamped or changed.
+	unchanged := func(after *DraftMetadata) error {
+		var problems []error
 
 		if after.Stamp != nil {
-			t.Fatalf("%s returned stamp %+v; it stored no document", step, *after.Stamp)
+			problems = append(problems, fmt.Errorf("stamp = %+v, want none: no document was stored", *after.Stamp))
 		}
 
 		for id, digest := range digests(after) {
 			if before[id] != digest {
-				t.Fatalf("%s changed the digest of snapshot %s", step, id)
+				problems = append(problems, fmt.Errorf("digest of snapshot %s = %s, want %s", id, digest, before[id]))
 			}
 		}
+
+		return errors.Join(problems...)
 	}
 
 	ticks := h.now.Load()
@@ -256,20 +293,32 @@ func TestCursorDeleteAndPublishStampNoDocument(t *testing.T) {
 		t.Fatalf("MoveCursor returned error: %v", err)
 	}
 
-	unchanged("MoveCursor", meta)
+	if err := unchanged(meta); err != nil {
+		t.Errorf("after MoveCursor:\n%v", err)
+	}
 
 	current, err := h.service.GetCurrentDocument(ctx, meta.ID)
 	if err != nil {
 		t.Fatalf("GetCurrentDocument returned error: %v", err)
 	}
 
-	if got := documentProvenance(t, current.Data); got != second || got.UpdatedBy != testPeer {
-		t.Fatalf("after an undo the document holds %+v, want the stamp of the save that made it %+v", got, second)
+	// After an undo the document holds the stamp of the save that made it.
+	got := documentProvenance(t, current.Data)
+	if diff := cmp.Diff(second, got); diff != "" {
+		t.Errorf("provenance of the current document after an undo mismatch (-want +got):\n%s", diff)
+	}
+
+	if got.UpdatedBy != testPeer {
+		t.Errorf("current document after an undo updatedBy = %q, want %q", got.UpdatedBy, testPeer)
 	}
 
 	// The draft itself was touched by the undo, which is another fact.
-	if meta.LastModifiedBy != testActor || !meta.Updated.After(current.Manifest.CreatedAt) {
-		t.Fatalf("the draft was last modified by %q at %s, want the undo", meta.LastModifiedBy, meta.Updated)
+	if meta.LastModifiedBy != testActor {
+		t.Errorf("MoveCursor last modified by = %q, want %q", meta.LastModifiedBy, testActor)
+	}
+
+	if !meta.Updated.After(current.Manifest.CreatedAt) {
+		t.Errorf("MoveCursor updated = %s, want after the snapshot %s", meta.Updated, current.Manifest.CreatedAt)
 	}
 
 	meta, err = h.service.MarkPublished(ctx, markPublishedRequest(meta, meta.Revision))
@@ -277,23 +326,27 @@ func TestCursorDeleteAndPublishStampNoDocument(t *testing.T) {
 		t.Fatalf("MarkPublished returned error: %v", err)
 	}
 
-	unchanged("MarkPublished", meta)
+	if err := unchanged(meta); err != nil {
+		t.Errorf("after MarkPublished:\n%v", err)
+	}
 
-	if meta.Publication.Digest != before[meta.Current().ID] {
-		t.Fatal("the publication does not record the digest of the snapshot it published")
+	if got, want := meta.Publication.Digest, before[meta.Current().ID]; got != want {
+		t.Errorf("MarkPublished publication digest = %s, want the published snapshot's %s", got, want)
 	}
 
 	meta = deleteTestSnapshot(t, h, meta, meta.History[2].ID, testPeer)
 
-	unchanged("DeleteSnapshot", meta)
+	if err := unchanged(meta); err != nil {
+		t.Errorf("after DeleteSnapshot:\n%v", err)
+	}
 
 	// Each of the three read the clock once.
 	if got := h.now.Load() - ticks; got != 3 {
-		t.Fatalf("an undo, a publication and a snapshot delete read the clock %d times, want 3", got)
+		t.Errorf("an undo, a publication and a snapshot delete read the clock %d times, want 3", got)
 	}
 
-	if got := snapshotProvenance(t, h, meta.ID, meta.Current().ID); got != second {
-		t.Fatalf("the current document holds %+v, want %+v", got, second)
+	if diff := cmp.Diff(second, snapshotProvenance(t, h, meta.ID, meta.Current().ID)); diff != "" {
+		t.Errorf("provenance of the current document mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -345,18 +398,25 @@ func TestCreateDraftKeepsAnUnchangedCopy(t *testing.T) {
 				t.Fatalf("GetCurrentDocument returned error: %v", err)
 			}
 
-			switch {
-			case !bytes.Equal(snapshot.Data, origin):
-				t.Fatalf("the draft does not hold the origin's bytes:\n%s", snapshot.Data)
-			case meta.History[0].Digest != digestOf(origin):
-				t.Fatalf("digest = %s, want the origin's %s", meta.History[0].Digest, digestOf(origin))
-			case *meta.Stamp != test.origin:
-				t.Fatalf("stamp = %+v, want the origin's %+v", *meta.Stamp, test.origin)
-			case meta.DocumentCreatedBy != test.origin.CreatedBy || meta.DocumentCreatedAt != test.origin.CreatedAt:
-				t.Fatalf("the draft records %q at %q, want the origin's %q at %q",
-					meta.DocumentCreatedBy, meta.DocumentCreatedAt, test.origin.CreatedBy, test.origin.CreatedAt)
-			case meta.History[0].CreatedBy != testActor || meta.CreatedBy != testActor:
-				t.Fatalf("the snapshot was stored by %q in a draft created by %q", meta.History[0].CreatedBy, meta.CreatedBy)
+			// The draft holds the exact bytes of the origin.
+			if diff := cmp.Diff(string(origin), string(snapshot.Data)); diff != "" {
+				t.Errorf("GetCurrentDocument data mismatch (-want +got):\n%s", diff)
+			}
+
+			if got, want := meta.History[0].Digest, digestOf(origin); got != want {
+				t.Errorf("CreateDraft snapshot digest = %s, want the origin's %s", got, want)
+			}
+
+			if diff := cmp.Diff(&test.origin, meta.Stamp); diff != "" {
+				t.Errorf("CreateDraft stamp mismatch (-want +got):\n%s", diff)
+			}
+
+			if got, want := documentCreation(meta), [2]string{test.origin.CreatedBy, test.origin.CreatedAt}; got != want {
+				t.Errorf("CreateDraft document creator and creation time = %q, want the origin's %q", got, want)
+			}
+
+			if got, want := [2]string{meta.History[0].CreatedBy, meta.CreatedBy}, [2]string{testActor, testActor}; got != want {
+				t.Errorf("CreateDraft snapshot and draft creators = %q, want %q", got, want)
 			}
 
 			// A save then is the caller's edit of the origin's document: the
@@ -370,8 +430,12 @@ func TestCreateDraftKeepsAnUnchangedCopy(t *testing.T) {
 				UpdatedAt: builder.FormatTime(meta.Current().CreatedAt),
 			}
 
-			if got := snapshotProvenance(t, h, meta.ID, meta.Current().ID); got != want || *meta.Stamp != want {
-				t.Fatalf("the saved document holds %+v (stamp %+v), want %+v", got, *meta.Stamp, want)
+			if diff := cmp.Diff(want, snapshotProvenance(t, h, meta.ID, meta.Current().ID)); diff != "" {
+				t.Errorf("provenance of the saved document mismatch (-want +got):\n%s", diff)
+			}
+
+			if diff := cmp.Diff(&want, meta.Stamp); diff != "" {
+				t.Errorf("AppendSnapshot(topo-v2) stamp mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -439,14 +503,20 @@ func TestCreateDraftStampsAChangedCopy(t *testing.T) {
 			}
 
 			if meta.History[0].Digest == digestOf(origin) {
-				t.Fatal("a changed copy was stored under the origin's digest")
+				t.Errorf("CreateDraft snapshot digest = %s, the origin's; want a digest of its own", meta.History[0].Digest)
 			}
 
-			if got := snapshotProvenance(t, h, meta.ID, meta.History[0].ID); got != test.want || *meta.Stamp != test.want {
-				t.Fatalf("the stored document holds %+v (stamp %+v), want %+v", got, *meta.Stamp, test.want)
+			if diff := cmp.Diff(test.want, snapshotProvenance(t, h, meta.ID, meta.History[0].ID)); diff != "" {
+				t.Errorf("provenance of the stored document mismatch (-want +got):\n%s", diff)
 			}
 
-			assertSavedBy(t, h, meta)
+			if diff := cmp.Diff(&test.want, meta.Stamp); diff != "" {
+				t.Errorf("CreateDraft stamp mismatch (-want +got):\n%s", diff)
+			}
+
+			if err := checkSavedBy(t, h, meta); err != nil {
+				t.Errorf("after CreateDraft:\n%v", err)
+			}
 		})
 	}
 }
@@ -472,9 +542,12 @@ func TestCreateDraftWithoutAnOriginStampsAnEqualDocument(t *testing.T) {
 		CreatedBy: "carol", CreatedAt: "2025-03-04T05:06:07Z", UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
 	}
 
-	if *meta.Stamp != want || meta.History[0].Digest == digestOf(origin) {
-		t.Fatalf("stamp = %+v with the origin's digest %t; want %+v and a digest of its own",
-			*meta.Stamp, meta.History[0].Digest == digestOf(origin), want)
+	if diff := cmp.Diff(&want, meta.Stamp); diff != "" {
+		t.Errorf("CreateDraft stamp mismatch (-want +got):\n%s", diff)
+	}
+
+	if meta.History[0].Digest == digestOf(origin) {
+		t.Errorf("CreateDraft snapshot digest = %s, the origin's; want a digest of its own", meta.History[0].Digest)
 	}
 
 	// An origin that is not a digest is a caller's mistake, never ignored.
@@ -483,7 +556,7 @@ func TestCreateDraftWithoutAnOriginStampsAnEqualDocument(t *testing.T) {
 		Forked: nil, Origin: &DocumentOrigin{Digest: "abc"}, Document: origin, Summary: "", ID: "",
 	})
 	if !errors.Is(err, ErrInvalid) {
-		t.Fatalf("CreateDraft with an origin without a digest = %s, want ErrInvalid", fmtErr(err))
+		t.Errorf("CreateDraft with the origin digest abc error = %s, want ErrInvalid", fmtErr(err))
 	}
 }
 
@@ -514,7 +587,7 @@ func TestMalformedProvenanceRefusesTheRequest(t *testing.T) {
 				Forked: nil, Origin: nil, Document: document, Summary: "", ID: "",
 			})
 			if !errors.Is(err, ErrInvalid) {
-				t.Fatalf("CreateDraft error = %s, want ErrInvalid", fmtErr(err))
+				t.Errorf("CreateDraft error = %s, want ErrInvalid", fmtErr(err))
 			}
 
 			_, err = h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
@@ -522,15 +595,20 @@ func TestMalformedProvenanceRefusesTheRequest(t *testing.T) {
 				Document: document, Summary: "", OpID: "",
 			})
 			if !errors.Is(err, ErrInvalid) {
-				t.Fatalf("AppendSnapshot error = %s, want ErrInvalid", fmtErr(err))
+				t.Errorf("AppendSnapshot error = %s, want ErrInvalid", fmtErr(err))
 			}
 		})
 	}
 
-	stored, err := h.service.GetDraft(ctx, meta.ID)
-	if err != nil || stored.Revision != meta.Revision || h.store.Count(NamespaceDrafts) != 1 {
-		t.Fatalf("GetDraft = %+v, %s with %d drafts; want nothing stored",
-			stored, fmtErr(err), h.store.Count(NamespaceDrafts))
+	// Nothing was stored.
+	if stored, err := h.service.GetDraft(ctx, meta.ID); err != nil {
+		t.Errorf("GetDraft(%s) returned error: %s", meta.ID, fmtErr(err))
+	} else if stored.Revision != meta.Revision {
+		t.Errorf("GetDraft(%s) revision = %d, want %d", meta.ID, stored.Revision, meta.Revision)
+	}
+
+	if got := h.store.Count(NamespaceDrafts); got != 1 {
+		t.Errorf("%d drafts are stored, want 1", got)
 	}
 }
 
@@ -566,12 +644,11 @@ func TestStampCountsTowardsTheDocumentLimit(t *testing.T) {
 		Forked: nil, Origin: nil, Document: full, Summary: "", ID: "",
 	})
 	if !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("CreateDraft of a document the stamp pushes over the limit = %s, want ErrTooLarge", fmtErr(err))
+		t.Errorf("CreateDraft of a document the stamp pushes over the limit = %s, want ErrTooLarge", fmtErr(err))
 	}
 
-	if h.store.Count(NamespaceDrafts) != 0 || h.store.Count(NamespaceChunks) != 0 {
-		t.Fatalf("%d drafts and %d chunks were stored, want none",
-			h.store.Count(NamespaceDrafts), h.store.Count(NamespaceChunks))
+	if got := [2]int{h.store.Count(NamespaceDrafts), h.store.Count(NamespaceChunks)}; got != [2]int{} {
+		t.Errorf("drafts and chunks stored = %d, want none", got)
 	}
 
 	// The same document is stored when it is the unchanged copy of an
@@ -580,8 +657,12 @@ func TestStampCountsTowardsTheDocumentLimit(t *testing.T) {
 		Actor: testActor, Title: "", SourceToken: "builder-doc/abc", SourceFile: "",
 		Forked: nil, Origin: originOf(full), Document: full, Summary: "", ID: "",
 	})
-	if err != nil || copied.History[0].Size != MaxDocumentBytes {
-		t.Fatalf("CreateDraft of an unchanged copy at the limit = %+v, %s", copied, fmtErr(err))
+	if err != nil {
+		t.Fatalf("CreateDraft of an unchanged copy at the limit returned error: %s", fmtErr(err))
+	}
+
+	if got := copied.History[0].Size; got != MaxDocumentBytes {
+		t.Errorf("CreateDraft of an unchanged copy at the limit stored %d bytes, want %d", got, MaxDocumentBytes)
 	}
 
 	// A save of it is stamped, and so refused: the draft is left as it was.
@@ -592,12 +673,17 @@ func TestStampCountsTowardsTheDocumentLimit(t *testing.T) {
 		Document: full, Summary: "", OpID: "",
 	})
 	if !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("AppendSnapshot of a document the stamp pushes over the limit = %s, want ErrTooLarge", fmtErr(err))
+		t.Errorf("AppendSnapshot of a document the stamp pushes over the limit = %s, want ErrTooLarge", fmtErr(err))
 	}
 
-	stored, err := h.service.GetDraft(ctx, copied.ID)
-	if err != nil || stored.Revision != copied.Revision || h.store.Count(NamespaceChunks) != chunks {
-		t.Fatalf("GetDraft = %+v, %s; want the draft and its chunks untouched", stored, fmtErr(err))
+	if stored, err := h.service.GetDraft(ctx, copied.ID); err != nil {
+		t.Errorf("GetDraft(%s) returned error: %s", copied.ID, fmtErr(err))
+	} else if stored.Revision != copied.Revision {
+		t.Errorf("GetDraft(%s) revision = %d, want the draft untouched at %d", copied.ID, stored.Revision, copied.Revision)
+	}
+
+	if got := h.store.Count(NamespaceChunks); got != chunks {
+		t.Errorf("%d chunks are stored, want the %d there were", got, chunks)
 	}
 
 	// One that leaves room for exactly the stamp is stored at the limit.
@@ -609,8 +695,12 @@ func TestStampCountsTowardsTheDocumentLimit(t *testing.T) {
 		Actor: testActor, Title: "", SourceToken: "", SourceFile: "",
 		Forked: nil, Origin: nil, Document: fits, Summary: "", ID: "",
 	})
-	if err != nil || created.History[0].Size != MaxDocumentBytes {
-		t.Fatalf("CreateDraft of a document the stamp fills the limit with = %+v, %s", created, fmtErr(err))
+	if err != nil {
+		t.Fatalf("CreateDraft of a document the stamp fills the limit with returned error: %s", fmtErr(err))
+	}
+
+	if got := created.History[0].Size; got != MaxDocumentBytes {
+		t.Errorf("CreateDraft of a document the stamp fills the limit with stored %d bytes, want %d", got, MaxDocumentBytes)
 	}
 }
 
@@ -637,31 +727,39 @@ func TestPutPublishedDocumentNeverStamps(t *testing.T) {
 			CreatedBy: "carol", CreatedAt: "2019-05-06T07:08:09Z", UpdatedBy: "dave", UpdatedAt: "2031-01-01T00:00:00Z",
 		}),
 	} {
-		published, err := h.service.PutPublishedDocument(ctx, PutPublishedDocumentRequest{
-			Target: "topo", Kind: "Topology", Actor: "erin", Document: data, DraftID: "", SnapshotID: "",
+		t.Run(name, func(t *testing.T) {
+			published, err := h.service.PutPublishedDocument(ctx, PutPublishedDocumentRequest{
+				Target: "topo", Kind: "Topology", Actor: "erin", Document: data, DraftID: "", SnapshotID: "",
+			})
+			if err != nil {
+				t.Fatalf("PutPublishedDocument returned error: %v", err)
+			}
+
+			_, stored, err := h.service.GetPublishedDocumentData(ctx, published.ID)
+			if err != nil {
+				t.Fatalf("GetPublishedDocumentData(%s) returned error: %v", published.ID, err)
+			}
+
+			// The published document is the exact bytes it was published from.
+			if diff := cmp.Diff(string(data), string(stored)); diff != "" {
+				t.Errorf("GetPublishedDocumentData(%s) mismatch (-want +got):\n%s", published.ID, diff)
+			}
+
+			if got, want := published.Digest, digestOf(data); got != want {
+				t.Errorf("PutPublishedDocument digest = %s, want %s", got, want)
+			}
 		})
-		if err != nil {
-			t.Fatalf("%s: PutPublishedDocument returned error: %v", name, err)
-		}
-
-		_, stored, err := h.service.GetPublishedDocumentData(ctx, published.ID)
-		if err != nil {
-			t.Fatalf("%s: GetPublishedDocumentData returned error: %v", name, err)
-		}
-
-		if !bytes.Equal(stored, data) || published.Digest != digestOf(data) {
-			t.Fatalf("%s: the published document is not the bytes it was published from", name)
-		}
 	}
 
 	if published := h.now.Load() - ticks; published == 0 {
-		t.Fatal("the test published nothing")
+		t.Error("the test published nothing")
 	}
 
 	// The draft is as it was: publishing wrote no snapshot.
-	stored, err := h.service.GetDraft(ctx, meta.ID)
-	if err != nil || stored.Revision != meta.Revision {
-		t.Fatalf("GetDraft = %+v, %s; want the draft untouched", stored, fmtErr(err))
+	if stored, err := h.service.GetDraft(ctx, meta.ID); err != nil {
+		t.Errorf("GetDraft(%s) returned error: %s", meta.ID, fmtErr(err))
+	} else if stored.Revision != meta.Revision {
+		t.Errorf("GetDraft(%s) revision = %d, want the draft untouched at %d", meta.ID, stored.Revision, meta.Revision)
 	}
 }
 
@@ -674,7 +772,8 @@ func TestCloneCopiesTheStamp(t *testing.T) {
 	clone.Stamp.CreatedBy = "changed"
 
 	if meta.Stamp.CreatedBy != testActor {
-		t.Fatal("a clone shares its stamp with the metadata it was made from")
+		t.Errorf("after changing the stamp of a Clone, the original stamp creator = %q, want %q",
+			meta.Stamp.CreatedBy, testActor)
 	}
 }
 
@@ -712,9 +811,9 @@ func TestValidateSourceFile(t *testing.T) {
 
 			switch {
 			case test.valid && err != nil:
-				t.Fatalf("ValidateSourceFile(%q) = %s, want it accepted", test.value, fmtErr(err))
+				t.Errorf("ValidateSourceFile(%q) = %s, want nil", test.value, fmtErr(err))
 			case !test.valid && !errors.Is(err, ErrInvalid):
-				t.Fatalf("ValidateSourceFile(%q) = %s, want ErrInvalid", test.value, fmtErr(err))
+				t.Errorf("ValidateSourceFile(%q) = %s, want ErrInvalid", test.value, fmtErr(err))
 			}
 		})
 	}
@@ -732,8 +831,12 @@ func TestCreateDraftRecordsTheSourceFile(t *testing.T) {
 		Actor: testActor, Title: "", SourceToken: "", SourceFile: name,
 		Forked: nil, Origin: nil, Document: testDocument(t, "topo", 0), Summary: "", ID: "",
 	})
-	if err != nil || meta.SourceFile != name {
-		t.Fatalf("CreateDraft = %+v, %s; want source file %q", meta, fmtErr(err), name)
+	if err != nil {
+		t.Fatalf("CreateDraft returned error: %s", fmtErr(err))
+	}
+
+	if meta.SourceFile != name {
+		t.Errorf("CreateDraft source file = %q, want %q", meta.SourceFile, name)
 	}
 
 	meta = appendTestSnapshot(t, h, meta, "topo-v2", testPeer)
@@ -741,24 +844,33 @@ func TestCreateDraftRecordsTheSourceFile(t *testing.T) {
 	meta, err = h.service.MoveCursor(ctx, MoveCursorRequest{
 		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Index: 0, SnapshotID: "", UseIndex: true,
 	})
-	if err != nil || meta.SourceFile != name {
-		t.Fatalf("MoveCursor = %+v, %s; want source file %q", meta, fmtErr(err), name)
+	if err != nil {
+		t.Fatalf("MoveCursor returned error: %s", fmtErr(err))
 	}
 
-	stored, err := h.service.GetDraft(ctx, meta.ID)
-	if err != nil || stored.SourceFile != name {
-		t.Fatalf("GetDraft = %+v, %s; want source file %q", stored, fmtErr(err), name)
+	if meta.SourceFile != name {
+		t.Errorf("MoveCursor source file = %q, want %q", meta.SourceFile, name)
+	}
+
+	if stored, err := h.service.GetDraft(ctx, meta.ID); err != nil {
+		t.Errorf("GetDraft(%s) returned error: %s", meta.ID, fmtErr(err))
+	} else if stored.SourceFile != name {
+		t.Errorf("GetDraft(%s) source file = %q, want %q", meta.ID, stored.SourceFile, name)
 	}
 
 	drafts, damaged, err := h.service.ListDraftsWithDamaged(ctx)
-	if err != nil || len(damaged) != 0 || len(drafts) != 1 || drafts[0].SourceFile != name {
-		t.Fatalf("ListDraftsWithDamaged = %+v, %+v, %s; want source file %q", drafts, damaged, fmtErr(err), name)
+	switch {
+	case err != nil:
+		t.Errorf("ListDraftsWithDamaged returned error: %s", fmtErr(err))
+	case len(damaged) != 0 || len(drafts) != 1:
+		t.Errorf("ListDraftsWithDamaged = %d drafts and %+v damaged, want 1 draft and none damaged", len(drafts), damaged)
+	case drafts[0].SourceFile != name:
+		t.Errorf("ListDraftsWithDamaged source file = %q, want %q", drafts[0].SourceFile, name)
 	}
 
 	// A draft made without one records none.
-	plain := createTestDraft(t, h, "plain")
-	if plain.SourceFile != "" {
-		t.Fatalf("source file = %q, want none", plain.SourceFile)
+	if plain := createTestDraft(t, h, "plain"); plain.SourceFile != "" {
+		t.Errorf("CreateDraft without a source file recorded %q, want none", plain.SourceFile)
 	}
 
 	for _, invalid := range []string{
@@ -769,11 +881,11 @@ func TestCreateDraftRecordsTheSourceFile(t *testing.T) {
 			Forked: nil, Origin: nil, Document: testDocument(t, "refused", 0), Summary: "", ID: "",
 		})
 		if !errors.Is(err, ErrInvalid) {
-			t.Fatalf("CreateDraft with source file %q = %s, want ErrInvalid", invalid, fmtErr(err))
+			t.Errorf("CreateDraft with source file %q = %s, want ErrInvalid", invalid, fmtErr(err))
 		}
 	}
 
 	if got := h.store.Count(NamespaceDrafts); got != 2 {
-		t.Fatalf("%d drafts are stored, want the 2 that were accepted", got)
+		t.Errorf("%d drafts are stored, want the 2 that were accepted", got)
 	}
 }

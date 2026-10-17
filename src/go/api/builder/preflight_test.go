@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"phenix/types/builder"
 )
 
@@ -98,7 +101,7 @@ func runOne(t *testing.T, doc *builder.Document, check PreflightCheck, experimen
 	}, env)
 
 	if len(report.Checks) != 1 || report.Checks[0].Name != check {
-		t.Fatalf("report = %+v, want the one check %s", report, check)
+		t.Fatalf("RunPreflight(%s) = %+v, want a report of the one check", check, report)
 	}
 
 	return report.Checks[0]
@@ -114,16 +117,24 @@ func issueCodes(issues []builder.Issue) []builder.Code {
 	return codes
 }
 
-// expectUnavailable fails the test unless result is unavailable for the
-// reason given, in its summary and in its one issue.
-func expectUnavailable(t *testing.T, result PreflightResult, summary string) {
-	t.Helper()
+// resultDiff returns how two results differ, as cmp.Diff does, in all but
+// their summaries and the text of their issues, which a test checks the parts
+// of it needs on its own.
+func resultDiff(want, got PreflightResult) string {
+	return cmp.Diff(want, got, cmpopts.EquateEmpty(),
+		cmpopts.IgnoreFields(PreflightResult{}, "Summary"), cmpopts.IgnoreFields(builder.Issue{}, "Message"))
+}
 
-	if result.Status != PreflightUnavailable || result.Summary != summary ||
-		len(result.Issues) != 1 || result.Issues[0].Code != builder.CodePreflightUnavailable ||
-		result.Issues[0].Severity != builder.SeverityWarning {
-		t.Fatalf("result = %+v, want unavailable saying %q", result, summary)
+// unavailableDiff returns how result differs, as cmp.Diff does, from a check
+// that is unavailable for the reason summary gives, in its summary and in its
+// one issue.
+func unavailableDiff(result PreflightResult, summary string) string {
+	want := PreflightResult{
+		Name: result.Name, Status: PreflightUnavailable, Summary: summary,
+		Issues: []builder.Issue{{Code: builder.CodePreflightUnavailable, Severity: builder.SeverityWarning}},
 	}
+
+	return cmp.Diff(want, result, cmpopts.IgnoreFields(builder.Issue{}, "Message"))
 }
 
 func capacityDocument() *builder.Document {
@@ -148,9 +159,13 @@ func TestPreflightCapacityPasses(t *testing.T) {
 
 	result := runOne(t, capacityDocument(), PreflightCapacity, "", env)
 
-	want := "Needed: 3 vCPUs and 2560 MB of memory for 2 devices. Free: 6 vCPUs and 12288 MB on 2 schedulable hosts."
-	if result.Status != PreflightPassed || len(result.Issues) != 0 || result.Summary != want {
-		t.Fatalf("result = %+v, want passed with summary %q", result, want)
+	want := PreflightResult{
+		Name: PreflightCapacity, Status: PreflightPassed,
+		Summary: "Needed: 3 vCPUs and 2560 MB of memory for 2 devices. Free: 6 vCPUs and 12288 MB on 2 schedulable hosts.",
+	}
+
+	if diff := cmp.Diff(want, result, cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("RunPreflight(capacity) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -166,27 +181,25 @@ func TestPreflightCapacityFails(t *testing.T) {
 
 	result := runOne(t, doc, PreflightCapacity, "", env)
 
-	want := []builder.Code{
-		builder.CodePreflightCapacityVMTooBig, builder.CodePreflightCapacityVMTooBig,
-		builder.CodePreflightCapacityMemory, builder.CodePreflightCapacityCPU,
+	want := PreflightResult{Name: PreflightCapacity, Status: PreflightFailed, Issues: []builder.Issue{
+		{
+			Code: builder.CodePreflightCapacityVMTooBig, Severity: builder.SeverityError,
+			Path: "nodes[4].device.spec.hardware.vcpus", NodeID: "n-big", Field: "spec.hardware.vcpus",
+		},
+		{
+			Code: builder.CodePreflightCapacityVMTooBig, Severity: builder.SeverityError,
+			Path: "nodes[4].device.spec.hardware.memory", NodeID: "n-big", Field: "spec.hardware.memory",
+		},
+		{Code: builder.CodePreflightCapacityMemory, Severity: builder.SeverityError},
+		{Code: builder.CodePreflightCapacityCPU, Severity: builder.SeverityWarning},
+	}}
+
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(capacity) mismatch (-want +got):\n%s", diff)
 	}
 
-	if got := issueCodes(result.Issues); result.Status != PreflightFailed || !slices.Equal(got, want) {
-		t.Fatalf("result = %+v, want failed with %v", result, want)
-	}
-
-	if issue := result.Issues[0]; issue.NodeID != "n-big" || issue.Field != "spec.hardware.vcpus" ||
-		issue.Path != "nodes[4].device.spec.hardware.vcpus" || issue.Severity != builder.SeverityError {
-		t.Fatalf("vCPU issue = %+v, want it located at big's vcpus", issue)
-	}
-
-	if issue := result.Issues[1]; issue.Field != "spec.hardware.memory" ||
-		!strings.Contains(issue.Message, "32768 MB") {
-		t.Fatalf("memory issue = %+v, want it about big's 32768 MB", issue)
-	}
-
-	if issue := result.Issues[3]; issue.Severity != builder.SeverityWarning {
-		t.Fatalf("CPU issue = %+v, want a warning", issue)
+	if len(result.Issues) > 1 && !strings.Contains(result.Issues[1].Message, "32768 MB") {
+		t.Errorf("RunPreflight(capacity) memory issue message = %q, want it about big's 32768 MB", result.Issues[1].Message)
 	}
 }
 
@@ -205,20 +218,26 @@ func TestPreflightCapacityNeedsOneHostForBoth(t *testing.T) {
 
 	result := runOne(t, doc, PreflightCapacity, "", env)
 
-	if got := issueCodes(result.Issues); result.Status != PreflightFailed ||
-		!slices.Equal(got, []builder.Code{builder.CodePreflightCapacityVMTooBig}) {
-		t.Fatalf("result = %+v, want failed with one %s", result, builder.CodePreflightCapacityVMTooBig)
+	want := PreflightResult{Name: PreflightCapacity, Status: PreflightFailed, Issues: []builder.Issue{{
+		Code: builder.CodePreflightCapacityVMTooBig, Severity: builder.SeverityError,
+		Path: "nodes[4].device.spec.hardware.vcpus", NodeID: "n-big", Field: "spec.hardware.vcpus",
+	}}}
+
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(capacity) mismatch (-want +got):\n%s", diff)
 	}
 
-	if issue := result.Issues[0]; issue.NodeID != "n-big" || issue.Field != "spec.hardware.vcpus" ||
-		issue.Severity != builder.SeverityError || !strings.Contains(issue.Message, "no single schedulable host") {
-		t.Fatalf("issue = %+v, want big fitting no single host", issue)
+	if len(result.Issues) > 0 && !strings.Contains(result.Issues[0].Message, "no single schedulable host") {
+		t.Errorf("RunPreflight(capacity) issue message = %q, want big fitting no single host", result.Issues[0].Message)
 	}
 
 	env.hosts = append(env.hosts, PreflightHost{Name: "both", CPUs: 16, CPUCommit: 0, MemTotal: 8192, MemCommit: 0})
 
-	if result := runOne(t, doc, PreflightCapacity, "", env); result.Status != PreflightPassed || len(result.Issues) != 0 {
-		t.Fatalf("result = %+v, want passed once a host holds big", result)
+	result = runOne(t, doc, PreflightCapacity, "", env)
+
+	want = PreflightResult{Name: PreflightCapacity, Status: PreflightPassed}
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(capacity) with a host that holds big mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -226,21 +245,28 @@ func TestPreflightCapacityNeedsOneHostForBoth(t *testing.T) {
 // minimega cannot be reached, and says why.
 func TestPreflightCapacityUnavailable(t *testing.T) {
 	for _, test := range []struct {
+		name    string
 		err     error
 		summary string
 	}{
 		{
+			name:    "no permission",
 			err:     NewPreflightUnavailable("your role may not list the cluster hosts"),
 			summary: "Your role may not list the cluster hosts.",
 		},
 		{
+			name:    "an error",
 			err:     errors.New("no cluster hosts found"),
 			summary: "The cluster hosts cannot be read: no cluster hosts found.",
 		},
-		{err: nil, summary: "No schedulable cluster host is listed."},
+		{name: "no hosts", err: nil, summary: "No schedulable cluster host is listed."},
 	} {
-		result := runOne(t, capacityDocument(), PreflightCapacity, "", &fakePreflight{hostsErr: test.err})
-		expectUnavailable(t, result, test.summary)
+		t.Run(test.name, func(t *testing.T) {
+			result := runOne(t, capacityDocument(), PreflightCapacity, "", &fakePreflight{hostsErr: test.err})
+			if diff := unavailableDiff(result, test.summary); diff != "" {
+				t.Errorf("RunPreflight(capacity) mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -271,6 +297,14 @@ func networkDocument() *builder.Document {
 	return doc
 }
 
+// labBridgeIssue is the warning that bridge lab, on a's eth1, is missing.
+func labBridgeIssue() builder.Issue {
+	return builder.Issue{
+		Code: builder.CodePreflightNetworkBridge, Severity: builder.SeverityWarning,
+		Path: "nodes[0].device.spec.network.interfaces[1].bridge", NodeID: "n-a", Field: "spec.network.interfaces.1.bridge",
+	}
+}
+
 // The network check compares VLANs, aliases and bridges with the range, the
 // running experiments and the hosts; a missing bridge is a warning.
 func TestPreflightNetworkFindsEveryProblem(t *testing.T) {
@@ -282,38 +316,43 @@ func TestPreflightNetworkFindsEveryProblem(t *testing.T) {
 
 	result := runOne(t, networkDocument(), PreflightNetwork, "exp", env)
 
-	want := []builder.Code{
-		builder.CodePreflightNetworkVLANRange, builder.CodePreflightNetworkAliasInUse, builder.CodePreflightNetworkBridge,
+	want := PreflightResult{Name: PreflightNetwork, Status: PreflightFailed, Issues: []builder.Issue{
+		{
+			Code: builder.CodePreflightNetworkVLANRange, Severity: builder.SeverityError,
+			Path: "networks[1].alias", NetworkID: "net-mgmt",
+		},
+		{
+			Code: builder.CodePreflightNetworkAliasInUse, Severity: builder.SeverityError,
+			Path: "networks[0].alias", NetworkID: "net-exp",
+		},
+		labBridgeIssue(),
+	}}
+
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(network) mismatch (-want +got):\n%s", diff)
 	}
 
-	if got := issueCodes(result.Issues); result.Status != PreflightFailed || !slices.Equal(got, want) {
-		t.Fatalf("result = %+v, want failed with %v", result, want)
-	}
+	if len(result.Issues) == len(want.Issues) {
+		if message := result.Issues[1].Message; !strings.Contains(message, `running experiment other uses for VLAN "X"`) {
+			t.Errorf("RunPreflight(network) alias issue message = %q, want EXP's alias in use by other", message)
+		}
 
-	if issue := result.Issues[0]; issue.NetworkID != "net-mgmt" || issue.Path != "networks[1].alias" {
-		t.Fatalf("range issue = %+v, want it on MGMT's alias", issue)
-	}
-
-	if issue := result.Issues[1]; issue.NetworkID != "net-exp" ||
-		!strings.Contains(issue.Message, `running experiment other uses for VLAN "X"`) {
-		t.Fatalf("alias issue = %+v, want EXP's alias in use by other", issue)
-	}
-
-	if issue := result.Issues[2]; issue.Severity != builder.SeverityWarning || issue.NodeID != "n-a" ||
-		issue.Field != "spec.network.interfaces.1.bridge" || !strings.Contains(issue.Message, "host h1") {
-		t.Fatalf("bridge issue = %+v, want a warning about lab on h1 at a's eth1", issue)
+		if message := result.Issues[2].Message; !strings.Contains(message, "host h1") {
+			t.Errorf("RunPreflight(network) bridge issue message = %q, want lab missing on h1", message)
+		}
 	}
 
 	if env.excepted != "exp" {
-		t.Fatalf("VLANsInUse was asked to leave out %q, want exp", env.excepted)
+		t.Errorf("VLANsInUse left out %q, want exp", env.excepted)
 	}
 
 	if want := "2 VLANs; experiment exp's VLAN range is 100 to 200"; !strings.HasPrefix(result.Summary, want) {
-		t.Fatalf("summary = %q, want it to start with %q", result.Summary, want)
+		t.Errorf("RunPreflight(network) summary = %q, want it to start with %q", result.Summary, want)
 	}
 
 	if strings.Contains(result.Summary, "may not list") {
-		t.Fatalf("summary = %q, want no note of running experiments left out, since none was", result.Summary)
+		t.Errorf("RunPreflight(network) summary = %q, want no note of running experiments left out, since none was",
+			result.Summary)
 	}
 }
 
@@ -328,22 +367,32 @@ func TestPreflightNetworkNotesHiddenExperiments(t *testing.T) {
 
 	result := runOne(t, networkDocument(), PreflightNetwork, "", env)
 
-	if got := issueCodes(result.Issues); result.Status != PreflightFailed ||
-		!slices.Equal(got, []builder.Code{builder.CodePreflightNetworkAliasInUse}) {
-		t.Fatalf("result = %+v, want failed only by MGMT's alias, which seen uses", result)
+	// Only MGMT's alias, which seen uses, fails the check.
+	want := PreflightResult{Name: PreflightNetwork, Status: PreflightFailed, Issues: []builder.Issue{{
+		Code: builder.CodePreflightNetworkAliasInUse, Severity: builder.SeverityError,
+		Path: "networks[1].alias", NetworkID: "net-mgmt",
+	}}}
+
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(network) mismatch (-want +got):\n%s", diff)
 	}
 
 	note := "2 VLAN aliases compared with running experiments; running experiments your role may not list were not compared"
 	if !strings.Contains(result.Summary, note) {
-		t.Fatalf("summary = %q, want it to contain %q", result.Summary, note)
+		t.Errorf("RunPreflight(network) summary = %q, want it to contain %q", result.Summary, note)
 	}
 
 	env.vlans = nil
 
 	result = runOne(t, networkDocument(), PreflightNetwork, "", env)
 
-	if result.Status != PreflightPassed || len(result.Issues) != 0 || !strings.Contains(result.Summary, note) {
-		t.Fatalf("result = %+v, want passed, noting the running experiments left out", result)
+	want = PreflightResult{Name: PreflightNetwork, Status: PreflightPassed}
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(network) with no VLAN in use mismatch (-want +got):\n%s", diff)
+	}
+
+	if !strings.Contains(result.Summary, note) {
+		t.Errorf("RunPreflight(network) with no VLAN in use summary = %q, want it to contain %q", result.Summary, note)
 	}
 }
 
@@ -359,22 +408,40 @@ func TestPreflightNetworkRange(t *testing.T) {
 
 	result := runOne(t, doc, PreflightNetwork, "exp", env)
 
-	if result.Status != PreflightFailed || len(result.Issues) < 2 ||
-		result.Issues[0].Code != builder.CodePreflightNetworkVLANRange || result.Issues[0].Path != "" ||
-		!strings.Contains(result.Issues[0].Message, "holds 1 VLAN") {
-		t.Fatalf("result = %+v, want the range too small for 2 VLANs", result)
+	// The range is too small for 2 VLANs, and the experiment's default bridge
+	// mine is missing.
+	want := PreflightResult{Name: PreflightNetwork, Status: PreflightFailed, Issues: []builder.Issue{
+		{Code: builder.CodePreflightNetworkVLANRange, Severity: builder.SeverityError},
+		{
+			Code: builder.CodePreflightNetworkVLANRange, Severity: builder.SeverityError,
+			Path: "networks[1].alias", NetworkID: "net-mgmt",
+		},
+		{Code: builder.CodePreflightNetworkBridge, Severity: builder.SeverityWarning},
+	}}
+
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(network) mismatch (-want +got):\n%s", diff)
 	}
 
-	last := result.Issues[len(result.Issues)-1]
-	if last.Code != builder.CodePreflightNetworkBridge || last.NodeID != "" || !strings.Contains(last.Message, `"mine"`) {
-		t.Fatalf("last issue = %+v, want the experiment's default bridge mine missing", last)
+	if len(result.Issues) == len(want.Issues) {
+		if message := result.Issues[0].Message; !strings.Contains(message, "holds 1 VLAN") {
+			t.Errorf("RunPreflight(network) range issue message = %q, want the range too small for 2 VLANs", message)
+		}
+
+		if message := result.Issues[2].Message; !strings.Contains(message, `"mine"`) {
+			t.Errorf("RunPreflight(network) bridge issue message = %q, want the default bridge mine missing", message)
+		}
 	}
 
 	result = runOne(t, doc, PreflightNetwork, "", env)
 
-	if result.Status != PreflightPassed || len(result.Issues) != 0 ||
-		!strings.Contains(result.Summary, "no experiment is named, so no VLAN range applies") {
-		t.Fatalf("result = %+v, want passed without a range", result)
+	want = PreflightResult{Name: PreflightNetwork, Status: PreflightPassed}
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(network) without an experiment mismatch (-want +got):\n%s", diff)
+	}
+
+	if note := "no experiment is named, so no VLAN range applies"; !strings.Contains(result.Summary, note) {
+		t.Errorf("RunPreflight(network) without an experiment summary = %q, want it to contain %q", result.Summary, note)
 	}
 }
 
@@ -389,23 +456,31 @@ func TestPreflightNetworkPartlyUnavailable(t *testing.T) {
 
 	result := runOne(t, networkDocument(), PreflightNetwork, "exp", env)
 
-	if result.Status != PreflightUnavailable || !strings.Contains(result.Summary, "Not checked: experiment exp does not exist") {
-		t.Fatalf("result = %+v, want unavailable naming the experiment", result)
+	// The bridge lab is still checked; the default bridge, unknown, is not.
+	unavailable := builder.Issue{Code: builder.CodePreflightUnavailable, Severity: builder.SeverityWarning}
+	want := PreflightResult{
+		Name: PreflightNetwork, Status: PreflightUnavailable,
+		Issues: []builder.Issue{labBridgeIssue(), unavailable, unavailable},
 	}
 
-	// The bridge lab is still checked; the default bridge, unknown, is not.
-	want := []builder.Code{builder.CodePreflightNetworkBridge, builder.CodePreflightUnavailable, builder.CodePreflightUnavailable}
-	if got := issueCodes(result.Issues); !slices.Equal(got, want) {
-		t.Fatalf("issues = %v, want %v", got, want)
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(network) mismatch (-want +got):\n%s", diff)
+	}
+
+	if note := "Not checked: experiment exp does not exist"; !strings.Contains(result.Summary, note) {
+		t.Errorf("RunPreflight(network) summary = %q, want it to contain %q", result.Summary, note)
 	}
 
 	env = &fakePreflight{bridgesErr: errors.New("unable to dial"), vlans: nil}
 
 	result = runOne(t, networkDocument(), PreflightNetwork, "", env)
 
-	if result.Status != PreflightUnavailable ||
-		!strings.Contains(result.Summary, "the bridges of the cluster hosts cannot be read: unable to dial") {
-		t.Fatalf("result = %+v, want unavailable naming minimega's failure", result)
+	if result.Status != PreflightUnavailable {
+		t.Errorf("RunPreflight(network) when minimega fails status = %s, want %s", result.Status, PreflightUnavailable)
+	}
+
+	if note := "the bridges of the cluster hosts cannot be read: unable to dial"; !strings.Contains(result.Summary, note) {
+		t.Errorf("RunPreflight(network) when minimega fails summary = %q, want it to contain %q", result.Summary, note)
 	}
 }
 
@@ -448,27 +523,37 @@ func TestPreflightDisks(t *testing.T) {
 
 	result := runOne(t, disksDocument(), PreflightDisks, "", env)
 
-	want := []builder.Code{builder.CodePreflightDiskMissing, builder.CodePreflightDiskKind, builder.CodePreflightDiskKind}
-	if got := issueCodes(result.Issues); result.Status != PreflightFailed || !slices.Equal(got, want) {
-		t.Fatalf("result = %+v, want failed with %v", result, want)
+	want := PreflightResult{
+		Name: PreflightDisks, Status: PreflightFailed,
+		Summary: "Found: 3 of 6 drive images, among the server's 3 disk images.",
+		Issues: []builder.Issue{
+			{
+				Code: builder.CodePreflightDiskMissing, Severity: builder.SeverityError,
+				Path: "nodes[1].device.spec.hardware.drives[0].image", NodeID: "n-vm2", Field: "spec.hardware.drives.0.image",
+			},
+			{
+				Code: builder.CodePreflightDiskKind, Severity: builder.SeverityError,
+				Path: "nodes[2].device.spec.hardware.drives[0].image", NodeID: "n-ct1", Field: "spec.hardware.drives.0.image",
+			},
+			{
+				Code: builder.CodePreflightDiskKind, Severity: builder.SeverityError,
+				Path: "nodes[4].device.spec.hardware.drives[1].image", NodeID: "n-vm3", Field: "spec.hardware.drives.1.image",
+			},
+		},
 	}
 
-	if issue := result.Issues[0]; issue.NodeID != "n-vm2" || issue.Field != "spec.hardware.drives.0.image" ||
-		issue.Path != "nodes[1].device.spec.hardware.drives[0].image" {
-		t.Fatalf("missing issue = %+v, want it at vm2's first drive", issue)
+	if diff := cmp.Diff(want, result, cmpopts.IgnoreFields(builder.Issue{}, "Message")); diff != "" {
+		t.Errorf("RunPreflight(disks) mismatch (-want +got):\n%s", diff)
 	}
 
-	if issue := result.Issues[1]; issue.NodeID != "n-ct1" || !strings.Contains(issue.Message, "is a container") {
-		t.Fatalf("kind issue = %+v, want the container ct1 with a VM image", issue)
-	}
+	if len(result.Issues) == len(want.Issues) {
+		if message := result.Issues[1].Message; !strings.Contains(message, "is a container") {
+			t.Errorf("RunPreflight(disks) ct1 issue message = %q, want the container ct1 with a VM image", message)
+		}
 
-	if issue := result.Issues[2]; issue.NodeID != "n-vm3" || issue.Field != "spec.hardware.drives.1.image" ||
-		!strings.Contains(issue.Message, "a container image") {
-		t.Fatalf("kind issue = %+v, want the kvm VM vm3 with a container image", issue)
-	}
-
-	if want := "Found: 3 of 6 drive images, among the server's 3 disk images."; result.Summary != want {
-		t.Fatalf("summary = %q, want %q", result.Summary, want)
+		if message := result.Issues[2].Message; !strings.Contains(message, "a container image") {
+			t.Errorf("RunPreflight(disks) vm3 issue message = %q, want the kvm VM vm3 with a container image", message)
+		}
 	}
 }
 
@@ -476,19 +561,26 @@ func TestPreflightDisks(t *testing.T) {
 // be read, and when the server lists none.
 func TestPreflightDisksUnavailable(t *testing.T) {
 	for _, test := range []struct {
+		name    string
 		env     *fakePreflight
 		summary string
 	}{
 		{
+			name:    "no permission",
 			env:     &fakePreflight{imagesErr: NewPreflightUnavailable("your role may not list the disk images")},
 			summary: "Your role may not list the disk images.",
 		},
 		{
+			name:    "no images",
 			env:     &fakePreflight{images: []PreflightImage{}},
 			summary: "The server listed no disk images, as it does when minimega cannot be reached.",
 		},
 	} {
-		expectUnavailable(t, runOne(t, disksDocument(), PreflightDisks, "", test.env), test.summary)
+		t.Run(test.name, func(t *testing.T) {
+			if diff := unavailableDiff(runOne(t, disksDocument(), PreflightDisks, "", test.env), test.summary); diff != "" {
+				t.Errorf("RunPreflight(disks) mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -506,35 +598,39 @@ func TestPreflightApps(t *testing.T) {
 
 	result := runOne(t, doc, PreflightApps, "", env)
 
-	want := []builder.Code{
-		builder.CodePreflightAppMissing, builder.CodePreflightScenarioMissing, builder.CodePreflightScenarioUnread,
+	want := PreflightResult{
+		Name: PreflightApps, Status: PreflightFailed,
+		Summary: "Found: 2 of 3 apps, named by 2 scenarios. Not read: 2 scenarios.",
+		Issues: []builder.Issue{
+			{Code: builder.CodePreflightAppMissing, Severity: builder.SeverityError, Path: "scenarios[1]"},
+			{Code: builder.CodePreflightScenarioMissing, Severity: builder.SeverityError, Path: "scenarios[2]"},
+			{Code: builder.CodePreflightScenarioUnread, Severity: builder.SeverityWarning, Path: "scenarios[3]"},
+		},
 	}
 
-	if got := issueCodes(result.Issues); result.Status != PreflightFailed || !slices.Equal(got, want) {
-		t.Fatalf("result = %+v, want failed with %v", result, want)
+	if diff := cmp.Diff(want, result, cmpopts.IgnoreFields(builder.Issue{}, "Message")); diff != "" {
+		t.Errorf("RunPreflight(apps) mismatch (-want +got):\n%s", diff)
 	}
 
-	if issue := result.Issues[0]; issue.Path != "scenarios[1]" || !strings.Contains(issue.Message, `app "nope"`) {
-		t.Fatalf("app issue = %+v, want s2's app nope", issue)
-	}
+	if len(result.Issues) == len(want.Issues) {
+		if message := result.Issues[0].Message; !strings.Contains(message, `app "nope"`) {
+			t.Errorf("RunPreflight(apps) app issue message = %q, want s2's app nope", message)
+		}
 
-	if issue := result.Issues[1]; issue.Severity != builder.SeverityError || !strings.Contains(issue.Message, "does not exist") {
-		t.Fatalf("scenario issue = %+v, want s3 missing as an error", issue)
-	}
+		if message := result.Issues[1].Message; !strings.Contains(message, "does not exist") {
+			t.Errorf("RunPreflight(apps) scenario issue message = %q, want s3 missing", message)
+		}
 
-	if issue := result.Issues[2]; issue.Severity != builder.SeverityWarning ||
-		issue.Message != "your role may not read scenario hidden" {
-		t.Fatalf("scenario issue = %+v, want hidden unreadable as a warning", issue)
-	}
-
-	if want := "Found: 2 of 3 apps, named by 2 scenarios. Not read: 2 scenarios."; result.Summary != want {
-		t.Fatalf("summary = %q, want %q", result.Summary, want)
+		if message, want := result.Issues[2].Message, "your role may not read scenario hidden"; message != want {
+			t.Errorf("RunPreflight(apps) unread scenario issue message = %q, want %q", message, want)
+		}
 	}
 
 	doc.Scenarios = []string{"s1", "hidden"}
 
 	if result := runOne(t, doc, PreflightApps, "", env); result.Status != PreflightUnavailable {
-		t.Fatalf("result = %+v, want unavailable with only a scenario it may not read", result)
+		t.Errorf("RunPreflight(apps) with only a scenario it may not read status = %s, want %s",
+			result.Status, PreflightUnavailable)
 	}
 }
 
@@ -544,13 +640,19 @@ func TestPreflightAppsWithoutScenariosOrPermission(t *testing.T) {
 	doc := builder.NewDocument("apps")
 	env := &fakePreflight{appsErr: NewPreflightUnavailable("your role may not list the apps")}
 
-	if result := runOne(t, doc, PreflightApps, "", env); result.Status != PreflightPassed || env.appsCalled {
-		t.Fatalf("result = %+v (apps read: %t), want passed without reading the apps", result, env.appsCalled)
+	if result := runOne(t, doc, PreflightApps, "", env); result.Status != PreflightPassed {
+		t.Errorf("RunPreflight(apps) without scenarios status = %s, want %s", result.Status, PreflightPassed)
+	}
+
+	if env.appsCalled {
+		t.Error("RunPreflight(apps) without scenarios read the apps, want them not read")
 	}
 
 	doc.Scenarios = []string{"s1"}
 
-	expectUnavailable(t, runOne(t, doc, PreflightApps, "", env), "Your role may not list the apps.")
+	if diff := unavailableDiff(runOne(t, doc, PreflightApps, "", env), "Your role may not list the apps."); diff != "" {
+		t.Errorf("RunPreflight(apps) without the permission mismatch (-want +got):\n%s", diff)
+	}
 }
 
 // The report keeps the order asked, and a check that times out is unavailable.
@@ -579,29 +681,36 @@ func TestRunPreflightOrderAndTimeout(t *testing.T) {
 		names[i] = result.Name
 	}
 
+	// The capacity check is the second one asked, as reported below.
 	if want := []PreflightCheck{PreflightApps, PreflightCapacity, PreflightDisks}; !slices.Equal(names, want) {
-		t.Fatalf("checks = %v, want %v", names, want)
+		t.Fatalf("RunPreflight checks = %v, want %v", names, want)
 	}
 
-	if !slices.Equal(report.Passed, []PreflightCheck{PreflightApps}) ||
-		!slices.Equal(report.Failed, []PreflightCheck{PreflightDisks}) ||
-		!slices.Equal(report.Unavailable, []PreflightCheck{PreflightCapacity}) {
-		t.Fatalf("report = %+v, want apps passed, disks failed, capacity unavailable", report)
+	want := PreflightReport{
+		Passed:      []PreflightCheck{PreflightApps},
+		Failed:      []PreflightCheck{PreflightDisks},
+		Unavailable: []PreflightCheck{PreflightCapacity},
 	}
 
-	expectUnavailable(t, report.Checks[1], "The check did not finish within 20ms.")
+	if diff := cmp.Diff(want, report, cmpopts.IgnoreFields(PreflightReport{}, "Checks")); diff != "" {
+		t.Errorf("RunPreflight mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := unavailableDiff(report.Checks[1], "The check did not finish within 20ms."); diff != "" {
+		t.Errorf("RunPreflight capacity check that timed out mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestParsePreflightCheck(t *testing.T) {
 	for _, check := range PreflightChecks() {
 		if got, ok := ParsePreflightCheck(string(check)); !ok || got != check {
-			t.Errorf("ParsePreflightCheck(%q) = %q, %t", check, got, ok)
+			t.Errorf("ParsePreflightCheck(%q) = %q, %t; want %q, true", check, got, ok, check)
 		}
 	}
 
 	for _, name := range []string{"", "Capacity", "network ", "everything"} {
-		if _, ok := ParsePreflightCheck(name); ok {
-			t.Errorf("ParsePreflightCheck(%q) is a check", name)
+		if got, ok := ParsePreflightCheck(name); ok {
+			t.Errorf("ParsePreflightCheck(%q) = %q, true; want false", name, got)
 		}
 	}
 }
