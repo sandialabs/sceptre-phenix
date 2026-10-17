@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/web/middleware"
@@ -64,7 +66,7 @@ func webErrorStatus(t *testing.T, err error) (int, *weberror.WebError) {
 
 	var werr *weberror.WebError
 	if !errors.As(err, &werr) {
-		t.Fatalf("expected a *weberror.WebError, got %v", err)
+		t.Fatalf("handler error = %v, want a *weberror.WebError", err)
 	}
 
 	return werr.Status, werr
@@ -76,29 +78,35 @@ func TestGetConfigRevision(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	if err := GetConfig(w, configRequest(t, http.MethodGet, nil)); err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetConfig(GET topology/demo) = %v", err)
 	}
 
 	if got := w.Header().Get("ETag"); got != etag {
-		t.Errorf("ETag = %q, want %q", got, etag)
+		t.Errorf("GetConfig(GET topology/demo) ETag = %q, want %q", got, etag)
 	}
 
 	if got := w.Header().Get("X-Phenix-Revision"); got != strconv.FormatUint(rev, 10) {
-		t.Errorf("X-Phenix-Revision = %q, want %d", got, rev)
+		t.Errorf("GetConfig(GET topology/demo) X-Phenix-Revision = %q, want %d", got, rev)
 	}
 
 	var body store.Config
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Metadata.Revision != rev {
-		t.Errorf("body metadata = %+v, %v; want revision %d", body.Metadata, err, rev)
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Errorf("GetConfig(GET topology/demo) = %s, not a config: %v", w.Body.String(), err)
+	} else if body.Metadata.Revision != rev {
+		t.Errorf("GetConfig(GET topology/demo) metadata.revision = %d, want %d", body.Metadata.Revision, rev)
 	}
 
 	w = httptest.NewRecorder()
 	if err := GetConfig(w, configRequest(t, http.MethodGet, map[string]string{"If-None-Match": etag})); err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetConfig(GET topology/demo If-None-Match %s) = %v", etag, err)
 	}
 
-	if w.Code != http.StatusNotModified || w.Body.Len() != 0 {
-		t.Errorf("If-None-Match of the current ETag: %d with %d bytes, want 304 and no body", w.Code, w.Body.Len())
+	if w.Code != http.StatusNotModified {
+		t.Errorf("GetConfig(GET topology/demo If-None-Match %s) = %d, want %d", etag, w.Code, http.StatusNotModified)
+	}
+
+	if w.Body.Len() != 0 {
+		t.Errorf("GetConfig(GET topology/demo If-None-Match %s) body = %q, want none", etag, w.Body.String())
 	}
 }
 
@@ -109,48 +117,58 @@ func TestUpdateConfigIfMatch(t *testing.T) {
 
 	status, werr := webErrorStatus(t, UpdateConfig(httptest.NewRecorder(),
 		configRequest(t, http.MethodPut, map[string]string{"If-Match": stale})))
-	if status != http.StatusPreconditionFailed || werr.UserMetadata["revision"] != strconv.FormatUint(rev, 10) {
-		t.Fatalf("PUT with a stale If-Match: %d %+v, want 412 with metadata.revision %d", status, werr, rev)
+	if status != http.StatusPreconditionFailed {
+		t.Errorf("UpdateConfig(PUT If-Match %s, stale) = %d, want %d", stale, status, http.StatusPreconditionFailed)
+	}
+
+	if werr != nil && werr.UserMetadata["revision"] != strconv.FormatUint(rev, 10) {
+		t.Errorf("UpdateConfig(PUT If-Match %s, stale) metadata.revision = %v, want %d", stale, werr.UserMetadata["revision"], rev)
 	}
 
 	if status, _ := webErrorStatus(t, UpdateConfig(httptest.NewRecorder(),
 		configRequest(t, http.MethodPut, map[string]string{"If-Match": "r1"}))); status != http.StatusBadRequest {
-		t.Fatalf("PUT with a malformed If-Match: %d, want 400", status)
+		t.Errorf("UpdateConfig(PUT If-Match r1, unquoted) = %d, want %d", status, http.StatusBadRequest)
 	}
 
 	w := httptest.NewRecorder()
 	if err := UpdateConfig(w, configRequest(t, http.MethodPut, map[string]string{"If-Match": etag})); err != nil {
-		t.Fatalf("PUT with the current If-Match: %v", err)
+		t.Fatalf("UpdateConfig(PUT If-Match %s, current) = %v", etag, err)
+	}
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("UpdateConfig(PUT If-Match %s, current) = %d, want %d", etag, w.Code, http.StatusNoContent)
 	}
 
 	newETag := w.Header().Get("ETag")
-	if w.Code != http.StatusNoContent || newETag == "" || newETag == etag {
-		t.Fatalf("PUT with the current If-Match: %d with ETag %q, want 204 and a new ETag", w.Code, newETag)
+	if newETag == "" || newETag == etag {
+		t.Fatalf("UpdateConfig(PUT If-Match %s, current) ETag = %q, want a new one", etag, newETag)
 	}
 
 	got, _ := store.NewConfig("topology/demo")
-	if err := store.Get(got); err != nil || `"r`+strconv.FormatUint(got.Metadata.Revision, 10)+`"` != newETag {
-		t.Fatalf("stored revision %d, %v; the PUT answered %s", got.Metadata.Revision, err, newETag)
+	if err := store.Get(got); err != nil {
+		t.Errorf("store.Get(topology/demo) after the PUT = %v", err)
+	} else if stored := `"r` + strconv.FormatUint(got.Metadata.Revision, 10) + `"`; stored != newETag {
+		t.Errorf("stored revision ETag = %s, want the PUT's %s", stored, newETag)
 	}
 
 	// without If-Match, a PUT writes whatever the revision
 	if err := UpdateConfig(httptest.NewRecorder(), configRequest(t, http.MethodPut, nil)); err != nil {
-		t.Fatalf("PUT without If-Match: %v", err)
+		t.Fatalf("UpdateConfig(PUT without If-Match) = %v", err)
 	}
 
 	status, _ = webErrorStatus(t, DeleteConfig(httptest.NewRecorder(),
 		configRequest(t, http.MethodDelete, map[string]string{"If-Match": newETag})))
 	if status != http.StatusPreconditionFailed {
-		t.Fatalf("DELETE with a stale If-Match: %d, want 412", status)
+		t.Errorf("DeleteConfig(DELETE If-Match %s, stale) = %d, want %d", newETag, status, http.StatusPreconditionFailed)
 	}
 
 	if err := store.Get(got); err != nil {
-		t.Fatalf("a refused DELETE deleted the config: %v", err)
+		t.Errorf("store.Get(topology/demo) after a refused DELETE = %v, want the config kept", err)
 	}
 
 	if err := DeleteConfig(httptest.NewRecorder(),
 		configRequest(t, http.MethodDelete, map[string]string{"If-Match": "*"})); err != nil {
-		t.Fatalf("DELETE with If-Match *: %v", err)
+		t.Errorf("DeleteConfig(DELETE If-Match *) = %v", err)
 	}
 }
 
@@ -166,11 +184,11 @@ func TestUpdateConfigLocationHasBasePath(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	if err := UpdateConfig(w, configRequest(t, http.MethodPut, nil)); err != nil {
-		t.Fatal(err)
+		t.Fatalf("UpdateConfig(PUT topology/demo) = %v", err)
 	}
 
 	if got, want := w.Header().Get("Location"), "/phenix/api/v1/configs/topology/demo"; got != want {
-		t.Errorf("Location %q, want %q", got, want)
+		t.Errorf("UpdateConfig(PUT topology/demo) behind /phenix/: Location = %q, want %q", got, want)
 	}
 }
 
@@ -183,11 +201,17 @@ func TestGetConfigsEmptyList(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	if err := GetConfigs(w, req); err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetConfigs(GET /api/v1/configs) = %v", err)
 	}
 
-	if got := w.Body.String(); got != `{"configs":[]}` {
-		t.Errorf("GET /configs that the role sees none of = %s, want {\"configs\":[]}", got)
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("GetConfigs(GET /api/v1/configs) = %s, not JSON: %v", w.Body.String(), err)
+	}
+
+	// an empty list, not null
+	if diff := cmp.Diff(map[string]any{"configs": []any{}}, got); diff != "" {
+		t.Errorf("GetConfigs(GET /api/v1/configs) that the role sees none of mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -208,7 +232,7 @@ func TestConfigNotFound(t *testing.T) {
 				[]byte(strings.Replace(revisionTestTopology, `"demo"`, `"none"`, 1)), vars)
 
 			if status, _ := webErrorStatus(t, handler(httptest.NewRecorder(), req)); status != http.StatusNotFound {
-				t.Errorf("status %d, want %d", status, http.StatusNotFound)
+				t.Errorf("%s /api/v1/configs/topology/none = %d, want %d", method, status, http.StatusNotFound)
 			}
 		})
 	}

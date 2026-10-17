@@ -10,6 +10,7 @@ import (
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/google/go-cmp/cmp"
 
 	v1 "phenix/types/version/v1"
 	"phenix/util/mm/mmtest"
@@ -52,19 +53,29 @@ func getHealth(t *testing.T, url string, header ...string) (*http.Response, heal
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reading GET %s: %v", url, err)
 	}
 
 	if got := resp.Header.Get("Content-Type"); got != health.MediaType {
-		t.Fatalf("GET %s: Content-Type %q (body %q), want %q", url, got, raw, health.MediaType)
+		t.Fatalf("GET %s Content-Type = %q, want %q (body %q)", url, got, health.MediaType, raw)
 	}
 
 	var body healthBody
 	if err := json.Unmarshal(raw, &body); err != nil {
-		t.Fatalf("decoding %q: %v", raw, err)
+		t.Fatalf("GET %s = %q, not a health response: %v", url, raw, err)
 	}
 
 	return resp, body
+}
+
+// oneResult returns the check's result, and reports whether the body has
+// exactly one.
+func oneResult(body healthBody, key string) (health.Result, bool) {
+	if results := body.Checks[key]; len(results) == 1 {
+		return results[0], true
+	}
+
+	return health.Result{}, false
 }
 
 // The disk check measures the test machine's own disks, so these tests leave
@@ -81,24 +92,36 @@ func TestReadyzReportsMinimega(t *testing.T) {
 	resp, body := getHealth(t, server.URL+readyz)
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d, body %+v, want 200", resp.StatusCode, body)
+		t.Fatalf("GET %s = %d, want %d: %+v", readyz, resp.StatusCode, http.StatusOK, body)
 	}
 
-	if r := body.Checks[health.KeyMinimegaNamespaces]; len(r) != 1 || r[0].ObservedValue != float64(2) {
-		t.Errorf("namespaces = %+v, want 2", r)
+	if r, ok := oneResult(body, health.KeyMinimegaNamespaces); !ok {
+		t.Errorf("GET %s %s = %+v, want one result", readyz, health.KeyMinimegaNamespaces, body.Checks[health.KeyMinimegaNamespaces])
+	} else if r.ObservedValue != float64(2) {
+		t.Errorf("GET %s %s observed value = %v, want 2", readyz, health.KeyMinimegaNamespaces, r.ObservedValue)
 	}
 
-	if r := body.Checks[health.KeyMinimegaVersion]; len(r) != 1 || r[0].ObservedValue != "2.9" || r[0].Output == "" {
-		t.Errorf("version = %+v, want 2.9 with its output (auth is disabled)", r)
+	if r, ok := oneResult(body, health.KeyMinimegaVersion); !ok {
+		t.Errorf("GET %s %s = %+v, want one result", readyz, health.KeyMinimegaVersion, body.Checks[health.KeyMinimegaVersion])
+	} else {
+		if r.ObservedValue != "2.9" {
+			t.Errorf("GET %s %s observed value = %v, want 2.9", readyz, health.KeyMinimegaVersion, r.ObservedValue)
+		}
+
+		if r.Output == "" {
+			t.Errorf("GET %s %s output is empty, want minimega's version (auth is disabled)", readyz, health.KeyMinimegaVersion)
+		}
 	}
 
-	if r := body.Checks[health.KeyStore]; len(r) != 1 || r[0].Status != health.Pass {
-		t.Errorf("store = %+v, want a pass", r)
+	if r, ok := oneResult(body, health.KeyStore); !ok {
+		t.Errorf("GET %s %s = %+v, want one result", readyz, health.KeyStore, body.Checks[health.KeyStore])
+	} else if r.Status != health.Pass {
+		t.Errorf("GET %s %s status = %s, want %s", readyz, health.KeyStore, r.Status, health.Pass)
 	}
 
 	for _, key := range []string{health.KeyUptime, health.KeyGoroutines, health.KeyWebsocketQueue, health.KeyMeshNodes} {
-		if len(body.Checks[key]) != 1 {
-			t.Errorf("%s = %+v, want one result", key, body.Checks[key])
+		if _, ok := oneResult(body, key); !ok {
+			t.Errorf("GET %s %s = %+v, want one result", readyz, key, body.Checks[key])
 		}
 	}
 
@@ -109,14 +132,14 @@ func TestReadyzReportsMinimega(t *testing.T) {
 
 	for _, base := range []string{"version", "namespace", "mesh status"} {
 		if n := mmtest.Count(cmds, base); n != 1 {
-			t.Errorf("%q sent %d times, want once", base, n)
+			t.Errorf("two GET %s sent minimega %q %d times, want 1", readyz, base, n)
 		}
 	}
 
 	// listing namespaces must not switch to one
 	for _, cmd := range cmds {
 		if cmd.Namespace != "" {
-			t.Errorf("%q sent in namespace %q, want none", cmd.Base, cmd.Namespace)
+			t.Errorf("GET %s sent minimega %q in namespace %q, want none", readyz, cmd.Base, cmd.Namespace)
 		}
 	}
 }
@@ -131,12 +154,25 @@ func TestReadyzFailsWithoutMinimega(t *testing.T) {
 
 	resp, body := getHealth(t, server.URL+readyz)
 
-	if resp.StatusCode != http.StatusServiceUnavailable || body.Status != "fail" {
-		t.Errorf("status %d (%s), want 503 (fail)", resp.StatusCode, body.Status)
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("GET %s without minimega = %d, want %d", readyz, resp.StatusCode, http.StatusServiceUnavailable)
 	}
 
-	if r := body.Checks[health.KeyMinimegaTime]; len(r) != 1 || r[0].Status != health.Fail || r[0].ObservedValue != nil {
-		t.Errorf("response time = %+v, want a failure without a value", r)
+	if body.Status != string(health.Fail) {
+		t.Errorf("GET %s without minimega status = %q, want %q", readyz, body.Status, health.Fail)
+	}
+
+	r, ok := oneResult(body, health.KeyMinimegaTime)
+	if !ok {
+		t.Fatalf("GET %s without minimega %s = %+v, want one result", readyz, health.KeyMinimegaTime, body.Checks[health.KeyMinimegaTime])
+	}
+
+	if r.Status != health.Fail {
+		t.Errorf("GET %s without minimega %s status = %s, want %s", readyz, health.KeyMinimegaTime, r.Status, health.Fail)
+	}
+
+	if r.ObservedValue != nil {
+		t.Errorf("GET %s without minimega %s observed value = %v, want none", readyz, health.KeyMinimegaTime, r.ObservedValue)
 	}
 }
 
@@ -162,15 +198,18 @@ func TestReadyzAnswersWhenMinimegaHangs(t *testing.T) {
 	resp, body := getHealth(t, server.URL+readyz)
 
 	if took := time.Since(start); took > 5*time.Second {
-		t.Errorf("answered after %s, want about 3s", took)
+		t.Errorf("GET %s with a hung minimega took %s, want about 3s", readyz, took)
 	}
 
 	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("status %d, want 503", resp.StatusCode)
+		t.Errorf("GET %s with a hung minimega = %d, want %d", readyz, resp.StatusCode, http.StatusServiceUnavailable)
 	}
 
-	if r := body.Checks[health.KeyMinimegaTime]; len(r) != 1 || r[0].Status != health.Fail {
-		t.Errorf("response time = %+v, want a failure", r)
+	if r, ok := oneResult(body, health.KeyMinimegaTime); !ok {
+		t.Errorf("GET %s with a hung minimega %s = %+v, want one result",
+			readyz, health.KeyMinimegaTime, body.Checks[health.KeyMinimegaTime])
+	} else if r.Status != health.Fail {
+		t.Errorf("GET %s with a hung minimega %s status = %s, want %s", readyz, health.KeyMinimegaTime, r.Status, health.Fail)
 	}
 }
 
@@ -189,24 +228,28 @@ func TestHealthNeedsNoToken(t *testing.T) {
 		resp, body := getHealth(t, server.URL+path, "X-Phenix-Auth-Token", "Bearer garbage")
 
 		if resp.StatusCode != http.StatusOK {
-			t.Errorf("%s: status %d, want 200", path, resp.StatusCode)
+			t.Errorf("GET %s with an invalid token = %d, want %d", path, resp.StatusCode, http.StatusOK)
 		}
 
-		if len(body.Notes) == 0 || body.Notes[0] != health.OutputOmitted {
-			t.Errorf("%s: notes %v, want output omitted", path, body.Notes)
+		if diff := cmp.Diff([]string{health.OutputOmitted}, body.Notes); diff != "" {
+			t.Errorf("GET %s with an invalid token notes mismatch (-want +got):\n%s", path, diff)
 		}
 
 		for key, results := range body.Checks {
 			for _, r := range results {
 				if r.Output != "" {
-					t.Errorf("%s: %s has output %q", path, key, r.Output)
+					t.Errorf("GET %s with an invalid token %s output = %q, want none", path, key, r.Output)
 				}
 			}
 		}
 
 		// the store check still names its kind of store
-		if r := body.Checks[health.KeyStore]; path == "/healthz" && (len(r) != 1 || r[0].ComponentID != "bolt") {
-			t.Errorf("liveness store = %+v, want the bolt store", r)
+		if path == "/healthz" {
+			if r, ok := oneResult(body, health.KeyStore); !ok {
+				t.Errorf("GET %s %s = %+v, want one result", path, health.KeyStore, body.Checks[health.KeyStore])
+			} else if r.ComponentID != "bolt" {
+				t.Errorf("GET %s %s component = %q, want bolt", path, health.KeyStore, r.ComponentID)
+			}
 		}
 	}
 }
@@ -222,11 +265,11 @@ func TestHealthShowsOutputWithValidToken(t *testing.T) {
 
 	user := rbac.NewUser("alice", "password")
 	if user == nil {
-		t.Fatal("creating user")
+		t.Fatal(`rbac.NewUser("alice") = nil, want a user`)
 	}
 
 	if err := user.SetRole(&rbac.Role{Spec: &v1.RoleSpec{Name: "Global Viewer"}}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("User.SetRole(Global Viewer) error = %v", err)
 	}
 
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -234,28 +277,35 @@ func TestHealthShowsOutputWithValidToken(t *testing.T) {
 		"exp": time.Now().Add(time.Hour).Unix(),
 	}).SignedString([]byte("secret"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("signing a token: %v", err)
 	}
 
 	if err := user.AddToken(token, "test"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("User.AddToken() error = %v", err)
 	}
 
 	server := serveRouter(t, testPublic(), "secret")
 
 	resp, body := getHealth(t, server.URL+readyz, "X-Phenix-Auth-Token", "Bearer "+token)
 
-	if resp.StatusCode != http.StatusOK || len(body.Notes) != 0 {
-		t.Errorf("status %d, notes %v, want 200 with no notes", resp.StatusCode, body.Notes)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET %s with a valid token = %d, want %d", readyz, resp.StatusCode, http.StatusOK)
 	}
 
-	if r := body.Checks[health.KeyMinimegaVersion]; len(r) != 1 || r[0].Output == "" {
-		t.Errorf("version = %+v, want its output", r)
+	if len(body.Notes) != 0 {
+		t.Errorf("GET %s with a valid token notes = %v, want none", readyz, body.Notes)
+	}
+
+	if r, ok := oneResult(body, health.KeyMinimegaVersion); !ok {
+		t.Errorf("GET %s with a valid token %s = %+v, want one result",
+			readyz, health.KeyMinimegaVersion, body.Checks[health.KeyMinimegaVersion])
+	} else if r.Output == "" {
+		t.Errorf("GET %s with a valid token %s output is empty, want minimega's version", readyz, health.KeyMinimegaVersion)
 	}
 
 	// passing liveness checks have no output, but none is omitted either
 	if _, body = getHealth(t, server.URL+"/healthz?token="+token); len(body.Notes) != 0 {
-		t.Errorf("liveness notes %v with a token in the query, want none", body.Notes)
+		t.Errorf("GET /healthz?token=<valid> notes = %v, want none", body.Notes)
 	}
 }
 
@@ -271,23 +321,30 @@ func TestHealthzIsNotTheUIIndex(t *testing.T) {
 	// the fallback is in place
 	unknown := do(t, http.MethodGet, server.URL+"/no-such-page", "")
 
-	if raw, _ := io.ReadAll(unknown.Body); !strings.Contains(string(raw), "<title>phenix</title>") {
-		t.Fatalf("unknown path = %q, want the UI index", raw)
+	if raw := readBody(t, unknown); !strings.Contains(raw, "<title>phenix</title>") {
+		t.Fatalf("GET /no-such-page = %q, want the UI index", raw)
 	}
 
 	for _, path := range []string{"/healthz", "/healthz?verbose=1"} {
 		resp := do(t, http.MethodGet, server.URL+path, "")
-		raw, _ := io.ReadAll(resp.Body)
 
-		if strings.Contains(string(raw), "<title>") || resp.Header.Get("Content-Type") != health.MediaType {
-			t.Errorf("GET %s = %s %q, want a health response", path, resp.Header.Get("Content-Type"), raw)
+		if raw := readBody(t, resp); strings.Contains(raw, "<title>") {
+			t.Errorf("GET %s = %q, want a health response, not the UI index", path, raw)
+		}
+
+		if got := resp.Header.Get("Content-Type"); got != health.MediaType {
+			t.Errorf("GET %s Content-Type = %q, want %q", path, got, health.MediaType)
 		}
 	}
 
 	resp := do(t, http.MethodPost, server.URL+"/healthz", "")
 
-	if raw, _ := io.ReadAll(resp.Body); resp.StatusCode != http.StatusMethodNotAllowed || strings.Contains(string(raw), "<title>") {
-		t.Errorf("POST /healthz = %d %q, want 405 without the UI index", resp.StatusCode, raw)
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("POST /healthz = %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)
+	}
+
+	if raw := readBody(t, resp); strings.Contains(raw, "<title>") {
+		t.Errorf("POST /healthz = %q, want no UI index", raw)
 	}
 }
 
@@ -301,23 +358,41 @@ func TestHealthzChecksStore(t *testing.T) {
 
 	resp, body := getHealth(t, server.URL+"/healthz")
 
-	if resp.StatusCode != http.StatusOK || body.Status != "pass" {
-		t.Errorf("status %d (%s), want 200 (pass)", resp.StatusCode, body.Status)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /healthz = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	if r := body.Checks[health.KeyStore]; len(r) != 1 || r[0].Status != health.Pass || r[0].ComponentID != "bolt" {
-		t.Errorf("checks = %+v, want a passing bolt store check", body.Checks)
+	if body.Status != string(health.Pass) {
+		t.Errorf("GET /healthz status = %q, want %q", body.Status, health.Pass)
 	}
 
-	if len(body.Checks[health.KeyUptime]) != 1 {
-		t.Errorf("checks = %+v, want uptime", body.Checks)
+	if r, ok := oneResult(body, health.KeyStore); !ok {
+		t.Errorf("GET /healthz %s = %+v, want one result", health.KeyStore, body.Checks[health.KeyStore])
+	} else {
+		if r.Status != health.Pass {
+			t.Errorf("GET /healthz %s status = %s, want %s", health.KeyStore, r.Status, health.Pass)
+		}
+
+		if r.ComponentID != "bolt" {
+			t.Errorf("GET /healthz %s component = %q, want bolt", health.KeyStore, r.ComponentID)
+		}
+	}
+
+	if _, ok := oneResult(body, health.KeyUptime); !ok {
+		t.Errorf("GET /healthz %s = %+v, want one result", health.KeyUptime, body.Checks[health.KeyUptime])
 	}
 
 	head := do(t, http.MethodHead, server.URL+"/healthz", "")
 
-	if raw, _ := io.ReadAll(head.Body); head.StatusCode != http.StatusOK || len(raw) != 0 ||
-		!strings.HasPrefix(head.Header.Get("Content-Type"), health.MediaType) {
-		t.Errorf("HEAD /healthz = %d %q with %d bytes, want 200 health+json with none",
-			head.StatusCode, head.Header.Get("Content-Type"), len(raw))
+	if head.StatusCode != http.StatusOK {
+		t.Errorf("HEAD /healthz = %d, want %d", head.StatusCode, http.StatusOK)
+	}
+
+	if got := head.Header.Get("Content-Type"); !strings.HasPrefix(got, health.MediaType) {
+		t.Errorf("HEAD /healthz Content-Type = %q, want %q", got, health.MediaType)
+	}
+
+	if raw := readBody(t, head); raw != "" {
+		t.Errorf("HEAD /healthz body = %q, want none", raw)
 	}
 }

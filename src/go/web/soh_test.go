@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"phenix/api/soh"
 	"phenix/store"
 	"phenix/web/cache"
@@ -40,7 +43,7 @@ func TestGetExperimentSoHNeedsExperimentGet(t *testing.T) {
 
 			resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/soh", "")
 			if resp.StatusCode != tc.wantCode {
-				t.Fatalf("expected %d, got %d: %s", tc.wantCode, resp.StatusCode, readBody(t, resp))
+				t.Errorf("GET /api/v1/experiments/test-experiment/soh = %d, want %d: %s", resp.StatusCode, tc.wantCode, readBody(t, resp))
 			}
 		})
 	}
@@ -110,7 +113,7 @@ func getSohSummary(t *testing.T, role rbac.Role) (int, []soh.Summary) {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decoding summary: %v", err)
+		t.Fatalf("decoding GET /api/v1/soh: %v", err)
 	}
 
 	return resp.StatusCode, body.Experiments
@@ -131,35 +134,32 @@ func TestGetSoHSummaryFiltersByExperimentGet(t *testing.T) {
 
 	code, sums := getSohSummary(t, sohSummaryRole("zeta", "alpha"))
 	if code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", code)
-	}
-
-	if len(sums) != 2 || sums[0].Name != "alpha" || sums[1].Name != "zeta" {
-		t.Fatalf("expected alpha and zeta, sorted, got %+v", sums)
+		t.Fatalf("GET /api/v1/soh = %d, want %d", code, http.StatusOK)
 	}
 
 	// only the running experiment the caller may get is asked about
 	if n := fake.stateReads.Load(); n != 1 {
-		t.Errorf("minimega asked %d times, want once", n)
+		t.Errorf("GET /api/v1/soh read minimega VM states %d times, want 1", n)
 	}
 
-	alpha, zeta := sums[0], sums[1]
-
-	if alpha.Configured || alpha.Running || alpha.Status != "stopped" || alpha.VMs.Total != 2 {
-		t.Errorf("alpha = %+v", alpha)
+	want := []soh.Summary{
+		{Name: "alpha", Scenario: "scn", Status: "stopped", VMs: soh.VMCounts{Total: 2}},
+		{
+			Name: "zeta", Scenario: "scn", Status: "started", Running: true,
+			Configured: true, ExpStarted: true, SOHInitialized: true,
+			VMs:     soh.VMCounts{Known: true, Total: 2, Running: 1, Failing: 1, NotDeploy: 1},
+			DownVMs: []string{"vm-b"},
+			Hosts:   1, HostsWithErrors: 1, Checks: soh.Tally{Total: 1, Failing: 1},
+			LastRun: "2026-09-28T14:03:40Z",
+			FailingChecks: []soh.FailingCheck{
+				{Host: "vm-a", Check: "network", Error: "C2 not active", Time: "2026-09-28T14:03:00Z"},
+			},
+		},
 	}
 
-	if !zeta.Configured || !zeta.SOHInitialized || zeta.Status != "started" || zeta.LastRun != "2026-09-28T14:03:40Z" {
-		t.Errorf("zeta = %+v", zeta)
-	}
-
-	wantVMs := soh.VMCounts{Known: true, Total: 2, Running: 1, Failing: 1, NotDeploy: 1}
-	if zeta.VMs != wantVMs || len(zeta.DownVMs) != 1 || zeta.DownVMs[0] != "vm-b" {
-		t.Errorf("zeta VMs = %+v, down %v", zeta.VMs, zeta.DownVMs)
-	}
-
-	if zeta.Checks.Failing != 1 || len(zeta.FailingChecks) != 1 || zeta.FailingChecks[0].Check != "network" {
-		t.Errorf("zeta checks = %+v, failing %+v", zeta.Checks, zeta.FailingChecks)
+	opts := cmp.Options{cmpopts.EquateEmpty(), cmpopts.IgnoreFields(soh.Summary{}, "VMsObservedAt")}
+	if diff := cmp.Diff(want, sums, opts); diff != "" {
+		t.Errorf("GET /api/v1/soh mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -171,11 +171,15 @@ func TestGetSoHSummaryReportsMinimegaErrors(t *testing.T) {
 
 	_, sums := getSohSummary(t, sohSummaryRole("*"))
 	if len(sums) != 1 {
-		t.Fatalf("got %+v", sums)
+		t.Fatalf("GET /api/v1/soh with minimega failing = %+v, want one summary", sums)
 	}
 
-	if sums[0].VMs.Known || sums[0].VMsError == "" {
-		t.Errorf("expected unknown VM states with an error, got %+v", sums[0])
+	if sums[0].VMs.Known {
+		t.Errorf("GET /api/v1/soh with minimega failing VM counts = %+v, want unknown", sums[0].VMs)
+	}
+
+	if sums[0].VMsError == "" {
+		t.Error("GET /api/v1/soh with minimega failing has no vms_error, want minimega's error")
 	}
 }
 
@@ -191,7 +195,7 @@ func TestGetSoHSummaryReusesStatesWhileBusy(t *testing.T) {
 	_, _ = getSohSummary(t, sohSummaryRole("*"))
 
 	if err := cache.LockExperimentForStarting("starting"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("cache.LockExperimentForStarting(starting) error = %v", err)
 	}
 
 	t.Cleanup(func() { cache.UnlockExperiment("starting") })
@@ -201,27 +205,38 @@ func TestGetSoHSummaryReusesStatesWhileBusy(t *testing.T) {
 	_, sums := getSohSummary(t, sohSummaryRole("*"))
 
 	if n := fake.stateReads.Load(); n != 0 {
-		t.Errorf("minimega asked %d times while busy", n)
+		t.Errorf("GET /api/v1/soh while minimega is busy read VM states %d times, want 0", n)
 	}
 
-	if sums[0].Name != "starting" || sums[0].Status != "starting" {
-		t.Errorf("starting = %+v", sums[0])
+	if len(sums) != 2 {
+		t.Fatalf("GET /api/v1/soh while minimega is busy = %+v, want two summaries", sums)
 	}
 
-	if !sums[1].VMs.Known || sums[1].VMs.Running != 2 {
-		t.Errorf("expected zeta's last states, got %+v", sums[1].VMs)
+	if got := sums[0]; got.Name != "starting" || got.Status != "starting" {
+		t.Errorf("GET /api/v1/soh first summary = %s with status %q, want starting with status starting", got.Name, got.Status)
+	}
+
+	wantVMs := soh.VMCounts{Known: true, Total: 2, Running: 2, Failing: 1}
+	if diff := cmp.Diff(wantVMs, sums[1].VMs); diff != "" {
+		t.Errorf("GET /api/v1/soh while busy zeta VM counts mismatch (-want +got):\n%s", diff)
 	}
 
 	// they are reported as earlier states, with when they were read
-	if !sums[1].VMsStale || sums[1].VMsObservedAt == "" {
-		t.Errorf("zeta's reused states: stale %v, observed at %q; want stale with a time",
-			sums[1].VMsStale, sums[1].VMsObservedAt)
+	if !sums[1].VMsStale {
+		t.Error("GET /api/v1/soh while busy zeta vms_stale = false, want true")
+	}
+
+	if sums[1].VMsObservedAt == "" {
+		t.Error("GET /api/v1/soh while busy zeta has no vms_observed_at, want when its states were read")
 	}
 
 	resp := do(t, http.MethodGet, serveAs(t, "alice", sohSummaryRole("*")).URL+"/api/v1/soh", "")
-	if resp.Header.Get("X-Phenix-Stale") != "true" || resp.Header.Get("X-Phenix-Observed-At") != sums[1].VMsObservedAt {
-		t.Errorf("headers stale %q, observed at %q; want true and zeta's %q",
-			resp.Header.Get("X-Phenix-Stale"), resp.Header.Get("X-Phenix-Observed-At"), sums[1].VMsObservedAt)
+	if got := resp.Header.Get("X-Phenix-Stale"); got != "true" {
+		t.Errorf("GET /api/v1/soh while busy X-Phenix-Stale = %q, want true", got)
+	}
+
+	if got, want := resp.Header.Get("X-Phenix-Observed-At"), sums[1].VMsObservedAt; got != want {
+		t.Errorf("GET /api/v1/soh while busy X-Phenix-Observed-At = %q, want zeta's %q", got, want)
 	}
 }
 
@@ -237,13 +252,21 @@ func TestGetSoHSummaryUnknownWhileBusyWithoutStates(t *testing.T) {
 	lastVMStates.Delete("zeta")
 
 	if err := cache.LockExperimentForStarting("starting"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("cache.LockExperimentForStarting(starting) error = %v", err)
 	}
 
 	t.Cleanup(func() { cache.UnlockExperiment("starting") })
 
 	_, sums := getSohSummary(t, sohSummaryRole("*"))
-	if len(sums) != 2 || sums[1].VMs.Known || sums[1].VMsObservedAt != "" {
-		t.Errorf("zeta = %+v, want unknown VM counts with no time", sums)
+	if len(sums) != 2 {
+		t.Fatalf("GET /api/v1/soh while busy = %+v, want two summaries", sums)
+	}
+
+	if sums[1].VMs.Known {
+		t.Errorf("GET /api/v1/soh while busy with no states read zeta VM counts = %+v, want unknown", sums[1].VMs)
+	}
+
+	if got := sums[1].VMsObservedAt; got != "" {
+		t.Errorf("GET /api/v1/soh while busy with no states read zeta vms_observed_at = %q, want none", got)
 	}
 }

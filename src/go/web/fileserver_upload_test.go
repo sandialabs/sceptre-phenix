@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/util/common"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -50,12 +52,18 @@ func TestUploadExperimentFilesIsAudited(t *testing.T) {
 
 	rec := uploadToFileServer(t, testRole("experiments/files", "create", "test-experiment"), "notes.txt", "hello")
 	if rec.Code != http.StatusOK {
-		t.Fatalf("upload: status %d: %s", rec.Code, rec.Body)
+		t.Fatalf("POST /upload of notes.txt as a files creator = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body)
 	}
 
 	target := filepath.Join(common.PhenixBase, "images", "test-experiment", "files", "notes.txt")
-	if b, err := os.ReadFile(target); err != nil || string(b) != "hello" {
-		t.Fatalf("uploaded file: %q, %v", b, err)
+
+	b, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("os.ReadFile(%s) after POST /upload error = %v", target, err)
+	}
+
+	if string(b) != "hello" {
+		t.Errorf("POST /upload of notes.txt wrote %q, want %q", b, "hello")
 	}
 
 	wantAudit(t, events(), "file-upload", "success", map[string]any{
@@ -63,13 +71,13 @@ func TestUploadExperimentFilesIsAudited(t *testing.T) {
 		"phenix.file.target_path": target, "file.size": 5,
 	})
 
-	if len(invalidated) != 1 || invalidated[0] != "test-experiment" {
-		t.Errorf("invalidated the listings of %v, want test-experiment's", invalidated)
+	if diff := cmp.Diff([]string{"test-experiment"}, invalidated); diff != "" {
+		t.Errorf("POST /upload invalidated file listings mismatch (-want +got):\n%s", diff)
 	}
 
 	rec = uploadToFileServer(t, testRole("experiments/files", "get", "test-experiment"), "other.txt", "no")
 	if rec.Code != http.StatusForbidden {
-		t.Fatalf("upload without permission: status %d", rec.Code)
+		t.Errorf("POST /upload of other.txt as a files getter = %d, want %d", rec.Code, http.StatusForbidden)
 	}
 
 	wantDenied(t, events(), "file-upload")

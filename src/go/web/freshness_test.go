@@ -4,10 +4,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"phenix/store"
@@ -39,7 +39,7 @@ func getRaw(t *testing.T, role rbac.Role, path string) (*http.Response, []byte) 
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reading GET %s: %v", path, err)
 	}
 
 	return resp, body
@@ -57,32 +57,71 @@ func TestVMListsReportUnknownRuntime(t *testing.T) {
 		obs: freshness.Observation{At: at, Known: false, Err: errors.New("compute1: timed out")},
 	}
 
-	resp, body := getRaw(t, experimentViewerRole(), "/api/v1/experiments/test-experiment/vms")
+	const vmsPath = "/api/v1/experiments/test-experiment/vms"
+
+	resp, body := getRaw(t, experimentViewerRole(), vmsPath)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want %d: %s", vmsPath, resp.StatusCode, http.StatusOK, body)
+	}
 
 	var list proto.VMList
-	if err := protojson.Unmarshal(body, &list); resp.StatusCode != http.StatusOK || err != nil {
-		t.Fatalf("GET vms: %d, %v: %s", resp.StatusCode, err, body)
+	if err := protojson.Unmarshal(body, &list); err != nil {
+		t.Fatalf("GET %s = %s, not a VM list: %v", vmsPath, body, err)
 	}
 
-	if !list.GetRuntimeUnknown() || len(list.GetVms()) != 1 || list.GetVms()[0].GetName() != "test-vm" {
-		t.Errorf("VM list = %v, want test-vm listed as configured with runtime_unknown", &list)
+	if !list.GetRuntimeUnknown() {
+		t.Errorf("GET %s runtime_unknown = false, want true", vmsPath)
 	}
 
-	if got := resp.Header.Get("X-Phenix-Observed-At"); got != freshness.FormatTime(at) || list.GetObservedAt() != got {
-		t.Errorf("observed at header %q, body %q; want %s", got, list.GetObservedAt(), freshness.FormatTime(at))
+	if diff := cmp.Diff([]string{"test-vm"}, vmNames(list.GetVms())); diff != "" {
+		t.Errorf("GET %s VM names mismatch (-want +got):\n%s", vmsPath, diff)
 	}
 
-	resp, body = getRaw(t, experimentViewerRole(), "/api/v1/experiments")
+	want := freshness.FormatTime(at)
+
+	if got := resp.Header.Get("X-Phenix-Observed-At"); got != want {
+		t.Errorf("GET %s X-Phenix-Observed-At = %q, want %q", vmsPath, got, want)
+	}
+
+	if got := list.GetObservedAt(); got != want {
+		t.Errorf("GET %s observed_at = %q, want %q", vmsPath, got, want)
+	}
+
+	const expsPath = "/api/v1/experiments"
+
+	resp, body = getRaw(t, experimentViewerRole(), expsPath)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want %d: %s", expsPath, resp.StatusCode, http.StatusOK, body)
+	}
 
 	var exps proto.ExperimentList
-	if err := protojson.Unmarshal(body, &exps); resp.StatusCode != http.StatusOK || err != nil {
-		t.Fatalf("GET experiments: %d, %v: %s", resp.StatusCode, err, body)
+	if err := protojson.Unmarshal(body, &exps); err != nil {
+		t.Fatalf("GET %s = %s, not an experiment list: %v", expsPath, body, err)
 	}
 
-	if len(exps.GetExperiments()) != 1 || !exps.GetExperiments()[0].GetVmsUnknown() ||
-		len(exps.GetExperiments()[0].GetVms()) != 1 {
-		t.Errorf("experiments = %v, want test-experiment's VM listed with vms_unknown", &exps)
+	if n := len(exps.GetExperiments()); n != 1 {
+		t.Fatalf("GET %s listed %d experiments, want 1: %v", expsPath, n, &exps)
 	}
+
+	exp := exps.GetExperiments()[0]
+
+	if !exp.GetVmsUnknown() {
+		t.Errorf("GET %s vms_unknown = false, want true", expsPath)
+	}
+
+	if diff := cmp.Diff([]string{"test-vm"}, vmNames(exp.GetVms())); diff != "" {
+		t.Errorf("GET %s VM names mismatch (-want +got):\n%s", expsPath, diff)
+	}
+}
+
+// vmNames returns each VM's name.
+func vmNames(vms []*proto.VM) []string {
+	names := make([]string, 0, len(vms))
+	for _, vm := range vms {
+		names = append(names, vm.GetName())
+	}
+
+	return names
 }
 
 // failingListStore is the test store, failing to list configs.
@@ -104,7 +143,8 @@ func TestGetExperimentsStoreFailure(t *testing.T) {
 
 	resp := do(t, http.MethodGet, server+"/api/v1/experiments", "")
 	if resp.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("GET experiments with an unreadable store: %d, want 500", resp.StatusCode)
+		t.Errorf("GET /api/v1/experiments with an unreadable store = %d, want %d",
+			resp.StatusCode, http.StatusInternalServerError)
 	}
 }
 
@@ -132,17 +172,31 @@ func TestGetExperimentsPartialIsStale(t *testing.T) {
 	s, _ := store.DefaultStore.(*testStore)
 	store.DefaultStore = undecodableStore{testStore: s} //nolint:reassign // useTestStore restores it
 
-	resp := do(t, http.MethodGet, server+"/api/v1/experiments?vms=false", "")
+	const path = "/api/v1/experiments?vms=false"
+
+	resp := do(t, http.MethodGet, server+path, "")
 	body := readBody(t, resp)
 
-	var exps proto.ExperimentList
-	if err := protojson.Unmarshal([]byte(body), &exps); resp.StatusCode != http.StatusOK || err != nil {
-		t.Fatalf("GET experiments: %d, %v: %s", resp.StatusCode, err, body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want %d: %s", path, resp.StatusCode, http.StatusOK, body)
 	}
 
-	stale, _ := strconv.ParseBool(resp.Header.Get(freshness.HeaderStale))
-	if len(exps.GetExperiments()) != 1 || !stale {
-		t.Errorf("experiments = %v, stale %v; want test-experiment, stale", &exps, stale)
+	var exps proto.ExperimentList
+	if err := protojson.Unmarshal([]byte(body), &exps); err != nil {
+		t.Fatalf("GET %s = %s, not an experiment list: %v", path, body, err)
+	}
+
+	names := make([]string, 0, len(exps.GetExperiments()))
+	for _, exp := range exps.GetExperiments() {
+		names = append(names, exp.GetName())
+	}
+
+	if diff := cmp.Diff([]string{"test-experiment"}, names); diff != "" {
+		t.Errorf("GET %s experiment names mismatch (-want +got):\n%s", path, diff)
+	}
+
+	if got := resp.Header.Get(freshness.HeaderStale); got != "true" {
+		t.Errorf("GET %s %s = %q, want true", path, freshness.HeaderStale, got)
 	}
 }
 
@@ -163,6 +217,7 @@ func TestGetExperimentFilesListingFailure(t *testing.T) {
 
 	resp := requestFiles(t, http.MethodGet, "", "", "list")
 	if body := readBody(t, resp); resp.StatusCode != http.StatusBadGateway {
-		t.Fatalf("GET files when the listing fails: %d %s, want 502", resp.StatusCode, body)
+		t.Errorf("GET /api/v1/experiments/test-experiment/files when the listing fails = %d, want %d: %s",
+			resp.StatusCode, http.StatusBadGateway, body)
 	}
 }

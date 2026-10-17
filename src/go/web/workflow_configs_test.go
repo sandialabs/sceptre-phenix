@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	v1 "phenix/types/version/v1"
@@ -271,8 +272,8 @@ func TestWorkflowUpsertConfigDryRunExplainsValidationErrors(t *testing.T) {
 
 				assertValidationWebError(t, dryErr, tt.raw, tt.lines)
 
-				if !reflect.DeepEqual(dryErr, realErr) {
-					t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
+				if diff := cmp.Diff(realErr, dryErr); diff != "" {
+					t.Errorf("WorkflowUpsertConfig(?dryRun=true) error mismatch with the real upsert's (-want +got):\n%s", diff)
 				}
 			})
 		}
@@ -307,20 +308,29 @@ func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 			realErr := send("")
 			dryErr := send("?dryRun=true")
 
-			var werr *weberror.WebError
-			if !errors.As(dryErr, &werr) {
-				t.Fatalf("expected a *weberror.WebError, got %v", dryErr)
+			var dry, upserted *weberror.WebError
+			if !errors.As(dryErr, &dry) {
+				t.Fatalf("WorkflowUpsertConfig(?dryRun=true, node named all) = %v, want a *weberror.WebError", dryErr)
 			}
 
-			if werr.Status != http.StatusBadRequest || werr.Message != wantMessage || !strings.Contains(werr.Cause, wantCause) {
-				t.Errorf(
-					"error = {status: %d, message: %q, cause: %q}, want {status: 400, message: %q, cause containing %q}",
-					werr.Status, werr.Message, werr.Cause, wantMessage, wantCause,
-				)
+			if !errors.As(realErr, &upserted) {
+				t.Fatalf("WorkflowUpsertConfig(node named all) = %v, want a *weberror.WebError", realErr)
 			}
 
-			if !reflect.DeepEqual(dryErr, realErr) {
-				t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
+			if dry.Status != http.StatusBadRequest {
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true, node named all) status = %d, want %d", dry.Status, http.StatusBadRequest)
+			}
+
+			if dry.Message != wantMessage {
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true, node named all) message = %q, want %q", dry.Message, wantMessage)
+			}
+
+			if !strings.Contains(dry.Cause, wantCause) {
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true, node named all) cause = %q, want it to contain %q", dry.Cause, wantCause)
+			}
+
+			if diff := cmp.Diff(upserted, dry); diff != "" {
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true, node named all) error mismatch with the real upsert's (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -418,14 +428,14 @@ func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
 
 			var werr *weberror.WebError
 			if !errors.As(err, &werr) {
-				t.Fatalf("expected a *weberror.WebError, got %v", err)
+				t.Fatalf("WorkflowUpsertConfig(%s) = %v, want a *weberror.WebError", tt.query, err)
 			}
 
-			if werr.Status != http.StatusBadRequest || werr.Message != tt.wantMsg || werr.Cause != tt.wantCause {
-				t.Errorf(
-					"error = {status: %d, message: %q, cause: %q}, want {status: 400, message: %q, cause: %q}",
-					werr.Status, werr.Message, werr.Cause, tt.wantMsg, tt.wantCause,
-				)
+			want := &weberror.WebError{Status: http.StatusBadRequest, Message: tt.wantMsg, Cause: tt.wantCause}
+			ignoreMetadata := cmpopts.IgnoreFields(weberror.WebError{}, "SystemMetadata", "UserMetadata")
+
+			if diff := cmp.Diff(want, werr, ignoreMetadata); diff != "" {
+				t.Errorf("WorkflowUpsertConfig(%s) error mismatch (-want +got):\n%s", tt.query, diff)
 			}
 		})
 	}
@@ -472,8 +482,16 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 				err := WorkflowUpsertConfig(httptest.NewRecorder(), req)
 
 				var werr *weberror.WebError
-				if !errors.As(err, &werr) || werr.Status != http.StatusForbidden || werr.Message != want {
-					t.Fatalf("error = %v, want a 403 with message %q", err, want)
+				if !errors.As(err, &werr) {
+					t.Fatalf("WorkflowUpsertConfig(%s) without policies = %v, want a *weberror.WebError", query, err)
+				}
+
+				if werr.Status != http.StatusForbidden {
+					t.Errorf("WorkflowUpsertConfig(%s) without policies status = %d, want %d", query, werr.Status, http.StatusForbidden)
+				}
+
+				if werr.Message != want {
+					t.Errorf("WorkflowUpsertConfig(%s) without policies message = %q, want %q", query, werr.Message, want)
 				}
 			})
 		}

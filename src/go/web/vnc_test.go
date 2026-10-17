@@ -33,7 +33,7 @@ func getVNCPage(t *testing.T, banner any) (*http.Response, string) {
 	body := readBody(t, resp)
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET vnc: status %d: %s", resp.StatusCode, body)
+		t.Fatalf("GET vms/test-vm/vnc = %d, want %d: %s", resp.StatusCode, http.StatusOK, body)
 	}
 
 	return resp, body
@@ -64,26 +64,26 @@ func banners(body string) (string, string) {
 // splits into lines at its newlines, and the map form sets each banner.
 func TestVNCBannerIsText(t *testing.T) {
 	tests := []struct {
-		name               string
-		banner             any
-		wantTop, wantBotom string
+		name                string
+		banner              any
+		wantTop, wantBottom string
 	}{
 		{
-			name:      "no annotation names the experiment and VM",
-			wantTop:   "EXP: test-experiment - VM: test-vm",
-			wantBotom: "EXP: test-experiment - VM: test-vm",
+			name:       "no annotation names the experiment and VM",
+			wantTop:    "EXP: test-experiment - VM: test-vm",
+			wantBottom: "EXP: test-experiment - VM: test-vm",
 		},
 		{
-			name:      "markup in a string",
-			banner:    `<img src=x onerror="alert(1)">`,
-			wantTop:   "&lt;img src=x onerror=&#34;alert(1)&#34;&gt;",
-			wantBotom: "&lt;img src=x onerror=&#34;alert(1)&#34;&gt;",
+			name:       "markup in a string",
+			banner:     `<img src=x onerror="alert(1)">`,
+			wantTop:    "&lt;img src=x onerror=&#34;alert(1)&#34;&gt;",
+			wantBottom: "&lt;img src=x onerror=&#34;alert(1)&#34;&gt;",
 		},
 		{
-			name:      "a string's lines",
-			banner:    "UNCLASSIFIED\nlab use only",
-			wantTop:   "UNCLASSIFIED<br>lab use only",
-			wantBotom: "UNCLASSIFIED<br>lab use only",
+			name:       "a string's lines",
+			banner:     "UNCLASSIFIED\nlab use only",
+			wantTop:    "UNCLASSIFIED<br>lab use only",
+			wantBottom: "UNCLASSIFIED<br>lab use only",
 		},
 		{
 			name: "markup in the map form's lines",
@@ -91,8 +91,8 @@ func TestVNCBannerIsText(t *testing.T) {
 				"topBanner":    map[string]any{"banner": []any{"<b>top</b>", "second"}},
 				"bottomBanner": map[string]any{"banner": []any{"</h3><script>alert(1)</script>"}},
 			},
-			wantTop:   "&lt;b&gt;top&lt;/b&gt;<br>second",
-			wantBotom: "&lt;/h3&gt;&lt;script&gt;alert(1)&lt;/script&gt;",
+			wantTop:    "&lt;b&gt;top&lt;/b&gt;<br>second",
+			wantBottom: "&lt;/h3&gt;&lt;script&gt;alert(1)&lt;/script&gt;",
 		},
 		{
 			name:   "disabled",
@@ -109,8 +109,12 @@ func TestVNCBannerIsText(t *testing.T) {
 			_, body := getVNCPage(t, tt.banner)
 
 			top, bottom := banners(body)
-			if top != tt.wantTop || bottom != tt.wantBotom {
-				t.Errorf("banners = %q, %q; want %q, %q", top, bottom, tt.wantTop, tt.wantBotom)
+			if top != tt.wantTop {
+				t.Errorf("GET vms/test-vm/vnc with vncBanner %v top banner = %q, want %q", tt.banner, top, tt.wantTop)
+			}
+
+			if bottom != tt.wantBottom {
+				t.Errorf("GET vms/test-vm/vnc with vncBanner %v bottom banner = %q, want %q", tt.banner, bottom, tt.wantBottom)
 			}
 		})
 	}
@@ -137,12 +141,12 @@ func TestVNCBannerMapSetsOnlyBanners(t *testing.T) {
 
 	for _, leaked := range []string{"attacker.example", "attacker-token"} {
 		if strings.Contains(body, leaked) {
-			t.Errorf("the page contains %q from the annotation", leaked)
+			t.Errorf("GET vms/test-vm/vnc contains %q from the annotation, want it left out", leaked)
 		}
 	}
 
-	if !strings.Contains(body, `<script type="module" src="`+o.basePath+`novnc/app/ui.js">`) {
-		t.Error("the page no longer loads noVNC from the server's base path")
+	if want := `<script type="module" src="` + o.basePath + `novnc/app/ui.js">`; !strings.Contains(body, want) {
+		t.Errorf("GET vms/test-vm/vnc has no %s, want noVNC loaded from the server's base path", want)
 	}
 
 	for _, want := range []string{
@@ -153,7 +157,7 @@ func TestVNCBannerMapSetsOnlyBanners(t *testing.T) {
 		"color: black;",
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("the page's banner styles lack %q", want)
+			t.Errorf("GET vms/test-vm/vnc banner styles have no %q, want it", want)
 		}
 	}
 }
@@ -172,7 +176,7 @@ func TestVNCPageContentSecurityPolicy(t *testing.T) {
 
 		m := inlineNonce.FindStringSubmatch(body)
 		if m == nil {
-			t.Fatal("the page's inline script has no nonce")
+			t.Fatal("GET vms/test-vm/vnc inline script has no nonce, want one")
 		}
 
 		nonce := m[1]
@@ -186,13 +190,13 @@ func TestVNCPageContentSecurityPolicy(t *testing.T) {
 			"base-uri 'none'",
 		} {
 			if !strings.Contains(policy, want) {
-				t.Errorf("Content-Security-Policy %q lacks %q", policy, want)
+				t.Errorf("GET vms/test-vm/vnc Content-Security-Policy = %q, want it to contain %q", policy, want)
 			}
 		}
 	}
 
 	if len(nonces) != 2 {
-		t.Error("two requests got the same nonce")
+		t.Errorf("two GET vms/test-vm/vnc nonces = %v, want two different ones", nonces)
 	}
 }
 
@@ -204,7 +208,7 @@ func TestVNCWebSocketDenialIsAudited(t *testing.T) {
 
 	resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/vms/test-vm/vnc/ws", "")
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Errorf("GET vms/test-vm/vnc/ws without vms/vnc get = %d, want %d: %s", resp.StatusCode, http.StatusForbidden, readBody(t, resp))
 	}
 
 	wantDenied(t, events(), "vnc-attach")
@@ -215,7 +219,7 @@ func TestVNCWebSocketAttachIsAudited(t *testing.T) {
 	// the VM's VNC server: echoes what it is sent
 	l, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("listening for the VM's VNC server: %v", err)
 	}
 
 	t.Cleanup(func() { _ = l.Close() })
@@ -240,18 +244,20 @@ func TestVNCWebSocketAttachIsAudited(t *testing.T) {
 		"ws"+strings.TrimPrefix(api, "http")+"/experiments/test-experiment/vms/test-vm/vnc/ws", "", api,
 	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("websocket.Dial(vms/test-vm/vnc/ws) error = %v", err)
 	}
 
 	defer ws.Close()
 
 	if _, err := ws.Write([]byte("RFB")); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing to vms/test-vm/vnc/ws: %v", err)
 	}
 
 	buf := make([]byte, 3)
-	if _, err := io.ReadFull(ws, buf); err != nil || string(buf) != "RFB" {
-		t.Fatalf("proxied: %q, %v", buf, err)
+	if _, err := io.ReadFull(ws, buf); err != nil {
+		t.Errorf("reading the echo from vms/test-vm/vnc/ws: %v", err)
+	} else if got := string(buf); got != "RFB" {
+		t.Errorf("vms/test-vm/vnc/ws echoed %q, want RFB", got)
 	}
 
 	wantAudit(t, events(), "vnc-attach", "success", map[string]any{

@@ -9,13 +9,15 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/disk"
 	"phenix/api/disk/disktest"
@@ -58,7 +60,7 @@ func useDiskFilesDir(t *testing.T) diskFiles {
 
 	dir := filepath.Join(base, "images")
 	if err := os.Mkdir(dir, 0o750); err != nil {
-		t.Fatal(err)
+		t.Fatalf("making the files directory: %v", err)
 	}
 
 	var seen int
@@ -87,11 +89,11 @@ func writeDisks(t *testing.T, paths ...string) {
 
 	for _, p := range paths {
 		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-			t.Fatal(err)
+			t.Fatalf("making the folder of %s: %v", p, err)
 		}
 
 		if err := os.WriteFile(p, []byte(p), 0o600); err != nil {
-			t.Fatal(err)
+			t.Fatalf("writing %s: %v", p, err)
 		}
 	}
 }
@@ -102,7 +104,7 @@ func backedBy(t *testing.T, path, backing string) {
 	t.Helper()
 
 	if err := os.WriteFile(path+".backing", []byte(backing), 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatalf("writing the backing of %s: %v", path, err)
 	}
 }
 
@@ -154,7 +156,7 @@ func getDisks(t *testing.T, role rbac.Role, query string, want int) []listedDisk
 	body := readBody(t, resp)
 
 	if resp.StatusCode != want {
-		t.Fatalf("GET /disks%s: status %d, want %d: %s", query, resp.StatusCode, want, body)
+		t.Fatalf("GET /api/v1/disks%s = %d, want %d: %s", query, resp.StatusCode, want, body)
 	}
 
 	var list struct {
@@ -163,11 +165,11 @@ func getDisks(t *testing.T, role rbac.Role, query string, want int) []listedDisk
 
 	if want == http.StatusOK {
 		if err := json.Unmarshal([]byte(body), &list); err != nil {
-			t.Fatalf("decoding %s: %v", body, err)
+			t.Fatalf("GET /api/v1/disks%s = %s, not a disk list: %v", query, body, err)
 		}
 
 		if list.Disks == nil {
-			t.Fatalf("GET /disks%s = %s, want a disks list", query, body)
+			t.Fatalf("GET /api/v1/disks%s = %s, want a disks list", query, body)
 		}
 	}
 
@@ -240,16 +242,19 @@ func TestGetDisksListsFoldersAndOutsideImages(t *testing.T) {
 
 	got := getDisks(t, disksRole([]string{"*"}, "list"), "", http.StatusOK)
 
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("GET /disks =\n%+v\nwant\n%+v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GET /api/v1/disks mismatch (-want +got):\n%s", diff)
 	}
 
 	// one experiment's images, and every image in the files directory
-	got = getDisks(t, disksRole([]string{"*"}, "list"), "?expName=exp-a", http.StatusOK)
+	paths := fullPaths(getDisks(t, disksRole([]string{"*"}, "list"), "?expName=exp-a", http.StatusOK))
 
-	paths := fullPaths(got)
-	if slices.Contains(paths, outside+"/b-only.qc2") || !slices.Contains(paths, outside+"/o.qc2") {
-		t.Errorf("GET /disks?expName=exp-a lists %q, want exp-a's outside images only", paths)
+	if slices.Contains(paths, outside+"/b-only.qc2") {
+		t.Errorf("GET /api/v1/disks?expName=exp-a lists %q, want no %s, which only exp-b uses", paths, outside+"/b-only.qc2")
+	}
+
+	if !slices.Contains(paths, outside+"/o.qc2") {
+		t.Errorf("GET /api/v1/disks?expName=exp-a lists %q, want exp-a's %s", paths, outside+"/o.qc2")
 	}
 
 	getDisks(t, disksRole([]string{"*"}, "list"), "?expName=nope", http.StatusNotFound)
@@ -274,15 +279,16 @@ func TestGetDisksHidesWhatTheRoleCannotSee(t *testing.T) {
 	disks := byPath(getDisks(t, disksRole([]string{"exp-a"}, "list"), "", http.StatusOK))
 
 	if _, ok := disks[outside+"/b-only.qc2"]; ok {
-		t.Error("lists an outside image only an experiment the role cannot get uses")
+		t.Errorf("GET /api/v1/disks as an exp-a viewer lists %s, which only exp-b uses; want it left out", outside+"/b-only.qc2")
 	}
 
 	if _, ok := disks[outside+"/base.qc2"]; !ok {
-		t.Error("leaves out an outside image backing an image the role sees")
+		t.Errorf("GET /api/v1/disks as an exp-a viewer leaves out %s, which backs over.qc2; want it listed", outside+"/base.qc2")
 	}
 
-	if got := disks[dir+"/a.qc2"].Experiments; !reflect.DeepEqual(got, []disk.ExperimentUse{{Name: "exp-a", Running: true}}) {
-		t.Errorf("a.qc2 experiments = %+v, want exp-a only", got)
+	want := []disk.ExperimentUse{{Name: "exp-a", Running: true}}
+	if diff := cmp.Diff(want, disks[dir+"/a.qc2"].Experiments); diff != "" {
+		t.Errorf("GET /api/v1/disks as an exp-a viewer a.qc2 experiments mismatch (-want +got):\n%s", diff)
 	}
 
 	getDisks(t, disksRole([]string{"exp-a"}, "list"), "?expName=exp-b", http.StatusForbidden)
@@ -291,13 +297,13 @@ func TestGetDisksHidesWhatTheRoleCannotSee(t *testing.T) {
 	role := combinedRole(testRole("disks", "list", "win10.qcow2"), testRole("experiments", "get", "*"))
 
 	paths := fullPaths(getDisks(t, role, "", http.StatusOK))
-	if want := []string{dir + "/linux/win10.qcow2", dir + "/win/win10.qcow2"}; !slices.Equal(paths, want) {
-		t.Errorf("a role listing win10.qcow2 sees %q, want %q", paths, want)
+	if diff := cmp.Diff([]string{dir + "/linux/win10.qcow2", dir + "/win/win10.qcow2"}, paths); diff != "" {
+		t.Errorf("GET /api/v1/disks as a win10.qcow2 lister mismatch (-want +got):\n%s", diff)
 	}
 
 	// a role that sees no image gets an empty list
 	if got := getDisks(t, testRole("disks", "list", "none.qc2"), "", http.StatusOK); len(got) != 0 {
-		t.Errorf("a role listing none.qc2 sees %q, want nothing", fullPaths(got))
+		t.Errorf("GET /api/v1/disks as a none.qc2 lister = %q, want nothing", fullPaths(got))
 	}
 }
 
@@ -316,7 +322,7 @@ func TestWatchFilesDirectoryFollowsMinimega(t *testing.T) {
 	// minimega gives another files directory, which GetMMFullPath returns
 	base := t.TempDir()
 	if err := os.Mkdir(base+"/images", 0o750); err != nil {
-		t.Fatal(err)
+		t.Fatalf("making the new files directory: %v", err)
 	}
 
 	common.PhenixBase = base //nolint:reassign // the new files directory's parent; useDiskFilesDir restores it
@@ -347,7 +353,7 @@ func tree(t *testing.T, dir string) map[string]string {
 		return err
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reading the files under %s: %v", dir, err)
 	}
 
 	return files
@@ -428,23 +434,25 @@ func TestDiskActionsRefuse(t *testing.T) {
 			server := serveAs(t, "alice", tc.role).URL
 			events := captureAudit(t)
 
+			request := tc.method + " /api/v1/disks" + tc.target
+
 			resp := do(t, tc.method, server+"/api/v1/disks"+tc.target, "")
 			body := readBody(t, resp)
 
 			if resp.StatusCode != tc.want {
-				t.Fatalf("status %d, want %d: %s", resp.StatusCode, tc.want, body)
+				t.Fatalf("%s = %d, want %d: %s", request, resp.StatusCode, tc.want, body)
 			}
 
 			if got := files.sent(); len(got) != 0 {
-				t.Errorf("sent minimega %q", got)
+				t.Errorf("%s sent minimega %q, want nothing", request, got)
 			}
 
-			if !reflect.DeepEqual(tree(t, filepath.Dir(dir)), before) {
-				t.Error("changed the files")
+			if diff := cmp.Diff(before, tree(t, filepath.Dir(dir))); diff != "" {
+				t.Errorf("%s changed the files (-before +after):\n%s", request, diff)
 			}
 
-			if tc.want == http.StatusForbidden && files.runs() != runs {
-				t.Error("inspected an image for a role not allowed to act on it")
+			if n := files.runs() - runs; tc.want == http.StatusForbidden && n != 0 {
+				t.Errorf("%s ran qemu-img %d times, want 0 for a role not allowed to act", request, n)
 			}
 
 			action, _, _ := strings.Cut(strings.TrimPrefix(tc.target, "/"), "?")
@@ -462,10 +470,12 @@ func TestDiskActionsRefuse(t *testing.T) {
 			default:
 				// refused before the RBAC check, or failed after it: neither a
 				// refusal nor a success
-				if n := countAudit(got, "disk-"+action, "success", nil); n != 0 || countAudit(
-					got, "disk-"+action, "failure", map[string]any{"event.reason": "forbidden"},
-				) != 0 {
-					t.Errorf("audited a refusal or success for a %d: %v", tc.want, got)
+				if n := countAudit(got, "disk-"+action, "success", nil); n != 0 {
+					t.Errorf("%s audited %d successes, want 0: %v", request, n, got)
+				}
+
+				if n := countAudit(got, "disk-"+action, "failure", map[string]any{"event.reason": "forbidden"}); n != 0 {
+					t.Errorf("%s audited %d refusals, want 0: %v", request, n, got)
 				}
 			}
 		})
@@ -504,13 +514,14 @@ func TestDiskActionsOnNestedImages(t *testing.T) {
 		{http.MethodPost, "/clone?disk=" + q("win/a+b&c.qc2") + "&new=" + q("a+b&c=2.qc2"), nil},
 		{http.MethodDelete, "?disk=" + q("win/a b.qc2"), nil},
 	} {
+		// each request acts on what the ones before it left
 		resp := do(t, tc.method, server+tc.target, "")
 		if body := readBody(t, resp); resp.StatusCode != http.StatusOK {
-			t.Fatalf("%s %s: status %d: %s", tc.method, tc.target, resp.StatusCode, body)
+			t.Fatalf("%s /api/v1/disks%s = %d, want %d: %s", tc.method, tc.target, resp.StatusCode, http.StatusOK, body)
 		}
 
-		if got := files.sent(); !slices.Equal(got, tc.sent) {
-			t.Errorf("%s %s sent %q, want %q", tc.method, tc.target, got, tc.sent)
+		if diff := cmp.Diff(tc.sent, files.sent(), cmpopts.EquateEmpty()); diff != "" {
+			t.Errorf("%s /api/v1/disks%s minimega commands mismatch (-want +got):\n%s", tc.method, tc.target, diff)
 		}
 	}
 
@@ -527,18 +538,19 @@ func TestDiskActionsOnNestedImages(t *testing.T) {
 		wantAudit(t, events(), action, "success", fields)
 	}
 
-	written := tree(t, dir)
+	// minimega is fake, so only the clones, the rename and the delete change files
+	want := map[string]string{
+		dir + "/a.qc2":                 dir + "/a.qc2",
+		dir + "/win/win10.qcow2":       dir + "/win/win10.qcow2",
+		dir + "/win/child.qc2":         dir + "/win/child.qc2",
+		dir + "/win/child.qc2.backing": "../a.qc2",
+		dir + "/win/a+b&c.qc2":         dir + "/win/a+b&c.qc2",
+		dir + "/win/moved.qc2":         dir + "/win/win10.qcow2",
+		dir + "/win/a+b&c=2.qc2":       dir + "/win/a+b&c.qc2",
+	}
 
-	for path, want := range map[string]string{
-		dir + "/win/moved.qc2":   dir + "/win/win10.qcow2",
-		dir + "/win/a+b&c=2.qc2": dir + "/win/a+b&c.qc2",
-		dir + "/win/win10.qcow2": dir + "/win/win10.qcow2",
-		dir + "/win/copy.qcow2":  "",
-		dir + "/win/a b.qc2":     "",
-	} {
-		if got, ok := written[path]; want == "" && ok || want != "" && got != want {
-			t.Errorf("%s holds %q (exists: %t), want %q", path, got, ok, want)
-		}
+	if diff := cmp.Diff(want, tree(t, dir)); diff != "" {
+		t.Errorf("files after the disk actions mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -553,35 +565,37 @@ func TestCloneDiskJob(t *testing.T) {
 	server := serveAs(t, "alice", disksRole(nil, "create", "get")).URL + "/api/v1/disks"
 	events := captureAudit(t)
 
-	resp := do(t, http.MethodPost, server+"/clone/jobs?disk=win/win10.qcow2&new=copy", "")
-	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
-	}
+	const path = "/api/v1/disks/clone/jobs?disk=win/win10.qcow2&new=copy"
 
-	var started job.Job
-	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
-		t.Fatal(err)
-	}
-
-	if loc := resp.Header.Get("Location"); loc != "/api/v1/jobs/"+started.ID {
-		t.Errorf("Location %q", loc)
-	}
-
+	started := startClone(t, server+"/clone/jobs?disk=win/win10.qcow2&new=copy")
 	size := int64(len(files.dir + "/win/win10.qcow2"))
 
-	if started.Kind != "disk.clone" || started.Owner != "alice" || started.Progress.BytesTotal != size ||
-		len(started.Items) != 1 || started.Items[0].Name != "copy.qcow2" || !started.Cancelable {
-		t.Errorf("started %+v", started)
+	want := job.Job{
+		Kind:       "disk.clone",
+		Owner:      "alice",
+		Cancelable: true,
+		Progress:   job.Progress{BytesTotal: size},
+		Items:      []job.Item{{Name: "copy.qcow2"}},
+	}
+	if diff := cmp.Diff(want, started, startedJobOpts); diff != "" {
+		t.Errorf("POST %s job mismatch (-want +got):\n%s", path, diff)
 	}
 
 	j := waitJob(t, registry, started.ID)
-	if j.Status != job.StatusSucceeded || j.Progress.Bytes != size {
-		t.Errorf("job %s with %d bytes copied: %+v", j.Status, j.Progress.Bytes, j)
+	if j.Status != job.StatusSucceeded {
+		t.Errorf("POST %s job status = %s, want %s", path, j.Status, job.StatusSucceeded)
 	}
 
-	written := tree(t, files.dir)
-	if written[files.dir+"/win/copy.qcow2"] != files.dir+"/win/win10.qcow2" || len(written) != 2 {
-		t.Errorf("files after the clone: %v", written)
+	if j.Progress.Bytes != size {
+		t.Errorf("POST %s job copied %d bytes, want %d", path, j.Progress.Bytes, size)
+	}
+
+	wantFiles := map[string]string{
+		files.dir + "/win/win10.qcow2": files.dir + "/win/win10.qcow2",
+		files.dir + "/win/copy.qcow2":  files.dir + "/win/win10.qcow2",
+	}
+	if diff := cmp.Diff(wantFiles, tree(t, files.dir)); diff != "" {
+		t.Errorf("files after POST %s mismatch (-want +got):\n%s", path, diff)
 	}
 
 	// audited when the job finishes, as the user who started it
@@ -591,7 +605,7 @@ func TestCloneDiskJob(t *testing.T) {
 	})
 
 	if n := len(got); n != 1 {
-		t.Errorf("%d audit events, want 1: %v", n, got)
+		t.Errorf("POST %s logged %d audit events, want 1: %v", path, n, got)
 	}
 }
 
@@ -616,23 +630,23 @@ func TestCloneDiskJobAuditsFailure(t *testing.T) {
 
 	// the image is gone by the time the job runs
 	if err := os.Remove(files.dir + "/a.qc2"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("removing a.qc2: %v", err)
 	}
 
 	cancel := strings.TrimSuffix(server, "/disks") + "/jobs/" + canceled.ID + "/cancel"
 	if resp := do(t, http.MethodPost, cancel, ""); resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("cancel: %d", resp.StatusCode)
+		t.Fatalf("POST /api/v1/jobs/%s/cancel = %d, want %d", canceled.ID, resp.StatusCode, http.StatusAccepted)
 	}
 
 	close(release)
 	waitJob(t, registry, held.ID)
 
 	if j := waitJob(t, registry, failing.ID); j.Status != job.StatusFailed {
-		t.Errorf("clone of a removed image: %s", j.Status)
+		t.Errorf("clone job of a removed image status = %s, want %s", j.Status, job.StatusFailed)
 	}
 
 	if j := waitJob(t, registry, canceled.ID); j.Status != job.StatusCanceled {
-		t.Errorf("canceled clone: %s", j.Status)
+		t.Errorf("canceled clone job status = %s, want %s", j.Status, job.StatusCanceled)
 	}
 
 	e := waitAudit(t, events, "disk-clone", "failure", map[string]any{
@@ -644,7 +658,7 @@ func TestCloneDiskJobAuditsFailure(t *testing.T) {
 	})
 
 	if n := countAudit(events(), "disk-clone", "success", nil); n != 0 {
-		t.Errorf("%d clones audited as done", n)
+		t.Errorf("a failed and a canceled clone job audited %d successes, want 0", n)
 	}
 }
 
@@ -654,12 +668,16 @@ func startClone(t *testing.T, url string) job.Job {
 
 	resp := do(t, http.MethodPost, url, "")
 	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("POST %s = %d, want %d: %s", url, resp.StatusCode, http.StatusAccepted, readBody(t, resp))
 	}
 
 	var started job.Job
 	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
-		t.Fatal(err)
+		t.Fatalf("POST %s did not answer with a job: %v", url, err)
+	}
+
+	if loc := resp.Header.Get("Location"); loc != "/api/v1/jobs/"+started.ID {
+		t.Errorf("POST %s Location = %q, want %q", url, loc, "/api/v1/jobs/"+started.ID)
 	}
 
 	return started
@@ -697,20 +715,22 @@ func TestDownloadDiskRefuses(t *testing.T) {
 			resp := do(t, http.MethodGet, server+url.QueryEscape(tc.disk), "")
 
 			if resp.StatusCode != tc.want {
-				t.Fatalf("expected %d, got %d", tc.want, resp.StatusCode)
+				t.Fatalf("GET /api/v1/disks/download?disk=%s = %d, want %d", tc.disk, resp.StatusCode, tc.want)
 			}
 
-			if _ = readBody(t, resp); tc.outcome == "" {
+			readBody(t, resp)
+
+			if tc.outcome == "" {
 				if got := events(); len(got) != 0 {
-					t.Errorf("audited a request refused before the RBAC check: %v", got)
+					t.Errorf("GET /api/v1/disks/download?disk=%s audit events = %v, want none before the RBAC check", tc.disk, got)
 				}
 
 				return
 			}
 
 			e := wantAudit(t, events(), "disk-download", tc.outcome, map[string]any{"user.name": "alice"})
-			if tc.want == http.StatusForbidden && e != nil && e["event.reason"] != "forbidden" {
-				t.Errorf("refusal audited without event.reason: %v", e)
+			if got := e["event.reason"]; tc.want == http.StatusForbidden && e != nil && got != "forbidden" {
+				t.Errorf("GET /api/v1/disks/download?disk=%s audit event.reason = %v, want forbidden", tc.disk, got)
 			}
 		})
 	}
@@ -725,24 +745,37 @@ func TestDownloadDiskResumes(t *testing.T) {
 	server := serveAs(t, "alice", testRole("disks", "get", "a.qc2", "win")).URL + "/api/v1/disks/download?disk="
 	contents := dir + "/win/a.qc2" // writeDisks writes each image's path into it
 
-	head := do(t, http.MethodHead, server+"win/a.qc2", "")
-	etag := head.Header.Get("ETag")
+	const path = "/api/v1/disks/download?disk=win/a.qc2"
 
-	if head.StatusCode != http.StatusOK || etag == "" || head.Header.Get("Content-Length") != strconv.Itoa(len(contents)) {
-		t.Fatalf("HEAD: status %d, ETag %q, Content-Length %q", head.StatusCode, etag, head.Header.Get("Content-Length"))
+	head := do(t, http.MethodHead, server+"win/a.qc2", "")
+	if head.StatusCode != http.StatusOK {
+		t.Fatalf("HEAD %s = %d, want %d", path, head.StatusCode, http.StatusOK)
+	}
+
+	etag := head.Header.Get("ETag")
+	if etag == "" {
+		t.Fatalf("HEAD %s ETag is empty, want one", path)
+	}
+
+	if got, want := head.Header.Get("Content-Length"), strconv.Itoa(len(contents)); got != want {
+		t.Errorf("HEAD %s Content-Length = %q, want %q", path, got, want)
 	}
 
 	if got := head.Header.Get("Content-Disposition"); got != "attachment; filename=a.qc2" {
-		t.Errorf("Content-Disposition = %q", got)
+		t.Errorf("HEAD %s Content-Disposition = %q, want %q", path, got, "attachment; filename=a.qc2")
 	}
 
 	resp := do(t, http.MethodGet, server+"win/a.qc2", "", "Range", "bytes=5-", "If-Range", etag)
-	if body := readBody(t, resp); resp.StatusCode != http.StatusPartialContent || body != contents[5:] {
-		t.Fatalf("resume: status %d, body %q; want 206 %q", resp.StatusCode, body, contents[5:])
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Errorf("GET %s from byte 5 = %d, want %d", path, resp.StatusCode, http.StatusPartialContent)
+	}
+
+	if body := readBody(t, resp); body != contents[5:] {
+		t.Errorf("GET %s from byte 5 = %q, want %q", path, body, contents[5:])
 	}
 
 	if resp := do(t, http.MethodGet, server+"win", ""); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("a folder: status %d, want 400", resp.StatusCode)
+		t.Errorf("GET /api/v1/disks/download?disk=win = %d, want %d", resp.StatusCode, http.StatusBadRequest)
 	}
 }
 
@@ -755,17 +788,21 @@ func TestGetDiskChecksum(t *testing.T) {
 
 	resp := do(t, http.MethodGet, server+"win/a.qc2", "")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("GET /api/v1/disks/checksum?disk=win/a.qc2 = %d, want %d: %s",
+			resp.StatusCode, http.StatusOK, readBody(t, resp))
 	}
 
 	var body util.Checksum
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatal(err)
+		t.Fatalf("GET /api/v1/disks/checksum?disk=win/a.qc2 did not answer with a checksum: %v", err)
 	}
 
-	sum := sha256.Sum256([]byte(dir + "/win/a.qc2"))
-	if body.Path != "win/a.qc2" || body.SHA256 != hex.EncodeToString(sum[:]) {
-		t.Errorf("got %+v", body)
+	contents := dir + "/win/a.qc2" // writeDisks writes each image's path into it
+	sum := sha256.Sum256([]byte(contents))
+
+	want := util.Checksum{Path: "win/a.qc2", Size: int64(len(contents)), SHA256: hex.EncodeToString(sum[:])}
+	if diff := cmp.Diff(want, body, cmpopts.IgnoreFields(util.Checksum{}, "Modified", "ETag")); diff != "" {
+		t.Errorf("GET /api/v1/disks/checksum?disk=win/a.qc2 mismatch (-want +got):\n%s", diff)
 	}
 
 	events := captureAudit(t)
@@ -778,7 +815,7 @@ func TestGetDiskChecksum(t *testing.T) {
 		"../a.qc2":  http.StatusBadRequest,
 	} {
 		if resp := do(t, http.MethodGet, server+url.QueryEscape(disk), ""); resp.StatusCode != want {
-			t.Errorf("%s: status %d, want %d", disk, resp.StatusCode, want)
+			t.Errorf("GET /api/v1/disks/checksum?disk=%s = %d, want %d", disk, resp.StatusCode, want)
 		}
 	}
 
@@ -788,7 +825,7 @@ func TestGetDiskChecksum(t *testing.T) {
 
 	server = serveAs(t, "alice", testRole("disks", "get", "missing.qc2")).URL + "/api/v1/disks/checksum?disk="
 	if resp := do(t, http.MethodGet, server+"missing.qc2", ""); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("missing: status %d, want 404", resp.StatusCode)
+		t.Errorf("GET /api/v1/disks/checksum?disk=missing.qc2 = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 }
 
@@ -820,13 +857,20 @@ func TestUploadDiskRefusesWhatItCannotSave(t *testing.T) {
 			defer func() { wantAudit(t, events(), "disk-upload", "failure", map[string]any{"user.name": "alice"}) }()
 
 			resp := upload(t, tc.field, tc.filename)
-			if body := readBody(t, resp); resp.StatusCode != http.StatusInternalServerError ||
-				!strings.HasPrefix(body, "Error uploading") {
-				t.Errorf("status %d: %s; want 500 with the error", resp.StatusCode, body)
+
+			body := readBody(t, resp)
+			if resp.StatusCode != http.StatusInternalServerError {
+				t.Errorf("POST /api/v1/disks of %s in field %s = %d, want %d: %s",
+					tc.filename, tc.field, resp.StatusCode, http.StatusInternalServerError, body)
 			}
 
-			if !reflect.DeepEqual(tree(t, dir), before) {
-				t.Error("changed the files")
+			if !strings.HasPrefix(body, "Error uploading") {
+				t.Errorf("POST /api/v1/disks of %s in field %s = %q, want the error", tc.filename, tc.field, body)
+			}
+
+			if diff := cmp.Diff(before, tree(t, dir)); diff != "" {
+				t.Errorf("POST /api/v1/disks of %s in field %s changed the files (-before +after):\n%s",
+					tc.filename, tc.field, diff)
 			}
 		})
 	}
@@ -834,7 +878,8 @@ func TestUploadDiskRefusesWhatItCannotSave(t *testing.T) {
 	events := captureAudit(t)
 
 	if resp := upload(t, "file", "new.qc2"); resp.StatusCode != http.StatusOK {
-		t.Fatalf("uploading after the refusals: status %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("POST /api/v1/disks of new.qc2 after the refusals = %d, want %d: %s",
+			resp.StatusCode, http.StatusOK, readBody(t, resp))
 	}
 
 	wantAudit(t, events(), "disk-upload", "success", map[string]any{
@@ -843,13 +888,13 @@ func TestUploadDiskRefusesWhatItCannotSave(t *testing.T) {
 
 	refused := serveAs(t, "alice", testRole("disks", "get")).URL + "/api/v1/disks"
 	if resp := do(t, http.MethodPost, refused, ""); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("uploading without permission: status %d", resp.StatusCode)
+		t.Errorf("POST /api/v1/disks as a disk getter = %d, want %d", resp.StatusCode, http.StatusForbidden)
 	}
 
 	wantDenied(t, events(), "disk-upload")
 
 	if got := tree(t, dir)[dir+"/new.qc2"]; got != "uploaded" {
-		t.Errorf("uploaded new.qc2 holds %q, want %q", got, "uploaded")
+		t.Errorf("POST /api/v1/disks of new.qc2 wrote %q, want %q", got, "uploaded")
 	}
 }
 
@@ -862,13 +907,14 @@ func TestRedeployRefusesABadRequestFirst(t *testing.T) {
 
 	// held by another action: a request reaching the lock would get a 409
 	if err := cache.LockVMForRedeploying("test-experiment", "test-vm"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("cache.LockVMForRedeploying(test-experiment, test-vm) error = %v", err)
 	}
 
 	t.Cleanup(func() { cache.UnlockVM("test-experiment", "test-vm") })
 
-	server := serveAs(t, "alice", testRole("vms/redeploy", "update", "test-experiment/test-vm")).URL +
-		"/api/v1/experiments/test-experiment/vms/test-vm/redeploy"
+	const path = "/api/v1/experiments/test-experiment/vms/test-vm/redeploy"
+
+	server := serveAs(t, "alice", testRole("vms/redeploy", "update", "test-experiment/test-vm")).URL + path
 
 	for name, request := range map[string]string{
 		"no body":                    "",
@@ -879,13 +925,13 @@ func TestRedeployRefusesABadRequestFirst(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			resp := do(t, http.MethodPost, server, request)
 			if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest {
-				t.Errorf("status %d: %s; want 400", resp.StatusCode, body)
+				t.Errorf("POST %s %q = %d, want %d: %s", path, request, resp.StatusCode, http.StatusBadRequest, body)
 			}
 		})
 	}
 
 	if sent := mmtest.Bases(received()); len(sent) != 0 {
-		t.Errorf("sent minimega %q", sent)
+		t.Errorf("bad POST %s requests sent minimega %q, want nothing", path, sent)
 	}
 }
 
@@ -896,20 +942,28 @@ func TestUpdateVMsRefusesAnUnusableDiskWhole(t *testing.T) {
 
 	server := serveAs(t, "alice", testRole("vms", "patch", "test-experiment/*")).URL
 
-	resp := do(t, http.MethodPatch, server+"/api/v1/experiments/test-experiment/vms",
+	const path = "/api/v1/experiments/test-experiment/vms"
+
+	resp := do(t, http.MethodPatch, server+path,
 		`{"total": 2, "vms": [{"name": "vm1", "disk": "c.qc2"}, {"name": "vm2", "disk": "a b.qc2"}]}`)
-	if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "vm2") {
-		t.Errorf("status %d: %s; want 400 naming vm2", resp.StatusCode, body)
+
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("PATCH %s with vm2 on a b.qc2 = %d, want %d: %s", path, resp.StatusCode, http.StatusBadRequest, body)
+	}
+
+	if !strings.Contains(body, "vm2") {
+		t.Errorf("PATCH %s with vm2 on a b.qc2 = %q, want it to name vm2", path, body)
 	}
 
 	exp, err := experiment.Get("test-experiment")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("experiment.Get(test-experiment) error = %v", err)
 	}
 
 	for name, want := range map[string]string{"vm1": "a.qc2", "vm2": "b.qc2"} {
 		if got := exp.Spec.Topology().FindNodeByName(name).Hardware().Drives()[0].Image(); got != want {
-			t.Errorf("%s boots from %q, want %q", name, got, want)
+			t.Errorf("after the refused PATCH %s, %s boots from %q, want %q", path, name, got, want)
 		}
 	}
 }
@@ -919,9 +973,17 @@ func TestUpdateVMsRefusesAnUnusableDiskWhole(t *testing.T) {
 func TestPatchVMRefusesADiskMinimegaCannotUse(t *testing.T) {
 	useAnnotatedVMExperiment(t)
 
-	resp := patchVM(t, vmRole("get", "patch"), `{"disk": "win/a b.qc2"}`)
-	if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "contains ' '") {
-		t.Errorf("status %d: %s; want 400 naming the space", resp.StatusCode, body)
+	const request = `{"disk": "win/a b.qc2"}`
+
+	resp := patchVM(t, vmRole("get", "patch"), request)
+
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("PATCH test-vm %s = %d, want %d: %s", request, resp.StatusCode, http.StatusBadRequest, body)
+	}
+
+	if !strings.Contains(body, "contains ' '") {
+		t.Errorf("PATCH test-vm %s = %q, want it to name the space", request, body)
 	}
 }
 
@@ -941,7 +1003,8 @@ func TestVMDiskActionsRefuse(t *testing.T) {
 
 			resp := do(t, http.MethodPost, server+route, `{"filename":"x.qc2"}`)
 			if resp.StatusCode != http.StatusForbidden {
-				t.Fatalf("expected 403, got %d: %s", resp.StatusCode, readBody(t, resp))
+				t.Fatalf("POST .../vms/test-vm%s as a VM getter = %d, want %d: %s",
+					route, resp.StatusCode, http.StatusForbidden, readBody(t, resp))
 			}
 
 			wantDenied(t, events(), action)

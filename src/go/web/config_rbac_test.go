@@ -50,14 +50,11 @@ func handlerStatus(t *testing.T, w *httptest.ResponseRecorder, err error) int {
 	return w.Code
 }
 
-// wantNoConfig fails the test when the store holds the named config.
-func wantNoConfig(t *testing.T, name string) {
-	t.Helper()
-
+// isStored reports whether the store holds the named config.
+func isStored(name string) bool {
 	c, _ := store.NewConfig(name)
-	if c != nil && store.Get(c) == nil {
-		t.Errorf("%s was stored", name)
-	}
+
+	return c != nil && store.Get(c) == nil
 }
 
 // POST /configs and the workflow upsert check configs create against the new
@@ -92,12 +89,15 @@ func TestCreateConfigChecksKind(t *testing.T) {
 				req := roleRequest(http.MethodPost, route.target, tc.body, vars, topologyConfigs("create"))
 
 				if got := handlerStatus(t, w, route.handler(w, req)); got != tc.want {
-					t.Errorf("%s: status %d, want %d", tc.name, got, tc.want)
+					t.Errorf("%s of a %s = %d, want %d", route.name, tc.name, got, tc.want)
 				}
 			}
 
-			wantNoConfig(t, "user/intruder")
-			wantNoConfig(t, "role/intruder")
+			for _, name := range []string{"user/intruder", "role/intruder"} {
+				if isStored(name) {
+					t.Errorf("%s by a topology-only role stored %s, want it refused", route.name, name)
+				}
+			}
 		})
 	}
 }
@@ -120,16 +120,21 @@ func TestUpdateConfigChecksRename(t *testing.T) {
 		{"renamed", renamedTopology("other"), topologyConfigs("update", "create"), http.StatusNoContent},
 		{"same name without create", revisionTestTopology, topologyConfigs("update"), http.StatusNoContent},
 	} {
-		useRevisionTestStore(t)
+		t.Run(tc.name, func(t *testing.T) {
+			useRevisionTestStore(t)
 
-		w := httptest.NewRecorder()
-		req := roleRequest(http.MethodPut, "/api/v1/configs/topology/demo", tc.body, vars, tc.role)
+			w := httptest.NewRecorder()
+			req := roleRequest(http.MethodPut, "/api/v1/configs/topology/demo", tc.body, vars, tc.role)
 
-		if got := handlerStatus(t, w, UpdateConfig(w, req)); got != tc.want {
-			t.Errorf("%s: status %d, want %d", tc.name, got, tc.want)
-		}
+			if got := handlerStatus(t, w, UpdateConfig(w, req)); got != tc.want {
+				t.Errorf("UpdateConfig(PUT topology/demo, %s) = %d, want %d", tc.name, got, tc.want)
+			}
 
-		wantNoConfig(t, "user/intruder")
-		wantNoConfig(t, "role/demo")
+			for _, name := range []string{"user/intruder", "role/demo"} {
+				if isStored(name) {
+					t.Errorf("UpdateConfig(PUT topology/demo, %s) stored %s, want it refused", tc.name, name)
+				}
+			}
+		})
 	}
 }

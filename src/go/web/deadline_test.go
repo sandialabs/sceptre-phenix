@@ -51,12 +51,16 @@ func TestStreamsWriteWithDeadlines(t *testing.T) {
 
 		for range 3 {
 			if !watch.send("heartbeat", map[string]any{"t": 1}) {
-				t.Fatal("send failed")
+				t.Fatal(`sharkWatch.send("heartbeat") = false, want true`)
 			}
 		}
 
-		if w.bounded != 3 || w.unbounded != 0 {
-			t.Errorf("writes with a deadline = %d, without = %d; want 3, 0", w.bounded, w.unbounded)
+		if w.bounded != 3 {
+			t.Errorf("after 3 sharkWatch.send calls, writes with a deadline = %d, want 3", w.bounded)
+		}
+
+		if w.unbounded != 0 {
+			t.Errorf("after 3 sharkWatch.send calls, writes without a deadline = %d, want 0", w.unbounded)
 		}
 	})
 
@@ -68,12 +72,16 @@ func TestStreamsWriteWithDeadlines(t *testing.T) {
 
 		for range 3 {
 			if err := send([]byte("chunk")); err != nil {
-				t.Fatal(err)
+				t.Fatalf("pcapSender(w)(%q) error = %v", "chunk", err)
 			}
 		}
 
-		if w.bounded != 3 || w.unbounded != 0 {
-			t.Errorf("writes with a deadline = %d, without = %d; want 3, 0", w.bounded, w.unbounded)
+		if w.bounded != 3 {
+			t.Errorf("after 3 pcapSender sends, writes with a deadline = %d, want 3", w.bounded)
+		}
+
+		if w.unbounded != 0 {
+			t.Errorf("after 3 pcapSender sends, writes without a deadline = %d, want 0", w.unbounded)
 		}
 	})
 }

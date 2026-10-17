@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/job"
 	"phenix/store"
@@ -155,7 +157,7 @@ func (f contractFixture) console(t *testing.T, user string) string {
 
 	console, err := f.consoles.start(context.WithoutCancel(t.Context()), user)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("starting a console of %s: %v", user, err)
 	}
 
 	return strconv.Itoa(console.pid)
@@ -495,15 +497,15 @@ func TestContractAuth(t *testing.T) {
 
 					resp := req.send(t, route, route.url(t, server, f, user), session)
 
-					switch {
+					switch ct := resp.Header.Get("Content-Type"); {
 					case req.refuse == 0:
 						if !route.passed(resp.StatusCode) {
-							t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+							t.Errorf("%s with %s = %d, want it past auth and RBAC: %s", route, name, resp.StatusCode, readBody(t, resp))
 						}
 					case resp.StatusCode != req.refuse:
-						t.Fatalf("status %d, want %d", resp.StatusCode, req.refuse)
-					case !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain"):
-						t.Errorf("Content-Type %q, want text/plain", resp.Header.Get("Content-Type"))
+						t.Errorf("%s with %s = %d, want %d", route, name, resp.StatusCode, req.refuse)
+					case !strings.HasPrefix(ct, "text/plain"):
+						t.Errorf("%s with %s: Content-Type = %q, want text/plain", route, name, ct)
 					}
 				})
 			}
@@ -537,7 +539,7 @@ func TestContractRBAC(t *testing.T) {
 
 					resp := do(t, route.method, route.url(t, server, f, "alice"), route.body, route.header...)
 					if resp.StatusCode != route.denied() {
-						t.Fatalf("status %d, want %d", resp.StatusCode, route.denied())
+						t.Fatalf("%s %s = %d, want %d", route, name, resp.StatusCode, route.denied())
 					}
 
 					wantErrorBody(t, route, resp)
@@ -550,12 +552,12 @@ func TestContractRBAC(t *testing.T) {
 
 				resp := do(t, route.method, route.url(t, server, f, "alice"), route.body, route.header...)
 				if !route.passed(resp.StatusCode) {
-					t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+					t.Errorf("%s with exactly what it needs = %d, want it past RBAC: %s", route, resp.StatusCode, readBody(t, resp))
 				}
 
 				// ordered against websocket messages, as every API route's
 				if resp.Header.Get("X-Phenix-Seq") == "" {
-					t.Error("no X-Phenix-Seq")
+					t.Errorf("%s with exactly what it needs: X-Phenix-Seq is missing", route)
 				}
 			})
 		})
@@ -625,14 +627,14 @@ func wantErrorBody(t *testing.T, route contractRoute, resp *http.Response) {
 
 	if !route.jsonErrors {
 		if !strings.HasPrefix(got, "text/plain") {
-			t.Errorf("Content-Type %q, want text/plain", got)
+			t.Errorf("%s error: Content-Type = %q, want text/plain", route, got)
 		}
 
 		return
 	}
 
 	if got != "application/json" {
-		t.Errorf("Content-Type %q, want application/json", got)
+		t.Errorf("%s error: Content-Type = %q, want application/json", route, got)
 	}
 
 	if route.method == http.MethodHead {
@@ -643,8 +645,10 @@ func wantErrorBody(t *testing.T, route contractRoute, resp *http.Response) {
 		Message string `json:"message"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || body.Message == "" {
-		t.Errorf("error body has no message: %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Errorf("%s error body is not JSON: %v", route, err)
+	} else if body.Message == "" {
+		t.Errorf("%s error body message = %q, want one", route, body.Message)
 	}
 }
 
@@ -665,7 +669,7 @@ func TestContractJobListing(t *testing.T) {
 
 			resp := do(t, http.MethodGet, server+"/api/v1/jobs", "")
 			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("status %d", resp.StatusCode)
+				t.Fatalf("GET /api/v1/jobs = %d, want %d", resp.StatusCode, http.StatusOK)
 			}
 
 			var body struct {
@@ -673,12 +677,21 @@ func TestContractJobListing(t *testing.T) {
 			}
 
 			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-				t.Fatal(err)
+				t.Fatalf("decoding GET /api/v1/jobs: %v", err)
 			}
 
-			listed := len(body.Jobs) == 1 && body.Jobs[0].ID == f.bobsJob.ID
-			if listed != tc.want || len(body.Jobs) > 1 {
-				t.Errorf("listed %+v, want bob's job listed %t", body.Jobs, tc.want)
+			ids := make([]string, 0, len(body.Jobs))
+			for _, j := range body.Jobs {
+				ids = append(ids, j.ID)
+			}
+
+			var want []string
+			if tc.want {
+				want = []string{f.bobsJob.ID}
+			}
+
+			if diff := cmp.Diff(want, ids, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("GET /api/v1/jobs job IDs mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -884,7 +897,7 @@ func TestContractErrors(t *testing.T) {
 
 			resp := do(t, tc.method, server+path, tc.body, tc.header...)
 			if resp.StatusCode != tc.want {
-				t.Fatalf("status %d, want %d: %s", resp.StatusCode, tc.want, readBody(t, resp))
+				t.Fatalf("%s %s = %d, want %d: %s", tc.method, path, resp.StatusCode, tc.want, readBody(t, resp))
 			}
 
 			// gorilla's 405 and a 304 have no body
@@ -892,14 +905,14 @@ func TestContractErrors(t *testing.T) {
 				return
 			}
 
-			wantErrorBody(t, contractRoute{method: tc.method, jsonErrors: tc.json}, resp)
+			wantErrorBody(t, contractRoute{method: tc.method, path: path, jsonErrors: tc.json}, resp)
 
 			if name == "unknown API path" {
 				return
 			}
 
 			if !spec.documents(tc.method, path, tc.want) {
-				t.Errorf("openapi.yml does not document %d for %s %s", tc.want, tc.method, path)
+				t.Errorf("openapi.yml documents %d for %s %s = false, want true", tc.want, tc.method, path)
 			}
 		})
 	}
@@ -941,11 +954,11 @@ func TestContractJSONContentType(t *testing.T) {
 
 			resp := do(t, http.MethodGet, server+path, "")
 			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+				t.Fatalf("GET %s = %d, want %d: %s", path, resp.StatusCode, http.StatusOK, readBody(t, resp))
 			}
 
 			if got := resp.Header.Get("Content-Type"); got != mimeJSON {
-				t.Errorf("Content-Type %q, want %s", got, mimeJSON)
+				t.Errorf("GET %s Content-Type = %q, want %s", path, got, mimeJSON)
 			}
 		})
 	}
@@ -987,66 +1000,69 @@ func TestContractBasePath(t *testing.T) {
 	} {
 		resp := do(t, http.MethodPost, server+start.path, start.body)
 		if resp.StatusCode != http.StatusAccepted {
-			t.Fatalf("POST %s: status %d: %s", start.path, resp.StatusCode, readBody(t, resp))
+			t.Errorf("POST %s = %d, want %d: %s", start.path, resp.StatusCode, http.StatusAccepted, readBody(t, resp))
+
+			continue
 		}
 
 		var started job.Job
 		if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
-			t.Fatal(err)
+			t.Errorf("decoding POST %s: %v", start.path, err)
+
+			continue
 		}
 
 		location := resp.Header.Get("Location")
 		if want := base + "api/v1/jobs/" + started.ID; location != want {
-			t.Errorf("POST %s: Location %q, want %q", start.path, location, want)
+			t.Errorf("POST %s Location = %q, want %q", start.path, location, want)
 
 			continue
 		}
 
 		if got := proxied(t, http.MethodGet, location); got.StatusCode != http.StatusOK {
-			t.Errorf("GET %s through the proxy: status %d", location, got.StatusCode)
+			t.Errorf("GET %s through the proxy = %d, want %d", location, got.StatusCode, http.StatusOK)
 		}
 	}
 
 	// a config the workflow routes upsert
 	upserted := do(t, http.MethodPost, server+"/api/v1/workflow/configs/main", upsertTestTopology, "Content-Type", mimeYAML)
 	if upserted.StatusCode != http.StatusCreated {
-		t.Fatalf("upserting a config: status %d: %s", upserted.StatusCode, readBody(t, upserted))
-	}
-
-	if location, want := upserted.Header.Get("Location"), base+"api/v1/configs/topology/main-topo"; location != want {
-		t.Errorf("upserted config: Location %q, want %q", location, want)
+		t.Errorf("POST /api/v1/workflow/configs/main = %d, want %d: %s",
+			upserted.StatusCode, http.StatusCreated, readBody(t, upserted))
+	} else if location, want := upserted.Header.Get("Location"), base+"api/v1/configs/topology/main-topo"; location != want {
+		t.Errorf("POST /api/v1/workflow/configs/main Location = %q, want %q", location, want)
 	} else if got := proxied(t, http.MethodGet, location); got.StatusCode != http.StatusOK {
-		t.Errorf("GET %s through the proxy: status %d", location, got.StatusCode)
+		t.Errorf("GET %s through the proxy = %d, want %d", location, got.StatusCode, http.StatusOK)
 	}
 
 	resp := do(t, http.MethodPost, server+exp+"/capture-tokens", `{"operations":["view"],"path":"a.pcap"}`)
 	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("giving a capture token: status %d: %s", resp.StatusCode, readBody(t, resp))
+		t.Fatalf("POST %s/capture-tokens = %d, want %d: %s", exp, resp.StatusCode, http.StatusCreated, readBody(t, resp))
 	}
 
 	var token captureToken
 	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding POST %s/capture-tokens: %v", exp, err)
 	}
 
 	// the view URL, resolved against the page phenix is served at, and the
 	// capture WebShark's page then asks for
 	view, err := url.Parse(base + token.URLs["view"])
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("capture token view URL %q: %v", token.URLs["view"], err)
 	}
 
 	if got := proxied(t, http.MethodGet, view.String()); got.StatusCode != http.StatusOK {
-		t.Errorf("GET %s through the proxy: status %d", view, got.StatusCode)
+		t.Errorf("GET %s through the proxy = %d, want %d", view, got.StatusCode, http.StatusOK)
 	}
 
 	capture := base + "webshark/captures/" + view.Query().Get("capture")
 	if got := proxied(t, http.MethodGet, capture); got.StatusCode != http.StatusOK {
-		t.Errorf("GET %s through the proxy: status %d", capture, got.StatusCode)
+		t.Errorf("GET %s through the proxy = %d, want %d", capture, got.StatusCode, http.StatusOK)
 	}
 
 	if page := readBody(t, proxied(t, http.MethodGet, base+"webshark/")); !strings.Contains(page, `"`+base+`webshark/"`) {
-		t.Errorf("WebShark's page does not name the base path: %s", page)
+		t.Errorf("GET %swebshark/ through the proxy = %s, want the base path named", base, page)
 	}
 }
 
@@ -1078,11 +1094,11 @@ func TestContractPublicRoutes(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			resp := do(t, http.MethodGet, server+path, "")
 			if !slices.Contains(tc.want, resp.StatusCode) {
-				t.Fatalf("status %d, want one of %v: %s", resp.StatusCode, tc.want, readBody(t, resp))
+				t.Errorf("GET %s without credentials = %d, want one of %v: %s", path, resp.StatusCode, tc.want, readBody(t, resp))
 			}
 
 			if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, tc.contentType) {
-				t.Errorf("Content-Type %q, want %s", got, tc.contentType)
+				t.Errorf("GET %s Content-Type = %q, want %s", path, got, tc.contentType)
 			}
 		})
 	}
@@ -1142,11 +1158,11 @@ func TestContractSocket(t *testing.T) {
 
 			resp := do(t, tc.method, server.URL+"/api/v1"+strings.ReplaceAll(tc.path, "{job}", f.bobsJob.ID), tc.body, header...)
 			if resp.StatusCode != tc.want {
-				t.Fatalf("status %d, want %d: %s", resp.StatusCode, tc.want, readBody(t, resp))
+				t.Errorf("socket %s %s = %d, want %d: %s", tc.method, tc.path, resp.StatusCode, tc.want, readBody(t, resp))
 			}
 
 			if tc.route != "" && resp.Header.Get("X-Phenix-Seq") == "" {
-				t.Error("no X-Phenix-Seq")
+				t.Errorf("socket %s %s: X-Phenix-Seq is missing", tc.method, tc.path)
 			}
 		})
 	}

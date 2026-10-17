@@ -33,7 +33,7 @@ func loadOpenAPI(t *testing.T) openAPISpec {
 
 	raw, err := os.ReadFile("public/docs/openapi.yml")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reading openapi.yml: %v", err)
 	}
 
 	var doc struct {
@@ -55,7 +55,7 @@ func loadOpenAPI(t *testing.T) openAPISpec {
 			}
 
 			if err := servers.Decode(&list); err != nil {
-				t.Fatalf("%s: servers: %v", path, err)
+				t.Fatalf("decoding openapi.yml %s servers: %v", path, err)
 			}
 
 			if len(list) > 0 && !strings.HasSuffix(list[0].URL, "/api/v1") {
@@ -73,7 +73,7 @@ func loadOpenAPI(t *testing.T) openAPISpec {
 			}
 
 			if err := node.Decode(&op); err != nil {
-				t.Fatalf("%s %s: %v", method, path, err)
+				t.Fatalf("decoding openapi.yml %s %s: %v", method, path, err)
 			}
 
 			statuses := make([]string, 0, len(op.Responses))
@@ -126,7 +126,7 @@ func routerOperations(t *testing.T) (map[string]bool, []string) {
 
 	router, ok := server.Config.Handler.(*mux.Router)
 	if !ok {
-		t.Fatalf("the server's handler is a %T", server.Config.Handler)
+		t.Fatalf("contract server handler = %T, want *mux.Router", server.Config.Handler)
 	}
 
 	var (
@@ -161,7 +161,7 @@ func routerOperations(t *testing.T) (map[string]bool, []string) {
 		return nil
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Router.Walk() error = %v", err)
 	}
 
 	return ops, anyMethod

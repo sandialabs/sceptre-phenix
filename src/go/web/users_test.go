@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"phenix/api/config"
+	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -27,7 +29,7 @@ func useDefaultRoles(t *testing.T) {
 	storetest.Use(t)
 
 	if err := config.Init(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("config.Init() error = %v", err)
 	}
 }
 
@@ -71,21 +73,21 @@ func TestCreateUserChecksRoleAndName(t *testing.T) {
 		CreateUser(w, roleRequest(http.MethodPost, "/api/v1/users", tc.body, nil, usersCreate))
 
 		if w.Code != tc.want {
-			t.Errorf("%s: status %d, want %d (%s)", tc.name, w.Code, tc.want, w.Body.String())
+			t.Errorf("CreateUser(%s) = %d, want %d: %s", tc.name, w.Code, tc.want, w.Body.String())
 		}
 	}
 
-	if _, err := rbac.GetUser("ghost"); err == nil {
-		t.Error("a user with an unknown role was stored")
+	if _, err := rbac.GetUser("ghost"); !errors.Is(err, store.ErrNotExist) {
+		t.Errorf("rbac.GetUser(ghost) after CreateUser with an unknown role error = %v, want %v", err, store.ErrNotExist)
 	}
 
 	user, err := rbac.GetUser("real")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rbac.GetUser(real) error = %v", err)
 	}
 
-	if user.RoleName() != experimentUserRole {
-		t.Errorf("role = %q, want %q", user.RoleName(), experimentUserRole)
+	if got := user.RoleName(); got != experimentUserRole {
+		t.Errorf("rbac.GetUser(real) role = %q, want %q", got, experimentUserRole)
 	}
 }
 
@@ -102,22 +104,22 @@ func TestConfigureUsersSkipsUnknownRole(t *testing.T) {
 		"real:" + testPassword + ":" + experimentUserRole + ":exp-a",
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("ConfigureUsers() error = %v", err)
 	}
 
 	for _, name := range []string{"ghost", "short"} {
-		if _, err := rbac.GetUser(name); err == nil {
-			t.Errorf("user %s was stored", name)
+		if _, err := rbac.GetUser(name); !errors.Is(err, store.ErrNotExist) {
+			t.Errorf("rbac.GetUser(%s) after ConfigureUsers error = %v, want %v", name, err, store.ErrNotExist)
 		}
 	}
 
 	user, err := rbac.GetUser("real")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rbac.GetUser(real) error = %v", err)
 	}
 
-	if user.RoleName() != experimentUserRole {
-		t.Errorf("role = %q, want %q", user.RoleName(), experimentUserRole)
+	if got := user.RoleName(); got != experimentUserRole {
+		t.Errorf("rbac.GetUser(real) role = %q, want %q", got, experimentUserRole)
 	}
 }
 
@@ -151,7 +153,7 @@ func TestCreateUserTokenForOtherUser(t *testing.T) {
 		CreateUserToken(w, roleRequest(http.MethodPost, "/api/v1/users/"+tc.target+"/tokens", `{"lifetime":"1h"}`, vars, tc.role))
 
 		if w.Code != tc.want {
-			t.Errorf("%s: status %d, want %d (%s)", tc.name, w.Code, tc.want, w.Body.String())
+			t.Errorf("CreateUserToken(%s) for %s = %d, want %d: %s", tc.name, tc.target, w.Code, tc.want, w.Body.String())
 		}
 	}
 }

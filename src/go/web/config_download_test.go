@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/store"
 )
 
@@ -35,28 +37,33 @@ func TestDownloadConfigsArchive(t *testing.T) {
 
 	server := serveAs(t, "alice", testRole("configs", "get", "Topology/a", "Topology/b", "Topology/none"))
 
-	resp := do(t, http.MethodPost, server.URL+"/api/v1/configs/download", `["Topology/a", "Topology/b", "Topology/c"]`)
+	const (
+		path = "/api/v1/configs/download"
+		all  = `["Topology/a", "Topology/b", "Topology/c"]`
+	)
+
+	resp := do(t, http.MethodPost, server.URL+path, all)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reading POST %s %s: %v", path, all, err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d: %s", resp.StatusCode, body)
+		t.Fatalf("POST %s %s = %d, want %d: %s", path, all, resp.StatusCode, http.StatusOK, body)
 	}
 
 	if got := resp.Header.Get("Content-Type"); got != "application/zip" {
-		t.Errorf("Content-Type = %q, want application/zip", got)
+		t.Errorf("POST %s %s Content-Type = %q, want application/zip", path, all, got)
 	}
 
 	if got := resp.Header.Get("Content-Disposition"); !strings.HasPrefix(got, "attachment") {
-		t.Errorf("Content-Disposition = %q, want an attachment", got)
+		t.Errorf("POST %s %s Content-Disposition = %q, want an attachment", path, all, got)
 	}
 
 	archive, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("POST %s %s is not a zip archive: %v", path, all, err)
 	}
 
 	names := make([]string, 0, len(archive.File))
@@ -64,13 +71,18 @@ func TestDownloadConfigsArchive(t *testing.T) {
 		names = append(names, f.Name)
 	}
 
-	if strings.Join(names, ",") != "Topology-a.yml,Topology-b.yml" {
-		t.Errorf("archive holds %v, want Topology-a.yml and Topology-b.yml", names)
+	if diff := cmp.Diff([]string{"Topology-a.yml", "Topology-b.yml"}, names); diff != "" {
+		t.Errorf("POST %s %s archive files mismatch (-want +got):\n%s", path, all, diff)
 	}
 
-	resp = do(t, http.MethodPost, server.URL+"/api/v1/configs/download", `["Topology/a", "Topology/none"]`)
-	if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("Content-Type") != mimeJSON {
-		t.Errorf("an unknown config: status %d, Content-Type %q, want 400 with a JSON error",
-			resp.StatusCode, resp.Header.Get("Content-Type"))
+	const unknown = `["Topology/a", "Topology/none"]`
+
+	resp = do(t, http.MethodPost, server.URL+path, unknown)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("POST %s %s = %d, want %d", path, unknown, resp.StatusCode, http.StatusBadRequest)
+	}
+
+	if got := resp.Header.Get("Content-Type"); got != mimeJSON {
+		t.Errorf("POST %s %s Content-Type = %q, want a JSON error", path, unknown, got)
 	}
 }

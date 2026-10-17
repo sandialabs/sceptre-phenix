@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/api/job"
 	"phenix/util/polltest"
 	"phenix/web/middleware"
@@ -78,7 +80,7 @@ func startTestJob(t *testing.T, r *job.Registry, owner, exp string, release chan
 		},
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Registry.Start(%s's test job on %q) error = %v", owner, exp, err)
 	}
 
 	return j
@@ -128,7 +130,7 @@ func listedJobs(t *testing.T, url string) []string {
 
 	resp := do(t, http.MethodGet, url+"/api/v1/jobs", "")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /jobs: %d", resp.StatusCode)
+		t.Fatalf("GET /api/v1/jobs = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
 	var body struct {
@@ -136,7 +138,7 @@ func listedJobs(t *testing.T, url string) []string {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding GET /api/v1/jobs: %v", err)
 	}
 
 	ids := make([]string, 0, len(body.Jobs))
@@ -145,7 +147,7 @@ func listedJobs(t *testing.T, url string) []string {
 
 		for _, item := range j.Items {
 			if item.Result != nil {
-				t.Errorf("GET /jobs: job %s item %s has result %s", j.ID, item.Name, item.Result)
+				t.Errorf("GET /api/v1/jobs job %s item %s result = %s, want none", j.ID, item.Name, item.Result)
 			}
 		}
 	}
@@ -191,20 +193,11 @@ func TestJobVisibility(t *testing.T) {
 		"experiments jobs admin": {expAdmin.URL, []string{bobs.ID, exp2.ID, exp1.ID}},
 		"experiment jobs admin":  {scoped.URL, []string{bobs.ID, exp1.ID}},
 	} {
-		got := listedJobs(t, tc.url)
-		if len(got) != len(tc.want) {
-			t.Errorf("%s: listed %v, want %v", name, got, tc.want)
-
-			continue
-		}
-
-		for i := range got {
-			if got[i] != tc.want[i] {
-				t.Errorf("%s: listed %v, want %v", name, got, tc.want)
-
-				break
+		t.Run("list as "+name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, listedJobs(t, tc.url)); diff != "" {
+				t.Errorf("GET /api/v1/jobs as %s mismatch (-want +got):\n%s", name, diff)
 			}
-		}
+		})
 	}
 
 	for name, tc := range map[string]struct {
@@ -221,10 +214,10 @@ func TestJobVisibility(t *testing.T) {
 		"unknown job":                      {admin.URL, "j0000000000000000", http.StatusNotFound},
 		"another user's artifact":          {bob.URL, exp1.ID + "/artifact", http.StatusNotFound},
 	} {
-		url := tc.url + "/api/v1/jobs/" + tc.id
+		path := "/api/v1/jobs/" + tc.id
 
-		if resp := do(t, http.MethodGet, url, ""); resp.StatusCode != tc.want {
-			t.Errorf("%s: GET %s = %d, want %d", name, url, resp.StatusCode, tc.want)
+		if resp := do(t, http.MethodGet, tc.url+path, ""); resp.StatusCode != tc.want {
+			t.Errorf("GET %s as %s = %d, want %d", path, name, resp.StatusCode, tc.want)
 		}
 	}
 
@@ -233,11 +226,20 @@ func TestJobVisibility(t *testing.T) {
 
 	var got job.Job
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decoding GET /api/v1/jobs/%s: %v", exp1.ID, err)
 	}
 
-	if len(got.Items) != 1 || string(got.Items[0].Result) != `{"name":"a"}` {
-		t.Errorf("GET /jobs/%s items = %+v, want a's result", exp1.ID, got.Items)
+	if len(got.Items) != 1 {
+		t.Fatalf("GET /api/v1/jobs/%s items = %+v, want one", exp1.ID, got.Items)
+	}
+
+	var result map[string]string
+	if err := json.Unmarshal(got.Items[0].Result, &result); err != nil {
+		t.Fatalf("GET /api/v1/jobs/%s item result = %s, not an object: %v", exp1.ID, got.Items[0].Result, err)
+	}
+
+	if diff := cmp.Diff(map[string]string{"name": "a"}, result); diff != "" {
+		t.Errorf("GET /api/v1/jobs/%s item result mismatch (-want +got):\n%s", exp1.ID, diff)
 	}
 }
 
@@ -259,41 +261,43 @@ func TestCancelAndDismissJobs(t *testing.T) {
 	jobURL := "/api/v1/jobs/" + running.ID
 
 	if resp := do(t, http.MethodPost, bob.URL+cancelURL, ""); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("another user's cancel: %d, want 404", resp.StatusCode)
+		t.Errorf("POST %s as another user = %d, want %d", cancelURL, resp.StatusCode, http.StatusNotFound)
 	}
 
 	if resp := do(t, http.MethodDelete, alice.URL+jobURL, ""); resp.StatusCode != http.StatusConflict {
-		t.Errorf("dismissing a running job: %d, want 409", resp.StatusCode)
+		t.Errorf("DELETE %s while running = %d, want %d", jobURL, resp.StatusCode, http.StatusConflict)
 	}
 
 	resp := do(t, http.MethodPost, alice.URL+cancelURL, "")
 	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("owner's cancel: %d, want 202", resp.StatusCode)
+		t.Fatalf("POST %s as the owner = %d, want %d", cancelURL, resp.StatusCode, http.StatusAccepted)
 	}
 
 	var canceling job.Job
-	if err := json.NewDecoder(resp.Body).Decode(&canceling); err != nil || !canceling.CancelRequested {
-		t.Errorf("cancel answered %+v (%v), want the job with its cancel requested", canceling, err)
+	if err := json.NewDecoder(resp.Body).Decode(&canceling); err != nil {
+		t.Errorf("decoding POST %s: %v", cancelURL, err)
+	} else if !canceling.CancelRequested {
+		t.Errorf("POST %s cancelRequested = false, want true", cancelURL)
 	}
 
 	if j := waitJob(t, r, running.ID); j.Status != job.StatusCanceled {
-		t.Errorf("canceled job is %s", j.Status)
+		t.Errorf("job %s after POST %s status = %s, want %s", running.ID, cancelURL, j.Status, job.StatusCanceled)
 	}
 
 	if resp := do(t, http.MethodPost, admin.URL+cancelURL, ""); resp.StatusCode != http.StatusConflict {
-		t.Errorf("canceling a finished job: %d, want 409", resp.StatusCode)
+		t.Errorf("POST %s after the job finished = %d, want %d", cancelURL, resp.StatusCode, http.StatusConflict)
 	}
 
 	if resp := do(t, http.MethodDelete, bob.URL+jobURL, ""); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("another user's dismissal: %d, want 404", resp.StatusCode)
+		t.Errorf("DELETE %s as another user = %d, want %d", jobURL, resp.StatusCode, http.StatusNotFound)
 	}
 
 	if resp := do(t, http.MethodDelete, admin.URL+jobURL, ""); resp.StatusCode != http.StatusNoContent {
-		t.Errorf("jobs admin's dismissal: %d, want 204", resp.StatusCode)
+		t.Errorf("DELETE %s as a jobs admin = %d, want %d", jobURL, resp.StatusCode, http.StatusNoContent)
 	}
 
 	if _, ok := r.Get(running.ID); ok {
-		t.Error("dismissed job is still held")
+		t.Errorf("Registry.Get(%s) after DELETE %s found the job, want none", running.ID, jobURL)
 	}
 
 	// another user's job of no experiment, such as a disk clone, needs
@@ -301,12 +305,12 @@ func TestCancelAndDismissJobs(t *testing.T) {
 	noExp := "/api/v1/jobs/" + startTestJob(t, r, "alice", "", release, "").ID + "/cancel"
 
 	if resp := do(t, http.MethodPost, admin.URL+noExp, ""); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("every experiment's jobs admin canceling a job of none: %d, want 404", resp.StatusCode)
+		t.Errorf("POST %s as every experiment's jobs admin = %d, want %d", noExp, resp.StatusCode, http.StatusNotFound)
 	}
 
 	global := serveAs(t, "global", testRole("jobs/global", "update"))
 	if resp := do(t, http.MethodPost, global.URL+noExp, ""); resp.StatusCode != http.StatusAccepted {
-		t.Errorf("jobs/global admin canceling a job of none: %d, want 202", resp.StatusCode)
+		t.Errorf("POST %s as a jobs/global admin = %d, want %d", noExp, resp.StatusCode, http.StatusAccepted)
 	}
 
 	// a job that cannot stop
@@ -316,12 +320,18 @@ func TestCancelAndDismissJobs(t *testing.T) {
 		return nil
 	}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Registry.Start(a job that cannot be canceled) error = %v", err)
 	}
 
-	resp = do(t, http.MethodPost, alice.URL+"/api/v1/jobs/"+stuck.ID+"/cancel", "")
-	if body := readBody(t, resp); resp.StatusCode != http.StatusConflict || body != "this job cannot be canceled\n" {
-		t.Errorf("canceling a job that cannot stop: %d %q, want 409", resp.StatusCode, body)
+	stuckURL := "/api/v1/jobs/" + stuck.ID + "/cancel"
+	resp = do(t, http.MethodPost, alice.URL+stuckURL, "")
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("POST %s of a job that cannot stop = %d, want %d", stuckURL, resp.StatusCode, http.StatusConflict)
+	}
+
+	if got, want := readBody(t, resp), job.ErrNotCancelable.Error()+"\n"; got != want {
+		t.Errorf("POST %s of a job that cannot stop = %q, want %q", stuckURL, got, want)
 	}
 }
 
@@ -335,29 +345,40 @@ func TestJobArtifact(t *testing.T) {
 		without = waitJob(t, r, startTestJob(t, r, "alice", "exp1", nil, "").ID)
 	)
 
-	resp := do(t, http.MethodGet, alice.URL+"/api/v1/jobs/"+zipped.ID+"/artifact", "", "Range", "bytes=0-9")
-	if body := readBody(t, resp); resp.StatusCode != http.StatusPartialContent || body != "0123456789" {
-		t.Errorf("ranged artifact GET: %d %q, want 206 with the first ten bytes", resp.StatusCode, body)
+	if zipped.Artifact == nil {
+		t.Fatalf("job %s finished without an artifact, want out.zip", zipped.ID)
 	}
 
-	if cd := resp.Header.Get("Content-Disposition"); cd != "attachment; filename=out.zip" {
-		t.Errorf("Content-Disposition %q", cd)
+	artifact := "/api/v1/jobs/" + zipped.ID + "/artifact"
+	resp := do(t, http.MethodGet, alice.URL+artifact, "", "Range", "bytes=0-9")
+
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Errorf("GET %s with Range bytes=0-9 = %d, want %d", artifact, resp.StatusCode, http.StatusPartialContent)
 	}
 
-	if ct := resp.Header.Get("Content-Type"); ct != "application/zip" {
-		t.Errorf("Content-Type %q, want application/zip", ct)
+	if got, want := readBody(t, resp), "0123456789"; got != want {
+		t.Errorf("GET %s with Range bytes=0-9 = %q, want %q", artifact, got, want)
 	}
 
-	if resp := do(t, http.MethodGet, alice.URL+"/api/v1/jobs/"+without.ID+"/artifact", ""); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("job without an artifact: %d, want 404", resp.StatusCode)
+	if got, want := resp.Header.Get("Content-Disposition"), "attachment; filename=out.zip"; got != want {
+		t.Errorf("GET %s Content-Disposition = %q, want %q", artifact, got, want)
+	}
+
+	if got, want := resp.Header.Get("Content-Type"), "application/zip"; got != want {
+		t.Errorf("GET %s Content-Type = %q, want %q", artifact, got, want)
+	}
+
+	noArtifact := "/api/v1/jobs/" + without.ID + "/artifact"
+	if resp := do(t, http.MethodGet, alice.URL+noArtifact, ""); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("GET %s of a job without an artifact = %d, want %d", noArtifact, resp.StatusCode, http.StatusNotFound)
 	}
 
 	if resp := do(t, http.MethodDelete, alice.URL+"/api/v1/jobs/"+zipped.ID, ""); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("dismissing: %d", resp.StatusCode)
+		t.Fatalf("DELETE /api/v1/jobs/%s = %d, want %d", zipped.ID, resp.StatusCode, http.StatusNoContent)
 	}
 
 	if _, err := os.Stat(zipped.Artifact.Path); !os.IsNotExist(err) {
-		t.Errorf("dismissed job's artifact remains: %v", err)
+		t.Errorf("os.Stat(artifact) after DELETE /api/v1/jobs/%s error = %v, want it not to exist", zipped.ID, err)
 	}
 }
 
@@ -378,7 +399,11 @@ func TestStartJobAnswersQueueFull(t *testing.T) {
 
 	startJob(rec, req, job.Spec{Kind: "test", Run: func(context.Context, *job.Run) error { return nil }})
 
-	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
-		t.Errorf("status %d, Retry-After %q, want 429 with one", rec.Code, rec.Header().Get("Retry-After"))
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("startJob() with a full queue = %d, want %d", rec.Code, http.StatusTooManyRequests)
+	}
+
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("startJob() with a full queue has no Retry-After header, want one")
 	}
 }
