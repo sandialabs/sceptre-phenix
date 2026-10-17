@@ -2,12 +2,10 @@ package builder_test
 
 import (
 	"encoding/json"
-	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -247,69 +245,6 @@ func TestSchemaNotesProperty(t *testing.T) {
 
 			if matched := matcher.MatchString(text); matched != accepted {
 				t.Errorf("a note of %U: the pattern matches it: %t, Validate accepts it: %t", r, matched, accepted)
-			}
-		}
-	}
-}
-
-// jsonFieldNames returns the JSON names of a struct's fields, and those it
-// leaves out when empty.
-func jsonFieldNames(t *testing.T, typ reflect.Type) ([]string, []string) {
-	t.Helper()
-
-	var (
-		fields   = make([]string, 0, typ.NumField())
-		optional []string
-	)
-
-	for i := range typ.NumField() {
-		tag := typ.Field(i).Tag.Get("json")
-
-		name, options, _ := strings.Cut(tag, ",")
-		if name == "" || name == "-" {
-			t.Fatalf("field %s.%s has no JSON name", typ.Name(), typ.Field(i).Name)
-		}
-
-		fields = append(fields, name)
-
-		if strings.Contains(options, "omitempty") {
-			optional = append(optional, name)
-		}
-	}
-
-	return fields, optional
-}
-
-// TestDocumentFieldsMatchSchemaProperties ties the document struct and its metadata to the schema:
-// both decode strictly, so a field one lacks is a document the other refuses.
-func TestDocumentFieldsMatchSchemaProperties(t *testing.T) {
-	schema := mustSchema(t)
-
-	for name, test := range map[string]struct {
-		typ    reflect.Type
-		schema map[string]any
-	}{
-		"document": {typ: reflect.TypeFor[builder.Document](), schema: schema},
-		"metadata": {typ: reflect.TypeFor[builder.Metadata](), schema: mapAt(t, mapAt(t, schema, "$defs"), "metadata")},
-	} {
-		fields, optional := jsonFieldNames(t, test.typ)
-		properties := mapAt(t, test.schema, "properties")
-
-		names := slices.Sorted(maps.Keys(properties))
-
-		sorted := slices.Clone(fields)
-		slices.Sort(sorted)
-
-		if !slices.Equal(sorted, names) {
-			t.Fatalf("%s fields %v are not the schema's properties %v", name, sorted, names)
-		}
-
-		// A field left out when empty cannot be required, and the others
-		// are always written.
-		for _, field := range fields {
-			if required := containsAny(test.schema["required"], field); required == slices.Contains(optional, field) {
-				t.Fatalf("%s.%s: required = %t, but the struct omits it when empty = %t",
-					name, field, required, slices.Contains(optional, field))
 			}
 		}
 	}

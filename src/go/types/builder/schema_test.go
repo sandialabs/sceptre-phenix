@@ -71,28 +71,69 @@ func TestSchemaHeader(t *testing.T) {
 	}
 }
 
-// TestSchemaDocumentsEveryProperty checks that each Builder-owned definition and property has a
-// title, a description and an example (schema-examples.test.js checks the examples are valid).
+// builderSchema is one schema the Builder serves, with the definitions it must hold.
+type builderSchema struct {
+	name   string
+	schema func() (map[string]any, error)
+	json   func() ([]byte, error)
+	uri    string
+	holds  []string
+}
+
+func builderSchemas() []builderSchema {
+	return []builderSchema{
+		{"document", builder.Schema, builder.SchemaJSON, builder.SchemaURI, nil},
+		{
+			"package", builder.PackageSchema, builder.PackageSchemaJSON, builder.PackageSchemaURI,
+			[]string{"packageDocument", "packageConfig", "packageRequirements", "packageImage", "node"},
+		},
+		// The template device refers to the icon size, which the file schema holds, as it does the
+		// definitions the icon size has no part in.
+		{
+			"template file", builder.TemplateFileSchema, builder.TemplateFileSchemaJSON, builder.TemplateFileSchemaURI,
+			[]string{"templateDevice", "iconSize", "iconKey", "iconRef", "hexColor"},
+		},
+		{
+			"layer set file", builder.LayerSetFileSchema, builder.LayerSetFileSchemaJSON, builder.LayerSetFileSchemaURI,
+			[]string{"layer", "layerId", "iconKey", "iconRef", "hexColor", "icon", "matchConflict"},
+		},
+	}
+}
+
+// TestSchemaDocumentsEveryProperty checks that each Builder-owned definition and property of
+// every Builder schema has a title, a description and an example (schema-examples.test.js checks
+// the examples are valid).
 func TestSchemaDocumentsEveryProperty(t *testing.T) {
-	schema := mustSchema(t)
+	for _, tc := range builderSchemas() {
+		t.Run(tc.name, func(t *testing.T) {
+			schema, err := tc.schema()
+			if err != nil {
+				t.Fatalf("building the schema: %v", err)
+			}
 
-	var missing []string
+			if schema["$id"] != tc.uri {
+				t.Fatalf("$id = %v, want %s", schema["$id"], tc.uri)
+			}
 
-	for name, property := range mapAt(t, schema, "properties") {
-		missing = append(missing, undocumented("properties."+name, property, true)...)
-	}
+			var missing []string
 
-	for name, def := range mapAt(t, schema, "$defs") {
-		if strings.HasPrefix(name, builder.PhenixDefPrefix) {
-			continue
-		}
+			for name, property := range mapAt(t, schema, "properties") {
+				missing = append(missing, undocumented("properties."+name, property, true)...)
+			}
 
-		missing = append(missing, undocumented("$defs."+name, def, true)...)
-	}
+			for name, def := range mapAt(t, schema, "$defs") {
+				if strings.HasPrefix(name, builder.PhenixDefPrefix) {
+					continue
+				}
 
-	if len(missing) > 0 {
-		slices.Sort(missing)
-		t.Fatalf("these lack a title, a description or examples:\n  %s", strings.Join(missing, "\n  "))
+				missing = append(missing, undocumented("$defs."+name, def, true)...)
+			}
+
+			if len(missing) > 0 {
+				slices.Sort(missing)
+				t.Fatalf("these lack a title, a description or examples:\n  %s", strings.Join(missing, "\n  "))
+			}
+		})
 	}
 }
 
@@ -199,6 +240,17 @@ func TestSchemaPropertiesMatchDocument(t *testing.T) {
 	schema := mustSchema(t)
 	defs := mapAt(t, schema, "$defs")
 
+	// A field of the document or its metadata left out when empty cannot be required, and the
+	// others are always written.
+	requiredUnlessOmitted := func(name string, def map[string]any, fields map[string]string) {
+		for field, declaration := range fields {
+			required, omitted := containsAny(def["required"], field), strings.Contains(declaration, ",omitempty")
+			if required == omitted {
+				t.Fatalf("%s.%s: required = %t, but the struct omits it when empty = %t", name, field, required, omitted)
+			}
+		}
+	}
+
 	for name, value := range map[string]any{
 		"metadata":       builder.Metadata{},
 		"device":         builder.Device{},
@@ -219,18 +271,26 @@ func TestSchemaPropertiesMatchDocument(t *testing.T) {
 		"layerSet":       builder.DocumentLayerSet{},
 		"layerSetSource": builder.LayerSetSource{},
 	} {
-		want := slices.Sorted(maps.Keys(jsonFields(t, value)))
+		fields := jsonFields(t, value)
+		want := slices.Sorted(maps.Keys(fields))
 
 		if got := propertyNames(t, mapAt(t, defs, name)); !slices.Equal(got, want) {
 			t.Fatalf("$defs.%s has the properties %v, and its Go type the fields %v", name, got, want)
 		}
+
+		if name == "metadata" {
+			requiredUnlessOmitted(name, mapAt(t, defs, name), fields)
+		}
 	}
 
-	want := slices.Sorted(maps.Keys(jsonFields(t, builder.Document{})))
+	fields := jsonFields(t, builder.Document{})
+	want := slices.Sorted(maps.Keys(fields))
 
 	if got := propertyNames(t, schema); !slices.Equal(got, want) {
 		t.Fatalf("the schema has the root properties %v, and Document the fields %v", got, want)
 	}
+
+	requiredUnlessOmitted("document", schema, fields)
 }
 
 // TestSchemaPresentationFields pins the schema of the presentation fields,
@@ -510,33 +570,46 @@ func TestSchemaDiscriminatesNodeKinds(t *testing.T) {
 	}
 }
 
+// TestSchemaHasNoUnresolvedReferences checks that every reference of each Builder schema names a
+// definition it holds, so a field a definition gains brings its own definitions along.
 func TestSchemaHasNoUnresolvedReferences(t *testing.T) {
-	schema := mustSchema(t)
-	defs := mapAt(t, schema, "$defs")
+	for _, tc := range builderSchemas() {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := tc.json()
+			if err != nil {
+				t.Fatalf("encoding the schema: %v", err)
+			}
 
-	data, err := builder.SchemaJSON()
-	if err != nil {
-		t.Fatalf("marshaling schema: %v", err)
-	}
+			if bytes.Contains(data, []byte("#/components/")) {
+				t.Fatal("the schema still contains OpenAPI component references")
+			}
 
-	if bytes.Contains(data, []byte("#/components/")) {
-		t.Fatal("schema still contains OpenAPI component references")
-	}
+			var schema map[string]any
 
-	refs := collectRefs(schema)
-	if len(refs) == 0 {
-		t.Fatal("schema contains no references")
-	}
+			if err := json.Unmarshal(data, &schema); err != nil {
+				t.Fatalf("decoding the schema: %v", err)
+			}
 
-	for _, ref := range refs {
-		name, found := strings.CutPrefix(ref, "#/$defs/")
-		if !found {
-			t.Fatalf("reference %q is not local", ref)
-		}
+			defs := mapAt(t, schema, "$defs")
 
-		if _, ok := defs[name]; !ok {
-			t.Fatalf("reference %q does not resolve", ref)
-		}
+			refs := collectRefs(schema)
+			if len(refs) == 0 {
+				t.Fatal("the schema contains no references")
+			}
+
+			for _, ref := range refs {
+				name, local := strings.CutPrefix(ref, "#/$defs/")
+				if _, held := defs[name]; !local || !held {
+					t.Errorf("reference %q does not resolve within the schema", ref)
+				}
+			}
+
+			for _, name := range tc.holds {
+				if _, held := defs[name]; !held {
+					t.Errorf("the schema does not hold $defs/%s", name)
+				}
+			}
+		})
 	}
 }
 
@@ -619,20 +692,6 @@ func TestBundleOpenAPIDefsConvertsNullableSchemas(t *testing.T) {
 
 	if findKey(defs, "nullable") {
 		t.Fatal("bundled schema still contains the OpenAPI nullable keyword")
-	}
-}
-
-func TestBundleOpenAPIDefsDropsNullPatterns(t *testing.T) {
-	defs, err := builder.PhenixDefs()
-	if err != nil {
-		t.Fatalf("bundling phenix defs: %v", err)
-	}
-
-	serial := mapAt(t, defs, builder.PhenixDefPrefix+"serial_iface")
-	device := mapAt(t, mapAt(t, serial, "properties"), "device")
-
-	if _, ok := device["pattern"]; ok {
-		t.Fatalf("serial device retains an invalid null pattern: %v", device)
 	}
 }
 

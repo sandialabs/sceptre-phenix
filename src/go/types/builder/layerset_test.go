@@ -1,7 +1,6 @@
 package builder_test
 
 import (
-	"encoding/json"
 	"regexp"
 	"slices"
 	"strings"
@@ -213,34 +212,14 @@ func TestIsLayerSetID(t *testing.T) {
 	}
 }
 
-func TestLayerSetFileSchemaDocumentsEveryProperty(t *testing.T) {
+// TestLayerSetFileSchemaPropertiesMatchLayerSet checks that the properties of a layer set file
+// are the fields of a set, its schema and its icons.
+func TestLayerSetFileSchemaPropertiesMatchLayerSet(t *testing.T) {
 	schema, err := builder.LayerSetFileSchema()
 	if err != nil {
 		t.Fatalf("LayerSetFileSchema returned error: %v", err)
 	}
 
-	if schema["$id"] != builder.LayerSetFileSchemaURI {
-		t.Fatalf("$id = %v, want %s", schema["$id"], builder.LayerSetFileSchemaURI)
-	}
-
-	properties, defs := mapAt(t, schema, "properties"), mapAt(t, schema, "$defs")
-	missing := make([]string, 0, len(properties)+len(defs))
-
-	for name, property := range properties {
-		missing = append(missing, undocumented("properties."+name, property, true)...)
-	}
-
-	for name, def := range defs {
-		missing = append(missing, undocumented("$defs."+name, def, true)...)
-	}
-
-	if len(missing) > 0 {
-		slices.Sort(missing)
-		t.Fatalf("these lack a title, a description or examples:\n  %s", strings.Join(missing, "\n  "))
-	}
-
-	// The properties of the file are the fields of a set, its schema and its
-	// icons.
 	fields := jsonFields(t, builder.LayerSet{})
 	want := make([]string, 0, len(fields)+2)
 	want = append(want, "$schema", "icons")
@@ -252,39 +231,7 @@ func TestLayerSetFileSchemaDocumentsEveryProperty(t *testing.T) {
 	slices.Sort(want)
 
 	if got := propertyNames(t, schema); !slices.Equal(got, want) {
-		t.Fatalf("the schema has the properties %v, and LayerSetFile the fields %v", got, want)
-	}
-}
-
-func TestLayerSetFileSchemaReferencesResolve(t *testing.T) {
-	encoded, err := builder.LayerSetFileSchemaJSON()
-	if err != nil {
-		t.Fatalf("LayerSetFileSchemaJSON returned error: %v", err)
-	}
-
-	var schema map[string]any
-
-	if err := json.Unmarshal(encoded, &schema); err != nil {
-		t.Fatalf("decoding the layer set file schema: %v", err)
-	}
-
-	defs := mapAt(t, schema, "$defs")
-	refs := map[string]string{}
-
-	schemaRefs(schema, "#", refs)
-
-	for at, reference := range refs {
-		name, local := strings.CutPrefix(reference, "#/$defs/")
-
-		if _, held := defs[name]; !local || !held {
-			t.Errorf("%s refers to %q, which the schema does not hold", at, reference)
-		}
-	}
-
-	for _, name := range []string{"layer", "layerId", "iconKey", "iconRef", "hexColor", "icon", "matchConflict"} {
-		if _, held := defs[name]; !held {
-			t.Errorf("the schema does not hold $defs/%s", name)
-		}
+		t.Fatalf("the schema has the properties %v, and a layer set file the fields %v", got, want)
 	}
 }
 

@@ -103,7 +103,7 @@ read, which can only be deleted with their `etag`
 Every Builder problem has a stable code: dotted lowercase words, the first
 of which names the subject (`node.hostname.duplicate`,
 `publish.topology.exists`, `request.not-found`). The one registry is
-`types/builder/codes.go` (`bdoc.Codes()`, `LookupCode`, constants
+`types/builder/codes.go` (`LookupCode`, constants
 `Code…`), with a default severity and a description for each code.
 
 - `make generate-builder-schema` writes the registry to

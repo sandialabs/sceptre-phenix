@@ -181,7 +181,7 @@ func exampleDocumentLayerSet() map[string]any {
 }
 
 // LayerSetFileSchema returns the JSON Schema of a layer set file (see
-// [LayerSetFile]) as a freshly built map. Like [TemplateFileSchema], it is
+// [LayerSetFileSchemaURI]) as a freshly built map. Like [TemplateFileSchema], it is
 // self contained: it holds every Builder definition that the parts of the
 // file refer to. The editor checks what JSON Schema cannot express: layer IDs
 // that repeat, patterns that do not compile, and that an icon is an accepted PNG.

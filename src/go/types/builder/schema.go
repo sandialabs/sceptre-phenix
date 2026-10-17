@@ -221,7 +221,7 @@ func convertOpenAPISchema(value any, prefix string) any {
 		nullable, _ := typed["nullable"].(bool)
 
 		for key, val := range typed {
-			if key == "nullable" || key == "pattern" && val == nil {
+			if key == "nullable" {
 				continue
 			}
 

@@ -203,8 +203,8 @@ Code: `types/builder/layerset.go`, `api/builder/layersets.go`,
 ### Layer set files
 
 `layerSetFile.js` reads one set as YAML or JSON, strictly, with the copies
-of the custom icons it names. Go keeps only the `LayerSetFile` struct
-(`types/builder/layersetfile.go`), the schema and `IsLayerSetFileText`. The schema is `LayerSetFileSchema()`, served
+of the custom icons it names. Go keeps only the schema
+(`types/builder/layerset_schema.go`) and `IsLayerSetFileText`. The schema is `LayerSetFileSchema()`, served
 at `GET /schemas/builder/layersets/v1`. Codes: `layerset.file.invalid` and
 `layerset.file.schema-mismatch`. Download writes YAML named
 `<name>.layers.yaml` (`layerSetFileName`). Upload layer set… adds the file

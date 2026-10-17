@@ -101,7 +101,7 @@ type LayerSetSource struct {
 // LayerSet is a named list of layers, with the options that apply to them,
 // that a diagram copies (see [DocumentLayerSet]). The server keeps a
 // library of layer sets that every user of the Builder shares, and a file
-// holds one (see [LayerSetFile]).
+// holds one (see [LayerSetFileSchemaURI]).
 type LayerSet struct {
 	// Name is not blank, is at most [MaxLayerSetNameBytes] and holds no
 	// control characters.

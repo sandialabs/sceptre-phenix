@@ -1,9 +1,7 @@
 package builder
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 )
 
@@ -446,7 +444,7 @@ const (
 // codeRegistry is every code, grouped by what it is about, each with its
 // default severity and the rule it names.
 //
-//nolint:gochecknoglobals // the registry is one table, read only through Codes, LookupCode and CodesJSON
+//nolint:gochecknoglobals // the registry is one table, read only through LookupCode and the tests
 var codeRegistry = []CodeInfo{
 	{CodeDocumentInvalid, SeverityError, "The document does not validate. The issues field lists each reason."},
 	{CodeDocumentContentMissing, SeverityError, "There is no document at all."},
@@ -801,37 +799,6 @@ var codeIndex = func() map[Code]int { //nolint:gochecknoglobals // built once fr
 
 	return index
 }()
-
-// Codes returns every code, in the order of the registry: grouped by what
-// each is about.
-func Codes() []CodeInfo {
-	return slices.Clone(codeRegistry)
-}
-
-// codeEntry is what [CodesJSON] says of one code.
-type codeEntry struct {
-	Severity    Severity `json:"severity"`
-	Description string   `json:"description"`
-}
-
-// CodesJSON returns the registry as the web UI bundles it
-// (src/js/src/builder/schema/codes.json): an object of each code's default
-// severity and description by code, keys sorted, indented by two spaces,
-// with a final newline.
-func CodesJSON() ([]byte, error) {
-	entries := make(map[Code]codeEntry, len(codeRegistry))
-
-	for _, info := range codeRegistry {
-		entries[info.Code] = codeEntry{Severity: info.Severity, Description: info.Description}
-	}
-
-	encoded, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("encoding the code registry: %w", err)
-	}
-
-	return append(encoded, '\n'), nil
-}
 
 // LookupCode returns what the registry says of code, and whether it holds
 // it.

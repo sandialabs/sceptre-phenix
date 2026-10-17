@@ -1,5 +1,5 @@
 // Layer set files: one layer set as a file holds it, YAML or JSON
-// (LayerSetFile in types/builder/layersetfile.go). The Layers tab of the
+// (LayerSetFileSchema in types/builder/layerset_schema.go). The Layers tab of the
 // Drafts page downloads a set as a layer set file, and uploads one as a new
 // set of the server's library.
 //
@@ -387,7 +387,7 @@ export function decodeLayerSetFile(value) {
 }
 
 /**
- * What makes a decoded layer set file unusable (LayerSetFile.Issues in
+ * What makes a decoded layer set file unusable (LayerSet.Validate in
  * layersetfile.go), in this order, each with the code the server gives it:
  * another schema, a set the library refuses (see layerSetIssues), and
  * custom icons a document may not carry (see validateIcons).
