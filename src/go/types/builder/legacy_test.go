@@ -456,8 +456,72 @@ func TestLegacySampleTopology(t *testing.T) {
 }
 
 // TestLegacyCells converts the diagrams of testdata/legacy/cells, which hold every kind of cell,
-// against their golden documents.
+// against their golden documents and the warnings each gives (TestLegacyVariables has those of the
+// variables diagrams).
 func TestLegacyCells(t *testing.T) {
+	checks := map[string]struct {
+		warnings []string
+		extra    func(t *testing.T, doc *builder.Document)
+	}{
+		"devices": {
+			warnings: []string{
+				`topology node at index 14 duplicates the hostname of the node at index 13 ("DUP") and was skipped`,
+				"topology node at index 15 has no hostname and was skipped",
+				`Renamed node "web server 1" to "web-server-1": a hostname cannot hold spaces.`,
+				`Renamed node "from label" to "from-label": a hostname cannot hold spaces.`,
+			},
+			extra: func(t *testing.T, doc *builder.Document) {
+				t.Helper()
+
+				// The settings name the node, and the label does only when they name none.
+				if node := nodeByHostname(t, doc, "edge-1"); node.Label != "edge-1" ||
+					node.Device.Spec["general"].(map[string]any)["hostname"] != "edge-1" {
+					t.Errorf("edge-1 = %s", asJSON(t, node))
+				}
+
+				if spec := nodeByHostname(t, doc, "from-label").Device.Spec; spec["general"].(map[string]any)["hostname"] != "from-label" {
+					t.Errorf("from-label spec = %v, want the hostname written into it", spec)
+				}
+			},
+		},
+		"switches": {
+			warnings: []string{
+				"VLAN ID 5000 of network v5000 is not a number from 1 to 4094 and was left out.",
+				"VLAN ID -1 of network vneg is not a number from 1 to 4094 and was left out.",
+				"VLAN ID 1.5 of network vfrac is not a number from 1 to 4094 and was left out.",
+				"Network twin has more than one VLAN ID in the legacy diagram. The first, 300, was kept.",
+				"VLAN ID 101 is used by networks v101 and dupid. It was kept for v101 only.",
+				"1 item has settings that could not be read and was left out: cell 23.",
+				`Renamed network "my lan" to "my-lan": a network name cannot hold spaces.`,
+			},
+			extra: func(t *testing.T, doc *builder.Document) {
+				t.Helper()
+
+				// A switch without a VLAN name takes its label.
+				if doc.NetworkByName("labelled") == nil {
+					t.Errorf("networks = %s, want one named by the label of its switch", asJSON(t, doc.Networks))
+				}
+			},
+		},
+		"links": {warnings: []string{
+			"Added a switch for 2 networks that had none in the legacy diagram: p2p and quiet.",
+			"Left out 3 links whose nodes have no interface on that network: beta to nowhere, beta to spare and gamma to nowhere.",
+			"Left out 5 lines that were not network links.",
+			legacyDecorations,
+		}},
+		"decorations": {warnings: []string{"Left out 1 shape that had no text.", legacyDecorations}},
+		"groups":      {warnings: []string{legacyDecorations}},
+		"structure": {warnings: []string{
+			"The legacy diagram had 2 layers. They were merged into one.",
+			legacyDecorations,
+		}},
+		"settings": {warnings: []string{
+			"6 items have settings that could not be read and were left out: " +
+				"a list, a number too large, cell 7, empty, not json and too deep.",
+			"Left out 1 line that was not a network link.",
+		}},
+	}
+
 	files, err := filepath.Glob(filepath.Join("testdata", "legacy", "cells", "*.xml"))
 	if err != nil || len(files) != 10 {
 		t.Fatalf("found %d diagrams (%v), want 10", len(files), err)
@@ -467,9 +531,20 @@ func TestLegacyCells(t *testing.T) {
 		name := strings.TrimSuffix(filepath.Base(file), ".xml")
 
 		t.Run(name, func(t *testing.T) {
-			doc, _ := legacyCells(t, name)
+			doc, warnings := legacyCells(t, name)
 
 			checkLegacyGolden(t, filepath.Join("cells", name+".golden.json"), doc)
+
+			check, ok := checks[name]
+			if !ok {
+				return
+			}
+
+			wantLegacyWarnings(t, warnings, check.warnings...)
+
+			if check.extra != nil {
+				check.extra(t, doc)
+			}
 		})
 	}
 }
@@ -478,88 +553,6 @@ func legacyCells(t *testing.T, name string) (*builder.Document, []string) {
 	t.Helper()
 
 	return convertLegacy(t, string(legacyFile(t, filepath.Join("cells", name+".xml"))), name)
-}
-
-func TestLegacyDevices(t *testing.T) {
-	doc, warnings := legacyCells(t, "devices")
-
-	wantLegacyWarnings(t, warnings,
-		`topology node at index 14 duplicates the hostname of the node at index 13 ("DUP") and was skipped`,
-		"topology node at index 15 has no hostname and was skipped",
-		`Renamed node "web server 1" to "web-server-1": a hostname cannot hold spaces.`,
-		`Renamed node "from label" to "from-label": a hostname cannot hold spaces.`,
-	)
-
-	// The settings name the node, and the label does only when they name none.
-	if node := nodeByHostname(t, doc, "edge-1"); node.Label != "edge-1" ||
-		node.Device.Spec["general"].(map[string]any)["hostname"] != "edge-1" {
-		t.Errorf("edge-1 = %s", asJSON(t, node))
-	}
-
-	if spec := nodeByHostname(t, doc, "from-label").Device.Spec; spec["general"].(map[string]any)["hostname"] != "from-label" {
-		t.Errorf("from-label spec = %v, want the hostname written into it", spec)
-	}
-}
-
-func TestLegacySwitches(t *testing.T) {
-	doc, warnings := legacyCells(t, "switches")
-
-	wantLegacyWarnings(t, warnings,
-		"VLAN ID 5000 of network v5000 is not a number from 1 to 4094 and was left out.",
-		"VLAN ID -1 of network vneg is not a number from 1 to 4094 and was left out.",
-		"VLAN ID 1.5 of network vfrac is not a number from 1 to 4094 and was left out.",
-		"Network twin has more than one VLAN ID in the legacy diagram. The first, 300, was kept.",
-		"VLAN ID 101 is used by networks v101 and dupid. It was kept for v101 only.",
-		"1 item has settings that could not be read and was left out: cell 23.",
-		`Renamed network "my lan" to "my-lan": a network name cannot hold spaces.`,
-	)
-
-	// A switch without a VLAN name takes its label.
-	if doc.NetworkByName("labelled") == nil {
-		t.Errorf("networks = %s, want one named by the label of its switch", asJSON(t, doc.Networks))
-	}
-}
-
-func TestLegacyLinks(t *testing.T) {
-	_, warnings := legacyCells(t, "links")
-
-	wantLegacyWarnings(t, warnings,
-		"Added a switch for 2 networks that had none in the legacy diagram: p2p and quiet.",
-		"Left out 3 links whose nodes have no interface on that network: beta to nowhere, beta to spare and gamma to nowhere.",
-		"Left out 5 lines that were not network links.",
-		legacyDecorations,
-	)
-}
-
-func TestLegacyDecorations(t *testing.T) {
-	_, warnings := legacyCells(t, "decorations")
-
-	wantLegacyWarnings(t, warnings, "Left out 1 shape that had no text.", legacyDecorations)
-}
-
-func TestLegacyGroups(t *testing.T) {
-	_, warnings := legacyCells(t, "groups")
-
-	wantLegacyWarnings(t, warnings, legacyDecorations)
-}
-
-func TestLegacyStructure(t *testing.T) {
-	_, warnings := legacyCells(t, "structure")
-
-	wantLegacyWarnings(t, warnings,
-		"The legacy diagram had 2 layers. They were merged into one.",
-		legacyDecorations,
-	)
-}
-
-func TestLegacySettings(t *testing.T) {
-	_, warnings := legacyCells(t, "settings")
-
-	wantLegacyWarnings(t, warnings,
-		"6 items have settings that could not be read and were left out: "+
-			"a list, a number too large, cell 7, empty, not json and too deep.",
-		"Left out 1 line that was not a network link.",
-	)
 }
 
 // TestLegacyInterfacesThatCannotBeRead checks that interfaces that are not a list of objects are

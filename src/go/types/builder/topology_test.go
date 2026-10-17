@@ -295,23 +295,6 @@ func TestToTopologyDeviceHostnameWins(t *testing.T) {
 	}
 }
 
-func TestPublishTopologyConfigAcceptsCompleteDocument(t *testing.T) {
-	doc := loadDocumentFixture(t, "strict-document.json")
-
-	if err := doc.Validate(); err != nil {
-		t.Fatalf("fixture document is invalid: %v", err)
-	}
-
-	_, warnings, err := doc.PublishTopologyConfig("strict-topology")
-	if err != nil {
-		t.Fatalf("projection was rejected: %v", err)
-	}
-
-	if len(warnings) != 0 {
-		t.Fatalf("unexpected warnings: %v", warnings)
-	}
-}
-
 func TestPublishTopologyReturnsTheProjectionTheConfigHolds(t *testing.T) {
 	doc := loadDocumentFixture(t, "strict-document.json")
 
@@ -346,9 +329,17 @@ func TestPublishTopologyReturnsTheProjectionTheConfigHolds(t *testing.T) {
 func TestPublishTopologyConfigReturnsValidatedConfig(t *testing.T) {
 	doc := loadDocumentFixture(t, "strict-document.json")
 
-	config, _, err := doc.PublishTopologyConfig("strict-topology")
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("fixture document is invalid: %v", err)
+	}
+
+	config, warnings, err := doc.PublishTopologyConfig("strict-topology")
 	if err != nil {
 		t.Fatalf("publishing topology: %v", err)
+	}
+
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
 	}
 
 	if config.Kind != "Topology" {

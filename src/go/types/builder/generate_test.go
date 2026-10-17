@@ -601,22 +601,14 @@ func TestFromConfigUpgradesOlderVersions(t *testing.T) {
 	}
 }
 
-func TestFromConfigRejectsUnsupportedKind(t *testing.T) {
-	config := loadConfig(t, "topology.json")
-	config.Kind = "Scenario"
+func TestFromConfigChecksKind(t *testing.T) {
+	for kind, want := range map[string]error{"topology": nil, "Scenario": builder.ErrUnsupportedKind} {
+		config := loadConfig(t, "topology.json")
+		config.Kind = kind
 
-	_, _, err := builder.FromConfig(config)
-	if !errors.Is(err, builder.ErrUnsupportedKind) {
-		t.Fatalf("error %v does not wrap ErrUnsupportedKind", err)
-	}
-}
-
-func TestFromConfigAcceptsKindCaseInsensitively(t *testing.T) {
-	config := loadConfig(t, "topology.json")
-	config.Kind = "topology"
-
-	if _, _, err := builder.FromConfig(config); err != nil {
-		t.Fatalf("FromConfig: %v", err)
+		if _, _, err := builder.FromConfig(config); !errors.Is(err, want) {
+			t.Errorf("FromConfig of kind %q: error %v, want %v", kind, err, want)
+		}
 	}
 }
 

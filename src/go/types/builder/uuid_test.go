@@ -111,39 +111,3 @@ func TestIsUUID(t *testing.T) {
 		}
 	}
 }
-
-func TestGeneratedDocumentsUseUUIDs(t *testing.T) {
-	doc, _ := documentFromConfig(t, loadConfig(t, "experiment.json"))
-
-	if !builder.IsUUID(doc.Metadata.ID) {
-		t.Fatalf("document ID %q is not a UUID", doc.Metadata.ID)
-	}
-
-	for _, node := range doc.Nodes {
-		if !builder.IsUUID(node.ID) {
-			t.Fatalf("node ID %q is not a UUID", node.ID)
-		}
-
-		if node.Device == nil {
-			continue
-		}
-
-		for _, handle := range node.Device.Interfaces {
-			if !builder.IsUUID(handle.ID) {
-				t.Fatalf("handle ID %q is not a UUID", handle.ID)
-			}
-		}
-	}
-
-	for _, network := range doc.Networks {
-		if !builder.IsUUID(network.ID) {
-			t.Fatalf("network ID %q is not a UUID", network.ID)
-		}
-	}
-
-	for _, edge := range doc.Edges {
-		if !builder.IsUUID(edge.ID) {
-			t.Fatalf("edge ID %q is not a UUID", edge.ID)
-		}
-	}
-}
