@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	bapi "phenix/api/builder"
 	"phenix/api/config"
@@ -65,6 +67,12 @@ func builderSourceNames(sources []builderSourceResponse) []string {
 	return names
 }
 
+// ignoreBuilderSourceStamps ignores what a source response takes from the
+// stored config's metadata, which the tests do not set.
+func ignoreBuilderSourceStamps() cmp.Options {
+	return cmp.Options{cmpopts.IgnoreFields(builderSourceResponse{}, "APIVersion", "Created", "Updated", "Digest")}
+}
+
 // TestBuilderListSources asserts a source is listed only with configs list
 // and, for a kind that has one, the kind's own list permission.
 func TestBuilderListSources(t *testing.T) {
@@ -91,8 +99,14 @@ func TestBuilderListSources(t *testing.T) {
 
 	// Image configs have no kind specific permission, so configs list alone admits them.
 	want := [][]string{{"Topology/visible"}, {}, {"Scenario/allowed"}, {"Image/image"}}
-	if !reflect.DeepEqual(got, want) || strings.Contains(body, "hidden") || strings.Contains(body, "denied") {
-		t.Errorf("sources = %v, want %v and no other: %s", got, want, body)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GET /builder/sources mismatch (-want +got):\n%s", diff)
+	}
+
+	for _, unlisted := range []string{"hidden", "denied"} {
+		if strings.Contains(body, unlisted) {
+			t.Errorf("GET /builder/sources names %q: %s", unlisted, body)
+		}
 	}
 }
 
@@ -110,28 +124,26 @@ func TestBuilderListSourcesFull(t *testing.T) {
 
 	groups, body := builderListSourcesBody(t, harness, nil)
 
-	checks := []struct {
-		name        string
-		sources     []builderSourceResponse
-		want        string
-		generatable bool
-	}{
-		{name: "topologies", sources: groups.Topologies, want: "Topology/topo", generatable: true},
-		{name: "experiments", sources: groups.Experiments, want: "Experiment/exp", generatable: true},
-		{name: "scenarios", sources: groups.Scenarios, want: "Scenario/scenario", generatable: false},
-		{name: "images", sources: groups.Images, want: "Image/image", generatable: false},
+	source := func(kind, name string, generatable bool) []builderSourceResponse {
+		return []builderSourceResponse{{
+			Kind: kind, Name: name, FullName: kind + "/" + name, Stored: true, Generatable: generatable,
+		}}
 	}
 
-	for _, check := range checks {
-		if len(check.sources) != 1 || check.sources[0].FullName != check.want ||
-			check.sources[0].Generatable != check.generatable {
-			t.Errorf("%s = %+v, want only %q, generatable %t", check.name, check.sources, check.want, check.generatable)
-		}
+	want := builderSourceGroups{
+		Topologies:  source("Topology", "topo", true),
+		Experiments: source("Experiment", "exp", true),
+		Scenarios:   source("Scenario", "scenario", false),
+		Images:      source("Image", "image", false),
+	}
+
+	if diff := cmp.Diff(want, groups, ignoreBuilderSourceStamps()); diff != "" {
+		t.Errorf("GET /builder/sources mismatch (-want +got):\n%s", diff)
 	}
 
 	for _, unwanted := range []string{"User/", "Role/", "vlans"} {
 		if strings.Contains(body, unwanted) {
-			t.Errorf("listing reports %q", unwanted)
+			t.Errorf("GET /builder/sources reports %q: %s", unwanted, body)
 		}
 	}
 }
@@ -153,7 +165,7 @@ func TestBuilderGenerateFromStoredSource(t *testing.T) {
 	})
 
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
+		t.Fatalf("POST /builder/generate of Topology/topo: status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
 	}
 
 	var response builderGenerateResponse
@@ -166,24 +178,25 @@ func TestBuilderGenerateFromStoredSource(t *testing.T) {
 	}
 
 	// The source keeps the config's own annotations, and says when it was imported.
-	if want := map[string]string{"team": "ops"}; !reflect.DeepEqual(document.Source.Annotations, want) {
-		t.Errorf("annotations = %v, want %v", document.Source.Annotations, want)
+	if diff := cmp.Diff(map[string]string{"team": "ops"}, document.Source.Annotations); diff != "" {
+		t.Errorf("generated document source annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	imported, err := time.Parse(time.RFC3339, document.Source.ImportedAt)
 	if err != nil || imported.Before(before) || imported.After(time.Now().UTC()) {
-		t.Errorf("importedAt = %q, want the time of the request", document.Source.ImportedAt)
+		t.Errorf("generated document importedAt = %q, want the time of the request", document.Source.ImportedAt)
 	}
 
-	if response.Source.FullName != "Topology/topo" {
-		t.Errorf("source = %q, want %q", response.Source.FullName, "Topology/topo")
+	want := builderSourceResponse{
+		Kind: "Topology", Name: "topo", FullName: "Topology/topo", Stored: true,
+		Builder: bdoc.LegacyXMLAnnotation, Generatable: true,
 	}
-	if !response.Source.Stored {
-		t.Error("stored source was not marked stored")
+	if diff := cmp.Diff(want, response.Source, ignoreBuilderSourceStamps()); diff != "" {
+		t.Errorf("POST /builder/generate of Topology/topo: source mismatch (-want +got):\n%s", diff)
 	}
 
 	if response.Warnings == nil {
-		t.Error("warnings = null, want an array")
+		t.Error("POST /builder/generate of Topology/topo: warnings = null, want an array")
 	}
 
 	// The generated document round-trips through the draft service.
@@ -191,7 +204,7 @@ func TestBuilderGenerateFromStoredSource(t *testing.T) {
 
 	// Generating never writes a config.
 	if len(harness.configs) != 1 || harness.configs[0].FullName() != stored.FullName() {
-		t.Errorf("configs = %+v, want the single stored config unchanged", harness.configs)
+		t.Errorf("configs after generating = %+v, want the single stored config unchanged", harness.configs)
 	}
 }
 
@@ -201,6 +214,10 @@ func TestBuilderGenerateFromUpload(t *testing.T) {
 	uploads := []struct {
 		name    string
 		content string
+		// builder is the builder annotation the upload carries, and annotations
+		// are those the document's source keeps.
+		builder     string
+		annotations map[string]string
 	}{
 		{
 			name: "json",
@@ -212,6 +229,8 @@ func TestBuilderGenerateFromUpload(t *testing.T) {
 			content: `apiVersion: phenix.sandia.gov/v1\nkind: Topology\n` +
 				`metadata:\n  name: uploaded\n  annotations:\n    builder-doc: x\n    team: ops\n` +
 				`spec:\n  nodes: []\n`,
+			builder:     bapi.DocumentAnnotation,
+			annotations: map[string]string{"team": "ops"},
 		},
 	}
 
@@ -225,15 +244,18 @@ func TestBuilderGenerateFromUpload(t *testing.T) {
 			})
 
 			if recorder.Code != http.StatusOK {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
+				t.Fatalf("POST /builder/generate of an upload: status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
 			}
 
 			var response builderGenerateResponse
 
-			harness.decode(recorder, &response)
+			decodeBuilderAnswer(t, recorder, &response)
 
-			if response.Source.Name != "uploaded" {
-				t.Errorf("source = %q, want %q", response.Source.Name, "uploaded")
+			want := builderSourceResponse{
+				Kind: "Topology", Name: "uploaded", FullName: "Topology/uploaded", Builder: upload.builder, Generatable: true,
+			}
+			if diff := cmp.Diff(want, response.Source, ignoreBuilderSourceStamps()); diff != "" {
+				t.Errorf("POST /builder/generate of an upload: source mismatch (-want +got):\n%s", diff)
 			}
 
 			document, err := bdoc.Decode(response.Document)
@@ -241,18 +263,15 @@ func TestBuilderGenerateFromUpload(t *testing.T) {
 				t.Fatalf("decoding the generated document: %v", err)
 			}
 
-			if upload.name == "yaml" && !reflect.DeepEqual(document.Source.Annotations, map[string]string{"team": "ops"}) {
-				t.Errorf("annotations = %v, want only team", document.Source.Annotations)
-			}
-			if response.Source.Stored {
-				t.Error("uploaded source was marked stored")
+			if diff := cmp.Diff(upload.annotations, document.Source.Annotations, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("generated document source annotations mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 
 	// Nothing was stored.
 	if len(harness.configs) != 0 {
-		t.Errorf("configs = %+v, want none", harness.configs)
+		t.Errorf("configs after generating from uploads = %+v, want none", harness.configs)
 	}
 }
 
@@ -303,7 +322,7 @@ func TestBuilderGenerateUploadRequiresCreate(t *testing.T) {
 			})
 
 			if recorder.Code != tt.status {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, tt.status, recorder.Body)
+				t.Fatalf("POST /builder/generate %s: status = %d, want %d: %s", tt.name, recorder.Code, tt.status, recorder.Body)
 			}
 
 			if tt.status != http.StatusForbidden {
@@ -311,13 +330,13 @@ func TestBuilderGenerateUploadRequiresCreate(t *testing.T) {
 			}
 
 			if strings.Contains(recorder.Body.String(), secret) {
-				t.Error("a refused upload disclosed the server environment")
+				t.Errorf("POST /builder/generate %s disclosed the server environment: %s", tt.name, recorder.Body)
 			}
 
 			// The refusal names the source as the Import dialog does.
 			want := "importing a builder document from a config file not allowed for " + builderAlice
-			if !strings.Contains(recorder.Body.String(), want) {
-				t.Errorf("body = %s, want it to say %q", recorder.Body, want)
+			if got := builderRefusal(t, recorder).Message; !strings.Contains(got, want) {
+				t.Errorf("POST /builder/generate %s: message = %q, want it to say %q", tt.name, got, want)
 			}
 		})
 	}
@@ -346,7 +365,7 @@ func TestBuilderDocumentRoutePermissions(t *testing.T) {
 
 	runBuilderAccessCases(t, harness, []builderAccessCase{
 		{
-			name: "generating without the kind's list permission", user: builderAlice, role: noKind,
+			name: "generating without the list permission of the kind", user: builderAlice, role: noKind,
 			request: generate("Topology/topo"), status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
 		},
 		{
@@ -370,11 +389,14 @@ func TestBuilderGenerateResolvesIncludes(t *testing.T) {
 	configs, role := includeSourceFixture(t)
 	harness := newBuilderHarness(t, configs...)
 
-	response, _ := builderGenerate(t, harness, role, `{"source":"Topology/root"}`)
+	response, document := builderGenerate(t, harness, role, `{"source":"Topology/root"}`)
 
-	body := string(response.Document)
-	if !strings.Contains(body, `"includedFrom":"visible"`) || strings.Contains(body, "secret-host") {
-		t.Fatalf("document = %s, want visible-host included and secret-host left out", body)
+	if host := document.FindDevice("visible-host"); host == nil || host.Device.IncludedFrom != "visible" {
+		t.Errorf("generated document = %s, want visible-host included from visible", response.Document)
+	}
+
+	if strings.Contains(string(response.Document), "secret-host") {
+		t.Errorf("generated document = %s, want secret-host left out", response.Document)
 	}
 
 	for _, want := range []string{
@@ -384,7 +406,7 @@ func TestBuilderGenerateResolvesIncludes(t *testing.T) {
 		"Added 1 node from included topology visible (1 node).",
 	} {
 		if !slices.ContainsFunc(response.Warnings, func(warning string) bool { return strings.HasPrefix(warning, want) }) {
-			t.Errorf("warnings = %q, want %q", response.Warnings, want)
+			t.Errorf("generating Topology/root: warnings = %q, want one starting with %q", response.Warnings, want)
 		}
 	}
 }
@@ -592,17 +614,17 @@ func TestBuilderGenerateRequests(t *testing.T) {
 				method: http.MethodPost, path: "/builder/generate", body: tt.body, user: builderAlice, role: tt.role,
 			})
 			if recorder.Code != tt.status {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, tt.status, recorder.Body)
+				t.Errorf("POST /builder/generate: status = %d, want %d: %.300s", recorder.Code, tt.status, recorder.Body)
 			}
 
 			refusal := builderRefusal(t, recorder)
 
 			if tt.message != "" && refusal.Message != tt.message {
-				t.Errorf("message = %q, want %q", refusal.Message, tt.message)
+				t.Errorf("POST /builder/generate: message = %q, want %q", refusal.Message, tt.message)
 			}
 
 			if tt.code != "" && refusal.Code != string(tt.code) {
-				t.Errorf("code = %q, want %q", refusal.Code, tt.code)
+				t.Errorf("POST /builder/generate: code = %q, want %q", refusal.Code, tt.code)
 			}
 		})
 	}
@@ -617,28 +639,47 @@ func TestBuilderGenerateChoices(t *testing.T) {
 	long := strings.Repeat("n", 512)
 	file := `apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: plant\nspec:\n  nodes: []\n`
 
-	for body, want := range map[string]struct{ name, note string }{
-		`{"source":"Topology/root"}`:                                   {"root", ""},
-		`{"source":"Topology/root","includes":""}`:                     {"root", ""},
-		`{"source":"Topology/root","includes":"keep","copy":false}`:    {"root", ""},
-		`{"source":"Topology/root","copy":true,"name":"` + long + `"}`: {long, "Copied from root"},
-		`{"content":"` + file + `","copy":true,"name":"plant"}`:        {"plant", "Copied from plant"},
-		`{"content":"` + file + `","includes":"combine"}`:              {"plant-combined", "Copied from plant"},
-		`{"content":"` + file + `","includes":"keep","copy":true}`:     {"plant-copy", "Copied from plant"},
+	for _, tt := range []struct {
+		name, body string
+		want       bdoc.Metadata
+	}{
+		{name: "a source", body: `{"source":"Topology/root"}`, want: bdoc.Metadata{Name: "root"}},
+		{name: "a source with no includes choice", body: `{"source":"Topology/root","includes":""}`, want: bdoc.Metadata{Name: "root"}},
+		{
+			name: "a source with includes kept and no copy", body: `{"source":"Topology/root","includes":"keep","copy":false}`,
+			want: bdoc.Metadata{Name: "root"},
+		},
+		{
+			name: "a copy with a name of 512 bytes", body: `{"source":"Topology/root","copy":true,"name":"` + long + `"}`,
+			want: bdoc.Metadata{Name: long, Notes: []string{"Copied from root"}},
+		},
+		{
+			name: "a copied file named as it is", body: `{"content":"` + file + `","copy":true,"name":"plant"}`,
+			want: bdoc.Metadata{Name: "plant", Notes: []string{"Copied from plant"}},
+		},
+		{
+			name: "a combined file", body: `{"content":"` + file + `","includes":"combine"}`,
+			want: bdoc.Metadata{Name: "plant-combined", Notes: []string{"Copied from plant"}},
+		},
+		{
+			name: "a copied file with includes kept", body: `{"content":"` + file + `","includes":"keep","copy":true}`,
+			want: bdoc.Metadata{Name: "plant-copy", Notes: []string{"Copied from plant"}},
+		},
 	} {
-		_, document := builderGenerate(t, harness, nil, body)
-		if document.Metadata.Name != want.name {
-			t.Errorf("%.80s: document name = %q, want %q", body, document.Metadata.Name, want.name)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			_, document := builderGenerate(t, harness, nil, tt.body)
+			if diff := cmp.Diff(tt.want, document.Metadata, builderNameAndNotes()); diff != "" {
+				t.Errorf("generating %.80s: metadata mismatch (-want +got):\n%s", tt.body, diff)
+			}
+		})
+	}
+}
 
-		var notes []string
-		if want.note != "" {
-			notes = []string{want.note}
-		}
-
-		if !reflect.DeepEqual(document.Metadata.Notes, notes) {
-			t.Errorf("%.80s: notes = %q, want %q", body, document.Metadata.Notes, notes)
-		}
+// builderNameAndNotes compares only the name and the notes of document
+// metadata.
+func builderNameAndNotes() cmp.Options {
+	return cmp.Options{
+		cmpopts.IgnoreFields(bdoc.Metadata{}, "ID", "Description", "CreatedBy", "CreatedAt", "UpdatedBy", "UpdatedAt"),
 	}
 }
 
@@ -651,13 +692,27 @@ func TestBuilderGenerateCopy(t *testing.T) {
 	_, plain := builderGenerate(t, harness, nil, `{"source":"Topology/root"}`)
 	response, copied := builderGenerate(t, harness, nil, `{"source":"Topology/root","copy":true}`)
 
-	if plain.Source.Kind != bdoc.SourceKindTopology || copied.Source.Kind != bdoc.SourceKindManual ||
-		copied.Source.Name != "" || !reflect.DeepEqual(copied.Nodes, plain.Nodes) {
-		t.Errorf("plain source %+v, copy source %+v, want the copy's nodes linked to nothing", plain.Source, copied.Source)
+	if plain.Source.Kind != bdoc.SourceKindTopology {
+		t.Errorf("generating Topology/root: source kind = %q, want %q", plain.Source.Kind, bdoc.SourceKindTopology)
 	}
 
-	if response.Source.FullName != "Topology/root" || !response.Source.Stored || harness.configWrites != 0 {
-		t.Errorf("source = %+v after %d writes, want the stored topology root and none", response.Source, harness.configWrites)
+	if copied.Source.Kind != bdoc.SourceKindManual || copied.Source.Name != "" {
+		t.Errorf("copying Topology/root: source = %+v, want a manual source linked to nothing", copied.Source)
+	}
+
+	if diff := cmp.Diff(plain.Nodes, copied.Nodes); diff != "" {
+		t.Errorf("copying Topology/root: nodes mismatch with a plain import (-plain +copy):\n%s", diff)
+	}
+
+	want := builderSourceResponse{
+		Kind: "Topology", Name: "root", FullName: "Topology/root", Stored: true, Generatable: true,
+	}
+	if diff := cmp.Diff(want, response.Source, ignoreBuilderSourceStamps()); diff != "" {
+		t.Errorf("copying Topology/root: response source mismatch (-want +got):\n%s", diff)
+	}
+
+	if harness.configWrites != 0 {
+		t.Errorf("copying Topology/root wrote %d configs, want none", harness.configWrites)
 	}
 }
 
@@ -669,30 +724,35 @@ func TestBuilderGenerateCombine(t *testing.T) {
 
 	response, document := builderGenerate(t, harness, role, `{"source":"Topology/root","includes":"combine"}`)
 
-	if document.Metadata.Name != "root-combined" || document.Metadata.ID != bdoc.DocumentID("root-combined") {
-		t.Errorf("name = %q, id = %q, want root-combined and its document ID", document.Metadata.Name, document.Metadata.ID)
+	want := bdoc.Metadata{ID: bdoc.DocumentID("root-combined"), Name: "root-combined", Notes: []string{"Copied from root"}}
+	if diff := cmp.Diff(want, document.Metadata,
+		cmpopts.IgnoreFields(bdoc.Metadata{}, "Description", "CreatedBy", "CreatedAt", "UpdatedBy", "UpdatedAt")); diff != "" {
+		t.Errorf("combining Topology/root: metadata mismatch (-want +got):\n%s", diff)
 	}
 
-	if strings.Contains(string(response.Document), "secret-host") || strings.Contains(string(response.Document), "includedFrom") {
-		t.Fatalf("document = %s, want no node of the secret topology and no node marked as included", response.Document)
+	for _, left := range []string{"secret-host", "includedFrom"} {
+		if strings.Contains(string(response.Document), left) {
+			t.Errorf("combining Topology/root: document = %s, want no %s", response.Document, left)
+		}
 	}
 
-	if host := document.FindDevice("visible-host"); host == nil || document.FindDevice("root-host") == nil {
-		t.Fatalf("document = %s, want root-host and visible-host", response.Document)
+	for _, hostname := range []string{"root-host", "visible-host"} {
+		if document.FindDevice(hostname) == nil {
+			t.Errorf("combining Topology/root: document = %s, want %s", response.Document, hostname)
+		}
 	}
 
-	want := &bdoc.Source{
+	wantSource := &bdoc.Source{
 		Kind:              bdoc.SourceKindManual,
-		ImportedAt:        document.Source.ImportedAt,
 		IncludeTopologies: []string{"secret", "../outside.yml"},
 		Warnings:          response.Warnings,
 	}
-	if !reflect.DeepEqual(document.Source, want) || document.Source.ImportedAt == "" {
-		t.Errorf("source = %s, want %s", builderJSON(t, document.Source), builderJSON(t, want))
+	if diff := cmp.Diff(wantSource, document.Source, cmpopts.IgnoreFields(bdoc.Source{}, "ImportedAt")); diff != "" {
+		t.Errorf("combining Topology/root: document source mismatch (-want +got):\n%s", diff)
 	}
 
-	if notes := []string{"Copied from root"}; !reflect.DeepEqual(document.Metadata.Notes, notes) {
-		t.Errorf("notes = %q, want %q", document.Metadata.Notes, notes)
+	if document.Source != nil && document.Source.ImportedAt == "" {
+		t.Error("combining Topology/root: document source importedAt = \"\", want the time of the request")
 	}
 
 	wantWarnings := []string{
@@ -704,12 +764,15 @@ func TestBuilderGenerateCombine(t *testing.T) {
 		"Included topologies secret and ../outside.yml were not combined and stay in includeTopologies: " +
 			"publishing keeps the references.",
 	}
-	if !reflect.DeepEqual(response.Warnings, wantWarnings) {
-		t.Errorf("warnings = %q, want %q", response.Warnings, wantWarnings)
+	if diff := cmp.Diff(wantWarnings, response.Warnings); diff != "" {
+		t.Errorf("combining Topology/root: warnings mismatch (-want +got):\n%s", diff)
 	}
 
-	if response.Source.FullName != "Topology/root" || !response.Source.Stored {
-		t.Errorf("source = %+v, want the stored topology root", response.Source)
+	wantResponse := builderSourceResponse{
+		Kind: "Topology", Name: "root", FullName: "Topology/root", Stored: true, Generatable: true,
+	}
+	if diff := cmp.Diff(wantResponse, response.Source, ignoreBuilderSourceStamps()); diff != "" {
+		t.Errorf("combining Topology/root: response source mismatch (-want +got):\n%s", diff)
 	}
 
 	// The topology the document projects holds both nodes and the includes
@@ -719,20 +782,29 @@ func TestBuilderGenerateCombine(t *testing.T) {
 		t.Fatalf("ToTopology returned error: %v", err)
 	}
 
-	if nodes, _ := topology.Spec["nodes"].([]any); len(nodes) != 2 ||
-		!reflect.DeepEqual(topology.Spec["includeTopologies"], []string{"secret", "../outside.yml"}) {
-		t.Errorf("projected topology = %s, want two nodes and the two kept includes", builderJSON(t, topology.Spec))
+	if nodes, _ := topology.Spec["nodes"].([]any); len(nodes) != 2 {
+		t.Errorf("combining Topology/root: projected topology nodes = %v, want two", topology.Spec["nodes"])
+	}
+
+	if diff := cmp.Diff([]string{"secret", "../outside.yml"}, topology.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("combining Topology/root: projected topology includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 
 	// A caller who may read every include, and names the new topology.
 	_, document = builderGenerate(t, harness, nil,
 		`{"source":"Topology/root","includes":"combine","copy":true,"name":"site_all"}`)
 
-	if document.Metadata.Name != "site_all" || document.FindDevice("secret-host") == nil ||
-		!reflect.DeepEqual(document.Source.IncludeTopologies, []string{"../outside.yml"}) ||
-		!reflect.DeepEqual(document.Metadata.Notes, []string{"Copied from root"}) {
-		t.Errorf("name = %q, source = %s, notes = %q, want site_all with secret-host, only the file still included "+
-			"and the note", document.Metadata.Name, builderJSON(t, document.Source), document.Metadata.Notes)
+	if diff := cmp.Diff(bdoc.Metadata{Name: "site_all", Notes: []string{"Copied from root"}}, document.Metadata,
+		builderNameAndNotes()); diff != "" {
+		t.Errorf("combining Topology/root as site_all: metadata mismatch (-want +got):\n%s", diff)
+	}
+
+	if document.FindDevice("secret-host") == nil {
+		t.Errorf("combining Topology/root as site_all: document source = %s, want secret-host", builderJSON(t, document.Source))
+	}
+
+	if diff := cmp.Diff([]string{"../outside.yml"}, document.Source.IncludeTopologies); diff != "" {
+		t.Errorf("combining Topology/root as site_all: includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 
 	// A config file is combined the same way, from the store.
@@ -744,10 +816,17 @@ func TestBuilderGenerateCombine(t *testing.T) {
 	response, document = builderGenerate(t, harness, nil,
 		builderJSON(t, map[string]string{"content": string(content), "includes": "combine"}))
 
-	if document.Metadata.Name != "root-combined" || document.FindDevice("visible-host") == nil || response.Source.Stored ||
-		!reflect.DeepEqual(document.Metadata.Notes, []string{"Copied from root"}) {
-		t.Errorf("name = %q, source = %+v, notes = %q, want root-combined made from the file", document.Metadata.Name,
-			response.Source, document.Metadata.Notes)
+	if diff := cmp.Diff(bdoc.Metadata{Name: "root-combined", Notes: []string{"Copied from root"}}, document.Metadata,
+		builderNameAndNotes()); diff != "" {
+		t.Errorf("combining a file of root: metadata mismatch (-want +got):\n%s", diff)
+	}
+
+	if document.FindDevice("visible-host") == nil {
+		t.Errorf("combining a file of root: document = %s, want visible-host", response.Document)
+	}
+
+	if response.Source.Stored {
+		t.Errorf("combining a file of root: response source = %+v, want it not stored", response.Source)
 	}
 
 	if harness.configWrites != 0 {
@@ -766,40 +845,67 @@ func TestBuilderGenerateLegacyTopologyChoices(t *testing.T) {
 
 	harness := newBuilderHarness(t, topology, shared)
 
-	if groups := builderListSources(t, harness, nil); groups.Topologies[0].Name != "sample" ||
-		groups.Topologies[0].Builder != bdoc.LegacyXMLAnnotation || groups.Topologies[0].IncludeCount != 2 {
-		t.Fatalf("sources = %+v, want the legacy topology with its two includes", groups.Topologies)
+	groups := builderListSources(t, harness, nil)
+	if len(groups.Topologies) == 0 {
+		t.Fatal("GET /builder/sources: topologies = none, want sample and shared")
+	}
+
+	want := builderSourceResponse{
+		Kind: "Topology", Name: "sample", FullName: "Topology/sample", Stored: true,
+		Builder: bdoc.LegacyXMLAnnotation, Generatable: true, IncludeCount: 2,
+	}
+	if diff := cmp.Diff(want, groups.Topologies[0], ignoreBuilderSourceStamps()); diff != "" {
+		t.Errorf("GET /builder/sources: first topology mismatch (-want +got):\n%s", diff)
 	}
 
 	response, copied := builderGenerate(t, harness, nil, `{"source":"Topology/sample","copy":true}`)
 
-	if response.Source.Builder != bdoc.LegacyXMLAnnotation || copied.Metadata.Name != "sample-copy" ||
-		copied.Source.Kind != bdoc.SourceKindManual || copied.Source.Name != "" || copied.Source.Digest != "" ||
-		!reflect.DeepEqual(copied.Metadata.Notes, []string{"Copied from sample"}) {
-		t.Errorf("copy: response source = %+v, document source = %+v, notes = %q, want a legacy conversion "+
-			"linked to nothing that names its source in a note", response.Source, copied.Source, copied.Metadata.Notes)
+	if response.Source.Builder != bdoc.LegacyXMLAnnotation {
+		t.Errorf("copying Topology/sample: response source builder = %q, want %q", response.Source.Builder, bdoc.LegacyXMLAnnotation)
 	}
 
-	if got := legacyPosition(t, copied, "server-device-5"); got != (bdoc.Position{X: 1280, Y: 512}) {
-		t.Errorf("copy: position = %+v, want the diagram's", got)
+	if diff := cmp.Diff(bdoc.Metadata{Name: "sample-copy", Notes: []string{"Copied from sample"}}, copied.Metadata,
+		builderNameAndNotes()); diff != "" {
+		t.Errorf("copying Topology/sample: metadata mismatch (-want +got):\n%s", diff)
 	}
 
-	if host := copied.FindDevice("inc-host"); host == nil || host.Device.IncludedFrom != "shared" ||
-		!reflect.DeepEqual(copied.Source.UnresolvedIncludes, []string{"gone"}) {
-		t.Errorf("copy: source = %+v, want inc-host read only and the missing include listed", copied.Source)
+	if copied.Source.Kind != bdoc.SourceKindManual || copied.Source.Name != "" || copied.Source.Digest != "" {
+		t.Errorf("copying Topology/sample: source = %+v, want a legacy conversion linked to nothing", copied.Source)
+	}
+
+	if got, want := legacyPosition(t, copied, "server-device-5"), (bdoc.Position{X: 1280, Y: 512}); got != want {
+		t.Errorf("copying Topology/sample: position of server-device-5 = %+v, want %+v", got, want)
+	}
+
+	if host := copied.FindDevice("inc-host"); host == nil || host.Device.IncludedFrom != "shared" {
+		t.Errorf("copying Topology/sample: inc-host = %+v, want it included from shared", host)
+	}
+
+	if diff := cmp.Diff([]string{"gone"}, copied.Source.UnresolvedIncludes); diff != "" {
+		t.Errorf("copying Topology/sample: unresolved includes mismatch (-want +got):\n%s", diff)
 	}
 
 	_, combined := builderGenerate(t, harness, nil, `{"source":"Topology/sample","includes":"combine"}`)
 
-	if got := legacyPosition(t, combined, "server-device-5"); got != (bdoc.Position{X: 1280, Y: 512}) {
-		t.Errorf("combined: position = %+v, want the diagram's", got)
+	if got, want := legacyPosition(t, combined, "server-device-5"), (bdoc.Position{X: 1280, Y: 512}); got != want {
+		t.Errorf("combining Topology/sample: position of server-device-5 = %+v, want %+v", got, want)
 	}
 
-	if host := combined.FindDevice("inc-host"); combined.Metadata.Name != "sample-combined" || host == nil ||
-		host.Device.IncludedFrom != "" || !reflect.DeepEqual(combined.Source.IncludeTopologies, []string{"gone"}) ||
-		combined.Source.Kind != bdoc.SourceKindManual || !reflect.DeepEqual(combined.Metadata.Notes, []string{"Copied from sample"}) {
-		t.Errorf("combined: name = %q, source = %+v, notes = %q, want inc-host as its own node, only the missing "+
-			"include kept and the note", combined.Metadata.Name, combined.Source, combined.Metadata.Notes)
+	if diff := cmp.Diff(bdoc.Metadata{Name: "sample-combined", Notes: []string{"Copied from sample"}}, combined.Metadata,
+		builderNameAndNotes()); diff != "" {
+		t.Errorf("combining Topology/sample: metadata mismatch (-want +got):\n%s", diff)
+	}
+
+	if host := combined.FindDevice("inc-host"); host == nil || host.Device.IncludedFrom != "" {
+		t.Errorf("combining Topology/sample: inc-host = %+v, want it as a node of its own", host)
+	}
+
+	if combined.Source.Kind != bdoc.SourceKindManual {
+		t.Errorf("combining Topology/sample: source kind = %q, want %q", combined.Source.Kind, bdoc.SourceKindManual)
+	}
+
+	if diff := cmp.Diff([]string{"gone"}, combined.Source.IncludeTopologies); diff != "" {
+		t.Errorf("combining Topology/sample: includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 
 	for _, want := range []string{
@@ -808,26 +914,32 @@ func TestBuilderGenerateLegacyTopologyChoices(t *testing.T) {
 		legacyDecorations,
 	} {
 		if !slices.ContainsFunc(combined.Source.Warnings, func(warning string) bool { return strings.Contains(warning, want) }) {
-			t.Errorf("combined: warnings = %q, want one containing %q", combined.Source.Warnings, want)
+			t.Errorf("combining Topology/sample: warnings = %q, want one containing %q", combined.Source.Warnings, want)
 		}
 	}
 
 	// Neither draft replaces the legacy topology: publishing refuses it as
 	// any draft that was not imported from the topology, and the diagram stays.
 	for name, document := range map[string]*bdoc.Document{"copy": copied, "combined": combined} {
-		draft := createBuilderPublishDraft(t, harness, document, "")
+		t.Run(name, func(t *testing.T) {
+			draft := createBuilderPublishDraft(t, harness, document, "")
 
-		_, refusal := publishBuilderDraft(t, harness, draft,
-			`{"mode":"topology","topology":{"name":"sample","action":"update"}}`, http.StatusConflict)
-		if refusal != "topology sample is not the source this draft was loaded from" {
-			t.Errorf("%s: refusal = %q, want the draft refused as not loaded from the topology", name, refusal)
-		}
+			const want = "topology sample is not the source this draft was loaded from"
+
+			_, refusal := publishBuilderDraft(t, harness, draft,
+				`{"mode":"topology","topology":{"name":"sample","action":"update"}}`, http.StatusConflict)
+			if refusal != want {
+				t.Errorf("publishing the %s to sample: refusal = %q, want %q", name, refusal, want)
+			}
+		})
 	}
 
-	if !harness.configs[0].HasAnnotation(bdoc.LegacyXMLAnnotation) || harness.configs[0].HasAnnotation(bapi.DocumentAnnotation) ||
-		harness.configWrites != 0 {
-		t.Errorf("annotations = %v after %d writes, want the legacy diagram untouched",
-			harness.configs[0].Metadata.Annotations, harness.configWrites)
+	if !harness.configs[0].HasAnnotation(bdoc.LegacyXMLAnnotation) || harness.configs[0].HasAnnotation(bapi.DocumentAnnotation) {
+		t.Errorf("Topology/sample annotations = %v, want the legacy diagram untouched", harness.configs[0].Metadata.Annotations)
+	}
+
+	if harness.configWrites != 0 {
+		t.Errorf("generating and publishing wrote %d configs, want none", harness.configWrites)
 	}
 }
 
@@ -858,18 +970,34 @@ func TestBuilderListSourcesIncludeCount(t *testing.T) {
 	groups := builderListSources(t, harness, nil)
 
 	want := map[string]int{"root": 3, "visible": 0, "secret": 0, "listed": 1}
-	if got := counts(groups.Topologies); !reflect.DeepEqual(got, want) {
-		t.Errorf("topology include counts = %v, want %v", got, want)
+	if diff := cmp.Diff(want, counts(groups.Topologies)); diff != "" {
+		t.Errorf("GET /builder/sources: topology include counts mismatch (-want +got):\n%s", diff)
 	}
 
-	if got := counts(groups.Experiments); !reflect.DeepEqual(got, map[string]int{"exp": 0}) {
-		t.Errorf("experiment include counts = %v, want none", got)
+	if diff := cmp.Diff(map[string]int{"exp": 0}, counts(groups.Experiments)); diff != "" {
+		t.Errorf("GET /builder/sources: experiment include counts mismatch (-want +got):\n%s", diff)
 	}
 
 	// A topology that includes nothing has no count at all.
 	_, body := builderListSourcesBody(t, harness, nil)
-	if got := strings.Count(body, `"includeCount"`); got != 2 || strings.Contains(body, `"includeCount":0`) {
-		t.Errorf("listing has %d include counts, want one for root and one for listed: %s", got, body)
+
+	var decoded map[string][]map[string]any
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		t.Fatalf("decoding GET /builder/sources: %v", err)
+	}
+
+	given := map[string]any{}
+
+	for _, sources := range decoded {
+		for _, source := range sources {
+			if count, ok := source["includeCount"]; ok {
+				given[fmt.Sprint(source["fullName"])] = count
+			}
+		}
+	}
+
+	if diff := cmp.Diff(map[string]any{"Topology/root": 3.0, "Topology/listed": 1.0}, given); diff != "" {
+		t.Errorf("GET /builder/sources: includeCount fields mismatch (-want +got):\n%s", diff)
 	}
 
 	// The caller may list every topology, but get only root.
@@ -880,8 +1008,8 @@ func TestBuilderListSourcesIncludeCount(t *testing.T) {
 	)
 
 	want = map[string]int{"root": 3, "visible": 0, "secret": 0, "listed": 0}
-	if got := counts(builderListSources(t, harness, role).Topologies); !reflect.DeepEqual(got, want) {
-		t.Errorf("topology include counts for a caller who may get only root = %v, want %v", got, want)
+	if diff := cmp.Diff(want, counts(builderListSources(t, harness, role).Topologies)); diff != "" {
+		t.Errorf("GET /builder/sources for a caller who may get only root: include counts mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -937,9 +1065,12 @@ func TestBuilderListDocumentsReadsEachKindOnce(t *testing.T) {
 		http.StatusOK, &response)
 
 	lists := slices.Sorted(slices.Values(harness.configLists))
-	if !slices.Equal(lists, []string{kindExperiment, builderKindTopology}) || harness.configGets != 0 {
-		t.Fatalf("the listing listed %q and got %d configs, want each kind listed once and none got",
-			harness.configLists, harness.configGets)
+	if want := []string{kindExperiment, builderKindTopology}; !slices.Equal(lists, want) {
+		t.Errorf("GET /builder/documents listed the kinds %q, want %q once each", harness.configLists, want)
+	}
+
+	if harness.configGets != 0 {
+		t.Errorf("GET /builder/documents got %d configs, want none", harness.configGets)
 	}
 
 	listed := map[string]bool{}
@@ -955,9 +1086,14 @@ func TestBuilderListDocumentsReadsEachKindOnce(t *testing.T) {
 			role:   role,
 		}).Code
 
-		if listed[document.ID] != current[document.ID] || (got == http.StatusOK) != current[document.ID] {
-			t.Errorf("document %s of %s: listed %t, get %d; want listed, without its bytes, and got only when current and allowed",
-				document.ID, document.Target, listed[document.ID], got)
+		if listed[document.ID] != current[document.ID] {
+			t.Errorf("GET /builder/documents: document %s of %s listed without its bytes = %t, want %t",
+				document.ID, document.Target, listed[document.ID], current[document.ID])
+		}
+
+		if (got == http.StatusOK) != current[document.ID] {
+			t.Errorf("GET /builder/documents/%s of %s: status = %d, want %d only when current and allowed",
+				document.ID, document.Target, got, http.StatusOK)
 		}
 	}
 }
@@ -971,8 +1107,20 @@ func TestBuilderGetDocument(t *testing.T) {
 	harness.doDecode(builderRequest{method: http.MethodGet, path: "/builder/documents/" + document.ID, user: builderAlice},
 		http.StatusOK, &response)
 
-	if response.Config != "Topology/topo" || !strings.Contains(string(response.Document), "topo") {
-		t.Errorf("config = %q, document %s; want Topology/topo and its document", response.Config, response.Document)
+	if response.Config != "Topology/topo" {
+		t.Errorf("GET /builder/documents/%s: config = %q, want Topology/topo", document.ID, response.Config)
+	}
+
+	var want, got any
+
+	if err := json.Unmarshal(builderDocument(t, "topo"), &want); err != nil {
+		t.Fatalf("decoding the published document: %v", err)
+	}
+
+	if err := json.Unmarshal(response.Document, &got); err != nil {
+		t.Errorf("GET /builder/documents/%s: document %s is not JSON: %v", document.ID, response.Document, err)
+	} else if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GET /builder/documents/%s: document mismatch (-want +got):\n%s", document.ID, diff)
 	}
 }
 
@@ -1049,15 +1197,21 @@ func (h *builderHarness) publishTopology(target string) []*bapi.PublishedDocumen
 	return documents
 }
 
-// assertDocumentsGone fails unless none of the published documents is stored.
-func (h *builderHarness) assertDocumentsGone(documents []*bapi.PublishedDocument) {
-	h.t.Helper()
+// documentsKept returns an error naming each of the published documents that
+// is still stored, or nil.
+func (h *builderHarness) documentsKept(documents []*bapi.PublishedDocument) error {
+	var kept []error
 
 	for _, document := range documents {
 		if _, err := h.service.GetPublishedDocument(h.t.Context(), document.ID); !errors.Is(err, bapi.ErrNotFound) {
-			h.t.Errorf("document %s of %s: error = %v, want it gone", document.ID, document.Target, err)
+			kept = append(
+				kept,
+				fmt.Errorf("GetPublishedDocument(%s) of %s error = %w, want %w", document.ID, document.Target, err, bapi.ErrNotFound),
+			)
 		}
 	}
+
+	return errors.Join(kept...)
 }
 
 // renameBody returns the body of the PUT /configs that renames the stored
@@ -1089,17 +1243,19 @@ func TestBuilderDocumentsDeletedWithTopology(t *testing.T) {
 	remove := builderRequest{method: http.MethodDelete, path: "/builder/documents/" + documents[1].ID, user: builderAlice}
 
 	if recorder := harness.doDecode(remove, http.StatusNoContent, nil); recorder.Header().Get("Warning") != "" {
-		t.Fatalf("warning %q, want none", recorder.Header().Get("Warning"))
+		t.Errorf("DELETE %s: Warning = %q, want none", remove.path, recorder.Header().Get("Warning"))
 	}
 
-	harness.assertDocumentsGone(documents)
+	if err := harness.documentsKept(documents); err != nil {
+		t.Errorf("after DELETE %s: %v", remove.path, err)
+	}
 
 	if _, err := config.Get("Topology/topo", false); !errors.Is(err, store.ErrNotExist) {
-		t.Errorf("topology: error = %v, want it deleted", err)
+		t.Errorf("config.Get(Topology/topo) error = %v, want %v", err, store.ErrNotExist)
 	}
 
 	if _, _, err := harness.service.GetPublishedDocumentData(t.Context(), kept[1].ID); err != nil {
-		t.Errorf("another topology's document: %v, want it kept", err)
+		t.Errorf("GetPublishedDocumentData(%s) of another topology returned error: %v, want it kept", kept[1].ID, err)
 	}
 
 	harness.doDecode(remove, http.StatusNotFound, nil)
@@ -1120,15 +1276,17 @@ func TestBuilderDeleteDocumentWarnsWithConfigHook(t *testing.T) {
 
 	const warning = `199 phenix "delete published topology succeeded but removing superseded content failed"`
 
-	if recorder.Header().Get("Warning") != warning {
-		t.Fatalf("warning %q, want %q", recorder.Header().Get("Warning"), warning)
+	if got := recorder.Header().Get("Warning"); got != warning {
+		t.Errorf("DELETE /builder/documents/%s: Warning = %q, want %q", documents[1].ID, got, warning)
 	}
 
 	if _, err := config.Get("Topology/topo", false); !errors.Is(err, store.ErrNotExist) {
-		t.Errorf("topology: error = %v, want it deleted", err)
+		t.Errorf("config.Get(Topology/topo) error = %v, want %v", err, store.ErrNotExist)
 	}
 
-	harness.assertDocumentsGone(documents)
+	if err := harness.documentsKept(documents); err != nil {
+		t.Errorf("after DELETE /builder/documents/%s: %v", documents[1].ID, err)
+	}
 }
 
 // TestBuilderDocumentsDeletedWithRenamedTopology asserts a topology renamed
@@ -1153,14 +1311,22 @@ func TestBuilderDocumentsDeletedWithRenamedTopology(t *testing.T) {
 	harness.doDecode(builderRequest{method: http.MethodGet, path: "/builder/documents", user: builderAlice},
 		http.StatusOK, &listed)
 
-	if len(listed.Documents) != 1 || listed.Documents[0].ID != kept[1].ID {
-		t.Errorf("listed documents = %+v, want only %s of the topology kept", listed.Documents, kept[1].ID)
+	ids := make([]string, 0, len(listed.Documents))
+	for _, document := range listed.Documents {
+		ids = append(ids, document.ID)
 	}
 
+	if want := []string{kept[1].ID}; !slices.Equal(ids, want) {
+		t.Errorf("GET /builder/documents lists %q, want only %q of the topology kept", ids, want)
+	}
+
+	builders := map[string]string{}
 	for _, source := range builderListSources(t, harness, nil).Topologies {
-		if want := map[string]string{"kept": bapi.DocumentAnnotation, "renamed": ""}[source.Name]; source.Builder != want {
-			t.Errorf("source %s builder = %q, want %q", source.Name, source.Builder, want)
-		}
+		builders[source.Name] = source.Builder
+	}
+
+	if diff := cmp.Diff(map[string]string{"kept": bapi.DocumentAnnotation, "renamed": ""}, builders); diff != "" {
+		t.Errorf("GET /builder/sources: topology builders mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1228,20 +1394,27 @@ func TestConfigRoutesWaitForBuilderPublishing(t *testing.T) {
 				builderPublishLock.Unlock()
 
 				if test.waits {
-					t.Fatalf("answered %d while a publication held the lock", recorder.Code)
+					t.Errorf("%s %s answered %d while a publication held the lock", test.request.method, test.request.path, recorder.Code)
 				}
 			case <-time.After(patience):
 				builderPublishLock.Unlock()
 
 				if !test.waits {
-					t.Fatal("waited for the publish lock")
+					t.Errorf("%s %s waited for the publish lock", test.request.method, test.request.path)
 				}
 
 				recorder = <-answered
 			}
 
 			if recorder.Code != http.StatusNoContent {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusNoContent, recorder.Body)
+				t.Errorf(
+					"%s %s: status = %d, want %d: %s",
+					test.request.method,
+					test.request.path,
+					recorder.Code,
+					http.StatusNoContent,
+					recorder.Body,
+				)
 			}
 		})
 	}
@@ -1310,15 +1483,15 @@ func TestBuilderDeleteDocumentRefusals(t *testing.T) {
 			}, test.status, &refusal)
 
 			if test.reason != "" && refusal.Message != test.reason {
-				t.Errorf("message = %q, want %q", refusal.Message, test.reason)
+				t.Errorf("DELETE /builder/documents/%s: message = %q, want %q", document.ID, refusal.Message, test.reason)
 			}
 
 			if _, err := harness.getConfig(config.FullName()); err != nil {
-				t.Errorf("a refused delete deleted %s: %v", config.FullName(), err)
+				t.Errorf("after a refused delete: getConfig(%s) returned error: %v", config.FullName(), err)
 			}
 
 			if _, err := harness.service.GetPublishedDocument(t.Context(), document.ID); err != nil {
-				t.Errorf("a refused delete deleted document %s: %v", document.ID, err)
+				t.Errorf("after a refused delete: GetPublishedDocument(%s) returned error: %v", document.ID, err)
 			}
 		})
 	}

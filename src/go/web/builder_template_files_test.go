@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
 	"phenix/util/plog/plogtest"
@@ -61,75 +64,123 @@ func TestBuilderTemplatesListPreloadedCollections(t *testing.T) {
 
 	viewer := builderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list"}))
 
-	for _, request := range []builderRequest{
-		{method: http.MethodGet, path: builderTemplatesRoute, user: builderAlice},
-		{method: http.MethodGet, path: builderTemplatesRoute, user: builderBob, role: viewer},
+	for name, request := range map[string]builderRequest{
+		"alice":         {method: http.MethodGet, path: builderTemplatesRoute, user: builderAlice},
+		"bob as viewer": {method: http.MethodGet, path: builderTemplatesRoute, user: builderBob, role: viewer},
 	} {
-		recorder := harness.do(request)
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("listing as %s: status = %d: %s", request.user, recorder.Code, recorder.Body)
-		}
-
-		var list builderTemplateLibraryResponse
-
-		harness.decode(recorder, &list)
-
-		if len(list.Preloaded) != 2 {
-			t.Fatalf("preloaded = %+v, want the two template files", list.Preloaded)
-		}
-
-		nlr, sandia := &list.Preloaded[0], &list.Preloaded[1]
-
-		if nlr.Collection.Name != "NLR Node Templates" || sandia.Collection.Name != "Sandia Node Templates" ||
-			sandia.Collection.Description != "Sandia's devices" {
-			t.Fatalf("collections = %+v, %+v", nlr.Collection, sandia.Collection)
-		}
-
-		for i := range list.Preloaded {
-			entry := &list.Preloaded[i]
-			collection := &entry.Collection
-
-			if collection.Source != builderTemplatePreloaded || collection.CreatedBy != "" || collection.Version != 1 ||
-				collection.ETag != `"1"` || !strings.HasPrefix(collection.ID, "server-") {
-				t.Errorf("collection %+v is not a read-only server collection", collection)
+		t.Run(name, func(t *testing.T) {
+			recorder := harness.do(request)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("GET %s as %s: status = %d, want %d: %s", request.path, request.user, recorder.Code, http.StatusOK, recorder.Body)
 			}
 
-			ids := make([]string, 0, len(entry.Templates))
+			var list builderTemplateLibraryResponse
 
-			for j := range entry.Templates {
-				template := &entry.Templates[j]
+			decodeBuilderAnswer(t, recorder, &list)
 
-				ids = append(ids, template.ID)
+			if len(list.Preloaded) != 2 {
+				t.Fatalf("GET %s as %s: preloaded = %+v, want the two template files", request.path, request.user, list.Preloaded)
+			}
 
-				if template.Source != builderTemplatePreloaded || template.CreatedBy != "" || template.Version != 1 ||
-					!slices.Equal(template.Collections, []string{collection.ID}) || slices.Contains(builderBuiltinIDs, template.ID) {
-					t.Errorf("template %+v is not a read-only template of %s", template, collection.ID)
+			// The IDs are the server's own: the want takes them from the listing.
+			nlr, sandia := list.Preloaded[0], list.Preloaded[1]
+			nlrIDs := builderPreloadedTemplateIDs(nlr, 2)
+			sandiaIDs := builderPreloadedTemplateIDs(sandia, 1)
+
+			want := []builderPreloadedCollection{
+				{
+					Collection: builderPreloadedCollectionOf(nlr.Collection.ID, "NLR Node Templates", "", nlrIDs),
+					Templates: []builderTemplateResponse{
+						builderPreloadedTemplateOf(nlrIDs[0], "PLC", nlr.Collection.ID, bdoc.TemplateDevice{
+							Spec: map[string]any{"general": map[string]any{"hostname": "plc"}},
+						}),
+						builderPreloadedTemplateOf(nlrIDs[1], "HMI", nlr.Collection.ID, bdoc.TemplateDevice{
+							Spec: map[string]any{"general": map[string]any{"hostname": "hmi"}},
+						}),
+					},
+				},
+				{
+					Collection: builderPreloadedCollectionOf(sandia.Collection.ID, "Sandia Node Templates", "Sandia's devices", sandiaIDs),
+					Templates: []builderTemplateResponse{
+						builderPreloadedTemplateOf(sandiaIDs[0], "RTU", sandia.Collection.ID, bdoc.TemplateDevice{
+							Icon: "rtu-icon", Spec: map[string]any{"general": map[string]any{"hostname": "rtu"}},
+						}),
+					},
+				},
+			}
+
+			if diff := cmp.Diff(want, list.Preloaded); diff != "" {
+				t.Errorf("GET %s as %s: preloaded mismatch (-want +got):\n%s", request.path, request.user, diff)
+			}
+
+			for _, entry := range list.Preloaded {
+				if id := entry.Collection.ID; !strings.HasPrefix(id, "server-") {
+					t.Errorf("GET %s as %s: collection ID = %q, want a server- ID", request.path, request.user, id)
+				}
+
+				for _, template := range entry.Templates {
+					if slices.Contains(builderBuiltinIDs, template.ID) {
+						t.Errorf("GET %s as %s: template %s has the ID of a built-in template", request.path, request.user, template.Name)
+					}
 				}
 			}
 
-			if !slices.Equal(ids, collection.TemplateIDs) {
-				t.Errorf("collection %s names %q, and lists templates %q", collection.ID, collection.TemplateIDs, ids)
+			// The library and the built-in templates are listed apart from them.
+			if len(list.Collections) != 0 || len(list.Templates) != 0 || len(list.Builtins) != len(builderBuiltinIDs) {
+				t.Errorf(
+					"GET %s as %s: library = %d templates and %d collections, and %d built-in templates, want only the %d built-in ones",
+					request.path,
+					request.user,
+					len(list.Templates),
+					len(list.Collections),
+					len(list.Builtins),
+					len(builderBuiltinIDs),
+				)
 			}
-		}
-
-		if names := []string{nlr.Templates[0].Name, nlr.Templates[1].Name}; !slices.Equal(names, []string{"PLC", "HMI"}) {
-			t.Errorf("NLR templates = %q, want PLC then HMI", names)
-		}
-
-		if sandia.Templates[0].Device.Icon != "rtu-icon" {
-			t.Errorf("RTU names icon %q, want rtu-icon", sandia.Templates[0].Device.Icon)
-		}
-
-		// The library and the built-in templates are listed apart from them.
-		if len(list.Collections) != 0 || len(list.Templates) != 0 || len(list.Builtins) != len(builderBuiltinIDs) {
-			t.Errorf("library = %d templates and %d collections, and %d built-in templates, want only the built-in ones",
-				len(list.Templates), len(list.Collections), len(list.Builtins))
-		}
+		})
 	}
 
 	icon, err := harness.service.GetIcon(context.Background(), "rtu-icon")
-	if err != nil || icon.Owner != bapi.ServerIconOwner || icon.Data != builderTemplateFileIcon {
-		t.Fatalf("GetIcon(rtu-icon) = %+v, %v; want the file's icon, owned by no user", icon, err)
+	if err != nil {
+		t.Fatalf("GetIcon(rtu-icon) returned error: %v", err)
+	}
+
+	if icon.Owner != bapi.ServerIconOwner {
+		t.Errorf("GetIcon(rtu-icon).Owner = %q, want %q", icon.Owner, bapi.ServerIconOwner)
+	}
+
+	if icon.Data != builderTemplateFileIcon {
+		t.Errorf("GetIcon(rtu-icon).Data = %q, want the template file's icon %q", icon.Data, builderTemplateFileIcon)
+	}
+}
+
+// builderPreloadedTemplateIDs returns the IDs of the first count templates of
+// entry, "" for each it does not list.
+func builderPreloadedTemplateIDs(entry builderPreloadedCollection, count int) []string {
+	ids := make([]string, count)
+
+	for i := range min(count, len(entry.Templates)) {
+		ids[i] = entry.Templates[i].ID
+	}
+
+	return ids
+}
+
+// builderPreloadedCollectionOf returns the listing of a read-only server
+// collection.
+func builderPreloadedCollectionOf(id, name, description string, templateIDs []string) builderTemplateCollectionResponse {
+	return builderTemplateCollectionResponse{
+		ID: id, Source: builderTemplatePreloaded, Name: name, Description: description, TemplateIDs: templateIDs,
+		Version: 1, ETag: `"1"`,
+	}
+}
+
+// builderPreloadedTemplateOf returns the listing of a read-only template of
+// the server collection collection.
+func builderPreloadedTemplateOf(id, name, collection string, device bdoc.TemplateDevice) builderTemplateResponse {
+	return builderTemplateResponse{
+		ID: id, Source: builderTemplatePreloaded, Name: name, Device: device, Version: 1, ETag: `"1"`,
+		Collections: []string{collection},
 	}
 }
 
@@ -142,10 +193,12 @@ func TestBuilderTemplateFileIconsAreReadOnly(t *testing.T) {
 		{http.MethodPut, `{"name":"rtu-renamed"}`},
 		{http.MethodDelete, ""},
 	} {
-		recorder := harness.iconRequest(t, request.method, "rtu-icon", request.body, builderUserRole())
-		if recorder.Code != http.StatusForbidden {
-			t.Errorf("%s rtu-icon: status = %d, want %d: %s", request.method, recorder.Code, http.StatusForbidden, recorder.Body)
-		}
+		t.Run(request.method, func(t *testing.T) {
+			recorder := harness.iconRequest(t, request.method, "rtu-icon", request.body, builderUserRole())
+			if recorder.Code != http.StatusForbidden {
+				t.Errorf("%s rtu-icon: status = %d, want %d: %s", request.method, recorder.Code, http.StatusForbidden, recorder.Body)
+			}
+		})
 	}
 }
 
@@ -163,13 +216,16 @@ func TestBuilderStartsWhenTheTemplateDirectoryIsAFile(t *testing.T) {
 
 	list := harness.templates(builderAlice)
 	if len(list.Preloaded) != 0 || len(list.Builtins) != len(builderBuiltinIDs) {
-		t.Fatalf("listing = %d server collections and %d built-in templates, want none and the built-in templates",
-			len(list.Preloaded), len(list.Builtins))
+		t.Errorf("templates(alice) = %d server collections and %d built-in templates, want none and %d",
+			len(list.Preloaded), len(list.Builtins), len(builderBuiltinIDs))
 	}
 
 	records := logs.Records(t, plogtest.Message("builder template directory cannot be read"))
-	if len(records) != 1 || records[0]["level"] != "WARN" || records[0]["directory"] != path {
-		t.Fatalf("the log of a directory that is a file = %v, want one warning naming it", records)
+	want := []map[string]any{{"level": "WARN", "directory": path}}
+	onlyLevelAndDirectory := cmpopts.IgnoreMapEntries(func(key string, _ any) bool { return key != "level" && key != "directory" })
+
+	if diff := cmp.Diff(want, records, onlyLevelAndDirectory); diff != "" {
+		t.Errorf("log of a template directory that is a file mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -203,18 +259,20 @@ func TestBuilderTemplatesRefuseChangingPreloadedItems(t *testing.T) {
 			recorder := harness.library(tt.method, path, builderAlice, tt.body, tt.ifMatch)
 
 			if recorder.Code != http.StatusConflict {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusConflict, recorder.Body)
+				t.Fatalf("%s %s: status = %d, want %d: %s", tt.method, path, recorder.Code, http.StatusConflict, recorder.Body)
 			}
 
 			refusal := builderRefusal(t, recorder)
 
 			if refusal.Code != string(bdoc.CodeTemplateItemReadOnly) {
-				t.Errorf("code = %q, want %q", refusal.Code, bdoc.CodeTemplateItemReadOnly)
+				t.Errorf("%s %s: code = %q, want %q", tt.method, path, refusal.Code, bdoc.CodeTemplateItemReadOnly)
 			}
 
-			if !strings.Contains(refusal.Message, "is read from a template file of the phenix server") ||
-				!strings.Contains(refusal.Message, "into the library to change") {
-				t.Fatalf("message = %q, want it to say the item is the server's and how to change a copy", refusal.Message)
+			// The message says the item is the server's and how to change a copy.
+			for _, want := range []string{"is read from a template file of the phenix server", "into the library to change"} {
+				if !strings.Contains(refusal.Message, want) {
+					t.Errorf("%s %s: message = %q, want it to say %q", tt.method, path, refusal.Message, want)
+				}
 			}
 		})
 	}
@@ -223,11 +281,12 @@ func TestBuilderTemplatesRefuseChangingPreloadedItems(t *testing.T) {
 	after := harness.templates(builderAlice)
 
 	if len(after.Collections) != 0 || len(after.Templates) != 0 {
-		t.Fatalf("the library changed: %d templates, %d collections", len(after.Templates), len(after.Collections))
+		t.Errorf("templates(alice) after the refusals = %d templates and %d collections, want none",
+			len(after.Templates), len(after.Collections))
 	}
 
 	if len(after.Preloaded) != 2 || after.Preloaded[0].Templates[0].Name != "PLC" {
-		t.Fatalf("the server's collections changed: %+v", after.Preloaded)
+		t.Errorf("templates(alice).Preloaded after the refusals = %+v, want the two template files as read", after.Preloaded)
 	}
 
 	// A copy in the library is an ordinary template.
@@ -236,6 +295,6 @@ func TestBuilderTemplatesRefuseChangingPreloadedItems(t *testing.T) {
 		Collection: nil,
 	}))
 	if copied.Code != http.StatusCreated {
-		t.Fatalf("copying: status = %d: %s", copied.Code, copied.Body)
+		t.Errorf("POST /items of a copy of PLC: status = %d, want %d: %s", copied.Code, http.StatusCreated, copied.Body)
 	}
 }
