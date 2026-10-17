@@ -709,11 +709,8 @@
     });
   }
 
-  // Writes the rows into the diagram, as one undo step. This drops a blank
-  // row, also when the diagram's notes stay as they were, or when the write
-  // only drops an empty list of notes, which leaves the rows' watch quiet. A
-  // row whose text cannot be written keeps its text box, with its error,
-  // and the diagram its saved note.
+  // Writes the rows into the diagram as one undo step and always drops blank
+  // rows; a row whose text cannot be written keeps its box and its error.
   function writeNotes() {
     store.setDiagramNotes(
       rows.value.map(noteOf).filter((note) => note !== null),
