@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/store"
 	"phenix/types/builder"
 )
@@ -194,15 +196,15 @@ func TestValidateRejects(t *testing.T) {
 
 			err := doc.Validate()
 			if err == nil {
-				t.Fatalf("expected an error, got nil")
+				t.Fatal("Validate() = nil, want an error")
 			}
 
 			if !errors.Is(err, builder.ErrInvalidDocument) {
-				t.Fatalf("error %v does not wrap ErrInvalidDocument", err)
+				t.Errorf("Validate() = %v, want an error wrapping ErrInvalidDocument", err)
 			}
 
 			if !strings.Contains(err.Error(), test.wantMsg) {
-				t.Fatalf("error %q does not contain %q", err.Error(), test.wantMsg)
+				t.Errorf("Validate() = %q, want it to contain %q", err.Error(), test.wantMsg)
 			}
 		})
 	}
@@ -227,7 +229,7 @@ func TestValidateAllowsFreeNotesAndGroups(t *testing.T) {
 	)
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("free notes/groups should be valid: %v", err)
+		t.Errorf("Validate() of free notes and groups = %v, want nil", err)
 	}
 }
 
@@ -244,7 +246,7 @@ func TestValidateAllowsNestedGroups(t *testing.T) {
 	nodeWithHostname(doc, "host-a").ParentID = idGrpInner
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("nested groups should be valid: %v", err)
+		t.Errorf("Validate() of nested groups = %v, want nil", err)
 	}
 }
 
@@ -256,18 +258,15 @@ func TestValidateReportsEveryIssue(t *testing.T) {
 	doc.Edges[0].NetworkID = idNetNope
 
 	err := doc.Validate()
-	if err == nil {
-		t.Fatal("expected an error, got nil")
-	}
 
 	var validationErr *builder.ValidationError
 
 	if !errors.As(err, &validationErr) {
-		t.Fatalf("expected *ValidationError, got %T", err)
+		t.Fatalf("Validate() = %T %v, want a *ValidationError", err, err)
 	}
 
 	if len(validationErr.Issues) < 3 {
-		t.Fatalf("expected at least 3 issues, got %d: %v", len(validationErr.Issues), validationErr.Issues)
+		t.Errorf("Validate() = %d issues, want at least 3: %v", len(validationErr.Issues), validationErr.Issues)
 	}
 }
 
@@ -293,11 +292,12 @@ func TestValidateEdgesOfADeviceWithManyInterfaces(t *testing.T) {
 
 	device := nodeWithHostname(doc, "wide")
 	if len(device.Device.Interfaces) != count || len(doc.Edges) != count {
-		t.Fatalf("handles = %d, edges = %d, want %d of each", len(device.Device.Interfaces), len(doc.Edges), count)
+		t.Fatalf("FromConfig(wide) = %d handles and %d edges, want %d of each",
+			len(device.Device.Interfaces), len(doc.Edges), count)
 	}
 
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("Validate returned error: %v", err)
+		t.Errorf("Validate() = %v, want nil", err)
 	}
 
 	// handleOf points at the end of an edge that names the device's handle.
@@ -468,7 +468,7 @@ func TestValidationCorpus(t *testing.T) {
 
 	for _, test := range corpus.Cases {
 		if names[test.Name] {
-			t.Errorf("corpus case %q is named twice", test.Name)
+			t.Errorf("validation corpus has case %q twice, want each name once", test.Name)
 		}
 
 		names[test.Name] = true
@@ -499,11 +499,11 @@ func TestValidationCorpus(t *testing.T) {
 
 			switch {
 			case test.Error == "" && err != nil:
-				t.Fatalf("refused: %v", err)
+				t.Errorf("Parse() = %v, want nil", err)
 			case test.Error != "" && err == nil:
-				t.Fatalf("accepted; want an issue at %s", test.Error)
+				t.Errorf("Parse() = nil, want an issue at %s", test.Error)
 			case test.Error != "" && !refusedAt(err, test.Error, test.Message, test.Code):
-				t.Fatalf("error %q has no issue at %s of code %q saying %q", err.Error(), test.Error, test.Code, test.Message)
+				t.Errorf("Parse() = %q, want an issue at %s of code %q saying %q", err.Error(), test.Error, test.Code, test.Message)
 			}
 
 			if test.Issues == nil {
@@ -513,17 +513,18 @@ func TestValidationCorpus(t *testing.T) {
 			var invalid *builder.ValidationError
 
 			if !errors.As(err, &invalid) {
-				t.Fatalf("error %v is not a validation error with issues", err)
+				t.Fatalf("Parse() = %v, want a *ValidationError with issues", err)
 			}
 
-			if got, want := issueLines(invalid.Issues), issueLines(test.Issues); !slices.Equal(got, want) {
-				t.Fatalf("issues:\n  %s\nwant only:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+			if diff := cmp.Diff(issueLines(test.Issues), issueLines(invalid.Issues)); diff != "" {
+				t.Errorf("Parse() issues mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 
 	if registered != len(corpus.Cases) {
-		t.Fatalf("gave %d corpus cases a subtest, want all %d", registered, len(corpus.Cases))
+		t.Errorf("TestValidationCorpus registered %d subtests, want one for each of the %d corpus cases",
+			registered, len(corpus.Cases))
 	}
 }
 

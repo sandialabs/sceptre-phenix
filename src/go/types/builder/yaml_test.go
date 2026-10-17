@@ -1,7 +1,6 @@
 package builder_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
 
 	"phenix/types/builder"
@@ -36,7 +36,7 @@ func readDocsExample(t *testing.T, name string) []byte {
 
 // canonicalDocument returns the canonical JSON of the document in data, which
 // is what a document's digest is the digest of.
-func canonicalDocument(t *testing.T, data []byte) []byte {
+func canonicalDocument(t *testing.T, data []byte) string {
 	t.Helper()
 
 	document, err := builder.Parse(data)
@@ -49,7 +49,7 @@ func canonicalDocument(t *testing.T, data []byte) []byte {
 		t.Fatalf("Encode returned error: %v", err)
 	}
 
-	return canonical
+	return string(canonical)
 }
 
 // TestJSONFromYAMLKeepsTheDocument writes each docs example as YAML and
@@ -74,38 +74,30 @@ func TestJSONFromYAMLKeepsTheDocument(t *testing.T) {
 				t.Fatalf("encoding the example as YAML: %v", err)
 			}
 
-			converted, err := builder.JSONFromYAML(text)
-			if err != nil {
-				t.Fatalf("JSONFromYAML returned error: %v", err)
-			}
-
-			if got := canonicalDocument(t, converted); !bytes.Equal(got, want) {
-				t.Fatal("the document read from YAML is not the document of the JSON file")
+			if converted, err := builder.JSONFromYAML(text); err != nil {
+				t.Errorf("JSONFromYAML(%s as YAML) returned error: %v", name, err)
+			} else if diff := cmp.Diff(want, canonicalDocument(t, converted)); diff != "" {
+				t.Errorf("canonical JSONFromYAML(%s as YAML) mismatch (-want +got):\n%s", name, diff)
 			}
 
 			// The content decides which of the two a file's text is.
-			fromText, err := builder.JSONFromText(text)
-			if err != nil {
-				t.Fatalf("JSONFromText returned error for YAML: %v", err)
+			if fromText, err := builder.JSONFromText(text); err != nil {
+				t.Errorf("JSONFromText(%s as YAML) returned error: %v", name, err)
+			} else if diff := cmp.Diff(want, canonicalDocument(t, fromText)); diff != "" {
+				t.Errorf("canonical JSONFromText(%s as YAML) mismatch (-want +got):\n%s", name, diff)
 			}
 
-			if got := canonicalDocument(t, fromText); !bytes.Equal(got, want) {
-				t.Fatal("the document JSONFromText read from YAML is not the document of the JSON file")
-			}
-
-			asIs, err := builder.JSONFromText(source)
-			if err != nil || !bytes.Equal(asIs, source) {
-				t.Fatalf("JSONFromText of JSON returned %d bytes, %v; want the %d bytes it was given", len(asIs), err, len(source))
+			if asIs, err := builder.JSONFromText(source); err != nil {
+				t.Errorf("JSONFromText(%s) returned error: %v", name, err)
+			} else if diff := cmp.Diff(string(source), string(asIs)); diff != "" {
+				t.Errorf("JSONFromText(%s) mismatch (-want +got), want the text it was given:\n%s", name, diff)
 			}
 
 			// JSON is YAML too, so a JSON file is read the same either way.
-			fromJSON, err := builder.JSONFromYAML(source)
-			if err != nil {
-				t.Fatalf("JSONFromYAML returned error for JSON: %v", err)
-			}
-
-			if got := canonicalDocument(t, fromJSON); !bytes.Equal(got, want) {
-				t.Fatal("the document read from JSON as YAML is not the document of the JSON file")
+			if fromJSON, err := builder.JSONFromYAML(source); err != nil {
+				t.Errorf("JSONFromYAML(%s) returned error: %v", name, err)
+			} else if diff := cmp.Diff(want, canonicalDocument(t, fromJSON)); diff != "" {
+				t.Errorf("canonical JSONFromYAML(%s) mismatch (-want +got):\n%s", name, diff)
 			}
 		})
 	}
@@ -136,8 +128,8 @@ func TestJSONFromYAMLKeepsPresentationFields(t *testing.T) {
 		t.Fatalf("JSONFromYAML returned error: %v", err)
 	}
 
-	if got := canonicalDocument(t, converted); !bytes.Equal(got, source) {
-		t.Fatalf("the document read from YAML is not the document written:\nwant: %s\ngot:  %s", source, got)
+	if diff := cmp.Diff(string(source), canonicalDocument(t, converted)); diff != "" {
+		t.Errorf("canonical JSONFromYAML(decorated document as YAML) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -202,8 +194,8 @@ func TestJSONFromYAMLScalars(t *testing.T) {
 				t.Fatalf("JSONFromYAML returned error: %v", err)
 			}
 
-			if string(got) != test.want {
-				t.Fatalf("JSONFromYAML = %s, want %s", got, test.want)
+			if diff := cmp.Diff(test.want, string(got)); diff != "" {
+				t.Errorf("JSONFromYAML(%q) mismatch (-want +got):\n%s", test.text, diff)
 			}
 		})
 	}
@@ -253,14 +245,17 @@ func TestJSONFromYAMLLongIntegers(t *testing.T) {
 			switch value := read["a"].(type) {
 			case float64:
 				if !test.number {
-					t.Fatalf("read as the number %v, want text", value)
+					t.Errorf("JSONFromYAML(a: %s) read a as the number %v, want the scalar as text", name, value)
 				}
 			case string:
-				if test.number || value != test.text {
-					t.Fatalf("read as text of %d bytes, want number %t and the scalar itself", len(value), test.number)
+				if test.number {
+					t.Errorf("JSONFromYAML(a: %s) read a as text, want a number", name)
+				} else if value != test.text {
+					t.Errorf("JSONFromYAML(a: %s) read a as text of %d bytes, want the %d bytes of the scalar",
+						name, len(value), len(test.text))
 				}
 			default:
-				t.Fatalf("read as %T, want a number or text", value)
+				t.Errorf("JSONFromYAML(a: %s) read a as %T, want a number or text", name, value)
 			}
 		})
 	}
@@ -305,31 +300,31 @@ func TestJSONFromYAMLRefusals(t *testing.T) {
 
 			got, err := builder.JSONFromYAML([]byte(test.text))
 			if !errors.Is(err, builder.ErrUnsupportedYAML) {
-				t.Fatalf("JSONFromYAML = %s, %v; want an error matching ErrUnsupportedYAML", got, err)
+				t.Fatalf("JSONFromYAML(%q) = %s, %v, want an error matching ErrUnsupportedYAML", test.text, got, err)
 			}
 
 			if !strings.Contains(err.Error(), test.reason) {
-				t.Fatalf("error = %q, want it to say %q", err, test.reason)
+				t.Errorf("JSONFromYAML(%q) error = %q, want it to say %q", test.text, err, test.reason)
 			}
 
 			if strings.Contains(err.Error(), marker) {
-				t.Fatalf("error = %q, which repeats a value of the text", err)
+				t.Errorf("JSONFromYAML(%q) error = %q, want it not to repeat a value of the text", test.text, err)
 			}
 		})
 	}
 
 	// Text that is not YAML at all is refused by the YAML reader itself.
 	if got, err := builder.JSONFromYAML([]byte("a: [1, 2\nb: }")); !errors.Is(err, builder.ErrUnsupportedYAML) {
-		t.Fatalf("JSONFromYAML of malformed YAML = %s, %v; want an error matching ErrUnsupportedYAML", got, err)
+		t.Errorf("JSONFromYAML(malformed YAML) = %s, %v, want an error matching ErrUnsupportedYAML", got, err)
 	}
 
 	// Text that is not JSON is read as YAML, which is laxer about commas.
 	if got, err := builder.JSONFromText([]byte(`{"a": 1,}`)); err != nil || string(got) != `{"a":1}` {
-		t.Fatalf("JSONFromText of malformed JSON = %s, %v; want it read as YAML", got, err)
+		t.Errorf(`JSONFromText({"a": 1,}) = %s, %v, want {"a":1}, read as YAML`, got, err)
 	}
 
 	if got, err := builder.JSONFromText(nil); !errors.Is(err, builder.ErrUnsupportedYAML) {
-		t.Fatalf("JSONFromText of no text = %s, %v; want an error matching ErrUnsupportedYAML", got, err)
+		t.Errorf("JSONFromText(nil) = %s, %v, want an error matching ErrUnsupportedYAML", got, err)
 	}
 }
 
@@ -350,7 +345,7 @@ func TestJSONFromYAMLDoesNotExpandAliases(t *testing.T) {
 	}
 
 	if got, err := builder.JSONFromYAML([]byte(text.String())); !errors.Is(err, builder.ErrUnsupportedYAML) {
-		t.Fatalf("JSONFromYAML returned %d bytes, %v; want the aliases refused", len(got), err)
+		t.Errorf("JSONFromYAML(nested aliases) = %d bytes, %v, want an error matching ErrUnsupportedYAML", len(got), err)
 	}
 }
 
@@ -377,21 +372,29 @@ func TestIsDocumentText(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range builderDocsExamples {
-		data := readDocsExample(t, name)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-		if !builder.IsDocumentText(data) {
-			t.Errorf("%s: not recognized as a Builder document", name)
-		}
+			data := readDocsExample(t, name)
 
-		if !builder.IsDocumentText(yamlOfJSON(t, data)) {
-			t.Errorf("%s as YAML: not recognized as a Builder document", name)
-		}
+			if !builder.IsDocumentText(data) {
+				t.Errorf("IsDocumentText(%s) = false, want true", name)
+			}
+
+			if !builder.IsDocumentText(yamlOfJSON(t, data)) {
+				t.Errorf("IsDocumentText(%s as YAML) = false, want true", name)
+			}
+		})
 	}
 
 	for _, name := range []string{"pump-station.topology.yaml"} {
-		if builder.IsDocumentText(readDocsExample(t, name)) {
-			t.Errorf("%s: a topology config was recognized as a Builder document", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if builder.IsDocumentText(readDocsExample(t, name)) {
+				t.Errorf("IsDocumentText(%s) = true, want false for a topology config", name)
+			}
+		})
 	}
 
 	for name, test := range map[string]struct {
@@ -416,8 +419,12 @@ func TestIsDocumentText(t *testing.T) {
 		"nothing":                            {"", false},
 		"text that is neither JSON nor YAML": {"{\"$schema\": \"https://phenix.sandia.gov/schemas/builder/v1\"", false},
 	} {
-		if got := builder.IsDocumentText([]byte(test.text)); got != test.want {
-			t.Errorf("%s: IsDocumentText = %t, want %t", name, got, test.want)
-		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := builder.IsDocumentText([]byte(test.text)); got != test.want {
+				t.Errorf("IsDocumentText(%q) = %t, want %t", test.text, got, test.want)
+			}
+		})
 	}
 }

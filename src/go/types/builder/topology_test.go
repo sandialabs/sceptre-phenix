@@ -2,15 +2,37 @@ package builder_test
 
 import (
 	"errors"
+	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
+	"phenix/store"
 	"phenix/types"
 	"phenix/types/builder"
 )
+
+// ignoreConfigSpec leaves a topology config's spec out of a comparison of its header.
+var ignoreConfigSpec = cmpopts.IgnoreFields(store.Config{}, "Spec") //nolint:gochecknoglobals // test option
+
+// errorTexts returns the text of each error, or nil for none.
+func errorTexts(errs []error) []string {
+	if len(errs) == 0 {
+		return nil
+	}
+
+	texts := make([]string, 0, len(errs))
+
+	for _, err := range errs {
+		texts = append(texts, err.Error())
+	}
+
+	return texts
+}
 
 func TestToTopologyOmitsNonDeviceNodes(t *testing.T) {
 	doc := loadDocumentFixture(t, "document.json")
@@ -26,7 +48,7 @@ func TestToTopologyOmitsNonDeviceNodes(t *testing.T) {
 	}
 
 	if len(nodes) != 2 {
-		t.Fatalf("mapped %d nodes, want 2 (switch, note, and group must be omitted): %s",
+		t.Errorf("ToTopology() = %d nodes, want 2 (switch, note, and group omitted): %s",
 			len(nodes), asJSON(t, topology.Spec))
 	}
 }
@@ -42,25 +64,25 @@ func TestToTopologyAppliesConnectedNetworkVLAN(t *testing.T) {
 	router := specNode(t, topology, "router")
 
 	if vlan := specInterface(t, router, "eth0")["vlan"]; vlan != "EXP" {
-		t.Fatalf("router eth0 vlan = %v, want EXP (the connected network name)", vlan)
+		t.Errorf("ToTopology() router eth0 vlan = %v, want EXP (the connected network name)", vlan)
 	}
 
 	// eth1 is not connected: it must be preserved untouched, without a VLAN.
 	eth1 := specInterface(t, router, "eth1")
 
 	if vlan, ok := eth1["vlan"]; ok {
-		t.Fatalf("unconnected router eth1 gained vlan %v", vlan)
+		t.Errorf("ToTopology() unconnected router eth1 vlan = %v, want none", vlan)
 	}
 
 	if eth1["proto"] != "dhcp" {
-		t.Fatalf("unconnected interface was modified: %s", asJSON(t, eth1))
+		t.Errorf("ToTopology() unconnected router eth1 = %s, want it unchanged with proto dhcp", asJSON(t, eth1))
 	}
 
 	// host-a is connected by an edge whose switch is the *source* endpoint.
 	host := specNode(t, topology, "host-a")
 
 	if vlan := specInterface(t, host, "eth0")["vlan"]; vlan != "EXP" {
-		t.Fatalf("host-a eth0 vlan = %v, want EXP", vlan)
+		t.Errorf("ToTopology() host-a eth0 vlan = %v, want EXP", vlan)
 	}
 
 	// A connection's label and color are the canvas's alone.
@@ -72,9 +94,8 @@ func TestToTopologyAppliesConnectedNetworkVLAN(t *testing.T) {
 		t.Fatalf("ToTopology: %v", err)
 	}
 
-	if asJSON(t, styled.Spec) != asJSON(t, topology.Spec) {
-		t.Fatalf("a connection's label and color changed the spec:\nbefore: %s\nafter: %s",
-			asJSON(t, topology.Spec), asJSON(t, styled.Spec))
+	if diff := cmp.Diff(jsonValue(t, topology.Spec), jsonValue(t, styled.Spec)); diff != "" {
+		t.Errorf("ToTopology() with a styled connection spec mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -88,35 +109,31 @@ func TestToTopologyPreservesNodeSemantics(t *testing.T) {
 
 	router := specNode(t, topology, "router")
 
-	general, ok := router["general"].(map[string]any)
-	if !ok {
-		t.Fatalf("router has no general section: %s", asJSON(t, router))
-	}
-
-	if general["description"] != "core router" {
-		t.Fatalf("general.description = %v, want %q", general["description"], "core router")
+	if general, ok := router["general"].(map[string]any); !ok {
+		t.Errorf("ToTopology() router = %s, want a general section", asJSON(t, router))
+	} else if general["description"] != "core router" {
+		t.Errorf("ToTopology() router general.description = %v, want %q", general["description"], "core router")
 	}
 
 	if router["type"] != "VirtualMachine" {
-		t.Fatalf("node type = %v, want VirtualMachine", router["type"])
+		t.Errorf("ToTopology() router type = %v, want VirtualMachine", router["type"])
 	}
 
-	hardware, ok := router["hardware"].(map[string]any)
-	if !ok || hardware["os_type"] != "linux" {
-		t.Fatalf("hardware was not preserved: %s", asJSON(t, router))
+	if hardware, ok := router["hardware"].(map[string]any); !ok || hardware["os_type"] != "linux" {
+		t.Errorf("ToTopology() router = %s, want its hardware with os_type linux", asJSON(t, router))
 	}
 }
 
 func TestToTopologyDoesNotMutateDocument(t *testing.T) {
 	doc := loadDocumentFixture(t, "document.json")
-	before := asJSON(t, doc)
+	before := jsonValue(t, doc)
 
 	if _, err := doc.ToTopology(); err != nil {
 		t.Fatalf("ToTopology: %v", err)
 	}
 
-	if after := asJSON(t, doc); after != before {
-		t.Fatalf("ToTopology mutated the document:\nbefore: %s\nafter: %s", before, after)
+	if diff := cmp.Diff(before, jsonValue(t, doc)); diff != "" {
+		t.Errorf("ToTopology() changed the document (-before +after):\n%s", diff)
 	}
 }
 
@@ -130,8 +147,8 @@ func TestToTopologyVLANAliases(t *testing.T) {
 
 	want := map[string]int{"EXP": 101, "RESERVED": 250}
 
-	if !reflect.DeepEqual(topology.VLANAliases, want) {
-		t.Fatalf("VLAN aliases = %v, want %v", topology.VLANAliases, want)
+	if diff := cmp.Diff(want, topology.VLANAliases); diff != "" {
+		t.Errorf("ToTopology() VLANAliases mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -159,12 +176,16 @@ func TestToTopologyWarnsOnHandleWithoutInterface(t *testing.T) {
 		t.Fatalf("ToTopology: %v", err)
 	}
 
-	if !containsSubstring(builder.IssueMessages(topology.Warnings), `interface "eth9"`) ||
-		!slices.ContainsFunc(topology.Warnings, func(warning builder.Issue) bool {
-			return warning.Code == builder.CodeInterfaceNameUnmatched && warning.NodeID == router.ID &&
-				warning.Severity == builder.SeverityWarning
-		}) {
-		t.Fatalf("expected a warning about the missing interface, got %v", topology.Warnings)
+	if !containsSubstring(builder.IssueMessages(topology.Warnings), `interface "eth9"`) {
+		t.Errorf("ToTopology() warnings = %v, want one naming interface \"eth9\"", topology.Warnings)
+	}
+
+	if !slices.ContainsFunc(topology.Warnings, func(warning builder.Issue) bool {
+		return warning.Code == builder.CodeInterfaceNameUnmatched && warning.NodeID == router.ID &&
+			warning.Severity == builder.SeverityWarning
+	}) {
+		t.Errorf("ToTopology() warnings = %v, want a %s warning at the router", topology.Warnings,
+			builder.CodeInterfaceNameUnmatched)
 	}
 }
 
@@ -173,7 +194,7 @@ func TestToTopologyRejectsInvalidDocument(t *testing.T) {
 	doc.Edges[0].NetworkID = idNetNope
 
 	if _, err := doc.ToTopology(); err == nil {
-		t.Fatal("expected ToTopology to reject an invalid document")
+		t.Error("ToTopology() of an edge to an unknown network = nil error, want an error")
 	}
 }
 
@@ -209,28 +230,33 @@ func TestToTopologySpecV1(t *testing.T) {
 
 	node := spec.FindNodeByName("router")
 	if node == nil {
-		t.Fatalf("v1 spec has no router node")
+		t.Fatalf("SpecV1() has no router node")
 	}
 
 	if got := node.General().Description(); got != "core router" {
-		t.Fatalf("description = %q, want %q", got, "core router")
+		t.Errorf("SpecV1() router description = %q, want %q", got, "core router")
 	}
 
 	// Note the legacy v1 API: InterfaceVLAN maps a VLAN name to its interface.
 	if got := node.Network().InterfaceVLAN("EXP"); got != "eth0" {
-		t.Fatalf("interface on VLAN EXP = %q, want eth0", got)
+		t.Errorf("SpecV1() router InterfaceVLAN(EXP) = %q, want eth0", got)
 	}
 
 	if got := node.Network().InterfaceMask("eth0"); got != 24 {
-		t.Fatalf("eth0 mask = %d, want 24", got)
+		t.Errorf("SpecV1() router InterfaceMask(eth0) = %d, want 24", got)
 	}
 
-	if hardware := node.Hardware(); hardware.VCPU() != 2 || hardware.Memory() != 4096 {
-		t.Fatalf("vcpus, memory = %d, %d, want 2, 4096", hardware.VCPU(), hardware.Memory())
+	type sizes struct{ VCPU, Memory int }
+
+	hardware := node.Hardware()
+	if diff := cmp.Diff(sizes{VCPU: 2, Memory: 4096}, sizes{VCPU: hardware.VCPU(), Memory: hardware.Memory()}); diff != "" {
+		t.Errorf("SpecV1() router hardware mismatch (-want +got):\n%s", diff)
 	}
 
-	if got := node.Network().Interfaces()[0].DNS(); !slices.Equal(got, []string{"8.8.8.8"}) {
-		t.Fatalf("eth0 dns = %v, want [8.8.8.8]", got)
+	if interfaces := node.Network().Interfaces(); len(interfaces) == 0 {
+		t.Errorf("SpecV1() router has no interfaces, want eth0")
+	} else if diff := cmp.Diff([]string{"8.8.8.8"}, interfaces[0].DNS()); diff != "" {
+		t.Errorf("SpecV1() router eth0 DNS() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -243,23 +269,20 @@ func TestToTopologyConfig(t *testing.T) {
 	}
 
 	if len(warnings) != 0 {
-		t.Fatalf("unexpected warnings: %v", warnings)
+		t.Errorf("ToTopologyConfig(generated-topo) warnings = %v, want none", warnings)
 	}
 
-	if config.Kind != "Topology" {
-		t.Fatalf("kind = %q, want Topology", config.Kind)
+	want := &store.Config{
+		Version:  builder.TopologyAPIVersion,
+		Kind:     "Topology",
+		Metadata: store.ConfigMetadata{Name: "generated-topo"},
 	}
-
-	if config.Version != builder.TopologyAPIVersion {
-		t.Fatalf("apiVersion = %q, want %q", config.Version, builder.TopologyAPIVersion)
-	}
-
-	if config.Metadata.Name != "generated-topo" {
-		t.Fatalf("name = %q, want generated-topo", config.Metadata.Name)
+	if diff := cmp.Diff(want, config, ignoreConfigSpec); diff != "" {
+		t.Errorf("ToTopologyConfig(generated-topo) mismatch (-want +got):\n%s", diff)
 	}
 
 	if _, ok := config.Spec["nodes"]; !ok {
-		t.Fatalf("config spec has no nodes: %s", asJSON(t, config.Spec))
+		t.Errorf("ToTopologyConfig(generated-topo) spec = %s, want nodes", asJSON(t, config.Spec))
 	}
 }
 
@@ -284,14 +307,17 @@ func TestToTopologyDeviceHostnameWins(t *testing.T) {
 	node := specNode(t, topology, "renamed-router")
 
 	if vlan := specInterface(t, node, "eth0")["vlan"]; vlan != "EXP" {
-		t.Fatalf("renamed device lost its network: %v", vlan)
+		t.Errorf("ToTopology() renamed-router eth0 vlan = %v, want EXP", vlan)
 	}
 
-	if !containsSubstring(builder.IssueMessages(topology.Warnings), "The device hostname wins") ||
-		!slices.ContainsFunc(topology.Warnings, func(warning builder.Issue) bool {
-			return warning.Code == builder.CodeDeviceHostnameMismatch
-		}) {
-		t.Fatalf("expected a hostname override warning, got %v", topology.Warnings)
+	if !containsSubstring(builder.IssueMessages(topology.Warnings), "The device hostname wins") {
+		t.Errorf("ToTopology() warnings = %v, want one saying the device hostname wins", topology.Warnings)
+	}
+
+	if !slices.ContainsFunc(topology.Warnings, func(warning builder.Issue) bool {
+		return warning.Code == builder.CodeDeviceHostnameMismatch
+	}) {
+		t.Errorf("ToTopology() warnings = %v, want a %s warning", topology.Warnings, builder.CodeDeviceHostnameMismatch)
 	}
 }
 
@@ -308,12 +334,12 @@ func TestPublishTopologyReturnsTheProjectionTheConfigHolds(t *testing.T) {
 		t.Fatalf("projecting topology: %v", err)
 	}
 
-	if !reflect.DeepEqual(projection, want) {
-		t.Fatalf("projection = %#v, want %#v", projection, want)
+	if diff := cmp.Diff(want, projection); diff != "" {
+		t.Errorf("PublishTopology(strict-topology) projection mismatch (-want +got):\n%s", diff)
 	}
 
-	if !reflect.DeepEqual(config.Spec, projection.Spec) {
-		t.Fatal("the config must hold the projection's spec")
+	if diff := cmp.Diff(projection.Spec, config.Spec); diff != "" {
+		t.Errorf("PublishTopology(strict-topology) config spec mismatch, want the projection spec (-want +got):\n%s", diff)
 	}
 
 	sameConfig, sameWarnings, err := doc.PublishTopologyConfig("strict-topology")
@@ -321,8 +347,13 @@ func TestPublishTopologyReturnsTheProjectionTheConfigHolds(t *testing.T) {
 		t.Fatalf("PublishTopologyConfig: %v", err)
 	}
 
-	if !reflect.DeepEqual(sameConfig.Spec, config.Spec) || !reflect.DeepEqual(sameWarnings, warnings) {
-		t.Fatal("PublishTopologyConfig must return what PublishTopology does")
+	if diff := cmp.Diff(config.Spec, sameConfig.Spec); diff != "" {
+		t.Errorf("PublishTopologyConfig(strict-topology) spec mismatch, want what PublishTopology returns (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(warnings, sameWarnings); diff != "" {
+		t.Errorf("PublishTopologyConfig(strict-topology) warnings mismatch, want what PublishTopology returns (-want +got):\n%s",
+			diff)
 	}
 }
 
@@ -339,24 +370,21 @@ func TestPublishTopologyConfigReturnsValidatedConfig(t *testing.T) {
 	}
 
 	if len(warnings) != 0 {
-		t.Fatalf("unexpected warnings: %v", warnings)
+		t.Errorf("PublishTopologyConfig(strict-topology) warnings = %v, want none", warnings)
 	}
 
-	if config.Kind != "Topology" {
-		t.Fatalf("kind = %q, want Topology", config.Kind)
+	want := &store.Config{
+		Version:  builder.TopologyAPIVersion,
+		Kind:     "Topology",
+		Metadata: store.ConfigMetadata{Name: "strict-topology"},
 	}
-
-	if config.Version != builder.TopologyAPIVersion {
-		t.Fatalf("version = %q, want %q", config.Version, builder.TopologyAPIVersion)
-	}
-
-	if config.Metadata.Name != "strict-topology" {
-		t.Fatalf("name = %q, want strict-topology", config.Metadata.Name)
+	if diff := cmp.Diff(want, config, ignoreConfigSpec); diff != "" {
+		t.Errorf("PublishTopologyConfig(strict-topology) mismatch (-want +got):\n%s", diff)
 	}
 
 	router := storedNode(t, config.Spec, "router")
-	if specInterface(t, router, "eth0")["vlan"] != "EXP" {
-		t.Fatalf("router eth0 was not connected: %s", asJSON(t, router))
+	if vlan := specInterface(t, router, "eth0")["vlan"]; vlan != "EXP" {
+		t.Errorf("PublishTopologyConfig(strict-topology) router eth0 vlan = %v, want EXP: %s", vlan, asJSON(t, router))
 	}
 
 	export, err := doc.ExportTopologyConfig("strict-topology")
@@ -364,8 +392,12 @@ func TestPublishTopologyConfigReturnsValidatedConfig(t *testing.T) {
 		t.Fatalf("exporting topology: %v", err)
 	}
 
-	if len(export.PublishBlockers) != 0 || !reflect.DeepEqual(export.Config, config) {
-		t.Fatalf("export = %s, %v, want the published config", asJSON(t, export.Config), export.PublishBlockers)
+	if len(export.PublishBlockers) != 0 {
+		t.Errorf("ExportTopologyConfig(strict-topology) PublishBlockers = %v, want none", export.PublishBlockers)
+	}
+
+	if diff := cmp.Diff(config, export.Config); diff != "" {
+		t.Errorf("ExportTopologyConfig(strict-topology) config mismatch, want the published config (-want +got):\n%s", diff)
 	}
 }
 
@@ -382,9 +414,10 @@ func TestPublishTopologyConfigRejectsDraftDocument(t *testing.T) {
 	const want = `interface "eth1" of device "router" has no VLAN`
 
 	if _, _, err := doc.PublishTopologyConfig("draft-topology"); err == nil {
-		t.Fatal("expected the draft projection to be rejected")
+		t.Error("PublishTopologyConfig(draft-topology) = nil error, want the draft refused")
 	} else if !strings.Contains(err.Error(), "validating topology projection: "+want) {
-		t.Fatalf("error %q does not name the interface without a VLAN", err.Error())
+		t.Errorf("PublishTopologyConfig(draft-topology) = %q, want it to name the interface without a VLAN: %q",
+			err.Error(), want)
 	}
 }
 
@@ -431,25 +464,29 @@ func TestPublishTopologyConfigRefusesInterfaceWithoutVLAN(t *testing.T) {
 
 			config, _, err := doc.PublishTopologyConfig("no-vlan")
 			if err == nil {
-				t.Fatalf("published %s", asJSON(t, config.Spec))
+				t.Fatalf("PublishTopologyConfig(no-vlan) = %s, want an error", asJSON(t, config.Spec))
 			}
 
 			var vlanErr *builder.InterfaceVLANError
 			if !errors.As(err, &vlanErr) {
-				t.Fatalf("error %q is not an InterfaceVLANError", err.Error())
+				t.Fatalf("PublishTopologyConfig(no-vlan) = %q, want an InterfaceVLANError", err.Error())
 			}
 
 			want := []string{
 				`interface "eth0" of device "host-a" has no VLAN: connect it to a network, or type a VLAN for it`,
 			}
-			if !reflect.DeepEqual(vlanErr.Problems, want) {
-				t.Fatalf("problems = %q, want %q", vlanErr.Problems, want)
+			if diff := cmp.Diff(want, vlanErr.Problems); diff != "" {
+				t.Errorf("PublishTopologyConfig(no-vlan) problems mismatch (-want +got):\n%s", diff)
 			}
 
 			export, exportErr := doc.ExportTopologyConfig("no-vlan")
 			if !tt.exports {
-				if export != nil || exportErr == nil || exportErr.Error() != err.Error() {
-					t.Fatalf("ExportTopologyConfig = %v, %v, want the publish error %v", export, exportErr, err)
+				if export != nil {
+					t.Errorf("ExportTopologyConfig(no-vlan) = %v, want nil", export)
+				}
+
+				if exportErr == nil || exportErr.Error() != err.Error() {
+					t.Errorf("ExportTopologyConfig(no-vlan) error = %v, want the publish error %v", exportErr, err)
 				}
 
 				return
@@ -459,12 +496,12 @@ func TestPublishTopologyConfigRefusesInterfaceWithoutVLAN(t *testing.T) {
 				t.Fatalf("ExportTopologyConfig returned error: %v", exportErr)
 			}
 
-			if len(export.PublishBlockers) != 1 || export.PublishBlockers[0].Error() != err.Error() {
-				t.Fatalf("PublishBlockers = %v, want the publish error %v", export.PublishBlockers, err)
+			if diff := cmp.Diff([]string{err.Error()}, errorTexts(export.PublishBlockers)); diff != "" {
+				t.Errorf("ExportTopologyConfig(no-vlan) PublishBlockers mismatch, want the publish error (-want +got):\n%s", diff)
 			}
 
 			if vlan := specInterface(t, storedNode(t, export.Config.Spec, "host-a"), "eth0")["vlan"]; vlan != eth0["vlan"] {
-				t.Fatalf("exported eth0 vlan = %q, want %q", vlan, eth0["vlan"])
+				t.Errorf("ExportTopologyConfig(no-vlan) host-a eth0 vlan = %q, want %q", vlan, eth0["vlan"])
 			}
 		})
 	}
@@ -514,27 +551,42 @@ func TestExportTopologyConfigRefusesForTheSchemaReason(t *testing.T) {
 			}
 
 			config, _, publishRefusal := doc.PublishTopologyConfig("mixed")
-			if config != nil || !named(publishRefusal) {
-				t.Fatalf("PublishTopologyConfig = %v, %v, want an InterfaceVLANError or InterfaceAddressError",
-					config, publishRefusal)
+			if config != nil {
+				t.Errorf("PublishTopologyConfig(mixed) = %v, want nil", config)
+			}
+
+			if !named(publishRefusal) {
+				t.Fatalf("PublishTopologyConfig(mixed) error = %v, want an InterfaceVLANError or InterfaceAddressError",
+					publishRefusal)
 			}
 
 			export, err := doc.ExportTopologyConfig("mixed")
-			if export != nil || err == nil {
-				t.Fatalf("ExportTopologyConfig = %v, %v, want a refusal", export, err)
+			if export != nil {
+				t.Errorf("ExportTopologyConfig(mixed) = %v, want nil", export)
+			}
+
+			if err == nil {
+				t.Fatal("ExportTopologyConfig(mixed) error = nil, want a refusal")
 			}
 
 			if tt.vlan {
 				if err.Error() != publishRefusal.Error() {
-					t.Fatalf("export error = %v, want the publish error %v", err, publishRefusal)
+					t.Errorf("ExportTopologyConfig(mixed) error = %v, want the publish error %v", err, publishRefusal)
 				}
 
 				return
 			}
 
-			if errors.As(err, &vlanErr) || errors.As(err, &addressErr) || !errors.Is(err, types.ErrValidationFailed) ||
-				!strings.Contains(err.Error(), "/mac") {
-				t.Fatalf("export error = %v, want the schema's refusal of the MAC address", err)
+			if errors.As(err, &vlanErr) || errors.As(err, &addressErr) {
+				t.Errorf("ExportTopologyConfig(mixed) error = %v, want neither an InterfaceVLANError nor an InterfaceAddressError", err)
+			}
+
+			if !errors.Is(err, types.ErrValidationFailed) {
+				t.Errorf("ExportTopologyConfig(mixed) error = %v, want an error matching types.ErrValidationFailed", err)
+			}
+
+			if !strings.Contains(err.Error(), "/mac") {
+				t.Errorf("ExportTopologyConfig(mixed) error = %v, want it to name the MAC address (/mac)", err)
 			}
 		})
 	}
@@ -559,7 +611,7 @@ func TestPublishTopologyConfigNamesInterfacesByPosition(t *testing.T) {
 
 	var vlanErr *builder.InterfaceVLANError
 	if !errors.As(err, &vlanErr) {
-		t.Fatalf("error %v is not an InterfaceVLANError", err)
+		t.Fatalf("PublishTopologyConfig(positions) = %v, want an InterfaceVLANError", err)
 	}
 
 	const fix = " has no VLAN: connect it to a network, or type a VLAN for it"
@@ -569,19 +621,30 @@ func TestPublishTopologyConfigNamesInterfacesByPosition(t *testing.T) {
 		`interface "eth1" (#3) of device "host-a"` + fix,
 		`interface "eth0" (#5) of device "host-a"` + fix,
 	}
-	if !reflect.DeepEqual(vlanErr.Problems, want) {
-		t.Fatalf("problems = %q, want %q", vlanErr.Problems, want)
+	if diff := cmp.Diff(want, vlanErr.Problems); diff != "" {
+		t.Errorf("PublishTopologyConfig(positions) problems mismatch (-want +got):\n%s", diff)
 	}
 
 	// Each problem is an issue at its interface, of the device it is on.
 	host := nodeByHostname(t, doc, "host-a")
 	issues := vlanErr.Issues()
 
-	for i, field := range []string{"spec.network.interfaces.1.vlan", "spec.network.interfaces.2.vlan", "spec.network.interfaces.4.vlan"} {
-		if len(issues) != len(want) || issues[i].Code != builder.CodeInterfaceVLANMissing || issues[i].Message != want[i] ||
-			issues[i].NodeID != host.ID || issues[i].Field != field || issues[i].Severity != builder.SeverityError ||
-			!strings.HasPrefix(issues[i].Path, "nodes[") {
-			t.Fatalf("issues = %+v, want each problem at its interface, field %s", issues, field)
+	fields := []string{"spec.network.interfaces.1.vlan", "spec.network.interfaces.2.vlan", "spec.network.interfaces.4.vlan"}
+	wantIssues := make([]builder.Issue, 0, len(fields))
+
+	for i, field := range fields {
+		wantIssues = append(wantIssues, builder.Issue{
+			Code: builder.CodeInterfaceVLANMissing, Severity: builder.SeverityError, Message: want[i], NodeID: host.ID, Field: field,
+		})
+	}
+
+	if diff := cmp.Diff(wantIssues, issues, cmpopts.IgnoreFields(builder.Issue{}, "Path")); diff != "" {
+		t.Errorf("PublishTopologyConfig(positions) issues mismatch (-want +got):\n%s", diff)
+	}
+
+	for _, issue := range issues {
+		if !strings.HasPrefix(issue.Path, "nodes[") {
+			t.Errorf("PublishTopologyConfig(positions) issue %q path = %q, want one starting nodes[", issue.Message, issue.Path)
 		}
 	}
 }
@@ -598,7 +661,7 @@ func TestPublishTopologyConfigKeepsVLANsOfUnconnectedInterfaces(t *testing.T) {
 	}
 
 	if vlan := specInterface(t, storedNode(t, config.Spec, "host-a"), "eth0")["vlan"]; vlan != "GHOST" {
-		t.Fatalf("host-a eth0 vlan = %v, want GHOST", vlan)
+		t.Errorf("PublishTopologyConfig(ghost-vlan) host-a eth0 vlan = %v, want GHOST", vlan)
 	}
 
 	doc, _ = unconnectedHost(t)
@@ -613,7 +676,7 @@ func TestPublishTopologyConfigKeepsVLANsOfUnconnectedInterfaces(t *testing.T) {
 	}
 
 	if _, _, err := doc.PublishTopologyConfig("external-no-vlan"); err != nil {
-		t.Fatalf("an external node's interfaces need no VLAN: %v", err)
+		t.Errorf("PublishTopologyConfig(external-no-vlan) = %v, want nil: an external node's interfaces need no VLAN", err)
 	}
 }
 
@@ -646,8 +709,8 @@ func withInterfaces(t *testing.T, interfaces map[string][]map[string]any) *build
 }
 
 // sharedAddresses returns what publishing doc says about shared interface addresses, or nil when it
-// does not refuse them; the draft stays valid either way.
-func sharedAddresses(t *testing.T, doc *builder.Document) []string {
+// does not refuse them, and an error when its issues do not match those problems.
+func sharedAddresses(t *testing.T, doc *builder.Document) ([]string, error) {
 	t.Helper()
 
 	if err := doc.Validate(); err != nil {
@@ -658,26 +721,33 @@ func sharedAddresses(t *testing.T, doc *builder.Document) []string {
 
 	var addressErr *builder.InterfaceAddressError
 	if !errors.As(err, &addressErr) {
-		return nil
+		return nil, nil
 	}
 
-	// Each problem is an issue of its kind of address, at an interface of a
-	// device that is not included.
-	issues := addressErr.Issues()
+	return addressErr.Problems, checkAddressIssues(addressErr)
+}
+
+// checkAddressIssues returns an error unless each problem of err is an issue of its kind of address, at
+// an interface of a device that is not included.
+func checkAddressIssues(err *builder.InterfaceAddressError) error {
+	issues := err.Issues()
+	if len(issues) != len(err.Problems) {
+		return fmt.Errorf("issues = %+v, want one for each problem of %q", issues, err.Problems)
+	}
 
 	for i, issue := range issues {
 		code := builder.CodeInterfaceIPShared
-		if strings.HasPrefix(addressErr.Problems[i], "MAC address ") {
+		if strings.HasPrefix(err.Problems[i], "MAC address ") {
 			code = builder.CodeInterfaceMACShared
 		}
 
-		if len(issues) != len(addressErr.Problems) || issue.Code != code || issue.Message != addressErr.Problems[i] ||
-			issue.NodeID == "" || !strings.HasPrefix(issue.Field, "spec.network.interfaces.") {
-			t.Fatalf("issues = %+v, want one at an interface for each problem of %q", issues, addressErr.Problems)
+		if issue.Code != code || issue.Message != err.Problems[i] || issue.NodeID == "" ||
+			!strings.HasPrefix(issue.Field, "spec.network.interfaces.") {
+			return fmt.Errorf("issue = %+v, want code %s at an interface of a device saying %q", issue, code, err.Problems[i])
 		}
 	}
 
-	return addressErr.Problems
+	return nil
 }
 
 // Publishing refuses two interfaces on one network with one IP (compared parsed) or MAC (any case
@@ -748,8 +818,13 @@ func TestPublishTopologyConfigRefusesSharedAddresses(t *testing.T) {
 			})
 
 			want := strings.Split(test.want, "; ")
-			if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
-				t.Fatalf("problems = %q, want %q", got, want)
+			got, issuesErr := sharedAddresses(t, doc)
+			if issuesErr != nil {
+				t.Errorf("PublishTopologyConfig(shared) %v", issuesErr)
+			}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("PublishTopologyConfig(shared) problems mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -774,7 +849,7 @@ func TestExportTopologyConfigReportsSharedAddresses(t *testing.T) {
 
 			_, _, refusal := doc.PublishTopologyConfig("shared")
 			if refusal == nil {
-				t.Fatal("published interfaces that share an address")
+				t.Fatal("PublishTopologyConfig(shared) = nil error, want interfaces that share an address refused")
 			}
 
 			export, err := doc.ExportTopologyConfig("shared")
@@ -800,20 +875,25 @@ func TestExportTopologyConfigReportsSharedAddresses(t *testing.T) {
 				}
 			}
 
-			if !reflect.DeepEqual(kinds, test.blockers) {
-				t.Fatalf("blockers = %q (%v), want %q", kinds, export.PublishBlockers, test.blockers)
+			if diff := cmp.Diff(test.blockers, kinds); diff != "" {
+				t.Errorf("ExportTopologyConfig(shared) PublishBlockers kinds mismatch (-want +got):\n%s\nblockers: %v",
+					diff, export.PublishBlockers)
+			}
+
+			if len(export.PublishBlockers) == 0 {
+				return
 			}
 
 			// Publishing refuses the document with the first.
-			if export.PublishBlockers[0].Error() != refusal.Error() {
-				t.Fatalf("first blocker = %v, want the publish error %v", export.PublishBlockers[0], refusal)
+			if got := export.PublishBlockers[0].Error(); got != refusal.Error() {
+				t.Errorf("ExportTopologyConfig(shared) first blocker = %q, want the publish error %q", got, refusal)
 			}
 
-			if got := export.PublishBlockers[len(export.PublishBlockers)-1].Error(); !strings.HasSuffix(
-				got, `IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of device "router" `+
-					`and interface "eth0" of device "host-a"`,
-			) {
-				t.Fatalf("address blocker = %q", got)
+			const wantSuffix = `IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of device "router" ` +
+				`and interface "eth0" of device "host-a"`
+
+			if got := export.PublishBlockers[len(export.PublishBlockers)-1].Error(); !strings.HasSuffix(got, wantSuffix) {
+				t.Errorf("ExportTopologyConfig(shared) last blocker = %q, want it to end with %q", got, wantSuffix)
 			}
 		})
 	}
@@ -835,8 +915,14 @@ func TestPublishTopologyConfigRefusesAddressesOfOneDevice(t *testing.T) {
 		`MAC address 00:00:00:00:00:01 on VLAN "EXP" is used by interface "eth0" of device "host-a", ` +
 			`interface "eth1" (#2) of device "host-a" and 1 more interface`,
 	}
-	if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
-		t.Fatalf("problems = %q, want %q", got, want)
+
+	got, issuesErr := sharedAddresses(t, doc)
+	if issuesErr != nil {
+		t.Errorf("PublishTopologyConfig(shared) %v", issuesErr)
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("PublishTopologyConfig(shared) problems mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -863,7 +949,7 @@ func TestPublishTopologyConfigSkipsAddressesNotAssigned(t *testing.T) {
 			})
 
 			if _, _, err := doc.PublishTopologyConfig("unshared"); err != nil {
-				t.Fatalf("PublishTopologyConfig: %v", err)
+				t.Errorf("PublishTopologyConfig(unshared) = %v, want nil", err)
 			}
 		})
 	}
@@ -895,8 +981,13 @@ func TestPublishTopologyConfigSkipsAddressesNotAssignedAsTyped(t *testing.T) {
 				"host-a": {test.host},
 			})
 
-			if got := sharedAddresses(t, doc); got != nil {
-				t.Fatalf("problems = %q, want none", got)
+			got, issuesErr := sharedAddresses(t, doc)
+			if issuesErr != nil {
+				t.Errorf("PublishTopologyConfig(shared) %v", issuesErr)
+			}
+
+			if got != nil {
+				t.Errorf("PublishTopologyConfig(shared) problems = %q, want none", got)
 			}
 		})
 	}
@@ -914,7 +1005,7 @@ func TestPublishTopologyConfigComparesExternalDevicesByIP(t *testing.T) {
 	host.Device.Spec["type"] = "HIL"
 
 	if _, _, err := doc.PublishTopologyConfig("external"); err != nil {
-		t.Fatalf("PublishTopologyConfig: %v", err)
+		t.Errorf("PublishTopologyConfig(external) = %v, want nil: an external device's MAC does not count", err)
 	}
 
 	network, _ := host.Device.Spec["network"].(map[string]any)
@@ -925,8 +1016,14 @@ func TestPublishTopologyConfigComparesExternalDevicesByIP(t *testing.T) {
 	want := []string{
 		`IP address 10.0.0.1 on VLAN "EXP" is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
 	}
-	if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
-		t.Fatalf("problems = %q, want %q", got, want)
+
+	got, issuesErr := sharedAddresses(t, doc)
+	if issuesErr != nil {
+		t.Errorf("PublishTopologyConfig(shared) %v", issuesErr)
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("PublishTopologyConfig(shared) problems mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -942,14 +1039,25 @@ func TestPublishTopologyConfigComparesIncludedDevices(t *testing.T) {
 	want := []string{
 		`IP address 10.0.0.1 on VLAN "EXP" is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
 	}
-	if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
-		t.Fatalf("problems = %q, want %q", got, want)
+
+	got, issuesErr := sharedAddresses(t, doc)
+	if issuesErr != nil {
+		t.Errorf("PublishTopologyConfig(shared) %v", issuesErr)
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("PublishTopologyConfig(shared) problems mismatch (-want +got):\n%s", diff)
 	}
 
 	nodeByHostname(t, doc, "router").Device.IncludedFrom = "shared"
 
-	if got := sharedAddresses(t, doc); got != nil {
-		t.Fatalf("problems = %q, want none among included devices", got)
+	got, issuesErr = sharedAddresses(t, doc)
+	if issuesErr != nil {
+		t.Errorf("PublishTopologyConfig(shared) %v", issuesErr)
+	}
+
+	if got != nil {
+		t.Errorf("PublishTopologyConfig(shared) problems = %q, want none among included devices", got)
 	}
 }
 
@@ -985,11 +1093,11 @@ func TestPublishTopologyConfigComparesAddressesOnOneNetwork(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			blockers, err := doc.PublishBlockers("isolated")
 			if err != nil || len(blockers) != 0 {
-				t.Fatalf("PublishBlockers = %v, %v, want none", blockers, err)
+				t.Errorf("PublishBlockers(isolated) = %v, %v, want none", blockers, err)
 			}
 
 			if _, _, err := doc.PublishTopologyConfig("isolated"); err != nil {
-				t.Fatalf("PublishTopologyConfig: %v", err)
+				t.Errorf("PublishTopologyConfig(isolated) = %v, want nil", err)
 			}
 		})
 	}
@@ -1008,8 +1116,13 @@ func TestPublishTopologyConfigComparesAddressesOnOneNetwork(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := sharedAddresses(t, test.doc); !reflect.DeepEqual(got, []string{test.want}) {
-				t.Fatalf("problems = %q, want %q", got, test.want)
+			got, issuesErr := sharedAddresses(t, test.doc)
+			if issuesErr != nil {
+				t.Errorf("PublishTopologyConfig(shared) %v", issuesErr)
+			}
+
+			if diff := cmp.Diff([]string{test.want}, got); diff != "" {
+				t.Errorf("PublishTopologyConfig(shared) problems mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1030,8 +1143,13 @@ func TestPublishTopologyConfigComparesAddressesAfterConnections(t *testing.T) {
 			eth0["vlan"] = vlan
 			eth0["address"] = "10.0.0.1"
 
-			if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
-				t.Fatalf("problems = %q, want %q", got, want)
+			got, issuesErr := sharedAddresses(t, doc)
+			if issuesErr != nil {
+				t.Errorf("PublishTopologyConfig(shared) %v", issuesErr)
+			}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("PublishTopologyConfig(shared) problems mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1107,11 +1225,11 @@ func TestPublishTopologyConfigComparesConnectedAddressesOnTheirNetworks(t *testi
 
 			blockers, err := doc.PublishBlockers("connected")
 			if err != nil || len(blockers) != 0 {
-				t.Fatalf("PublishBlockers = %v, %v, want none", blockers, err)
+				t.Errorf("PublishBlockers(connected) = %v, %v, want none", blockers, err)
 			}
 
 			if _, _, err := doc.PublishTopologyConfig("connected"); err != nil {
-				t.Fatalf("PublishTopologyConfig: %v", err)
+				t.Errorf("PublishTopologyConfig(connected) = %v, want nil", err)
 			}
 
 			// host-a's eth0 connected to the switch of ISOLATED-1 too.
@@ -1120,13 +1238,25 @@ func TestPublishTopologyConfigComparesConnectedAddressesOnTheirNetworks(t *testi
 			blockers, err = doc.PublishBlockers("connected")
 
 			var addressErr *builder.InterfaceAddressError
-			if err != nil || len(blockers) != 1 || !errors.As(blockers[0], &addressErr) ||
-				!reflect.DeepEqual(addressErr.Problems, []string{test.want}) {
-				t.Fatalf("PublishBlockers = %v, %v, want the problem %q", blockers, err, test.want)
+
+			switch {
+			case err != nil:
+				t.Errorf("PublishBlockers(connected) returned error: %v", err)
+			case len(blockers) != 1 || !errors.As(blockers[0], &addressErr):
+				t.Errorf("PublishBlockers(connected) = %v, want one InterfaceAddressError", blockers)
+			default:
+				if diff := cmp.Diff([]string{test.want}, addressErr.Problems); diff != "" {
+					t.Errorf("PublishBlockers(connected) problems mismatch (-want +got):\n%s", diff)
+				}
 			}
 
-			if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, []string{test.want}) {
-				t.Fatalf("problems = %q, want %q", got, test.want)
+			got, issuesErr := sharedAddresses(t, doc)
+			if issuesErr != nil {
+				t.Errorf("PublishTopologyConfig(shared) %v", issuesErr)
+			}
+
+			if diff := cmp.Diff([]string{test.want}, got); diff != "" {
+				t.Errorf("PublishTopologyConfig(shared) problems mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1165,8 +1295,8 @@ func TestPublishBlockersCompareAddressesWithoutVLAN(t *testing.T) {
 				}
 			}
 
-			if !reflect.DeepEqual(got, test.want) {
-				t.Fatalf("problems = %q, want %q", got, test.want)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("PublishBlockers(no-vlan) problems mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1183,12 +1313,15 @@ func TestToTopologyOmitsIncludedDevices(t *testing.T) {
 	}
 
 	nodes, _ := topology.Spec["nodes"].([]any)
-	if len(nodes) != 1 || specNode(t, topology, "router") == nil {
-		t.Fatalf("mapped nodes = %s, want only the document's own router", asJSON(t, nodes))
+	if len(nodes) != 1 {
+		t.Errorf("ToTopology() nodes = %s, want only the document's own router", asJSON(t, nodes))
 	}
 
-	if !reflect.DeepEqual(topology.Spec["includeTopologies"], []string{"shared"}) {
-		t.Fatalf("includeTopologies = %v, want the reference that brings host-a back", topology.Spec["includeTopologies"])
+	specNode(t, topology, "router")
+
+	if diff := cmp.Diff([]string{"shared"}, topology.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("ToTopology() includeTopologies mismatch, want the reference that brings host-a back (-want +got):\n%s",
+			diff)
 	}
 }
 
@@ -1210,28 +1343,27 @@ func renamedHost(t *testing.T, hostname, osType string) *builder.Document {
 	return doc
 }
 
-// checkHostnameRefusal fails unless the refusal's issue has the code of phenix's reason, at the
-// device's hostname, and says what the refusal says.
-func checkHostnameRefusal(t *testing.T, err error, code builder.Code) {
-	t.Helper()
-
+// checkHostnameRefusal returns an error unless the refusal's issue has the code of phenix's reason, at
+// the device's hostname, and says what the refusal says.
+func checkHostnameRefusal(err error, code builder.Code) error {
 	var refusal *builder.NodeHostnameError
 	if !errors.As(err, &refusal) {
-		return
+		return nil
 	}
 
 	issues := refusal.Issues()
-	if len(issues) != 1 || issues[0].Code != code || issues[0].NodeID == "" || issues[0].Severity != builder.SeverityError ||
-		!strings.HasSuffix(issues[0].Path, ".device.hostname") || issues[0].Message != refusal.Problems[0] {
-		t.Fatalf("refusal issues = %+v, want one of code %s at the device's hostname", issues, code)
+	if len(issues) != 1 || len(refusal.Problems) == 0 || issues[0].Code != code || issues[0].NodeID == "" ||
+		issues[0].Severity != builder.SeverityError || !strings.HasSuffix(issues[0].Path, ".device.hostname") ||
+		issues[0].Message != refusal.Problems[0] {
+		return fmt.Errorf("refusal issues = %+v, want one of code %s at the device's hostname", issues, code)
 	}
+
+	return nil
 }
 
-// checkHostnameWarning fails unless the hostname warnings are none (start "") or one starting with
-// start, of code and severity warning, at the device's hostname.
-func checkHostnameWarning(t *testing.T, warnings []builder.Issue, start string, code builder.Code) {
-	t.Helper()
-
+// checkHostnameWarning returns an error unless the hostname warnings are none (start "") or one
+// starting with start, of code and severity warning, at the device's hostname.
+func checkHostnameWarning(warnings []builder.Issue, start string, code builder.Code) error {
 	var found []builder.Issue
 
 	for _, warning := range warnings {
@@ -1242,16 +1374,18 @@ func checkHostnameWarning(t *testing.T, warnings []builder.Issue, start string, 
 
 	if start == "" {
 		if len(found) != 0 {
-			t.Fatalf("hostname warnings = %+v, want none", found)
+			return fmt.Errorf("hostname warnings = %+v, want none", found)
 		}
 
-		return
+		return nil
 	}
 
 	if len(found) != 1 || !strings.HasPrefix(found[0].Message, start) || found[0].Code != code ||
 		found[0].Severity != builder.SeverityWarning || !strings.HasSuffix(found[0].Path, ".device.hostname") {
-		t.Fatalf("hostname warnings = %+v, want one of code %s starting %q", found, code, start)
+		return fmt.Errorf("hostname warnings = %+v, want one of code %s starting %q", found, code, start)
 	}
+
+	return nil
 }
 
 // Publishing refuses a hostname phenix refuses, which a draft keeps; an export returns it as a
@@ -1307,19 +1441,35 @@ func TestPublishTopologyConfigChecksHostnames(t *testing.T) {
 
 			switch {
 			case tt.refused == "" && err != nil:
-				t.Fatalf("PublishTopologyConfig returned error: %v", err)
-			case tt.refused != "" && (config != nil || !errors.As(err, &hostnameErr) ||
-				len(hostnameErr.Problems) != 1 || !strings.HasPrefix(hostnameErr.Problems[0], tt.refused)):
-				t.Fatalf("PublishTopologyConfig = %v, %v, want a NodeHostnameError starting %q", config, err, tt.refused)
+				t.Errorf("PublishTopologyConfig(hostnames) = %v, want nil", err)
+			case tt.refused != "" && !errors.As(err, &hostnameErr):
+				t.Fatalf("PublishTopologyConfig(hostnames) = %v, want a NodeHostnameError starting %q", err, tt.refused)
+			case tt.refused != "":
+				if config != nil {
+					t.Errorf("PublishTopologyConfig(hostnames) = %v, want nil", config)
+				}
+
+				if len(hostnameErr.Problems) != 1 || !strings.HasPrefix(hostnameErr.Problems[0], tt.refused) {
+					t.Errorf("PublishTopologyConfig(hostnames) problems = %q, want one starting %q", hostnameErr.Problems, tt.refused)
+				}
 			}
 
-			checkHostnameRefusal(t, err, tt.code)
-			checkHostnameWarning(t, warnings, tt.warning, tt.code)
+			if err := checkHostnameRefusal(err, tt.code); err != nil {
+				t.Errorf("PublishTopologyConfig(hostnames) %v", err)
+			}
+
+			if err := checkHostnameWarning(warnings, tt.warning, tt.code); err != nil {
+				t.Errorf("PublishTopologyConfig(hostnames) %v", err)
+			}
 
 			export, exportErr := doc.ExportTopologyConfig("hostnames")
 			if !tt.exports {
-				if export != nil || exportErr == nil || exportErr.Error() != err.Error() {
-					t.Fatalf("ExportTopologyConfig = %v, %v, want the publish error %v", export, exportErr, err)
+				if export != nil {
+					t.Errorf("ExportTopologyConfig(hostnames) = %v, want nil", export)
+				}
+
+				if exportErr == nil || err == nil || exportErr.Error() != err.Error() {
+					t.Errorf("ExportTopologyConfig(hostnames) error = %v, want the publish error %v", exportErr, err)
 				}
 
 				return
@@ -1329,15 +1479,17 @@ func TestPublishTopologyConfigChecksHostnames(t *testing.T) {
 				t.Fatalf("ExportTopologyConfig returned error: %v", exportErr)
 			}
 
-			if !slices.Equal(export.Warnings, warnings) {
-				t.Fatalf("export warnings = %q, want %q", export.Warnings, warnings)
+			if diff := cmp.Diff(warnings, export.Warnings); diff != "" {
+				t.Errorf("ExportTopologyConfig(hostnames) warnings mismatch, want the publish warnings (-want +got):\n%s", diff)
 			}
 
-			switch {
-			case tt.refused == "" && len(export.PublishBlockers) != 0:
-				t.Fatalf("PublishBlockers = %v, want none", export.PublishBlockers)
-			case tt.refused != "" && (len(export.PublishBlockers) != 1 || export.PublishBlockers[0].Error() != err.Error()):
-				t.Fatalf("PublishBlockers = %v, want the publish error %v", export.PublishBlockers, err)
+			var wantBlockers []string
+			if tt.refused != "" {
+				wantBlockers = []string{err.Error()}
+			}
+
+			if diff := cmp.Diff(wantBlockers, errorTexts(export.PublishBlockers)); diff != "" {
+				t.Errorf("ExportTopologyConfig(hostnames) PublishBlockers mismatch, want the publish error (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1356,7 +1508,7 @@ func TestPublishTopologyConfigChecksHostnamesAfterInterfaces(t *testing.T) {
 
 	var vlanErr *builder.InterfaceVLANError
 	if !errors.As(refusal, &vlanErr) {
-		t.Fatalf("PublishTopologyConfig error = %v, want an InterfaceVLANError", refusal)
+		t.Fatalf("PublishTopologyConfig(ordered) error = %v, want an InterfaceVLANError", refusal)
 	}
 
 	export, err := doc.ExportTopologyConfig("ordered")
@@ -1365,16 +1517,25 @@ func TestPublishTopologyConfigChecksHostnamesAfterInterfaces(t *testing.T) {
 	}
 
 	var hostnameErr *builder.NodeHostnameError
-	if len(export.PublishBlockers) != 2 || export.PublishBlockers[0].Error() != refusal.Error() ||
-		!errors.As(export.PublishBlockers[1], &hostnameErr) {
-		t.Fatalf("PublishBlockers = %v, want the VLAN, then the hostname", export.PublishBlockers)
+
+	switch blockers := export.PublishBlockers; {
+	case len(blockers) != 2:
+		t.Errorf("ExportTopologyConfig(ordered) PublishBlockers = %v, want the VLAN, then the hostname", blockers)
+	default:
+		if blockers[0].Error() != refusal.Error() {
+			t.Errorf("ExportTopologyConfig(ordered) first blocker = %v, want the publish error %v", blockers[0], refusal)
+		}
+
+		if !errors.As(blockers[1], &hostnameErr) {
+			t.Errorf("ExportTopologyConfig(ordered) second blocker = %v, want a NodeHostnameError", blockers[1])
+		}
 	}
 
 	external := renamedHost(t, "42", "linux")
 	nodeByHostname(t, external, "42").Device.Spec["external"] = true
 
 	if _, _, err := external.PublishTopologyConfig("external"); errors.As(err, &hostnameErr) {
-		t.Fatalf("PublishTopologyConfig refused an external device's hostname: %v", err)
+		t.Errorf("PublishTopologyConfig(external) = %v, want an external device's hostname not checked", err)
 	}
 }
 
@@ -1383,18 +1544,22 @@ func TestTopologyNameMatchesPublishDialog(t *testing.T) {
 
 	// The cases of configName in src/js/test/builder/publish.test.js, and a
 	// name that leaves none.
-	for name, want := range map[string]string{
-		"Untitled topology":  "Untitled-topology",
-		"  lab #2 (copy) ":   "lab-2-copy",
-		"core_net@site.v2":   "core_net@site.v2",
-		" Lab topology (2) ": "Lab-topology-2",
-		"Pump station":       "Pump-station",
-		"":                   builder.DefaultTopologyName,
-		"!!":                 builder.DefaultTopologyName,
+	for _, test := range []struct{ desc, name, want string }{
+		{desc: "untitled", name: "Untitled topology", want: "Untitled-topology"},
+		{desc: "padded with punctuation", name: "  lab #2 (copy) ", want: "lab-2-copy"},
+		{desc: "underscore at sign and dot", name: "core_net@site.v2", want: "core_net@site.v2"},
+		{desc: "padded with parentheses", name: " Lab topology (2) ", want: "Lab-topology-2"},
+		{desc: "two words", name: "Pump station", want: "Pump-station"},
+		{desc: "empty", name: "", want: builder.DefaultTopologyName},
+		{desc: "punctuation only", name: "!!", want: builder.DefaultTopologyName},
 	} {
-		if got := builder.TopologyName(name); got != want {
-			t.Errorf("TopologyName(%q) = %q, want %q", name, got, want)
-		}
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			if got := builder.TopologyName(test.name); got != test.want {
+				t.Errorf("TopologyName(%q) = %q, want %q", test.name, got, test.want)
+			}
+		})
 	}
 }
 
@@ -1415,8 +1580,12 @@ func TestExportTopologyConfigReturnsVLANAliases(t *testing.T) {
 		t.Fatalf("ExportTopologyConfig: %v", err)
 	}
 
-	if len(projection.VLANAliases) == 0 || !maps.Equal(export.VLANAliases, projection.VLANAliases) {
-		t.Fatalf("export aliases = %v, want the projection's %v, which are not empty", export.VLANAliases, projection.VLANAliases)
+	if len(projection.VLANAliases) == 0 {
+		t.Fatal("ToTopology() VLANAliases = none, want the fixture's aliases")
+	}
+
+	if diff := cmp.Diff(projection.VLANAliases, export.VLANAliases); diff != "" {
+		t.Errorf("ExportTopologyConfig(lab) VLANAliases mismatch, want the projection's (-want +got):\n%s", diff)
 	}
 }
 
@@ -1442,15 +1611,15 @@ func TestToTopologyOmitsVisualNodes(t *testing.T) {
 		t.Fatalf("ToTopologyConfig: %v", err)
 	}
 
-	if asJSON(t, got) != asJSON(t, want) {
-		t.Fatalf("a visual node reached the topology:\nwant: %s\ngot:  %s", asJSON(t, want), asJSON(t, got))
+	if diff := cmp.Diff(jsonValue(t, want), jsonValue(t, got)); diff != "" {
+		t.Errorf("ToTopologyConfig(visual) with visual nodes mismatch (-want +got):\n%s", diff)
 	}
 
 	encoded := asJSON(t, got)
 
 	for _, text := range []string{"DMZ", "Internet", "uplink", "rectangle", "#c0392b", `"points"`} {
 		if strings.Contains(encoded, text) {
-			t.Fatalf("the topology holds %s: %s", text, encoded)
+			t.Errorf("ToTopologyConfig(visual) = %s, want no %s in it", encoded, text)
 		}
 	}
 }
@@ -1474,8 +1643,8 @@ func TestToTopologyOmitsPresentationFields(t *testing.T) {
 		t.Fatalf("ToTopologyConfig: %v", err)
 	}
 
-	if asJSON(t, got) != asJSON(t, want) {
-		t.Fatalf("a presentation field reached the topology:\nwant: %s\ngot:  %s", asJSON(t, want), asJSON(t, got))
+	if diff := cmp.Diff(jsonValue(t, want), jsonValue(t, got)); diff != "" {
+		t.Errorf("ToTopologyConfig(decorated) of a decorated document mismatch (-want +got):\n%s", diff)
 	}
 
 	encoded := asJSON(t, got)
@@ -1484,13 +1653,13 @@ func TestToTopologyOmitsPresentationFields(t *testing.T) {
 
 	for _, text := range append(presentation, decorationKeys...) {
 		if strings.Contains(encoded, text) {
-			t.Fatalf("the topology holds %s: %s", text, encoded)
+			t.Errorf("ToTopologyConfig(decorated) = %s, want no %s in it", encoded, text)
 		}
 	}
 
 	// The includes themselves are written back, all of them.
-	if includes := got.Spec["includeTopologies"]; !reflect.DeepEqual(includes, []string{"shared", "plant"}) {
-		t.Fatalf("includeTopologies = %#v", includes)
+	if diff := cmp.Diff([]string{"shared", "plant"}, got.Spec["includeTopologies"]); diff != "" {
+		t.Errorf("ToTopologyConfig(decorated) includeTopologies mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1548,12 +1717,12 @@ func TestTopologyCarriesDeviceNotes(t *testing.T) {
 	}
 
 	general, _ := topologyNode(t, export.Config.Spec, "router")["general"].(map[string]any)
-	if !reflect.DeepEqual(general["notes"], notes) {
-		t.Fatalf("general.notes = %#v, want %#v", general["notes"], notes)
+	if diff := cmp.Diff(notes, general["notes"]); diff != "" {
+		t.Errorf("ExportTopologyConfig(publishable) router general.notes mismatch (-want +got):\n%s", diff)
 	}
 
 	if encoded := asJSON(t, export.Config); strings.Contains(encoded, "Mirror port") {
-		t.Fatalf("the topology holds a switch's notes: %s", encoded)
+		t.Errorf("ExportTopologyConfig(publishable) = %s, want no switch notes in it", encoded)
 	}
 
 	tooMany := make([]any, builder.MaxDiagramNotes+1)
@@ -1574,15 +1743,15 @@ func TestTopologyCarriesDeviceNotes(t *testing.T) {
 			// The draft keeps them and both publish paths refuse them; the schema names the node, not its
 			// notes (see TestNodeNotesSchemaRejects in phenix/types).
 			if err := doc.Validate(); err != nil {
-				t.Fatalf("Validate refused the spec's notes: %v", err)
+				t.Errorf("Validate() = %v, want the draft to keep the notes", err)
 			}
 
 			if _, err := doc.ExportTopologyConfig("publishable"); err == nil {
-				t.Fatal("ExportTopologyConfig accepted the spec's notes")
+				t.Error("ExportTopologyConfig(publishable) = nil error, want the notes refused")
 			}
 
 			if _, _, err := doc.PublishTopologyConfig("publishable"); err == nil {
-				t.Fatal("PublishTopologyConfig accepted the spec's notes")
+				t.Error("PublishTopologyConfig(publishable) = nil error, want the notes refused")
 			}
 		})
 	}
