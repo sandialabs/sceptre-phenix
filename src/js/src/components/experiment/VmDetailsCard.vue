@@ -43,7 +43,7 @@
             position="is-bottom"
             append-to-body>
             <router-link
-              class="button is-light is-small vm-card-soh"
+              class="button is-light is-small"
               aria-label="view soh"
               :to="{ name: 'soh', params: { id: experiment } }">
               <b-icon icon="heartbeat" />
@@ -55,7 +55,7 @@
             position="is-bottom"
             append-to-body>
             <router-link
-              class="button is-light is-small vm-card-scorch"
+              class="button is-light is-small"
               aria-label="view scorch"
               :to="{ name: 'scorchruns', params: { id: experiment } }">
               <b-icon icon="fire" />
@@ -90,7 +90,7 @@
           format="percent" />
       </div>
 
-      <div v-if="power.length" class="vm-section vm-power">
+      <div v-if="power.length" class="vm-section">
         <p class="vm-section-title">Power</p>
         <div class="vm-power-buttons">
           <b-tooltip
@@ -967,11 +967,6 @@
     border-radius: 8px;
     padding: 0.75rem 0.9rem;
     margin-bottom: 0.75rem;
-  }
-
-  .vm-section-link {
-    margin-left: auto;
-    text-transform: none;
   }
 
   .vm-section-title {

@@ -119,20 +119,6 @@
           </b-switch>
         </b-field>
 
-        <b-tooltip
-          v-if="expRunning"
-          label="you cannot edit a running experiment"
-          type="is-light is-bottom"
-          multilined>
-          <button
-            v-if="expRunning"
-            class="button is-warning"
-            id="editor"
-            disabled>
-            Running
-          </button>
-        </b-tooltip>
-
         <button
           v-if="mode == 'edit' && !expStart"
           class="button is-success"
@@ -233,10 +219,6 @@
         editor: {
           lang: 'yaml',
           vim: false,
-          options: {
-            useWorker: false,
-            tabSize: 2,
-          },
           isLoading: false,
         },
         config: {
@@ -258,7 +240,6 @@
         // loaded and the current one, and the save to resend
         conflict: { modal: false, name: '', from: null, to: null, save: null },
 
-        expRunning: false,
         expStart: false, //TODO: remove
 
         pastConfigKind: null,
@@ -390,8 +371,6 @@
 
         this.config.str = '';
         this.config.builderXML = null;
-        this.editor.nameErrType = null;
-        this.editor.nameErrMsg = null;
 
         this.$emit('is-done', msg);
       },
@@ -716,10 +695,6 @@
     background-color: #686868;
     color: #fff;
   }
-  div.autocomplete :deep(a.dropdown-item) {
-    color: #383838 !important;
-  }
-
   .x-modal-dark {
     background-color: #5b5b5b;
   }
@@ -744,9 +719,5 @@
   button#editor {
     margin-top: 125px;
     margin-right: 10px;
-  }
-
-  button.action {
-    margin-right: 5px;
   }
 </style>

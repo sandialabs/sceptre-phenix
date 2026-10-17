@@ -1,29 +1,10 @@
 <template>
   <svg class="pipeline" :width="width" :height="height">
-    <defs>
-      <marker
-        :id="'idArrow' + i"
-        v-for="i in [0, 1, 2, 3, 4, 5]"
-        :key="'arrow' + i"
-        :class="'weight' + i"
-        viewBox="0 0 20 20"
-        refX="13"
-        refY="10"
-        markerUnits="strokeWidth"
-        markerWidth="3"
-        markerHeight="10"
-        orient="auto">
-        <path d="M 0 0 L 20 10 L 0 20 z" />
-      </marker>
-    </defs>
-
     <pipeline-line
       v-for="(item, index) in lineList"
       :key="'line' + index"
-      :showArrow="showArrow"
       :path="item.path"
-      :weight="item.weight"
-      :lineStyle="lineStyle" />
+      :weight="item.weight" />
     <pipeline-node
       v-for="(item, idx) in nodeList"
       :key="'node' + idx"
@@ -34,9 +15,7 @@
       :y="item.y"
       :node="item"
       :index="idx"
-      @click="handleClick"
-      @mouseenter="handleMouseEnter"
-      @mouseleave="handleMouseLeave" />
+      @click="handleClick" />
   </svg>
 </template>
 <script>
@@ -54,7 +33,7 @@
       PipelineNode,
       PipelineLine,
     },
-    emits: ['select', 'mouseenter', 'mouseleave'],
+    emits: ['select'],
     props: {
       x: {
         type: Number,
@@ -75,14 +54,6 @@
       pipeline: {
         type: Array,
         default: () => [],
-      },
-      lineStyle: {
-        type: String,
-        default: 'default',
-      },
-      showArrow: {
-        type: Boolean,
-        default: false,
       },
     },
 
@@ -105,14 +76,6 @@
         this.$emit('select', node);
       },
 
-      handleMouseEnter(_, node) {
-        this.$emit('mouseenter', node);
-      },
-
-      handleMouseLeave(_, node) {
-        this.$emit('mouseleave', node);
-      },
-
       render() {
         this.service = new Pipeline(
           this.pipeline,
@@ -120,7 +83,6 @@
           this.y,
           this.xstep,
           this.ystep,
-          this.lineStyle,
         );
 
         if (this.service.hasCircle()) {
@@ -144,55 +106,15 @@
 </script>
 
 <style>
-  .pipeline {
-    /* transform: rotate(90deg) */
-  }
-
   .pipeline .weight0 {
-    fill: #f5f5f5;
     stroke: #f5f5f5;
   }
 
   .pipeline .weight1 {
-    fill: #f6b44b;
     stroke: #f6b44b;
   }
 
   .pipeline .weight2 {
-    fill: #8cc04f;
     stroke: #8cc04f;
-  }
-
-  /* .pipeline .pipeline-node{
-  transform: rotate(90deg)
-} */
-  .pipeline-node-terminal {
-    fill: #949393;
-  }
-  .pipeline-connector-skipped {
-    stroke: #949393;
-    stroke-opacity: 0.25;
-  }
-  .pipeline-small-label {
-    font-size: 80%;
-  }
-  .pipeline-big-label.selected,
-  .pipeline-small-label.selected {
-    font-weight: bold;
-  }
-  .pipeline-node-terminal {
-    fill: #949393;
-  }
-  .svgResultStatus.no-background .circle-bg {
-    opacity: 0;
-  }
-
-  .jdl-table td .svgResultStatus {
-    vertical-align: middle;
-  }
-
-  .pipeline-big-label.selected,
-  .pipeline-small-label.selected {
-    font-weight: bold;
   }
 </style>

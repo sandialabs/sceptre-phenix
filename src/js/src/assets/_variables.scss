@@ -2,7 +2,6 @@
 @import 'bulma/sass/utilities/_all';
 @import 'buefy/src/scss/utils/_all';
 
-$logo: #9a4420;
 // derived via: https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
 $primary: #da622d;
 $link: #62c0d7;
@@ -20,8 +19,6 @@ $background-ter: #5a5a5a;
 $border: white;
 $text: whitesmoke;
 $text-strong: white;
-$text-weak: whitesmoke;
-$input-color: black;
 
 $body-background-color: $background;
 $table-background-color: $background-bis;
@@ -66,7 +63,6 @@ $input-icon-color: lighten($scheme-main, 20);
 $input-icon-active-color: lighten($scheme-main, 10);
 $input-hover-color: lighten($link, 10); // dropdown arrows etc.
 
-$progress-text-color: black;
 $hr-background-color: whitesmoke;
 
 $fullhd: 1536px + (2 * $gap);

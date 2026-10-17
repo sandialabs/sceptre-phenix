@@ -77,7 +77,7 @@
     },
     // declare emits so the click listener does not also fall through
     // to the root element as a native listener and fire twice
-    emits: ['click', 'mouseenter', 'mouseleave'],
+    emits: ['click'],
     props: {
       index: {
         type: Number,
@@ -128,21 +128,9 @@
       },
       handleMouseEnter() {
         this.nodeClass = 'pipeline-node-selected';
-        this.$emit('mouseenter', this.index, this.node);
       },
       handleMouseLeave() {
         this.nodeClass = 'pipeline-node';
-        this.$emit('mouseleave', this.index, this.node);
-      },
-      getTextWidth(text, font) {
-        // reuse canvas object for better performance
-        var canvas =
-          this.getTextWidth.canvas ||
-          (this.getTextWidth.canvas = document.createElement('canvas'));
-        var context = canvas.getContext('2d');
-        context.font = font;
-        var metrics = context.measureText(text);
-        return metrics.width;
       },
     },
   };
@@ -167,9 +155,6 @@
   }
   .svgResultStatus > circle.unstable {
     fill: #f6b44b;
-  }
-  .svgResultStatus > circle.aborted {
-    fill: #949393;
   }
   .svgResultStatus > circle.paused {
     fill: #24b0d5;

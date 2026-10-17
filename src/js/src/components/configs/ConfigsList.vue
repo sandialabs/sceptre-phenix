@@ -143,8 +143,7 @@
               v-model="searchQuery"
               placeholder="Find a Config"
               icon="search"
-              :data="filteredConfigs.map((c) => c.metadata.name)"
-              @select="(option) => (filtered = option)">
+              :data="filteredConfigs.map((c) => c.metadata.name)">
               <template #empty> No results found </template>
             </b-autocomplete>
             <p v-if="searchQuery || filterKind" class="control">

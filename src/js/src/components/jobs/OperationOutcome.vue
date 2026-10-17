@@ -5,7 +5,7 @@ its reason and whether trying it again may work, and a button to retry
 those that may.
 -->
 <template>
-  <div class="operation-outcome">
+  <div>
     <b-collapse
       v-for="group in groups"
       :key="group.status"
@@ -25,9 +25,7 @@ those that may.
       <ul class="outcome-items">
         <li v-for="item in group.items" :key="item.name">
           <span class="outcome-name">{{ item.name }}</span>
-          <span v-if="item.error" class="outcome-error"
-            >: {{ item.error }}</span
-          >
+          <span v-if="item.error">: {{ item.error }}</span>
           <b-tag
             v-if="item.retryable"
             type="is-info"

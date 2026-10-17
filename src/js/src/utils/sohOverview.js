@@ -203,17 +203,20 @@ export function trend(summary, count) {
   return (summary?.history ?? []).slice(-count).map((run) => run.failing ?? 0);
 }
 
-// An SVG polyline's points for values in a width x height box, with pad
-// pixels kept clear top and bottom. A flat line sits at the bottom.
-export function sparkPoints(values, width, height, pad = 2) {
+// pixels a sparkline keeps clear above and below its line
+const SPARK_PAD = 2;
+
+// An SVG polyline's points for values in a width x height box, with
+// SPARK_PAD pixels kept clear top and bottom. A flat line sits at the bottom.
+export function sparkPoints(values, width, height) {
   if (values.length === 0) return [];
   const max = Math.max(...values);
   const step = values.length > 1 ? width / (values.length - 1) : 0;
+  const bottom = height - SPARK_PAD;
+  const span = height - 2 * SPARK_PAD;
   return values.map((v, i) => [
     Math.round(i * step * 10) / 10,
-    Math.round(
-      (height - pad - (max > 0 ? (v / max) * (height - 2 * pad) : 0)) * 10,
-    ) / 10,
+    Math.round((bottom - (max > 0 ? (v / max) * span : 0)) * 10) / 10,
   ]);
 }
 

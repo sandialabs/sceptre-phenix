@@ -79,11 +79,11 @@ const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // One sentence for each reason partitionForAction skipped things for,
 // turning a reason about "the <noun>" into one about all of them: "The VMs a
 // and b are not running."
-export function skippedText(skipped, noun, pluralNoun) {
+export function skippedText(skipped, noun) {
   const subjectRe = new RegExp(`^the ${escapeRegExp(noun)} (is|does)\\b`);
   return (skipped ?? [])
     .map(({ reason, names }) => {
-      const subject = upperFirst(namedList(names, noun, pluralNoun));
+      const subject = upperFirst(namedList(names, noun));
       const text = reason.replace(
         subjectRe,
         (_, verb) =>
@@ -229,10 +229,10 @@ export function summarizeOutcome(items) {
 
 // The one-line summary of an outcome: "Restarted 3 VMs", or "Restarted 2 of
 // 3 VMs; 1 failed, 1 skipped".
-export function outcomeTitle({ verbPast, noun, pluralNoun, items }) {
+export function outcomeTitle({ verbPast, noun, items }) {
   const total = (items ?? []).length;
   const counts = summarizeOutcome(items);
-  const count = plural(total, noun, pluralNoun);
+  const count = plural(total, noun);
   if (counts.succeeded === total) return `${verbPast} ${count}`;
 
   const rest = ['failed', 'skipped', 'canceled']
@@ -264,13 +264,10 @@ export function outcomeLines(items) {
 // failures (up to LISTED_FAILURES), and, when some may work if tried again
 // and `onRetry` is given, a Retry failed button that calls it with their
 // names. Nothing is shown for an operation on no items.
-export function notifyOutcome(
-  buefy,
-  { verbPast, noun, pluralNoun, items, onRetry },
-) {
+export function notifyOutcome(buefy, { verbPast, noun, items, onRetry }) {
   if (!items?.length) return;
 
-  const title = outcomeTitle({ verbPast, noun, pluralNoun, items });
+  const title = outcomeTitle({ verbPast, noun, items });
   const counts = summarizeOutcome(items);
 
   if (counts.succeeded === items.length) {

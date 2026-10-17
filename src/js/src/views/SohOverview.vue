@@ -436,7 +436,7 @@
 
   export default {
     setup() {
-      return { ...useTable(), roleAllowed, pluralWord };
+      return { ...useTable(), pluralWord };
     },
 
     data() {

@@ -43,7 +43,7 @@ value. -->
         @update:model-value="update(index, { value: $event })" />
       <button
         type="button"
-        class="button is-small is-light annotation-remove"
+        class="button is-small is-light"
         :aria-label="`Remove ${row.key || 'annotation'}`"
         @click="remove(index)">
         <b-icon icon="trash" size="is-small" />

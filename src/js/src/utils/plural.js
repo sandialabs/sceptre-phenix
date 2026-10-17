@@ -7,8 +7,8 @@ export function pluralWord(count, singular, plural = `${singular}s`) {
 }
 
 // a count with its noun: "1 VM", "3 VMs"
-export function plural(count, singular, pluralForm) {
-  return `${count} ${pluralWord(count, singular, pluralForm)}`;
+export function plural(count, singular) {
+  return `${count} ${pluralWord(count, singular)}`;
 }
 
 // a list in prose: "a", "a and b", "a, b, and c"
@@ -20,10 +20,10 @@ export function listText(items) {
 }
 
 // names of one kind of thing: "the web VM", "the VMs web and db"
-export function namedList(names, singular, pluralForm) {
+export function namedList(names, singular) {
   const list = Array.isArray(names) ? names : [names];
   if (list.length == 1) return `the ${list[0]} ${singular}`;
-  return `the ${pluralWord(list.length, singular, pluralForm)} ${listText(list)}`;
+  return `the ${pluralWord(list.length, singular)} ${listText(list)}`;
 }
 
 // a sentence's first letter in upper case

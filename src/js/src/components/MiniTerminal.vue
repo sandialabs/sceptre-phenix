@@ -4,24 +4,20 @@
 
 <script>
   import { markRaw } from 'vue';
-  import { debounce } from 'lodash-es';
 
-  import axiosInstance from '@/utils/axios.js';
   import { usePhenixStore } from '@/store.js';
 
   import { Terminal } from '@xterm/xterm';
-  import { FitAddon } from '@xterm/addon-fit';
   import { AttachAddon } from '@xterm/addon-attach';
 
   import '@xterm/xterm/css/xterm.css';
 
   export default {
-    props: ['wsPath', 'resizePath'],
+    props: ['wsPath'],
     data() {
       return {
         socket: null,
         term: null,
-        fit: null,
         attach: null,
       };
     },
@@ -32,13 +28,7 @@
       },
     },
 
-    created() {
-      this.handleResize = debounce(this.handleResize, 100);
-    },
-
     beforeUnmount() {
-      window.removeEventListener('resize', this.handleResize);
-      this.handleResize.cancel();
       this.teardownSocket();
       if (this.term) {
         this.term.dispose();
@@ -51,25 +41,8 @@
       // internals only add overhead to every write
       const term = markRaw(new Terminal());
 
-      this.fit = markRaw(new FitAddon());
-      term.loadAddon(this.fit);
-
       term.open(this.$refs.xterm);
-
-      if (this.resizePath === undefined) {
-        term.resize(80, 30);
-      } else {
-        term.onResize((size) => {
-          var url =
-            this.resizePath + '?cols=' + size.cols + '&rows=' + size.rows;
-          axiosInstance.post(url).catch((err) => {
-            console.warn('failed to resize the terminal', err);
-          });
-        });
-
-        this.fit.fit();
-        window.addEventListener('resize', this.handleResize);
-      }
+      term.resize(80, 30);
 
       this.term = term;
       this.setupTerminal();
@@ -83,10 +56,6 @@
         this.socket.onopen = () => {
           this.attach = markRaw(new AttachAddon(this.socket));
           this.term.loadAddon(this.attach);
-
-          if (this.resizePath !== undefined) {
-            this.fit.fit();
-          }
         };
 
         this.socket.onerror = () => {
@@ -122,11 +91,6 @@
 
         let proto = window.location.protocol == 'https:' ? 'wss://' : 'ws://';
         return proto + window.location.host + path;
-      },
-      handleResize() {
-        if (this.fit) {
-          this.fit.fit();
-        }
       },
     },
   };

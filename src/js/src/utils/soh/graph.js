@@ -124,7 +124,7 @@ const CELL_H = 18;
 const BLOCK_HEAD = 14; // room for the VLAN node above its hosts
 
 // The hosts attached only to one VLAN, packed as a grid block under it.
-// Returns Map(vlanId -> {leaves, cols, rows, w, h}).
+// Returns Map(vlanId -> {leaves, cols, w, h}).
 export function leafBlocks(graph, adj) {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const blocks = new Map();
@@ -142,7 +142,6 @@ export function leafBlocks(graph, adj) {
     blocks.set(n.id, {
       leaves,
       cols,
-      rows,
       w: Math.max(40, cols * CELL_W),
       h: BLOCK_HEAD + rows * CELL_H,
     });
@@ -208,7 +207,6 @@ export function layoutInput(nodes, edges) {
       id: n.id,
       label: n.label,
       image: n.image,
-      status: n.status,
     })),
     edges: edges
       .filter((e) => ids.has(e.source) && ids.has(e.target))

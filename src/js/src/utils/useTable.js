@@ -20,7 +20,7 @@ export function useTable(options = {}) {
   const name = options.name;
   const table = reactive({
     isPaginated: name ? loadPaginate(name) : false,
-    perPage: options.perPage ?? 10,
+    perPage: 10,
     currentPage: 1,
     isPaginationSimple: true,
     paginationSize: 'is-small',

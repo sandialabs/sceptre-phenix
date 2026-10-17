@@ -67,7 +67,6 @@ export function diskRunningText(disk) {
 // when name is undefined).
 export function diskDisabledReason(action, disk, { disks = [], can }) {
   const rule = DISK_ACTION_RULES[action];
-  if (!rule) return null;
 
   if (disk.readOnly) {
     return `the disk is ${readOnlyReason(disk)}`;

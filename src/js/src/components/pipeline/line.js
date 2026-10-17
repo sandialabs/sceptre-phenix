@@ -1,24 +1,8 @@
-export class EdgeService {
+class EdgeService {
   constructor(xstep, ystep) {
     this.xstep = xstep;
     this.ystep = ystep;
   }
-
-  static getDrawEdgeService(lineStyle, step) {
-    switch (lineStyle) {
-      case 'default':
-        return new DefaultStyleService(step.x, step.y);
-      case 'bessel':
-        return new BesselStyleService(step.x, step.y);
-      case 'line':
-        return new LineStyleService(step.x, step.y);
-      default:
-        break;
-    }
-  }
-
-  // eslint-disable-next-line no-unused-vars
-  drawEdge(start, end) {}
 
   drawVerticalEdge(start, end) {
     const radius = 14;
@@ -65,7 +49,7 @@ export class EdgeService {
   }
 }
 
-class DefaultStyleService extends EdgeService {
+export class DefaultStyleService extends EdgeService {
   constructor(xstep, ystep) {
     super(xstep, ystep);
   }
@@ -104,40 +88,5 @@ class DefaultStyleService extends EdgeService {
         `;
       return d;
     }
-  }
-}
-
-class BesselStyleService extends EdgeService {
-  drawEdge(start, end) {
-    if (start.y == end.y) {
-      return this.drawHEdge(start, end);
-    }
-    if (start.x == end.x) {
-      return this.drawVerticalEdge(start, end);
-    }
-    if (end.y > start.y) {
-      let path = `M ${start.x + 12},${start.y}\
-            C ${end.x},${start.y}\
-            ${start.x + 50},${end.y}\
-            ${end.x - 15},${end.y}
-            `;
-      return path;
-    } else {
-      let path = `M ${start.x},${start.y}\
-            C ${end.x - 50},${start.y}\
-            ${start.x},${end.y}\
-            ${end.x - 12},${end.y}
-            `;
-      return path;
-    }
-  }
-}
-
-class LineStyleService extends EdgeService {
-  drawEdge(start, end) {
-    if (start.y == end.y) {
-      return this.drawHEdge(start, end);
-    }
-    return this.getStraightLinePath(start, end);
   }
 }

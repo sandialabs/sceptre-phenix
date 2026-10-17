@@ -915,16 +915,6 @@
     margin: 4px 0px;
   }
 
-  .action-button {
-    color: dimgray;
-    padding: 8px;
-    cursor: pointer !important;
-  }
-
-  .action-button:hover {
-    background-color: #ddd;
-  }
-
   .row-actions {
     display: inline-flex;
     gap: 5px;
@@ -965,13 +955,5 @@
     /* color: blue; */
     text-decoration: none;
     display: inline;
-  }
-
-  .file-cta,
-  .file-cta > p,
-  .file-cta:hover {
-    border: none;
-    background-color: #686868;
-    color: whitesmoke !important;
   }
 </style>
