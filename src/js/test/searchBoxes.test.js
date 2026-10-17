@@ -1,4 +1,4 @@
-// Every page's search box, rendered with real Buefy: the same look (icon left,
+// Every page's search box, drawn with real Buefy: the same look (icon left,
 // Buefy's width), and a clear button only while there is a search.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,7 +25,7 @@ import Scorch from '@/views/Scorch.vue';
 import SohOverview from '@/views/SohOverview.vue';
 import Users from '@/views/Users.vue';
 import { never } from './helpers/async.js';
-import { renderSSR, stubBrowser } from './helpers/render.js';
+import { mountPage } from './helpers/mount.js';
 
 // each page, where it is, and the searches it can clear
 const pages = [
@@ -56,14 +56,17 @@ const pages = [
   ['VMtilesView', VMtilesView, '/vmtiles', [{ searchName: 'dmz' }]],
 ];
 
-// the search box's control: its icons, the input and its placeholder
-const searchBox = (html) =>
-  html.match(
-    /<div class="control[^"]*"[^>]*>(?:(?!<\/div>).)*?placeholder="(?:Find|Search)[^"]*"(?:(?!<\/div>).)*<\/div>/s,
-  )?.[0];
+// the control holding the search input: its icons and the input
+const searchBox = (wrapper) =>
+  wrapper
+    .findAll('.control')
+    .find((control) =>
+      [...control.element.children].some((el) =>
+        /^(Find|Search)/.test(el.placeholder),
+      ),
+    );
 
-const clearButton = (html) =>
-  html.match(/<button[^>]*aria-label="Clear [^"]*"[^>]*>/)?.[0];
+const clearButton = (wrapper) => wrapper.find('button[aria-label^="Clear "]');
 
 let warn;
 beforeEach(() => {
@@ -77,28 +80,28 @@ beforeEach(() => {
   });
   // the pages' lists never arrive
   for (const request of Object.values(axios)) request.mockImplementation(never);
-  stubBrowser();
   warn = vi.spyOn(console, 'warn');
 });
 afterEach(() => {
-  vi.unstubAllGlobals();
   warn.mockRestore();
 });
 
 describe.each(pages)('%s', (_, page, route, searches) => {
-  it('renders a search box with the search icon and no width of its own', async () => {
-    const box = searchBox(await renderSSR(page, {}, { route }));
-    expect(box).toContain('class="icon is-left"><i data-icon="search"');
-    expect(box).not.toMatch(/style="[^"]*width/);
-    // and the page renders without complaint
+  it('draws a search box with the search icon and no width of its own', async () => {
+    const box = searchBox(await mountPage(page, { route }));
+    expect(box.find('.icon.is-left [data-icon="search"]').exists()).toBe(true);
+    for (const el of [box, ...box.findAll('*')]) {
+      expect(el.attributes('style') ?? '').not.toMatch(/width/);
+    }
+    // and the page draws without complaint
     expect(warn).not.toHaveBeenCalled();
   });
 
   it('offers to clear the search only while there is one', async () => {
-    expect(clearButton(await renderSSR(page, {}, { route }))).toBeUndefined();
+    expect(clearButton(await mountPage(page, { route })).exists()).toBe(false);
     for (const data of searches) {
-      const html = await renderSSR(page, {}, { route, data });
-      expect(clearButton(html), JSON.stringify(data)).toBeDefined();
+      const wrapper = await mountPage(page, { route, data });
+      expect(clearButton(wrapper).exists(), JSON.stringify(data)).toBe(true);
     }
   });
 });

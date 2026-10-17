@@ -1,15 +1,19 @@
 // Each table's Paginate toggle is remembered in this browser, under the
 // table's name, for every user of it.
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // the pages holding the tables
-const { modules, resetMocks } = await vi.hoisted(
+const { axios, modules, resetMocks } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
 );
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/utils/pageLoader.js', modules.pageLoader);
+vi.mock('@/utils/notify.js', modules.notify);
 
 import { nextTick } from 'vue';
 
@@ -23,12 +27,13 @@ import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import Hosts from '@/views/Hosts.vue';
 import Users from '@/views/Users.vue';
-import { runSetup } from './helpers/context.js';
-import { blockedStorage, memoryStorage } from './helpers/storage.js';
+import { mountComponent } from './helpers/mount.js';
+import { blockedStorage } from './helpers/storage.js';
 
 beforeEach(() => {
+  setActivePinia(createPinia());
   resetMocks({ store: {} });
-  vi.stubGlobal('localStorage', memoryStorage());
+  axios.get.mockResolvedValue({ data: {} });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -100,8 +105,11 @@ describe('the tables with a Paginate toggle', () => {
     const key = `phenix.paginate.${name}`;
     localStorage.setItem(key, 'true');
 
-    const bindings = runSetup(component, props);
-    const table = bindings.table ?? bindings.filesTable;
+    const { vm } = await mountComponent(component, {
+      props,
+      route: '/experiment/exp1',
+    });
+    const table = vm.table ?? vm.filesTable;
     expect(table.isPaginated).toBe(true);
 
     table.isPaginated = false;

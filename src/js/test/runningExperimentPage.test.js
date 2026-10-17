@@ -1,13 +1,17 @@
 // The running experiment page: the experiment it loads, its VMs over the
 // websocket, what it reloads on reconnect, and traffic that is not its own.
+import { flushPromises, RouterLinkStub } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, capturing, loaderSpy, modules, resetMocks, ws } =
   await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/utils/notify.js', modules.notify);
 // the options the page gives its loader, and the loader's load()
 vi.mock('@/utils/pageLoader.js', capturing);
 
@@ -15,16 +19,15 @@ import { cachedPage, clearPageCache } from '@/utils/pageCache.js';
 import { experimentKey } from '@/utils/pageData.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { wsMsg } from './helpers/fixtures.js';
-import { pageContext } from './helpers/page.js';
-import { stubBrowser } from './helpers/render.js';
+import { mountPage, tableRows, textOf, toasts } from './helpers/mount.js';
 
-// The page on exp1, created as it is when opened. Not page.js's openPage,
-// whose flush() waits on a timer the fake timers hold back.
-async function openPage(fields = {}) {
-  const page = pageContext(RunningExperiment, { id: 'exp1', fields });
-  await RunningExperiment.created.call(page);
-  return page;
-}
+// the page on exp1, with this state; its links do not resolve once it leaves
+const openPage = (data) =>
+  mountPage(RunningExperiment, {
+    route: '/experiment/exp1',
+    data,
+    stubs: { RouterLink: RouterLinkStub },
+  });
 
 const running = (vms) => ({ name: 'exp1', running: true, vm_count: 2, vms });
 
@@ -40,8 +43,27 @@ const screenshotSizes = () =>
 const vmList = (name, vms) =>
   wsMsg('experiment/vms', name, 'list', { vms, total: vms.length });
 
+// gives the page the experiment its loader fetched, and waits for it to draw
+async function apply(experiment) {
+  loaderSpy.options.apply(experiment);
+  await flushPromises();
+}
+
+// passes a websocket message to the page, and waits for it to draw
+async function handle(msg) {
+  for (const handler of ws.handlers) handler(msg);
+  await flushPromises();
+}
+
+// the name in each row of the VM table
+const names = (page) =>
+  tableRows(page).map((cells) => textOf(cells.Node.find('.tag')));
+
+// what the VM table says when it has no rows
+const emptyText = (page) => textOf(page.find('.table tbody'));
+
 beforeEach(() => {
-  stubBrowser();
+  setActivePinia(createPinia());
   // the timer that gives up waiting for screenshots
   vi.useFakeTimers();
   resetMocks({ store: { token: 't', features: [], role: null } });
@@ -50,7 +72,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  vi.unstubAllGlobals();
   clearPageCache();
 });
 
@@ -59,17 +80,17 @@ describe('loading', () => {
     const page = await openPage();
 
     // each list has the server ask minimega for every VM
-    loaderSpy.options.apply(running([{ name: 'vm1' }]));
-    loaderSpy.options.apply(running([{ name: 'vm1' }]));
+    await apply(running([{ name: 'vm1' }]));
+    await apply(running([{ name: 'vm1' }]));
 
     expect(vmLists()).toHaveLength(1);
-    expect(page.experiment.vms.map((vm) => vm.name)).toEqual(['vm1']);
-    expect(page.table.total).toBe(2);
+    expect(names(page)).toEqual(['vm1']);
+    expect(page.vm.table.total).toBe(2);
   });
 
   it('lists the VMs again when the header refreshes the page', async () => {
     await openPage();
-    loaderSpy.options.apply(running([]));
+    await apply(running([]));
 
     loaderSpy.options.refresh();
     expect(vmLists()).toHaveLength(2);
@@ -78,28 +99,28 @@ describe('loading', () => {
 
   it('keeps the websocket rows once they have arrived', async () => {
     const page = await openPage();
-    page.handleWs(vmList('exp1', [{ name: 'live' }]));
+    await handle(vmList('exp1', [{ name: 'live' }]));
 
-    loaderSpy.options.apply(running([]));
-    expect(page.experiment.vms).toEqual([{ name: 'live' }]);
+    await apply(running([]));
+    expect(names(page)).toEqual(['live']);
   });
 
   it('says the VMs are loading until the websocket lists them', async () => {
     const page = await openPage();
-    loaderSpy.options.apply(running([]));
-    expect(page.vmsEmptyText).toBe('Loading VMs…');
+    await apply(running([]));
+    expect(emptyText(page)).toBe('Loading VMs…');
 
-    page.handleWs(vmList('exp1', []));
-    expect(page.vmsEmptyText).toBe('This experiment has no VMs');
-    page.search.filter = 'web';
-    expect(page.vmsEmptyText).toBe('No VMs match your search');
+    await handle(vmList('exp1', []));
+    expect(emptyText(page)).toBe('This experiment has no VMs');
+    await page.find('.autocomplete input').setValue('web');
+    expect(emptyText(page)).toBe('No VMs match your search');
   });
 
   it('hands over to the stopped view when the experiment has stopped', async () => {
     const page = await openPage();
-    loaderSpy.options.apply({ name: 'exp1', running: false });
+    await apply({ name: 'exp1', running: false });
 
-    expect(page.$emit).toHaveBeenCalledWith('running', false);
+    expect(page.emitted('running')).toEqual([[false]]);
     expect(vmLists()).toHaveLength(0);
   });
 });
@@ -112,9 +133,9 @@ describe('after the websocket reconnects', () => {
       ['400'],
     ],
     ['only the VM list at the default screenshot size', {}, []],
-  ])('asks again for %s', async (_, fields, sizes) => {
-    await openPage(fields);
-    loaderSpy.options.apply(running([]));
+  ])('asks again for %s', async (_, data, sizes) => {
+    await openPage(data);
+    await apply(running([]));
     ws.sent.length = 0;
 
     ws.reconnect.forEach((f) => f());
@@ -133,15 +154,15 @@ describe('after the websocket reconnects', () => {
 describe('websocket traffic', () => {
   it("lists only its own experiment's VMs, and caches the list", async () => {
     const page = await openPage();
-    loaderSpy.options.apply(running([{ name: 'vm1' }]));
+    await apply(running([{ name: 'vm1' }]));
 
-    page.handleWs(vmList('exp2', [{ name: 'other-vm' }]));
-    expect(page.experiment.vms.map((vm) => vm.name)).toEqual(['vm1']);
-    expect(page.vmsLoaded).toBe(false);
+    await handle(vmList('exp2', [{ name: 'other-vm' }]));
+    expect(names(page)).toEqual(['vm1']);
+    expect(page.vm.vmsLoaded).toBe(false);
 
-    page.handleWs(vmList('exp1', [{ name: 'web' }]));
-    expect(page.experiment.vms.map((vm) => vm.name)).toEqual(['web']);
-    expect(page.vmsLoaded).toBe(true);
+    await handle(vmList('exp1', [{ name: 'web' }]));
+    expect(names(page)).toEqual(['web']);
+    expect(page.vm.vmsLoaded).toBe(true);
     expect(
       cachedPage(experimentKey('exp1')).data.vms.map((vm) => vm.name),
     ).toEqual(['web']);
@@ -152,28 +173,30 @@ describe('websocket traffic', () => {
     ['deleted', 'delete'],
   ])(
     'leaves the page when its experiment is %s elsewhere',
-    async (_, action) => {
+    async (done, action) => {
       const page = await openPage();
+      const path = () => page.router.currentRoute.value.path;
       const message = (name, act) => wsMsg('experiment', name, act);
 
       // another experiment, or a message that does not end this one
-      page.handleWs(message('exp2', action));
-      page.handleWs(message('exp1', 'stopping'));
-      expect(page.$router.replace).not.toHaveBeenCalled();
+      await handle(message('exp2', action));
+      await handle(message('exp1', 'stopping'));
+      expect(path()).toBe('/experiment/exp1');
 
-      page.handleWs(message('exp1', action));
-      expect(page.$router.replace).toHaveBeenCalledWith('/experiments/');
-      expect(page.$buefy.toast.open).toHaveBeenCalledTimes(1);
+      await handle(message('exp1', action));
+      expect(path()).toBe('/experiments/');
+      expect(toasts()).toEqual([
+        { text: `The exp1 experiment was ${done} elsewhere.`, type: 'is-info' },
+      ]);
     },
   );
 
   it('leaves its own Stop to navigate', async () => {
-    const page = await openPage();
-    page.isWaiting = true;
+    const page = await openPage({ isWaiting: true });
 
-    page.handleWs(wsMsg('experiment', 'exp1', 'stop'));
-    expect(page.$router.replace).not.toHaveBeenCalled();
-    expect(page.$buefy.toast.open).not.toHaveBeenCalled();
+    await handle(wsMsg('experiment', 'exp1', 'stop'));
+    expect(page.router.currentRoute.value.path).toBe('/experiment/exp1');
+    expect(toasts()).toEqual([]);
   });
 });
 
@@ -187,51 +210,60 @@ describe('ordering VM lists against VM changes', () => {
   const vmMsg = (action, vm, seq) =>
     wsMsg('experiment/vm', `exp1/${vm.name}`, action, vm, seq);
 
+  // each VM's name and the color of its tag: running or shut down
+  const COLORS = { 'is-success': 'RUNNING', 'is-danger': 'QUIT' };
   const states = (page) =>
-    page.experiment.vms.map((vm) => `${vm.name}:${vm.state}`);
+    tableRows(page).map((cells) => {
+      const tag = cells.Node.find('.tag');
+      const color = tag.classes().find((c) => c in COLORS);
+      return `${textOf(tag)}:${COLORS[color]}`;
+    });
 
   async function withVms(vms) {
     const page = await openPage();
-    loaderSpy.options.apply(running([]));
-    page.handleWs(listAt(5, vms));
+    await apply(running([]));
+    await handle(listAt(5, vms));
     return page;
   }
 
   it('keeps a VM stopped when a list read before the stop arrives after it', async () => {
     const page = await withVms([{ name: 'vm1', state: 'RUNNING' }]);
 
-    page.handleWs(vmMsg('stop', { name: 'vm1', state: 'QUIT' }, 20));
-    page.handleWs(listAt(10, [{ name: 'vm1', state: 'RUNNING' }]));
+    await handle(vmMsg('stop', { name: 'vm1', state: 'QUIT' }, 20));
+    await handle(listAt(10, [{ name: 'vm1', state: 'RUNNING' }]));
     expect(states(page)).toEqual(['vm1:QUIT']);
 
     // a list read after the stop is taken as it is
-    page.handleWs(listAt(30, [{ name: 'vm1', state: 'RUNNING' }]));
+    await handle(listAt(30, [{ name: 'vm1', state: 'RUNNING' }]));
     expect(states(page)).toEqual(['vm1:RUNNING']);
   });
 
   it('keeps a deleted VM out of a list read before the delete', async () => {
     const page = await withVms([{ name: 'vm1' }, { name: 'vm2' }]);
 
-    page.handleWs(vmMsg('delete', { name: 'vm1' }, 20));
-    page.handleWs(listAt(10, [{ name: 'vm1' }, { name: 'vm2' }]));
-    expect(page.experiment.vms.map((vm) => vm.name)).toEqual(['vm2']);
+    await handle(vmMsg('delete', { name: 'vm1' }, 20));
+    await handle(listAt(10, [{ name: 'vm1' }, { name: 'vm2' }]));
+    expect(names(page)).toEqual(['vm2']);
   });
 
   it('forgets the changes it ordered by when the websocket reconnects', async () => {
     const page = await withVms([{ name: 'vm1', state: 'RUNNING' }]);
-    page.handleWs(vmMsg('stop', { name: 'vm1', state: 'QUIT' }, 20));
+    await handle(vmMsg('stop', { name: 'vm1', state: 'QUIT' }, 20));
 
     // a restarted server numbers its messages afresh
     ws.reconnect.forEach((f) => f());
-    page.handleWs(listAt(3, [{ name: 'vm1', state: 'RUNNING' }]));
+    await handle(listAt(3, [{ name: 'vm1', state: 'RUNNING' }]));
     expect(states(page)).toEqual(['vm1:RUNNING']);
   });
 
   it('says when minimega did not answer for the VMs', async () => {
     const page = await withVms([{ name: 'vm1' }]);
-    expect(page.runtimeUnknown).toBe(false);
+    const warning = () => page.find('.runtime-unknown');
+    expect(warning().exists()).toBe(false);
 
-    page.handleWs(listAt(10, [{ name: 'vm1' }], { runtime_unknown: true }));
-    expect(page.runtimeUnknown).toBe(true);
+    await handle(listAt(10, [{ name: 'vm1' }], { runtime_unknown: true }));
+    expect(textOf(warning())).toBe(
+      'minimega did not answer; showing the VMs as configured.',
+    );
   });
 });

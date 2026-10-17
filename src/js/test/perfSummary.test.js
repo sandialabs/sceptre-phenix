@@ -1,3 +1,4 @@
+// @vitest-environment node
 // perf/summary.mjs: the CI perf job's summary, perf-summary artifact and
 // budget gate, from size-limit and Lighthouse CI output (see perf/README.md).
 import { spawnSync } from 'node:child_process';

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // How pages name and offer disk-list images: the VM details' backing chain,
 // the disk and CD-ROM pickers' options, and the warnings beside a VM's disk.
 import { readFileSync } from 'node:fs';

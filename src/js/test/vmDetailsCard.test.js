@@ -1,6 +1,6 @@
-// Renders the VM details card and the Actions buttons with real Buefy; the
-// annotation editor runs on a plain object.
+// Mounts the VM details card and the Actions buttons with real Buefy.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
 
 const { modules, rbac, resetMocks } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
@@ -15,173 +15,192 @@ import VmDetailsCard from '@/components/experiment/VmDetailsCard.vue';
 import VmRowActions from '@/components/experiment/VmRowActions.vue';
 import { disk, vm as makeVm } from './helpers/fixtures.js';
 import { allowAll, denyOnly } from './helpers/permissions.js';
-import { renderSSR, textOf, tooltipButtons } from './helpers/render.js';
+import {
+  byLabel,
+  mountComponent,
+  textOf,
+  tooltipButtons,
+} from './helpers/mount.js';
 
 // web, capturing on its second interface
 const vm = makeVm({ captures: [{ vm: 'web', interface: 1 }] });
 
+const OUTSIDE = 'Outside the standard images directory';
+
+// whether `wrapper` holds an element `selector` matches
+const has = (wrapper, selector) => wrapper.find(selector).exists();
+
 beforeEach(() => resetMocks({ store: {} }));
 
 const card = (props) =>
-  renderSSR(VmDetailsCard, {
-    vm,
-    fullName: 'demo/web',
-    experiment: 'demo',
-    ...props,
+  mountComponent(VmDetailsCard, {
+    props: { vm, fullName: 'demo/web', experiment: 'demo', ...props },
   });
 
-// the text of the storage section, up to the next section's title
-const storage = (html) => {
-  const start = html.indexOf('Storage');
-  return textOf(
-    html.slice(start, html.indexOf('<p class="vm-section-title"', start)),
-  );
-};
+// the section whose title starts with `title`
+const section = (wrapper, title) =>
+  wrapper
+    .findAll('.vm-section')
+    .find((s) => textOf(s.find('.vm-section-title')).startsWith(title));
+
+// the value of a row of the storage section, by its key
+const storageValue = (wrapper, key) =>
+  section(wrapper, 'Storage')
+    .findAll('.vm-kv')
+    .find((kv) => textOf(kv.find('.vm-kv-key')) === key)
+    ?.find('.vm-kv-value');
+
+// the tooltips of the outside-the-files-directory warnings in `wrapper`
+const outsideWarnings = (wrapper) =>
+  wrapper
+    .findAllComponents({ name: 'DiskWarning' })
+    .flatMap(tooltipButtons)
+    .filter((b) => b.label === OUTSIDE)
+    .map((b) => b.tooltip);
+
+const OUTSIDE_TEXT =
+  /^Outside the standard images directory \(\/phenix\/images\)\./;
 
 describe('VmDetailsCard storage', () => {
   it('leaves out the CD-ROM when none is inserted', async () => {
-    const html = await card();
-    expect(storage(html)).not.toMatch(/CD-ROM/);
-    expect(html).not.toContain('vm-cdrom');
+    const wrapper = await card();
+    expect(storageValue(wrapper, 'CD-ROM')).toBeUndefined();
+    expect(has(wrapper, '.vm-cdrom')).toBe(false);
   });
 
   it('shows the inserted CD-ROM', async () => {
-    const html = await card({
+    const wrapper = await card({
       vm: { ...vm, cdRom: '/phenix/images/tools.iso' },
     });
-    expect(storage(html)).toMatch(/CD-ROM tools\.iso/);
+    expect(textOf(storageValue(wrapper, 'CD-ROM'))).toBe('tools.iso');
   });
 
   it('names the CD-ROM by its label, warning of one outside the files directory', async () => {
-    // the warnings in the CD-ROM row
-    const warnings = (html) =>
-      tooltipButtons(html.slice(html.indexOf('vm-cdrom'))).filter(
-        (b) => b.label === 'Outside the standard images directory',
-      );
     const inside = disk('/phenix/images/isos/tools.iso', 'isos/tools.iso', {
       kind: 'ISO',
     });
-    let html = await card({
+    let wrapper = await card({
       vm: { ...vm, cdRom: inside.fullPath },
       cdRomDisk: inside,
       filesDir: '/phenix/images',
     });
-    expect(storage(html)).toMatch(/CD-ROM isos\/tools\.iso$/);
-    expect(html).toContain('title="/phenix/images/isos/tools.iso"');
-    expect(warnings(html)).toEqual([]);
+    const value = storageValue(wrapper, 'CD-ROM');
+    expect(textOf(value)).toBe('isos/tools.iso');
+    expect(value.attributes('title')).toBe('/phenix/images/isos/tools.iso');
+    expect(outsideWarnings(wrapper.find('.vm-cdrom'))).toEqual([]);
 
     const outside = disk('/data/isos/tools.iso', '', { kind: 'ISO' });
-    html = await card({
+    wrapper = await card({
       vm: { ...vm, cdRom: outside.fullPath },
       cdRomDisk: outside,
       filesDir: '/phenix/images',
     });
-    expect(storage(html)).toMatch(/CD-ROM \/data\/isos\/tools\.iso /);
-    expect(warnings(html).map((b) => b.tooltip)).toEqual([
-      expect.stringMatching(
-        /^Outside the standard images directory \(\/phenix\/images\)\./,
-      ),
+    expect(textOf(storageValue(wrapper, 'CD-ROM'))).toBe(
+      '/data/isos/tools.iso',
+    );
+    expect(outsideWarnings(wrapper.find('.vm-cdrom'))).toEqual([
+      expect.stringMatching(OUTSIDE_TEXT),
     ]);
   });
 
   it("shows the disk's backing chain under it, nearest first", async () => {
-    const html = await card({
+    const wrapper = await card({
       backingChain: ['jammy_hardened.qc2', 'jammy.qc2'],
     });
-    const text = storage(html);
-    expect(text).toMatch(
-      /Disk web_snap\.qc2 .*↓ jammy_hardened\.qc2 ↓ jammy\.qc2/,
-    );
+    const chain = wrapper.find('.vm-backing-chain');
+    const above = chain.element.previousElementSibling;
+    expect(textOf(above.querySelector('.vm-kv-key'))).toBe('Disk');
+    expect(textOf(above.querySelector('.vm-kv-value'))).toBe('web_snap.qc2');
+    expect(chain.findAll('.vm-chain-name').map(textOf)).toEqual([
+      'jammy_hardened.qc2',
+      'jammy.qc2',
+    ]);
+    expect(chain.findAll('.vm-chain-arrow').map(textOf)).toEqual(['↓', '↓']);
   });
 
   it('names the disk by its label, warning of one outside the files directory', async () => {
     const inside = disk('/phenix/images/web/web_snap.qc2', 'web/web_snap.qc2');
-    let html = await card({
+    let wrapper = await card({
       vm: { ...vm, disk: inside.fullPath },
       disk: inside,
       filesDir: '/phenix/images',
     });
-    expect(storage(html)).toContain('Disk web/web_snap.qc2 ');
-    expect(tooltipButtons(html).map((b) => b.label)).not.toContain(
-      'Outside the standard images directory',
-    );
+    expect(textOf(storageValue(wrapper, 'Disk'))).toBe('web/web_snap.qc2');
+    expect(outsideWarnings(wrapper)).toEqual([]);
 
     const outside = disk('/data/vms/web.img');
-    html = await card({
+    wrapper = await card({
       vm: { ...vm, disk: outside.fullPath },
       disk: outside,
       filesDir: '/phenix/images',
     });
-    expect(storage(html)).toContain('Disk /data/vms/web.img');
-    expect(
-      tooltipButtons(html).find(
-        (b) => b.label === 'Outside the standard images directory',
-      )?.tooltip,
-    ).toMatch(/^Outside the standard images directory \(\/phenix\/images\)\./);
+    expect(textOf(storageValue(wrapper, 'Disk'))).toBe('/data/vms/web.img');
+    expect(outsideWarnings(wrapper)).toEqual([
+      expect.stringMatching(OUTSIDE_TEXT),
+    ]);
   });
 
   it('names the disk by file name while the disk list is unknown', async () => {
-    const html = await card();
-    expect(storage(html)).toContain('Disk web_snap.qc2 ');
+    expect(textOf(storageValue(await card(), 'Disk'))).toBe('web_snap.qc2');
   });
 
   it('says none for a VM without a disk', async () => {
-    const html = await card({ vm: { ...vm, disk: '' } });
-    expect(storage(html)).toContain(' Disk none ');
+    const wrapper = await card({ vm: { ...vm, disk: '' } });
+    expect(textOf(storageValue(wrapper, 'Disk'))).toBe('none');
   });
 
   it('shows the disk alone when it has no backing image', async () => {
     for (const backingChain of [[], null]) {
-      const html = await card({ backingChain });
-      expect(html).not.toContain('vm-backing-chain');
+      const wrapper = await card({ backingChain });
+      expect(has(wrapper, '.vm-backing-chain')).toBe(false);
     }
   });
 });
 
 describe('VmDetailsCard capture buttons', () => {
   it('start with the capture icon and stop with the stop icon', async () => {
-    const html = await card();
-    expect(html).toMatch(/vm-capture-start[^>]*>[\s\S]*?data-icon="shark-fin"/);
-    expect(html).toMatch(/vm-capture-stop[^>]*>[\s\S]*?data-icon="stop"/);
+    const wrapper = await card();
+    expect(has(wrapper, '.vm-capture-start [data-icon="shark-fin"]')).toBe(
+      true,
+    );
+    expect(has(wrapper, '.vm-capture-stop [data-icon="stop"]')).toBe(true);
   });
 
   it('shows a spinner on the interface waiting on the server', async () => {
-    const html = await card({ capturePending: [0] });
-    const buttons = html.match(/<button[^>]*vm-capture-[^>]*>/g);
-    expect(buttons).toHaveLength(2);
-    expect(buttons[0]).toContain('is-loading');
-    expect(buttons[1]).not.toContain('is-loading');
+    const wrapper = await card({ capturePending: [0] });
+    expect(
+      wrapper.findAll('.vm-capture').map((b) => b.classes('is-loading')),
+    ).toEqual([true, false]);
   });
 });
 
 describe('VmDetailsCard Open in WebShark', () => {
-  const links = (html) => html.match(/<a[^>]*vm-webshark[" ][^>]*>/g) ?? [];
-
   it('opens each running capture on the WebShark page', async () => {
-    const html = await card({ features: ['webshark'] });
-    const found = links(html);
+    const wrapper = await card({ features: ['webshark'] });
+    const links = wrapper.findAll('.vm-webshark');
     // only interface 1 is capturing
-    expect(found).toHaveLength(1);
-    expect(found[0]).toMatch(
-      /href="\/packets\?exp=demo&(amp;)?vm=web&(amp;)?iface=1"/,
+    expect(links).toHaveLength(1);
+    expect(links[0].element.tagName).toBe('A');
+    expect(links[0].attributes('href')).toBe(
+      '/packets?exp=demo&vm=web&iface=1',
     );
-    expect(found[0]).toContain('aria-label="Open in WebShark"');
+    expect(links[0].attributes('aria-label')).toBe('Open in WebShark');
     // not the capture icon, which starts captures
-    expect(html).toMatch(/vm-webshark[^>]*>[\s\S]*?data-icon="search"/);
+    expect(has(links[0], '[data-icon="search"]')).toBe(true);
   });
 
   it('needs WebShark installed', async () => {
-    expect(links(await card())).toEqual([]);
+    expect((await card()).findAll('.vm-webshark')).toEqual([]);
   });
 });
 
-// the Network box's buttons: [tooltip, attributes] for each of them
-const networkButtons = (html) => {
-  const title = html.match(/vm-section-title[^>]*> Network[\s\S]*?<\/p>/)[0];
-  return tooltipButtons(title).map((b) => [b.tooltip, b.attrs]);
-};
-const networkButton = (html, name) =>
-  networkButtons(html).find(([, attrs]) => attrs.includes(`vm-${name}`));
+// the Network box's buttons, with their tooltips
+const networkButtons = (wrapper) =>
+  tooltipButtons(
+    section(wrapper, 'Network').find('.vm-section-title .vm-section-actions'),
+  );
+const networkButton = (wrapper, name) =>
+  networkButtons(wrapper).find((b) => b.control.classes(`vm-${name}`));
 
 describe('VmDetailsCard Network buttons', () => {
   const twoCaptured = [
@@ -190,82 +209,91 @@ describe('VmDetailsCard Network buttons', () => {
   ];
 
   it('start captures on every interface and stop them all', async () => {
-    const html = await card();
-    const [start, stop] = networkButtons(html);
-    expect(start[0]).toBe(
+    const [start, stop] = networkButtons(await card());
+    expect(start.tooltip).toBe(
       'Start a packet capture on every connected interface of the VM',
     );
-    expect(start[1]).toMatch(/vm-captureAll[^"]*is-success/);
-    expect(start[1]).not.toContain('disabled');
-    expect(stop[0]).toBe('Stop every packet capture running on the VM');
-    expect(stop[1]).toMatch(/vm-stopCaptures[^"]*is-danger/);
-    expect(stop[1]).not.toContain('disabled');
-    expect(html).toMatch(/vm-captureAll[^>]*>[\s\S]*?data-icon="play"/);
-    expect(html).toMatch(/vm-stopCaptures[^>]*>[\s\S]*?data-icon="stop"/);
+    expect(start.control.classes()).toEqual(
+      expect.arrayContaining(['vm-captureAll', 'is-success']),
+    );
+    expect(start.disabled).toBe(false);
+    expect(has(start.control, '[data-icon="play"]')).toBe(true);
+    expect(stop.tooltip).toBe('Stop every packet capture running on the VM');
+    expect(stop.control.classes()).toEqual(
+      expect.arrayContaining(['vm-stopCaptures', 'is-danger']),
+    );
+    expect(stop.disabled).toBe(false);
+    expect(has(stop.control, '[data-icon="stop"]')).toBe(true);
   });
 
   it('disable stop, saying why, when nothing is captured', async () => {
-    const html = await card({ vm: { ...vm, captures: [] } });
-    const [label, attrs] = networkButton(html, 'stopCaptures');
-    expect(attrs).toContain('disabled');
-    expect(label).toBe(
+    const wrapper = await card({ vm: { ...vm, captures: [] } });
+    const stop = networkButton(wrapper, 'stopCaptures');
+    expect(stop.disabled).toBe(true);
+    expect(stop.tooltip).toBe(
       "Can't stop all packet captures: no packet capture is running",
     );
-    expect(networkButton(html, 'captureAll')[1]).not.toContain('disabled');
+    expect(networkButton(wrapper, 'captureAll').disabled).toBe(false);
   });
 
   it('disable start, saying why, when every interface is captured', async () => {
-    const html = await card({ vm: { ...vm, captures: twoCaptured } });
-    const [label, attrs] = networkButton(html, 'captureAll');
-    expect(attrs).toContain('disabled');
-    expect(label).toBe(
+    const wrapper = await card({ vm: { ...vm, captures: twoCaptured } });
+    const start = networkButton(wrapper, 'captureAll');
+    expect(start.disabled).toBe(true);
+    expect(start.tooltip).toBe(
       "Can't capture all interfaces: every connected interface is already being captured",
     );
-    expect(networkButton(html, 'stopCaptures')[1]).not.toContain('disabled');
+    expect(networkButton(wrapper, 'stopCaptures').disabled).toBe(false);
   });
 
   it('spin the one waiting on the server and hold the other', async () => {
-    const html = await card({
+    const wrapper = await card({
       vm: { ...vm, captures: [] },
       captureAllPending: true,
     });
-    const start = networkButton(html, 'captureAll')[1];
-    const stop = networkButton(html, 'stopCaptures')[1];
-    expect(start).toContain('is-loading');
-    expect(stop).not.toContain('is-loading');
-    expect(start).toContain('disabled');
-    expect(stop).toContain('disabled');
+    const start = networkButton(wrapper, 'captureAll');
+    const stop = networkButton(wrapper, 'stopCaptures');
+    expect(start.control.classes('is-loading')).toBe(true);
+    expect(stop.control.classes('is-loading')).toBe(false);
+    expect(start.disabled).toBe(true);
+    expect(stop.disabled).toBe(true);
   });
 
   it("link to the WebShark tab on the VM's running capture", async () => {
-    const html = await card({ features: ['webshark'] });
-    const [label, attrs] = networkButton(html, 'webshark-tab');
-    expect(label).toBe("Open this VM's running capture in the WebShark tab");
-    expect(attrs).toMatch(
-      /href="\/packets\?exp=demo&(amp;)?vm=web&(amp;)?iface=1"/,
+    const tab = networkButton(
+      await card({ features: ['webshark'] }),
+      'webshark-tab',
+    );
+    expect(tab.tooltip).toBe(
+      "Open this VM's running capture in the WebShark tab",
+    );
+    expect(tab.control.attributes('href')).toBe(
+      '/packets?exp=demo&vm=web&iface=1',
     );
   });
 
   it('link to the first of several running captures', async () => {
-    const html = await card({
+    const wrapper = await card({
       vm: { ...vm, captures: [...twoCaptured].reverse() },
       features: ['webshark'],
     });
-    const [label, attrs] = networkButton(html, 'webshark-tab');
-    expect(label).toBe(
+    const tab = networkButton(wrapper, 'webshark-tab');
+    expect(tab.tooltip).toBe(
       "Open this VM's capture of interface 0 in the WebShark tab",
     );
-    expect(attrs).toMatch(/iface=0"/);
+    expect(tab.control.attributes('href')).toMatch(/iface=0$/);
   });
 
   it("link to the experiment's captures when none is running", async () => {
-    const html = await card({
+    const wrapper = await card({
       vm: { ...vm, captures: [] },
       features: ['webshark'],
     });
-    const [label, attrs] = networkButton(html, 'webshark-tab');
-    expect(label).toBe("Open the WebShark tab on this experiment's captures");
-    expect(attrs).toMatch(/href="\/packets\?exp=demo"/);
+    const tab = networkButton(wrapper, 'webshark-tab');
+    expect(tab.tooltip).toBe(
+      "Open the WebShark tab on this experiment's captures",
+    );
+    expect(tab.control.attributes('href')).toBe('/packets?exp=demo');
   });
 
   it('link to the WebShark tab only where it is installed', async () => {
@@ -274,23 +302,16 @@ describe('VmDetailsCard Network buttons', () => {
 });
 
 describe('VmDetailsCard annotations', () => {
-  // the annotations section's text
-  const section = (html) => {
-    const start = html.indexOf('vm-annotations');
-    return start < 0
-      ? null
-      : textOf(html.slice(start, html.indexOf('vm-lists', start)));
-  };
+  const annotations = (wrapper) => wrapper.find('.vm-annotations');
 
   it("wait for the VM's own details, which carry them", async () => {
-    expect(section(await card())).toBeNull();
-    expect(
-      section(await card({ vm: { ...vm, annotations: null } })),
-    ).toBeNull();
+    expect(annotations(await card()).exists()).toBe(false);
+    const wrapper = await card({ vm: { ...vm, annotations: null } });
+    expect(annotations(wrapper).exists()).toBe(false);
   });
 
   it('list each one by key, hiding passwords', async () => {
-    const html = await card({
+    const wrapper = await card({
       vm: {
         ...vm,
         annotations: {
@@ -301,38 +322,49 @@ describe('VmDetailsCard annotations', () => {
         },
       },
     });
-    const text = section(html);
-    expect(text).toContain(
-      'phenix/default-apps false ' +
-        'phenix/startup-autotunnel ["8080","2222:22"] ' +
-        'vncBanner Authorized use only ' +
-        'vrouter/vyos-password ••••••',
-    );
-    expect(html).not.toContain('hunter2');
-    expect(html).toContain('aria-label="Show vrouter/vyos-password"');
+    expect(
+      annotations(wrapper)
+        .findAll('.vm-annotation-key')
+        .map((key) => [textOf(key), textOf(key.element.nextElementSibling)]),
+    ).toEqual([
+      ['phenix/default-apps', 'false'],
+      ['phenix/startup-autotunnel', '["8080","2222:22"]'],
+      ['vncBanner', 'Authorized use only'],
+      ['vrouter/vyos-password', '••••••'],
+    ]);
+    expect(wrapper.html()).not.toContain('hunter2');
+    expect(byLabel(wrapper, 'Show vrouter/vyos-password').exists()).toBe(true);
   });
 
   it('say when there are none', async () => {
-    const text = section(await card({ vm: { ...vm, annotations: {} } }));
-    expect(text).toContain('No annotations');
+    const wrapper = await card({ vm: { ...vm, annotations: {} } });
+    expect(textOf(annotations(wrapper))).toContain('No annotations');
   });
 
-  const { editAnnotations, saveAnnotations } = VmDetailsCard.methods;
-
-  it('edit as rows and save the whole set, keeping unchanged values as they were', () => {
-    const ctx = {
+  it('edit as rows and save the whole set, keeping unchanged values as they were', async () => {
+    const wrapper = await card({
       vm: {
+        ...vm,
         annotations: {
           'phenix/startup-autotunnel': ['8080', '2222:22'],
           'phenix/default-apps': 'no',
           retries: 3,
         },
       },
-      $emit: vi.fn(),
-    };
-    editAnnotations.call(ctx);
+    });
+    await wrapper.find('.vm-edit-annotations').trigger('click');
+    const rows = wrapper.findAll('.annotation-row');
     expect(
-      ctx.annotationRows.map(({ key, type, value }) => [key, type, value]),
+      rows.map((row) => {
+        const key = row.find('.annotation-key');
+        return [
+          key.element.localName === 'code'
+            ? textOf(key)
+            : key.find('input').element.value,
+          row.classes()[1].replace('annotation-', ''),
+          row.find('.annotation-value input').element.value,
+        ];
+      }),
     ).toEqual([
       // not a boolean, so a custom row that can be fixed
       ['phenix/default-apps', 'text', 'no'],
@@ -340,11 +372,11 @@ describe('VmDetailsCard annotations', () => {
       ['retries', 'text', '3'],
     ]);
 
-    ctx.annotationRows[1].value = '8080';
-    saveAnnotations.call(ctx);
-    expect(ctx.annotationsSaving).toBe(true);
-    const [event, payload, done] = ctx.$emit.mock.calls[0];
-    expect(event).toBe('save-annotations');
+    await rows[1].find('.annotation-value input').setValue('8080');
+    const save = () => wrapper.find('.vm-save-annotations');
+    await save().trigger('click');
+    expect(save().classes('is-loading')).toBe(true);
+    const [[payload, done]] = wrapper.emitted('save-annotations');
     expect(payload).toEqual({
       'phenix/default-apps': 'no',
       'phenix/startup-autotunnel': ['8080'],
@@ -352,115 +384,129 @@ describe('VmDetailsCard annotations', () => {
     });
 
     done(false);
-    expect(ctx.annotationsSaving).toBe(false);
-    expect(ctx.annotationRows).not.toBeNull();
+    await nextTick();
+    expect(save().classes('is-loading')).toBe(false);
+    expect(has(wrapper, '.annotation-list')).toBe(true);
     done(true);
-    expect(ctx.annotationRows).toBeNull();
+    await nextTick();
+    expect(has(wrapper, '.annotation-list')).toBe(false);
   });
 });
 
 describe('VmDetailsCard header', () => {
   it('puts the description between the name and the links', async () => {
-    const html = await card({
+    const wrapper = await card({
       vm: { ...vm, description: 'Public web server' },
     });
-    const [head, body] = html.split('</header>');
-    expect(head).toMatch(
-      /vm-card-heading[\s\S]*vm-card-description[^>]*>\s*Public web server\s*<\/p>[\s\S]*vm-card-links/,
+    const header = wrapper.find('header');
+    expect([...header.element.children].map((el) => el.classList[0])).toEqual([
+      'vm-card-heading',
+      'vm-card-description',
+      'vm-card-links',
+    ]);
+    expect(textOf(header.find('.vm-card-description'))).toBe(
+      'Public web server',
     );
-    expect(head).toContain('has-description');
-    expect(body).not.toContain('Public web server');
+    expect(header.classes()).toContain('has-description');
+    expect(textOf(wrapper.find('.vm-card-body'))).not.toContain(
+      'Public web server',
+    );
   });
 
   it('leaves out the description box without one', async () => {
-    const html = await card();
-    expect(html).not.toContain('vm-card-description');
-    expect(html).not.toContain('has-description');
+    const wrapper = await card();
+    expect(has(wrapper, '.vm-card-description')).toBe(false);
+    expect(wrapper.find('header').classes()).not.toContain('has-description');
   });
 
   it("links to the experiment's SOH and SCORCH pages", async () => {
-    const html = await card();
-    expect(html).toMatch(/href="\/soh\/demo"[^>]*aria-label="view soh"/);
-    expect(html).toMatch(/href="\/scorch\/demo"[^>]*aria-label="view scorch"/);
+    const wrapper = await card();
+    expect(byLabel(wrapper, 'view soh').attributes('href')).toBe('/soh/demo');
+    expect(byLabel(wrapper, 'view scorch').attributes('href')).toBe(
+      '/scorch/demo',
+    );
   });
 
   it('links to the VM docs and the Disks page', async () => {
-    const html = await card();
-    expect(html).toMatch(
-      /class="[^"]*vm-card-docs"[^>]*href="https:\/\/phenix\.sceptre\.dev\/latest\/vms\/"/,
+    const wrapper = await card();
+    expect(wrapper.find('.vm-card-docs').attributes('href')).toBe(
+      'https://phenix.sceptre.dev/latest/vms/',
     );
-    expect(html).toMatch(/href="\/disks\/"[^>]*vm-card-disks/);
+    expect(wrapper.find('.vm-card-disks').attributes('href')).toBe('/disks/');
   });
 
   it('puts the miniccc agent first among the stats', async () => {
-    const html = await card();
-    const labels = [...html.matchAll(/vm-stat-label[^>]*>([^<]*)</g)].map((m) =>
-      m[1].trim(),
-    );
-    expect(labels).toEqual(['miniccc agent', 'vCPU', 'Memory', 'Interfaces']);
+    const wrapper = await card();
+    expect(wrapper.findAll('.vm-stat-label').map(textOf)).toEqual([
+      'miniccc agent',
+      'vCPU',
+      'Memory',
+      'Interfaces',
+    ]);
   });
 });
 
 describe('VmDetailsCard permissions', () => {
-  // [what a role loses, the permission it lacks, the card's props, what
-  // shows that part of the card (each of a list), a part the role keeps]
+  // [what a role loses, the permission it lacks, the card's props, the
+  // selectors of what shows that part of the card, a part the role keeps]
   it.each([
     [
       'the WebShark links',
       ['vms/captures', 'list'],
       { features: ['webshark'] },
-      /<a[^>]*vm-webshark[" ]/,
+      ['.vm-webshark'],
       null,
     ],
     [
       'Capture all interfaces',
       ['vms/captures', 'create'],
       {},
-      'vm-captureAll',
-      'vm-stopCaptures',
+      ['.vm-captureAll'],
+      '.vm-stopCaptures',
     ],
     [
       'annotation editing',
       ['vms', 'patch'],
       { vm: makeVm({ annotations: {} }) },
-      'vm-edit-annotations',
-      'vm-annotations',
+      ['.vm-edit-annotations'],
+      '.vm-annotations',
     ],
     [
       'the SOH and SCORCH links',
       ['experiments', 'get'],
       {},
-      ['aria-label="view soh"', 'aria-label="view scorch"'],
-      'vm-card-docs',
+      ['[aria-label="view soh"]', '[aria-label="view scorch"]'],
+      '.vm-card-docs',
     ],
-    ['the Disks link', ['disks'], {}, 'vm-card-disks', 'vm-card-docs'],
+    ['the Disks link', ['disks'], {}, ['.vm-card-disks'], '.vm-card-docs'],
   ])(
     'hides %s from a role without %j',
     async (_, permission, props, shown, kept) => {
-      const parts = [shown].flat();
       rbac.allowed = allowAll;
       const allowed = await card(props);
-      for (const part of parts) expect(allowed).toMatch(part);
+      for (const part of shown) expect(has(allowed, part)).toBe(true);
 
       rbac.allowed = denyOnly(permission);
-      const html = await card(props);
-      for (const part of parts) expect(html).not.toMatch(part);
-      if (kept) expect(html).toContain(kept);
+      const denied = await card(props);
+      for (const part of shown) expect(has(denied, part)).toBe(false);
+      if (kept) expect(has(denied, kept)).toBe(true);
     },
   );
 });
 
 describe('VmRowActions', () => {
   it('shows a spinner on an action still running', async () => {
-    const html = await renderSSR(VmRowActions, {
-      vm: { ...vm, captures: [] },
-      fullName: 'demo/web',
-      pending: ['captureAll'],
+    const actions = await mountComponent(VmRowActions, {
+      props: {
+        vm: { ...vm, captures: [] },
+        fullName: 'demo/web',
+        pending: ['captureAll'],
+      },
     });
-    const button = html.match(/<button[^>]*vm-row-captureAll[^>]*>/)[0];
-    expect(button).toContain('is-loading');
-    expect(button).toContain('disabled');
-    expect(html).toMatch(/vm-row-captureAll[\s\S]*?data-icon="shark-fin"/);
+    const button = actions.find('.vm-row-captureAll');
+    expect(button.classes()).toContain('is-loading');
+    expect(button.attributes('disabled')).toBeDefined();
+    expect(has(button, '[data-icon="shark-fin"]')).toBe(true);
   });
 });
 

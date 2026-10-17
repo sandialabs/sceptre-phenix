@@ -1,5 +1,5 @@
-// The WebShark page: pickers, server requests, frame and URL. Most tests run
-// its options on a plain object; rendering tests use the real Buefy.
+// The WebShark page: pickers, server requests, frame and URL.
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, rbac, resetMocks, store } = await vi.hoisted(
@@ -8,16 +8,28 @@ const { axios, modules, notify, rbac, resetMocks, store } = await vi.hoisted(
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
-vi.mock('@/store.js', modules.store);
+// reactive, as the features can arrive after the page opens
+vi.mock('@/store.js', async () => {
+  const [{ reactive }, mocks] = await Promise.all([
+    import('vue'),
+    import('./helpers/mocks.js'),
+  ]);
+  return { usePhenixStore: () => reactive(mocks.store) };
+});
+
+import { reactive } from 'vue';
 
 import { cachePage, clearPageCache } from '@/utils/pageCache.js';
 import { experimentKey } from '@/utils/pageData.js';
-import { fileTarget } from '@/utils/webshark.js';
 import WebShark from '@/views/WebShark.vue';
-import { flush } from './helpers/async.js';
-import { makeContext } from './helpers/context.js';
+import {
+  byLabel,
+  dialogs,
+  mountPage,
+  textOf,
+  toasts,
+} from './helpers/mount.js';
 import { denyOnly } from './helpers/permissions.js';
-import { renderSSR } from './helpers/render.js';
 
 // what the mocked server answers each GET with, by URL
 const SERVER = {
@@ -49,6 +61,13 @@ const SERVER = {
   },
 };
 
+// the server's answer for a stream token
+const token = {
+  id: '3f9a0c51d2e47b86',
+  token: 'pcs_abc',
+  urls: { stream: 'webshark/streams/pcs_abc' },
+};
+
 beforeEach(() => {
   resetMocks({
     store: {
@@ -78,53 +97,69 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-// the page with the given URL query; picking changes the query, which the
-// page follows as its $route watcher does
-function page(query = {}) {
-  const ctx = makeContext(WebShark, {
-    $route: { name: 'webshark', query },
-    $nextTick: (fn) => fn?.(),
-    $refs: {},
-    $buefy: { toast: { open: vi.fn() }, dialog: { alert: vi.fn() } },
-    // there is no window to fit in
-    fitFrame: () => {},
-  });
-  ctx.$router = {
-    replace: vi.fn((to) => {
-      ctx.$route = { name: 'webshark', query: to.query };
-      ctx.applyQuery();
-    }),
-  };
-  return ctx;
+// the page at the URL with this query, with this state
+const opened = (query = {}, data) =>
+  mountPage(WebShark, { route: { name: 'webshark', query }, data });
+
+const experimentPicker = (page) => byLabel(page, 'Experiment');
+const capturePicker = (page) => byLabel(page, 'Capture');
+
+// the options a picker offers, by group, leaving out its placeholder
+const options = (picker, group) =>
+  picker
+    .findAll(group ? `optgroup[label="${group}"] option` : 'option')
+    .filter((o) => !o.element.hidden)
+    .map((o) => ({ value: o.element.value, text: textOf(o) }));
+const values = (picker, group) => options(picker, group).map((o) => o.value);
+const texts = (picker, group) => options(picker, group).map((o) => o.text);
+
+const LIVE = 'Live captures';
+const FILES = 'Saved files';
+
+const query = (page) => page.router.currentRoute.value.query;
+const frame = (page) => page.find('iframe');
+const emptyText = (page) => textOf(page.find('.webshark-empty'));
+const copyButton = (page) => page.find('.webshark-copy');
+
+// picks this capture, and waits for the page to follow its URL
+async function pick(page, key) {
+  await capturePicker(page).setValue(key);
+  await flushPromises();
 }
 
-async function opened(query) {
-  const ctx = page(query);
-  WebShark.created.call(ctx);
-  await flush();
-  return ctx;
+// The VM and interface the Wireshark command streams: copies it, and reads
+// the stream token request.
+async function streamed(page) {
+  vi.stubGlobal('navigator', {});
+  axios.post.mockResolvedValue({ data: token });
+  await copyButton(page).trigger('click');
+  await flushPromises();
+  const [url, { vm, interface: iface }] = axios.post.mock.lastCall;
+  expect(url).toBe('experiments/exp1/capture-tokens');
+  return { vm, iface };
 }
 
 describe('the pickers', () => {
   it('list the experiments by name, then their captures', async () => {
-    const ctx = await opened({ exp: 'exp1' });
-    expect(ctx.experimentOptions).toEqual([
-      { name: 'exp1', running: true },
-      { name: 'exp2', running: false },
+    const page = await opened({ exp: 'exp1' });
+    expect(texts(experimentPicker(page))).toEqual(['exp1 (running)', 'exp2']);
+    expect(texts(capturePicker(page), LIVE)).toEqual(['db · IF0', 'web · IF1']);
+    expect(values(capturePicker(page), FILES)).toEqual([
+      'file:caps/a.pcap',
+      'file:B.PCAPNG.gz',
+      'file:w1.pcap',
     ]);
-    expect(ctx.liveOptions.map((t) => t.label)).toEqual([
-      'db · IF0',
-      'web · IF1',
-    ]);
-    expect(ctx.fileOptions.map((t) => [t.path, t.size])).toEqual([
-      ['caps/a.pcap', 2048],
-      ['B.PCAPNG.gz', 10],
-      ['w1.pcap', 100],
+    expect(texts(capturePicker(page), FILES)).toEqual([
+      'caps/a.pcap (2.05 KB)',
+      'B.PCAPNG.gz (10.00 B)',
+      'w1.pcap (100.00 B)',
     ]);
     expect(axios.get).toHaveBeenCalledWith('experiments/exp1/files', {
       params: { sortCol: 'date', sortDir: 'desc' },
     });
-    expect(ctx.listsLoading).toBe(false);
+    expect(
+      byLabel(page, 'Reload the captures').attributes(),
+    ).not.toHaveProperty('disabled');
     expect(axios.post).not.toHaveBeenCalled();
   });
 
@@ -132,8 +167,8 @@ describe('the pickers', () => {
     cachePage(experimentKey('exp1'), {
       vms: [{ name: 'web', networks: ['DMZ (149)', 'MGMT (151)'] }],
     });
-    const ctx = await opened({ exp: 'exp1' });
-    expect(ctx.liveOptions.map((t) => t.label)).toEqual([
+    const page = await opened({ exp: 'exp1' });
+    expect(texts(capturePicker(page), LIVE)).toEqual([
       'db · IF0',
       'web · IF1 (mgmt)',
     ]);
@@ -144,9 +179,9 @@ describe('the pickers', () => {
       ['experiments/files', 'get'],
       ['vms/captures', '*', 'exp1/db'],
     );
-    const ctx = await opened({ exp: 'exp1' });
-    expect(ctx.liveOptions.map((t) => t.label)).toEqual(['web · IF1']);
-    expect(ctx.fileOptions).toEqual([]);
+    const page = await opened({ exp: 'exp1' });
+    expect(texts(capturePicker(page), LIVE)).toEqual(['web · IF1']);
+    expect(options(capturePicker(page), FILES)).toEqual([]);
     expect(axios.get).not.toHaveBeenCalledWith(
       'experiments/exp1/files',
       expect.anything(),
@@ -159,71 +194,79 @@ describe('the pickers', () => {
       if (url === 'experiments/exp1/captures') throw err;
       return { data: SERVER[url] };
     });
-    const ctx = await opened({ exp: 'exp1' });
+    const page = await opened({ exp: 'exp1' });
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(ctx.liveOptions).toEqual([]);
-    expect(ctx.fileOptions).toHaveLength(3);
+    expect(options(capturePicker(page), LIVE)).toEqual([]);
+    expect(options(capturePicker(page), FILES)).toHaveLength(3);
   });
 
   it('put the picked experiment in the URL and list its captures', async () => {
-    const ctx = await opened({});
-    expect(ctx.exp).toBe(null);
-    ctx.pickExperiment('exp1');
-    expect(ctx.$router.replace).toHaveBeenCalledWith({
-      query: { exp: 'exp1' },
-    });
-    await flush();
-    expect(ctx.exp).toBe('exp1');
-    expect(ctx.liveOptions).toHaveLength(2);
+    const page = await opened({});
+    // no experiment is picked, so there is nothing to pick a capture of
+    expect(capturePicker(page).attributes()).toHaveProperty('disabled');
+
+    await experimentPicker(page).setValue('exp1');
+    await flushPromises();
+    expect(query(page)).toEqual({ exp: 'exp1' });
+    expect(experimentPicker(page).element.value).toBe('exp1');
+    expect(capturePicker(page).attributes()).not.toHaveProperty('disabled');
+    expect(options(capturePicker(page), LIVE)).toHaveLength(2);
   });
 });
 
 describe('opening a capture', () => {
   it('posts a saved file by path and frames it from /webshark/', async () => {
-    const ctx = await opened({ exp: 'exp1' });
-    ctx.pickCapture('file:caps/a.pcap');
-    expect(ctx.$router.replace).toHaveBeenCalledWith({
-      query: { exp: 'exp1', file: 'caps/a.pcap' },
+    const page = await opened({ exp: 'exp1' });
+    const answer = axios.post.getMockImplementation();
+    const held = Promise.withResolvers();
+    axios.post.mockImplementationOnce(async (...args) => {
+      await held.promise;
+      return answer(...args);
     });
-    expect(ctx.opening).toBe(true);
-    await flush();
+
+    await pick(page, 'file:caps/a.pcap');
+    expect(query(page)).toEqual({ exp: 'exp1', file: 'caps/a.pcap' });
+    expect(emptyText(page)).toBe('Opening caps/a.pcap…');
+    held.resolve();
+    await flushPromises();
 
     expect(axios.post).toHaveBeenCalledTimes(1);
     expect(axios.post).toHaveBeenCalledWith('experiments/exp1/webshark', {
       path: 'caps/a.pcap',
     });
-    expect(ctx.opening).toBe(false);
-    expect(ctx.frameURL).toBe(
+    expect(page.find('.webshark-empty').exists()).toBe(false);
+    expect(frame(page).attributes('src')).toBe(
       '/webshark/embed?capture=exp1%2Fcaps%2Fa.pcap&embed=1',
     );
-    expect(ctx.newTabURL).toBe('/webshark/embed?capture=exp1%2Fcaps%2Fa.pcap');
+    expect(page.find('.webshark-new-tab').attributes('href')).toBe(
+      '/webshark/embed?capture=exp1%2Fcaps%2Fa.pcap',
+    );
     // a finished file has nothing to stream
-    expect(ctx.streamTarget).toBe(null);
+    expect(copyButton(page).exists()).toBe(false);
   });
 
   it('posts a live capture by VM and interface', async () => {
-    const ctx = await opened({ exp: 'exp1' });
-    ctx.pickCapture('live:1:web');
-    expect(ctx.$router.replace).toHaveBeenCalledWith({
-      query: { exp: 'exp1', vm: 'web', iface: '1' },
-    });
-    await flush();
+    const page = await opened({ exp: 'exp1' });
+    await pick(page, 'live:1:web');
+    expect(query(page)).toEqual({ exp: 'exp1', vm: 'web', iface: '1' });
 
     expect(axios.post).toHaveBeenCalledWith('experiments/exp1/webshark', {
       vm: 'web',
       interface: 1,
     });
-    expect(ctx.capture.live).toBe(true);
-    expect(ctx.frameURL).toBe('/webshark/embed?capture=exp1%2Fweb-1&embed=1');
-    expect(ctx.streamTarget).toMatchObject({ vm: 'web', iface: 1 });
+    expect(textOf(page.find('.tag.is-danger'))).toBe('Live');
+    expect(frame(page).attributes('src')).toBe(
+      '/webshark/embed?capture=exp1%2Fweb-1&embed=1',
+    );
+    expect(await streamed(page)).toEqual({ vm: 'web', iface: 1 });
   });
 
   it('streams a saved file that is still being captured', async () => {
     axios.post.mockResolvedValue({
       data: { capture: 'w1', live: true, title: 'w1.pcap' },
     });
-    const ctx = await opened({ exp: 'exp1', file: 'w1.pcap' });
-    expect(ctx.streamTarget).toMatchObject({ vm: 'web', iface: 1 });
+    const page = await opened({ exp: 'exp1', file: 'w1.pcap' });
+    expect(await streamed(page)).toEqual({ vm: 'web', iface: 1 });
   });
 
   it('shows why a capture could not be opened', async () => {
@@ -231,20 +274,19 @@ describe('opening a capture', () => {
       response: { status: 404, data: 'capture not found' },
     });
     axios.post.mockRejectedValue(err);
-    const ctx = await opened({ exp: 'exp1', vm: 'web', iface: '3' });
+    const page = await opened({ exp: 'exp1', vm: 'web', iface: '3' });
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(ctx.capture).toBe(null);
-    expect(ctx.opening).toBe(false);
-    expect(ctx.emptyText).toBe(
+    expect(frame(page).exists()).toBe(false);
+    expect(emptyText(page)).toBe(
       'Could not open web · IF3. It was not found, or is no longer being captured.',
     );
   });
 
   it('refuses an answer that names no capture', async () => {
     axios.post.mockResolvedValue({ data: {} });
-    const ctx = await opened({ exp: 'exp1', file: 'caps/a.pcap' });
+    const page = await opened({ exp: 'exp1', file: 'caps/a.pcap' });
     expect(notify.error).toHaveBeenCalled();
-    expect(ctx.capture).toBe(null);
+    expect(frame(page).exists()).toBe(false);
   });
 
   it('keeps only the answer for the last pick', async () => {
@@ -252,60 +294,59 @@ describe('opening a capture', () => {
     axios.post.mockImplementation(
       (_, body) => new Promise((resolve) => answers.push({ body, resolve })),
     );
-    const ctx = await opened({ exp: 'exp1' });
-    ctx.pickCapture('file:caps/a.pcap');
-    ctx.pickCapture('live:0:db');
+    const page = await opened({ exp: 'exp1' });
+    await pick(page, 'file:caps/a.pcap');
+    await pick(page, 'live:0:db');
     answers[1].resolve({ data: { capture: 'db', live: true } });
     answers[0].resolve({ data: { capture: 'a', live: false } });
-    await flush();
-    expect(ctx.capture.capture).toBe('db');
+    await flushPromises();
+    expect(frame(page).attributes('src')).toBe(
+      '/webshark/embed?capture=db&embed=1',
+    );
   });
 });
 
 describe('deep links', () => {
   it('open the saved file the URL names', async () => {
-    const ctx = await opened({ exp: 'exp1', file: 'caps/a.pcap' });
-    expect(ctx.exp).toBe('exp1');
-    expect(ctx.selected.key).toBe('file:caps/a.pcap');
+    const page = await opened({ exp: 'exp1', file: 'caps/a.pcap' });
+    expect(experimentPicker(page).element.value).toBe('exp1');
+    expect(capturePicker(page).element.value).toBe('file:caps/a.pcap');
     expect(axios.post).toHaveBeenCalledTimes(1);
     expect(axios.post).toHaveBeenCalledWith('experiments/exp1/webshark', {
       path: 'caps/a.pcap',
     });
-    expect(ctx.frameURL).toBe(
+    expect(frame(page).attributes('src')).toBe(
       '/webshark/embed?capture=exp1%2Fcaps%2Fa.pcap&embed=1',
     );
   });
 
   it('open the running capture the URL names', async () => {
-    const ctx = await opened({ exp: 'exp1', vm: 'web', iface: '1' });
-    expect(ctx.selected.key).toBe('live:1:web');
+    const page = await opened({ exp: 'exp1', vm: 'web', iface: '1' });
+    expect(capturePicker(page).element.value).toBe('live:1:web');
     expect(axios.post).toHaveBeenCalledWith('experiments/exp1/webshark', {
       vm: 'web',
       interface: 1,
     });
     // the listed entry, not a second one for the URL
-    expect(ctx.liveOptions.map((t) => t.key)).toEqual([
+    expect(values(capturePicker(page), LIVE)).toEqual([
       'live:0:db',
       'live:1:web',
     ]);
   });
 
   it('keep a file the list does not have pickable', async () => {
-    const ctx = await opened({ exp: 'exp1', file: 'gone.pcap' });
-    expect(ctx.fileOptions.map((t) => t.path)).toContain('gone.pcap');
+    const page = await opened({ exp: 'exp1', file: 'gone.pcap' });
+    expect(values(capturePicker(page), FILES)).toContain('file:gone.pcap');
   });
 
   it('wait for the features before asking the server anything', async () => {
     store.features = [];
     store.featuresLoaded = false;
-    const ctx = page({ exp: 'exp1', file: 'caps/a.pcap' });
-    WebShark.created.call(ctx);
-    await flush();
+    await opened({ exp: 'exp1', file: 'caps/a.pcap' });
     expect(axios.get).not.toHaveBeenCalled();
 
-    store.features = ['webshark'];
-    WebShark.watch.installed.call(ctx, true);
-    await flush();
+    reactive(store).features = ['webshark'];
+    await flushPromises();
     expect(axios.post).toHaveBeenCalledWith('experiments/exp1/webshark', {
       path: 'caps/a.pcap',
     });
@@ -313,26 +354,23 @@ describe('deep links', () => {
 });
 
 describe('Copy Wireshark command', () => {
-  const token = {
-    id: '3f9a0c51d2e47b86',
-    token: 'pcs_abc',
-    urls: { stream: 'webshark/streams/pcs_abc' },
-  };
-
+  // the page on a running capture, its next requests answered with a token
   async function live() {
     vi.stubEnv('VITE_AUTH', 'enabled');
-    vi.stubGlobal('window', {
-      location: { origin: 'https://phenix.example' },
-    });
-    const ctx = await opened({ exp: 'exp1', vm: 'web', iface: '1' });
+    const page = await opened({ exp: 'exp1', vm: 'web', iface: '1' });
     axios.post.mockReset();
     axios.post.mockResolvedValue({ data: token });
-    return ctx;
+    return page;
+  }
+
+  async function copy(page) {
+    await copyButton(page).trigger('click');
+    await flushPromises();
   }
 
   // the stream token is the command's only credential
   const command =
-    "curl -fsSN --max-redirs 0 -L 'https://phenix.example/webshark/streams/pcs_abc'" +
+    `curl -fsSN --max-redirs 0 -L '${location.origin}/webshark/streams/pcs_abc'` +
     ' | wireshark -k -i -';
 
   const minted = () =>
@@ -341,6 +379,15 @@ describe('Copy Wireshark command', () => {
       interface: 1,
       operations: ['stream'],
     });
+
+  // the title and message of the dialog the page shows
+  const alert = () => {
+    const [dialog] = dialogs();
+    return {
+      title: textOf(dialog.querySelector('.modal-card-title')),
+      message: dialog.querySelector('.media-content').innerHTML,
+    };
+  };
 
   it('copies a command with a stream token, as the clipboard item it awaits', async () => {
     const items = [];
@@ -355,33 +402,33 @@ describe('Copy Wireshark command', () => {
     const write = vi.fn(async (written) => items.push(...written));
     const writeText = vi.fn(async () => {});
     vi.stubGlobal('navigator', { clipboard: { write, writeText } });
-    const ctx = await live();
-    await ctx.copyWiresharkCommand();
+    const page = await live();
+    await copy(page);
     minted();
     expect(writeText).not.toHaveBeenCalled();
     expect(await (await items[0].data['text/plain']).text()).toBe(command);
-    const [{ message, type }] = ctx.$buefy.toast.open.mock.calls[0];
+    const [{ text, type }] = toasts();
     expect(type).toBe('is-success');
-    expect(message).toContain('5 minutes');
-    expect(message).toContain('sign out');
+    expect(text).toContain('5 minutes');
+    expect(text).toContain('sign out');
   });
 
   it('writes the command once it has it without clipboard items', async () => {
     const writeText = vi.fn(async () => {});
     vi.stubGlobal('navigator', { clipboard: { writeText } });
-    const ctx = await live();
-    await ctx.copyWiresharkCommand();
+    const page = await live();
+    await copy(page);
     minted();
     expect(writeText).toHaveBeenCalledWith(command);
-    expect(ctx.$buefy.toast.open).toHaveBeenCalled();
-    expect(ctx.$buefy.dialog.alert).not.toHaveBeenCalled();
+    expect(toasts()).toHaveLength(1);
+    expect(dialogs()).toHaveLength(0);
   });
 
   it('shows the command when there is no clipboard', async () => {
     vi.stubGlobal('navigator', {});
-    const ctx = await live();
-    await ctx.copyWiresharkCommand();
-    const [{ title, message }] = ctx.$buefy.dialog.alert.mock.calls[0];
+    const page = await live();
+    await copy(page);
+    const { title, message } = alert();
     expect(title).toBe('Wireshark command');
     expect(message).toContain(command);
     expect(message).toContain('5 minutes');
@@ -391,29 +438,29 @@ describe('Copy Wireshark command', () => {
   it('copies nothing and says why when the server gives no token', async () => {
     const writeText = vi.fn(async () => {});
     vi.stubGlobal('navigator', { clipboard: { writeText } });
-    const ctx = await live();
+    const page = await live();
     const err = Object.assign(new Error('forbidden'), {
       response: { status: 403 },
     });
     axios.post.mockRejectedValue(err);
-    await ctx.copyWiresharkCommand();
+    await copy(page);
     expect(writeText).not.toHaveBeenCalled();
     expect(notify.error).toHaveBeenCalledWith(err);
-    const [{ message, type }] = ctx.$buefy.toast.open.mock.calls[0];
+    const [{ text, type }] = toasts();
     expect(type).toBe('is-danger');
-    expect(message).toContain("You don't have permission");
-    expect(ctx.$buefy.dialog.alert).not.toHaveBeenCalled();
+    expect(text).toContain("You don't have permission");
+    expect(dialogs()).toHaveLength(0);
   });
 
   it('explains a sign-in proxy, which the command must get past', async () => {
     const writeText = vi.fn(async () => {});
     vi.stubGlobal('navigator', { clipboard: { writeText } });
-    const ctx = await live();
+    const page = await live();
     vi.stubEnv('VITE_AUTH', 'proxy');
-    await ctx.copyWiresharkCommand();
+    await copy(page);
     expect(writeText).toHaveBeenCalledWith(command);
-    expect(ctx.$buefy.toast.open).not.toHaveBeenCalled();
-    const [{ title, message }] = ctx.$buefy.dialog.alert.mock.calls[0];
+    expect(toasts()).toEqual([]);
+    const { title, message } = alert();
     expect(title).toBe('Copied the Wireshark command');
     expect(message).toContain('sign-in proxy');
     expect(message).toContain("-b 'NAME=VALUE'");
@@ -424,49 +471,41 @@ describe('Copy Wireshark command', () => {
 });
 
 describe('rendering', () => {
-  const render = (query, data) =>
-    renderSSR(WebShark, {}, { route: { name: 'webshark', query }, data });
-
   it('says when WebShark is not installed', async () => {
     store.features = ['tunneler-download'];
-    const html = await render({});
-    expect(html).toContain('WebShark is not installed on this phēnix server.');
-    expect(html).toContain(
-      'href="https://phenix.sceptre.dev/latest/webshark/"',
+    const page = await opened();
+    expect(textOf(page)).toContain(
+      'WebShark is not installed on this phēnix server.',
     );
-    expect(html).not.toContain('webshark-bar');
+    expect(page.find('.webshark-missing a').attributes('href')).toBe(
+      'https://phenix.sceptre.dev/latest/webshark/',
+    );
+    expect(page.find('.webshark-bar').exists()).toBe(false);
     expect(axios.get).not.toHaveBeenCalled();
   });
 
   it('waits for the features before saying so', async () => {
     store.features = [];
     store.featuresLoaded = false;
-    const html = await render({});
-    expect(html).not.toContain('not installed');
-    expect(html).toContain('Loading…');
+    const page = await opened();
+    expect(textOf(page)).not.toContain('not installed');
+    expect(textOf(page)).toContain('Loading…');
   });
 
   it('groups live captures and saved files in the capture picker', async () => {
-    const html = await render(
-      { exp: 'exp1' },
-      {
-        exp: 'exp1',
-        liveCaptures: [
-          { key: 'live:1:web', live: true, label: 'web · IF1', vm: 'web' },
-        ],
-        savedFiles: [fileTarget('caps/a.pcap', 2048)],
-      },
-    );
-    expect(html).toMatch(
-      /<optgroup label="Live captures"[^>]*>(<!--\[-->)?<option value="live:1:web"[^>]*>\s*web · IF1\s*<\/option>/,
-    );
-    expect(html).toMatch(
-      /<optgroup label="Saved files"[^>]*>(<!--\[-->)?<option value="file:caps\/a.pcap"[^>]*>\s*caps\/a.pcap \(2.05 KB\)\s*<\/option>/,
-    );
+    const page = await opened({ exp: 'exp1' });
+    expect(options(capturePicker(page), LIVE)).toContainEqual({
+      value: 'live:1:web',
+      text: 'web · IF1',
+    });
+    expect(options(capturePicker(page), FILES)).toContainEqual({
+      value: 'file:caps/a.pcap',
+      text: 'caps/a.pcap (2.05 KB)',
+    });
   });
 
   it('frames the capture from /webshark/ and links to it', async () => {
-    const html = await render(
+    const page = await opened(
       { exp: 'exp1', vm: 'web', iface: '1' },
       {
         exp: 'exp1',
@@ -480,15 +519,19 @@ describe('rendering', () => {
         capture: { capture: 'exp1/web 1', live: true, title: 'web IF1' },
       },
     );
-    expect(html).toMatch(
-      /<iframe src="\/webshark\/embed\?capture=exp1%2Fweb%201&amp;embed=1" title="web IF1"/,
-    );
-    expect(html).toMatch(
-      /href="\/webshark\/embed\?capture=exp1%2Fweb%201" target="_blank"[\s\S]*?Open in new tab/,
-    );
-    expect(html).toMatch(/class="tag is-danger[\s\S]*?Live/);
-    expect(html).toContain('Copy Wireshark command');
-    expect(html).toContain(
+    expect(frame(page).attributes()).toMatchObject({
+      src: '/webshark/embed?capture=exp1%2Fweb%201&embed=1',
+      title: 'web IF1',
+    });
+    const newTab = page.find('.webshark-new-tab');
+    expect(newTab.attributes()).toMatchObject({
+      href: '/webshark/embed?capture=exp1%2Fweb%201',
+      target: '_blank',
+    });
+    expect(textOf(newTab)).toBe('Open in new tab');
+    expect(textOf(page.find('.tag.is-danger'))).toBe('Live');
+    expect(textOf(copyButton(page))).toBe('Copy Wireshark command');
+    expect(textOf(page)).toContain(
       'Copy a command that streams this capture into a local Wireshark',
     );
   });

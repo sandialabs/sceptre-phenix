@@ -8,7 +8,7 @@ import { memoryStorage } from './helpers/storage.js';
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal();
-  // there is no browser history to use outside a browser
+  // a fresh history for each test, not the window's shared one
   return { ...actual, createWebHistory: actual.createMemoryHistory };
 });
 const toast = vi.hoisted(() => vi.fn());
@@ -19,7 +19,7 @@ vi.mock('buefy', () => ({
     }
   },
 }));
-// the pages visits end on; the real views need a browser
+// the pages visits end on, which these tests do not draw
 vi.mock('@/views/Experiments.vue', () => ({ default: {} }));
 vi.mock('@/views/Hosts.vue', () => ({ default: {} }));
 vi.mock('@/views/Users.vue', () => ({ default: {} }));

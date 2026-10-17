@@ -1,6 +1,7 @@
 // The running experiment page: packet captures, the CD-ROM picker, and the VM
 // details disk and backing chain.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notices, noticeText, notify, rbac, resetMocks } =
   await vi.hoisted(() => import('./helpers/mocks.js'));
@@ -14,26 +15,88 @@ vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 
 import { cachePage, clearPageCache } from '@/utils/pageCache.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
-import { flush } from './helpers/async.js';
-import { disk } from './helpers/fixtures.js';
+import { disk, vm } from './helpers/fixtures.js';
 import { denyOnly } from './helpers/permissions.js';
 import {
-  labeledControls,
-  openModal,
-  renderSSR,
-  selectOptions,
-  stubBrowser,
+  confirmDialog,
+  dialogs,
+  mountPage,
+  tableRows,
   textOf,
+  toasts,
   tooltipButtons,
-} from './helpers/render.js';
-import { page } from './helpers/runningExperiment.js';
+} from './helpers/mount.js';
 
-const web = {
-  name: 'web',
-  running: true,
+const web = vm({
   networks: ['DMZ (149)', 'disconnected', 'MGMT (151)'],
-  captures: [],
+  ipv4: ['10.0.0.5', '', '10.1.0.5'],
+  taps: ['tap0', 'tap1', 'tap2'],
+});
+
+const capturesUrl = (name) => `experiments/demo/vms/${name}/captures`;
+
+// Answers the page's GETs: a URL in `answers` with what its function gives,
+// a VM's details, snapshots and forwards from `vms`, and fails the rest.
+function answerGets(vms, answers = {}) {
+  axios.get.mockImplementation(async (url) => {
+    if (url in answers) return answers[url]();
+    const [, name, part] =
+      url.match(/^experiments\/demo\/vms\/([^/]+)(.*)$/) ?? [];
+    const found = vms.find((v) => v.name === name);
+    if (found && part === '') return { data: found };
+    if (found && part === '/snapshots') return { data: { snapshots: [] } };
+    if (found && part === '/forwards') return { data: { listeners: [] } };
+    throw new Error(`no answer for ${url}`);
+  });
+}
+
+// the demo experiment's page, listing `vms`
+const openPage = (vms, answers) => {
+  answerGets(vms, answers);
+  return mountPage(RunningExperiment, {
+    route: '/experiment/demo',
+    data: { experiment: { name: 'demo', running: true, vms } },
+  });
 };
+
+// the cells of a VM's row in the VM table
+const rowOf = (page, name) =>
+  tableRows(page).find(
+    (cells) => textOf(cells.Node.find('.field > div')) === name,
+  );
+
+// clicks the tap of a VM's interface, which starts or stops its capture
+const clickTap = (page, name, iface) =>
+  rowOf(page, name).Taps.findAll('.field > div')[iface].trigger('click');
+
+// the interfaces of a VM whose taps show a spinner
+const spinningTaps = (page, name) =>
+  rowOf(page, name)
+    .Taps.findAll('.field > div')
+    .flatMap((tap, i) => (tap.attributes('aria-busy') === 'true' ? [i] : []));
+
+// a button in a VM's Actions column
+const rowAction = (page, name, action) =>
+  rowOf(page, name).Actions.find(`.vm-row-${action}`);
+
+// opens a VM's details by its name in the table
+async function openDetails(page, name) {
+  await rowOf(page, name).Node.find('.field > div').trigger('click');
+  await flushPromises();
+  return page.find('.vm-card');
+}
+
+// the newest dialog's title, message text and confirm button text
+const lastDialog = () => {
+  const dialog = dialogs().at(-1);
+  return {
+    title: textOf(dialog.querySelector('.modal-card-title')),
+    message: textOf(dialog.querySelector('.media-content')),
+    confirmText: textOf(dialog.querySelector('footer .button:last-child')),
+  };
+};
+
+const getUrls = () => axios.get.mock.calls.map(([url]) => url);
 
 beforeEach(() => {
   resetMocks();
@@ -42,91 +105,118 @@ beforeEach(() => {
 
 describe('starting one capture', () => {
   it('shows a spinner until the start dialog opens', async () => {
-    const ctx = page();
     const request = Promise.withResolvers();
-    axios.get.mockReturnValue(request.promise);
+    const page = await openPage([web], {
+      [capturesUrl('web')]: () => request.promise,
+    });
 
-    ctx.handlePcap(web, 0);
-    expect(ctx.isCapturePending('web', 0)).toBe(true);
-    expect(ctx.pendingCaptureIfaces('web')).toEqual([0]);
-    expect(ctx.$buefy.dialog.confirm).not.toHaveBeenCalled();
+    await clickTap(page, 'web', 0);
+    expect(spinningTaps(page, 'web')).toEqual([0]);
+    expect(dialogs()).toEqual([]);
 
     // a second click while waiting sends nothing more
-    ctx.handlePcap(web, 0);
-    expect(axios.get).toHaveBeenCalledTimes(1);
+    await clickTap(page, 'web', 0);
+    expect(getUrls().filter((url) => url === capturesUrl('web'))).toHaveLength(
+      1,
+    );
 
     request.resolve({ data: { captures: [] } });
-    await flush();
-    expect(ctx.isCapturePending('web', 0)).toBe(false);
-    expect(ctx.pendingCaptureIfaces('web')).toEqual([]);
-    expect(ctx.$buefy.dialog.confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Start a Packet Capture' }),
-    );
+    await flushPromises();
+    expect(spinningTaps(page, 'web')).toEqual([]);
+    expect(lastDialog().title).toBe('Start a Packet Capture');
   });
 
   it('stops the spinner and says why when the request fails', async () => {
-    const ctx = page();
     const err = new Error('boom');
-    axios.get.mockRejectedValue(err);
+    const page = await openPage([web], {
+      [capturesUrl('web')]: () => Promise.reject(err),
+    });
 
-    ctx.handlePcap(web, 2);
-    await flush();
-    expect(ctx.isCapturePending('web', 2)).toBe(false);
+    await clickTap(page, 'web', 2);
+    await flushPromises();
+    expect(spinningTaps(page, 'web')).toEqual([]);
     expect(notify.error).toHaveBeenCalledWith(err);
   });
 
-  it('keeps spinners per VM and interface', () => {
-    const ctx = page();
-    ctx.setCapturePending('web', 0, true);
-    ctx.setCapturePending('web', 2, true);
-    ctx.setCapturePending('db', 0, true);
-    expect(ctx.pendingCaptureIfaces('web')).toEqual([0, 2]);
-    ctx.setCapturePending('web', 0, false);
-    expect(ctx.pendingCaptureIfaces('web')).toEqual([2]);
-    expect(ctx.isCapturePending('db', 0)).toBe(true);
+  it('keeps spinners per VM and interface', async () => {
+    const answers = { web: [], db: [] };
+    const waiting = (name) => () => {
+      const request = Promise.withResolvers();
+      answers[name].push(request);
+      return request.promise;
+    };
+    const db = { ...web, name: 'db' };
+    const page = await openPage([web, db], {
+      [capturesUrl('web')]: waiting('web'),
+      [capturesUrl('db')]: waiting('db'),
+    });
+    const card = await openDetails(page, 'web');
+    // the details card's capture buttons, on the connected interfaces 0 and 2
+    const cardSpinners = () =>
+      card.findAll('.vm-capture').map((b) => b.classes('is-loading'));
+
+    await clickTap(page, 'web', 0);
+    await clickTap(page, 'web', 2);
+    await clickTap(page, 'db', 0);
+    expect(spinningTaps(page, 'web')).toEqual([0, 2]);
+    expect(cardSpinners()).toEqual([true, true]);
+
+    answers.web[0].resolve({ data: { captures: [] } });
+    await flushPromises();
+    expect(spinningTaps(page, 'web')).toEqual([2]);
+    expect(cardSpinners()).toEqual([false, true]);
+    expect(spinningTaps(page, 'db')).toEqual([0]);
   });
 });
 
 describe('capturing all interfaces', () => {
   it('asks to start one capture per connected interface, then starts them', async () => {
-    const ctx = page();
-    axios.get.mockResolvedValue({ data: { captures: [{ interface: 2 }] } });
-    axios.post.mockResolvedValue({ status: 204 });
+    const listed = Promise.withResolvers();
+    const started = Promise.withResolvers();
+    const page = await openPage([web], {
+      [capturesUrl('web')]: () => listed.promise,
+    });
+    axios.post.mockReturnValue(started.promise);
+    const button = () => rowAction(page, 'web', 'captureAll');
 
-    const run = ctx.captureAllInterfaces(web);
-    expect(ctx.captureAllPending.web).toBe(true);
-    await run;
-    expect(ctx.captureAllPending.web).toBeUndefined();
+    await button().trigger('click');
+    expect(button().classes()).toContain('is-loading');
+    listed.resolve({ data: { captures: [{ interface: 2 }] } });
+    await flushPromises();
+    expect(button().classes()).not.toContain('is-loading');
 
-    const dialog = ctx.$buefy.dialog.confirm.mock.calls[0][0];
+    const dialog = lastDialog();
     expect(dialog.title).toBe('Start a Packet Capture');
     expect(dialog.message).toMatch(/on interface 0 of the web VM/);
     expect(dialog.message).toMatch(/web_0_\d{4}-\d\d-\d\d_\d{4}\.pcap/);
 
-    const confirmed = dialog.onConfirm();
-    expect(ctx.captureAllPending.web).toBe(true);
-    await confirmed;
-    expect(ctx.captureAllPending.web).toBeUndefined();
+    await confirmDialog();
+    expect(button().classes()).toContain('is-loading');
+    started.resolve({ status: 204 });
+    await flushPromises();
+    expect(button().classes()).not.toContain('is-loading');
     expect(axios.post).toHaveBeenCalledTimes(1);
-    expect(axios.post).toHaveBeenCalledWith(
-      'experiments/demo/vms/web/captures',
-      { interface: 0, filename: expect.stringMatching(/^web_0_.*\.pcap$/) },
-    );
+    expect(axios.post).toHaveBeenCalledWith(capturesUrl('web'), {
+      interface: 0,
+      filename: expect.stringMatching(/^web_0_.*\.pcap$/),
+    });
   });
 
   it('starts several with plural wording and sums up how they went', async () => {
-    const ctx = page();
-    axios.get.mockResolvedValue({ data: { captures: [] } });
+    const page = await openPage([web], {
+      [capturesUrl('web')]: async () => ({ data: { captures: [] } }),
+    });
     const err = new Error('capture already exists');
     axios.post.mockResolvedValueOnce({}).mockRejectedValueOnce(err);
 
-    await ctx.captureAllInterfaces(web);
-    const dialog = ctx.$buefy.dialog.confirm.mock.calls[0][0];
+    await rowAction(page, 'web', 'captureAll').trigger('click');
+    await flushPromises();
+    const dialog = lastDialog();
     expect(dialog.title).toBe('Start Packet Captures');
     expect(dialog.message).toMatch(/packet captures on interfaces 0 and 2/);
     expect(dialog.confirmText).toBe('Start All');
 
-    await dialog.onConfirm();
+    await confirmDialog();
     expect(axios.post.mock.calls.map(([, body]) => body.interface)).toEqual([
       0, 2,
     ]);
@@ -134,22 +224,26 @@ describe('capturing all interfaces', () => {
     expect(notify.error).not.toHaveBeenCalled();
     expect(notices.open).toHaveBeenCalledTimes(1);
     expect(noticeText()).toContain('interface 2: capture already exists');
-    expect(ctx.captureAllPending.web).toBeUndefined();
+    expect(rowAction(page, 'web', 'captureAll').classes()).not.toContain(
+      'is-loading',
+    );
   });
 
   it('says so when every interface is already being captured', async () => {
-    const ctx = page();
-    axios.get.mockResolvedValue({
-      data: { captures: [{ interface: 0 }, { interface: 2 }] },
+    const page = await openPage([web], {
+      [capturesUrl('web')]: async () => ({
+        data: { captures: [{ interface: 0 }, { interface: 2 }] },
+      }),
     });
 
-    await ctx.captureAllInterfaces(web);
-    expect(ctx.$buefy.dialog.confirm).not.toHaveBeenCalled();
-    expect(ctx.$buefy.toast.open).toHaveBeenCalledWith(
+    await rowAction(page, 'web', 'captureAll').trigger('click');
+    await flushPromises();
+    expect(dialogs()).toEqual([]);
+    expect(toasts()).toEqual([
       expect.objectContaining({
-        message: expect.stringMatching(/already being captured/),
+        text: expect.stringMatching(/already being captured/),
       }),
-    );
+    ]);
   });
 });
 
@@ -157,40 +251,40 @@ describe('stopping all captures', () => {
   const capturing = { ...web, captures: [{ interface: 0 }, { interface: 2 }] };
 
   it('asks once, then stops every capture with a spinner', async () => {
-    const ctx = page();
+    const page = await openPage([capturing]);
     const stop = Promise.withResolvers();
     axios.delete.mockReturnValue(stop.promise);
+    const button = () => rowAction(page, 'web', 'stopCaptures');
 
-    ctx.stopAllCaptures(capturing);
-    const dialog = ctx.$buefy.dialog.confirm.mock.calls[0][0];
+    await button().trigger('click');
+    expect(dialogs()).toHaveLength(1);
+    const dialog = lastDialog();
     expect(dialog.message).toMatch(/interfaces 0 and 2 of the web VM/);
     expect(dialog.confirmText).toBe('Stop All');
 
-    const run = dialog.onConfirm();
-    expect(ctx.captureAllPending.web).toBe(true);
-    expect(axios.delete).toHaveBeenCalledWith(
-      'experiments/demo/vms/web/captures',
-    );
+    await confirmDialog();
+    expect(button().classes()).toContain('is-loading');
+    expect(axios.delete).toHaveBeenCalledWith(capturesUrl('web'));
     stop.resolve({});
-    await run;
-    expect(ctx.captureAllPending.web).toBeUndefined();
+    await flushPromises();
+    expect(button().classes()).not.toContain('is-loading');
   });
 
   it('reports a failed stop and stops the spinner', async () => {
-    const ctx = page();
+    const page = await openPage([capturing]);
     axios.delete.mockRejectedValue(new Error('boom'));
 
-    ctx.stopAllCaptures(capturing);
-    await ctx.$buefy.dialog.confirm.mock.calls[0][0].onConfirm();
+    await rowAction(page, 'web', 'stopCaptures').trigger('click');
+    await confirmDialog();
 
     expect(notify.error).toHaveBeenCalled();
-    expect(ctx.captureAllPending.web).toBeUndefined();
+    expect(rowAction(page, 'web', 'stopCaptures').classes()).not.toContain(
+      'is-loading',
+    );
   });
 });
 
 describe('the CD-ROM picker', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   // ISO images inside the files directory /images, one in a folder and one
   // minimega cannot take, and a same-named one outside it
   const iso = (fullPath, relativePath) =>
@@ -202,126 +296,144 @@ describe('the CD-ROM picker', () => {
     iso('/images/my disc.iso', 'my disc.iso'),
     iso('/data/isos/tools.iso'),
   ];
+  const listed = async () => ({ data: { disks: isos } });
+
+  // the open picker, or undefined; a closed modal is hidden
+  const pickerOf = (page) =>
+    page
+      .findAll('.modal.is-active')
+      .find(
+        (modal) =>
+          modal.element.style.display !== 'none' &&
+          modal.find('.optical-disc-card').exists(),
+      );
+
+  // the page with web's CD-ROM picker opened from its details, the ISO list
+  // answered by `listIsos`
+  async function openPicker(cdRom = '', listIsos = listed) {
+    const page = await openPage([{ ...web, cdRom }], { disks: listIsos });
+    const card = await openDetails(page, 'web');
+    await card.find('.vm-action-cdrom').trigger('click');
+    await flushPromises();
+    return page;
+  }
+
+  // the text of the picker's state: loading, an error, or no images
+  const stateOf = (page) => {
+    const state = pickerOf(page).find('.optical-disc-state');
+    return state.exists() ? textOf(state) : null;
+  };
 
   it('shows a spinner while it lists the ISO images', async () => {
-    const ctx = page();
     const request = Promise.withResolvers();
-    axios.get.mockReturnValue(request.promise);
+    const page = await openPicker('', () => request.promise);
 
-    const open = ctx.showChangeDisc({ name: 'web', cdRom: '' });
-    expect(ctx.opticalDiscModal).toMatchObject({
-      active: true,
-      vmName: 'web',
-      loading: true,
-      current: '',
-      disc: null,
-    });
+    const picker = pickerOf(page);
+    expect(textOf(picker.find('.modal-card-title'))).toBe(
+      'Insert a CD-ROM for web',
+    );
+    expect(picker.find('.optical-disc-current').exists()).toBe(false);
+    expect(stateOf(page)).toBe('Loading ISO images…');
+    expect(picker.find('.optical-disc-insert').attributes('disabled')).toBe('');
     expect(axios.get).toHaveBeenCalledWith('disks', {
       params: { diskType: 'ISO' },
     });
 
     request.resolve({ data: { disks: isos } });
-    await open;
-    expect(ctx.opticalDiscModal.loading).toBe(false);
-    expect(ctx.opticalDiscModal.isos).toEqual(isos);
+    await flushPromises();
+    expect(stateOf(page)).toBeNull();
+    const listed = pickerOf(page)
+      .findAll('option[value]')
+      .map((o) => o.element.value);
+    expect(listed.sort()).toEqual(isos.map((d) => d.fullPath).sort());
   });
 
   it('starts from the inserted ISO', async () => {
-    const ctx = page();
-    axios.get.mockResolvedValue({ data: { disks: isos } });
-    await ctx.showChangeDisc({ name: 'web', cdRom: '/images/tools.iso' });
-    expect(ctx.opticalDiscModal).toMatchObject({
-      current: '/images/tools.iso',
-      disc: '/images/tools.iso',
-    });
-    expect(ctx.insertedIsoLabel).toBe('tools.iso');
+    // what the picker says is inserted, and the ISO picked, when it opens
+    const opened = async (cdRom) => {
+      const picker = pickerOf(await openPicker(cdRom));
+      const inserted = picker.find('.optical-disc-current');
+      expect(inserted.find('span').attributes('title')).toBe(cdRom);
+      return [textOf(inserted), picker.find('select').element.value];
+    };
 
-    await ctx.showChangeDisc({ name: 'web', cdRom: '/images/win/drivers.iso' });
-    expect(ctx.insertedIsoLabel).toBe('win/drivers.iso');
-
+    expect(await opened('/images/tools.iso')).toEqual([
+      'Inserted: tools.iso',
+      '/images/tools.iso',
+    ]);
+    expect((await opened('/images/win/drivers.iso'))[0]).toBe(
+      'Inserted: win/drivers.iso',
+    );
     // one the list does not hold, by its full path, as a same-named ISO in
     // another folder may be listed
-    await ctx.showChangeDisc({ name: 'web', cdRom: '/images/old/tools.iso' });
-    expect(ctx.insertedIsoLabel).toBe('/images/old/tools.iso');
+    expect((await opened('/images/old/tools.iso'))[0]).toBe(
+      'Inserted: /images/old/tools.iso',
+    );
   });
 
   it('is empty, not silent, when there are no ISO images', async () => {
-    const ctx = page();
-    axios.get.mockResolvedValue({ data: { disks: [] } });
-    await ctx.showChangeDisc({ name: 'web' });
-    expect(ctx.opticalDiscModal).toMatchObject({
-      loading: false,
-      error: null,
-      isos: [],
-    });
+    const page = await openPicker('', async () => ({ data: { disks: [] } }));
+    expect(stateOf(page)).toMatch(/^There are no ISO images to insert\./);
+    expect(pickerOf(page).find('select').exists()).toBe(false);
   });
 
   it('says why when the images cannot be listed', async () => {
-    const ctx = page();
     const err = new Error('forbidden');
-    axios.get.mockRejectedValue(err);
-    await ctx.showChangeDisc({ name: 'web' });
-    expect(ctx.opticalDiscModal.loading).toBe(false);
-    expect(ctx.opticalDiscModal.error).toMatch(/couldn't be listed/);
+    const page = await openPicker('', () => Promise.reject(err));
+    expect(textOf(pickerOf(page).find('[role="alert"]'))).toMatch(
+      /couldn't be listed/,
+    );
     expect(notify.error).toHaveBeenCalledWith(err);
   });
 
   it("explains a role that can't list disks without asking the server", async () => {
     rbac.allowed = denyOnly(['disks']);
-    const ctx = page();
-    await ctx.showChangeDisc({ name: 'web' });
-    expect(axios.get).not.toHaveBeenCalled();
-    expect(ctx.opticalDiscModal.error).toMatch(/can't list disk images/);
+    const page = await openPicker();
+    expect(getUrls()).not.toContain('disks');
+    expect(textOf(pickerOf(page).find('[role="alert"]'))).toMatch(
+      /can't list disk images/,
+    );
   });
 
   it('ignores a listing that arrives after the picker closed', async () => {
-    const ctx = page();
-    const request = Promise.withResolvers();
-    axios.get.mockReturnValue(request.promise);
-    const open = ctx.showChangeDisc({ name: 'web' });
-    ctx.resetOpticalDiscModal();
-    request.resolve({ data: { disks: isos } });
-    await open;
-    expect(ctx.opticalDiscModal).toMatchObject({ active: false, isos: [] });
+    const stale = Promise.withResolvers();
+    let listing = stale.promise;
+    const page = await openPicker('', () => listing);
+    const cancel = pickerOf(page)
+      .findAll('button')
+      .find((b) => textOf(b) === 'Cancel');
+    await cancel.trigger('click');
+    expect(pickerOf(page)).toBeUndefined();
+
+    // reopened, it waits on its own listing, not the stale one
+    listing = new Promise(() => {});
+    await page.find('.vm-card .vm-action-cdrom').trigger('click');
+    stale.resolve({ data: { disks: isos } });
+    await flushPromises();
+    expect(stateOf(page)).toBe('Loading ISO images…');
+    expect(pickerOf(page).findAll('option')).toEqual([]);
   });
 
   it('labels its list of ISO images, and each image by its label', async () => {
-    stubBrowser();
-    // the netflow check that creating the page makes
-    axios.get.mockRejectedValue(new Error('no netflow'));
-    const html = await renderSSR(
-      RunningExperiment,
-      {},
-      {
-        route: '/experiment/demo',
-        data: {
-          opticalDiscModal: {
-            active: true,
-            vmName: 'web',
-            loading: false,
-            error: null,
-            isos,
-            current: '/images/win/drivers.iso',
-            disc: null,
-          },
-        },
-      },
-    );
+    const picker = pickerOf(await openPicker());
 
-    const modal = openModal(html);
-    expect(labeledControls(modal)).toEqual([
-      { label: 'ISO image', control: 'select' },
-    ]);
-    expect(textOf(modal)).toContain('Inserted: win/drivers.iso');
+    const labels = picker.findAll('label[for]');
+    expect(
+      labels.map((label) => [
+        textOf(label),
+        picker.find(`#${label.attributes('for')}`).element.localName,
+      ]),
+    ).toEqual([['ISO image', 'select']]);
     // the options by label, sorted, those outside the files directory in a
     // group of their own, and one minimega cannot take disabled
-    const select = modal.match(/<select\b[\s\S]*?<\/select>/)[0];
     expect(
-      selectOptions(select).map(
-        ({ group, value, text, disabled }) =>
-          `${group ? `[${group}] ` : ''}${text} = ${value}` +
-          (disabled ? ' (disabled)' : ''),
-      ),
+      picker.findAll('option').map(({ element: o }) => {
+        const group = o.parentElement.localName === 'optgroup';
+        return (
+          `${group ? `[${o.parentElement.label}] ` : ''}${textOf(o)} = ` +
+          `${o.getAttribute('value') ?? ''}${o.disabled ? ' (disabled)' : ''}`
+        );
+      }),
     ).toEqual([
       'Select an ISO image =  (disabled)',
       'my disc.iso (minimega cannot use this name) = /images/my disc.iso ' +
@@ -334,26 +446,22 @@ describe('the CD-ROM picker', () => {
     ]);
   });
 
-  it('inserts the picked ISO and ejects the inserted one', () => {
-    const ctx = page();
+  it('inserts the picked ISO and ejects the inserted one', async () => {
     axios.post.mockResolvedValue({});
     axios.delete.mockResolvedValue({});
 
-    ctx.opticalDiscModal = {
-      ...ctx.opticalDiscModal,
-      vmName: 'web',
-      disc: '/images/tools.iso',
-    };
-    ctx.insertOpticalDisc();
+    let page = await openPicker();
+    await pickerOf(page).find('select').setValue('/images/tools.iso');
+    await pickerOf(page).find('.optical-disc-insert').trigger('click');
     expect(axios.post).toHaveBeenCalledWith(
       'experiments/demo/vms/web/cdrom',
       null,
       { params: { isoPath: '/images/tools.iso' } },
     );
-    expect(ctx.opticalDiscModal.active).toBe(false);
+    expect(pickerOf(page)).toBeUndefined();
 
-    ctx.opticalDiscModal = { ...ctx.opticalDiscModal, vmName: 'web' };
-    ctx.ejectOpticalDisc();
+    page = await openPicker('/images/tools.iso');
+    await pickerOf(page).find('.optical-disc-eject').trigger('click');
     expect(axios.delete).toHaveBeenCalledWith('experiments/demo/vms/web/cdrom');
   });
 });
@@ -370,86 +478,57 @@ describe("the VM details' disk and backing image chain", () => {
     disk('/images/isos/tools.iso', 'isos/tools.iso', { kind: 'ISO' }),
   ];
 
+  // the value of a row of the details' Storage section, by its key
+  const storage = (card, key) => {
+    const row = card
+      .findAll('.vm-kv')
+      .find((kv) => textOf(kv.find('.vm-kv-key')) === key);
+    return row && textOf(row.find('.vm-kv-value'));
+  };
+  const chainOf = (card) => card.findAll('.vm-chain-name').map(textOf);
+
   it("shows the open VM's disk and its chain, each by its label", async () => {
     cachePage('disks', disks);
-    const vm = {
-      name: 'web',
+    const shown = {
+      ...web,
       disk: '/images/web/web_snap.qc2',
       cdRom: '/images/isos/tools.iso',
     };
-    const ctx = page({ expModal: { active: true, vm, backingChain: null } });
-    await ctx.loadBackingChain(vm);
-    expect(ctx.expModal).toMatchObject({
-      backingChain: ['jammy/jammy.qc2', '/data/vms/jammy.qc2'],
-      disk: disks[0],
-      cdRomDisk: disks[3],
-      filesDir: '/images',
-    });
+    const card = await openDetails(await openPage([shown]), 'web');
+    expect(storage(card, 'Disk')).toBe('web/web_snap.qc2');
+    expect(chainOf(card)).toEqual(['jammy/jammy.qc2', '/data/vms/jammy.qc2']);
+    expect(storage(card, 'CD-ROM')).toBe('isos/tools.iso');
   });
 
   it('finds the ISO image in the CD-ROM drive of a VM without a disk', async () => {
     cachePage('disks', disks);
-    const vm = { name: 'live', disk: '', cdRom: '/images/isos/tools.iso' };
-    const ctx = page({ expModal: { active: true, vm, backingChain: null } });
-    await ctx.loadBackingChain(vm);
-    expect(ctx.expModal).toMatchObject({
-      backingChain: [],
-      disk: null,
-      cdRomDisk: disks[3],
-    });
+    const live = {
+      ...web,
+      name: 'live',
+      disk: '',
+      cdRom: '/images/isos/tools.iso',
+    };
+    const card = await openDetails(await openPage([live]), 'live');
+    expect(storage(card, 'Disk')).toBe('none');
+    expect(chainOf(card)).toEqual([]);
+    expect(storage(card, 'CD-ROM')).toBe('isos/tools.iso');
   });
 
   it('names them by label in the details on the page, warning of one outside the files directory', async () => {
-    stubBrowser();
-    // the netflow check that creating the page makes
-    axios.get.mockRejectedValue(new Error('no netflow'));
-    const vm = {
-      name: 'web',
-      state: 'RUNNING',
-      running: true,
-      snapshot: true,
-      cpus: 1,
-      ram: 1024,
+    cachePage('disks', disks);
+    const shown = {
+      ...web,
       disk: '/data/vms/jammy.qc2',
       cdRom: '/images/isos/tools.iso',
-      networks: [],
-      ipv4: [],
-      taps: [],
-      captures: [],
     };
-    const html = await renderSSR(
-      RunningExperiment,
-      {},
-      {
-        route: '/experiment/demo',
-        data: {
-          expModal: {
-            active: true,
-            fullName: 'demo/web',
-            vm,
-            snapshots: false,
-            forwards: [],
-            backingChain: [],
-            disk: disks[2],
-            cdRomDisk: disks[3],
-            filesDir: '/images',
-          },
-        },
-      },
-    );
+    const card = await openDetails(await openPage([shown]), 'web');
 
-    // the Storage section of the open details
-    const details = html.slice(html.indexOf('<div class="modal is-active"'));
-    const start = details.indexOf('Storage');
-    const storage = details.slice(
-      start,
-      details.indexOf('<p class="vm-section-title"', start),
-    );
-    expect(textOf(storage)).toMatch(
-      /Disk \/data\/vms\/jammy\.qc2 .*CD-ROM isos\/tools\.iso$/,
-    );
+    expect(storage(card, 'Disk')).toBe('/data/vms/jammy.qc2');
+    expect(storage(card, 'CD-ROM')).toBe('isos/tools.iso');
     expect(
-      tooltipButtons(storage)
+      card
+        .findAllComponents({ name: 'DiskWarning' })
+        .flatMap(tooltipButtons)
         .filter((b) => b.label === 'Outside the standard images directory')
         .map((b) => b.tooltip),
     ).toEqual([
@@ -462,22 +541,27 @@ describe("the VM details' disk and backing image chain", () => {
 
   it("leaves it out for roles that can't list disks", async () => {
     rbac.allowed = denyOnly(['disks']);
-    const vm = { name: 'web', disk: '/images/web_snap.qc2' };
-    const ctx = page({ expModal: { active: true, vm, backingChain: null } });
-    await ctx.loadBackingChain(vm);
-    expect(axios.get).not.toHaveBeenCalled();
-    expect(ctx.expModal.backingChain).toBeNull();
+    const shown = { ...web, disk: '/images/web_snap.qc2' };
+    const card = await openDetails(await openPage([shown]), 'web');
+    expect(getUrls()).not.toContain('disks');
+    expect(chainOf(card)).toEqual([]);
+    expect(storage(card, 'Disk')).toBe('web_snap.qc2');
   });
 
   it('drops a chain that arrives after another VM was opened', async () => {
-    cachePage('disks', disks);
-    const ctx = page({
-      expModal: { active: true, vm: { name: 'db' }, backingChain: null },
-    });
-    await ctx.loadBackingChain({
-      name: 'web',
-      disk: '/images/web/web_snap.qc2',
-    });
-    expect(ctx.expModal.backingChain).toBeNull();
+    const listing = Promise.withResolvers();
+    const db = { ...web, name: 'db', disk: '', cdRom: '' };
+    const page = await openPage(
+      [{ ...web, disk: '/images/web/web_snap.qc2' }, db],
+      { disks: () => listing.promise },
+    );
+    await openDetails(page, 'web');
+    expect(getUrls()).toContain('disks');
+    const card = await openDetails(page, 'db');
+
+    listing.resolve({ data: { disks } });
+    await flushPromises();
+    expect(textOf(card.find('.vm-card-title'))).toBe('db');
+    expect(chainOf(card)).toEqual([]);
   });
 });

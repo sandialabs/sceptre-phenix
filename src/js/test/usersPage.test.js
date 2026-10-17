@@ -13,8 +13,8 @@ vi.mock('@/utils/websocket.js', modules.websocket);
 vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 
 import Users from '@/views/Users.vue';
+import { mountPage } from './helpers/mount.js';
 import { allowOnly } from './helpers/permissions.js';
-import { renderSSR } from './helpers/render.js';
 
 const user = (username) => ({
   username,
@@ -22,22 +22,6 @@ const user = (username) => ({
   last_name: '',
   role_name: 'Experiment Admin',
 });
-
-// the users the page offers to create a token for
-async function tokenButtons() {
-  const html = await renderSSR(
-    Users,
-    {},
-    {
-      route: '/users',
-      tables: true,
-      data: { users: [user('alice'), user('bob')], loaded: true },
-    },
-  );
-  return [...html.matchAll(/aria-label="Create token for ([^"]+)"/g)].map(
-    ([, name]) => name,
-  );
-}
 
 beforeEach(() => {
   resetMocks();
@@ -47,6 +31,15 @@ beforeEach(() => {
 describe('the Users page token button', () => {
   it('is offered for the signed-in user to a role that may patch them', async () => {
     rbac.allowed = allowOnly(['users', 'patch']);
-    expect(await tokenButtons()).toEqual(['alice']);
+    const page = await mountPage(Users, {
+      route: '/users',
+      data: { users: [user('alice'), user('bob')], loaded: true },
+    });
+
+    expect(
+      page
+        .findAll('[aria-label^="Create token for "]')
+        .map((b) => b.attributes('aria-label')),
+    ).toEqual(['Create token for alice']);
   });
 });

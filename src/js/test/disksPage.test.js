@@ -1,5 +1,6 @@
 // The Disks page: loading and refreshing the list, disk names, the actions it
 // offers and why each is disabled, and the requests those actions send.
+import { flushPromises } from '@vue/test-utils';
 import realAxios from 'axios';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,6 +15,7 @@ const {
   notify,
   rbac,
   resetMocks,
+  ws,
 } = await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -24,27 +26,26 @@ vi.mock('@/utils/notify.js', modules.notify);
 // a loader whose load() fetches as the real one does, without the cache
 vi.mock('@/utils/pageLoader.js', fetching);
 
-import Disks from '@/views/Disks.vue';
-import { flush } from './helpers/async.js';
-import { disk, httpError, wsMsg } from './helpers/fixtures.js';
+import JobProgress from '@/components/jobs/JobProgress.vue';
 import { useJobStore } from '@/utils/jobs.js';
-import { pageContext } from './helpers/page.js';
+import Disks from '@/views/Disks.vue';
+import { disk, httpError, wsMsg } from './helpers/fixtures.js';
+import {
+  byLabel,
+  confirmDialog,
+  dialogs,
+  mountPage,
+  tableHeader,
+  tableRows,
+  textOf,
+  tooltipButtons,
+} from './helpers/mount.js';
 import {
   allowAll,
   allowOnly,
   denyAll,
   denyOnly,
 } from './helpers/permissions.js';
-import {
-  openModal,
-  renderSSR,
-  selectOptions,
-  tableRows,
-  textOf,
-  tooltipButtons,
-} from './helpers/render.js';
-
-const page = (fields) => pageContext(Disks, { fields });
 
 beforeEach(() => {
   setActivePinia(createPinia());
@@ -57,158 +58,186 @@ const OUTSIDE_TEXT =
   'not copy this image to other cluster nodes, so on a multi-node cluster ' +
   'every node that may run a VM using it needs the same file at this path.';
 
-// the page rendered with these disks, and more of its state
-const rendered = (disks, data = {}) =>
-  renderSSR(
-    Disks,
-    {},
-    { route: '/disks/', data: { disks, loaded: true, ...data }, tables: true },
-  );
+// the page listing these disks, which its loader does not replace
+const page = (disks = []) =>
+  mountPage(Disks, { route: '/disks/', data: { disks, loaded: true } });
 
-// the text of a Name cell's label, without its warning
-const labelOf = (cell) =>
-  textOf(cell.match(/<span class="disk-label"[^>]*>([\s\S]*?)<\/span>/)[1]);
+const nameOf = (cells) => textOf(cells.Name.find('.disk-label'));
+
+// the label each row's Name cell shows, in order
+const names = (wrapper) => tableRows(wrapper).map(nameOf);
+
+// opens the details window of the disk with this label, and gives it
+async function openDetails(wrapper, label) {
+  const row = tableRows(wrapper).find((cells) => nameOf(cells) === label);
+  row.Name.element.closest('tr').click();
+  await flushPromises();
+  return wrapper.find('.modal.is-active');
+}
+
+// a row of the details list, by its term
+const detail = (details, term) =>
+  details
+    .findAll('dl > div')
+    .find((row) => textOf(row.find('dt')) === term)
+    .find('dd');
+
+// clicks the details window's button for an action, by its label
+async function runAction(details, label) {
+  const button = details
+    .findAll('.actions button')
+    .find((b) => textOf(b.find('b')) === label);
+  await button.trigger('click');
+  await flushPromises();
+}
 
 describe('the disk list', () => {
-  async function opened() {
-    const ctx = page();
-    await Disks.created.call(ctx);
-    return ctx;
-  }
   const urls = () => axios.get.mock.calls.map(([url]) => url);
 
   it("has the server inspect every image again on the header's refresh", async () => {
-    const ctx = await opened();
+    await page();
 
     await loaderSpy.options.refresh();
-    await ctx.loader.load();
+    await loaderSpy.load();
     expect(urls()).toEqual(['disks?refresh=true', 'disks']);
   });
 
   it('reloads when the server reports its images changed', async () => {
-    const ctx = await opened();
+    await page();
 
-    ctx.handleWs({ resource: { type: 'disks', action: 'update' } });
-    ctx.handleWs({ resource: { type: 'experiment', action: 'update' } });
+    for (const type of ['disks', 'experiment']) {
+      for (const handler of ws.handlers) {
+        handler({ resource: { type, action: 'update' } });
+      }
+    }
     expect(loaderSpy.load).toHaveBeenCalledTimes(1);
     expect(loaderSpy.load).toHaveBeenCalledWith({ force: true });
   });
 
+  // picks a file of this name in the upload window
+  async function upload(name) {
+    const wrapper = await page();
+    await byLabel(wrapper, 'Upload a disk').trigger('click');
+    const input = wrapper.find('.modal.is-active input[type="file"]');
+    Object.defineProperty(input.element, 'files', {
+      value: [new File(['x'], name)],
+    });
+    await input.trigger('change');
+    await flushPromises();
+  }
+
   it('shows why an upload failed', async () => {
     axios.post.mockRejectedValue(httpError(507, 'no space left on device'));
-    page().uploadDisk({ name: 'a.qc2' });
-    await flush();
+    await upload('a.qc2');
     expect(notify.error).toHaveBeenCalledWith(
       'Error uploading: no space left on device',
     );
   });
 
-  it('refuses to upload a file that is no disk image', () => {
-    page().uploadDisk({ name: 'notes.txt' });
+  it('refuses to upload a file that is no disk image', async () => {
+    // the file picker takes any .tgz, but only a rootfs archive is a disk
+    await upload('notes.tgz');
 
     expect(notify.show).toHaveBeenCalledWith(
-      'Cannot upload notes.txt',
+      'Cannot upload notes.tgz',
       'Valid disk file types are .qcow2, .qc2, *_rootfs.tgz, .hdd, and .iso.',
     );
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('sorts sizes by their bytes, unknown sizes first', () => {
-    const disks = ['2.1 GiB', '512 B', '', '3G', '900 MiB'].map((size) => ({
-      size,
-    }));
-    disks.sort((a, b) => page().sortBy('size')(a, b, true));
-    expect(disks.map((d) => d.size)).toEqual([
-      '',
-      '512 B',
-      '900 MiB',
-      '2.1 GiB',
-      '3G',
-    ]);
+  it('sorts sizes by their bytes, unknown sizes first', async () => {
+    const sizes = ['2.1 GiB', '512 B', '', '3G', '900 MiB'];
+    const wrapper = await page(
+      sizes.map((size, i) =>
+        disk(`/phenix/images/${i}.qc2`, `${i}.qc2`, { size }),
+      ),
+    );
+
+    await tableHeader(wrapper, 'Size on Disk').trigger('click');
+    expect(
+      tableRows(wrapper).map((cells) => textOf(cells['Size on Disk'])),
+    ).toEqual(['', '512 B', '900 MiB', '2.1 GiB', '3G']);
   });
 });
 
 const vmDisk = disk('/phenix/images/snap.qc2', 'snap.qc2', {
   backingImages: ['/phenix/images/base.qc2'],
 });
-const names = [
-  'snapshot',
-  'commit',
-  'rebase',
-  'clone',
-  'resize',
-  'download',
-  'rename',
-  'delete',
+const ACTIONS = [
+  'Snapshot',
+  'Commit',
+  'Rebase',
+  'Clone',
+  'Resize',
+  'Download',
+  'Rename',
+  'Delete',
 ];
 
 describe('disk actions', () => {
-  it('lists every action in the details window, and some on each row', () => {
-    const ctx = page();
-    expect(ctx.diskActions.map((a) => a.name)).toEqual(names);
-    expect(ctx.rowActions.map((a) => a.name)).toEqual([
-      'snapshot',
-      'clone',
-      'download',
-      'rename',
-      'delete',
-    ]);
+  it('lists every action in the details window, and some on each row', async () => {
+    const wrapper = await page([vmDisk]);
+    const [row] = tableRows(wrapper);
+    expect(
+      row.Actions.findAll('button').map((b) => b.attributes('aria-label')),
+    ).toEqual(['Snapshot', 'Clone', 'Download', 'Rename', 'Delete']);
+
+    const details = await openDetails(wrapper, 'snap.qc2');
+    expect(details.findAll('.actions button b').map(textOf)).toEqual(ACTIONS);
   });
 
-  it('says how the disk rules an action out: its kind, backing image or use', () => {
-    const ctx = page();
-    const tooltip = (name, disk) =>
-      ctx.actionTooltip(
-        ctx.diskActions.find((a) => a.name === name),
-        disk,
-      );
+  it('says how the disk rules an action out: its kind, backing image or use', async () => {
+    // each action's tooltip in the details window of this disk
+    const tooltips = async (shown) => {
+      const details = await openDetails(await page([shown]), 'snap.qc2');
+      const found = tooltipButtons(details.find('.actions'));
+      return Object.fromEntries(found.map((t, i) => [ACTIONS[i], t.tooltip]));
+    };
 
-    expect(tooltip('commit', vmDisk)).toBe('Commit');
+    expect((await tooltips(vmDisk)).Commit).toBe('Commit');
     for (const backingImages of [[], undefined]) {
-      expect(tooltip('commit', { ...vmDisk, backingImages })).toBe(
+      expect((await tooltips({ ...vmDisk, backingImages })).Commit).toBe(
         "Can't commit: the disk has no backing image to commit into",
       );
     }
-    const kernel = { ...vmDisk, name: 'vmlinuz', kind: 'Kernel' };
-    expect(tooltip('snapshot', kernel)).toBe(
+    const kernel = await tooltips({
+      ...vmDisk,
+      name: 'vmlinuz',
+      kind: 'Kernel',
+    });
+    expect(kernel.Snapshot).toBe(
       "Can't snapshot: only VM disks can be snapshotted",
     );
-    expect(tooltip('commit', kernel)).toBe(
-      "Can't commit: only VM disks can be committed",
-    );
-    expect(tooltip('rebase', kernel)).toBe(
-      "Can't rebase: only VM disks can be rebased",
-    );
+    expect(kernel.Commit).toBe("Can't commit: only VM disks can be committed");
+    expect(kernel.Rebase).toBe("Can't rebase: only VM disks can be rebased");
     // the rest work on any disk
-    for (const name of ['clone', 'resize', 'download', 'rename', 'delete']) {
-      expect(tooltip(name, kernel)).toBe(
-        ctx.diskActions.find((a) => a.name === name).label,
-      );
+    for (const label of ['Clone', 'Resize', 'Download', 'Rename', 'Delete']) {
+      expect(kernel[label]).toBe(label);
     }
 
-    const used = {
+    const used = await tooltips({
       ...vmDisk,
       inUse: true,
       experiments: [
         { name: 'a', running: true },
         { name: 'b', running: false },
       ],
-    };
-    for (const name of ['commit', 'rebase', 'resize', 'rename', 'delete']) {
-      expect(tooltip(name, used)).toMatch(/: the disk is in use by a$/);
+    });
+    for (const label of ['Commit', 'Rebase', 'Resize', 'Rename', 'Delete']) {
+      expect(used[label]).toMatch(/: the disk is in use by a$/);
     }
     // cloning and downloading only read the disk
-    expect(tooltip('clone', used)).toBe('Clone');
-    expect(tooltip('download', used)).toBe('Download');
+    expect(used.Clone).toBe('Clone');
+    expect(used.Download).toBe('Download');
   });
 
-  it('asks roleAllowed about a disk by name, and about creating one with no name', () => {
+  it('asks roleAllowed about a disk by name, and about creating one with no name', async () => {
+    const wrapper = await page([vmDisk]);
     const calls = [];
     rbac.allowed = (...args) => calls.push(args) > 0;
-    const ctx = page();
 
-    ctx.disabledReason('snapshot', vmDisk);
-    ctx.disabledReason('commit', vmDisk);
+    wrapper.vm.disabledReason('snapshot', vmDisk);
+    wrapper.vm.disabledReason('commit', vmDisk);
     expect(calls).toStrictEqual([
       ['disks', 'create'],
       ['disks', 'get', 'snap.qc2'],
@@ -281,7 +310,8 @@ describe('disk actions', () => {
   ])(
     "shows each row's actions for %s, disabled ones saying why",
     async (_, can, want) => {
-      const disks = [
+      rbac.allowed = can;
+      const wrapper = await page([
         vmDisk,
         disk('/phenix/images/isos/tools.iso', 'isos/tools.iso', {
           kind: 'ISO',
@@ -296,16 +326,14 @@ describe('disk actions', () => {
         disk('/phenix/images/exp1/files/vm.hdd', 'exp1/files/vm.hdd', {
           readOnly: true,
         }),
-      ];
-      rbac.allowed = can;
-      const html = await rendered(disks);
+      ]);
 
       const rows = Object.fromEntries(
-        tableRows(html).map((cells) => {
+        tableRows(wrapper).map((cells) => {
           const buttons = tooltipButtons(cells.Actions);
           expect(buttons.map((b) => b.label)).toEqual(labels);
           return [
-            labelOf(cells.name),
+            nameOf(cells),
             buttons.map((b) =>
               b.disabled ? b.tooltip.replace(/^Can't [a-z]+: /, '') : OK,
             ),
@@ -337,84 +365,69 @@ describe('disks in folders and outside the files directory', () => {
   });
   const spaced = disk('/phenix/images/my disk.qc2', 'my disk.qc2');
   const disks = [snap, base, outside, top, kept, spaced];
+  // their labels, as the list sorts them at first
+  const sorted = [
+    '/data/vms/base.qc2',
+    'base.qc2',
+    'exp1/files/vm.hdd',
+    'my disk.qc2',
+    'win/base.qc2',
+    'win/snap.qc2',
+  ];
 
   it('names each disk by its path within the files directory, warning of those outside it', async () => {
-    const html = await rendered(disks);
+    const wrapper = await page(disks);
 
-    const names = tableRows(html).map((cells) => [
-      labelOf(cells.name),
-      tooltipButtons(cells.name).map(({ label, tooltip }) => ({
+    const warnings = tableRows(wrapper).map((cells) =>
+      tooltipButtons(cells.Name).map(({ label, tooltip }) => ({
         label,
         tooltip,
       })),
-    ]);
-    expect(names).toEqual([
-      ['win/snap.qc2', []],
-      ['win/base.qc2', []],
-      [
-        '/data/vms/base.qc2',
-        [
-          {
-            label: 'Outside the standard images directory',
-            tooltip: OUTSIDE_TEXT,
-          },
-        ],
-      ],
-      ['base.qc2', []],
-      ['exp1/files/vm.hdd', []],
-      ['my disk.qc2', []],
-    ]);
-  });
-
-  it('finds and sorts disks by the names it shows', () => {
-    const ctx = page();
-    ctx.disks = disks;
-
-    ctx.filterString = 'WIN/';
-    expect(ctx.filteredDisks).toEqual([snap, base]);
-    ctx.filterString = '/data';
-    expect(ctx.filteredDisks).toEqual([outside]);
-
-    const sorted = (isAsc) =>
-      [...disks]
-        .sort((a, b) => ctx.sortByLabel(a, b, isAsc))
-        .map((d) => d.fullPath);
-    expect(sorted(true)).toEqual([
-      '/data/vms/base.qc2',
-      '/phenix/images/base.qc2',
-      '/phenix/images/exp1/files/vm.hdd',
-      '/phenix/images/my disk.qc2',
-      '/phenix/images/win/base.qc2',
-      '/phenix/images/win/snap.qc2',
-    ]);
-    expect(sorted(false)).toEqual(sorted(true).reverse());
-  });
-
-  // the details window, up to its actions
-  const details = (html) =>
-    html.slice(
-      html.indexOf('<div class="modal is-active"'),
-      html.indexOf('>Actions</p>'),
     );
+    expect(names(wrapper)).toEqual(sorted);
+    expect(warnings).toEqual([
+      [
+        {
+          label: 'Outside the standard images directory',
+          tooltip: OUTSIDE_TEXT,
+        },
+      ],
+      ...Array(5).fill([]),
+    ]);
+  });
+
+  it('finds and sorts disks by the names it shows', async () => {
+    const wrapper = await page(disks);
+    // the field draws its input afresh as its clear button comes and goes
+    const find = (text) =>
+      wrapper.find('input[placeholder="Find a disk"]').setValue(text);
+
+    await find('WIN/');
+    expect(names(wrapper)).toEqual(['win/base.qc2', 'win/snap.qc2']);
+    await find('/data');
+    expect(names(wrapper)).toEqual(['/data/vms/base.qc2']);
+
+    await find('');
+    expect(names(wrapper)).toEqual(sorted);
+    await tableHeader(wrapper, 'Name').trigger('click');
+    expect(names(wrapper)).toEqual(sorted.toReversed());
+  });
 
   it("shows where a disk is and links its backing chain by each image's full path", async () => {
-    const html = details(
-      await rendered(disks, { detailsModal: { active: true, disk: snap } }),
-    );
+    const details = await openDetails(await page(disks), 'win/snap.qc2');
 
-    expect(textOf(html.match(/modal-card-title[^>]*>([^<]*)</)[1])).toBe(
-      'win/snap.qc2',
-    );
-    expect(textOf(html)).toContain(
-      'Location: The standard images directory (/phenix/images)',
+    expect(textOf(details.find('.modal-card-title'))).toBe('win/snap.qc2');
+    expect(textOf(detail(details, 'Location:'))).toBe(
+      'The standard images directory (/phenix/images)',
     );
     // the chain names the listed images by label, with the same-named image
     // outside the files directory its own entry, and one not listed as is
-    const chain = html.slice(html.indexOf('Backing Chain'));
+    const chain = details.find('[style*="text-align: center"]');
     expect(
-      [...chain.matchAll(/<(button|span)\b[^>]*>([^<]*)<\/\1>/g)].map(
-        ([, tag, text]) => [tag, textOf(text)],
-      ),
+      chain
+        .findAll('div')
+        .map(({ element }) => element.lastElementChild)
+        .map((el) => [el.localName, textOf(el)]),
     ).toEqual([
       ['button', 'win/base.qc2'],
       ['button', '/data/vms/base.qc2'],
@@ -425,54 +438,50 @@ describe('disks in folders and outside the files directory', () => {
   it.each([
     [
       'outside the files directory',
-      outside,
+      '/data/vms/base.qc2',
       'Outside the standard images directory',
       [OUTSIDE_TEXT],
     ],
     [
       'in an experiment files folder',
-      kept,
+      'exp1/files/vm.hdd',
       'The standard images directory (/phenix/images), at a path the disk ' +
         'list leaves out',
       [],
     ],
   ])(
     'says where a read-only disk %s is',
-    async (_, shown, location, warnings) => {
-      const html = details(
-        await rendered(disks, { detailsModal: { active: true, disk: shown } }),
-      );
-      const row = html.match(
-        /<dt[^>]*>Location:<\/dt><dd[^>]*>([\s\S]*?)<\/dd>/,
-      )[1];
+    async (_, label, location, warnings) => {
+      const details = await openDetails(await page(disks), label);
+      const row = detail(details, 'Location:');
       expect(textOf(row).startsWith(location)).toBe(true);
       expect(tooltipButtons(row).map((b) => b.tooltip)).toEqual(warnings);
     },
   );
 
-  it("opens a backing image's details by its full path, not a same-named image", () => {
-    const ctx = page();
-    ctx.disks = disks;
-    ctx.detailsModal.disk = snap;
+  it("opens a backing image's details by its full path, not a same-named image", async () => {
+    const wrapper = await page(disks);
+    const follow = async (label) => {
+      const details = await openDetails(wrapper, 'win/snap.qc2');
+      await details
+        .findAll('.backing-link')
+        .find((b) => textOf(b) === label)
+        .trigger('click');
+      return textOf(detail(details, 'Full Path:'));
+    };
 
-    ctx.openBacking('/data/vms/base.qc2');
-    expect(ctx.detailsModal.disk).toBe(outside);
-    ctx.openBacking('/phenix/images/win/base.qc2');
-    expect(ctx.detailsModal.disk).toBe(base);
+    expect(await follow('/data/vms/base.qc2')).toBe(outside.fullPath);
+    expect(await follow('win/base.qc2')).toBe(base.fullPath);
   });
 
   it('rebases only onto the other disks phēnix acts on and minimega takes, by label', async () => {
-    const html = await rendered(disks, {
-      detailsModal: { active: false, disk: base },
-      rebaseModal: { active: true, dst: '', unsafe: false, isWaiting: false },
-    });
+    const wrapper = await page(disks);
+    await runAction(await openDetails(wrapper, 'win/base.qc2'), 'Rebase');
 
-    const select = openModal(html).match(
-      /<select\b[^>]*>[\s\S]*?<\/select>/,
-    )[0];
-    expect(select).toMatch(/\saria-label="New backing image"/);
+    const select = wrapper.findAll('.modal.is-active').at(-1).find('select');
+    expect(select.attributes('aria-label')).toBe('New backing image');
     expect(
-      selectOptions(select).map(({ value, text }) => [text, value]),
+      select.findAll('option').map((o) => [textOf(o), o.element.value]),
     ).toEqual([
       ['None', ''],
       ['base.qc2', '/phenix/images/base.qc2'],
@@ -484,12 +493,22 @@ describe('disks in folders and outside the files directory', () => {
 describe('disk action requests', () => {
   // a path whose characters a query string would otherwise mangle
   const path = '/phenix/images/a+b&c=d/x%1.qc2';
-  const dialog = () => ({
-    startLoading: vi.fn(),
-    close: vi.fn(),
-    cancelLoading: vi.fn(),
-  });
-  const opened = () => page({ loader: { load: vi.fn() } });
+  const target = disk('/phenix/images/b&c.qc2', 'b&c.qc2');
+
+  // the page, and the details window of the disk at that path
+  async function opened() {
+    const wrapper = await page([
+      disk(path, 'a+b&c=d/x%1.qc2', {
+        backingImages: ['/phenix/images/base.qc2'],
+      }),
+      target,
+    ]);
+    return { wrapper, details: await openDetails(wrapper, 'a+b&c=d/x%1.qc2') };
+  }
+
+  // the window an action in the details opened over them
+  const actionWindow = (wrapper) => wrapper.findAll('.modal.is-active').at(-1);
+
   // the query the server gets for a request's config
   const query = (config) =>
     Object.fromEntries(
@@ -498,20 +517,16 @@ describe('disk action requests', () => {
     );
 
   it.each([
-    ['snapshotDisk', 'prompt', 'post', 'disks/snapshot', { new: 'n+1&.qc2' }],
-    ['renameDisk', 'prompt', 'post', 'disks/rename', { new: 'n+1&.qc2' }],
-    ['resizeDisk', 'prompt', 'post', 'disks/resize', { size: '+5G' }],
-    ['deleteDisk', 'confirm', 'delete', 'disks', {}],
+    ['Snapshot', 'post', 'disks/snapshot', { new: 'n+1&.qc2' }],
+    ['Rename', 'post', 'disks/rename', { new: 'n+1&.qc2' }],
+    ['Resize', 'post', 'disks/resize', { size: '+5G' }],
+    ['Delete', 'delete', 'disks', {}],
   ])(
     '%s sends the disk and its input as query parameters, intact',
-    async (method, kind, verb, url, input) => {
-      const ctx = opened();
+    async (action, verb, url, input) => {
       axios.request.mockResolvedValue({});
-
-      ctx[method](path);
-      const confirm = ctx.$buefy.dialog[kind].mock.lastCall[0];
-      const open = dialog();
-      confirm.onConfirm(Object.values(input)[0], open);
+      await runAction((await opened()).details, action);
+      await confirmDialog(Object.values(input)[0]);
 
       const config = axios.request.mock.lastCall[0];
       expect(config).toEqual({
@@ -520,48 +535,43 @@ describe('disk action requests', () => {
         params: { disk: path, ...input },
       });
       expect(query(config)).toEqual({ disk: path, ...input });
-      await flush();
-      expect(open.close).toHaveBeenCalled();
-      expect(ctx.loader.load).toHaveBeenCalled();
+      await vi.waitFor(() => expect(dialogs()).toEqual([]));
+      expect(loaderSpy.load).toHaveBeenCalled();
     },
   );
 
+  // has the server start the clone as this job
+  const starts = (id) =>
+    axios.post.mockResolvedValue({
+      data: { id, kind: 'disk.clone', status: 'running', revision: 1 },
+    });
+
   it('clones in a background job, closing the prompt once it starts and reloading when it ends', async () => {
-    const ctx = opened();
-    const job = {
+    starts('j1');
+    const done = {
       id: 'j1',
       kind: 'disk.clone',
-      status: 'running',
-      revision: 1,
+      status: 'succeeded',
+      revision: 3,
     };
-    axios.post.mockResolvedValue({ data: job });
-    const done = { ...job, status: 'succeeded', revision: 3 };
     axios.get.mockResolvedValue({ data: done });
 
-    ctx.cloneDisk(path);
-    const open = dialog();
-    const confirmed = ctx.$buefy.dialog.prompt.mock.lastCall[0].onConfirm(
-      'n+1&.qc2',
-      open,
-    );
-    await flush();
+    await runAction((await opened()).details, 'Clone');
+    await confirmDialog('n+1&.qc2');
 
     const [url, body, config] = axios.post.mock.lastCall;
     expect([url, body]).toEqual(['disks/clone/jobs', null]);
     expect(query({ url, ...config })).toEqual({ disk: path, new: 'n+1&.qc2' });
-    expect(open.close).toHaveBeenCalled();
-    expect(ctx.loader.load).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(dialogs()).toEqual([]));
+    expect(loaderSpy.load).not.toHaveBeenCalled();
 
     useJobStore().apply(wsMsg('job', 'j1', 'update', done));
-    await confirmed;
-    expect(ctx.loader.load).toHaveBeenCalled();
+    await flushPromises();
+    expect(loaderSpy.load).toHaveBeenCalled();
   });
 
   it('says why a clone failed, and stops waiting for a job the server forgot', async () => {
-    const ctx = opened();
-    axios.post.mockResolvedValue({
-      data: { id: 'j1', kind: 'disk.clone', status: 'running', revision: 1 },
-    });
+    starts('j1');
     const failed = {
       id: 'j1',
       kind: 'disk.clone',
@@ -571,52 +581,43 @@ describe('disk action requests', () => {
       revision: 3,
     };
     axios.get.mockResolvedValue({ data: failed });
+    const { details } = await opened();
 
-    ctx.cloneDisk(path);
-    let confirmed = ctx.$buefy.dialog.prompt.mock.lastCall[0].onConfirm(
-      'x',
-      dialog(),
-    );
-    await flush();
+    await runAction(details, 'Clone');
+    await confirmDialog('x');
     useJobStore().apply(wsMsg('job', 'j1', 'update', failed));
-    await confirmed;
+    await flushPromises();
     expect(notices.open).toHaveBeenCalledTimes(1);
     expect(noticeText()).toContain('no space left');
 
     // the server restarted while the next clone ran
-    axios.post.mockResolvedValue({
-      data: { id: 'j2', kind: 'disk.clone', status: 'running', revision: 1 },
-    });
-    ctx.cloneDisk(path);
-    confirmed = ctx.$buefy.dialog.prompt.mock.lastCall[0].onConfirm(
-      'y',
-      dialog(),
-    );
-    await flush();
+    starts('j2');
+    await runAction(details, 'Clone');
+    await confirmDialog('y');
     useJobStore().apply(wsMsg('job', 'j2', 'remove', {}));
-    await confirmed;
+    await flushPromises();
     expect(notify.error.mock.lastCall[0].message).toMatch(
       /no longer has job j2/,
     );
-    expect(ctx.loader.load).toHaveBeenCalledTimes(2);
+    expect(loaderSpy.load).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the prompt open and shows why a clone could not start', async () => {
-    const ctx = opened();
     const err = httpError(409, 'disk image exists');
     axios.post.mockRejectedValue(err);
 
-    ctx.cloneDisk(path);
-    const open = dialog();
-    await ctx.$buefy.dialog.prompt.mock.lastCall[0].onConfirm('x', open);
+    await runAction((await opened()).details, 'Clone');
+    await confirmDialog('x');
 
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(open.cancelLoading).toHaveBeenCalled();
-    expect(open.close).not.toHaveBeenCalled();
+    const [prompt] = dialogs();
+    expect(prompt).toBeDefined();
+    expect(
+      prompt.querySelector('footer .button:last-child').classList,
+    ).not.toContain('is-loading');
   });
 
-  it("shows a disk's clones in its details", () => {
-    const ctx = opened();
+  it("shows a disk's clones in its details", async () => {
     useJobStore().put({
       id: 'j1',
       kind: 'disk.clone',
@@ -631,36 +632,44 @@ describe('disk action requests', () => {
       status: 'running',
       revision: 1,
     });
-    expect(ctx.cloneJobsOf({ fullPath: path }).map((j) => j.id)).toEqual([
-      'j1',
-    ]);
+    const { wrapper } = await opened();
+    expect(
+      wrapper.findAllComponents(JobProgress).map((p) => p.props('job').id),
+    ).toEqual(['j1']);
   });
 
-  it('rebases with the disk, backing image and mode as query parameters', () => {
-    const ctx = opened();
+  it('rebases with the disk, backing image and mode as query parameters', async () => {
     axios.request.mockResolvedValue({});
+    const { wrapper, details } = await opened();
+    await runAction(details, 'Rebase');
 
-    ctx.rebaseDisk(path, '/phenix/images/b&c.qc2', true);
+    const rebase = actionWindow(wrapper);
+    await rebase.find('select').setValue(target.fullPath);
+    await rebase.find('input[type="checkbox"]').setValue(true);
+    await rebase.findAll('footer button').at(-1).trigger('click');
     expect(query(axios.request.mock.lastCall[0])).toEqual({
       disk: path,
-      backing: '/phenix/images/b&c.qc2',
+      backing: target.fullPath,
       unsafe: 'true',
     });
   });
 
   it('commits, then deletes the committed disk when asked', async () => {
-    const ctx = opened();
     axios.post.mockResolvedValue({});
     axios.request.mockResolvedValue({});
+    const { wrapper, details } = await opened();
+    await runAction(details, 'Commit');
 
-    ctx.commitDisk(path, true);
+    const commit = actionWindow(wrapper);
+    await commit.find('input[type="checkbox"]').setValue(true);
+    await commit.findAll('footer button').at(-1).trigger('click');
     expect(axios.post).toHaveBeenCalledWith('disks/commit', null, {
       params: { disk: path },
     });
     expect(query({ url: 'disks/commit', params: { disk: path } })).toEqual({
       disk: path,
     });
-    await flush();
+    await flushPromises();
     expect(axios.request).toHaveBeenCalledWith({
       method: 'delete',
       url: 'disks',

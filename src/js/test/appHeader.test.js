@@ -1,24 +1,27 @@
 // The header: a link to each page the role may open, the page's load state
 // beside the button that reloads it, and the background jobs menu.
+import { nextTick } from 'vue';
+import { flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const store = vi.hoisted(() => ({
-  auth: true,
-  role: null,
-  token: 't',
-  features: [],
-}));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
-vi.mock('@/utils/axios.js', () => ({ default: { get: vi.fn() } }));
+const { modules, resetMocks, store } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/axios.js', modules.axios);
 
 import AppHeader from '@/components/AppHeader.vue';
 import RefreshStatus from '@/components/RefreshStatus.vue';
 import JobsMenu from '@/components/jobs/JobsMenu.vue';
 import { useJobStore } from '@/utils/jobs.js';
 import { pageStatus } from '@/utils/pageLoader.js';
-import { makeContext } from './helpers/context.js';
-import { renderSSR, textOf, tooltipButtons } from './helpers/render.js';
+import {
+  byLabel,
+  mountComponent,
+  textOf,
+  tooltipButtons,
+} from './helpers/mount.js';
 import { role } from './helpers/roles.js';
 
 const NOW = Date.parse('2026-09-30T12:00:00Z');
@@ -27,7 +30,7 @@ beforeEach(() => {
   setActivePinia(createPinia());
   // the refresh status's clock, and the timer it keeps it current with
   vi.useFakeTimers({ now: NOW });
-  Object.assign(store, { auth: true, role: null, features: [] });
+  resetMocks({ store: { auth: true, role: null, token: 't', features: [] } });
   Object.assign(pageStatus, {
     refresh: null,
     loading: false,
@@ -42,16 +45,10 @@ beforeEach(() => {
 
 afterEach(() => vi.useRealTimers());
 
+const header = (options) => mountComponent(AppHeader, options);
+
 // the text of each link in the header's menu, in order
-function links(html) {
-  const menu = html.slice(
-    html.indexOf('navbar-start'),
-    html.indexOf('navbar-end'),
-  );
-  return [...menu.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/g)].map(([, text]) =>
-    textOf(text),
-  );
-}
+const links = (wrapper) => wrapper.findAll('.navbar-start a').map(textOf);
 
 describe('the menu', () => {
   const admin = role('Global Admin', ['*', '*'], ['*/*', '*']);
@@ -120,80 +117,59 @@ describe('the menu', () => {
     ],
   ])('%s', async (_, signedIn, features, want) => {
     Object.assign(store, { role: signedIn, features });
-    expect(links(await renderSSR(AppHeader))).toEqual(want);
+    expect(links(await header())).toEqual(want);
   });
 
   it('offers only the experiments to no one signed in', async () => {
     Object.assign(store, { auth: false, role: admin });
-    const html = await renderSSR(AppHeader);
-    expect(links(html)).toEqual(['Experiments']);
-    expect(textOf(html)).not.toContain('Logout');
+    const signedOut = await header();
+    expect(links(signedOut)).toEqual(['Experiments']);
+    expect(textOf(signedOut)).not.toContain('Logout');
   });
 });
 
 describe('the Tunneler button', () => {
-  // the Tunneler link at the right of the header, if there is one
-  const button = (html) =>
-    html
-      .slice(html.indexOf('navbar-end'))
-      .match(/<a\b[^>]*tunneler-button[^>]*>[\s\S]*?<\/a>/)?.[0];
-
-  it('links to the Tunneler page at the right of the header, not as a tab', async () => {
+  const viewer = () =>
     Object.assign(store, {
       role: role('Viewer', ['experiments', 'list']),
       features: ['tunneler-download'],
     });
-    const html = await renderSSR(AppHeader);
+  const button = (wrapper) => wrapper.find('.navbar-end a.tunneler-button');
 
-    expect(links(html)).not.toContain('Tunneler');
-    const link = button(html);
-    expect(link).toMatch(/href="\/tunneler"/);
-    const classes = link.match(/class="([^"]*)"/)[1].split(' ');
-    expect(classes).toEqual(
+  it('links to the Tunneler page at the right of the header, not as a tab', async () => {
+    viewer();
+    const page = await header();
+
+    expect(links(page)).not.toContain('Tunneler');
+    const link = button(page);
+    expect(link.attributes('href')).toBe('/tunneler');
+    expect(link.classes()).toEqual(
       expect.arrayContaining(['button', 'is-primary', 'is-medium']),
     );
-    expect(link).toContain('data-icon="download"');
+    expect(link.find('[data-icon="download"]').exists()).toBe(true);
     expect(textOf(link)).toBe('Tunneler');
-    expect(link).not.toContain('aria-current');
+    expect(link.attributes('aria-current')).toBeUndefined();
   });
 
   it('is marked as the current page on the Tunneler page', async () => {
-    Object.assign(store, {
-      role: role('Viewer', ['experiments', 'list']),
-      features: ['tunneler-download'],
-    });
-    const html = await renderSSR(AppHeader, {}, { route: '/tunneler' });
-    expect(button(html)).toContain('aria-current="page"');
+    viewer();
+    const page = await header({ route: '/tunneler' });
+    expect(button(page).attributes('aria-current')).toBe('page');
   });
 
   it('closes the burger menu when followed', async () => {
-    Object.assign(store, {
-      role: role('Viewer', ['experiments', 'list']),
-      features: ['tunneler-download'],
-    });
-    const menu = (html) => html.match(/class="navbar-menu[^"]*"/)[0];
-    expect(menu(await renderSSR(AppHeader))).not.toContain('is-active');
-    expect(
-      menu(await renderSSR(AppHeader, {}, { data: { menuOpen: true } })),
-    ).toContain('is-active');
+    viewer();
+    const page = await header();
+    const menuOpen = () => page.find('.navbar-menu').classes('is-active');
+    expect(menuOpen()).toBe(false);
 
-    const instances = [];
-    await renderSSR(AppHeader, {}, { instances });
-    const header = instances.find((vm) => 'menuOpen' in vm.$data);
-    const navbar = instances.find((vm) => vm.$options.name === 'BNavbar');
-    const link = instances.find(
-      (vm) =>
-        vm.$options.name === 'RouterLink' && vm.$props.to.name === 'tunneler',
-    );
-
-    navbar.toggleActive();
-    expect(header.menuOpen).toBe(true);
-    // the anchor's click handlers: the router's navigate, then the button's
-    const click = { button: 0, defaultPrevented: false, preventDefault() {} };
-    await Promise.all(
-      [link.$.subTree.props.onClick].flat().map((on) => on(click)),
-    );
-    expect(header.menuOpen).toBe(false);
+    await page.find('.navbar-burger').trigger('click');
+    expect(menuOpen()).toBe(true);
+    // a click on the label, which Buefy's navbar leaves open
+    await button(page).find('span:not(.icon)').trigger('click');
+    await flushPromises();
+    expect(menuOpen()).toBe(false);
+    expect(page.router.currentRoute.value.name).toBe('tunneler');
   });
 
   it.each([
@@ -205,9 +181,9 @@ describe('the Tunneler button', () => {
       role: role('Viewer', ['experiments', 'list']),
       features,
     });
-    const html = await renderSSR(AppHeader);
-    expect(html).not.toContain('tunneler-button');
-    expect(html).not.toContain('href="/tunneler"');
+    const page = await header();
+    expect(page.find('.tunneler-button').exists()).toBe(false);
+    expect(page.find('a[href="/tunneler"]').exists()).toBe(false);
   });
 });
 
@@ -320,21 +296,21 @@ describe('the refresh status', () => {
   ])('%s', async (_, status, want) => {
     store.role = role('Viewer', ['experiments', 'list']);
     Object.assign(pageStatus, { refresh: () => {}, ...status });
-    const html = await renderSSR(AppHeader);
+    const refresh = (await header()).find('.refresh-status');
 
-    const label = html.match(
-      /<span[^>]*class="[^"]*refresh-label[^"]*"[^>]*>([^<]*)</,
-    )[1];
-    const reason = html.match(/<span class="is-sr-only"[^>]*>: ([^<]*)</)?.[1];
-    const [button] = tooltipButtons(html);
+    // the label's own text, before its screen-reader reason
+    const label = refresh.find('.refresh-label');
+    const reason = label.find('.is-sr-only');
+    const [button] = tooltipButtons(refresh);
     expect({
-      label,
-      state: button.attrs.match(
-        /refresh-(loading|ok|failed|idle|stale)\b/,
-      )?.[1],
+      label: label.element.firstChild.textContent,
+      state: button.control
+        .classes()
+        .find((c) => /^refresh-(loading|ok|failed|idle|stale)$/.test(c))
+        ?.slice('refresh-'.length),
       disabled: button.disabled,
-      spins: /data-icon="sync-alt" class="fa-spin"/.test(html),
-      ...(reason && { reason }),
+      spins: refresh.find('[data-icon="sync-alt"].fa-spin').exists(),
+      ...(reason.exists() && { reason: textOf(reason).replace(/^: /, '') }),
     }).toEqual(want);
     expect(button).toMatchObject({
       tooltip: "Refresh this page's data",
@@ -372,15 +348,14 @@ describe('the refresh status', () => {
   ])('announces %s', async (_, status, want, labelHidden) => {
     store.role = role('Viewer', ['experiments', 'list']);
     Object.assign(pageStatus, { refresh: () => {}, ...status });
-    const html = await renderSSR(AppHeader);
+    const page = await header();
 
     // the only live region is the one for problems, so polls stay quiet
-    expect(html.match(/aria-live=/g)).toHaveLength(1);
-    expect(
-      html.match(/class="refresh-alert is-sr-only"[^>]*>([^<]*)</)[1],
-    ).toBe(want);
-    const label = html.match(/<span[^>]*class="[^"]*refresh-label[^>]*>/)[0];
-    expect(label.includes('aria-hidden="true"')).toBe(labelHidden);
+    expect(page.findAll('[aria-live]')).toHaveLength(1);
+    expect(page.find('.refresh-alert.is-sr-only').text()).toBe(want);
+    expect(page.find('.refresh-label').attributes('aria-hidden')).toBe(
+      labelHidden ? 'true' : undefined,
+    );
   });
 
   it.each([
@@ -392,32 +367,34 @@ describe('the refresh status', () => {
     ],
   ])(
     'keeps announcing %s through each poll, so it is not read out again',
-    (_, status, want) => {
+    async (_, status, want) => {
       Object.assign(pageStatus, { refresh: () => {}, ...status });
-      const ctx = makeContext(RefreshStatus);
-      // the alert after the page status changes, as its watcher leaves it
-      const after = (change) => {
+      const refresh = await mountComponent(RefreshStatus);
+      // the alert after the page status changes
+      const after = async (change) => {
         Object.assign(pageStatus, change);
-        RefreshStatus.watch.problem?.handler.call(ctx, ctx.problem);
-        return ctx.alert;
+        await nextTick();
+        return refresh.find('.refresh-alert').text();
       };
 
-      expect(after({})).toBe(want);
-      expect(after({ loading: true })).toBe(want);
-      expect(after({ loading: false })).toBe(want);
-      expect(after({ loading: true })).toBe(want);
+      expect(await after({})).toBe(want);
+      expect(await after({ loading: true })).toBe(want);
+      expect(await after({ loading: false })).toBe(want);
+      expect(await after({ loading: true })).toBe(want);
       // a reload that fixes it clears the announcement
-      expect(after({ loading: false, failed: false, updatedAt: NOW })).toBe('');
+      expect(
+        await after({ loading: false, failed: false, updatedAt: NOW }),
+      ).toBe('');
     },
   );
 
   it('is left out on a page with nothing to reload, and when signed out', async () => {
     store.role = role('Viewer', ['experiments', 'list']);
-    expect(await renderSSR(AppHeader)).not.toContain('refresh-status');
+    expect((await header()).find('.refresh-status').exists()).toBe(false);
 
     Object.assign(pageStatus, { refresh: () => {}, updatedAt: NOW });
     store.auth = false;
-    expect(await renderSSR(AppHeader)).not.toContain('refresh-status');
+    expect((await header()).find('.refresh-status').exists()).toBe(false);
   });
 });
 
@@ -442,55 +419,60 @@ describe('the jobs menu', () => {
     jobs.put(job('2', 'queued'));
     jobs.put(job('3', 'succeeded'));
 
-    const html = await renderSSR(AppHeader);
-    expect(html).toContain('aria-label="Background jobs (2 jobs running)"');
-    expect(html).toMatch(/class="tag is-info is-rounded jobs-count"[^>]*>2</);
+    const page = await header();
+    expect(byLabel(page, 'Background jobs (2 jobs running)').exists()).toBe(
+      true,
+    );
+    expect(page.find('.tag.is-info.is-rounded.jobs-count').text()).toBe('2');
   });
 
   it('is a disclosure whose buttons and links assistive technology reaches', async () => {
     store.role = viewer;
     useJobStore().put(job('1', 'running'));
 
-    const html = await renderSSR(AppHeader);
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('aria-controls="jobs-panel"');
-    expect(html).toMatch(
-      /id="jobs-panel"[^>]*role="region"|role="region"[^>]*id="jobs-panel"/,
-    );
-    expect(html).toMatch(/class="dropdown is-right jobs-menu"/);
+    const page = await header();
+    const trigger = page.find('.jobs-trigger');
+    expect(trigger.attributes('aria-expanded')).toBe('false');
+    expect(trigger.attributes('aria-controls')).toBe('jobs-panel');
+    expect(page.find('#jobs-panel').attributes('role')).toBe('region');
+    expect(page.find('.jobs-menu').classes()).toEqual([
+      'dropdown',
+      'is-right',
+      'jobs-menu',
+    ]);
   });
 
-  it('closes on Escape, back to its button, and on a click outside it', () => {
-    const inside = {};
-    const trigger = { focus: vi.fn() };
-    const menu = makeContext(JobsMenu, {
-      $refs: { root: { contains: (el) => el === inside }, trigger },
-    });
+  it('closes on Escape, back to its button, and on a click outside it', async () => {
+    const menu = await mountComponent(JobsMenu, { attachTo: document.body });
+    const trigger = menu.find('.jobs-trigger');
+    const isOpen = () => menu.classes('is-active');
 
-    menu.open = true;
-    menu.closeOutside({ target: inside });
-    expect(menu.open).toBe(true);
-    menu.closeOutside({ target: {} });
-    expect(menu.open).toBe(false);
-    expect(trigger.focus).not.toHaveBeenCalled();
+    await trigger.trigger('click');
+    await menu.find('#jobs-panel').trigger('click');
+    expect(isOpen()).toBe(true);
+    document.body.click();
+    await nextTick();
+    expect(isOpen()).toBe(false);
+    expect(document.activeElement).not.toBe(trigger.element);
 
-    menu.open = true;
-    menu.close(true);
-    expect(menu.open).toBe(false);
-    expect(trigger.focus).toHaveBeenCalledOnce();
+    await trigger.trigger('click');
+    await menu.trigger('keydown', { key: 'Escape' });
+    expect(isOpen()).toBe(false);
+    expect(document.activeElement).toBe(trigger.element);
 
     // Escape with the panel already closed leaves focus where it is
-    menu.close(true);
-    expect(trigger.focus).toHaveBeenCalledOnce();
+    trigger.element.blur();
+    await menu.trigger('keydown', { key: 'Escape' });
+    expect(document.activeElement).not.toBe(trigger.element);
   });
 
   it('says when there are none, and is not shown to no one signed in', async () => {
     store.role = viewer;
-    expect(await renderSSR(AppHeader)).toContain(
-      'aria-label="Background jobs (0 jobs running)"',
-    );
+    expect(
+      byLabel(await header(), 'Background jobs (0 jobs running)').exists(),
+    ).toBe(true);
 
     Object.assign(store, { auth: false });
-    expect(await renderSSR(AppHeader)).not.toContain('Background jobs');
+    expect((await header()).html()).not.toContain('Background jobs');
   });
 });

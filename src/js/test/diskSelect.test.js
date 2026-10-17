@@ -6,12 +6,7 @@ vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
 
 import DiskSelect from '@/components/experiment/DiskSelect.vue';
 import { disk } from './helpers/fixtures.js';
-import {
-  renderSSR,
-  selectOptions,
-  textOf,
-  tooltipButtons,
-} from './helpers/render.js';
+import { mountComponent, textOf, tooltipButtons } from './helpers/mount.js';
 
 const disks = [
   disk('/phenix/images/win/base.qc2', 'win/base.qc2'),
@@ -20,23 +15,33 @@ const disks = [
   disk('/data/vms/e2e.img'),
 ];
 
+// each option of a select, in order, with the label of its optgroup
+const optionsOf = (select) =>
+  select.findAll('option').map((o) => ({
+    group:
+      o.element.parentElement.localName === 'optgroup'
+        ? o.element.parentElement.label
+        : null,
+    value: o.element.value,
+    text: textOf(o),
+    disabled: o.element.disabled,
+  }));
+
 // The picker for a VM whose disk is `modelValue`, given the disk list: its
 // select, its options in order and the warnings beside it.
 async function render(modelValue, list = disks) {
-  const html = await renderSSR(DiskSelect, {
-    modelValue,
-    disks: list,
-    label: 'Disk for VM web',
+  const picker = await mountComponent(DiskSelect, {
+    props: { modelValue, disks: list, label: 'Disk for VM web' },
   });
-  const select = html.match(/<select\b[^>]*>[\s\S]*?<\/select>/)[0];
+  const select = picker.find('select');
   return {
+    picker,
     select,
-    options: selectOptions(select),
-    warnings: tooltipButtons(html).map(({ label, tooltip }) => ({
+    options: optionsOf(select),
+    warnings: tooltipButtons(picker).map(({ label, tooltip }) => ({
       label,
       tooltip,
     })),
-    html,
   };
 }
 
@@ -48,8 +53,8 @@ describe('DiskSelect', () => {
       '/phenix/images/win/base.qc2',
     );
 
-    expect(select).toContain('aria-label="Disk for VM web"');
-    expect(select).toContain('title="/phenix/images/win/base.qc2"');
+    expect(select.attributes('aria-label')).toBe('Disk for VM web');
+    expect(select.attributes('title')).toBe('/phenix/images/win/base.qc2');
     expect(options).toEqual([
       {
         group: null,
@@ -81,7 +86,7 @@ describe('DiskSelect', () => {
   });
 
   it('warns of a disk outside the standard images directory', async () => {
-    const { options, warnings, html } = await render('/data/vms/e2e.img');
+    const { picker, options, warnings } = await render('/data/vms/e2e.img');
 
     // the VM's disk is one of the options, not added again
     expect(options.map((o) => o.value)).toHaveLength(4);
@@ -97,11 +102,12 @@ describe('DiskSelect', () => {
     ]);
     // the button is described by the same text, for screen readers, and
     // submits no form it is in
-    const describedBy = html.match(/aria-describedby="([^"]*)"/)[1];
-    expect(
-      textOf(html.match(new RegExp(`id="${describedBy}"[^>]*>([^<]*)<`))[1]),
-    ).toBe(warnings[0].tooltip);
-    expect(tooltipButtons(html)[0].attrs).toMatch(/\stype="button"/);
+    const [{ control }] = tooltipButtons(picker);
+    const describedBy = control.attributes('aria-describedby');
+    expect(textOf(picker.find(`[id="${describedBy}"]`))).toBe(
+      warnings[0].tooltip,
+    );
+    expect(control.attributes('type')).toBe('button');
   });
 
   it('shows a disk the loaded list does not hold as not listed, with a warning', async () => {

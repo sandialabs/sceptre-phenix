@@ -1,8 +1,9 @@
 // The State of Health page: what surrounds the graph, its layout, the SOH runs
 // it follows from `apps/soh` messages, and its SVG and GEXF downloads.
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, fetching, modules, notify, resetMocks, saver } =
+const { axios, fetching, modules, notify, resetMocks, saver, ws } =
   await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -15,12 +16,23 @@ vi.mock('file-saver', modules.fileSaver);
 
 import { GROUPS_MAX_NODES } from '@/utils/soh/layouts.js';
 import StateOfHealth from '@/views/StateOfHealth.vue';
-import { pageContext } from './helpers/page.js';
-import { buttons, renderSSR, stubBrowser, textOf } from './helpers/render.js';
+import { buttons, mountComponent, toasts } from './helpers/mount.js';
 import { sohFixture } from './sohFixture.js';
 
+// The page on experiment demo with this state, not attached to the
+// document, which so has no #graph to draw into.
+const open = (state = {}, component = StateOfHealth) =>
+  mountComponent(component, { route: '/soh/demo', data: state });
+
+const big = Array.from({ length: GROUPS_MAX_NODES + 1 }, (_, id) => ({
+  id,
+  image: 'linux',
+}));
+
+// the radio button that picks this layout
+const layoutButton = (page, label) => page.find(`[aria-label="${label}"]`);
+
 beforeEach(() => {
-  stubBrowser();
   resetMocks({ store: { token: 't', features: [], role: null } });
 });
 
@@ -29,76 +41,70 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// the page on experiment demo
-const page = (fields, component = StateOfHealth) =>
-  pageContext(component, { id: 'demo', fields });
-
 describe('rendering', () => {
-  const render = (data) =>
-    renderSSR(StateOfHealth, {}, { route: '/soh/demo', data });
   const { nodes, edges } = sohFixture();
 
   // the layout buttons: the label of each, and whether it is chosen or off
-  const layoutButtons = (html) =>
-    [...html.matchAll(/aria-label="([^"]+)"[^>]*><label class="([^"]*)"/g)].map(
-      ([, label, cls]) => ({
-        label,
-        chosen: cls.includes('is-selected'),
-        off: cls.includes('is-disabled'),
-      }),
-    );
+  const layoutButtons = (page) =>
+    page.findAll('.soh-layout-seg .control').map((c) => ({
+      label: c.attributes('aria-label'),
+      chosen: c.find('label').classes('is-selected'),
+      off: c.find('label').classes('is-disabled'),
+    }));
 
   it('counts the VMs and VLANs the filter shows', async () => {
-    const counts = (html) =>
-      textOf(html.match(/<div class="soh-counts"[\s\S]*?<\/div>/)[0]);
+    const counts = async (state) =>
+      (await open(state))
+        .findAll('.soh-count')
+        .map((c) => c.text().replace(/\s+/g, ' '))
+        .join(' ');
 
-    expect(counts(await render({ nodes, edges }))).toBe('19 VMs 4 VLANs');
+    expect(await counts({ nodes, edges })).toBe('19 VMs 4 VLANs');
     const one = [nodes[0], nodes.find((n) => n.image === 'switch')];
-    expect(counts(await render({ nodes: one }))).toBe('1 VM 1 VLAN');
+    expect(await counts({ nodes: one })).toBe('1 VM 1 VLAN');
   });
 
   it('offers each layout, starting with the one last chosen', async () => {
     localStorage.setItem('phenix.soh.layout', 'elk');
-    const html = await render({ nodes, edges });
+    const page = await open({ nodes, edges });
 
-    expect(layoutButtons(html)).toEqual(
+    expect(layoutButtons(page)).toEqual(
       ['Force', 'Radial tree', 'Layered', 'VLAN groups', 'ELK layered'].map(
         (label) => ({ label, chosen: label == 'ELK layered', off: false }),
       ),
     );
-    expect(html).toContain('Top-down tiers with host blocks (ELK)');
+    expect(page.text()).toContain('Top-down tiers with host blocks (ELK)');
   });
 
   it('turns VLAN groups off above its node cap, saying why', async () => {
-    const big = Array.from({ length: GROUPS_MAX_NODES + 1 }, (_, id) => ({
-      id,
-      image: 'linux',
-    }));
-    const html = await render({ nodes: big });
+    const page = await open({ nodes: big });
 
     expect(
-      layoutButtons(html)
+      layoutButtons(page)
         .filter((b) => b.off)
         .map((b) => b.label),
     ).toEqual(['VLAN groups']);
-    expect(html).toContain('VLAN groups is off above 300 nodes');
+    expect(page.text()).toContain('VLAN groups is off above 300 nodes');
   });
 
   it('holds the layouts, Fit and Download until there is a graph', async () => {
-    const html = await render({ nodes: null });
+    const page = await open({ nodes: null });
 
-    expect(textOf(html)).toContain(
+    expect(page.text()).toContain(
       'There are no nodes matching your filter criteria!',
     );
-    expect(layoutButtons(html).map((b) => b.off)).toEqual(Array(5).fill(true));
-    expect(buttons(html)).toEqual([
+    expect(layoutButtons(page).map((b) => b.off)).toEqual(Array(5).fill(true));
+    expect(buttons(page)).toEqual([
       'Refresh Network',
       'Loading… (disabled)',
       'Fit (disabled)',
       'Download (disabled)',
     ]);
-    const formats = [...html.matchAll(/<b[^>]*>(PNG|SVG|GEXF)<\/b>/g)];
-    expect(formats.map(([, f]) => f)).toEqual(['PNG', 'SVG', 'GEXF']);
+    expect(page.findAll('.soh-download-item b').map((b) => b.text())).toEqual([
+      'PNG',
+      'SVG',
+      'GEXF',
+    ]);
   });
 
   it.each([
@@ -120,8 +126,8 @@ describe('rendering', () => {
     ],
     ['says SOH has not started', { running: true }, 'SOH Not Initialized'],
   ])('holds the SOH button and %s', async (_, state, label) => {
-    const html = await render({ nodes, loaded: true, ...state });
-    expect(buttons(html)).toEqual([
+    const page = await open({ nodes, loaded: true, ...state });
+    expect(buttons(page)).toEqual([
       'Refresh Network',
       `${label} (disabled)`,
       'Fit',
@@ -130,13 +136,13 @@ describe('rendering', () => {
   });
 
   it('offers Run SOH once SOH has started in the running experiment', async () => {
-    const html = await render({
+    const page = await open({
       nodes,
       loaded: true,
       running: true,
       sohInitialized: true,
     });
-    expect(buttons(html)).toEqual([
+    expect(buttons(page)).toEqual([
       'Refresh Network',
       'Run SOH',
       'Fit',
@@ -146,95 +152,94 @@ describe('rendering', () => {
 });
 
 describe('SOH runs', () => {
-  const soh = (action, name = 'demo') => ({
-    resource: { type: 'apps/soh', name, action },
-  });
-
-  // the page, opened on a running experiment whose SOH has run before
+  // the page, opened on a running experiment whose SOH has run before, and
+  // a function that sends it an `apps/soh` message and gives its SOH button
   async function opened() {
-    const ctx = page({ loaded: true, running: true, sohInitialized: true });
-    await StateOfHealth.created.call(ctx);
-    return ctx;
-  }
-
-  // the SOH button, as the page renders in the state ctx is in
-  async function sohButton(ctx) {
-    const { loaded, running, sohRunning, sohInitialized } = ctx;
-    const html = await renderSSR(
-      StateOfHealth,
-      {},
-      {
-        route: '/soh/demo',
-        data: { loaded, running, sohRunning, sohInitialized },
-      },
-    );
-    const shown = buttons(html);
-    // it follows the Refresh Network button
-    return shown[shown.indexOf('Refresh Network') + 1];
+    const page = await open({
+      loaded: true,
+      running: true,
+      sohInitialized: true,
+    });
+    const soh = async (action, name = 'demo') => {
+      const msg = { resource: { type: 'apps/soh', name, action } };
+      for (const handler of ws.handlers) handler(msg);
+      await flushPromises();
+      // it follows the Refresh Network button
+      return buttons(page)[1];
+    };
+    return { page, soh };
   }
 
   it('shows a run from start to success, then reloads the graph', async () => {
     axios.get.mockResolvedValue({ data: {} });
-    const ctx = await opened();
-    expect(await sohButton(ctx)).toBe('Run SOH');
+    const { page, soh } = await opened();
+    expect(buttons(page)[1]).toBe('Run SOH');
 
-    ctx.handleWs(soh('start'));
-    expect(await sohButton(ctx)).toBe('SOH Is Running (disabled)');
+    expect(await soh('start')).toBe('SOH Is Running (disabled)');
     expect(axios.get).not.toHaveBeenCalled();
 
-    ctx.handleWs(soh('success'));
-    expect(await sohButton(ctx)).toBe('Run SOH');
+    expect(await soh('success')).toBe('Run SOH');
     expect(axios.get.mock.calls.map(([url]) => url)).toEqual([
       'experiments/demo/soh',
     ]);
   });
 
   it('reports a failed run and offers another', async () => {
-    const ctx = await opened();
+    const { soh } = await opened();
 
-    ctx.handleWs(soh('start'));
-    ctx.handleWs(soh('error'));
-    expect(await sohButton(ctx)).toBe('Run SOH');
-    expect(ctx.$buefy.toast.open).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: 'Triggering State of Health update failed.',
+    await soh('start');
+    expect(await soh('error')).toBe('Run SOH');
+    expect(toasts()).toEqual([
+      {
+        text: 'Triggering State of Health update failed.',
         type: 'is-danger',
-      }),
-    );
+      },
+    ]);
     expect(axios.get).not.toHaveBeenCalled();
   });
 
   it('ignores runs in other experiments', async () => {
-    const ctx = await opened();
+    const { soh } = await opened();
 
-    ctx.handleWs(soh('start', 'other'));
-    ctx.handleWs(soh('success', 'other'));
-    expect(await sohButton(ctx)).toBe('Run SOH');
+    await soh('start', 'other');
+    expect(await soh('success', 'other')).toBe('Run SOH');
     expect(axios.get).not.toHaveBeenCalled();
   });
 });
 
 describe('downloading the graph', () => {
-  // a page with the fixture graph drawn in the layered layout
-  function drawn(svg = {}) {
+  // The page with the fixture graph drawn in the layered layout, and a
+  // function that downloads it from the menu in a format.
+  async function drawn(svg = {}, state) {
     const { nodes, edges } = sohFixture();
-    const graph = {
-      svg: { node: () => svg },
+    const page = await open({ nodes, edges, running: true, ...state });
+    page.vm.graph = {
+      svg: { node: () => svg, interrupt: () => page.vm.graph.svg },
       layoutId: 'layered',
       nodes: nodes.map((n, i) => ({ id: n.id, x: i, y: 2 * i })),
     };
-    return page({ nodes, edges, running: true, graph });
+    return async (format) => {
+      const item = page
+        .findAll('.soh-download-item')
+        .find((i) => i.find('b').text() == format);
+      await item.trigger('click');
+      // the exporters load on first use
+      await vi.waitFor(() => expect(page.vm.exporting).toBe(false));
+      return saver.saveAs.mock.calls[0];
+    };
   }
 
   it("saves the graph with the experiment's VMs and the positions shown", async () => {
-    vi.useFakeTimers({ now: new Date(2026, 8, 30, 12, 0, 0) });
+    vi.useFakeTimers({
+      now: new Date(2026, 8, 30, 12, 0, 0),
+      toFake: ['Date'],
+    });
     axios.get.mockResolvedValue({
       data: { vms: [{ name: 'historian', host: 'compute7' }] },
     });
 
-    await drawn().download('gexf');
+    const [blob, name] = await (await drawn())('GEXF');
     expect(axios.get).toHaveBeenCalledWith('experiments/demo/vms');
-    const [blob, name] = saver.saveAs.mock.calls[0];
     expect(name).toBe('demo-soh-layered-20260930-120000.gexf');
     const xml = await blob.text();
     expect(xml).toContain('experiment demo: 19 VMs and 4 VLANs');
@@ -245,8 +250,7 @@ describe('downloading the graph', () => {
   it('saves it without VM details the user may not read', async () => {
     axios.get.mockRejectedValue(new Error('forbidden'));
 
-    await drawn().download('gexf');
-    const [blob] = saver.saveAs.mock.calls[0];
+    const [blob] = await (await drawn())('GEXF');
     expect(await blob.text()).toContain(
       'VM details (host, addresses, CPUs, memory, disk) not available',
     );
@@ -270,7 +274,7 @@ describe('downloading the graph', () => {
 
   it('titles the SVG with the experiment, what the filter shows, the layout and the time', async () => {
     const now = new Date(2026, 8, 30, 12, 0, 0);
-    vi.useFakeTimers({ now });
+    vi.useFakeTimers({ now, toFake: ['Date'] });
     vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '' }));
     vi.stubGlobal(
       'XMLSerializer',
@@ -280,16 +284,16 @@ describe('downloading the graph', () => {
         }
       },
     );
-    const ctx = drawn(svgElement());
     // the server sends only the nodes the filter shows
-    ctx.radioButton = 'running';
-    ctx.nodes = ctx.nodes.filter(
-      (n) => n.status === 'running' || n.image === 'switch',
-    );
+    const download = await drawn(svgElement(), {
+      radioButton: 'running',
+      nodes: sohFixture().nodes.filter(
+        (n) => n.status === 'running' || n.image === 'switch',
+      ),
+    });
 
-    await ctx.download('svg');
+    const [blob, name] = await download('SVG');
     expect(notify.error).not.toHaveBeenCalled();
-    const [blob, name] = saver.saveAs.mock.calls[0];
     expect(name).toBe('demo-soh-layered-20260930-120000.svg');
     const svg = await blob.text();
     expect(svg).toContain('>State of Health: demo<');
@@ -301,29 +305,23 @@ describe('downloading the graph', () => {
 
 describe('the layout drawn', () => {
   // the page lays out the graph and stops short of drawing it, as the
-  // server-side document has no #graph
+  // document has no #graph
 
   it('draws Force instead of VLAN groups for a graph too big for it, saying why', async () => {
-    const big = Array.from({ length: GROUPS_MAX_NODES + 1 }, (_, id) => ({
-      id,
-      image: 'linux',
-    }));
-    const ctx = page({ nodes: big, edges: [], layout: 'groups' });
+    const page = await open({ nodes: big, edges: [], layout: 'groups' });
 
-    await ctx.generateGraph();
+    await page.vm.generateGraph();
     const notice =
       'VLAN groups is off above 300 nodes (this graph has 301): it would ' +
       'take many seconds to compute. Showing Force.';
-    expect(ctx.layoutNotice).toBe(notice);
-    expect(ctx.$buefy.toast.open).toHaveBeenCalledWith(
-      expect.objectContaining({ message: notice, type: 'is-warning' }),
-    );
-    expect(ctx.layoutBusy).toBe(false);
+    expect(page.vm.layoutNotice).toBe(notice);
+    expect(toasts()).toEqual([{ text: notice, type: 'is-warning' }]);
+    expect(page.vm.layoutBusy).toBe(false);
   });
 
   // The page from modules loaded afresh, and the layout libraries it has
   // loaded, in order: none has loaded yet, whichever tests ran before.
-  async function freshPage(fields) {
+  async function freshPage(state) {
     vi.resetModules();
     const libraries = [];
     for (const [name, path] of [
@@ -338,35 +336,39 @@ describe('the layout drawn', () => {
       });
     }
     const { default: fresh } = await import('@/views/StateOfHealth.vue');
-    return { ctx: page(fields, fresh), libraries };
+    return { page: await open(state, fresh), libraries };
   }
 
   it("loads each layout's library only once that layout is picked", async () => {
-    // ELK reaches for the browser window's Error when there is a window,
-    // and the stubbed one has none
-    vi.stubGlobal('window', undefined);
     // a VM and its VLAN: the libraries load no faster for a bigger graph
     const { nodes, edges } = sohFixture();
     const [edge] = edges;
     const pair = nodes.filter((n) => [edge.source, edge.target].includes(n.id));
-    const { ctx, libraries } = await freshPage({ nodes: pair, edges: [edge] });
+    // the last one picked before, so that picking each one changes it
+    localStorage.setItem('phenix.soh.layout', 'elk');
+    const { page, libraries } = await freshPage({
+      nodes: pair,
+      edges: [edge],
+      loaded: true,
+    });
 
     // none with the page
     expect(libraries).toEqual([]);
     for (const [layout, loaded] of [
-      ['force', []],
-      ['radial', []],
-      ['layered', ['dagre']],
-      ['groups', ['dagre', 'webcola']],
-      ['elk', ['dagre', 'webcola', 'elkjs']],
+      ['Force', []],
+      ['Radial tree', []],
+      ['Layered', ['dagre']],
+      ['VLAN groups', ['dagre', 'webcola']],
+      ['ELK layered', ['dagre', 'webcola', 'elkjs']],
     ]) {
-      ctx.layout = layout;
-      await ctx.generateGraph();
+      await layoutButton(page, layout).find('input').setValue(true);
+      await vi.waitFor(() => expect(page.vm.layoutBusy).toBe(false));
+      await flushPromises();
       expect(libraries, layout).toEqual(loaded);
     }
     // and each layout ran without falling back to Force
     expect(notify.error.mock.calls.map(([e]) => e.message)).toEqual([]);
-    expect(ctx.layout).toBe('elk');
-    expect(ctx.$buefy.toast.open).not.toHaveBeenCalled();
+    expect(page.vm.layout).toBe('elk');
+    expect(toasts()).toEqual([]);
   });
 });

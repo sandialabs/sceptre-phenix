@@ -1,10 +1,8 @@
 // Shared operation feedback: whether an action can be taken and why not, what
 // a selection skips, one confirm dialog, and one summary of how it went.
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/utils/notify.js', () => ({ openNotification: vi.fn() }));
-
-import { openNotification } from '@/utils/notify.js';
 import {
   LISTED_FAILURES,
   actionState,
@@ -19,10 +17,18 @@ import {
   skippedText,
   summarizeOutcome,
 } from '@/utils/operations.js';
-import { fakeBuefy, lastConfirm, toasts } from './helpers/buefy.js';
 import { httpError } from './helpers/fixtures.js';
+import {
+  confirmDialog,
+  dialogs,
+  mountComponent,
+  textOf,
+  toasts,
+} from './helpers/mount.js';
 
-beforeEach(() => openNotification.mockReset());
+// the $buefy of a mounted component, which also opens the notifications
+const realBuefy = async () =>
+  (await mountComponent({ template: '<div />' })).vm.$buefy;
 
 const restart = { name: 'restart', label: 'Restart', icon: 'sync-alt' };
 
@@ -134,40 +140,47 @@ describe('partitionForAction and skippedText', () => {
 });
 
 describe('confirmOperation', () => {
+  // the HTML of a dialog's message
+  const messageOf = (dialog) =>
+    dialog.querySelector('.media-content p > div').innerHTML;
+
   it('asks once, naming what it skips, and resolves with the answer', async () => {
-    const buefy = fakeBuefy();
-    const answer = confirmOperation(buefy, {
+    const answer = confirmOperation(await realBuefy(), {
       title: 'Restart VMs',
       message: 'Restart <b>2 VMs</b>?',
       confirmText: 'Restart',
       skipped: [{ reason: 'the VM is paused', names: ['<db>'] }],
       noun: 'VM',
     });
+    await nextTick();
 
-    const dialog = lastConfirm({ $buefy: buefy });
-    expect(buefy.dialog.confirm).toHaveBeenCalledTimes(1);
-    expect(dialog).toMatchObject({
-      title: 'Restart VMs',
-      confirmText: 'Restart',
-    });
-    expect(dialog.message).toContain('Restart <b>2 VMs</b>?');
-    expect(dialog.message).toContain('The &lt;db&gt; VM is paused.');
+    expect(dialogs()).toHaveLength(1);
+    const [dialog] = dialogs();
+    expect(textOf(dialog.querySelector('.modal-card-title'))).toBe(
+      'Restart VMs',
+    );
+    expect(textOf(dialog.querySelector('footer .button:last-child'))).toBe(
+      'Restart',
+    );
+    const message = messageOf(dialog);
+    expect(message).toContain('Restart <b>2 VMs</b>?');
+    expect(message).toContain('The &lt;db&gt; VM is paused.');
 
-    dialog.onConfirm();
+    await confirmDialog();
     await expect(answer).resolves.toBe(true);
   });
 
   it('resolves false when canceled, and says nothing of skips when there are none', async () => {
-    const buefy = fakeBuefy();
-    const answer = confirmOperation(buefy, {
+    const answer = confirmOperation(await realBuefy(), {
       title: 'Clear',
       message: 'Clear?',
       confirmText: 'Clear',
       noun: 'run',
     });
-    const dialog = lastConfirm({ $buefy: buefy });
-    expect(dialog.message).toBe('<p>Clear?</p>');
-    dialog.onCancel();
+    await nextTick();
+    const [dialog] = dialogs();
+    expect(messageOf(dialog)).toBe('<p>Clear?</p>');
+    dialog.querySelector('footer .button:first-child').click();
     await expect(answer).resolves.toBe(false);
   });
 });
@@ -273,55 +286,42 @@ describe('outcomes', () => {
 });
 
 describe('notifyOutcome', () => {
+  afterEach(() => vi.useRealTimers());
+
   const ok = (name) => ({ name, status: 'succeeded' });
 
-  // the text of a VNode tree
-  const text = (node) =>
-    node == null || node === false
-      ? ''
-      : typeof node === 'string'
-        ? node
-        : Array.isArray(node)
-          ? node.map(text).join('|')
-          : text(node.children);
+  // the lasting notifications on the page body
+  const notices = () => [...document.querySelectorAll('.notification')];
 
-  const findButton = (node) => {
-    if (!node || typeof node !== 'object') return null;
-    if (Array.isArray(node)) {
-      return node.map(findButton).find(Boolean) ?? null;
-    }
-    if (node.type === 'button') return node;
-    return findButton(node.children);
-  };
+  // a notification's message: its title, failures and retry button
+  const messageOf = (notice) =>
+    notice.querySelector('.error-title').parentElement;
+  const lines = (notice) => [...messageOf(notice).children].map(textOf);
 
-  it('toasts when every item succeeded', () => {
-    const buefy = fakeBuefy();
-    notifyOutcome(buefy, {
+  it('toasts when every item succeeded', async () => {
+    notifyOutcome(await realBuefy(), {
       verbPast: 'Restarted',
       noun: 'VM',
       items: [ok('a'), ok('b'), ok('c')],
     });
-    expect(toasts({ $buefy: buefy })).toEqual([
-      expect.objectContaining({
-        message: 'Restarted 3 VMs',
-        type: 'is-success',
-      }),
-    ]);
-    expect(openNotification).not.toHaveBeenCalled();
+    expect(toasts()).toEqual([{ text: 'Restarted 3 VMs', type: 'is-success' }]);
+    expect(notices()).toEqual([]);
   });
 
-  it('shows nothing for no items', () => {
-    const buefy = fakeBuefy();
-    notifyOutcome(buefy, { verbPast: 'Restarted', noun: 'VM', items: [] });
-    expect(buefy.toast.open).not.toHaveBeenCalled();
-    expect(openNotification).not.toHaveBeenCalled();
+  it('shows nothing for no items', async () => {
+    notifyOutcome(await realBuefy(), {
+      verbPast: 'Restarted',
+      noun: 'VM',
+      items: [],
+    });
+    expect(toasts()).toEqual([]);
+    expect(notices()).toEqual([]);
   });
 
-  it('shows one lasting notification naming the failures, and retries those worth it', () => {
-    const buefy = fakeBuefy();
+  it('shows one lasting notification naming the failures, and retries those worth it', async () => {
+    const buefy = await realBuefy();
     const onRetry = vi.fn();
-    const close = vi.fn();
-    openNotification.mockReturnValue({ close });
+    vi.useFakeTimers();
 
     notifyOutcome(buefy, {
       verbPast: 'Restarted',
@@ -333,35 +333,41 @@ describe('notifyOutcome', () => {
       ],
       onRetry,
     });
+    // a notification that is not lasting has closed by now
+    vi.advanceTimersByTime(60_000);
+    vi.useRealTimers();
 
-    expect(buefy.toast.open).not.toHaveBeenCalled();
-    expect(openNotification).toHaveBeenCalledTimes(1);
-    const options = openNotification.mock.lastCall[0];
-    expect(options).toMatchObject({ indefinite: true, type: 'is-warning' });
-    expect(text(options.message)).toBe(
-      'Restarted 1 of 3 VMs; 2 failed|b: locked|c: boom|Retry failed (1)',
-    );
+    expect(toasts()).toEqual([]);
+    expect(notices()).toHaveLength(1);
+    const [notice] = notices();
+    expect(notice.classList).toContain('is-warning');
+    expect(lines(notice)).toEqual([
+      'Restarted 1 of 3 VMs; 2 failed',
+      'b: locked',
+      'c: boom',
+      'Retry failed (1)',
+    ]);
 
-    findButton(options.message).props.onClick();
-    expect(close).toHaveBeenCalled();
+    messageOf(notice).querySelector('button').click();
     expect(onRetry).toHaveBeenCalledWith(['b']);
+    await vi.waitFor(() => expect(notices()).toEqual([]));
   });
 
-  it(`names at most ${LISTED_FAILURES} failures, and offers no retry without one worth it`, () => {
+  it(`names at most ${LISTED_FAILURES} failures, and offers no retry without one worth it`, async () => {
     const items = Array.from({ length: LISTED_FAILURES + 3 }, (_, i) => ({
       name: `vm${i}`,
       status: 'failed',
       error: 'boom',
     }));
-    notifyOutcome(fakeBuefy(), {
+    notifyOutcome(await realBuefy(), {
       verbPast: 'Restarted',
       noun: 'VM',
       items,
       onRetry: vi.fn(),
     });
-    const options = openNotification.mock.lastCall[0];
-    expect(options.type).toBe('is-danger');
-    expect(text(options.message)).toMatch(/\|vm7: boom\|and 3 more$/);
-    expect(findButton(options.message)).toBe(null);
+    const [notice] = notices();
+    expect(notice.classList).toContain('is-danger');
+    expect(lines(notice).slice(-2)).toEqual(['vm7: boom', 'and 3 more']);
+    expect(messageOf(notice).querySelector('button')).toBe(null);
   });
 });

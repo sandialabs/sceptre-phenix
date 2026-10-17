@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 
 import OperationOutcome from '@/components/jobs/OperationOutcome.vue';
-import { buttons, renderSSR, textOf } from './helpers/render.js';
+import { mountComponent, textOf } from './helpers/mount.js';
 
 const items = [
   { name: 'web', status: 'succeeded' },
@@ -11,26 +11,35 @@ const items = [
   { name: 'dns', status: 'skipped', error: "you don't have permission" },
 ];
 
+const render = (props) => mountComponent(OperationOutcome, { props });
+
+const retryButtons = (wrapper) =>
+  wrapper.findAll('button').filter((b) => b.text().startsWith('Retry'));
+
 describe('OperationOutcome', () => {
   it('groups the items by outcome, failures first, with their reasons', async () => {
-    const html = await renderSSR(OperationOutcome, { items, noun: 'VM' });
-    const text = textOf(html);
+    const wrapper = await render({ items, noun: 'VM' });
+    const text = textOf(wrapper);
 
     expect(text.indexOf('Failed: 2 VMs')).toBeLessThan(
       text.indexOf('Skipped: 1 VM'),
     );
     expect(text).toContain('Succeeded: 1 VM');
     expect(text).not.toContain('Canceled');
-    expect(text).toContain('db : vm db is locked can retry');
-    expect(text).toContain("dns : you don't have permission");
-    expect(html).toContain('aria-expanded="true"');
-    expect(buttons(html)).toContain('Retry failed (1)');
+    expect(text).toContain('db: vm db is locked can retry');
+    expect(text).toContain("dns: you don't have permission");
+    expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
+
+    const [retry] = retryButtons(wrapper);
+    expect(retry.text()).toBe('Retry failed (1)');
+    await retry.trigger('click');
+    expect(wrapper.emitted('retry')).toEqual([[['db']]]);
   });
 
   it('offers no retry without a failure worth retrying', async () => {
-    const html = await renderSSR(OperationOutcome, {
+    const wrapper = await render({
       items: items.filter((item) => !item.retryable),
     });
-    expect(buttons(html).some((b) => b.startsWith('Retry'))).toBe(false);
+    expect(retryButtons(wrapper)).toEqual([]);
   });
 });
