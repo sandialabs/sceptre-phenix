@@ -40,10 +40,7 @@
           >: {{ contents }}</span
         ></span
       >
-      <span
-        v-if="!open && errors"
-        class="inspector-disclosure__error"
-        data-testid="inspector-section-error">
+      <span v-if="!open && errors" class="inspector-disclosure__error">
         <builder-icon name="close" :size="12" />
         <span class="builder-visually-hidden">, has errors</span>
       </span>

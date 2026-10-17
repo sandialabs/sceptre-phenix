@@ -47,7 +47,6 @@
   <div
     ref="rootEl"
     class="builder-layer-rows"
-    data-testid="layer-rows"
     @focusin="lastFocus = $event.target">
     <p
       id="layer-rows-matcher-hint"
@@ -151,8 +150,7 @@
           <p
             v-if="counts"
             :id="`${row.key}-uses`"
-            class="builder-hint builder-layer-rows__uses"
-            data-testid="layer-uses">
+            class="builder-hint builder-layer-rows__uses">
             {{ usesText(row.id) }}
           </p>
         </div>
@@ -165,7 +163,6 @@
             Node matchers<span
               v-if="!matcherRows(row).length"
               class="builder-layer-rows__none"
-              data-testid="layer-matchers-none"
               >: none</span
             >
           </p>

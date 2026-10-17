@@ -22,10 +22,7 @@
 -->
 <template>
   <div ref="root" data-testid="upload-package">
-    <p
-      id="upload-package-summary"
-      class="builder-package__summary"
-      data-testid="upload-package-summary">
+    <p id="upload-package-summary" class="builder-package__summary">
       {{ summary }}
     </p>
 

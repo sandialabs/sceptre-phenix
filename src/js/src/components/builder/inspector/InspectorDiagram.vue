@@ -138,10 +138,7 @@
 
   <div class="inspector-diagram" data-testid="inspector-layers">
     <h3>Layers</h3>
-    <p
-      id="inspector-layers-help"
-      class="inspector-diagram__none"
-      data-testid="inspector-layers-summary">
+    <p id="inspector-layers-help" class="inspector-diagram__none">
       {{ layersSummary }}
     </p>
     <ul class="inspector-diagram__layers" data-testid="inspector-layers-list">
@@ -317,10 +314,7 @@
     <p v-if="!scenarioRows.length" class="inspector-diagram__none">
       No scenarios.
     </p>
-    <ul
-      v-else
-      class="inspector-diagram__scenarios"
-      data-testid="inspector-scenarios">
+    <ul v-else class="inspector-diagram__scenarios">
       <li
         v-for="(row, index) in scenarioRows"
         :key="row.name"

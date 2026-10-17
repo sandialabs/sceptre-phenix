@@ -61,8 +61,7 @@
           name="username"
           autocomplete="username"
           readonly
-          aria-describedby="builder-signin-user-hint"
-          data-testid="signin-username" />
+          aria-describedby="builder-signin-user-hint" />
         <p id="builder-signin-user-hint" class="builder-hint">
           To sign in as someone else, cancel, then log out.
         </p>

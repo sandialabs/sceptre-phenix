@@ -40,8 +40,7 @@
         ref="listbox"
         class="inspector-combobox__listbox"
         role="listbox"
-        :aria-label="`Suggestions for ${control.label || 'the value'}`"
-        data-testid="inspector-suggestions">
+        :aria-label="`Suggestions for ${control.label || 'the value'}`">
         <li
           v-for="(option, index) in matches"
           :id="`${ids.listbox}-${index}`"

@@ -59,10 +59,7 @@
         :size="iconPixels(iconSize)" />
       <span class="builder-node__label">{{ data.label }}</span>
     </div>
-    <span
-      v-if="data.includedFrom"
-      class="builder-node__origin"
-      data-testid="node-included-from">
+    <span v-if="data.includedFrom" class="builder-node__origin">
       Included from {{ data.includedFrom }}
     </span>
     <span
@@ -115,7 +112,6 @@
       type="source"
       :position="Position.Bottom"
       class="builder-handle builder-handle--new"
-      data-testid="device-new-interface"
       :title="`Drag to connect ${data.label} on a new interface`"
       aria-hidden="true" />
   </div>

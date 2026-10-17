@@ -77,7 +77,6 @@
         class="builder-canvas__notice-close"
         aria-label="Dismiss message"
         title="Dismiss message"
-        data-testid="canvas-notice-dismiss"
         @click="dismissNotice">
         <span aria-hidden="true">&times;</span>
       </button>

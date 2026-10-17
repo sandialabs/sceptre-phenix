@@ -245,10 +245,7 @@
       </div>
     </form>
 
-    <p
-      class="builder-dialog__message builder-visually-hidden"
-      role="status"
-      data-testid="import-status">
+    <p class="builder-dialog__message builder-visually-hidden" role="status">
       <span v-if="status.text" :key="status.key">{{ status.text }}</span>
     </p>
   </builder-dialog>

@@ -63,7 +63,6 @@
         <builder-switch
           :model-value="builderSettings.reduceMotion"
           aria-describedby="settings-motion-hint"
-          data-testid="settings-reduce-motion"
           @update:model-value="setSetting('reduceMotion', $event)">
           Reduce motion
         </builder-switch>
@@ -104,7 +103,6 @@
         <builder-switch
           :model-value="builderSettings.showMinimap"
           aria-describedby="settings-minimap-hint"
-          data-testid="settings-minimap"
           @update:model-value="setSetting('showMinimap', $event)">
           Show the minimap
         </builder-switch>

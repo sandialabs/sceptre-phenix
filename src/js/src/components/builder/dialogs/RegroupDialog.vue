@@ -59,11 +59,7 @@
       </p>
 
       <div class="builder-dialog__actions">
-        <button
-          type="button"
-          class="builder-button"
-          data-testid="regroup-dialog-cancel"
-          @click="$emit('close')">
+        <button type="button" class="builder-button" @click="$emit('close')">
           Cancel
         </button>
         <button

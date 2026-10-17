@@ -141,8 +141,7 @@
               type="text"
               autocomplete="off"
               :aria-invalid="fieldError.invalid('description')"
-              :aria-describedby="fieldError.describedBy('description')"
-              data-testid="layers-new-description" />
+              :aria-describedby="fieldError.describedBy('description')" />
           </div>
           <div class="builder-layers-dialog__actions">
             <button

@@ -250,7 +250,6 @@
           v-if="store.saveState.versions.length"
           type="button"
           class="builder-button"
-          data-testid="tabs-choose"
           aria-haspopup="dialog"
           @click="dialog = 'tabs'">
           Choose which to save

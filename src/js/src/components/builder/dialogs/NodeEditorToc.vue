@@ -16,7 +16,6 @@
         :class="{ 'is-active': entry.key === active }"
         :aria-current="entry.key === active ? 'location' : undefined"
         :data-key="entry.key"
-        data-testid="node-editor-toc-entry"
         @click="$emit('go', entry.key)">
         <span class="builder-node-editor-toc__label"
           >{{ entry.label
@@ -24,10 +23,7 @@
             ({{ entry.count }})</template
           ></span
         >
-        <span
-          v-if="entry.errors"
-          class="builder-node-editor-toc__error"
-          data-testid="node-editor-toc-error">
+        <span v-if="entry.errors" class="builder-node-editor-toc__error">
           <builder-icon name="close" :size="12" />
           <span class="builder-visually-hidden">, has errors</span>
         </span>

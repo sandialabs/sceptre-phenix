@@ -60,7 +60,7 @@
 
       <fieldset class="builder-field">
         <legend>Scenarios of this diagram</legend>
-        <p class="builder-hint" data-testid="scenario-pick-hint">
+        <p class="builder-hint">
           {{
             store.readOnly
               ? 'The selected scenarios are the ones that this diagram uses.'
@@ -87,10 +87,7 @@
           </p>
         </template>
 
-        <ul
-          v-if="shown.length"
-          class="scenario-list"
-          data-testid="scenario-list">
+        <ul v-if="shown.length" class="scenario-list">
           <li
             v-for="(row, index) in shown"
             :key="row.name"
@@ -135,7 +132,7 @@
             </span>
           </li>
         </ul>
-        <p v-else-if="rows.length" data-testid="scenario-no-match">
+        <p v-else-if="rows.length">
           No scenario name contains "{{ filter.trim() }}".
         </p>
         <p v-else data-testid="scenario-none">

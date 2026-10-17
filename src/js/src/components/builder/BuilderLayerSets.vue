@@ -94,9 +94,7 @@
     </div>
 
     <div v-if="library.status === 'failed'" class="builder-layer-sets__failed">
-      <p role="alert" data-testid="layer-sets-failed">
-        Could not load the layer sets. {{ library.error }}
-      </p>
+      <p role="alert">Could not load the layer sets. {{ library.error }}</p>
       <button
         type="button"
         class="builder-button"
@@ -113,12 +111,12 @@
       Loading…
     </p>
     <template v-else-if="library.loaded">
-      <p v-if="library.damaged" data-testid="layer-sets-damaged">
+      <p v-if="library.damaged">
         The server cannot read
         {{ count(library.damaged, 'layer set') }}. A newer version of phenix may
         have saved {{ library.damaged === 1 ? 'it' : 'them' }}.
       </p>
-      <ul class="builder-cards" data-testid="layer-sets-list">
+      <ul class="builder-cards">
         <li
           v-for="(set, index) in library.items"
           :key="set.id"
@@ -139,10 +137,7 @@
                 data-testid="layer-set-default"
                 >Default</span
               >
-              <span
-                v-if="set.builtin"
-                class="builder-layer-sets__tag"
-                data-testid="layer-set-builtin"
+              <span v-if="set.builtin" class="builder-layer-sets__tag"
                 >Built-in</span
               >
             </h2>
@@ -157,10 +152,7 @@
             {{ count(effectiveLayerList(set.layers).length, 'layer')
             }}{{ set.builtin ? '. Read only.' : '' }}
           </p>
-          <p
-            v-if="changedText(set)"
-            class="builder-card__meta"
-            data-testid="layer-set-updated">
+          <p v-if="changedText(set)" class="builder-card__meta">
             {{ changedText(set) }}
           </p>
           <ul

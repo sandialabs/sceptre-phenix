@@ -112,8 +112,7 @@
           list="builder-preflight-experiments"
           autocomplete="off"
           spellcheck="false"
-          aria-describedby="builder-preflight-experiment-hint"
-          data-testid="preflight-experiment" />
+          aria-describedby="builder-preflight-experiment-hint" />
         <datalist id="builder-preflight-experiments">
           <option v-for="option in experiments" :key="option" :value="option" />
         </datalist>
@@ -140,10 +139,7 @@
         Tick at least one check to run.
       </p>
 
-      <p
-        class="builder-dialog__message builder-dialog__error"
-        role="alert"
-        data-testid="preflight-error">
+      <p class="builder-dialog__message builder-dialog__error" role="alert">
         <span v-if="preflight.error" :key="preflight.errorKey">{{
           preflight.error
         }}</span>
@@ -159,7 +155,7 @@
       </p>
 
       <template v-if="preflight.report">
-        <ul class="builder-preflight__results" data-testid="preflight-results">
+        <ul class="builder-preflight__results">
           <li
             v-for="result in results"
             :key="result.name"

@@ -38,11 +38,7 @@
       :src="src"
       :size="16"
       data-testid="layer-name-icon" />
-    <span
-      v-if="color"
-      class="builder-layer-name__swatch"
-      aria-hidden="true"
-      data-testid="layer-name-swatch" />
+    <span v-if="color" class="builder-layer-name__swatch" aria-hidden="true" />
     <span v-if="!bare" class="builder-layer-name__title">
       {{ layer.label }}
     </span>
