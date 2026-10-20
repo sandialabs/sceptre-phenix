@@ -1187,7 +1187,8 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 	vmName, vmUUID, vmHost := target.name, target.uuid, target.host
 	o.vmUUID, o.vmHost = vmUUID, vmHost
 
-	exec := func(ns, vm, cmd string) (string, error) {
+	// host selects whose answer to read; empty takes any host's.
+	exec := func(ns, vm, cmd, host string) (string, error) {
 		mu := ccLock(ns)
 		mu.Lock()
 		defer mu.Unlock()
@@ -1214,7 +1215,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 
 		// Command ids are per-host counters, so a sibling host's answer would
 		// name a different command there.
-		data, err := hostResponse(byHost, vmHost, errs)
+		data, err := hostResponse(byHost, host, errs)
 		if err != nil {
 			if errors.Is(err, mmcli.ErrTimeout) {
 				return "", fmt.Errorf("timeout running '%s' in vm %s", cmd, vm)
@@ -1239,7 +1240,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 
 	// execID is exec for commands minimega answers with a cc command id.
 	execID := func(ns, vm, cmd string) (string, error) {
-		id, err := exec(ns, vm, cmd)
+		id, err := exec(ns, vm, cmd, vmHost)
 		if err != nil {
 			return "", err
 		}
@@ -1321,7 +1322,8 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 				return "", fmt.Errorf("creating mount directory: %w", err)
 			}
 
-			id, err := exec(o.ns, vmName, cmd)
+			// The headnode does the mount and answers for remote VMs too.
+			id, err := exec(o.ns, vmName, cmd, "")
 			if err != nil {
 				return "", fmt.Errorf("error creating mount: %w", err)
 			}
@@ -1330,7 +1332,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 		} else {
 			cmd := "clear cc mount " + vmName
 
-			id, err := exec(o.ns, vmName, cmd)
+			id, err := exec(o.ns, vmName, cmd, "")
 			if err != nil {
 				return "", fmt.Errorf("error clearing mount: %w", err)
 			}

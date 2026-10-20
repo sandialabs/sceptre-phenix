@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
+
+	"phenix/util/common"
 )
 
 const (
@@ -97,6 +99,35 @@ func TestExecC2CommandReadsOwnerHost(t *testing.T) {
 	_, err = GetC2Response(C2NS(testNS), C2VMHost(testSibling), C2CommandID(id))
 	if err == nil || !strings.Contains(err.Error(), "no responses for 7") {
 		t.Fatalf("sibling response err = %v, want its error", err)
+	}
+}
+
+// TestMountRemoteVMAcceptsHeadnodeAnswer: minimega mounts a remote VM from the
+// headnode, so only the headnode answers `cc mount` and `clear cc mount`.
+func TestMountRemoteVMAcceptsHeadnodeAnswer(t *testing.T) {
+	common.MountBase = t.TempDir() //nolint:reassign // test fixture
+
+	t.Cleanup(func() { common.MountBase = "" }) //nolint:reassign // test fixture
+
+	useFakeHandler(t, func(cmd string) minicli.Responses {
+		if resp, ok := ownerOnly(cmd); ok {
+			return resp
+		}
+
+		if strings.Contains(cmd, "cc mount") {
+			return minicli.Responses{text("head", "")}
+		}
+
+		return nil
+	})
+
+	for _, opt := range []C2Option{C2Mount(), C2Unmount()} {
+		_, err := ExecC2Command(
+			C2NS(testNS), C2VM(testVM), C2VMUUID(testUUID), opt, C2Timeout(testTimeout),
+		)
+		if err != nil {
+			t.Fatalf("ExecC2Command: %v", err)
+		}
 	}
 }
 

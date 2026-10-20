@@ -3,7 +3,9 @@ package app_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 
@@ -342,5 +344,102 @@ func TestStageApplicableExcludesRunningForDefaultApps(t *testing.T) {
 func TestStageApplicableAllowsRunningForUserApps(t *testing.T) {
 	if !app.StageApplicable(app.ActionRunning, "some-user-app") {
 		t.Fatal("expected running stage to be applicable for a non-default app")
+	}
+}
+
+// statusApp records each run in its own app status, as SOH does.
+type statusApp struct{ stubApp }
+
+func (a *statusApp) Running(_ context.Context, exp *types.Experiment) error {
+	return exp.UpdateAppStatus(a.name, func(status map[string]any) {
+		status["ran"] = true
+	})
+}
+
+// TestPeriodicallyRunAppsIsolatesWorkers: periodic workers run concurrently, so
+// each must keep to its own in-memory status. Run with -race.
+func TestPeriodicallyRunAppsIsolatesWorkers(t *testing.T) {
+	names := []string{"test-periodic-a", "test-periodic-b"}
+
+	appConfigs := make([]map[string]any, 0, len(names))
+
+	for _, name := range names {
+		if err := app.RegisterUserApp(name, func() app.App {
+			return &statusApp{stubApp{name: name}}
+		}); err != nil {
+			t.Fatalf("registering user app: %v", err)
+		}
+
+		appConfigs = append(appConfigs, map[string]any{"name": name, "runPeriodically": "1ms"})
+	}
+
+	var (
+		mu     sync.Mutex
+		stored = store.Config{
+			Version:  "phenix.sandia.gov/v1",
+			Kind:     "Experiment",
+			Metadata: store.ConfigMetadata{Name: "periodic-test"},
+			Spec: map[string]any{
+				"experimentName": "periodic-test",
+				"scenario":       map[string]any{"apps": appConfigs},
+			},
+		}
+	)
+
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	m := store.NewMockStore(ctrl)
+	m.EXPECT().Get(gomock.Any()).DoAndReturn(func(c *store.Config) error {
+		mu.Lock()
+		defer mu.Unlock()
+
+		*c = stored
+
+		return nil
+	}).AnyTimes()
+	m.EXPECT().Update(gomock.Any()).DoAndReturn(func(c *store.Config) error {
+		mu.Lock()
+		defer mu.Unlock()
+
+		stored = *c
+
+		return nil
+	}).AnyTimes()
+
+	original := store.DefaultStore
+	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore store
+
+	store.DefaultStore = m //nolint:reassign // monkey patching for test
+
+	exp, err := types.DecodeExperimentFromConfig(stored)
+	if err != nil {
+		t.Fatalf("decoding experiment: %v", err)
+	}
+
+	var (
+		wg          sync.WaitGroup
+		ctx, cancel = context.WithTimeout(context.Background(), 50*time.Millisecond)
+	)
+
+	defer cancel()
+
+	if err := app.PeriodicallyRunApps(ctx, &wg, exp); err != nil {
+		t.Fatalf("PeriodicallyRunApps: %v", err)
+	}
+
+	wg.Wait()
+
+	final, err := types.DecodeExperimentFromConfig(stored)
+	if err != nil {
+		t.Fatalf("decoding stored experiment: %v", err)
+	}
+
+	for _, name := range names {
+		var status map[string]any
+
+		if err := final.Status.ParseAppStatus(name, &status); err != nil || status["ran"] != true {
+			t.Fatalf("%s status = %v (%v), want its run recorded", name, status, err)
+		}
 	}
 }

@@ -89,8 +89,7 @@ func (b Break) breakPoint(ctx context.Context, stage Action) error {
 
 		status.Taps[b.options.Name] = md.Tap
 
-		b.options.Exp.Status.SetAppStatus("scorch", status)
-		_ = b.options.Exp.WriteToStore(true)
+		_ = setScorchStatus(&b.options.Exp, status)
 
 		defer func() { _ = md.Tap.Delete(mm.Headnode()) }()
 	}

@@ -101,11 +101,10 @@ func (e Experiment) WriteToStore(statusOnly bool) error {
 	return nil
 }
 
-// UpdateAppStatus applies fn to app's status as currently stored and writes
-// only that back, so a long-running app does not clobber what other writers
-// stored meanwhile. The in-memory status is refreshed to match. WriteToStore
-// replaces the whole status with the caller's copy instead.
-func (e *Experiment) UpdateAppStatus(app string, fn func(status map[string]any)) error {
+// UpdateStatus applies fn to the status as currently stored and writes it
+// back, so concurrent writers do not clobber each other. The in-memory status
+// is replaced to match. WriteToStore writes the caller's whole copy instead.
+func (e *Experiment) UpdateStatus(fn func(status ifaces.ExperimentStatus)) error {
 	statusMu.Lock()
 	defer statusMu.Unlock()
 
@@ -122,12 +121,7 @@ func (e *Experiment) UpdateAppStatus(app string, fn func(status map[string]any))
 		return fmt.Errorf("decoding experiment %s: %w", name, err)
 	}
 
-	status := make(map[string]any)
-	_ = exp.Status.ParseAppStatus(app, &status)
-
-	fn(status)
-
-	exp.Status.SetAppStatus(app, status)
+	fn(exp.Status)
 	e.Status = exp.Status
 
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
@@ -137,6 +131,18 @@ func (e *Experiment) UpdateAppStatus(app string, fn func(status map[string]any))
 	}
 
 	return nil
+}
+
+// UpdateAppStatus is UpdateStatus scoped to app's status.
+func (e *Experiment) UpdateAppStatus(app string, fn func(status map[string]any)) error {
+	return e.UpdateStatus(func(s ifaces.ExperimentStatus) {
+		status := make(map[string]any)
+		_ = s.ParseAppStatus(app, &status)
+
+		fn(status)
+
+		s.SetAppStatus(app, status)
+	})
 }
 
 func (e *Experiment) SetSpec(spec ifaces.ExperimentSpec) {
