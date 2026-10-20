@@ -9,9 +9,11 @@ import (
 const (
 	reachabilityOff  = "off"
 	defaultC2Timeout = 5 * time.Minute
-	notifyInterval   = 5 * time.Second
-	c2RetryDelay     = 5 * time.Second
-	monitorMemory    = 512
+	// defaultC2Concurrency bounds in-flight C2 probes per SoH run.
+	defaultC2Concurrency = 16
+	notifyInterval       = 5 * time.Second
+	c2RetryDelay         = 5 * time.Second
+	monitorMemory        = 512
 )
 
 type Node struct {
@@ -132,6 +134,9 @@ type customHostTest struct {
 type sohMetadata struct {
 	AppProfileKey      string                      `mapstructure:"appMetadataProfileKey"`
 	C2Timeout          string                      `mapstructure:"c2Timeout"`
+	C2AppearGrace      string                      `mapstructure:"c2AppearGrace"`
+	C2ClientGrace      string                      `mapstructure:"c2ClientGrace"`
+	C2Concurrency      *int                        `mapstructure:"c2Concurrency"`
 	ExitOnError        bool                        `mapstructure:"exitOnError"`
 	HostFiles          map[string][]string         `mapstructure:"hostFiles"`
 	HostFilesAbsent    map[string][]string         `mapstructure:"hostFilesAbsent"`
@@ -157,9 +162,12 @@ type sohMetadata struct {
 	Other map[string]any `mapstructure:",remain"`
 
 	// set after parsing
-	c2Timeout    time.Duration
-	startupDelay time.Duration
-	uuidHosts    map[string]struct{}
+	c2Timeout     time.Duration
+	c2AppearGrace *time.Duration
+	c2ClientGrace *time.Duration
+	c2Concurrency int
+	startupDelay  time.Duration
+	uuidHosts     map[string]struct{}
 }
 
 func (m *sohMetadata) init() error {
@@ -192,9 +200,26 @@ func (m *sohMetadata) init() error {
 		}
 	}
 
+	// The graces default inside the mm package; only an explicit setting is
+	// passed along, so "0s" disables a check.
+	var err error
+
+	if m.c2AppearGrace, err = optionalDuration("C2 appear grace", m.C2AppearGrace); err != nil {
+		return err
+	}
+
+	if m.c2ClientGrace, err = optionalDuration("C2 client grace", m.C2ClientGrace); err != nil {
+		return err
+	}
+
+	m.c2Concurrency = defaultC2Concurrency
+
+	if m.C2Concurrency != nil {
+		m.c2Concurrency = *m.C2Concurrency
+	}
+
 	// Default startup delay is 0 if not set
 	if m.StartupDelay != "" {
-		var err error
 		if m.startupDelay, err = time.ParseDuration(m.StartupDelay); err != nil {
 			return fmt.Errorf("parsing startup delay setting `%s`: %w", m.StartupDelay, err)
 		}
@@ -270,4 +295,18 @@ func (p *sohProfile) init() error {
 	}
 
 	return nil
+}
+
+// optionalDuration parses a duration setting, returning nil when unset.
+func optionalDuration(name, val string) (*time.Duration, error) {
+	if val == "" {
+		return nil, nil //nolint:nilnil // unset is a valid state
+	}
+
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s setting '%s': %w", name, val, err)
+	}
+
+	return &d, nil
 }

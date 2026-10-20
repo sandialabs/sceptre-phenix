@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
@@ -66,7 +67,14 @@ func (e *Experiment) Reload() error {
 	return nil
 }
 
+// statusMu serialises experiment writes to the store so a read-modify-write
+// of one app's status cannot interleave with another writer's.
+var statusMu sync.Mutex //nolint:gochecknoglobals // process-wide store guard
+
 func (e Experiment) WriteToStore(statusOnly bool) error {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+
 	name := e.Metadata.Name
 
 	c, _ := store.NewConfig("experiment/" + name)
@@ -91,6 +99,50 @@ func (e Experiment) WriteToStore(statusOnly bool) error {
 	}
 
 	return nil
+}
+
+// UpdateStatus applies fn to the status as currently stored and writes it
+// back, so concurrent writers do not clobber each other. The in-memory status
+// is replaced to match. WriteToStore writes the caller's whole copy instead.
+func (e *Experiment) UpdateStatus(fn func(status ifaces.ExperimentStatus)) error {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+
+	name := e.Metadata.Name
+
+	c, _ := store.NewConfig("experiment/" + name)
+
+	if err := store.Get(c); err != nil {
+		return fmt.Errorf("getting experiment %s from store: %w", name, err)
+	}
+
+	exp, err := DecodeExperimentFromConfig(*c)
+	if err != nil {
+		return fmt.Errorf("decoding experiment %s: %w", name, err)
+	}
+
+	fn(exp.Status)
+	e.Status = exp.Status
+
+	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
+
+	if err := store.Update(c); err != nil {
+		return fmt.Errorf("saving experiment config: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateAppStatus is UpdateStatus scoped to app's status.
+func (e *Experiment) UpdateAppStatus(app string, fn func(status map[string]any)) error {
+	return e.UpdateStatus(func(s ifaces.ExperimentStatus) {
+		status := make(map[string]any)
+		_ = s.ParseAppStatus(app, &status)
+
+		fn(status)
+
+		s.SetAppStatus(app, status)
+	})
 }
 
 func (e *Experiment) SetSpec(spec ifaces.ExperimentSpec) {

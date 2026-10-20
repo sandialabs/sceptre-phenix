@@ -446,7 +446,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				_ = exp.WriteToStore(true)
 			case ActionRunning:
 				// Check to make sure this app isn't already running via an automatic
-				// periodic execution.
+				// periodic execution. Callers pass their own copy of the experiment,
+				// so consult the store rather than that copy's status.
+				_ = exp.Reload()
+
 				if running := exp.Status.AppRunning()[app.Name()]; running {
 					notes.AddInfo(
 						ctx,
@@ -589,13 +592,15 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 
 				wg.Add(1)
 
-				go func(exp *types.Experiment, app ifaces.ScenarioApp, duration time.Duration) {
+				// Each worker gets its own copy; UpdateStatus swaps in a private
+				// status before any read.
+				go func(exp types.Experiment, app ifaces.ScenarioApp, duration time.Duration) {
 					defer wg.Done()
 
-					exp.Status.SetAppFrequency(app.Name(), app.RunPeriodically())
-					exp.Status.SetAppRunning(app.Name(), false)
-
-					err := exp.WriteToStore(true)
+					err := exp.UpdateStatus(func(s ifaces.ExperimentStatus) {
+						s.SetAppFrequency(app.Name(), app.RunPeriodically())
+						s.SetAppRunning(app.Name(), false)
+					})
 					if err != nil {
 						plog.Error(
 							plog.TypePhenixApp,
@@ -616,10 +621,10 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 								<-timer.C
 							}
 
-							exp.Status.SetAppFrequency(app.Name(), "")
-							exp.Status.SetAppRunning(app.Name(), false)
-
-							err := exp.WriteToStore(true)
+							err := exp.UpdateStatus(func(s ifaces.ExperimentStatus) {
+								s.SetAppFrequency(app.Name(), "")
+								s.SetAppRunning(app.Name(), false)
+							})
 							if err != nil {
 								plog.Error(
 									plog.TypePhenixApp,
@@ -643,6 +648,8 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 									app.Name(),
 								)
 
+								timer.Reset(duration)
+
 								continue
 							}
 
@@ -656,9 +663,9 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 							a := GetApp(app.Name())
 							_ = a.Init(Name(app.Name()))
 
-							exp.Status.SetAppRunning(app.Name(), true)
-
-							err := exp.WriteToStore(true)
+							err := exp.UpdateStatus(func(s ifaces.ExperimentStatus) {
+								s.SetAppRunning(app.Name(), true)
+							})
 							if err != nil {
 								plog.Error(
 									plog.TypePhenixApp,
@@ -676,7 +683,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 								State:      "start",
 							})
 
-							err = a.Running(ctx, exp)
+							err = a.Running(ctx, &exp)
 							if err != nil {
 								pubsub.Publish("trigger-app", TriggerPublication{ //nolint:exhaustruct // partial initialization
 									Experiment: exp.Spec.ExperimentName(),
@@ -701,9 +708,9 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 								State:      "success",
 							})
 
-							exp.Status.SetAppRunning(app.Name(), false)
-
-							err = exp.WriteToStore(true)
+							err = exp.UpdateStatus(func(s ifaces.ExperimentStatus) {
+								s.SetAppRunning(app.Name(), false)
+							})
 							if err != nil {
 								plog.Error(
 									plog.TypePhenixApp,
@@ -718,7 +725,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 							timer.Reset(duration)
 						}
 					}
-				}(exp, app, duration)
+				}(*exp, app, duration)
 			}
 		}
 	}

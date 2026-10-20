@@ -17,7 +17,7 @@ import (
 	"phenix/web/scorch"
 )
 
-var ErrUserComponentNotFound = errors.New("user component not found")
+var ErrUserShellComponentNotFound = errors.New("user component not found")
 
 const (
 	levelInfo  = "INFO"
@@ -28,21 +28,21 @@ const (
 	logFlushInterval = 10 * time.Millisecond
 )
 
-type UserComponent struct {
+type UserShellComponent struct {
 	options Options
 }
 
-func (u *UserComponent) Init(opts ...Option) error {
+func (u *UserShellComponent) Init(opts ...Option) error {
 	u.options = NewOptions(opts...)
 
 	return nil
 }
 
-func (u UserComponent) Type() string {
+func (u UserShellComponent) Type() string {
 	return u.options.Type
 }
 
-func (u UserComponent) Configure(ctx context.Context) error {
+func (u UserShellComponent) Configure(ctx context.Context) error {
 	if u.options.Background {
 		ctx = background(ctx, ActionConfigure, u.options)
 	}
@@ -50,7 +50,7 @@ func (u UserComponent) Configure(ctx context.Context) error {
 	return u.shellOut(ctx, ActionConfigure)
 }
 
-func (u UserComponent) Start(ctx context.Context) error {
+func (u UserShellComponent) Start(ctx context.Context) error {
 	if u.options.Background {
 		ctx = background(ctx, ActionStart, u.options)
 	}
@@ -58,19 +58,19 @@ func (u UserComponent) Start(ctx context.Context) error {
 	return u.shellOut(ctx, ActionStart)
 }
 
-func (u UserComponent) Stop(ctx context.Context) error {
+func (u UserShellComponent) Stop(ctx context.Context) error {
 	handleBackgrounded(ActionStop, u.options)
 
 	return u.shellOut(ctx, ActionStop)
 }
 
-func (u UserComponent) Cleanup(ctx context.Context) error {
+func (u UserShellComponent) Cleanup(ctx context.Context) error {
 	handleBackgrounded(ActionCleanup, u.options)
 
 	return u.shellOut(ctx, ActionCleanup)
 }
 
-func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
+func (u UserShellComponent) shellOut(ctx context.Context, stage Action) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -81,7 +81,7 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 		return fmt.Errorf(
 			"external user component %s does not exist in your path: %w",
 			cmd,
-			ErrUserComponentNotFound,
+			ErrUserShellComponentNotFound,
 		)
 	}
 
@@ -149,7 +149,7 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 	return u.run(ctx, stage, cmd, data)
 }
 
-func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data []byte) error {
+func (u UserShellComponent) run(ctx context.Context, stage Action, cmd string, data []byte) error {
 	update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
 		Exp:     u.options.Exp.Spec.ExperimentName(),
 		CmpName: u.options.Name,

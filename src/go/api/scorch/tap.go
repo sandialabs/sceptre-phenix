@@ -10,6 +10,7 @@ import (
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/util"
 	"phenix/util/mm"
 	"phenix/util/tap"
@@ -71,8 +72,7 @@ func (t Tap) Start(ctx context.Context) error {
 
 	status.Taps[t.options.Name] = tp
 
-	t.options.Exp.Status.SetAppStatus("scorch", status)
-	_ = t.options.Exp.WriteToStore(true)
+	_ = setScorchStatus(&t.options.Exp, status)
 
 	return nil
 }
@@ -102,6 +102,17 @@ func (t Tap) Stop(ctx context.Context) error {
 
 func (Tap) Cleanup(context.Context) error {
 	return nil
+}
+
+// setScorchStatus sets the scorch status in the run's shared in-memory status,
+// where later components read it, and in the store. Only the scorch status is
+// written: the rest of the run's copy is stale.
+func setScorchStatus(exp *types.Experiment, status scorchmd.ScorchStatus) error {
+	exp.Status.SetAppStatus("scorch", status)
+
+	return exp.UpdateStatus(func(s ifaces.ExperimentStatus) {
+		s.SetAppStatus("scorch", status)
+	})
 }
 
 func discoverUsedPairs() []netaddr.IPPrefix {
