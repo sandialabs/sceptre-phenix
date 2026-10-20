@@ -1834,7 +1834,8 @@ name; other <code>${VAR}</code> placeholders are filled in from the server's env
 (see <a href="../configuration/#environment-variables">Environment Variables</a>). That's
 why configs reference injected files as
 <code>/phenix/injects/${BRANCH_NAME}/&lt;file&gt;</code>, and why one directory can be deployed
-under several names side by side. An experiment that a workflow creates is
+under several names side by side. A config's <code>kind</code> and <code>metadata.name</code> can
+use no placeholder but <code>${BRANCH_NAME}</code>. An experiment that a workflow creates is
 <a href="#actions">mapped</a> to its branch name.</p>
 <p>Configs that hard-code the injects path need <code>-b</code> set to the name they use:
 a topology that references <code>/phenix/injects/lab-a/&lt;file&gt;</code> is deployed with
