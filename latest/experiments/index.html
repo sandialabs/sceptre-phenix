@@ -800,6 +800,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#vlan-aliases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VLAN Aliases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="VLAN Aliases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#from-the-command-line-binary_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From the Command Line Binary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#common-workflows" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1900,6 +1928,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#vlan-aliases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VLAN Aliases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="VLAN Aliases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#from-the-command-line-binary_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From the Command Line Binary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#common-workflows" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2247,31 +2303,55 @@ instead. The deprecated command:</p>
 <p>Is equivalent to:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>phenix<span class="w"> </span>exp<span class="w"> </span>trigger<span class="w"> </span>running<span class="w"> </span>my-experiment<span class="w"> </span><span class="o">[</span>&lt;app<span class="w"> </span>name&gt;<span class="w"> </span>...<span class="o">]</span>
 </span></code></pre></div>
+<h2 id="vlan-aliases">VLAN Aliases<a class="headerlink" href="#vlan-aliases" title="Permanent link">&para;</a></h2>
+<p>Topologies refer to VLANs by alias, such as <code>MGMT</code> or <code>EXP-1</code>,
+which is mapped by phēnix to a numerical VLAN ID.</p>
+<h3 id="from-the-command-line-binary_6">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_6" title="Permanent link">&para;</a></h3>
+<p>The <code>phenix vlan alias</code> command can list and change VLAN aliases.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># List VLAN aliases of every experiment</span>
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>phenix<span class="w"> </span>vlan<span class="w"> </span><span class="nb">alias</span>
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
+</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># List VLAN aliases of a single experiment</span>
+</span><span id="__span-19-5"><a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>phenix<span class="w"> </span>vlan<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;
+</span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>
+</span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="c1"># Print the VLAN ID of a specific alias for an experiment</span>
+</span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>phenix<span class="w"> </span>vlan<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;<span class="nb">alias</span><span class="w"> </span>name&gt;
+</span><span id="__span-19-9"><a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>
+</span><span id="__span-19-10"><a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="c1"># Set the alias to a VLAN ID (add -f to overwrite an existing alias)</span>
+</span><span id="__span-19-11"><a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>phenix<span class="w"> </span>vlan<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;<span class="nb">alias</span><span class="w"> </span>name&gt;<span class="w"> </span>&lt;vlan<span class="w"> </span>id&gt;
+</span></code></pre></div>
+<p>For example, if the <code>MYVLAN</code> alias of <code>my-experiment</code> maps to VLAN 105:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>$<span class="w"> </span>phenix<span class="w"> </span>vlan<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>my-experiment<span class="w"> </span>MYVLAN
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="m">105</span>
+</span></code></pre></div>
+<p>A running experiment reports the VLAN IDs minimega assigned when it started. A
+stopped experiment has no ID for an alias unless one was set explicitly, so
+most alias lookups will fail until the experiment starts.</p>
 <h2 id="common-workflows">Common Workflows<a class="headerlink" href="#common-workflows" title="Permanent link">&para;</a></h2>
 <h3 id="1-basic-experiment-lifecycle">1. Basic Experiment Lifecycle<a class="headerlink" href="#1-basic-experiment-lifecycle" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># 1. Create experiment from topology/scenario files</span>
-</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>phenix<span class="w"> </span>exp<span class="w"> </span>create<span class="w"> </span>my-experiment<span class="w"> </span>-t<span class="w"> </span>/path/to/topology.yaml<span class="w"> </span>-s<span class="w"> </span>/path/to/scenario.yaml
-</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
-</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># 2. Start the experiment</span>
-</span><span id="__span-19-5"><a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>phenix<span class="w"> </span>exp<span class="w"> </span>start<span class="w"> </span>my-experiment
-</span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>
-</span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="c1"># 3. View status and inspect VMs</span>
-</span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>phenix<span class="w"> </span>exp<span class="w"> </span>list
-</span><span id="__span-19-9"><a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>phenix<span class="w"> </span>vm<span class="w"> </span>info<span class="w"> </span>my-experiment
-</span><span id="__span-19-10"><a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>
-</span><span id="__span-19-11"><a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="c1"># 4. Stop the experiment when testing finishes</span>
-</span><span id="__span-19-12"><a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>phenix<span class="w"> </span>exp<span class="w"> </span>stop<span class="w"> </span>my-experiment
-</span><span id="__span-19-13"><a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a>
-</span><span id="__span-19-14"><a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a><span class="c1"># 5. Delete the experiment</span>
-</span><span id="__span-19-15"><a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a>phenix<span class="w"> </span>exp<span class="w"> </span>delete<span class="w"> </span>my-experiment
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># 1. Create experiment from topology/scenario files</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>phenix<span class="w"> </span>exp<span class="w"> </span>create<span class="w"> </span>my-experiment<span class="w"> </span>-t<span class="w"> </span>/path/to/topology.yaml<span class="w"> </span>-s<span class="w"> </span>/path/to/scenario.yaml
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
+</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="c1"># 2. Start the experiment</span>
+</span><span id="__span-21-5"><a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>phenix<span class="w"> </span>exp<span class="w"> </span>start<span class="w"> </span>my-experiment
+</span><span id="__span-21-6"><a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>
+</span><span id="__span-21-7"><a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="c1"># 3. View status and inspect VMs</span>
+</span><span id="__span-21-8"><a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>phenix<span class="w"> </span>exp<span class="w"> </span>list
+</span><span id="__span-21-9"><a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>phenix<span class="w"> </span>vm<span class="w"> </span>info<span class="w"> </span>my-experiment
+</span><span id="__span-21-10"><a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a>
+</span><span id="__span-21-11"><a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a><span class="c1"># 4. Stop the experiment when testing finishes</span>
+</span><span id="__span-21-12"><a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a>phenix<span class="w"> </span>exp<span class="w"> </span>stop<span class="w"> </span>my-experiment
+</span><span id="__span-21-13"><a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a>
+</span><span id="__span-21-14"><a id="__codelineno-21-14" name="__codelineno-21-14" href="#__codelineno-21-14"></a><span class="c1"># 5. Delete the experiment</span>
+</span><span id="__span-21-15"><a id="__codelineno-21-15" name="__codelineno-21-15" href="#__codelineno-21-15"></a>phenix<span class="w"> </span>exp<span class="w"> </span>delete<span class="w"> </span>my-experiment
 </span></code></pre></div>
 <h3 id="2-updating-and-reconfiguring-an-experiment">2. Updating and Reconfiguring an Experiment<a class="headerlink" href="#2-updating-and-reconfiguring-an-experiment" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Reconfigure a stopped experiment after modifying underlying configuration files</span>
-</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>phenix<span class="w"> </span>exp<span class="w"> </span>reconfigure<span class="w"> </span>my-experiment
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># Reconfigure a stopped experiment after modifying underlying configuration files</span>
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>phenix<span class="w"> </span>exp<span class="w"> </span>reconfigure<span class="w"> </span>my-experiment
 </span></code></pre></div>
 <h3 id="3-dry-run-deployment-testing">3. Dry-Run Deployment Testing<a class="headerlink" href="#3-dry-run-deployment-testing" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Test experiment startup logic without deploying minimega VMs</span>
-</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>phenix<span class="w"> </span>exp<span class="w"> </span>start<span class="w"> </span>my-experiment<span class="w"> </span>--dry-run
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1"># Test experiment startup logic without deploying minimega VMs</span>
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>phenix<span class="w"> </span>exp<span class="w"> </span>start<span class="w"> </span>my-experiment<span class="w"> </span>--dry-run
 </span></code></pre></div>
 
 

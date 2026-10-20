@@ -1572,13 +1572,33 @@
 <h2 id="command-line-usage">Command Line Usage<a class="headerlink" href="#command-line-usage" title="Permanent link">&para;</a></h2>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Send commands, or attach, to minimega
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>Usage:
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  phenix mm &lt;minimega args&gt;... [flags]
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  Sends a command to minimega and prints the response, or attaches to the
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  interactive minimega console. Exits non-zero if minimega reports an error.
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>Flags:
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>      --attach             Attach to minimega console instead of sending commands
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  -h, --help               help for mm
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>      --namespace string   Default minimega namespace to use
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  Flags must come before the minimega command. Everything after the first
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  minimega argument, including arguments that start with "-", is passed to
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  minimega unchanged, and arguments are quoted for minimega as needed. A
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  single argument is sent as-is, so a whole command written in minimega's own
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  syntax can be passed as one quoted string.
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>Usage:
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  phenix mm &lt;minimega args&gt;... [flags]
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>Aliases:
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>  mm, minimega
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>Examples:
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>  phenix mm vm info
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>  phenix mm -n &lt;experiment name&gt; vm info
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>  phenix mm -n &lt;experiment name&gt; cc exec ls -a
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>  phenix mm -n &lt;experiment name&gt; "vm info"
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>  phenix minimega -a -n &lt;experiment name&gt;
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>Flags:
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>  -a, --attach             Attach to minimega console instead of sending commands
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>  -h, --help               help for mm
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>  -n, --namespace string   Default minimega namespace to use
 </span></code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
@@ -1593,25 +1613,37 @@
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>phenix<span class="w"> </span>mm<span class="w"> </span>vm<span class="w"> </span>info
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># List active VLANs in minimega</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>phenix<span class="w"> </span>mm<span class="w"> </span>vlan
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>phenix<span class="w"> </span>mm<span class="w"> </span>vlans
 </span></code></pre></div>
+<p><code>phenix mm</code> flags, and any <a href="../settings/#global-flags">global flags</a>, must come before the minimega command. Everything after the first minimega argument is passed to minimega unchanged, including arguments that start with <code>-</code>, so <code>phenix mm cc exec ls -a</code> runs <code>ls -a</code> rather than treating <code>-a</code> as the <code>--attach</code> flag.</p>
+<p>phēnix quotes each argument for minimega as needed, so empty arguments and arguments containing spaces, quotes, or <code>#</code> arrive intact. A single argument is sent as-is instead, which lets you pass a whole command written in minimega's own syntax as one quoted string, such as <code>phenix mm "vm info"</code>.</p>
+<p>If minimega errors or the minimega daemon is unreachable, <code>phenix mm</code> will exit with a non-zero status and record the error in the phēnix log.</p>
 <h3 id="namespace-scoping">Namespace Scoping<a class="headerlink" href="#namespace-scoping" title="Permanent link">&para;</a></h3>
-<p>When working with experiment-specific VMs or VLANs, use the <code>--namespace</code> flag to target a specific minimega namespace:</p>
+<p>When working with experiment-specific VMs or VLANs, use the <code>--namespace</code> (<code>-n</code>) flag to target a specific minimega namespace. Each running experiment has a minimega namespace with the same name as the experiment.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Execute minimega commands within the 'my-experiment' namespace</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>phenix<span class="w"> </span>mm<span class="w"> </span>--namespace<span class="w"> </span>my-experiment<span class="w"> </span>vm<span class="w"> </span>info
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Check network connections in a specific experiment namespace</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>phenix<span class="w"> </span>mm<span class="w"> </span>--namespace<span class="w"> </span>my-experiment<span class="w"> </span>vm<span class="w"> </span>net
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Check the network connections of VMs in the 'my-experiment' namespace</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>phenix<span class="w"> </span>mm<span class="w"> </span>-n<span class="w"> </span>my-experiment<span class="w"> </span>.columns<span class="w"> </span>name,vlan,bridge,tap,ip<span class="w"> </span>vm<span class="w"> </span>info
 </span></code></pre></div>
+<p>With <a href="../#accessing-the-cli-shell-completion">shell completion</a> enabled, <code>--namespace</code> completes the names of running experiments, and <code>phenix mm</code> completes minimega commands using suggestions from the running minimega.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Specifying a namespace that does not exist will cause minimega to create it.</p>
+</div>
 <h2 id="attaching-to-the-minimega-console">Attaching to the minimega Console<a class="headerlink" href="#attaching-to-the-minimega-console" title="Permanent link">&para;</a></h2>
-<p>The <code>--attach</code> flag opens an interactive minimega console session, allowing real-time interaction with the minimega shell.</p>
+<p>The <code>--attach</code> (<code>-a</code>) flag opens an interactive minimega console session, allowing real-time interaction with the minimega shell.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Attach to the global minimega console</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>phenix<span class="w"> </span>mm<span class="w"> </span>--attach
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Attach to the minimega console scoped to a specific experiment namespace</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>phenix<span class="w"> </span>mm<span class="w"> </span>--attach<span class="w"> </span>--namespace<span class="w"> </span>my-experiment
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>phenix<span class="w"> </span>mm<span class="w"> </span>-a<span class="w"> </span>-n<span class="w"> </span>my-experiment
 </span></code></pre></div>
-<p>To exit the attached console session, type <code>exit</code> or press <code>Ctrl+D</code>.</p>
+<p>To exit the attached console session, type <code>disconnect</code> or press <code>Ctrl+D</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Typing <code>quit</code> in the console stops the minimega daemon itself, not just the console session. minimega asks you to enter <code>quit</code> a second time to confirm.</p>
+</div>
 <h2 id="minimega-command-and-control-miniccc">minimega Command and Control (<code>miniccc</code>)<a class="headerlink" href="#minimega-command-and-control-miniccc" title="Permanent link">&para;</a></h2>
 <p>phēnix and its applications rely on minimega's command and control infrastructure (<a href="https://sandia-minimega.github.io/minimega/reference/minimega/">miniccc</a>) running inside experiment VMs to execute commands, transfer files, and monitor VM health.</p>
 <ul>
@@ -1656,10 +1688,11 @@
 <h3 id="1-debugging-experiment-vms">1. Debugging Experiment VMs<a class="headerlink" href="#1-debugging-experiment-vms" title="Permanent link">&para;</a></h3>
 <p>When troubleshooting virtual machine or network deployment issues, use <code>phenix mm</code> to inspect minimega's internal state:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Check detailed VM status and tap interface mappings</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>phenix<span class="w"> </span>mm<span class="w"> </span>--namespace<span class="w"> </span>my-experiment<span class="w"> </span>vm<span class="w"> </span>info
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>phenix<span class="w"> </span>mm<span class="w"> </span>-n<span class="w"> </span>my-experiment<span class="w"> </span>vm<span class="w"> </span>info
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Inspect minimega log entries</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>phenix<span class="w"> </span>mm<span class="w"> </span>log
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Inspect recent minimega log entries (the log ring must first be enabled,</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># for example with `phenix mm log ring 1000`)</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>phenix<span class="w"> </span>mm<span class="w"> </span>log<span class="w"> </span>ring
 </span></code></pre></div>
 <h3 id="2-monitoring-cluster-hosts">2. Monitoring Cluster Hosts<a class="headerlink" href="#2-monitoring-cluster-hosts" title="Permanent link">&para;</a></h3>
 <p>In multi-node minimega deployments, use <code>phenix mm</code> to verify cluster connectivity and host status:</p>
