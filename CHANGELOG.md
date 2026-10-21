@@ -78,6 +78,7 @@ All notable changes to this project will be documented in this file.
 - **CLI**: Every `phenix` command waits at most one minute for the server's options over `--unix-socket` instead of hanging on a server that never answers. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **SoH**: Fix concurrent map access that could crash phēnix.
 - **SoH**: Report checks on hosts without C2 as failed.
+- **SoH**: Skip packet capture hosts that won't boot or don't exist.
 
 ### Security
 
