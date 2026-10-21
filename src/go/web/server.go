@@ -262,6 +262,7 @@ func Start(opts ...ServerOption) error {
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/scorch/pipelines", weberror.ErrorHandler(scorch.GetPipelines)).
 		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/scorch/pipelines/{run}/recover", weberror.ErrorHandler(scorch.RecoverPipeline)).Methods(http.MethodPost)
 	api.Handle("/experiments/{name}/scorch/pipelines/{run}/{loop}", weberror.ErrorHandler(scorch.GetPipeline)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.StartPipeline)).
@@ -429,7 +430,7 @@ func Start(opts ...ServerOption) error {
 
 	plog.Info(plog.TypeSystem, "starting scorch processors")
 
-	go scorch.Start(o.basePath)
+	scorch.Start(o.basePath)
 
 	plog.Info(plog.TypeSystem, "starting log publisher")
 

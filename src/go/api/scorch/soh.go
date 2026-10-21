@@ -36,46 +36,22 @@ func (s *SOH) Init(opts ...Option) error {
 }
 
 func (s SOH) Type() string {
-	return "soh"
+	return componentSOH
 }
 
 func (s SOH) Configure(ctx context.Context) error {
-	if s.options.Background {
-		ctx = background(ctx, ActionConfigure, s.options)
-
-		go func() { _ = s.check(ctx, ActionConfigure) }()
-
-		return nil
-	}
-
 	return s.check(ctx, ActionConfigure)
 }
 
 func (s SOH) Start(ctx context.Context) error {
-	if s.options.Background {
-		ctx = background(ctx, ActionStart, s.options)
-
-		go func() { _ = s.check(ctx, ActionStart) }()
-
-		return nil
-	}
-
 	return s.check(ctx, ActionStart)
 }
 
 func (s SOH) Stop(ctx context.Context) error {
-	if handleBackgrounded(ActionStop, s.options) {
-		return nil
-	}
-
 	return s.check(ctx, ActionStop)
 }
 
 func (s SOH) Cleanup(ctx context.Context) error {
-	if handleBackgrounded(ActionCleanup, s.options) {
-		return nil
-	}
-
 	return s.check(ctx, ActionCleanup)
 }
 

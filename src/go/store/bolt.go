@@ -83,6 +83,7 @@ func (b *BoltDB) open() error {
 
 	b.db, err = bbolt.Open(b.path, boltFileMode, &bbolt.Options{NoFreelistSync: true}) //nolint:exhaustruct // partial initialization
 	if err != nil {
+		b.mu.Unlock()
 		return err
 	}
 
@@ -199,30 +200,50 @@ func (b *BoltDB) Create(c *Config) error {
 }
 
 func (b *BoltDB) Update(c *Config) error {
-	_ = b.open()
-
-	defer func() { _ = b.Close() }()
-
-	if _, err := b.get(c.Kind, c.Metadata.Name); err != nil {
-		return ErrNotExist
-	}
-
-	c.Metadata.Updated = time.Now().Format(time.RFC3339)
-
-	v, err := json.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("marshaling config JSON: %w", err)
-	}
-
-	if err := b.put(c.Kind, c.Metadata.Name, v); err != nil {
-		return fmt.Errorf("writing config JSON to Bolt: %w", err)
-	}
-
-	return nil
+	incoming := *c
+	return b.Mutate(c, func(current *Config) error {
+		preserveScorch(current, &incoming)
+		*current = incoming
+		return nil
+	})
 }
 
 func (b *BoltDB) Patch(*Config, map[string]any) error {
 	return errors.New("boltDB.Patch not implemented")
+}
+
+func (b *BoltDB) Mutate(c *Config, update func(*Config) error) error {
+	if err := b.open(); err != nil {
+		return err
+	}
+	defer func() { _ = b.Close() }()
+	return b.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(c.Kind))
+		if bucket == nil {
+			return ErrNotExist
+		}
+		data := bucket.Get([]byte(c.Metadata.Name))
+		if data == nil {
+			return ErrNotExist
+		}
+		var current Config
+		if err := json.Unmarshal(data, &current); err != nil {
+			return err
+		}
+		if err := update(&current); err != nil {
+			return err
+		}
+		current.Metadata.Updated = time.Now().Format(time.RFC3339)
+		data, err := json.Marshal(current)
+		if err != nil {
+			return err
+		}
+		if err := bucket.Put([]byte(c.Metadata.Name), data); err != nil {
+			return err
+		}
+		*c = current
+		return nil
+	})
 }
 
 func (b *BoltDB) Delete(c *Config) error {

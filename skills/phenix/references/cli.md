@@ -72,7 +72,7 @@ phenix experiment stop <exp>
 phenix experiment restart <exp> [--dry-run]
 phenix experiment reconfigure <exp>
 phenix experiment trigger <lifecycle> <exp> [app ...]  # re-fire a lifecycle stage for app(s)
-phenix experiment scorch <exp> [-r|--run <id>]      # start SCORCH run <id> (default 0) for the experiment
+phenix experiment scorch <exp> [-r|--run <id>]      # start configured SCORCH run <id> (default 0); different run IDs may execute concurrently
 ```
 
 `-t`/`-s` accept either the name of an already-stored config or a path to a

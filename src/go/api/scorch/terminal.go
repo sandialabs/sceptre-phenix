@@ -20,7 +20,8 @@ func terminal(ctx context.Context, dir, cmd string, args []string, envs ...strin
 	_, _ = printer.Printf("Breakpoint: returning control to shell...\n\n")
 
 	c := exec.CommandContext(ctx, cmd, args...)
-	c.Env = append(c.Env, envs...)
+	c.Env = append(os.Environ(), envs...)
+	c.Cancel = func() error { return syscall.Kill(-c.Process.Pid, syscall.SIGKILL) }
 	c.Dir = dir
 
 	tty, err := pty.Start(c)
@@ -28,18 +29,14 @@ func terminal(ctx context.Context, dir, cmd string, args []string, envs ...strin
 		return fmt.Errorf("starting pty for %s: %w", cmd, err)
 	}
 
-	defer func() { _ = tty.Close() }()
+	defer func() { _ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL); _ = c.Wait(); _ = tty.Close() }()
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
 
 	go func() {
 		for range ch {
-			err = pty.InheritSize(os.Stdin, tty)
-			if err != nil {
-				// TODO
-				_ = err
-			}
+			_ = pty.InheritSize(os.Stdin, tty)
 		}
 	}()
 

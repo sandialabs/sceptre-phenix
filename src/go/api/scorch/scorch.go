@@ -1,8 +1,10 @@
 package scorch
 
 import (
-	"context"
 	"fmt"
+
+	"phenix/api/scorch/scorchmd"
+	"phenix/types"
 
 	"phenix/api/config"
 	"phenix/api/experiment"
@@ -10,73 +12,22 @@ import (
 	"phenix/web/scorch"
 )
 
-var backgrounded = map[Action]map[string]context.CancelFunc{ //nolint:gochecknoglobals // global state
-	ActionConfigure: make(map[string]context.CancelFunc),
-	ActionStart:     make(map[string]context.CancelFunc),
-	ActionStop:      make(map[string]context.CancelFunc),
-	ActionCleanup:   make(map[string]context.CancelFunc),
-	ActionDone:      make(map[string]context.CancelFunc),
-	ActionLoop:      make(map[string]context.CancelFunc),
-}
-
-func background(ctx context.Context, stage Action, options Options) context.Context {
-	if options.Background {
-		var (
-			cancel context.CancelFunc
-			name   = fmt.Sprintf("%s/%s/%s", options.Exp.Spec.ExperimentName(), stage, options.Name)
-		)
-
-		ctx, cancel = context.WithCancel(ctx)
-		backgrounded[stage][name] = cancel
-	}
-
-	return ctx
-}
-
-func handleBackgrounded(stage Action, options Options) bool {
-	var bgStage Action
-
-	switch stage {
-	case ActionStop:
-		bgStage = ActionStart
-	case ActionCleanup:
-		bgStage = ActionConfigure
-	case ActionConfigure, ActionStart, ActionDone, ActionLoop:
-		return false
-	default:
-		return false
-	}
-
-	name := fmt.Sprintf("%s/%s/%s", options.Exp.Spec.ExperimentName(), bgStage, options.Name)
-
-	if cancel, ok := backgrounded[bgStage][name]; ok {
-		cancel()
-
-		update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
-			Exp:     options.Exp.Spec.ExperimentName(),
-			Run:     options.Run,
-			Loop:    options.Loop,
-			Count:   options.Count,
-			Stage:   string(bgStage),
-			CmpType: options.Type,
-			CmpName: options.Name,
-			Status:  "success",
-		}
-
-		_ = scorch.UpdatePipeline(update)
-		scorch.UpdateComponent(update)
-		delete(backgrounded[bgStage], name)
-
-		return true
-	}
-
-	return false
-}
-
 func init() { //nolint:gochecknoinits // config hook
 	config.RegisterConfigHook("Experiment", func(stage string, c *store.Config) error {
 		switch stage {
 		case "update", "delete":
+			current, err := experiment.Get(c.Metadata.Name)
+			if err == nil {
+				status, err := scorchmd.Status(current)
+				if err != nil {
+					return err
+				}
+				for _, e := range status.Executions {
+					if e.Active() || e.State == scorchmd.StateInterrupted {
+						return fmt.Errorf("Scorch run %d must finish or recover before experiment configuration changes", e.Run)
+					}
+				}
+			}
 			scorch.DeletePipeline(c.Metadata.Name, -1, -1, false)
 		}
 
@@ -85,5 +36,9 @@ func init() { //nolint:gochecknoinits // config hook
 
 	experiment.RegisterHook("start", func(_ string, name string) { // clear SCORCH pipeline on experiment start
 		scorch.DeletePipeline(name, -1, -1, false)
+		_ = scorchmd.Mutate(name, func(_ *types.Experiment, s *scorchmd.ScorchStatus) error {
+			s.Stopping = false
+			return nil
+		})
 	})
 }

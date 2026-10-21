@@ -83,7 +83,7 @@ func (shell) ProcessExists(pid int) bool {
 	}
 }
 
-//nolint:funlen // complex logic
+//nolint:funlen,noctx // owns process-group cancellation and output streams
 func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, error) {
 	o := newOptions(opts...)
 
@@ -99,12 +99,13 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		stdIn = bytes.NewBuffer(o.stdin)
 	}
 
-	// Not using `exec.CommandContext` here since we're catching the context being
-	// canceled below in order to gracefully terminate the child process. Using
-	// `exec.CommandContext` forcefully kills the child process when the context
-	// is canceled.
-	cmd := exec.CommandContext(ctx, o.cmd, o.args...) //nolint:gosec // Subprocess launched with a potential tainted input
+	// Own the process group so cancellation also stops grandchildren holding
+	// output pipes open. The watcher sends TERM, then KILL after the grace period.
+	cmd := exec.Command(
+		o.cmd,
+		o.args...) //nolint:gosec // cancellation is handled for the entire process group below; Subprocess launched with a potential tainted input
 
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} //nolint:exhaustruct // other platform settings keep their defaults
 	cmd.Stdin = stdIn
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
@@ -114,13 +115,20 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 
 	err := cmd.Start()
 	if err != nil {
+		if o.stdout != nil {
+			close(o.stdout)
+		}
+		if o.stderr != nil {
+			close(o.stderr)
+		}
 		return nil, nil, fmt.Errorf("starting command: %w", err)
 	}
 
 	var (
-		done = make(chan struct{})
-		errs error
-		wg   sync.WaitGroup
+		done     = make(chan struct{})
+		errs     error
+		errorsMu sync.Mutex
+		wg       sync.WaitGroup
 	)
 
 	go func() {
@@ -128,13 +136,13 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		case <-done:
 			return
 		case <-ctx.Done():
-			_ = cmd.Process.Signal(syscall.SIGTERM)
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 
 			select {
 			case <-done:
 				return
 			case <-time.After(killDelay):
-				_ = cmd.Process.Kill()
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			}
 		}
 	}()
@@ -159,7 +167,9 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 
 		err := scanner.Err()
 		if err != nil {
+			errorsMu.Lock()
 			errs = multierror.Append(errs, fmt.Errorf("scanning STDOUT: %w", err))
+			errorsMu.Unlock()
 		}
 
 		if o.stdout != nil {
@@ -187,7 +197,9 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 
 		err := scanner.Err()
 		if err != nil {
+			errorsMu.Lock()
 			errs = multierror.Append(errs, fmt.Errorf("scanning STDERR: %w", err))
+			errorsMu.Unlock()
 		}
 
 		if o.stderr != nil {
@@ -203,6 +215,8 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 	}
 
 	close(done)
-
+	if ctx.Err() != nil {
+		errs = multierror.Append(errs, ctx.Err())
+	}
 	return stdoutBytes, stderrBytes, errs
 }

@@ -21,7 +21,18 @@ type Options struct {
 	Loop         int
 	Count        int
 	Background   bool
+	Detached     bool
 	Replacements scorchmd.ResolvedReplacements
+	Tasks        *taskGroup
+	Iteration    string
+}
+
+func executionTasks(tasks *taskGroup) Option {
+	return func(o *Options) { o.Tasks = tasks }
+}
+
+func iteration(path string) Option {
+	return func(o *Options) { o.Iteration = path }
 }
 
 // NewOptions returns an Options struct initialized with the given option list.

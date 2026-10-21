@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/creack/pty"
 
@@ -18,31 +19,35 @@ import (
 )
 
 type WebTerm struct {
-	Exp   string `json:"exp"`
-	Run   int    `json:"run"`
-	Loop  int    `json:"loop"`
-	Stage string `json:"stage"`
-	Name  string `json:"name"`
-	Loc   string `json:"loc"`
-	Exit  string `json:"exit"`
-	RO    bool   `json:"readOnly"`
+	ExecutionID string `json:"executionID"`
+	Exp         string `json:"exp"`
+	Run         int    `json:"run"`
+	Loop        int    `json:"loop"`
+	Stage       string `json:"stage"`
+	Name        string `json:"name"`
+	Loc         string `json:"loc"`
+	Exit        string `json:"exit"`
+	RO          bool   `json:"readOnly"`
 
 	// exposed for use in web package
 	Pid  int           `json:"-"`
 	Pty  *os.File      `json:"-"`
 	Done chan struct{} `json:"-"`
 
-	key string
+	clientID string
+	key      string
+	exited   *sync.Once
 }
 
 func newWebTerm(exp string, run, loop int, stage, name string) WebTerm {
 	return WebTerm{ //nolint:exhaustruct // partial initialization
-		Exp:   exp,
-		Run:   run,
-		Loop:  loop,
-		Stage: stage,
-		Name:  name,
-		Done:  make(chan struct{}),
+		Exp:    exp,
+		Run:    run,
+		Loop:   loop,
+		Stage:  stage,
+		Name:   name,
+		Done:   make(chan struct{}),
+		exited: new(sync.Once),
 
 		key: fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, name),
 	}
@@ -58,6 +63,7 @@ var ErrTerminalNotFound = errors.New("web terminal not found")
 
 func CreateWebTerminal(
 	ctx context.Context,
+	executionID string,
 	exp string,
 	run, loop int,
 	stage, name, dir, cmd string,
@@ -65,9 +71,11 @@ func CreateWebTerminal(
 	envs ...string,
 ) (chan struct{}, error) {
 	term := newWebTerm(exp, run, loop, stage, name)
+	term.ExecutionID = executionID
 
 	c := exec.CommandContext(ctx, cmd, args...)
-	c.Env = append(c.Env, envs...)
+	c.Env = append(os.Environ(), envs...)
+	c.Cancel = func() error { return syscall.Kill(-c.Process.Pid, syscall.SIGKILL) }
 	c.Dir = dir
 
 	tty, err := pty.Start(c)
@@ -85,6 +93,22 @@ func CreateWebTerminal(
 	webTermsExp[term.key] = term
 	webTermMu.Unlock()
 
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		for {
+			buf := make([]byte, TerminalBufferSize)
+			n, err := tty.Read(buf)
+			if n > 0 {
+				publishTerminalOutput(term, buf[:n])
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	go func() { _ = c.Wait(); _ = syscall.Kill(-term.Pid, syscall.SIGKILL); <-readerDone; finishTerminal(term) }()
+
 	// Monitor for the provided context being canceled and kill the terminal
 	// accordingly.
 	go func() {
@@ -98,7 +122,7 @@ func CreateWebTerminal(
 	body, _ := json.Marshal(term)
 
 	broker.Broadcast(
-		nil,
+		bt.NewRequestPolicy("experiments", "get", exp),
 		bt.NewResource("apps/scorch", exp, "terminal-create"),
 		body,
 	)
@@ -106,32 +130,35 @@ func CreateWebTerminal(
 	return term.Done, nil
 }
 
+func finishTerminal(term WebTerm) {
+	term.exited.Do(func() {
+		_ = term.Pty.Close()
+		webTermMu.Lock()
+		delete(webTermsPid, term.Pid)
+		if current, ok := webTermsExp[term.key]; ok && current.Pid == term.Pid {
+			delete(webTermsExp, term.key)
+		}
+		webTermMu.Unlock()
+		body, _ := json.Marshal(term)
+		broker.Broadcast(
+			bt.NewRequestPolicy("experiments", "get", term.Exp),
+			bt.NewResource("apps/scorch", term.Exp, "terminal-exit"),
+			body,
+		)
+		mu.Lock()
+		delete(history, term.Pid)
+		delete(rwTerm, term.Pid)
+		delete(rwTermOwners, term.Pid)
+		mu.Unlock()
+		close(term.Done)
+	})
+}
+
 func KillTerminal(term WebTerm) error {
-	close(term.Done)
-
-	webTermMu.Lock()
-	delete(webTermsPid, term.Pid)
-	delete(webTermsExp, term.key)
-	webTermMu.Unlock()
-
-	broker.Broadcast(
-		nil,
-		bt.NewResource("apps/scorch", term.Exp, "terminal-exit"),
-		nil,
-	)
-
-	defer term.Pty.Close()
-
-	proc, err := os.FindProcess(term.Pid)
-	if err != nil {
-		return fmt.Errorf("cannot find process with PID %d", term.Pid)
-	}
-
-	_ = proc.Kill()
-	_, _ = proc.Wait()
-
-	plog.Debug(plog.TypeSystem, "process killed", "pid", term.Pid)
-
+	// A PTY child leads its own session; kill its process group, then let the
+	// single waiter reap it before releasing the breakpoint.
+	_ = syscall.Kill(-term.Pid, syscall.SIGKILL)
+	<-term.Done
 	return nil
 }
 

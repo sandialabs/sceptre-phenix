@@ -19,6 +19,8 @@ const (
 // Store is the interface that identifies all the required functionality for a
 // config store. Not all functions are required to be implemented. If not
 // implemented, they should return an error stating such.
+//
+//nolint:interfacebloat // atomic mutation is part of the store contract
 type Store interface {
 	// Init is used to initialize a config store with options generic to all store
 	// implementations.
@@ -38,6 +40,10 @@ type Store interface {
 
 	// Update persists the given config to the store if it already exists.
 	Update(*Config) error
+
+	// Mutate atomically reads and updates a config. The callback must be pure:
+	// an optimistic store may invoke it more than once on conflicting writes.
+	Mutate(*Config, func(*Config) error) error
 
 	// Patch modifies the given config in the store with the given data if the
 	// config already exists.

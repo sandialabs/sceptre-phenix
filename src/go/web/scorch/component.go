@@ -15,15 +15,16 @@ const (
 )
 
 type ComponentUpdate struct {
-	Exp     string // experiment name
-	CmpName string // component name
-	CmpType string // component type
-	Run     int    // experiment run
-	Loop    int    // current loop
-	Count   int    // current loop count
-	Stage   string // component stage
-	Status  string // component status
-	Output  []byte // component output
+	ExecutionID string
+	Exp         string // experiment name
+	CmpName     string // component name
+	CmpType     string // component type
+	Run         int    // experiment run
+	Loop        int    // current loop
+	Count       int    // current loop count
+	Stage       string // component stage
+	Status      string // component status
+	Output      []byte // component output
 
 	done chan struct{}
 }
@@ -60,16 +61,10 @@ func UpdateComponent(update ComponentUpdate) {
 }
 
 func processComponents() {
-	componentUpdates = make(chan ComponentUpdate)
-	outputRequests = make(chan outputRequest)
-
-	cmpType = make(map[string]string)
-	running = make(map[string]bool)
-	output = make(map[string][]byte)
-
 	for {
 		select {
 		case update := <-componentUpdates:
+			componentMu.Lock()
 			// track updates by exp/run/loop/stage/component
 			key := fmt.Sprintf(
 				"%s|%d|%d|%s|%s",
@@ -117,6 +112,7 @@ func processComponents() {
 				}
 			}
 
+			componentMu.Unlock()
 			close(update.done)
 		case req := <-outputRequests:
 			resp := outputResponse{running: running[req.key]} //nolint:exhaustruct // partial initialization
@@ -124,7 +120,7 @@ func processComponents() {
 			if resp.running {
 				resp.terminal = cmpType[req.key] == "break"
 			} else {
-				resp.output = output[req.key]
+				resp.output = append([]byte(nil), output[req.key]...)
 			}
 
 			req.resp <- resp

@@ -148,30 +148,53 @@ func (e Etcd) Create(c *Config) error {
 }
 
 func (e Etcd) Update(c *Config) error {
-	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
-
-	if resp, _ := e.cli.Get(context.Background(), key); resp.Count == 0 {
-		return fmt.Errorf("config %s/%s doesn't exist", c.Kind, c.Metadata.Name)
-	}
-
-	now := time.Now().Format(time.RFC3339)
-
-	c.Metadata.Updated = now
-
-	v, err := json.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("marshaling config JSON: %w", err)
-	}
-
-	if _, err := e.cli.Put(context.Background(), key, string(v)); err != nil {
-		return fmt.Errorf("writing config JSON to Etcd: %w", err)
-	}
-
-	return nil
+	incoming := *c
+	return e.Mutate(c, func(current *Config) error {
+		preserveScorch(current, &incoming)
+		*current = incoming
+		return nil
+	})
 }
 
 func (e Etcd) Patch(c *Config, u map[string]any) error {
 	return errors.New("not implemented")
+}
+
+func (e Etcd) Mutate(c *Config, update func(*Config) error) error {
+	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
+	for range 32 {
+		resp, err := e.cli.Get(context.Background(), key)
+		if err != nil {
+			return err
+		}
+		if resp.Count == 0 {
+			return ErrNotExist
+		}
+		entry := resp.Kvs[0]
+		var current Config
+		if err := json.Unmarshal(entry.Value, &current); err != nil {
+			return err
+		}
+		if err := update(&current); err != nil {
+			return err
+		}
+		current.Metadata.Updated = time.Now().Format(time.RFC3339)
+		data, err := json.Marshal(current)
+		if err != nil {
+			return err
+		}
+		commit, err := e.cli.Txn(context.Background()).If(
+			clientv3.Compare(clientv3.ModRevision(key), "=", entry.ModRevision),
+		).Then(clientv3.OpPut(key, string(data))).Commit()
+		if err != nil {
+			return err
+		}
+		if commit.Succeeded {
+			*c = current
+			return nil
+		}
+	}
+	return errors.New("config mutation exceeded conflict retry limit")
 }
 
 func (e Etcd) Delete(c *Config) error {

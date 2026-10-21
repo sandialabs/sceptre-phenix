@@ -182,6 +182,8 @@ type (
 )
 
 type ScorchStatus struct {
-	RunID int                 `mapstructure:"runID" structs:"runID"`
-	Taps  map[string]*tap.Tap `mapstructure:"taps"  structs:"taps"`
+	RunID      int                   `mapstructure:"runID"      structs:"runID"      json:"runID"`
+	Taps       map[string]*tap.Tap   `mapstructure:"taps"       structs:"taps"       json:"taps"`
+	Executions map[string]*Execution `mapstructure:"executions" structs:"executions" json:"executions"`
+	Stopping   bool                  `mapstructure:"stopping"   structs:"stopping"   json:"stopping"`
 }
