@@ -76,6 +76,7 @@ All notable changes to this project will be documented in this file.
 - **Web UI**: The Configs page shows validation errors for uploaded configs again instead of failing silently. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow API**: `POST /api/v1/workflow/configs/{branch}` returns 400 for a config with a missing or unknown kind, or with `/` in its name, instead of dropping the connection. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **CLI**: Every `phenix` command waits at most one minute for the server's options over `--unix-socket` instead of hanging on a server that never answers. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+- **SoH**: Fix concurrent map access that could crash phēnix.
 
 ### Security
 
