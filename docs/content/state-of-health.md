@@ -305,8 +305,11 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
           be deployed it must be provided.
 
     * `captureHosts`: a map of VMs, each specifying a list of network interface
-      names to monitor. One Packetbeat VM will be deployed for each VM interface
-      specified. The default is `nil`.
+      names to monitor. One Packetbeat VM will be deployed for each listed VM
+      that boots, and it monitors each interface listed for that VM. A listed VM
+      that isn't in the topology or won't boot (for example, because its disk
+      image is missing) gets no Packetbeat VM, and SoH logs a warning naming
+      it. The default is `nil`.
 
 * `skipInitialNetworkConfigTests`: by default, a set of tests will be run on
   each VM to ensure the VM was assigned the correct IP address and can reach its
@@ -397,7 +400,7 @@ to Elasticsearch.
 
 When enabled, an Elasticsearch/Kibana VM is added to the experiment's topology so it
 can be accessed via the phenix UI. Packetbeat VMs are deployed in minimega for
-each experiment VM interface that's configured to be monitored, but are not
+each experiment VM that's configured to be monitored and boots, but are not
 added to the experiment topology so they do not clutter the phenix UI.
 
 When packet capture is enabled, the phenix UI SoH tab will include a Network

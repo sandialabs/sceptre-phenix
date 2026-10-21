@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"reflect"
 	"slices"
 	"strconv"
@@ -54,6 +55,7 @@ type fakeMM struct {
 
 	mu       sync.Mutex
 	attempts map[string][]string // VM -> commands sent to it
+	scripts  []string            // scripts read into minimega
 }
 
 func (f *fakeMM) GetVMInfo(opts ...mm.Option) mm.VMs {
@@ -124,6 +126,32 @@ func (f *fakeMM) WaitForC2Response(opts ...mm.C2Option) (string, error) {
 	}
 
 	return f.GetC2Response(opts...)
+}
+
+func (*fakeMM) Headnode() string {
+	return "headnode"
+}
+
+func (f *fakeMM) ReadScriptFromFile(_, filename string) error {
+	script, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.scripts = append(f.scripts, string(script))
+
+	return nil
+}
+
+// readScripts returns the scripts read into minimega.
+func (f *fakeMM) readScripts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return slices.Clone(f.scripts)
 }
 
 // optionField reads a string field of the options that mm.NewOptions or

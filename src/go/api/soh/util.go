@@ -46,7 +46,9 @@ var stringSpacePattern = regexp.MustCompile(`\s+`)
 
 var errC2NotActive = errors.New("c2 not active on host")
 
-func (s *SOH) deployCapture(exp *types.Experiment, dryrun bool) error {
+func (s *SOH) deployCapture(ctx context.Context, exp *types.Experiment, dryrun bool) error { //nolint:funlen // complex logic
+	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
+
 	err := s.decodeMetadata(exp)
 	if err != nil {
 		return err
@@ -70,7 +72,13 @@ func (s *SOH) deployCapture(exp *types.Experiment, dryrun bool) error {
 		node := exp.Spec.Topology().FindNodeByName(nodeToMonitor)
 
 		if node == nil {
-			return fmt.Errorf("node %s to monitor via packet capture does not exist", nodeToMonitor)
+			logger.Warn(
+				"skipping packet capture for host",
+				hostKey, nodeToMonitor,
+				"reason", "host is not in the topology",
+			)
+
+			continue
 		}
 
 		if node.External() {
@@ -78,6 +86,18 @@ func (s *SOH) deployCapture(exp *types.Experiment, dryrun bool) error {
 				"node %s to monitor via packet capture is not running in minimega",
 				nodeToMonitor,
 			)
+		}
+
+		// This also covers nodes the startup app marked in pre-start because their
+		// disk image is missing.
+		if *node.General().DoNotBoot() {
+			logger.Warn(
+				"skipping packet capture for host",
+				hostKey, nodeToMonitor,
+				"reason", "node will not boot",
+			)
+
+			continue
 		}
 
 		currentIP = nextIP(currentIP)
@@ -91,6 +111,10 @@ func (s *SOH) deployCapture(exp *types.Experiment, dryrun bool) error {
 
 		sched[captureNode.General().Hostname()] = exp.Status.Schedules()[nodeToMonitor]
 		monitors[captureNode.General().Hostname()] = mon
+	}
+
+	if len(caps) == 0 {
+		return nil
 	}
 
 	spec := map[string]any{
