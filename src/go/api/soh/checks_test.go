@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/mitchellh/mapstructure"
 
 	"phenix/app"
 	"phenix/store"
@@ -45,9 +46,14 @@ type fakeMM struct {
 	// barrier, if set, holds each WaitForC2Response call until all of them have
 	// arrived, so the goroutines that make them overlap.
 	barrier *barrier
+	// noC2 holds the VMs whose C2 client never becomes active.
+	noC2 map[string]bool
 
 	ids      atomic.Int64
 	commands sync.Map // command ID -> command
+
+	mu       sync.Mutex
+	attempts map[string][]string // VM -> commands sent to it
 }
 
 func (f *fakeMM) GetVMInfo(opts ...mm.Option) mm.VMs {
@@ -60,7 +66,22 @@ func (f *fakeMM) GetVMInfo(opts ...mm.Option) mm.VMs {
 }
 
 func (f *fakeMM) ExecC2Command(opts ...mm.C2Option) (string, error) {
-	command := optionField(mm.NewC2Options(opts...), "command")
+	o := mm.NewC2Options(opts...)
+	vm, command := optionField(o, "vm"), optionField(o, "command")
+
+	f.mu.Lock()
+
+	if f.attempts == nil {
+		f.attempts = make(map[string][]string)
+	}
+
+	f.attempts[vm] = append(f.attempts[vm], command)
+	f.mu.Unlock()
+
+	if f.noC2[vm] {
+		// What minimega returns once c2Timeout passes with no C2 client.
+		return "", fmt.Errorf("cannot execute command: %w", mm.ErrC2ClientNotActive)
+	}
 
 	id := strconv.FormatInt(f.ids.Add(1), 10)
 	f.commands.Store(id, command)
@@ -85,6 +106,14 @@ func (f *fakeMM) GetC2Response(opts ...mm.C2Option) (string, error) {
 	}
 
 	return "", fmt.Errorf("no response for C2 command %q", command)
+}
+
+// sent returns the commands sent to vm.
+func (f *fakeMM) sent(vm string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return slices.Clone(f.attempts[vm])
 }
 
 func (f *fakeMM) WaitForC2Response(opts ...mm.C2Option) (string, error) {
@@ -195,11 +224,11 @@ func dhcpIface(name, vlan string) map[string]any {
 	return map[string]any{"name": name, "type": "ethernet", "vlan": vlan, "proto": "dhcp"}
 }
 
-func staticIface(name, vlan, addr, gateway string) map[string]any {
+func staticIface(name, addr, gateway string) map[string]any {
 	return map[string]any{
 		"name":    name,
 		"type":    "ethernet",
-		"vlan":    vlan,
+		"vlan":    "EXP",
 		"proto":   "static",
 		"address": addr,
 		"mask":    24,
@@ -207,12 +236,16 @@ func staticIface(name, vlan, addr, gateway string) map[string]any {
 	}
 }
 
-// checksContext returns a context that runs only the given checks and drops
-// soh's logs.
+// checksContext returns a context that runs only the given checks, or the
+// default checks if none are given, and drops soh's logs.
 func checksContext(t *testing.T, checks ...string) context.Context {
 	t.Helper()
 
 	ctx := plog.ContextWithLogger(t.Context(), slog.New(slog.DiscardHandler), plog.TypeSoh)
+
+	if len(checks) == 0 {
+		return ctx
+	}
 
 	return app.SetContextMetadata(ctx, map[string]any{"checks": checks})
 }
@@ -258,7 +291,7 @@ func TestRunChecksRecordsEveryDHCPLease(t *testing.T) {
 	nodes = append(nodes, linuxNode(
 		"mixed",
 		dhcpIface("IF0", "EXP"),
-		staticIface("IF1", "EXP", "10.0.0.100", ""),
+		staticIface("IF1", "10.0.0.100", ""),
 	))
 	vms["mixed"] = mm.VM{Name: "mixed", IPv4: []string{"10.1.0.100", "10.0.0.100"}}
 	staticIPs = append(staticIPs, "10.0.0.100/24")
@@ -269,13 +302,13 @@ func TestRunChecksRecordsEveryDHCPLease(t *testing.T) {
 		host := fmt.Sprintf("static-%d", i)
 		addr := fmt.Sprintf("10.0.0.%d", i+1)
 
-		nodes = append(nodes, linuxNode(host, staticIface("IF0", "EXP", addr, "")))
+		nodes = append(nodes, linuxNode(host, staticIface("IF0", addr, "")))
 		staticIPs = append(staticIPs, addr+"/24")
 		wantVLANs["EXP"] = append(wantVLANs["EXP"], addr)
 		wantIPs[host] = map[string]string{"IF0": addr}
 	}
 
-	external := linuxNode("plc", staticIface("IF0", "EXP", "10.0.0.200", ""))
+	external := linuxNode("plc", staticIface("IF0", "10.0.0.200", ""))
 	external["external"] = true
 	nodes = append(nodes, external)
 	wantVLANs["EXP"] = append(wantVLANs["EXP"], "10.0.0.200")
@@ -358,5 +391,250 @@ func TestWaitForCPULoadRecordsEveryHost(t *testing.T) {
 		if got := s.status[host].CPULoad; got != want {
 			t.Errorf("%s CPU load = %q, want %q", host, got, want)
 		}
+	}
+}
+
+const (
+	goodHost = "good-host"
+	noC2Host = "rtu-1"
+
+	// What the web UI and REST API show for a check that C2 kept from running.
+	c2NotActive = "c2 not active on host"
+)
+
+// noC2Experiment builds two hosts that are configured for every check group,
+// some through another app's SoH profile. Only goodHost has C2.
+func noC2Experiment(t *testing.T, md map[string]any) (*types.Experiment, *fakeMM) {
+	t.Helper()
+
+	nodes := []map[string]any{
+		linuxNode(goodHost, staticIface("IF0", "10.0.0.1", "10.0.0.254")),
+		linuxNode(noC2Host, staticIface("IF0", "10.0.0.2", "10.0.0.254")),
+	}
+
+	customTest := map[string]any{"name": "ready", "testScript": "echo ok", "testStdout": "ok"}
+
+	soh := map[string]any{
+		"c2Timeout":        "10s",
+		"testReachability": "full",
+		"hostFiles": map[string]any{
+			goodHost: []string{"/etc/good.conf"},
+			noC2Host: []string{"/etc/rtu.conf", "/opt/rtu/config.xml"},
+		},
+		"hostFilesAbsent":  map[string]any{noC2Host: []string{"/tmp/rtu.lock"}},
+		"hostServices":     map[string]any{goodHost: []string{"sshd"}, noC2Host: []string{"rtu"}},
+		"hostProcesses":    map[string]any{goodHost: []string{"sshd"}, noC2Host: []string{"rtud"}},
+		"hostListeners":    map[string]any{goodHost: []string{":22"}, noC2Host: []string{":502"}},
+		"dockerContainers": map[string]any{goodHost: []string{"web"}, noC2Host: []string{"historian"}},
+		"hostCustomTests":  map[string]any{noC2Host: []any{customTest}},
+	}
+
+	maps.Copy(soh, md)
+
+	profile := map[string]any{
+		"processes":   []string{"rtu-agent"},
+		"listeners":   []string{":20000"},
+		"customTests": []any{map[string]any{"name": "profile", "testScript": "true", "testStdout": "x"}},
+	}
+
+	other := map[string]any{
+		"name":  "rtu-app",
+		"hosts": []any{map[string]any{"hostname": noC2Host, "metadata": map[string]any{"sohProfile": profile}}},
+	}
+
+	f := &fakeMM{
+		noC2: map[string]bool{noC2Host: true},
+		responses: map[string]string{
+			"ip addr":             "inet 10.0.0.1/24\ninet 10.0.0.2/24",
+			"ip route":            "default via 10.0.0.254 dev eth0",
+			"ping -c 1 ":          "1 packets transmitted, 1 received",
+			"stat -c present ":    "present",
+			"systemctl is-active": "active",
+			"pgrep -f ":           "1234",
+			"ss -lntu ":           "Netid State\ntcp LISTEN",
+			"docker inspect ":     "running",
+			"cat /proc/loadavg":   testLoadAvg,
+		},
+	}
+
+	useFakes(t, f)
+
+	return newTestExperiment(t, nodes, soh, other), f
+}
+
+// reportedStatus decodes the host states soh stored in exp the way Get does
+// for the web UI and REST API.
+func reportedStatus(t *testing.T, exp *types.Experiment) map[string]HostState {
+	t.Helper()
+
+	data, _ := exp.Status.AppStatus()[appName].(map[string]any)
+
+	var states []HostState
+
+	if err := mapstructure.Decode(data["hosts"], &states); err != nil {
+		t.Fatalf("decoding soh host states: %v", err)
+	}
+
+	hosts := make(map[string]HostState, len(states))
+
+	for _, state := range states {
+		hosts[state.Hostname] = state
+	}
+
+	return hosts
+}
+
+// wantFailures checks that states holds one failure with the error errText for
+// each item, which the metadata key names.
+func wantFailures(t *testing.T, group string, states []State, key, errText string, items ...string) {
+	t.Helper()
+
+	got := make([]string, 0, len(states))
+
+	for _, st := range states {
+		if !strings.Contains(st.Error, errText) {
+			t.Errorf("%s %v: error = %q, want %q", group, st.Metadata, st.Error, errText)
+		}
+
+		item, _ := st.Metadata[key].(string)
+		got = append(got, item)
+	}
+
+	slices.Sort(got)
+
+	if want := slices.Sorted(slices.Values(items)); !slices.Equal(got, want) {
+		t.Errorf("%s %s = %q, want %q", group, key, got, want)
+	}
+}
+
+// wantNoC2Failures checks that every check configured for noC2Host after the
+// network checks has one "c2 not active on host" failure.
+func wantNoC2Failures(t *testing.T, rtu HostState) {
+	t.Helper()
+
+	wantFailures(t, "filesAbsent", rtu.FilesAbsent, "path", c2NotActive, "/tmp/rtu.lock")
+	wantFailures(t, "services", rtu.Services, hostKey, c2NotActive, noC2Host)
+	wantFailures(t, "services", rtu.Services, "service", c2NotActive, "rtu")
+	wantFailures(t, "processes", rtu.Processes, "proc", c2NotActive, "rtud", "rtu-agent")
+	wantFailures(t, "listeners", rtu.Listeners, "port", c2NotActive, ":502", ":20000")
+	wantFailures(t, "containers", rtu.Containers, "container", c2NotActive, "historian")
+	wantFailures(t, "customTests", rtu.CustomTests, "test", c2NotActive, "ready", "profile")
+
+	if rtu.CPULoad != c2NotActive {
+		t.Errorf("CPU load = %q, want %q", rtu.CPULoad, c2NotActive)
+	}
+}
+
+// wantHealthy checks that goodHost ran its checks and passed them.
+func wantHealthy(t *testing.T, good HostState) {
+	t.Helper()
+
+	for _, st := range good.AllStates() {
+		// Reachability results also show on the target host.
+		if st.Metadata[hostKey] != goodHost {
+			continue
+		}
+
+		if st.Error != "" {
+			t.Errorf("%s %v failed: %s", goodHost, st.Metadata, st.Error)
+		}
+	}
+
+	if len(good.Files) != 1 || len(good.Services) != 1 || len(good.Processes) != 1 ||
+		len(good.Listeners) != 1 || len(good.Containers) != 1 {
+		t.Errorf("%s did not run every check: %+v", goodHost, good)
+	}
+
+	if good.CPULoad != testCPULoad {
+		t.Errorf("%s CPU load = %q, want %q", goodHost, good.CPULoad, testCPULoad)
+	}
+}
+
+// TestNoC2HostReportsEveryCheck covers a host whose C2 never starts. The
+// network check finds that out, and every check after it must still show up in
+// the host's status as failed, without another C2 command to the host.
+func TestNoC2HostReportsEveryCheck(t *testing.T) {
+	exp, f := noC2Experiment(t, nil)
+
+	if err := newSOH().Running(checksContext(t), exp); err == nil {
+		t.Fatal("Running() = nil, want an error")
+	}
+
+	hosts := reportedStatus(t, exp)
+	rtu := hosts[noC2Host]
+
+	wantFailures(t, "networking", rtu.Networking, hostKey, mm.ErrC2ClientNotActive.Error(), noC2Host)
+
+	var toGood []State
+
+	for _, st := range rtu.Reachability {
+		if st.Metadata[hostKey] == noC2Host && st.Metadata[targetKey] == goodHost {
+			toGood = append(toGood, st)
+		}
+	}
+
+	wantFailures(t, "reachability", toGood, "ip", c2NotActive, "10.0.0.1")
+	wantFailures(t, "files", rtu.Files, "path", c2NotActive, "/etc/rtu.conf", "/opt/rtu/config.xml")
+	wantNoC2Failures(t, rtu)
+	wantHealthy(t, hosts[goodHost])
+
+	if got := f.sent(noC2Host); !slices.Equal(got, []string{"ip addr"}) {
+		t.Errorf("C2 commands sent to %s = %q, want only the first network check", noC2Host, got)
+	}
+}
+
+// TestNoC2HostReportsEveryCheckWithoutNetworkChecks covers the same host when
+// the network checks are skipped, so the file checks are the first to find
+// that C2 is not active.
+func TestNoC2HostReportsEveryCheckWithoutNetworkChecks(t *testing.T) {
+	exp, f := noC2Experiment(t, map[string]any{"skipInitialNetworkConfigTests": true})
+
+	if err := newSOH().Running(checksContext(t), exp); err == nil {
+		t.Fatal("Running() = nil, want an error")
+	}
+
+	hosts := reportedStatus(t, exp)
+	rtu := hosts[noC2Host]
+
+	if len(rtu.Networking) != 0 || len(rtu.Reachability) != 0 {
+		t.Errorf("%s has network results with network checks skipped: %+v", noC2Host, rtu)
+	}
+
+	wantFailures(t, "files", rtu.Files, "path", mm.ErrC2ClientNotActive.Error(), "/etc/rtu.conf", "/opt/rtu/config.xml")
+	wantNoC2Failures(t, rtu)
+	wantHealthy(t, hosts[goodHost])
+
+	// Both file checks start before either one finds that C2 is not active.
+	got := f.sent(noC2Host)
+	if len(got) != len(rtu.Files) {
+		t.Errorf("C2 commands sent to %s = %q, want only its file checks", noC2Host, got)
+	}
+
+	for _, command := range got {
+		if !strings.HasPrefix(command, "stat ") {
+			t.Errorf("%s was sent %q after its file checks found no C2", noC2Host, command)
+		}
+	}
+}
+
+// TestSkippedHostReportsNothing checks that a host in skipHosts still gets no
+// status entries and no C2 commands.
+func TestSkippedHostReportsNothing(t *testing.T) {
+	exp, f := noC2Experiment(t, map[string]any{"skipHosts": []string{noC2Host}})
+
+	if err := newSOH().Running(checksContext(t), exp); err != nil {
+		t.Fatalf("Running() = %v, want nil", err)
+	}
+
+	hosts := reportedStatus(t, exp)
+
+	if rtu, ok := hosts[noC2Host]; ok {
+		t.Errorf("skipped host %s has status %+v", noC2Host, rtu)
+	}
+
+	wantHealthy(t, hosts[goodHost])
+
+	if got := f.sent(noC2Host); len(got) != 0 {
+		t.Errorf("C2 commands sent to skipped host %s = %q", noC2Host, got)
 	}
 }

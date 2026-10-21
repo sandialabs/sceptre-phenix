@@ -152,8 +152,10 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 
 * `c2Timeout`: a [Golang duration
   string](https://golang.org/pkg/time/#ParseDuration) specifying how long to
-  wait for the `miniccc` C2 client to become active in a VM before moving on and
-  marking the VM as not to be monitored. The default is `5m`.
+  wait for the `miniccc` C2 client to become active in a VM. If it doesn't
+  become active in time, the VM's remaining checks aren't sent to it for the
+  rest of that SoH run, and each one is reported as failed with
+  `c2 not active on host`. The default is `5m`.
 
 * `exitOnError`: a boolean representing whether the app should cause the entire
   experiment deployment to fail if it has any errors. The default is `false`.
@@ -355,7 +357,9 @@ Testing network reachability for a VM requires that the VM has minimega's
 command and control (C2) layer active (ie., the `miniccc` agent is running in
 the VM), has the correct IP address configured, and can ping its default route
 if one is configured. If C2 is not active for a VM after the `c2Timeout`
-duration has passed, then the VM will be excluded from reachability testing.
+duration has passed, then reachability tests from the VM aren't run. Each one
+is reported as failed with `c2 not active on host`, as are the VM's later checks
+and its CPU load.
 Once C2 is up for a VM, the VM is queried to confirm its IP address is
 configured and its gateway is reachable for a maximum of 5 minutes. Once all the
 VMs with C2 detected have their IP address configured and their gateways are

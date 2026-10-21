@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"net"
 	"os"
@@ -42,6 +43,8 @@ const (
 )
 
 var stringSpacePattern = regexp.MustCompile(`\s+`)
+
+var errC2NotActive = errors.New("c2 not active on host")
 
 func (s *SOH) deployCapture(exp *types.Experiment, dryrun bool) error {
 	err := s.decodeMetadata(exp)
@@ -350,6 +353,38 @@ func (s *SOH) decodeMetadata(exp *types.Experiment) error {
 	return nil
 }
 
+// markNoC2 stops checks from being sent to host for the rest of this run, since
+// each would wait c2Timeout again, and remembers why.
+func (s *SOH) markNoC2(host string) {
+	delete(s.c2Hosts, host)
+	s.noC2[host] = struct{}{}
+}
+
+// c2Unavailable reports whether a check can't be sent to host. If the host's C2
+// was found inactive earlier in this run, it also records the check that meta
+// describes as failed, so the check still shows in the host's status. Hosts
+// skipped per config get no entry.
+func (s *SOH) c2Unavailable(
+	logger *slog.Logger,
+	wg *mm.StateGroup,
+	host string,
+	meta map[string]any,
+) bool {
+	if _, ok := s.c2Hosts[host]; ok {
+		return false
+	}
+
+	if _, ok := s.noC2[host]; ok {
+		wg.AddError(errC2NotActive, meta)
+
+		return true
+	}
+
+	logger.Debug("skipping host per config", hostKey, host)
+
+	return true
+}
+
 //nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map[string]bool) bool {
 	if s.md.SkipNetworkConfig || !checks["network-config"] {
@@ -386,7 +421,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 
 			if _, ok := s.c2Hosts[host]; !ok {
 				// This host is known to not have C2 active, so don't test from it.
-				skipHost = errors.New("c2 not active on host")
+				skipHost = errC2NotActive
 			}
 
 			if _, ok := s.failedNetwork[host]; ok {
@@ -491,10 +526,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 
 			if _, ok := s.c2Hosts[host]; !ok {
 				// This host is known to not have C2 active, so don't test from it.
-				wg.AddError(
-					errors.New("c2 not active on host"),
-					map[string]any{hostKey: host, targetKey: reach.Dst},
-				)
+				wg.AddError(errC2NotActive, map[string]any{hostKey: host, targetKey: reach.Dst})
 
 				continue
 			}
@@ -565,7 +597,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			}
 
 			st.Error = err.Error()
@@ -635,13 +667,11 @@ func (s *SOH) waitForFileExistenceTest(
 	)
 
 	for host, files := range hostFiles {
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", hostKey, host)
-
-			continue
-		}
-
 		for _, path := range files {
+			if s.c2Unavailable(logger, wg, host, map[string]any{hostKey: host, "path": path}) {
+				continue
+			}
+
 			logger.Debug("checking for file on host", hostKey, host, "path", path)
 			test(ctx, wg, ns, s.nodes[host], path)
 		}
@@ -666,12 +696,12 @@ func (s *SOH) waitForFileExistenceTest(
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			}
 
 			st.Error = err.Error()
 
-			logger.Error(notFoundLogMsg, hostKey, host, "path", path)
+			logger.Error(notFoundLogMsg, hostKey, host, "path", path, "err", err)
 		} else {
 			st.Success = state.Msg
 		}
@@ -724,13 +754,11 @@ func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, services := range s.md.HostServices {
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
 		for _, service := range services {
+			if s.c2Unavailable(logger, wg, host, map[string]any{hostKey: host, "service": service}) {
+				continue
+			}
+
 			logger.Debug("checking for service on host", "host", host, "service", service)
 			s.serviceTest(ctx, wg, ns, s.nodes[host], service)
 		}
@@ -755,12 +783,12 @@ func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			}
 
 			st.Error = err.Error()
 
-			logger.Error("[✗] service not running on host", "host", host, "service", service)
+			logger.Error("[✗] service not running on host", "host", host, "service", service, "err", err)
 		} else {
 			st.Success = state.Msg
 		}
@@ -785,13 +813,11 @@ func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, containers := range s.md.HostContainers {
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
 		for _, container := range containers {
+			if s.c2Unavailable(logger, wg, host, map[string]any{hostKey: host, "container": container}) {
+				continue
+			}
+
 			logger.Debug("checking docker container on host", "host", host, "container", container)
 			s.containerTest(ctx, wg, ns, s.nodes[host], container)
 		}
@@ -820,7 +846,7 @@ func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			}
 
 			st.Error = err.Error()
@@ -831,6 +857,8 @@ func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
 				host,
 				"container",
 				container,
+				"err",
+				err,
 			)
 		} else {
 			st.Success = state.Msg
@@ -856,15 +884,11 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, processes := range s.md.HostProcesses {
-		// If the host isn't in the C2 hosts map, then don't operate on it since it
-		// was likely skipped for a reason.
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", hostKey, host)
-
-			continue
-		}
-
 		for _, proc := range processes {
+			if s.c2Unavailable(logger, wg, host, map[string]any{hostKey: host, "proc": proc}) {
+				continue
+			}
+
 			logger.Debug("checking for process on host", hostKey, host, "process", proc)
 			s.procTest(ctx, wg, ns, s.nodes[host], proc)
 		}
@@ -874,12 +898,6 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	for _, app := range s.apps {
 		for _, host := range app.Hosts() {
 			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
-				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", hostKey, host.Hostname())
-
-					continue
-				}
-
 				var profile sohProfile
 
 				err := mapstructure.Decode(ms, &profile)
@@ -896,6 +914,11 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 				}
 
 				for _, proc := range profile.Processes {
+					meta := map[string]any{hostKey: host.Hostname(), "proc": proc}
+					if s.c2Unavailable(logger, wg, host.Hostname(), meta) {
+						continue
+					}
+
 					logger.Debug(
 						"checking for process on host",
 						hostKey,
@@ -928,12 +951,12 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			}
 
 			st.Error = err.Error()
 
-			logger.Error("[✗] process not running on host", hostKey, host, "process", proc)
+			logger.Error("[✗] process not running on host", hostKey, host, "process", proc, "err", err)
 		} else {
 			st.Success = state.Msg
 		}
@@ -958,15 +981,11 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, listeners := range s.md.HostListeners {
-		// If the host isn't in the C2 hosts map, then don't operate on it since it
-		// was likely skipped for a reason.
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", hostKey, host)
-
-			continue
-		}
-
 		for _, port := range listeners {
+			if s.c2Unavailable(logger, wg, host, map[string]any{hostKey: host, "port": port}) {
+				continue
+			}
+
 			logger.Debug("checking for listener on host", hostKey, host, "listener", port)
 			s.portTest(ctx, wg, ns, s.nodes[host], port)
 		}
@@ -976,12 +995,6 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 	for _, app := range s.apps {
 		for _, host := range app.Hosts() {
 			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
-				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", hostKey, host.Hostname())
-
-					continue
-				}
-
 				var profile sohProfile
 
 				err := mapstructure.Decode(ms, &profile)
@@ -998,6 +1011,11 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 				}
 
 				for _, port := range profile.Listeners {
+					meta := map[string]any{hostKey: host.Hostname(), "port": port}
+					if s.c2Unavailable(logger, wg, host.Hostname(), meta) {
+						continue
+					}
+
 					logger.Debug(
 						"checking for listener on host",
 						hostKey,
@@ -1030,12 +1048,12 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			}
 
 			st.Error = err.Error()
 
-			logger.Error("[✗] host not listening on port", hostKey, host, "port", port)
+			logger.Error("[✗] host not listening on port", hostKey, host, "port", port, "err", err)
 		} else {
 			st.Success = state.Msg
 		}
@@ -1059,15 +1077,11 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, tests := range s.md.CustomHostTests {
-		// If the host isn't in the C2 hosts map, then don't operate on it since it
-		// was likely skipped for a reason.
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", hostKey, host)
-
-			continue
-		}
-
 		for _, test := range tests {
+			if s.c2Unavailable(logger, wg, host, map[string]any{hostKey: host, "test": test.Name}) {
+				continue
+			}
+
 			logger.Debug("running custom test on host", hostKey, host, "test", test.Name)
 			s.customTest(ctx, wg, ns, s.nodes[host], test)
 		}
@@ -1077,12 +1091,6 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 	for _, app := range s.apps {
 		for _, host := range app.Hosts() {
 			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
-				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", hostKey, host.Hostname())
-
-					continue
-				}
-
 				var profile sohProfile
 
 				err := mapstructure.Decode(ms, &profile)
@@ -1099,6 +1107,11 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 				}
 
 				for _, test := range profile.CustomTests {
+					meta := map[string]any{hostKey: host.Hostname(), "test": test.Name}
+					if s.c2Unavailable(logger, wg, host.Hostname(), meta) {
+						continue
+					}
+
 					logger.Debug(
 						"running custom test on host",
 						hostKey,
@@ -1131,12 +1144,12 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			}
 
 			st.Error = err.Error()
 
-			logger.Error("[✗] test failed on host", hostKey, host, "test", test)
+			logger.Error("[✗] test failed on host", hostKey, host, "test", test, "err", err)
 		} else {
 			st.Success = state.Msg
 		}
@@ -1160,6 +1173,12 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 	)
 
 	logger.Info("querying nodes for CPU load")
+
+	// Hosts found without C2 earlier in this run get no command, but their CPU
+	// load still says why it is missing.
+	for host := range s.noC2 {
+		wg.AddError(errC2NotActive, map[string]any{hostKey: host})
+	}
 
 	// Only check for CPU load in hosts that have confirmed C2 availability.
 	for host := range s.c2Hosts {
@@ -1260,7 +1279,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			}
 
 			hostState.CPULoad = err.Error()
