@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/activeshadow/structs"
@@ -53,6 +54,14 @@ type SOH struct {
 	packetCapture map[string]any
 
 	options app.Options
+}
+
+// dhcpLease is an address minimega reports for a host's DHCP interface.
+type dhcpLease struct {
+	host  string
+	iface string
+	vlan  string
+	addr  string
 }
 
 func newSOH() *SOH {
@@ -195,6 +204,13 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	ns := exp.Spec.ExperimentName()
 	wg := new(mm.StateGroup)
 
+	// The DHCP goroutines below run while this loop keeps writing the IP maps, so
+	// they only collect leases, which get recorded once they have all returned.
+	var (
+		leasesMu sync.Mutex
+		leases   []dhcpLease
+	)
+
 	if val, ok := md["c2Timeout"]; ok {
 		if duration, ok2 := val.(string); ok2 {
 			if timeout, err := time.ParseDuration(duration); err == nil {
@@ -314,16 +330,14 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 									continue
 								}
 
-								s.addrHosts[addrs[idx]] = host
-								s.vlans[iface.VLAN()] = append(s.vlans[iface.VLAN()], addrs[idx])
-
-								ips, ok := s.hostIPs[host]
-								if !ok {
-									ips = make(map[string]string)
-								}
-
-								ips[iface.Name()] = addrs[idx]
-								s.hostIPs[host] = ips
+								leasesMu.Lock()
+								leases = append(leases, dhcpLease{
+									host:  host,
+									iface: iface.Name(),
+									vlan:  iface.VLAN(),
+									addr:  addrs[idx],
+								})
+								leasesMu.Unlock()
 
 								wg.AddSuccess(
 									fmt.Sprintf("IP %s configured via DHCP", addrs[idx]),
@@ -370,6 +384,19 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+
+	for _, lease := range leases {
+		s.addrHosts[lease.addr] = lease.host
+		s.vlans[lease.vlan] = append(s.vlans[lease.vlan], lease.addr)
+
+		ips, ok := s.hostIPs[lease.host]
+		if !ok {
+			ips = make(map[string]string)
+		}
+
+		ips[lease.iface] = lease.addr
+		s.hostIPs[lease.host] = ips
 	}
 
 	for _, state := range wg.States {
