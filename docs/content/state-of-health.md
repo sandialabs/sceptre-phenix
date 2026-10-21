@@ -152,8 +152,10 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 
 * `c2Timeout`: a [Golang duration
   string](https://golang.org/pkg/time/#ParseDuration) specifying how long to
-  wait for the `miniccc` C2 client to become active in a VM before moving on and
-  marking the VM as not to be monitored. The default is `5m`.
+  wait for the `miniccc` C2 client to become active in a VM. If it doesn't
+  become active in time, the VM's remaining checks aren't sent to it for the
+  rest of that SoH run, and each one is reported as failed with
+  `c2 not active on host`. The default is `5m`.
 
 * `exitOnError`: a boolean representing whether the app should cause the entire
   experiment deployment to fail if it has any errors. The default is `false`.
@@ -303,8 +305,11 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
           be deployed it must be provided.
 
     * `captureHosts`: a map of VMs, each specifying a list of network interface
-      names to monitor. One Packetbeat VM will be deployed for each VM interface
-      specified. The default is `nil`.
+      names to monitor. One Packetbeat VM will be deployed for each listed VM
+      that boots, and it monitors each interface listed for that VM. A listed VM
+      that isn't in the topology or won't boot (for example, because its disk
+      image is missing) gets no Packetbeat VM, and SoH logs a warning naming
+      it. The default is `nil`.
 
 * `skipInitialNetworkConfigTests`: by default, a set of tests will be run on
   each VM to ensure the VM was assigned the correct IP address and can reach its
@@ -355,7 +360,9 @@ Testing network reachability for a VM requires that the VM has minimega's
 command and control (C2) layer active (ie., the `miniccc` agent is running in
 the VM), has the correct IP address configured, and can ping its default route
 if one is configured. If C2 is not active for a VM after the `c2Timeout`
-duration has passed, then the VM will be excluded from reachability testing.
+duration has passed, then reachability tests from the VM aren't run. Each one
+is reported as failed with `c2 not active on host`, as are the VM's later checks
+and its CPU load.
 Once C2 is up for a VM, the VM is queried to confirm its IP address is
 configured and its gateway is reachable for a maximum of 5 minutes. Once all the
 VMs with C2 detected have their IP address configured and their gateways are
@@ -393,7 +400,7 @@ to Elasticsearch.
 
 When enabled, an Elasticsearch/Kibana VM is added to the experiment's topology so it
 can be accessed via the phenix UI. Packetbeat VMs are deployed in minimega for
-each experiment VM interface that's configured to be monitored, but are not
+each experiment VM that's configured to be monitored and boots, but are not
 added to the experiment topology so they do not clutter the phenix UI.
 
 When packet capture is enabled, the phenix UI SoH tab will include a Network

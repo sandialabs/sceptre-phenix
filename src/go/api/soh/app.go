@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/activeshadow/structs"
@@ -31,6 +32,8 @@ type SOH struct {
 	nodes map[string]ifaces.NodeSpec
 	// Track hosts with active C2
 	c2Hosts map[string]struct{}
+	// Track hosts whose C2 was found inactive during this run
+	noC2 map[string]struct{}
 	// Track hosts that should be tested for reachability
 	// (ie. hosts that have at least one interface in an experiment VLAN)
 	reachabilityHosts map[string]struct{}
@@ -55,10 +58,19 @@ type SOH struct {
 	options app.Options
 }
 
+// dhcpLease is an address minimega reports for a host's DHCP interface.
+type dhcpLease struct {
+	host  string
+	iface string
+	vlan  string
+	addr  string
+}
+
 func newSOH() *SOH {
 	return &SOH{ //nolint:exhaustruct // partial initialization
 		nodes:             make(map[string]ifaces.NodeSpec),
 		c2Hosts:           make(map[string]struct{}),
+		noC2:              make(map[string]struct{}),
 		reachabilityHosts: make(map[string]struct{}),
 		addrHosts:         make(map[string]string),
 		vlans:             make(map[string][]string),
@@ -131,7 +143,7 @@ func (s *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
 
 	s.apps = exp.Spec.Scenario().Apps()
 
-	err = s.deployCapture(exp, s.options.DryRun)
+	err = s.deployCapture(ctx, exp, s.options.DryRun)
 	if err != nil {
 		if s.md.ExitOnError {
 			return err
@@ -194,6 +206,13 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	md := app.GetContextMetadata(ctx)
 	ns := exp.Spec.ExperimentName()
 	wg := new(mm.StateGroup)
+
+	// The DHCP goroutines below run while this loop keeps writing the IP maps, so
+	// they only collect leases, which get recorded once they have all returned.
+	var (
+		leasesMu sync.Mutex
+		leases   []dhcpLease
+	)
 
 	if val, ok := md["c2Timeout"]; ok {
 		if duration, ok2 := val.(string); ok2 {
@@ -314,16 +333,14 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 									continue
 								}
 
-								s.addrHosts[addrs[idx]] = host
-								s.vlans[iface.VLAN()] = append(s.vlans[iface.VLAN()], addrs[idx])
-
-								ips, ok := s.hostIPs[host]
-								if !ok {
-									ips = make(map[string]string)
-								}
-
-								ips[iface.Name()] = addrs[idx]
-								s.hostIPs[host] = ips
+								leasesMu.Lock()
+								leases = append(leases, dhcpLease{
+									host:  host,
+									iface: iface.Name(),
+									vlan:  iface.VLAN(),
+									addr:  addrs[idx],
+								})
+								leasesMu.Unlock()
 
 								wg.AddSuccess(
 									fmt.Sprintf("IP %s configured via DHCP", addrs[idx]),
@@ -372,6 +389,19 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		return ctx.Err()
 	}
 
+	for _, lease := range leases {
+		s.addrHosts[lease.addr] = lease.host
+		s.vlans[lease.vlan] = append(s.vlans[lease.vlan], lease.addr)
+
+		ips, ok := s.hostIPs[lease.host]
+		if !ok {
+			ips = make(map[string]string)
+		}
+
+		ips[lease.iface] = lease.addr
+		s.hostIPs[lease.host] = ips
+	}
+
 	for _, state := range wg.States {
 		host, _ := state.Meta[hostKey].(string)
 
@@ -385,7 +415,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			logger.Error("[✗] failed to confirm networking", hostKey, host, "err", err)
 
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			} else {
 				s.failedNetwork[host] = struct{}{}
 			}
