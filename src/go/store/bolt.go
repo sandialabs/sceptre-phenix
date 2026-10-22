@@ -83,6 +83,8 @@ func (b *BoltDB) open() error {
 
 	b.db, err = bbolt.Open(b.path, boltFileMode, &bbolt.Options{NoFreelistSync: true}) //nolint:exhaustruct // partial initialization
 	if err != nil {
+		b.mu.Unlock()
+
 		return err
 	}
 

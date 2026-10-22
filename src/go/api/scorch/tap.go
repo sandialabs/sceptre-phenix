@@ -69,6 +69,10 @@ func (t Tap) Start(ctx context.Context) error {
 		return fmt.Errorf("getting experiment status for scorch app: %w", err)
 	}
 
+	if status.Taps == nil {
+		status.Taps = make(map[string]*tap.Tap)
+	}
+
 	status.Taps[t.options.Name] = tp
 
 	t.options.Exp.Status.SetAppStatus("scorch", status)
@@ -77,30 +81,40 @@ func (t Tap) Start(ctx context.Context) error {
 	return nil
 }
 
-func (t Tap) Stop(ctx context.Context) error {
+func (t Tap) Stop(context.Context) error {
+	return t.deleteTap()
+}
+
+func (t Tap) Cleanup(context.Context) error {
+	return t.deleteTap()
+}
+
+func (t Tap) deleteTap() error {
 	exp := t.options.Exp.Metadata.Name
 
 	var status scorchmd.ScorchStatus
 
-	err := t.options.Exp.Status.ParseAppStatus("scorch", &status)
-	if err != nil {
-		return fmt.Errorf("getting experiment status for scorch app: %w", err)
+	if err := t.options.Exp.Status.ParseAppStatus("scorch", &status); err != nil {
+		return nil //nolint:nilerr // missing status means no taps were recorded
 	}
 
 	tp, ok := status.Taps[t.options.Name]
-	if ok {
-		tp.Init(t.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp))
-
-		err = tp.Delete(mm.Headnode())
-		if err != nil {
-			return fmt.Errorf("deleting host tap for VLAN %s: %w", tp.VLAN, err)
-		}
+	if !ok {
+		return nil
 	}
 
-	return nil
-}
+	tp.Init(t.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp))
 
-func (Tap) Cleanup(context.Context) error {
+	err := tp.Delete(mm.Headnode())
+	if err != nil {
+		return fmt.Errorf("deleting host tap for VLAN %s: %w", tp.VLAN, err)
+	}
+
+	delete(status.Taps, t.options.Name)
+
+	t.options.Exp.Status.SetAppStatus("scorch", status)
+	_ = t.options.Exp.WriteToStore(true)
+
 	return nil
 }
 
