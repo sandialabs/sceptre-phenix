@@ -109,7 +109,7 @@ func (r *applyRun) preflight(ctx context.Context) (preflightResult, error) {
 	if r.injects != "" {
 		// Staged, such an entry would make the staged tree look like a
 		// topology directory, which checkDestination then refuses to replace.
-		if entry := injectsMarkerEntry(r.injects); entry != "" {
+		if entry := injectsMarkerEntry(r.injects, r.opts.FollowInjectSymlinks); entry != "" {
 			return preflightResult{}, fmt.Errorf(
 				"%s holds %s, a name that marks a topology directory; rename it or move it deeper", r.injects, entry,
 			)

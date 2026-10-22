@@ -44,10 +44,26 @@ var rename = os.Rename //nolint:gochecknoglobals // overridden by tests
 // it has just written to.
 var removeAll = os.RemoveAll //nolint:gochecknoglobals // overridden by tests
 
+// StageOptions configures how [StageInjectsWithOptions] stages injects.
+type StageOptions struct {
+	FollowSymlinks bool
+	Protect        []string
+}
+
 // StageInjects copies the directory tree src to base/name and returns the
-// number of regular files it copied. On any error it returns 0, except for an
-// error that wraps [ErrPreviousCopyKept]: the new tree is then in place, the
-// count is returned, and the error names the old tree.
+// number of regular files it copied. Symlinks are recreated, never followed.
+// See [StageInjectsWithOptions] for full details.
+func StageInjects(src, base, name string, protect ...string) (int, error) {
+	return StageInjectsWithOptions(src, base, name, StageOptions{
+		FollowSymlinks: false,
+		Protect:        protect,
+	})
+}
+
+// StageInjectsWithOptions copies the directory tree src to base/name with opts
+// and returns the number of regular files it copied. On any error it returns 0,
+// except for an error that wraps [ErrPreviousCopyKept]: the new tree is then in
+// place, the count is returned, and the error names the old tree.
 //
 // The name must pass [ValidateName], so base/name is always a direct child of
 // base. Base is created (mode 0o755 before the umask) when it is missing.
@@ -60,21 +76,23 @@ var removeAll = os.RemoveAll //nolint:gochecknoglobals // overridden by tests
 // base. Every protect path must exist.
 //
 // The tree is copied into a hidden .<name>.tmp-<random> sibling of base/name.
-// Symlinks are recreated, never followed. Regular files keep their permission
-// bits. Directories keep theirs plus owner read, write and search. Only
-// permission bits are copied: setuid, setgid and sticky bits are dropped, so a
-// staged directory in a setgid base does not keep the setgid bit it inherits.
-// Any other file type fails the copy. An existing base/name is then renamed to
-// a hidden .<name>.old-<random> sibling, the copy is renamed into place and
-// the old tree is removed, so base/name is missing only between those two
-// renames. If the copy or the swap fails, the copy is removed and any
-// existing base/name is put back as it was. If putting it back fails too, it
-// stays in the .<name>.old-<random> sibling, which the error names. A failure
-// to remove the copy is added to the error, which then names the copy. If
-// only removing the old tree fails, the new tree stays in place and the error
+// When opts.FollowSymlinks is true, symlinks are followed and copied as regular
+// files or directories, and an error is returned if a symlink is dangling or cyclic.
+// When opts.FollowSymlinks is false, symlinks are recreated, never followed.
+// Regular files keep their permission bits. Directories keep theirs plus owner
+// read, write and search. Only permission bits are copied: setuid, setgid and
+// sticky bits are dropped, so a staged directory in a setgid base does not keep
+// the setgid bit it inherits. Any other file type fails the copy. An existing
+// base/name is then renamed to a hidden .<name>.old-<random> sibling, the copy
+// is renamed into place and the old tree is removed, so base/name is missing
+// only between those two renames. If the copy or the swap fails, the copy is
+// removed and any existing base/name is put back as it was. If putting it back
+// fails too, it stays in the .<name>.old-<random> sibling, which the error names.
+// A failure to remove the copy is added to the error, which then names the copy.
+// If only removing the old tree fails, the new tree stays in place and the error
 // wraps [ErrPreviousCopyKept]. Filesystem errors are wrapped, so callers can
 // match them with [errors.Is], for example against [fs.ErrPermission].
-func StageInjects(src, base, name string, protect ...string) (int, error) {
+func StageInjectsWithOptions(src, base, name string, opts StageOptions) (int, error) {
 	if err := ValidateName(name); err != nil {
 		return 0, err
 	}
@@ -92,7 +110,7 @@ func StageInjects(src, base, name string, protect ...string) (int, error) {
 		return 0, fmt.Errorf("creating injects directory %s: %w", base, err)
 	}
 
-	dest, err := injectsDestination(src, base, name, protect)
+	dest, err := injectsDestination(src, base, name, opts.Protect)
 	if err != nil {
 		return 0, err
 	}
@@ -100,7 +118,13 @@ func StageInjects(src, base, name string, protect ...string) (int, error) {
 	parent := filepath.Dir(dest)
 	tmp := filepath.Join(parent, "."+name+stagingInfix+rand.Text())
 
-	files, err := copyTree(src, tmp, info.Mode().Perm())
+	copier := &treeCopier{
+		followSymlinks: opts.FollowSymlinks,
+		stagingDir:     tmp,
+		ancestors:      make(map[string]bool),
+	}
+
+	files, err := copier.copyTree(src, tmp, info.Mode().Perm())
 	if err != nil {
 		return 0, withSecondError(fmt.Errorf("copying %s to %s: %w", src, parent, err), removeStaging(tmp))
 	}
@@ -256,10 +280,34 @@ func PathWithin(target, dir string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+type treeCopier struct {
+	followSymlinks bool
+	stagingDir     string
+	ancestors      map[string]bool
+}
+
 // copyTree copies the directory src to the new directory dst, then gives dst
 // the permissions perm plus owner access. It returns the number of regular
 // files copied.
-func copyTree(src, dst string, perm fs.FileMode) (int, error) {
+func (c *treeCopier) copyTree(src, dst string, perm fs.FileMode) (int, error) {
+	if c.followSymlinks {
+		realDir, err := resolveRealPath(src)
+		if err != nil {
+			return 0, fmt.Errorf("resolving directory %s: %w", src, err)
+		}
+
+		if c.ancestors[realDir] {
+			return 0, fmt.Errorf("cyclic directory link: %s points to %s", src, realDir)
+		}
+
+		if PathWithin(c.stagingDir, realDir) {
+			return 0, fmt.Errorf("%w: %s points to %s, which contains the staging directory", ErrUnsafeDestination, src, realDir)
+		}
+
+		c.ancestors[realDir] = true
+		defer delete(c.ancestors, realDir)
+	}
+
 	entries, err := os.ReadDir(src)
 	if err == nil {
 		err = os.Mkdir(dst, ownerAccess)
@@ -272,7 +320,7 @@ func copyTree(src, dst string, perm fs.FileMode) (int, error) {
 	files := 0
 
 	for _, entry := range entries {
-		n, err := copyEntry(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name()))
+		n, err := c.copyEntry(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name()))
 		if err != nil {
 			return 0, err
 		}
@@ -285,7 +333,7 @@ func copyTree(src, dst string, perm fs.FileMode) (int, error) {
 
 // copyEntry copies the directory, regular file or symlink src to dst. It
 // returns the number of regular files copied.
-func copyEntry(src, dst string) (int, error) {
+func (c *treeCopier) copyEntry(src, dst string) (int, error) {
 	info, err := os.Lstat(src)
 	if err != nil {
 		return 0, err
@@ -295,9 +343,28 @@ func copyEntry(src, dst string) (int, error) {
 
 	switch {
 	case mode&fs.ModeSymlink != 0:
-		return 0, copySymlink(src, dst)
+		if !c.followSymlinks {
+			return 0, copySymlink(src, dst)
+		}
+
+		targetInfo, err := os.Stat(src)
+		if err != nil {
+			return 0, fmt.Errorf("following symlink %s: %w", src, err)
+		}
+
+		targetMode := targetInfo.Mode()
+
+		switch {
+		case targetMode.IsDir():
+			return c.copyTree(src, dst, targetMode.Perm())
+		case targetMode.IsRegular():
+			return 1, copyFile(src, dst, targetMode.Perm())
+		default:
+			return 0, fmt.Errorf("%s: unsupported file type %s", src, targetMode.Type())
+		}
+
 	case mode.IsDir():
-		return copyTree(src, dst, mode.Perm())
+		return c.copyTree(src, dst, mode.Perm())
 	case mode.IsRegular():
 		return 1, copyFile(src, dst, mode.Perm())
 	default:

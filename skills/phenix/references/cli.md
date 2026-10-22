@@ -109,6 +109,7 @@ phenix workflow apply <DIR|NAME> -n                 # --dry-run: validate everyt
 phenix workflow apply <DIR|NAME> -f                 # --force: allow restarting a running experiment
 phenix workflow apply <DIR|NAME> -b <name>          # --branch-name: workflow branch name (default: the directory's name)
 phenix workflow apply <DIR|NAME> -c <file>          # --config: workflow config, relative to DIR unless absolute
+phenix workflow apply <DIR|NAME> --follow-inject-symlinks # follow symlinks in phenix-injects/ and copy as regular files
 ```
 
 The argument, the directory layout, the steps, the workflow config, and the

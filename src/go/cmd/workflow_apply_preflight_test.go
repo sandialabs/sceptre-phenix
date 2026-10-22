@@ -749,3 +749,30 @@ func TestRunWorkflowApplyRefusesMarkerNamesInInjects(t *testing.T) {
 		})
 	}
 }
+
+func TestRunWorkflowApplyRefusesMarkerNamesInSymlinkedInjects(t *testing.T) {
+	extDir := t.TempDir()
+	extSub := filepath.Join(extDir, "sub")
+	if err := os.Mkdir(extSub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extSub, "phenix.yml"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := newTopologyDir(t, "foo", fullTopology())
+	if err := os.Symlink(extSub, filepath.Join(dir, "phenix-injects", "symdir")); err != nil {
+		t.Fatal(err)
+	}
+
+	injects := t.TempDir()
+	fake := newFakePhenix(t, fakePhenix{options: serverOptions(injects)})
+	opts := testApplyOptions(fake.socket, t.TempDir())
+	opts.FollowInjectSymlinks = true
+
+	err := runWorkflowApply(t.Context(), opts, dir)
+	want := dir + "/phenix-injects holds symdir/phenix.yml, a name that marks a topology directory; rename it or move it deeper"
+	if err == nil || err.Error() != want {
+		t.Fatalf("runWorkflowApply() error = %v, want %q", err, want)
+	}
+}
