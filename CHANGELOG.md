@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Image Releases**: `phenix image create` recognizes the Debian releases `trixie` and `forky`.
+- **SCORCH**: Support the `cleanup` stage in the built-in `tap` component for reliable tap teardown on run completion or cancellation.
 - **Topology Builder**:
   - **Topology Endpoints**: Added `POST /api/v1/builder/topologies` and `PUT /api/v1/builder/topologies/{name}` to create and save a topology and its diagram without touching an experiment; both refuse the write while an experiment built from that topology is running.
   - **Default Disk Images**: Added the `$DEFAULT_VM_IMAGE` and `$DEFAULT_ROUTER_IMAGE` experiment variables, which set the disk image new VM and router nodes are created with.
