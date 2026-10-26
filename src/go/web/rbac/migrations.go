@@ -39,6 +39,59 @@ func EnsureJobsPermission() error {
 	return ensurePermission(jobsResource, []string{"list", "get", "update", "delete"}, experimentFilesDeleteRole)
 }
 
+const (
+	globalAdminRole = "Global Admin"
+	metricsResource = "metrics"
+	metricsGetVerb  = "get"
+)
+
+// EnsureMetricsPermission lets the stored Global Admin roles, and users with
+// them, read the server's metrics. A role whose policies allow it already,
+// as the default Global Admin's "*" policy does, is left as it is.
+func EnsureMetricsPermission() error {
+	roles, err := GetRoles()
+	if err != nil {
+		return fmt.Errorf("getting roles: %w", err)
+	}
+
+	for _, role := range roles {
+		if role.Spec.Name == globalAdminRole && addMetricsGet(role.Spec) {
+			if err := role.Save(); err != nil {
+				return fmt.Errorf("saving role %s: %w", role.Spec.Name, err)
+			}
+		}
+	}
+
+	users, err := GetUsers()
+	if err != nil {
+		return fmt.Errorf("getting users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.Spec.Role == nil || user.Spec.Role.Name != globalAdminRole || !addMetricsGet(user.Spec.Role) {
+			continue
+		}
+
+		user.config.Spec = structs.MapDefaultCase(user.Spec, structs.CASESNAKE)
+
+		if err := user.Save(); err != nil {
+			return fmt.Errorf("saving user %s: %w", user.Username(), err)
+		}
+	}
+
+	return nil
+}
+
+// addMetricsGet gives the role the metrics get permission unless it has it,
+// and reports whether it changed the role.
+func addMetricsGet(role *v1.RoleSpec) bool {
+	if (Role{Spec: role, config: nil, mappedPolicies: nil}).Allowed(metricsResource, metricsGetVerb) {
+		return false
+	}
+
+	return ensurePolicy(role, metricsResource, []string{metricsGetVerb}, nil)
+}
+
 // captureSubnetResource is the resource of starting (create) and stopping
 // (delete) the captures of a subnet.
 const captureSubnetResource = "exp/captureSubnet"

@@ -4,6 +4,8 @@ import (
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
+
+	"phenix/util/metrics"
 )
 
 type Status string
@@ -42,16 +44,12 @@ func NewGoWebCache() *GoWebCache {
 }
 
 func (gwc GoWebCache) Get(key string) ([]byte, bool) {
-	v, ok := gwc.c.Get(key)
-	if !ok {
-		return nil, false
-	}
+	v, _ := gwc.c.Get(key)
 
 	val, ok := v.([]byte)
-	if !ok {
-		return nil, false
-	}
-	return val, true
+	metrics.CacheLookup("web", ok)
+
+	return val, ok
 }
 
 func (gwc *GoWebCache) SetWithExpire(key string, val []byte, exp time.Duration) error {

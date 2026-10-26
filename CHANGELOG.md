@@ -47,9 +47,11 @@ All notable changes to this project will be documented in this file.
 - **Data age**: Responses with runtime data from minimega carry `X-Phenix-Observed-At`, and `X-Phenix-Stale` when they serve earlier data while minimega is busy; the State of Health summary adds `vms_observed_at` and `vms_stale`, and the web UI header shows how old its data is.
 - **Token permission**: Creating an API token for another user needs the new `users/tokens` `create` permission on that user as well as `users` `patch`, which Global Admin has, and the Users tab shows the token button only to roles that may use it.
 - **Graceful shutdown**: `phenix ui` stops cleanly on `SIGINT` or `SIGTERM`, finishing requests and closing websockets, consoles and jobs within the new `ui.shutdown-grace-period` setting (default 5 seconds).
+- **Prometheus metrics**: `GET /api/v1/metrics` serves HTTP, minimega, cache, websocket, job, store, Go runtime and process metrics to roles with the new `metrics` `get` permission, unless the new `ui.metrics` setting is `false`.
 
 ### Changed
 
+- **Dependencies**: Added the `github.com/prometheus/client_golang` dependency and updated `google.golang.org/protobuf` and the `golang.org/x` modules.
 - **Image Defaults (breaking)**: `phenix image create` defaults `--release` to `noble`. Debian releases now default to the Debian components `main contrib non-free non-free-firmware` instead of the Ubuntu ones.
 - **Image miniccc Service**: `miniccc` systemd service created by `phenix image {build|inject-miniexe}` now sets `User=root` and `HOME=/root`, so commands run through `cc exec` have an environment.
 - **Loading**: A header status with a refresh button replaces full-page spinners. After login the Experiments, Configs, Disks, Hosts, Users, Logs, Scorch, State of Health and Settings tabs preload in the background, pages show their cached data at once, and a load you leave keeps running for up to 2 minutes. Empty tables say why they are empty.

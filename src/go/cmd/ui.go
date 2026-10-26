@@ -63,6 +63,7 @@ func newUICmd() *cobra.Command {
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
 				web.ServeWithUnixSocketGID(viper.GetInt("unix-socket-gid")),
 				web.ServeWithShutdownGracePeriod(grace),
+				web.ServeMetrics(viper.GetBool("ui.metrics")),
 			}
 
 			if level := viper.GetString("ui.logs.level"); level != "" {
@@ -123,6 +124,7 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().String("logs.level", "", "log level to publish to UI. Defaults to file level")
 	uiCmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
 	uiCmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
+	uiCmd.Flags().Bool("metrics", true, "serve Prometheus metrics on /api/v1/metrics to roles with the metrics get permission")
 	uiCmd.Flags().Int(
 		"shutdown-grace-period",
 		int(web.DefaultShutdownGracePeriod/time.Second),
@@ -142,6 +144,7 @@ func newUICmd() *cobra.Command {
 	_ = viper.BindPFlag("ui.logs.level", uiCmd.Flags().Lookup("logs.level"))
 	_ = viper.BindPFlag("ui.features", uiCmd.Flags().Lookup("features"))
 	_ = viper.BindPFlag("ui.minimega-console", uiCmd.Flags().Lookup("minimega-console"))
+	_ = viper.BindPFlag("ui.metrics", uiCmd.Flags().Lookup("metrics"))
 	_ = viper.BindPFlag("ui.shutdown-grace-period", uiCmd.Flags().Lookup("shutdown-grace-period"))
 
 	_ = viper.BindEnv("ui.listen-endpoint")
@@ -157,6 +160,7 @@ func newUICmd() *cobra.Command {
 	_ = viper.BindEnv("ui.logs.level")
 	_ = viper.BindEnv("ui.features")
 	_ = viper.BindEnv("ui.minimega-console")
+	_ = viper.BindEnv("ui.metrics")
 	_ = viper.BindEnv("ui.shutdown-grace-period")
 
 	uiCmd.Flags().Bool("log-requests", false, "Log HTTP requests")

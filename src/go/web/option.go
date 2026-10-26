@@ -49,6 +49,9 @@ type serverOptions struct {
 	unixSocketGID int
 
 	shutdownGrace time.Duration
+
+	// serve Prometheus metrics on /api/v1/metrics
+	metrics bool
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -60,6 +63,7 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		features:    make(map[string]bool),
 
 		shutdownGrace: DefaultShutdownGracePeriod,
+		metrics:       true,
 	}
 
 	for _, opt := range opts {
@@ -199,6 +203,14 @@ func ServeWithUnixSocketGID(g int) ServerOption {
 func ServeWithShutdownGracePeriod(d time.Duration) ServerOption {
 	return func(o *serverOptions) {
 		o.shutdownGrace = d
+	}
+}
+
+// ServeMetrics sets whether the server serves Prometheus metrics on
+// /api/v1/metrics, and records the HTTP requests it answers in them.
+func ServeMetrics(enabled bool) ServerOption {
+	return func(o *serverOptions) {
+		o.metrics = enabled
 	}
 }
 

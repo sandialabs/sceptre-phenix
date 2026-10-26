@@ -79,6 +79,7 @@ archive job's files when `GET /jobs/{id}/artifact` downloads the archive.
 | Workflow | `POST /workflow/apply/{branch}` (`?dryRun=true`, `pending`, `expect`, `tag`), `POST /workflow/configs/{branch}` (`?dryRun=true`). Parameters and answers are in [`workflow.md`](workflow.md#rest-endpoints) |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode, plus `base-dir.injects` and `workflow-dry-run`) |
 | Health (server root, no token) | `GET/HEAD /healthz` (liveness: uptime, BoltDB store), `GET/HEAD /readyz` (readiness: minimega, mesh, store, qemu-img, WebShark, disk, websocket broker, runtime; `?exclude=<check>`); IETF `application/health+json`, `200` on pass or warn, `503` on fail, `output` fields only with a token or auth disabled. See `docs/content/health.md` |
+| Metrics | `GET /metrics`: Prometheus text format; needs `metrics` `get` (Global Admin and Global Viewer have it); not served (`404`) with `ui.metrics: false`. HTTP requests by route template, method and status class; minimega commands by name and outcome; flight joins; cache hits; websocket broker; jobs; BoltDB latency; Go runtime and process. Labels never name an experiment, VM, user or file. See `docs/content/health.md#prometheus-metrics` |
 | Tunneler (server root, only with the `tunneler-download` feature) | `GET /downloads/tunneler` (lists the installed builds), `GET/HEAD /downloads/tunneler/{name}` (resumable); neither needs a token |
 
 When a config fails its schema, the config routes (`POST /configs`,

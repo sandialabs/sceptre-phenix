@@ -271,6 +271,12 @@ fails. Like `/features`, they are served from the server root, outside
 `/api/v1`, and need no credentials; only their `output` details need a token.
 See [Health Checks](health.md).
 
+## Metrics
+
+`GET /api/v1/metrics` serves the server's Prometheus metrics to a role with
+the `metrics` `get` permission, unless `ui.metrics` is `false`. See
+[Prometheus Metrics](health.md#prometheus-metrics).
+
 ## Integrations
 
 The phēnix API can be used to integrate phēnix with external systems. Known

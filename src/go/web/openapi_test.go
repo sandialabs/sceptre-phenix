@@ -124,9 +124,15 @@ func routerOperations(t *testing.T) (map[string]bool, []string) {
 		o.features = map[string]bool{"webshark": true, "vm-mount": true, "tunneler-download": true}
 	})
 
-	router, ok := server.Config.Handler.(*mux.Router)
-	if !ok {
-		t.Fatalf("contract server handler = %T, want *mux.Router", server.Config.Handler)
+	var router *mux.Router
+
+	switch handler := server.Config.Handler.(type) {
+	case *mux.Router:
+		router = handler
+	case observedRouter:
+		router = handler.Router
+	default:
+		t.Fatalf("contract server handler = %T, want *mux.Router or observedRouter", server.Config.Handler)
 	}
 
 	var (

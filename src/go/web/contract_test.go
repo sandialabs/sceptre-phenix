@@ -187,7 +187,7 @@ func serveContract(t *testing.T, set func(*serverOptions)) *httptest.Server {
 		t.Fatal(err)
 	}
 
-	server := httptest.NewServer(router)
+	server := httptest.NewServer(newHandler(router))
 	t.Cleanup(server.Close)
 
 	return server
@@ -346,6 +346,9 @@ func contractRoutes() []contractRoute {
 
 		// state of health
 		{method: "GET", path: "/api/v1/soh", need: one(testRole("experiments", "list"))},
+
+		// Prometheus metrics
+		{method: "GET", path: "/api/v1/metrics", need: one(testRole("metrics", "get")), want: ok},
 
 		// users: a token for another user also needs users/tokens create
 		{

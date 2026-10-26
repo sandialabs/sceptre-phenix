@@ -22,6 +22,7 @@ import (
 
 	"phenix/util/common"
 	"phenix/util/freshness"
+	"phenix/util/metrics"
 	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 )
@@ -1380,7 +1381,10 @@ func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 // returns an error wrapping ctx's error.
 func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error) {
 	if !schedOnly {
-		if hosts, at, ok := recentHosts.get(); ok {
+		hosts, at, ok := recentHosts.get()
+		metrics.CacheLookup("cluster-hosts", ok)
+
+		if ok {
 			return cloneHosts(hosts), freshness.Observed(at), nil
 		}
 	}

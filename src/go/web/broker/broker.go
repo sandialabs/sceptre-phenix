@@ -89,6 +89,12 @@ func CurrentStats() Stats {
 	}
 }
 
+// Dropped returns how many clients the broker has dropped for being too slow,
+// and how many log lines it has dropped from the live stream, since it started.
+func Dropped() (uint64, uint64) {
+	return slowDropped.Load(), logsDropped.Load()
+}
+
 // encodedPublish is a broadcast marshaled once, before it reaches the broker,
 // rather than once for each client it goes to.
 type encodedPublish struct {

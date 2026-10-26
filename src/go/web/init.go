@@ -50,5 +50,9 @@ func Init() error {
 		return fmt.Errorf("scoping Experiment Viewer mount permissions: %w", err)
 	}
 
+	if err := rbac.EnsureMetricsPermission(); err != nil {
+		return fmt.Errorf("ensuring metrics permissions: %w", err)
+	}
+
 	return nil
 }

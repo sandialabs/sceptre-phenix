@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"phenix/util/flight"
+	"phenix/util/metrics"
 )
 
 // listingTTL is how long an experiment's file listing is reused. Listing asks
@@ -59,7 +60,7 @@ type listing struct {
 
 func newListingCache(ttl time.Duration) *listingCache {
 	return &listingCache{
-		ttl: ttl, flights: flight.Group[listing]{}, mu: sync.Mutex{},
+		ttl: ttl, flights: flight.Group[listing]{Name: "experiment-files"}, mu: sync.Mutex{},
 		entries: make(map[string]listing), running: make(map[string]*listing),
 	}
 }
@@ -72,7 +73,10 @@ func (c *listingCache) getContext(
 	key string,
 	list func(ctx context.Context) (Files, error),
 ) (Files, time.Time, error) {
-	if l, ok := c.recent(key); ok {
+	l, ok := c.recent(key)
+	metrics.CacheLookup("experiment-files", ok)
+
+	if ok {
 		return cloneFiles(l.files), l.started, nil
 	}
 

@@ -97,8 +97,10 @@ install-dev: bin/mockgen bin/protoc-gen-go
 bin/mockgen:
 	go install github.com/golang/mock/mockgen
 
-bin/protoc-gen-go:
+# rebuilt when go.mod changes its version, which regenerates the protobufs
+bin/protoc-gen-go: go.mod
 	go install google.golang.org/protobuf/cmd/protoc-gen-go
+	touch $@
 
 api-docs: web/public/docs/index.html
 

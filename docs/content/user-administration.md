@@ -651,6 +651,19 @@ the VM.
 | Exp. Scoped | no |
 | Res. Scoped | no |
 
+#### Resource: `metrics`
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | read the server's [Prometheus metrics](health.md#prometheus-metrics) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+Global Admin and Global Viewer have it through their `*` policies. On
+startup, phēnix gives it to Global Admin roles, and users with them, whose
+policies were edited so they no longer allow it.
+
 ### Built-In Roles
 
 The following default roles are defined in phēnix as YAML resource specifications:

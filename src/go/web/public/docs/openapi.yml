@@ -114,6 +114,12 @@ tags:
       but only an authenticated request (a valid token, or any request when
       auth is disabled) sees the `output` fields, which may name paths, hosts
       and errors.
+  - name: Metrics
+    description: >-
+      The server's Prometheus metrics: HTTP requests, minimega commands,
+      caches, the websocket broker, background jobs, the BoltDB store, and the
+      Go runtime and process. Labels never name an experiment, VM, user or
+      file.
   - name: Jobs
     description: >-
       Background jobs: long operations (bulk VM actions, experiment file
@@ -6530,6 +6536,41 @@ paths:
                 $ref: "#/components/schemas/TimeoutSettings"
         "500":
           description: the settings could not be read
+  "/metrics":
+    get:
+      tags:
+        - Metrics
+      summary: Get the server's Prometheus metrics
+      description: >-
+        The server's metrics in the Prometheus text exposition format, for a
+        Prometheus server to scrape. Needs the `metrics` `get` permission,
+        which the Global Admin and Global Viewer roles have; a scraper sends a
+        user token in the `X-Phenix-Auth-Token` header, or in the `token`
+        query parameter. Served unless the server runs with `ui.metrics` set
+        to false, when it answers 404.
+      operationId: getMetrics
+      security:
+        - phenixToken: []
+        - phenixTokenParameter: []
+      responses:
+        "200":
+          description: the metrics
+          content:
+            text/plain:
+              schema:
+                title: Metrics
+                description: metrics in the Prometheus text exposition format, version 0.0.4
+                type: string
+                example: |
+                  # HELP phenix_http_requests_total HTTP requests answered, by route template, method and status class.
+                  # TYPE phenix_http_requests_total counter
+                  phenix_http_requests_total{code="2xx",method="GET",route="/api/v1/experiments"} 42
+        "401":
+          description: the token is malformed, expired or signed out
+        "403":
+          description: no token, or the role lacks the `metrics` `get` permission
+        "404":
+          description: the server does not serve metrics (`ui.metrics` is false)
   "/logs":
     get:
       tags:
@@ -6633,6 +6674,17 @@ externalDocs:
 servers:
   - url: http://localhost:3000/api/v1
 components:
+  securitySchemes:
+    phenixToken:
+      type: apiKey
+      in: header
+      name: X-Phenix-Auth-Token
+      description: a user token, as `Bearer <token>`
+    phenixTokenParameter:
+      type: apiKey
+      in: query
+      name: token
+      description: a user token, for clients that cannot set the header
   schemas:
     Console:
       title: Console

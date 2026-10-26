@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"sync"
+
+	"phenix/util/metrics"
 )
 
 // ErrAborted is what the callers that joined a run get when the run panicked
@@ -18,6 +20,9 @@ var ErrAborted = errors.New("shared run aborted before returning a result")
 // run finishes, so callers that reuse results layer a cache on top. The zero
 // value is ready to use.
 type Group[T any] struct {
+	// Name labels the group's calls in the metrics; it must be fixed in code.
+	Name string
+
 	mu    sync.Mutex
 	calls map[string]*call[T]
 }
@@ -54,6 +59,8 @@ func (g *Group[T]) Do( //nolint:ireturn // T is concrete at each use
 
 		g.mu.Unlock()
 
+		metrics.Flight(g.Name, metrics.FlightJoined)
+
 		defer leave()
 
 		select {
@@ -74,6 +81,8 @@ func (g *Group[T]) Do( //nolint:ireturn // T is concrete at each use
 	leave := g.join(ctx, key, c)
 
 	g.mu.Unlock()
+
+	metrics.Flight(g.Name, metrics.FlightRan)
 
 	defer leave()
 

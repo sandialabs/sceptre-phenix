@@ -196,7 +196,7 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 
 	server := &uiServer{grace: o.shutdownGrace, servers: nil, socket: "", stopBackground: stopBackground}
 
-	if err := server.listen(ctx, fileServerEndpoint, router); err != nil {
+	if err := server.listen(ctx, fileServerEndpoint, newHandler(router)); err != nil {
 		server.closeListeners()
 
 		return err
@@ -303,6 +303,11 @@ func (s *uiServer) listen(ctx context.Context, fileServerEndpoint string, router
 func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	router := mux.NewRouter().StrictSlash(true)
 
+	if o.metrics {
+		registerServerMetrics()
+		router.Use(recordRoute)
+	}
+
 	if o.featured("tunneler-download") {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
 		router.HandleFunc("/downloads/tunneler", forward.ListTunnelers).Methods("GET")
@@ -383,6 +388,8 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 			"method",
 			r.Method,
 		)
+
+		setRoute(r, routeUI)
 
 		// index.html names the current build's hashed chunks, so browsers must
 		// revalidate it rather than reuse a stale copy
@@ -624,6 +631,10 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	api.HandleFunc("/settings/password", GetPasswordRequirements).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings/timeout", GetTimeoutSettings).Methods("GET", "OPTIONS")
 
+	if o.metrics {
+		api.HandleFunc("/metrics", GetMetrics).Methods("GET", "OPTIONS")
+	}
+
 	// with OPTIONS, as every API route takes it
 	for _, r := range socketRoutes() {
 		api.Handle(r.path, r.handler).Methods(append(r.methods, "OPTIONS")...)
@@ -649,6 +660,16 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	}
 
 	return router, nil
+}
+
+// newHandler is router, recording the requests it answers in the HTTP
+// metrics when the server serves them.
+func newHandler(router *mux.Router) http.Handler {
+	if !o.metrics {
+		return router
+	}
+
+	return observedRouter{Router: router}
 }
 
 // apiLocation returns the absolute path of the API resource at p, relative to

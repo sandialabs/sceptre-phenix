@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"phenix/util/metrics"
 	"phenix/util/plog"
 )
 
@@ -295,6 +296,14 @@ func (r *Registry) Get(id string) (Job, bool) {
 	}
 
 	return e.job.clone(), true
+}
+
+// Active returns how many jobs are running and how many wait to run.
+func (r *Registry) Active() (int, int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.running, len(r.queue)
 }
 
 // List returns the jobs f selects, newest first.
@@ -656,6 +665,8 @@ func (r *Registry) finishLocked(e *entry, err error) []func() {
 	}
 
 	j.Status, j.Error = finalStatus(*j, err)
+
+	metrics.JobFinished(j.Kind, string(j.Status))
 
 	now := r.now()
 	j.Finished = &now

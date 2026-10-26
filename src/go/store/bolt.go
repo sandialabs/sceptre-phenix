@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"go.etcd.io/bbolt"
+
+	"phenix/util/metrics"
 )
 
 const boltFileMode = 0o600
@@ -124,6 +126,62 @@ func (b *BoltDB) Close() error {
 }
 
 func (b *BoltDB) List(kinds ...string) (Configs, error) {
+	start := time.Now()
+
+	configs, err := b.list(kinds...)
+	observe("list", start, err)
+
+	return configs, err
+}
+
+func (b *BoltDB) Get(c *Config) error {
+	start := time.Now()
+
+	err := b.get(c)
+	observe("get", start, err)
+
+	return err
+}
+
+func (b *BoltDB) Create(c *Config) error {
+	start := time.Now()
+
+	err := b.create(c)
+	observe("create", start, err)
+
+	return err
+}
+
+func (b *BoltDB) Update(c *Config) error {
+	start := time.Now()
+
+	err := b.update(c)
+	observe("update", start, err)
+
+	return err
+}
+
+func (b *BoltDB) Delete(c *Config) error {
+	start := time.Now()
+
+	err := b.delete(c)
+	observe("delete", start, err)
+
+	return err
+}
+
+// observe records a store operation that began at start and ended with err.
+// A missing or existing config, or a revision conflict, is an answer, not a
+// failure of the store.
+func observe(operation string, start time.Time, err error) {
+	if errors.Is(err, ErrNotExist) || errors.Is(err, ErrExist) || errors.Is(err, ErrConflict) {
+		err = nil
+	}
+
+	metrics.StoreOperation(operation, time.Since(start), err)
+}
+
+func (b *BoltDB) list(kinds ...string) (Configs, error) {
 	var configs Configs
 
 	err := b.view(func(tx *bbolt.Tx) error {
@@ -159,7 +217,7 @@ func (b *BoltDB) List(kinds ...string) (Configs, error) {
 	return configs, nil
 }
 
-func (b *BoltDB) Get(c *Config) error {
+func (b *BoltDB) get(c *Config) error {
 	var found bool
 
 	err := b.view(func(tx *bbolt.Tx) error {
@@ -196,7 +254,7 @@ func (b *BoltDB) Get(c *Config) error {
 	return nil
 }
 
-func (b *BoltDB) Create(c *Config) error {
+func (b *BoltDB) create(c *Config) error {
 	if err := b.open(); err != nil {
 		return err
 	}
@@ -244,7 +302,7 @@ func (b *BoltDB) Create(c *Config) error {
 	return nil
 }
 
-func (b *BoltDB) Update(c *Config) error {
+func (b *BoltDB) update(c *Config) error {
 	if err := b.open(); err != nil {
 		return err
 	}
@@ -285,7 +343,7 @@ func (b *BoltDB) Update(c *Config) error {
 	return nil
 }
 
-func (b *BoltDB) Delete(c *Config) error {
+func (b *BoltDB) delete(c *Config) error {
 	if err := b.open(); err != nil {
 		return err
 	}

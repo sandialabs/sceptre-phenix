@@ -21,10 +21,10 @@ const launchTolerance = 10 * time.Second
 const clusterHostsTTL = 5 * time.Second
 
 var (
-	vmInfoFlights       flight.Group[vmInfoResult] //nolint:gochecknoglobals // shared by concurrent callers
-	clusterHostsFlights flight.Group[clusterHosts] //nolint:gochecknoglobals // shared by concurrent callers
-	snapshotDisks       snapshotDiskCache          //nolint:gochecknoglobals // process-lifetime cache
-	recentHosts         recentClusterHosts         //nolint:gochecknoglobals // shared by all callers
+	vmInfoFlights       = flight.Group[vmInfoResult]{Name: "vm-info"}       //nolint:gochecknoglobals // shared by concurrent callers
+	clusterHostsFlights = flight.Group[clusterHosts]{Name: "cluster-hosts"} //nolint:gochecknoglobals // shared by concurrent callers
+	snapshotDisks       snapshotDiskCache                                   //nolint:gochecknoglobals // process-lifetime cache
+	recentHosts         recentClusterHosts                                  //nolint:gochecknoglobals // shared by all callers
 )
 
 // vmInfoResult is one GetVMInfo run, as shared between its callers: the VMs

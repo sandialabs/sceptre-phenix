@@ -29,6 +29,8 @@ probe the phēnix port directly.
     The web UI does not show health yet. Use the endpoints, or
     [`phenix healthcheck`](#the-phenix-healthcheck-command).
 
+For trends over time, phēnix also serves [Prometheus metrics](#prometheus-metrics).
+
 ## Status Codes and Format
 
 | Status | HTTP code | Meaning |
@@ -275,3 +277,74 @@ readinessProbe:
 
 With TLS, add `scheme: HTTPS`. To probe from inside the container instead, use
 `exec: {command: [phenix, healthcheck]}`, as `podman/pod.yml` does.
+
+## Prometheus Metrics
+
+`phenix ui` also serves metrics in the Prometheus text format at
+`/api/v1/metrics` (`<base-path>/api/v1/metrics` behind a proxy). Unlike the
+health endpoints, it needs credentials: a token of a user whose role has the
+`metrics` `get` permission. Global Admin and Global Viewer have it; for a
+scraper, create a role with only that permission and a user with a token:
+
+```yaml
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: metrics-reader
+spec:
+  roleName: Metrics Reader
+  policies:
+  - resources:
+    - metrics
+    verbs:
+    - get
+```
+
+Without a token the endpoint answers `403`, with a malformed, expired or
+signed-out token `401`, and with auth disabled it answers everyone. Set
+`ui.metrics` to `false` (or run `phenix ui --metrics=false`) to stop serving
+it; see [Settings](settings.md).
+
+| Metric | Type | Labels | What it counts |
+| :--- | :--- | :--- | :--- |
+| `phenix_http_requests_total` | counter | `route`, `method`, `code` | Requests answered, by route template (such as `/api/v1/experiments/{name}`, `ui` for a UI page, or `unmatched`), method and status class (`2xx`). |
+| `phenix_http_request_duration_seconds` | histogram | `route`, `method` | How long requests took to answer; websockets are left out. |
+| `phenix_http_requests_in_flight` | gauge | | Requests being answered, open websockets included. |
+| `phenix_minimega_commands_total` | counter | `command`, `outcome` | minimega commands, by name (such as `vm info`, or `other`) and outcome: `ok`, `error` (minimega answered with an error), `timeout`, `lost` (the connection failed) or `not_sent` (gave up waiting for the connection). |
+| `phenix_minimega_command_duration_seconds` | histogram | `command` | How long minimega took to answer the commands sent to it. |
+| `phenix_minimega_connection_wait_seconds` | histogram | | How long commands waited for the shared minimega connection. |
+| `phenix_flight_calls_total` | counter | `group`, `outcome` | Calls of a shared minimega read (`vm-info`, `cluster-hosts`, `experiment-files`) that ran it or joined one already running. |
+| `phenix_cache_lookups_total` | counter | `cache`, `result` | Lookups that found a reusable value (`hit`) or not (`miss`) in the `experiment-files`, `cluster-hosts` and `web` (screenshots, topology searches) caches. |
+| `phenix_websocket_clients` | gauge | | Websocket clients connected to the broker. |
+| `phenix_websocket_queue_length`, `phenix_websocket_queue_capacity` | gauge | | Broadcasts waiting for the broker, and how many fit. |
+| `phenix_websocket_slow_clients_dropped_total` | counter | | Websocket clients dropped for being too slow. |
+| `phenix_websocket_log_lines_dropped_total` | counter | | Log lines dropped from the live log stream. |
+| `phenix_jobs_running`, `phenix_jobs_queued` | gauge | | [Background jobs](jobs.md) running and waiting to run. |
+| `phenix_jobs_finished_total` | counter | `kind`, `status` | Background jobs finished, by kind and final status. |
+| `phenix_store_operation_duration_seconds` | histogram | `operation`, `result` | How long BoltDB store operations (`list`, `get`, `create`, `update`, `delete`) took; `result` is `error` only when the store failed, not for a missing config. |
+| `go_*`, `process_*` | | | The Go runtime and the phēnix process (memory, goroutines, garbage collection, CPU, open files). |
+
+Labels never name an experiment, VM, user, host or file, so the number of
+series stays the same however many experiments run.
+
+A Prometheus scrape config, with the token in the `token` query parameter
+(phēnix leaves it out of its request logs):
+
+```yaml
+scrape_configs:
+  - job_name: phenix
+    metrics_path: /api/v1/metrics
+    params:
+      token: ["<token>"]
+    static_configs:
+      - targets: ["phenix.example.com:3000"]
+```
+
+Prometheus versions whose scrape configs take `http_headers` can send the
+header instead of the parameter:
+
+```yaml
+    http_headers:
+      X-Phenix-Auth-Token:
+        secrets: ["Bearer <token>"]
+```

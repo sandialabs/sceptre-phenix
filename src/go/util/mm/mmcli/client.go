@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 
 	"phenix/util/common"
+	"phenix/util/metrics"
 )
 
 var (
@@ -316,6 +317,7 @@ func guard(
 	in chan *miniclient.Response,
 	release func(),
 	timeout time.Duration,
+	obs *commandObserver,
 ) chan *miniclient.Response {
 	out := make(chan *miniclient.Response)
 
@@ -341,6 +343,7 @@ func guard(
 					err := streamEnded(c, count)
 
 					release()
+					obs.done(err)
 
 					if err != nil {
 						markDead(c)
@@ -353,6 +356,7 @@ func guard(
 
 				count++
 
+				obs.saw(resp)
 				out <- resp
 			case <-after:
 				markDead(c)
@@ -367,6 +371,7 @@ func guard(
 				}()
 
 				release()
+				obs.done(ErrTimeout)
 
 				out <- errResponse(ErrTimeout)
 
@@ -406,21 +411,29 @@ func runShared(ctx context.Context, c *Command, started func()) chan *miniclient
 
 	// checked first, as select picks at random when the connection is free too
 	if err := ctx.Err(); err != nil {
+		notSent(c)
+
 		return wrapErr(gaveUp(err))
 	}
 
 	if c.Timeout > 0 {
 		notify(started)
 
-		return runPrivate(cmdStr, c.Timeout)
+		return runPrivate(c, cmdStr, c.Timeout)
 	}
 
 	wait, cancel := context.WithTimeout(ctx, DefaultWaitTimeout)
 	defer cancel()
 
+	waiting := time.Now()
+
 	select {
 	case shared <- struct{}{}:
+		metrics.MinimegaWaited(time.Since(waiting))
 	case <-wait.Done():
+		metrics.MinimegaWaited(time.Since(waiting))
+		notSent(c)
+
 		return wrapErr(gaveUp(ctx.Err()))
 	}
 
@@ -428,9 +441,12 @@ func runShared(ctx context.Context, c *Command, started func()) chan *miniclient
 
 	notify(started)
 
+	obs := observe(c)
+
 	active, err := conn()
 	if err != nil {
 		release()
+		obs.done(err)
 
 		return wrapErr(err)
 	}
@@ -443,7 +459,7 @@ func runShared(ctx context.Context, c *Command, started func()) chan *miniclient
 
 	// shared is held until guard has read the terminal error, so no other
 	// command can reach Conn.err in between
-	return guard(active, active.Run(cmdStr), release, timeout)
+	return guard(active, active.Run(cmdStr), release, timeout, obs)
 }
 
 // gaveUp is the error of a command that stopped waiting for the shared
@@ -465,7 +481,7 @@ func gaveUp(err error) error {
 // hold the shared connection, and so every other command, for their whole
 // duration. Callers MUST drain the returned channel, as with Run.
 func RunDedicated(c *Command) chan *miniclient.Response {
-	return runPrivate(c.String(), c.Timeout)
+	return runPrivate(c, c.String(), c.Timeout)
 }
 
 func notify(started func()) {
@@ -479,10 +495,15 @@ func notify(started func()) {
 // timeout of zero or less waits for the command however long it takes.
 //
 // Callers MUST drain the returned channel, as with guard.
-func runPrivate(cmdStr string, timeout time.Duration) chan *miniclient.Response {
+func runPrivate(c *Command, cmdStr string, timeout time.Duration) chan *miniclient.Response {
+	obs := observe(c)
+
 	private, err := miniclient.Dial(common.MinimegaBase)
 	if err != nil {
-		return wrapErr(fmt.Errorf("unable to dial: %w", err))
+		err = fmt.Errorf("unable to dial: %w", err)
+		obs.done(err)
+
+		return wrapErr(err)
 	}
 
 	out := make(chan *miniclient.Response)
@@ -505,7 +526,10 @@ func runPrivate(cmdStr string, timeout time.Duration) chan *miniclient.Response 
 			select {
 			case resp, ok := <-in:
 				if !ok {
-					if err := streamEnded(private, count); err != nil {
+					err := streamEnded(private, count)
+					obs.done(err)
+
+					if err != nil {
 						out <- errResponse(err)
 					}
 
@@ -514,6 +538,7 @@ func runPrivate(cmdStr string, timeout time.Duration) chan *miniclient.Response 
 
 				count++
 
+				obs.saw(resp)
 				out <- resp
 			case <-after:
 				// Drain in the background so miniclient's reader can exit. It
@@ -524,6 +549,8 @@ func runPrivate(cmdStr string, timeout time.Duration) chan *miniclient.Response 
 						_ = struct{}{}
 					}
 				}()
+
+				obs.done(ErrTimeout)
 
 				out <- errResponse(ErrTimeout)
 

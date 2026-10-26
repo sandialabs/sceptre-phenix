@@ -573,3 +573,47 @@ func TestMigrationHelpersProperties(t *testing.T) {
 		})
 	})
 }
+
+// The metrics migration lets Global Admin roles and their users read the
+// metrics, leaving those whose policies allow it already, and other roles.
+//
+//nolint:paralleltest // replaces the store
+func TestEnsureMetricsPermission(t *testing.T) {
+	var (
+		everything  = &v1.PolicySpec{Resources: []string{"*", "*/*"}, ResourceNames: []string{"*", "*/*"}, Verbs: []string{"*"}}
+		experiments = policy("experiments", nil, "list", "get")
+		listMetrics = policy(metricsResource, nil, "list")
+		getAll      = policy("*", nil, "get")
+	)
+
+	useStore(t,
+		[]*v1.RoleSpec{
+			role(globalAdminRole, everything),
+			role("Global Viewer", getAll),
+			role(experimentAdminRole, experiments),
+		},
+		[]*v1.UserSpec{
+			{Username: "admin", Role: role(globalAdminRole, everything)},
+			// an edited Global Admin role that lost it
+			{Username: "narrowed", Role: role(globalAdminRole, experiments)},
+			{Username: "lister", Role: role(globalAdminRole, experiments, listMetrics)},
+			{Username: "experimenter", Role: role(experimentAdminRole, experiments)},
+		},
+	)
+
+	want := map[string][]*v1.PolicySpec{
+		"role Global Admin":     {everything},
+		"role Global Viewer":    {getAll},
+		"role Experiment Admin": {experiments},
+		"user admin":            {everything},
+		"user narrowed":         {experiments, policy(metricsResource, nil, metricsGetVerb)},
+		"user lister":           {experiments, policy(metricsResource, nil, "list", metricsGetVerb)},
+		"user experimenter":     {experiments},
+	}
+
+	for _, pass := range []string{"first", "repeated"} {
+		if diff := cmp.Diff(want, migrate(t, EnsureMetricsPermission)); diff != "" {
+			t.Errorf("EnsureMetricsPermission() %s pass: stored policies mismatch (-want +got):\n%s", pass, diff)
+		}
+	}
+}
