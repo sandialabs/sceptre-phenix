@@ -57,4 +57,11 @@ type Details struct {
 	Experiment    *string  `json:"experiment"`
 	BackingImages []string `json:"backingImages"`
 	InUse         bool     `json:"inUse"`
+
+	// Format is the image's format as qemu-img detects it. BackingPaths and
+	// BackingFormats hold the full path and format of each image in its backing
+	// chain, whatever its format.
+	Format         string   `json:"-"`
+	BackingPaths   []string `json:"-"`
+	BackingFormats []string `json:"-"`
 }
