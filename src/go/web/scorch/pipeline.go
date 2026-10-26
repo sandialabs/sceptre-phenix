@@ -1,6 +1,7 @@
 package scorch
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -707,9 +708,11 @@ func initPipelines() {
 	pipelineDeletes = make(chan pipelineDelete)
 }
 
-func processPipelines() {
+func processPipelines(ctx context.Context) {
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case update := <-pipelineUpdates:
 			err := updatePipeline(update)
 			update.resp <- err

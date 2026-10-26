@@ -1,6 +1,7 @@
 package scorch
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,7 +12,7 @@ import (
 // startComponents starts the SCORCH processors, once for all tests, as
 // useScorch does.
 func startComponents() {
-	startOnce.Do(func() { Start("/") })
+	startOnce.Do(func() { Start(context.Background(), "/") })
 }
 
 func update(cmp, status, out string) ComponentUpdate {

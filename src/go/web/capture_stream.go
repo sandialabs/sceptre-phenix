@@ -15,6 +15,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/capability"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -96,6 +97,10 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) {
 
 	fields := audit.Fields{Experiment: exp, VM: name, Interface: &iface}
 
+	if websocket.IsWebSocketUpgrade(r) && lifecycle.RefuseWhileStopping(w) {
+		return
+	}
+
 	tap, ok := openCaptureTap(w, r, fields)
 	if !ok {
 		return
@@ -173,7 +178,8 @@ func openCaptureTap(w http.ResponseWriter, r *http.Request, fields audit.Fields)
 // streamCapture sends the capture as a chunked pcap body, until it stops or
 // the request's context ends.
 func streamCapture(w http.ResponseWriter, r *http.Request, tap *livecapture.Tap, fromNow bool) {
-	ctx := r.Context()
+	ctx, release := lifecycle.WithStop(r.Context(), "capture stream")
+	defer release()
 
 	capture := tap.Capture()
 
@@ -226,7 +232,10 @@ func streamCaptureWebSocket(w http.ResponseWriter, r *http.Request, tap *livecap
 
 	defer conn.Close()
 
-	ctx, cancel := context.WithCancel(r.Context())
+	stopCtx, release := lifecycle.WithStop(r.Context(), "capture stream")
+	defer release()
+
+	ctx, cancel := context.WithCancel(stopCtx)
 	defer cancel()
 
 	go func() { // reader: pongs and close
@@ -270,7 +279,14 @@ func streamCaptureWebSocket(w http.ResponseWriter, r *http.Request, tap *livecap
 		reason = "capture stream failed"
 	}
 
-	if ctx.Err() == nil {
+	switch {
+	case lifecycle.Stopped(stopCtx):
+		_ = conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseGoingAway, lifecycle.CloseReason),
+			time.Now().Add(lifecycle.CloseWait),
+		)
+	case ctx.Err() == nil:
 		_ = conn.WriteControl(
 			websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason),

@@ -22,15 +22,17 @@ import (
 
 	"phenix/util/plog"
 	"phenix/web/audit"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/util"
 )
 
 // Why a console ended, as its audit event's phenix.console.end_reason says.
 const (
-	consoleEndedByUser = "user"
-	consoleEndedIdle   = "idle"
-	consoleExited      = "exited"
+	consoleEndedByUser   = "user"
+	consoleEndedIdle     = "idle"
+	consoleExited        = "exited"
+	consoleEndedShutdown = "shutdown"
 )
 
 // A minimega console outlives the websockets that show it, so the user keeps
@@ -60,6 +62,7 @@ const (
 var (
 	errConsoleEnded    = errors.New("console ended")
 	errConsoleNotEnded = errors.New("console did not end")
+	errServerStopping  = errors.New(lifecycle.CloseReason)
 )
 
 // consoles are the running minimega consoles, by pid.
@@ -93,6 +96,12 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 	// the console must outlive this request; r.Context() is canceled as soon
 	// as the response is written, which would SIGKILL the console process
 	console, err := consoles.start(context.WithoutCancel(ctx), user)
+	if errors.Is(err, errServerStopping) {
+		lifecycle.Refuse(w)
+
+		return
+	}
+
 	if err != nil {
 		plog.Error(plog.TypeSystem, "starting minimega console", "err", err)
 		audit.Failure(r, audit.ConsoleCreate, "starting miniconsole failed", audit.Fields{}, err)
@@ -239,7 +248,13 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if lifecycle.RefuseWhileStopping(w) {
+		return
+	}
+
 	websocket.Handler(func(ws *websocket.Conn) {
+		defer lifecycle.TrackConn("minimega console", ws)()
+
 		// binary frames: output cut between two reads need not be valid UTF-8
 		ws.PayloadType = websocket.BinaryFrame
 
@@ -307,6 +322,8 @@ func minimegaConsoleCommand(ctx context.Context) (*exec.Cmd, error) {
 type consoleRegistry struct {
 	mu       sync.Mutex
 	sessions map[int]*consoleSession
+	// set by endAll: no console starts after it
+	closed bool
 
 	grace   time.Duration
 	command func(context.Context) (*exec.Cmd, error)
@@ -319,6 +336,7 @@ func newConsoleRegistry(
 	return &consoleRegistry{
 		mu:       sync.Mutex{},
 		sessions: make(map[int]*consoleSession),
+		closed:   false,
 		grace:    grace,
 		command:  command,
 	}
@@ -327,6 +345,12 @@ func newConsoleRegistry(
 // start runs a new console for owner. It ends after the grace period unless
 // a websocket attaches.
 func (r *consoleRegistry) start(ctx context.Context, owner string) (*consoleSession, error) {
+	select {
+	case <-lifecycle.Stopping():
+		return nil, errServerStopping
+	default:
+	}
+
 	cmd, err := r.command(ctx)
 	if err != nil {
 		return nil, err
@@ -356,6 +380,17 @@ func (r *consoleRegistry) start(ctx context.Context, owner string) (*consoleSess
 	}
 
 	r.mu.Lock()
+
+	if r.closed {
+		r.mu.Unlock()
+
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		_ = tty.Close()
+
+		return nil, errServerStopping
+	}
+
 	r.sessions[console.pid] = console
 	r.mu.Unlock()
 
@@ -376,6 +411,50 @@ func (r *consoleRegistry) lookup(pid int) *consoleSession {
 	defer r.mu.Unlock()
 
 	return r.sessions[pid]
+}
+
+// endAll ends every console for reason, and waits for them until ctx is done.
+// It returns how many had not ended by then.
+func (r *consoleRegistry) endAll(ctx context.Context, reason string) int {
+	r.mu.Lock()
+	r.closed = true
+	running := make([]*consoleSession, 0, len(r.sessions))
+
+	for _, console := range r.sessions {
+		running = append(running, console)
+	}
+	r.mu.Unlock()
+
+	for _, console := range running {
+		console.mu.Lock()
+		console.endingLocked(reason)
+		console.mu.Unlock()
+
+		_ = console.proc.Kill()
+	}
+
+	var left int
+
+	for _, console := range running {
+		select {
+		case <-console.done:
+		case <-ctx.Done():
+			if !isDone(console.done) {
+				left++
+			}
+		}
+	}
+
+	return left
+}
+
+func isDone(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *consoleRegistry) remove(console *consoleSession) {

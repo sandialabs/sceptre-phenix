@@ -33,7 +33,8 @@ Precedence (highest to lowest): **1. command-line flag** → **2. `config.yaml`*
 variable** (`PHENIX_*`) → **4. built-in default**. See
 [Settings & Configuration](https://phenix.sceptre.dev/latest/settings/) for the
 full settings reference, including UI-only settings (`ui.logs.level`,
-`ui.features`, `ui.file-server-endpoint`) not exposed as root-level CLI flags.
+`ui.features`, `ui.file-server-endpoint`, `ui.shutdown-grace-period`) not
+exposed as root-level CLI flags.
 
 `phenix ui --features vm-mount` (equivalently `ui.features: vm-mount` in
 `config.yaml`, or `PHENIX_UI_FEATURES=vm-mount`) enables the optional
@@ -42,6 +43,21 @@ VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/
 `/unmount`, `/files`, `/files/download`, `/files/upload` API routes). It's
 disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
+
+`phenix ui` stops cleanly on `SIGINT`/`SIGTERM` within
+`--shutdown-grace-period` (`ui.shutdown-grace-period`,
+`PHENIX_UI_SHUTDOWN_GRACE_PERIOD`; default `5s`, `0` waits for nothing, a
+negative value is refused): it stops listening, lets requests in progress
+finish, closes every websocket with code `1001` (only at shutdown; the
+broker, capture and netflow websockets carry the reason `server shutting
+down`, while the console, SCORCH, VNC and port forward ones, served by
+`golang.org/x/net/websocket`, carry none), answers new websockets, consoles
+and jobs with `503` and `Retry-After`, gives running jobs half the period before canceling them, ends minimega
+consoles and SCORCH terminals, then logs `shutdown complete` (or a warning
+naming what was still running) and exits 0. A second signal exits at once
+with 130 (`SIGINT`) or 143 (`SIGTERM`). A set `ui.file-server-endpoint` that
+cannot listen makes `phenix ui` exit with an error.
+Docker's 10 s stop timeout covers the default.
 
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 

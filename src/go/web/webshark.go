@@ -26,6 +26,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/capability"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/util"
 )
@@ -448,7 +449,10 @@ func (c grantChecker) GetWebSharkWatch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	ctx, cancel := c.untilRevoked(r.Context(), g)
+	stopCtx, release := lifecycle.WithStop(r.Context(), "WebShark watch")
+	defer release()
+
+	ctx, cancel := c.untilRevoked(stopCtx, g)
 	defer cancel()
 
 	watch := &sharkWatch{w: w, rc: http.NewResponseController(w), heartbeat: time.NewTicker(sharkHeartbeat)}

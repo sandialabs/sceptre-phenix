@@ -208,20 +208,17 @@ type fileServerResponseRecorder struct {
 	status int
 }
 
-// StartFileServer starts an authenticated experiment file upload server.
-func StartFileServer(endpoint string, jwtKey, proxyAuthHeader string) {
+// newFileServer returns the authenticated experiment file upload server.
+func newFileServer(endpoint string, jwtKey, proxyAuthHeader string) *http.Server {
 	mux := http.NewServeMux()
 	authEnabled := jwtKey != ""
 	mux.HandleFunc("/", showFileServerIndex(authEnabled))
 	mux.HandleFunc("/login", fileServerLogin(proxyAuthHeader))
 	mux.HandleFunc("/upload", uploadExperimentFiles(authEnabled))
 
-	plog.Info(plog.TypeSystem, "starting file server", "endpoint", endpoint)
 	handler := fileServerCookieAuth(middleware.Auth(jwtKey, proxyAuthHeader)(mux), jwtKey)
 
-	if err := newHTTPServer(endpoint, handler).ListenAndServe(); err != nil {
-		plog.Error(plog.TypeSystem, "serving file server", "err", err)
-	}
+	return newHTTPServer(endpoint, handler)
 }
 
 // fileServerCookieAuth bridges fileserver login cookies to phenix auth headers.

@@ -133,6 +133,8 @@ type Registry struct {
 	sweeping sync.Once
 	done     chan struct{}
 	stopping sync.Once
+	// set by shutdown: no job starts after it
+	closed bool
 }
 
 // entry is a job and what the registry needs to run it.
@@ -204,6 +206,13 @@ func (r *Registry) Start(spec Spec) (Job, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	r.mu.Lock()
+
+	if r.closed {
+		r.mu.Unlock()
+		cancel()
+
+		return Job{}, ErrShuttingDown
+	}
 
 	if !r.canStart(spec.Owner) && !r.canQueue(spec.Owner) {
 		r.mu.Unlock()
@@ -474,28 +483,63 @@ func (r *Registry) RemoveStaleArtifacts() (int, error) {
 // Shutdown cancels every job, waits for the running ones to end, and stops
 // the sweeper.
 func (r *Registry) Shutdown() {
+	r.ShutdownContext(context.Background(), 0)
+}
+
+// ShutdownContext cancels queued jobs, gives running ones drain to finish, then
+// cancels them and waits until ctx is done. It returns those still running.
+func (r *Registry) ShutdownContext(ctx context.Context, drain time.Duration) []Job {
 	r.stopping.Do(func() { close(r.done) })
 
 	r.mu.Lock()
+	r.closed = true
 
-	ids := make([]string, 0, len(r.jobs))
-
-	for id, e := range r.jobs {
-		if !e.job.Status.Terminal() {
-			ids = append(ids, id)
-		}
+	queued := make([]string, 0, len(r.queue))
+	for _, e := range r.queue {
+		queued = append(queued, e.job.ID)
 	}
 
 	r.mu.Unlock()
 
-	for _, id := range ids {
+	for _, id := range queued {
 		r.forceCancel(id)
 	}
 
-	r.wg.Wait()
+	// no job begins once closed, so wg only counts down from here
+	ended := make(chan struct{})
+
+	go func() {
+		r.wg.Wait()
+		close(ended)
+	}()
+
+	if drain > 0 {
+		timer := time.NewTimer(drain)
+		defer timer.Stop()
+
+		select {
+		case <-ended:
+			return nil
+		case <-timer.C:
+		case <-ctx.Done():
+		}
+	}
+
+	active := Filter{Owner: "", Experiment: "", Kind: "", Active: true}
+
+	for _, j := range r.List(active) {
+		r.forceCancel(j.ID)
+	}
+
+	select {
+	case <-ended:
+		return nil
+	case <-ctx.Done():
+		return r.List(active)
+	}
 }
 
-// forceCancel cancels a job whether or not it is cancelable, for Shutdown.
+// forceCancel cancels a job whether or not it is cancelable, for shutdown.
 func (r *Registry) forceCancel(id string) {
 	r.mu.Lock()
 
@@ -677,6 +721,10 @@ func finalStatus(j Job, err error) (Status, string) {
 // returns their notifications. r.mu is held.
 func (r *Registry) dequeueLocked() []func() {
 	var send []func()
+
+	if r.closed {
+		return nil
+	}
 
 	for i := 0; i < len(r.queue); {
 		e := r.queue[i]

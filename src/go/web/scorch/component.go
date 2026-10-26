@@ -1,6 +1,7 @@
 package scorch
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -73,9 +74,11 @@ func initComponents() {
 	output = make(map[string][]byte)
 }
 
-func processComponents() {
+func processComponents(ctx context.Context) {
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case update := <-componentUpdates:
 			// track updates by exp/run/loop/stage/component
 			key := fmt.Sprintf(

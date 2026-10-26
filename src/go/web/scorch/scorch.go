@@ -1,6 +1,8 @@
 package scorch
 
 import (
+	"context"
+
 	"phenix/util/plog"
 )
 
@@ -67,12 +69,13 @@ func streamTo(key string, chunk []byte) {
 	}
 }
 
-func Start(base string) {
+// Start runs the SCORCH output and pipeline processors until ctx is done.
+func Start(ctx context.Context, base string) {
 	basePath = base
 
 	initComponents()
 	initPipelines()
 
-	go processComponents()
-	go processPipelines()
+	go processComponents(ctx)
+	go processPipelines(ctx)
 }

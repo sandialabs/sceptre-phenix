@@ -18,6 +18,9 @@ var (
 	// ErrQueueFull is returned when starting a job that would have to wait
 	// while its owner, or everyone, already has the most jobs waiting.
 	ErrQueueFull = errors.New("too many jobs are waiting to run; try again once some finish")
+	// ErrShuttingDown is returned when starting a job while the server shuts
+	// down.
+	ErrShuttingDown = errors.New("the phēnix server is shutting down; try again once it is back")
 	// ErrForbidden is the reason an item the user may not act on is skipped.
 	ErrForbidden = errors.New("you don't have permission")
 )

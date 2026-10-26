@@ -262,7 +262,7 @@ downloading it, and only those archived, including any cut short, not those its
 | `phenix.capture.subnet` | a subnet capture's subnet |
 | `phenix.capability.id`, `phenix.capability.op`, `phenix.capability.ops`, `phenix.capability.expires` | a capture grant's ID (never its token), the operation used or those granted, and when it ends |
 | `phenix.webshark.live` | whether a capture opened in WebShark is still running |
-| `phenix.console.end_reason` | why a console ended: `user` (ended from the UI), `idle` (no websocket attached for 15 seconds) or `exited` (its process exited) |
+| `phenix.console.end_reason` | why a console ended: `user` (ended from the UI), `idle` (no websocket attached for 15 seconds), `shutdown` (the server stopped) or `exited` (its process exited) |
 | `phenix.disk.size`, `phenix.disk.unsafe` | a resize's size and a rebase's `unsafe` |
 | `phenix.mount.path` | where a VM's disk is mounted |
 | `destination.address`, `destination.port`, `phenix.forward.owner` | a port forward's destination, and the user who created it |

@@ -114,10 +114,37 @@ The following global flags are supported by all `phenix` subcommands:
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI. **(Restart Required)** |
 | `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable. Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). **(Restart Required)** |
-| `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). **(Restart Required)** |
+| `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). If it is set and the address cannot be listened on, `phenix ui` exits with an error. **(Restart Required)** |
+| `ui.shutdown-grace-period` | `PHENIX_UI_SHUTDOWN_GRACE_PERIOD` | `5s` | How long stopping `phenix ui` may take to finish requests and jobs and close connections, as a duration with a unit such as `10s`. `0` closes everything without waiting; a negative value is refused at startup. Also `phenix ui --shutdown-grace-period`. See [Stopping the Server](#stopping-the-server). **(Restart Required)** |
 | `mount-dir` | `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory used for VM filesystem mounts created via `phenix vm mount`. See [Mount a VM](vms.md#mount-a-vm). |
 | `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`. The phēnix server's value is used unless `--base-dir.injects` is given; see [Workflow](workflow.md#settings). Use an absolute path. **(Restart Required)** |
 | `base-dir.topologies` | `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Directory where `phenix workflow apply NAME` looks for `NAME` when `NAME` isn't an existing path. Use an absolute path. See [Workflow](workflow.md). |
+
+## Stopping the Server
+
+`phenix ui` shuts down cleanly on `SIGINT` (CTRL+C) or `SIGTERM` (`docker stop`),
+taking at most `ui.shutdown-grace-period` (`5s` by default):
+
+* It stops accepting connections at once. Requests in progress may finish
+  until the grace period ends, and are cut off then.
+* It closes every websocket, including consoles, SCORCH terminals, VNC and
+  port forwards, with close code `1001` (going away), so the web UI says the
+  server is shutting down rather than that the network failed. New websockets
+  are refused with `503 Service Unavailable`.
+* Running background jobs get the first half of the grace period to finish,
+  and are canceled then. Queued jobs are canceled at once, and starting a job
+  or a console answers `503 Service Unavailable`.
+* It ends minimega consoles and SCORCH terminals, so their processes do not
+  outlive the server.
+* It logs `shutdown complete` once everything has stopped, or a warning that
+  names what was still running when the grace period ended, and exits with
+  status 0 either way.
+
+A second `SIGINT` or `SIGTERM` stops the server at once, with exit status 130
+or 143. `docker stop` waits 10
+seconds before it kills the container, which covers the default. If you raise
+`ui.shutdown-grace-period` past that, raise Docker's timeout with it:
+`stop_grace_period` in `docker-compose.yml`, or `docker stop --time`.
 
 ## Web UI Session Timeout
 

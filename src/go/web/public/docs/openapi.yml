@@ -1425,6 +1425,10 @@ paths:
           description: >-
             too many of the user's jobs, or of all jobs, are waiting to run;
             `Retry-After` says when to try again
+        "503":
+          description: >-
+            the server is shutting down and starts no more jobs;
+            `Retry-After` says when to try again
   "/experiments/{name}/files/delete":
     post:
       tags:
@@ -1816,6 +1820,9 @@ paths:
           description: forbidden
         "404":
           description: no netflow capture is running for the experiment
+        "503":
+          description: >-
+            the server is shutting down; `Retry-After` says when to try again
   "/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}":
     get:
       tags:
@@ -1893,6 +1900,9 @@ paths:
           description: the run or loop is not a number, or not a websocket handshake
         "403":
           description: forbidden, or a handshake without an `Origin` header
+        "503":
+          description: >-
+            the server is shutting down; `Retry-After` says when to try again
   "/experiments/{name}/scorch/pipelines":
     get:
       tags:
@@ -2241,6 +2251,9 @@ paths:
             permission
         "404":
           description: no such terminal for the experiment, or a client ID unknown, used or expired
+        "503":
+          description: >-
+            the server is shutting down; `Retry-After` says when to try again
   "/experiments/{name}/scorch/terminals/{pid}/exit/{id}":
     post:
       tags:
@@ -2730,6 +2743,10 @@ paths:
           description: >-
             too many of the user's jobs, or of all jobs, are waiting to run;
             `Retry-After` says when to try again
+        "503":
+          description: >-
+            the server is shutting down and starts no more jobs;
+            `Retry-After` says when to try again
   "/experiments/{exp_name}/vms/{vm_name}":
     get:
       tags:
@@ -3133,6 +3150,9 @@ paths:
           description: the VM's VNC endpoint could not be found
         "403":
           description: the role may not `get` the VM's `vms/vnc`
+        "503":
+          description: >-
+            the server is shutting down; `Retry-After` says when to try again
   "/experiments/{exp_name}/vms/{vm_name}/captures":
     get:
       tags:
@@ -3278,6 +3298,9 @@ paths:
           description: forbidden
         "404":
           description: the interface is not being captured
+        "503":
+          description: >-
+            the server is shutting down; `Retry-After` says when to try again
   "/experiments/{exp_name}/vms/{vm_name}/cdrom":
     post:
       tags:
@@ -3825,6 +3848,9 @@ paths:
           description: no forward to the host and port, or not a websocket handshake
         "403":
           description: forbidden, or a handshake without an `Origin` header
+        "503":
+          description: >-
+            the server is shutting down; `Retry-After` says when to try again
   "/experiments/{exp_name}/vms/{vm_name}/mount":
     post:
       tags:
@@ -4754,6 +4780,10 @@ paths:
           description: >-
             too many of the user's jobs, or of all jobs, are waiting to run;
             `Retry-After` says when to try again
+        "503":
+          description: >-
+            the server is shutting down and starts no more jobs;
+            `Retry-After` says when to try again
   "/disks/rename":
     post:
       tags:
@@ -5616,6 +5646,9 @@ paths:
           description: the server was started without --minimega-console
         "500":
           description: the console could not be started
+        "503":
+          description: >-
+            the server is shutting down; `Retry-After` says when to try again
   "/console/{pid}":
     parameters:
       - name: pid
@@ -5686,6 +5719,9 @@ paths:
           description: the role may not use a console (miniconsole get)
         "404":
           description: no running console with this pid belongs to the user
+        "503":
+          description: >-
+            the server is shutting down; `Retry-After` says when to try again
   "/console/{pid}/size":
     post:
       tags:
@@ -6577,7 +6613,9 @@ paths:
         54 seconds and drops a client that has not answered within 60, and
         closes a client that falls 256 messages behind with 1013 (Try Again
         Later) and the reason `client too slow`; the client reconnects and
-        reloads what it shows. Every message carries `seq`, as the
+        reloads what it shows. When the server shuts down it closes every
+        client with 1001 (Going Away) and the reason `server shutting down`,
+        and answers new websockets with 503. Every message carries `seq`, as the
         introduction describes. Needs a signed-in user, but no permission of
         its own.
       operationId: getWs
@@ -6586,6 +6624,9 @@ paths:
           description: switching protocols; `WebSocketMessage`s follow
         "400":
           description: not a websocket handshake
+        "503":
+          description: >-
+            the server is shutting down; `Retry-After` says when to try again
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io

@@ -16,6 +16,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/broker"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -158,6 +159,12 @@ func startJob(w http.ResponseWriter, r *http.Request, spec job.Spec) {
 		plog.Warn(plog.TypeSystem, "job queue full", "kind", spec.Kind, "user", spec.Owner)
 		w.Header().Set("Retry-After", "60")
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
+
+		return
+	}
+
+	if errors.Is(err, job.ErrShuttingDown) {
+		lifecycle.Refuse(w)
 
 		return
 	}

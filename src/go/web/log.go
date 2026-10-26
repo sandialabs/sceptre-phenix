@@ -144,8 +144,12 @@ func SyncMinimegaLogs(ctx context.Context, minimega string) {
 	}
 
 	go func() {
+		// drains the tail until it stops, so stopping it never blocks
 		for l := range mmLogs.Lines {
-			logs <- l.Text
+			select {
+			case logs <- l.Text:
+			case <-ctx.Done():
+			}
 		}
 	}()
 
@@ -155,6 +159,8 @@ func SyncMinimegaLogs(ctx context.Context, minimega string) {
 	for {
 		select {
 		case <-ctx.Done():
+			mmLogs.Kill(nil)
+
 			return
 		case log := <-logs:
 			if log == "" {

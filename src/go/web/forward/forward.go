@@ -23,6 +23,7 @@ import (
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	ft "phenix/web/forward/forwardtypes"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -597,10 +598,16 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) {
 // serveForward proxies the request's websocket to the forward's listener,
 // auditing the attach once the websocket is open.
 func serveForward(w http.ResponseWriter, r *http.Request, listener ft.Listener, fields audit.Fields) {
+	if lifecycle.RefuseWhileStopping(w) {
+		return
+	}
+
 	fields.Extra = append(fields.Extra, "phenix.forward.owner", listener.Owner)
 	proxy := util.ConnectWSHandler(listener.ClusterEndpoint())
 
 	websocket.Handler(func(ws *websocket.Conn) {
+		defer lifecycle.TrackConn("port forward", ws)()
+
 		audit.Success(r, audit.PortForwardAttach, "port forward attached", fields)
 		proxy(ws)
 	}).ServeHTTP(w, r)

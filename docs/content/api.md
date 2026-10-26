@@ -239,6 +239,16 @@ client of its own should do the same. Under heavy load the live log stream
 skips lines rather than wait, and sends a `WARN` entry saying how many it
 skipped; `GET /logs` and the log file still have them.
 
+### Server shutdown
+
+When `phenix ui` shuts down (see
+[Stopping the Server](settings.md#stopping-the-server)), it closes every
+websocket with close code 1001 (Going Away), and sends that code at no other
+time. `GET /ws` and the capture stream and netflow websockets carry the reason
+`server shutting down`; the console, SCORCH, VNC and port forward websockets
+carry no reason. Until the server stops, a new websocket, starting a console
+and starting a job answer `503 Service Unavailable` with `Retry-After`.
+
 The capture stream above, and WebShark's live update stream, end when one
 write to the client takes longer than 10 seconds, letting go of the capture.
 The server also waits at most 10 seconds for a request's headers; request

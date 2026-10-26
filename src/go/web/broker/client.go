@@ -24,6 +24,7 @@ import (
 	"phenix/util/mm"
 	"phenix/util/plog"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -227,8 +228,13 @@ func (c *Client) Stop() {
 func (c *Client) shutdown(code int, reason string) {
 	c.once.Do(func() {
 		close(c.done)
+		closingConns.Add(1)
 
-		go c.closeConn(code, reason)
+		go func() {
+			defer closingConns.Add(-1)
+
+			c.closeConn(code, reason)
+		}()
 	})
 }
 
@@ -1028,6 +1034,10 @@ func (c *Client) pushScreenshots() {
 }
 
 func ServeWS(w http.ResponseWriter, r *http.Request) {
+	if lifecycle.RefuseWhileStopping(w) {
+		return
+	}
+
 	upgrader.CheckOrigin = func(*http.Request) bool { return true }
 
 	conn, err := upgrader.Upgrade(w, r, nil)

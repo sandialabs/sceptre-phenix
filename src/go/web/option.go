@@ -14,7 +14,11 @@ import (
 	"phenix/web/weberror"
 )
 
-const defaultJWTLifetime = 24 * time.Hour
+const (
+	defaultJWTLifetime = 24 * time.Hour
+	// DefaultShutdownGracePeriod is how long shutting the server down may take.
+	DefaultShutdownGracePeriod = 5 * time.Second
+)
 
 type ServerOption func(*serverOptions)
 
@@ -43,6 +47,8 @@ type serverOptions struct {
 	websharkDir string
 
 	unixSocketGID int
+
+	shutdownGrace time.Duration
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -52,6 +58,8 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		basePath:    "/",
 		jwtLifetime: defaultJWTLifetime,
 		features:    make(map[string]bool),
+
+		shutdownGrace: DefaultShutdownGracePeriod,
 	}
 
 	for _, opt := range opts {
@@ -183,6 +191,14 @@ func ServeWithFeatures(f []string) ServerOption {
 func ServeWithUnixSocketGID(g int) ServerOption {
 	return func(o *serverOptions) {
 		o.unixSocketGID = g
+	}
+}
+
+// ServeWithShutdownGracePeriod sets how long shutting the server down may
+// take; 0 closes everything without waiting.
+func ServeWithShutdownGracePeriod(d time.Duration) ServerOption {
+	return func(o *serverOptions) {
+		o.shutdownGrace = d
 	}
 }
 

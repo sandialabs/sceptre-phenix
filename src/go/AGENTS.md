@@ -84,6 +84,10 @@ the root target does.
   `context.WithoutCancel`. A handler whose request ended writes nothing and
   logs it at debug level (`requestGone`, `requestCanceled` in `web/`). CLI
   commands, startup and background loops keep plain `mmcli.Run`.
+- A long-lived web handler (websocket, terminal, streamed response) registers
+  with `phenix/web/lifecycle` (`Track`, `TrackConn` or `WithStop`) and ends on
+  its stop signal, a gorilla websocket with close code 1001 and
+  `lifecycle.CloseReason`, so `phenix ui` shuts down within its grace period.
 - Check parsers, sanitizers, round trips and list invariants with
   `pgregory.net/rapid` properties beside the table tests. Keep each property
   fast, never pin a seed, and name generators after their test file.

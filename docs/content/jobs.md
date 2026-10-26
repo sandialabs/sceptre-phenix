@@ -76,7 +76,8 @@ Jobs live **in the memory of the `phenix ui` server only**:
 * a finished job is kept for one hour, and at most 200 finished jobs are kept
   (the oldest go first); dismissing a job forgets it at once;
 * restarting the server loses every job, and stops the work of the running
-  ones;
+  ones: they get half of `ui.shutdown-grace-period` to finish, and are
+  canceled then (see [Stopping the Server](settings.md#stopping-the-server));
 * the files a job leaves when the server stops mid-way are deleted when it
   starts again (`<base-dir.phenix>/jobs/` and partial disk clones).
 

@@ -1,7 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -12,7 +17,11 @@ import (
 	"phenix/web"
 )
 
-const defaultJWTLifetime = 24 * time.Hour
+const (
+	defaultJWTLifetime = 24 * time.Hour
+	// a process ended by signal n exits with signalExitBase + n.
+	signalExitBase = 128
+)
 
 var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
 
@@ -26,7 +35,12 @@ func newUICmd() *cobra.Command {
 		Short: "Run the phenix UI",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := web.Init()
+			grace, err := shutdownGracePeriod()
+			if err != nil {
+				return err
+			}
+
+			err = web.Init()
 			if err != nil {
 				return fmt.Errorf("initializing web package: %w", err)
 			}
@@ -43,6 +57,7 @@ func newUICmd() *cobra.Command {
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
 				web.ServeWithUnixSocketGID(viper.GetInt("unix-socket-gid")),
+				web.ServeWithShutdownGracePeriod(grace),
 			}
 
 			if level := viper.GetString("ui.logs.level"); level != "" {
@@ -70,7 +85,10 @@ func newUICmd() *cobra.Command {
 				opts = append(opts, web.ServeUnbundled())
 			}
 
-			err = web.Start(opts...)
+			ctx, stop := notifyShutdown(cmd.Context(), os.Exit)
+			defer stop()
+
+			err = web.Start(ctx, opts...)
 			if err != nil {
 				return util.HumanizeError(err, "Unable to serve UI").Humanized()
 			}
@@ -100,6 +118,11 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().String("logs.level", "", "log level to publish to UI. Defaults to file level")
 	uiCmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
 	uiCmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
+	uiCmd.Flags().Duration(
+		"shutdown-grace-period",
+		web.DefaultShutdownGracePeriod,
+		"how long stopping the server may take to close connections and finish work (0 does not wait)",
+	)
 
 	_ = viper.BindPFlag("ui.listen-endpoint", uiCmd.Flags().Lookup("listen-endpoint"))
 	_ = viper.BindPFlag("ui.base-path", uiCmd.Flags().Lookup("base-path"))
@@ -114,6 +137,7 @@ func newUICmd() *cobra.Command {
 	_ = viper.BindPFlag("ui.logs.level", uiCmd.Flags().Lookup("logs.level"))
 	_ = viper.BindPFlag("ui.features", uiCmd.Flags().Lookup("features"))
 	_ = viper.BindPFlag("ui.minimega-console", uiCmd.Flags().Lookup("minimega-console"))
+	_ = viper.BindPFlag("ui.shutdown-grace-period", uiCmd.Flags().Lookup("shutdown-grace-period"))
 
 	_ = viper.BindEnv("ui.listen-endpoint")
 	_ = viper.BindEnv("ui.base-path")
@@ -128,6 +152,7 @@ func newUICmd() *cobra.Command {
 	_ = viper.BindEnv("ui.logs.level")
 	_ = viper.BindEnv("ui.features")
 	_ = viper.BindEnv("ui.minimega-console")
+	_ = viper.BindEnv("ui.shutdown-grace-period")
 
 	uiCmd.Flags().Bool("log-requests", false, "Log HTTP requests")
 	uiCmd.Flags().
@@ -141,6 +166,73 @@ func newUICmd() *cobra.Command {
 	_ = viper.BindEnv("unix-socket-gid")
 
 	return uiCmd
+}
+
+// shutdownGracePeriod returns ui.shutdown-grace-period, which must be a
+// duration with a unit, such as 5s, and not negative.
+func shutdownGracePeriod() (time.Duration, error) {
+	value := viper.GetString("ui.shutdown-grace-period")
+
+	grace, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid ui.shutdown-grace-period %q: %w", value, err)
+	}
+
+	if grace < 0 {
+		return 0, fmt.Errorf("invalid ui.shutdown-grace-period %q: it must not be negative", value)
+	}
+
+	return grace, nil
+}
+
+// notifyShutdown returns a copy of parent canceled, with a web.SignalError, by
+// the first SIGINT or SIGTERM; a second one calls exit with 128 + its number.
+func notifyShutdown(parent context.Context, exit func(code int)) (context.Context, func()) {
+	ctx, cancel := context.WithCancelCause(parent)
+
+	var (
+		signals = make(chan os.Signal, 1)
+		stopped = make(chan struct{})
+		once    sync.Once
+	)
+
+	// kept after the first signal: PID 1 in a container, or a process started
+	// with SIGINT ignored, has no fatal default to fall back on
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		select {
+		case sig := <-signals:
+			cancel(web.SignalError{Signal: sig})
+		case <-stopped:
+			return
+		}
+
+		select {
+		case sig := <-signals:
+			plog.Warn(plog.TypeSystem, "exiting at once on a second signal", "signal", sig.String())
+			exit(signalExitCode(sig))
+		case <-stopped:
+		}
+	}()
+
+	return ctx, func() {
+		once.Do(func() {
+			signal.Stop(signals)
+			close(stopped)
+			cancel(nil)
+		})
+	}
+}
+
+// signalExitCode is the exit status of a process ended by sig, as a shell
+// reports it.
+func signalExitCode(sig os.Signal) int {
+	if s, ok := sig.(syscall.Signal); ok {
+		return signalExitBase + int(s)
+	}
+
+	return 1
 }
 
 func init() { //nolint:gochecknoinits // cobra command

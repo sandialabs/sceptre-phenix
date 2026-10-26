@@ -20,6 +20,7 @@ import (
 	"phenix/util/plog"
 	"phenix/util/pubsub"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/lifecycle"
 	"phenix/web/util"
 )
 
@@ -33,6 +34,8 @@ const (
 	delayedStartScreenshotSize = "215"
 	// how often the broker tells of the clients and log lines it dropped.
 	dropReportInterval = 30 * time.Second
+	// how often Shutdown checks whether clients have taken their close frame.
+	closePollInterval = 10 * time.Millisecond
 )
 
 var (
@@ -40,6 +43,8 @@ var (
 	broadcast  = make(chan encodedPublish, brokerChannelBuffer) //nolint:gochecknoglobals // global state
 	register   = make(chan *Client, brokerChannelBuffer)        //nolint:gochecknoglobals // global state
 	unregister = make(chan *Client, brokerChannelBuffer)        //nolint:gochecknoglobals // global state
+	// a pending request to close every client; see Shutdown.
+	closeAll = make(chan closeRequest, 1) //nolint:gochecknoglobals // global state
 
 	// Log lines have their own queue, which drops lines rather than wait: every
 	// plog call in the process sends one, and none may block on the broker.
@@ -50,6 +55,8 @@ var (
 	logsDropped atomic.Uint64 //nolint:gochecknoglobals // global state
 	// log lines dropped that clients have not yet been told of.
 	logsUntold atomic.Uint64 //nolint:gochecknoglobals // global state
+	// connections of closed clients still taking their close frame.
+	closingConns atomic.Int64 //nolint:gochecknoglobals // global state
 
 	// reports drops; run calls it on its own goroutine, since logging sends to
 	// the broker.
@@ -128,8 +135,59 @@ func publish(pub bt.Publish) {
 	}
 }
 
-func Start() {
-	run(context.Background(), pubsub.Subscribe("trigger-app"), pubsub.Subscribe("delayed-start"))
+// closeRequest asks the broker loop to close every client, and every one
+// that registers later, with code and reason.
+type closeRequest struct {
+	code   int
+	reason string
+	// how many clients it closed
+	closed chan int
+}
+
+// Start runs the broker until ctx is done.
+func Start(ctx context.Context) {
+	trigger, delayed := pubsub.Subscribe("trigger-app"), pubsub.Subscribe("delayed-start")
+
+	defer pubsub.Unsubscribe("trigger-app", trigger)
+	defer pubsub.Unsubscribe("delayed-start", delayed)
+
+	run(ctx, trigger, delayed)
+}
+
+// Shutdown closes every client with close code 1001 (going away) and
+// lifecycle.CloseReason. It returns how many were still open when ctx ended.
+func Shutdown(ctx context.Context) int {
+	req := closeRequest{code: websocket.CloseGoingAway, reason: lifecycle.CloseReason, closed: make(chan int, 1)}
+
+	// sent even when ctx is already done, as with no grace period
+	select {
+	case closeAll <- req:
+	default:
+		select {
+		case closeAll <- req:
+		case <-ctx.Done():
+			return int(clientCount.Load() + closingConns.Load())
+		}
+	}
+
+	select {
+	case <-req.closed:
+	case <-ctx.Done():
+		return int(clientCount.Load() + closingConns.Load())
+	}
+
+	ticker := time.NewTicker(closePollInterval)
+	defer ticker.Stop()
+
+	for closingConns.Load() > 0 {
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return int(closingConns.Load())
+		}
+	}
+
+	return 0
 }
 
 // run hands broadcasts to clients until ctx is done. It owns the clients map,
@@ -141,10 +199,24 @@ func run(ctx context.Context, triggerSub, delayedSub <-chan any) {
 
 	var reportedClients, reportedLines uint64
 
+	// set once every client has been closed for shutdown
+	var closer *closeRequest
+
 	for {
 		select {
 		case <-ctx.Done():
+			// a shutdown asked for just before the loop was stopped
+			select {
+			case req := <-closeAll:
+				closeClients(req)
+			default:
+			}
+
 			return
+		case req := <-closeAll:
+			closer = &req
+
+			closeClients(req)
 		case pub := <-triggerSub:
 			var (
 				trigger, _ = pub.(app.TriggerPublication)
@@ -186,6 +258,12 @@ func run(ctx context.Context, triggerSub, delayedSub <-chan any) {
 			// rather than holding up every other client's messages
 			go publishDelayedStart(delayed, expName, vmName)
 		case cli := <-register:
+			if closer != nil {
+				cli.shutdown(closer.code, closer.reason)
+
+				continue
+			}
+
 			clients[cli] = true
 
 			clientCount.Add(1)
@@ -215,6 +293,18 @@ func run(ctx context.Context, triggerSub, delayedSub <-chan any) {
 			}
 		}
 	}
+}
+
+// closeClients closes every client for req, and tells how many it closed.
+func closeClients(req closeRequest) {
+	n := len(clients)
+
+	for cli := range clients {
+		forget(cli)
+		cli.shutdown(req.code, req.reason)
+	}
+
+	req.closed <- n
 }
 
 // forget removes cli from the broker's clients.

@@ -31,7 +31,7 @@ var startOnce sync.Once //nolint:gochecknoglobals // the processors run for the 
 func useScorch(t *testing.T, runs ...map[string]any) {
 	t.Helper()
 
-	startOnce.Do(func() { Start("/") })
+	startOnce.Do(func() { Start(context.Background(), "/") })
 
 	// forget the pipelines built from this test's runs
 	t.Cleanup(func() { DeletePipeline("exp", -1, -1, false) })

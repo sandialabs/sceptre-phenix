@@ -25,6 +25,7 @@ import (
 	"phenix/util/plog"
 	"phenix/util/pubsub"
 	"phenix/web/cache"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -238,6 +239,10 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if lifecycle.RefuseWhileStopping(w) {
+		return
+	}
+
 	readOnly, status := claimTerminalClient(pid, mux.Vars(r)["id"], mayWrite(r, exp))
 
 	switch status {
@@ -332,6 +337,8 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) {
 
 func terminalWsHandler(t WebTerm) func(*websocket.Conn) {
 	return func(ws *websocket.Conn) {
+		defer lifecycle.TrackConn("SCORCH terminal", ws)()
+
 		_, err := os.FindProcess(t.Pid)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "unable to find process", "pid", t.Pid)
@@ -665,6 +672,10 @@ func StreamComponentOutput(w http.ResponseWriter, r *http.Request) {
 
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
 
+	if lifecycle.RefuseWhileStopping(w) {
+		return
+	}
+
 	plog.Debug(plog.TypeSystem, "starting scorch component streamer", "key", key)
 
 	websocket.Handler(scorchComponentWsHandler(key)).ServeHTTP(w, r)
@@ -672,6 +683,8 @@ func StreamComponentOutput(w http.ResponseWriter, r *http.Request) {
 
 func scorchComponentWsHandler(key string) func(*websocket.Conn) {
 	return func(ws *websocket.Conn) {
+		defer lifecycle.TrackConn("SCORCH output", ws)()
+
 		v := newViewer(ws)
 
 		// add client to list for component
