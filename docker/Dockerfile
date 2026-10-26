@@ -37,7 +37,7 @@ RUN npx @redocly/cli build-docs openapi.yml -o index.html --title 'phenix API'
 
 
 # ** gobuilder **
-FROM golang:1.24.1 AS gobuilder
+FROM golang:1.24.13 AS gobuilder
 
 RUN apt-get update \
   && apt-get install -y protobuf-compiler xz-utils
