@@ -85,6 +85,7 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- **API Authentication**: The auth middleware let any request whose path ended in `/login` or `/signup` through without a token, which included routes such as `/api/v1/experiments/{name}` and `/api/v1/configs/{kind}/{name}` when the last path variable was `login`. Only `/api/v1/login`, `/api/v1/signup`, and the file server `/login` are now public. Signing in with an unknown username now returns the same 401 as a wrong password, after the same bcrypt work, instead of a 404 that echoed the username. With proxy authentication the 404 still carries the proxied username, which the web UI uses to start sign-up.
 - **Workflow configs**: `POST /api/v1/workflow/configs/{branch}` no longer exposes server environment variables in its errors to callers who may not write that config, and checks the role's config names when creating one. ([#436](https://github.com/sandialabs/sceptre-phenix/pull/436))
 
 ## [1.0.0]
