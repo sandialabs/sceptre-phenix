@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"sync"
@@ -33,16 +32,16 @@ func (b *BoltDB) Init(opts ...Option) error {
 	}
 
 	if u.Scheme != "bolt" {
-		return fmt.Errorf("invalid scheme '%s' for BoltDB endpoint", u.Scheme)
+		return fmt.Errorf("invalid scheme '%s' for store endpoint: only bolt:// is supported", u.Scheme)
 	}
 
 	b.path = u.Host + u.Path
 
-	if err := b.InitializeComponent(ComponentStore); err != nil {
-		return fmt.Errorf("initializing component %s: %w", ComponentStore, err)
+	if err := b.open(); err != nil {
+		return fmt.Errorf("initializing BoltDB store: %w", err)
 	}
 
-	return nil
+	return b.Close()
 }
 
 func (b *BoltDB) IsInitialized(component Component) bool {
@@ -221,10 +220,6 @@ func (b *BoltDB) Update(c *Config) error {
 	}
 
 	return nil
-}
-
-func (b *BoltDB) Patch(*Config, map[string]any) error {
-	return errors.New("boltDB.Patch not implemented")
 }
 
 func (b *BoltDB) Delete(c *Config) error {

@@ -218,7 +218,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
   "config not found" further down the pipeline.
 - **`vm_type` default is `kvm`, not `container`** — do not assume container semantics
   unless the topology explicitly sets `general.vm_type: container`.
-- **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
+- **Store endpoint changes the whole world.** `--store.endpoint` (a `bolt://` path) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
   "no configs found" rather than an obvious connection error.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of

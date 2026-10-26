@@ -1,30 +1,16 @@
 package store
 
-import (
-	"fmt"
-	"net/url"
-)
-
 var DefaultStore Store = NewBoltDB() //nolint:gochecknoglobals // default implementation
 
 func Init(opts ...Option) error {
-	options := NewOptions(opts...)
-
-	u, err := url.Parse(options.Endpoint)
-	if err != nil {
-		return fmt.Errorf("parsing store endpoint: %w", err)
+	s := NewBoltDB()
+	if err := s.Init(opts...); err != nil {
+		return err
 	}
 
-	switch u.Scheme {
-	case "bolt":
-		DefaultStore = NewBoltDB()
-	case "etcd":
-		DefaultStore = NewEtcd()
-	default:
-		return fmt.Errorf("unknown store scheme '%s'", u.Scheme)
-	}
+	DefaultStore = s
 
-	return DefaultStore.Init(opts...)
+	return nil
 }
 
 func Close() error {
@@ -45,10 +31,6 @@ func Create(config *Config) error {
 
 func Update(config *Config) error {
 	return DefaultStore.Update(config)
-}
-
-func Patch(config *Config, data map[string]any) error {
-	return DefaultStore.Patch(config, data)
 }
 
 func Delete(config *Config) error {
