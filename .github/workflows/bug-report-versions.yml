@@ -1,0 +1,85 @@
+name: Bug Report Versions
+
+# Issue forms cannot validate input, so this flags bug reports whose
+# "Phenix Version" or "Minimega Version" field says "latest" instead of a
+# real version or commit, and clears the flag once the issue is fixed.
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check versions
+    if: >-
+      github.event.issue.pull_request == null &&
+      contains(github.event.issue.body, '### Phenix Version')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ISSUE: ${{ github.event.issue.number }}
+      ISSUE_BODY: ${{ github.event.issue.body }}
+      LABEL: needs-version
+      MARKER: '<!-- bug-report-versions -->'
+    steps:
+      - name: Find fields that say "latest"
+        id: parse
+        shell: python
+        run: |
+          import os
+          import re
+
+          # Issue forms render each field as "### <label>" followed by its value.
+          sections = re.split(r"^### +", os.environ["ISSUE_BODY"], flags=re.M)
+          bad = []
+          for section in sections[1:]:
+              label, _, value = section.partition("\n")
+              label = label.strip()
+              if label in ("Phenix Version", "Minimega Version") and re.search(
+                  r"latest", value, re.I
+              ):
+                  bad.append(label)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"bad={', '.join(bad)}\n")
+
+      - name: Flag the issue
+        if: steps.parse.outputs.bad != ''
+        env:
+          BAD: ${{ steps.parse.outputs.bad }}
+        run: |
+          gh label create "$LABEL" --force --color d93f0b \
+            --description 'Bug report needs a real phenix or minimega version'
+          gh issue edit "$ISSUE" --add-label "$LABEL"
+          existing=$(gh api "repos/$GH_REPO/issues/$ISSUE/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -n1)
+          body="$MARKER
+          The **$BAD** field of this bug report says \"latest\", which is not allowed. \"Latest\" changes over time, so it does not tell us which code you ran.
+
+          Please edit the issue and replace it with the output of \`phenix version\` or \`mm version\`, a release version, or a commit hash. The \`$LABEL\` label is removed automatically once the fields are fixed."
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$existing" -f body="$body"
+          else
+            gh issue comment "$ISSUE" --body "$body"
+          fi
+
+      - name: Clear the flag
+        if: >-
+          steps.parse.outputs.bad == '' &&
+          contains(github.event.issue.labels.*.name, 'needs-version')
+        run: |
+          gh issue edit "$ISSUE" --remove-label "$LABEL"
+          existing=$(gh api "repos/$GH_REPO/issues/$ISSUE/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -n1)
+          if [ -n "$existing" ]; then
+            gh api --method DELETE "repos/$GH_REPO/issues/comments/$existing"
+          fi
