@@ -12,6 +12,9 @@ import (
 
 const boltFileMode = 0o600
 
+// boltOpenTimeout bounds the wait for another process to release its lock on the BoltDB file.
+var boltOpenTimeout = 10 * time.Second //nolint:gochecknoglobals // overridden in tests
+
 type BoltDB struct {
 	mu sync.Mutex
 
@@ -80,11 +83,13 @@ func (b *BoltDB) open() error {
 
 	var err error
 
-	b.db, err = bbolt.Open(b.path, boltFileMode, &bbolt.Options{NoFreelistSync: true}) //nolint:exhaustruct // partial initialization
+	opts := &bbolt.Options{NoFreelistSync: true, Timeout: boltOpenTimeout} //nolint:exhaustruct // partial initialization
+
+	b.db, err = bbolt.Open(b.path, boltFileMode, opts)
 	if err != nil {
 		b.mu.Unlock()
 
-		return err
+		return fmt.Errorf("opening BoltDB file %s: %w", b.path, err)
 	}
 
 	return nil
@@ -200,12 +205,14 @@ func (b *BoltDB) Create(c *Config) error {
 }
 
 func (b *BoltDB) Update(c *Config) error {
-	_ = b.open()
+	if err := b.open(); err != nil {
+		return err
+	}
 
 	defer func() { _ = b.Close() }()
 
 	if _, err := b.get(c.Kind, c.Metadata.Name); err != nil {
-		return ErrNotExist
+		return fmt.Errorf("getting config: %w", err)
 	}
 
 	c.Metadata.Updated = time.Now().Format(time.RFC3339)
@@ -223,19 +230,15 @@ func (b *BoltDB) Update(c *Config) error {
 }
 
 func (b *BoltDB) Delete(c *Config) error {
-	_ = b.open()
+	if err := b.open(); err != nil {
+		return err
+	}
 
 	defer func() { _ = b.Close() }()
 
-	if err := b.ensureBucket(c.Kind); err != nil {
-		return nil
-	}
-
 	err := b.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Kind))
-		v := b.Get([]byte(c.Metadata.Name))
-
-		if v == nil {
+		if b == nil || b.Get([]byte(c.Metadata.Name)) == nil {
 			return ErrNotExist
 		}
 
