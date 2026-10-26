@@ -236,7 +236,7 @@ func init() { //nolint:gochecknoinits // cobra command
 
 	workflowCmd.AddCommand(newWorkflowApplyCmd())
 
-	// The examples use global flags (--unix-socket, --base-dir.*, --log.level),
-	// so help shows them, as it does for ui.
-	addCommandToRoot(workflowCmd, false)
+	// Global flags are hidden in help, as they are for every command but ui.
+	// The long help and the examples name the ones apply reads.
+	addCommandToRoot(workflowCmd, true)
 }

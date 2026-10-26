@@ -30,6 +30,9 @@ func TestResolveTopologyDir(t *testing.T) {
 	})
 	t.Chdir(root)
 
+	// Shell completion appends this to a directory it completes.
+	sep := string(filepath.Separator)
+
 	tests := []struct {
 		name    string
 		arg     string
@@ -55,6 +58,23 @@ func TestResolveTopologyDir(t *testing.T) {
 			base:    topologies,
 			wantErr: "topology directory not found: stat " + filepath.Join("sub", "named"),
 		},
+		{name: "trailing separator on a name", arg: "named" + sep, base: topologies, want: filepath.Join(topologies, "named")},
+		{
+			name: "repeated trailing separators on a name",
+			arg:  "named" + sep + sep,
+			base: topologies,
+			want: filepath.Join(topologies, "named"),
+		},
+		{name: "trailing separator on a local path", arg: "local" + sep, base: topologies, want: filepath.Join(root, "local")},
+		{name: "trailing separator on the current directory", arg: "." + sep, base: topologies, want: root},
+		{name: "the root directory", arg: sep, base: topologies, want: sep},
+		{
+			name:    "trailing separator on a missing name",
+			arg:     "nope" + sep,
+			base:    topologies,
+			wantErr: "topology directory not found: tried nope and " + filepath.Join(topologies, "nope"),
+		},
+		{name: "trailing separator on a local file", arg: "file.txt" + sep, base: topologies, wantErr: "file.txt is not a directory"},
 		{name: "no topologies base", arg: "named", base: "", wantErr: "topology directory not found: stat named"},
 		{name: "local file", arg: "file.txt", base: topologies, wantErr: "file.txt is not a directory"},
 		{
