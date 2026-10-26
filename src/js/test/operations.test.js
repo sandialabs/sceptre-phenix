@@ -1,5 +1,6 @@
 // Shared operation feedback: whether an action can be taken and why not, what
 // a selection skips, one confirm dialog, and one summary of how it went.
+import { AxiosError } from 'axios';
 import fc from 'fast-check';
 import { nextTick } from 'vue';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +21,8 @@ import {
   skippedText,
   summarizeOutcome,
 } from '@/utils/operations.js';
+import { setWsDown } from '@/utils/freshness.js';
+import { SHUTTING_DOWN, UNREACHABLE } from '@/utils/unreachable.js';
 import { httpError } from './helpers/fixtures.js';
 import {
   confirmDialog,
@@ -252,8 +255,25 @@ describe('errorText and errorLine', () => {
     ],
     ['a Blob body, by its status', httpError(500, new Blob(['x'])), '500', []],
     ['nothing', undefined, 'Unknown error', []],
+    [
+      'a request that got no response',
+      new AxiosError('Network Error', 'ERR_NETWORK', {}, {}),
+      UNREACHABLE,
+      [],
+    ],
   ])('reads %s', (_, err, title, steps) => {
     expect(errorText(err)).toEqual({ title, steps });
+  });
+
+  it('says the server is shutting down for a request it did not answer as it does', () => {
+    setWsDown(true, 'shutdown');
+    try {
+      expect(
+        errorLine(new AxiosError('Network Error', 'ERR_NETWORK', {}, {})),
+      ).toBe(SHUTTING_DOWN);
+    } finally {
+      setWsDown(false);
+    }
   });
 
   // a step of an error chain as the server words it

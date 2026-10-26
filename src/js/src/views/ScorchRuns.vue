@@ -161,6 +161,7 @@
 
 <script>
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
+  import { serverShuttingDown, wsCloseCause } from '@/utils/freshness.js';
   import axiosInstance from '@/utils/axios.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif';
   import { notifyOutcome, outcomeFromSettled } from '@/utils/operations.js';
@@ -578,9 +579,14 @@
         this.output.socket.onmessage = (event) => {
           this.output.msg += event.data;
         };
-        this.output.socket.onerror = () => {
+        // an error is always followed by a close, which says what happened
+        const socket = this.output.socket;
+        this.output.socket.onclose = (event) => {
+          if (this.output.socket !== socket || event.code === 1000) return;
           this.output.msg +=
-            '\n[output stream failed; close and reopen to retry]';
+            wsCloseCause(event) === 'shutdown' || serverShuttingDown()
+              ? '\n[output stream ended: phēnix server shutting down]'
+              : '\n[lost the connection to the phēnix server; close and reopen to retry]';
         };
       },
 

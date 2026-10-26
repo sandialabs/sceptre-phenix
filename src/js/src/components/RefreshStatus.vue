@@ -90,6 +90,8 @@ button to reload it. Pages opt in with createPageLoader.
             return 'minimega was busy; showing earlier data';
           case 'invalidated':
             return 'changed elsewhere since it loaded';
+          case 'shutdown':
+            return 'phēnix server shutting down or restarting';
           case 'disconnected':
             return 'live updates disconnected';
           case 'age': {

@@ -348,3 +348,84 @@ describe('searching', () => {
     );
   });
 });
+
+describe('the netflow capture', () => {
+  class FakeWebSocket extends EventTarget {
+    static instances = [];
+    constructor(url) {
+      super();
+      this.url = url;
+      FakeWebSocket.instances.push(this);
+    }
+    close() {}
+    // the socket closes with this code
+    closeWith(code, reason = '') {
+      this.dispatchEvent(Object.assign(new Event('close'), { code, reason }));
+    }
+  }
+
+  let freshness;
+  beforeEach(async () => {
+    FakeWebSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    freshness = await import('@/utils/freshness.js');
+    // a capture is running on the server, so the page joins it
+    axios.get.mockImplementation(async (path) => {
+      if (path.endsWith('/netflow')) return { data: {} };
+      throw new Error('not found');
+    });
+  });
+
+  afterEach(() => {
+    freshness.setWsDown(false);
+    vi.unstubAllGlobals();
+  });
+
+  // the page on the netflow tab, joined to the running capture
+  async function capturing() {
+    const page = await openPage({ activeTab: 3 });
+    await apply(running([]));
+    const socket = FakeWebSocket.instances.at(-1);
+    socket.dispatchEvent(new Event('open'));
+    return { page, socket };
+  }
+
+  const markers = (page) => page.findAll('.netflow-marker td').map(textOf);
+  const toggle = (page) =>
+    page.find('button[aria-label$="netflow capture"]').attributes('aria-label');
+
+  it.each([
+    [
+      'the server shutting down',
+      1001,
+      'Capture stopped: phēnix server shutting down',
+      'Start netflow capture',
+    ],
+    [
+      'a lost connection',
+      1006,
+      'Lost the connection to the phēnix server',
+      'Stop netflow capture',
+    ],
+  ])(
+    'says the capture stream ended after %s',
+    async (_, code, marker, button) => {
+      const { page, socket } = await capturing();
+      expect(toggle(page)).toBe('Stop netflow capture');
+
+      socket.closeWith(code);
+      await flushPromises();
+      expect(markers(page).filter((t) => t.includes('phēnix'))).toEqual([
+        marker,
+      ]);
+      expect(toggle(page)).toBe(button);
+    },
+  );
+
+  it('says nothing of a stream the server ended normally', async () => {
+    const { page, socket } = await capturing();
+    socket.closeWith(1000, 'netflow stopped');
+    await flushPromises();
+    expect(markers(page).filter((t) => t.includes('phēnix'))).toEqual([]);
+  });
+});

@@ -6,6 +6,11 @@
   import { markRaw } from 'vue';
 
   import { usePhenixStore } from '@/store.js';
+  import {
+    serverShuttingDown,
+    shutdownWithin,
+    wsCloseCause,
+  } from '@/utils/freshness.js';
 
   import { Terminal } from '@xterm/xterm';
   import { AttachAddon } from '@xterm/addon-attach';
@@ -49,7 +54,8 @@
     },
     methods: {
       setupTerminal() {
-        this.socket = markRaw(new WebSocket(this.getWsUrl()));
+        const socket = markRaw(new WebSocket(this.getWsUrl()));
+        this.socket = socket;
 
         // the attach addon throws on input if it is loaded before the
         // socket is open, so wait for onopen to wire it up
@@ -62,8 +68,20 @@
           this.term.write('\r\n[terminal connection error]\r\n');
         };
 
-        this.socket.onclose = () => {
-          this.term.write('\r\n[terminal connection closed]\r\n');
+        this.socket.onclose = async (event) => {
+          // a dropped socket may be the first sign of a shutdown
+          const shutdown =
+            wsCloseCause(event) === 'shutdown' ||
+            (event.code === 1000
+              ? serverShuttingDown()
+              : await shutdownWithin());
+          // the terminal may have closed or moved on while it waited
+          if (!this.term || this.socket !== socket) return;
+          this.term.write(
+            shutdown
+              ? '\r\n[phēnix server shutting down; terminal closed]\r\n'
+              : '\r\n[terminal connection closed]\r\n',
+          );
         };
       },
       teardownSocket() {

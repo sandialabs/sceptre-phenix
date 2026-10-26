@@ -176,20 +176,81 @@ export function mergeFreshness(meta, from) {
   return meta;
 }
 
-// When the live websocket connection dropped, or null while it is up. Kept
-// here rather than in websocket.ts so the page utilities need not load it.
-let wsDownSince = null;
+// The close code the server sends every websocket, and only then, as it shuts
+// down, and the code it sends a client too slow to keep up with its messages.
+const GOING_AWAY = 1001;
+const TRY_AGAIN_LATER = 1013;
 
-export function setWsDown(down) {
-  if (!down) wsDownSince = null;
-  else wsDownSince ??= Date.now();
+// Why a websocket closed, from its CloseEvent: 'shutdown' (the server is
+// shutting down), 'behind' (it dropped a client too slow), else 'lost'.
+export function wsCloseCause(event) {
+  if (event?.code === GOING_AWAY) return 'shutdown';
+  if (event?.code === TRY_AGAIN_LATER) return 'behind';
+  return 'lost';
+}
+
+// How long a shutdown is believed without the server answering: it may not
+// come back, and by then a failed reconnect means it is down.
+export const SHUTDOWN_HOLD_MS = MINUTE;
+
+// When the live websocket connection dropped, or null while it is up, and why
+// (a wsCloseCause). Kept here rather than in websocket.ts so the page
+// utilities and error notifications need not load it.
+let wsDownSince = null;
+let wsDownCause = null;
+// when the server said it is shutting down, or null
+let shutdownAt = null;
+
+const shutdownKnown = (now = Date.now()) =>
+  shutdownAt !== null && now - shutdownAt < SHUTDOWN_HOLD_MS;
+
+export function setWsDown(down, cause = 'lost') {
+  if (!down) {
+    wsDownSince = null;
+    wsDownCause = null;
+    shutdownAt = null;
+    return;
+  }
+  wsDownSince ??= Date.now();
+  // a shutdown holds through the failed reconnects that follow it
+  if (shutdownKnown()) return;
+  wsDownCause = cause;
+  shutdownAt = cause === 'shutdown' ? Date.now() : null;
+}
+
+// The server answered a request sent at sentAt (ms), so it is serving again;
+// one sent before it said it was shutting down may only have been finished.
+export function serverResponded(sentAt) {
+  if (shutdownAt === null || sentAt < shutdownAt) return;
+  shutdownAt = null;
+  wsDownCause = 'lost';
+}
+
+// Why the live websocket connection is down (a wsCloseCause), or null.
+export function wsDownReason() {
+  if (wsDownCause === 'shutdown' && !shutdownKnown()) return 'lost';
+  return wsDownCause;
+}
+
+// Whether the server said it was shutting down and has not answered since.
+export function serverShuttingDown() {
+  return shutdownKnown();
+}
+
+// Whether the server turns out to be shutting down within ms: a socket the
+// server closes may drop before the live socket hears why.
+export async function shutdownWithin(ms = 1500) {
+  if (serverShuttingDown()) return true;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  return serverShuttingDown();
 }
 
 // Why data may be out of date, or null when it is not:
 //
 //   'server'        the server served earlier data (minimega was busy)
 //   'invalidated'   it changed elsewhere since it loaded
-//   'disconnected'  live updates stopped coming
+//   'shutdown'      live updates stopped as the server shut down
+//   'disconnected'  live updates stopped coming for any other reason
 //   'age'           it is older than the resource's staleAfterMs
 //
 // state is { observedAt, stale, invalidated }.
@@ -198,10 +259,13 @@ export function staleReason(
   resource,
   now = Date.now(),
   disconnectedSince = wsDownSince,
+  disconnectedCause = wsDownReason(),
 ) {
   if (state.stale) return 'server';
   if (state.invalidated) return 'invalidated';
-  if (resource?.live && disconnectedSince !== null) return 'disconnected';
+  if (resource?.live && disconnectedSince !== null) {
+    return disconnectedCause === 'shutdown' ? 'shutdown' : 'disconnected';
+  }
   if (
     resource?.staleAfterMs &&
     state.observedAt !== undefined &&

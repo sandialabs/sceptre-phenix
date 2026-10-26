@@ -1,13 +1,20 @@
 // The freshness rules and how responses report it (utils/freshness.js).
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FreshnessMeta,
   mergeFreshness,
   readFreshness,
   resourceFor,
   RESOURCES,
+  serverResponded,
+  serverShuttingDown,
+  setWsDown,
+  SHUTDOWN_HOLD_MS,
+  shutdownWithin,
   staleReason,
+  wsCloseCause,
+  wsDownReason,
 } from '@/utils/freshness.js';
 import { isoTimeArb } from './helpers/arbitraries.js';
 
@@ -194,6 +201,19 @@ describe('staleReason', () => {
     expect(staleReason(state, resource, now, disconnectedSince)).toBe(reason);
   });
 
+  it.each([
+    ['shutdown', 'shutdown'],
+    ['behind', 'disconnected'],
+    ['lost', 'disconnected'],
+  ])('calls live updates stopped by a %s close %s', (cause, reason) => {
+    const state = { observedAt: now };
+    expect(staleReason(state, RESOURCES.experiments, now, now, cause)).toBe(
+      reason,
+    );
+    // a page that is not live is not out of date for it
+    expect(staleReason(state, RESOURCES.hosts, now, now, cause)).toBe(null);
+  });
+
   const state = fc.record(
     {
       stale: fc.boolean(),
@@ -206,17 +226,26 @@ describe('staleReason', () => {
   );
   const resource = fc.constantFrom(undefined, ...Object.values(RESOURCES));
   const disconnectedSince = fc.option(fc.nat(now));
+  const cause = fc.constantFrom('shutdown', 'behind', 'lost');
 
-  it('gives the reasons in order: server, invalidated, disconnected, age', () => {
+  it('gives the reasons in order: server, invalidated, shutdown or disconnected, age', () => {
     fc.assert(
-      fc.property(state, resource, disconnectedSince, (s, r, down) => {
-        const reason = staleReason(s, r, now, down);
-        expect(reason === 'server').toBe(!!s.stale);
-        if (!s.stale) expect(reason === 'invalidated').toBe(!!s.invalidated);
-        if (!s.stale && !s.invalidated) {
-          expect(reason === 'disconnected').toBe(!!r?.live && down !== null);
-        }
-      }),
+      fc.property(
+        state,
+        resource,
+        disconnectedSince,
+        cause,
+        (s, r, down, c) => {
+          const reason = staleReason(s, r, now, down, c);
+          expect(reason === 'server').toBe(!!s.stale);
+          if (!s.stale) expect(reason === 'invalidated').toBe(!!s.invalidated);
+          if (!s.stale && !s.invalidated) {
+            const cut = !!r?.live && down !== null;
+            expect(reason === 'shutdown').toBe(cut && c === 'shutdown');
+            expect(reason === 'disconnected').toBe(cut && c !== 'shutdown');
+          }
+        },
+      ),
     );
   });
 
@@ -236,6 +265,128 @@ describe('staleReason', () => {
         },
       ),
     );
+  });
+});
+
+describe('wsCloseCause', () => {
+  it.each([
+    ['the server shutting down', 1001, 'server shutting down', 'shutdown'],
+    ['the server shutting down a console', 1001, '', 'shutdown'],
+    ['a client too slow to keep up', 1013, 'client too slow', 'behind'],
+    ['a socket that dropped without a close frame', 1006, '', 'lost'],
+    ['a normal close', 1000, 'server shutting down', 'lost'],
+  ])('names %s', (_, code, reason, cause) => {
+    expect(wsCloseCause({ code, reason })).toBe(cause);
+  });
+
+  it('calls a close lost without an event', () => {
+    expect(wsCloseCause(undefined)).toBe('lost');
+  });
+
+  it('calls every 1001 a shutdown, whatever its reason, and nothing else', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1000, max: 4999 }),
+        fc.string(),
+        (code, reason) => {
+          expect(wsCloseCause({ code, reason }) === 'shutdown').toBe(
+            code === 1001,
+          );
+        },
+      ),
+    );
+  });
+});
+
+describe('the server shutting down', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    setWsDown(false);
+    vi.useRealTimers();
+  });
+
+  it('holds through the failed reconnects that follow, until the socket is back up', () => {
+    setWsDown(true, 'shutdown');
+    setWsDown(true, 'lost');
+    setWsDown(true, 'behind');
+    expect(wsDownReason()).toBe('shutdown');
+    expect(serverShuttingDown()).toBe(true);
+
+    setWsDown(false);
+    expect(wsDownReason()).toBe(null);
+    expect(serverShuttingDown()).toBe(false);
+  });
+
+  it('reports the latest cause of a drop that was not a shutdown', () => {
+    setWsDown(true, 'behind');
+    expect(wsDownReason()).toBe('behind');
+    setWsDown(true);
+    expect(wsDownReason()).toBe('lost');
+    expect(serverShuttingDown()).toBe(false);
+  });
+
+  it('is believed only for a while without the server answering', () => {
+    setWsDown(true, 'shutdown');
+    vi.advanceTimersByTime(SHUTDOWN_HOLD_MS - 1);
+    expect(serverShuttingDown()).toBe(true);
+
+    vi.advanceTimersByTime(1);
+    expect(serverShuttingDown()).toBe(false);
+    expect(wsDownReason()).toBe('lost');
+    expect(staleReason({}, RESOURCES.experiments)).toBe('disconnected');
+    // a later failed reconnect is a lost connection
+    setWsDown(true, 'lost');
+    expect(wsDownReason()).toBe('lost');
+  });
+
+  it('ends once the server answers a request sent after it said so', () => {
+    const before = Date.now();
+    vi.advanceTimersByTime(10);
+    setWsDown(true, 'shutdown');
+
+    // a request in flight as it shut down is finished, not a sign it is back
+    serverResponded(before);
+    expect(serverShuttingDown()).toBe(true);
+
+    vi.advanceTimersByTime(10);
+    serverResponded(Date.now());
+    expect(serverShuttingDown()).toBe(false);
+    expect(wsDownReason()).toBe('lost');
+  });
+
+  it('says the server is shutting down only after a shutdown, before it answers or the socket reopens', () => {
+    const step = fc.oneof(
+      fc.constantFrom('shutdown', 'behind', 'lost').map((c) => ['down', c]),
+      fc.constantFrom(['up'], ['answered']),
+    );
+    fc.assert(
+      fc.property(fc.array(step, { maxLength: 12 }), (steps) => {
+        setWsDown(false);
+        let shuttingDown = false;
+        for (const [event, cause] of steps) {
+          vi.advanceTimersByTime(1);
+          if (event === 'down') setWsDown(true, cause);
+          else if (event === 'up') setWsDown(false);
+          else serverResponded(Date.now());
+          if (event === 'down') shuttingDown ||= cause === 'shutdown';
+          else shuttingDown = false;
+        }
+        expect(serverShuttingDown()).toBe(shuttingDown);
+      }),
+    );
+  });
+
+  it('is waited for briefly, as a dropped socket may come before the reason', async () => {
+    const waited = shutdownWithin(1500);
+    vi.advanceTimersByTime(1000);
+    setWsDown(true, 'shutdown');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await waited).toBe(true);
+
+    setWsDown(false);
+    const never = shutdownWithin(1500);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(await never).toBe(false);
   });
 });
 

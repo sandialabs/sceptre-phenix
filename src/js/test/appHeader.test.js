@@ -15,6 +15,7 @@ vi.mock('@/utils/axios.js', modules.axios);
 import AppHeader from '@/components/AppHeader.vue';
 import RefreshStatus from '@/components/RefreshStatus.vue';
 import JobsMenu from '@/components/jobs/JobsMenu.vue';
+import { setWsDown } from '@/utils/freshness.js';
 import { useJobStore } from '@/utils/jobs.js';
 import { pageStatus } from '@/utils/pageLoader.js';
 import {
@@ -355,6 +356,32 @@ describe('the refresh status', () => {
     expect(page.find('.refresh-label').attributes('aria-hidden')).toBe(
       labelHidden ? 'true' : undefined,
     );
+  });
+
+  it.each([
+    [
+      'the server shutting down',
+      'shutdown',
+      'phēnix server shutting down or restarting',
+    ],
+    ['falling behind', 'behind', 'live updates disconnected'],
+    ['a lost connection', 'lost', 'live updates disconnected'],
+  ])('says why live data stopped updating after %s', async (_, cause, want) => {
+    setWsDown(true, cause);
+    try {
+      Object.assign(pageStatus, {
+        refresh: () => {},
+        updatedAt: NOW,
+        resource: 'experiments',
+      });
+      const refresh = await mountComponent(RefreshStatus);
+      expect(refresh.find('.refresh-label').attributes('title')).toBe(want);
+      expect(refresh.find('.refresh-alert').text()).toBe(
+        `Data may be out of date: ${want}`,
+      );
+    } finally {
+      setWsDown(false);
+    }
   });
 
   it.each([

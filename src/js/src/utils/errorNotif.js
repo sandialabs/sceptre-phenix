@@ -2,6 +2,7 @@ import { usePhenixStore } from '@/store.js';
 import { escapeHTML } from '@/utils/escapeHTML.js';
 import { openNotification } from '@/utils/notify.js';
 import { errorSteps } from '@/utils/operations.js';
+import { noResponseMessage } from '@/utils/unreachable.js';
 
 // Shows an error: a request's, an Error, or a message (a string).
 export async function useErrorNotification(error) {
@@ -15,7 +16,10 @@ export async function useErrorNotification(error) {
 
   let message;
   console.warn('Error', error);
-  if (!('response' in error)) {
+  const unreachable = noResponseMessage(error);
+  if (unreachable) {
+    message = errorHTML(unreachable);
+  } else if (!('response' in error)) {
     message = errorHTML(error.message);
   } else if (error.response.headers.get('content-type') == 'application/json') {
     const msg = error.response.data ?? {};

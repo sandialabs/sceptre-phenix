@@ -1246,7 +1246,11 @@
   import { showError, useErrorNotification } from '@/utils/errorNotif';
   import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
   import { cachePage } from '@/utils/pageCache.js';
-  import { FreshnessMeta } from '@/utils/freshness.js';
+  import {
+    FreshnessMeta,
+    serverShuttingDown,
+    wsCloseCause,
+  } from '@/utils/freshness.js';
   import { experimentKey, fetchRunningExperiment } from '@/utils/pageData.js';
   import { useTable } from '@/utils/useTable.js';
   import { escapeHTML } from '@/utils/escapeHTML.js';
@@ -3640,10 +3644,29 @@
         let proto = location.protocol == 'https:' ? 'wss://' : 'ws://';
         let url = proto + location.host + path;
 
-        this.socket = new WebSocket(url);
+        const socket = new WebSocket(url);
+        this.socket = socket;
         const started = () => (this.netflow.starting = false);
-        this.socket.addEventListener('open', started);
-        this.socket.addEventListener('error', started);
+        socket.addEventListener('open', started);
+        socket.addEventListener('error', started);
+        socket.addEventListener('close', (event) => {
+          // a socket the page closed or replaced, or a normal close
+          if (this.socket !== socket || event.code === 1000) return;
+          started();
+          if (wsCloseCause(event) === 'shutdown' || serverShuttingDown()) {
+            // the server stops its captures as it shuts down
+            this.socket = null;
+            this.netflow.capturing = false;
+            this.netflow.tooltip = 'Start Netflow Capture';
+            this.addNetflowLines([
+              netflowMarker('Capture stopped: phēnix server shutting down'),
+            ]);
+          } else {
+            this.addNetflowLines([
+              netflowMarker('Lost the connection to the phēnix server'),
+            ]);
+          }
+        });
         this.socket.addEventListener('message', (event) => {
           // one update per frame, however many flows it carries
           const flows = event.data

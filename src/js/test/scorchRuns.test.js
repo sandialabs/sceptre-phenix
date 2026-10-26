@@ -466,3 +466,65 @@ describe('Cleanup', () => {
     expect((await pageButtons(wrapper)).runs[0][1]).toBe('Cleanup (disabled)');
   });
 });
+
+describe("a component's streamed output", () => {
+  class FakeWebSocket {
+    static instances = [];
+    constructor(url) {
+      this.url = url;
+      FakeWebSocket.instances.push(this);
+    }
+    close() {}
+  }
+
+  let freshness;
+  beforeEach(async () => {
+    FakeWebSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    freshness = await import('@/utils/freshness.js');
+  });
+
+  afterEach(() => {
+    freshness.setWsDown(false);
+    vi.unstubAllGlobals();
+  });
+
+  // opens the output of run 0's first component, which streams it
+  async function stream() {
+    const wrapper = await open([{}]);
+    axios.get.mockResolvedValueOnce({ data: { stream: '/api/v1/out/ws' } });
+    runs(wrapper)[0].props('viewer')({
+      exp: 'exp1',
+      run: 0,
+      loop: 0,
+      stage: 'start',
+      name: 'c0',
+      status: 'running',
+    });
+    await flushPromises();
+    const socket = FakeWebSocket.instances.at(-1);
+    socket.onmessage({ data: 'line 1' });
+    return { wrapper, socket };
+  }
+
+  const output = (wrapper) => wrapper.find('textarea').element.value;
+
+  it.each([
+    [
+      'the server shutting down',
+      { code: 1001, reason: '' },
+      'line 1\n[output stream ended: phēnix server shutting down]',
+    ],
+    [
+      'a lost connection',
+      { code: 1006, reason: '' },
+      'line 1\n[lost the connection to the phēnix server; close and reopen to retry]',
+    ],
+    ['the stream ending', { code: 1000, reason: '' }, 'line 1'],
+  ])('says it stopped after %s', async (_, event, want) => {
+    const { wrapper, socket } = await stream();
+    socket.onclose(event);
+    await nextTick();
+    expect(output(wrapper)).toBe(want);
+  });
+});

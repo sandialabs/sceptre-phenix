@@ -8,7 +8,10 @@ const store = vi.hoisted(() => ({ logout: vi.fn() }));
 vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
 
 import { openNotification } from '@/utils/notify.js';
+import { AxiosError } from 'axios';
 import { showError, useErrorNotification } from '@/utils/errorNotif.js';
+import { setWsDown } from '@/utils/freshness.js';
+import { SHUTTING_DOWN, UNREACHABLE } from '@/utils/unreachable.js';
 import { errorSteps } from '@/utils/operations.js';
 
 beforeEach(() => {
@@ -17,7 +20,10 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  setWsDown(false);
+  vi.restoreAllMocks();
+});
 
 // the body of the notification last shown
 const message = () => openNotification.mock.lastCall[0].message;
@@ -224,8 +230,8 @@ describe('showError', () => {
 describe('useErrorNotification', () => {
   it.each([
     [
-      'shows the message of a request that got no answer',
-      { message: 'Network Error' },
+      'shows the message of an error that is not a request',
+      new Error('Network Error'),
       ['<b>Error:</b> Network Error'],
     ],
     [
@@ -326,6 +332,33 @@ describe('useErrorNotification', () => {
       ]);
     },
   );
+
+  it.each([
+    ['the live connection is up', null, UNREACHABLE],
+    ['the live connection was lost', 'lost', UNREACHABLE],
+    ['the server said it is shutting down', 'shutdown', SHUTTING_DOWN],
+  ])(
+    'explains a request that got no response while %s',
+    async (_, cause, want) => {
+      if (cause) setWsDown(true, cause);
+      await useErrorNotification(
+        new AxiosError('Network Error', 'ERR_NETWORK', {}, {}),
+      );
+      expect(lines()).toEqual([`<b>Error:</b> ${want}`]);
+    },
+  );
+
+  it("shows the server's own words for a job it refused as it shuts down", async () => {
+    await useErrorNotification(
+      failed({
+        status: 503,
+        data: 'the phēnix server is shutting down; try again once it is back',
+      }),
+    );
+    expect(lines()).toEqual([
+      '<b>Error:</b> the phēnix server is shutting down; try again once it is back',
+    ]);
+  });
 
   it('says nothing of requests canceled on leaving a page', async () => {
     await useErrorNotification({ code: 'ERR_CANCELED', message: 'canceled' });

@@ -10,6 +10,12 @@ import { AttachAddon } from '@xterm/addon-attach';
 import '@xterm/xterm/css/xterm.css';
 
 import axiosInstance from '@/utils/axios.js';
+import {
+  serverShuttingDown,
+  shutdownWithin,
+  wsCloseCause,
+} from '@/utils/freshness.js';
+import { gotNoResponse } from '@/utils/unreachable.js';
 import { usePhenixStore } from '@/store.js';
 import {
   currentConsole,
@@ -181,8 +187,9 @@ class ConsoleSession {
     this.attachAddon?.dispose();
     this.attachAddon = null;
 
-    const ended = await this.consoleEnded(event);
-    if (ended) {
+    const outcome = await this.closeOutcome(event);
+    // the server ends its consoles as it shuts down
+    if (outcome !== 'lost') {
       forgetConsolePid(this.username, this.pid);
     }
     // the page may have let the session go while the server was asked
@@ -190,7 +197,10 @@ class ConsoleSession {
       return;
     }
 
-    if (ended) {
+    if (outcome === 'shutdown') {
+      this.term.write('\r\n[phēnix server shutting down; console ended]\r\n');
+      this.finish('ended');
+    } else if (outcome === 'ended') {
       this.term.write('\r\n[console ended]\r\n');
       this.finish('ended');
     } else {
@@ -199,17 +209,23 @@ class ConsoleSession {
     }
   }
 
-  // whether the socket closed because the console ended, rather than only
-  // this connection to it
-  async consoleEnded(event) {
+  // Why the socket closed: 'shutdown' (the server is shutting down), 'ended'
+  // (the console ended), or 'lost' (only this connection to it).
+  async closeOutcome(event) {
+    if (wsCloseCause(event) === 'shutdown' || serverShuttingDown()) {
+      return 'shutdown';
+    }
+    // a dropped socket may be the first sign of a shutdown
     if (event.code !== NORMAL_CLOSE) {
-      return false;
+      return (await shutdownWithin()) ? 'shutdown' : 'lost';
     }
     try {
-      return !(await consoleRunning(this.pid));
+      if (await consoleRunning(this.pid)) return 'lost';
+      return serverShuttingDown() ? 'shutdown' : 'ended';
     } catch (err) {
+      if (gotNoResponse(err) && (await shutdownWithin())) return 'shutdown';
       console.warn('failed to check whether the console is running', err);
-      return false;
+      return 'lost';
     }
   }
 

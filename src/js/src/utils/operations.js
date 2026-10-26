@@ -3,6 +3,7 @@ import { h } from 'vue';
 import { escapeHTML } from '@/utils/escapeHTML.js';
 import { openNotification } from '@/utils/notify.js';
 import { namedList, plural, pluralWord, upperFirst } from '@/utils/plural.js';
+import { noResponseMessage } from '@/utils/unreachable.js';
 
 // What the UI shows before and after an operation on one thing or several:
 // whether an action can be taken and why not, which of a selection it skips,
@@ -145,7 +146,7 @@ function errorParts(err) {
   if (typeof err === 'string') return [err];
 
   const response = err.response;
-  if (!response) return [err.message ?? String(err)];
+  if (!response) return [noResponseMessage(err) ?? err.message ?? String(err)];
 
   const data = response.data;
   if (data && typeof data === 'object' && !(data instanceof Blob)) {

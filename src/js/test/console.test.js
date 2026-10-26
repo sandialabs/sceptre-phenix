@@ -71,6 +71,7 @@ vi.mock('@xterm/addon-attach', () => ({
   },
 }));
 
+import { AxiosError } from 'axios';
 import { httpError } from './helpers/fixtures.js';
 import { mountComponent, textOf } from './helpers/mount.js';
 import { blockedStorage } from './helpers/storage.js';
@@ -93,6 +94,7 @@ const notFound = () => httpError(404);
 
 let consoleSession;
 let consoleTerminal;
+let freshness;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -112,12 +114,23 @@ beforeEach(async () => {
 
   consoleSession = await import('@/utils/consoleSession.js');
   consoleTerminal = await import('@/utils/consoleTerminal.js');
+  freshness = await import('@/utils/freshness.js');
 });
 
 afterEach(() => {
   consoleSession.closeConsole();
+  freshness.setWsDown(false);
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
+
+// a request the server did not answer, as axios rejects it
+const networkError = () =>
+  new AxiosError('Network Error', 'ERR_NETWORK', {}, {});
+
+// what the live websocket hears as the server shuts down
+const brokerShutdown = () => freshness.setWsDown(true, 'shutdown');
 
 describe('opening the console', () => {
   it('starts a console and remembers it for the user', async () => {
@@ -253,10 +266,14 @@ describe('a console session', () => {
   });
 
   it('keeps a console whose connection was lost for the next visit to check', async () => {
+    vi.useFakeTimers();
     const session = await consoleTerminal.openConsole();
     session.mount(document.createElement('div'));
     FakeWebSocket.instances[0].onclose({ code: 1006 });
-    await flushPromises();
+    // it waits a moment to hear whether the server is shutting down
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(session.state).toBe('connecting');
+    await vi.advanceTimersByTimeAsync(500);
 
     expect(axios.get).not.toHaveBeenCalled();
     expect(session.state).toBe('lost');
@@ -265,6 +282,120 @@ describe('a console session', () => {
     );
     expect(consoleSession.currentConsole()).toBe(null);
     expect(consoleSession.rememberedConsolePid('alice')).toBe(42);
+  });
+
+  it('ends when the server shuts down, which ends its consoles', async () => {
+    const session = await consoleTerminal.openConsole();
+    session.mount(document.createElement('div'));
+    FakeWebSocket.instances[0].onopen();
+
+    FakeWebSocket.instances[0].onclose({
+      code: 1001,
+      reason: 'server shutting down',
+    });
+    await flushPromises();
+
+    // the server is going away, so it is not asked about the console
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(session.state).toBe('ended');
+    const written = xterm.terminals[0].written.join('');
+    expect(written).toContain('[phēnix server shutting down; console ended]');
+    expect(written).not.toContain('[console connection lost]');
+    expect(consoleSession.currentConsole()).toBe(null);
+    expect(consoleSession.rememberedConsolePid('alice')).toBe(null);
+  });
+
+  it('ends when its socket closes going away with no reason, as the server shuts down', async () => {
+    const session = await consoleTerminal.openConsole();
+    session.mount(document.createElement('div'));
+    FakeWebSocket.instances[0].onopen();
+
+    FakeWebSocket.instances[0].onclose({ code: 1001, reason: '' });
+    await flushPromises();
+
+    expect(session.state).toBe('ended');
+    expect(xterm.terminals[0].written.join('')).toContain(
+      '[phēnix server shutting down; console ended]',
+    );
+  });
+
+  // the live websocket's close from the server may come before, during the
+  // wait after, or never after the console's socket drops or its probe fails
+  describe.each([
+    ['drops', { code: 1006 }, () => {}],
+    [
+      'closes and the server cannot be asked about it',
+      { code: 1000 },
+      () => axios.get.mockRejectedValue(networkError()),
+    ],
+  ])('when its socket %s', (_, event, arrange) => {
+    const closeWith = async (brokerAt) => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      arrange();
+      const session = await consoleTerminal.openConsole();
+      session.mount(document.createElement('div'));
+      FakeWebSocket.instances[0].onopen();
+
+      if (brokerAt === 'before') brokerShutdown();
+      FakeWebSocket.instances[0].onclose(event);
+      await vi.advanceTimersByTimeAsync(700);
+      if (brokerAt === 'after') brokerShutdown();
+      await vi.advanceTimersByTimeAsync(800);
+      return session;
+    };
+
+    it.each([
+      ['before', 'ended', '[phēnix server shutting down; console ended]', null],
+      ['after', 'ended', '[phēnix server shutting down; console ended]', null],
+      ['never', 'lost', '[console connection lost]', 42],
+    ])(
+      'with the server shutdown heard %s, it is %s',
+      async (brokerAt, state, text, remembered) => {
+        const session = await closeWith(brokerAt);
+        expect(session.state).toBe(state);
+        const written = xterm.terminals[0].written.join('');
+        expect(written).toContain(text);
+        expect(written.match(/\[/g)).toHaveLength(1);
+        expect(consoleSession.rememberedConsolePid('alice')).toBe(remembered);
+      },
+    );
+  });
+
+  it('says the server shut down, not that the console ended, when the console is gone as it shuts down', async () => {
+    const session = await consoleTerminal.openConsole();
+    session.mount(document.createElement('div'));
+    FakeWebSocket.instances[0].onopen();
+
+    let answer;
+    axios.get.mockReturnValue(
+      new Promise((_, reject) => {
+        answer = reject;
+      }),
+    );
+    FakeWebSocket.instances[0].onclose({ code: 1000 });
+    brokerShutdown();
+    answer(notFound());
+    await flushPromises();
+
+    expect(session.state).toBe('ended');
+    const written = xterm.terminals[0].written.join('');
+    expect(written).toContain('[phēnix server shutting down; console ended]');
+    expect(written).not.toContain('[console ended]');
+  });
+
+  it('writes nothing to a session let go while it waited to hear of a shutdown', async () => {
+    vi.useFakeTimers();
+    const session = await consoleTerminal.openConsole();
+    session.mount(document.createElement('div'));
+    FakeWebSocket.instances[0].onopen();
+
+    FakeWebSocket.instances[0].onclose({ code: 1006 });
+    session.unmount();
+    session.dispose();
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(xterm.terminals[0].written.join('')).not.toContain('[');
   });
 
   it('keeps a console that dropped a websocket too slow for its output', async () => {
@@ -460,6 +591,59 @@ describe('the Console page', () => {
     expect(consoleSession.currentConsole().pid).toBe(43);
     expect(terminal(page).exists()).toBe(true);
   });
+
+  it.each([
+    [
+      'the server could not be reached',
+      networkError,
+      null,
+      'Could not reach the phēnix server. It may be down, or your network may have dropped.',
+    ],
+    [
+      'the server could not be reached as it shuts down',
+      networkError,
+      'shutdown',
+      'The phēnix server is shutting down or restarting. Try again once it is back.',
+    ],
+    [
+      'the server is shutting down',
+      () => httpError(503, 'the phēnix server is shutting down'),
+      null,
+      'The phēnix server is shutting down or restarting. Try again once it is back.',
+    ],
+    [
+      'the server said why',
+      () => httpError(500, { message: 'minimega is not running' }),
+      null,
+      'minimega is not running',
+    ],
+    [
+      'the server said why in text',
+      () => httpError(500, 'too many consoles\n'),
+      null,
+      'too many consoles',
+    ],
+    [
+      'the server gave no reason',
+      () => httpError(500, ''),
+      null,
+      'Could not start the console.',
+    ],
+  ])(
+    'explains a console it could not start because %s',
+    async (_, error, cause, want) => {
+      if (cause) freshness.setWsDown(true, cause);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      axios.post.mockRejectedValue(error());
+      try {
+        const page = await mountComponent(Console);
+        await flushPromises();
+        expect(textOf(page.find('h1'))).toBe(want);
+      } finally {
+        warn.mockRestore();
+      }
+    },
+  );
 
   it('explains a console the server does not offer', async () => {
     axios.post.mockRejectedValue(httpError(405));

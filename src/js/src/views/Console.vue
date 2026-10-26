@@ -21,6 +21,14 @@
 
   import { currentConsole } from '@/utils/consoleSession.js';
   import { consolePhase, openConsole } from '@/utils/consoleTerminal.js';
+  import { noResponseMessage, SHUTTING_DOWN } from '@/utils/unreachable.js';
+
+  // the server's own message in a failed request's body, or null
+  const serverMessage = (err) => {
+    const data = err?.response?.data;
+    const text = typeof data === 'string' ? data : data?.message;
+    return typeof text === 'string' && text.trim() ? text.trim() : null;
+  };
 
   // The console session outlives this page (see consoleSession.js): leaving
   // the page only takes its terminal out of the page, and coming back puts
@@ -97,8 +105,14 @@
             case 403:
               this.error = 'You do not have access to the console.';
               break;
+            case 503:
+              this.error = SHUTTING_DOWN;
+              break;
             default:
-              this.error = 'Could not start the console.';
+              this.error =
+                noResponseMessage(err) ??
+                serverMessage(err) ??
+                'Could not start the console.';
               console.warn('failed to start the console', err);
           }
         }
