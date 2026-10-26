@@ -5,10 +5,12 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
+	"golang.org/x/crypto/bcrypt"
 
 	"phenix/api/settings"
 	"phenix/util/plog"
@@ -17,6 +19,16 @@ import (
 	"phenix/web/util"
 	jwtutil "phenix/web/util/jwt"
 )
+
+// dummyPasswordHash returns a hash to compare against when a login names an
+// unknown user, so that the request takes as long as one with a wrong password.
+// It is computed on first use rather than at startup, which every phenix
+// command, not only the server, would otherwise pay for.
+var dummyPasswordHash = sync.OnceValue(func() []byte { //nolint:gochecknoglobals // computed once
+	hash, _ := bcrypt.GenerateFromPassword([]byte("phenix-dummy-password"), bcrypt.DefaultCost)
+
+	return hash
+})
 
 const (
 	hoursInDay  = 24
@@ -296,7 +308,19 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSecurity, "attempted login with unknown username", "username", user)
 
-		http.Error(w, user, http.StatusNotFound)
+		// With proxy auth the proxy has already vouched for the name, and the UI
+		// reads it back from this 404 to start a proxied sign-up.
+		if proxied {
+			http.Error(w, user, http.StatusNotFound)
+
+			return
+		}
+
+		// Answer exactly as for a wrong password, after the same bcrypt work, so
+		// the response does not reveal which usernames exist.
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash(), []byte(pass))
+
+		http.Error(w, "invalid creds", http.StatusUnauthorized)
 
 		return
 	}
