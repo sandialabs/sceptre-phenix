@@ -86,6 +86,21 @@ func TestRunWorkflowApplyResolvesTheArgument(t *testing.T) {
 			staged:   "helloworld",
 		},
 		{
+			name:  "name with the trailing separator shell completion appends",
+			files: fullTopology(),
+			setup: func(t *testing.T, dir string, opts *applyOptions) string {
+				t.Helper()
+
+				opts.TopologiesBase = filepath.Dir(dir)
+				t.Chdir(t.TempDir())
+
+				return "helloworld" + string(filepath.Separator)
+			},
+			want:     fullRun("helloworld", workflow.ActionCreateAndStart),
+			wantBody: wfWorkflowYAML,
+			staged:   "helloworld",
+		},
+		{
 			name:  "current directory",
 			files: fullTopology(),
 			setup: func(t *testing.T, dir string, _ *applyOptions) string {

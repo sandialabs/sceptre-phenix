@@ -188,11 +188,14 @@ func (r *applyRun) checkServer(ctx context.Context) (string, error) {
 
 // resolveTopologyDir returns the absolute topology directory for arg: an
 // existing path as is, else a name with no path separator under
-// topologiesBase.
+// topologiesBase. A trailing separator, which shell completion appends to a
+// directory it completes, is ignored, so NAME/ resolves like NAME.
 func resolveTopologyDir(arg, topologiesBase string) (string, error) {
 	if arg == "" {
 		return "", errors.New("the topology directory or name must not be empty")
 	}
+
+	arg = trimTrailingSeparators(arg)
 
 	path := arg
 
@@ -267,6 +270,17 @@ func injectsBaseDir(opts applyOptions, serverOpts map[string]any) string {
 	}
 
 	return opts.InjectsBase
+}
+
+// trimTrailingSeparators removes the trailing path separators from path. The
+// root directory, which is nothing but separators, is returned unchanged.
+func trimTrailingSeparators(path string) string {
+	trimmed := strings.TrimRight(path, string(filepath.Separator))
+	if trimmed == "" {
+		return path
+	}
+
+	return trimmed
 }
 
 // existingDir returns path when it is a directory, else "".
