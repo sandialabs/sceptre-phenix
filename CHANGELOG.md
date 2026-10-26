@@ -46,7 +46,7 @@ All notable changes to this project will be documented in this file.
 - **Ordering**: API responses carry an `X-Phenix-Seq` header and websocket messages a `seq` field from one increasing sequence, so clients can tell which of two updates is newer.
 - **Data age**: Responses with runtime data from minimega carry `X-Phenix-Observed-At`, and `X-Phenix-Stale` when they serve earlier data while minimega is busy; the State of Health summary adds `vms_observed_at` and `vms_stale`, and the web UI header shows how old its data is.
 - **Token permission**: Creating an API token for another user needs the new `users/tokens` `create` permission on that user as well as `users` `patch`, which Global Admin has, and the Users tab shows the token button only to roles that may use it.
-- **Graceful shutdown**: `phenix ui` stops cleanly on `SIGINT` or `SIGTERM`, finishing requests and closing websockets, consoles and jobs within the new `ui.shutdown-grace-period` setting (default `5s`).
+- **Graceful shutdown**: `phenix ui` stops cleanly on `SIGINT` or `SIGTERM`, finishing requests and closing websockets, consoles and jobs within the new `ui.shutdown-grace-period` setting (default 5 seconds).
 
 ### Changed
 

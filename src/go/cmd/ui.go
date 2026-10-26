@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -21,6 +24,8 @@ const (
 	defaultJWTLifetime = 24 * time.Hour
 	// a process ended by signal n exits with signalExitBase + n.
 	signalExitBase = 128
+	// the longest ui.shutdown-grace-period a [time.Duration] holds.
+	maxShutdownGraceSeconds = int64(math.MaxInt64 / time.Second)
 )
 
 var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
@@ -35,7 +40,7 @@ func newUICmd() *cobra.Command {
 		Short: "Run the phenix UI",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			grace, err := shutdownGracePeriod()
+			grace, err := shutdownGracePeriod(viper.GetViper())
 			if err != nil {
 				return err
 			}
@@ -118,10 +123,10 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().String("logs.level", "", "log level to publish to UI. Defaults to file level")
 	uiCmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
 	uiCmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
-	uiCmd.Flags().Duration(
+	uiCmd.Flags().Int(
 		"shutdown-grace-period",
-		web.DefaultShutdownGracePeriod,
-		"how long stopping the server may take to close connections and finish work (0 does not wait)",
+		int(web.DefaultShutdownGracePeriod/time.Second),
+		"how many seconds stopping the server may take to close connections and finish work (0 does not wait)",
 	)
 
 	_ = viper.BindPFlag("ui.listen-endpoint", uiCmd.Flags().Lookup("listen-endpoint"))
@@ -168,21 +173,29 @@ func newUICmd() *cobra.Command {
 	return uiCmd
 }
 
-// shutdownGracePeriod returns ui.shutdown-grace-period, which must be a
-// duration with a unit, such as 5s, and not negative.
-func shutdownGracePeriod() (time.Duration, error) {
-	value := viper.GetString("ui.shutdown-grace-period")
+// shutdownGracePeriod returns ui.shutdown-grace-period from v, which must be a
+// whole number of seconds, such as 5, and not negative.
+func shutdownGracePeriod(v *viper.Viper) (time.Duration, error) {
+	value := v.GetString("ui.shutdown-grace-period")
 
-	grace, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("invalid ui.shutdown-grace-period %q: %w", value, err)
+	seconds, err := strconv.ParseInt(value, 10, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, fmt.Errorf(
+			"invalid ui.shutdown-grace-period %q: it must be a whole number of seconds, such as 5", value,
+		)
 	}
 
-	if grace < 0 {
+	if seconds < 0 {
 		return 0, fmt.Errorf("invalid ui.shutdown-grace-period %q: it must not be negative", value)
 	}
 
-	return grace, nil
+	if seconds > maxShutdownGraceSeconds {
+		return 0, fmt.Errorf(
+			"invalid ui.shutdown-grace-period %q: it must be at most %d seconds", value, maxShutdownGraceSeconds,
+		)
+	}
+
+	return time.Duration(seconds) * time.Second, nil
 }
 
 // notifyShutdown returns a copy of parent canceled, with a web.SignalError, by

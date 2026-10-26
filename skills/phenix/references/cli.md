@@ -46,9 +46,10 @@ equivalents (`phenix vm mount`/`unmount`) are always available.
 
 `phenix ui` stops cleanly on `SIGINT`/`SIGTERM` within
 `--shutdown-grace-period` (`ui.shutdown-grace-period`,
-`PHENIX_UI_SHUTDOWN_GRACE_PERIOD`; default `5s`, `0` waits for nothing, a
-negative value is refused): it stops listening, lets requests in progress
-finish, closes every websocket with code `1001` (only at shutdown; the
+`PHENIX_UI_SHUTDOWN_GRACE_PERIOD`; whole seconds, default `5`, `0` waits for
+nothing, a negative or non-integer value such as `5s` is refused): it stops
+listening, lets requests in progress finish, closes every websocket with
+code `1001` (only at shutdown; the
 broker, capture and netflow websockets carry the reason `server shutting
 down`, while the console, SCORCH, VNC and port forward ones, served by
 `golang.org/x/net/websocket`, carry none), answers new websockets, consoles
