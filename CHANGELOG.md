@@ -103,6 +103,7 @@ All notable changes to this project will be documented in this file.
 - **minimega commands**: A minimega command queued for a VM, capture, snapshot list, topology, cluster host, file list or state of health request, or for a bulk VM action job, is dropped when the request is abandoned or the job canceled.
 - **Subnet captures**: Stopping a subnet's captures (`POST /experiments/{exp}/stopCaptureSubnet`) needs `exp/captureSubnet` `delete` instead of `create`, which roles that may start them gain on startup.
 - **Connection messages**: The web UI tells a server shutting down or restarting apart from a lost connection, in its reconnect notice, status, error popups and consoles.
+- **Polling during shutdown**: The web UI stops polling, job checks and preloads while the server is shutting down, and resumes with one staggered refresh once it is back.
 - **UI file server**: `phenix ui` exits with an error when `ui.file-server-endpoint` is set and cannot be listened on, instead of only logging it.
 
 ### Removed

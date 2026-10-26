@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 
 import axiosInstance from '@/utils/axios.js';
+import { startPoll } from '@/utils/freshness.js';
 import { usePhenixStore } from '@/store.js';
 
 // The server's background jobs the user may see (see docs/content/jobs.md):
@@ -190,11 +191,20 @@ export const useJobStore = defineStore('jobs', {
         waiters.set(id, [...(waiters.get(id) ?? []), { resolve, reject }]);
       });
 
-      // in case a websocket message is lost
-      const poll = setInterval(() => this.check(id), DONE_POLL_MS);
+      // in case a websocket message is lost; one check at a time, paused
+      // while the server is away (see startPoll)
+      let checking = false;
+      const stopPoll = startPoll(
+        () => {
+          checking = true;
+          this.check(id).finally(() => (checking = false));
+        },
+        DONE_POLL_MS,
+        { when: () => !checking },
+      );
 
       return done
-        .finally(() => clearInterval(poll))
+        .finally(stopPoll)
         .then(() => this.fetch(id).catch(() => this.jobs[id] ?? held));
     },
 

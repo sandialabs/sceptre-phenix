@@ -300,8 +300,9 @@
       // the server sends log lines only to clients that ask for them, and
       // forgets who asked when the websocket reconnects
       this.subscribeLogs('subscribe');
-      this.offWsReconnect = onWsReconnect(() =>
-        this.subscribeLogs('subscribe'),
+      this.offWsReconnect = onWsReconnect(
+        () => this.subscribeLogs('subscribe'),
+        { spread: true },
       );
     },
 

@@ -10,7 +10,12 @@ import {
   recentPage,
 } from '@/utils/pageCache.js';
 import { whenIdle } from '@/utils/prefetch.js';
-import { FreshnessMeta, mergeFreshness } from '@/utils/freshness.js';
+import {
+  FreshnessMeta,
+  mergeFreshness,
+  whenServing,
+} from '@/utils/freshness.js';
+import { serverNotAnswering } from '@/utils/unreachable.js';
 import { roleAllowed } from '@/utils/rbac.js';
 import { usePhenixStore } from '@/store.js';
 
@@ -212,9 +217,17 @@ export async function preloadPages() {
 
   const worker = async () => {
     for (let key = queue.shift(); key; key = queue.shift()) {
+      // paused while the server is shutting down
+      await whenServing();
+      if (cachedPage(key) || isLoadingPage(key)) continue;
       const request = fetchIntoCache(key, pageFetchers[key]);
       request.release(); // nothing waits on it; the background limit applies
-      await request.promise.catch(() => {});
+      const failure = await request.promise.then(
+        () => null,
+        (err) => err,
+      );
+      // the server is unreachable: the rest would fail too
+      if (serverNotAnswering(failure)) return;
     }
   };
 

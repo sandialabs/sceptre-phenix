@@ -1,3 +1,5 @@
+import { holdOffMs, whenServing } from '@/utils/freshness.js';
+
 // Every page is a lazy-loaded chunk, so without this the first visit to a page
 // blocks navigation on fetching its chunk(s) from the server; on a slow or
 // high-latency link that reads as the UI hanging for seconds after a click.
@@ -21,6 +23,8 @@ export function lazyRouteLoaders(routes) {
 // triggers; a failed prefetch is harmless, navigation retries the import.
 export async function prefetchSequentially(loaders) {
   for (const load of loaders) {
+    // paused while the server is shutting down
+    if (holdOffMs() > 0) await whenServing();
     try {
       await load();
     } catch {

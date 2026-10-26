@@ -19,7 +19,13 @@ import {
   invalidatePages,
   isInvalidated,
 } from '@/utils/pageCache.js';
-import { FreshnessMeta, RESOURCES } from '@/utils/freshness.js';
+import {
+  BACK_SPREAD_MS,
+  forgetServer,
+  FreshnessMeta,
+  RESOURCES,
+  setWsDown,
+} from '@/utils/freshness.js';
 import {
   DEFAULT_LOG_WINDOW,
   experimentKey,
@@ -572,6 +578,51 @@ describe('preloading', () => {
         },
       ),
     );
+  });
+
+  it('waits while the server shuts down, and goes on once it is back', async () => {
+    vi.useFakeTimers();
+    try {
+      setWsDown(true, 'shutdown');
+      const done = preloadPages();
+      await vi.advanceTimersByTimeAsync(30_000);
+      for (const key of Object.keys(pageFetchers)) {
+        expect(pageFetchers[key]).not.toHaveBeenCalled();
+      }
+
+      setWsDown(false);
+      await vi.advanceTimersByTimeAsync(BACK_SPREAD_MS);
+      await done;
+      expect(cachedPage('experiments').data).toEqual(['experiments']);
+      expect(cachedPage('disks').data).toEqual(['disks']);
+    } finally {
+      forgetServer();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [
+      'the server does not answer',
+      { code: 'ERR_NETWORK', request: {}, message: 'Network Error' },
+    ],
+    [
+      'a proxy cannot reach the server',
+      { response: { status: 502, headers: {} }, message: 'Bad Gateway' },
+    ],
+  ])('stops once %s, leaving the pages to load when opened', async (_, err) => {
+    for (const key of Object.keys(pageFetchers)) {
+      pageFetchers[key].mockRejectedValue(
+        Object.assign(new Error(err.message), err),
+      );
+    }
+    await preloadPages();
+
+    const asked = Object.keys(pageFetchers).filter(
+      (key) => pageFetchers[key].mock.calls.length > 0,
+    );
+    // one request per worker
+    expect(asked).toEqual(['experiments', 'configs']);
   });
 
   it('starts once the browser is idle, unless saving data', async () => {

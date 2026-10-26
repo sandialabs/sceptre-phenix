@@ -26,6 +26,7 @@ vi.mock('@/store.js', modules.store);
 vi.mock('@/components/MiniTerminal.vue', modules.stub);
 
 import ScorchRun from '@/components/scorch/ScorchRun.vue';
+import { forgetServer, setWsDown } from '@/utils/freshness.js';
 import { clearPageCache } from '@/utils/pageCache.js';
 import ScorchRuns from '@/views/ScorchRuns.vue';
 import { never } from './helpers/async.js';
@@ -225,6 +226,58 @@ describe('Start all', () => {
       'start this run',
       'start this run (spinning) (disabled)',
     ]);
+  });
+
+  it.each([
+    ['refuses a start as it shuts down', { response: { status: 503 } }],
+    ['does not answer', { code: 'ERR_NETWORK', request: {} }],
+  ])('drops the runs waiting to start when the server %s', async (_, err) => {
+    axios.post.mockRejectedValueOnce(err);
+    const wrapper = await open([{}, {}, {}]);
+
+    await click(wrapper, 'Start all');
+    await flushPromises();
+    expect(sent()).toEqual([`POST ${url(0)}`]);
+    const after = await pageButtons(wrapper);
+    expect(after.header[0]).toBe('Start all');
+    expect(after.runs.map((run) => run.at(-1))).toEqual([
+      'start this run',
+      'start this run',
+      'start this run',
+    ]);
+  });
+
+  it('drops the runs waiting to start when the server shuts down before a start is reported', async () => {
+    const wrapper = await open([{}, {}]);
+    vi.useFakeTimers();
+    try {
+      await click(wrapper, 'Start all');
+      setWsDown(true, 'shutdown');
+      vi.advanceTimersByTime(15000);
+      expect(sent()).toEqual([`POST ${url(0)}`]);
+    } finally {
+      forgetServer();
+    }
+  });
+
+  it('sends the first start of Start all while the server seems to be shutting down, so its answer is shown', async () => {
+    const err = { response: { status: 503 } };
+    axios.post.mockRejectedValueOnce(err);
+    const wrapper = await open([{}, {}]);
+    setWsDown(true, 'shutdown');
+    try {
+      await click(wrapper, 'Start all');
+      await flushPromises();
+      expect(sent()).toEqual([`POST ${url(0)}`]);
+      expect(notify.error).toHaveBeenCalledWith(err);
+      const after = await pageButtons(wrapper);
+      expect(after.runs.map((run) => run.at(-1))).toEqual([
+        'start this run',
+        'start this run',
+      ]);
+    } finally {
+      forgetServer();
+    }
   });
 
   it('lets a run already running finish first', async () => {

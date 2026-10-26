@@ -2,6 +2,7 @@
 // what pages ask before the socket opens, and reconnecting after it drops.
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BACK_SPREAD_MS } from '@/utils/freshness.js';
 
 vi.mock('@/utils/debug.js', () => ({ debug: () => {} }));
 vi.mock('@/store.js', () => ({ usePhenixStore: () => ({ token: null }) }));
@@ -90,11 +91,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// drops the open socket and lets the reconnect happen and settle
+// drops the open socket and lets the reconnect happen and settle, and the
+// reconnect listeners, spread out, run
 function reconnect() {
   sockets.at(-1).drop();
   vi.runAllTimers();
   sockets.at(-1).settle();
+  vi.advanceTimersByTime(BACK_SPREAD_MS);
 }
 
 describe('messages', () => {
@@ -226,6 +229,47 @@ describe('messages', () => {
     );
   });
 
+  it('asked for again about the same resource while the socket is down replace the earlier ones', () => {
+    ws.connectWebsocket();
+    sockets[0].settle();
+    sockets[0].drop();
+
+    const list = (page) => ({
+      resource: { type: 'experiment/vms', name: 'exp', action: 'list' },
+      request: { page_number: page },
+    });
+    const unsubscribe = {
+      resource: { type: 'experiment/vms', name: 'exp', action: 'unsubscribe' },
+    };
+    ws.sendWsMsg(list(1));
+    ws.sendWsMsg(unsubscribe);
+    ws.sendWsMsg(list(2));
+    ws.sendWsMsg({ n: 1 });
+    ws.sendWsMsg({ n: 1 });
+    ws.sendWsMsg(list(3));
+
+    vi.runAllTimers();
+    sockets[1].open();
+    expect(sockets[1].sent.map((m) => JSON.parse(m))).toEqual([
+      unsubscribe,
+      { n: 1 },
+      { n: 1 },
+      list(3),
+    ]);
+  });
+
+  it('queued while the socket is down are bounded, keeping the latest', () => {
+    ws.connectWebsocket();
+    sockets[0].settle();
+    sockets[0].drop();
+    for (let n = 0; n < 150; n++) ws.sendWsMsg({ n });
+
+    vi.runAllTimers();
+    sockets[1].open();
+    expect(sockets[1].sent).toHaveLength(100);
+    expect(JSON.parse(sockets[1].sent.at(-1))).toEqual({ n: 149 });
+  });
+
   it('are dropped while no socket is wanted', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     ws.sendWsMsg({ n: 1 });
@@ -259,6 +303,7 @@ describe('reconnecting', () => {
     sockets[1].open();
     expect(listener).not.toHaveBeenCalled();
     sockets[1].receive({ n: 1 });
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
@@ -285,6 +330,79 @@ describe('reconnecting', () => {
     reconnect();
     expect(listener).toHaveBeenCalledTimes(1);
     expect(console.error).toHaveBeenCalled();
+  });
+
+  it('tells at once a listener that only resets, before the new socket brings anything', () => {
+    const order = [];
+    ws.onWsReconnect(() => order.push('reset'));
+    ws.onWsReconnect(() => order.push('ask'), { spread: true });
+    ws.addWsHandler((msg) => order.push(`message ${msg.n}`));
+    ws.connectWebsocket();
+    sockets[0].settle();
+
+    sockets[0].drop();
+    vi.runAllTimers();
+    sockets[1].open();
+    sockets[1].receive({ n: 1 });
+    expect(order).toEqual(['reset', 'message 1']);
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(order).toEqual(['reset', 'message 1', 'ask']);
+  });
+
+  it('tells listeners that ask the server spread out, each in its own time, so it is not asked all at once', () => {
+    const calls = [];
+    const random = vi.spyOn(Math, 'random');
+    const spread = { spread: true };
+    ws.onWsReconnect(() => calls.push(['a', Date.now()]), spread);
+    ws.onWsReconnect(() => calls.push(['b', Date.now()]), spread);
+    ws.connectWebsocket();
+    sockets[0].settle();
+
+    sockets[0].drop();
+    vi.runAllTimers();
+    random.mockReturnValueOnce(0.75).mockReturnValueOnce(0.25);
+    sockets[1].settle();
+    const back = Date.now();
+    expect(calls).toEqual([]);
+
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(calls).toEqual([
+      ['b', back + 0.25 * BACK_SPREAD_MS],
+      ['a', back + 0.75 * BACK_SPREAD_MS],
+    ]);
+  });
+
+  it('tells no listener when the socket drops again, or the user signs out, before its turn', () => {
+    const listener = vi.fn();
+    ws.onWsReconnect(listener, { spread: true });
+    ws.connectWebsocket();
+    sockets[0].settle();
+
+    sockets[0].drop();
+    vi.runAllTimers();
+    sockets[1].settle();
+    sockets[1].drop();
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(listener).not.toHaveBeenCalled();
+
+    vi.runAllTimers();
+    sockets[2].settle();
+    ws.disconnectWebsocket();
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('waits out the Retry-After of a refused request', async () => {
+    const { serverUnavailable } = await import('@/utils/freshness.js');
+    ws.connectWebsocket();
+    sockets[0].settle();
+
+    serverUnavailable('20');
+    sockets[0].drop();
+    vi.advanceTimersByTime(20_000 - 1);
+    expect(sockets).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(sockets).toHaveLength(2);
   });
 
   it('is called off by disconnecting, as signing out does', () => {

@@ -1,12 +1,21 @@
 /// <reference types="vite/types/importMeta.d.ts" />
 import { usePhenixStore } from '@/store.js';
 import { debug } from '@/utils/debug.js';
-import { setWsDown, wsCloseCause, wsDownReason } from '@/utils/freshness.js';
+import {
+  afterSpread,
+  forgetServer,
+  retryAfterLeftMs,
+  setWsDown,
+  wsCloseCause,
+  wsDownReason,
+} from '@/utils/freshness.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 let globalWs: WebSocket = null;
 const wsListeners: Function[] = [];
-const reconnectListeners: (() => void)[] = [];
+// spread ones send requests, so they are called spread out after a reconnect
+type ReconnectListener = { f: () => void; spread: boolean };
+const reconnectListeners: ReconnectListener[] = [];
 
 // set once a socket has stayed up, so later ones are reconnects
 let everConnected: boolean = false;
@@ -27,8 +36,18 @@ let reconnectTimer: ReturnType<typeof setTimeout> = null;
 const STABLE_AFTER_MS = 1500;
 let stableTimer: ReturnType<typeof setTimeout> = null;
 
-// Messages requested while the socket isn't OPEN yet; flushed on open.
-const pendingMessages: string[] = [];
+// Messages requested while the socket isn't OPEN yet; flushed on open. A
+// later message about the same resource and action replaces an earlier one.
+const pendingMessages: { key: string | null; data: string }[] = [];
+const MAX_PENDING_MESSAGES = 100;
+
+// reconnect listener calls spread out after a reconnect, not yet made
+let pendingReconnects: (() => void)[] = [];
+
+function cancelPendingReconnects(): void {
+  pendingReconnects.forEach((cancel) => cancel());
+  pendingReconnects = [];
+}
 
 // What the warning says while the socket is down, by why it closed (see
 // wsCloseCause).
@@ -71,7 +90,11 @@ const SHUTDOWN_RECONNECT_MS = 5000;
 
 function reconnectDelayMs(): number {
   const base = Math.min(2 ** numFailedConnects, MAX_RECONNECT_DELAY_S);
-  const delay = base * 1000 + Math.random() * 1000;
+  // a 503's Retry-After also says when the server may take a socket again
+  const delay = Math.max(
+    base * 1000 + Math.random() * 1000,
+    retryAfterLeftMs(),
+  );
   return wsDownReason() === 'shutdown'
     ? Math.max(delay, SHUTDOWN_RECONNECT_MS)
     : delay;
@@ -112,14 +135,21 @@ function connectionBack(): void {
   // the server forgets a client's subscriptions when its socket closes
   const reconnected = everConnected;
   everConnected = true;
-  if (reconnected) {
-    reconnectListeners.slice().forEach((listener) => {
+  if (!reconnected) return;
+  cancelPendingReconnects();
+  for (const listener of [...reconnectListeners]) {
+    const call = () => {
+      // removed since
+      if (!reconnectListeners.includes(listener)) return;
       try {
-        listener();
+        listener.f();
       } catch (err) {
         console.error('websocket reconnect listener error', err);
       }
-    });
+    };
+    // so a restarted server is not asked for everything at once
+    if (listener.spread) pendingReconnects.push(afterSpread(call));
+    else call();
   }
 }
 
@@ -143,7 +173,7 @@ export function connectWebsocket(): void {
 
     // flush anything queued while the socket was connecting
     const queued = pendingMessages.splice(0);
-    queued.forEach((msg) => ws.send(msg));
+    queued.forEach((msg) => ws.send(msg.data));
 
     stableTimer = setTimeout(connectionBack, STABLE_AFTER_MS);
   };
@@ -153,6 +183,7 @@ export function connectWebsocket(): void {
       return;
     }
     cancelStableTimer();
+    cancelPendingReconnects();
     socketUp = false;
 
     // live pages may miss updates until the socket reopens
@@ -172,7 +203,9 @@ export function disconnectWebsocket(): void {
   socketUp = false;
   everConnected = false;
   numFailedConnects = 0;
-  setWsDown(false);
+  cancelPendingReconnects();
+  // nothing waiting on the server's return should run after signing out
+  forgetServer();
   closeDownWarning();
   debug('disconnected websocket');
 
@@ -187,6 +220,22 @@ export function disconnectWebsocket(): void {
   }
 }
 
+// the resource and action a message is about, or null for one without
+function messageKey(payload: any): string | null {
+  const resource = payload?.resource;
+  if (!resource || typeof resource !== 'object') return null;
+  return JSON.stringify([resource.type, resource.name, resource.action]);
+}
+
+function queueMessage(payload: object, data: string): void {
+  const key = messageKey(payload);
+  const i =
+    key === null ? -1 : pendingMessages.findIndex((msg) => msg.key === key);
+  if (i >= 0) pendingMessages.splice(i, 1);
+  pendingMessages.push({ key, data });
+  if (pendingMessages.length > MAX_PENDING_MESSAGES) pendingMessages.shift();
+}
+
 export function sendWsMsg(payload: object): void {
   const data = JSON.stringify(payload);
 
@@ -199,13 +248,13 @@ export function sendWsMsg(payload: object): void {
     // socket exists but is still CONNECTING (or closing) — queue and let onopen
     // flush it rather than calling send() in an invalid state.
     debug('websocket not open, queueing message');
-    pendingMessages.push(data);
+    queueMessage(payload, data);
     return;
   }
 
   if (shouldBeConnected) {
     debug('websocket is null, connecting before send');
-    pendingMessages.push(data);
+    queueMessage(payload, data);
     connectWebsocket();
     return;
   }
@@ -225,12 +274,16 @@ export function removeWsHandler(f: (msg: object) => void): void {
   }
 }
 
-// Calls f each time the socket reopens after a reconnect (not on the first
-// connect). Returns a function that removes it.
-export function onWsReconnect(f: () => void): () => void {
-  reconnectListeners.push(f);
+// Calls f after each reconnect (not the first connect), before the new socket's
+// messages, or within BACK_SPREAD_MS with spread; returns its remover.
+export function onWsReconnect(
+  f: () => void,
+  { spread = false }: { spread?: boolean } = {},
+): () => void {
+  const listener = { f, spread };
+  reconnectListeners.push(listener);
   return () => {
-    const i = reconnectListeners.indexOf(f);
+    const i = reconnectListeners.indexOf(listener);
     if (i >= 0) {
       reconnectListeners.splice(i, 1);
     }

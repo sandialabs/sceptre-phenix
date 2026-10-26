@@ -1,11 +1,12 @@
 // What the UI says of a request the phēnix server did not answer.
-import { AxiosError } from 'axios';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { setWsDown } from '@/utils/freshness.js';
 import {
   gotNoResponse,
   noResponseMessage,
+  serverNotAnswering,
   SHUTTING_DOWN,
   UNREACHABLE,
 } from '@/utils/unreachable.js';
@@ -57,5 +58,33 @@ describe('noResponseMessage', () => {
     setWsDown(true, 'shutdown');
     expect(gotNoResponse(error)).toBe(matched);
     expect(noResponseMessage(error)).toBe(matched ? SHUTTING_DOWN : null);
+  });
+});
+
+describe('serverNotAnswering', () => {
+  const answer = (status, headers = {}) =>
+    axiosError('ERR_BAD_RESPONSE', { status, headers, data: '' });
+
+  it.each([
+    ['a network failure', axiosError('ERR_NETWORK'), true],
+    ["a proxy's 502", answer(502), true],
+    ["a proxy's 504", answer(504), true],
+    [
+      "a proxy's 502 in AxiosHeaders",
+      answer(502, new AxiosHeaders({ 'content-type': 'text/html' })),
+      true,
+    ],
+    ["phēnix's own 502", answer(502, { 'x-phenix-seq': '7' }), false],
+    [
+      "phēnix's own 502 in AxiosHeaders",
+      answer(502, new AxiosHeaders({ 'X-Phenix-Seq': '7' })),
+      false,
+    ],
+    ['a 503', answer(503), false],
+    ['a 500', answer(500), false],
+    ['a canceled request', axiosError('ERR_CANCELED'), false],
+    ['nothing', null, false],
+  ])('tells apart %s', (_, error, matched) => {
+    expect(serverNotAnswering(error)).toBe(matched);
   });
 });

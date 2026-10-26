@@ -1450,15 +1450,26 @@
       // undo it (see listedVms)
       this.vmSeq = new Map();
       this.vmDeletedSeq = new Map();
-      this.offWsReconnect = onWsReconnect(() => {
-        // a restarted server numbers its messages afresh
+      // a restarted server numbers its messages afresh, so forget before
+      // the new socket's messages are handled
+      const offSeqReset = onWsReconnect(() => {
         this.vmSeq.clear();
         this.vmDeletedSeq.clear();
-        if (this.vncWidth != DEFAULT_SCREENSHOT_WIDTH) {
-          this.setVncScreenshotRes(this.vncWidth);
-        }
-        if (this.experiment.name) this.updateTable();
       });
+      const offAskAgain = onWsReconnect(
+        () => {
+          if (this.vncWidth != DEFAULT_SCREENSHOT_WIDTH) {
+            this.setVncScreenshotRes(this.vncWidth);
+          }
+          // a hidden tab lists its VMs, and so gets screenshots, once shown
+          if (this.experiment.name && !document.hidden) this.updateTable();
+        },
+        { spread: true },
+      );
+      this.offWsReconnect = () => {
+        offSeqReset();
+        offAskAgain();
+      };
       this.loadColumnVisibility();
       // cached so the page opens at once; the header shows how old the copy
       // is while a fresh one loads

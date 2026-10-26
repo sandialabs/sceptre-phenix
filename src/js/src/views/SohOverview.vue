@@ -371,6 +371,7 @@
   import { debug } from '@/utils/debug.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif.js';
   import { inForeground } from '@/utils/foreground.js';
+  import { startPoll } from '@/utils/freshness.js';
   import { createLiveRows } from '@/utils/liveRows.js';
   import { pageFetchers } from '@/utils/pageData.js';
   import { plural, pluralWord } from '@/utils/plural.js';
@@ -480,14 +481,14 @@
         },
       });
       this.loader.start();
-      this.pollTimer = setInterval(() => this.pollRunning(), RUNNING_POLL_MS);
+      this.stopPoll = startPoll(() => this.pollRunning(), RUNNING_POLL_MS);
     },
 
     beforeUnmount() {
       removeWsHandler(this.handleWs);
       this.offWsReconnect?.();
       clearTimeout(this.reloadTimer);
-      clearInterval(this.pollTimer);
+      this.stopPoll?.();
       this.experiments.forEach((exp) => this.settle(exp));
       this.loader.stop();
     },
@@ -737,7 +738,7 @@
       pollRunning() {
         if (this.loader.loading || !inForeground()) return;
         if (this.experiments.some((exp) => exp.soh_running || exp.pending)) {
-          this.loader.load();
+          this.loader.load({ poll: true });
         }
       },
 

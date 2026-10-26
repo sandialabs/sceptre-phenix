@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { BACK_SPREAD_MS, forgetServer, setWsDown } from '@/utils/freshness.js';
 import {
   lazyRouteLoaders,
   prefetchSequentially,
@@ -46,6 +47,32 @@ describe('prefetchSequentially', () => {
         },
       ),
     );
+  });
+});
+
+describe('prefetchSequentially while the server is away', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    forgetServer();
+    vi.useRealTimers();
+  });
+
+  test('loads nothing while the server shuts down, and the rest once it is back', async () => {
+    const loaded = [];
+    const loaders = [0, 1, 2].map((i) => async () => {
+      loaded.push(i);
+      // the server says it is shutting down while the first chunk loads
+      if (i === 0) setWsDown(true, 'shutdown');
+    });
+
+    const done = prefetchSequentially(loaders);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(loaded).toEqual([0]);
+
+    setWsDown(false);
+    await vi.advanceTimersByTimeAsync(BACK_SPREAD_MS);
+    await done;
+    expect(loaded).toEqual([0, 1, 2]);
   });
 });
 

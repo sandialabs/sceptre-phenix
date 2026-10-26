@@ -102,11 +102,11 @@ to access the VM VNC by clicking on the screenshot.
   import { createPageLoader } from '@/utils/pageLoader.js';
   import { pageFetchers } from '@/utils/pageData.js';
   import { inForeground } from '@/utils/foreground.js';
-  import { RESOURCES } from '@/utils/freshness.js';
+  import { RESOURCES, startPoll } from '@/utils/freshness.js';
   import { usePhenixStore } from '@/store';
   export default {
     beforeUnmount() {
-      clearInterval(this.update);
+      this.stopPoll?.();
       this.loader.stop();
     },
 
@@ -160,13 +160,13 @@ to access the VM VNC by clicking on the screenshot.
 
     methods: {
       periodicUpdateVms() {
-        this.update = setInterval(() => {
-          // skip polling (and its screenshots) unless the page is focused,
-          // or while the last poll is still waiting on the server
-          if (inForeground() && !this.loader.loading) {
-            this.loader.load();
-          }
-        }, RESOURCES.vmtiles.pollMs);
+        // skip polling (and its screenshots) unless the page is focused,
+        // or while the last poll is still waiting on the server
+        this.stopPoll = startPoll(
+          () => this.loader.load({ poll: true }),
+          RESOURCES.vmtiles.pollMs,
+          { when: () => inForeground() && !this.loader.loading },
+        );
       },
 
       vmFullName(vm) {

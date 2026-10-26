@@ -29,6 +29,7 @@ import {
   vmsDown,
 } from '@/utils/sohOverview.js';
 import { pageStatus } from '@/utils/pageLoader.js';
+import { BACK_SPREAD_MS, forgetServer, setWsDown } from '@/utils/freshness.js';
 import SohOverview, {
   PROBLEMS_SHOWN,
   RELOAD_DELAY_MS,
@@ -671,6 +672,24 @@ describe('SohOverview view', () => {
     ['skips a poll while a load is in flight', { soh_running: true }, true, 0],
   ])('%s', async (_, run, loading, loads) => {
     expect(await polls(run, { loading })).toBe(loads);
+  });
+
+  it('polls a run nothing while the server shuts down, once when it is back, then at its rate', async () => {
+    try {
+      expect(await polls({ soh_running: true })).toBe(1);
+      setWsDown(true, 'shutdown');
+      vi.advanceTimersByTime(45_000);
+      expect(loaderSpy.load).toHaveBeenCalledTimes(1);
+
+      setWsDown(false);
+      vi.advanceTimersByTime(BACK_SPREAD_MS);
+      expect(loaderSpy.load).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(2 * POLL_MS);
+      expect(loaderSpy.load).toHaveBeenCalledTimes(4);
+      expect(loaderSpy.load).toHaveBeenLastCalledWith({ poll: true });
+    } finally {
+      forgetServer();
+    }
   });
 
   it('shows experiment start progress without reloading', async () => {

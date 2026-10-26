@@ -201,19 +201,36 @@ let wsDownCause = null;
 // when the server said it is shutting down, or null
 let shutdownAt = null;
 
+// whether a request got no response at all and none has been answered since
+let unanswered = false;
+// no background request before this time (ms), from a 503's Retry-After
+let retryAfterUntil = 0;
+
 const shutdownKnown = (now = Date.now()) =>
   shutdownAt !== null && now - shutdownAt < SHUTDOWN_HOLD_MS;
 
+// whether background requests are holding back or backing off, so the
+// server's next answer brings them back (see onServerBack)
+const awayNoted = () =>
+  shutdownAt !== null || unanswered || retryAfterUntil > 0;
+
 export function setWsDown(down, cause = 'lost') {
   if (!down) {
+    const away = awayNoted();
     wsDownSince = null;
     wsDownCause = null;
     shutdownAt = null;
+    unanswered = false;
+    retryAfterUntil = 0;
+    if (away) announceBack();
     return;
   }
   wsDownSince ??= Date.now();
   // a shutdown holds through the failed reconnects that follow it
-  if (shutdownKnown()) return;
+  if (shutdownKnown()) {
+    wsDownCause = 'shutdown';
+    return;
+  }
   wsDownCause = cause;
   shutdownAt = cause === 'shutdown' ? Date.now() : null;
 }
@@ -221,9 +238,56 @@ export function setWsDown(down, cause = 'lost') {
 // The server answered a request sent at sentAt (ms), so it is serving again;
 // one sent before it said it was shutting down may only have been finished.
 export function serverResponded(sentAt) {
-  if (shutdownAt === null || sentAt < shutdownAt) return;
+  if (shutdownAt !== null && sentAt < shutdownAt) return;
+  if (!awayNoted()) return;
+  if (shutdownAt !== null && wsDownCause === 'shutdown') wsDownCause = 'lost';
   shutdownAt = null;
-  wsDownCause = 'lost';
+  unanswered = false;
+  retryAfterUntil = 0;
+  announceBack();
+}
+
+// A request got no response at all: polls back off until one is answered
+// (see startPoll), as from a server that is down.
+export function serverUnanswered() {
+  unanswered = true;
+}
+
+// Whether a request got no response and none has been answered since.
+export function requestsUnanswered() {
+  return unanswered;
+}
+
+// the longest Retry-After honored, so a bad header cannot stop polling for good
+export const MAX_RETRY_AFTER_MS = 5 * MINUTE;
+
+// Retry-After in ms from now: delay-seconds or an HTTP date; 0 if unreadable.
+export function retryAfterMs(value, now = Date.now()) {
+  if (value === undefined || value === null) return 0;
+  const text = String(value).trim();
+  if (text === '') return 0;
+  const ms = /^\d+$/.test(text)
+    ? Number(text) * SECOND
+    : Date.parse(text) - now;
+  if (!Number.isFinite(ms)) return 0;
+  return Math.min(Math.max(ms, 0), MAX_RETRY_AFTER_MS);
+}
+
+// The server refused a request with 503 and Retry-After, as it does while
+// shutting down: background requests wait for it, and at least that long.
+export function serverUnavailable(retryAfter) {
+  const now = Date.now();
+  shutdownAt = now;
+  if (wsDownCause !== null) wsDownCause = 'shutdown';
+  retryAfterUntil = Math.max(
+    retryAfterUntil,
+    now + retryAfterMs(retryAfter, now),
+  );
+}
+
+// How long until a 503's Retry-After has passed, in ms (0 once it has).
+export function retryAfterLeftMs(now = Date.now()) {
+  return Math.max(retryAfterUntil - now, 0);
 }
 
 // Why the live websocket connection is down (a wsCloseCause), or null.
@@ -243,6 +307,160 @@ export async function shutdownWithin(ms = 1500) {
   if (serverShuttingDown()) return true;
   await new Promise((resolve) => setTimeout(resolve, ms));
   return serverShuttingDown();
+}
+
+// Background requests pause while the server shuts down, back off while
+// unanswered, and resume spread out; a merely lost websocket pauses nothing.
+
+// the longest a poll backs off while requests go unanswered
+export const MAX_POLL_BACKOFF_MS = 5 * MINUTE;
+// what waits for the server's return starts within this long of it
+export const BACK_SPREAD_MS = 2 * SECOND;
+
+const backListeners = new Set();
+// the spread-out calls not yet made, so forgetServer can cancel them
+const spreadTimers = new Set();
+
+// Calls f after a random part of BACK_SPREAD_MS; returns a function that
+// cancels it.
+export function afterSpread(f) {
+  const timer = setTimeout(() => {
+    spreadTimers.delete(timer);
+    f();
+  }, Math.random() * BACK_SPREAD_MS);
+  spreadTimers.add(timer);
+  return () => {
+    clearTimeout(timer);
+    spreadTimers.delete(timer);
+  };
+}
+
+function announceBack() {
+  const backAt = Date.now();
+  for (const listener of backListeners) {
+    afterSpread(() => {
+      // removed since
+      if (!backListeners.has(listener)) return;
+      try {
+        listener(backAt);
+      } catch (err) {
+        console.error('server back listener error', err);
+      }
+    });
+  }
+}
+
+// Calls f(backAt), spread out, each time the server answers after a shutdown,
+// a Retry-After or unanswered requests. Returns a function that removes it.
+export function onServerBack(f) {
+  backListeners.add(f);
+  return () => backListeners.delete(f);
+}
+
+// Forgets what is known of the server without telling anyone, as on signing
+// out.
+export function forgetServer() {
+  wsDownSince = null;
+  wsDownCause = null;
+  shutdownAt = null;
+  unanswered = false;
+  retryAfterUntil = 0;
+  for (const timer of spreadTimers) clearTimeout(timer);
+  spreadTimers.clear();
+}
+
+// How long background requests should still hold back, in ms: while the
+// server is believed to be shutting down, and until its Retry-After.
+export function holdOffMs(now = Date.now()) {
+  const shutdown = shutdownKnown(now) ? shutdownAt + SHUTDOWN_HOLD_MS - now : 0;
+  return Math.max(shutdown, retryAfterUntil - now, 0);
+}
+
+// How long a poll of intervalMs waits between requests after `misses` of its
+// turns in a row went unanswered: doubled for each, up to MAX_POLL_BACKOFF_MS.
+export function pollDelayMs(intervalMs, misses = 0) {
+  const backoff = intervalMs * 2 ** Math.min(misses, 16);
+  return Math.min(backoff, Math.max(MAX_POLL_BACKOFF_MS, intervalMs));
+}
+
+// Resolves once background requests may go ahead: at once, or when the
+// server is back or the hold ends.
+export function whenServing() {
+  if (holdOffMs() === 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    let timer = null;
+    let off = () => {};
+    const done = () => {
+      clearTimeout(timer);
+      off();
+      resolve();
+    };
+    const check = () => {
+      const hold = holdOffMs();
+      if (hold > 0) timer = setTimeout(check, hold);
+      else done();
+    };
+    off = onServerBack(done);
+    check();
+  });
+}
+
+// Calls tick every intervalMs while when() allows, pausing and backing off as
+// above, and on the server's return if a turn was put off; returns a stopper.
+export function startPoll(tick, intervalMs, { when = () => true } = {}) {
+  let timer = null;
+  let stopped = false;
+  // due times count from lastRun; misses counts its turns in a row taken
+  // while requests went unanswered, so a burst of failures counts once
+  let lastRun = Date.now();
+  let misses = 0;
+  // a due turn was put off by a hold or by backing off
+  let owed = false;
+
+  const schedule = (ms) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fire(), ms);
+  };
+
+  const fire = (force = false) => {
+    clearTimeout(timer);
+    timer = null;
+    if (stopped) return;
+    const now = Date.now();
+    const hold = holdOffMs(now);
+    if (hold > 0) {
+      owed = true;
+      return schedule(hold);
+    }
+    // still unanswered since its last turn: that turn missed too
+    const due = lastRun + pollDelayMs(intervalMs, unanswered ? misses + 1 : 0);
+    if (!force && now < due) {
+      owed = true;
+      return schedule(due - now);
+    }
+    lastRun = now;
+    owed = false;
+    schedule(intervalMs);
+    if (!when()) return;
+    misses = unanswered ? misses + 1 : 0;
+    try {
+      tick();
+    } catch (err) {
+      console.error('poll error', err);
+    }
+  };
+
+  // a turn it took itself, answered, owes nothing
+  const offBack = onServerBack(() => {
+    if (owed) fire(true);
+  });
+  schedule(intervalMs);
+
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    offBack();
+  };
 }
 
 // Why data may be out of date, or null when it is not:

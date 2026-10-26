@@ -146,6 +146,23 @@ describe('after the websocket reconnects', () => {
     expect(vmLists()).toHaveLength(1);
   });
 
+  it('lists no VMs while its tab is hidden, leaving that to its return', async () => {
+    await openPage();
+    await apply(running([]));
+    ws.sent.length = 0;
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    try {
+      ws.reconnect.forEach((f) => f());
+      expect(vmLists()).toHaveLength(0);
+
+      hidden.mockReturnValue(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(vmLists()).toHaveLength(1);
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
   it('lists no VMs before the experiment has loaded', async () => {
     await openPage();
 

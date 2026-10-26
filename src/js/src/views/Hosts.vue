@@ -141,7 +141,7 @@ bandwidth available for experiments, the number of VMs, and host uptime.
   import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
   import { pageFetchers } from '@/utils/pageData.js';
   import { inForeground } from '@/utils/foreground.js';
-  import { RESOURCES } from '@/utils/freshness.js';
+  import { RESOURCES, startPoll } from '@/utils/freshness.js';
 
   export default {
     mixins: [formattingMixin],
@@ -149,7 +149,7 @@ bandwidth available for experiments, the number of VMs, and host uptime.
       return useTable({ name: 'hosts' });
     },
     beforeUnmount() {
-      clearInterval(this.update);
+      this.stopPoll?.();
       this.loader.stop();
     },
 
@@ -170,14 +170,14 @@ bandwidth available for experiments, the number of VMs, and host uptime.
       loadingText,
 
       periodicUpdateHosts() {
-        this.update = setInterval(() => {
-          // every poll has the server ask minimega for host stats and disk
-          // usage: skip it unless the page is focused, and while the last
-          // poll is still waiting on the server
-          if (inForeground() && !this.loader.loading) {
-            this.loader.load();
-          }
-        }, RESOURCES.hosts.pollMs);
+        // every poll has the server ask minimega for host stats and disk
+        // usage: skip it unless the page is focused, and while the last
+        // poll is still waiting on the server
+        this.stopPoll = startPoll(
+          () => this.loader.load({ poll: true }),
+          RESOURCES.hosts.pollMs,
+          { when: () => inForeground() && !this.loader.loading },
+        );
       },
 
       decorator(sum, len) {

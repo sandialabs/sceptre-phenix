@@ -477,3 +477,29 @@ test('a live page shows as out of date while live updates are down', async () =>
   expect(currentStaleReason()).toBeNull();
   live.stop();
 });
+
+test('a poll failing again reports nothing new, until a load succeeds', async () => {
+  let failing = true;
+  const fetch = async () => {
+    if (failing) throw new Error('down');
+    return ['h1'];
+  };
+  const loader = createPageLoader({ fetch, apply: vi.fn() });
+  const reported = () => useErrorNotification.mock.calls.length;
+
+  await loader.load({ poll: true });
+  await loader.load({ poll: true });
+  expect(reported()).toBe(1);
+
+  // the user asked, so is told
+  await loader.load();
+  expect(reported()).toBe(2);
+  await loader.load({ poll: true });
+  expect(reported()).toBe(2);
+
+  failing = false;
+  expect(await loader.load({ poll: true })).toBe(true);
+  failing = true;
+  await loader.load({ poll: true });
+  expect(reported()).toBe(3);
+});

@@ -165,6 +165,7 @@
   import axiosInstance from '@/utils/axios.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif';
   import { notifyOutcome, outcomeFromSettled } from '@/utils/operations.js';
+  import { serverAway } from '@/utils/unreachable.js';
   import { createPageLoader } from '@/utils/pageLoader.js';
   import { scorchRunsKey } from '@/utils/pageData.js';
   import { usePhenixStore } from '@/store.js';
@@ -415,6 +416,8 @@
         request.catch((err) => {
           this.settle(run);
           useErrorNotification(err);
+          // the queued runs would fail too
+          if (serverAway(err)) this.dropQueue();
           this.startNext();
         });
       },
@@ -430,17 +433,25 @@
         this.runs.forEach((run) => {
           if (!run.running && !run.pending) run.queued = true;
         });
-        this.startNext();
+        this.startNext({ asked: true });
       },
 
-      startNext() {
+      // Starts the next queued run. One the user asked for is sent even while
+      // the server seems to be shutting down, so its answer says what holds.
+      startNext({ asked = false } = {}) {
         if (!this.runs || this.anyBusy) return;
+        if (!asked && serverShuttingDown()) return this.dropQueue();
 
         const id = this.runs.findIndex((run) => run.queued);
         if (id < 0) return;
 
         this.runs[id].queued = false;
         this.scorchControl(this.expName, id);
+      },
+
+      // forgets the runs waiting to start
+      dropQueue() {
+        this.runs?.forEach((run) => (run.queued = false));
       },
 
       // stops the running runs and drops the ones still waiting to start

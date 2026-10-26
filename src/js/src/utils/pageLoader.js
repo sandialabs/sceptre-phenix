@@ -94,6 +94,7 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
   let loads = 0; // numbers each load() call, so older data never replaces newer
   let applied = 0; // the number of the load whose data is on the page
   let skipped = false; // whether an earlier result was skipped since then
+  let failing = false; // whether the latest load failed
   const cacheKey = () => (typeof key === 'function' ? key() : key);
 
   // stops waiting on the page's requests: a private one is canceled, a
@@ -132,7 +133,7 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
 
     // Resolves to true once fresh data is applied, false otherwise. force
     // waits for a request sent after a change the page was told of.
-    async load({ force = false } = {}) {
+    async load({ force = false, poll = false } = {}) {
       const n = ++loads;
       const k = cacheKey();
       let request;
@@ -178,6 +179,7 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
         }
         applied = n;
         skipped = false;
+        failing = false;
 
         const meta = request.meta;
         apply(data, { seq: meta?.seq });
@@ -193,7 +195,9 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
       } catch (err) {
         if (current !== request) return false;
 
-        useErrorNotification(err);
+        // a poll failing again after a failed load has nothing new to say
+        if (!(poll && failing)) useErrorNotification(err);
+        failing = true;
         if (owner === loader) pageStatus.failed = true;
         return false;
       } finally {

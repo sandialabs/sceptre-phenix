@@ -2,17 +2,28 @@
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  BACK_SPREAD_MS,
+  forgetServer,
   FreshnessMeta,
+  holdOffMs,
+  MAX_POLL_BACKOFF_MS,
+  MAX_RETRY_AFTER_MS,
   mergeFreshness,
+  onServerBack,
   readFreshness,
   resourceFor,
   RESOURCES,
+  retryAfterMs,
   serverResponded,
   serverShuttingDown,
+  serverUnanswered,
+  serverUnavailable,
   setWsDown,
   SHUTDOWN_HOLD_MS,
   shutdownWithin,
+  startPoll,
   staleReason,
+  whenServing,
   wsCloseCause,
   wsDownReason,
 } from '@/utils/freshness.js';
@@ -387,6 +398,328 @@ describe('the server shutting down', () => {
     const never = shutdownWithin(1500);
     await vi.advanceTimersByTimeAsync(1500);
     expect(await never).toBe(false);
+  });
+});
+
+describe('a 503 with Retry-After', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    forgetServer();
+    vi.useRealTimers();
+  });
+
+  it('says the server is shutting down, with the socket up or down', () => {
+    serverUnavailable('10');
+    expect(serverShuttingDown()).toBe(true);
+    expect(wsDownReason()).toBe(null);
+
+    // the socket then drops without a close frame
+    setWsDown(true, 'lost');
+    expect(wsDownReason()).toBe('shutdown');
+    expect(staleReason({}, RESOURCES.experiments)).toBe('shutdown');
+  });
+
+  it('calls a lost socket a shutdown once the server refuses a request', () => {
+    setWsDown(true, 'lost');
+    serverUnavailable('10');
+    expect(wsDownReason()).toBe('shutdown');
+
+    vi.advanceTimersByTime(10);
+    serverResponded(Date.now());
+    expect(serverShuttingDown()).toBe(false);
+    expect(wsDownReason()).toBe('lost');
+  });
+
+  it.each([
+    ['delay-seconds', '10', 10_000],
+    ['no delay', '0', 0],
+    ['an HTTP date', 'in 30 s', 30_000],
+    ['an HTTP date already past', 'past', 0],
+    ['an unreadable value', 'soon', 0],
+    ['a negative number', '-5', 0],
+    ['nothing', undefined, 0],
+    ['an empty header', ' ', 0],
+    ['a delay too long to honor', '86400', MAX_RETRY_AFTER_MS],
+  ])('reads %s', (_, value, ms) => {
+    const now = Date.parse('2026-10-26T12:00:00Z');
+    const date = (offset) => new Date(now + offset).toUTCString();
+    const header =
+      value === 'in 30 s'
+        ? date(30_000)
+        : value === 'past'
+          ? date(-30_000)
+          : value;
+    expect(retryAfterMs(header, now)).toBe(ms);
+  });
+
+  it('never asks for a wait outside 0 to the longest honored', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.nat().map(String),
+          fc.string(),
+          fc.date({ noInvalidDate: true }).map((d) => d.toUTCString()),
+        ),
+        fc.nat({ max: 4e12 }),
+        (value, now) => {
+          const ms = retryAfterMs(value, now);
+          expect(ms).toBeGreaterThanOrEqual(0);
+          expect(ms).toBeLessThanOrEqual(MAX_RETRY_AFTER_MS);
+        },
+      ),
+    );
+  });
+});
+
+describe('background requests while the server is away', () => {
+  const INTERVAL = 10_000;
+  let stops = [];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    forgetServer();
+  });
+  afterEach(() => {
+    stops.forEach((stop) => stop());
+    stops = [];
+    forgetServer();
+    vi.useRealTimers();
+  });
+
+  // a poll of INTERVAL; returns when it ticked, in ms from now
+  function poll(tick = () => {}, options) {
+    const start = Date.now();
+    const ticks = [];
+    const stop = startPoll(
+      () => {
+        ticks.push(Date.now() - start);
+        tick();
+      },
+      INTERVAL,
+      options,
+    );
+    stops.push(stop);
+    return ticks;
+  }
+
+  it('polls at its rate while the server serves, when allowed', () => {
+    let allowed = true;
+    const ticks = poll(undefined, { when: () => allowed });
+    vi.advanceTimersByTime(3 * INTERVAL);
+    expect(ticks).toEqual([10_000, 20_000, 30_000]);
+
+    allowed = false;
+    vi.advanceTimersByTime(INTERVAL);
+    allowed = true;
+    vi.advanceTimersByTime(INTERVAL);
+    expect(ticks).toEqual([10_000, 20_000, 30_000, 50_000]);
+  });
+
+  it('keeps polling at its rate while only the websocket is lost', () => {
+    const ticks = poll();
+    setWsDown(true, 'lost');
+    vi.advanceTimersByTime(3 * INTERVAL);
+    expect(ticks).toEqual([10_000, 20_000, 30_000]);
+  });
+
+  it('sends nothing while the server shuts down, once when it is back, then at its rate', () => {
+    const ticks = poll();
+    vi.advanceTimersByTime(INTERVAL);
+    setWsDown(true, 'shutdown');
+    vi.advanceTimersByTime(40_000);
+    expect(ticks).toEqual([10_000]);
+
+    // the websocket is back
+    setWsDown(false);
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(ticks).toHaveLength(2);
+    const back = ticks[1];
+    expect(back).toBeGreaterThanOrEqual(50_000);
+    expect(back).toBeLessThanOrEqual(50_000 + BACK_SPREAD_MS);
+
+    vi.advanceTimersByTime(2 * INTERVAL);
+    expect(ticks).toEqual([10_000, back, back + INTERVAL, back + 2 * INTERVAL]);
+  });
+
+  it('resumes once a request sent after the shutdown is answered', () => {
+    const ticks = poll();
+    serverUnavailable('10');
+    vi.advanceTimersByTime(30_000);
+    expect(ticks).toEqual([]);
+
+    serverResponded(Date.now());
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(ticks).toHaveLength(1);
+  });
+
+  it('believes a shutdown only so long, then backs off while nothing answers', () => {
+    // every tick's request goes unanswered until the server is back
+    let answering = false;
+    const ticks = poll(() => answering || serverUnanswered());
+    setWsDown(true, 'shutdown');
+    vi.advanceTimersByTime(SHUTDOWN_HOLD_MS - 1);
+    expect(ticks).toEqual([]);
+
+    vi.advanceTimersByTime(1 + 2 * MAX_POLL_BACKOFF_MS + 310_000);
+    const gaps = ticks.slice(1).map((at, i) => at - ticks[i]);
+    expect(ticks[0]).toBe(SHUTDOWN_HOLD_MS);
+    expect(gaps).toEqual([
+      20_000,
+      40_000,
+      80_000,
+      160_000,
+      MAX_POLL_BACKOFF_MS,
+      MAX_POLL_BACKOFF_MS,
+    ]);
+
+    // the server answers: one poll soon, then its own rate
+    answering = true;
+    serverResponded(Date.now());
+    const before = ticks.length;
+    vi.advanceTimersByTime(BACK_SPREAD_MS + 2 * INTERVAL);
+    const after = ticks.slice(before);
+    expect(after).toHaveLength(3);
+    expect(after[1] - after[0]).toBe(INTERVAL);
+    expect(after[2] - after[1]).toBe(INTERVAL);
+  });
+
+  it('counts a burst of unanswered requests as one miss of each poll', () => {
+    const ticks = poll();
+    vi.advanceTimersByTime(INTERVAL + 2000);
+    // a page load, the preloads and other polls fail together
+    for (let i = 0; i < 5; i++) serverUnanswered();
+    vi.advanceTimersByTime(6 * INTERVAL);
+    expect(ticks).toEqual([10_000, 30_000, 70_000]);
+  });
+
+  it('asks nothing more on the return its own request brought', () => {
+    let answering = false;
+    const ticks = poll(() =>
+      answering ? serverResponded(Date.now()) : serverUnanswered(),
+    );
+    vi.advanceTimersByTime(INTERVAL);
+    answering = true;
+    vi.advanceTimersByTime(2 * INTERVAL + BACK_SPREAD_MS);
+    expect(ticks).toEqual([10_000, 30_000]);
+    vi.advanceTimersByTime(INTERVAL);
+    expect(ticks).toEqual([10_000, 30_000, 40_000]);
+  });
+
+  it('refreshes on return only a poll whose turn was put off', () => {
+    const ticks = poll();
+    vi.advanceTimersByTime(INTERVAL);
+    serverUnanswered();
+    vi.advanceTimersByTime(5000);
+    // answered before its next turn was due: nothing was put off
+    serverResponded(Date.now());
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(ticks).toEqual([10_000]);
+    vi.advanceTimersByTime(INTERVAL);
+    expect(ticks).toEqual([10_000, 20_000]);
+  });
+
+  it('waits out a Retry-After longer than a shutdown is believed', () => {
+    const ticks = poll();
+    serverUnavailable('120');
+    vi.advanceTimersByTime(120_000 - 1);
+    expect(ticks).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(ticks).toEqual([120_000]);
+  });
+
+  it('never polls while holding back, nor faster than its rate but once on return', () => {
+    const event = fc.oneof(
+      fc.constantFrom(
+        'shutdown',
+        'lost',
+        'up',
+        'answered',
+        'unanswered',
+        'refused',
+      ),
+      fc.integer({ min: 1, max: 90_000 }),
+    );
+    fc.assert(
+      fc.property(fc.array(event, { maxLength: 25 }), (events) => {
+        forgetServer();
+        const ticks = [];
+        // when the server may have come back, by the clock
+        const backs = [];
+        const stop = startPoll(() => {
+          ticks.push({ at: Date.now(), held: holdOffMs() > 0 });
+        }, INTERVAL);
+        for (const e of events) {
+          if (typeof e === 'number') vi.advanceTimersByTime(e);
+          else if (e === 'shutdown' || e === 'lost') setWsDown(true, e);
+          else if (e === 'up') setWsDown(false);
+          else if (e === 'answered') serverResponded(Date.now());
+          else if (e === 'unanswered') serverUnanswered();
+          else serverUnavailable('10');
+          if (e === 'up' || e === 'answered') backs.push(Date.now());
+        }
+        vi.advanceTimersByTime(BACK_SPREAD_MS);
+        stop();
+
+        for (const tick of ticks) expect(tick.held).toBe(false);
+        for (let i = 1; i < ticks.length; i++) {
+          const gap = ticks[i].at - ticks[i - 1].at;
+          const returned = backs.some(
+            (at) => at >= ticks[i - 1].at - BACK_SPREAD_MS && at <= ticks[i].at,
+          );
+          if (!returned) expect(gap).toBeGreaterThanOrEqual(INTERVAL);
+        }
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  it('waits for the server before starting work, or not at all while it serves', async () => {
+    let started = false;
+    whenServing().then(() => (started = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(started).toBe(true);
+
+    setWsDown(true, 'shutdown');
+    started = false;
+    whenServing().then(() => (started = true));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(started).toBe(false);
+    setWsDown(false);
+    await vi.advanceTimersByTimeAsync(BACK_SPREAD_MS);
+    expect(started).toBe(true);
+
+    // or until it is no longer believed to be shutting down
+    setWsDown(true, 'shutdown');
+    started = false;
+    whenServing().then(() => (started = true));
+    await vi.advanceTimersByTimeAsync(SHUTDOWN_HOLD_MS - 1);
+    expect(started).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(started).toBe(true);
+  });
+
+  it('tells of the server coming back only after it was away, and not after signing out', () => {
+    const back = vi.fn();
+    stops.push(onServerBack(back));
+
+    setWsDown(true, 'lost');
+    setWsDown(false);
+    serverResponded(Date.now());
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(back).not.toHaveBeenCalled();
+
+    serverUnanswered();
+    serverUnanswered();
+    serverResponded(Date.now());
+    serverResponded(Date.now());
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(back).toHaveBeenCalledTimes(1);
+
+    setWsDown(true, 'shutdown');
+    setWsDown(false);
+    forgetServer();
+    vi.advanceTimersByTime(BACK_SPREAD_MS);
+    expect(back).toHaveBeenCalledTimes(1);
   });
 });
 

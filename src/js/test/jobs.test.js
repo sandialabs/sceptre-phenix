@@ -10,6 +10,12 @@ const { axios, modules, resetMocks } = await vi.hoisted(
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/store.js', modules.store);
 
+import {
+  BACK_SPREAD_MS,
+  forgetServer,
+  serverUnanswered,
+  setWsDown,
+} from '@/utils/freshness.js';
 import { bytesText, isActiveJob, useJobStore } from '@/utils/jobs.js';
 import { flush } from './helpers/async.js';
 import { wsMsg } from './helpers/fixtures.js';
@@ -41,7 +47,10 @@ beforeEach(() => {
   jobs = useJobStore();
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  forgetServer();
+  vi.useRealTimers();
+});
 
 describe('the jobs store', () => {
   it('loads the jobs the server lists, newest first, and forgets the rest', async () => {
@@ -290,6 +299,66 @@ describe('the jobs store', () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(done.status).toBe('failed');
+  });
+
+  // the times jobs/j1 was asked for, in ms from now
+  function checks() {
+    const start = Date.now();
+    const at = [];
+    axios.get.mockImplementation(async (url) => {
+      if (url === 'jobs/j1') at.push(Date.now() - start);
+      return { data: job('j1') };
+    });
+    return at;
+  }
+
+  it('stops asking while the server shuts down, asks once when it is back, then every 5 s', async () => {
+    vi.useFakeTimers();
+    jobs.put(job('j1'));
+    const at = checks();
+    jobs.whenDone('j1').catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(5000);
+    setWsDown(true, 'shutdown');
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(at).toEqual([5000]);
+
+    setWsDown(false);
+    await vi.advanceTimersByTimeAsync(BACK_SPREAD_MS);
+    expect(at).toHaveLength(2);
+    const back = at[1];
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(at).toEqual([5000, back, back + 5000, back + 10_000]);
+    jobs.clear();
+  });
+
+  it('asks less often while the server does not answer', async () => {
+    vi.useFakeTimers();
+    jobs.put(job('j1'));
+    const at = [];
+    axios.get.mockImplementation(async (url) => {
+      if (url === 'jobs/j1') at.push(Date.now());
+      // as the axios client notes a request with no response
+      serverUnanswered();
+      throw { code: 'ERR_NETWORK', request: {} };
+    });
+    const start = Date.now();
+    jobs.whenDone('j1').catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(80_000);
+    expect(at.map((t) => t - start)).toEqual([5000, 15_000, 35_000, 75_000]);
+    jobs.clear();
+  });
+
+  it('asks one check at a time, though the server is slow', async () => {
+    vi.useFakeTimers();
+    jobs.put(job('j1'));
+    axios.get.mockImplementation(() => new Promise(() => {}));
+    jobs.whenDone('j1').catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    jobs.clear();
   });
 
   it('fails whenDone once the server no longer has the job', async () => {

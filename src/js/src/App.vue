@@ -40,7 +40,7 @@
   function followJobs() {
     if (stopJobReload) return;
     addWsHandler(applyJob);
-    stopJobReload = onWsReconnect(loadJobs);
+    stopJobReload = onWsReconnect(loadJobs, { spread: true });
     loadJobs();
   }
 
