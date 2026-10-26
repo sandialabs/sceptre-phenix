@@ -1,6 +1,6 @@
 module phenix
 
-go 1.24.0
+go 1.24.4
 
 require (
 	github.com/activeshadow/structs v1.3.0
