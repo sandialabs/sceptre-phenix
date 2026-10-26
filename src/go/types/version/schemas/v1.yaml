@@ -270,6 +270,8 @@ components:
           nullable: true
           properties:
             apps:
+              title: "Apps"
+              description: "Applications configured for this scenario."
               type: array
               nullable: true
               items:
@@ -278,8 +280,11 @@ components:
                 - name
                 properties:
                   name:
+                    title: "Name"
+                    description: "Name of the application."
                     type: string
                     minLength: 1
+                    example: example-app
         baseDir:
           title: "Base Dir"
           description: "Working directory used by the experiment."
