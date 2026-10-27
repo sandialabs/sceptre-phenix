@@ -137,6 +137,8 @@ jobs:
       - name: Summarize coverage
         if: ${{ !cancelled() && hashFiles('src/js/coverage/coverage-summary.json') != '' }}
         run: |
+          # The ${} expressions are JavaScript, so the shell must not expand them.
+          # shellcheck disable=SC2016
           node -e '
             const fs = require("node:fs");
             const t = require("./coverage/coverage-summary.json").total;
