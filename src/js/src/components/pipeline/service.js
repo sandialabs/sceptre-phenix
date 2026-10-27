@@ -239,13 +239,11 @@ class Pipeline {
     if (list.length == 0) {
       return null;
     }
-    for (let i = 0; i < list.length; i++) {
-      if (this.solvedList[list[i]]) {
-        return list[i];
-      } else {
-        return this.findSolvedFather(list[i]);
-      }
+    const father = list[0];
+    if (this.solvedList[father]) {
+      return father;
     }
+    return this.findSolvedFather(father);
   }
 
   /**

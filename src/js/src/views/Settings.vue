@@ -131,9 +131,6 @@
           this.settings_obj = state;
         });
       },
-      printSettings() {
-        console.log(this.settings_obj);
-      },
       sendSettingsToServer() {
         axiosInstance
           .post('settings', this.settings_obj, { timeout: 0 })

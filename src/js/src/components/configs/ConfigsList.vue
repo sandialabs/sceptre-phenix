@@ -64,7 +64,10 @@
       </section>
       <footer class="modal-card-foot x-modal-dark buttons is-right">
         <button
-          v-if="roleAllowed('configs', 'update', configFullName(viewer.config))"
+          v-if="
+            viewer.config &&
+            roleAllowed('configs', 'update', configFullName(viewer.config))
+          "
           class="button is-success"
           @click="$emit('edit', viewer.config)">
           Edit Config
@@ -192,8 +195,7 @@
       pagination-simple="true"
       pagination-size="is-small"
       default-sort="kind"
-      :loading="isWaiting"
-      ref="cfgTable">
+      :loading="isWaiting">
       <!-- docs currently wrong with checked rows, see: https://github.com/buefy/buefy/issues/4102 -->
       <!-- <b-loading :is-full-page="false" v-model="isWaiting"></b-loading> -->
 
@@ -358,8 +360,6 @@
         ],
         //table
         isPaginated: false,
-        perPage: 10,
-        currentPage: 1,
         selectedConfigs: [],
 
         //uploader modal
@@ -375,7 +375,7 @@
 
         viewer: {
           isActive: false,
-          config: { kind: null, metadata: { name: null } },
+          config: null,
           title: null,
           obj: null,
         },
@@ -593,11 +593,8 @@
       },
       resetViewer() {
         this.viewer.isActive = false;
-        ((this.viewer.config = {
-          kind: null,
-          metadata: { name: null },
-        }),
-          (this.viewer.title = null));
+        this.viewer.config = null;
+        this.viewer.title = null;
         this.viewer.obj = null;
       },
       viewConfig(cfg) {

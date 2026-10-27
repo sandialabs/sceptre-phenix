@@ -252,22 +252,4 @@ type sohProfile struct {
 	Listeners   []string         `mapstructure:"listeners"`
 	CustomTests []customHostTest `mapstructure:"customTests"`
 	Captures    []string         `mapstructure:"captureInterfaces"`
-
-	// set after parsing
-	c2Timeout time.Duration
-}
-
-func (p *sohProfile) init() error {
-	if p.C2Timeout == "" {
-		// Default C2 timeout to 5m if not specified in the SoH Profile config.
-		p.c2Timeout = defaultC2Timeout
-	} else {
-		var err error
-
-		if p.c2Timeout, err = time.ParseDuration(p.C2Timeout); err != nil {
-			return fmt.Errorf("parsing C2 timeout setting '%s': %w", p.C2Timeout, err)
-		}
-	}
-
-	return nil
 }

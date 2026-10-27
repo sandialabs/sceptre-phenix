@@ -180,15 +180,7 @@ func startExperiment(name string) ([]byte, error) {
 			waiters[name] = &wg
 			commonMu.Unlock()
 
-			if err := app.PeriodicallyRunApps(ctx, &wg, s.exp); err != nil {
-				cancel() // avoid leakage
-				commonMu.Lock()
-				delete(cancelers, name)
-				delete(waiters, name)
-				commonMu.Unlock()
-
-				fmt.Printf("Error scheduling experiment apps to run periodically: %v\n", err) //nolint:forbidigo // error logging
-			}
+			app.PeriodicallyRunApps(ctx, &wg, s.exp)
 
 			vms, err := vm.List(name)
 			if err != nil {

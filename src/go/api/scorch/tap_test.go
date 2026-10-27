@@ -15,8 +15,7 @@ import (
 type fakeTapMM struct {
 	mm.Minimega
 
-	tapVLANCalls   int
-	meshShellCalls int
+	tapVLANCalls int
 }
 
 func (f *fakeTapMM) TapVLAN(opts ...mm.TapOption) error {
@@ -25,9 +24,7 @@ func (f *fakeTapMM) TapVLAN(opts ...mm.TapOption) error {
 	return nil
 }
 
-func (f *fakeTapMM) MeshShell(host, command string) error {
-	f.meshShellCalls++
-
+func (*fakeTapMM) MeshShell(_, _ string) error {
 	return nil
 }
 

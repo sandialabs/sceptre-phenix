@@ -18,7 +18,6 @@
     },
     data() {
       return {
-        isWaiting: false,
         editorActive: false,
         editorMode: null,
         editorConfig: null,
