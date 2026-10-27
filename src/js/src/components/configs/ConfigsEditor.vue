@@ -23,6 +23,13 @@
     <div class="columns p-4">
       <div class="column is-1" />
       <div class="column is-2">
+        <!-- Focus starts here when the editor opens, not on the page. -->
+        <h1
+          ref="heading"
+          class="title is-5 config-editor__heading"
+          tabindex="-1">
+          {{ heading }}
+        </h1>
         <b-field
           class="editor"
           label="Config Name"
@@ -134,6 +141,10 @@
             :vim="editor.vim"
             @save="configSentSave"
             @reset="configSentReset" />
+          <p class="help">
+            Press Enter on the editor to type in it, and Escape to leave it
+            (twice in Vim mode), so that Tab moves on.
+          </p>
           <b-loading
             :is-full-page="false"
             v-model="editor.isLoading"></b-loading>
@@ -163,6 +174,8 @@
       editorConfig: Object,
     },
     mounted() {
+      this.$refs.heading?.focus();
+
       //set vim mode
       let user = localStorage.getItem('user');
       if (localStorage.getItem(user + '.vimMode')) {
@@ -328,7 +341,7 @@
           },
         });
       },
-      resetEditor(msg) {
+      resetEditor(msg, savedName = '') {
         this.editor.vim = false;
 
         this.config.str = '';
@@ -336,7 +349,7 @@
         this.editor.nameErrType = null;
         this.editor.nameErrMsg = null;
 
-        this.$emit('is-done', msg);
+        this.$emit('is-done', msg, savedName);
       },
       getConfigObj(lang = null) {
         if (!lang) {
@@ -435,7 +448,11 @@
                 headers: { 'Content-Type': 'application/json' },
               })
               .then(() => {
-                this.resetEditor(`config ${name} has been edited`);
+                // The save can rename the config, so report its new name.
+                this.resetEditor(
+                  `config ${name} has been edited`,
+                  `${config.kind}/${config.metadata.name}`,
+                );
               })
               .catch((err) => {
                 console.log(err);
@@ -505,6 +522,12 @@
       },
     },
     computed: {
+      // What the editor is for: "Edit Topology/web", or "New config".
+      heading() {
+        return this.mode == 'edit' && this.editorConfig
+          ? `Edit ${this.editorConfig.kind}/${this.editorConfig.metadata.name}`
+          : 'New config';
+      },
       validName() {
         return /^[a-zA-Z0-9_@.-]*$/.test(this.configName);
       },
@@ -659,6 +682,11 @@
 
   .editor :deep(.label) {
     color: whitesmoke;
+  }
+
+  .config-editor__heading {
+    color: whitesmoke;
+    overflow-wrap: anywhere;
   }
 
   button#editor {

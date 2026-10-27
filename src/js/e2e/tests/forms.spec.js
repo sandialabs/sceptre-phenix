@@ -111,10 +111,10 @@ test('configs: view a config and open the editor', async ({ page }) => {
 
   const row = page.locator('tr').filter({ hasText: 'e2e-viewer-role' });
   await row.getByText('e2e-viewer-role', { exact: true }).click();
-  await settle(page, 1500);
 
   // viewer opens; Edit switches to the Ace-based editor
-  await page.getByRole('button', { name: /edit/i }).first().click();
+  const viewer = page.getByRole('dialog', { name: 'Role/e2e-viewer-role' });
+  await viewer.getByRole('button', { name: 'Edit Config' }).click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
 
   await page.request

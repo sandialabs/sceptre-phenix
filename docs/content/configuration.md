@@ -685,7 +685,8 @@ There are two ways to view a specific config:
    It is possible to select text and copy from this modal. However, it is not
    possible to edit the config directly in this view. Instead, there is an
    `Edit Config` button, which will open an editor. It is also possible to
-   download a copy of the config.
+   download a copy of the config. From the keyboard, Tab to the name and press
+   Enter.
   ![screenshot](images/view.png){: width=800 .center}
 2. Selecting the `Edit` button for a given config will open the editor window.
    It is possible to edit the config in this window and save the update to the
@@ -719,6 +720,9 @@ There are two ways to create a new config:
 ### Editor Window
 
 The editor window allows direct editing of an existing or new config file.
+
+- From the keyboard, Tab stops on the editor once. Press Enter to type in it,
+  and Escape to stop typing (twice with Vim keybindings), so that Tab moves on.
 
 - It is possible to edit a file as YAML or JSON by selecting the relevant radio
   button under `File Format`.
