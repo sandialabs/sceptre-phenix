@@ -1,61 +1,131 @@
-name: Publish phenix Docker & Debian Packages
+name: Packages
+
+# Builds the phenix container images and Debian package. A push to any branch
+# publishes ghcr.io/<owner>/<repo>/phenix:<branch>; pull requests only build
+# and test. A v* tag push, or a manual run given a tag, publishes the release
+# images and attaches the .deb to the GitHub release.
 on:
-  # Documentation-only changes don't affect the packages. GitHub doesn't
-  # evaluate path filters for tag pushes, so releases always build.
+  # GitHub doesn't evaluate path filters for tag pushes, so releases always
+  # build.
   push:
     branches: ['**']
     tags: ['v*']
     paths-ignore:
       - 'docs/**'
+      - '**/*.md'
+      - '**/prek.toml'
+      - 'src/js/e2e/**'
+      - 'src/js/test/**'
+      - 'CODEOWNERS'
+      - '.github/workflows/bug-report-versions.yml'
+      - '.github/workflows/ci.yml'
       - '.github/workflows/docs.yml'
+      - '.github/workflows/examples.yml'
+      - '.github/workflows/frontend.yml'
+      - '.github/workflows/lint.yml'
+      - '.github/workflows/podman.yml'
+  # Pull request code changes are compiled and tested by the other workflows,
+  # so only changes to how the packages are built rebuild them here.
   pull_request:
-    branches: ['main']
-    paths-ignore:
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
+    branches: [main]
+    paths:
+      - '.dockerignore'
+      - '.github/workflows/packages.yml'
+      - 'Makefile'
+      - 'docker/**'
+      - 'scripts/**'
+      - 'src/go/Makefile'
+      - 'src/go/go.mod'
+      - 'src/go/go.sum'
+      - 'src/js/package.json'
+      - 'src/js/package-lock.json'
+  # Weekly uncached rebuild of main, so the image picks up OS security updates
+  # and refreshed downloads that the layer cache would otherwise keep.
+  schedule:
+    - cron: '17 5 * * 1'
   repository_dispatch:
     types: [apps-update]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to rebuild and attach packages to (blank for the selected branch)
+        type: string
+        required: false
+
 env:
   MM_REV: master
+  # The release being built: a pushed v* tag, or the tag given to a manual run.
+  # Only a tag push moves `latest`, so rebuilding an old release can't.
+  RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+
 permissions:
   contents: read
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # Never cancel an in-progress tag build (release), but do cancel stale
-  # in-progress runs for the same branch/PR when new commits supersede them.
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: packages-${{ inputs.tag || github.ref }}
+  # Never cancel a release build, but do cancel stale runs for the same
+  # branch or PR when new commits supersede them.
+  cancel-in-progress: ${{ !(inputs.tag || github.ref_type == 'tag') }}
+
 jobs:
-  build-and-publish:
-    name: Build and Publish Docker & Debian Packages
+  build:
+    name: Build images and Debian package
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: write
-      contents: write
+    env:
+      PUSH: ${{ github.event_name != 'pull_request' }}
+    outputs:
+      image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
     steps:
       - name: Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Get short SHA
+
+      - name: Resolve source refs
+        # Passing the current head of the apps repository as a build arg
+        # rebuilds its cached layers when it changes. vmdb2 is pinned in the
+        # Dockerfile instead.
+        id: refs
+        env:
+          APPS_REPO: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandialabs/sceptre-phenix-apps' }}
         run: |
-          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          apps_ref=$(git ls-remote "https://github.com/${APPS_REPO}.git" refs/heads/main | cut -f1)
+          if [[ -z "$apps_ref" ]]; then
+            echo "::error::could not resolve the main branch of ${APPS_REPO}"
+            exit 1
+          fi
+          {
+            echo "sha=$(git rev-parse --short HEAD)"
+            echo "apps-repo=${APPS_REPO}"
+            echo "apps-ref=${apps_ref}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Log in to GitHub Docker Registry
+        if: env.PUSH == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}/phenix
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha
+            type=ref,event=branch,enable=${{ !env.RELEASE_TAG }}
+            type=sha,enable=${{ !env.RELEASE_TAG }}
+            type=raw,value=${{ env.RELEASE_TAG }},enable=${{ !!env.RELEASE_TAG }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
       - name: Build container image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -63,126 +133,111 @@ jobs:
           file: docker/Dockerfile
           build-args: |
             MM_MIN_REV=${{ env.MM_REV }}
-            PHENIX_COMMIT=${{ env.sha }}
-            PHENIX_TAG=${{ steps.meta.outputs.version }}
+            PHENIX_COMMIT=${{ steps.refs.outputs.sha }}
+            PHENIX_TAG=${{ env.RELEASE_TAG || steps.meta.outputs.version }}
             PHENIX_REPO=${{ github.event.pull_request.head.repo.full_name || github.repository }}
-            APPS_REPO=github.com/${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandialabs/sceptre-phenix-apps' }}
+            APPS_REPO=github.com/${{ steps.refs.outputs.apps-repo }}
             APPS_BRANCH=main
-          push: ${{ github.event_name != 'pull_request' }}
-          load: true
+            APPS_REF=${{ steps.refs.outputs.apps-ref }}
           tags: ${{ steps.meta.outputs.tags }}
+          load: true
+          provenance: false
+          # Releases and the weekly rebuild start fresh, then refresh the cache.
+          no-cache: ${{ github.event_name == 'schedule' || !!env.RELEASE_TAG }}
+          cache-from: type=gha,scope=phenix
+          cache-to: type=gha,mode=max,scope=phenix
 
-      # Built right after the phenix image (its only dependency) and before
-      # the slower Debian package build, so the JIT UI image is available
-      # sooner rather than waiting on the .deb build/release steps.
-      #
-      # NOTE: this and the phenix build above intentionally use the default
-      # (non-buildx-container) docker driver instead of
-      # docker/setup-buildx-action + GHA layer caching. The JIT build's
-      # `FROM $PHENIX_IMG` needs to resolve the phenix image that was just
-      # `load: true`-ed into the local Docker engine (PR builds don't push to
-      # the registry), and only the default driver shares that local image
-      # store; the docker-container driver builds in an isolated BuildKit
-      # instance that can't see it and would fail to resolve the image.
+      - name: Smoke test the image
+        env:
+          IMAGE: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          SHA: ${{ steps.refs.outputs.sha }}
+        run: |
+          set -x
+          docker run --rm "$IMAGE" phenix version | grep -F "(commit ${SHA})"
+          docker run --rm "$IMAGE" phenix help > /dev/null
+          docker run --rm "$IMAGE" sh -c \
+            'glow --version && command -v filebeat && test -x /usr/bin/vmdb2 && ls /usr/local/bin/phenix-app-* /opt/phenix/downloads/tunneler/'
+          docker run --rm "$IMAGE" python3 -c 'import minimega, phenix_apps'
+          docker images "$IMAGE"
+
+      - name: Push container image
+        if: env.PUSH == 'true'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          for tag in $TAGS; do
+            docker push "$tag"
+          done
+
+      # The JIT image builds FROM the phenix image loaded above, which only
+      # the default (docker driver) builder can see; it isn't cached.
       - name: Docker meta for JIT UI
         id: meta-jit
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}/phenix-jit-ui
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha
+            type=ref,event=branch,enable=${{ !env.RELEASE_TAG }}
+            type=sha,enable=${{ !env.RELEASE_TAG }}
+            type=raw,value=${{ env.RELEASE_TAG }},enable=${{ !!env.RELEASE_TAG }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref_type == 'tag' }}
       - name: Build JIT container image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
+          builder: default
           context: docker/jit
           file: docker/jit/Dockerfile
           build-args: |
             PHENIX_REPO=${{ github.event.pull_request.head.repo.full_name || github.repository }}
             PHENIX_IMG=${{ fromJSON(steps.meta.outputs.json).tags[0] }}
-            PHENIX_BRANCH=${{ github.head_ref || github.ref_name }}
-          push: ${{ github.event_name != 'pull_request' }}
+            PHENIX_BRANCH=${{ env.RELEASE_TAG || github.head_ref || github.ref_name }}
+          push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.meta-jit.outputs.tags }}
 
-      - name: Build Debian Package
+      - name: Build Debian package
         env:
           PHENIX_BUILD_IMAGE: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          PHENIX_VERSION: ${{ env.RELEASE_TAG }}
         run: ./scripts/build-deb.sh
 
-      - name: Upload .deb Artifact
+      - name: Check Debian package
+        run: |
+          deb=$(echo build/deb/*.deb)
+          version=$(dpkg-deb -f "$deb" Version)
+          echo "Built ${deb} (version ${version})"
+          if ! dpkg --validate-version "$version"; then
+            echo "::error::unexpected Debian package version: ${version}"
+            exit 1
+          fi
+          contents=$(dpkg-deb --contents "$deb")
+          for path in ./usr/local/bin/phenix ./usr/local/bin/glow ./opt/phenix/downloads/tunneler/phenix-tunneler-linux-amd64; do
+            grep -qE " ${path}\$" <<< "$contents" || { echo "::error::${path} is missing from ${deb}"; exit 1; }
+          done
+
+      - name: Upload .deb artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: phenix-deb-package
           path: build/deb/*.deb
           retention-days: 3
 
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" build/deb/*.deb --generate-notes
-    outputs:
-      image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
-
-  # Mirrors the Docker build so the Containerfile can't silently drift, then
-  # runs the finished image to catch a container that builds but cannot start.
-  # Nothing is published: the image only ever exists on the runner.
-  build-podman:
-    name: Build and Smoke Test Podman Image
+  release:
+    name: Attach Debian package to the release
+    needs: build
+    if: inputs.tag || github.ref_type == 'tag'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
     permissions:
-      contents: read
+      contents: write
     steps:
-      - name: Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Get short SHA
-        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
-      - name: Free disk space
-        # The full image plus its build stages do not fit next to the runner's
-        # preinstalled Android, .NET, and Haskell toolchains.
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
-          df -h /
-      - name: Build Podman image
-        # The final stage pulls external resources (filebeat, vmdb2, the Kali
-        # keyring), so retry before failing the job on a flaky fetch.
+          name: phenix-deb-package
+      - name: Create or update the release
         env:
-          MM_MIN_REV: ${{ env.MM_REV }}
-          PHENIX_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          SHA: ${{ env.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          for attempt in 1 2 3; do
-            echo "::group::podman build attempt ${attempt}"
-            if podman build \
-              -f podman/Containerfile \
-              --build-arg MM_MIN_REV="$MM_MIN_REV" \
-              --build-arg PHENIX_COMMIT="$SHA" \
-              --build-arg PHENIX_TAG=ci \
-              --build-arg PHENIX_REPO="$PHENIX_REPO" \
-              -t phenix-podman-ci \
-              .; then
-              echo "::endgroup::"
-              exit 0
-            fi
-            echo "::endgroup::"
-            echo "podman build attempt ${attempt} failed"
-            sleep 30
-          done
-          echo "podman build failed after 3 attempts"
-          exit 1
-      - name: Smoke test the image
-        run: |
-          set -x
-          podman run --rm phenix-podman-ci phenix version
-          podman run --rm phenix-podman-ci phenix help
-          podman run --rm phenix-podman-ci sh -c \
-            'command -v phenix && command -v glow && command -v filebeat && test -x /usr/bin/vmdb2'
-          podman run --rm phenix-podman-ci python3 -c 'import minimega, phenix_apps'
-      - name: Report image size
-        run: podman images phenix-podman-ci
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" ./*.deb --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" ./*.deb --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
+          fi

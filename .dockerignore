@@ -1,0 +1,15 @@
+# Keep local build output and tool environments out of the image build
+# context, so the image is built only from source. .git stays: the build
+# bind-mounts it for version info.
+**/node_modules
+**/.venv
+/bin
+/build
+/docs/site
+/src/js/dist
+/src/go/bin
+/src/go/store/mock.go
+/src/go/web/proto/*.pb.go
+/src/go/web/rbac/known_policy.go
+/src/go/web/public/assets
+/src/go/web/public/index.html

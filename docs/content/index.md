@@ -55,6 +55,8 @@ docker compose logs -f
 !!! note
     The Docker image includes the user apps from the [sceptre-phenix-apps](https://github.com/sandialabs/sceptre-phenix-apps) repository.
 
+To build the image with Podman instead, run `podman build -f docker/Dockerfile -t phenix .` from the repository root. See `podman/README.md` for running phēnix and minimega as a Podman pod.
+
 ### Accessing the CLI & Shell Completion
 
 With `phenix` running in a container, you can execute commands. For the best experience, including shell (tab) completion, you should install the provided wrapper script.
