@@ -4,24 +4,6 @@
 </template>
 
 <script>
-  // import ace from 'ace-builds/src-noconflict/ace';
-  //
-  // import themeDraculaUrl from 'ace-builds/src-noconflict/theme-dracula?url';
-  // ace.config.setModuleUrl('ace/theme/dracula', themeDraculaUrl);
-  //
-  // import keybindingVim from 'ace-builds/src-noconflict/keybinding-vim?url';
-  // ace.config.setModuleUrl('ace/keybinding/vim', keybindingVim);
-  // import 'ace-builds/src-noconflict/keybinding-vim';
-  //
-  // import 'ace-builds/src-noconflict/ext-language_tools';
-  // ace.require('ace/ext/language_tools');
-  //
-  // import modeJsonUrl from 'ace-builds/src-noconflict/mode-json?url';
-  // ace.config.setModuleUrl('ace/mode/json', modeJsonUrl);
-  //
-  // import modeYamlUrl from 'ace-builds/src-noconflict/mode-yaml?url';
-  // ace.config.setModuleUrl('ace/mode/yaml', modeYamlUrl);
-
   export default {
     props: {
       value: {
@@ -44,6 +26,7 @@
         editor: null,
         ace: null,
         isLoading: false,
+        disposed: false,
       };
     },
     async mounted() {
@@ -83,11 +66,18 @@
       );
       this.ace.config.setModuleUrl('ace/mode/yaml', modeYamlUrl.default);
 
+      if (this.disposed || !this.$refs.editor) {
+        return;
+      }
+
+      // Tab reaches the editor as one stop: Enter starts typing and Escape
+      // stops, so Tab moves on and does not indent (WCAG 2.1.2).
       this.editor = this.ace.edit(this.$refs.editor, {
         theme: 'ace/theme/dracula',
         mode: 'ace/mode/' + this.lang,
         useWorker: false,
         tabSize: 2,
+        enableKeyboardAccessibility: true,
       });
       if (this.vim) {
         this.editor.setKeyboardHandler('ace/keyboard/vim');
@@ -125,11 +115,10 @@
         }
       },
     },
-    // setup() {
-    //   this.ace.config.set('basePath', 'ace-builds/src-noconflict/');
-    // },
     beforeUnmount() {
-      this.editor.destroy();
+      this.disposed = true;
+      this.editor?.destroy();
+      this.editor = null;
     },
     methods: {
       loadVimCommands() {

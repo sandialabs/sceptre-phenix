@@ -1,5 +1,9 @@
 <template>
-  <ConfigsList v-if="!editorActive" @edit="handleEdit" @create="handleCreate" />
+  <ConfigsList
+    v-if="!editorActive"
+    :focus-config="returnTo"
+    @edit="handleEdit"
+    @create="handleCreate" />
   <component
     ref="editor"
     :is="editorComponent"
@@ -23,6 +27,8 @@
         editorConfig: null,
 
         editorComponent: null,
+        // The config whose edit button takes focus when the editor closes.
+        returnTo: '',
       };
     },
     async beforeRouteLeave() {
@@ -38,7 +44,10 @@
       ).default;
     },
     methods: {
-      handleDone(msg) {
+      handleDone(msg, savedName = '') {
+        if (savedName) {
+          this.returnTo = savedName;
+        }
         if (msg !== '') {
           this.$buefy.toast.open({
             message: msg,
@@ -49,11 +58,13 @@
         this.editorActive = false;
       },
       handleEdit(config) {
+        this.returnTo = `${config.kind}/${config.metadata.name}`;
         this.editorActive = true;
         this.editorMode = 'edit';
         this.editorConfig = config;
       },
       handleCreate() {
+        this.returnTo = '';
         this.editorActive = true;
         this.editorMode = 'create';
         this.editorConfig = null;

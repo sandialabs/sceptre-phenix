@@ -1,14 +1,102 @@
+// @vitest-environment happy-dom
 import { readFileSync } from 'node:fs';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { resolve } from 'node:path';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import Buefy from 'buefy';
 import YAML from 'js-yaml';
+import ConfigsEditor from '@/components/configs/ConfigsEditor.vue';
 import axiosInstance from '@/utils/axios.js';
 import { useErrorNotification } from '@/utils/errorNotif';
-import ConfigsEditor from '@/components/configs/ConfigsEditor.vue';
 
-// The real modules import the Pinia store, the router or Buefy, which need a
-// browser. Vitest hoists vi.mock above the imports.
-vi.mock('@/utils/axios.js', () => ({ default: { get: vi.fn() } }));
+const role = {
+  apiVersion: 'phenix.sandia.gov/v1',
+  kind: 'Role',
+  metadata: { name: 'viewer' },
+  spec: { policies: [] },
+};
+
+vi.mock('@/utils/axios.js', () => ({
+  default: {
+    get: vi.fn(() => Promise.resolve({ data: structuredClone(role) })),
+    put: vi.fn(() => Promise.resolve({ data: {} })),
+  },
+}));
 vi.mock('@/utils/errorNotif', () => ({ useErrorNotification: vi.fn() }));
+
+enableAutoUnmount(afterEach);
+
+// Mounts the editor with the real Buefy and without the Ace editor.
+function mountEditor(props) {
+  return mount(ConfigsEditor, {
+    attachTo: document.body,
+    props,
+    global: { plugins: [Buefy], stubs: { AceEditor: true } },
+  });
+}
+
+describe('ConfigsEditor heading', () => {
+  test('editing a config focuses a heading that names it', async () => {
+    const wrapper = mountEditor({
+      mode: 'edit',
+      editorConfig: structuredClone(role),
+    });
+    await flushPromises();
+
+    const heading = wrapper.get('h1');
+    expect(heading.text()).toBe('Edit Role/viewer');
+    expect(heading.attributes('tabindex')).toBe('-1');
+    expect(document.activeElement).toBe(heading.element);
+  });
+
+  test('a new config focuses the New config heading', async () => {
+    const wrapper = mountEditor({ mode: 'create' });
+    await flushPromises();
+
+    const heading = wrapper.get('h1');
+    expect(heading.text()).toBe('New config');
+    expect(document.activeElement).toBe(heading.element);
+  });
+
+  test('the editor says how to leave it with the keyboard', async () => {
+    const wrapper = mountEditor({ mode: 'create' });
+    await flushPromises();
+
+    expect(wrapper.get('p.help').text()).toContain(
+      'Escape to leave it (twice in Vim mode)',
+    );
+  });
+});
+
+describe('ConfigsEditor save', () => {
+  test('saving a renamed config reports the new name', async () => {
+    const wrapper = mountEditor({
+      mode: 'edit',
+      editorConfig: structuredClone(role),
+    });
+    await flushPromises();
+    vi.spyOn(wrapper.vm.$buefy.dialog, 'confirm').mockImplementation((opts) =>
+      opts.onConfirm(),
+    );
+
+    wrapper.vm.config.str = wrapper.vm.config.str.replace(
+      'name: viewer',
+      'name: auditor',
+    );
+    wrapper.vm.saveConfig('yaml');
+    await flushPromises();
+
+    expect(axiosInstance.put).toHaveBeenCalledWith(
+      'configs/Role/viewer',
+      expect.any(String),
+      expect.anything(),
+    );
+    expect(wrapper.emitted('is-done').at(-1)).toEqual([
+      'config Role/viewer has been edited',
+      'Role/auditor',
+    ]);
+  });
+});
 
 // specs holds the embedded schema files the server serves at
 // GET /schemas/{version}, keyed by version.
@@ -17,9 +105,9 @@ const specs = Object.fromEntries(
     version,
     YAML.load(
       readFileSync(
-        new URL(
+        resolve(
+          import.meta.dirname,
           `../../go/types/version/schemas/${version}.yaml`,
-          import.meta.url,
         ),
         'utf8',
       ),
@@ -39,8 +127,7 @@ function serveSchemas(url) {
   return Promise.resolve({ data });
 }
 
-// The repo has no DOM test environment or @vue/test-utils, so run the
-// component's options against a plain object.
+// Runs the component's options against a plain object, without a mount.
 function newConfigsEditor() {
   const vm = ConfigsEditor.data();
   for (const [name, method] of Object.entries(ConfigsEditor.methods)) {
@@ -61,6 +148,9 @@ describe('ConfigsEditor config templates', () => {
     vi.clearAllMocks();
     axiosInstance.get.mockImplementation(serveSchemas);
   });
+
+  // Put back the mock's first answer, the role, for the other tests.
+  afterEach(() => axiosInstance.get.mockReset());
 
   test.each([
     ['Experiment', 'v1'],

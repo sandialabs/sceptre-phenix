@@ -1,28 +1,37 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { createSSRApp, h } from 'vue';
-import { renderToString } from 'vue/server-renderer';
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import Buefy from 'buefy';
 import axiosInstance from '@/utils/axios.js';
 import { useErrorNotification } from '@/utils/errorNotif';
 import ConfigsList from '@/components/configs/ConfigsList.vue';
 
-// The real modules import the Pinia store, the router or Buefy, which need a
-// browser. Vitest hoists vi.mock above the imports. The get stub answers the
-// config list request that created() makes when the render test runs it.
+const site = {
+  kind: 'Topology',
+  metadata: { name: 'site', annotations: { 'builder-xml': '<mxGraphModel/>' } },
+};
+
+// The list holds one topology with a Builder diagram, and viewing it reads it
+// again. roleAllowed reads the role from the mocked Pinia store.
 vi.mock('@/utils/axios.js', () => ({
   default: {
-    get: vi.fn(() => Promise.resolve({ data: { configs: [] } })),
+    get: vi.fn((url) =>
+      Promise.resolve({
+        data: url === 'configs' ? { configs: [site] } : structuredClone(site),
+      }),
+    ),
     post: vi.fn(),
   },
 }));
 vi.mock('@/utils/errorNotif', () => ({ useErrorNotification: vi.fn() }));
-vi.mock('@/utils/rbac.js', () => ({ roleAllowed: vi.fn() }));
+const phenix = vi.hoisted(() => ({ role: null }));
+vi.mock('@/store.js', () => ({ usePhenixStore: () => phenix }));
 
 const validation = [
   'nodes[0] "ADServer" (line 14): property "image" is missing (at hardware.drives[0].image)',
   '  hint: "image:" is on line 12 under nodes[0].hardware, but the schema expects it at nodes[0].hardware.drives[0].image',
 ].join('\n');
 
-const openDialog = { modal: true, title: 'Validation Error', msg: validation };
 const closedDialog = { modal: false, title: null, msg: null };
 
 const duplicate = {
@@ -32,82 +41,82 @@ const duplicate = {
   },
 };
 
-// Like Buefy's, this b-modal shows its content only while its v-model is true.
-const modalStub = {
-  props: ['modelValue'],
-  render() {
-    return this.modelValue ? h('div', this.$slots.default()) : null;
-  },
-};
-
-// The other Buefy components in the template render nothing here.
-const otherBuefyComponents = [
-  'b-autocomplete',
-  'b-checkbox',
-  'b-field',
-  'b-icon',
-  'b-select',
-  'b-switch',
-  'b-table',
-  'b-table-column',
-  'b-tag',
-  'b-tooltip',
-  'b-upload',
-];
-
-// The repo has no DOM test environment or @vue/test-utils, so run the
-// component's options against a plain object.
-function newConfigsList() {
-  const vm = ConfigsList.data();
-  for (const [name, method] of Object.entries(ConfigsList.methods)) {
-    vm[name] = method.bind(vm);
-  }
-  return vm;
+// roleAllowed caches its answers by role name, so every role gets its own.
+let roles = 0;
+function setRole(resources) {
+  roles += 1;
+  phenix.role = {
+    name: `role-${roles}`,
+    policies: [{ resources, verbs: ['*'], resourceNames: ['*/*'] }],
+  };
 }
 
-// uploadFile does not return its request promise, so wait for it to settle.
-async function upload(vm) {
-  vm.uploadFile(new File(['kind: Topology\n'], 'topology.yml'));
-  await new Promise((resolve) => setTimeout(resolve));
-}
+enableAutoUnmount(afterEach);
 
-// render server-renders the real template with the given dialog state, which
-// needs no DOM, and resolves to the HTML. It adds Vue's warnings to warnings.
-function render(error, warnings) {
-  const app = createSSRApp({
-    ...ConfigsList,
-    data: () => ({ ...ConfigsList.data(), error }),
+// Mounts the list with the real Buefy.
+function mountList(warnings = [], props = {}) {
+  return mount(ConfigsList, {
+    attachTo: document.body,
+    props,
+    global: {
+      plugins: [Buefy],
+      config: { warnHandler: (msg) => warnings.push(msg) },
+    },
   });
-  app.config.warnHandler = (msg) => warnings.push(msg);
-  app.component('b-modal', modalStub);
-  for (const name of otherBuefyComponents) {
-    app.component(name, { render: () => null });
-  }
-  return renderToString(app);
 }
+
+// Opens the uploader and chooses a config in its file field.
+async function upload(wrapper) {
+  await wrapper.get('[aria-label="Upload a new config"]').trigger('click');
+  const field = wrapper.get('input[type="file"]');
+
+  Object.defineProperty(field.element, 'files', {
+    configurable: true,
+    value: [new File(['kind: Topology\n'], 'topology.yml')],
+  });
+  await field.trigger('change');
+  await flushPromises();
+}
+
+// The modal card of the validation error dialog, or undefined.
+const errorCard = (wrapper) =>
+  wrapper
+    .findAll('.modal-card')
+    .find((card) => card.find('[aria-label="Validation errors"]').exists());
 
 describe('ConfigsList upload errors', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setRole(['*']);
   });
 
-  test('declares a closed validation error dialog', () => {
-    expect(ConfigsList.data().error).toEqual(closedDialog);
+  test('shows no validation error dialog until an upload fails', async () => {
+    const wrapper = mountList();
+    await flushPromises();
+
+    expect(errorCard(wrapper)).toBeUndefined();
+    expect(wrapper.text()).not.toContain('Validation Error');
+    expect(wrapper.vm.error).toEqual(closedDialog);
   });
 
   test('opens the dialog with the validation lines from a 400', async () => {
     axiosInstance.post.mockRejectedValueOnce({
       response: { status: 400, data: { metadata: { validation } } },
     });
+    const wrapper = mountList();
+    await flushPromises();
 
-    const vm = newConfigsList();
-    await upload(vm);
+    await upload(wrapper);
 
     expect(axiosInstance.post).toHaveBeenCalledWith(
       'configs',
       expect.any(FormData),
     );
-    expect(vm.error).toEqual(openDialog);
+    expect(wrapper.vm.error).toEqual({
+      modal: true,
+      title: 'Validation Error',
+      msg: validation,
+    });
     expect(useErrorNotification).not.toHaveBeenCalled();
   });
 
@@ -116,44 +125,153 @@ describe('ConfigsList upload errors', () => {
     ['a network error', new Error('Network Error')],
   ])('sends %s to the error notification', async (_, err) => {
     axiosInstance.post.mockRejectedValueOnce(err);
+    const wrapper = mountList();
+    await flushPromises();
 
-    const vm = newConfigsList();
-    await upload(vm);
+    await upload(wrapper);
 
     expect(useErrorNotification).toHaveBeenCalledWith(err);
-    expect(vm.error).toEqual(closedDialog);
+    expect(errorCard(wrapper)).toBeUndefined();
+    expect(wrapper.vm.error).toEqual(closedDialog);
   });
 
-  test('resetErrorModal closes and clears the dialog', () => {
-    const vm = newConfigsList();
-    vm.error = { modal: true, title: 'Validation Error', msg: 'line' };
+  test('Exit closes the dialog and clears the error', async () => {
+    axiosInstance.post.mockRejectedValueOnce({
+      response: { status: 400, data: { metadata: { validation } } },
+    });
+    const wrapper = mountList();
+    await flushPromises();
+    await upload(wrapper);
 
-    vm.resetErrorModal();
+    await errorCard(wrapper).get('footer button').trigger('click');
 
-    expect(vm.error).toEqual(closedDialog);
+    // Buefy hides the modal at once and removes it after its transition.
+    const card = errorCard(wrapper);
+    expect(card === undefined || !card.isVisible()).toBe(true);
+    expect(wrapper.vm.error).toEqual(closedDialog);
   });
 
   test('renders the dialog with the lines only while it is open', async () => {
+    axiosInstance.post.mockRejectedValueOnce({
+      response: { status: 400, data: { metadata: { validation } } },
+    });
     const warnings = [];
-    const html = await render(openDialog, warnings);
-    const closedHtml = await render(closedDialog, warnings);
+    const wrapper = mountList(warnings);
+    await flushPromises();
 
-    // Every Buefy tag has a stub, so Vue warned about nothing, not even
-    // "Failed to resolve component".
-    expect(warnings).toEqual([]);
-    // Each render ran created(), which only fetches the config list.
-    expect(axiosInstance.get.mock.calls).toEqual([['configs'], ['configs']]);
+    // Mounting only fetches the config list.
+    expect(axiosInstance.get.mock.calls).toEqual([['configs']]);
     expect(axiosInstance.post).not.toHaveBeenCalled();
+    expect(wrapper.find('textarea').exists()).toBe(false);
 
-    expect(html).toContain('>Validation Error</p>');
-    expect(html).toContain('>Exit</button>');
-    const [, attrs, text] =
-      html.match(/<textarea([^>]*)>([^<]*)<\/textarea>/) ?? [];
-    expect(attrs).toContain(' readonly');
-    expect(attrs).toContain('font-family:monospace');
-    // The renderer escapes the quotes around the hostname and the keys.
-    expect(text).toBe(validation.replaceAll('"', '&quot;'));
+    await upload(wrapper);
+    const card = errorCard(wrapper);
+    const textarea = card.get('textarea');
 
-    expect(closedHtml).not.toContain('<textarea');
+    // Buefy is real, so Vue warned about nothing, not even "Failed to
+    // resolve component".
+    expect(warnings).toEqual([]);
+    expect(card.isVisible()).toBe(true);
+    expect(card.get('.modal-card-title').text()).toBe('Validation Error');
+    expect(card.get('footer button').text()).toBe('Exit');
+    expect(textarea.attributes()).toHaveProperty('readonly');
+    expect(textarea.attributes('style')).toContain('font-family: monospace');
+    expect(textarea.element.value).toBe(validation);
+  });
+});
+
+describe('ConfigsList viewer', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const nameButton = (wrapper) =>
+    wrapper.get('[data-config-view="Topology/site"]');
+
+  // Views the topology from its name, and resolves to the viewer's text.
+  async function view(wrapper) {
+    await nameButton(wrapper).trigger('click');
+    await flushPromises();
+    return wrapper.get('[aria-label="Config, as YAML"]');
+  }
+
+  test('the name is a button that opens a dialog named for the config', async () => {
+    setRole(['*']);
+    const wrapper = mountList();
+    await flushPromises();
+
+    const name = nameButton(wrapper);
+    expect(name.element.tagName).toBe('BUTTON');
+    expect(name.attributes('aria-label')).toBe('View Topology site');
+
+    const textarea = await view(wrapper);
+    const dialog = wrapper.get('[role="dialog"]');
+    expect(dialog.attributes('aria-label')).toBe('Topology/site');
+    expect(dialog.attributes('aria-modal')).toBe('true');
+    expect(textarea.isVisible()).toBe(true);
+    // The Builder diagram is left out of the text, and the viewer opens.
+    expect(textarea.element.value).toContain('builder-xml: <SNIPPED>');
+    expect(textarea.element.value).not.toContain('mxGraphModel');
+    expect(useErrorNotification).not.toHaveBeenCalled();
+  });
+
+  test('Exit returns focus to the name the viewer was opened from', async () => {
+    setRole(['*']);
+    const wrapper = mountList();
+    await flushPromises();
+    await view(wrapper);
+
+    const exit = wrapper
+      .findAll('footer button')
+      .find((button) => button.text() === 'Exit');
+    await exit.trigger('click');
+    await flushPromises();
+
+    expect(document.activeElement).toBe(nameButton(wrapper).element);
+    expect(wrapper.vm.viewer.config).toBeNull();
+  });
+
+  test('a role that may only read configs gets no Edit Config', async () => {
+    setRole(['configs']);
+    phenix.role.policies[0].verbs = ['list', 'get'];
+    const wrapper = mountList();
+    await flushPromises();
+    await view(wrapper);
+
+    const labels = wrapper.findAll('button').map((b) => b.text());
+    expect(labels).not.toContain('Edit Config');
+    expect(wrapper.find('[data-config-edit="Topology/site"]').exists()).toBe(
+      false,
+    );
+  });
+});
+
+describe('ConfigsList focus after the editor closes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setRole(['*']);
+  });
+
+  const editButton = () =>
+    document.querySelector('[data-config-edit="Topology/site"]');
+
+  test('the first load focuses the edit button of focusConfig', async () => {
+    mountList([], { focusConfig: 'Topology/site' });
+    await flushPromises();
+
+    expect(document.activeElement).toBe(editButton());
+  });
+
+  test('a refresh after an upload leaves focus where it is', async () => {
+    axiosInstance.post.mockResolvedValueOnce({});
+    const wrapper = mountList([], { focusConfig: 'Topology/site' });
+    await flushPromises();
+
+    await upload(wrapper);
+    await flushPromises();
+
+    // The upload fetched the list again.
+    expect(axiosInstance.get.mock.calls).toEqual([['configs'], ['configs']]);
+    expect(document.activeElement).not.toBe(editButton());
   });
 });
