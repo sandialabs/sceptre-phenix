@@ -63,4 +63,9 @@ When a config fails its schema, the config routes (`POST /configs`,
 explained lines in `metadata.validation`, one per line, and the validator's
 text in `metadata.validation-raw`; see [`workflow.md`](workflow.md).
 
+`POST /users` and `POST /signup` answer `409` `user <name> already exists` for
+a name another user has, and `500` `error creating user` for other failures.
+`POST /users` answers `400` `role not found` for an unknown role before it
+creates anything.
+
 `src/go/web/server.go` is the authoritative route list.

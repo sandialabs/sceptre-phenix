@@ -20,6 +20,7 @@ It requires a valid username and password.
               type="text"
               id="signup-username"
               :compat-fallthrough="false"
+              ref="signupUsername"
               autocomplete="username"
               v-model="username"
               minlength="4"
@@ -250,8 +251,30 @@ It requires a valid username and password.
             this.signUpModal = false;
           })
           .catch((err) => {
+            // Another account has the name: the User Name field says so,
+            // a toast announces it, and focus goes back to the field.
+            if (err.response?.status === 409) {
+              this.userExists = true;
+              this.$buefy.toast.open({
+                message: 'User already exists',
+                type: 'is-warning',
+                duration: 4000,
+              });
+              this.$refs.signupUsername?.focus();
+
+              return;
+            }
+
             useErrorNotification(err);
           });
+      },
+    },
+
+    watch: {
+      // After the user changes the name, the form does not know if it is
+      // taken.
+      username() {
+        this.userExists = false;
       },
     },
 

@@ -85,11 +85,24 @@ test('create account via signup modal lands on disabled page', async ({
   ).toBeVisible();
 
   const modal = page.locator('.modal-card');
-  await modal.locator('input[type="text"]').nth(0).fill('e2e-signup');
+  const userName = modal.locator('input[type="text"]').nth(0);
+  await userName.fill(ADMIN_USER);
   await modal.locator('input[type="text"]').nth(1).fill('E2E');
   await modal.locator('input[type="text"]').nth(2).fill('Signup');
   await modal.locator('input[type="password"]').nth(0).fill('Testpass1!');
   await modal.locator('input[type="password"]').nth(1).fill('Testpass1!');
+
+  // The admin's name is refused in the field, with focus, and in a toast.
+  // Another name clears it.
+  await page.getByRole('button', { name: 'Create User' }).click();
+  const taken = modal.getByText('User already exists');
+  await expect(taken).toBeVisible();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'User already exists' }),
+  ).toBeVisible();
+  await expect(userName).toBeFocused();
+  await userName.fill('e2e-signup');
+  await expect(taken).toBeHidden();
   await page.getByRole('button', { name: 'Create User' }).click();
 
   // fresh self-signup users get the Disabled role until an admin assigns one
