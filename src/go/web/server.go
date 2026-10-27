@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -34,6 +35,8 @@ const (
 
 var o serverOptions //nolint:gochecknoglobals // global options
 
+// ConfigureUsers creates each missing default user (name:password:role[:resource...])
+// with its role. It skips an entry without a role and joins the errors.
 func ConfigureUsers(users []string) error {
 	setUserRole := func(user *rbac.User, rname string, resources ...string) {
 		if role, err := rbac.RoleFromConfig(rname); err == nil {
@@ -61,8 +64,34 @@ func ConfigureUsers(users []string) error {
 		}
 	}
 
-	for _, u := range users {
+	// Where an entry's password and role are, after its name.
+	const (
+		passwordField = 1
+		roleField     = 2
+	)
+
+	var errs []error
+
+	for position, u := range users {
 		creds := strings.Split(u, ":")
+
+		if len(creds) <= roleField {
+			// Name the entry by position and by its name, never by a field
+			// that may be a password.
+			var name string
+			if len(creds) > passwordField {
+				name = creds[0]
+			}
+
+			plog.Error(plog.TypeSecurity, "skipping default user without a role", "position", position+1, "user", name)
+
+			errs = append(errs, fmt.Errorf(
+				"default user %d (%q) is not name:password:role[:resource...]", position+1, name,
+			))
+
+			continue
+		}
+
 		uname := creds[0]
 		pword := creds[1]
 		rname := creds[2]
@@ -90,12 +119,25 @@ func ConfigureUsers(users []string) error {
 
 		plog.Info(plog.TypeSecurity, "creating default user", "user", uname, "role", rname)
 
-		user := rbac.NewUser(uname, pword)
+		user, err := rbac.NewUser(uname, pword, "", "")
+		if errors.Is(err, rbac.ErrUserExists) {
+			// Created since it was looked up, by another phenix sharing the
+			// store, say. It is left as it is.
+			plog.Info(plog.TypeSecurity, "default user already exists", "user", uname)
+
+			continue
+		} else if err != nil {
+			plog.Error(plog.TypeSecurity, "creating default user", "user", uname, "err", err)
+
+			errs = append(errs, err)
+
+			continue
+		}
 
 		setUserRole(user, rname, creds[3:]...)
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 //nolint:funlen,maintidx // server startup
