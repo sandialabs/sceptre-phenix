@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
 
 env:
-  MM_REV: master
+  MM_REV: latest
 
 permissions:
   contents: read
