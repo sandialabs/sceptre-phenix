@@ -27,6 +27,8 @@ message VM {
   bool snapshot = 22 [json_name="snapshot"];
   uint32 inject_partition = 23 [json_name="inject_partition"];
   string description = 24;
+  // The topology node's general.notes, which are never VM tags.
+  repeated string notes = 25;
 }
 
 message VMList {

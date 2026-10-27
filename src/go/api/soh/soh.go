@@ -11,11 +11,30 @@ import (
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
+	"phenix/util/mm"
 )
 
 const defaultEdgeLength = 150
 
 var vlanAliasRegex = regexp.MustCompile(`(.*) \(\d*\)`)
+
+// vmNode makes the network node for a VM, with its topology notes for the details dialog.
+func vmNode(v mm.VM, status string) Node {
+	node := Node{ //nolint:exhaustruct // partial initialization
+		ID:     v.ID,
+		Label:  v.Name,
+		Image:  v.OSType,
+		Tags:   v.Tags,
+		Notes:  v.Notes,
+		Status: status,
+	}
+
+	if v.Type == "Router" || v.Type == "Firewall" {
+		node.Image = v.Type
+	}
+
+	return node
+}
 
 func Get(expName, statusFilter string) (*Network, error) { //nolint:funlen // complex logic
 	// Create an empty network
@@ -104,17 +123,7 @@ func Get(expName, statusFilter string) (*Network, error) { //nolint:funlen // co
 			continue
 		}
 
-		node := Node{ //nolint:exhaustruct // partial initialization
-			ID:     vm.ID,
-			Label:  vm.Name,
-			Image:  vm.OSType,
-			Tags:   vm.Tags,
-			Status: vmState,
-		}
-
-		if vm.Type == "Router" || vm.Type == "Firewall" {
-			node.Image = vm.Type
-		}
+		node := vmNode(vm, vmState)
 
 		if soh, ok := status[vm.Name]; ok {
 			node.SOH = soh

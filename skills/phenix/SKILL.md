@@ -53,7 +53,11 @@ for a complete, copyable two-node topology):
 
 - `type`: `VirtualMachine | Firewall | Router | Switch`
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
-  `general.do_not_boot`, `general.snapshot`
+  `general.do_not_boot`, `general.snapshot`, `general.notes` (up to 100 strings;
+  kept only in the topology, never copied to labels or VM tags; the VM Labels
+  dialog and State of Health details list them read-only before the editable
+  `__notes_<time>` VM tags, and the API's VM and SoH node JSON carry them as
+  `notes`)
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos | other`
 - `hardware.vcpus`, `hardware.memory`, `hardware.drives[].image` (disk image name/path)
 - `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|dhcp|manual`

@@ -113,6 +113,8 @@ Optional values for a node in the topology configuration can include:
 - additional disk storage
 - file injections (and main disk inject partition)
 - labels, which are typically used by phēnix apps
+- notes (`general.notes`), which the VM's Labels dialog and State of Health
+  details show (see [Node Notes](#node-notes))
 - routing ruleset(s)
 - delay triggered by `user`, `timer`, or `c2` (command and control)
 
@@ -149,6 +151,40 @@ three options available to set, but on only one option can be set:
     tag in the Delay column next to the Screenshot column. The tag will indicate
     what type of dealy was set. Once all the delayed VMs have started, the Delay
     column will no longer be visible.
+
+#### Node Notes
+
+`general.notes` is a list of notes about a node. It holds at most 100 notes,
+each 1 to 4096 characters long. A note can have more than one line.
+
+phēnix keeps the notes only in `general.notes`. It does not copy them into
+the node's labels, so they never become VM tags. In an experiment, the VM's
+Labels dialog (the Labels column of the experiment's VM table) and the VM's
+[State of Health](state-of-health.md) details list them first under Notes, each
+marked "From the topology". The UI shows them read-only: to change them, change
+the topology.
+
+```yaml
+- type: VirtualMachine
+  general:
+    hostname: AD1
+    notes:
+    - Domain controller for the corporate network.
+    - |-
+      Reset the administrator password
+      before each run.
+  hardware:
+    os_type: windows
+    drives:
+    - image: win-svr-2019.qc2
+```
+
+!!! note
+    An experiment keeps the topology it was created from, so a later change to
+    the topology's notes does not change an existing experiment. A note that
+    you add in the Labels dialog is a VM tag with a `__notes_<time>` key, and
+    you can edit or delete it there. Saving the dialog writes only those notes
+    and the labels, never the topology's notes.
 
 #### Network Address Translation (NAT)
 

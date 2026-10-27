@@ -2,6 +2,8 @@ package vm_test
 
 import (
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -35,9 +37,19 @@ func (m *connectMM) ConnectVMInterface(opts ...mm.Option) error {
 
 // getTestExperiment builds a store mock backing a minimal experiment with one
 // topology node and one scenario app that targets the node with metadata, and
-// makes it the phenix default store for the duration of the test.
-func getTestExperiment(t *testing.T, vmName string, appMetadata map[string]any, startTime string) {
+// makes it the phenix default store for the duration of the test. Any notes go in the node's general.notes.
+func getTestExperiment(t *testing.T, vmName string, appMetadata map[string]any, startTime string, notes ...string) {
 	t.Helper()
+
+	general := map[string]any{
+		"hostname":    vmName,
+		"do_not_boot": false,
+		"snapshot":    false,
+	}
+
+	if len(notes) > 0 {
+		general["notes"] = notes
+	}
 
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
@@ -54,12 +66,8 @@ func getTestExperiment(t *testing.T, vmName string, appMetadata map[string]any, 
 			"topology": map[string]any{
 				"nodes": []map[string]any{
 					{
-						"type": "VirtualMachine",
-						"general": map[string]any{
-							"hostname":    vmName,
-							"do_not_boot": false,
-							"snapshot":    false,
-						},
+						"type":    "VirtualMachine",
+						"general": general,
 						"hardware": map[string]any{
 							"vcpus":   2,
 							"memory":  512,
@@ -186,6 +194,60 @@ func TestListExcludesKilledVMsFromRunningExperiment(t *testing.T) {
 
 			if len(got) != test.want {
 				t.Fatalf("vm.List returned %d VMs, want %d: %#v", len(got), test.want, got)
+			}
+		})
+	}
+}
+
+// TestVMsCarryNodeNotes checks that List and Get fill VM notes from general.notes, apart from the tags.
+func TestVMsCarryNodeNotes(t *testing.T) {
+	notes := []string{"Domain controller.", "Reset the password\nbefore each run."}
+
+	tests := []struct {
+		name      string
+		startTime string
+		vms       mm.VMs
+	}{
+		{name: "stopped experiment"},
+		{
+			name:      "running experiment",
+			startTime: "2026-08-26T00:00:00Z",
+			vms:       mm.VMs{{Name: "notes-vm", Running: true, Tags: map[string]string{"role": "dc"}}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			getTestExperiment(t, "notes-vm", nil, test.startTime, notes...)
+
+			originalMM := mm.DefaultMM
+			t.Cleanup(func() { mm.DefaultMM = originalMM }) //nolint:reassign // restore test double
+			mm.DefaultMM = listMM{vms: test.vms}            //nolint:reassign // install test double
+
+			listed, err := vm.List("test-experiment")
+			if err != nil {
+				t.Fatalf("vm.List returned error: %v", err)
+			}
+
+			if len(listed) != 1 {
+				t.Fatalf("vm.List returned %d VMs, want 1: %#v", len(listed), listed)
+			}
+
+			got, err := vm.Get("test-experiment", "notes-vm")
+			if err != nil {
+				t.Fatalf("vm.Get returned error: %v", err)
+			}
+
+			for name, v := range map[string]mm.VM{"vm.List": listed[0], "vm.Get": *got} {
+				if !slices.Equal(v.Notes, notes) {
+					t.Errorf("%s notes = %q, want %q", name, v.Notes, notes)
+				}
+
+				for key := range v.Tags {
+					if strings.HasPrefix(key, "__notes_") {
+						t.Errorf("%s tags hold note key %q, want no note tags", name, key)
+					}
+				}
 			}
 		})
 	}

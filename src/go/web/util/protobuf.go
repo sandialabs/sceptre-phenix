@@ -123,6 +123,7 @@ func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM 
 		State:           vm.State,
 		CdRom:           vm.CdRom,
 		Tags:            vm.Tags,
+		Notes:           vm.Notes,
 		CcActive:        vm.CCActive,
 		Snapshot:        vm.Snapshot,
 	}

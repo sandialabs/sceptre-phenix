@@ -1907,6 +1907,13 @@ components:
         screenshot:
           type: string
           format: base64
+        notes:
+          type: array
+          description: >-
+            The notes of the VM's topology node (`general.notes`), in order.
+            They are not VM tags, and updating the VM's tags does not change them.
+          items:
+            type: string
     Schedule:
       type: object
       properties:

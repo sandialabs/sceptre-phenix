@@ -1,7 +1,12 @@
 package util
 
 import (
+	"encoding/json"
+	"maps"
+	"slices"
 	"testing"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"phenix/store"
 	"phenix/types"
@@ -50,5 +55,38 @@ func TestExperimentToProtobufVMCount(t *testing.T) {
 				t.Fatalf("VM count = %d, want %d", got, test.want)
 			}
 		})
+	}
+}
+
+// TestVMToProtobufCarriesNotes checks that the VM message and its JSON carry the node notes apart from the tags.
+func TestVMToProtobufCarriesNotes(t *testing.T) {
+	notes := []string{"Domain controller.", "Reset the password\nbefore each run."}
+	vm := mm.VM{Name: "host-01", Tags: map[string]string{"role": "dc"}, Notes: notes}
+
+	pb := VMToProtobuf("test", vm, nil)
+	if !slices.Equal(pb.GetNotes(), notes) {
+		t.Errorf("VMToProtobuf notes = %q, want %q", pb.GetNotes(), notes)
+	}
+
+	body, err := protojson.Marshal(pb)
+	if err != nil {
+		t.Fatalf("marshaling the VM: %v", err)
+	}
+
+	var got struct {
+		Notes []string          `json:"notes"`
+		Tags  map[string]string `json:"tags"`
+	}
+
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshaling %s: %v", body, err)
+	}
+
+	if !slices.Equal(got.Notes, notes) {
+		t.Errorf("JSON notes = %q, want %q", got.Notes, notes)
+	}
+
+	if want := map[string]string{"role": "dc"}; !maps.Equal(got.Tags, want) {
+		t.Errorf("JSON tags = %v, want %v", got.Tags, want)
 	}
 }

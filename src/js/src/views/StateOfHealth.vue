@@ -14,6 +14,12 @@
           <div class="content">
             <ul>
               <li
+                v-for="(note, index) in detailsModal.notes"
+                :key="`topologyNote${index}`">
+                <span class="tag is-info is-light">From the topology</span>
+                <p style="white-space: pre-line">{{ note }}</p>
+              </li>
+              <li
                 v-for="k in Object.keys(detailsModal.tags).filter((k) =>
                   k.startsWith('__notes_'),
                 )"
@@ -377,7 +383,13 @@
                 aria-label="Edit notes and labels"
                 class="button is-light"
                 icon-left="tag"
-                @click="showTagsModal(detailsModal.vm, detailsModal.tags)" />
+                @click="
+                  showTagsModal(
+                    detailsModal.vm,
+                    detailsModal.tags,
+                    detailsModal.notes,
+                  )
+                " />
             </b-tooltip>
           </template>
           <template
@@ -889,6 +901,7 @@
               this.detailsModal.status = detailsNode.status;
               this.detailsModal.soh = detailsNode.soh;
               this.detailsModal.tags = detailsNode.tags;
+              this.detailsModal.notes = detailsNode.notes ?? [];
             }
           }
         } catch (err) {
@@ -1154,6 +1167,7 @@
           this.detailsModal.status = n.status;
           this.detailsModal.soh = n.soh;
           this.detailsModal.tags = n.tags;
+          this.detailsModal.notes = n.notes ?? [];
         }
       },
 
@@ -1331,6 +1345,7 @@
           status: '',
           soh: null,
           tags: {},
+          notes: [],
         };
       },
 
@@ -1354,7 +1369,7 @@
         }).href;
       },
 
-      showTagsModal(vm, tags) {
+      showTagsModal(vm, tags, topologyNotes) {
         const self = this;
         this.$buefy.modal.open({
           component: VmLabelsModal,
@@ -1364,6 +1379,7 @@
             vmName: vm,
             experiment: this.$route.params.id,
             tags: tags,
+            topologyNotes: topologyNotes,
           },
           events: {
             saved() {
@@ -1477,6 +1493,7 @@
           status: '',
           soh: null,
           tags: {},
+          notes: [],
         },
         styleModal: {
           active: false,

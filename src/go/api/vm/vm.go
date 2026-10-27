@@ -111,6 +111,7 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 			OSType:          node.Hardware().OSType(),
 			Snapshot:        snapshot,
 			Tags:            node.Labels(),
+			Notes:           node.General().Notes(),
 		}
 
 		ifaceNameByVLAN := make(map[string]string)
@@ -240,6 +241,7 @@ func Get(expName, vmName string) (*mm.VM, error) { //nolint:funlen // complex lo
 			Metadata:        make(map[string]any),
 			Labels:          node.Labels(),
 			Tags:            node.Labels(),
+			Notes:           node.General().Notes(),
 			Annotations:     node.Annotations(),
 		}
 

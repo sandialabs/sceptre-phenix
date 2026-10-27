@@ -1293,7 +1293,7 @@
                     <font-awesome-icon icon="tag" />
                     <font-awesome-layers-text
                       counter
-                      :value="tagCount(props.row.tags)" />
+                      :value="tagCount(props.row.tags, props.row.notes)" />
                   </font-awesome-layers>
                 </div>
               </b-tooltip>
@@ -1744,6 +1744,7 @@
             vmName: vm.name,
             experiment: this.$route.params.id,
             tags: vm.tags,
+            topologyNotes: vm.notes,
           },
         });
       },

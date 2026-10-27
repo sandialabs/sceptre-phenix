@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -234,6 +235,9 @@ type VM struct {
 	Snapshot        bool              `json:"snapshot"`
 	Labels          map[string]string `json:"labels"`
 
+	// Notes holds the topology node's general.notes. phenix never sets them as VM tags.
+	Notes []string `json:"notes,omitempty"`
+
 	// Used internally to track network <--> IP relationship, since
 	// network ordering from minimega may not be the same as network
 	// ordering in the experiment database.
@@ -276,6 +280,8 @@ func (v VM) Copy() VM {
 
 	vm.Tags = make(map[string]string, len(v.Tags))
 	maps.Copy(vm.Tags, v.Tags)
+
+	vm.Notes = slices.Clone(v.Notes)
 
 	return vm
 }

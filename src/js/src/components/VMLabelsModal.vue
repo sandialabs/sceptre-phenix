@@ -1,10 +1,19 @@
 <template>
   <div class="modal-card" style="width: auto">
     <header class="modal-card-head">
-      <p class="modal-card-title mr-6">{{ this.vmName }} Labels</p>
+      <p class="modal-card-title mr-6">{{ vmName }} Labels</p>
     </header>
     <section class="modal-card-body fixed-height">
       <p class="title is-4">Notes</p>
+      <ul v-if="topologyNotes.length > 0" class="topology-notes mb-3">
+        <li
+          v-for="(note, index) in topologyNotes"
+          :key="`topologyNote${index}`"
+          class="topology-note">
+          <span class="tag is-info is-light">From the topology</span>
+          <p class="topology-note-text">{{ note }}</p>
+        </li>
+      </ul>
       <b-table :data="workingNotes" ref="notesTable">
         <b-table-column field="value" label="Value" v-slot="props">
           <template v-if="canEdit()">
@@ -100,6 +109,11 @@
       vmName: String,
       experiment: String,
       tags: Object,
+      // The node's general.notes. The dialog shows them but never saves them as tags.
+      topologyNotes: {
+        type: Array,
+        default: () => [],
+      },
     },
 
     data() {
@@ -226,5 +240,16 @@
 
   textarea {
     overflow-y: hidden;
+  }
+
+  .topology-note {
+    padding: 0.5em 0.75em;
+    border-bottom: 1px solid #dbdbdb;
+  }
+
+  .topology-note-text {
+    margin-top: 0.25em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 </style>

@@ -19,6 +19,7 @@ type Node struct {
 	Label  string            `json:"label"`
 	Image  string            `json:"image"`
 	Tags   map[string]string `json:"tags"`
+	Notes  []string          `json:"notes,omitempty"`
 	Status string            `json:"status"`
 	SOH    *HostState        `json:"soh"`
 }
