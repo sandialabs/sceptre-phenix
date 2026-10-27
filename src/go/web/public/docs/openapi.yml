@@ -3,7 +3,6 @@ info:
   description: phenix API
   version: 0.0.0
   title: phenix
-  termsOfService: http://swagger.io/terms/
   contact:
     url: https://github.com/sandialabs/sceptre-phenix
   license:
@@ -345,6 +344,12 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        "404":
+          description: there is no schema for this kind or version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
   "/experiments":
     get:
       tags:
@@ -517,7 +522,7 @@ paths:
           description: name of phenix experiment to update schedule for
           required: true
           schema:
-            type: name
+            type: string
       requestBody:
         description: scheduling algorithm to use
         required: true
@@ -723,7 +728,7 @@ paths:
       description: ""
       operationId: deleteExperimentsNameVmsName
       parameters:
-        - name: name
+        - name: exp_name
           in: path
           description: name of phenix experiment
           required: true
@@ -1367,7 +1372,7 @@ paths:
           schema:
             type: string
       requestBody:
-        description: user paramaters
+        description: user parameters
         required: true
         content:
           application/json:
@@ -1896,7 +1901,7 @@ components:
           items:
             $ref: "#/components/schemas/Capture"
         running:
-          type: bool
+          type: boolean
         uptime:
           type: number
           format: float
@@ -2071,6 +2076,17 @@ components:
           type: string
         token:
           type: string
+    WebError:
+      type: object
+      properties:
+        message:
+          type: string
+        cause:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
     Workflow:
       type: object
       title: Workflow
