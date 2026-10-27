@@ -84,11 +84,26 @@ are only available to Global Administrator or Global Viewer.
     </template>
 
     <template #end>
-      <b-navbar-item v-if="proxyAuth" class="navbar-item" @click="logout"
-        >Reauthorize
+      <!-- Buttons, so the keyboard reaches them too. While a logout waits
+           for the server, they say so. -->
+      <b-navbar-item
+        v-if="proxyAuth"
+        tag="button"
+        type="button"
+        class="navbar-item app-header__logout"
+        :aria-busy="loggingOut ? 'true' : undefined"
+        @click="logout"
+        >{{ loggingOut ? 'Logging out…' : 'Reauthorize' }}
       </b-navbar-item>
-      <b-navbar-item v-else-if="auth" class="navbar-item" @click="logout"
-        >Logout
+      <b-navbar-item
+        v-else-if="auth"
+        tag="button"
+        type="button"
+        class="navbar-item app-header__logout"
+        data-testid="nav-logout"
+        :aria-busy="loggingOut ? 'true' : undefined"
+        @click="logout"
+        >{{ loggingOut ? 'Logging out…' : 'Logout' }}
       </b-navbar-item>
     </template>
   </b-navbar>
@@ -102,6 +117,9 @@ are only available to Global Administrator or Global Viewer.
   export default {
     setup() {
       return { roleAllowed };
+    },
+    data() {
+      return { loggingOut: false };
     },
     //  The computed elements determine if the user is already logged
     //  in; if so, the routable links are available. If not, the sign
@@ -129,20 +147,55 @@ are only available to Global Administrator or Global Viewer.
     methods: {
       //  These methods are used to logout a user; or, present
       //  routable link based on a Global user role.
-      logout() {
-        axiosInstance.get('logout').then((response) => {
-          if (response.status == 204) {
-            usePhenixStore().logout();
+      logout(event) {
+        const button = event?.currentTarget;
 
-            if (this.proxyAuth) {
-              this.$buefy.toast.open({
-                message: 'Your account has been reauthorized',
-                type: 'is-success',
-                duration: 4000,
-              });
+        if (this.loggingOut) {
+          return;
+        }
+
+        this.loggingOut = true;
+
+        axiosInstance
+          .get('logout')
+          .then(
+            (response) => response.status,
+            (error) => error.response?.status,
+          )
+          .then((status) => {
+            this.loggingOut = false;
+
+            // The server no longer knows an expired token, and replies 401.
+            if (status === 204 || status === 401) {
+              usePhenixStore().logout();
+
+              if (this.proxyAuth) {
+                this.$buefy.toast.open({
+                  message: 'Your account has been reauthorized',
+                  type: 'is-success',
+                  duration: 4000,
+                });
+              }
+
+              return;
             }
-          }
-        });
+
+            // When the server does not answer the logout, the session stays
+            // as it was and a toast says so. Focus goes back to Logout.
+            this.$buefy.toast.open({
+              message:
+                'Could not log out. Check your connection and try again.',
+              type: 'is-danger',
+              duration: 8000,
+            });
+            button?.focus();
+
+            // In a narrow window, the menu that held Logout closes on a
+            // click. Focus goes back to the button that opens the menu.
+            if (!button?.getClientRects().length) {
+              this.$el.querySelector('.navbar-burger')?.focus();
+            }
+          });
       },
 
       builderLoc() {
@@ -155,3 +208,27 @@ are only available to Global Administrator or Global Viewer.
     },
   };
 </script>
+
+<style scoped>
+  /* The logout items are buttons that look like the links beside them. */
+  .app-header__logout {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-align: start;
+  }
+
+  .app-header__logout:hover,
+  .app-header__logout:focus-visible {
+    background-color: rgba(255, 255, 255, 0.12);
+  }
+
+  /* In the collapsed menu, the row is the button, as it is for a link. */
+  @media (max-width: 1023px) {
+    .app-header__logout {
+      width: 100%;
+    }
+  }
+</style>

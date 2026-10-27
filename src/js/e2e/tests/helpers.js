@@ -1,4 +1,6 @@
 // Shared helpers for the phenix UI smoke tests.
+const { expect } = require('@playwright/test');
+const AxeBuilder = require('@axe-core/playwright').default;
 
 // Attach console/network/pageerror capture to a page; findings pushed into `issues`.
 function attachCapture(page, issues) {
@@ -71,4 +73,34 @@ function unsignedJwt(username) {
   return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: username, exp: 9999999999 })}.sig`;
 }
 
-module.exports = { attachCapture, settle, fatalOf, gotoSeeded, unsignedJwt };
+// Axe scans run only in Chromium.
+function isChromium(page) {
+  return page.context().browser()?.browserType().name() === 'chromium';
+}
+
+// Fails when text in `selector` has less contrast than WCAG 1.4.3 asks for,
+// as axe-core measures it. `label` names the element. Chromium only.
+async function expectTextContrast(page, selector, label) {
+  if (!isChromium(page)) return;
+  const { violations } = await new AxeBuilder({ page })
+    .include(selector)
+    .withRules(['color-contrast'])
+    .analyze();
+  const failures = violations.flatMap((violation) =>
+    violation.nodes.map(
+      (node) =>
+        `${node.target.join(' ')}: ${node.any.map((check) => check.message).join('; ')}`,
+    ),
+  );
+  expect(failures, `text contrast in ${label}`).toEqual([]);
+}
+
+module.exports = {
+  attachCapture,
+  settle,
+  fatalOf,
+  gotoSeeded,
+  isChromium,
+  unsignedJwt,
+  expectTextContrast,
+};
