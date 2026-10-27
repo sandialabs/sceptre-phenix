@@ -1332,6 +1332,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
+        "409":
+          description: a user of that name exists
   "/users/{username}":
     get:
       tags:
@@ -1437,6 +1439,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Credentials"
+        "409":
+          description: a user of that name exists
   "/login":
     get:
       tags:
