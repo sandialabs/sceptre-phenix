@@ -8,14 +8,18 @@ FROM $PHENIX_IMG
 ARG PHENIX_REPO
 ARG PHENIX_BRANCH
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # Install Node.js
-ENV NODE_VERSION=24.16.0
+ENV NODE_VERSION=24.22.1
+ARG NODE_SHA256=6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6
 RUN wget --progress=dot:giga -O node.txz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
+  && echo "${NODE_SHA256}  node.txz" | sha256sum -c - \
   && tar -xJf node.txz -C /usr/local --strip-components=1 --no-same-owner && rm node.txz \
   && ln -s /usr/local/bin/node /usr/local/bin/nodejs
 
 # Install Redocly CLI globally for building API docs
-RUN npm install -g @redocly/cli@2.48.0 && npm cache clean --force
+RUN npm install -g @redocly/cli@2.62.1 && npm cache clean --force
 
 RUN git clone --branch ${PHENIX_BRANCH} https://github.com/${PHENIX_REPO}.git /usr/local/src/phenix \
   && mkdir -p /opt/phenix/web \

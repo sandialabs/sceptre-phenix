@@ -17,9 +17,8 @@ Image builds are Linux-only, amd64-only, and need root/privileged execution
 | Disk space in the output dir | Raw image of `--size` plus converted copy plus `<name>.tar` cache |
 | Network access | debootstrap, apt, and script downloads |
 
-The in-tree [`docker/Dockerfile`](../../../docker/Dockerfile) and
-[`podman/Containerfile`](../../../podman/Containerfile) `apt-get install` the
-full set:
+The in-tree [`docker/Dockerfile`](../../../docker/Dockerfile) (used by both
+Docker and Podman) `apt-get install`s the full set:
 
 ```text
 cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted
@@ -27,7 +26,8 @@ psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim
 wget xz-utils zerofree guestfish
 ```
 
-plus `git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2` and
+plus a clone of `https://gitlab.com/glattercj/vmdb2` into `/opt/vmdb2`, checked
+out at the commit pinned by the `VMDB2_REF` build arg, and
 `ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2`. The Debian package built by
 [`scripts/build-deb.sh`](../../../scripts/build-deb.sh) declares the same
 dependencies, so a host install of the phenix `.deb` is also a valid build host.

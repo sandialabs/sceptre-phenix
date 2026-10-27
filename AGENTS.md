@@ -175,9 +175,11 @@ image, documentation, or topology details.
 GitHub Actions is path-scoped: `ci.yml` generates, lints, and tests Go;
 `frontend.yml` runs Vitest and, for changes that can affect the browser (the
 paths its `changes` job lists), builds UI/backend and runs Playwright smoke
-tests; `examples.yml` checks Go/Python examples; `packages.yml` builds Docker, Debian,
-and Podman outputs; `docs.yml` builds the documentation site for pull requests
-and publishes it to GitHub Pages from `main`. `lint.yml` runs every prek hook
+tests; `examples.yml` checks Go/Python examples; `packages.yml` builds the Docker
+image (Buildx with the GHA layer cache), JIT UI image, and Debian package;
+`podman.yml` builds the same `docker/Dockerfile` with Podman; `docs.yml` builds
+the documentation site for pull requests and publishes it to GitHub Pages from
+`main`. `lint.yml` runs every prek hook
 on all changes. Update affected path filters, inputs, generated artifacts,
 tool versions, and local-equivalent commands together. Preserve least-privilege
 permissions, supported action versions, lockfile caches, and shared version
