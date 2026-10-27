@@ -55,16 +55,6 @@ func init() { //nolint:gochecknoinits // component registration
 	}
 }
 
-//nolint:ireturn // factory function returns interface
-func GetComponent(name string) Component {
-	cmp, ok := components[name]
-	if !ok {
-		cmp = components["user-shell"]
-	}
-
-	return cmp
-}
-
 func ExecuteComponent(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
 

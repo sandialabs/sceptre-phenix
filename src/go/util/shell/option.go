@@ -68,12 +68,6 @@ func StreamStderr(s chan []byte) Option {
 	}
 }
 
-func SplitLines() Option {
-	return func(o *options) {
-		o.splitter = bufio.ScanLines
-	}
-}
-
 func SplitBytes() Option {
 	return func(o *options) {
 		o.splitter = bufio.ScanBytes

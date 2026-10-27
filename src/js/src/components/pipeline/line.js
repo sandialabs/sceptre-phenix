@@ -70,10 +70,6 @@ export class EdgeService {
 }
 
 class DefaultStyleService extends EdgeService {
-  constructor(xstep, ystep) {
-    super(xstep, ystep);
-  }
-
   drawEdge(start, end) {
     if (start.y == end.y) {
       return this.drawHEdge(start, end);

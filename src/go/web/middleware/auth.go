@@ -51,18 +51,6 @@ func UserFromContext(ctx context.Context) string {
 	return user
 }
 
-// JWTFromContext safely extracts the raw JWT string from the given context.
-func JWTFromContext(ctx context.Context) string {
-	val := ctx.Value(ContextKeyJWT)
-
-	jwt, ok := val.(string)
-	if !ok {
-		return ""
-	}
-
-	return jwt
-}
-
 func fromPhenixAuthTokenHeader(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("X-Phenix-Auth-Token")
 	if authHeader == "" {

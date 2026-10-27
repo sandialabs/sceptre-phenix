@@ -2,7 +2,6 @@ package notes
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 
 	"github.com/gofrs/uuid/v5"
@@ -124,84 +123,6 @@ func AddInfo(ctx context.Context, flush bool, i ...string) {
 	}
 }
 
-func ClearErrors(ctx context.Context) {
-	uuid, ok := ctx.Value(noteUUID{}).(string)
-
-	if !ok {
-		return
-	}
-
-	errsMutex.Lock()
-	defer errsMutex.Unlock()
-
-	delete(errs, uuid)
-}
-
-func ClearWarnings(ctx context.Context) {
-	uuid, ok := ctx.Value(noteUUID{}).(string)
-
-	if !ok {
-		return
-	}
-
-	warningsMutex.Lock()
-	defer warningsMutex.Unlock()
-
-	delete(warnings, uuid)
-}
-
-func ClearInfo(ctx context.Context) {
-	uuid, ok := ctx.Value(noteUUID{}).(string)
-
-	if !ok {
-		return
-	}
-
-	infosMutex.Lock()
-	defer infosMutex.Unlock()
-
-	delete(infos, uuid)
-}
-
-func Errors(ctx context.Context, all bool) []error {
-	uuid, ok := ctx.Value(noteUUID{}).(string)
-
-	if !ok {
-		return nil
-	}
-
-	errsMutex.RLock()
-	defer errsMutex.RUnlock()
-
-	if all {
-		e := make([]error, len(errs[uuid]))
-
-		for idx, err := range errs[uuid] {
-			e[idx] = err.note
-
-			err.seen = true
-			errs[uuid][idx] = err
-		}
-
-		return e
-	}
-
-	var e []error
-
-	for idx, err := range errs[uuid] {
-		if err.seen {
-			continue
-		}
-
-		e = append(e, err.note)
-
-		err.seen = true
-		errs[uuid][idx] = err
-	}
-
-	return e
-}
-
 func Warnings(ctx context.Context, all bool) []error {
 	uuid, ok := ctx.Value(noteUUID{}).(string)
 
@@ -313,57 +234,4 @@ func PrettyPrint(ctx context.Context, all bool) {
 			plog.Info(plog.TypeSystem, i.note)
 		}
 	}
-}
-
-func ToJSON(ctx context.Context) json.RawMessage {
-	uuid, ok := ctx.Value(noteUUID{}).(string)
-
-	if !ok {
-		return nil
-	}
-
-	body := make(map[string][]string)
-
-	errsMutex.RLock()
-	defer errsMutex.RUnlock()
-
-	if v, ok := errs[uuid]; ok {
-		s := make([]string, len(v))
-
-		for i, e := range v {
-			s[i] = e.note.Error()
-		}
-
-		body["errors"] = s
-	}
-
-	warningsMutex.RLock()
-	defer warningsMutex.RUnlock()
-
-	if v, ok := warnings[uuid]; ok {
-		s := make([]string, len(v))
-
-		for i, e := range v {
-			s[i] = e.note.Error()
-		}
-
-		body["warnings"] = s
-	}
-
-	infosMutex.RLock()
-	defer infosMutex.RUnlock()
-
-	if v, ok := infos[uuid]; ok {
-		s := make([]string, len(v))
-
-		for i, e := range v {
-			s[i] = e.note
-		}
-
-		body["infos"] = s
-	}
-
-	raw, _ := json.Marshal(body)
-
-	return raw
 }

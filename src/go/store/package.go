@@ -13,10 +13,6 @@ func Init(opts ...Option) error {
 	return nil
 }
 
-func Close() error {
-	return DefaultStore.Close()
-}
-
 func List(kinds ...string) (Configs, error) {
 	return DefaultStore.List(kinds...)
 }

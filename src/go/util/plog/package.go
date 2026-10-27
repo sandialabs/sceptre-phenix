@@ -6,11 +6,6 @@ import (
 	"strings"
 )
 
-// SetLevel sets the log level of the "phenix-default" [slog.Handler].
-func SetLevel(l slog.Level) {
-	Level.Set(l)
-}
-
 // SetLevelText sets the log level of the "phenix-default" [slog.Handler].
 func SetLevelText(l string) {
 	if strings.ToUpper(l) == "NONE" {
@@ -20,10 +15,6 @@ func SetLevelText(l string) {
 	}
 
 	_ = Level.UnmarshalText([]byte(l))
-}
-
-func SetLogFile(path string) {
-	ChangeLogFile(path)
 }
 
 func TextToLevel(level string) slog.Level {
