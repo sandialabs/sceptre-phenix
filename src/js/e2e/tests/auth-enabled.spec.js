@@ -57,18 +57,22 @@ test('wrong password shows incorrect-credentials toast', async ({ page }) => {
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });
 
-test('login lands on experiments', async ({ page }) => {
-  const issues = [];
-  attachCapture(page, issues);
-  await page.goto('/signin');
-  await settle(page);
-  await page.locator('.signin-form input[type="text"]').fill(ADMIN_USER);
-  await page.locator('.signin-form input[type="password"]').fill(ADMIN_PASS);
-  await page.getByRole('button', { name: 'Submit' }).click();
-  await expect(page).toHaveURL(/\/experiments/, { timeout: 15000 });
-  const fatal = filterKnown403s(fatalOf(issues));
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
-});
+test(
+  'login lands on experiments',
+  { tag: '@cross-browser' },
+  async ({ page }) => {
+    const issues = [];
+    attachCapture(page, issues);
+    await page.goto('/signin');
+    await settle(page);
+    await page.locator('.signin-form input[type="text"]').fill(ADMIN_USER);
+    await page.locator('.signin-form input[type="password"]').fill(ADMIN_PASS);
+    await page.getByRole('button', { name: 'Submit' }).click();
+    await expect(page).toHaveURL(/\/experiments/, { timeout: 15000 });
+    const fatal = filterKnown403s(fatalOf(issues));
+    expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+  },
+);
 
 test('create account via signup modal lands on disabled page', async ({
   page,
