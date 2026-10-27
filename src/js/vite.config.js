@@ -55,9 +55,16 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    // vitest: the Playwright suite in e2e/ has its own runner
+    // Vitest leaves out the Playwright suite in e2e/, which has its own runner.
     test: {
       exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+      setupFiles: ['test/unit-setup.js'],
+      // Measured only with --coverage (npm run test:coverage), as CI does.
+      coverage: {
+        provider: 'v8',
+        include: ['src/**'],
+        reporter: ['text-summary', 'json-summary', 'html'],
+      },
     },
   };
 });

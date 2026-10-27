@@ -19,6 +19,7 @@ Run from `src/go/`:
 |---|---|
 | Focused tests | `go test -race ./path/to/package/...` |
 | All Go tests | `go test -race ./...` or `make test` |
+| Go tests with coverage | `make test-cover` |
 | Non-fixing lint | `make check` |
 | Format / fixing lint | `make format` / `make lint` |
 | Generate all outputs | `make generate` |

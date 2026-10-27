@@ -42,8 +42,34 @@ jobs:
           cache-dependency-path: src/js/package-lock.json
       - name: Install dependencies
         run: npm ci
-      - name: Run unit tests
-        run: npm test
+      - name: Run unit tests with coverage
+        run: npm run test:coverage
+      # Coverage below the minimums in .github/coverage-minimums.json warns
+      # but does not fail the job.
+      - name: Summarize coverage
+        if: ${{ !cancelled() && hashFiles('src/js/coverage/coverage-summary.json') != '' }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const t = require("./coverage/coverage-summary.json").total;
+            const min = require("../../.github/coverage-minimums.json").js;
+            const keys = ["lines", "statements", "functions", "branches"];
+            const rows = keys.map(
+              (k) => `| ${k} | ${t[k].pct}% | ${min[k]}% | ${t[k].covered} of ${t[k].total} |`,
+            );
+            const head = ["### JS coverage", "", "| Measure | Covered | Minimum | Count |", "|---|---:|---:|---:|"];
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [...head, ...rows, ""].join("\n"));
+            for (const k of keys.filter((k) => t[k].pct < min[k])) {
+              console.log(`::warning title=JS coverage::${k} coverage is ${t[k].pct}%, below the minimum of ${min[k]}% in .github/coverage-minimums.json`);
+            }
+          '
+      - name: Upload coverage
+        if: ${{ !cancelled() && hashFiles('src/js/coverage/coverage-summary.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-js
+          path: src/js/coverage/
+          retention-days: 14
 
   test-e2e:
     name: E2E Smoke (UI)
