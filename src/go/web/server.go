@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -238,6 +239,10 @@ func Start(opts ...ServerOption) error {
 	})
 
 	api := router.PathPrefix("/api/v1").Subrouter()
+
+	// The router's NotFoundHandler serves the SPA index, so an API client would get 200 HTML.
+	// A route behind a disabled feature flag would then also look enabled.
+	api.NotFoundHandler = apiNotFoundHandler()
 
 	// OPTIONS method needed for CORS
 	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
@@ -560,4 +565,34 @@ func addRoutesToRouter(router *mux.Router, routes ...route) {
 	for _, r := range routes {
 		router.Handle(r.path, r.handler).Methods(r.methods...)
 	}
+}
+
+// apiNotFoundHandler answers 404 to an API request that matches no route, and never serves the SPA index.
+// Router middleware, including authentication, does not run here, so it must disclose nothing the path does not.
+func apiNotFoundHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plog.Warn(
+			plog.TypeSystem,
+			"Unknown API route requested",
+			"route",
+			r.URL.Path,
+			"method",
+			r.Method,
+		)
+
+		webErr := weberror.NewWebError(nil, "no API route matches this request").
+			SetStatus(http.StatusNotFound)
+
+		body, err := json.Marshal(webErr)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", mimeJSON)
+		w.WriteHeader(http.StatusNotFound)
+
+		_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	})
 }
