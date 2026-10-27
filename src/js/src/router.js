@@ -2,8 +2,13 @@ import { createRouter, createWebHistory } from 'vue-router';
 
 import { ToastProgrammatic as Toast } from 'buefy';
 
-import { usePhenixStore } from '@/store.js';
+import { tokenExpired, usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
+
+/** A page's title (WCAG 2.4.2): the most specific part first, then the app. */
+export function pageTitle(...parts) {
+  return [...parts.filter(Boolean), 'phēnix'].join(' - ');
+}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -212,10 +217,7 @@ router.beforeEach(async (to, _, next) => {
     } else if (to.name === 'signin') {
       // No need to go to the signin route if already authorized.
       router.replace('/');
-    } else if (
-      Date.now() >=
-      JSON.parse(atob(store.token.split('.')[1])).exp * 1000
-    ) {
+    } else if (tokenExpired(store.token)) {
       // handle expired JWT by logging user out: https://stackoverflow.com/a/69058154
       new Toast().open({
         message: `Token is expired. Log in again`,
@@ -254,7 +256,7 @@ router.beforeEach(async (to, _, next) => {
 });
 // Give every route its own document title (WCAG 2.4.2 Page Titled).
 router.afterEach((to) => {
-  document.title = to.meta?.title ? `${to.meta.title} - phēnix` : 'phēnix';
+  document.title = pageTitle(to.meta?.title);
 });
 
 export default router;
