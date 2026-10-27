@@ -53,21 +53,36 @@ server on another port (see the port rule in the root `AGENTS.md`):
 ```bash
 cd e2e
 npm ci
-npx playwright install --with-deps chromium
+npx playwright install --with-deps chromium firefox
 # against `phenix ui --listen-endpoint 127.0.0.1:3080`
 E2E_BASE_URL=http://127.0.0.1:3080 npx playwright test
 ```
 
-Default smoke tests need only a server. `routes.spec.js` also runs an
-axe-core WCAG 2.x A/AA scan on every route; fix violations in the UI
-(accessible names, contrast, ARIA) rather than excluding rules. Lifecycle tests additionally need
-minimega, VM images, and a topology (`E2E_LIFECYCLE=1`). Auth suites require a
-matching `VITE_AUTH` build and signing key. See `e2e/README.md`; report missing
-prerequisites instead of silently skipping checks.
+`routes.spec.js` also runs an axe-core WCAG 2.x A/AA scan on every route; fix
+violations in the UI (accessible names, contrast, ARIA) rather than excluding
+rules. Lifecycle tests additionally need minimega, VM images, and a topology
+(`E2E_LIFECYCLE=1`). Auth suites require a matching `VITE_AUTH` build and
+signing key. See `e2e/README.md`; report missing prerequisites instead of
+silently skipping checks.
+
+Axe scans run only in Chromium. Do not run them in Firefox. The Firefox
+project (`@cross-browser` tests) is only for browser-compatibility tests.
+
+On CI a failed test runs once more, and a test that passes only on that retry
+is flaky and fails the run (`failOnFlakyTests`). Fix the cause instead of
+adding waits. A check that something does not happen runs the page clock
+past the delay the UI waits for (`page.clock.runFor`), not a fixed
+`waitForTimeout` (see `e2e/README.md`).
 
 ## CI
 
-`.github/workflows/frontend.yml` runs Vitest and builds the UI, then builds and
-starts a real backend for Playwright smoke tests. Keep Node versions, npm cache
-lockfiles, auth build mode, backend startup, and path filters aligned with local
-commands.
+`.github/workflows/frontend.yml` runs Vitest, builds the UI and a
+real backend once for each `VITE_AUTH` mode, then runs the Playwright tests
+in parallel jobs, each against its own server (see `e2e/README.md`). It
+builds and runs the Playwright tests only for a change that can affect the
+browser, as its `changes` job decides. A change to unit tests under `test/`
+alone runs Vitest only. Keep Node versions, npm cache lockfiles, auth build
+mode, backend startup, path filters, and that job's path list aligned with
+local commands. The Playwright jobs run in the Playwright image pinned in the
+workflow. When you change the `@playwright/test` version in `e2e/`, change the
+image tag and digest to match. The `changes` job fails while they differ.
