@@ -10,7 +10,8 @@
     "format:check": "prettier . --check",
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^6.7.2",
@@ -39,10 +40,13 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^5.2.3",
+    "@vitest/coverage-v8": "^5.0.2",
     "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/test-utils": "^2.5.1",
     "eslint": "^10.9.1",
     "eslint-plugin-vue": "^10.10.0",
     "globals": "^17.11.0",
+    "happy-dom": "^21.0.0",
     "prettier": "^3.5.3",
     "vite": "^6.4.0",
     "vite-plugin-vue-devtools": "^7.7.2",

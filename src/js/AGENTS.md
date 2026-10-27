@@ -27,10 +27,21 @@ npm ci
 | Development server       | `npm run dev`                   |
 | Focused Vitest           | `npm test -- test/rbac.test.js` |
 | All Vitest               | `npm test`                      |
+| Vitest with coverage     | `npm run test:coverage`         |
 | Production build         | `npm run build`                 |
 | Format, then review diff | `npm run format`                |
 
 The development server needs a backend on `localhost:3000`.
+
+`test/unit-setup.js` mocks `@/utils/axios.js` and `@/store.js` for every
+test file. A file mocks the module again for other values, or calls
+`vi.unmock` for the real module.
+
+Test what a component does with `@vue/test-utils` in a file that starts
+with `// @vitest-environment happy-dom`: mount it, use `trigger` and
+`setValue`, and check focus, emitted events and the DOM. Use the server
+render for static output only, and keep each file in one environment.
+happy-dom has no layout, so test sizes and positions in Playwright.
 
 ## UI Conventions
 

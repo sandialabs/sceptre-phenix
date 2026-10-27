@@ -42,4 +42,27 @@ jobs:
         run: make generate
       - name: Run tests with coverage
         working-directory: src/go
-        run: make test
+        run: make test-cover
+      # Coverage below the minimum in .github/coverage-minimums.json warns
+      # but does not fail the job.
+      - name: Summarize coverage
+        if: ${{ !cancelled() && hashFiles('src/go/coverage.out') != '' }}
+        working-directory: src/go
+        run: |
+          total=$(go tool cover -func=coverage.out | tail -n 1 | awk '{print $NF}' | tr -d %)
+          min=$(jq -r .go ../../.github/coverage-minimums.json)
+          {
+            echo '### Go coverage'
+            echo
+            echo "Total statements: ${total}% (minimum ${min}%)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if awk -v t="$total" -v m="$min" 'BEGIN { exit !(t < m) }'; then
+            echo "::warning title=Go coverage::Statement coverage is ${total}%, below the minimum of ${min}% in .github/coverage-minimums.json"
+          fi
+      - name: Upload coverage
+        if: ${{ !cancelled() && hashFiles('src/go/coverage.out') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-go
+          path: src/go/coverage.out
+          retention-days: 14
