@@ -54,14 +54,11 @@ func TestCreateEnv(t *testing.T) {
 	}
 
 	cfg := `
-	{
-		"apiVersion": "phenix.sandia.gov/v1",
-		"kind": "Topology",
-		"metadata": {
-			"name": "${BRANCH_NAME}-test-experiment"
-		}
-	}
-	`
+apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+  name: ${BRANCH_NAME}-test-experiment
+`
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -72,7 +69,7 @@ func TestCreateEnv(t *testing.T) {
 	store.DefaultStore = m //nolint:reassign // mocking
 
 	t.Setenv("BRANCH_NAME", "foobar")
-	options := []config.CreateOption{config.CreateFromJSON([]byte(cfg))}
+	options := []config.CreateOption{config.CreateFromYAML([]byte(cfg))}
 
 	_, err := config.Create(options...)
 	if err != nil {

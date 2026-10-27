@@ -66,7 +66,9 @@ paths:
       tags:
         - Configs
       summary: Create new phenix config
-      description: ""
+      description: >
+        Needs `configs` `create` on the config the body names, by its kind
+        and name (such as `Topology/lab`).
       operationId: postConfigs
       requestBody:
         description: phenix config creation parameters
@@ -165,6 +167,8 @@ paths:
       description: >
         Can also be used to rename a config by changing the name in the metadata
         portion of the config header and using the old name in the request path.
+        Needs `configs` `update` on the config of the path and, when the body
+        names another kind or name, on that config too.
       operationId: putConfigsKindName
       parameters:
         - name: kind
@@ -1510,7 +1514,10 @@ paths:
         Topology is also checked for a node an experiment could not use, such
         as a hostname used twice or a reserved hostname, before it is stored.
         With dryRun=true it runs the same checks, returns what it would do, and
-        stores nothing.
+        stores nothing. Needs `configs` `create` or `update` before the body is
+        parsed, then `configs` `create` on a new config or `update` on a
+        stored one, by the kind and name the body gives (such as
+        `Topology/lab`), dry run or not.
       operationId: postWorkflowConfigsBranch
       parameters:
         - name: branch
