@@ -26,7 +26,7 @@ it('spaces the header links more tightly than Bulma', () => {
     '.navbar-end > .navbar-item',
   ]) {
     expect(declarations(selector, DESKTOP)).toMatchObject({
-      'padding-inline': '0.5rem',
+      'padding-inline': '0.4rem',
     });
   }
 });

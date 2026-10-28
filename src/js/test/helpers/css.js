@@ -1,5 +1,6 @@
 // The app's compiled styles, for files run with `@vitest-environment node`:
 // happy-dom lays nothing out, so tests read the rules themselves.
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as sass from 'sass';
 
@@ -43,12 +44,10 @@ function rules(css) {
   return found;
 }
 
-// The declarations the app's styles give `selector` alone, the last of each
-// winning: those inside an @media whose condition contains `media`, or, with
-// no `media`, those outside any @media.
-export function declarations(selector, media = null) {
+// the declarations `css` gives `selector` alone, the last of each winning
+function pick(css, selector, media) {
   const found = {};
-  for (const rule of rules(appCss())) {
+  for (const rule of rules(css)) {
     if (!rule.selectors.includes(selector)) continue;
     const inMedia = media
       ? rule.media.some((m) => m.includes(media))
@@ -60,4 +59,21 @@ export function declarations(selector, media = null) {
     }
   }
   return found;
+}
+
+// The declarations the app's styles give `selector` alone, the last of each
+// winning: those inside an @media whose condition contains `media`, or, with
+// no `media`, those outside any @media.
+export function declarations(selector, media = null) {
+  return pick(appCss(), selector, media);
+}
+
+// The same, from the plain CSS <style> blocks of the component at `file`
+// (relative to src/js), with selectors as its source writes them.
+export function componentDeclarations(file, selector, media = null) {
+  const source = readFileSync(join(ROOT, file), 'utf8');
+  const css = [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)]
+    .map((m) => m[1])
+    .join('\n');
+  return pick(css, selector, media);
 }

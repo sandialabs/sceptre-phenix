@@ -81,8 +81,11 @@ const levelItem = (page, level) =>
     .findAll('.dropdown-item')
     .find((item) => textOf(item) === level);
 
-// the "Logs shown" box's text
-const shownCount = (page) => textOf(page.find('.logs-shown'));
+// the "Logs shown" count, as "label: count"
+const shownCount = (page) => {
+  const stat = page.find('[aria-label="Logs shown"] .stat');
+  return `${textOf(stat.find('dt'))}: ${textOf(stat.find('dd'))}`;
+};
 
 // each log line's level badge: its text and color class
 const badges = (page) =>

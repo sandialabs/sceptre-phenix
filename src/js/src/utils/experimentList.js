@@ -35,9 +35,9 @@ function formatter(timeZone) {
   return formatters.get(timeZone);
 }
 
-// "14:03:22 28-10-2026 (MDT)": the start time in 24-hour time in `timeZone`
-// (the browser's by default), or null when it is empty or malformed.
-export function startTimeText(raw, timeZone) {
+// { time: "14:03:22", date: "28-10-2026 (MDT)" }: the start time in 24-hour
+// time in `timeZone` (the browser's by default), or null when it is malformed.
+export function startTimeParts(raw, timeZone) {
   const ms = startTimeMs(raw);
   if (ms === null) return null;
   const parts = Object.fromEntries(
@@ -46,10 +46,16 @@ export function startTimeText(raw, timeZone) {
       .map(({ type, value }) => [type, value]),
   );
   const year = parts.year.padStart(4, '0');
-  return (
-    `${parts.hour}:${parts.minute}:${parts.second} ` +
-    `${parts.day}-${parts.month}-${year} (${parts.timeZoneName})`
-  );
+  return {
+    time: `${parts.hour}:${parts.minute}:${parts.second}`,
+    date: `${parts.day}-${parts.month}-${year} (${parts.timeZoneName})`,
+  };
+}
+
+// "14:03:22 28-10-2026 (MDT)", or null when the start time is malformed
+export function startTimeText(raw, timeZone) {
+  const parts = startTimeParts(raw, timeZone);
+  return parts && `${parts.time} ${parts.date}`;
 }
 
 const byName = (a, b) => (a.name ?? '').localeCompare(b.name ?? '');

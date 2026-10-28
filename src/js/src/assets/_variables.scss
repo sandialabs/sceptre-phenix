@@ -33,8 +33,20 @@ $modal-background-background-color: rgba($black, 0.86);
 $modal-card-head-border-bottom: transparent;
 $modal-card-foot-border-top: 1px solid $scheme-main-bis;
 
+// success buttons and tags: white is 2.1:1 on Bulma's #48c78e, 5.3:1 on this
+$success-fill: (#1e7b4b, white, $success-light, $success-dark);
+$tag-colors: map.merge(
+  $colors,
+  (
+    'success': $success-fill,
+  )
+);
+
 $button-border-color: lighten($scheme-main, 10);
 $button-hover-color: $text-strong;
+// Bulma's focused and pressed text, #363636, is 2.2:1 on a default button
+$button-focus-color: $text-strong;
+$button-active-color: $text-strong;
 $button-text-hover-background-color: $scheme-main;
 // this line isn't ideal, but a lot of existing buttons were tagged with `is-light` so this sets them to what you would expect
 $button-colors: map.merge(
@@ -44,6 +56,7 @@ $button-colors: map.merge(
       $scheme-main,
       $scheme-invert,
     ),
+    'success': $success-fill,
   )
 );
 

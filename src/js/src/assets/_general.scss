@@ -54,7 +54,7 @@ textarea:focus {
 
   .navbar-start > .navbar-item,
   .navbar-end > .navbar-item {
-    padding-inline: 0.5rem;
+    padding-inline: 0.4rem;
   }
 }
 
@@ -67,8 +67,9 @@ a.navbar-item:focus {
   color: whitesmoke !important;
 }
 
+// $success is 4.3:1 on the table's $background-bis; this tint of it is 5:1
 div.is-success {
-  color: $success;
+  color: #5cd69c;
 }
 
 .b-table {

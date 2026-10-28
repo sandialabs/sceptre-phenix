@@ -31,7 +31,8 @@ import Experiments from '@/views/Experiments.vue';
 import { never } from './helpers/async.js';
 import { httpError } from './helpers/fixtures.js';
 import { allowOnly, denyOnly } from './helpers/permissions.js';
-import { startTimeText } from '@/utils/experimentList.js';
+import { startTimeParts, startTimeText } from '@/utils/experimentList.js';
+import { componentDeclarations } from './helpers/css.js';
 import {
   buttons,
   byLabel,
@@ -184,6 +185,9 @@ describe('the table', () => {
       /^\d{2}:\d{2}:\d{2} \d{2}-\d{2}-\d{4} \(.+\)$/,
     );
     expect(a.find('time').attributes('datetime')).toBe(raw);
+    // the time, then the date and zone: the two pieces a narrow screen wraps
+    const { time, date } = startTimeParts(raw);
+    expect(a.findAll('time > span').map(textOf)).toEqual([time, date]);
     const tooltip = wrapper
       .findAllComponents({ name: 'BTooltip' })
       .find((t) => a.element.contains(t.element));
@@ -191,6 +195,23 @@ describe('the table', () => {
     expect(textOf(a.find('.is-sr-only'))).toBe(`(${raw})`);
     // as before: N/A for none, and text that is not a time as it came
     expect([textOf(b), textOf(c)]).toEqual(['N/A', 'garbled']);
+  });
+
+  // The table fits a 1,024 px screen: a start time wraps between its time and
+  // date, never inside either, and the cells pad less below 1,280 px.
+  it('keeps the table within a desktop screen', () => {
+    const style = (selector, media) =>
+      componentDeclarations('src/views/Experiments.vue', selector, media);
+    expect(style('.exp-start-time')).not.toHaveProperty('white-space');
+    expect(style('.exp-start-time > span')).toMatchObject({
+      'white-space': 'nowrap',
+    });
+    const narrow = 'min-width: 769px) and (max-width: 1279px';
+    for (const cell of ['th', 'td']) {
+      const selector = `.exp-table :deep(${cell}:not(.exp-select-cell))`;
+      expect(style(selector, narrow)).toEqual({ 'padding-inline': '0.375em' });
+      expect(style(selector)).toEqual({});
+    }
   });
 
   it('sorts start times by the moment, not the text', async () => {
@@ -449,7 +470,7 @@ describe('the totals', () => {
   // each total's label and number
   const totals = (wrapper) =>
     wrapper
-      .findAll('.exp-totals .exp-total')
+      .findAll('.stat-strip .stat')
       .map((t) => [textOf(t.find('dt')), textOf(t.find('dd'))]);
 
   it('count every experiment, those running, their VMs and all VLANs', async () => {

@@ -140,16 +140,6 @@
     color: white;
   }
 
-  /* white is 5.3:1 on this green, as on the jobs button's */
-  .apps-box-trigger.button.is-success {
-    background-color: #1e7b4b;
-    color: white;
-  }
-
-  .apps-box-trigger.button.is-success:hover:not([disabled]) {
-    background-color: #186a40;
-  }
-
   .apps-box-count {
     letter-spacing: normal;
   }

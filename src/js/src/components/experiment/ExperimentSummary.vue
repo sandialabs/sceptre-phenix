@@ -145,12 +145,9 @@
     overflow-wrap: anywhere;
   }
 
-  /* white is 5.3:1 on this green, as on the jobs button's */
   .exp-summary-status.tag.is-success {
     gap: 0.25rem;
     flex: none;
-    background-color: #1e7b4b;
-    color: white;
   }
 
   /* two rows of tiles: what it was made from, then its counts and start */

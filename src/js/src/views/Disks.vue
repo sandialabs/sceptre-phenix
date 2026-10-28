@@ -230,28 +230,7 @@
     <!-- CONTENT -->
     <b-field grouped position="is-right" style="margin: 12px 0px">
       <b-field expanded>
-        <div
-          v-if="loaded"
-          class="disk-totals"
-          role="group"
-          aria-label="Disk totals">
-          <span class="disk-total">
-            <b-icon icon="hdd" size="is-small"></b-icon>
-            <strong>{{ totals.disks }}</strong>
-            {{ pluralWord(totals.disks, 'disk') }}
-          </span>
-          <span class="disk-total">
-            <b-icon icon="play-circle" size="is-small"></b-icon>
-            <strong>{{ totals.inUse }}</strong> in use
-          </span>
-          <span class="disk-total">
-            <b-icon icon="database" size="is-small"></b-icon>
-            <strong>{{ bytesText(totals.virtualBytes) }}</strong>
-            total virtual size<template v-if="totals.unknownSizes"
-              >, {{ totals.unknownSizes }} unknown</template
-            >
-          </span>
-        </div>
+        <stat-strip v-if="loaded" label="Disk totals" :stats="totalsShown" />
       </b-field>
       <div
         v-if="paginationNeeded"
@@ -410,10 +389,10 @@
 <script>
   import DiskWarning from '@/components/DiskWarning.vue';
   import JobProgress from '@/components/jobs/JobProgress.vue';
+  import StatStrip from '@/components/StatStrip.vue';
   import { useJobStore } from '@/utils/jobs.js';
   import { bytesText, parseBytes } from '@/utils/bytes.js';
   import { diskTotals } from '@/utils/diskTotals.js';
-  import { pluralWord } from '@/utils/plural.js';
   import {
     errorLine,
     notifyOutcome,
@@ -448,15 +427,13 @@
   let rescanPending = false;
 
   export default {
-    components: { DiskWarning, JobProgress },
+    components: { DiskWarning, JobProgress, StatStrip },
     setup() {
       return {
         ...useTable({ name: 'disks' }),
         roleAllowed,
         diskLabel,
         findDisk,
-        bytesText,
-        pluralWord,
       };
     },
     async created() {
@@ -502,8 +479,21 @@
         );
         return `${types.slice(0, -1).join(', ')}, and ${types.at(-1)}`;
       },
-      totals() {
-        return diskTotals(this.disks);
+      // the counts beside the search box, of every disk, not only those shown
+      totalsShown() {
+        const totals = diskTotals(this.disks);
+        return [
+          { key: 'disks', label: 'Disks', value: totals.disks },
+          { key: 'in-use', label: 'In use', value: totals.inUse },
+          {
+            key: 'virtual-size',
+            label: 'Total virtual size',
+            value: bytesText(totals.virtualBytes),
+            detail: totals.unknownSizes
+              ? `(${totals.unknownSizes} unknown)`
+              : '',
+          },
+        ];
       },
       emptyText() {
         if (!this.loaded) return loadingText('disks');
@@ -925,32 +915,6 @@
 
   hr {
     margin: 4px 0px;
-  }
-
-  /* the counter beside the search box, as tall as it */
-  .disk-totals {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  /* whitesmoke on $background-bis (#484848) is 8.4:1 */
-  .disk-total {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    min-height: 2.5em;
-    padding: 0 0.75rem;
-    border: 1px solid #8a8a8a;
-    border-radius: 4px;
-    background-color: #484848;
-    color: whitesmoke;
-    white-space: nowrap;
-  }
-
-  .disk-total strong {
-    color: white;
   }
 
   .row-actions {

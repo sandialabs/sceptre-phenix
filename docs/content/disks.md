@@ -26,7 +26,7 @@ counts:
 * how many disk images the list holds;
 * how many of them are [in use](#in-use), as the `In Use` column marks them;
 * the sum of their virtual sizes, in the same units as the size columns (for
-  example `1.2 TiB total virtual size`). An image whose virtual size phēnix
+  example `Total virtual size 1.2 TiB`). An image whose virtual size phēnix
   could not read is left out of the sum and counted as `unknown`.
 
 The totals cover every image in the list, not just the ones the search shows.

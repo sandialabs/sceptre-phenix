@@ -777,9 +777,11 @@ describe('disk action requests', () => {
 });
 
 describe('the disk totals', () => {
-  // the counter's chips, as their text
+  // the counter's stats, as "label: value"
   const totalsText = (wrapper) =>
-    wrapper.findAll('[aria-label="Disk totals"] .disk-total').map(textOf);
+    wrapper
+      .findAll('[aria-label="Disk totals"] .stat')
+      .map((s) => `${textOf(s.find('dt'))}: ${textOf(s.find('dd'))}`);
 
   it('counts every disk, the ones in use, and their virtual sizes, whatever the search', async () => {
     const wrapper = await page([
@@ -791,9 +793,9 @@ describe('the disk totals', () => {
       disk('/phenix/images/c.iso', 'c.iso', { virtualSize: '' }),
     ]);
     const want = [
-      '3 disks',
-      '1 in use',
-      '3.0 GiB total virtual size, 1 unknown',
+      'Disks: 3',
+      'In use: 1',
+      'Total virtual size: 3.0 GiB (1 unknown)',
     ];
     expect(totalsText(wrapper)).toEqual(want);
 
@@ -802,10 +804,10 @@ describe('the disk totals', () => {
     expect(totalsText(wrapper)).toEqual(want);
   });
 
-  it('reads one disk as a disk, and shows nothing before the list loads', async () => {
+  it('counts one disk, and shows nothing before the list loads', async () => {
     const one = await page([disk('/phenix/images/a.qc2', 'a.qc2')]);
-    expect(totalsText(one)[0]).toBe('1 disk');
-    expect(totalsText(one)[2]).toBe('0 B total virtual size, 1 unknown');
+    expect(totalsText(one)[0]).toBe('Disks: 1');
+    expect(totalsText(one)[2]).toBe('Total virtual size: 0 B (1 unknown)');
 
     const loading = await mountPage(Disks, {
       route: '/disks/',

@@ -2,15 +2,7 @@
   <div class="content">
     <b-field grouped position="is-right" style="margin: 12px 0px">
       <b-field expanded style="display: flex; align-items: center">
-        <div class="logs-shown">
-          <b-icon icon="file-alt" size="is-small" class="logs-shown-icon" />
-          <span class="logs-shown-label">Logs shown:</span>&#32;<span
-            class="logs-shown-count"
-            >{{ filteredLogs.length.toLocaleString('en-US') }}</span
-          ><span v-if="hiddenByFilters > 0" class="logs-shown-total"
-            >&#32;of {{ totalLogs.toLocaleString('en-US') }}</span
-          >
-        </div>
+        <stat-strip label="Logs shown" :stats="shownStats" />
       </b-field>
       <b-field>
         <b-dropdown
@@ -236,6 +228,7 @@
   import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
   import * as logsApi from '@/api/logs.js';
+  import StatStrip from '@/components/StatStrip.vue';
   import { usePhenixStore } from '@/store.js';
   import { levelBadge } from '@/utils/logLevels.js';
   import { roleAllowed } from '@/utils/rbac.js';
@@ -298,6 +291,7 @@
     components: {
       BDatetimepicker,
       RecycleScroller,
+      StatStrip,
     },
 
     async created() {
@@ -426,6 +420,18 @@
       },
       hiddenByFilters() {
         return this.totalLogs - this.filteredLogs.length;
+      },
+      // the count left of the filters, with the total when they hide some
+      shownStats() {
+        const n = (count) => count.toLocaleString('en-US');
+        return [
+          {
+            key: 'shown',
+            label: 'Logs shown',
+            value: n(this.filteredLogs.length),
+            detail: this.hiddenByFilters > 0 ? `of ${n(this.totalLogs)}` : '',
+          },
+        ];
       },
       canDownloadLogs() {
         return roleAllowed('logs', 'get');
@@ -652,38 +658,6 @@
   .level-tag.level-error {
     background-color: #a91f3d;
     color: #fff;
-  }
-
-  .logs-shown {
-    display: inline-flex;
-    align-items: baseline;
-    padding: 0.4em 0.9em;
-    background-color: #484848;
-    border: 1px solid #8a8a8a;
-    border-left: 4px solid #da622d;
-    border-radius: 6px;
-    white-space: nowrap;
-  }
-
-  .logs-shown-icon {
-    align-self: center;
-    margin-right: 0.5em;
-    color: #e0e0e0;
-  }
-
-  .logs-shown-label {
-    color: #dcdcdc;
-  }
-
-  .logs-shown-count {
-    color: #fff;
-    font-weight: 700;
-    font-size: 1.15em;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .logs-shown-total {
-    color: #dcdcdc;
   }
 
   .log-downloads {

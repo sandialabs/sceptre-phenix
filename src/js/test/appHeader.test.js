@@ -171,7 +171,7 @@ describe('the Tunneler button', () => {
     const link = button(page);
     expect(link.attributes('href')).toBe('/tunneler');
     expect(link.classes()).toEqual(
-      expect.arrayContaining(['button', 'is-primary', 'is-medium']),
+      expect.arrayContaining(['button', 'is-primary']),
     );
     expect(link.find('[data-icon="download"]').exists()).toBe(true);
     expect(textOf(link)).toBe('Tunneler');

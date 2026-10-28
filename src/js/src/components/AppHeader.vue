@@ -86,7 +86,6 @@ what their role allows.
           tag="router-link"
           :to="{ name: 'tunneler' }"
           type="is-primary"
-          size="is-medium"
           icon-left="download"
           class="tunneler-button"
           @click="menuOpen = false"
@@ -255,9 +254,9 @@ what their role allows.
     background-color: #9a4420;
   }
 
-  /* 95% of Bulma's is-medium (1.25rem); padding and height are in em */
-  .tunneler-button.button.is-medium {
-    font-size: 1.1875rem;
+  /* a normal-size button, narrower so the header fits on one row */
+  .tunneler-button.button {
+    padding-inline: 0.75em;
   }
 
   .tunneler-button.router-link-exact-active {

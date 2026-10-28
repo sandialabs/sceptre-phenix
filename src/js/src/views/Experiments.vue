@@ -35,18 +35,7 @@
     </template>
     <template v-else>
       <div class="exp-toolbar">
-        <div class="exp-totals" role="group" aria-label="Experiment totals">
-          <dl>
-            <div
-              v-for="total in totalsShown"
-              :key="total.key"
-              class="exp-total"
-              :class="`exp-total-${total.key}`">
-              <dt>{{ total.label }}</dt>
-              <dd>{{ total.value }}</dd>
-            </div>
-          </dl>
-        </div>
+        <stat-strip label="Experiment totals" :stats="totalsShown" />
         <b-field class="exp-toolbar-controls" position="is-right" grouped>
           <b-field v-if="selected.length" class="exp-selection-actions" grouped>
             <b-field v-for="action in bulkActions" :key="action.name">
@@ -290,11 +279,13 @@
             header-class="sort-inline"
             v-slot="props">
             <b-tooltip
-              v-if="startTimeText(props.row.start_time)"
+              v-if="startTimeParts(props.row.start_time)"
               :label="props.row.start_time"
               type="is-dark">
               <time class="exp-start-time" :datetime="props.row.start_time">
-                {{ startTimeText(props.row.start_time) }}
+                <span>{{ startTimeParts(props.row.start_time).time }}</span>
+                {{ ' ' }}
+                <span>{{ startTimeParts(props.row.start_time).date }}</span>
               </time>
               <span class="is-sr-only"> ({{ props.row.start_time }})</span>
             </b-tooltip>
@@ -326,7 +317,7 @@
               }})
             </template>
           </b-table-column>
-          <b-table-column label="Actions" width="200" centered v-slot="props">
+          <b-table-column label="Actions" width="176" centered v-slot="props">
             <div class="exp-row-actions">
               <b-tooltip
                 v-for="action in powerButtons(props.row)"
@@ -415,6 +406,7 @@
 
 <script>
   import CreateExperimentCard from '@/components/CreateExperimentCard.vue';
+  import StatStrip from '@/components/StatStrip.vue';
   import { createLiveRows } from '@/utils/liveRows.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import * as experimentsApi from '@/api/experiments.js';
@@ -453,11 +445,11 @@
     experimentTotals,
     sortByStartTime,
     sortByVlans,
-    startTimeText,
+    startTimeParts,
   } from '@/utils/experimentList.js';
 
   export default {
-    components: { CreateExperimentCard },
+    components: { CreateExperimentCard, StatStrip },
     mixins: [formattingMixin],
 
     setup() {
@@ -584,10 +576,15 @@
           stillLoading(this.loaded, this.experiments) ? '…' : n;
         return [
           ['experiments', 'Experiments', totals.experiments],
-          ['running', 'Running', totals.running],
-          ['vms', 'Running VMs', totals.runningVms],
+          ['running', 'Running', totals.running, 'success'],
+          ['vms', 'Running VMs', totals.runningVms, 'success'],
           ['vlans', 'VLANs', totals.vlans],
-        ].map(([key, label, n]) => ({ key, label, value: value(n) }));
+        ].map(([key, label, n, tone]) => ({
+          key,
+          label,
+          value: value(n),
+          tone,
+        }));
       },
 
       // whether the role may act on any experiment, so offering a selection
@@ -659,7 +656,7 @@
       configViewRoute,
       sortByStartTime,
       sortByVlans,
-      startTimeText,
+      startTimeParts,
 
       // whether the experiment's topology or scenario links to its config
       configLinked(kind, name) {
@@ -1149,60 +1146,11 @@
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 0.75rem;
+    margin-bottom: 0.75rem;
   }
 
   .exp-toolbar-controls {
     margin-left: auto;
-  }
-
-  .exp-totals dl {
-    display: flex;
-    align-items: stretch;
-    height: 2.5em;
-    margin: 0;
-    border: 1px solid #5a5a5a;
-    border-radius: 6px;
-    background-color: #484848;
-  }
-
-  .exp-total {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0 0.75rem;
-  }
-
-  .exp-total + .exp-total {
-    border-left: 1px solid #686868;
-  }
-
-  .exp-total dt {
-    color: #dbdbdb;
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .exp-total dd {
-    margin: 0;
-    color: whitesmoke;
-    font-size: 1.1rem;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* accents only: each number has its label; all are 5:1 or more on #484848 */
-  .exp-total-running dd {
-    color: #6fdca8;
-  }
-
-  .exp-total-vms dd {
-    color: #7fcfe0;
-  }
-
-  .exp-total-vlans dd {
-    color: #ffe08a;
   }
 
   /* the checkbox column is only as wide as its checkboxes */
@@ -1220,7 +1168,8 @@
     padding-left: 0;
   }
 
-  .exp-start-time {
+  /* below about 1,280 px the time and the date wrap onto two lines, each whole */
+  .exp-start-time > span {
     white-space: nowrap;
   }
 
@@ -1232,7 +1181,15 @@
   }
 
   .exp-row-actions .button {
-    width: 2.25rem;
+    width: 2rem;
+  }
+
+  /* below 1,280 px the cells pad less, so the table fits the screen */
+  @media screen and (min-width: 769px) and (max-width: 1279px) {
+    .exp-table :deep(th:not(.exp-select-cell)),
+    .exp-table :deep(td:not(.exp-select-cell)) {
+      padding-inline: 0.375em;
+    }
   }
 
   /* one that can't run now is gray, hovered too; its tooltip says why. The

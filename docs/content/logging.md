@@ -177,7 +177,7 @@ follows new entries as the server logs them. It needs `get` on `logs`.
 
 * The **Logs shown** box at the top left counts the entries that pass the
   date range, level, type and search filters. When the filters hide some, it
-  also says how many were loaded, such as `Logs shown: 120 of 4,000`.
+  also says how many were loaded, such as `Logs shown 120 of 4,000`.
 * The **Level** column shows each entry's level as a short badge: `DBG`
   (dark grey), `INFO` (blue), `WRN` (yellow) and `ERR` (red). A level the page
   does not know shows its own name in uppercase. Hold the pointer over a badge
