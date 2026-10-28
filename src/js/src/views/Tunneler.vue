@@ -36,7 +36,20 @@
     </section>
     <hr />
     <div id="quick-start">
-      <h2>Quick Start</h2>
+      <div class="quick-start-head">
+        <h2>Quick Start</h2>
+        <b-button
+          tag="a"
+          :href="docsPage('tunneler')"
+          target="_blank"
+          rel="noopener"
+          type="is-light"
+          size="is-large"
+          icon-left="book"
+          class="docs-button"
+          >Tunneler Documentation</b-button
+        >
+      </div>
       <p>
         The phēnix-tunneler is an application phēnix users can run on their
         local machine in order to access services in VMs locally.
@@ -87,15 +100,6 @@
         Once a local port is activated, either automatically or manually, users
         can connect to the local port with the appropriate application and
         traffic will be forwarded through the phēnix UI server to the VM.
-
-        <br />
-        <br />
-
-        See the
-        <a :href="docsPage('tunneler')" target="_blank" rel="noopener"
-          >Tunneler documentation</a
-        >
-        for more.
       </p>
     </div>
   </div>
@@ -168,6 +172,22 @@
 
   section#downloads {
     max-width: 36rem;
+  }
+
+  .quick-start-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.5rem;
+    margin-bottom: 1em;
+  }
+
+  .quick-start-head h2 {
+    margin: 0;
+  }
+
+  #quick-start p {
+    font-size: calc(1em + 2pt);
   }
 
   code {

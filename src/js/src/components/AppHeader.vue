@@ -255,6 +255,11 @@ what their role allows.
     background-color: #9a4420;
   }
 
+  /* 95% of Bulma's is-medium (1.25rem); padding and height are in em */
+  .tunneler-button.button.is-medium {
+    font-size: 1.1875rem;
+  }
+
   .tunneler-button.router-link-exact-active {
     box-shadow: inset 0 -3px 0 whitesmoke;
   }

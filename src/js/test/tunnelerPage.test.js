@@ -3,6 +3,7 @@
 import fc from 'fast-check';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { docsPage } from '@/utils/docs.js';
 import Tunneler from '@/views/Tunneler.vue';
 import { never } from './helpers/async.js';
 import { mountPage, tableRows, textOf } from './helpers/mount.js';
@@ -139,6 +140,17 @@ describe('the Tunneler page', () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(textOf(page)).toContain('downloaded via the table above');
+  });
+
+  it('links the docs from a button beside the quick start heading', async () => {
+    const page = await open(json({ files: [] }));
+    const link = page.find('.quick-start-head a');
+    expect(textOf(link)).toBe('Tunneler Documentation');
+    expect(link.attributes()).toMatchObject({
+      href: docsPage('tunneler'),
+      target: '_blank',
+      rel: 'noopener',
+    });
   });
 
   it('says it is loading until the list arrives', async () => {

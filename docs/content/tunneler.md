@@ -16,13 +16,13 @@ UI.
 Click the `Tunneler` button near the right-hand end of the banner at the top
 of the phēnix UI.
 
-![The Tunneler page, opened from the Tunneler button in the banner, with the Tunneler Downloads table above the Quick Start](images/tunneler_page.png)
+![The Tunneler page, opened from the Tunneler button in the banner, with the Tunneler Downloads table above the Quick Start and its Tunneler Documentation button](images/tunneler_page.png)
 
 The page starts with a `Tunneler Downloads` table of the `phenix-tunneler`
 builds installed on the phēnix server, with an `OS` and an `Architecture`
 column and a `Download` link for each build. Below that is a `Quick Start`
-summary of the steps described below, ending in a `Tunneler documentation`
-link back to this page.
+summary of the steps described below, with a `Tunneler Documentation` button
+beside its heading that links back to this page.
 
 phēnix ships these builds:
 
