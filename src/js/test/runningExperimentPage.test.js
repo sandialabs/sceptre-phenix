@@ -591,6 +591,28 @@ describe('the netflow capture', () => {
     },
   );
 
+  it('offers the recorded captures for download', async () => {
+    axios.get.mockImplementation(async (path) => {
+      if (path.endsWith('/netflow')) return { data: {} };
+      if (path.endsWith('/netflow/captures')) return { data: { captures: [] } };
+      throw new Error('not found');
+    });
+    const { page } = await capturing();
+    const button = page
+      .findAll('button')
+      .find((b) => textOf(b) === 'Download captures');
+    expect(button).toBeDefined();
+
+    await button.trigger('click');
+    await flushPromises();
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringMatching(/^experiments\/[^/]+\/netflow\/captures$/),
+    );
+    expect(textOf(page.find('.netflow-captures .modal-card-body'))).toBe(
+      'No captures recorded yet. Starting a netflow capture records it.',
+    );
+  });
+
   it('says nothing of a stream the server ended normally', async () => {
     const { page, socket } = await capturing();
     socket.closeWith(1000, 'netflow stopped');

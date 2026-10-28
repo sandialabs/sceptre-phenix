@@ -1,18 +1,23 @@
 <template>
-  <div
-    v-if="lines.length === 0"
-    class="content has-text-white has-text-centered">
-    {{
-      starting
-        ? 'Starting netflow capture…'
-        : 'No netflow captures yet. Start one with the netflow button above.'
-    }}
-  </div>
-  <template v-else>
-    <p class="netflow-summary">
-      {{ summary }}
-    </p>
-    <div ref="view" class="netflow-view" :style="{ maxHeight }">
+  <div class="netflow-panel">
+    <div class="netflow-header">
+      <p v-if="lines.length > 0" class="netflow-summary">
+        {{ summary }}
+      </p>
+      <p v-else class="netflow-empty has-text-white">
+        {{
+          starting
+            ? 'Starting netflow capture…'
+            : 'No netflow captures yet. Start one with the netflow button above.'
+        }}
+      </p>
+      <NetflowCaptures v-if="experiment" :experiment="experiment" />
+    </div>
+    <div
+      v-if="lines.length > 0"
+      ref="view"
+      class="netflow-view"
+      :style="{ maxHeight }">
       <table class="table is-narrow is-fullwidth netflow-table">
         <thead>
           <tr>
@@ -42,11 +47,12 @@
         </tbody>
       </table>
     </div>
-  </template>
+  </div>
 </template>
 
 <script>
   import { roomInWindow } from '@/utils/viewportFit.js';
+  import NetflowCaptures from './NetflowCaptures.vue';
   import {
     NETFLOW_SHOWN_LINES,
     matchNetflow,
@@ -58,7 +64,11 @@
   // when it changes height.
   export default {
     name: 'NetflowPanel',
+    components: { NetflowCaptures },
     props: {
+      // the experiment, whose recorded captures the panel offers to
+      // download; empty until the page has loaded it
+      experiment: { type: String, default: '' },
       // captured flows and start/stop markers, oldest first (see netflow.js)
       lines: { type: Array, required: true },
       // whether a capture is starting, before it has any lines
@@ -148,8 +158,16 @@
     font-style: italic;
   }
 
-  .netflow-summary {
+  /* the summary or empty text, and the Download captures button */
+  .netflow-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
     margin-bottom: 0.5rem;
+  }
+
+  .netflow-summary {
     opacity: 0.8;
   }
 </style>

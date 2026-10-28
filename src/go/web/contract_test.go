@@ -42,6 +42,7 @@ const (
 	contractTopo     = "demo"
 	contractRevision = 5
 	contractOther    = "other-experiment"
+	contractNetflow  = "20261028T153012.345Z"
 )
 
 // serveContractAs is serveContract with every request taken as one from alice
@@ -60,7 +61,7 @@ func serveContractAs(t *testing.T, role rbac.Role, set func(*serverOptions)) *ht
 	})
 }
 
-// contractFixture: running test-experiment with test-vm mounted (etc/hostname), files a.log and a.pcap, test-disk.qc2,
+// contractFixture: running test-experiment with test-vm mounted (etc/hostname), files a.log, a.pcap and a netflow capture, test-disk.qc2,
 // demo at revision 5, bob's finished job (3-byte artifact), on-demand capture tokens and consoles; fake minimega says ok.
 type contractFixture struct {
 	jobs     *job.Registry
@@ -83,7 +84,14 @@ func useContractFixture(t *testing.T) contractFixture {
 		t.Fatal(err)
 	}
 
-	for name, contents := range map[string]string{"a.log": "alpha", "a.pcap": string(testPcapHeader())} {
+	if err := os.MkdirAll(filepath.Join(expFiles, "netflow"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, contents := range map[string]string{
+		"a.log": "alpha", "a.pcap": string(testPcapHeader()),
+		"netflow/" + contractNetflow + ".txt": "2026-10-28T15:30:12Z\t1s\t6\t10.0.0.1:1\t<->\t10.0.0.2:2\t1\t1\n",
+	} {
 		if err := os.WriteFile(filepath.Join(expFiles, name), []byte(contents), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -263,17 +271,18 @@ func contractRoutes() []contractRoute {
 	)
 
 	var (
-		filesGet = testRole("experiments/files", "get", contractExp)
-		captures = testRole("vms/captures", "list", contractExp+"/"+contractVM)
-		trigger  = testRole("experiments/trigger", "create", contractExp)
-		diskGet  = testRole("disks", "get", contractDisk)
-		mount    = testRole("vms/mount", "get", contractExp+"/"+contractVM)
-		one      = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
-		jobs     = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
-		configs  = func(verb string) []rbac.Role { return one(testRole("configs", verb, "Topology/"+contractTopo)) }
-		current  = []string{"If-Match", freshness.ETag(contractRevision), "Content-Type", mimeJSON}
-		ok       = []int{http.StatusOK}
-		done     = []int{http.StatusNoContent}
+		filesGet   = testRole("experiments/files", "get", contractExp)
+		netflowGet = testRole("experiments/netflow", "get", contractExp)
+		captures   = testRole("vms/captures", "list", contractExp+"/"+contractVM)
+		trigger    = testRole("experiments/trigger", "create", contractExp)
+		diskGet    = testRole("disks", "get", contractDisk)
+		mount      = testRole("vms/mount", "get", contractExp+"/"+contractVM)
+		one        = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
+		jobs       = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
+		configs    = func(verb string) []rbac.Role { return one(testRole("configs", verb, "Topology/"+contractTopo)) }
+		current    = []string{"If-Match", freshness.ETag(contractRevision), "Content-Type", mimeJSON}
+		ok         = []int{http.StatusOK}
+		done       = []int{http.StatusNoContent}
 	)
 
 	return []contractRoute{
@@ -297,6 +306,11 @@ func contractRoutes() []contractRoute {
 		{method: "DELETE", path: exp + "/capture-tokens/{token}", want: done},
 		{method: "POST", path: exp + "/webshark", body: `{"path":"a.pcap"}`, need: one(filesGet)},
 		{method: "GET", path: vm + "/captures/0/stream", need: []rbac.Role{captures, filesGet}},
+
+		// recorded netflow captures
+		{method: "GET", path: exp + "/netflow/captures", need: one(netflowGet), want: ok},
+		{method: "GET", path: exp + "/netflow/captures/" + contractNetflow + "?format=csv", need: one(netflowGet), want: ok},
+		{method: "HEAD", path: exp + "/netflow/captures/" + contractNetflow, need: one(netflowGet), want: ok},
 
 		// experiment files
 		{method: "GET", path: exp + "/files", need: one(testRole("experiments/files", "list", contractExp)), want: ok},
@@ -837,8 +851,20 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 			method: "POST", path: exp + "/vms/actions", body: `{"action":"start","vms":[]}`, want: http.StatusBadRequest,
 		},
 		"netflow that is not running": {method: "GET", path: exp + "/netflow", want: http.StatusNotFound},
-		"checksum of missing disk":    {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
-		"checksum of disk outside":    {method: "GET", path: "/api/v1/disks/checksum?disk=../none.qc2", want: http.StatusBadRequest},
+		"netflow captures of unknown experiment": {
+			method: "GET", path: "/api/v1/experiments/" + contractOther + "/netflow/captures", want: http.StatusNotFound,
+		},
+		"netflow capture in unknown format": {
+			method: "GET", path: exp + "/netflow/captures/" + contractNetflow + "?format=pcap", want: http.StatusBadRequest,
+		},
+		"netflow capture with invalid id": {
+			method: "GET", path: exp + "/netflow/captures/latest", want: http.StatusBadRequest,
+		},
+		"netflow capture that is missing": {
+			method: "GET", path: exp + "/netflow/captures/20200101T000000.000Z?format=jsonl", want: http.StatusNotFound,
+		},
+		"checksum of missing disk": {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
+		"checksum of disk outside": {method: "GET", path: "/api/v1/disks/checksum?disk=../none.qc2", want: http.StatusBadRequest},
 		"clone onto existing disk": {
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=" + contractDisk,
 			want: http.StatusConflict,

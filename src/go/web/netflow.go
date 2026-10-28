@@ -1,8 +1,11 @@
 package web
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -15,6 +18,7 @@ import (
 	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/util"
 	"phenix/web/weberror"
 )
 
@@ -77,7 +81,7 @@ func StartNetflow(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	err := experiment.StartNetflow(exp)
+	err := experiment.StartNetflow(exp, o.netflowMaxSize)
 	if err != nil {
 		audit.Failure(r, audit.NetflowStart, "starting netflow capture failed", started, err)
 		plog.Error(plog.TypeSystem, "starting netflow capture", "exp", exp, "err", err)
@@ -364,6 +368,198 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) error {
 		"client",
 		id,
 	)
+
+	return nil
+}
+
+// netflowCaptureTypes are the Content-Type and file extension of each format
+// a recorded netflow capture downloads as.
+var netflowCaptureTypes = map[string][2]string{ //nolint:gochecknoglobals // constant table
+	experiment.NetflowFormatText:  {"text/plain; charset=utf-8", ".txt"},
+	experiment.NetflowFormatCSV:   {"text/csv; charset=utf-8; header=present", ".csv"},
+	experiment.NetflowFormatJSONL: {"application/x-ndjson", ".jsonl"},
+}
+
+// GetNetflowCaptures - GET /experiments/{exp}/netflow/captures.
+func GetNetflowCaptures(w http.ResponseWriter, r *http.Request) error {
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		exp  = mux.Vars(r)["exp"]
+	)
+
+	if !role.Allowed("experiments/netflow", "get", exp) {
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(plog.TypeSecurity, "listing netflow captures not allowed", "user", user, "exp", exp)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	captures, err := experiment.NetflowCaptures(exp)
+	if err != nil {
+		if errors.Is(err, experiment.ErrExperimentNotFound) {
+			return weberror.New(http.StatusNotFound, "experiment "+exp+" not found")
+		}
+
+		plog.Error(plog.TypeSystem, "listing netflow captures", "exp", exp, "err", err)
+
+		return weberror.New(http.StatusInternalServerError, "unable to list netflow captures")
+	}
+
+	body, err := json.Marshal(map[string]any{"captures": captures})
+	if err != nil {
+		return weberror.New(http.StatusInternalServerError, "unable to list netflow captures")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+
+	return nil
+}
+
+// DownloadNetflowCapture - GET|HEAD /experiments/{exp}/netflow/captures/{id}?format=.
+//
+// Text is the recorded file, resumable; CSV and JSONL are converted as they
+// are sent, like the files zip. A live capture converts as it was when opened.
+func DownloadNetflowCapture(w http.ResponseWriter, r *http.Request) error {
+	var (
+		role   = middleware.RoleFromContext(r.Context())
+		vars   = mux.Vars(r)
+		exp    = vars["exp"]
+		id     = vars["id"]
+		format = r.URL.Query().Get("format")
+		head   = r.Method == http.MethodHead
+	)
+
+	if format == "" {
+		format = experiment.NetflowFormatText
+	}
+
+	fields := audit.Fields{
+		Experiment: exp, File: "netflow/" + id + ".txt",
+		Extra: []any{"phenix.netflow.capture", id, "phenix.netflow.format", format},
+	}
+
+	if !role.Allowed("experiments/netflow", "get", exp) {
+		if !head {
+			audit.Denied(r, audit.NetflowDownload, "downloading netflow capture not allowed", fields)
+		}
+
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	fail := func(status int, msg string, err error) error {
+		if !head {
+			audit.Failure(r, audit.NetflowDownload, "downloading netflow capture failed", fields, err)
+		}
+
+		return weberror.New(status, msg)
+	}
+
+	kind, ok := netflowCaptureTypes[format]
+	if !ok {
+		return fail(http.StatusBadRequest, "format must be text, csv or jsonl", experiment.ErrInvalidNetflowFormat)
+	}
+
+	f, capture, err := experiment.OpenNetflowCapture(exp, id)
+	if err != nil {
+		switch {
+		case errors.Is(err, experiment.ErrInvalidNetflowCapture):
+			return fail(http.StatusBadRequest, "invalid netflow capture id", err)
+		case errors.Is(err, experiment.ErrExperimentNotFound):
+			return fail(http.StatusNotFound, "experiment "+exp+" not found", err)
+		case errors.Is(err, experiment.ErrNetflowCaptureNotFound):
+			return fail(http.StatusNotFound, "netflow capture "+id+" not found", err)
+		default:
+			plog.Error(plog.TypeSystem, "opening netflow capture", "exp", exp, "id", id, "err", err)
+
+			return fail(http.StatusInternalServerError, "unable to open netflow capture", err)
+		}
+	}
+
+	defer func() { _ = f.Close() }()
+
+	d := util.Download{Path: f.Name(), Name: exp + "-netflow-" + id + kind[1], ContentType: kind[0], MaxSize: 0}
+
+	if format == experiment.NetflowFormatText {
+		return sendNetflowText(w, r, f, d, fields)
+	}
+
+	return sendNetflowExport(w, r, io.LimitReader(f, capture.Size), d, format, fields)
+}
+
+// sendNetflowText sends a recorded capture's file as it is, resumably.
+func sendNetflowText(w http.ResponseWriter, r *http.Request, f *os.File, d util.Download, fields audit.Fields) error {
+	served, err := util.ServeOpenFile(w, r, f, d)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "sending netflow capture", "exp", fields.Experiment, "file", fields.File, "err", err)
+
+		if r.Method != http.MethodHead {
+			audit.Failure(r, audit.NetflowDownload, "downloading netflow capture failed", fields, err)
+		}
+
+		return weberror.New(http.StatusInternalServerError, "unable to read netflow capture")
+	}
+
+	// once per download, not per resumed range or HEAD
+	if served.Started {
+		if rng := r.Header.Get("Range"); rng != "" {
+			fields.Extra = append(fields.Extra, "http.request.range", rng)
+		}
+
+		audit.Success(r, audit.NetflowDownload, "downloaded netflow capture", fields)
+	}
+
+	return nil
+}
+
+// sendNetflowExport sends a capture's lines from src converted to format, as
+// they are converted; HEAD sends only the headers.
+func sendNetflowExport(
+	w http.ResponseWriter, r *http.Request, src io.Reader, d util.Download, format string, fields audit.Fields,
+) error {
+	start := func() io.Writer {
+		header := w.Header()
+		header.Set("Content-Type", d.ContentType)
+		header.Set("Content-Disposition", util.Attachment(d.Name))
+		header.Set("X-Content-Type-Options", "nosniff")
+		// built as it is sent, so it cannot be resumed or cached
+		header.Set("Accept-Ranges", "none")
+		header.Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+
+		return w
+	}
+
+	if r.Method == http.MethodHead {
+		start()
+
+		return nil
+	}
+
+	var started bool
+
+	exported, err := experiment.ExportNetflow(r.Context(), func() io.Writer {
+		started = true
+
+		return start()
+	}, src, format)
+
+	fields.Extra = append(fields.Extra, "phenix.netflow.flows", exported.Flows, "phenix.netflow.skipped", exported.Skipped)
+
+	if err != nil {
+		audit.Failure(r, audit.NetflowDownload, "downloading netflow capture failed", fields, err)
+
+		if started {
+			// aborting tells the client the export is incomplete
+			plog.Error(plog.TypeSystem, "streaming netflow capture", "exp", fields.Experiment, "file", fields.File, "err", err)
+			panic(http.ErrAbortHandler)
+		}
+
+		return weberror.New(http.StatusInternalServerError, "unable to export netflow capture")
+	}
+
+	audit.Success(r, audit.NetflowDownload, "downloaded netflow capture", fields)
 
 	return nil
 }

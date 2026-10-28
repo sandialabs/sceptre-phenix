@@ -104,6 +104,7 @@ type meshMM struct {
 	entered chan string
 	gate    chan struct{}
 	release func()
+	fail    error // returned by every mesh command
 }
 
 func (m *meshMM) Headnode() string { return "head" }
@@ -112,7 +113,7 @@ func (m *meshMM) MeshSend(exp, _, _ string) error {
 	m.entered <- exp
 	<-m.gate
 
-	return nil
+	return m.fail
 }
 
 // useNetflows installs a store in which the named experiments are running, a
@@ -182,7 +183,7 @@ func TestStartingOneNetflowDoesNotBlockOthers(t *testing.T) {
 
 	started := make(chan error, 1)
 
-	go func() { started <- StartNetflow("a") }()
+	go func() { started <- StartNetflow("a", 0) }()
 
 	polltest.Within(t, "the start asking the mesh", func() { <-fake.entered })
 
@@ -196,7 +197,7 @@ func TestStartingOneNetflowDoesNotBlockOthers(t *testing.T) {
 		stopHook("b")
 	})
 
-	if err := StartNetflow("a"); !errors.Is(err, ErrNetflowAlreadyStarted) {
+	if err := StartNetflow("a", 0); !errors.Is(err, ErrNetflowAlreadyStarted) {
 		t.Errorf("second StartNetflow(a) error = %v, want %v", err, ErrNetflowAlreadyStarted)
 	}
 
@@ -223,7 +224,7 @@ func TestStopHookDuringStartAbandonsIt(t *testing.T) {
 
 	started := make(chan error, 1)
 
-	go func() { started <- StartNetflow("a") }()
+	go func() { started <- StartNetflow("a", 0) }()
 
 	polltest.Within(t, "the start asking the mesh", func() { <-fake.entered })
 	polltest.Within(t, "the stop hook", func() { stopHook("a") })

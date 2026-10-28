@@ -501,3 +501,32 @@ func TestDoctorCommand(t *testing.T) {
 		}
 	}
 }
+
+// The ui.netflow.max-size check passes for a size phenix ui accepts, naming
+// it, and fails for one it refuses.
+func TestNetflowMaxSizeCheck(t *testing.T) {
+	tests := map[string]struct {
+		env  string
+		want doctorCheck
+	}{
+		"default": {want: doctorCheck{Name: "ui.netflow.max-size", Status: doctorPass, Detail: "100 MiB"}},
+		"off": {env: "0", want: doctorCheck{
+			Name: "ui.netflow.max-size", Status: doctorPass, Detail: "0; netflow captures are not recorded",
+		}},
+		"negative": {env: "-5", want: doctorCheck{
+			Name: "ui.netflow.max-size", Status: doctorFail, Detail: `invalid ui.netflow.max-size "-5": it must not be negative`,
+		}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if tt.env != "" {
+				t.Setenv("PHENIX_UI_NETFLOW_MAX_SIZE", tt.env)
+			}
+
+			if diff := cmp.Diff(tt.want, netflowMaxSizeCheck()); diff != "" {
+				t.Errorf("netflowMaxSizeCheck() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

@@ -1,4 +1,4 @@
-// Experiments and what runs across one: its apps, netflow capture and health.
+// Experiments and what runs across one: its apps, netflow captures and health.
 // Names go into the path as given unless a function says it encodes them.
 import axiosInstance from '@/utils/axios.js';
 
@@ -84,6 +84,32 @@ export function startNetflowCapture(name) {
 // DELETE /experiments/{name}/netflow
 export function stopNetflowCapture(name) {
   return axiosInstance.delete(netflowURL(name));
+}
+
+// the recorded netflow captures of an experiment, the name and ID encoded
+const netflowCapturesURL = (name) =>
+  `experiments/${encodeURIComponent(name)}/netflow/captures`;
+
+// GET /experiments/{name}/netflow/captures, newest first
+export function listNetflowCaptures(name) {
+  return axiosInstance.get(netflowCapturesURL(name));
+}
+
+// HEAD /experiments/{name}/netflow/captures/{id}?format=, to check that a
+// capture is still there before downloading it
+export function headNetflowCapture(name, id, format) {
+  return axiosInstance.head(
+    `${netflowCapturesURL(name)}/${encodeURIComponent(id)}`,
+    { params: { format } },
+  );
+}
+
+// where a capture downloads from in the format; the token goes in the query,
+// as for job artifacts, since a link cannot send the auth header
+export function netflowCaptureURL(name, id, format, token) {
+  const query = new URLSearchParams({ format });
+  if (token) query.set('token', token);
+  return `${import.meta.env.BASE_URL}api/v1/${netflowCapturesURL(name)}/${encodeURIComponent(id)}?${query}`;
 }
 
 // GET /experiments/{name}/captures, the name encoded: the packet captures

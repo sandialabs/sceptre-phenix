@@ -120,6 +120,7 @@ const (
 	CaptureTokenRevoke  Action = "capture-token-revoke"
 	NetflowStart        Action = "netflow-start"
 	NetflowStop         Action = "netflow-stop"
+	NetflowDownload     Action = "netflow-download"
 
 	// Experiment files, and files in a mounted VM disk with the VM set.
 
@@ -244,6 +245,7 @@ var kinds = map[Action]kind{
 	CaptureTokenRevoke:  {categoryIAM, typeDeletion},
 	NetflowStart:        {categoryNetwork, typeStart},
 	NetflowStop:         {categoryNetwork, typeEnd},
+	NetflowDownload:     {categoryFile, typeAccess},
 
 	FileDownload: {categoryFile, typeAccess},
 	FileUpload:   {categoryFile, typeCreation},

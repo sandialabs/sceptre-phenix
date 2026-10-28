@@ -59,7 +59,7 @@ curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experi
 Sign-in and sign-out, user, token, config and experiment changes, workflow
 applies and config upserts, settings changes, app
 triggers, SCORCH runs, VM power actions, VM PATCHes, optical disc changes,
-netflow captures, and the capture, capture token, WebShark, experiment file,
+netflow captures and their downloads, and the capture, capture token, WebShark, experiment file,
 minimega console, VNC websocket, port forward websocket, disk, VM snapshot,
 commit and mount routes log `AUDIT` events with ECS fields (`event.action`,
 `event.outcome`, `user.name`, `source.ip`, ...) for successes, failures and
@@ -181,7 +181,8 @@ unreadable (and is `X-Phenix-Stale` when it leaves out unreadable experiments). 
 Single-file downloads stream from disk and resume:
 `GET /experiments/{name}/files/{filename}?path=`, `GET /disks/download?disk=`,
 the VM mount's `GET .../files/download?path=`, `GET /downloads/tunneler/{name}`
-and a saved capture's `GET /webshark/captures/{name}`. Each also answers `HEAD`,
+a saved capture's `GET /webshark/captures/{name}` and a recorded netflow
+capture's `GET /experiments/{name}/netflow/captures/{id}?format=text`. Each also answers `HEAD`,
 and sends `Accept-Ranges: bytes`, `Content-Length`, a
 strong `ETag` (from the file's inode, size and nanosecond modification time,
 never its contents) and `Last-Modified`, with `Cache-Control: private,
@@ -199,8 +200,11 @@ The `file-download` audit event fires once per download (a `GET` answered
 `http.request.range`.
 
 `POST /experiments/{name}/files/download` and `POST /configs/download` build a
-zip as they send it: `Accept-Ranges: none`, `Cache-Control: no-store`, and no
-resume. Download very large files one at a time.
+zip as they send it, and `GET /experiments/{name}/netflow/captures/{id}` with
+`format=csv` or `format=jsonl` converts the capture as it sends it:
+`Accept-Ranges: none`, `Cache-Control: no-store`, and no resume. List the
+recorded netflow captures with `GET /experiments/{name}/netflow/captures`; a
+capture over `ui.netflow.max-size` (MiB, `phenix ui` restart) is `truncated`. Download very large files one at a time.
 
 ```bash
 curl -C - -o out.pcap -H "X-Phenix-Auth-Token: Bearer $TOKEN" \

@@ -346,6 +346,7 @@
           v-if="roleAllowed('experiments/netflow', 'get', experiment.name)">
           <NetflowPanel
             ref="netflowPanel"
+            :experiment="experiment.name"
             :lines="netflow.lines"
             :starting="netflow.starting"
             :search="netflowSearch" />

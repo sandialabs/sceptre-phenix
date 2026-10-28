@@ -2262,8 +2262,11 @@ paths:
       summary: Start a netflow capture of an experiment
       description: >-
         Has every cluster node send the netflow records of the experiment's
-        bridge to the server, which hands them to the clients of
-        `GET /experiments/{name}/netflow/ws`. The experiment must be running
+        bridge to the server. The server sends them to the clients of `GET
+        /experiments/{name}/netflow/ws`, and records them up to
+        `ui.netflow.max-size` (see `GET /experiments/{name}/netflow/captures`).
+        A
+        capture that cannot be recorded still starts. The experiment must be running
         and have its own default bridge, not `phenix`. Needs the
         `experiments/netflow` `create` permission.
       operationId: postExperimentsNameNetflow
@@ -2334,6 +2337,227 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: a cluster node could not stop the capture
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/netflow/captures":
+    get:
+      tags:
+        - Experiments
+      summary: List an experiment's recorded netflow captures
+      description: >-
+        Every netflow capture is recorded to the experiment's files, as
+        `netflow/<id>.txt`, up to the server's `ui.netflow.max-size`. Lists
+        them newest first. A capture that is still running is `recording`, and
+        one that stopped is `stopped`. A capture that the server did not finish
+        (it stopped or restarted while recording) is `interrupted`, with an
+        unknown flow count. Needs the `experiments/netflow` `get` permission.
+      operationId: getExperimentsNameNetflowCaptures
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the experiment's captures, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetflowCaptureList"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: there is no such experiment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the captures could not be listed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/netflow/captures/{id}":
+    get:
+      tags:
+        - Experiments
+      summary: Download a recorded netflow capture
+      description: >-
+        Sends the capture as an attachment. `text` is the recorded file,
+        every line as minimega sent it, and resumes like an experiment file
+        download (`Range` with `If-Range`). `csv` and `jsonl` convert each
+        flow to Elastic Common Schema fields as they are sent, and skip lines
+        that do not parse. The fields are `event.start`, `event.end`,
+        `event.duration`, `source.ip`, `source.port`, `destination.ip`,
+        `destination.port`, `network.transport`, `network.iana_number`,
+        `network.packets` and `network.bytes`. These formats cannot be resumed
+        (`Accept-Ranges: none`). A capture that is still recording is converted
+        as it was when
+        the request came. Downloads are never gzip-compressed. Needs the
+        `experiments/netflow` `get` permission.
+      operationId: getExperimentsNameNetflowCapturesId
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: the capture's ID, its UTC start time, as listed
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9]{8}T[0-9]{6}\.[0-9]{3}Z$'
+            example: 20261028T153012.345Z
+        - name: format
+          in: query
+          description: >-
+            `text` for the lines as minimega sent them, `csv` or `jsonl` for
+            the flows converted to Elastic Common Schema fields
+          required: false
+          schema:
+            type: string
+            enum: [text, csv, jsonl]
+            default: text
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the whole capture, in the format asked for
+          headers:
+            Content-Disposition:
+              description: "`attachment`, named `<exp>-netflow-<id>.txt`, `.csv` or `.jsonl`"
+              schema:
+                type: string
+            Accept-Ranges:
+              description: "`bytes` for text, and `none` for CSV and JSONL, which are converted as they are sent"
+              schema:
+                type: string
+                enum: [bytes, none]
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            text/plain:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/x-ndjson:
+              schema:
+                type: string
+                format: binary
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          description: >-
+            the format is not `text`, `csv` or `jsonl`, or the ID is not a
+            capture ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: there is no such experiment, or no capture with the ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+    head:
+      tags:
+        - Experiments
+      summary: Check a recorded netflow capture download
+      description: >-
+        The GET response's headers without the capture. CSV and JSONL are
+        not converted. Needs the `experiments/netflow` `get` permission.
+      operationId: headExperimentsNameNetflowCapturesId
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: the capture's ID, its UTC start time, as listed
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9]{8}T[0-9]{6}\.[0-9]{3}Z$'
+            example: 20261028T153012.345Z
+        - name: format
+          in: query
+          description: >-
+            `text` for the lines as minimega sent them, `csv` or `jsonl` for
+            the flows converted to Elastic Common Schema fields
+          required: false
+          schema:
+            type: string
+            enum: [text, csv, jsonl]
+            default: text
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the download's headers
+          headers:
+            Content-Disposition:
+              description: "`attachment`, named `<exp>-netflow-<id>.txt`, `.csv` or `.jsonl`"
+              schema:
+                type: string
+            Accept-Ranges:
+              description: "`bytes` for text, and `none` for CSV and JSONL, which are converted as they are sent"
+              schema:
+                type: string
+                enum: [bytes, none]
+            ETag:
+              $ref: "#/components/headers/ETag"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          description: >-
+            the format is not `text`, `csv` or `jsonl`, or the ID is not a
+            capture ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: there is no such experiment, or no capture with the ID
           content:
             application/json:
               schema:
@@ -10384,6 +10608,77 @@ components:
           type: integer
           description: bytes in the flow
           example: 4096
+    NetflowCaptureList:
+      title: Netflow Capture List
+      type: object
+      description: An experiment's recorded netflow captures, newest first.
+      required: [captures]
+      properties:
+        captures:
+          title: Captures
+          type: array
+          description: the captures, newest first
+          items:
+            $ref: "#/components/schemas/NetflowCapture"
+    NetflowCapture:
+      title: Netflow Capture
+      type: object
+      description: One recorded netflow capture of an experiment.
+      required: [id, started, stopped, state, size, flows, truncated, path]
+      properties:
+        id:
+          title: ID
+          type: string
+          description: the capture's UTC start time, which identifies it
+          example: 20261028T153012.345Z
+        started:
+          title: Started
+          type: string
+          format: date-time
+          description: when the capture started
+          example: "2026-10-28T15:30:12.345Z"
+        stopped:
+          title: Stopped
+          type: string
+          format: date-time
+          nullable: true
+          description: when the capture stopped, or null unless its state is `stopped`
+          example: "2026-10-28T16:00:00Z"
+        state:
+          title: State
+          type: string
+          description: >-
+            `recording` while the capture runs, `stopped` once it stopped, and
+            `interrupted` when the server stopped or restarted before it did.
+            While the capture is `recording` and `truncated`, the server no
+            longer records its lines
+          enum: [recording, stopped, interrupted]
+          example: stopped
+        size:
+          title: Size
+          type: integer
+          format: int64
+          description: bytes of the recorded lines
+          example: 834211
+        flows:
+          title: Flows
+          type: integer
+          format: int64
+          nullable: true
+          description: lines recorded, or null when the capture was interrupted
+          example: 10342
+        truncated:
+          title: Truncated
+          type: boolean
+          description: >-
+            whether recording stopped early, at the size limit or on a write
+            error. Later flows were only shown live
+          example: false
+        path:
+          title: Path
+          type: string
+          description: the recorded lines' path in the experiment's files
+          example: netflow/20261028T153012.345Z.txt
     ExperimentGraph:
       title: Experiment Graph
       type: object

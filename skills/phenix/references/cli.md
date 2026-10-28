@@ -37,7 +37,8 @@ Precedence (highest to lowest): **1. command-line flag** → **2. `config.yaml`*
 variable** (`PHENIX_*`) → **4. built-in default**. See
 [Settings & Configuration](https://phenix.sceptre.dev/latest/settings/) for the
 full settings reference, including UI-only settings (`ui.logs.level`,
-`ui.features`, `ui.file-server-endpoint`, `ui.shutdown-grace-period`) not
+`ui.features`, `ui.file-server-endpoint`, `ui.shutdown-grace-period`,
+`ui.netflow.max-size`) not
 exposed as root-level CLI flags.
 
 `phenix ui --features vm-mount` (equivalently `ui.features: vm-mount` in

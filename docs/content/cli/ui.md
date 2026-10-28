@@ -34,6 +34,7 @@ phenix ui [flags]
       --logs.level string             log level to publish to UI. Defaults to file level
       --logs.minimega-path string     path to minimega log file to publish to UI
       --minimega-console              enable minimega console access in UI
+      --netflow.max-size int          maximum size in megabytes of each recorded netflow capture (0 does not record) (default 100)
       --proxy-auth-header string      header containing username when using proxy authentication
       --shutdown-grace-period int     how many seconds stopping the server may take to close connections and finish work (0 does not wait) (default 5)
       --tls-cert string               path to TLS cert file

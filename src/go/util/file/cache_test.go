@@ -508,3 +508,41 @@ func TestListingCacheCancelsAListingNoOneWaitsFor(t *testing.T) {
 func (c *listingCache) get(key string, list func() (Files, error)) (Files, time.Time, error) {
 	return c.getContext(context.Background(), key, func(context.Context) (Files, error) { return list() })
 }
+
+// A recorded netflow capture lists as plain text, and its metadata does not
+// list; other JSON files do.
+//
+//nolint:paralleltest // replaces the listing cache and minimega
+func TestListingHidesNetflowSidecars(t *testing.T) {
+	installListing(t, nil)
+	experimentListings.invalidateAll()
+
+	mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
+		if strings.HasPrefix(cmd.Base, "file list") {
+			return []*minicli.Response{mmtest.Tabular("head", []string{"dir", "name", "size", "modified"},
+				[]string{"", "exp/files/netflow/20261028T153012.345Z.txt", "5", "2026-01-01T00:00:00Z"},
+				[]string{"", "exp/files/netflow/20261028T153012.345Z.json", "5", "2026-01-01T00:00:00Z"},
+				[]string{"", "exp/files/results.json", "5", "2026-01-01T00:00:00Z"})}
+		}
+
+		return nil
+	})
+
+	var files MMClusterFiles
+
+	listed, _, err := files.GetExperimentFilesObserved(t.Context(), "exp", "")
+	if err != nil {
+		t.Fatalf("GetExperimentFilesObserved(exp) error = %v", err)
+	}
+
+	plain := make(map[string]bool)
+
+	for _, f := range listed {
+		plain[f.Path] = f.PlainText
+	}
+
+	want := map[string]bool{"netflow/20261028T153012.345Z.txt": true, "results.json": true}
+	if diff := cmp.Diff(want, plain); diff != "" {
+		t.Errorf("GetExperimentFilesObserved(exp) paths and plain text mismatch (-want +got):\n%s", diff)
+	}
+}

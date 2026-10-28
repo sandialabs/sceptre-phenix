@@ -81,3 +81,25 @@ func TestGetOptionsForbidden(t *testing.T) {
 		t.Errorf("body = %s, want only the forbidden error", body)
 	}
 }
+
+// Each capture records 100 MiB by default; the option sets another limit, and
+// the server refuses a negative one.
+//
+//nolint:paralleltest // sets the server options
+func TestServeWithNetflowMaxSize(t *testing.T) {
+	if got := newServerOptions().netflowMaxSize; got != 100<<20 {
+		t.Errorf("default netflow max size = %d, want %d", got, 100<<20)
+	}
+
+	if got := newServerOptions(ServeWithNetflowMaxSize(0)).netflowMaxSize; got != 0 {
+		t.Errorf("netflow max size with ServeWithNetflowMaxSize(0) = %d, want 0", got)
+	}
+
+	saved := o
+	t.Cleanup(func() { o = saved })
+
+	err := Start(t.Context(), ServeWithNetflowMaxSize(-1))
+	if err == nil || !strings.Contains(err.Error(), "ui.netflow.max-size") {
+		t.Errorf("Start(netflow max size -1) = %v, want an error naming ui.netflow.max-size", err)
+	}
+}

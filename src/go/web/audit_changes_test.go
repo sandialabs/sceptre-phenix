@@ -416,6 +416,51 @@ func TestNetflowIsAudited(t *testing.T) {
 	wantAudit(t, got, "netflow-stop", "failure", map[string]any{"user.name": "bob", "event.reason": "forbidden"})
 }
 
+// Downloading a recorded netflow capture is audited once per download, with
+// its format and, when converted, the flows written and lines skipped.
+func TestNetflowDownloadIsAudited(t *testing.T) {
+	var (
+		url    = useNetflowCaptures(t) + "/" + netflowTestID
+		events = captureAudit(t)
+		bob    = serveAs(t, "bob", testRole("experiments/netflow", "get", "other")).URL +
+			"/api/v1/experiments/test-experiment/netflow/captures/" + netflowTestID
+	)
+
+	for _, tc := range []struct {
+		method, url string
+		want        int
+	}{
+		{http.MethodGet, url + "?format=csv", http.StatusOK},
+		{http.MethodHead, url + "?format=csv", http.StatusOK},
+		{http.MethodGet, url, http.StatusOK},
+		{http.MethodHead, url, http.StatusOK},
+		{http.MethodGet, url[:len(url)-len(netflowTestID)] + "20200101T000000.000Z", http.StatusNotFound},
+		{http.MethodGet, bob, http.StatusForbidden},
+	} {
+		if resp := do(t, tc.method, tc.url, ""); resp.StatusCode != tc.want {
+			t.Errorf("%s %s = %d, want %d", tc.method, tc.url, resp.StatusCode, tc.want)
+		}
+	}
+
+	got := events()
+	file := "netflow/" + netflowTestID + ".txt"
+
+	wantAudit(t, got, "netflow-download", "success", map[string]any{
+		"user.name": "alice", "phenix.experiment.name": "test-experiment", "file.path": file,
+		"event.category": "file", "phenix.netflow.capture": netflowTestID, "phenix.netflow.format": "csv",
+		"phenix.netflow.flows": 1, "phenix.netflow.skipped": 1,
+	})
+	wantAudit(t, got, "netflow-download", "success", map[string]any{"user.name": "alice", "phenix.netflow.format": "text"})
+	wantAudit(t, got, "netflow-download", "failure", map[string]any{
+		"user.name": "alice", "phenix.netflow.capture": "20200101T000000.000Z",
+	})
+	wantAudit(t, got, "netflow-download", "failure", map[string]any{"user.name": "bob", "event.reason": "forbidden"})
+
+	if n := countAudit(got, "netflow-download", "success", map[string]any{}); n != 2 {
+		t.Errorf("netflow-download successes = %d, want 2 (one per GET, none per HEAD)", n)
+	}
+}
+
 // settingsBody is a POST /settings body with the default settings, but for
 // the password minimum length and whether sessions time out.
 func settingsBody(minLength string, timeout bool) string {

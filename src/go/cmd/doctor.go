@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -166,6 +167,7 @@ func runDoctor(ctx context.Context, flags *pflag.FlagSet, timeout time.Duration)
 		baseDirCheck("mount-dir", derivedBaseDir(effective("mount-dir"), phenixBase, "mounts"), true),
 		jwtKeyCheck(viper.GetString("ui.jwt-signing-key")),
 		gracePeriodCheck(),
+		netflowMaxSizeCheck(),
 	)
 
 	common.MinimegaBase = minimegaBase //nolint:reassign // configuration injection
@@ -385,6 +387,24 @@ func gracePeriodCheck() doctorCheck {
 	}
 
 	return doctorCheck{Name: "ui.shutdown-grace-period", Status: doctorPass, Detail: grace.String()}
+}
+
+// netflowMaxSizeCheck fails for a ui.netflow.max-size phenix ui refuses.
+func netflowMaxSizeCheck() doctorCheck {
+	check := doctorCheck{Name: "ui.netflow.max-size", Status: doctorPass, Detail: ""}
+
+	size, err := netflowMaxSize(viper.GetViper())
+
+	switch {
+	case err != nil:
+		check.Status, check.Detail = doctorFail, err.Error()
+	case size == 0:
+		check.Detail = "0, so phenix ui records no netflow captures"
+	default:
+		check.Detail = strconv.FormatInt(size>>mibShift, 10) + " MiB"
+	}
+
+	return check
 }
 
 // minimegaCheck asks minimega, through probe, for its version, waiting at

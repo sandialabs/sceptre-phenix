@@ -159,6 +159,10 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 		return fmt.Errorf("invalid ui.shutdown-grace-period %s: it must not be negative", o.shutdownGrace)
 	}
 
+	if o.netflowMaxSize < 0 {
+		return fmt.Errorf("invalid ui.netflow.max-size %d bytes: it must not be negative", o.netflowMaxSize)
+	}
+
 	fileServerEndpoint, err := normalizeFileServerEndpoint(o.fileServerEndpoint)
 	if err != nil {
 		return fmt.Errorf("invalid ui.file-server-endpoint: %w", err)
@@ -463,6 +467,10 @@ func newRouter(assets http.FileSystem) *mux.Router {
 	api.Handle("/experiments/{exp}/netflow", weberror.ErrorHandler(StartNetflow)).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/netflow", weberror.ErrorHandler(StopNetflow)).Methods("DELETE", "OPTIONS")
 	api.Handle("/experiments/{exp}/netflow/ws", weberror.ErrorHandler(GetNetflowWebSocket)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/netflow/captures", weberror.ErrorHandler(GetNetflowCaptures)).
+		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/netflow/captures/{id}", weberror.ErrorHandler(DownloadNetflowCapture)).
+		Methods("GET", "HEAD", "OPTIONS")
 	api.Handle("/experiments/{name}/topology", weberror.ErrorHandler(GetExperimentTopology)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/topology/search", weberror.ErrorHandler(SearchExperimentTopology)).
 		Methods("GET", "OPTIONS")

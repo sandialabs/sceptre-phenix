@@ -3,12 +3,15 @@ package experiment
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"phenix/util/file"
 	"phenix/util/mm"
 	"phenix/util/plog"
 )
@@ -17,6 +20,7 @@ const (
 	netflowChannelBufferSize = 100
 	netflowMinFieldCount     = 8
 	netflowMaxDatagramSize   = 65535
+	netflowReadBuffer        = 4 << 20
 )
 
 type Netflow struct {
@@ -29,9 +33,17 @@ type Netflow struct {
 
 	logMu   sync.Mutex
 	lastLog map[string]time.Time
+
+	// recorder, set only at construction, records the capture; nil when it is
+	// not recorded.
+	recorder *netflowRecorder
 }
 
 func NewNetflow(bridge string, conn *net.UDPConn) *Netflow {
+	return newNetflow(bridge, conn, nil)
+}
+
+func newNetflow(bridge string, conn *net.UDPConn, rec *netflowRecorder) *Netflow {
 	return &Netflow{
 		mu:     sync.RWMutex{},
 		Bridge: bridge,
@@ -40,6 +52,7 @@ func NewNetflow(bridge string, conn *net.UDPConn) *Netflow {
 		callbacks: make(map[string]chan map[string]any),
 		logMu:     sync.Mutex{},
 		lastLog:   make(map[string]time.Time),
+		recorder:  rec,
 	}
 }
 
@@ -113,7 +126,6 @@ func (n *Netflow) Publish(body map[string]any) {
 
 func (n *Netflow) Close() {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 
 	for _, cb := range n.callbacks {
 		close(cb)
@@ -122,6 +134,12 @@ func (n *Netflow) Close() {
 	n.callbacks = nil
 	n.lastLog = nil
 	_ = n.Conn.Close()
+
+	n.mu.Unlock()
+
+	if n.recorder != nil {
+		n.recorder.close(time.Now())
+	}
 }
 
 type netflowState int
@@ -191,7 +209,9 @@ func forgetNetflow(exp string, entry *netflowEntry) {
 	}
 }
 
-func StartNetflow(exp string) error {
+// StartNetflow starts the experiment's netflow capture, recording up to
+// maxSize bytes of it; 0 does not record it.
+func StartNetflow(exp string, maxSize int64) error {
 	// reserve the experiment's capture before any I/O
 	netflowMu.Lock()
 
@@ -206,7 +226,7 @@ func StartNetflow(exp string) error {
 
 	netflowMu.Unlock()
 
-	flow, err := startNetflow(exp)
+	flow, err := startNetflow(exp, maxSize)
 	if err != nil {
 		forgetNetflow(exp, entry)
 
@@ -218,6 +238,10 @@ func StartNetflow(exp string) error {
 	// the experiment stopped while the capture was starting
 	if netflows[exp] != entry {
 		netflowMu.Unlock()
+
+		if flow.recorder != nil {
+			flow.recorder.discard()
+		}
 
 		flow.Close()
 
@@ -235,8 +259,8 @@ func StartNetflow(exp string) error {
 }
 
 // startNetflow asks every cluster node to send the experiment's netflow to a
-// new UDP listener.
-func startNetflow(exp string) (*Netflow, error) {
+// new UDP listener, recording it first when maxSize is positive.
+func startNetflow(exp string, maxSize int64) (*Netflow, error) {
 	spec, err := Get(exp)
 	if err != nil {
 		return nil, ErrExperimentNotFound
@@ -257,12 +281,36 @@ func startNetflow(exp string) (*Netflow, error) {
 		return nil, fmt.Errorf("creating UDP listener: %w", err)
 	}
 
+	if err := conn.SetReadBuffer(netflowReadBuffer); err != nil {
+		plog.Warn(plog.TypeSystem, "enlarging netflow receive buffer", "exp", exp, "err", err)
+	}
+
+	// live viewing works on, unrecorded, when the capture cannot be recorded
+	var rec *netflowRecorder
+
+	if maxSize > 0 {
+		rec, err = newNetflowRecorder(exp, netflowDir(spec.FilesDir()), maxSize, time.Now())
+		if err != nil {
+			plog.Error(plog.TypeSystem, "recording netflow capture", "exp", exp, "err", err)
+		} else {
+			file.InvalidateExperimentFiles(exp)
+		}
+	}
+
+	failed := func() {
+		_ = conn.Close()
+
+		if rec != nil {
+			rec.discard()
+		}
+	}
+
 	addr := strings.Split(conn.LocalAddr().String(), ":")
 	// The mode command is already broadcast by minimega. Sending it through
 	// every cluster node can cause overlapping mesh broadcasts while a new
 	// capture is being configured.
 	if err := mm.MeshSend(exp, mm.Headnode(), "capture netflow mode ascii"); err != nil {
-		_ = conn.Close()
+		failed()
 		return nil, fmt.Errorf("setting netflow capture mode: %w", err)
 	}
 
@@ -275,12 +323,12 @@ func startNetflow(exp string) (*Netflow, error) {
 	for _, node := range cluster {
 		err = mm.MeshSend(exp, node, cmd)
 		if err != nil {
-			_ = conn.Close()
+			failed()
 			return nil, fmt.Errorf("starting netflow capture on node %s: %w", node, err)
 		}
 	}
 
-	return NewNetflow(spec.Spec.DefaultBridge(), conn), nil
+	return newNetflow(spec.Spec.DefaultBridge(), conn, rec), nil
 }
 
 // readNetflow publishes the capture's records until its connection closes.
@@ -300,11 +348,20 @@ func readNetflow(exp string, flow *Netflow) {
 			return
 		}
 
+		var lines []string
+
 		for line := range strings.SplitSeq(string(buf[:n]), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
+			if strings.TrimSpace(line) != "" {
+				lines = append(lines, line)
 			}
+		}
+
+		if flow.recorder != nil {
+			flow.recorder.record(lines)
+		}
+
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
 
 			body, ok := parseNetflowLine(line)
 			if !ok {
@@ -319,51 +376,93 @@ func readNetflow(exp string, flow *Netflow) {
 
 func parseNetflowLine(line string) (map[string]any, bool) {
 	fields := strings.Fields(line)
-	if len(fields) < netflowMinFieldCount || fields[4] != "<->" {
+	if len(fields) < netflowMinFieldCount {
 		return nil, false
 	}
 
-	proto, err := strconv.Atoi(fields[2])
-	if err != nil || proto < 0 || proto > 255 {
-		return nil, false
-	}
-
-	srcHost, srcPortText, ok := splitAddr(fields[3])
-	if !ok || net.ParseIP(srcHost) == nil {
-		return nil, false
-	}
-	srcPort, err := strconv.Atoi(srcPortText)
-	if err != nil || srcPort < 0 || srcPort > 65535 {
-		return nil, false
-	}
-
-	dstHost, dstPortText, ok := splitAddr(fields[5])
-	if !ok || net.ParseIP(dstHost) == nil {
-		return nil, false
-	}
-	dstPort, err := strconv.Atoi(dstPortText)
-	if err != nil || dstPort < 0 || dstPort > 65535 {
-		return nil, false
-	}
-
-	packets, err := strconv.Atoi(fields[6])
-	if err != nil || packets < 0 {
-		return nil, false
-	}
-	bytes, err := strconv.Atoi(fields[7])
-	if err != nil || bytes < 0 {
+	f, ok := parseNetflowFields(fields)
+	if !ok || f.packets > math.MaxInt || f.bytes > math.MaxInt {
 		return nil, false
 	}
 
 	return map[string]any{
-		"proto":   proto,
-		"src":     srcHost,
-		"sport":   srcPort,
-		"dst":     dstHost,
-		"dport":   dstPort,
-		"packets": packets,
-		"bytes":   bytes,
+		"proto":   int(f.proto),
+		"src":     f.srcHost,
+		"sport":   int(f.sport),
+		"dst":     f.dstHost,
+		"dport":   int(f.dport),
+		"packets": int(f.packets),
+		"bytes":   int(f.bytes),
 	}, true
+}
+
+// netflowFields are fields 2 to 7 of a minimega ascii netflow line: the
+// protocol, both endpoints, and the packet and byte counts.
+type netflowFields struct {
+	proto            uint8
+	srcHost, dstHost string
+	src, dst         netip.Addr
+	sport, dport     uint16
+	packets, bytes   uint64
+}
+
+// parseNetflowFields parses fields 2 to 7 of a line's fields, which number at
+// least netflowMinFieldCount.
+func parseNetflowFields(fields []string) (netflowFields, bool) {
+	var (
+		f   netflowFields
+		ok  bool
+		err error
+	)
+
+	if fields[4] != "<->" {
+		return f, false
+	}
+
+	proto, err := strconv.ParseUint(fields[2], 10, 8)
+	if err != nil {
+		return f, false
+	}
+
+	f.proto = uint8(proto)
+
+	if f.srcHost, f.src, f.sport, ok = parseNetflowEndpoint(fields[3]); !ok {
+		return f, false
+	}
+
+	if f.dstHost, f.dst, f.dport, ok = parseNetflowEndpoint(fields[5]); !ok {
+		return f, false
+	}
+
+	if f.packets, err = strconv.ParseUint(fields[6], 10, 64); err != nil {
+		return f, false
+	}
+
+	if f.bytes, err = strconv.ParseUint(fields[7], 10, 64); err != nil {
+		return f, false
+	}
+
+	return f, true
+}
+
+// parseNetflowEndpoint parses an IP address and port, refusing a zone.
+func parseNetflowEndpoint(text string) (string, netip.Addr, uint16, bool) {
+	host, portText, ok := splitAddr(text)
+	if !ok {
+		return "", netip.Addr{}, 0, false
+	}
+
+	addr, err := netip.ParseAddr(host)
+	if err != nil || addr.Zone() != "" {
+		return "", netip.Addr{}, 0, false
+	}
+
+	port, err := strconv.ParseUint(portText, 10, 16)
+	if err != nil {
+		return "", netip.Addr{}, 0, false
+	}
+
+	return host, addr, uint16(port), true
 }
 
 // splitAddr splits a netflow address into host and port. It accepts the

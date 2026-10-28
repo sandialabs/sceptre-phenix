@@ -201,7 +201,10 @@ the file then also send it as `Repr-Digest` (RFC 9530), except a gzip-compressed
 plain-text view.
 
 The zip downloads of several experiment files or configs are built as they are
-sent, so they cannot be resumed (`Accept-Ranges: none`).
+sent, so they cannot be resumed (`Accept-Ranges: none`). A recorded netflow
+capture (`GET /experiments/{name}/netflow/captures/{id}`) resumes like a file
+when downloaded as `text`, while its `csv` and `jsonl` downloads are converted
+as they are sent, like the zip downloads.
 
 !!! note
     A reverse proxy in front of phēnix must pass `Range`, `If-Range` and the

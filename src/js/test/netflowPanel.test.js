@@ -15,6 +15,7 @@ vi.mock('@/store.js', modules.store);
 const room = vi.hoisted(() => vi.fn(() => null));
 vi.mock('@/utils/viewportFit.js', () => ({ roomInWindow: room }));
 
+import NetflowCaptures from '@/components/experiment/NetflowCaptures.vue';
 import NetflowPanel from '@/components/experiment/NetflowPanel.vue';
 import {
   NETFLOW_MAX_LINES,
@@ -100,7 +101,8 @@ describe('the lines', () => {
 });
 
 describe('the panel', () => {
-  const render = (props) => mountComponent(NetflowPanel, { props });
+  const render = (props) =>
+    mountComponent(NetflowPanel, { props: { experiment: 'demo', ...props } });
   const rows = (wrapper) =>
     wrapper.findAll('tbody tr').map((tr) => textOf(tr.findAll('td').at(1)));
 
@@ -111,7 +113,20 @@ describe('the panel', () => {
     ],
     [true, 'Starting netflow capture…'],
   ])('says so when it has no lines, starting: %s', async (starting, text) => {
-    expect(textOf(await render({ lines: [], starting }))).toBe(text);
+    expect(
+      textOf((await render({ lines: [], starting })).find('.netflow-empty')),
+    ).toBe(text);
+  });
+
+  it.each([
+    ['no lines', []],
+    ['lines', [netflowMarker('Capture started')]],
+  ])("offers the experiment's recorded captures with %s", async (_, lines) => {
+    const wrapper = await render({ lines });
+    const captures = wrapper.findComponent(NetflowCaptures);
+    expect(captures.props('experiment')).toBe('demo');
+    expect(textOf(captures.find('button'))).toBe('Download captures');
+    expect(wrapper.find('.netflow-view').exists()).toBe(lines.length > 0);
   });
 
   it('shows the lines matching the search, newest first', async () => {

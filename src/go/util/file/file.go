@@ -193,6 +193,11 @@ func listExperimentFiles(ctx context.Context, exp string) (Files, error) {
 				continue
 			}
 
+			// a recorded netflow capture's metadata, not a file of its own
+			if strings.HasPrefix(file.Path, "netflow/") && filepath.Ext(name) == ".json" {
+				continue
+			}
+
 			if strings.Contains(file.Path, "scorch") {
 				file.Categories = append(file.Categories, "Scorch Artifact")
 
