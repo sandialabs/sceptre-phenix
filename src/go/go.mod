@@ -8,8 +8,8 @@ require (
 	github.com/cescoferraro/go-jwt-middleware v0.0.0-20161113181124-eb52b4929b4e
 	github.com/creack/pty v1.1.11
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
-	github.com/fatih/color v1.9.0
-	github.com/fsnotify/fsnotify v1.4.7
+	github.com/fatih/color v1.18.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/gofrs/uuid/v5 v5.4.0
 	github.com/golang/mock v1.4.4
@@ -20,14 +20,14 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hpcloud/tail v1.0.0
 	github.com/json-iterator/go v1.1.12
-	github.com/lmittmann/tint v1.0.4
-	github.com/mattn/go-isatty v0.0.11
+	github.com/lmittmann/tint v1.2.1
+	github.com/mattn/go-isatty v0.0.24
 	github.com/mitchellh/mapstructure v1.2.2
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/olivere/elastic/v7 v7.0.21
+	github.com/olivere/elastic/v7 v7.0.32
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.9
+	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.7.1
 	go.etcd.io/bbolt v1.3.5
 	golang.org/x/crypto v0.1.0
@@ -51,7 +51,7 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/mattn/go-colorable v0.1.4 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -68,7 +68,7 @@ require (
 	go4.org/intern v0.0.0-20211027215823-ae77deb06f29 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
 	golang.org/x/mod v0.6.0 // indirect
-	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/tools v0.2.0 // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
