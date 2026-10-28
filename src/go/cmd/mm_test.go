@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/activeshadow/libminimega/minicli"
-	"github.com/activeshadow/libminimega/miniclient"
 	"github.com/mattn/go-isatty"
+	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
+	"github.com/sandia-minimega/minimega/v2/pkg/miniclient"
 	"github.com/spf13/cobra"
 
 	"phenix/util/common"
@@ -170,8 +170,8 @@ func TestMinimegaCommand(t *testing.T) {
 	}
 }
 
-// TestMinimegaCommandParses checks that minimega's own command parser, which
-// libminimega shares, reads back the arguments phenix sends unchanged.
+// TestMinimegaCommandParses checks that minimega's own command parser reads back
+// the arguments phenix sends unchanged.
 func TestMinimegaCommandParses(t *testing.T) {
 	minicli.Reset()
 	t.Cleanup(minicli.Reset)
