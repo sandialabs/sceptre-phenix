@@ -2,9 +2,10 @@ import { createRouter, createWebHistory } from 'vue-router';
 
 import { ToastProgrammatic as Toast } from 'buefy';
 
-import { tokenExpired, usePhenixStore } from '@/store.js';
+import { usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
 import { routeTitle } from '@/utils/pageTitle.js';
+import { tokenExpired } from '@/utils/token.js';
 
 export { pageTitle } from '@/utils/pageTitle.js';
 
@@ -111,6 +112,18 @@ const router = createRouter({
       name: 'tunneler',
       meta: { title: 'Tunneler' },
       component: () => import('@/views/Tunneler.vue'),
+    },
+    {
+      // The Builder. The build finds the files that only this view loads
+      // from the view's path (src/js/plugins/builder-assets.js). The server
+      // sends them compressed (src/go/web/builder_assets.go).
+      path: '/builder',
+      name: 'builder',
+      component: () => import('@/views/Builder.vue'),
+      // The editor fills the viewport below the header, so App.vue drops the
+      // page container, its padding and the footer for this route. The
+      // editor adds the open diagram to the title (see Builder.vue).
+      meta: { fullBleed: true, title: 'Builder' },
     },
 
     {

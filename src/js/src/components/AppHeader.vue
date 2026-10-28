@@ -56,6 +56,13 @@ are only available to Global Administrator or Global Viewer.
         >Scorch</b-navbar-item
       >
       <b-navbar-item
+        v-if="auth && roleAllowed('builder', 'use')"
+        tag="router-link"
+        :to="{ name: 'builder' }"
+        data-testid="nav-builder"
+        >Builder</b-navbar-item
+      >
+      <b-navbar-item
         v-if="auth && roleAllowed('miniconsole', 'post')"
         tag="router-link"
         :to="{ name: 'console' }"
