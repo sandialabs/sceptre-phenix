@@ -1,9 +1,9 @@
 {
-  "go": 19.5,
+  "go": 41.5,
   "js": {
-    "lines": 1.8,
-    "statements": 1.7,
-    "functions": 0.9,
-    "branches": 2.1
+    "lines": 68.6,
+    "statements": 68.5,
+    "functions": 61.2,
+    "branches": 71.2
   }
 }
