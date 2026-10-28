@@ -38,6 +38,11 @@ spec:
     verbs:
     - create
   - resources:
+    - vlans
+    verbs:
+    - list
+    - get
+  - resources:
     - hosts
     resourceNames:
     - "*"

@@ -24,7 +24,8 @@ type qemuBackingChain struct {
 	BackingFile string `json:"backing-filename"`
 }
 
-var diskNameWithTstampRegex = regexp.MustCompile(`(.*)_\d{14}`)
+// diskNameWithTstampRegex matches a file name with an earlier time: the text before and after the time.
+var diskNameWithTstampRegex = regexp.MustCompile(`(?s)^(.*)_\d{14}(\D.*)?$`)
 
 func GetNewDiskName(expName, vmName string) (string, error) {
 	base, err := getVMImage(expName, vmName)
@@ -32,21 +33,31 @@ func GetNewDiskName(expName, vmName string) (string, error) {
 		return "", fmt.Errorf("getting base disk image: %w", err)
 	}
 
-	name := strings.TrimSuffix(base, filepath.Ext(base))
+	return newDiskName(base, time.Now()), nil
+}
 
-	// For example, if name = ubuntu_server_20191117102805, then this
-	// will match and match[1] will be `ubuntu_server`.
-	if match := diskNameWithTstampRegex.FindStringSubmatch(name); match != nil {
-		name = match[1]
+// newDiskName is the name of a new image made from the VM image base at now: base with the time in place of the
+// last earlier one in its file name, or added to the end of the file name. It keeps the folder, a .qcow2, .qc2 or
+// .qcow extension, since CommitToDisk writes into a copy of the image's base, which keeps its format, and adds .qc2
+// to any other.
+func newDiskName(base string, now time.Time) string {
+	dir, file := filepath.Split(strings.TrimSuffix(base, filepath.Ext(base)))
+	stamp := "_" + now.Format("20060102150405")
+
+	// For example, web_20191117102805_v2 gives web_<now>_v2.
+	if match := diskNameWithTstampRegex.FindStringSubmatch(file); match != nil {
+		file = match[1] + stamp + match[2]
+	} else {
+		file += stamp
 	}
 
-	name = name + "_" + time.Now().Format("20060102150405") + filepath.Ext(base)
+	name := dir + file + filepath.Ext(base)
 
-	if ext := filepath.Ext(name); ext != ".qcow2" && ext != ".qc2" {
+	if ext := filepath.Ext(name); ext != ".qcow2" && ext != ".qc2" && ext != ".qcow" {
 		name += ".qc2"
 	}
 
-	return name, nil
+	return name
 }
 
 func getVMImage(expName, vmName string) (string, error) {
@@ -60,18 +71,29 @@ func getVMImage(expName, vmName string) (string, error) {
 		return "", fmt.Errorf("getting vm %s for experiment %s", vmName, expName)
 	}
 
+	drives := vm.Hardware().Drives()
+	if len(drives) == 0 {
+		return "", fmt.Errorf("vm %s for experiment %s has no drives", vmName, expName)
+	}
+
 	// base image from topology
-	return vm.Hardware().Drives()[0].Image(), nil
+	return drives[0].Image(), nil
 }
 
-func getBackingImage(path string) (string, error) {
+// getBackingImage returns the base image of the disk path's backing chain, or the file a base that is a symlink
+// names. A path without a folder is one of phenix's images. An empty backing chain is an error.
+func getBackingImage(ctx context.Context, path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = common.PhenixBase + "/images/" + path
 	}
 
-	chain, err := getImageBackingChain(path)
+	chain, err := getImageBackingChain(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("getting image backing chain for %s: %w", path, err)
+	}
+
+	if len(chain) == 0 {
+		return "", fmt.Errorf("getting image backing chain for %s: qemu-img returned no images", path)
 	}
 
 	// backing image should always be last image in chain
@@ -95,8 +117,8 @@ func getBackingImage(path string) (string, error) {
 	return path, nil
 }
 
-func getImageSnapshots(path string) ([]string, error) {
-	chain, err := getImageBackingChain(path)
+func getImageSnapshots(ctx context.Context, path string) ([]string, error) {
+	chain, err := getImageBackingChain(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("getting image backing chain for %s: %w", path, err)
 	}
@@ -116,10 +138,10 @@ func getImageSnapshots(path string) ([]string, error) {
 	return snapshots, nil
 }
 
-func getImageBackingChain(path string) ([]qemuBackingChain, error) {
+func getImageBackingChain(ctx context.Context, path string) ([]qemuBackingChain, error) {
 	cmd := fmt.Sprintf("qemu-img info --backing-chain %s --output json", path)
 
-	resp, err := mm.MeshShellResponse("", cmd)
+	resp, err := mm.MeshShellResponse(ctx, "", cmd)
 	if err != nil {
 		return nil, fmt.Errorf("getting image info for %s: %w", path, err)
 	}
@@ -133,12 +155,16 @@ func getImageBackingChain(path string) ([]qemuBackingChain, error) {
 	return chain, nil
 }
 
+// copyProgressInterval is how often a copier reports its progress.
+const copyProgressInterval = time.Second
+
 type copier struct {
-	subs []chan float64
+	subs     []chan float64
+	interval time.Duration // how often it reports its progress
 }
 
-func newCopier() *copier {
-	return new(copier)
+func newCopier(interval time.Duration) *copier {
+	return &copier{subs: nil, interval: interval}
 }
 
 func (c *copier) subscribe() chan float64 {
@@ -174,24 +200,39 @@ func (c copier) copy(ctx context.Context, src, dst string) error {
 
 	pw := newProgressWriter(out)
 	cr := newCancelableReader(ctx, in)
-	done := make(chan struct{})
+
+	var (
+		done         = make(chan struct{})
+		progressDone = make(chan struct{})
+	)
 
 	go func() {
-		info, _ := in.Stat()
-		size := info.Size()
+		defer close(progressDone)
+
+		var size int64
+		if info, err := in.Stat(); err == nil {
+			size = info.Size()
+		}
+
+		ticker := time.NewTicker(c.interval)
+		defer ticker.Stop()
 
 		for {
+			n := pw.N()
+
+			// a subscriber that stops reading does not hold up the copy's end
+			for _, s := range c.subs {
+				select {
+				case s <- copyFraction(n, size):
+				case <-done:
+					return
+				}
+			}
+
 			select {
 			case <-done:
 				return
-			default:
-				n := pw.N()
-
-				for _, s := range c.subs {
-					s <- float64(n) / float64(size)
-				}
-
-				time.Sleep(1 * time.Second)
+			case <-ticker.C:
 			}
 		}
 	}()
@@ -200,11 +241,24 @@ func (c copier) copy(ctx context.Context, src, dst string) error {
 
 	close(done)
 
+	// done closes the subscriptions, which the progress goroutine sends on
+	<-progressDone
+
 	if err != nil {
 		return err
 	}
 
 	return out.Close()
+}
+
+// copyFraction is the fraction of size that n bytes are. An empty source has
+// nothing left to copy, so its fraction is 1.
+func copyFraction(n, size int64) float64 {
+	if size <= 0 {
+		return 1
+	}
+
+	return float64(n) / float64(size)
 }
 
 type progressWriter struct {
@@ -254,6 +308,7 @@ func (c cancelableReader) Read(p []byte) (int, error) {
 	}
 }
 
-func getTimestamp() string {
-	return time.Now().Format("20060102_1500")
+// getTimestamp is the date, hour and minute of now, for the names of memory dumps and captures.
+func getTimestamp(now time.Time) string {
+	return now.Format("20060102_1504")
 }

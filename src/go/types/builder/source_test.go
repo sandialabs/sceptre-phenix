@@ -173,6 +173,15 @@ func TestFromConfigKeepsAnnotationsButTheBuilders(t *testing.T) {
 		t.Errorf("FromConfig(experiment.json) source annotations mismatch (-want +got):\n%s", diff)
 	}
 
+	// The settings phenix saves on an experiment are its own, so they are not kept.
+	saved := loadConfig(t, "experiment.json")
+	saved.Metadata.Annotations["phenix/vm-defaults"] = `{"host-a":{"cpus":1}}`
+	experiment, _ = documentFromConfig(t, saved)
+
+	if diff := cmp.Diff(want, experiment.Source.Annotations); diff != "" {
+		t.Errorf("FromConfig(experiment.json with phenix/vm-defaults) source annotations mismatch (-want +got):\n%s", diff)
+	}
+
 	// Only the Builders' own: none are kept, and the field is left out.
 	config.Metadata.Annotations = store.Annotations{"builder-xml": "<mxGraphModel/>"}
 	doc, _ = documentFromConfig(t, config)

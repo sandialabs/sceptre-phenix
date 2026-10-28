@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/spf13/cobra"
 )
@@ -222,5 +224,74 @@ func TestHideInheritedHelpDoesNotBreakFlagParsing(t *testing.T) {
 
 	if seen != "debug" {
 		t.Fatalf("expected hidden --log.level flag to still be parsed, got %q", seen)
+	}
+}
+
+// TestHideInheritedHelpKeepsHiddenFlagsHidden checks that an inherited flag
+// that was hidden before help stays hidden after it.
+func TestHideInheritedHelpKeepsHiddenFlagsHidden(t *testing.T) {
+	root := newTestRootWithGlobalFlag()
+	root.PersistentFlags().String("secret", "", "a hidden flag")
+
+	if err := root.PersistentFlags().MarkHidden("secret"); err != nil {
+		t.Fatalf("MarkHidden(secret) error = %v", err)
+	}
+
+	child := &cobra.Command{Use: "child", RunE: func(*cobra.Command, []string) error { return nil }}
+	hideInheritedHelp(child)
+	root.AddCommand(child)
+
+	_ = runHelp(root, []string{"child"})
+
+	if flag := root.PersistentFlags().Lookup("secret"); !flag.Hidden {
+		t.Error("child help showed the hidden --secret flag again, want it hidden")
+	}
+
+	if flag := root.PersistentFlags().Lookup("log.level"); flag.Hidden {
+		t.Error("child help left --log.level hidden, want it shown again")
+	}
+}
+
+// TestParentCommandsPrintHelp checks that a command that only groups other
+// commands prints its help to the command writer when it runs alone.
+func TestParentCommandsPrintHelp(t *testing.T) {
+	t.Parallel()
+
+	for name, newCmd := range map[string]func() *cobra.Command{
+		"experiment":  newExperimentCmd,
+		"image":       newImageCmd,
+		"mm":          newMMCmd,
+		"settings":    newSettingsCmd,
+		"settings db": newSettingsDBCmd,
+		"util":        newUtilCmd,
+		"vlan":        newVlanCmd,
+		"vm":          newVMCmd,
+		"vm net":      newVMNetCmd,
+		"vm capture":  newVMCaptureCmd,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := newCmd()
+			cmd.SetArgs([]string{})
+
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(io.Discard)
+
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("phenix %s error = %v", name, err)
+			}
+
+			want := cmd.Long
+			if want == "" {
+				want = cmd.Short
+			}
+
+			got := output.String()
+			if !strings.HasPrefix(got, strings.TrimRightFunc(want, unicode.IsSpace)) || !strings.Contains(got, "Usage:") {
+				t.Errorf("phenix %s = %q, want its help", name, got)
+			}
+		})
 	}
 }

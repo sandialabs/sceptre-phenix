@@ -443,6 +443,8 @@ metadata:
       digest: sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
       id: fd063e784604f43e5c39cc9959501cf117b4dc2be895e92f9bb98e23f8465c4b
       path: /phenix/topologies/pump-station/pump-station.builder.json
+spec:
+  ...
 ```
 
 | Key | What it holds |
@@ -542,7 +544,7 @@ The directory `/phenix/topologies/pump-station/` holds two files:
             - general:
                 description: Field engineering laptop
                 hostname: eng-ws-01
-            # ... the rest of the nodes
+            - ... # the rest of the nodes
     ```
 
 To make the Topology config:

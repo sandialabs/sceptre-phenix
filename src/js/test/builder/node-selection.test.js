@@ -1,3 +1,4 @@
+// @vitest-environment node
 // A selected node gets is-selected: a border and inner ring in the selection
 // color, which keeps 3:1 against its background in each theme.
 

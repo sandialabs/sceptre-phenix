@@ -4,12 +4,10 @@
 // describes the connection.
 
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import NetworkEdge from '@/components/builder/edges/NetworkEdge.vue';
 import { edgeIssueId } from '@/builder/adapters/vueflow.js';
-
-enableAutoUnmount(afterEach);
 
 let labels = null;
 

@@ -4,7 +4,7 @@
 // the toggle beside the Description field in the Inspector.
 
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { flushPromises } from '@vue/test-utils';
 
 import {
   descriptionPath,
@@ -30,8 +30,6 @@ import {
 import { validateDocument } from '@/builder/validate.js';
 
 import { fakeHost, fieldAt, mountInspector } from './inspector-mount.js';
-
-enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   resetSettings(null);

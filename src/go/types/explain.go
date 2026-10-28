@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -146,12 +147,48 @@ func schemaLeaves(err error, prefix []string) []schemaLeaf {
 // documentRoot returns the top-level node of src, or nil when src does not
 // parse or is empty. JSON parses as YAML.
 func documentRoot(src []byte) *yaml.Node {
+	if json.Valid(src) {
+		src = yamlEscapeJSON(src)
+	}
+
 	var doc yaml.Node
 	if err := yaml.Unmarshal(src, &doc); err != nil || len(doc.Content) == 0 {
 		return nil
 	}
 
 	return doc.Content[0]
+}
+
+// yamlEscapeJSON escapes, in a JSON document's strings, what YAML reads
+// differently: DEL, C1 controls, line separators, U+FFFE/U+FFFF and invalid
+// UTF-8, which encoding/json reads as U+FFFD.
+func yamlEscapeJSON(src []byte) []byte {
+	special := func(r rune) bool {
+		return r >= 0x7f && r <= 0x9f || r == 0x2028 || r == 0x2029 || r == 0xfffe || r == 0xffff || r == utf8.RuneError
+	}
+
+	if bytes.IndexFunc(src, special) < 0 {
+		return src
+	}
+
+	out := make([]byte, 0, len(src))
+
+	for len(src) > 0 {
+		r, size := utf8.DecodeRune(src)
+
+		switch {
+		case r == utf8.RuneError && size == 1:
+			out = append(out, `\ufffd`...)
+		case special(r):
+			out = fmt.Appendf(out, `\u%04x`, r)
+		default:
+			out = append(out, src[:size]...)
+		}
+
+		src = src[size:]
+	}
+
+	return out
 }
 
 // explainLeaf explains one error as an error line and, for a missing key found

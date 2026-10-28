@@ -15,12 +15,12 @@ configure
 # ------------------------------ Interfaces -------------------------------
     {{- range $idx, $iface := $node.Network.Interfaces }}
         {{- if eq $iface.Proto "dhcp" }}
-set interface ethernet eth{{ $idx }} address dhcp
+set interfaces ethernet eth{{ $idx }} address dhcp
         {{- else }}
-set interface ethernet eth{{ $idx }} address {{ $iface.Address }}/{{ $iface.Mask }}
+set interfaces ethernet eth{{ $idx }} address {{ $iface.Address }}/{{ $iface.Mask }}
         {{- end }}
         {{- if and (ge $iface.MTU 68) (le $iface.MTU 16000) }}
-set interface ethernet eth{{ $idx }} mtu {{ $iface.MTU }}
+set interfaces ethernet eth{{ $idx }} mtu {{ $iface.MTU }}
         {{- end }}
         {{- if eq $iface.Proto "ospf" }}
             {{- if $node.Network.OSPF.DeadInterval }}
@@ -189,16 +189,17 @@ set vpn ipsec esp-group ESP-1W mode tunnel
 set vpn ipsec esp-group ESP-1W pfs enable
 set vpn ipsec esp-group ESP-1W proposal 1 encryption aes256
 set vpn ipsec esp-group ESP-1W proposal 1 hash sha1
+set vpn ipsec ike-group IKE-1W key-exchange ikev2
 set vpn ipsec ike-group IKE-1W lifetime 3600
-set vpn ipsec esp-group IKE-1W proposal 1 encryption aes256
-set vpn ipsec esp-group IKE-1W proposal 1 hash sha1
+set vpn ipsec ike-group IKE-1W proposal 1 encryption aes256
+set vpn ipsec ike-group IKE-1W proposal 1 hash sha1
         {{- range $ipsec.Interfaces }}
 set vpn ipsec interface {{ . }}
         {{- end }}
-        {{- range $site := $ipsec.Sites }}
-set vpn ipsec authentication psk PSK-KEY id '{{ $site.Local }}'
-set vpn ipsec authentication psk PSK-KEY id '{{ $site.Remote }}'
-set vpn ipsec authentication psk PSK-KEY secret '{{ $site.PresharedKey }}'
+        {{- range $sidx, $site := $ipsec.Sites }}
+set vpn ipsec authentication psk PSK-{{ $sidx }} id '{{ $site.Local }}'
+set vpn ipsec authentication psk PSK-{{ $sidx }} id '{{ $site.Remote }}'
+set vpn ipsec authentication psk PSK-{{ $sidx }} secret '{{ $site.PresharedKey }}'
 set vpn ipsec site-to-site peer {{ $site.Peer }} authentication mode pre-shared-secret
 set vpn ipsec site-to-site peer {{ $site.Peer }} authentication local-id '{{ $site.Local }}'
 set vpn ipsec site-to-site peer {{ $site.Peer }} authentication remote-id '{{ $site.Remote }}'

@@ -63,4 +63,31 @@ type ExperimentStatus interface { //nolint:interfacebloat // legacy interface
 
 	ParseAppStatus(string, any) error
 	ResetAppStatus()
+
+	// Pending starts: each timer-delayed VM's due time (RFC 3339), each C2-delayed VM's awaited VMs (true to
+	// match the C2 client by UUID), whether post-start apps must run, and why phenix could not resume them.
+	DelayedTimers() map[string]string
+	DelayedC2() map[string]map[string]bool
+	PostStartPending() bool
+	Interrupted() string
+
+	SetDelayedStarts(map[string]string, map[string]map[string]bool, bool)
+	SetInterrupted(string)
+
+	// The start in progress, and the process that runs it; the zero marker means no start is in progress.
+	Starting() StartMarker
+	SetStarting(StartMarker)
+}
+
+// StartMarker records a start in progress: when it began (RFC 3339, UTC), and the process ID and host name of the
+// process that runs it. The zero value records no start.
+type StartMarker struct {
+	Since string `json:"since" mapstructure:"since" structs:"since" yaml:"since"`
+	PID   int    `json:"pid"   mapstructure:"pid"   structs:"pid"   yaml:"pid"`
+	Host  string `json:"host"  mapstructure:"host"  structs:"host"  yaml:"host"`
+}
+
+// IsZero reports whether m records no start.
+func (m StartMarker) IsZero() bool {
+	return m.Since == "" && m.PID == 0 && m.Host == ""
 }

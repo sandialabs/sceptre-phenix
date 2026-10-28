@@ -644,7 +644,6 @@ func TestDeletingTopologyNeverTouchesItsFile(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "builder.yaml")
 	content := []byte("not a builder document\n")
 
-	//nolint:gosec // a file the test reads back
 	if err := os.WriteFile(file, content, 0o600); err != nil {
 		t.Fatalf("writing the builder file: %v", err)
 	}

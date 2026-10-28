@@ -6,45 +6,56 @@ a CI-built binary, a container, or a full range node.
 
 ## What runs where
 
-| Spec                           | Needs                                                                                        | CI                  |
-| ------------------------------ | -------------------------------------------------------------------------------------------- | ------------------- |
-| `routes.spec.js`               | just a running server (empty store is fine)                                                  | yes                 |
-| `forms.spec.js`                | just a running server                                                                        | yes                 |
-| `a11y-seeded.spec.js`          | just a running server (each test seeds and deletes its own data)                             | yes                 |
-| `builder-*.spec.js`            | just a running server, except the two specs below                                            | yes                 |
-| `builder-files.spec.js`        | also `E2E_BASE_DIR`: the server's `--base-dir.phenix`, on the machine the tests run on       | yes                 |
-| `builder-multi-user.spec.js`   | server started with `--jwt-signing-key` and an admin user, and `E2E_MULTI_USER=1`            | yes (own server)    |
-| `builder-legacy.spec.js`       | just a running server and `tests/fixtures/legacy-sample.xml`                                 | yes                 |
-| `experiment-lifecycle.spec.js` | minimega, VM images, a topology (`E2E_LIFECYCLE=1`)                                          | no (needs minimega) |
-| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`, `E2E_AUTH_MODE=enabled`       | yes (own server)    |
-| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`, `E2E_AUTH_MODE=proxy` | yes (own server)    |
+| Spec                           | Needs                                                                                        | CI                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------- | ----------------------- |
+| `routes.spec.js`               | just a running server (empty store is fine)                                                  | yes                     |
+| `forms.spec.js`                | just a running server                                                                        | yes                     |
+| `performance.spec.js`          | just a running server                                                                        | yes                     |
+| `experiments.spec.js`          | just a running server                                                                        | yes                     |
+| `navbar.spec.js`               | just a running server                                                                        | yes                     |
+| `tables.spec.js`               | just a running server                                                                        | yes                     |
+| `jobs.spec.js`                 | just a running server                                                                        | yes                     |
+| `a11y-seeded.spec.js`          | just a running server (each test seeds and deletes its own data)                             | yes                     |
+| `health.spec.js`               | a running server with a BoltDB store and no minimega                                         | yes, in every auth mode |
+| `builder-*.spec.js`            | just a running server, except the two specs below                                            | yes                     |
+| `builder-files.spec.js`        | also `E2E_BASE_DIR`: the server's `--base-dir.phenix`, on the machine the tests run on       | yes                     |
+| `builder-multi-user.spec.js`   | server started with `--jwt-signing-key` and an admin user, and `E2E_MULTI_USER=1`            | yes (own server)        |
+| `builder-legacy.spec.js`       | just a running server and `tests/fixtures/legacy-sample.xml`                                 | yes                     |
+| `experiment-lifecycle.spec.js` | minimega, VM images, a topology (`E2E_LIFECYCLE=1`)                                          | no (needs minimega)     |
+| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`, `E2E_AUTH_MODE=enabled`       | yes (own server)        |
+| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`, `E2E_AUTH_MODE=proxy` | yes (own server)        |
 
 CI (`.github/workflows/e2e.yml`) builds `bin/phenix` three times in one job,
-with the UI built with `VITE_AUTH=disabled`, `enabled` and `proxy`. Then five
-jobs run in parallel. Each job, or each step of the last job, starts its own
-`bin/phenix ui` against a throw-away store and base directory
+with the UI built with `VITE_AUTH=disabled`, `enabled` and `proxy`. The three
+binaries and the `disabled` UI build are the `phenix-e2e` artifact, which the
+`perf` job also uses. Then six jobs run in parallel. Each job, or each step of
+the last job, starts its own `bin/phenix ui` with
+`scripts/ci-start-phenix-ui.sh` against a throw-away store and base directory
 (`--base-dir.phenix`, given to the smoke tests as `E2E_BASE_DIR`) and runs one
 part of the suite:
 
-| Job (step)                         | UI build   | Server                        | Runs                                        |
-| ---------------------------------- | ---------- | ----------------------------- | ------------------------------------------- |
-| Smoke 1/3 to 3/3                   | `disabled` | no flags                      | the default set without `@axe`, in 3 shards |
-| Axe scans                          | `disabled` | no flags                      | the `@axe` tests, in Chromium only          |
-| Auth and multi-user (auth enabled) | `enabled`  | authentication on             | `auth-enabled.spec.js`                      |
-| Auth and multi-user (auth proxy)   | `proxy`    | `--jwt-signing-key proxy-jwt` | `auth-proxy.spec.js`, in Chromium           |
-| Auth and multi-user (Builder)      | `disabled` | authentication on             | `builder-multi-user.spec.js`, in Chromium   |
+| Job (step)                         | UI build   | Server                        | Runs                                                           |
+| ---------------------------------- | ---------- | ----------------------------- | -------------------------------------------------------------- |
+| Smoke 1/3                          | `disabled` | no flags                      | the `read-only` project                                        |
+| Smoke 2/3 and 3/3                  | `disabled` | no flags                      | the `store` and `builder` projects without `@axe`, in 2 shards |
+| Firefox                            | `disabled` | no flags                      | the `firefox` project without `@axe`                           |
+| Axe scans                          | `disabled` | no flags                      | the `@axe` tests, in Chromium only                             |
+| Auth and multi-user (auth enabled) | `enabled`  | authentication on             | `auth-enabled.spec.js` and `health.spec.js`                    |
+| Auth and multi-user (auth proxy)   | `proxy`    | `--jwt-signing-key proxy-jwt` | the same for proxy, in Chromium only                           |
+| Auth and multi-user (Builder)      | `disabled` | authentication on             | `builder-multi-user.spec.js`, in Chromium                      |
 
 The workflow runs only for a change that can affect the browser: `src/js/`
 outside its unit tests in `src/js/test/`, `src/go/web/`, `src/go/api/`,
 `src/go/store/`, `src/go/cmd/`, `src/go/types/builder/`,
 `src/go/types/version/`, the Go module files (`src/go/go.mod`, `go.sum`),
-the `Makefile`, `docker/` or the workflow itself (its path filters). On CI, a
-`test.only` left in a spec fails the run (`forbidOnly`). A test that fails on
-CI runs once more. A test that passes
-only on that retry is flaky, and it fails the run too (`failOnFlakyTests`).
-The trace and screenshot of the failed try are in the job's failure
-artifacts. On CI the Playwright run stops after 8 minutes (`globalTimeout`),
-and each test job stops after 30 or 40 minutes.
+the `Makefile`, `docker/`, `scripts/api-docs.sh`,
+`scripts/ci-start-phenix-ui.sh` or the workflow itself (its path filters). On
+CI, a `test.only` left in a spec fails the run (`forbidOnly`). A test that
+fails on CI runs once more. A test that passes only on that retry is flaky,
+and it fails the run too (`failOnFlakyTests`). The trace and screenshot of the
+failed try are in the job's failure artifacts. On CI the Playwright run stops
+after 10 minutes (`globalTimeout`), and each test job stops after 30 or 40
+minutes.
 
 The test jobs run in the Playwright image
 (`mcr.microsoft.com/playwright:v<version>-noble`, pinned by digest), which
@@ -55,34 +66,62 @@ build job fails while they differ. To update Playwright, change
 workflow. To find the digest, run
 `docker buildx imagetools inspect mcr.microsoft.com/playwright:v<version>-noble`.
 
-The smoke shards and the auth-enabled step run both projects (below) on
-their part. The axe job and the auth-proxy and multi-user steps run only the
-`chromium` project. The multi-user spec creates its own users with the built-in Builder
-role and signs them in (`userMaker` in `tests/builder-support.js`). The shards
-use Playwright's `--shard`, which splits the tests by count, not by time.
+Specs that need data (a topology, experiments, configs) set it up through the
+REST API and remove what they made afterwards. Their experiments are never
+started, so they need no minimega.
+
+The axe job runs the `store` and `builder` projects, and the multi-user step
+runs only the `builder` project. The multi-user spec creates its own users
+with the built-in Builder role and signs them in (`userMaker` in
+`tests/builder-support.js`). The shards use Playwright's `--shard`, which
+splits the tests by count, not by time.
 
 Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A, AA
-and AAA rule tags, with `wcag2aaa`) as rendered against the empty store and
-fails on any violation. `a11y-seeded.spec.js` seeds a topology, a scenario, a
-stopped experiment and a user through the REST API, without minimega. It
-scans the table rows, modals and config editor that only appear with data,
-with the same rules (`expectNoAxeViolations` in `helpers.js`). It also fails
-when the config editor traps the keyboard, or when anything moves for longer
-than 0.01s while the browser asks for reduced motion. Notifications are not
-covered; the full axe report is attached to each test result.
+and AAA rule tags, with `wcag2aaa`) as rendered against the empty store, and
+the Disks page and its details window once more with images in folders and
+outside the files directory. `experiments.spec.js` scans the pages it fills
+with data: the experiment list, a stopped experiment's page with a VM
+selected, its VM info modal and Files tab, and the create experiment modal
+with Advanced Options open. The server has no disk images, so these two specs
+stand in for its disk list (`GET /api/v1/disks`) with `page.route`.
+`a11y-seeded.spec.js` seeds a topology, a scenario, a stopped experiment and a
+user through the REST API, without minimega. It scans the table rows, modals
+and config editor that only appear with data. It also fails when the config
+editor traps the keyboard, or when anything moves for longer than 0.01s while
+the browser asks for reduced motion. All these scans use the same rules
+(`expectNoAxeViolations` in `helpers.js`). Any violation fails the test, and
+the full axe report is attached to each test result. Content these scans
+don't reach, such as notifications and the running experiment page, is not
+covered.
 
-Tests run in parallel (`fullyParallel`), in 4 workers on CI and half the CPU
-cores locally; set `E2E_WORKERS` to a count or a percentage such as `50%` to
-override. Every test must therefore create its own users, drafts and configs
+## Projects
+
+`playwright.config.js` splits the default set in four projects:
+
+| Project     | Browser  | Runs                                                                                     |
+| ----------- | -------- | ---------------------------------------------------------------------------------------- |
+| `read-only` | Chromium | the specs that never change the store (routes, performance, jobs, health), in parallel   |
+| `store`     | Chromium | the rest, one at a time once `read-only` finishes                                        |
+| `builder`   | Chromium | the `builder-*.spec.js` specs, in parallel and beside `store`, once `read-only` finishes |
+| `firefox`   | Firefox  | only tests tagged `@cross-browser`, one at a time once `store` and `builder` finish      |
+
+The read-only specs therefore always see the empty store. A failure in
+`read-only` skips `store` and `builder`. With `E2E_AUTH_MODE` set, only that
+mode's spec and `health.spec.js` run, one at a time, in the `auth-<mode>`
+project (Chromium) and the `auth-<mode>-firefox` project (`@cross-browser`
+tests).
+
+Parallel tests run in 4 workers on CI and half the CPU cores locally; set
+`E2E_WORKERS` to a count or a percentage such as `50%` to override. Tests
+time out after 30 seconds and the Builder tests after 60 seconds; the
+lifecycle spec raises that for its own file.
+
+The Builder tests run in parallel with each other and with the `store` specs.
+Every Builder test must therefore create its own users, drafts and configs
 with unique names and must not assume anything about the rest of the server's
 state. The drafts page lists the drafts of other tests too. A test selects and
 deletes only its own drafts, and a test that presses **Select all** never
-presses a Delete button. Two projects split the work:
-
-| Project    | Runs                                                           |
-| ---------- | -------------------------------------------------------------- |
-| `chromium` | every test                                                     |
-| `firefox`  | only tests tagged `@cross-browser`, a browser-sensitive subset |
+presses a Delete button.
 
 Tag a test in its declaration: `test('…', { tag: '@cross-browser' }, …)`.
 `tag` also takes an array of tags. The Firefox subset is for browser
@@ -184,29 +223,27 @@ cd src/js/e2e
 npm ci
 npx playwright install --with-deps chromium firefox
 
-# The default target is a server on :3000. Locally, start phenix on a free
-# port instead (the root AGENTS.md lists ports to avoid) and point the tests
-# at it, for example `phenix ui --listen-endpoint 127.0.0.1:3080`:
-export E2E_BASE_URL=http://127.0.0.1:3080
-
-# default set
+# default set against a server on :3197 (override with E2E_BASE_URL; the
+# root AGENTS.md lists ports to avoid)
 npx playwright test
 
-# Builder suite, one project at a time
-npx playwright test builder --project=chromium
-npx playwright test builder --project=firefox
+# one part of the default set, as CI runs it
+npx playwright test --project=read-only
+npx playwright test --project=store --project=builder --no-deps --grep-invert @axe --shard=1/2
+npx playwright test --project=firefox --no-deps --grep-invert @axe
+npx playwright test --project=store --project=builder --no-deps --grep @axe
 
-# as the separate CI jobs run them: the axe scans, and one shard of the rest
-npx playwright test --grep @axe
-npx playwright test --grep-invert @axe --shard=1/3
+# Builder suite, one project at a time
+npx playwright test builder --project=builder --no-deps
+npx playwright test builder --project=firefox --no-deps
 
 # Builder files a topology names (the server started with
 # `--base-dir.phenix /tmp/phenix-e2e`, a directory this user can write)
-E2E_BASE_DIR=/tmp/phenix-e2e npx playwright test builder-files
+E2E_BASE_DIR=/tmp/phenix-e2e npx playwright test --no-deps builder-files
 
 # several Builder users (the server started with
 # `--jwt-signing-key e2e-multi-user --users 'e2e-admin:Testpass1!:Global Admin'`)
-E2E_MULTI_USER=1 npx playwright test builder-multi-user
+E2E_MULTI_USER=1 npx playwright test --no-deps builder-multi-user
 
 # the auth specs (the UI built with the matching VITE_AUTH, and the server
 # started as the header comment of each spec says)
@@ -215,7 +252,8 @@ E2E_AUTH_MODE=proxy npx playwright test auth-proxy
 
 # full experiment lifecycle on a real deployment (topology defaults to
 # helloworld). CI does not run it: it needs minimega and VM images.
-E2E_LIFECYCLE=1 E2E_TOPOLOGY=helloworld npx playwright test experiment-lifecycle
+# --no-deps skips the read-only project a single store spec otherwise waits for
+E2E_LIFECYCLE=1 E2E_TOPOLOGY=helloworld npx playwright test --no-deps experiment-lifecycle
 ```
 
 The auth-mode specs need the UI rebuilt with the matching `VITE_AUTH` value and
@@ -225,3 +263,10 @@ comment in each spec. The proxy spec simulates the auth proxy with Playwright's
 
 Failure artifacts (screenshots, traces) land in `test-results/`; open traces
 with `npx playwright show-trace <trace.zip>`.
+
+## Docs screenshots
+
+`docs-screenshots/` holds an on-demand script, never run in CI, that retakes
+the web UI images in `docs/content/images` against a running server with sample
+data (`npm run docs-screenshots`); see its
+[README](docs-screenshots/README.md).

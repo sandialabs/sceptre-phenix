@@ -145,7 +145,8 @@ func TestBuilderAssetHandler(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			handler := builderAssetHandler(builderTestAssets(c.list))
+			assets := builderTestAssets(c.list)
+			handler := builderAssetHandler(assets, http.FileServer(assets))
 
 			req := httptest.NewRequest(http.MethodGet, c.path, nil)
 			if c.accept != "" {
@@ -215,7 +216,8 @@ func TestBuilderAssetHandler(t *testing.T) {
 // TestBuilderAssetHandlerContentLength sets Content-Length for a whole
 // compressed file only. Ranges and preconditions apply to the encoding sent.
 func TestBuilderAssetHandlerContentLength(t *testing.T) {
-	handler := builderAssetHandler(builderTestAssets(builderTestList))
+	assets := builderTestAssets(builderTestList)
+	handler := builderAssetHandler(assets, http.FileServer(assets))
 
 	serve := func(t *testing.T, method string, header map[string]string) (*http.Response, []byte) {
 		t.Helper()

@@ -5,7 +5,7 @@
 // (InspectorComboboxControl).
 
 import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { flushPromises } from '@vue/test-utils';
 
 import { resetCollapsed } from '@/components/builder/inspector/collapse.js';
 
@@ -14,7 +14,6 @@ import { COUNT_DELAY_MS } from '@/builder/announce.js';
 import { sampleDocument } from './fixtures.js';
 import { fieldAt, keydown, mountInspector, type } from './inspector-mount.js';
 
-enableAutoUnmount(afterEach);
 afterEach(resetCollapsed);
 
 const DISKS = ['ubuntu.qc2', 'kali.qc2', 'ubuntu-22.qc2', 'win10.qc2'];

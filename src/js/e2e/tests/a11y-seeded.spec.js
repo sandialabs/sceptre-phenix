@@ -159,7 +159,7 @@ async function openConfigViewer(page, kind, name) {
 
 async function openConfigEditor(page, seed) {
   const viewer = await openConfigViewer(page, 'Topology', seed.topology);
-  await viewer.getByRole('button', { name: 'Edit Config' }).click();
+  await viewer.getByTestId('viewer-edit').click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
   await expect(page.locator('.ace_content')).toContainText(seed.topology, {
     timeout: 20000,

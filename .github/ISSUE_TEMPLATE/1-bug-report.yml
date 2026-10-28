@@ -90,6 +90,8 @@ body:
       description: >-
         Add any other context about the problem here, such as screenshots, logs,
         error messages, or related issues/PRs.
+        For a server or configuration problem, paste the output of '`phenix doctor --report`',
+        which hides host names and secrets.
         Please attach large logs or files as separate attachments rather than
         pasting them directly into the issue.
       placeholder: "Describe the additional context here..."

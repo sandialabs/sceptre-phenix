@@ -98,3 +98,90 @@ func bridgeNames(responses chan *miniclient.Response) ([]string, error) {
 
 	return slices.Compact(names), nil
 }
+
+// bridgeNotFoundPrefix starts the error of a minimega that does not know the bridge to destroy.
+const bridgeNotFoundPrefix = "bridge not found: "
+
+// errNoBridgeDestroy is the error when a host gives no answer to the bridge
+// destroy command, for example when the connection to minimega is lost.
+var errNoBridgeDestroy = errors.New("minimega returned no answer to the bridge destroy")
+
+// DestroyBridge destroys bridge on each named host with minimega's bridge destroy command, which also removes the
+// taps, trunks and tunnels on it. minimega keeps an Open vSwitch bridge that it did not create. A host that does not
+// know the bridge is not an error. It tries every host and returns the errors of all hosts that failed.
+func (m Minimega) DestroyBridge(bridge string, hosts ...string) error {
+	return destroyBridge(bridge, hosts, m.IsHeadnode, mmcli.Run)
+}
+
+// destroyBridge destroys bridge on each host. It sends through run the one
+// command that [bridgeDestroy] gives for that host. headnode reports whether a
+// host is the head node.
+func destroyBridge(
+	bridge string,
+	hosts []string,
+	headnode func(string) bool,
+	run func(*mmcli.Command) chan *miniclient.Response,
+) error {
+	if err := ValidateArg(bridge); err != nil {
+		return fmt.Errorf("destroying bridge: %w", err)
+	}
+
+	var errs []error
+
+	for _, host := range hosts {
+		if err := ValidateArg(host); err != nil {
+			errs = append(errs, fmt.Errorf("destroying bridge %s on host %q: %w", bridge, host, err))
+
+			continue
+		}
+
+		cmd := mmcli.NewCommand()
+		cmd.Command = bridgeDestroy(bridge, host, headnode(host))
+
+		if err := bridgeDestroyed(run(cmd)); err != nil {
+			errs = append(errs, fmt.Errorf("destroying bridge %s on host %s: %w", bridge, host, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// bridgeDestroy is the minimega command that destroys bridge on host: the
+// command itself on the head node, else that command sent to the host over
+// the mesh.
+func bridgeDestroy(bridge, host string, headnode bool) string {
+	if headnode {
+		return "bridge destroy " + bridge
+	}
+
+	return fmt.Sprintf("mesh send %s bridge destroy %s", host, bridge)
+}
+
+// bridgeDestroyed reads every response to a bridge destroy command, as the shared connection needs. It fails on an
+// error response other than "bridge not found", or on no response.
+func bridgeDestroyed(responses chan *miniclient.Response) error {
+	var (
+		errs    []error
+		answers int
+	)
+
+	for response := range responses {
+		for _, resp := range response.Resp {
+			answers++
+
+			if resp.Error != "" && !strings.HasPrefix(resp.Error, bridgeNotFoundPrefix) {
+				errs = append(errs, errors.New(strings.TrimSpace(resp.Error)))
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
+	if answers == 0 {
+		return errNoBridgeDestroy
+	}
+
+	return nil
+}

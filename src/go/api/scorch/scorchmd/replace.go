@@ -1,11 +1,13 @@
 package scorchmd
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"maps"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
@@ -74,7 +76,7 @@ func (d *DistributionSpec) Generate() (any, error) {
 			stddev = d.Gaussian.StdDev
 		}
 
-		val = rand.NormFloat64()*stddev + mean //nolint:gosec // weak random number generator
+		val = rand.NormFloat64()*stddev + mean //nolint:gosec // G404 sample values, not secrets
 	case d.Exponential != nil:
 		mean := 10.0
 		if d.Exponential.Mean != 0 {
@@ -99,7 +101,7 @@ func (d *DistributionSpec) Generate() (any, error) {
 			)
 		}
 
-		val = minVal + rand.Float64()*(maxVal-minVal) //nolint:gosec // weak random number generator
+		val = minVal + rand.Float64()*(maxVal-minVal) //nolint:gosec // G404 sample values, not secrets
 	}
 
 	if d.Type == "int" {
@@ -121,7 +123,7 @@ func ResolveReplacements(replace map[string]any) (ResolvedReplacements, error) {
 				return nil, fmt.Errorf("replacement key %q has empty list", key)
 			}
 
-			resolved[key] = v[rand.IntN(len(v))] //nolint:gosec // weak random number generator
+			resolved[key] = v[rand.IntN(len(v))] //nolint:gosec // G404 sample values, not secrets
 
 		// Random distribution
 		case map[string]any:
@@ -154,51 +156,63 @@ func ApplyReplacements(meta ComponentMetadata, resolved ResolvedReplacements) Co
 
 	copied := util.CopyableMap(meta).DeepCopy()
 
-	return applyToMap(copied, resolved)
+	return applyToMap(copied, resolved, replacer(resolved))
 }
 
-func applyToMap(m map[string]any, resolved ResolvedReplacements) map[string]any {
+func applyToMap(m map[string]any, resolved ResolvedReplacements, r *strings.Replacer) map[string]any {
 	for k, v := range m {
-		m[k] = applyToValue(v, resolved)
+		m[k] = applyToValue(v, resolved, r)
 	}
 
 	return m
 }
 
-func applyToSlice(s []any, resolved ResolvedReplacements) []any {
+func applyToSlice(s []any, resolved ResolvedReplacements, r *strings.Replacer) []any {
 	for i, v := range s {
-		s[i] = applyToValue(v, resolved)
+		s[i] = applyToValue(v, resolved, r)
 	}
 
 	return s
 }
 
-func applyToValue(v any, resolved ResolvedReplacements) any {
+func applyToValue(v any, resolved ResolvedReplacements, r *strings.Replacer) any {
 	switch val := v.(type) {
 	case string:
-		return applyToString(val, resolved)
+		return applyToString(val, resolved, r)
 	case map[string]any:
-		return applyToMap(val, resolved)
+		return applyToMap(val, resolved, r)
 	case []any:
-		return applyToSlice(val, resolved)
+		return applyToSlice(val, resolved, r)
 	default:
 		return v
 	}
 }
 
-func applyToString(s string, resolved ResolvedReplacements) any {
+func applyToString(s string, resolved ResolvedReplacements, r *strings.Replacer) any {
 	// Check if entire string is a replacement key - return typed value
 	if val, ok := resolved[s]; ok {
 		return val
 	}
 
-	// Otherwise do string substitution
-	result := s
-	for key, value := range resolved {
-		result = strings.ReplaceAll(result, key, fmt.Sprintf("%v", value))
+	return r.Replace(s)
+}
+
+// replacer replaces each non-empty key with its value's text in one pass. Where
+// keys start at the same place, the longest key is replaced.
+func replacer(resolved ResolvedReplacements) *strings.Replacer {
+	keys := slices.SortedFunc(maps.Keys(resolved), func(a, b string) int {
+		return cmp.Or(len(b)-len(a), strings.Compare(a, b))
+	})
+
+	pairs := make([]string, 0, len(keys)*2) //nolint:mnd // a key and its value
+
+	for _, key := range keys {
+		if key != "" {
+			pairs = append(pairs, key, fmt.Sprintf("%v", resolved[key]))
+		}
 	}
 
-	return result
+	return strings.NewReplacer(pairs...)
 }
 
 // MergeReplacements combines two sets of replacements.

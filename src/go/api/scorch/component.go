@@ -3,6 +3,7 @@ package scorch
 import (
 	"context"
 	"fmt"
+	"slices"
 )
 
 // Action represents the different SCORCH lifecycle hooks.
@@ -43,25 +44,54 @@ type Component interface {
 	Cleanup(context.Context) error
 }
 
-var components map[string]Component //nolint:gochecknoglobals // global registry
+// components makes a new component of each type for each execution. Init
+// keeps the options of the run in the component, so concurrent runs cannot
+// share one.
+var components map[string]func() Component //nolint:gochecknoglobals // global registry
 
 func init() { //nolint:gochecknoinits // component registration
-	components = map[string]Component{
-		"break":      new(Break),
-		"pause":      new(Pause),
-		"soh":        new(SOH),
-		"tap":        new(Tap),
-		"user-shell": new(UserComponent),
+	components = map[string]func() Component{
+		"break":      func() Component { return new(Break) },
+		"pause":      func() Component { return new(Pause) },
+		"soh":        func() Component { return new(SOH) },
+		"tap":        func() Component { return new(Tap) },
+		"user-shell": func() Component { return new(UserComponent) },
 	}
+}
+
+// newComponent returns a new component of type typ, or a new user-shell
+// component, which runs a phenix-scorch-component-<type>, for another type.
+//
+//nolint:ireturn // factory function returns interface
+func newComponent(typ string) Component {
+	factory, ok := components[typ]
+	if !ok {
+		factory = components["user-shell"]
+	}
+
+	return factory()
+}
+
+// BuiltinComponents returns, sorted, the SCORCH component types built into
+// phenix. SCORCH runs a phenix-scorch-component-<type> on PATH for any other type.
+func BuiltinComponents() []string {
+	types := make([]string, 0, len(components))
+
+	for typ := range components {
+		if typ != "user-shell" {
+			types = append(types, typ)
+		}
+	}
+
+	slices.Sort(types)
+
+	return types
 }
 
 func ExecuteComponent(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
 
-	cmp, ok := components[options.Type]
-	if !ok {
-		cmp = components["user-shell"]
-	}
+	cmp := newComponent(options.Type)
 
 	_ = cmp.Init(opts...)
 

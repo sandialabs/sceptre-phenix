@@ -6,26 +6,35 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Each tunneler command accepts only its documented number of arguments.
 func TestTunnelerCommandArgumentCounts(t *testing.T) {
 	tests := []struct {
 		name    string
 		command cobra.PositionalArgs
 		args    []string
+		wantErr bool
 	}{
-		{name: "list missing", command: listCmd.Args, args: []string{"unexpected"}},
-		{name: "activate missing", command: activateCmd.Args, args: nil},
-		{name: "activate extra", command: activateCmd.Args, args: []string{"1", "2"}},
-		{name: "deactivate missing", command: deactivateCmd.Args, args: nil},
-		{name: "deactivate extra", command: deactivateCmd.Args, args: []string{"1", "2"}},
-		{name: "move missing", command: moveCmd.Args, args: []string{"1"}},
-		{name: "move extra", command: moveCmd.Args, args: []string{"1", "2", "3"}},
-		{name: "serve missing", command: serveCmd.Args, args: nil},
+		{name: "list", command: listCmd.Args, args: nil},
+		{name: "list extra", command: listCmd.Args, args: []string{"unexpected"}, wantErr: true},
+		{name: "activate", command: activateCmd.Args, args: []string{"1"}},
+		{name: "activate missing", command: activateCmd.Args, args: nil, wantErr: true},
+		{name: "activate extra", command: activateCmd.Args, args: []string{"1", "2"}, wantErr: true},
+		{name: "deactivate", command: deactivateCmd.Args, args: []string{"1"}},
+		{name: "deactivate missing", command: deactivateCmd.Args, args: nil, wantErr: true},
+		{name: "deactivate extra", command: deactivateCmd.Args, args: []string{"1", "2"}, wantErr: true},
+		{name: "move", command: moveCmd.Args, args: []string{"1", "2"}},
+		{name: "move missing", command: moveCmd.Args, args: []string{"1"}, wantErr: true},
+		{name: "move extra", command: moveCmd.Args, args: []string{"1", "2", "3"}, wantErr: true},
+		{name: "serve", command: serveCmd.Args, args: []string{"https://phenix.example.test"}},
+		{name: "serve missing", command: serveCmd.Args, args: nil, wantErr: true},
+		{name: "serve extra", command: serveCmd.Args, args: []string{"https://a.example.test", "https://b.example.test"}, wantErr: true},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := test.command(&cobra.Command{Use: test.name}, test.args); err == nil {
-				t.Fatal("expected argument validation error")
+			err := test.command(&cobra.Command{Use: test.name}, test.args)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("Args(%q) = %v, want error %t", test.args, err, test.wantErr)
 			}
 		})
 	}

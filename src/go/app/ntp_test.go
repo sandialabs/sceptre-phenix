@@ -2,11 +2,15 @@ package app_test
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"testing"
 
 	"phenix/app"
+	"phenix/store"
 	"phenix/tmpl"
+	"phenix/types"
+	v1 "phenix/types/version/v1"
 )
 
 // TestNTPAppSourceIPAddressDirect verifies that an explicit Address is returned
@@ -24,6 +28,45 @@ func TestNTPAppSourceIPAddressMissingInterface(t *testing.T) {
 	s := app.NTPAppSource{Hostname: "server01"}
 	if got := s.IPAddress(nil); got != "" {
 		t.Fatalf("expected empty string, got %s", got)
+	}
+}
+
+// TestNTPAppSourceIPAddressTopology verifies that IPAddress finds the address
+// of the named interface on the named node, with a case-insensitive interface
+// name, and gives an empty string for an unknown node or interface.
+func TestNTPAppSourceIPAddressTopology(t *testing.T) {
+	t.Parallel()
+
+	node := &v1.Node{
+		GeneralF: &v1.General{HostnameF: "server01"},
+		NetworkF: &v1.Network{InterfacesF: []*v1.Interface{
+			{NameF: "mgmt", AddressF: "172.16.0.1"},
+			{NameF: "IF0", AddressF: "10.0.0.1"},
+		}},
+	}
+	exp := &types.Experiment{
+		Metadata: store.ConfigMetadata{Name: "ntp-source-test"},
+		Spec:     &v1.ExperimentSpec{TopologyF: &v1.TopologySpec{NodesF: []*v1.Node{node}}},
+	}
+
+	tests := map[string]struct {
+		source app.NTPAppSource
+		want   string
+	}{
+		"match":             {source: app.NTPAppSource{Hostname: "server01", Interface: "IF0"}, want: "10.0.0.1"},
+		"case-insensitive":  {source: app.NTPAppSource{Hostname: "server01", Interface: "if0"}, want: "10.0.0.1"},
+		"unknown host":      {source: app.NTPAppSource{Hostname: "server02", Interface: "IF0"}},
+		"unknown interface": {source: app.NTPAppSource{Hostname: "server01", Interface: "eth9"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tc.source.IPAddress(exp); got != tc.want {
+				t.Errorf("IPAddress() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -184,8 +227,8 @@ func TestChronyLinuxTemplateServerNoUpstreamServer(t *testing.T) {
 	}
 }
 
-// TestNTPLinuxTemplateClientBurst verifies that ntp_linux.tmpl includes
-// iburst and burst on the server line for aggressive startup synchronization.
+// TestNTPLinuxTemplateClientBurst verifies that ntp_linux.tmpl gives the
+// upstream server line iburst, prefer and maxpoll 6.
 func TestNTPLinuxTemplateClientBurst(t *testing.T) {
 	var buf bytes.Buffer
 
@@ -195,8 +238,8 @@ func TestNTPLinuxTemplateClientBurst(t *testing.T) {
 
 	out := buf.String()
 
-	if !strings.Contains(out, "iburst") || !strings.Contains(out, "burst") {
-		t.Fatalf("expected iburst and burst on server line:\n%s", out)
+	if !slices.Contains(strings.Split(out, "\n"), "server 10.0.0.1 iburst prefer maxpoll 6") {
+		t.Fatalf("expected the line %q:\n%s", "server 10.0.0.1 iburst prefer maxpoll 6", out)
 	}
 }
 

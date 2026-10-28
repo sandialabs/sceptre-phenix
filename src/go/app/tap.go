@@ -2,10 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"math/rand/v2"
 	"slices"
-	"time"
 
 	"github.com/hashicorp/go-multierror"
 	"inet.af/netaddr"
@@ -107,10 +106,12 @@ func (t *Tap) createTaps(exp *types.Experiment, stage string) error {
 		return fmt.Errorf("getting list of experiment hosts: %w", err)
 	}
 
-	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 1)) //nolint:gosec // weak random number generator
+	host, err := tapHost(hosts)
+	if err != nil {
+		return err
+	}
 
 	var (
-		host  = hosts[rng.IntN(len(hosts))].Name
 		pairs = t.discoverUsedPairs()
 		vlans []string
 	)
@@ -151,6 +152,24 @@ func (t *Tap) createTaps(exp *types.Experiment, stage string) error {
 	exp.Status.SetAppStatus(t.Name(), status)
 
 	return nil
+}
+
+// tapHost picks the experiment host with the fewest VMs, the first by name
+// among equals, so every run places the taps the same way.
+func tapHost(hosts mm.Hosts) (string, error) {
+	if len(hosts) == 0 {
+		return "", errors.New("no experiment hosts to create the taps on")
+	}
+
+	best := hosts[0]
+
+	for _, h := range hosts[1:] {
+		if h.VMs < best.VMs || (h.VMs == best.VMs && h.Name < best.Name) {
+			best = h
+		}
+	}
+
+	return best.Name, nil
 }
 
 func (Tap) Running(ctx context.Context, exp *types.Experiment) error {

@@ -10,6 +10,7 @@ import (
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/util"
 	"phenix/util/mm"
 	"phenix/util/tap"
@@ -69,14 +70,7 @@ func (t Tap) Start(ctx context.Context) error {
 		return fmt.Errorf("getting experiment status for scorch app: %w", err)
 	}
 
-	if status.Taps == nil {
-		status.Taps = make(map[string]*tap.Tap)
-	}
-
-	status.Taps[t.options.Name] = tp
-
-	t.options.Exp.Status.SetAppStatus("scorch", status)
-	_ = t.options.Exp.WriteToStore(true)
+	_ = setScorchStatus(&t.options.Exp, func(s *scorchmd.ScorchStatus) { s.Taps[t.options.Name] = tp })
 
 	return nil
 }
@@ -110,10 +104,37 @@ func (t Tap) deleteTap() error {
 		return fmt.Errorf("deleting host tap for VLAN %s: %w", tp.VLAN, err)
 	}
 
-	delete(status.Taps, t.options.Name)
+	_ = setScorchStatus(&t.options.Exp, func(s *scorchmd.ScorchStatus) { delete(s.Taps, t.options.Name) })
 
-	t.options.Exp.Status.SetAppStatus("scorch", status)
-	_ = t.options.Exp.WriteToStore(true)
+	return nil
+}
+
+// setScorchStatus applies fn to the scorch status that the run's components
+// share in memory, and to the stored scorch status. It writes no other status:
+// the rest of the run's copy is older than the store. fn gets non-nil taps.
+func setScorchStatus(exp *types.Experiment, fn func(*scorchmd.ScorchStatus)) error {
+	apply := func(s ifaces.ExperimentStatus) {
+		var status scorchmd.ScorchStatus
+
+		_ = s.ParseAppStatus("scorch", &status) // a missing status stays empty
+
+		if status.Taps == nil {
+			status.Taps = make(map[string]*tap.Tap)
+		}
+
+		fn(&status)
+		s.SetAppStatus("scorch", status)
+	}
+
+	apply(exp.Status)
+
+	// UpdateStatus replaces the status of exp; keep the one the components share
+	shared := exp.Status
+	defer func() { exp.Status = shared }()
+
+	if err := exp.UpdateStatus(apply); err != nil {
+		return fmt.Errorf("storing scorch status: %w", err)
+	}
 
 	return nil
 }

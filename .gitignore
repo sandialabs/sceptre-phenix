@@ -30,6 +30,7 @@ src/js/dist/
 
 # Example binaries
 examples/go/example-app
+examples/go/example
 examples/stderr
 .github/workflows/example
 .github/workflows/example.exe
@@ -48,7 +49,7 @@ src/js/.env.local
 src/js/.env.*.local
 
 # Python specific
-.venv/
+.venv
 __pycache__/
 .pytest_cache/
 

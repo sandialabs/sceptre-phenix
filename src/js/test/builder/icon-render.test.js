@@ -1,3 +1,4 @@
+// @vitest-environment node
 // BuilderIcon, a custom icon on a canvas node, and the Custom icons dialog,
 // given a library of the test's own. The dialog's requests are e2e only.
 

@@ -18,6 +18,8 @@ on:
       - 'src/go/go.sum'
       - 'Makefile'
       - 'docker/**'
+      - 'scripts/api-docs.sh'
+      - 'scripts/ci-start-phenix-ui.sh'
       - '.github/workflows/e2e.yml'
   pull_request:
     # closed: only to cancel this PR's runs (see concurrency); jobs skip it
@@ -28,6 +30,9 @@ on:
 env:
   GO_VERSION: '1.24'
   NODE_VERSION: '24'
+  # read by scripts/ci-start-phenix-ui.sh, Playwright and Lighthouse CI
+  E2E_PORT: '3197'
+  E2E_BASE_URL: http://127.0.0.1:3197
 
 permissions:
   contents: read
@@ -87,22 +92,31 @@ jobs:
         working-directory: src/js
         run: npm ci
       # One phenix binary (which embeds the UI) for each auth mode. SKIP_UI
-      # keeps make from rebuilding the UI built just before it.
+      # keeps make from rebuilding the UI built just before it. Only the
+      # disabled build renders the API reference: the auth specs do not open it.
+      # It builds last, so src/js/dist holds the UI that perf measures.
       - name: Build phenix for each auth mode
         run: |
           mkdir -p e2e-bin
-          for auth in disabled enabled proxy; do
+          for auth in enabled proxy disabled; do
             echo "::group::VITE_AUTH=$auth"
             (cd src/js && VITE_AUTH=$auth npm run build)
-            make bin/phenix SKIP_UI=1
+            if [ "$auth" = disabled ]; then
+              make bin/phenix SKIP_UI=1
+            else
+              make bin/phenix SKIP_UI=1 SKIP_API_DOCS=1
+            fi
             mv bin/phenix "e2e-bin/phenix-$auth"
             echo "::endgroup::"
           done
-      - name: Upload phenix
+      - name: Package build
+        # tar keeps the executable bit, which upload-artifact drops
+        run: tar -cf phenix-e2e.tar e2e-bin src/js/dist
+      - name: Upload build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: phenix-e2e
-          path: e2e-bin/
+          path: phenix-e2e.tar
           if-no-files-found: error
           retention-days: 1
 
@@ -121,18 +135,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The read-only specs need an empty store, so they get a server of
+          # their own and the store specs split over two more.
           - name: Smoke 1/3
             id: smoke-1
-            tests: --grep-invert @axe --shard=1/3
+            tests: --project=read-only --grep-invert @axe
           - name: Smoke 2/3
             id: smoke-2
-            tests: --grep-invert @axe --shard=2/3
+            tests: --project=store --project=builder --no-deps --grep-invert @axe --shard=1/2
           - name: Smoke 3/3
             id: smoke-3
-            tests: --grep-invert @axe --shard=3/3
+            tests: --project=store --project=builder --no-deps --grep-invert @axe --shard=2/2
+          # Firefox runs one test at a time, in a job of its own.
+          - name: Firefox
+            id: firefox
+            tests: --project=firefox --no-deps --grep-invert @axe
+          # The @axe scans run in Chromium only.
           - name: Axe scans
             id: axe
-            tests: --grep @axe --project=chromium
+            tests: --grep @axe --project=store --project=builder --no-deps
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -145,19 +166,16 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: phenix-e2e
-          path: e2e-bin
-      # The container runs steps in sh, so use POSIX redirects. Output left on
-      # the step's pipe stops phenix when the step ends.
+      - name: Unpack build
+        run: tar -xf phenix-e2e.tar && rm phenix-e2e.tar
+      # scripts/ci-start-phenix-ui.sh starts bin/phenix. It sends the output to
+      # the log, not the step's pipe, which would stop phenix when the step ends.
       - name: Start phenix UI
         run: |
-          chmod +x e2e-bin/phenix-disabled
-          mkdir -p "$E2E_BASE_DIR"
-          ./e2e-bin/phenix-disabled ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
-            --base-dir.phenix "$E2E_BASE_DIR" \
-            --listen-endpoint 127.0.0.1:3000 > /tmp/phenix-ui.log 2>&1 &
-          # /version needs no sign-in, so it answers 200 in every auth mode.
-          timeout 30 bash -c \
-            'until curl -sf -o /dev/null http://127.0.0.1:3000/version; do sleep 1; done'
+          mkdir -p bin "$E2E_BASE_DIR"
+          ln -sf ../e2e-bin/phenix-disabled bin/phenix
+          ./scripts/ci-start-phenix-ui.sh /tmp/phenix-e2e.bdb /tmp/phenix-ui.log \
+            --base-dir.phenix "$E2E_BASE_DIR"
       - name: Install e2e dependencies
         working-directory: src/js/e2e
         run: npm ci
@@ -201,72 +219,65 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: phenix-e2e
-          path: e2e-bin
       - name: Install e2e dependencies
         id: deps
         run: |
-          chmod +x "$GITHUB_WORKSPACE"/e2e-bin/phenix-*
+          tar -xf "$GITHUB_WORKSPACE"/phenix-e2e.tar -C "$GITHUB_WORKSPACE"
+          mkdir -p "$GITHUB_WORKSPACE"/bin
           npm ci
-      # Each step starts its own server, with its own port, socket, store and
-      # base directory. The trap stops the server when the step ends.
+      # Each step starts its own server, with its own binary, port, socket,
+      # store and base directory. bin/phenix links to the binary that
+      # scripts/ci-start-phenix-ui.sh starts. With E2E_AUTH_MODE set,
+      # playwright.config.js runs only that mode's spec and health.spec.js.
       - name: Run auth-enabled tests
         env:
           HOME: /root
           E2E_AUTH_MODE: enabled
-          E2E_BASE_URL: http://127.0.0.1:3000
+          E2E_PORT: '3197'
+          E2E_BASE_URL: http://127.0.0.1:3197
         run: |
+          ln -sf ../e2e-bin/phenix-enabled "$GITHUB_WORKSPACE"/bin/phenix
           mkdir -p /tmp/phenix-base-enabled
-          "$GITHUB_WORKSPACE"/e2e-bin/phenix-enabled ui \
-            --store.endpoint bolt:///tmp/phenix-enabled.bdb \
+          "$GITHUB_WORKSPACE"/scripts/ci-start-phenix-ui.sh \
+            /tmp/phenix-enabled.bdb /tmp/phenix-ui-enabled.log \
             --base-dir.phenix /tmp/phenix-base-enabled \
             --unix-socket /tmp/phenix-enabled.sock \
-            --listen-endpoint 127.0.0.1:3000 \
             --jwt-signing-key e2e-auth \
-            --users 'e2e-admin:Testpass1!:Global Admin' > /tmp/phenix-ui-enabled.log 2>&1 &
-          pid=$!
-          trap 'kill "$pid"' EXIT
-          timeout 30 bash -c \
-            "until curl -sf -o /dev/null $E2E_BASE_URL/version; do sleep 1; done"
-          npx playwright test auth-enabled --output test-results/auth-enabled
+            --users 'e2e-admin:Testpass1!:Global Admin'
+          npx playwright test --output test-results/auth-enabled
       - name: Run auth-proxy tests
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           HOME: /root
           E2E_AUTH_MODE: proxy
-          E2E_BASE_URL: http://127.0.0.1:3100
+          E2E_PORT: '3198'
+          E2E_BASE_URL: http://127.0.0.1:3198
         run: |
+          ln -sf ../e2e-bin/phenix-proxy "$GITHUB_WORKSPACE"/bin/phenix
           mkdir -p /tmp/phenix-base-proxy
-          "$GITHUB_WORKSPACE"/e2e-bin/phenix-proxy ui \
-            --store.endpoint bolt:///tmp/phenix-proxy.bdb \
+          "$GITHUB_WORKSPACE"/scripts/ci-start-phenix-ui.sh \
+            /tmp/phenix-proxy.bdb /tmp/phenix-ui-proxy.log \
             --base-dir.phenix /tmp/phenix-base-proxy \
             --unix-socket /tmp/phenix-proxy.sock \
-            --listen-endpoint 127.0.0.1:3100 \
-            --jwt-signing-key proxy-jwt > /tmp/phenix-ui-proxy.log 2>&1 &
-          pid=$!
-          trap 'kill "$pid"' EXIT
-          timeout 30 bash -c \
-            "until curl -sf -o /dev/null $E2E_BASE_URL/version; do sleep 1; done"
-          npx playwright test auth-proxy --project=chromium --output test-results/auth-proxy
+            --jwt-signing-key proxy-jwt
+          npx playwright test --project=auth-proxy --output test-results/auth-proxy
       - name: Run Builder multi-user tests
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           HOME: /root
           E2E_MULTI_USER: '1'
-          E2E_BASE_URL: http://127.0.0.1:3200
+          E2E_PORT: '3199'
+          E2E_BASE_URL: http://127.0.0.1:3199
         run: |
+          ln -sf ../e2e-bin/phenix-disabled "$GITHUB_WORKSPACE"/bin/phenix
           mkdir -p /tmp/phenix-base-multi-user
-          "$GITHUB_WORKSPACE"/e2e-bin/phenix-disabled ui \
-            --store.endpoint bolt:///tmp/phenix-multi-user.bdb \
+          "$GITHUB_WORKSPACE"/scripts/ci-start-phenix-ui.sh \
+            /tmp/phenix-multi-user.bdb /tmp/phenix-ui-multi-user.log \
             --base-dir.phenix /tmp/phenix-base-multi-user \
             --unix-socket /tmp/phenix-multi-user.sock \
-            --listen-endpoint 127.0.0.1:3200 \
             --jwt-signing-key e2e-multi-user \
-            --users 'e2e-admin:Testpass1!:Global Admin' > /tmp/phenix-ui-multi-user.log 2>&1 &
-          pid=$!
-          trap 'kill "$pid"' EXIT
-          timeout 30 bash -c \
-            "until curl -sf -o /dev/null $E2E_BASE_URL/version; do sleep 1; done"
-          npx playwright test builder-multi-user --project=chromium --output test-results/multi-user
+            --users 'e2e-admin:Testpass1!:Global Admin'
+          npx playwright test builder-multi-user --project=builder --no-deps --output test-results/multi-user
       - name: Server logs
         if: failure()
         run: |
@@ -280,3 +291,137 @@ jobs:
         with:
           name: e2e-artifacts-servers
           path: src/js/e2e/test-results
+
+  perf:
+    name: UI Performance (bundle budgets, Lighthouse)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # finds and downloads the default branch's perf-summary artifact
+      actions: read
+    defaults:
+      run:
+        working-directory: src/js/perf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/js/perf/package-lock.json
+      - name: Download build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: phenix-e2e
+      - name: Unpack build
+        working-directory: .
+        run: |
+          tar -xf phenix-e2e.tar && rm phenix-e2e.tar
+          mkdir -p bin
+          ln -sf ../e2e-bin/phenix-disabled bin/phenix
+      - name: Install perf tooling
+        run: npm ci
+      # The size and Lighthouse steps may fail without stopping the job, so
+      # both always run and the summary covers both; "Check budgets" fails it.
+      - name: Check bundle size budgets
+        id: size
+        continue-on-error: true
+        run: npm run --silent size:json > size-limit.json
+      - name: Start phenix UI
+        id: server
+        working-directory: .
+        run: ./scripts/ci-start-phenix-ui.sh /tmp/phenix-perf.bdb /tmp/phenix-ui.log
+      - name: Run Lighthouse CI
+        id: lighthouse
+        if: steps.server.outcome == 'success'
+        continue-on-error: true
+        run: npm run lighthouse
+      - name: Find baseline
+        # the newest unexpired perf-summary artifact from a push run of this
+        # workflow on the base branch: push runs are always on this repository's
+        # own branches, never a fork's branch of the same name. Listing runs, not
+        # the repository's artifacts, keeps other branches' artifacts from
+        # pushing the baseline off the first page.
+        id: baseline
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        run: |
+          run_id=""
+          for id in $(gh api -X GET "repos/$REPO/actions/workflows/e2e.yml/runs" \
+              -f branch="$BASE" -f event=push -f status=completed -F per_page=30 \
+              --jq '.workflow_runs[].id'); do
+            found="$(gh api "repos/$REPO/actions/runs/$id/artifacts?name=perf-summary" \
+              --jq '[.artifacts[] | select(.expired | not)] | length')" || found=0
+            if [ "$found" -gt 0 ]; then
+              run_id="$id"
+              break
+            fi
+          done
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Download baseline
+        if: always() && steps.baseline.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: perf-summary
+          run-id: ${{ steps.baseline.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: src/js/perf/baseline
+      - name: Summarize
+        if: always()
+        env:
+          BASE: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        run: |
+          node summary.mjs --size size-limit.json \
+            --assert .lighthouseci/assertion-results.json \
+            --manifest lighthouse-results/manifest.json \
+            --baseline baseline/perf-summary.json --base-ref "$BASE" \
+            --out-md perf-summary.md --out-json perf-summary.json
+      - name: Upload perf summary
+        # kept 90 days: runs on the default branch are the baseline for later runs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-summary
+          path: |
+            src/js/perf/perf-summary.md
+            src/js/perf/perf-summary.json
+          retention-days: 90
+          if-no-files-found: ignore
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lighthouse-reports
+          path: |
+            src/js/perf/lighthouse-results
+            src/js/perf/.lighthouseci
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Check budgets
+        if: always()
+        env:
+          SIZE_OUTCOME: ${{ steps.size.outcome }}
+          LIGHTHOUSE_OUTCOME: ${{ steps.lighthouse.outcome }}
+        run: |
+          if ! node summary.mjs --check perf-summary.json; then
+            exit 1
+          fi
+          # a fallback in case the summary missed a failed step
+          if [ "$SIZE_OUTCOME" != success ] || [ "$LIGHTHOUSE_OUTCOME" != success ]; then
+            echo "::error title=Perf budget::size-limit ($SIZE_OUTCOME) or Lighthouse ($LIGHTHOUSE_OUTCOME) failed; see their steps."
+            exit 1
+          fi
+      - name: Server log
+        if: failure()
+        working-directory: .
+        run: tail -100 /tmp/phenix-ui.log

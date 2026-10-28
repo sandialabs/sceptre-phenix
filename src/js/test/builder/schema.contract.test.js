@@ -103,15 +103,16 @@ describe('inspector schemas', () => {
       );
     }
 
-    expect(minimega.properties.advanced).toMatchObject({
-      title: 'Advanced settings',
-      type: ['object', 'null'],
-      [MAP_KEYWORD]: 'text',
-    });
-    expect(minimega.properties.advanced[MAP_KEYS_KEYWORD]).toContain(
-      'qemu-append',
-    );
-    expect(external.properties.advanced).toBeUndefined();
+    for (const spec of [minimega, external]) {
+      expect(spec.properties.advanced).toMatchObject({
+        title: 'Advanced settings',
+        type: ['object', 'null'],
+        [MAP_KEYWORD]: 'text',
+      });
+      expect(spec.properties.advanced[MAP_KEYS_KEYWORD]).toContain(
+        'qemu-append',
+      );
+    }
   });
 
   // JSON Forms compiles each oneOf branch alone, so a branch that points at
@@ -184,9 +185,9 @@ describe('inspector schemas', () => {
       'Whole number',
       'Text',
     ]);
-    // Named by their key ("Interfaces"), apart from the Inspector's
-    // Connection points by their section.
-    expect(network.properties.interfaces.title).toBeUndefined();
+    // Named "Interfaces", apart from the Inspector's Connection points by
+    // their section.
+    expect(network.properties.interfaces.title).toBe('Interfaces');
     expect(iface.title).toBe('Interface kind');
     // Each by what tells it apart, short enough for a narrow picker.
     expect(iface.oneOf.map((b) => b.title)).toEqual([
@@ -632,13 +633,13 @@ describe('node spec fields in the Inspector', () => {
     // phenix reads an empty timer as no delay.
     expect(validate(withTimer(''))).toBe(true);
     expect(validate(withTimer('90 seconds'))).toBe(false);
-    // Documents, and configs imported with such a value, still open.
+    // Documents follow the served schema, whose pattern checks the timer too.
     expect(
       createFormValidator().validate(
         { $defs: builderSchemaV1.$defs, $ref: `#/$defs/${MINIMEGA_NODE_DEF}` },
         withTimer('90 seconds'),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   // A VLAN is its interface's connection, which an interface may not have

@@ -1,12 +1,22 @@
-// @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
-import MiniTerminal from '@/components/MiniTerminal.vue';
+// The terminal: what it says when its websocket closes, and the way out of it.
+import { afterEach, beforeEach, describe, expect, it, test, vi } from 'vitest';
+import { mount } from '@vue/test-utils';
 
-// A stand-in for xterm.js that keeps the key handler and the data sent.
-const xterm = vi.hoisted(() => ({ handler: null, textarea: null, sent: [] }));
+vi.mock('@/store.js', () => ({ usePhenixStore: () => ({ token: null }) }));
+
+// A stand-in for xterm.js that keeps the key handler and what goes in and out.
+const xterm = vi.hoisted(() => ({
+  terminals: [],
+  handler: null,
+  textarea: null,
+  sent: [],
+}));
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
+    constructor() {
+      this.written = [];
+      xterm.terminals.push(this);
+    }
     attachCustomKeyEventHandler(handler) {
       xterm.handler = handler;
     }
@@ -17,18 +27,81 @@ vi.mock('@xterm/xterm', () => ({
       xterm.textarea = this.textarea;
     }
     resize() {}
-    onResize() {}
-    write() {}
+    write(data) {
+      this.written.push(data);
+    }
     input(data) {
       xterm.sent.push(data);
     }
+    dispose() {}
   },
 }));
-vi.mock('@xterm/addon-fit', () => ({ FitAddon: class {} }));
 vi.mock('@xterm/addon-attach', () => ({ AttachAddon: class {} }));
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}));
 
-enableAutoUnmount(afterEach);
+import MiniTerminal from '@/components/MiniTerminal.vue';
+import { mountComponent } from './helpers/mount.js';
+
+class FakeWebSocket {
+  static instances = [];
+
+  constructor(url) {
+    this.url = url;
+    FakeWebSocket.instances.push(this);
+  }
+
+  close() {}
+}
+
+const SHUTDOWN = '[terminal closed: phēnix server shutting down]';
+const CLOSED = '[terminal connection closed]';
+
+const open = () =>
+  mountComponent(MiniTerminal, {
+    props: { wsPath: '/api/v1/scorch/terminal/ws' },
+  });
+
+describe('the SCORCH terminal', () => {
+  let freshness;
+
+  beforeEach(async () => {
+    FakeWebSocket.instances = [];
+    xterm.terminals = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    vi.useFakeTimers();
+    freshness = await import('@/utils/freshness.js');
+  });
+
+  afterEach(() => {
+    freshness.setWsDown(false);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['the server shutting down', { code: 1001, reason: '' }, 'never', SHUTDOWN],
+    ['a normal close', { code: 1000, reason: '' }, 'never', CLOSED],
+    ['a normal close as it shuts down', { code: 1000 }, 'before', SHUTDOWN],
+    ['a drop', { code: 1006, reason: '' }, 'never', CLOSED],
+    ['a drop, then the shutdown', { code: 1006 }, 'after', SHUTDOWN],
+  ])('says it closed after %s', async (_, event, brokerAt, want) => {
+    await open();
+    if (brokerAt === 'before') freshness.setWsDown(true, 'shutdown');
+    FakeWebSocket.instances[0].onclose(event);
+    await vi.advanceTimersByTimeAsync(700);
+    if (brokerAt === 'after') freshness.setWsDown(true, 'shutdown');
+    await vi.advanceTimersByTimeAsync(800);
+    expect(xterm.terminals[0].written.join('').trim()).toBe(want);
+  });
+
+  it('writes nothing once it has closed', async () => {
+    const terminal = await open();
+    FakeWebSocket.instances[0].onclose({ code: 1006 });
+    terminal.unmount();
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(xterm.terminals[0].written).toEqual([]);
+  });
+});
 
 function key(type, init) {
   return new KeyboardEvent(type, { cancelable: true, ...init });
@@ -37,12 +110,7 @@ function key(type, init) {
 describe('MiniTerminal', () => {
   beforeEach(() => {
     xterm.sent = [];
-    vi.stubGlobal(
-      'WebSocket',
-      class {
-        close() {}
-      },
-    );
+    vi.stubGlobal('WebSocket', FakeWebSocket);
   });
 
   afterEach(() => {

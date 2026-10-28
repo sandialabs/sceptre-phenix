@@ -11,6 +11,7 @@ import (
 	"github.com/sandia-minimega/minimega/v2/pkg/miniclient"
 
 	"phenix/util/mm/mmcli"
+	"phenix/util/mm/mmtest"
 )
 
 // bridgeResponses is a closed channel of one answer holding resps, as
@@ -152,5 +153,139 @@ func TestGetBridges(t *testing.T) {
 
 	if diff := cmp.Diff(map[string][]string{}, bridges); diff != "" {
 		t.Errorf("GetBridges() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// The head node gets the bridge destroy command itself, and each other host
+// gets it over the mesh, in the order of the hosts.
+func TestDestroyBridgeSendsTheDestroy(t *testing.T) {
+	var sent []string
+
+	run := func(cmd *mmcli.Command) chan *miniclient.Response {
+		sent = append(sent, cmd.String())
+
+		return bridgeResponses(&minicli.Response{Host: "head"})
+	}
+
+	err := destroyBridge("exp", []string{"h2", "head", "h3"}, func(host string) bool { return host == "head" }, run)
+	if err != nil {
+		t.Fatalf("destroyBridge(exp) error = %v, want nil", err)
+	}
+
+	want := []string{
+		".record false mesh send h2 bridge destroy exp",
+		".record false bridge destroy exp",
+		".record false mesh send h3 bridge destroy exp",
+	}
+	if diff := cmp.Diff(want, sent); diff != "" {
+		t.Errorf("destroyBridge(exp) sent mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// A host that does not know the bridge is not an error. A host that fails is
+// reported, and the hosts after it still get the command.
+func TestDestroyBridgeReportsFailedHosts(t *testing.T) {
+	notFound := &minicli.Response{Host: "h2", Error: "bridge not found: exp"}
+	failed := &minicli.Response{Host: "h2", Error: "ovs-vsctl: database connection failed\n"}
+
+	tests := []struct {
+		name     string
+		bridge   string
+		hosts    []string
+		answers  map[string]*minicli.Response // by host, success when missing
+		noAnswer string                       // a host that gives no answer
+		wantSent []string                     // the hosts that get the command
+		wantErr  []string                     // parts of the error, none for nil
+		wantIs   error
+	}{
+		{name: "every host destroys", bridge: "exp", hosts: []string{"h1", "h2"}, wantSent: []string{"h1", "h2"}},
+		{
+			name: "a host that does not know the bridge", bridge: "exp", hosts: []string{"h1", "h2", "h3"},
+			answers: map[string]*minicli.Response{"h2": notFound}, wantSent: []string{"h1", "h2", "h3"},
+		},
+		{
+			name: "a host that fails", bridge: "exp", hosts: []string{"h1", "h2", "h3"},
+			answers: map[string]*minicli.Response{"h2": failed}, wantSent: []string{"h1", "h2", "h3"},
+			wantErr: []string{"destroying bridge exp on host h2: ovs-vsctl: database connection failed"},
+		},
+		{
+			name: "two hosts that fail", bridge: "exp", hosts: []string{"h1", "h2"},
+			answers:  map[string]*minicli.Response{"h1": failed, "h2": failed},
+			wantSent: []string{"h1", "h2"},
+			wantErr:  []string{"destroying bridge exp on host h1: ", "destroying bridge exp on host h2: "},
+		},
+		{
+			name: "a host that gives no answer", bridge: "exp", hosts: []string{"h1", "h2"}, noAnswer: "h1",
+			wantSent: []string{"h1", "h2"}, wantErr: []string{"destroying bridge exp on host h1"}, wantIs: errNoBridgeDestroy,
+		},
+		{
+			name: "a bridge minimega cannot take", bridge: "a b", hosts: []string{"h1"},
+			wantErr: []string{"destroying bridge: "}, wantIs: ErrUnsafeArg,
+		},
+		{
+			name: "a host minimega cannot take", bridge: "exp", hosts: []string{"h 1", "h2"}, wantSent: []string{"h2"},
+			wantErr: []string{`destroying bridge exp on host "h 1"`}, wantIs: ErrUnsafeArg,
+		},
+		{name: "no hosts", bridge: "exp"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var sent []string
+
+			run := func(cmd *mmcli.Command) chan *miniclient.Response {
+				host := strings.Fields(cmd.Command)[2]
+				sent = append(sent, host)
+
+				if host == tc.noAnswer {
+					empty := make(chan *miniclient.Response)
+					close(empty)
+
+					return empty
+				}
+
+				if answer, ok := tc.answers[host]; ok {
+					return bridgeResponses(answer)
+				}
+
+				return bridgeResponses(&minicli.Response{Host: host})
+			}
+
+			err := destroyBridge(tc.bridge, tc.hosts, func(string) bool { return false }, run)
+
+			if len(tc.wantErr) == 0 && err != nil {
+				t.Errorf("destroyBridge(%s, %v) error = %v, want nil", tc.bridge, tc.hosts, err)
+			}
+
+			for _, part := range tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), part) {
+					t.Errorf("destroyBridge(%s, %v) error = %v, want one containing %q", tc.bridge, tc.hosts, err, part)
+				}
+			}
+
+			if tc.wantIs != nil && !errors.Is(err, tc.wantIs) {
+				t.Errorf("destroyBridge(%s, %v) error = %v, want %v", tc.bridge, tc.hosts, err, tc.wantIs)
+			}
+
+			if diff := cmp.Diff(tc.wantSent, sent); diff != "" {
+				t.Errorf("destroyBridge(%s, %v) hosts sent to mismatch (-want +got):\n%s", tc.bridge, tc.hosts, diff)
+			}
+		})
+	}
+}
+
+// DestroyBridge sends the destroy to a minimega, the head node found as phenix finds it.
+func TestDestroyBridgeThroughMinimega(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	received := useFakeMinimega(t, answering(map[string][]*minicli.Response{
+		"mesh send compute1 bridge destroy exp": {mmtest.Error("compute1", "bridge not found: exp")},
+	}))
+
+	if err := DestroyBridge("exp", "head", "compute1"); err != nil {
+		t.Fatalf("DestroyBridge(exp, head, compute1) error = %v, want nil", err)
+	}
+
+	want := []string{bare("bridge destroy exp"), bare("mesh send compute1 bridge destroy exp")}
+	if diff := cmp.Diff(want, sentRaw(received())); diff != "" {
+		t.Errorf("DestroyBridge(exp, head, compute1) sent mismatch (-want +got):\n%s", diff)
 	}
 }

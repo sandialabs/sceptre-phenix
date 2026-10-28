@@ -2,10 +2,13 @@ import { createRouter, createWebHistory } from 'vue-router';
 
 import { ToastProgrammatic as Toast } from 'buefy';
 
+import * as authApi from '@/api/auth.js';
 import { usePhenixStore } from '@/store.js';
-import axiosInstance from '@/utils/axios.js';
 import { routeTitle } from '@/utils/pageTitle.js';
+import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
+import { isChunkLoadError, reloadForStaleChunk } from '@/utils/staleChunk.js';
 import { tokenExpired } from '@/utils/token.js';
+import { canUseWebShark } from '@/utils/webshark.js';
 
 export { pageTitle } from '@/utils/pageTitle.js';
 
@@ -32,79 +35,120 @@ const router = createRouter({
     {
       path: '/experiments',
       name: 'experiments',
-      meta: { title: 'Experiments' },
+      meta: {
+        title: 'Experiments',
+        allowed: () => roleAllowed('experiments', 'list'),
+      },
       component: () => import('@/views/Experiments.vue'),
     },
     {
       path: '/experiment/:id',
       name: 'experiment',
-      meta: { title: 'Experiment', titleParam: 'id' },
+      meta: {
+        title: 'Experiment',
+        titleParam: 'id',
+        allowed: (to) => roleAllowed('experiments', 'get', to.params.id),
+      },
       component: () => import('@/views/experiment/Base.vue'),
     },
     {
       path: '/hosts',
       name: 'hosts',
-      meta: { title: 'Hosts' },
+      meta: { title: 'Hosts', allowed: () => roleAllowed('hosts', 'list') },
       component: () => import('@/views/Hosts.vue'),
+    },
+    {
+      path: '/vlans',
+      name: 'vlans',
+      meta: { title: 'VLANs', allowed: () => roleAllowed('vlans', 'list') },
+      component: () => import('@/views/Vlans.vue'),
     },
     {
       path: '/configs/',
       name: 'configs',
-      meta: { title: 'Configs' },
+      meta: { title: 'Configs', allowed: () => roleAllowed('configs', 'list') },
       component: () => import('@/views/Configs.vue'),
     },
     {
       path: '/disks/',
       name: 'disks',
-      meta: { title: 'Disks' },
+      meta: { title: 'Disks', allowed: () => roleAllowed('disks', 'list') },
       component: () => import('@/views/Disks.vue'),
     },
     {
       path: '/vmtiles',
       name: 'vmtiles',
-      meta: { title: 'VM tiles' },
+      meta: { title: 'VM tiles', allowed: () => roleAllowed('vms', 'list') },
       component: () => import('@/views/experiment/VMtilesView.vue'),
     },
     {
       path: '/users',
       name: 'users',
-      meta: { title: 'Users' },
+      meta: { title: 'Users', allowed: () => usersPageAllowed() },
       component: () => import('@/views/Users.vue'),
     },
     {
       path: '/log',
       name: 'log',
-      meta: { title: 'Logs' },
       component: () => import('@/views/Logs.vue'),
+      meta: { title: 'Logs', allowed: () => roleAllowed('logs', 'get') },
     },
     {
       path: '/console',
       name: 'console',
-      meta: { title: 'Console' },
+      meta: {
+        title: 'Console',
+        allowed: () => roleAllowed('miniconsole', 'post'),
+      },
       component: () => import('@/views/Console.vue'),
     },
     {
       path: '/scorch',
       name: 'scorch',
-      meta: { title: 'SCORCH' },
+      meta: {
+        title: 'SCORCH',
+        allowed: () => roleAllowed('experiments', 'list'),
+      },
       component: () => import('@/views/Scorch.vue'),
     },
     {
       path: '/scorch/:id',
       name: 'scorchruns',
-      meta: { title: 'SCORCH runs', titleParam: 'id' },
+      meta: {
+        title: 'SCORCH runs',
+        titleParam: 'id',
+        allowed: (to) => roleAllowed('experiments', 'get', to.params.id),
+      },
       component: () => import('@/views/ScorchRuns.vue'),
+    },
+    {
+      path: '/soh',
+      name: 'sohoverview',
+      component: () => import('@/views/SohOverview.vue'),
+      meta: {
+        title: 'State of Health',
+        allowed: () => roleAllowed('experiments', 'list'),
+      },
     },
     {
       path: '/soh/:id',
       name: 'soh',
-      meta: { title: 'State of health', titleParam: 'id' },
+      meta: {
+        title: 'State of Health',
+        titleParam: 'id',
+        allowed: (to) => roleAllowed('experiments', 'get', to.params.id),
+        // the graph uses the whole window width (App.vue)
+        wide: true,
+      },
       component: () => import('@/views/StateOfHealth.vue'),
     },
     {
       path: '/settings',
       name: 'settings',
-      meta: { title: 'Settings' },
+      meta: {
+        title: 'Settings',
+        allowed: () => roleAllowed('settings', 'update'),
+      },
       component: () => import('@/views/Settings.vue'),
     },
     {
@@ -112,6 +156,13 @@ const router = createRouter({
       name: 'tunneler',
       meta: { title: 'Tunneler' },
       component: () => import('@/views/Tunneler.vue'),
+    },
+    {
+      // not /webshark: the server serves WebShark itself there
+      path: '/packets',
+      name: 'webshark',
+      component: () => import('@/views/WebShark.vue'),
+      meta: { title: 'WebShark', allowed: () => canUseWebShark() },
     },
     {
       // The Builder. The build finds the files that only this view loads
@@ -122,8 +173,9 @@ const router = createRouter({
       component: () => import('@/views/Builder.vue'),
       // The editor fills the viewport below the header, so App.vue drops the
       // page container, its padding and the footer for this route. The
-      // editor adds the open diagram to the title (see Builder.vue).
-      meta: { fullBleed: true, title: 'Builder' },
+      // editor adds the open diagram to the title (see Builder.vue). Its
+      // large chunk loads only on demand, so it is not prefetched.
+      meta: { fullBleed: true, title: 'Builder', prefetch: false },
     },
 
     {
@@ -145,37 +197,35 @@ const router = createRouter({
     //static paths
     { path: '/version', name: 'version' },
     { path: '/features', name: 'features' },
-    { path: '/api/v1/options', name: 'options' },
 
-    //file, vnc
-    {
-      path: '/api/v1/experiments/:id/files/:name',
-      name: 'file',
-    },
+    //vnc
     { path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token', name: 'vnc' },
 
-    //console paths
-    { path: '/api/v1/console/:pid/ws', name: 'console-ws' },
-
-    //tunneler paths
     {
-      path: '/downloads/tunneler/phenix-tunneler-linux-amd64',
-      name: 'linux-tunneler',
-    },
-    {
-      path: '/downloads/tunneler/phenix-tunneler-darwin-arm64',
-      name: 'macos-arm-tunneler',
-    },
-    {
-      path: '/downloads/tunneler/phenix-tunneler-darwin-amd64',
-      name: 'macos-intel-tunneler',
-    },
-    {
-      path: '/downloads/tunneler/phenix-tunneler-windows-amd64.exe',
-      name: 'windows-tunneler',
+      path: '/:pathMatch(.*)*',
+      name: 'notfound',
+      meta: { title: 'Page not found' },
+      component: () => import('@/views/NotFound.vue'),
     },
   ],
 });
+
+// the address of the navigation under way, for a failed chunk load to reload to
+let pending = null;
+
+export function pendingNavigationHref() {
+  return pending;
+}
+
+router.beforeEach((to) => {
+  pending = router.resolve(to.fullPath).href;
+});
+
+// forgets the navigation to `to` once it ends, but not a newer one that
+// cancelled it
+function settle(to) {
+  if (!to || pending === router.resolve(to.fullPath).href) pending = null;
+}
 
 router.beforeEach(async (to, _, next) => {
   const store = usePhenixStore();
@@ -232,9 +282,18 @@ router.beforeEach(async (to, _, next) => {
       new Toast().open({
         message: `Token is expired. Log in again`,
         type: 'is-warning',
-        duration: 5000,
       });
       store.logout();
+    } else if (to.meta.allowed && !to.meta.allowed(to)) {
+      // a page the role cannot use (an old link or bookmark) would only show
+      // permission errors: go to the first page it can use instead
+      const fallback = ['experiments', 'vmtiles'].find(
+        (name) => name !== to.name && router.resolve({ name }).meta.allowed(),
+      );
+      if (fallback) {
+        next({ name: fallback });
+        return;
+      }
     }
 
     next();
@@ -242,11 +301,9 @@ router.beforeEach(async (to, _, next) => {
     store.next = to;
 
     if (import.meta.env.VITE_AUTH === 'proxy') {
-      // next(); //TODO
-      // return;
-
-      axiosInstance
-        .get('login')
+      // awaited, so the router waits for the next() it calls
+      await authApi
+        .getProxyLogin()
         .then((response) => {
           store.login(response.data, false);
           next();
@@ -254,7 +311,9 @@ router.beforeEach(async (to, _, next) => {
         .catch((err) => {
           next({
             name: 'proxysignup',
-            params: { username: (err.response?.data ?? '').trim() },
+            params: {
+              username: err.response?.data?.metadata?.username ?? '',
+            },
           });
         });
     } else {
@@ -265,7 +324,17 @@ router.beforeEach(async (to, _, next) => {
 // Give every route its own document title (WCAG 2.4.2 Page Titled), with the
 // name of the item it shows (WCAG 2.4.8 Location).
 router.afterEach((to) => {
+  settle(to);
   document.title = routeTitle(to);
+});
+
+// A page whose chunk the server no longer has (an update while the tab was
+// open) is loaded again from the server, once (see utils/staleChunk.js).
+router.onError((err, to) => {
+  settle(to);
+  if (isChunkLoadError(err)) {
+    reloadForStaleChunk(to ? router.resolve(to.fullPath).href : '');
+  }
 });
 
 export default router;

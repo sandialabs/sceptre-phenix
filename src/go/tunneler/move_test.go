@@ -34,7 +34,7 @@ func TestMoveLocalListenerRollsBackOnBindFailure(t *testing.T) {
 		oldPort  = listener.SrcPort
 	)
 
-	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	occupied, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatalf("creating occupied listener: %v", err)
 	}

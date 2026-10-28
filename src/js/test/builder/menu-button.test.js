@@ -3,12 +3,10 @@
 // the WAI-ARIA APG menu button pattern has it.
 
 import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 import fc from 'fast-check';
 
 import BuilderMenuButton from '@/components/builder/BuilderMenuButton.vue';
-
-enableAutoUnmount(afterEach);
 
 afterEach(() => {
   document.body.innerHTML = '';
