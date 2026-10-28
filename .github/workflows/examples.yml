@@ -5,12 +5,15 @@ on:
     branches: ['**']
     paths:
       - 'examples/**'
+      # The Go example imports phenix packages from src/go.
+      - 'src/go/**'
       - '.github/workflows/examples.yml'
   pull_request:
     # closed: only to cancel this PR's runs (see concurrency); jobs skip it
     types: [opened, synchronize, reopened, closed]
     paths:
       - 'examples/**'
+      - 'src/go/**'
       - '.github/workflows/examples.yml'
   repository_dispatch:
     types: [apps-update]
