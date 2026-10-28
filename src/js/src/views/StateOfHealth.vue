@@ -957,7 +957,8 @@
         this.nodes = state.nodes;
         this.edges = state.edges;
 
-        this.flows = state.host_flows != null;
+        // the server sends an empty matrix when the soh app recorded no flows
+        this.flows = (state.host_flows?.length ?? 0) > 0;
         this.volume = this.flows
           ? Object.assign(state.host_flows, { names: state.hosts })
           : [];

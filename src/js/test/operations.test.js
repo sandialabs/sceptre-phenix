@@ -188,6 +188,28 @@ describe('partitionForAction and skippedText', () => {
   });
 });
 
+// Bulma's grey text classes and the colors they draw
+const BULMA_TEXT = {
+  'has-text-grey-darker': '#363636',
+  'has-text-grey-dark': '#4a4a4a',
+  'has-text-grey': '#7a7a7a',
+  'has-text-grey-light': '#b5b5b5',
+  'has-text-grey-lighter': '#dbdbdb',
+};
+
+// the WCAG contrast ratio of two #rrggbb colors
+function contrast(a, b) {
+  const luminance = (hex) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
 describe('confirmOperation', () => {
   // the HTML of a dialog's message
   const messageOf = (dialog) =>
@@ -217,6 +239,24 @@ describe('confirmOperation', () => {
 
     await confirmDialog();
     await expect(answer).resolves.toBe(true);
+  });
+
+  it('writes what it skips in a color that reads on the dialog', async () => {
+    confirmOperation(await realBuefy(), {
+      title: 'Restart VMs',
+      message: 'Restart?',
+      confirmText: 'Restart',
+      skipped: [{ reason: 'the VM is paused', names: ['db'] }],
+      noun: 'VM',
+    });
+    await nextTick();
+    const note = dialogs()[0].querySelector('.media-content p > div p + p');
+    const colors = [...note.classList].filter((c) => c.startsWith('has-text-'));
+    expect(colors).toHaveLength(1);
+    // the dialog body is $background-ter (#5a5a5a); AA text needs 4.5:1
+    expect(contrast(BULMA_TEXT[colors[0]], '#5a5a5a')).toBeGreaterThanOrEqual(
+      4.5,
+    );
   });
 
   it('resolves false when canceled, and says nothing of skips when there are none', async () => {
@@ -554,6 +594,23 @@ describe('notifyOutcome', () => {
     messageOf(notice).querySelector('button').click();
     expect(onRetry).toHaveBeenCalledWith(['b']);
     await vi.waitFor(() => expect(notices()).toEqual([]));
+  });
+
+  it('keeps its lasting notification when later toasts come and go', async () => {
+    const buefy = await realBuefy();
+    vi.useFakeTimers();
+    notifyOutcome(buefy, {
+      verbPast: 'Stopped',
+      noun: 'experiment',
+      items: [ok('a'), { name: 'b', status: 'failed', error: 'boom' }],
+    });
+    buefy.toast.open({ message: 'Experiment c is being updated' });
+    buefy.toast.open({ message: 'Experiment d is being updated' });
+    vi.advanceTimersByTime(60_000);
+    vi.useRealTimers();
+
+    expect(notices()).toHaveLength(1);
+    expect(lines(notices()[0])[0]).toBe('Stopped 1 of 2 experiments: 1 failed');
   });
 
   it(`names at most ${LISTED_FAILURES} failures, and offers no retry without one worth it`, async () => {

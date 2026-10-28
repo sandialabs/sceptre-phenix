@@ -148,7 +148,7 @@
           </b-select>
         </b-tooltip>
       </b-field>
-      <b-field>
+      <b-field :addons="false" class="has-addons">
         <b-autocomplete
           v-model="searchName"
           :placeholder="searchPlaceholder"
@@ -652,6 +652,11 @@
       this.searchVMs.cancel();
       removeWsHandler(this.handleWs);
       this.loader.stop();
+    },
+
+    mounted() {
+      // a link to the Files tab opens it without the activeTab watcher
+      if (this.activeTab === TAB.FILES) this.$refs.filesTab?.reload();
     },
 
     async created() {

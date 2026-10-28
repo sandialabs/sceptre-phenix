@@ -70,6 +70,8 @@ export function installBuefy(app) {
     defaultIconPack: 'fas',
     defaultProgrammaticPromise: true,
     defaultToastDuration: TOAST_DURATION,
+    // queued, a new toast empties the notice area, lasting notices included
+    defaultNoticeQueue: false,
   });
   // Buefy has no config default for the modal close button's name, so the X
   // button is unnamed unless every modal passes close-button-aria-label. Set

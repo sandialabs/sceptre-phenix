@@ -855,8 +855,8 @@ describe('actions on VMs', () => {
     await act(page, 'Shut down selected VMs', selection);
     expect(messageOf(questions()[0])).toBe(
       '<p>This will shut down the VMs web, persistent, and db.</p>' +
-        '<p class="mt-3 has-text-grey-dark">The VMs off and held are not ' +
-        'running. The gone VM is not shown in the table.</p>',
+        '<p class="mt-3 has-text-grey-lighter">The VMs off and held are not ' +
+        'running. The gone VM is not in the table.</p>',
     );
 
     await act(page, 'Restart selected VMs', selection);

@@ -116,7 +116,7 @@
           >
         </b-dropdown>
       </b-field>
-      <b-field>
+      <b-field :addons="false" class="has-addons">
         <b-input
           v-model="searchInput"
           placeholder="Search log messages"

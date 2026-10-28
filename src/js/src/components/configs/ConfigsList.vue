@@ -149,7 +149,7 @@
               </option>
             </b-select>
           </b-field>
-          <b-field>
+          <b-field :addons="false" class="has-addons">
             <b-autocomplete
               v-model="searchQuery"
               placeholder="Find a Config"

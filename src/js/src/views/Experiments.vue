@@ -86,7 +86,7 @@
               >Paginate</b-switch
             >
           </div>
-          <b-field>
+          <b-field :addons="false" class="has-addons">
             <b-autocomplete
               v-model="searchName"
               placeholder="Find an Experiment"
@@ -143,8 +143,9 @@
               </div>
             </section>
           </template>
+          <!-- hidden, not left out: a column added after mount goes last -->
           <b-table-column
-            v-if="selectionOffered"
+            :visible="selectionOffered"
             field="select"
             label=""
             header-class="exp-select-cell"

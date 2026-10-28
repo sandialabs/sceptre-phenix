@@ -20,7 +20,7 @@ to access the VM VNC by clicking on the screenshot.
     </b-field>
     <br /><br />
     <b-field position="is-right" grouped>
-      <b-field>
+      <b-field :addons="false" class="has-addons">
         <b-autocomplete
           v-model="searchName"
           placeholder="Find a VM"

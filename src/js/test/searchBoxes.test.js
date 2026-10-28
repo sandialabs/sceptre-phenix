@@ -110,9 +110,36 @@ describe.each(pages)('%s', (_, page, route, searches) => {
     }
   });
 
+  it('keeps the box focused and every character as a search is typed', async () => {
+    const wrapper = await mountPage(page, { route, attachTo: document.body });
+    const input = searchBox(wrapper).find('input');
+    input.element.focus();
+    vi.useFakeTimers();
+    await fc.assert(
+      fc.asyncProperty(
+        fc
+          .string({ minLength: 2, maxLength: 8 })
+          .filter((s) => s.trim() !== ''),
+        async (text) => {
+          for (let i = 1; i <= text.length; i++) {
+            await input.setValue(text.slice(0, i));
+            await vi.advanceTimersByTimeAsync(50);
+          }
+          // the clear button came without the box being drawn again
+          expect(clearButton(wrapper).exists()).toBe(true);
+          expect(searchBox(wrapper).find('input').element).toBe(input.element);
+          expect(document.activeElement).toBe(input.element);
+          expect(input.element.value).toBe(text);
+          await input.setValue('');
+          await vi.runAllTimersAsync();
+        },
+      ),
+      { numRuns: 5 },
+    );
+  });
+
   it('offers to clear any search typed in its box, and clears the box', async () => {
     const wrapper = await mountPage(page, { route });
-    // the field draws its controls again as the clear button comes and goes
     const input = () => searchBox(wrapper).find('input');
     // the experiment pages clear their search after a pause
     vi.useFakeTimers();

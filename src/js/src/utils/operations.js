@@ -98,8 +98,9 @@ export function confirmOperation(
   buefy,
   { title, message, confirmText, type = 'is-primary', skipped = [], noun },
 ) {
+  // grey-lighter is 5:1 on the dialog's $background-ter
   const skippedNote = skipped.length
-    ? `<p class="mt-3 has-text-grey-dark">${escapeHTML(skippedText(skipped, noun))}</p>`
+    ? `<p class="mt-3 has-text-grey-lighter">${escapeHTML(skippedText(skipped, noun))}</p>`
     : '';
 
   return new Promise((resolve) => {

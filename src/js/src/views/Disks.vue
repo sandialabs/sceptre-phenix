@@ -260,7 +260,7 @@
           >Paginate</b-switch
         >
       </div>
-      <b-field>
+      <b-field :addons="false" class="has-addons">
         <b-autocomplete
           v-model="filterString"
           placeholder="Find a disk"

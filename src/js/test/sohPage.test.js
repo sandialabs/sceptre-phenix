@@ -139,6 +139,28 @@ describe('rendering', () => {
     ]);
   });
 
+  it.each([
+    ['no flows', [], []],
+    ['no flow matrix', null, null],
+    [
+      'flows',
+      ['web', 'db'],
+      [
+        [0, 3],
+        [2, 0],
+      ],
+      'Network Volume',
+    ],
+  ])('shows the tabs for a network with %s', async (_, hosts, flows, extra) => {
+    const page = await open();
+    // the network as GET experiments/demo/soh answers it
+    loaderSpy.options.apply({ nodes, edges, hosts, host_flows: flows });
+    await flushPromises();
+    expect(page.findAll('.tabs li').map((li) => li.text().trim())).toEqual(
+      ['Topology Graph', extra].filter(Boolean),
+    );
+  });
+
   it('offers Run SOH once SOH has started in the running experiment', async () => {
     const page = await open({
       nodes,

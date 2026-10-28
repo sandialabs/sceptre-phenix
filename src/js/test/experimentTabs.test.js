@@ -129,6 +129,7 @@ describe.each([
 
   async function open(route = '/experiment/exp1') {
     filters.length = 0;
+    FilesTab.methods.reload.mockClear();
     return mountPage(view, {
       route,
       data: { experiment: { name: 'exp1', vms: [] } },
@@ -164,6 +165,17 @@ describe.each([
     expect(searchBox(page).element.value).toBe('log');
     expect(searchBox(page).attributes('placeholder')).toBe('Find a File');
     expect(filters.at(-1)).toBe('log');
+  });
+
+  it.each([
+    ['/experiment/exp1?tab=files', 1],
+    ['/experiment/exp1?tab=files&q=log', 1],
+    ['/experiment/exp1', 0],
+    ['/experiment/exp1?tab=vnc', 0],
+  ])('opening %s lists the files %i times', async (route, times) => {
+    await open(route);
+
+    expect(FilesTab.methods.reload).toHaveBeenCalledTimes(times);
   });
 
   it('opens on the VMs tab when the role may not list files', async () => {

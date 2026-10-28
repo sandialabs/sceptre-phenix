@@ -208,7 +208,7 @@
           >Paginate</b-switch
         >
       </div>
-      <b-field>
+      <b-field :addons="false" class="has-addons">
         <b-input
           v-model="searchText"
           placeholder="Find a user"

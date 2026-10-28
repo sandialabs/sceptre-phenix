@@ -243,6 +243,19 @@ describe('the table', () => {
     },
   );
 
+  it('puts the checkbox column first when the list arrives after the page opens', async () => {
+    const wrapper = await page();
+    expect(wrapper.find('thead th').classes()).not.toContain('exp-select-cell');
+
+    loaderSpy.options.apply(three(), { seq: 1 });
+    await flushPromises();
+
+    expect(wrapper.find('thead th').classes()).toContain('exp-select-cell');
+    expect(Object.values(tableRows(wrapper)[0])[0].classes()).toContain(
+      'exp-select-cell',
+    );
+  });
+
   it('narrows the checkbox column to its checkboxes', async () => {
     const wrapper = await page(three());
 
@@ -852,7 +865,11 @@ describe('the selection', () => {
     ]);
     answer({});
     await flushPromises();
-    expect(toasts().map((t) => t.text)).toEqual(['Started 1 experiment']);
+    // the newest toast is drawn first, and the delayed VMs stay told
+    expect(toasts().map((t) => t.text)).toEqual([
+      'Started 1 experiment',
+      'The a experiment has been started (with 2 delayed VMs).',
+    ]);
   });
 
   it('skips an experiment that changed while the confirm was open', async () => {

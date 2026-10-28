@@ -10,6 +10,8 @@
 // served while minimega was busy). Ages are measured from the server's own
 // Date header, so the browser's clock never matters.
 
+import { shallowRef } from 'vue';
+
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 
@@ -214,6 +216,11 @@ let wsDownCause = null;
 // when the server said it is shutting down, or null
 let shutdownAt = null;
 
+// counts changes to the state above, so a computed value reading it through
+// wsDownReason (the header's refresh status) updates at once
+const connectionChanges = shallowRef(0);
+const connectionChanged = () => connectionChanges.value++;
+
 // whether a request got no response at all and none has been answered since
 let unanswered = false;
 // no background request before this time (ms), from a 503's Retry-After
@@ -228,6 +235,7 @@ const awayNoted = () =>
   shutdownAt !== null || unanswered || retryAfterUntil > 0;
 
 export function setWsDown(down, cause = 'lost') {
+  connectionChanged();
   if (!down) {
     const away = awayNoted();
     wsDownSince = null;
@@ -253,6 +261,7 @@ export function setWsDown(down, cause = 'lost') {
 export function serverResponded(sentAt) {
   if (shutdownAt !== null && sentAt < shutdownAt) return;
   if (!awayNoted()) return;
+  connectionChanged();
   if (shutdownAt !== null && wsDownCause === 'shutdown') wsDownCause = 'lost';
   shutdownAt = null;
   unanswered = false;
@@ -290,6 +299,7 @@ export function retryAfterMs(value, now = Date.now()) {
 // shutting down: background requests wait for it, and at least that long.
 export function serverUnavailable(retryAfter) {
   const now = Date.now();
+  connectionChanged();
   shutdownAt = now;
   if (wsDownCause !== null) wsDownCause = 'shutdown';
   retryAfterUntil = Math.max(
@@ -305,6 +315,7 @@ export function retryAfterLeftMs(now = Date.now()) {
 
 // Why the live websocket connection is down (a wsCloseCause), or null.
 export function wsDownReason() {
+  connectionChanges.value;
   if (wsDownCause === 'shutdown' && !shutdownKnown()) return 'lost';
   return wsDownCause;
 }
@@ -373,6 +384,7 @@ export function onServerBack(f) {
 // Forgets what is known of the server without telling anyone, as on signing
 // out.
 export function forgetServer() {
+  connectionChanged();
   wsDownSince = null;
   wsDownCause = null;
   shutdownAt = null;

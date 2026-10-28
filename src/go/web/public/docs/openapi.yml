@@ -11125,7 +11125,8 @@ components:
           type: array
           description: >-
             a matrix of the flows the soh app recorded: the entry at row i,
-            column j counts those from host i to host j
+            column j counts those from host i to host j. Empty, never null, when
+            it recorded none
           items:
             type: array
             items:
@@ -11234,6 +11235,19 @@ components:
           description: the container checks
           items:
             $ref: "#/components/schemas/SoHState"
+        customTests:
+          title: Custom Tests
+          type: array
+          description: the custom host tests from the VM's soh profile
+          items:
+            $ref: "#/components/schemas/SoHState"
+        errors:
+          title: Errors
+          type: boolean
+          description: >-
+            whether any of the VM's checks failed, which the UI marks on the
+            node's border
+          example: false
     SoHState:
       title: SoH State
       type: object

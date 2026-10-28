@@ -1,7 +1,7 @@
 <template>
   <div class="content">
     <b-field position="is-right" grouped>
-      <b-field>
+      <b-field :addons="false" class="has-addons">
         <b-autocomplete
           placeholder="Find an Experiment"
           v-model="searchName"

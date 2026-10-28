@@ -411,6 +411,40 @@ describe('the refresh status', () => {
   });
 
   it.each([
+    [
+      'the server shutting down',
+      'shutdown',
+      'phēnix server shutting down or restarting',
+    ],
+    ['a lost connection', 'lost', 'live updates disconnected'],
+  ])(
+    'turns stale at once on %s, and fresh again on reconnecting',
+    async (_, cause, want) => {
+      Object.assign(pageStatus, {
+        refresh: () => {},
+        updatedAt: NOW,
+        resource: 'experiments',
+      });
+      const refresh = await mountComponent(RefreshStatus);
+      const label = () => textOf(refresh.find('.refresh-label'));
+      expect(label()).toBe('Updated just now');
+
+      try {
+        setWsDown(true, cause);
+        await nextTick();
+        expect(label()).toBe(`Updated just now · may be out of date: ${want}`);
+        expect(refresh.find('.refresh-alert').text()).toBe(
+          `Data may be out of date: ${want}`,
+        );
+      } finally {
+        setWsDown(false);
+      }
+      await nextTick();
+      expect(label()).toBe('Updated just now');
+    },
+  );
+
+  it.each([
     ['a failed reload', { failed: true, updatedAt: NOW }, 'Refresh failed'],
     [
       'data that stays out of date',
@@ -647,7 +681,9 @@ describe('Logout', () => {
     const wrapper = await header();
 
     const logout = wrapper.find('[data-testid="nav-logout"]');
+    // a button, so the keyboard reaches it
     expect(logout.element.tagName).toBe('BUTTON');
+    expect(logout.attributes('type')).toBe('button');
     expect(textOf(logout)).toBe('Logout');
     await logout.trigger('click');
     await flushPromises();

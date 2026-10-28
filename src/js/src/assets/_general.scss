@@ -36,6 +36,28 @@ textarea:focus {
   margin-bottom: 0.5em;
 }
 
+// A role with every page, on a server with every download, needs a wider
+// header than most screens: it wraps onto a second row instead of off-screen.
+@include from($navbar-breakpoint) {
+  .navbar-menu {
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .navbar-start,
+  .navbar-end {
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .navbar-start > .navbar-item,
+  .navbar-end > .navbar-item {
+    padding-inline: 0.5rem;
+  }
+}
+
 // Focus looks like hover, as Bulma's focus colors are about 1:1 here. Keyboard
 // focus also gets the ring below, since the current page's link looks the same.
 a.navbar-item.router-link-exact-active,
@@ -68,6 +90,15 @@ div.is-success {
 // scale icons inside inputs so they don't touch the edges
 .control.has-icons-left > .icon > svg {
   width: 75% !important;
+}
+
+// Bulma keeps a modal title from shrinking, so a long one (a user or VM
+// name) runs past the head's padding; wrap it instead
+.modal-card-title {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
 // round bottom of modal-card even if not explicitly a footer

@@ -29,7 +29,7 @@
         <b :class="{ 't-bad': totals.vmsDown > 0 }">{{ totals.vmsDown }}</b>
         {{ pluralWord(totals.vmsDown, 'VM') }} down
       </div>
-      <b-field class="mb-0">
+      <b-field :addons="false" class="has-addons mb-0">
         <b-autocomplete
           placeholder="Find an Experiment"
           v-model="searchName"
