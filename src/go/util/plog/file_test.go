@@ -63,3 +63,12 @@ func TestGetLogsReturnsRecentEntry(t *testing.T) {
 
 	t.Fatalf("entry not found in recent window (got %d entries)", len(logs))
 }
+
+// LogFilePath names the file the file handler writes, for downloads of it.
+func TestLogFilePath(t *testing.T) {
+	path := useLogFile(t)
+
+	if got := LogFilePath(); got != path {
+		t.Errorf("LogFilePath() = %q, want %q", got, path)
+	}
+}

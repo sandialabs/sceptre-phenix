@@ -182,8 +182,9 @@ experiments asks minimega only about the experiments on it, and a page of
 ## Downloads
 
 Single-file downloads stream from disk and can be resumed: experiment files,
-disk images, files in a mounted VM, tunneler builds, and saved captures in
-WebShark. Each download route also answers `HEAD`, and every response carries
+disk images, files in a mounted VM, tunneler builds, saved captures in
+WebShark, and the server's log files (`GET /logs/files/{name}`, see
+[Downloading Log Files](logging.md#downloading-log-files)). Each download route also answers `HEAD`, and every response carries
 `Accept-Ranges: bytes`, a strong `ETag` and `Last-Modified`.
 
 * `Range` asks for part of the file (`206`), such as `bytes=1048576-` for all

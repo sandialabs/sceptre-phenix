@@ -184,9 +184,11 @@ unreadable (and is `X-Phenix-Stale` when it leaves out unreadable experiments). 
 
 Single-file downloads stream from disk and resume:
 `GET /experiments/{name}/files/{filename}?path=`, `GET /disks/download?disk=`,
-the VM mount's `GET .../files/download?path=`, `GET /downloads/tunneler/{name}`
-a saved capture's `GET /webshark/captures/{name}` and a recorded netflow
-capture's `GET /experiments/{name}/netflow/captures/{id}?format=text`. Each also answers `HEAD`,
+the VM mount's `GET .../files/download?path=`, `GET /downloads/tunneler/{name}`,
+a saved capture's `GET /webshark/captures/{name}`, a recorded netflow
+capture's `GET /experiments/{name}/netflow/captures/{id}?format=text` and the
+log files' `GET /logs/files/{phenix|minimega}` (`logs` `get`; `GET /logs/files`
+says which can be downloaded and why not; audited as `log-download`). Each also answers `HEAD`,
 and sends `Accept-Ranges: bytes`, `Content-Length`, a
 strong `ETag` (from the file's inode, size and nanosecond modification time,
 never its contents) and `Last-Modified`, with `Cache-Control: private,

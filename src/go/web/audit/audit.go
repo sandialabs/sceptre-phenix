@@ -1,7 +1,7 @@
 // Package audit logs security-relevant actions taken through the web API:
 // who signed in, changed a user, config, experiment, VM or the settings,
 // applied a workflow, powered a VM, read a capture, opened a console, changed
-// a disk image or deleted a file, and who was refused, including requests
+// a disk image, deleted a file or downloaded a log file, and who was refused, including requests
 // whose token the auth middleware refused. Each event is a plog record of type AUDIT whose
 // fields follow the Elastic Common Schema (ECS) as flat dotted keys, so the
 // JSON system log file can be shipped to Elasticsearch (with Filebeat, say)
@@ -159,6 +159,10 @@ const (
 	VMUnmount        Action = "vm-unmount"
 	VMFileUpload     Action = "vm-file-upload"
 	VMFileCopy       Action = "vm-file-copy"
+
+	// The server's log files.
+
+	LogDownload Action = "log-download"
 )
 
 // ECS event.category and event.type values.
@@ -276,6 +280,8 @@ var kinds = map[Action]kind{
 	VMUnmount:        {categorySession, typeEnd},
 	VMFileUpload:     {categoryFile, typeCreation},
 	VMFileCopy:       {categoryFile, typeCreation},
+
+	LogDownload: {categoryFile, typeAccess},
 }
 
 // ecs is the action's ECS event.category and event.type.

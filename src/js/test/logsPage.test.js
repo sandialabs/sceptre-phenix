@@ -1,16 +1,18 @@
 // The Logs page: it subscribes to log lines while open, filters them by type,
-// and finds AUDIT events by the ECS fields in their message.
+// finds AUDIT events by the ECS fields in their message, shows each level as
+// a short badge, counts the lines shown, and links to the log files.
 import fc from 'fast-check';
 import { flushPromises } from '@vue/test-utils';
 import { h } from 'vue';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-const { capturing, loaderSpy, modules, resetMocks, ws } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const { axios, capturing, loaderSpy, modules, rbac, resetMocks, ws } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/pageData.js', async (original) => ({
   ...(await original()),
   pageFetchers: { logs: vi.fn() },
@@ -19,7 +21,8 @@ vi.mock('@/utils/pageLoader.js', capturing);
 
 import Logs from '@/views/Logs.vue';
 import { wsMsg } from './helpers/fixtures.js';
-import { mountPage, textOf } from './helpers/mount.js';
+import { mountPage, textOf, tooltipButtons } from './helpers/mount.js';
+import { allowOnly, denyAll } from './helpers/permissions.js';
 
 const LOGS = [
   {
@@ -77,6 +80,18 @@ const levelItem = (page, level) =>
     .at(1)
     .findAll('.dropdown-item')
     .find((item) => textOf(item) === level);
+
+// the "Logs shown" box's text
+const shownCount = (page) => textOf(page.find('.logs-shown'));
+
+// each log line's level badge: its text and color class
+const badges = (page) =>
+  page
+    .findAll('.level-tag')
+    .map((tag) => [
+      textOf(tag),
+      tag.classes().find((c) => c.startsWith('level-') && c !== 'level-tag'),
+    ]);
 
 const searchBox = (page) =>
   page.find('input[aria-label="Search log messages"]');
@@ -189,6 +204,11 @@ it('shows the lines that pass the filters, as lines stream in and filters change
           }
           await flushPromises();
 
+          expect(shownCount(page)).toMatch(
+            new RegExp(
+              `^Logs shown: ${shown(page).length}( of ${logs.length})?$`,
+            ),
+          );
           expect(shown(page)).toEqual(
             logs
               .filter(
@@ -205,4 +225,205 @@ it('shows the lines that pass the filters, as lines stream in and filters change
     ),
     { numRuns: 20 },
   );
+});
+
+it('shows each level as a short colored badge', async () => {
+  const page = await open();
+  loaderSpy.options.apply(
+    LEVELS.map((level, id) => ({
+      id,
+      level,
+      type: 'SYSTEM',
+      msg: `a ${level} line`,
+    })),
+  );
+  await levelItem(page, 'DEBUG').trigger('click');
+  await flushPromises();
+
+  expect(badges(page)).toEqual([
+    ['DBG', 'level-debug'],
+    ['INFO', 'level-info'],
+    ['WRN', 'level-warn'],
+    ['ERR', 'level-error'],
+  ]);
+});
+
+it('counts the lines shown in its box, and of how many when filters hide some', async () => {
+  const page = await logsPage();
+
+  expect(shownCount(page)).toBe('Logs shown: 4');
+  await typeItem(page, 'AUDIT').trigger('click');
+  expect(shownCount(page)).toBe('Logs shown: 2 of 4');
+
+  for (const handler of ws.handlers)
+    handler(wsMsg('log', 'phenix', 'log', LOGS[0]));
+  await flushPromises();
+  expect(shownCount(page)).toBe('Logs shown: 3 of 5');
+});
+
+// the download buttons, once the page has asked which log files there are
+async function downloadsPage(files) {
+  if (files instanceof Error) axios.get.mockRejectedValue(files);
+  else axios.get.mockResolvedValue({ data: { files } });
+  const page = await open();
+  await flushPromises();
+  return tooltipButtons(page)
+    .filter(({ label }) => label.startsWith('Download'))
+    .map(({ tooltip, label, disabled, control }) => ({
+      label,
+      tooltip,
+      disabled,
+      href: control.attributes('href') ?? null,
+    }));
+}
+
+const PHENIX = {
+  label: 'Download phēnix log',
+  tooltip: 'Download the phēnix log file',
+  disabled: false,
+  href: '/api/v1/logs/files/phenix?token=t',
+};
+
+it.each([
+  [
+    'both files',
+    [
+      { name: 'phenix', available: true, size: 10 },
+      { name: 'minimega', available: true, size: 20 },
+    ],
+    [
+      PHENIX,
+      {
+        label: 'Download minimega log',
+        tooltip: 'Download the minimega log file',
+        disabled: false,
+        href: '/api/v1/logs/files/minimega?token=t',
+      },
+    ],
+  ],
+  [
+    'an unconfigured minimega log',
+    [
+      { name: 'phenix', available: true, size: 10 },
+      { name: 'minimega', available: false, reason: 'not configured' },
+    ],
+    [
+      PHENIX,
+      {
+        label: 'Download minimega log',
+        tooltip: 'Unavailable: not configured',
+        disabled: true,
+        href: null,
+      },
+    ],
+  ],
+  [
+    'a failed listing',
+    Object.assign(new Error('Network Error'), {
+      response: { data: { message: 'forbidden' } },
+    }),
+    ['phēnix log', 'minimega log'].map((name) => ({
+      label: `Download ${name}`,
+      tooltip: 'Could not check the log files: forbidden',
+      disabled: true,
+      href: null,
+    })),
+  ],
+])(
+  'links to the log files, or says why not, with %s',
+  async (_, files, want) => {
+    expect(await downloadsPage(files)).toEqual(want);
+    expect(axios.get).toHaveBeenCalledWith('logs/files', expect.anything());
+  },
+);
+
+// the download buttons' state: whether each one links to its file
+const linked = (page) =>
+  tooltipButtons(page)
+    .filter(({ label }) => label.startsWith('Download'))
+    .map(({ control }) => control.attributes('href') !== undefined);
+
+const MISSING = [
+  { name: 'phenix', available: true, size: 10 },
+  { name: 'minimega', available: false, reason: 'does not exist yet' },
+];
+const BOTH = [
+  { name: 'phenix', available: true, size: 10 },
+  { name: 'minimega', available: true, size: 20 },
+];
+
+it('asks again which log files there are every 30 seconds and after a reconnect', async () => {
+  vi.useFakeTimers();
+  axios.get.mockResolvedValue({ data: { files: MISSING } });
+  const page = await open();
+  await flushPromises();
+  expect(linked(page)).toEqual([true, false]);
+
+  axios.get.mockResolvedValue({ data: { files: BOTH } });
+  await vi.advanceTimersByTimeAsync(30 * 1000);
+  await flushPromises();
+  expect(linked(page)).toEqual([true, true]);
+
+  axios.get.mockResolvedValue({ data: { files: MISSING } });
+  ws.reconnect.forEach((f) => f());
+  await flushPromises();
+  expect(linked(page)).toEqual([true, false]);
+
+  page.unmount();
+  const calls = axios.get.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(60 * 1000);
+  expect(axios.get.mock.calls.length).toBe(calls);
+});
+
+it('clears a failed listing once one succeeds', async () => {
+  vi.useFakeTimers();
+  axios.get.mockRejectedValue(new Error('Network Error'));
+  const page = await open();
+  await flushPromises();
+  expect(linked(page)).toEqual([false, false]);
+
+  axios.get.mockResolvedValue({ data: { files: BOTH } });
+  await vi.advanceTimersByTimeAsync(30 * 1000);
+  await flushPromises();
+  expect(linked(page)).toEqual([true, true]);
+});
+
+it('does not ask again for log files without logs get', async () => {
+  vi.useFakeTimers();
+  rbac.allowed = denyAll;
+  axios.get.mockResolvedValue({ data: { files: [] } });
+  await open();
+  await flushPromises();
+  const calls = axios.get.mock.calls.length;
+
+  await vi.advanceTimersByTimeAsync(60 * 1000);
+  ws.reconnect.forEach((f) => f());
+  expect(axios.get.mock.calls.length).toBe(calls);
+});
+
+it('spins the download buttons until it knows which files there are', async () => {
+  axios.get.mockReturnValue(new Promise(() => {}));
+  const page = await open();
+
+  const downloads = page
+    .findAll('.log-downloads button')
+    .map((b) => [
+      b.classes('is-loading'),
+      b.attributes('disabled') !== undefined,
+    ]);
+  expect(downloads).toEqual([
+    [true, true],
+    [true, true],
+  ]);
+});
+
+it.each([
+  ['with', allowOnly(['logs', 'get']), 2],
+  ['without', denyAll, 0],
+])('offers the downloads only %s logs get', async (_, role, want) => {
+  rbac.allowed = role;
+  axios.get.mockResolvedValue({ data: { files: [] } });
+  const page = await open();
+
+  expect(page.findAll('.log-downloads .button')).toHaveLength(want);
 });

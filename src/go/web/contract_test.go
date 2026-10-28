@@ -184,6 +184,7 @@ func serveContract(t *testing.T, set func(*serverOptions)) *httptest.Server {
 	o = newServerOptions()
 	o.features = map[string]bool{"webshark": true, "vm-mount": true, "tunneler-download": true}
 	o.websharkDir = t.TempDir()
+	o.systemLog = contractSystemLog(t)
 
 	if set != nil {
 		set(&o)
@@ -197,6 +198,19 @@ func serveContract(t *testing.T, set func(*serverOptions)) *httptest.Server {
 	t.Cleanup(server.Close)
 
 	return server
+}
+
+// contractSystemLog writes a system log file of one entry, and returns the
+// systemLog server option that names it.
+func contractSystemLog(t *testing.T) func() string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "phenix.log")
+	if err := os.WriteFile(path, []byte(`{"level":"INFO","msg":"contract"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	return func() string { return path }
 }
 
 // contractRoute is one API route of the contract, as a request the fixture
@@ -363,6 +377,11 @@ func contractRoutes() []contractRoute {
 
 		// state of health
 		{method: "GET", path: "/api/v1/soh", need: one(testRole("experiments", "list"))},
+
+		// the server's log files
+		{method: "GET", path: "/api/v1/logs/files", need: one(testRole("logs", "get")), want: ok},
+		{method: "GET", path: "/api/v1/logs/files/phenix", need: one(testRole("logs", "get")), want: ok},
+		{method: "HEAD", path: "/api/v1/logs/files/phenix", need: one(testRole("logs", "get")), want: ok},
 
 		// users: a token for another user also needs users/tokens create
 		{
@@ -897,7 +916,11 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 	)
 
 	return map[string]contractErrorCase{
-		"unknown config": {method: "GET", path: "/api/v1/configs/topology/none", want: http.StatusNotFound},
+		"unknown config":   {method: "GET", path: "/api/v1/configs/topology/none", want: http.StatusNotFound},
+		"unknown log file": {method: "GET", path: "/api/v1/logs/files/none", want: http.StatusNotFound},
+		"unconfigured minimega log file": {
+			method: "GET", path: "/api/v1/logs/files/minimega", want: http.StatusNotFound,
+		},
 		"current config": {method: "GET", path: config, header: []string{"If-None-Match", current}, want: http.StatusNotModified},
 		"update of stale config": {
 			method: "PUT", path: config, body: revisionTestTopology, want: http.StatusPreconditionFailed,

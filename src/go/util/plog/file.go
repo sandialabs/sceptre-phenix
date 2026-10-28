@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"phenix/util/plog/lumberjack"
@@ -49,6 +50,10 @@ var (
 	TimestampFormat = "2006-01-02 15:04:05.000" //nolint:gochecknoglobals // package level logger state
 	cacheLock       sync.Mutex                  //nolint:gochecknoglobals // package level logger state
 	cachePath       string                      //nolint:gochecknoglobals // package level logger state
+
+	// systemLogPath is the system log file's path, read by requests while the
+	// config watcher may change it.
+	systemLogPath atomic.Pointer[string] //nolint:gochecknoglobals // package level logger state
 )
 
 type FileHandlerOpts struct {
@@ -77,6 +82,7 @@ func AddFileHandler(fname string, opts FileHandlerOpts) {
 	}
 
 	fileLogger.Filename = filePath
+	systemLogPath.Store(&filePath)
 	cachePath = path.Join(path.Dir(filePath), "lookupCache.json")
 
 	fileLogger.MaxAge = opts.MaxAge
@@ -98,6 +104,16 @@ func AddFileHandler(fname string, opts FileHandlerOpts) {
 
 	// change to a go thread for main release .. in case has to build
 	loadCache()
+}
+
+// LogFilePath is the system log file records are written to, or "" when no
+// file handler was added.
+func LogFilePath() string {
+	if p := systemLogPath.Load(); p != nil {
+		return *p
+	}
+
+	return ""
 }
 
 func CloseFile() error {
@@ -130,6 +146,7 @@ func ChangeLogFile(fname string) {
 	if fileLogger.Filename != filePath {
 		_ = fileLogger.Close()
 		fileLogger.Filename = filePath
+		systemLogPath.Store(&filePath)
 		cachePath = path.Join(path.Dir(filePath), "lookupCache.json")
 
 		loadCache()

@@ -8276,6 +8276,164 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/logs/files":
+    get:
+      tags:
+        - Logs
+      summary: List the log files to download
+      description: >-
+        The log files `GET /logs/files/{name}` downloads: the server's own
+        system log (`log.system.path`) and minimega's
+        (`ui.logs.minimega-path`). Each shows whether it can be downloaded now
+        and, when it cannot, why. Needs the `logs` `get` permission.
+      operationId: getLogFiles
+      responses:
+        "200":
+          description: the log files, phenix's first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogFileList"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/logs/files/{name}":
+    get:
+      tags:
+        - Logs
+      summary: Download a log file
+      description: >-
+        Streams the server's system log file (`phenix`), as it is now and
+        without its rotated files, or minimega's log file (`minimega`) as an
+        attachment. The file grows as the server logs, so a download is the
+        file as it was when the download started. A resumed download
+        with `If-Range` sends the whole file again once it has grown. Each
+        download is audited as `log-download`. Needs the `logs` `get`
+        permission.
+      operationId: getLogFile
+      parameters:
+        - name: name
+          in: path
+          description: the log file, `phenix` or `minimega`
+          required: true
+          schema:
+            type: string
+            enum: [phenix, minimega]
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the log file
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+          content:
+            text/plain:
+              schema:
+                type: string
+                format: binary
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            no such log file, or the server writes no system log. Also the
+            server does not know where minimega's log is
+            (`ui.logs.minimega-path`), or finds no regular file there.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the log file cannot be opened or read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: the server may not read the log file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+    head:
+      tags:
+        - Logs
+      summary: Check a log file download
+      description: >-
+        The GET response's headers without the file: its size
+        (Content-Length), `ETag` and `Last-Modified`. Needs the `logs` `get`
+        permission.
+      operationId: headLogFile
+      parameters:
+        - name: name
+          in: path
+          description: the log file, `phenix` or `minimega`
+          required: true
+          schema:
+            type: string
+            enum: [phenix, minimega]
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the log file's headers
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            no such log file, or the server writes no system log. Also the
+            server does not know where minimega's log is
+            (`ui.logs.minimega-path`), or finds no regular file there.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the log file cannot be opened or read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: the server may not read the log file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/ws":
     get:
       tags:
@@ -11472,6 +11630,51 @@ components:
           type: string
           description: what the entry is about
           enum: [SYSTEM, ACTION, SECURITY, AUDIT, HTTP, MINIMEGA, SOH, SCORCH, PHENIX-APP]
+    LogFileList:
+      title: Log File List
+      type: object
+      description: The log files the server serves.
+      required: [files]
+      properties:
+        files:
+          title: Files
+          type: array
+          description: the log files, phenix's first
+          items:
+            $ref: "#/components/schemas/LogFile"
+    LogFile:
+      title: Log File
+      type: object
+      description: One log file the server serves, and whether it can serve it now.
+      required: [name, available]
+      properties:
+        name:
+          title: Name
+          type: string
+          description: the log file's name in `GET /logs/files/{name}`
+          enum: [phenix, minimega]
+        available:
+          title: Available
+          type: boolean
+          description: whether the file can be downloaded now
+          example: true
+        size:
+          title: Size
+          type: integer
+          format: int64
+          description: the file's size in bytes, when it is available
+          example: 1048576
+        modified:
+          title: Modified
+          type: string
+          format: date-time
+          description: when the file last changed, when it is available
+          example: "2026-01-01T10:00:00Z"
+        reason:
+          title: Reason
+          type: string
+          description: why the file cannot be downloaded, when it is not available
+          example: "the minimega log file is not configured (set ui.logs.minimega-path)"
     WebSocketMessage:
       title: Web Socket Message
       type: object

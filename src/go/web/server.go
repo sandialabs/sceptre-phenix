@@ -623,6 +623,8 @@ func newRouter(assets http.FileSystem) *mux.Router {
 	api.Handle("/login", weberror.ErrorHandler(Login)).Methods("GET", "POST", "OPTIONS")
 	api.Handle("/logout", weberror.ErrorHandler(Logout)).Methods("POST", "OPTIONS")
 	api.Handle("/logs", weberror.ErrorHandler(GetLogs)).Methods("GET", "OPTIONS")
+	api.Handle("/logs/files", weberror.ErrorHandler(GetLogFiles)).Methods("GET", "OPTIONS")
+	api.Handle("/logs/files/{name}", weberror.ErrorHandler(DownloadLogFile)).Methods("GET", "HEAD", "OPTIONS")
 	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
 	api.Handle("/console", weberror.ErrorHandler(CreateConsole)).Methods("POST", "OPTIONS")
 	api.Handle("/console/{pid}", weberror.ErrorHandler(GetConsole)).Methods("GET", "OPTIONS")

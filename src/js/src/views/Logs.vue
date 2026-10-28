@@ -2,7 +2,15 @@
   <div class="content">
     <b-field grouped position="is-right" style="margin: 12px 0px">
       <b-field expanded style="display: flex; align-items: center">
-        Logs shown: {{ filteredLogs.length }}
+        <div class="logs-shown">
+          <b-icon icon="file-alt" size="is-small" class="logs-shown-icon" />
+          <span class="logs-shown-label">Logs shown:</span>&#32;<span
+            class="logs-shown-count"
+            >{{ filteredLogs.length.toLocaleString('en-US') }}</span
+          ><span v-if="hiddenByFilters > 0" class="logs-shown-total"
+            >&#32;of {{ totalLogs.toLocaleString('en-US') }}</span
+          >
+        </div>
       </b-field>
       <b-field>
         <b-dropdown
@@ -123,6 +131,36 @@
           </button>
         </p>
       </b-field>
+      <b-field v-if="canDownloadLogs">
+        <div class="log-downloads">
+          <b-tooltip
+            v-for="file in logDownloads"
+            :key="file.name"
+            :label="file.tooltip"
+            type="is-dark"
+            position="is-bottom"
+            multilined>
+            <a
+              v-if="file.href"
+              class="button is-light"
+              :href="file.href"
+              download
+              :aria-label="`Download ${file.label}`">
+              <b-icon icon="download" size="is-small" />
+              <span>{{ file.label }}</span>
+            </a>
+            <b-button
+              v-else
+              disabled
+              :loading="logFilesLoading"
+              :aria-label="`Download ${file.label}`"
+              type="is-light"
+              icon-left="download">
+              {{ file.label }}
+            </b-button>
+          </b-tooltip>
+        </div>
+      </b-field>
     </b-field>
     <div style="position: relative; background: #484848">
       <div class="columns row mb-0 has-text-weight-bold mx-0">
@@ -151,19 +189,15 @@
         :item-size="36"
         key-field="id"
         style="width: 100%; height: 75vh">
-        <template v-slot="{ item, index }">
+        <template v-slot="{ item }">
           <div class="columns row">
             <div class="log-column level-column">
-              <b-tooltip
-                :label="item.level"
-                type="is-light"
-                :position="index < 2 ? 'is-right' : 'is-top'">
-                <b-icon
-                  :icon="getIconForLevel(item.level)[0]"
-                  size="is-small"
-                  :type="getIconForLevel(item.level)[1]"
-                  style="vertical-align: middle" />
-              </b-tooltip>
+              <span
+                class="tag level-tag"
+                :class="levelBadge(item.level).cls"
+                :title="item.level">
+                {{ levelBadge(item.level).label }}
+              </span>
             </div>
 
             <div class="log-column ts-column">{{ item.timestamp }}</div>
@@ -202,6 +236,9 @@
   import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
   import * as logsApi from '@/api/logs.js';
+  import { usePhenixStore } from '@/store.js';
+  import { levelBadge } from '@/utils/logLevels.js';
+  import { roleAllowed } from '@/utils/rbac.js';
   import {
     addWsHandler,
     onWsReconnect,
@@ -233,6 +270,10 @@
     'Last 1 Week': 7 * 24 * 60 * 60,
     'Custom Date Range': null,
   };
+  // the log files GET /logs/files lists, as the download buttons name them
+  const LOG_FILE_LABELS = { phenix: 'phēnix log', minimega: 'minimega log' };
+  // how often the page asks again which log files the server can send
+  const LOG_FILES_REFRESH_MS = 30 * 1000;
   const KNOWN_TYPES = [
     // keep in sync with util/plog/package.go
     'AUDIT',
@@ -245,6 +286,13 @@
     'MINIMEGA',
     'SYSTEM',
   ];
+
+  // where GET /logs/files/{name} downloads from; a link sends no auth header,
+  // so the session token goes in the query
+  function logFileURL(name, token) {
+    const query = token ? `?token=${encodeURIComponent(token)}` : '';
+    return `${import.meta.env.BASE_URL}api/v1/logs/files/${encodeURIComponent(name)}${query}`;
+  }
 
   export default {
     components: {
@@ -296,14 +344,22 @@
         },
       });
       this.loader.start();
+      this.loadLogFiles();
 
       addWsHandler(this.handleWs);
       // the server sends log lines only to clients that ask for them, and
       // forgets who asked when the websocket reconnects
       this.subscribeLogs('subscribe');
       this.offWsReconnect = onWsReconnect(
-        () => this.subscribeLogs('subscribe'),
+        () => {
+          this.subscribeLogs('subscribe');
+          this.refreshLogFiles();
+        },
         { spread: true },
+      );
+      this.logFilesTimer = setInterval(
+        () => this.refreshLogFiles(),
+        LOG_FILES_REFRESH_MS,
       );
     },
 
@@ -313,6 +369,8 @@
       removeWsHandler(this.handleWs);
       this.applySearch.cancel();
       this.loader.stop();
+      clearInterval(this.logFilesTimer);
+      this.logFilesAbort?.abort();
     },
 
     watch: {
@@ -361,6 +419,40 @@
         }
         return cache.result;
       },
+      // every loaded log, and those the filters leave out
+      totalLogs() {
+        this.logsVersion; // dependency: bumped when logs change
+        return this.logs.length;
+      },
+      hiddenByFilters() {
+        return this.totalLogs - this.filteredLogs.length;
+      },
+      canDownloadLogs() {
+        return roleAllowed('logs', 'get');
+      },
+      // each log file's download button: the link to it, or why there is none
+      logDownloads() {
+        const listed = new Map(this.logFiles.map((f) => [f.name, f]));
+        return Object.entries(LOG_FILE_LABELS).map(([name, label]) => {
+          const file = listed.get(name);
+          let reason = null;
+          if (this.logFilesLoading) reason = 'Checking for the log file';
+          else if (this.logFilesError !== null)
+            reason = `Could not check the log files: ${this.logFilesError}`;
+          else if (!file) reason = 'The server does not offer this log file';
+          else if (!file.available)
+            reason = `Unavailable: ${file.reason || 'the server cannot send it'}`;
+          return {
+            name,
+            label,
+            href:
+              reason === null
+                ? logFileURL(name, usePhenixStore().token)
+                : undefined,
+            tooltip: reason ?? `Download the ${label} file`,
+          };
+        });
+      },
       dateDropdownLabel: function () {
         if (this.dateModes[this.dateFilter] === null) {
           let dateOpts = {
@@ -384,6 +476,28 @@
 
     methods: {
       loadingText,
+      levelBadge,
+
+      // asks which log files the server can send, for the download buttons
+      async loadLogFiles() {
+        this.logFilesAbort?.abort();
+        const ctrl = (this.logFilesAbort = new AbortController());
+        try {
+          const resp = await logsApi.listLogFiles(ctrl.signal);
+          if (ctrl.signal.aborted) return;
+          this.logFiles = resp.data?.files ?? [];
+          this.logFilesError = null;
+        } catch (err) {
+          if (ctrl.signal.aborted) return;
+          this.logFilesError =
+            err?.response?.data?.message ?? err?.message ?? 'unknown error';
+        }
+        this.logFilesLoading = false;
+      },
+      // a log file can appear or go away while the page is open
+      refreshLogFiles() {
+        if (this.canDownloadLogs && !document.hidden) this.loadLogFiles();
+      },
 
       isDefaultView() {
         return this.endNow && this.dateFilter === DEFAULT_DATE_FILTER;
@@ -423,18 +537,6 @@
           this.logsVersion++;
         }
       },
-      getIconForLevel(level) {
-        switch (level) {
-          case 'ERROR':
-            return ['xmark-circle', 'is-danger'];
-          case 'WARN':
-            return ['exclamation-circle', 'is-warning'];
-          case 'INFO':
-            return ['info-circle', ''];
-          default:
-            return ['question-circle', 'is-light'];
-        }
-      },
     },
 
     data() {
@@ -450,6 +552,9 @@
         searchInput: '', // bound to the search box; applied to searchFilter debounced
         searchFilter: '',
         loaded: false, // false until the first logs arrive
+        logFiles: [], // GET /logs/files: the log files to download
+        logFilesLoading: true,
+        logFilesError: null, // why the log files could not be listed
       };
     },
   };
@@ -512,10 +617,78 @@
     font-size: 0.85em;
   }
 
+  /* the gap keeps the badge off the timestamp */
   .level-column {
-    width: 64px;
+    width: 76px;
+    padding: 0 12px 0 4px;
     text-align: center;
     justify-content: center;
+  }
+
+  /* each level's badge; text on fill is at least 4.5:1 */
+  .level-tag {
+    width: 100%;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .level-tag.level-debug {
+    background-color: #2b2b2b;
+    color: #e0e0e0;
+    box-shadow: inset 0 0 0 1px #8a8a8a;
+  }
+
+  .level-tag.level-info {
+    background-color: #1f6f8b;
+    color: #fff;
+  }
+
+  .level-tag.level-warn {
+    background-color: #ffe08a;
+    color: #363636;
+  }
+
+  .level-tag.level-error {
+    background-color: #a91f3d;
+    color: #fff;
+  }
+
+  .logs-shown {
+    display: inline-flex;
+    align-items: baseline;
+    padding: 0.4em 0.9em;
+    background-color: #484848;
+    border: 1px solid #8a8a8a;
+    border-left: 4px solid #da622d;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  .logs-shown-icon {
+    align-self: center;
+    margin-right: 0.5em;
+    color: #e0e0e0;
+  }
+
+  .logs-shown-label {
+    color: #dcdcdc;
+  }
+
+  .logs-shown-count {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.15em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .logs-shown-total {
+    color: #dcdcdc;
+  }
+
+  .log-downloads {
+    display: flex;
+    gap: 0.5em;
   }
 
   .ts-column {
