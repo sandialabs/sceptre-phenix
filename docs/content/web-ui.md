@@ -143,7 +143,9 @@ the connection; the menu catches up when the page reconnects.
 
 The `Paginate` toggle sits above its table, on the right, and appears only
 when the table has more rows than one page holds. It starts off in a fresh
-browser.
+browser. On a running experiment's page, the VM table's
+[`Labels` filter](vms.md#filtering-and-sorting-the-vm-table) sits to its left,
+so that row also appears when the experiment's VMs have labels.
 
 Each table remembers its own `Paginate` setting in the browser, not in your
 account. The setting is shared by everyone who uses that browser, survives

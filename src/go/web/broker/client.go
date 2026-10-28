@@ -678,6 +678,7 @@ func (c *Client) listVMs(job listJob) {
 
 	resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
 	util.SetVMListObservation(resp, observed)
+	resp.Labels = util.VMLabelsToProtobuf(util.VMLabels(expName, vms, query.ShowDNB, c.role))
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
@@ -716,6 +717,13 @@ func parseVMListQuery(payload map[string]any) util.VMQuery {
 	query := util.VMQuery{SortAsc: true} //nolint:exhaustruct // zero values are the defaults
 
 	query.Filter, _ = payload["filter"].(string)
+
+	// a malformed labels entry matches no VM rather than widening the list
+	if labels, ok := payload["labels"].([]any); ok {
+		for _, entry := range labels {
+			query.Labels = append(query.Labels, parseVMLabel(entry))
+		}
+	}
 	query.ShowDNB, _ = payload["show_dnb"].(bool)
 	query.SortCol, _ = payload["sort_column"].(string)
 
@@ -731,6 +739,20 @@ func parseVMListQuery(payload map[string]any) util.VMQuery {
 	}
 
 	return query
+}
+
+// parseVMLabel reads a labels entry, giving the zero label, which matches no
+// VM, for anything but an object with a string key and value.
+func parseVMLabel(entry any) util.VMLabel {
+	obj, _ := entry.(map[string]any)
+	key, keyOK := obj["key"].(string)
+	value, valueOK := obj["value"].(string)
+
+	if !keyOK || !valueOK {
+		return util.VMLabel{}
+	}
+
+	return util.VMLabel{Key: key, Value: value}
 }
 
 // pageValue reads a page number or size, which must be a positive whole

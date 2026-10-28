@@ -55,6 +55,11 @@ export function triggerApps(name, apps) {
   });
 }
 
+// GET /experiments/{name}/apps: whether each app is running, by name
+export function getExperimentApps(name) {
+  return axiosInstance.get('experiments/' + name + '/apps');
+}
+
 // POST /experiments/{name}/trigger?apps=soh, with the query in the URL
 export function triggerSoh(name) {
   return axiosInstance.post('experiments/' + name + '/trigger?apps=soh');

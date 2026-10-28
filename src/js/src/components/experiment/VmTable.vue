@@ -284,9 +284,13 @@
         {{ formatUptime(props.row.uptime) }}
       </template>
     </b-table-column>
+    <!-- sorted by how many labels and notes, ties by name A to Z -->
     <b-table-column
       v-if="columns.labels"
+      field="labels"
       label="Labels"
+      sortable
+      header-class="sort-inline"
       centered
       v-slot="props">
       <b-tooltip label="View/Edit Labels" type="is-dark">

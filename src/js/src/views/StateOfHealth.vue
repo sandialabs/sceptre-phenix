@@ -859,7 +859,7 @@
           }
 
           // the broker announces app runs as `apps/<app>`: start, then
-          // success or error
+          // success, error, or canceled
           case 'apps/soh': {
             if (msg.resource.name != this.$route.params.id) {
               return;
@@ -871,7 +871,8 @@
                 break;
               }
 
-              case 'success': {
+              case 'success':
+              case 'canceled': {
                 this.reload();
                 this.sohRunning = false;
                 break;

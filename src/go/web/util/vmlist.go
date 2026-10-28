@@ -1,9 +1,11 @@
 package util
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,9 +23,21 @@ const MaxPageValue = math.MaxInt32
 
 var ErrInvalidPage = errors.New("invalid pageNum or perPage")
 
+// labelsColumn is the sort column ordering VMs by their label count.
+const labelsColumn = "labels"
+
+// VMLabel is one key=value label a VM may carry.
+type VMLabel struct {
+	Key   string
+	Value string
+}
+
 // VMQuery is how a client narrows, orders and pages an experiment's VMs.
 type VMQuery struct {
-	Filter  string
+	Filter string
+	// Labels keeps the VMs carrying any of them; a label with no key matches
+	// no VM, so a malformed one never widens the list.
+	Labels  []VMLabel
 	ShowDNB bool
 	// SortCol is empty for the VMs' own order.
 	SortCol string
@@ -89,6 +103,10 @@ func SelectVMs(
 			continue
 		}
 
+		if len(q.Labels) > 0 && !hasAnyLabel(vm, q.Labels) {
+			continue
+		}
+
 		if role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
 			selected = append(selected, vm)
 		}
@@ -98,6 +116,8 @@ func SelectVMs(
 	case "":
 	case "delayed":
 		sortByDelay(selected, IndexTopology(topo), q.SortAsc)
+	case labelsColumn:
+		sortByLabels(selected, q.SortAsc)
 	default:
 		selected.SortBy(q.SortCol, q.SortAsc)
 	}
@@ -111,6 +131,107 @@ func SelectVMs(
 	return selected, total
 }
 
+// ParseVMLabel reads a key=value label, split at its first "=". It reports
+// false for one without an "=" or with an empty key.
+func ParseVMLabel(s string) (VMLabel, bool) {
+	key, value, ok := strings.Cut(s, "=")
+	if !ok || key == "" {
+		return VMLabel{}, false
+	}
+
+	return VMLabel{Key: key, Value: value}, true
+}
+
+// isUserLabel reports whether a minimega tag is a label people set, rather
+// than one phenix keeps for itself (its key starts with "__").
+func isUserLabel(key string) bool {
+	return !strings.HasPrefix(key, "__")
+}
+
+// labelCount is the number the VM table's Labels column shows for a VM: its
+// labels and its notes.
+func labelCount(vm mm.VM) int {
+	n := 0
+
+	for key := range vm.Tags {
+		if isUserLabel(key) || strings.HasPrefix(key, "__notes_") {
+			n++
+		}
+	}
+
+	return n
+}
+
+func hasAnyLabel(vm mm.VM, labels []VMLabel) bool {
+	for _, l := range labels {
+		if v, ok := vm.Tags[l.Key]; ok && l.Key != "" && isUserLabel(l.Key) && v == l.Value {
+			return true
+		}
+	}
+
+	return false
+}
+
+// sortByLabels orders VMs by their label count, ties by name A to Z in either
+// direction, so that VMs with as many labels read alphabetically.
+func sortByLabels(vms mm.VMs, asc bool) {
+	slices.SortStableFunc(vms, func(a, b mm.VM) int {
+		byCount := cmp.Compare(labelCount(a), labelCount(b))
+		if !asc {
+			byCount = -byCount
+		}
+
+		return cmp.Or(
+			byCount,
+			cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+			cmp.Compare(a.Name, b.Name),
+		)
+	})
+}
+
+// VMLabels returns the distinct labels on the VMs role may list (do-not-boot
+// ones only with showDNB), ordered by key then value, to filter by.
+func VMLabels(expName string, vms []mm.VM, showDNB bool, role rbac.Role) []VMLabel {
+	seen := map[VMLabel]struct{}{}
+
+	for _, vm := range vms {
+		if vm.DoNotBoot && !showDNB {
+			continue
+		}
+
+		if !role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
+			continue
+		}
+
+		for key, value := range vm.Tags {
+			if key != "" && isUserLabel(key) {
+				seen[VMLabel{Key: key, Value: value}] = struct{}{}
+			}
+		}
+	}
+
+	labels := make([]VMLabel, 0, len(seen))
+	for l := range seen {
+		labels = append(labels, l)
+	}
+
+	slices.SortFunc(labels, func(a, b VMLabel) int {
+		return cmp.Or(cmp.Compare(a.Key, b.Key), cmp.Compare(a.Value, b.Value))
+	})
+
+	return labels
+}
+
+// VMLabelsToProtobuf converts the labels VMLabels returns.
+func VMLabelsToProtobuf(labels []VMLabel) []*proto.VMLabel {
+	out := make([]*proto.VMLabel, len(labels))
+	for i, l := range labels {
+		out[i] = &proto.VMLabel{Key: l.Key, Value: l.Value}
+	}
+
+	return out
+}
+
 // VMListToProtobuf converts a page of an experiment's VMs; total is the count
 // before paging.
 func VMListToProtobuf(expName string, vms mm.VMs, total int, topo ifaces.TopologySpec) *proto.VMList {
@@ -122,6 +243,8 @@ func VMListToProtobuf(expName string, vms mm.VMs, total int, topo ifaces.Topolog
 		ObservedAt:     "",
 		// only a bulk update fills it
 		Errors: nil,
+		// set by the lists that offer a label filter
+		Labels: nil,
 	}
 	nodes := IndexTopology(topo)
 

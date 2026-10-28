@@ -325,6 +325,12 @@ const requests = [
     ['experiments/exp/trigger', null, { params: { apps: 'soh,scorch' } }],
   ],
   [
+    'getExperimentApps',
+    () => experimentsApi.getExperimentApps('exp'),
+    'get',
+    ['experiments/exp/apps'],
+  ],
+  [
     'triggerSoh',
     () => experimentsApi.triggerSoh('exp'),
     'post',

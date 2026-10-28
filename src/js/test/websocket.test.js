@@ -270,6 +270,21 @@ describe('messages', () => {
     expect(JSON.parse(sockets[1].sent.at(-1))).toEqual({ n: 149 });
   });
 
+  it('longer than the server reads are never sent, so it never closes the socket', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    ws.connectWebsocket();
+    sockets[0].open();
+    const bytes = (msg) => new TextEncoder().encode(JSON.stringify(msg)).length;
+    fc.assert(
+      fc.property(fc.string({ unit: 'binary', maxLength: 1100 }), (text) => {
+        const sent = sockets[0].sent.length;
+        ws.sendWsMsg({ filter: text });
+        const wasSent = sockets[0].sent.length > sent;
+        expect(wasSent).toBe(bytes({ filter: text }) <= 2048);
+      }),
+    );
+  });
+
   it('are dropped while no socket is wanted', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     ws.sendWsMsg({ n: 1 });

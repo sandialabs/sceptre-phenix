@@ -30,6 +30,19 @@ type CreateTunnel struct {
 	User       string
 }
 
+// TriggerStateCanceled is the state published when a triggered app run is canceled.
+const TriggerStateCanceled = "canceled"
+
+// publishRunResult announces how an app's running stage ended: error or success, never both.
+func publishRunResult(expName, appName string, err error) {
+	pub := TriggerPublication{Experiment: expName, App: appName, State: "success"} //nolint:exhaustruct // partial initialization
+	if err != nil {
+		pub.State, pub.Error = "error", err
+	}
+
+	pubsub.Publish("trigger-app", pub)
+}
+
 type TriggerPublication struct {
 	Experiment string
 	Verb       string
@@ -682,13 +695,6 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 
 							err = a.Running(ctx, exp)
 							if err != nil {
-								pubsub.Publish("trigger-app", TriggerPublication{ //nolint:exhaustruct // partial initialization
-									Experiment: exp.Spec.ExperimentName(),
-									App:        app.Name(),
-									State:      "error",
-									Error:      err,
-								})
-
 								plog.Error(
 									plog.TypePhenixApp,
 									"[✗] error periodically running app",
@@ -699,11 +705,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 								)
 							}
 
-							pubsub.Publish("trigger-app", TriggerPublication{ //nolint:exhaustruct // partial initialization
-								Experiment: exp.Spec.ExperimentName(),
-								App:        app.Name(),
-								State:      "success",
-							})
+							publishRunResult(exp.Spec.ExperimentName(), app.Name(), err)
 
 							exp.Status.SetAppRunning(app.Name(), false)
 

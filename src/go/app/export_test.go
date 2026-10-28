@@ -4,3 +4,6 @@ package app
 func UnregisterUserApp(name string) {
 	delete(apps, name)
 }
+
+// PublishRunResult exposes publishRunResult to tests.
+var PublishRunResult = publishRunResult //nolint:gochecknoglobals // test export

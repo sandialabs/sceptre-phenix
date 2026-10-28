@@ -3,7 +3,10 @@ package util
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,11 +64,11 @@ func listRole() rbac.Role {
 
 func TestSelectVMs(t *testing.T) {
 	vms := []mm.VM{
-		{Name: "c", Host: "h1"},
-		{Name: "a", Host: "h2"},
-		{Name: "dnb", DoNotBoot: true},
-		{Name: "hidden"},
-		{Name: "b", Host: "h1"},
+		{Name: "c", Host: "h1", Tags: map[string]string{"role": "web"}},
+		{Name: "a", Host: "h2", Tags: map[string]string{"tier": "db", "__notes_1": "hi"}},
+		{Name: "dnb", DoNotBoot: true, Tags: map[string]string{"role": "web"}},
+		{Name: "hidden", Tags: map[string]string{"role": "web"}},
+		{Name: "b", Host: "h1", Tags: map[string]string{"role": "app"}},
 	}
 
 	tests := []struct {
@@ -82,6 +85,15 @@ func TestSelectVMs(t *testing.T) {
 		{"past the last page", VMQuery{Page: 3, Size: 2}, []string{}, 3},
 		{"filtered", VMQuery{Filter: "h1", SortCol: "name", SortAsc: true}, []string{"b", "c"}, 2},
 		{"unparsable filter matches nothing", VMQuery{Filter: "(("}, []string{}, 0},
+		{
+			"any of the labels",
+			VMQuery{Labels: []VMLabel{{"role", "web"}, {"tier", "db"}}, SortCol: "name", SortAsc: true},
+			[]string{"a", "c"}, 2,
+		},
+		{"labels and filter both", VMQuery{Filter: "h1", Labels: []VMLabel{{"role", "web"}}}, []string{"c"}, 1},
+		{"a label's value must match", VMQuery{Labels: []VMLabel{{"role", "db"}}}, []string{}, 0},
+		{"a label with no key matches nothing", VMQuery{Labels: []VMLabel{{}}}, []string{}, 0},
+		{"notes are not labels", VMQuery{Labels: []VMLabel{{"__notes_1", "hi"}}}, []string{}, 0},
 	}
 
 	for _, tc := range tests {
@@ -144,6 +156,179 @@ func TestSortByDelay(t *testing.T) {
 	}
 }
 
+// Sorting by labels counts each VM's labels and notes, as the Labels column
+// shows them, and breaks ties by name A to Z in either direction.
+func TestSortByLabels(t *testing.T) {
+	tags := func(keys ...string) map[string]string {
+		m := map[string]string{}
+		for _, k := range keys {
+			m[k] = "v"
+		}
+
+		return m
+	}
+
+	vms := []mm.VM{
+		{Name: "b2", Tags: tags("x", "y")},
+		{Name: "none"},
+		{Name: "B1", Tags: tags("x", "__notes_1")},
+		{Name: "a2", Tags: tags("x", "y", "__internal")},
+		{Name: "one", Tags: tags("x")},
+	}
+
+	tests := []struct {
+		name string
+		asc  bool
+		want []string
+	}{
+		{"ascending", true, []string{"none", "one", "a2", "B1", "b2"}},
+		{"descending", false, []string{"a2", "B1", "b2", "one", "none"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			query := VMQuery{SortCol: "labels", SortAsc: tc.asc}
+
+			page, _ := SelectVMs("exp", vms, nil, query, listRole())
+			if diff := cmp.Diff(tc.want, vmNames(page)); diff != "" {
+				t.Errorf("SelectVMs(exp, %+v) mismatch (-want +got):\n%s", query, diff)
+			}
+		})
+	}
+}
+
+// genLabeledVMs draws VMs with distinct names and a few labels and notes each.
+func genLabeledVMs() *rapid.Generator[[]mm.VM] {
+	vm := rapid.Custom(func(t *rapid.T) mm.VM {
+		keys := rapid.SliceOfDistinct(
+			rapid.SampledFrom([]string{"a", "b", "c", "__notes_1", "__hidden"}),
+			rapid.ID[string],
+		).Draw(t, "keys")
+		tags := map[string]string{}
+
+		for _, k := range keys {
+			tags[k] = rapid.SampledFrom([]string{"x", "y"}).Draw(t, "value")
+		}
+
+		return mm.VM{Name: rapid.StringMatching(`[a-cA-C]{1,3}`).Draw(t, "name"), Tags: tags}
+	})
+
+	return rapid.SliceOfDistinct(vm, func(vm mm.VM) string { return vm.Name })
+}
+
+// In either direction, the label sort orders VMs by count and then by name A
+// to Z, and keeps every VM.
+func TestSortByLabelsOrdersByCountThenName(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		vms := genLabeledVMs().Draw(t, "vms")
+		asc := rapid.Bool().Draw(t, "asc")
+
+		sorted := slices.Clone(mm.VMs(vms))
+		sortByLabels(sorted, asc)
+
+		if diff := cmp.Diff(vmNames(vms), vmNames(sorted), cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+			t.Fatalf("sortByLabels changed the VMs (-before +after):\n%s", diff)
+		}
+
+		for i := 1; i < len(sorted); i++ {
+			prev, next := sorted[i-1], sorted[i]
+			pc, nc := labelCount(prev), labelCount(next)
+
+			if pc == nc {
+				if strings.ToLower(prev.Name) > strings.ToLower(next.Name) {
+					t.Fatalf("VMs %q and %q have %d labels each but are not in name order", prev.Name, next.Name, pc)
+				}
+
+				continue
+			}
+
+			if (pc < nc) != asc {
+				t.Fatalf("VM %q (%d labels) before %q (%d labels) with ascending %v", prev.Name, pc, next.Name, nc, asc)
+			}
+		}
+	})
+}
+
+func TestVMLabels(t *testing.T) {
+	vms := []mm.VM{
+		{Name: "b", Tags: map[string]string{"role": "web", "tier": "db", "__notes_1": "hi"}},
+		{Name: "a", Tags: map[string]string{"role": "app", "tier": "db"}},
+		{Name: "dnb", DoNotBoot: true, Tags: map[string]string{"zone": "dmz"}},
+		{Name: "hidden", Tags: map[string]string{"secret": "yes"}},
+	}
+
+	tests := []struct {
+		name    string
+		showDNB bool
+		want    []VMLabel
+	}{
+		{"booting VMs only", false, []VMLabel{{"role", "app"}, {"role", "web"}, {"tier", "db"}}},
+		{"do-not-boot VMs too", true, []VMLabel{{"role", "app"}, {"role", "web"}, {"tier", "db"}, {"zone", "dmz"}}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := VMLabels("exp", vms, tc.showDNB, listRole())
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("VMLabels(exp, showDNB %v) mismatch (-want +got):\n%s", tc.showDNB, diff)
+			}
+		})
+	}
+}
+
+// Every label VMLabels offers selects at least one VM, and filtering by all
+// of them lists every VM that carries a label.
+func TestVMLabelsEachSelectsAVM(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		vms := genLabeledVMs().Draw(t, "vms")
+		labels := VMLabels("exp", vms, true, listRole())
+
+		for _, l := range labels {
+			if page, _ := SelectVMs("exp", vms, nil, VMQuery{Labels: []VMLabel{l}, ShowDNB: true}, listRole()); len(page) == 0 {
+				t.Fatalf("label %+v selects no VM", l)
+			}
+		}
+
+		var labeled int
+
+		for _, vm := range vms {
+			if slices.ContainsFunc(slices.Collect(maps.Keys(vm.Tags)), isUserLabel) {
+				labeled++
+			}
+		}
+
+		if _, total := SelectVMs("exp", vms, nil, VMQuery{Labels: labels, ShowDNB: true}, listRole()); len(labels) > 0 && total != labeled {
+			t.Fatalf("filtering by every label lists %d VMs, want %d", total, labeled)
+		}
+	})
+}
+
+func TestParseVMLabel(t *testing.T) {
+	tests := []struct {
+		in   string
+		want VMLabel
+		ok   bool
+	}{
+		{"role=web", VMLabel{"role", "web"}, true},
+		{"role=", VMLabel{"role", ""}, true},
+		{"url=a=b", VMLabel{"url", "a=b"}, true},
+		{"role", VMLabel{}, false},
+		{"=web", VMLabel{}, false},
+		{"", VMLabel{}, false},
+	}
+
+	for _, tc := range tests {
+		got, ok := ParseVMLabel(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ParseVMLabel(%q) = %+v, %v; want %+v, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
 // genVMListVMs draws an experiment's VMs, some hidden from listRole or not booting.
 func genVMListVMs() *rapid.Generator[[]mm.VM] {
 	vm := rapid.Custom(func(t *rapid.T) mm.VM {
@@ -165,7 +350,7 @@ func TestSelectVMsPagesPartitionTheList(t *testing.T) {
 		vms := genVMListVMs().Draw(t, "vms")
 		query := VMQuery{
 			ShowDNB: rapid.Bool().Draw(t, "showDNB"),
-			SortCol: rapid.SampledFrom([]string{"", "name", "host", "uptime"}).Draw(t, "sortCol"),
+			SortCol: rapid.SampledFrom([]string{"", "name", "host", "uptime", "labels"}).Draw(t, "sortCol"),
 			SortAsc: rapid.Bool().Draw(t, "sortAsc"),
 			Size:    rapid.IntRange(1, 5).Draw(t, "size"),
 		}

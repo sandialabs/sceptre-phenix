@@ -41,6 +41,10 @@ message Experiment {
 	// why phenix could not resume the delayed VM starts or post-start apps the
 	// experiment's start still waited on when phenix restarted; empty otherwise
 	string interrupted = 23;
+
+	// the experiment's scenario, then each other scenario its apps take their
+	// configuration from (fromScenario), in app order; empty with no scenario
+	repeated string scenarios = 24;
 }
 
 message ExperimentList {

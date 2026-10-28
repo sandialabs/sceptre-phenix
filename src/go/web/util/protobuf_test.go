@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
+	"pgregory.net/rapid"
 
 	"phenix/api/vm"
 	"phenix/store"
@@ -46,7 +47,9 @@ func testExperiment(t *testing.T, startTime string) types.Experiment {
 		{GeneralF: &v1.General{HostnameF: "plain"}, ExternalF: &yes, DelayF: &v1.Delay{TimerF: "9m"}},
 		{GeneralF: &v1.General{HostnameF: "dnb"}},
 	}})
-	exp.Spec.SetScenario(&v2.ScenarioSpec{AppsF: []*v2.ScenarioApp{{NameF: "ntp"}, {NameF: "soh"}}})
+	exp.Spec.SetScenario(&v2.ScenarioSpec{AppsF: []*v2.ScenarioApp{
+		{NameF: "ntp"}, {NameF: "soh", FromScenarioF: "base"}, {NameF: "x", FromScenarioF: "scn"},
+	}})
 
 	if err := exp.Spec.SetVLANRange(100, 200, true); err != nil {
 		t.Fatal(err)
@@ -93,7 +96,7 @@ func TestExperimentToProtobuf(t *testing.T) {
 		VMs                      []vmFields
 		Name, Topology, Scenario string
 		StartTime, Status        string
-		Apps                     []string
+		Apps, Scenarios          []string
 		Interrupted              string
 	}
 
@@ -158,7 +161,8 @@ func TestExperimentToProtobuf(t *testing.T) {
 				Name:    "exp", Topology: "topo", Scenario: "scn",
 				StartTime: tc.startTime,
 				Status:    string(cache.StatusStarted),
-				Apps:      []string{"ntp", "soh"},
+				Apps:      []string{"ntp", "soh", "x"},
+				Scenarios: []string{"scn", "base"},
 			}
 
 			if running {
@@ -192,6 +196,7 @@ func TestExperimentToProtobuf(t *testing.T) {
 				StartTime:  pb.GetStartTime(),
 				Status:     pb.GetStatus(),
 				Apps:       pb.GetApps(),
+				Scenarios:  pb.GetScenarios(),
 
 				Interrupted: pb.GetInterrupted(),
 			}
@@ -201,6 +206,84 @@ func TestExperimentToProtobuf(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExperimentScenarios(t *testing.T) {
+	apps := func(from ...string) []ifaces.ScenarioApp {
+		out := make([]ifaces.ScenarioApp, len(from))
+		for i, f := range from {
+			out[i] = &v2.ScenarioApp{NameF: "app", FromScenarioF: f}
+		}
+
+		return out
+	}
+
+	tests := []struct {
+		name     string
+		scenario string
+		apps     []ifaces.ScenarioApp
+		want     []string
+	}{
+		{"no scenario", "", nil, nil},
+		{"one scenario", "scn", apps("", ""), []string{"scn"}},
+		{"its own scenario named again", "scn", apps("scn"), []string{"scn"}},
+		{"others once each, in app order", "scn", apps("b", "", "a", "b"), []string{"scn", "b", "a"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, experimentScenarios(tc.scenario, tc.apps)); diff != "" {
+				t.Errorf("experimentScenarios(%q, ...) mismatch (-want +got):\n%s", tc.scenario, diff)
+			}
+		})
+	}
+}
+
+// The scenarios start with the experiment's own, name each scenario the apps
+// take configuration from, and name none twice.
+func TestExperimentScenariosListsEachOnce(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		name := rapid.SampledFrom([]string{"", "a", "b", "c"})
+		scenario := name.Draw(t, "scenario")
+		from := rapid.SliceOf(name).Draw(t, "from")
+
+		apps := make([]ifaces.ScenarioApp, len(from))
+		for i, f := range from {
+			apps[i] = &v2.ScenarioApp{NameF: "app", FromScenarioF: f}
+		}
+
+		got := experimentScenarios(scenario, apps)
+
+		if scenario != "" && (len(got) == 0 || got[0] != scenario) {
+			t.Fatalf("experimentScenarios(%q, %v) = %v, want %q first", scenario, from, got, scenario)
+		}
+
+		want := map[string]bool{}
+		if scenario != "" {
+			want[scenario] = true
+		}
+
+		for _, f := range from {
+			if f != "" {
+				want[f] = true
+			}
+		}
+
+		seen := map[string]bool{}
+		for _, g := range got {
+			if seen[g] || !want[g] {
+				t.Fatalf("experimentScenarios(%q, %v) = %v: %q is repeated or unexpected", scenario, from, got, g)
+			}
+
+			seen[g] = true
+		}
+
+		if len(seen) != len(want) {
+			t.Fatalf("experimentScenarios(%q, %v) = %v, want each of %v", scenario, from, got, want)
+		}
+	})
 }
 
 func TestVMToProtobuf(t *testing.T) {

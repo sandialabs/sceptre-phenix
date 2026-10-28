@@ -133,6 +133,28 @@ Use "phenix experiment [command] --help" for more information about a command.
 !!! note
     For a list of global flags supported across all `phenix` subcommands, see [Global Flags](settings.md#global-flags).
 
+## The Running Experiment Page
+
+Click a running experiment's name to open its page. The card at the top left
+names the experiment and shows, as labeled tiles, the scenario it was created
+from (`Scenarios` when its apps also take configuration from other scenarios
+through `fromScenario`, listed after its own), its topology, how many VMs and
+VLANs it has, and when it started, as the `Start Time` column shows it; hold
+the pointer over the start time to see the server's timestamp. When your role
+may read a scenario or topology config, its name opens it in the Configs page's
+viewer.
+
+The `Apps` box at the top right shows each of the experiment's apps as a tile,
+laid out in as few even rows as fit; the tiles of a shorter last row widen to
+fill it. Each tile says, in words
+and with a colored edge, what the page last heard the app doing: `Running`,
+`Last run succeeded`, `Last run failed`, or `Last run canceled`, or else
+whether it is `Built-in` (`ntp`, `serial`, `startup`, `vrouter` and `scorch`,
+which phēnix runs at each stage itself) or a `User app`. Click a user app's tile to open the trigger
+dialog with that app checked, or `Trigger` to pick the apps yourself. `Trigger`
+is greyed out, with the reason in its tooltip, when your role may not trigger
+apps or the experiment has only built-in apps.
+
 ## Create a New Experiment
 
 ### From the Web-UI

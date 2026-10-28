@@ -518,6 +518,166 @@ describe('searching', () => {
   });
 });
 
+describe('the header', () => {
+  const tileText = (page) =>
+    page.findAll('.app-tile').map((tile) => textOf(tile));
+
+  it('lists every scenario and the apps, each as last heard of', async () => {
+    const page = await openPage();
+    await apply({
+      ...running([]),
+      scenario: 'scn',
+      scenarios: ['scn', 'base'],
+      apps: ['ntp', 'mine'],
+    });
+
+    expect(textOf(page.find('.exp-fact-scenarios'))).toContain('scn, base');
+    expect(tileText(page)).toEqual(['ntp, Built-in', 'Trigger mine, User app']);
+
+    await handle(wsMsg('apps/mine', 'exp1', 'start'));
+    await handle(wsMsg('apps/ntp', 'exp2', 'error'));
+    expect(tileText(page)).toEqual(['ntp, Built-in', 'Trigger mine, Running']);
+    await handle(wsMsg('apps/mine', 'exp1', 'error', { error: 'boom' }));
+    expect(tileText(page)).toEqual([
+      'ntp, Built-in',
+      'Trigger mine, Last run failed',
+    ]);
+    await handle(wsMsg('apps/mine', 'exp1', 'canceled'));
+    expect(tileText(page)).toEqual([
+      'ntp, Built-in',
+      'Trigger mine, Last run canceled',
+    ]);
+  });
+
+  it('shows the apps running when it opened', async () => {
+    axios.get.mockImplementation((url) =>
+      url === 'experiments/exp1/apps'
+        ? Promise.resolve({ data: { mine: true, ntp: false } })
+        : Promise.reject(new Error('no netflow')),
+    );
+    const page = await openPage();
+    await apply({ ...running([]), apps: ['ntp', 'mine'] });
+
+    expect(tileText(page)).toEqual(['ntp, Built-in', 'Trigger mine, Running']);
+  });
+
+  it("opens the trigger dialog with an app's tile picked", async () => {
+    const page = await openPage();
+    await apply({ ...running([]), apps: ['ntp', 'mine', 'other'] });
+
+    await page.find('.app-tile button').trigger('click');
+    const modal = page.findComponent({ name: 'TriggerAppsModal' });
+    expect(modal.props()).toMatchObject({
+      active: true,
+      triggerable: ['mine', 'other'],
+      apps: ['mine'],
+    });
+  });
+});
+
+describe('filtering by label', () => {
+  const web = { key: 'role', value: 'web' };
+  const filter = (page) => page.findComponent({ name: 'VmLabelFilter' });
+  const lastList = () => vmLists().at(-1).request;
+  // a VM list with the labels on the experiment's VMs, of total VMs in all
+  const labeledList = (vms, labels, total = vms.length) =>
+    wsMsg('experiment/vms', 'exp1', 'list', { vms, total, labels });
+
+  it('offers the labels the server lists, beside Paginate', async () => {
+    const page = await openPage();
+    await apply({ ...running([]), vm_count: 11 });
+    await handle(labeledList([{ name: 'vm1' }], [web], 11));
+
+    // the filter comes first, to the left of the Paginate switch
+    const html = page.find('.vm-table-bar').html();
+    expect(html.indexOf('vm-label-filter-trigger')).toBeGreaterThan(-1);
+    expect(html.indexOf('vm-label-filter-trigger')).toBeLessThan(
+      html.indexOf('Paginate'),
+    );
+    expect(filter(page).props('options')).toEqual([web]);
+  });
+
+  it('keeps Paginate beside the filter while the checked labels fit a page', async () => {
+    const page = await openPage();
+    await apply({ ...running([]), vm_count: 11 });
+    await handle(labeledList([{ name: 'vm1' }], [web], 11));
+
+    filter(page).vm.$emit('update:picked', [web]);
+    await handle(labeledList([{ name: 'vm1', tags: { role: 'web' } }], [web]));
+    expect(textOf(page.find('.vm-table-bar'))).toContain('Paginate');
+  });
+
+  it('leaves the bar out with no labels and one page', async () => {
+    const page = await openPage();
+    await apply(running([]));
+    await handle(labeledList([{ name: 'vm1' }], []));
+    expect(page.find('.vm-table-bar').exists()).toBe(false);
+  });
+
+  it('lists the VMs with the labels checked, from the first page, uncached', async () => {
+    const page = await openPage();
+    await apply({ ...running([]), vm_count: 30 });
+    // paged, and on the third page
+    Object.assign(page.vm.table, { isPaginated: true, currentPage: 3 });
+    await handle(labeledList([{ name: 'vm1', tags: { role: 'web' } }], [web]));
+    clearPageCache();
+
+    filter(page).vm.$emit('update:picked', [web]);
+    await flushPromises();
+    expect(lastList()).toMatchObject({
+      labels: [web],
+      filter: '',
+      page_number: 1,
+    });
+
+    await handle(labeledList([], [web]));
+    expect(emptyText(page)).toBe('No VMs have any of the checked labels');
+    expect(cachedPage(experimentKey('exp1'))).toBeUndefined();
+
+    await page.find('.autocomplete input').setValue('db');
+    expect(emptyText(page)).toBe(
+      'No VMs match your search and the checked labels',
+    );
+  });
+
+  it('offers no more labels once the request would be too long for the server', async () => {
+    const page = await openPage();
+    await apply({ ...running([]), vm_count: 30 });
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      key: `key-${i}`,
+      value: 'v'.repeat(40),
+    }));
+    await handle(labeledList([{ name: 'vm1' }], many, 30));
+    const boxes = () => page.findAll('.vm-label-filter-list input');
+    expect(boxes().every((box) => !box.element.disabled)).toBe(true);
+
+    // checks every label it still offers, in order
+    for (let i = 0; i < many.length; i++) {
+      const box = boxes()[i];
+      if (!box.element.disabled) await box.setValue(true);
+    }
+    const disabled = boxes().filter((box) => box.element.disabled);
+    expect(disabled.length).toBeGreaterThan(0);
+    expect(lastList().labels.length + disabled.length).toBe(many.length);
+    expect(textOf(page.find('.vm-label-filter'))).toContain(
+      'Uncheck a label to check another',
+    );
+    const bytes = (msg) => new TextEncoder().encode(JSON.stringify(msg)).length;
+    expect(vmLists().every((msg) => bytes(msg) <= 2048)).toBe(true);
+  });
+
+  it('sorts the VMs by label count through the server', async () => {
+    const page = await openPage();
+    await apply(running([]));
+
+    page.findComponent({ name: 'VmTable' }).vm.$emit('sort', 'labels', 'desc');
+    expect(lastList()).toMatchObject({
+      sort_column: 'labels',
+      sort_asc: false,
+    });
+  });
+});
+
 describe('the netflow capture', () => {
   class FakeWebSocket extends EventTarget {
     static instances = [];

@@ -622,6 +622,17 @@ describe('SohOverview view', () => {
     expect(loaderSpy.load).toHaveBeenCalledTimes(1);
   });
 
+  it('reloads when a soh run is canceled', async () => {
+    vi.useFakeTimers();
+    await page([summary()]);
+
+    await publish(wsMsg('apps/soh', 'ot-substation', 'start'));
+    await publish(wsMsg('apps/soh', 'ot-substation', 'canceled'));
+    vi.advanceTimersByTime(RELOAD_DELAY_MS);
+    expect(loaderSpy.load).toHaveBeenCalledTimes(1);
+    expect(notify.show).not.toHaveBeenCalled();
+  });
+
   it('reloads for VM state changes of running experiments only', async () => {
     vi.useFakeTimers();
     await page([

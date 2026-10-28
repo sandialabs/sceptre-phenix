@@ -56,6 +56,19 @@ func TestParseVMListQuery(t *testing.T) {
 				"sort_asc": "no", "page_number": "2", "page_size": "10"}`,
 			want: util.VMQuery{SortAsc: true},
 		},
+		"labels": {
+			payload: `{"labels": [{"key": "role", "value": "web"}, {"key": "tier", "value": ""}]}`,
+			want:    util.VMQuery{Labels: []util.VMLabel{{Key: "role", Value: "web"}, {Key: "tier"}}, SortAsc: true},
+		},
+		// a malformed label matches no VM rather than widening the list
+		"malformed labels": {
+			payload: `{"labels": ["role=web", {"key": "role"}, {"key": 1, "value": "x"}, null]}`,
+			want:    util.VMQuery{Labels: []util.VMLabel{{}, {}, {}, {}}, SortAsc: true},
+		},
+		"labels not a list": {
+			payload: `{"labels": {"key": "role", "value": "web"}}`,
+			want:    util.VMQuery{SortAsc: true},
+		},
 		"page without size": {
 			payload: `{"page_number": 2}`,
 			want:    util.VMQuery{SortAsc: true},

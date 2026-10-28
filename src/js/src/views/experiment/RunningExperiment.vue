@@ -97,27 +97,18 @@
       @close="resetOpticalDiscModal"
       @insert="insertOpticalDisc()"
       @eject="ejectOpticalDisc()" />
-    <div class="level is-vcentered">
-      <div class="level-left is-block">
-        <span style="font-weight: bold; font-size: x-large"
-          >Experiment: {{ $route.params.id }}</span
-        ><br />
-        <span v-if="experiment.scenario" style="font-weight: bold"
-          >Scenario: {{ experiment.scenario }}</span
-        >
-      </div>
-      <div
-        class="level-right is-clickable"
-        v-if="experiment.scenario"
-        style="max-width: 50%"
-        @click="getApps()">
-        <span style="font-weight: bold">Apps:</span>&nbsp;
-        <div style="display: flex; flex-wrap: wrap; gap: 4px">
-          <b-tag v-for="(a, index) in experiment.apps" :key="index">
-            {{ a }}
-          </b-tag>
-        </div>
-      </div>
+    <div class="experiment-header">
+      <ExperimentSummary
+        class="experiment-header-summary"
+        :name="$route.params.id"
+        :experiment="experiment" />
+      <ExperimentAppsBox
+        v-if="experiment.apps?.length"
+        class="experiment-header-apps"
+        :experiment="$route.params.id"
+        :apps="experiment.apps"
+        :states="appStates"
+        @trigger="getApps" />
     </div>
     <b-notification
       v-if="experiment.interrupted"
@@ -284,8 +275,19 @@
             role="status">
             minimega did not answer. Showing the VMs as configured.
           </b-notification>
-          <b-field v-if="paginationNeeded" grouped position="is-right">
-            <div class="control is-flex">
+          <b-field
+            v-if="paginationNeeded || labelChoices.length || labelFilter.length"
+            grouped
+            position="is-right"
+            class="vm-table-bar">
+            <div class="control">
+              <VmLabelFilter
+                :options="labelChoices"
+                :picked="labelFilter"
+                :fits="labelsFit"
+                @update:picked="filterByLabels" />
+            </div>
+            <div v-if="paginationNeeded" class="control is-flex">
               <b-switch
                 v-model="table.isPaginated"
                 @update:modelValue="updateTable()"
@@ -362,7 +364,9 @@
 
 <script>
   import { getCurrentInstance } from 'vue';
+  import ExperimentAppsBox from '@/components/experiment/ExperimentAppsBox.vue';
   import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
+  import ExperimentSummary from '@/components/experiment/ExperimentSummary.vue';
   import VMLabelsModal from '@/components/VMLabelsModal.vue';
   import NetflowPanel from '@/components/experiment/NetflowPanel.vue';
   import OpticalDiscModal from '@/components/experiment/OpticalDiscModal.vue';
@@ -372,6 +376,7 @@
   import VlanModal from '@/components/experiment/VlanModal.vue';
   import VmDetailsCard from '@/components/experiment/VmDetailsCard.vue';
   import VmFilenamesModal from '@/components/experiment/VmFilenamesModal.vue';
+  import VmLabelFilter from '@/components/experiment/VmLabelFilter.vue';
   import VmSelectionToolbar from '@/components/experiment/VmSelectionToolbar.vue';
   import VmTable from '@/components/experiment/VmTable.vue';
   import VncTiles from '@/components/experiment/VncTiles.vue';
@@ -388,6 +393,11 @@
     useVmRows,
   } from '@/components/experiment/vmRows.js';
   import { vmScreenshot, vncHref } from '@/components/experiment/vmScreens.js';
+  import {
+    DEFAULT_APPS,
+    appStateAfter,
+    labelOptions,
+  } from '@/components/experiment/experimentHeader.js';
   import { useNetflowCapture } from '@/components/experiment/useNetflowCapture.js';
   import { useVmCaptures } from '@/components/experiment/useVmCaptures.js';
   import {
@@ -448,6 +458,7 @@
     outcomeFromJob,
     outcomeFromSettled,
   } from '@/utils/operations.js';
+  import { wsMsgFits } from '@/utils/wsMessage.js';
 
   // how long a VM shows "Loading Screenshot" before "Not Available"; minimega
   // takes screenshots one at a time, so large experiments need a while
@@ -499,7 +510,9 @@
   export default {
     emits: ['running'],
     components: {
+      ExperimentAppsBox,
       ExperimentFilesTab,
+      ExperimentSummary,
       NetflowPanel,
       OpticalDiscModal,
       PortForwardModal,
@@ -508,6 +521,7 @@
       VlanModal,
       VmDetailsCard,
       VmFilenamesModal,
+      VmLabelFilter,
       VmSelectionToolbar,
       VmTable,
       VncTiles,
@@ -636,6 +650,7 @@
         },
       });
       this.loader.start();
+      this.loadAppStates();
 
       try {
         await experimentsApi.getNetflowCapture(this.$route.params.id);
@@ -686,8 +701,22 @@
         if (!this.vmsLoaded && roleAllowed('vms', 'list')) {
           return loadingText('VMs');
         }
+        const labels = this.labelFilter.length > 0;
+        if (this.vmFilter && labels) {
+          return 'No VMs match your search and the checked labels';
+        }
+        if (labels) return 'No VMs have any of the checked labels';
         if (this.vmFilter) return 'No VMs match your search';
         return 'This experiment has no VMs';
+      },
+
+      // the labels the VM table can filter by
+      labelChoices() {
+        return labelOptions(
+          this.vmLabels,
+          this.experiment.vms,
+          this.labelFilter,
+        );
       },
 
       vncWidth() {
@@ -696,8 +725,10 @@
           : DEFAULT_SCREENSHOT_WIDTH;
       },
 
+      // by all the VMs, so a search or label filter leaves the bar as it was
       paginationNeeded() {
-        return this.table.total > this.table.perPage;
+        const all = Math.max(this.table.total, this.experiment.vm_count ?? 0);
+        return all > this.table.perPage;
       },
 
       // The VM whose details are open: the details fetched when it opened,
@@ -765,7 +796,8 @@
         sendWsMsg(msg);
       },
 
-      updateTable() {
+      // the request for the table's VMs, with these labels checked
+      vmListMsg(labels) {
         let number = this.table.currentPage;
         let size = this.table.perPage;
 
@@ -774,7 +806,7 @@
           size = this.experiment.vm_count;
         }
 
-        let msg = {
+        return {
           resource: {
             type: 'experiment/vms',
             name: this.$route.params.id,
@@ -786,10 +818,25 @@
             page_number: number,
             page_size: size,
             filter: this.vmFilter,
+            labels: labels.map(({ key, value }) => ({ key, value })),
           },
         };
+      },
 
-        sendWsMsg(msg);
+      updateTable() {
+        sendWsMsg(this.vmListMsg(this.labelFilter));
+      },
+
+      // whether the VM list request with these labels is short enough to send
+      labelsFit(labels) {
+        return wsMsgFits(this.vmListMsg(labels));
+      },
+
+      // lists the VMs with any of these labels, from the first page
+      filterByLabels(labels) {
+        this.labelFilter = labels;
+        this.table.currentPage = 1;
+        this.updateTable();
       },
 
       onPageChange(page) {
@@ -816,12 +863,16 @@
         });
       },
 
-      // Apps publish their runs on apps/<app>, scheduled runs included, so
-      // only the apps this page triggered get a toast.
+      // Apps publish their runs on apps/<app>, scheduled runs included: each
+      // updates the app's tile, and only the apps this page triggered get a toast.
       handleAppTrigger(msg) {
         const app = msg.resource.type.slice('apps/'.length);
+        if (msg.resource.name !== this.$route.params.id) return;
+        const state = appStateAfter(msg.resource.action);
+        if (state) this.appStates = { ...this.appStates, [app]: state };
+
         const i = this.triggeredApps.indexOf(app);
-        if (msg.resource.name !== this.$route.params.id || i === -1) return;
+        if (i === -1) return;
 
         switch (msg.resource.action) {
           case 'success':
@@ -835,6 +886,12 @@
               'Triggering phēnix app ' + app + ' failed',
               msg.result?.error,
             );
+            break;
+          case 'canceled':
+            this.$buefy.toast.open({
+              message: 'phēnix app ' + app + ' was canceled.',
+              type: 'is-warning',
+            });
             break;
           default:
             return;
@@ -904,6 +961,7 @@
           msg.seq,
         );
         this.table.total = msg.result.total;
+        this.vmLabels = msg.result.labels ?? [];
         this.runtimeUnknown = !!msg.result.runtime_unknown;
         this.vmsLoaded = true;
 
@@ -918,6 +976,7 @@
         // later page: the page reopens unfiltered on its first page
         if (
           !this.vmFilter &&
+          this.labelFilter.length === 0 &&
           (!this.table.isPaginated || this.table.currentPage === 1)
         ) {
           cachePage(
@@ -1605,13 +1664,34 @@
         };
       },
 
-      getApps() {
-        let defaultApps = ['ntp', 'serial', 'startup', 'vrouter', 'scorch'];
-
+      // opens the trigger dialog, with app picked when given
+      getApps(app) {
         this.appsModal.triggerable = this.experiment.apps.filter(
-          (a) => !defaultApps.includes(a),
+          (a) => !DEFAULT_APPS.includes(a),
         );
+        this.appsModal.apps = this.appsModal.triggerable.includes(app)
+          ? [app]
+          : [];
         this.appsModal.active = true;
+      },
+
+      // The apps running now, for their tiles; the websocket keeps them
+      // current after. Tiles say nothing of a role that can't read them.
+      async loadAppStates() {
+        const name = this.$route.params.id;
+        if (!roleAllowed('experiments/apps', 'get', name)) return;
+        try {
+          const resp = await experimentsApi.getExperimentApps(name);
+          const running = Object.entries(resp.data ?? {})
+            .filter(([app, on]) => on === true && !this.appStates[app])
+            .map(([app]) => [app, 'running']);
+          this.appStates = {
+            ...Object.fromEntries(running),
+            ...this.appStates,
+          };
+        } catch {
+          // the tiles fall back to saying which apps are built in
+        }
       },
 
       startApps(apps) {
@@ -2075,7 +2155,13 @@
         opticalDiscModal: emptyOpticalDiscModal(),
         // apps this page triggered that have not reported back
         triggeredApps: [],
-        experiment: [],
+        // what each app was last heard doing, for its tile
+        appStates: {},
+        // the labels on the experiment's VMs, as the last VM list gave them,
+        // and those the VM table is filtered by
+        vmLabels: [],
+        labelFilter: [],
+        experiment: {},
         // the Files tab's category picker, and the categories it offers
         fileCategory: null,
         fileCategories: [],
@@ -2150,6 +2236,27 @@
 </script>
 
 <style scoped>
+  /* the experiment's facts on the left, its apps on the right */
+  .experiment-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .experiment-header-summary {
+    flex: 1 1 32rem;
+  }
+
+  .experiment-header-apps {
+    flex: 0 1 36rem;
+  }
+
+  .vm-table-bar {
+    align-items: center;
+  }
+
   :deep(.tabs ul) {
     margin-left: 0px !important;
   }

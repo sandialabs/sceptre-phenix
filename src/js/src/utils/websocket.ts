@@ -9,6 +9,7 @@ import {
   wsCloseCause,
   wsDownReason,
 } from '@/utils/freshness.js';
+import { wsMsgFits } from '@/utils/wsMessage.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 let globalWs: WebSocket = null;
@@ -236,6 +237,11 @@ function queueMessage(payload: object, data: string): void {
 }
 
 export function sendWsMsg(payload: object): void {
+  // the server would close the socket, and the resend on reconnect again
+  if (!wsMsgFits(payload)) {
+    console.warn('websocket message too long to send');
+    return;
+  }
   const data = JSON.stringify(payload);
 
   if (globalWs !== null && globalWs.readyState === WebSocket.OPEN) {

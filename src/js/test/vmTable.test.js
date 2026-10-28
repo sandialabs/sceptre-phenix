@@ -15,7 +15,12 @@ import VmTable from '@/components/experiment/VmTable.vue';
 import { useTable } from '@/utils/useTable.js';
 import { vm } from './helpers/fixtures.js';
 import { denyOnly } from './helpers/permissions.js';
-import { mountComponent, tableRows, textOf } from './helpers/mount.js';
+import {
+  mountComponent,
+  tableHeader,
+  tableRows,
+  textOf,
+} from './helpers/mount.js';
 
 beforeEach(() => resetMocks());
 
@@ -190,6 +195,16 @@ describe('what it asks the page for', () => {
     expect(wrapper.emitted('update:selected')).toEqual([[[]]]);
     await box('Select all VMs').setValue(true);
     expect(wrapper.emitted('update:checkAll')).toEqual([[true]]);
+  });
+
+  it('asks to sort by the Labels column, both ways', async () => {
+    const wrapper = await render();
+    await tableHeader(wrapper, 'Labels').trigger('click');
+    await tableHeader(wrapper, 'Labels').trigger('click');
+    expect(wrapper.emitted('sort')).toEqual([
+      ['labels', 'asc'],
+      ['labels', 'desc'],
+    ]);
   });
 
   it('gives the rows it shows', async () => {

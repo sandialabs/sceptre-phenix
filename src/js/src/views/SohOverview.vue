@@ -795,6 +795,7 @@
             exp.soh_running = true;
             break;
           case 'success':
+          case 'canceled':
             this.settle(exp);
             this.reloadSoon();
             break;

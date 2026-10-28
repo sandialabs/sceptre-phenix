@@ -179,6 +179,26 @@ Or, run the following to see the information for a specific VM in an experiment.
 phenix vm info <experiment name> [vm name] [--label <label>]
 ```
 
+## Filtering and Sorting the VM Table
+
+The `Labels` button to the left of the `Paginate` toggle, above the running
+experiment's VM table, lists every `key=value` label on the experiment's VMs.
+Check labels to list only the VMs that carry any of them; checking two labels
+widens the list rather than narrowing it, as repeating `--label` does on the
+`phenix vm` commands. The label filter combines with the search box, which
+still narrows the list, and the table goes back to its first page whenever the
+checked labels change.
+`Clear labels` unchecks them all. The button shows how many labels are checked,
+and is greyed out when no VM has a label.
+
+Click the `Labels` heading to sort the VMs by how many labels they have, the
+number the column shows, which counts their notes too. VMs with as many labels
+are listed by name from A to Z whichever way the column is sorted.
+
+From the API, `GET /api/v1/experiments/{name}` takes a repeated
+`label=key=value` query parameter with the same meaning, and both it and
+`GET /api/v1/experiments/{name}/vms` take `sortCol=labels`.
+
 ## VM Actions Column
 
 The running experiment's VM table has an `Actions` column of compact icon

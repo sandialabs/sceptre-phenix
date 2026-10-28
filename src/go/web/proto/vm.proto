@@ -45,6 +45,15 @@ message VMList {
   string observed_at = 4 [json_name="observed_at"];
   // the VMs a bulk update left unchanged, and why; only PATCH fills it
   repeated VMItemError errors = 5;
+  // every distinct label on the VMs the role may list, unfiltered and unpaged,
+  // ordered by key then value; only VM list reads fill it
+  repeated VMLabel labels = 6;
+}
+
+// VMLabel is one key=value label a VM carries.
+message VMLabel {
+  string key = 1;
+  string value = 2;
 }
 
 // VMItemError is one VM a bulk update left unchanged: "skipped" when the role

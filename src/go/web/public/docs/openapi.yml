@@ -850,6 +850,18 @@ paths:
           required: false
           schema:
             type: string
+        - name: label
+          in: query
+          description: >-
+            a `key=value` label (split at the first `=`). With labels, only the
+            VMs that carry at least one of them are listed. May be repeated.
+          required: false
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              pattern: "^[^=]+=.*$"
         - name: show_dnb
           in: query
           description: any value includes the VMs marked do not boot
@@ -858,11 +870,14 @@ paths:
             type: string
         - name: sortCol
           in: query
-          description: column to sort the VMs by, used with sortDir
+          description: >-
+            column to sort the VMs by, used with sortDir; `labels` sorts by how
+            many labels and notes a VM has, ties by name A to Z in either
+            direction
           required: false
           schema:
             type: string
-            enum: [name, host, uptime, delayed]
+            enum: [name, host, uptime, delayed, labels]
         - name: sortDir
           in: query
           description: sort direction, used with sortCol
@@ -901,7 +916,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Experiment"
         "400":
-          description: pageNum or perPage is not a whole number of at least 1
+          description: >-
+            pageNum or perPage is not a whole number of at least 1, or a
+            `label` has no `=` or an empty key
           content:
             application/json:
               schema:
@@ -3347,9 +3364,10 @@ paths:
         one after another, in the background, stopping at the first that
         fails. Every query parameter is passed to the apps as metadata. Each
         app's progress is published on the `/ws` websocket as an
-        `apps/<app>` resource named after the experiment, whose action is
-        `start`, then `success` or `error` (with the error as its result).
-        Needs the `experiments/trigger` `create` permission.
+        `apps/<app>` resource named after the experiment. Its action is
+        `start`, then `success` or `error` (with the error as its result),
+        or `canceled` when `DELETE` cancels it. Needs the
+        `experiments/trigger` `create` permission.
       operationId: postExperimentsNameTrigger
       parameters:
         - name: name
@@ -3379,8 +3397,8 @@ paths:
         - Experiments
       summary: Cancel an experiment's triggered apps
       description: >-
-        Answers at once and cancels the running stage of each app `apps`
-        names that a trigger started, publishing an `apps/<app>` `success`
+        Answers immediately and cancels the running stage of each app `apps`
+        names that a trigger started. It publishes an `apps/<app>` `canceled`
         message, with the `delete` permission verb, on the `/ws` websocket.
         Needs the `experiments/trigger` `delete` permission.
       operationId: deleteExperimentsNameTrigger
@@ -3528,11 +3546,14 @@ paths:
             type: string
         - name: sortCol
           in: query
-          description: column to sort the VMs by, used with sortDir
+          description: >-
+            column to sort the VMs by, used with sortDir; `labels` sorts by how
+            many labels and notes a VM has, ties by name A to Z in either
+            direction
           required: false
           schema:
             type: string
-            enum: [name, host, uptime, delayed]
+            enum: [name, host, uptime, delayed, labels]
         - name: sortDir
           in: query
           description: sort direction, used with sortCol
@@ -8281,8 +8302,10 @@ paths:
           experiment's VMs, answered with an `experiment/vms` message, whose
           VMs then get `experiment/vm/screenshot` messages while the
           experiment runs, each only when the VM's image changed; `request`
-          takes `filter`, `show_dnb`, `sort_column`, `sort_asc`, `page_number`
-          and `page_size`. A newer list replaces one not yet answered, and
+          takes `filter`, `labels` (a list of `{"key": "<key>", "value":
+          "<value>"}`; with any, only the VMs carrying one are listed),
+          `show_dnb`, `sort_column`, `sort_asc`, `page_number` and
+          `page_size`. A newer list replaces one not yet answered, and
           `unsubscribe` stops the screenshots. Needs `vms` `list`.
         - `{"resource": {"type": "metadata/screenshot"}, "request": {"size":
           "<width>"}}` sets the width of the client's screenshots, in pixels,
@@ -8468,7 +8491,17 @@ components:
           title: "Scenario"
           example: example-scenario
           type: string
-          description: the scenario's name; empty when the experiment has none
+          description: the scenario's name, or empty when the experiment has none
+        scenarios:
+          title: "Scenarios"
+          description: >-
+            the experiment's scenario, then each other scenario its apps take
+            their configuration from (`fromScenario`), in app order. Empty when
+            the experiment has none
+          example: [example-scenario, base-scenario]
+          type: array
+          items:
+            type: string
         status:
           title: "Status"
           example: started
@@ -8608,6 +8641,29 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VMItemError"
+        labels:
+          title: Labels
+          description: >-
+            every distinct label on the VMs the role may list, before filtering
+            and paging, ordered by key then value. Empty for a bulk `PATCH`
+          type: array
+          items:
+            $ref: "#/components/schemas/VMLabel"
+    VMLabel:
+      title: VM Label
+      description: A key and value label a VM carries.
+      type: object
+      properties:
+        key:
+          title: Key
+          description: the label's key
+          example: role
+          type: string
+        value:
+          title: Value
+          description: the label's value, which may be empty
+          example: server
+          type: string
     VMItemError:
       title: VM Item Error
       description: A VM a bulk update left unchanged.

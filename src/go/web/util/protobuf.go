@@ -3,6 +3,7 @@ package util
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -88,6 +89,24 @@ func (c *vmCounts) add(running, doNotBoot, external bool, delay string) {
 	}
 }
 
+// experimentScenarios lists the scenario an experiment was created from, then
+// each other scenario its apps take configuration from, once each in app order.
+func experimentScenarios(scenario string, apps []ifaces.ScenarioApp) []string {
+	var names []string
+
+	if scenario != "" {
+		names = append(names, scenario)
+	}
+
+	for _, app := range apps {
+		if from := app.FromScenario(); from != "" && !slices.Contains(names, from) {
+			names = append(names, from)
+		}
+	}
+
+	return names
+}
+
 // experimentToProtobuf converts all of the experiment but its VMs.
 func experimentToProtobuf(exp types.Experiment, status cache.Status) *proto.Experiment {
 	pb := &proto.Experiment{ //nolint:exhaustruct // partial initialization
@@ -110,6 +129,7 @@ func experimentToProtobuf(exp types.Experiment, status cache.Status) *proto.Expe
 	}
 
 	pb.Apps = apps
+	pb.Scenarios = experimentScenarios(exp.Metadata.Annotations["scenario"], exp.Apps())
 
 	var aliases map[string]int
 

@@ -200,6 +200,15 @@ describe('SOH runs', () => {
     expect(axios.get).not.toHaveBeenCalled();
   });
 
+  it('offers another run once one is canceled', async () => {
+    axios.get.mockResolvedValue({ data: {} });
+    const { soh } = await opened();
+
+    await soh('start');
+    expect(await soh('canceled')).toBe('Run SOH');
+    expect(notify.show).not.toHaveBeenCalled();
+  });
+
   it('ignores runs in other experiments', async () => {
     const { soh } = await opened();
 

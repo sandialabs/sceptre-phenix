@@ -87,6 +87,7 @@ func GetVMs(w http.ResponseWriter, r *http.Request) error {
 
 	resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
 	util.SetVMListObservation(resp, observed)
+	resp.Labels = util.VMLabelsToProtobuf(util.VMLabels(expName, vms, vmQuery.ShowDNB, role))
 	freshness.SetObserved(w, observed)
 
 	body, err := marshaler.Marshal(resp)

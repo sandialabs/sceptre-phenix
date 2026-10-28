@@ -126,6 +126,10 @@ lack it). Points that are easy to miss:
   file lists page with `pageNum` and `perPage` (both, from 1; `400`
   otherwise) and report the unpaged `total`; without them they return
   everything.
+- `GET /experiments/{name}` lists only VMs carrying any repeated
+  `label=key=value` (`400` without an `=` or a key); it and `/experiments/{name}/vms`
+  sort by label count with `sortCol=labels`, and the VM list's `labels` holds
+  every label to filter by.
 - Slow `/ws` clients are closed with code 1013 and should reconnect; the live
   log stream may skip lines under load.
 

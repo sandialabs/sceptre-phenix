@@ -579,6 +579,37 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// parseVMQuery reads the VM filter, label, sort and page parameters of a request.
+func parseVMQuery(query url.Values) (util.VMQuery, error) {
+	sortDir := query.Get("sortDir")
+
+	page, pageSize, err := util.ParsePage(query.Get("pageNum"), query.Get("perPage"))
+	if err != nil {
+		return util.VMQuery{}, weberror.NewWebError(nil, "%v", err).SetStatus(http.StatusBadRequest)
+	}
+
+	labels := make([]util.VMLabel, 0, len(query["label"]))
+
+	for _, raw := range query["label"] {
+		label, ok := util.ParseVMLabel(raw)
+		if !ok {
+			return util.VMQuery{}, weberror.NewWebError(nil, "label %q is not key=value", raw).SetStatus(http.StatusBadRequest)
+		}
+
+		labels = append(labels, label)
+	}
+
+	return util.VMQuery{
+		Filter:  query.Get("filter"),
+		Labels:  labels,
+		ShowDNB: query.Get("show_dnb") != "",
+		SortCol: sortColumn(query.Get("sortCol"), sortDir),
+		SortAsc: sortDir == sortAsc,
+		Page:    page,
+		Size:    pageSize,
+	}, nil
+}
+
 // GetExperiment - GET /experiments/{name}.
 //
 // With vms=false the VMs are left out and nothing is asked of minimega:
@@ -586,19 +617,13 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 // uses it, as its VM rows arrive over the websocket (experiment/vms list).
 func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
-		ctx          = r.Context()
-		role         = middleware.RoleFromContext(ctx)
-		vars         = mux.Vars(r)
-		name         = vars["name"]
-		query        = r.URL.Query()
-		size         = query.Get("screenshot")
-		noVMs        = query.Get("vms") == "false" && size == ""
-		sortCol      = query.Get("sortCol")
-		sortDir      = query.Get("sortDir")
-		pageNum      = query.Get("pageNum")
-		perPage      = query.Get("perPage")
-		showDNB      = query.Get("show_dnb") != ""
-		clientFilter = query.Get("filter")
+		ctx   = r.Context()
+		role  = middleware.RoleFromContext(ctx)
+		vars  = mux.Vars(r)
+		name  = vars["name"]
+		query = r.URL.Query()
+		size  = query.Get("screenshot")
+		noVMs = query.Get("vms") == "false" && size == ""
 	)
 
 	if !role.Allowed("experiments", "get", name) {
@@ -621,9 +646,9 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	page, pageSize, err := util.ParsePage(pageNum, perPage)
+	vmQuery, err := parseVMQuery(query)
 	if err != nil {
-		return weberror.NewWebError(nil, "%v", err).SetStatus(http.StatusBadRequest)
+		return err
 	}
 
 	exp, err := experiment.Get(name)
@@ -645,15 +670,6 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	// This will happen if another handler is currently acting on the
 	// experiment.
 	status := cache.IsExperimentLocked(name)
-
-	vmQuery := util.VMQuery{
-		Filter:  clientFilter,
-		ShowDNB: showDNB,
-		SortCol: sortColumn(sortCol, sortDir),
-		SortAsc: sortDir == sortAsc,
-		Page:    page,
-		Size:    pageSize,
-	}
 
 	allowed, total := util.SelectVMs(name, vms, exp.Spec.Topology(), vmQuery, role)
 
