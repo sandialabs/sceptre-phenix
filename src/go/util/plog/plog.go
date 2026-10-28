@@ -58,7 +58,7 @@ func NewPhenixHandler(w io.Writer) {
 		},
 	}
 
-	handler.AddHandler("phenix-default", tint.NewHandler(w, options))
+	handler.AddHandler("phenix-default", tint.NewTextHandler(w, options))
 }
 
 // ChangeConsoleLogger updates the "phenix-default" handler with a new writer.
