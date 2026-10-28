@@ -1,0 +1,19 @@
+# Functions scripts/go-deadcode.sh reports as unreachable that are kept on
+# purpose, as "<package path> <function>  # reason".
+
+# Init's counterpart for programs outside this module that open the store,
+# such as phenix apps
+phenix/store Close
+# a StateGroup entry is an error, so callers can wrap and match it
+phenix/util/mm GroupStateError.Error
+phenix/util/mm GroupStateError.Unwrap
+# the option that keeps a tap out of a network namespace
+phenix/util/tap UseNetNS
+# follow-up: nothing frees a context's notes yet, and the fix needs these
+phenix/util/notes ClearErrors
+phenix/util/notes ClearWarnings
+phenix/util/notes ClearInfo
+phenix/util/notes Errors
+phenix/util/notes ToJSON
+# follow-up: a SoH profile's c2Timeout is decoded but never parsed or applied
+phenix/api/soh sohProfile.init

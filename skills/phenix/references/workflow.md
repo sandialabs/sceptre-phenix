@@ -102,7 +102,7 @@ spec:                              # required; {} applies every default
   vlanRange:
     min: 100                       # 0 leaves that end of the range unset
     max: 200
-  defaultBridge: phenix            # at most 15 characters (the Linux interface-name limit)
+  defaultBridge: phenix            # at most 15 of a-z A-Z 0-9 _ @ . - (the Linux interface-name limit)
 ```
 
 Experiments are mapped to a branch by their `phenix.workflow/branch`
@@ -131,7 +131,7 @@ these lines in `metadata.validation` and the validator's text in
 ## REST endpoints
 
 Paths are relative to the `/api/v1` base path; [`web-api.md`](web-api.md) has
-the full route table and the auth modes.
+the auth modes and points to the full route reference.
 
 | Route | Notes |
 |---|---|

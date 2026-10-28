@@ -82,7 +82,7 @@ func newSettingsDBListCmd() *cobra.Command {
 				s = filtered
 			}
 
-			if MustGetBool(cmd.Flags(), "json") {
+			if mustGet(cmd.Flags().GetBool, "json") {
 				b, err := json.MarshalIndent(s, "", "  ")
 				if err != nil {
 					return err
@@ -278,7 +278,7 @@ func newSettingsListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := getEffectiveSettings()
 
-			if filter := MustGetString(cmd.Flags(), "filter"); filter != "" {
+			if filter := mustGet(cmd.Flags().GetString, "filter"); filter != "" {
 				flat := make(map[string]any)
 				flattenSettingsMap("", settings, flat)
 
@@ -291,9 +291,9 @@ func newSettingsListCmd() *cobra.Command {
 				settings = filtered
 			}
 
-			format := MustGetString(cmd.Flags(), "format")
+			format := mustGet(cmd.Flags().GetString, "format")
 
-			if MustGetBool(cmd.Flags(), "json") {
+			if mustGet(cmd.Flags().GetBool, "json") {
 				format = FormatJSON
 			}
 
@@ -339,7 +339,7 @@ func newSettingsGetCmd() *cobra.Command {
 		ValidArgsFunction: settingsKeyCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var val any
-			outputFormat := MustGetString(cmd.Flags(), "format")
+			outputFormat := mustGet(cmd.Flags().GetString, "format")
 
 			if len(args) == 0 {
 				val = getEffectiveSettings()
@@ -351,7 +351,7 @@ func newSettingsGetCmd() *cobra.Command {
 				}
 			}
 
-			if MustGetBool(cmd.Flags(), "json") {
+			if mustGet(cmd.Flags().GetBool, "json") {
 				outputFormat = FormatJSON
 			}
 
@@ -410,7 +410,7 @@ func newSettingsUnsetCmd() *cobra.Command {
   phenix settings unset --all`,
 		ValidArgsFunction: settingsKeyCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			all := MustGetBool(cmd.Flags(), "all")
+			all := mustGet(cmd.Flags().GetBool, "all")
 
 			if !all && len(args) == 0 {
 				return errors.New("must provide a configuration key to unset, or use --all")

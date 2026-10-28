@@ -30,5 +30,25 @@ func Init() error {
 		return fmt.Errorf("ensuring experiment file upload permissions: %w", err)
 	}
 
+	if err := rbac.EnsureExperimentFilesDeletePermission(); err != nil {
+		return fmt.Errorf("adding the permission to delete experiment files: %w", err)
+	}
+
+	if err := rbac.EnsureJobsPermission(); err != nil {
+		return fmt.Errorf("adding the job permissions: %w", err)
+	}
+
+	if err := rbac.EnsureCaptureSubnetStopPermission(); err != nil {
+		return fmt.Errorf("adding the permission to stop subnet captures: %w", err)
+	}
+
+	if err := rbac.DropNullResourceNames(); err != nil {
+		return fmt.Errorf("dropping null resource names: %w", err)
+	}
+
+	if err := rbac.EnsureExperimentViewerMountScope(); err != nil {
+		return fmt.Errorf("limiting the mount permissions of the Experiment Viewer role: %w", err)
+	}
+
 	return nil
 }

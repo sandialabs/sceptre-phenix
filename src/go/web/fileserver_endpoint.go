@@ -31,15 +31,14 @@ func normalizeFileServerEndpoint(value string) (string, error) {
 	return net.JoinHostPort(host, port), nil
 }
 
-// parseFileServerPort validates a numeric TCP port.
+// parseFileServerPort validates a TCP port of plain digits in 1-65535.
 func parseFileServerPort(value string) error {
-	port, err := strconv.Atoi(value)
-	if err != nil {
+	if value == "" || strings.Trim(value, "0123456789") != "" {
 		return fmt.Errorf("invalid port %q", value)
 	}
 
-	if port < 0 || port > 65535 {
-		return fmt.Errorf("port %d out of range", port)
+	if port, err := strconv.Atoi(value); err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("port %q out of range 1-65535", value)
 	}
 
 	return nil

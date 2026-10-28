@@ -402,7 +402,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 					// Range over IPs to prevent this for-loop from going on forever if
 					// all IPs in VLAN failed network connectivity test.
 					for range ips {
-						idx := rand.IntN(len(ips)) //nolint:gosec // weak random number generator
+						idx := rand.IntN(len(ips)) //nolint:gosec // G404 picks a target, not a secret
 						targetIP := ips[idx]
 
 						targetHost := s.addrHosts[targetIP]
@@ -433,7 +433,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 
 					if !targeted {
 						// Choose random host in VLAN to create error for.
-						idx := rand.IntN(len(ips)) //nolint:gosec // weak random number generator
+						idx := rand.IntN(len(ips)) //nolint:gosec // G404 picks a target, not a secret
 						targetIP := ips[idx]
 
 						// This target host failed the network config test, so don't try
@@ -2096,7 +2096,7 @@ func runValidator(ctx context.Context, script, input, label string) error {
 	if err != nil {
 		return fmt.Errorf("unable to create %s validator script", label)
 	}
-	defer func() { _ = os.Remove(f.Name()) }() //nolint:gosec // Path traversal via taint analysis
+	defer func() { _ = os.Remove(f.Name()) }() //nolint:gosec // G703 the temporary file it created
 
 	if _, err := f.WriteString(script); err != nil {
 		_ = f.Close()
@@ -2109,7 +2109,7 @@ func runValidator(ctx context.Context, script, input, label string) error {
 		return fmt.Errorf("bash command is not available for %s validation", label)
 	}
 
-	cmd := exec.CommandContext(ctx, bash, f.Name()) //nolint:gosec // Command injection via taint analysis
+	cmd := exec.CommandContext(ctx, bash, f.Name()) //nolint:gosec // G702 runs the script it wrote with bash
 	cmd.Stdin = strings.NewReader(input)
 
 	if err := cmd.Run(); err != nil {

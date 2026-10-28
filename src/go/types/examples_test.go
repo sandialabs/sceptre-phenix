@@ -51,7 +51,7 @@ func TestRepoExampleConfigsValidate(t *testing.T) {
 		}
 
 		for _, file := range files {
-			data, err := os.ReadFile(file) //nolint:gosec // test reads repository files
+			data, err := os.ReadFile(file)
 			if err != nil {
 				t.Fatalf("reading %s: %v", file, err)
 			}
@@ -68,7 +68,7 @@ func TestRepoExampleConfigsValidate(t *testing.T) {
 				return err
 			}
 
-			data, err := os.ReadFile(path) //nolint:gosec // test reads repository files
+			data, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}

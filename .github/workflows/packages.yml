@@ -9,6 +9,8 @@ on:
       - 'docs/**'
       - '.github/workflows/docs.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     branches: ['main']
     paths-ignore:
       - 'docs/**'
@@ -20,12 +22,13 @@ env:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   # Never cancel an in-progress tag build (release), but do cancel stale
   # in-progress runs for the same branch/PR when new commits supersede them.
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   build-and-publish:
+    if: github.event.action != 'closed'
     name: Build and Publish Docker & Debian Packages
     runs-on: ubuntu-latest
     permissions:
@@ -103,6 +106,7 @@ jobs:
             PHENIX_IMG=${{ fromJSON(steps.meta.outputs.json).tags[0] }}
             PHENIX_BRANCH=${{ github.head_ref || github.ref_name }}
           push: ${{ github.event_name != 'pull_request' }}
+          load: true
           tags: ${{ steps.meta-jit.outputs.tags }}
 
       - name: Build Debian Package
@@ -117,19 +121,83 @@ jobs:
           path: build/deb/*.deb
           retention-days: 3
 
+      # Report-only, as in security.yml: a finding never fails the build.
+      - name: Scan container image
+        id: scan
+        continue-on-error: true
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          fail-build: false
+          output-format: json
+          output-file: build/grype-phenix.json
+      - name: Report image vulnerabilities
+        if: steps.scan.outcome == 'success'
+        continue-on-error: true
+        run: scripts/vuln-report.sh grype build/grype-phenix.json "phenix image (grype)"
+
+      # SPDX SBOMs from syft, as the default docker driver cannot write BuildKit attestations;
+      # a release attaches them and fails without them, other builds keep them as an artifact.
+      - name: SBOM of the phenix image
+        continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          format: spdx-json
+          output-file: build/sbom/phenix-image.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: SBOM of the JIT UI image
+        continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ fromJSON(steps.meta-jit.outputs.json).tags[0] }}
+          format: spdx-json
+          output-file: build/sbom/phenix-jit-ui-image.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Unpack the Debian package
+        id: deb
+        continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          debs=(build/deb/*.deb)
+          if [ "${#debs[@]}" -ne 1 ]; then
+            echo "expected one .deb, found: ${debs[*]}" >&2
+            exit 1
+          fi
+          name="$(basename "${debs[0]}" .deb)"
+          dpkg-deb -x "${debs[0]}" "build/sbom-root/${name}"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+      - name: SBOM of the Debian package
+        if: steps.deb.outcome == 'success'
+        continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: build/sbom-root/${{ steps.deb.outputs.name }}
+          format: spdx-json
+          output-file: build/sbom/${{ steps.deb.outputs.name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Upload SBOM Artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phenix-sbom
+          path: build/sbom/*.spdx.json
+          retention-days: 14
+
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" build/deb/*.deb --generate-notes
-    outputs:
-      image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+        run: gh release create "$RELEASE_TAG" build/deb/*.deb build/sbom/*.spdx.json --generate-notes
 
   # Mirrors the Docker build so the Containerfile can't silently drift, then
   # runs the finished image to catch a container that builds but cannot start.
   # Nothing is published: the image only ever exists on the runner.
   build-podman:
+    if: github.event.action != 'closed'
     name: Build and Smoke Test Podman Image
     runs-on: ubuntu-latest
     timeout-minutes: 90

@@ -8,12 +8,16 @@ on:
       - 'docs/**'
       - 'src/go/web/public/docs/openapi.yml'
       - 'src/go/types/version/schemas/**'
+      - 'scripts/api-docs.sh'
       - '.github/workflows/docs.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'docs/**'
       - 'src/go/web/public/docs/openapi.yml'
       - 'src/go/types/version/schemas/**'
+      - 'scripts/api-docs.sh'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -21,13 +25,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     name: Build Documentation
-    if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+    if: >-
+      (github.event_name == 'pull_request' && github.event.action != 'closed')
+      || (github.event_name != 'pull_request' && github.ref != 'refs/heads/main')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -48,11 +54,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Build API documentation
         working-directory: .
-        run: |
-          npx --yes @redocly/cli@2.53.2 build-docs \
-            src/go/web/public/docs/openapi.yml \
-            --output=/tmp/swagger.html \
-            --title='phenix API'
+        run: ./scripts/api-docs.sh build src/go/web/public/docs/openapi.yml /tmp/swagger.html
       - name: Build documentation
         run: mkdocs build --strict
 
@@ -82,11 +84,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Build API documentation
         working-directory: .
-        run: |
-          npx --yes @redocly/cli@2.53.2 build-docs \
-            src/go/web/public/docs/openapi.yml \
-            --output=/tmp/swagger.html \
-            --title='phenix API'
+        run: ./scripts/api-docs.sh build src/go/web/public/docs/openapi.yml /tmp/swagger.html
       - name: Configure Git user
         run: |
           git config user.name "github-actions[bot]"

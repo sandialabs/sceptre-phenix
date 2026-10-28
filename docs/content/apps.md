@@ -39,6 +39,10 @@ during every lifecycle stage. User apps configured in a scenario are
 unaffected. Omit the annotation, or set it to `true`, to retain the default
 behavior.
 
+To set the annotation on every VM of one experiment without editing its
+topology, add it when you create the experiment; see
+[Adding Annotations](experiments.md#adding-annotations).
+
 ### startup App
 
 The `startup` app generates scripts that configure supported guest operating
@@ -175,6 +179,10 @@ spec:
         drives:
           - image: ubuntu.qc2
 ```
+
+To set the annotation on every VM of one experiment without editing its
+topology, add it when you create the experiment; see
+[Adding Annotations](experiments.md#adding-annotations).
 
 For a disk layout that cannot be injected into, such as an LVM-based image, set
 the injection partition on the first drive to `0`:
@@ -659,6 +667,9 @@ the taps to already exist when the experiment starts. Valid values are
 `pre-start` and `post-start`; when unset, it defaults to `post-start` to
 preserve backwards compatibility.
 
+The taps are created on the experiment host running the fewest VMs, the first
+by name among hosts with equally few, so every run places them the same way.
+
 The following is an example of how the `tap` app can be configured via a
 `Scenario` configuration, showing all the possible options.
 
@@ -787,6 +798,13 @@ phēnix centralized logging system.
     process and wait a maximum of 10 seconds for the process to exit gracefully
     before killin the process with a `SIGKILL`.
 
+!!! note
+    While an app runs a stage, phēnix marks it running in the experiment's
+    `status.appRunningStageStatus`, and refuses to start that app's `running`
+    stage, such as a Scorch run, again until it finishes. If phēnix stops in
+    the middle, `phenix ui` clears these marks for every running experiment
+    when it starts again, so the app can run without restarting the experiment.
+
 ### Available User Apps
 
 The
@@ -798,9 +816,9 @@ including the following:
 | ------------ | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | caldera      | [caldera source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/caldera)      | Deployment and orchestration of [MITRE Caldera](https://caldera.mitre.org/) in an experiment                                                                            |
 | helics       | [helics source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/helics)       | Aids in the generation of [HELICS](https://helics.org/) broker start scripts and injects them into the appropriate nodes in an experiment                               |
-| mirror       | [mirror source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main?tab=readme-ov-file#mirror)                | The mirror app configures cluster-wide packet mirroring for specific VLANs to a specific interface on a predefined node using GRE tunnels. It is written in Golang.     |
+| mirror       | [mirror source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/go/cmd/phenix-app-mirror)                | The mirror app configures cluster-wide packet mirroring for specific VLANs to a specific interface on a predefined node using GRE tunnels. It is written in Golang.     |
 | otsim        | [otsim source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/otsim)        | Aids in the generation of config files for [OT-sim](https://ot-sim.patsec.dev/)                                                                                         |
-| protonuke    | [protonuke source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main?tab=readme-ov-file#protonuke)             | Configures the protonuke traffic generator                                                                                                                              |
+| protonuke    | [protonuke source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/protonuke)             | Configures the protonuke traffic generator                                                                                                                              |
 | scale        | [scale source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/scale)        | Specialized phenix application designed for high-volume simulations                                                                                                     |
 | sceptre      | [sceptre source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/sceptre)      | Core functionality for [SCEPTRE](https://sandialabs.github.io/sceptre-docs/), including generating configs for field devices (bennu), SCADA systems, and other systems. |
 | wind_turbine | [wind_turbine source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/wind_turbine) | Aids in the generation of wind-turbine-specific [OT-sim](https://ot-sim.patsec.dev/) config files                                                                       |

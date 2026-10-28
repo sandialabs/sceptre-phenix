@@ -18,12 +18,9 @@ test.skip(
   'set E2E_AUTH_MODE=enabled (see file header)',
 );
 
-// Known upstream issue (predates the Vue 3 upgrade): in enabled mode the jwt
-// middleware stores the parsed token under a plain-string context key while
-// userMiddleware reads a typed key, so authenticated API calls and the
-// websocket return 403 even after a successful login. The login/signup routes
-// themselves bypass that check and are what these tests cover.
-function filterKnown403s(issues) {
+// A user with the Disabled role may use no API, so the app's calls and its
+// websocket can be refused once such a user signs in.
+function filterDisabledRefusals(issues) {
   return issues.filter(
     (i) =>
       !/403/.test(i.text) && !/WebSocket connection .* failed/.test(i.text),
@@ -52,7 +49,7 @@ test('unauthenticated visit redirects to signin', async ({ page }) => {
   await settle(page);
   expect(new URL(page.url()).pathname).toBe('/signin');
   await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible();
-  const fatal = filterKnown403s(fatalOf(issues));
+  const fatal = fatalOf(issues);
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });
 
@@ -67,13 +64,22 @@ test('wrong password shows incorrect-credentials toast', async ({ page }) => {
     .fill('definitely-wrong');
   await page.getByRole('button', { name: 'Submit' }).click();
   await expect(
-    page.getByText('The username and/or password is incorrect'),
+    page.getByText('The username or password is incorrect'),
   ).toBeVisible({
     timeout: 10000,
   });
-  const fatal = filterKnown403s(fatalOf(issues));
+  const fatal = fatalOf(issues);
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });
+
+async function signIn(page) {
+  await page.goto('/signin');
+  await settle(page);
+  await page.locator('.signin-form input[type="text"]').fill(ADMIN_USER);
+  await page.locator('.signin-form input[type="password"]').fill(ADMIN_PASS);
+  await page.getByRole('button', { name: 'Submit' }).click();
+  await expect(page).toHaveURL(/\/experiments/, { timeout: 15000 });
+}
 
 test(
   'login lands on experiments',
@@ -81,12 +87,7 @@ test(
   async ({ page }) => {
     const issues = [];
     attachCapture(page, issues);
-    await page.goto('/signin');
-    await settle(page);
-    await page.locator('.signin-form input[type="text"]').fill(ADMIN_USER);
-    await page.locator('.signin-form input[type="password"]').fill(ADMIN_PASS);
-    await page.getByRole('button', { name: 'Submit' }).click();
-    await expect(page).toHaveURL(/\/experiments/, { timeout: 15000 });
+    await signIn(page);
 
     // Logout is a button the keyboard reaches. After a logout in the app,
     // which is no page load, typing starts in the Username field again.
@@ -99,10 +100,30 @@ test(
       page.locator('.signin-form').getByLabel('Username', { exact: true }),
     ).toBeFocused();
 
-    const fatal = filterKnown403s(fatalOf(issues));
+    const fatal = fatalOf(issues);
     expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
   },
 );
+
+test('signed-in pages load their data', async ({ page }) => {
+  await signIn(page);
+  // only what follows sign-in, which must all be authorized
+  const issues = [];
+  attachCapture(page, issues);
+
+  for (const path of ['/experiments', '/configs/', '/users']) {
+    await page.goto(path);
+    await expect(
+      page.locator('.refresh-label').filter({ hasText: 'Updated just now' }),
+      path,
+    ).toBeVisible();
+  }
+
+  const refused = issues.filter((i) => /^http-40[13]$/.test(i.kind));
+  expect(refused, JSON.stringify(refused, null, 2)).toHaveLength(0);
+  const fatal = fatalOf(issues);
+  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+});
 
 test('create account via signup modal lands on disabled page', async ({
   page,
@@ -210,6 +231,6 @@ test('create account via signup modal lands on disabled page', async ({
   // The admin removes the account, so the test passes again on this server.
   expect(await deleteSignupUser(request)).toBe(204);
 
-  const fatal = filterKnown403s(fatalOf(issues));
+  const fatal = filterDisabledRefusals(fatalOf(issues));
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });

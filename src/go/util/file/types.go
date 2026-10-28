@@ -99,7 +99,7 @@ func (f Files) Paginate(page, size int) Files {
 
 // MakeFile creates an instance of our file object using a FileInfo and path.
 func MakeFile(file fs.FileInfo, basePath string) File {
-	f := File{} //nolint:exhaustruct // partial initialization
+	f := File{Categories: []string{}} //nolint:exhaustruct // partial initialization
 	f.Name = file.Name()
 	f.Path = filepath.Join(basePath, file.Name())
 	f.dateTime = file.ModTime()

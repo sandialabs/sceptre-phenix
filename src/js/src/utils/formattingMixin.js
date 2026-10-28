@@ -1,10 +1,9 @@
+import { mebibytesText } from '@/utils/bytes.js';
+
 export const formattingMixin = {
   methods: {
     formatLowercase(value) {
-      if (value === null) {
-        return value;
-      }
-      return value.toLowerCase();
+      return value?.toLowerCase() ?? '';
     },
     formatStringify(value) {
       if (value == null || value.length == 0) {
@@ -12,14 +11,9 @@ export const formattingMixin = {
       }
       return value.join(', ').toLowerCase();
     },
+    // memory minimega gives in MiB: 1.5 GiB
     formatRAM(value) {
-      if (value == 0) {
-        return '0 Byte';
-      }
-      let size = ['MB', 'GB', 'TB'];
-      let i = parseInt(Math.floor(Math.log(value) / Math.log(1024)));
-      let output = Math.round(value / Math.pow(1024, i), 2) + ' ' + size[i];
-      return output;
+      return mebibytesText(value);
     },
     formatUptime(value) {
       if (value == null) {
@@ -65,6 +59,16 @@ export const formattingMixin = {
         return (value / Math.pow(10, 9)).toFixed(2) + ' GB';
       }
       return value;
+    },
+    // the last part of a path, to list disk images by file name
+    getBaseName(path) {
+      return path.substring(path.lastIndexOf('/') + 1);
+    },
+    // the distinct items, sorted; those under four characters are dropped,
+    // except "dnb", the search for VMs set not to boot
+    getUniqueItems(items) {
+      const kept = items.filter((item) => item.length >= 4 || item == 'dnb');
+      return [...new Set(kept)].sort();
     },
   },
 };

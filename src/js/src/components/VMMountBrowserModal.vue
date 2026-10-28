@@ -116,8 +116,10 @@
 
 <script>
   import { roleAllowed } from '@/utils/rbac.js';
-  import axiosInstance from '@/utils/axios.js';
+  import * as experimentFilesApi from '@/api/experimentFiles.js';
+  import * as vmsApi from '@/api/vms.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
+  import { showError } from '@/utils/errorNotif';
   import { usePhenixStore } from '@/store';
 
   export default {
@@ -143,15 +145,19 @@
     },
 
     beforeUnmount() {
+      window.removeEventListener('beforeunload', this.unmount);
       this.unmount();
     },
 
     beforeMount() {
-      axiosInstance
-        .post(`experiments/${this.targetExp}/vms/${this.targetVm}/mount`)
+      vmsApi
+        .mountVm(this.targetExp, this.targetVm)
         .then((_) => {
           this.getFiles();
-          if (this.fileServerEnabled) {
+          if (
+            this.fileServerEnabled &&
+            roleAllowed('experiments/files', 'list', this.targetExp)
+          ) {
             this.getExperimentFiles();
           }
         })
@@ -165,11 +171,11 @@
     computed: {
       // split current path into list of directories
       pathParts() {
-        let parts = this.currentPath.split('/');
-        let p = parts.slice(1).map((p) => {
+        let parts = this.currentPath.split('/').filter((part) => part !== '');
+        let p = parts.map((part, i) => {
           return {
-            part: p,
-            upTo: parts.slice(0, parts.indexOf(p) + 1).join('/'),
+            part: part,
+            upTo: '/' + parts.slice(0, i + 1).join('/'),
           };
         });
         // prepend special entry for returning to base of mount
@@ -192,10 +198,8 @@
     methods: {
       getFiles() {
         this.filesLoading = true;
-        axiosInstance
-          .get(`experiments/${this.targetExp}/vms/${this.targetVm}/files`, {
-            params: { path: this.currentPath },
-          })
+        vmsApi
+          .listVmFiles(this.targetExp, this.targetVm, this.currentPath)
           .then((resp) => {
             this.error = resp.data.error;
             this.files = resp.data.files === null ? [] : resp.data.files;
@@ -209,8 +213,8 @@
 
       // getExperimentFiles loads files available to copy from this experiment.
       getExperimentFiles() {
-        axiosInstance
-          .get(`experiments/${this.targetExp}/files`)
+        experimentFilesApi
+          .listExperimentFiles(this.targetExp)
           .then((resp) => {
             this.experimentFiles =
               resp.data.files === null ? [] : resp.data.files;
@@ -228,14 +232,8 @@
 
         this.currentCopyFileName = path.substring(path.lastIndexOf('/') + 1);
         this.copyingExperimentFile = true;
-        axiosInstance
-          .post(
-            `experiments/${this.targetExp}/vms/${this.targetVm}/files/copy`,
-            null,
-            {
-              params: { path: this.currentPath, source: path },
-            },
-          )
+        vmsApi
+          .copyFileToVm(this.targetExp, this.targetVm, this.currentPath, path)
           .then((_) => {
             this.selectedExperimentFile = null;
             this.copyingExperimentFile = false;
@@ -262,21 +260,18 @@
       },
 
       handleUpload(file) {
-        console.log(file);
         let formData = new FormData();
         formData.append('file', file);
         this.currentUploadFileName = file.name;
         this.currentUploadProgress = 0;
-        axiosInstance
-          .put(
-            `experiments/${this.targetExp}/vms/${this.targetVm}/files/upload`,
+        vmsApi
+          .uploadVmFile(
+            this.targetExp,
+            this.targetVm,
+            this.currentPath,
             formData,
-            {
-              params: { path: this.currentPath },
-              headers: { 'Content-Type': 'multipart/form-data' },
-              onUploadProgress: (event) => {
-                this.currentUploadProgress = (event.loaded / event.total) * 100;
-              },
+            (event) => {
+              this.currentUploadProgress = (event.loaded / event.total) * 100;
             },
           )
           .then((_) => {
@@ -290,26 +285,19 @@
       },
 
       errorDialog(msg) {
-        console.error(msg);
-        this.$buefy.toast.open({
-          message: msg,
-          type: 'is-danger',
-          duration: 5000,
-        });
+        showError(msg);
       },
 
       unmount() {
-        axiosInstance
-          .delete(`experiments/${this.targetExp}/vms/${this.targetVm}/unmount`)
-          .then(
-            (_) => {},
-            (err) => {
-              // Only show error if files or path have changed.
-              // Otherwise, mount failed and no need to show another error message
-              if (this.files.length !== 0 || this.currentPath !== '/')
-                this.errorDialog(`Error unmounting vm: ${err}`);
-            },
-          );
+        vmsApi.unmountVm(this.targetExp, this.targetVm).then(
+          (_) => {},
+          (err) => {
+            // Only show error if files or path have changed.
+            // Otherwise, mount failed and no need to show another error message
+            if (this.files.length !== 0 || this.currentPath !== '/')
+              this.errorDialog(`Could not unmount the VM: ${err}`);
+          },
+        );
       },
     },
   };

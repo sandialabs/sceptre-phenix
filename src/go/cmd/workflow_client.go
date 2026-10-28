@@ -261,7 +261,7 @@ func (c *workflowClient) post(ctx context.Context, path string, query url.Values
 func (c *workflowClient) do(req *http.Request) (int, []byte, error) {
 	plog.Debug(plog.TypeSystem, "phenix server request", "method", req.Method, "url", req.URL.String(), "bytes", req.ContentLength)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) //nolint:gosec // G704 the phenix server the user configured
 	if err != nil {
 		if req.Context().Err() != nil {
 			return 0, nil, endedRequestError(req, err)

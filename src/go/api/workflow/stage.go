@@ -106,7 +106,7 @@ func StageInjectsWithOptions(src, base, name string, opts StageOptions) (int, er
 		return 0, fmt.Errorf("injects source %s is not a directory", src)
 	}
 
-	if err := os.MkdirAll(base, 0o755); err != nil {
+	if err := os.MkdirAll(base, 0o755); err != nil { //nolint:gosec // G301 injects are not secret, and VM tooling reads them
 		return 0, fmt.Errorf("creating injects directory %s: %w", base, err)
 	}
 

@@ -1,0 +1,868 @@
+{
+  "GET /disks": {
+    "disks": [
+      {
+        "kind": "VM",
+        "name": "bennu-historian.qc2",
+        "fullPath": "/phenix/images/bennu-historian.qc2",
+        "relativePath": "bennu-historian.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "6.4 GiB",
+        "virtualSize": "60 GiB",
+        "experiments": [
+          {
+            "name": "bennu",
+            "running": true
+          }
+        ],
+        "backingImages": ["/phenix/images/ubuntu-22.04-base.qc2"],
+        "inUse": true
+      },
+      {
+        "kind": "VM",
+        "name": "bennu-hmi.qc2",
+        "fullPath": "/phenix/images/bennu-hmi.qc2",
+        "relativePath": "bennu-hmi.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "3.1 GiB",
+        "virtualSize": "40 GiB",
+        "experiments": [
+          {
+            "name": "bennu",
+            "running": true
+          }
+        ],
+        "backingImages": ["/phenix/images/windows-10-base.qc2"],
+        "inUse": true
+      },
+      {
+        "kind": "VM",
+        "name": "bennu-power-provider.qc2",
+        "fullPath": "/phenix/images/bennu-power-provider.qc2",
+        "relativePath": "bennu-power-provider.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "2.8 GiB",
+        "virtualSize": "30 GiB",
+        "experiments": [
+          {
+            "name": "bennu",
+            "running": true
+          }
+        ],
+        "backingImages": ["/phenix/images/ubuntu-22.04-base.qc2"],
+        "inUse": true
+      },
+      {
+        "kind": "Container",
+        "name": "example-sensor_rootfs.tgz",
+        "fullPath": "/phenix/images/example-sensor_rootfs.tgz",
+        "relativePath": "example-sensor_rootfs.tgz",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "218 MiB",
+        "virtualSize": "218 MiB",
+        "experiments": [],
+        "backingImages": [],
+        "inUse": false
+      },
+      {
+        "kind": "ISO",
+        "name": "example-tools.iso",
+        "fullPath": "/phenix/images/example-tools.iso",
+        "relativePath": "example-tools.iso",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "812 MiB",
+        "virtualSize": "812 MiB",
+        "experiments": [
+          {
+            "name": "bennu",
+            "running": true
+          }
+        ],
+        "backingImages": [],
+        "inUse": true
+      },
+      {
+        "kind": "VM",
+        "name": "PHENIX-elasticsearch.qc2",
+        "fullPath": "/phenix/images/PHENIX-elasticsearch.qc2",
+        "relativePath": "PHENIX-elasticsearch.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "9.7 GiB",
+        "virtualSize": "80 GiB",
+        "experiments": [
+          {
+            "name": "bennu",
+            "running": true
+          }
+        ],
+        "backingImages": [],
+        "inUse": true
+      },
+      {
+        "kind": "VM",
+        "name": "PHENIX-kali.qc2",
+        "fullPath": "/phenix/images/PHENIX-kali.qc2",
+        "relativePath": "PHENIX-kali.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "14 GiB",
+        "virtualSize": "80 GiB",
+        "experiments": [
+          {
+            "name": "bennu",
+            "running": true
+          }
+        ],
+        "backingImages": [],
+        "inUse": true
+      },
+      {
+        "kind": "VM",
+        "name": "ubuntu-22.04-base.qc2",
+        "fullPath": "/phenix/images/ubuntu-22.04-base.qc2",
+        "relativePath": "ubuntu-22.04-base.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "1.9 GiB",
+        "virtualSize": "20 GiB",
+        "experiments": [],
+        "backingImages": [],
+        "inUse": false
+      },
+      {
+        "kind": "VM",
+        "name": "ubuntu-22.04-ot-sim.qc2",
+        "fullPath": "/phenix/images/ubuntu-22.04-ot-sim.qc2",
+        "relativePath": "ubuntu-22.04-ot-sim.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "2.2 GiB",
+        "virtualSize": "20 GiB",
+        "experiments": [
+          {
+            "name": "bennu",
+            "running": true
+          }
+        ],
+        "backingImages": [],
+        "inUse": true
+      },
+      {
+        "kind": "VM",
+        "name": "vyos-1.3.qc2",
+        "fullPath": "/phenix/images/vyos-1.3.qc2",
+        "relativePath": "vyos-1.3.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "1.1 GiB",
+        "virtualSize": "8.0 GiB",
+        "experiments": [
+          {
+            "name": "bennu",
+            "running": true
+          }
+        ],
+        "backingImages": [],
+        "inUse": true
+      },
+      {
+        "kind": "VM",
+        "name": "windows-10-base.qc2",
+        "fullPath": "/phenix/images/windows-10-base.qc2",
+        "relativePath": "windows-10-base.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "18 GiB",
+        "virtualSize": "40 GiB",
+        "experiments": [],
+        "backingImages": [],
+        "inUse": false
+      }
+    ]
+  },
+  "GET /hosts": {
+    "hosts": [
+      {
+        "name": "compute1",
+        "cpus": 64,
+        "cpucommit": 18,
+        "load": ["4.21", "3.88", "3.40"],
+        "memused": 38912,
+        "memtotal": 131072,
+        "memcommit": 40960,
+        "tx": 5.8,
+        "rx": 12.6,
+        "bandwidth": "rx: 12.6 / tx: 5.8",
+        "diskusage": {
+          "diskphenix": 68,
+          "diskminimega": 22
+        },
+        "netcommit": 12,
+        "vms": 5,
+        "uptime": 1892340,
+        "schedulable": true,
+        "headnode": true
+      },
+      {
+        "name": "compute2",
+        "cpus": 64,
+        "cpucommit": 12,
+        "load": ["2.05", "2.18", "2.02"],
+        "memused": 21504,
+        "memtotal": 131072,
+        "memcommit": 24576,
+        "tx": 2.9,
+        "rx": 6.2,
+        "bandwidth": "rx: 6.2 / tx: 2.9",
+        "diskusage": {
+          "diskphenix": 41,
+          "diskminimega": 15
+        },
+        "netcommit": 9,
+        "vms": 4,
+        "uptime": 1892100,
+        "schedulable": true,
+        "headnode": false
+      },
+      {
+        "name": "compute3",
+        "cpus": 32,
+        "cpucommit": 8,
+        "load": ["1.02", "0.94", "0.88"],
+        "memused": 12288,
+        "memtotal": 65536,
+        "memcommit": 16384,
+        "tx": 1.3,
+        "rx": 2.4,
+        "bandwidth": "rx: 2.4 / tx: 1.3",
+        "diskusage": {
+          "diskphenix": 27,
+          "diskminimega": 9
+        },
+        "netcommit": 5,
+        "vms": 3,
+        "uptime": 1891980,
+        "schedulable": true,
+        "headnode": false
+      }
+    ]
+  },
+  "GET /users": {
+    "users": [
+      {
+        "username": "admin@example.com",
+        "first_name": "Alex",
+        "last_name": "Admin",
+        "role": {
+          "name": "Global Admin"
+        }
+      },
+      {
+        "username": "analyst@example.com",
+        "first_name": "Robin",
+        "last_name": "Analyst",
+        "role": {
+          "name": "Experiment User"
+        }
+      },
+      {
+        "username": "auditor@example.com",
+        "first_name": "Jordan",
+        "last_name": "Auditor",
+        "role": {
+          "name": "Global Viewer"
+        }
+      },
+      {
+        "username": "instructor@example.com",
+        "first_name": "Sam",
+        "last_name": "Instructor",
+        "role": {
+          "name": "Experiment Admin"
+        }
+      },
+      {
+        "username": "student@example.com",
+        "first_name": "Casey",
+        "last_name": "Student",
+        "role": {
+          "name": "VM Viewer"
+        }
+      }
+    ]
+  },
+  "GET /roles": {
+    "roles": [
+      {
+        "name": "Global Admin"
+      },
+      {
+        "name": "Global Viewer"
+      },
+      {
+        "name": "Experiment Admin"
+      },
+      {
+        "name": "Experiment User"
+      },
+      {
+        "name": "Experiment Viewer"
+      },
+      {
+        "name": "VM Viewer"
+      }
+    ]
+  },
+  "GET /options": {
+    "bridge-mode": "manual",
+    "deploy-mode": "no-headnode",
+    "use-gre-mesh": false
+  },
+  "GET /topologies": {
+    "topologies": ["bennu", "cyber-range", "grid-training"]
+  },
+  "GET /topologies/bennu/scenarios": {
+    "scenarios": {}
+  },
+  "GET /experiments": {
+    "experiments": [
+      {
+        "name": "bennu",
+        "topology": "bennu",
+        "scenario": "bennu-soh",
+        "status": "started",
+        "apps": ["soh"],
+        "start_time": "2026-09-29T09:31:00Z",
+        "running": true,
+        "vm_count": 11,
+        "vlan_min": 100,
+        "vlan_max": 200,
+        "vlan_count": 5
+      },
+      {
+        "name": "grid-training",
+        "topology": "grid-training",
+        "scenario": "grid-soh",
+        "status": "stopped",
+        "apps": ["soh"],
+        "running": false,
+        "vm_count": 9,
+        "vlan_count": 3
+      }
+    ]
+  },
+  "GET /soh": {
+    "experiments": [
+      {
+        "name": "bennu",
+        "scenario": "bennu-soh",
+        "status": "started",
+        "running": true,
+        "configured": true,
+        "started": true,
+        "soh_initialized": true,
+        "soh_running": false,
+        "vms": {
+          "known": true,
+          "total": 11,
+          "running": 8,
+          "failing": 2,
+          "notrunning": 2,
+          "notboot": 0,
+          "notdeploy": 0,
+          "external": 1,
+          "delayed": 0
+        },
+        "down_vms": ["historian", "ot-sim-2"],
+        "hosts": 11,
+        "hosts_with_errors": 3,
+        "checks": {
+          "total": 64,
+          "passing": 61,
+          "failing": 3
+        },
+        "reachability": {
+          "total": 90,
+          "passing": 86,
+          "failing": 4
+        },
+        "last_run": "2026-09-29T10:58:12Z",
+        "last_run_duration": 14.2,
+        "history": [
+          {
+            "time": "2026-09-29T10:03:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:08:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 2,
+            "hosts_failing": 2,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:13:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:18:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:23:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 2,
+            "hosts_failing": 2,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:28:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 3,
+            "hosts_failing": 3,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:33:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:38:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:43:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 3,
+            "hosts_failing": 3,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:48:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 2,
+            "hosts_failing": 2,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:53:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 3,
+            "hosts_failing": 3,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:58:12Z",
+            "duration": 14.2,
+            "total": 64,
+            "failing": 3,
+            "hosts_failing": 3,
+            "hosts_down": 0
+          }
+        ],
+        "failing_checks": [
+          {
+            "host": "site-1-hmi",
+            "check": "process",
+            "target": "example-hmi.exe",
+            "error": "process example-hmi.exe is not running",
+            "time": "2026-09-29T10:58:12Z"
+          },
+          {
+            "host": "ot-sim-1",
+            "check": "listener",
+            "target": "tcp:20000",
+            "error": "no listener on tcp:20000",
+            "time": "2026-09-29T10:58:10Z"
+          },
+          {
+            "host": "router",
+            "check": "reachability",
+            "target": "192.168.21.21",
+            "error": "icmp: no reply from 192.168.21.21 after 5s",
+            "time": "2026-09-29T10:58:07Z"
+          }
+        ]
+      },
+      {
+        "name": "cyber-range-2",
+        "scenario": "range-soh",
+        "status": "started",
+        "running": true,
+        "configured": true,
+        "started": true,
+        "soh_initialized": true,
+        "soh_running": false,
+        "vms": {
+          "known": true,
+          "total": 18,
+          "running": 18,
+          "failing": 1,
+          "notrunning": 0,
+          "notboot": 0,
+          "notdeploy": 0,
+          "external": 0,
+          "delayed": 0
+        },
+        "down_vms": [],
+        "hosts": 18,
+        "hosts_with_errors": 1,
+        "checks": {
+          "total": 96,
+          "passing": 94,
+          "failing": 2
+        },
+        "reachability": {
+          "total": 120,
+          "passing": 119,
+          "failing": 1
+        },
+        "last_run": "2026-09-29T10:54:40Z",
+        "last_run_duration": 21.7,
+        "history": [
+          {
+            "time": "2026-09-29T09:59:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:04:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:09:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:14:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:19:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:24:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:29:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:34:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:39:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:44:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 2,
+            "hosts_failing": 2,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:49:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 1,
+            "hosts_failing": 1,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:54:40Z",
+            "duration": 14.2,
+            "total": 96,
+            "failing": 2,
+            "hosts_failing": 2,
+            "hosts_down": 0
+          }
+        ],
+        "failing_checks": [
+          {
+            "host": "web-01",
+            "check": "service",
+            "target": "nginx",
+            "error": "service nginx is not active",
+            "time": "2026-09-29T10:58:12Z"
+          },
+          {
+            "host": "dc-01",
+            "check": "listener",
+            "target": "tcp:389",
+            "error": "no listener on tcp:389",
+            "time": "2026-09-29T10:58:12Z"
+          }
+        ]
+      },
+      {
+        "name": "bennu-baseline",
+        "scenario": "bennu-soh",
+        "status": "stopped",
+        "running": false,
+        "configured": true,
+        "started": false,
+        "soh_initialized": false,
+        "soh_running": false,
+        "vms": {
+          "known": true,
+          "total": 12,
+          "running": 0,
+          "failing": 0,
+          "notrunning": 0,
+          "notboot": 0,
+          "notdeploy": 0,
+          "external": 0,
+          "delayed": 0
+        },
+        "down_vms": [],
+        "hosts": 0,
+        "hosts_with_errors": 0,
+        "checks": {
+          "total": 0,
+          "passing": 0,
+          "failing": 0
+        },
+        "reachability": {
+          "total": 0,
+          "passing": 0,
+          "failing": 0
+        },
+        "history": [],
+        "failing_checks": []
+      },
+      {
+        "name": "grid-training",
+        "scenario": "grid-soh",
+        "status": "started",
+        "running": true,
+        "configured": true,
+        "started": true,
+        "soh_initialized": true,
+        "soh_running": false,
+        "vms": {
+          "known": true,
+          "total": 9,
+          "running": 9,
+          "failing": 0,
+          "notrunning": 0,
+          "notboot": 0,
+          "notdeploy": 0,
+          "external": 1,
+          "delayed": 0
+        },
+        "down_vms": [],
+        "hosts": 9,
+        "hosts_with_errors": 0,
+        "checks": {
+          "total": 48,
+          "passing": 48,
+          "failing": 0
+        },
+        "reachability": {
+          "total": 56,
+          "passing": 56,
+          "failing": 0
+        },
+        "last_run": "2026-09-29T10:57:02Z",
+        "last_run_duration": 9.8,
+        "history": [
+          {
+            "time": "2026-09-29T10:02:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 3,
+            "hosts_failing": 3,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:07:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:12:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:17:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:22:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:27:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:32:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:37:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:42:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:47:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:52:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          },
+          {
+            "time": "2026-09-29T10:57:02Z",
+            "duration": 14.2,
+            "total": 48,
+            "failing": 0,
+            "hosts_failing": 0,
+            "hosts_down": 0
+          }
+        ],
+        "failing_checks": []
+      },
+      {
+        "name": "packet-lab",
+        "scenario": "packet-capture",
+        "status": "started",
+        "running": true,
+        "configured": false,
+        "started": true,
+        "soh_initialized": false,
+        "soh_running": false,
+        "vms": {
+          "known": true,
+          "total": 6,
+          "running": 6,
+          "failing": 0,
+          "notrunning": 0,
+          "notboot": 0,
+          "notdeploy": 0,
+          "external": 0,
+          "delayed": 0
+        },
+        "down_vms": [],
+        "hosts": 0,
+        "hosts_with_errors": 0,
+        "history": [],
+        "failing_checks": []
+      }
+    ]
+  }
+}

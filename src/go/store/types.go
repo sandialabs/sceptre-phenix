@@ -32,12 +32,21 @@ type Config struct {
 	Metadata ConfigMetadata `json:"metadata"         yaml:"metadata"`
 	Spec     map[string]any `json:"spec,omitempty"   yaml:"spec,omitempty"`
 	Status   map[string]any `json:"status,omitempty" yaml:"status,omitempty"`
+
+	// IfRevision, when not zero, makes Store.Update and Store.Delete fail with
+	// ErrConflict unless the stored config is still at this revision. It is
+	// never serialized.
+	IfRevision uint64 `json:"-" yaml:"-"`
 }
 
 type ConfigMetadata struct {
-	Name        string      `json:"name"                  yaml:"name"`
-	Created     string      `json:"created"               yaml:"created"`
-	Updated     string      `json:"updated"               yaml:"updated"`
+	Name    string `json:"name"    yaml:"name"`
+	Created string `json:"created" yaml:"created"`
+	Updated string `json:"updated" yaml:"updated"`
+	// Revision is set by the store on every write and only increases. It is
+	// opaque: compare it for equality only. Zero means the config was written
+	// before revisions existed and has not been written since.
+	Revision    uint64      `json:"revision,omitempty"    yaml:"revision,omitempty"`
 	Annotations Annotations `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }
 
@@ -107,6 +116,7 @@ func NewConfigFromFile(path string) (*Config, error) {
 	// ensure users aren't trying to set these values
 	c.Metadata.Created = ""
 	c.Metadata.Updated = ""
+	c.Metadata.Revision = 0
 
 	return &c, nil
 }
@@ -125,6 +135,7 @@ func NewConfigFromJSON(body []byte) (*Config, error) {
 	// ensure users aren't trying to set these values
 	c.Metadata.Created = ""
 	c.Metadata.Updated = ""
+	c.Metadata.Revision = 0
 
 	return &c, nil
 }
@@ -143,6 +154,7 @@ func NewConfigFromYAML(body []byte) (*Config, error) {
 	// ensure users aren't trying to set these values
 	c.Metadata.Created = ""
 	c.Metadata.Updated = ""
+	c.Metadata.Revision = 0
 
 	return &c, nil
 }

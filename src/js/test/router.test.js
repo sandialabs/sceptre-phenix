@@ -1,0 +1,259 @@
+// Where the router sends a visit: to sign in when signed out, to a page the
+// role may use instead of one it may not, and anywhere without auth.
+import fc from 'fast-check';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { NavigationFailureType, isNavigationFailure } from 'vue-router';
+import { role } from './helpers/roles.js';
+
+vi.unmock('@/store.js');
+vi.mock('vue-router', async (importOriginal) => {
+  const actual = await importOriginal();
+  // a fresh history for each test, not the window's shared one
+  return { ...actual, createWebHistory: actual.createMemoryHistory };
+});
+const toast = vi.hoisted(() => vi.fn());
+vi.mock('buefy', () => ({
+  ToastProgrammatic: class {
+    open(options) {
+      toast(options);
+    }
+  },
+}));
+// the pages visits end on, which these tests do not draw
+vi.mock('@/views/Experiments.vue', () => ({ default: {} }));
+vi.mock('@/views/Hosts.vue', () => ({ default: {} }));
+vi.mock('@/views/Users.vue', () => ({ default: {} }));
+vi.mock('@/views/Tunneler.vue', () => ({ default: {} }));
+vi.mock('@/views/SignIn.vue', () => ({ default: {} }));
+vi.mock('@/views/Disabled.vue', () => ({ default: {} }));
+vi.mock('@/views/experiment/Base.vue', () => ({ default: {} }));
+vi.mock('@/views/experiment/VMtilesView.vue', () => ({ default: {} }));
+vi.mock('@/views/ProxySignUp.vue', () => ({ default: {} }));
+const getProxyLogin = vi.hoisted(() => vi.fn());
+vi.mock('@/api/auth.js', () => ({ getProxyLogin }));
+
+let router;
+let store;
+
+beforeEach(async () => {
+  vi.stubEnv('VITE_AUTH', 'enabled');
+  // test/setup.js gives each test an empty localStorage
+  sessionStorage.clear();
+  document.title = '';
+  toast.mockReset();
+
+  // a new router for each test, so every visit starts from nowhere
+  vi.resetModules();
+  setActivePinia(createPinia());
+  ({ default: router } = await import('@/router.js'));
+  store = (await import('@/store.js')).usePhenixStore();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
+});
+
+// signs in with a token that expires in the given number of seconds
+function signIn(signedInRole, expiresIn = 3600) {
+  const exp = Math.floor(Date.now() / 1000) + expiresIn;
+  store.auth = true;
+  store.username = 'alice';
+  store.role = signedInRole;
+  store.token = `header.${btoa(JSON.stringify({ exp }))}.signature`;
+}
+
+// the route a visit to path ends on, after any page the guard sends it to
+function visit(path) {
+  return new Promise((resolve, reject) => {
+    const stop = router.afterEach((to, _, failure) => {
+      // the guard starting a navigation of its own cancels this one
+      if (isNavigationFailure(failure, NavigationFailureType.cancelled)) {
+        return;
+      }
+      stop();
+      if (failure) reject(failure);
+      else resolve(to);
+    });
+    router.push(path);
+  });
+}
+
+describe('a signed-in role', () => {
+  const experimenter = role('Experimenter', ['experiments', 'list']);
+  const tiles = role('Tiles', ['vms', 'list']);
+  const oneExperiment = role(
+    'One',
+    ['experiments', 'list'],
+    ['experiments', 'get', ['exp1']],
+  );
+
+  it.each([
+    [
+      'opens a page it may use',
+      role('Hosts', ['experiments', 'list'], ['hosts', 'list']),
+      '/hosts',
+      'hosts',
+    ],
+    [
+      'is sent to the experiments list from a page it may not use',
+      experimenter,
+      '/hosts',
+      'experiments',
+    ],
+    [
+      'is sent to the VM tiles when it may only list VMs',
+      tiles,
+      '/hosts',
+      'vmtiles',
+    ],
+    [
+      'is sent to the VM tiles from the experiments list it may not use',
+      tiles,
+      '/experiments',
+      'vmtiles',
+    ],
+    [
+      'opens an experiment it may get',
+      oneExperiment,
+      '/experiment/exp1',
+      'experiment',
+    ],
+    [
+      'is sent to the experiments list from an experiment it may not get',
+      oneExperiment,
+      '/experiment/exp2',
+      'experiments',
+    ],
+    [
+      'opens the page asked for when it may use no page to be sent to',
+      role('Configs', ['configs', 'list']),
+      '/hosts',
+      'hosts',
+    ],
+    [
+      'opens a page without a permission check of its own',
+      tiles,
+      '/tunneler',
+      'tunneler',
+    ],
+    [
+      'opens the users page when it may list users',
+      role('Admin', ['experiments', 'list'], ['users', 'list']),
+      '/users',
+      'users',
+    ],
+    [
+      'opens the users page when it may get only its own user',
+      role('Self', ['experiments', 'list'], ['users', 'get', ['alice']]),
+      '/users',
+      'users',
+    ],
+    [
+      'is sent to the experiments list from the users page it may not use',
+      role('Other', ['experiments', 'list'], ['users', 'get', ['bob']]),
+      '/users',
+      'experiments',
+    ],
+    ['opens the experiments list as home', experimenter, '/', 'experiments'],
+    [
+      'opens the VM tiles as home for a VM viewer',
+      role('VM Viewer', ['vms', 'list']),
+      '/',
+      'vmtiles',
+    ],
+    [
+      'is sent to the disabled page when its account is disabled',
+      role('Disabled'),
+      '/hosts',
+      'disabled',
+    ],
+  ])('%s', async (_, signedInRole, path, destination) => {
+    signIn(signedInRole);
+    const to = await visit(path);
+    expect(to.name).toBe(destination);
+    expect(document.title).toBe(`${to.meta.title} - phēnix`);
+  });
+
+  it('is sent home from the sign-in page behind an authenticating proxy', async () => {
+    vi.stubEnv('VITE_AUTH', 'proxy');
+    signIn(experimenter);
+    expect((await visit('/signin')).name).toBe('experiments');
+  });
+
+  it('is signed out when its token has expired', async () => {
+    signIn(experimenter, -60);
+    expect((await visit('/experiments')).name).toBe('signin');
+    expect(store.auth).toBe(false);
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/expired/) }),
+    );
+  });
+
+  it('is signed out from the second its token expires, and not before', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const expiresIn = fc.oneof(
+      fc.integer({ min: -2, max: 2 }),
+      fc.integer({ min: -1e6, max: 1e6 }),
+    );
+    // any moment, so the token's whole-second exp lands anywhere in a second
+    const moment = fc.integer({
+      min: Date.UTC(2020, 0),
+      max: Date.UTC(2040, 0),
+    });
+    await fc.assert(
+      fc.asyncProperty(moment, expiresIn, async (now, seconds) => {
+        // from a page every visit may open, not the sign-in page logout opens
+        await router.push('/disabled');
+        vi.setSystemTime(now);
+        signIn(experimenter, seconds);
+        const to = await visit('/experiments');
+        expect(to.name).toBe(seconds > 0 ? 'experiments' : 'signin');
+        expect(store.auth).toBe(seconds > 0);
+      }),
+    );
+  });
+});
+
+describe('with no one signed in', () => {
+  it('sends a visit to sign in and remembers where it was going', async () => {
+    expect((await visit('/hosts')).name).toBe('signin');
+    expect(store.next.fullPath).toBe('/hosts');
+    expect(document.title).toBe('Sign in - phēnix');
+  });
+});
+
+describe('behind an authenticating proxy', () => {
+  // the proxy's user has no phenix user: the server's 404 names it
+  const unknownUser = (data) =>
+    Object.assign(new Error('Request failed with status code 404'), {
+      response: { status: 404, data },
+    });
+
+  it.each([
+    [
+      'offers to sign up the user a JSON Error names',
+      { message: 'user not found', metadata: { username: 'alice' } },
+      'alice',
+    ],
+    ['offers an empty sign-up for an error naming no user', 'forbidden', ''],
+  ])('%s', async (_, data, username) => {
+    vi.stubEnv('VITE_AUTH', 'proxy');
+    getProxyLogin.mockRejectedValue(unknownUser(data));
+    const to = await visit('/hosts');
+    expect(to.name).toBe('proxysignup');
+    expect(to.params.username).toBe(username);
+  });
+});
+
+describe('without authentication', () => {
+  it('signs in as a global admin and opens any page', async () => {
+    vi.stubEnv('VITE_AUTH', 'disabled');
+    expect((await visit('/hosts')).name).toBe('hosts');
+    expect(store).toMatchObject({
+      auth: true,
+      role: { name: 'Global Admin' },
+    });
+  });
+});

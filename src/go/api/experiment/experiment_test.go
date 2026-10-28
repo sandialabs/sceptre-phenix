@@ -2,6 +2,7 @@ package experiment_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -172,10 +173,11 @@ func TestTriggerAllowsAllAppsWhenAtLeastOneSupportsStage(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	// an earlier run of this test in the same process (-count) registered it
 	name := "test-all-apps-running-supported"
 	if err := app.RegisterUserApp(name, func() app.App {
 		return &noopApp{name: name}
-	}); err != nil {
+	}); err != nil && !errors.Is(err, app.ErrUserAppAlreadyRegistered) {
 		t.Fatalf("registering user app: %v", err)
 	}
 

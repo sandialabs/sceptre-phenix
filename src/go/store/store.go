@@ -5,6 +5,9 @@ import "errors"
 var (
 	ErrExist    = errors.New("config already exists")
 	ErrNotExist = errors.New("config does not exist")
+	// ErrConflict is returned by Update and Delete when Config.IfRevision is
+	// set and the stored config is at another revision.
+	ErrConflict = errors.New("config changed after the caller read it")
 )
 
 type (
@@ -31,13 +34,19 @@ type Store interface {
 	// Get initializes the given config with data from the store.
 	Get(*Config) error
 
-	// Create persists the given config to the store if it doesn't already exist.
+	// Create persists the given config to the store if it doesn't already
+	// exist, and sets its Metadata.Revision. It ignores Config.IfRevision.
 	Create(*Config) error
 
-	// Update persists the given config to the store if it already exists.
+	// Update persists the given config to the store if it already exists, and
+	// sets its Metadata.Revision to the new revision. When Config.IfRevision is
+	// not zero, it returns ErrConflict unless the stored config is at that
+	// revision.
 	Update(*Config) error
 
-	// Delete removes the given config from the config store.
+	// Delete removes the given config from the config store. When
+	// Config.IfRevision is not zero, it returns ErrConflict unless the stored
+	// config is at that revision.
 	Delete(*Config) error
 
 	// IsInitialized checks if the given phenix component has been initialized.

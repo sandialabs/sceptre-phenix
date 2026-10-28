@@ -118,9 +118,9 @@ It requires a valid username and password.
 </template>
 
 <script>
-  import axiosInstance from '@/utils/axios.js';
+  import * as authApi from '@/api/auth.js';
   import { usePhenixStore } from '@/store.js';
-  import { useErrorNotification } from '@/utils/errorNotif';
+  import { showError, useErrorNotification } from '@/utils/errorNotif';
 
   // The Create Account dialog's fields, apart from the sign-in form's.
   function blankSignUp() {
@@ -143,7 +143,6 @@ It requires a valid username and password.
           this.$buefy.toast.open({
             message: 'You must include a username',
             type: 'is-warning',
-            duration: 4000,
           });
           return {};
         }
@@ -152,50 +151,38 @@ It requires a valid username and password.
           this.$buefy.toast.open({
             message: 'You must include a password',
             type: 'is-warning',
-            duration: 4000,
           });
 
           return {};
         }
 
-        axiosInstance
-          .post('login', { user: this.username, pass: this.password })
-          .then(
-            (response) => {
-              const store = usePhenixStore();
-              store.login(response.data, this.rememberMe);
-            },
-            (response) => {
-              if (response.status == 401) {
-                this.$buefy.toast.open({
-                  message: 'The username and/or password is incorrect',
-                  type: 'is-warning',
-                  duration: 4000,
-                });
+        authApi.logIn(this.username, this.password).then(
+          (response) => {
+            const store = usePhenixStore();
+            store.login(response.data, this.rememberMe);
+          },
+          (response) => {
+            if (response.status == 401) {
+              this.$buefy.toast.open({
+                message: 'The username or password is incorrect',
+                type: 'is-warning',
+              });
 
-                this.username = null;
-                this.password = null;
-              } else if (response.status == 0) {
-                this.$buefy.toast.open({
-                  message: 'The data server is not available.',
-                  type: 'is-danger',
-                  duration: 6000,
-                });
+              this.username = null;
+              this.password = null;
+            } else if (response.status == 0) {
+              showError('The data server is not available.');
 
-                this.username = null;
-                this.password = null;
-              } else {
-                this.$buefy.toast.open({
-                  message: 'Getting the user information failed.',
-                  type: 'is-danger',
-                  duration: 4000,
-                });
+              this.username = null;
+              this.password = null;
+            } else {
+              showError('Could not get the user information.');
 
-                this.username = null;
-                this.password = null;
-              }
-            },
-          );
+              this.username = null;
+              this.password = null;
+            }
+          },
+        );
       },
 
       create() {
@@ -203,7 +190,6 @@ It requires a valid username and password.
           this.$buefy.toast.open({
             message: 'You must include an username',
             type: 'is-warning',
-            duration: 4000,
           });
 
           return {};
@@ -213,7 +199,6 @@ It requires a valid username and password.
           this.$buefy.toast.open({
             message: 'You must include a first name',
             type: 'is-warning',
-            duration: 4000,
           });
 
           return {};
@@ -223,7 +208,6 @@ It requires a valid username and password.
           this.$buefy.toast.open({
             message: 'You must include a last name',
             type: 'is-warning',
-            duration: 4000,
           });
 
           return {};
@@ -233,7 +217,6 @@ It requires a valid username and password.
           this.$buefy.toast.open({
             message: 'You must include a password',
             type: 'is-warning',
-            duration: 4000,
           });
 
           return {};
@@ -243,7 +226,6 @@ It requires a valid username and password.
           this.$buefy.toast.open({
             message: 'You must include a password confirmation',
             type: 'is-warning',
-            duration: 4000,
           });
 
           return {};
@@ -253,7 +235,6 @@ It requires a valid username and password.
           this.$buefy.toast.open({
             message: 'Your passwords do not match',
             type: 'is-warning',
-            duration: 4000,
           });
 
           return {};
@@ -269,8 +250,8 @@ It requires a valid username and password.
           last_name: this.signUp.last_name,
         };
 
-        axiosInstance
-          .post('signup', account)
+        authApi
+          .signUp(account)
           .then((_) => {
             // on success, sign user in
             this.username = account.username;
@@ -287,7 +268,6 @@ It requires a valid username and password.
               this.$buefy.toast.open({
                 message: 'User already exists',
                 type: 'is-warning',
-                duration: 4000,
               });
               if (this.signUpForm === form) {
                 this.userExists = true;

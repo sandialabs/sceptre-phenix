@@ -29,10 +29,24 @@ message Experiment {
 	uint32 vm_count = 15 [json_name="vm_count"];
 
 	uint32 delayed_vms = 20 [json_name="delayed_vms"];
+
+	// launch progress from 0 to 1 while the experiment is starting; only
+	// experiment lists set it
+	double percent = 21;
+
+	// minimega did not answer for every VM in vms, so some are listed as
+	// configured; only set when the response includes VMs
+	bool vms_unknown = 22 [json_name="vms_unknown"];
+
+	// why phenix could not resume the delayed VM starts or post-start apps the
+	// experiment's start still waited on when phenix restarted; empty otherwise
+	string interrupted = 23;
 }
 
 message ExperimentList {
 	repeated Experiment experiments = 1;
+	// how many experiments the role may list, before paging
+	uint32 total = 2;
 }
 
 message Schedule {
@@ -73,6 +87,11 @@ message CreateExperimentRequest {
 	string deploy_mode = 8 [json_name="deploy_mode"];
 	string default_bridge = 9 [json_name="default_bridge"];
 	bool use_gre_mesh = 10 [json_name="use_gre_mesh"];
+	// Added to every VM in the experiment's copy of the topology; a VM's own
+	// annotation for the same key wins.
+	map<string, google.protobuf.Value> node_annotations = 11 [json_name="node_annotations"];
+	// Added to the experiment's metadata annotations.
+	map<string, string> annotations = 12;
 }
 
 message SnapshotRequest {

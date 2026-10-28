@@ -6,8 +6,6 @@ DATE   := $(shell date -u)
 
 SOURCES   := $(shell find . -name '*.go')
 UISOURCES := $(shell find web -name '*.go' -not -path 'web/rbac/known_policy.go')
-CONFIGS   := $(shell find api/config/default -name '*')
-TEMPLATES := $(shell find tmpl/templates -name '*')
 
 TUNNELSOURCES := $(shell find tunneler -name '*.go' )
 
@@ -28,7 +26,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all check-protoc clean generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test test-cover
+.PHONY: all api-docs check-protoc clean cli-docs generate generate-mocks generate-protobuf go-generate help install install-dev deadcode fuzz phenix phenix-debug phenix-tunneler test test-cover test-stress
 .DEFAULT_GOAL := help
 
 help:
@@ -39,7 +37,11 @@ help:
 	@echo ""
 	@echo "Development targets:"
 	@echo "  all                - Run all tools (test)"
-	@echo "  test               - Run unit tests"
+	@echo "  test               - Run unit tests (V=1 for verbose output,"
+	@echo "                       COVERPROFILE=<file> to write a coverage profile)"
+	@echo "  test-stress        - Run the concurrency-heavy packages STRESS_COUNT times with -race"
+	@echo "  fuzz               - Run every Go fuzz target for FUZZTIME (default 30s) each"
+	@echo "  deadcode           - Fail on unreachable functions not in deadcode-allow.txt"
 	@echo ""
 	@echo "NOTE: Linting/formatting (golangci-lint) is handled by 'prek' from"
 	@echo "      the repository root, not by this Makefile. Run 'make lint'"
@@ -50,6 +52,8 @@ help:
 	@echo "  generate-mocks     - Generate mocks"
 	@echo "  generate-protobuf  - Generate protobufs"
 	@echo "  go-generate        - Run go generate"
+	@echo "  api-docs           - Render the API reference (web/public/docs/index.html)"
+	@echo "  cli-docs           - Regenerate the tracked CLI reference (docs/content/cli)"
 	@echo ""
 	@echo "Installation targets:"
 	@echo "  install            - Install Go module dependencies"
@@ -65,9 +69,31 @@ all: test
 
 generate: generate-mocks generate-protobuf go-generate
 
+# Shuffled test order exposes tests that depend on each other; a failing
+# package prints the -test.shuffle seed to rerun it with.
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
-	go test -v -race ./...
+	go test $(if $(V),-v) -race -shuffle=on $(if $(COVERPROFILE),-coverprofile=$(COVERPROFILE)) ./...
+
+# Packages whose shared state many goroutines touch: grants, the job registry,
+# the freshness sequence and the audit writer.
+STRESS_COUNT ?= 20
+STRESS_PKGS  ?= ./api/job/... ./util/freshness/... ./web/audit/... ./web/capability/... ./web/middleware/...
+
+test-stress:
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
+	go test -race -shuffle=on -count=$(STRESS_COUNT) $(STRESS_PKGS)
+
+# Each target fuzzes for FUZZTIME; a failing input lands in its testdata/fuzz/.
+FUZZTIME ?= 30s
+export FUZZTIME
+
+fuzz:
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
+	../../scripts/go-fuzz.sh
+
+deadcode: generate
+	../../scripts/go-deadcode.sh
 
 test-cover:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
@@ -106,8 +132,16 @@ bin/mockgen:
 bin/protoc-gen-go:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go
 
-web/public/docs/index.html: web/public/docs/openapi.yml
-	npx @redocly/cli build-docs web/public/docs/openapi.yml -o web/public/docs/index.html --title 'phenix API'
+api-docs: web/public/docs/index.html
+
+# Unlike the outputs above, the CLI reference is tracked; check-generated fails when it is stale.
+cli-docs: generate
+	go run ./cmd/gendocs -out ../../docs/content/cli -mkdocs ../../docs/mkdocs.yml
+
+# The Redocly version is pinned in scripts/api-docs.sh, shared with every
+# other place that renders the API reference.
+web/public/docs/index.html: web/public/docs/openapi.yml ../../scripts/api-docs.sh
+	../../scripts/api-docs.sh build web/public/docs/openapi.yml web/public/docs/index.html
 
 web/public/index.html:
 	$(MAKE) -C ../js dist/index.html

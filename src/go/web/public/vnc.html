@@ -9,7 +9,7 @@
     4. Preventing the `_clipboardServerCapabilitiesFormats` flags from getting set in `core/rfb.js`.
        These flags represent support for the extended clipboard pseudo-encoding which minimega does
        not support
-    5. Add the banner and styling to this file
+    5. Add the banner and styling to this file (banner lines are text, escaped by the template)
     6. Remove title changing in `app/ui.js` since we set it with templating
 -->
 <!DOCTYPE html>
@@ -100,7 +100,7 @@
     <link rel="preload" as="image" href="{{ .BasePath }}novnc/app/images/warning.svg">
 
     <script src="{{ .BasePath }}novnc/app/error-handler.js"></script>
-    <script>
+    <script nonce="{{ .Nonce }}">
     <!-- PHENIX EDIT init script: just add correct path and autoconnect param to hash. noVNC will grab parameters from there -->
     {{- if .Token }}
         window.location.hash = `autoconnect=true&path=${window.location.pathname.substr(1)}/ws?token=` + "{{ .Token }}"
@@ -355,11 +355,11 @@
     </div>
 
     <!-- PHENIX EDIT: banner -->
-    {{- if .TopBanner.Banner }}
-        <div id="banner-top" class="banner-top"><h3 class="banner-top">{{ .TopBanner.Banner }}</h3></div>
+    {{- if .TopBanner.Lines }}
+        <div id="banner-top" class="banner-top"><h3 class="banner-top">{{ range $i, $line := .TopBanner.Lines }}{{ if $i }}<br>{{ end }}{{ $line }}{{ end }}</h3></div>
     {{- end }}
-    {{- if .BottomBanner.Banner }}
-        <div class="banner-bottom"><h3 class="banner-bottom">{{ .BottomBanner.Banner }}</h3></div>
+    {{- if .BottomBanner.Lines }}
+        <div class="banner-bottom"><h3 class="banner-bottom">{{ range $i, $line := .BottomBanner.Lines }}{{ if $i }}<br>{{ end }}{{ $line }}{{ end }}</h3></div>
     {{- end }}
 
     <!-- This is where the RFB elements will attach -->

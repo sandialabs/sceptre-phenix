@@ -2,6 +2,8 @@ syntax = "proto3";
 
 option go_package = "web/proto";
 
+import "google/protobuf/struct.proto";
+
 message VM {
   string name = 1;
   string host = 2;
@@ -27,11 +29,30 @@ message VM {
   bool snapshot = 22 [json_name="snapshot"];
   uint32 inject_partition = 23 [json_name="inject_partition"];
   string description = 24;
+  // the node's annotations; only a single VM's GET response, and its PATCH
+  // response to a caller who may get the VM, carry them, not VM lists or
+  // broadcasts
+  google.protobuf.Struct annotations = 25;
 }
 
 message VMList {
   repeated VM vms = 1;
   uint32 total = 2;
+  // minimega did not answer for every VM of a running experiment: VMs it did
+  // not report are listed as configured, with no state
+  bool runtime_unknown = 3 [json_name="runtime_unknown"];
+  // when minimega was read for the VMs (RFC 3339), empty when it was not
+  string observed_at = 4 [json_name="observed_at"];
+  // the VMs a bulk update left unchanged, and why; only PATCH fills it
+  repeated VMItemError errors = 5;
+}
+
+// VMItemError is one VM a bulk update left unchanged: "skipped" when the role
+// may not change it, "failed" when its change did not take.
+message VMItemError {
+  string name = 1;
+  string status = 2;
+  string error = 3;
 }
 
 message Capture {
@@ -88,6 +109,8 @@ message UpdateVMRequest {
   uint32 inject_partition = 10 [json_name="inject_partition"];
   TagUpdateMode tag_update_mode = 11 [json_name="tag_update_mode"];
   map<string, string> tags = 12;
+  // replaces all of the node's annotations when set
+  google.protobuf.Struct annotations = 13;
 }
 
 message UpdateVMRequestList {

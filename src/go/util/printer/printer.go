@@ -11,6 +11,7 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 
+	"phenix/api/job"
 	"phenix/store"
 	"phenix/types"
 	"phenix/util/mm"
@@ -54,11 +55,16 @@ func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
 			apps = append(apps, app.Name())
 		}
 
+		started := exp.Status.StartTime()
+		if exp.Running() && exp.Status.Interrupted() != "" {
+			started += " (interrupted)"
+		}
+
 		table.Append([]string{
 			exp.Spec.ExperimentName(),
 			exp.Metadata.Annotations["topology"],
 			exp.Metadata.Annotations["scenario"],
-			exp.Status.StartTime(),
+			started,
 			strconv.Itoa(len(exp.Spec.Topology().Nodes())),
 			strconv.Itoa(len(exp.Spec.VLANs().Aliases())),
 			strings.Join(apps, ", "),
@@ -352,4 +358,96 @@ func PrintTableOfRuntimeSettings(writer io.Writer, settings map[string]any) {
 
 	table.AppendBulk(data)
 	table.Render()
+}
+
+// PrintTableOfJobs writes the given background jobs to the given writer as an
+// ASCII table.
+func PrintTableOfJobs(writer io.Writer, jobs ...job.Job) {
+	table := tablewriter.NewWriter(writer)
+	table.SetHeader([]string{"ID", "Kind", "Status", "Progress", "Experiment", "Owner", "Created"})
+
+	for _, j := range jobs {
+		table.Append([]string{
+			j.ID,
+			j.Kind,
+			string(j.Status),
+			jobProgress(j),
+			j.Experiment,
+			j.Owner,
+			j.Created.Format(time.RFC3339),
+		})
+	}
+
+	table.Render()
+}
+
+// PrintJob writes a background job, then a table of its items with their
+// outcomes, to the given writer.
+func PrintJob(writer io.Writer, j job.Job) {
+	fields := [][2]string{
+		{"ID", j.ID},
+		{"Kind", j.Kind},
+		{"Title", j.Title},
+		{"Status", string(j.Status)},
+		{"Progress", jobProgress(j)},
+		{"Experiment", j.Experiment},
+		{"Owner", j.Owner},
+		{"Created", j.Created.Format(time.RFC3339)},
+	}
+
+	if j.Finished != nil {
+		fields = append(fields, [2]string{"Finished", j.Finished.Format(time.RFC3339)})
+	}
+
+	if j.Error != "" {
+		fields = append(fields, [2]string{"Error", j.Error})
+	}
+
+	if j.Artifact != nil {
+		artifact := fmt.Sprintf("%s (%d bytes)", j.Artifact.Name, j.Artifact.Size)
+		if j.Artifact.Incomplete {
+			artifact += ", incomplete"
+		}
+
+		fields = append(fields, [2]string{"Artifact", artifact})
+	}
+
+	for _, f := range fields {
+		if f[1] != "" {
+			fmt.Fprintf(writer, "%-11s %s\n", f[0]+":", f[1])
+		}
+	}
+
+	if len(j.Items) == 0 {
+		return
+	}
+
+	fmt.Fprintln(writer)
+
+	table := tablewriter.NewWriter(writer)
+	table.SetHeader([]string{"Item", "Status", "Retryable", "Error"})
+	table.SetAutoWrapText(false)
+
+	for _, item := range j.Items {
+		retryable := ""
+		if item.Retryable {
+			retryable = "yes"
+		}
+
+		table.Append([]string{item.Name, string(item.Status), retryable, item.Error})
+	}
+
+	table.Render()
+}
+
+// jobProgress is a job's progress as "done/total", with the bytes when it
+// counts them.
+func jobProgress(j job.Job) string {
+	progress := fmt.Sprintf("%d/%d", j.Progress.Done, j.Progress.Total)
+
+	if j.Progress.BytesTotal > 0 {
+		progress += fmt.Sprintf(" (%d%% of %d bytes)", j.Progress.Bytes*100/j.Progress.BytesTotal, j.Progress.BytesTotal)
+	}
+
+	return progress
 }

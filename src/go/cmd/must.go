@@ -1,40 +1,11 @@
 package cmd
 
-import (
-	"fmt"
+import "fmt"
 
-	"github.com/spf13/pflag"
-)
-
-func MustGetString(flags *pflag.FlagSet, name string) string {
-	val, err := flags.GetString(name)
-	if err != nil {
-		panic(fmt.Sprintf("Getting value for %s: %v", name, err))
-	}
-
-	return val
-}
-
-func MustGetBool(flags *pflag.FlagSet, name string) bool {
-	val, err := flags.GetBool(name)
-	if err != nil {
-		panic(fmt.Sprintf("Getting value for %s: %v", name, err))
-	}
-
-	return val
-}
-
-func MustGetInt(flags *pflag.FlagSet, name string) int {
-	val, err := flags.GetInt(name)
-	if err != nil {
-		panic(fmt.Sprintf("Getting value for %s: %v", name, err))
-	}
-
-	return val
-}
-
-func MustGetStringArray(flags *pflag.FlagSet, name string) []string {
-	val, err := flags.GetStringArray(name)
+// mustGet returns a flag's value from a pflag getter such as
+// cmd.Flags().GetString, panicking when the flag is undefined or mistyped.
+func mustGet[T any](get func(string) (T, error), name string) T { //nolint:ireturn // T is concrete at each use
+	val, err := get(name)
 	if err != nil {
 		panic(fmt.Sprintf("Getting value for %s: %v", name, err))
 	}

@@ -6,25 +6,37 @@ on:
     paths:
       - 'src/go/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/check-generated.sh'
+      - 'docs/content/cli/**'
+      - 'docs/mkdocs.yml'
       - '.github/workflows/ci.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'src/go/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/check-generated.sh'
+      - 'docs/content/cli/**'
+      - 'docs/mkdocs.yml'
       - '.github/workflows/ci.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
 
 env:
   GO_VERSION: '1.24'
+  NODE_VERSION: '24'
 
 jobs:
   test-go:
+    if: github.event.action != 'closed'
     name: Test (Go)
     runs-on: ubuntu-latest
     steps:
@@ -36,13 +48,15 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: src/go/go.sum
       - name: Install system dependencies
-        run: sudo apt-get update -q && sudo apt-get install -y protobuf-compiler
+        # tests that need qemu-img fail rather than skip in CI (util/testenv)
+        run: sudo apt-get update -q && sudo apt-get install -y protobuf-compiler qemu-utils
       - name: Generate code
         working-directory: src/go
         run: make generate
       - name: Run tests with coverage
         working-directory: src/go
-        run: make test-cover
+        shell: bash
+        run: make test COVERPROFILE=coverage.out 2>&1 | tee test-output.txt
       # Coverage below the minimum in .github/coverage-minimums.json warns
       # but does not fail the job.
       - name: Summarize coverage
@@ -55,6 +69,12 @@ jobs:
             echo '### Go coverage'
             echo
             echo "Total statements: ${total}% (minimum ${min}%)"
+            echo
+            echo '| Package | Statements covered |'
+            echo '| --- | --- |'
+            awk '$1 == "ok" && $2 ~ /^phenix\/(web|web\/middleware|util\/mm)$/ {
+              for (i = 3; i < NF; i++) if ($i == "coverage:") print "| `" $2 "` | " $(i + 1) " |"
+            }' test-output.txt
           } >> "$GITHUB_STEP_SUMMARY"
           if awk -v t="$total" -v m="$min" 'BEGIN { exit !(t < m) }'; then
             echo "::warning title=Go coverage::Statement coverage is ${total}%, below the minimum of ${min}% in .github/coverage-minimums.json"
@@ -66,3 +86,26 @@ jobs:
           name: coverage-go
           path: src/go/coverage.out
           retention-days: 14
+
+  generated:
+    if: github.event.action != 'closed'
+    name: Reproducible generated outputs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/go/go.sum
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # scripts/api-docs.sh runs the pinned Redocly CLI through npx
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install system dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y protobuf-compiler
+      - name: Check generated outputs
+        # generates twice from scratch; fails on missing, non-deterministic or
+        # unignored outputs, changed tracked files, and a stale CLI reference
+        run: make check-generated

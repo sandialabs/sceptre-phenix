@@ -44,6 +44,51 @@ args = [
     "--fix"
 ]
 
+
+# OpenAPI: checks that the spec served at /docs/ is valid OpenAPI, with the
+# Redocly version pinned in scripts/api-docs.sh (needs Node.js, as the
+# src/js hooks do)
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "openapi-lint"
+name = "openapi lint (redocly, spec ruleset)"
+entry = "scripts/api-docs.sh lint src/go/web/public/docs/openapi.yml"
+language = "system"
+pass_filenames = false
+files = '^(src/go/web/public/docs/openapi\.yml|scripts/api-docs\.sh)$'
+priority = "lint"
+
+[[repos.hooks]]
+id = "schema-lint"
+name = "config schema lint (redocly, spec ruleset)"
+entry = "scripts/api-docs.sh lint-schemas"
+language = "system"
+pass_filenames = false
+files = '^(src/go/types/(version/)?schemas/[^/]+\.yaml|src/go/types/redocly\.yaml|scripts/api-docs\.sh)$'
+priority = "lint"
+
+# Regenerates docs/content/cli and its nav from the command tree; fails when a
+# file changes (commit the result). Needs Go and protoc, like go-generate.
+[[repos.hooks]]
+id = "cli-docs"
+name = "CLI reference is current (make cli-docs)"
+entry = "make cli-docs"
+language = "system"
+pass_filenames = false
+files = '^(src/go/.*\.go|src/go/go\.(mod|sum)|docs/content/cli/.*|docs/mkdocs\.yml)$'
+priority = "lint"
+
+# Docs images need alt text that describes them, not the bare word "screenshot"
+[[repos.hooks]]
+id = "docs-image-alt-text"
+name = "docs image alt text is not \"screenshot\""
+entry = '''(?i)!\[\s*screenshot\s*\]\(|\balt\s*=\s*["']\s*screenshot\s*["']'''
+language = "pygrep"
+files = '\.md$'
+priority = "lint"
+
 # Spell checking
 [[repos]]
 repo = "https://github.com/codespell-project/codespell"
@@ -56,7 +101,7 @@ args = [
   "ue,ot,ues,fo,nd,ist,te,parm,parms,ser,iif,iam,nin,filetest",
   # vendored UI assets and generated/binary content are noisy for codespell
   "--skip",
-  "*.svg,*.lock,*.sum,docs/content/images/*,docs/content/stylesheets/*,docs/theme/*,src/js/yarn.lock,src/js/dist/*,src/go/web/public/*,src/go/web/proto/*.pb.go,src/go/store/mock.go,src/go/web/rbac/known_policy.go,**/*.min.js,**/*.min.css"
+  "*.svg,*.lock,*.sum,*package-lock.json,docs/content/images/*,docs/content/stylesheets/*,docs/theme/*,src/js/dist/*,src/go/web/public/*,src/go/web/proto/*.pb.go,src/go/store/mock.go,src/go/web/rbac/known_policy.go,**/*.min.js,**/*.min.css"
 ]
 priority = "lint"
 

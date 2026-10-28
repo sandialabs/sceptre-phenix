@@ -1,11 +1,17 @@
 package scheduler
 
 import (
+	"errors"
+
 	ifaces "phenix/types/interfaces"
 	"phenix/util/shell"
 )
 
 var schedulers = make(map[string]Scheduler) //nolint:gochecknoglobals // global registry
+
+// ErrNoSchedulableHosts is returned when a VM needs a cluster host and the
+// cluster has none that VMs can be scheduled on.
+var ErrNoSchedulableHosts = errors.New("no schedulable cluster hosts")
 
 // Scheduler is the interface that identifies all the required functionality for
 // a phenix scheduler.

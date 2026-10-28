@@ -47,12 +47,12 @@ func terminal(ctx context.Context, dir, cmd string, args []string, envs ...strin
 
 	defer func() { signal.Stop(ch); close(ch) }()
 
-	old, err := term.MakeRaw(int(os.Stdin.Fd())) //nolint:gosec // integer overflow conversion uintptr -> int
+	old, err := term.MakeRaw(int(os.Stdin.Fd())) //nolint:gosec // G115 file descriptors fit in an int
 	if err != nil {
 		return fmt.Errorf("putting STDIN into raw mode: %w", err)
 	}
 
-	defer func() { _ = term.Restore(int(os.Stdin.Fd()), old) }() //nolint:gosec // integer overflow conversion uintptr -> int
+	defer func() { _ = term.Restore(int(os.Stdin.Fd()), old) }() //nolint:gosec // G115 file descriptors fit in an int
 
 	go func() { _, _ = io.Copy(tty, os.Stdin) }()
 

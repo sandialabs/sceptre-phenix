@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/activeshadow/structs"
@@ -42,6 +43,9 @@ const (
 	filebeatMaxHarvest   = 5 * time.Minute
 	filebeatHarvestTick  = 5 * time.Second
 )
+
+// updatePipeline reports a run's done stage to the pipeline view.
+var updatePipeline = scorch.UpdatePipeline //nolint:gochecknoglobals // replaced in tests
 
 func init() { //nolint:gochecknoinits // app registration
 	_ = app.RegisterUserApp("scorch", func() app.App { return newScorch() })
@@ -118,6 +122,10 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		return fmt.Errorf("invalid Scorch run ID for experiment %s", exp.Metadata.Name)
 	}
 
+	if scorchexe.CleanupOnly(ctx) {
+		return s.cleanupOnly(ctx, exp, runID, start)
+	}
+
 	if err := os.RemoveAll(runDir); err != nil {
 		return fmt.Errorf("removing existing contents of run directory at %s: %w", runDir, err)
 	}
@@ -170,7 +178,7 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	update.Status = statusRunning
-	_ = scorch.UpdatePipeline(update)
+	_ = updatePipeline(update)
 
 	if cmd != nil {
 		s.stopFilebeat(ctx, cmd, port)
@@ -195,10 +203,36 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		}
 	}
 
-	update.Status = statusSuccess
-	_ = scorch.UpdatePipeline(update)
+	update.Status = doneStatus(errors)
+	_ = updatePipeline(update)
 
 	return errors
+}
+
+// doneStatus is a run's done stage status: failure when the run or its
+// archiving met errs.
+func doneStatus(errs error) string {
+	if errs != nil {
+		return statusFailure
+	}
+
+	return statusSuccess
+}
+
+// cleanupOnly runs just the run's cleanup components, leaving the data an
+// earlier run collected in place.
+func (s *Scorch) cleanupOnly(
+	ctx context.Context,
+	exp *types.Experiment,
+	runID int,
+	start time.Time,
+) error {
+	opts := []Option{
+		Experiment(*exp), RunID(runID), StartTime(start.Format(time.RubyDate)),
+		LoopCount(0), CleanupOnly(),
+	}
+
+	return executor(ctx, s.md.ComponentSpecs(), s.md.Runs[runID], opts...)
 }
 
 func (Scorch) Cleanup(context.Context, *types.Experiment) error {
@@ -352,7 +386,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 
 				return
 			}
-			resp, err := http.DefaultClient.Do(req) //nolint:gosec // SSRF via taint analysis
+			resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704 asks the local Filebeat that scorch started
 			if err != nil {
 				plog.Error(
 					plog.TypePhenixApp,
@@ -440,16 +474,44 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 	}
 }
 
+// minimega's version is recorded with every run. It only changes if minimega
+// is upgraded while phenix keeps running, so it is asked for once rather than
+// at the end of every run.
+var mmVersionCache struct { //nolint:gochecknoglobals // process-wide cache
+	mu      sync.Mutex
+	version string
+}
+
+// minimegaVersion returns minimega's version, asking minimega only until it
+// has answered once.
+func minimegaVersion() (string, error) {
+	mmVersionCache.mu.Lock()
+	defer mmVersionCache.mu.Unlock()
+
+	if mmVersionCache.version != "" {
+		return mmVersionCache.version, nil
+	}
+
+	c := mmcli.NewCommand()
+	c.Command = "version"
+
+	v, err := mmcli.SingleResponse(mmcli.Run(c))
+	if err != nil {
+		return "", err
+	}
+
+	mmVersionCache.version = v
+
+	return v, nil
+}
+
 func (s Scorch) recordInfo(
 	runID int,
 	runDir string,
 	md store.ConfigMetadata,
 	startTime time.Time,
 ) error {
-	c := mmcli.NewCommand()
-	c.Command = "version"
-
-	mmVersion, err := mmcli.SingleResponse(mmcli.Run(c))
+	mmVersion, err := minimegaVersion()
 	if err != nil {
 		return fmt.Errorf("getting minimega version: %w", err)
 	}
@@ -646,6 +708,10 @@ func executor(
 	start := func() error { return runStage(ActionStart, exe.Start, true) }
 	stop := func() error { return runStage(ActionStop, exe.Stop, false) }
 	cleanup := func() error { return runStage(ActionCleanup, exe.Cleanup, false) }
+
+	if options.CleanupOnly {
+		return cleanup()
+	}
 
 	if err := configure(); err != nil {
 		errors := multierror.Append(nil, err)

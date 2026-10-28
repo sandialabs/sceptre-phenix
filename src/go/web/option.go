@@ -14,7 +14,11 @@ import (
 	"phenix/web/weberror"
 )
 
-const defaultJWTLifetime = 24 * time.Hour
+const (
+	defaultJWTLifetime = 24 * time.Hour
+	// DefaultShutdownGracePeriod is how long shutting the server down may take.
+	DefaultShutdownGracePeriod = 5 * time.Second
+)
 
 type ServerOption func(*serverOptions)
 
@@ -40,7 +44,11 @@ type serverOptions struct {
 
 	features map[string]bool
 
+	websharkDir string
+
 	unixSocketGID int
+
+	shutdownGrace time.Duration
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -50,6 +58,8 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		basePath:    "/",
 		jwtLifetime: defaultJWTLifetime,
 		features:    make(map[string]bool),
+
+		shutdownGrace: DefaultShutdownGracePeriod,
 	}
 
 	for _, opt := range opts {
@@ -66,6 +76,11 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 
 	if _, err := os.Stat("downloads/tunneler"); err == nil {
 		so.features["tunneler-download"] = true
+	}
+
+	if dir, ok := findWebShark(); ok {
+		so.websharkDir = dir
+		so.features["webshark"] = true
 	}
 
 	return so
@@ -167,16 +182,8 @@ func ServeWithProxyAuthHeader(h string) ServerOption {
 
 func ServeWithFeatures(f []string) ServerOption {
 	return func(o *serverOptions) {
-		if f == nil {
-			for k, v := range o.features {
-				if !v {
-					delete(o.features, k)
-				}
-			}
-		} else {
-			for _, feature := range f {
-				o.features[feature] = false
-			}
+		for _, feature := range f {
+			o.features[feature] = true
 		}
 	}
 }
@@ -184,6 +191,14 @@ func ServeWithFeatures(f []string) ServerOption {
 func ServeWithUnixSocketGID(g int) ServerOption {
 	return func(o *serverOptions) {
 		o.unixSocketGID = g
+	}
+}
+
+// ServeWithShutdownGracePeriod sets how long shutting the server down may
+// take; 0 closes everything without waiting.
+func ServeWithShutdownGracePeriod(d time.Duration) ServerOption {
+	return func(o *serverOptions) {
+		o.shutdownGrace = d
 	}
 }
 

@@ -18,9 +18,20 @@ export default defineConfig(({ mode }) => {
     base: (process.env.VITE_BASE_PATH || '/').replace(/\/?$/, '/'),
     plugins: [vue(), vueDevTools()],
     resolve: {
-      alias: {
-        '@': fileURLToPath(new URL('./src', import.meta.url)),
-      },
+      alias: [
+        {
+          find: '@',
+          replacement: fileURLToPath(new URL('./src', import.meta.url)),
+        },
+        // buefy's "module" entry is a single pre-bundled file that rollup
+        // cannot tree-shake; its per-component ESM build can be
+        {
+          find: /^buefy$/,
+          replacement: fileURLToPath(
+            new URL('./node_modules/buefy/dist/esm/index.js', import.meta.url),
+          ),
+        },
+      ],
     },
     // applies to npm run dev
     server: {
@@ -40,6 +51,24 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           ws: true,
         },
+        // health endpoints, served from the server root
+        '/healthz': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          logLevel: 'debug',
+        },
+        '/readyz': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          logLevel: 'debug',
+        },
+        // WebShark, which the server serves when it is installed
+        '/webshark': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          logLevel: 'debug',
+          ws: true,
+        },
       },
     },
     css: {
@@ -51,10 +80,14 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    // Vitest leaves out the Playwright suite in e2e/, which has its own runner.
+    // Vitest leaves out the Playwright suite in e2e/ and the perf/ tooling,
+    // which have their own runners.
+    // tests run in happy-dom unless a file starts `// @vitest-environment node`
     test: {
-      exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
-      setupFiles: ['test/unit-setup.js'],
+      exclude: ['e2e/**', 'perf/**', 'node_modules/**', 'dist/**'],
+      environment: 'happy-dom',
+      setupFiles: ['test/setup.js', 'test/unit-setup.js'],
+      environmentOptions: { happyDOM: { url: 'http://phenix.test/' } },
       // Measured only with --coverage (npm run test:coverage), as CI does.
       coverage: {
         provider: 'v8',

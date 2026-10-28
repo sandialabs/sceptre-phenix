@@ -32,9 +32,23 @@ const (
 	defaultMaxLogSize    = 100
 	defaultMaxLogBackups = 3
 	defaultMaxLogAge     = 90
+	rootDefaultLogPath   = "/var/log/phenix/phenix.log"
+	rootDefaultStore     = "bolt:///etc/phenix/store.bdb"
+
+	// DocDefaultAnnotation on a flag holds the default the CLI reference shows in place of
+	// one that depends on the user running phenix.
+	DocDefaultAnnotation = "phenix_doc_default"
+
+	consoleStderr   = "stderr"
+	consoleStdout   = "stdout"
+	usersConfigName = "users"
 )
 
 var (
+	// configSearchPaths are the directories searched, in order, for the config
+	// and users files.
+	configSearchPaths []string //nolint:gochecknoglobals // set once by init
+
 	phenixBase         string   //nolint:gochecknoglobals // global flag
 	minimegaBase       string   //nolint:gochecknoglobals // global flag
 	mountDir           string   //nolint:gochecknoglobals // global flag
@@ -119,8 +133,8 @@ var rootCmd = &cobra.Command{
 		if out := getEffectiveString(
 			"log.console",
 			cmd.Flags().Changed("log.console"),
-		); out != "stderr" {
-			if out == "stdout" {
+		); out != consoleStderr {
+			if out == consoleStdout {
 				logOutput = os.Stdout
 			} else if out != "" {
 				if err := os.MkdirAll(filepath.Dir(out), 0o750); err != nil {
@@ -238,10 +252,15 @@ func argsWithUsage(validate cobra.PositionalArgs) cobra.PositionalArgs {
 	}
 }
 
+// Root returns the phenix root command, for tools that walk the command tree.
+func Root() *cobra.Command {
+	return rootCmd
+}
+
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }
 
@@ -258,8 +277,8 @@ func init() {
 
 	if uid == "0" {
 		defaultConfigDir = configDir
-		defaultLogPath = "/var/log/phenix/phenix.log"
-		defaultStore = "bolt:///etc/phenix/store.bdb"
+		defaultLogPath = rootDefaultLogPath
+		defaultStore = rootDefaultStore
 	} else {
 		defaultConfigDir = filepath.Join(home, ".config", appName)
 		defaultLogPath = filepath.Join(home, "phenix_logs", "phenix.log")
@@ -270,55 +289,36 @@ func init() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
 	viper.AutomaticEnv() // read in environment variables that match
 
-	viper.SetConfigName("config")
-
 	// Config paths - first look in current directory, then home directory (if
 	// discoverable), then finally global config directory.
-	viper.AddConfigPath(".")
+	configSearchPaths = []string{"."}
 
 	if uid != "0" {
-		viper.AddConfigPath(defaultConfigDir)
+		configSearchPaths = append(configSearchPaths, defaultConfigDir)
 	}
 
-	viper.AddConfigPath("/etc/phenix")
+	configSearchPaths = append(configSearchPaths, configDir)
 
-	// If a config file is found, read it in.
-	err := viper.ReadInConfig()
-	if err == nil {
+	for _, path := range configSearchPaths {
+		viper.AddConfigPath(path)
+	}
+
+	viper.SetConfigName("config")
+
+	if readConfig(viper.GetViper(), defaultConfigDir, os.Stderr) {
 		viper.WatchConfig()
-	} else if errors.As(err, &viper.ConfigFileNotFoundError{}) {
-		// If the config file doesn't exist, create it so we can watch it for
-		// changes at runtime.
-		err := os.MkdirAll(defaultConfigDir, 0o750)
-		if err == nil {
-			targetFile := filepath.Join(defaultConfigDir, "config.yaml")
-			_ = viper.SafeWriteConfigAs(targetFile)
-			err := viper.ReadInConfig()
-			if err == nil {
-				viper.WatchConfig()
-			}
-		}
 	}
 
-	viper.SetConfigName("users")
-	viper.AddConfigPath(".")
+	viper.SetConfigName(usersConfigName)
 
-	if uid != "0" {
-		viper.AddConfigPath(defaultConfigDir)
-	}
-
-	viper.AddConfigPath(configDir)
-
-	// If a users config file is found, merge it in.
-	err = viper.MergeInConfig()
-	if err == nil {
+	if mergeConfig(viper.GetViper(), os.Stderr) {
 		viper.WatchConfig() // Watch the users config if it exists
 	}
 
 	viper.SetConfigName("config")
 
 	viper.OnConfigChange(func(e fsnotify.Event) {
-		if strings.TrimSuffix(filepath.Base(e.Name), filepath.Ext(e.Name)) == "users" {
+		if strings.TrimSuffix(filepath.Base(e.Name), filepath.Ext(e.Name)) == usersConfigName {
 			_ = web.ConfigureUsers(viper.GetStringSlice("ui.users"))
 		}
 		plog.SetLevelText(
@@ -355,8 +355,8 @@ func init() {
 		if out := getEffectiveString(
 			"log.console",
 			rootCmd.PersistentFlags().Changed("log.console"),
-		); out != "stderr" {
-			if out == "stdout" {
+		); out != consoleStderr {
+			if out == consoleStdout {
 				logOutput = os.Stdout
 			} else if out != "" {
 				err := os.MkdirAll(filepath.Dir(out), 0o750)
@@ -395,6 +395,8 @@ func init() {
 				),
 			)
 		}
+
+		warnRestartSettings()
 	})
 
 	rootCmd.PersistentFlags().
@@ -415,7 +417,7 @@ func init() {
 		StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
 	rootCmd.PersistentFlags().String("log.level", "info", "level to log messages at")
 	rootCmd.PersistentFlags().
-		String("log.console", "stderr", "output for console logs (text format) (stderr, stdout, or file path)")
+		String("log.console", consoleStderr, "output for console logs (text format) (stderr, stdout, or file path)")
 	rootCmd.PersistentFlags().
 		Int("log.system.max-size", defaultMaxLogSize, "maximum size in megabytes of the log file before it gets rotated")
 	rootCmd.PersistentFlags().
@@ -425,8 +427,8 @@ func init() {
 	rootCmd.PersistentFlags().
 		String(
 			"bridge-mode",
-			"",
-			"bridge naming mode for experiments ('auto' uses experiment name for bridge; 'manual' uses user-specified bridge name, or 'phenix' if not specified) (options: manual | auto)",
+			string(common.BridgeModeManual),
+			"bridge naming mode for experiments ('auto' uses experiment name for bridge; 'manual' uses user-specified bridge name, or 'phenix' if not specified; a phenix ui in 'auto' mode overrides it) (options: manual | auto)",
 		)
 	rootCmd.PersistentFlags().
 		String("deploy-mode", "", "deploy mode for minimega VMs (options: all | no-headnode | only-headnode)")
@@ -448,7 +450,66 @@ func init() {
 	rootCmd.PersistentFlags().
 		String("log.system.path", defaultLogPath, "path to system log (JSON format)")
 
+	_ = rootCmd.PersistentFlags().SetAnnotation("store.endpoint", DocDefaultAnnotation, []string{
+		rootDefaultStore + " as root, bolt://$HOME/.phenix.bdb otherwise",
+	})
+	_ = rootCmd.PersistentFlags().SetAnnotation("log.system.path", DocDefaultAnnotation, []string{
+		rootDefaultLogPath + " as root, $HOME/phenix_logs/phenix.log otherwise",
+	})
+
 	_ = viper.BindPFlags(rootCmd.PersistentFlags())
+}
+
+// readConfig reads the config file into v, creating an empty one in createDir if none
+// exists so it can be watched. Logging is not set up yet, so problems go to warn.
+func readConfig(v *viper.Viper, createDir string, warn io.Writer) bool {
+	err := v.ReadInConfig()
+	if err == nil {
+		return true
+	}
+
+	if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
+		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: %v\n", v.ConfigFileUsed(), err)
+
+		return false
+	}
+
+	if err := os.MkdirAll(createDir, 0o750); err != nil {
+		_, _ = fmt.Fprintf(warn, "phenix: warning: creating config directory: %v\n", err)
+
+		return false
+	}
+
+	target := filepath.Join(createDir, "config.yaml")
+
+	if err := v.SafeWriteConfigAs(target); err != nil {
+		_, _ = fmt.Fprintf(warn, "phenix: warning: creating config file %s: %v\n", target, err)
+
+		return false
+	}
+
+	if err := v.ReadInConfig(); err != nil {
+		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: %v\n", target, err)
+
+		return false
+	}
+
+	return true
+}
+
+// mergeConfig merges the file with v's current config name into v and reports
+// whether it did; a missing file is silent, any other error goes to warn.
+func mergeConfig(v *viper.Viper, warn io.Writer) bool {
+	err := v.MergeInConfig()
+	if err == nil {
+		return true
+	}
+
+	if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
+		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: %v\n", v.ConfigFileUsed(), err)
+	}
+
+	return false
 }
 
 func getCurrentUserInfo() (string, string) {

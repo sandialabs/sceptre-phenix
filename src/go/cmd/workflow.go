@@ -195,15 +195,15 @@ func applyOptionsFromFlags(cmd *cobra.Command) (applyOptions, error) {
 
 	return applyOptions{
 		Name:                 name,
-		Config:               MustGetString(cmd.Flags(), "config"),
+		Config:               mustGet(cmd.Flags().GetString, "config"),
 		ConfigExplicit:       cmd.Flags().Changed("config"),
-		DryRun:               MustGetBool(cmd.Flags(), "dry-run"),
-		Force:                MustGetBool(cmd.Flags(), "force"),
+		DryRun:               mustGet(cmd.Flags().GetBool, "dry-run"),
+		Force:                mustGet(cmd.Flags().GetBool, "force"),
 		Socket:               common.UnixSocket,
 		InjectsBase:          common.InjectsBase,
 		TopologiesBase:       common.TopologiesBase,
 		InjectsBaseExplicit:  cmd.Flags().Changed(optionInjectsBase),
-		FollowInjectSymlinks: MustGetBool(cmd.Flags(), optionFollowInjectSymlinks),
+		FollowInjectSymlinks: mustGet(cmd.Flags().GetBool, optionFollowInjectSymlinks),
 		Now:                  time.Now,
 	}, nil
 }
@@ -213,8 +213,8 @@ func applyOptionsFromFlags(cmd *cobra.Command) (applyOptions, error) {
 // the same value is accepted; with different values it is an error, since
 // there is no way to tell which was meant.
 func branchNameFromFlags(flags *pflag.FlagSet) (string, error) {
-	branch := MustGetString(flags, optionBranchName)
-	alias := MustGetString(flags, optionBranchNameAlias)
+	branch := mustGet(flags.GetString, optionBranchName)
+	alias := mustGet(flags.GetString, optionBranchNameAlias)
 
 	switch {
 	case !flags.Changed(optionBranchNameAlias):

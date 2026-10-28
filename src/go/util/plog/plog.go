@@ -22,7 +22,7 @@ var (
 	Level = new(slog.LevelVar) //nolint:gochecknoglobals // package level logger
 
 	// list of log attribute keys to remove from the default logger.
-	logKeysIgnored = map[string]struct{}{ScorchSohKey: {}} //nolint:gochecknoglobals // package level logger
+	logKeysIgnored = map[string]struct{}{ScorchSohKey: {}, auditTimestampKey: {}} //nolint:gochecknoglobals // package level logger
 )
 
 // main phenix [slog.Handler].
@@ -34,7 +34,7 @@ type phenixHandler struct {
 
 // NewPhenixHandler creates a new [slog.TextHandler] named "phenix-default"
 // logging to STDERR. This handler will default to a log level of [slog.LevelInfo]
-// until it is changed with the "SetLevel" function.
+// until it is changed with the "SetLevelText" function.
 func NewPhenixHandler(w io.Writer) {
 	if w == nil {
 		w = os.Stderr
@@ -84,6 +84,10 @@ func (h *phenixHandler) RemoveHandler(name string) {
 
 // Enabled implements the [slog.Handler] interface for the phenix handler.
 func (h *phenixHandler) Enabled(ctx context.Context, l slog.Level) bool {
+	if isAudit(ctx) {
+		return true
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -103,8 +107,9 @@ func (h *phenixHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	var errs error
 
-	for _, handler := range h.handlers {
-		if handler.Enabled(ctx, r.Level) {
+	for name, handler := range h.handlers {
+		// an audit record reaches the system log file whatever its level
+		if handler.Enabled(ctx, r.Level) || (name == fileHandlerName && isAudit(ctx)) {
 			errs = errors.Join(errs, handler.Handle(ctx, r.Clone()))
 		}
 	}

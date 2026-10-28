@@ -70,9 +70,9 @@ linters:
     - goheader # checks is file header matches to pattern
     - gomoddirectives # manages the use of 'replace', 'retract', and 'excludes' directives in go.mod
     - goprintffuncname # checks that printf-like functions are named with f at the end
-    #   - gosec # inspects source code for security problems
+    - gosec # inspects source code for security problems
     - gosmopolitan # reports certain i18n/l10n anti-patterns in your Go codebase
-    #   - govet # reports suspicious constructs, such as Printf calls whose arguments do not align with the format string
+    - govet # reports suspicious constructs, such as Printf calls whose arguments do not align with the format string
     - grouper # analyzes expression groups
     - iface # checks the incorrect use of interfaces, helping developers avoid interface pollution
     - importas # enforces consistent import aliases
@@ -238,6 +238,8 @@ linters:
         - ^golang.org/x/tools/go/analysis.Analyzer$
         - ^google.golang.org/protobuf/.+Options$
         - ^gopkg.in/yaml.v3.Node$
+        # phenix option-style structs
+        - ^phenix/web/audit.Fields$
       # Allows empty structures in return statements.
       # Default: false
       allow-empty-returns: true
@@ -300,14 +302,11 @@ linters:
       replace-local: true
 
     govet:
-      # Enable all analyzers.
-      # Default: false
-      enable-all: true
-      # Disable analyzers by name.
+      # Run the default analyzers only: enable-all adds shadow, which reports
+      # every `err` redeclared in an inner scope.
       # Run `GL_DEBUG=govet golangci-lint run --enable=govet` to see default, all available analyzers, and enabled analyzers.
-      # Default: []
-      disable:
-        - fieldalignment # too strict
+      # Default: false
+      enable-all: false
 
     mnd:
       # List of function patterns to exclude from analysis.
@@ -428,3 +427,10 @@ linters:
           - gosec
           - noctx
           - wrapcheck
+      # gosec taint false positives on JSON/YAML response writes, terminal text and the fixed mm --attach
+      # command; it reports some only on some runs, so one rule (never unused) replaces flaky nolints.
+      - path: '^(web|cmd|tunneler)/.*\.go$'
+        linters:
+          - gosec
+        text: 'G70[25]:'
+        source: '^\s*(_, _ = w\.Write\((body|marshalled)\)$|fmt\.Fprintf\(os\.Std(out|err),|return exec\.CommandContext\(ctx, phenix, "mm", "--attach"\), nil$)'

@@ -1,624 +1,102 @@
 <template>
   <div class="content">
     <b-modal v-model="expModal.active" @close="resetExpModal" has-modal-card>
-      <div class="modal-card" style="width: 35em">
-        <header class="modal-card-head">
-          <p class="modal-card-title">
-            {{ expModal.vm.name ? expModal.vm.name : 'unknown' }}
-          </p>
-        </header>
-        <section class="modal-card-body">
-          <p>Host: {{ expModal.vm.host }}</p>
-          <p>Description: {{ expModal.vm.description || 'unknown' }}</p>
-          <p>IP: {{ formatStringify(expModal.vm.ipv4) }}</p>
-          <p>CPU(s): {{ expModal.vm.cpus }}</p>
-          <p>Memory: {{ formatRAM(expModal.vm.ram) }}</p>
-          <p>Disk: {{ expModal.vm.disk }}</p>
-          <p>Uptime: {{ formatUptime(expModal.vm.uptime) }}</p>
-          <p
-            :class="{
-              'has-text-danger has-text-weight-bold': !expModal.vm.snapshot,
-            }">
-            Snapshot: {{ expModal.vm.snapshot ? 'enabled' : 'disabled' }}
-          </p>
-          <p v-if="expModal.vm.delayed_start">
-            Delay: {{ expModal.vm.delayed_start }}
-          </p>
-          <p>Network(s): {{ formatStringify(expModal.vm.networks) }}</p>
-          <p>Taps: {{ formatStringify(expModal.vm.taps) }}</p>
-          <p>CC Active: {{ expModal.vm.ccActive }}</p>
-          <div v-if="expModal.snapshots">
-            Snapshots:
-            <br />
-            <div
-              v-for="(snap, index) in expModal.snapshots"
-              :key="index"
-              class="vm-modal-list-row">
-              <b-tooltip
-                v-if="roleAllowed('vms/snapshots', 'update', expModal.fullName)"
-                label="restore this snapshot"
-                type="is-light is-right">
-                <b-icon
-                  class="is-clickable"
-                  icon="play-circle"
-                  @click="restoreSnapshot(expModal.vm.name, snap)"></b-icon>
-              </b-tooltip>
-              {{ snap }}
-            </div>
-          </div>
-          <div v-if="expModal.forwards.length !== 0">
-            Port Forwards:
-            <br />
-            <div
-              v-for="(forward, index) in expModal.forwards"
-              :key="index"
-              class="vm-modal-list-row">
-              {{ forward.desc }} ({{ forward.owner }})
-              <b-tooltip
-                v-if="forward.canDelete"
-                label="delete this port forward"
-                type="is-light is-right">
-                <b-icon
-                  class="isClickable"
-                  icon="trash"
-                  size="is-small"
-                  @click="
-                    deletePortForward(expModal.vm.name, forward)
-                  "></b-icon>
-              </b-tooltip>
-            </div>
-          </div>
-        </section>
-        <footer class="modal-card-foot buttons is-right">
-          <div
-            v-if="
-              roleAllowed('vms/start', 'update', expModal.fullName) &&
-              !showModifyStateBar
-            ">
-            <template v-if="!expModal.vm.running">
-              <b-tooltip label="start" type="is-light">
-                <b-button
-                  :aria-label="`Start VM ${expModal.vm.name}`"
-                  class="button is-success"
-                  icon-left="play"
-                  @click="startVm(expModal.vm.name)">
-                </b-button>
-              </b-tooltip>
-            </template>
-            <template v-else>
-              <b-tooltip label="pause" type="is-light">
-                <b-button
-                  :aria-label="`Pause VM ${expModal.vm.name}`"
-                  class="button is-warning"
-                  icon-left="pause"
-                  @click="pauseVm(expModal.vm.name)">
-                </b-button>
-              </b-tooltip>
-            </template>
-          </div>
-          <div
-            v-if="
-              features.includes('vm-mount') &&
-              roleAllowed('vms/mount', 'post', expModal.fullName) &&
-              !showModifyStateBar &&
-              expModal.vm.running
-            ">
-            <b-tooltip
-              :label="
-                !expModal.vm.ccActive
-                  ? 'mount vm (requires active cc)'
-                  : 'mount vm'
-              "
-              type="is-light">
-              <b-button
-                :aria-label="`Mount VM ${expModal.vm.name}`"
-                class="button is-light"
-                icon-left="hdd"
-                @click="showMountDialog(expModal.vm.name)"
-                :disabled="!expModal.vm.ccActive">
-              </b-button>
-            </b-tooltip>
-          </div>
-          <div
-            v-if="
-              roleAllowed('vms/forwards', 'create', expModal.fullName) &&
-              !showModifyStateBar &&
-              expModal.vm.running
-            ">
-            <b-tooltip label="create port forward" type="is-light">
-              <b-button
-                :aria-label="`Create port forward for VM ${expModal.vm.name}`"
-                class="button is-light"
-                icon-left="arrow-right"
-                @click="showPortForwardDialog(expModal.vm.name)"
-                :disabled="!expModal.vm.ccActive">
-              </b-button>
-            </b-tooltip>
-          </div>
-          <div
-            v-if="
-              roleAllowed('vms/memorySnapshot', 'create', expModal.fullName) &&
-              !showModifyStateBar &&
-              expModal.vm.running
-            ">
-            <b-tooltip label="create memory snapshot" type="is-light">
-              <b-button
-                :aria-label="`Create memory snapshot of VM ${expModal.vm.name}`"
-                class="button is-light"
-                icon-left="database"
-                @click="queueMemorySnapshotVMs(expModal.vm.name)">
-              </b-button>
-            </b-tooltip>
-          </div>
-          <div
-            v-if="
-              roleAllowed('vms/commit', 'create', expModal.fullName) &&
-              !showModifyStateBar &&
-              expModal.vm.running &&
-              expModal.vm.snapshot
-            ">
-            <b-tooltip label="create backing image" type="is-light">
-              <b-button
-                :aria-label="`Create backing image for VM ${expModal.vm.name}`"
-                class="button is-light"
-                icon-left="save"
-                @click="diskImage(expModal.vm.name)">
-              </b-button>
-            </b-tooltip>
-          </div>
-          <div
-            v-if="
-              roleAllowed('vms/snapshots', 'create', expModal.fullName) &&
-              !showModifyStateBar &&
-              expModal.vm.running &&
-              expModal.vm.snapshot
-            ">
-            <b-tooltip label="create vm snapshot" type="is-light">
-              <b-button
-                :aria-label="`Create snapshot of VM ${expModal.vm.name}`"
-                class="button is-light"
-                icon-left="camera"
-                @click="captureSnapshot(expModal.vm.name)">
-              </b-button>
-            </b-tooltip>
-          </div>
-          <div
-            v-if="
-              roleAllowed('vms/cdrom', 'update', expModal.fullName) &&
-              roleAllowed('vms/cdrom', 'delete', expModal.fullName) &&
-              !showModifyStateBar &&
-              expModal.vm.running
-            ">
-            <b-tooltip :label="getOpticalDiscLabel()" type="is-light">
-              <b-button
-                :aria-label="`Change optical disc for VM ${expModal.vm.name}`"
-                class="button is-light"
-                icon-left="compact-disc"
-                @click="showChangeDisc(expModal.vm)">
-              </b-button>
-            </b-tooltip>
-          </div>
-          <!-- STATE BAR -->
-          <div v-if="!showModifyStateBar">
-            <b-tooltip label="modify state" type="is-light">
-              <b-button
-                :aria-label="`Modify state of VM ${expModal.vm.name}`"
-                class="button is-light"
-                icon-left="edit"
-                @click="showModifyStateBar = true">
-              </b-button>
-            </b-tooltip>
-          </div>
-          <div v-if="showModifyStateBar">
-            <b-tooltip
-              v-if="roleAllowed('vms/redeploy', 'update', expModal.fullName)"
-              label="redeploy"
-              type="is-light">
-              <b-button
-                :aria-label="`Redeploy VM ${expModal.vm.name}`"
-                class="button is-success"
-                icon-left="history"
-                @click="redeploy(expModal.vm.name)">
-              </b-button>
-            </b-tooltip>
-
-            <b-tooltip
-              v-if="
-                roleAllowed('vms/reset', 'update', expModal.fullName) &&
-                expModal.vm.snapshot
-              "
-              label="reset disk state"
-              type="is-light">
-              <b-button
-                :aria-label="`Reset disk state of VM ${expModal.vm.name}`"
-                class="button is-success"
-                icon-left="undo-alt"
-                @click="resetVmState(expModal.vm.name)">
-              </b-button>
-            </b-tooltip>
-
-            <b-tooltip
-              v-if="roleAllowed('vms/restart', 'update', expModal.fullName)"
-              label="restart"
-              type="is-light">
-              <b-button
-                :aria-label="`Restart VM ${expModal.vm.name}`"
-                class="button is-success"
-                icon-left="sync-alt"
-                @click="restartVm(expModal.vm.name)">
-              </b-button>
-            </b-tooltip>
-
-            <b-tooltip
-              v-if="roleAllowed('vms/shutdown', 'update', expModal.fullName)"
-              label="shutdown"
-              type="is-light">
-              <b-button
-                :aria-label="`Shut down VM ${expModal.vm.name}`"
-                class="button is-danger"
-                icon-left="power-off"
-                @click="shutdownVm(expModal.vm.name)">
-              </b-button>
-            </b-tooltip>
-
-            <b-tooltip
-              v-if="roleAllowed('vms', 'delete', expModal.fullName)"
-              label="kill"
-              type="is-light">
-              <b-button
-                :aria-label="`Kill VM ${expModal.vm.name}`"
-                class="button is-danger"
-                icon-left="skull-crossbones"
-                @click="killVm(expModal.vm.name)">
-              </b-button>
-            </b-tooltip>
-
-            <b-tooltip label="close  toolbar" type="is-light">
-              <b-button
-                aria-label="Close state actions"
-                class="button is-light"
-                icon-left="window-close"
-                @click="showModifyStateBar = false">
-              </b-button>
-            </b-tooltip>
-          </div>
-        </footer>
-      </div>
+      <VmDetailsCard
+        :vm="expModalVm"
+        :full-name="expModal.fullName"
+        :experiment="experiment.name"
+        :capture-pending="pendingCaptureIfaces(expModalVm.name)"
+        :capture-all-pending="!!captureAllPending[expModalVm.name]"
+        :backing-chain="expModal.backingChain"
+        :disk="expModal.disk"
+        :cd-rom-disk="expModal.cdRomDisk"
+        :files-dir="expModal.filesDir"
+        :screenshot="vmScreenshot(expModalVm, screenshotsDue)"
+        :vnc-href="
+          expModalVm.running && !expModalVm.busy ? vncLoc(expModalVm) : null
+        "
+        :snapshots="expModal.snapshots"
+        :forwards="expModal.forwards"
+        :features="features"
+        @action="(name) => onVmAction(name, expModalVm)"
+        @capture="(index) => handlePcap(expModalVm, index)"
+        @change-vlan="(iface) => showVlanModal(expModalVm, iface.index)"
+        @edit-labels="showTagsModal(expModalVm)"
+        @save-annotations="saveAnnotations"
+        @restore-snapshot="(snap) => restoreSnapshot(expModalVm.name, snap)"
+        @delete-forward="(fwd) => deletePortForward(expModalVm.name, fwd)" />
     </b-modal>
-    <b-modal
-      v-model="portForwardModal.active"
+    <PortForwardModal
+      v-model:active="portForwardModal.active"
+      v-model:src-port="portForwardModal.srcPort"
+      v-model:dst-host="portForwardModal.dstHost"
+      v-model:dst-port="portForwardModal.dstPort"
       @close="resetPortForwardModal"
-      has-modal-card>
-      <div class="modal-card" style="width: 30em">
-        <header class="modal-card-head">
-          <p class="modal-card-title">Create New Port Forward</p>
-        </header>
-        <section class="modal-card-body">
-          <b-field label="Source Port">
-            <b-input type="text" v-model="portForwardModal.srcPort"></b-input>
-          </b-field>
-          <b-field label="Destination Host">
-            <b-input type="text" v-model="portForwardModal.dstHost"></b-input>
-          </b-field>
-          <b-field label="Destination Port">
-            <b-input type="text" v-model="portForwardModal.dstPort"></b-input>
-          </b-field>
-        </section>
-        <footer class="modal-card-foot buttons is-right">
-          <button class="button is-success" @click="createPortForward()">
-            Create
-          </button>
-        </footer>
-      </div>
-    </b-modal>
-    <b-modal v-model="vlanModal.active" has-modal-card>
-      <div class="modal-card" style="width: 25em">
-        <header class="modal-card-head">
-          <p class="modal-card-title">Change the VLAN</p>
-        </header>
-        <section class="modal-card-body">
-          Move interface {{ vlanModal.vmNetIndex }} from
-          {{ formatLowercase(vlanModal.vmFromNet) }} to a new one for the
-          {{ vlanModal.active ? vlanModal.vmName : 'unknown' }} VM. <br /><br />
-          <b-field>
-            <b-select v-model="vlan" expanded>
-              <option value="0">disconnect</option>
-              <option
-                v-for="(n, index) in experiment.vlans"
-                :key="index"
-                :value="n">
-                {{ formatLowercase(n.alias) }} ({{ n.vlan }})
-              </option>
-            </b-select>
-          </b-field>
-        </section>
-        <footer class="modal-card-foot buttons is-right">
-          <button
-            class="button is-success"
-            @click="
-              changeVlan(
-                vlanModal.vmNetIndex,
-                vlan,
-                vlanModal.vmFromNet,
-                vlanModal.vmName,
-              )
-            ">
-            Change
-          </button>
-        </footer>
-      </div>
-    </b-modal>
-    <b-modal
-      v-model="redeployModal.active"
+      @create="createPortForward()" />
+    <VlanModal
+      v-model:active="vlanModal.active"
+      v-model:vlan="vlan"
+      :vm-name="vlanModal.vmName"
+      :from-net="vlanModal.vmFromNet"
+      :net-index="vlanModal.vmNetIndex"
+      :vlans="experiment.vlans"
+      @change="
+        changeVlan(
+          vlanModal.vmNetIndex,
+          vlan,
+          vlanModal.vmFromNet,
+          vlanModal.vmName,
+        )
+      " />
+    <RedeployModal
+      v-model:active="redeployModal.active"
+      :vms="redeployModal.vm"
+      :disks="disks"
       @close="resetRedeployModal"
-      has-modal-card
-      ref="reDeploy">
-      <div class="modal-card" style="width: auto">
-        <header class="modal-card-head">
-          <p class="modal-card-title">Redeploy the VMs</p>
-        </header>
-        <section class="modal-card-body">
-          <div v-if="redeployModal.vm.length > 0">
-            <div v-for="(vmI, index) in redeployModal.vm" :key="index">
-              <div>
-                <hr v-if="parseInt(index) > 0" />
-                Modify current settings and redeploy
-                {{ vmI.name }} <br /><br />
-                CPUs:
-                <b-tooltip label="menu for assigning cpus" type="is-dark">
-                  <b-select v-model="vmI.cpus" expanded>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                    <option value="6">6</option>
-                    <option value="7">7</option>
-                    <option value="8">8</option>
-                  </b-select>
-                </b-tooltip>
-                Memory:
-                <b-tooltip label="menu for assigning memory" type="is-dark">
-                  <b-select v-model="vmI.ram" expanded>
-                    <option value="512">512 MB</option>
-                    <option value="1024">1 GB</option>
-                    <option value="2048">2 GB</option>
-                    <option value="3072">3 GB</option>
-                    <option value="4096">4 GB</option>
-                    <option value="8192">8 GB</option>
-                    <option value="12288">12 GB</option>
-                    <option value="16384">16 GB</option>
-                  </b-select>
-                </b-tooltip>
-                <br /><br />
-                Disk:
-                <b-tooltip :label="getDiskToolTip(vmI.disk)" type="is-dark">
-                  <b-select v-model="vmI.disk">
-                    <option v-for="(d, index) in disks" :key="index" :value="d">
-                      {{ getBaseName(d) }}
-                    </option>
-                  </b-select>
-                </b-tooltip>
-                <br /><br />
-                Replicate Original Injection(s):
-                <b-tooltip
-                  label="menu for replicating injections"
-                  type="is-dark">
-                  <b-select v-model="vmI.inject" expanded>
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </b-select>
-                </b-tooltip>
-              </div>
-            </div>
-          </div>
-        </section>
-        <footer class="modal-card-foot buttons is-right">
-          <button class="button" type="button" @click="closeModal('reDeploy')">
-            Cancel
-          </button>
-          <button
-            class="button is-success"
-            @click="redeployVm(redeployModal.vm)">
-            Redeploy
-          </button>
-        </footer>
-      </div>
-    </b-modal>
-    <b-modal
-      v-model="diskImageModal.active"
-      has-modal-card
+      @edit="(index, field, value) => (redeployModal.vm[index][field] = value)"
+      @redeploy="redeployVm(redeployModal.vm)" />
+    <VmFilenamesModal
+      v-model:active="diskImageModal.active"
+      title="Create a Disk Image"
+      kind="Disk image"
+      prompt="Create disk image of the"
+      :vms="diskImageModal.vm"
+      :valid="validate(diskImageModal)"
       @close="resetDiskImageModal"
-      ref="diskImage">
-      <div class="modal-card" style="width: auto">
-        <header class="modal-card-head">
-          <p class="modal-card-title">Create a Disk Image</p>
-        </header>
-        <section class="modal-card-body">
-          <div v-if="diskImageModal.vm.length > 0">
-            <div v-for="(vmI, index) in diskImageModal.vm" :key="index">
-              <div>
-                <hr
-                  v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
-                Create disk image of the {{ vmI.name }} VM with filename:
-                <br /><br />
-                <b-field
-                  :type="vmI.nameErrType"
-                  :message="vmI.nameErrMsg"
-                  autofocus>
-                  <b-input type="text" v-model="vmI.filename" focus></b-input>
-                </b-field>
-              </div>
-            </div>
-          </div>
-        </section>
-        <footer class="modal-card-foot buttons is-right">
-          <button class="button" type="button" @click="closeModal('diskImage')">
-            Cancel
-          </button>
-          <button
-            class="button is-success"
-            :disabled="!validate(diskImageModal)"
-            @click="backingImage(diskImageModal.vm)">
-            Create
-          </button>
-        </footer>
-      </div>
-    </b-modal>
-    <b-modal
-      v-model="memorySnapshotModal.active"
-      has-modal-card
+      @update:filename="
+        (index, name) => (diskImageModal.vm[index].filename = name)
+      "
+      @create="backingImage(diskImageModal.vm)" />
+    <VmFilenamesModal
+      v-model:active="memorySnapshotModal.active"
+      title="Create memory snapshot"
+      kind="Memory snapshot"
+      prompt="Create a memory snapshot for the"
+      :vms="memorySnapshotModal.vm"
+      :valid="validate(memorySnapshotModal)"
       @close="resetMemorySnapshotModal"
-      ref="memorySnapshot">
-      <div class="modal-card" style="width: auto">
-        <header class="modal-card-head">
-          <p class="modal-card-title">Create memory snapshot</p>
-        </header>
-        <section class="modal-card-body">
-          <div v-if="memorySnapshotModal.vm.length > 0">
-            <div v-for="(vmI, index) in memorySnapshotModal.vm" :key="index">
-              <div>
-                <hr
-                  v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
-                Create a memory snapshot for the
-                {{ vmI.name }} VM with filename: <br /><br />
-                <b-field
-                  :type="vmI.nameErrType"
-                  :message="vmI.nameErrMsg"
-                  autofocus>
-                  <b-input type="text" v-model="vmI.filename" focus></b-input>
-                </b-field>
-              </div>
-            </div>
-          </div>
-        </section>
-        <footer class="modal-card-foot buttons is-right">
-          <button
-            class="button"
-            type="button"
-            @click="closeModal('memorySnapshot')">
-            Cancel
-          </button>
-          <button
-            class="button is-success"
-            :disabled="!validate(memorySnapshotModal)"
-            @click="createMemorySnapshot(memorySnapshotModal.vm)">
-            Create
-          </button>
-        </footer>
-      </div>
-    </b-modal>
-    <b-modal v-model="appsModal.active" @close="resetAppsModal" has-modal-card>
-      <div class="modal-card" style="width: 25em">
-        <header class="modal-card-head">
-          <p class="modal-card-title">phēnix Apps</p>
-        </header>
-        <section class="modal-card-body">
-          <div v-if="appsModal.triggerable.length">
-            <b-checkbox
-              v-for="(a, index) in appsModal.triggerable"
-              :key="index"
-              :native-value="a"
-              v-model="appsModal.apps"
-              type="is-light">
-              {{ a }}
-            </b-checkbox>
-          </div>
-          <div v-else>
-            <span>This experiment doesn't include any triggerable apps.</span>
-          </div>
-        </section>
-        <footer class="modal-card-foot buttons is-right">
-          <div
-            v-if="
-              roleAllowed('experiments/trigger', 'create', experiment.name)
-            ">
-            <b-tooltip label="start selected apps" type="is-light is-left">
-              <b-button
-                v-if="appsModal.apps.length > 0"
-                class="button is-success"
-                @click="startApps(appsModal.apps)"
-                >Trigger Apps</b-button
-              >
-              <b-button v-else disabled class="button is-success"
-                >Trigger Apps</b-button
-              >
-            </b-tooltip>
-          </div>
-        </footer>
-      </div>
-    </b-modal>
-    <b-modal
-      v-model="fileViewerModal.active"
-      @close="resetFileViewerModal"
-      has-modal-card>
-      <div class="modal-card" style="width: 50em">
-        <header class="modal-card-head x-modal-dark">
-          <p class="modal-card-title x-config-text">
-            {{ fileViewerModal.title }}
-          </p>
-        </header>
-        <section class="modal-card-body x-modal-dark">
-          <div class="control">
-            <textarea
-              class="textarea x-config-text has-fixed-size"
-              rows="30"
-              v-model="fileViewerModal.contents"
-              readonly></textarea>
-          </div>
-        </section>
-        <footer class="modal-card-foot x-modal-dark buttons is-right">
-          <button class="button is-dark" @click="resetFileViewerModal">
-            Exit
-          </button>
-        </footer>
-      </div>
-    </b-modal>
-    <b-modal
-      v-model="opticalDiscModal.active"
-      has-modal-card
+      @update:filename="
+        (index, name) => (memorySnapshotModal.vm[index].filename = name)
+      "
+      @create="createMemorySnapshot(memorySnapshotModal.vm)" />
+    <TriggerAppsModal
+      v-model:active="appsModal.active"
+      v-model:apps="appsModal.apps"
+      :triggerable="appsModal.triggerable"
+      :experiment="experiment.name"
+      @close="resetAppsModal"
+      @trigger="startApps(appsModal.apps)" />
+    <OpticalDiscModal
+      v-model:active="opticalDiscModal.active"
+      v-model:disc="opticalDiscModal.disc"
+      :vm-name="opticalDiscModal.vmName"
+      :current="opticalDiscModal.current"
+      :isos="opticalDiscModal.isos"
+      :loading="opticalDiscModal.loading"
+      :error="opticalDiscModal.error"
       @close="resetOpticalDiscModal"
-      ref="opticalDisc">
-      <div class="modal-card" style="width: auto">
-        <header class="modal-card-head">
-          <p class="modal-card-title">
-            Change Optical Disc for {{ opticalDiscModal.vmName }}
-          </p>
-        </header>
-        <section class="modal-card-body pt-3">
-          <b-field label="Optical Disc:">
-            <b-tooltip
-              :label="getDiskToolTip(opticalDiscModal.disc, 'select ISO')"
-              type="is-dark">
-              <b-select
-                :value="opticalDiscModal.disc"
-                @update:modelValue="(value) => (opticalDiscModal.disc = value)">
-                <option v-for="(d, index) in disks" :key="index" :value="d">
-                  {{ getBaseName(d) }}
-                </option>
-              </b-select>
-            </b-tooltip>
-          </b-field>
-        </section>
-        <footer class="modal-card-foot buttons is-right">
-          <button
-            class="button"
-            type="button"
-            @click="closeModal('opticalDisc')">
-            Cancel
-          </button>
-          <button
-            class="button is-success"
-            @click="
-              changeOpticalDisc(opticalDiscModal.vmName, opticalDiscModal.disc)
-            ">
-            {{ getOpticalDiscLabel() }}
-          </button>
-        </footer>
-      </div>
-    </b-modal>
+      @insert="insertOpticalDisc()"
+      @eject="ejectOpticalDisc()" />
     <div class="level is-vcentered">
       <div class="level-left is-block">
         <span style="font-weight: bold; font-size: x-large"
@@ -641,262 +119,38 @@
         </div>
       </div>
     </div>
+    <b-notification
+      v-if="experiment.interrupted"
+      class="start-interrupted"
+      type="is-warning"
+      :closable="false"
+      role="status">
+      <b>Start interrupted:</b> {{ experiment.interrupted }}. Restart the
+      experiment to run its delayed VMs and post-start apps.
+    </b-notification>
     <b-field position="is-right" grouped>
       <!-- Multi-VM options shown next to search -->
-      <b-field v-if="isMultiVmSelected" position="is-center" grouped>
-        <template
-          v-if="
-            vmSelectedArray.every((vm) =>
-              roleAllowed('vms/start', 'update', experiment.name + '/' + vm),
-            ) && !showModifyStateBar
-          ">
-          <b-field>
-            <b-tooltip label="start" type="is-light">
-              <b-button
-                class="button is-success"
-                icon-left="play"
-                @click="processMultiVmAction(vmActions.start)">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-          <b-field>
-            <b-tooltip label="pause" type="is-light">
-              <b-button
-                aria-label="Pause selected VMs"
-                class="button is-warning"
-                icon-left="pause"
-                @click="processMultiVmAction(vmActions.pause)">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-        </template>
+      <VmSelectionToolbar
+        v-if="isMultiVmSelected"
+        v-model:modify-open="showModifyStateBar"
+        :selected="vmSelectedArray"
+        :experiment="experiment.name"
+        @act="actOnSelection" />
+
+      <b-field position="is-right">
         <b-field
           v-if="
-            vmSelectedArray.every((vm) =>
-              roleAllowed(
-                'vms/memorySnapshot',
-                'create',
-                experiment.name + '/' + vm,
-              ),
-            ) && !showModifyStateBar
+            activeTab == TAB.FILES &&
+            roleAllowed('experiments/files', 'list', experiment.name)
           ">
-          <b-tooltip label="create memory snapshot" type="is-light">
-            <b-button
-              aria-label="Create memory snapshots of selected VMs"
-              class="button is-light"
-              icon-left="database"
-              @click="processMultiVmAction(vmActions.createMemorySnapshot)">
-            </b-button>
-          </b-tooltip>
-        </b-field>
-        <b-field
-          v-if="
-            vmSelectedArray.every((vm) =>
-              roleAllowed('vms/commit', 'create', experiment.name + '/' + vm),
-            ) && !showModifyStateBar
-          ">
-          <b-tooltip label="create backing image" type="is-light">
-            <b-button
-              aria-label="Create backing images for selected VMs"
-              class="button is-light"
-              icon-left="save"
-              @click="processMultiVmAction(vmActions.createBacking)">
-            </b-button>
-          </b-tooltip>
-        </b-field>
-        <b-field
-          v-if="
-            vmSelectedArray.every((vm) =>
-              roleAllowed(
-                'vms/snapshots',
-                'create',
-                experiment.name + '/' + vm,
-              ),
-            ) && !showModifyStateBar
-          ">
-          <b-tooltip label="create vm snapshot" type="is-light">
-            <b-button
-              aria-label="Create snapshots of selected VMs"
-              class="button is-light"
-              icon-left="camera"
-              @click="processMultiVmAction(vmActions.captureSnapshot)">
-            </b-button>
-          </b-tooltip>
-        </b-field>
-        <b-field v-if="!showModifyStateBar">
-          <b-tooltip label="modify state" type="is-light">
-            <b-button
-              aria-label="Modify state of selected VMs"
-              class="button is-light"
-              icon-left="edit"
-              @click="showModifyStateBar = true">
-            </b-button>
-          </b-tooltip>
-        </b-field>
-        <template v-if="showModifyStateBar">
-          <b-field>
-            <b-tooltip
-              v-if="
-                vmSelectedArray.every((vm) =>
-                  roleAllowed(
-                    'vms/redeploy',
-                    'update',
-                    experiment.name + '/' + vm,
-                  ),
-                )
-              "
-              label="redeploy"
-              type="is-light">
-              <b-button
-                aria-label="Redeploy selected VMs"
-                class="button is-success"
-                icon-left="history"
-                @click="processMultiVmAction(vmActions.redeploy)">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-
-          <b-field>
-            <b-tooltip
-              v-if="
-                vmSelectedArray.every((vm) =>
-                  roleAllowed(
-                    'vms/reset',
-                    'update',
-                    experiment.name + '/' + vm,
-                  ),
-                )
-              "
-              label="reset disk state"
-              type="is-light">
-              <b-button
-                aria-label="Reset disk state of selected VMs"
-                class="button is-success"
-                icon-left="undo-alt"
-                @click="processMultiVmAction(vmActions.resetState)">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-
-          <b-field>
-            <b-tooltip
-              v-if="
-                vmSelectedArray.every((vm) =>
-                  roleAllowed(
-                    'vms/restart',
-                    'update',
-                    experiment.name + '/' + vm,
-                  ),
-                )
-              "
-              label="restart"
-              type="is-light">
-              <b-button
-                aria-label="Restart selected VMs"
-                class="button is-success"
-                icon-left="sync-alt"
-                @click="processMultiVmAction(vmActions.restart)">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-          <b-field>
-            <b-tooltip
-              v-if="
-                vmSelectedArray.every((vm) =>
-                  roleAllowed(
-                    'vms/restart',
-                    'update',
-                    experiment.name + '/' + vm,
-                  ),
-                )
-              "
-              label="restart"
-              type="is-light">
-              <b-button
-                aria-label="Restart selected VMs"
-                class="button is-success"
-                icon-left="sync-alt"
-                @click="processMultiVmAction(vmActions.restart)">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-          <b-field>
-            <b-tooltip
-              v-if="
-                vmSelectedArray.every((vm) =>
-                  roleAllowed(
-                    'vms/shutdown',
-                    'update',
-                    experiment.name + '/' + vm,
-                  ),
-                )
-              "
-              label="shutdown"
-              type="is-light">
-              <b-button
-                aria-label="Shut down selected VMs"
-                class="button is-danger"
-                icon-left="power-off"
-                @click="processMultiVmAction(vmActions.shutdown)">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-          <b-field>
-            <b-tooltip
-              v-if="
-                vmSelectedArray.every((vm) =>
-                  roleAllowed('vms', 'delete', experiment.name + '/' + vm),
-                )
-              "
-              label="kill"
-              type="is-light">
-              <b-button
-                aria-label="Kill selected VMs"
-                class="button is-danger"
-                icon-left="skull-crossbones"
-                @click="processMultiVmAction(vmActions.kill)">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-          <b-field>
-            <b-tooltip label="close toolbar" type="is-light">
-              <b-button
-                aria-label="Close state actions"
-                class="button is-light"
-                icon-left="window-close"
-                @click="showModifyStateBar = false">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-        </template>
-        <hr style="width: 1px; height: 100%; margin: 0" />
-      </b-field>
-
-      <b-field
-        v-if="roleAllowed('experiments/files', 'list', experiment.name)"
-        position="is-right">
-        <b-field>
-          <b-tooltip :label="netflow.tooltip" type="is-light">
-            <button
-              :aria-label="
-                netflow.capturing
-                  ? 'Stop netflow capture'
-                  : 'Start netflow capture'
-              "
-              :class="`button ${netflow.capturing ? 'is-danger' : 'is-success'}`"
-              @click="handleNetflow(!netflow.capturing)">
-              <b-icon icon="circle-nodes"></b-icon>
-            </button>
-          </b-tooltip>
-        </b-field>
-        <b-field v-if="activeTab == 1">
           <b-tooltip label="search on a specific category" type="is-light">
             <b-select
-              :value="filesTable.category"
+              aria-label="Filter files by category"
+              v-model="fileCategory"
               @update:modelValue="(value) => assignCategory(value)"
               placeholder="All Categories">
               <option
-                v-for="(category, index) in filesTable.categories"
+                v-for="(category, index) in fileCategories"
                 :key="index"
                 :value="category">
                 {{ category }}
@@ -909,18 +163,21 @@
             v-model="search.filter"
             :placeholder="searchPlaceholder"
             icon="search"
-            :data="searchHistory"
+            :data="searchOptions"
             @typing="searchVMs"
             @select="(option) => searchVMs(option)">
-            <template #empty>No results found</template>
+            <!-- netflow is filtered in place; there is nothing to list here -->
+            <template v-if="activeTab != TAB.NETFLOW" #empty
+              >No results found</template
+            >
           </b-autocomplete>
-          <p class="control">
+          <p v-if="search.filter || fileCategory" class="control">
             <button
               aria-label="Clear VM search"
               class="button input-button"
               @click="
                 searchVMs('');
-                filesTable.category = null;
+                fileCategory = null;
               ">
               <b-icon icon="window-close"></b-icon>
             </button>
@@ -938,10 +195,27 @@
             </b-button>
           </b-tooltip>
         </b-field>
+        <b-field
+          v-if="roleAllowed('experiments/netflow', 'create', experiment.name)">
+          <b-tooltip :label="netflow.tooltip" type="is-light">
+            <b-button
+              :aria-label="
+                netflow.capturing
+                  ? 'Stop netflow capture'
+                  : 'Start netflow capture'
+              "
+              :class="netflow.capturing ? 'is-danger' : 'is-success'"
+              :loading="netflow.starting || netflow.stopping"
+              icon-left="circle-nodes"
+              @click="handleNetflow(!netflow.capturing)">
+            </b-button>
+          </b-tooltip>
+        </b-field>
         <b-field>
-          <b-tooltip label="view soh" type="is-light" :delay="500">
+          <b-tooltip label="view state of health" type="is-light" :delay="500">
             <router-link
               v-if="roleAllowed('experiments', 'get', experiment.name)"
+              :aria-label="`View state of health for experiment ${$route.params.id}`"
               class="button is-light"
               :to="{
                 name: 'soh',
@@ -952,9 +226,10 @@
           </b-tooltip>
         </b-field>
         <b-field>
-          <b-tooltip label="view scorch" type="is-light" :delay="500">
+          <b-tooltip label="view SCORCH runs" type="is-light" :delay="500">
             <router-link
               v-if="roleAllowed('experiments', 'get', experiment.name)"
+              :aria-label="`View SCORCH runs for experiment ${$route.params.id}`"
               class="button is-light"
               :to="{
                 name: 'scorchruns',
@@ -975,7 +250,10 @@
               position="is-bottom-left"
               style="margin-right: 1rem">
               <template #trigger>
-                <b-button type="is-light" icon-left="columns" />
+                <b-button
+                  aria-label="Select visible columns"
+                  type="is-light"
+                  icon-left="columns" />
               </template>
               <b-dropdown-item
                 v-for="toggle in columnToggles"
@@ -997,491 +275,80 @@
 
     <div style="margin-top: -4em">
       <b-tabs v-model="activeTab">
-        <b-tab-item label="VMs" icon="desktop">
-          <b-table
-            :data="experiment.vms"
-            :paginated="table.isPaginated"
-            aria-next-label="Next page"
-            aria-previous-label="Previous page"
-            aria-page-label="Page"
-            aria-current-label="Current page"
-            backend-pagination
-            :total="table.total"
-            :per-page="table.perPage"
-            @page-change="onPageChange"
-            :pagination-simple="table.isPaginationSimple"
-            :pagination-size="table.paginationSize"
-            backend-sorting
-            default-sort-direction="asc"
-            default-sort="name"
-            @sort="onSort"
-            ref="vmTable">
-            <template #empty>
-              <section class="section">
-                <div class="content has-text-white has-text-centered">
-                  Your search turned up empty!
-                </div>
-              </section>
-            </template>
-            <b-table-column field="multiselect" label="">
-              <template v-slot:header>
-                <b-tooltip label="Select/Unselect All" type="is-dark">
-                  <b-checkbox v-model="checkAll"></b-checkbox>
-                </b-tooltip>
-              </template>
-              <template v-slot:default="props">
-                <template v-if="!props.row.busy">
-                  <div>
-                    <b-checkbox
-                      :disabled="props.row.external"
-                      v-model="vmSelectedArray"
-                      :native-value="props.row.name"></b-checkbox>
-                  </div>
-                </template>
-                <template v-else> BUSY </template>
-              </template>
-            </b-table-column>
-            <b-table-column
-              field="name"
-              label="Node"
-              width="150"
-              sortable
-              centered
-              v-slot="props">
-              <template
-                v-if="
-                  !props.row.external &&
-                  roleAllowed(
-                    'vms',
-                    'get',
-                    experiment.name + '/' + props.row.name,
-                  )
-                ">
-                <b-tooltip label="start/stop/redeploy the vm" type="is-dark">
-                  <span
-                    class="tag is-medium is-clickable"
-                    :class="decorator(props.row.state, props.row.busy)">
-                    <div class="field">
-                      <div @click="getInfo(props.row)">
-                        {{ props.row.name }}
-                      </div>
-                    </div>
-                  </span>
-                </b-tooltip>
-              </template>
-              <template v-else-if="props.row.external">
-                <span class="tag is-medium">
-                  <div class="field">
-                    {{ props.row.name }}
-                  </div>
-                </span>
-              </template>
-              <template v-else>
-                <b-tooltip label="get info for the vm" type="is-dark">
-                  <span
-                    class="tag is-medium"
-                    :class="decorator(props.row.running, !props.row.busy)">
-                    <div class="field">
-                      <div
-                        @click="
-                          expModal.active = true;
-                          expModal.vm = props.row;
-                        ">
-                        {{ props.row.name }}
-                      </div>
-                    </div>
-                  </span>
-                </b-tooltip>
-              </template>
-              <section v-if="props.row.busy">
-                <b-progress
-                  size="is-small"
-                  type="is-warning"
-                  show-value
-                  :value="props.row.percent"
-                  format="percent"></b-progress>
-              </section>
-            </b-table-column>
-            <b-table-column
-              v-if="columnVisibility.screenshot"
-              field="screenshot"
-              label="Screenshot"
-              centered
-              v-slot="props">
-              <template v-if="props.row.external">
-                <img
-                  :src="getVmScreenshot(props.row)"
-                  width="200"
-                  height="150" />
-              </template>
-              <template
-                v-else-if="
-                  (props.row.running && !props.row.busy) ||
-                  (props.row.delayed_start && props.row.state == 'BUILDING')
-                ">
-                <a :href="vncLoc(props.row)" target="_blank">
-                  <img
-                    :src="getVmScreenshot(props.row)"
-                    :width="props.row.screenshot ? undefined : 200"
-                    :height="props.row.screenshot ? undefined : 150" />
-                </a>
-              </template>
-              <template v-else-if="props.row.busy">
-                <b-tooltip
-                  label="Screenshot not available while busy with action"
-                  type="is-dark">
-                  <img
-                    :src="getVmScreenshot(props.row)"
-                    width="200"
-                    height="150" />
-                </b-tooltip>
-              </template>
-              <template v-else>
-                <img
-                  :src="getVmScreenshot(props.row)"
-                  width="200"
-                  height="150" />
-              </template>
-            </b-table-column>
-            <b-table-column
-              v-if="isDelayed()"
-              field="delayed"
-              label="Delay"
-              centered
-              v-slot="props">
-              <b-tag
-                type="is-info"
-                v-if="props.row.delayed_start && props.row.state == 'BUILDING'"
-                >{{ props.row.delayed_start }}</b-tag
-              >
-            </b-table-column>
-            <b-table-column
-              v-if="columnVisibility.host"
-              field="host"
-              label="Host"
-              width="150"
-              sortable
-              v-slot="props">
-              <template v-if="props.row.external"> EXTERNAL </template>
-              <template v-else>
-                {{ props.row.host }}
-              </template>
-            </b-table-column>
-            <b-table-column
-              v-if="columnVisibility.ipv4"
-              field="ipv4"
-              label="IP"
-              width="150">
-              <template v-slot:default="props">
-                <template
-                  v-if="
-                    roleAllowed(
-                      'vms/captures',
-                      'create',
-                      experiment.name + '/' + props.row.name,
-                    ) &&
-                    props.row.running &&
-                    !props.row.busy
-                  ">
-                  <b-tooltip
-                    :label="updateCaptureLabel(props.row)"
-                    type="is-dark">
-                    <div class="field">
-                      <div
-                        v-for="(ip, index) in props.row.ipv4"
-                        :class="tapDecorator(props.row.captures, index)"
-                        :key="index"
-                        @click="handlePcap(props.row, index)">
-                        {{ ip }}
-                      </div>
-                    </div>
-                  </b-tooltip>
-                </template>
-                <template v-else>
-                  {{ formatStringify(props.row.ipv4) }}
-                </template>
-              </template>
-            </b-table-column>
-            <b-table-column
-              v-if="columnVisibility.network"
-              field="network"
-              label="Network"
-              v-slot="props">
-              <template
-                v-if="
-                  roleAllowed(
-                    'vms',
-                    'patch',
-                    experiment.name + '/' + props.row.name,
-                  ) &&
-                  props.row.running &&
-                  !props.row.busy
-                ">
-                <b-tooltip label="change vlan(s)" type="is-dark">
-                  <div class="field">
-                    <div
-                      v-for="(n, index) in props.row.networks"
-                      :key="index"
-                      @click="
-                        vlanModal.active = true;
-                        vlanModal.vmName = props.row.name;
-                        vlanModal.vmFromNet = n;
-                        vlanModal.vmNet = props.row.networks;
-                        vlanModal.vmNetIndex = index;
-                      ">
-                      {{ formatLowercase(n) }}
-                    </div>
-                  </div>
-                </b-tooltip>
-              </template>
-              <template v-else>
-                {{ formatStringify(props.row.networks) }}
-              </template>
-            </b-table-column>
-            <b-table-column
-              v-if="columnVisibility.taps"
-              field="taps"
-              label="Taps"
-              v-slot="props">
-              <template
-                v-if="
-                  roleAllowed(
-                    'vms/captures',
-                    'create',
-                    experiment.name + '/' + props.row.name,
-                  ) &&
-                  props.row.running &&
-                  !props.row.busy
-                ">
-                <b-tooltip
-                  :label="updateCaptureLabel(props.row)"
-                  type="is-dark">
-                  <div class="field">
-                    <div
-                      v-for="(t, index) in props.row.taps"
-                      :class="tapDecorator(props.row.captures, index)"
-                      :key="index"
-                      @click="handlePcap(props.row, index)">
-                      {{ formatLowercase(t) }}
-                    </div>
-                  </div>
-                </b-tooltip>
-              </template>
-              <template v-else>
-                {{ formatStringify(props.row.taps) }}
-              </template>
-            </b-table-column>
-            <b-table-column
-              v-if="columnVisibility.uptime"
-              field="uptime"
-              label="Uptime"
-              width="165"
-              v-slot="props">
-              <template v-if="props.row.external"> unknown </template>
-              <template v-else>
-                {{ formatUptime(props.row.uptime) }}
-              </template>
-            </b-table-column>
-            <b-table-column
-              v-if="columnVisibility.labels"
-              label="Labels"
-              centered
-              v-slot="props">
-              <b-tooltip label="View/Edit Labels" type="is-dark">
-                <div @click="showTagsModal(props.row)" class="is-clickable">
-                  <font-awesome-layers full-width>
-                    <font-awesome-icon icon="tag" />
-                    <font-awesome-layers-text
-                      counter
-                      :value="tagCount(props.row.tags)" />
-                  </font-awesome-layers>
-                </div>
-              </b-tooltip>
-            </b-table-column>
-          </b-table>
-          <br />
+        <b-tab-item :value="TAB.VMS" label="VMs" icon="desktop">
+          <b-notification
+            v-if="runtimeUnknown"
+            class="runtime-unknown"
+            type="is-warning"
+            :closable="false"
+            role="status">
+            minimega did not answer. Showing the VMs as configured.
+          </b-notification>
           <b-field v-if="paginationNeeded" grouped position="is-right">
             <div class="control is-flex">
               <b-switch
                 v-model="table.isPaginated"
-                @update:modelValue="
-                  updateExperiment();
-                  changePaginate();
-                "
+                @update:modelValue="updateTable()"
                 size="is-small"
                 type="is-light"
                 >Paginate</b-switch
               >
             </div>
           </b-field>
+          <VmTable
+            ref="vmTable"
+            v-model:selected="vmSelectedArray"
+            v-model:check-all="checkAll"
+            :vms="experiment.vms"
+            :experiment="experiment.name"
+            :table="table"
+            :columns="columnVisibility"
+            :empty-text="vmsEmptyText"
+            :screenshots-due="screenshotsDue"
+            :capture-pending="capturePending"
+            :capture-all-pending="captureAllPending"
+            @page-change="onPageChange"
+            @sort="onSort"
+            @info="getInfo"
+            @details="showVmDetails"
+            @capture="handlePcap"
+            @change-vlan="showVlanModal"
+            @edit-labels="showTagsModal"
+            @action="onVmAction" />
         </b-tab-item>
-        <b-tab-item label="Files" icon="file-alt">
-          <b-table
-            :data="files"
-            :paginated="filesTable.isPaginated"
-            aria-next-label="Next page"
-            aria-previous-label="Previous page"
-            aria-page-label="Page"
-            aria-current-label="Current page"
-            backend-pagination
-            :total="filesTable.total"
-            :per-page="filesTable.perPage"
-            v-model:current-page="filesTable.currentPage"
-            @page-change="onFilesPageChange"
-            :pagination-simple="filesTable.isPaginationSimple"
-            :pagination-size="filesTable.paginationSize"
-            backend-sorting
-            :default-sort-direction="filesTable.defaultSortDirection"
-            default-sort="date"
-            @sort="onFilesSort">
-            <template #empty>
-              <section class="section">
-                <div class="content has-text-white has-text-centered">
-                  No Files Are Available!
-                </div>
-              </section>
-            </template>
-            <b-table-column field="name" label="Name" sortable v-slot="props">
-              <template v-if="props.row.plainText">
-                <b-tooltip label="view file" type="is-dark">
-                  <div class="field is-clickable">
-                    <div @click="viewFile(props.row)">
-                      {{ props.row.name }}
-                    </div>
-                  </div>
-                </b-tooltip>
-              </template>
-              <template v-else>
-                {{ props.row.name }}
-              </template>
-            </b-table-column>
-            <b-table-column field="path" label="Path" centered v-slot="props">
-              <b-tooltip
-                :label="
-                  '/phenix/images/' +
-                  experiment.name +
-                  '/files/' +
-                  props.row.path
-                "
-                type="is-dark">
-                <b-icon icon="info-circle" size="is-small" />
-              </b-tooltip>
-            </b-table-column>
-            <b-table-column field="categories" label="Category" v-slot="props">
-              <b-taglist>
-                <b-tag
-                  v-for="(c, index) in props.row.categories"
-                  :key="index"
-                  type="is-light"
-                  >{{ c }}</b-tag
-                >
-              </b-taglist>
-            </b-table-column>
-            <b-table-column
-              field="date"
-              label="Date"
-              sortable
-              centered
-              v-slot="props">
-              {{ props.row.date }}
-            </b-table-column>
-            <b-table-column
-              field="size"
-              label="Size"
-              sortable
-              centered
-              v-slot="props">
-              {{ formatFileSize(props.row.size) }}
-            </b-table-column>
-            <b-table-column
-              field="actions"
-              label="Actions"
-              centered
-              v-slot="props">
-              <b-button
-                class="button is-light is-small action"
-                icon-left="file-download"
-                @click="
-                  downloadFile(experiment.name, props.row.name, props.row.path)
-                ">
-              </b-button>
-            </b-table-column>
-          </b-table>
-          <br />
-          <b-field v-if="filesPaginationNeeded" grouped position="is-right">
-            <div class="control is-flex">
-              <b-switch
-                v-model="filesTable.isPaginated"
-                @update:modelValue="
-                  updateFiles();
-                  changeFilesPaginate();
-                "
-                size="is-small"
-                type="is-light"
-                >Paginate</b-switch
-              >
-            </div>
-          </b-field>
+        <b-tab-item
+          :value="TAB.FILES"
+          label="Files"
+          icon="file-alt"
+          :visible="roleAllowed('experiments/files', 'list', experiment.name)">
+          <ExperimentFilesTab
+            ref="filesTab"
+            paginate-key="running-files"
+            :filter="filesFilter"
+            :category="fileCategory"
+            @categories="(list) => (fileCategories = list)"
+            @found="addSearchHistory"
+            @waiting="(on) => (isWaiting = on)" />
         </b-tab-item>
-        <b-tab-item label="VNC" icon="arrow-pointer">
-          <b-field
-            label="Zoom Level"
-            style="width: 300px; margin-left: 32px"
-            horizontal>
-            <b-slider
-              :min="2"
-              :max="16"
-              :custom-formatter="(val) => 0.25 + (val - 1) * 0.25 + 'x'"
-              v-model="vncZoom">
-              <template v-for="val in [4, 8, 12, 16]" :key="val">
-                <b-slider-tick :value="val">
-                  {{ 0.25 + (val - 1) * 0.25 + 'x' }}
-                </b-slider-tick>
-              </template>
-            </b-slider>
-          </b-field>
-          <div
-            style="
-              display: flex;
-              flex-direction: row;
-              flex-wrap: wrap;
-              align-items: flex-end;
-              justify-content: center;
-              gap: 4px;
-            ">
-            <template v-if="vncVms.length">
-              <div v-for="vm in vncVms" :key="vm.name">
-                <a :href="vncLoc(vm)" target="_blank">
-                  <img
-                    :src="getVmScreenshot(vm)"
-                    :width="vncWidth"
-                    style="display: block" />
-                </a>
-                <a
-                  style="
-                    color: whitesmoke;
-                    display: block;
-                    background-color: grey;
-                    text-align: center;
-                    padding: 2px 0px;
-                  "
-                  @click="getInfo(vm)"
-                  >{{ vm.name }}</a
-                >
-              </div>
-            </template>
-            <template v-else>Your search turned up empty!</template>
-          </div>
+        <b-tab-item :value="TAB.VNC" label="VNC" icon="arrow-pointer">
+          <VncTiles
+            v-model:zoom="vncZoom"
+            :vms="experiment.vms"
+            :experiment="experiment.name"
+            :width="vncWidth"
+            :screenshots-due="screenshotsDue"
+            @info="getInfo" />
         </b-tab-item>
-        <b-tab-item label="Netflow" icon="circle-nodes" v-if="netflow.data">
-          <div class="control">
-            <textarea
-              class="textarea"
-              style="font-family: 'Courier New'"
-              readonly
-              rows="40"
-              v-model="netflow.data"></textarea>
-          </div>
+        <b-tab-item
+          :value="TAB.NETFLOW"
+          label="Netflow"
+          icon="circle-nodes"
+          v-if="roleAllowed('experiments/netflow', 'get', experiment.name)">
+          <NetflowPanel
+            ref="netflowPanel"
+            :lines="netflow.lines"
+            :starting="netflow.starting"
+            :search="netflowSearch" />
         </b-tab-item>
       </b-tabs>
     </div>
@@ -1493,158 +360,394 @@
 </template>
 
 <script>
+  import { getCurrentInstance } from 'vue';
+  import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
   import VMLabelsModal from '@/components/VMLabelsModal.vue';
-  import { tagCount } from '@/utils/tagCount';
-  import { addWsHandler, removeWsHandler, sendWsMsg } from '@/utils/websocket';
+  import NetflowPanel from '@/components/experiment/NetflowPanel.vue';
+  import OpticalDiscModal from '@/components/experiment/OpticalDiscModal.vue';
+  import PortForwardModal from '@/components/experiment/PortForwardModal.vue';
+  import RedeployModal from '@/components/experiment/RedeployModal.vue';
+  import TriggerAppsModal from '@/components/experiment/TriggerAppsModal.vue';
+  import VlanModal from '@/components/experiment/VlanModal.vue';
+  import VmDetailsCard from '@/components/experiment/VmDetailsCard.vue';
+  import VmFilenamesModal from '@/components/experiment/VmFilenamesModal.vue';
+  import VmSelectionToolbar from '@/components/experiment/VmSelectionToolbar.vue';
+  import VmTable from '@/components/experiment/VmTable.vue';
+  import VncTiles from '@/components/experiment/VncTiles.vue';
+  import {
+    partitionVMsForAction,
+    skippedVMsText,
+  } from '@/components/experiment/vmActions.js';
+  import {
+    VM_EVENT_TYPES,
+    applyVmEvent,
+    eventVmName,
+    findVm,
+    replaceVm,
+    useVmRows,
+  } from '@/components/experiment/vmRows.js';
+  import { vmScreenshot, vncHref } from '@/components/experiment/vmScreens.js';
+  import { useNetflowCapture } from '@/components/experiment/useNetflowCapture.js';
+  import { useVmCaptures } from '@/components/experiment/useVmCaptures.js';
+  import {
+    TAB,
+    sameQuery,
+    searchFromQuery,
+    searchKey,
+    tabFromQuery,
+    tabQuery,
+  } from '@/components/experiment/experimentTabs.js';
+  import {
+    minuteStamp,
+    timestampParts,
+  } from '@/components/experiment/timestamp.js';
+  import { addSearch } from '@/utils/searchHistory.js';
+  import {
+    addWsHandler,
+    onWsReconnect,
+    removeWsHandler,
+    sendWsMsg,
+  } from '@/utils/websocket';
   import { usePhenixStore } from '@/store';
   import VMMountBrowserModal from '@/components/VMMountBrowserModal.vue';
   import { debounce } from 'lodash-es';
+  import { readPref, writePref } from '@/utils/prefs.js';
   import { roleAllowed } from '@/utils/rbac.js';
-  import axiosInstance from '@/utils/axios.js';
-  import { formattingMixin } from '@/utils/formattingMixin.js';
-  import { useErrorNotification } from '@/utils/errorNotif';
-  import { partitionSnapshotVMNames } from '@/utils/vmSnapshot.js';
+  import * as disksApi from '@/api/disks.js';
+  import * as experimentsApi from '@/api/experiments.js';
+  import * as vmsApi from '@/api/vms.js';
+  import { showError, useErrorNotification } from '@/utils/errorNotif';
+  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import { cachePage } from '@/utils/pageCache.js';
+  import { FreshnessMeta } from '@/utils/freshness.js';
   import {
-    applyStopCaptureUpdate,
-    isInterfaceCapturing,
-    hasMultipleCaptures,
-  } from '@/utils/captures.js';
-  import externalImg from '@/assets/imgs/external.png';
-  import notAvailableImg from '@/assets/imgs/not-available.png';
-  import delayedImg from '@/assets/imgs/delayed.png';
-  import notRunningImg from '@/assets/imgs/not-running.png';
+    experimentKey,
+    fetchRunningExperiment,
+    withoutScreenshots,
+  } from '@/utils/pageData.js';
+  import { useTable } from '@/utils/useTable.js';
+  import { escapeHTML } from '@/utils/escapeHTML.js';
+  import {
+    offerForcedStop,
+    stopCanBeForced,
+  } from '@/utils/experimentActions.js';
+  import {
+    backingChain,
+    baseName,
+    diskList,
+    filesDir,
+    findDisk,
+    isoDisks,
+  } from '@/utils/diskChain.js';
+  import { namedList, pluralWord } from '@/utils/plural.js';
+  import { useJobStore } from '@/utils/jobs.js';
+  import {
+    confirmOperation,
+    notifyOutcome,
+    outcomeFromJob,
+    outcomeFromSettled,
+  } from '@/utils/operations.js';
+
+  // how long a VM shows "Loading Screenshot" before "Not Available"; minimega
+  // takes screenshots one at a time, so large experiments need a while
+  const SCREENSHOT_WAIT_MS = 60000;
+
+  // the screenshot width the server uses until the page asks for another
+  const DEFAULT_SCREENSHOT_WIDTH = 200;
+
+  // the CD-ROM picker with nothing open
+  function emptyOpticalDiscModal() {
+    return {
+      active: false,
+      vmName: null,
+      // the ISO inserted when it opened, '' for none
+      current: '',
+      // the ISO picked
+      disc: null,
+      // the ISO images to pick from, while loading and after
+      isos: [],
+      loading: false,
+      error: null,
+    };
+  }
+
+  // what each power action did, for its outcome summary
+  const VM_ACTION_DONE = {
+    start: 'Started',
+    pause: 'Paused',
+    restart: 'Restarted',
+    shutdown: 'Shut down',
+    kill: 'Killed',
+    resetDisk: 'Reset the disks of',
+  };
+
+  // the page's handler for each action the selection toolbar takes
+  const SELECTION_HANDLERS = {
+    start: 'startVm',
+    pause: 'pauseVm',
+    memorySnapshot: 'queueMemorySnapshotVMs',
+    commit: 'diskImage',
+    snapshot: 'captureSnapshot',
+    redeploy: 'redeploy',
+    resetDisk: 'resetVmState',
+    restart: 'restartVm',
+    shutdown: 'shutdownVm',
+    kill: 'killVm',
+  };
 
   export default {
-    mixins: [formattingMixin],
+    emits: ['running'],
+    components: {
+      ExperimentFilesTab,
+      NetflowPanel,
+      OpticalDiscModal,
+      PortForwardModal,
+      RedeployModal,
+      TriggerAppsModal,
+      VlanModal,
+      VmDetailsCard,
+      VmFilenamesModal,
+      VmSelectionToolbar,
+      VmTable,
+      VncTiles,
+    },
     setup() {
-      return { roleAllowed, tagCount };
+      const { proxy } = getCurrentInstance();
+      const { table } = useTable({
+        name: 'running-vms',
+        fields: { total: 0, sortColumn: 'name', sortOrder: 'asc' },
+      });
+      return {
+        table,
+        // the seq of each VM's last change, so a VM list read before it
+        // does not undo it
+        vmSeqs: useVmRows(),
+        ...useNetflowCapture(),
+        ...useVmCaptures({
+          setWaiting: (on) => (proxy.isWaiting = on),
+          fanOut: (...args) => proxy.fanOut(...args),
+        }),
+        roleAllowed,
+        vmScreenshot,
+        TAB,
+      };
     },
 
     async beforeUnmount() {
+      this.unmounting = true;
+      this.searchVMs.cancel();
+      this.pageResize?.disconnect();
+      document.removeEventListener('visibilitychange', this.onVisibilityChange);
       removeWsHandler(this.handleWs);
+      this.offWsReconnect();
+      clearTimeout(this.screenshotsTimer);
+      this.unsubscribeVms();
 
-      if (this.socket) {
-        this.socket.close();
-        this.socket = null;
-      }
+      this.loader.stop();
+    },
+
+    mounted() {
+      // the page changes height without the window resizing: the tab left
+      // for the netflow tab stays laid out until its slide ends, and the VM
+      // table fills in after the netflow table may have been sized
+      this.pageResize = new ResizeObserver(() =>
+        this.$refs.netflowPanel?.fit(),
+      );
+      this.pageResize.observe(this.$el);
     },
 
     async created() {
-      this.features = usePhenixStore().features;
+      // the URL the page opened on, which already names its tab and search
+      this.syncedQuery = this.$route.query;
+      this.searchVMs = debounce((term) => {
+        this.search.filter = term ?? '';
+        this.syncQuery();
+        switch (this.activeTab) {
+          case TAB.VMS:
+          case TAB.VNC:
+            // before the first load, apply() lists the VMs with this filter
+            if (this.experiment.name) this.updateTable();
+            break;
+          case TAB.FILES:
+            this.$refs.filesTab?.reload();
+            break;
+          // the netflow tab filters what it already has
+        }
+      }, 250);
       addWsHandler(this.handleWs);
+      document.addEventListener('visibilitychange', this.onVisibilityChange);
+      // the server drops VM subscriptions and the screenshot size when the
+      // websocket reconnects
+      this.offWsReconnect = onWsReconnect(
+        () => {
+          if (this.vncWidth != DEFAULT_SCREENSHOT_WIDTH) {
+            this.setVncScreenshotRes(this.vncWidth);
+          }
+          // a hidden tab lists its VMs, and so gets screenshots, once shown
+          if (this.experiment.name && !document.hidden) this.updateTable();
+        },
+        { spread: true },
+      );
       this.loadColumnVisibility();
-      this.loadPaginationPreference();
-      this.updateExperiment();
+      // cached so the page opens at once; the header shows how old the copy
+      // is while a fresh one loads
+      this.loader = createPageLoader({
+        key: experimentKey(this.$route.params.id),
+        fetch: (signal, meta) =>
+          fetchRunningExperiment(this.$route.params.id, signal, meta),
+        apply: (experiment) => {
+          if (!experiment.running) {
+            // stopped since the page was opened; Base shows the stopped view
+            this.$emit('running', false);
+            return;
+          }
+          // the VM table arrives over the websocket; once it has, a reload
+          // keeps it (and its screenshots, pagination, and filter)
+          if (this.vmsLoaded) {
+            this.experiment = { ...experiment, vms: this.experiment.vms };
+          } else {
+            const shots = new Map(
+              (this.experiment.vms ?? []).map((vm) => [vm.name, vm.screenshot]),
+            );
+            this.experiment = {
+              ...experiment,
+              vms: (experiment.vms ?? []).map((vm) => ({
+                ...vm,
+                screenshot: vm.screenshot || shots.get(vm.name),
+              })),
+            };
+            this.table.total = experiment.vm_count;
+          }
+
+          // Once is enough: the list comes back over the websocket and VM
+          // events keep it current, and each list has the server ask minimega
+          // for every VM. The cached copy and the fresh one are both applied
+          // on open, so listing on each would list twice.
+          if (!this.vmsRequested) {
+            this.vmsRequested = true;
+            this.updateTable();
+          }
+        },
+        // the header's refresh button lists the VMs again too
+        refresh: () => {
+          this.updateTable();
+          return this.loader.load();
+        },
+      });
+      this.loader.start();
 
       try {
-        await axiosInstance.get(`experiments/${this.$route.params.id}/netflow`);
-        this.handleNetflow(true, false);
+        await experimentsApi.getNetflowCapture(this.$route.params.id);
+        // the page may have been left while waiting
+        if (!this.unmounting) this.handleNetflow(true, false);
       } catch {}
     },
 
     computed: {
-      vncWidth() {
-        return this.activeTab == 2 ? this.vncZoom * 50 : 200;
+      searchOptions() {
+        return [...this.searchHistory].sort();
       },
 
-      vncVms() {
-        // Hide external/HIL nodes and DNB (do not boot) nodes from the VNC tab
-        // since they don't have a VNC console to display.
-        return (this.experiment.vms || []).filter(
-          (vm) => !vm.external && !vm.dnb,
-        );
+      // the VM table's search and the Files tab's, kept while another tab is
+      // open
+      vmFilter() {
+        return this.filterOf(TAB.VMS);
+      },
+
+      filesFilter() {
+        return this.filterOf(TAB.FILES);
+      },
+
+      searchPlaceholder() {
+        switch (this.activeTab) {
+          case TAB.FILES:
+            return 'Find a File';
+          case TAB.NETFLOW:
+            return 'Search netflow';
+          default:
+            return 'Find a VM';
+        }
+      },
+
+      // the server's features, from the store: they may arrive after the page
+      // opens, so a copy taken when it opened could miss them
+      features() {
+        return usePhenixStore().features ?? [];
+      },
+
+      // the search box's text, which the netflow tab filters by while open
+      netflowSearch() {
+        return this.activeTab == TAB.NETFLOW ? (this.search.filter ?? '') : '';
+      },
+
+      vmsEmptyText() {
+        // the websocket lists VMs only for roles allowed to
+        if (!this.vmsLoaded && roleAllowed('vms', 'list')) {
+          return loadingText('VMs');
+        }
+        if (this.vmFilter) return 'No VMs match your search';
+        return 'This experiment has no VMs';
+      },
+
+      vncWidth() {
+        return this.activeTab == TAB.VNC
+          ? this.vncZoom * 50
+          : DEFAULT_SCREENSHOT_WIDTH;
       },
 
       paginationNeeded() {
         return this.table.total > this.table.perPage;
       },
 
-      filesPaginationNeeded() {
-        return this.filesTable.total > this.filesTable.perPage;
+      // The VM whose details are open: the details fetched when it opened,
+      // kept current with the table row's live screenshot, state, and
+      // captures, which websocket events update.
+      expModalVm() {
+        const vm = this.expModal.vm ?? {};
+        const row = vm.name
+          ? this.experiment.vms?.find((v) => v.name == vm.name)
+          : null;
+        if (!row || row === vm) return vm;
+        return {
+          ...vm,
+          state: row.state ?? vm.state,
+          running: row.running,
+          busy: row.busy,
+          percent: row.percent,
+          captures: row.captures ?? vm.captures,
+          screenshot: row.screenshot || vm.screenshot,
+        };
       },
 
       isMultiVmSelected() {
-        if (
-          this.vmSelectedArray == undefined ||
-          this.vmSelectedArray.length == 0
-        ) {
-          return false;
-        }
-        return true;
+        return this.vmSelectedArray.length > 0;
       },
     },
 
     methods: {
-      changePaginate() {
-        var user = usePhenixStore().username;
-        localStorage.setItem(user + '.lastPaginate', this.table.isPaginated);
-      },
-
       getUserStorageKey(storageKey) {
         var user = usePhenixStore().username;
         return user + '.' + storageKey;
       },
 
       loadColumnVisibility() {
-        this.columnToggles.forEach((toggle) => {
-          let value = localStorage.getItem(
-            this.getUserStorageKey(toggle.storageKey),
-          );
+        for (const toggle of this.columnToggles) {
+          const value = readPref(this.getUserStorageKey(toggle.storageKey));
           if (value !== null) {
             this.columnVisibility[toggle.key] = value == 'true';
           }
-        });
-      },
-
-      loadPaginationPreference() {
-        var user = usePhenixStore().username;
-        let value = localStorage.getItem(user + '.lastPaginate');
-        if (value !== null) {
-          this.table.isPaginated = value == 'true';
-          this.filesTable.isPaginated = value == 'true';
         }
       },
 
       persistColumnVisibility(toggle) {
-        localStorage.setItem(
+        writePref(
           this.getUserStorageKey(toggle.storageKey),
           this.columnVisibility[toggle.key],
         );
       },
 
-      changeFilesPaginate() {
-        var user = usePhenixStore().username;
-        localStorage.setItem(
-          user + '.lastPaginate',
-          this.filesTable.isPaginated,
-        );
-      },
-
       vncLoc(vm) {
-        return this.$router.resolve({
-          name: 'vnc',
-          params: {
-            id: this.$route.params.id,
-            name: vm.name,
-            token: usePhenixStore().token,
-          },
-        }).href;
-      },
-
-      getVmScreenshot(vm) {
-        if (vm.external) {
-          return externalImg;
-        } else if (vm.running && !vm.busy && !vm.screenshot) {
-          return notAvailableImg;
-        } else if (vm.delayed_start && vm.state == 'BUILDING') {
-          return delayedImg;
-        } else if (vm.running && !vm.busy && vm.screenshot) {
-          return vm.screenshot;
-        } else if (vm.busy) {
-          return notAvailableImg;
-        } else {
-          return notRunningImg;
-        }
+        return vncHref(this.$router, this.$route.params.id, vm);
       },
 
       setVncScreenshotRes(width) {
@@ -1660,19 +763,6 @@
 
         sendWsMsg(msg);
       },
-
-      searchVMs: debounce(function (term) {
-        if (term == null) {
-          term = '';
-        }
-        this.search.filter = term;
-        if (this.activeTab == 0) {
-          this.updateExperiment();
-          return;
-        }
-
-        this.updateFiles();
-      }, 250),
 
       updateTable() {
         let number = this.table.currentPage;
@@ -1694,7 +784,7 @@
             sort_asc: this.table.sortOrder === 'asc',
             page_number: number,
             page_size: size,
-            filter: this.search.filter,
+            filter: this.vmFilter,
           },
         };
 
@@ -1712,16 +802,6 @@
         this.updateTable();
       },
 
-      onFilesPageChange(page) {
-        this.filesTable.currentPage = page;
-        this.updateFiles();
-      },
-      onFilesSort(column, order) {
-        this.filesTable.sortColumn = column;
-        this.filesTable.defaultSortDirection = order;
-        this.updateFiles();
-      },
-
       showTagsModal(vm) {
         this.$buefy.modal.open({
           component: VMLabelsModal,
@@ -1729,716 +809,243 @@
           hasModalCard: true,
           props: {
             vmName: vm.name,
+            experiment: this.$route.params.id,
             tags: vm.tags,
           },
         });
       },
 
-      handleWs(msg) {
-        switch (msg.resource.type) {
-          case 'experiment/' + this.$route.params.id: {
-            switch (msg.resource.action) {
-              case 'triggered': {
-                this.$buefy.toast.open({
-                  message: 'phēnix Apps ' + this.apps + ' have been triggered.',
-                  type: 'is-success',
-                  duration: 4000,
-                });
+      // Apps publish their runs on apps/<app>, scheduled runs included, so
+      // only the apps this page triggered get a toast.
+      handleAppTrigger(msg) {
+        const app = msg.resource.type.slice('apps/'.length);
+        const i = this.triggeredApps.indexOf(app);
+        if (msg.resource.name !== this.$route.params.id || i === -1) return;
 
-                this.apps = null;
-
-                break;
-              }
-
-              case 'triggerError': {
-                this.$buefy.toast.open({
-                  message: 'Triggering phēnix Apps ' + this.apps + ' failed.',
-                  type: 'is-danger',
-                  duration: 4000,
-                });
-
-                this.apps = null;
-
-                break;
-              }
-            }
+        switch (msg.resource.action) {
+          case 'success':
+            this.$buefy.toast.open({
+              message: 'phēnix app ' + app + ' was triggered successfully.',
+              type: 'is-success',
+            });
             break;
-          }
-
-          case 'experiment/vms': {
-            if (msg.resource.action != 'list') {
-              return;
-            }
-
-            this.experiment.vms = [...msg.result.vms];
-            this.table.total = msg.result.total;
-
-            if (this.search.filter) {
-              // Only add successful searches to the search history
-              if (this.table.total > 0) {
-                if (this.searchHistory > this.searchHistoryLength) {
-                  this.searchHistory.pop();
-                }
-                this.searchHistory.push(this.search.filter.trim());
-                this.searchHistory = this.getUniqueItems(this.searchHistory);
-              }
-            }
-
-            this.isWaiting = false;
-
+          case 'error':
+            showError(
+              'Triggering phēnix app ' + app + ' failed',
+              msg.result?.error,
+            );
             break;
-          }
-
-          case 'experiment/vm': {
-            let vm = msg.resource.name.split('/');
-            let vms = this.experiment.vms;
-
-            switch (msg.resource.action) {
-              case 'update': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == msg.result.name) {
-                    vms[i] = msg.result;
-                    break;
-                  }
-                }
-
-                this.$buefy.toast.open({
-                  message:
-                    'The VM ' +
-                    msg.result.name +
-                    ' has been successfully updated.',
-                  type: 'is-success',
-                });
-
-                break;
-              }
-
-              case 'delete': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms.splice(i, 1);
-                    break;
-                  }
-                }
-
-                this.$buefy.toast.open({
-                  message: 'The ' + vm[1] + ' VM was killed.',
-                  type: 'is-success',
-                });
-
-                break;
-              }
-
-              case 'start': {
-                break;
-              }
-
-              case 'starting': {
-                break;
-              }
-
-              case 'stop': {
-                break;
-              }
-
-              case 'stopping': {
-                break;
-              }
-
-              case 'redeploying': {
-                break;
-              }
-
-              case 'shutdown': {
-                break;
-              }
-
-              case 'cdrom-inserted': {
-                this.$buefy.toast.open({
-                  message:
-                    'The optical disc for ' +
-                    vm[1] +
-                    ' was successfully inserted.',
-                  type: 'is-success',
-                  duration: 4000,
-                });
-
-                // Refresh the VM
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    this.getInfo(vms[i]);
-                    break;
-                  }
-                }
-
-                break;
-              }
-
-              case 'cdrom-ejected': {
-                this.$buefy.toast.open({
-                  message:
-                    'The optical disc for ' +
-                    vm[1] +
-                    ' was successfully ejected.',
-                  type: 'is-success',
-                  duration: 4000,
-                });
-
-                // Refresh the VM
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    this.getInfo(vms[i]);
-                    break;
-                  }
-                }
-                break;
-              }
-
-              case 'redeployed': {
-                this.$buefy.toast.open({
-                  message: 'Redeployed ' + vm[1],
-                  type: 'is-success',
-                });
-                let index = this.redeployModal.actionsQueue.findIndex(
-                  (action) => action.name == vm[1],
-                );
-                if (index !== -1) {
-                  this.redeployModal.actionsQueue.splice(index, 1);
-                }
-                if (this.redeployModal.actionsQueue.length > 0) {
-                  let url = this.redeployModal.actionsQueue[0].url;
-                  let body = this.redeployModal.actionsQueue[0].body;
-                  axiosInstance.post(url, body).catch((err) => {
-                    useErrorNotification(err);
-                  });
-                } else {
-                  this.redeployModal.active = false;
-                  this.resetRedeployModal();
-                  this.isWaiting = false;
-                }
-
-                break;
-              }
-
-              case 'error': {
-                // Only show this error if the user is currently viewing the
-                // running experiment in which the error occurred.
-                if (this.$route.params.id == vm[0]) {
-                  this.$buefy.toast.open({
-                    message: msg.result.error,
-                    type: 'is-danger',
-                    duration: 4000,
-                  });
-                }
-
-                break;
-              }
-            }
-
-            break;
-          }
-
-          case 'experiment/vm/commit': {
-            let vm = msg.resource.name.split('/');
-            let vms = this.experiment.vms;
-
-            switch (msg.resource.action) {
-              case 'commit': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = false;
-                    vms[i] = msg.result.vm;
-
-                    let disk = msg.result.disk;
-
-                    this.$buefy.toast.open({
-                      message:
-                        'The backing image with name ' +
-                        disk +
-                        ' for the ' +
-                        vm[1] +
-                        ' VM was successfully created.',
-                      type: 'is-success',
-                      duration: 4000,
-                    });
-                  }
-
-                  this.experiment.vms = [...vms];
-                }
-                break;
-              }
-
-              case 'committing': {
-                //this.$buefy.toast.open({
-                //     message: 'COMMITING',
-                //     duration: 200
-                //   });
-
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = true;
-                    vms[i].percent = 0;
-
-                    let disk = msg.result.disk;
-
-                    this.$buefy.toast.open({
-                      message:
-                        'A backing image with name ' +
-                        disk +
-                        ' for the ' +
-                        vm[1] +
-                        ' VM is being created.',
-                      type: 'is-warning',
-                      duration: 4000,
-                    });
-
-                    this.experiment.vms = [...vms];
-
-                    break;
-                  }
-                }
-
-                break;
-              }
-
-              case 'progress': {
-                let percent = Math.round(msg.result.percent * 100);
-
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = true; // in case committing message is missed
-                    vms[i].percent = percent;
-                    this.experiment.vms = [...vms];
-
-                    break;
-                  }
-                }
-
-                break;
-              }
-            }
-
-            break;
-          }
-
-          case 'experiment/vm/memorySnapshot': {
-            let vm = msg.resource.name.split('/');
-            let vms = this.experiment.vms;
-            switch (msg.resource.action) {
-              case 'commit': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = false;
-                    let disk = msg.result.disk;
-
-                    this.$buefy.toast.open({
-                      message:
-                        'A memory snapshot was created with name ' +
-                        disk +
-                        ' for the ' +
-                        vm[1] +
-                        ' VM was successfully created.',
-                      type: 'is-success',
-                      duration: 4000,
-                    });
-                    this.experiment.vms = [...vms];
-                    break;
-                  }
-                }
-                break;
-              }
-              case 'committing': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = true;
-                    vms[i].percent = 0;
-                    let disk = msg.result.disk;
-
-                    this.$buefy.toast.open({
-                      message:
-                        'A memory snapshot with name ' +
-                        disk +
-                        ' for the ' +
-                        vm[1] +
-                        ' VM is being created.',
-                      type: 'is-warning',
-                      duration: 4000,
-                    });
-
-                    this.experiment.vms = [...vms];
-                    break;
-                  }
-                }
-                break;
-              }
-
-              case 'progress': {
-                let percent = Math.round(msg.result.percent * 100);
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = true; // in case committing message is missed
-                    vms[i].percent = percent;
-                    this.experiment.vms = [...vms];
-                    break;
-                  }
-                }
-                break;
-              }
-            }
-            break;
-          }
-
-          case 'experiment/vm/screenshot': {
-            let vm = msg.resource.name.split('/');
-            let vms = this.experiment.vms;
-            if (!vms) {
-              break;
-            }
-
-            switch (msg.resource.action) {
-              case 'update': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].screenshot = msg.result.screenshot;
-                    break;
-                  }
-                }
-
-                this.experiment.vms = [...vms];
-
-                break;
-              }
-            }
-            break;
-          }
-
-          case 'experiment/vm/capture': {
-            let vm = msg.resource.name.split('/');
-            let vms = this.experiment.vms;
-
-            switch (msg.resource.action) {
-              case 'start': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    if (vms[i].captures == null) {
-                      vms[i].captures = [];
-                    }
-
-                    vms[i].captures.push({
-                      vm: vm[1],
-                      interface: msg.result.interface,
-                      filename: msg.result.filename,
-                    });
-
-                    break;
-                  }
-                }
-
-                this.experiment.vms = [...vms];
-
-                this.$buefy.toast.open({
-                  message:
-                    'Packet capture was started for the ' + vm[1] + ' VM.',
-                  type: 'is-success',
-                });
-
-                break;
-              }
-
-              case 'stop': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].captures = applyStopCaptureUpdate(
-                      vms[i].captures,
-                      msg.result,
-                    );
-                    break;
-                  }
-                }
-
-                this.experiment.vms = [...vms];
-
-                this.$buefy.toast.open({
-                  message:
-                    msg.result && msg.result.interface !== undefined
-                      ? 'Packet capture was stopped for interface ' +
-                        msg.result.interface +
-                        ' on the ' +
-                        vm[1] +
-                        ' VM.'
-                      : 'Packet capture was stopped for the ' + vm[1] + ' VM.',
-                  type: 'is-success',
-                });
-
-                break;
-              }
-            }
-
-            break;
-          }
-
-          case 'experiment/vm/snapshot': {
-            let vm = msg.resource.name.split('/');
-            let vms = this.experiment.vms;
-            if (!vms) {
-              break;
-            }
-
-            switch (msg.resource.action) {
-              case 'create': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = false;
-                    this.$buefy.toast.open({
-                      message:
-                        'The snapshot for the ' +
-                        vm[1] +
-                        ' VM was successfully created.',
-                      type: 'is-success',
-                      duration: 4000,
-                    });
-                  }
-
-                  this.experiment.vms = [...vms];
-                }
-
-                break;
-              }
-
-              case 'creating': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = true;
-                    vms[i].percent = 0;
-                    this.$buefy.toast.open({
-                      message:
-                        'A snapshot for the ' + vm[1] + ' VM is being created.',
-                      type: 'is-warning',
-                      duration: 4000,
-                    });
-                  }
-
-                  this.experiment.vms = [...vms];
-                }
-
-                break;
-              }
-
-              case 'progress': {
-                let percent = Math.round(msg.result.percent * 100);
-
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].percent = percent;
-                    this.experiment.vms = [...vms];
-                    break;
-                  }
-                }
-
-                break;
-              }
-
-              case 'restore': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = false;
-                    this.$buefy.toast.open({
-                      message:
-                        'The ' +
-                        vm[1] +
-                        ' VM was successfully reverted to a previous snapshot.',
-                      type: 'is-success',
-                      duration: 4000,
-                    });
-                  }
-
-                  this.experiment.vms = [...vms];
-                }
-
-                break;
-              }
-
-              case 'restoring': {
-                for (let i = 0; i < vms.length; i++) {
-                  if (vms[i].name == vm[1]) {
-                    vms[i].busy = true;
-                    vms[i].percent = 0;
-                    this.$buefy.toast.open({
-                      message:
-                        'A snapshot for the ' +
-                        vm[1] +
-                        ' VM is being restored.',
-                      type: 'is-warning',
-                      duration: 4000,
-                    });
-                  }
-
-                  this.experiment.vms = [...vms];
-                }
-
-                break;
-              }
-            }
-
-            break;
-          }
+          default:
+            return;
         }
+
+        this.triggeredApps.splice(i, 1);
       },
 
-      isDelayed() {
-        if (this.experiment.vms === undefined) {
-          return false;
-        }
-        for (let i = 0; i < this.experiment.vms.length; i++) {
-          if (
-            this.experiment.vms[i].delayed_start &&
-            this.experiment.vms[i].state == 'BUILDING'
-          ) {
-            return true;
-          }
-        }
+      // a queued redeploy finished or failed: send the next or close the modal
+      advanceRedeployQueue(name) {
+        const queue = this.redeployModal.actionsQueue;
+        const index = queue.findIndex((action) => action.name == name);
+        if (index === -1) return;
 
-        return false;
-      },
-
-      async updateExperiment() {
-        try {
-          let resp = await axiosInstance.get(
-            'experiments/' + this.$route.params.id,
-          );
-          this.experiment = resp.data;
-          this.search.vms = resp.data.vms.map((vm) => {
-            return vm.name;
-          });
-          this.table.total = resp.data.vm_count;
-
-          this.updateTable();
-        } catch (err) {
-          useErrorNotification(err);
-        } finally {
+        queue.splice(index, 1);
+        if (queue.length > 0) {
+          vmsApi
+            .redeployVm(queue[0].exp, queue[0].name, queue[0].body)
+            .catch((err) => {
+              useErrorNotification(err);
+            });
+        } else {
+          this.redeployModal.active = false;
+          this.resetRedeployModal();
           this.isWaiting = false;
         }
       },
 
-      updateDisks(diskType = '') {
-        this.disks = [];
-        this.isWaiting = true;
-
-        axiosInstance
-          .get(`disks?diskType=${diskType}`)
-          .then((resp) => {
-            this.isWaiting = false;
-
-            for (let i = 0; i < resp.data.disks.length; i++) {
-              this.disks.push(resp.data.disks[i].fullPath);
-            }
-
-            this.disks.sort((a, b) =>
-              this.getBaseName(a).localeCompare(this.getBaseName(b)),
-            );
-          })
-          .catch((err) => {
-            this.isWaiting = false;
-            useErrorNotification(err);
-          });
-      },
-
-      updateFiles() {
-        let params = '?filter=' + this.search.filter;
-        params = params + '&sortCol=' + this.filesTable.sortColumn;
-        params = params + '&sortDir=' + this.filesTable.defaultSortDirection;
-
-        if (this.table.isPaginated) {
-          params = params + '&pageNum=' + this.table.currentPage;
-          params = params + '&perPage=' + this.table.perPage;
+      // Stopped or deleted from elsewhere (the CLI, another window or user):
+      // the page has nothing left to show, and leaving it tells the server to
+      // stop screenshotting the VMs.
+      handleExperimentEvent(msg) {
+        if (
+          msg.resource.name !== this.$route.params.id ||
+          !['stop', 'delete'].includes(msg.resource.action)
+        ) {
+          return;
         }
 
-        axiosInstance
-          .get('experiments/' + this.$route.params.id + '/files' + params)
-          .then((resp) => {
-            this.files = resp.data.files === null ? [] : resp.data.files;
-            this.filesTable.total = resp.data.total;
+        // this window's own Stop leaves the page itself
+        if (this.isWaiting) return;
 
-            for (let i = 0; i < this.files.length; i++) {
-              this.filesTable.categories.push(...this.files[i].categories);
-            }
-
-            this.filesTable.categories = this.getUniqueItems(
-              this.filesTable.categories,
-            );
-
-            if (this.filesTable.category) {
-              let files = this.files;
-              this.files = [];
-              for (let i = 0; i < files.length; i++) {
-                if (files[i].categories.includes(this.filesTable.category)) {
-                  this.files.push(files[i]);
-                }
-              }
-            }
-
-            // Only add successful searches to the search history
-            if (this.files.length > 0) {
-              if (this.searchHistory > this.searchHistoryLength) {
-                this.searchHistory.pop();
-              }
-              this.searchHistory.push(this.search.filter.trim());
-              this.searchHistory = this.getUniqueItems(this.searchHistory);
-            }
-
-            this.isWaiting = false;
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-            this.isWaiting = false;
-          });
+        this.$buefy.toast.open({
+          message:
+            'The ' +
+            msg.resource.name +
+            ' experiment was ' +
+            (msg.resource.action == 'stop' ? 'stopped' : 'deleted') +
+            ' elsewhere.',
+          type: 'is-info',
+        });
+        this.$router.replace({ name: 'experiments' });
       },
 
-      viewFile(file) {
+      // the VM list the page asked the websocket for
+      handleVmList(msg) {
+        if (
+          msg.resource.action != 'list' ||
+          msg.resource.name !== this.$route.params.id
+        ) {
+          return;
+        }
+
+        this.experiment.vms = this.vmSeqs.listed(
+          this.experiment.vms,
+          msg.result.vms,
+          msg.seq,
+        );
+        this.table.total = msg.result.total;
+        this.runtimeUnknown = !!msg.result.runtime_unknown;
+        this.vmsLoaded = true;
+
+        // a VM still without a screenshot by then has none to show
+        this.screenshotsDue = false;
+        clearTimeout(this.screenshotsTimer);
+        this.screenshotsTimer = setTimeout(() => {
+          this.screenshotsDue = true;
+        }, SCREENSHOT_WAIT_MS);
+
+        // cache the page without screenshots, unless it is a filtered view or a
+        // later page: the page reopens unfiltered on its first page
+        if (
+          !this.vmFilter &&
+          (!this.table.isPaginated || this.table.currentPage === 1)
+        ) {
+          cachePage(
+            experimentKey(this.$route.params.id),
+            {
+              ...this.experiment,
+              vms: withoutScreenshots(this.experiment.vms),
+            },
+            Object.assign(new FreshnessMeta(), {
+              seq: msg.seq,
+              observedAt: Date.now(),
+            }),
+          );
+        }
+
+        // Only add successful searches to the search history
+        if (
+          searchKey(this.activeTab) === TAB.VMS &&
+          this.vmFilter &&
+          this.table.total > 0
+        ) {
+          this.addSearchHistory();
+        }
+
+        this.isWaiting = false;
+      },
+
+      // a per-VM event: its change to the VM's row and its toast (see
+      // vmRows.js), then what the page does about it
+      handleVmEvent(msg) {
+        const type = msg.resource.type;
+        const name = eventVmName(msg, this.$route.params.id, this.experiment);
+        if (name === null) return;
+
+        if (type === 'experiment/vm') this.vmSeqs.record(name, msg);
+
+        const notice = applyVmEvent(this.experiment, msg, name);
+        if (notice?.type === 'is-danger') showError(notice.message);
+        else if (notice) this.$buefy.toast.open(notice);
+
+        if (type !== 'experiment/vm') return;
+        switch (msg.resource.action) {
+          case 'cdrom-inserted':
+          case 'cdrom-ejected':
+            // the event carries no VM, so ask for the one whose disc changed
+            // if its details are open; its snapshots and forwards are the same
+            if (this.expModal.active && this.expModal.vm.name == name) {
+              this.refreshVmDetails(name);
+            }
+            break;
+
+          case 'redeployed':
+          case 'errorRedeploying':
+            this.advanceRedeployQueue(name);
+            break;
+        }
+      },
+
+      handleWs(msg) {
+        const type = msg.resource.type;
+        if (type.startsWith('apps/')) {
+          this.handleAppTrigger(msg);
+        } else if (type === 'experiment') {
+          this.handleExperimentEvent(msg);
+        } else if (type === 'experiment/vms') {
+          this.handleVmList(msg);
+        } else if (VM_EVENT_TYPES.includes(type)) {
+          this.handleVmEvent(msg);
+        }
+      },
+
+      // the images the redeploy modal offers: those inside the minimega files
+      // directory and the ones this experiment names outside it
+      updateDisks() {
+        this.disks = null;
         this.isWaiting = true;
 
-        axiosInstance
-          .get(
-            `experiments/${this.$route.params.id}/files/${file.name}?path=${file.path}`,
-            { headers: { Accept: 'text/plain' } },
-          )
-          .then((response) => {
-            this.fileViewerModal.title = file.path;
-            this.fileViewerModal.contents = response.dataText;
-            this.fileViewerModal.active = true;
+        disksApi
+          .listDisks({ expName: this.$route.params.id })
+          .then((resp) => {
+            this.isWaiting = false;
+            this.disks = resp.data.disks ?? [];
           })
           .catch((err) => {
-            useErrorNotification(err);
-          })
-          .finally(() => {
             this.isWaiting = false;
+            useErrorNotification(err);
           });
       },
 
       assignCategory(value) {
-        this.filesTable.category = value;
-        this.updateFiles();
+        this.fileCategory = value;
+        this.$refs.filesTab?.reload();
       },
 
       async fetchVMDetails(vm) {
-        let url = `experiments/${this.$route.params.id}/vms/${vm.name}`;
-        let resp = await axiosInstance.get(url);
+        let resp = await vmsApi.getVm(this.$route.params.id, vm.name);
 
         return resp.data;
       },
 
       async fetchVMSnapshots(vm) {
-        let url = `experiments/${this.$route.params.id}/vms/${vm.name}/snapshots`;
-        let resp = await axiosInstance.get(url);
+        let resp = await vmsApi.listVmSnapshots(this.$route.params.id, vm.name);
 
         return resp.data;
       },
 
       async fetchVMForwards(vm) {
-        let url = `experiments/${this.$route.params.id}/vms/${vm.name}/forwards`;
-        let resp = await axiosInstance.get(url);
+        let resp = await vmsApi.listVmForwards(this.$route.params.id, vm.name);
 
         return resp.data;
+      },
+
+      // fetches a VM's details into its open details modal and its table row
+      async refreshVmDetails(name) {
+        try {
+          const details = await this.fetchVMDetails({ name });
+          replaceVm(this.experiment, details);
+          if (this.expModal.active && this.expModal.vm.name == name) {
+            this.expModal.vm = details;
+          }
+        } catch (err) {
+          useErrorNotification(err);
+        }
+      },
+
+      // opens the details of a VM the role may not get, as the table has it
+      showVmDetails(vm) {
+        this.expModal.active = true;
+        this.expModal.vm = vm;
       },
 
       async getInfo(vm) {
@@ -2456,15 +1063,25 @@
           return;
         }
 
+        const fullName = this.experiment.name + '/' + vm.name;
         this.expModal.vm = vm;
-        this.expModal.fullName = this.experiment.name + '/' + vm.name;
+        this.expModal.fullName = fullName;
+        this.expModal.backingChain = null;
+        this.expModal.disk = null;
+        this.expModal.cdRomDisk = null;
         this.expModal.active = true;
+        this.loadBackingChain(vm);
 
         try {
+          // roles without these permissions still get the rest of the details
           const [details, snapshots, forwards] = await Promise.all([
             this.fetchVMDetails(vm),
-            this.fetchVMSnapshots(vm),
-            this.fetchVMForwards(vm),
+            this.roleAllowed('vms/snapshots', 'list', fullName)
+              ? this.fetchVMSnapshots(vm)
+              : { snapshots: [] },
+            this.roleAllowed('vms/forwards', 'list', fullName)
+              ? this.fetchVMForwards(vm)
+              : { listeners: [] },
           ]);
 
           this.expModal.vm = details;
@@ -2473,74 +1090,83 @@
             this.expModal.snapshots = snapshots.snapshots;
           }
 
-          this.expModal.forwards = [];
+          this.showForwards(forwards.listeners);
+        } catch (err) {
+          useErrorNotification(err);
+        }
+      },
 
-          if (forwards.listeners) {
-            for (let i = 0; i < forwards.listeners.length; i++) {
-              let l = forwards.listeners[i];
+      // Replaces the open VM's annotations, from its details card; done(true)
+      // tells the card they are saved.
+      async saveAnnotations(annotations, done) {
+        const name = this.expModal.vm.name;
+        try {
+          const resp = await vmsApi.updateVm(this.$route.params.id, name, {
+            annotations,
+          });
+          if (this.expModal.active && this.expModal.vm.name == name) {
+            this.expModal.vm = {
+              ...this.expModal.vm,
+              annotations: resp.data?.annotations ?? annotations,
+            };
+          }
+          done(true);
+        } catch (err) {
+          useErrorNotification(err);
+          done(false);
+        }
+      },
 
-              l.desc = `${l.srcPort} --> ${l.dstHost}:${l.dstPort}`;
-              l.canDelete = usePhenixStore().username === l.owner;
+      // The open VM's disk and the images backing it, and the ISO image in
+      // its CD-ROM drive, from the Disks page's list. Roles that can't list
+      // disks see their paths alone.
+      async loadBackingChain(vm) {
+        if (!(vm.disk || vm.cdRom) || !roleAllowed('disks', 'list')) return;
 
-              this.expModal.forwards.push(l);
-            }
+        try {
+          const disks = await diskList();
+          if (this.expModal.active && this.expModal.vm.name == vm.name) {
+            this.expModal.backingChain = backingChain(disks, vm.disk);
+            this.expModal.disk = findDisk(disks, vm.disk);
+            this.expModal.cdRomDisk = findDisk(disks, vm.cdRom);
+            this.expModal.filesDir = filesDir(disks);
           }
         } catch (err) {
           useErrorNotification(err);
         }
       },
 
-      captureSnapshot(name) {
-        const { enabled, disabled } = partitionSnapshotVMNames(
-          name,
+      async captureSnapshot(names) {
+        const { allowed, skipped } = partitionVMsForAction(
+          'snapshot',
+          names,
           this.experiment.vms,
         );
-        this.notifySnapshotDisabled(disabled);
-        name = enabled;
-        if (name.length === 0) return;
+        if (allowed.length === 0) {
+          this.alertSkipped(skipped);
+          return;
+        }
 
-        var dateTime = new Date();
-        var time =
-          dateTime.getFullYear() +
-          '-' +
-          ('0' + (dateTime.getMonth() + 1)).slice(-2) +
-          '-' +
-          ('0' + dateTime.getDate()).slice(-2) +
-          '_' +
-          ('0' + dateTime.getHours()).slice(-2) +
-          ('0' + dateTime.getMinutes()).slice(-2);
+        const time = minuteStamp();
 
-        this.$buefy.dialog.confirm({
-          title: 'Create a VM Snapshot',
-          message: 'This will create a snapshot for the VMs ' + name,
-          cancelText: 'Cancel',
+        const confirmed = await confirmOperation(this.$buefy, {
+          title: pluralWord(
+            allowed.length,
+            'Create a VM Snapshot',
+            'Create VM Snapshots',
+          ),
+          message: `This will create ${pluralWord(allowed.length, 'a snapshot', 'snapshots')} of ${namedList(allowed, 'VM')}.`,
           confirmText: 'Create',
           type: 'is-success',
-          hasIcon: true,
-          onConfirm: () => {
-            this.resetExpModal();
-            name.forEach((vmName) => {
-              axiosInstance
-                .post(
-                  'experiments/' +
-                    this.$route.params.id +
-                    '/vms/' +
-                    vmName +
-                    '/snapshots',
-                  { filename: time },
-                  { timeout: 0 },
-                )
-                .then((response) => {
-                  if (response.status == 204) {
-                    console.log('create snapshot for vm ' + vmName);
-                  }
-                })
-                .catch((err) => {
-                  useErrorNotification(err);
-                });
-            });
-          },
+          skipped,
+          noun: 'VM',
         });
+        if (!confirmed) return;
+
+        this.resetExpModal();
+        this.fanOut(allowed, 'Snapshotted', (vmName) =>
+          vmsApi.createVmSnapshot(this.$route.params.id, vmName, time),
+        );
       },
 
       restoreSnapshot(name, snapshot) {
@@ -2554,22 +1180,8 @@
           onConfirm: () => {
             this.resetExpModal();
 
-            axiosInstance
-              .post(
-                'experiments/' +
-                  this.$route.params.id +
-                  '/vms/' +
-                  name +
-                  '/snapshots/' +
-                  snapshot,
-                {},
-                { timeout: 0 },
-              )
-              .then((response) => {
-                if (response.status == 204) {
-                  console.log('restore  snapshot for vm ' + name);
-                }
-              })
+            vmsApi
+              .restoreVmSnapshot(this.$route.params.id, name, snapshot)
               .catch((err) => {
                 useErrorNotification(err);
               });
@@ -2578,49 +1190,21 @@
       },
 
       diskImage(name) {
-        const { enabled, disabled } = partitionSnapshotVMNames(
-          name,
-          this.experiment.vms,
-        );
-        this.notifySnapshotDisabled(disabled);
-        name = enabled;
+        name = this.actionableVMs('commit', name);
         if (name.length === 0) return;
 
-        var now = new Date();
-        var date =
-          now.getFullYear() +
-          '' +
-          ('0' + now.getMonth() + 1).slice(-2) +
-          '' +
-          now.getDate();
-        var time =
-          ('0' + now.getHours()).slice(-2) +
-          '' +
-          ('0' + now.getMinutes()).slice(-2) +
-          '' +
-          ('0' + now.getSeconds()).slice(-2);
+        const t = timestampParts();
+        const date = `${t.year}${t.month}${t.day}`;
+        const time = `${t.hours}${t.minutes}${t.seconds}`;
         let vms = this.experiment.vms;
         name.forEach((arg) => {
           for (let i = 0; i < vms.length; i++) {
             if (vms[i].name == arg) {
-              var filename;
-              if (/(.*)_\d{14}/.test(vms[i].disk)) {
-                filename =
-                  vms[i].disk.substring(0, vms[i].disk.indexOf('_')) +
-                  '_' +
-                  date +
-                  time;
-              } else {
-                filename =
-                  vms[i].disk.substring(0, vms[i].disk.indexOf('.')) +
-                  '_' +
-                  date +
-                  time;
-              }
-              filename =
-                vms[i].name +
-                '_' +
-                filename.substring(filename.lastIndexOf('/') + 1);
+              // the disk's file name up to its first "_" when it holds a date
+              // and time, else up to its first "."
+              const file = baseName(vms[i].disk);
+              const stem = file.split(/_\d{14}/.test(file) ? '_' : '.')[0];
+              const filename = `${vms[i].name}_${stem}_${date}${time}`;
               this.diskImageModal.vm.push({
                 dateTime: date + time + '',
                 name: vms[i].name,
@@ -2636,14 +1220,17 @@
       },
 
       backingImage(vm) {
-        let vmList = '';
-        vm.forEach((arg) => {
-          vmList = vmList + arg.name + ', ';
-        });
-        vmList = vmList.slice(0, -2);
+        const names = vm.map((arg) => arg.name);
+        const files = Object.fromEntries(
+          vm.map((arg) => [arg.name, arg.filename + '.qc2']),
+        );
         this.$buefy.dialog.confirm({
-          title: 'Create Disk Images',
-          message: 'This will create a backing image for the VMs ' + vmList,
+          title: pluralWord(
+            names.length,
+            'Create a Disk Image',
+            'Create Disk Images',
+          ),
+          message: `This will create ${pluralWord(names.length, 'a backing image', 'backing images')} of ${namedList(names, 'VM')}.`,
           cancelText: 'Cancel',
           confirmText: 'Create',
           type: 'is-success',
@@ -2652,56 +1239,20 @@
             this.diskImageModal.active = false;
             this.resetDiskImageModal();
             this.resetExpModal();
-            let url = '';
-            let name = '';
-            let body = '';
-            vm.forEach((arg) => {
-              url =
-                'experiments/' +
-                this.$route.params.id +
-                '/vms/' +
-                arg.name +
-                '/commit';
-              body = { filename: arg.filename + '.qc2' };
-              name = arg.name;
-
-              axiosInstance
-                .post(url, body, { timeout: 0 })
-                .then((response) => {
-                  console.log(
-                    'backing image for vm ' +
-                      name +
-                      ' returned status ' +
-                      response.status,
-                  );
-                })
-                .catch((err) => {
-                  useErrorNotification(err);
-                });
-            });
+            this.fanOut(names, 'Created backing images of', (name) =>
+              vmsApi.commitVmDisk(this.$route.params.id, name, files[name]),
+            );
           },
         });
-
-        this.diskImageModal.active = true;
       },
 
       queueMemorySnapshotVMs(name) {
-        var now = new Date();
-        var date =
-          now.getFullYear() +
-          '' +
-          ('0' + now.getMonth() + 1).slice(-2) +
-          '' +
-          now.getDate();
-        var time =
-          ('0' + now.getHours()).slice(-2) +
-          '' +
-          ('0' + now.getMinutes()).slice(-2) +
-          '' +
-          ('0' + now.getSeconds()).slice(-2);
-        if (!Array.isArray(name)) {
-          name = [name];
-        }
+        name = this.actionableVMs('memorySnapshot', name);
+        if (name.length === 0) return;
+
+        const t = timestampParts();
+        const date = `${t.year}${t.month}${t.day}`;
+        const time = `${t.hours}${t.minutes}${t.seconds}`;
         let vms = this.experiment.vms;
         name.forEach((arg) => {
           for (let i = 0; i < vms.length; i++) {
@@ -2728,96 +1279,42 @@
       },
 
       createMemorySnapshot(vm) {
+        const files = Object.fromEntries(
+          vm.map((arg) => [arg.name, arg.filename + '.elf']),
+        );
         this.memorySnapshotModal.active = false;
-        let url = '';
-        let body = '';
-        vm.forEach((arg) => {
-          url =
-            'experiments/' +
-            this.$route.params.id +
-            '/vms/' +
-            arg.name +
-            '/memorySnapshot';
-          body = { filename: arg.filename + '.elf' };
+        this.resetMemorySnapshotModal();
+        this.fanOut(Object.keys(files), 'Created memory snapshots of', (name) =>
+          vmsApi.createVmMemorySnapshot(
+            this.$route.params.id,
+            name,
+            files[name],
+          ),
+        );
+      },
 
-          axiosInstance.post(url, body, { timeout: 0 }).catch((err) => {
-            useErrorNotification(err);
-          });
-
-          this.resetMemorySnapshotModal();
+      // Sends one request for each name, then tells in one summary how they
+      // went, offering to send again those that may work if retried.
+      async fanOut(names, verbPast, send, noun = 'VM') {
+        const results = await Promise.allSettled(names.map(send));
+        notifyOutcome(this.$buefy, {
+          verbPast,
+          noun,
+          items: outcomeFromSettled(names, results),
+          onRetry: (retry) => this.fanOut(retry, verbPast, send, noun),
         });
       },
 
-      killVm(name) {
-        if (!Array.isArray(name)) {
-          name = [name];
-        }
-        let vmList = [];
-        let vmExcludeList = [];
-        let vms = this.experiment.vms;
-        name.forEach((arg) => {
-          for (let i = 0; i < vms.length; i++) {
-            if (vms[i].name == arg) {
-              if (vms[i].running) {
-                vmList.push(arg);
-              } else {
-                vmExcludeList.push(arg);
-              }
-            }
-          }
-        });
-        if (vmExcludeList.length > 0) {
-          this.$buefy.dialog.alert({
-            title: 'No Action',
-            message:
-              'VMs ' +
-              vmExcludeList.join(', ') +
-              ' are either paused or killed',
-            confirmText: 'Ok',
-          });
-        }
-        if (vmList.length > 0) {
-          this.$buefy.dialog.confirm({
-            title: 'Kill the VMs',
-            message:
-              'This will kill the VMs ' +
-              vmList.join(', ') +
-              '. You will not be able to restore this VM until you restart the ' +
-              this.$route.params.id +
-              ' experiment!',
-            cancelText: 'Cancel',
-            confirmText: 'KILL THEM!',
-            type: 'is-danger',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-              this.resetExpModal();
-              vmList.forEach((arg) => {
-                axiosInstance
-                  .delete(
-                    'experiments/' + this.$route.params.id + '/vms/' + arg,
-                  )
-                  .then((response) => {
-                    if (response.status == 204) {
-                      let vms = this.experiment.vms;
-                      for (let i = 0; i < vms.length; i++) {
-                        if (vms[i].name == arg) {
-                          vms.splice(i, 1);
-                          break;
-                        }
-                      }
-                      this.experiment.vms = [...vms];
-                      this.isWaiting = false;
-                    }
-                  })
-                  .catch((err) => {
-                    useErrorNotification(err);
-                    this.isWaiting = false;
-                  });
-              });
-            },
-          });
-        }
+      killVm(names) {
+        this.confirmVmAction('kill', names, (vms) => ({
+          title: `Kill the ${pluralWord(vms.length, 'VM')}`,
+          message:
+            `This will kill ${namedList(vms, 'VM')}. You will not be able ` +
+            `to restore ${pluralWord(vms.length, 'it', 'them')} until you ` +
+            `restart the ${this.$route.params.id} experiment!`,
+          confirmText: pluralWord(vms.length, 'KILL IT!', 'KILL THEM!'),
+          type: 'is-danger',
+        }));
       },
 
       stop() {
@@ -2829,622 +1326,190 @@
           confirmText: 'Stop',
           type: 'is-danger',
           hasIcon: true,
-          onConfirm: () => {
-            this.isWaiting = true;
-
-            axiosInstance
-              .post('experiments/' + this.$route.params.id + '/stop')
-              .then(() => {
-                this.$router.replace('/experiments/');
-              })
-              .catch((err) => {
-                useErrorNotification(err);
-                this.isWaiting = false;
-              });
-          },
+          onConfirm: () => this.stopExperiment(),
         });
       },
 
-      decorator(state, busy) {
-        if (busy) {
-          return 'is-warning';
-        }
-
-        switch (state) {
-          case 'RUNNING':
-            return 'is-success';
-          case 'PAUSED':
-            return 'is-warning';
-          case 'QUIT':
-            return 'is-danger';
-        }
-      },
-
-      tapDecorator(captures, iface) {
-        if (captures.length > 0) {
-          for (let i = 0; i < captures.length; i++) {
-            if (captures[i].interface === iface) {
-              return 'is-success';
-            }
-          }
-        }
-      },
-
-      // stopVMCapture issues the DELETE request to stop packet capture(s) for
-      // a VM. If iface is provided, only that interface's capture is
-      // stopped; otherwise all captures for the VM are stopped.
-      stopVMCapture(vm, iface) {
+      // Stops the experiment; one whose VMs minimega could not kill is still
+      // running, and the user may force its stop.
+      stopExperiment(force = false) {
+        const name = this.$route.params.id;
         this.isWaiting = true;
 
-        const params = iface === undefined ? {} : { iface: iface };
-
-        axiosInstance
-          .delete(
-            'experiments/' +
-              this.$route.params.id +
-              '/vms/' +
-              vm.name +
-              '/captures',
-            { params: params },
-          )
-          .then((response) => {
-            if (response.status == 204) {
-              let vms = this.experiment.vms;
-
-              for (let i = 0; i < vms.length; i++) {
-                if (vms[i].name == response.data.name) {
-                  vms[i] = response.data;
-                  break;
-                }
-              }
-
-              this.experiment.vms = [...vms];
-              this.isWaiting = false;
-            }
+        return experimentsApi
+          .stopExperiment(name, { force })
+          .then(() => {
+            this.$router.replace({ name: 'experiments' });
           })
           .catch((err) => {
             useErrorNotification(err);
             this.isWaiting = false;
-          });
-      },
-
-      handlePcap(vm, iface) {
-        var dateTime = new Date();
-        var time =
-          dateTime.getFullYear() +
-          '-' +
-          ('0' + (dateTime.getMonth() + 1)).slice(-2) +
-          '-' +
-          ('0' + dateTime.getDate()).slice(-2) +
-          '_' +
-          ('0' + dateTime.getHours()).slice(-2) +
-          ('0' + dateTime.getMinutes()).slice(-2);
-
-        axiosInstance
-          .get(
-            'experiments/' +
-              this.$route.params.id +
-              '/vms/' +
-              vm.name +
-              '/captures',
-          )
-          .then((response) => {
-            let captures = response.data.captures || [];
-            let capturing = isInterfaceCapturing(captures, iface);
-
-            if (capturing && hasMultipleCaptures(captures)) {
-              // More than one capture is currently running for this VM;
-              // let the user choose between stopping just this interface's
-              // capture or all of the VM's running captures.
-              this.$buefy.dialog.confirm({
-                title: 'Stop Packet Capture',
-                message:
-                  'The ' +
-                  vm.name +
-                  ' VM has multiple packet captures running. Stop the ' +
-                  'capture on interface ' +
-                  iface +
-                  ' only, or stop all packet captures for the VM?',
-                cancelText: 'Stop Interface ' + iface + ' Only',
-                confirmText: 'Stop All Captures',
-                type: 'is-danger',
-                hasIcon: true,
-                onConfirm: () => {
-                  this.stopVMCapture(vm);
-                },
-                onCancel: (trigger) => {
-                  // Only the "Stop Interface <iface> Only" button (as
-                  // opposed to dismissing the dialog via escape or clicking
-                  // outside of it, either of which should be a no-op) stops
-                  // this interface's capture.
-                  if (trigger === 'button') {
-                    this.stopVMCapture(vm, iface);
-                  }
-                },
-              });
-            } else if (capturing) {
-              this.$buefy.dialog.confirm({
-                title: 'Stop Packet Capture',
-                message:
-                  'This will stop the packet capture on interface ' +
-                  iface +
-                  ' for the ' +
-                  vm.name +
-                  ' VM.',
-                cancelText: 'Cancel',
-                confirmText: 'Stop',
-                type: 'is-danger',
-                hasIcon: true,
-                onConfirm: () => {
-                  this.stopVMCapture(vm, iface);
-                },
-              });
-            } else if (vm.networks[iface] == 'disconnected') {
-              this.$buefy.toast.open({
-                message: 'Cannot capture traffic on a disconnected interface.',
-                type: 'is-danger',
-                duration: 4000,
-              });
-            } else {
-              this.$buefy.dialog.confirm({
-                title: 'Start a Packet Capture',
-                message:
-                  'This will start a packet capture for the ' +
-                  vm.name +
-                  ' VM, interface ' +
-                  iface +
-                  '.',
-                cancelText: 'Cancel',
-                confirmText: 'Start',
-                type: 'is-success',
-                hasIcon: true,
-                onConfirm: () => {
-                  this.isWaiting = true;
-
-                  axiosInstance
-                    .post(
-                      'experiments/' +
-                        this.$route.params.id +
-                        '/vms/' +
-                        vm.name +
-                        '/captures',
-                      {
-                        interface: iface,
-                        filename: [vm.name, iface, time].join('_') + '.pcap',
-                      },
-                    )
-                    .then((response) => {
-                      if (response.status == 204) {
-                        let vms = this.experiment.vms;
-
-                        for (let i = 0; i < vms.length; i++) {
-                          if (vms[i].name == response.data.name) {
-                            vms[i] = response.data;
-                            break;
-                          }
-                        }
-
-                        this.experiment.vms = [...vms];
-                        this.isWaiting = false;
-                      }
-                    })
-                    .catch((err) => {
-                      useErrorNotification(err);
-                      this.isWaiting = false;
-                    });
-                },
-              });
+            if (!force && stopCanBeForced(err)) {
+              offerForcedStop(this.$buefy, name, () =>
+                this.stopExperiment(true),
+              );
             }
           });
       },
 
-      startVm(name) {
-        if (!Array.isArray(name)) {
-          name = [name];
-        }
-        let vmList = [];
-        let vmExcludeList = [];
-        let vms = this.experiment.vms;
-        name.forEach((arg) => {
-          for (let i = 0; i < vms.length; i++) {
-            if (vms[i].name == arg) {
-              if (!vms[i].running) {
-                vmList.push(arg);
-              } else {
-                vmExcludeList.push(arg);
-              }
-            }
-          }
-        });
-        if (vmExcludeList.length > 0) {
-          this.$buefy.dialog.alert({
-            title: 'No Action',
-            message: 'VMs ' + vmExcludeList.join(', ') + ' are already running',
-            confirmText: 'Ok',
-          });
-        }
-        if (vmList.length > 0) {
-          this.$buefy.dialog.confirm({
-            title: 'Start the VMs',
-            message: 'This will start the VMs ' + vmList.join(', '),
-            cancelText: 'Cancel',
-            confirmText: 'Start',
-            type: 'is-success',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-              this.resetExpModal();
-              vmList.forEach((arg) => {
-                axiosInstance
-                  .post(
-                    'experiments/' +
-                      this.$route.params.id +
-                      '/vms/' +
-                      arg +
-                      '/start',
-                  )
-                  .then((response) => {
-                    let vms = this.experiment.vms;
-                    for (let i = 0; i < vms.length; i++) {
-                      if (vms[i].name == response.data.name) {
-                        vms[i] = response.data;
-                        break;
-                      }
-                    }
-                    this.experiment.vms = [...vms];
-                    this.isWaiting = false;
-                  })
-                  .catch((err) => {
-                    useErrorNotification(err);
-                    this.isWaiting = false;
-                  });
-              });
-            },
-          });
+      // runs a VM action from the details modal or the table's Actions column
+      onVmAction(action, vm) {
+        switch (action) {
+          case 'start':
+            this.startVm(vm.name);
+            break;
+          case 'pause':
+            this.pauseVm(vm.name);
+            break;
+          case 'restart':
+            this.restartVm(vm.name);
+            break;
+          case 'shutdown':
+            this.shutdownVm(vm.name);
+            break;
+          case 'kill':
+            this.killVm(vm.name);
+            break;
+          case 'redeploy':
+            this.redeploy(vm.name);
+            break;
+          case 'resetDisk':
+            this.resetVmState(vm.name);
+            break;
+          case 'snapshot':
+            this.captureSnapshot(vm.name);
+            break;
+          case 'commit':
+            this.diskImage(vm.name);
+            break;
+          case 'memorySnapshot':
+            this.queueMemorySnapshotVMs(vm.name);
+            break;
+          case 'portForward':
+            this.showPortForwardDialog(vm.name);
+            break;
+          case 'cdrom':
+            this.showChangeDisc(vm);
+            break;
+          case 'mount':
+            this.showMountDialog(vm.name);
+            break;
+          case 'captureAll':
+            this.captureAllInterfaces(vm);
+            break;
+          case 'stopCaptures':
+            this.stopAllCaptures(vm);
+            break;
         }
       },
 
-      pauseVm(name) {
-        if (!Array.isArray(name)) {
-          name = [name];
-        }
-        let vmList = [];
-        let vmExcludeList = [];
-        let vms = this.experiment.vms;
-        name.forEach((arg) => {
-          for (let i = 0; i < vms.length; i++) {
-            if (vms[i].name == arg) {
-              if (vms[i].running) {
-                vmList.push(arg);
-              } else {
-                vmExcludeList.push(arg);
-              }
-            }
-          }
-        });
-        if (vmExcludeList.length > 0) {
-          this.$buefy.dialog.alert({
-            title: 'No Action',
-            message: 'VMs ' + vmExcludeList.join(', ') + ' are not running',
-            confirmText: 'Ok',
-          });
-        }
-        if (vmList.length > 0) {
-          this.$buefy.dialog.confirm({
-            title: 'Pause the VMs',
-            message: 'This will pause the VMs ' + vmList.join(', '),
-            cancelText: 'Cancel',
-            confirmText: 'Pause',
-            type: 'is-success',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-              this.resetExpModal();
-              vmList.forEach((arg) => {
-                axiosInstance
-                  .post(
-                    'experiments/' +
-                      this.$route.params.id +
-                      '/vms/' +
-                      arg +
-                      '/stop',
-                  )
-                  .then((response) => {
-                    let vms = this.experiment.vms;
-                    for (let i = 0; i < vms.length; i++) {
-                      if (vms[i].name == response.data.name) {
-                        vms[i] = response.data;
-                        break;
-                      }
-                    }
-                    this.experiment.vms = [...vms];
-                    this.isWaiting = false;
-                  })
-                  .catch((err) => {
-                    useErrorNotification(err);
-                    this.isWaiting = false;
-                  });
-              });
-            },
-          });
-        }
+      showVlanModal(vm, index) {
+        this.vlanModal.active = true;
+        this.vlanModal.vmName = vm.name;
+        this.vlanModal.vmFromNet = vm.networks[index];
+        this.vlanModal.vmNetIndex = index;
       },
 
-      resetVmState(name) {
-        const { enabled, disabled } = partitionSnapshotVMNames(
-          name,
-          this.experiment.vms,
-        );
-        this.notifySnapshotDisabled(disabled);
-        name = enabled;
-        if (name.length === 0) return;
-
-        let vmList = [];
-        let vmExcludeList = [];
-        let vms = this.experiment.vms;
-        name.forEach((vmName) => {
-          for (let i = 0; i < vms.length; i++) {
-            if (vms[i].name == vmName) {
-              if (vms[i].state.toUpperCase() != 'PAUSED') {
-                vmList.push(vmName);
-              } else {
-                vmExcludeList.push(vmName);
-              }
-            }
-          }
-        });
-        if (vmExcludeList.length > 0) {
-          this.$buefy.dialog.alert({
-            title: 'No Action',
-            message:
-              'VMs ' +
-              vmExcludeList.join(', ') +
-              ' are currently paused.  Unable to reset paused VMs',
-            confirmText: 'Ok',
-          });
-        }
-
-        if (vmList.length > 0) {
-          this.$buefy.dialog.confirm({
-            title: 'Reset VMs Disk State',
-            message:
-              'This will reset the disk state for VMs ' + vmList.join(', '),
-            cancelText: 'Cancel',
-            confirmText: 'Reset',
-            type: 'is-success',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-              this.resetExpModal();
-              vmList.forEach((vmName) => {
-                axiosInstance
-                  .get(
-                    'experiments/' +
-                      this.$route.params.id +
-                      '/vms/' +
-                      vmName +
-                      '/reset',
-                  )
-                  .then((response) => {
-                    let vms = this.experiment.vms;
-                    for (let i = 0; i < vms.length; i++) {
-                      if (vms[i].name == response.data.name) {
-                        vms[i] = response.data;
-                        break;
-                      }
-                    }
-                    this.experiment.vms = [...vms];
-                    this.isWaiting = false;
-                  })
-                  .catch((err) => {
-                    useErrorNotification(err);
-                    this.isWaiting = false;
-                  });
-              });
-            },
-          });
-        }
+      startVm(names) {
+        this.confirmVmAction('start', names, (vms) => ({
+          title: `Start the ${pluralWord(vms.length, 'VM')}`,
+          message: `This will start ${namedList(vms, 'VM')}.`,
+          confirmText: 'Start',
+          type: 'is-success',
+        }));
       },
 
-      restartVm(name) {
-        if (!Array.isArray(name)) {
-          name = [name];
-        }
-
-        let vmList = [];
-        let vmExcludeList = [];
-        let vms = this.experiment.vms;
-        name.forEach((vmName) => {
-          for (let i = 0; i < vms.length; i++) {
-            if (vms[i].name == vmName) {
-              if (vms[i].state.toUpperCase() != 'PAUSED') {
-                vmList.push(vmName);
-              } else {
-                vmExcludeList.push(vmName);
-              }
-            }
-          }
-        });
-        if (vmExcludeList.length > 0) {
-          this.$buefy.dialog.alert({
-            title: 'No Action',
-            message:
-              'VMs ' +
-              vmExcludeList.join(', ') +
-              ' are currently paused.  Unable to restart paused VMs',
-            confirmText: 'Ok',
-          });
-        }
-
-        if (vmList.length > 0) {
-          this.$buefy.dialog.confirm({
-            title: 'Restart the VMs',
-            message: 'This will restart the VMs ' + vmList.join(', '),
-            cancelText: 'Cancel',
-            confirmText: 'Restart',
-            type: 'is-success',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-              this.resetExpModal();
-              vmList.forEach((vmName) => {
-                axiosInstance
-                  .get(
-                    'experiments/' +
-                      this.$route.params.id +
-                      '/vms/' +
-                      vmName +
-                      '/restart',
-                  )
-                  .then((response) => {
-                    let vms = this.experiment.vms;
-                    for (let i = 0; i < vms.length; i++) {
-                      if (vms[i].name == response.data.name) {
-                        vms[i] = response.data;
-                        break;
-                      }
-                    }
-                    this.experiment.vms = [...vms];
-                    this.isWaiting = false;
-                  })
-                  .catch((err) => {
-                    useErrorNotification(err);
-                    this.isWaiting = false;
-                  });
-              });
-            },
-          });
-        }
+      pauseVm(names) {
+        this.confirmVmAction('pause', names, (vms) => ({
+          title: `Pause the ${pluralWord(vms.length, 'VM')}`,
+          message: `This will pause ${namedList(vms, 'VM')}.`,
+          confirmText: 'Pause',
+          type: 'is-success',
+        }));
       },
 
-      shutdownVm(name) {
-        if (!Array.isArray(name)) {
-          name = [name];
-        }
-
-        let vmList = [];
-        let vmExcludeList = [];
-        let vms = this.experiment.vms;
-        name.forEach((vmName) => {
-          for (let i = 0; i < vms.length; i++) {
-            if (vms[i].name == vmName) {
-              if (vms[i].running) {
-                vmList.push(vmName);
-              } else {
-                vmExcludeList.push(vmName);
-              }
-            }
-          }
-        });
-        if (vmExcludeList.length > 0) {
-          this.$buefy.dialog.alert({
-            title: 'No Action',
-            message:
-              'VMs ' +
-              vmExcludeList.join(', ') +
-              ' are not running.  Unable to shutdown vms that are not running',
-            confirmText: 'Ok',
-          });
-        }
-
-        if (vmList.length > 0) {
-          this.$buefy.dialog.confirm({
-            title: 'Shutdown the VMs',
-            message: 'This will shutdown the VMs ' + vmList.join(', '),
-            cancelText: 'Cancel',
-            confirmText: 'Shutdown',
-            type: 'is-danger',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-              this.resetExpModal();
-              vmList.forEach((vmName) => {
-                axiosInstance
-                  .get(
-                    'experiments/' +
-                      this.$route.params.id +
-                      '/vms/' +
-                      vmName +
-                      '/shutdown',
-                  )
-                  .then((response) => {
-                    let vms = this.experiment.vms;
-                    for (let i = 0; i < vms.length; i++) {
-                      if (vms[i].name == response.data.name) {
-                        vms[i] = response.data;
-                        vms[i].running = false;
-                        break;
-                      }
-                    }
-                    this.experiment.vms = [...vms];
-                    this.isWaiting = false;
-                  })
-                  .catch((err) => {
-                    useErrorNotification(err);
-                    this.isWaiting = false;
-                  });
-              });
-            },
-          });
-        }
+      resetVmState(names) {
+        this.confirmVmAction('resetDisk', names, (vms) => ({
+          title: `Reset the ${pluralWord(vms.length, "VM's Disk", "VMs' Disks")}`,
+          message: `This will reset the disk state of ${namedList(vms, 'VM')}.`,
+          confirmText: 'Reset',
+          type: 'is-success',
+        }));
       },
 
-      redeploy(vm) {
-        if (!Array.isArray(vm)) {
-          vm = [vm];
+      restartVm(names) {
+        this.confirmVmAction('restart', names, (vms) => ({
+          title: `Restart the ${pluralWord(vms.length, 'VM')}`,
+          message: `This will restart ${namedList(vms, 'VM')}.`,
+          confirmText: 'Restart',
+          type: 'is-success',
+        }));
+      },
+
+      shutdownVm(names) {
+        this.confirmVmAction('shutdown', names, (vms) => ({
+          title: `Shut Down the ${pluralWord(vms.length, 'VM')}`,
+          message: `This will shut down ${namedList(vms, 'VM')}.`,
+          confirmText: 'Shut Down',
+          type: 'is-danger',
+        }));
+      },
+
+      redeploy(names) {
+        const vmList = this.actionableVMs('redeploy', names);
+        if (vmList.length === 0) return;
+
+        if (roleAllowed('disks', 'list')) {
+          this.updateDisks();
+        } else {
+          this.disks = null;
         }
-        this.updateDisks();
-        let vms = this.experiment.vms;
-        vm.forEach((arg, _) => {
-          for (let i = 0; i < vms.length; i++) {
-            if (vms[i].name == arg) {
-              this.redeployModal.vm.push({
-                name: vms[i].name,
-                cpus: vms[i].cpus,
-                ram: vms[i].ram,
-                disk: vms[i].disk.substring(vms[i].disk.lastIndexOf('/') + 1),
-                inject: false,
-              });
-            }
-          }
-        });
+        for (const name of vmList) {
+          const vm = findVm(this.experiment, name);
+          this.redeployModal.vm.push({
+            name: vm.name,
+            cpus: vm.cpus,
+            ram: vm.ram,
+            disk: vm.disk,
+            // the server keeps the VM's disk unless another one is picked
+            currentDisk: vm.disk,
+            inject: false,
+          });
+        }
 
         this.redeployModal.active = true;
       },
 
-      closeModal(modalName) {
-        this.$refs[modalName].cancel('x');
-      },
-
       redeployVm(vms) {
         let body = '';
-        let postUrl = '';
+        let name = '';
+        const exp = this.$route.params.id;
 
         vms.forEach((vm) => {
           body = {
             cpus: parseInt(vm.cpus),
             ram: parseInt(vm.ram),
-            disk: vm.disk,
           };
-          postUrl =
-            'experiments/' +
-            this.$route.params.id +
-            '/vms/' +
-            vm.name +
-            '/redeploy';
+          // a snapshot VM's disk is the image under phēnix's own snapshot
+          // overlay; sending it back would replace the overlay with the image
+          if (vm.disk !== vm.currentDisk) {
+            body.disk = vm.disk;
+          }
+          name = vm.name;
 
-          if (vm.inject) {
+          // the select stores the string 'true' or 'false'
+          if (vm.inject === true || vm.inject === 'true') {
             body['injects'] = true;
           }
 
           this.redeployModal.actionsQueue.push({
             name: vm.name,
-            url: postUrl,
+            exp,
             body: body,
           });
         });
 
-        axiosInstance.post(postUrl, body).catch((err) => {
+        vmsApi.redeployVm(exp, name, body).catch((err) => {
           useErrorNotification(err);
           this.isWaiting = false;
           this.resetExpModal();
@@ -3452,119 +1517,53 @@
       },
 
       changeVlan(index, vlan, from, name) {
-        if (vlan === '0') {
-          this.$buefy.dialog.confirm({
-            title: 'Disconnect a VM Network Interface',
-            message:
-              'This will disconnect the ' +
-              index +
-              ' interface for the ' +
-              name +
-              ' VM.',
-            cancelText: 'Cancel',
-            confirmText: 'Disconnect',
-            type: 'is-warning',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-
-              let update = {
-                interface: { index: index, vlan: '' },
-              };
-
-              axiosInstance
-                .patch(
-                  'experiments/' + this.$route.params.id + '/vms/' + name,
-                  update,
-                )
-                .then((response) => {
-                  let vms = this.experiment.vms;
-
-                  console.log(response);
-
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
-                  }
-
-                  this.experiment.vms = [...vms];
-                  this.isWaiting = false;
-                })
-                .catch((err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                });
-            },
-          });
-        } else {
-          this.$buefy.dialog.confirm({
-            title: 'Change the VLAN',
-            message:
-              'This will change the VLAN from ' +
-              from.toLowerCase() +
-              ' to ' +
-              vlan.alias.toLowerCase() +
-              ' (' +
-              vlan.vlan +
-              ')' +
-              ' for the ' +
-              name +
-              ' VM.',
-            cancelText: 'Cancel',
-            confirmText: 'Change',
-            type: 'is-warning',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-
-              let update = {
-                interface: { index: index, vlan: vlan.alias },
-              };
-
-              axiosInstance
-                .patch(
-                  'experiments/' + this.$route.params.id + '/vms/' + name,
-                  update,
-                )
-                .then((response) => {
-                  let vms = this.experiment.vms;
-                  console.log(response);
-
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
-                  }
-
-                  this.experiment.vms = [...vms];
-                  this.isWaiting = false;
-                })
-                .catch((err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                });
-            },
-          });
-        }
+        // the select's disconnect option is the string '0'
+        const disconnect = vlan === '0';
+        this.$buefy.dialog.confirm({
+          title: disconnect
+            ? 'Disconnect a VM Network Interface'
+            : 'Change the VLAN',
+          message: disconnect
+            ? `This will disconnect the ${index} interface for the ${name} VM.`
+            : `This will change the VLAN from ${from.toLowerCase()} to ` +
+              `${vlan.alias.toLowerCase()} (${vlan.vlan}) for the ${name} VM.`,
+          cancelText: 'Cancel',
+          confirmText: disconnect ? 'Disconnect' : 'Change',
+          type: 'is-warning',
+          hasIcon: true,
+          onConfirm: () => {
+            this.isWaiting = true;
+            vmsApi
+              .updateVm(this.$route.params.id, name, {
+                interface: { index, vlan: disconnect ? '' : vlan.alias },
+              })
+              .then((resp) => replaceVm(this.experiment, resp.data))
+              .catch((err) => useErrorNotification(err))
+              .finally(() => (this.isWaiting = false));
+          },
+        });
 
         this.vlanModal.active = false;
       },
 
-      changeOpticalDisc(vmName, isoPath) {
-        this.opticalDiscModal.active = false;
+      insertOpticalDisc() {
+        const isoPath = this.opticalDiscModal.disc;
+        if (!isoPath) return;
 
-        let url = `experiments/${this.$route.params.id}/vms/${vmName}/cdrom`;
+        vmsApi
+          .insertVmDisc(
+            this.$route.params.id,
+            this.opticalDiscModal.vmName,
+            isoPath,
+          )
+          .catch((err) => useErrorNotification(err));
+        this.resetOpticalDiscModal();
+      },
 
-        if (this.getOpticalDiscLabel().indexOf('eject') != -1) {
-          axiosInstance.delete(url).catch((err) => useErrorNotification(err));
-        } else {
-          url += `?isoPath=${isoPath}`;
-          axiosInstance.post(url).catch((err) => useErrorNotification(err));
-        }
-
+      ejectOpticalDisc() {
+        vmsApi
+          .ejectVmDisc(this.$route.params.id, this.opticalDiscModal.vmName)
+          .catch((err) => useErrorNotification(err));
         this.resetOpticalDiscModal();
       },
 
@@ -3572,9 +1571,13 @@
         this.expModal = {
           active: false,
           fullName: '',
-          vm: [],
+          vm: {},
           snapshots: false,
           forwards: [],
+          backingChain: null,
+          disk: null,
+          cdRomDisk: null,
+          filesDir: '',
         };
         this.showModifyStateBar = false;
       },
@@ -3611,22 +1614,15 @@
       },
 
       startApps(apps) {
-        apps = apps.join();
-        this.apps = apps;
+        this.triggeredApps.push(...apps);
 
-        axiosInstance
-          .post(
-            'experiments/' +
-              this.$route.params.id +
-              '/trigger' +
-              '?apps=' +
-              apps,
-          )
-          .then((response) => {
-            console.log('triggering ' + apps + ': ' + response);
-          })
+        experimentsApi
+          .triggerApps(this.$route.params.id, apps.join())
           .catch((err) => {
             useErrorNotification(err);
+            this.triggeredApps = this.triggeredApps.filter(
+              (a) => !apps.includes(a),
+            );
             this.isWaiting = false;
           });
 
@@ -3638,23 +1634,45 @@
         this.appsModal.active = false;
       },
 
-      resetFileViewerModal() {
-        this.fileViewerModal.active = false;
-        this.fileViewerModal.title = null;
-        this.fileViewerModal.contents = null;
-      },
-
       resetOpticalDiscModal() {
-        this.opticalDiscModal.active = false;
-        this.opticalDiscModal.disc = '';
-        this.opticalDiscModal.vmName = null;
+        this.opticalDiscModal = emptyOpticalDiscModal();
       },
 
-      showChangeDisc(vm) {
-        this.updateDisks('ISO');
-        this.opticalDiscModal.vmName = vm.name;
-        this.opticalDiscModal.active = true;
-        this.opticalDiscModal.disc = vm.cdRom;
+      // Opens the CD-ROM picker for a VM and lists the ISO images it can
+      // insert, saying so when there are none or they cannot be listed.
+      async showChangeDisc(vm) {
+        this.opticalDiscModal = {
+          ...emptyOpticalDiscModal(),
+          active: true,
+          vmName: vm.name,
+          current: vm.cdRom || '',
+          disc: vm.cdRom || null,
+        };
+        // the reactive copy, to tell if the modal was closed or reopened
+        const modal = this.opticalDiscModal;
+
+        if (!roleAllowed('disks', 'list')) {
+          modal.error =
+            'Your role cannot list disk images, so it cannot pick an ISO ' +
+            'image to insert.';
+          return;
+        }
+
+        modal.loading = true;
+        let isos = [];
+        let error = null;
+        try {
+          const resp = await disksApi.listDisks({ diskType: 'ISO' });
+          isos = isoDisks(resp.data?.disks);
+        } catch (err) {
+          error = 'Could not list the ISO images.';
+          useErrorNotification(err);
+        }
+
+        if (this.opticalDiscModal !== modal) return;
+        modal.isos = isos;
+        modal.error = error;
+        modal.loading = false;
       },
 
       validate(modalVMQueue) {
@@ -3674,135 +1692,138 @@
         return true;
       },
 
-      processMultiVmAction(action) {
-        switch (action) {
-          case this.vmActions.start:
-            this.startVm(this.vmSelectedArray);
-            break;
-          case this.vmActions.pause:
-            this.pauseVm(this.vmSelectedArray);
-            break;
-          case this.vmActions.kill:
-            this.killVm(this.vmSelectedArray);
-            break;
-          case this.vmActions.redeploy:
-            this.redeploy(this.vmSelectedArray);
-            break;
-          case this.vmActions.createBacking:
-            this.diskImage(this.vmSelectedArray);
-            break;
-          case this.vmActions.createMemorySnapshot:
-            this.queueMemorySnapshotVMs(this.vmSelectedArray);
-            break;
-          case this.vmActions.captureSnapshot:
-            this.captureSnapshot(this.vmSelectedArray);
-            break;
-          case this.vmActions.restart:
-            this.restartVm(this.vmSelectedArray);
-            break;
-          case this.vmActions.shutdown:
-            this.shutdownVm(this.vmSelectedArray);
-            break;
-          case this.vmActions.resetState:
-            this.resetVmState(this.vmSelectedArray);
-            break;
-          default:
-            this.notImplemented();
-        }
-
-        this.unSelectAllVMs();
+      // runs a toolbar action on the selected VMs, then clears the selection
+      actOnSelection(action) {
+        this[SELECTION_HANDLERS[action]](this.vmSelectedArray);
+        this.vmSelectedArray = [];
+        this.checkAll = false;
+        this.showModifyStateBar = false;
       },
 
-      notifySnapshotDisabled(names) {
-        if (names.length === 0) return;
-
-        this.$buefy.toast.open({
-          message:
-            'VMs ' +
-            names.join(', ') +
-            ' do not have snapshots enabled and were skipped.',
-          type: 'is-warning',
-          duration: 5000,
-        });
+      // the named VMs the action's rules for one VM allow, saying which were
+      // skipped and why
+      actionableVMs(action, names) {
+        const { allowed, skipped } = partitionVMsForAction(
+          action,
+          names,
+          this.experiment.vms,
+        );
+        if (skipped.length > 0) this.alertSkipped(skipped);
+        return allowed;
       },
 
-      updateCaptureLabel(vm) {
-        return vm.captures.length == 0
-          ? 'start packet capture'
-          : 'stop packet capture';
-      },
-
-      notImplemented() {
+      // says which VMs an action skipped, and why
+      alertSkipped(skipped) {
         this.$buefy.dialog.alert({
-          title: 'Not Implemented',
-          message: 'This function has not yet been implemented',
-          type: 'is-dark',
+          title: 'No Action',
+          message: escapeHTML(skippedVMsText(skipped)),
           confirmText: 'Ok',
         });
       },
 
-      getUniqueItems(inputArray) {
-        let arrayHash = {};
-
-        for (let i = 0; i < inputArray.length; i++) {
-          // Skip really short items
-          if (inputArray[i].length < 4) {
-            continue;
-          }
-
-          if (arrayHash[inputArray[i]] === undefined) {
-            arrayHash[inputArray[i]] = true;
-          }
+      // Asks once to take a power action on the named VMs its rules allow,
+      // saying in the same dialog which it skips and why, then takes it in
+      // one background job: `ask(vms)` words the question for the VMs it
+      // acts on.
+      async confirmVmAction(action, names, ask) {
+        const { allowed, skipped } = partitionVMsForAction(
+          action,
+          names,
+          this.experiment.vms,
+        );
+        if (allowed.length === 0) {
+          this.alertSkipped(skipped);
+          return;
         }
 
-        return Object.keys(arrayHash).sort();
-      },
-
-      getBaseName(diskName) {
-        return diskName.substring(diskName.lastIndexOf('/') + 1);
-      },
-
-      getOpticalDiscLabel() {
-        if (this.expModal.vm.cdRom === undefined) {
-          return 'insert optical disc';
-        }
-
-        // If there is an existing disc in the VM, see
-        // if the disc was changed
-        if (
-          this.expModal.vm.cdRom.length > 0 &&
-          this.opticalDiscModal.disc.length > 0
-        ) {
-          return String(this.expModal.vm.cdRom) !=
-            String(this.opticalDiscModal.disc)
-            ? 'change optical disc'
-            : 'eject optical disc';
-        } else if (this.expModal.vm.cdRom.length > 0) {
-          return 'eject optical disc';
-        } else {
-          return 'insert optical disc';
-        }
-      },
-
-      getDiskToolTip(
-        fullPath,
-        defaultMessage = 'menu for assigning vm(s) disk',
-      ) {
-        return this.disks.indexOf(fullPath) == -1 ? defaultMessage : fullPath;
-      },
-
-      downloadFile(exp_name, name, path) {
-        console.log('attempting to download file');
-        const store = usePhenixStore();
-        const basePath = import.meta.env.BASE_URL;
-
-        const url = `${basePath}api/v1/experiments/${exp_name}/files/${name}`;
-        const queryParams = new URLSearchParams({
-          path: path,
-          token: store.token,
+        const confirmed = await confirmOperation(this.$buefy, {
+          ...ask(allowed),
+          skipped,
+          noun: 'VM',
         });
+        if (confirmed) await this.runVmJob(action, allowed);
+      },
 
-        window.open(`${url}?${queryParams}`, '_blank');
+      // Takes a power action on the VMs in a background job, waiting for it,
+      // then shows each VM as the job left it and says how it went, offering
+      // to retry the VMs that may work if tried again. The table's rows also
+      // follow the VMs' own websocket updates meanwhile.
+      async runVmJob(action, vms) {
+        const jobs = useJobStore();
+        this.isWaiting = true;
+        this.resetExpModal();
+        try {
+          const job = await vmsApi.startVmActionsJob(
+            this.$route.params.id,
+            action,
+            vms,
+          );
+          const done = await jobs.whenDone(job.id);
+          const items = outcomeFromJob(done);
+
+          const succeeded = (done?.items ?? []).filter(
+            (item) => item.status === 'succeeded',
+          );
+          if (action === 'kill') {
+            const killed = new Set(succeeded.map((item) => item.name));
+            this.experiment.vms = this.experiment.vms.filter(
+              (vm) => !killed.has(vm.name),
+            );
+          } else {
+            for (const item of succeeded) {
+              if (item.result) replaceVm(this.experiment, item.result);
+            }
+          }
+
+          notifyOutcome(this.$buefy, {
+            verbPast: VM_ACTION_DONE[action],
+            noun: 'VM',
+            items,
+            onRetry: (retry) => this.runVmJob(action, retry),
+          });
+        } catch (err) {
+          useErrorNotification(err);
+        } finally {
+          this.isWaiting = false;
+        }
+      },
+
+      // the search of a tab's searchKey, whether its tab is open or not
+      filterOf(key) {
+        return searchKey(this.activeTab) === key
+          ? this.search.filter
+          : (this.tabSearches[key]?.filter ?? '');
+      },
+
+      // the tabs this role sees, which a link may open
+      offeredTabs() {
+        const id = this.$route.params.id;
+        return [
+          TAB.VMS,
+          TAB.VNC,
+          ...(roleAllowed('experiments/files', 'list', id) ? [TAB.FILES] : []),
+          ...(roleAllowed('experiments/netflow', 'get', id)
+            ? [TAB.NETFLOW]
+            : []),
+        ];
+      },
+
+      // keeps the URL naming the open tab and its search, as WebShark does
+      syncQuery() {
+        if (this.unmounting || this.$route.name !== 'experiment') return;
+        const query = tabQuery(
+          this.$route.query,
+          this.activeTab,
+          this.search.filter,
+        );
+        // the query watcher leaves alone the URL the page set itself
+        this.syncedQuery = query;
+        if (!sameQuery(query, this.$route.query))
+          this.$router.replace({ query });
+      },
+
+      addSearchHistory() {
+        this.searchHistory = addSearch(this.searchHistory, this.search.filter);
       },
 
       showMountDialog(vm) {
@@ -3833,26 +1854,31 @@
       },
 
       async createPortForward() {
-        let url = `experiments/${this.$route.params.id}/vms/${this.portForwardModal.vmName}/forwards`;
-        let params = `?src=${this.portForwardModal.srcPort}&host=${this.portForwardModal.dstHost}&dst=${this.portForwardModal.dstPort}`;
+        const exp = this.$route.params.id;
+        const vmName = this.portForwardModal.vmName;
+        const params = {
+          src: this.portForwardModal.srcPort,
+          host: this.portForwardModal.dstHost,
+          dst: this.portForwardModal.dstPort,
+        };
 
         try {
-          await axiosInstance.post(url + params);
+          await vmsApi.createVmForward(exp, vmName, params);
 
-          let resp = await axiosInstance.get(url);
+          this.$buefy.toast.open({
+            message: `Port forward ${params.src} → ${params.host}:${params.dst} created for the ${this.portForwardModal.vmName} VM.`,
+            type: 'is-success',
+          });
 
-          this.expModal.forwards = [];
-
-          if (resp.data.listeners) {
-            for (let i = 0; i < resp.data.listeners.length; i++) {
-              let l = resp.data.listeners[i];
-
-              l.desc = `${l.srcPort} --> ${l.dstHost}:${l.dstPort}`;
-              l.canDelete = usePhenixStore().username === l.owner;
-
-              this.expModal.forwards.push(l);
-            }
+          if (
+            !this.roleAllowed('vms/forwards', 'list', this.expModal.fullName)
+          ) {
+            return;
           }
+
+          let resp = await vmsApi.listVmForwards(exp, vmName);
+
+          this.showForwards(resp.data.listeners);
         } catch (err) {
           useErrorNotification(err);
         } finally {
@@ -3861,85 +1887,51 @@
       },
 
       async deletePortForward(vm, forward) {
-        let url = `experiments/${this.$route.params.id}/vms/${vm}/forwards`;
-        let params = `?host=${forward.dstHost}&dst=${forward.dstPort}`;
+        const exp = this.$route.params.id;
+        const params = { host: forward.dstHost, dst: forward.dstPort };
 
         try {
-          await axiosInstance.delete(url + params);
+          await vmsApi.deleteVmForward(exp, vm, params);
 
-          let resp = await axiosInstance.get(url);
+          let resp = await vmsApi.listVmForwards(exp, vm);
 
-          this.expModal.forwards = [];
-
-          if (resp.data.listeners) {
-            for (let i = 0; i < resp.data.listeners.length; i++) {
-              let l = resp.data.listeners[i];
-
-              l.desc = `${l.srcPort} --> ${l.dstHost}:${l.dstPort}`;
-              l.canDelete = usePhenixStore().username === l.owner;
-
-              this.expModal.forwards.push(l);
-            }
-          }
+          this.showForwards(resp.data.listeners);
         } catch (err) {
           useErrorNotification(err);
         }
       },
 
-      async handleNetflow(start, create = true) {
-        if (start) {
-          // the websocket upgrade 404s until the backend registers the
-          // capture, so wait for the POST to finish before connecting
-          if (create) {
-            try {
-              await axiosInstance.post(
-                `experiments/${this.$route.params.id}/netflow`,
-              );
-            } catch (err) {
-              useErrorNotification(err);
-              return;
-            }
-          }
+      // the open VM's port forwards, each marked deletable when the user
+      // owns it
+      showForwards(listeners) {
+        const user = usePhenixStore().username;
+        this.expModal.forwards = (listeners ?? []).map((forward) => ({
+          ...forward,
+          canDelete: forward.owner === user,
+        }));
+      },
 
-          this.netflow.capturing = true;
-          this.netflow.tooltip = 'Stop Netflow Capture';
-          this.netflow.data += '### CAPTURE START ###\n';
+      // Tells the server to stop sending the VMs; otherwise it keeps
+      // screenshotting them, and each screenshot holds up every other
+      // minimega command.
+      unsubscribeVms() {
+        sendWsMsg({
+          resource: {
+            type: 'experiment/vms',
+            name: this.experiment?.name ?? '',
+            action: 'unsubscribe',
+          },
+        });
+      },
 
-          let path = `${import.meta.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/netflow/ws`;
-
-          let token = usePhenixStore().token;
-          if (token) {
-            path += `?token=${token}`;
-          }
-
-          let proto = location.protocol == 'https:' ? 'wss://' : 'ws://';
-          let url = proto + location.host + path;
-
-          this.socket = new WebSocket(url);
-          this.socket.addEventListener('message', (event) => {
-            event.data.split(/\r?\n/).forEach((data) => {
-              if (data) {
-                let msg = JSON.parse(data);
-                let flow = `${msg['src']}:${msg['sport']}\t\t-->\t${msg['dst']}:${msg['dport']}\t\t${msg['proto']}\t${msg['packets']}\t${msg['bytes']}\n`;
-
-                this.netflow.data += flow;
-              }
-            });
-          });
+      // a hidden browser tab needs no screenshots; on return the VMs are
+      // listed again, which brings fresh ones
+      onVisibilityChange() {
+        if (!this.experiment.name) return;
+        if (document.hidden) {
+          this.unsubscribeVms();
         } else {
-          axiosInstance
-            .delete(`experiments/${this.$route.params.id}/netflow`)
-            .then((_) => {
-              this.netflow.capturing = false;
-              this.netflow.tooltip = 'Start Netflow Capture';
-              this.netflow.data += '### CAPTURE STOP ###\n';
-
-              if (this.socket) {
-                this.socket.close();
-                this.socket = null;
-              }
-            })
-            .catch((err) => useErrorNotification(err));
+          this.updateTable();
         }
       },
     },
@@ -3947,7 +1939,7 @@
     watch: {
       checkAll(newVal) {
         if (newVal) {
-          var visibleItems = this.$refs['vmTable'].visibleData;
+          var visibleItems = this.$refs['vmTable'].visibleData();
           // add all visible items
           this.vmSelectedArray = [];
           for (var i = 0; i < visibleItems.length; i++) {
@@ -3961,19 +1953,51 @@
           this.vmSelectedArray = [];
         }
       },
-      activeTab(newVal) {
-        // Clear search history and
-        // search filter when switching tabs
-        this.searchHistory = [];
-        this.searchName = '';
-
-        if (newVal == 0 || newVal == 2) {
-          this.searchPlaceholder = 'Find a VM';
-          this.updateExperiment();
-        } else {
-          this.searchPlaceholder = 'Find a File';
-          this.updateFiles();
+      activeTab(newVal, oldVal) {
+        // each tab keeps its own search and history while another is open
+        const [from, to] = [searchKey(oldVal), searchKey(newVal)];
+        if (from !== to) {
+          this.searchVMs.cancel();
+          this.tabSearches[from] = {
+            filter: this.search.filter,
+            history: this.searchHistory,
+          };
+          const kept = this.tabSearches[to];
+          this.search.filter = kept?.filter ?? '';
+          this.searchHistory = kept?.history ?? [];
         }
+        this.syncQuery();
+
+        if (newVal == TAB.VMS || newVal == TAB.VNC) {
+          if (this.experiment.name) this.updateTable();
+        } else if (newVal == TAB.NETFLOW) {
+          this.$nextTick(() => this.$refs.netflowPanel?.fit());
+        } else {
+          this.$refs.filesTab?.reload();
+        }
+      },
+
+      // a link to this page with another tab or search
+      '$route.query'(query) {
+        if (
+          this.$route.name !== 'experiment' ||
+          sameQuery(query, this.syncedQuery)
+        ) {
+          return;
+        }
+        const tab = tabFromQuery(query, this.offeredTabs());
+        const search = searchFromQuery(query);
+        if (tab === this.activeTab) {
+          if (search !== this.search.filter) this.searchVMs(search);
+          return;
+        }
+        // the activeTab watcher opens the tab with the link's search
+        const key = searchKey(tab);
+        this.searchVMs.cancel();
+        if (key === searchKey(this.activeTab)) this.search.filter = search;
+        else
+          this.tabSearches[key] = { ...this.tabSearches[key], filter: search };
+        this.activeTab = tab;
       },
 
       vncWidth(w) {
@@ -3983,38 +2007,30 @@
 
     data() {
       return {
+        // whether VMs still without screenshots have waited long enough
+        screenshotsDue: false,
+        screenshotsTimer: null,
         search: {
-          vms: [],
-          filter: '',
+          filter: searchFromQuery(this.$route.query),
         },
-        table: {
-          isPaginated: false,
-          isPaginationSimple: true,
-          currentPage: 1,
-          perPage: 10,
-          total: 0,
-          sortColumn: 'name',
-          sortOrder: 'asc',
-          paginationSize: 'is-small',
-        },
-        filesTable: {
-          isPaginated: false,
-          isPaginationSimple: true,
-          currentPage: 1,
-          perPage: 10,
-          total: 0,
-          sortColumn: 'date',
-          paginationSize: 'is-small',
-          defaultSortDirection: 'desc',
-          categories: [],
-          category: null,
-        },
+        // whether the websocket has sent the VM table yet
+        vmsLoaded: false,
+        // whether minimega failed to answer for the VMs last listed
+        runtimeUnknown: false,
+        // whether the page has asked the websocket for the VM table
+        vmsRequested: false,
         expModal: {
           active: false,
-          vm: [],
+          vm: {},
           fullName: '',
           snapshots: false,
           forwards: [],
+          backingChain: null,
+          // the VM's disk and CD-ROM ISO image in the disk list, and the
+          // minimega files directory
+          disk: null,
+          cdRomDisk: null,
+          filesDir: '',
         },
         portForwardModal: {
           active: false,
@@ -4028,7 +2044,6 @@
           vmName: null,
           vmFromNet: null,
           vmNetIndex: null,
-          vmNet: [],
         },
         redeployModal: {
           active: false,
@@ -4056,40 +2071,24 @@
           triggerable: [],
           apps: [],
         },
-        fileViewerModal: {
-          active: false,
-          title: null,
-          contents: null,
-        },
-        opticalDiscModal: {
-          active: false,
-          disc: '',
-          vmName: null,
-        },
-        apps: null,
+        opticalDiscModal: emptyOpticalDiscModal(),
+        // apps this page triggered that have not reported back
+        triggeredApps: [],
         experiment: [],
-        files: [],
-        disks: [],
+        // the Files tab's category picker, and the categories it offers
+        fileCategory: null,
+        fileCategories: [],
+        // the redeploy modal's disk list, null until it has loaded
+        disks: null,
         vlan: null,
-        isWaiting: true,
+        // shows the loading overlay while the page waits on the server
+        isWaiting: false,
         showModifyStateBar: false,
         checkAll: false,
         vmSelectedArray: [],
-        vmActions: {
-          start: 0,
-          pause: 1,
-          kill: 2,
-          redeploy: 3,
-          createBacking: 4,
-          captureSnapshot: 5,
-          restart: 6,
-          shutdown: 7,
-          resetState: 8,
-          createMemorySnapshot: 9,
-        },
         searchHistory: [],
-        searchHistoryLength: 10,
-        searchPlaceholder: 'Find a VM',
+        // the search and its history of each tab not open, by searchKey
+        tabSearches: {},
         columnToggles: [
           {
             key: 'screenshot',
@@ -4126,6 +2125,11 @@
             label: 'Labels',
             storageKey: 'showLabelsColumn',
           },
+          {
+            key: 'actions',
+            label: 'Actions',
+            storageKey: 'showActionsColumn',
+          },
         ],
         columnVisibility: {
           screenshot: true,
@@ -4135,36 +2139,21 @@
           taps: true,
           uptime: true,
           labels: true,
+          actions: true,
         },
-        activeTab: 0,
+        activeTab: tabFromQuery(this.$route.query, this.offeredTabs()),
         vncZoom: 4,
-        netflow: {
-          tooltip: 'Start Netflow Capture',
-          capturing: false,
-          data: '',
-        },
-        features: [],
       };
     },
   };
 </script>
 
 <style scoped>
-  .fa-layers-counter {
-    /* counter on tag icon */
-    transform: scale(0.7) translateX(50%) translateY(-50%);
-  }
   :deep(.tabs ul) {
     margin-left: 0px !important;
   }
 
   :deep(.b-tabs .tab-content) {
     padding: 1rem 0 0 0;
-  }
-
-  .vm-modal-list-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
   }
 </style>

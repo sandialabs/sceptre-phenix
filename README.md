@@ -41,6 +41,10 @@ To build the phēnix container image from source (does not require installing lo
 make docker
 ```
 
+The compose file checks the `phenix` container's health with `phenix healthcheck`, which probes the server's `/healthz` endpoint; `docker exec phenix phenix healthcheck --ready` also checks minimega, the store and free disk space. See [Health Checks](https://phenix.sceptre.dev/latest/health/).
+
+`docker exec phenix phenix doctor` checks the configuration without the server: config file syntax and keys, the store, log and base directories, and minimega, then lists each setting with where its value came from (secrets redacted). See [Checking the Configuration](https://phenix.sceptre.dev/latest/settings/#checking-the-configuration).
+
 ### Native Installation (.deb)
 
 As an alternative to running phēnix using Docker, you can build a native Debian package (`.deb`) which installs the binaries and dependencies directly onto your system.
@@ -54,6 +58,8 @@ Once the build is complete, you can install the generated package:
 ```bash
 sudo apt install ./build/deb/phenix_<version>_amd64.deb
 ```
+
+Each [GitHub release](https://github.com/sandialabs/sceptre-phenix/releases) also attaches the `.deb` and SPDX JSON software bills of materials (SBOMs) of it and of the phenix and JIT UI container images.
 
 ### Shell Completion
 
@@ -148,12 +154,14 @@ We use a `Makefile` to standardize development tasks. Run `make help` to see all
 # Development
 make all         # Run all tools (lint, test, build examples)
 make check       # Run linters without fixing (for CI)
-make generate    # Run code generation (protobuf, mocks, etc)
+make check-generated # Check that `make generate` is reproducible and writes only ignored files
+make generate    # Generate Go code (protobuf, mocks, RBAC policy) and the API reference
+make api-docs    # Render the API reference served at /docs/ (src/go/web/public/docs/index.html)
 make lint        # Run linters and formatters, fixing issues in place
 make test        # Run unit tests
 
 # Build
-make build       # Build the main phenix binary
+make build       # Build the UI, the API reference and the main phenix binary
 make deb         # Build the phenix .deb package
 make docker      # Build the phenix docker image
 make tunneler    # Build phenix-tunneler binaries
@@ -178,6 +186,12 @@ git clone https://github.com/sandialabs/sceptre-phenix.git
 cd sceptre-phenix
 make build
 ```
+
+`make build` also renders the API reference that `bin/phenix` serves at
+`/docs/`, with the Redocly CLI version pinned in `scripts/api-docs.sh`. That
+step runs `npx` and needs network access the first time; pass
+`SKIP_API_DOCS=1` to build offline without it, and `SKIP_UI=1` to reuse an
+existing UI build in `src/js/dist`.
 
 ## Logging & Configuration
 
@@ -343,6 +357,11 @@ func MyFunc() {
     plog.Info(plog.TypeSystem, "System initialized", "version", "1.0")
 }
 ```
+
+Web handlers log security-relevant actions (capture access, consoles, disk
+changes, file deletion, ...) as `AUDIT` records with ECS fields through
+`phenix/web/audit`. These always reach the system log file, whatever
+`log.level` is; see [Audit Events](docs/content/logging.md#audit-events).
 
 ### 🧠 Decision Log
 

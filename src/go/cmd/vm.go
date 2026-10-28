@@ -1,19 +1,24 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"phenix/api/experiment"
+	"phenix/api/livecapture"
 	"phenix/api/vm"
 	"phenix/util"
 	"phenix/util/mm"
@@ -33,6 +38,7 @@ const (
 	stopCaptureIfaceArgs   = 3
 	stopSubnetArgs         = 2
 	stopAllArgs            = 1
+	streamCaptureArgs      = 3
 	memSnapArgs            = 3
 	mountArgs              = 2
 	unmountArgs            = 2
@@ -63,7 +69,7 @@ func vmArgsCompletion(_ *cobra.Command, args []string, toComplete string) ([]str
 		}
 		return names, cobra.ShellCompDirectiveNoFileComp
 	} else if len(args) == 1 {
-		vms, err := vm.List(args[0])
+		vms, err := vm.List(context.Background(), args[0])
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
@@ -150,7 +156,7 @@ func vmMatchesAnyLabel(vmInfo mm.VM, labels []string) (bool, error) {
 }
 
 func listVMsByLabel(expName string, labels []string) ([]mm.VM, error) {
-	allVMs, err := vm.List(expName)
+	allVMs, err := vm.List(context.Background(), expName)
 	if err != nil {
 		return nil, err
 	}
@@ -365,6 +371,14 @@ func processVariableVMsArgument(fn func(expName, vmName string) error, cmd *cobr
 	return nil
 }
 
+// withoutContext is fn for the CLI, whose minimega commands wait as long as
+// they must (see mm.Context).
+func withoutContext(fn func(ctx context.Context, expName, vmName string) error) func(expName, vmName string) error {
+	return func(expName, vmName string) error {
+		return fn(context.Background(), expName, vmName)
+	}
+}
+
 /*
 ---------- VM Command Definitions ----------
 */
@@ -432,14 +446,14 @@ func newVMInfoCmd() *cobra.Command {
 			} else {
 				switch len(args) {
 				case 1:
-					vms, err = vm.List(args[0])
+					vms, err = vm.List(context.Background(), args[0])
 					if err != nil {
 						err := util.HumanizeError(err, "Unable to get a list of VMs")
 
 						return err.Humanized()
 					}
 				case infoArgs:
-					vmInfo, err := vm.Get(args[0], args[1])
+					vmInfo, err := vm.Get(context.Background(), args[0], args[1])
 					if err != nil {
 						err := util.HumanizeError(
 							err,
@@ -456,12 +470,12 @@ func newVMInfoCmd() *cobra.Command {
 				}
 			}
 
-			vms, err = filterVMInfo(vms, MustGetStringArray(cmd.Flags(), "filter"))
+			vms, err = filterVMInfo(vms, mustGet(cmd.Flags().GetStringArray, "filter"))
 			if err != nil {
 				return err
 			}
 
-			printer.PrintTableOfVMs(os.Stdout, MustGetBool(cmd.Flags(), "taps"), vms...)
+			printer.PrintTableOfVMs(os.Stdout, mustGet(cmd.Flags().GetBool, "taps"), vms...)
 
 			return nil
 		},
@@ -511,7 +525,7 @@ func newVMRestartCmd() *cobra.Command {
 		Short:             "Restart running, paused, or powered off VM(s) for a specific experiment",
 		ValidArgsFunction: vmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return processVariableVMsArgument(vm.Restart, cmd, args, "restart", "restarted")
+			return processVariableVMsArgument(withoutContext(vm.Restart), cmd, args, "restart", "restarted")
 		},
 	}
 
@@ -532,7 +546,7 @@ func newVMResetDiskCmd() *cobra.Command {
 		Long:              desc,
 		ValidArgsFunction: vmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return processVariableVMsArgument(vm.ResetDiskState, cmd, args, "reset disk", "disk reset")
+			return processVariableVMsArgument(withoutContext(vm.ResetDiskState), cmd, args, "reset disk", "disk reset")
 		},
 	}
 
@@ -565,8 +579,8 @@ func newVMRedeployCmd() *cobra.Command {
 			}
 
 			var (
-				disk   = MustGetString(cmd.Flags(), "disk")
-				inject = MustGetBool(cmd.Flags(), "replicate-injects")
+				disk   = mustGet(cmd.Flags().GetString, "disk")
+				inject = mustGet(cmd.Flags().GetBool, "replicate-injects")
 			)
 
 			if cpu != 0 && (cpu < 1 || cpu > 8) {
@@ -588,7 +602,7 @@ func newVMRedeployCmd() *cobra.Command {
 			}
 
 			for _, vmName := range vmNames {
-				err := vm.Redeploy(expName, vmName, opts...)
+				err := vm.Redeploy(context.Background(), expName, vmName, opts...)
 				if err != nil {
 					err := util.HumanizeError(err, "%s", "Unable to redeploy the "+vmName+" VM")
 
@@ -627,7 +641,7 @@ func newVMShutdownCmd() *cobra.Command {
 		Long:              desc,
 		ValidArgsFunction: vmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return processVariableVMsArgument(vm.Shutdown, cmd, args, "shutdown", "shutdown")
+			return processVariableVMsArgument(withoutContext(vm.Shutdown), cmd, args, "shutdown", "shutdown")
 		},
 	}
 
@@ -686,11 +700,11 @@ func newVMSetCmd() *cobra.Command {
 			}
 
 			var (
-				disk          = MustGetString(cmd.Flags(), "disk")
-				dnb           = MustGetBool(cmd.Flags(), "do-not-boot")
-				snapshot      = MustGetBool(cmd.Flags(), "snapshot")
-				rawLabels     = MustGetStringArray(cmd.Flags(), "label-changes")
-				appendLabels  = MustGetBool(cmd.Flags(), "append-labels")
+				disk          = mustGet(cmd.Flags().GetString, "disk")
+				dnb           = mustGet(cmd.Flags().GetBool, "do-not-boot")
+				snapshot      = mustGet(cmd.Flags().GetBool, "snapshot")
+				rawLabels     = mustGet(cmd.Flags().GetStringArray, "label-changes")
+				appendLabels  = mustGet(cmd.Flags().GetBool, "append-labels")
 				cpuChanged    = cmd.Flags().Changed("cpu")
 				memChanged    = cmd.Flags().Changed("mem")
 				partChanged   = cmd.Flags().Changed("partition")
@@ -936,7 +950,7 @@ func newVMCaptureCmd() *cobra.Command {
 				out      = args[3]
 			)
 
-			v, err := vm.Get(expName, vmName)
+			v, err := vm.Get(context.Background(), expName, vmName)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
@@ -958,7 +972,7 @@ func newVMCaptureCmd() *cobra.Command {
 				return err.Humanized()
 			}
 
-			if err := vm.StartCaptureForVM(v, expName, vmName, iface, out); err != nil {
+			if err := vm.StartCaptureForVM(context.Background(), v, expName, vmName, iface, out); err != nil {
 				err := util.HumanizeError(
 					err,
 					"%s",
@@ -994,7 +1008,7 @@ func newVMCaptureCmd() *cobra.Command {
 			var (
 				expName = args[0]
 				subnet  = args[1]
-				filter  = MustGetString(cmd.Flags(), "filter")
+				filter  = mustGet(cmd.Flags().GetString, "filter")
 				vmList  = []string{}
 			)
 
@@ -1009,7 +1023,7 @@ func newVMCaptureCmd() *cobra.Command {
 			if len(filter) > 0 {
 				filterTree := mm.BuildTree(filter)
 
-				vms, err := vm.List(expName)
+				vms, err := vm.List(context.Background(), expName)
 				if err != nil {
 					err := util.HumanizeError(
 						err,
@@ -1033,7 +1047,7 @@ func newVMCaptureCmd() *cobra.Command {
 				}
 			}
 
-			vms, err := vm.CaptureSubnet(expName, subnet, vmList)
+			vms, err := vm.CaptureSubnet(context.Background(), expName, subnet, vmList)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
@@ -1076,7 +1090,7 @@ func newVMCaptureCmd() *cobra.Command {
 			if len(args) == stopCaptureIfaceArgs {
 				ifaceArg := args[2]
 
-				v, err := vm.Get(expName, vmName)
+				v, err := vm.Get(context.Background(), expName, vmName)
 				if err != nil {
 					err := util.HumanizeError(
 						err,
@@ -1098,7 +1112,7 @@ func newVMCaptureCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				if err := vm.StopCapture(expName, vmName, iface); err != nil {
+				if err := vm.StopCapture(context.Background(), expName, vmName, iface); err != nil {
 					err := util.HumanizeError(
 						err,
 						"%s",
@@ -1122,7 +1136,7 @@ func newVMCaptureCmd() *cobra.Command {
 				return nil
 			}
 
-			err := vm.StopCaptures(expName, vmName)
+			err := vm.StopCaptures(context.Background(), expName, vmName)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
@@ -1150,7 +1164,7 @@ func newVMCaptureCmd() *cobra.Command {
 			var (
 				expName = args[0]
 				subnet  = args[1]
-				filter  = MustGetString(cmd.Flags(), "filter")
+				filter  = mustGet(cmd.Flags().GetString, "filter")
 				vmList  = []string{}
 			)
 
@@ -1165,7 +1179,7 @@ func newVMCaptureCmd() *cobra.Command {
 			if len(filter) > 0 {
 				filterTree := mm.BuildTree(filter)
 
-				vms, err := vm.List(expName)
+				vms, err := vm.List(context.Background(), expName)
 				if err != nil {
 					err := util.HumanizeError(
 						err,
@@ -1189,7 +1203,7 @@ func newVMCaptureCmd() *cobra.Command {
 				}
 			}
 
-			if _, err := vm.StopCaptureSubnet(expName, subnet, vmList); err != nil {
+			if _, err := vm.StopCaptureSubnet(context.Background(), expName, subnet, vmList); err != nil {
 				err := util.HumanizeError(
 					err,
 					"%s",
@@ -1215,7 +1229,7 @@ func newVMCaptureCmd() *cobra.Command {
 
 			expName := args[0]
 
-			if _, err := vm.StopCaptureSubnet(expName, "", []string{}); err != nil {
+			if _, err := vm.StopCaptureSubnet(context.Background(), expName, "", []string{}); err != nil {
 				err := util.HumanizeError(
 					err,
 					"%s",
@@ -1236,11 +1250,138 @@ func newVMCaptureCmd() *cobra.Command {
 	cmd.AddCommand(stopVMCaptures)
 	cmd.AddCommand(stopSubnetCaptures)
 	cmd.AddCommand(stopAllCaptures)
+	cmd.AddCommand(newVMCaptureStreamCmd())
 
 	startSubnetCaptures.Flags().StringP("filter", "f", "", "Filter to restrict the list of VMs")
 	stopSubnetCaptures.Flags().StringP("filter", "f", "", "Filter to restrict the list of VMs")
 
 	return cmd
+}
+
+func newVMCaptureStreamCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "stream <experiment name> <vm name> <iface name/index>",
+		Short: "Write a running packet capture to stdout as it is captured",
+		Long: `Write a running packet capture to stdout as it is captured
+
+  Writes the capture as a pcap stream: every packet captured so far (or, with
+  --from-now, none of them), then each packet as it is captured, until the
+  capture stops or the command is interrupted. Pipe it into Wireshark to
+  watch it live:
+
+    phenix vm capture stream <exp> <vm> <iface> | wireshark -k -i -`,
+		ValidArgsFunction: vmArgsCompletion,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != streamCaptureArgs {
+				return errors.New("must provide an experiment name, VM name, and iface name/index")
+			}
+
+			var (
+				expName = args[0]
+				vmName  = args[1]
+				output  = mustGet(cmd.Flags().GetString, "output")
+				fromNow = mustGet(cmd.Flags().GetBool, "from-now")
+			)
+
+			v, err := vm.Get(context.Background(), expName, vmName)
+			if err != nil {
+				err := util.HumanizeError(err, "%s", "Unable to get details for the "+vmName+" VM")
+
+				return err.Humanized()
+			}
+
+			iface, err := vm.ResolveInterface(v, args[2])
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to resolve interface "+args[2]+" on the "+vmName+" VM",
+				)
+
+				return err.Humanized()
+			}
+
+			out := os.Stdout
+
+			if output != "" && output != "-" {
+				out, err = os.Create(output)
+				if err != nil {
+					return fmt.Errorf("creating %s: %w", output, err)
+				}
+
+				defer out.Close()
+			} else if term.IsTerminal(int(os.Stdout.Fd())) { //nolint:gosec // G115 file descriptors fit in an int
+				return errors.New("refusing to write a packet capture to a terminal: pipe it to a program or use --output")
+			}
+
+			// a signal ends the stream rather than the process, so the cleanup
+			// below runs; once one has, the next ends the process at once, even
+			// while it waits on minimega
+			ctx, stop := signal.NotifyContext(cmd.Context(), captureStreamStopSignals()...)
+			defer stop()
+
+			context.AfterFunc(ctx, stop)
+
+			// with SIGPIPE ignored, a write to a pipe whose reader has gone
+			// fails with EPIPE instead of killing the process
+			signal.Ignore(syscall.SIGPIPE)
+
+			tap, err := livecapture.Open(expName, vmName, iface)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to follow the packet capture on the "+vmName+" VM",
+				)
+
+				return err.Humanized()
+			}
+
+			// the process exits once streaming ends, before a released Tap's
+			// idle expiry would remove the spool of a capture on another node.
+			// From here a signal ends the process: CloseAll removes the spool
+			// before it waits for a read in flight, which on a node that does
+			// not answer lasts until the read times out.
+			defer func() {
+				stop()
+				livecapture.CloseAll()
+			}()
+
+			err = tap.Stream(ctx, fromNow, func(b []byte) error {
+				_, err := out.Write(b)
+
+				return err //nolint:wrapcheck // the reader went away
+			})
+
+			// a signal, or the reader closing the pipe, is how streaming
+			// normally ends
+			if err != nil && ctx.Err() == nil && !errors.Is(err, syscall.EPIPE) {
+				return fmt.Errorf("streaming the capture: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringP("output", "o", "", "Write the capture to this file instead of stdout")
+	cmd.Flags().Bool("from-now", false, "Skip the packets captured before the command started")
+
+	return cmd
+}
+
+// captureStreamStopSignals are the signals that end `phenix vm capture
+// stream`. One the process was started ignoring, as nohup has it ignore a
+// hangup, stays ignored: asking to be notified of it would stop that.
+func captureStreamStopSignals() []os.Signal {
+	stopOn := []os.Signal{syscall.SIGTERM}
+
+	for _, sig := range []os.Signal{os.Interrupt, syscall.SIGHUP} {
+		if !signal.Ignored(sig) {
+			stopOn = append(stopOn, sig)
+		}
+	}
+
+	return stopOn
 }
 
 func newVMMemorySnapshotCmd() *cobra.Command {
@@ -1268,7 +1409,7 @@ func newVMMemorySnapshotCmd() *cobra.Command {
 			)
 
 			cb := func(s string) {}
-			if res, err := vm.MemorySnapshot(expName, vmName, snapshot, cb); err != nil {
+			if res, err := vm.MemorySnapshot(context.Background(), expName, vmName, snapshot, cb); err != nil {
 				if res != "failed" {
 					err := util.HumanizeError(
 						err,

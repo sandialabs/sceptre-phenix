@@ -8,14 +8,14 @@ import (
 
 type SignupRequest struct {
 	Username  string `json:"username"`
-	Password  string `json:"password"` //nolint:gosec // Exported struct field "Password" matches secret pattern
+	Password  string `json:"password"` //nolint:gosec // G117 the request carries the password
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 }
 
 type CreateUserRequest struct {
 	Username      string   `json:"username"`
-	Password      string   `json:"password"` //nolint:gosec // Exported struct field "Password" matches secret pattern
+	Password      string   `json:"password"` //nolint:gosec // G117 the request carries the password
 	FirstName     string   `json:"first_name"`
 	LastName      string   `json:"last_name"`
 	RoleName      string   `json:"role_name"`
@@ -41,7 +41,7 @@ type CreateTokenResponse struct {
 
 type LoginRequest struct {
 	Username string `json:"user"`
-	Password string `json:"pass"` //nolint:gosec // Exported struct field "Password" matches secret pattern
+	Password string `json:"pass"` //nolint:gosec // G117 the request carries the password
 }
 
 type LoginResponse struct {

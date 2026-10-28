@@ -1,0 +1,56 @@
+{
+  "description": "Disk paths minimega takes as one literal argument. The server's rule (minimegaSafe in src/go/api/disk/paths.go) and the UI's (minimegaSafe in src/js/src/utils/diskChain.js) are both tested against this file. refused lists every code point either rule refuses; every other code point is accepted. Write any character outside printable ASCII as a \\u escape.",
+  "refused": [
+    { "from": "U+0000", "to": "U+001F", "why": "C0 control characters, tab and newlines among them" },
+    { "from": "U+0020", "why": "space: minimega's command line splits on it" },
+    { "from": "U+0022", "why": "double quote: minimega unquotes it" },
+    { "from": "U+0023", "why": "number sign: minimega reads it as a comment" },
+    { "from": "U+0024", "why": "dollar sign: minimega expands environment variables" },
+    { "from": "U+0027", "why": "single quote: minimega unquotes it" },
+    { "from": "U+002A", "why": "asterisk: glob syntax" },
+    { "from": "U+002C", "why": "comma: ends the path in a VM's disk spec" },
+    { "from": "U+003F", "why": "question mark: glob syntax" },
+    { "from": "U+005B", "why": "left square bracket: glob syntax" },
+    { "from": "U+005C", "why": "backslash: glob escape" },
+    { "from": "U+005D", "why": "right square bracket: glob syntax" },
+    { "from": "U+0060", "why": "backtick: minimega unquotes it" },
+    { "from": "U+007B", "why": "left curly bracket: glob syntax" },
+    { "from": "U+007D", "why": "right curly bracket: glob syntax" },
+    { "from": "U+007F", "to": "U+009F", "why": "delete and C1 control characters, U+0085 next line among them" },
+    { "from": "U+00A0", "why": "no-break space" },
+    { "from": "U+1680", "why": "ogham space mark" },
+    { "from": "U+2000", "to": "U+200A", "why": "en quad to hair space" },
+    { "from": "U+2028", "why": "line separator" },
+    { "from": "U+2029", "why": "paragraph separator" },
+    { "from": "U+202F", "why": "narrow no-break space" },
+    { "from": "U+205F", "why": "medium mathematical space" },
+    { "from": "U+3000", "why": "ideographic space" }
+  ],
+  "paths": {
+    "accepted": [
+      { "path": "/phenix/images/a+b/x_y.v2.qcow2" },
+      { "path": "/phenix/images/\u00FC/x-1.qc2" },
+      { "path": "/data/vms/%20&=@!~.img", "why": "percent escapes stay literal" },
+      { "path": "/f/a&b=c%20(1)@x:y.qc2" },
+      { "path": "win/win10.qcow2" },
+      { "path": "/phenix/images/a\uFEFFb.qc2", "why": "U+FEFF is not white space, though JavaScript's \\s matches it" },
+      { "path": "/phenix/images/a\u200Bb.qc2", "why": "U+200B zero width space is not white space" },
+      { "path": "/phenix/images/a\u180Eb.qc2", "why": "U+180E left White_Space in Unicode 6.3" },
+      { "path": "/phenix/images/\uD83D\uDCBE.qc2", "why": "astral code points" }
+    ],
+    "refused": [
+      { "path": "/phenix/images/my disk.qc2" },
+      { "path": "/phenix/images/a\tb.qc2" },
+      { "path": "/phenix/images/a\nb.qc2" },
+      { "path": "/phenix/images/$HOME.qc2" },
+      { "path": "/phenix/images/a.qc2,cache=none" },
+      { "path": "/phenix/images/#a.qc2" },
+      { "path": "/phenix/images/*.qc2" },
+      { "path": "/phenix/images/a\u0000b.qc2" },
+      { "path": "/phenix/images/a\u0085b.qc2" },
+      { "path": "/phenix/images/a\u00A0b.qc2", "why": "no-break space" },
+      { "path": "/phenix/images/a\u2028b.qc2", "why": "line separator" },
+      { "path": "/phenix/images/a\u3000b.qc2", "why": "ideographic space" }
+    ]
+  }
+}

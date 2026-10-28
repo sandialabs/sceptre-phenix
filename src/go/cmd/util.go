@@ -56,7 +56,7 @@ func newUtilAppJSONCmd() *cobra.Command {
 
 			var m []byte
 
-			if MustGetBool(cmd.Flags(), "pretty") {
+			if mustGet(cmd.Flags().GetBool, "pretty") {
 				m, err = json.MarshalIndent(exp, "", "  ")
 			} else {
 				m, err = json.Marshal(exp)
@@ -107,7 +107,7 @@ func newUtilRoleTableCmd() *cobra.Command {
 				data = append(data, row)
 			}
 
-			if MustGetBool(cmd.Flags(), "pretty") {
+			if mustGet(cmd.Flags().GetBool, "pretty") {
 				table := tablewriter.NewWriter(os.Stdout)
 				table.SetHeader(header)
 				table.AppendBulk(data)

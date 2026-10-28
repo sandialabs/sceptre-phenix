@@ -1,5 +1,6 @@
-// Proxy-auth signup flow. Opt-in: needs the UI built with VITE_AUTH=proxy and
-// the server started with --jwt-signing-key proxy-jwt, e.g.:
+// Proxy-auth signup flow. CI runs these in the test-e2e-auth job's proxy leg.
+// They need the UI built with VITE_AUTH=proxy and the server started with
+// --jwt-signing-key proxy-jwt; to run them yourself:
 //
 //   phenix ui --jwt-signing-key proxy-jwt
 //   E2E_AUTH_MODE=proxy npx playwright test auth-proxy
@@ -99,8 +100,11 @@ test('signup success (200) logs the user in via response.data', async ({
   );
 
   // 401 fallout (HTTP and WebSocket) is expected: the user was never created.
+  // Without the proxy that adds X-Phenix-Auth-Token, the websocket is refused.
   const fatal = fatalOf(issues).filter(
-    (i) => !/401|user error|HTTP Authentication failed/.test(i.text),
+    (i) =>
+      !/401|user error|HTTP Authentication failed/.test(i.text) &&
+      !/WebSocket connection to .*\/api\/v1\/ws.* 400/.test(i.text),
   );
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });

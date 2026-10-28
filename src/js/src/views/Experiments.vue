@@ -1,144 +1,23 @@
 <template>
   <div class="content">
+    <!-- the card focuses its name input, which the modal would take over -->
     <b-modal
-      v-model="createModal.active"
-      @close="resetCreateModal"
-      has-modal-card>
-      <div class="modal-card" style="width: 25em">
-        <header class="modal-card-head">
-          <p class="modal-card-title">Create a New Experiment</p>
-        </header>
-        <section class="modal-card-body">
-          <b-field
-            label="Experiment Name"
-            :type="createModal.nameErrType"
-            :message="createModal.nameErrMsg"
-            autofocus>
-            <b-input type="text" v-model="createModal.name" v-focus></b-input>
-          </b-field>
-          <b-field label="Experiment Topology">
-            <b-select
-              placeholder="Select a topology"
-              v-model="createModal.topology"
-              @update:modelValue="getScenarios"
-              expanded>
-              <option v-for="(t, index) in topologies" :key="index" :value="t">
-                {{ t }}
-              </option>
-            </b-select>
-          </b-field>
-          <b-field
-            v-if="createModal.showScenarios"
-            label="Experiment Scenario"
-            grouped>
-            <b-select
-              v-if="createModal.showScenarios"
-              v-model="createModal.scenario"
-              expanded
-              placeholder="None">
-              <option
-                v-for="(a, s) in createModal.scenarios"
-                :key="s"
-                :value="s">
-                {{ s }}
-              </option>
-            </b-select>
-            <b-tooltip
-              label="a scenario is a collection of user app configurations for a topology 
-                            and they are optional"
-              type="is-light is-right"
-              multilined>
-              <b-icon
-                v-if="createModal.showScenarios"
-                icon="question-circle"></b-icon>
-            </b-tooltip>
-          </b-field>
-          <b-taglist>
-            <b-tag
-              v-for="(a, index) in createModal.scenarios[createModal.scenario]"
-              :key="index"
-              class="is-clickable"
-              :class="{ 'is-success': !a.disabled }"
-              @click="clickScenario(index)">
-              {{ a.name }}
-            </b-tag>
-          </b-taglist>
-          <b-collapse class="card" animation="slide" :model-value="false">
-            <template #trigger="props">
-              <div class="card-header" role="button">
-                <p class="card-header-title">Options</p>
-                <a class="card-header-icon">
-                  <b-icon
-                    size="is-small"
-                    :icon="props.open ? 'chevron-down' : 'chevron-up'"></b-icon>
-                </a>
-              </div>
-            </template>
-            <div class="card-content">
-              <div class="content">
-                <b-field label="Deployment Mode">
-                  <b-select v-model="createModal.deploy_mode" expanded>
-                    <option
-                      v-for="(mode, index) in [
-                        '',
-                        'no-headnode',
-                        'only-headnode',
-                        'all',
-                      ]"
-                      :key="index"
-                      :value="mode">
-                      {{ mode }}
-                    </option>
-                  </b-select>
-                </b-field>
-                <b-field
-                  v-if="bridgeMode != 'auto'"
-                  label="Default Bridge Name"
-                  :type="createModal.bridgeErrType"
-                  :message="createModal.bridgeErrMsg">
-                  <b-input type="text" v-model="createModal.bridge" />
-                </b-field>
-                <b-field label="VLAN Range">
-                  <b-field>
-                    <b-numberinput
-                      min="0"
-                      max="4094"
-                      type="is-light"
-                      size="is-small"
-                      controls-alignment="right"
-                      controls-position="compact"
-                      placeholder="min"
-                      v-model="createModal.vlan_min" />
-                    &nbsp;
-                    <b-numberinput
-                      min="0"
-                      max="4094"
-                      type="is-light"
-                      size="is-small"
-                      controls-alignment="right"
-                      controls-position="compact"
-                      placeholder="max"
-                      v-model="createModal.vlan_max" />
-                  </b-field>
-                </b-field>
-                <b-field label="Git Workflow Branch Name">
-                  <b-input type="text" v-model="createModal.branch" />
-                </b-field>
-              </div>
-            </div>
-          </b-collapse>
-        </section>
-        <footer class="modal-card-foot buttons is-right">
-          <button
-            class="button is-light"
-            :disabled="!validate()"
-            @click="create">
-            Create Experiment
-          </button>
-        </footer>
-      </div>
+      v-model="creating"
+      has-modal-card
+      :auto-focus="false"
+      aria-role="dialog"
+      aria-label="Create a new experiment"
+      aria-modal>
+      <create-experiment-card
+        :experiment-names="experimentNames"
+        :options="options"
+        :pending="createPending"
+        :error="createError"
+        :start-allowed="startAllowed"
+        @create="create" />
     </b-modal>
-    <template v-if="experiments.length == 0">
+    <template
+      v-if="!stillLoading(loaded, experiments) && experiments.length == 0">
       <section class="hero is-bold is-large">
         <div class="hero-body">
           <div class="container" style="text-align: center">
@@ -147,10 +26,7 @@
               v-if="roleAllowed('experiments', 'create')"
               type="is-success"
               outlined
-              @click="
-                updateTopologies();
-                createModal.active = true;
-              "
+              @click="creating = true"
               >Create One Now!</b-button
             >
           </div>
@@ -159,16 +35,50 @@
     </template>
     <template v-else>
       <b-field position="is-right" grouped>
+        <b-field v-if="selected.length" class="exp-selection-actions" grouped>
+          <b-field v-for="action in bulkActions" :key="action.name">
+            <b-tooltip
+              :label="action.reason || action.label"
+              type="is-dark"
+              multilined>
+              <b-button
+                :class="`exp-bulk-${action.name}`"
+                :type="action.type"
+                :icon-left="action.icon"
+                :aria-label="action.label"
+                :disabled="action.disabled"
+                @click="bulk(action.name)">
+                {{ action.text }}
+              </b-button>
+            </b-tooltip>
+          </b-field>
+          <b-field>
+            <b-tooltip label="clear the selection" type="is-dark">
+              <b-button
+                type="is-light"
+                icon-left="window-close"
+                aria-label="Clear the experiment selection"
+                @click="selected = []">
+              </b-button>
+            </b-tooltip>
+          </b-field>
+        </b-field>
+        <div
+          v-if="paginationNeeded"
+          class="control is-flex is-align-items-center">
+          <b-switch v-model="table.isPaginated" size="is-small" type="is-light"
+            >Paginate</b-switch
+          >
+        </div>
         <b-field>
           <b-autocomplete
             v-model="searchName"
             placeholder="Find an Experiment"
             icon="search"
-            :data="filteredData"
-            @select="(option) => (filtered = option)">
+            :data="filteredData">
             <template #empty> No results found </template>
           </b-autocomplete>
-          <p class="control">
+          <p v-if="searchName" class="control">
             <button
               aria-label="Clear experiment search"
               class="button input-button"
@@ -182,10 +92,7 @@
             <button
               aria-label="Create a new experiment"
               class="button is-light"
-              @click="
-                updateTopologies();
-                createModal.active = true;
-              ">
+              @click="creating = true">
               <b-icon icon="plus"></b-icon>
             </button>
           </b-tooltip>
@@ -194,7 +101,7 @@
       <div>
         <b-table
           :data="filteredExperiments"
-          :paginated="table.isPaginated"
+          :paginated="table.isPaginated && paginationNeeded"
           aria-next-label="Next page"
           aria-previous-label="Previous page"
           aria-page-label="Page"
@@ -208,12 +115,47 @@
           <template #empty>
             <section class="section">
               <div class="content has-text-white has-text-centered">
-                Your search turned up empty!
+                {{
+                  stillLoading(loaded, experiments)
+                    ? loadingText('experiments')
+                    : 'No experiments match your search'
+                }}
               </div>
             </section>
           </template>
-          <b-table-column field="name" label="Name" sortable v-slot="props">
-            <template v-if="updating(props.row.status)">
+          <b-table-column v-if="selectionOffered" field="select" label="">
+            <template #header>
+              <b-tooltip label="Select/Unselect All" type="is-dark">
+                <b-checkbox
+                  v-model="allSelected"
+                  :indeterminate="someSelected"
+                  :disabled="!selectableShown.length">
+                  <span class="is-sr-only">Select all experiments</span>
+                </b-checkbox>
+              </b-tooltip>
+            </template>
+            <template #default="props">
+              <b-checkbox
+                v-model="selected"
+                :native-value="props.row.name"
+                :disabled="!selectable(props.row)">
+                <span class="is-sr-only"
+                  >Select experiment {{ props.row.name }}</span
+                >
+              </b-checkbox>
+            </template>
+          </b-table-column>
+          <b-table-column
+            field="name"
+            label="Name"
+            sortable
+            header-class="sort-inline"
+            v-slot="props">
+            <template
+              v-if="
+                updating(props.row.status) ||
+                !roleAllowed('experiments', 'get', props.row.name)
+              ">
               {{ props.row.name }}
             </template>
             <template v-else>
@@ -233,6 +175,7 @@
             label="Status"
             width="100"
             sortable
+            header-class="sort-inline"
             centered
             v-slot="props">
             <template v-if="props.row.status == 'starting'">
@@ -245,26 +188,27 @@
                   format="percent"></b-progress>
               </section>
             </template>
-            <template
-              v-else-if="roleAllowed('experiments', 'update', props.row.name)">
+            <template v-else-if="rowActions[props.row.name].power.permitted">
               <b-tooltip
-                :label="getExpControlLabel(props.row.name, props.row.status)"
-                type="is-dark">
-                <span
-                  class="tag is-medium"
-                  :class="decorator(props.row.status)">
-                  <div class="field is-clickable">
-                    <div
-                      class="field"
-                      @click="
-                        props.row.running
-                          ? stop(props.row.name, props.row.status)
-                          : start(props.row.name, props.row.status)
-                      ">
-                      {{ props.row.status }}
-                    </div>
-                  </div>
-                </span>
+                :label="
+                  rowActions[props.row.name].power.reason ||
+                  getExpControlLabel(props.row.name, props.row.status)
+                "
+                type="is-dark"
+                multilined>
+                <button
+                  type="button"
+                  class="tag is-medium exp-status-control"
+                  :class="decorator(props.row.status)"
+                  :aria-label="`${rowActions[props.row.name].power.label} experiment ${props.row.name} (${props.row.status})`"
+                  :disabled="rowActions[props.row.name].power.disabled"
+                  @click="
+                    props.row.running
+                      ? stop(props.row.name)
+                      : start(props.row.name)
+                  ">
+                  {{ props.row.status }}
+                </button>
               </b-tooltip>
             </template>
             <template v-else>
@@ -272,17 +216,37 @@
                 {{ props.row.status }}
               </span>
             </template>
+            <b-tooltip
+              v-if="props.row.running && props.row.interrupted"
+              class="exp-interrupted"
+              :label="props.row.interrupted"
+              type="is-dark"
+              multilined>
+              <span class="tag is-warning">interrupted</span>
+              <span class="is-sr-only">: {{ props.row.interrupted }}</span>
+            </b-tooltip>
           </b-table-column>
-          <b-table-column field="topology" label="Topology" v-slot="props">
+          <b-table-column
+            field="topology"
+            label="Topology"
+            sortable
+            header-class="sort-inline"
+            v-slot="props">
             {{ formatLowercase(props.row.topology) }}
           </b-table-column>
-          <b-table-column field="scenario" label="Scenario" v-slot="props">
+          <b-table-column
+            field="scenario"
+            label="Scenario"
+            sortable
+            header-class="sort-inline"
+            v-slot="props">
             {{ formatLowercase(props.row.scenario) }}
           </b-table-column>
           <b-table-column
             field="start_time"
             label="Start Time"
             sortable
+            header-class="sort-inline"
             v-slot="props">
             {{ props.row.start_time }}
           </b-table-column>
@@ -292,6 +256,7 @@
             width="50"
             centered
             sortable
+            header-class="sort-inline"
             v-slot="props">
             {{ props.row.vm_count }}
           </b-table-column>
@@ -300,34 +265,42 @@
             label="VLANs"
             centered
             v-slot="props">
-            {{ props.row.vlan_min }} - {{ props.row.vlan_max }} ({{
-              props.row.vlan_count
-            }})
+            <template v-if="!props.row.partial">
+              {{ props.row.vlan_min }} - {{ props.row.vlan_max }} ({{
+                props.row.vlan_count
+              }})
+            </template>
           </b-table-column>
           <b-table-column label="Actions" width="125" centered v-slot="props">
             <b-tooltip
+              v-if="rowActions[props.row.name].delete.permitted"
               class="action"
               :delay="500"
-              label="delete experiment"
+              :label="
+                (!deleting[props.row.name] &&
+                  rowActions[props.row.name].delete.reason) ||
+                'delete experiment'
+              "
               type="is-light"
               multilined>
               <button
                 :aria-label="`Delete experiment ${props.row.name}`"
-                v-if="roleAllowed('experiments', 'delete', props.row.name)"
                 class="button is-light is-small"
-                :disabled="updating(props.row.status)"
-                @click="del(props.row.name, props.row.running)">
+                :class="{ 'is-loading': deleting[props.row.name] }"
+                :disabled="rowActions[props.row.name].delete.disabled"
+                @click="del(props.row.name)">
                 <b-icon icon="trash"></b-icon>
               </button>
             </b-tooltip>
             <b-tooltip
               class="action"
               :delay="500"
-              label="view soh"
+              label="view state of health"
               type="is-light"
               multilined>
               <router-link
                 v-if="roleAllowed('experiments', 'get', props.row.name)"
+                :aria-label="`View state of health for experiment ${props.row.name}`"
                 class="button is-light is-small"
                 :to="{
                   name: 'soh',
@@ -339,11 +312,12 @@
             <b-tooltip
               class="action"
               :delay="500"
-              label="view scorch"
+              label="view SCORCH runs"
               type="is-light"
               multilined>
               <router-link
                 v-if="roleAllowed('experiments', 'get', props.row.name)"
+                :aria-label="`View SCORCH runs for experiment ${props.row.name}`"
                 class="button is-light is-small"
                 :to="{
                   name: 'scorchruns',
@@ -354,56 +328,102 @@
             </b-tooltip>
           </b-table-column>
         </b-table>
-        <br />
-        <b-field v-if="paginationNeeded" grouped position="is-right">
-          <div class="control is-flex">
-            <b-switch
-              v-model="table.isPaginated"
-              size="is-small"
-              type="is-light"
-              @input="changePaginate()"
-              >Paginate</b-switch
-            >
-          </div>
-        </b-field>
       </div>
     </template>
-    <b-loading
-      :is-full-page="false"
-      v-model="isWaiting"
-      :can-cancel="false"></b-loading>
   </div>
 </template>
 
 <script>
+  import CreateExperimentCard from '@/components/CreateExperimentCard.vue';
+  import { createLiveRows } from '@/utils/liveRows.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
-  import axiosInstance from '@/utils/axios.js';
-  import { addWsHandler, removeWsHandler } from '@/utils/websocket';
+  import * as experimentsApi from '@/api/experiments.js';
+  import {
+    addWsHandler,
+    onWsReconnect,
+    removeWsHandler,
+  } from '@/utils/websocket';
   import { useTable } from '@/utils/useTable.js';
   import { roleAllowed } from '@/utils/rbac.js';
+  import { namedList, plural, pluralWord } from '@/utils/plural.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import {
+    BULK_ACTIONS,
+    EXPERIMENT_ACTIONS,
+    bulkActionState,
+    experimentActionState,
+    offerForcedStop,
+    partitionExperiments,
+    stopCanBeForced,
+  } from '@/utils/experimentActions.js';
+  import {
+    confirmOperation,
+    errorLine,
+    notifyOutcome,
+    outcomeFromSettled,
+  } from '@/utils/operations.js';
+  import {
+    createPageLoader,
+    loadingText,
+    stillLoading,
+  } from '@/utils/pageLoader.js';
+  import { pageFetchers } from '@/utils/pageData.js';
 
   export default {
+    components: { CreateExperimentCard },
     mixins: [formattingMixin],
 
     setup() {
-      return { ...useTable(), roleAllowed };
+      return { ...useTable({ name: 'experiments' }), roleAllowed };
     },
 
     async beforeUnmount() {
+      clearTimeout(this.reloadTimer);
       removeWsHandler(this.handleWs);
+      this.offWsReconnect?.();
+      this.loader.stop();
     },
 
     async created() {
       addWsHandler(this.handleWs);
-      this.updateExperiments();
-      axiosInstance
-        .get('/options')
+      // experiments a selection action is acting on, whose own toasts give
+      // way to its one summary
+      this.bulkPending = new Set();
+      this.liveRows = createLiveRows();
+      // a restarted server numbers its messages afresh
+      this.offWsReconnect = onWsReconnect(() => this.liveRows.reset());
+      this.loader = createPageLoader({
+        key: 'experiments',
+        fetch: pageFetchers.experiments,
+        apply: (experiments, { seq }) => {
+          // the server reports a starting experiment's progress from 0 to 1
+          const loaded = experiments.map((exp) => ({
+            ...exp,
+            percent: Math.round((exp.percent ?? 0) * 100),
+          }));
+          const byName = new Map(loaded.map((exp) => [exp.name, exp]));
+          // a row known only from websocket messages takes the loaded
+          // details and keeps the progress the messages reported
+          this.experiments = this.liveRows
+            .merge(loaded, this.experiments, seq)
+            .map((exp) => {
+              const row = exp.partial && byName.get(exp.name);
+              if (!row) return exp;
+              return exp.status == row.status
+                ? { ...row, percent: Math.max(exp.percent, row.percent) }
+                : row;
+            });
+          this.loaded = true;
+        },
+      });
+      this.loader.start();
+      experimentsApi
+        .getExperimentOptions()
         .then((resp) => {
           this.options = resp.data;
         })
         .catch((err) => {
-          console.log(err);
+          console.warn('failed to get experiment options', err);
         });
     },
 
@@ -411,12 +431,12 @@
       filteredExperiments: function () {
         let experiments = this.experiments;
 
-        var name_re = new RegExp(this.searchName, 'i');
+        const term = (this.searchName ?? '').toLowerCase();
         var data = [];
 
         for (let i in experiments) {
           let exp = experiments[i];
-          if (exp.name.match(name_re)) {
+          if (exp.name.toLowerCase().includes(term)) {
             exp.start_time = exp.start_time == '' ? 'N/A' : exp.start_time;
             data.push(exp);
           }
@@ -440,39 +460,155 @@
         });
       },
 
-      // Intentionally restores the persisted pagination toggle as a side
-      // effect on first access.
-      /* eslint-disable vue/no-side-effects-in-computed-properties */
-      paginationNeeded() {
-        this.restorePaginate();
+      experimentNames() {
+        return this.experiments.map((exp) => exp.name);
+      },
 
-        if (this.experiments.length <= 10) {
-          this.table.isPaginated = false;
-          return false;
-        } else {
-          return true;
+      paginationNeeded() {
+        return this.experiments.length > this.table.perPage;
+      },
+
+      // each row's status control (start or stop) and delete button
+      rowActions() {
+        const opts = (exp) => ({
+          can: roleAllowed,
+          deleting: !!this.deleting[exp.name],
+          starting: !!this.starting[exp.name],
+        });
+        return Object.fromEntries(
+          this.experiments.map((exp) => [
+            exp.name,
+            {
+              power: experimentActionState(
+                exp.running ? 'stop' : 'start',
+                exp,
+                opts(exp),
+              ),
+              delete: experimentActionState('delete', exp, opts(exp)),
+            },
+          ]),
+        );
+      },
+
+      // whether the role may act on any experiment, so offering a selection
+      selectionOffered() {
+        return this.experiments.some((exp) => this.selectable(exp));
+      },
+
+      selectableShown() {
+        return this.filteredExperiments.filter((exp) => this.selectable(exp));
+      },
+
+      allSelected: {
+        get() {
+          return (
+            this.selectableShown.length > 0 &&
+            this.selectableShown.every((exp) =>
+              this.selected.includes(exp.name),
+            )
+          );
+        },
+        set(on) {
+          this.selected = on ? this.selectableShown.map((exp) => exp.name) : [];
+        },
+      },
+
+      someSelected() {
+        return this.selected.length > 0 && !this.allSelected;
+      },
+
+      // the selection toolbar's buttons, each counting what it would act on
+      bulkActions() {
+        const opts = this.actionOpts();
+        return BULK_ACTIONS.map((name) => {
+          const state = bulkActionState(
+            name,
+            this.selected,
+            this.experiments,
+            opts,
+          );
+          return {
+            ...state,
+            text: `${EXPERIMENT_ACTIONS[name].label} (${state.count})`,
+          };
+        });
+      },
+    },
+
+    watch: {
+      // a selected experiment that is gone leaves the selection
+      experiments(experiments) {
+        const names = new Set(experiments.map((exp) => exp.name));
+        if (this.selected.some((name) => !names.has(name))) {
+          this.selected = this.selected.filter((name) => names.has(name));
         }
       },
-      /* eslint-enable vue/no-side-effects-in-computed-properties */
 
-      bridgeMode() {
-        return this.options['bridge-mode'];
+      // a card opened again starts without the last one's error
+      creating(open) {
+        if (open) {
+          this.createAttempt += 1;
+          this.createError = null;
+        }
       },
     },
 
     methods: {
+      loadingText,
+      stillLoading,
+
       handleWs(msg) {
+        // Experiments created as configs (the Configs page, workflows) are
+        // announced as configs, not experiments.
+        if (
+          msg.resource.type == 'config' &&
+          msg.resource.name?.startsWith('Experiment/')
+        ) {
+          this.reloadSoon();
+          return;
+        }
+
         // We only care about publishes pertaining to an experiment resource.
         if (msg.resource.type != 'experiment') {
           return;
         }
 
+        if (msg.resource.action == 'delete') {
+          this.liveRows.remove(msg.resource.name, msg.seq);
+        } else {
+          this.liveRows.touch(msg.resource.name, msg.seq);
+        }
         let exp = this.experiments;
+
+        // An experiment this list has not seen yet (created elsewhere, or
+        // while the list was loading): show it at once and fetch its details.
+        const known = exp.some((e) => e.name == msg.resource.name);
+        const ownRow = ['create', 'delete', 'errorStopping'];
+        if (!known && !ownRow.includes(msg.resource.action)) {
+          this.experiments = [
+            ...exp,
+            {
+              name: msg.resource.name,
+              status: {
+                starting: 'starting',
+                progress: 'starting',
+                stopping: 'stopping',
+              }[msg.resource.action],
+              percent: 0,
+              partial: true,
+            },
+          ];
+          exp = this.experiments;
+          this.reloadSoon();
+        }
 
         switch (msg.resource.action) {
           case 'create': {
             msg.result.status = 'stopped';
-            exp.push(msg.result);
+            // a list loaded meanwhile may already have it
+            const i = exp.findIndex((e) => e.name == msg.resource.name);
+            if (i < 0) exp.push(msg.result);
+            else exp[i] = msg.result;
 
             this.experiments = [...exp];
 
@@ -480,7 +616,6 @@
               message:
                 'The ' + msg.resource.name + ' experiment has been created.',
               type: 'is-success',
-              duration: 4000,
             });
 
             break;
@@ -497,11 +632,10 @@
 
             this.experiments = [...exp];
 
-            this.$buefy.toast.open({
+            this.wsToast(msg.resource.name, {
               message:
                 'The ' + msg.resource.name + ' experiment has been deleted.',
               type: 'is-success',
-              duration: 4000,
             });
 
             break;
@@ -521,17 +655,16 @@
 
             let toast = `The ${msg.resource.name} experiment has been started`;
 
-            if (msg.resource.delayed_vms > 0) {
-              toast = `${toast} (with ${msg.resource.delayed_vms} delayed VMs).`;
+            if (msg.result.delayed_vms > 0) {
+              toast = `${toast} (with ${plural(msg.result.delayed_vms, 'delayed VM')}).`;
             } else {
               toast = `${toast}.`;
             }
 
-            this.$buefy.toast.open({
-              message: toast,
-              type: 'is-success',
-              duration: 4000,
-            });
+            const started = { message: toast, type: 'is-success' };
+            // a selection's summary leaves out delayed VMs, so they show here
+            if (msg.result.delayed_vms > 0) this.$buefy.toast.open(started);
+            else this.wsToast(msg.resource.name, started);
 
             break;
           }
@@ -548,11 +681,10 @@
 
             this.experiments = [...exp];
 
-            this.$buefy.toast.open({
+            this.wsToast(msg.resource.name, {
               message:
                 'The ' + msg.resource.name + ' experiment has been stopped.',
               type: 'is-success',
-              duration: 4000,
             });
 
             break;
@@ -571,12 +703,18 @@
 
             this.experiments = [...exp];
 
-            this.$buefy.toast.open({
+            this.wsToast(msg.resource.name, {
               message:
                 'The ' + msg.resource.name + ' experiment is being updated.',
               type: 'is-warning',
             });
 
+            break;
+          }
+
+          // the experiment may still be running, or stopped with an error
+          case 'errorStopping': {
+            this.reloadSoon();
             break;
           }
 
@@ -597,30 +735,19 @@
         }
       },
 
-      updateExperiments() {
-        axiosInstance
-          .get('experiments')
-          .then((response) => {
-            this.experiments = response.data.experiments;
-            this.isWaiting = false;
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-          });
+      // a toast about one experiment, unless a selection action covers it
+      wsToast(name, toast) {
+        if (!this.bulkPending.has(name)) this.$buefy.toast.open(toast);
       },
 
-      updateTopologies() {
-        axiosInstance
-          .get('topologies')
-          .then((response) => {
-            const state = response.data;
-            this.topologies = state.topologies;
-            this.isWaiting = false;
-          })
-          .catch((err) => {
-            this.isWaiting = false;
-            useErrorNotification(err);
-          });
+      // Several messages about new experiments arrive together; one list
+      // request covers them.
+      reloadSoon() {
+        clearTimeout(this.reloadTimer);
+        this.reloadTimer = setTimeout(
+          () => this.loader.load({ force: true }),
+          250,
+        );
       },
 
       updating(status) {
@@ -639,64 +766,48 @@
         }
       },
 
-      start(name, status) {
-        if (status == 'starting' || status == 'stopping') {
-          this.$buefy.toast.open({
-            message:
-              'The ' +
-              name +
-              ' experiment is currently ' +
-              status +
-              '. You cannot make any changes at this time.',
-            type: 'is-warning',
-          });
-
-          return;
-        }
-
-        this.$buefy.dialog.confirm({
-          title: 'Start the Experiment',
-          message: 'This will start the ' + name + ' experiment.',
-          cancelText: 'Cancel',
-          confirmText: 'Start',
-          type: 'is-success',
-          hasIcon: true,
-          onConfirm: () => {
-            axiosInstance
-              .post('experiments/' + name + '/start')
-              .then((_) => {
-                console.log('experiment started');
-              })
-              .catch((err) => {
-                console.log('experiment start fail', err);
-                for (let i = 0; i < this.experiments.length; i++) {
-                  if (this.experiments[i].name == name) {
-                    this.experiments[i].status = 'stopped';
-                    break;
-                  }
-                }
-
-                useErrorNotification(err);
-              });
-          },
-        });
+      // whether the role may take a selection action on the experiment
+      selectable(exp) {
+        return BULK_ACTIONS.some((name) =>
+          roleAllowed(...EXPERIMENT_ACTIONS[name].rbac, exp.name),
+        );
       },
 
-      stop(name, status) {
-        if (status == 'starting' || status == 'stopping') {
-          this.$buefy.toast.open({
-            message:
-              'The ' +
-              name +
-              ' experiment is currently ' +
-              status +
-              '. You cannot make any changes at this time.',
-            type: 'is-warning',
-          });
+      startAllowed(name) {
+        return roleAllowed('experiments/start', 'update', name);
+      },
 
-          return;
+      // what the actions' states read: the role and the requests under way
+      actionOpts() {
+        return {
+          can: roleAllowed,
+          deleting: this.deleting,
+          starting: this.starting,
+        };
+      },
+
+      // starting is not destructive, and the row shows its progress
+      start(name) {
+        if (this.starting[name]) return;
+        this.startExperiment(name).catch((err) => useErrorNotification(err));
+      },
+
+      // Starts one experiment, its controls disabled until the server
+      // answers; one that failed to start shows as stopped.
+      async startExperiment(name) {
+        this.starting[name] = true;
+        try {
+          await experimentsApi.startExperiment(name);
+        } catch (err) {
+          const row = this.experiments.find((exp) => exp.name == name);
+          if (row) row.status = 'stopped';
+          throw err;
+        } finally {
+          delete this.starting[name];
         }
+      },
 
+      stop(name) {
         this.$buefy.dialog.confirm({
           title: 'Stop the Experiment',
           message: 'This will stop the ' + name + ' experiment.',
@@ -704,244 +815,145 @@
           confirmText: 'Stop',
           type: 'is-danger',
           hasIcon: true,
+          onConfirm: () => this.stopExperiment(name),
+        });
+      },
+
+      // Stops one experiment; one whose VMs minimega could not kill is still
+      // running, and the user may force its stop.
+      stopExperiment(name, force = false) {
+        return experimentsApi.stopExperiment(name, { force }).catch((err) => {
+          useErrorNotification(err);
+          if (!force && stopCanBeForced(err)) {
+            offerForcedStop(this.$buefy, name, () =>
+              this.stopExperiment(name, true),
+            );
+          }
+        });
+      },
+
+      del(name) {
+        this.$buefy.dialog.confirm({
+          title: 'Delete the Experiment',
+          message:
+            'This will DELETE the ' +
+            name +
+            ' experiment. Are you sure you want to do this?',
+          cancelText: 'Cancel',
+          confirmText: 'Delete',
+          type: 'is-danger',
+          hasIcon: true,
           onConfirm: () => {
-            axiosInstance
-              .post('experiments/' + name + '/stop')
-              .then((response) => {
-                console.log('experiment stopped: ' + response);
-              })
-              .catch((err) => {
-                useErrorNotification(err);
-                this.isWaiting = false;
-              });
+            this.deleteExperiment(name).catch((err) =>
+              useErrorNotification(err),
+            );
           },
         });
       },
 
-      del(name, running) {
-        if (running) {
-          this.$buefy.toast.open({
-            message:
-              'The ' +
-              name +
-              ' experiment is running; you must stop it before deleting it.',
-            type: 'is-warning',
-            duration: 4000,
-          });
-        } else {
-          this.$buefy.dialog.confirm({
-            title: 'Delete the Experiment',
-            message:
-              'This will DELETE the ' +
-              name +
-              ' experiment. Are you sure you want to do this?',
-            cancelText: 'Cancel',
-            confirmText: 'Delete',
-            type: 'is-danger',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-
-              axiosInstance
-                .delete('experiments/' + name)
-                .then((response) => {
-                  if (response.status == 204) {
-                    let exp = this.experiments;
-                    for (let i = 0; i < exp.length; i++) {
-                      if (exp[i].name == name) {
-                        exp.splice(i, 1);
-                        break;
-                      }
-                    }
-                    this.experiments = [...exp];
-                  }
-                  this.isWaiting = false;
-                })
-                .catch((err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                });
-            },
-          });
+      // deletes one experiment, its button spinning meanwhile
+      async deleteExperiment(name) {
+        this.deleting[name] = true;
+        try {
+          await experimentsApi.deleteExperiment(name);
+          this.experiments = this.experiments.filter((exp) => exp.name != name);
+        } finally {
+          delete this.deleting[name];
         }
       },
-      create() {
-        var disabledApps = [];
-        if (this.createModal.scenario != null) {
-          disabledApps = this.createModal.scenarios[this.createModal.scenario]
-            .filter((item) => item.disabled)
-            .map((item) => item.name);
-        }
 
-        const experimentData = {
-          name: this.createModal.name,
-          topology: this.createModal.topology,
-          scenario: this.createModal.scenario,
-          vlan_min: +this.createModal.vlan_min,
-          vlan_max: +this.createModal.vlan_max,
-          workflow_branch: this.createModal.branch,
-          deploy_mode: this.createModal.deploy_mode,
-          disabled_apps: disabledApps,
-          default_bridge: this.createModal.bridge,
-        };
+      // Takes an action on the selected experiments: one confirm naming those
+      // it acts on and those it skips and why, then one outcome summary.
+      async bulk(action) {
+        const { allowed, skipped } = partitionExperiments(
+          action,
+          this.selected,
+          this.experiments,
+          this.actionOpts(),
+        );
+        if (!allowed.length) return;
 
-        if (!this.createModal.name) {
-          this.$buefy.toast.open({
-            message: 'You must include a name for the experiment.',
-            type: 'is-warning',
-            duration: 4000,
-          });
+        const { label, type } = EXPERIMENT_ACTIONS[action];
+        const confirmed = await confirmOperation(this.$buefy, {
+          title: `${label} the ${pluralWord(allowed.length, 'Experiment')}`,
+          message:
+            `This will ${action === 'delete' ? 'DELETE' : label.toLowerCase()} ` +
+            `${namedList(allowed, 'experiment')}.`,
+          confirmText: label,
+          type,
+          skipped,
+          noun: 'experiment',
+        });
+        if (!confirmed) return;
 
-          return {};
-        }
-
-        if (!this.createModal.topology) {
-          this.$buefy.toast.open({
-            message: 'You must select an experiment topology.',
-            type: 'is-warning',
-            duration: 4000,
-          });
-
-          return {};
-        }
-
-        this.isWaiting = true;
-
-        axiosInstance
-          .post('experiments', experimentData, { timeout: 0 })
-          .then(() => {
-            this.isWaiting = false;
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-            this.isWaiting = false;
-          });
-
-        this.createModal.active = false;
-        this.resetCreateModal();
+        this.selected = [];
+        this.runBulk(action, allowed);
       },
 
-      getScenarios(topo) {
-        // Reset these values for the case where a topo with scenarios was
-        // initially selected, then another topo with no scenarios was
-        // subsequently selected.
-        this.createModal.scenarios = {};
-        this.createModal.showScenarios = false;
+      // Sends the action to each experiment still ready for it and sums up the outcome, holding the
+      // websocket's toasts until then; `force` forces stops, offered for those whose VMs survived.
+      async runBulk(action, names, { force = false } = {}) {
+        const send = {
+          start: (name) => this.startExperiment(name),
+          stop: (name) => experimentsApi.stopExperiment(name, { force }),
+          delete: (name) => this.deleteExperiment(name),
+        }[action];
 
-        axiosInstance
-          .get('topologies/' + topo + '/scenarios')
-          .then((response) => {
-            const state = response.data;
-            if (
-              state.scenarios != null &&
-              Object.keys(state.scenarios).length != 0
-            ) {
-              let scenarioObj = {};
-              for (const [name, apps] of Object.entries(state.scenarios)) {
-                let appList = [];
-                for (var appIdx = 0; appIdx < apps.length; appIdx++) {
-                  appList.push({
-                    name: apps[appIdx],
-                    disabled: false,
-                  });
-                }
-                scenarioObj[name] = appList;
-              }
+        // an experiment may have changed while the confirm was open
+        const { allowed, skipped } = partitionExperiments(
+          action,
+          names,
+          this.experiments,
+          this.actionOpts(),
+        );
+        const skippedItems = skipped.flatMap(({ reason, names }) =>
+          names.map((name) => ({ name, status: 'skipped', error: reason })),
+        );
 
-              this.createModal.scenarios = scenarioObj;
-              this.createModal.showScenarios = true;
-            }
-          })
-          .catch((err) => {
-            useErrorNotification(err);
+        allowed.forEach((name) => this.bulkPending.add(name));
+        try {
+          const results = await Promise.allSettled(allowed.map(send));
+          notifyOutcome(this.$buefy, {
+            verbPast: EXPERIMENT_ACTIONS[action].verbPast,
+            noun: 'experiment',
+            items: [...outcomeFromSettled(allowed, results), ...skippedItems],
+            onRetry: (retry) => this.runBulk(action, retry, { force }),
           });
-      },
-      clickScenario(id) {
-        let listOfApps = this.createModal.scenarios[this.createModal.scenario];
-        listOfApps[id].disabled = !listOfApps[id].disabled;
-      },
-
-      resetCreateModal() {
-        this.createModal = {
-          active: false,
-          name: null,
-          bridgeErrType: null,
-          bridgeErrMsg: null,
-          nameErrType: null,
-          nameErrMsg: null,
-          topology: null,
-          showScenarios: false,
-          scenarios: {},
-          scenario: null,
-          vlan_min: null,
-          vlan_max: null,
-          deploy_mode: null,
-        };
-      },
-
-      validate() {
-        if (!this.createModal.name) {
-          return false;
-        }
-
-        if (this.bridgeMode === 'auto') {
-          if (this.createModal.name && this.createModal.name.length > 15) {
-            this.createModal.nameErrType = 'is-danger';
-            this.createModal.nameErrMsg =
-              'experiment name must be 15 characters or less when using auto bridge mode';
-            return false;
+          const forceable = allowed.filter(
+            (_, i) =>
+              action === 'stop' && !force && stopCanBeForced(results[i].reason),
+          );
+          if (forceable.length) {
+            offerForcedStop(this.$buefy, forceable, () =>
+              this.runBulk('stop', forceable, { force: true }),
+            );
           }
+        } finally {
+          allowed.forEach((name) => this.bulkPending.delete(name));
         }
+      },
 
-        for (let i = 0; i < this.experiments.length; i++) {
-          if (this.experiments[i].name == this.createModal.name) {
-            this.createModal.nameErrType = 'is-danger';
-            this.createModal.nameErrMsg =
-              'experiment with this name already exists';
-            return false;
+      // Creates the experiment from the card, which stays open, its inputs
+      // kept, until the server answers; a failure shows in the card.
+      async create(request, { start = false } = {}) {
+        const attempt = this.createAttempt;
+        this.createPending = true;
+        this.createError = null;
+
+        try {
+          await experimentsApi.createExperiment(request);
+          if (this.createAttempt === attempt) this.creating = false;
+          if (start) this.start(request.name);
+        } catch (err) {
+          // the card was closed meanwhile
+          if (this.creating && this.createAttempt === attempt) {
+            this.createError = errorLine(err);
+          } else {
+            useErrorNotification(err);
           }
+        } finally {
+          this.createPending = false;
         }
-
-        if (/\s/.test(this.createModal.name)) {
-          this.createModal.nameErrType = 'is-danger';
-          this.createModal.nameErrMsg = 'experiment names cannot have a space';
-          return false;
-        } else if (this.createModal.name == 'create') {
-          this.createModal.nameErrType = 'is-danger';
-          this.createModal.nameErrMsg = 'experiment names cannot be create!';
-          return false;
-        } else {
-          this.createModal.nameErrType = null;
-          this.createModal.nameErrMsg = null;
-        }
-
-        if (!this.createModal.topology) {
-          return false;
-        }
-
-        if (this.createModal.vlan_max < this.createModal.vlan_min) {
-          return false;
-        }
-
-        if (this.createModal.vlan_min < 0) {
-          return false;
-        }
-
-        if (this.createModal.vlan_min > 4094) {
-          return false;
-        }
-
-        if (this.createModal.bridge && this.createModal.bridge.length > 15) {
-          this.createModal.bridgeErrType = 'is-danger';
-          this.createModal.bridgeErrMsg =
-            'default bridge name must be 15 characters or less';
-          return false;
-        } else {
-          this.createModal.bridgeErrType = null;
-          this.createModal.bridgeErrMsg = null;
-        }
-
-        return true;
       },
 
       getExpControlLabel(expName, expStatus) {
@@ -951,44 +963,41 @@
       },
     },
 
-    directives: {
-      focus: {
-        inserted(el) {
-          if (el.tagName == 'INPUT') {
-            el.focus();
-          } else {
-            el.querySelector('input').focus();
-          }
-        },
-      },
-    },
-
     data() {
       return {
-        createModal: {
-          active: false,
-          name: null,
-          bridgeErrType: null,
-          bridgeErrMsg: null,
-          nameErrType: null,
-          nameErrMsg: null,
-          topology: null,
-          showScenarios: false,
-          scenarios: {},
-          scenario: null,
-          vlan_min: null,
-          vlan_max: null,
-          branch: null,
-          deploy_mode: null,
-          bridge: null,
-        },
+        creating: false, // the create card is open
+        createPending: false, // the card's create request is under way
+        createError: null, // why the card's last create failed
+        createAttempt: 0, // counts the card's openings
         experiments: [],
-        topologies: [],
         searchName: '',
-        filtered: null,
-        isWaiting: true,
+        selected: [], // names of the checked experiments
+        deleting: {}, // names of the experiments being deleted
+        starting: {}, // names of the experiments whose start request is out
+        loaded: false, // false until the first list arrives
         options: {},
       };
     },
   };
 </script>
+
+<style scoped>
+  /* a start phenix could not resume shows under the status */
+  .exp-interrupted {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.25rem;
+  }
+
+  /* the status tag is the button that starts or stops the experiment */
+  .exp-status-control {
+    border: 0;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .exp-status-control:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+</style>
