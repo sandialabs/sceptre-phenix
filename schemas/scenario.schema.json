@@ -15,6 +15,24 @@
           "additionalProperties": {
             "type": "string"
           },
+          "properties": {
+            "builder-doc": {
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "digest": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
           "type": "object"
         },
         "created": {

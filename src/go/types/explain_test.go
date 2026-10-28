@@ -534,7 +534,7 @@ func TestExplainValidationErrorEscapesKeys(t *testing.T) {
 // a key twice. encoding/json keeps the last value, which is the one the
 // validator checked, so the explained lines name the item in it.
 func TestExplainValidationErrorRepeatedJSONKey(t *testing.T) {
-	c, err := store.NewConfigFromJSON([]byte(explainRepeatedSpecJSON))
+	c, err := store.DecodeConfigJSON([]byte(explainRepeatedSpecJSON))
 	if err != nil {
 		t.Fatalf("parsing config: %v", err)
 	}

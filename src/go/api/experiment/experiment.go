@@ -311,7 +311,7 @@ func Get(name string) (*types.Experiment, error) {
 // which case the default value of `/phenix/experiments/{name}` is used for the
 // experiment base directory. It returns any errors encountered while creating
 // the experiment.
-func Create(ctx context.Context, opts ...CreateOption) error {
+func Create(opts ...CreateOption) error {
 	o := newCreateOptions(opts...)
 
 	if o.name == "" {

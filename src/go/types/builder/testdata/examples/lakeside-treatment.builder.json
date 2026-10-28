@@ -1,0 +1,1166 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "metadata": {
+    "id": "2e8a6cc6-3d3f-56fd-9650-17797959ad40",
+    "name": "Lakeside Water Treatment",
+    "description": "A small water treatment plant, its devices at the layers of the Purdue model."
+  },
+  "nodes": [
+    {
+      "id": "6b8d342e-ac04-50b4-98dc-7fdd13c5917d",
+      "kind": "device",
+      "label": "mail-01",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "device": {
+        "hostname": "mail-01",
+        "iconKey": "server",
+        "layer": 6,
+        "spec": {
+          "general": {
+            "description": "Corporate email server",
+            "hostname": "mail-01"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.10.10",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP",
+                "gateway": "10.20.10.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "os_type": "linux"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "320bab5e-42de-5c2f-b9f2-1a55764f8912",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "47ecb089-b570-5683-a82e-49055088b613",
+      "kind": "device",
+      "label": "corp-ws-01",
+      "position": {
+        "x": 0,
+        "y": 176
+      },
+      "device": {
+        "hostname": "corp-ws-01",
+        "iconKey": "windows",
+        "layer": 5,
+        "spec": {
+          "general": {
+            "description": "Corporate workstation",
+            "hostname": "corp-ws-01"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.10.20",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP",
+                "gateway": "10.20.10.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "windows10.qc2"
+              }
+            ],
+            "os_type": "windows"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "eb0eaa26-e107-5530-9647-a3ebbc26171b",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "7c1bc9b1-ab9b-5c6a-90ab-d9076d98c77d",
+      "kind": "device",
+      "label": "erp-01",
+      "position": {
+        "x": 192,
+        "y": 176
+      },
+      "device": {
+        "hostname": "erp-01",
+        "iconKey": "server",
+        "layer": 5,
+        "spec": {
+          "general": {
+            "description": "ERP server for billing and work orders",
+            "hostname": "erp-01"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.10.30",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP",
+                "gateway": "10.20.10.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "os_type": "linux"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "72a2591e-b0eb-506f-9fe4-75675700f7c1",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "7b2f0249-6e3d-5ba0-b2a2-fe7b7c9c337d",
+      "kind": "device",
+      "label": "it-fw",
+      "position": {
+        "x": 0,
+        "y": 352
+      },
+      "device": {
+        "hostname": "it-fw",
+        "iconKey": "firewall",
+        "layer": 4,
+        "spec": {
+          "general": {
+            "description": "Firewall between the corporate network and the DMZ",
+            "hostname": "it-fw"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.10.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP"
+              },
+              {
+                "address": "10.20.20.1",
+                "mask": 24,
+                "name": "eth1",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "DMZ"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "vyos.qc2"
+              }
+            ],
+            "os_type": "vyos"
+          },
+          "type": "Firewall"
+        },
+        "interfaces": [
+          {
+            "id": "cf0324b0-b367-5287-85e6-38c12408f3e7",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "26aacda3-5756-5379-b842-539ec3b98975",
+            "name": "eth1",
+            "index": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "b02c3f20-ae6a-5e3f-b5a4-9f84e200731b",
+      "kind": "device",
+      "label": "hist-replica",
+      "position": {
+        "x": 192,
+        "y": 352
+      },
+      "device": {
+        "hostname": "hist-replica",
+        "iconKey": "linux",
+        "layer": 4,
+        "spec": {
+          "general": {
+            "description": "Copy of the plant historian for business users",
+            "hostname": "hist-replica"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.20.10",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "DMZ",
+                "gateway": "10.20.20.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "os_type": "linux"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "c2b40331-a2a9-5124-b89f-a72711b6fcb3",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "e481ef81-f09e-5d09-a574-05faf69ebe54",
+      "kind": "device",
+      "label": "jump-01",
+      "position": {
+        "x": 384,
+        "y": 352
+      },
+      "device": {
+        "hostname": "jump-01",
+        "iconKey": "windows",
+        "layer": 4,
+        "spec": {
+          "general": {
+            "description": "Jump host for remote support",
+            "hostname": "jump-01"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.20.20",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "DMZ",
+                "gateway": "10.20.20.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "windows10.qc2"
+              }
+            ],
+            "os_type": "windows"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "d820b517-c1b9-5f4d-90fd-22783501791a",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "9f0678a1-9c81-5cb7-b05c-811acee6d0e0",
+      "kind": "device",
+      "label": "ot-fw",
+      "position": {
+        "x": 576,
+        "y": 352
+      },
+      "device": {
+        "hostname": "ot-fw",
+        "iconKey": "firewall",
+        "layer": 4,
+        "spec": {
+          "general": {
+            "description": "Firewall between the DMZ and the plant networks",
+            "hostname": "ot-fw"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.20.254",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "DMZ"
+              },
+              {
+                "address": "10.20.30.1",
+                "mask": 24,
+                "name": "eth1",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "OPS"
+              },
+              {
+                "address": "10.20.40.1",
+                "mask": 24,
+                "name": "eth2",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CONTROL"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "vyos.qc2"
+              }
+            ],
+            "os_type": "vyos"
+          },
+          "type": "Firewall"
+        },
+        "interfaces": [
+          {
+            "id": "7bc17da3-d957-550c-a5a8-2b7b6ddc1620",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "cf67323b-22b7-5e52-aaa5-e3aa029ea086",
+            "name": "eth1",
+            "index": 1
+          },
+          {
+            "id": "debd51e6-792e-519b-8e09-6fd1dce04ecc",
+            "name": "eth2",
+            "index": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "4ac88740-ebd1-57b2-a099-f82574110e5e",
+      "kind": "device",
+      "label": "scada-01",
+      "position": {
+        "x": 0,
+        "y": 528
+      },
+      "device": {
+        "hostname": "scada-01",
+        "iconKey": "server",
+        "layer": 3,
+        "spec": {
+          "general": {
+            "description": "SCADA server",
+            "hostname": "scada-01"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.30.10",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "OPS",
+                "gateway": "10.20.30.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "os_type": "linux"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "cba85580-a721-5a44-bf6e-5dac795f1493",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "f118fd10-b7f5-53d9-8dcf-4eb489869151",
+      "kind": "device",
+      "label": "historian-01",
+      "position": {
+        "x": 192,
+        "y": 528
+      },
+      "device": {
+        "hostname": "historian-01",
+        "iconKey": "linux",
+        "layer": 3,
+        "spec": {
+          "general": {
+            "description": "Plant historian",
+            "hostname": "historian-01"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.30.20",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "OPS",
+                "gateway": "10.20.30.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "os_type": "linux"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "a268dd3e-7e9e-5c39-8e61-f7effac64afe",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "ca706ad1-0c73-574e-8715-0b9b6d3f6f47",
+      "kind": "device",
+      "label": "hmi-01",
+      "position": {
+        "x": 0,
+        "y": 704
+      },
+      "device": {
+        "hostname": "hmi-01",
+        "iconKey": "windows",
+        "layer": 2,
+        "spec": {
+          "general": {
+            "description": "Operator HMI",
+            "hostname": "hmi-01"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.40.10",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CONTROL",
+                "gateway": "10.20.40.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "windows10.qc2"
+              }
+            ],
+            "os_type": "windows"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "84cd3690-0d9c-505a-98d2-b7d523aafd33",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "aa0945d1-4c1d-5f04-8db2-bd46e56dfe7a",
+      "kind": "device",
+      "label": "ews-01",
+      "position": {
+        "x": 192,
+        "y": 704
+      },
+      "device": {
+        "hostname": "ews-01",
+        "iconKey": "windows",
+        "layer": 2,
+        "spec": {
+          "general": {
+            "description": "Engineering workstation",
+            "hostname": "ews-01"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.40.20",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CONTROL",
+                "gateway": "10.20.40.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "windows10.qc2"
+              }
+            ],
+            "os_type": "windows"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "ae5027fb-b9a3-5dc4-9f62-e29b81427c97",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "b39fd397-2c75-5934-ba9a-154634ae8a38",
+      "kind": "device",
+      "label": "plc-intake",
+      "position": {
+        "x": 0,
+        "y": 880
+      },
+      "device": {
+        "hostname": "plc-intake",
+        "iconKey": "plc",
+        "layer": 1,
+        "spec": {
+          "general": {
+            "description": "Intake and filter PLC (hardware in the loop)",
+            "hostname": "plc-intake"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.40.50",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CONTROL",
+                "gateway": "10.20.40.1"
+              },
+              {
+                "address": "10.20.50.1",
+                "mask": 24,
+                "name": "eth1",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "FIELD"
+              }
+            ]
+          },
+          "external": true,
+          "hardware": {
+            "os_type": "other"
+          },
+          "type": "HIL"
+        },
+        "interfaces": [
+          {
+            "id": "2d012da9-16b0-5ec4-9cd9-16a29e9ac155",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "c0ee4e03-7f86-5c88-beca-429cca6d5d0f",
+            "name": "eth1",
+            "index": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "c9e10abd-56f1-5d17-8dc3-b38dc7bc6dc9",
+      "kind": "device",
+      "label": "plc-dosing",
+      "position": {
+        "x": 192,
+        "y": 880
+      },
+      "device": {
+        "hostname": "plc-dosing",
+        "iconKey": "plc",
+        "layer": 1,
+        "spec": {
+          "general": {
+            "description": "Chemical dosing PLC (hardware in the loop)",
+            "hostname": "plc-dosing"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.40.51",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CONTROL",
+                "gateway": "10.20.40.1"
+              },
+              {
+                "address": "10.20.50.2",
+                "mask": 24,
+                "name": "eth1",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "FIELD"
+              }
+            ]
+          },
+          "external": true,
+          "hardware": {
+            "os_type": "other"
+          },
+          "type": "HIL"
+        },
+        "interfaces": [
+          {
+            "id": "7e8ce91c-6f9c-581a-991a-705dd12a087f",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "1f73bfa3-6e86-5505-adf4-43c280624786",
+            "name": "eth1",
+            "index": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "95f78a25-b817-5941-bb5b-7920dd1ac803",
+      "kind": "device",
+      "label": "rtu-reservoir",
+      "position": {
+        "x": 384,
+        "y": 880
+      },
+      "device": {
+        "hostname": "rtu-reservoir",
+        "iconKey": "rtu",
+        "layer": 1,
+        "spec": {
+          "general": {
+            "description": "RTU at the clear water reservoir",
+            "hostname": "rtu-reservoir"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.40.60",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CONTROL",
+                "gateway": "10.20.40.1"
+              }
+            ]
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "bennu.qc2"
+              }
+            ],
+            "os_type": "linux"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "bee59bec-3923-5661-99d9-aed6c27033fe",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "82cd8ff5-fe01-589a-aec7-0ecc29f9f7a5",
+      "kind": "device",
+      "label": "intake-pump",
+      "position": {
+        "x": 0,
+        "y": 1056
+      },
+      "device": {
+        "hostname": "intake-pump",
+        "iconKey": "external",
+        "layer": 0,
+        "spec": {
+          "general": {
+            "description": "Raw water intake pump",
+            "hostname": "intake-pump"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.50.10",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "FIELD"
+              }
+            ]
+          },
+          "external": true,
+          "hardware": {
+            "os_type": "other"
+          },
+          "type": "HIL"
+        },
+        "interfaces": [
+          {
+            "id": "d90115c7-3204-5e10-b5a0-92708c4da045",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "6ce35f59-a76d-5bf8-8876-d1a4f0057b40",
+      "kind": "device",
+      "label": "dosing-valve",
+      "position": {
+        "x": 192,
+        "y": 1056
+      },
+      "device": {
+        "hostname": "dosing-valve",
+        "iconKey": "external",
+        "layer": 0,
+        "spec": {
+          "general": {
+            "description": "Chlorine dosing valve",
+            "hostname": "dosing-valve"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.50.11",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "FIELD"
+              }
+            ]
+          },
+          "external": true,
+          "hardware": {
+            "os_type": "other"
+          },
+          "type": "HIL"
+        },
+        "interfaces": [
+          {
+            "id": "1ab37b4b-efb0-5db5-873a-15c3c26f0760",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "51ade404-b103-5de1-a0fc-ca4eb2e3bec5",
+      "kind": "device",
+      "label": "turbidity-sensor",
+      "position": {
+        "x": 384,
+        "y": 1056
+      },
+      "device": {
+        "hostname": "turbidity-sensor",
+        "iconKey": "external",
+        "layer": 0,
+        "spec": {
+          "general": {
+            "description": "Filtered water turbidity sensor",
+            "hostname": "turbidity-sensor"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.20.50.12",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "FIELD"
+              }
+            ]
+          },
+          "external": true,
+          "hardware": {
+            "os_type": "other"
+          },
+          "type": "HIL"
+        },
+        "interfaces": [
+          {
+            "id": "d9501154-8b65-530a-b96b-7469eca95fbd",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "1aa1162b-6c02-5567-b2fb-e2c07b452e65",
+      "kind": "switch",
+      "label": "CORP",
+      "position": {
+        "x": 384,
+        "y": 240
+      },
+      "switch": {
+        "networkId": "a1055f11-ae60-55e1-a396-8b027f3f0051",
+        "layer": 5
+      }
+    },
+    {
+      "id": "a3b6aba6-c700-5c90-ab5a-27cad0930132",
+      "kind": "switch",
+      "label": "DMZ",
+      "position": {
+        "x": 768,
+        "y": 416
+      },
+      "switch": {
+        "networkId": "07aa2cca-8b1b-514b-bde4-2b5a823e5926",
+        "layer": 4
+      }
+    },
+    {
+      "id": "6b1bf7f1-0618-55b9-b065-4f5d04d95d2e",
+      "kind": "switch",
+      "label": "OPS",
+      "position": {
+        "x": 384,
+        "y": 592
+      },
+      "switch": {
+        "networkId": "cb242103-07af-58f6-8a5d-3899977fb080",
+        "layer": 3
+      }
+    },
+    {
+      "id": "dc0b030d-f310-59d0-a091-d53bfa6fc6d1",
+      "kind": "switch",
+      "label": "CONTROL",
+      "position": {
+        "x": 384,
+        "y": 768
+      },
+      "switch": {
+        "networkId": "42484424-6b59-561b-b37c-27706804430a",
+        "layer": 2
+      }
+    },
+    {
+      "id": "cf7a8372-fe00-5b99-bd54-d6a53a9feeb0",
+      "kind": "switch",
+      "label": "FIELD",
+      "position": {
+        "x": 576,
+        "y": 1120
+      },
+      "switch": {
+        "networkId": "cfe2597f-8a95-5130-94dd-d0401a82df8f",
+        "layer": 0
+      }
+    }
+  ],
+  "networks": [
+    {
+      "id": "a1055f11-ae60-55e1-a396-8b027f3f0051",
+      "name": "CORP"
+    },
+    {
+      "id": "07aa2cca-8b1b-514b-bde4-2b5a823e5926",
+      "name": "DMZ"
+    },
+    {
+      "id": "cb242103-07af-58f6-8a5d-3899977fb080",
+      "name": "OPS"
+    },
+    {
+      "id": "42484424-6b59-561b-b37c-27706804430a",
+      "name": "CONTROL"
+    },
+    {
+      "id": "cfe2597f-8a95-5130-94dd-d0401a82df8f",
+      "name": "FIELD"
+    }
+  ],
+  "edges": [
+    {
+      "id": "9ffa86c9-e722-5f07-9a22-dc30c4af2b07",
+      "sourceNodeId": "6b8d342e-ac04-50b4-98dc-7fdd13c5917d",
+      "sourceHandleId": "320bab5e-42de-5c2f-b9f2-1a55764f8912",
+      "targetNodeId": "1aa1162b-6c02-5567-b2fb-e2c07b452e65",
+      "networkId": "a1055f11-ae60-55e1-a396-8b027f3f0051"
+    },
+    {
+      "id": "4d632a8d-db80-5233-b79b-9991308754b5",
+      "sourceNodeId": "47ecb089-b570-5683-a82e-49055088b613",
+      "sourceHandleId": "eb0eaa26-e107-5530-9647-a3ebbc26171b",
+      "targetNodeId": "1aa1162b-6c02-5567-b2fb-e2c07b452e65",
+      "networkId": "a1055f11-ae60-55e1-a396-8b027f3f0051"
+    },
+    {
+      "id": "a6592483-0bab-5ac3-bd73-e1d1dde0aab7",
+      "sourceNodeId": "7c1bc9b1-ab9b-5c6a-90ab-d9076d98c77d",
+      "sourceHandleId": "72a2591e-b0eb-506f-9fe4-75675700f7c1",
+      "targetNodeId": "1aa1162b-6c02-5567-b2fb-e2c07b452e65",
+      "networkId": "a1055f11-ae60-55e1-a396-8b027f3f0051"
+    },
+    {
+      "id": "c2a018b9-9825-5ac4-86c1-08afe101a14c",
+      "sourceNodeId": "7b2f0249-6e3d-5ba0-b2a2-fe7b7c9c337d",
+      "sourceHandleId": "cf0324b0-b367-5287-85e6-38c12408f3e7",
+      "targetNodeId": "1aa1162b-6c02-5567-b2fb-e2c07b452e65",
+      "networkId": "a1055f11-ae60-55e1-a396-8b027f3f0051"
+    },
+    {
+      "id": "da8dfebb-3423-58ca-bdb0-afedc0312430",
+      "sourceNodeId": "7b2f0249-6e3d-5ba0-b2a2-fe7b7c9c337d",
+      "sourceHandleId": "26aacda3-5756-5379-b842-539ec3b98975",
+      "targetNodeId": "a3b6aba6-c700-5c90-ab5a-27cad0930132",
+      "networkId": "07aa2cca-8b1b-514b-bde4-2b5a823e5926"
+    },
+    {
+      "id": "7f5d6b94-f814-5fd9-89c8-5ec7595e381d",
+      "sourceNodeId": "b02c3f20-ae6a-5e3f-b5a4-9f84e200731b",
+      "sourceHandleId": "c2b40331-a2a9-5124-b89f-a72711b6fcb3",
+      "targetNodeId": "a3b6aba6-c700-5c90-ab5a-27cad0930132",
+      "networkId": "07aa2cca-8b1b-514b-bde4-2b5a823e5926"
+    },
+    {
+      "id": "bc7a2bf0-195c-5fd7-b59c-1faaaa807820",
+      "sourceNodeId": "e481ef81-f09e-5d09-a574-05faf69ebe54",
+      "sourceHandleId": "d820b517-c1b9-5f4d-90fd-22783501791a",
+      "targetNodeId": "a3b6aba6-c700-5c90-ab5a-27cad0930132",
+      "networkId": "07aa2cca-8b1b-514b-bde4-2b5a823e5926"
+    },
+    {
+      "id": "0775285b-6a8c-508c-bc52-89ca86d6e70a",
+      "sourceNodeId": "9f0678a1-9c81-5cb7-b05c-811acee6d0e0",
+      "sourceHandleId": "7bc17da3-d957-550c-a5a8-2b7b6ddc1620",
+      "targetNodeId": "a3b6aba6-c700-5c90-ab5a-27cad0930132",
+      "networkId": "07aa2cca-8b1b-514b-bde4-2b5a823e5926"
+    },
+    {
+      "id": "a136a55c-8c71-5ca4-84c2-b179bf6212d0",
+      "sourceNodeId": "9f0678a1-9c81-5cb7-b05c-811acee6d0e0",
+      "sourceHandleId": "cf67323b-22b7-5e52-aaa5-e3aa029ea086",
+      "targetNodeId": "6b1bf7f1-0618-55b9-b065-4f5d04d95d2e",
+      "networkId": "cb242103-07af-58f6-8a5d-3899977fb080"
+    },
+    {
+      "id": "914da265-b322-55d7-bfa7-27ea162b9899",
+      "sourceNodeId": "9f0678a1-9c81-5cb7-b05c-811acee6d0e0",
+      "sourceHandleId": "debd51e6-792e-519b-8e09-6fd1dce04ecc",
+      "targetNodeId": "dc0b030d-f310-59d0-a091-d53bfa6fc6d1",
+      "networkId": "42484424-6b59-561b-b37c-27706804430a"
+    },
+    {
+      "id": "b2bb4ebb-52a0-545f-8c78-1839173d27f5",
+      "sourceNodeId": "4ac88740-ebd1-57b2-a099-f82574110e5e",
+      "sourceHandleId": "cba85580-a721-5a44-bf6e-5dac795f1493",
+      "targetNodeId": "6b1bf7f1-0618-55b9-b065-4f5d04d95d2e",
+      "networkId": "cb242103-07af-58f6-8a5d-3899977fb080"
+    },
+    {
+      "id": "d3cb9f22-ba2b-5272-a1eb-4e56527917fa",
+      "sourceNodeId": "f118fd10-b7f5-53d9-8dcf-4eb489869151",
+      "sourceHandleId": "a268dd3e-7e9e-5c39-8e61-f7effac64afe",
+      "targetNodeId": "6b1bf7f1-0618-55b9-b065-4f5d04d95d2e",
+      "networkId": "cb242103-07af-58f6-8a5d-3899977fb080"
+    },
+    {
+      "id": "12c4102c-07cf-517c-a183-dd66c99e4744",
+      "sourceNodeId": "ca706ad1-0c73-574e-8715-0b9b6d3f6f47",
+      "sourceHandleId": "84cd3690-0d9c-505a-98d2-b7d523aafd33",
+      "targetNodeId": "dc0b030d-f310-59d0-a091-d53bfa6fc6d1",
+      "networkId": "42484424-6b59-561b-b37c-27706804430a"
+    },
+    {
+      "id": "7e0aa6e9-0234-5870-9c47-f449df9afe66",
+      "sourceNodeId": "aa0945d1-4c1d-5f04-8db2-bd46e56dfe7a",
+      "sourceHandleId": "ae5027fb-b9a3-5dc4-9f62-e29b81427c97",
+      "targetNodeId": "dc0b030d-f310-59d0-a091-d53bfa6fc6d1",
+      "networkId": "42484424-6b59-561b-b37c-27706804430a"
+    },
+    {
+      "id": "8064ef4d-5cbe-547e-b0ab-1662fded2777",
+      "sourceNodeId": "b39fd397-2c75-5934-ba9a-154634ae8a38",
+      "sourceHandleId": "2d012da9-16b0-5ec4-9cd9-16a29e9ac155",
+      "targetNodeId": "dc0b030d-f310-59d0-a091-d53bfa6fc6d1",
+      "networkId": "42484424-6b59-561b-b37c-27706804430a"
+    },
+    {
+      "id": "0b97bde0-6b43-56f5-aa4a-9142a41ca177",
+      "sourceNodeId": "b39fd397-2c75-5934-ba9a-154634ae8a38",
+      "sourceHandleId": "c0ee4e03-7f86-5c88-beca-429cca6d5d0f",
+      "targetNodeId": "cf7a8372-fe00-5b99-bd54-d6a53a9feeb0",
+      "networkId": "cfe2597f-8a95-5130-94dd-d0401a82df8f"
+    },
+    {
+      "id": "8c0662d3-97d3-5f5b-94b2-d3b2db6562f3",
+      "sourceNodeId": "c9e10abd-56f1-5d17-8dc3-b38dc7bc6dc9",
+      "sourceHandleId": "7e8ce91c-6f9c-581a-991a-705dd12a087f",
+      "targetNodeId": "dc0b030d-f310-59d0-a091-d53bfa6fc6d1",
+      "networkId": "42484424-6b59-561b-b37c-27706804430a"
+    },
+    {
+      "id": "d98cfa85-b86e-5960-8aa8-b7ea7f1b3062",
+      "sourceNodeId": "c9e10abd-56f1-5d17-8dc3-b38dc7bc6dc9",
+      "sourceHandleId": "1f73bfa3-6e86-5505-adf4-43c280624786",
+      "targetNodeId": "cf7a8372-fe00-5b99-bd54-d6a53a9feeb0",
+      "networkId": "cfe2597f-8a95-5130-94dd-d0401a82df8f"
+    },
+    {
+      "id": "3f1ee1b1-e773-5a4d-a102-924a01a343d1",
+      "sourceNodeId": "95f78a25-b817-5941-bb5b-7920dd1ac803",
+      "sourceHandleId": "bee59bec-3923-5661-99d9-aed6c27033fe",
+      "targetNodeId": "dc0b030d-f310-59d0-a091-d53bfa6fc6d1",
+      "networkId": "42484424-6b59-561b-b37c-27706804430a"
+    },
+    {
+      "id": "040fc51f-523a-5628-95db-5c37eb40d549",
+      "sourceNodeId": "82cd8ff5-fe01-589a-aec7-0ecc29f9f7a5",
+      "sourceHandleId": "d90115c7-3204-5e10-b5a0-92708c4da045",
+      "targetNodeId": "cf7a8372-fe00-5b99-bd54-d6a53a9feeb0",
+      "networkId": "cfe2597f-8a95-5130-94dd-d0401a82df8f"
+    },
+    {
+      "id": "bb21f803-4fa7-5434-b902-048d1b4723c8",
+      "sourceNodeId": "6ce35f59-a76d-5bf8-8876-d1a4f0057b40",
+      "sourceHandleId": "1ab37b4b-efb0-5db5-873a-15c3c26f0760",
+      "targetNodeId": "cf7a8372-fe00-5b99-bd54-d6a53a9feeb0",
+      "networkId": "cfe2597f-8a95-5130-94dd-d0401a82df8f"
+    },
+    {
+      "id": "07d99e8e-f664-5ae9-94f8-14ac75f1036a",
+      "sourceNodeId": "51ade404-b103-5de1-a0fc-ca4eb2e3bec5",
+      "sourceHandleId": "d9501154-8b65-530a-b96b-7469eca95fbd",
+      "targetNodeId": "cf7a8372-fe00-5b99-bd54-d6a53a9feeb0",
+      "networkId": "cfe2597f-8a95-5130-94dd-d0401a82df8f"
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16
+  },
+  "layers": [
+    {
+      "id": 6,
+      "label": "Level 5 Enterprise"
+    },
+    {
+      "id": 5,
+      "label": "Level 4 Business"
+    },
+    {
+      "id": 4,
+      "label": "Level 3.5 Industrial DMZ"
+    },
+    {
+      "id": 3,
+      "label": "Level 3 Operations"
+    },
+    {
+      "id": 2,
+      "label": "Level 2 Supervisory control"
+    },
+    {
+      "id": 1,
+      "label": "Level 1 Basic control"
+    },
+    {
+      "id": 0,
+      "label": "Level 0 Process"
+    }
+  ]
+}

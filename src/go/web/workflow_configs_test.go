@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store"
 	v1 "phenix/types/version/v1"
@@ -144,34 +146,59 @@ func upsertTestRequest(t *testing.T, query, body string) *http.Request {
 	)
 }
 
+// upsertDryRunResult is the decoded body of a config dry run that would
+// take action on kind/name, with the pending ref an apply dry run is given.
+func upsertDryRunResult(action, kind, name, pending string) map[string]any {
+	return map[string]any{"action": action, "kind": kind, "name": name, "dryRun": true, "pending": pending}
+}
+
+// upsertWebError is what a client gets of a WebError, and what the tests compare.
+type upsertWebError struct {
+	Status         int
+	Message        string
+	Cause          string
+	SystemMetadata map[string]string
+	UserMetadata   map[string]string
+}
+
+func newUpsertWebError(werr *weberror.WebError) upsertWebError {
+	return upsertWebError{
+		Status:         werr.Status,
+		Message:        werr.Message,
+		Cause:          werr.Cause,
+		SystemMetadata: werr.SystemMetadata,
+		UserMetadata:   werr.UserMetadata,
+	}
+}
+
 func TestWorkflowUpsertConfigDryRun(t *testing.T) {
 	tests := []struct {
 		name   string
 		body   string
 		key    string
 		exists bool
-		want   string
+		want   map[string]any
 	}{
 		{
 			name:   "new topology",
 			body:   upsertTestTopology,
 			key:    "topology/main-topo",
 			exists: false,
-			want:   `{"action":"create","kind":"Topology","name":"main-topo","dryRun":true,"pending":"Topology/main-topo"}`,
+			want:   upsertDryRunResult("create", "Topology", "main-topo", "Topology/main-topo"),
 		},
 		{
 			name:   "stored topology",
 			body:   upsertTestTopology,
 			key:    "topology/main-topo",
 			exists: true,
-			want:   `{"action":"update","kind":"Topology","name":"main-topo","dryRun":true,"pending":"Topology/main-topo"}`,
+			want:   upsertDryRunResult("update", "Topology", "main-topo", "Topology/main-topo"),
 		},
 		{
 			name:   "topology with a node",
 			body:   upsertTestNodeTopology,
 			key:    "topology/main-topo",
 			exists: false,
-			want:   `{"action":"create","kind":"Topology","name":"main-topo","dryRun":true,"pending":"Topology/main-topo"}`,
+			want:   upsertDryRunResult("create", "Topology", "main-topo", "Topology/main-topo"),
 		},
 		{
 			// The include is not loaded: the node check covers the config's
@@ -180,7 +207,7 @@ func TestWorkflowUpsertConfigDryRun(t *testing.T) {
 			body:   upsertTestIncludeTopology,
 			key:    "topology/main-topo",
 			exists: false,
-			want:   `{"action":"create","kind":"Topology","name":"main-topo","dryRun":true,"pending":"Topology/main-topo?include=not-stored"}`,
+			want:   upsertDryRunResult("create", "Topology", "main-topo", "Topology/main-topo?include=not-stored"),
 		},
 		{
 			// A scenario is not decoded as a topology.
@@ -188,21 +215,21 @@ func TestWorkflowUpsertConfigDryRun(t *testing.T) {
 			body:   upsertTestScenarioWithNodes,
 			key:    "scenario/main-scn",
 			exists: false,
-			want:   `{"action":"create","kind":"Scenario","name":"main-scn","dryRun":true,"pending":"Scenario/main-scn?"}`,
+			want:   upsertDryRunResult("create", "Scenario", "main-scn", "Scenario/main-scn?"),
 		},
 		{
 			name:   "new experiment runs no config hook",
 			body:   upsertTestExperiment,
 			key:    "experiment/main-exp",
 			exists: false,
-			want:   `{"action":"create","kind":"Experiment","name":"main-exp","dryRun":true,"pending":"Experiment/main-exp"}`,
+			want:   upsertDryRunResult("create", "Experiment", "main-exp", "Experiment/main-exp"),
 		},
 		{
 			name:   "stored experiment runs no config hook",
 			body:   upsertTestExperiment,
 			key:    "experiment/main-exp",
 			exists: true,
-			want:   `{"action":"update","kind":"Experiment","name":"main-exp","dryRun":true,"pending":"Experiment/main-exp"}`,
+			want:   upsertDryRunResult("update", "Experiment", "main-exp", "Experiment/main-exp"),
 		},
 	}
 
@@ -219,23 +246,28 @@ func TestWorkflowUpsertConfigDryRun(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			if err := WorkflowUpsertConfig(rec, upsertTestRequest(t, "?dryRun=true", tt.body)); err != nil {
-				t.Fatalf("WorkflowUpsertConfig() error = %v", err)
+				t.Fatalf("WorkflowUpsertConfig(?dryRun=true) error = %v", err)
 			}
 
 			if rec.Code != http.StatusOK {
-				t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true) status = %d, want %d", rec.Code, http.StatusOK)
 			}
 
 			if got := rec.Header().Get("Content-Type"); got != mimeJSON {
-				t.Errorf("Content-Type = %q, want %q", got, mimeJSON)
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true) Content-Type = %q, want %q", got, mimeJSON)
 			}
 
 			if got := rec.Header().Get("Location"); got != "" {
-				t.Errorf("Location = %q, want none", got)
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true) Location = %q, want none", got)
 			}
 
-			if got := rec.Body.String(); got != tt.want {
-				t.Errorf("body:\n got %s\nwant %s", got, tt.want)
+			var got map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decoding the dry run body %s: %v", rec.Body, err)
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true) body mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -286,8 +318,10 @@ func TestWorkflowUpsertConfigDryRunExplainsValidationErrors(t *testing.T) {
 					t.Errorf("WorkflowUpsertConfig(?dryRun=true): %v", err)
 				}
 
-				if !reflect.DeepEqual(dryErr, realErr) {
-					t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
+				// Every field, unexported ones too, as reflect.DeepEqual compares.
+				all := cmp.Exporter(func(reflect.Type) bool { return true })
+				if diff := cmp.Diff(realErr, dryErr, all); diff != "" {
+					t.Errorf("WorkflowUpsertConfig(?dryRun=true) error mismatch with the real upsert's (-want +got):\n%s", diff)
 				}
 			})
 		}
@@ -341,18 +375,28 @@ func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 
 				var werr *weberror.WebError
 				if !errors.As(dryErr, &werr) {
-					t.Fatalf("expected a *weberror.WebError, got %v", dryErr)
+					t.Fatalf("WorkflowUpsertConfig(?dryRun=true) error = %v, want a *weberror.WebError", dryErr)
 				}
 
-				if werr.Status != http.StatusBadRequest || werr.Message != wantMessage || !strings.Contains(werr.Cause, tt.wantCause) {
-					t.Errorf(
-						"error = {status: %d, message: %q, cause: %q}, want {status: 400, message: %q, cause containing %q}",
-						werr.Status, werr.Message, werr.Cause, wantMessage, tt.wantCause,
-					)
+				got := upsertWebError{Status: werr.Status, Message: werr.Message}
+				want := upsertWebError{Status: http.StatusBadRequest, Message: wantMessage}
+
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("WorkflowUpsertConfig(?dryRun=true) error mismatch (-want +got):\n%s", diff)
 				}
 
-				if !reflect.DeepEqual(dryErr, realErr) {
-					t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
+				if !strings.Contains(werr.Cause, tt.wantCause) {
+					t.Errorf("WorkflowUpsertConfig(?dryRun=true) cause = %q, want it to contain %q", werr.Cause, tt.wantCause)
+				}
+
+				// Compare what the client gets: wrapped multierror causes are never equal.
+				var realWerr *weberror.WebError
+				if !errors.As(realErr, &realWerr) {
+					t.Fatalf("WorkflowUpsertConfig() error = %v, want a *weberror.WebError", realErr)
+				}
+
+				if diff := cmp.Diff(newUpsertWebError(realWerr), newUpsertWebError(werr)); diff != "" {
+					t.Errorf("WorkflowUpsertConfig(?dryRun=true) error mismatch with the real upsert's (-want +got):\n%s", diff)
 				}
 			})
 		}
@@ -454,14 +498,14 @@ func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
 
 			var werr *weberror.WebError
 			if !errors.As(err, &werr) {
-				t.Fatalf("expected a *weberror.WebError, got %v", err)
+				t.Fatalf("WorkflowUpsertConfig(%s) error = %v, want a *weberror.WebError", tt.query, err)
 			}
 
-			if werr.Status != http.StatusBadRequest || werr.Message != tt.wantMsg || werr.Cause != tt.wantCause {
-				t.Errorf(
-					"error = {status: %d, message: %q, cause: %q}, want {status: 400, message: %q, cause: %q}",
-					werr.Status, werr.Message, werr.Cause, tt.wantMsg, tt.wantCause,
-				)
+			got := upsertWebError{Status: werr.Status, Message: werr.Message, Cause: werr.Cause}
+			want := upsertWebError{Status: http.StatusBadRequest, Message: tt.wantMsg, Cause: tt.wantCause}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("WorkflowUpsertConfig(%s) error mismatch (-want +got):\n%s", tt.query, diff)
 			}
 		})
 	}
@@ -479,11 +523,13 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 				expectUpsertExists(m, workflowTestKey("topology/main-topo"), exists)
 
 				role := configsRole("update")
-				want := "creating config Topology/main-topo not allowed for test-user"
-
+				want := upsertWebError{
+					Status:  http.StatusForbidden,
+					Message: "creating config Topology/main-topo not allowed for test-user",
+				}
 				if exists {
 					role = configsRole("create")
-					want = "updating config Topology/main-topo not allowed for test-user"
+					want.Message = "updating config Topology/main-topo not allowed for test-user"
 				}
 
 				req := upsertTestRequest(t, query, upsertTestTopology)
@@ -492,10 +538,68 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 				err := WorkflowUpsertConfig(httptest.NewRecorder(), req)
 
 				var werr *weberror.WebError
-				if !errors.As(err, &werr) || werr.Status != http.StatusForbidden || werr.Message != want {
-					t.Fatalf("error = %v, want a 403 with message %q", err, want)
+				if !errors.As(err, &werr) {
+					t.Fatalf("WorkflowUpsertConfig(%s) error = %v, want a *weberror.WebError", query, err)
+				}
+
+				got := upsertWebError{Status: werr.Status, Message: werr.Message}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("WorkflowUpsertConfig(%s) error mismatch (-want +got):\n%s", query, diff)
 				}
 			})
+		}
+	}
+}
+
+// TestWorkflowUpsertConfigWritesWithoutDryRun pins the real upsert, which the
+// dry run must not change: 201, a Location header and an empty body, for a
+// topology without nodes and for one with a node that passes the node check.
+func TestWorkflowUpsertConfigWritesWithoutDryRun(t *testing.T) {
+	bodies := []struct {
+		name string
+		body string
+	}{
+		{name: "topology without nodes", body: upsertTestTopology},
+		{name: "topology with a node", body: upsertTestNodeTopology},
+	}
+
+	for _, tt := range bodies {
+		for _, query := range []string{"", "?dryRun=false"} {
+			for _, exists := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s, query %q, exists=%t", tt.name, query, exists), func(t *testing.T) {
+					t.Setenv("BRANCH_NAME", "")
+
+					m := installValidationTestStore(t)
+					key := workflowTestKey("topology/main-topo")
+
+					if exists {
+						// The handler's existence check, then config.Update's own read.
+						m.EXPECT().Get(gomock.Eq(key)).Return(nil).Times(2)
+						m.EXPECT().Update(gomock.Any()).Return(nil)
+					} else {
+						expectUpsertExists(m, key, false)
+						m.EXPECT().Create(gomock.Any()).Return(nil)
+					}
+
+					rec := httptest.NewRecorder()
+
+					if err := WorkflowUpsertConfig(rec, upsertTestRequest(t, query, tt.body)); err != nil {
+						t.Fatalf("WorkflowUpsertConfig(%s) error = %v", query, err)
+					}
+
+					if rec.Code != http.StatusCreated {
+						t.Errorf("WorkflowUpsertConfig(%s) status = %d, want %d", query, rec.Code, http.StatusCreated)
+					}
+
+					if got, want := rec.Header().Get("Location"), "/api/v1/configs/topology/main-topo"; got != want {
+						t.Errorf("WorkflowUpsertConfig(%s) Location = %q, want %q", query, got, want)
+					}
+
+					if rec.Body.Len() != 0 {
+						t.Errorf("WorkflowUpsertConfig(%s) body = %q, want empty", query, rec.Body.String())
+					}
+				})
+			}
 		}
 	}
 }
@@ -521,8 +625,8 @@ func configsRoleOn(names []string, verbs ...string) rbac.Role {
 	}
 }
 
-// Only a caller who may write the named config gets as far as expanding the
-// environment, and with it a parse error that quotes an environment variable.
+// Only a caller who may write the named config gets as far as parsing it.
+// The parse error then quotes the placeholder, never the environment variable.
 func TestWorkflowUpsertConfigChecksPermissionBeforeParsing(t *testing.T) {
 	const secret = "s3cret-value-for-test"
 
@@ -583,11 +687,13 @@ spec:
 				rec := httptest.NewRecorder()
 				weberror.ErrorHandler(WorkflowUpsertConfig).ServeHTTP(rec, req)
 
+				if strings.Contains(rec.Body.String(), secret) {
+					t.Fatalf("response quotes the environment variable: %s", rec.Body.String())
+				}
+
 				if !tt.forbidden {
-					// The probe quotes the variable to a caller who may write this
-					// config, who could store it and read it back anyway.
-					if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), secret) {
-						t.Fatalf("status = %d, want a 400 that quotes the probe: %s", rec.Code, rec.Body.String())
+					if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "${PHENIX_TEST_SECRET}") {
+						t.Fatalf("status = %d, want a 400 that quotes the placeholder: %s", rec.Code, rec.Body.String())
 					}
 
 					return
@@ -595,10 +701,6 @@ spec:
 
 				if rec.Code != http.StatusForbidden {
 					t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusForbidden, rec.Body.String())
-				}
-
-				if strings.Contains(rec.Body.String(), secret) {
-					t.Fatalf("response quotes the environment variable: %s", rec.Body.String())
 				}
 			})
 		}
@@ -668,5 +770,33 @@ func TestConfigName(t *testing.T) {
 				t.Fatalf("configName() = %q, %v, want %q", got, err, tt.want)
 			}
 		})
+	}
+}
+
+// TestReadWorkflowConfigExpandsOnlyBranchName asserts that readWorkflowConfig
+// fills in ${BRANCH_NAME} with the branch and keeps every other placeholder.
+func TestReadWorkflowConfigExpandsOnlyBranchName(t *testing.T) {
+	t.Setenv("BRANCH_NAME", "")
+	t.Setenv("PHENIX_WEB_TEST_SECRET", "workflow-secret-value")
+
+	body := workflowTestYAML("  topology: ${BRANCH_NAME}-topo\n  scenario: ${PHENIX_WEB_TEST_SECRET}\n" +
+		"  notes: $PHENIX_WEB_TEST_SECRET\n")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workflow/apply/lab", strings.NewReader(body))
+	req.Header.Set("Content-Type", mimeYAML)
+
+	doc, _, err := readWorkflowConfig(req, "lab")
+	if err != nil {
+		t.Fatalf("readWorkflowConfig(lab) returned error: %v", err)
+	}
+
+	want := map[string]any{
+		"topology": "lab-topo",
+		"scenario": "${PHENIX_WEB_TEST_SECRET}",
+		"notes":    "$PHENIX_WEB_TEST_SECRET",
+	}
+
+	if diff := cmp.Diff(want, doc["spec"]); diff != "" {
+		t.Errorf("readWorkflowConfig(lab) spec mismatch (-want +got):\n%s", diff)
 	}
 }
