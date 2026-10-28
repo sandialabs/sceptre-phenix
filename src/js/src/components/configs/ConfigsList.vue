@@ -356,6 +356,7 @@
   import { showError, useErrorNotification } from '@/utils/errorNotif';
   import {
     configKey,
+    findConfig,
     forgetConfig,
     fullConfig,
     prefetchConfig,
@@ -389,6 +390,7 @@
       return {
         configs: [],
         loaded: false, // false until the first list arrives
+        listSettled: false, // whether this visit's own first load has ended
         isWaiting: false, // set while a change is being saved
 
         //filters
@@ -438,14 +440,26 @@
           this.loaded = true;
           // a cached list arrives before the rows are drawn; mounted() waits
           if (first && this.$el) this.focusReturnedConfig();
+          this.viewFromRoute();
         },
       });
-      this.loader.start();
+      // a link to a config missing from a cached list waits for this load
+      Promise.resolve(this.loader.start()).then(() => {
+        if (this.unmounted) return;
+        this.listSettled = true;
+        this.viewFromRoute();
+      });
+    },
+    watch: {
+      '$route.query.view'() {
+        this.viewFromRoute();
+      },
     },
     mounted() {
       if (this.loaded) this.focusReturnedConfig();
     },
     beforeUnmount() {
+      this.unmounted = true;
       this.loader.stop();
       clearInterval(this.clock);
     },
@@ -671,6 +685,26 @@
         this.viewer.config = null;
         this.viewer.title = null;
         this.viewer.obj = null;
+      },
+      // Opens the config ?view=Kind/name names once it is listed, or reports it
+      // missing once this visit's load ends; either way drops the parameter.
+      viewFromRoute() {
+        const key = this.$route.query.view;
+        if (key === undefined || !this.loaded) return;
+        const cfg = findConfig(this.configs, key);
+        if (!cfg && !this.listSettled) return;
+        const query = { ...this.$route.query };
+        delete query.view;
+        this.$router.replace({ query });
+
+        if (cfg && this.configAllowed('get', cfg)) {
+          this.viewConfig(cfg);
+        } else {
+          showError(
+            'Config not found',
+            `The config list has no config ${String(key)} that your role can view.`,
+          );
+        }
       },
       // Opens the viewer at once and fills it when the config arrives; the
       // editor reuses the loaded config.

@@ -29,9 +29,14 @@ vi.mock('@/utils/loadAce.js', () => ({ loadAce: () => Promise.resolve() }));
 import AceEditor from '@/components/configs/AceEditor.vue';
 import ConfigsEditor from '@/components/configs/ConfigsEditor.vue';
 import ConfigsList from '@/components/configs/ConfigsList.vue';
-import { clearConfigCache } from '@/utils/configCache.js';
+import {
+  clearConfigCache,
+  configKey,
+  findConfig,
+} from '@/utils/configCache.js';
 import Configs from '@/views/Configs.vue';
 import { deferredGets, never } from './helpers/async.js';
+import { allowAll, denyOnly } from './helpers/permissions.js';
 import {
   byLabel,
   buttons,
@@ -196,6 +201,126 @@ describe('the config list', () => {
       await flushPromises();
       expect(notify.error).toHaveBeenCalledWith(err);
       expect(viewer(wrapper)).toBeNull();
+    });
+  });
+
+  describe('viewer links', () => {
+    // the list opened at /configs/?view=<key>, before or after it loaded
+    const linked = (key, loaded = true) =>
+      mountPage(ConfigsList, {
+        route: `/configs/?view=${encodeURIComponent(key)}&kind=x`,
+        data: loaded ? { configs: [topology, scenario], loaded } : {},
+      });
+    const query = (wrapper) => wrapper.router.currentRoute.value.query;
+
+    it.each([
+      ['its exact name', 'Scenario/web', 'Scenario/web'],
+      ['its name in another case', 'Topology/WEB', 'Topology/web'],
+    ])(
+      'open the config a link names by %s, and leave the address',
+      async (_, key, title) => {
+        axios.get.mockImplementation(never);
+        const wrapper = await linked(key);
+        await flushPromises();
+
+        expect(viewer(wrapper)?.title).toBe(title);
+        expect(query(wrapper)).toEqual({ kind: 'x' });
+        expect(notify.show).not.toHaveBeenCalled();
+      },
+    );
+
+    it('wait for the list before opening the config', async () => {
+      axios.get.mockImplementation(never);
+      const wrapper = await linked('Topology/web', false);
+      expect(viewer(wrapper)).toBeNull();
+
+      loaderSpy.options.apply([topology, scenario]);
+      await flushPromises();
+      expect(viewer(wrapper)?.title).toBe('Topology/web');
+    });
+
+    it('keep a link to a config a cached list lacks until the fresh list', async () => {
+      axios.get.mockImplementation(never);
+      const fresh = Promise.withResolvers();
+      loaderSpy.start = () => fresh.promise;
+      const wrapper = await mountPage(ConfigsList, {
+        route: '/configs/?view=Topology/new&kind=x',
+      });
+      const added = { kind: 'Topology', metadata: { name: 'new' } };
+
+      loaderSpy.options.apply([topology]);
+      await flushPromises();
+      expect(viewer(wrapper)).toBeNull();
+      expect(notify.show).not.toHaveBeenCalled();
+      expect(query(wrapper).view).toBe('Topology/new');
+
+      loaderSpy.options.apply([topology, added]);
+      fresh.resolve(true);
+      await flushPromises();
+      expect(viewer(wrapper)?.title).toBe('Topology/new');
+      expect(query(wrapper)).toEqual({ kind: 'x' });
+      expect(notify.show).not.toHaveBeenCalled();
+    });
+
+    it('report a link a cached list lacks once the fresh load ends without it', async () => {
+      const fresh = Promise.withResolvers();
+      loaderSpy.start = () => fresh.promise;
+      const wrapper = await mountPage(ConfigsList, {
+        route: '/configs/?view=Topology/gone',
+      });
+      loaderSpy.options.apply([topology]);
+      await flushPromises();
+      expect(notify.show).not.toHaveBeenCalled();
+
+      fresh.resolve(false);
+      await flushPromises();
+      expect(viewer(wrapper)).toBeNull();
+      expect(notify.show).toHaveBeenCalledWith(
+        'Config not found',
+        'The config list has no config Topology/gone that your role can view.',
+      );
+      expect(query(wrapper)).toEqual({});
+    });
+
+    it.each([
+      ['an unlisted config', 'Topology/gone', allowAll],
+      ['no kind', 'web', allowAll],
+      [
+        'a config the role may not view',
+        'Scenario/web',
+        denyOnly(['configs', 'get', 'Scenario/web']),
+      ],
+    ])('report a link to %s, opening nothing', async (_, key, role) => {
+      rbac.allowed = role;
+      const wrapper = await linked(key);
+      await flushPromises();
+
+      expect(viewer(wrapper)).toBeNull();
+      expect(axios.get).not.toHaveBeenCalled();
+      expect(notify.show).toHaveBeenCalledWith(
+        'Config not found',
+        `The config list has no config ${key} that your role can view.`,
+      );
+      expect(query(wrapper)).toEqual({ kind: 'x' });
+    });
+
+    it('find a listed config by its own key, whatever its name', () => {
+      fc.assert(
+        fc.property(
+          fc.uniqueArray(
+            fc.record({
+              kind: fc.constantFrom('Topology', 'Scenario', 'Experiment'),
+              metadata: fc.record({ name: fc.string({ minLength: 1 }) }),
+            }),
+            { selector: configKey },
+          ),
+          (configs) => {
+            for (const cfg of configs) {
+              expect(findConfig(configs, configKey(cfg))).toBe(cfg);
+            }
+          },
+        ),
+      );
     });
   });
 

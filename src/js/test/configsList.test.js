@@ -64,6 +64,8 @@ function mountList(warnings = [], props = {}) {
     global: {
       plugins: [Buefy],
       config: { warnHandler: (msg) => warnings.push(msg) },
+      // no ?view= link to open
+      mocks: { $route: { query: {} }, $router: { replace: vi.fn() } },
     },
   });
 }

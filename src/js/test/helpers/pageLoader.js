@@ -11,14 +11,21 @@ export async function idle(original) {
 }
 
 // The last capturing or fetching loader's options and load(); a test may set
-// load first, to answer as it likes, and loading for a load in flight.
-export const loaderSpy = { options: null, load: null, loading: false };
+// load first, to answer as it likes, loading for a load in flight, and start
+// for what a capturing loader's start() returns.
+export const loaderSpy = {
+  options: null,
+  load: null,
+  loading: false,
+  start: null,
+};
 
 // forgets the loader the last page made
 export function resetLoader() {
   loaderSpy.options = null;
   loaderSpy.load = null;
   loaderSpy.loading = false;
+  loaderSpy.start = null;
 }
 
 // the real module, whose loaders record their options and load nothing:
@@ -31,6 +38,7 @@ export async function capturing(original) {
       loaderSpy.load ??= vi.fn();
       return {
         ...idleLoader(),
+        start: () => loaderSpy.start?.(),
         load: (...args) => loaderSpy.load(...args),
         get loading() {
           return loaderSpy.loading;

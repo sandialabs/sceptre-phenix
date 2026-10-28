@@ -34,71 +34,91 @@
       </section>
     </template>
     <template v-else>
-      <b-field position="is-right" grouped>
-        <b-field v-if="selected.length" class="exp-selection-actions" grouped>
-          <b-field v-for="action in bulkActions" :key="action.name">
-            <b-tooltip
-              :label="action.reason || action.label"
-              type="is-dark"
-              multilined>
-              <b-button
-                :class="`exp-bulk-${action.name}`"
-                :type="action.type"
-                :icon-left="action.icon"
-                :aria-label="action.label"
-                :disabled="action.disabled"
-                @click="bulk(action.name)">
-                {{ action.text }}
-              </b-button>
-            </b-tooltip>
-          </b-field>
-          <b-field>
-            <b-tooltip label="clear the selection" type="is-dark">
-              <b-button
-                type="is-light"
-                icon-left="window-close"
-                aria-label="Clear the experiment selection"
-                @click="selected = []">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-        </b-field>
-        <div
-          v-if="paginationNeeded"
-          class="control is-flex is-align-items-center">
-          <b-switch v-model="table.isPaginated" size="is-small" type="is-light"
-            >Paginate</b-switch
-          >
+      <div class="exp-toolbar">
+        <div class="exp-totals" role="group" aria-label="Experiment totals">
+          <dl>
+            <div
+              v-for="total in totalsShown"
+              :key="total.key"
+              class="exp-total"
+              :class="`exp-total-${total.key}`">
+              <dt>{{ total.label }}</dt>
+              <dd>{{ total.value }}</dd>
+            </div>
+          </dl>
         </div>
-        <b-field>
-          <b-autocomplete
-            v-model="searchName"
-            placeholder="Find an Experiment"
-            icon="search"
-            :data="filteredData">
-            <template #empty> No results found </template>
-          </b-autocomplete>
-          <p v-if="searchName" class="control">
-            <button
-              aria-label="Clear experiment search"
-              class="button input-button"
-              @click="searchName = ''">
-              <b-icon icon="window-close"></b-icon>
-            </button>
+        <b-field class="exp-toolbar-controls" position="is-right" grouped>
+          <b-field v-if="selected.length" class="exp-selection-actions" grouped>
+            <b-field v-for="action in bulkActions" :key="action.name">
+              <b-tooltip
+                :label="action.reason || action.label"
+                type="is-dark"
+                multilined>
+                <b-button
+                  :class="`exp-bulk-${action.name}`"
+                  :type="action.type"
+                  :icon-left="action.icon"
+                  :aria-label="action.label"
+                  :disabled="action.disabled"
+                  @click="bulk(action.name)">
+                  {{ action.text }}
+                </b-button>
+              </b-tooltip>
+            </b-field>
+            <b-field>
+              <b-tooltip label="clear the selection" type="is-dark">
+                <b-button
+                  type="is-light"
+                  icon-left="window-close"
+                  aria-label="Clear the experiment selection"
+                  @click="selected = []">
+                </b-button>
+              </b-tooltip>
+            </b-field>
+          </b-field>
+          <div
+            v-if="paginationNeeded"
+            class="control is-flex is-align-items-center">
+            <b-switch
+              v-model="table.isPaginated"
+              size="is-small"
+              type="is-light"
+              >Paginate</b-switch
+            >
+          </div>
+          <b-field>
+            <b-autocomplete
+              v-model="searchName"
+              placeholder="Find an Experiment"
+              icon="search"
+              :data="filteredData">
+              <template #empty> No results found </template>
+            </b-autocomplete>
+            <p v-if="searchName" class="control">
+              <button
+                aria-label="Clear experiment search"
+                class="button input-button"
+                @click="searchName = ''">
+                <b-icon icon="window-close"></b-icon>
+              </button>
+            </p>
+          </b-field>
+          <p v-if="roleAllowed('experiments', 'create')" class="control">
+            <b-tooltip
+              label="create a new experiment"
+              type="is-light"
+              multilined>
+              <button
+                aria-label="Create a new experiment"
+                class="button is-light"
+                @click="creating = true">
+                <b-icon icon="plus"></b-icon>
+              </button>
+            </b-tooltip>
           </p>
         </b-field>
-        <p v-if="roleAllowed('experiments', 'create')" class="control">
-          <b-tooltip label="create a new experiment" type="is-light" multilined>
-            <button
-              aria-label="Create a new experiment"
-              class="button is-light"
-              @click="creating = true">
-              <b-icon icon="plus"></b-icon>
-            </button>
-          </b-tooltip>
-        </p>
-      </b-field>
-      <div>
+      </div>
+      <div class="exp-table">
         <b-table
           :data="filteredExperiments"
           :paginated="table.isPaginated && paginationNeeded"
@@ -123,7 +143,12 @@
               </div>
             </section>
           </template>
-          <b-table-column v-if="selectionOffered" field="select" label="">
+          <b-table-column
+            v-if="selectionOffered"
+            field="select"
+            label=""
+            header-class="exp-select-cell"
+            cell-class="exp-select-cell">
             <template #header>
               <b-tooltip label="Select/Unselect All" type="is-dark">
                 <b-checkbox
@@ -232,7 +257,14 @@
             sortable
             header-class="sort-inline"
             v-slot="props">
-            {{ formatLowercase(props.row.topology) }}
+            <router-link
+              v-if="configLinked('Topology', props.row.topology)"
+              :to="configViewRoute('Topology', props.row.topology)">
+              {{ formatLowercase(props.row.topology) }}
+            </router-link>
+            <template v-else>
+              {{ formatLowercase(props.row.topology) }}
+            </template>
           </b-table-column>
           <b-table-column
             field="scenario"
@@ -240,15 +272,34 @@
             sortable
             header-class="sort-inline"
             v-slot="props">
-            {{ formatLowercase(props.row.scenario) }}
+            <router-link
+              v-if="configLinked('Scenario', props.row.scenario)"
+              :to="configViewRoute('Scenario', props.row.scenario)">
+              {{ formatLowercase(props.row.scenario) }}
+            </router-link>
+            <template v-else>
+              {{ formatLowercase(props.row.scenario) }}
+            </template>
           </b-table-column>
           <b-table-column
             field="start_time"
             label="Start Time"
             sortable
+            :custom-sort="sortByStartTime"
             header-class="sort-inline"
             v-slot="props">
-            {{ props.row.start_time }}
+            <b-tooltip
+              v-if="startTimeText(props.row.start_time)"
+              :label="props.row.start_time"
+              type="is-dark">
+              <time class="exp-start-time" :datetime="props.row.start_time">
+                {{ startTimeText(props.row.start_time) }}
+              </time>
+              <span class="is-sr-only"> ({{ props.row.start_time }})</span>
+            </b-tooltip>
+            <template v-else>
+              {{ props.row.start_time || 'N/A' }}
+            </template>
           </b-table-column>
           <b-table-column
             field="vm_count"
@@ -261,9 +312,12 @@
             {{ props.row.vm_count }}
           </b-table-column>
           <b-table-column
-            field="vlan_range"
+            field="vlan_count"
             label="VLANs"
             centered
+            sortable
+            :custom-sort="sortByVlans"
+            header-class="sort-inline"
             v-slot="props">
             <template v-if="!props.row.partial">
               {{ props.row.vlan_min }} - {{ props.row.vlan_max }} ({{
@@ -271,61 +325,86 @@
               }})
             </template>
           </b-table-column>
-          <b-table-column label="Actions" width="125" centered v-slot="props">
-            <b-tooltip
-              v-if="rowActions[props.row.name].delete.permitted"
-              class="action"
-              :delay="500"
-              :label="
-                (!deleting[props.row.name] &&
-                  rowActions[props.row.name].delete.reason) ||
-                'delete experiment'
-              "
-              type="is-light"
-              multilined>
-              <button
-                :aria-label="`Delete experiment ${props.row.name}`"
-                class="button is-light is-small"
-                :class="{ 'is-loading': deleting[props.row.name] }"
-                :disabled="rowActions[props.row.name].delete.disabled"
-                @click="del(props.row.name)">
-                <b-icon icon="trash"></b-icon>
-              </button>
-            </b-tooltip>
-            <b-tooltip
-              class="action"
-              :delay="500"
-              label="view state of health"
-              type="is-light"
-              multilined>
-              <router-link
+          <b-table-column label="Actions" width="200" centered v-slot="props">
+            <div class="exp-row-actions">
+              <b-tooltip
+                v-for="action in powerButtons(props.row)"
+                :key="action.name"
+                :label="action.reason || `${action.name} experiment`"
+                type="is-dark"
+                multilined>
+                <button
+                  type="button"
+                  :class="[
+                    'button',
+                    'is-small',
+                    action.type,
+                    `exp-row-${action.name}`,
+                    { 'is-loading': action.pending },
+                  ]"
+                  :aria-label="`${action.label} experiment ${props.row.name}`"
+                  :aria-busy="action.pending"
+                  :disabled="action.disabled || action.pending"
+                  @click="
+                    action.name == 'start'
+                      ? start(props.row.name)
+                      : stop(props.row.name)
+                  ">
+                  <b-icon :icon="action.icon" />
+                </button>
+              </b-tooltip>
+              <b-tooltip
+                v-if="rowActions[props.row.name].delete.permitted"
+                :delay="500"
+                :label="
+                  (!deleting[props.row.name] &&
+                    rowActions[props.row.name].delete.reason) ||
+                  'delete experiment'
+                "
+                type="is-light"
+                multilined>
+                <button
+                  :aria-label="`Delete experiment ${props.row.name}`"
+                  class="button is-light is-small"
+                  :class="{ 'is-loading': deleting[props.row.name] }"
+                  :disabled="rowActions[props.row.name].delete.disabled"
+                  @click="del(props.row.name)">
+                  <b-icon icon="trash"></b-icon>
+                </button>
+              </b-tooltip>
+              <b-tooltip
                 v-if="roleAllowed('experiments', 'get', props.row.name)"
-                :aria-label="`View state of health for experiment ${props.row.name}`"
-                class="button is-light is-small"
-                :to="{
-                  name: 'soh',
-                  params: { id: props.row.name },
-                }">
-                <b-icon icon="heartbeat"></b-icon>
-              </router-link>
-            </b-tooltip>
-            <b-tooltip
-              class="action"
-              :delay="500"
-              label="view SCORCH runs"
-              type="is-light"
-              multilined>
-              <router-link
+                :delay="500"
+                label="view state of health"
+                type="is-light"
+                multilined>
+                <router-link
+                  :aria-label="`View state of health for experiment ${props.row.name}`"
+                  class="button is-light is-small"
+                  :to="{
+                    name: 'soh',
+                    params: { id: props.row.name },
+                  }">
+                  <b-icon icon="heartbeat"></b-icon>
+                </router-link>
+              </b-tooltip>
+              <b-tooltip
                 v-if="roleAllowed('experiments', 'get', props.row.name)"
-                :aria-label="`View SCORCH runs for experiment ${props.row.name}`"
-                class="button is-light is-small"
-                :to="{
-                  name: 'scorchruns',
-                  params: { id: props.row.name },
-                }">
-                <b-icon icon="fire"></b-icon>
-              </router-link>
-            </b-tooltip>
+                :delay="500"
+                label="view SCORCH runs"
+                type="is-light"
+                multilined>
+                <router-link
+                  :aria-label="`View SCORCH runs for experiment ${props.row.name}`"
+                  class="button is-light is-small"
+                  :to="{
+                    name: 'scorchruns',
+                    params: { id: props.row.name },
+                  }">
+                  <b-icon icon="fire"></b-icon>
+                </router-link>
+              </b-tooltip>
+            </div>
           </b-table-column>
         </b-table>
       </div>
@@ -368,6 +447,13 @@
     stillLoading,
   } from '@/utils/pageLoader.js';
   import { pageFetchers } from '@/utils/pageData.js';
+  import { configViewRoute } from '@/utils/configCache.js';
+  import {
+    experimentTotals,
+    sortByStartTime,
+    sortByVlans,
+    startTimeText,
+  } from '@/utils/experimentList.js';
 
   export default {
     components: { CreateExperimentCard },
@@ -436,10 +522,7 @@
 
         for (let i in experiments) {
           let exp = experiments[i];
-          if (exp.name.toLowerCase().includes(term)) {
-            exp.start_time = exp.start_time == '' ? 'N/A' : exp.start_time;
-            data.push(exp);
-          }
+          if (exp.name.toLowerCase().includes(term)) data.push(exp);
         }
 
         return data;
@@ -474,6 +557,7 @@
           can: roleAllowed,
           deleting: !!this.deleting[exp.name],
           starting: !!this.starting[exp.name],
+          stopping: !!this.stopping[exp.name],
         });
         return Object.fromEntries(
           this.experiments.map((exp) => [
@@ -485,9 +569,24 @@
                 opts(exp),
               ),
               delete: experimentActionState('delete', exp, opts(exp)),
+              start: experimentActionState('start', exp, opts(exp)),
+              stop: experimentActionState('stop', exp, opts(exp)),
             },
           ]),
         );
+      },
+
+      // the counts above the table, of every experiment, not only those shown
+      totalsShown() {
+        const totals = experimentTotals(this.experiments);
+        const value = (n) =>
+          stillLoading(this.loaded, this.experiments) ? '…' : n;
+        return [
+          ['experiments', 'Experiments', totals.experiments],
+          ['running', 'Running', totals.running],
+          ['vms', 'Running VMs', totals.runningVms],
+          ['vlans', 'VLANs', totals.vlans],
+        ].map(([key, label, n]) => ({ key, label, value: value(n) }));
       },
 
       // whether the role may act on any experiment, so offering a selection
@@ -556,6 +655,35 @@
     methods: {
       loadingText,
       stillLoading,
+      configViewRoute,
+      sortByStartTime,
+      sortByVlans,
+      startTimeText,
+
+      // whether the experiment's topology or scenario links to its config
+      configLinked(kind, name) {
+        return (
+          !!name &&
+          roleAllowed('configs', 'list') &&
+          roleAllowed('configs', 'get', `${kind}/${name}`)
+        );
+      },
+
+      // The row's Start and Stop buttons, each spinning while its request is
+      // out or the experiment is starting or stopping.
+      powerButtons(exp) {
+        const { start, stop } = this.rowActions[exp.name];
+        return [
+          {
+            ...start,
+            pending: !!this.starting[exp.name] || exp.status == 'starting',
+          },
+          {
+            ...stop,
+            pending: !!this.stopping[exp.name] || exp.status == 'stopping',
+          },
+        ];
+      },
 
       handleWs(msg) {
         // Experiments created as configs (the Configs page, workflows) are
@@ -783,6 +911,7 @@
           can: roleAllowed,
           deleting: this.deleting,
           starting: this.starting,
+          stopping: this.stopping,
         };
       },
 
@@ -808,6 +937,7 @@
       },
 
       stop(name) {
+        if (this.stopping[name]) return;
         this.$buefy.dialog.confirm({
           title: 'Stop the Experiment',
           message: 'This will stop the ' + name + ' experiment.',
@@ -822,7 +952,7 @@
       // Stops one experiment; one whose VMs minimega could not kill is still
       // running, and the user may force its stop.
       stopExperiment(name, force = false) {
-        return experimentsApi.stopExperiment(name, { force }).catch((err) => {
+        return this.sendStop(name, force).catch((err) => {
           useErrorNotification(err);
           if (!force && stopCanBeForced(err)) {
             offerForcedStop(this.$buefy, name, () =>
@@ -830,6 +960,16 @@
             );
           }
         });
+      },
+
+      // sends one stop, its buttons disabled until the server answers
+      async sendStop(name, force = false) {
+        this.stopping[name] = true;
+        try {
+          return await experimentsApi.stopExperiment(name, { force });
+        } finally {
+          delete this.stopping[name];
+        }
       },
 
       del(name) {
@@ -895,7 +1035,7 @@
       async runBulk(action, names, { force = false } = {}) {
         const send = {
           start: (name) => this.startExperiment(name),
-          stop: (name) => experimentsApi.stopExperiment(name, { force }),
+          stop: (name) => this.sendStop(name, force),
           delete: (name) => this.deleteExperiment(name),
         }[action];
 
@@ -974,6 +1114,7 @@
         selected: [], // names of the checked experiments
         deleting: {}, // names of the experiments being deleted
         starting: {}, // names of the experiments whose start request is out
+        stopping: {}, // names of the experiments whose stop request is out
         loaded: false, // false until the first list arrives
         options: {},
       };
@@ -999,5 +1140,111 @@
   .exp-status-control:disabled {
     cursor: not-allowed;
     opacity: 0.7;
+  }
+
+  /* the totals at the left, the search and its controls at the right */
+  .exp-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .exp-toolbar-controls {
+    margin-left: auto;
+  }
+
+  .exp-totals dl {
+    display: flex;
+    align-items: stretch;
+    height: 2.5em;
+    margin: 0;
+    border: 1px solid #5a5a5a;
+    border-radius: 6px;
+    background-color: #484848;
+  }
+
+  .exp-total {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 0.75rem;
+  }
+
+  .exp-total + .exp-total {
+    border-left: 1px solid #686868;
+  }
+
+  .exp-total dt {
+    color: #dbdbdb;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .exp-total dd {
+    margin: 0;
+    color: whitesmoke;
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* accents only: each number has its label; all are 5:1 or more on #484848 */
+  .exp-total-running dd {
+    color: #6fdca8;
+  }
+
+  .exp-total-vms dd {
+    color: #7fcfe0;
+  }
+
+  .exp-total-vlans dd {
+    color: #ffe08a;
+  }
+
+  /* the checkbox column is only as wide as its checkboxes */
+  .exp-table :deep(.exp-select-cell) {
+    width: 1%;
+    padding-left: 0.75em;
+    padding-right: 0.25em;
+  }
+
+  .exp-table :deep(.exp-select-cell .b-checkbox.checkbox) {
+    margin-right: 0;
+  }
+
+  .exp-table :deep(.exp-select-cell .control-label) {
+    padding-left: 0;
+  }
+
+  .exp-start-time {
+    white-space: nowrap;
+  }
+
+  /* one row of buttons, centered */
+  .exp-row-actions {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .exp-row-actions .button {
+    width: 2.25rem;
+  }
+
+  /* one that can't run now is gray, hovered too; its tooltip says why. The
+     :not()s outrank the colored buttons' hover rules in _general.scss. */
+  .exp-row-actions
+    .button[disabled]:not(.is-loading):not(.is-outlined):not(.is-inverted) {
+    border-color: transparent;
+    background-color: #5a5a5a;
+    color: #a8a8a8;
+    opacity: 1;
+  }
+
+  .exp-row-actions .button.is-loading[disabled] {
+    opacity: 1;
   }
 </style>

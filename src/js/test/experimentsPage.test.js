@@ -31,12 +31,14 @@ import Experiments from '@/views/Experiments.vue';
 import { never } from './helpers/async.js';
 import { httpError } from './helpers/fixtures.js';
 import { allowOnly, denyOnly } from './helpers/permissions.js';
+import { startTimeText } from '@/utils/experimentList.js';
 import {
   buttons,
   byLabel,
   confirmDialog,
   dialogs,
   mountPage,
+  tableHeader,
   tableRows,
   textOf,
   toasts,
@@ -128,7 +130,7 @@ describe('the table', () => {
     expect(marks).toEqual([['interrupted', `: ${reason}`], null, null]);
   });
 
-  it('sorts by each column but the VLAN range and actions', async () => {
+  it('sorts by each column but the actions', async () => {
     const wrapper = await page();
 
     const headers = wrapper.findAll('thead th').map((th) => ({
@@ -143,9 +145,110 @@ describe('the table', () => {
       { label: 'Scenario', sorts: true },
       { label: 'Start Time', sorts: true },
       { label: 'VMs', sorts: true },
-      { label: 'VLANs', sorts: false },
+      { label: 'VLANs', sorts: true },
       { label: 'Actions', sorts: false },
     ]);
+  });
+
+  // the names down the table once the header with this label is clicked
+  async function sortedBy(wrapper, label, clicks = 1) {
+    for (let i = 0; i < clicks; i++) {
+      await tableHeader(wrapper, label).trigger('click');
+    }
+    return tableRows(wrapper).map((cells) => textOf(cells.Name));
+  }
+
+  it('sorts by VLAN count, ties by name from A to Z either way', async () => {
+    const wrapper = await page([
+      { name: 'b', status: 'stopped', vlan_count: 2 },
+      { name: 'a', status: 'stopped', vlan_count: 2 },
+      { name: 'c', status: 'stopped', vlan_count: 0 },
+      { name: 'd', status: 'stopped', vlan_count: 5 },
+    ]);
+
+    expect(await sortedBy(wrapper, 'VLANs')).toEqual(['c', 'a', 'b', 'd']);
+    expect(await sortedBy(wrapper, 'VLANs')).toEqual(['d', 'a', 'b', 'c']);
+  });
+
+  it('shows start times in local 24-hour time, the recorded text on hover', async () => {
+    const raw = '2026-10-28T14:03:22Z';
+    const wrapper = await page([
+      { name: 'a', status: 'started', start_time: raw },
+      { name: 'b', status: 'stopped', start_time: '' },
+      { name: 'c', status: 'stopped', start_time: 'garbled' },
+    ]);
+
+    const [a, b, c] = tableRows(wrapper).map((cells) => cells['Start Time']);
+    expect(textOf(a.find('time'))).toBe(startTimeText(raw));
+    expect(textOf(a.find('time'))).toMatch(
+      /^\d{2}:\d{2}:\d{2} \d{2}-\d{2}-\d{4} \(.+\)$/,
+    );
+    expect(a.find('time').attributes('datetime')).toBe(raw);
+    const tooltip = wrapper
+      .findAllComponents({ name: 'BTooltip' })
+      .find((t) => a.element.contains(t.element));
+    expect(textOf(tooltip.vm.$refs.content)).toBe(raw);
+    expect(textOf(a.find('.is-sr-only'))).toBe(`(${raw})`);
+    // as before: N/A for none, and text that is not a time as it came
+    expect([textOf(b), textOf(c)]).toEqual(['N/A', 'garbled']);
+  });
+
+  it('sorts start times by the moment, not the text', async () => {
+    const wrapper = await page([
+      { name: 'late', status: 'started', start_time: '2026-01-01T06:00:00Z' },
+      // 05:00 UTC, though its text sorts after the other's
+      {
+        name: 'early',
+        status: 'started',
+        start_time: '2026-01-01T10:00:00+05:00',
+      },
+      { name: 'never', status: 'stopped', start_time: '' },
+    ]);
+
+    expect(await sortedBy(wrapper, 'Start Time')).toEqual([
+      'never',
+      'early',
+      'late',
+    ]);
+  });
+
+  it.each([
+    [
+      'may view them',
+      () => true,
+      ['/configs/?view=Topology/Topo-A', '/configs/?view=Scenario/scn'],
+    ],
+    [
+      'may not view the topology',
+      denyOnly(['configs', 'get', 'Topology/Topo-A']),
+      [null, '/configs/?view=Scenario/scn'],
+    ],
+    ['may not list configs', denyOnly(['configs', 'list']), [null, null]],
+  ])(
+    'links the topology and scenario to their configs when the role %s',
+    async (_, role, hrefs) => {
+      rbac.allowed = role;
+      const wrapper = await page([
+        { name: 'a', status: 'stopped', topology: 'Topo-A', scenario: 'scn' },
+      ]);
+
+      const [cells] = tableRows(wrapper);
+      const href = (cell) =>
+        cell.find('a').exists() ? cell.find('a').attributes('href') : null;
+      expect([href(cells.Topology), href(cells.Scenario)]).toEqual(hrefs);
+      expect([textOf(cells.Topology), textOf(cells.Scenario)]).toEqual([
+        'topo-a',
+        'scn',
+      ]);
+    },
+  );
+
+  it('narrows the checkbox column to its checkboxes', async () => {
+    const wrapper = await page(three());
+
+    const [cells] = tableRows(wrapper);
+    expect(wrapper.find('thead th').classes()).toContain('exp-select-cell');
+    expect(Object.values(cells)[0].classes()).toContain('exp-select-cell');
   });
 
   it('searches names literally', async () => {
@@ -328,6 +431,226 @@ const checkbox = (wrapper, text) =>
     .findAll('label.checkbox')
     .find((label) => textOf(label) === text)
     .find('input');
+
+describe('the totals', () => {
+  // each total's label and number
+  const totals = (wrapper) =>
+    wrapper
+      .findAll('.exp-totals .exp-total')
+      .map((t) => [textOf(t.find('dt')), textOf(t.find('dd'))]);
+
+  it('count every experiment, those running, their VMs and all VLANs', async () => {
+    const wrapper = await page([
+      {
+        name: 'a',
+        status: 'started',
+        running: true,
+        vm_count: 4,
+        vlan_count: 3,
+      },
+      {
+        name: 'b',
+        status: 'stopped',
+        running: false,
+        vm_count: 9,
+        vlan_count: 2,
+      },
+      {
+        name: 'c',
+        status: 'started',
+        running: true,
+        vm_count: 1,
+        vlan_count: 1,
+      },
+    ]);
+    // the search narrows the table, not the totals
+    await wrapper.find('input[placeholder="Find an Experiment"]').setValue('a');
+
+    expect(totals(wrapper)).toEqual([
+      ['Experiments', '3'],
+      ['Running', '2'],
+      ['Running VMs', '5'],
+      ['VLANs', '6'],
+    ]);
+    expect(byLabel(wrapper, 'Experiment totals').attributes('role')).toBe(
+      'group',
+    );
+  });
+
+  it('follow an experiment the websocket says has started', async () => {
+    const wrapper = await page(three());
+
+    await send(wrapper, {
+      resource: { type: 'experiment', name: 'a', action: 'start' },
+      result: { name: 'a', running: true, vm_count: 6, vlan_count: 2 },
+    });
+    expect(totals(wrapper)).toEqual([
+      ['Experiments', '3'],
+      ['Running', '2'],
+      ['Running VMs', '6'],
+      ['VLANs', '2'],
+    ]);
+  });
+});
+
+describe('the Start and Stop buttons', () => {
+  // the row's Start and Stop buttons: tooltip, disabled, spinning
+  const power = (wrapper, name) =>
+    ['Start', 'Stop'].map((verb) => {
+      const {
+        tooltip,
+        disabled,
+        control: button,
+      } = control(wrapper, `${verb} experiment ${name}`);
+      return { tooltip, disabled, spinning: button.classes('is-loading') };
+    });
+
+  it.each([
+    [
+      'a stopped experiment',
+      { name: 'x', status: 'stopped', running: false },
+      () => true,
+      [
+        { tooltip: 'start experiment', disabled: false, spinning: false },
+        {
+          tooltip: 'Cannot stop: the experiment is not running',
+          disabled: true,
+          spinning: false,
+        },
+      ],
+    ],
+    [
+      'a running experiment',
+      { name: 'x', status: 'started', running: true },
+      () => true,
+      [
+        {
+          tooltip: 'Cannot start: the experiment is already running',
+          disabled: true,
+          spinning: false,
+        },
+        { tooltip: 'stop experiment', disabled: false, spinning: false },
+      ],
+    ],
+    [
+      'a starting experiment',
+      { name: 'x', status: 'starting', running: false },
+      () => true,
+      [
+        {
+          tooltip: 'Cannot start: the experiment is starting',
+          disabled: true,
+          spinning: true,
+        },
+        {
+          tooltip: 'Cannot stop: the experiment is starting',
+          disabled: true,
+          spinning: false,
+        },
+      ],
+    ],
+    [
+      'a stopping experiment',
+      { name: 'x', status: 'stopping', running: true },
+      () => true,
+      [
+        {
+          tooltip: 'Cannot start: the experiment is stopping',
+          disabled: true,
+          spinning: false,
+        },
+        {
+          tooltip: 'Cannot stop: the experiment is stopping',
+          disabled: true,
+          spinning: true,
+        },
+      ],
+    ],
+    [
+      'a role that may not start it',
+      { name: 'x', status: 'stopped', running: false },
+      denyOnly(['experiments/start', 'update', 'x']),
+      [
+        {
+          tooltip: 'Cannot start: you do not have permission',
+          disabled: true,
+          spinning: false,
+        },
+        {
+          tooltip: 'Cannot stop: the experiment is not running',
+          disabled: true,
+          spinning: false,
+        },
+      ],
+    ],
+    [
+      'a role that may not stop it',
+      { name: 'x', status: 'started', running: true },
+      denyOnly(['experiments/stop', 'update', 'x']),
+      [
+        {
+          tooltip: 'Cannot start: the experiment is already running',
+          disabled: true,
+          spinning: false,
+        },
+        {
+          tooltip: 'Cannot stop: you do not have permission',
+          disabled: true,
+          spinning: false,
+        },
+      ],
+    ],
+  ])('for %s', async (_, exp, role, expected) => {
+    rbac.allowed = role;
+    const wrapper = await page([exp]);
+
+    expect(power(wrapper, 'x')).toEqual(expected);
+  });
+
+  it('start the experiment at once, spinning until the server answers', async () => {
+    const answer = Promise.withResolvers();
+    axios.post.mockReturnValue(answer.promise);
+    const wrapper = await page(three());
+
+    await byLabel(wrapper, 'Start experiment a').trigger('click');
+    expect(dialogs()).toEqual([]);
+    expect(axios.post.mock.calls).toEqual([['experiments/a/start']]);
+    expect(power(wrapper, 'a')[0]).toMatchObject({
+      disabled: true,
+      spinning: true,
+    });
+
+    answer.resolve({});
+    await flushPromises();
+    expect(power(wrapper, 'a')[0].spinning).toBe(false);
+  });
+
+  it('stop it after confirming, spinning until the server answers', async () => {
+    const answer = Promise.withResolvers();
+    axios.post.mockReturnValue(answer.promise);
+    const wrapper = await page(three());
+
+    await byLabel(wrapper, 'Stop experiment b').trigger('click');
+    expect(axios.post).not.toHaveBeenCalled();
+    await confirmDialog();
+    expect(axios.post.mock.calls).toEqual([['experiments/b/stop']]);
+    expect(power(wrapper, 'b')[1]).toMatchObject({
+      tooltip: 'Cannot stop: the experiment is being stopped',
+      disabled: true,
+      spinning: true,
+    });
+    // nor may it be deleted meanwhile
+    expect(control(wrapper, 'Delete experiment b').disabled).toBe(true);
+
+    answer.reject(httpError(500, { message: 'no' }));
+    await flushPromises();
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    expect(power(wrapper, 'b')[1]).toMatchObject({
+      disabled: false,
+      spinning: false,
+    });
+  });
+});
 
 describe('one experiment', () => {
   it('starts at once, without asking', async () => {

@@ -738,7 +738,8 @@ There are two ways to view a specific config:
    possible to edit the config directly in this view. Instead, there is an
    `Edit Config` button, which will open an editor. It is also possible to
    download a copy of the config. From the keyboard, Tab to the name and press
-   Enter.
+   Enter. A topology or scenario name on the `Experiments` page opens its
+   config in this viewer, too.
   ![Config viewer dialog showing the YAML of Role/vm-viewer, with Edit Config, download and Exit buttons.](images/view.png){: width=800 .center}
 2. Selecting the `Edit` button for a given config will open the editor window.
    It is possible to edit the config in this window and save the update to the

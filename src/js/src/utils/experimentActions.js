@@ -40,16 +40,17 @@ export const BULK_ACTIONS = ['start', 'stop', 'delete'];
 
 const updating = (status) => status === 'starting' || status === 'stopping';
 
-// Why the experiment's state rules the action out now, or null. `deleting`
-// and `starting` say whether its delete or start request is under way.
+// Why the experiment's state rules the action out now, or null. `deleting`,
+// `starting` and `stopping` say whether that request is under way.
 export function experimentBlocked(
   name,
   exp,
-  { deleting = false, starting = false } = {},
+  { deleting = false, starting = false, stopping = false } = {},
 ) {
   if (updating(exp.status)) return `the experiment is ${exp.status}`;
   if (deleting) return 'the experiment is being deleted';
   if (starting) return 'the experiment is being started';
+  if (stopping) return 'the experiment is being stopped';
   switch (name) {
     case 'start':
       return exp.running ? 'the experiment is already running' : null;
@@ -70,21 +71,21 @@ const experimentPermitted = (name, exp, can) =>
 export function experimentActionState(
   name,
   exp,
-  { can, deleting = false, starting = false },
+  { can, deleting = false, starting = false, stopping = false },
 ) {
   return actionState(EXPERIMENT_ACTIONS[name], {
     permitted: experimentPermitted(name, exp, can),
-    blocked: experimentBlocked(name, exp, { deleting, starting }),
+    blocked: experimentBlocked(name, exp, { deleting, starting, stopping }),
   });
 }
 
 // Splits a selection into `allowed` and `skipped` (grouped by reason);
-// `deleting` and `starting` map names with a request under way to true.
+// `deleting`, `starting` and `stopping` map names with a request out to true.
 export function partitionExperiments(
   name,
   names,
   experiments,
-  { can, deleting = {}, starting = {} },
+  { can, deleting = {}, starting = {}, stopping = {} },
 ) {
   const byName = new Map(experiments.map((exp) => [exp.name, exp]));
   return partitionForAction(
@@ -95,6 +96,7 @@ export function partitionExperiments(
         ? experimentBlocked(name, exp, {
             deleting: !!deleting[exp.name],
             starting: !!starting[exp.name],
+            stopping: !!stopping[exp.name],
           })
         : "the experiment is outside your role's permissions",
     'the experiment is no longer listed',

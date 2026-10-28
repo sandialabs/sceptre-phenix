@@ -11,11 +11,25 @@ the physical network MTU requirements.
 Click on the `Experiments` tab. This will display all available experiments that
 the user has access to view or edit.
 
+The box at the top left counts the listed experiments, how many of them are
+running, the VMs of the running experiments, and the VLANs of all of them. The
+counts cover every listed experiment, not only those the search shows.
+
 Click a column heading to sort the table by it: `Name`, `Status`, `Topology`,
-`Scenario`, `Start Time`, and `VMs` can all be sorted on. Experiments created or
-started somewhere else, such as from the command line binary or a
-[workflow](workflow.md), appear in the list as they are created or
-start, without reloading the page.
+`Scenario`, `Start Time`, `VMs`, and `VLANs` can all be sorted on. `VLANs` sorts
+by how many VLANs each experiment has, and experiments with the same number by
+name. Experiments created or started somewhere else, such as from the command
+line binary or a [workflow](workflow.md), appear in the list as they are
+created or start, without reloading the page.
+
+`Start Time` shows when the experiment started in your browser's time zone, as
+`hour:minute:second day-month-year (zone)` in 24-hour time, for example
+`14:03:22 28-10-2026 (MDT)`; hover over it to see the time as phēnix recorded
+it. The column sorts by the actual time.
+
+Click a name in the `Topology` or `Scenario` column to open that config in the
+viewer on the [Configs](configuration.md#view-a-config) page, if your role may
+view it.
 
 ### From the Command Line Binary
 
@@ -32,11 +46,15 @@ phenix exp list
 
 ### From the Web-UI
 
-Clicking the `stopped` button starts the experiment at once; clicking the
-`started` button stops it after you confirm. A progress bar is used to update
-the progress of starting an experiment. During the update to the experiment --
-starting or stopping -- it will not be accessible, and its status button and
-trash can are disabled, with the reason in their tooltips.
+Clicking the `stopped` button, or the green play button in the `Actions`
+column, starts the experiment at once; clicking the `started` button, or the red
+stop button, stops it after you confirm. The play or stop button spins while the
+experiment starts or stops, and a progress bar shows the progress of starting
+it. During the update to the experiment -- starting or stopping -- it will not
+be accessible, and its status button, play, stop and trash can buttons are
+disabled, with the reason in their tooltips. The play and stop buttons are also
+gray and disabled when the experiment is already running or stopped, or when
+your role may not start or stop it.
 
 To start, stop or delete several experiments at once, check them in the
 table's first column, or check its heading to check every experiment the search

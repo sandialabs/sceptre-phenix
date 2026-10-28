@@ -36,6 +36,7 @@ describe('one experiment', () => {
   it.each([
     ['deleting', 'the experiment is being deleted'],
     ['starting', 'the experiment is being started'],
+    ['stopping', 'the experiment is being stopped'],
   ])(
     'blocks every action on an experiment whose %s request is under way',
     (pending, reason) => {
@@ -85,36 +86,42 @@ describe('a selection', () => {
         fc.subarray(names),
         fc.constantFrom(...BULK_ACTIONS),
         fc.subarray(names),
+        fc.subarray(names),
       ),
     );
 
   it('acts on each selected experiment it may, and says why it skips the rest', () => {
     fc.assert(
-      fc.property(table, ([experiments, selected, permitted, action, sent]) => {
-        const can = (...[, , name]) => permitted.includes(name);
-        // the experiments whose start request is under way
-        const starting = Object.fromEntries(sent.map((name) => [name, true]));
-        const opts = { can, starting };
-        const { allowed, skipped } = partitionExperiments(
-          action,
-          selected,
-          experiments,
-          opts,
-        );
-        const skippedNames = skipped.flatMap((group) => group.names);
-        expect([...allowed, ...skippedNames].toSorted()).toEqual(
-          [...selected].toSorted(),
-        );
-        for (const name of allowed) {
-          const row = experiments.find((e) => e.name === name);
-          expect(permitted).toContain(name);
-          expect(sent).not.toContain(name);
-          expect(experimentBlocked(action, row)).toBeNull();
-        }
-        expect(
-          bulkActionState(action, selected, experiments, opts).disabled,
-        ).toBe(allowed.length === 0);
-      }),
+      fc.property(
+        table,
+        ([experiments, selected, permitted, action, sent, stops]) => {
+          const can = (...[, , name]) => permitted.includes(name);
+          // the experiments whose start or stop request is under way
+          const flags = (names) =>
+            Object.fromEntries(names.map((name) => [name, true]));
+          const opts = { can, starting: flags(sent), stopping: flags(stops) };
+          const { allowed, skipped } = partitionExperiments(
+            action,
+            selected,
+            experiments,
+            opts,
+          );
+          const skippedNames = skipped.flatMap((group) => group.names);
+          expect([...allowed, ...skippedNames].toSorted()).toEqual(
+            [...selected].toSorted(),
+          );
+          for (const name of allowed) {
+            const row = experiments.find((e) => e.name === name);
+            expect(permitted).toContain(name);
+            expect(sent).not.toContain(name);
+            expect(stops).not.toContain(name);
+            expect(experimentBlocked(action, row)).toBeNull();
+          }
+          expect(
+            bulkActionState(action, selected, experiments, opts).disabled,
+          ).toBe(allowed.length === 0);
+        },
+      ),
     );
   });
 });

@@ -47,3 +47,25 @@ export function forgetConfig(cfg) {
 export function clearConfigCache() {
   cache.clear();
 }
+
+// The Configs page with the config `kind`/`name` open in its viewer.
+export const configViewRoute = (kind, name) => ({
+  name: 'configs',
+  query: { view: `${kind}/${name}` },
+});
+
+// The listed config a viewer link names as Kind/name, or null; a name that
+// differs only in case matches when no name matches exactly.
+export function findConfig(configs, key) {
+  const match = /^([A-Za-z]+)\/(.+)$/s.exec(typeof key === 'string' ? key : '');
+  if (!match) return null;
+  const [, kind, name] = match;
+  const ofKind = configs.filter((cfg) => cfg.kind === kind);
+  return (
+    ofKind.find((cfg) => cfg.metadata.name === name) ??
+    ofKind.find(
+      (cfg) => cfg.metadata.name.toLowerCase() === name.toLowerCase(),
+    ) ??
+    null
+  );
+}
