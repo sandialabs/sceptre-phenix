@@ -1,4 +1,4 @@
-.PHONY: all build check clean deb docker docs-build docs-serve examples example-go example-python generate help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
+.PHONY: all build check clean deadcode deb docker docs-build docs-serve examples example-go example-python generate help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
 DOCKER_TAG ?= latest
@@ -18,6 +18,7 @@ help:
 	@echo "Development:"
 	@echo "  all            - Run all development tasks (lint, test) and build examples"
 	@echo "  check          - Run prek hooks without committing fixes (for CI)"
+	@echo "  deadcode       - Find dead code (Go deadcode and knip)"
 	@echo "  generate       - Run code generation (protobuf, mocks, etc)"
 	@echo "  lint           - Run prek hooks and fix issues (formatting, linting, etc)"
 	@echo "  prek           - Alias for 'lint'"
@@ -89,6 +90,11 @@ prek:
 
 generate:
 	$(MAKE) -C src/go generate
+
+# The dead-code sweep: deadcode for Go, knip for the UI. Each fails on a find.
+deadcode:
+	$(MAKE) -C src/go deadcode
+	cd src/js && npm run knip
 
 install-dev:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))

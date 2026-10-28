@@ -5,10 +5,13 @@ on:
     branches: ['**']
     paths:
       - 'examples/**'
+      # The Go example imports phenix packages from src/go.
+      - 'src/go/**'
       - '.github/workflows/examples.yml'
   pull_request:
     paths:
       - 'examples/**'
+      - 'src/go/**'
       - '.github/workflows/examples.yml'
   repository_dispatch:
     types: [apps-update]
