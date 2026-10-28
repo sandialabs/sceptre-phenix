@@ -507,9 +507,12 @@ describe('the jobs menu', () => {
     jobs.put(job('3', 'succeeded'));
 
     const page = await header();
-    expect(byLabel(page, 'Background jobs (2 jobs running)').exists()).toBe(
-      true,
-    );
+    expect(
+      byLabel(
+        page,
+        'Background jobs (2 jobs running; 1 succeeded job not viewed)',
+      ).exists(),
+    ).toBe(true);
     expect(page.find('.tag.is-info.is-rounded.jobs-count').text()).toBe('2');
   });
 
@@ -551,6 +554,76 @@ describe('the jobs menu', () => {
     trigger.element.blur();
     await menu.trigger('keydown', { key: 'Escape' });
     expect(document.activeElement).not.toBe(trigger.element);
+  });
+
+  it.each([
+    [
+      ['failed', 'succeeded'],
+      'is-unviewed-failed',
+      'exclamation-circle',
+      '1 failed job and 1 succeeded job not viewed',
+    ],
+    [
+      ['partial'],
+      'is-unviewed-failed',
+      'exclamation-circle',
+      '1 partly succeeded job not viewed',
+    ],
+    [
+      ['succeeded', 'canceled'],
+      'is-unviewed-succeeded',
+      'check-circle',
+      '1 succeeded job not viewed',
+    ],
+    [['canceled'], 'is-dark', null, null],
+  ])(
+    'with finished %j jobs not viewed, is %s',
+    async (statuses, cls, icon, text) => {
+      const jobs = useJobStore();
+      statuses.forEach((status, i) => jobs.put(job(String(i + 1), status)));
+      jobs.put(job('9', 'running'));
+
+      const menu = await mountComponent(JobsMenu);
+      const trigger = menu.find('.jobs-trigger');
+      expect(trigger.classes()).toContain(cls);
+      const label = text
+        ? `Background jobs (1 job running; ${text})`
+        : 'Background jobs (1 job running)';
+      expect(trigger.attributes('aria-label')).toBe(label);
+      expect(trigger.attributes('title')).toBe(label);
+      const shown = menu.find('.jobs-unviewed-icon');
+      expect(shown.exists()).toBe(icon !== null);
+      if (icon) {
+        expect(shown.attributes('aria-hidden')).toBe('true');
+        expect(shown.find(`[data-icon="${icon}"]`).exists()).toBe(true);
+      }
+    },
+  );
+
+  it('counts the jobs listed as viewed once opened, and those that finish while open', async () => {
+    const jobs = useJobStore();
+    jobs.put(job('1', 'failed'));
+    jobs.put(job('2', 'running'));
+
+    const menu = await mountComponent(JobsMenu);
+    const trigger = menu.find('.jobs-trigger');
+    expect(trigger.classes()).toContain('is-unviewed-failed');
+
+    await trigger.trigger('click');
+    expect(trigger.classes()).toContain('is-dark');
+    expect(JSON.parse(localStorage.getItem('phenix.jobs.viewed'))).toEqual([
+      '1',
+    ]);
+
+    jobs.put({ ...job('2', 'succeeded'), revision: 2 });
+    await nextTick();
+    await nextTick();
+    expect(jobs.unviewed).toEqual([]);
+
+    await trigger.trigger('click');
+    jobs.put(job('3', 'succeeded'));
+    await nextTick();
+    expect(trigger.classes()).toContain('is-unviewed-succeeded');
   });
 
   it('says when there are none, and is not shown to no one signed in', async () => {

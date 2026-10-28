@@ -55,11 +55,15 @@ test('the header jobs menu shows running and finished jobs', async ({
 
   await page.goto('/experiments');
   const menu = page.getByRole('button', {
-    name: 'Background jobs (1 job running)',
+    name: 'Background jobs (1 job running; 1 partly succeeded job not viewed)',
   });
   await expect(menu).toBeVisible();
   await menu.click();
 
+  // opening the menu marks the finished job viewed
+  await expect(
+    page.getByRole('button', { name: 'Background jobs (1 job running)' }),
+  ).toBeVisible();
   await expect(page.getByText('Restart 3 VMs')).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Cancel Restart 3 VMs' }),

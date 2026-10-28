@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 
 import axiosInstance from '@/utils/axios.js';
 import { startPoll } from '@/utils/freshness.js';
+import { listText, pluralWord } from '@/utils/plural.js';
+import { readPref, writePref } from '@/utils/prefs.js';
 import { usePhenixStore } from '@/store.js';
 
 // The server's background jobs the user may see (see docs/content/jobs.md):
@@ -18,6 +20,59 @@ const RECENT_JOBS = 10;
 // whether a job is still queued or running
 export const isActiveJob = (job) =>
   job?.status === 'queued' || job?.status === 'running';
+
+// The finished jobs this browser has shown in the jobs menu, by job ID, kept
+// in localStorage so a reload does not color the menu button again.
+const VIEWED_KEY = 'phenix.jobs.viewed';
+
+// the job IDs stored at VIEWED_KEY; anything but a list of short strings is
+// dropped, as storage the page did not write
+export function parseViewed(text) {
+  let ids;
+  try {
+    ids = JSON.parse(text ?? '[]');
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(ids)) return [];
+  return ids.filter(
+    (id) => typeof id === 'string' && id.length > 0 && id.length <= 256,
+  );
+}
+
+// the finished statuses that color the menu button, worst first; a canceled
+// job was stopped on purpose, so it does not
+const UNVIEWED_STATUSES = ['failed', 'partial', 'succeeded'];
+const UNVIEWED_WORDS = {
+  failed: 'failed',
+  partial: 'partly succeeded',
+  succeeded: 'succeeded',
+};
+
+// how many of the jobs ended in each of UNVIEWED_STATUSES
+export function unviewedCounts(jobs) {
+  const counts = { failed: 0, partial: 0, succeeded: 0 };
+  for (const job of jobs) {
+    if (UNVIEWED_STATUSES.includes(job.status)) counts[job.status] += 1;
+  }
+  return counts;
+}
+
+// the menu button's color for those counts: 'failed' when any job failed or
+// only partly succeeded, 'succeeded' when the rest succeeded, null for none
+export function unviewedTone(counts) {
+  if (counts.failed || counts.partial) return 'failed';
+  return counts.succeeded ? 'succeeded' : null;
+}
+
+// the counts in words: "1 failed job and 2 succeeded jobs not viewed", or ''
+export function unviewedText(counts) {
+  const parts = UNVIEWED_STATUSES.filter((status) => counts[status]).map(
+    (status) =>
+      `${counts[status]} ${UNVIEWED_WORDS[status]} ${pluralWord(counts[status], 'job')}`,
+  );
+  return parts.length ? `${listText(parts)} not viewed` : '';
+}
 
 // when a job was created, as [ms, ns past that ms]: Go's RFC3339Nano trims
 // trailing zeros and gives the server's zone, so the text does not sort
@@ -61,6 +116,8 @@ function forget(
 export const useJobStore = defineStore('jobs', {
   state: () => ({
     jobs: {},
+    // the IDs of the finished jobs shown in the jobs menu (see VIEWED_KEY)
+    viewed: new Set(parseViewed(readPref(VIEWED_KEY))),
   }),
 
   getters: {
@@ -74,6 +131,13 @@ export const useJobStore = defineStore('jobs', {
     recent() {
       const finished = this.list.filter((job) => !isActiveJob(job));
       return [...this.active, ...finished.slice(0, RECENT_JOBS)];
+    },
+    // the finished jobs the menu lists but has not shown, canceled ones aside
+    unviewed() {
+      return this.recent.filter(
+        (job) =>
+          UNVIEWED_STATUSES.includes(job.status) && !this.viewed.has(job.id),
+      );
     },
   },
 
@@ -112,6 +176,7 @@ export const useJobStore = defineStore('jobs', {
       for (const id of Object.keys(this.jobs)) {
         if (!listed.has(id)) delete this.jobs[id];
       }
+      this.pruneViewed(listed);
       // asks after the awaited ones, which may have started since the list
       for (const id of waiters.keys()) {
         if (!listed.has(id)) this.check(id);
@@ -123,6 +188,7 @@ export const useJobStore = defineStore('jobs', {
       if (msg?.resource?.type !== 'job') return;
       if (msg.resource.action === 'remove') {
         delete this.jobs[msg.resource.name];
+        this.dropViewed(msg.resource.name);
         forget(msg.resource.name);
         return;
       }
@@ -148,6 +214,7 @@ export const useJobStore = defineStore('jobs', {
       } catch (err) {
         if (err?.response?.status !== 404) return;
         delete this.jobs[id];
+        this.dropViewed(id);
         forget(id);
       }
     },
@@ -161,6 +228,32 @@ export const useJobStore = defineStore('jobs', {
     async dismiss(id) {
       await axiosInstance.delete(`jobs/${id}`);
       delete this.jobs[id];
+      this.dropViewed(id);
+    },
+
+    // marks the jobs as shown in the jobs menu, in this browser
+    markViewed(jobs) {
+      const before = this.viewed.size;
+      for (const job of jobs) this.viewed.add(job.id);
+      if (this.viewed.size !== before) this.saveViewed();
+    },
+
+    // keeps only the viewed IDs of the jobs the server listed, a Set of IDs
+    pruneViewed(ids) {
+      const before = this.viewed.size;
+      for (const id of [...this.viewed]) {
+        if (!ids.has(id)) this.viewed.delete(id);
+      }
+      if (this.viewed.size !== before) this.saveViewed();
+    },
+
+    // forgets that a job the server no longer has was viewed
+    dropViewed(id) {
+      if (this.viewed.delete(id)) this.saveViewed();
+    },
+
+    saveViewed() {
+      writePref(VIEWED_KEY, JSON.stringify([...this.viewed]));
     },
 
     // resolves with the job once it has finished, read whole from the

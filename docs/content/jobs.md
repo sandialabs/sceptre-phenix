@@ -116,7 +116,8 @@ for the operations run within their request; see
 
 The [background jobs menu](web-ui.md#background-jobs-menu) in the header lists
 your jobs, with their progress, and cancels, downloads and dismisses them. It
-picks up jobs again after a reload or a lost connection.
+picks up jobs again after a reload or a lost connection. Its button turns red
+or green when jobs have failed or succeeded since you last opened it.
 
 ## Command line
 

@@ -128,6 +128,16 @@ and disk clones, along with the jobs of other users your role may see. A badge
 on the button counts the jobs still running, and its name says how many, as in
 `Background jobs (2 jobs running)`.
 
+When jobs have finished since you last opened the menu, the button turns red
+with an exclamation icon if any of them failed or only partly succeeded, and
+green with a check icon if they all succeeded; canceled jobs do not color it.
+Its name and tooltip say why, as in
+`Background jobs (0 jobs running; 1 failed job not viewed)`. Opening the menu
+counts every finished job it lists as viewed, including jobs that finish while
+it is open, and the button goes back to its usual color. The browser remembers
+which jobs you have viewed, so a reload does not color the button again; it is
+kept per browser, not per account, and forgets jobs the server no longer has.
+
 The menu lists every running or queued job and the ten most recent finished
 ones. Each shows its title, its status in words (`Running`, `Partly succeeded`,
 `Failed`, ...), a progress bar while it runs, and a line saying how far it got,

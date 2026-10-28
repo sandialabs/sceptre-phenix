@@ -16,7 +16,14 @@ import {
   serverUnanswered,
   setWsDown,
 } from '@/utils/freshness.js';
-import { isActiveJob, useJobStore } from '@/utils/jobs.js';
+import {
+  isActiveJob,
+  parseViewed,
+  unviewedCounts,
+  unviewedText,
+  unviewedTone,
+  useJobStore,
+} from '@/utils/jobs.js';
 import { flush } from './helpers/async.js';
 import { wsMsg } from './helpers/fixtures.js';
 
@@ -465,5 +472,136 @@ describe('helpers', () => {
     ['canceled', false],
   ])('a %s job is active: %s', (status, want) => {
     expect(isActiveJob({ status })).toBe(want);
+  });
+});
+
+describe('viewed jobs', () => {
+  const VIEWED_KEY = 'phenix.jobs.viewed';
+  const stored = () => JSON.parse(localStorage.getItem(VIEWED_KEY));
+  const ids = (list) => list.map((j) => j.id);
+
+  it('lists the finished jobs not viewed, canceled ones aside', () => {
+    for (const status of ['running', 'succeeded', 'partial', 'canceled']) {
+      jobs.put(job(status, { status }));
+    }
+    expect(ids(jobs.unviewed).sort()).toEqual(['partial', 'succeeded']);
+
+    jobs.markViewed([jobs.jobs.partial]);
+    expect(ids(jobs.unviewed)).toEqual(['succeeded']);
+    expect(stored()).toEqual(['partial']);
+  });
+
+  it('remembers viewed jobs across a reload, and forgets the ones the server dropped', async () => {
+    jobs.put(job('a', { status: 'failed' }));
+    jobs.put(job('b', { status: 'succeeded' }));
+    jobs.markViewed([jobs.jobs.a, jobs.jobs.b]);
+
+    setActivePinia(createPinia());
+    const reloaded = useJobStore();
+    expect([...reloaded.viewed].sort()).toEqual(['a', 'b']);
+
+    axios.get.mockResolvedValue({
+      data: { jobs: [job('b', { status: 'succeeded' })] },
+    });
+    await reloaded.load();
+    expect(stored()).toEqual(['b']);
+    expect(reloaded.unviewed).toEqual([]);
+  });
+
+  it('forgets a dismissed or removed job was viewed', async () => {
+    jobs.put(job('a', { status: 'failed' }));
+    jobs.put(job('b', { status: 'failed' }));
+    jobs.markViewed([jobs.jobs.a, jobs.jobs.b]);
+
+    axios.delete.mockResolvedValue({ status: 204 });
+    await jobs.dismiss('a');
+    jobs.apply(wsMsg('job', 'b', 'remove', job('b')));
+    expect(stored()).toEqual([]);
+  });
+
+  it('starts empty when storage holds something else or throws', () => {
+    for (const text of ['not json', '{"a":1}', '[1, null, "", "ok"]']) {
+      localStorage.setItem(VIEWED_KEY, text);
+      setActivePinia(createPinia());
+      expect([...useJobStore().viewed]).toEqual(
+        text.includes('ok') ? ['ok'] : [],
+      );
+    }
+
+    globalThis.localStorage = {
+      getItem() {
+        throw new Error('blocked');
+      },
+      setItem() {
+        throw new Error('blocked');
+      },
+    };
+    setActivePinia(createPinia());
+    const store = useJobStore();
+    store.put(job('a', { status: 'failed' }));
+    expect(() => store.markViewed([store.jobs.a])).not.toThrow();
+    expect(store.unviewed).toEqual([]);
+  });
+
+  it('keeps only short strings from storage, whatever it holds', () => {
+    fc.assert(
+      fc.property(fc.jsonValue(), (value) => {
+        const got = parseViewed(JSON.stringify(value));
+        expect(Array.isArray(got)).toBe(true);
+        for (const id of got) {
+          expect(typeof id).toBe('string');
+          expect(id.length).toBeGreaterThan(0);
+          expect(id.length).toBeLessThanOrEqual(256);
+        }
+      }),
+    );
+  });
+
+  it.each([
+    [
+      { failed: 1, partial: 0, succeeded: 0 },
+      'failed',
+      '1 failed job not viewed',
+    ],
+    [
+      { failed: 0, partial: 2, succeeded: 1 },
+      'failed',
+      '2 partly succeeded jobs and 1 succeeded job not viewed',
+    ],
+    [
+      { failed: 0, partial: 0, succeeded: 3 },
+      'succeeded',
+      '3 succeeded jobs not viewed',
+    ],
+    [{ failed: 0, partial: 0, succeeded: 0 }, null, ''],
+  ])('reads %o as %s: %s', (counts, tone, text) => {
+    expect(unviewedTone(counts)).toBe(tone);
+    expect(unviewedText(counts)).toBe(text);
+  });
+
+  it('colors red for any failed or partial job, green for only succeeded ones, and counts every one', () => {
+    const statuses = fc.array(
+      fc.constantFrom('succeeded', 'partial', 'failed', 'canceled'),
+      { maxLength: 12 },
+    );
+    fc.assert(
+      fc.property(statuses, (given) => {
+        const counts = unviewedCounts(given.map((status) => ({ status })));
+        const n = (status) => given.filter((s) => s === status).length;
+        expect(counts).toEqual({
+          failed: n('failed'),
+          partial: n('partial'),
+          succeeded: n('succeeded'),
+        });
+        const want =
+          n('failed') + n('partial')
+            ? 'failed'
+            : n('succeeded')
+              ? 'succeeded'
+              : null;
+        expect(unviewedTone(counts)).toBe(want);
+        expect(unviewedText(counts) === '').toBe(want === null);
+      }),
+    );
   });
 });

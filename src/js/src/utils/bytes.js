@@ -17,3 +17,12 @@ export function bytesText(bytes) {
 // a size minimega gives in MiB (VM memory, host memory) for people: 1.5 GiB
 export const mebibytesText = (mebibytes) =>
   bytesText((mebibytes ?? 0) * 1024 ** 2);
+
+// the byte count of a size as the disk list writes it ("512 B", "2.1 GiB",
+// or minimega's "2.1G"), or null when it reads as no size
+export function parseBytes(text) {
+  const match = /^\s*(\d+(?:\.\d+)?)\s*([KMGTPE])?/.exec(text ?? '');
+  if (!match) return null;
+  const power = match[2] ? 'KMGTPE'.indexOf(match[2]) + 1 : 0;
+  return parseFloat(match[1]) * 1024 ** power;
+}

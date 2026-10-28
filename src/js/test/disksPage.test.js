@@ -28,6 +28,7 @@ vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/pageLoader.js', fetching);
 
 import JobProgress from '@/components/jobs/JobProgress.vue';
+import { diskTotals } from '@/utils/diskTotals.js';
 import { useJobStore } from '@/utils/jobs.js';
 import Disks from '@/views/Disks.vue';
 import { diskListArb } from './helpers/arbitraries.js';
@@ -772,5 +773,76 @@ describe('disk action requests', () => {
       url: 'disks',
       params: { disk: path },
     });
+  });
+});
+
+describe('the disk totals', () => {
+  // the counter's chips, as their text
+  const totalsText = (wrapper) =>
+    wrapper.findAll('[aria-label="Disk totals"] .disk-total').map(textOf);
+
+  it('counts every disk, the ones in use, and their virtual sizes, whatever the search', async () => {
+    const wrapper = await page([
+      disk('/phenix/images/a.qc2', 'a.qc2', {
+        inUse: true,
+        virtualSize: '2.0 GiB',
+      }),
+      disk('/phenix/images/b.qc2', 'b.qc2', { virtualSize: '1G' }),
+      disk('/phenix/images/c.iso', 'c.iso', { virtualSize: '' }),
+    ]);
+    const want = [
+      '3 disks',
+      '1 in use',
+      '3.0 GiB total virtual size, 1 unknown',
+    ];
+    expect(totalsText(wrapper)).toEqual(want);
+
+    await wrapper.find('input[placeholder="Find a disk"]').setValue('a.qc2');
+    expect(tableRows(wrapper)).toHaveLength(1);
+    expect(totalsText(wrapper)).toEqual(want);
+  });
+
+  it('reads one disk as a disk, and shows nothing before the list loads', async () => {
+    const one = await page([disk('/phenix/images/a.qc2', 'a.qc2')]);
+    expect(totalsText(one)[0]).toBe('1 disk');
+    expect(totalsText(one)[2]).toBe('0 B total virtual size, 1 unknown');
+
+    const loading = await mountPage(Disks, {
+      route: '/disks/',
+      data: { disks: [], loaded: false },
+    });
+    expect(loading.find('[aria-label="Disk totals"]').exists()).toBe(false);
+  });
+
+  it('adds up any list of disks', () => {
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    const entry = fc.record({
+      inUse: fc.boolean(),
+      size: fc.option(
+        fc.record({ tenths: fc.nat(20000), power: fc.nat(units.length - 1) }),
+      ),
+    });
+    fc.assert(
+      fc.property(fc.array(entry, { maxLength: 30 }), (entries) => {
+        const disks = entries.map(({ inUse, size }, i) =>
+          disk(`/phenix/images/${i}.qc2`, `${i}.qc2`, {
+            inUse,
+            virtualSize: size
+              ? `${(size.tenths / 10).toFixed(1)} ${units[size.power]}`
+              : '',
+          }),
+        );
+        const known = entries.filter((e) => e.size);
+        const bytes = known.reduce(
+          (sum, { size }) => sum + (size.tenths / 10) * 1024 ** size.power,
+          0,
+        );
+        const got = diskTotals(disks);
+        expect(got.disks).toBe(entries.length);
+        expect(got.inUse).toBe(entries.filter((e) => e.inUse).length);
+        expect(got.unknownSizes).toBe(entries.length - known.length);
+        expect(got.virtualBytes).toBeCloseTo(bytes, 0);
+      }),
+    );
   });
 });

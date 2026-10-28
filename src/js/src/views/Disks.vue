@@ -229,6 +229,30 @@
     </b-modal>
     <!-- CONTENT -->
     <b-field grouped position="is-right" style="margin: 12px 0px">
+      <b-field expanded>
+        <div
+          v-if="loaded"
+          class="disk-totals"
+          role="group"
+          aria-label="Disk totals">
+          <span class="disk-total">
+            <b-icon icon="hdd" size="is-small"></b-icon>
+            <strong>{{ totals.disks }}</strong>
+            {{ pluralWord(totals.disks, 'disk') }}
+          </span>
+          <span class="disk-total">
+            <b-icon icon="play-circle" size="is-small"></b-icon>
+            <strong>{{ totals.inUse }}</strong> in use
+          </span>
+          <span class="disk-total">
+            <b-icon icon="database" size="is-small"></b-icon>
+            <strong>{{ bytesText(totals.virtualBytes) }}</strong>
+            total virtual size<template v-if="totals.unknownSizes"
+              >, {{ totals.unknownSizes }} unknown</template
+            >
+          </span>
+        </div>
+      </b-field>
       <div
         v-if="paginationNeeded"
         class="control is-flex is-align-items-center">
@@ -299,14 +323,19 @@
       <b-table-column
         field="name"
         label="Name"
-        width="27%"
+        width="30%"
         sortable
         header-class="sort-inline"
         :custom-sort="sortByLabel"
         v-slot="props">
-        <span class="disk-label">{{ diskLabel(props.row) }}</span>
-        <span v-if="props.row.outsideFilesDir" class="name-warning" @click.stop>
-          <DiskWarning reason="outside" :files-dir="filesDir" />
+        <span class="disk-name">
+          <span class="disk-label">{{ diskLabel(props.row) }}</span>
+          <span
+            v-if="props.row.outsideFilesDir"
+            class="name-warning"
+            @click.stop>
+            <DiskWarning reason="outside" :files-dir="filesDir" />
+          </span>
         </span>
       </b-table-column>
 
@@ -382,6 +411,9 @@
   import DiskWarning from '@/components/DiskWarning.vue';
   import JobProgress from '@/components/jobs/JobProgress.vue';
   import { useJobStore } from '@/utils/jobs.js';
+  import { bytesText, parseBytes } from '@/utils/bytes.js';
+  import { diskTotals } from '@/utils/diskTotals.js';
+  import { pluralWord } from '@/utils/plural.js';
   import {
     errorLine,
     notifyOutcome,
@@ -423,6 +455,8 @@
         roleAllowed,
         diskLabel,
         findDisk,
+        bytesText,
+        pluralWord,
       };
     },
     async created() {
@@ -467,6 +501,9 @@
           t.startsWith('.') ? t : `*${t}`,
         );
         return `${types.slice(0, -1).join(', ')}, and ${types.at(-1)}`;
+      },
+      totals() {
+        return diskTotals(this.disks);
       },
       emptyText() {
         if (!this.loaded) return loadingText('disks');
@@ -737,19 +774,11 @@
             this.currentUploadProgress = null;
           });
       },
-      // converts a human-readable string in IEC format to a byte count
-      toByteCount(s) {
-        // "512 B", "2.1 GiB" or minimega's "2.1G"; unknown sizes sort first
-        const match = /([\d.]+)\s*([KMGTPE])?/.exec(s ?? '');
-        if (!match) return -1;
-        const power = match[2] ? 'KMGTPE'.indexOf(match[2]) + 1 : 0;
-        return parseFloat(match[1]) * Math.pow(1024, power);
-      },
-      // sorts by a human-readable size field
+      // sorts by a human-readable size field; unknown sizes sort first
       sortBy(field) {
+        const bytes = (disk) => parseBytes(disk[field]) ?? -1;
         return (diskA, diskB, isAsc) =>
-          (this.toByteCount(diskA[field]) - this.toByteCount(diskB[field])) *
-          (isAsc ? 1 : -1);
+          (bytes(diskA) - bytes(diskB)) * (isAsc ? 1 : -1);
       },
       // sorts by the names the Name column shows
       sortByLabel(diskA, diskB, isAsc) {
@@ -898,17 +927,52 @@
     margin: 4px 0px;
   }
 
+  /* the counter beside the search box, as tall as it */
+  .disk-totals {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* whitesmoke on $background-bis (#484848) is 8.4:1 */
+  .disk-total {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.5em;
+    padding: 0 0.75rem;
+    border: 1px solid #8a8a8a;
+    border-radius: 4px;
+    background-color: #484848;
+    color: whitesmoke;
+    white-space: nowrap;
+  }
+
+  .disk-total strong {
+    color: white;
+  }
+
   .row-actions {
     display: inline-flex;
     gap: 5px;
   }
 
+  /* a long name wraps beside its warning icon, never under it */
+  .disk-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 100%;
+  }
+
   .disk-label {
+    min-width: 0;
     overflow-wrap: anywhere;
   }
 
   .name-warning {
-    margin-left: 0.35rem;
+    flex: none;
   }
 
   .button.backing-link {

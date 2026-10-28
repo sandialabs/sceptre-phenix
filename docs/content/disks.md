@@ -18,6 +18,21 @@ only images your role may see appear; see [Permissions](#permissions).
 The same images can be managed from the command line; see
 [Virtual Disk Images Management](image.md).
 
+## Disk Totals
+
+Above the table on the left, level with the `Find a disk` search box, the page
+counts:
+
+* how many disk images the list holds;
+* how many of them are [in use](#in-use), as the `In Use` column marks them;
+* the sum of their virtual sizes, in the same units as the size columns (for
+  example `1.2 TiB total virtual size`). An image whose virtual size phēnix
+  could not read is left out of the sum and counted as `unknown`.
+
+The totals cover every image in the list, not just the ones the search shows.
+A backing image is a row of its own, so it and each image built on it add their
+own virtual size.
+
 ## The Disks Table
 
 | Column | What it shows |

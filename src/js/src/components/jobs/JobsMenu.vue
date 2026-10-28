@@ -1,5 +1,6 @@
 <!--
-The header's background jobs menu: a button counting the running jobs, which
+The header's background jobs menu: a button counting the running jobs,
+colored and marked with an icon while finished jobs wait to be seen, which
 opens the recent jobs with their progress, a link to each one's experiment,
 and their cancel, download and dismiss buttons. It is a disclosure, a button
 that shows and hides a panel, rather than an ARIA menu: a menu item's
@@ -17,7 +18,8 @@ its panel aria-modal although the panel is no dialog.
       <button
         ref="trigger"
         type="button"
-        class="button is-small is-dark jobs-trigger"
+        class="button is-small jobs-trigger"
+        :class="toneClass"
         :aria-label="triggerLabel"
         :aria-expanded="open ? 'true' : 'false'"
         aria-controls="jobs-panel"
@@ -30,6 +32,12 @@ its panel aria-modal although the panel is no dialog.
           aria-hidden="true"
           >{{ jobs.active.length }}</span
         >
+        <b-icon
+          v-if="tone"
+          :icon="tone === 'failed' ? 'exclamation-circle' : 'check-circle'"
+          size="is-small"
+          class="jobs-unviewed-icon"
+          aria-hidden="true"></b-icon>
       </button>
     </div>
     <div class="dropdown-menu">
@@ -63,7 +71,12 @@ its panel aria-modal although the panel is no dialog.
 
 <script>
   import JobProgress from '@/components/jobs/JobProgress.vue';
-  import { useJobStore } from '@/utils/jobs.js';
+  import {
+    unviewedCounts,
+    unviewedText,
+    unviewedTone,
+    useJobStore,
+  } from '@/utils/jobs.js';
   import { plural } from '@/utils/plural.js';
 
   export default {
@@ -75,10 +88,29 @@ its panel aria-modal although the panel is no dialog.
       return { open: false };
     },
     computed: {
-      triggerLabel() {
-        const running = this.jobs.active.length;
-        return `Background jobs (${plural(running, 'job')} running)`;
+      counts() {
+        return unviewedCounts(this.jobs.unviewed);
       },
+      tone() {
+        return unviewedTone(this.counts);
+      },
+      toneClass() {
+        return this.tone ? `is-unviewed-${this.tone}` : 'is-dark';
+      },
+      triggerLabel() {
+        const running = `${plural(this.jobs.active.length, 'job')} running`;
+        const unviewed = unviewedText(this.counts);
+        return `Background jobs (${unviewed ? `${running}; ${unviewed}` : running})`;
+      },
+      // the IDs of the listed jobs not yet shown, which change as jobs end
+      unviewedIds() {
+        return this.jobs.unviewed.map((job) => job.id).join(' ');
+      },
+    },
+    watch: {
+      // a finished job listed while the panel is open has been seen
+      open: 'markListedViewed',
+      unviewedIds: 'markListedViewed',
     },
     mounted() {
       document.addEventListener('click', this.closeOutside, true);
@@ -87,6 +119,11 @@ its panel aria-modal although the panel is no dialog.
       document.removeEventListener('click', this.closeOutside, true);
     },
     methods: {
+      markListedViewed() {
+        if (this.open && this.jobs.unviewed.length) {
+          this.jobs.markViewed(this.jobs.unviewed);
+        }
+      },
       // Closes the panel, and with refocus puts focus back on the button
       // that opened it, as Escape does.
       close(refocus) {
@@ -112,6 +149,28 @@ its panel aria-modal although the panel is no dialog.
   .jobs-count {
     height: 1.4em;
     padding: 0 0.5em;
+  }
+
+  /* Finished jobs not yet seen: white text is 5.3:1 on this green and 7.1:1
+     on the red; the icon and the button's name say the same in words. */
+  .jobs-trigger.is-unviewed-succeeded {
+    background-color: #1e7b4b;
+    border-color: transparent;
+    color: white;
+  }
+
+  .jobs-trigger.is-unviewed-succeeded:hover {
+    background-color: #186a40;
+  }
+
+  .jobs-trigger.is-unviewed-failed {
+    background-color: #a91f3d;
+    border-color: transparent;
+    color: white;
+  }
+
+  .jobs-trigger.is-unviewed-failed:hover {
+    background-color: #8f1a34;
   }
 
   .jobs-panel {

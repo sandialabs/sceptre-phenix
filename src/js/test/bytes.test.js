@@ -2,7 +2,7 @@
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 
-import { bytesText, mebibytesText } from '@/utils/bytes.js';
+import { bytesText, mebibytesText, parseBytes } from '@/utils/bytes.js';
 import { formattingMixin } from '@/utils/formattingMixin.js';
 
 it.each([
@@ -57,6 +57,32 @@ it('writes memory to a tenth of its unit, not rounded to a whole one', () => {
       expect(
         Math.abs(Number(value) * 1024 ** unit - mebibytes),
       ).toBeLessThanOrEqual(0.05 * 1024 ** unit);
+    }),
+  );
+});
+
+it.each([
+  ['512 B', 512],
+  ['2.0 GiB', 2 * 1024 ** 3],
+  ['3G', 3 * 1024 ** 3],
+  ['1.5 KiB', 1536],
+  ['', null],
+  ['unknown', null],
+  [undefined, null],
+])('reads %j as %j bytes', (text, want) => {
+  expect(parseBytes(text)).toBe(want);
+});
+
+it('reads back any byte count it writes, to a tenth of its unit', () => {
+  fc.assert(
+    fc.property(fc.maxSafeNat(), (bytes) => {
+      const text = bytesText(bytes);
+      const unit = ['B', 'KiB', 'MiB', 'GiB', 'TiB'].indexOf(
+        text.split(' ')[1],
+      );
+      expect(Math.abs(parseBytes(text) - bytes)).toBeLessThanOrEqual(
+        0.05 * 1024 ** unit,
+      );
     }),
   );
 });
