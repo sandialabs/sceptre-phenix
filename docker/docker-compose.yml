@@ -25,6 +25,8 @@ services:
     container_name: phenix
     privileged: true
     pid: host
+    environment:
+      PHENIX_COLOR: "on" # enables colors on docker logs
     <<: *common
     volumes:
       - /dev:/dev
@@ -35,10 +37,18 @@ services:
       - /phenix:/phenix:shared
       - ./tmp/minimega:/tmp/minimega
       - ./tmp/phenix:/tmp/phenix
+    # wait for minimega to answer, so phenix ui does not start without it
     depends_on:
-      - minimega
+      minimega:
+        condition: service_healthy
+    # liveness of phenix ui: process up and store readable (the image sets no
+    # HEALTHCHECK; `phenix healthcheck --ready` also checks minimega)
     healthcheck:
-      test: phenix version
+      test: ["CMD", "phenix", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
   minimega:
     image: ghcr.io/sandia-minimega/minimega:latest
     container_name: minimega
@@ -56,8 +66,12 @@ services:
       - /phenix:/phenix:shared
       - ./tmp/minimega:/tmp/minimega
       - ./tmp/phenix:/tmp/phenix
+    # `.record false` keeps the probe out of minimega's command history
     healthcheck:
-      test: minimega -e version
+      test: ["CMD", "minimega", "-e", ".record", "false", "version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     environment:
       MM_BASE: /tmp/minimega
       MM_FILEPATH: /phenix/images

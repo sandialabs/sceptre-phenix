@@ -1,104 +1,99 @@
-// @vitest-environment happy-dom
-// The Change Optical Disc dialog keeps the VM name in its title until it
-// has finished closing, and only then forgets the VM and the disc.
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import {
-  RouterLinkStub,
-  enableAutoUnmount,
-  flushPromises,
-  mount,
-} from '@vue/test-utils';
-import Buefy from 'buefy';
-import axiosInstance from '@/utils/axios.js';
+// The CD-ROM picker keeps the VM name in its title until it has finished
+// closing, and only then forgets the VM and the disc.
+import { flushPromises } from '@vue/test-utils';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+
+const { axios, modules, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/notify.js', modules.notify);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/utils/pageLoader.js', modules.pageLoader);
+
+import { clearPageCache } from '@/utils/pageCache.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
+import { disk } from './helpers/fixtures.js';
+import { mountPage, textOf } from './helpers/mount.js';
 
-vi.mock('@/utils/axios.js', () => ({
-  default: {
-    get: vi.fn(() => Promise.reject(new Error('no backend'))),
-    post: vi.fn(() => Promise.resolve({})),
-    delete: vi.fn(() => Promise.resolve({})),
-  },
-}));
-vi.mock('@/utils/errorNotif', () => ({ useErrorNotification: vi.fn() }));
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: vi.fn(),
-  removeWsHandler: vi.fn(),
-  sendWsMsg: vi.fn(),
-}));
-vi.mock('@/store', () => ({
-  usePhenixStore: () => ({ username: 'alice', role: null, features: [] }),
-}));
+const closed = {
+  active: false,
+  vmName: null,
+  current: '',
+  disc: null,
+  isos: [],
+  loading: false,
+  error: null,
+};
 
-enableAutoUnmount(afterEach);
-
-function mountView() {
-  return mount(RunningExperiment, {
-    attachTo: document.body,
-    global: {
-      plugins: [Buefy],
-      // The real transition, so that the dialog leaves as in the browser.
-      stubs: { 'router-link': RouterLinkStub, transition: false },
-      mocks: { $route: { params: { id: 'exp' } } },
-    },
+// The exp page with the real transitions, so that the picker leaves as in
+// the browser.
+function openPage() {
+  axios.get.mockRejectedValue(new Error('no backend'));
+  return mountPage(RunningExperiment, {
+    route: '/experiment/exp',
+    data: { experiment: { name: 'exp', running: true, vms: [] } },
+    stubs: { transition: false },
   });
 }
 
-// Opens the dialog for vm-1, and resolves to its modal card.
-async function openDialog(wrapper) {
-  wrapper.vm.opticalDiscModal.vmName = 'vm-1';
-  wrapper.vm.opticalDiscModal.disc = '/phenix/images/tools.iso';
-  wrapper.vm.opticalDiscModal.active = true;
+// Opens the picker for web, and resolves to its modal card.
+async function openPicker(page) {
+  Object.assign(page.vm.opticalDiscModal, {
+    vmName: 'web',
+    disc: '/images/tools.iso',
+    isos: [disk('/images/tools.iso', 'tools.iso', { kind: 'ISO' })],
+    active: true,
+  });
   await flushPromises();
 
-  return wrapper
-    .findAll('.modal-card')
-    .find((card) => card.text().includes('Change Optical Disc for'));
+  return page.get('.optical-disc-card');
 }
 
 const button = (card, text) =>
-  card.findAll('button').find((b) => b.text() === text);
+  card.findAll('footer button').find((b) => textOf(b) === text);
 
-describe('RunningExperiment Change Optical Disc dialog', () => {
+describe('RunningExperiment CD-ROM picker', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    resetMocks();
+    clearPageCache();
   });
 
-  test.each(['Cancel', 'insert optical disc'])(
-    '%s keeps the title until the dialog has left',
+  test.each(['Cancel', 'Insert'])(
+    '%s keeps the title until the picker has left',
     async (label) => {
-      const wrapper = mountView();
-      await flushPromises();
-      const card = await openDialog(wrapper);
+      axios.post.mockResolvedValue({});
+      const page = await openPage();
+      const card = await openPicker(page);
 
-      expect(card.get('.modal-card-title').text()).toBe(
-        'Change Optical Disc for vm-1',
+      expect(textOf(card.get('.modal-card-title'))).toBe(
+        'Insert a CD-ROM for web',
       );
 
       await button(card, label).trigger('click');
 
-      // The dialog is closing. Its title still names the VM.
-      expect(wrapper.vm.opticalDiscModal.active).toBe(false);
-      expect(wrapper.vm.opticalDiscModal.vmName).toBe('vm-1');
+      // The picker is closing. Its title still names the VM.
+      expect(page.vm.opticalDiscModal.active).toBe(false);
+      expect(page.vm.opticalDiscModal.vmName).toBe('web');
 
-      await vi.waitFor(() =>
-        expect(wrapper.vm.opticalDiscModal).toEqual({
-          active: false,
-          disc: '',
-          vmName: null,
-        }),
-      );
+      await vi.waitFor(() => expect(page.vm.opticalDiscModal).toEqual(closed));
     },
   );
 
   test('insert sends the chosen disc of the VM', async () => {
-    const wrapper = mountView();
-    await flushPromises();
-    const card = await openDialog(wrapper);
+    axios.post.mockResolvedValue({});
+    const page = await openPage();
+    const card = await openPicker(page);
 
-    await button(card, 'insert optical disc').trigger('click');
+    await button(card, 'Insert').trigger('click');
 
-    expect(axiosInstance.post).toHaveBeenCalledWith(
-      'experiments/exp/vms/vm-1/cdrom?isoPath=/phenix/images/tools.iso',
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/exp/vms/web/cdrom',
+      null,
+      { params: { isoPath: '/images/tools.iso' } },
     );
   });
 });

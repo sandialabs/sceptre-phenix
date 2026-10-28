@@ -1738,9 +1738,9 @@ test(
   async ({ page, builder, request, tracker, issues }, testInfo) => {
     const name = uniqueName(testInfo, 'node');
     // A plain device's template, as New template makes it, named and
-    // described, its hostname node-a.
+    // described, its hostname node-a, and a spare that stays in the library.
     const {
-      ids: [id],
+      ids: [id, spare],
     } = await seedTemplates(request, tracker, [
       {
         name,
@@ -1754,6 +1754,11 @@ test(
             network: { interfaces: [] },
           },
         },
+      },
+      {
+        name: uniqueName(testInfo, 'spare'),
+        description: 'Spare words',
+        device: unitDevice('spare'),
       },
     ]);
     const draft = await builder.seedDraft(
@@ -1878,6 +1883,8 @@ test(
       });
       await expect(library.card(id)).toHaveCount(0);
       await expect(builder).toHaveAnnounced(`Deleted template ${name}.`);
+      // The spare keeps a row in the list, so Select all takes focus.
+      await expect.soft(library.card(spare)).toBeVisible();
       await expect(library.all).toBeFocused();
 
       const [gone] = await listedTemplates(request, [id]);

@@ -4,7 +4,7 @@
 
 import { reactive, watch } from 'vue';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 import fc from 'fast-check';
 
 import BuilderToolbar from '@/components/builder/BuilderToolbar.vue';
@@ -16,8 +16,6 @@ import { memoryStorage } from './fixtures.js';
 const held = vi.hoisted(() => ({ store: null }));
 
 vi.mock('@/builder/store.js', () => ({ useBuilderStore: () => held.store }));
-
-enableAutoUnmount(afterEach);
 
 // The store's state and getters the toolbar reads, and its actions as spies.
 function fakeStore(overrides = {}) {

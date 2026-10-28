@@ -55,6 +55,9 @@ const (
 	pngHeaderBytes = 13
 	pngSideBytes   = 4
 	pngColorTypeAt = 9
+	// maxIconPixelBytes bounds the inflated pixels of an icon: 8 bytes a pixel
+	// and a filter byte a row, twice over to allow for interlacing.
+	maxIconPixelBytes = 2 * MaxIconPixels * (8*MaxIconPixels + 1)
 )
 
 // The color types that take a palette or a transparent color: grayscale
@@ -181,8 +184,13 @@ func checkPixelData(joined []byte) error {
 
 	defer func() { _ = stream.Close() }()
 
-	if _, err := io.Copy(io.Discard, stream); err != nil {
+	inflated, err := io.Copy(io.Discard, io.LimitReader(stream, maxIconPixelBytes+1))
+	if err != nil {
 		return errUndecodable(err)
+	}
+
+	if inflated > maxIconPixelBytes {
+		return iconErrorf("the PNG holds too much pixel data")
 	}
 
 	if source.Len() > 0 {
@@ -313,7 +321,7 @@ func walkIconChunks(data []byte) (int, int, []byte, error) {
 		length := binary.BigEndian.Uint32(rest)
 		kind := string(rest[pngChunkLength : pngChunkLength+pngChunkType])
 
-		if uint64(length) > uint64(len(rest)-pngChunkOverhead) {
+		if int64(length) > int64(len(rest)-pngChunkOverhead) {
 			return 0, 0, nil, errCutShort()
 		}
 

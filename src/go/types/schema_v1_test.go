@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+	"pgregory.net/rapid"
 
+	"phenix/api/image"
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
@@ -13,9 +15,9 @@ import (
 
 // v1KindSpecs are representative specs of the kinds stored at v1. Each wants
 // the outcome the v2.yaml definitions gave when config validation used them
-// for every kind. They cover the places where the earlier v1.yaml definitions
-// differed, so validating a v1 config against its own schema must keep these
-// outcomes.
+// for every kind, except that includeTopologies and schedules are declared.
+// They cover the places where the earlier v1.yaml definitions differed, so
+// validating a v1 config against its own schema must keep these outcomes.
 var v1KindSpecs = []struct { //nolint:gochecknoglobals // test table
 	name  string
 	kind  string
@@ -28,8 +30,9 @@ nodes:
 - type: VirtualMachine
   general: {hostname: host-1}
   hardware: {os_type: linux, drives: [{image: ubuntu.qc2}]}`, true},
-	{"topology with only includeTopologies", "Topology", `{includeTopologies: [base]}`, false},
-	{"topology with includeTopologies of any shape", "Topology", `{includeTopologies: [{name: x}], nodes: []}`, true},
+	{"topology with only includeTopologies", "Topology", `{includeTopologies: [base]}`, true},
+	{"topology with a single includeTopologies name", "Topology", `{includeTopologies: base, nodes: []}`, true},
+	{"topology with includeTopologies of mappings", "Topology", `{includeTopologies: [{name: x}], nodes: []}`, false},
 	{"topology with a node missing hardware", "Topology", `
 nodes:
 - type: VirtualMachine
@@ -130,10 +133,10 @@ nodes:
 topology: {nodes: []}
 scenario: null
 vlans: {aliases: null, min: 100, max: 200}
-schedule: null`, true},
+schedules: null`, true},
 	{"experiment with null vlans", "Experiment", `{topology: {nodes: []}, vlans: null}`, true},
 	{"experiment with a non-integer VLAN alias", "Experiment", `{topology: {nodes: []}, vlans: {aliases: {MGMT: x}}}`, false},
-	{"experiment with a non-string schedule", "Experiment", `{topology: {nodes: []}, schedule: {host-1: 1}}`, false},
+	{"experiment with a non-string schedule", "Experiment", `{topology: {nodes: []}, schedules: {host-1: 1}}`, false},
 	{"experiment with a scenario", "Experiment", `
 topology: {nodes: []}
 scenario:
@@ -166,6 +169,16 @@ script_order: null
 scripts: null`, true},
 	{"image without a size", "Image", `
 {format: qcow2, mirror: http://us.archive.ubuntu.com/ubuntu/, release: focal, variant: minbase}`, false},
+	{"image with a decimal size", "Image", `
+{format: qcow2, mirror: m, release: focal, size: 1.5G, variant: minbase}`, true},
+	{"image with a size in megabytes", "Image", `
+{format: qcow2, mirror: m, release: focal, size: 500M, variant: minbase}`, true},
+	{"image with a size without a unit", "Image", `
+{format: qcow2, mirror: m, release: focal, size: "10", variant: minbase}`, false},
+	{"image with a lower-case size unit", "Image", `
+{format: qcow2, mirror: m, release: focal, size: 10g, variant: minbase}`, false},
+	{"image with a zero size", "Image", `
+{format: qcow2, mirror: m, release: focal, size: 0.0G, variant: minbase}`, false},
 	{"image with a non-string script", "Image", `
 {format: qcow2, mirror: m, release: focal, size: 10G, variant: minbase, scripts: {POSTBUILD: 1}}`, false},
 	{"image with a non-boolean compress", "Image", `
@@ -219,4 +232,26 @@ func TestV1SchemasKeepValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The Image schema accepts a size exactly when image.ValidateSize does.
+func TestV1ImageSizeMatchesValidateSize(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		size := rapid.StringOfN(rapid.SampledFrom([]rune("00123456789..MGmgT -")), 0, 8, -1).Draw(t, "size")
+
+		c := store.Config{
+			Version:  store.APIGroup + "/v1",
+			Kind:     "Image",
+			Metadata: store.ConfigMetadata{Name: "fixture"},
+			Spec:     map[string]any{"format": "qcow2", "mirror": "m", "release": "focal", "size": size, "variant": "minbase"},
+		}
+
+		schemaErr := types.ValidateConfigSpec(c)
+		sizeErr := image.ValidateSize(size)
+
+		if (schemaErr == nil) != (sizeErr == nil) {
+			t.Fatalf("ValidateConfigSpec(size %q) = %v, want valid = %t as ValidateSize = %v",
+				size, schemaErr, sizeErr == nil, sizeErr)
+		}
+	})
 }

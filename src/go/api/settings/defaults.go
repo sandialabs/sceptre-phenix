@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/activeshadow/structs"
+	"github.com/mitchellh/mapstructure"
 
 	"phenix/store"
 	"phenix/types"
@@ -14,15 +15,16 @@ import (
 
 const (
 	DefaultPasswordMinLength = 8
-	DefaultLogMaxFileSize    = 100
-	DefaultLogMaxFileAge     = 90
 	DefaultTimeoutMin        = 30
 	DefaultWarningMin        = 3
 	settingCategoryPassword  = "Password"
-	settingCategoryLogging   = "Logging"
 	settingCategoryTimeout   = "Timeout"
 	settingAPIVersion        = "phenix.sandia.gov/v2"
 	settingKind              = "Setting"
+
+	// legacyCategoryLogging is the category of the logging settings that
+	// older versions stored. The runtime settings hold them now.
+	legacyCategoryLogging = "Logging"
 )
 
 var DefaultSettings = []v2.Setting{ //nolint:gochecknoglobals // global constant
@@ -55,15 +57,16 @@ var DefaultSettings = []v2.Setting{ //nolint:gochecknoglobals // global constant
 	{Category: settingCategoryTimeout, Name: "Enabled", Type: v2.SettingValueBool, Value: strconv.FormatBool(false)},
 	{Category: settingCategoryTimeout, Name: "TimeoutMin", Type: v2.SettingValueFloat, Value: formatFloat(DefaultTimeoutMin)},
 	{Category: settingCategoryTimeout, Name: "WarningMin", Type: v2.SettingValueFloat, Value: formatFloat(DefaultWarningMin)},
-
-	{Category: settingCategoryLogging, Name: "MaxFileRotations", Type: v2.SettingValueInt, Value: formatInt(0)},
-	{Category: settingCategoryLogging, Name: "MaxFileSize", Type: v2.SettingValueInt, Value: formatInt(DefaultLogMaxFileSize)},
-	{Category: settingCategoryLogging, Name: "MaxFileAge", Type: v2.SettingValueInt, Value: formatInt(DefaultLogMaxFileAge)},
 }
 
+// SetDefaults stores each default setting that the store does not hold, and
+// deletes the Logging settings that older versions stored.
 func SetDefaults() error {
+	if err := deleteLegacySettings(); err != nil {
+		return err
+	}
+
 	for _, spec := range DefaultSettings {
-		// create ignores if the setting exists already
 		settingName := GetStoreName(spec.Category, spec.Name)
 
 		c := store.Config{ //nolint:exhaustruct // partial initialization
@@ -76,8 +79,31 @@ func SetDefaults() error {
 		}
 
 		err := store.Create(&c)
-		if err != nil {
+		if err != nil && !errors.Is(err, store.ErrExist) {
 			return fmt.Errorf("storing setting %s: %w", settingName, err)
+		}
+	}
+
+	return nil
+}
+
+// deleteLegacySettings deletes the settings of legacyCategoryLogging from the
+// store.
+func deleteLegacySettings() error {
+	configs, err := store.List(settingKind)
+	if err != nil {
+		return fmt.Errorf("getting list of settings from store: %w", err)
+	}
+
+	for _, c := range configs {
+		var spec v2.Setting
+		if err := mapstructure.Decode(c.Spec, &spec); err != nil || spec.Category != legacyCategoryLogging {
+			continue
+		}
+
+		err := store.Delete(&c)
+		if err != nil && !errors.Is(err, store.ErrNotExist) {
+			return fmt.Errorf("deleting setting %s: %w", c.Metadata.Name, err)
 		}
 	}
 

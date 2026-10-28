@@ -3,7 +3,7 @@ name: Packages
 # Builds the phenix container images and Debian package. A push to any branch
 # publishes ghcr.io/<owner>/<repo>/phenix:<branch>; pull requests only build
 # and test. A v* tag push, or a manual run given a tag, publishes the release
-# images and attaches the .deb to the GitHub release.
+# images and attaches the .deb and SBOMs to the GitHub release.
 on:
   # GitHub doesn't evaluate path filters for tag pushes, so releases always
   # build.
@@ -18,12 +18,16 @@ on:
       - 'src/js/test/**'
       - 'CODEOWNERS'
       - '.github/workflows/bug-report-versions.yml'
+      - '.github/workflows/cancel-closed-pr.yml'
       - '.github/workflows/ci.yml'
       - '.github/workflows/docs.yml'
       - '.github/workflows/examples.yml'
       - '.github/workflows/frontend.yml'
+      - '.github/workflows/fuzz.yml'
       - '.github/workflows/lint.yml'
       - '.github/workflows/podman.yml'
+      - '.github/workflows/security.yml'
+      - '.github/workflows/stress.yml'
   # Pull request code changes are compiled and tested by the other workflows,
   # so only changes to how the packages are built rebuild them here.
   pull_request:
@@ -159,7 +163,7 @@ jobs:
           docker run --rm "$IMAGE" phenix version | grep -F "(commit ${SHA})"
           docker run --rm "$IMAGE" phenix help > /dev/null
           docker run --rm "$IMAGE" sh -c \
-            'glow --version && command -v filebeat && test -x /usr/bin/vmdb2 && ls /usr/local/bin/phenix-app-* /opt/phenix/downloads/tunneler/'
+            'glow --version && command -v filebeat && test -x /usr/bin/vmdb2 && test -f /opt/phenix/webshark/index.html && ls /usr/local/bin/phenix-app-* /opt/phenix/downloads/tunneler/'
           docker run --rm "$IMAGE" python3 -c 'import minimega, phenix_apps'
           docker images "$IMAGE"
 
@@ -195,6 +199,7 @@ jobs:
             PHENIX_IMG=${{ fromJSON(steps.meta.outputs.json).tags[0] }}
             PHENIX_BRANCH=${{ env.RELEASE_TAG || github.head_ref || github.ref_name }}
           push: ${{ env.PUSH == 'true' }}
+          load: true
           tags: ${{ steps.meta-jit.outputs.tags }}
 
       - name: Build Debian package
@@ -224,8 +229,73 @@ jobs:
           path: build/deb/*.deb
           retention-days: 3
 
+      # Report-only, as in security.yml: a finding never fails the build.
+      - name: Scan container image
+        id: scan
+        continue-on-error: true
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          fail-build: false
+          output-format: json
+          output-file: build/grype-phenix.json
+      - name: Report image vulnerabilities
+        if: steps.scan.outcome == 'success'
+        continue-on-error: true
+        run: scripts/vuln-report.sh grype build/grype-phenix.json "phenix image (grype)"
+
+      # SPDX SBOMs from syft, as the loaded images carry no BuildKit attestations;
+      # a release attaches them and fails without them, other builds keep them as an artifact.
+      - name: SBOM of the phenix image
+        continue-on-error: ${{ !env.RELEASE_TAG }}
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          format: spdx-json
+          output-file: build/sbom/phenix-image.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: SBOM of the JIT UI image
+        continue-on-error: ${{ !env.RELEASE_TAG }}
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ fromJSON(steps.meta-jit.outputs.json).tags[0] }}
+          format: spdx-json
+          output-file: build/sbom/phenix-jit-ui-image.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Unpack the Debian package
+        id: deb
+        continue-on-error: ${{ !env.RELEASE_TAG }}
+        run: |
+          debs=(build/deb/*.deb)
+          if [ "${#debs[@]}" -ne 1 ]; then
+            echo "expected one .deb, found: ${debs[*]}" >&2
+            exit 1
+          fi
+          name="$(basename "${debs[0]}" .deb)"
+          dpkg-deb -x "${debs[0]}" "build/sbom-root/${name}"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+      - name: SBOM of the Debian package
+        if: steps.deb.outcome == 'success'
+        continue-on-error: ${{ !env.RELEASE_TAG }}
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: build/sbom-root/${{ steps.deb.outputs.name }}
+          format: spdx-json
+          output-file: build/sbom/${{ steps.deb.outputs.name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phenix-sbom
+          path: build/sbom/*.spdx.json
+          if-no-files-found: ${{ env.RELEASE_TAG && 'error' || 'warn' }}
+          retention-days: 14
+
   release:
-    name: Attach Debian package to the release
+    name: Attach Debian package and SBOMs to the release
     needs: build
     if: inputs.tag || github.ref_type == 'tag'
     runs-on: ubuntu-latest
@@ -235,12 +305,15 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: phenix-deb-package
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phenix-sbom
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" ./*.deb --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$RELEASE_TAG" ./*.deb ./*.spdx.json --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$RELEASE_TAG" ./*.deb --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
+            gh release create "$RELEASE_TAG" ./*.deb ./*.spdx.json --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
           fi

@@ -15,8 +15,7 @@ func (p Policy) resourceNameAllowed(name string) bool {
 	var allowed bool
 
 	for _, n := range p.Spec.ResourceNames {
-		negate := strings.HasPrefix(n, "!")
-		n = strings.Replace(n, "!", "", 1)
+		n, negate := strings.CutPrefix(n, "!")
 
 		if matched, _ := filepath.Match(n, name); matched {
 			if negate {

@@ -3,11 +3,9 @@
 // shown tab is scrolled into view when the page mounts and when it changes.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import BuilderDrafts from '@/components/builder/BuilderDrafts.vue';
-
-enableAutoUnmount(afterEach);
 
 let scrolled;
 

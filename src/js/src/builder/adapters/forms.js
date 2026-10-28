@@ -392,7 +392,9 @@ const SPEC_MORE = [
   'commands',
   'delay',
   'injections',
+  'deletions',
   'advanced',
+  'overrides',
   'labels',
   'annotations',
 ];

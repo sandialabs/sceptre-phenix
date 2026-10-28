@@ -252,7 +252,7 @@ spec:
 | `deployMode` | the server's `deploy-mode` | Which minimega VMs to deploy: `all`, `no-headnode` or `only-headnode`. |
 | `useGREMesh` | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. |
 | `vlanRange.min`, `vlanRange.max` | `0` | The lowest and highest VLAN IDs minimega may assign. `0` leaves that end unset. |
-| `defaultBridge` | `phenix` | The bridge VMs connect to by default: at most 15 characters and, unless it's `phenix`, used by no other experiment. |
+| `defaultBridge` | `phenix` | The bridge VMs connect to by default: at most 15 ASCII letters, digits, `_`, `@`, `.`, or `-` and, unless it's `phenix`, used by no other experiment. |
 
 ### Schema
 
@@ -283,6 +283,9 @@ branch:
 
 It is also an error when `auto.create` names an existing experiment that
 isn't mapped to the branch.
+
+A `restart` checks the disks of its start before it stops the experiment. If
+the start would fail, the apply fails, and the experiment continues to run.
 
 ## Dry Run
 

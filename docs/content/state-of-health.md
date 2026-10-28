@@ -7,23 +7,20 @@ collect the experiment health state data. See the [command and control](#command
 
 ## User Interface
 
-SoH information is presented in the UI in three separate tabs. You can access
+SoH information is presented in the UI in two separate tabs. You can access
 the information by clicking the SoH button from the Experiments or Running
-Experiment components.
+Experiment components. The `SoH` tab in the navbar summarizes
+every experiment in one table.
 
 Button available on the experiments table.
 
-![screenshot](images/exps_soh.png){: width=100 .center}
-
-Button available in running experiment.
-
-![screenshot](images/exp_run.png){: width=200 .center}
+![The Actions column of the Experiments table, where each row has start, stop, delete, State of Health heartbeat and SCORCH fire buttons, grayed out where they do not apply.](images/exps_soh.png){: width=200 .center}
 
 ### Topology Graph
 
 This tab displays a network graph of the running experiment.
 
-![screenshot](images/net_graph.png){: width=800 .center}
+![State of Health topology graph in the Force layout, with a status legend, VM and VLAN counts, filter radio buttons, and VMs colored by state around VLAN segment nodes.](images/soh_graph.png){: width=800 .center}
 
 The color of the node is based on the condition of the corresponding VM and
 could be:
@@ -32,29 +29,43 @@ could be:
 * `Not running` (part of the experiment, but currently paused)
 * `Not booted` (part of the experiment, but marked as Do Not Boot)
 * `Not deployed` (part of the experiment, but flushed from minimega)
-* `External` (an [external node](configuration.md#external-nodes), i.e.
+* `External / HIL` (an [external node](configuration.md#external-nodes), i.e.
   hardware in the loop, not deployed by minimega)
-* `Experiment stopped`
-
-![screenshot](images/graph_legend.png){: width=800 .center}
 
 It is also possible to filter the graph based on nodes that are either:
 
-* `Running`,
+* `All` (the default)
+* `Running`
 * `Not running`
 * `Not booted`
 * `Not deployed`
+* `External / HIL`
 
-!!! warning
-    There is no filter option for `External` nodes. Applying any of the filters
-    above will hide external nodes from the graph, since they don't match any
-    of the filterable statuses. Use `Refresh Network` to clear the filter and
-    see external nodes again.
+The `Refresh Network` button reloads the graph data from the server. It keeps
+the filter you picked.
 
-The `Refresh Network` button will reset the filter, showing all nodes.
+The `Run SOH` button triggers a new SoH run. To get the latest server-side SoH
+data without a new run, use the `Refresh Network` button.
 
-The `Manual Refresh` button will request the latest server-side SoH data and
-update the three tabs.
+Before the first SoH run, a note beside the buttons tells you why there are no
+results:
+
+* The soh app waits for its first run, which starts after post-start.
+* The soh app is running its first checks.
+* The scenario sets `disabled: true` on the soh app, so the app did not run at
+  post-start. The `Run SOH` button is available. Use it to start the app
+  manually.
+
+The `SoH` tab shows the same information for each experiment in
+its `Last Check` column and on its run buttons.
+
+The graph opens in the `VLAN groups` layout (the `VLANs` button), which puts
+the hosts in a box for each VLAN. Use the layout buttons above the graph to
+select a different layout. The page remembers the layout that you select. The
+graph uses the `Force` layout when the `VLAN groups` layout cannot draw it: the
+graph has more than 300 nodes, or the layout fails. A note above the graph
+tells you when the graph is too large for the layout. When a layout that you
+selected fails, the page does not remember it.
 
 Hovering over a node in the graph will cause it to expand to show what operating
 system the node is running. An orange border around a node is indicative of the
@@ -63,17 +74,17 @@ processes are missing, or the node cannot reach other nodes on the network).
 Other virtual systems will also be represented accordingly (e.g., a printer or
 firewall).
 
-![screenshot](images/linux.png){: width=800 .center}
+![Graph node hovered to show its Linux server icon and name, ringed in orange because a check failed.](images/linux.png){: width=800 .center}
 
 Clicking on the node with an orange border will produce a details modal with the
 current error reporting.
 
-![screenshot](images/soh_log_details.png){: width=800 .center}
+![server VM Details dialog reporting a CPU load of 0.26 and a listener on port 465 that is not listening.](images/soh_log_details.png){: width=800 .center}
 
 If there are no errors to report and command and control is enabled, the details
 modal will only show the current CPU load.
 
-![screenshot](images/soh_details.png){: width=800 .center}
+![client2 VM Details dialog reporting only a CPU load of 0.18.](images/soh_details.png){: width=800 .center}
 
 Note the green button in the lower right corner of the modal; this will provide
 access to the VNC for any running VM. When the VM is not running, access to the
@@ -81,16 +92,16 @@ VNC will be disabled. Finally, if there is no SoH information to report on a
 given VM, it will be noted in the details modal. The following screenshot is an
 example of no SoH information with the VNC button disabled.
 
-![screenshot](images/soh_no_details.png){: width=800 .center}
+![VM Details dialog saying there is no state of health data available for the VM.](images/soh_no_details.png){: width=800 .center}
 
 ### External Devices
 
 Experiments that include hardware-in-the-loop or other devices not deployed by
 minimega can still represent them in the topology graph by adding them to the
 topology as [external nodes](configuration.md#external-nodes) (`external:
-true`). External nodes show up in the graph with the `External` status color
-(see the legend above) and, when hovered, still show which OS type/icon was
-configured for them.
+true`). External nodes show up in the graph with the `External / HIL` status
+color (see the legend above) and, when hovered, still show which OS type/icon
+was configured for them.
 
 Because external nodes don't run `miniccc`, they're excluded from the
 automated command-and-control-based checks described in [Command and
@@ -129,13 +140,13 @@ traffic between nodes.
 This is an example chord graph of a Protonuke server with two clients; one of
 which is requesting content at a delayed interval (therefore less traffic flow).
 
-![screenshot](images/chord.png){: width=800 .center}
+![Network Volume chord diagram for the icmp-test experiment, where 192.168.100.100 carries almost all of the traffic.](images/chord.png){: width=800 .center}
 
 If you hover over traffic flow, a tooltip will appear providing additional
 details. (In this screenshot, the mouse is hovering over the traffic for IP
 `192.168.100.1`.)
 
-![screenshot](images/chord_tooltip.png){: width=800 .center}
+![Chord diagram tooltip giving the traffic volume in each direction between 192.168.100.1 and 192.168.100.100.](images/chord_tooltip.png){: width=800 .center}
 
 ## Configuration Options
 
@@ -163,14 +174,19 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   wait before initiating checks at the experiment starts. This can be useful
   when some processes are not healthy immediately at experiment start. This
   only delays SoH when it first runs at the experiment start. It will not delay
-  SoH when run manually later by clicking the 'Run SoH' button in the UI or
+  SoH when run manually later by clicking the `Run SOH` button in the UI or
   running `phenix exp trigger running` (or the deprecated `trigger-running`
   command) from the command line. The default is no delay.
 
 * `hostCustomTests`: If present, a map of custom tests to run on the given
   hosts.
 
-    * `name`: name of test. Used as script name to be sent to the host.
+    * `name`: name of test. Used as script name to be sent to the host. The
+      script name is `<host>-<name>`. SoH replaces each run of white space with
+      one `_`. Then it replaces each character other than a letter, a digit,
+      `-`, `_`, or `.` with `_`. If this changes the name, SoH adds `-` and an
+      8-character hash, for example `web-db_check-420ef7c9`. Thus two test
+      names on one host do not use the same script file.
 
     * `testScript`: the actual script (can be multiple lines) to be executed
       using the specified `executor`.
@@ -243,10 +259,16 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 * `hostListeners`: a map of VMs, each specifying a list of listening ports to
   check for within the VM. If the port can be listening on any interface, the
   form `:80` can be used. If the port should be listening on a specific
-  interface, the form `192.168.1.10:80` can be used. The default is `nil`.
+  interface, the form `192.168.1.10:80` can be used. Each address and port can
+  contain only letters, digits, and the characters `-_.%*/`. The default is
+  `nil`.
 
 * `hostProcesses`: a map of VMs, each specifying a list of process names to
-  check for within the VM. The default is `nil`.
+  check for within the VM. On Linux, each entry is a `pgrep -f` pattern, which
+  matches the full command line, for example `python3 server.py`. On Windows,
+  each entry is a `Get-Process` name. The check passes when the VM returns one
+  or more process IDs. Other output, for example a `pgrep` error, makes the
+  check fail with an error. The default is `nil`.
 
 * `hostsToUseUUIDForC2Active`: a list of topology hostnames to use the minimega
   VM UUID for when determining if their cc agent is active. This is useful for
@@ -291,7 +313,7 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
         * `ipAddress`: the IP address to use for the Elastic/Kibana server added
           to the experiment topology. The network interface this IP address is
           used for will be added to the experiment VLAN specified by `vlan`. The
-          IP address should be specified in CIDR notation. There should also be
+          IP address must be an IPv4 address in CIDR notation. There should also be
           sufficient IP addresses after the one specified here to be assigned to
           each of the Packetbeat monitor VMs that will be deployed, as the IP
           addresses assigned to them on the VLAN specified by `vlan` will
@@ -313,7 +335,8 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 
 * `skipHosts`: a list of VM hostnames and/or disk image names to skip health
   monitoring for. For disk image names, any host using the disk image as its
-  primary image will be skipped. The default is `nil`.
+  primary image will be skipped. A disk image name ends in `.qc2`, `.qcow2`,
+  or `.qcow`. The default is `nil`.
 
 * `testReachability`: reachability testing is the process of making sure each VM
   can reach other VMs within the experiment over the network. See [Network
@@ -502,9 +525,9 @@ Current tests executed on Linux VMs include the following:
 * `ip addr`
 * `ip route`
 * `ping -c 1 <ip>`
-* `stat -c present -- '<path>'`
-* `systemctl is-active -- '<service>'`
-* `pgrep -f <process>`
+* `stat -c present -- <path>`
+* `systemctl is-active -- <service>`
+* `pgrep -f -- <process>`
 * `ss -lntu state all 'sport = <port>'`
 * `cat /proc/loadavg`
 
@@ -515,6 +538,16 @@ Corresponding tests for Windows VMs include the following:
 * `ping -n 1 <ip>`
 * `powershell -NoProfile -Command "if (Test-Path -LiteralPath '<path>' -PathType Leaf) { 'present' }"`
 * `powershell -NoProfile -Command "if ((Get-Service -Name '<service>' -ErrorAction SilentlyContinue).Status -eq 'Running') { 'active' }"`
-* `powershell -command "Get-Process <process> -ErrorAction SilentlyContinue"`
-* `powershell -command "netstat -an | select-string -pattern 'listening' | select-string -pattern '<port>'"`
-* `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select Average"`
+* `powershell -NoProfile -Command "Get-Process -Name '<process>' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`
+* `powershell -NoProfile -Command "@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue; Get-NetUDPEndpoint -ErrorAction SilentlyContinue) | Where-Object LocalPort -eq <port> | Select-Object -First 1"`
+* `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select -ExpandProperty Average"`
+
+SoH quotes each value, so that the VM gets the value as one argument. A path,
+service, container, or process value can contain spaces and quotes. minimega
+expands environment variables in each `cc exec` argument, also in quoted text.
+Thus, SoH does not send a check if its value has a `$` before a letter, a
+digit, `_`, `{`, or one of `*#$@!?-` (for example, `$HOME`). Other uses of `$`
+are permitted, for example at the end of a process pattern. minimega also
+replaces a value that starts with `file:`, `http:`, `https:`, or `tar:`, so
+SoH does not send that check. For each check that SoH does not send, the
+check result shows an error.

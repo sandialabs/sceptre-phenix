@@ -6,6 +6,7 @@ import (
 
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
+	"phenix/util/plog"
 )
 
 const maxUsageRatio = 1.0
@@ -62,7 +63,12 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 				memUsage := float64(totalMEM+host.MemCommit) / float64(host.MemTotal)
 
 				if cpuUsage > maxUsageRatio || memUsage > maxUsageRatio {
-					fmt.Printf("Using host %s. It may become overloaded.", host.Name) //nolint:forbidigo // CLI output
+					plog.Warn(
+						plog.TypeSystem,
+						"using host for isolated experiment; host may become overloaded",
+						"host", host.Name,
+						"exp", spec.ExperimentName(),
+					)
 				}
 
 				for _, node := range spec.Topology().Nodes() {
@@ -74,7 +80,12 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 				return nil
 			}
 
-			fmt.Printf("Host %s is currently in use; will not use.\n", host.Name) //nolint:forbidigo // CLI output
+			plog.Warn(
+				plog.TypeSystem,
+				"scheduled host is in use; not using it for isolated experiment",
+				"host", host.Name,
+				"exp", spec.ExperimentName(),
+			)
 		}
 	}
 
@@ -115,6 +126,10 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 	}
 
 	// if that doesn't work either, there are no unoccupied hosts
+
+	if len(cluster) == 0 {
+		return fmt.Errorf("isolating experiment: %w", ErrNoSchedulableHosts)
+	}
 
 	return errors.New("no unused hosts -- cannot isolate experiment")
 }

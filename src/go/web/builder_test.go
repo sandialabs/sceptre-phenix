@@ -78,7 +78,7 @@ type builderHarness struct {
 }
 
 // newBuilderRouter returns a router wired as [Start] wires it: the SPA index
-// at the root and a JSON NotFoundHandler under "/api/v1".
+// at the root, and JSON NotFound and MethodNotAllowed handlers under "/api/v1".
 func newBuilderRouter() (*mux.Router, *mux.Router) {
 	router := mux.NewRouter().StrictSlash(true)
 
@@ -91,6 +91,7 @@ func newBuilderRouter() (*mux.Router, *mux.Router) {
 
 	api := router.PathPrefix("/api/v1").Subrouter()
 	api.NotFoundHandler = apiNotFoundHandler()
+	api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
 
 	return router, api
 }
@@ -266,7 +267,7 @@ func (h *builderHarness) publishOps() builderPublishOps {
 
 			return nil
 		},
-		broadcastExperiment: func(string, string) error {
+		broadcastExperiment: func(context.Context, string, string) error {
 			h.broadcasts++
 
 			return nil
@@ -2015,7 +2016,7 @@ func TestBuilderCodedError(t *testing.T) {
 		},
 		{
 			name: "a code of its own",
-			err:  weberror.NewWebError(nil, "stale").SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeDraftStale)),
+			err:  weberror.NewWebError(nil, "stale").SetStatus(http.StatusPreconditionFailed).WithCode(weberror.Code(bdoc.CodeDraftStale)),
 			want: coded{Code: string(bdoc.CodeDraftStale)},
 		},
 		{
@@ -2045,7 +2046,7 @@ func TestBuilderCodedError(t *testing.T) {
 				t.Fatalf("builderCodedError(%v) = %T, want a *weberror.WebError", tt.err, err)
 			}
 
-			got := coded{Code: web.Code, Issues: web.Issues}
+			got := coded{Code: string(web.Code), Issues: web.Issues}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("builderCodedError(%v) mismatch (-want +got):\n%s", tt.err, diff)
 			}
@@ -2301,5 +2302,47 @@ func TestBuilderRoutesNeedAStore(t *testing.T) {
 
 	if routes != 0 {
 		t.Errorf("registerBuilderRoutes() without a store registered %d routes, want 0", routes)
+	}
+}
+
+// TestBuilderETagsStayStrongWhenCompressed asserts a gzipped Builder answer
+// keeps its strong ETag, which names a stored revision. The client sends that
+// tag back in If-Match, and the Builder refuses a weak tag there.
+func TestBuilderETagsStayStrongWhenCompressed(t *testing.T) {
+	harness := newBuilderHarness(t)
+	harness.api.Use(CompressResponses)
+
+	draft := harness.createDraft(builderAlice, "compressed")
+
+	serve := func(method, ifMatch string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "/api/v1/builder/drafts/"+draft.ID, nil)
+		req.Header.Set("Accept-Encoding", gzipCoding)
+
+		if ifMatch != "" {
+			req.Header.Set("If-Match", ifMatch)
+		}
+
+		ctx := context.WithValue(req.Context(), middleware.ContextKeyUser, builderAlice)
+		ctx = context.WithValue(ctx, middleware.ContextKeyRole, *builderFullRole())
+
+		recorder := httptest.NewRecorder()
+		harness.router.ServeHTTP(recorder, req.WithContext(ctx))
+
+		return recorder
+	}
+
+	read := serve(http.MethodGet, "")
+	if read.Code != http.StatusOK || read.Header().Get("Content-Encoding") != gzipCoding {
+		t.Fatalf("GET draft with gzip: status = %d, Content-Encoding = %q, want 200 and gzip: %s",
+			read.Code, read.Header().Get("Content-Encoding"), read.Body)
+	}
+
+	if got := read.Header().Get("ETag"); got != draft.ETag {
+		t.Errorf("GET draft with gzip: ETag = %q, want the strong %q", got, draft.ETag)
+	}
+
+	if deleted := serve(http.MethodDelete, read.Header().Get("ETag")); deleted.Code != http.StatusNoContent {
+		t.Errorf("DELETE draft with the gzipped ETag: status = %d, want %d: %s",
+			deleted.Code, http.StatusNoContent, deleted.Body)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"phenix/api/workflow"
+	"phenix/util/file"
 	"phenix/util/plog"
 )
 
@@ -131,7 +132,7 @@ func (r *applyRun) stage(injectsBase string) error {
 // target paths outside injects, so any path outside injectsBase (both as
 // written and with symlinks resolved) is also treated as a source path.
 func isSourcePermissionError(path, injects, injectsBase, cwd string, followSymlinks bool) bool {
-	if workflow.PathWithin(path, injects) {
+	if file.WithinDir(injects, path) {
 		return true
 	}
 
@@ -141,7 +142,7 @@ func isSourcePermissionError(path, injects, injectsBase, cwd string, followSymli
 
 	absBase := absolutePath(injectsBase, cwd)
 
-	return !workflow.PathWithin(path, absBase) && !workflow.PathWithin(path, resolvedPath(absBase))
+	return !file.WithinDir(absBase, path) && !file.WithinDir(resolvedPath(absBase), path)
 }
 
 // checkDestination refuses to stage into injectsBase, or to replace dest, its
@@ -165,7 +166,7 @@ func (r *applyRun) checkDestination(injectsBase, dest, cwd string) error {
 	base := resolvedPath(filepath.Dir(absDest))
 	replaced := filepath.Join(base, filepath.Base(absDest))
 
-	if workflow.PathWithin(replaced, resolvedPath(r.dir)) {
+	if file.WithinDir(resolvedPath(r.dir), replaced) {
 		return fmt.Errorf(
 			"refusing to replace %s: it lies inside the topology directory %s; check --base-dir.injects and -b", dest, r.dir,
 		)
@@ -207,7 +208,7 @@ func (r *applyRun) topologiesUnder(replaced, cwd string) bool {
 
 	topologies, err := filepath.EvalSymlinks(absolutePath(r.opts.TopologiesBase, cwd))
 
-	return err == nil && workflow.PathWithin(topologies, replaced)
+	return err == nil && file.WithinDir(replaced, topologies)
 }
 
 // topologyAncestor returns the nearest directory above dir, which is

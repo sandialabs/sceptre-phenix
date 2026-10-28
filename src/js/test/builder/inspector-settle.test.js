@@ -3,7 +3,7 @@
 // diagram is left or read whole (saveUnapplied, see leave.js), mounted.
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { flushPromises } from '@vue/test-utils';
 
 import {
   INSPECTOR_ICON_LIBRARY,
@@ -31,7 +31,6 @@ import {
 } from './inspector-mount.js';
 import { ICON_DATA } from './png.js';
 
-enableAutoUnmount(afterEach);
 afterEach(resetCollapsed);
 
 // The Inspector mounted on `node` of `doc`. `edit` changes the form's data,

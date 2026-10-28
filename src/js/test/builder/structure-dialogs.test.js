@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The Add a connection and Move to a group forms (structureForms.js) and
 // dialogs, rendered on the server. Focus and keys are left to e2e.
 

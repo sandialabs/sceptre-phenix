@@ -12,7 +12,8 @@ import (
 )
 
 // TestPasswordSettingsStoredByAnotherRequest checks that a default another request
-// stored first is read instead of failing on the duplicate.
+// stored first is read instead of failing on the duplicate, and that its stored
+// value is used in place of the default.
 func TestPasswordSettingsStoredByAnotherRequest(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -30,7 +31,7 @@ func TestPasswordSettingsStoredByAnotherRequest(t *testing.T) {
 			t.Errorf("Get(%s), want only the setting that existed", c.Metadata.Name)
 		}
 
-		c.Spec = map[string]any{"category": "Password", "name": "SymbolReq", "type": "bool", "value": "true"}
+		c.Spec = map[string]any{"category": "Password", "name": "SymbolReq", "type": "bool", "value": "false"}
 
 		return nil
 	})
@@ -43,7 +44,7 @@ func TestPasswordSettingsStoredByAnotherRequest(t *testing.T) {
 	}
 
 	want := settings.PasswordSettings{
-		LowercaseReq: true, UppercaseReq: false, NumberReq: true, SymbolReq: true,
+		LowercaseReq: true, UppercaseReq: false, NumberReq: true, SymbolReq: false,
 		MinLength: settings.DefaultPasswordMinLength,
 	}
 	if diff := cmp.Diff(want, got); diff != "" {

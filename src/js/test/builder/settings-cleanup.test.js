@@ -3,14 +3,12 @@
 // confirmation over the settings, the cleanup, the spinner and what the
 // settings' status region says.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 
 import BuilderSettings from '@/components/builder/BuilderSettings.vue';
 import { useBuilderStore } from '@/builder/store.js';
-
-enableAutoUnmount(afterEach);
 
 // What the server's dry run finds, and then what the cleanup removes.
 const PLAN = { drafts: ['d1', 'd2'], documents: 1, content: 2 };

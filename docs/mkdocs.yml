@@ -53,6 +53,7 @@ markdown_extensions:
   - pymdownx.snippets:
       base_path: !relative $config_dir/..
       check_paths: true
+      # schema.md includes indented sections of the schema files
       dedent_subsections: true
   - pymdownx.highlight:
       anchor_linenums: true
@@ -98,6 +99,30 @@ nav:
   - Administration:
     - Users: user-administration.md
   - Reference:
+    - CLI:
+      # BEGIN generated CLI reference (make cli-docs)
+      - Overview: cli/index.md
+      - phenix admin: cli/admin.md
+      - phenix completion: cli/completion.md
+      - phenix config: cli/config.md
+      - phenix disk: cli/disk.md
+      - phenix doctor: cli/doctor.md
+      - phenix experiment: cli/experiment.md
+      - phenix healthcheck: cli/healthcheck.md
+      - phenix host: cli/host.md
+      - phenix image: cli/image.md
+      - phenix job: cli/job.md
+      - phenix logs: cli/logs.md
+      - phenix mm: cli/mm.md
+      - phenix settings: cli/settings.md
+      - phenix ui: cli/ui.md
+      - phenix util: cli/util.md
+      - phenix version: cli/version.md
+      - phenix vlan: cli/vlan.md
+      - phenix vm: cli/vm.md
+      - phenix workflow: cli/workflow.md
+      # END generated CLI reference
+    - Deprecations: deprecations.md
     - minimega: minimega.md
     - Troubleshooting: troubleshooting.md
     - Schema: schema.md

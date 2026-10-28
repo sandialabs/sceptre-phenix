@@ -24,6 +24,8 @@
 /docs/                  @GhostofGoes @cmulk @nblair2 @glattercj @activeshadow
 /examples/              @glattercj @nblair2 @GhostofGoes
 /scripts/               @glattercj
+/scripts/go-fuzz.sh     @GhostofGoes
+/scripts/vuln-report.sh @GhostofGoes
 /skills/                @GhostofGoes @glattercj
 
 # Containers

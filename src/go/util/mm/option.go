@@ -7,11 +7,21 @@ import (
 	"time"
 )
 
-const DefaultC2Timeout = 5 * time.Minute
+const (
+	DefaultC2Timeout = 5 * time.Minute
+	// DefaultC2AppearGrace is how long a command can take to show in
+	// `cc commands` on the host that has the VM's client.
+	DefaultC2AppearGrace = 30 * time.Second
+	// DefaultC2ClientGrace is how long the VM's C2 client can be absent from
+	// `cc clients` while a command waits for its response.
+	DefaultC2ClientGrace = 90 * time.Second
+)
 
 type Option func(*options)
 
 type options struct {
+	ctx context.Context //nolint:containedctx // carried to the commands an option set runs
+
 	ns     string
 	vm     string
 	cpu    int
@@ -30,6 +40,8 @@ type options struct {
 	captureIface    int
 	captureIfaceSet bool
 	captureFile     string
+	captures        []Capture
+	capturesKnown   bool
 
 	screenshotSize string
 
@@ -40,13 +52,22 @@ type options struct {
 }
 
 func NewOptions(opts ...Option) options {
-	o := options{injectPart: 1} //nolint:exhaustruct // partial initialization
+	o := options{ctx: context.Background(), injectPart: 1} //nolint:exhaustruct // partial initialization
 
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	return o
+}
+
+// Context gives up a call's commands still waiting for the shared connection once ctx is done (see
+// mmcli.RunContext), returning ctx's error. A call making several changes checks ctx only until its
+// first change is sent, so it is never left half done.
+func Context(ctx context.Context) Option {
+	return func(o *options) {
+		o.ctx = ctx
+	}
 }
 
 func NS(n string) Option {
@@ -128,6 +149,15 @@ func CaptureFile(f string) Option {
 	}
 }
 
+// KnownCaptures gives the VM's captures as the caller already listed them, so
+// StopVMCapture does not list them again.
+func KnownCaptures(c []Capture) Option {
+	return func(o *options) {
+		o.captures = c
+		o.capturesKnown = true
+	}
+}
+
 func ScreenshotSize(s string) Option {
 	return func(o *options) {
 		o.screenshotSize = s
@@ -173,11 +203,14 @@ type c2Options struct {
 
 	testConn string
 	sendFile string
+	recvFile string
 
 	mount *bool
 
-	timeout time.Duration
-	wait    bool
+	timeout     time.Duration
+	appearGrace time.Duration
+	clientGrace time.Duration
+	wait        bool
 
 	skipActiveClientCheck bool
 
@@ -187,8 +220,10 @@ type c2Options struct {
 
 func NewC2Options(opts ...C2Option) c2Options {
 	o := c2Options{ //nolint:exhaustruct // partial initialization
-		ctx:     context.Background(),
-		timeout: DefaultC2Timeout,
+		ctx:         context.Background(),
+		timeout:     DefaultC2Timeout,
+		appearGrace: DefaultC2AppearGrace,
+		clientGrace: DefaultC2ClientGrace,
 	}
 
 	for _, opt := range opts {
@@ -257,6 +292,22 @@ func C2Unmount() C2Option {
 func C2Timeout(d time.Duration) C2Option {
 	return func(o *c2Options) {
 		o.timeout = d
+	}
+}
+
+// C2AppearGrace sets how long a command can take to show on the host that has
+// the VM's client, before the wait for its response fails. Zero disables it.
+func C2AppearGrace(d time.Duration) C2Option {
+	return func(o *c2Options) {
+		o.appearGrace = d
+	}
+}
+
+// C2ClientGrace sets how long the VM's C2 client can be absent while a command
+// waits for its response, before the wait fails. Zero disables it.
+func C2ClientGrace(d time.Duration) C2Option {
+	return func(o *c2Options) {
+		o.clientGrace = d
 	}
 }
 

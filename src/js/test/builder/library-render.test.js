@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The Node Templates tab, the collection dialog, the palette's library and the
 // template editor on a library template, rendered on the server.
 

@@ -12,6 +12,9 @@ import (
 
 var ErrScorchNotConfigured = errors.New("scorch not configured for experiment")
 
+// errEmptyRun tells that an item of the SCORCH runs list is empty.
+var errEmptyRun = errors.New("scorch run is empty")
+
 func DecodeMetadata(exp *types.Experiment) (ScorchMetadata, error) {
 	var (
 		ms map[string]any
@@ -41,7 +44,11 @@ func DecodeMetadata(exp *types.Experiment) (ScorchMetadata, error) {
 		md.components[c.Name] = c
 	}
 
-	for _, run := range md.Runs {
+	for i, run := range md.Runs {
+		if run == nil {
+			return md, fmt.Errorf("decoding app metadata: run %d: %w", i, errEmptyRun)
+		}
+
 		ensureCount(run)
 	}
 

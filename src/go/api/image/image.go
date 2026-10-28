@@ -1,4 +1,4 @@
-package image //nolint:cyclop // package complexity
+package image
 
 import (
 	"bufio"
@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +15,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"sync"
+	"syscall"
 
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
@@ -21,6 +25,7 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
+	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 	"phenix/util/shell"
 )
@@ -28,11 +33,6 @@ import (
 const (
 	VVerbose  int = 1
 	VVVerbose int = 2
-)
-
-var (
-	ErrMinicccNotFound   = errors.New("miniccc executable not found")
-	ErrProtonukeNotFound = errors.New("protonuke executable not found")
 )
 
 const miniccc = "miniccc"
@@ -138,6 +138,10 @@ func Create(img *v1.Image) error {
 		return errors.New("image name is required to create an image")
 	}
 
+	if err := ValidateSize(img.Size); err != nil {
+		return fmt.Errorf("invalid image size %q: %w", img.Size, err)
+	}
+
 	err := SetupImage(img)
 	if err != nil {
 		return fmt.Errorf("setting up image: %w", err)
@@ -179,7 +183,9 @@ func CreateFromConfig(name, saveas string, overlays, packages, scripts []string)
 		return fmt.Errorf("decoding image spec: %w", err)
 	}
 
-	c.Metadata.Name = saveas
+	// the new config is created now, under its own name
+	c.Metadata.Name, c.Metadata.Created = saveas, ""
+	img.Name = saveas
 
 	if len(overlays) > 0 {
 		img.Overlays = append(img.Overlays, overlays...)
@@ -290,19 +296,23 @@ func Build(
 			return fmt.Errorf("starting vmdb2 command: %w", err)
 		}
 
-		go func() {
-			scanner := bufio.NewScanner(stdout)
-			for scanner.Scan() {
-				fmt.Println(scanner.Text()) //nolint:forbidigo // CLI output
-			}
-		}()
+		// Wait closes the pipes, so all output must be read before it.
+		var wg sync.WaitGroup
 
-		go func() {
-			scanner := bufio.NewScanner(stderr)
-			for scanner.Scan() {
-				fmt.Println(scanner.Text()) //nolint:forbidigo // CLI output
-			}
-		}()
+		for _, r := range []io.Reader{stdout, stderr} {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				scanner := bufio.NewScanner(r)
+				for scanner.Scan() {
+					fmt.Println(scanner.Text()) //nolint:forbidigo // CLI output
+				}
+			}()
+		}
+
+		wg.Wait()
 
 		err = cmd.Wait()
 		if err != nil {
@@ -340,11 +350,10 @@ func List() ([]types.Image, error) {
 	return images, nil
 }
 
-// Update retrieves the named image configuration file from the store and will
-// update scripts. First, it will verify the script is present on disk. If so,
-// it will remove the existing script from the configuration file and update the
-// file with updated. It will return any errors encountered during the process
-// of creating a new image configuration, decoding it, or updating it in the
+// Update retrieves the named image configuration file from the store and
+// rereads each of its scripts that is present on disk, keeping the order the
+// scripts run in. It will return any errors encountered during the process of
+// creating a new image configuration, decoding it, or updating it in the
 // store.
 func Update(name string) error {
 	c, err := store.NewConfig("image/" + name)
@@ -362,23 +371,63 @@ func Update(name string) error {
 		return fmt.Errorf("decoding image spec: %w", err)
 	}
 
-	scripts := img.Scripts
+	reread := make(map[string]bool)
 
-	if len(scripts) > 0 {
-		for k := range scripts {
-			if _, statErr := os.Stat(k); statErr == nil {
-				delete(img.Scripts, k)
-				img.ScriptOrder = slices.DeleteFunc(img.ScriptOrder, func(script string) bool {
-					return script == k
-				})
+	// refresh replaces a configured script found on disk with its contents, once.
+	refresh := func(k string) (bool, error) {
+		if _, ok := img.Scripts[k]; !ok || reread[k] {
+			return false, nil
+		}
 
-				err = addScriptToImage(&img, k, "")
-				if err != nil {
-					return fmt.Errorf("adding script %s to image config: %w", k, err)
-				}
-			}
+		// a script that is not a file on disk, such as a URL, keeps its contents
+		exists, err := fileExists(k)
+		if err != nil || !exists {
+			return false, err
+		}
+
+		script, err := readScript(k)
+		if err != nil {
+			return false, fmt.Errorf("rereading script %s: %w", k, err)
+		}
+
+		img.Scripts[k] = script
+		reread[k] = true
+
+		return true, nil
+	}
+
+	// A reread script keeps its first place in the order, or goes last if it had none.
+	// A name in the order that has no script is dropped.
+	order := make([]string, 0, len(img.ScriptOrder))
+
+	for _, k := range img.ScriptOrder {
+		if _, ok := img.Scripts[k]; !ok || reread[k] {
+			continue
+		}
+
+		if _, err = refresh(k); err != nil {
+			return err
+		}
+
+		order = append(order, k)
+	}
+
+	for _, k := range slices.Sorted(maps.Keys(img.Scripts)) {
+		if slices.Contains(order, k) {
+			continue
+		}
+
+		ok, err := refresh(k)
+		if err != nil {
+			return err
+		}
+
+		if ok {
+			order = append(order, k)
 		}
 	}
+
+	img.ScriptOrder = order
 
 	c.Spec = structs.MapDefaultCase(img, structs.CASESNAKE)
 
@@ -495,6 +544,8 @@ func Remove(name string, overlays, packages, scripts []string) error {
 		for _, s := range scripts {
 			delete(img.Scripts, s)
 		}
+
+		img.ScriptOrder = slices.DeleteFunc(img.ScriptOrder, func(s string) bool { return slices.Contains(scripts, s) })
 	}
 
 	c.Spec = structs.MapDefaultCase(img, structs.CASESNAKE)
@@ -506,13 +557,26 @@ func Remove(name string, overlays, packages, scripts []string) error {
 	return nil
 }
 
+// InjectMiniExe injects exe, the miniccc, protonuke or minirouter
+// executable, and its boot files for svc into disk with a minimega disk
+// inject. A disk with no ":<partition>" suffix gets partition 1. It returns an
+// error wrapping [mm.ErrUnsafeArg] when minimega cannot take exe, disk or the
+// temporary directory as written.
 func InjectMiniExe(exe, disk, svc string) error { //nolint:funlen // complex logic
+	if err := validateInjectPaths(exe, disk); err != nil {
+		return err
+	}
+
 	// Assume partition 1 if no partition is specified.
 	if parts := strings.Split(disk, ":"); len(parts) == 1 {
 		disk += ":1"
 	}
 
 	tmp := os.TempDir() + "/phenix"
+
+	if err := validateTempDir(tmp); err != nil {
+		return err
+	}
 
 	if err := os.MkdirAll(tmp, 0o750); err != nil {
 		return fmt.Errorf("creating temp phenix base directory: %w", err)
@@ -525,50 +589,39 @@ func InjectMiniExe(exe, disk, svc string) error { //nolint:funlen // complex log
 
 	defer func() { _ = os.RemoveAll(tmp) }()
 
-	var injects []string
+	var injects []injectPair
 
-	if path.Ext(exe) == ".exe" { // assume Windows
-		// /opt/minimega/bin/miniccc.exe --> miniccc
-		base := strings.TrimSuffix(path.Base(exe), path.Ext(exe))
+	if ext := path.Ext(exe); strings.EqualFold(ext, ".exe") { // assume Windows
+		// /opt/minimega/bin/miniccc.exe --> miniccc; Windows file names ignore case
+		base := strings.ToLower(strings.TrimSuffix(path.Base(exe), ext))
 
 		if base != miniccc && base != protonuke {
 			return errors.New("only miniccc.exe and protonuke.exe are supported for Windows")
 		}
 
-		switch base {
-		case miniccc:
-			if svc == "startup" {
-				err = tmpl.RestoreAsset(
-					tmp,
-					fmt.Sprintf("%s/%s-scheduler.cmd", base, base),
-				)
-				if err != nil {
-					return fmt.Errorf("restoring %s startup scheduler for Windows: %w", base, err)
-				}
+		exePair := injectPair{src: exe, dst: fmt.Sprintf("/minimega/%s.exe", base)}
 
-				injects = []string{
-					tmp + fmt.Sprintf(
-						`/%s/%s-scheduler.cmd:"/ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/%s-scheduler.cmd"`,
-						base,
-						base,
-						base,
-					),
-					exe + fmt.Sprintf(":/minimega/%s.exe", base),
-				}
-			} else {
-				injects = []string{
-					exe + fmt.Sprintf(":/minimega/%s.exe", base),
-				}
+		switch {
+		case base == miniccc && svc == "startup":
+			err = tmpl.RestoreAsset(tmp, fmt.Sprintf("%s/%s-scheduler.cmd", base, base))
+			if err != nil {
+				return fmt.Errorf("restoring %s startup scheduler for Windows: %w", base, err)
 			}
-		case protonuke:
+
+			injects = []injectPair{
+				{
+					src: fmt.Sprintf("%s/%s/%s-scheduler.cmd", tmp, base, base),
+					dst: fmt.Sprintf("/ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/%s-scheduler.cmd", base),
+				},
+				exePair,
+			}
+		default:
 			// We're not creating a default Windows Startup file for protonuke to
 			// start it as a service at boot since its command line arguments are
 			// dynamic. Users or apps wishing to leverage protonuke on Windows hosts
 			// need to inject their own Windows Startup file or use miniccc to start
 			// protonuke.
-			injects = []string{
-				exe + fmt.Sprintf(":/minimega/%s.exe", base),
-			}
+			injects = []injectPair{exePair}
 		}
 	} else {
 		// /opt/minimega/bin/miniccc --> miniccc
@@ -598,20 +651,16 @@ func InjectMiniExe(exe, disk, svc string) error { //nolint:funlen // complex log
 				return fmt.Errorf("generating systemd service link for Linux: %w", err)
 			}
 
-			injects = []string{
-				tmp + fmt.Sprintf(
-					"/%s/%s.service:/etc/systemd/system/%s.service",
-					base,
-					base,
-					base,
-				),
-				tmp + fmt.Sprintf(
-					"/%s/symlinks/%s.service:/etc/systemd/system/multi-user.target.wants/%s.service",
-					base,
-					base,
-					base,
-				),
-				exe + ":/usr/local/bin/" + base,
+			injects = []injectPair{
+				{
+					src: fmt.Sprintf("%s/%s/%s.service", tmp, base, base),
+					dst: fmt.Sprintf("/etc/systemd/system/%s.service", base),
+				},
+				{
+					src: fmt.Sprintf("%s/%s/symlinks/%s.service", tmp, base, base),
+					dst: fmt.Sprintf("/etc/systemd/system/multi-user.target.wants/%s.service", base),
+				},
+				{src: exe, dst: "/usr/local/bin/" + base},
 			}
 		case "sysinitv":
 			err = tmpl.RestoreAsset(tmp, fmt.Sprintf("%s/%s.init", base, base))
@@ -619,7 +668,7 @@ func InjectMiniExe(exe, disk, svc string) error { //nolint:funlen // complex log
 				return fmt.Errorf("restoring %s sysinitv service for Linux: %w", base, err)
 			}
 
-			_ = os.Chmod(tmp+fmt.Sprintf("/%s/%s.init", base, base), 0o750) //nolint:gosec // init script must be executable
+			_ = os.Chmod(tmp+fmt.Sprintf("/%s/%s.init", base, base), 0o750) //nolint:gosec // G302 (mode > 0600): script must be executable
 
 			err = os.Symlink(
 				"../init.d/"+base,
@@ -629,10 +678,10 @@ func InjectMiniExe(exe, disk, svc string) error { //nolint:funlen // complex log
 				return fmt.Errorf("generating sysinitv service link for Linux: %w", err)
 			}
 
-			injects = []string{
-				tmp + fmt.Sprintf("/%s/%s.init:/etc/init.d/%s", base, base, base),
-				tmp + fmt.Sprintf("/%s/symlinks/S99-%s:/etc/rc5.d/S99-%s", base, base, base),
-				exe + ":/usr/local/bin/" + base,
+			injects = []injectPair{
+				{src: fmt.Sprintf("%s/%s/%s.init", tmp, base, base), dst: "/etc/init.d/" + base},
+				{src: fmt.Sprintf("%s/%s/symlinks/S99-%s", tmp, base, base), dst: "/etc/rc5.d/S99-" + base},
+				{src: exe, dst: "/usr/local/bin/" + base},
 			}
 		default:
 			return fmt.Errorf("unknown service %s specified", svc)
@@ -656,67 +705,153 @@ func InjectMiniExe(exe, disk, svc string) error { //nolint:funlen // complex log
 	return nil
 }
 
-func addScriptToImage(img *v1.Image, name, script string) error {
-	if script == "" {
-		u, err := url.Parse(name)
-		if err != nil {
-			return fmt.Errorf("parsing script path: %w", err)
-		}
-
-		// Default to file scheme if no scheme provided.
-		if u.Scheme == "" {
-			u.Scheme = "file"
-		}
-
-		var (
-			loc  = u.Host + u.Path
-			body io.ReadCloser
-		)
-
-		switch u.Scheme {
-		case "http", "https":
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, name, nil)
-			if err != nil {
-				return fmt.Errorf("creating request for script: %w", err)
-			}
-
-			var resp *http.Response
-			resp, err = http.DefaultClient.Do(req) //nolint:bodyclose,gosec // body is closed below, SSRF via taint analysis
-			if err != nil {
-				return fmt.Errorf("getting script via HTTP(s): %w", err)
-			}
-
-			body = resp.Body
-		case "file":
-			body, err = os.Open(loc) //nolint:gosec // Path traversal via taint analysis
-			if err != nil {
-				return fmt.Errorf("opening script file: %w", err)
-			}
-		default:
-			return fmt.Errorf("scheme %s not supported for scripts", u.Scheme)
-		}
-
-		defer func() { _ = body.Close() }()
-
-		contents, err := io.ReadAll(body)
-		if err != nil {
-			return fmt.Errorf("processing script %s: %w", name, err)
-		}
-
-		script = string(contents)
+// validateInjectPaths returns an error wrapping [mm.ErrUnsafeArg] unless
+// minimega takes exe and disk, double-quoted, as written. The exe path also
+// must not have a ":", which minimega reads as the end of a source path.
+func validateInjectPaths(exe, disk string) error {
+	if err := mm.ValidateQuotedArg(exe); err != nil {
+		return fmt.Errorf("executable path: %w", err)
 	}
 
-	img.Scripts[name] = script
-	img.ScriptOrder = append(img.ScriptOrder, name)
+	if strings.Contains(exe, ":") {
+		return fmt.Errorf("%w: executable path %q has a \":\"", mm.ErrUnsafeArg, exe)
+	}
+
+	if err := mm.ValidateQuotedArg(disk); err != nil {
+		return fmt.Errorf("disk path: %w", err)
+	}
 
 	return nil
 }
 
-func inject(disk string, injects ...string) error {
-	files := strings.Join(injects, " ")
+// validateTempDir returns an error wrapping [mm.ErrUnsafeArg] unless
+// minimega takes dir, the base of the boot file source paths, double-quoted
+// as written. The dir also must not have a ":".
+func validateTempDir(dir string) error {
+	if err := mm.ValidateQuotedArg(dir); err != nil {
+		return fmt.Errorf("temporary directory: %w", err)
+	}
+
+	if strings.Contains(dir, ":") {
+		return fmt.Errorf("%w: temporary directory %q has a \":\"", mm.ErrUnsafeArg, dir)
+	}
+
+	return nil
+}
+
+func addScriptToImage(img *v1.Image, name, script string) error {
+	if script == "" {
+		var err error
+
+		if script, err = readScript(name); err != nil {
+			return err
+		}
+	}
+
+	if img.Scripts == nil {
+		img.Scripts = make(map[string]string)
+	}
+
+	img.Scripts[name] = script
+
+	// a script added again runs once, in its first place
+	if !slices.Contains(img.ScriptOrder, name) {
+		img.ScriptOrder = append(img.ScriptOrder, name)
+	}
+
+	return nil
+}
+
+// fileExists reports whether [os.Stat] finds path. An HTTP(S) URL is not a
+// file. It returns the error from [os.Stat] when that error does not mean
+// that path does not exist.
+func fileExists(path string) (bool, error) {
+	if u, err := url.Parse(path); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		return false, nil
+	}
+
+	_, err := os.Stat(path)
+
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+		// a path under a regular file is not a file either
+		return false, nil
+	default:
+		return false, fmt.Errorf("checking script %s: %w", path, err)
+	}
+}
+
+// readScript reads the script at name, a file path or an HTTP(S) URL.
+func readScript(name string) (string, error) {
+	u, err := url.Parse(name)
+	if err != nil {
+		return "", fmt.Errorf("parsing script path: %w", err)
+	}
+
+	// Default to file scheme if no scheme provided.
+	if u.Scheme == "" {
+		u.Scheme = "file"
+	}
+
+	var (
+		loc  = u.Host + u.Path
+		body io.ReadCloser
+	)
+
+	switch u.Scheme {
+	case "http", "https":
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, name, nil)
+		if err != nil {
+			return "", fmt.Errorf("creating request for script: %w", err)
+		}
+
+		var resp *http.Response
+		resp, err = http.DefaultClient.Do(req) //nolint:gosec // G704 (SSRF): the user names the script URL
+		if err != nil {
+			return "", fmt.Errorf("getting script via HTTP(s): %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+
+			return "", fmt.Errorf("getting script via HTTP(s): %s", resp.Status)
+		}
+
+		body = resp.Body
+	case "file":
+		body, err = os.Open(loc) //nolint:gosec // G703 (path traversal): the user names the script file
+		if err != nil {
+			return "", fmt.Errorf("opening script file: %w", err)
+		}
+	default:
+		return "", fmt.Errorf("scheme %s not supported for scripts", u.Scheme)
+	}
+
+	defer func() { _ = body.Close() }()
+
+	contents, err := io.ReadAll(body)
+	if err != nil {
+		return "", fmt.Errorf("processing script %s: %w", name, err)
+	}
+
+	return string(contents), nil
+}
+
+// injectPair is a file to inject and the path in the disk to inject it to.
+type injectPair struct {
+	src, dst string
+}
+
+func inject(disk string, injects ...injectPair) error {
+	files := make([]string, 0, len(injects))
+	for _, i := range injects {
+		files = append(files, fmt.Sprintf(`"%s":"%s"`, i.src, i.dst))
+	}
 
 	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("disk inject %s files %s", disk, files)
+	cmd.Command = fmt.Sprintf(`disk inject "%s" files %s`, disk, strings.Join(files, " "))
 
 	err := mmcli.ErrorResponse(mmcli.Run(cmd))
 	if err != nil {

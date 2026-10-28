@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
@@ -66,7 +67,14 @@ func (e *Experiment) Reload() error {
 	return nil
 }
 
+// statusMu serializes the experiment writes of this process, so that the read,
+// change and write of UpdateStatus cannot interleave with another write.
+var statusMu sync.Mutex //nolint:gochecknoglobals // process-wide store guard
+
 func (e Experiment) WriteToStore(statusOnly bool) error {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+
 	name := e.Metadata.Name
 
 	c, _ := store.NewConfig("experiment/" + name)
@@ -91,6 +99,56 @@ func (e Experiment) WriteToStore(statusOnly bool) error {
 	}
 
 	return nil
+}
+
+// UpdateStatus applies fn to the status that the store holds and writes the
+// result back, so it keeps what other writers stored since e was read. When
+// the write succeeds, the status of e becomes the written status. WriteToStore
+// writes the whole status of e instead.
+func (e *Experiment) UpdateStatus(fn func(status ifaces.ExperimentStatus)) error {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+
+	name := e.Metadata.Name
+
+	c, err := store.NewConfig("experiment/" + name)
+	if err != nil {
+		return fmt.Errorf("getting experiment: %w", err)
+	}
+
+	if err := store.Get(c); err != nil {
+		return fmt.Errorf("getting experiment %s from store: %w", name, err)
+	}
+
+	stored, err := DecodeExperimentFromConfig(*c)
+	if err != nil {
+		return fmt.Errorf("decoding experiment %s: %w", name, err)
+	}
+
+	fn(stored.Status)
+
+	c.Status = structs.MapDefaultCase(stored.Status, structs.CASESNAKE)
+
+	if err := store.Update(c); err != nil {
+		return fmt.Errorf("saving experiment config: %w", err)
+	}
+
+	e.Status = stored.Status
+
+	return nil
+}
+
+// UpdateAppStatus is UpdateStatus for the status of app only. fn gets the
+// stored status of app, empty when there is none, and changes it in place.
+func (e *Experiment) UpdateAppStatus(app string, fn func(status map[string]any)) error {
+	return e.UpdateStatus(func(s ifaces.ExperimentStatus) {
+		status := make(map[string]any)
+		_ = s.ParseAppStatus(app, &status) // a missing status stays empty
+
+		fn(status)
+
+		s.SetAppStatus(app, status)
+	})
 }
 
 func (e *Experiment) SetSpec(spec ifaces.ExperimentSpec) {
@@ -147,18 +205,58 @@ func (e Experiment) FilesDir() string {
 	return filepath.Join(common.PhenixBase, "images", e.Metadata.Name, "files")
 }
 
+// ExperimentDecodeError is the error for a stored experiment config that
+// does not decode.
+type ExperimentDecodeError struct {
+	Name string // the name of the config
+	Err  error
+}
+
+func (e *ExperimentDecodeError) Error() string {
+	return fmt.Sprintf("decoding experiment %s from config: %v", e.Name, e.Err)
+}
+
+func (e *ExperimentDecodeError) Unwrap() error {
+	return e.Err
+}
+
+// Experiments returns the stored experiments, or only the running ones when
+// running is true. It returns an error when one stored config does not
+// decode. Use DecodableExperiments to skip such configs.
 func Experiments(running bool) ([]*Experiment, error) {
-	configs, err := store.List("Experiment")
+	experiments, failed, err := DecodableExperiments(running)
 	if err != nil {
-		return nil, fmt.Errorf("getting list of experiment configs from store: %w", err)
+		return nil, err
 	}
 
-	var experiments []*Experiment
+	if len(failed) > 0 {
+		return nil, failed[0]
+	}
+
+	return experiments, nil
+}
+
+// DecodableExperiments returns the stored experiments that decode, or only
+// the running ones when running is true. It also returns an error for each
+// stored config that does not decode, in store order. The last error is set
+// only when the store cannot list the configs.
+func DecodableExperiments(running bool) ([]*Experiment, []*ExperimentDecodeError, error) {
+	configs, err := store.List("Experiment")
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting list of experiment configs from store: %w", err)
+	}
+
+	var (
+		experiments []*Experiment
+		failed      []*ExperimentDecodeError
+	)
 
 	for _, c := range configs {
 		exp, err := DecodeExperimentFromConfig(c)
 		if err != nil {
-			return nil, fmt.Errorf("decoding experiment %s from config: %w", c.Metadata.Name, err)
+			failed = append(failed, &ExperimentDecodeError{Name: c.Metadata.Name, Err: err})
+
+			continue
 		}
 
 		if running && !exp.Running() {
@@ -168,7 +266,7 @@ func Experiments(running bool) ([]*Experiment, error) {
 		experiments = append(experiments, exp)
 	}
 
-	return experiments, nil
+	return experiments, failed, nil
 }
 
 func DecodeExperimentFromConfig(c store.Config) (*Experiment, error) {

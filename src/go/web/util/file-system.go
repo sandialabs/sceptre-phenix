@@ -4,6 +4,8 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+
+	"phenix/web/weberror"
 )
 
 type BinaryFileSystem struct {
@@ -17,7 +19,7 @@ func NewBinaryFileSystem(assets http.FileSystem) *BinaryFileSystem {
 func (b BinaryFileSystem) ServeTemplate(w http.ResponseWriter, name string, data any) {
 	f, err := b.assets.Open(name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		weberror.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -26,7 +28,7 @@ func (b BinaryFileSystem) ServeTemplate(w http.ResponseWriter, name string, data
 
 	body, err := io.ReadAll(f)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		weberror.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}

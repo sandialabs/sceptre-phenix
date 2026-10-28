@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Import's options for a topology (importOptions.js) and the dialog as it
 // opens, rendered on the server. The rest is in builder-io.spec.js.
 

@@ -445,13 +445,13 @@ func builderGenerateNewName(request builderGenerateRequest, source *store.Config
 			nil,
 			"new topology name %q is not valid. Use 1 to %d letters, numbers, underscores, at signs, periods and hyphens",
 			builderLegacyShown(name), bdoc.MaxNameBytes,
-		).SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodeImportNameInvalid))
+		).SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodeImportNameInvalid))
 	}
 
 	if request.Source != "" && name == source.Metadata.Name {
 		return "", weberror.NewWebError(
 			nil, "new topology name %q is the name of the imported topology. Enter another name", name,
-		).SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodeImportNameSource))
+		).SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodeImportNameSource))
 	}
 
 	return name, nil

@@ -10,8 +10,10 @@ on:
       - '.dockerignore'
       - '.github/workflows/podman.yml'
       - 'docker/Dockerfile'
+      - 'docker/build-webshark.sh'
       - 'docker/install-certs.sh'
       - 'podman/**'
+      - 'scripts/api-docs.sh'
   pull_request:
     # closed: only to cancel this PR's runs (see concurrency); jobs skip it
     types: [opened, synchronize, reopened, closed]
@@ -19,8 +21,10 @@ on:
       - '.dockerignore'
       - '.github/workflows/podman.yml'
       - 'docker/Dockerfile'
+      - 'docker/build-webshark.sh'
       - 'docker/install-certs.sh'
       - 'podman/**'
+      - 'scripts/api-docs.sh'
   schedule:
     - cron: '47 5 * * 1'
   workflow_dispatch:
@@ -31,6 +35,7 @@ env:
 permissions:
   contents: read
 
+# a newer commit (or closing the PR) cancels runs still going for this PR or ref
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
@@ -88,7 +93,7 @@ jobs:
           podman run --rm phenix-podman-ci phenix version
           podman run --rm phenix-podman-ci phenix help > /dev/null
           podman run --rm phenix-podman-ci sh -c \
-            'command -v phenix && glow --version && command -v filebeat && test -x /usr/bin/vmdb2'
+            'command -v phenix && glow --version && command -v filebeat && test -x /usr/bin/vmdb2 && test -f /opt/phenix/webshark/index.html'
           podman run --rm phenix-podman-ci python3 -c 'import minimega, phenix_apps'
       - name: Report image size
         run: podman images phenix-podman-ci

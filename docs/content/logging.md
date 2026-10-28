@@ -161,9 +161,94 @@ func MyFunc() {
 }
 ```
 
+The log types are `AUDIT`, `SECURITY`, `SOH`, `SCORCH`, `PHENIX-APP`, `ACTION`,
+`HTTP`, `MINIMEGA` and `SYSTEM`. Web handlers log `AUDIT` records with the
+`phenix/web/audit` package rather than with `plog` directly (see
+[Audit Events](#audit-events)).
+
 ### HTTP Request Logging
 
 To view detailed HTTP request logs (method, path, status, duration), start the UI with the `--log-requests` flag.
+
+## Audit Events
+
+The web API logs an audit event, a record of type `AUDIT`, for each
+security-relevant action.
+
+### Audited Actions
+
+| `event.action` | `event.category` | `event.type` | Routes |
+| :--- | :--- | :--- | :--- |
+| `sign-in` | `authentication` | `start` | `GET`, `POST /login`, by password or through a proxy (`phenix.auth.method`); `POST /signup`, once the user is created |
+| `sign-out` | `authentication` | `end` | `POST /logout` |
+| `user-create` | `iam` | `creation` | `POST /users`, `POST /signup` (as the user signing up) |
+| `user-update` | `iam` | `change` | `PATCH /users/{username}` changing a first or last name (`phenix.user.changed`) |
+| `user-role-change` | `iam` | `change` | `PATCH /users/{username}` with a `role_name`; refused, and the role left as it is, without `patch` on `users/roles` (a `role_name` equal to the user's current role is not refused) |
+| `user-password-change` | `iam` | `change` | `PATCH /users/{username}` with a `new_password` |
+| `user-delete` | `iam` | `deletion` | `DELETE /users/{username}`; refused for the user's own account (`event.reason` `own user`) |
+| `user-token-create` | `iam` | `creation` | `POST /users/{username}/tokens` |
+| `role-create` | `iam` | `creation` | `POST /roles` (`phenix.role.name`); refused for a role that grants a permission the requester does not hold (`event.reason` `privilege escalation`) |
+| `role-update` | `iam` | `change` | `PATCH /roles/{name}` (`phenix.role.name`, and `phenix.role.users` for the users whose copy of the role changed, or could not change); refused as `role-create` is |
+| `role-delete` | `iam` | `deletion` | `DELETE /roles/{name}` (`phenix.role.name`) |
+| `request-auth` | `authentication` | `info` | any API or file server request refused for its token (`event.reason`), at most once a minute for each client address and reason |
+| `config-create` | `configuration` | `creation` | `POST /configs`, `POST /workflow/configs/{branch}` for a new config (and its refusal by a role that may neither create nor update configs), and `PUT /configs/{kind}/{name}` refusals of the new name it renames a config to |
+| `config-update` | `configuration` | `change` | `PUT /configs/{kind}/{name}`, `POST /workflow/configs/{branch}` for a stored config |
+| `config-delete` | `configuration` | `deletion` | `DELETE /configs/{kind}/{name}` |
+| `workflow-apply` | `configuration` | `change` | `POST /workflow/apply/{branch}` (`phenix.workflow.branch`, `phenix.workflow.action`) |
+| `settings-update` | `configuration` | `change` | `POST /settings` (`phenix.settings.changed`) |
+| `experiment-create` | `configuration` | `creation` | `POST /experiments` |
+| `experiment-update` | `configuration` | `change` | `PATCH /experiments/{name}`, and the VLAN pin and range routes `PUT` and `DELETE .../vlans/aliases/{alias}`, `PUT` and `DELETE .../vlans/range`, `POST .../vlans/pin-live` |
+| `experiment-schedule` | `configuration` | `change` | `POST /experiments/{name}/schedule` |
+| `experiment-delete` | `configuration` | `deletion` | `DELETE /experiments/{name}` |
+| `experiment-start` | `host` | `start` | `POST /experiments/{name}/start` |
+| `experiment-stop` | `host` | `end` | `POST /experiments/{name}/stop` |
+| `app-trigger` | `process` | `start` | `POST /experiments/{name}/trigger` (`phenix.app.names`, `phenix.app.stage`) |
+| `app-trigger-cancel` | `process` | `end` | `DELETE /experiments/{name}/trigger` |
+| `scorch-start` | `process` | `start` | `POST .../scorch/pipelines/{run}`, `POST .../scorch/pipelines/{run}/cleanup` (`phenix.scorch.cleanup_only`) |
+| `scorch-cancel` | `process` | `end` | `DELETE .../scorch/pipelines/{run}` |
+| `scorch-clear` | `process` | `change` | `POST .../scorch/pipelines/{run}/clear` |
+| `scorch-terminal-exit` | `process` | `end` | `POST .../scorch/terminals/{pid}/exit/{id}` |
+| `vm-start` | `host` | `start` | `POST .../vms/{name}/start`, `POST .../vms/actions` with `start` (one event per VM) |
+| `vm-stop` | `host` | `end` | `POST .../vms/{name}/stop`, `POST .../vms/actions` with `pause` |
+| `vm-shutdown` | `host` | `end` | `POST .../vms/{name}/shutdown`, `POST .../vms/actions` with `shutdown` |
+| `vm-restart` | `host` | `change` | `POST .../vms/{name}/restart`, `POST .../vms/actions` with `restart` |
+| `vm-reset-disk` | `host` | `change` | `POST .../vms/{name}/reset`, `POST .../vms/actions` with `resetDisk` |
+| `vm-redeploy` | `host` | `change` | `POST .../vms/{name}/redeploy` |
+| `vm-kill` | `host` | `end` | `DELETE .../vms/{name}`, `POST .../vms/actions` with `kill` |
+| `vm-update` | `configuration` | `change` | `PATCH .../vms/{name}`, `PATCH /experiments/{exp}/vms` and `POST /experiments/{exp}/vms/resetSettings` (one event per VM), `PUT` and `DELETE .../vms/{name}/interfaces/{iface}/qos` (`qos`), naming the settings changed in `phenix.vm.changed`; refused (`event.reason` `port forwards not allowed`) for annotations that start port forwards the role may not create |
+| `vm-cdrom-change`, `vm-cdrom-eject` | `host` | `change` | `POST .../vms/{name}/cdrom` (the disc in `file.path`), `DELETE .../vms/{name}/cdrom` |
+| `capture-start` | `network` | `start` | `POST .../vms/{name}/captures`, `POST .../captureSubnet` (one event per VM), `POST .../captureVlan` (one event per capture, `phenix.capture.vlan`) |
+| `capture-stop` | `network` | `end` | `DELETE .../vms/{name}/captures`, `POST .../stopCaptureSubnet` (one event per VM), `POST .../stopCaptureVlan` (one event per capture, `phenix.capture.vlan`) |
+| `capture-stream` | `network` | `access` | `GET .../captures/{iface}/stream`, `GET /webshark/streams/{token}` |
+| `capture-webshark-open` | `network` | `access` | `POST /experiments/{exp}/webshark` |
+| `capture-webshark-read` | `network` | `access` | `GET /webshark/captures/{name}` (once per grant), `GET /webshark/json?method=download` (once per download) |
+| `capture-token-create` | `iam` | `creation` | `POST /experiments/{exp}/captureTokens` |
+| `capture-token-revoke` | `iam` | `deletion` | `DELETE /experiments/{exp}/captureTokens/{id}` |
+| `netflow-start`, `netflow-stop` | `network` | `start`, `end` | `POST /experiments/{exp}/netflow`, `DELETE /experiments/{exp}/netflow` |
+| `netflow-download` | `file` | `access` | `GET /experiments/{exp}/netflow/captures/{id}` (once per download, not per resumed range or `HEAD`), naming the capture and format in `phenix.netflow.capture` and `phenix.netflow.format`, and for CSV and JSONL the flows written and lines skipped in `phenix.netflow.flows` and `phenix.netflow.skipped` |
+| `file-download` | `file` | `access` | `GET /experiments/{name}/files/{filename}` (downloads and the Files tab's viewer), `POST .../files/download` (one event per file sent, including those sent before the download failed), `GET .../vms/{name}/files/download`, `GET /jobs/{id}/artifact` of an archive job (one event per file archived); refusals of `GET .../files/{filename}/checksum` and `POST .../files/archive`, and archive jobs that fail or are canceled |
+| `file-upload` | `file` | `creation` | the file server's upload page (one event per file) |
+| `file-delete` | `file` | `deletion` | `DELETE /experiments/{name}/files/{filename}`, `POST .../files/delete` (one event per file) |
+| `console-create` | `process` | `start` | `POST /console` |
+| `console-attach` | `process` | `access` | `GET /console/{pid}/ws`; refusals of `GET /console/{pid}` and `POST /console/{pid}/size`, and of another user's console on any console route |
+| `console-terminate` | `process` | `end` | `DELETE /console/{pid}` |
+| `console-end` | `process` | `end` | none: a console ended, for any reason |
+| `vnc-attach` | `session` | `start` | `GET .../vms/{name}/vnc/ws`; refusals of `GET .../vms/{name}/vnc` |
+| `port-forward-attach` | `network` | `connection` | `GET .../vms/{name}/forwards/{host}/{port}/ws` |
+| `disk-snapshot`, `disk-clone` | `file` | `creation` | `POST /disks/snapshot`, `POST /disks/clone`, `POST /disks/clone/jobs` |
+| `disk-rename`, `disk-commit`, `disk-rebase`, `disk-resize` | `file` | `change` | `POST /disks/rename`, `/disks/commit`, `/disks/rebase`, `/disks/resize` |
+| `disk-delete` | `file` | `deletion` | `DELETE /disks`; refused (`event.reason` `in use`) for an image that other images or experiments use, and `phenix.disk.force` for a forced delete |
+| `disk-upload` | `file` | `creation` | `POST /disks` |
+| `disk-download` | `file` | `access` | `GET /disks/download`; refusals of `GET /disks/checksum` |
+| `vm-snapshot`, `vm-commit`, `vm-memory-snapshot` | `file` | `creation` | `POST .../vms/{name}/snapshots`, `/commit`, `/memorySnapshot` |
+| `vm-restore` | `file` | `change` | `POST .../vms/{name}/snapshots/{snapshot}` |
+| `vm-mount`, `vm-unmount` | `session` | `start`, `end` | `POST .../vms/{name}/mount`, `DELETE .../vms/{name}/unmount` |
+| `vm-file-upload`, `vm-file-copy` | `file` | `creation` | `PUT .../vms/{name}/files/upload`, `POST .../vms/{name}/files/copy` |
+| `log-download` | `file` | `access` | `GET /logs/files/{name}`, naming the log file in `phenix.log.name` |
+| `vlan-blacklist-add`, `vlan-blacklist-remove` | `configuration` | `creation`, `deletion` | `PUT /vlans/blacklist/{id}`, `DELETE /vlans/blacklist/{id}`, naming the VLAN ID in `phenix.vlan.id` |
+| `vlan-release` | `configuration` | `deletion` | `DELETE /vlans/allocations/{namespace}`, naming the minimega namespace in `phenix.vlan.namespace` |
+| `minimega-command` | `process` | `start` | `POST /minimega/commands`, naming the command line in `phenix.minimega.command` |
+| `runtime-setting-change` | `configuration` | `change` | `PUT /runtimeSettings/{key}`, `DELETE /runtimeSettings/{key}`, naming the setting in `phenix.setting.key` |
 
 !!! tip "Troubleshooting"
     For common logging issues and solutions, please see the [Troubleshooting](troubleshooting.md) page.

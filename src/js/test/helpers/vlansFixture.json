@@ -1,0 +1,678 @@
+{
+  "vlans": [
+    {
+      "id": 100,
+      "alias": "",
+      "experiment": "",
+      "namespace": "",
+      "running": false,
+      "owned": false,
+      "states": [
+        "blacklisted"
+      ],
+      "sources": {
+        "phenix": null,
+        "minimega": 100
+      },
+      "vms": 0,
+      "hosts": [],
+      "issues": [
+        "pin-blacklisted"
+      ]
+    },
+    {
+      "id": 100,
+      "alias": "MGMT",
+      "experiment": "lab",
+      "namespace": "",
+      "running": false,
+      "owned": true,
+      "states": [
+        "pinned"
+      ],
+      "sources": {
+        "phenix": 100,
+        "minimega": null
+      },
+      "vms": 1,
+      "hosts": [],
+      "issues": [
+        "pin-blacklisted"
+      ]
+    },
+    {
+      "id": 101,
+      "alias": "MGMT",
+      "experiment": "substation-a",
+      "namespace": "substation-a",
+      "running": true,
+      "owned": true,
+      "states": [
+        "pinned",
+        "allocated"
+      ],
+      "sources": {
+        "phenix": 101,
+        "minimega": 101
+      },
+      "vms": 12,
+      "hosts": [
+        "compute1"
+      ],
+      "issues": []
+    },
+    {
+      "id": 102,
+      "alias": "EXP",
+      "experiment": "scratch",
+      "namespace": "",
+      "running": false,
+      "owned": true,
+      "states": [
+        "pinned"
+      ],
+      "sources": {
+        "phenix": 102,
+        "minimega": null
+      },
+      "vms": 3,
+      "hosts": [],
+      "issues": [
+        "duplicate-pin"
+      ]
+    },
+    {
+      "id": 102,
+      "alias": "SCADA",
+      "experiment": "substation-a",
+      "namespace": "substation-a",
+      "running": true,
+      "owned": true,
+      "states": [
+        "pinned",
+        "allocated"
+      ],
+      "sources": {
+        "phenix": 102,
+        "minimega": 102
+      },
+      "vms": 8,
+      "hosts": [
+        "compute1"
+      ],
+      "issues": [
+        "duplicate-pin"
+      ]
+    },
+    {
+      "id": 103,
+      "alias": "FIELD",
+      "experiment": "substation-a",
+      "namespace": "substation-a",
+      "running": true,
+      "owned": true,
+      "states": [
+        "pinned",
+        "allocated"
+      ],
+      "sources": {
+        "phenix": 103,
+        "minimega": 103
+      },
+      "vms": 21,
+      "hosts": [
+        "compute1"
+      ],
+      "issues": []
+    },
+    {
+      "id": 104,
+      "alias": "CORP",
+      "experiment": "substation-a",
+      "namespace": "substation-a",
+      "running": true,
+      "owned": true,
+      "states": [
+        "pinned"
+      ],
+      "sources": {
+        "phenix": 104,
+        "minimega": 110
+      },
+      "vms": 6,
+      "hosts": [
+        "compute1"
+      ],
+      "issues": [
+        "id-differs"
+      ]
+    },
+    {
+      "id": 110,
+      "alias": "CORP",
+      "experiment": "substation-a",
+      "namespace": "substation-a",
+      "running": true,
+      "owned": true,
+      "states": [
+        "allocated"
+      ],
+      "sources": {
+        "phenix": 104,
+        "minimega": 110
+      },
+      "vms": 6,
+      "hosts": [
+        "compute1"
+      ],
+      "issues": [
+        "id-differs"
+      ]
+    },
+    {
+      "id": 150,
+      "alias": "ENG",
+      "experiment": "ics-training",
+      "namespace": "",
+      "running": false,
+      "owned": true,
+      "states": [
+        "pinned"
+      ],
+      "sources": {
+        "phenix": 150,
+        "minimega": null
+      },
+      "vms": 1,
+      "hosts": [],
+      "issues": []
+    },
+    {
+      "id": 151,
+      "alias": "OPS",
+      "experiment": "ics-training",
+      "namespace": "",
+      "running": false,
+      "owned": true,
+      "states": [
+        "pinned"
+      ],
+      "sources": {
+        "phenix": 151,
+        "minimega": null
+      },
+      "vms": 1,
+      "hosts": [],
+      "issues": []
+    },
+    {
+      "id": 152,
+      "alias": "DMZ",
+      "experiment": "ics-training",
+      "namespace": "",
+      "running": false,
+      "owned": true,
+      "states": [
+        "pinned"
+      ],
+      "sources": {
+        "phenix": 152,
+        "minimega": null
+      },
+      "vms": 1,
+      "hosts": [],
+      "issues": []
+    },
+    {
+      "id": 250,
+      "alias": "LOG",
+      "experiment": "ics-training",
+      "namespace": "",
+      "running": false,
+      "owned": true,
+      "states": [
+        "pinned"
+      ],
+      "sources": {
+        "phenix": 250,
+        "minimega": null
+      },
+      "vms": 1,
+      "hosts": [],
+      "issues": [
+        "out-of-range"
+      ]
+    },
+    {
+      "id": 301,
+      "alias": "RT_C2",
+      "experiment": "red-team-2",
+      "namespace": "red-team-2",
+      "running": true,
+      "owned": true,
+      "states": [
+        "pinned",
+        "allocated"
+      ],
+      "sources": {
+        "phenix": 301,
+        "minimega": 301
+      },
+      "vms": 1,
+      "hosts": [
+        "compute2"
+      ],
+      "issues": []
+    },
+    {
+      "id": 302,
+      "alias": "RT_TARGET",
+      "experiment": "red-team-2",
+      "namespace": "red-team-2",
+      "running": true,
+      "owned": true,
+      "states": [
+        "pinned",
+        "allocated"
+      ],
+      "sources": {
+        "phenix": 302,
+        "minimega": 302
+      },
+      "vms": 1,
+      "hosts": [
+        "compute2"
+      ],
+      "issues": []
+    },
+    {
+      "id": 330,
+      "alias": "TAP_TEMP",
+      "experiment": "red-team-2",
+      "namespace": "red-team-2",
+      "running": true,
+      "owned": true,
+      "states": [
+        "allocated"
+      ],
+      "sources": {
+        "phenix": null,
+        "minimega": 330
+      },
+      "vms": 1,
+      "hosts": [
+        "compute2"
+      ],
+      "issues": [
+        "minimega-only"
+      ]
+    },
+    {
+      "id": 400,
+      "alias": "LAN",
+      "experiment": "",
+      "namespace": "old-demo",
+      "running": false,
+      "owned": false,
+      "states": [
+        "allocated"
+      ],
+      "sources": {
+        "phenix": null,
+        "minimega": 400
+      },
+      "vms": 0,
+      "hosts": [],
+      "issues": [
+        "unowned"
+      ]
+    },
+    {
+      "id": 401,
+      "alias": "WAN",
+      "experiment": "",
+      "namespace": "old-demo",
+      "running": false,
+      "owned": false,
+      "states": [
+        "allocated"
+      ],
+      "sources": {
+        "phenix": null,
+        "minimega": 401
+      },
+      "vms": 0,
+      "hosts": [],
+      "issues": [
+        "unowned"
+      ]
+    },
+    {
+      "id": 402,
+      "alias": "DMZ",
+      "experiment": "",
+      "namespace": "old-demo",
+      "running": false,
+      "owned": false,
+      "states": [
+        "allocated"
+      ],
+      "sources": {
+        "phenix": null,
+        "minimega": 402
+      },
+      "vms": 0,
+      "hosts": [],
+      "issues": [
+        "unowned"
+      ]
+    },
+    {
+      "id": 403,
+      "alias": "OOB",
+      "experiment": "",
+      "namespace": "old-demo",
+      "running": false,
+      "owned": false,
+      "states": [
+        "allocated"
+      ],
+      "sources": {
+        "phenix": null,
+        "minimega": 403
+      },
+      "vms": 0,
+      "hosts": [],
+      "issues": [
+        "unowned"
+      ]
+    },
+    {
+      "id": 999,
+      "alias": "",
+      "experiment": "",
+      "namespace": "",
+      "running": false,
+      "owned": false,
+      "states": [
+        "blacklisted"
+      ],
+      "sources": {
+        "phenix": null,
+        "minimega": 999
+      },
+      "vms": 0,
+      "hosts": [],
+      "issues": []
+    }
+  ],
+  "experiments": [
+    {
+      "name": "ics-training",
+      "running": false,
+      "min": 150,
+      "max": 249,
+      "aliases": [
+        {
+          "alias": "DMZ",
+          "pinned": 152,
+          "live": 0,
+          "vms": 1
+        },
+        {
+          "alias": "ENG",
+          "pinned": 150,
+          "live": 0,
+          "vms": 1
+        },
+        {
+          "alias": "LOG",
+          "pinned": 250,
+          "live": 0,
+          "vms": 1
+        },
+        {
+          "alias": "OPS",
+          "pinned": 151,
+          "live": 0,
+          "vms": 1
+        }
+      ],
+      "issues": [
+        "range-overlap",
+        "out-of-range"
+      ]
+    },
+    {
+      "name": "lab",
+      "running": false,
+      "min": 0,
+      "max": 0,
+      "aliases": [
+        {
+          "alias": "MGMT",
+          "pinned": 100,
+          "live": 0,
+          "vms": 1
+        }
+      ],
+      "issues": [
+        "pin-blacklisted"
+      ]
+    },
+    {
+      "name": "red-team-2",
+      "running": true,
+      "min": 300,
+      "max": 399,
+      "aliases": [
+        {
+          "alias": "RT_C2",
+          "pinned": 301,
+          "live": 301,
+          "vms": 1
+        },
+        {
+          "alias": "RT_TARGET",
+          "pinned": 302,
+          "live": 302,
+          "vms": 1
+        },
+        {
+          "alias": "TAP_TEMP",
+          "pinned": 0,
+          "live": 330,
+          "vms": 1
+        }
+      ],
+      "issues": [
+        "minimega-only"
+      ]
+    },
+    {
+      "name": "scratch",
+      "running": false,
+      "min": 0,
+      "max": 0,
+      "aliases": [
+        {
+          "alias": "EXP",
+          "pinned": 102,
+          "live": 0,
+          "vms": 3
+        }
+      ],
+      "issues": [
+        "duplicate-pin"
+      ]
+    },
+    {
+      "name": "substation-a",
+      "running": true,
+      "min": 100,
+      "max": 199,
+      "aliases": [
+        {
+          "alias": "CORP",
+          "pinned": 104,
+          "live": 110,
+          "vms": 6
+        },
+        {
+          "alias": "FIELD",
+          "pinned": 103,
+          "live": 103,
+          "vms": 21
+        },
+        {
+          "alias": "MGMT",
+          "pinned": 101,
+          "live": 101,
+          "vms": 12
+        },
+        {
+          "alias": "SCADA",
+          "pinned": 102,
+          "live": 102,
+          "vms": 8
+        }
+      ],
+      "issues": [
+        "duplicate-pin",
+        "id-differs",
+        "range-overlap"
+      ]
+    }
+  ],
+  "issues": [
+    {
+      "kind": "duplicate-pin",
+      "severity": "conflict",
+      "vlan": 102,
+      "alias": "EXP",
+      "experiments": [
+        "scratch",
+        "substation-a"
+      ],
+      "namespace": "",
+      "range": null,
+      "message": "Also pinned by substation-a (SCADA)."
+    },
+    {
+      "kind": "duplicate-pin",
+      "severity": "conflict",
+      "vlan": 102,
+      "alias": "SCADA",
+      "experiments": [
+        "substation-a",
+        "scratch"
+      ],
+      "namespace": "",
+      "range": null,
+      "message": "Also pinned by scratch (EXP)."
+    },
+    {
+      "kind": "pin-blacklisted",
+      "severity": "conflict",
+      "vlan": 100,
+      "alias": "MGMT",
+      "experiments": [
+        "lab"
+      ],
+      "namespace": "",
+      "range": null,
+      "message": "minimega blacklists 100."
+    },
+    {
+      "kind": "unowned",
+      "severity": "conflict",
+      "vlan": null,
+      "alias": "",
+      "experiments": [],
+      "namespace": "old-demo",
+      "range": null,
+      "message": "No experiment has the namespace old-demo."
+    },
+    {
+      "kind": "id-differs",
+      "severity": "difference",
+      "vlan": 104,
+      "alias": "CORP",
+      "experiments": [
+        "substation-a"
+      ],
+      "namespace": "",
+      "range": null,
+      "message": "phēnix pins 104. minimega allocated 110."
+    },
+    {
+      "kind": "minimega-only",
+      "severity": "difference",
+      "vlan": 330,
+      "alias": "TAP_TEMP",
+      "experiments": [
+        "red-team-2"
+      ],
+      "namespace": "",
+      "range": null,
+      "message": "Not in the experiment spec."
+    },
+    {
+      "kind": "range-overlap",
+      "severity": "warning",
+      "vlan": null,
+      "alias": "",
+      "experiments": [
+        "ics-training",
+        "substation-a"
+      ],
+      "namespace": "",
+      "range": [
+        150,
+        199
+      ],
+      "message": "150–199 overlaps substation-a."
+    },
+    {
+      "kind": "range-overlap",
+      "severity": "warning",
+      "vlan": null,
+      "alias": "",
+      "experiments": [
+        "substation-a",
+        "ics-training"
+      ],
+      "namespace": "",
+      "range": [
+        150,
+        199
+      ],
+      "message": "150–199 overlaps ics-training."
+    },
+    {
+      "kind": "out-of-range",
+      "severity": "warning",
+      "vlan": 250,
+      "alias": "LOG",
+      "experiments": [
+        "ics-training"
+      ],
+      "namespace": "",
+      "range": [
+        150,
+        249
+      ],
+      "message": "Outside the range 150–249."
+    }
+  ],
+  "blacklist": [
+    100,
+    999
+  ],
+  "minimega": {
+    "ok": true,
+    "read": "2026-11-05T12:00:00Z",
+    "error": "",
+    "blacklistRemoval": true
+  }
+}

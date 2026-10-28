@@ -2321,7 +2321,7 @@ function axeScans(scheme) {
           soft: true,
           label: 'axe on the Builder button of the Configs viewer',
         });
-        await viewer.getByRole('button', { name: 'Exit' }).click();
+        await viewer.getByRole('button', { name: 'Close' }).click();
         await expect(viewer).toBeHidden();
       });
       expectNoFatal(issues);
