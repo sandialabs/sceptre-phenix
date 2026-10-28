@@ -1,0 +1,2681 @@
+{
+  "description": "The design warnings, and the errors only publishing refuses, that validate.go and the front end's validate.js must agree on (DesignWarnings in warnings.go and the device settings among PublishBlockers in topology.go, collectWarnings in validate.js, which marks the errors blocksPublish). Each case changes document.json as the cases of validation-corpus.json do, and the document stays valid. Its warnings are the issues of the codes listed here (codes, and blockers for the errors) that both sides give for it, each with its code, path and message, and its field when it has one, in any order. Read by TestWarningCorpus and validate.contract.test.js.",
+  "document": "document.json",
+  "codes": [
+    "device.rulesets.ignored",
+    "interface.ruleset.unknown",
+    "interface.ip.outside-subnet",
+    "network.gateway.unowned",
+    "network.subnet.overlap",
+    "device.router-os.unsupported",
+    "device.interfaces.unconfigured",
+    "device.serial.unconfigured",
+    "device.injections.unapplied",
+    "device.ospf.unused",
+    "device.ospf-network.unused",
+    "interface.ospf.outside-area",
+    "device.ntp-server.ignored",
+    "device.ntp-server.no-mgmt",
+    "device.enable-ssh.invalid",
+    "device.autotunnel.invalid",
+    "device.default-apps.invalid"
+  ],
+  "blockers": [
+    "device.drives.none",
+    "device.ospf.missing",
+    "device.ntp-server.invalid"
+  ],
+  "cases": [
+    {
+      "name": "the fixture",
+      "set": [],
+      "warnings": []
+    },
+    {
+      "name": "rulesets of a virtual machine",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "rulesets"
+          ],
+          "value": [
+            {
+              "name": "web-in",
+              "default": "drop",
+              "rules": [
+                {
+                  "id": 10,
+                  "action": "accept",
+                  "protocol": "tcp"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.rulesets.ignored",
+          "path": "nodes[1].device.spec.type",
+          "message": "device \"router\" has firewall rulesets, but phenix applies them only to a device of type Router or Firewall. The type of the device is \"VirtualMachine\"",
+          "field": "spec.type"
+        }
+      ]
+    },
+    {
+      "name": "an empty ruleset list",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "rulesets"
+          ],
+          "value": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "a ruleset name on an interface of a device with no type",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "delete": true
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "ruleset_out"
+          ],
+          "value": "web-in"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.rulesets.ignored",
+          "path": "nodes[1].device.spec.type",
+          "message": "device \"router\" has firewall rulesets, but phenix applies them only to a device of type Router or Firewall. The device has no type",
+          "field": "spec.type"
+        }
+      ]
+    },
+    {
+      "name": "a router applies its own rulesets",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "rulesets"
+          ],
+          "value": [
+            {
+              "name": "web-in",
+              "default": "drop",
+              "rules": [
+                {
+                  "id": 10,
+                  "action": "accept",
+                  "protocol": "tcp"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "ruleset_in"
+          ],
+          "value": "web-in"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "ruleset_out"
+          ],
+          "value": ""
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.router-os.unsupported",
+          "path": "nodes[1].device.spec.hardware.os_type",
+          "message": "device \"router\" is a Router with os_type \"linux\". phenix configures this os_type as vyatta, but phenix deprecated it for routers. Set hardware.os_type to vyatta, vyos or minirouter",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "a router interface names a ruleset the router does not have",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "rulesets"
+          ],
+          "value": [
+            {
+              "name": "web-in",
+              "default": "drop",
+              "rules": [
+                {
+                  "id": 10,
+                  "action": "accept",
+                  "protocol": "tcp"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "ruleset_in"
+          ],
+          "value": "web-in"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            1,
+            "ruleset_out"
+          ],
+          "value": "Web-in"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "interface.ruleset.unknown",
+          "path": "nodes[1].device.spec.network.interfaces[1].ruleset_out",
+          "message": "interface \"eth1\" of \"router\" names ruleset \"Web-in\" for outbound traffic, but the device has no ruleset of that name. Thus phenix applies no outbound firewall to the interface",
+          "field": "spec.network.interfaces.1.ruleset_out"
+        },
+        {
+          "code": "device.router-os.unsupported",
+          "path": "nodes[1].device.spec.hardware.os_type",
+          "message": "device \"router\" is a Router with os_type \"linux\". phenix configures this os_type as vyatta, but phenix deprecated it for routers. Set hardware.os_type to vyatta, vyos or minirouter",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "a firewall of a type in lowercase with no rulesets",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "firewall"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "ruleset_in"
+          ],
+          "value": "dmz"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "interface.ruleset.unknown",
+          "path": "nodes[1].device.spec.network.interfaces[0].ruleset_in",
+          "message": "interface \"eth0\" of \"router\" names ruleset \"dmz\" for inbound traffic, but the device has no ruleset of that name. Thus phenix applies no inbound firewall to the interface",
+          "field": "spec.network.interfaces.0.ruleset_in"
+        },
+        {
+          "code": "device.router-os.unsupported",
+          "path": "nodes[1].device.spec.hardware.os_type",
+          "message": "device \"router\" is a firewall with os_type \"linux\". phenix configures this os_type as vyatta, but phenix deprecated it for routers. Set hardware.os_type to vyatta, vyos or minirouter",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "the rulesets of an external device",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "external"
+          ],
+          "value": true
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "rulesets"
+          ],
+          "value": [
+            {
+              "name": "web-in",
+              "default": "drop",
+              "rules": [
+                {
+                  "id": 10,
+                  "action": "accept",
+                  "protocol": "tcp"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "ruleset_in"
+          ],
+          "value": "nope"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "addresses outside the subnet of their network",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "subnet"
+          ],
+          "value": "10.1.0.0/24"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "interface.ip.outside-subnet",
+          "path": "nodes[1].device.spec.network.interfaces[0].address",
+          "message": "IP address 10.0.0.1 of interface \"eth0\" of \"router\" is not a host address of subnet 10.1.0.0/24 of network \"EXP\"",
+          "field": "spec.network.interfaces.0.address"
+        },
+        {
+          "code": "interface.ip.outside-subnet",
+          "path": "nodes[2].device.spec.network.interfaces[0].address",
+          "message": "IP address 10.0.0.2 of interface \"eth0\" of \"host-a\" is not a host address of subnet 10.1.0.0/24 of network \"EXP\"",
+          "field": "spec.network.interfaces.0.address"
+        }
+      ]
+    },
+    {
+      "name": "addresses inside the subnet of their network",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "subnet"
+          ],
+          "value": "10.0.0.0/24"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "the network address of a subnet with a prefix length",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "subnet"
+          ],
+          "value": "10.0.0.0/24"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "address"
+          ],
+          "value": " 10.0.0.0/24 "
+        }
+      ],
+      "warnings": [
+        {
+          "code": "interface.ip.outside-subnet",
+          "path": "nodes[2].device.spec.network.interfaces[0].address",
+          "message": "IP address 10.0.0.0 of interface \"eth0\" of \"host-a\" is not a host address of subnet 10.0.0.0/24 of network \"EXP\"",
+          "field": "spec.network.interfaces.0.address"
+        }
+      ]
+    },
+    {
+      "name": "the address of a DHCP interface",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "subnet"
+          ],
+          "value": "10.0.0.0/24"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "proto"
+          ],
+          "value": "DHCP"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "address"
+          ],
+          "value": "192.0.2.1"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "an unconnected interface on the network its VLAN names in another case",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "subnet"
+          ],
+          "value": "10.5.0.0/24"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            1,
+            "proto"
+          ],
+          "value": "static"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            1,
+            "address"
+          ],
+          "value": "10.9.0.1"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            1,
+            "vlan"
+          ],
+          "value": " reserved "
+        }
+      ],
+      "warnings": [
+        {
+          "code": "interface.ip.outside-subnet",
+          "path": "nodes[1].device.spec.network.interfaces[1].address",
+          "message": "IP address 10.9.0.1 of interface \"eth1\" of \"router\" is not a host address of subnet 10.5.0.0/24 of network \"RESERVED\"",
+          "field": "spec.network.interfaces.1.address"
+        }
+      ]
+    },
+    {
+      "name": "a connected interface is on the network of its connection, not of its VLAN",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "subnet"
+          ],
+          "value": "10.5.0.0/24"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "vlan"
+          ],
+          "value": "RESERVED"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "a gateway no interface has",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "subnet"
+          ],
+          "value": "10.0.0.0/24"
+        },
+        {
+          "path": [
+            "networks",
+            0,
+            "gateway"
+          ],
+          "value": "10.0.0.254"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "network.gateway.unowned",
+          "path": "networks[0].gateway",
+          "message": "no interface on network \"EXP\" has its gateway address 10.0.0.254. Give that address to a router interface on the network, or change the gateway"
+        }
+      ]
+    },
+    {
+      "name": "a gateway a router has",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "subnet"
+          ],
+          "value": "10.0.0.0/24"
+        },
+        {
+          "path": [
+            "networks",
+            0,
+            "gateway"
+          ],
+          "value": "10.0.0.1"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "a gateway of a network with no subnet that an interface has",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "gateway"
+          ],
+          "value": "10.0.0.2"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "a gateway of a network with no subnet that no interface has",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "gateway"
+          ],
+          "value": "10.0.0.2"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "network.gateway.unowned",
+          "path": "networks[1].gateway",
+          "message": "no interface on network \"RESERVED\" has its gateway address 10.0.0.2. Give that address to a router interface on the network, or change the gateway"
+        }
+      ]
+    },
+    {
+      "name": "a gateway that only a DHCP interface has",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "gateway"
+          ],
+          "value": "10.0.0.2"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "proto"
+          ],
+          "value": "dhcp"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "network.gateway.unowned",
+          "path": "networks[0].gateway",
+          "message": "no interface on network \"EXP\" has its gateway address 10.0.0.2. Give that address to a router interface on the network, or change the gateway"
+        }
+      ]
+    },
+    {
+      "name": "a subnet that holds another",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "subnet"
+          ],
+          "value": "10.0.0.0/16"
+        },
+        {
+          "path": [
+            "networks",
+            1,
+            "subnet"
+          ],
+          "value": "10.0.5.0/24"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "network.subnet.overlap",
+          "path": "networks[0].subnet",
+          "message": "subnet 10.0.0.0/16 of network \"EXP\" overlaps subnet 10.0.5.0/24 of network \"RESERVED\". Thus a router cannot route between them. Ignore this warning for networks that never connect, such as isolated enclaves that reuse a subnet on purpose"
+        },
+        {
+          "code": "network.subnet.overlap",
+          "path": "networks[1].subnet",
+          "message": "subnet 10.0.5.0/24 of network \"RESERVED\" overlaps subnet 10.0.0.0/16 of network \"EXP\". Thus a router cannot route between them. Ignore this warning for networks that never connect, such as isolated enclaves that reuse a subnet on purpose"
+        }
+      ]
+    },
+    {
+      "name": "two networks with one subnet",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "subnet"
+          ],
+          "value": "10.0.0.0/24"
+        },
+        {
+          "path": [
+            "networks",
+            1,
+            "subnet"
+          ],
+          "value": "10.0.0.0/24"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "network.subnet.overlap",
+          "path": "networks[0].subnet",
+          "message": "subnet 10.0.0.0/24 of network \"EXP\" overlaps subnet 10.0.0.0/24 of network \"RESERVED\". Thus a router cannot route between them. Ignore this warning for networks that never connect, such as isolated enclaves that reuse a subnet on purpose"
+        },
+        {
+          "code": "network.subnet.overlap",
+          "path": "networks[1].subnet",
+          "message": "subnet 10.0.0.0/24 of network \"RESERVED\" overlaps subnet 10.0.0.0/24 of network \"EXP\". Thus a router cannot route between them. Ignore this warning for networks that never connect, such as isolated enclaves that reuse a subnet on purpose"
+        }
+      ]
+    },
+    {
+      "name": "subnets side by side",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "subnet"
+          ],
+          "value": "10.0.0.0/24"
+        },
+        {
+          "path": [
+            "networks",
+            1,
+            "subnet"
+          ],
+          "value": "10.0.1.0/24"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "a router of os_type windows",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "windows"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.router-os.unsupported",
+          "path": "nodes[1].device.spec.hardware.os_type",
+          "message": "device \"router\" is a Router, but phenix configures a router only when its os_type is vyatta, vyos or minirouter. The os_type of the device is \"windows\". Thus phenix does not configure its routing or firewall. Set hardware.os_type to vyatta, vyos or minirouter",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "a firewall of os_type linux",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "firewall"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "linux"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.router-os.unsupported",
+          "path": "nodes[1].device.spec.hardware.os_type",
+          "message": "device \"router\" is a firewall with os_type \"linux\". phenix configures this os_type as vyatta, but phenix deprecated it for routers. Set hardware.os_type to vyatta, vyos or minirouter",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "a router of os_type minirouter",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "minirouter"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "a router with no os_type",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "delete": true
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.router-os.unsupported",
+          "path": "nodes[1].device.spec.hardware.os_type",
+          "message": "device \"router\" is a Router, but phenix configures a router only when its os_type is vyatta, vyos or minirouter. The device has no os_type. Thus phenix does not configure its routing or firewall. Set hardware.os_type to vyatta, vyos or minirouter",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "a router whose default apps are off",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "windows"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "phenix/default-apps": false
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "a static interface of os_type other",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "other"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.interfaces.unconfigured",
+          "path": "nodes[1].device.spec.hardware.os_type",
+          "message": "device \"router\" has os_type \"other\", for which phenix writes no interface configuration. Thus phenix gives its static interface \"eth0\" no address. Set hardware.os_type to linux, rhel, centos or windows, or set the addresses in its image",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "static and ospf interfaces of os_type Other",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "Other"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            1,
+            "proto"
+          ],
+          "value": "OSPF"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.interfaces.unconfigured",
+          "path": "nodes[1].device.spec.hardware.os_type",
+          "message": "device \"router\" has os_type \"Other\", for which phenix writes no interface configuration. Thus phenix gives its static interfaces \"eth0\", \"eth1\" no address. Set hardware.os_type to linux, rhel, centos or windows, or set the addresses in its image",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "a serial interface on rhel",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "rhel"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "type"
+          ],
+          "value": "serial"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.serial.unconfigured",
+          "path": "nodes[2].device.spec.hardware.os_type",
+          "message": "device \"host-a\" has serial interface \"eth0\", but phenix configures serial interfaces only on a device whose os_type is exactly \"linux\". The os_type of the device is \"rhel\". Set hardware.os_type to linux",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "a serial interface on Linux in capitals",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "Linux"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "type"
+          ],
+          "value": "serial"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.serial.unconfigured",
+          "path": "nodes[2].device.spec.hardware.os_type",
+          "message": "device \"host-a\" has serial interface \"eth0\", but phenix configures serial interfaces only on a device whose os_type is exactly \"linux\". The os_type of the device is \"Linux\". Set hardware.os_type to linux",
+          "field": "spec.hardware.os_type"
+        }
+      ]
+    },
+    {
+      "name": "a serial interface on linux",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "type"
+          ],
+          "value": "serial"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "injections without a snapshot",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "injections"
+          ],
+          "value": [
+            {
+              "src": "motd",
+              "dst": "/etc/motd"
+            }
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "general",
+            "snapshot"
+          ],
+          "value": false
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.injections.unapplied",
+          "path": "nodes[2].device.spec.general.snapshot",
+          "message": "device \"host-a\" has file injections, but its general.snapshot is false. Thus phenix neither injects nor deletes its files. Set general.snapshot to true",
+          "field": "spec.general.snapshot"
+        }
+      ]
+    },
+    {
+      "name": "deletions from inject partition 0",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "deletions"
+          ],
+          "value": [
+            {
+              "path": "/etc/motd"
+            }
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "hardware",
+            "drives",
+            0,
+            "inject_partition"
+          ],
+          "value": 0
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.injections.unapplied",
+          "path": "nodes[2].device.spec.hardware.drives[0].inject_partition",
+          "message": "device \"host-a\" has file deletions, but the inject_partition of its first drive is 0. Thus phenix neither injects nor deletes its files. Set hardware.drives[0].inject_partition to the partition that holds the file system",
+          "field": "spec.hardware.drives.0.inject_partition"
+        }
+      ]
+    },
+    {
+      "name": "injections and deletions of a device that does not boot",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "injections"
+          ],
+          "value": [
+            {
+              "src": "motd",
+              "dst": "/etc/motd"
+            }
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "deletions"
+          ],
+          "value": [
+            {
+              "path": "/tmp/x"
+            }
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "general",
+            "snapshot"
+          ],
+          "value": false
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "general",
+            "do_not_boot"
+          ],
+          "value": true
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "injections and deletions on partition 2",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "injections"
+          ],
+          "value": [
+            {
+              "src": "motd",
+              "dst": "/etc/motd"
+            }
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "deletions"
+          ],
+          "value": [
+            {
+              "path": "/tmp/x"
+            }
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "hardware",
+            "drives",
+            0,
+            "inject_partition"
+          ],
+          "value": 2
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "a virtual machine with an empty drive list",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "hardware",
+            "drives"
+          ],
+          "value": []
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.drives.none",
+          "path": "nodes[2].device.spec.hardware.drives",
+          "message": "device \"host-a\" has no drive, which phenix needs to start it. Add a drive to hardware.drives",
+          "field": "spec.hardware.drives"
+        }
+      ]
+    },
+    {
+      "name": "a virtual machine with no drive list",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "hardware",
+            "drives"
+          ],
+          "delete": true
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.drives.none",
+          "path": "nodes[2].device.spec.hardware.drives",
+          "message": "device \"host-a\" has no drive, which phenix needs to start it. Add a drive to hardware.drives",
+          "field": "spec.hardware.drives"
+        }
+      ]
+    },
+    {
+      "name": "a vyos router with a null drive list",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyos"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "hardware",
+            "drives"
+          ],
+          "value": null
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.drives.none",
+          "path": "nodes[2].device.spec.hardware.drives",
+          "message": "device \"host-a\" has no drive, which phenix needs to start it. Add a drive to hardware.drives",
+          "field": "spec.hardware.drives"
+        }
+      ]
+    },
+    {
+      "name": "an external device with no drive",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "external"
+          ],
+          "value": true
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "hardware",
+            "drives"
+          ],
+          "value": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "an ospf interface of a vyatta router with no network.ospf",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "proto"
+          ],
+          "value": "ospf"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.ospf.missing",
+          "path": "nodes[1].device.spec.network.interfaces[0].proto",
+          "message": "interface \"eth0\" of \"router\" has proto ospf, but the device has no network.ospf. Thus phenix cannot write its router configuration. Thus the experiment fails to start. Add network.ospf to the device, or set the proto of the interface to static",
+          "field": "spec.network.interfaces.0.proto"
+        }
+      ]
+    },
+    {
+      "name": "an ospf interface of a vyos router with network.ospf",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyos"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "proto"
+          ],
+          "value": "ospf"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "ospf"
+          ],
+          "value": {
+            "router_id": "0.0.0.1",
+            "areas": []
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "an OSPF interface in capitals of a vyatta router",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "proto"
+          ],
+          "value": "OSPF"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "an ospf interface of a minirouter with no network.ospf",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "minirouter"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "proto"
+          ],
+          "value": "ospf"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "interface.ospf.outside-area",
+          "path": "nodes[1].device.spec.network.interfaces[0].address",
+          "message": "interface \"eth0\" of \"router\" has proto ospf, but the device has no network.ospf. Thus the interface is in no OSPF area. Add network.ospf with an area network that holds the address of the interface",
+          "field": "spec.network.interfaces.0.address"
+        }
+      ]
+    },
+    {
+      "name": "a minirouter area network that holds no ospf interface",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "minirouter"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "proto"
+          ],
+          "value": "ospf"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "ospf"
+          ],
+          "value": {
+            "router_id": "0.0.0.1",
+            "areas": [
+              {
+                "area_id": 0,
+                "area_networks": [
+                  {
+                    "network": "10.0.0.0/24"
+                  },
+                  {
+                    "network": "10.9.0.0/16"
+                  },
+                  {
+                    "network": "bad"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.ospf-network.unused",
+          "path": "nodes[1].device.spec.network.ospf.areas[0].area_networks[1].network",
+          "message": "OSPF area network 10.9.0.0/16 of \"router\" holds the address of no interface with proto ospf. Thus minirouter does not advertise the area network. Give an ospf interface of the device an address in the area network, or remove the area network",
+          "field": "spec.network.ospf.areas.0.area_networks.1.network"
+        }
+      ]
+    },
+    {
+      "name": "a minirouter ospf interface outside every area network",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "minirouter"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "proto"
+          ],
+          "value": "Ospf"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "ospf"
+          ],
+          "value": {
+            "router_id": "0.0.0.1",
+            "areas": [
+              {
+                "area_id": 1,
+                "area_networks": [
+                  {
+                    "network": "10.1.0.0/24"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "interface.ospf.outside-area",
+          "path": "nodes[1].device.spec.network.interfaces[0].address",
+          "message": "IP address 10.0.0.1 of interface \"eth0\" of \"router\" is in no area network of its network.ospf. Thus the interface is in no OSPF area. Add an area network that holds the address",
+          "field": "spec.network.interfaces.0.address"
+        },
+        {
+          "code": "device.ospf-network.unused",
+          "path": "nodes[1].device.spec.network.ospf.areas[0].area_networks[0].network",
+          "message": "OSPF area network 10.1.0.0/24 of \"router\" holds the address of no interface with proto ospf. Thus minirouter does not advertise the area network. Give an ospf interface of the device an address in the area network, or remove the area network",
+          "field": "spec.network.ospf.areas.0.area_networks.0.network"
+        }
+      ]
+    },
+    {
+      "name": "a minirouter area network with host bits and a padded length",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "minirouter"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "interfaces",
+            0,
+            "proto"
+          ],
+          "value": "ospf"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "ospf"
+          ],
+          "value": {
+            "router_id": "0.0.0.1",
+            "areas": [
+              {
+                "area_id": 0,
+                "area_networks": [
+                  {
+                    "network": "10.0.0.7/024"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "network.ospf on a minirouter with no ospf interface",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "minirouter"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "network",
+            "ospf"
+          ],
+          "value": {
+            "router_id": "0.0.0.1",
+            "areas": []
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.ospf.unused",
+          "path": "nodes[1].device.spec.network.ospf",
+          "message": "device \"router\" has network.ospf, but none of its interfaces has proto ospf. Thus minirouter runs OSPF on no interface. Set the proto of the interfaces that must run OSPF to ospf, or remove network.ospf",
+          "field": "spec.network.ospf"
+        }
+      ]
+    },
+    {
+      "name": "vrouter/enable-ssh of a vyatta router naming an interface with no address",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "vrouter/enable-ssh": "eth1"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.enable-ssh.invalid",
+          "path": "nodes[1].device.spec.annotations.vrouter/enable-ssh",
+          "message": "the vrouter/enable-ssh annotation of \"router\" names interface \"eth1\", which has no IP address. Thus phenix does not enable SSH. Give the interface an address, or name another interface",
+          "field": "spec.annotations.vrouter/enable-ssh"
+        }
+      ]
+    },
+    {
+      "name": "vrouter/enable-ssh of a vyatta router naming an interface in capitals",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "vrouter/enable-ssh": "ETH0"
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "vrouter/enable-ssh of a vyatta router of an IPv6 address",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "vrouter/enable-ssh": "fe80::1"
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "vrouter/enable-ssh of a vyatta router of neither an address nor an interface",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "vrouter/enable-ssh": "10.0.0.300"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.enable-ssh.invalid",
+          "path": "nodes[1].device.spec.annotations.vrouter/enable-ssh",
+          "message": "the vrouter/enable-ssh annotation of \"router\" is \"10.0.0.300\", which is neither an IP address nor the name of an interface of the device. Thus phenix does not enable SSH. Set the annotation to an IP address or to the name of an interface of the device",
+          "field": "spec.annotations.vrouter/enable-ssh"
+        }
+      ]
+    },
+    {
+      "name": "vrouter/enable-ssh of a vyatta router that is not text",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "vrouter/enable-ssh": true
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.enable-ssh.invalid",
+          "path": "nodes[1].device.spec.annotations.vrouter/enable-ssh",
+          "message": "the vrouter/enable-ssh annotation of \"router\" is not text. Thus phenix does not enable SSH. Set the annotation to an IP address or to the name of an interface of the device",
+          "field": "spec.annotations.vrouter/enable-ssh"
+        }
+      ]
+    },
+    {
+      "name": "vrouter/enable-ssh of a virtual machine, which phenix does not read",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "vrouter/enable-ssh": "eth9"
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "vrouter/enable-ssh of a minirouter, which phenix does not read",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "minirouter"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "vrouter/enable-ssh": "eth9"
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "vrouter/enable-ssh of a vyatta router with default apps off, which phenix does not read",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "vrouter/enable-ssh": "eth9",
+            "phenix/default-apps": false
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "phenix/startup-autotunnel that is not a list",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "phenix/startup-autotunnel": "8080"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "the phenix/startup-autotunnel annotation of \"host-a\" is not a list. Thus phenix opens none of its tunnels. Set the annotation to a list of texts such as \"8080\", \"2222:22\" or \"9090:10.0.0.5:80\"",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        }
+      ]
+    },
+    {
+      "name": "phenix/startup-autotunnel with a number",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "phenix/startup-autotunnel": [
+              "8080",
+              22
+            ]
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "entry 2 of the phenix/startup-autotunnel annotation of \"host-a\" is not text. Thus phenix opens none of its tunnels. Write each tunnel as \"port\", \"port:dport\" or \"port:host:dport\"",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        }
+      ]
+    },
+    {
+      "name": "phenix/startup-autotunnel entries phenix skips",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "phenix/startup-autotunnel": [
+              "8080",
+              "2222:22",
+              "9090:10.0.0.5:80",
+              "0",
+              "1:2:3:4",
+              "x:22",
+              null,
+              "80::22",
+              "65536",
+              "5900:VNC",
+              "22:10.0.0.5:vnc",
+              "5901::Vnc",
+              "VNC",
+              "x:VNC"
+            ]
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "entry 4 of the phenix/startup-autotunnel annotation of \"host-a\" is \"0\", which is not \"port\", \"port:dport\" or \"port:host:dport\". Thus phenix does not open that tunnel",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        },
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "entry 5 of the phenix/startup-autotunnel annotation of \"host-a\" is \"1:2:3:4\", which is not \"port\", \"port:dport\" or \"port:host:dport\". Thus phenix does not open that tunnel",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        },
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "entry 6 of the phenix/startup-autotunnel annotation of \"host-a\" is \"x:22\", which is not \"port\", \"port:dport\" or \"port:host:dport\". Thus phenix does not open that tunnel",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        },
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "entry 7 of the phenix/startup-autotunnel annotation of \"host-a\" is null, which is not \"port\", \"port:dport\" or \"port:host:dport\". Thus phenix does not open that tunnel",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        },
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "entry 8 of the phenix/startup-autotunnel annotation of \"host-a\" is \"80::22\", which is not \"port\", \"port:dport\" or \"port:host:dport\". Thus phenix does not open that tunnel",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        },
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "entry 9 of the phenix/startup-autotunnel annotation of \"host-a\" is \"65536\", which is not \"port\", \"port:dport\" or \"port:host:dport\". Thus phenix does not open that tunnel",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        },
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "entry 13 of the phenix/startup-autotunnel annotation of \"host-a\" is \"VNC\", which is not \"port\", \"port:dport\" or \"port:host:dport\". Thus phenix does not open that tunnel",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        },
+        {
+          "code": "device.autotunnel.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-autotunnel",
+          "message": "entry 14 of the phenix/startup-autotunnel annotation of \"host-a\" is \"x:VNC\", which is not \"port\", \"port:dport\" or \"port:host:dport\". Thus phenix does not open that tunnel",
+          "field": "spec.annotations.phenix/startup-autotunnel"
+        }
+      ]
+    },
+    {
+      "name": "phenix/startup-autotunnel that is null",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "phenix/startup-autotunnel": null
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "phenix/default-apps as text",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "phenix/default-apps": "false"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.default-apps.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/default-apps",
+          "message": "the phenix/default-apps annotation of \"host-a\" is not true or false. Thus phenix runs its default apps on the device. To disable them, set the annotation to false, not the text \"false\"",
+          "field": "spec.annotations.phenix/default-apps"
+        }
+      ]
+    },
+    {
+      "name": "an ntp-server label naming no interface",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "eth9"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.ntp-server.invalid",
+          "path": "nodes[2].device.spec.labels.ntp-server",
+          "message": "the ntp-server label of \"host-a\" is \"eth9\", which names no interface of the device. Thus the experiment fails to start. Set the label to the name of an interface with an IP address",
+          "field": "spec.labels.ntp-server"
+        }
+      ]
+    },
+    {
+      "name": "an ntp-server label naming an interface in capitals",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "ETH0"
+          }
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "an ntp-server label naming an interface with no address",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "eth1"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.ntp-server.invalid",
+          "path": "nodes[1].device.spec.labels.ntp-server",
+          "message": "the ntp-server label of \"router\" names interface \"eth1\", which has no IP address. Thus the experiment fails to start. Give the interface an address, or name another interface",
+          "field": "spec.labels.ntp-server"
+        }
+      ]
+    },
+    {
+      "name": "an ntp-server label on an external device",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "external"
+          ],
+          "value": true
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "eth9"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.ntp-server.invalid",
+          "path": "nodes[1].device.spec.labels.ntp-server",
+          "message": "the ntp-server label of \"router\" is \"eth9\", which names no interface of the device. Thus the experiment fails to start. Set the label to the name of an interface with an IP address",
+          "field": "spec.labels.ntp-server"
+        }
+      ]
+    },
+    {
+      "name": "two devices with the ntp-server label",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "eth0"
+          }
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "eth9"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.ntp-server.ignored",
+          "path": "nodes[2].device.spec.labels.ntp-server",
+          "message": "device \"host-a\" has the ntp-server label, but phenix uses only the first device with it, \"router\"",
+          "field": "spec.labels.ntp-server"
+        }
+      ]
+    },
+    {
+      "name": "vyatta routers and an ntp-server off VLAN mgmt",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "eth0"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.ntp-server.no-mgmt",
+          "path": "nodes[2].device.spec.labels.ntp-server",
+          "message": "routers take their NTP server address from an interface of \"host-a\" on VLAN mgmt, but the device has no such interface. Thus phenix gives the routers no NTP server, unless an ntp app of the scenario names one. Connect an interface of \"host-a\" to a network named mgmt",
+          "field": "spec.labels.ntp-server"
+        }
+      ]
+    },
+    {
+      "name": "vyatta routers and an ntp-server connected to MGMT",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "eth0"
+          }
+        },
+        {
+          "path": [
+            "networks",
+            0,
+            "name"
+          ],
+          "value": "MGMT"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "vyatta routers and an ntp-server with a typed VLAN Mgmt",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "vyatta"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "eth0"
+          }
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "network",
+            "interfaces"
+          ],
+          "value": [
+            {
+              "name": "eth0",
+              "type": "ethernet",
+              "proto": "static",
+              "address": "10.0.0.2",
+              "mask": 24
+            },
+            {
+              "name": "eth1",
+              "type": "ethernet",
+              "proto": "static",
+              "address": "10.5.0.2",
+              "mask": 24,
+              "vlan": "Mgmt"
+            }
+          ]
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "minirouters and an ntp-server off VLAN mgmt",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "type"
+          ],
+          "value": "Router"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "hardware",
+            "os_type"
+          ],
+          "value": "minirouter"
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "labels"
+          ],
+          "value": {
+            "ntp-server": "eth0"
+          }
+        }
+      ],
+      "warnings": []
+    }
+  ]
+}

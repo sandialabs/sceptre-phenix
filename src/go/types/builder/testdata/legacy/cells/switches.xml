@@ -1,0 +1,151 @@
+<mxGraphModel dx="786" dy="589" grid="1" gridSize="10" page="1" experimentVars="[{&quot;name&quot;:&quot;DEFAULT_MEMORY&quot;,&quot;value&quot;:&quot;2048&quot;},{&quot;name&quot;:&quot;DEFAULT_VCPU&quot;,&quot;value&quot;:&quot;1&quot;},{&quot;name&quot;:&quot;DEFAULT_VM_IMAGE&quot;,&quot;value&quot;:&quot;ubuntu.qc2&quot;},{&quot;name&quot;:&quot;DEFAULT_ROUTER_IMAGE&quot;,&quot;value&quot;:&quot;vyos.qc2&quot;}]">
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+    <object label="host-a" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;host-a&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;,&quot;network&quot;:{&quot;interfaces&quot;:[{&quot;name&quot;:&quot;eth0&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;v0&quot;},{&quot;name&quot;:&quot;eth1&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;v101&quot;},{&quot;name&quot;:&quot;eth2&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;vauto&quot;},{&quot;name&quot;:&quot;eth3&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;vtext&quot;},{&quot;name&quot;:&quot;eth4&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;v5000&quot;},{&quot;name&quot;:&quot;eth5&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;vneg&quot;},{&quot;name&quot;:&quot;eth6&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;vfrac&quot;},{&quot;name&quot;:&quot;eth7&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;dupid&quot;},{&quot;name&quot;:&quot;eth8&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;my lan&quot;}]}}" id="2">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="40" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="host-b" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;host-b&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;,&quot;network&quot;:{&quot;interfaces&quot;:[{&quot;name&quot;:&quot;eth0&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;twin&quot;}]}}" id="3">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="40" y="400" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="host-c" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;host-c&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;,&quot;network&quot;:{&quot;interfaces&quot;:[{&quot;name&quot;:&quot;eth0&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;twin&quot;},{&quot;name&quot;:&quot;eth1&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;twin&quot;}]}}" id="4">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="400" y="400" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="v0-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:0,&quot;hostname&quot;:&quot;v0-sw&quot;,&quot;name&quot;:&quot;v0&quot;}" id="10">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="200" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="v101-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:101,&quot;hostname&quot;:&quot;v101-sw&quot;,&quot;name&quot;:&quot;v101&quot;}" id="11">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="300" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="vauto-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:&quot;auto&quot;,&quot;hostname&quot;:&quot;vauto-sw&quot;,&quot;name&quot;:&quot;vauto&quot;}" id="12">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="400" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="vtext-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:&quot;102&quot;,&quot;hostname&quot;:&quot;vtext-sw&quot;,&quot;name&quot;:&quot;vtext&quot;}" id="13">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="500" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="v5000-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:5000,&quot;hostname&quot;:&quot;v5000-sw&quot;,&quot;name&quot;:&quot;v5000&quot;}" id="14">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="600" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="vneg-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:-1,&quot;hostname&quot;:&quot;vneg-sw&quot;,&quot;name&quot;:&quot;vneg&quot;}" id="15">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="700" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="vfrac-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:1.5,&quot;hostname&quot;:&quot;vfrac-sw&quot;,&quot;name&quot;:&quot;vfrac&quot;}" id="16">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="800" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="dupid-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:101,&quot;hostname&quot;:&quot;dupid-sw&quot;,&quot;name&quot;:&quot;dupid&quot;}" id="17">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="900" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="my lan-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:0,&quot;hostname&quot;:&quot;my lan-sw&quot;,&quot;name&quot;:&quot;my lan&quot;}" id="18">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="1000" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="twin-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:300,&quot;hostname&quot;:&quot;twin-sw&quot;,&quot;name&quot;:&quot;twin&quot;}" id="19">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="200" y="400" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="twin-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:301,&quot;hostname&quot;:&quot;twin-sw&quot;,&quot;name&quot;:&quot;twin&quot;}" id="20">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="560" y="400" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="lonely-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:0,&quot;hostname&quot;:&quot;lonely-sw&quot;,&quot;name&quot;:&quot;lonely&quot;}" id="21">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="200" y="600" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="labelled" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:0,&quot;hostname&quot;:&quot;x-sw&quot;,&quot;name&quot;:&quot;&quot;}" id="22">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="400" y="600" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot; &quot;}" id="23">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="600" y="600" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="v0" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;v0&quot;}" id="30">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="10">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="v101" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:101,&quot;name&quot;:&quot;v101&quot;}" id="31">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="11">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="vauto" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;vauto&quot;}" id="32">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="12">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="vtext" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;vtext&quot;}" id="33">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="13">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="v5000" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;v5000&quot;}" id="34">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="14">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="vneg" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;vneg&quot;}" id="35">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="15">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="vfrac" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;vfrac&quot;}" id="36">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="16">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="dupid" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;dupid&quot;}" id="37">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="17">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="my lan" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;my lan&quot;}" id="38">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="18">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="twin" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:300,&quot;name&quot;:&quot;twin&quot;}" id="39">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="3" target="19">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="twin" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:300,&quot;name&quot;:&quot;twin&quot;}" id="40">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="4" target="19">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="twin" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:301,&quot;name&quot;:&quot;twin&quot;}" id="41">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="20" target="4">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+  </root>
+</mxGraphModel>

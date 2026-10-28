@@ -90,7 +90,7 @@ type Result struct {
 }
 
 // ConfigResult is the JSON body of a config dry run response. Kind and Name
-// are the config's after ${VAR} expansion, and Pending is its ref from
+// are the config's after ${BRANCH_NAME} expansion, and Pending is its ref from
 // [PendingRef], which a client passes on unchanged to an apply dry run.
 type ConfigResult struct {
 	Action  Action `json:"action"`

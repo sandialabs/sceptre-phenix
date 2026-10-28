@@ -135,13 +135,10 @@ func readConfigFile(path string) ([]byte, error) {
 	return body, nil
 }
 
-// parseConfigFile reads path and checks that it holds exactly one YAML or
-// JSON document with a mapping at the top level. The check parses a copy with
-// the placeholders masked, since the server fills them in first; Body keeps
-// the file as read. Kind is the document's kind, which must be a non-empty
-// string when present. requireKind marks a file from phenix-configs/, whose
-// kind orders the upserts. Everything else in a config is for the phenix
-// server to check.
+// parseConfigFile checks that path holds one YAML or JSON mapping, with the
+// placeholders masked, and returns the file as read. requireKind marks a file
+// from phenix-configs/, whose kind orders the upserts. The server checks the
+// rest.
 func parseConfigFile(path string, requireKind bool) (configFile, error) {
 	body, err := readConfigFile(path)
 	if err != nil {
@@ -216,11 +213,8 @@ func parseDocument(path string, body []byte) (*yaml.Node, error) {
 	return doc.Content[0], nil
 }
 
-// neutralizePlaceholders replaces every character of each placeholder in
-// body with an x, except whitespace. The placeholders are the ${VAR} and
-// ${VAR:default} that the phenix server fills in before it parses a config,
-// as common.EnvPlaceholder matches them. A placeholder in a JSON number, a
-// flow mapping or a value with a colon then no longer breaks the syntax
+// neutralizePlaceholders replaces each non-whitespace character of every
+// common.EnvPlaceholder match with x. A placeholder then breaks no syntax
 // check, and every line and column stays where it was.
 func neutralizePlaceholders(body []byte) []byte {
 	return common.EnvPlaceholder.ReplaceAllFunc(body, func(match []byte) []byte {

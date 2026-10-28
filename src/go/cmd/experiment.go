@@ -236,7 +236,7 @@ func newExperimentCreateCmd() *cobra.Command {
 
 			ctx := notes.Context(context.Background(), false)
 
-			if err := experiment.Create(ctx, opts...); err != nil {
+			if err := experiment.Create(opts...); err != nil {
 				err := util.HumanizeError(err, "%s", "Unable to create the "+args[0]+" experiment")
 
 				return err.Humanized()
