@@ -44,6 +44,30 @@ npm run format
 npm run test
 ```
 
+Browser tests are a separate Playwright project and need a running
+`phenix ui` (see `e2e/README.md`):
+
+```bash
+cd e2e
+npm ci
+npx playwright install --with-deps chromium firefox
+npx playwright test
+```
+
+## Builder
+
+Start the backend with `phenix ui`, then open `/builder`. The Builder uses
+Vue Flow for the canvas and JSON Forms for schema-backed node and network
+properties. It works over plain HTTP and HTTPS.
+
+Drafts and draft history autosave apart from phenix configs. Only Publish
+creates or updates Topology, Scenario, or Experiment configs. A draft may
+update a stored Topology or Experiment only if the draft is tied to it.
+
+For the features, see the user documentation in
+`docs/content/builder/`. The developer
+reference is `skills/phenix/references/builder.md`.
+
 ## Code Details
 
 ### Structure

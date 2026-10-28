@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import {
+  RouterLinkStub,
+  enableAutoUnmount,
+  flushPromises,
+  mount,
+} from '@vue/test-utils';
 import Buefy from 'buefy';
 import axiosInstance from '@/utils/axios.js';
 import { useErrorNotification } from '@/utils/errorNotif';
@@ -8,10 +13,10 @@ import ConfigsList from '@/components/configs/ConfigsList.vue';
 
 const site = {
   kind: 'Topology',
-  metadata: { name: 'site', annotations: { 'builder-xml': '<mxGraphModel/>' } },
+  metadata: { name: 'site', annotations: { 'builder-doc': '{}' } },
 };
 
-// The list holds one topology with a Builder diagram, and viewing it reads it
+// The list holds one topology made in the Builder, and viewing it reads it
 // again. roleAllowed reads the role from the mocked Pinia store.
 vi.mock('@/utils/axios.js', () => ({
   default: {
@@ -53,13 +58,15 @@ function setRole(resources) {
 
 enableAutoUnmount(afterEach);
 
-// Mounts the list with the real Buefy.
+// Mounts the list with the real Buefy. A row's Builder tag is a router-link,
+// and the test has no router.
 function mountList(warnings = [], props = {}) {
   return mount(ConfigsList, {
     attachTo: document.body,
     props,
     global: {
       plugins: [Buefy],
+      stubs: { 'router-link': RouterLinkStub },
       config: { warnHandler: (msg) => warnings.push(msg) },
     },
   });
@@ -168,8 +175,8 @@ describe('ConfigsList upload errors', () => {
     const card = errorCard(wrapper);
     const textarea = card.get('textarea');
 
-    // Buefy is real, so Vue warned about nothing, not even "Failed to
-    // resolve component".
+    // Buefy is real and router-link has a stub, so Vue warned about
+    // nothing, not even "Failed to resolve component".
     expect(warnings).toEqual([]);
     expect(card.isVisible()).toBe(true);
     expect(card.get('.modal-card-title').text()).toBe('Validation Error');
@@ -204,12 +211,22 @@ describe('ConfigsList viewer', () => {
     expect(name.element.tagName).toBe('BUTTON');
     expect(name.attributes('aria-label')).toBe('View Topology site');
 
+    // The server's copy of the topology has a legacy Builder diagram.
+    axiosInstance.get.mockResolvedValueOnce({
+      data: {
+        kind: 'Topology',
+        metadata: {
+          name: 'site',
+          annotations: { 'builder-xml': '<mxGraphModel/>' },
+        },
+      },
+    });
     const textarea = await view(wrapper);
     const dialog = wrapper.get('[role="dialog"]');
     expect(dialog.attributes('aria-label')).toBe('Topology/site');
     expect(dialog.attributes('aria-modal')).toBe('true');
     expect(textarea.isVisible()).toBe(true);
-    // The Builder diagram is left out of the text, and the viewer opens.
+    // The legacy diagram is left out of the text, and the viewer opens.
     expect(textarea.element.value).toContain('builder-xml: <SNIPPED>');
     expect(textarea.element.value).not.toContain('mxGraphModel');
     expect(useErrorNotification).not.toHaveBeenCalled();
@@ -243,6 +260,48 @@ describe('ConfigsList viewer', () => {
     expect(wrapper.find('[data-config-edit="Topology/site"]').exists()).toBe(
       false,
     );
+  });
+});
+
+describe('ConfigsList Builder control', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const builderLinkOf = (wrapper) =>
+    wrapper.find('[data-config-builder="Topology/site"]');
+
+  // Views the topology, and resolves to the viewer's Builder button.
+  async function viewerButton(wrapper) {
+    await wrapper.get('[data-config-view="Topology/site"]').trigger('click');
+    await flushPromises();
+    return wrapper.find('[data-testid="viewer-builder"]');
+  }
+
+  test('a role with the Builder gets the link into it', async () => {
+    setRole(['*']);
+    const wrapper = mountList();
+    await flushPromises();
+
+    const link = builderLinkOf(wrapper);
+    expect(link.text()).toBe('builder');
+    expect(link.attributes('aria-label')).toBe(
+      'builder: open Topology site in the Builder',
+    );
+    expect(wrapper.findComponent(RouterLinkStub).props('to')).toBeTruthy();
+    expect((await viewerButton(wrapper)).text()).toBe('Open in Builder');
+  });
+
+  test('a role without the Builder gets no link, whatever configs it may read', async () => {
+    setRole(['configs']);
+    const wrapper = mountList();
+    await flushPromises();
+
+    expect(builderLinkOf(wrapper).exists()).toBe(false);
+    expect(wrapper.findComponent(RouterLinkStub).exists()).toBe(false);
+    // The row keeps its plain tag, and the name still opens the viewer.
+    expect(wrapper.get('span.tag').text()).toBe('builder');
+    expect((await viewerButton(wrapper)).exists()).toBe(false);
   });
 });
 

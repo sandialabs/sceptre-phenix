@@ -579,7 +579,7 @@
     <b-modal
       v-model="opticalDiscModal.active"
       has-modal-card
-      @close="resetOpticalDiscModal"
+      @after-leave="resetOpticalDiscModal"
       ref="opticalDisc">
       <div class="modal-card" style="width: auto">
         <header class="modal-card-head">
@@ -3564,8 +3564,6 @@
           url += `?isoPath=${isoPath}`;
           axiosInstance.post(url).catch((err) => useErrorNotification(err));
         }
-
-        this.resetOpticalDiscModal();
       },
 
       resetExpModal() {
