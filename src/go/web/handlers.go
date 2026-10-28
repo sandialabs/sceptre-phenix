@@ -254,7 +254,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		opts = append(opts, experiment.CreateWithAnnotations(annotations))
 	}
 
-	if err := experiment.Create(ctx, opts...); err != nil {
+	if err := experiment.Create(opts...); err != nil {
 		plog.Error(plog.TypeSystem, "creating experiment", "exp", req.GetName(), "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 

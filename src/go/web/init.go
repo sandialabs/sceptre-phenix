@@ -30,5 +30,9 @@ func Init() error {
 		return fmt.Errorf("ensuring experiment file upload permissions: %w", err)
 	}
 
+	if err := rbac.EnsureBuilderRolePermissions(); err != nil {
+		return fmt.Errorf("ensuring the Builder role and its permission: %w", err)
+	}
+
 	return nil
 }

@@ -297,7 +297,7 @@ func (e *ExperimentSpec) SetUseGREMesh(g bool) {
 	e.UseGREMeshF = g
 }
 
-func (e ExperimentSpec) VerifyScenario(ctx context.Context) error {
+func (e ExperimentSpec) VerifyScenario(ctx context.Context) error { //nolint:unparam // implements ifaces.ExperimentSpec
 	if e.ScenarioF == nil {
 		return nil
 	}
@@ -323,7 +323,7 @@ func (e ExperimentSpec) VerifyScenario(ctx context.Context) error {
 	return nil
 }
 
-func (e *ExperimentSpec) ScheduleNode(node, host string) error {
+func (e *ExperimentSpec) ScheduleNode(node, host string) error { //nolint:unparam // implements ifaces.ExperimentSpec
 	e.SchedulesF[node] = host
 
 	return nil
@@ -347,7 +347,7 @@ type ExperimentStatus struct {
 	CleanupF   map[string]bool   `json:"appCleanupStagePending,omitempty"   mapstructure:"appCleanupStagePending"   structs:"appCleanupStagePending"   yaml:"appCleanupStagePending,omitempty"`
 }
 
-func (s *ExperimentStatus) Init() error {
+func (s *ExperimentStatus) Init() error { //nolint:unparam // implements ifaces.ExperimentStatus
 	if s.SchedulesF == nil {
 		s.SchedulesF = make(map[string]string)
 	}

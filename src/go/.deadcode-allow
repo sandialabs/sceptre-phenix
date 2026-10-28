@@ -1,0 +1,2 @@
+# Functions that `make deadcode` can report, one "<package path>.<func>" per line.
+# Put a comment line above each entry that tells why the function stays.

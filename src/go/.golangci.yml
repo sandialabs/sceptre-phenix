@@ -397,6 +397,24 @@ linters:
         # https://staticcheck.dev/docs/checks/#QF1008
         - -QF1008
 
+    unparam:
+      # Also check exported functions. Add a nolint with a reason where an interface fixes the signature.
+      # Default: false
+      check-exported: true
+
+    unused:
+      # Report fields that are written but never read.
+      # Default: true
+      field-writes-are-uses: false
+      # Report exported fields that are never used.
+      # Default: true
+      exported-fields-are-used: false
+      # Report local variables that are assigned but never read.
+      # Default: true
+      local-variables-are-used: false
+      # Default: true
+      parameters-are-used: true
+
     usetesting:
       # Enable/disable `os.TempDir()` detections.
       # Default: false

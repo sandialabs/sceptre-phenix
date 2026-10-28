@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -107,7 +106,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if !dryRun {
-		if err := executeWorkflowPlan(ctx, plan, spec, branch, tags, prep, target); err != nil {
+		if err := executeWorkflowPlan(plan, spec, branch, tags, prep, target); err != nil {
 			return err
 		}
 	}
@@ -121,7 +120,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// readWorkflowConfig returns the request body parsed with its ${VAR}
+// readWorkflowConfig returns the request body parsed with its ${BRANCH_NAME}
 // references expanded, and the body itself, which explains schema errors. It
 // parses into a map rather than a store config so the schema sees every
 // top-level key the body has.
@@ -133,7 +132,7 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 		err error
 	)
 
-	// ${BRANCH_NAME} expands to the branch, as in NewConfigFromYAML.
+	// Only ${BRANCH_NAME} expands, to the branch, as in the configs.
 	_ = os.Setenv("BRANCH_NAME", branch)
 
 	switch typ {
@@ -145,7 +144,7 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
 
-		err = json.Unmarshal([]byte(common.ParseEnv(string(src))), &doc)
+		err = json.Unmarshal(store.ExpandBranchName(src), &doc)
 	case mimeYAML:
 		src, err = io.ReadAll(r.Body)
 		if err != nil {
@@ -154,7 +153,7 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
 
-		err = yaml.Unmarshal([]byte(common.ParseEnv(string(src))), &doc)
+		err = yaml.Unmarshal(store.ExpandBranchName(src), &doc)
 	default:
 		return nil, nil, weberror.NewWebError(
 			nil,
@@ -254,7 +253,6 @@ func workflowWebError(err error, message string) *weberror.WebError {
 // executeWorkflowPlan carries out plan with what prep resolved. exp is the
 // experiment mapped to branch, which the update actions act on.
 func executeWorkflowPlan(
-	ctx context.Context,
 	plan workflow.Plan,
 	spec workflow.Spec,
 	branch, tags string,
@@ -265,7 +263,7 @@ func executeWorkflowPlan(
 	case workflow.ActionNone:
 		// Nothing to carry out; the response gives the reason.
 	case workflow.ActionCreate, workflow.ActionCreateAndStart:
-		return createFromWorkflow(ctx, spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart)
+		return createFromWorkflow(spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart)
 	case workflow.ActionUpdate, workflow.ActionUpdateAndStart, workflow.ActionRestart:
 		return updateFromWorkflow(exp, spec, tags, prep, plan.Action)
 	}
@@ -276,7 +274,6 @@ func executeWorkflowPlan(
 // createFromWorkflow creates the experiment auto.create names from what prep
 // resolved, maps it to branch, tags it and starts it when start is true.
 func createFromWorkflow(
-	ctx context.Context,
 	spec workflow.Spec,
 	branch, tags string,
 	prep workflow.Prepared,
@@ -313,7 +310,7 @@ func createFromWorkflow(
 		experiment.CreateWithGREMesh(spec.UseGREMesh),
 	}
 
-	err = experiment.Create(ctx, opts...)
+	err = experiment.Create(opts...)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to create new experiment")
 
@@ -430,9 +427,8 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		scope   = vars["branch"]
 	)
 
-	// Parsing substitutes ${NAME} references with the server's environment
-	// variables, and a parse error quotes the text it failed on, so a caller
-	// who may not write configs is refused before the body is even read.
+	// A parse error quotes the text it failed on, so a caller who may not
+	// write configs is refused before the body is even read.
 	if !role.Allowed("configs", "create") && !role.Allowed("configs", "update") {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Warn(
@@ -464,9 +460,9 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 
 	switch typ {
 	case mimeJSON:
-		format, parse = "JSON", store.NewConfigFromJSON
+		format, parse = "JSON", store.DecodeConfigJSON
 	case mimeYAML:
-		format, parse = "YAML", store.NewConfigFromYAML
+		format, parse = "YAML", store.DecodeConfigYAML
 	default:
 		return weberror.NewWebError(
 			nil,
@@ -481,8 +477,8 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
-	// The checks for the named config run before the environment is expanded,
-	// so only a caller who may write this config sees what the expansion gives.
+	// The checks for the named config run before the body is parsed, so only
+	// a caller who may write this config sees a parse error.
 	name, err := configName(src, typ, scope)
 	if err != nil {
 		return weberror.NewWebError(err, "unable to parse %s config", format)
@@ -493,11 +489,11 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	// set branch name in environment variable so it can be used in
-	// NewConfigFromJSON and NewConfigFromYAML
+	// ExpandBranchName reads the branch name from the environment. It keeps
+	// every other placeholder as it is written.
 	_ = os.Setenv("BRANCH_NAME", scope)
 
-	cfg, err := parse(src)
+	cfg, err := parse(store.ExpandBranchName(src))
 	if err != nil {
 		return weberror.NewWebError(err, "unable to parse %s config", format)
 	}
