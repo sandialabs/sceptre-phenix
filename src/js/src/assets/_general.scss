@@ -55,39 +55,93 @@ textarea:focus {
   margin-bottom: 0.5em;
 }
 
-.close {
-  text-align: right;
-  height: 10px;
-  width: 10px;
-  position: relative;
-  box-sizing: border-box;
-  line-height: 10px;
-  display: inline-block;
+// A role with every page, on a server with every download, needs a wider
+// header than most screens: it wraps onto a second row instead of off-screen.
+@include from($navbar-breakpoint) {
+  .navbar-menu {
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .navbar-start,
+  .navbar-end {
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .navbar-start > .navbar-item,
+  .navbar-end > .navbar-item {
+    padding-inline: 0.4rem;
+  }
 }
 
-.close:before,
-.close:after {
-  transform: rotate(-45deg);
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  margin-top: -1px;
-  margin-left: -5px;
-  display: block;
-  height: 2px;
-  width: 10px;
-  background-color: black;
-  transition: all 0.25s ease-out;
+// Each header link and menu has a tooltip around it, as tall as the header.
+.navbar .nav-tip,
+.navbar .nav-tip > .tooltip-trigger {
+  display: flex;
+  align-items: stretch;
 }
 
-.close:after {
-  transform: rotate(-135deg);
+// In the burger menu, each is a full row that shows its text.
+@include until($navbar-breakpoint) {
+  .navbar .nav-tip,
+  .navbar .nav-tip > .tooltip-trigger {
+    display: block;
+  }
+
+  .navbar .nav-tip > .tooltip-content {
+    display: none !important;
+  }
 }
 
-.close:hover:before,
-.close:hover:after {
-  transform: rotate(0deg);
+// Up to 1400 px the header has no room for the link text: icons only.
+@media screen and (min-width: $navbar-breakpoint) and (max-width: 1399.98px) {
+  .navbar .nav-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+// The header's icon buttons, outlined on the dark bar. Tunneler is filled,
+// and the jobs menu keeps its colors for jobs not viewed.
+.navbar .button.nav-icon-button {
+  height: 2.25rem;
+  min-width: 2.25rem;
+  padding-block: 0;
+  padding-inline: 0.5rem;
+  gap: 0.25rem;
+  font-size: 1rem;
+}
+
+.navbar .navbar-item .button.nav-icon-button .icon {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.navbar .button.nav-icon-button:not(.is-primary, [class*='is-unviewed-']) {
+  background-color: transparent;
+  border-color: #b1b1b1;
+  color: $text-strong;
+}
+
+.navbar
+  .button.nav-icon-button:not(.is-primary, [class*='is-unviewed-']):is(
+    :hover,
+    :focus-visible
+  ) {
+  background-color: $scheme-main;
+  border-color: $text-strong;
+}
+
+.navbar .button.nav-icon-button:focus-visible {
+  outline: 3px solid #ffd166;
+  outline-offset: 2px;
 }
 
 // Focus looks like hover, as Bulma's focus colors are about 1:1 here. Keyboard
@@ -113,6 +167,11 @@ div.is-success {
   .help.is-#{$name} {
     color: $color;
   }
+}
+
+// Bulma's #dbdbdb is 6.4:1 on $background-ter; this gray is 7.1:1 there.
+.has-text-grey-lighter {
+  color: #e6e6e6 !important;
 }
 
 // Bulma draws the cross in $scheme-main, which is 2.6:1 on the modal
@@ -165,6 +224,15 @@ div.is-success {
   width: 75% !important;
 }
 
+// Bulma keeps a modal title from shrinking, so a long one (a user or VM
+// name) runs past the head's padding; wrap it instead
+.modal-card-title {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
 // round bottom of modal-card even if not explicitly a footer
 .modal-card > :last-child {
   border-radius: 0 0 $modal-card-foot-radius $modal-card-foot-radius;
@@ -184,9 +252,62 @@ div.is-success {
   border-radius: 12px;
 }
 
+// A button drawn as the text or tag inside it: a click target in a table
+// cell or card that the keyboard reaches too.
+.plain-button {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+// a plain-button that reads as a link
+.plain-button.link-button {
+  color: $link-text;
+}
+
+.plain-button.link-button:hover {
+  text-decoration: underline;
+}
+
+button.tag {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
 //useful for buttons side by side in table
 .action:not(:last-child) {
   margin-right: 5px;
+}
+
+// Greyed buttons that stay focusable, so the keyboard reaches their tooltip
+// saying why: drawn as Bulma draws a disabled button.
+.button[aria-disabled='true'] {
+  background-color: $button-disabled-background-color;
+  border-color: $button-disabled-border-color;
+  box-shadow: $button-disabled-shadow;
+  opacity: $button-disabled-opacity;
+  cursor: not-allowed;
+}
+
+@each $name, $pair in $button-colors {
+  $color: nth($pair, 1);
+  .button.is-#{$name}[aria-disabled='true'] {
+    background-color: $color;
+    border-color: $color;
+    box-shadow: none;
+  }
+
+  .button.is-#{$name}.is-outlined[aria-disabled='true'] {
+    background-color: transparent;
+    border-color: $color;
+    color: $color;
+  }
 }
 
 input::placeholder,
@@ -267,18 +388,18 @@ textarea:focus-visible,
 }
 
 // Buefy renders an unselected b-select placeholder as rgba($grey, 0.7)
-// (#a2a2a2 on white, 2.6:1); use a colour with 7:1 on the white input.
+// (#a2a2a2 on white, 2.6:1); use a color with 7:1 on the white input.
 .select.is-empty select {
   color: #4f5862;
 }
 
-// A modal title that is a heading keeps the Bulma modal title look inside
+// A modal title that is a heading keeps the modal title look inside
 // `.content`, which styles headings.
 .content .modal-card-head .modal-card-title {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 400;
-  line-height: 1;
+  line-height: 1.25;
 }
 
 // A dialog wider than a narrow window would hide its sides (WCAG 1.4.10).
@@ -312,4 +433,97 @@ textarea:focus-visible,
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+// the icon of a disk image whose backing chain is broken, in the pale red of
+// a field error
+.broken-chain-icon {
+  color: map.get($text-on-dark, 'danger');
+}
+
+// $link (#62c0d7) is 4.4:1 on table rows ($table-background-color), so links
+// in table cells, such as the Users page's user names, use the link text color.
+.table td a:not(.button):not(.tag),
+.table td .plain-button.link-button {
+  color: $link-text;
+}
+
+// Tables: sort arrows sit next to their headings (header-class="sort-inline")
+// rather than at the far edge of the column, and never over centered text.
+.b-table .table th.sort-inline .th-wrap {
+  flex-wrap: nowrap;
+}
+
+.b-table .table th.sort-inline .th-wrap:not(.is-centered) {
+  justify-content: flex-start;
+}
+
+.b-table .table th.sort-inline .sort-icon {
+  position: static;
+  transform: none;
+}
+
+.b-table .table th.sort-inline .sort-icon.icon.is-desc {
+  transform: rotate(180deg) !important;
+}
+
+// In a centered column the arrow would push the heading left of the values
+// below it; an empty space as wide as the arrow and its margin balances it.
+.b-table .table th.sort-inline .th-wrap.is-centered::before {
+  content: '';
+  flex: none;
+  width: 1.5rem;
+}
+
+// Table cells that should size to their content instead of wrapping.
+.b-table .table td.nowrap-cell {
+  white-space: nowrap;
+  width: 1%;
+}
+
+// Error notifications: wide enough that a long server error doesn't wrap
+// into a narrow column, with each step of the error chain on its own line.
+.notices .notification {
+  max-width: min(56rem, calc(100vw - 2rem));
+  overflow-wrap: anywhere;
+}
+
+.notification .error-title {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.notification .error-step {
+  display: block;
+  padding-left: 1.25rem;
+  text-indent: -1.25rem;
+}
+
+.notification .error-step::before {
+  content: '↳ ';
+}
+
+// the VMs and disk images of a start refused for broken disks, and the
+// details of a failed item; the disclosure's summary is underlined as a control
+.notification .broken-disk-list,
+.notification .error-details ul {
+  margin: 0.25rem 0 0.25rem 1.25rem;
+  list-style: disc;
+  columns: auto;
+}
+
+.notification .broken-disk-list ul {
+  margin-left: 1.25rem;
+  list-style: circle;
+  columns: auto;
+}
+
+.notification details > summary {
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.notification details > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }

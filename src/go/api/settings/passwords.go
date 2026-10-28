@@ -21,6 +21,14 @@ const (
 	MaxPasswordBytes = 72
 )
 
+// ErrPasswordMinLength is the error for a password minimum length outside
+// MinPasswordMinLen to MaxPasswordMinLen.
+var ErrPasswordMinLength = fmt.Errorf(
+	"minimum password length must be between %d and %d",
+	MinPasswordMinLen,
+	MaxPasswordMinLen,
+)
+
 type PasswordSettings struct {
 	LowercaseReq bool  `json:"lowercase_req"`
 	UppercaseReq bool  `json:"uppercase_req"`
@@ -113,13 +121,9 @@ func GetPasswordSettingsFromList(settings []types.Setting) (PasswordSettings, er
 func UpdatePasswordSettings(newSettings PasswordSettings) error {
 	plog.Debug(plog.TypeSystem, "Updating password settings")
 
-	minLen := newSettings.MinLength
-	if minLen > MaxPasswordMinLen || minLen < MinPasswordMinLen {
-		return fmt.Errorf(
-			"minimum password length must be between %d and %d",
-			MinPasswordMinLen,
-			MaxPasswordMinLen,
-		)
+	// checked before any setting is saved, so a bad length changes none
+	if minLen := newSettings.MinLength; minLen > MaxPasswordMinLen || minLen < MinPasswordMinLen {
+		return ErrPasswordMinLength
 	}
 
 	var err error

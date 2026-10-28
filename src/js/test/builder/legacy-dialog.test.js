@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Upload and Import of a legacy Builder diagram, rendered on the server: the
 // source Upload offers, the warnings, and how Import marks such a topology.
 

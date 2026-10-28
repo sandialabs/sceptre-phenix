@@ -10,12 +10,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
 	"testing/iotest"
 
 	"github.com/golang/mock/gomock"
+	gocmp "github.com/google/go-cmp/cmp"
 	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
@@ -72,17 +72,7 @@ func workflowTestRole(allow bool) rbac.Role {
 		return rbac.Role{Spec: &v1.RoleSpec{}}
 	}
 
-	return rbac.Role{
-		Spec: &v1.RoleSpec{
-			Policies: []*v1.PolicySpec{
-				{
-					Resources:     []string{"*", "*/*"},
-					ResourceNames: []string{"*", "*/*"},
-					Verbs:         []string{"*"},
-				},
-			},
-		},
-	}
+	return adminRole()
 }
 
 // workflowTestYAML returns a YAML workflow config with the given spec body,
@@ -326,8 +316,8 @@ func assertWorkflowResult(t *testing.T, rec *httptest.ResponseRecorder, want wor
 		"dryRun":     dryRun,
 	}
 
-	if !reflect.DeepEqual(got, wantBody) {
-		t.Fatalf("expected body %v, got %v", wantBody, got)
+	if diff := gocmp.Diff(wantBody, got); diff != "" {
+		t.Fatalf("body mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -504,6 +494,16 @@ func TestApplyWorkflowSchemaErrors(t *testing.T) {
 			body:        workflowTestYAML("  defaultBridge: " + strings.Repeat("b", experiment.MaxBridgeNameLength+1) + "\n"),
 			wantRaw:     `"/spec/defaultBridge"`,
 			wantLine:    true,
+		},
+		{
+			// Within maxLength in characters but over the 15-byte limit: the
+			// pattern allows only one-byte characters, so the schema refuses it.
+			name:          "defaultBridge with multi-byte characters",
+			contentType:   mimeYAML,
+			body:          workflowTestYAML("  defaultBridge: " + strings.Repeat("\u00e9", experiment.MaxBridgeNameLength/2+2) + "\n"),
+			wantRaw:       `"/spec/defaultBridge"`,
+			wantLine:      true,
+			wantExplained: "spec (line 5): *regular expression* (at defaultBridge)",
 		},
 		{
 			name:        "wrong kind",
@@ -802,19 +802,6 @@ func TestApplyWorkflowPrepareFailures(t *testing.T) {
 			wantStatus:  http.StatusBadRequest,
 			wantMessage: prepareMsg,
 			wantCause:   []string{"scenario base doesn't exist"},
-		},
-		{
-			// Two-byte characters pass the schema's maxLength, which counts
-			// characters, but not the bridge name limit, which counts bytes and
-			// which Validate applies before experiments are even listed.
-			name:        "defaultBridge over the limit in bytes only",
-			contentType: mimeYAML,
-			body: strings.NewReader(workflowTestYAML(
-				"  defaultBridge: " + strings.Repeat("\u00e9", experiment.MaxBridgeNameLength/2+2) + "\n",
-			)),
-			wantStatus:  http.StatusBadRequest,
-			wantMessage: "invalid phenix workflow config",
-			wantCause:   []string{"invalid workflow config"},
 		},
 	})
 }
@@ -1412,7 +1399,7 @@ func TestApplyWorkflowExecutesPlan(t *testing.T) {
 				prepared(m, fooRunning)
 				expectWorkflowReadFails(m, "experiment/foo")
 			},
-			wantStatus:  http.StatusBadRequest,
+			wantStatus:  http.StatusNotFound,
 			wantMessage: "unable to stop experiment foo",
 			wantCause:   []string{"config does not exist"},
 		},
@@ -1430,7 +1417,7 @@ func TestApplyWorkflowExecutesPlan(t *testing.T) {
 				expectWorkflowRead(m, "scenario/scn", workflowTestScenario(map[string]any{"name": "app1"}))
 				expectWorkflowReadFails(m, "experiment/foo")
 			},
-			wantStatus:  http.StatusBadRequest,
+			wantStatus:  http.StatusNotFound,
 			wantMessage: "unable to stop experiment foo",
 			wantCause:   []string{"config does not exist"},
 		},
@@ -1577,8 +1564,8 @@ func TestApplyWorkflowUpdateWritesExperiment(t *testing.T) {
 		"scenario":                "scn",
 	}
 
-	if !reflect.DeepEqual(written.Metadata.Annotations, wantAnnotations) {
-		t.Errorf("expected annotations %v, got %v", wantAnnotations, written.Metadata.Annotations)
+	if diff := gocmp.Diff(wantAnnotations, written.Metadata.Annotations); diff != "" {
+		t.Errorf("annotations mismatch (-want +got):\n%s", diff)
 	}
 
 	raw, err := json.Marshal(written.Spec)
@@ -1600,8 +1587,8 @@ func TestApplyWorkflowUpdateWritesExperiment(t *testing.T) {
 		Scenario:      storedScenario{Apps: []storedApp{{Name: "app1", Metadata: map[string]any{"from": "base"}}}},
 	}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("expected written spec %+v, got %+v", want, got)
+	if diff := gocmp.Diff(want, got); diff != "" {
+		t.Errorf("written spec mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1759,8 +1746,10 @@ func TestApplyWorkflowDryRunChecksPendingReferences(t *testing.T) {
 				refs = append(refs, configDryRunPending(t, doc))
 			}
 
-			if tc.wantRefs != nil && !reflect.DeepEqual(refs, tc.wantRefs) {
-				t.Fatalf("pending refs = %q, want %q", refs, tc.wantRefs)
+			if tc.wantRefs != nil {
+				if diff := gocmp.Diff(tc.wantRefs, refs); diff != "" {
+					t.Fatalf("pending refs mismatch (-want +got):\n%s", diff)
+				}
 			}
 
 			assertPendingApplyDryRun(t, body, refs, tc.wantCause)
@@ -1809,8 +1798,8 @@ func TestApplyWorkflowDryRunChecksPendingIncludes(t *testing.T) {
 			wantCause: notFound,
 		},
 		{
-			// The Topology schema does not declare includeTopologies, and
-			// the real apply's weak decode reads a single value as a list.
+			// The Topology schema allows a single include name, and the
+			// real apply's weak decode reads a single value as a list.
 			name:      "single include in neither the directory nor the store",
 			docs:      []string{topology("${BRANCH_NAME}-net")},
 			wantRefs:  []string{"Topology/main?include=main-net"},
@@ -1832,8 +1821,8 @@ func TestApplyWorkflowDryRunChecksPendingIncludes(t *testing.T) {
 				refs = append(refs, configDryRunPending(t, doc))
 			}
 
-			if !reflect.DeepEqual(refs, tc.wantRefs) {
-				t.Fatalf("pending refs = %q, want %q", refs, tc.wantRefs)
+			if diff := gocmp.Diff(tc.wantRefs, refs); diff != "" {
+				t.Fatalf("pending refs mismatch (-want +got):\n%s", diff)
 			}
 
 			assertPendingApplyDryRun(t, body, refs, tc.wantCause)

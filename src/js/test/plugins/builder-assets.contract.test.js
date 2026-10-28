@@ -94,10 +94,14 @@ function bundle() {
     // A script asset no chunk names is not Builder's.
     asset('assets/other-worker-B.js'),
     chunk('assets/sampler-A.js'),
-    chunk('assets/elk-api-A.js', { imports: ['assets/shared-A.js'] }),
+    chunk('assets/elk-api-A.js', {
+      imports: ['assets/shared-A.js'],
+      moduleIds: ['/app/node_modules/elkjs/lib/elk-api.js'],
+    }),
     chunk('assets/elk-worker.min-A.js', {
       code: 'export default "/assets/elk-worker.min-B.js";',
       assets: ['assets/elk-worker.min-B.js'],
+      moduleIds: ['/app/node_modules/elkjs/lib/elk-worker.min.js?url'],
     }),
     asset('assets/elk-worker.min-B.js', new TextEncoder().encode(SCRIPT)),
     asset('assets/index-A.css', 'body { margin: 0 }'),
@@ -107,6 +111,9 @@ function bundle() {
 
   return Object.fromEntries(outputs.map((out) => [out.fileName, out]));
 }
+
+// The modules of the files Builder shares that the build compresses too.
+const ELK_MODULES = /[\\/]node_modules[\\/]elkjs[\\/]/;
 
 const BUILDER_FILES = [
   'assets/Builder-A.css',
@@ -123,7 +130,7 @@ const BUILDER_FILES = [
 // env says otherwise, and returns what it emitted, by name.
 function generate(
   input,
-  { view = VIEW, env = { PHENIX_BROTLI_QUALITY: '1' } } = {},
+  { view = VIEW, shared, env = { PHENIX_BROTLI_QUALITY: '1' } } = {},
 ) {
   const emitted = {};
   const context = {
@@ -137,7 +144,7 @@ function generate(
     },
   };
 
-  const plugin = builderAssets({ view, env });
+  const plugin = builderAssets({ view, shared, env });
 
   plugin.buildStart.call(context);
   plugin.generateBundle.handler.call(context, {}, input);
@@ -166,6 +173,29 @@ describe('builderFiles', () => {
     input['assets/Configs-A.js'].dynamicImports = ['assets/elk-api-A.js'];
 
     expect(builderFiles(input, VIEW)).not.toContain('assets/elk-api-A.js');
+  });
+
+  test('keeps the files it shares that shared matches, with their assets', () => {
+    const input = bundle();
+    input['assets/Configs-A.js'].dynamicImports = [
+      'assets/elk-api-A.js',
+      'assets/elk-worker.min-A.js',
+    ];
+    const elk = [
+      'assets/elk-api-A.js',
+      'assets/elk-worker.min-A.js',
+      'assets/elk-worker.min-B.js',
+    ];
+
+    expect(builderFiles(input, VIEW)).toEqual(
+      BUILDER_FILES.filter((file) => !elk.includes(file)),
+    );
+    expect(builderFiles(input, VIEW, ELK_MODULES)).toEqual(BUILDER_FILES);
+    // elk-api's chunk imports shared-A, which shared does not match.
+    expect(builderFiles(input, VIEW, ELK_MODULES)).not.toContain(
+      'assets/shared-A.js',
+    );
+    expect(builderFiles(bundle(), VIEW, ELK_MODULES)).toEqual(BUILDER_FILES);
   });
 
   test('lists a worker a Builder chunk starts, unless another page starts it too', () => {
@@ -226,6 +256,20 @@ describe('the builder-assets plugin', () => {
       BUILDER_FILES.filter((file) => file !== 'assets/elk-worker.min-A.js')
         .flatMap((file) => [`${file}.br`, `${file}.gz`])
         .sort(),
+    );
+  });
+
+  test('lists and copies the files it shares that shared matches', () => {
+    const input = bundle();
+    input['assets/Configs-A.js'].dynamicImports = ['assets/elk-api-A.js'];
+    const emitted = generate(input, { shared: ELK_MODULES });
+
+    expect(JSON.parse(emitted[BUILDER_ASSET_LIST])).toEqual(BUILDER_FILES);
+    expect(gunzipSync(emitted['assets/elk-api-A.js.gz'])).toEqual(
+      contentOf(input['assets/elk-api-A.js']),
+    );
+    expect(Object.keys(generate(input))).not.toContain(
+      'assets/elk-api-A.js.gz',
     );
   });
 

@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { logoutSchedule, TimeoutTool } from '@/utils/timeout.js';
-import axiosInstance from '@/utils/axios.js';
+import * as authApi from '@/api/auth.js';
+import { endConsole } from '@/utils/consoleSession.js';
 
 // Vitest hoists vi.mock above the imports.
 const store = vi.hoisted(() => ({ auth: true, logout: vi.fn() }));
 const toast = vi.hoisted(() => ({ close: vi.fn() }));
 vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
-vi.mock('@/utils/axios.js', () => ({ default: { get: vi.fn() } }));
+vi.mock('@/api/auth.js', () => ({ logOut: vi.fn() }));
+vi.mock('@/utils/consoleSession.js', () => ({
+  endConsole: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('buefy', () => ({
   ToastProgrammatic: class {
     open() {
@@ -74,7 +78,7 @@ describe('TimeoutTool', () => {
   }
 
   test('a warning longer than the timeout does not log out at once', async () => {
-    axiosInstance.get.mockResolvedValue({ status: 204 });
+    authApi.logOut.mockResolvedValue({ status: 204 });
     const t = tool({ timeout_min: 10, warning_min: 15 });
 
     t.startLogoutTimer();
@@ -86,15 +90,17 @@ describe('TimeoutTool', () => {
     expect(store.logout).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1);
-    expect(axiosInstance.get).toHaveBeenCalledWith('logout', {
-      timeout: 10000,
-    });
+    expect(endConsole).toHaveBeenCalledOnce();
+    expect(authApi.logOut).toHaveBeenCalledOnce();
+    expect(endConsole.mock.invocationCallOrder[0]).toBeLessThan(
+      authApi.logOut.mock.invocationCallOrder[0],
+    );
     expect(store.logout).toHaveBeenCalledOnce();
     expect(toast.close).toHaveBeenCalledOnce();
   });
 
   test('warns, then logs out at the timeout', async () => {
-    axiosInstance.get.mockResolvedValue({ status: 204 });
+    authApi.logOut.mockResolvedValue({ status: 204 });
     const t = tool({ timeout_min: 30, warning_min: 3 });
 
     t.startLogoutTimer();
@@ -110,12 +116,28 @@ describe('TimeoutTool', () => {
 
   test('ends the session even if the server does not answer the logout', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    axiosInstance.get.mockRejectedValue(new Error('Network Error'));
+    authApi.logOut.mockRejectedValue(new Error('Network Error'));
     const t = tool({ timeout_min: 1, warning_min: 0 });
 
     t.startLogoutTimer();
     await vi.advanceTimersByTimeAsync(MINUTE);
 
+    expect(store.logout).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  test('ends the session 10 seconds into a logout the server never answers', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    authApi.logOut.mockReturnValue(new Promise(() => {}));
+    const t = tool({ timeout_min: 1, warning_min: 0 });
+
+    t.startLogoutTimer();
+    await vi.advanceTimersByTimeAsync(MINUTE + 10000 - 1);
+    expect(authApi.logOut).toHaveBeenCalledOnce();
+    expect(store.logout).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
     expect(store.logout).toHaveBeenCalledOnce();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
@@ -128,6 +150,6 @@ describe('TimeoutTool', () => {
     tool({ enabled: false, timeout_min: 1 }).startLogoutTimer();
 
     await vi.advanceTimersByTimeAsync(2 * MINUTE);
-    expect(axiosInstance.get).not.toHaveBeenCalled();
+    expect(authApi.logOut).not.toHaveBeenCalled();
   });
 });

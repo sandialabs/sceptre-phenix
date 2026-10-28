@@ -27,6 +27,36 @@
       </footer>
     </div>
   </b-modal>
+  <b-modal
+    v-model="conflict.modal"
+    has-modal-card
+    aria-modal
+    aria-labelledby="config-conflict-title">
+    <div class="modal-card" style="width: 40em">
+      <header class="modal-card-head x-modal-dark">
+        <h2 id="config-conflict-title" class="modal-card-title">
+          Config Changed
+        </h2>
+      </header>
+      <section class="modal-card-body x-modal-dark">
+        <p>
+          {{ conflict.name }} changed since you opened it (revision
+          {{ conflict.from }} → {{ conflict.to ?? 'unknown' }}).
+        </p>
+      </section>
+      <footer class="modal-card-foot x-modal-dark buttons is-right">
+        <button class="button is-light" @click="reloadConflicted">
+          Reload it (your edits are lost)
+        </button>
+        <button class="button is-warning" @click="overwriteConflicted">
+          Overwrite anyway
+        </button>
+        <button class="button is-dark" @click="conflict.modal = false">
+          Cancel
+        </button>
+      </footer>
+    </div>
+  </b-modal>
   <section class="hero is-light is-bold is-small">
     <div class="columns p-4">
       <div class="column is-1" />
@@ -123,42 +153,25 @@
           </b-switch>
         </b-field>
 
-        <b-tooltip
-          v-if="expRunning"
-          label="you cannot edit a running experiment"
-          type="is-light is-bottom"
-          multilined>
+        <div class="buttons editor-buttons">
           <button
-            v-if="expRunning"
-            class="button is-warning"
-            id="editor"
-            disabled>
-            Running
+            v-if="mode == 'edit' && !expStart"
+            class="button is-success"
+            @click="saveConfig(editor.lang)"
+            :disabled="!validConfig">
+            Save
           </button>
-        </b-tooltip>
-
-        <button
-          v-if="mode == 'edit' && !expStart"
-          class="button is-success"
-          id="editor"
-          @click="saveConfig(editor.lang)"
-          :disabled="!validConfig">
-          Save
-        </button>
-        <button
-          v-if="mode == 'create'"
-          class="button is-success"
-          id="editor"
-          @click="createConfig(editor.lang)"
-          :disabled="!validConfig">
-          Create
-        </button>
-        <button
-          class="button is-danger"
-          id="editor"
-          @click="confirmResetEditor">
-          Exit
-        </button>
+          <button
+            v-if="mode == 'create'"
+            class="button is-success"
+            @click="createConfig(editor.lang)"
+            :disabled="!validConfig">
+            Create
+          </button>
+          <button class="button is-danger" @click="confirmResetEditor">
+            Exit
+          </button>
+        </div>
       </div>
       <div class="column">
         <div>
@@ -182,13 +195,13 @@
   </section>
 </template>
 <script>
-  import { useErrorNotification } from '@/utils/errorNotif';
+  import { showError, useErrorNotification } from '@/utils/errorNotif';
   import YAML from 'js-yaml';
   import AceEditor from './AceEditor.vue';
-  import { sample } from 'openapi-sampler';
   import { debounce } from 'lodash-es';
 
-  import axiosInstance from '@/utils/axios.js';
+  import * as configsApi from '@/api/configs.js';
+  import { configKey, forgetConfig, fullConfig } from '@/utils/configCache.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import {
     DOC_ANNOTATION,
@@ -227,65 +240,11 @@
         };
         this.config.str = this.getConfigStr('yaml');
         this.editor.lang = 'yaml';
+        this.original = this.config.str;
       } else if (this.mode == 'edit') {
-        const name = `${this.editorConfig.kind}/${this.editorConfig.metadata.name}`;
         this.editor.isLoading = true;
 
-        axiosInstance
-          .get('configs/' + name, { headers: { Accept: 'application/json' } })
-          .then(async (response) => {
-            if (builderAnnotation(response.data) === DOC_ANNOTATION) {
-              // Only Builder edits it.
-              this.editor.isLoading = false;
-
-              // A role without the Builder gets an alert, not a page it
-              // cannot use.
-              if (!roleAllowed('builder', 'use')) {
-                const done = () => this.$emit('is-done', '');
-
-                this.$buefy.dialog.alert({
-                  title: 'Built by Builder',
-                  message: 'Only Builder can edit this configuration',
-                  confirmText: 'OK',
-                  type: 'is-warning',
-                  hasIcon: true,
-                  onConfirm: done,
-                  onCancel: done,
-                });
-                return;
-              }
-
-              const router = this.$router;
-              const destination = builderLink(response.data);
-
-              // No message: an empty one would open an empty toast. The
-              // Builder announces the draft it opens.
-              this.$emit('is-done', '');
-              await router.push(destination);
-              return;
-            }
-
-            // The user edits a topology with a legacy Builder diagram as
-            // text, like any other. The text leaves out the diagram, which
-            // goes back as it was (see getConfigStr and getConfigObj).
-            this.config.obj = response.data;
-            this.config.str = this.getConfigStr('yaml');
-
-            if (this.config.obj.kind == 'Experiment') {
-              if (
-                this.config.obj.status &&
-                this.config.obj.status.startTime !== ''
-              ) {
-                this.expStart = true;
-              }
-            }
-            this.editor.lang = 'yaml';
-            this.editor.isLoading = false;
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-            this.editor.isLoading = false;
-          });
+        this.loadConfig();
       }
       window.addEventListener('beforeunload', this.handlePageReload);
     },
@@ -317,15 +276,85 @@
           msg: null,
         },
 
-        expRunning: false,
+        original: '', // the config as loaded, to tell whether it was edited
+        // the store revision of the config as loaded, which a save names in
+        // If-Match so it does not overwrite a change made meanwhile
+        loadedRevision: null,
+        // a save refused because the config changed: its name, the revision
+        // loaded and the current one, and the save to resend
+        conflict: { modal: false, name: '', from: null, to: null, save: null },
+
         expStart: false, //TODO: remove
 
         pastConfigKind: null,
       };
     },
     methods: {
+      // opens the edited config: usually already loaded by the viewer or a
+      // hover over the config
+      loadConfig() {
+        this.editor.isLoading = true;
+
+        fullConfig(this.editorConfig)
+          .then(async (config) => {
+            if (builderAnnotation(config) === DOC_ANNOTATION) {
+              // Only Builder edits it.
+              this.editor.isLoading = false;
+
+              // A role without the Builder gets an alert, not a page it
+              // cannot use.
+              if (!roleAllowed('builder', 'use')) {
+                const done = () => this.$emit('is-done', '');
+
+                this.$buefy.dialog.alert({
+                  title: 'Built by Builder',
+                  message: 'Only Builder can edit this configuration',
+                  confirmText: 'OK',
+                  type: 'is-warning',
+                  hasIcon: true,
+                  onConfirm: done,
+                  onCancel: done,
+                });
+                return;
+              }
+
+              const router = this.$router;
+              const destination = builderLink(config);
+
+              // No message: an empty one would open an empty toast. The
+              // Builder announces the draft it opens.
+              this.$emit('is-done', '');
+              await router.push(destination);
+              return;
+            }
+
+            // The user edits a topology with a legacy Builder diagram as
+            // text, like any other. The text leaves out the diagram, which
+            // goes back as it was (see getConfigStr and getConfigObj).
+            this.config.obj = config;
+            this.config.str = this.getConfigStr('yaml');
+            this.original = this.config.str;
+            this.loadedRevision = config.metadata?.revision ?? null;
+
+            if (this.config.obj.kind == 'Experiment') {
+              if (
+                this.config.obj.status &&
+                this.config.obj.status.startTime !== ''
+              ) {
+                this.expStart = true;
+              }
+            }
+            this.editor.lang = 'yaml';
+            this.editor.isLoading = false;
+          })
+          .catch((err) => {
+            useErrorNotification(err);
+            this.editor.isLoading = false;
+          });
+      },
+      // asks before a reload throws away edits
       handlePageReload(event) {
-        event.preventDefault();
+        if (this.changed) event.preventDefault();
       },
       configSentSave() {
         if (this.mode == 'edit') {
@@ -335,9 +364,7 @@
         }
       },
       configSentReset() {
-        if (confirm('Any edits will be lost... are you sure?')) {
-          this.resetEditor('');
-        }
+        this.confirmResetEditor();
       },
       resetErrorModal() {
         this.error.modal = false;
@@ -348,55 +375,53 @@
         let user = localStorage.getItem('user');
         localStorage.setItem(user + '.vimMode', this.editor.vim);
       },
-      updateConfigTemplate(config) {
+      async updateConfigTemplate(config) {
         this.editor.isLoading = true;
-        let version = config.apiVersion.split('/')[1];
+        const version = config.apiVersion.split('/')[1];
 
-        // The kind's schema refers to sub-schemas in the full schema of the
-        // same version, so get that version's full schema to resolve them.
-        axiosInstance
-          .get('schemas/' + version, {
-            headers: { Accept: 'application/json' },
-          })
-          .then((spec) => {
-            axiosInstance
-              .get('schemas/' + config.kind + '/' + version, {
-                headers: { Accept: 'application/json' },
-              })
-              .then((schema) => {
-                config.spec = sample(
-                  schema.data,
-                  { skipReadOnly: true },
-                  spec.data,
-                );
-                this.config.str = this.getConfigStr(null, config);
-                this.editor.isLoading = false;
+        try {
+          // the sampler is needed only here, so it loads with the schemas
+          const [{ sample }, spec, schema] = await Promise.all([
+            import('openapi-sampler'),
+            // the kind's schema refers to sub-schemas in the full schema of
+            // the same version, so get that version's full schema
+            configsApi.getSchemaSpec(version),
+            configsApi.getKindSchema(config.kind, version),
+          ]);
+          config.spec = sample(schema.data, { skipReadOnly: true }, spec.data);
+          this.config.str = this.getConfigStr(null, config);
 
-                //update past kind so any edits to file doesn't reset
-                this.pastConfigKind = config.kind;
-              })
-              .catch((err) => {
-                useErrorNotification(err);
-                this.editor.isLoading = false;
-              });
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-            this.editor.isLoading = false;
-          });
+          // update past kind so any edits to file doesn't reset
+          this.pastConfigKind = config.kind;
+        } catch (err) {
+          useErrorNotification(err);
+        } finally {
+          this.editor.isLoading = false;
+        }
       },
-      async confirmResetEditor() {
-        return this.$buefy.dialog.confirm({
-          title: 'Edits in Progress',
-          message:
-            'You will lose your current edits... do you want to continue?',
-          confirmText: 'Continue',
-          cancelText: 'Cancel',
-          type: 'is-warning',
-          hasIcon: true,
-          onConfirm: () => {
-            this.resetEditor('');
-          },
+      // Closes the editor, first asking whether to drop any edits. Resolves
+      // to whether it closed.
+      confirmResetEditor() {
+        if (!this.changed) {
+          this.resetEditor('');
+          return Promise.resolve(true);
+        }
+
+        return new Promise((resolve) => {
+          this.$buefy.dialog.confirm({
+            title: 'Edits in Progress',
+            message:
+              'You will lose your current edits... do you want to continue?',
+            confirmText: 'Continue',
+            cancelText: 'Cancel',
+            type: 'is-warning',
+            hasIcon: true,
+            onConfirm: () => {
+              this.resetEditor('');
+              resolve(true);
+            },
+            onCancel: () => resolve(false),
+          });
         });
       },
       resetEditor(msg, savedName = '') {
@@ -404,8 +429,6 @@
 
         this.config.str = '';
         this.config.builderXML = null;
-        this.editor.nameErrType = null;
-        this.editor.nameErrMsg = null;
 
         this.$emit('is-done', msg, savedName);
       },
@@ -493,17 +516,13 @@
       saveConfig(lang) {
         let config = this.getConfigObj(lang);
         if (!config) {
-          this.$buefy.toast.open({
-            message: 'missing config to create',
-            type: 'is-danger',
-            duration: 4000,
-          });
+          showError('there is no config to create');
           return;
         }
 
         // Using component config to get name just in case name changed as part
         // of edit.
-        let name = this.config.obj.kind + '/' + this.config.obj.metadata.name;
+        let name = configKey(this.config.obj);
 
         this.$buefy.dialog.confirm({
           title: 'Modify the Config',
@@ -515,75 +534,84 @@
           confirmText: 'Save',
           type: 'is-warning',
           hasIcon: true,
-          onConfirm: () => {
-            axiosInstance
-              .put('configs/' + name, JSON.stringify(config), {
-                headers: { 'Content-Type': 'application/json' },
-              })
-              .then(() => {
-                // The save can rename the config, so report its new name.
-                this.resetEditor(
-                  `config ${name} has been edited`,
-                  `${config.kind}/${config.metadata.name}`,
-                );
-              })
-              .catch((err) => {
-                console.log(err);
-                const resp = err.response.data;
-                // useErrorNotification(err);
-                if (resp.metadata && resp.metadata.validation) {
-                  this.error.title = 'Validation Error';
-                  this.error.msg = resp.metadata.validation;
-                  this.error.modal = true;
-                } else {
-                  this.error.title = 'Validation Error';
-                  this.error.msg = resp.message;
-                  this.error.modal = true;
-                }
-              });
-          },
+          onConfirm: () => this.putConfig(name, config, this.loadedRevision),
         });
-        this.isWaiting = false;
+      },
+
+      // Saves config over the config `name`. With a revision, the server
+      // refuses the save (412) if the config has changed since that revision
+      // was loaded, and a dialog offers to reload it or overwrite it anyway.
+      putConfig(name, config, revision) {
+        return configsApi
+          .updateConfig(name, config, revision)
+          .then(() => {
+            // the cached copies are of the revision this save replaced
+            forgetConfig(this.editorConfig ?? this.config.obj);
+            forgetConfig(config);
+            // the save can rename the config, so report its new name
+            this.resetEditor(
+              `config ${name} has been edited`,
+              configKey(config),
+            );
+          })
+          .catch((err) => {
+            if (err.response?.status === 412) {
+              const current = Number(err.response.data?.metadata?.revision);
+              Object.assign(this.conflict, {
+                modal: true,
+                name,
+                from: revision,
+                to: Number.isFinite(current) && current > 0 ? current : null,
+                save: () => this.putConfig(name, config, null),
+              });
+              return;
+            }
+            this.showSaveError(err);
+          });
+      },
+
+      // sends the refused save again, without If-Match, replacing the newer
+      // config
+      overwriteConflicted() {
+        const save = this.conflict.save;
+        this.conflict.modal = false;
+        return save?.();
+      },
+
+      // opens the config as it is now, dropping the edits
+      reloadConflicted() {
+        this.conflict.modal = false;
+        forgetConfig(this.editorConfig);
+        this.loadConfig();
       },
 
       createConfig(lang) {
         let config = this.getConfigObj(lang);
 
         if (!config) {
-          this.$buefy.toast.open({
-            message: 'missing config to create',
-            type: 'is-danger',
-            duration: 4000,
-          });
-
+          showError('there is no config to create');
           return;
         }
 
-        axiosInstance
-          .post('configs', JSON.stringify(config), {
-            headers: { 'Content-Type': 'application/json' },
-          })
+        configsApi
+          .createConfig(config)
           .then(() => {
-            this.resetEditor(
-              `config ${config.kind}/${config.metadata.name} has been created`,
-            );
+            this.resetEditor(`config ${configKey(config)} has been created`);
           })
-          .catch((err) => {
-            console.log(err);
-
-            if (
-              err.response.data.metadata &&
-              err.response.data.metadata.validation
-            ) {
-              this.error.title = 'Validation Error';
-              this.error.msg = err.response.data.metadata.validation;
-              this.error.modal = true;
-            } else {
-              useErrorNotification(err); // this may need to be updated
-            }
-          });
-
-        this.isWaiting = false;
+          .catch((err) => this.showSaveError(err));
+      },
+      // Validation failures open the editor's error modal, which keeps the
+      // config open for fixing; other failures (permissions, network) use the
+      // usual error notification.
+      showSaveError(err) {
+        const validation = err.response?.data?.metadata?.validation;
+        if (validation) {
+          this.error.title = 'Validation Error';
+          this.error.msg = validation;
+          this.error.modal = true;
+        } else {
+          useErrorNotification(err);
+        }
       },
     },
     computed: {
@@ -593,6 +621,10 @@
           ? `Edit ${this.editorConfig.kind}/${this.editorConfig.metadata.name}`
           : 'New config';
       },
+      changed() {
+        return this.config.str !== this.original;
+      },
+
       validName() {
         return /^[a-zA-Z0-9_@.-]*$/.test(this.configName);
       },
@@ -684,7 +716,6 @@
             config.kind !== this.pastConfigKind
           ) {
             this.debouncedUpdateConfigTemplate(config);
-            // this.updateConfigTemplate(config)
           }
 
           return config.kind;
@@ -711,7 +742,7 @@
   };
 </script>
 <style scoped>
-  /*Quickfix for css. incorporate into main css packages*/
+  /* the editor's panel in the app's grays, not Bulma's light gradient */
   /* Darker stops give white text 7:1 or more on all of the gradient. */
   .hero.is-light.is-bold {
     background-image: linear-gradient(
@@ -752,12 +783,7 @@
     overflow-wrap: anywhere;
   }
 
-  button#editor {
-    margin-top: 125px;
-    margin-right: 10px;
-  }
-
-  button.action {
-    margin-right: 5px;
+  .editor-buttons {
+    margin-top: 1.5rem;
   }
 </style>

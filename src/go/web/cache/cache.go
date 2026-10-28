@@ -26,7 +26,6 @@ const (
 
 type WebCache interface {
 	Get(string) ([]byte, bool)
-	Set(string, []byte) error
 	SetWithExpire(string, []byte, time.Duration) error
 
 	Lock(string, Status, time.Duration) Status
@@ -53,12 +52,6 @@ func (gwc GoWebCache) Get(key string) ([]byte, bool) {
 		return nil, false
 	}
 	return val, true
-}
-
-func (gwc *GoWebCache) Set(key string, val []byte) error {
-	gwc.c.Set(key, val, -1)
-
-	return nil
 }
 
 func (gwc *GoWebCache) SetWithExpire(key string, val []byte, exp time.Duration) error {

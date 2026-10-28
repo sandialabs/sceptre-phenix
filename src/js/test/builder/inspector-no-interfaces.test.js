@@ -3,7 +3,7 @@
 // to, from the checks or from the Inspector, focuses Add interface.
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { flushPromises } from '@vue/test-utils';
 
 import { closeSections } from '@/components/builder/inspector/InspectorSectionRenderer.vue';
 
@@ -13,7 +13,6 @@ import { validateDocument } from '@/builder/validate.js';
 import { sampleDocument } from './fixtures.js';
 import { mountInspector } from './inspector-mount.js';
 
-enableAutoUnmount(afterEach);
 afterEach(closeSections);
 
 const CODE = 'device.interfaces.none';

@@ -2,15 +2,13 @@
 // A drop on the canvas adds the palette entry it carries, and ignores a
 // kind the palette does not send.
 
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import BuilderCanvas from '@/components/builder/BuilderCanvas.vue';
 import { PALETTE_MIME } from '@/components/builder/paletteDnd.js';
 import { useBuilderStore } from '@/builder/store.js';
-
-enableAutoUnmount(afterEach);
 
 globalThis.ResizeObserver ??= class {
   observe() {}

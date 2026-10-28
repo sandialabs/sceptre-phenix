@@ -3,7 +3,7 @@
 // how keeping, moving, removing and resetting keys change the keymap.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import BuilderShortcuts from '@/components/builder/BuilderShortcuts.vue';
 import { commandKeys } from '@/builder/commands.js';
@@ -14,8 +14,6 @@ import {
 } from '@/builder/keymap.js';
 
 import { memoryStorage } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   setPlatform('other');

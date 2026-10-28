@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -449,6 +450,45 @@ func TestApplyOptionsFromFlags(t *testing.T) {
 
 			if args := cmd.Flags().Args(); !slices.Equal(args, []string{"helloworld"}) {
 				t.Errorf("positional arguments = %q, want [helloworld]", args)
+			}
+		})
+	}
+}
+
+// phenix workflow apply returns the error of its flags, and that of a
+// topology directory that does not exist, before it asks the server.
+func TestWorkflowApplyCmdErrors(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "different branch names",
+			args:    []string{"workflow", "apply", "-b", "one", "--" + optionBranchNameAlias, "two", missing},
+			wantErr: `--branch-name "one" and --name "two" differ`,
+		},
+		{name: "missing directory", args: []string{"workflow", "apply", missing}, wantErr: "topology directory not found"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := &cobra.Command{Use: appName, SilenceUsage: true, SilenceErrors: true}
+			root.PersistentFlags().String("unix-socket", filepath.Join(t.TempDir(), "phenix.sock"), "")
+			root.PersistentFlags().String(optionInjectsBase, "", "")
+			root.PersistentFlags().String("base-dir.topologies", "", "")
+
+			workflowCmd := newWorkflowCmd()
+			workflowCmd.AddCommand(newWorkflowApplyCmd())
+			root.AddCommand(workflowCmd)
+			root.SetArgs(tt.args)
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+
+			if _, err := root.ExecuteC(); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("phenix %q error = %v, want %q", tt.args, err, tt.wantErr)
 			}
 		})
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
@@ -56,7 +55,7 @@ func newUtilAppJSONCmd() *cobra.Command {
 
 			var m []byte
 
-			if MustGetBool(cmd.Flags(), "pretty") {
+			if mustGet(cmd.Flags().GetBool, "pretty") {
 				m, err = json.MarshalIndent(exp, "", "  ")
 			} else {
 				m, err = json.Marshal(exp)
@@ -68,7 +67,7 @@ func newUtilAppJSONCmd() *cobra.Command {
 				return err.Humanized()
 			}
 
-			fmt.Fprintln(os.Stdout, string(m))
+			fmt.Fprintln(cmd.OutOrStdout(), string(m))
 
 			return nil
 		},
@@ -84,7 +83,12 @@ func newUtilRoleTableCmd() *cobra.Command {
 		Use:   "role-table",
 		Short: "Print a table for permissions and roles",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			roles, _ := rbac.GetRoles()
+			roles, err := rbac.GetRoles()
+			if err != nil {
+				err := util.HumanizeError(err, "Unable to get the roles")
+
+				return err.Humanized()
+			}
 
 			header := make([]string, 0, roleHeaderPadding+len(roles))
 			header = append(header, "", "")
@@ -107,8 +111,8 @@ func newUtilRoleTableCmd() *cobra.Command {
 				data = append(data, row)
 			}
 
-			if MustGetBool(cmd.Flags(), "pretty") {
-				table := tablewriter.NewWriter(os.Stdout)
+			if mustGet(cmd.Flags().GetBool, "pretty") {
+				table := tablewriter.NewWriter(cmd.OutOrStdout())
 				table.SetHeader(header)
 				table.AppendBulk(data)
 				table.SetBorders(
@@ -117,7 +121,7 @@ func newUtilRoleTableCmd() *cobra.Command {
 				table.SetCenterSeparator("|")
 				table.Render()
 			} else {
-				w := csv.NewWriter(os.Stdout)
+				w := csv.NewWriter(cmd.OutOrStdout())
 
 				_ = w.Write(header)
 				for _, r := range data {

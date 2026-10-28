@@ -4,7 +4,7 @@
 // and the text each tab keeps.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import BuilderDrafts from '@/components/builder/BuilderDrafts.vue';
 
@@ -17,8 +17,6 @@ const PUBLISHED = [
   { id: 'p1', kind: 'Topology', target: 'lab', source: 'store' },
   { id: 'p2', kind: 'Topology', target: 'plant', source: 'store' },
 ];
-
-enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   sessionStorage.clear();

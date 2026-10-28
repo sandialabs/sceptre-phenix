@@ -56,6 +56,19 @@ func (a *stubApp) Cleanup(context.Context, *types.Experiment) error {
 	return nil
 }
 
+// registerUserApp registers a test's user app until the test ends.
+func registerUserApp(t *testing.T, name string, factory app.AppFactory) error {
+	t.Helper()
+
+	if err := app.RegisterUserApp(name, factory); err != nil {
+		return err //nolint:wrapcheck // test helper
+	}
+
+	t.Cleanup(func() { app.UnregisterUserApp(name) })
+
+	return nil
+}
+
 // runningStageExperiment builds a minimal experiment whose scenario contains
 // the given apps, backed by a store mock so WriteToStore/Reload calls are
 // absorbed.
@@ -68,7 +81,10 @@ func runningStageExperiment(t *testing.T, appNames ...string) *types.Experiment 
 	m := store.NewMockStore(ctrl)
 	m.EXPECT().Get(gomock.Any()).Return(errors.New("store unavailable")).AnyTimes()
 
+	oldStore := store.DefaultStore
 	store.DefaultStore = m //nolint:reassign // monkey patching for test
+
+	t.Cleanup(func() { store.DefaultStore = oldStore }) //nolint:reassign // restore the patched store
 
 	appConfigs := make([]map[string]any, 0, len(appNames))
 	for _, name := range appNames {
@@ -102,7 +118,7 @@ func runningStageExperiment(t *testing.T, appNames ...string) *types.Experiment 
 func TestApplyAppsRunningStageErrorPropagates(t *testing.T) {
 	name := "test-running-fails"
 
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name, err: errors.New("checks failed")}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)
@@ -126,7 +142,7 @@ func TestApplyAppsRunningStageErrorPropagates(t *testing.T) {
 func TestApplyAppsRunningStageSuccess(t *testing.T) {
 	name := "test-running-succeeds"
 
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name, err: nil}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)
@@ -149,14 +165,14 @@ func TestApplyAppsFiltersNonRunningLifecycleStage(t *testing.T) {
 	var selectedCalls, skippedCalls []app.Action
 
 	selected := "test-cleanup-selected"
-	if err := app.RegisterUserApp(selected, func() app.App {
+	if err := registerUserApp(t, selected, func() app.App {
 		return &stubApp{name: selected, calls: &selectedCalls}
 	}); err != nil {
 		t.Fatalf("registering selected user app: %v", err)
 	}
 
 	skipped := "test-cleanup-skipped"
-	if err := app.RegisterUserApp(skipped, func() app.App {
+	if err := registerUserApp(t, skipped, func() app.App {
 		return &stubApp{name: skipped, calls: &skippedCalls}
 	}); err != nil {
 		t.Fatalf("registering skipped user app: %v", err)
@@ -187,7 +203,7 @@ func TestApplyAppsQueuesTriggeredAppCleanup(t *testing.T) {
 	var calls []app.Action
 
 	name := "test-triggered-cleanup"
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name, calls: &calls}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)
@@ -236,7 +252,7 @@ func TestApplyAppsQueuesTriggeredAppCleanup(t *testing.T) {
 
 func TestApplyAppsQueuesCleanupBeforeTriggeredAppFailure(t *testing.T) {
 	name := "test-triggered-cleanup-failure"
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{
 			name:         name,
 			configureErr: errors.New("configure failed"),
@@ -266,7 +282,7 @@ func TestApplyAppsQueuesCleanupBeforeTriggeredAppFailure(t *testing.T) {
 
 func TestApplyAppsTriggeredPreStartPreservesAppStatus(t *testing.T) {
 	name := "test-triggered-pre-start"
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)
@@ -301,7 +317,7 @@ func TestApplyAppsTriggeredPreStartPreservesAppStatus(t *testing.T) {
 
 func TestExperimentAppsIncludesDefaultAndScenarioApps(t *testing.T) {
 	name := "test-experiment-apps-scenario"
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)

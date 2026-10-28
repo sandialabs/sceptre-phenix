@@ -1,63 +1,129 @@
 {
   "$defs": {
     "Experiment": {
+      "description": "Schema describing the Experiment resource.",
       "properties": {
         "baseDir": {
+          "description": "Working directory used by the experiment.",
           "examples": [
             "/phenix/topologies/example-topo"
           ],
+          "title": "Base Dir",
           "type": "string"
         },
+        "defaultBridge": {
+          "description": "Bridge used for experiment VM interfaces by default.",
+          "examples": [
+            "phenix"
+          ],
+          "maxLength": 15,
+          "title": "Default Bridge",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deployMode": {
+          "description": "Cluster hosts eligible to run experiment VMs.",
+          "enum": [
+            "all",
+            "no-headnode",
+            "only-headnode"
+          ],
+          "examples": [
+            "all"
+          ],
+          "title": "Deploy Mode",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "experimentName": {
+          "description": "Name of the experiment.",
           "examples": [
             "example-exp"
           ],
           "readOnly": true,
+          "title": "Experiment Name",
           "type": "string"
         },
         "scenario": {
           "$ref": "#/$defs/experiment_scenario"
         },
-        "schedule": {
+        "schedules": {
           "additionalProperties": {
             "type": "string"
           },
+          "description": "Mapping from VM hostnames to cluster hosts.",
           "examples": [
             {
               "ADServer": "compute1"
             }
           ],
+          "title": "Schedules",
           "type": [
             "object",
             "null"
           ]
         },
         "topology": {
-          "$ref": "#/$defs/Topology"
+          "allOf": [
+            {
+              "$ref": "#/$defs/Topology"
+            }
+          ],
+          "description": "Topology configuration embedded in or referenced by this resource.",
+          "title": "Topology"
+        },
+        "useGREMesh": {
+          "description": "Whether cluster hosts use a GRE mesh for this experiment.",
+          "examples": [
+            false
+          ],
+          "title": "Use GRE Mesh",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "vlans": {
+          "description": "VLAN IDs and aliases allocated to the experiment.",
           "properties": {
             "aliases": {
               "additionalProperties": {
                 "type": "integer"
               },
+              "description": "Mapping from VLAN aliases to VLAN IDs.",
               "examples": [
                 {
                   "MGMT": 200
                 }
               ],
+              "title": "Aliases",
               "type": [
                 "object",
                 "null"
               ]
             },
             "max": {
+              "description": "Highest VLAN ID available to the experiment.",
+              "examples": [
+                1
+              ],
+              "title": "Max",
               "type": "integer"
             },
             "min": {
+              "description": "Lowest VLAN ID available to the experiment.",
+              "examples": [
+                1
+              ],
+              "title": "Min",
               "type": "integer"
             }
           },
+          "title": "VLANs",
           "type": [
             "object",
             "null"
@@ -67,36 +133,88 @@
       "required": [
         "topology"
       ],
+      "title": "Experiment",
       "type": "object"
     },
     "Image": {
+      "description": "Schema describing the Image resource.",
       "properties": {
+        "components": {
+          "description": "Distribution components from which to install packages.",
+          "examples": [
+            [
+              "main",
+              "restricted"
+            ]
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Components",
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "compress": {
           "default": false,
+          "description": "Whether to compress the disk image after creating it.",
           "examples": [
             false
           ],
+          "title": "Compress",
           "type": "boolean"
         },
-        "deb_append": {
-          "examples": [
-            "--components=main,restricted"
-          ],
-          "type": "string"
-        },
         "format": {
+          "description": "Format of the output disk image.",
+          "enum": [
+            "raw",
+            "qcow2",
+            "vmdk",
+            "vdi",
+            "vhdx"
+          ],
           "examples": [
             "qcow2"
           ],
+          "title": "Format",
           "type": "string"
         },
+        "kernel": {
+          "description": "Kernel command-line arguments included in the image.",
+          "examples": [
+            [
+              "net.ifnames=0"
+            ]
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Kernel",
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "mirror": {
+          "description": "URL of the distribution mirror used to build the image.",
           "examples": [
             "http://us.archive.ubuntu.com/ubuntu/"
           ],
+          "title": "Mirror",
           "type": "string"
         },
+        "no_virtuals": {
+          "default": false,
+          "description": "Whether to omit virtual packages when resolving packages.",
+          "examples": [
+            false
+          ],
+          "title": "No Virtuals",
+          "type": "boolean"
+        },
         "overlays": {
+          "description": "Overlay directories applied while building the image.",
           "examples": [
             [
               "/phenix/vmdb/overlays/example-overlay"
@@ -105,12 +223,14 @@
           "items": {
             "type": "string"
           },
+          "title": "Overlays",
           "type": [
             "array",
             "null"
           ]
         },
         "packages": {
+          "description": "Additional packages installed in the image.",
           "examples": [
             [
               "isc-dhcp-client",
@@ -120,6 +240,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Packages",
           "type": [
             "array",
             "null"
@@ -127,18 +248,23 @@
         },
         "ramdisk": {
           "default": false,
+          "description": "Whether to build a kernel and initrd alongside the disk image.",
           "examples": [
             false
           ],
+          "title": "Ramdisk",
           "type": "boolean"
         },
         "release": {
+          "description": "Distribution release used to build the image.",
           "examples": [
             "focal"
           ],
+          "title": "Release",
           "type": "string"
         },
         "script_order": {
+          "description": "Script names in the order they run during the image build.",
           "examples": [
             [
               "POSTBUILD_APT_CLEANUP"
@@ -147,6 +273,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Script Order",
           "type": [
             "array",
             "null"
@@ -156,26 +283,42 @@
           "additionalProperties": {
             "type": "string"
           },
+          "description": "Named scripts available to the image build.",
           "examples": [
             {
               "POSTBUILD_APT_CLEANUP": "apt clean || apt-get clean || echo \"unable to clean apt cache\"\n"
             }
           ],
+          "title": "Scripts",
           "type": [
             "object",
             "null"
           ]
         },
         "size": {
+          "description": "Target size of the generated disk image: a positive number and M or G, such as 10G.",
           "examples": [
             "10G"
           ],
+          "pattern": "^(0*[1-9][0-9]*(\\.[0-9]+)?|0+\\.[0-9]*[1-9][0-9]*)[MG]$",
+          "title": "Size",
           "type": "string"
         },
+        "skip_default_packages": {
+          "default": false,
+          "description": "Whether to omit the default packages of the image builder.",
+          "examples": [
+            false
+          ],
+          "title": "Skip Default Packages",
+          "type": "boolean"
+        },
         "variant": {
+          "description": "Distribution variant used to build the image.",
           "examples": [
             "minbase"
           ],
+          "title": "Variant",
           "type": "string"
         }
       },
@@ -186,11 +329,14 @@
         "size",
         "variant"
       ],
+      "title": "Image",
       "type": "object"
     },
     "Role": {
+      "description": "Schema describing the Role resource.",
       "properties": {
         "policies": {
+          "description": "Access policies assigned to this role.",
           "examples": [
             [
               {
@@ -211,32 +357,41 @@
           "items": {
             "properties": {
               "resourceNames": {
+                "description": "Resource names covered by this policy.",
                 "items": {
                   "type": "string"
                 },
+                "title": "Resource Names",
                 "type": "array"
               },
               "resources": {
+                "description": "Resource types covered by this policy.",
                 "items": {
                   "type": "string"
                 },
+                "title": "Resources",
                 "type": "array"
               },
               "verbs": {
+                "description": "Actions allowed on the listed resources.",
                 "items": {
                   "type": "string"
                 },
+                "title": "Verbs",
                 "type": "array"
               }
             },
             "type": "object"
           },
+          "title": "Policies",
           "type": "array"
         },
         "roleName": {
+          "description": "Name assigned to this role.",
           "examples": [
             "Example Role"
           ],
+          "title": "Role Name",
           "type": "string"
         }
       },
@@ -244,40 +399,59 @@
         "policies",
         "roleName"
       ],
+      "title": "Role",
       "type": "object"
     },
     "Scenario": {
+      "description": "Schema describing the Scenario resource.",
       "properties": {
         "apps": {
+          "description": "Applications configured for this scenario.",
           "items": {
             "properties": {
               "assetDir": {
+                "description": "Directory containing assets made available to the application.",
                 "examples": [
                   "/phenix/topologies/example-topo/assets"
                 ],
+                "title": "Asset Directory",
                 "type": "string"
               },
               "disabled": {
                 "default": false,
+                "description": "Whether to skip this application.",
                 "examples": [
                   false
                 ],
+                "title": "Disabled",
                 "type": [
                   "boolean",
                   "null"
                 ]
               },
+              "fromScenario": {
+                "description": "Scenario inherited by this application configuration.",
+                "examples": [
+                  "base-scenario"
+                ],
+                "title": "From Scenario",
+                "type": "string"
+              },
               "hosts": {
+                "description": "Host-specific application settings.",
                 "items": {
                   "properties": {
                     "hostname": {
+                      "description": "Hostname used to identify the node.",
                       "examples": [
                         "example-host"
                       ],
+                      "title": "Hostname",
                       "type": "string"
                     },
                     "metadata": {
                       "additionalProperties": true,
+                      "description": "Application-specific settings for this host.",
                       "examples": [
                         {
                           "setting0": true,
@@ -285,6 +459,7 @@
                           "setting2": "universe key"
                         }
                       ],
+                      "title": "Metadata",
                       "type": [
                         "object",
                         "null"
@@ -296,10 +471,12 @@
                   ],
                   "type": "object"
                 },
+                "title": "Hosts",
                 "type": "array"
               },
               "metadata": {
                 "additionalProperties": true,
+                "description": "Application-specific settings shared across its hosts.",
                 "examples": [
                   {
                     "setting0": true,
@@ -307,15 +484,26 @@
                     "setting2": "universe key"
                   }
                 ],
+                "title": "Metadata",
                 "type": [
                   "object",
                   "null"
                 ]
               },
               "name": {
+                "description": "Name used to identify this resource or entry.",
                 "examples": [
                   "example-app"
                 ],
+                "title": "Name",
+                "type": "string"
+              },
+              "runPeriodically": {
+                "description": "Interval at which the application running stage repeats.",
+                "examples": [
+                  "30s"
+                ],
+                "title": "Run Periodically",
                 "type": "string"
               }
             },
@@ -324,6 +512,7 @@
             ],
             "type": "object"
           },
+          "title": "Apps",
           "type": [
             "array",
             "null"
@@ -333,14 +522,67 @@
       "required": [
         "apps"
       ],
+      "title": "Scenario",
       "type": [
         "object",
         "null"
       ]
     },
     "Topology": {
+      "anyOf": [
+        {
+          "properties": {
+            "nodes": true
+          },
+          "required": [
+            "nodes"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "includeTopologies": true
+          },
+          "required": [
+            "includeTopologies"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "Schema describing the Topology resource.",
       "properties": {
+        "includeTopologies": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "description": "Topology configs or file paths to merge into this topology. A single value is the same as a list of one value.",
+              "examples": [
+                [
+                  "/phenix/topologies/common.yml",
+                  "shared-topology"
+                ]
+              ],
+              "title": "Included Topologies"
+            }
+          ],
+          "description": "Topology configs or file paths to merge into this topology. A single value is the same as a list of one value.",
+          "title": "Included Topologies"
+        },
         "nodes": {
+          "description": "Nodes that make up the topology.",
           "items": {
             "oneOf": [
               {
@@ -351,33 +593,39 @@
               }
             ]
           },
+          "title": "Nodes",
           "type": "array"
         }
       },
-      "required": [
-        "nodes"
-      ],
+      "title": "Topology",
       "type": "object"
     },
     "User": {
+      "description": "Schema describing the User resource.",
       "properties": {
         "first_name": {
+          "description": "Given name of the user.",
           "examples": [
             "John"
           ],
+          "title": "First Name",
           "type": "string"
         },
         "last_name": {
+          "description": "Family name of the user.",
           "examples": [
             "Doe"
           ],
+          "title": "Last Name",
           "type": "string"
         },
         "password": {
+          "description": "Password supplied for account creation or sign-in.",
           "examples": [
             "<encrypted password>"
           ],
           "readOnly": true,
+          "title": "Password",
           "type": "string"
         },
         "rbac": {
@@ -386,12 +634,16 @@
               "$ref": "#/$defs/Role"
             }
           ],
-          "readOnly": true
+          "description": "Role-based access control settings assigned to this user.",
+          "readOnly": true,
+          "title": "RBAC"
         },
         "username": {
+          "description": "Username used to identify the account.",
           "examples": [
             "johndoe@example.com"
           ],
+          "title": "Username",
           "type": "string"
         }
       },
@@ -400,6 +652,7 @@
         "last_name",
         "username"
       ],
+      "title": "User",
       "type": "object"
     },
     "dhcp_iface": {
@@ -411,6 +664,7 @@
           "$ref": "#/$defs/iface_rulesets"
         }
       ],
+      "description": "Schema describing the Dhcp Iface resource.",
       "properties": {
         "proto": {
           "default": "dhcp",
@@ -422,6 +676,7 @@
           "examples": [
             "dhcp"
           ],
+          "title": "Protocol",
           "type": "string"
         },
         "type": {
@@ -433,6 +688,7 @@
           "examples": [
             "ethernet"
           ],
+          "title": "Type",
           "type": "string"
         }
       },
@@ -440,40 +696,59 @@
         "type",
         "proto"
       ],
+      "title": "DHCP Interface",
       "type": "object"
     },
     "experiment_scenario": {
+      "description": "Schema describing the Scenario resource.",
       "properties": {
         "apps": {
+          "description": "Applications configured for this scenario.",
           "items": {
             "properties": {
               "assetDir": {
+                "description": "Directory containing assets made available to the application.",
                 "examples": [
                   "/phenix/topologies/example-topo/assets"
                 ],
+                "title": "Asset Directory",
                 "type": "string"
               },
               "disabled": {
                 "default": false,
+                "description": "Whether to skip this application.",
                 "examples": [
                   false
                 ],
+                "title": "Disabled",
                 "type": [
                   "boolean",
                   "null"
                 ]
               },
+              "fromScenario": {
+                "description": "Scenario inherited by this application configuration.",
+                "examples": [
+                  "base-scenario"
+                ],
+                "title": "From Scenario",
+                "type": "string"
+              },
               "hosts": {
+                "description": "Host-specific application settings.",
                 "items": {
                   "properties": {
                     "hostname": {
+                      "description": "Hostname used to identify the node.",
                       "examples": [
                         "example-host"
                       ],
+                      "title": "Hostname",
                       "type": "string"
                     },
                     "metadata": {
                       "additionalProperties": true,
+                      "description": "Application-specific settings for this host.",
                       "examples": [
                         {
                           "setting0": true,
@@ -481,6 +756,7 @@
                           "setting2": "universe key"
                         }
                       ],
+                      "title": "Metadata",
                       "type": [
                         "object",
                         "null"
@@ -492,10 +768,12 @@
                   ],
                   "type": "object"
                 },
+                "title": "Hosts",
                 "type": "array"
               },
               "metadata": {
                 "additionalProperties": true,
+                "description": "Application-specific settings shared across its hosts.",
                 "examples": [
                   {
                     "setting0": true,
@@ -503,15 +781,26 @@
                     "setting2": "universe key"
                   }
                 ],
+                "title": "Metadata",
                 "type": [
                   "object",
                   "null"
                 ]
               },
               "name": {
+                "description": "Name used to identify this resource or entry.",
                 "examples": [
                   "example-app"
                 ],
+                "title": "Name",
+                "type": "string"
+              },
+              "runPeriodically": {
+                "description": "Interval at which the application running stage repeats.",
+                "examples": [
+                  "30s"
+                ],
+                "title": "Run Periodically",
                 "type": "string"
               }
             },
@@ -520,6 +809,7 @@
             ],
             "type": "object"
           },
+          "title": "Apps",
           "type": [
             "array",
             "null"
@@ -529,24 +819,162 @@
       "required": [
         "apps"
       ],
+      "title": "Scenario",
       "type": [
         "object",
         "null"
       ]
     },
     "external_node": {
+      "description": "Schema describing the External Node resource.",
       "properties": {
+        "advanced": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Additional minimega VM settings.",
+          "title": "Advanced",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Free-form annotations associated with this node.",
+          "examples": [
+            {
+              "physical": true
+            }
+          ],
+          "title": "Annotations",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "commands": {
+          "description": "Minimega commands to run for this node.",
+          "examples": [
+            [
+              "exec hostname"
+            ]
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Commands",
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "delay": {
+          "description": "Conditions that delay the node start.",
+          "properties": {
+            "c2": {
+              "description": "Command-and-control hosts whose availability can release the delay.",
+              "items": {
+                "properties": {
+                  "hostname": {
+                    "description": "Hostname used to identify the node.",
+                    "examples": [
+                      "c2-server"
+                    ],
+                    "title": "Hostname",
+                    "type": "string"
+                  },
+                  "useUUID": {
+                    "description": "Whether to match the command-and-control host by UUID.",
+                    "examples": [
+                      false
+                    ],
+                    "title": "Use UUID",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "title": "C2",
+              "type": "array"
+            },
+            "timer": {
+              "description": "Duration to wait before starting the node, in Go duration syntax such as 5m or 1h30m.",
+              "examples": [
+                "5m"
+              ],
+              "pattern": "^$|^[-+]?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$",
+              "title": "Timer",
+              "type": "string"
+            },
+            "user": {
+              "description": "Whether node start requires user confirmation.",
+              "examples": [
+                true
+              ],
+              "title": "User",
+              "type": "boolean"
+            }
+          },
+          "title": "Delay",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "deletions": {
+          "description": "Files to remove from the node disk before boot.",
+          "items": {
+            "properties": {
+              "description": {
+                "description": "Human-readable description of this resource or entry.",
+                "examples": [
+                  "Remove obsolete endpoint file"
+                ],
+                "title": "Description",
+                "type": "string"
+              },
+              "path": {
+                "description": "Path to remove from the node disk.",
+                "examples": [
+                  "/tmp/obsolete"
+                ],
+                "minLength": 1,
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "type": "object"
+          },
+          "title": "Deletions",
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "external": {
           "description": "Marks a device phenix does not deploy, such as hardware in the loop. It stays in the topology for State of Health and apps.",
+          "enum": [
+            true
+          ],
+          "examples": [
+            true
+          ],
+          "title": "External",
           "type": "boolean"
         },
         "general": {
+          "description": "General node settings.",
           "properties": {
             "description": {
               "description": "Free-text notes about the device.",
               "examples": [
                 "Active Directory Server"
               ],
+              "title": "Description",
               "type": "string"
             },
             "hostname": {
@@ -554,6 +982,7 @@
               "examples": [
                 "ADServer"
               ],
+              "title": "Hostname",
               "type": "string"
             },
             "vm_type": {
@@ -567,15 +996,18 @@
               "examples": [
                 "vm"
               ],
+              "title": "VM Type",
               "type": "string"
             }
           },
           "required": [
             "hostname"
           ],
+          "title": "General",
           "type": "object"
         },
         "hardware": {
+          "description": "Virtual hardware assigned to the node.",
           "properties": {
             "cpu": {
               "default": "Broadwell",
@@ -583,6 +1015,7 @@
               "examples": [
                 "Broadwell"
               ],
+              "title": "CPU",
               "type": "string"
             },
             "memory": {
@@ -598,7 +1031,8 @@
                 {
                   "type": "string"
                 }
-              ]
+              ],
+              "title": "Memory"
             },
             "os_type": {
               "default": "linux",
@@ -616,6 +1050,7 @@
               "examples": [
                 "windows"
               ],
+              "title": "OS Type",
               "type": "string"
             },
             "vcpus": {
@@ -631,18 +1066,88 @@
                 {
                   "type": "string"
                 }
-              ]
+              ],
+              "title": "Virtual CPUs"
             }
           },
           "required": [
             "os_type"
           ],
+          "title": "Hardware",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "injections": {
+          "description": "Files to copy into the node disk before boot.",
+          "items": {
+            "properties": {
+              "description": {
+                "description": "Human-readable description of this resource or entry.",
+                "examples": [
+                  "Inject endpoint config"
+                ],
+                "title": "Description",
+                "type": "string"
+              },
+              "dst": {
+                "description": "Destination path for the injected file.",
+                "examples": [
+                  "/etc/config.txt"
+                ],
+                "minLength": 1,
+                "title": "Destination",
+                "type": "string"
+              },
+              "permissions": {
+                "description": "File permissions to set on the injected file.",
+                "examples": [
+                  "0644"
+                ],
+                "title": "Permissions",
+                "type": "string"
+              },
+              "src": {
+                "description": "Source file copied into the node disk.",
+                "examples": [
+                  "./config.txt"
+                ],
+                "minLength": 1,
+                "title": "Source",
+                "type": "string"
+              }
+            },
+            "required": [
+              "src",
+              "dst"
+            ],
+            "type": "object"
+          },
+          "title": "Injections",
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "String labels used to select or group nodes.",
+          "examples": [
+            {
+              "tier": "endpoint"
+            }
+          ],
+          "title": "Labels",
           "type": [
             "object",
             "null"
           ]
         },
         "network": {
+          "description": "Network settings associated with this node.",
           "properties": {
             "interfaces": {
               "description": "Network interfaces of the device, for the topology's network diagram and State of Health checks.",
@@ -653,6 +1158,7 @@
                     "examples": [
                       "192.168.1.100"
                     ],
+                    "title": "Address",
                     "type": "string"
                   },
                   "gateway": {
@@ -660,6 +1166,7 @@
                     "examples": [
                       "192.168.1.1"
                     ],
+                    "title": "Gateway",
                     "type": "string"
                   },
                   "mask": {
@@ -670,6 +1177,7 @@
                     ],
                     "maximum": 32,
                     "minimum": 0,
+                    "title": "Mask",
                     "type": "integer"
                   },
                   "name": {
@@ -677,6 +1185,7 @@
                     "examples": [
                       "eth0"
                     ],
+                    "title": "Name",
                     "type": "string"
                   },
                   "proto": {
@@ -691,6 +1200,7 @@
                     "examples": [
                       "static"
                     ],
+                    "title": "Protocol",
                     "type": "string"
                   },
                   "vlan": {
@@ -698,6 +1208,7 @@
                     "examples": [
                       "EXP-1"
                     ],
+                    "title": "VLAN",
                     "type": "string"
                   }
                 },
@@ -706,12 +1217,25 @@
                 ],
                 "type": "object"
               },
+              "title": "Interfaces",
               "type": "array"
             }
           },
           "required": [
             "interfaces"
           ],
+          "title": "Network",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "overrides": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Minimega VM settings overridden for this node.",
+          "title": "Overrides",
           "type": [
             "object",
             "null"
@@ -723,6 +1247,7 @@
           "examples": [
             "HIL"
           ],
+          "title": "Type",
           "type": "string"
         }
       },
@@ -731,18 +1256,28 @@
         "type",
         "general"
       ],
+      "title": "External Node",
       "type": "object"
     },
     "iface": {
+      "description": "Schema describing the Iface resource.",
       "properties": {
         "autostart": {
           "default": true,
           "description": "Whether the interface should come up when the VM boots. phenix itself does not act on this setting.",
+          "examples": [
+            true
+          ],
+          "title": "Autostart",
           "type": "boolean"
         },
         "bridge": {
           "default": "phenix",
           "description": "Open vSwitch bridge on the host the interface attaches to. Empty or phenix uses the experiment's default bridge.",
+          "examples": [
+            "phenix"
+          ],
+          "title": "Bridge",
           "type": "string"
         },
         "driver": {
@@ -750,6 +1285,7 @@
           "examples": [
             "e1000"
           ],
+          "title": "Driver",
           "type": "string"
         },
         "mac": {
@@ -758,6 +1294,7 @@
             "00:11:22:33:44:55"
           ],
           "pattern": "^$|^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]){2}$",
+          "title": "MAC",
           "type": "string"
         },
         "mtu": {
@@ -766,6 +1303,7 @@
           "examples": [
             1500
           ],
+          "title": "MTU",
           "type": "integer"
         },
         "name": {
@@ -773,11 +1311,16 @@
           "examples": [
             "eth0"
           ],
+          "title": "Name",
           "type": "string"
         },
         "qinq": {
           "default": false,
           "description": "Carry the guest's own VLAN tags inside the interface's VLAN (QinQ, 802.1ad). The guest brings the interface up without an address.",
+          "examples": [
+            false
+          ],
+          "title": "QinQ",
           "type": "boolean"
         },
         "vlan": {
@@ -785,6 +1328,7 @@
           "examples": [
             "EXP-1"
           ],
+          "title": "VLAN",
           "type": "string"
         }
       },
@@ -792,15 +1336,18 @@
         "name",
         "vlan"
       ],
+      "title": "Interface",
       "type": "object"
     },
     "iface_address": {
+      "description": "Schema describing the Iface Address resource.",
       "properties": {
         "address": {
           "description": "IPv4 address of the interface.",
           "examples": [
             "192.168.1.100"
           ],
+          "title": "Address",
           "type": "string"
         },
         "dns": {
@@ -826,16 +1373,19 @@
                   },
                   "type": "array"
                 }
-              ]
+              ],
+              "title": "DNS Servers"
             }
           ],
-          "description": "DNS server addresses the guest uses: one address, or a list."
+          "description": "DNS server addresses the guest uses: one address, or a list.",
+          "title": "DNS Servers"
         },
         "gateway": {
           "description": "Default gateway, reached through this interface.",
           "examples": [
             "192.168.1.1"
           ],
+          "title": "Gateway",
           "type": "string"
         },
         "mask": {
@@ -846,6 +1396,7 @@
           ],
           "maximum": 32,
           "minimum": 0,
+          "title": "Mask",
           "type": "integer"
         }
       },
@@ -853,9 +1404,11 @@
         "address",
         "mask"
       ],
+      "title": "Interface Address",
       "type": "object"
     },
     "iface_rulesets": {
+      "description": "Schema describing the Iface Rulesets resource.",
       "properties": {
         "ruleset_in": {
           "description": "Ruleset for traffic coming in on this interface, on Router and Firewall nodes.",
@@ -863,6 +1416,7 @@
             "InFromInet"
           ],
           "pattern": "^[\\w-]*$",
+          "title": "Ruleset In",
           "type": "string"
         },
         "ruleset_out": {
@@ -871,18 +1425,41 @@
             "OutToInet"
           ],
           "pattern": "^[\\w-]*$",
+          "title": "Ruleset Out",
           "type": "string"
         }
       },
+      "title": "Interface Rulesets",
       "type": "object"
     },
     "minimega_node": {
+      "description": "Schema describing the Minimega Node resource.",
       "properties": {
         "advanced": {
           "additionalProperties": {
             "type": "string"
           },
           "description": "Extra minimega vm config settings, each a setting name and its value.",
+          "examples": [
+            {
+              "rtc.utc": "true"
+            }
+          ],
+          "title": "Advanced",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Free-form annotations associated with this node.",
+          "examples": [
+            {
+              "app": "web"
+            }
+          ],
+          "title": "Annotations",
           "type": [
             "object",
             "null"
@@ -898,12 +1475,14 @@
           "items": {
             "type": "string"
           },
+          "title": "Commands",
           "type": [
             "array",
             "null"
           ]
         },
         "delay": {
+          "description": "Conditions that delay the node start.",
           "properties": {
             "c2": {
               "description": "Start the VM once each of these hosts has checked in with minimega command and control.",
@@ -911,15 +1490,24 @@
                 "properties": {
                   "hostname": {
                     "description": "Host to wait for.",
+                    "examples": [
+                      "node-01"
+                    ],
+                    "title": "Hostname",
                     "type": "string"
                   },
                   "useUUID": {
                     "description": "Wait for the host's UUID, rather than its hostname, to check in.",
+                    "examples": [
+                      false
+                    ],
+                    "title": "Use UUID",
                     "type": "boolean"
                   }
                 },
                 "type": "object"
               },
+              "title": "C2",
               "type": [
                 "array",
                 "null"
@@ -930,25 +1518,67 @@
               "examples": [
                 "5m"
               ],
+              "pattern": "^$|^[-+]?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$",
+              "title": "Timer",
               "type": "string"
             },
             "user": {
               "description": "Leave the VM stopped until someone starts it from phenix or minimega. Takes precedence over the other delays.",
+              "examples": [
+                false
+              ],
+              "title": "User",
               "type": "boolean"
             }
           },
+          "title": "Delay",
           "type": [
             "object",
             "null"
           ]
         },
+        "deletions": {
+          "description": "Files to remove from the node disk before boot.",
+          "items": {
+            "properties": {
+              "description": {
+                "description": "Human-readable description of this resource or entry.",
+                "examples": [
+                  "Remove the obsolete configuration file"
+                ],
+                "title": "Description",
+                "type": "string"
+              },
+              "path": {
+                "description": "Path to remove from the node disk.",
+                "examples": [
+                  "/etc/obsolete.conf"
+                ],
+                "minLength": 1,
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "type": "object"
+          },
+          "title": "Deletions",
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "general": {
+          "description": "General node settings.",
           "properties": {
             "description": {
               "description": "Free-text notes about the node.",
               "examples": [
                 "Active Directory Server"
               ],
+              "title": "Description",
               "type": "string"
             },
             "do_not_boot": {
@@ -957,19 +1587,21 @@
               "examples": [
                 false
               ],
+              "title": "Do Not Boot",
               "type": [
                 "boolean",
                 "null"
               ]
             },
             "hostname": {
-              "description": "Name of the VM in minimega and the host name set in the guest. Unique in the topology.",
+              "description": "Name of the VM in minimega and the host name set in the guest. The name is unique in the topology.",
               "examples": [
                 "ADServer"
               ],
               "maxLength": 63,
               "minLength": 2,
               "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$",
+              "title": "Hostname",
               "type": "string"
             },
             "snapshot": {
@@ -978,6 +1610,7 @@
               "examples": [
                 true
               ],
+              "title": "Snapshot",
               "type": [
                 "boolean",
                 "null"
@@ -994,15 +1627,18 @@
               "examples": [
                 "kvm"
               ],
+              "title": "VM Type",
               "type": "string"
             }
           },
           "required": [
             "hostname"
           ],
+          "title": "General",
           "type": "object"
         },
         "hardware": {
+          "description": "Virtual hardware assigned to the node.",
           "properties": {
             "cpu": {
               "default": "Broadwell",
@@ -1010,6 +1646,7 @@
               "examples": [
                 "Broadwell"
               ],
+              "title": "CPU",
               "type": "string"
             },
             "drives": {
@@ -1030,6 +1667,7 @@
                     "examples": [
                       "writeback"
                     ],
+                    "title": "Cache Mode",
                     "type": "string"
                   },
                   "image": {
@@ -1038,6 +1676,7 @@
                       "ubuntu.qc2"
                     ],
                     "minLength": 1,
+                    "title": "Image",
                     "type": "string"
                   },
                   "inject_partition": {
@@ -1046,6 +1685,7 @@
                     "examples": [
                       2
                     ],
+                    "title": "Inject Partition",
                     "type": [
                       "integer",
                       "null"
@@ -1068,6 +1708,7 @@
                     "examples": [
                       "ide"
                     ],
+                    "title": "Interface",
                     "type": "string"
                   }
                 },
@@ -1077,6 +1718,7 @@
                 "type": "object"
               },
               "minItems": 1,
+              "title": "Drives",
               "type": "array"
             },
             "memory": {
@@ -1092,7 +1734,8 @@
                 {
                   "type": "string"
                 }
-              ]
+              ],
+              "title": "Memory"
             },
             "os_type": {
               "default": "linux",
@@ -1110,6 +1753,7 @@
               "examples": [
                 "windows"
               ],
+              "title": "OS Type",
               "type": "string"
             },
             "vcpus": {
@@ -1125,13 +1769,15 @@
                 {
                   "type": "string"
                 }
-              ]
+              ],
+              "title": "Virtual CPUs"
             }
           },
           "required": [
             "os_type",
             "drives"
           ],
+          "title": "Hardware",
           "type": "object"
         },
         "injections": {
@@ -1143,6 +1789,7 @@
                 "examples": [
                   "phenix config file"
                 ],
+                "title": "Description",
                 "type": "string"
               },
               "dst": {
@@ -1150,6 +1797,7 @@
                 "examples": [
                   "/etc/phenix/foo.xml"
                 ],
+                "title": "Destination",
                 "type": "string"
               },
               "permissions": {
@@ -1157,6 +1805,7 @@
                 "examples": [
                   "0664"
                 ],
+                "title": "Permissions",
                 "type": "string"
               },
               "src": {
@@ -1164,6 +1813,7 @@
                 "examples": [
                   "foo.xml"
                 ],
+                "title": "Source",
                 "type": "string"
               }
             },
@@ -1173,12 +1823,30 @@
             ],
             "type": "object"
           },
+          "title": "Injections",
           "type": [
             "array",
             "null"
           ]
         },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "String labels used to select or group nodes.",
+          "examples": [
+            {
+              "tier": "frontend"
+            }
+          ],
+          "title": "Labels",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "network": {
+          "description": "Network settings associated with this node.",
           "properties": {
             "interfaces": {
               "description": "Network interfaces, in the order the guest sees them.",
@@ -1196,12 +1864,48 @@
                 ],
                 "type": "object"
               },
+              "title": "Interfaces",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "nat": {
+              "description": "Mappings for network address translation on this node.",
+              "items": {
+                "properties": {
+                  "in": {
+                    "description": "Internal networks or interfaces mapped by this NAT rule.",
+                    "examples": [
+                      [
+                        "10.0.0.0/24"
+                      ]
+                    ],
+                    "items": {
+                      "type": "string"
+                    },
+                    "title": "In",
+                    "type": "array"
+                  },
+                  "out": {
+                    "description": "External interface used by this NAT rule.",
+                    "examples": [
+                      "eth0"
+                    ],
+                    "title": "Out",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "title": "Nat",
               "type": [
                 "array",
                 "null"
               ]
             },
             "ospf": {
+              "description": "Open Shortest Path First routing settings.",
               "properties": {
                 "areas": {
                   "description": "OSPF areas the router takes part in.",
@@ -1213,6 +1917,7 @@
                         "examples": [
                           1
                         ],
+                        "title": "Area Id",
                         "type": "integer"
                       },
                       "area_networks": {
@@ -1224,6 +1929,7 @@
                               "examples": [
                                 "10.1.25.0/24"
                               ],
+                              "title": "Network",
                               "type": "string"
                             }
                           },
@@ -1232,6 +1938,7 @@
                           ],
                           "type": "object"
                         },
+                        "title": "Area Networks",
                         "type": "array"
                       }
                     },
@@ -1241,6 +1948,7 @@
                     ],
                     "type": "object"
                   },
+                  "title": "Areas",
                   "type": "array"
                 },
                 "dead_interval": {
@@ -1248,6 +1956,7 @@
                   "examples": [
                     40
                   ],
+                  "title": "Dead Interval",
                   "type": [
                     "integer",
                     "null"
@@ -1258,6 +1967,7 @@
                   "examples": [
                     10
                   ],
+                  "title": "Hello Interval",
                   "type": [
                     "integer",
                     "null"
@@ -1268,6 +1978,7 @@
                   "examples": [
                     5
                   ],
+                  "title": "Retransmission Interval",
                   "type": [
                     "integer",
                     "null"
@@ -1278,6 +1989,7 @@
                   "examples": [
                     "0.0.0.1"
                   ],
+                  "title": "Router Id",
                   "type": "string"
                 }
               },
@@ -1285,6 +1997,7 @@
                 "router_id",
                 "areas"
               ],
+              "title": "OSPF",
               "type": [
                 "object",
                 "null"
@@ -1300,6 +2013,7 @@
                     "examples": [
                       1
                     ],
+                    "title": "Cost",
                     "type": [
                       "integer",
                       "null"
@@ -1310,6 +2024,7 @@
                     "examples": [
                       "192.168.0.0/24"
                     ],
+                    "title": "Destination",
                     "type": "string"
                   },
                   "next": {
@@ -1317,6 +2032,7 @@
                     "examples": [
                       "192.168.1.254"
                     ],
+                    "title": "Next",
                     "type": "string"
                   }
                 },
@@ -1326,6 +2042,7 @@
                 ],
                 "type": "object"
               },
+              "title": "Routes",
               "type": [
                 "array",
                 "null"
@@ -1345,6 +2062,7 @@
                     "examples": [
                       "drop"
                     ],
+                    "title": "Default",
                     "type": "string"
                   },
                   "description": {
@@ -1352,6 +2070,7 @@
                     "examples": [
                       "From Corp to the DMZ network"
                     ],
+                    "title": "Description",
                     "type": "string"
                   },
                   "name": {
@@ -1359,6 +2078,7 @@
                     "examples": [
                       "OutToDMZ"
                     ],
+                    "title": "Name",
                     "type": "string"
                   },
                   "rules": {
@@ -1375,6 +2095,7 @@
                           "examples": [
                             "accept"
                           ],
+                          "title": "Action",
                           "type": "string"
                         },
                         "description": {
@@ -1382,15 +2103,18 @@
                           "examples": [
                             "Allow UDP 10.1.26.80 ==> 10.2.25.0/24:123"
                           ],
+                          "title": "Description",
                           "type": "string"
                         },
                         "destination": {
+                          "description": "Destination network or address for this route or rule.",
                           "properties": {
                             "address": {
                               "description": "Destination address or network the rule matches.",
                               "examples": [
                                 "10.1.24.60"
                               ],
+                              "title": "Address",
                               "type": "string"
                             },
                             "port": {
@@ -1398,12 +2122,14 @@
                               "examples": [
                                 3389
                               ],
+                              "title": "Port",
                               "type": "integer"
                             }
                           },
                           "required": [
                             "address"
                           ],
+                          "title": "Destination",
                           "type": [
                             "object",
                             "null"
@@ -1414,6 +2140,7 @@
                           "examples": [
                             10
                           ],
+                          "title": "Id",
                           "type": "integer"
                         },
                         "protocol": {
@@ -1431,15 +2158,18 @@
                           "examples": [
                             "tcp"
                           ],
+                          "title": "Protocol",
                           "type": "string"
                         },
                         "source": {
+                          "description": "Source address and optional port matched by this rule.",
                           "properties": {
                             "address": {
                               "description": "Source address or network the rule matches.",
                               "examples": [
                                 "10.1.24.60"
                               ],
+                              "title": "Address",
                               "type": "string"
                             },
                             "port": {
@@ -1447,16 +2177,26 @@
                               "examples": [
                                 3389
                               ],
+                              "title": "Port",
                               "type": "integer"
                             }
                           },
                           "required": [
                             "address"
                           ],
+                          "title": "Source",
                           "type": [
                             "object",
                             "null"
                           ]
+                        },
+                        "stateful": {
+                          "description": "Whether the firewall rule tracks connection state.",
+                          "examples": [
+                            true
+                          ],
+                          "title": "Stateful",
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -1466,6 +2206,7 @@
                       ],
                       "type": "object"
                     },
+                    "title": "Rules",
                     "type": "array"
                   }
                 },
@@ -1476,6 +2217,7 @@
                 ],
                 "type": "object"
               },
+              "title": "Rulesets",
               "type": [
                 "array",
                 "null"
@@ -1485,6 +2227,23 @@
           "required": [
             "interfaces"
           ],
+          "title": "Network",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "overrides": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Minimega VM settings overridden for this node.",
+          "examples": [
+            {
+              "memory": "4096"
+            }
+          ],
+          "title": "Overrides",
           "type": [
             "object",
             "null"
@@ -1502,6 +2261,7 @@
           "examples": [
             "VirtualMachine"
           ],
+          "title": "Type",
           "type": "string"
         }
       },
@@ -1510,6 +2270,7 @@
         "general",
         "hardware"
       ],
+      "title": "Minimega Node",
       "type": "object"
     },
     "serial_iface": {
@@ -1524,6 +2285,7 @@
           "$ref": "#/$defs/iface_rulesets"
         }
       ],
+      "description": "Schema describing the Serial Iface resource.",
       "properties": {
         "baud_rate": {
           "default": 9600,
@@ -1547,6 +2309,7 @@
           "examples": [
             9600
           ],
+          "title": "Baud Rate",
           "type": "integer"
         },
         "device": {
@@ -1555,6 +2318,7 @@
           "examples": [
             "/dev/ttyS0"
           ],
+          "title": "Device",
           "type": "string"
         },
         "proto": {
@@ -1566,6 +2330,7 @@
           "examples": [
             "static"
           ],
+          "title": "Protocol",
           "type": "string"
         },
         "type": {
@@ -1577,6 +2342,7 @@
           "examples": [
             "serial"
           ],
+          "title": "Type",
           "type": "string"
         },
         "udp_port": {
@@ -1587,6 +2353,7 @@
           ],
           "maximum": 65535,
           "minimum": 0,
+          "title": "UDP Port",
           "type": "integer"
         }
       },
@@ -1597,6 +2364,7 @@
         "baud_rate",
         "device"
       ],
+      "title": "Serial Interface",
       "type": "object"
     },
     "static_iface": {
@@ -1611,6 +2379,7 @@
           "$ref": "#/$defs/iface_rulesets"
         }
       ],
+      "description": "Schema describing the Static Iface resource.",
       "properties": {
         "proto": {
           "default": "static",
@@ -1622,6 +2391,7 @@
           "examples": [
             "static"
           ],
+          "title": "Protocol",
           "type": "string"
         },
         "type": {
@@ -1633,6 +2403,7 @@
           "examples": [
             "ethernet"
           ],
+          "title": "Type",
           "type": "string"
         }
       },
@@ -1640,6 +2411,7 @@
         "type",
         "proto"
       ],
+      "title": "Static Interface",
       "type": "object"
     }
   },

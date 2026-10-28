@@ -240,44 +240,49 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 
 // processLogChannel reads from ch and calls logFn for each detected log entry.
 // It buffers non-JSON lines for up to 10ms to reconstruct multi-line messages (like stack traces).
+// It joins the parts of a multi-part JSON message into one entry.
 func processLogChannel(ch <-chan []byte, logFn func(level, msg string)) {
 	var (
-		buf   bytes.Buffer
-		timer = time.NewTimer(time.Hour)
+		buf    bytes.Buffer
+		timer  = time.NewTimer(time.Hour)
+		joiner = plog.NewPartJoiner(func(level string, _ struct{}, msg string) { logFn(level, msg) })
 	)
 	timer.Stop()
 
-	flush := func() {
+	resetTimer := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(logFlushInterval)
+	}
+
+	flushText := func() {
 		if buf.Len() == 0 {
 			return
 		}
 		msg := buf.String()
 		buf.Reset()
 
-		level := levelInfo
-		switch {
-		case strings.Contains(msg, "| ERROR |") || strings.Contains(msg, "| ERR |"):
-			level = levelError
-		case strings.Contains(msg, "| WARN |") || strings.Contains(msg, "| WARNING |"):
-			level = levelWarn
-		case strings.Contains(msg, "| DEBUG |") || strings.Contains(msg, "| DBG |"):
-			level = levelDebug
-		}
-
-		logFn(level, msg)
+		logFn(textLevel(msg), msg)
 	}
 
 	type jsonLog struct {
 		Level     string `json:"level"`
 		Message   string `json:"msg"`
 		Traceback string `json:"traceback"`
+		Part      any    `json:"part"`
+		Parts     any    `json:"parts"`
 	}
 
 	for {
 		select {
 		case line, ok := <-ch:
 			if !ok {
-				flush()
+				joiner.Flush()
+				flushText()
 				return
 			}
 
@@ -296,29 +301,52 @@ func processLogChannel(ch <-chan []byte, logFn func(level, msg string)) {
 			}
 
 			if isJSON {
-				flush()
-
 				if entry.Traceback != "" {
 					entry.Message += "\n" + entry.Traceback
 				}
 
+				if part, ok := plog.ParsePart(entry.Part, entry.Parts); ok {
+					flushText()
+					joiner.Add(entry.Level, part, entry.Message, struct{}{})
+
+					if joiner.Pending() {
+						resetTimer()
+					}
+
+					continue
+				}
+
+				joiner.Flush()
+				flushText()
 				logFn(entry.Level, entry.Message)
 			} else {
+				joiner.Flush()
+
 				if buf.Len() > 0 {
 					buf.WriteByte('\n')
 				}
 				buf.Write(bytes.TrimRight(line, "\r\n"))
 
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-				timer.Reset(logFlushInterval)
+				resetTimer()
 			}
 		case <-timer.C:
-			flush()
+			joiner.Flush()
+			flushText()
 		}
+	}
+}
+
+// textLevel returns the level that the "| LEVEL |" marker in a text entry
+// names, or INFO if the entry has no marker.
+func textLevel(msg string) string {
+	switch {
+	case strings.Contains(msg, "| ERROR |") || strings.Contains(msg, "| ERR |"):
+		return levelError
+	case strings.Contains(msg, "| WARN |") || strings.Contains(msg, "| WARNING |"):
+		return levelWarn
+	case strings.Contains(msg, "| DEBUG |") || strings.Contains(msg, "| DBG |"):
+		return levelDebug
+	default:
+		return levelInfo
 	}
 }

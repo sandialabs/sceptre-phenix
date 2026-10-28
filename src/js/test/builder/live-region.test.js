@@ -5,12 +5,10 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import BuilderLiveRegion from '@/components/builder/BuilderLiveRegion.vue';
 import { useBuilderStore } from '@/builder/store.js';
-
-enableAutoUnmount(afterEach);
 
 const HOLD_MS = 750;
 

@@ -476,12 +476,9 @@ test.describe('Configs page', () => {
       await expect.soft(page).toHaveURL(/\/configs\/$/);
       await expect.soft(page.locator('.dialog.modal.is-active')).toHaveCount(0);
 
-      // Leave the unchanged editor to get back to the list.
+      // Exit leaves the unchanged editor without a question.
       await page.getByRole('button', { name: 'Exit', exact: true }).click();
-      await page
-        .locator('.dialog.modal.is-active')
-        .getByRole('button', { name: 'Continue' })
-        .click();
+      await expect.soft(page.locator('.dialog.modal.is-active')).toHaveCount(0);
       await expect(configRow(page, built)).toBeVisible();
     });
 

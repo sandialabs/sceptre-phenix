@@ -42,3 +42,13 @@ entry = "npm run lint"
 language = "system"
 pass_filenames = false
 priority = "lint"
+
+[[repos.hooks]]
+id = "knip"
+name = "knip (unused files, exports and dependencies)"
+description = "Fails on JS/Vue files, exports and dependencies nothing uses; knip.jsonc lists the exceptions."
+entry = "npm run knip"
+language = "system"
+pass_filenames = false
+files = '(\.(js|vue|scss|sass)|^package\.json|^knip\.jsonc)$'
+priority = "lint"

@@ -2,137 +2,124 @@
 The header component is available on all views based on the 
 App.vue component. The available routable links are available 
 based on whether the user is logged in and furthermore based on 
-their role. Based on the current limitations per user role, these 
-are only available to Global Administrator or Global Viewer.
+what their role allows.
  -->
 <template>
-  <b-navbar class="mb-4">
+  <b-navbar v-model="menuOpen" class="mb-4">
     <template #brand>
       <b-navbar-item tag="router-link" :to="{ name: 'home' }" :active="false">
         <img src="@/assets/imgs/phenix-banner.png" alt="phenix" />
       </b-navbar-item>
     </template>
     <template #start>
-      <b-navbar-item
-        v-if="roleAllowed('experiments', 'list')"
-        tag="router-link"
-        :to="{ name: 'experiments' }"
-        >Experiments</b-navbar-item
-      >
-      <b-navbar-item
-        v-if="auth && roleAllowed('configs', 'list')"
-        tag="router-link"
-        :to="{ name: 'configs' }"
-        >Configs</b-navbar-item
-      >
-      <b-navbar-item
-        v-if="auth && roleAllowed('disks', 'list')"
-        tag="router-link"
-        :to="{ name: 'disks' }"
-        >Disks</b-navbar-item
-      >
-      <b-navbar-item
-        v-if="auth && roleAllowed('hosts', 'list')"
-        tag="router-link"
-        :to="{ name: 'hosts' }"
-        >Hosts</b-navbar-item
-      >
-      <b-navbar-item
-        v-if="auth && !disabled"
-        tag="router-link"
-        :to="{ name: 'users' }"
-        >Users</b-navbar-item
-      >
-      <b-navbar-item
-        v-if="auth && roleAllowed('logs', 'list')"
-        tag="router-link"
-        :to="{ name: 'log' }"
-        >Logs</b-navbar-item
-      >
-      <b-navbar-item
-        v-if="auth && roleAllowed('experiments', 'list')"
-        tag="router-link"
-        :to="{ name: 'scorch' }"
-        >Scorch</b-navbar-item
-      >
-      <b-navbar-item
-        v-if="auth && roleAllowed('builder', 'use')"
-        tag="router-link"
-        :to="{ name: 'builder' }"
-        data-testid="nav-builder"
-        >Builder</b-navbar-item
-      >
-      <b-navbar-item
-        v-if="auth && roleAllowed('miniconsole', 'post')"
-        tag="router-link"
-        :to="{ name: 'console' }"
-        >Console</b-navbar-item
-      >
-      <b-navbar-item
-        v-if="auth && tunneler"
-        tag="router-link"
-        :to="{ name: 'tunneler' }">
-        Tunneler
-      </b-navbar-item>
-      <b-navbar-item
-        v-if="auth && roleAllowed('settings', 'edit')"
-        tag="router-link"
-        :to="{ name: 'settings' }"
-        >Settings</b-navbar-item
-      >
+      <template v-for="(item, i) in navItems" :key="item.label">
+        <span v-if="i" class="nav-dot" aria-hidden="true">·</span>
+        <nav-menu
+          v-if="item.links"
+          :label="item.label"
+          :icon="item.icon"
+          :links="item.links"></nav-menu>
+        <b-tooltip
+          v-else
+          :label="item.tip ?? item.label"
+          type="is-light"
+          position="is-bottom"
+          class="nav-tip">
+          <router-link
+            :to="{ name: item.route }"
+            class="navbar-item nav-link"
+            :data-testid="item.testid">
+            <b-icon
+              :icon="item.icon"
+              size="is-small"
+              aria-hidden="true"></b-icon>
+            <span class="nav-text">{{ item.label }}</span>
+          </router-link>
+        </b-tooltip>
+      </template>
     </template>
 
     <template #end>
-      <!-- Buttons, so the keyboard reaches them too. While a logout waits
-           for the server, they say so. -->
-      <b-navbar-item
-        v-if="proxyAuth"
-        tag="button"
-        type="button"
-        class="navbar-item app-header__logout"
-        :aria-busy="loggingOut ? 'true' : undefined"
-        @click="logout"
-        >{{ loggingOut ? 'Logging out…' : 'Reauthorize' }}
-      </b-navbar-item>
-      <b-navbar-item
-        v-else-if="auth"
-        tag="button"
-        type="button"
-        class="navbar-item app-header__logout"
-        data-testid="nav-logout"
-        :aria-busy="loggingOut ? 'true' : undefined"
-        @click="logout"
-        >{{ loggingOut ? 'Logging out…' : 'Logout' }}
-      </b-navbar-item>
+      <div class="navbar-item nav-tools">
+        <b-tooltip
+          v-if="auth && tunneler"
+          label="Tunneler"
+          type="is-light"
+          position="is-bottom">
+          <b-button
+            tag="router-link"
+            :to="{ name: 'tunneler' }"
+            type="is-primary"
+            icon-left="download"
+            class="nav-icon-button tunneler-button"
+            ><span class="tunneler-label is-sr-only">Tunneler</span></b-button
+          >
+        </b-tooltip>
+        <b-tooltip label="Docs" type="is-light" position="is-bottom">
+          <a
+            :href="DOCS_URL"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="button nav-icon-button docs-button"
+            aria-label="Docs (opens in new tab)"
+            ><b-icon icon="book" size="is-small" aria-hidden="true"></b-icon
+          ></a>
+        </b-tooltip>
+        <span v-if="auth" class="nav-sep" aria-hidden="true"></span>
+        <refresh-status v-if="auth"></refresh-status>
+        <jobs-menu v-if="auth"></jobs-menu>
+        <!-- a proxy gets Reauthorize, not Logout; while a logout waits for
+             the server, it says so -->
+        <template v-if="proxyAuth || auth">
+          <span class="nav-sep" aria-hidden="true"></span>
+          <!-- left of the button, which is at the window's right edge -->
+          <b-tooltip :label="logoutTip" type="is-light" position="is-left">
+            <button
+              type="button"
+              class="button nav-icon-button app-header__logout"
+              :data-testid="proxyAuth ? null : 'nav-logout'"
+              :aria-label="logoutLabel"
+              :aria-busy="loggingOut ? 'true' : undefined"
+              @click="logout">
+              <b-icon
+                :icon="proxyAuth ? 'user-shield' : 'right-from-bracket'"
+                size="is-small"
+                aria-hidden="true"></b-icon>
+            </button>
+          </b-tooltip>
+        </template>
+      </div>
     </template>
   </b-navbar>
 </template>
 
 <script>
   import { usePhenixStore } from '@/store.js';
-  import { roleAllowed } from '@/utils/rbac.js';
-  import axiosInstance from '@/utils/axios.js';
+  import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
+  import { canUseWebShark, webSharkInstalled } from '@/utils/webshark.js';
+  import * as authApi from '@/api/auth.js';
+  import { showError } from '@/utils/errorNotif.js';
+  import { endConsole } from '@/utils/consoleSession.js';
+  import RefreshStatus from '@/components/RefreshStatus.vue';
+  import JobsMenu from '@/components/jobs/JobsMenu.vue';
+  import NavMenu from '@/components/NavMenu.vue';
+  import { DOCS_URL } from '@/utils/docs.js';
 
   export default {
+    components: { RefreshStatus, JobsMenu, NavMenu },
     setup() {
-      return { roleAllowed };
+      return { DOCS_URL };
     },
+    // The burger menu's state, closed when a link in it is followed.
     data() {
-      return { loggingOut: false };
+      return { menuOpen: false, loggingOut: false };
     },
-    //  The computed elements determine if the user is already logged
-    //  in; if so, the routable links are available. If not, the sign
-    //  in routable link is the only one available. The role getter
-    //  determines what the role of the user is; this is used to present
-    //  routable links in the header row.
+    // Links but Experiments wait for login; Tunneler and WebShark need the
+    // server (WebShark also capture access); signed-in users get the jobs menu.
     computed: {
       auth() {
         const phenixStore = usePhenixStore();
         return phenixStore.auth;
-      },
-      disabled() {
-        const phenixStore = usePhenixStore();
-        return phenixStore.role.name === 'Disabled';
       },
       proxyAuth() {
         return import.meta.env.VITE_AUTH === 'proxy';
@@ -141,12 +128,125 @@ are only available to Global Administrator or Global Viewer.
       tunneler() {
         return usePhenixStore().features.includes('tunneler-download');
       },
+
+      webshark() {
+        return webSharkInstalled(usePhenixStore().features) && canUseWebShark();
+      },
+
+      logoutLabel() {
+        if (this.loggingOut) return 'Logging out…';
+        return this.proxyAuth ? 'Reauthorize' : 'Logout';
+      },
+
+      // Reauthorize's tooltip says what it does: the proxy signs you in again
+      logoutTip() {
+        return this.proxyAuth && !this.loggingOut
+          ? 'Reauthorize (reload your session and role)'
+          : this.logoutLabel;
+      },
+
+      // The links and menus the role may open, in order. A menu shows the
+      // links in it the role may open, and only if there is one.
+      navItems() {
+        const auth = this.auth;
+        const may = (resource, verb) => auth && roleAllowed(resource, verb);
+        const menu = (label, icon, links) => ({
+          label,
+          icon,
+          links: links.filter((link) => link.show),
+        });
+        return [
+          {
+            route: 'experiments',
+            label: 'Experiments',
+            icon: 'flask',
+            show: roleAllowed('experiments', 'list'),
+          },
+          {
+            route: 'builder',
+            label: 'Builder',
+            icon: 'diagram-project',
+            show: may('builder', 'use'),
+            testid: 'nav-builder',
+          },
+          {
+            route: 'scorch',
+            label: 'SCORCH',
+            icon: 'route',
+            show: may('experiments', 'list'),
+          },
+          {
+            route: 'sohoverview',
+            label: 'SoH',
+            tip: 'State of Health',
+            icon: 'heart-pulse',
+            show: may('experiments', 'list'),
+          },
+          {
+            route: 'webshark',
+            label: 'WebShark',
+            icon: 'shark-fin',
+            show: auth && this.webshark,
+          },
+          menu('Resources', 'cubes', [
+            {
+              route: 'configs',
+              label: 'Configs',
+              icon: 'file-code',
+              show: may('configs', 'list'),
+            },
+            {
+              route: 'disks',
+              label: 'Disks',
+              icon: 'hard-drive',
+              show: may('disks', 'list'),
+            },
+            {
+              route: 'hosts',
+              label: 'Hosts',
+              icon: 'server',
+              show: may('hosts', 'list'),
+            },
+          ]),
+          menu('Admin', 'screwdriver-wrench', [
+            {
+              route: 'users',
+              label: 'Users',
+              icon: 'users',
+              show: auth && usersPageAllowed(),
+            },
+            {
+              route: 'log',
+              label: 'Logs',
+              icon: 'file-lines',
+              show: may('logs', 'get'),
+            },
+            {
+              route: 'settings',
+              label: 'Settings',
+              icon: 'gear',
+              show: may('settings', 'update'),
+            },
+            {
+              route: 'console',
+              label: 'Console',
+              icon: 'terminal',
+              show: may('miniconsole', 'post'),
+            },
+          ]),
+        ].filter((item) => (item.links ? item.links.length : item.show));
+      },
+    },
+
+    watch: {
+      // Buefy closes the burger menu only on a click on its own items.
+      '$route.fullPath'() {
+        this.menuOpen = false;
+      },
     },
 
     methods: {
-      //  These methods are used to logout a user; or, present
-      //  routable link based on a Global user role.
-      logout(event) {
+      async logout(event) {
         const button = event?.currentTarget;
 
         if (this.loggingOut) {
@@ -155,8 +255,11 @@ are only available to Global Administrator or Global Viewer.
 
         this.loggingOut = true;
 
-        axiosInstance
-          .get('logout')
+        // end the console first, while the token still allows it
+        await endConsole();
+
+        authApi
+          .logOut()
           .then(
             (response) => response.status,
             (error) => error.response?.status,
@@ -172,7 +275,6 @@ are only available to Global Administrator or Global Viewer.
                 this.$buefy.toast.open({
                   message: 'Your account has been reauthorized',
                   type: 'is-success',
-                  duration: 4000,
                 });
               }
 
@@ -180,13 +282,10 @@ are only available to Global Administrator or Global Viewer.
             }
 
             // When the server does not answer the logout, the session stays
-            // as it was and a toast says so. Focus goes back to Logout.
-            this.$buefy.toast.open({
-              message:
-                'Could not log out. Check your connection and try again.',
-              type: 'is-danger',
-              duration: 8000,
-            });
+            // as it was and an error says so. Focus goes back to Logout.
+            showError(
+              'Could not log out. Check your connection and try again.',
+            );
             button?.focus();
 
             // In a narrow window, the menu that held Logout closes on a
@@ -201,25 +300,49 @@ are only available to Global Administrator or Global Viewer.
 </script>
 
 <style scoped>
-  /* The logout items are buttons that look like the links beside them. */
-  .app-header__logout {
-    background: transparent;
-    border: 0;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-    text-align: start;
+  /* flex rows in the burger menu too, where Bulma makes them blocks */
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding-inline: 0.5rem;
   }
 
-  .app-header__logout:hover,
-  .app-header__logout:focus-visible {
-    background-color: #575757;
+  .nav-dot {
+    display: flex;
+    align-items: center;
+    padding-inline: 0.1rem;
+    color: #e6e6e6;
   }
 
-  /* In the collapsed menu, the row is the button, as it is for a link. */
+  .navbar-item.nav-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .nav-sep {
+    align-self: stretch;
+    width: 1px;
+    margin-block: 0.25rem;
+    background-color: #8a8a8a;
+  }
+
+  /* darker than the primary fill (#9a4420); white is 7.6:1 on it */
+  .tunneler-button.button.is-primary:hover,
+  .tunneler-button.button.is-primary.router-link-exact-active {
+    background-color: #8a3d1c;
+  }
+
+  .tunneler-button.router-link-exact-active {
+    box-shadow: inset 0 -3px 0 whitesmoke;
+  }
+
+  /* In the burger menu, the links show their text, without the dots. */
   @media (max-width: 1023px) {
-    .app-header__logout {
-      width: 100%;
+    .nav-dot {
+      display: none;
     }
   }
 </style>

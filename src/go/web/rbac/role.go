@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
@@ -18,6 +17,7 @@ import (
 var (
 	ErrResourceNameExists  = errors.New("resource name for role exists")
 	ErrResourceNameInvalid = errors.New("invalid resource name for role")
+	ErrRoleNotFound        = errors.New("could not find role in store")
 )
 
 type Role struct {
@@ -43,7 +43,7 @@ func GetRoles() ([]*Role, error) {
 			return nil, fmt.Errorf("decoding roles config: %w", err)
 		}
 
-		roles[i] = &Role{Spec: &u, config: &c} //nolint:exhaustruct // partial initialization
+		roles[i] = newRole(&u, &c)
 	}
 
 	return roles, nil
@@ -51,6 +51,7 @@ func GetRoles() ([]*Role, error) {
 
 // RoleFromConfig gets a role based on its name from config.
 // Works for both the roleName (e.g., "Global Admin") and metadata name (e.g., "global-admin").
+// It returns ErrRoleNotFound when no role has the name.
 func RoleFromConfig(name string) (*Role, error) {
 	roles, err := config.List("role")
 	if err != nil {
@@ -66,11 +67,18 @@ func RoleFromConfig(name string) (*Role, error) {
 				return nil, fmt.Errorf("decoding role: %w", err)
 			}
 
-			return &Role{Spec: &role, config: &roleConfig}, nil //nolint:exhaustruct // partial initialization
+			return newRole(&role, &roleConfig), nil
 		}
 	}
 
-	return nil, fmt.Errorf("could not find role in store: %w", err)
+	return nil, ErrRoleNotFound
+}
+
+// newRole builds a Role and indexes its policies once, so value copies of the
+// role (request contexts, broker clients) share the index instead of
+// rebuilding it on every Allowed call.
+func newRole(spec *v1.RoleSpec, cfg *store.Config) *Role {
+	return &Role{Spec: spec, config: cfg, mappedPolicies: mapPolicies(spec)}
 }
 
 func (r Role) Save() error {
@@ -84,6 +92,10 @@ func (r Role) Save() error {
 	return nil
 }
 
+// SetResourceNames scopes the role's policies that have no resource names (a
+// missing or empty list) to names, such as a user's experiments; no names, or
+// one empty name, means every resource ("*"). A policy that already names its
+// resources, such as a default role's disks or hosts policy, keeps them.
 func (r *Role) SetResourceNames(names ...string) error {
 	// Gracefully handle when no names or a single empty name is passed,
 	// defaulting to allow all.
@@ -96,40 +108,49 @@ func (r *Role) SetResourceNames(names ...string) error {
 		}
 	}
 
-	for _, policy := range r.Spec.Policies {
-		if policy.ResourceNames != nil {
-			return fmt.Errorf("%w: resource names already exist for policy", ErrResourceNameExists)
+	for _, name := range names {
+		if !validPattern(name) {
+			return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
 		}
+	}
 
-		for _, name := range names {
-			// Checking to make sure pattern given in 'name' is valid. Thus, the
-			// string provided to match it against is useless.
-			if _, err := filepath.Match(name, "useless"); err != nil {
-				return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
-			}
-
-			policy.ResourceNames = append(policy.ResourceNames, name)
+	for _, policy := range r.Spec.Policies {
+		if len(policy.ResourceNames) == 0 {
+			policy.ResourceNames = slices.Clone(names)
 		}
 	}
 
 	return nil
 }
 
+// AddResourceName adds name once to each policy that names resources but not
+// name. A policy that names no resources stays as it is. A bad pattern returns
+// ErrResourceNameInvalid before any change. It returns ErrResourceNameExists
+// only when no policy changed and a policy already names name.
 func (r *Role) AddResourceName(name string) error {
+	if !validPattern(name) {
+		return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
+	}
+
+	var changed, exists bool
+
 	for _, policy := range r.Spec.Policies {
-		for _, existing := range policy.ResourceNames {
-			if name == existing {
-				return fmt.Errorf("%w: %s", ErrResourceNameExists, name)
-			}
-
-			// Checking to make sure pattern given in 'name' is valid. Thus, the
-			// string provided to match it against is useless.
-			if _, err := filepath.Match(name, "useless"); err != nil {
-				return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
-			}
-
-			policy.ResourceNames = append(policy.ResourceNames, name)
+		if len(policy.ResourceNames) == 0 {
+			continue
 		}
+
+		if slices.Contains(policy.ResourceNames, name) {
+			exists = true
+
+			continue
+		}
+
+		policy.ResourceNames = append(policy.ResourceNames, name)
+		changed = true
+	}
+
+	if exists && !changed {
+		return fmt.Errorf("%w: %s", ErrResourceNameExists, name)
 	}
 
 	return nil
@@ -143,9 +164,17 @@ func (r *Role) AddPolicy(res, rn, v []string) {
 	}
 
 	r.Spec.Policies = append(r.Spec.Policies, policy)
+
+	// the index maps resources to policies, so a new policy invalidates it
+	r.mappedPolicies = mapPolicies(r.Spec)
 }
 
 func (r Role) Allowed(resource, verb string, names ...string) bool {
+	// the zero Role (no role in the request context) allows nothing
+	if r.Spec == nil {
+		return false
+	}
+
 	for _, policy := range r.policiesForResource(resource) {
 		if policy.verbAllowed(verb) {
 			if len(names) == 0 {
@@ -162,52 +191,39 @@ func (r Role) Allowed(resource, verb string, names ...string) bool {
 }
 
 func (r Role) policiesForResource(resource string) []Policy {
-	err := r.mapPolicies()
-	if err != nil {
-		return nil
+	mapped := r.mappedPolicies
+	if mapped == nil {
+		// Role built without an index (e.g., a literal): build a throwaway one
+		// rather than mutating a value that may be shared across goroutines.
+		mapped = mapPolicies(r.Spec)
 	}
 
 	var policies []Policy
 
-	for r, p := range r.mappedPolicies {
+	for r, p := range mapped {
 		if matched, _ := filepath.Match(r, resource); matched {
 			policies = append(policies, p...)
-
-			continue
 		}
 	}
 
 	return policies
 }
 
-func (r *Role) mapPolicies() error {
-	if r.mappedPolicies != nil {
-		return nil
-	}
+// mapPolicies indexes the spec's policies by resource pattern. A role with any
+// invalid resource pattern allows nothing, so it maps to an empty (non-nil)
+// index.
+func mapPolicies(spec *v1.RoleSpec) map[string][]Policy {
+	mapped := make(map[string][]Policy)
 
-	r.mappedPolicies = make(map[string][]Policy)
-
-	var invalid []string
-
-	for _, policy := range r.Spec.Policies {
+	for _, policy := range spec.Policies {
 		for _, resource := range policy.Resources {
-			// Checking to make sure pattern given in 'resource' is valid. Thus, the
-			// string provided to match it against is useless.
-			if _, err := filepath.Match(resource, "useless"); err != nil {
-				invalid = append(invalid, resource)
-
-				continue
+			if !validPattern(resource) {
+				return map[string][]Policy{}
 			}
 
-			mapped := r.mappedPolicies[resource]
-			mapped = append(mapped, Policy{Spec: policy})
-			r.mappedPolicies[resource] = mapped
+			mapped[resource] = append(mapped[resource], Policy{Spec: policy})
 		}
 	}
 
-	if len(invalid) != 0 {
-		return errors.New("invalid resource(s): " + strings.Join(invalid, ", "))
-	}
-
-	return nil
+	return mapped
 }

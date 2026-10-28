@@ -118,6 +118,13 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 		return errors.New("state of health checks: soh app not initialized")
 	}
 
+	err := mapstructure.Decode(s.options.Meta, &md)
+	if err != nil {
+		updateComponent("Unable to parse metadata for this component.\n")
+
+		return fmt.Errorf("decoding soh component metadata: %w", err)
+	}
+
 	if soh.Running(exp) {
 		updateComponent("State of health app is currently already running.\n")
 
@@ -126,13 +133,6 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 		}
 
 		return nil
-	}
-
-	err := mapstructure.Decode(s.options.Meta, &md)
-	if err != nil {
-		updateComponent("Unable to parse metadata for this component.\n")
-
-		return fmt.Errorf("decoding soh component metadata: %w", err)
 	}
 
 	if md.C2Timeout != "" {

@@ -39,12 +39,26 @@ type Config struct {
 	Metadata ConfigMetadata `json:"metadata"         yaml:"metadata"`
 	Spec     map[string]any `json:"spec,omitempty"   yaml:"spec,omitempty"`
 	Status   map[string]any `json:"status,omitempty" yaml:"status,omitempty"`
+
+	// IfRevision, when not zero, makes Store.Update and Store.Delete fail with
+	// ErrConflict unless the stored config is still at this revision. It is
+	// never serialized.
+	IfRevision uint64 `json:"-" yaml:"-"`
+
+	// Stored is, while the "update" config hooks run, the config as the store
+	// holds it, under its name before any rename. It is nil at other times and
+	// never serialized.
+	Stored *Config `json:"-" yaml:"-"`
 }
 
 type ConfigMetadata struct {
-	Name        string      `json:"name"                  yaml:"name"`
-	Created     string      `json:"created"               yaml:"created"`
-	Updated     string      `json:"updated"               yaml:"updated"`
+	Name    string `json:"name"    yaml:"name"`
+	Created string `json:"created" yaml:"created"`
+	Updated string `json:"updated" yaml:"updated"`
+	// Revision is set by the store on every write and only increases. It is
+	// opaque: compare it for equality only. Zero means the config was written
+	// before revisions existed and has not been written since.
+	Revision    uint64      `json:"revision,omitempty"    yaml:"revision,omitempty"`
 	Annotations Annotations `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }
 
@@ -114,6 +128,7 @@ func NewConfigFromFile(path string) (*Config, error) {
 	// ensure users aren't trying to set these values
 	c.Metadata.Created = ""
 	c.Metadata.Updated = ""
+	c.Metadata.Revision = 0
 
 	return &c, nil
 }
@@ -148,6 +163,7 @@ func DecodeConfigJSON(body []byte) (*Config, error) {
 	// ensure users aren't trying to set these values
 	c.Metadata.Created = ""
 	c.Metadata.Updated = ""
+	c.Metadata.Revision = 0
 
 	return &c, nil
 }
@@ -164,6 +180,7 @@ func DecodeConfigYAML(body []byte) (*Config, error) {
 	// ensure users aren't trying to set these values
 	c.Metadata.Created = ""
 	c.Metadata.Updated = ""
+	c.Metadata.Revision = 0
 
 	return &c, nil
 }
@@ -181,6 +198,7 @@ type exactYAMLMetadata struct {
 	Name        string `yaml:"name"`
 	Created     string `yaml:"created"`
 	Updated     string `yaml:"updated"`
+	Revision    uint64 `yaml:"revision,omitempty"`
 	Annotations any    `yaml:"annotations,omitempty"`
 }
 
@@ -196,6 +214,7 @@ func (c Config) MarshalYAML() (any, error) { //nolint:unparam // implements yaml
 			Name:        c.Metadata.Name,
 			Created:     c.Metadata.Created,
 			Updated:     c.Metadata.Updated,
+			Revision:    c.Metadata.Revision,
 			Annotations: exactYAMLUnlessEmpty(c.Metadata.Annotations.wire()),
 		},
 		Spec:   exactYAMLUnlessEmpty(c.Spec),
@@ -548,6 +567,7 @@ type storedMetadata struct {
 	Name        string            `json:"name"`
 	Created     string            `json:"created"`
 	Updated     string            `json:"updated"`
+	Revision    uint64            `json:"revision,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
@@ -561,6 +581,7 @@ func (c Config) StoredJSON() ([]byte, error) {
 			Name:        c.Metadata.Name,
 			Created:     c.Metadata.Created,
 			Updated:     c.Metadata.Updated,
+			Revision:    c.Metadata.Revision,
 			Annotations: c.Metadata.Annotations,
 		},
 		Spec:   c.Spec,
