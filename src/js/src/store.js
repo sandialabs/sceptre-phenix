@@ -1,14 +1,6 @@
 import { defineStore } from 'pinia';
 import router from '@/router';
-import { tokenExpiry } from '@/utils/token.js';
-
-/**
- * Whether the token says it has expired. A token that is not a JWT (without
- * authentication) never expires.
- */
-export function tokenExpired(token) {
-  return Date.now() >= (tokenExpiry(token) ?? Infinity);
-}
+import { endBuilderSession, startBuilderSession } from '@/builder/session.js';
 
 export const usePhenixStore = defineStore('phenix', {
   state: () => ({
@@ -29,6 +21,11 @@ export const usePhenixStore = defineStore('phenix', {
   }),
   actions: {
     login(loginResponse, remember, navigate = true) {
+      // Another user can leave Builder data on this device when they close
+      // the browser without a logout. That data goes before this user's
+      // session starts. Its preferences stay, as at logout.
+      startBuilderSession(loginResponse.user.username);
+
       this.username = loginResponse.user.username;
       this.token = loginResponse.token;
       this.role = loginResponse.user.role;
@@ -76,6 +73,10 @@ export const usePhenixStore = defineStore('phenix', {
       sessionStorage.removeItem('phenix.token');
       sessionStorage.removeItem('phenix.role');
       sessionStorage.removeItem('phenix.auth');
+
+      // Builder's drafts, lists and recent commands on this device go too,
+      // before the sign-in page shows. Its preferences stay.
+      endBuilderSession();
 
       router.replace('/signin');
     },

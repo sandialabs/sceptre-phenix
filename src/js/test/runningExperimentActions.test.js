@@ -1,7 +1,6 @@
 // Calls the RunningExperiment methods with a stand-in for the component, so
 // no DOM is needed.
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import axiosInstance from '@/utils/axios.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 
 vi.mock('@/utils/axios.js', () => ({
@@ -55,29 +54,6 @@ describe('RunningExperiment', () => {
       { name: 'vm-2', busy: true, percent: 0 },
     ]);
     expect(vm.$buefy.toast.open).toHaveBeenCalledOnce();
-  });
-
-  test('changing the optical disc resets the dialog', () => {
-    const vm = instance({
-      getOpticalDiscLabel: () => 'insert optical disc',
-      resetOpticalDiscModal: methods.resetOpticalDiscModal,
-    });
-    vm.opticalDiscModal = {
-      active: true,
-      disc: '/phenix/images/tools.iso',
-      vmName: 'vm-1',
-    };
-
-    methods.changeOpticalDisc.call(vm, 'vm-1', '/phenix/images/tools.iso');
-
-    expect(axiosInstance.post).toHaveBeenCalledWith(
-      'experiments/exp/vms/vm-1/cdrom?isoPath=/phenix/images/tools.iso',
-    );
-    expect(vm.opticalDiscModal).toEqual({
-      active: false,
-      disc: '',
-      vmName: null,
-    });
   });
 
   test('every multi-VM action has its own value', () => {

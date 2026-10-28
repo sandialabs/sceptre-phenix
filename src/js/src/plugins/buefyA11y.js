@@ -38,7 +38,7 @@ function labelFromTitle(root) {
   el.setAttribute('aria-labelledby', label.id);
 }
 
-export const modalFocusReturn = {
+const modalFocusReturn = {
   created() {
     if (this.isActive) this.a11yRememberOpener();
   },
@@ -86,7 +86,7 @@ function sortOnKey(event) {
 
 // The default `th-attrs` of every b-table-column. A view that sets its own
 // `th-attrs` replaces it.
-export function sortableHeaderAttrs(column) {
+function sortableHeaderAttrs(column) {
   if (!column.sortable) return {};
   const attrs = { tabindex: 0, onKeydown: sortOnKey };
   const table = column.$table;
