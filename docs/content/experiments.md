@@ -158,9 +158,13 @@ Click a running experiment's name to open its page. The card at the top left
 names the experiment and shows, as labeled tiles, the scenario it was created
 from (`Scenarios` when its apps also take configuration from other scenarios
 through `fromScenario`, listed after its own), its topology, how many VMs and
-VLANs it has, and when it started, as the `Start Time` column shows it. When
-your role may read a scenario or topology config, its name opens it in the
-Configs page's viewer.
+VLANs it has (the `VMs` tile also says how many of them are running, such as
+`18 running of 25`, once the VM table has loaded, and keeps that count current
+as VMs start and stop), and when it started, as the `Start Time` column shows
+it. When your role may read a scenario or topology config, its name opens it in
+the Configs page's viewer. Beside the card's `Running` status, the heartbeat
+button opens the experiment's [State of Health](state-of-health.md) and the fire
+button its [SCORCH runs](scorch.md); both need `get` on the experiment.
 
 The `Apps` box at the top right shows each of the experiment's apps as a tile,
 laid out in as few even rows as fit; the tiles of a shorter last row widen to

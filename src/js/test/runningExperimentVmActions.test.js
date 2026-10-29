@@ -36,6 +36,7 @@ import {
   partitionVMsForAction,
   skippedVMsText,
 } from '@/components/experiment/vmActions.js';
+import { useJobStore } from '@/utils/jobs.js';
 import { namedList } from '@/utils/plural.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { disk } from './helpers/fixtures.js';
@@ -148,13 +149,12 @@ async function act(page, label, names) {
   await flushPromises();
 }
 
-// the page's handler for each VM action, and whether it takes the VM itself
-// rather than its name
+// the power actions a VM's row and details take at once, without asking
+const UNASKED = ['start', 'pause', 'restart', 'shutdown'];
+
+// the page's handler for each other VM action, and whether it takes the VM
+// itself rather than its name
 const handlers = [
-  ['start', 'startVm'],
-  ['pause', 'pauseVm'],
-  ['restart', 'restartVm'],
-  ['shutdown', 'shutdownVm'],
   ['kill', 'killVm'],
   ['redeploy', 'redeploy'],
   ['resetDisk', 'resetVmState'],
@@ -169,10 +169,22 @@ const handlers = [
 ];
 
 it('runs every VM action', () => {
-  expect(handlers.map(([action]) => action).sort()).toEqual(
+  expect([...UNASKED, ...handlers.map(([action]) => action)].sort()).toEqual(
     Object.keys(VM_ACTIONS).sort(),
   );
 });
+
+it.each(UNASKED)(
+  "runs %s from a row's actions with runVmAction",
+  async (action) => {
+    const vm = { name: 'vm1', running: true };
+    const page = await open({ experiment: { name: 'demo', vms: [vm] } });
+    const run = vi.spyOn(page.vm, 'runVmAction').mockImplementation(() => {});
+
+    page.findComponent(VmRowActions).vm.$emit('action', action);
+    expect(run).toHaveBeenCalledWith(action, 'vm1');
+  },
+);
 
 it.each(handlers)(
   "runs %s from a row's actions with %s",
@@ -458,7 +470,10 @@ describe('changing a VLAN', () => {
     });
 
     await confirmDialog();
-    expect(waiting(page)).toBe(true);
+    expect(waiting(page)).toBe(false);
+    expect(vmRows(page)[0].Network.find('.capture-spinner').exists()).toBe(
+      true,
+    );
     expect(axios.patch).toHaveBeenCalledWith('experiments/demo/vms/web', {
       interface: { index: 0, vlan: 'MGMT' },
     });
@@ -466,10 +481,37 @@ describe('changing a VLAN', () => {
       data: listed({ name: 'web', running: true, networks: ['mgmt (200)'] }),
     });
     await flushPromises();
-    expect(waiting(page)).toBe(false);
     const [cells] = vmRows(page);
+    expect(cells.Network.find('.capture-spinner').exists()).toBe(false);
     expect(textOf(cells.Network.find('.field'))).toBe('mgmt (200)');
     expect(cells.Screenshot.find('img').attributes('src')).toBe('shot');
+  });
+
+  it("changes it from the VM's details, spinning beside the interface and leaving them open", async () => {
+    const patch = Promise.withResolvers();
+    axios.patch.mockReturnValue(patch.promise);
+    const page = await open({
+      experiment,
+      expModal: { active: true, vm: listed(experiment.vms[0]) },
+    });
+    const card = () => page.findComponent(VmDetailsCard);
+
+    await card().find('a.vm-iface-name').trigger('click');
+    const modal = modalTitled(page, 'Change the VLAN');
+    await modal.findAll('select option').at(1).setSelected();
+    await modal.find('footer button').trigger('click');
+    await confirmDialog();
+    expect(waiting(page)).toBe(false);
+    expect(page.vm.expModal.active).toBe(true);
+    expect(card().find('.vm-pending-spinner').exists()).toBe(true);
+
+    patch.resolve({
+      data: listed({ name: 'web', running: true, networks: ['mgmt (200)'] }),
+    });
+    await flushPromises();
+    expect(card().find('.vm-pending-spinner').exists()).toBe(false);
+    expect(textOf(card().find('.vm-iface-net .tag'))).toBe('VLAN 200');
+    expect(page.vm.expModal.active).toBe(true);
   });
 
   it('disconnects the interface', async () => {
@@ -887,7 +929,66 @@ describe('actions on VMs', () => {
     expect(alerts()).toEqual([]);
   });
 
-  it("asks about one VM from its row's actions or its details, then runs a job for it", async () => {
+  it.each([
+    ['start', 'off', 'details'],
+    ['pause', 'web', 'details'],
+    ['restart', 'web', 'details'],
+    ['shutdown', 'web', 'details'],
+    ['restart', 'web', 'row'],
+    ['shutdown', 'web', 'row'],
+  ])(
+    'runs %s on the %s VM from its %s without asking',
+    async (action, name, from) => {
+      const vm = vms.find((v) => v.name === name);
+      const page = await open({
+        experiment: { name: 'demo', vms },
+        expModal: { active: true, vm },
+      });
+      answerJob();
+      const button =
+        from === 'row'
+          ? vmRows(page)
+              .find((cells) => nodeOf(cells) === name)
+              .Actions.find(`.vm-row-${action}`)
+          : page.findComponent(VmDetailsCard).find(`.vm-action-${action}`);
+
+      await button.trigger('click');
+      await flushPromises();
+      expect(dialogs()).toEqual([]);
+      expect(axios.post.mock.calls).toEqual([
+        ['experiments/demo/vms/actions', { action, vms: [name] }, undefined],
+      ]);
+      expect(page.vm.expModal.active).toBe(true);
+    },
+  );
+
+  it("starts a stopped VM from its row's Start, in place of Shut down, without asking", async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const page = await open({ experiment: { name: 'demo', vms } });
+    const finish = runningJob();
+    const off = () => vmRows(page).find((cells) => nodeOf(cells) === 'off');
+    const button = (action) => off().Actions.find(`.vm-row-${action}`);
+
+    expect(button('shutdown').exists()).toBe(false);
+    expect(button('restart').attributes('disabled')).toBeDefined();
+    await button('start').trigger('click');
+    await flushPromises();
+    expect(questions()).toEqual([]);
+    expect(waiting(page)).toBe(false);
+    expect(axios.post.mock.calls).toEqual([
+      [
+        'experiments/demo/vms/actions',
+        { action: 'start', vms: ['off'] },
+        undefined,
+      ],
+    ]);
+    expect(button('start').classes()).toContain('is-loading');
+
+    await finish();
+    expect(button('start').classes()).not.toContain('is-loading');
+  });
+
+  it("asks about one VM's other actions from its row's actions or its details", async () => {
     const page = await open({
       experiment: { name: 'demo', vms },
       expModal: { active: true, vm: vms[0] },
@@ -903,33 +1004,26 @@ describe('actions on VMs', () => {
       return questions().at(-1);
     };
 
-    expect(asked(await pick(row('shutdown')))).toMatchObject({
-      title: 'Shut Down the VM',
-      message: '<p>This will shut down the web VM.</p>',
-    });
     expect(titleOf(await pick(details('resetDisk')))).toBe(
       "Reset the VM's Disk",
     );
-    expect(asked(await pick(details('kill')))).toMatchObject({
-      title: 'Kill the VM',
-      confirmText: 'KILL IT!',
-    });
     expect(asked(await pick(row('snapshot')))).toMatchObject({
       title: 'Create a VM Snapshot',
       message: '<p>This will create a snapshot of the web VM.</p>',
     });
-    expect(asked(await pick(row('restart')))).toMatchObject({
-      title: 'Restart the VM',
-      message: '<p>This will restart the web VM.</p>',
+    expect(asked(await pick(details('kill')))).toMatchObject({
+      title: 'Kill the VM',
+      confirmText: 'KILL IT!',
     });
-    expect(questions()).toHaveLength(5);
+    expect(questions()).toHaveLength(3);
     expect(alerts()).toEqual([]);
+    expect(axios.post).not.toHaveBeenCalled();
 
     await confirmDialog();
     expect(axios.post.mock.calls).toEqual([
       [
         'experiments/demo/vms/actions',
-        { action: 'restart', vms: ['web'] },
+        { action: 'kill', vms: ['web'] },
         undefined,
       ],
     ]);
@@ -992,17 +1086,97 @@ describe('actions on VMs', () => {
     );
   });
 
-  it('keeps waiting while the job is running', async () => {
+  // Answers the action with a job that runs until finish() is called; each
+  // VM it names then succeeds, shown on the host the job left it.
+  let jobCount = 0;
+  const runningJob = () => {
+    const id = `running-${++jobCount}`;
+    let names = [];
+    axios.post.mockImplementation(async (_, body) => {
+      names = body.vms;
+      return { data: { id, status: 'running', items: [], revision: 1 } };
+    });
+    return async () => {
+      const job = {
+        id,
+        kind: 'vms.action',
+        status: 'succeeded',
+        revision: 2,
+        items: names.map((name) => ({
+          name,
+          status: 'succeeded',
+          result: listed({
+            ...vms.find((vm) => vm.name === name),
+            host: 'answered',
+          }),
+        })),
+      };
+      axios.get.mockResolvedValueOnce({ data: job });
+      useJobStore().put(job);
+      await flushPromises();
+    };
+  };
+
+  it("runs the job in the background, spinning its VMs' buttons, with the page and details left open", async () => {
     // the job store's poll while it waits
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-    const page = await showing();
-    axios.post.mockResolvedValue({
-      data: { id: 'j1', status: 'running', items: [], revision: 1 },
+    const page = await open({
+      experiment: { name: 'demo', vms },
+      expModal: { active: true, vm: vms[0] },
     });
+    const finish = runningJob();
+    const card = () => page.findComponent(VmDetailsCard);
+    const spinning = () =>
+      vmRows(page)
+        .filter((cells) =>
+          cells.Actions.find('.vm-row-restart').classes('is-loading'),
+        )
+        .map(nodeOf);
 
     await act(page, 'Restart selected VMs', ['web', 'db']);
     await confirmDialog();
-    expect(waiting(page)).toBe(true);
+    expect(waiting(page)).toBe(false);
+    expect(spinning()).toEqual(['web', 'db']);
+    expect(card().find('.vm-action-restart').classes()).toContain('is-loading');
+    expect(card().find('.vm-action-pause').classes()).not.toContain(
+      'is-loading',
+    );
+
+    await finish();
+    expect(spinning()).toEqual([]);
+    expect(card().find('.vm-action-restart').classes()).not.toContain(
+      'is-loading',
+    );
+    // the card shows the VM as the job left it
+    expect(textOf(card().find('.vm-card-meta'))).toContain('answered');
+  });
+
+  it("keeps the VM's details open while a job acts on it from there, closing them once it is killed", async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const page = await open({
+      experiment: { name: 'demo', vms },
+      expModal: { active: true, vm: vms[0] },
+    });
+    const card = () => page.findComponent(VmDetailsCard);
+
+    let finish = runningJob();
+    await card().find('.vm-action-shutdown').trigger('click');
+    await flushPromises();
+    expect(page.vm.expModal.active).toBe(true);
+    expect(waiting(page)).toBe(false);
+    expect(card().find('.vm-action-shutdown').classes()).toContain(
+      'is-loading',
+    );
+    await finish();
+    expect(page.vm.expModal.active).toBe(true);
+
+    finish = runningJob();
+    await card().find('.vm-action-kill').trigger('click');
+    await flushPromises();
+    await confirmDialog();
+    expect(page.vm.expModal.active).toBe(true);
+    await finish();
+    expect(page.vm.expModal.active).toBe(false);
   });
 
   it('reports a job that could not start and stops waiting', async () => {
@@ -1053,6 +1227,119 @@ describe('actions on VMs', () => {
       title: 'Create a VM Snapshot',
       message: '<p>This will create a snapshot of the web VM.</p>',
     });
+  });
+
+  it("snapshots the VM from its details, spinning its button, then lists the VM's snapshots again", async () => {
+    const page = await open({
+      experiment: { name: 'demo', vms },
+      expModal: { active: true, vm: vms[0], snapshots: [] },
+    });
+    const card = () => page.findComponent(VmDetailsCard);
+    const request = Promise.withResolvers();
+    axios.post.mockReturnValue(request.promise);
+    axios.get.mockResolvedValue({ data: { snapshots: ['web_2024'] } });
+
+    await card().find('.vm-action-snapshot').trigger('click');
+    await flushPromises();
+    await confirmDialog();
+    expect(page.vm.expModal.active).toBe(true);
+    expect(card().find('.vm-action-snapshot').classes()).toContain(
+      'is-loading',
+    );
+
+    request.resolve({});
+    await flushPromises();
+    expect(card().find('.vm-action-snapshot').classes()).not.toContain(
+      'is-loading',
+    );
+    expect(axios.get).toHaveBeenCalledWith(
+      'experiments/demo/vms/web/snapshots',
+    );
+    expect(page.vm.expModal.snapshots).toEqual(['web_2024']);
+  });
+
+  it.each([
+    ['commit', 'Create a Disk Image', true],
+    ['memorySnapshot', 'Create memory snapshot', false],
+  ])(
+    "runs %s from the VM's details, spinning its button and leaving them open",
+    async (action, title, asks) => {
+      const page = await open({
+        experiment: { name: 'demo', vms },
+        expModal: { active: true, vm: vms[0], snapshots: [] },
+      });
+      const card = () => page.findComponent(VmDetailsCard);
+      const button = () => card().find(`.vm-action-${action}`);
+      const request = Promise.withResolvers();
+      axios.post.mockReturnValue(request.promise);
+
+      await button().trigger('click');
+      await flushPromises();
+      await modalTitled(page, title)
+        .find('footer .is-success')
+        .trigger('click');
+      if (asks) await confirmDialog();
+      await flushPromises();
+      expect(page.vm.expModal.active).toBe(true);
+      expect(waiting(page)).toBe(false);
+      expect(button().classes()).toContain('is-loading');
+
+      request.resolve({});
+      await flushPromises();
+      expect(button().classes()).not.toContain('is-loading');
+      expect(page.vm.expModal.active).toBe(true);
+    },
+  );
+
+  it("restores a snapshot from the VM's details, spinning its button and leaving them open", async () => {
+    const page = await open({
+      experiment: { name: 'demo', vms },
+      expModal: { active: true, vm: vms[0], snapshots: ['web_2024'] },
+    });
+    const restore = () =>
+      page
+        .findComponent(VmDetailsCard)
+        .find('[aria-label="restore this snapshot"]');
+    const request = Promise.withResolvers();
+    axios.post.mockReturnValue(request.promise);
+
+    await restore().trigger('click');
+    await confirmDialog();
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/demo/vms/web/snapshots/web_2024',
+      {},
+      { timeout: 0 },
+    );
+    expect(page.vm.expModal.active).toBe(true);
+    expect(waiting(page)).toBe(false);
+    expect(restore().classes()).toContain('is-loading');
+
+    request.resolve({});
+    await flushPromises();
+    expect(restore().classes()).not.toContain('is-loading');
+    expect(page.vm.expModal.active).toBe(true);
+  });
+
+  it('lists the disks to redeploy a VM on from its details without covering the page', async () => {
+    const page = await open({
+      experiment: { name: 'demo', vms },
+      expModal: { active: true, vm: vms[0], snapshots: [] },
+    });
+    const listing = Promise.withResolvers();
+    axios.get.mockReturnValue(listing.promise);
+
+    await page
+      .findComponent(VmDetailsCard)
+      .find('.vm-action-redeploy')
+      .trigger('click');
+    await flushPromises();
+    expect(modalTitled(page, 'Redeploy the VM')).toBeDefined();
+    expect(waiting(page)).toBe(false);
+    expect(page.vm.expModal.active).toBe(true);
+
+    listing.resolve({ data: { disks: [disk('/images/web.qc2', 'web.qc2')] } });
+    await flushPromises();
+    expect(page.vm.disks).toHaveLength(1);
   });
 
   it('creates memory snapshots in one go, summing up how they went', async () => {

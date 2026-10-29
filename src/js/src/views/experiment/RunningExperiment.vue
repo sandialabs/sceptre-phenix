@@ -7,6 +7,7 @@
         :experiment="experiment.name"
         :capture-pending="pendingCaptureIfaces(expModalVm.name)"
         :capture-all-pending="!!captureAllPending[expModalVm.name]"
+        :pending-actions="vmActionPending[expModalVm.name] ?? []"
         :backing-chain="expModal.backingChain"
         :disk="expModal.disk"
         :cd-rom-disk="expModal.cdRomDisk"
@@ -101,7 +102,8 @@
       <ExperimentSummary
         class="experiment-header-summary"
         :name="$route.params.id"
-        :experiment="experiment" />
+        :experiment="experiment"
+        :running="runningVms" />
       <ExperimentAppsBox
         v-if="experiment.apps?.length"
         class="experiment-header-apps"
@@ -119,7 +121,7 @@
       <b>Start interrupted:</b> {{ experiment.interrupted }}. Restart the
       experiment to run its delayed VMs and post-start apps.
     </b-notification>
-    <b-field position="is-right" grouped>
+    <b-field position="is-right" grouped class="exp-toolbar">
       <!-- Multi-VM options shown next to search -->
       <VmSelectionToolbar
         v-if="isMultiVmSelected"
@@ -127,6 +129,26 @@
         :selected="vmSelectedArray"
         :experiment="experiment.name"
         @act="actOnSelection" />
+      <!-- the VM table's filters and paging, left of the search box -->
+      <div v-if="vmFiltersShown" class="control vm-table-filters">
+        <VmHostFilter
+          :options="hostChoices"
+          :picked="hostFilter"
+          :fits="hostsFit"
+          @update:picked="filterByHosts" />
+        <VmLabelFilter
+          :options="labelChoices"
+          :picked="labelFilter"
+          :fits="labelsFit"
+          @update:picked="filterByLabels" />
+        <b-switch
+          v-if="paginationNeeded"
+          v-model="table.isPaginated"
+          @update:modelValue="updateTable()"
+          type="is-light"
+          >Paginate</b-switch
+        >
+      </div>
 
       <b-field position="is-right">
         <b-field
@@ -203,34 +225,6 @@
           </b-tooltip>
         </b-field>
         <b-field>
-          <b-tooltip label="view state of health" type="is-light" :delay="500">
-            <router-link
-              v-if="roleAllowed('experiments', 'get', experiment.name)"
-              :aria-label="`View state of health for experiment ${$route.params.id}`"
-              class="button is-light"
-              :to="{
-                name: 'soh',
-                params: { id: $route.params.id },
-              }">
-              <b-icon icon="heartbeat"></b-icon>
-            </router-link>
-          </b-tooltip>
-        </b-field>
-        <b-field>
-          <b-tooltip label="view SCORCH runs" type="is-light" :delay="500">
-            <router-link
-              v-if="roleAllowed('experiments', 'get', experiment.name)"
-              :aria-label="`View SCORCH runs for experiment ${$route.params.id}`"
-              class="button is-light"
-              :to="{
-                name: 'scorchruns',
-                params: { id: $route.params.id },
-              }">
-              <b-icon icon="fire"></b-icon>
-            </router-link>
-          </b-tooltip>
-        </b-field>
-        <b-field>
           <b-tooltip
             label="select visible columns"
             type="is-light"
@@ -275,28 +269,6 @@
             role="status">
             minimega did not answer. Showing the VMs as configured.
           </b-notification>
-          <b-field
-            v-if="paginationNeeded || labelChoices.length || labelFilter.length"
-            grouped
-            position="is-right"
-            class="vm-table-bar">
-            <div class="control">
-              <VmLabelFilter
-                :options="labelChoices"
-                :picked="labelFilter"
-                :fits="labelsFit"
-                @update:picked="filterByLabels" />
-            </div>
-            <div v-if="paginationNeeded" class="control is-flex">
-              <b-switch
-                v-model="table.isPaginated"
-                @update:modelValue="updateTable()"
-                size="is-small"
-                type="is-light"
-                >Paginate</b-switch
-              >
-            </div>
-          </b-field>
           <VmTable
             ref="vmTable"
             v-model:selected="vmSelectedArray"
@@ -309,6 +281,7 @@
             :screenshots-due="screenshotsDue"
             :capture-pending="capturePending"
             :capture-all-pending="captureAllPending"
+            :action-pending="vmActionPending"
             @page-change="onPageChange"
             @sort="onSort"
             @info="getInfo"
@@ -376,13 +349,16 @@
   import VlanModal from '@/components/experiment/VlanModal.vue';
   import VmDetailsCard from '@/components/experiment/VmDetailsCard.vue';
   import VmFilenamesModal from '@/components/experiment/VmFilenamesModal.vue';
+  import VmHostFilter from '@/components/experiment/VmHostFilter.vue';
   import VmLabelFilter from '@/components/experiment/VmLabelFilter.vue';
   import VmSelectionToolbar from '@/components/experiment/VmSelectionToolbar.vue';
   import VmTable from '@/components/experiment/VmTable.vue';
   import VncTiles from '@/components/experiment/VncTiles.vue';
   import {
     partitionVMsForAction,
+    restorePendingKey,
     skippedVMsText,
+    vlanPendingKey,
   } from '@/components/experiment/vmActions.js';
   import {
     VM_EVENT_TYPES,
@@ -393,9 +369,11 @@
     useVmRows,
   } from '@/components/experiment/vmRows.js';
   import { vmScreenshot, vncHref } from '@/components/experiment/vmScreens.js';
+  import { createRunningCount } from '@/components/experiment/runningCount.js';
   import {
     DEFAULT_APPS,
     appStateAfter,
+    hostOptions,
     labelOptions,
   } from '@/components/experiment/experimentHeader.js';
   import { useNetflowCapture } from '@/components/experiment/useNetflowCapture.js';
@@ -521,6 +499,7 @@
       VlanModal,
       VmDetailsCard,
       VmFilenamesModal,
+      VmHostFilter,
       VmLabelFilter,
       VmSelectionToolbar,
       VmTable,
@@ -537,9 +516,9 @@
         // the seq of each VM's last change, so a VM list read before it
         // does not undo it
         vmSeqs: useVmRows(),
+        runningCount: createRunningCount(),
         ...useNetflowCapture(),
         ...useVmCaptures({
-          setWaiting: (on) => (proxy.isWaiting = on),
           fanOut: (...args) => proxy.fanOut(...args),
         }),
         roleAllowed,
@@ -703,13 +682,41 @@
         if (!this.vmsLoaded && roleAllowed('vms', 'list')) {
           return loadingText('VMs');
         }
-        const labels = this.labelFilter.length > 0;
-        if (this.vmFilter && labels) {
-          return 'No VMs match your search and the checked labels';
+        const checked = [
+          this.labelFilter.length > 0 && 'labels',
+          this.hostFilter.length > 0 && 'hosts',
+        ].filter(Boolean);
+        if (this.vmFilter && checked.length) {
+          return `No VMs match your search and the checked ${checked.join(' and ')}`;
         }
-        if (labels) return 'No VMs have any of the checked labels';
+        if (checked.length === 2) {
+          return 'No VMs match the checked labels and hosts';
+        }
+        if (checked[0] === 'labels') {
+          return 'No VMs have any of the checked labels';
+        }
+        if (checked[0] === 'hosts') {
+          return 'No VMs run on any of the checked hosts';
+        }
         if (this.vmFilter) return 'No VMs match your search';
         return 'This experiment has no VMs';
+      },
+
+      // the cluster hosts the VM table can filter by
+      hostChoices() {
+        return hostOptions(this.vmHosts, this.experiment.vms, this.hostFilter);
+      },
+
+      // whether the VMs tab shows its filters and Paginate in the toolbar
+      vmFiltersShown() {
+        return (
+          this.activeTab == TAB.VMS &&
+          (this.paginationNeeded ||
+            this.labelChoices.length > 0 ||
+            this.labelFilter.length > 0 ||
+            this.hostChoices.length > 0 ||
+            this.hostFilter.length > 0)
+        );
       },
 
       // the labels the VM table can filter by
@@ -798,8 +805,8 @@
         sendWsMsg(msg);
       },
 
-      // the request for the table's VMs, with these labels checked
-      vmListMsg(labels) {
+      // the request for the table's VMs, with these labels and hosts checked
+      vmListMsg({ labels = this.labelFilter, hosts = this.hostFilter } = {}) {
         let number = this.table.currentPage;
         let size = this.table.perPage;
 
@@ -821,17 +828,30 @@
             page_size: size,
             filter: this.vmFilter,
             labels: labels.map(({ key, value }) => ({ key, value })),
+            hosts,
           },
         };
       },
 
       updateTable() {
-        sendWsMsg(this.vmListMsg(this.labelFilter));
+        sendWsMsg(this.vmListMsg());
       },
 
       // whether the VM list request with these labels is short enough to send
       labelsFit(labels) {
-        return wsMsgFits(this.vmListMsg(labels));
+        return wsMsgFits(this.vmListMsg({ labels }));
+      },
+
+      // whether the VM list request with these hosts is short enough to send
+      hostsFit(hosts) {
+        return wsMsgFits(this.vmListMsg({ hosts }));
+      },
+
+      // lists the VMs on any of these hosts, from the first page
+      filterByHosts(hosts) {
+        this.hostFilter = hosts;
+        this.table.currentPage = 1;
+        this.updateTable();
       },
 
       // lists the VMs with any of these labels, from the first page
@@ -962,8 +982,14 @@
           msg.result.vms,
           msg.seq,
         );
+        this.runningVms = this.runningCount.listed(
+          msg.result.running,
+          msg.result.vms,
+          this.experiment.vms,
+        );
         this.table.total = msg.result.total;
         this.vmLabels = msg.result.labels ?? [];
+        this.vmHosts = msg.result.hosts ?? [];
         this.runtimeUnknown = !!msg.result.runtime_unknown;
         this.vmsLoaded = true;
 
@@ -979,6 +1005,7 @@
         if (
           !this.vmFilter &&
           this.labelFilter.length === 0 &&
+          this.hostFilter.length === 0 &&
           (!this.table.isPaginated || this.table.currentPage === 1)
         ) {
           cachePage(
@@ -1013,7 +1040,14 @@
         const name = eventVmName(msg, this.$route.params.id, this.experiment);
         if (name === null) return;
 
-        if (type === 'experiment/vm') this.vmSeqs.record(name, msg);
+        if (type === 'experiment/vm') {
+          this.vmSeqs.record(name, msg);
+          this.runningVms = this.runningCount.changed(
+            name,
+            msg.resource.action,
+            msg.result,
+          );
+        }
 
         const notice = applyVmEvent(this.experiment, msg, name);
         if (notice?.type === 'is-danger') showError(notice.message);
@@ -1054,18 +1088,13 @@
       // directory and the ones this experiment names outside it
       updateDisks() {
         this.disks = null;
-        this.isWaiting = true;
 
         disksApi
           .listDisks({ expName: this.$route.params.id })
           .then((resp) => {
-            this.isWaiting = false;
             this.disks = resp.data.disks ?? [];
           })
-          .catch((err) => {
-            this.isWaiting = false;
-            useErrorNotification(err);
-          });
+          .catch((err) => useErrorNotification(err));
       },
 
       assignCategory(value) {
@@ -1225,10 +1254,30 @@
         });
         if (!confirmed) return;
 
-        this.resetExpModal();
-        this.fanOut(allowed, 'Snapshotted', (vmName) =>
-          vmsApi.createVmSnapshot(this.$route.params.id, vmName, time),
-        );
+        this.setVmActionPending('snapshot', allowed, true);
+        try {
+          await this.fanOut(allowed, 'Snapshotted', (vmName) =>
+            vmsApi.createVmSnapshot(this.$route.params.id, vmName, time),
+          );
+        } finally {
+          this.setVmActionPending('snapshot', allowed, false);
+        }
+        const open = this.expModal.vm.name;
+        if (this.expModal.active && allowed.includes(open)) {
+          this.reloadSnapshots(open);
+        }
+      },
+
+      // lists the open VM's snapshots again, in its details card
+      async reloadSnapshots(name) {
+        try {
+          const { snapshots } = await this.fetchVMSnapshots({ name });
+          if (this.expModal.active && this.expModal.vm.name == name) {
+            this.expModal.snapshots = snapshots ?? [];
+          }
+        } catch (err) {
+          useErrorNotification(err);
+        }
       },
 
       restoreSnapshot(name, snapshot) {
@@ -1239,14 +1288,20 @@
           confirmText: 'Revert',
           type: 'is-success',
           hasIcon: true,
-          onConfirm: () => {
-            this.resetExpModal();
-
-            vmsApi
-              .restoreVmSnapshot(this.$route.params.id, name, snapshot)
-              .catch((err) => {
-                useErrorNotification(err);
-              });
+          onConfirm: async () => {
+            const key = restorePendingKey(snapshot);
+            this.setVmActionPending(key, [name], true);
+            try {
+              await vmsApi.restoreVmSnapshot(
+                this.$route.params.id,
+                name,
+                snapshot,
+              );
+            } catch (err) {
+              useErrorNotification(err);
+            } finally {
+              this.setVmActionPending(key, [name], false);
+            }
           },
         });
       },
@@ -1297,13 +1352,17 @@
           confirmText: 'Create',
           type: 'is-success',
           hasIcon: true,
-          onConfirm: () => {
+          onConfirm: async () => {
             this.diskImageModal.active = false;
             this.resetDiskImageModal();
-            this.resetExpModal();
-            this.fanOut(names, 'Created backing images of', (name) =>
-              vmsApi.commitVmDisk(this.$route.params.id, name, files[name]),
-            );
+            this.setVmActionPending('commit', names, true);
+            try {
+              await this.fanOut(names, 'Created backing images of', (name) =>
+                vmsApi.commitVmDisk(this.$route.params.id, name, files[name]),
+              );
+            } finally {
+              this.setVmActionPending('commit', names, false);
+            }
           },
         });
       },
@@ -1336,23 +1395,28 @@
             }
           }
         });
-        this.expModal.active = false;
         this.memorySnapshotModal.active = true;
       },
 
-      createMemorySnapshot(vm) {
+      async createMemorySnapshot(vm) {
         const files = Object.fromEntries(
           vm.map((arg) => [arg.name, arg.filename + '.elf']),
         );
+        const names = Object.keys(files);
         this.memorySnapshotModal.active = false;
         this.resetMemorySnapshotModal();
-        this.fanOut(Object.keys(files), 'Created memory snapshots of', (name) =>
-          vmsApi.createVmMemorySnapshot(
-            this.$route.params.id,
-            name,
-            files[name],
-          ),
-        );
+        this.setVmActionPending('memorySnapshot', names, true);
+        try {
+          await this.fanOut(names, 'Created memory snapshots of', (name) =>
+            vmsApi.createVmMemorySnapshot(
+              this.$route.params.id,
+              name,
+              files[name],
+            ),
+          );
+        } finally {
+          this.setVmActionPending('memorySnapshot', names, false);
+        }
       },
 
       // Sends one request for each name, then tells in one summary how they
@@ -1414,20 +1478,15 @@
           });
       },
 
-      // runs a VM action from the details modal or the table's Actions column
+      // runs a VM action from the details modal or the table's Actions
+      // column; power actions but kill run without asking, unlike the toolbar's
       onVmAction(action, vm) {
         switch (action) {
           case 'start':
-            this.startVm(vm.name);
-            break;
           case 'pause':
-            this.pauseVm(vm.name);
-            break;
           case 'restart':
-            this.restartVm(vm.name);
-            break;
           case 'shutdown':
-            this.shutdownVm(vm.name);
+            this.runVmAction(action, vm.name);
             break;
           case 'kill':
             this.killVm(vm.name);
@@ -1571,11 +1630,9 @@
           });
         });
 
-        vmsApi.redeployVm(exp, name, body).catch((err) => {
-          useErrorNotification(err);
-          this.isWaiting = false;
-          this.resetExpModal();
-        });
+        vmsApi
+          .redeployVm(exp, name, body)
+          .catch((err) => useErrorNotification(err));
       },
 
       changeVlan(index, vlan, from, name) {
@@ -1593,15 +1650,20 @@
           confirmText: disconnect ? 'Disconnect' : 'Change',
           type: 'is-warning',
           hasIcon: true,
-          onConfirm: () => {
-            this.isWaiting = true;
-            vmsApi
-              .updateVm(this.$route.params.id, name, {
+          onConfirm: async () => {
+            const key = vlanPendingKey(index);
+            this.setVmActionPending(key, [name], true);
+            try {
+              const resp = await vmsApi.updateVm(this.$route.params.id, name, {
                 interface: { index, vlan: disconnect ? '' : vlan.alias },
-              })
-              .then((resp) => replaceVm(this.experiment, resp.data))
-              .catch((err) => useErrorNotification(err))
-              .finally(() => (this.isWaiting = false));
+              });
+              replaceVm(this.experiment, resp.data);
+              this.showOpenVm(resp.data);
+            } catch (err) {
+              useErrorNotification(err);
+            } finally {
+              this.setVmActionPending(key, [name], false);
+            }
           },
         });
 
@@ -1827,14 +1889,50 @@
         if (confirmed) await this.runVmJob(action, allowed);
       },
 
-      // Takes a power action on the VMs in a background job, waiting for it,
-      // then shows each VM as the job left it and says how it went, offering
-      // to retry the VMs that may work if tried again. The table's rows also
-      // follow the VMs' own websocket updates meanwhile.
+      // marks an action running, or no longer, for each named VM
+      setVmActionPending(action, names, pending) {
+        const next = { ...this.vmActionPending };
+        for (const name of names) {
+          const rest = (next[name] ?? []).filter((a) => a !== action);
+          if (pending) next[name] = [...rest, action];
+          else if (rest.length) next[name] = rest;
+          else delete next[name];
+        }
+        this.vmActionPending = next;
+      },
+
+      // shows the job's copy of a VM in its open details card, keeping the
+      // annotations, which a job's copy leaves out
+      showOpenVm(vm) {
+        if (!this.expModal.active || this.expModal.vm.name != vm.name) return;
+        const open = this.expModal.vm;
+        this.expModal.vm = {
+          ...open,
+          ...vm,
+          annotations: vm.annotations ?? open.annotations,
+        };
+      },
+
+      // takes a power action on the named VMs its rules allow without asking,
+      // saying why when they allow none
+      runVmAction(action, names) {
+        const { allowed, skipped } = partitionVMsForAction(
+          action,
+          names,
+          this.experiment.vms,
+        );
+        if (allowed.length === 0) {
+          this.alertSkipped(skipped);
+          return;
+        }
+        return this.runVmJob(action, allowed);
+      },
+
+      // Takes a power action in a background job, spinning the VMs' buttons,
+      // then shows each VM as the job left it and offers to retry failures.
       async runVmJob(action, vms) {
         const jobs = useJobStore();
-        this.isWaiting = true;
-        this.resetExpModal();
+        this.setVmActionPending(action, vms, true);
         try {
           const job = await vmsApi.startVmActionsJob(
             this.$route.params.id,
@@ -1852,9 +1950,15 @@
             this.experiment.vms = this.experiment.vms.filter(
               (vm) => !killed.has(vm.name),
             );
+            // a killed VM has no details left to show
+            if (this.expModal.active && killed.has(this.expModal.vm.name)) {
+              this.resetExpModal();
+            }
           } else {
             for (const item of succeeded) {
-              if (item.result) replaceVm(this.experiment, item.result);
+              if (!item.result) continue;
+              replaceVm(this.experiment, item.result);
+              this.showOpenVm(item.result);
             }
           }
 
@@ -1867,7 +1971,7 @@
         } catch (err) {
           useErrorNotification(err);
         } finally {
-          this.isWaiting = false;
+          this.setVmActionPending(action, vms, false);
         }
       },
 
@@ -1910,8 +2014,6 @@
       },
 
       showMountDialog(vm) {
-        this.resetExpModal();
-
         this.$buefy.modal.open({
           component: VMMountBrowserModal,
           trapFocus: true,
@@ -2163,6 +2265,11 @@
         // and those the VM table is filtered by
         vmLabels: [],
         labelFilter: [],
+        // the same for the cluster hosts running the VMs
+        vmHosts: [],
+        hostFilter: [],
+        // how many of the experiment's VMs are running, null until listed
+        runningVms: null,
         experiment: {},
         // the Files tab's category picker, and the categories it offers
         fileCategory: null,
@@ -2172,6 +2279,9 @@
         vlan: null,
         // shows the loading overlay while the page waits on the server
         isWaiting: false,
+        // the actions running in the background for each VM, by its name,
+        // whose buttons spin meanwhile
+        vmActionPending: {},
         showModifyStateBar: false,
         checkAll: false,
         vmSelectedArray: [],
@@ -2255,8 +2365,26 @@
     flex: 0 1 36rem;
   }
 
-  .vm-table-bar {
+  /* Room for the tabs drawn beside the toolbar's last row: the VM filters
+     wrap onto a row of their own above the search box when it runs out. */
+  .exp-toolbar {
+    padding-left: 25rem;
+  }
+
+  .exp-toolbar :deep(.field.is-grouped.is-grouped-right) {
+    flex-wrap: wrap;
     align-items: center;
+    gap: 0.75rem;
+  }
+
+  .exp-toolbar :deep(.field.is-grouped.is-grouped-right > *) {
+    margin-right: 0;
+  }
+
+  .vm-table-filters {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
   }
 
   :deep(.tabs ul) {

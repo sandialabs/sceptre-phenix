@@ -579,7 +579,8 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// parseVMQuery reads the VM filter, label, sort and page parameters of a request.
+// parseVMQuery reads the VM filter, label, host, sort and page parameters of a
+// request.
 func parseVMQuery(query url.Values) (util.VMQuery, error) {
 	sortDir := query.Get("sortDir")
 
@@ -599,9 +600,15 @@ func parseVMQuery(query url.Values) (util.VMQuery, error) {
 		labels = append(labels, label)
 	}
 
+	hosts := query["host"]
+	if slices.Contains(hosts, "") {
+		return util.VMQuery{}, weberror.NewWebError(nil, "host must not be empty").SetStatus(http.StatusBadRequest)
+	}
+
 	return util.VMQuery{
 		Filter:  query.Get("filter"),
 		Labels:  labels,
+		Hosts:   hosts,
 		ShowDNB: query.Get("show_dnb") != "",
 		SortCol: sortColumn(query.Get("sortCol"), sortDir),
 		SortAsc: sortDir == sortAsc,

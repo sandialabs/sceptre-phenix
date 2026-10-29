@@ -18,3 +18,12 @@ export function minuteStamp() {
   const t = timestampParts();
   return `${t.year}-${t.month}-${t.day}_${t.hours}${t.minutes}`;
 }
+
+// the local time to the second and a random suffix as
+// YYYY-MM-DD_HHMMSS_xxxx, for files that must not replace an earlier one
+export function uniqueStamp() {
+  const t = timestampParts();
+  const [n] = crypto.getRandomValues(new Uint16Array(1));
+  const suffix = n.toString(16).padStart(4, '0');
+  return `${t.year}-${t.month}-${t.day}_${t.hours}${t.minutes}${t.seconds}_${suffix}`;
+}

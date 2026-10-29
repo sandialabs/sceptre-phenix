@@ -65,6 +65,19 @@ func TestParseVMListQuery(t *testing.T) {
 			payload: `{"labels": ["role=web", {"key": "role"}, {"key": 1, "value": "x"}, null]}`,
 			want:    util.VMQuery{Labels: []util.VMLabel{{}, {}, {}, {}}, SortAsc: true},
 		},
+		"hosts": {
+			payload: `{"hosts": ["node1", "node2"]}`,
+			want:    util.VMQuery{Hosts: []string{"node1", "node2"}, SortAsc: true},
+		},
+		// a malformed host matches no VM rather than widening the list
+		"malformed hosts": {
+			payload: `{"hosts": [1, null, {"host": "node1"}]}`,
+			want:    util.VMQuery{Hosts: []string{"", "", ""}, SortAsc: true},
+		},
+		"hosts not a list": {
+			payload: `{"hosts": "node1"}`,
+			want:    util.VMQuery{SortAsc: true},
+		},
 		"labels not a list": {
 			payload: `{"labels": {"key": "role", "value": "web"}}`,
 			want:    util.VMQuery{SortAsc: true},

@@ -254,6 +254,54 @@ func TestVMListLabels(t *testing.T) {
 	}
 }
 
+// The experiment's VMs filter by the cluster host running them, which must not
+// be empty, and the VM list offers the hosts to filter by.
+func TestVMListHosts(t *testing.T) {
+	useTestExperiment(t)
+	useTestMM(t, &testMM{vms: mm.VMs{{Name: "test-vm", Host: "node1", Running: true, State: "RUNNING"}}})
+
+	server := serveAs(t, "alice", experimentViewerRole()).URL
+
+	for _, tt := range []struct {
+		query string
+		code  int
+		vms   int
+	}{
+		{"?host=node1", http.StatusOK, 1},
+		{"?host=node2&host=node1", http.StatusOK, 1},
+		{"?host=node2", http.StatusOK, 0},
+		{"?host=", http.StatusBadRequest, 0},
+	} {
+		var exp proto.Experiment
+
+		path := "/api/v1/experiments/test-experiment" + tt.query
+		if code := getAPI(t, server+path, &exp); code != tt.code {
+			t.Errorf("GET %s = %d, want %d", path, code, tt.code)
+
+			continue
+		}
+
+		if got := len(exp.GetVms()); got != tt.vms {
+			t.Errorf("GET %s listed %d VMs, want %d", path, got, tt.vms)
+		}
+	}
+
+	var list proto.VMList
+
+	path := "/api/v1/experiments/test-experiment/vms"
+	if code := getAPI(t, server+path, &list); code != http.StatusOK {
+		t.Fatalf("GET %s = %d, want %d", path, code, http.StatusOK)
+	}
+
+	if diff := cmp.Diff([]string{"node1"}, list.GetHosts()); diff != "" {
+		t.Errorf("GET %s hosts mismatch (-want +got):\n%s", path, diff)
+	}
+
+	if got := list.GetRunning(); got != 1 {
+		t.Errorf("GET %s running = %d, want 1", path, got)
+	}
+}
+
 // stoppedVMNode is a VM node of the topology of a stopped test experiment.
 func stoppedVMNode(hostname string) map[string]any {
 	return map[string]any{

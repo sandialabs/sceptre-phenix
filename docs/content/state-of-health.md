@@ -19,9 +19,8 @@ Button available on the experiments table.
 
 ![SoH column header of the Experiments table above a State of Health heart-monitor button.](images/exps_soh.png){: width=100 .center}
 
-Button available in running experiment.
-
-![Running experiment's stop, netflow and State of Health heart-monitor buttons.](images/exp_run.png){: width=200 .center}
+Button available in a running experiment, beside the `Running` status in the
+experiment's summary card at the top of its page.
 
 An experiment's SoH page has at most two tabs, `Topology Graph` and `Network
 Volume`, and the `Network Volume` tab is only present when the SoH [packet

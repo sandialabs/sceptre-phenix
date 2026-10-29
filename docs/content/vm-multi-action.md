@@ -59,8 +59,9 @@ the selection, whether or not its dialog is then confirmed.
 one [background job](jobs.md) for all the VMs, which the
 [jobs menu](web-ui.md#background-jobs-menu) shows and can cancel; canceling
 stops after the VMs in progress finish, and a VM still waiting its turn for
-minimega is left untouched. The page waits until the job ends, then
-shows each VM as the job left it. When every VM succeeded, a short message
+minimega is left untouched. The page stays usable while the job runs, and the
+VMs' own buttons in the table and the details card spin until it ends; the page
+then shows each VM as the job left it. When every VM succeeded, a short message
 says so (`Restarted 3 VMs`); otherwise one lasting notification sums up the
 outcome (`Restarted 2 of 3 VMs: 1 failed`), names up to eight VMs that failed or
 were skipped with the reason, and offers `Retry failed` for the VMs that may

@@ -55,6 +55,8 @@ const paused = (vm) => (vm.state ?? '').toUpperCase() === 'PAUSED';
 const PAUSED = 'the VM is paused. Resume paused VMs first';
 // why a busy VM can take no action
 const BUSY = 'the VM is busy with another action';
+// why a VM's Restart button is greyed out beside its Start
+const NOT_RUNNING = 'the VM is not running; start it instead';
 
 // Each action: its label, what it does (its tooltip), its icon, the Bulma
 // color type of its button, the RBAC permissions it needs (all of them), and
@@ -84,7 +86,7 @@ export const VM_ACTIONS = {
   },
   restart: {
     label: 'Restart',
-    description: 'Restart the VM, or start it if it is shut down',
+    description: 'Restart the running VM',
     icon: 'sync-alt',
     type: 'is-warning',
     outlined: true,
@@ -230,6 +232,11 @@ export const VM_ACTIONS = {
   },
 };
 
+// the pending keys of a VLAN change on an interface and a snapshot restore,
+// which spin beside their links rather than on an action button
+export const vlanPendingKey = (index) => `vlan:${index}`;
+export const restorePendingKey = (snapshot) => `restore:${snapshot}`;
+
 // power operations, shown first in the details modal
 export const POWER_ACTIONS = ['start', 'pause', 'restart', 'shutdown', 'kill'];
 // the rest of the details modal's actions
@@ -253,12 +260,35 @@ export const ROW_ACTIONS = [
   'captureAll',
 ];
 
-// The VM table's Actions column for one VM: capturing VMs get a button that
-// stops their captures in place of the one that starts them.
+// the actions that take another's place in the Actions column, by its name
+export const ROW_SWAPS = { shutdown: 'start', captureAll: 'stopCaptures' };
+
+// The action a row swaps with this one, so a pending action's spinner survives
+// the swap its job causes, as Shut down turning into Start.
+export function rowSwapOf(name) {
+  return (
+    ROW_SWAPS[name] ??
+    Object.keys(ROW_SWAPS).find((swapped) => ROW_SWAPS[swapped] === name)
+  );
+}
+
+// The VM table's Actions column for one VM: a stopped VM gets Start in place of
+// Shut down, and a capturing VM a button that stops its captures.
 export function rowActionNames(vm) {
-  const capturing = (vm?.captures ?? []).length > 0;
-  return ROW_ACTIONS.map((name) =>
-    name === 'captureAll' && capturing ? 'stopCaptures' : name,
+  const swapped = {
+    shutdown: !vm?.running,
+    captureAll: (vm?.captures ?? []).length > 0,
+  };
+  return ROW_ACTIONS.map((name) => (swapped[name] ? ROW_SWAPS[name] : name));
+}
+
+// The buttons for one VM's actions, Restart greyed out while the VM is not
+// running, for the Start beside it; a selection still restarts a stopped VM.
+export function vmButtonStates(names, vm, opts) {
+  return vmActionStates(names, vm, opts).map((state) =>
+    state.name === 'restart' && !vm.running && !state.disabled
+      ? { ...state, disabled: true, reason: `Can't restart: ${NOT_RUNNING}` }
+      : state,
   );
 }
 

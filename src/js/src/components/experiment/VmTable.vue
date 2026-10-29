@@ -209,10 +209,13 @@
         </template>
       </template>
     </b-table-column>
+    <!-- the server sorts Network by VLAN ID and Taps by name, ties by VM name -->
     <b-table-column
       v-if="columns.network"
       field="network"
       label="Network"
+      sortable
+      header-class="sort-inline"
       v-slot="props">
       <template
         v-if="
@@ -227,6 +230,14 @@
               :key="index"
               @click="$emit('change-vlan', props.row, index)">
               {{ formatLowercase(n) }}
+              <span
+                v-if="
+                  (actionPending[props.row.name] ?? []).includes(
+                    vlanPendingKey(index),
+                  )
+                "
+                class="capture-spinner"
+                title="waiting for the server"></span>
             </div>
           </div>
         </b-tooltip>
@@ -239,6 +250,8 @@
       v-if="columns.taps"
       field="taps"
       label="Taps"
+      sortable
+      header-class="sort-inline"
       v-slot="props">
       <template
         v-if="
@@ -280,6 +293,10 @@
       cell-class="nowrap-cell"
       v-slot="props">
       <template v-if="props.row.external"> unknown </template>
+      <template v-else-if="!props.row.running">
+        <span class="vm-uptime-none" aria-hidden="true">—</span>
+        <span class="is-sr-only">not running</span>
+      </template>
       <template v-else>
         {{ formatUptime(props.row.uptime) }}
       </template>
@@ -309,11 +326,12 @@
       <VmRowActions
         :vm="props.row"
         :full-name="experiment + '/' + props.row.name"
-        :pending="
-          captureAllPending[props.row.name]
+        :pending="[
+          ...(captureAllPending[props.row.name]
             ? ['captureAll', 'stopCaptures']
-            : []
-        "
+            : []),
+          ...(actionPending[props.row.name] ?? []),
+        ]"
         @action="(name) => $emit('action', name, props.row)" />
     </b-table-column>
   </b-table>
@@ -325,7 +343,13 @@
   import { roleAllowed } from '@/utils/rbac.js';
   import VmLabelCount from './VmLabelCount.vue';
   import VmRowActions from './VmRowActions.vue';
-  import { ROW_ACTIONS, actionPermitted, vmStateType } from './vmActions.js';
+  import {
+    ROW_ACTIONS,
+    ROW_SWAPS,
+    actionPermitted,
+    vlanPendingKey,
+    vmStateType,
+  } from './vmActions.js';
   import {
     consoleLinkAlt,
     screenshotAlt,
@@ -346,6 +370,7 @@
         consoleLinkAlt,
         screenshotAlt,
         vmScreenshot,
+        vlanPendingKey,
       };
     },
     props: {
@@ -364,6 +389,8 @@
       capturePending: { type: Object, default: () => ({}) },
       // names of the VMs starting or stopping captures on all interfaces
       captureAllPending: { type: Object, default: () => ({}) },
+      // the actions running in the background for each VM, by its name
+      actionPending: { type: Object, default: () => ({}) },
       // the names of the VMs selected, and whether all of them are
       selected: { type: Array, default: () => [] },
       checkAll: { type: Boolean, default: false },
@@ -398,7 +425,9 @@
       // whether the role may take any of the Actions column's actions on
       // some VM; the column is hidden otherwise
       rowActionsAllowed() {
-        return ROW_ACTIONS.some((name) => actionPermitted(name, roleAllowed));
+        return [...ROW_ACTIONS, ...Object.values(ROW_SWAPS)].some((name) =>
+          actionPermitted(name, roleAllowed),
+        );
       },
     },
 
@@ -434,7 +463,12 @@
 </script>
 
 <style scoped>
-  /* a small spinner beside an IP or tap whose capture request is waiting */
+  /* 4.9:1 on the table's $background-bis (#484848) */
+  .vm-uptime-none {
+    color: #bdbdbd;
+  }
+
+  /* a small spinner beside an IP, tap or network whose request is waiting */
   .capture-spinner {
     display: inline-block;
     width: 0.85em;

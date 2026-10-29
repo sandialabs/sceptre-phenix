@@ -862,6 +862,19 @@ paths:
             items:
               type: string
               pattern: "^[^=]+=.*$"
+        - name: host
+          in: query
+          description: >-
+            a cluster host. With hosts, only the VMs running on one of them are
+            listed (and with labels too, only those that also carry a label).
+            May be repeated. An empty host is a `400`.
+          required: false
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              minLength: 1
         - name: show_dnb
           in: query
           description: any value includes the VMs marked do not boot
@@ -871,13 +884,15 @@ paths:
         - name: sortCol
           in: query
           description: >-
-            column to sort the VMs by, used with sortDir; `labels` sorts by how
-            many labels and notes a VM has, ties by name A to Z in either
-            direction
+            column to sort the VMs by, used with sortDir. `labels` sorts by how
+            many labels and notes a VM has. `network` sorts by the VLAN IDs of
+            its interfaces as numbers, and `taps` by their tap names. Both sort
+            in interface order and put VMs that have none last. Ties sort by
+            name A to Z in either direction.
           required: false
           schema:
             type: string
-            enum: [name, host, uptime, delayed, labels]
+            enum: [name, host, uptime, delayed, labels, network, taps]
         - name: sortDir
           in: query
           description: sort direction, used with sortCol
@@ -3547,13 +3562,15 @@ paths:
         - name: sortCol
           in: query
           description: >-
-            column to sort the VMs by, used with sortDir; `labels` sorts by how
-            many labels and notes a VM has, ties by name A to Z in either
-            direction
+            column to sort the VMs by, used with sortDir. `labels` sorts by how
+            many labels and notes a VM has. `network` sorts by the VLAN IDs of
+            its interfaces as numbers, and `taps` by their tap names. Both sort
+            in interface order and put VMs that have none last. Ties sort by
+            name A to Z in either direction.
           required: false
           schema:
             type: string
-            enum: [name, host, uptime, delayed, labels]
+            enum: [name, host, uptime, delayed, labels, network, taps]
         - name: sortDir
           in: query
           description: sort direction, used with sortCol
@@ -8457,14 +8474,16 @@ paths:
           `unsubscribe`) starts or stops the live log entries.
         - `{"resource": {"type": "experiment/vms", "name": "<exp>",
           "action": "list"}, "request": {...}}` asks for a page of the
-          experiment's VMs, answered with an `experiment/vms` message, whose
-          VMs then get `experiment/vm/screenshot` messages while the
-          experiment runs, each only when the VM's image changed; `request`
-          takes `filter`, `labels` (a list of `{"key": "<key>", "value":
-          "<value>"}`; with any, only the VMs carrying one are listed),
-          `show_dnb`, `sort_column`, `sort_asc`, `page_number` and
-          `page_size`. A newer list replaces one not yet answered, and
-          `unsubscribe` stops the screenshots. Needs `vms` `list`.
+          experiment's VMs. An `experiment/vms` message answers it. While the
+          experiment runs, its VMs then get `experiment/vm/screenshot`
+          messages, each only when the VM's image changed. `request` takes
+          `filter`, `labels`, `hosts`, `show_dnb`, `sort_column`, `sort_asc`,
+          `page_number` and `page_size`. `labels` is a list of `{"key":
+          "<key>", "value": "<value>"}`. With labels, only the VMs that carry
+          one are listed. `hosts` is a list of cluster host names. With hosts,
+          only the VMs running on one are listed. A newer list replaces one not
+          yet answered. `unsubscribe` stops the screenshots. Needs `vms`
+          `list`.
         - `{"resource": {"type": "metadata/screenshot"}, "request": {"size":
           "<width>"}}` sets the width of the client's screenshots, in pixels,
           rounded up to a multiple of 200.
@@ -8807,6 +8826,22 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VMLabel"
+        hosts:
+          title: Hosts
+          description: >-
+            every distinct cluster host running the VMs the role may list,
+            before filtering and paging, sorted. Empty for a bulk `PATCH`
+          type: array
+          items:
+            type: string
+          example: [compute1, compute2]
+        running:
+          title: Running
+          description: >-
+            how many of the VMs the role may list are running, before filtering
+            and paging. It is 0 for a bulk `PATCH`
+          type: integer
+          example: 9
     VMLabel:
       title: VM Label
       description: A key and value label a VM carries.
@@ -8966,6 +9001,14 @@ components:
           title: Description
           description: the VM's description from the topology
           example: Web server
+          type: string
+        os_type:
+          title: OS Type
+          description: >-
+            the guest operating system its topology node gives in
+            hardware.os_type, such as linux, windows or vyos. Empty when the
+            node gives none
+          example: linux
           type: string
         uptime:
           title: "Uptime"

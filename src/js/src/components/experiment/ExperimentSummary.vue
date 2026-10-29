@@ -5,10 +5,30 @@
         <p class="exp-summary-kind">Experiment</p>
         <h1 id="exp-summary-name" class="exp-summary-name">{{ name }}</h1>
       </div>
-      <span class="tag is-success is-medium exp-summary-status">
-        <b-icon icon="play" size="is-small" />
-        <span>Running</span>
-      </span>
+      <div class="exp-summary-actions">
+        <template v-if="roleAllowed('experiments', 'get', name)">
+          <b-tooltip label="view state of health" type="is-light" :delay="500">
+            <router-link
+              :aria-label="`View state of health for experiment ${name}`"
+              class="button is-light is-small"
+              :to="{ name: 'soh', params: { id: name } }">
+              <b-icon icon="heartbeat" size="is-small" />
+            </router-link>
+          </b-tooltip>
+          <b-tooltip label="view SCORCH runs" type="is-light" :delay="500">
+            <router-link
+              :aria-label="`View SCORCH runs for experiment ${name}`"
+              class="button is-light is-small"
+              :to="{ name: 'scorchruns', params: { id: name } }">
+              <b-icon icon="fire" size="is-small" />
+            </router-link>
+          </b-tooltip>
+        </template>
+        <span class="tag is-success is-medium exp-summary-status">
+          <b-icon icon="play" size="is-small" />
+          <span>Running</span>
+        </span>
+      </div>
     </div>
     <dl
       :class="['exp-summary-facts', { 'has-start': !!experiment.start_time }]">
@@ -41,11 +61,11 @@
         </dd>
         <dd v-else class="exp-fact-none">None</dd>
       </div>
-      <div class="exp-fact exp-fact-count">
+      <div class="exp-fact exp-fact-count exp-fact-vms">
         <dt><b-icon icon="desktop" size="is-small" /> VMs</dt>
-        <dd>{{ experiment.vm_count ?? 0 }}</dd>
+        <dd>{{ vmsText }}</dd>
       </div>
-      <div class="exp-fact exp-fact-count">
+      <div class="exp-fact exp-fact-count exp-fact-vlans">
         <dt><b-icon icon="network-wired" size="is-small" /> VLANs</dt>
         <dd>{{ (experiment.vlans ?? []).length }}</dd>
       </div>
@@ -63,8 +83,8 @@
   import { roleAllowed } from '@/utils/rbac.js';
   import { experimentScenarios } from './experimentHeader.js';
 
-  // The running experiment's name and what it was made from, as labeled
-  // tiles: its scenarios and topology (linked to their configs), counts and start.
+  // The running experiment's name, links to its state of health and SCORCH
+  // runs, and as labeled tiles its scenarios and topology, counts and start.
   export default {
     name: 'ExperimentSummary',
     components: { TimeWithAge },
@@ -72,13 +92,22 @@
       // the experiment's name, shown before the experiment has loaded
       name: { type: String, default: '' },
       experiment: { type: Object, default: () => ({}) },
+      // how many of its VMs are running, null until the VM list says
+      running: { type: Number, default: null },
     },
     setup() {
-      return { configViewRoute };
+      return { configViewRoute, roleAllowed };
     },
     computed: {
       scenarios() {
         return experimentScenarios(this.experiment);
+      },
+      // "18 running of 25", or the total alone until the running count is known
+      vmsText() {
+        const total = this.experiment.vm_count ?? 0;
+        return this.running === null
+          ? `${total}`
+          : `${this.running} running of ${total}`;
       },
     },
     methods: {
@@ -136,6 +165,14 @@
     overflow-wrap: anywhere;
   }
 
+  /* its state of health and SCORCH links, left of its status */
+  .exp-summary-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: none;
+  }
+
   .exp-summary-status.tag.is-success {
     gap: 0.25rem;
     flex: none;
@@ -164,8 +201,13 @@
     grid-column: span 6;
   }
 
-  .has-start .exp-fact-count {
-    grid-column: span 3;
+  /* the VMs tile is wider, for its running count */
+  .has-start .exp-fact-vms {
+    grid-column: span 4;
+  }
+
+  .has-start .exp-fact-vlans {
+    grid-column: span 2;
   }
 
   .exp-fact-started {
@@ -173,13 +215,13 @@
   }
 
   /* a wide card gives the start its time and age on one line, the counts less */
-  @container (min-width: 38rem) {
-    .has-start .exp-fact-count {
-      grid-column: span 2;
+  @container (min-width: 44rem) {
+    .has-start .exp-fact-vms {
+      grid-column: span 3;
     }
 
     .exp-fact-started {
-      grid-column: span 8;
+      grid-column: span 7;
     }
   }
 

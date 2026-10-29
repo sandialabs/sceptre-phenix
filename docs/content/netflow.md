@@ -31,8 +31,7 @@ when using the `phenix exp create` subcommand.
 ## Usage
 
 Running experiments have a green network button in the button row to the right
-of the VM search box, alongside the red button that stops the experiment and the
-heartbeat button that opens [State of Health](state-of-health.md). Its tooltip
+of the VM search box, beside the red button that stops the experiment. Its tooltip
 reads `Start Netflow Capture`. Clicking it starts netflow capture for the
 non-default bridge the experiment is configured to use for all VM network
 interfaces.

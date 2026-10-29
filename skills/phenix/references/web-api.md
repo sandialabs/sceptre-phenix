@@ -127,9 +127,14 @@ lack it). Points that are easy to miss:
   otherwise) and report the unpaged `total`; without them they return
   everything.
 - `GET /experiments/{name}` lists only VMs carrying any repeated
-  `label=key=value` (`400` without an `=` or a key); it and `/experiments/{name}/vms`
-  sort by label count with `sortCol=labels`, and the VM list's `labels` holds
-  every label to filter by.
+  `label=key=value` (`400` without an `=` or a key) and running on any repeated
+  `host=<host>` (`400` when empty); it and `/experiments/{name}/vms`
+  sort by label count with `sortCol=labels`, by VLAN IDs (as numbers) or tap
+  names in interface order with `sortCol=network` or `taps` (VMs with none
+  last, ties by name), and the VM list's `labels` and `hosts` hold every label
+  and cluster host to filter by and its `running` counts the running VMs, all
+  before filtering and paging. The websocket `experiment/vms` `list` request
+  takes the same filters as `labels` and `hosts`.
 - Slow `/ws` clients are closed with code 1013 and should reconnect; the live
   log stream may skip lines under load.
 
@@ -288,6 +293,12 @@ is rejected with `400` naming the key. Giving `phenix/startup-autotunnel` in
 `node_annotations` needs `vms/forwards` `create` on every VM the experiment
 deploys (external nodes excluded), or the request gets `403`, because the
 startup app creates those forwards.
+
+## VM OS type
+
+Every VM object the REST API and websocket VM updates send carries `os_type`,
+its topology node's `hardware.os_type` (`linux`, `windows`, `vyos`, ...), left
+out when the node gives none.
 
 ## VM annotations
 

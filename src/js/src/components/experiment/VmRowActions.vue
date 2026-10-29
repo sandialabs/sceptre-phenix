@@ -27,7 +27,7 @@
 
 <script>
   import { roleAllowed } from '@/utils/rbac.js';
-  import { rowActionNames, vmActionStates } from './vmActions.js';
+  import { rowActionNames, rowSwapOf, vmButtonStates } from './vmActions.js';
 
   // The VM table's Actions column: compact icon buttons, disabled with the
   // reason in their tooltip when the role or the VM's state rules them out,
@@ -45,11 +45,13 @@
     emits: ['action'],
     computed: {
       actions() {
-        return vmActionStates(rowActionNames(this.vm), this.vm, {
+        return vmButtonStates(rowActionNames(this.vm), this.vm, {
           can: (resource, verb) => roleAllowed(resource, verb, this.fullName),
         }).map((action) => ({
           ...action,
-          pending: this.pending.includes(action.name),
+          pending: [action.name, rowSwapOf(action.name)].some((name) =>
+            this.pending.includes(name),
+          ),
         }));
       },
     },

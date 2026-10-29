@@ -1,5 +1,5 @@
 // The running experiment page's header: its facts, its Apps box and the VM
-// table's label filter, and the rules they lay out and list by.
+// table's label and host filters, and the rules they lay out and list by.
 import fc from 'fast-check';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,12 +11,14 @@ vi.mock('@/store.js', modules.store);
 
 import ExperimentAppsBox from '@/components/experiment/ExperimentAppsBox.vue';
 import ExperimentSummary from '@/components/experiment/ExperimentSummary.vue';
+import VmHostFilter from '@/components/experiment/VmHostFilter.vue';
 import VmLabelFilter from '@/components/experiment/VmLabelFilter.vue';
 import {
   appStateAfter,
   appTileState,
   balancedColumns,
   experimentScenarios,
+  hostOptions,
   labelOptions,
 } from '@/components/experiment/experimentHeader.js';
 import { componentDeclarations } from './helpers/css.js';
@@ -164,6 +166,46 @@ describe('the label options', () => {
   });
 });
 
+describe('the host options', () => {
+  it('lists the server and row hosts and those checked, once each, in order', () => {
+    const rows = [
+      vm({ host: 'node3' }),
+      vm({ name: 'db', host: '' }),
+      vm({ name: 'ext', host: 'router', external: true }),
+    ];
+    expect(hostOptions(['node2', 'node1'], rows, ['gone'])).toEqual([
+      'gone',
+      'node1',
+      'node2',
+      'node3',
+    ]);
+  });
+
+  it('lists each host it is given once, sorted', () => {
+    const host = fc.constantFrom('', 'a', 'b', 'B', 'node10', 'node9');
+    fc.assert(
+      fc.property(
+        fc.array(host.filter(Boolean), { maxLength: 5 }),
+        fc.array(host, { maxLength: 5 }),
+        fc.array(host.filter(Boolean), { maxLength: 3 }),
+        (listed, rowHosts, picked) => {
+          const got = hostOptions(
+            listed,
+            rowHosts.map((h) => vm({ host: h })),
+            picked,
+          );
+          expect(new Set(got).size).toBe(got.length);
+          expect(got).toEqual([...got].sort());
+          expect(got).not.toContain('');
+          for (const h of [...listed, ...picked, ...rowHosts.filter(Boolean)]) {
+            expect(got).toContain(h);
+          }
+        },
+      ),
+    );
+  });
+});
+
 describe('the experiment summary', () => {
   // a fact as its term and its description
   const fact = (f) => `${textOf(f.find('dt'))}: ${textOf(f.find('dd'))}`;
@@ -228,6 +270,42 @@ describe('the experiment summary', () => {
     );
   });
 
+  it.each([
+    ['links to its state of health and SCORCH runs', undefined, true],
+    [
+      'leaves the links out for a role that may not get it',
+      denyOnly(['experiments', 'get']),
+      false,
+    ],
+  ])('%s, left of its status', async (_, role, linked) => {
+    if (role) rbac.allowed = role;
+    const wrapper = await render({});
+    const head = wrapper.find('.exp-summary-actions');
+    expect(head.findAll('a').map((a) => a.attributes('href'))).toEqual(
+      linked ? ['/soh/exp1', '/scorch/exp1'] : [],
+    );
+    expect(head.findAll('a').map((a) => a.attributes('aria-label'))).toEqual(
+      linked
+        ? [
+            'View state of health for experiment exp1',
+            'View SCORCH runs for experiment exp1',
+          ]
+        : [],
+    );
+    // the links come first, then the status
+    expect(textOf(head.element.lastElementChild)).toBe('Running');
+  });
+
+  it.each([
+    ['the total alone until the running count is known', null, 'VMs: 3'],
+    ['how many are running of all', 2, 'VMs: 2 running of 3'],
+  ])('counts the VMs: %s', async (_, count, text) => {
+    const wrapper = await mountComponent(ExperimentSummary, {
+      props: { name: 'exp1', experiment: { vm_count: 3 }, running: count },
+    });
+    expect(fact(wrapper.find('.exp-fact-vms'))).toBe(text);
+  });
+
   it('shows the start as the Experiments page does: as sent, then its age', async () => {
     vi.useFakeTimers({ now: Date.parse('2026-10-28T13:00:00Z') });
     try {
@@ -249,8 +327,8 @@ describe('the experiment summary', () => {
     expect(textOf(wrapper.find('.exp-fact-started dd'))).toBe('garbled');
   });
 
-  // "2026-10-28T14:03:22-06:00 (59 minutes ago)" fits on one line in 8 of the
-  // 12 columns of a 38rem card, so a wrapped start does not make it taller.
+  // "2026-10-28T14:03:22-06:00 (59 minutes ago)" fits on one line in 7 of the
+  // 12 columns of a 44rem card, and "18 running of 25" in 3.
   it('widens the start over the counts in a wide card', () => {
     const file = 'src/components/experiment/ExperimentSummary.vue';
     expect(
@@ -260,15 +338,15 @@ describe('the experiment summary', () => {
       'grid-column': 'span 6',
     });
     expect(
-      componentDeclarations(file, '.exp-fact-started', '(min-width: 38rem)'),
-    ).toEqual({ 'grid-column': 'span 8' });
+      componentDeclarations(file, '.exp-fact-started', '(min-width: 44rem)'),
+    ).toEqual({ 'grid-column': 'span 7' });
     expect(
       componentDeclarations(
         file,
-        '.has-start .exp-fact-count',
-        '(min-width: 38rem)',
+        '.has-start .exp-fact-vms',
+        '(min-width: 44rem)',
       ),
-    ).toEqual({ 'grid-column': 'span 2' });
+    ).toEqual({ 'grid-column': 'span 3' });
   });
 });
 
@@ -386,5 +464,123 @@ describe('the label filter', () => {
       tooltip: 'Cannot filter by label: no VM has a label',
       disabled: true,
     });
+  });
+});
+
+describe('the host filter', () => {
+  const render = (props) =>
+    mountComponent(VmHostFilter, {
+      props: { options: ['node1', 'node2'], ...props },
+    });
+  const box = (wrapper, text) =>
+    wrapper
+      .findAll('label.b-checkbox')
+      .find((b) => textOf(b) === text)
+      .find('input');
+
+  it('checks and unchecks hosts, and clears them', async () => {
+    const wrapper = await render({ picked: ['node2'] });
+    expect(box(wrapper, 'node2').element.checked).toBe(true);
+    await box(wrapper, 'node1').setValue(true);
+    await box(wrapper, 'node2').setValue(false);
+    const clear = wrapper
+      .findAll('button')
+      .find((b) => textOf(b) === 'Clear hosts');
+    await clear.trigger('click');
+    expect(wrapper.emitted('update:picked')).toEqual([
+      [['node2', 'node1']],
+      [[]],
+      [[]],
+    ]);
+  });
+
+  it('names what it filters by, and how many are checked', async () => {
+    const trigger = (w) => w.find('.vm-host-filter-trigger');
+    expect(trigger(await render()).attributes('aria-label')).toBe(
+      'Filter VMs by host',
+    );
+    const two = await render({ picked: ['node1', 'node2'] });
+    expect(trigger(two).attributes('aria-label')).toBe(
+      'Filter VMs by host, 2 checked',
+    );
+    expect(textOf(trigger(two))).toBe('Hosts (2)');
+  });
+
+  it('hides its tooltip while its list is open', async () => {
+    const wrapper = await render();
+    const tooltip = () => wrapper.findComponent({ name: 'BTooltip' });
+    expect(tooltip().props('active')).toBe(true);
+    await wrapper.find('.vm-host-filter-trigger').trigger('click');
+    // Buefy opens a dropdown on a timer
+    await vi.waitFor(() => expect(tooltip().props('active')).toBe(false));
+  });
+
+  it('is greyed out, saying why, when no VM runs on a host', async () => {
+    const wrapper = await render({ options: [] });
+    expect(
+      tooltipButtons(wrapper).find((b) => b.label === 'Filter VMs by host'),
+    ).toMatchObject({
+      tooltip: "Can't filter by host: no VM is running on a host",
+      disabled: true,
+    });
+  });
+
+  it('leaves unchecked the hosts that would make the request too long', async () => {
+    const wrapper = await render({
+      options: ['node1', 'node2', 'node3'],
+      picked: ['node1'],
+      fits: (hosts) => hosts.length <= 2,
+    });
+    const disabled = ['node1', 'node2', 'node3'].map(
+      (h) => box(wrapper, h).element.disabled,
+    );
+    expect(disabled).toEqual([false, false, false]);
+
+    await wrapper.setProps({ picked: ['node1', 'node2'] });
+    expect(
+      ['node1', 'node2', 'node3'].map((h) => box(wrapper, h).element.disabled),
+    ).toEqual([false, false, true]);
+    expect(textOf(wrapper)).toContain('Uncheck a host to check another');
+  });
+});
+
+describe('the Hosts and Labels buttons', () => {
+  // each button's classes and markup, with its own kind, icon and title
+  // taken out
+  const looks = async (Filter, options, kind, icon, title) => {
+    const trigger = (await mountComponent(Filter, { props: { options } })).find(
+      `.vm-${kind}-filter-trigger`,
+    );
+    expect(trigger.find(`[data-icon="${icon}"]`).exists()).toBe(true);
+    return trigger
+      .html()
+      .replace(new RegExp(`(?<!aria-)${kind}`, 'g'), 'KIND')
+      .replaceAll(icon, 'ICON')
+      .replaceAll(title, 'TITLE');
+  };
+
+  it('look alike apart from their icon and title', async () => {
+    expect(
+      await looks(VmHostFilter, ['node1'], 'host', 'server', 'Hosts'),
+    ).toBe(
+      await looks(
+        VmLabelFilter,
+        [{ key: 'role', value: 'web' }],
+        'label',
+        'tag',
+        'Labels',
+      ),
+    );
+  });
+
+  // a full-width glyph such as the server's fills its icon box, so Bulma's
+  // 0.25em after the box left it touching the title
+  it('leave room between the icon and the title', () => {
+    expect(
+      componentDeclarations(
+        'src/components/experiment/VmPickFilter.vue',
+        '.vm-pick-filter-trigger :deep(.icon:first-child:not(:last-child))',
+      ),
+    ).toEqual({ 'margin-inline-end': '0.5em' });
   });
 });

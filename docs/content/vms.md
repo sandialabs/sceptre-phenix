@@ -18,6 +18,11 @@ The header is colored by the VM's state and shows:
 
 * the VM name and a state tag: `Running`, `Paused`, `Shut down`, `Building`,
   `Delayed start`, `Error`, `Busy` or `Not booted`;
+* an OS box naming the guest operating system the topology gives the VM in
+  `hardware.os_type`, with an icon and a color for its family: a yellow penguin
+  for Linux (`linux`, `centos`, `rhel`), a blue window for `windows`, a purple
+  route for routers (`vyos`, `vyatta`, `minirouter`) and a gray screen for
+  `other`. It is left out when the topology gives none;
 * a `do not boot` tag, when the VM is flagged not to boot;
 * the host the VM is scheduled on, and how long it has been up, or
   `starts after <delay>` for a VM with a delayed start;
@@ -42,9 +47,20 @@ The `Power` section holds the VM's power operations as labeled buttons:
 * `Start` — start the VM. On a paused VM the button reads `Resume` and resumes
   the VM where it left off.
 * `Pause` — pause the VM, keeping its memory, until it is resumed.
-* `Restart` — restart the running VM.
+* `Restart` — restart the running VM; greyed out while the VM is not running.
 * `Shut down` — power off the VM; it can be started again later.
 * `Kill` — kill the VM and remove it from the running experiment.
+
+`Start`, `Pause`, `Restart` and `Shut down` act as soon as you click them;
+`Kill` asks you to confirm first. A power action runs as a
+[background job](jobs.md), which the
+[jobs menu](web-ui.md#background-jobs-menu) shows. The card stays open, and the
+button spins until the job ends; the card then shows the VM as the job left it.
+A killed VM's card closes once the job ends. `Snapshot` also leaves the card
+open, spinning until the snapshot is taken, and then lists the VM's snapshots
+again. `Backing image`, `Memory snapshot`, restoring a snapshot and changing a
+VLAN leave the card open too, with a spinner on the button or interface until
+the server answers, and none of them grays out the page.
 
 #### More Actions
 
@@ -67,8 +83,9 @@ The `Power` section holds the VM's power operations as labeled buttons:
 An action your role may not take is not shown at all. An action the VM's
 current state rules out stays visible but disabled, with the reason in its
 tooltip — `Can't pause: the VM is not running`, `Can't snapshot: the VM does
-not have snapshots enabled`, or `Can't restart: the VM is paused and must be
-resumed first`.
+not have snapshots enabled`, `Can't restart: the VM is paused and must be
+resumed first`, or `Can't restart: the VM is not running; start it instead`
+beside a `Start`.
 
 ![VM details for the shut-down historian, with Start enabled and the actions a stopped VM cannot take grayed out.](images/vm_details_disabled.png){: width=800 .center}
 
@@ -181,32 +198,57 @@ phenix vm info <experiment name> [vm name] [--label <label>]
 
 ## Filtering and Sorting the VM Table
 
-The `Labels` button to the left of the `Paginate` toggle, above the running
-experiment's VM table, lists every `key=value` label on the experiment's VMs.
+On the running experiment's `VMs` tab, the `Hosts`, `Labels` and `Paginate`
+controls sit in the toolbar to the left of the `Find a VM` search box. When
+the window is too narrow for one row, they move to a row of their own above
+the search box.
+
+The `Hosts` button lists every cluster host running one of the experiment's
+VMs. Check hosts to list only the VMs running on any of them; checking two
+hosts widens the list rather than narrowing it. `Clear hosts` unchecks them
+all, the button shows how many hosts are checked, and it is greyed out when no
+VM is running on a host. The CLI has no host filter; `phenix vm info
+<experiment>` shows each VM's host.
+
+The `Labels` button lists every `key=value` label on the experiment's VMs.
 Check labels to list only the VMs that carry any of them; checking two labels
 widens the list rather than narrowing it, as repeating `--label` does on the
-`phenix vm` commands. The label filter combines with the search box, which
-still narrows the list, and the table goes back to its first page whenever the
-checked labels change.
-`Clear labels` unchecks them all. The button shows how many labels are checked,
-and is greyed out when no VM has a label.
+`phenix vm` commands. `Clear labels` unchecks them all. The button shows how
+many labels are checked, and is greyed out when no VM has a label.
+
+The host and label filters combine with each other and with the search box:
+a VM must match the search, run on a checked host and carry a checked label.
+The table goes back to its first page whenever the checked hosts or labels
+change. The request for the list must fit in 2 KiB, so once the checked hosts
+and labels fill it, the rest are greyed out until you uncheck one.
 
 Click the `Labels` heading to sort the VMs by how many labels they have, the
 number beside each VM's tag icon, which counts their notes too; a VM with none
 shows no number. VMs with as many labels are listed by name from A to Z
 whichever way the column is sorted.
 
+Click the `Network` heading to sort the VMs by the VLAN IDs of their
+interfaces, compared as numbers, or the `Taps` heading to sort them by their
+tap names, compared as text. A VM with several interfaces compares its first
+interface, then its second, and so on; VMs with no VLAN ID or tap, such as
+those that are not running, come last either way. VMs that tie are listed by
+name from A to Z.
+
 From the API, `GET /api/v1/experiments/{name}` takes a repeated
-`label=key=value` query parameter with the same meaning, and both it and
-`GET /api/v1/experiments/{name}/vms` take `sortCol=labels`.
+`label=key=value` query parameter and a repeated `host=<host>` query parameter
+with the same meanings, and the VM lists' `hosts` and `labels` hold every host
+and label to filter by. Both it and
+`GET /api/v1/experiments/{name}/vms` take `sortCol=labels`, `sortCol=network`
+and `sortCol=taps`.
 
 ## VM Actions Column
 
 The running experiment's VM table has an `Actions` column of compact icon
 buttons that act on that row's VM without opening its details card:
 
-* `Shut down`
-* `Restart`
+* `Shut down`, which becomes `Start` (or `Resume` for a paused VM) while the
+  VM is not running
+* `Restart`, greyed out while the VM is not running
 * `Port forward`
 * `Snapshot`
 * `Backing image`
@@ -215,10 +257,14 @@ buttons that act on that row's VM without opening its details card:
 
 ![VM table Actions column with a tooltip explaining that a VM without snapshots enabled cannot be snapshotted.](images/vm_row_actions.png){: width=400 .center}
 
+`Shut down`, `Start` and `Restart` act as soon as you click them, as on the
+details card, and so do the capture buttons; a button spins until its action
+has finished, while the page stays usable.
 The buttons follow the same rules as the ones on the details card: a button is
 disabled, with the reason in its tooltip, when your role may not use it
 (`Can't snapshot: you don't have permission`) or when the VM's state rules it
-out (`Can't restart: the VM is busy with another action`). Three buttons fit on
+out (`Can't restart: the VM is busy with another action`, or `Can't restart: the
+VM is not running; start it instead` beside a `Start`). Three buttons fit on
 a row and the rest wrap below, so the column never widens. External nodes have
 no buttons, and the whole column is hidden if your role may not take any of
 these actions. `Actions` is one of the columns you can turn off from the column
@@ -457,15 +503,17 @@ network tap will turn green once a packet capture has started. Each interface in
 the VM's details card has its own shark-fin button that does the same thing.
 
 Either way, phēnix first asks the server which captures are already running on
-the VM. minimega lists them across the cluster, so this takes a moment; the
-button or tap name shows a spinner until the answer arrives and the dialog
-opens. Captures started from the Web-UI are written to the experiment's files as
-`<vm>_<interface>_<time>.pcap`.
+the VM. minimega lists them across the cluster, so this takes a moment. phēnix
+then starts the interface's capture, or stops it if one is already running,
+without asking you to confirm; the button or tap name shows a spinner until the
+server has done so. Captures started from the Web-UI are written to the
+experiment's files as `<vm>_<interface>_<time>_<random>.pcap`. `<time>` is the
+local time to the second and `<random>` is four random hexadecimal digits, so a
+restarted capture does not replace the file of an earlier capture.
 
-It is possible to start captures on multiple network taps. When you stop a
-capture and it is the only one running on the VM, phēnix just asks you to
-confirm. When several are running it asks which you mean:
-`Stop Interface <index> Only` or `Stop All Captures`.
+It is possible to start captures on multiple network taps. Stopping the capture
+on one interface leaves the VM's other captures running; use
+`Stop all packet captures` to stop them all.
 
 A capture cannot be started on a disconnected interface; phēnix says
 `Cannot capture traffic on a disconnected interface.` instead of starting one.
@@ -507,9 +555,9 @@ local Wireshark (`phenix vm capture stream`), see [WebShark](webshark.md).
 card's [Network](#network) section, starts a packet capture on every connected
 interface of a VM that does not already have one, so you do not have to start
 them one interface at a time. phēnix asks the server which captures are already
-running, then confirms once, naming the interfaces it will capture and the files
-it will write — `<vm>_<interface>_<time>.pcap` for each, in the experiment's
-files.
+running, then starts the rest without asking you to confirm, writing
+`<vm>_<interface>_<time>_<random>.pcap` for each to the experiment's files. The button
+spins until the captures have started.
 
 The button is disabled, with the reason in its tooltip, when the VM is not
 running, has no interfaces, has all of its interfaces disconnected, or is
@@ -518,11 +566,8 @@ captures sees `Cannot capture all interfaces: you do not have permission`
 instead.
 
 While captures are running on the VM, a red `Stop all packet captures` button
-takes its place. It confirms, naming the interfaces it will stop, spins while
-the server stops the captures, and turns back into `Capture all interfaces`
-once they have stopped.
-
-![Start Packet Captures confirmation naming the two capture files it will write for site-1-rtu, with Cancel and Start All buttons.](images/vm_capture_all.png){: width=500 .center}
+takes its place. It stops them without asking, spins while the server stops the
+captures, and turns back into `Capture all interfaces` once they have stopped.
 
 ## Kill a VM
 
@@ -637,7 +682,10 @@ phenix vm reset-disk <experiment name> [vm name] [--label <label>]
 Click on the name of a running VM in a started experiment to open its details
 card, then click `Restart` in the `Power` section. `Restart` is also in the VM
 table's [Actions column](#vm-actions-column). On a paused VM it is disabled with
-`Can't restart: the VM is paused and must be resumed first`.
+`Can't restart: the VM is paused and must be resumed first`, and on any other VM
+that is not running with `Can't restart: the VM is not running; start it
+instead`. Restarting a selection of VMs from the table's toolbar still starts
+the ones that are shut down.
 
 ### From the Command Line Binary
 

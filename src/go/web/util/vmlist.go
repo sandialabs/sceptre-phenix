@@ -4,7 +4,9 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -23,8 +25,17 @@ const MaxPageValue = math.MaxInt32
 
 var ErrInvalidPage = errors.New("invalid pageNum or perPage")
 
-// labelsColumn is the sort column ordering VMs by their label count.
-const labelsColumn = "labels"
+// The sort columns SelectVMs orders itself rather than with mm.VMs.SortBy:
+// VMs by their label count, their interfaces' VLAN IDs, and their tap names.
+const (
+	labelsColumn  = "labels"
+	networkColumn = "network"
+	tapsColumn    = "taps"
+)
+
+// vlanIDRegex reads the VLAN ID minimega gives a network: "EXP_1 (101)", or a
+// bare "101" for a VLAN with no alias.
+var vlanIDRegex = regexp.MustCompile(`^(\d+)$|\((\d+)\)$`)
 
 // VMLabel is one key=value label a VM may carry.
 type VMLabel struct {
@@ -37,7 +48,10 @@ type VMQuery struct {
 	Filter string
 	// Labels keeps the VMs carrying any of them; a label with no key matches
 	// no VM, so a malformed one never widens the list.
-	Labels  []VMLabel
+	Labels []VMLabel
+	// Hosts keeps the VMs running on any of these cluster hosts; an empty
+	// host matches no VM.
+	Hosts   []string
 	ShowDNB bool
 	// SortCol is empty for the VMs' own order.
 	SortCol string
@@ -107,6 +121,10 @@ func SelectVMs(
 			continue
 		}
 
+		if len(q.Hosts) > 0 && (vm.Host == "" || !slices.Contains(q.Hosts, vm.Host)) {
+			continue
+		}
+
 		if role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
 			selected = append(selected, vm)
 		}
@@ -118,6 +136,10 @@ func SelectVMs(
 		sortByDelay(selected, IndexTopology(topo), q.SortAsc)
 	case labelsColumn:
 		sortByLabels(selected, q.SortAsc)
+	case networkColumn:
+		sortBySequence(selected, vlanIDs, q.SortAsc)
+	case tapsColumn:
+		sortBySequence(selected, func(vm mm.VM) []string { return vm.Taps }, q.SortAsc)
 	default:
 		selected.SortBy(q.SortCol, q.SortAsc)
 	}
@@ -181,11 +203,62 @@ func sortByLabels(vms mm.VMs, asc bool) {
 			byCount = -byCount
 		}
 
-		return cmp.Or(
-			byCount,
-			cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
-			cmp.Compare(a.Name, b.Name),
-		)
+		return cmp.Or(byCount, byName(a, b))
+	})
+}
+
+// byName orders VMs by name A to Z, ignoring case, then exactly.
+func byName(a, b mm.VM) int {
+	return cmp.Or(
+		cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+		cmp.Compare(a.Name, b.Name),
+	)
+}
+
+// vlanIDs are the VLAN IDs of a VM's interfaces in interface order, leaving
+// out the interfaces without one, such as disconnected ones.
+func vlanIDs(vm mm.VM) []int {
+	ids := make([]int, 0, len(vm.Networks))
+
+	for _, network := range vm.Networks {
+		match := vlanIDRegex.FindStringSubmatch(network)
+		if match == nil {
+			continue
+		}
+
+		if id, err := strconv.Atoi(match[1] + match[2]); err == nil {
+			ids = append(ids, id)
+		}
+	}
+
+	return ids
+}
+
+// sortBySequence orders VMs by key, one value per interface in interface order,
+// ties by name A to Z; VMs with an empty key come last in either direction.
+func sortBySequence[E cmp.Ordered](vms mm.VMs, key func(mm.VM) []E, asc bool) {
+	keys := make(map[string][]E, len(vms))
+	for _, vm := range vms {
+		keys[vm.Name] = key(vm)
+	}
+
+	slices.SortStableFunc(vms, func(a, b mm.VM) int {
+		ka, kb := keys[a.Name], keys[b.Name]
+
+		if (len(ka) == 0) != (len(kb) == 0) {
+			if len(ka) == 0 {
+				return 1
+			}
+
+			return -1
+		}
+
+		bySeq := slices.Compare(ka, kb)
+		if !asc {
+			bySeq = -bySeq
+		}
+
+		return cmp.Or(bySeq, byName(a, b))
 	})
 }
 
@@ -222,6 +295,42 @@ func VMLabels(expName string, vms []mm.VM, showDNB bool, role rbac.Role) []VMLab
 	return labels
 }
 
+// VMHosts returns the distinct cluster hosts running the VMs role may list
+// (do-not-boot ones only with showDNB), sorted, to filter by.
+func VMHosts(expName string, vms []mm.VM, showDNB bool, role rbac.Role) []string {
+	seen := map[string]struct{}{}
+
+	for _, vm := range vms {
+		if vm.Host == "" || (vm.DoNotBoot && !showDNB) {
+			continue
+		}
+
+		if role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
+			seen[vm.Host] = struct{}{}
+		}
+	}
+
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// CountRunning returns how many of the VMs role may list (do-not-boot ones
+// only with showDNB) are running.
+func CountRunning(expName string, vms []mm.VM, showDNB bool, role rbac.Role) uint32 {
+	var n uint32
+
+	for _, vm := range vms {
+		if !vm.Running || (vm.DoNotBoot && !showDNB) {
+			continue
+		}
+
+		if role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
+			n++
+		}
+	}
+
+	return n
+}
+
 // VMLabelsToProtobuf converts the labels VMLabels returns.
 func VMLabelsToProtobuf(labels []VMLabel) []*proto.VMLabel {
 	out := make([]*proto.VMLabel, len(labels))
@@ -243,8 +352,11 @@ func VMListToProtobuf(expName string, vms mm.VMs, total int, topo ifaces.Topolog
 		ObservedAt:     "",
 		// only a bulk update fills it
 		Errors: nil,
-		// set by the lists that offer a label filter
+		// set by the lists that offer label and host filters
 		Labels: nil,
+		Hosts:  nil,
+		// set by the lists that count the running VMs
+		Running: 0,
 	}
 	nodes := IndexTopology(topo)
 

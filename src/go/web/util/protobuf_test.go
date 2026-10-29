@@ -313,9 +313,10 @@ func TestVMToProtobuf(t *testing.T) {
 				Experiment:   "exp",
 				DelayedStart: tc.delay,
 				External:     tc.external,
+				OsType:       "windows",
 			}
 
-			got := VMToProtobuf("exp", mm.VM{Name: tc.vm, Host: "host", DoNotBoot: true}, tc.topo)
+			got := VMToProtobuf("exp", mm.VM{Name: tc.vm, Host: "host", DoNotBoot: true, OSType: "windows"}, tc.topo)
 
 			if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 				t.Errorf("VMToProtobuf(exp, %q) mismatch (-want +got):\n%s", tc.vm, diff)

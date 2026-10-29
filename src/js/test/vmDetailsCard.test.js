@@ -567,6 +567,49 @@ describe('VmDetailsCard permissions', () => {
   );
 });
 
+describe('VmDetailsCard Restart', () => {
+  // the Restart button's tooltip and disabled state in `wrapper`
+  const restart = (wrapper, selector) =>
+    tooltipButtons(wrapper).find((b) => b.control.classes(selector));
+
+  it.each([
+    ['running', {}, false, 'Restart the running VM'],
+    [
+      'shut down',
+      { state: 'QUIT', running: false },
+      true,
+      'Cannot restart: the VM is not running. Start it instead',
+    ],
+    [
+      'paused',
+      { state: 'PAUSED', running: false },
+      true,
+      "Can't restart: the VM is paused and must be resumed first",
+    ],
+    [
+      'busy',
+      { state: 'QUIT', running: false, busy: true },
+      true,
+      "Can't restart: the VM is busy with another action",
+    ],
+  ])(
+    'agrees with the Actions column on a %s VM',
+    async (_, fields, disabled, tooltip) => {
+      const target = makeVm(fields);
+      const details = await card({ vm: target });
+      const row = await mountComponent(VmRowActions, {
+        props: { vm: target, fullName: 'demo/web' },
+      });
+      for (const button of [
+        restart(section(details, 'Power'), 'vm-action-restart'),
+        restart(row, 'vm-row-restart'),
+      ]) {
+        expect(button).toMatchObject({ disabled, tooltip });
+      }
+    },
+  );
+});
+
 describe('VmRowActions', () => {
   it('shows a spinner on an action still running', async () => {
     const actions = await mountComponent(VmRowActions, {
@@ -580,6 +623,30 @@ describe('VmRowActions', () => {
     expect(button.classes()).toContain('is-loading');
     expect(button.attributes('disabled')).toBeDefined();
     expect(has(button, '[data-icon="shark-fin"]')).toBe(true);
+  });
+});
+
+describe('VmDetailsCard OS tag', () => {
+  it.each([
+    ['linux', 'Linux', 'is-os-linux', 'linux'],
+    ['windows', 'Windows', 'is-os-windows', 'windows'],
+    ['vyos', 'VyOS', 'is-os-router', 'route'],
+    ['other', 'Other', 'is-os-other', 'desktop'],
+  ])(
+    'names %s as %s with its color and icon',
+    async (osType, label, color, iconName) => {
+      const wrapper = await card({ vm: { ...vm, os_type: osType } });
+      const tag = wrapper.find('.vm-card-title-row .vm-os-tag');
+      expect(tag.classes()).toContain(color);
+      expect(textOf(tag)).toBe(`Operating system: ${label}`);
+      expect(tag.find('.is-sr-only').text()).toBe('Operating system:');
+      expect(has(tag, `[data-icon="${iconName}"]`)).toBe(true);
+    },
+  );
+
+  it('is left out when the VM gives no OS', async () => {
+    const wrapper = await card({ vm: { ...vm, os_type: '' } });
+    expect(has(wrapper, '.vm-os-tag')).toBe(false);
   });
 });
 

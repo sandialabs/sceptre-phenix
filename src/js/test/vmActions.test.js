@@ -15,6 +15,7 @@ import {
   skippedVMsText,
   vmActionState,
   vmActionStates,
+  vmButtonStates,
   vmInterfaces,
   vmStateInfo,
   vmStateType,
@@ -551,6 +552,79 @@ describe('capture all interfaces', () => {
 });
 
 describe('rowActionNames', () => {
+  it('swaps shut down for start while the VM is not running', () => {
+    expect(rowActionNames({ running: true })).toContain('shutdown');
+    const names = rowActionNames({ running: false, state: 'QUIT' });
+    expect(names).toContain('start');
+    expect(names).not.toContain('shutdown');
+    expect(names.indexOf('start')).toBe(ROW_ACTIONS.indexOf('shutdown'));
+  });
+
+  it.each([
+    [
+      'shut down',
+      { state: 'QUIT' },
+      { label: 'Start', disabled: false },
+      'the VM is not running. Start it instead',
+    ],
+    [
+      'paused',
+      { state: 'PAUSED' },
+      { label: 'Resume', disabled: false },
+      'the VM is paused. Resume paused VMs first',
+    ],
+    [
+      'busy',
+      { state: 'QUIT', busy: true },
+      { label: 'Start', disabled: true },
+      'the VM is busy with another action',
+    ],
+  ])(
+    'greys out restart beside the start of a %s VM, saying why',
+    (_, fields, start, why) => {
+      const vm = { name: 'vm1', running: false, ...fields };
+      const byName = Object.fromEntries(
+        vmButtonStates(rowActionNames(vm), vm, { can: allowAll }).map((a) => [
+          a.name,
+          a,
+        ]),
+      );
+      expect(byName.start).toMatchObject(start);
+      expect(byName.restart).toMatchObject({
+        disabled: true,
+        reason: `Cannot restart: ${why}`,
+      });
+    },
+  );
+
+  it('offers start or shut down, and restart only while running, for any VM', () => {
+    const vm = fc.record({
+      name: fc.constant('vm1'),
+      running: fc.boolean(),
+      state: fc.constantFrom('RUNNING', 'PAUSED', 'QUIT', 'BUILDING', ''),
+      busy: fc.boolean(),
+      snapshot: fc.boolean(),
+      captures: fc.constantFrom([], [{ interface: 0 }]),
+    });
+    fc.assert(
+      fc.property(vm, (target) => {
+        const states = vmButtonStates(rowActionNames(target), target, {
+          can: allowAll,
+        });
+        const names = states.map((a) => a.name);
+        expect(names.includes('start')).toBe(!target.running);
+        expect(names.includes('shutdown')).toBe(target.running);
+        expect(states).toHaveLength(ROW_ACTIONS.length);
+        const restart = states.find((a) => a.name === 'restart');
+        expect(restart).toEqual(
+          target.running
+            ? vmActionState('restart', target, { can: allowAll })
+            : expect.objectContaining({ disabled: true }),
+        );
+      }),
+    );
+  });
+
   it('swaps capture all for stop all while the VM is capturing', () => {
     expect(rowActionNames({ captures: [] })).toContain('captureAll');
     const names = rowActionNames({ captures: [{ interface: 0 }] });

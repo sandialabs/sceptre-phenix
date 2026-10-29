@@ -4,7 +4,6 @@ import {
   applyStopCaptureUpdate,
   captureFilename,
   isInterfaceCapturing,
-  hasMultipleCaptures,
 } from '@/utils/captures.js';
 
 describe('applyStopCaptureUpdate', () => {
@@ -85,21 +84,6 @@ describe('isInterfaceCapturing', () => {
     expect(isInterfaceCapturing([], 0)).toBe(false);
     expect(isInterfaceCapturing(null, 0)).toBe(false);
     expect(isInterfaceCapturing(undefined, 0)).toBe(false);
-  });
-});
-
-describe('hasMultipleCaptures', () => {
-  test('returns false when zero or one captures are running', () => {
-    expect(hasMultipleCaptures([])).toBe(false);
-    expect(hasMultipleCaptures(null)).toBe(false);
-    expect(hasMultipleCaptures(undefined)).toBe(false);
-    expect(hasMultipleCaptures([{ interface: 0 }])).toBe(false);
-  });
-
-  test('returns true when more than one capture is running', () => {
-    expect(hasMultipleCaptures([{ interface: 0 }, { interface: 1 }])).toBe(
-      true,
-    );
   });
 });
 

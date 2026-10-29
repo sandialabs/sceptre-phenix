@@ -20,7 +20,7 @@ import {
     faPaintbrush, faTv, faCircle, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
     faTableColumns, faArrowPointer, faBroom, faEraser, faBook,
     faServer, faClock, faHourglassHalf, faMicrochip, faMemory, faPlug, faUpRightFromSquare, faBan,
-    faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRedo
+    faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRedo, faRoute
 } from '@fortawesome/free-solid-svg-icons'
 
 // prettier-ignore
@@ -33,12 +33,12 @@ library.add(
     faPaintbrush, faTv, faCircle, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
     faTableColumns, faArrowPointer, faBroom, faEraser, faBook,
     faServer, faClock, faHourglassHalf, faMicrochip, faMemory, faPlug, faUpRightFromSquare, faBan,
-    faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRedo
+    faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRedo, faRoute
 )
 
 // icons of our own (see utils/icons.js)
-import { faSharkFin } from './utils/icons.js';
-library.add(faSharkFin);
+import { faLinux, faSharkFin, faWindows } from './utils/icons.js';
+library.add(faLinux, faSharkFin, faWindows);
 
 import App from './App.vue';
 import router from './router.js';

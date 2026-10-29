@@ -153,6 +153,30 @@ describe('the rows', () => {
     ).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('shows how long a VM has run, a muted dash for one not running, and unknown for an external node', async () => {
+    const wrapper = await render([
+      vm({ name: 'up', uptime: 3725 }),
+      vm({ name: 'down', running: false, state: 'QUIT', uptime: 0 }),
+      vm({ name: 'ext', external: true, running: false }),
+    ]);
+    const uptime = (name) => rowOf(wrapper, name).Uptime;
+    expect(textOf(uptime('up'))).toBe('01:02:05');
+    expect(textOf(uptime('ext'))).toBe('unknown');
+
+    const dash = uptime('down').find('.vm-uptime-none');
+    expect([textOf(dash), dash.attributes('aria-hidden')]).toEqual([
+      '—',
+      'true',
+    ]);
+    expect(textOf(uptime('down').find('.is-sr-only'))).toBe('not running');
+    const { color } = componentDeclarations(
+      'src/components/experiment/VmTable.vue',
+      '.vm-uptime-none',
+    );
+    // on the table's $background-bis
+    expect(contrast(color, '#484848')).toBeGreaterThanOrEqual(4.5);
+  });
+
   // the column ends at the window's right edge
   it('opens the Actions tooltips to the left, inside the window', async () => {
     const positions = tooltipPositions(
@@ -217,6 +241,21 @@ describe('what it asks the page for', () => {
     ]);
   });
 
+  it.each([
+    ['shutdown', false, 'start'],
+    ['start', true, 'shutdown'],
+  ])(
+    'keeps spinning a pending %s after the VM swaps its button',
+    async (action, running, shown) => {
+      const wrapper = await render([vm({ running })], {
+        actionPending: { web: [action] },
+      });
+      const button = wrapper.find(`.vm-row-${shown}`);
+      expect(button.classes()).toContain('is-loading');
+      expect(button.attributes('disabled')).toBeDefined();
+    },
+  );
+
   it('selects VMs and all of them through its checkboxes', async () => {
     const wrapper = await render([web, vm({ name: 'ext', external: true })], {
       selected: ['web'],
@@ -235,13 +274,17 @@ describe('what it asks the page for', () => {
     expect(wrapper.emitted('update:checkAll')).toEqual([[true]]);
   });
 
-  it('asks to sort by the Labels column, both ways', async () => {
+  it.each([
+    ['Labels', 'labels'],
+    ['Network', 'network'],
+    ['Taps', 'taps'],
+  ])('asks to sort by the %s column, both ways', async (header, field) => {
     const wrapper = await render();
-    await tableHeader(wrapper, 'Labels').trigger('click');
-    await tableHeader(wrapper, 'Labels').trigger('click');
+    await tableHeader(wrapper, header).trigger('click');
+    await tableHeader(wrapper, header).trigger('click');
     expect(wrapper.emitted('sort')).toEqual([
-      ['labels', 'asc'],
-      ['labels', 'desc'],
+      [field, 'asc'],
+      [field, 'desc'],
     ]);
   });
 

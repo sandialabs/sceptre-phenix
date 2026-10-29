@@ -318,7 +318,7 @@ A user can access the terminal if a break point is reached by clicking on the co
 
 ### Runs Page
 
-The page showing an experiment's pipelines is reached from the `Experiment` or `Go to SCORCH pipelines` links in the [Scorch table](#scorch-table), and from the fire button (tooltip `view SCORCH runs`) in a running experiment's button row.
+The page showing an experiment's pipelines is reached from the `Experiment` or `Go to SCORCH pipelines` links in the [Scorch table](#scorch-table), and from the fire button (tooltip `view SCORCH runs`) beside the `Running` status in a running experiment's summary card.
 
 At its top left, the page counts the experiment's `Pipelines` and how the last run of each went, as its components show: `Running`, `Succeeded` once its `done` node succeeded, or `Failed` when any component failed. A pipeline whose last run neither failed nor finished, such as one never run or just cleared, counts in none of the three. The following functions are available across the top of the page, below the counts:
 

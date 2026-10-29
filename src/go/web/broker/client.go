@@ -679,6 +679,8 @@ func (c *Client) listVMs(job listJob) {
 	resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
 	util.SetVMListObservation(resp, observed)
 	resp.Labels = util.VMLabelsToProtobuf(util.VMLabels(expName, vms, query.ShowDNB, c.role))
+	resp.Hosts = util.VMHosts(expName, vms, query.ShowDNB, c.role)
+	resp.Running = util.CountRunning(expName, vms, query.ShowDNB, c.role)
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
@@ -713,6 +715,7 @@ func (c *Client) listVMs(job listJob) {
 // parseVMListQuery reads an experiment/vms list request payload. Clients may
 // leave any field out, or send it with the wrong type: the list is then
 // unfiltered, hides do-not-boot VMs, sorts ascending and is not paginated.
+// A malformed labels or hosts entry matches no VM.
 func parseVMListQuery(payload map[string]any) util.VMQuery {
 	query := util.VMQuery{SortAsc: true} //nolint:exhaustruct // zero values are the defaults
 
@@ -724,6 +727,13 @@ func parseVMListQuery(payload map[string]any) util.VMQuery {
 			query.Labels = append(query.Labels, parseVMLabel(entry))
 		}
 	}
+	if hosts, ok := payload["hosts"].([]any); ok {
+		for _, entry := range hosts {
+			host, _ := entry.(string)
+			query.Hosts = append(query.Hosts, host)
+		}
+	}
+
 	query.ShowDNB, _ = payload["show_dnb"].(bool)
 	query.SortCol, _ = payload["sort_column"].(string)
 

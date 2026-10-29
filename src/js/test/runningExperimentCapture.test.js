@@ -18,7 +18,6 @@ import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { disk, vm } from './helpers/fixtures.js';
 import { denyOnly } from './helpers/permissions.js';
 import {
-  confirmDialog,
   dialogs,
   mountPage,
   tableRows,
@@ -86,16 +85,6 @@ async function openDetails(page, name) {
   return page.find('.vm-card');
 }
 
-// the newest dialog's title, message text and confirm button text
-const lastDialog = () => {
-  const dialog = dialogs().at(-1);
-  return {
-    title: textOf(dialog.querySelector('.modal-card-title')),
-    message: textOf(dialog.querySelector('.media-content')),
-    confirmText: textOf(dialog.querySelector('footer .button:last-child')),
-  };
-};
-
 const getUrls = () => axios.get.mock.calls.map(([url]) => url);
 
 beforeEach(() => {
@@ -104,15 +93,16 @@ beforeEach(() => {
 });
 
 describe('starting one capture', () => {
-  it('shows a spinner until the start dialog opens', async () => {
+  it('starts it without asking, with a spinner until the server has started it', async () => {
     const request = Promise.withResolvers();
+    const started = Promise.withResolvers();
     const page = await openPage([web], {
       [capturesUrl('web')]: () => request.promise,
     });
+    axios.post.mockReturnValue(started.promise);
 
     await clickTap(page, 'web', 0);
     expect(spinningTaps(page, 'web')).toEqual([0]);
-    expect(dialogs()).toEqual([]);
 
     // a second click while waiting sends nothing more
     await clickTap(page, 'web', 0);
@@ -122,8 +112,46 @@ describe('starting one capture', () => {
 
     request.resolve({ data: { captures: [] } });
     await flushPromises();
+    expect(dialogs()).toEqual([]);
+    expect(spinningTaps(page, 'web')).toEqual([0]);
+    expect(axios.post).toHaveBeenCalledWith(capturesUrl('web'), {
+      interface: 0,
+      filename: expect.stringMatching(/^web_0_.*\.pcap$/),
+    });
+
+    started.resolve({});
+    await flushPromises();
     expect(spinningTaps(page, 'web')).toEqual([]);
-    expect(lastDialog().title).toBe('Start a Packet Capture');
+    expect(page.find('.loading-overlay').exists()).toBe(false);
+  });
+
+  it("stops the interface's capture from the details without asking or closing them", async () => {
+    const page = await openPage([{ ...web, captures: [{ interface: 2 }] }], {
+      [capturesUrl('web')]: async () => ({
+        data: { captures: [{ interface: 0 }, { interface: 2 }] },
+      }),
+    });
+    const stop = Promise.withResolvers();
+    axios.delete.mockReturnValue(stop.promise);
+    const card = await openDetails(page, 'web');
+
+    await card.find('.vm-capture-stop').trigger('click');
+    await flushPromises();
+    expect(dialogs()).toEqual([]);
+    expect(axios.delete).toHaveBeenCalledWith(capturesUrl('web'), {
+      params: { iface: 2 },
+    });
+    expect(page.find('.vm-card .vm-capture-stop').classes()).toContain(
+      'is-loading',
+    );
+    expect(page.find('.loading-overlay').exists()).toBe(false);
+
+    stop.resolve({});
+    await flushPromises();
+    expect(page.find('.vm-card').exists()).toBe(true);
+    expect(page.find('.vm-card .vm-capture-stop').classes()).not.toContain(
+      'is-loading',
+    );
   });
 
   it('stops the spinner and says why when the request fails', async () => {
@@ -170,7 +198,7 @@ describe('starting one capture', () => {
 });
 
 describe('capturing all interfaces', () => {
-  it('asks to start one capture per connected interface, then starts them', async () => {
+  it('starts one capture per connected interface without asking, spinning until they start', async () => {
     const listed = Promise.withResolvers();
     const started = Promise.withResolvers();
     const page = await openPage([web], {
@@ -183,14 +211,7 @@ describe('capturing all interfaces', () => {
     expect(button().classes()).toContain('is-loading');
     listed.resolve({ data: { captures: [{ interface: 2 }] } });
     await flushPromises();
-    expect(button().classes()).not.toContain('is-loading');
-
-    const dialog = lastDialog();
-    expect(dialog.title).toBe('Start a Packet Capture');
-    expect(dialog.message).toMatch(/on interface 0 of the web VM/);
-    expect(dialog.message).toMatch(/web_0_\d{4}-\d\d-\d\d_\d{4}\.pcap/);
-
-    await confirmDialog();
+    expect(dialogs()).toEqual([]);
     expect(button().classes()).toContain('is-loading');
     started.resolve({ status: 204 });
     await flushPromises();
@@ -202,7 +223,7 @@ describe('capturing all interfaces', () => {
     });
   });
 
-  it('starts several with plural wording and sums up how they went', async () => {
+  it('starts several and sums up how they went', async () => {
     const page = await openPage([web], {
       [capturesUrl('web')]: async () => ({ data: { captures: [] } }),
     });
@@ -211,12 +232,7 @@ describe('capturing all interfaces', () => {
 
     await rowAction(page, 'web', 'captureAll').trigger('click');
     await flushPromises();
-    const dialog = lastDialog();
-    expect(dialog.title).toBe('Start Packet Captures');
-    expect(dialog.message).toMatch(/packet captures on interfaces 0 and 2/);
-    expect(dialog.confirmText).toBe('Start All');
-
-    await confirmDialog();
+    expect(dialogs()).toEqual([]);
     expect(axios.post.mock.calls.map(([, body]) => body.interface)).toEqual([
       0, 2,
     ]);
@@ -250,19 +266,14 @@ describe('capturing all interfaces', () => {
 describe('stopping all captures', () => {
   const capturing = { ...web, captures: [{ interface: 0 }, { interface: 2 }] };
 
-  it('asks once, then stops every capture with a spinner', async () => {
+  it('stops every capture without asking, with a spinner', async () => {
     const page = await openPage([capturing]);
     const stop = Promise.withResolvers();
     axios.delete.mockReturnValue(stop.promise);
     const button = () => rowAction(page, 'web', 'stopCaptures');
 
     await button().trigger('click');
-    expect(dialogs()).toHaveLength(1);
-    const dialog = lastDialog();
-    expect(dialog.message).toMatch(/interfaces 0 and 2 of the web VM/);
-    expect(dialog.confirmText).toBe('Stop All');
-
-    await confirmDialog();
+    expect(dialogs()).toEqual([]);
     expect(button().classes()).toContain('is-loading');
     expect(axios.delete).toHaveBeenCalledWith(capturesUrl('web'));
     stop.resolve({});
@@ -275,7 +286,7 @@ describe('stopping all captures', () => {
     axios.delete.mockRejectedValue(new Error('boom'));
 
     await rowAction(page, 'web', 'stopCaptures').trigger('click');
-    await confirmDialog();
+    await flushPromises();
 
     expect(notify.error).toHaveBeenCalled();
     expect(rowAction(page, 'web', 'stopCaptures').classes()).not.toContain(

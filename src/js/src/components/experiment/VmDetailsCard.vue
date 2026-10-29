@@ -12,6 +12,14 @@
             <b-icon :icon="state.icon" size="is-small" />
             <span>{{ state.label }}</span>
           </b-tag>
+          <b-tag
+            v-if="os"
+            :class="['vm-os-tag', `is-os-${os.family}`]"
+            title="Operating system (os_type)">
+            <b-icon :icon="os.icon" size="is-small" />
+            <span class="is-sr-only">Operating system: </span>
+            <span>{{ os.label }}</span>
+          </b-tag>
           <b-tag v-if="vm.dnb" rounded type="is-dark">do not boot</b-tag>
         </div>
         <div class="vm-card-meta">
@@ -105,6 +113,8 @@
               :outlined="action.outlined"
               :icon-left="action.icon"
               :disabled="action.disabled"
+              :loading="pendingActions.includes(action.name)"
+              :aria-busy="pendingActions.includes(action.name)"
               expanded
               @click="$emit('action', action.name)">
               {{ action.label }}
@@ -149,6 +159,8 @@
                   size="is-small"
                   :icon-left="action.icon"
                   :disabled="action.disabled"
+                  :loading="pendingActions.includes(action.name)"
+                  :aria-busy="pendingActions.includes(action.name)"
                   expanded
                   @click="$emit('action', action.name)">
                   {{ action.label }}
@@ -331,6 +343,10 @@
                   </a>
                 </b-tooltip>
                 <span v-else class="vm-iface-name">{{ iface.network }}</span>
+                <span
+                  v-if="pendingActions.includes(vlanPendingKey(iface.index))"
+                  class="vm-pending-spinner"
+                  title="waiting for the server"></span>
                 <b-tag v-if="iface.vlan" type="is-info">
                   VLAN {{ iface.vlan }}
                 </b-tag>
@@ -485,6 +501,10 @@
                     type="is-success"
                     icon-left="play-circle"
                     aria-label="restore this snapshot"
+                    :loading="pendingActions.includes(restorePendingKey(snap))"
+                    :aria-busy="
+                      pendingActions.includes(restorePendingKey(snap))
+                    "
                     @click="$emit('restore-snapshot', snap)" />
                 </b-tooltip>
               </div>
@@ -550,12 +570,16 @@
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { plural, pluralWord } from '@/utils/plural.js';
   import { webSharkInstalled } from '@/utils/webshark.js';
+  import { osTypeInfo } from './osType.js';
   import {
     CAPTURE_ICON,
     POWER_ACTIONS,
     TOOL_ACTIONS,
+    restorePendingKey,
+    vlanPendingKey,
     vmActionState,
     vmActionStates,
+    vmButtonStates,
     vmInterfaces,
     vmStateInfo,
   } from './vmActions.js';
@@ -575,6 +599,8 @@
         diskLabel,
         NODE_ANNOTATIONS,
         CUSTOM_NODE_ANNOTATION,
+        restorePendingKey,
+        vlanPendingKey,
       };
     },
     props: {
@@ -587,6 +613,8 @@
       capturePending: { type: Array, default: () => [] },
       // whether starting or stopping all of the VM's captures is under way
       captureAllPending: { type: Boolean, default: false },
+      // the actions running in the background for the VM, whose buttons spin
+      pendingActions: { type: Array, default: () => [] },
       // the images backing the VM's disk, nearest first (see utils/diskChain.js);
       // null while unknown
       backingChain: { type: Array, default: null },
@@ -635,6 +663,10 @@
       state() {
         return vmStateInfo(this.vm);
       },
+      // the guest operating system's tag, or null when the VM gives none
+      os() {
+        return osTypeInfo(this.vm.os_type);
+      },
       stateClass() {
         return this.state.type ? `has-state-${this.state.type}` : '';
       },
@@ -651,7 +683,7 @@
       // the actions the role may take; the ones the VM's state rules out stay
       // visible, disabled, with the reason in their tooltip
       power() {
-        return vmActionStates(POWER_ACTIONS, this.vm, this.opts).filter(
+        return vmButtonStates(POWER_ACTIONS, this.vm, this.opts).filter(
           (a) => a.permitted,
         );
       },
@@ -925,6 +957,43 @@
     margin: 0 !important;
     width: 1em;
     height: 1em;
+  }
+
+  /* the OS tag, a squarer box than the state pill; each family's text is at
+     least 5.7:1 on its color */
+  .vm-os-tag {
+    font-weight: 600;
+    border-radius: 4px;
+  }
+
+  :deep(.vm-os-tag > span) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    line-height: 1;
+  }
+
+  .vm-os-tag .icon {
+    margin: 0 !important;
+    width: 1em;
+    height: 1em;
+  }
+
+  .vm-os-tag.is-os-linux {
+    background-color: #f2c94c;
+    color: #1a1a1a;
+  }
+  .vm-os-tag.is-os-windows {
+    background-color: #0067b8;
+    color: #fff;
+  }
+  .vm-os-tag.is-os-router {
+    background-color: #6f42c1;
+    color: #fff;
+  }
+  .vm-os-tag.is-os-other {
+    background-color: #dbdbdb;
+    color: #1a1a1a;
   }
 
   .vm-card-links {
@@ -1322,6 +1391,24 @@
   .vm-iface-name {
     font-weight: 600;
     overflow-wrap: anywhere;
+  }
+
+  /* beside an interface whose VLAN change is waiting on the server */
+  .vm-pending-spinner {
+    display: inline-block;
+    width: 0.85em;
+    height: 0.85em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: vm-pending-spin 0.6s linear infinite;
+  }
+
+  @keyframes vm-pending-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .vm-iface-ip,

@@ -1,5 +1,5 @@
 // What the running experiment page's header shows: its scenarios, its apps'
-// grid and states, and the labels its VM table filters by.
+// grid and states, and the labels and hosts its VM table filters by.
 
 // The apps phenix runs itself at each stage, which cannot be triggered.
 export const DEFAULT_APPS = Object.freeze([
@@ -82,6 +82,16 @@ export function labelOptions(listed, vms, picked = []) {
   return [...byId.values()].sort(
     (a, b) => compare(a.key, b.key) || compare(a.value, b.value),
   );
+}
+
+// The cluster hosts to filter by, once each and sorted: the server's for the
+// experiment, those running the rows shown (maybe newer), and those picked.
+export function hostOptions(listed, vms, picked = []) {
+  const hosts = new Set([...(listed ?? []), ...picked]);
+  for (const vm of vms ?? []) {
+    if (vm?.host && !vm.external) hosts.add(vm.host);
+  }
+  return [...hosts].sort(compare);
 }
 
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);

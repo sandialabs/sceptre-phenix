@@ -94,6 +94,10 @@ func TestSelectVMs(t *testing.T) {
 		{"a label's value must match", VMQuery{Labels: []VMLabel{{"role", "db"}}}, []string{}, 0},
 		{"a label with no key matches nothing", VMQuery{Labels: []VMLabel{{}}}, []string{}, 0},
 		{"notes are not labels", VMQuery{Labels: []VMLabel{{"__notes_1", "hi"}}}, []string{}, 0},
+		{"any of the hosts", VMQuery{Hosts: []string{"h2", "h1"}, SortCol: "name", SortAsc: true}, []string{"a", "b", "c"}, 3},
+		{"a host", VMQuery{Hosts: []string{"h1"}, SortCol: "name", SortAsc: true}, []string{"b", "c"}, 2},
+		{"hosts and labels both", VMQuery{Hosts: []string{"h1"}, Labels: []VMLabel{{"role", "web"}}}, []string{"c"}, 1},
+		{"no host matches a VM without one", VMQuery{Hosts: []string{""}, ShowDNB: true}, []string{}, 0},
 	}
 
 	for _, tc := range tests {
@@ -251,6 +255,104 @@ func TestSortByLabelsOrdersByCountThenName(t *testing.T) {
 	})
 }
 
+// Sorting by network compares each VM's VLAN IDs as numbers in interface
+// order, and by taps its tap names as text; VMs with none come last either way.
+func TestSortByInterfaces(t *testing.T) {
+	vms := []mm.VM{
+		{Name: "b", Networks: []string{"EXP (9)"}, Taps: []string{"mega_tap2"}},
+		{Name: "none", Networks: []string{"disconnected"}},
+		{Name: "a", Networks: []string{"EXP (9)"}, Taps: []string{"mega_tap2"}},
+		{Name: "ten", Networks: []string{"EXP (10)"}, Taps: []string{"mega_tap10"}},
+		{Name: "bare", Networks: []string{"50"}, Taps: []string{"mega_tap5"}},
+		{Name: "two", Networks: []string{"EXP (9)", "MGMT (100)"}, Taps: []string{"mega_tap1", "mega_tap3"}},
+		{Name: "Stopped", Networks: []string{"EXP"}},
+	}
+
+	tests := []struct {
+		col  string
+		asc  bool
+		want []string
+	}{
+		{"network", true, []string{"a", "b", "two", "ten", "bare", "none", "Stopped"}},
+		{"network", false, []string{"bare", "ten", "two", "a", "b", "none", "Stopped"}},
+		{"taps", true, []string{"two", "ten", "a", "b", "bare", "none", "Stopped"}},
+		{"taps", false, []string{"bare", "a", "b", "ten", "two", "none", "Stopped"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%s ascending %v", tc.col, tc.asc), func(t *testing.T) {
+			query := VMQuery{SortCol: tc.col, SortAsc: tc.asc}
+
+			page, _ := SelectVMs("exp", vms, nil, query, listRole())
+			if diff := cmp.Diff(tc.want, vmNames(page)); diff != "" {
+				t.Errorf("SelectVMs(exp, %+v) mismatch (-want +got):\n%s", query, diff)
+			}
+		})
+	}
+}
+
+// genInterfaceVMs draws VMs with distinct names and a few interfaces each,
+// some disconnected, on VLANs and taps that often repeat.
+func genInterfaceVMs() *rapid.Generator[[]mm.VM] {
+	vm := rapid.Custom(func(t *rapid.T) mm.VM {
+		n := rapid.IntRange(0, 3).Draw(t, "interfaces")
+		vm := mm.VM{Name: rapid.StringMatching(`[a-cA-C]{1,3}`).Draw(t, "name")}
+
+		for range n {
+			network := rapid.SampledFrom([]string{"EXP (9)", "EXP (10)", "MGMT (100)", "50", "disconnected"}).Draw(t, "network")
+			vm.Networks = append(vm.Networks, network)
+			vm.Taps = append(vm.Taps, rapid.SampledFrom([]string{"mega_tap1", "mega_tap10", "mega_tap2"}).Draw(t, "tap"))
+		}
+
+		return vm
+	})
+
+	return rapid.SliceOfDistinct(vm, func(vm mm.VM) string { return vm.Name })
+}
+
+// Either way, the network and taps sorts keep every VM, put those with no VLAN
+// ID or tap last, order the rest by their sequence, and tie by name A to Z.
+func TestSortByInterfacesOrdersBySequenceThenName(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		vms := genInterfaceVMs().Draw(t, "vms")
+		col := rapid.SampledFrom([]string{"network", "taps"}).Draw(t, "col")
+		asc := rapid.Bool().Draw(t, "asc")
+
+		sorted, _ := SelectVMs("exp", vms, nil, VMQuery{SortCol: col, SortAsc: asc}, listRole())
+
+		if diff := cmp.Diff(vmNames(vms), vmNames(sorted), cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+			t.Fatalf("sorting by %s changed the VMs (-before +after):\n%s", col, diff)
+		}
+
+		key := func(vm mm.VM) string { return fmt.Sprint(vm.Taps) }
+		order := func(a, b mm.VM) int { return slices.Compare(a.Taps, b.Taps) }
+		empty := func(vm mm.VM) bool { return len(vm.Taps) == 0 }
+
+		if col == "network" {
+			key = func(vm mm.VM) string { return fmt.Sprint(vlanIDs(vm)) }
+			order = func(a, b mm.VM) int { return slices.Compare(vlanIDs(a), vlanIDs(b)) }
+			empty = func(vm mm.VM) bool { return len(vlanIDs(vm)) == 0 }
+		}
+
+		for i := 1; i < len(sorted); i++ {
+			prev, next := sorted[i-1], sorted[i]
+
+			switch {
+			case empty(prev) && !empty(next):
+				t.Fatalf("VM %q with no %s before %q (%s)", prev.Name, col, next.Name, key(next))
+			case empty(prev) == empty(next) && order(prev, next) == 0:
+				if strings.ToLower(prev.Name) > strings.ToLower(next.Name) {
+					t.Fatalf("VMs %q and %q have %s %s but are not in name order", prev.Name, next.Name, col, key(prev))
+				}
+			case !empty(prev) && !empty(next) && (order(prev, next) < 0) != asc:
+				t.Fatalf("VM %q (%s) before %q (%s) with ascending %v", prev.Name, key(prev), next.Name, key(next), asc)
+			}
+		}
+	})
+}
+
 func TestVMLabels(t *testing.T) {
 	vms := []mm.VM{
 		{Name: "b", Tags: map[string]string{"role": "web", "tier": "db", "__notes_1": "hi"}},
@@ -307,6 +409,86 @@ func TestVMLabelsEachSelectsAVM(t *testing.T) {
 	})
 }
 
+func TestVMHosts(t *testing.T) {
+	vms := []mm.VM{
+		{Name: "b", Host: "h2"},
+		{Name: "a", Host: "h1"},
+		{Name: "c", Host: "h2"},
+		{Name: "off"},
+		{Name: "dnb", DoNotBoot: true, Host: "h3"},
+		{Name: "hidden", Host: "h4"},
+	}
+
+	tests := []struct {
+		name    string
+		showDNB bool
+		want    []string
+	}{
+		{"booting VMs only", false, []string{"h1", "h2"}},
+		{"do-not-boot VMs too", true, []string{"h1", "h2", "h3"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := VMHosts("exp", vms, tc.showDNB, listRole())
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("VMHosts(exp, showDNB %v) mismatch (-want +got):\n%s", tc.showDNB, diff)
+			}
+		})
+	}
+}
+
+func TestCountRunning(t *testing.T) {
+	vms := []mm.VM{
+		{Name: "a", Running: true},
+		{Name: "b"},
+		{Name: "c", Running: true},
+		{Name: "dnb", DoNotBoot: true, Running: true},
+		{Name: "hidden", Running: true},
+	}
+
+	if got := CountRunning("exp", vms, false, listRole()); got != 2 {
+		t.Errorf("CountRunning(exp, showDNB false) = %d, want 2", got)
+	}
+
+	if got := CountRunning("exp", vms, true, listRole()); got != 3 {
+		t.Errorf("CountRunning(exp, showDNB true) = %d, want 3", got)
+	}
+}
+
+// Every host VMHosts offers selects the VMs it runs, and filtering by all of
+// them lists every VM running on a host.
+func TestVMHostsEachSelectsItsVMs(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		vms := genVMListVMs().Draw(t, "vms")
+		for i := range vms {
+			if rapid.Bool().Draw(t, "hostless") {
+				vms[i].Host = ""
+			}
+		}
+
+		hosts := VMHosts("exp", vms, true, listRole())
+		all, _ := SelectVMs("exp", vms, nil, VMQuery{ShowDNB: true}, listRole())
+
+		for _, host := range hosts {
+			page, _ := SelectVMs("exp", vms, nil, VMQuery{Hosts: []string{host}, ShowDNB: true}, listRole())
+			want := slices.DeleteFunc(slices.Clone(all), func(vm mm.VM) bool { return vm.Host != host })
+
+			if len(page) == 0 || !cmp.Equal(vmNames(want), vmNames(page)) {
+				t.Fatalf("host %q selects %v, want %v", host, vmNames(page), vmNames(want))
+			}
+		}
+
+		withHost := slices.DeleteFunc(slices.Clone(all), func(vm mm.VM) bool { return vm.Host == "" })
+		_, total := SelectVMs("exp", vms, nil, VMQuery{Hosts: hosts, ShowDNB: true}, listRole())
+		if len(hosts) > 0 && total != len(withHost) {
+			t.Fatalf("filtering by every host lists %d VMs, want %d", total, len(withHost))
+		}
+	})
+}
+
 func TestParseVMLabel(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -350,7 +532,7 @@ func TestSelectVMsPagesPartitionTheList(t *testing.T) {
 		vms := genVMListVMs().Draw(t, "vms")
 		query := VMQuery{
 			ShowDNB: rapid.Bool().Draw(t, "showDNB"),
-			SortCol: rapid.SampledFrom([]string{"", "name", "host", "uptime", "labels"}).Draw(t, "sortCol"),
+			SortCol: rapid.SampledFrom([]string{"", "name", "host", "uptime", "labels", "network", "taps"}).Draw(t, "sortCol"),
 			SortAsc: rapid.Bool().Draw(t, "sortAsc"),
 			Size:    rapid.IntRange(1, 5).Draw(t, "size"),
 		}

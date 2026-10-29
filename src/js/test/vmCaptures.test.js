@@ -14,15 +14,10 @@ vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 import {
   minuteStamp,
   timestampParts,
+  uniqueStamp,
 } from '@/components/experiment/timestamp.js';
 import { useVmCaptures } from '@/components/experiment/useVmCaptures.js';
-import {
-  confirmDialog,
-  dialogs,
-  mountComponent,
-  textOf,
-  toasts,
-} from './helpers/mount.js';
+import { dialogs, mountComponent, toasts } from './helpers/mount.js';
 
 const url = 'experiments/demo/vms/web/captures';
 
@@ -32,32 +27,22 @@ const web = {
   captures: [],
 };
 
-// the composable as the demo experiment's page uses it, with spies for the
-// page's waiting overlay and its fan-out of requests
+// the composable as the demo experiment's page uses it, with a spy for the
+// page's fan-out of requests
 async function useCaptures() {
-  const setWaiting = vi.fn();
   const fanOut = vi.fn(async (names, _, send) =>
     Promise.allSettled(names.map(send)),
   );
   let captures;
   const Host = defineComponent({
     setup() {
-      captures = useVmCaptures({ setWaiting, fanOut });
+      captures = useVmCaptures({ fanOut });
       return () => h('div');
     },
   });
   await mountComponent(Host, { route: '/experiment/demo' });
-  return { captures, setWaiting, fanOut };
+  return { captures, fanOut };
 }
-
-// the newest dialog's title and confirm button text
-const lastDialog = () => {
-  const dialog = dialogs().at(-1);
-  return {
-    title: textOf(dialog.querySelector('.modal-card-title')),
-    confirmText: textOf(dialog.querySelector('footer .button:last-child')),
-  };
-};
 
 // answers the captures GET with these running captures, once released
 function listCaptures(running) {
@@ -78,12 +63,14 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('one interface', () => {
-  it('marks the interface pending until the server answers', async () => {
+  it('marks the interface pending until the server answers, asking nothing', async () => {
     const { captures } = await useCaptures();
     const release = listCaptures([]);
+    const start = Promise.withResolvers();
+    axios.post.mockReturnValue(start.promise);
 
     captures.handlePcap(web, 2);
-    // a second press while waiting asks nothing more
+    // a second press while waiting sends nothing more
     captures.handlePcap(web, 2);
     expect(captures.capturePending.value).toEqual({ 'web/2': true });
     expect(captures.pendingCaptureIfaces('web')).toEqual([2]);
@@ -92,93 +79,99 @@ describe('one interface', () => {
 
     release();
     await flushPromises();
+    // still waiting on the start, which no dialog asked about
+    expect(dialogs()).toEqual([]);
+    expect(captures.pendingCaptureIfaces('web')).toEqual([2]);
+
+    start.resolve({});
+    await flushPromises();
     expect(captures.capturePending.value).toEqual({});
-    expect(lastDialog()).toEqual({
-      title: 'Start a Packet Capture',
-      confirmText: 'Start',
-    });
   });
 
-  it('starts a capture named for the VM, interface and minute', async () => {
-    const { captures, setWaiting } = await useCaptures();
+  it('starts a capture named for the VM, interface and second', async () => {
+    const { captures } = await useCaptures();
     listCaptures([])();
     axios.post.mockResolvedValue({});
 
-    captures.handlePcap(web, 2);
-    await flushPromises();
-    await confirmDialog();
+    await captures.handlePcap(web, 2);
 
+    expect(dialogs()).toEqual([]);
     expect(axios.post).toHaveBeenCalledWith(url, {
       interface: 2,
-      filename: 'web_2_2024-01-02_0304.pcap',
+      filename: expect.stringMatching(
+        /^web_2_2024-01-02_030405_[0-9a-f]{4}\.pcap$/,
+      ),
     });
-    expect(setWaiting.mock.calls).toEqual([[true], [false]]);
   });
 
-  it('reports a failed start and clears the waiting overlay', async () => {
-    const { captures, setWaiting } = await useCaptures();
+  // minimega truncates an existing capture file, so a restart in the same
+  // second must not reuse the name of the capture it replaces
+  it('gives a restarted capture a new file in the same second', async () => {
+    let n = 0;
+    const random = vi
+      .spyOn(crypto, 'getRandomValues')
+      .mockImplementation((a) => a.fill(++n));
+    try {
+      const { captures } = await useCaptures();
+      listCaptures([])();
+      axios.post.mockResolvedValue({});
+
+      await captures.handlePcap(web, 2);
+      await captures.handlePcap(web, 2);
+
+      const [first, second] = axios.post.mock.calls.map(
+        ([, body]) => body.filename,
+      );
+      expect(first).toBe('web_2_2024-01-02_030405_0001.pcap');
+      expect(second).toBe('web_2_2024-01-02_030405_0002.pcap');
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it('reports a failed start and clears the pending mark', async () => {
+    const { captures } = await useCaptures();
     listCaptures([])();
     const err = new Error('no');
     axios.post.mockRejectedValue(err);
 
-    captures.handlePcap(web, 0);
-    await flushPromises();
-    await confirmDialog();
+    await captures.handlePcap(web, 0);
 
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(setWaiting.mock.calls).toEqual([[true], [false]]);
+    expect(captures.capturePending.value).toEqual({});
   });
 
   it('refuses a disconnected interface', async () => {
     const { captures } = await useCaptures();
     listCaptures([])();
 
-    captures.handlePcap(web, 1);
-    await flushPromises();
+    await captures.handlePcap(web, 1);
 
     expect(dialogs()).toEqual([]);
+    expect(axios.post).not.toHaveBeenCalled();
     expect(notify.show).toHaveBeenCalledWith(
       'Cannot capture traffic on a disconnected interface.',
     );
     expect(toasts()).toEqual([]);
   });
 
-  it("stops the interface's capture", async () => {
-    const { captures } = await useCaptures();
-    listCaptures([{ interface: 0 }])();
-    axios.delete.mockResolvedValue({});
-
-    captures.handlePcap(web, 0);
-    await flushPromises();
-    expect(lastDialog()).toEqual({
-      title: 'Stop Packet Capture',
-      confirmText: 'Stop',
-    });
-    await confirmDialog();
-
-    expect(axios.delete).toHaveBeenCalledWith(url, { params: { iface: 0 } });
-  });
-
   it.each([
-    ['stops every capture', 'last', {}],
-    ["stops only the interface's capture", 'first', { iface: 0 }],
+    ['the only capture', [{ interface: 0 }]],
+    ['one of several captures', [{ interface: 0 }, { interface: 2 }]],
   ])(
-    'with several captures running, %s from the %s button',
-    async (_, which, params) => {
+    "stops only the interface's capture when it is %s, asking nothing",
+    async (_, running) => {
       const { captures } = await useCaptures();
-      listCaptures([{ interface: 0 }, { interface: 2 }])();
+      listCaptures(running)();
       axios.delete.mockResolvedValue({});
 
-      captures.handlePcap(web, 0);
-      await flushPromises();
-      expect(lastDialog()).toEqual({
-        title: 'Stop Packet Capture',
-        confirmText: 'Stop All Captures',
-      });
-      dialogs().at(-1).querySelector(`footer .button:${which}-child`).click();
-      await flushPromises();
+      await captures.handlePcap(web, 0);
 
-      expect(axios.delete).toHaveBeenCalledWith(url, { params });
+      expect(dialogs()).toEqual([]);
+      expect(axios.delete.mock.calls).toEqual([
+        [url, { params: { iface: 0 } }],
+      ]);
+      expect(captures.capturePending.value).toEqual({});
     },
   );
 
@@ -187,41 +180,36 @@ describe('one interface', () => {
     const err = new Error('no');
     axios.get.mockRejectedValue(err);
 
-    captures.handlePcap(web, 0);
-    await flushPromises();
+    await captures.handlePcap(web, 0);
 
     expect(notify.error).toHaveBeenCalledWith(err);
     expect(captures.capturePending.value).toEqual({});
-    expect(dialogs()).toEqual([]);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(axios.delete).not.toHaveBeenCalled();
   });
 });
 
 describe('every interface', () => {
-  it('starts captures on the connected interfaces not yet captured', async () => {
+  it('starts captures on the connected interfaces not yet captured, asking nothing', async () => {
     const { captures, fanOut } = await useCaptures();
     listCaptures([{ interface: 2 }])();
     axios.post.mockResolvedValue({});
-
-    await captures.captureAllInterfaces(web);
-    expect(captures.captureAllPending.value).toEqual({});
-    expect(lastDialog()).toEqual({
-      title: 'Start a Packet Capture',
-      confirmText: 'Start',
-    });
-
     const done = Promise.withResolvers();
     fanOut.mockImplementation(async (names, _, send) => {
       await Promise.allSettled(names.map(send));
       await done.promise;
     });
-    await confirmDialog();
+
+    const started = captures.captureAllInterfaces(web);
+    await flushPromises();
+    expect(dialogs()).toEqual([]);
     expect(captures.captureAllPending.value).toEqual({ web: true });
-    // a second press while starting asks nothing more
+    // a second press while starting sends nothing more
     await captures.captureAllInterfaces(web);
     expect(axios.get).toHaveBeenCalledTimes(1);
 
     done.resolve();
-    await flushPromises();
+    await started;
     expect(captures.captureAllPending.value).toEqual({});
     expect(fanOut).toHaveBeenCalledWith(
       ['interface 0'],
@@ -231,48 +219,47 @@ describe('every interface', () => {
     );
     expect(axios.post).toHaveBeenCalledWith(url, {
       interface: 0,
-      filename: 'web_0_2024-01-02_0304.pcap',
+      filename: expect.stringMatching(
+        /^web_0_2024-01-02_030405_[0-9a-f]{4}\.pcap$/,
+      ),
     });
   });
 
   it('says so when every connected interface is captured', async () => {
-    const { captures } = await useCaptures();
+    const { captures, fanOut } = await useCaptures();
     listCaptures([{ interface: 0 }, { interface: 2 }])();
 
     await captures.captureAllInterfaces(web);
 
     expect(dialogs()).toEqual([]);
+    expect(fanOut).not.toHaveBeenCalled();
+    expect(captures.captureAllPending.value).toEqual({});
     expect(toasts()).toEqual([
       {
-        text: 'Every connected interface of the web VM is already being captured.',
+        text: 'phēnix already captures every connected interface of the web VM.',
         type: 'is-info',
       },
     ]);
   });
 
-  it('stops every capture, pending until the server answers', async () => {
+  it('stops every capture, pending until the server answers, asking nothing', async () => {
     const { captures } = await useCaptures();
     const vm = { ...web, captures: [{ interface: 0 }, { interface: 2 }] };
     const request = Promise.withResolvers();
     axios.delete.mockReturnValue(request.promise);
 
-    captures.stopAllCaptures(vm);
+    const stopped = captures.stopAllCaptures(vm);
     await flushPromises();
-    expect(lastDialog()).toEqual({
-      title: 'Stop Packet Captures',
-      confirmText: 'Stop All',
-    });
-    await confirmDialog();
+    expect(dialogs()).toEqual([]);
     expect(captures.captureAllPending.value).toEqual({ web: true });
     expect(axios.delete).toHaveBeenCalledWith(url);
 
-    // a second press while stopping opens no dialog
-    captures.stopAllCaptures(vm);
-    await flushPromises();
-    expect(dialogs()).toEqual([]);
+    // a second press while stopping sends nothing more
+    await captures.stopAllCaptures(vm);
+    expect(axios.delete).toHaveBeenCalledTimes(1);
 
     request.reject(new Error('no'));
-    await flushPromises();
+    await stopped;
     expect(notify.error).toHaveBeenCalled();
     expect(captures.captureAllPending.value).toEqual({});
   });
@@ -304,6 +291,8 @@ describe('timestamps', () => {
             expect(part).toMatch(/^\d\d$/);
           }
           expect(minuteStamp()).toMatch(/^\d{4}-\d\d-\d\d_\d{4}$/);
+          const second = `${t.year}-${t.month}-${t.day}_${t.hours}${t.minutes}${t.seconds}`;
+          expect(uniqueStamp()).toMatch(new RegExp(`^${second}_[0-9a-f]{4}$`));
         },
       ),
     );

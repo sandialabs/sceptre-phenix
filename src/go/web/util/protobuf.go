@@ -254,6 +254,7 @@ func vmToProtobuf(exp string, vm mm.VM) *proto.VM {
 		Ram:             uint32(vm.RAM),  //nolint:gosec // G115 VM sizes fit in a uint32
 		Disk:            vm.Disk,
 		InjectPartition: uint32(vm.InjectPartition), //nolint:gosec // G115 partition numbers are small
+		OsType:          vm.OSType,
 		Uptime:          vm.Uptime,
 		Networks:        vm.Networks,
 		Taps:            vm.Taps,

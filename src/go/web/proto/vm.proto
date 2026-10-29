@@ -33,6 +33,8 @@ message VM {
   // response to a caller who may get the VM, carry them, not VM lists or
   // broadcasts
   google.protobuf.Struct annotations = 25;
+  // the guest operating system its topology node gives (hardware.os_type)
+  string os_type = 26 [json_name="os_type"];
 }
 
 message VMList {
@@ -48,6 +50,12 @@ message VMList {
   // every distinct label on the VMs the role may list, unfiltered and unpaged,
   // ordered by key then value; only VM list reads fill it
   repeated VMLabel labels = 6;
+  // every distinct cluster host running the VMs the role may list, unfiltered
+  // and unpaged, sorted; only VM list reads fill it
+  repeated string hosts = 7;
+  // how many of the VMs the role may list are running, unfiltered and
+  // unpaged; only VM list reads fill it
+  uint32 running = 8;
 }
 
 // VMLabel is one key=value label a VM carries.
