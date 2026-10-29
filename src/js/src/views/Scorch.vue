@@ -119,7 +119,8 @@
           <b-tooltip
             v-if="scorchControlAllowed(props.row)"
             :label="scorchControlLabel(props.row)"
-            type="is-dark">
+            type="is-dark"
+            position="is-left">
             <button
               class="button is-small is-white"
               :class="{ 'is-loading': props.row.scorch.pending }"
@@ -132,7 +133,8 @@
           <b-tooltip
             v-if="roleAllowed('experiments', 'get', props.row.name)"
             label="Go to SCORCH pipelines"
-            type="is-dark">
+            type="is-dark"
+            position="is-left">
             <router-link
               class="button is-small is-white"
               aria-label="Go to SCORCH pipelines"

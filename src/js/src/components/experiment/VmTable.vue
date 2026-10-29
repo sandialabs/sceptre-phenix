@@ -295,12 +295,7 @@
       v-slot="props">
       <b-tooltip label="View/Edit Labels" type="is-dark">
         <div @click="$emit('edit-labels', props.row)" class="is-clickable">
-          <font-awesome-layers full-width>
-            <font-awesome-icon icon="tag" />
-            <font-awesome-layers-text
-              counter
-              :value="tagCount(props.row.tags)" />
-          </font-awesome-layers>
+          <VmLabelCount :tags="props.row.tags" />
         </div>
       </b-tooltip>
     </b-table-column>
@@ -328,7 +323,7 @@
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { isInterfaceCapturing } from '@/utils/captures.js';
   import { roleAllowed } from '@/utils/rbac.js';
-  import { tagCount } from '@/utils/tagCount';
+  import VmLabelCount from './VmLabelCount.vue';
   import VmRowActions from './VmRowActions.vue';
   import { ROW_ACTIONS, actionPermitted, vmStateType } from './vmActions.js';
   import {
@@ -343,12 +338,11 @@
   // page, sort, select, or act on a VM.
   export default {
     name: 'VmTable',
-    components: { VmRowActions },
+    components: { VmLabelCount, VmRowActions },
     mixins: [formattingMixin],
     setup() {
       return {
         roleAllowed,
-        tagCount,
         consoleLinkAlt,
         screenshotAlt,
         vmScreenshot,
@@ -458,10 +452,5 @@
     to {
       transform: rotate(360deg);
     }
-  }
-
-  .fa-layers-counter {
-    /* counter on tag icon */
-    transform: scale(0.7) translateX(50%) translateY(-50%);
   }
 </style>

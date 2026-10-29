@@ -30,6 +30,7 @@ import {
   tableRows,
   textOf,
   toasts,
+  tooltipPositions,
 } from './helpers/mount.js';
 import { denyOnly } from './helpers/permissions.js';
 
@@ -115,6 +116,15 @@ describe('a created experiment', () => {
     expect(axios.get).not.toHaveBeenCalled();
     expect(tableRows(wrapper)).toEqual([]);
   });
+});
+
+// Scorch Status holds the last buttons before the window's right edge
+it('opens the Scorch Status tooltips to the left, inside the window', async () => {
+  const wrapper = await page([row()]);
+  expect(tooltipPositions(tableRows(wrapper)[0]['Scorch Status'])).toEqual([
+    'is-left',
+    'is-left',
+  ]);
 });
 
 describe('the run button', () => {

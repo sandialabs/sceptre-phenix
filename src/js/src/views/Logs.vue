@@ -1,6 +1,10 @@
 <template>
   <div class="content">
-    <b-field grouped position="is-right" style="margin: 12px 0px">
+    <b-field
+      class="logs-toolbar"
+      grouped
+      position="is-right"
+      style="margin: 12px 0px">
       <b-field expanded style="display: flex; align-items: center">
         <stat-strip label="Logs shown" :stats="shownStats" />
       </b-field>
@@ -130,7 +134,7 @@
             :key="file.name"
             :label="file.tooltip"
             type="is-dark"
-            position="is-bottom"
+            position="is-left"
             multilined>
             <a
               v-if="file.href"
@@ -594,8 +598,10 @@
     line-height: 1.2;
   }
 
+  /* breaking anywhere keeps a long token from widening the message column */
   .truncate {
     overflow: hidden;
+    overflow-wrap: anywhere;
     text-overflow: ellipsis;
     padding-top: 2px;
     padding-bottom: 2px;
@@ -621,6 +627,17 @@
     align-items: center;
     font-family: monospace;
     font-size: 0.85em;
+  }
+
+  /* fixed columns never shrink, so every row lines up with the header */
+  .level-column,
+  .ts-column,
+  .type-column {
+    flex: none;
+  }
+
+  .msg-column {
+    min-width: 0;
   }
 
   /* the gap keeps the badge off the timestamp */
@@ -660,13 +677,20 @@
     color: #fff;
   }
 
+  /* the filters drop below the count when both do not fit on one row */
+  .logs-toolbar > :deep(.field-body > .field.is-grouped) {
+    flex-wrap: wrap;
+    row-gap: 0.75rem;
+  }
+
   .log-downloads {
     display: flex;
     gap: 0.5em;
   }
 
   .ts-column {
-    width: 200px;
+    width: 26ch;
+    white-space: nowrap;
   }
 
   .type-column {

@@ -17,6 +17,7 @@ import { pageStatus } from '@/utils/pageLoader.js';
 import Settings from '@/views/Settings.vue';
 import { never } from './helpers/async.js';
 import { buttons, mountPage, textOf, toasts } from './helpers/mount.js';
+import { componentDeclarations, contrast } from './helpers/css.js';
 
 const settings = () => ({
   password_settings: {
@@ -304,5 +305,34 @@ describe('the Settings page', () => {
     expect(on(page)).toEqual(['Require a lowercase letter']);
     expect(control(page, 'settings-idle-timeout').element.value).toBe('60');
     expect(buttons(page)).toEqual(UNCHANGED);
+  });
+
+  // a compact dark box before each label, not a wide white one after it
+  it('draws each number as a small dark box ahead of its label', async () => {
+    const page = await open();
+    for (const id of Object.keys(NUMBERS)) {
+      const field = control(page, id).element.closest('.setting-number');
+      expect([...field.children].map((el) => el.tagName)).toEqual([
+        'DIV',
+        'SPAN',
+      ]);
+      expect(field.lastElementChild.id).toBe(id);
+    }
+
+    const style = (selector) =>
+      componentDeclarations('src/views/Settings.vue', selector);
+    expect(style('.setting-number')).toMatchObject({ display: 'flex' });
+    expect(style('.setting-number :deep(.b-numberinput)')).toMatchObject({
+      flex: 'none',
+      width: '5.5em',
+    });
+    const input = style('.setting-number :deep(.input)');
+    const formBackground = '#484848';
+    expect(
+      contrast(input.color, input['background-color']),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(input['border-color'], formBackground),
+    ).toBeGreaterThanOrEqual(3);
   });
 });

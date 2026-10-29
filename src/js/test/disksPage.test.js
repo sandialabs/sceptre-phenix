@@ -401,6 +401,24 @@ describe('disk actions', () => {
   );
 });
 
+describe("a row's action tooltips", () => {
+  // the Actions column is the table's last, so a tooltip centered on its
+  // right-hand buttons would run off the window
+  it('open to the left of their buttons', async () => {
+    const wrapper = await page([disk('/phenix/images/a.qc2', 'a.qc2')]);
+    const tooltips = tableRows(wrapper)[0].Actions.findAllComponents({
+      name: 'BTooltip',
+    });
+    expect(
+      tooltips.map((t) => t.find('button').attributes('aria-label')),
+    ).toEqual(['Snapshot', 'Clone', 'Download', 'Rename', 'Delete']);
+    for (const tooltip of tooltips) {
+      await tooltip.find('.tooltip-trigger').trigger('mouseenter');
+      expect(tooltip.classes()).toContain('is-left');
+    }
+  });
+});
+
 describe('disks in folders and outside the files directory', () => {
   const snap = disk('/phenix/images/win/snap.qc2', 'win/snap.qc2', {
     backingImages: [

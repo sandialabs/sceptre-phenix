@@ -1,5 +1,6 @@
 // The Users page's Create token button, offered for the users the role may
-// create a token for (rbac.test.js tests that rule), and its totals.
+// create a token for (rbac.test.js tests that rule), its totals and its
+// Actions tooltips.
 import fc from 'fast-check';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,8 +16,13 @@ vi.mock('@/utils/websocket.js', modules.websocket);
 import { clearPageCache } from '@/utils/pageCache.js';
 import { userTotals } from '@/utils/pageTotals.js';
 import Users from '@/views/Users.vue';
-import { mountPage, tableRows, textOf } from './helpers/mount.js';
-import { allowOnly } from './helpers/permissions.js';
+import {
+  mountPage,
+  tableRows,
+  textOf,
+  tooltipPositions,
+} from './helpers/mount.js';
+import { allowOnly, denyOnly } from './helpers/permissions.js';
 
 const user = (username) => ({
   username,
@@ -95,4 +101,19 @@ describe('the Users page totals', () => {
       }),
     );
   });
+});
+
+// the column ends at the window's right edge
+it('opens the Actions tooltips to the left, inside the window', async () => {
+  rbac.allowed = denyOnly(['roles', 'list']);
+  const page = await mountPage(Users, { route: '/users' });
+  const rows = tableRows(page);
+  expect(rows).toHaveLength(2);
+  for (const cells of rows) {
+    expect(tooltipPositions(cells.Actions)).toEqual([
+      'is-left',
+      'is-left',
+      'is-left',
+    ]);
+  }
 });

@@ -5,6 +5,7 @@
       :key="action.name"
       :label="action.reason || action.description || action.label"
       type="is-dark"
+      position="is-left"
       multilined>
       <button
         :class="[

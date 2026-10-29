@@ -48,6 +48,7 @@ import {
   tableRows,
   textOf,
   toasts,
+  tooltipPositions,
 } from './helpers/mount.js';
 
 // two list rows sharing a name
@@ -608,6 +609,12 @@ describe('the config list', () => {
       expect(notify.error).toHaveBeenCalledWith(err);
       expect(openModal(wrapper)).toBeNull();
     });
+  });
+
+  // the column ends at the window's right edge
+  it('opens the Actions tooltips to the left, inside the window', async () => {
+    const positions = tooltipPositions(row(await list(), 'Topology').Actions);
+    expect(positions).toEqual(['is-left', 'is-left', 'is-left']);
   });
 
   it('finds the configs whose name holds the search as plain text, in any case', async () => {

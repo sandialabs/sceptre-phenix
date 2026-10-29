@@ -22,6 +22,7 @@ vi.mock('@/utils/pageLoader.js', capturing);
 import Logs from '@/views/Logs.vue';
 import { wsMsg } from './helpers/fixtures.js';
 import { mountPage, textOf, tooltipButtons } from './helpers/mount.js';
+import { componentDeclarations } from './helpers/css.js';
 import { allowOnly, denyAll } from './helpers/permissions.js';
 
 const LOGS = [
@@ -251,6 +252,37 @@ it('shows each level as a short colored badge', async () => {
   ]);
 });
 
+// happy-dom lays nothing out, so this reads the rules that keep the columns
+// fixed: a long unbroken message must not squeeze them or wrap a timestamp
+it('keeps every row aligned with the header, however long its message', async () => {
+  const style = (selector) =>
+    componentDeclarations('src/views/Logs.vue', selector);
+  for (const column of ['.level-column', '.ts-column', '.type-column']) {
+    expect(style(column)).toMatchObject({ flex: 'none' });
+    expect(style(column).width).toBeDefined();
+  }
+  expect(style('.ts-column')).toMatchObject({ 'white-space': 'nowrap' });
+  expect(style('.msg-column')).toMatchObject({ 'min-width': '0' });
+  expect(style('.truncate')).toMatchObject({ 'overflow-wrap': 'anywhere' });
+
+  const page = await open();
+  loaderSpy.options.apply([
+    { id: 0, level: 'INFO', type: 'HTTP', msg: 'x'.repeat(2000) },
+    { id: 1, level: 'INFO', type: 'HTTP', msg: 'short' },
+  ]);
+  await flushPromises();
+  const rows = page.findAll('.columns.row');
+  expect(rows).toHaveLength(3);
+  for (const row of rows) {
+    expect(row.findAll('.log-column').map((c) => c.classes()[1])).toEqual([
+      'level-column',
+      'ts-column',
+      'type-column',
+      expect.any(String),
+    ]);
+  }
+});
+
 it('counts the lines shown in its box, and of how many when filters hide some', async () => {
   const page = await logsPage();
 
@@ -402,6 +434,21 @@ it('does not ask again for log files without logs get', async () => {
   await vi.advanceTimersByTimeAsync(60 * 1000);
   ws.reconnect.forEach((f) => f());
   expect(axios.get.mock.calls.length).toBe(calls);
+});
+
+// the buttons end the toolbar at the window's right edge
+it('opens the download tooltips to the left, inside the window', async () => {
+  axios.get.mockResolvedValue({ data: { files: MISSING } });
+  const page = await open();
+  await flushPromises();
+
+  const tips = page
+    .find('.log-downloads')
+    .findAllComponents({ name: 'BTooltip' });
+  expect(tips.map((tip) => tip.props('position'))).toEqual([
+    'is-left',
+    'is-left',
+  ]);
 });
 
 it('spins the download buttons until it knows which files there are', async () => {

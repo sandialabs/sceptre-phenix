@@ -370,11 +370,13 @@
 
       <b-table-column label="Actions" centered v-slot="props">
         <div class="row-actions" @click.stop>
+          <!-- the last column: a tooltip above a button would leave the window -->
           <b-tooltip
             v-for="action in rowActions"
             :key="action.name"
             :label="actionTooltip(action, props.row)"
             type="is-dark"
+            position="is-left"
             multilined>
             <button
               class="button is-light is-small action"

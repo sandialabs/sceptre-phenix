@@ -13,9 +13,6 @@ const Icon = {
   render: (ctx) => h('i', { 'data-icon': [ctx.icon].flat().at(-1) }),
 };
 
-// the Font Awesome layers main.js registers, drawn as their contents
-const Layers = { render: (ctx) => h('span', ctx.$slots.default?.()) };
-
 // Mounts `component` at `route`; `data` is set over its data(). The wrapper
 // also has the `router`.
 export async function mountComponent(
@@ -36,8 +33,6 @@ export async function mountComponent(
       plugins: [installBuefy, router],
       components: {
         'font-awesome-icon': Icon,
-        'font-awesome-layers': Layers,
-        'font-awesome-layers-text': Layers,
       },
       stubs,
     },
@@ -99,6 +94,12 @@ export const tableRows = (wrapper) =>
 // a Buefy table's header cell for the column with this label; click to sort
 export const tableHeader = (wrapper, label) =>
   wrapper.findAll('thead th').find((th) => textOf(th) === label);
+
+// where each Buefy tooltip in `node` opens, such as 'is-left'
+export const tooltipPositions = (node) =>
+  node
+    .findAllComponents({ name: 'BTooltip' })
+    .map((tooltip) => tooltip.props('position'));
 
 // Each Buefy tooltip's text with its control's aria-label and disabled state,
 // read from the component because append-to-body moves the text.

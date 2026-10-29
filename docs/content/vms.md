@@ -192,8 +192,9 @@ checked labels change.
 and is greyed out when no VM has a label.
 
 Click the `Labels` heading to sort the VMs by how many labels they have, the
-number the column shows, which counts their notes too. VMs with as many labels
-are listed by name from A to Z whichever way the column is sorted.
+number beside each VM's tag icon, which counts their notes too; a VM with none
+shows no number. VMs with as many labels are listed by name from A to Z
+whichever way the column is sorted.
 
 From the API, `GET /api/v1/experiments/{name}` takes a repeated
 `label=key=value` query parameter with the same meaning, and both it and

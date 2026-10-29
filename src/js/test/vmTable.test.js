@@ -15,11 +15,13 @@ import VmTable from '@/components/experiment/VmTable.vue';
 import { useTable } from '@/utils/useTable.js';
 import { vm } from './helpers/fixtures.js';
 import { denyOnly } from './helpers/permissions.js';
+import { componentDeclarations, contrast } from './helpers/css.js';
 import {
   mountComponent,
   tableHeader,
   tableRows,
   textOf,
+  tooltipPositions,
 } from './helpers/mount.js';
 
 beforeEach(() => resetMocks());
@@ -122,6 +124,42 @@ describe('the rows', () => {
     expect(link.attributes('href')).toBe(
       '/api/v1/experiments/demo/vms/web/vnc?token=t',
     );
+  });
+
+  it('counts labels and notes beside the tag icon, and shows no count for none', async () => {
+    const vms = [
+      vm({ name: 'bare', tags: {} }),
+      vm({ name: 'untagged' }),
+      vm({ name: 'hidden', tags: { __internal: 'x' } }),
+      vm({ name: 'tagged', tags: { role: 'web', __notes_1: 'n', __x: '' } }),
+    ];
+    const wrapper = await render(vms);
+    const count = (name) => {
+      const cell = rowOf(wrapper, name).Labels;
+      expect(cell.find('[data-icon="tag"]').exists()).toBe(true);
+      const badge = cell.find('.vm-label-count-badge');
+      return badge.exists() ? textOf(badge) : null;
+    };
+    expect(vms.map((v) => count(v.name))).toEqual([null, null, null, '2']);
+
+    // a neutral gray, not red, with readable text
+    const badge = componentDeclarations(
+      'src/components/experiment/VmLabelCount.vue',
+      '.vm-label-count-badge',
+    );
+    expect(badge['background-color']).toBe('#686868');
+    expect(
+      contrast(badge.color, badge['background-color']),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // the column ends at the window's right edge
+  it('opens the Actions tooltips to the left, inside the window', async () => {
+    const positions = tooltipPositions(
+      rowOf(await render([web]), 'web').Actions,
+    );
+    expect(positions.length).toBeGreaterThan(2);
+    expect(new Set(positions)).toEqual(new Set(['is-left']));
   });
 
   it('hides the Actions column from roles that can take none of its actions', async () => {

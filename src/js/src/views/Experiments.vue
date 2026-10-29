@@ -311,6 +311,7 @@
                 :key="action.name"
                 :label="action.reason || `${action.name} experiment`"
                 type="is-dark"
+                position="is-left"
                 multilined>
                 <button
                   type="button"
@@ -341,6 +342,7 @@
                   'delete experiment'
                 "
                 type="is-light"
+                position="is-left"
                 multilined>
                 <button
                   :aria-label="`Delete experiment ${props.row.name}`"
@@ -356,6 +358,7 @@
                 :delay="500"
                 label="view state of health"
                 type="is-light"
+                position="is-left"
                 multilined>
                 <router-link
                   :aria-label="`View state of health for experiment ${props.row.name}`"
@@ -372,6 +375,7 @@
                 :delay="500"
                 label="view SCORCH runs"
                 type="is-light"
+                position="is-left"
                 multilined>
                 <router-link
                   :aria-label="`View SCORCH runs for experiment ${props.row.name}`"

@@ -301,6 +301,7 @@
           :delay="500"
           label="edit config file"
           type="is-light"
+          position="is-left"
           multilined>
           <button
             v-if="configAllowed('update', props.row)"
@@ -317,6 +318,7 @@
           :delay="500"
           label="download config"
           type="is-light"
+          position="is-left"
           multilined>
           <button
             v-if="configAllowed('get', props.row)"
@@ -332,6 +334,7 @@
           :delay="500"
           label="delete config"
           type="is-light"
+          position="is-left"
           multilined>
           <button
             v-if="configAllowed('delete', props.row)"

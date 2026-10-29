@@ -270,7 +270,10 @@
 
       <b-table-column label="Actions" centered v-slot="props">
         <div class="actions">
-          <b-tooltip :label="runLabel(props.row)" type="is-dark">
+          <b-tooltip
+            :label="runLabel(props.row)"
+            type="is-dark"
+            position="is-left">
             <button
               class="button is-light is-small"
               :class="{ 'is-loading': props.row.pending }"
@@ -280,7 +283,10 @@
               <b-icon icon="play" />
             </button>
           </b-tooltip>
-          <b-tooltip label="View topology graph" type="is-dark">
+          <b-tooltip
+            label="View topology graph"
+            type="is-dark"
+            position="is-left">
             <router-link
               class="button is-light is-small"
               aria-label="View topology graph"

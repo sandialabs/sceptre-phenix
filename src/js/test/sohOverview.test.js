@@ -40,6 +40,7 @@ import {
   tableRows,
   textOf,
   tooltipButtons,
+  tooltipPositions,
 } from './helpers/mount.js';
 import { denyOnly } from './helpers/permissions.js';
 
@@ -555,6 +556,15 @@ describe('SohOverview view', () => {
       summary({ name: 'down', vms: { ...summary().vms, notrunning: 1 } }),
     ]);
     expect(names(wrapper)).toEqual(['down', 'healthy', 'none']);
+  });
+
+  // the Actions column ends at the window's right edge
+  it('opens the Actions tooltips to the left, inside the window', async () => {
+    const wrapper = await page([summary()]);
+    expect(tooltipPositions(tableRows(wrapper)[0].Actions)).toEqual([
+      'is-left',
+      'is-left',
+    ]);
   });
 
   it('runs SOH only when it can and says why not', async () => {

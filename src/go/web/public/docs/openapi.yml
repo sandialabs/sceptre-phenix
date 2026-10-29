@@ -11085,6 +11085,7 @@ components:
       title: SoH Network
       type: object
       description: An experiment's network graph with its state of health.
+      required: [started, soh_initialized, soh_running, nodes, edges, hosts, host_flows]
       properties:
         started:
           title: Started
@@ -11136,6 +11137,7 @@ components:
       title: SoH Node
       type: object
       description: A graph node with its state of health.
+      required: [id, label, image, tags, status, soh]
       properties:
         id:
           title: ID
@@ -11176,6 +11178,7 @@ components:
       title: SoH Host State
       type: object
       description: One VM's latest soh results, each check's kind in its own list.
+      required: [hostname, cpuLoad, errors]
       properties:
         hostname:
           title: Hostname
@@ -11252,6 +11255,7 @@ components:
       title: SoH State
       type: object
       description: One soh check's result.
+      required: [metadata, timestamp, success, error]
       properties:
         metadata:
           title: Metadata

@@ -42,6 +42,7 @@ import {
   textOf,
   toasts,
   tooltipButtons,
+  tooltipPositions,
 } from './helpers/mount.js';
 import { allowAll, denyAll, denyOnly } from './helpers/permissions.js';
 
@@ -94,6 +95,14 @@ describe('StoppedExperiment', () => {
 
     await publish(message('exp1'));
     expect(host()).toBe('b');
+  });
+
+  // Persistence is the last column, at the window's right edge
+  it('opens the Persistence tooltip to the left, inside the window', async () => {
+    const page = await stopped([{ name: 'vm1', snapshot: true }]);
+    expect(tooltipPositions(tableRows(page)[0].Persistence)).toEqual([
+      'is-left',
+    ]);
   });
 
   it('ignores publishes before the experiment has loaded', async () => {
