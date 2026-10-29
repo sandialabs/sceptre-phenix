@@ -28,6 +28,7 @@ vi.mock('@/components/MiniTerminal.vue', modules.stub);
 import ScorchRun from '@/components/scorch/ScorchRun.vue';
 import { forgetServer, setWsDown } from '@/utils/freshness.js';
 import { clearPageCache } from '@/utils/pageCache.js';
+import { runOutcome, scorchRunTotals } from '@/utils/pageTotals.js';
 import ScorchRuns from '@/views/ScorchRuns.vue';
 import { never } from './helpers/async.js';
 import { wsMsg } from './helpers/fixtures.js';
@@ -579,5 +580,96 @@ describe("a component's streamed output", () => {
     socket.onclose(event);
     await nextTick();
     expect(output(wrapper)).toBe(want);
+  });
+});
+
+describe('the pipeline totals', () => {
+  // the strip's stats, as "label: value"
+  const totalsText = (wrapper) =>
+    wrapper
+      .findAll('[aria-label="Pipeline totals"] .stat')
+      .map((s) => `${textOf(s.find('dt'))}: ${textOf(s.find('dd'))}`);
+
+  const done = (status) => ({ name: 'done', stage: '', status });
+
+  it('counts the pipelines by how their last run went, as the websocket reports it', async () => {
+    const wrapper = await open(
+      [
+        {},
+        { pipeline: [...nodes('success', 'failure'), done('success')] },
+        { pipeline: [...nodes('success'), done('success')] },
+        { pipeline: nodes('success', 'unknown') },
+      ],
+      0,
+    );
+    expect(totalsText(wrapper)).toEqual([
+      'Pipelines: 4',
+      'Running: 1',
+      'Succeeded: 1',
+      'Failed: 1',
+    ]);
+
+    report('success', 0);
+    for (const handler of ws.handlers) {
+      handler(
+        wsMsg('apps/scorch', 'exp1/3/0', 'pipeline-update', {
+          pipeline: [...nodes('success'), done('success')],
+        }),
+      );
+    }
+    await nextTick();
+    expect(totalsText(wrapper)).toEqual([
+      'Pipelines: 4',
+      'Running: 0',
+      'Succeeded: 2',
+      'Failed: 1',
+    ]);
+  });
+
+  it('shows the counts as unknown before the runs load', async () => {
+    axios.get.mockImplementation(never);
+    const wrapper = await mountPage(ScorchRuns, { route: '/scorch/exp1' });
+    expect(totalsText(wrapper)).toEqual([
+      'Pipelines: …',
+      'Running: …',
+      'Succeeded: …',
+      'Failed: …',
+    ]);
+  });
+
+  it('puts each pipeline in at most one outcome', () => {
+    const status = fc.constantFrom(
+      'unknown',
+      'running',
+      'success',
+      'failure',
+      'background',
+    );
+    const run = fc.record({
+      running: fc.boolean(),
+      nodes: fc.array(
+        fc.record({
+          name: fc.constantFrom('c0', 'c1', 'done'),
+          status,
+        }),
+        { maxLength: 6 },
+      ),
+    });
+    fc.assert(
+      fc.property(fc.array(run, { maxLength: 12 }), (runs) => {
+        const got = scorchRunTotals(runs);
+        expect(got.pipelines).toBe(runs.length);
+        expect(got.running).toBe(runs.filter((r) => r.running).length);
+        expect(got.running + got.succeeded + got.failed).toBeLessThanOrEqual(
+          got.pipelines,
+        );
+        for (const r of runs) {
+          const outcome = runOutcome(r);
+          if (r.running) expect(outcome).toBe('running');
+          else if (r.nodes.some((n) => n.status === 'failure'))
+            expect(outcome).toBe('failed');
+        }
+      }),
+    );
   });
 });

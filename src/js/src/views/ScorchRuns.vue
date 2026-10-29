@@ -1,5 +1,9 @@
 <template>
   <div class="content">
+    <stat-strip
+      class="runs-totals"
+      label="Pipeline totals"
+      :stats="totalsShown" />
     <div class="runs-header">
       <div class="buttons">
         <router-link class="button is-dark" :to="{ name: 'scorch' }">
@@ -170,7 +174,9 @@
   import { scorchRunsKey } from '@/utils/pageData.js';
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
+  import { scorchRunTotals } from '@/utils/pageTotals.js';
 
+  import StatStrip from '@/components/StatStrip.vue';
   import ScorchKey from '@/components/scorch/ScorchKey.vue';
   import ScorchRun from '@/components/scorch/ScorchRun.vue';
   import Terminal from '@/components/MiniTerminal.vue';
@@ -208,6 +214,7 @@
     },
 
     components: {
+      StatStrip,
       'scorch-key': ScorchKey,
       'scorch-run': ScorchRun,
       'vue-terminal': Terminal,
@@ -258,6 +265,22 @@
     computed: {
       expName() {
         return this.$route.params.id;
+      },
+
+      // the experiment's pipelines, by how their last run went
+      totalsShown() {
+        const totals = scorchRunTotals(this.runs);
+        return [
+          ['pipelines', 'Pipelines', totals.pipelines],
+          ['running', 'Running', totals.running, 'success'],
+          ['succeeded', 'Succeeded', totals.succeeded],
+          ['failed', 'Failed', totals.failed],
+        ].map(([key, label, n, tone]) => ({
+          key,
+          label,
+          value: this.runs ? n : '…',
+          tone,
+        }));
       },
 
       canStartAll() {
@@ -780,6 +803,10 @@
 </script>
 
 <style scoped>
+  .runs-totals {
+    margin-bottom: 0.75rem;
+  }
+
   /* navigation left, experiment name centered, page actions right */
   .runs-header {
     display: grid;

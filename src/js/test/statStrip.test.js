@@ -1,5 +1,4 @@
-// The counts strip the Experiments, Disks and Logs pages show beside their
-// search boxes.
+// The counts strip the list pages show beside their search boxes.
 import { describe, expect, it } from 'vitest';
 
 import StatStrip from '@/components/StatStrip.vue';

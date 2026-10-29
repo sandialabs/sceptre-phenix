@@ -1,6 +1,9 @@
 <template>
   <div class="content">
     <b-field position="is-right" grouped>
+      <b-field expanded>
+        <stat-strip label="SCORCH totals" :stats="totalsShown" />
+      </b-field>
       <b-field :addons="false" class="has-addons">
         <b-autocomplete
           placeholder="Find an Experiment"
@@ -221,6 +224,8 @@
   import { useTable } from '@/utils/useTable.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { createLiveRows } from '@/utils/liveRows.js';
+  import { scorchTotals } from '@/utils/pageTotals.js';
+  import StatStrip from '@/components/StatStrip.vue';
 
   // how long a SCORCH button spins waiting for the server to report that the
   // run started or stopped, in case that update never arrives
@@ -232,6 +237,7 @@
       return { table, roleAllowed };
     },
     components: {
+      StatStrip,
       'vue-terminal': Terminal,
     },
 
@@ -265,6 +271,22 @@
     },
 
     computed: {
+      // every listed experiment's pipelines, whatever the search
+      totalsShown() {
+        const totals = scorchTotals(this.experiments);
+        const value = (n) =>
+          stillLoading(this.loaded, this.experiments) ? '…' : n;
+        return [
+          ['experiments', 'Experiments', totals.experiments],
+          ['pipelines', 'Pipelines', totals.pipelines],
+          ['running', 'Running pipelines', totals.running, 'success'],
+        ].map(([key, label, n, tone]) => ({
+          key,
+          label,
+          value: value(n),
+          tone,
+        }));
+      },
       emptyText() {
         if (stillLoading(this.loaded, this.experiments)) {
           return loadingText('experiments');

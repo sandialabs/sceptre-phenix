@@ -783,19 +783,23 @@ describe('the disk totals', () => {
       .findAll('[aria-label="Disk totals"] .stat')
       .map((s) => `${textOf(s.find('dt'))}: ${textOf(s.find('dd'))}`);
 
-  it('counts every disk, the ones in use, and their virtual sizes, whatever the search', async () => {
+  it('counts every disk, the ones in use, and their sizes, whatever the search', async () => {
     const wrapper = await page([
       disk('/phenix/images/a.qc2', 'a.qc2', {
         inUse: true,
+        size: '512.0 MiB',
         virtualSize: '2.0 GiB',
       }),
-      disk('/phenix/images/b.qc2', 'b.qc2', { virtualSize: '1G' }),
+      disk('/phenix/images/b.qc2', 'b.qc2', {
+        size: '1.5G',
+        virtualSize: '1G',
+      }),
       disk('/phenix/images/c.iso', 'c.iso', { virtualSize: '' }),
     ]);
     const want = [
       'Disks: 3',
       'In use: 1',
-      'Total virtual size: 3.0 GiB (1 unknown)',
+      'Total size on disk: 2.0 GiB (1 unknown)',
     ];
     expect(totalsText(wrapper)).toEqual(want);
 
@@ -807,7 +811,12 @@ describe('the disk totals', () => {
   it('counts one disk, and shows nothing before the list loads', async () => {
     const one = await page([disk('/phenix/images/a.qc2', 'a.qc2')]);
     expect(totalsText(one)[0]).toBe('Disks: 1');
-    expect(totalsText(one)[2]).toBe('Total virtual size: 0 B (1 unknown)');
+    expect(totalsText(one)[2]).toBe('Total size on disk: 0 B (1 unknown)');
+
+    const known = await page([
+      disk('/phenix/images/a.qc2', 'a.qc2', { size: '3 K', virtualSize: '1G' }),
+    ]);
+    expect(totalsText(known)[2]).toBe('Total size on disk: 3.0 KiB');
 
     const loading = await mountPage(Disks, {
       route: '/disks/',
@@ -818,32 +827,36 @@ describe('the disk totals', () => {
 
   it('adds up any list of disks', () => {
     const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    const sizeArb = fc.option(
+      fc.record({ tenths: fc.nat(20000), power: fc.nat(units.length - 1) }),
+    );
     const entry = fc.record({
       inUse: fc.boolean(),
-      size: fc.option(
-        fc.record({ tenths: fc.nat(20000), power: fc.nat(units.length - 1) }),
-      ),
+      onDisk: sizeArb,
     });
+    const text = (size) =>
+      size ? `${(size.tenths / 10).toFixed(1)} ${units[size.power]}` : '';
+    const sum = (sizes) =>
+      sizes.reduce(
+        (total, { tenths, power }) => total + (tenths / 10) * 1024 ** power,
+        0,
+      );
     fc.assert(
       fc.property(fc.array(entry, { maxLength: 30 }), (entries) => {
-        const disks = entries.map(({ inUse, size }, i) =>
+        const disks = entries.map(({ inUse, onDisk }, i) =>
           disk(`/phenix/images/${i}.qc2`, `${i}.qc2`, {
             inUse,
-            virtualSize: size
-              ? `${(size.tenths / 10).toFixed(1)} ${units[size.power]}`
-              : '',
+            size: text(onDisk),
           }),
         );
-        const known = entries.filter((e) => e.size);
-        const bytes = known.reduce(
-          (sum, { size }) => sum + (size.tenths / 10) * 1024 ** size.power,
-          0,
-        );
+        const knownOnDisk = entries
+          .filter((e) => e.onDisk)
+          .map((e) => e.onDisk);
         const got = diskTotals(disks);
         expect(got.disks).toBe(entries.length);
         expect(got.inUse).toBe(entries.filter((e) => e.inUse).length);
-        expect(got.unknownSizes).toBe(entries.length - known.length);
-        expect(got.virtualBytes).toBeCloseTo(bytes, 0);
+        expect(got.unknownDiskSizes).toBe(entries.length - knownOnDisk.length);
+        expect(got.sizeBytes).toBeCloseTo(sum(knownOnDisk), 0);
       }),
     );
   });

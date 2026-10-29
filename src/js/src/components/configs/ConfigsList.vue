@@ -92,8 +92,10 @@
     </div>
   </b-modal>
   <!--header-->
-  <div class="level">
-    <div class="level-left" />
+  <div class="level configs-toolbar">
+    <div class="level-left">
+      <stat-strip label="Config totals" :stats="totalsShown" />
+    </div>
     <div class="level-right">
       <div class="level-item">
         <b-field position="is-right" grouped>
@@ -359,13 +361,19 @@
     prefetchConfig,
   } from '@/utils/configCache.js';
   import { loadAce } from '@/utils/loadAce.js';
-  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import StatStrip from '@/components/StatStrip.vue';
+  import { CONFIG_KINDS, configTotals } from '@/utils/pageTotals.js';
+  import {
+    createPageLoader,
+    loadingText,
+    stillLoading,
+  } from '@/utils/pageLoader.js';
   import { pageFetchers } from '@/utils/pageData.js';
   import { useTable } from '@/utils/useTable.js';
   import TimeWithAge from '@/components/TimeWithAge.vue';
 
   export default {
-    components: { TimeWithAge },
+    components: { StatStrip, TimeWithAge },
     emits: ['edit', 'create'],
     props: {
       // The config ("Kind/name") whose edit button takes focus on the first
@@ -394,14 +402,7 @@
         //filters
         filterKind: null,
         searchQuery: '',
-        filterOptions: [
-          'Topology',
-          'Scenario',
-          'Experiment',
-          'Image',
-          'User',
-          'Role',
-        ],
+        filterOptions: CONFIG_KINDS,
         selectedConfigs: [],
 
         //uploader modal
@@ -458,6 +459,21 @@
       this.loader.stop();
     },
     computed: {
+      // every config, then each kind's, whatever the search and kind filter
+      totalsShown() {
+        if (stillLoading(this.loaded, this.configs)) {
+          return [{ key: 'configs', label: 'Configs', value: '…' }];
+        }
+        const totals = configTotals(this.configs);
+        return [
+          { key: 'configs', label: 'Configs', value: totals.configs },
+          ...totals.kinds.map(({ kind, count }) => ({
+            key: `kind-${String(kind).toLowerCase()}`,
+            label: kind,
+            value: count,
+          })),
+        ];
+      },
       emptyText() {
         if (!this.loaded) return loadingText('configs');
         if (this.configs.length === 0) return 'No configs found';
@@ -742,6 +758,16 @@
   .config-name:focus-visible {
     outline: 2px solid currentColor;
     outline-offset: 2px;
+  }
+
+  /* the controls drop below the counts when both do not fit on one row */
+  .configs-toolbar {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .configs-toolbar .level-right {
+    margin-left: auto;
   }
 
   .x-modal-dark :deep(textarea) {

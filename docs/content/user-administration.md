@@ -136,6 +136,11 @@ The table has a `Find a user` search box above it, which matches user names,
 first and last names, and role names, and it can be sorted by `User`,
 `First Name`, `Last Name`, or `Role`.
 
+Level with the search box on the left, the page counts the users it lists,
+with how many have no role yet (for example `Users 12 (1 without a role)`), and
+the `Unique roles` among them: `Global Admin` held by three users counts once.
+The counts cover every user listed, whatever the search.
+
 ![Users table of five example users with first and last names, roles, and change password, delete and edit actions, beside a Find a user box.](images/users_search.png){: width=800 .center}
 
 ### Roles

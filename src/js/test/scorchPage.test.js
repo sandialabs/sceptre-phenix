@@ -1,6 +1,7 @@
 // The SCORCH page: rows for experiments created while open, the run button
 // that waits for the server's report, and rows kept current by the websocket.
 import { flushPromises } from '@vue/test-utils';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, rbac, resetMocks, ws } = await vi.hoisted(
@@ -17,6 +18,7 @@ vi.mock('@/components/MiniTerminal.vue', modules.stub);
 
 import { nextTick } from 'vue';
 
+import { scorchTotals } from '@/utils/pageTotals.js';
 import Scorch from '@/views/Scorch.vue';
 import { never } from './helpers/async.js';
 import { httpError, wsMsg } from './helpers/fixtures.js';
@@ -290,5 +292,70 @@ describe('the experiment button', () => {
       ['experiments/exp1/stop'],
       ['experiments/exp1/stop', null, { params: { force: true } }],
     ]);
+  });
+});
+
+describe('the SCORCH totals', () => {
+  // the strip's stats, as "label: value"
+  const totalsText = (wrapper) =>
+    wrapper
+      .findAll('[aria-label="SCORCH totals"] .stat')
+      .map((s) => `${textOf(s.find('dt'))}: ${textOf(s.find('dd'))}`);
+
+  it('counts the experiments, their pipelines and those running, whatever the search', async () => {
+    const wrapper = await mountPage(Scorch, {
+      route: '/scorch',
+      data: {
+        loaded: true,
+        experiments: [
+          row({ running: true, run: 1 }),
+          row({ runs: ['only'] }, { name: 'exp2' }),
+          row({ runs: [] }, { name: 'exp3' }),
+        ],
+      },
+    });
+    const want = ['Experiments: 3', 'Pipelines: 3', 'Running pipelines: 1'];
+    expect(totalsText(wrapper)).toEqual(want);
+    expect(
+      wrapper.find('[aria-label="SCORCH totals"] .stat-running').classes(),
+    ).toContain('is-success');
+
+    await wrapper
+      .find('input[placeholder="Find an Experiment"]')
+      .setValue('exp2');
+    expect(tableRows(wrapper)).toHaveLength(1);
+    expect(totalsText(wrapper)).toEqual(want);
+  });
+
+  it('shows the counts as unknown before the list loads', async () => {
+    const wrapper = await page();
+    expect(totalsText(wrapper)).toEqual([
+      'Experiments: …',
+      'Pipelines: …',
+      'Running pipelines: …',
+    ]);
+  });
+
+  it('adds up any list of experiments', () => {
+    const exp = fc.record({
+      runs: fc.nat(5),
+      running: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(fc.array(exp, { maxLength: 20 }), (exps) => {
+        const got = scorchTotals(
+          exps.map(({ runs, running }, i) =>
+            row(
+              { running, runs: Array.from({ length: runs }, () => 'r') },
+              { name: `e${i}` },
+            ),
+          ),
+        );
+        expect(got.experiments).toBe(exps.length);
+        expect(got.pipelines).toBe(exps.reduce((n, e) => n + e.runs, 0));
+        expect(got.running).toBe(exps.filter((e) => e.running).length);
+        expect(got.running).toBeLessThanOrEqual(got.experiments);
+      }),
+    );
   });
 });

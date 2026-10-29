@@ -25,13 +25,13 @@ counts:
 
 * how many disk images the list holds;
 * how many of them are [in use](#in-use), as the `In Use` column marks them;
-* the sum of their virtual sizes, in the same units as the size columns (for
-  example `Total virtual size 1.2 TiB`). An image whose virtual size phēnix
-  could not read is left out of the sum and counted as `unknown`.
+* the sum of their sizes on disk, in the same units as the size columns (for
+  example `Total size on disk 310.4 GiB`).
 
-The totals cover every image in the list, not just the ones the search shows.
-A backing image is a row of its own, so it and each image built on it add their
-own virtual size.
+An image whose size phēnix could not read is left out of that sum and counted
+as `unknown` beside it. The totals cover every image in the list, not just the
+ones the search shows. A backing image is a row of its own, so it and each
+image built on it add their own sizes.
 
 ## The Disks Table
 

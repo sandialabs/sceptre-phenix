@@ -34,6 +34,7 @@ import {
   configKey,
   findConfig,
 } from '@/utils/configCache.js';
+import { CONFIG_KINDS, configTotals } from '@/utils/pageTotals.js';
 import Configs from '@/views/Configs.vue';
 import { deferredGets, never } from './helpers/async.js';
 import { allowAll, denyOnly } from './helpers/permissions.js';
@@ -662,6 +663,85 @@ describe('the config list', () => {
       'Download',
       'Delete',
     ]);
+  });
+});
+
+describe('the config totals', () => {
+  // the strip's stats, as "label: value"
+  const totalsText = (wrapper) =>
+    wrapper
+      .findAll('[aria-label="Config totals"] .stat')
+      .map((s) => `${textOf(s.find('dt'))}: ${textOf(s.find('dd'))}`);
+
+  const cfg = (kind, name) => ({ kind, metadata: { name } });
+
+  it('counts every config and each kind present, in the kind filter order, whatever the filters', async () => {
+    const configs = [
+      cfg('Role', 'admin'),
+      cfg('Topology', 'a'),
+      cfg('Experiment', 'x'),
+      cfg('Topology', 'b'),
+      cfg('Role', 'viewer'),
+      cfg('User', 'alice'),
+    ];
+    const wrapper = await mountPage(ConfigsList, {
+      route: '/configs/',
+      data: { configs, loaded: true },
+    });
+    const want = [
+      'Configs: 6',
+      'Topology: 2',
+      'Experiment: 1',
+      'User: 1',
+      'Role: 2',
+    ];
+    expect(totalsText(wrapper)).toEqual(want);
+
+    await wrapper.find('input[placeholder="Find a Config"]').setValue('a');
+    await wrapper
+      .find('select[aria-label="Filter configs by kind"]')
+      .setValue('Role');
+    expect(tableRows(wrapper)).toHaveLength(1);
+    expect(totalsText(wrapper)).toEqual(want);
+  });
+
+  it('shows only the total, unknown, before the list loads', async () => {
+    const wrapper = await mountPage(ConfigsList, {
+      route: '/configs/',
+      data: { configs: [], loaded: false },
+    });
+    expect(totalsText(wrapper)).toEqual(['Configs: …']);
+  });
+
+  it('lists a kind it does not know after the known ones', () => {
+    const got = configTotals([
+      cfg('Zebra', 'z'),
+      cfg('Alpha', 'a'),
+      cfg('Image', 'i'),
+    ]);
+    expect(got.kinds.map((k) => k.kind)).toEqual(['Image', 'Alpha', 'Zebra']);
+  });
+
+  it('counts each kind once, in a stable order, adding up to the total', () => {
+    const kind = fc.constantFrom(...CONFIG_KINDS, 'Custom', 'Other');
+    fc.assert(
+      fc.property(fc.array(kind, { maxLength: 40 }), (kinds) => {
+        const configs = kinds.map((k, i) => cfg(k, `c${i}`));
+        const got = configTotals(configs);
+        expect(got.configs).toBe(configs.length);
+        expect(got.kinds.reduce((sum, k) => sum + k.count, 0)).toBe(
+          configs.length,
+        );
+        expect(new Set(got.kinds.map((k) => k.kind)).size).toBe(
+          got.kinds.length,
+        );
+        for (const { kind: k, count } of got.kinds) {
+          expect(count).toBe(kinds.filter((x) => x === k).length);
+        }
+        // the order does not depend on the order of the list
+        expect(configTotals([...configs].reverse()).kinds).toEqual(got.kinds);
+      }),
+    );
   });
 });
 

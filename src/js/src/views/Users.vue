@@ -201,6 +201,9 @@
     </b-modal>
     <!-- BODY -->
     <b-field grouped position="is-right">
+      <b-field expanded>
+        <stat-strip label="User totals" :stats="totalsShown" />
+      </b-field>
       <div
         v-if="paginationNeeded"
         class="control is-flex is-align-items-center">
@@ -363,8 +366,14 @@
   import { useTable } from '@/utils/useTable.js';
   import { roleAllowed, userTokenAllowed } from '@/utils/rbac.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif';
-  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import {
+    createPageLoader,
+    loadingText,
+    stillLoading,
+  } from '@/utils/pageLoader.js';
   import { pageFetchers } from '@/utils/pageData.js';
+  import { userTotals } from '@/utils/pageTotals.js';
+  import StatStrip from '@/components/StatStrip.vue';
 
   // Resource names are typed space-separated and sent as a list.
   function splitResourceNames(names) {
@@ -372,6 +381,7 @@
   }
 
   export default {
+    components: { StatStrip },
     setup() {
       return { ...useTable({ name: 'users' }), roleAllowed, userTokenAllowed };
     },
@@ -394,6 +404,23 @@
       this.getPasswordRequirements();
     },
     computed: {
+      // every user and the roles they hold, whatever the search
+      totalsShown() {
+        const totals = userTotals(this.users);
+        const value = (n) => (stillLoading(this.loaded, this.users) ? '…' : n);
+        return [
+          {
+            key: 'users',
+            label: 'Users',
+            value: value(totals.users),
+            detail:
+              totals.unassigned && this.loaded
+                ? `(${totals.unassigned} without a role)`
+                : '',
+          },
+          { key: 'roles', label: 'Roles', value: value(totals.roles) },
+        ];
+      },
       filteredUsers() {
         const text = this.searchText.trim().toLowerCase();
         if (!text) {

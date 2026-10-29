@@ -186,6 +186,12 @@ Every page's search box looks and works the same way: it sits at the right
 above its table, has a magnifier on its left, and shows its clear button only
 once there is something to clear.
 
+The Experiments, Configs, Users, Disks, Logs and SCORCH pages count what they
+list in a strip at the left, level with the search box. The counts cover the
+whole list, not just the rows the search shows. On the Experiments, Configs and
+Disks pages, when the window is too narrow for both, the search box and its
+buttons move below the counts.
+
 On an experiment's page, each tab keeps its own search while you look at
 another, and the VMs and VNC tabs share one. The address bar names the open tab
 and its search, for example `/experiment/demo?tab=files&q=log`, so reloading the

@@ -725,6 +725,12 @@ available configuration files. It is possible to filter in two ways:
 
 Clicking on the `X` next to the `Find a Config` field will reset both filters.
 
+At the top left, level with the filters, the page counts the configs:
+`Configs` and the total, then one count for each kind that has any, in the
+order the kind filter lists them (`Topology`, `Scenario`, `Experiment`,
+`Image`, `User`, `Role`). The counts cover every config, whatever the filters
+and the table's page.
+
 The table can also be sorted by `Name`, `Kind`, or `Last Updated` by clicking
 the column heading. `Last Updated` shows when the config last changed, followed
 by how long ago that was, for example `(3 hours ago)`.
