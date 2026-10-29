@@ -868,8 +868,9 @@
 </script>
 
 <style scoped>
+  /* the modal's 68rem width and 20px side margins center it */
   .vm-card {
-    width: min(68rem, calc(100vw - 2rem));
+    width: min(68rem, calc(100vw - 40px));
   }
 
   .vm-card-head {
@@ -877,6 +878,13 @@
     gap: 1rem;
     border-top: 6px solid #8a8a8a;
     background-color: #4f4f4f;
+  }
+
+  /* below 68rem plus two gutters the modal's close X sits on the head's corner */
+  @media screen and (max-width: 1191px) {
+    .vm-card-head {
+      padding-right: 3.5rem;
+    }
   }
 
   .vm-card-head.has-state-is-success {
@@ -1052,6 +1060,7 @@
 
   .vm-section-link {
     margin-left: auto;
+    color: #8fd8ea;
     font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: normal;
@@ -1130,6 +1139,12 @@
     width: 100%;
   }
 
+  /* Bulma's outlined red text is too faint on the card's gray */
+  .vm-power-buttons :deep(.button.is-danger.is-outlined:not(:hover)) {
+    border-color: #ff9eb0;
+    color: #ff9eb0;
+  }
+
   .vm-power-buttons :deep(.button) {
     font-weight: 600;
   }
@@ -1152,7 +1167,7 @@
     padding: 1.5rem 1rem;
     border-radius: 8px;
     border: 2px dashed #7a7a7a;
-    color: #bdbdbd;
+    color: #e0e0e0;
     text-align: center;
   }
 
@@ -1388,6 +1403,15 @@
     min-width: 0;
   }
 
+  /* the lighter cyan and blue keep 4.5:1 contrast on the card's grays */
+  a.vm-iface-name {
+    color: #8fd8ea;
+  }
+
+  .vm-iface .tag.is-info {
+    background-color: #1f6fb2;
+  }
+
   .vm-iface-name {
     font-weight: 600;
     overflow-wrap: anywhere;
@@ -1430,6 +1454,10 @@
 
   .vm-label .tag {
     margin-bottom: 0.35rem !important;
+  }
+
+  .vm-label .tag.is-primary {
+    background-color: #00796b;
   }
 
   .vm-lists {

@@ -38,6 +38,7 @@ import { CONFIG_KINDS, configTotals } from '@/utils/pageTotals.js';
 import Configs from '@/views/Configs.vue';
 import { deferredGets, never } from './helpers/async.js';
 import { allowAll, denyOnly } from './helpers/permissions.js';
+import { componentDeclarations } from './helpers/css.js';
 import {
   byLabel,
   buttons,
@@ -615,6 +616,19 @@ describe('the config list', () => {
   it('opens the Actions tooltips to the left, inside the window', async () => {
     const positions = tooltipPositions(row(await list(), 'Topology').Actions);
     expect(positions).toEqual(['is-left', 'is-left', 'is-left']);
+  });
+
+  // at 1024 px the three buttons wrapped onto two rows in every row
+  it('keeps the Actions buttons on one row', async () => {
+    expect(row(await list(), 'Scenario').Actions.classes()).toContain(
+      'config-actions',
+    );
+    expect(
+      componentDeclarations(
+        'src/components/configs/ConfigsList.vue',
+        ':deep(td.config-actions)',
+      ),
+    ).toEqual({ 'white-space': 'nowrap' });
   });
 
   it('finds the configs whose name holds the search as plain text, in any case', async () => {

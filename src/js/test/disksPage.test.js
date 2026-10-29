@@ -49,6 +49,7 @@ import {
   denyAll,
   denyOnly,
 } from './helpers/permissions.js';
+import { componentDeclarations } from './helpers/css.js';
 
 beforeEach(() => {
   setActivePinia(createPinia());
@@ -841,6 +842,36 @@ describe('the disk totals', () => {
       data: { disks: [], loaded: false },
     });
     expect(loading.find('[aria-label="Disk totals"]').exists()).toBe(false);
+  });
+
+  // at 1024 px the Paginate switch stayed beside the counts while the search
+  // dropped below them
+  it('sits left of the paging, search and upload controls, which wrap together as on the Configs page', async () => {
+    rbac.allowed = allowAll;
+    const wrapper = await page(
+      Array.from({ length: 11 }, (_, i) =>
+        disk(`/phenix/images/d${i}.qc2`, `d${i}.qc2`),
+      ),
+    );
+    const toolbar = wrapper.find('.level.disks-toolbar');
+    expect(
+      toolbar.find('.level-left [aria-label="Disk totals"]').exists(),
+    ).toBe(true);
+    const right = toolbar.find('.level-right');
+    expect([
+      right.find('.switch').exists(),
+      right.find('input[placeholder="Find a disk"]').exists(),
+      right.find('[aria-label="Upload a disk"]').exists(),
+    ]).toEqual([true, true, true]);
+
+    const style = (selector) =>
+      componentDeclarations('src/views/Disks.vue', selector);
+    expect(style('.level.disks-toolbar')).toMatchObject({
+      'flex-wrap': 'wrap',
+    });
+    expect(style('.disks-toolbar .level-right')).toEqual({
+      'margin-left': 'auto',
+    });
   });
 
   it('adds up any list of disks', () => {

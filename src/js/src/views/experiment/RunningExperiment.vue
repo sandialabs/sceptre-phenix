@@ -1,6 +1,10 @@
 <template>
   <div class="content">
-    <b-modal v-model="expModal.active" @close="resetExpModal" has-modal-card>
+    <b-modal
+      v-model="expModal.active"
+      @close="resetExpModal"
+      has-modal-card
+      width="68rem">
       <VmDetailsCard
         :vm="expModalVm"
         :full-name="expModal.fullName"

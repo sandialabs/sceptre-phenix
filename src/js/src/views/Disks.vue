@@ -228,55 +228,66 @@
       </div>
     </b-modal>
     <!-- CONTENT -->
-    <b-field
-      class="disks-toolbar"
-      grouped
-      position="is-right"
-      style="margin: 12px 0px">
-      <b-field expanded>
+    <div class="level disks-toolbar">
+      <div class="level-left">
         <stat-strip v-if="loaded" label="Disk totals" :stats="totalsShown" />
-      </b-field>
-      <div
-        v-if="paginationNeeded"
-        class="control is-flex is-align-items-center">
-        <b-switch v-model="table.isPaginated" size="is-small" type="is-light"
-          >Paginate</b-switch
-        >
       </div>
-      <b-field :addons="false" class="has-addons">
-        <b-autocomplete
-          v-model="filterString"
-          placeholder="Find a disk"
-          icon="search"
-          @select="(option) => (selected = option)"
-          :data="filteredDisks.map(diskLabel)">
-        </b-autocomplete>
+      <div class="level-right">
+        <div class="level-item">
+          <b-field grouped position="is-right">
+            <div
+              v-if="paginationNeeded"
+              class="control is-flex is-align-items-center">
+              <b-switch
+                v-model="table.isPaginated"
+                size="is-small"
+                type="is-light"
+                >Paginate</b-switch
+              >
+            </div>
+            <b-field :addons="false" class="has-addons">
+              <b-autocomplete
+                v-model="filterString"
+                placeholder="Find a disk"
+                icon="search"
+                @select="(option) => (selected = option)"
+                :data="filteredDisks.map(diskLabel)">
+              </b-autocomplete>
 
-        <p v-if="filterString" class="control">
-          <button
-            class="button input-button"
-            aria-label="Clear disk search"
-            @click="filterString = ''">
-            <b-icon icon="window-close"></b-icon>
-          </button>
-        </p>
-      </b-field>
-      <b-tooltip
-        v-if="roleAllowed('disks', 'upload')"
-        :label="
-          currentUploadProgress == null ? 'Upload a disk' : 'Upload progress'
-        "
-        type="is-light is-left">
-        <button
-          class="button is-light"
-          style="margin-left: 8px"
-          aria-label="Upload a disk"
-          @click="uploader.active = true">
-          <b-icon v-if="currentUploadProgress == null" icon="upload"></b-icon>
-          <span v-else style="width: 32px">{{ currentUploadProgress }}%</span>
-        </button>
-      </b-tooltip>
-    </b-field>
+              <p v-if="filterString" class="control">
+                <button
+                  class="button input-button"
+                  aria-label="Clear disk search"
+                  @click="filterString = ''">
+                  <b-icon icon="window-close"></b-icon>
+                </button>
+              </p>
+            </b-field>
+            <b-tooltip
+              v-if="roleAllowed('disks', 'upload')"
+              :label="
+                currentUploadProgress == null
+                  ? 'Upload a disk'
+                  : 'Upload progress'
+              "
+              type="is-light is-left">
+              <button
+                class="button is-light"
+                style="margin-left: 8px"
+                aria-label="Upload a disk"
+                @click="uploader.active = true">
+                <b-icon
+                  v-if="currentUploadProgress == null"
+                  icon="upload"></b-icon>
+                <span v-else style="width: 32px"
+                  >{{ currentUploadProgress }}%</span
+                >
+              </button>
+            </b-tooltip>
+          </b-field>
+        </div>
+      </div>
+    </div>
 
     <b-table
       :data="filteredDisks"
@@ -928,10 +939,16 @@
     gap: 5px;
   }
 
-  /* the controls drop below the counts when both do not fit on one row */
-  .disks-toolbar > :deep(.field-body > .field.is-grouped) {
+  /* as on the Configs page: the controls drop below the counts together when
+     both do not fit on one row */
+  .level.disks-toolbar {
     flex-wrap: wrap;
-    row-gap: 0.75rem;
+    gap: 0.75rem;
+    margin: 12px 0;
+  }
+
+  .disks-toolbar .level-right {
+    margin-left: auto;
   }
 
   /* a long name wraps beside its warning icon, never under it */

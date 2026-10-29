@@ -105,10 +105,14 @@
         </b-field>
 
         <hr />
-        <b-button :disabled="!changed" @click="resetForm">Reset Form</b-button>
-        <b-button native-type="submit" :disabled="!changed" :loading="saving">
-          Save Changes
-        </b-button>
+        <div class="buttons">
+          <b-button :disabled="!changed" @click="resetForm"
+            >Reset Form</b-button
+          >
+          <b-button native-type="submit" :disabled="!changed" :loading="saving">
+            Save Changes
+          </b-button>
+        </div>
       </form>
     </div>
   </section>

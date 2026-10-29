@@ -15,6 +15,7 @@
     backend-sorting
     default-sort-direction="asc"
     default-sort="name"
+    scrollable
     @sort="(column, order) => $emit('sort', column, order)"
     ref="table">
     <template #empty>

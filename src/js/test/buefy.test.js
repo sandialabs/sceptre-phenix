@@ -4,11 +4,12 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { createApp } from 'vue';
 import { babelParse, parse } from 'vue/compiler-sfc';
+import { flushPromises } from '@vue/test-utils';
 import { expect, test } from 'vitest';
 
 import { installBuefy } from '@/utils/buefy.js';
 
-import { mountComponent } from './helpers/mount.js';
+import { dialogs, mountComponent } from './helpers/mount.js';
 
 const SRC = join(import.meta.dirname, '..', 'src');
 
@@ -82,4 +83,15 @@ test('names the modal close button Close', async () => {
   });
   const close = modal.findAll('button.modal-close');
   expect(close.map((b) => b.attributes('aria-label'))).toEqual(['Close']);
+});
+
+test('gives a confirm dialog the alertdialog role, as a modal', async () => {
+  const wrapper = await mountComponent({ template: '<p>x</p>' });
+  wrapper.vm.$buefy.dialog.confirm({ message: 'Sure?' });
+  await flushPromises();
+  const [dialog] = dialogs();
+  expect(['role', 'aria-modal'].map((a) => dialog.getAttribute(a))).toEqual([
+    'alertdialog',
+    'true',
+  ]);
 });

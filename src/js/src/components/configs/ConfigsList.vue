@@ -250,7 +250,7 @@
       <b-table-column
         field="kind"
         label="Kind"
-        width="200"
+        width="150"
         header-class="sort-inline"
         sortable
         v-slot="props">
@@ -295,7 +295,11 @@
         <time-with-age :time="props.row.metadata.updated" />
       </b-table-column>
 
-      <b-table-column label="Actions" centered v-slot="props">
+      <b-table-column
+        label="Actions"
+        centered
+        cell-class="config-actions"
+        v-slot="props">
         <b-tooltip
           class="action"
           :delay="500"
@@ -771,6 +775,11 @@
 
   .configs-toolbar .level-right {
     margin-left: auto;
+  }
+
+  /* edit, download and delete stay on one row; the other columns give way */
+  :deep(td.config-actions) {
+    white-space: nowrap;
   }
 
   .x-modal-dark :deep(textarea) {

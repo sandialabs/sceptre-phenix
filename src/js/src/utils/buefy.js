@@ -1,5 +1,6 @@
 import {
   Autocomplete,
+  BDialog,
   BModal,
   Breadcrumb,
   Button,
@@ -78,5 +79,8 @@ export function installBuefy(app) {
   // the prop default before the first render; b-modal and $buefy.modal share
   // this component.
   BModal.props.closeButtonAriaLabel = { type: String, default: 'Close' };
+  // $buefy.dialog renders aria-modal="false" with no role, which ARIA forbids
+  BDialog.props.ariaRole = { type: String, default: 'alertdialog' };
+  BDialog.props.ariaModal = { type: Boolean, default: true };
   buefyPlugins.forEach((plugin) => app.use(plugin));
 }
