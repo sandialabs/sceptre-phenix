@@ -436,6 +436,18 @@ describe('opening a file', () => {
     );
   });
 
+  it('downloads a file without a token when there is none', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    delete store.token;
+    const tab = await listing(['a.log']);
+
+    await byLabel(tab, 'Download a.log').trigger('click');
+    expect(open).toHaveBeenCalledWith(
+      '/api/v1/experiments/exp1/files/a.log?path=a.log',
+      '_blank',
+    );
+  });
+
   it('downloads any file by a URL its name and path read back from intact', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     await fc.assert(

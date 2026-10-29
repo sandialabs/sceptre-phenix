@@ -1,7 +1,7 @@
 <template>
-  <div class="content">
+  <div class="content scorch-run">
     <div class="run-header">
-      <div>
+      <div class="run-loop">
         <b-tooltip
           v-if="loop > 0"
           label="return to previous loop"
@@ -44,6 +44,7 @@
             <span>Cleanup</span>
           </button>
         </b-tooltip>
+        <slot name="actions" />
         <b-tooltip :label="statusLabel" type="is-light is-left">
           <button
             class="button is-dark"
@@ -56,8 +57,12 @@
         </b-tooltip>
       </div>
     </div>
+    <!-- focusable, so the keyboard can scroll a wide pipeline -->
     <div
-      style="margin-top: 10px; border: 2px solid whitesmoke; background: #333">
+      class="run-pipeline"
+      role="region"
+      tabindex="0"
+      :aria-label="`${title} pipeline`">
       <vue-pipeline :pipeline="nodes" @select="viewer" />
     </div>
   </div>
@@ -158,21 +163,56 @@
 </script>
 
 <style scoped>
+  /* a pipeline wider than the page scrolls inside its own box */
+  .run-pipeline {
+    margin-top: 10px;
+    overflow-x: auto;
+    border: 2px solid whitesmoke;
+    background: #333;
+  }
+
+  .scorch-run {
+    container-type: inline-size;
+  }
+
   /* loop button left, run name centered, status and actions right */
   .run-header {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
+    grid-template-areas: 'loop title status';
     align-items: center;
     gap: 1rem;
   }
 
+  .run-loop {
+    grid-area: loop;
+  }
+
   .run-title {
+    grid-area: title;
     font-weight: bold;
     font-size: x-large;
   }
 
+  /* too narrow for the controls beside a centered name: the name gets a row */
+  @container (max-width: 80rem) {
+    .run-header {
+      grid-template-columns: auto 1fr;
+      grid-template-areas: 'title title' 'loop status';
+      row-gap: 0.5rem;
+    }
+
+    .run-title {
+      justify-self: center;
+      text-align: center;
+    }
+  }
+
+  /* wraps instead of widening its track, which pushes the name off center */
   .run-status {
+    grid-area: status;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
     gap: 0.5rem;

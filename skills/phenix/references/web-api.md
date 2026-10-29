@@ -217,6 +217,12 @@ curl -C - -o out.pcap -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
   "http://localhost:3000/api/v1/experiments/exp/files/out.pcap?path=scorch/run-0/out.pcap"
 ```
 
+Each time a SCORCH run finishes it archives `scorch/run-<run>/` to
+`scorch-run-<run>_<start, 2006-01-02T15-04-05Z0700>.tgz` at the top of the
+experiment's files, one archive per execution; the SCORCH runs page's
+`Download` menu lists them from `GET /experiments/{name}/files` and downloads
+them with this route.
+
 `curl -C -` sends only `Range`, not `If-Range`, so it splices a file that
 changed between attempts, such as a disk image a running VM writes to.
 Verify with a checksum: `GET /experiments/{name}/files/{filename}/checksum?path=`

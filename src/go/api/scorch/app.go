@@ -24,6 +24,7 @@ import (
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util"
+	"phenix/util/file"
 	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 	"phenix/util/shell"
@@ -188,25 +189,38 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		errors = multierror.Append(errors, err)
 	}
 
-	if _, err := os.Stat(runDir); err == nil {
-		archive := filepath.Join(
-			exp.FilesDir(),
-			fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format("2006-01-02T15-04-05Z0700")),
-		)
-
-		err := util.CreateArchive(runDir, archive)
-		if err != nil {
-			errors = multierror.Append(
-				errors,
-				fmt.Errorf("archiving data generated for run %d: %w", runID, err),
-			)
-		}
+	if err := archiveRun(exp, runID, runDir, start); err != nil {
+		errors = multierror.Append(errors, err)
 	}
 
 	update.Status = doneStatus(errors)
 	_ = updatePipeline(update)
 
 	return errors
+}
+
+// archiveRun archives the run's directory, if any, to the experiment's
+// scorch-run-<run>_<start>.tgz, which the SCORCH runs page downloads.
+func archiveRun(exp *types.Experiment, runID int, runDir string, start time.Time) error {
+	if _, err := os.Stat(runDir); err != nil {
+		return nil //nolint:nilerr // a run that wrote nothing has nothing to archive
+	}
+
+	archive := filepath.Join(
+		exp.FilesDir(),
+		fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format("2006-01-02T15-04-05Z0700")),
+	)
+
+	err := util.CreateArchive(runDir, archive)
+
+	// lists the new archive at once rather than once the cached listing expires
+	file.InvalidateExperimentFiles(exp.Metadata.Name)
+
+	if err != nil {
+		return fmt.Errorf("archiving data generated for run %d: %w", runID, err)
+	}
+
+	return nil
 }
 
 // doneStatus is a run's done stage status: failure when the run or its

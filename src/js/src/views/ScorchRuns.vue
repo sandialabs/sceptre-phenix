@@ -77,7 +77,16 @@
         :clearer="clearRun"
         :clearable="roleAllowed('experiments/trigger', 'create', expName)"
         :can-clear="canClear(run)"
-        :rewinder="loopHistory" />
+        :rewinder="loopHistory">
+        <template #actions>
+          <scorch-run-downloads
+            :exp="expName"
+            :run="id"
+            :name="run.name"
+            :files="files"
+            :failed="filesFailed" />
+        </template>
+      </scorch-run>
     </div>
     <hr />
     <scorch-key />
@@ -167,6 +176,7 @@
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import { serverShuttingDown, wsCloseCause } from '@/utils/freshness.js';
   import * as scorchApi from '@/api/scorch.js';
+  import { listExperimentFiles } from '@/api/experimentFiles.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif';
   import { notifyOutcome, outcomeFromSettled } from '@/utils/operations.js';
   import { serverAway } from '@/utils/unreachable.js';
@@ -179,6 +189,7 @@
   import StatStrip from '@/components/StatStrip.vue';
   import ScorchKey from '@/components/scorch/ScorchKey.vue';
   import ScorchRun from '@/components/scorch/ScorchRun.vue';
+  import ScorchRunDownloads from '@/components/scorch/ScorchRunDownloads.vue';
   import Terminal from '@/components/MiniTerminal.vue';
 
   // how long a run's button spins waiting for the server to report that the
@@ -204,6 +215,13 @@
     stopping: { label: 'stopping', tag: 'is-warning' },
   };
 
+  // whether a pipeline update says the run's done stage has ended
+  const archived = (nodes) =>
+    (nodes ?? []).some(
+      (node) =>
+        node.name === 'done' && ['success', 'failure'].includes(node.status),
+    );
+
   // whether any component of the pipeline has run
   const hasStatus = (nodes) =>
     (nodes ?? []).some((node) => node.status && node.status !== 'unknown');
@@ -217,6 +235,7 @@
       StatStrip,
       'scorch-key': ScorchKey,
       'scorch-run': ScorchRun,
+      'scorch-run-downloads': ScorchRunDownloads,
       'vue-terminal': Terminal,
     },
 
@@ -227,6 +246,11 @@
       const exp = this.expName;
       this.loader = createPageLoader({
         key: scorchRunsKey(exp),
+        // the header's refresh button lists the runs' archives again too
+        refresh: () => {
+          this.loadFiles();
+          return this.loader.load();
+        },
         fetch: async (signal) => {
           const resp = await scorchApi.listScorchPipelines(exp, signal);
           return resp.data;
@@ -247,12 +271,14 @@
           }));
         },
       });
-      this.loader.start();
+      // the runs' archives are listed once the runs are shown
+      this.loader.start().finally(() => this.loadFiles());
     },
 
     beforeUnmount() {
       removeWsHandler(this.handle);
       this.loader.stop();
+      this.filesRequest?.abort();
       // close the streaming output socket if the modal is still open
       this.exitOutput();
       // drop the queue and the fallback timers
@@ -473,6 +499,31 @@
           run.queued = false;
           if (run.running && !run.pending) this.scorchControl(this.expName, id);
         });
+      },
+
+      // Lists the experiment's files, for the archives each run's Download
+      // button offers; only the newest listing is kept.
+      async loadFiles() {
+        if (
+          !roleAllowed('experiments/files', 'list', this.expName) ||
+          !roleAllowed('experiments/files', 'get', this.expName)
+        ) {
+          return;
+        }
+
+        this.filesRequest?.abort();
+        const request = (this.filesRequest = new AbortController());
+        try {
+          const resp = await listExperimentFiles(this.expName, {
+            signal: request.signal,
+          });
+          if (this.filesRequest !== request) return;
+          this.files = resp.data.files ?? [];
+          this.filesFailed = false;
+        } catch {
+          // the buttons say the files could not be listed
+          if (this.filesRequest === request) this.filesFailed = true;
+        }
       },
 
       // reloads the experiment's SCORCH runs
@@ -714,6 +765,9 @@
                   run.nodes = msg.result.pipeline ?? [];
                 }
 
+                // the done stage ends once the run's artifacts are archived
+                if (archived(msg.result?.pipeline)) this.loadFiles();
+
                 break;
               }
             }
@@ -797,6 +851,10 @@
         },
         // the experiment's state: started, stopped, starting or stopping
         expStatus: null,
+        // the experiment's listed files, null until listed, for the runs'
+        // archives; and whether the latest listing failed
+        files: null,
+        filesFailed: false,
       };
     },
   };

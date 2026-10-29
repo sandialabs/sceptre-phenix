@@ -18,6 +18,7 @@ import (
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
 	"phenix/util/common"
+	"phenix/util/file"
 	"phenix/util/mm/mmtest"
 	scorchweb "phenix/web/scorch"
 )
@@ -279,5 +280,35 @@ func TestRunningReportsHowTheRunEnded(t *testing.T) { //nolint:paralleltest // r
 				t.Errorf("Running(failing %t) done statuses mismatch (-want +got):\n%s", tc.failing, diff)
 			}
 		})
+	}
+}
+
+// A run's new archive shows in the experiment's file listing at once, rather
+// than once the cached listing expires.
+func TestRunningArchiveRefreshesTheFileListing(t *testing.T) { //nolint:paralleltest // replaces package state
+	received := useMinimega(t, nil)
+	exp, _ := scorchExperiment(t)
+
+	listings := func() int {
+		t.Helper()
+
+		if _, err := file.GetExperimentFiles(exp.Metadata.Name, ""); err != nil {
+			t.Fatalf("GetExperimentFiles(%q) error = %v", exp.Metadata.Name, err)
+		}
+
+		return mmtest.Count(received(), "file list")
+	}
+
+	first := listings()
+	if again := listings(); again != first {
+		t.Fatalf("headnode file listings after listing twice = %d, want %d (the cached one)", again, first)
+	}
+
+	if err := newScorch().Running(scorchexe.SetRunID(context.Background(), 0), exp); err != nil {
+		t.Fatalf("Running(run 0) error = %v", err)
+	}
+
+	if got := listings(); got != first+1 {
+		t.Errorf("headnode file listings after a run archived its data = %d, want %d", got, first+1)
 	}
 }

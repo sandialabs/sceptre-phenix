@@ -236,7 +236,7 @@
   import { useErrorNotification } from '@/utils/errorNotif';
   import { escapeHTML } from '@/utils/escapeHTML.js';
   import * as experimentFilesApi from '@/api/experimentFiles.js';
-  import { keepListed } from '@/utils/experimentFiles.js';
+  import { experimentFileURL, keepListed } from '@/utils/experimentFiles.js';
   import { isActiveJob, useJobStore } from '@/utils/jobs.js';
   import { notifyOutcome } from '@/utils/operations.js';
   import { fileText } from '@/utils/fileText.js';
@@ -475,13 +475,14 @@
       },
 
       downloadFile(file) {
-        const url = `${import.meta.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/files/${encodeURIComponent(file.name)}`;
-        const queryParams = new URLSearchParams({
-          path: file.path,
-          token: usePhenixStore().token,
-        });
-
-        window.open(`${url}?${queryParams}`, '_blank');
+        window.open(
+          experimentFileURL(
+            this.$route.params.id,
+            file,
+            usePhenixStore().token,
+          ),
+          '_blank',
+        );
       },
 
       // the WebShark page for a row's capture file, or null when the row is
