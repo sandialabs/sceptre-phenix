@@ -18,7 +18,8 @@ function appCss() {
   return compiled;
 }
 
-// each style rule: its selectors, the @media conditions around it, its body
+// each style rule: its selectors, the @media and @container conditions
+// around it, its body
 function rules(css) {
   const found = [];
   const open = [];
@@ -32,7 +33,7 @@ function rules(css) {
       if (!prelude.startsWith('@')) {
         found.push({
           selectors: prelude.split(',').map((s) => s.trim()),
-          media: open.filter((p) => p.startsWith('@media')),
+          media: open.filter((p) => /^@(media|container)\b/.test(p)),
           body: text,
         });
       }
@@ -62,8 +63,8 @@ function pick(css, selector, media) {
 }
 
 // The declarations the app's styles give `selector` alone, the last of each
-// winning: those inside an @media whose condition contains `media`, or, with
-// no `media`, those outside any @media.
+// winning: those inside an @media or @container whose condition contains
+// `media`, or, with no `media`, those outside both.
 export function declarations(selector, media = null) {
   return pick(appCss(), selector, media);
 }

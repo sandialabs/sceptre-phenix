@@ -51,13 +51,7 @@
       </div>
       <div v-if="experiment.start_time" class="exp-fact exp-fact-started">
         <dt><b-icon icon="clock" size="is-small" /> Started</dt>
-        <dd v-if="startText">
-          <b-tooltip :label="experiment.start_time" type="is-dark">
-            <time :datetime="experiment.start_time">{{ startText }}</time>
-            <span class="is-sr-only"> ({{ experiment.start_time }})</span>
-          </b-tooltip>
-        </dd>
-        <dd v-else>{{ experiment.start_time }}</dd>
+        <dd><time-with-age :time="experiment.start_time" /></dd>
       </div>
     </dl>
   </section>
@@ -65,7 +59,7 @@
 
 <script>
   import { configViewRoute } from '@/utils/configCache.js';
-  import { startTimeText } from '@/utils/experimentList.js';
+  import TimeWithAge from '@/components/TimeWithAge.vue';
   import { roleAllowed } from '@/utils/rbac.js';
   import { experimentScenarios } from './experimentHeader.js';
 
@@ -73,6 +67,7 @@
   // tiles: its scenarios and topology (linked to their configs), counts and start.
   export default {
     name: 'ExperimentSummary',
+    components: { TimeWithAge },
     props: {
       // the experiment's name, shown before the experiment has loaded
       name: { type: String, default: '' },
@@ -84,10 +79,6 @@
     computed: {
       scenarios() {
         return experimentScenarios(this.experiment);
-      },
-      // as the Experiments page shows it: "14:03:22 28-10-2026 (MDT)"
-      startText() {
-        return startTimeText(this.experiment.start_time);
       },
     },
     methods: {
@@ -158,6 +149,7 @@
     grid-auto-rows: 1fr;
     gap: 0.5rem;
     margin: 0;
+    container-type: inline-size;
   }
 
   .exp-fact-scenarios {
@@ -178,6 +170,17 @@
 
   .exp-fact-started {
     grid-column: span 6;
+  }
+
+  /* a wide card gives the start its time and age on one line, the counts less */
+  @container (min-width: 38rem) {
+    .has-start .exp-fact-count {
+      grid-column: span 2;
+    }
+
+    .exp-fact-started {
+      grid-column: span 8;
+    }
   }
 
   .exp-fact {
@@ -225,9 +228,9 @@
     text-decoration: underline;
   }
 
-  /* its tooltip shows outside the tile */
+  /* a narrow tile wraps the start between its date, time and age */
   .content .exp-fact-started dd {
-    overflow: visible;
+    white-space: normal;
   }
 
   .content .exp-fact dd.exp-fact-none {

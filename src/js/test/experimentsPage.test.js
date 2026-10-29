@@ -31,7 +31,6 @@ import Experiments from '@/views/Experiments.vue';
 import { never } from './helpers/async.js';
 import { httpError } from './helpers/fixtures.js';
 import { allowOnly, denyOnly } from './helpers/permissions.js';
-import { startTimeParts, startTimeText } from '@/utils/experimentList.js';
 import { componentDeclarations } from './helpers/css.js';
 import {
   buttons,
@@ -171,7 +170,19 @@ describe('the table', () => {
     expect(await sortedBy(wrapper, 'VLANs')).toEqual(['d', 'a', 'b', 'c']);
   });
 
-  it('shows start times in local 24-hour time, the recorded text on hover', async () => {
+  it('shows start times as sent, then how long ago, with no tooltip', async () => {
+    // the clock too, which beforeEach leaves real, for a fixed age
+    vi.useRealTimers();
+    vi.useFakeTimers({
+      toFake: [
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+        'Date',
+      ],
+      now: Date.parse('2026-10-29T02:03:22Z'),
+    });
     const raw = '2026-10-28T14:03:22Z';
     const wrapper = await page([
       { name: 'a', status: 'started', start_time: raw },
@@ -180,32 +191,22 @@ describe('the table', () => {
     ]);
 
     const [a, b, c] = tableRows(wrapper).map((cells) => cells['Start Time']);
-    expect(textOf(a.find('time'))).toBe(startTimeText(raw));
-    expect(textOf(a.find('time'))).toMatch(
-      /^\d{2}:\d{2}:\d{2} \d{2}-\d{2}-\d{4} \(.+\)$/,
-    );
+    expect(textOf(a)).toBe(`${raw} (12 hours ago)`);
     expect(a.find('time').attributes('datetime')).toBe(raw);
-    // the time, then the date and zone: the two pieces a narrow screen wraps
-    const { time, date } = startTimeParts(raw);
-    expect(a.findAll('time > span').map(textOf)).toEqual([time, date]);
-    const tooltip = wrapper
-      .findAllComponents({ name: 'BTooltip' })
-      .find((t) => a.element.contains(t.element));
-    expect(textOf(tooltip.vm.$refs.content)).toBe(raw);
-    expect(textOf(a.find('.is-sr-only'))).toBe(`(${raw})`);
+    expect(
+      wrapper
+        .findAllComponents({ name: 'BTooltip' })
+        .some((t) => a.element.contains(t.element)),
+    ).toBe(false);
     // as before: N/A for none, and text that is not a time as it came
     expect([textOf(b), textOf(c)]).toEqual(['N/A', 'garbled']);
   });
 
-  // The table fits a 1,024 px screen: a start time wraps between its time and
-  // date, never inside either, and the cells pad less below 1,280 px.
+  // The table fits a 1,024 px screen: the cells pad less below 1,280 px, and
+  // a start time wraps between its date, time and age (see timeWithAge.test).
   it('keeps the table within a desktop screen', () => {
     const style = (selector, media) =>
       componentDeclarations('src/views/Experiments.vue', selector, media);
-    expect(style('.exp-start-time')).not.toHaveProperty('white-space');
-    expect(style('.exp-start-time > span')).toMatchObject({
-      'white-space': 'nowrap',
-    });
     const narrow = 'min-width: 769px) and (max-width: 1279px';
     for (const cell of ['th', 'td']) {
       const selector = `.exp-table :deep(${cell}:not(.exp-select-cell))`;

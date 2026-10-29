@@ -290,10 +290,7 @@
         sortable
         :custom-sort="sortByUpdated"
         v-slot="props">
-        {{ props.row.metadata.updated }}
-        <span v-if="props.row.metadata.updated" class="has-text-grey-lighter">
-          ({{ relativeTime(props.row.metadata.updated, now) }})
-        </span>
+        <time-with-age :time="props.row.metadata.updated" />
       </b-table-column>
 
       <b-table-column label="Actions" centered v-slot="props">
@@ -362,12 +359,13 @@
     prefetchConfig,
   } from '@/utils/configCache.js';
   import { loadAce } from '@/utils/loadAce.js';
-  import { relativeTime } from '@/utils/relativeTime.js';
   import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
   import { pageFetchers } from '@/utils/pageData.js';
   import { useTable } from '@/utils/useTable.js';
+  import TimeWithAge from '@/components/TimeWithAge.vue';
 
   export default {
+    components: { TimeWithAge },
     emits: ['edit', 'create'],
     props: {
       // The config ("Kind/name") whose edit button takes focus on the first
@@ -425,12 +423,9 @@
         },
 
         downloading: new Set(), // configs being downloaded, by key
-        now: Date.now(), // for the Last Updated column's relative times
       };
     },
     created() {
-      // keeps the relative times current
-      this.clock = setInterval(() => (this.now = Date.now()), 30000);
       this.loader = createPageLoader({
         key: 'configs',
         fetch: pageFetchers.configs,
@@ -461,7 +456,6 @@
     beforeUnmount() {
       this.unmounted = true;
       this.loader.stop();
-      clearInterval(this.clock);
     },
     computed: {
       emptyText() {
@@ -503,7 +497,6 @@
           );
         }
       },
-      relativeTime,
 
       // Focuses the edit button of the config the editor closed on, on the
       // first load only, so a later refresh (an upload) leaves focus alone.

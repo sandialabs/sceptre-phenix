@@ -278,20 +278,7 @@
             :custom-sort="sortByStartTime"
             header-class="sort-inline"
             v-slot="props">
-            <b-tooltip
-              v-if="startTimeParts(props.row.start_time)"
-              :label="props.row.start_time"
-              type="is-dark">
-              <time class="exp-start-time" :datetime="props.row.start_time">
-                <span>{{ startTimeParts(props.row.start_time).time }}</span>
-                {{ ' ' }}
-                <span>{{ startTimeParts(props.row.start_time).date }}</span>
-              </time>
-              <span class="is-sr-only"> ({{ props.row.start_time }})</span>
-            </b-tooltip>
-            <template v-else>
-              {{ props.row.start_time || 'N/A' }}
-            </template>
+            <time-with-age :time="props.row.start_time" fallback="N/A" />
           </b-table-column>
           <b-table-column
             field="vm_count"
@@ -407,6 +394,7 @@
 <script>
   import CreateExperimentCard from '@/components/CreateExperimentCard.vue';
   import StatStrip from '@/components/StatStrip.vue';
+  import TimeWithAge from '@/components/TimeWithAge.vue';
   import { createLiveRows } from '@/utils/liveRows.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import * as experimentsApi from '@/api/experiments.js';
@@ -445,11 +433,10 @@
     experimentTotals,
     sortByStartTime,
     sortByVlans,
-    startTimeParts,
   } from '@/utils/experimentList.js';
 
   export default {
-    components: { CreateExperimentCard, StatStrip },
+    components: { CreateExperimentCard, StatStrip, TimeWithAge },
     mixins: [formattingMixin],
 
     setup() {
@@ -656,7 +643,6 @@
       configViewRoute,
       sortByStartTime,
       sortByVlans,
-      startTimeParts,
 
       // whether the experiment's topology or scenario links to its config
       configLinked(kind, name) {
@@ -1166,11 +1152,6 @@
 
   .exp-table :deep(.exp-select-cell .control-label) {
     padding-left: 0;
-  }
-
-  /* below about 1,280 px the time and the date wrap onto two lines, each whole */
-  .exp-start-time > span {
-    white-space: nowrap;
   }
 
   /* one row of buttons, centered */

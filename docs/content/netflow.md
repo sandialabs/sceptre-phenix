@@ -92,6 +92,8 @@ downloaded and deleted like any other experiment file.
 The `Download captures` button beside the line above the table, shown even
 before any flows arrive, opens a list of the experiment's recorded captures,
 newest first, with when each started and stopped, its flow count and its size.
+Start and stop times show as UTC timestamps to the second, followed by how
+long ago they were, for example `2026-10-28T15:30:12Z (2 hours ago)`.
 Each capture downloads in three formats:
 
 | Format | File | Contents |

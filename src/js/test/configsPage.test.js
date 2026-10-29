@@ -132,6 +132,23 @@ describe('the config list', () => {
     };
   }
 
+  it('shows when each config changed as sent, then how long ago', async () => {
+    vi.useFakeTimers({
+      toFake: ['Date'],
+      now: Date.parse('2025-01-02T06:04:05Z'),
+    });
+    try {
+      const wrapper = await list([topology]);
+      const updated = row(wrapper, 'Topology')['Last Updated'];
+      expect(textOf(updated)).toBe('2025-01-02T03:04:05Z (3 hours ago)');
+      expect(updated.find('time').attributes('datetime')).toBe(
+        '2025-01-02T03:04:05Z',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // whether each row's download button spins, by kind
   const rowSpinners = (wrapper) =>
     Object.fromEntries(

@@ -1,5 +1,4 @@
-// The Experiments table's start time text, its VLAN and start time sorts, and
-// the totals above it.
+// The Experiments table's VLAN and start time sorts, and the totals above it.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
@@ -7,51 +6,8 @@ import {
   experimentTotals,
   sortByStartTime,
   sortByVlans,
-  startTimeMs,
-  startTimeText,
 } from '@/utils/experimentList.js';
 import { isoTimeArb } from './helpers/arbitraries.js';
-
-describe('the start time text', () => {
-  it.each([
-    ['2026-10-28T14:03:22Z', 'UTC', '14:03:22 28-10-2026 (UTC)'],
-    ['2026-10-28T14:03:22Z', 'America/Denver', '08:03:22 28-10-2026 (MDT)'],
-    [
-      '2026-01-05T00:00:09-07:00',
-      'America/Denver',
-      '00:00:09 05-01-2026 (MST)',
-    ],
-    ['2026-03-01T23:59:59.5+05:30', 'UTC', '18:29:59 01-03-2026 (UTC)'],
-  ])('reads %s in %s as %s', (raw, zone, text) => {
-    expect(startTimeText(raw, zone)).toBe(text);
-  });
-
-  it.each([[''], ['N/A'], ['1'], ['2026-10-28'], ['tomorrow'], [null], [3]])(
-    'is null for %j, which is not an RFC 3339 time',
-    (raw) => {
-      expect(startTimeText(raw, 'UTC')).toBeNull();
-      expect(startTimeMs(raw)).toBeNull();
-    },
-  );
-
-  it('gives the moment in 24-hour UTC time, whatever the offset', () => {
-    fc.assert(
-      fc.property(isoTimeArb, ({ time, ms }) => {
-        const text = startTimeText(time, 'UTC');
-        const at = new Date(ms);
-        const [h, m, s, d, mo, y] = [
-          at.getUTCHours(),
-          at.getUTCMinutes(),
-          at.getUTCSeconds(),
-          at.getUTCDate(),
-          at.getUTCMonth() + 1,
-          at.getUTCFullYear(),
-        ].map((n, i) => String(n).padStart(i == 5 ? 4 : 2, '0'));
-        expect(text).toBe(`${h}:${m}:${s} ${d}-${mo}-${y} (UTC)`);
-      }),
-    );
-  });
-});
 
 // sorts rows with a Buefy custom-sort in the direction asked
 const sorted = (rows, sort, isAsc) =>

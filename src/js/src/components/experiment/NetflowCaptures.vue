@@ -50,7 +50,7 @@
               </thead>
               <tbody>
                 <tr v-for="capture in captures" :key="capture.id">
-                  <td>{{ started(capture) }}</td>
+                  <td><time-with-age :time="capture.started" /></td>
                   <td>
                     <b-tag
                       v-if="capture.state === 'recording' && capture.truncated"
@@ -67,7 +67,7 @@
                       type="is-light">
                       Interrupted
                     </b-tag>
-                    <template v-else>{{ stopped(capture) }}</template>
+                    <time-with-age v-else :time="capture.stopped" />
                   </td>
                   <td class="has-text-right">
                     {{ flows(capture) }}
@@ -75,7 +75,9 @@
                       Truncated
                     </b-tag>
                   </td>
-                  <td class="has-text-right">{{ bytesText(capture.size) }}</td>
+                  <td class="has-text-right netflow-captures-size">
+                    {{ bytesText(capture.size) }}
+                  </td>
                   <td>
                     <div class="buttons are-small netflow-captures-formats">
                       <b-button
@@ -116,6 +118,8 @@
   import { usePhenixStore } from '@/store.js';
   import { bytesText } from '@/utils/bytes.js';
   import { useErrorNotification } from '@/utils/errorNotif.js';
+  import { isoTimeParts } from '@/utils/relativeTime.js';
+  import TimeWithAge from '@/components/TimeWithAge.vue';
 
   // the formats a capture downloads as: its file extension, button label and
   // the name its button's accessible name uses
@@ -129,6 +133,7 @@
   // lists the experiment's recorded captures, newest first, to download.
   export default {
     name: 'NetflowCaptures',
+    components: { TimeWithAge },
     props: {
       // the experiment whose captures are listed
       experiment: { type: String, required: true },
@@ -200,17 +205,9 @@
         }
       },
 
+      // the start time as its cell shows it, to the second
       started(capture) {
-        return new Date(capture.started).toLocaleString('en-US');
-      },
-
-      // the stop time, with its date only when that differs from the start's
-      stopped(capture) {
-        const start = new Date(capture.started);
-        const stop = new Date(capture.stopped);
-        return start.toDateString() === stop.toDateString()
-          ? stop.toLocaleTimeString('en-US')
-          : stop.toLocaleString('en-US');
+        return isoTimeParts(capture.started ?? '').join('');
       },
 
       flows(capture) {
@@ -271,6 +268,11 @@
 
   .netflow-captures-table td {
     vertical-align: middle;
+  }
+
+  /* a size never splits from its unit beside the two-line times */
+  .netflow-captures-size {
+    white-space: nowrap;
   }
 
   /* Bulma's info blue gives white text only 3.5:1; its dark shade gives 5.3:1 */

@@ -22,10 +22,11 @@ name. Experiments created or started somewhere else, such as from the command
 line binary or a [workflow](workflow.md), appear in the list as they are
 created or start, without reloading the page.
 
-`Start Time` shows when the experiment started in your browser's time zone, as
-`hour:minute:second day-month-year (zone)` in 24-hour time, for example
-`14:03:22 28-10-2026 (MDT)`; hover over it to see the time as phēnix recorded
-it. The column sorts by the actual time.
+`Start Time` shows when the experiment started as phēnix recorded it, an
+ISO 8601 timestamp with the server's UTC offset, followed by how long ago that
+was, for example `2026-10-28T14:03:22-06:00 (3 hours ago)`, the same form as
+`Last Updated` on the [Configs](configuration.md) page. The column sorts by
+the actual time.
 
 Click a name in the `Topology` or `Scenario` column to open that config in the
 viewer on the [Configs](configuration.md#view-a-config) page, if your role may
@@ -157,10 +158,9 @@ Click a running experiment's name to open its page. The card at the top left
 names the experiment and shows, as labeled tiles, the scenario it was created
 from (`Scenarios` when its apps also take configuration from other scenarios
 through `fromScenario`, listed after its own), its topology, how many VMs and
-VLANs it has, and when it started, as the `Start Time` column shows it; hold
-the pointer over the start time to see the server's timestamp. When your role
-may read a scenario or topology config, its name opens it in the Configs page's
-viewer.
+VLANs it has, and when it started, as the `Start Time` column shows it. When
+your role may read a scenario or topology config, its name opens it in the
+Configs page's viewer.
 
 The `Apps` box at the top right shows each of the experiment's apps as a tile,
 laid out in as few even rows as fit; the tiles of a shorter last row widen to

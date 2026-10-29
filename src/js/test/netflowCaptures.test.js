@@ -96,6 +96,24 @@ describe('the dialog', () => {
     );
   });
 
+  it('shows when each started and stopped as the server sent it, then how long ago', async () => {
+    vi.useFakeTimers({
+      toFake: ['Date'],
+      now: Date.parse('2026-10-28T18:00:00Z'),
+    });
+    try {
+      const wrapper = await openDialog([capture()]);
+      const [started, stopped] = rows(wrapper)[0].findAll('td');
+      expect(textOf(started)).toBe('2026-10-28T15:30:12Z (2 hours ago)');
+      expect(textOf(stopped)).toBe('2026-10-28T16:00:00Z (2 hours ago)');
+      expect(started.find('time').attributes('datetime')).toBe(
+        '2026-10-28T15:30:12.345Z',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('lists a running capture that stopped recording as Live only', async () => {
     const wrapper = await openDialog([
       capture({ state: 'recording', stopped: null, truncated: true }),
@@ -142,7 +160,7 @@ describe('the dialog', () => {
 
   it('names each download button by its capture and format', async () => {
     const wrapper = await openDialog([capture()]);
-    const started = new Date(capture().started).toLocaleString('en-US');
+    const started = '2026-10-28T15:30:12Z';
     const labels = rows(wrapper)[0]
       .findAll('button')
       .map((b) => [textOf(b), b.attributes('aria-label')]);

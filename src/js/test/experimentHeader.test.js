@@ -19,6 +19,7 @@ import {
   experimentScenarios,
   labelOptions,
 } from '@/components/experiment/experimentHeader.js';
+import { componentDeclarations } from './helpers/css.js';
 import { vm } from './helpers/fixtures.js';
 import { denyOnly } from './helpers/permissions.js';
 import { mountComponent, textOf, tooltipButtons } from './helpers/mount.js';
@@ -227,13 +228,47 @@ describe('the experiment summary', () => {
     );
   });
 
-  it('shows the start as the Experiments page does, the stamp as sent beside it', async () => {
-    const wrapper = await render({ start_time: '2026-10-28T10:00:00Z' });
-    const started = wrapper.find('.exp-fact-started');
-    expect(textOf(started.find('time'))).toMatch(
-      /^\d{2}:\d{2}:\d{2} \d{2}-\d{2}-2026 \(.+\)$/,
-    );
-    expect(textOf(started.find('.is-sr-only'))).toBe('(2026-10-28T10:00:00Z)');
+  it('shows the start as the Experiments page does: as sent, then its age', async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-10-28T13:00:00Z') });
+    try {
+      const wrapper = await render({ start_time: '2026-10-28T10:00:00Z' });
+      const started = wrapper.find('.exp-fact-started dd');
+      expect(textOf(started)).toBe('2026-10-28T10:00:00Z (3 hours ago)');
+      expect(
+        wrapper
+          .findAllComponents({ name: 'BTooltip' })
+          .some((t) => started.element.contains(t.element)),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows a start that is not a time as it came', async () => {
+    const wrapper = await render({ start_time: 'garbled' });
+    expect(textOf(wrapper.find('.exp-fact-started dd'))).toBe('garbled');
+  });
+
+  // "2026-10-28T14:03:22-06:00 (59 minutes ago)" fits on one line in 8 of the
+  // 12 columns of a 38rem card, so a wrapped start does not make it taller.
+  it('widens the start over the counts in a wide card', () => {
+    const file = 'src/components/experiment/ExperimentSummary.vue';
+    expect(
+      componentDeclarations(file, '.content dl.exp-summary-facts'),
+    ).toMatchObject({ 'container-type': 'inline-size' });
+    expect(componentDeclarations(file, '.exp-fact-started')).toEqual({
+      'grid-column': 'span 6',
+    });
+    expect(
+      componentDeclarations(file, '.exp-fact-started', '(min-width: 38rem)'),
+    ).toEqual({ 'grid-column': 'span 8' });
+    expect(
+      componentDeclarations(
+        file,
+        '.has-start .exp-fact-count',
+        '(min-width: 38rem)',
+      ),
+    ).toEqual({ 'grid-column': 'span 2' });
   });
 });
 

@@ -1,7 +1,13 @@
 import fc from 'fast-check';
-import { expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
-import { relativeTime } from '@/utils/relativeTime.js';
+import {
+  isoTimeParts,
+  now as clockNow,
+  relativeTime,
+  rfc3339Ms,
+  watchNow,
+} from '@/utils/relativeTime.js';
 import { isoTimeArb } from './helpers/arbitraries.js';
 
 const now = Date.parse('2026-09-25T12:00:00Z');
@@ -110,4 +116,62 @@ test('a time as far ahead reads as the same span in the future', () => {
 
 test('a count past 999 is digit-grouped', () => {
   expect(relativeTime('9999-09-25T12:00:00Z', now)).toBe('in 7,978 years');
+});
+
+test.each([[''], ['N/A'], ['1'], ['2026-10-28'], ['tomorrow'], [null], [3]])(
+  '%j is not an RFC 3339 time',
+  (raw) => {
+    expect(rfc3339Ms(raw)).toBeNull();
+  },
+);
+
+test('an RFC 3339 time reads as its moment, whatever the offset', () => {
+  fc.assert(
+    fc.property(isoTimeArb, ({ time, ms }) => {
+      expect(rfc3339Ms(time)).toBe(ms);
+    }),
+  );
+});
+
+test.each([
+  ['2026-10-28T14:03:22Z', ['2026-10-28T', '14:03:22Z']],
+  ['2026-10-28T14:03:22-06:00', ['2026-10-28T', '14:03:22-06:00']],
+  ['2026-10-28T15:30:12.345678901Z', ['2026-10-28T', '15:30:12Z']],
+])('%s shows to the second as %j', (raw, parts) => {
+  expect(isoTimeParts(raw)).toEqual(parts);
+});
+
+test('a time to the second keeps its moment, less its fraction', () => {
+  fc.assert(
+    fc.property(isoTimeArb, ({ time, ms }) => {
+      const [date, rest] = isoTimeParts(time);
+      expect(date).toMatch(/^\d{4}-\d{2}-\d{2}T$/);
+      expect(rest).toMatch(/^\d{2}:\d{2}:\d{2}([Zz]|[+-]\d{2}:\d{2})$/);
+      expect(rfc3339Ms(date + rest)).toBe(ms - (ms % 1000));
+    }),
+  );
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+test('the clock ticks every 30 seconds until its last watcher stops', () => {
+  vi.useFakeTimers({ now: now });
+  const stopFirst = watchNow();
+  const stopSecond = watchNow();
+  expect(clockNow.value).toBe(now);
+
+  vi.advanceTimersByTime(30_000);
+  expect(clockNow.value).toBe(now + 30_000);
+
+  stopFirst();
+  stopFirst(); // stopping twice does not stop the other watcher
+  vi.advanceTimersByTime(30_000);
+  expect(clockNow.value).toBe(now + 60_000);
+
+  stopSecond();
+  expect(vi.getTimerCount()).toBe(0);
+  vi.advanceTimersByTime(30_000);
+  expect(clockNow.value).toBe(now + 60_000);
 });
