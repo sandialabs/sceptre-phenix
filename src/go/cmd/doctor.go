@@ -136,8 +136,9 @@ func newDoctorCmd() *cobra.Command {
   The checks read the config and users files and report unknown keys, check
   each set environment variable phenix reads (PHENIX_*, PATH, EDITOR,
   SUDO_USER and SUDO_COMMAND) as phenix parses it and warn about PHENIX_*
-  variables that name no setting, check that the store and log files can be
-  written, that the base directories exist, and that minimega answers on its
+  variables that name no setting, check the settings every other phenix
+  command refuses or misreads (bridge-mode, deploy-mode, log.level and
+  log.system.*), check that the store and log files can be written, that the base directories exist, and that minimega answers on its
   socket. --skip takes a check or a group of checks; an unknown name fails and
   lists the valid ones. Secret values, such as the JWT signing key and initial
   users, are redacted. doctor exits 1 when a check fails, or with --strict

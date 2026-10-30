@@ -44,6 +44,11 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		"store.endpoint":           "bolt://" + filepath.Join(dir, "store.bdb"),
 		"log.system.path":          filepath.Join(dir, "phenix.log"),
 		"log.console":              consoleStderr,
+		"log.level":                "info",
+		"log.system.max-size":      "100",
+		"log.system.max-backups":   "3",
+		"log.system.max-age":       "90",
+		"bridge-mode":              "manual",
 		"ui.jwt-signing-key":       "doctor-test-key",
 		"ui.shutdown-grace-period": "5",
 		"ui.netflow.max-size":      "100",
@@ -81,6 +86,20 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 	}
 }
 
+// replaceRows returns rows with each row in with in place of the row of the
+// same id.
+func replaceRows(rows []string, with ...string) []string {
+	rows = slices.Clone(rows)
+
+	for _, w := range with {
+		id, _, _ := strings.Cut(w, " ")
+		i := slices.IndexFunc(rows, func(r string) bool { return strings.HasPrefix(r, id+" ") })
+		rows[i] = w
+	}
+
+	return rows
+}
+
 // rowsOf returns each result as "id name status".
 func rowsOf(results []doctorResult) []string {
 	rows := make([]string, 0, len(results))
@@ -100,6 +119,12 @@ func TestDoctorChecksFromInput(t *testing.T) {
 	allPass := []string{
 		"config-file config file pass",
 		"config-keys config keys pass",
+		"bridge-mode bridge-mode pass",
+		"deploy-mode deploy-mode pass",
+		"log.level log.level pass",
+		"log.system.max-size log.system.max-size pass",
+		"log.system.max-backups log.system.max-backups pass",
+		"log.system.max-age log.system.max-age pass",
 		"store.endpoint store.endpoint pass",
 		"log.system.path log.system.path pass",
 		"base-dir.phenix base-dir.phenix pass",
@@ -143,14 +168,25 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		},
 		"derived directory missing": {
 			settings: map[string]string{"base-dir.phenix": dir},
-			want: []string{
-				allPass[0], allPass[1], allPass[2], allPass[3],
-				"base-dir.phenix base-dir.phenix pass", allPass[5],
+			want: replaceRows(allPass,
 				"base-dir.injects base-dir.injects warn",
 				"base-dir.topologies base-dir.topologies warn",
 				"mount-dir mount-dir warn",
-				allPass[9], allPass[10], allPass[11], allPass[12],
+			),
+		},
+		"settings every command reads": {
+			settings: map[string]string{
+				"bridge-mode": "sideways", "deploy-mode": "some", "log.level": "loud",
+				"log.system.max-size": "-1", "log.system.max-backups": "five", "log.system.max-age": "-3",
 			},
+			want: replaceRows(allPass,
+				"bridge-mode bridge-mode fail",
+				"deploy-mode deploy-mode fail",
+				"log.level log.level warn",
+				"log.system.max-size log.system.max-size fail",
+				"log.system.max-backups log.system.max-backups warn",
+				"log.system.max-age log.system.max-age warn",
+			),
 		},
 		"no jwt key": {
 			settings: map[string]string{"ui.jwt-signing-key": ""},
@@ -189,7 +225,10 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				in.settings["log.level"] = resolvedSetting{value: "loud", text: "loud", source: sourceEnv}
 			},
 			// after config-keys, in name order
-			want: append(append(slices.Clone(allPass[:2]), "env PATH pass", "env PHENIX_LOG_LEVEL fail"), allPass[2:]...),
+			want: replaceRows(
+				append(append(slices.Clone(allPass[:2]), "env PATH pass", "env PHENIX_LOG_LEVEL warn"), allPass[2:]...),
+				"log.level log.level warn",
+			),
 		},
 	}
 
@@ -269,6 +308,12 @@ func TestParseDoctorSkip(t *testing.T) {
 			args: []string{"--skip", "config"},
 			want: []string{"config-file", "config-keys", "users-file"},
 		},
+		"settings group": {
+			args: []string{"--skip", "settings"},
+			want: []string{
+				"bridge-mode", "deploy-mode", "log.level", "log.system.max-age", "log.system.max-backups", "log.system.max-size",
+			},
+		},
 		"comma list and repeated": {
 			args: []string{"--skip", "env, store.endpoint", "--skip", "ui"},
 			want: []string{"env", "store.endpoint", "ui.jwt-signing-key", "ui.netflow.max-size", "ui.shutdown-grace-period"},
@@ -295,7 +340,7 @@ func TestParseDoctorSkip(t *testing.T) {
 					t.Fatalf("parseDoctorSkip(%v) error = %v, want prefix %q", tc.args, err, tc.wantErr)
 				}
 
-				if !strings.HasSuffix(err.Error(), "groups: config, env, files, dirs, ui, minimega") {
+				if !strings.HasSuffix(err.Error(), "groups: config, env, settings, files, dirs, ui, minimega") {
 					t.Errorf("parseDoctorSkip(%v) error = %v, want the groups listed", tc.args, err)
 				}
 
@@ -420,7 +465,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 11 passed, 0 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 17 passed, 0 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},

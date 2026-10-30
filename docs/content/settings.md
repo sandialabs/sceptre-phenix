@@ -109,13 +109,19 @@ valid ones.
 | :--- | :--- | :--- | :--- |
 | `config-file`, `users-file` | `config` | no `config.yaml` is found | the file does not parse, so phēnix ignores it |
 | `config-keys` | `config` | the config files hold keys that are not phēnix settings, such as a misspelling | never |
-| `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag or the config file overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
+| `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag or the config file overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), it holds a log level phēnix ignores, or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
+| `bridge-mode`, `deploy-mode`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative | `bridge-mode` or `deploy-mode` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
 | `store.endpoint` | `files` | never | the file cannot be written, or its directory does not exist or cannot be written |
 | `log.system.path`, `log.console` | `files` | never | the file (`phenix.log` in it when `log.system.path` is a directory) cannot be written, or created in the nearest directory above it that exists; `log.console` gets a row only when it names a file |
 | `base-dir.phenix`, `base-dir.minimega`, `base-dir.injects`, `base-dir.topologies`, `mount-dir` | `dirs` | the directory does not exist, is not readable and searchable by this user, is relative, or is one phēnix writes to and is not writable by this user | the path is not a directory |
 | `ui.jwt-signing-key` | `ui` | the key is empty (no sign-in) or a development key | never |
 | `ui.shutdown-grace-period`, `ui.netflow.max-size` | `ui` | never | `phenix ui` would refuse the value |
 | `minimega` | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default) |
+
+Every phēnix command reads the `settings` group before it runs, and `phenix
+doctor` skips that step, so these checks show what the other commands would
+refuse. They check the value phēnix uses, from wherever it comes, by the
+rules of the `env` rows.
 
 The `env` check covers each environment variable phēnix reads, `PHENIX_*`,
 `PATH`, `EDITOR`, `SUDO_USER` and `SUDO_COMMAND`, with a row only when the

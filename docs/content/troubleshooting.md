@@ -51,6 +51,20 @@ setting's value comes from, then a summary naming each failed check with a
 hint; see
 [Checking the Configuration](settings.md#checking-the-configuration).
 
+### Every Command Fails on a Mode Setting
+
+Every phēnix command except `phenix doctor` reads `bridge-mode` and
+`deploy-mode` before it runs, and stops on a value it does not know:
+
+```text
+setting user-specified bridge mode: setting bridge mode: unknown bridge mode provided: sideways
+```
+
+Fix the value in the flag, `PHENIX_BRIDGE_MODE` or `PHENIX_DEPLOY_MODE`, or the
+config file. `phenix doctor` fails its `bridge-mode` or `deploy-mode` check
+for such a value, and warns about a `log.level` or `log.system.*` value that
+phēnix ignores or reads as `0`.
+
 ### Do Not Delete `config.yaml`
 
 If you delete the `config.yaml` file while phēnix is running, the internal file watcher will break, and dynamic configuration changes will no longer apply.

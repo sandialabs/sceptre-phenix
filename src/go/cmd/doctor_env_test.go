@@ -103,7 +103,7 @@ func TestEnvChecks(t *testing.T) {
 			},
 			want: []doctorCheck{
 				row("PHENIX_LOG_SYSTEM_MAX_AGE", doctorWarn, "-3 is negative, which phenix treats as 0 (no limit)"),
-				row("PHENIX_LOG_SYSTEM_MAX_BACKUPS", doctorFail, `"five" is not a whole number, so phenix reads it as 0`),
+				row("PHENIX_LOG_SYSTEM_MAX_BACKUPS", doctorWarn, `"five" is not a whole number, so phenix reads it as 0 (no limit)`),
 				row("PHENIX_LOG_SYSTEM_MAX_SIZE", doctorWarn, `phenix reads "010" as 8`),
 			},
 		},
@@ -112,6 +112,15 @@ func TestEnvChecks(t *testing.T) {
 			want: []doctorCheck{
 				row("PHENIX_LOG_SYSTEM_MAX_AGE", doctorPass, "0 (no limit)"),
 				row("PHENIX_LOG_SYSTEM_MAX_SIZE", doctorFail, "-1 is negative, so every write to the system log fails"),
+			},
+		},
+		"misread log settings": {
+			vars: map[string]string{"PHENIX_LOG_SYSTEM_MAX_SIZE": "big", "PHENIX_LOG_LEVEL": "loud"},
+			want: []doctorCheck{
+				row("PHENIX_LOG_LEVEL", doctorWarn,
+					`"loud" is not a log level (debug, info, warn or error), so phenix ignores it and logs at info`),
+				row("PHENIX_LOG_SYSTEM_MAX_SIZE", doctorWarn,
+					`"big" is not a whole number, so phenix reads it as 0, and the system log rotates at 100 MB`),
 			},
 		},
 		"enum": {
@@ -125,8 +134,8 @@ func TestEnvChecks(t *testing.T) {
 				row("PHENIX_BRIDGE_MODE", doctorFail,
 					"unknown bridge mode provided: sideways, so phenix commands refuse it (options: manual | auto)"),
 				row("PHENIX_DEPLOY_MODE", doctorPass, "no-headnode"),
-				row("PHENIX_LOG_LEVEL", doctorPass, "none; phenix logs nothing"),
-				row("PHENIX_UI_LOGS_LEVEL", doctorFail,
+				row("PHENIX_LOG_LEVEL", doctorPass, "none, so phenix logs nothing"),
+				row("PHENIX_UI_LOGS_LEVEL", doctorWarn,
 					`"warning" is not a log level (debug, info, warn or error), so phenix ui uses info`),
 			},
 		},
@@ -134,7 +143,7 @@ func TestEnvChecks(t *testing.T) {
 			vars: map[string]string{"PHENIX_UI_LOGS_LEVEL": "none", "PHENIX_LOG_LEVEL": "DEBUG"},
 			want: []doctorCheck{
 				row("PHENIX_LOG_LEVEL", doctorPass, "debug"),
-				row("PHENIX_UI_LOGS_LEVEL", doctorFail,
+				row("PHENIX_UI_LOGS_LEVEL", doctorWarn,
 					`"none" is not a log level (debug, info, warn or error), so phenix ui uses info`),
 			},
 		},

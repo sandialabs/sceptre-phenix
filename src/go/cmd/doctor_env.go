@@ -160,7 +160,7 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 
 		return env.writableFileCheck("", value), true
 	case "log.level":
-		return logLevelCheck(value, true, "phenix ignores it"), true
+		return logLevelCheck(value, true, "phenix ignores it and logs at info"), true
 	case "ui.logs.level":
 		return logLevelCheck(value, false, "phenix ui uses info"), true
 	case "log.system.max-size":
@@ -170,6 +170,10 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 	case "hostname-suffixes":
 		return suffixesCheck(value), true
 	case "bridge-mode":
+		if value == "" {
+			return passCheck("not set, so phenix uses manual, or auto when phenix ui runs in auto"), true
+		}
+
 		mode, err := common.ParseBridgeMode(value)
 		if err != nil {
 			return failCheck(err.Error() + ", so phenix commands refuse it (options: manual | auto)"), true
@@ -177,6 +181,10 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 
 		return passCheck(string(mode)), true
 	case "deploy-mode":
+		if value == "" {
+			return passCheck("not set, so phenix uses the mode of phenix ui, or no-headnode"), true
+		}
+
 		mode, err := common.ParseDeployMode(value)
 		if err != nil {
 			return failCheck(err.Error() + ", so phenix commands refuse it (options: all | no-headnode | only-headnode)"), true
@@ -327,7 +335,8 @@ func boolVarCheck(value string) doctorCheck {
 	return passCheck(strconv.FormatBool(b))
 }
 
-// logLevelCheck parses value as plog does; only log.level accepts none.
+// logLevelCheck parses value as plog does; only log.level accepts none. plog
+// ignores a level it cannot parse, so that only warns.
 func logLevelCheck(value string, allowNone bool, fallback string) doctorCheck {
 	if allowNone && strings.EqualFold(value, "none") {
 		return passCheck("none, so phenix logs nothing")
@@ -335,20 +344,20 @@ func logLevelCheck(value string, allowNone bool, fallback string) doctorCheck {
 
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(value)); err != nil {
-		return failCheck(fmt.Sprintf("%q is not a log level (debug, info, warn or error), so %s", value, fallback))
+		return warnCheck(fmt.Sprintf("%q is not a log level (debug, info, warn or error), so %s", value, fallback))
 	}
 
 	return passCheck(strings.ToLower(level.String()))
 }
 
 // logMaxSizeCheck fails for a negative size, with which every write to the
-// system log fails.
+// system log fails; one that reads as 0 only warns, since 0 is the default size.
 func logMaxSizeCheck(value string) doctorCheck {
 	n, check := intVarCheck(value)
 
 	switch {
 	case check.Status == doctorFail:
-		return check
+		return warnCheck(fmt.Sprintf("%s, and the system log rotates at %d MB", check.Detail, defaultLogRotateMiB))
 	case n < 0:
 		return failCheck(fmt.Sprintf("%d is negative, so every write to the system log fails", n))
 	case n == 0:
@@ -359,13 +368,13 @@ func logMaxSizeCheck(value string) doctorCheck {
 }
 
 // logRetentionCheck checks a log.system.max-backups or max-age, where 0 and
-// below keep every old log file.
+// below keep every old log file, so no value breaks logging.
 func logRetentionCheck(value string) doctorCheck {
 	n, check := intVarCheck(value)
 
 	switch {
 	case check.Status == doctorFail:
-		return check
+		return warnCheck(check.Detail + " (no limit)")
 	case n < 0:
 		return warnCheck(fmt.Sprintf("%d is negative, which phenix treats as 0 (no limit)", n))
 	case n == 0:

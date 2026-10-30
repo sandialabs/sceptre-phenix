@@ -21,6 +21,7 @@ import (
 const (
 	doctorGroupConfig   = "config"
 	doctorGroupEnv      = "env"
+	doctorGroupSettings = "settings"
 	doctorGroupFiles    = "files"
 	doctorGroupDirs     = "dirs"
 	doctorGroupUI       = "ui"
@@ -240,7 +241,22 @@ func baseDirDef(key, sub string, needWrite bool) doctorCheckDef {
 	}
 }
 
+// settingDef registers the check of key's value, from wherever it comes, by
+// the rules of its env check. Every phenix command reads key before it runs.
+func settingDef(key, hint string) doctorCheckDef {
+	return doctorCheckDef{
+		id: key, group: doctorGroupSettings, name: key, hint: hintText(hint),
+		run: func(_ context.Context, in *doctorInput) []doctorCheck {
+			check, _ := settingValueCheck(in.env, key, in.text(key))
+
+			return []doctorCheck{check}
+		},
+	}
+}
+
 // doctorChecks is every check doctor runs, in the order it runs them.
+//
+//nolint:funlen // one entry per check
 func doctorChecks() []doctorCheckDef {
 	one := func(c doctorCheck) []doctorCheck { return []doctorCheck{c} }
 	parseHint := hintText("fix the YAML syntax in the file it names")
@@ -275,6 +291,13 @@ func doctorChecks() []doctorCheckDef {
 				return envChecks(in.env, in.sources())
 			},
 		},
+		settingDef("bridge-mode", "set bridge-mode to manual or auto; every phenix command refuses another value"),
+		settingDef("deploy-mode",
+			"set deploy-mode to all, no-headnode or only-headnode, or unset it; every phenix command refuses another value"),
+		settingDef("log.level", "set log.level to debug, info, warn, error or none"),
+		settingDef("log.system.max-size", "set log.system.max-size to a whole number of megabytes, or 0 for 100"),
+		settingDef("log.system.max-backups", "set log.system.max-backups to a whole number, or 0 to keep every old log"),
+		settingDef("log.system.max-age", "set log.system.max-age to a whole number of days, or 0 for no limit"),
 		{
 			id: "store.endpoint", group: doctorGroupFiles, name: "store.endpoint",
 			hint: hintText("create the directory, or set store.endpoint to a bolt:// path this user can write"),
