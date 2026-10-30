@@ -129,7 +129,9 @@ valid ones.
 | `ui.listen-endpoint`, `ui.file-server-endpoint` | `tls` | the listen endpoint has no port, so `phenix ui` listens on a random one | `phenix ui` cannot listen on the value or refuses it |
 | `unix-socket` | `socket` | the path is relative, or holds a file that is not a socket, which `phenix ui` deletes | the directory does not exist or this user cannot write it, or the path is too long for a unix socket |
 | `unix-socket-gid` | `socket` | phēnix runs as root and no group has the id | phēnix does not run as root, and no group has the id or this user is not in the group, so `phenix ui` exits when it sets the socket's group |
-| `minimega` | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default) |
+| `server` (with the rows server bridge-mode and server deploy-mode when phenix ui answers) | `server` | no `phenix ui` answers on `unix-socket`: no socket file, a stale one, or no answer within `--timeout`; the version of `phenix ui` is not the version of this phēnix; its `bridge-mode` or `deploy-mode` is not the one set here | this user may not connect to the socket |
+| `minimega` | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default); the row names the likely cause: no socket, a stale one, or a user that may not connect |
+| `minimega-env` (the rows minimega files, minimega base and minimega mesh; one skip row when minimega gives no version) | `minimega` | minimega gives no flags (it is older than 3.0); its `-filepath` is relative or not writable by this user; its `-base` is not `base-dir.minimega`; `mesh status` fails when `-degree` is above 0 | the `-filepath` directory does not exist for phēnix or is not readable and searchable by this user |
 
 Every phēnix command reads the `settings` group before it runs, and `phenix
 doctor` skips that step, so these checks show what the other commands would
@@ -162,6 +164,21 @@ certificate files, and print neither.
 `name`, `status`, `detail` and, when it warns or fails, `hint`) and
 `settings`.
 
+The `server` check asks `phenix ui` on `unix-socket` for `GET /api/v1/options`,
+as every other phēnix command does before it runs, and reads the
+`X-Phenix-Version` header. A phēnix command uses `auto` when `phenix ui` uses
+`bridge-mode: auto`, whatever is set here, and the `bridge-mode` set here
+otherwise. It uses the `deploy-mode` set here, or the mode of `phenix ui`
+when none is set. The mode rows name the mode the command uses. A failure to
+connect warns, since `phenix doctor` also runs while `phenix ui` is stopped.
+
+The `minimega-env` check sends minimega its `args` command and reads the
+flags minimega runs with. phēnix resolves relative image paths against the
+`-filepath` directory and keeps disk images in it, so phēnix must see it at
+the same path, as the Docker Compose setup does with `/phenix`. The
+`minimega mesh` row gives `-degree` and `-abssnapshot` (see
+[Disks](disks.md)) and, when `-degree` is above 0, the size of the mesh.
+
 `--report` adds the hostname to the header and prints the whole output, text
 or JSON, in a fenced code block to paste into the
 [bug report form](https://github.com/sandialabs/sceptre-phenix/issues/new?template=1-bug-report.yml).
@@ -172,8 +189,10 @@ and 0 otherwise. It never prints the values of `ui.jwt-signing-key` or
 `ui.users`, only `<redacted>` when they are set, nor those of
 `PHENIX_UI_JWT_SIGNING_KEY`, `PHENIX_UI_USERS`, `SUDO_COMMAND` or a
 `PHENIX_*` variable that names no setting. Like `phenix healthcheck`, it opens
-no store, unix socket or log file, binds no port, and sends minimega only its
-`version` command. Run it with the same flags, environment and user as the command you
+no store or log file and binds no port. It connects to the unix socket of
+`phenix ui` as a client only, and never creates or removes it. It sends
+minimega only global commands that change nothing: `version`, `args` and
+`mesh status`. Run it with the same flags, environment and user as the command you
 are checking, since those decide the values it sees.
 
 ## Configuration Precedence

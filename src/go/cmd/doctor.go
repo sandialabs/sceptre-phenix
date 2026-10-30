@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/activeshadow/libminimega/minicli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"golang.org/x/sys/unix"
 
 	"phenix/store"
-	"phenix/util/mm/mmcli"
 )
 
 const (
@@ -142,18 +142,24 @@ func newDoctorCmd() *cobra.Command {
   store and log files can be written and that the base directories exist,
   check what phenix ui reads at startup (the JWT signing key and lifetime,
   initial users, proxy auth, the TLS key pair and certificate expiry, the
-  listen endpoints, and the unix socket's directory and group), and check
-  that minimega answers on its socket. --skip takes a check or a group of
-  checks; an unknown name fails and lists the valid ones. Secret values,
-  such as the JWT signing key and initial users, are redacted. doctor exits
-  1 when a check fails, or with --strict when one warns, and 0 otherwise.
+  listen endpoints, and the unix socket's directory and group), ask a
+  running phenix ui on the unix socket for its version and its bridge and
+  deploy modes, and check that minimega answers on its socket and that its
+  files directory, base directory and mesh suit phenix. --skip takes a
+  check or a group of checks; an unknown name fails and lists the valid
+  ones. Secret values, such as the JWT signing key and initial users, are
+  redacted. doctor exits 1 when a check fails, or with --strict when one
+  warns, and 0 otherwise.
 
   --report adds the hostname to the header and prints the whole output in a
   fenced block to paste into a bug report.
 
-  Like healthcheck, doctor opens no store, unix socket or log file and binds
-  no port, so it works while phenix ui is stopped. Run it with the same
-  flags, environment and user as the phenix command you are checking.`
+  Like healthcheck, doctor opens no store or log file and binds no port, so
+  it works while phenix ui is stopped. It connects to the unix socket as a
+  client only, never creating or removing it, and sends minimega only
+  global commands that change nothing (version, args and mesh status). Run
+  it with the same flags, environment and user as the phenix command you
+  are checking.`
 
 	cmd := &cobra.Command{
 		Use:   "doctor",
@@ -200,7 +206,7 @@ func newDoctorCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Duration("timeout", defaultDoctorTimeout, "how long to wait for minimega to answer")
+	cmd.Flags().Duration("timeout", defaultDoctorTimeout, "how long to wait for each answer of minimega or phenix ui")
 	cmd.Flags().StringP("output", "o", "text", "output format ('text' or 'json')")
 	cmd.Flags().StringSlice("skip", nil,
 		"checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)")
@@ -425,7 +431,7 @@ func netflowMaxSizeCheck(v *viper.Viper) doctorCheck {
 }
 
 // minimegaCheck asks minimega, through probe, for its version, waiting at
-// most timeout.
+// most timeout, and explains a failure to connect.
 func minimegaCheck(
 	ctx context.Context,
 	base string,
@@ -434,71 +440,45 @@ func minimegaCheck(
 ) doctorCheck {
 	socket := filepath.Join(base, minimegaCheckName)
 
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	type answer struct {
-		version string
-		err     error
-	}
-
-	answers := make(chan answer, 1)
-
-	go func() {
+	resps, err := boundedCall(ctx, timeout, func() ([]*minicli.Response, error) {
 		version, err := probe(timeout)
-		answers <- answer{version: version, err: err}
-	}()
 
-	select {
-	case a := <-answers:
-		if a.err != nil {
-			return doctorCheck{
-				Name:   minimegaCheckName,
-				Status: doctorFail,
-				Detail: fmt.Sprintf("no answer on %s: %v", socket, a.err),
-			}
-		}
+		return []*minicli.Response{{Response: version}}, err
+	})
 
-		return doctorCheck{Name: minimegaCheckName, Status: doctorPass, Detail: a.version}
-	case <-ctx.Done():
-		return doctorCheck{
-			Name:   minimegaCheckName,
-			Status: doctorFail,
-			Detail: fmt.Sprintf("no answer on %s within %s", socket, timeout),
+	var check doctorCheck
+	if len(resps) > 0 {
+		check = passCheck(resps[0].Response)
+	}
+
+	switch {
+	case errors.Is(err, errNoAnswer):
+		check = failCheck(fmt.Sprintf("no answer on %s within %s", socket, timeout))
+	case err != nil:
+		check = failCheck(fmt.Sprintf("no answer on %s: %v", socket, err))
+		if problem := minimegaDialProblem(err); problem != "" {
+			check.Detail += " (" + problem + ")"
 		}
 	}
+
+	check.Name = minimegaCheckName
+
+	return check
 }
 
 // probeMinimega sends minimega's version command to the minimega whose base
 // directory is base, on a connection of its own, bounded by timeout.
 func probeMinimega(base string, timeout time.Duration) (string, error) {
-	cmd := mmcli.NewCommand()
-	cmd.Command = "version"
-	cmd.Timeout = timeout
-
-	var (
-		version string
-		err     error
-	)
-
-	// every response is read, so the connection is released
-	for resp := range mmcli.RunDedicatedAt(base, cmd) {
-		for _, r := range resp.Resp {
-			if r.Error != "" {
-				if err == nil {
-					err = errors.New(r.Error) //nolint:err113 // minimega's error text
-				}
-
-				continue
-			}
-
-			if version == "" {
-				version = strings.TrimSpace(r.Response)
-			}
-		}
+	resps, err := runMinimegaAt(base, "version", timeout)
+	if err != nil {
+		return "", err
 	}
 
-	return version, err
+	if len(resps) == 0 {
+		return "", nil
+	}
+
+	return strings.TrimSpace(resps[0].Response), nil
 }
 
 // settingSource names where key's value comes from, in viper's order: a set

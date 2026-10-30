@@ -366,6 +366,14 @@ type meshInfo struct {
 	degree, peers string
 }
 
+// MeshSize is the number of nodes in the local node's `mesh status`, and
+// false when the responses give none.
+func MeshSize(resps []*minicli.Response) (int, bool) {
+	info, ok := meshStatus(resps)
+
+	return info.size, ok
+}
+
 // meshStatus reads the local node's `mesh status`.
 func meshStatus(resps []*minicli.Response) (meshInfo, bool) {
 	for _, resp := range resps {

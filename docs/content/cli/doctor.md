@@ -29,18 +29,24 @@ Check the phenix configuration without a running server
   store and log files can be written and that the base directories exist,
   check what phenix ui reads at startup (the JWT signing key and lifetime,
   initial users, proxy auth, the TLS key pair and certificate expiry, the
-  listen endpoints, and the unix socket's directory and group), and check
-  that minimega answers on its socket. --skip takes a check or a group of
-  checks; an unknown name fails and lists the valid ones. Secret values,
-  such as the JWT signing key and initial users, are redacted. doctor exits
-  1 when a check fails, or with --strict when one warns, and 0 otherwise.
+  listen endpoints, and the unix socket's directory and group), ask a
+  running phenix ui on the unix socket for its version and its bridge and
+  deploy modes, and check that minimega answers on its socket and that its
+  files directory, base directory and mesh suit phenix. --skip takes a
+  check or a group of checks; an unknown name fails and lists the valid
+  ones. Secret values, such as the JWT signing key and initial users, are
+  redacted. doctor exits 1 when a check fails, or with --strict when one
+  warns, and 0 otherwise.
 
   --report adds the hostname to the header and prints the whole output in a
   fenced block to paste into a bug report.
 
-  Like healthcheck, doctor opens no store, unix socket or log file and binds
-  no port, so it works while phenix ui is stopped. Run it with the same
-  flags, environment and user as the phenix command you are checking.
+  Like healthcheck, doctor opens no store or log file and binds no port, so
+  it works while phenix ui is stopped. It connects to the unix socket as a
+  client only, never creating or removing it, and sends minimega only
+  global commands that change nothing (version, args and mesh status). Run
+  it with the same flags, environment and user as the phenix command you
+  are checking.
 ```
 
 ```text
@@ -72,7 +78,7 @@ docker exec phenix phenix doctor --report
       --report              add the hostname and print the output in a fenced block to paste into a bug report
       --skip strings        checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)
       --strict              exit 1 when a check warns, not only when one fails
-      --timeout duration    how long to wait for minimega to answer (default 3s)
+      --timeout duration    how long to wait for each answer of minimega or phenix ui (default 3s)
 ```
 
 ### SEE ALSO

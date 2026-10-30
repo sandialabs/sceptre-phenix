@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"os/user"
 	"runtime"
@@ -29,6 +30,7 @@ const (
 	doctorGroupAuth     = "auth"
 	doctorGroupTLS      = "tls"
 	doctorGroupSocket   = "socket"
+	doctorGroupServer   = "server"
 	doctorGroupMinimega = "minimega"
 )
 
@@ -40,6 +42,8 @@ type doctorInput struct {
 	known    []string
 	settings map[string]resolvedSetting
 	probe    func(base string, timeout time.Duration) (string, error)
+	minimega minimegaRunner
+	server   func(socket string, timeout time.Duration) *http.Client
 	timeout  time.Duration
 	now      func() time.Time
 	hostname func() (string, error)
@@ -47,6 +51,7 @@ type doctorInput struct {
 	uid, gid int
 	userName string
 	cwd      string
+	found    *doctorFound // set for each run by runDoctorChecks
 }
 
 // resolvedSetting is a setting's value as phenix reads it and where it came
@@ -108,6 +113,8 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		known:    known,
 		settings: resolveSettings(flags, config.keys, known, env.lookup),
 		probe:    probeMinimega,
+		minimega: runMinimegaAt,
+		server:   doctorServerClient,
 		timeout:  timeout,
 		now:      time.Now,
 		hostname: os.Hostname,
@@ -116,6 +123,7 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		gid:      os.Getgid(),
 		userName: name,
 		cwd:      cwd,
+		found:    nil,
 	}
 }
 
@@ -508,14 +516,31 @@ func doctorChecks() []doctorCheckDef {
 			},
 		},
 		{
-			id: minimegaCheckName, group: doctorGroupMinimega, name: minimegaCheckName,
-			hint: hintText("start minimega, or set base-dir.minimega to the directory that holds its socket"),
+			id: serverCheckName, group: doctorGroupServer, name: serverCheckName, hint: serverHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck {
+				bridge := in.text("bridge-mode")
+				if in.settings["bridge-mode"].source == sourceDefault {
+					bridge = ""
+				}
+
+				return serverChecks(ctx, in.text("unix-socket"), in.timeout, in.server, in.env.lstat, bridge, in.text("deploy-mode"))
+			},
+		},
+		{
+			id: minimegaCheckName, group: doctorGroupMinimega, name: minimegaCheckName, hint: minimegaHint,
 			run: func(ctx context.Context, in *doctorInput) []doctorCheck {
 				base := in.text("base-dir.minimega")
 				probe := func(timeout time.Duration) (string, error) { return in.probe(base, timeout) }
 
-				return one(minimegaCheck(ctx, base, in.timeout, probe))
+				check := minimegaCheck(ctx, base, in.timeout, probe)
+				in.found.minimegaUp = check.Status == doctorPass
+
+				return one(check)
 			},
+		},
+		{
+			id: "minimega-env", group: doctorGroupMinimega, name: "minimega-env", hint: minimegaEnvHint,
+			run: minimegaEnvChecks,
 		},
 	}
 }
@@ -563,10 +588,14 @@ func parseDoctorSkip(names []string, defs []doctorCheckDef) (map[string]bool, er
 	return skip, nil
 }
 
-// runDoctorChecks runs each check in defs against in, in order, and gives a
-// skip row for each one skip names.
-func runDoctorChecks(ctx context.Context, in *doctorInput, defs []doctorCheckDef, skip map[string]bool) []doctorResult {
+// runDoctorChecks runs each check in defs against a copy of input, in order,
+// and gives a skip row for each one skip names.
+func runDoctorChecks(ctx context.Context, input *doctorInput, defs []doctorCheckDef, skip map[string]bool) []doctorResult {
 	var results []doctorResult
+
+	run := *input
+	run.found = &doctorFound{minimegaUp: false, minimegaArgs: nil}
+	in := &run
 
 	for _, def := range defs {
 		if skip[def.id] {

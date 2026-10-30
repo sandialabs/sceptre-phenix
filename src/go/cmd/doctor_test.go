@@ -300,7 +300,7 @@ func TestMinimegaCheck(t *testing.T) {
 			want: doctorCheck{
 				Name:   "minimega",
 				Status: doctorFail,
-				Detail: "no answer on /tmp/mm/minimega: connection refused",
+				Detail: "no answer on /tmp/mm/minimega: connection refused (a stale socket file: minimega stopped without removing it)",
 			},
 		},
 		"hangs": {
@@ -605,13 +605,17 @@ func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 }
 
 // phenix doctor reports each setting's source, redacts the JWT signing key,
-// fails when minimega does not answer, and leaves common.MinimegaBase alone.
+// fails when minimega does not answer, warns when phenix ui does not, creates
+// no unix socket, and leaves common.MinimegaBase alone.
 func TestDoctorCommand(t *testing.T) {
 	const key = "doctor-test-signing-key"
 
 	t.Setenv("PHENIX_UI_JWT_SIGNING_KEY", key)
 	t.Setenv("PHENIX_BASE_DIR_MINIMEGA", t.TempDir())
 	t.Setenv("PHENIX_STORE_ENDPOINT", "bolt://"+filepath.Join(t.TempDir(), "store.bdb"))
+
+	socket := filepath.Join(t.TempDir(), "phenix.sock")
+	t.Setenv("PHENIX_UNIX_SOCKET", socket)
 
 	base := common.MinimegaBase
 
@@ -666,7 +670,14 @@ func TestDoctorCommand(t *testing.T) {
 		checks[c.Name] = c.Status
 	}
 
-	for name, status := range map[string]doctorStatus{"minimega": doctorFail, "store.endpoint": doctorPass, "ui.jwt-signing-key": doctorPass} {
+	if _, err := os.Lstat(socket); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("doctor left %s behind: %v", socket, err)
+	}
+
+	for name, status := range map[string]doctorStatus{
+		"minimega": doctorFail, "minimega-env": doctorSkip, "server": doctorWarn,
+		"store.endpoint": doctorPass, "ui.jwt-signing-key": doctorPass,
+	} {
 		if checks[name] != status {
 			t.Errorf("check %s = %q, want %q (checks %v)", name, checks[name], status, report.Checks)
 		}

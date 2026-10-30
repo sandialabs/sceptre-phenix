@@ -84,6 +84,15 @@ user), or when `ui.jwt-lifetime` has no unit (`24` is 24 nanoseconds). Run
 `phenix doctor --skip minimega` with the settings and user of `phenix ui`: its
 `auth`, `tls` and `socket` checks report each of these.
 
+### A Command Ignores `bridge-mode` or `deploy-mode`
+
+Before it runs, every phēnix command asks `phenix ui` on `unix-socket` for its
+modes. When `phenix ui` uses `bridge-mode: auto`, the command uses `auto` too,
+and when `deploy-mode` is not set here, the command uses the mode of
+`phenix ui`. `phenix doctor` warns in its `server` check when either mode
+differs from the one set here, and names the mode the command uses. It also
+warns when the version of `phenix ui` is not the version of the command.
+
 ### Do Not Delete `config.yaml`
 
 If you delete the `config.yaml` file while phēnix is running, the internal file watcher will break, and dynamic configuration changes will no longer apply.
@@ -129,3 +138,14 @@ Long-running work, such as an experiment's start script and VM launches, uses
 connections of its own and is not limited this way. This error usually means
 minimega itself is stuck or overloaded: check `minimega -e version` and the
 minimega log on the headnode.
+
+### phēnix Cannot Reach minimega or Its Images
+
+`phenix doctor` fails its `minimega` check when minimega does not give its
+version on `<base-dir.minimega>/minimega`, and names the likely cause: no
+socket (minimega is not running, or `base-dir.minimega` names another
+directory), a stale socket file, or a user that may not connect. Its
+`minimega-env` check then reads the flags minimega runs with. It fails when
+the `-filepath` directory does not exist for phēnix, which then cannot find
+the images minimega launches. In a container, mount that directory at the
+same path for both, as the Docker Compose setup does with `/phenix`.

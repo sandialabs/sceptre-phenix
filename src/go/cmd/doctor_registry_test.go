@@ -5,16 +5,21 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
 	"pgregory.net/rapid"
+
+	"phenix/version"
 )
 
 const doctorTestMinimega = "minimega 3.0.1 837c9174 2026-07-08"
@@ -26,7 +31,7 @@ func newDoctorTestDir(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	for _, sub := range []string{"phenix/injects", "phenix/topologies", "phenix/mounts", "minimega"} {
+	for _, sub := range []string{"phenix/injects", "phenix/topologies", "phenix/mounts", "minimega", "files"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o750); err != nil {
 			t.Fatalf("os.MkdirAll(%s) error = %v", sub, err)
 		}
@@ -82,6 +87,8 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		known:    known,
 		settings: resolved,
 		probe:    func(string, time.Duration) (string, error) { return doctorTestMinimega, nil },
+		minimega: (&doctorMinimega{mu: sync.Mutex{}, args: doctorMinimegaArgs(dir), size: "1", commands: nil}).run,
+		server:   doctorServerAnswer(http.StatusOK, version.API(), doctorTestOptions),
 		timeout:  time.Second,
 		now:      func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
 		hostname: func() (string, error) { return "doctor-test-host", nil },
@@ -105,6 +112,13 @@ func replaceRows(rows []string, with ...string) []string {
 	}
 
 	return rows
+}
+
+// withoutModeRows returns rows without the server's mode rows.
+func withoutModeRows(rows []string) []string {
+	return slices.DeleteFunc(slices.Clone(rows), func(r string) bool {
+		return r == "server server bridge-mode pass" || r == "server server deploy-mode pass"
+	})
 }
 
 // rowsOf returns each result as "id name status".
@@ -150,7 +164,13 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"ui.file-server-endpoint ui.file-server-endpoint pass",
 		"unix-socket unix-socket pass",
 		"unix-socket-gid unix-socket-gid pass",
+		"server server pass",
+		"server server bridge-mode pass",
+		"server server deploy-mode pass",
 		"minimega minimega pass",
+		"minimega-env minimega files pass",
+		"minimega-env minimega base pass",
+		"minimega-env minimega mesh pass",
 	}
 
 	// with replaces the row of id in allPass with row, or adds row after id
@@ -194,7 +214,11 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				"bridge-mode": "sideways", "deploy-mode": "some", "log.level": "loud",
 				"log.system.max-size": "-1", "log.system.max-backups": "five", "log.system.max-age": "-3",
 			},
-			want: replaceRows(allPass,
+			modify: func(in *doctorInput) {
+				in.settings["bridge-mode"] = resolvedSetting{value: "sideways", text: "sideways", source: sourceFlag}
+			},
+			// modes every command refuses are compared with no server's
+			want: replaceRows(withoutModeRows(allPass),
 				"bridge-mode bridge-mode fail",
 				"deploy-mode deploy-mode fail",
 				"log.level log.level warn",
@@ -266,13 +290,38 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		},
 		"no socket": {
 			settings: map[string]string{"unix-socket": "", "unix-socket-gid": "200"},
-			want:     allPass,
+			// no server to ask for its modes
+			want: withoutModeRows(allPass),
 		},
 		"minimega down": {
 			modify: func(in *doctorInput) {
 				in.probe = func(string, time.Duration) (string, error) { return "", errors.New("refused") }
 			},
-			want: with("minimega", "minimega minimega fail", false),
+			// minimega-env checks nothing, in one skip row
+			want: append(slices.Clone(allPass[:len(allPass)-4]), "minimega minimega fail", "minimega-env minimega-env skip"),
+		},
+		"server down": {
+			modify: func(in *doctorInput) { in.server = doctorServerDialError(syscall.ENOENT) },
+			want:   replaceRows(withoutModeRows(allPass), "server server warn"),
+		},
+		"server modes differ": {
+			settings: map[string]string{"deploy-mode": "all"},
+			want: slices.Replace(slices.Clone(allPass), slices.Index(allPass, "server server deploy-mode pass"),
+				slices.Index(allPass, "server server deploy-mode pass")+1, "server server deploy-mode warn"),
+		},
+		"phenix ui in auto, bridge-mode not set here": {
+			modify: func(in *doctorInput) {
+				in.server = doctorServerAnswer(http.StatusOK, version.API(), `{"bridge-mode":"auto","deploy-mode":"no-headnode"}`)
+			},
+			want: allPass,
+		},
+		"phenix ui in auto, manual set here": {
+			modify: func(in *doctorInput) {
+				in.server = doctorServerAnswer(http.StatusOK, version.API(), `{"bridge-mode":"auto","deploy-mode":"no-headnode"}`)
+				in.settings["bridge-mode"] = resolvedSetting{value: "manual", text: "manual", source: sourceFlag}
+			},
+			want: slices.Replace(slices.Clone(allPass), slices.Index(allPass, "server server bridge-mode pass"),
+				slices.Index(allPass, "server server bridge-mode pass")+1, "server server bridge-mode warn"),
 		},
 		"no config file": {
 			modify: func(in *doctorInput) {
@@ -381,9 +430,10 @@ func TestParseDoctorSkip(t *testing.T) {
 		want    []string
 		wantErr string
 	}{
-		"none":  {want: []string{}},
-		"id":    {args: []string{"--skip", "ui.jwt-signing-key"}, want: []string{"ui.jwt-signing-key"}},
-		"group": {args: []string{"--skip", "minimega"}, want: []string{"minimega"}},
+		"none":   {want: []string{}},
+		"one id": {args: []string{"--skip", "ui.jwt-signing-key"}, want: []string{"ui.jwt-signing-key"}},
+		"group":  {args: []string{"--skip", "minimega"}, want: []string{"minimega", "minimega-env"}},
+		"id":     {args: []string{"--skip", "minimega-env,server"}, want: []string{"minimega-env", "server"}},
 		"group of several": {
 			args: []string{"--skip", "config"},
 			want: []string{"config-file", "config-keys", "users-file"},
@@ -427,7 +477,7 @@ func TestParseDoctorSkip(t *testing.T) {
 					t.Fatalf("parseDoctorSkip(%v) error = %v, want prefix %q", tc.args, err, tc.wantErr)
 				}
 
-				if !strings.HasSuffix(err.Error(), "groups: config, env, settings, files, dirs, ui, auth, tls, socket, minimega") {
+				if !strings.HasSuffix(err.Error(), "groups: config, env, settings, files, dirs, ui, auth, tls, socket, server, minimega") {
 					t.Errorf("parseDoctorSkip(%v) error = %v, want the groups listed", tc.args, err)
 				}
 
@@ -552,7 +602,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 25 passed, 0 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 28 passed, 1 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
