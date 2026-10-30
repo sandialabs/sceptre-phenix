@@ -1,6 +1,15 @@
 // How each cached page fetches its data. They live here rather than in the
 // pages so the data can be preloaded before a page is ever opened.
-import axiosInstance from '@/utils/axios.js';
+import * as configsApi from '@/api/configs.js';
+import * as disksApi from '@/api/disks.js';
+import * as experimentsApi from '@/api/experiments.js';
+import * as hostsApi from '@/api/hosts.js';
+import * as logsApi from '@/api/logs.js';
+import * as rolesApi from '@/api/roles.js';
+import * as scorchApi from '@/api/scorch.js';
+import * as settingsApi from '@/api/settings.js';
+import * as usersApi from '@/api/users.js';
+import * as vmsApi from '@/api/vms.js';
 import { useErrorNotification } from '@/utils/errorNotif.js';
 import {
   cachePage,
@@ -46,17 +55,19 @@ export const withoutScreenshots = (vms) =>
     return row;
   });
 
-// GET url; meta, if given, receives the response's freshness (see
-// freshness.js)
-const get = async (url, signal, meta, config = {}) =>
-  (await axiosInstance.get(url, { signal, meta, ...config })).data;
+// the data a request answers with
+const body = async (request) => (await request).data;
 
-// The running experiment page's data without its VMs, which it lists over the websocket; the rows it last
-// showed are kept, without screenshots, for the next visit to open with while the fresh list loads.
+// The running experiment page's data without its VMs, which it lists over
+// the websocket, plus the rows it last showed, without screenshots.
 export async function fetchRunningExperiment(name, signal, meta) {
-  const experiment = await get(`experiments/${name}`, signal, meta, {
-    params: { vms: false },
-  });
+  const experiment = await body(
+    experimentsApi.getExperiment(name, {
+      signal,
+      meta,
+      params: { vms: false },
+    }),
+  );
   return {
     ...experiment,
     vms: withoutScreenshots(cachedPage(experimentKey(name))?.data?.vms),
@@ -95,13 +106,6 @@ export const scorchListed = (exp) =>
   roleAllowed('experiments/apps', 'get', exp.name) &&
   roleAllowed('experiments', 'get', exp.name);
 
-// GET /experiments/{name}/scorch/pipelines, which also says whether the SCORCH
-// app is running
-export const scorchPipelines = (name, signal, meta) =>
-  get(`experiments/${name}/scorch/pipelines`, signal, meta, {
-    headers: { Accept: 'application/json' },
-  });
-
 // An experiment's row on the SCORCH page: a copy of it (the experiment
 // objects are shared with the Experiments page) with its SCORCH run state and
 // run names.
@@ -120,24 +124,32 @@ export const scorchRow = (exp, pipelines) => ({
 export const pageFetchers = {
   experiments: async (signal, meta) =>
     // the list only shows VM counts, which need nothing from minimega
-    (await get('experiments?vms=false', signal, meta)).experiments ?? [],
+    (await body(experimentsApi.listExperiments({ signal, meta })))
+      .experiments ?? [],
 
   configs: async (signal, meta) =>
-    (await get('configs', signal, meta)).configs ?? [],
+    (await body(configsApi.listConfigs({ signal, meta }))).configs ?? [],
 
   // rescan: have the server inspect every image again, not only changed ones
   disks: async (signal, meta, { rescan = false } = {}) =>
-    (await get(rescan ? 'disks?refresh=true' : 'disks', signal, meta)).disks ??
-    [],
+    (
+      await body(
+        disksApi.listDisks(rescan ? { refresh: true } : undefined, {
+          signal,
+          meta,
+        }),
+      )
+    ).disks ?? [],
 
-  hosts: async (signal, meta) => (await get('hosts', signal, meta)).hosts ?? [],
+  hosts: async (signal, meta) =>
+    (await body(hostsApi.listHosts({ signal, meta }))).hosts ?? [],
 
   users: async (signal, meta) => {
     // roles are only used for the role dropdown when creating/editing
     const [users, roles] = await Promise.all([
-      get('users', signal, meta),
+      body(usersApi.listUsers({ signal, meta })),
       roleAllowed('roles', 'list')
-        ? get('roles', signal, meta).catch((err) => {
+        ? body(rolesApi.listRoles({ signal, meta })).catch((err) => {
             // the user list is still worth showing without roles
             useErrorNotification(err);
             return null;
@@ -154,7 +166,7 @@ export const pageFetchers = {
   logs: async (signal, meta) => {
     const start = new Date(Date.now() - DEFAULT_LOG_WINDOW * 1000);
     return withLogIds(
-      (await get(`logs?start=${start.toISOString()}`, signal, meta)) ?? [],
+      (await body(logsApi.listLogs(start, null, { signal, meta }))) ?? [],
     );
   },
 
@@ -172,7 +184,9 @@ export const pageFetchers = {
         if (!scorchListed(exp)) return null;
 
         const runMeta = new FreshnessMeta();
-        const pipelines = await scorchPipelines(exp.name, signal, runMeta);
+        const pipelines = await body(
+          scorchApi.listScorchPipelines(exp.name, { signal, meta: runMeta }),
+        );
         mergeFreshness(meta, runMeta);
         // the experiment's runs page shows the same response, so it opens at
         // once too, unless it has fetched a fresher copy of its own
@@ -187,12 +201,13 @@ export const pageFetchers = {
 
   // every experiment's state of health, as far as the role may get each
   soh: async (signal, meta) =>
-    (await get('soh', signal, meta)).experiments ?? [],
+    (await body(experimentsApi.listSoh({ signal, meta }))).experiments ?? [],
 
-  settings: async (signal, meta) => await get('settings', signal, meta),
+  settings: (signal, meta) => body(settingsApi.getSettings({ signal, meta })),
 
   // the tiles fetch their screenshots themselves, only while on screen
-  vmtiles: async (signal, meta) => (await get('vms', signal, meta)).vms ?? [],
+  vmtiles: async (signal, meta) =>
+    (await body(vmsApi.listAllVms({ signal, meta }))).vms ?? [],
 };
 
 // Tabs worth loading ahead of a visit, cheapest first, with who may see them

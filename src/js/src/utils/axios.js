@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { usePhenixStore } from '@/store.js';
 import {
+  header,
   readFreshness,
   serverResponded,
   serverUnanswered,
@@ -28,11 +29,6 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
-const retryAfterHeader = (headers) =>
-  (typeof headers?.get === 'function'
-    ? headers.get('retry-after')
-    : headers?.['retry-after']) ?? undefined;
-
 axiosInstance.interceptors.response.use(
   (response) => {
     const { meta, metaSentAt, sentAt } = response.config ?? {};
@@ -47,7 +43,7 @@ axiosInstance.interceptors.response.use(
     if (serverNotAnswering(error)) {
       serverUnanswered();
     } else if (response?.status === 503) {
-      const retryAfter = retryAfterHeader(response.headers);
+      const retryAfter = header(response.headers, 'retry-after');
       if (retryAfter !== undefined) serverUnavailable(retryAfter);
     } else if (response) {
       serverResponded(error.config?.sentAt);

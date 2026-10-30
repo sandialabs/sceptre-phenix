@@ -35,7 +35,7 @@ export const lastNotice = () => notices.open.mock.lastCall[0];
 export const noticeText = () => JSON.stringify(lastNotice().message.children);
 
 // what usePhenixStore() returns after resetMocks()
-export const STORE_DEFAULTS = {
+const STORE_DEFAULTS = {
   token: 't',
   features: [],
   role: null,

@@ -17,12 +17,9 @@ const boltFileMode = 0o600
 // boltOpenTimeout bounds the wait for another process to release its lock on the BoltDB file.
 var boltOpenTimeout = 10 * time.Second //nolint:gochecknoglobals // overridden in tests
 
-// BoltDB opens its file for each operation rather than holding it open, so
-// the phenix CLI and the UI server can share it (Bolt locks the file while it
-// is open). Reads open it read-only, which lets them run together. Writes keep
-// the free page list in the file: without it every open walks the whole file
-// to rebuild the list, which takes seconds on a large store once the file has
-// left the page cache, and reads wait behind it.
+// BoltDB opens its file for each operation, read-only for reads, so the phenix CLI and the UI server can share it (Bolt
+// locks the file while it is open). Writes keep the free page list in the file, so an open never walks a large file to
+// rebuild it.
 type BoltDB struct {
 	// held for reading by reads and for writing by writes, since this process's
 	// read-only and read-write opens of the file would otherwise block each other
@@ -50,7 +47,7 @@ func (b *BoltDB) Init(opts ...Option) error {
 		return fmt.Errorf("initializing BoltDB store: %w", err)
 	}
 
-	return b.Close()
+	return b.close()
 }
 
 func (b *BoltDB) IsInitialized(component Component) bool {
@@ -74,7 +71,7 @@ func (b *BoltDB) InitializeComponent(component Component) error {
 		return err
 	}
 
-	defer func() { _ = b.Close() }()
+	defer func() { _ = b.close() }()
 
 	err = b.put("phenix", string(component), []byte{1})
 	if err != nil {
@@ -118,7 +115,8 @@ func (b *BoltDB) view(fn func(*bbolt.Tx) error) error {
 	return db.View(fn)
 }
 
-func (b *BoltDB) Close() error {
+// close closes the file open() opened and releases its lock.
+func (b *BoltDB) close() error {
 	defer b.mu.Unlock()
 
 	return b.db.Close()
@@ -202,7 +200,7 @@ func (b *BoltDB) Create(c *Config) error {
 		return err
 	}
 
-	defer func() { _ = b.Close() }()
+	defer func() { _ = b.close() }()
 
 	// restored on failure, so a create of an existing name leaves c as it was
 	metadata := c.Metadata
@@ -250,7 +248,7 @@ func (b *BoltDB) Update(c *Config) error {
 		return err
 	}
 
-	defer func() { _ = b.Close() }()
+	defer func() { _ = b.close() }()
 
 	// restored on failure, so a failed update leaves c as it was
 	metadata := c.Metadata
@@ -291,7 +289,7 @@ func (b *BoltDB) Delete(c *Config) error {
 		return err
 	}
 
-	defer func() { _ = b.Close() }()
+	defer func() { _ = b.close() }()
 
 	err := b.db.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(c.Kind))

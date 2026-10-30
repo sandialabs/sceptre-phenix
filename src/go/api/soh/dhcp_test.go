@@ -31,20 +31,16 @@ func (m *dhcpMM) GetVMIPv4(...mm.Option) ([]string, error) {
 	return reply, nil
 }
 
-// useDHCP makes minimega answer with replies, as dhcpMM does, polled every millisecond until the test ends.
+// useDHCP makes minimega answer with replies, as dhcpMM does, until the test ends.
 func useDHCP(t *testing.T, replies ...[]string) *dhcpMM {
 	t.Helper()
 
 	fake := &dhcpMM{replies: replies}
-	originalMM, originalInterval := mm.DefaultMM, dhcpPollInterval
+	originalMM := mm.DefaultMM
 
 	mm.DefaultMM = fake //nolint:reassign // install test double
-	dhcpPollInterval = time.Millisecond
 
-	t.Cleanup(func() {
-		mm.DefaultMM = originalMM //nolint:reassign // restore default
-		dhcpPollInterval = originalInterval
-	})
+	t.Cleanup(func() { mm.DefaultMM = originalMM }) //nolint:reassign // restore default
 
 	return fake
 }
@@ -74,7 +70,7 @@ func TestWaitForDHCPPollsOnceForAllInterfaces(t *testing.T) { //nolint:parallelt
 
 		s.waitForDHCP(context.Background(), wg, &ipsMu, "exp", "host", []dhcpInterface{
 			{idx: 2, iface: eth2}, {idx: 3, iface: eth3},
-		})
+		}, time.Millisecond)
 	}()
 
 	// The IP maps are safe to write while the wait fills them in.
@@ -136,7 +132,7 @@ func TestWaitForDHCPTimesOutPerInterface(t *testing.T) { //nolint:paralleltest /
 		{idx: 0, iface: &v1.Interface{NameF: "eth0", ProtoF: "dhcp"}},
 		{idx: 1, iface: &v1.Interface{NameF: "eth1", ProtoF: "dhcp"}},
 		{idx: 5, iface: &v1.Interface{NameF: "eth5", ProtoF: "dhcp"}},
-	})
+	}, time.Millisecond)
 
 	// eth0's success, then a timeout for each of the others
 	if diff := cmp.Diff([]bool{false, true, true}, stateFailures(wg)); diff != "" {

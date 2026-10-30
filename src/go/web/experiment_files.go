@@ -309,12 +309,8 @@ func mayDownloadArchive(role rbac.Role, j job.Job) bool {
 
 // ArchiveExperimentFiles - POST /experiments/{name}/files/archive.
 //
-// It checks the files as DownloadExperimentFiles does, then builds their zip
-// archive in a background job, for GET /jobs/{id}/artifact. A file that fails
-// is left out and listed in the archive's MISSING.txt, and the archive is
-// named <exp>-files-incomplete.zip. The files are audited as downloaded when
-// the archive is (see auditArchiveDownload), and the job when it fails (see
-// auditArchiveJob).
+// Checks the files as DownloadExperimentFiles does, then zips them in a background job for GET /jobs/{id}/artifact. A
+// file that fails is listed in MISSING.txt and the archive is named <exp>-files-incomplete.zip.
 func ArchiveExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 	name := mux.Vars(r)["name"]
 

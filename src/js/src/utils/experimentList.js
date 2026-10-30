@@ -1,9 +1,9 @@
 // The Experiments table's sorts and page totals.
 
+import { compare } from './compare.js';
 import { rfc3339Ms } from './relativeTime.js';
 
 const byName = (a, b) => (a.name ?? '').localeCompare(b.name ?? '');
-const compare = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
 
 // A Buefy custom-sort on `key(row)` in the direction asked, ties always by
 // name from A to Z.

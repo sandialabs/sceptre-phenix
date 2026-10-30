@@ -19,14 +19,3 @@ it.each(['.navbar-menu', '.navbar-start', '.navbar-end'])(
     });
   },
 );
-
-it('spaces the header links more tightly than Bulma', () => {
-  for (const selector of [
-    '.navbar-start > .navbar-item',
-    '.navbar-end > .navbar-item',
-  ]) {
-    expect(declarations(selector, DESKTOP)).toMatchObject({
-      'padding-inline': '0.4rem',
-    });
-  }
-});

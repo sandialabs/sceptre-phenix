@@ -1,13 +1,6 @@
-// Package livecapture follows pcap captures while minimega is still writing
-// them, so their packets can be streamed as they arrive (to the web UI, the
-// command line or a local Wireshark) instead of only once a capture stops.
-//
-// minimega writes each capture on the node running the VM. A Tap follows one
-// capture: it reads the file as it grows (directly on the headnode, a byte
-// range at a time over the mesh elsewhere) and only ever exposes whole
-// records, so every reader sees a valid pcap file however far it has grown.
-// Any number of readers share a Tap, which stops following a while after the
-// last one lets go.
+// Package livecapture follows pcap captures while minimega is still writing them, so their packets can be streamed as
+// they arrive. A Tap follows one capture on the node running the VM (directly on the headnode, a byte range at a time
+// over the mesh elsewhere), exposes only whole records, and is shared by any number of readers.
 package livecapture
 
 import (
@@ -494,14 +487,9 @@ func (t *Tap) expire() {
 	}
 }
 
-// CloseAll stops following every capture and removes what was read from
-// other nodes, for a process about to exit: an idle Tap is otherwise only
-// removed once its grace period has passed. A reader still holding a Tap sees
-// it done.
-//
-// The spools go first: stopping waits for any read in flight, which on an
-// unresponsive node takes until the read times out. Readers, and a read
-// finishing meanwhile, keep using the open file.
+// CloseAll stops following every capture and removes the spools read from other nodes, for a process about to exit; a
+// reader still holding a Tap sees it done. The spools go first, since stopping waits for any read in flight, which on an
+// unresponsive node lasts until the read times out.
 func CloseAll() {
 	registryMu.Lock()
 	taps := slices.Collect(maps.Values(registry))

@@ -232,15 +232,9 @@ type Checksum struct {
 	SHA256 string `json:"sha256,omitempty"`
 }
 
-// ServeChecksum answers a request for the SHA-256 checksum of the file at
-// path, named display in the response, from Digests: 200 with the checksum,
-// also as Repr-Digest, once it is known, or 202 with Retry-After while it is
-// computed in the background. A small file's checksum is usually known at
-// once.
-//
-// It returns an error, having sent nothing, if the file cannot be read, is not
-// a regular file (ErrNotRegular), or changed while it was hashed
-// (ErrChangedWhileHashing); the caller writes the error response.
+// ServeChecksum answers with the SHA-256 checksum of the file at path, named display: 200 with it (also as Repr-Digest)
+// once Digests knows it, or 202 with Retry-After while it is computed. It returns an error, having sent nothing, if the
+// file cannot be read, is not regular (ErrNotRegular) or changed while hashed (ErrChangedWhileHashing).
 func ServeChecksum(w http.ResponseWriter, path, display string) error {
 	info, err := os.Stat(path)
 	if err != nil {

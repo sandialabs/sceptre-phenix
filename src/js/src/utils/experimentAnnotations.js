@@ -165,8 +165,6 @@ function nodeValue(row) {
     return row.original.value;
   }
   switch (row.type) {
-    case 'boolean':
-      return row.value;
     case 'list':
       return row.value
         .split(',')

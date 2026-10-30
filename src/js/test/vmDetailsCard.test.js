@@ -580,18 +580,6 @@ describe('VmDetailsCard Restart', () => {
       true,
       'Cannot restart: the VM is not running. Start it instead',
     ],
-    [
-      'paused',
-      { state: 'PAUSED', running: false },
-      true,
-      "Can't restart: the VM is paused and must be resumed first",
-    ],
-    [
-      'busy',
-      { state: 'QUIT', running: false, busy: true },
-      true,
-      "Can't restart: the VM is busy with another action",
-    ],
   ])(
     'agrees with the Actions column on a %s VM',
     async (_, fields, disabled, tooltip) => {

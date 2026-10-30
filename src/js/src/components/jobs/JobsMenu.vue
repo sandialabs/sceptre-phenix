@@ -1,12 +1,7 @@
 <!--
-The header's background jobs menu: a button counting the running jobs,
-colored and marked with an icon while finished jobs wait to be seen, which
-opens the recent jobs with their progress, a link to each one's experiment,
-and their cancel, download and dismiss buttons. It is a disclosure, a button
-that shows and hides a panel, rather than an ARIA menu: a menu item's
-children are presentational, which would hide the panel's buttons and links
-from assistive technology. It is not a Buefy dropdown either, which marks
-its panel aria-modal although the panel is no dialog.
+The header's background jobs menu: a button counting the running jobs that
+opens the recent jobs. It is a disclosure, not an ARIA menu or Buefy dropdown,
+so the panel's buttons stay exposed to assistive technology.
 -->
 <template>
   <div

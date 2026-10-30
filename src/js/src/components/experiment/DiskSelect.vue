@@ -1,9 +1,5 @@
-<!-- A VM's disk picker. It offers the disks in the list by label, those outside
-the minimega files directory in a group of their own, and gives the chosen
-disk's full path. A VM disk the list does not hold is still shown. A warning
-beside the picker says when the VM's disk is outside the files directory, or
-when it is missing from the list, which is only known once the list has
-loaded (null until then, and for roles that may not list disks). -->
+<!-- A VM's disk picker: the listed disks, with those outside the minimega files
+directory grouped apart. Its disk list is null until it loads. -->
 <template>
   <div class="disk-select" :class="{ 'is-expanded': expanded }">
     <b-select

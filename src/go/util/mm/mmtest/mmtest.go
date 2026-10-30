@@ -62,12 +62,9 @@ var (
 	)
 )
 
-// Use points mmcli at the fake minimega, which answers with handle until the
-// test ends, and returns a function listing the commands received since. A
-// nil handle answers every command with an empty success.
-//
-// The fake is started once per process, and mmcli's shared connection to it
-// outlives a test, so tests using it must not run in parallel.
+// Use points mmcli at the fake minimega, which answers with handle (nil answers every command with an empty success)
+// until the test ends, and returns a function listing the commands received since. The fake and mmcli's connection to it
+// outlive a test, so tests using it must not run in parallel.
 func Use(tb testing.TB, handle Handler) func() []Command {
 	tb.Helper()
 

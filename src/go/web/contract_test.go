@@ -739,13 +739,6 @@ func TestContractJobListing(t *testing.T) {
 	}
 }
 
-// contractAdmin may do anything, as Global Admin may.
-func contractAdmin() rbac.Role {
-	return rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{{
-		Resources: []string{"*", "*/*"}, ResourceNames: []string{"*", "*/*"}, Verbs: []string{"*"},
-	}}}}
-}
-
 // useGlobalAdmin stores the global-admin role every request has with auth off and over the Unix socket;
 // the server keeps that role for 30 seconds across tests, so every test stores this one.
 func useGlobalAdmin(t *testing.T) {
@@ -755,7 +748,7 @@ func useGlobalAdmin(t *testing.T) {
 		Version:  "phenix.sandia.gov/v1",
 		Kind:     "Role",
 		Metadata: store.ConfigMetadata{Name: "global-admin"},
-		Spec:     map[string]any{"roleName": "Global Admin", "policies": rolePolicies(contractAdmin())},
+		Spec:     map[string]any{"roleName": "Global Admin", "policies": rolePolicies(adminRole())},
 	})
 }
 
@@ -999,7 +992,7 @@ func checkContractError(t *testing.T, spec openAPISpec, name string, tc contract
 	t.Helper()
 
 	f := useContractFixture(t)
-	server := serveContractAs(t, contractAdmin(), nil).URL
+	server := serveContractAs(t, adminRole(), nil).URL
 
 	path := tc.path
 	if tc.prepare != nil {
@@ -1062,7 +1055,7 @@ func TestContractJSONContentType(t *testing.T) {
 	} {
 		t.Run(path, func(t *testing.T) {
 			useContractFixture(t)
-			server := serveContractAs(t, contractAdmin(), nil).URL
+			server := serveContractAs(t, adminRole(), nil).URL
 
 			resp := do(t, http.MethodGet, server+path, "")
 			if resp.StatusCode != http.StatusOK {
@@ -1084,7 +1077,7 @@ func TestContractBasePath(t *testing.T) {
 	const base = "/phenix/"
 
 	useContractFixture(t)
-	server := serveContractAs(t, contractAdmin(), func(o *serverOptions) {
+	server := serveContractAs(t, adminRole(), func(o *serverOptions) {
 		o.basePath = base
 
 		page := `<html><head><base href="/webshark/"></head></html>`

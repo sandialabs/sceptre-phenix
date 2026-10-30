@@ -101,13 +101,9 @@ func (a *memAsset) serve(w http.ResponseWriter, r *http.Request, name string) bo
 	return true
 }
 
-// StaticHandler serves files from assets, gzip-compressing text assets for
-// clients that accept it (the UI's JavaScript compresses roughly 4x). Every
-// file gets a content-hash ETag so browsers can revalidate with a 304: embedded
-// files have a zero modification time, so there is no Last-Modified to fall
-// back on. The ETag and compressed bytes are cached per file; the size and
-// modification time in the key keep the cache correct when serving unbundled
-// assets from disk.
+// StaticHandler serves files from assets, gzip-compressing text assets for clients that accept it, with a content-hash
+// ETag so browsers can revalidate (embedded files have no modification time). The ETag and compressed bytes are cached
+// per file, keyed by size and modification time so unbundled assets served from disk stay correct.
 func StaticHandler(assets http.FileSystem, immutable bool) http.Handler {
 	var (
 		files = http.FileServer(assets)

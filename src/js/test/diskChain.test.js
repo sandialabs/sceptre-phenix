@@ -15,6 +15,7 @@ vi.mock('@/store.js', modules.store);
 
 import {
   backingChain,
+  baseName,
   diskLabel,
   diskList,
   diskOptions,
@@ -59,6 +60,20 @@ beforeEach(() => resetMocks({ store: {} }));
 afterEach(() => {
   clearPageCache();
   vi.useRealTimers();
+});
+
+describe('baseName', () => {
+  const noSlash = fc.string({ unit: 'binary' }).filter((s) => !s.includes('/'));
+
+  it('names a disk image by its file name', () => {
+    expect(baseName('/phenix/images/win10.qc2')).toBe('win10.qc2');
+    // any folders, absolute or relative, even empty ones
+    fc.assert(
+      fc.property(fc.array(noSlash), noSlash, (folders, name) => {
+        expect(baseName([...folders, name].join('/'))).toBe(name);
+      }),
+    );
+  });
 });
 
 describe('diskLabel', () => {

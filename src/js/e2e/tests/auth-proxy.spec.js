@@ -1,13 +1,8 @@
-// Proxy-auth signup flow. CI runs these in the test-e2e-auth job's proxy leg.
-// They need the UI built with VITE_AUTH=proxy and the server started with
-// --jwt-signing-key proxy-jwt; to run them yourself:
-//
+// Proxy-auth signup flow, run in CI's test-e2e-auth job; extraHTTPHeaders plays
+// the proxy, whose JWT the server parses unverified. It needs a VITE_AUTH=proxy
+// build and:
 //   phenix ui --jwt-signing-key proxy-jwt
 //   E2E_AUTH_MODE=proxy npx playwright test auth-proxy
-//
-// The auth proxy is simulated with Playwright's extraHTTPHeaders: every
-// request carries the proxy-style JWT, which the server intentionally parses
-// without verifying (that is what proxy mode means).
 const { test, expect } = require('@playwright/test');
 const { attachCapture, settle, fatalOf, unsignedJwt } = require('./helpers');
 

@@ -14,6 +14,18 @@ export function downloadConfigs(keys) {
   });
 }
 
+// GET /configs: the configs' metadata; config carries signal and meta
+export function listConfigs(config) {
+  return axiosInstance.get('configs', config);
+}
+
+// GET /configs/{kind}/{name}, as JSON
+export function getConfig(key) {
+  return axiosInstance.get('configs/' + key, {
+    headers: { Accept: JSON_BODY },
+  });
+}
+
 // DELETE /configs/{kind}/{name}
 export function deleteConfig(key) {
   return axiosInstance.delete('configs/' + key);

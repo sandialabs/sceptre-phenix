@@ -36,14 +36,9 @@ func GetMMFullPath(path string) string {
 	return filepath.Join(filesDirectory(), path)
 }
 
-// CleanBackingPath returns the absolute path p without its "." and ".."
-// segments, naming the file the kernel opens for p. qemu-img and minimega
-// report a backing file as its overlay's directory joined with the stored
-// (often relative) name, so p may hold ".." segments. That is
-// [filepath.Clean] of p unless a ".." follows a symlinked directory, which the
-// kernel leaves from the link's target rather than from the directory holding
-// the link; then p is returned with every symlink resolved. A file phenix
-// cannot stat keeps the cleaned form.
+// CleanBackingPath returns the absolute path p, a backing file as qemu-img and minimega report it (possibly holding ".."
+// segments), without its "." and ".." segments, naming the file the kernel opens. That is [filepath.Clean] of p unless a
+// ".." follows a symlinked directory; then every symlink is resolved. A file phenix cannot stat keeps the cleaned form.
 func CleanBackingPath(p string) string {
 	clean := filepath.Clean(p)
 	if clean == p {
@@ -76,15 +71,9 @@ func FilesDirectoryGiven() <-chan struct{} {
 	return filesDir.given
 }
 
-// filesDirectory returns minimega's files directory. It asks minimega on first
-// use rather than at startup, when neither the configured base directories
-// nor minimega may be ready, and keeps the answer. Until minimega answers it
-// returns <PhenixBase>/images, asking again at most once every filesDirRetry.
-// One caller asks at a time, without holding filesDir.mu, so a slow minimega
-// does not hold up FilesDirectoryGiven. Other callers wait for that answer
-// rather than take the fallback early, which would point them at a directory
-// minimega does not use; the question is bounded by the shared connection's
-// own timeouts.
+// filesDirectory returns minimega's files directory, asking minimega on first use and keeping the answer. Until minimega
+// answers it returns <PhenixBase>/images, asking again at most once every filesDirRetry; one caller asks at a time,
+// without holding filesDir.mu, and the others wait for its answer.
 func filesDirectory() string {
 	filesDir.mu.Lock()
 

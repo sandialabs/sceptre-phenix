@@ -45,19 +45,19 @@ const (
 	filebeatHarvestTick  = 5 * time.Second
 )
 
-// updatePipeline reports a run's done stage to the pipeline view.
-var updatePipeline = scorch.UpdatePipeline //nolint:gochecknoglobals // replaced in tests
-
 func init() { //nolint:gochecknoinits // app registration
-	_ = app.RegisterUserApp("scorch", func() app.App { return newScorch() })
+	_ = app.RegisterUserApp("scorch", func() app.App { return newScorch(scorch.UpdatePipeline) })
 }
 
 type Scorch struct {
 	md scorchmd.ScorchMetadata
+
+	// updatePipeline reports a run's done stage to the pipeline view.
+	updatePipeline func(scorch.ComponentUpdate) error
 }
 
-func newScorch() *Scorch {
-	return new(Scorch)
+func newScorch(updatePipeline func(scorch.ComponentUpdate) error) *Scorch {
+	return &Scorch{updatePipeline: updatePipeline} //nolint:exhaustruct // the rest is set by Init
 }
 
 func (*Scorch) Init(...app.Option) error {
@@ -179,7 +179,7 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	update.Status = statusRunning
-	_ = updatePipeline(update)
+	_ = s.updatePipeline(update)
 
 	if cmd != nil {
 		s.stopFilebeat(ctx, cmd, port)
@@ -194,7 +194,7 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	update.Status = doneStatus(errors)
-	_ = updatePipeline(update)
+	_ = s.updatePipeline(update)
 
 	return errors
 }

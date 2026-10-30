@@ -133,12 +133,9 @@ func ErrorResponse(responses chan *miniclient.Response) error {
 // vmNotFoundPrefix starts minimega's error for a VM a node doesn't have.
 const vmNotFoundPrefix = "vm not found: "
 
-// VMTargetErrorResponse is ErrorResponse for a command naming one VM that
-// minimega runs on every node in the namespace (such as `vm flush <vm>` or `cc
-// tunnel <vm> ...`). The nodes not running the VM answer "vm not found", so, as
-// minimega itself does for its VM-target commands, those errors are dropped
-// once any node has answered without an error. They are returned only when no
-// node succeeded and nothing else went wrong.
+// VMTargetErrorResponse is ErrorResponse for a command naming one VM that minimega runs on every node in the namespace
+// (such as `vm flush <vm>`). As minimega does for its VM-target commands, the other nodes' "vm not found" errors are
+// dropped once any node answered without one.
 func VMTargetErrorResponse(responses chan *miniclient.Response) error {
 	var (
 		errs, notFound error
@@ -297,20 +294,10 @@ func streamEnded(c *miniclient.Conn, count int) error {
 	return fmt.Errorf("running minimega command: %w", err)
 }
 
-// guard forwards responses from the shared connection, reporting a truncated or
-// empty stream as an error rather than as a successful empty result.
-//
-// release is called once the terminal error has been read. It must not be
-// called any earlier: miniclient closes the response channel before releasing
-// its own connection lock, so another command could otherwise take that lock
-// and overwrite Conn.err first.
-//
-// A command still running after timeout (none if zero or less) is abandoned:
-// the connection is marked dead and closed, and release is called at once, so
-// the commands waiting behind it can go on over a new connection.
-//
-// Callers MUST drain the returned channel. Abandoning it blocks this goroutine,
-// and miniclient's reader behind it, for the life of the process.
+// guard forwards responses from the shared connection, reporting a truncated or empty stream as an error. release is
+// called once the terminal error has been read (miniclient closes the channel before releasing its lock), or at once
+// when a command outlasts timeout (none if zero or less) and the connection is closed. Callers MUST drain the returned
+// channel, or this goroutine and miniclient's reader block for the life of the process.
 func guard(
 	c *miniclient.Conn,
 	in chan *miniclient.Response,

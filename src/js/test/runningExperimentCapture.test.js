@@ -15,6 +15,7 @@ vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 
 import { cachePage, clearPageCache } from '@/utils/pageCache.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
+import { never } from './helpers/async.js';
 import { disk, vm } from './helpers/fixtures.js';
 import { denyOnly } from './helpers/permissions.js';
 import {
@@ -417,7 +418,7 @@ describe('the CD-ROM picker', () => {
     expect(pickerOf(page)).toBeUndefined();
 
     // reopened, it waits on its own listing, not the stale one
-    listing = new Promise(() => {});
+    listing = never();
     await page.find('.vm-card .vm-action-cdrom').trigger('click');
     stale.resolve({ data: { disks: isos } });
     await flushPromises();

@@ -28,6 +28,7 @@ import (
 
 	"phenix/util/common"
 	"phenix/util/mm"
+	"phenix/util/polltest"
 )
 
 const (
@@ -125,15 +126,9 @@ func TestVMCaptureStreamInterruptedTwice(t *testing.T) {
 
 	stream.signal(t, os.Interrupt)
 
-	deadline := time.Now().Add(10 * time.Second)
-
-	for countSpools(t, stream.dir) != 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("vm capture stream kept its spool for 10s after an interrupt, want it removed at once")
-		}
-
-		time.Sleep(time.Millisecond)
-	}
+	polltest.Until(t, "vm capture stream removes its spool after an interrupt", func() bool {
+		return countSpools(t, stream.dir) == 0
+	})
 
 	stream.signal(t, os.Interrupt)
 

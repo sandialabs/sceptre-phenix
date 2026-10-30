@@ -14,14 +14,11 @@ import { noResponseMessage } from '@/utils/unreachable.js';
 // the most failures an outcome notification names; it counts the rest
 export const LISTED_FAILURES = 8;
 
-// Whether and how to offer an action. `action` describes it: its name,
-// label, verb (the label in lower case unless given), description, icon,
-// Bulma color type and whether its button is outlined. `unavailable` says why
-// it is not offered at all (an external node, a feature the server lacks),
-// `permitted` whether the role may take it, and `blocked` why the thing's
-// state rules it out now; reasons read after "Can't <verb>: ".
-//   permitted: the action is offered
-//   disabled: it cannot be taken now; `reason` says why
+// Whether and how to offer the action its first argument describes: why it is
+// `unavailable` at all, whether the role is `permitted` it, and why the thing's
+// state has it `blocked` now. The result is `permitted` if offered, and
+// `disabled` with a `reason` that reads "Can't <verb>: ..." when it cannot be
+// taken now; the verb is the label in lower case unless given.
 export function actionState(
   { name, label, verb, description, icon, type, outlined },
   { permitted = true, unavailable = null, blocked = null } = {},

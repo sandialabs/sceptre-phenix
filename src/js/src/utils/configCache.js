@@ -3,7 +3,7 @@
 // metadata; a cached copy is used while the list's revision for it (or, for a
 // config not written since revisions were added, its `updated` time, which
 // has whole seconds) is unchanged. Cleared on logout with the other page data.
-import axiosInstance from '@/utils/axios.js';
+import { getConfig } from '@/api/configs.js';
 
 const cache = new Map(); // "Kind/name" -> { version, promise }
 
@@ -19,9 +19,7 @@ export async function fullConfig(cfg) {
 
   let entry = cache.get(key);
   if (!entry || entry.version !== version) {
-    const promise = axiosInstance
-      .get(`configs/${key}`, { headers: { Accept: 'application/json' } })
-      .then((resp) => resp.data);
+    const promise = getConfig(key).then((resp) => resp.data);
     entry = { version, promise };
     cache.set(key, entry);
 

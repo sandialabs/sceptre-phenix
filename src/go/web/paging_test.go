@@ -18,7 +18,7 @@ func TestListsRefuseBadPages(t *testing.T) {
 	useJobs(t)
 	useDiskExperiments(t)
 
-	server := serveAs(t, "alice", contractAdmin()).URL
+	server := serveAs(t, "alice", adminRole()).URL
 
 	for _, path := range []string{"/api/v1/experiments", "/api/v1/vms", "/api/v1/disks", "/api/v1/jobs"} {
 		for _, query := range []string{"pageNum=0&perPage=10", "pageNum=1&perPage=0", "pageNum=x&perPage=10"} {
@@ -154,7 +154,7 @@ func TestDisksAndJobsPage(t *testing.T) {
 		waitJob(t, registry, startTestJob(t, registry, "alice", "", nil, "").ID)
 	}
 
-	server := serveAs(t, "alice", contractAdmin()).URL
+	server := serveAs(t, "alice", adminRole()).URL
 
 	for _, key := range []string{"disks", "jobs"} {
 		t.Run(key, func(t *testing.T) {

@@ -12,6 +12,7 @@ vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
 
 import NetflowCaptures from '@/components/experiment/NetflowCaptures.vue';
+import { never } from './helpers/async.js';
 import { componentDeclarations } from './helpers/css.js';
 import { httpError } from './helpers/fixtures.js';
 import { mountComponent, textOf } from './helpers/mount.js';
@@ -291,7 +292,7 @@ describe('focus', () => {
     await wrapper.find('button').trigger('click');
     await flushPromises();
 
-    axios.get.mockReturnValue(new Promise(() => {}));
+    axios.get.mockReturnValue(never());
     const refresh = buttonNamed(wrapper, 'Refresh');
     refresh.element.focus();
     await refresh.trigger('click');

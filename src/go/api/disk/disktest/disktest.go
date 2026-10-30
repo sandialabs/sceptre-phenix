@@ -9,12 +9,9 @@ import (
 	"testing"
 )
 
-// fakeQemuImg reports each image by the path it was given, as qemu-img does:
-// a qcow2 when its name ends in .qc2 or .qcow2, and raw otherwise. An image
-// with a sidecar <image>.backing file is backed by the image that file names,
-// relative to the image's folder or absolute, which the chain reports joined
-// onto that folder without cleaning, as qemu-img does. A chain naming a
-// missing file cannot be read.
+// fakeQemuImg reports each image as qemu-img does: a qcow2 when its name ends in .qc2 or .qcow2, raw otherwise, and
+// backed by the image a sidecar <image>.backing file names (joined onto the image's folder without cleaning). A chain
+// naming a missing file cannot be read.
 const fakeQemuImg = `#!/bin/sh
 echo "$*" >> "$FAKE_QEMU_IMG_CALLS"
 chain=false

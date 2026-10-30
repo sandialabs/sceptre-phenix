@@ -57,14 +57,10 @@ function graphArea(bbox, transform) {
   };
 }
 
-// Puts the serialized graph (the zoom group's children, in graph
-// coordinates) into a standalone SVG sized in CSS pixels:
-//   graph      markup of the graph layer
-//   defs       markup of the <defs> it references
-//   bbox       the graph's bounding box in graph coordinates
-//   transform  the zoom transform {k, x, y}
-//   scale      CSS pixels per SVG unit on screen
-// Returns { svg, width, height }.
+// Puts the serialized graph into a standalone SVG sized in CSS pixels: graph
+// and defs are markup, bbox the graph's box in graph coordinates, transform the
+// zoom {k, x, y}, and scale CSS pixels per SVG unit on screen. Returns
+// { svg, width, height }.
 export function composeSvg({
   graph,
   defs,

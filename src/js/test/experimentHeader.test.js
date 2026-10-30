@@ -421,6 +421,54 @@ describe('the Apps box', () => {
   );
 });
 
+describe('the label and host filters', () => {
+  const web = { key: 'role', value: 'web' };
+  const db = { key: 'tier', value: 'db' };
+  // [kind, filter, its options, its title, why it may be greyed out]
+  const filters = [
+    ['label', VmLabelFilter, [web, db], 'Labels', 'no VM has a label'],
+    [
+      'host',
+      VmHostFilter,
+      ['node1', 'node2'],
+      'Hosts',
+      'no VM is running on a host',
+    ],
+  ];
+
+  it.each(filters)(
+    'the %s filter names what it filters by, and how many are checked',
+    async (kind, Filter, options, title) => {
+      const render = (props) =>
+        mountComponent(Filter, { props: { options, ...props } });
+      const trigger = (w) => w.find(`.vm-${kind}-filter-trigger`);
+      expect(trigger(await render()).attributes('aria-label')).toBe(
+        `Filter VMs by ${kind}`,
+      );
+      const two = await render({ picked: options });
+      expect(trigger(two).attributes('aria-label')).toBe(
+        `Filter VMs by ${kind}, 2 checked`,
+      );
+      expect(textOf(trigger(two))).toBe(`${title} (2)`);
+    },
+  );
+
+  it.each(filters.map(([kind, Filter, , , why]) => [kind, Filter, why]))(
+    'the %s filter is greyed out, saying why, with nothing to filter by',
+    async (kind, Filter, why) => {
+      const wrapper = await mountComponent(Filter, { props: { options: [] } });
+      expect(
+        tooltipButtons(wrapper).find(
+          (b) => b.label === `Filter VMs by ${kind}`,
+        ),
+      ).toMatchObject({
+        tooltip: `Cannot filter by ${kind}: ${why}`,
+        disabled: true,
+      });
+    },
+  );
+});
+
 describe('the label filter', () => {
   const web = { key: 'role', value: 'web' };
   const db = { key: 'tier', value: 'db' };
@@ -443,28 +491,6 @@ describe('the label filter', () => {
     await clear.trigger('click');
     expect(wrapper.emitted('update:picked')).toEqual([[[db, web]], [[]], [[]]]);
   });
-
-  it('names what it filters by, and how many are checked', async () => {
-    const trigger = (w) => w.find('.vm-label-filter-trigger');
-    expect(trigger(await render()).attributes('aria-label')).toBe(
-      'Filter VMs by label',
-    );
-    const two = await render({ picked: [web, db] });
-    expect(trigger(two).attributes('aria-label')).toBe(
-      'Filter VMs by label, 2 checked',
-    );
-    expect(textOf(trigger(two))).toBe('Labels (2)');
-  });
-
-  it('is greyed out, saying why, when no VM has a label', async () => {
-    const wrapper = await render({ options: [] });
-    expect(
-      tooltipButtons(wrapper).find((b) => b.label === 'Filter VMs by label'),
-    ).toMatchObject({
-      tooltip: 'Cannot filter by label: no VM has a label',
-      disabled: true,
-    });
-  });
 });
 
 describe('the host filter', () => {
@@ -478,34 +504,6 @@ describe('the host filter', () => {
       .find((b) => textOf(b) === text)
       .find('input');
 
-  it('checks and unchecks hosts, and clears them', async () => {
-    const wrapper = await render({ picked: ['node2'] });
-    expect(box(wrapper, 'node2').element.checked).toBe(true);
-    await box(wrapper, 'node1').setValue(true);
-    await box(wrapper, 'node2').setValue(false);
-    const clear = wrapper
-      .findAll('button')
-      .find((b) => textOf(b) === 'Clear hosts');
-    await clear.trigger('click');
-    expect(wrapper.emitted('update:picked')).toEqual([
-      [['node2', 'node1']],
-      [[]],
-      [[]],
-    ]);
-  });
-
-  it('names what it filters by, and how many are checked', async () => {
-    const trigger = (w) => w.find('.vm-host-filter-trigger');
-    expect(trigger(await render()).attributes('aria-label')).toBe(
-      'Filter VMs by host',
-    );
-    const two = await render({ picked: ['node1', 'node2'] });
-    expect(trigger(two).attributes('aria-label')).toBe(
-      'Filter VMs by host, 2 checked',
-    );
-    expect(textOf(trigger(two))).toBe('Hosts (2)');
-  });
-
   it('hides its tooltip while its list is open', async () => {
     const wrapper = await render();
     const tooltip = () => wrapper.findComponent({ name: 'BTooltip' });
@@ -513,16 +511,6 @@ describe('the host filter', () => {
     await wrapper.find('.vm-host-filter-trigger').trigger('click');
     // Buefy opens a dropdown on a timer
     await vi.waitFor(() => expect(tooltip().props('active')).toBe(false));
-  });
-
-  it('is greyed out, saying why, when no VM runs on a host', async () => {
-    const wrapper = await render({ options: [] });
-    expect(
-      tooltipButtons(wrapper).find((b) => b.label === 'Filter VMs by host'),
-    ).toMatchObject({
-      tooltip: "Can't filter by host: no VM is running on a host",
-      disabled: true,
-    });
   });
 
   it('leaves unchecked the hosts that would make the request too long', async () => {

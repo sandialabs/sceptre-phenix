@@ -1,14 +1,7 @@
-// The State of Health graph layouts. Each layout is a module loaded on
-// demand, so a layout's library downloads only when someone picks it:
-//
-//   kind: 'simulation'  createSimulation(nodes, links, {width, height})
-//                       returns a running d3 force simulation
-//   kind: 'static'      compute({nodes, edges}) returns (or resolves to)
-//                       { positions: Map(id -> {x, y}),
-//                         groups?: [{id, label?, members: [id], padding}],
-//                         faintEdges?: Set(edge id) }
-//
-// The view draws every layout with the same d3 code.
+// The State of Health graph layouts, each loaded on demand. A 'simulation'
+// one's createSimulation(nodes, links, {width, height}) returns a d3 force
+// simulation; a 'static' one's compute({nodes, edges}) resolves to { positions
+// (Map of id to {x, y}), groups?, faintEdges? }. The view draws all with d3.
 import { readPref, writePref } from '../prefs.js';
 import * as force from './layouts/force.js';
 

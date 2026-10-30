@@ -39,10 +39,6 @@ type Netflow struct {
 	recorder *netflowRecorder
 }
 
-func NewNetflow(bridge string, conn *net.UDPConn) *Netflow {
-	return newNetflow(bridge, conn, nil)
-}
-
 func newNetflow(bridge string, conn *net.UDPConn, rec *netflowRecorder) *Netflow {
 	return &Netflow{
 		mu:     sync.RWMutex{},

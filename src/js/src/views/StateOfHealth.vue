@@ -1706,9 +1706,11 @@
       },
 
       execSoH() {
-        experimentsApi.triggerSoh(this.$route.params.id).catch((err) => {
-          useErrorNotification(err);
-        });
+        experimentsApi
+          .triggerApps(this.$route.params.id, 'soh')
+          .catch((err) => {
+            useErrorNotification(err);
+          });
       },
 
       vncLoc(vm) {

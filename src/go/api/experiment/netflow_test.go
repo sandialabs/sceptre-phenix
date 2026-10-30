@@ -72,7 +72,7 @@ func TestParseNetflowLine(t *testing.T) {
 }
 
 func TestNetflowPublishDoesNotBlockOnSlowConsumer(t *testing.T) {
-	flow := NewNetflow("bridge", &net.UDPConn{})
+	flow := newNetflow("bridge", &net.UDPConn{}, nil)
 	consumer := flow.NewChannel("slow")
 	for range netflowChannelBufferSize {
 		consumer <- map[string]any{"bytes": 1}

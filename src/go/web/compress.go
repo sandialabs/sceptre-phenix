@@ -46,12 +46,9 @@ var (
 	errNotHijacker = errors.New("response writer does not support hijacking")
 )
 
-// CompressResponses gzip-compresses JSON, YAML and plain-text API responses for
-// clients that accept it. Large list responses (VMs, disks, configs, logs) are
-// repetitive JSON that shrinks several fold, which matters on the slow links
-// the UI is often used over. Websocket upgrades and every other content type
-// pass through as-is, as do downloads (attachments): their bytes must reach the
-// client unchanged so byte ranges and the ETag refer to what it saves.
+// CompressResponses gzip-compresses JSON, YAML and plain-text API responses for clients that accept it, since large
+// lists shrink several fold. Websocket upgrades, other content types and downloads pass through as-is, so byte ranges
+// and the ETag refer to what the client saves.
 func CompressResponses(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Accept-Encoding")

@@ -13,12 +13,9 @@ import (
 	ft "phenix/web/forward/forwardtypes"
 )
 
-// forwardExists reports whether the tunnel behind a forward is still open,
-// given the VM's tunnels as mm.GetTunnels lists them without filters. A tunnel
-// matches as minimega's filters would match it: on each part the forward sets,
-// case-insensitively. The source port is the tunnel's own port on the cluster
-// host, so another user's tunnel to the same destination does not count. A
-// QEMU forward is not a tunnel and always counts as open.
+// forwardExists reports whether the tunnel behind a forward is still open among the VM's tunnels, matching each part the
+// forward sets case-insensitively, as minimega's filters do. The source port is the tunnel's own port on the cluster
+// host, so another user's tunnel to the same destination does not count; a QEMU forward always counts as open.
 func forwardExists(l ft.Listener, tunnels []map[string]string) bool {
 	if l.QEMU {
 		return true

@@ -31,8 +31,8 @@ func TestExperimentStatus(t *testing.T) {
 	}
 }
 
-// A lock held by another action is a temporary failure, with the message it
-// always had.
+// A lock held by another action is a temporary failure whose message names
+// the locked VM and its status.
 func TestLockedErrorIsRetryable(t *testing.T) {
 	if err := LockVMForStarting("locked-test", "vm1"); err != nil {
 		t.Fatalf("LockVMForStarting(locked-test, vm1) error = %v", err)

@@ -4,12 +4,10 @@ import { actionState } from '@/utils/operations.js';
 // Which disk actions a role may take on a disk in its current state, and why
 // not. The Disks page's details window and each row's buttons share these.
 
-// What each disk action needs: the RBAC verb, the disk name the role is
-// checked against (none to create a disk), whether the action reads the disk
-// into a new one, so the role must also be allowed to get it, whether
-// minimega runs it on the disk's path, whether a running experiment using the
-// disk rules it out, and, for actions only VM disks allow, the word for a
-// disk they were used on.
+// What each disk action needs: its RBAC verb and the disk name checked (none
+// to create one), whether it reads the disk into a new one (so needs get too),
+// whether minimega runs it on the path, whether a running experiment using the
+// disk rules it out, and, for VM-disk-only actions, the word for a used disk.
 const byName = (disk) => disk.name;
 export const DISK_ACTION_RULES = {
   snapshot: {

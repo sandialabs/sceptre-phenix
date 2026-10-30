@@ -16,7 +16,10 @@ export function diskList() {
 }
 
 // a path's file name
-export const baseName = (path) => String(path ?? '').replace(/^.*\//, '');
+export const baseName = (path) =>
+  String(path ?? '')
+    .split('/')
+    .pop();
 
 // What a path must not hold for minimega to take it as one literal path, as
 // the server checks it (minimegaSafe in src/go/api/disk/paths.go): globMeta

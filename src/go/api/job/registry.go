@@ -480,12 +480,6 @@ func (r *Registry) RemoveStaleArtifacts() (int, error) {
 	return removed, nil
 }
 
-// Shutdown cancels every job, waits for the running ones to end, and stops
-// the sweeper.
-func (r *Registry) Shutdown() {
-	r.ShutdownContext(context.Background(), 0)
-}
-
 // ShutdownContext cancels queued jobs, gives running ones drain to finish, then
 // cancels them and waits until ctx is done. It returns those still running.
 func (r *Registry) ShutdownContext(ctx context.Context, drain time.Duration) []Job {
@@ -877,7 +871,7 @@ func (r *Registry) flush(e *entry) {
 	send()
 }
 
-// sweepLoop sweeps every sweepInterval until Shutdown.
+// sweepLoop sweeps every sweepInterval until ShutdownContext.
 func (r *Registry) sweepLoop() {
 	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()

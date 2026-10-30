@@ -90,9 +90,11 @@ describe('the list pages', () => {
   });
 
   it('asks the server to inspect every disk again on a rescan', async () => {
-    serve({ 'disks?refresh=true': { disks: [] } });
+    serve({ disks: { disks: [] } });
     await pageFetchers.disks(undefined, undefined, { rescan: true });
-    expect(urls()).toEqual(['disks?refresh=true']);
+    expect(axiosInstance.get.mock.calls).toEqual([
+      ['disks', { params: { refresh: true } }],
+    ]);
   });
 
   it('shows the settings as the server sends them', async () => {

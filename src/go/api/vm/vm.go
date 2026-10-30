@@ -913,9 +913,28 @@ func Snapshots(ctx context.Context, expName, vmName string) ([]string, error) {
 	return names, nil
 }
 
+// SnapshotOption changes how Snapshot waits for the VM's memory snapshot.
+type SnapshotOption func(*saveTiming)
+
+// saveTiming is how often awaitSave asks minimega how a memory snapshot is going (asking right after it starts can
+// crash minimega), and how long it waits for one.
+type saveTiming struct {
+	poll, timeout time.Duration
+}
+
+// WithSaveTiming polls the memory snapshot every poll, giving up after timeout, in place of every second for an hour.
+func WithSaveTiming(poll, timeout time.Duration) SnapshotOption {
+	return func(t *saveTiming) { t.poll, t.timeout = poll, timeout }
+}
+
 // Snapshot saves the VM's disk and memory state as a snapshot it can later be restored from. Unsent minimega commands
 // give up once ctx is done, until the save starts; after that it ignores ctx.
-func Snapshot(ctx context.Context, expName, vmName, out string, cb func(string)) error {
+func Snapshot(ctx context.Context, expName, vmName, out string, cb func(string), opts ...SnapshotOption) error {
+	timing := saveTiming{poll: time.Second, timeout: time.Hour}
+	for _, opt := range opts {
+		opt(&timing)
+	}
+
 	vm, err := Get(ctx, expName, vmName)
 	if err != nil {
 		return fmt.Errorf("getting VM details: %w", err)
@@ -965,7 +984,7 @@ func Snapshot(ctx context.Context, expName, vmName, out string, cb func(string))
 		return fmt.Errorf("starting memory snapshot for VM %s: %w", vmName, err)
 	}
 
-	if err := awaitSave(expName, vmName, cb); err != nil {
+	if err := awaitSave(expName, vmName, cb, timing); err != nil {
 		return err
 	}
 
@@ -992,19 +1011,9 @@ func Snapshot(ctx context.Context, expName, vmName, out string, cb func(string))
 	return nil
 }
 
-//nolint:gochecknoglobals // tests shorten them
-var (
-	// savePoll is how often awaitSave asks minimega how a memory snapshot is
-	// going; asking right after it starts can crash minimega.
-	savePoll = time.Second
-
-	// saveTimeout is how long awaitSave waits for a memory snapshot.
-	saveTimeout = time.Hour
-)
-
 // awaitSave reports the progress of the VM's memory snapshot to cb, if set, until it completes, fails or
-// outlasts saveTimeout, then resumes the VM whatever the outcome.
-func awaitSave(expName, vmName string, cb func(string)) (err error) {
+// outlasts timing.timeout, then resumes the VM whatever the outcome.
+func awaitSave(expName, vmName string, cb func(string), timing saveTiming) (err error) {
 	cmd := mmcli.NewNamespacedCommand(expName)
 
 	defer func() {
@@ -1021,12 +1030,12 @@ func awaitSave(expName, vmName string, cb func(string)) (err error) {
 	cmd.Filters = []string{"name=" + vmName}
 
 	var (
-		deadline = time.Now().Add(saveTimeout)
+		deadline = time.Now().Add(timing.timeout)
 		lastErr  error
 	)
 
 	for {
-		time.Sleep(savePoll)
+		time.Sleep(timing.poll)
 
 		rows, qerr := mmcli.RunTabularCheckedContext(context.Background(), cmd, nil)
 
@@ -1054,10 +1063,10 @@ func awaitSave(expName, vmName string, cb func(string)) (err error) {
 
 		if time.Now().After(deadline) {
 			if lastErr != nil {
-				return fmt.Errorf("memory snapshot for VM %s did not complete within %s: %w", vmName, saveTimeout, lastErr)
+				return fmt.Errorf("memory snapshot for VM %s did not complete within %s: %w", vmName, timing.timeout, lastErr)
 			}
 
-			return fmt.Errorf("memory snapshot for VM %s did not complete within %s", vmName, saveTimeout)
+			return fmt.Errorf("memory snapshot for VM %s did not complete within %s", vmName, timing.timeout)
 		}
 	}
 }
@@ -1241,7 +1250,7 @@ func CommitToDisk(ctx context.Context, expName, vmName, out string, cb func(floa
 	// Goroutine below fails.
 
 	wait.Go(func() error {
-		copier := newCopier()
+		copier := newCopier(copyProgressInterval)
 		s := copier.subscribe()
 
 		go func() {
@@ -1283,7 +1292,7 @@ func CommitToDisk(ctx context.Context, expName, vmName, out string, cb func(floa
 		)
 
 		wait.Go(func() error {
-			copier := newCopier()
+			copier := newCopier(copyProgressInterval)
 
 			tmp := fmt.Sprintf("%s/images/%s/tmp/snapshot-%d.qc2", common.PhenixBase, expName, id)
 

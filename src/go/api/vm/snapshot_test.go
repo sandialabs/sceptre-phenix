@@ -67,7 +67,6 @@ func TestSnapshot(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			vm.SetSaveTiming(t, time.Millisecond, time.Minute)
 			useExperiment(t, startTime, vmNode("vm1"))
 
 			fake := &shellMM{fakeMM: &fakeMM{vms: mm.VMs{runningVM("vm1")}}, failOn: test.failOn}
@@ -92,7 +91,8 @@ func TestSnapshot(t *testing.T) {
 
 			var progress []string
 
-			err := vm.Snapshot(t.Context(), testExp, "vm1", "snap.SNAP", func(p string) { progress = append(progress, p) })
+			err := vm.Snapshot(t.Context(), testExp, "vm1", "snap.SNAP", func(p string) { progress = append(progress, p) },
+				vm.WithSaveTiming(time.Millisecond, time.Minute))
 
 			switch {
 			case test.wantErr && err == nil:
@@ -171,7 +171,6 @@ func TestSnapshotAlwaysResumesTheVM(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			vm.SetSaveTiming(t, time.Millisecond, 50*time.Millisecond)
 			useExperiment(t, startTime, vmNode("vm1"))
 
 			fake := &shellMM{fakeMM: &fakeMM{vms: mm.VMs{runningVM("vm1")}}}
@@ -200,7 +199,8 @@ func TestSnapshotAlwaysResumesTheVM(t *testing.T) {
 
 			var progress []string
 
-			err := vm.Snapshot(t.Context(), testExp, "vm1", "snap", func(p string) { progress = append(progress, p) })
+			err := vm.Snapshot(t.Context(), testExp, "vm1", "snap", func(p string) { progress = append(progress, p) },
+				vm.WithSaveTiming(time.Millisecond, 50*time.Millisecond))
 
 			switch {
 			case test.wantErr == "" && err != nil:

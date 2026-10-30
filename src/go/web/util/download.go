@@ -54,20 +54,9 @@ type Served struct {
 	Started bool
 }
 
-// ServeDownload sends the file at d.Path with [http.ServeContent], so byte
-// ranges (Range and If-Range), conditional requests (If-None-Match, If-Match,
-// If-Modified-Since), HEAD requests and 416 responses work as net/http
-// implements them. The file is streamed from disk, never read into memory.
-//
-// The response carries a strong ETag (see FileETag) and the
-// file's modification time, with Cache-Control "private, no-cache": a client
-// may keep the file but must revalidate it, and a browser or curl resumes an
-// interrupted download only while the file is unchanged. If Digests knows the
-// file's checksum it is sent as Repr-Digest; a download never computes one.
-//
-// It returns an error, having sent nothing, if the file cannot be opened
-// (wrapping the [io/fs.PathError]), is not a regular file (ErrNotRegular) or is
-// larger than d.MaxSize (ErrTooLarge); the caller writes the error response.
+// ServeDownload streams the file at d.Path with [http.ServeContent], so ranges, conditional and HEAD requests work, with
+// a strong ETag (see FileETag), Cache-Control "private, no-cache" and any Repr-Digest Digests knows. It returns an error,
+// having sent nothing, if the file cannot be opened, is not regular (ErrNotRegular) or exceeds d.MaxSize (ErrTooLarge).
 func ServeDownload(w http.ResponseWriter, r *http.Request, d Download) (Served, error) {
 	f, err := os.Open(d.Path)
 	if err != nil {

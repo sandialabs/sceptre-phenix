@@ -20,12 +20,9 @@ import (
 // of the user's inotify watches.
 const maxWatchedDirs = 4096
 
-// Watch calls onChange once images under dir stop changing for the debounce
-// period after being created, written, renamed or removed (an upload writes
-// many times), until ctx is done. It watches dir, which may be a symlink, and
-// the folders under it that GetImages searches, including ones created later,
-// up to maxWatchedDirs folders. Changes past that limit, and to images outside
-// dir, show on the next listing.
+// Watch calls onChange once images under dir stop changing for the debounce period (an upload writes many times), until
+// ctx is done. It watches dir and the folders GetImages searches, including new ones, up to maxWatchedDirs; changes past
+// that limit, or outside dir, show on the next listing.
 func Watch(ctx context.Context, dir string, debounce time.Duration, onChange func()) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

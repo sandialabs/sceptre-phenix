@@ -11,13 +11,8 @@ import (
 
 // A copy that ends while a slow subscriber has not taken its progress ends cleanly, closing the
 // subscription only once progress stops being sent on it.
-//
-//nolint:paralleltest // shortens the progress interval
 func TestCopyEndsWhileProgressIsPending(t *testing.T) {
-	saved := copyProgressInterval
-	copyProgressInterval = time.Millisecond
-
-	t.Cleanup(func() { copyProgressInterval = saved })
+	t.Parallel()
 
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")
@@ -27,7 +22,7 @@ func TestCopyEndsWhileProgressIsPending(t *testing.T) {
 	}
 
 	for i := range 50 {
-		c := newCopier()
+		c := newCopier(time.Millisecond)
 		s := c.subscribe()
 		read := make(chan struct{})
 

@@ -817,7 +817,7 @@ describe('actions on VMs', () => {
 
       // one request for all of them, not one each
       expect(axios.post.mock.calls).toEqual([
-        ['experiments/demo/vms/actions', { action, vms: allowed }, undefined],
+        ['experiments/demo/vms/actions', { action, vms: allowed }],
       ]);
       // each VM is shown as the job left it
       expect(
@@ -849,11 +849,10 @@ describe('actions on VMs', () => {
     expect(messageOf(dialog)).toContain(skippedVMsText(skipped));
 
     await confirmDialog();
-    expect(axios.post).toHaveBeenCalledWith(
-      'experiments/demo/vms/actions',
-      { action: 'kill', vms: ['web', 'persistent', 'db'] },
-      undefined,
-    );
+    expect(axios.post).toHaveBeenCalledWith('experiments/demo/vms/actions', {
+      action: 'kill',
+      vms: ['web', 'persistent', 'db'],
+    });
     expect(vmRows(page).map(nodeOf)).toEqual(['off', 'held']);
   });
 
@@ -888,7 +887,6 @@ describe('actions on VMs', () => {
     expect(axios.post.mock.lastCall).toEqual([
       'experiments/demo/vms/actions',
       { action: 'restart', vms: ['persistent'] },
-      undefined,
     ]);
   });
 
@@ -956,7 +954,7 @@ describe('actions on VMs', () => {
       await flushPromises();
       expect(dialogs()).toEqual([]);
       expect(axios.post.mock.calls).toEqual([
-        ['experiments/demo/vms/actions', { action, vms: [name] }, undefined],
+        ['experiments/demo/vms/actions', { action, vms: [name] }],
       ]);
       expect(page.vm.expModal.active).toBe(true);
     },
@@ -979,11 +977,7 @@ describe('actions on VMs', () => {
     expect(questions()).toEqual([]);
     expect(waiting(page)).toBe(false);
     expect(axios.post.mock.calls).toEqual([
-      [
-        'experiments/demo/vms/actions',
-        { action: 'start', vms: ['off'] },
-        undefined,
-      ],
+      ['experiments/demo/vms/actions', { action: 'start', vms: ['off'] }],
     ]);
     expect(button('start').classes()).toContain('is-loading');
 
@@ -1024,11 +1018,7 @@ describe('actions on VMs', () => {
 
     await confirmDialog();
     expect(axios.post.mock.calls).toEqual([
-      [
-        'experiments/demo/vms/actions',
-        { action: 'kill', vms: ['web'] },
-        undefined,
-      ],
+      ['experiments/demo/vms/actions', { action: 'kill', vms: ['web'] }],
     ]);
   });
 
@@ -1073,13 +1063,7 @@ describe('actions on VMs', () => {
           }
           expect(axios.post.mock.calls).toEqual(
             allowed.length
-              ? [
-                  [
-                    'experiments/demo/vms/actions',
-                    { action, vms: allowed },
-                    undefined,
-                  ],
-                ]
+              ? [['experiments/demo/vms/actions', { action, vms: allowed }]]
               : [],
           );
           page.unmount();
@@ -1824,7 +1808,7 @@ describe('the selection toolbar', () => {
   );
 
   it('clears the selection once a button starts its action', async () => {
-    const page = await selected({ checkAll: true });
+    const page = await selected();
     expect(checked(page)).toEqual([
       'Select all VMs',
       'Select VM web',

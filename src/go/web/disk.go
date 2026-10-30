@@ -454,10 +454,8 @@ const cloneKind = "disk.clone"
 
 // CloneDiskJob - POST /disks/clone/jobs?disk={disk}&new={new}
 //
-// Clones as CloneDisk does, in a background job that reports the bytes
-// copied and can be canceled, leaving no file. It checks the request as
-// CloneDisk does before answering 202 with the job. The clone is audited
-// when the job finishes (see auditCloneJob).
+// Clones as CloneDisk does in a cancelable background job reporting the bytes copied, answering 202 with the job once
+// the request checks out. The clone is audited when the job finishes (see auditCloneJob).
 func CloneDiskJob(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 

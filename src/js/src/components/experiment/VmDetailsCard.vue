@@ -231,7 +231,7 @@
               <span class="vm-kv-key">Disk</span>
               <span class="vm-kv-value vm-mono" :title="vm.disk">
                 {{
-                  diskLabel(disk) || (vm.disk && getBaseName(vm.disk)) || 'None'
+                  diskLabel(disk) || (vm.disk && baseName(vm.disk)) || 'None'
                 }}
               </span>
               <DiskWarning
@@ -269,7 +269,7 @@
             <div v-if="vm.cdRom" class="vm-kv vm-cdrom">
               <span class="vm-kv-key">CD-ROM</span>
               <span class="vm-kv-value vm-mono" :title="vm.cdRom">
-                {{ diskLabel(cdRomDisk) || getBaseName(vm.cdRom) }}
+                {{ diskLabel(cdRomDisk) || baseName(vm.cdRom) }}
               </span>
               <DiskWarning
                 v-if="cdRomDisk && cdRomDisk.outsideFilesDir"
@@ -581,7 +581,7 @@
   } from '@/utils/experimentAnnotations.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { docsPage } from '@/utils/docs.js';
-  import { diskLabel } from '@/utils/diskChain.js';
+  import { baseName, diskLabel } from '@/utils/diskChain.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { plural, pluralWord } from '@/utils/plural.js';
   import { webSharkInstalled } from '@/utils/webshark.js';
@@ -611,6 +611,7 @@
         plural,
         pluralWord,
         annotationText,
+        baseName,
         diskLabel,
         NODE_ANNOTATIONS,
         CUSTOM_NODE_ANNOTATION,

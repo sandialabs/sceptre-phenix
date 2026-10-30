@@ -25,12 +25,9 @@ const partialSuffixBytes = 8
 // list leaves them out, and named after the image they become.
 var partialName = regexp.MustCompile(`^\..+\.partial-[0-9a-f]{16}$`)
 
-// cloneFile copies src to dst, a file it creates, so it never replaces one.
-// The copy goes to a hidden temporary file beside dst, which becomes dst only
-// once complete and synced: an interrupted clone, canceled through ctx or by
-// a crash, never leaves a whole-looking image behind, and RemoveStalePartials
-// deletes what a crash leaves. progress, if not nil, is told of each chunk
-// copied. The copy is not sparse.
+// cloneFile copies src to dst, a file it creates, through a hidden temporary file beside dst that becomes dst only once
+// complete and synced, so an interrupted clone never leaves a whole-looking image (RemoveStalePartials deletes what a
+// crash leaves). progress, if not nil, is told of each chunk copied. The copy is not sparse.
 func cloneFile(ctx context.Context, src, dst string, progress func(n int64)) error {
 	in, err := openRegular(src)
 	if err != nil {

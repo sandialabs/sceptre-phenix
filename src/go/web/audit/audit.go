@@ -1,17 +1,7 @@
-// Package audit logs security-relevant actions taken through the web API:
-// who signed in, changed a user, config, experiment, VM or the settings,
-// applied a workflow, powered a VM, read a capture, opened a console, changed
-// a disk image, deleted a file or downloaded a log file, and who was refused, including requests
-// whose token the auth middleware refused. Each event is a plog record of type AUDIT whose
-// fields follow the Elastic Common Schema (ECS) as flat dotted keys, so the
-// JSON system log file can be shipped to Elasticsearch (with Filebeat, say)
-// as it is.
-//
-// A handler calls Denied at each RBAC refusal, Failure when the authorized
-// operation fails, and Success once it has worked. Validation errors raised
-// before the RBAC check are not audited. Work a handler leaves to a
-// background job is audited when the job finishes, with Background or
-// BackgroundFailure, as the user who started it.
+// Package audit logs the security-relevant actions taken through the web API, and refusals, as plog AUDIT records whose
+// fields follow the Elastic Common Schema as flat dotted keys. A handler calls Denied at each RBAC refusal, Failure when
+// the authorized operation fails, and Success once it works; a background job is audited when it finishes, with
+// Background or BackgroundFailure. docs/content/logging.md lists the actions.
 package audit
 
 import (

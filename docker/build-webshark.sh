@@ -1,13 +1,6 @@
 #!/bin/sh
-# Builds the WebShark UI (https://github.com/QXIP/webshark) for phēnix to
-# serve at /webshark/. phēnix stands in for WebShark's own server, so only the
-# UI is built.
-#
 # usage: build-webshark.sh <WebShark source checkout> <output directory>
-#
-# Needs Node.js ^22.22.3, ^24.15.0 or >=26 (what WebShark's Angular build
-# requires), npm, gzip, wget, and python3 (WebShark's script that bundles its
-# fonts, so the UI works without internet access).
+# Builds only the WebShark UI for /webshark/; needs Node.js ^22.22.3, ^24.15.0 or >=26, npm, gzip, wget and python3.
 set -eu
 
 SRC=$(cd "$1" && pwd)
@@ -24,10 +17,8 @@ cp -a dist/webshark/. "$OUT/"
 sed -i 's|href="/"|href="/webshark/"|g' "$OUT/index.html"
 sh "$SRC/scripts/vendor-offline-fonts.sh" "$OUT"
 
-# Source maps are for WebShark's developers. The largest files (Wireshark's
-# WebAssembly alone is 69 MB) ship only compressed: the phēnix server sends
-# the .gz as is to browsers, which all accept gzip, and decompresses it for
-# any other client.
+# Drop source maps and ship large files only as .gz: the server sends the .gz
+# to browsers and decompresses it for any other client.
 find "$OUT" -name '*.map' -delete
 find "$OUT" -type f -size +16k \
   \( -name '*.wasm' -o -name '*.data' -o -name '*.js' -o -name '*.css' -o -name '*.json' -o -name '*.svg' \) \

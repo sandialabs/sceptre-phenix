@@ -346,10 +346,7 @@ func newJobWaitCmd() *cobra.Command {
   phenix job wait j0f3a9c2e81b4d7a6 --timeout 10m`,
 		Args: argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			timeout, err := cmd.Flags().GetDuration("timeout")
-			if err != nil {
-				return fmt.Errorf("getting timeout flag: %w", err)
-			}
+			timeout := mustGet(cmd.Flags().GetDuration, "timeout")
 
 			ctx := sigterm.CancelContext(commandContext(cmd))
 

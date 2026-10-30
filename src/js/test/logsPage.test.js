@@ -20,6 +20,7 @@ vi.mock('@/utils/pageData.js', async (original) => ({
 vi.mock('@/utils/pageLoader.js', capturing);
 
 import Logs from '@/views/Logs.vue';
+import { never } from './helpers/async.js';
 import { wsMsg } from './helpers/fixtures.js';
 import { mountPage, textOf, tooltipButtons } from './helpers/mount.js';
 import { componentDeclarations } from './helpers/css.js';
@@ -452,7 +453,7 @@ it('opens the download tooltips to the left, inside the window', async () => {
 });
 
 it('spins the download buttons until it knows which files there are', async () => {
-  axios.get.mockReturnValue(new Promise(() => {}));
+  axios.get.mockReturnValue(never());
   const page = await open();
 
   const downloads = page

@@ -25,9 +25,6 @@ type Store interface {
 	// implementations.
 	Init(...Option) error
 
-	// Close persists any queued writes and closes the store.
-	Close() error
-
 	// List returns a list of configs of the given kind(s) from the store.
 	List(...string) (Configs, error)
 

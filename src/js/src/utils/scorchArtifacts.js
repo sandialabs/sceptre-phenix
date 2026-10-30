@@ -1,3 +1,4 @@
+import { compare } from '@/utils/compare.js';
 import { rfc3339Ms } from '@/utils/relativeTime.js';
 
 // A SCORCH run archives what it collected each time it finishes, in the
@@ -27,9 +28,5 @@ export function runArchives(files, run) {
       if (!m || m[1] !== id || file.isDir) return [];
       return [{ ...file, started: stampTime(m[2]) ?? file.date ?? '' }];
     })
-    .toSorted(
-      (a, b) =>
-        started(b) - started(a) ||
-        (a.path < b.path ? 1 : a.path > b.path ? -1 : 0),
-    );
+    .toSorted((a, b) => started(b) - started(a) || compare(b.path, a.path));
 }

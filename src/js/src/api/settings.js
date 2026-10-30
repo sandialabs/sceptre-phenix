@@ -1,6 +1,11 @@
 // The server's settings.
 import axiosInstance from '@/utils/axios.js';
 
+// GET /settings; config carries the request's signal and meta
+export function getSettings(config) {
+  return axiosInstance.get('settings', config);
+}
+
 // POST /settings, with no timeout
 export function saveSettings(settings) {
   return axiosInstance.post('settings', settings, { timeout: 0 });

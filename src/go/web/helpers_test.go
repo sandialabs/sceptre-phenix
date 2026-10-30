@@ -47,6 +47,13 @@ func testRole(resource, verb string, names ...string) rbac.Role {
 	}
 }
 
+// adminRole may do anything, as Global Admin may.
+func adminRole() rbac.Role {
+	return rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{{
+		Resources: []string{"*", "*/*"}, ResourceNames: []string{"*", "*/*"}, Verbs: []string{"*"},
+	}}}}
+}
+
 // combinedRole returns a role with the policies of every role given.
 func combinedRole(roles ...rbac.Role) rbac.Role {
 	combined := rbac.Role{Spec: &v1.RoleSpec{}}

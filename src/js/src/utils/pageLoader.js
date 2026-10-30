@@ -68,25 +68,11 @@ export function stillLoading(loaded, rows) {
 // the loader that owns pageStatus; others must not touch it
 let owner = null;
 
-// Loads a page's data without hiding the page behind a spinner: cached data
-// is shown at once, progress shows in the header, and the header's refresh
-// button reloads it.
-//
-//   fetch(signal, meta) resolves to the data; signal aborts the request, and
-//     meta (a FreshnessMeta) goes with its requests, which report how fresh
-//     their responses are into it (see freshness.js).
-//   apply(data, { seq }) puts the data on the page; seq orders it against
-//     websocket messages, so updates the page received since the server
-//     read it can be kept (see liveRows.js).
-//   key is the cache key; pass a function to decide per load, returning
-//     null to skip caching (e.g. for non-default filters), or omit it for
-//     live pages whose cached copy would mislead.
-//   refresh, if given, replaces load() as the header button's action, for
-//     pages that also reload secondary data on request.
-//
-// A cached page's request is shared (see fetchIntoCache): leaving the page
-// lets it finish in the background and fill the cache for the next visit.
-// Other requests are canceled when the page is left.
+// Loads a page's data without a spinner: cached data shows at once, and the
+// header shows progress and reloads it. fetch(signal, meta) resolves to the
+// data; apply(data, { seq }) shows it (see liveRows.js); key is the cache key
+// or a function giving it (null: no caching); refresh replaces header reload.
+// On leaving, a cached page's request finishes into the cache; others cancel.
 export function createPageLoader({ key = null, fetch, apply, refresh }) {
   let current = null; // the request this page is waiting on
   // a shared request still running when a forced load queued current behind it

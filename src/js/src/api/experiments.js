@@ -2,6 +2,12 @@
 // Names go into the path as given unless a function says it encodes them.
 import axiosInstance from '@/utils/axios.js';
 
+// GET /experiments?vms=false: the experiments with VM counts but no VMs;
+// config carries the request's signal and meta
+export function listExperiments(config) {
+  return axiosInstance.get('experiments?vms=false', config);
+}
+
 // GET /options: the choices the create-experiment card offers
 export function getExperimentOptions() {
   return axiosInstance.get('/options');
@@ -60,9 +66,9 @@ export function getExperimentApps(name) {
   return axiosInstance.get('experiments/' + name + '/apps');
 }
 
-// POST /experiments/{name}/trigger?apps=soh, with the query in the URL
-export function triggerSoh(name) {
-  return axiosInstance.post('experiments/' + name + '/trigger?apps=soh');
+// GET /soh: every experiment's state of health, as far as the role may get it
+export function listSoh(config) {
+  return axiosInstance.get('soh', config);
 }
 
 // GET /experiments/{name}/soh, filtered by statusFilter when it is given

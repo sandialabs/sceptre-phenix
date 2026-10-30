@@ -1,18 +1,6 @@
 #!/usr/bin/env bash
-#
-# Checks that `make generate` is reproducible: it regenerates every derived
-# source (protobuf bindings, store mocks, RBAC policy, API reference) twice
-# from scratch and fails if
-#
-#   - an output is missing or empty,
-#   - the two runs produce different bytes (a non-deterministic generator), or
-#   - generating changed a tracked file or left a file git does not ignore.
-#
-# All generated outputs are gitignored build products, so a generator that
-# writes anywhere else is a bug. The one exception is the CLI reference that
-# `make cli-docs` writes to docs/content/cli and the docs nav: it is tracked,
-# and this script fails if regenerating it changes the working tree. Runs in
-# CI (ci.yml) and locally with `make check-generated`.
+# Runs `make generate` twice and fails on a missing or empty output, differing bytes,
+# or a changed tracked file; only the CLI reference (make cli-docs) is tracked.
 
 set -euo pipefail
 

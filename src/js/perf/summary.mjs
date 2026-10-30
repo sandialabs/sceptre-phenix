@@ -1,20 +1,7 @@
-// Summarizes the perf job's results: size-limit's JSON output and Lighthouse
-// CI's assertion results and report manifest become perf-summary.json and
-// perf-summary.md, with deltas against a baseline perf-summary.json from the
-// default branch. See README.md ("CI summary").
-//
-//   node summary.mjs --size size-limit.json \
-//     --assert .lighthouseci/assertion-results.json \
-//     --manifest lighthouse-results/manifest.json \
-//     [--baseline baseline/perf-summary.json] [--base-ref main] \
-//     --out-md perf-summary.md --out-json perf-summary.json
-//   node summary.mjs --check perf-summary.json
-//
-// The first form always exits 0 and appends the markdown to
-// $GITHUB_STEP_SUMMARY when set. The second prints one GitHub error
-// annotation per failed budget and exits 1 unless every budget passed.
-//
-// Node built-ins only, so it runs without `npm ci`.
+// Summarizes size-limit's and Lighthouse CI's results, with deltas against a
+// baseline, as perf-summary.md and .json (exits 0); with --check, annotates
+// each failed budget and exits 1 if any failed. Usage is in README.md. Node
+// built-ins only, so it runs without `npm ci`.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';

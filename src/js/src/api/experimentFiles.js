@@ -43,5 +43,7 @@ export async function deleteExperimentFiles(exp, paths) {
 // POST /experiments/{name}/files/archive: the server builds the zip in a
 // background job (see utils/jobs.js), which this returns
 export function archiveExperimentFiles(exp, paths) {
-  return useJobStore().start(`${filesURL(exp)}/archive`, { paths });
+  return useJobStore().start(
+    axiosInstance.post(`${filesURL(exp)}/archive`, { paths }),
+  );
 }

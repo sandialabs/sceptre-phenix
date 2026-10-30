@@ -9,7 +9,7 @@ import { AttachAddon } from '@xterm/addon-attach';
 
 import '@xterm/xterm/css/xterm.css';
 
-import axiosInstance from '@/utils/axios.js';
+import * as consoleApi from '@/api/console.js';
 import {
   serverShuttingDown,
   shutdownWithin,
@@ -66,7 +66,7 @@ async function findOrStartConsole() {
 
   if (pid === null) {
     consolePhase.value = 'starting';
-    pid = (await axiosInstance.post('console')).data.pid;
+    pid = (await consoleApi.startConsole()).data.pid;
     rememberConsolePid(username, pid);
   }
 
@@ -77,7 +77,7 @@ async function findOrStartConsole() {
 
 async function consoleRunning(pid) {
   try {
-    await axiosInstance.get(`console/${pid}`);
+    await consoleApi.getConsole(pid);
     return true;
   } catch (err) {
     if (err.response?.status === 404) {
@@ -167,11 +167,9 @@ class ConsoleSession {
       return;
     }
 
-    axiosInstance
-      .post(`console/${this.pid}/size?cols=${cols}&rows=${rows}`)
-      .catch((err) => {
-        console.warn('failed to resize the console', err);
-      });
+    consoleApi.resizeConsole(this.pid, cols, rows).catch((err) => {
+      console.warn('failed to resize the console', err);
+    });
   }
 
   handleOpen() {

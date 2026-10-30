@@ -1,13 +1,6 @@
-// Package health runs the checks behind the server's /healthz and /readyz
-// endpoints and answers them in the format of the IETF draft "Health Check
-// Response Format for HTTP APIs" (draft-inadarei-api-health-check-06), with
-// the media type application/health+json.
-//
-// Every observedValue keeps one JSON type per check key across runs: a run
-// that cannot observe a value leaves it out rather than reporting it as a
-// string, so tools that index the responses (such as Elasticsearch through
-// Metricbeat) never see a key change type. Fractional values are [Float]s,
-// which keep a decimal point when whole, so such a tool maps them as floats.
+// Package health runs the checks behind /healthz and /readyz and answers them as application/health+json
+// (draft-inadarei-api-health-check-06). Each observedValue keeps one JSON type per key across runs, and fractional
+// values are [Float]s, so tools that index the responses never see a key change type.
 package health
 
 import (

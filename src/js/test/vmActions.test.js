@@ -560,6 +560,31 @@ describe('rowActionNames', () => {
     expect(names.indexOf('start')).toBe(ROW_ACTIONS.indexOf('shutdown'));
   });
 
+  it('swaps capture all for stop all while the VM is capturing', () => {
+    expect(rowActionNames({ captures: [] })).toContain('captureAll');
+    const names = rowActionNames({ captures: [{ interface: 0 }] });
+    expect(names).toContain('stopCaptures');
+    expect(names).not.toContain('captureAll');
+  });
+
+  it('offers stop all only to roles that may stop captures', () => {
+    const vm = {
+      running: true,
+      networks: ['DMZ (1)'],
+      captures: [{ interface: 0 }],
+    };
+    const state = (can) => vmActionState('stopCaptures', vm, { can });
+    expect(state(() => true)).toMatchObject({
+      disabled: false,
+      type: 'is-danger',
+    });
+    expect(state((_, verb) => verb !== 'delete')).toMatchObject({
+      permitted: false,
+    });
+  });
+});
+
+describe('vmButtonStates', () => {
   it.each([
     [
       'shut down',
@@ -597,7 +622,7 @@ describe('rowActionNames', () => {
     },
   );
 
-  it('offers start or shut down, and restart only while running, for any VM', () => {
+  it('greys out restart unless the VM is running', () => {
     const vm = fc.record({
       name: fc.constant('vm1'),
       running: fc.boolean(),
@@ -623,29 +648,6 @@ describe('rowActionNames', () => {
         );
       }),
     );
-  });
-
-  it('swaps capture all for stop all while the VM is capturing', () => {
-    expect(rowActionNames({ captures: [] })).toContain('captureAll');
-    const names = rowActionNames({ captures: [{ interface: 0 }] });
-    expect(names).toContain('stopCaptures');
-    expect(names).not.toContain('captureAll');
-  });
-
-  it('offers stop all only to roles that may stop captures', () => {
-    const vm = {
-      running: true,
-      networks: ['DMZ (1)'],
-      captures: [{ interface: 0 }],
-    };
-    const state = (can) => vmActionState('stopCaptures', vm, { can });
-    expect(state(() => true)).toMatchObject({
-      disabled: false,
-      type: 'is-danger',
-    });
-    expect(state((_, verb) => verb !== 'delete')).toMatchObject({
-      permitted: false,
-    });
   });
 });
 

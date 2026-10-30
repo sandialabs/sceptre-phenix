@@ -3,10 +3,8 @@ import { expect, it } from 'vitest';
 
 import { formattingMixin } from '@/utils/formattingMixin.js';
 
-const { formatLowercase, formatUptime, getBaseName, getUniqueItems } =
+const { formatLowercase, formatUptime, getUniqueItems } =
   formattingMixin.methods;
-
-const noSlash = fc.string({ unit: 'binary' }).filter((s) => !s.includes('/'));
 
 it('lowercases text and shows nothing for a missing value', () => {
   expect(formatLowercase('Enterprise')).toBe('enterprise');
@@ -20,16 +18,6 @@ it.each([
   [2 * 86400, '2 days, 00:00:00'],
 ])('shows an uptime of %s seconds as %s', (seconds, text) => {
   expect(formatUptime(seconds)).toBe(text);
-});
-
-it('names a disk image by its file name', () => {
-  expect(getBaseName('/phenix/images/win10.qc2')).toBe('win10.qc2');
-  // any folders, absolute or relative, even empty ones
-  fc.assert(
-    fc.property(fc.array(noSlash), noSlash, (folders, name) => {
-      expect(getBaseName([...folders, name].join('/'))).toBe(name);
-    }),
-  );
 });
 
 it('keeps each item once, sorted, without short ones but "dnb"', () => {

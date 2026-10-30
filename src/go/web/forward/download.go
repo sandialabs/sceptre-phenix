@@ -23,12 +23,8 @@ const tunnelerDir = "downloads/tunneler"
 
 // ListTunnelers - GET /downloads/tunneler.
 //
-// Lists the builds that are actually installed, so the Tunneler page offers
-// only downloads that exist. Without a downloads directory none are.
-//
-// A build may be a link to a file elsewhere, which deployments use to point at
-// builds they install separately; a broken link or one to a directory is left
-// out.
+// Lists the builds installed in the downloads directory (none without one), including links to files elsewhere; a broken
+// link or one to a directory is left out.
 func ListTunnelers(w http.ResponseWriter, _ *http.Request) error {
 	entries, err := os.ReadDir(tunnelerDir)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

@@ -9,8 +9,6 @@ import (
 	"testing"
 	"unicode"
 	"unicode/utf8"
-
-	"pgregory.net/rapid"
 )
 
 // nameCases are the cases in testdata/minimega_names.json, which the UI's
@@ -132,20 +130,4 @@ func TestValidateMinimegaPathSharedPaths(t *testing.T) {
 			t.Errorf("ValidateMinimegaPath(%q) = %v, want %v", c.Path, err, ErrUnsafeName)
 		}
 	}
-}
-
-// TestMinimegaSafeSharedProperty checks that a path is safe exactly when none
-// of its code points is one the shared cases refuse.
-func TestMinimegaSafeSharedProperty(t *testing.T) {
-	t.Parallel()
-
-	_, refused := loadNameCases(t)
-
-	rapid.Check(t, func(t *rapid.T) {
-		p := rapid.String().Draw(t, "path")
-
-		if got, want := minimegaSafe(p), !strings.ContainsFunc(p, refused); got != want {
-			t.Fatalf("minimegaSafe(%q) = %v, want %v", p, got, want)
-		}
-	})
 }

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -257,15 +256,15 @@ func TestMinimegaCheck(t *testing.T) {
 	t.Cleanup(func() { close(hung) })
 
 	tests := map[string]struct {
-		probe func(context.Context, time.Duration) (string, error)
+		probe func(time.Duration) (string, error)
 		want  doctorCheck
 	}{
 		"answers": {
-			probe: func(context.Context, time.Duration) (string, error) { return "minimega 2.9", nil },
+			probe: func(time.Duration) (string, error) { return "minimega 2.9", nil },
 			want:  doctorCheck{Name: "minimega", Status: doctorPass, Detail: "minimega 2.9"},
 		},
 		"error": {
-			probe: func(context.Context, time.Duration) (string, error) { return "", errors.New("connection refused") },
+			probe: func(time.Duration) (string, error) { return "", errors.New("connection refused") },
 			want: doctorCheck{
 				Name:   "minimega",
 				Status: doctorFail,
@@ -273,7 +272,7 @@ func TestMinimegaCheck(t *testing.T) {
 			},
 		},
 		"hangs": {
-			probe: func(context.Context, time.Duration) (string, error) { <-hung; return "", nil },
+			probe: func(time.Duration) (string, error) { <-hung; return "", nil },
 			want: doctorCheck{
 				Name:   "minimega",
 				Status: doctorFail,

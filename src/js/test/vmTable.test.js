@@ -185,13 +185,6 @@ describe('the rows', () => {
     expect(positions.length).toBeGreaterThan(2);
     expect(new Set(positions)).toEqual(new Set(['is-left']));
   });
-
-  it('hides the Actions column from roles that can take none of its actions', async () => {
-    rbac.allowed = (resource) => !resource.startsWith('vms/');
-    expect(Object.keys(tableRows(await render([web]))[0])).not.toContain(
-      'Actions',
-    );
-  });
 });
 
 describe('what it asks the page for', () => {

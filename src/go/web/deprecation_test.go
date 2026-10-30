@@ -159,7 +159,7 @@ func TestDeprecatedAliasHeaders(t *testing.T) {
 			t.Run(a.String()+"/"+name, func(t *testing.T) {
 				f := useContractFixture(t)
 
-				server := serveContractAs(t, contractAdmin(), func(o *serverOptions) {
+				server := serveContractAs(t, adminRole(), func(o *serverOptions) {
 					o.basePath = base
 
 					if name == "without a token" {

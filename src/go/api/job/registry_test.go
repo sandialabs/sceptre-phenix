@@ -82,7 +82,7 @@ func newTestRegistry(t *testing.T, opts ...Option) *Registry {
 	t.Helper()
 
 	r := NewRegistry(opts...)
-	t.Cleanup(r.Shutdown)
+	t.Cleanup(func() { r.ShutdownContext(context.Background(), 0) })
 
 	return r
 }
@@ -1186,7 +1186,7 @@ func TestRegistryProperties(t *testing.T) {
 			WithMaxFinished(m.maxFinished), WithClock(clock.Now),
 		)
 
-		defer m.r.Shutdown()
+		defer m.r.ShutdownContext(context.Background(), 0)
 
 		t.Repeat(map[string]func(*rapid.T){
 			"start":  m.start,

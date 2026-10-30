@@ -266,7 +266,7 @@
           return this.loader.load();
         },
         fetch: async (signal) => {
-          const resp = await scorchApi.listScorchPipelines(exp, signal);
+          const resp = await scorchApi.listScorchPipelines(exp, { signal });
           return resp.data;
         },
         apply: (pipelines) => {
@@ -668,7 +668,7 @@
           this.output.msg +=
             wsCloseCause(event) === 'shutdown' || serverShuttingDown()
               ? '\n[output stream ended: phēnix server shutting down]'
-              : '\n[lost the connection to the phēnix server; close and reopen to retry]';
+              : '\n[lost the connection to the phēnix server. Close and reopen to retry]';
         };
       },
 

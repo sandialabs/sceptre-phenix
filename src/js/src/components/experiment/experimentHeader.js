@@ -1,6 +1,8 @@
 // What the running experiment page's header shows: its scenarios, its apps'
 // grid and states, and the labels and hosts its VM table filters by.
 
+import { compare } from '@/utils/compare.js';
+
 // The apps phenix runs itself at each stage, which cannot be triggered.
 export const DEFAULT_APPS = Object.freeze([
   'ntp',
@@ -93,5 +95,3 @@ export function hostOptions(listed, vms, picked = []) {
   }
   return [...hosts].sort(compare);
 }
-
-const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);

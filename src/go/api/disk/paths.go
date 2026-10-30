@@ -79,16 +79,9 @@ func minimegaSafe(p string) bool {
 	return file.CommandSafe(p) && !strings.ContainsAny(p, "$,")
 }
 
-// skipped reports whether the listing leaves out rel, a path relative to the
-// minimega files directory with no "." or ".." segments, and everything under
-// it:
-//   - hidden names (starting with "."), such as tool state and partial
-//     downloads, and lost+found;
-//   - <top>/files, <top>/tmp and <top>/miniccc_responses: the files, scratch
-//     images and command responses of the experiment <top>, which its Files
-//     tab owns;
-//   - top-level saved and transfer_*: minimega's saved VM state and cluster
-//     transfers in progress.
+// skipped reports whether the listing leaves out rel (relative to the files directory, without "." or ".." segments) and
+// everything under it: hidden names and lost+found, an experiment's <top>/files, <top>/tmp and <top>/miniccc_responses,
+// and minimega's top-level saved and transfer_* folders.
 func skipped(rel string) bool {
 	for i, name := range strings.Split(filepath.ToSlash(rel), "/") {
 		switch {
@@ -246,12 +239,9 @@ func requireFile(path string) error {
 	return nil
 }
 
-// imageFiles lists, as paths under dir, the images in the minimega files
-// directory dir at any depth down to maxDepth: regular files, and symlinks to
-// them, with a known image extension. It leaves out what skipped names and
-// does not follow symlinked folders. dir may itself be a symlink. An
-// unreadable folder under dir is logged and left out; an unreadable dir fails
-// the listing.
+// imageFiles lists, as paths under dir (the files directory, which may be a symlink), the regular files and symlinks to
+// them with a known image extension, down to maxDepth, leaving out what skipped names and not following symlinked
+// folders. An unreadable folder under dir is logged and left out; an unreadable dir fails the listing.
 func imageFiles(dir string) ([]string, error) {
 	root, err := filepath.EvalSymlinks(dir)
 	if err != nil {

@@ -134,14 +134,15 @@ func getImageBackingChain(ctx context.Context, path string) ([]qemuBackingChain,
 }
 
 // copyProgressInterval is how often a copier reports its progress.
-var copyProgressInterval = time.Second //nolint:gochecknoglobals // shortened in tests
+const copyProgressInterval = time.Second
 
 type copier struct {
-	subs []chan float64
+	subs     []chan float64
+	interval time.Duration // how often it reports its progress
 }
 
-func newCopier() *copier {
-	return new(copier)
+func newCopier(interval time.Duration) *copier {
+	return &copier{subs: nil, interval: interval}
 }
 
 func (c *copier) subscribe() chan float64 {
@@ -189,7 +190,7 @@ func (c copier) copy(ctx context.Context, src, dst string) error {
 		info, _ := in.Stat()
 		size := info.Size()
 
-		ticker := time.NewTicker(copyProgressInterval)
+		ticker := time.NewTicker(c.interval)
 		defer ticker.Stop()
 
 		for {

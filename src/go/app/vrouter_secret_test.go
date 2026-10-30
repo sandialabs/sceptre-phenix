@@ -9,8 +9,7 @@ import (
 
 const secretChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-// TestGenerateSecretDiffers checks that back-to-back IPsec preshared keys
-// differ, which a generator seeded from the clock did not promise.
+// TestGenerateSecretDiffers checks that back-to-back IPsec preshared keys differ.
 func TestGenerateSecretDiffers(t *testing.T) {
 	a, b := generateSecret(ipsecSecretLength), generateSecret(ipsecSecretLength)
 	if a == b {

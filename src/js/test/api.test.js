@@ -12,21 +12,28 @@ vi.mock('@/store.js', modules.store);
 
 import * as authApi from '@/api/auth.js';
 import * as configsApi from '@/api/configs.js';
+import * as consoleApi from '@/api/console.js';
 import * as disksApi from '@/api/disks.js';
 import * as experimentFilesApi from '@/api/experimentFiles.js';
 import * as experimentsApi from '@/api/experiments.js';
+import * as hostsApi from '@/api/hosts.js';
+import * as jobsApi from '@/api/jobs.js';
 import * as logsApi from '@/api/logs.js';
+import * as rolesApi from '@/api/roles.js';
 import * as scorchApi from '@/api/scorch.js';
 import * as settingsApi from '@/api/settings.js';
 import * as topologiesApi from '@/api/topologies.js';
 import * as usersApi from '@/api/users.js';
 import * as vmsApi from '@/api/vms.js';
+import * as webSharkApi from '@/api/webshark.js';
 import { useJobStore } from '@/utils/jobs.js';
 
 // what a test passes through untouched: a form, a progress callback, a signal
 const form = { form: true };
 const onProgress = () => {};
 const signal = new AbortController().signal;
+// a page fetcher's request config: its signal and freshness meta
+const fetchConfig = { signal, meta: {} };
 
 const JSON_TYPE = { 'Content-Type': 'application/json' };
 const ACCEPT_JSON = { headers: { Accept: 'application/json' } };
@@ -52,6 +59,12 @@ const requests = [
 
   // settings
   [
+    'getSettings',
+    () => settingsApi.getSettings(fetchConfig),
+    'get',
+    ['settings', fetchConfig],
+  ],
+  [
     'saveSettings',
     () => settingsApi.saveSettings({ a: 1 }),
     'post',
@@ -71,6 +84,12 @@ const requests = [
   ],
 
   // users
+  [
+    'listUsers',
+    () => usersApi.listUsers(fetchConfig),
+    'get',
+    ['users', fetchConfig],
+  ],
   [
     'createUser',
     () => usersApi.createUser({ username: 'bob' }),
@@ -108,13 +127,13 @@ const requests = [
   // logs
   [
     'listLogs to now',
-    () => logsApi.listLogs(new Date(0), null, signal),
+    () => logsApi.listLogs(new Date(0), null, { signal }),
     'get',
     ['logs?start=1970-01-01T00:00:00.000Z', { signal }],
   ],
   [
     'listLogs to an end',
-    () => logsApi.listLogs(new Date(0), new Date(1000), signal),
+    () => logsApi.listLogs(new Date(0), new Date(1000), { signal }),
     'get',
     [
       'logs?start=1970-01-01T00:00:00.000Z&end=1970-01-01T00:00:01.000Z',
@@ -188,6 +207,61 @@ const requests = [
     'get',
     ['schemas/Topology/v1', ACCEPT_JSON],
   ],
+  [
+    'listConfigs',
+    () => configsApi.listConfigs(fetchConfig),
+    'get',
+    ['configs', fetchConfig],
+  ],
+  [
+    'getConfig',
+    () => configsApi.getConfig('Topology/a'),
+    'get',
+    ['configs/Topology/a', ACCEPT_JSON],
+  ],
+
+  // console
+  ['startConsole', () => consoleApi.startConsole(), 'post', ['console']],
+  ['getConsole', () => consoleApi.getConsole(7), 'get', ['console/7']],
+  ['endConsole', () => consoleApi.endConsole(7), 'delete', ['console/7']],
+  [
+    'resizeConsole',
+    () => consoleApi.resizeConsole(7, 80, 24),
+    'post',
+    ['console/7/size?cols=80&rows=24'],
+  ],
+
+  // hosts, roles and jobs
+  [
+    'listHosts',
+    () => hostsApi.listHosts(fetchConfig),
+    'get',
+    ['hosts', fetchConfig],
+  ],
+  [
+    'listRoles',
+    () => rolesApi.listRoles(fetchConfig),
+    'get',
+    ['roles', fetchConfig],
+  ],
+  ['listJobs', () => jobsApi.listJobs(), 'get', ['jobs']],
+  ['getJob', () => jobsApi.getJob('j1'), 'get', ['jobs/j1']],
+  ['cancelJob', () => jobsApi.cancelJob('j1'), 'post', ['jobs/j1/cancel']],
+  ['deleteJob', () => jobsApi.deleteJob('j1'), 'delete', ['jobs/j1']],
+
+  // WebShark
+  [
+    'openWebSharkCapture',
+    () => webSharkApi.openWebSharkCapture('e@x', form),
+    'post',
+    ['experiments/e%40x/webshark', form],
+  ],
+  [
+    'createCaptureToken',
+    () => webSharkApi.createCaptureToken('e@x', form),
+    'post',
+    ['experiments/e%40x/captureTokens', form],
+  ],
 
   // disks
   [
@@ -195,6 +269,12 @@ const requests = [
     () => disksApi.listDisks({ expName: 'exp' }),
     'get',
     ['disks', { params: { expName: 'exp' } }],
+  ],
+  [
+    'listDisks with a config',
+    () => disksApi.listDisks({ refresh: true }, fetchConfig),
+    'get',
+    ['disks', { params: { refresh: true }, ...fetchConfig }],
   ],
   [
     'uploadDisk',
@@ -283,6 +363,18 @@ const requests = [
     ['experiments', { name: 'exp' }, { timeout: 0 }],
   ],
   [
+    'listExperiments',
+    () => experimentsApi.listExperiments(fetchConfig),
+    'get',
+    ['experiments?vms=false', fetchConfig],
+  ],
+  [
+    'listSoh',
+    () => experimentsApi.listSoh(fetchConfig),
+    'get',
+    ['soh', fetchConfig],
+  ],
+  [
     'getExperiment',
     () => experimentsApi.getExperiment('exp', { params: { pageNum: 2 } }),
     'get',
@@ -335,12 +427,6 @@ const requests = [
     () => experimentsApi.getExperimentApps('exp'),
     'get',
     ['experiments/exp/apps'],
-  ],
-  [
-    'triggerSoh',
-    () => experimentsApi.triggerSoh('exp'),
-    'post',
-    ['experiments/exp/trigger?apps=soh'],
   ],
   [
     'getSoh',
@@ -448,11 +534,17 @@ const requests = [
     'archiveExperimentFiles',
     () => experimentFilesApi.archiveExperimentFiles('e@x', ['a']),
     'post',
-    ['experiments/e%40x/files/archive', { paths: ['a'] }, undefined],
+    ['experiments/e%40x/files/archive', { paths: ['a'] }],
   ],
 
   // VMs
   ['listVms', () => vmsApi.listVms('exp'), 'get', ['experiments/exp/vms']],
+  [
+    'listAllVms',
+    () => vmsApi.listAllVms(fetchConfig),
+    'get',
+    ['vms', fetchConfig],
+  ],
   [
     'updateVms',
     () => vmsApi.updateVms('exp', [{ name: 'a', dnb: true }]),
@@ -463,11 +555,7 @@ const requests = [
     'startVmActionsJob',
     () => vmsApi.startVmActionsJob('exp', 'restart', ['a', 'b']),
     'post',
-    [
-      'experiments/exp/vms/actions',
-      { action: 'restart', vms: ['a', 'b'] },
-      undefined,
-    ],
+    ['experiments/exp/vms/actions', { action: 'restart', vms: ['a', 'b'] }],
   ],
   ['getVm', () => vmsApi.getVm('exp', 'a'), 'get', ['experiments/exp/vms/a']],
   [
@@ -639,7 +727,7 @@ const requests = [
   // SCORCH
   [
     'listScorchPipelines',
-    () => scorchApi.listScorchPipelines('exp', signal),
+    () => scorchApi.listScorchPipelines('exp', { signal }),
     'get',
     [
       'experiments/exp/scorch/pipelines',
@@ -759,15 +847,20 @@ describe('the API modules', () => {
     const exported = [
       authApi,
       configsApi,
+      consoleApi,
       disksApi,
       experimentFilesApi,
       experimentsApi,
+      hostsApi,
+      jobsApi,
       logsApi,
+      rolesApi,
       scorchApi,
       settingsApi,
       topologiesApi,
       usersApi,
       vmsApi,
+      webSharkApi,
     ].flatMap((mod) => Object.keys(mod));
     // builds a link's URL rather than sending a request (tested below)
     const links = new Set(['netflowCaptureURL']);

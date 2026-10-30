@@ -77,10 +77,7 @@ func newHealthcheckCmd() *cobra.Command {
 				}
 			}
 
-			timeout, err := cmd.Flags().GetDuration("timeout")
-			if err != nil {
-				return fmt.Errorf("getting timeout flag: %w", err)
-			}
+			timeout := mustGet(cmd.Flags().GetDuration, "timeout")
 
 			return runHealthcheck(cmd, target, timeout, mustGet(cmd.Flags().GetString, "output"))
 		},

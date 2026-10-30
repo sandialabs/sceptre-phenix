@@ -309,7 +309,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			go func() {
 				defer wg.Done()
 
-				s.waitForDHCP(ctx, wg, &ipsMu, ns, host, dhcp)
+				s.waitForDHCP(ctx, wg, &ipsMu, ns, host, dhcp, dhcpPollInterval)
 			}()
 		}
 	}
@@ -616,7 +616,7 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 }
 
 // dhcpPollInterval is how often minimega is asked for a VM's DHCP addresses.
-var dhcpPollInterval = 1 * time.Second //nolint:gochecknoglobals // shortened by tests
+const dhcpPollInterval = 1 * time.Second
 
 // dhcpInterface is an interface configured using DHCP, and its index among
 // the node's interfaces (and so in minimega's list of the VM's IPs).
@@ -627,13 +627,14 @@ type dhcpInterface struct {
 
 // waitForDHCP waits for minimega to report an address for each of a host's
 // DHCP interfaces, recording each address (under ipsMu) and its outcome in wg.
-// One `vm info` a second serves all the host's DHCP interfaces.
+// One `vm info` each poll serves all the host's DHCP interfaces.
 func (s *SOH) waitForDHCP(
 	ctx context.Context,
 	wg *mm.StateGroup,
 	ipsMu *sync.Mutex,
 	ns, host string,
 	pending []dhcpInterface,
+	poll time.Duration,
 ) {
 	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
 
@@ -710,7 +711,7 @@ func (s *SOH) waitForDHCP(
 
 		pending = waiting
 
-		time.Sleep(dhcpPollInterval)
+		time.Sleep(poll)
 	}
 }
 

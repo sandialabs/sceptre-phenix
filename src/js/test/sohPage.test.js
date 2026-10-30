@@ -18,7 +18,7 @@ import { layoutInput } from '@/utils/soh/graph.js';
 import { GROUPS_MAX_NODES, runLayout } from '@/utils/soh/layouts.js';
 import StateOfHealth from '@/views/StateOfHealth.vue';
 import { buttons, mountComponent, toasts } from './helpers/mount.js';
-import { sohFixture } from './sohFixture.js';
+import { sohFixture } from './helpers/sohFixture.js';
 
 // The page on experiment demo with this state, not attached to the
 // document, which so has no #graph to draw into.

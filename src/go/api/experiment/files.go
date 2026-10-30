@@ -172,15 +172,10 @@ var storedExtensions = []string{ //nolint:gochecknoglobals // constant list
 	".7z", ".bz2", ".gz", ".hdd", ".jpg", ".png", ".qc2", ".qcow2", ".tgz", ".xz", ".zip", ".zst",
 }
 
-// ZipFiles writes a zip archive of the experiment's files at paths (relative
-// to its files directory, as listed) to the writer start returns, one file at
-// a time from the headnode's copy, so no more than a file's buffer is held in
-// memory. Before calling start it checks every path as File does and totals
-// the files' sizes: a failure then (ErrInvalidFilePath, ErrFileNotFound,
-// mm.ErrCaptureExists, ErrDownloadTooLarge) has written nothing. It returns
-// the paths archived, each flushed to the writer once it is complete, and on
-// a later failure those flushed before it. It is PlanZip followed by
-// ZipPlan.Write, which fails at the first file it cannot archive.
+// ZipFiles writes a zip archive of the experiment's files at paths (relative to its files directory) to the writer start
+// returns, one file at a time. It checks and totals every path first, so ErrInvalidFilePath, ErrFileNotFound,
+// mm.ErrCaptureExists or ErrDownloadTooLarge means nothing was written. It returns the paths archived, even on a later
+// failure. It is PlanZip followed by ZipPlan.Write.
 func ZipFiles(name string, paths []string, limits ZipLimits, start func() io.Writer) ([]string, error) {
 	plan, err := PlanZip(name, paths, limits)
 	if err != nil {
@@ -465,13 +460,9 @@ func (c *ctxReader) Read(b []byte) (int, error) {
 	return n, err //nolint:wrapcheck // io.Copy expects io.EOF as is
 }
 
-// DeleteFiles deletes the experiment's files at paths (relative to its files
-// directory, as listed) from the headnode and every mesh node that has them.
-// It refuses, with the reason, a path File would, one not listed (including a
-// directory), one minimega could read as a glob or several arguments, and a
-// pcap a running capture is still writing, and deletes the rest together. A
-// failure deleting them is returned as err, after which any of them may
-// remain.
+// DeleteFiles deletes the experiment's files at paths (relative to its files directory) from the headnode and every mesh
+// node that has them. It refuses, with the reason, a path File would, one not listed, one minimega could misparse, and a
+// pcap a running capture is writing; after a failure deleting the rest, any of them may remain.
 func DeleteFiles(name string, paths []string) ([]string, map[string]error, error) {
 	refused := make(map[string]error)
 

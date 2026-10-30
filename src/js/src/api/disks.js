@@ -3,9 +3,10 @@
 import axiosInstance from '@/utils/axios.js';
 import { useJobStore } from '@/utils/jobs.js';
 
-// GET /disks, filtered by params such as expName or diskType
-export function listDisks(params) {
-  return axiosInstance.get('disks', { params });
+// GET /disks, filtered by params such as expName or diskType; config carries
+// the request's signal and meta
+export function listDisks(params, config) {
+  return axiosInstance.get('disks', { params, ...config });
 }
 
 // POST /disks, with an uploaded file as FormData; onUploadProgress receives
@@ -70,7 +71,9 @@ export function renameDisk(disk, newName) {
 // POST /disks/clone/jobs?disk=&new=: the server copies the disk in a
 // background job (see utils/jobs.js), which this returns
 export function cloneDisk(disk, newName) {
-  return useJobStore().start('disks/clone/jobs', null, {
-    params: { disk, new: newName },
-  });
+  return useJobStore().start(
+    axiosInstance.post('disks/clone/jobs', null, {
+      params: { disk, new: newName },
+    }),
+  );
 }

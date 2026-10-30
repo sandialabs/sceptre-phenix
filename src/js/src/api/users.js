@@ -1,6 +1,11 @@
 // Users and their API tokens.
 import axiosInstance from '@/utils/axios.js';
 
+// GET /users, with each user's role; config carries signal and meta
+export function listUsers(config) {
+  return axiosInstance.get('users', config);
+}
+
 // POST /users
 export function createUser(user) {
   return axiosInstance.post('users', user);

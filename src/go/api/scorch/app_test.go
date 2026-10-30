@@ -145,7 +145,7 @@ func TestRunningRunsEveryStageOrOnlyCleanup(t *testing.T) { //nolint:paralleltes
 				ctx = scorchexe.SetCleanupOnly(ctx)
 			}
 
-			if err := newScorch().Running(ctx, exp); err != nil {
+			if err := newScorch(scorchweb.UpdatePipeline).Running(ctx, exp); err != nil {
 				t.Fatalf("Running(run 0, cleanup only %t) error = %v", tc.cleanupOnly, err)
 			}
 
@@ -231,24 +231,18 @@ func (r failingRecorder) Start(ctx context.Context) error {
 	return errors.New("component failed")
 }
 
-// recordDoneUpdates records the done stage statuses a run reports to the pipeline view.
-func recordDoneUpdates(t *testing.T) *[]string {
-	t.Helper()
-
-	original := updatePipeline
-	t.Cleanup(func() { updatePipeline = original })
-
+// recordDoneUpdates returns a pipeline update function recording the done stage statuses a run reports, and the
+// statuses it recorded.
+func recordDoneUpdates() (func(scorchweb.ComponentUpdate) error, *[]string) {
 	statuses := new([]string)
 
-	updatePipeline = func(update scorchweb.ComponentUpdate) error {
+	return func(update scorchweb.ComponentUpdate) error {
 		if update.Stage == string(ActionDone) {
 			*statuses = append(*statuses, update.Status)
 		}
 
 		return nil
-	}
-
-	return statuses
+	}, statuses
 }
 
 func TestRunningReportsHowTheRunEnded(t *testing.T) { //nolint:paralleltest // replaces package state
@@ -265,13 +259,13 @@ func TestRunningReportsHowTheRunEnded(t *testing.T) { //nolint:paralleltest // r
 		t.Run(tc.name, func(t *testing.T) {
 			useMinimega(t, nil)
 			exp, calls := scorchExperiment(t)
-			statuses := recordDoneUpdates(t)
+			update, statuses := recordDoneUpdates()
 
 			if tc.failing {
 				components["test-recorder"] = failingRecorder{recorder{calls: calls}}
 			}
 
-			err := newScorch().Running(scorchexe.SetRunID(context.Background(), 0), exp)
+			err := newScorch(update).Running(scorchexe.SetRunID(context.Background(), 0), exp)
 			if (err != nil) != tc.failing {
 				t.Errorf("Running(failing %t) error = %v, want an error %t", tc.failing, err, tc.failing)
 			}
@@ -304,7 +298,7 @@ func TestRunningArchiveRefreshesTheFileListing(t *testing.T) { //nolint:parallel
 		t.Fatalf("headnode file listings after listing twice = %d, want %d (the cached one)", again, first)
 	}
 
-	if err := newScorch().Running(scorchexe.SetRunID(context.Background(), 0), exp); err != nil {
+	if err := newScorch(scorchweb.UpdatePipeline).Running(scorchexe.SetRunID(context.Background(), 0), exp); err != nil {
 		t.Fatalf("Running(run 0) error = %v", err)
 	}
 

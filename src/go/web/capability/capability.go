@@ -1,10 +1,6 @@
-// Package capability keeps the capability grants of one process: random
-// tokens that let their holder read one capture, for a few operations,
-// without the session credentials of the user they were given to.
-//
-// Only the SHA-256 hash of a token is kept, so the registry never holds a
-// usable token; a grant is named in logs and listings by an ID derived from
-// the hash. Grants live in memory: a restart revokes them all.
+// Package capability keeps one process's capability grants: random tokens that let their holder read one capture
+// without the session credentials of the user they were given to. Only a token's SHA-256 hash is kept, a grant is named
+// by an ID derived from it, and a restart revokes every grant.
 package capability
 
 import (

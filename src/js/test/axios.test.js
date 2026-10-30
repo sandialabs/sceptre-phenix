@@ -11,7 +11,6 @@ import {
   BACK_SPREAD_MS,
   forgetServer,
   holdOffMs,
-  requestsUnanswered,
   serverShuttingDown,
   setWsDown,
   startPoll,
@@ -99,30 +98,38 @@ describe('background requests', () => {
       const ticks = [];
       const stop = startPoll(() => ticks.push(Date.now()), 10_000);
       await request(status).catch(() => {});
-      expect(requestsUnanswered()).toBe(true);
       // its turn at 10 s is put off to 20 s
       await vi.advanceTimersByTimeAsync(10_000);
       expect(ticks).toEqual([]);
 
       await request(404).catch(() => {});
-      expect(requestsUnanswered()).toBe(false);
       await vi.advanceTimersByTimeAsync(BACK_SPREAD_MS);
       expect(ticks).toHaveLength(1);
       stop();
     },
   );
 
+  // whether a 10 s poll takes its turn on time after the request
+  const pollOnTime = async (send) => {
+    const ticks = [];
+    const stop = startPoll(() => ticks.push(Date.now()), 10_000);
+    await send().catch(() => {});
+    await vi.advanceTimersByTimeAsync(10_000);
+    stop();
+    return ticks.length === 1;
+  };
+
   it('are not held back by a 502 phēnix answered itself', async () => {
-    await request(502, { 'x-phenix-seq': '7' }).catch(() => {});
-    expect(requestsUnanswered()).toBe(false);
+    expect(await pollOnTime(() => request(502, { 'x-phenix-seq': '7' }))).toBe(
+      true,
+    );
   });
 
   it('are not held back by a request canceled on purpose', async () => {
     const controller = new AbortController();
     controller.abort();
-    await axiosInstance
-      .get('experiments', { signal: controller.signal })
-      .catch(() => {});
-    expect(requestsUnanswered()).toBe(false);
+    const send = () =>
+      axiosInstance.get('experiments', { signal: controller.signal });
+    expect(await pollOnTime(send)).toBe(true);
   });
 });

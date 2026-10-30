@@ -527,7 +527,7 @@ func TestRefusedWhileStopping(t *testing.T) {
 		t.Errorf("GET /ws while stopping mismatch (-want +got):\n%s", diff)
 	}
 
-	jobs.Shutdown()
+	jobs.ShutdownContext(context.Background(), 0)
 
 	started := httptest.NewRecorder()
 	serveStartJob(started, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/jobs", nil), job.Spec{

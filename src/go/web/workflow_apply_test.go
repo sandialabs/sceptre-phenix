@@ -72,17 +72,7 @@ func workflowTestRole(allow bool) rbac.Role {
 		return rbac.Role{Spec: &v1.RoleSpec{}}
 	}
 
-	return rbac.Role{
-		Spec: &v1.RoleSpec{
-			Policies: []*v1.PolicySpec{
-				{
-					Resources:     []string{"*", "*/*"},
-					ResourceNames: []string{"*", "*/*"},
-					Verbs:         []string{"*"},
-				},
-			},
-		},
-	}
+	return adminRole()
 }
 
 // workflowTestYAML returns a YAML workflow config with the given spec body,

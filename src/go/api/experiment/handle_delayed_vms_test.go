@@ -77,6 +77,9 @@ func (m *delayedMM) clears() int {
 	return m.cleared
 }
 
+// testC2Check is how often the tests check C2 clients.
+const testC2Check = 10 * time.Millisecond
+
 // useDelayedMM installs a delayedMM and a fake minimega failing vm start for the VMs in fail;
 // returns the double and a lister of the commands sent.
 func useDelayedMM(t *testing.T, fail ...string) (*delayedMM, func() []mmtest.Command) {
@@ -84,15 +87,11 @@ func useDelayedMM(t *testing.T, fail ...string) (*delayedMM, func() []mmtest.Com
 
 	fake := &delayedMM{active: make(map[mm.C2ClientRef]bool)}
 
-	originalMM, originalInterval := mm.DefaultMM, c2CheckInterval
+	originalMM := mm.DefaultMM
 
 	mm.DefaultMM = fake //nolint:reassign // install test double
-	c2CheckInterval = 10 * time.Millisecond
 
-	t.Cleanup(func() {
-		mm.DefaultMM = originalMM //nolint:reassign // restore default
-		c2CheckInterval = originalInterval
-	})
+	t.Cleanup(func() { mm.DefaultMM = originalMM }) //nolint:reassign // restore default
 
 	received := mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
 		if slices.Contains(fail, strings.TrimPrefix(cmd.Base, "vm start ")) {
@@ -123,7 +122,7 @@ func TestHandleDelayedVMsStartsC2DelayedVMsOnceTheirClientsAreActive(t *testing.
 
 	done := make(chan error, 1)
 
-	go func() { done <- handleDelayedVMs(context.Background(), "exp", nil, c2s, nil) }()
+	go func() { done <- handleDelayedVMs(context.Background(), "exp", nil, c2s, testC2Check, nil) }()
 
 	// Nothing starts while no client is active, and each check asks about
 	// every waited-on client once.
@@ -209,6 +208,7 @@ func TestHandleDelayedVMsLeavesNamespaceWhenCanceled(t *testing.T) { //nolint:pa
 		"exp",
 		map[string]time.Duration{"timed": time.Minute},
 		map[string]map[string]bool{"a": {"server": false}, "b": {"server": true}},
+		testC2Check,
 		nil,
 	)
 
@@ -236,7 +236,7 @@ func TestHandleDelayedVMsLeavesNamespaceWhenCanceled(t *testing.T) { //nolint:pa
 func TestHandleDelayedVMsWithNothingDelayed(t *testing.T) { //nolint:paralleltest // replaces package globals
 	fake, received := useDelayedMM(t)
 
-	if err := handleDelayedVMs(context.Background(), "exp", nil, nil, nil); err != nil {
+	if err := handleDelayedVMs(context.Background(), "exp", nil, nil, testC2Check, nil); err != nil {
 		t.Errorf("handleDelayedVMs(nothing delayed) error = %v, want nil", err)
 	}
 

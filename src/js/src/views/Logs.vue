@@ -328,7 +328,7 @@
           const resp = await logsApi.listLogs(
             this.startDate,
             this.endNow ? null : this.endDate,
-            signal,
+            { signal },
           );
           return withLogIds(resp.data ?? []);
         },

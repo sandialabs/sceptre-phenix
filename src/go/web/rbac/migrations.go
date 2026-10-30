@@ -43,9 +43,8 @@ func EnsureJobsPermission() error {
 // (delete) the captures of a subnet.
 const captureSubnetResource = "exp/captureSubnet"
 
-// EnsureCaptureSubnetStopPermission lets the stored roles, and users' roles,
-// that may start subnet captures stop them as well. Stopping once needed the
-// same create permission as starting, and now needs delete.
+// EnsureCaptureSubnetStopPermission grants the delete verb to the stored roles,
+// and users' roles, that may start subnet captures, so they may stop them too.
 func EnsureCaptureSubnetStopPermission() error {
 	roles, err := GetRoles()
 	if err != nil {

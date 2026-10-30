@@ -1,13 +1,7 @@
-// GEXF 1.3 export of the State of Health graph, for Gephi and Gephi Lite.
-// Built in the browser from the experiment's state of health (GET
-// /experiments/{name}/soh) already on the page, plus the experiment's VM list
-// when the user may read it (host, addresses, CPUs, memory, disk). See
-// https://gexf.net and the 1.3 schema at
-// https://github.com/gephi/gexf/tree/master/specs/1.3.
-//
-// Visual data (color, position, size, shape) uses the viz namespace
-// http://gexf.net/1.3/viz, as Gephi, graphology (Gephi Lite) and NetworkX
-// write and read it.
+// GEXF 1.3 (https://gexf.net) export of the State of Health graph for Gephi,
+// from the page's SOH data plus the VM list when the user may read it. Visual
+// data uses the viz namespace http://gexf.net/1.3/viz, as Gephi, graphology
+// and NetworkX read it.
 import {
   STATUS_LABELS,
   displayColor,

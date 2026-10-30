@@ -1,15 +1,7 @@
-// Remembers which rows a page changed from websocket updates, so a list the
-// server read before an update does not put the old state back: an
-// experiment stopped while the list was loading would otherwise show as
-// started again until the next reload, a new one would vanish, and a deleted
-// one would come back.
-//
-// Changes are ordered by the server's sequence (see freshness.js): a message
-// with seq S changed the row after any list tagged with a lower seq was read,
-// and before any list tagged S or higher. A change without a seq (made by the
-// page itself, or from an older server) wins over every list until a list
-// newer than the last seq the page has seen (or, if it has seen none, newer
-// than the next list with a seq).
+// Remembers which rows a page changed from websocket updates, so a list read
+// before an update cannot put the old state back. Changes are ordered by the
+// server's seq (see freshness.js); one without a seq wins over every list until
+// a list newer than the last seq seen (or the next list with one) arrives.
 export function createLiveRows() {
   const updatedSeq = new Map();
   const deletedSeq = new Map();

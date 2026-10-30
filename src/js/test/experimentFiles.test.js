@@ -761,11 +761,9 @@ describe('downloading the selected files', () => {
     expect(download.attributes('disabled')).toBeDefined();
     expect(tab.vm.filesBusy).toBe(true);
     await flushPromises();
-    expect(axios.post).toHaveBeenCalledWith(
-      'experiments/exp1/files/archive',
-      { paths: ['a.log', 'c.pcap'] },
-      undefined,
-    );
+    expect(axios.post).toHaveBeenCalledWith('experiments/exp1/files/archive', {
+      paths: ['a.log', 'c.pcap'],
+    });
     expect(tab.vm.archiveJob.status).toBe('running');
 
     // the job's websocket update says it finished

@@ -1,5 +1,7 @@
-// Create, start, stop and delete an experiment; opt-in, as it needs minimega, VM images and a topology:
-//   E2E_LIFECYCLE=1 [E2E_TOPOLOGY=helloworld] npx playwright test --no-deps experiment-lifecycle
+// Create, start, stop and delete an experiment; opt-in, as it needs minimega,
+// VM images and a topology:
+//   E2E_LIFECYCLE=1 [E2E_TOPOLOGY=helloworld] \
+//     npx playwright test --no-deps experiment-lifecycle
 const { test, expect } = require('@playwright/test');
 const { attachCapture, settle, fatalOf } = require('./helpers');
 

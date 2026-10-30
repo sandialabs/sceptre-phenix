@@ -67,12 +67,8 @@ func captureStreamStatus(err error) int {
 
 // GetVMCaptureStream - GET /experiments/{exp}/vms/{name}/captures/{iface}/stream
 //
-// Streams a running capture as a pcap file: everything captured so far (or,
-// with ?from=now, nothing captured before the request), then each packet as
-// minimega writes it, until the capture stops. A plain request gets a
-// chunked pcap body, which Wireshark reads from a pipe (curl ... | wireshark
-// -k -i -); a websocket request gets the same bytes as binary messages, the
-// first holding the file header and each later one whole packets.
+// Streams a running capture as a pcap file (with ?from=now, only packets from now on) until it stops: a chunked body
+// Wireshark reads from a pipe, or for a websocket, binary messages holding the file header and then whole packets.
 func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) error {
 	var (
 		role    = middleware.RoleFromContext(r.Context())
@@ -121,11 +117,8 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) error {
 
 // GetCaptureStreamByToken - GET /webshark/streams/{token}
 //
-// Streams the running capture a stream grant names, as
-// GetVMCaptureStream's pcap body does. The grant is the credential: a
-// command run outside the browser carries it rather than the user's
-// session. The stream ends when the grant does, or when a check of the
-// grant while it runs finds its user may no longer read the capture.
+// Streams the running capture a stream grant names, as GetVMCaptureStream does; the grant is the credential. It ends with
+// the grant, or when its user may no longer read the capture.
 func (c grantChecker) GetCaptureStreamByToken(w http.ResponseWriter, r *http.Request) error {
 	g, status := c.use(r, mux.Vars(r)["token"], capability.OpStream)
 	if status != 0 {

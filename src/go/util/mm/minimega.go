@@ -1407,17 +1407,9 @@ func (m Minimega) GetVMCaptures(opts ...Option) []Capture {
 	return keep
 }
 
-// GetClusterHosts returns the cluster's hosts, or only those VMs can be
-// scheduled on.
-//
-// A schedOnly call is always answered from minimega: the schedulers (and apps
-// given it, see app.PopulateRuntime) place VMs by each host's VM count and
-// commit, which starting another experiment changes moments later. The full
-// list is only shown to people (the Hosts page, which polls it, and the
-// experiment page's host choices), so it is reused for up to clusterHostsTTL.
-// Both kinds share one set of minimega commands with concurrent calls (see
-// flight.Group), and every fresh answer refreshes the reused one. Each caller
-// gets its own copy.
+// GetClusterHosts returns the cluster's hosts, or only those VMs can be scheduled on. A schedOnly call always asks
+// minimega, since VM placement depends on current counts; the full list, shown only to people, is reused for up to
+// clusterHostsTTL. Concurrent calls share one set of commands (see flight.Group), and each caller gets its own copy.
 func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 	hosts, _, err := m.GetClusterHostsObserved(context.Background(), schedOnly)
 
@@ -1537,19 +1529,9 @@ func (m Minimega) getClusterHosts(ctx context.Context, started func()) (Hosts, e
 	return cluster, nil
 }
 
-// phenixNamespaceCurrent reports whether the dummy namespace phenix runs `host`
-// in to reach every compute node already spans exactly the nodes it would if
-// it were created now, so it need not be destroyed and recreated.
-//
-// minimega fixes a namespace's hosts when it creates the namespace: every mesh
-// peer, or just the local node when it has none. Nodes joining or leaving the
-// mesh later are not picked up. Clearing the namespace before every `host`
-// would pick them up, but costs a `clear namespace` broadcast to the whole mesh
-// plus tearing down and rebuilding the namespace on every node, twice as many
-// mesh commands as the `host` itself. Instead, the namespace's hosts are
-// compared with the current mesh peers (both local commands) and it is only
-// recreated when they differ, or when either can't be read (such as a minimega
-// without `mesh list peers`).
+// phenixNamespaceCurrent reports whether the dummy namespace phenix runs `host` in already spans exactly the current
+// mesh peers, so it need not be recreated: minimega fixes a namespace's hosts when it creates it, and recreating it
+// before every `host` costs twice the mesh commands of the `host` itself. It reports false when either cannot be read.
 func phenixNamespaceCurrent(ctx context.Context, self string) bool {
 	peers, err := hostList(ctx, mmcli.NewCommand(), "mesh list peers")
 	if err != nil {
@@ -2406,17 +2388,9 @@ func getResponse(ctx context.Context, ns, id string) (string, error) {
 	return resp, nil
 }
 
-// deleteC2Command deletes a cc command phenix is done waiting on from the
-// namespace's command list. The command's responses are kept.
-//
-// Until deleted, a `cc exec` stays in the list and is sent again to every
-// client that connects, so a restarted miniccc would run it again. `cc
-// exec-once` is no alternative: minimega marks it sent the first time it sends
-// commands out, whether or not the client it is filtered to is connected yet,
-// and a client connecting later never gets it.
-//
-// A failed delete is logged rather than returned: the caller's command has run
-// (or been given up on) either way.
+// deleteC2Command deletes a cc command phenix is done waiting on, keeping its responses, so a restarted miniccc does not
+// run it again (`cc exec-once` is marked sent before a filtered client connects, so it is no alternative). A failed
+// delete is logged rather than returned.
 func deleteC2Command(ns, id string) {
 	if _, err := strconv.Atoi(id); err != nil {
 		plog.Warn(plog.TypeSystem, "not deleting C2 command with a malformed ID", "ns", ns, "id", id)

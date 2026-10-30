@@ -224,12 +224,9 @@ func (req vmRequest) logArgs() []any {
 	return args
 }
 
-// runVMAction takes the action on the VM, with the RBAC check, lock,
-// broadcasts and logs of its single-VM handler, and returns the VM as JSON
-// when the action ends with one. A role that may not act fails with 403,
-// wrapping job.ErrForbidden; a VM another action holds with 409, wrapping
-// its *cache.LockedError. A single-VM request is audited here; a job's VMs
-// are audited when it finishes (see auditVMActionJob).
+// runVMAction takes the action on the VM with its single-VM handler's RBAC check, lock, broadcasts and logs, returning
+// the VM as JSON when the action ends with one. It fails with 403 (job.ErrForbidden) for a role that may not act and 409
+// (*cache.LockedError) for a locked VM; a job's VMs are audited when it finishes (see auditVMActionJob).
 //
 //nolint:funlen // the action's steps in order
 func runVMAction(req vmRequest, a *vmAction) ([]byte, error) {
@@ -421,11 +418,8 @@ type vmActionsRequest struct {
 
 // RunVMActions - POST /experiments/{exp}/vms/actions.
 //
-// Takes one power action (start, pause, restart, shutdown, kill or
-// resetDisk) on several VMs in a background job, a few at a time, each VM as
-// its single-VM route would. A VM the role may not act on is skipped; when
-// the role may act on none of them, the request is refused with 403 and no
-// job starts.
+// Takes one power action on several VMs in a background job, a few at a time, each as its single-VM route would,
+// skipping the VMs the role may not act on; with none left it answers 403 and starts no job.
 func RunVMActions(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()

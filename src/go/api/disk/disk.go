@@ -240,12 +240,9 @@ func getImagesLocal(experiments []types.Experiment, details map[string]Details) 
 	return nil
 }
 
-// getAllFiles adds the images in the minimega files directory, as minimega
-// lists them, down to maxDepth: one non-recursive `file list` per folder,
-// because minimega stops a recursive listing at its first unreadable entry.
-// Like imageFiles, it does not follow symlinked folders, which minimega lists
-// as files, and it leaves out what is not a regular file (see
-// minimegaMayInspect).
+// getAllFiles adds the images in the minimega files directory down to maxDepth, with one non-recursive `file list` per
+// folder because minimega stops a recursive listing at its first unreadable entry. Like imageFiles, it does not follow
+// symlinked folders and leaves out what is not a regular file (see minimegaMayInspect).
 func getAllFiles(details map[string]Details) {
 	for folders := []string{""}; len(folders) > 0; folders = folders[1:] {
 		cmd := mmcli.NewCommand()

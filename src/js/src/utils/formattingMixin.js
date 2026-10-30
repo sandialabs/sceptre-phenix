@@ -1,5 +1,6 @@
 import { bytesText, mebibytesText } from '@/utils/bytes.js';
 import { plural } from '@/utils/plural.js';
+import { keptSearch } from '@/utils/searchHistory.js';
 
 export const formattingMixin = {
   methods: {
@@ -53,14 +54,9 @@ export const formattingMixin = {
     formatFileSize(value) {
       return bytesText(value);
     },
-    // the last part of a path, to list disk images by file name
-    getBaseName(path) {
-      return path.substring(path.lastIndexOf('/') + 1);
-    },
-    // the distinct items, sorted; those under four characters are dropped,
-    // except "dnb", the search for VMs set not to boot
+    // the distinct items, sorted, keeping only those keptSearch keeps
     getUniqueItems(items) {
-      const kept = items.filter((item) => item.length >= 4 || item == 'dnb');
+      const kept = items.filter(keptSearch);
       return [...new Set(kept)].sort();
     },
   },

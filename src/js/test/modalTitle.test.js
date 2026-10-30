@@ -1,6 +1,6 @@
 // @vitest-environment node
-// A dialog's title wraps inside its head's padding: Bulma's own rule keeps it
-// from shrinking, so a long user or VM name ran to the dialog's edge.
+// A dialog's title wraps inside its head's padding; Bulma's own rule stops it
+// shrinking, so a long user or VM name would reach the dialog's edge.
 import { expect, it } from 'vitest';
 
 import { declarations } from './helpers/css.js';

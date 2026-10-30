@@ -106,10 +106,7 @@ func newDoctorCmd() *cobra.Command {
 				return fmt.Errorf("unsupported output format: %s", output)
 			}
 
-			timeout, err := cmd.Flags().GetDuration("timeout")
-			if err != nil {
-				return fmt.Errorf("getting timeout flag: %w", err)
-			}
+			timeout := mustGet(cmd.Flags().GetDuration, "timeout")
 
 			report := runDoctor(cmd.Context(), cmd.Flags(), timeout)
 
@@ -413,7 +410,7 @@ func minimegaCheck(
 	ctx context.Context,
 	base string,
 	timeout time.Duration,
-	probe func(context.Context, time.Duration) (string, error),
+	probe func(time.Duration) (string, error),
 ) doctorCheck {
 	socket := filepath.Join(base, minimegaCheckName)
 
@@ -428,7 +425,7 @@ func minimegaCheck(
 	answers := make(chan answer, 1)
 
 	go func() {
-		version, err := probe(ctx, timeout)
+		version, err := probe(timeout)
 		answers <- answer{version: version, err: err}
 	}()
 
@@ -454,7 +451,7 @@ func minimegaCheck(
 
 // probeMinimega sends minimega's version command on a connection of its own,
 // bounded by timeout.
-func probeMinimega(_ context.Context, timeout time.Duration) (string, error) {
+func probeMinimega(timeout time.Duration) (string, error) {
 	cmd := mmcli.NewCommand()
 	cmd.Command = "version"
 	cmd.Timeout = timeout

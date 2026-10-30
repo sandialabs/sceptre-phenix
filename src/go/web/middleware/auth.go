@@ -417,13 +417,9 @@ func isPublicPath(path string) bool {
 	return ok
 }
 
-// ResolveRole looks up again the role of user, who signed in with the session
-// JWT rawJWT, in the auth mode the JWT signing key jwtKey selects, as Auth
-// does for each request: with sign-in disabled, every user is global-admin;
-// dev auth gives its one user its role; otherwise the user must still exist
-// and still hold the session (not have signed out or deleted it), and gets
-// the role it has now. It does not check the JWT's signature or expiry,
-// which Auth checked when it was presented.
+// ResolveRole looks up again, as Auth does for each request, the role of user, signed in with the session JWT rawJWT in
+// the auth mode jwtKey selects: global-admin with sign-in disabled, the dev user's role, or else the role the user has
+// now, if it still exists and holds the session. It does not check the JWT's signature or expiry.
 func ResolveRole(jwtKey, user, rawJWT string) (rbac.Role, error) {
 	switch {
 	case jwtKey == "":
@@ -454,14 +450,9 @@ func ResolveRole(jwtKey, user, rawJWT string) (rbac.Role, error) {
 	return role, nil
 }
 
-// Authenticator reports whether a request carries credentials the API would
-// accept, without rejecting it: with auth disabled (no JWT signing key, or a
-// dev key) every request does. Otherwise a request that presents a token is
-// passed through the same chain Auth builds, with its token, user, revocation
-// and proxy user checks, and counts as authenticated when it gets through. A
-// request without a token is not, and logs nothing, so unauthenticated health
-// probes do not fill the security log. A refusal is reported, as by Auth, to
-// the OnRefusal function of opts, with the request as it was sent.
+// Authenticator reports, without rejecting it, whether a request carries credentials the API would accept: every request
+// does with auth disabled, and otherwise one whose token gets through Auth's chain. A request without a token logs
+// nothing, so unauthenticated health probes do not fill the security log; refusals go to opts' OnRefusal.
 func Authenticator(jwtKey, proxyAuthHeader string, opts ...AuthOption) func(*http.Request) bool {
 	if jwtKey == "" || strings.HasPrefix(jwtKey, "dev|") {
 		return func(*http.Request) bool { return true }

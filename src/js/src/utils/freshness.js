@@ -1,14 +1,6 @@
-// How fresh each page's data is, and the rules that decide it: the one
-// registry of the UI's data caches and reuse windows (the server's are in
-// src/go/util/freshness/doc.go).
-//
-// The server tags every REST response with X-Phenix-Seq and every websocket
-// message with seq, from one sequence that only increases within a server
-// process: data tagged S reflects every change whose message has a seq of S or
-// less. Responses built from minimega reads also carry X-Phenix-Observed-At
-// (when the oldest of the data was read) and X-Phenix-Stale (earlier data
-// served while minimega was busy). Ages are measured from the server's own
-// Date header, so the browser's clock never matters.
+// How fresh each page's data is: the one registry of the UI's data caches and
+// reuse windows. The X-Phenix-Seq, Observed-At and Stale headers it reads are
+// described in docs/content/api.md; ages count from the server's Date header.
 
 import { shallowRef } from 'vue';
 
@@ -52,19 +44,11 @@ const deletedExperiment = (msg) =>
 // whether msg drops any cached page under a removedBy rule below
 export const removesPages = (msg) => deletedExperiment(msg) !== undefined;
 
-// Each page's data, by page cache key:
-//
-//   live           the page is kept current by websocket messages, so its
-//                  data may be out of date while the websocket is down
-//   reuseMs        how long other pages reuse a cached copy instead of
-//                  asking again (see recentPage)
-//   pollMs         how often the open page reloads
-//   staleAfterMs   past this age the data is shown as may be out of date
-//   invalidatedBy  websocket messages after which a cached copy is out of
-//                  date and is loaded again on the next visit; each is given
-//                  the message and the cache key
-//   removedBy      websocket messages after which what a cached copy shows no
-//                  longer exists, so it is dropped; given the same arguments
+// Each page's data, by cache key: live (kept current by websocket messages),
+// reuseMs (how long other pages reuse a cached copy), pollMs (how often the
+// open page reloads), staleAfterMs (the age shown as may be out of date), and
+// invalidatedBy and removedBy (given a websocket message and the key: whether
+// a cached copy must load again on the next visit, or be dropped).
 export const RESOURCES = {
   experiments: {
     live: true,
@@ -146,10 +130,10 @@ export class FreshnessMeta {
   }
 }
 
-const header = (headers, name) =>
-  typeof headers?.get === 'function'
-    ? (headers.get(name) ?? undefined)
-    : headers?.[name];
+// one response header, from axios's headers object or a plain one
+export const header = (headers, name) =>
+  (typeof headers?.get === 'function' ? headers.get(name) : headers?.[name]) ??
+  undefined;
 
 // Folds one response's freshness headers into meta: sentAt and receivedAt
 // are when its request was sent and its response arrived, on the browser's
@@ -273,11 +257,6 @@ export function serverResponded(sentAt) {
 // (see startPoll), as from a server that is down.
 export function serverUnanswered() {
   unanswered = true;
-}
-
-// Whether a request got no response and none has been answered since.
-export function requestsUnanswered() {
-  return unanswered;
 }
 
 // the longest Retry-After honored, so a bad header cannot stop polling for good
@@ -488,15 +467,10 @@ export function startPoll(tick, intervalMs, { when = () => true } = {}) {
   };
 }
 
-// Why data may be out of date, or null when it is not:
-//
-//   'server'        the server served earlier data (minimega was busy)
-//   'invalidated'   it changed elsewhere since it loaded
-//   'shutdown'      live updates stopped as the server shut down
-//   'disconnected'  live updates stopped coming for any other reason
-//   'age'           it is older than the resource's staleAfterMs
-//
-// state is { observedAt, stale, invalidated }.
+// Why data in state { observedAt, stale, invalidated } may be out of date, or
+// null: 'server' (minimega was busy), 'invalidated' (changed since it loaded),
+// 'shutdown' or 'disconnected' (live updates stopped), or 'age' (past
+// staleAfterMs).
 export function staleReason(
   state,
   resource,

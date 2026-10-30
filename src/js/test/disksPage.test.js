@@ -98,14 +98,17 @@ async function runAction(details, label) {
 }
 
 describe('the disk list', () => {
-  const urls = () => axios.get.mock.calls.map(([url]) => url);
-
   it("has the server inspect every image again on the header's refresh", async () => {
     await page();
 
     await loaderSpy.options.refresh();
     await loaderSpy.load();
-    expect(urls()).toEqual(['disks?refresh=true', 'disks']);
+    expect(
+      axios.get.mock.calls.map(([url, config]) => [url, config?.params]),
+    ).toEqual([
+      ['disks', { refresh: true }],
+      ['disks', undefined],
+    ]);
   });
 
   it('reloads when the server reports its images changed', async () => {

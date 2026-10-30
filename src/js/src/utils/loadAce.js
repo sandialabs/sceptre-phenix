@@ -1,9 +1,6 @@
-// Loads the Ace editor with everything the config editor uses. Once Ace itself
-// has loaded, its other pieces are fetched in parallel rather than one after
-// another, and the theme and modes are bundled rather than fetched by Ace when
-// first used, so opening the editor over a slow link waits on two rounds of
-// requests. The Configs list starts this on hover, so the editor usually opens
-// with Ace already loaded.
+// Loads the Ace editor with everything the config editor uses: Ace, then its
+// other pieces in parallel, with the theme and modes bundled, so a slow link
+// waits on two rounds of requests. The Configs list starts it on hover.
 let loading = null;
 
 export function loadAce() {

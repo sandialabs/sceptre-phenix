@@ -43,7 +43,7 @@ const (
 
 // c2CheckInterval is how often the C2 clients C2-delayed VMs wait on are
 // checked.
-var c2CheckInterval = 5 * time.Second //nolint:gochecknoglobals // shortened by tests
+const c2CheckInterval = 5 * time.Second
 
 var (
 	ErrExperimentNotFound   = errors.New("experiment not found")
@@ -811,7 +811,7 @@ func afterLaunch(ctx context.Context, exp *types.Experiment, dryrun bool, steps 
 			started = func(host string) { delayedVMStarted(name, host) }
 		}
 
-		if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), steps.delays, steps.c2s, started); err != nil {
+		if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), steps.delays, steps.c2s, c2CheckInterval, started); err != nil {
 			return stepDelayedVMs, fmt.Errorf("handling delayed VMs: %w", err)
 		}
 
@@ -1299,13 +1299,14 @@ func deleteSnapshots(exp *types.Experiment) error {
 	return nil
 }
 
-// handleDelayedVMs starts the delayed VMs of namespace ns as their delays end, calling started,
-// when it is not nil, with each VM it started.
+// handleDelayedVMs starts the delayed VMs of namespace ns as their delays end, checking the C2 clients every
+// c2Check, and calls started, when it is not nil, with each VM it started.
 func handleDelayedVMs(
 	ctx context.Context,
 	ns string,
 	delays map[string]time.Duration,
 	c2s map[string]map[string]bool,
+	c2Check time.Duration,
 	started func(host string),
 ) error {
 	if len(delays) == 0 && len(c2s) == 0 {
@@ -1337,7 +1338,7 @@ func handleDelayedVMs(
 			defer wg.Done()
 
 			// at most one error per C2-delayed VM, so errChan has room for them
-			for _, err := range waitForC2(ctx, ns, c2s, started) {
+			for _, err := range waitForC2(ctx, ns, c2s, c2Check, started) {
 				errChan <- err
 			}
 		}()
@@ -1397,19 +1398,16 @@ func waitForTimeDelay(ctx context.Context, ns, host string, delay time.Duration,
 	return nil
 }
 
-// waitForC2 starts each C2-delayed VM (keyed by name in c2s, with the VMs it
-// waits on and whether each one's client is identified by UUID) once the C2
-// clients of all the VMs it waits on are active. It returns the errors from
-// starting them, and the context's error once for each VM still waiting when
-// the context is done.
-//
-// One loop serves every C2-delayed VM in the namespace, and each check asks
-// minimega about all the clients still waited on at once (mm.ActiveC2Clients).
-func waitForC2(ctx context.Context, ns string, c2s map[string]map[string]bool, started func(string)) []error {
+// waitForC2 starts each C2-delayed VM in c2s once the C2 clients of every VM it waits on are active, asking minimega
+// about all the clients still waited on at once every interval. It returns the errors from starting them, and the
+// context's error once for each VM still waiting when ctx is done.
+func waitForC2(
+	ctx context.Context, ns string, c2s map[string]map[string]bool, interval time.Duration, started func(string),
+) []error {
 	var (
 		pending = maps.Clone(c2s)
 		errs    []error
-		ticker  = time.NewTicker(c2CheckInterval)
+		ticker  = time.NewTicker(interval)
 	)
 
 	defer ticker.Stop()

@@ -39,6 +39,12 @@ node summary.mjs --size size-limit.json \
   --manifest lighthouse-results/manifest.json
 ```
 
+CI also passes `--baseline <perf-summary.json>`, `--base-ref <branch>`,
+`--out-md perf-summary.md` and `--out-json perf-summary.json`; the markdown is
+also appended to `$GITHUB_STEP_SUMMARY` when it is set. Then
+`node summary.mjs --check perf-summary.json` prints one error annotation per
+failed budget and exits 1 if any failed.
+
 ## CI summary
 
 The `perf` job runs size-limit and Lighthouse even when one of them fails, then
@@ -63,9 +69,9 @@ annotation per failed budget, at most 10.
 
 The baseline is the newest unexpired `perf-summary` artifact among the last 30
 completed push runs on the pull request's base branch, or on the default branch
-for pushes, in this repository. Bundle size deltas are exact. Lighthouse deltas are informational:
-medians of 3 runs on shared runners vary from run to run, so only the absolute
-budgets in `lighthouserc.cjs` fail the job. Without a baseline, for example
+for pushes, in this repository. Bundle size deltas are exact. Lighthouse deltas
+are informational: medians of 3 runs on shared runners vary from run to run, so
+only the absolute budgets in `lighthouserc.cjs` fail the job. Without a baseline, for example
 before the default branch has a run or after its artifact expires, deltas show
 n/a. The baseline is another run's output, so `summary.mjs` reads only numbers
 from it.
@@ -73,25 +79,10 @@ from it.
 ## Why perf/ has its own lockfile
 
 `perf/` is a separate npm project with its own `package-lock.json`, like
-`e2e/`, and stays one. Measured with npm 11.20 and `npm ci --ignore-scripts`:
-
-| Install                                                             | Packages | `node_modules` |
-| ------------------------------------------------------------------- | -------- | -------------- |
-| UI alone (`src/js`)                                                 | 382      | 220 MB         |
-| `perf/` alone                                                       | 335      | 158 MB         |
-| Merged as an npm workspace (`workspaces: ["perf"]`), plain `npm ci` | 700      | 375 MB         |
-| Merged, `npm ci -w perf`                                            | 346      | 159 MB         |
-| Merged, `npm ci --workspaces=false`                                 | 384      | 223 MB         |
-
-Merging would add 318 packages and about 155 MB (Lighthouse,
-puppeteer-core, Sentry and their dependencies) to every plain `npm ci` in `src/js`, including the
-container image builds, and save no repository space: the merged lock is
-344 kB against 351 kB for the two today. Workspace flags can scope an install,
-but every install site (the Makefile and the container builds through it, the
-JIT image, the Lint and Frontend workflows, and the documented developer
-setup) would need one, and a missed site pays the full cost silently. So
-`perf/` keeps its own lock, `npm ci` here installs it, and Vitest and ESLint
-treat `perf/` as tooling (`vite.config.js`, `eslint.config.js`).
+`e2e/`, so a plain `npm ci` in `src/js` (as the container builds run it) does
+not install Lighthouse and its dependencies; `npm ci` here installs them.
+Vitest and ESLint treat `perf/` as tooling (`vite.config.js`,
+`eslint.config.js`).
 
 ## Changing a budget
 

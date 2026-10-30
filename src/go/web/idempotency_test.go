@@ -24,7 +24,7 @@ func TestJobRoutesHonorIdempotencyKey(t *testing.T) {
 	for _, route := range routes {
 		t.Run(route.name, func(t *testing.T) {
 			useContractFixture(t)
-			server := serveContractAs(t, contractAdmin(), nil).URL
+			server := serveContractAs(t, adminRole(), nil).URL
 			key := []string{"Idempotency-Key", "retry-" + route.name}
 
 			first := do(t, http.MethodPost, server+route.path, route.body, key...)

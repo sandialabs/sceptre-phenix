@@ -215,11 +215,9 @@ func Store(component string, list func() error) Check {
 // sent or any node answered with one.
 type MinimegaRunner func(ctx context.Context, command string) ([]*minicli.Response, error)
 
-// Minimega reports how long minimega takes to give its version, the version,
-// the number of namespaces and the number of nodes in the mesh. It fails when
-// minimega does not answer, and warns when it is slow, when the namespaces or
-// mesh cannot be listed, or when the mesh has fewer nodes than it has had
-// since the server started (a node left or cannot be reached).
+// Minimega reports minimega's version, how long it takes to give it, and the number of namespaces and mesh nodes. It
+// fails when minimega does not answer, and warns when it is slow, a list fails, or the mesh has fewer nodes than it has
+// had since the server started.
 //
 //nolint:funlen // one check of four keys
 func Minimega(run MinimegaRunner) Check {

@@ -5,6 +5,11 @@ import { useJobStore } from '@/utils/jobs.js';
 
 const vmURL = (exp, vm) => 'experiments/' + exp + '/vms/' + vm;
 
+// GET /vms: every running VM; config carries the request's signal and meta
+export function listAllVms(config) {
+  return axiosInstance.get('vms', config);
+}
+
 // GET /experiments/{exp}/vms
 export function listVms(exp) {
   return axiosInstance.get('experiments/' + exp + '/vms');
@@ -21,10 +26,9 @@ export function updateVms(exp, vms) {
 // POST /experiments/{exp}/vms/actions: the server takes a power action on
 // the VMs in a background job (see utils/jobs.js), which this returns
 export function startVmActionsJob(exp, action, vms) {
-  return useJobStore().start(`experiments/${exp}/vms/actions`, {
-    action,
-    vms,
-  });
+  return useJobStore().start(
+    axiosInstance.post(`experiments/${exp}/vms/actions`, { action, vms }),
+  );
 }
 
 // GET /experiments/{exp}/vms/{vm}

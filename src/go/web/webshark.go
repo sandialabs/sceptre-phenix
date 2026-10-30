@@ -32,13 +32,9 @@ import (
 	"phenix/web/weberror"
 )
 
-// WebShark (github.com/QXIP/webshark) dissects packets in the browser, with
-// Wireshark compiled to WebAssembly. phēnix serves its UI build from the
-// first of these directories that has it (the working directory's, like the
-// tunneler downloads, then where the image and package install it), and
-// stands in for the small server it normally runs with: that server lists
-// and serves capture files from a directory and reports when one grows, all
-// under /webshark/.
+// WebShark (github.com/QXIP/webshark) dissects packets in the browser with Wireshark compiled to WebAssembly. phēnix
+// serves its UI build from the first of these directories that has it, and stands in, under /webshark/, for the small
+// server that lists and serves its capture files and reports when one grows.
 var websharkDirs = []string{"webshark", "/opt/phenix/webshark"} //nolint:gochecknoglobals // constant list
 
 // findWebShark returns the directory of the WebShark build, if there is one.
@@ -100,10 +96,8 @@ type sharkCaptureResponse struct {
 
 // CreateWebSharkCapture - POST /experiments/{exp}/webshark
 //
-// Names a capture for WebShark to open: a saved capture file ({"path": ...},
-// as the experiment's files are listed) or a VM interface's running capture
-// ({"vm": ..., "interface": ...}). A file still being captured is opened
-// live. The name is a capture grant of the user's (see capability.go).
+// Names a capture for WebShark to open, as a capture grant of the user's (see capability.go): a saved file ({"path"})
+// or a VM interface's running capture ({"vm", "interface"}). A file still being captured is opened live.
 func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) error {
 	var (
 		exp = mux.Vars(r)["exp"]
@@ -410,10 +404,8 @@ func (c grantChecker) GetWebSharkCaptureFile(w http.ResponseWriter, r *http.Requ
 
 // GetWebSharkWatch - GET /webshark/watch?capture=...
 //
-// Server-sent events telling WebShark when a capture grows, so it reloads
-// the capture and shows the new packets: an "init" event with the size it
-// has now, then an "append" event whenever it has grown, and heartbeats. The
-// watch ends when the capture's grant does.
+// Server-sent events telling WebShark when a capture grows: "init" with its size now, "append" whenever it grows, and
+// heartbeats, until the capture's grant ends.
 func (c grantChecker) GetWebSharkWatch(w http.ResponseWriter, r *http.Request) {
 	g, status := c.use(r, r.URL.Query().Get("capture"), capability.OpWatch)
 	if status != 0 {
@@ -630,13 +622,9 @@ func WebSharkHandler(dir, basePath string) http.Handler {
 	})
 }
 
-// sharkServiceWorker is the service worker WebShark's page registers when it
-// is served over HTTPS without cross-origin isolation, to add the isolation
-// headers itself. phēnix sends them itself where it can (only a page of its
-// own tab can be isolated, not one in phēnix's frame), and the service worker
-// sends WebShark's scripts and styles on without cookies, so a proxy that
-// signs users in by cookie refuses them and WebShark fails to load Wireshark.
-// phēnix serves sharkServiceWorkerRemover in its place.
+// sharkServiceWorker is the service worker WebShark registers over HTTPS without cross-origin isolation. It sends
+// WebShark's scripts and styles without cookies, which a proxy signing users in by cookie refuses, so phēnix sends the
+// isolation headers itself where it can and serves sharkServiceWorkerRemover in its place.
 const sharkServiceWorker = "enable-threads.js"
 
 // sharkServiceWorkerRemover unregisters the service worker from browsers that
@@ -674,12 +662,9 @@ const sharkServiceWorkerRemover = `// phēnix: removes the service worker WebSha
 // as is.
 var sharkBasePath = regexp.MustCompile(`^/[A-Za-z0-9._~%/-]*/$`)
 
-// sharkRebaser serves the WebShark build's page, scripts and styles with the
-// root WebShark hardcodes, /webshark/, moved under the base path phēnix is
-// served behind: its page's base href and the URLs its scripts fetch are
-// otherwise root-absolute, and miss phēnix behind a proxy that serves it
-// under a path. Each file is rewritten once, when first asked for. A nil
-// sharkRebaser, for phēnix served at "/", serves nothing.
+// sharkRebaser serves the WebShark build's page, scripts and styles with their hardcoded /webshark/ root moved under the
+// base path phēnix is served behind, rewriting each file once, when first asked for. A nil sharkRebaser, for phēnix
+// served at "/", serves nothing.
 type sharkRebaser struct {
 	fsys     fs.FS
 	replacer *strings.Replacer

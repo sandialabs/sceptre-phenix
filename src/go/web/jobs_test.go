@@ -36,7 +36,7 @@ func useJobsIn(t *testing.T, dir string, opts ...job.Option) *job.Registry {
 	jobs = r
 
 	t.Cleanup(func() {
-		r.Shutdown()
+		r.ShutdownContext(context.Background(), 0)
 
 		jobs = original
 	})

@@ -10,15 +10,9 @@ const HeaderSeq = "X-Phenix-Seq"
 
 var lastSeq atomic.Uint64 //nolint:gochecknoglobals // the process's sequence
 
-// Seq returns the next number in a process-wide, strictly increasing
-// sequence. It orders everything one phenix process tells its clients, over
-// REST (X-Phenix-Seq) and websockets (the seq of each message): data tagged S
-// reflects every change whose message carries a seq of S or less.
-//
-// It is a hybrid logical clock in microseconds, max(last+1, now), so it
-// normally keeps increasing across restarts, but it is only comparable within
-// one process: clients reset what they track when their websocket reconnects.
-// Values stay below 2^53, so JavaScript numbers hold them exactly.
+// Seq returns the next number in a process-wide, strictly increasing sequence (X-Phenix-Seq and each websocket message's
+// seq; see docs/content/api.md). It is a hybrid logical clock in microseconds, max(last+1, now), comparable only within
+// one process, and stays below 2^53 so JavaScript numbers hold it exactly.
 func Seq() uint64 {
 	for {
 		now := uint64(time.Now().UnixMicro())

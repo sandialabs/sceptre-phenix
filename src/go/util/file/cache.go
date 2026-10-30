@@ -10,13 +10,9 @@ import (
 	"phenix/util/flight"
 )
 
-// listingTTL is how long an experiment's file listing is reused. Listing asks
-// every mesh node for its files (`mesh send all file list ... recursive`) and
-// then the headnode, over the minimega connection every other request waits
-// on, while the Files tab asks again for each search, sort, and page, and the
-// VM details modal asks for the snapshots. Changes phenix itself makes to the
-// files invalidate the listing; changes made elsewhere (another phenix
-// process, SCORCH components, a VM writing to a mount) show within this long.
+// listingTTL is how long an experiment's file listing, which asks every mesh node and then the headnode over the shared
+// minimega connection, is reused. phenix's own changes to the files invalidate it; changes made elsewhere show within
+// this long.
 const listingTTL = 5 * time.Second
 
 // experimentListings caches the MMClusterFiles listing of each experiment.

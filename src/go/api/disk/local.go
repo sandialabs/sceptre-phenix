@@ -21,12 +21,9 @@ import (
 	"phenix/util/plog"
 )
 
-// Listing disks through minimega runs one `disk info` (a qemu-img process) per
-// image, one after another, while holding the shared minimega connection that
-// every other phenix request needs. phenix already reads and writes the
-// minimega files directory itself (disk uploads), so when qemu-img is
-// installed it inspects images directly instead: in parallel, and only for
-// images that changed since they were last inspected.
+// Listing disks through minimega runs one `disk info` (a qemu-img process) per image while holding the shared minimega
+// connection, so when qemu-img is installed phenix inspects images in the files directory itself: in parallel, and only
+// those that changed since they were last inspected.
 
 const (
 	// qemuImgTimeout bounds a single image inspection.
@@ -234,12 +231,9 @@ func stampsCurrent(stamps []fileStamp) bool {
 	return true
 }
 
-// lockedInodes returns the inodes of files with a lock held on them: the files
-// open in a running VM. It is how minimega decides an image is in use. The
-// device is left out on purpose: /proc/locks prints the filesystem's device,
-// which on a btrfs subvolume differs from the one stat reports, so matching it
-// would show an image in use as free. A locked file on another device with the
-// same inode shows an image in use instead, which only holds back its actions.
+// lockedInodes returns the inodes of files with a lock held on them (the files open in a running VM), as minimega decides
+// an image is in use. The device is left out on purpose: on a btrfs subvolume /proc/locks prints a different device than
+// stat reports, and matching it would show an image in use as free.
 func lockedInodes() (map[uint64]bool, error) {
 	file, err := os.Open("/proc/locks")
 	if err != nil {

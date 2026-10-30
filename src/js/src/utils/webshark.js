@@ -2,7 +2,7 @@
 // /webshark/ when it is installed: which files it opens, what a role needs to
 // use it, how the WebShark page asks the server for a capture, and the
 // command that streams a live capture into a local Wireshark.
-import axiosInstance from '@/utils/axios.js';
+import * as webSharkApi from '@/api/webshark.js';
 import { roleAllowed } from '@/utils/rbac.js';
 
 // the feature GET /features lists when the server has WebShark installed
@@ -82,10 +82,7 @@ export function queryTarget(query) {
 // for WebShark. Resolves to { capture, live, title }; `capture` names it in
 // webSharkURL.
 export async function openInWebShark(exp, target) {
-  const resp = await axiosInstance.post(
-    `experiments/${encodeURIComponent(exp)}/webshark`,
-    target.body,
-  );
+  const resp = await webSharkApi.openWebSharkCapture(exp, target.body);
   return resp.data;
 }
 
@@ -115,10 +112,11 @@ const shellQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 // instead of the session token; its streams end at sign-out. Resolves to
 // { id, token, expires, useBy, urls }; urls.stream is under the UI's base path.
 export async function mintCaptureStream(exp, vm, iface) {
-  const resp = await axiosInstance.post(
-    `experiments/${encodeURIComponent(exp)}/captureTokens`,
-    { vm, interface: iface, operations: ['stream'] },
-  );
+  const resp = await webSharkApi.createCaptureToken(exp, {
+    vm,
+    interface: iface,
+    operations: ['stream'],
+  });
   return resp.data;
 }
 

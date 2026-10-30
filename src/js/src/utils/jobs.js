@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 
-import axiosInstance from '@/utils/axios.js';
+import * as jobsApi from '@/api/jobs.js';
 import { startPoll } from '@/utils/freshness.js';
 import { listText, pluralWord } from '@/utils/plural.js';
 import { readPref, writePref } from '@/utils/prefs.js';
@@ -166,7 +166,7 @@ export const useJobStore = defineStore('jobs', {
 
     // asks the server for every job the user may see
     async load() {
-      const { data } = await axiosInstance.get('jobs');
+      const { data } = await jobsApi.listJobs();
       const listed = new Set();
       for (const job of data?.jobs ?? []) {
         listed.add(job.id);
@@ -195,15 +195,15 @@ export const useJobStore = defineStore('jobs', {
       this.put(msg.result);
     },
 
-    // starts a job with a POST to url and returns it
-    async start(url, body, config) {
-      const { data } = await axiosInstance.post(url, body, config);
+    // keeps the job a request started (see src/api/) and returns it
+    async start(request) {
+      const { data } = await request;
       return this.put(data);
     },
 
     // reads the whole job, with every item's result
     async fetch(id) {
-      const { data } = await axiosInstance.get(`jobs/${id}`);
+      const { data } = await jobsApi.getJob(id);
       return this.put(data);
     },
 
@@ -220,13 +220,13 @@ export const useJobStore = defineStore('jobs', {
     },
 
     async cancel(id) {
-      const { data } = await axiosInstance.post(`jobs/${id}/cancel`);
+      const { data } = await jobsApi.cancelJob(id);
       return this.put(data);
     },
 
     // forgets a finished job, on the server too
     async dismiss(id) {
-      await axiosInstance.delete(`jobs/${id}`);
+      await jobsApi.deleteJob(id);
       delete this.jobs[id];
       this.dropViewed(id);
     },

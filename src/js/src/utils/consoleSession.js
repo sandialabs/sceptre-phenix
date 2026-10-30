@@ -1,13 +1,8 @@
-// The minimega console this tab has open. It is kept here rather than in the
-// Console page, so moving to another page and back keeps the console and its
-// output. The terminal itself is built in consoleTerminal.js, which loads with
-// the Console page; this module stays small because logging out needs it.
-//
-// The console's pid is also remembered per user in localStorage, so a reload
-// or another tab attaches to the same console. The server keeps a console
-// until its process exits (CTRL+D or `disconnect`), its user ends it (on
-// logout), or no tab has had it open for 15 seconds.
-import axiosInstance from '@/utils/axios.js';
+// The minimega console this tab has open, kept outside the Console page so
+// leaving and coming back keeps it; its terminal is in consoleTerminal.js. Its
+// pid is remembered per user, so a reload or another tab attaches to it; the
+// server ends it on exit, on logout, or after 15 seconds open in no tab.
+import * as consoleApi from '@/api/console.js';
 import { readPref, removePref, writePref } from '@/utils/prefs.js';
 import { usePhenixStore } from '@/store.js';
 
@@ -67,7 +62,7 @@ export async function endConsole() {
   }
 
   try {
-    await axiosInstance.delete(`console/${pid}`);
+    await consoleApi.endConsole(pid);
   } catch (err) {
     // already ended
     if (err.response?.status !== 404) {

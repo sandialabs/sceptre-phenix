@@ -330,7 +330,7 @@ func TestBoltRevisionsIncreaseAcrossConfigs(t *testing.T) {
 	}
 
 	err = b.put("Topology", "legacy", v)
-	_ = b.Close()
+	_ = b.close()
 
 	if err != nil {
 		t.Fatalf("BoltDB.put(Topology, legacy) error = %v", err)

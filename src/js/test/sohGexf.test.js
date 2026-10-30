@@ -4,7 +4,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { buildGexf } from '@/utils/soh/gexf.js';
-import { sohFixture } from './sohFixture.js';
+import { sohFixture } from './helpers/sohFixture.js';
 
 // What XML 1.0 never allows: C0 controls but tab, LF and CR, U+FFFE,
 // U+FFFF and lone surrogates.

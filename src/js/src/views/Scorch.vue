@@ -216,12 +216,7 @@
     loadingText,
     stillLoading,
   } from '@/utils/pageLoader.js';
-  import {
-    pageFetchers,
-    scorchListed,
-    scorchPipelines,
-    scorchRow,
-  } from '@/utils/pageData.js';
+  import { pageFetchers, scorchListed, scorchRow } from '@/utils/pageData.js';
   import {
     addWsHandler,
     onWsReconnect,
@@ -679,7 +674,8 @@
         if (!scorchListed(exp)) return;
 
         try {
-          const pipelines = await scorchPipelines(exp.name);
+          const pipelines = (await scorchApi.listScorchPipelines(exp.name))
+            .data;
           // a new experiment is stopped, so SCORCH is not running in it
           this.experiments.push({
             ...scorchRow(exp, pipelines),

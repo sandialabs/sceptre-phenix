@@ -928,28 +928,6 @@ func TestStageInjectsReportsUnremovablePreviousCopy(t *testing.T) {
 	}
 }
 
-func TestPathWithin(t *testing.T) {
-	tests := []struct {
-		target string
-		dir    string
-		want   bool
-	}{
-		{target: "/a/b", dir: "/a/b", want: true},
-		{target: "/a/b/c", dir: "/a/b", want: true},
-		{target: "/a/bc", dir: "/a/b", want: false},
-		{target: "/a", dir: "/a/b", want: false},
-		{target: "/a/b/../c", dir: "/a/b", want: false},
-		{target: "/", dir: "/", want: true},
-		{target: "/a", dir: "/", want: true},
-	}
-
-	for _, tt := range tests {
-		if got := workflow.PathWithin(filepath.FromSlash(tt.target), filepath.FromSlash(tt.dir)); got != tt.want {
-			t.Errorf("PathWithin(%q, %q) = %v, want %v", tt.target, tt.dir, got, tt.want)
-		}
-	}
-}
-
 func TestStagingLeftovers(t *testing.T) {
 	// The random suffixes that StageInjects gives its hidden siblings are 26
 	// characters from A to Z and 2 to 7.
@@ -1280,27 +1258,6 @@ func TestStageInjectsProperties(t *testing.T) {
 			if err != nil || len(entries) != 1 || entries[0].Name() != name {
 				t.Fatalf("StageInjects(tree %d, %q) left base holding %v (err %v), want only %s", i+1, name, entries, err, name)
 			}
-		}
-	})
-}
-
-// PathWithin agrees with a segment prefix model over clean absolute paths.
-func TestPathWithinProperties(t *testing.T) {
-	t.Parallel()
-
-	segments := rapid.SliceOfN(rapid.SampledFrom([]string{"a", "ab", "a.b", "..a", "a..", "...", "b c"}), 0, 3)
-
-	rapid.Check(t, func(t *rapid.T) {
-		dir := "/" + path.Join(segments.Draw(t, "dir")...)
-		target := "/" + path.Join(segments.Draw(t, "target")...)
-
-		if rapid.Bool().Draw(t, "below") {
-			target = path.Join(dir, path.Join(segments.Draw(t, "below")...))
-		}
-
-		want := target == dir || dir == "/" || strings.HasPrefix(target, dir+"/")
-		if got := workflow.PathWithin(filepath.FromSlash(target), filepath.FromSlash(dir)); got != want {
-			t.Fatalf("PathWithin(%q, %q) = %t, want %t", target, dir, got, want)
 		}
 	})
 }

@@ -122,11 +122,6 @@ func broadcastWebListeners() {
 // headers, so idle half-open connections do not pile up.
 const webReadHeaderTimeout = 10 * time.Second
 
-// newWebServer returns the web UI's server for handler.
-func newWebServer(handler http.Handler) *http.Server {
-	return &http.Server{Handler: handler, ReadHeaderTimeout: webReadHeaderTimeout}
-}
-
 func startWebServer(addr string) error {
 	handler, err := newWebHandler()
 	if err != nil {
@@ -141,7 +136,9 @@ func startWebServer(addr string) error {
 		return err
 	}
 
-	go newWebServer(handler).Serve(listener) //nolint:errcheck // Goroutine
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: webReadHeaderTimeout}
+
+	go server.Serve(listener) //nolint:errcheck // Goroutine
 
 	return nil
 }

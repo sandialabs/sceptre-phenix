@@ -74,12 +74,9 @@ type snapshotDiskEntry struct {
 	backing string
 }
 
-// snapshotDiskCache remembers the image each running VM's snapshot disk is
-// based on, which otherwise takes a `disk info` (a qemu-img run, usually via
-// `mesh send`) per VM every time VMs are listed. A snapshot disk is only ever
-// recreated or rebased while its VM's process is gone, and relaunching a VM
-// changes its launch time, so a cached result is only reused for the same
-// launch.
+// snapshotDiskCache remembers the image each running VM's snapshot disk is based on, which otherwise takes a `disk info`
+// per VM on every listing. A snapshot disk only changes while its VM's process is gone, so a result is reused only for
+// the same launch.
 type snapshotDiskCache struct {
 	mu      sync.Mutex
 	entries map[string]snapshotDiskEntry

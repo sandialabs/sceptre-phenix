@@ -15,7 +15,7 @@ import {
 } from '@/utils/soh/layouts.js';
 import { layoutInput } from '@/utils/soh/graph.js';
 import { blockedStorage, memoryStorage } from './helpers/storage.js';
-import { sohFixture } from './sohFixture.js';
+import { sohFixture } from './helpers/sohFixture.js';
 
 afterEach(() => {
   vi.restoreAllMocks();

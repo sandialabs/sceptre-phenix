@@ -23,7 +23,7 @@ func TestSetSettingsRefusesMinLength(t *testing.T) {
 		t.Fatalf("settings.GetSettings() error = %v", err)
 	}
 
-	server := serveContractAs(t, contractAdmin(), nil).URL
+	server := serveContractAs(t, adminRole(), nil).URL
 
 	for name, body := range map[string]string{
 		"min length out of range": `{"password_settings":{"uppercase_req":true,"min_length":3},"timeout_settings":{"enabled":true}}`,

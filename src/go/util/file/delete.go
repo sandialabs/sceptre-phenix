@@ -45,19 +45,9 @@ func DeleteExistingFiles(names []string) error {
 	return nil
 }
 
-// DeleteExistingFiles lists the directories the named files are in, with one
-// `mesh send all file list` and one local `file list` per directory, and
-// deletes only the copies found: `mesh send <nodes> file delete` for the mesh
-// nodes that have a file, then `file delete` if the headnode has it. Deleting
-// a file with DeleteFile takes two commands (the first a mesh round trip to
-// every node) whether or not it exists anywhere, which for every VM's snapshot
-// on every experiment start and stop would be most of the work.
-//
-// The listing is narrowed with a glob of the names' common prefix, and only
-// names that match exactly are deleted, so experiment "foo" never deletes
-// "foo_bar"'s files. If a directory cannot be listed on every node, its files
-// are deleted everywhere, as DeleteFile does. The names are meant to be files:
-// a directory is found (and deleted) only if something is in it.
+// DeleteExistingFiles deletes only the copies of the named files that exist, after listing their directories on the mesh
+// and the headnode, rather than sending DeleteFile's two commands per file. Only exact name matches are deleted, so "foo"
+// never deletes "foo_bar"'s files; a directory that cannot be listed everywhere has its files deleted everywhere.
 func (MMClusterFiles) DeleteExistingFiles(names []string) error {
 	byDir := make(map[string][]string)
 

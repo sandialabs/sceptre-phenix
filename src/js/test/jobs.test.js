@@ -24,7 +24,7 @@ import {
   unviewedTone,
   useJobStore,
 } from '@/utils/jobs.js';
-import { flush } from './helpers/async.js';
+import { flush, never } from './helpers/async.js';
 import { wsMsg } from './helpers/fixtures.js';
 
 // a job as the server sends it
@@ -240,17 +240,8 @@ describe('the jobs store', () => {
   });
 
   it('starts, cancels and dismisses jobs', async () => {
-    axios.post.mockResolvedValueOnce({ data: job('j1') });
-    const started = await jobs.start('experiments/exp/vms/actions', {
-      action: 'restart',
-      vms: ['a', 'b'],
-    });
-    expect(axios.post).toHaveBeenCalledWith(
-      'experiments/exp/vms/actions',
-      { action: 'restart', vms: ['a', 'b'] },
-      undefined,
-    );
-    expect(started.id).toBe('j1');
+    const started = await jobs.start(Promise.resolve({ data: job('j1') }));
+    expect(started).toBe(jobs.jobs.j1);
 
     axios.post.mockResolvedValueOnce({
       data: job('j1', { cancelRequested: true, revision: 2 }),
@@ -360,7 +351,7 @@ describe('the jobs store', () => {
   it('asks one check at a time, though the server is slow', async () => {
     vi.useFakeTimers();
     jobs.put(job('j1'));
-    axios.get.mockImplementation(() => new Promise(() => {}));
+    axios.get.mockImplementation(never);
     jobs.whenDone('j1').catch(() => {});
 
     await vi.advanceTimersByTimeAsync(30_000);

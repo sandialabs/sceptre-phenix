@@ -34,14 +34,9 @@ type healthHandlers struct {
 	live, ready http.Handler
 }
 
-// newHealthHandlers builds the health endpoints from the server options:
-//
-//   - /healthz (liveness) reports uptime and whether the BoltDB store, a file
-//     of this process's own, can be read.
-//   - /readyz (readiness) reports everything phenix needs to run experiments.
-//
-// Only authenticated requests (or every request, with auth disabled) see the
-// checks' output fields.
+// newHealthHandlers builds /healthz (liveness: uptime and whether the store can be read) and /readyz (readiness:
+// everything phenix needs to run experiments) from the server options. Only authenticated requests, or every request
+// with auth disabled, see the checks' output fields.
 func newHealthHandlers() healthHandlers {
 	var (
 		authenticated = middleware.Authenticator(o.jwtKey, o.proxyAuthHeader, middleware.OnRefusal(audit.TokenRefused))

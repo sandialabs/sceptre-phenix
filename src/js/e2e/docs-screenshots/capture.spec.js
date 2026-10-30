@@ -1,5 +1,6 @@
-// Each test writes the docs image it is named after (`-g disks_table` retakes one), from the
-// sample data in fixtures.json, so any `phenix ui` built with VITE_AUTH=disabled will do.
+// Each test writes the docs image it is named after (`-g disks_table` retakes
+// one) from the sample data in fixtures.json, so any `phenix ui` built with
+// VITE_AUTH=disabled will do.
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { pageDataLoaded } = require('../tests/helpers');

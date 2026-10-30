@@ -90,7 +90,7 @@ func vmChanges() map[string]vmChange {
 func serveVMChange(ctx context.Context, t *testing.T, change vmChange) *httptest.ResponseRecorder {
 	t.Helper()
 
-	ctx = context.WithValue(ctx, middleware.ContextKeyRole, contractAdmin())
+	ctx = context.WithValue(ctx, middleware.ContextKeyRole, adminRole())
 	ctx = context.WithValue(ctx, middleware.ContextKeyUser, "alice")
 
 	req := httptest.NewRequestWithContext(ctx, change.method, change.path, strings.NewReader(change.body))

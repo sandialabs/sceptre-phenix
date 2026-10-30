@@ -57,11 +57,9 @@ func jobKindOf(kind string) jobKind {
 // jobAccess checks whether a role may act on a job of another user.
 type jobAccess func(role rbac.Role, j job.Job) bool
 
-// The checks for each verb on another user's job, written out so the RBAC
-// policy generator finds them. A job of an experiment needs the jobs
-// permission on its experiment; a job of none, such as a disk clone, needs
-// jobs/global, which an experiment-scoped role's patterns, even "*", do not
-// reach.
+// The checks for each verb on another user's job, written out so the RBAC policy generator finds them. A job of an
+// experiment needs jobs on that experiment; a job of none, such as a disk clone, needs jobs/global, which an
+// experiment-scoped role's patterns, even "*", do not reach.
 //
 //nolint:gochecknoglobals // constant checks
 var (

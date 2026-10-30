@@ -9,7 +9,7 @@ import {
   displayColor,
   nodeFill,
 } from '@/utils/soh/graph.js';
-import { sohFixture } from './sohFixture.js';
+import { sohFixture } from './helpers/sohFixture.js';
 
 describe('counts', () => {
   const { nodes } = sohFixture();

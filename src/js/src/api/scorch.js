@@ -4,10 +4,11 @@ import axiosInstance from '@/utils/axios.js';
 
 const pipelinesURL = (exp) => `experiments/${exp}/scorch/pipelines`;
 
-// GET /experiments/{exp}/scorch/pipelines: every run's pipeline
-export function listScorchPipelines(exp, signal) {
+// GET /experiments/{exp}/scorch/pipelines: every run's pipeline, and whether
+// the SCORCH app is running; config carries the request's signal and meta
+export function listScorchPipelines(exp, config) {
   return axiosInstance.get(pipelinesURL(exp), {
-    signal,
+    ...config,
     headers: { Accept: 'application/json' },
   });
 }
