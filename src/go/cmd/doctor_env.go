@@ -51,6 +51,7 @@ type doctorEnv struct {
 	lstat       func(string) (os.FileInfo, error)
 	access      func(string, uint32) error
 	readFile    func(string) ([]byte, error)
+	readDir     func(string) ([]os.DirEntry, error)
 	groups      func() ([]int, error) // the groups this process is in
 	roles       []string              // the built-in roles, or nil when unknown
 	root        bool
@@ -68,6 +69,7 @@ func osDoctorEnv() doctorEnv {
 		lstat:       os.Lstat,
 		access:      unix.Access,
 		readFile:    os.ReadFile,
+		readDir:     os.ReadDir,
 		groups: func() ([]int, error) {
 			groups, err := os.Getgroups()
 
@@ -601,7 +603,7 @@ func (e doctorEnv) readableFileCheck(path string, missing doctorStatus) doctorCh
 }
 
 // featuresCheck checks the phenix ui features; viper splits the variable on
-// spaces, not commas.
+// spaces, not commas. The ui.features check checks what each feature needs.
 func featuresCheck(value string) doctorCheck {
 	features := strings.Fields(value)
 
@@ -615,13 +617,13 @@ func featuresCheck(value string) doctorCheck {
 			))
 		}
 
-		if feature != "vm-mount" {
-			unknown = append(unknown, feature)
+		if feature != web.FeatureVMMount && !slices.Contains(autoFeatures, feature) {
+			unknown = append(unknown, unknownFeatureDetail(feature))
 		}
 	}
 
 	if len(unknown) > 0 {
-		return warnCheck("unknown features: " + strings.Join(unknown, ", ") + " (phenix ui offers vm-mount)")
+		return warnCheck(strings.Join(unknown, ". "))
 	}
 
 	return passCheck(strings.Join(features, " "))

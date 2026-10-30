@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,15 +38,22 @@ import (
 // server that lists and serves its capture files and reports when one grows.
 var websharkDirs = []string{"webshark", "/opt/phenix/webshark"} //nolint:gochecknoglobals // constant list
 
-// findWebShark returns the directory of the WebShark build, if there is one.
-func findWebShark() (string, bool) {
+// FindWebShark returns the first of [WebSharkDirs] that holds a WebShark build,
+// as stat sees it, if one does.
+func FindWebShark(stat func(string) (os.FileInfo, error)) (string, bool) {
 	for _, dir := range websharkDirs {
-		if info, err := os.Stat(filepath.Join(dir, "index.html")); err == nil && info.Mode().IsRegular() {
+		if info, err := stat(filepath.Join(dir, "index.html")); err == nil && info.Mode().IsRegular() {
 			return dir, true
 		}
 	}
 
 	return "", false
+}
+
+// WebSharkDirs are the directories the server looks for a WebShark build in,
+// in order; a relative one is under the directory the server starts in.
+func WebSharkDirs() []string {
+	return slices.Clone(websharkDirs)
 }
 
 const (
@@ -104,7 +112,7 @@ func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) error {
 		req sharkCaptureRequest
 	)
 
-	if !o.featured("webshark") {
+	if !o.featured(FeatureWebShark) {
 		return weberror.New(http.StatusNotImplemented, "WebShark is not installed on this phēnix server")
 	}
 

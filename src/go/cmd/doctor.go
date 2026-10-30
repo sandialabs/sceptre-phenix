@@ -145,7 +145,12 @@ func newDoctorCmd() *cobra.Command {
   listen endpoints, and the unix socket's directory and group), ask a
   running phenix ui on the unix socket for its version and its bridge and
   deploy modes, and check that minimega answers on its socket and that its
-  files directory, base directory and mesh suit phenix. --skip takes a
+  files directory, base directory and mesh suit phenix. The tools and
+  features checks look for qemu-img, vmdb2 and filebeat on PATH, list the
+  user apps and SCORCH components there, measure free disk space, report
+  whether phenix ui turns on tunneler downloads and WebShark (relative to
+  the working directory), and check ui.features and ui.logs.minimega-path.
+  --skip takes a
   check or a group of checks; an unknown name fails and lists the valid
   ones. Secret values, such as the JWT signing key and initial users, are
   redacted. doctor exits 1 when a check fails, or with --strict when one

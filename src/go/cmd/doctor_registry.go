@@ -17,6 +17,9 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"golang.org/x/sys/unix"
+
+	"phenix/web"
+	"phenix/web/health"
 )
 
 // The groups --skip takes in place of a check id.
@@ -32,6 +35,8 @@ const (
 	doctorGroupSocket   = "socket"
 	doctorGroupServer   = "server"
 	doctorGroupMinimega = "minimega"
+	doctorGroupTools    = "tools"
+	doctorGroupFeatures = "features"
 )
 
 // doctorInput is everything the checks and the report header read, resolved
@@ -44,6 +49,8 @@ type doctorInput struct {
 	probe    func(base string, timeout time.Duration) (string, error)
 	minimega minimegaRunner
 	server   func(socket string, timeout time.Duration) *http.Client
+	qemuImg  func(ctx context.Context, path string) (string, error) // its version
+	statfs   func(path string) (health.DiskStat, error)
 	timeout  time.Duration
 	now      func() time.Time
 	hostname func() (string, error)
@@ -115,6 +122,8 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		probe:    probeMinimega,
 		minimega: runMinimegaAt,
 		server:   doctorServerClient,
+		qemuImg:  health.QemuImgVersion,
+		statfs:   health.Statfs,
 		timeout:  timeout,
 		now:      time.Now,
 		hostname: os.Hostname,
@@ -316,7 +325,7 @@ func settingDef(key, hint string) doctorCheckDef {
 
 // doctorChecks is every check doctor runs, in the order it runs them.
 //
-//nolint:funlen // one entry per check
+//nolint:funlen,maintidx // one entry per check
 func doctorChecks() []doctorCheckDef {
 	one := func(c doctorCheck) []doctorCheck { return []doctorCheck{c} }
 	parseHint := hintText("fix the YAML syntax in the file it names")
@@ -541,6 +550,67 @@ func doctorChecks() []doctorCheckDef {
 		{
 			id: "minimega-env", group: doctorGroupMinimega, name: "minimega-env", hint: minimegaEnvHint,
 			run: minimegaEnvChecks,
+		},
+		{
+			id: "qemu-img", group: doctorGroupTools, name: "qemu-img",
+			hint: hintText("install qemu-img (the qemu-utils package on Debian and Ubuntu)"),
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck {
+				return one(qemuImgCheck(ctx, in.timeout, in.env.lookPath, in.qemuImg))
+			},
+		},
+		{
+			id: "vmdb2", group: doctorGroupTools, name: "vmdb2",
+			hint: hintText("install vmdb2 to build images with phenix image build, or skip this check with --skip vmdb2"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(toolCheck(in.env.lookPath, "vmdb2", doctorFail, "phenix image build fails"))
+			},
+		},
+		{
+			id: "filebeat", group: doctorGroupTools, name: "filebeat",
+			hint: hintText("install filebeat for the SCORCH components that enable it"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(toolCheck(in.env.lookPath, "filebeat", doctorWarn,
+					"SCORCH starts no Filebeat, even for a component that enables it"))
+			},
+		},
+		{
+			id: "apps", group: doctorGroupTools, name: "apps", hint: nil,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(in.env.appsCheck()) },
+		},
+		{
+			id: "disk", group: doctorGroupTools, name: "disk",
+			hint: hintText("increase the free space on the filesystem that the row names"),
+			run:  diskChecks,
+		},
+		{
+			id: web.FeatureTunnelerDownload, group: doctorGroupFeatures, name: web.FeatureTunnelerDownload,
+			hint: hintText("make " + web.TunnelerDownloadDir + " a directory of phenix-tunneler builds, or remove it"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(in.env.tunnelerDownloadCheck(in.cwd))
+			},
+		},
+		{
+			id: web.FeatureWebShark, group: doctorGroupFeatures, name: web.FeatureWebShark, hint: nil,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(in.env.webSharkCheck(in.cwd)) },
+		},
+		{
+			id: "ui.features", group: doctorGroupFeatures, name: "ui.features", hint: featuresHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				// as phenix ui reads it, whatever type the source gives
+				v := viper.New()
+				v.Set("ui.features", in.settings["ui.features"].value)
+
+				return one(in.env.featuresSettingCheck(
+					v.GetStringSlice("ui.features"), in.cwd, in.text("ui.file-server-endpoint"),
+				))
+			},
+		},
+		{
+			id: "ui.logs.minimega-path", group: doctorGroupFeatures, name: "ui.logs.minimega-path",
+			hint: hintText("set ui.logs.minimega-path to the file minimega logs to, readable by this user"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(in.env.minimegaLogCheck(in.text("ui.logs.minimega-path"), in.found.minimegaArgs["logfile"]))
+			},
 		},
 	}
 }

@@ -42,7 +42,7 @@ func newHealthHandlers() healthHandlers {
 		authenticated = middleware.Authenticator(o.jwtKey, o.proxyAuthHeader, middleware.OnRefusal(audit.TokenRefused))
 		uptime        = health.Uptime(startedAt)
 		storeCheck    = health.Store("bolt", listRoles)
-		webshark      = o.featured("webshark")
+		webshark      = o.featured(FeatureWebShark)
 	)
 
 	ready := health.NewRegistry(

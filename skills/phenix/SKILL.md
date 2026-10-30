@@ -177,7 +177,7 @@ are run with `docker exec` rather than a host-installed binary:
 ```bash
 docker exec phenix phenix experiment list   # no -it for scripted/agentic use
 docker exec phenix phenix healthcheck --ready  # is minimega, the store and disk OK?
-docker exec phenix phenix doctor  # no server needed: versions/env header, each setting's source, config/env/settings/path checks, phenix ui startup checks (auth, tls, socket), a running phenix ui's version and modes (client only), minimega and its args (files dir, base, mesh), summary with hints; --report for bug reports
+docker exec phenix phenix doctor  # no server needed: versions/env header, each setting's source, config/env/settings/path checks, phenix ui startup checks (auth, tls, socket), a running phenix ui's version and modes (client only), minimega and its args (files dir, base, mesh), host tools (qemu-img, vmdb2, filebeat, apps, disk), optional features and the minimega log path, summary with hints; --report for bug reports
 ```
 
 For interactive human use, `make install-wrapper` installs

@@ -19,6 +19,15 @@ If your application logs are not showing up in the phēnix web UI, check the fol
 * **Check the environment**: Verify `PHENIX_LOG_FILE=stderr` is set in your app's environment (phēnix does this automatically for apps it launches).
 * **Check for skipped lines**: When the server logs faster than it can send to the browser, the Logs page's live view skips lines and shows a `WARN` entry such as `120 log lines skipped while the server was busy`. The lines are still in the log file: reload the Logs page, or call `GET /logs`, to see them. The server also logs a `WebSocket broker dropped slow clients or live log lines` warning at most every 30 seconds.
 
+### No minimega Logs on the Logs Page
+
+The Logs page shows minimega's log only when `ui.logs.minimega-path` names
+the file minimega logs to, such as `/var/log/phenix/minimega.log` in the
+Docker Compose setup. When the file is not there, `phenix ui` waits for it
+without a warning. `phenix doctor` warns in its `ui.logs.minimega-path` check
+when the file is missing, or when the setting is empty while minimega logs to
+a file.
+
 ### JSON Parsing Errors
 
 If you see "malformed log entry" warnings in the main phēnix system log, it's likely because your application is writing non-JSON text to `stderr`.

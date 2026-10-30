@@ -63,6 +63,7 @@ func fakeDoctorEnv(vars map[string]string, root bool) doctorEnv {
 		lstat:    os.Lstat,
 		access:   unix.Access,
 		readFile: func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		readDir:  os.ReadDir,
 		groups:   func() ([]int, error) { return []int{1000, 100}, nil },
 		roles:    builtinRoles(),
 		root:     root,
@@ -277,9 +278,9 @@ func TestEnvChecks(t *testing.T) {
 				`"vm-mount,webshark" holds a comma. phenix splits PHENIX_UI_FEATURES on spaces, so separate features with spaces`)},
 		},
 		"unknown feature": {
-			vars: map[string]string{"PHENIX_UI_FEATURES": "vm-mount webshark"},
+			vars: map[string]string{"PHENIX_UI_FEATURES": "vm-mount webshrak"},
 			want: []doctorCheck{
-				row("PHENIX_UI_FEATURES", doctorWarn, "unknown features: webshark (phenix ui offers vm-mount)"),
+				row("PHENIX_UI_FEATURES", doctorWarn, `unknown feature "webshrak" (did you mean webshark?)`),
 			},
 		},
 		"directories": {

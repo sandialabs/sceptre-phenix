@@ -151,3 +151,35 @@ func TestNormalizeBasePathProperty(t *testing.T) {
 		}
 	})
 }
+
+// The server refuses webshark set by hand without a WebShark build, and
+// accepts it with one; other features need no check.
+func TestCheckFeatures(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		features    []string
+		websharkDir string
+		wantErr     bool
+	}{
+		"none":                  {},
+		"vm-mount":              {features: []string{FeatureVMMount}},
+		"webshark with a build": {features: []string{FeatureWebShark}, websharkDir: "/opt/phenix/webshark"},
+		"webshark without one":  {features: []string{FeatureWebShark, FeatureVMMount}, wantErr: true},
+		"others without theirs": {features: []string{FeatureTunnelerDownload, FeatureFileServer}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			so := serverOptions{features: make(map[string]bool), websharkDir: tc.websharkDir}
+			ServeWithFeatures(tc.features)(&so)
+
+			err := so.checkFeatures()
+			if (err != nil) != tc.wantErr || (err != nil && !strings.Contains(err.Error(), "ui.features")) {
+				t.Errorf("checkFeatures(%v, %q) = %v, want an error naming ui.features: %t", tc.features, tc.websharkDir, err, tc.wantErr)
+			}
+		})
+	}
+}

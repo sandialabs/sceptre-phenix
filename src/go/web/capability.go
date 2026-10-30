@@ -511,7 +511,7 @@ func CreateCaptureToken(w http.ResponseWriter, r *http.Request) error {
 
 	stream := ops[0] == capability.OpStream
 
-	if !stream && !o.featured("webshark") {
+	if !stream && !o.featured(FeatureWebShark) {
 		return weberror.New(http.StatusNotImplemented, "WebShark is not installed on this phēnix server")
 	}
 

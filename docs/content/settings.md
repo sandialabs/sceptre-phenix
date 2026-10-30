@@ -132,6 +132,13 @@ valid ones.
 | `server` (with the rows server bridge-mode and server deploy-mode when phenix ui answers) | `server` | no `phenix ui` answers on `unix-socket`: no socket file, a stale one, or no answer within `--timeout`; the version of `phenix ui` is not the version of this phēnix; its `bridge-mode` or `deploy-mode` is not the one set here | this user may not connect to the socket |
 | `minimega` | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default); the row names the likely cause: no socket, a stale one, or a user that may not connect |
 | `minimega-env` (the rows minimega files, minimega base and minimega mesh; one skip row when minimega gives no version) | `minimega` | minimega gives no flags (it is older than 3.0); its `-filepath` is relative or not writable by this user; its `-base` is not `base-dir.minimega`; `mesh status` fails when `-degree` is above 0 | the `-filepath` directory does not exist for phēnix or is not readable and searchable by this user |
+| `qemu-img`, `vmdb2` | `tools` | never | the program is not on `PATH`, or `qemu-img --version` fails: phēnix commits VMs to disk images with `qemu-img`, and `phenix image build` runs `vmdb2` |
+| `filebeat` | `tools` | the program is not on `PATH`, so SCORCH starts no Filebeat, even for a component that enables it | never |
+| `apps` | `tools` | never | never; the row lists the user apps (`phenix-app-*`) and SCORCH components (`phenix-scorch-component-*`) found on `PATH` |
+| `disk` (one row per filesystem, such as disk phenix-base) | `tools` | the filesystem of `base-dir.phenix`, the store or minimega's `-filepath` is 90% full | the filesystem is 98% full |
+| `tunneler-download`, `webshark` | `features` | `downloads/tunneler` is not a directory | never; the row says whether `phenix ui` turns the feature on |
+| `ui.features` | `features` | a name is not a feature, such as a misspelling; `tunneler-download` or `file-server` is set without what it needs | `webshark` is set without a WebShark build, which `phenix ui` refuses |
+| `ui.logs.minimega-path` | `features` | the file does not exist or is not readable by this user; the setting is empty while minimega logs to a file (its `-logfile`, or `MM_LOGFILE` in the environment) | the path is not a regular file |
 
 Every phēnix command reads the `settings` group before it runs, and `phenix
 doctor` skips that step, so these checks show what the other commands would
@@ -178,6 +185,16 @@ flags minimega runs with. phēnix resolves relative image paths against the
 the same path, as the Docker Compose setup does with `/phenix`. The
 `minimega mesh` row gives `-degree` and `-abssnapshot` (see
 [Disks](disks.md)) and, when `-degree` is above 0, the size of the mesh.
+
+The `tools` and `features` groups check what parts of phēnix need beyond
+its settings. `phenix ui` turns on `tunneler-download` when the directory it
+starts in holds `downloads/tunneler`, `webshark` when `webshark/index.html`
+is there or in `/opt/phenix/webshark`, and `file-server` when
+`ui.file-server-endpoint` is set. The rows name the working directory of
+`phenix doctor`, so run it in the directory `phenix ui` starts in, such as
+`/opt/phenix` in the Docker image. When `ui.logs.minimega-path` names a file
+that is not there, `phenix ui` waits for it without a warning, and the Logs
+page shows no minimega logs.
 
 `--report` adds the hostname to the header and prints the whole output, text
 or JSON, in a fenced code block to paste into the
@@ -254,7 +271,7 @@ The following global flags are supported by all `phenix` subcommands. The
 | `log.system.max-age` | `PHENIX_LOG_SYSTEM_MAX_AGE` | `90` | Max age in days to retain old logs. |
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI and offer for download on the Logs page. **(Restart Required)** |
-| `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable (space-separated in `PHENIX_UI_FEATURES`). Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). **(Restart Required)** |
+| `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable (space-separated in `PHENIX_UI_FEATURES`). Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). `phenix ui` turns on `webshark`, `tunneler-download` and `file-server` itself, and refuses to start with `webshark` set but no WebShark build. **(Restart Required)** |
 | `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). If it is set and the address cannot be listened on, `phenix ui` exits with an error. **(Restart Required)** |
 | `ui.shutdown-grace-period` | `PHENIX_UI_SHUTDOWN_GRACE_PERIOD` | `5` | How many seconds stopping `phenix ui` may take to finish requests and jobs and close connections, as a whole number such as `10`. `0` closes everything without waiting; a negative value, or one that is not a whole number of seconds (such as `10s` or `1.5`), is refused at startup. Also `phenix ui --shutdown-grace-period`. See [Stopping the Server](#stopping-the-server). **(Restart Required)** |
 | `ui.netflow.max-size` | `PHENIX_UI_NETFLOW_MAX_SIZE` | `100` | Maximum size in megabytes of each recorded netflow capture, as a whole number. A capture that reaches it stops recording and is marked truncated, while the live view goes on. `0` does not record captures; a negative value, or one that is not a whole number, is refused at startup. Also `phenix ui --netflow.max-size`. See [Recorded Captures](netflow.md#recorded-captures). **(Restart Required)** |

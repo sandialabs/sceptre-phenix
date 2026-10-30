@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -20,6 +22,7 @@ import (
 	"pgregory.net/rapid"
 
 	"phenix/version"
+	"phenix/web/health"
 )
 
 const doctorTestMinimega = "minimega 3.0.1 837c9174 2026-07-08"
@@ -76,8 +79,25 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 
 	configFile := filepath.Join(dir, "config.yaml")
 
+	env := fakeDoctorEnv(nil, false)
+	env.lookPath = func(name string) (string, error) {
+		if slices.Contains([]string{"vim", "qemu-img", "vmdb2", "filebeat"}, name) {
+			return "/usr/bin/" + name, nil
+		}
+
+		return "", exec.ErrNotFound
+	}
+	// no tunneler downloads or WebShark build, wherever the tests run
+	env.stat = func(path string) (os.FileInfo, error) {
+		if !filepath.IsAbs(path) || strings.HasPrefix(path, "/opt/phenix") {
+			return nil, os.ErrNotExist
+		}
+
+		return os.Stat(path)
+	}
+
 	return &doctorInput{
-		env: fakeDoctorEnv(nil, false),
+		env: env,
 		config: doctorConfig{
 			checks: map[string]doctorCheck{"config": {Name: "config file", Status: doctorPass, Detail: configFile}},
 			keys:   map[string]bool{},
@@ -89,6 +109,10 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		probe:    func(string, time.Duration) (string, error) { return doctorTestMinimega, nil },
 		minimega: (&doctorMinimega{mu: sync.Mutex{}, args: doctorMinimegaArgs(dir), size: "1", commands: nil}).run,
 		server:   doctorServerAnswer(http.StatusOK, version.API(), doctorTestOptions),
+		qemuImg: func(context.Context, string) (string, error) {
+			return "qemu-img version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1)", nil
+		},
+		statfs:   func(string) (health.DiskStat, error) { return health.DiskStat{Device: 1, Total: 100, Avail: 50}, nil },
 		timeout:  time.Second,
 		now:      func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
 		hostname: func() (string, error) { return "doctor-test-host", nil },
@@ -133,6 +157,8 @@ func rowsOf(results []doctorResult) []string {
 
 // Each registered check reads only its input: with every value good they
 // all pass, and each bad value fails or warns only the check that reads it.
+//
+//nolint:maintidx // one table
 func TestDoctorChecksFromInput(t *testing.T) {
 	t.Parallel()
 
@@ -171,6 +197,15 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"minimega-env minimega files pass",
 		"minimega-env minimega base pass",
 		"minimega-env minimega mesh pass",
+		"qemu-img qemu-img pass",
+		"vmdb2 vmdb2 pass",
+		"filebeat filebeat pass",
+		"apps apps pass",
+		"disk disk phenix-base pass",
+		"tunneler-download tunneler-download pass",
+		"webshark webshark pass",
+		"ui.features ui.features pass",
+		"ui.logs.minimega-path ui.logs.minimega-path pass",
 	}
 
 	// with replaces the row of id in allPass with row, or adds row after id
@@ -298,7 +333,26 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				in.probe = func(string, time.Duration) (string, error) { return "", errors.New("refused") }
 			},
 			// minimega-env checks nothing, in one skip row
-			want: append(slices.Clone(allPass[:len(allPass)-4]), "minimega minimega fail", "minimega-env minimega-env skip"),
+			want: slices.Replace(replaceRows(allPass, "minimega minimega fail"),
+				slices.Index(allPass, "minimega-env minimega files pass"),
+				slices.Index(allPass, "minimega-env minimega mesh pass")+1,
+				"minimega-env minimega-env skip"),
+		},
+		"tools missing": {
+			modify: func(in *doctorInput) {
+				in.env.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+				in.statfs = func(string) (health.DiskStat, error) { return health.DiskStat{Device: 1, Total: 100, Avail: 1}, nil }
+			},
+			want: replaceRows(allPass,
+				"qemu-img qemu-img fail", "vmdb2 vmdb2 fail", "filebeat filebeat warn", "disk disk phenix-base fail"),
+		},
+		"features phenix ui turns on by itself": {
+			settings: map[string]string{"ui.features": "vm-mount webshark file-server vm-mnt"},
+			want:     replaceRows(allPass, "ui.features ui.features fail"),
+		},
+		"minimega log missing": {
+			settings: map[string]string{"ui.logs.minimega-path": filepath.Join(dir, "minimega.log")},
+			want:     replaceRows(allPass, "ui.logs.minimega-path ui.logs.minimega-path warn"),
 		},
 		"server down": {
 			modify: func(in *doctorInput) { in.server = doctorServerDialError(syscall.ENOENT) },
@@ -338,7 +392,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		},
 		"environment overrides the config file": {
 			modify: func(in *doctorInput) {
-				in.env = fakeDoctorEnv(map[string]string{"PHENIX_LOG_LEVEL": "debug"}, false)
+				vars := fakeDoctorEnv(map[string]string{"PHENIX_LOG_LEVEL": "debug"}, false)
+				in.env.lookup, in.env.environ = vars.lookup, vars.environ
 				in.config.keys["log.level"] = true
 				in.config.values["log.level"] = fileSetting{file: in.config.used, value: "info"}
 				in.settings["log.level"] = resolvedSetting{value: "debug", text: "debug", source: sourceEnv}
@@ -350,7 +405,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		},
 		"environment variables": {
 			modify: func(in *doctorInput) {
-				in.env = fakeDoctorEnv(map[string]string{"PHENIX_LOG_LEVEL": "loud", "PATH": "/usr/bin"}, false)
+				vars := fakeDoctorEnv(map[string]string{"PHENIX_LOG_LEVEL": "loud", "PATH": "/usr/bin"}, false)
+				in.env.lookup, in.env.environ = vars.lookup, vars.environ
 				in.settings["log.level"] = resolvedSetting{value: "loud", text: "loud", source: sourceEnv}
 			},
 			// after config-keys, in name order
@@ -477,7 +533,8 @@ func TestParseDoctorSkip(t *testing.T) {
 					t.Fatalf("parseDoctorSkip(%v) error = %v, want prefix %q", tc.args, err, tc.wantErr)
 				}
 
-				if !strings.HasSuffix(err.Error(), "groups: config, env, settings, files, dirs, ui, auth, tls, socket, server, minimega") {
+				groups := "groups: config, env, settings, files, dirs, ui, auth, tls, socket, server, minimega, tools, features"
+				if !strings.HasSuffix(err.Error(), groups) {
 					t.Errorf("parseDoctorSkip(%v) error = %v, want the groups listed", tc.args, err)
 				}
 
@@ -602,7 +659,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 28 passed, 1 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 37 passed, 1 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},

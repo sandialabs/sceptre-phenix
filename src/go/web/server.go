@@ -152,7 +152,11 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 	}
 
 	if fileServerEndpoint != "" {
-		o.features["file-server"] = true
+		o.features[FeatureFileServer] = true
+	}
+
+	if err := o.checkFeatures(); err != nil {
+		return err
 	}
 
 	_ = ConfigureUsers(o.users)
@@ -314,7 +318,7 @@ func (s *uiServer) listen(ctx context.Context, fileServerEndpoint string, router
 func newRouter(assets http.FileSystem) *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
 
-	if o.featured("tunneler-download") {
+	if o.featured(FeatureTunnelerDownload) {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
 		router.Handle("/downloads/tunneler", weberror.ErrorHandler(forward.ListTunnelers)).Methods("GET")
 		router.Handle("/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)).Methods("GET", "HEAD")
@@ -327,7 +331,7 @@ func newRouter(assets http.FileSystem) *mux.Router {
 	// WebShark, under the /webshark/ that proxies already pass on
 	router.Handle("/webshark/streams/{token}", weberror.ErrorHandler(grants.GetCaptureStreamByToken)).Methods("GET")
 
-	if o.featured("webshark") {
+	if o.featured(FeatureWebShark) {
 		plog.Info(plog.TypeSystem, "Serving WebShark", "dir", o.websharkDir)
 		router.HandleFunc("/webshark/json", grants.GetWebSharkJSON).Methods("GET")
 		router.HandleFunc("/webshark/captures/{name}", grants.GetWebSharkCaptureFile).Methods("GET", "HEAD")
@@ -536,7 +540,7 @@ func newRouter(assets http.FileSystem) *mux.Router {
 	api.Handle("/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws", weberror.ErrorHandler(forward.GetPortForwardWebSocket)).
 		Methods("GET", "OPTIONS")
 
-	if o.featured("vm-mount") {
+	if o.featured(FeatureVMMount) {
 		api.Handle("/experiments/{exp}/vms/{name}/mount", weberror.ErrorHandler(MountVM)).Methods("POST", "OPTIONS")
 		api.Handle("/experiments/{exp}/vms/{name}/unmount", weberror.ErrorHandler(UnmountVM)).
 			Methods("DELETE", "OPTIONS")
