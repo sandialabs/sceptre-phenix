@@ -19,7 +19,7 @@ Run from `src/go/`:
 |---|---|
 | Focused tests | `go test -race ./path/to/package/...` |
 | All Go tests | `make test` (shuffled, `-race`; `V=1` for verbose output, `COVERPROFILE=<file>` for coverage) |
-| Go tests with coverage | `make test-cover` |
+| Go tests with coverage | `make test-cover` (`make test COVERPROFILE=coverage.out`, then prints the total) |
 | Repeat the concurrency-heavy packages | `make test-stress` (`STRESS_COUNT`, default 20) |
 | Fuzz every fuzz target | `make fuzz` (`FUZZTIME` each, default 30s) |
 | Unreachable functions | `make deadcode` (also a prek hook) |

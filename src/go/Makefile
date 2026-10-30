@@ -39,6 +39,7 @@ help:
 	@echo "  all                - Run all tools (test)"
 	@echo "  test               - Run unit tests (V=1 for verbose output,"
 	@echo "                       COVERPROFILE=<file> to write a coverage profile)"
+	@echo "  test-cover         - Run unit tests into coverage.out and print the total"
 	@echo "  test-stress        - Run the concurrency-heavy packages STRESS_COUNT times with -race"
 	@echo "  fuzz               - Run every Go fuzz target for FUZZTIME (default 30s) each"
 	@echo "  deadcode           - Fail on unreachable functions not in deadcode-allow.txt"
@@ -96,8 +97,7 @@ deadcode: generate
 	../../scripts/go-deadcode.sh
 
 test-cover:
-	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
-	go test -v -race -coverprofile=coverage.out ./...
+	$(MAKE) test COVERPROFILE=coverage.out
 	go tool cover -func=coverage.out | tail -n 1
 
 clean:

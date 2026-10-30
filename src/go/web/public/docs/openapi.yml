@@ -6582,15 +6582,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: the password is wrong, or a proxy names another user
+          description: >-
+            the user does not exist or the password is wrong (without proxy
+            auth both get the same answer), or a proxy names another user
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: >-
-            no such user; the Error's `metadata.username` names the user, for
-            the proxy sign-up page to offer creating it
+            with proxy auth only, no such user. The Error's `metadata.username`
+            names the user, so the proxy sign-up page can offer to create it.
           content:
             application/json:
               schema:
@@ -6635,15 +6637,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: the password is wrong, or a proxy names another user
+          description: >-
+            the user does not exist or the password is wrong (without proxy
+            auth both get the same answer), or a proxy names another user
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: >-
-            no such user; the Error's `metadata.username` names the user, for
-            the proxy sign-up page to offer creating it
+            with proxy auth only, no such user. The Error's `metadata.username`
+            names the user, so the proxy sign-up page can offer to create it.
           content:
             application/json:
               schema:
