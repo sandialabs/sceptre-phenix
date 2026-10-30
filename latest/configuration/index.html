@@ -711,34 +711,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#builder" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Builder
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Builder">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#creating-or-editing-a-topology" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Creating or Editing a Topology
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#environment-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2004,34 +1976,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#builder" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Builder
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Builder">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#creating-or-editing-a-topology" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Creating or Editing a Topology
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#environment-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2595,7 +2539,7 @@ on an existing topology named <code>foobar</code> and an existing scenario named
 <p>Once created, either manually or automatically, the experiment configuration
 will be expanded to have the topology and scenario configurations embedded in
 it, as well as additional details like cluster host schedules for VMs, VLAN
-ranges, Builder XML, etc. The advantage of embedding the topology and scenario
+ranges, etc. The advantage of embedding the topology and scenario
 into the experiment is that they can be modified in the experiment without
 modifying the originals.</p>
 <h2 id="image">Image<a class="headerlink" href="#image" title="Permanent link">&para;</a></h2>
@@ -2805,54 +2749,6 @@ presented to confirm the selection. Once the config is deleted, it cannot be
 restored to the store. If an experiment config is deleted, the corresponding
 experiment will not longer be presented in the <code>Experiments</code> tab.</p>
 <p><img alt="screenshot" class="center" src="../images/actions.png" width="150" /></p>
-<h2 id="builder">Builder<a class="headerlink" href="#builder" title="Permanent link">&para;</a></h2>
-<p>The Builder app is an external app that allows users to generate either topology
-or experiment configuration using a graphical interface. It is based on the
-<code>minibuilder</code> app in <code>minimega</code>. Users can access the Builder app via the
-<code>Builder</code> tab in the phēnix UI.</p>
-<h3 id="creating-or-editing-a-topology">Creating or Editing a Topology<a class="headerlink" href="#creating-or-editing-a-topology" title="Permanent link">&para;</a></h3>
-<p>When Builder opens, it does so in a new configuration. If a user wanted to open
-an existing configuration, they are available in the File menu through the
-Import from phēnix or Import from Disk selections.</p>
-<p>A user can add VM hosts or networking components by selecting the relevant image
-on the left side of the Builder canvas.</p>
-<p><img alt="screenshot" class="center" src="../images/components.png" width="150" /></p>
-<p>Each time a configuration is saved to phēnix, it is available to select from
-Import from phēnix in the File menu. A configuration created in Builder can only
-be edited while in the Builder app. There are two options for editing an
-existing configuration created in Builder.</p>
-<p><img alt="screenshot" class="center" src="../images/file.png" width="150" /></p>
-<ol>
-<li>
-<p>Select Import from phēnix in Builder &mdash; make any changes and then add to
-   phēnix with a <strong>new</strong> name</p>
-</li>
-<li>
-<p>Select Import from phēnix in Builder &mdash; make any changes and then add to
-   phēnix with the same name; this will overwrite the configuration that was
-   selected to import</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Any hosts added to a topology will not have a drive image name; this is a
-requirement and will need to be included in each node added to the Builder
-canvas.
-<img alt="screenshot" class="center" src="../images/drive.png" width="150" /></p>
-</div>
-</li>
-</ol>
-<p>Other values will be auto-generated but can be customized by clicking on a
-target node and making changes in the dialogue presented in the Builder UI. It
-is worth noting that a user can set a single node value and then copy and paste
-that node multiple times; the customized values will be extended to each node
-that is pasted in the Builder canvas.</p>
-<p>While scenarios are not a part of the Builder environment, a user can add them
-to a topology. When a user selects Save to phēnix, a pulldown will be presented
-with available scenarios from the phēnix store.</p>
-<p><img alt="screenshot" class="center" src="../images/save.png" width="150" /></p>
-<p>When a scenario is selected, Builder will write the topology configuration to
-the phēnix store and an experiment configuration. When a scenario is not
-specified, the Builder app will save the topology configuration only. The user
-will then need to create an experiment in the phēnix UI.</p>
 <h2 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
 <p>Phēnix supports environment variables in its configuration files. On creation
 of a new phēnix config, any environment variable placeholders found in the
