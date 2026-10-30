@@ -40,11 +40,16 @@ func newDoctorTestDir(t *testing.T) string {
 		}
 	}
 
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), nil, 0o600); err != nil {
+		t.Fatalf("os.WriteFile(config.yaml) error = %v", err)
+	}
+
 	return dir
 }
 
 // fakeDoctorInput is an input under dir, made by newDoctorTestDir, on which
-// every check passes; settings replaces the values of some settings.
+// every check passes; settings replaces the values of some settings. There is
+// no store file, and no store of a phenix ui that runs as root.
 func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 	values := map[string]string{
 		"base-dir.phenix":          filepath.Join(dir, "phenix"),
@@ -121,6 +126,12 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		gid:      1000,
 		userName: "alice",
 		cwd:      "/home/alice",
+
+		configPaths:  []string{dir},
+		settingsUsed: configFile,
+		phenixUID:    "1000",
+		home:         "/home/alice",
+		systemStore:  filepath.Join(dir, "etc", "store.bdb"),
 	}
 }
 
@@ -166,6 +177,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 	allPass := []string{
 		"config-file config file pass",
 		"config-keys config keys pass",
+		"config-paths config paths pass",
+		"settings-file settings file pass",
 		"env-overrides env overrides pass",
 		"bridge-mode bridge-mode pass",
 		"deploy-mode deploy-mode pass",
@@ -174,6 +187,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"log.system.max-backups log.system.max-backups pass",
 		"log.system.max-age log.system.max-age pass",
 		"store.endpoint store.endpoint pass",
+		"store-root store root pass",
 		"log.system.path log.system.path pass",
 		"base-dir.phenix base-dir.phenix pass",
 		"base-dir.minimega base-dir.minimega pass",
@@ -208,6 +222,15 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"ui.logs.minimega-path ui.logs.minimega-path pass",
 	}
 
+	storeFile := filepath.Join(dir, "valid.bdb")
+	if err := os.WriteFile(storeFile, doctorFilesBolt(doctorFilesPageSize), 0o600); err != nil {
+		t.Fatalf("os.WriteFile(%s) error = %v", storeFile, err)
+	}
+
+	notStore := writeTestFile(t, dir, "not-a-store.bdb", "hello\n")
+	otherConfig := filepath.Join(dir, "other", "config.yaml")
+	doctorFilesCreate(t, otherConfig, false)
+
 	// with replaces the row of id in allPass with row, or adds row after id
 	with := func(id, row string, add bool) []string {
 		rows := slices.Clone(allPass)
@@ -231,6 +254,54 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"store directory missing": {
 			settings: map[string]string{"store.endpoint": "bolt://" + filepath.Join(dir, "missing", "store.bdb")},
 			want:     with("store.endpoint", "store.endpoint store.endpoint fail", false),
+		},
+		"store file": {
+			settings: map[string]string{"store.endpoint": "bolt://" + storeFile},
+			modify:   func(in *doctorInput) { in.uid = os.Getuid() },
+			want: slices.Insert(slices.Clone(allPass), slices.Index(allPass, "store.endpoint store.endpoint pass")+1,
+				"store-file store file pass", "store-owner store owner pass"),
+		},
+		"store of another user": {
+			settings: map[string]string{"store.endpoint": "bolt://" + storeFile},
+			modify: func(in *doctorInput) {
+				in.env.stat = func(path string) (os.FileInfo, error) {
+					info, err := os.Stat(path)
+					if err != nil || path != storeFile {
+						return info, err
+					}
+
+					return doctorFilesOwned{FileInfo: info, uid: 4242}, nil
+				}
+			},
+			want: slices.Insert(slices.Clone(allPass), slices.Index(allPass, "store.endpoint store.endpoint pass")+1,
+				"store-file store file pass", "store-owner store owner warn"),
+		},
+		"not a store": {
+			settings: map[string]string{"store.endpoint": "bolt://" + notStore},
+			modify:   func(in *doctorInput) { in.uid = os.Getuid() },
+			want: slices.Insert(slices.Clone(allPass), slices.Index(allPass, "store.endpoint store.endpoint pass")+1,
+				"store-file store file fail", "store-owner store owner pass"),
+		},
+		"root store exists": {
+			modify: func(in *doctorInput) { in.systemStore = notStore },
+			want:   replaceRows(allPass, "store-root store root warn"),
+		},
+		"store endpoint set": {
+			modify: func(in *doctorInput) {
+				in.settings["store.endpoint"] = resolvedSetting{
+					value: in.text("store.endpoint"), text: in.text("store.endpoint"), source: sourceFlag,
+				}
+				in.systemStore = notStore
+			},
+			want: slices.DeleteFunc(slices.Clone(allPass), func(r string) bool { return strings.HasPrefix(r, "store-root ") }),
+		},
+		"settings set writes another file": {
+			modify: func(in *doctorInput) { in.settingsUsed, in.home = "", filepath.Join(dir, "home") },
+			want:   replaceRows(allPass, "settings-file settings file warn"),
+		},
+		"config file phenix ignores": {
+			modify: func(in *doctorInput) { in.configPaths = []string{dir, filepath.Dir(otherConfig)} },
+			want:   replaceRows(allPass, "config-paths config paths warn"),
 		},
 		"console log file": {
 			settings: map[string]string{"log.console": filepath.Join(dir, "console.log")},
@@ -399,7 +470,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				in.settings["log.level"] = resolvedSetting{value: "debug", text: "debug", source: sourceEnv}
 			},
 			want: replaceRows(
-				append(append(slices.Clone(allPass[:2]), "env PHENIX_LOG_LEVEL pass"), allPass[2:]...),
+				append(append(slices.Clone(allPass[:4]), "env PHENIX_LOG_LEVEL pass"), allPass[4:]...),
 				"env-overrides env overrides warn",
 			),
 		},
@@ -409,9 +480,9 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				in.env.lookup, in.env.environ = vars.lookup, vars.environ
 				in.settings["log.level"] = resolvedSetting{value: "loud", text: "loud", source: sourceEnv}
 			},
-			// after config-keys, in name order
+			// after the config checks, in name order
 			want: replaceRows(
-				append(append(slices.Clone(allPass[:2]), "env PATH pass", "env PHENIX_LOG_LEVEL warn"), allPass[2:]...),
+				append(append(slices.Clone(allPass[:4]), "env PATH pass", "env PHENIX_LOG_LEVEL warn"), allPass[4:]...),
 				"log.level log.level warn",
 			),
 		},
@@ -492,7 +563,7 @@ func TestParseDoctorSkip(t *testing.T) {
 		"id":     {args: []string{"--skip", "minimega-env,server"}, want: []string{"minimega-env", "server"}},
 		"group of several": {
 			args: []string{"--skip", "config"},
-			want: []string{"config-file", "config-keys", "users-file"},
+			want: []string{"config-file", "config-keys", "config-paths", "settings-file", "users-file"},
 		},
 		"settings group": {
 			args: []string{"--skip", "settings"},
@@ -513,7 +584,7 @@ func TestParseDoctorSkip(t *testing.T) {
 		},
 		"unknown": {
 			args:    []string{"--skip", "minimega,mm,cofnig"},
-			wantErr: `--skip: unknown check "mm", "cofnig"; checks: config-file, users-file, config-keys, env,`,
+			wantErr: `--skip: unknown check "mm", "cofnig". Checks: config-file, users-file, config-keys, config-paths, settings-file, env,`,
 		},
 	}
 
@@ -659,7 +730,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 37 passed, 1 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 40 passed, 1 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},

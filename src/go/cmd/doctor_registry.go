@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/sys/unix"
 
+	"phenix/store"
 	"phenix/web"
 	"phenix/web/health"
 )
@@ -59,6 +60,12 @@ type doctorInput struct {
 	userName string
 	cwd      string
 	found    *doctorFound // set for each run by runDoctorChecks
+
+	configPaths  []string // searched for the config and users files, in order
+	settingsUsed string   // the config file the settings commands change, before the default
+	phenixUID    string   // the user phenix resolves: SUDO_USER's under sudo phenix
+	home         string   // phenixUID's home directory
+	systemStore  string   // the store file of a phenix ui that runs as root
 }
 
 // resolvedSetting is a setting's value as phenix reads it and where it came
@@ -114,6 +121,9 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		cwd = "unknown: " + err.Error()
 	}
 
+	phenixUID, home := getCurrentUserInfo()
+	systemStore, _ := store.BoltPath(rootDefaultStore)
+
 	return &doctorInput{
 		env:      env,
 		config:   config,
@@ -133,6 +143,12 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		userName: name,
 		cwd:      cwd,
 		found:    nil,
+
+		configPaths:  configSearchPaths,
+		settingsUsed: viper.ConfigFileUsed(),
+		phenixUID:    phenixUID,
+		home:         home,
+		systemStore:  systemStore,
 	}
 }
 
@@ -354,6 +370,22 @@ func doctorChecks() []doctorCheckDef {
 			},
 		},
 		{
+			id: "config-paths", group: doctorGroupConfig, name: "config paths",
+			hint: hintText("merge the files phenix ignores into the one it reads, then remove them"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(in.env.configPathsCheck(in.configPaths, in.cwd))
+			},
+		},
+		{
+			id: "settings-file", group: doctorGroupConfig, name: "settings file",
+			hint: hintText("make the config file phenix reads a YAML file this user can write, or run phenix settings as its owner"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				target := settingsFile(in.settingsUsed, in.phenixUID, in.home)
+
+				return one(in.env.settingsFileCheck(target, in.config.used))
+			},
+		},
+		{
 			id: "env", group: doctorGroupEnv, name: "environment variables",
 			hint: func(c doctorCheck) string { return "fix or unset " + c.Name },
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
@@ -379,6 +411,48 @@ func doctorChecks() []doctorCheckDef {
 			hint: hintText("create the directory, or set store.endpoint to a bolt:// path this user can write"),
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
 				return one(in.env.storeCheck(in.text("store.endpoint")))
+			},
+		},
+		{
+			id: "store-file", group: doctorGroupFiles, name: "store file",
+			hint: func(c doctorCheck) string {
+				if c.Status == doctorWarn {
+					return "copy the store to a backup while phenix ui is stopped"
+				}
+
+				return "restore the store from a backup, or move it so that phenix creates an empty one"
+			},
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				path, info := in.storeFile()
+				if info == nil {
+					return nil
+				}
+
+				return one(in.env.storeFileCheck(path, info.Size()))
+			},
+		},
+		{
+			id: "store-owner", group: doctorGroupFiles, name: "store owner",
+			hint: hintText("run phenix as the user that owns the store, or give the store to the user that runs phenix ui"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				path, info := in.storeFile()
+				if info == nil {
+					return nil
+				}
+
+				return in.env.storeOwnerCheck(path, info, in.uid, in.phenixUID)
+			},
+		},
+		{
+			id: "store-root", group: doctorGroupFiles, name: "store root",
+			hint: func(doctorCheck) string {
+				return "to use the store of a phenix ui that runs as root, run phenix in a root shell (sudo -i), " +
+					"or set store.endpoint to " + rootDefaultStore
+			},
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				s := in.settings["store.endpoint"]
+
+				return in.env.storeRootCheck(s.text, s.source, in.phenixUID, in.systemStore)
 			},
 		},
 		{

@@ -115,7 +115,21 @@ value that `phenix settings set` writes is hidden while one is set, as in a
 Docker deployment that sets `PHENIX_LOG_LEVEL`. `phenix doctor` shows each
 setting's source and warns in its `env-overrides` check about each variable
 that overrides a different config file value. Drop the flag or unset the
-variable to use the file's value.
+variable to use the file's value. Its `settings-file` check names the file
+`phenix settings set` writes, and its `config-paths` check names each config
+file that phēnix ignores because another one comes first in the search path.
+
+### A Command Sees Different Experiments Than `phenix ui`
+
+A user other than root uses the store `$HOME/.phenix.bdb` by default, and root
+uses `/etc/phenix/store.bdb`. So a command run without root reads a different
+store than a `phenix ui` that runs as root. `sudo phenix` also uses the store
+of the user that runs `sudo`; run the command from a root shell (`sudo -i`),
+or set `store.endpoint`, to use the store of `phenix ui`. `phenix doctor`
+warns in its `store-root` check when the command uses a per-user store while
+`/etc/phenix/store.bdb` exists, and in its `store-owner` check when the store
+file belongs to another user. Its `store-file` check fails when the store file
+is not a whole BoltDB file.
 
 ### Upgrading the BoltDB Store
 

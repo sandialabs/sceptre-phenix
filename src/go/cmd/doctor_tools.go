@@ -34,6 +34,10 @@ func qemuImgCheck(
 	lookPath func(string) (string, error),
 	version func(context.Context, string) (string, error),
 ) doctorCheck {
+	if _, err := lookPath("qemu-img"); err != nil {
+		return failCheck("qemu-img is not a program on PATH, so phenix cannot commit VMs to disk images")
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 

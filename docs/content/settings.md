@@ -25,7 +25,16 @@ phēnix looks for a configuration file (e.g. `config.yaml`, `config.json`, `conf
 * `$HOME/.config/phenix/config.yaml`
 * `/etc/phenix/config.yaml`
 
-It looks for `users.yaml` in the same locations.
+It looks for `users.yaml` in the same locations. `sudo phenix` searches as
+the user that runs `sudo`, so it also searches that user's
+`$HOME/.config/phenix`.
+
+Before any command runs, phēnix creates the default log directory
+(`$HOME/phenix_logs`, or `/var/log/phenix` as root) and, as root,
+`/etc/phenix`. When it finds no config file, it also creates
+`$HOME/.config/phenix/config.yaml` (`/etc/phenix/config.yaml` as root),
+empty, so that it can watch the file for changes. `phenix doctor` lists every
+config and users file it finds in its `config-paths` check.
 
 ### Example Configuration
 
@@ -113,10 +122,15 @@ valid ones.
 | :--- | :--- | :--- | :--- |
 | `config-file`, `users-file` | `config` | no `config.yaml` is found | the file does not parse or cannot be read, so phēnix ignores it; for a parse error the row gives the line, never the file's content |
 | `config-keys` | `config` | the config files hold keys that are not phēnix settings, such as a misspelling | never |
+| `config-paths` | `config` | phēnix ignores a config or users file on the search path, since it reads only the first of each name; the row lists the directories searched and each file found | never |
+| `settings-file` | `config` | `phenix settings set` would write a file other than the config file phēnix reads, a file that is not YAML, or a file this user cannot write or create | never |
 | `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), it holds a log level phēnix ignores, or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
 | `env-overrides` | `env` | a `PHENIX_*` variable overrides a different value in the config or users file; the row names the variable, the setting and the file, never a value | never |
 | `bridge-mode`, `deploy-mode`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative | `bridge-mode` or `deploy-mode` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
 | `store.endpoint` | `files` | never | the file cannot be written, or its directory does not exist or cannot be written |
+| `store-file` (only when the store file exists) | `files` | one of its two meta pages is corrupt, so BoltDB reads the other, which may not hold the last write | the file is not a BoltDB file, has another format version or byte order, is shorter than its two meta pages, or both meta pages are corrupt |
+| `store-owner` (only when the store file exists) | `files` | another user owns the file and this user is not root; as root under `sudo phenix`, the file does not belong to the user whose store `sudo phenix` uses | never |
+| `store-root` (only for the default store of a user other than root) | `files` | `/etc/phenix/store.bdb` exists, or this user cannot see whether it exists, so a `phenix ui` that runs as root uses a different store | never |
 | `log.system.path`, `log.console` | `files` | never | the file (`phenix.log` in it when `log.system.path` is a directory) cannot be written, or created in the nearest directory above it that exists; `log.console` gets a row only when it names a file |
 | `base-dir.phenix`, `base-dir.minimega`, `base-dir.injects`, `base-dir.topologies`, `mount-dir` | `dirs` | the directory does not exist, is not readable and searchable by this user, is relative, or is one phēnix writes to and is not writable by this user | the path is not a directory |
 | `ui.shutdown-grace-period`, `ui.netflow.max-size` | `ui` | never | `phenix ui` would refuse the value |
@@ -127,9 +141,9 @@ valid ones.
 | `ui.proxy-auth-header` (only when set) | `auth` | the JWT signing key is empty or a development key, so `phenix ui` ignores the header | the value is not an HTTP header name |
 | `ui.tls` | `tls` | the certificate expires within 30 days | only one of `ui.tls-key` and `ui.tls-cert` is set, so `phenix ui` serves plain HTTP; a file cannot be read; the key and certificate do not load as a pair; the certificate has expired or is not valid yet |
 | `ui.listen-endpoint`, `ui.file-server-endpoint` | `tls` | the listen endpoint has no port, so `phenix ui` listens on a random one | `phenix ui` cannot listen on the value or refuses it |
-| `unix-socket` | `socket` | the path is relative, or holds a file that is not a socket, which `phenix ui` deletes | the directory does not exist or this user cannot write it, or the path is too long for a unix socket |
-| `unix-socket-gid` | `socket` | phēnix runs as root and no group has the id | phēnix does not run as root, and no group has the id or this user is not in the group, so `phenix ui` exits when it sets the socket's group |
-| `server` (with the rows server bridge-mode and server deploy-mode when phenix ui answers) | `server` | no `phenix ui` answers on `unix-socket`: no socket file, a stale one, or no answer within `--timeout`; the version of `phenix ui` is not the version of this phēnix; its `bridge-mode` or `deploy-mode` is not the one set here | this user may not connect to the socket |
+| `unix-socket` | `socket` | the path is relative, or holds a file that is not a socket, which `phenix ui` deletes; this user cannot write the directory, but a socket is there, such as one a `phenix ui` of another user serves | the directory does not exist, this user cannot write it and no socket is there, or the path is too long for a unix socket |
+| `unix-socket-gid` | `socket` | phēnix runs as root and no group has the id | phēnix does not run as root, and this user is not in a group of that id, so `phenix ui` exits when it sets the socket's group |
+| `server` (with the rows server bridge-mode and server deploy-mode when phenix ui answers) | `server` | no `phenix ui` answers on `unix-socket`: no socket file, a stale one, a file that is not a socket, or no answer within `--timeout`; the version of `phenix ui` is not the version of this phēnix; its `bridge-mode` or `deploy-mode` is not the one set here | this user may not connect to the socket |
 | `minimega` | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default); the row names the likely cause: no socket, a stale one, or a user that may not connect |
 | `minimega-env` (the rows minimega files, minimega base and minimega mesh; one skip row when minimega gives no version) | `minimega` | minimega gives no flags (it is older than 3.0); its `-filepath` is relative or not writable by this user; its `-base` is not `base-dir.minimega`; `mesh status` fails when `-degree` is above 0 | the `-filepath` directory does not exist for phēnix or is not readable and searchable by this user |
 | `qemu-img`, `vmdb2` | `tools` | never | the program is not on `PATH`, or `qemu-img --version` fails: phēnix commits VMs to disk images with `qemu-img`, and `phenix image build` runs `vmdb2` |
@@ -158,6 +172,24 @@ and a trailing `/` added when missing. `PHENIX_UI_FEATURES` fails when it
 holds a comma. `PHENIX_UI_USERS`, `PHENIX_UI_JWT_SIGNING_KEY`,
 `PHENIX_UI_JWT_LIFETIME`, `PHENIX_UNIX_SOCKET` and `PHENIX_UNIX_SOCKET_GID`
 follow the rules of their `auth` and `socket` rows.
+
+The `config-paths` check names the file phēnix reads, marked `(read)`, and
+each one it ignores. In each directory phēnix tries the extensions in the
+order `json`, `toml`, `yaml`, `yml`, then less common ones, so a
+`config.json` hides a `config.yaml` beside it. Since phēnix creates an empty
+config file when it finds none, `config-file` warns only when it cannot. The
+`settings-file` check names the file `phenix settings set` and `unset`
+change, which is the file phēnix reads.
+
+The store checks read the first two pages of the store file with a plain
+read, never through BoltDB, which locks the file. A BoltDB file starts with
+two meta pages, each with the magic number `0xED0CDAED`, the format version
+`2`, the page size and a checksum. phēnix creates the store readable and
+writable by its owner only. A user other than root uses
+`$HOME/.phenix.bdb` by default and root uses `/etc/phenix/store.bdb`, so a
+command run without root sees different experiments than a `phenix ui` that
+runs as root. `sudo phenix` uses the store of the user that runs `sudo`, so
+a store it creates belongs to root but is in that user's home directory.
 
 The `auth`, `tls` and `socket` groups check what `phenix ui` reads at startup.
 A development key is `dev|<user>|<role>`. Since doctor opens no store, it
@@ -205,8 +237,9 @@ Without `--report`, doctor does not print the hostname.
 and 0 otherwise. It never prints the values of `ui.jwt-signing-key` or
 `ui.users`, only `<redacted>` when they are set, nor those of
 `PHENIX_UI_JWT_SIGNING_KEY`, `PHENIX_UI_USERS`, `SUDO_COMMAND` or a
-`PHENIX_*` variable that names no setting. Like `phenix healthcheck`, it opens
-no store or log file and binds no port. It connects to the unix socket of
+`PHENIX_*` variable that names no setting. It never opens the store through
+BoltDB and reads only the first two pages of the store file. It opens no log
+file, writes no file and binds no port. It connects to the unix socket of
 `phenix ui` as a client only, and never creates or removes it. It sends
 minimega only global commands that change nothing: `version`, `args` and
 `mesh status`. Run it with the same flags, environment and user as the command you

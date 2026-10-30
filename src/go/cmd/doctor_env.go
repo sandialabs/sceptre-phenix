@@ -47,13 +47,16 @@ type doctorEnv struct {
 	lookupPort  func(service string) (int, error) // the port of a TCP service name
 	lookupUser  func(string) (*user.User, error)
 	lookupGroup func(string) (*user.Group, error)
+	lookupUID   func(string) (*user.User, error)
 	stat        func(string) (os.FileInfo, error)
 	lstat       func(string) (os.FileInfo, error)
 	access      func(string, uint32) error
 	readFile    func(string) ([]byte, error)
+	readAt      func(path string, off int64, n int) ([]byte, error) // at most n bytes, from off
 	readDir     func(string) ([]os.DirEntry, error)
 	groups      func() ([]int, error) // the groups this process is in
 	roles       []string              // the built-in roles, or nil when unknown
+	pageSize    int                   // the host's memory page size, as bbolt reads it
 	root        bool
 }
 
@@ -65,18 +68,21 @@ func osDoctorEnv() doctorEnv {
 		lookupPort:  lookupTCPPort,
 		lookupUser:  user.Lookup,
 		lookupGroup: user.LookupGroupId,
+		lookupUID:   user.LookupId,
 		stat:        os.Stat,
 		lstat:       os.Lstat,
 		access:      unix.Access,
 		readFile:    os.ReadFile,
+		readAt:      osReadAt,
 		readDir:     os.ReadDir,
 		groups: func() ([]int, error) {
 			groups, err := os.Getgroups()
 
 			return append(groups, os.Getegid()), err
 		},
-		roles: builtinRoles(),
-		root:  os.Getuid() == 0,
+		roles:    builtinRoles(),
+		pageSize: os.Getpagesize(),
+		root:     os.Getuid() == 0,
 	}
 }
 

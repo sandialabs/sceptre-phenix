@@ -45,8 +45,7 @@ func TestQemuImgCheck(t *testing.T) {
 		"found": {lookPath: found, version: version, want: row("", doctorPass, "/usr/bin/qemu-img: qemu-img version 8.2.2")},
 		"missing": {
 			lookPath: lookPathIn(nil), version: version,
-			want: row("", doctorFail, "qemu-img not found; phenix inspects disk images through minimega instead; "+
-				"phenix commits VMs to disk images with it"),
+			want: row("", doctorFail, "qemu-img is not a program on PATH, so phenix cannot commit VMs to disk images"),
 		},
 		"broken": {
 			lookPath: found, version: broken,

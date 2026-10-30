@@ -59,13 +59,25 @@ func fakeDoctorEnv(vars map[string]string, root bool) doctorEnv {
 
 			return nil, user.UnknownGroupIdError(id)
 		},
+		lookupUID: func(id string) (*user.User, error) {
+			switch id {
+			case "0":
+				return &user.User{Uid: id, Gid: id, Username: "root", Name: "", HomeDir: "/root"}, nil
+			case "1000":
+				return &user.User{Uid: id, Gid: id, Username: "alice", Name: "", HomeDir: "/home/alice"}, nil
+			}
+
+			return nil, user.UnknownUserIdError(0)
+		},
 		stat:     os.Stat,
 		lstat:    os.Lstat,
 		access:   unix.Access,
 		readFile: func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		readAt:   osReadAt,
 		readDir:  os.ReadDir,
 		groups:   func() ([]int, error) { return []int{1000, 100}, nil },
 		roles:    builtinRoles(),
+		pageSize: 4096,
 		root:     root,
 	}
 }
