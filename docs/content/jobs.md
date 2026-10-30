@@ -23,7 +23,7 @@ Each job records:
 | `disk.clone` | cloning a disk image (`POST /api/v1/disks/clone/jobs`, see [Disks](disks.md#cloning-in-the-background)) | the new image |
 
 Other operations, such as VM snapshots, commits and memory snapshots, experiment
-starts and SCORCH runs, still run within their request and are not jobs.
+starts and SCORCH runs, run within their request and are not jobs.
 
 ## Lifecycle
 
@@ -141,7 +141,7 @@ each command fails with `phenix ui is not running (no socket at ...)`.
 !!! note
     The command line can follow jobs, but not start them. Commands such as
     `phenix vm start` act in the `phenix` process itself rather than through the
-    server, so they wait for their result as before and are not jobs; start
+    server, so they wait for their result and are not jobs; start
     bulk VM actions, file archives and disk clones from the web UI or the REST
     API.
 

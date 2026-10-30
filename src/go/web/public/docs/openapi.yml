@@ -8442,9 +8442,9 @@ components:
               format: int64
               readOnly: true
               description: >-
-                set by the store on every write and only increasing; opaque, so
-                compare it for equality only. Absent for a config not written
-                since revisions were added. Ignored on input
+                The store sets it on every write, and it only increases. It is
+                opaque, so compare it for equality only. Absent for a config
+                that has no stored revision. The server ignores it on input
             annotations:
               title: "Annotations"
               description: "String-valued annotations associated with the configuration resource."
@@ -11832,9 +11832,9 @@ components:
     # Config revisions: conditional reads and writes of one config.
     ConfigETag:
       description: >-
-        strong validator `"r<revision>"` naming the config's revision (not
-        its bytes, so it holds for a gzip-compressed body too); absent for a
-        config not written since revisions were added
+        strong validator `"r<revision>"` naming the config's revision (not its
+        bytes, so it holds for a gzip-compressed body too). Absent for a config
+        with no stored revision
       schema:
         type: string
     ConfigRevision:

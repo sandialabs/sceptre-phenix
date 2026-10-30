@@ -147,8 +147,7 @@ with a letter or digit, or that has a character other than letters, digits,
 `.`, `_`, `@`, `+` and `-`, and create no user.
 
 Config revisions: `GET /configs/{kind}/{name}` sends `ETag: "r<revision>"`
-and `X-Phenix-Revision` (none for a config unwritten since revisions were
-added; the ETag stays strong when gzipped) and answers `If-None-Match` with
+and `X-Phenix-Revision` (none for a config with no stored revision; the ETag stays strong when gzipped) and answers `If-None-Match` with
 `304`. `PUT` and `DELETE` take an optional `If-Match` (`"r<n>"` list or `*`):
 `412` with `metadata.revision` when the config moved on, `400` when malformed.
 An unknown config is `404` (a `PUT` or `DELETE` with `If-Match`: `412`;

@@ -50,8 +50,7 @@ begin with a capital letter.
 phenix stamps every stored config with `metadata.created`, `metadata.updated`
 and `metadata.revision`. The revision is a number that changes on every write
 to the config and only increases; it is ignored in files and requests, like
-the timestamps. A config stored before revisions existed has none until its
-next write.
+the timestamps. A config with no revision gets one on its next write.
 
 ```yaml
 metadata:

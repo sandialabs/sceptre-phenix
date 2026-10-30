@@ -1,6 +1,6 @@
 # phenix UI performance checks
 
-Two industry-standard tools guard the web UI's load performance. CI runs both
+Two tools check the web UI's load performance. CI runs both
 in the `perf` job of `.github/workflows/frontend.yml`.
 
 | Tool                                                           | Checks                                                                                                                                         | Config             |
@@ -9,6 +9,11 @@ in the `perf` job of `.github/workflows/frontend.yml`.
 | [Lighthouse CI](https://github.com/GoogleChrome/lighthouse-ci) | Performance score, FCP, LCP, TBT, CLS, page weight, script size, compression and caching of static assets, for the main pages of a real server | `lighthouserc.cjs` |
 
 ## Running locally
+
+Lighthouse needs a running `phenix ui` serving the build (see
+`../e2e/README.md`) and Chrome or Chromium; set `CHROME_PATH` if it is not
+found. It checks `http://127.0.0.1:3197` unless `E2E_BASE_URL` names another
+server.
 
 ```bash
 cd src/js
@@ -19,10 +24,7 @@ cd perf
 npm ci
 npm run size          # bundle budgets; needs only the build above
 
-# Lighthouse needs a running `phenix ui` serving that build (see ../e2e/README.md)
-# and Chrome or Chromium (set CHROME_PATH if it is not found automatically);
-# it defaults to http://127.0.0.1:3197; point E2E_BASE_URL at another server,
-# e.g. one started with `phenix ui --listen-endpoint 127.0.0.1:3080`
+# Lighthouse needs a running phenix ui serving that build
 E2E_BASE_URL=http://127.0.0.1:3080 npm run lighthouse
 ```
 
@@ -73,15 +75,12 @@ for pushes, in this repository. Bundle size deltas are exact. Lighthouse deltas
 are informational: medians of 3 runs on shared runners vary from run to run, so
 only the absolute budgets in `lighthouserc.cjs` fail the job. Without a baseline, for example
 before the default branch has a run or after its artifact expires, deltas show
-n/a. The baseline is another run's output, so `summary.mjs` reads only numbers
-from it.
+n/a.
 
-## Why perf/ has its own lockfile
+## Installing
 
-`perf/` is a separate npm project with its own `package-lock.json`, like
-`e2e/`, so a plain `npm ci` in `src/js` (as the container builds run it) does
-not install Lighthouse and its dependencies; `npm ci` here installs them.
-Vitest and ESLint treat `perf/` as tooling (`vite.config.js`,
+`perf/` is a separate npm project with its own lockfile; run `npm ci` here to
+install Lighthouse. Vitest and ESLint treat `perf/` as tooling (`vite.config.js`,
 `eslint.config.js`).
 
 ## Changing a budget
@@ -91,8 +90,8 @@ only what is used, lazy-load code needed by a single page, and register heavy
 Buefy components locally in the view that uses them (see `src/utils/buefy.js`).
 Raise a limit only deliberately, and say why in the pull request. When you raise
 a size-limit budget, set it about 5 to 10% above the measured size.
-Lighthouse's page weight and script size budgets are looser, because phēnix runs
-on desktops and laptops over fast links; they catch large regressions.
+Lighthouse's page weight and script size budgets are looser and catch large
+regressions.
 
 To see what is in a chunk, build with source maps and open the treemap:
 

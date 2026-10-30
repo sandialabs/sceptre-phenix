@@ -24,11 +24,9 @@ heartbeat button (tooltip `view state of health`):
 
 Both buttons need `get` on the experiment.
 
-An experiment's SoH page has at most two tabs, `Topology Graph` and `Network
-Volume`, and the `Network Volume` tab is only present when the SoH [packet
-capture](#packet-capture) option is enabled. Without it there is nothing to
-switch to, so the tab bar is hidden entirely and the topology graph fills the
-page.
+An experiment's SoH page has a `Topology Graph` tab and, when SoH
+[packet capture](#packet-capture) is enabled, a `Network Volume` tab. Without
+packet capture the tab bar is hidden.
 
 A `Go to experiment` button in the top left corner of the page returns to the
 experiment. Two counters above the graph's top-left corner show how many VMs
@@ -226,15 +224,12 @@ and `Computing layout…` appears while a layout is being worked out.
 
 ![State of Health graph in the Layered layout, with the router at the top and VLAN segments grouping their VMs in tiers below.](images/soh_layout_layered.png){: width=800 .center}
 
-`VLAN groups` is unavailable on graphs of more than 300 nodes, because the
-library it uses slows down steeply with size — a few seconds at 500 nodes and
-tens of seconds at a few thousand. The button is disabled and its tooltip says
-so, naming the node count; if the remembered choice is `VLAN groups` and the
-graph turns out to be that big, the graph is drawn with `Force` and a notice
-explains why.
+`VLAN groups` is disabled on graphs of more than 300 nodes; its tooltip gives
+the node count. If it is the saved layout on such a graph, the graph is drawn
+with `Force` and a notice says why.
 
-Each layout's library is downloaded the first time you pick that layout, so
-the page itself stays small. Your choice is remembered in the browser and
+Each layout's library is downloaded the first time you pick that layout. Your
+choice is remembered in the browser and
 survives filter changes, reloads and later visits. If a layout fails to load
 or to compute, the graph falls back to `Force` and an error notification names
 the layout that failed.
@@ -268,25 +263,18 @@ experiment, a line giving the VM and VLAN counts, the filter, the layout and
 the date, and the legend beneath the graph. The OS and VLAN icons are embedded,
 so the file stands on its own.
 
-The GEXF file carries much more than the picture. Every VM and VLAN node is
-exported with typed attributes: its status and status label, OS type, minimega
-VM state, cluster host, IP addresses, VLANs and interface count, CPUs, memory,
-disk image and uptime, whether it is external or marked Do Not Boot, its
-description, labels, notes and custom node style, the CPU load, the number of
-passed and failed SoH checks in each category, a failed total, and a readable
-summary of what failed. Nodes also carry the color, shape, size and the
-position they have on screen, so the graph opens in Gephi looking like the one
-in phēnix. Edges between a VM and a VLAN carry the interface's VLAN, index and
-IP address, and, when [network volume](#network-volume) data is available, the
-SoH traffic flows are added as weighted directed edges, with an extra node for
-any flow endpoint that is not one of the experiment's VMs. The VM details
-(host, addresses, CPUs, memory, disk) are only included when your role may list
-the experiment's VMs; the file's description says when they are missing.
+The GEXF file holds each VM and VLAN node with typed attributes (status, OS
+type, VM state, host, addresses, resources, labels and notes, and SoH check
+counts and failures), its color, shape, size and position, and an edge for each
+interface. When [network volume](#network-volume) data is available, traffic
+flows are added as weighted directed edges, with a node for any endpoint that is
+not one of the experiment's VMs. VM details (host, addresses, CPUs, memory,
+disk) are included only if your role may list the experiment's VMs; the file's
+description says when they are missing.
 
 Downloads are named `<experiment>-soh-<layout>-<timestamp>.<ext>`, where
 `<layout>` is the layout's short name (`force`, `radial`, `layered`, `groups`
-or `elk`) and `<timestamp>` is the local time as `yyyymmdd-hhmmss`, for example
-`foobar-soh-layered-20260214-143002.svg`.
+or `elk`) and `<timestamp>` is the local time as `yyyymmdd-hhmmss`.
 
 ## External Devices
 
@@ -604,8 +592,7 @@ added to the experiment topology so they do not clutter the phenix UI.
 When packet capture is enabled, the phenix UI SoH tab will include a Network
 Volume tab that uses network flow data queried from Elasticsearch to populate a
 chord graph in an effort to depict how much traffic is flowing between VMs.
-Without packet capture there is no `Network Volume` tab, and the experiment's
-SoH page shows no tab bar at all. Users/Analysts can also access Kibana using
+Users/Analysts can also access Kibana using
 VNC via the phenix UI to do additional analysis on the network flow data that's
 being captured.
 
@@ -734,9 +721,8 @@ finished run in its app status: `lastRun`, the time the run finished;
 last 20 runs. Each history entry holds the run's `time` and `duration`, the
 `total` number of checks it ran and how many were `failing`, `hostsFailing`
 (hosts with at least one failing check) and `hostsDown` (hosts whose network
-configuration could not be confirmed). As new runs finish the oldest entries
-are dropped, so the history never grows past 20 runs.
+configuration could not be confirmed).
 
-This is where the [State of Health Overview](#state-of-health-overview) gets
-its `Last Check` column and its `Failing, last 12 runs` sparkline, which is why
-an experiment needs two runs before the sparkline can be drawn.
+The [State of Health Overview](#state-of-health-overview) takes its
+`Last Check` column and its `Failing, last 12 runs` sparkline from this
+history.

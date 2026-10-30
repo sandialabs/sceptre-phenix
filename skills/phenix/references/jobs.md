@@ -2,9 +2,10 @@
 
 `phenix ui` runs long operations as background jobs: the request that starts
 one answers `202 Accepted` with the job and `Location: /api/v1/jobs/{id}`
-(under `--base-path`, if set), and the job runs on in the server. Jobs live only in that server's memory: a
-restart loses them and stops their work (at shutdown, running jobs get half of
-`ui.shutdown-grace-period` and are then canceled; starting one answers `503`). User docs: `docs/content/jobs.md`.
+(under `--base-path`, if set), and the job runs on in the server. Jobs live in
+the server's memory; a restart loses them. See [`cli.md`](cli.md) for shutdown
+behavior.
+User docs: `docs/content/jobs.md`.
 Code: `src/go/api/job` (registry), `src/go/web/jobs.go` (routes).
 
 ## Model

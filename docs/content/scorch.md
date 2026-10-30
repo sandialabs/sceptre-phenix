@@ -297,12 +297,12 @@ The Scorch table, accessible as one of the tab selections within the phēnix UI,
 - `Experiment`: the experiment name, which is a link (tooltip `view SCORCH components`) to that experiment's Scorch runs
 - `Experiment Status`: this reports on the status of the experiment &mdash; an experiment must be running for a Scorch app to start. Beside the status are a button that starts or stops the experiment (its tooltip names the experiment, and starting or stopping is confirmed in a dialog first) and a `Go to experiment` button that opens the experiment itself. While an experiment starts, a progress bar takes the place of the status.
 - `SCORCH Status`: this will report the running or stopped status of the Scorch app itself. Beside it are a button that starts or stops a run &mdash; its tooltip names the run it will start or stop, and it spins until the server reports that the run started or stopped &mdash; and a `Go to SCORCH runs` button that opens the experiment's runs.
-- `Terminal`: if the Scorch app has reached a break point, a terminal will be available &mdash; if clicked, a terminal dialog will be opened and is running on the phēnix host system. The button is only shown for experiments that actually have a Scorch terminal.
+- `Terminal`: if the Scorch app has reached a break point, a terminal will be available &mdash; if clicked, a terminal dialog will be opened and is running on the phēnix host system.
 - `Find an Experiment`: similar to the search fields in other tables within the phēnix UI, it is possible to filter experiment names based on terms entered here
 
-Level with the search box on the left, the page counts the experiments it lists, their `Runs` (the runs their scenarios define), and those `Running`, one at most per experiment since Scorch executes one run at a time. The counts cover every listed experiment, whatever the search.
+Level with the search box on the left, the page counts the experiments it lists, their `Runs` (the runs their scenarios define), and those `Running`, one at most per experiment. The counts cover every listed experiment, whatever the search.
 
-Each button is only shown if your role permits the action it takes. Column headings stay on one line with the sort arrow beside the heading, and the status and terminal buttons are centered in their columns.
+Each button is only shown if your role permits the action it takes.
 
 ![SCORCH page with its Experiments, Runs and Running totals and a table of three experiments with their experiment and SCORCH status buttons.](images/scorch_table.png)
 
@@ -325,7 +325,7 @@ At its top left, the page counts the experiment's `Runs` and how the last run of
 - `Back to SCORCH`: returns to the Scorch table
 - `Go to experiment`: opens the experiment the runs belong to
 - `Experiment:` followed by the experiment's name, in a box colored by the experiment's state: green while it is running, red while it is stopped, and yellow while it is starting or stopping. Its tooltip spells the state out, as in `The experiment is running`.
-- `Start all`: starts every run that is not already running or waiting to start. Its tooltip reads `Starts all defined runs in order one by one (not in parallel)`, because Scorch executes one run at a time per experiment; a run that is already executing finishes first.
+- `Start all`: starts every run that is not already running or waiting to start. Its tooltip reads `Starts all defined runs in order one by one (not in parallel)`.
 - `Stop all`: stops the run that is executing and drops the runs still waiting to start
 - `Clear all`: clears the status of every run that is not running, then says in one summary how many it cleared, listing any it could not with the reason and offering `Retry failed` for those that may work if tried again
 
@@ -333,7 +333,7 @@ Each run is shown below that with its own header: the title `Run:` followed by t
 
 - `Clear` (tooltip `clear this run's status`): forgets the statuses of the run's components, for every loop, so its pipeline reads as never run. It is only enabled once the run is idle and has a status to clear, and it is only offered to users whose role may trigger Scorch runs.
 - `Cleanup` (tooltip `run only this run's cleanup stage`): executes just this run's `cleanup` stage, for example to tear down what a canceled run left behind. It is only shown for runs that define cleanup components, and is disabled while any run of the experiment is busy.
-- `Download`: a menu of the archives of the run's artifacts, newest first, each with the time the run started, with its age (see [Timestamps](web-ui.md#timestamps)), and the archive's size; picking one downloads it. Each time a run finishes, Scorch archives what the run wrote under `scorch/run-<run>/` in the experiment's files to `scorch-run-<run>_<start>.tgz` at the top of those files, so a run executed several times has several archives, and they are also listed on the experiment's Files tab. The button is greyed, its tooltip saying why, until the run has an archive, and it is only shown to users whose role may download the experiment's files (`get` on `experiments/files`); listing the archives also needs `list` on `experiments/files`. The menu is listed again once a run's `done` stage ends.
+- `Download`: a menu of the archives of the run's artifacts, newest first, each with the time the run started, with its age (see [Timestamps](web-ui.md#timestamps)), and the archive's size; picking one downloads it. Each time a run finishes, Scorch archives what the run wrote under `scorch/run-<run>/` in the experiment's files to `scorch-run-<run>_<start>.tgz` at the top of those files, so a run executed several times has several archives, and they are also listed on the experiment's Files tab. The button is grayed out, its tooltip saying why, until the run has an archive, and it is only shown to users whose role may download the experiment's files (`get` on `experiments/files`); listing the archives also needs `list` on `experiments/files`. The menu is listed again once a run's `done` stage ends.
 - a start/stop button (tooltip `start this run` or `stop this run`) that spins until the server reports that the run started or stopped
 
 When you are viewing one of a run's loops, a button also appears to the left of the run's title that returns the display one level up in the loop chain, as described under [Stages](#stages).

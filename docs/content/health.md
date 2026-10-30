@@ -26,8 +26,8 @@ requires its own sign-in on every path must exempt them, or monitors should
 probe the phēnix port directly.
 
 !!! note
-    The web UI does not show health yet. Use the endpoints, or
-    [`phenix healthcheck`](#the-phenix-healthcheck-command).
+    Health is available through the endpoints and
+    [`phenix healthcheck`](#the-phenix-healthcheck-command), not the web UI.
 
 ## Status Codes and Format
 
@@ -79,9 +79,7 @@ Each check key keeps one JSON type for its `observedValue` across runs: a
 check that could not observe a value (minimega down, the store unreadable)
 leaves `observedValue` out rather than reporting a string. Fractional values,
 such as milliseconds and percentages, always carry a decimal point, even when
-they happen to be whole (`42.0`, not `42`). That keeps dynamically mapped
-fields in tools such as Elasticsearch from conflicting, and maps fractional
-values as floats from the first document, so later values are not truncated.
+they happen to be whole (`42.0`, not `42`).
 
 ## Checks
 
@@ -254,9 +252,7 @@ metricbeat.modules:
       X-Phenix-Auth-Token: "Bearer ${PHENIX_TOKEN}"
 ```
 
-The answers land under `http.phenix_health`. Because each key's
-`observedValue` keeps one type, dynamic mapping does not conflict when a
-check fails.
+The answers land under `http.phenix_health`.
 
 ### Kubernetes and Podman Probes
 

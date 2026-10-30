@@ -47,20 +47,16 @@ The `Power` section holds the VM's power operations as labeled buttons:
 * `Start` — start the VM. On a paused VM the button reads `Resume` and resumes
   the VM where it left off.
 * `Pause` — pause the VM, keeping its memory, until it is resumed.
-* `Restart` — restart the running VM; greyed out while the VM is not running.
+* `Restart` — restart the running VM; grayed out while the VM is not running.
 * `Shut down` — power off the VM; it can be started again later.
 * `Kill` — kill the VM and remove it from the running experiment.
 
 `Start`, `Pause`, `Restart` and `Shut down` act as soon as you click them;
 `Kill` asks you to confirm first. A power action runs as a
 [background job](jobs.md), which the
-[jobs menu](web-ui.md#background-jobs-menu) shows. The card stays open, and the
-button spins until the job ends; the card then shows the VM as the job left it.
-A killed VM's card closes once the job ends. `Snapshot` also leaves the card
-open, spinning until the snapshot is taken, and then lists the VM's snapshots
-again. `Backing image`, `Memory snapshot`, restoring a snapshot and changing a
-VLAN leave the card open too, with a spinner on the button or interface until
-the server answers, and none of them grays out the page.
+[jobs menu](web-ui.md#background-jobs-menu) shows. Actions leave the card open.
+The button or interface shows a spinner until the server answers, and the card
+then shows the VM as the action left it. A killed VM's card closes.
 
 #### More Actions
 
@@ -84,10 +80,7 @@ own. `Mount disk` is only present when the `vm-mount` feature is enabled; see
 
 An action your role may not take is not shown at all. An action the VM's
 current state rules out stays visible but disabled, with the reason in its
-tooltip — `Can't pause: the VM is not running`, `Can't snapshot: the VM does
-not have snapshots enabled`, `Can't restart: the VM is paused and must be
-resumed first`, or `Can't restart: the VM is not running; start it instead`
-beside a `Start`.
+tooltip, such as `Cannot pause: the VM is not running`.
 
 ![VM details for the shut-down historian, with Start enabled and Restart and the other actions a stopped VM cannot take grayed out.](images/vm_details_disabled.png){: width=800 .center}
 
@@ -218,23 +211,21 @@ the window is too narrow for one row, they move to a row of their own above
 the search box.
 
 The `Hosts` button lists every cluster host running one of the experiment's
-VMs. Check hosts to list only the VMs running on any of them; checking two
-hosts widens the list rather than narrowing it. `Clear hosts` unchecks them
-all, the button shows how many hosts are checked, and it is greyed out when no
+VMs. Check hosts to list only the VMs running on any of them. `Clear hosts` unchecks them
+all, the button shows how many hosts are checked, and it is grayed out when no
 VM is running on a host. On the CLI, repeat `--host` on `phenix vm info` to
 do the same.
 
 The `Labels` button lists every `key=value` label on the experiment's VMs.
-Check labels to list only the VMs that carry any of them; checking two labels
-widens the list rather than narrowing it, as repeating `--label` does on the
-`phenix vm` commands. `Clear labels` unchecks them all. The button shows how
-many labels are checked, and is greyed out when no VM has a label.
+Check labels to list only the VMs that carry any of them, as repeating
+`--label` does on the `phenix vm` commands. `Clear labels` unchecks them all. The button shows how
+many labels are checked, and is grayed out when no VM has a label.
 
 The host and label filters combine with each other and with the search box:
 a VM must match the search, run on a checked host and carry a checked label.
 The table goes back to its first page whenever the checked hosts or labels
 change. The request for the list must fit in 2 KiB, so once the checked hosts
-and labels fill it, the rest are greyed out until you uncheck one.
+and labels fill it, the rest are grayed out until you uncheck one.
 
 Click the `Labels` heading to sort the VMs by how many labels they have, the
 number beside each VM's tag icon, which counts their notes too; a VM with none
@@ -265,7 +256,7 @@ buttons that act on that row's VM without opening its details card:
 
 * `Shut down`, which becomes `Start` (or `Resume` for a paused VM) while the
   VM is not running
-* `Restart`, greyed out while the VM is not running
+* `Restart`, grayed out while the VM is not running
 * `Port forward`
 * `Snapshot`
 * `Backing image`
@@ -277,12 +268,10 @@ buttons that act on that row's VM without opening its details card:
 `Shut down`, `Start` and `Restart` act as soon as you click them, as on the
 details card, and so do the capture buttons; a button spins until its action
 has finished, while the page stays usable. `Snapshot` asks you to confirm
-first, and `Port forward` and `Backing image` open their dialogs. The buttons
-follow the same rules as the ones on the details card: a button is
+first, and `Port forward` and `Backing image` open their dialogs. A button is
 disabled, with the reason in its tooltip, when your role may not use it
-(`Can't snapshot: you don't have permission`) or when the VM's state rules it
-out (`Can't restart: the VM is busy with another action`, or `Can't restart: the
-VM is not running; start it instead` beside a `Start`). Three buttons fit on
+(`Cannot snapshot: you do not have permission`) or when the VM's state rules it
+out, as on the details card. Three buttons fit on
 a row and the rest wrap below, so the column never widens. External nodes have
 no buttons, and the whole column is hidden if your role may not take any of
 these actions. `Actions` is one of the columns you can turn off from the column
@@ -376,9 +365,7 @@ For any other color, phēnix logs a warning and uses the default white
 background or black text. It also logs and ignores map keys it does not know.
 
 Banner text is shown exactly as written, so HTML in it appears as text rather
-than as markup. The VNC tab sends a `Content-Security-Policy` that lets only
-phēnix's own scripts run, so scripts a reverse proxy adds to the page do not
-run.
+than as markup.
 
 ### From the Command Line Binary
 
@@ -567,8 +554,7 @@ local Wireshark (`phenix vm capture stream`), see [WebShark](webshark.md).
 `Capture all interfaces`, in the VM table's
 [Actions column](#vm-actions-column) and as the play button on the details
 card's [Network](#network) section, starts a packet capture on every connected
-interface of a VM that does not already have one, so you do not have to start
-them one interface at a time. phēnix asks the server which captures are already
+interface of a VM that does not already have one. phēnix asks the server which captures are already
 running, then starts the rest without asking you to confirm, writing
 `<vm>_<interface>_<time>_<random>.pcap` for each to the experiment's files. The button
 spins until the captures have started.
@@ -631,11 +617,6 @@ phenix vm net disconnect <experiment name> <vm name> <iface index>
 Click on the name of a running VM in a started experiment to open its details
 card, then click `Pause` in the `Power` section.
 
-`Pause` and `Start` are separate buttons and both are always shown. On a paused
-VM, `Start` reads `Resume` — its tooltip is
-`Resume the paused VM where it left off` — and `Pause` is disabled with
-`Can't pause: the VM is not running`.
-
 ### From the Command Line Binary
 
 To pause a VM, run the following command.
@@ -659,8 +640,7 @@ card, then click `Redeploy` in `More actions`. The dialog that opens lets you
 change the VM's CPUs, memory and disk, and whether the original injections are
 replicated, before it is deployed again. Its `Disk` menu starts on the VM's
 current disk and works as described in [Disk Menu](#disk-menu). The dialog sends
-a disk only when you pick a different one, so leaving the menu alone never moves
-the VM onto another image.
+a disk only when you pick a different one.
 
 ### From the Command Line Binary
 
@@ -676,10 +656,9 @@ phenix vm redeploy <experiment name> [vm name] [--label <label>]
 
 Click on the name of a running VM in a started experiment to open its details
 card, then click `Reset disk` in `More actions` and confirm. The button is
-disabled with `Can't reset disk: the VM does not have snapshots enabled` on a
-VM whose snapshot flag is off, since a persistent VM has no separate disk state
-to discard, and with `Can't reset disk: the VM is paused and must be resumed
-first` on a paused VM.
+disabled with `Cannot reset disk: the VM does not have snapshots enabled` on a
+VM whose snapshot flag is off, and with `Cannot reset disk: the VM is paused. Resume
+paused VMs first` on a paused VM.
 
 ### From the Command Line Binary
 
@@ -714,8 +693,7 @@ phenix vm restart <experiment name> [vm name] [--label <label>]
 ### From the Web-UI
 
 Click on the name of the paused VM in a started experiment to open its details
-card, then click `Resume` in the `Power` section. That is the same button that
-reads `Start` on a VM that is not paused.
+card, then click `Resume` in the `Power` section.
 
 ### From the Command Line Binary
 
@@ -788,8 +766,7 @@ stopped experiment, then writes the image's full path into the topology.
 * A VM with no disk shows `No disk`.
 
 The menu needs `list` on `disks` to offer other images. Without it, the menu
-shows only the VM's current disk, with no warning, since phēnix cannot tell
-whether the disk is listed. A role that may not `patch` the VM sees its disk as
+shows only the VM's current disk, with no warning. A role that may not `patch` the VM sees its disk as
 text, named as on the Disks page, with the same warning icons.
 
 ### CD-ROM

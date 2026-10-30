@@ -156,9 +156,8 @@ default or enum. A route the Unix socket serves gets a case in
 
 `.github/workflows/ci.yml` generates artifacts, runs `make check`, and executes
 race-enabled tests in shuffled order, uploading a coverage profile and writing
-a coverage summary that warns, without failing, below
-`.github/coverage-minimums.json`; its `generated` job runs `make check-generated` from the
-repository root. `.github/workflows/stress.yml` runs `make test-stress` weekly
+a coverage summary; see the root `AGENTS.md` CI list for its minimums and the
+`generated` job. `.github/workflows/stress.yml` runs `make test-stress` weekly
 and on demand, and `.github/workflows/fuzz.yml` runs `make fuzz` weekly,
 uploading any failing input. `.github/workflows/security.yml` reports
 govulncheck findings in the job summary without failing (locally,

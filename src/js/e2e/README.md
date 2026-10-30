@@ -21,8 +21,7 @@ a CI-built binary, a container, or a full range node.
 | `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`, `E2E_AUTH_MODE=proxy` | yes (own job)           |
 
 CI (`.github/workflows/frontend.yml`) builds `bin/phenix` three times, with
-the UI built with `VITE_AUTH=disabled`, `enabled` and `proxy`, since
-`VITE_AUTH` is compiled into the UI. Each build, with its UI, is the
+the UI built with `VITE_AUTH=disabled`, `enabled` and `proxy`. Each build, with its UI, is the
 `phenix-e2e-<mode>` artifact; the `perf` job also uses the `disabled` one.
 Then five jobs run in parallel. Each starts its own `bin/phenix ui` against a
 throw-away store with `scripts/ci-start-phenix-ui.sh` and runs one part of
@@ -84,8 +83,7 @@ notifications and the running experiment page, is not covered.
 The read-only specs therefore always see the empty store. A failure in
 `read-only` skips `store`. With `E2E_AUTH_MODE` set, only that mode's spec and
 `health.spec.js` run, one at a time, in the `auth-<mode>` project (Chromium)
-and the `auth-<mode>-firefox` project (`@cross-browser` tests), since the
-other specs assume auth is disabled.
+and the `auth-<mode>-firefox` project (`@cross-browser` tests).
 
 Parallel tests run in 4 workers on CI and half the CPU cores locally; set
 `E2E_WORKERS` to a count or a percentage such as `50%` to override. Tests

@@ -60,12 +60,8 @@ an upgrade, and an earlier release can still open a store this one has written.
 
 ### Reserved Experiment Names
 
-An experiment cannot be named `minimega` or `__phenix__`, in any mix of upper and
-lower case. An experiment runs in the minimega namespace of the same name:
-`minimega` is minimega's own default namespace, so stopping such an experiment
-would clear it, and phēnix uses `__phenix__` to reach every cluster host. The
-name `all` is reserved as well. Creating an experiment with one of these names
-fails immediately:
+An experiment cannot be named `minimega`, `__phenix__` or `all`, in any mix of
+upper and lower case. Creating one fails immediately:
 
 ```text
 cannot use 'minimega' for experiment name: reserved minimega namespace
@@ -76,26 +72,11 @@ cannot use 'minimega' for experiment name: reserved minimega namespace
 ### `timeout running command`
 
 phēnix sends most minimega commands over one shared connection, one at a time.
-VM screenshots wait for it behind every other command, so an action you take
-waits for at most the one screenshot already being taken.
 A command that waits more than 10 minutes for that connection, or holds it for
-more than 30 minutes, fails with `timeout running command`, so one stuck
-command cannot hold up every other one for good. minimega still finishes a
-command phēnix stopped waiting for. A command still waiting its turn for a
-VM, capture, snapshot list, topology, cluster host, file list or state of
-health request whose client went away (a closed page, say), or for a bulk VM
-action job that was canceled, is withdrawn without being sent; an action made
-of several commands is withdrawn only before its first change, so it is never
-left half done. A web request that changes VMs (a power action, a disc,
-capture, snapshot, memory snapshot, commit, restore, redeploy or settings
-change, or a port forward) gives minimega 5 minutes, or 10 when it changes
-several VMs. Past that it fails with an error that includes `context deadline
-exceeded` (a port forward answers 504 `timed out waiting for minimega`),
-though an action of several commands that has made its first change still
-runs to the end. Work shared with
-other clients, such as a VM screenshot or an update broadcast to every open
-page, is still done. Long-running work, such
-as an experiment's start script and VM launches, uses connections of its own
-and is not limited this way. Seeing this error usually means minimega itself
-is stuck or overloaded: check `minimega -e version` and the minimega log on
-the headnode.
+more than 30 minutes, fails with `timeout running command`. A web request that
+changes VMs gives minimega 5 minutes, or 10 when it changes several VMs, and
+past that fails with an error that includes `context deadline exceeded`.
+Long-running work, such as an experiment's start script and VM launches, uses
+connections of its own and is not limited this way. This error usually means
+minimega itself is stuck or overloaded: check `minimega -e version` and the
+minimega log on the headnode.

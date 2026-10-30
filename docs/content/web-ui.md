@@ -43,12 +43,9 @@ server reports the `webshark` feature when it finds a WebShark build (see
 `downloads/tunneler` directory to hand tunneler builds out from (see
 [Tunneler](tunneler.md)).
 
-The `Console` tab is shown by permission alone, but the console itself works
-only when the server was started with `phenix ui --minimega-console`. Without
-it, the page reads `Console access is not configured.`, because the server
-answers `POST /console` with `405` and `'minimega-console' CLI arg not
-enabled`. See
-[Attaching to the minimega Console](minimega.md).
+The `Console` tab needs `post` on `miniconsole`, and the console works only
+when the server runs with `phenix ui --minimega-console`; see
+[Attaching to the minimega Console](minimega.md#from-the-web-ui).
 
 ## Page Freshness and Refresh
 
@@ -112,9 +109,8 @@ the VM table was loading stays stopped.
 
 After you sign in, the UI loads the Experiments, Configs, Users, Logs, Hosts,
 Scorch, State of Health, Settings and Disks tabs in the background, two requests
-at a time, so they open with data already in place. Disks is loaded last,
-because inspecting disk images is the most expensive listing. The VM tiles are
-left out, because they list every running VM.
+at a time, so they open with data already in place. Disks loads last. The VM
+tiles are not preloaded.
 
 A page's load finishes even if you leave before it comes back, for up to two
 minutes, so the data is ready when you return; a request nothing is waiting on
@@ -170,7 +166,7 @@ centered over the values below it. Tab reaches each sortable heading, and Enter
 or Space sorts by it as a click does. A table wider than the window scrolls
 sideways inside itself instead of widening the page.
 
-A greyed-out VM action button can still be reached with Tab, and its tooltip,
+A grayed-out VM action button can still be reached with Tab, and its tooltip,
 shown on keyboard focus as on hover, says why it can't be used. An address
 that matches no page shows `Page not found` with a link to the home page.
 
@@ -217,23 +213,19 @@ The Logs page keeps its own timestamp column.
 ## Errors
 
 A failure opens a red notification at the top of the page. It stays until you
-dismiss it (`Dismiss error`), and it is wide enough that a long server message
-does not wrap into a narrow column. Successes and progress show as short
+dismiss it (`Dismiss error`). Successes and progress show as short
 messages that go away by themselves after about 4 seconds, or 6 for longer ones;
 an error never does.
 
 Text from the server is escaped and shown as text, never rendered as HTML. When
 the server nests one error inside another, the notification splits the chain
 into steps: `Error:` and the outermost message first, then each step that led
-to it on a line of its own, with the root cause last and in bold. A failure
-deep inside a SCORCH run is much easier to read this way than as one long
-sentence.
+to it on a line of its own, with the root cause last and in bold.
 
 ## Permissions
 
-Opening a page your role cannot use — from an old link or a bookmark — would
-only show permission errors, so the UI sends you to the first page your role
-can use instead, either Experiments or the VM tiles. A role named `Disabled`
+If you open a page your role cannot use, the UI sends you to the first page
+your role can use: Experiments or the VM tiles. A role named `Disabled`
 goes to the account-disabled page. Buttons and menu items your role cannot use
 are hidden or disabled, and a disabled button says why in its tooltip.
 
@@ -251,19 +243,10 @@ Some pages keep asking the server for fresh data on their own:
 | Screenshots of the VMs on a running experiment's page | every 15 seconds, running VMs only |
 | The State of Health overview, while a run is in progress | every 15 seconds |
 
-Each of these has the server ask minimega, which runs one command at a time, so
-every other request waits behind them. The Hosts, VM tiles and State of Health
-pages therefore skip a refresh while the last one is still waiting on the
-server, and while their browser tab is hidden. A tab that is showing keeps
-refreshing without focus, as on a wall display or a second monitor.
-
-Screenshots work the same way from the other end. The server takes them for the
-VMs a running experiment's page is showing, and stops when that page stops
-asking. It takes each VM's screenshot once for every page showing it at that
-width, and sends a page a screenshot only when the VM's screen changed. Hiding
-its browser tab stops them, and they start again, with fresh ones, when you
-come back. Leaving the page stops them altogether, which leaves minimega free
-for everything else.
+The Hosts, VM tiles and State of Health pages skip a refresh while the last one
+is still waiting or their browser tab is hidden. Screenshots are taken only for
+the VMs a visible running-experiment page shows, once per page width, and are
+sent only when the screen changed.
 
 ## When an Experiment Goes Away
 

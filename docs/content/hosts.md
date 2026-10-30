@@ -40,8 +40,7 @@ of the row.
 
 The page reloads every 30 seconds. Each reload has the server ask minimega about
 every host, so a reload is skipped while the previous one is still running and
-while its browser tab is hidden. A tab that is showing keeps reloading without
-focus, as on a wall display or a second monitor. The header's refresh button reloads it at once, and says
+while its browser tab is hidden. A visible tab keeps reloading without focus. The header's refresh button reloads it at once, and says
 how old the figures on screen are; see
 [Page Freshness and Refresh](web-ui.md#page-freshness-and-refresh).
 

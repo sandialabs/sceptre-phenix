@@ -205,7 +205,5 @@ phēnix server (sticky sessions).
   captures (hundreds of megabytes) are slow to open, and a live capture is
   downloaded again each time WebShark reloads it. For large captures, stream
   them into a local Wireshark instead.
-* A WebShark link stops working 2 hours after it was last used, 12 hours after
-  it was opened, when you sign out, or when the phēnix server restarts. A tab
-  opened with `Open in new tab` and left idle then shows WebShark's "not found";
-  open the capture again from the WebShark tab.
+* A WebShark link that has expired shows WebShark's "not found"; open the
+  capture again from the WebShark tab (see [Capture Tokens](#capture-tokens)).

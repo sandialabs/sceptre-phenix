@@ -117,7 +117,7 @@ positions in Playwright. Shared helpers live in `test/helpers/`:
 - Page tests load `mocks.js` with `vi.hoisted`, hand its `modules.*`
   factories to `vi.mock`, and call `resetMocks()` in `beforeEach`, passing
   the store the test needs (`resetMocks({ store: {} })`). Add a stand-in for
-  a newly mocked module there rather than in one test file.
+  each mocked module there rather than in one test file.
 - Roles for the mocked `roleAllowed` are `permissions.js` predicates
   (`allowAll`, `denyAll`, `allowOnly`, `denyOnly`); `roles.js` builds role
   objects for the real `rbac.js`. Build disks, VMs, websocket messages and
@@ -134,8 +134,7 @@ positions in Playwright. Shared helpers live in `test/helpers/`:
 `perf/` holds size-limit budgets, Lighthouse CI assertions, and `summary.mjs`,
 which writes the CI budget summary; see `perf/README.md`. `perf/` and `e2e/`
 are separate npm projects with their own lockfiles, so a plain `npm ci` here
-does not install Lighthouse or Playwright; `perf/README.md` explains why they
-are not merged into workspaces. Register new Buefy components in `src/utils/buefy.js` (or
+does not install Lighthouse or Playwright. Register new Buefy components in `src/utils/buefy.js` (or
 locally in the one view that uses a heavy one) rather than installing all of
 Buefy, keep long-lived third-party objects (xterm, d3, editors) out of deep
 reactivity with `markRaw`, and clean up intervals, sockets, and listeners in

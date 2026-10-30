@@ -107,8 +107,7 @@ names and paths. A directory variable follows the rules of the `base-dir.*`
 rows above, a file variable those of the `store.endpoint` and `log.*` rows,
 and `PHENIX_UI_TLS_KEY` and `PHENIX_UI_TLS_CERT` must name readable files.
 `PHENIX_UI_FEATURES` fails when it holds a comma, and `PHENIX_UI_USERS` when
-a user's role does, since phēnix splits these lists on spaces when they come
-from the environment.
+a user's role does.
 
 `phenix doctor` exits 1 when a check fails and 0 otherwise. It never prints
 the values of `ui.jwt-signing-key` or `ui.users`, only `<redacted>` when they
@@ -218,11 +217,11 @@ saved, with no `config.yaml` change or restart.
 | `File Logging Settings` | `Max number of file rotations (0 for infinite)` | `0` |
 | `File Logging Settings` | `Max rotated log file age (0 for infinite)`, in days | `90` |
 
-The two idle timeout boxes are greyed out until the timeout is turned on. The
+The two idle timeout boxes are grayed out until the timeout is turned on. The
 page opens on the settings it last loaded, and the refresh button in the header
 reloads them without discarding edits you have not saved. `Reset Form` puts
 the loaded settings back, `Save Changes` saves them and says
-`Settings updated`, and both stay greyed out until you change something.
+`Settings updated`, and both stay grayed out until you change something.
 
 ## phēnix Apps Environment Variables
 

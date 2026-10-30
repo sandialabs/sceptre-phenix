@@ -33,9 +33,8 @@ phēnix ships these builds:
 | macOS   | amd64        |
 | Windows | amd64        |
 
-The table lists only the builds the server actually has, so it can show
-fewer than these, and it lists a build it does not recognize by its file
-name. If the server's downloads directory holds no builds, the table reads
+The table lists the builds the server has, which can be fewer than these,
+and names an unrecognized build by its file name. If the server's downloads directory holds no builds, the table reads
 `No tunneler builds are installed on this server`. If the server does not
 serve tunneler binaries at all, the page reads
 `Tunneler downloads are not installed on this phēnix server` in place of

@@ -52,18 +52,20 @@ equivalents (`phenix vm mount`/`unmount`) are always available.
 `phenix ui` stops cleanly on `SIGINT`/`SIGTERM` within
 `--shutdown-grace-period` (`ui.shutdown-grace-period`,
 `PHENIX_UI_SHUTDOWN_GRACE_PERIOD`; whole seconds, default `5`, `0` waits for
-nothing, a negative or non-integer value such as `5s` is refused): it stops
-listening, lets requests in progress finish, closes every websocket with
-code `1001` (only at shutdown; the
-broker, capture and netflow websockets carry the reason `server shutting
-down`, while the console, SCORCH, VNC and port forward ones, served by
-`golang.org/x/net/websocket`, carry none), answers new websockets, consoles
-and jobs with `503` and `Retry-After`, gives running jobs half the period before canceling them, ends minimega
-consoles and SCORCH terminals, then logs `shutdown complete` (or a warning
-naming what was still running) and exits 0. A second signal exits at once
-with 130 (`SIGINT`) or 143 (`SIGTERM`). A set `ui.file-server-endpoint` that
-cannot listen makes `phenix ui` exit with an error.
-Docker's 10 s stop timeout covers the default.
+nothing, a negative or non-integer value such as `5s` is refused). On shutdown
+it:
+
+- stops listening and lets requests in progress finish;
+- closes every websocket with code `1001`;
+- answers new websockets, consoles and jobs with `503` and `Retry-After`;
+- gives running jobs half the period, then cancels them;
+- ends minimega consoles and SCORCH terminals;
+- logs `shutdown complete` (or a warning naming what was still running) and
+  exits 0.
+
+A second signal exits at once with 130 (`SIGINT`) or 143 (`SIGTERM`). A set
+`ui.file-server-endpoint` that cannot listen makes `phenix ui` exit with an
+error.
 
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
@@ -167,7 +169,7 @@ are not jobs); see [`jobs.md`](jobs.md).
 ## `phenix vm` — manage running VMs within an experiment
 
 ```bash
-phenix vm info <exp> [vm] [--host h]                 # table of VM(s); --host keeps VMs on that cluster host
+phenix vm info <exp> [vm] [--host h]                 # table of VM(s); --host: only VMs on that host
 phenix vm pause|resume|restart|shutdown|kill <exp> [vm]
 phenix vm reset-disk <exp> [vm]
 phenix vm redeploy <exp> [vm] [flags]                # new CPU, memory or disk; -r recreates the disk snapshot and injections

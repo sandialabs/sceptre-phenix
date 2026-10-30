@@ -172,11 +172,12 @@ actions and two more:
 An action you cannot use stays visible but is disabled, and its tooltip says
 why:
 
-* `Can't rename: the disk is outside the standard images directory` — phēnix
-  acts only on images in the minimega files directory, so every action is
-  disabled on an image outside it, and on one the list leaves out
-  (`Can't delete: the disk is at a path the disk list leaves out`).
-* `Can't resize: minimega cannot use the disk's path` — `Snapshot`, `Commit`,
+* `Cannot rename: the disk is outside the standard images directory` — every
+  action is disabled on an image outside the files directory (see
+  [Images Outside the Files Directory](#images-outside-the-files-directory)),
+  and on one the list leaves out
+  (`Cannot delete: the disk is at a path the disk list leaves out`).
+* `Cannot resize: minimega cannot use the disk's path` — `Snapshot`, `Commit`,
   `Rebase`, and `Resize` run through minimega, which cannot take every path;
   see below.
 * `Cannot rename: the disk is in use by foo` — an image held open cannot be
@@ -248,11 +249,6 @@ directory or at a path the list leaves out, a folder rather than an image, a new
 name that does not name a file, or a name minimega cannot use; 404 when the
 image, or the folder for a new one, does not exist; and 409 when the new name is
 taken.
-
-!!! warning
-    Renaming an image that backs others leaves them pointing at the old name;
-    rebase them onto the new one. Deleting an image that backs others makes
-    them invalid. Both dialogs say so before you confirm.
 
 The details window also draws the image's backing chain, the image itself first
 and then the images it is backed by. Each of those is a button that opens that

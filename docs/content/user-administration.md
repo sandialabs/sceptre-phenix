@@ -136,10 +136,9 @@ The table has a `Find a User` search box above it, which matches user names,
 first and last names, and role names, and it can be sorted by `User`,
 `First Name`, `Last Name`, or `Role`.
 
-Level with the search box on the left, the page counts the users it lists,
-with how many have no role yet (for example `Users 12 (1 without a role)`), and
-the `Unique roles` among them: `Global Admin` held by three users counts once.
-The counts cover every user listed, whatever the search.
+Level with the search box, the page counts the users it lists (and how many
+have no role), and as `Roles`, how many different roles they have. The counts
+ignore the search.
 
 ![Users page with its Users and Roles totals, a Find a User box, and a table of five example users with first and last names, roles, and change password, delete and edit actions.](images/users_search.png){: width=800 .center}
 
@@ -166,10 +165,9 @@ E\* in the Experiment Admin row means the role can delete an experiment's
 files, but not the experiment itself.
 
 The web UI hides or disables what your role cannot do, using the same permission
-names the server checks. If you open a page your role cannot use, such as an old
-bookmark, phēnix sends you to the first page your role can use — `Experiments`,
-or the VM tiles page for a role that cannot list experiments — instead of
-leaving you on a page full of permission errors.
+names the server checks. If you open a page your role cannot use, phēnix sends
+you to the first page your role can use: `Experiments`, or the VM tiles page for
+a role that cannot list experiments.
 
 ### Resources
 
@@ -552,10 +550,8 @@ directory. See [Disks](disks.md#permissions).
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
-A user with `users` `patch` on themselves creates their own tokens without it.
-A token lets whoever holds it act as its user, so only `Global Admin` has this
-permission by default; a custom role that created tokens for other users with
-`users` `patch` alone needs it added.
+By default only `Global Admin` has this permission. A user with `users`
+`patch` on themselves creates their own tokens without it.
 
 #### Resource: `users/roles`
 
@@ -769,19 +765,16 @@ spec:
 ```
 
 !!! note
-    `experiments/files delete` was added to this role after phēnix shipped it.
-    When the UI server starts it adds the permission to any stored
-    `Experiment Admin` role, and to the role of every user assigned it, so
-    existing installs pick it up without editing anything. `Experiment User`,
-    `Experiment Viewer` and `VM Admin` do not get it. `Experiment User` can
-    still upload experiment files but cannot delete them, and `Experiment
-    Viewer` and `VM Admin` can do neither.
+    On startup the UI server adds `experiments/files delete` to any stored
+    `Experiment Admin` role and to the role of every user assigned it.
+    `Experiment User` can upload but not delete experiment files;
+    `Experiment Viewer` and `VM Admin` can do neither.
 
 !!! note
-    The `jobs` policy was also added after phēnix shipped this role. The UI
-    server adds it on startup the same way, scoped to each user's experiments,
-    so an Experiment Admin sees and cancels the [background jobs](jobs.md) of
-    those experiments that other users started.
+    On startup the UI server adds the `jobs` policy to stored
+    `Experiment Admin` roles, scoped to each user's experiments, so an
+    Experiment Admin sees and cancels the [background jobs](jobs.md) other
+    users started in those experiments.
 
 #### Experiment User (`experiment-user`)
 
@@ -865,10 +858,9 @@ spec:
 ```
 
 !!! note
-    Assigning this role once left the `vms/mount` policy without resource
-    names, so those users could not mount their VMs. When the UI server
-    starts it gives that policy, in the role of every user assigned
-    `Experiment Viewer`, the names of the user's `vms` policy.
+    On startup the UI server gives the `vms/mount` policy in the role of every
+    user assigned `Experiment Viewer` the resource names of the user's `vms`
+    policy.
 
 #### VM Admin (`vm-admin`)
 

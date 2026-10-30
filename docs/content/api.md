@@ -135,9 +135,7 @@ server error`, and the server logs the error itself.
 ## Response Encoding
 
 JSON, YAML, and plain-text responses are gzip-compressed for clients that send
-`Accept-Encoding: gzip`, which makes a large list such as VMs, disks, or logs
-noticeably faster to fetch over a slow link. Clients that do not advertise gzip
-get the uncompressed response, so no change is needed to keep working.
+`Accept-Encoding: gzip`; other clients get them uncompressed.
 Downloads (responses with `Content-Disposition: attachment`) are never
 compressed.
 

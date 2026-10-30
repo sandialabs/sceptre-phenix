@@ -182,7 +182,7 @@ and with a colored edge, what the page last heard the app doing: `Running`,
 whether it is `Built-in` (`ntp`, `serial`, `startup`, `vrouter` and `scorch`,
 which phēnix runs at each stage itself) or a `User app`. Click a user app's tile to open the trigger
 dialog with that app checked, or `Trigger` to pick the apps yourself. `Trigger`
-is greyed out, with the reason in its tooltip, when your role may not trigger
+is grayed out, with the reason in its tooltip, when your role may not trigger
 apps or the experiment has only built-in apps.
 
 ## Create a New Experiment
@@ -614,10 +614,8 @@ In order, they are:
   file, or `view file` for a text file. A row for any other kind of file leaves
   that space empty. A text file over 10 MiB is too large to view; download it
   instead.
-* `download`, which downloads that one file. Single-file downloads resume: if
-  one is interrupted, retrying it in the browser's downloads list continues
-  where it stopped, as long as the file has not changed meanwhile (a changed
-  file downloads again from the start).
+* `download`, which downloads that one file; an interrupted download resumes
+  (see [Downloads](api.md#downloads)).
 * `delete`, which asks you to confirm, naming the file, and spins while the file
   is deleted. Deleting a file removes it from every cluster node and cannot be
   undone.
@@ -665,8 +663,6 @@ instead.
 !!! note
     One zip download holds at most 500 files and 2 GiB in total. A larger one is
     refused before any of it is sent; through the [API](api.md) that is a `413`.
-    The finished archive downloads like a single file, so an interrupted
-    download of it can be resumed.
 
 Through the API, `POST /api/v1/experiments/<name>/files/archive` with the same
 `{"paths": [...]}` body builds the archive in a [background job](jobs.md)

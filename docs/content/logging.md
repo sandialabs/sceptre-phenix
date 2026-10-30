@@ -179,7 +179,7 @@ follows new entries as the server logs them. It needs `get` on `logs`.
   date range, level, type and search filters. When the filters hide some, it
   also says how many were loaded, such as `Logs shown 120 of 4,000`.
 * The **Level** column shows each entry's level as a short badge: `DBG`
-  (dark grey), `INFO` (blue), `WRN` (yellow) and `ERR` (red). A level the page
+  (dark gray), `INFO` (blue), `WRN` (yellow) and `ERR` (red). A level the page
   does not know shows its own name in uppercase. Hold the pointer over a badge
   to see the full level name.
 * The **phēnix log** and **minimega log** buttons at the top right download
@@ -192,7 +192,7 @@ when the download starts, without its rotated files. **minimega log**
 downloads the file that `ui.logs.minimega-path` names, which the `phenix ui`
 server must be able to read; in a container deployment, mount minimega's log
 into the phēnix container. A file that cannot be downloaded has its button
-greyed out, and the button's tooltip says why, such as `the minimega log file
+grayed out, and the button's tooltip says why, such as `the minimega log file
 is not configured (set ui.logs.minimega-path)`. The page checks the files
 again every 30 seconds and after it reconnects, so a button comes on once its
 file appears.
