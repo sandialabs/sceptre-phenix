@@ -1646,16 +1646,11 @@ Changes made via this command are applied immediately (hot-swapped) without rest
 <p>It is important to distinguish between the <strong>System Configuration</strong> and the <strong>Data Store</strong>:</p>
 <ul>
 <li><strong>System Configuration (<code>config.yaml</code>)</strong>: Configures the phēnix <em>daemon</em> itself. It controls <em>how</em> the service runs (e.g., log levels, API ports, storage backend connection strings).</li>
-<li><strong>Data Store (BoltDB/etcd)</strong>: Stores the <em>application state</em>. It holds <em>what</em> phēnix manages (e.g., defined experiments, topologies, user accounts, active VM states).</li>
+<li><strong>Data Store (BoltDB)</strong>: Stores the <em>application state</em>. It holds <em>what</em> phēnix manages (e.g., defined experiments, topologies, user accounts, active VM states).</li>
 </ul>
 <p>Deleting <code>config.yaml</code> resets daemon behavior to defaults. Deleting the Data Store results in data loss (experiments, users, etc.).</p>
 <h2 id="store-configuration">Store Configuration<a class="headerlink" href="#store-configuration" title="Permanent link">&para;</a></h2>
-<p>The phenix tool uses a key-value data store. By default it uses bbolt but also supports etcd.</p>
-<ul>
-<li><strong>bbolt (Default)</strong>: No external dependencies, but only accessible on a single machine.</li>
-<li><strong>etcd</strong>: Allows running <code>phenix</code> on multiple machines accessing the same data, but requires an external <code>etcd</code> service.</li>
-</ul>
-<p>To use <code>etcd</code>, configure the store endpoint (e.g. <code>etcd://localhost:2379</code>) via the config file or <code>phenix settings set</code>.</p>
+<p>The phenix tool uses a bbolt key-value data store, a single file with no external dependencies that is only accessible on one machine. Set its path with the <code>bolt://</code> store endpoint (e.g. <code>bolt:///etc/phenix/store.bdb</code>).</p>
 <h2 id="managing-settings">Managing Settings<a class="headerlink" href="#managing-settings" title="Permanent link">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># View all current runtime settings</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>phenix<span class="w"> </span>settings<span class="w"> </span>list
@@ -1783,7 +1778,7 @@ Changes made via this command are applied immediately (hot-swapped) without rest
 <td style="text-align: left;"><code>--store.endpoint</code></td>
 <td style="text-align: left;"><code>string</code></td>
 <td style="text-align: left;"><code>bolt:///etc/phenix/store.bdb</code></td>
-<td style="text-align: left;">Endpoint for the storage service.</td>
+<td style="text-align: left;">BoltDB store endpoint (<code>bolt://&lt;path&gt;</code>).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>--unix-socket</code></td>
