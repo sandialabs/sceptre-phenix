@@ -314,10 +314,6 @@ func contractRoutes() []contractRoute {
 		{method: "GET", path: exp + "/captureTokens", want: ok},
 		{method: "POST", path: exp + "/captureTokens", body: `{"operations":["view"],"path":"a.pcap"}`, need: one(filesGet)},
 		{method: "DELETE", path: exp + "/captureTokens/{token}", want: done},
-		// the deprecated kebab-case alias answers as captureTokens does
-		{method: "GET", path: exp + "/capture-tokens", want: ok},
-		{method: "POST", path: exp + "/capture-tokens", body: `{"operations":["view"],"path":"a.pcap"}`, need: one(filesGet)},
-		{method: "DELETE", path: exp + "/capture-tokens/{token}", want: done},
 		{method: "POST", path: exp + "/webshark", body: `{"path":"a.pcap"}`, need: one(filesGet)},
 		{method: "GET", path: vm + "/captures/0/stream", need: []rbac.Role{captures, filesGet}},
 
@@ -813,9 +809,6 @@ func jobAndCaptureErrorCases() map[string]contractErrorCase {
 			want: http.StatusBadRequest,
 		},
 		"revoke unknown capture token": {method: "DELETE", path: exp + "/captureTokens/none", want: http.StatusNotFound},
-		"revoke unknown capture token by its alias": {
-			method: "DELETE", path: exp + "/capture-tokens/none", want: http.StatusNotFound,
-		},
 		"revoke another user's capture token": {
 			method: "DELETE", want: http.StatusNotFound,
 			prepare: func(_ *testing.T, f contractFixture) string { return exp + "/captureTokens/" + f.captureToken("bob") },

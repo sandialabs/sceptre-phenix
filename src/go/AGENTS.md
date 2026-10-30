@@ -146,9 +146,7 @@ no field the schema leaves out; send `[]`, not `null`, for an empty list.
 route the router serves as a role of no permissions and fails on any answer
 but 401 or 403 (404 for the job routes in `rbacHidden`); a route outside
 `/api/v1`, or one any signed-in user may call, goes in `rbacExempt` with the
-reason. A deprecated alias registered
-with `aliasRoute` must be `deprecated: true` in `openapi.yml`;
-`web/deprecation_test.go` checks both directions and its headers.
+reason.
 `types/openapi_test.go` requires every schema and property in `openapi.yml`
 to have a title and a description, and every scalar property an example,
 default or enum. A route the Unix socket serves gets a case in

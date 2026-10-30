@@ -109,12 +109,7 @@ lack it). Points that are easy to miss:
 - `POST /experiments/{name}/stop` that cannot kill the VMs leaves the
   experiment running and answers 502 with `metadata.retry` `force`;
   `?force=true` marks it stopped anyway.
-- Paths use camelCase (`captureSubnet`, `memorySnapshot`, `captureTokens`); the
-  kebab-case `capture-tokens` paths are deprecated aliases, removed on
-  2027-04-27.
-- A deprecated alias lives 6 months and marks every response with
-  `Deprecation` (`@<unix seconds>`), `Sunset` (HTTP date) and
-  `Link: <successor>; rel="successor-version"`; move callers to the successor.
+- Paths use camelCase (`captureSubnet`, `memorySnapshot`, `captureTokens`).
 - `GET /schemas/{version}` returns the whole schema file (`v0` Workflow, `v1`
   Topology/Experiment/Image/User/Role, `v2` Scenario).
   `GET /schemas/{kind}/{version}` returns one kind, only at the version it is

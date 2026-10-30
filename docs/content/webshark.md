@@ -192,9 +192,6 @@ curl -fsSN 'https://phenix.example.com/webshark/streams/pcs_<token>' \
 
 `GET /api/v1/experiments/<exp>/captureTokens` lists your own tokens, without
 the tokens themselves, and `DELETE .../captureTokens/<id>` revokes one.
-The kebab-case `capture-tokens` paths still answer the same way, but are
-deprecated and will be removed on 2027-04-27 (see
-[Deprecated Routes](api.md#deprecated-routes)).
 `/webshark/streams/` is served whether or not WebShark is installed, under the
 same base path as WebShark, so a proxy needs no route of its own for it.
 

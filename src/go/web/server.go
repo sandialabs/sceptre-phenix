@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/gorilla/mux"
 
@@ -434,7 +433,7 @@ func newRouter(assets http.FileSystem) *mux.Router {
 	// The router's NotFoundHandler serves the SPA index, so an API client would get 200 HTML.
 	// A route behind a disabled feature flag would then also look enabled.
 	api.NotFoundHandler = apiNotFoundHandler()
-	api.MethodNotAllowedHandler = deprecatedMethodNotAllowed(api, http.HandlerFunc(methodNotAllowed))
+	api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
 
 	// API routes take OPTIONS, which AnswerOptions answers with 204
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
@@ -489,14 +488,6 @@ func newRouter(assets http.FileSystem) *mux.Router {
 	api.HandleFunc("/experiments/{exp}/captureTokens", ListCaptureTokens).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/captureTokens/{id}", weberror.ErrorHandler(DeleteCaptureToken)).Methods("DELETE", "OPTIONS")
 
-	// deprecated aliases, removed deprecationMonths after their date
-	renamed := time.Date(2026, time.October, 27, 0, 0, 0, 0, time.UTC)
-	aliasRoute(api, "/experiments/{exp}/capture-tokens", "/experiments/{exp}/captureTokens", renamed,
-		weberror.ErrorHandler(CreateCaptureToken), "POST")
-	aliasRoute(api, "/experiments/{exp}/capture-tokens", "/experiments/{exp}/captureTokens", renamed,
-		http.HandlerFunc(ListCaptureTokens), "GET")
-	aliasRoute(api, "/experiments/{exp}/capture-tokens/{id}", "/experiments/{exp}/captureTokens/{id}", renamed,
-		weberror.ErrorHandler(DeleteCaptureToken), "DELETE")
 	api.Handle("/experiments/{name}/files", weberror.ErrorHandler(GetExperimentFiles)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/files/download", weberror.ErrorHandler(DownloadExperimentFiles)).
 		Methods("POST", "OPTIONS")
@@ -651,9 +642,6 @@ func newRouter(assets http.FileSystem) *mux.Router {
 	// outermost, so the other middleware (full logging in particular) sees the
 	// uncompressed response
 	api.Use(CompressResponses)
-
-	// before every refusal, which a deprecated alias marks too
-	api.Use(DeprecationHeaders)
 
 	api.Use(middleware.AnswerOptions)
 

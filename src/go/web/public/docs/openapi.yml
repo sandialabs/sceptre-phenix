@@ -70,22 +70,13 @@ info:
     `Location` headers of jobs and configs carry it.
 
     Every error, refusals by authentication, RBAC and routing included,
-    answers with the `Error` schema as `application/json`: a `message`, the
-    `cause`, sometimes `metadata`, and a `code` to match on rather than the
-    message. Only the `/webshark/` routes WebShark itself calls answer in
-    WebShark's own format, the health routes in `application/health+json`, and
-    a failed handshake on the console, VNC, port forward and SCORCH websockets
-    in plain text.
-
-    ## Deprecation
-
-    A route that was renamed or moved keeps its old path as a deprecated
-    alias for six months, and is then removed. Every answer of an alias,
-    refusals and `OPTIONS` included, carries `Deprecation` (when it was
-    deprecated, `@` and Unix seconds, RFC 9745), `Sunset` (when it will be
-    removed, an HTTP-date, RFC 8594) and `Link: <successor>;
-    rel="successor-version"` naming the route to use instead. Aliases are
-    marked `deprecated` here.
+    answers with the `Error` schema as `application/json`. The schema has a
+    `message`, the `cause`, sometimes `metadata`, and a `code` to match on
+    rather than the message. There are three exceptions. The `/webshark/`
+    routes that WebShark itself calls answer in WebShark's own format. The
+    health routes answer in `application/health+json`. A failed handshake on
+    the console, VNC, port forward and SCORCH websockets answers in plain
+    text.
   version: 0.0.0
   title: phenix
   contact:
@@ -1465,157 +1456,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  "/experiments/{exp_name}/capture-tokens":
-    post:
-      tags:
-        - Experiments
-      summary: Give a capture token (deprecated path)
-      description: >-
-        Deprecated alias of `POST /experiments/{exp_name}/captureTokens`,
-        which it answers as, until its removal on 2027-04-27.
-      deprecated: true
-      operationId: postExperimentsNameCaptureTokensDeprecated
-      parameters:
-        - $ref: "#/components/parameters/ExpName"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CaptureTokenRequest"
-      responses:
-        "201":
-          description: the token, which no other response shows
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CaptureToken"
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/Deprecation"
-            Sunset:
-              $ref: "#/components/headers/Sunset"
-            Link:
-              $ref: "#/components/headers/SuccessorLink"
-        "400":
-          description: a request `POST /experiments/{exp_name}/captureTokens` refuses
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/Deprecation"
-            Sunset:
-              $ref: "#/components/headers/Sunset"
-            Link:
-              $ref: "#/components/headers/SuccessorLink"
-        "403":
-          description: forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/Deprecation"
-            Sunset:
-              $ref: "#/components/headers/Sunset"
-            Link:
-              $ref: "#/components/headers/SuccessorLink"
-        "404":
-          description: no such file, or the interface is not being captured
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/Deprecation"
-            Sunset:
-              $ref: "#/components/headers/Sunset"
-            Link:
-              $ref: "#/components/headers/SuccessorLink"
-        "501":
-          description: WebShark is not installed (for view, download and watch)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/Deprecation"
-            Sunset:
-              $ref: "#/components/headers/Sunset"
-            Link:
-              $ref: "#/components/headers/SuccessorLink"
-    get:
-      tags:
-        - Experiments
-      summary: List the caller's capture tokens (deprecated path)
-      description: >-
-        Deprecated alias of `GET /experiments/{exp_name}/captureTokens`, which
-        it answers as, until its removal on 2027-04-27.
-      deprecated: true
-      operationId: getExperimentsNameCaptureTokensDeprecated
-      parameters:
-        - $ref: "#/components/parameters/ExpName"
-      responses:
-        "200":
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CaptureTokenList"
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/Deprecation"
-            Sunset:
-              $ref: "#/components/headers/Sunset"
-            Link:
-              $ref: "#/components/headers/SuccessorLink"
-  "/experiments/{exp_name}/capture-tokens/{id}":
-    delete:
-      tags:
-        - Experiments
-      summary: Revoke a capture token (deprecated path)
-      description: >-
-        Deprecated alias of `DELETE
-        /experiments/{exp_name}/captureTokens/{id}`, which it answers as,
-        until its removal on 2027-04-27.
-      deprecated: true
-      operationId: deleteExperimentsNameCaptureTokensIdDeprecated
-      parameters:
-        - $ref: "#/components/parameters/ExpName"
-        - name: id
-          in: path
-          description: the token's ID
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: revoked
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/Deprecation"
-            Sunset:
-              $ref: "#/components/headers/Sunset"
-            Link:
-              $ref: "#/components/headers/SuccessorLink"
-        "404":
-          description: no such token of the caller's, or it has ended
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/Deprecation"
-            Sunset:
-              $ref: "#/components/headers/Sunset"
-            Link:
-              $ref: "#/components/headers/SuccessorLink"
   "/experiments/{name}/captureSubnet":
     post:
       tags:
@@ -11948,27 +11788,6 @@ components:
       schema:
         type: string
   headers:
-    # Deprecated alias routes (see the description) send these three.
-    Deprecation:
-      description: >-
-        when the route was deprecated, as `@` and Unix seconds (RFC 9745)
-      schema:
-        type: string
-        example: "@1793059200"
-    Sunset:
-      description: >-
-        when the deprecated route will be removed, six months after its
-        deprecation, as an HTTP-date (RFC 8594)
-      schema:
-        type: string
-        example: Tue, 27 Apr 2027 00:00:00 GMT
-    SuccessorLink:
-      description: >-
-        the route to use instead, as `<path>; rel="successor-version"`, with
-        the request's path parameters and query
-      schema:
-        type: string
-        example: </api/v1/experiments/demo/captureTokens>; rel="successor-version"
     IdempotentReplayed:
       description: >-
         `true` when the answer is the first one given for the request's

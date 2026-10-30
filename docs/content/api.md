@@ -132,33 +132,6 @@ on the console, VNC, port forward and SCORCH websockets in plain text.
 A failure the server did not expect answers `500` with the message `internal
 server error`, and the server logs the error itself.
 
-## Deprecated Routes
-
-When a route is renamed or moved, its old path keeps working as a deprecated
-alias for 6 months, and is then removed. The API docs mark aliases
-deprecated, and every response from one, errors included, carries three
-headers:
-
-* `Deprecation`: when the route was deprecated, as `@` and Unix seconds
-  ([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)).
-* `Sunset`: when it will be removed, 6 months later, as an HTTP date
-  ([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)).
-* `Link`: the route to use instead, with `rel="successor-version"`.
-
-```text
-Deprecation: @1793059200
-Sunset: Tue, 27 Apr 2027 00:00:00 GMT
-Link: </api/v1/experiments/demo/captureTokens>; rel="successor-version"
-```
-
-Check scripts and integrations for these headers, and move them to the
-successor before the sunset date.
-
-| Deprecated route | Use instead | Removed on |
-|---|---|---|
-| `/experiments/{exp}/capture-tokens` | `/experiments/{exp}/captureTokens` | 2027-04-27 |
-| `/experiments/{exp}/capture-tokens/{id}` | `/experiments/{exp}/captureTokens/{id}` | 2027-04-27 |
-
 ## Response Encoding
 
 JSON, YAML, and plain-text responses are gzip-compressed for clients that send

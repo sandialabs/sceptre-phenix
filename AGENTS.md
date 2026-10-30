@@ -123,13 +123,6 @@ upgraders: each kind decodes only at its stored version, so changing that
 version breaks existing configs.
 Keep CLI, REST, websocket, and UI authorization consistent.
 
-A renamed or moved REST route keeps its old path as a deprecated alias,
-registered with `aliasRoute` in `src/go/web/server.go` (which sends the
-`Deprecation`, `Sunset` and successor `Link` headers) and marked
-`deprecated: true` in `openapi.yml`. An alias lives 6 months from its
-deprecation date and is then removed; its removal is a breaking change in
-`CHANGELOG.md`.
-
 ## Validation
 
 Run the narrowest existing test, build, or lint command covering the change,
