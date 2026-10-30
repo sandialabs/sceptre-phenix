@@ -111,7 +111,7 @@ valid ones.
 
 | Check | Group | Warns when | Fails when |
 | :--- | :--- | :--- | :--- |
-| `config-file`, `users-file` | `config` | no `config.yaml` is found | the file does not parse, so phēnix ignores it |
+| `config-file`, `users-file` | `config` | no `config.yaml` is found | the file does not parse or cannot be read, so phēnix ignores it; for a parse error the row gives the line, never the file's content |
 | `config-keys` | `config` | the config files hold keys that are not phēnix settings, such as a misspelling | never |
 | `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), it holds a log level phēnix ignores, or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
 | `env-overrides` | `env` | a `PHENIX_*` variable overrides a different value in the config or users file; the row names the variable, the setting and the file, never a value | never |

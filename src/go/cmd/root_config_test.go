@@ -5,12 +5,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/spf13/viper"
+	"pgregory.net/rapid"
 )
 
 // newSearchViper returns a viper that searches dir for the config file.
@@ -47,7 +49,11 @@ func TestReadConfigReportsBadFiles(t *testing.T) {
 		"valid": {data: "log:\n  level: debug\n", wantRead: true},
 		"bad yaml": {
 			data:     "log:\n  level: debug\n bad indent: [\n",
-			wantWarn: []string{"phenix: warning: ignoring config file", "config.yaml"},
+			wantWarn: []string{"phenix: warning: ignoring config file", "config.yaml", ": it does not parse at line 2\n"},
+		},
+		"a password where yaml quotes the line": {
+			data:     "bo:hunter2:global-admin\n",
+			wantWarn: []string{"config.yaml: it does not parse at line 1\n"},
 		},
 	}
 
@@ -74,6 +80,10 @@ func TestReadConfigReportsBadFiles(t *testing.T) {
 				if !strings.Contains(warn.String(), want) {
 					t.Errorf("readConfig() warning %q does not contain %q", warn.String(), want)
 				}
+			}
+
+			if strings.Contains(warn.String(), "hunt") {
+				t.Errorf("readConfig() warning %q quotes the file", warn.String())
 			}
 		})
 	}
@@ -139,13 +149,13 @@ func TestMergeUsersConfigReportsBadFiles(t *testing.T) {
 		data      string // no file when empty
 		wantUsers []string
 		wantFile  bool
-		wantWarn  bool
+		wantWarn  string // after the path; no warning when empty
 	}{
 		"missing": {},
 		"valid": {
 			data: "ui:\n  users: [admin:secret:global-admin]\n", wantUsers: []string{"admin:secret:global-admin"}, wantFile: true,
 		},
-		"bad": {data: "ui: [\n", wantFile: true, wantWarn: true},
+		"bad": {data: "ui: [\n", wantFile: true, wantWarn: "it does not parse at line 1"},
 	}
 
 	for name, tc := range tests {
@@ -174,8 +184,13 @@ func TestMergeUsersConfigReportsBadFiles(t *testing.T) {
 				t.Errorf("ui.users mismatch (-want +got):\n%s", diff)
 			}
 
-			if got := warn.Len() != 0; got != tc.wantWarn {
-				t.Errorf("mergeUsersConfig() warned %q, want a warning %t", warn.String(), tc.wantWarn)
+			want := ""
+			if tc.wantWarn != "" {
+				want = "phenix: warning: ignoring config file " + filepath.Join(dir, "users.yaml") + ": " + tc.wantWarn + "\n"
+			}
+
+			if diff := cmp.Diff(want, warn.String()); diff != "" {
+				t.Errorf("mergeUsersConfig() warning mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -314,4 +329,104 @@ func TestSettingsSetWritesFileRead(t *testing.T) {
 	if err := setConfigValue(filepath.Join(dir, "config.toml"), "log.level", "debug"); !errors.Is(err, errNotYAML) {
 		t.Errorf("setConfigValue(config.toml) error = %v, want %v", err, errNotYAML)
 	}
+}
+
+// A config or users file's parse error gives only the line it names, never
+// the error's text, which quotes the file.
+func TestConfigParseError(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err  error
+		want string
+	}{
+		"yaml syntax": {
+			err:  errors.New("While parsing config: yaml: line 3: did not find expected key"),
+			want: "does not parse at line 3",
+		},
+		"yaml unmarshal": {
+			err: errors.New("While parsing config: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str " +
+				"`bo:hunt...` into map[string]interface {}"),
+			want: "does not parse at line 1",
+		},
+		"toml":       {err: errors.New("While parsing config: (12, 5): unexpected token"), want: "does not parse at line 12"},
+		"no line":    {err: errors.New("While parsing config: invalid character 'b' looking for value"), want: "does not parse"},
+		"line later": {err: errors.New("x `line 9: secret` y"), want: "does not parse at line 9"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := configParseError(tc.err); got != tc.want {
+				t.Errorf("configParseError(%q) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// A file that cannot be read is named with the error, which quotes no
+// content; one that does not parse gives only its line.
+func TestConfigReadProblem(t *testing.T) {
+	t.Parallel()
+
+	if got, want := configReadProblem(os.ErrPermission), "is not readable: permission denied"; got != want {
+		t.Errorf("configReadProblem(os.ErrPermission) = %q, want %q", got, want)
+	}
+
+	path := writeTestFile(t, t.TempDir(), "config.yaml", "bo:hunter2:global-admin\n")
+
+	v := viper.New()
+	v.SetConfigFile(path)
+
+	if got, want := configReadProblem(v.ReadInConfig()), "does not parse at line 1"; got != want {
+		t.Errorf("configReadProblem(parse error) = %q, want %q", got, want)
+	}
+}
+
+// Whatever a config or users file holds, the warning for one that does not
+// parse names the file and at most a line number, so never a secret in it.
+func TestConfigWarningsNeverShowContent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	rapid.Check(t, func(t *rapid.T) {
+		content := rapid.StringMatching(`[A-Za-z0-9:\[\]{} -]{1,40}(\n[A-Za-z0-9: -]{0,20}){0,3}`).Draw(t, "content")
+
+		path := filepath.Join(dir, "users.yaml")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("os.WriteFile() error = %v", err)
+		}
+
+		var warn bytes.Buffer
+
+		mergeUsersConfig(viper.New(), []string{dir}, &warn)
+
+		if warn.Len() == 0 {
+			return
+		}
+
+		rest, ok := strings.CutPrefix(warn.String(), "phenix: warning: ignoring config file "+path+": it does not parse")
+		if !ok || !regexp.MustCompile(`^( at line \d+)?\n$`).MatchString(rest) {
+			t.Fatalf("warning %q for %q gives more than the path and a line", warn.String(), content)
+		}
+
+		config := filepath.Join(dir, "config.yaml")
+		if err := os.WriteFile(config, []byte(content), 0o600); err != nil {
+			t.Fatalf("os.WriteFile() error = %v", err)
+		}
+
+		warn.Reset()
+
+		v := viper.New()
+		v.SetConfigName("config")
+		v.AddConfigPath(dir)
+		readConfig(v, dir, &warn)
+
+		rest, ok = strings.CutPrefix(warn.String(), "phenix: warning: ignoring config file "+config+": it does not parse")
+		if !ok || !regexp.MustCompile(`^( at line \d+)?\n$`).MatchString(rest) {
+			t.Fatalf("readConfig() warning %q for %q gives more than the path and a line", warn.String(), content)
+		}
+	})
 }

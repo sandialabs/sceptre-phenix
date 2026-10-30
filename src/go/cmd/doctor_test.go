@@ -104,6 +104,26 @@ func TestDoctorConfigFiles(t *testing.T) {
 	}
 }
 
+// A config or users file that does not parse fails with its path and line
+// only, since the parse error quotes the start of the line, here part of a password.
+func TestDoctorConfigFilesUsersDetail(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"config", "users"} {
+		dir := t.TempDir()
+		writeTestFile(t, dir, "config.yaml", "log:\n  level: debug\n")
+		path := writeTestFile(t, dir, name+".yaml", "bo:hunter2:global-admin\n")
+
+		want := doctorCheck{
+			Name: name + " file", Status: doctorFail, Detail: path + " does not parse at line 1, so phenix ignores it",
+		}
+
+		if diff := cmp.Diff(want, doctorConfigFiles([]string{dir}).checks[name]); diff != "" {
+			t.Errorf("%s file check mismatch (-want +got):\n%s", name, diff)
+		}
+	}
+}
+
 // Keys phenix does not read, such as a misspelling, warn by name.
 func TestUnknownKeysCheck(t *testing.T) {
 	t.Parallel()
@@ -509,13 +529,15 @@ func TestWorstStatus(t *testing.T) {
 	}
 }
 
-// Whatever the JWT signing key and users, in settings or environment variables,
-// and whatever a sudo command or unknown PHENIX_ variable holds, neither the
-// text nor the JSON report contains them, with or without --report.
+// Whatever the JWT signing key and users, in settings, environment variables
+// or a users file that does not parse, and whatever a sudo command or unknown
+// PHENIX_ variable holds, neither the text nor the JSON report contains them,
+// with or without --report, nor does the root command's users file warning.
 func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 	t.Parallel()
 
 	dir := newDoctorTestDir(t)
+	usersDir := t.TempDir()
 
 	rapid.Check(t, func(t *rapid.T) {
 		secret := rapid.StringMatching(`[A-Za-z0-9|_-]{12,32}`).Draw(t, "secret")
@@ -524,8 +546,30 @@ func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 			user, user + " bob:" + secret, "bob:pw:" + secret + "," + user, secret,
 		}).Draw(t, "users")
 
+		// a users file that does not parse, with a password where yaml quotes it
+		password := rapid.StringMatching(`[A-Za-z0-9]{12,32}`).Draw(t, "password")
+		usersFile := filepath.Join(usersDir, "users.yaml")
+		if err := os.WriteFile(usersFile, []byte(password+":pw:global-admin\n"), 0o600); err != nil {
+			t.Fatalf("os.WriteFile() error = %v", err)
+		}
+
+		var warn bytes.Buffer
+
+		mergeUsersConfig(viper.New(), []string{usersDir}, &warn)
+
 		in := fakeDoctorInput(dir, map[string]string{"ui.jwt-signing-key": secret})
 		in.settings["ui.users"] = resolvedSetting{value: []any{user}, text: user, source: sourceFile}
+		in.config.checks["users"] = doctorConfigFiles([]string{usersDir}).checks["users"]
+		in.config.values["ui.jwt-signing-key"] = fileSetting{file: "/etc/phenix/config.yaml", value: secret + "x"}
+		in.settings["ui.jwt-signing-key"] = resolvedSetting{value: secret, text: secret, source: sourceEnv}
+
+		if in.config.checks["users"].Status != doctorFail || warn.Len() == 0 {
+			t.Fatalf("users file %q parsed: check %+v, warning %q", password, in.config.checks["users"], warn.String())
+		}
+
+		if strings.Contains(warn.String(), password[:7]) {
+			t.Fatalf("users file warning %q contains part of the password %q", warn.String(), password)
+		}
 		in.env = fakeDoctorEnv(map[string]string{
 			"PHENIX_UI_JWT_SIGNING_KEY": secret,
 			"PHENIX_UI_USERS":           envUsers,
@@ -542,8 +586,8 @@ func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 				t.Fatalf("writeDoctorReport() error = %v", err)
 			}
 
-			if strings.Contains(out.String(), secret) {
-				t.Fatalf("%s report contains the secret %q:\n%s", output, secret, out.String())
+			if strings.Contains(out.String(), secret) || strings.Contains(out.String(), password[:7]) {
+				t.Fatalf("%s report contains the secret %q or password %q:\n%s", output, secret, password, out.String())
 			}
 		}
 	})

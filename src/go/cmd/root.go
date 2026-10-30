@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -421,7 +422,7 @@ func readConfig(v *viper.Viper, createDir string, warn io.Writer) bool {
 	}
 
 	if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
-		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: %v\n", v.ConfigFileUsed(), err)
+		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: it %s\n", v.ConfigFileUsed(), configReadProblem(err))
 
 		return false
 	}
@@ -441,7 +442,7 @@ func readConfig(v *viper.Viper, createDir string, warn io.Writer) bool {
 	}
 
 	if err := v.ReadInConfig(); err != nil {
-		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: %v\n", target, err)
+		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: it %s\n", target, configReadProblem(err))
 
 		return false
 	}
@@ -464,7 +465,7 @@ func loadConfigFiles(v *viper.Viper, paths []string, createDir string, warn io.W
 // users file added, and merges the users file over it again.
 func reloadConfigFiles(v *viper.Viper, paths []string, warn io.Writer) {
 	if err := v.ReadInConfig(); err != nil {
-		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: %v\n", v.ConfigFileUsed(), err)
+		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: it %s\n", v.ConfigFileUsed(), configReadProblem(err))
 	}
 
 	mergeUsersConfig(v, paths, warn)
@@ -487,12 +488,38 @@ func mergeUsersConfig(v *viper.Viper, paths []string, warn io.Writer) string {
 	case errors.As(err, &viper.ConfigFileNotFoundError{}):
 		return ""
 	case err != nil:
-		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: %v\n", users.ConfigFileUsed(), err)
+		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: it %s\n", users.ConfigFileUsed(), configReadProblem(err))
 	default:
 		_ = v.MergeConfigMap(users.AllSettings())
 	}
 
 	return users.ConfigFileUsed()
+}
+
+// parseErrorLine finds the line number in a YAML ("line 3") or TOML ("(3, 5)")
+// parse error.
+var parseErrorLine = regexp.MustCompile(`\bline (\d+)|\((\d+), \d+\)`)
+
+// configReadProblem describes err, the failure to read a config or users
+// file, as configParseError does when the file does not parse.
+func configReadProblem(err error) string {
+	if errors.As(err, &viper.ConfigParseError{}) {
+		return configParseError(err)
+	}
+
+	return "is not readable: " + err.Error()
+}
+
+// configParseError describes err, a config or users file's parse error, by
+// the line it names alone, since the error's text quotes the file and so a
+// password or key.
+func configParseError(err error) string {
+	m := parseErrorLine.FindStringSubmatch(err.Error())
+	if m == nil {
+		return "does not parse"
+	}
+
+	return "does not parse at line " + m[1] + m[2]
 }
 
 func getCurrentUserInfo() (string, string) {

@@ -200,7 +200,7 @@ func doctorConfigFiles(paths []string) doctorConfig {
 			check.Detail = fmt.Sprintf("none found in %s, so phenix uses environment variables and defaults", strings.Join(paths, ", "))
 		default:
 			check.Status = doctorFail
-			check.Detail = fmt.Sprintf("%s does not parse, so phenix ignores it: %v", v.ConfigFileUsed(), err)
+			check.Detail = fmt.Sprintf("%s %s, so phenix ignores it", v.ConfigFileUsed(), configReadProblem(err))
 		}
 
 		if name == "config" {

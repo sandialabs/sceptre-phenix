@@ -40,12 +40,20 @@ When phēnix cannot read its config file, it runs on environment variables
 and defaults and prints a warning on stderr at startup, such as:
 
 ```text
-phenix: warning: ignoring config file /etc/phenix/config.yaml: While parsing config: yaml: line 3: did not find expected key
+phenix: warning: ignoring config file /etc/phenix/config.yaml: it does not parse at line 3
 ```
 
-The same warning names a `users.yaml` that does not parse, or a config
-directory or file that could not be created on first run. Fix the file it
-names; the warning appears in `docker logs phenix` for the Docker deployment.
+The warning gives only the line of the error, since the parser's message can
+quote a password or key. The same warning names a `users.yaml` that does not
+parse:
+
+```text
+phenix: warning: ignoring config file /etc/phenix/users.yaml: it does not parse at line 1
+```
+
+It also names a config directory or file that could not be created on first
+run. Fix the file it names; the warning appears in `docker logs phenix` for
+the Docker deployment.
 `phenix doctor` reports the same problems, misspelled keys, and where each
 setting's value comes from, then a summary naming each failed check with a
 hint; see
