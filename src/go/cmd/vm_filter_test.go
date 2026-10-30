@@ -15,46 +15,46 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// normalizeVMLabels
+// normalizeVMFilterValues
 // ---------------------------------------------------------------------------
 
-func TestNormalizeVMLabels_Empty(t *testing.T) {
-	if got := normalizeVMLabels(nil); got != nil {
+func TestNormalizeVMFilterValues_Empty(t *testing.T) {
+	if got := normalizeVMFilterValues(nil); got != nil {
 		t.Fatalf("expected nil slice for nil input, got %v", got)
 	}
 }
 
-func TestNormalizeVMLabels_SingleItem(t *testing.T) {
-	got := normalizeVMLabels([]string{"app-label"})
+func TestNormalizeVMFilterValues_SingleItem(t *testing.T) {
+	got := normalizeVMFilterValues([]string{"app-label"})
 	if len(got) != 1 || got[0] != "app-label" {
 		t.Fatalf("unexpected result: %v", got)
 	}
 }
 
-func TestNormalizeVMLabels_CommaSeparatedExpandsToMultiple(t *testing.T) {
-	got := normalizeVMLabels([]string{"label-a,label-b"})
+func TestNormalizeVMFilterValues_CommaSeparatedExpandsToMultiple(t *testing.T) {
+	got := normalizeVMFilterValues([]string{"label-a,label-b"})
 	if len(got) != 2 || got[0] != "label-a" || got[1] != "label-b" {
 		t.Fatalf("unexpected result: %v", got)
 	}
 }
 
-func TestNormalizeVMLabels_MultipleEntriesMerged(t *testing.T) {
-	got := normalizeVMLabels([]string{"label-a", "label-b", "label-c"})
+func TestNormalizeVMFilterValues_MultipleEntriesMerged(t *testing.T) {
+	got := normalizeVMFilterValues([]string{"label-a", "label-b", "label-c"})
 	if len(got) != 3 {
 		t.Fatalf("expected 3 items, got %d: %v", len(got), got)
 	}
 }
 
-func TestNormalizeVMLabels_TrimsWhitespace(t *testing.T) {
-	got := normalizeVMLabels([]string{" label-a , label-b "})
+func TestNormalizeVMFilterValues_TrimsWhitespace(t *testing.T) {
+	got := normalizeVMFilterValues([]string{" label-a , label-b "})
 	if len(got) != 2 || got[0] != "label-a" || got[1] != "label-b" {
 		t.Fatalf("unexpected result after trimming: %v", got)
 	}
 }
 
-func TestNormalizeVMLabels_EmptyPiecesSkipped(t *testing.T) {
+func TestNormalizeVMFilterValues_EmptyPiecesSkipped(t *testing.T) {
 	// e.g. trailing comma or double comma
-	got := normalizeVMLabels([]string{"label-a,,label-b"})
+	got := normalizeVMFilterValues([]string{"label-a,,label-b"})
 	if len(got) != 2 || got[0] != "label-a" || got[1] != "label-b" {
 		t.Fatalf("expected empty pieces to be skipped, got %v", got)
 	}
@@ -322,7 +322,7 @@ func genVMFilterLabelArgs() *rapid.Generator[[]string] {
 	return rapid.SliceOfN(rapid.StringOfN(rapid.RuneFrom([]rune("ab, \t")), 0, 8, -1), 0, 4)
 }
 
-func TestNormalizeVMLabelsProperties(t *testing.T) {
+func TestNormalizeVMFilterValuesProperties(t *testing.T) {
 	t.Parallel()
 
 	dropBlanks := func(s string) string {
@@ -337,26 +337,26 @@ func TestNormalizeVMLabelsProperties(t *testing.T) {
 
 	rapid.Check(t, func(t *rapid.T) {
 		in := genVMFilterLabelArgs().Draw(t, "in")
-		got := normalizeVMLabels(in)
+		got := normalizeVMFilterValues(in)
 
 		for _, piece := range got {
 			if piece == "" || strings.Contains(piece, ",") || strings.TrimSpace(piece) != piece {
-				t.Fatalf("normalizeVMLabels(%q) = %q, has the piece %q", in, got, piece)
+				t.Fatalf("normalizeVMFilterValues(%q) = %q, has the piece %q", in, got, piece)
 			}
 		}
 
 		// no label text is lost: only commas and the blanks around pieces go
 		if want, kept := dropBlanks(strings.Join(in, "")), dropBlanks(strings.Join(got, "")); kept != want {
-			t.Fatalf("normalizeVMLabels(%q) = %q, keeps %q, want %q", in, got, kept, want)
+			t.Fatalf("normalizeVMFilterValues(%q) = %q, keeps %q, want %q", in, got, kept, want)
 		}
 
 		joined := []string{strings.Join(in, ",")}
-		if diff := cmp.Diff(got, normalizeVMLabels(joined)); diff != "" {
-			t.Fatalf("normalizeVMLabels(%q) and normalizeVMLabels(%q) mismatch (-separate +joined):\n%s", in, joined, diff)
+		if diff := cmp.Diff(got, normalizeVMFilterValues(joined)); diff != "" {
+			t.Fatalf("normalizeVMFilterValues(%q) and normalizeVMFilterValues(%q) mismatch (-separate +joined):\n%s", in, joined, diff)
 		}
 
-		if again := normalizeVMLabels(got); !slices.Equal(again, got) {
-			t.Fatalf("normalizeVMLabels(%q) = %q, want %q", got, again, got)
+		if again := normalizeVMFilterValues(got); !slices.Equal(again, got) {
+			t.Fatalf("normalizeVMFilterValues(%q) = %q, want %q", got, again, got)
 		}
 	})
 }

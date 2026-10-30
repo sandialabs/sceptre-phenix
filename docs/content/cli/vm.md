@@ -225,6 +225,14 @@ Table of VM(s)
     phenix vm info my-experiment --filter RUNNING=true
     phenix vm info my-experiment --filter RUNNING=true --filter OS_TYPE=linux
     phenix vm info my-experiment --filter DISK=jammy
+
+  Repeat --host to list only the VMs running on any of the named cluster
+  hosts, named exactly as minimega reports them. --host combines with the VM
+  name or --label, and with --filter: a VM must match each of them. For
+  example:
+
+    phenix vm info my-experiment --host compute1 --host compute2
+    phenix vm info my-experiment --host compute1 --label role-web
 ```
 
 ```text
@@ -236,6 +244,7 @@ phenix vm info <experiment name> [vm name] [flags]
 ```text
   -f, --filter stringArray   Filter output by column value (COLUMN=VALUE); may be repeated
   -h, --help                 help for info
+      --host stringArray     Cluster host to filter VMs by, named exactly as minimega reports it; may be repeated
   -l, --label stringArray    Label to filter VMs (supports glob patterns); use 'all' to select every VM
   -t, --taps                 Include tap interface names
 ```

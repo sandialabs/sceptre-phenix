@@ -196,7 +196,18 @@ phenix vm info <experiment name>
 Or, run the following to see the information for a specific VM in an experiment.
 
 ```shell
-phenix vm info <experiment name> [vm name] [--label <label>]
+phenix vm info <experiment name> [vm name] [--label <label>] [--host <host>]
+```
+
+`--host` lists only the VMs running on the named cluster host, named exactly
+as minimega reports it. Repeat it to list the VMs on any of several hosts. It
+combines with the VM name or `--label`, and with `--filter`: a VM must match
+each of them, as with the `Hosts` and `Labels` filters below. A host filter
+matching no VM is an error. Press Tab after `--host` to complete host names.
+
+```shell
+phenix vm info my-exp --host compute1 --host compute2
+phenix vm info my-exp --host compute1 --label role-web
 ```
 
 ## Filtering and Sorting the VM Table
@@ -210,8 +221,8 @@ The `Hosts` button lists every cluster host running one of the experiment's
 VMs. Check hosts to list only the VMs running on any of them; checking two
 hosts widens the list rather than narrowing it. `Clear hosts` unchecks them
 all, the button shows how many hosts are checked, and it is greyed out when no
-VM is running on a host. The CLI has no host filter; `phenix vm info
-<experiment>` shows each VM's host.
+VM is running on a host. On the CLI, repeat `--host` on `phenix vm info` to
+do the same.
 
 The `Labels` button lists every `key=value` label on the experiment's VMs.
 Check labels to list only the VMs that carry any of them; checking two labels

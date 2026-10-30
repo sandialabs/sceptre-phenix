@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/signal"
 	"path"
@@ -94,7 +95,85 @@ func addVMLabelFlag(cmd *cobra.Command) {
 	)
 }
 
-func normalizeVMLabels(labels []string) []string {
+func addVMHostFlag(cmd *cobra.Command) {
+	cmd.Flags().StringArray(
+		"host",
+		nil,
+		"Cluster host to filter VMs by, named exactly as minimega reports it; may be repeated",
+	)
+	_ = cmd.RegisterFlagCompletionFunc("host", vmHostCompletion)
+}
+
+func vmHostCompletion(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) == 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	vms, err := vm.List(context.Background(), args[0])
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	return vmHostNames(vms, toComplete), cobra.ShellCompDirectiveNoFileComp
+}
+
+// vmHostNames returns the distinct cluster hosts running the VMs, sorted, that
+// start with prefix.
+func vmHostNames(vms []mm.VM, prefix string) []string {
+	seen := map[string]struct{}{}
+
+	for _, vmInfo := range vms {
+		if vmInfo.Host != "" && strings.HasPrefix(vmInfo.Host, prefix) {
+			seen[vmInfo.Host] = struct{}{}
+		}
+	}
+
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// vmInfoHosts returns the --host values, split at commas; nil when the flag is
+// not set.
+func vmInfoHosts(cmd *cobra.Command) ([]string, error) {
+	if !cmd.Flags().Changed("host") {
+		return nil, nil
+	}
+
+	flagHosts, err := cmd.Flags().GetStringArray("host")
+	if err != nil {
+		return nil, fmt.Errorf("getting vm host values: %w", err)
+	}
+
+	hosts := normalizeVMFilterValues(flagHosts)
+	if len(hosts) == 0 {
+		return nil, errors.New("must provide at least one VM host filter")
+	}
+
+	return hosts, nil
+}
+
+// filterVMsByHost keeps the VMs running on any of hosts, as the UI's Hosts
+// filter does; no hosts keeps every VM, and none left is an error.
+func filterVMsByHost(vms []mm.VM, hosts []string) ([]mm.VM, error) {
+	if len(hosts) == 0 {
+		return vms, nil
+	}
+
+	matched := make([]mm.VM, 0, len(vms))
+
+	for _, vmInfo := range vms {
+		if vmInfo.OnAnyHost(hosts) {
+			matched = append(matched, vmInfo)
+		}
+	}
+
+	if len(matched) == 0 {
+		return nil, fmt.Errorf("no VMs matched host(s): %s", strings.Join(hosts, ", "))
+	}
+
+	return matched, nil
+}
+
+func normalizeVMFilterValues(labels []string) []string {
 	var normalized []string
 
 	for _, label := range labels {
@@ -331,7 +410,7 @@ func vmTargetNamesForCommand(cmd *cobra.Command, args []string) (string, []strin
 		return "", nil, fmt.Errorf("getting vm label values: %w", err)
 	}
 
-	labels := normalizeVMLabels(append(flagLabels, args[1:]...))
+	labels := normalizeVMFilterValues(append(flagLabels, args[1:]...))
 	if len(labels) == 0 {
 		return "", nil, errors.New("must provide at least one VM label filter")
 	}
@@ -395,6 +474,61 @@ func newVMCmd() *cobra.Command {
 	return cmd
 }
 
+// listVMInfoVMs returns the VMs vm info starts from: those carrying a label,
+// the named VM, or every VM in the experiment.
+func listVMInfoVMs(cmd *cobra.Command, args []string) ([]mm.VM, error) {
+	var (
+		vms []mm.VM
+		err error
+	)
+
+	if cmd.Flags().Changed("label") {
+		flagLabels, err := cmd.Flags().GetStringArray("label")
+		if err != nil {
+			return nil, fmt.Errorf("getting vm label values: %w", err)
+		}
+
+		labels := normalizeVMFilterValues(append(flagLabels, args[1:]...))
+		if len(labels) == 0 {
+			return nil, errors.New("must provide at least one VM label filter")
+		}
+
+		vms, err = listVMsByLabel(args[0], labels)
+		if err != nil {
+			err := util.HumanizeError(err, "Unable to get a filtered list of VMs")
+
+			return nil, err.Humanized()
+		}
+	} else {
+		switch len(args) {
+		case 1:
+			vms, err = vm.List(context.Background(), args[0])
+			if err != nil {
+				err := util.HumanizeError(err, "Unable to get a list of VMs")
+
+				return nil, err.Humanized()
+			}
+		case infoArgs:
+			vmInfo, err := vm.Get(context.Background(), args[0], args[1])
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to get information for the "+args[1]+" VM",
+				)
+
+				return nil, err.Humanized()
+			}
+
+			vms = []mm.VM{*vmInfo}
+		default:
+			return nil, errors.New("invalid argument")
+		}
+	}
+
+	return vms, nil
+}
+
 func newVMInfoCmd() *cobra.Command {
 	desc := `Table of VM(s)
 
@@ -409,7 +543,15 @@ func newVMInfoCmd() *cobra.Command {
 
     phenix vm info my-experiment --filter RUNNING=true
     phenix vm info my-experiment --filter RUNNING=true --filter OS_TYPE=linux
-    phenix vm info my-experiment --filter DISK=jammy`
+    phenix vm info my-experiment --filter DISK=jammy
+
+  Repeat --host to list only the VMs running on any of the named cluster
+  hosts, named exactly as minimega reports them. --host combines with the VM
+  name or --label, and with --filter: a VM must match each of them. For
+  example:
+
+    phenix vm info my-experiment --host compute1 --host compute2
+    phenix vm info my-experiment --host compute1 --label role-web`
 
 	cmd := &cobra.Command{
 		Use:               "info <experiment name> [vm name]",
@@ -421,53 +563,19 @@ func newVMInfoCmd() *cobra.Command {
 				return errors.New("must provide an experiment name")
 			}
 
-			var (
-				vms []mm.VM
-				err error
-			)
+			hosts, err := vmInfoHosts(cmd)
+			if err != nil {
+				return err
+			}
 
-			if cmd.Flags().Changed("label") {
-				flagLabels, err := cmd.Flags().GetStringArray("label")
-				if err != nil {
-					return fmt.Errorf("getting vm label values: %w", err)
-				}
+			vms, err := listVMInfoVMs(cmd, args)
+			if err != nil {
+				return err
+			}
 
-				labels := normalizeVMLabels(append(flagLabels, args[1:]...))
-				if len(labels) == 0 {
-					return errors.New("must provide at least one VM label filter")
-				}
-
-				vms, err = listVMsByLabel(args[0], labels)
-				if err != nil {
-					err := util.HumanizeError(err, "Unable to get a filtered list of VMs")
-
-					return err.Humanized()
-				}
-			} else {
-				switch len(args) {
-				case 1:
-					vms, err = vm.List(context.Background(), args[0])
-					if err != nil {
-						err := util.HumanizeError(err, "Unable to get a list of VMs")
-
-						return err.Humanized()
-					}
-				case infoArgs:
-					vmInfo, err := vm.Get(context.Background(), args[0], args[1])
-					if err != nil {
-						err := util.HumanizeError(
-							err,
-							"%s",
-							"Unable to get information for the "+args[1]+" VM",
-						)
-
-						return err.Humanized()
-					}
-
-					vms = []mm.VM{*vmInfo}
-				default:
-					return errors.New("invalid argument")
-				}
+			vms, err = filterVMsByHost(vms, hosts)
+			if err != nil {
+				return err
 			}
 
 			vms, err = filterVMInfo(vms, mustGet(cmd.Flags().GetStringArray, "filter"))
@@ -482,6 +590,7 @@ func newVMInfoCmd() *cobra.Command {
 	}
 
 	addVMLabelFlag(cmd)
+	addVMHostFlag(cmd)
 	cmd.Flags().StringArrayP("filter", "f", nil, "Filter output by column value (COLUMN=VALUE); may be repeated")
 	cmd.Flags().BoolP("taps", "t", false, "Include tap interface names")
 

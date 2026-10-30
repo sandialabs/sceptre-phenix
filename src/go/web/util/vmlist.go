@@ -121,7 +121,7 @@ func SelectVMs(
 			continue
 		}
 
-		if len(q.Hosts) > 0 && (vm.Host == "" || !slices.Contains(q.Hosts, vm.Host)) {
+		if len(q.Hosts) > 0 && !vm.OnAnyHost(q.Hosts) {
 			continue
 		}
 

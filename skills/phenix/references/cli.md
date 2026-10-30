@@ -167,7 +167,7 @@ are not jobs); see [`jobs.md`](jobs.md).
 ## `phenix vm` — manage running VMs within an experiment
 
 ```bash
-phenix vm info <exp> [vm]                            # table of VM(s)
+phenix vm info <exp> [vm] [--host h]                 # table of VM(s); --host keeps VMs on that cluster host
 phenix vm pause|resume|restart|shutdown|kill <exp> [vm]
 phenix vm reset-disk <exp> [vm]
 phenix vm redeploy <exp> [vm] [flags]                # new CPU, memory or disk; -r recreates the disk snapshot and injections
@@ -203,6 +203,16 @@ is an error (`no VMs matched label(s): ...`).
 phenix vm info my-exp --label role-web
 phenix vm shutdown my-exp --label 'site-*'
 phenix vm restart my-exp --label all
+```
+
+`phenix vm info` also takes `--host` (repeatable, comma-separated values also
+accepted) to list only the VMs running on any of the named cluster hosts,
+matched exactly as minimega names them. It combines with the VM name or
+`--label`, and with `--filter`, by AND, as the UI's Hosts and Labels filters do, and a
+host filter matching no VM is an error (`no VMs matched host(s): ...`).
+
+```bash
+phenix vm info my-exp --host compute1 --label role-web
 ```
 
 Labels are written with `phenix vm set --label-changes/-L key=value` (repeatable);
