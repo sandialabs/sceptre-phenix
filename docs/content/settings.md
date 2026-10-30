@@ -119,8 +119,16 @@ valid ones.
 | `store.endpoint` | `files` | never | the file cannot be written, or its directory does not exist or cannot be written |
 | `log.system.path`, `log.console` | `files` | never | the file (`phenix.log` in it when `log.system.path` is a directory) cannot be written, or created in the nearest directory above it that exists; `log.console` gets a row only when it names a file |
 | `base-dir.phenix`, `base-dir.minimega`, `base-dir.injects`, `base-dir.topologies`, `mount-dir` | `dirs` | the directory does not exist, is not readable and searchable by this user, is relative, or is one phēnix writes to and is not writable by this user | the path is not a directory |
-| `ui.jwt-signing-key` | `ui` | the key is empty (no sign-in) or a development key | never |
 | `ui.shutdown-grace-period`, `ui.netflow.max-size` | `ui` | never | `phenix ui` would refuse the value |
+| `ui.jwt-signing-key` | `auth` | the key is empty (no sign-in) or a development key | a development key does not name exactly a user and a role, so `phenix ui` refuses every request |
+| `ui.jwt-lifetime` | `auth` | never | phēnix reads the value as under a minute: `24` is 24 nanoseconds, and a value that is not a duration, such as `1d`, is 0 |
+| `ui.users` | `auth` | an entry's role is not built in, so `phenix ui` skips the user unless the store holds the role; the list is empty while sign-in is on, so `phenix ui` creates the default user `admin@foo.com` | an entry is not `name:password:role[:resource...]`, which `phenix ui` skips without an error, or its role holds a comma; a row names an entry by position and user name, never by its password |
+| `proxy-jwt` (only with the `proxy-jwt` key) | `auth` | `ui.listen-endpoint` listens on every address, and `phenix ui` does not check the signatures of proxy JWTs | never |
+| `ui.proxy-auth-header` (only when set) | `auth` | the JWT signing key is empty or a development key, so `phenix ui` ignores the header | the value is not an HTTP header name |
+| `ui.tls` | `tls` | the certificate expires within 30 days | only one of `ui.tls-key` and `ui.tls-cert` is set, so `phenix ui` serves plain HTTP; a file cannot be read; the key and certificate do not load as a pair; the certificate has expired or is not valid yet |
+| `ui.listen-endpoint`, `ui.file-server-endpoint` | `tls` | the listen endpoint has no port, so `phenix ui` listens on a random one | `phenix ui` cannot listen on the value or refuses it |
+| `unix-socket` | `socket` | the path is relative, or holds a file that is not a socket, which `phenix ui` deletes | the directory does not exist or this user cannot write it, or the path is too long for a unix socket |
+| `unix-socket-gid` | `socket` | phēnix runs as root and no group has the id | phēnix does not run as root, and no group has the id or this user is not in the group, so `phenix ui` exits when it sets the socket's group |
 | `minimega` | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default) |
 
 Every phēnix command reads the `settings` group before it runs, and `phenix
@@ -138,7 +146,15 @@ the `dirs` rows above, a file variable those of the `files` rows, and
 `PHENIX_UI_TLS_KEY` and `PHENIX_UI_TLS_CERT` must name readable files.
 `PHENIX_UI_BASE_PATH` shows the path `phenix ui` serves under, with a leading
 and a trailing `/` added when missing. `PHENIX_UI_FEATURES` fails when it
-holds a comma, and `PHENIX_UI_USERS` when a user's role does.
+holds a comma. `PHENIX_UI_USERS`, `PHENIX_UI_JWT_SIGNING_KEY`,
+`PHENIX_UI_JWT_LIFETIME`, `PHENIX_UNIX_SOCKET` and `PHENIX_UNIX_SOCKET_GID`
+follow the rules of their `auth` and `socket` rows.
+
+The `auth`, `tls` and `socket` groups check what `phenix ui` reads at startup.
+A development key is `dev|<user>|<role>`. Since doctor opens no store, it
+checks the roles of `ui.users` and of a development key against the built-in
+roles only, and warns about any other. The `tls` checks read the key and
+certificate files, and print neither.
 
 `-o json` prints the same report as one JSON object: `schemaVersion` (`1`),
 `status`, `time`, `version` (`phenix`, `label`, `commit`, `date`,
@@ -156,8 +172,8 @@ and 0 otherwise. It never prints the values of `ui.jwt-signing-key` or
 `ui.users`, only `<redacted>` when they are set, nor those of
 `PHENIX_UI_JWT_SIGNING_KEY`, `PHENIX_UI_USERS`, `SUDO_COMMAND` or a
 `PHENIX_*` variable that names no setting. Like `phenix healthcheck`, it opens
-no store, unix socket or log file, and sends minimega only its `version`
-command. Run it with the same flags, environment and user as the command you
+no store, unix socket or log file, binds no port, and sends minimega only its
+`version` command. Run it with the same flags, environment and user as the command you
 are checking, since those decide the values it sees.
 
 ## Configuration Precedence

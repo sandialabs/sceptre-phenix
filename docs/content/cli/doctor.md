@@ -26,7 +26,10 @@ Check the phenix configuration without a running server
   variables that name no setting or override a different config file value,
   check the settings every other phenix command refuses or misreads
   (bridge-mode, deploy-mode, log.level and log.system.*), check that the
-  store and log files can be written, that the base directories exist, and
+  store and log files can be written and that the base directories exist,
+  check what phenix ui reads at startup (the JWT signing key and lifetime,
+  initial users, proxy auth, the TLS key pair and certificate expiry, the
+  listen endpoints, and the unix socket's directory and group), and check
   that minimega answers on its socket. --skip takes a check or a group of
   checks; an unknown name fails and lists the valid ones. Secret values,
   such as the JWT signing key and initial users, are redacted. doctor exits
@@ -35,9 +38,9 @@ Check the phenix configuration without a running server
   --report adds the hostname to the header and prints the whole output in a
   fenced block to paste into a bug report.
 
-  Like healthcheck, doctor opens no store, unix socket or log file, so it
-  works while phenix ui is stopped. Run it with the same flags, environment
-  and user as the phenix command you are checking.
+  Like healthcheck, doctor opens no store, unix socket or log file and binds
+  no port, so it works while phenix ui is stopped. Run it with the same
+  flags, environment and user as the phenix command you are checking.
 ```
 
 ```text

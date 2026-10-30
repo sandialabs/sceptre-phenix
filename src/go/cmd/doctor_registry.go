@@ -26,6 +26,9 @@ const (
 	doctorGroupFiles    = "files"
 	doctorGroupDirs     = "dirs"
 	doctorGroupUI       = "ui"
+	doctorGroupAuth     = "auth"
+	doctorGroupTLS      = "tls"
+	doctorGroupSocket   = "socket"
 	doctorGroupMinimega = "minimega"
 )
 
@@ -387,13 +390,6 @@ func doctorChecks() []doctorCheckDef {
 		baseDirDef("base-dir.topologies", "topologies", false),
 		baseDirDef("mount-dir", "mounts", true),
 		{
-			id: "ui.jwt-signing-key", group: doctorGroupUI, name: "ui.jwt-signing-key",
-			hint: hintText("set ui.jwt-signing-key to a long random secret to require sign-in"),
-			run: func(_ context.Context, in *doctorInput) []doctorCheck {
-				return one(jwtKeyCheck(in.text("ui.jwt-signing-key")))
-			},
-		},
-		{
 			id: "ui.shutdown-grace-period", group: doctorGroupUI, name: "ui.shutdown-grace-period",
 			hint: hintText("set ui.shutdown-grace-period to a whole number of seconds, such as 5"),
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
@@ -409,6 +405,106 @@ func doctorChecks() []doctorCheckDef {
 				key := "ui.netflow.max-size"
 
 				return one(netflowMaxSizeCheck(viperWith(key, in.text(key))))
+			},
+		},
+		{
+			id: "ui.jwt-signing-key", group: doctorGroupAuth, name: "ui.jwt-signing-key",
+			hint: func(c doctorCheck) string {
+				if c.Status == doctorFail {
+					return "write a dev| key as dev|<user>|<role>, such as dev|alice|global-viewer"
+				}
+
+				return "set ui.jwt-signing-key to a long random secret to require sign-in"
+			},
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(jwtKeyCheck(in.text("ui.jwt-signing-key"), in.env.roles))
+			},
+		},
+		{
+			id: "ui.jwt-lifetime", group: doctorGroupAuth, name: "ui.jwt-lifetime",
+			hint: hintText("set ui.jwt-lifetime to a duration with a unit, such as 24h"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(jwtLifetimeCheck(in.text("ui.jwt-lifetime")))
+			},
+		},
+		{
+			id: "ui.users", group: doctorGroupAuth, name: "ui.users",
+			hint: func(c doctorCheck) string {
+				if strings.HasPrefix(c.Detail, "empty") {
+					return "set ui.users to the users phenix ui creates, or change the default user's password"
+				}
+
+				return "write each user as name:password:role[:resource...], with a built-in role or one in the store"
+			},
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				// as phenix ui reads it, whatever type the source gives
+				v := viper.New()
+				v.Set("ui.users", in.settings["ui.users"].value)
+				users := v.GetStringSlice("ui.users")
+
+				return usersSettingCheck(users, in.text("ui.jwt-signing-key"), in.env.roles)
+			},
+		},
+		{
+			id: proxyJWTKey, group: doctorGroupAuth, name: proxyJWTKey,
+			hint: hintText("set ui.listen-endpoint to an address only the proxy reaches, such as 127.0.0.1:3000"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				if in.text("ui.jwt-signing-key") != proxyJWTKey {
+					return nil
+				}
+
+				return one(proxyJWTCheck(in.text("ui.listen-endpoint")))
+			},
+		},
+		{
+			id: "ui.proxy-auth-header", group: doctorGroupAuth, name: "ui.proxy-auth-header",
+			hint: hintText("set ui.jwt-signing-key to require sign-in, or unset ui.proxy-auth-header"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				header := in.text("ui.proxy-auth-header")
+				if header == "" {
+					return nil
+				}
+
+				return one(proxyHeaderCheck(in.env, header, in.text("ui.jwt-signing-key")))
+			},
+		},
+		{
+			id: "ui.tls", group: doctorGroupTLS, name: "ui.tls",
+			hint: hintText("set both ui.tls-key and ui.tls-cert to a readable key and its current certificate, or neither"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(in.env.tlsCheck(in.text("ui.tls-key"), in.text("ui.tls-cert"), in.now()))
+			},
+		},
+		{
+			id: "ui.listen-endpoint", group: doctorGroupTLS, name: "ui.listen-endpoint",
+			hint: hintText("set ui.listen-endpoint to host:port, such as 0.0.0.0:3000"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(listenEndpointCheck(in.env.lookupPort, in.text("ui.listen-endpoint")))
+			},
+		},
+		{
+			id: "ui.file-server-endpoint", group: doctorGroupTLS, name: "ui.file-server-endpoint",
+			hint: hintText("set ui.file-server-endpoint to a port, host:port, or 0 for no file server"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(fileServerCheck(in.text("ui.file-server-endpoint")))
+			},
+		},
+		{
+			id: "unix-socket", group: doctorGroupSocket, name: "unix-socket",
+			hint: hintText("set unix-socket to a path in an existing directory this user can write"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(in.env.socketCheck(in.text("unix-socket")))
+			},
+		},
+		{
+			id: "unix-socket-gid", group: doctorGroupSocket, name: "unix-socket-gid",
+			hint: hintText("set unix-socket-gid to a group this user is in, run phenix ui as root, or set it to -1"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				if in.text("unix-socket") == "" {
+					return one(passCheck("unused, because unix-socket is empty"))
+				}
+
+				return one(gidCheck(in.env, in.text("unix-socket-gid")))
 			},
 		},
 		{

@@ -17,7 +17,8 @@ import (
 )
 
 // fakeDoctorEnv is a doctorEnv holding only vars, with vim on PATH, the user
-// alice, the group 100, the real file system and no /proc.
+// alice, the groups 100 (which it is in) and 200, the built-in roles, the real
+// file system and no /proc.
 func fakeDoctorEnv(vars map[string]string, root bool) doctorEnv {
 	return doctorEnv{
 		lookup: func(name string) (string, bool) {
@@ -40,6 +41,7 @@ func fakeDoctorEnv(vars map[string]string, root bool) doctorEnv {
 
 			return "", exec.ErrNotFound
 		},
+		lookupPort: doctorEnvLookupPort,
 		lookupUser: func(name string) (*user.User, error) {
 			if name == "alice" {
 				return &user.User{Uid: "1000", Gid: "1000", Username: "alice", Name: "", HomeDir: "/home/alice"}, nil
@@ -48,8 +50,11 @@ func fakeDoctorEnv(vars map[string]string, root bool) doctorEnv {
 			return nil, user.UnknownUserError(name)
 		},
 		lookupGroup: func(id string) (*user.Group, error) {
-			if id == "100" {
+			switch id {
+			case "100":
 				return &user.Group{Gid: id, Name: "users"}, nil
+			case "200":
+				return &user.Group{Gid: id, Name: "wheel"}, nil
 			}
 
 			return nil, user.UnknownGroupIdError(id)
@@ -58,6 +63,8 @@ func fakeDoctorEnv(vars map[string]string, root bool) doctorEnv {
 		lstat:    os.Lstat,
 		access:   unix.Access,
 		readFile: func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		groups:   func() ([]int, error) { return []int{1000, 100}, nil },
+		roles:    builtinRoles(),
 		root:     root,
 	}
 }
@@ -154,7 +161,9 @@ func TestEnvChecks(t *testing.T) {
 		},
 		"short duration": {
 			vars: map[string]string{"PHENIX_UI_JWT_LIFETIME": "30s"},
-			want: []doctorCheck{row("PHENIX_UI_JWT_LIFETIME", doctorWarn, "30s; tokens expire within a minute")},
+			want: []doctorCheck{
+				row("PHENIX_UI_JWT_LIFETIME", doctorFail, "30s is under a minute, so tokens expire before anyone can use them"),
+			},
 		},
 		"bad duration": {
 			vars: map[string]string{"PHENIX_UI_JWT_LIFETIME": "1d"},
@@ -244,17 +253,23 @@ func TestEnvChecks(t *testing.T) {
 				`"X Forwarded User" is not an HTTP header name, so no request carries it`)},
 		},
 		"users": {
-			vars: map[string]string{"PHENIX_UI_USERS": "admin:pw:global-admin bob:pw:viewer:exp1"},
+			vars: map[string]string{"PHENIX_UI_USERS": "admin:pw:global-admin bob:pw:experiment-viewer:exp1"},
 			want: []doctorCheck{row("PHENIX_UI_USERS", doctorPass, "2 users")},
+		},
+		"user with a custom role": {
+			vars: map[string]string{"PHENIX_UI_USERS": "admin:pw:global-admin bob:pw:viewer:exp1"},
+			want: []doctorCheck{row("PHENIX_UI_USERS", doctorWarn,
+				`user 2 ("bob") has a role that is not built in, so phenix ui skips the user unless the store holds the role`)},
 		},
 		"comma-separated users": {
 			vars: map[string]string{"PHENIX_UI_USERS": "admin:pw:global-admin,bob:pw:viewer"},
 			want: []doctorCheck{row("PHENIX_UI_USERS", doctorFail,
-				"user 1's role holds a comma; phenix splits PHENIX_UI_USERS on spaces, so separate users with spaces")},
+				`user 1 ("admin") has a comma in its role. phenix splits PHENIX_UI_USERS on spaces, so separate users with spaces`)},
 		},
 		"malformed user": {
 			vars: map[string]string{"PHENIX_UI_USERS": "admin:pw:global-admin bob:pw"},
-			want: []doctorCheck{row("PHENIX_UI_USERS", doctorFail, "user 2 is not name:password:role[:resource...]")},
+			want: []doctorCheck{row("PHENIX_UI_USERS", doctorFail,
+				`default user 2 ("bob") is not name:password:role[:resource...], so phenix ui skips it`)},
 		},
 		"features": {
 			vars: map[string]string{"PHENIX_UI_FEATURES": "vm-mount,webshark"},
@@ -324,8 +339,27 @@ func TestEnvChecks(t *testing.T) {
 			vars: map[string]string{"PHENIX_UNIX_SOCKET_GID": "4242", "PHENIX_LOG_SYSTEM_MAX_BACKUPS": "0x10"},
 			want: []doctorCheck{
 				row("PHENIX_LOG_SYSTEM_MAX_BACKUPS", doctorWarn, `phenix reads "0x10" as 16`),
-				row("PHENIX_UNIX_SOCKET_GID", doctorWarn, "no group has id 4242"),
+				row("PHENIX_UNIX_SOCKET_GID", doctorFail, "no group has id 4242, so phenix ui exits when it sets the socket's group"),
 			},
+		},
+		"socket group, as root": {
+			vars: map[string]string{"PHENIX_UNIX_SOCKET_GID": "4242"},
+			root: true,
+			want: []doctorCheck{row("PHENIX_UNIX_SOCKET_GID", doctorWarn, "no group has id 4242, so no group can use the socket")},
+		},
+		"socket group of others": {
+			vars: map[string]string{"PHENIX_UNIX_SOCKET_GID": "200"},
+			want: []doctorCheck{row("PHENIX_UNIX_SOCKET_GID", doctorFail,
+				"this user is not root or in group 200 (wheel), so phenix ui exits when it sets the socket's group")},
+		},
+		"socket group of others, as root": {
+			vars: map[string]string{"PHENIX_UNIX_SOCKET_GID": "200"},
+			root: true,
+			want: []doctorCheck{row("PHENIX_UNIX_SOCKET_GID", doctorPass, "200")},
+		},
+		"socket group of this user with no name": {
+			vars: map[string]string{"PHENIX_UNIX_SOCKET_GID": "1000"},
+			want: []doctorCheck{row("PHENIX_UNIX_SOCKET_GID", doctorPass, "1000, a group of this user with no name")},
 		},
 		"known socket group": {
 			vars: map[string]string{"PHENIX_UNIX_SOCKET_GID": "100"},
@@ -342,10 +376,20 @@ func TestEnvChecks(t *testing.T) {
 			},
 		},
 		"dev key": {
-			vars: map[string]string{"PHENIX_UI_JWT_SIGNING_KEY": "dev|admin"},
+			vars: map[string]string{"PHENIX_UI_JWT_SIGNING_KEY": "dev|admin|global-viewer"},
 			want: []doctorCheck{
 				row("PHENIX_UI_JWT_SIGNING_KEY", doctorWarn, "a dev| key, so phenix ui uses development authentication"),
 			},
+		},
+		"dev key without a role": {
+			vars: map[string]string{"PHENIX_UI_JWT_SIGNING_KEY": "dev|admin"},
+			want: []doctorCheck{row("PHENIX_UI_JWT_SIGNING_KEY", doctorFail,
+				"a dev| key that is not dev|<user>|<role>, so phenix ui refuses every request")},
+		},
+		"dev key with a custom role": {
+			vars: map[string]string{"PHENIX_UI_JWT_SIGNING_KEY": "dev|admin|wizard"},
+			want: []doctorCheck{row("PHENIX_UI_JWT_SIGNING_KEY", doctorWarn,
+				"a dev| key whose role is not built in, so phenix ui refuses every request unless the store holds the role")},
 		},
 		"empty": {
 			vars: map[string]string{"PHENIX_LOG_LEVEL": ""},
@@ -490,7 +534,7 @@ func TestEnvChecksPermissions(t *testing.T) {
 		row("PHENIX_BASE_DIR_TOPOLOGIES", doctorWarn, locked+" is not readable and searchable by this user"),
 		row("PHENIX_MOUNT_DIR", doctorWarn, readOnly+" is not writable by this user"),
 		row("PHENIX_UI_TLS_KEY", doctorFail, unreadable+" is not readable by this user"),
-		row("PHENIX_UNIX_SOCKET", doctorWarn,
+		row("PHENIX_UNIX_SOCKET", doctorFail,
 			"phenix ui cannot create "+filepath.Join(readOnly, "phenix.sock")+": "+readOnly+" is not writable by this user"),
 	}
 
@@ -570,5 +614,95 @@ func TestUnknownEnvDetail(t *testing.T) {
 		if got := unknownEnvDetail(name, known); got != want {
 			t.Errorf("unknownEnvDetail(%s) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// Whether the socket's group has a name or not, a member of it passes, a user
+// that is not root and not in it fails, and root never fails.
+func TestGidCheckProperty(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		gid := rapid.IntRange(0, 5000).Draw(t, "gid")
+		member := rapid.Bool().Draw(t, "member")
+		named := rapid.Bool().Draw(t, "named")
+		root := rapid.Bool().Draw(t, "root")
+
+		env := fakeDoctorEnv(nil, root)
+		env.lookupGroup = func(id string) (*user.Group, error) {
+			if named {
+				return &user.Group{Gid: id, Name: "g" + id}, nil
+			}
+
+			return nil, user.UnknownGroupIdError(id)
+		}
+		env.groups = func() ([]int, error) {
+			if member {
+				return []int{gid}, nil
+			}
+
+			return []int{gid + 1}, nil
+		}
+
+		got := gidCheck(env, strconv.Itoa(gid))
+
+		switch {
+		case root && got.Status == doctorFail:
+			t.Fatalf("gidCheck(%d) as root = %+v, want no failure", gid, got)
+		case !root && member && got.Status != doctorPass:
+			t.Fatalf("gidCheck(%d) for a member = %+v, want pass", gid, got)
+		case !root && !member && got.Status != doctorFail:
+			t.Fatalf("gidCheck(%d) for a user not in the group = %+v, want fail", gid, got)
+		}
+	})
+}
+
+// doctorEnvMode is file information of mode, for a socket the tests do not create.
+type doctorEnvMode struct {
+	os.FileInfo
+
+	mode os.FileMode
+}
+
+func (m doctorEnvMode) Mode() os.FileMode { return m.mode }
+
+// A directory this user cannot write fails the socket check, unless a socket
+// is already there, such as one a phenix ui of another user serves.
+func TestSocketCheckUnwritableDir(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "phenix.sock")
+
+	tests := map[string]struct {
+		mode os.FileMode // of the file at path; 0 is none
+		want doctorCheck
+	}{
+		"no socket": {want: failCheck("phenix ui cannot create " + path + ": " + dir + " is not writable by this user")},
+		"a socket": {
+			mode: os.ModeSocket | 0o660,
+			want: warnCheck(dir + " is not writable by this user, so phenix ui run as this user cannot replace " + path),
+		},
+		"a regular file": {mode: 0o600, want: failCheck("phenix ui cannot create " + path + ": " + dir + " is not writable by this user")},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			env := fakeDoctorEnv(nil, false)
+			env.access = func(string, uint32) error { return unix.EACCES }
+			env.lstat = func(string) (os.FileInfo, error) {
+				if tc.mode == 0 {
+					return nil, os.ErrNotExist
+				}
+
+				return doctorEnvMode{FileInfo: nil, mode: tc.mode}, nil
+			}
+
+			if diff := cmp.Diff(tc.want, env.socketCheck(path)); diff != "" {
+				t.Errorf("socketCheck() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

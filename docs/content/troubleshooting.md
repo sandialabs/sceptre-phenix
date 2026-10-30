@@ -73,6 +73,17 @@ config file. `phenix doctor` fails its `bridge-mode` or `deploy-mode` check
 for such a value, and warns about a `log.level` or `log.system.*` value that
 phēnix ignores or reads as `0`.
 
+### `phenix ui` Fails to Start, or Ignores TLS or Users
+
+`phenix ui` exits at startup when it cannot listen on `ui.listen-endpoint` or
+`ui.file-server-endpoint`, create its unix socket, or give the socket the
+group in `unix-socket-gid`. It starts, but not as configured, when only one
+of `ui.tls-key` and `ui.tls-cert` is set (it serves plain HTTP), when a
+`ui.users` entry is not `name:password:role[:resource...]` (it skips the
+user), or when `ui.jwt-lifetime` has no unit (`24` is 24 nanoseconds). Run
+`phenix doctor --skip minimega` with the settings and user of `phenix ui`: its
+`auth`, `tls` and `socket` checks report each of these.
+
 ### Do Not Delete `config.yaml`
 
 If you delete the `config.yaml` file while phēnix is running, the internal file watcher will break, and dynamic configuration changes will no longer apply.

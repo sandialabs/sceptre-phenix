@@ -60,7 +60,7 @@ type serverOptions struct {
 func newServerOptions(opts ...ServerOption) serverOptions {
 	so := serverOptions{ //nolint:exhaustruct // partial initialization
 		endpoint:    ":3000",
-		users:       []string{"admin@foo.com:foobar:Global Admin"},
+		users:       []string{DefaultAdminName + ":foobar:Global Admin"},
 		basePath:    "/",
 		jwtLifetime: defaultJWTLifetime,
 		features:    make(map[string]bool),

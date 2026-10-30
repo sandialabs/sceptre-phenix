@@ -19,6 +19,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 	"golang.org/x/sys/unix"
 
+	"phenix/api/config"
 	"phenix/util/common"
 	"phenix/util/editor"
 	"phenix/web"
@@ -35,7 +36,6 @@ const (
 
 	minJWTLifetime = time.Minute
 	maxPort        = 65535
-	userFields     = 3
 )
 
 // doctorEnv is the environment doctor checks and the lookups and file system
@@ -44,12 +44,15 @@ type doctorEnv struct {
 	lookup      func(string) (string, bool)
 	environ     func() []string
 	lookPath    func(string) (string, error)
+	lookupPort  func(service string) (int, error) // the port of a TCP service name
 	lookupUser  func(string) (*user.User, error)
 	lookupGroup func(string) (*user.Group, error)
 	stat        func(string) (os.FileInfo, error)
 	lstat       func(string) (os.FileInfo, error)
 	access      func(string, uint32) error
 	readFile    func(string) ([]byte, error)
+	groups      func() ([]int, error) // the groups this process is in
+	roles       []string              // the built-in roles, or nil when unknown
 	root        bool
 }
 
@@ -58,14 +61,36 @@ func osDoctorEnv() doctorEnv {
 		lookup:      os.LookupEnv,
 		environ:     os.Environ,
 		lookPath:    exec.LookPath,
+		lookupPort:  lookupTCPPort,
 		lookupUser:  user.Lookup,
 		lookupGroup: user.LookupGroupId,
 		stat:        os.Stat,
 		lstat:       os.Lstat,
 		access:      unix.Access,
 		readFile:    os.ReadFile,
-		root:        os.Getuid() == 0,
+		groups: func() ([]int, error) {
+			groups, err := os.Getgroups()
+
+			return append(groups, os.Getegid()), err
+		},
+		roles: builtinRoles(),
+		root:  os.Getuid() == 0,
 	}
+}
+
+// lookupTCPPort is the port of the TCP service name service.
+func lookupTCPPort(service string) (int, error) {
+	return net.DefaultResolver.LookupPort(context.Background(), "tcp", service)
+}
+
+// builtinRoles is every name of a built-in role, or nil if they cannot be read.
+func builtinRoles() []string {
+	roles, err := config.BuiltinRoles()
+	if err != nil {
+		return nil
+	}
+
+	return roles
 }
 
 func passCheck(detail string) doctorCheck {
@@ -198,11 +223,11 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 	case "unix-socket-gid":
 		return gidCheck(env, value), true
 	case "ui.listen-endpoint":
-		return listenCheck(value), true
+		return listenCheck(env.lookupPort, value), true
 	case "ui.base-path":
 		return basePathCheck(value), true
 	case "ui.jwt-signing-key":
-		return jwtKeyCheck(value), true
+		return jwtKeyCheck(value, env.roles), true
 	case "ui.jwt-lifetime":
 		return jwtLifetimeCheck(value), true
 	case "ui.file-server-endpoint":
@@ -214,7 +239,7 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 
 		return passCheck(value), true
 	case "ui.users":
-		return usersCheck(value), true
+		return usersCheck(value, env.roles), true
 	case "ui.tls-key", "ui.tls-cert":
 		return env.readableFileCheck(value, doctorFail), true
 	case "ui.logs.minimega-path":
@@ -399,6 +424,10 @@ func suffixesCheck(value string) doctorCheck {
 // socketCheck checks a unix socket path that phenix ui creates, after
 // deleting whatever is there, and other commands connect to.
 func (e doctorEnv) socketCheck(path string) doctorCheck {
+	if path == "" {
+		return passCheck("empty, so phenix ui serves no unix socket")
+	}
+
 	if limit := len(unix.RawSockaddrUnix{}.Path); len(path) >= limit { //nolint:exhaustruct // only its size
 		return failCheck(fmt.Sprintf("%s is %d bytes, longer than a unix socket path may be (%d)", path, len(path), limit-1))
 	}
@@ -406,6 +435,8 @@ func (e doctorEnv) socketCheck(path string) doctorCheck {
 	dir := filepath.Dir(path)
 
 	info, err := e.stat(dir)
+	existing, lerr := e.lstat(path)
+	isSocket := lerr == nil && existing.Mode()&os.ModeSocket != 0
 
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -414,14 +445,13 @@ func (e doctorEnv) socketCheck(path string) doctorCheck {
 		return failCheck(err.Error())
 	case !info.IsDir():
 		return failCheck(dir + " is not a directory")
-	}
-
-	if info, err := e.lstat(path); err == nil {
-		if info.Mode()&os.ModeSocket == 0 {
-			return warnCheck(path + " is not a socket, and phenix ui deletes it to create one")
-		}
-	} else if e.access(dir, unix.W_OK) != nil {
-		return warnCheck(fmt.Sprintf("phenix ui cannot create %s: %s is not writable by this user", path, dir))
+	case e.access(dir, unix.W_OK) != nil && isSocket:
+		// another user's phenix ui may serve it; the server check connects to it
+		return warnCheck(fmt.Sprintf("%s is not writable by this user, so phenix ui run as this user cannot replace %s", dir, path))
+	case e.access(dir, unix.W_OK) != nil:
+		return failCheck(fmt.Sprintf("phenix ui cannot create %s: %s is not writable by this user", path, dir))
+	case lerr == nil && !isSocket:
+		return warnCheck(path + " is not a socket, and phenix ui deletes it to create one")
 	}
 
 	if !filepath.IsAbs(path) {
@@ -431,7 +461,8 @@ func (e doctorEnv) socketCheck(path string) doctorCheck {
 	return passCheck(path)
 }
 
-// gidCheck checks the group phenix ui gives its unix socket; -1 leaves it.
+// gidCheck checks the group phenix ui gives its unix socket, which needs
+// root or a member of the group; -1 leaves the group as it is.
 func gidCheck(env doctorEnv, value string) doctorCheck {
 	gid, check := intVarCheck(value)
 
@@ -444,15 +475,38 @@ func gidCheck(env doctorEnv, value string) doctorCheck {
 		return failCheck(fmt.Sprintf("%d is not a group id, so phenix ui fails to start", gid))
 	}
 
-	if _, err := env.lookupGroup(strconv.Itoa(gid)); err != nil {
-		return warnCheck(fmt.Sprintf("no group has id %d", gid))
+	group, lookupErr := env.lookupGroup(strconv.Itoa(gid))
+
+	if env.root {
+		if lookupErr != nil {
+			return warnCheck(fmt.Sprintf("no group has id %d, so no group can use the socket", gid))
+		}
+
+		return check
+	}
+
+	// chown needs membership of the group, not a name for it
+	groups, err := env.groups()
+
+	switch {
+	case err == nil && slices.Contains(groups, gid) && lookupErr != nil:
+		return passCheck(fmt.Sprintf("%d, a group of this user with no name", gid))
+	case err == nil && slices.Contains(groups, gid):
+		return check
+	case lookupErr != nil:
+		return failCheck(fmt.Sprintf("no group has id %d, so phenix ui exits when it sets the socket's group", gid))
+	case err == nil:
+		return failCheck(fmt.Sprintf(
+			"this user is not root or in group %d (%s), so phenix ui exits when it sets the socket's group", gid, group.Name,
+		))
 	}
 
 	return check
 }
 
-// listenCheck checks a host:port phenix ui listens on.
-func listenCheck(value string) doctorCheck {
+// listenCheck checks a host:port phenix ui listens on, where lookupPort
+// finds the port of a service name.
+func listenCheck(lookupPort func(string) (int, error), value string) doctorCheck {
 	_, port, err := net.SplitHostPort(value)
 	if err != nil {
 		return failCheck(fmt.Sprintf("%q is not host:port, so phenix ui cannot listen on it", value))
@@ -466,7 +520,7 @@ func listenCheck(value string) doctorCheck {
 	case err == nil && (n < 0 || n > maxPort):
 		return failCheck(fmt.Sprintf("port %d is out of range 1-%d, so phenix ui cannot listen on it", n, maxPort))
 	case err != nil:
-		if _, err := net.DefaultResolver.LookupPort(context.Background(), "tcp", port); err != nil {
+		if _, err := lookupPort(port); err != nil {
 			return failCheck(fmt.Sprintf("port %q is not a number or service name, so phenix ui cannot listen on it", port))
 		}
 	}
@@ -488,7 +542,7 @@ func basePathCheck(value string) doctorCheck {
 }
 
 // jwtLifetimeCheck parses value as viper reads a duration, where a number
-// without a unit is nanoseconds.
+// without a unit is nanoseconds, and fails under a minute.
 func jwtLifetimeCheck(value string) doctorCheck {
 	if !strings.ContainsAny(value, "nsuµmh") {
 		if _, err := strconv.ParseFloat(value, 64); err == nil {
@@ -507,7 +561,7 @@ func jwtLifetimeCheck(value string) doctorCheck {
 	case d <= 0:
 		return failCheck(fmt.Sprintf("%s is not positive, so tokens expire immediately", d))
 	case d < minJWTLifetime:
-		return warnCheck(fmt.Sprintf("%s; tokens expire within a minute", d))
+		return failCheck(fmt.Sprintf("%s is under a minute, so tokens expire before anyone can use them", d))
 	}
 
 	return passCheck(d.String())
@@ -525,33 +579,6 @@ func fileServerCheck(value string) doctorCheck {
 	}
 
 	return passCheck(endpoint)
-}
-
-// usersCheck checks initial users without showing any of them. viper splits
-// the variable on spaces, not commas.
-func usersCheck(value string) doctorCheck {
-	users := strings.Fields(value)
-
-	for i, entry := range users {
-		fields := strings.Split(entry, ":")
-
-		if len(fields) < userFields || slices.Contains(fields[:userFields], "") {
-			return failCheck(fmt.Sprintf("user %d is not name:password:role[:resource...]", i+1))
-		}
-
-		if strings.Contains(fields[userFields-1], ",") {
-			return failCheck(fmt.Sprintf(
-				"user %d's role holds a comma; phenix splits %s on spaces, so separate users with spaces",
-				i+1, settingEnvVar("ui.users"),
-			))
-		}
-	}
-
-	if len(users) == 1 {
-		return passCheck("1 user")
-	}
-
-	return passCheck(fmt.Sprintf("%d users", len(users)))
 }
 
 // readableFileCheck checks a file phenix reads; missing is the status of one

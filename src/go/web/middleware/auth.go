@@ -359,30 +359,6 @@ func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) mux.MiddlewareFunc
 		})
 	}
 
-	// For testing, treats all requests as coming from a given user/role.
-	// To use start with jwt key of format "dev|<username>|<role>"
-	// e.g., "dev|testuser|global-viewer"
-	devAuthMiddleware := func(h http.Handler) http.Handler {
-		creds := strings.Split(jwtKey, "|")
-
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-
-			role, err := fixedRole(creds[2])
-			if err != nil {
-				plog.Error(plog.TypeSecurity, "getting role for dev auth", "err", err)
-				weberror.Error(w, "role error", http.StatusInternalServerError)
-
-				return
-			}
-
-			ctx = context.WithValue(ctx, ContextKeyUser, creds[1])
-			ctx = context.WithValue(ctx, ContextKeyRole, role)
-
-			h.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-
 	switch {
 	case jwtKey == "":
 		plog.Info(plog.TypeSecurity, "no JWT signing key provided -- disabling auth")
@@ -393,13 +369,62 @@ func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) mux.MiddlewareFunc
 
 		return func(h http.Handler) http.Handler { return validTokenMiddleware(userMiddleware(h)) }
 	case strings.HasPrefix(jwtKey, "dev|"):
+		user, role, ok := DevAuthCredentials(jwtKey)
+		if !ok {
+			plog.Error(plog.TypeSecurity, "development JWT key is not dev|<user>|<role>: refusing every request")
+
+			return refuseAll
+		}
+
 		plog.Debug(plog.TypeSecurity, "development JWT key provided -- enabling dev auth")
 
-		return func(h http.Handler) http.Handler { return devAuthMiddleware(h) }
+		return devAuth(user, role)
 	}
 
 	// First validate the token itself, then ensure the user in the token is valid.
 	return func(h http.Handler) http.Handler { return tokenMiddleware.Handler(userMiddleware(h)) }
+}
+
+// devKeyFields is how many fields a development JWT key, dev|<user>|<role>, has.
+const devKeyFields = 3
+
+// DevAuthCredentials returns the user and role a development JWT key,
+// dev|<user>|<role>, names, and false for any other key.
+func DevAuthCredentials(jwtKey string) (string, string, bool) {
+	creds := strings.Split(jwtKey, "|")
+	if len(creds) != devKeyFields || creds[0] != "dev" || creds[1] == "" || creds[2] == "" {
+		return "", "", false
+	}
+
+	return creds[1], creds[2], true
+}
+
+// devAuth treats every request as coming from user with role, for testing.
+func devAuth(user, roleName string) mux.MiddlewareFunc {
+	return func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			role, err := fixedRole(roleName)
+			if err != nil {
+				plog.Error(plog.TypeSecurity, "getting role for dev auth", "err", err)
+				weberror.Error(w, "role error", http.StatusInternalServerError)
+
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), ContextKeyUser, user)
+			ctx = context.WithValue(ctx, ContextKeyRole, role)
+
+			h.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// refuseAll answers every request with an error, for a development JWT key
+// that names no user and role.
+func refuseAll(http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		weberror.Error(w, "dev auth key is not dev|<user>|<role>", http.StatusInternalServerError)
+	})
 }
 
 // publicPaths are the only routes reachable without a valid user token. They
@@ -425,12 +450,12 @@ func ResolveRole(jwtKey, user, rawJWT string) (rbac.Role, error) {
 	case jwtKey == "":
 		return fixedRole("global-admin")
 	case strings.HasPrefix(jwtKey, "dev|"):
-		creds := strings.Split(jwtKey, "|")
-		if len(creds) != 3 || user != creds[1] {
+		devUser, devRole, ok := DevAuthCredentials(jwtKey)
+		if !ok || user != devUser {
 			return rbac.Role{}, fmt.Errorf("user %s is not the dev auth user", user)
 		}
 
-		return fixedRole(creds[2])
+		return fixedRole(devRole)
 	}
 
 	u, err := rbac.GetUser(user)
@@ -451,11 +476,17 @@ func ResolveRole(jwtKey, user, rawJWT string) (rbac.Role, error) {
 }
 
 // Authenticator reports, without rejecting it, whether a request carries credentials the API would accept: every request
-// does with auth disabled, and otherwise one whose token gets through Auth's chain. A request without a token logs
+// does with auth disabled or a valid dev key, none with another dev key, and otherwise one whose token gets through Auth's chain. A request without a token logs
 // nothing, so unauthenticated health probes do not fill the security log; refusals go to opts' OnRefusal.
 func Authenticator(jwtKey, proxyAuthHeader string, opts ...AuthOption) func(*http.Request) bool {
-	if jwtKey == "" || strings.HasPrefix(jwtKey, "dev|") {
+	if jwtKey == "" {
 		return func(*http.Request) bool { return true }
+	}
+
+	if strings.HasPrefix(jwtKey, "dev|") {
+		_, _, ok := DevAuthCredentials(jwtKey)
+
+		return func(*http.Request) bool { return ok }
 	}
 
 	var ao authOptions

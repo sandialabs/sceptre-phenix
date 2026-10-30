@@ -529,15 +529,17 @@ func TestWorstStatus(t *testing.T) {
 	}
 }
 
-// Whatever the JWT signing key and users, in settings, environment variables
-// or a users file that does not parse, and whatever a sudo command or unknown
-// PHENIX_ variable holds, neither the text nor the JSON report contains them,
-// with or without --report, nor does the root command's users file warning.
+// Whatever the JWT signing key and users, in settings, environment variables or a users file that does not
+// parse, and whatever a sudo command or unknown PHENIX_ variable holds, neither the text nor the JSON report
+// contains them or the TLS key, with or without --report, nor does the root command's users file warning.
 func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 	t.Parallel()
 
 	dir := newDoctorTestDir(t)
 	usersDir := t.TempDir()
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	tlsKey, tlsCert, keyPEM := writeTestKeyPair(t, t.TempDir(), "ui", now.Add(-time.Hour), now.Add(time.Hour))
+	keyLines := strings.Split(keyPEM, "\n")[1:3] // body lines, not the PEM header
 
 	rapid.Check(t, func(t *rapid.T) {
 		secret := rapid.StringMatching(`[A-Za-z0-9|_-]{12,32}`).Draw(t, "secret")
@@ -576,6 +578,9 @@ func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 			"PHENIX_UI_TOKEN":           secret,
 			"SUDO_COMMAND":              "/usr/bin/phenix ui --jwt-signing-key " + secret,
 		}, rapid.Bool().Draw(t, "root"))
+		in.env.readFile = os.ReadFile
+		in.settings["ui.tls-key"] = resolvedSetting{value: tlsKey, text: tlsKey, source: sourceFile}
+		in.settings["ui.tls-cert"] = resolvedSetting{value: tlsCert, text: tlsCert, source: sourceFile}
 
 		for _, output := range []string{"text", FormatJSON} {
 			opts := doctorOptions{output: output, report: rapid.Bool().Draw(t, "report")}
@@ -588,6 +593,12 @@ func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 
 			if strings.Contains(out.String(), secret) || strings.Contains(out.String(), password[:7]) {
 				t.Fatalf("%s report contains the secret %q or password %q:\n%s", output, secret, password, out.String())
+			}
+
+			for _, line := range keyLines {
+				if strings.Contains(out.String(), line) {
+					t.Fatalf("%s report contains the TLS key:\n%s", output, out.String())
+				}
 			}
 		}
 	})

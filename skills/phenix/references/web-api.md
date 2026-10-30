@@ -30,7 +30,8 @@ Authentication depends on `phenix ui --jwt-signing-key` (`ui.jwt-signing-key`,
   may also be passed as a `?token=<jwt>` query parameter, which is how browser
   links and image tags reach `/screenshot.png` and `/vnc/ws`.
 - `--jwt-signing-key proxy-jwt` accepts JWTs minted by an upstream proxy, and a
-  `dev|`-prefixed key enables development auth.
+  `dev|<user>|<role>` key enables development auth, treating every request as
+  that user and role; any other `dev|` key answers every request with `500`.
 
 With auth on, a request without a token gets `403`; a malformed, expired or
 signed-out token, or a `--proxy-auth-header` user other than the token's,

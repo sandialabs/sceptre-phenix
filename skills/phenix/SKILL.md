@@ -177,7 +177,7 @@ are run with `docker exec` rather than a host-installed binary:
 ```bash
 docker exec phenix phenix experiment list   # no -it for scripted/agentic use
 docker exec phenix phenix healthcheck --ready  # is minimega, the store and disk OK?
-docker exec phenix phenix doctor  # no server needed: versions/env header, each setting's source, config/env/settings/path/minimega checks, summary with hints; --report for bug reports
+docker exec phenix phenix doctor  # no server needed: versions/env header, each setting's source, config/env/settings/path checks, phenix ui startup checks (auth, tls, socket), minimega, summary with hints; --report for bug reports
 ```
 
 For interactive human use, `make install-wrapper` installs
@@ -255,6 +255,7 @@ The other gotchas of `phenix workflow apply` are in
 | Experiment `create` succeeds but `start` fails to boot VMs | Re-run with `phenix experiment start --dry-run <exp>` to see what would be sent to minimega, check `phenix vm info <exp>` and minimega directly via `phenix mm <cmd>`, and verify the disk images referenced in the topology exist (`phenix image list` for image configs, `GET /api/v1/disks` for disk files present on the headnode). |
 | Web API calls return 401 | That server has a JWT signing key configured, so auth is on: send a current token as `X-Phenix-Auth-Token: Bearer <jwt>` (or `?token=`), not in `Authorization` — standard bearer-token tooling silently 401s. Re-login if the token expired. A server started without a signing key never returns 401. |
 | `configuration not updated` after `phenix config edit` | No changes were saved in the editor — this is expected, not an error. |
+| `phenix ui` exits at startup, serves HTTP despite a TLS setting, or lacks an initial user | Run `phenix doctor --skip minimega` with the same settings and user: the `auth`, `tls` and `socket` checks catch a half-set TLS pair, a malformed `ui.users` entry (skipped silently), a unitless `ui.jwt-lifetime`, a bad `dev\|<user>\|<role>` key, and a socket directory or `unix-socket-gid` phenix ui cannot use. |
 | Settings changes via `phenix settings set` don't seem to apply | Command-line flags and `PHENIX_*` environment variables win over the config file; drop the flag or unset the variable (`phenix doctor` warns about each variable that overrides the file). |
 
 Errors of `phenix workflow apply` and their fixes are in the troubleshooting

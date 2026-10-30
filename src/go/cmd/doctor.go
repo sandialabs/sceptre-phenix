@@ -139,7 +139,10 @@ func newDoctorCmd() *cobra.Command {
   variables that name no setting or override a different config file value,
   check the settings every other phenix command refuses or misreads
   (bridge-mode, deploy-mode, log.level and log.system.*), check that the
-  store and log files can be written, that the base directories exist, and
+  store and log files can be written and that the base directories exist,
+  check what phenix ui reads at startup (the JWT signing key and lifetime,
+  initial users, proxy auth, the TLS key pair and certificate expiry, the
+  listen endpoints, and the unix socket's directory and group), and check
   that minimega answers on its socket. --skip takes a check or a group of
   checks; an unknown name fails and lists the valid ones. Secret values,
   such as the JWT signing key and initial users, are redacted. doctor exits
@@ -148,9 +151,9 @@ func newDoctorCmd() *cobra.Command {
   --report adds the hostname to the header and prints the whole output in a
   fenced block to paste into a bug report.
 
-  Like healthcheck, doctor opens no store, unix socket or log file, so it
-  works while phenix ui is stopped. Run it with the same flags, environment
-  and user as the phenix command you are checking.`
+  Like healthcheck, doctor opens no store, unix socket or log file and binds
+  no port, so it works while phenix ui is stopped. Run it with the same
+  flags, environment and user as the phenix command you are checking.`
 
 	cmd := &cobra.Command{
 		Use:   "doctor",
@@ -391,23 +394,6 @@ func (e doctorEnv) systemLogCheck(name, path string) doctorCheck {
 	}
 
 	return e.writableFileCheck(name, path)
-}
-
-// jwtKeyCheck reports the authentication mode the JWT signing key selects,
-// never the key.
-func jwtKeyCheck(key string) doctorCheck {
-	check := doctorCheck{Name: "ui.jwt-signing-key", Status: doctorPass, Detail: "set; phenix ui requires sign-in"}
-
-	switch {
-	case key == "":
-		check.Status, check.Detail = doctorWarn, "empty; phenix ui serves without authentication"
-	case strings.HasPrefix(key, "dev|"):
-		check.Status, check.Detail = doctorWarn, "a dev| key; phenix ui uses development authentication"
-	case key == "proxy-jwt":
-		check.Detail = "proxy-jwt; phenix ui trusts JWTs from the proxy"
-	}
-
-	return check
 }
 
 // gracePeriodCheck fails for a ui.shutdown-grace-period in v phenix ui refuses.

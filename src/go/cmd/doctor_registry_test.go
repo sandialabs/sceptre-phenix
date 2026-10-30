@@ -52,6 +52,12 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		"ui.jwt-signing-key":       "doctor-test-key",
 		"ui.shutdown-grace-period": "5",
 		"ui.netflow.max-size":      "100",
+		"ui.jwt-lifetime":          "24h",
+		"ui.users":                 "alice:Alicepass1!:global-admin",
+		"ui.listen-endpoint":       "0.0.0.0:3000",
+		"ui.file-server-endpoint":  "0",
+		"unix-socket":              filepath.Join(dir, "phenix.sock"),
+		"unix-socket-gid":          "-1",
 	}
 
 	maps.Copy(values, settings)
@@ -134,9 +140,16 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"base-dir.injects base-dir.injects pass",
 		"base-dir.topologies base-dir.topologies pass",
 		"mount-dir mount-dir pass",
-		"ui.jwt-signing-key ui.jwt-signing-key pass",
 		"ui.shutdown-grace-period ui.shutdown-grace-period pass",
 		"ui.netflow.max-size ui.netflow.max-size pass",
+		"ui.jwt-signing-key ui.jwt-signing-key pass",
+		"ui.jwt-lifetime ui.jwt-lifetime pass",
+		"ui.users ui.users pass",
+		"ui.tls ui.tls pass",
+		"ui.listen-endpoint ui.listen-endpoint pass",
+		"ui.file-server-endpoint ui.file-server-endpoint pass",
+		"unix-socket unix-socket pass",
+		"unix-socket-gid unix-socket-gid pass",
 		"minimega minimega pass",
 	}
 
@@ -201,6 +214,59 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"bad netflow size": {
 			settings: map[string]string{"ui.netflow.max-size": "-1"},
 			want:     with("ui.netflow.max-size", "ui.netflow.max-size ui.netflow.max-size fail", false),
+		},
+		"auth settings phenix ui misreads": {
+			settings: map[string]string{"ui.jwt-lifetime": "24", "ui.users": "bob:Bobpass1!", "ui.jwt-signing-key": "dev|bob"},
+			want: replaceRows(allPass,
+				"ui.jwt-signing-key ui.jwt-signing-key fail",
+				"ui.jwt-lifetime ui.jwt-lifetime fail",
+				"ui.users ui.users fail",
+			),
+		},
+		"default user": {
+			settings: map[string]string{"ui.users": ""},
+			want:     with("ui.users", "ui.users ui.users warn", false),
+		},
+		"proxy JWTs on every address": {
+			settings: map[string]string{"ui.jwt-signing-key": proxyJWTKey},
+			want:     with("ui.users", "proxy-jwt proxy-jwt warn", true),
+		},
+		"proxy JWTs on loopback": {
+			settings: map[string]string{"ui.jwt-signing-key": proxyJWTKey, "ui.listen-endpoint": "127.0.0.1:3000"},
+			want:     with("ui.users", "proxy-jwt proxy-jwt pass", true),
+		},
+		"proxy header without sign-in": {
+			settings: map[string]string{"ui.jwt-signing-key": "", "ui.proxy-auth-header": "X-Forwarded-User"},
+			want: replaceRows(
+				with("ui.users", "ui.proxy-auth-header ui.proxy-auth-header warn", true),
+				"ui.jwt-signing-key ui.jwt-signing-key warn",
+			),
+		},
+		"proxy header with sign-in": {
+			settings: map[string]string{"ui.proxy-auth-header": "X-Forwarded-User"},
+			want:     with("ui.users", "ui.proxy-auth-header ui.proxy-auth-header pass", true),
+		},
+		"TLS key without a certificate": {
+			settings: map[string]string{"ui.tls-key": filepath.Join(dir, "phenix.key")},
+			want:     with("ui.tls", "ui.tls ui.tls fail", false),
+		},
+		"listeners phenix ui refuses": {
+			settings: map[string]string{"ui.listen-endpoint": "3000", "ui.file-server-endpoint": "99999"},
+			want: replaceRows(allPass,
+				"ui.listen-endpoint ui.listen-endpoint fail",
+				"ui.file-server-endpoint ui.file-server-endpoint fail",
+			),
+		},
+		"socket phenix ui cannot set up": {
+			settings: map[string]string{"unix-socket": filepath.Join(dir, "missing", "phenix.sock"), "unix-socket-gid": "200"},
+			want: replaceRows(allPass,
+				"unix-socket unix-socket fail",
+				"unix-socket-gid unix-socket-gid fail",
+			),
+		},
+		"no socket": {
+			settings: map[string]string{"unix-socket": "", "unix-socket-gid": "200"},
+			want:     allPass,
 		},
 		"minimega down": {
 			modify: func(in *doctorInput) {
@@ -289,8 +355,8 @@ func TestRunDoctorChecksSkipAndHints(t *testing.T) {
 			ID: "minimega", Group: doctorGroupMinimega, Name: "minimega", Status: doctorSkip, Detail: "skipped by --skip",
 		},
 		"ui.jwt-signing-key": {
-			ID: "ui.jwt-signing-key", Group: doctorGroupUI, Name: "ui.jwt-signing-key", Status: doctorWarn,
-			Detail: jwtKeyCheck("").Detail,
+			ID: "ui.jwt-signing-key", Group: doctorGroupAuth, Name: "ui.jwt-signing-key", Status: doctorWarn,
+			Detail: jwtKeyCheck("", nil).Detail,
 			Hint:   "set ui.jwt-signing-key to a long random secret to require sign-in",
 		},
 		"store.endpoint": {
@@ -330,8 +396,13 @@ func TestParseDoctorSkip(t *testing.T) {
 		},
 		"comma list and repeated": {
 			args: []string{"--skip", "env, store.endpoint", "--skip", "ui"},
+			want: []string{"env", "env-overrides", "store.endpoint", "ui.netflow.max-size", "ui.shutdown-grace-period"},
+		},
+		"auth, tls and socket groups": {
+			args: []string{"--skip", "auth,tls", "--skip", "socket"},
 			want: []string{
-				"env", "env-overrides", "store.endpoint", "ui.jwt-signing-key", "ui.netflow.max-size", "ui.shutdown-grace-period",
+				"proxy-jwt", "ui.file-server-endpoint", "ui.jwt-lifetime", "ui.jwt-signing-key", "ui.listen-endpoint",
+				"ui.proxy-auth-header", "ui.tls", "ui.users", "unix-socket", "unix-socket-gid",
 			},
 		},
 		"unknown": {
@@ -356,7 +427,7 @@ func TestParseDoctorSkip(t *testing.T) {
 					t.Fatalf("parseDoctorSkip(%v) error = %v, want prefix %q", tc.args, err, tc.wantErr)
 				}
 
-				if !strings.HasSuffix(err.Error(), "groups: config, env, settings, files, dirs, ui, minimega") {
+				if !strings.HasSuffix(err.Error(), "groups: config, env, settings, files, dirs, ui, auth, tls, socket, minimega") {
 					t.Errorf("parseDoctorSkip(%v) error = %v, want the groups listed", tc.args, err)
 				}
 
@@ -481,7 +552,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 18 passed, 0 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 25 passed, 0 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
