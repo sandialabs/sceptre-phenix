@@ -110,7 +110,7 @@ When changing a capability, inspect every applicable surface:
 | CLI, REST, or UI capability | Implement parity in the other two when applicable and feasible; document gaps |
 | CLI command, flag, or help text | Regenerate the CLI reference with `make cli-docs` and commit `docs/content/cli/` and `docs/mkdocs.yml` |
 | Config field or version | Versioned structs, interfaces, schemas, examples, API output, skill, and docs |
-| REST route | Domain API, route table, RBAC, OpenAPI, UI client, and tests |
+| REST route | Domain API, route registration in `src/go/web/server.go`, RBAC, OpenAPI, UI client, and tests |
 | Store interface | Implementations, mock generation, callers, and tests |
 | Protobuf | `.proto`, generated files, consumers, and tests |
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
@@ -187,35 +187,44 @@ image, documentation, or topology details.
 
 ## CI and Release Safety
 
-Most GitHub Actions workflows are path-scoped: `ci.yml` generates code and tests
-Go with a coverage summary (both coverage summaries warn, without failing,
-below `.github/coverage-minimums.json`), and its `generated` job runs `make check-generated`,
-which also fails on a stale CLI reference; `frontend.yml` runs
-Vitest with a coverage summary and, for changes that can affect the browser
-(the paths its `changes` job lists), builds the UI and backend once per
-`VITE_AUTH` mode and shares those builds with the Playwright jobs, which run in
-parallel in the pinned Playwright image, and with the UI bundle budget and
-Lighthouse jobs, the latter writing a budget summary with deltas against the
-default branch; `examples.yml` checks Go/Python examples; `docs.yml` builds the docs and API
-reference and publishes them from `main`. Every API reference build, local,
-container, or CI, goes through `scripts/api-docs.sh`, which pins the Redocly CLI
-version; prek hooks lint `openapi.yml` and the config schemas with it.
-`lint.yml` runs the `prek` hooks, including golangci-lint and deadcode for Go
-(`src/go/prek.toml`) and knip for the UI (`src/js/prek.toml`), on every push, and `packages.yml` builds Docker, Debian,
-and Podman outputs on every push that
-changes more than the docs; `stress.yml` repeats the concurrency-heavy Go
-packages under `-race` weekly, and `fuzz.yml` runs every Go fuzz target for a
-bounded time weekly; `security.yml` reports govulncheck and `npm audit` findings
-on pull requests and weekly, and grype findings for the published image weekly,
-while `packages.yml` scans each image it builds with grype. Both write the findings
-to the job summary through `scripts/vuln-report.sh` (`go`, `npm` or `grype`, also
-runnable locally) and do not fail the run. `packages.yml` also makes SPDX SBOMs
-of both images and the `.deb` with syft, attaches them to a release and keeps
-them as an artifact otherwise; `cancel-closed-pr.yml` cancels a closed pull request
-branch's push-triggered runs (branches in this repository only), while each
-workflow's own concurrency group cancels the pull request's `pull_request` runs.
-Those groups are keyed by pull request number, not ref, so a closed pull
-request's run cannot cancel runs on the base branch.
+Most GitHub Actions workflows are path-scoped:
+
+- `ci.yml` generates code and tests Go with a coverage summary; its
+  `generated` job runs `make check-generated`, which also fails on a stale CLI
+  reference.
+- `frontend.yml` runs Vitest with a coverage summary and, for changes that can
+  affect the browser (the paths its `changes` job lists), builds the UI and
+  backend once per `VITE_AUTH` mode and shares those builds with the Playwright
+  jobs, which run in parallel in the pinned Playwright image, and with the UI
+  bundle budget and Lighthouse jobs, the latter writing a budget summary with
+  deltas against the default branch.
+- Both coverage summaries warn, without failing, below
+  `.github/coverage-minimums.json`.
+- `examples.yml` checks the Go and Python examples.
+- `docs.yml` builds the docs and API reference and publishes them from `main`.
+  Every API reference build, local, container or CI, goes through
+  `scripts/api-docs.sh`, which pins the Redocly CLI version; prek hooks lint
+  `openapi.yml` and the config schemas with it.
+- `lint.yml` runs the `prek` hooks on every push, including golangci-lint and
+  deadcode for Go (`src/go/prek.toml`) and knip for the UI
+  (`src/js/prek.toml`).
+- `packages.yml` builds the Docker, Debian and Podman outputs on every push
+  that changes more than the docs, scans each image it builds with grype, and
+  makes SPDX SBOMs of both images and the `.deb` with syft, attaching them to a
+  release and keeping them as an artifact otherwise.
+- `stress.yml` repeats the concurrency-heavy Go packages under `-race` weekly,
+  and `fuzz.yml` runs every Go fuzz target for a bounded time weekly.
+- `security.yml` reports govulncheck and `npm audit` findings on pull requests
+  and weekly, and grype findings for the published image weekly. It and
+  `packages.yml` write the findings to the job summary through
+  `scripts/vuln-report.sh` (`go`, `npm` or `grype`, also runnable locally) and
+  do not fail the run.
+- `cancel-closed-pr.yml` cancels a closed pull request branch's push-triggered
+  runs (branches in this repository only), while each workflow's own
+  concurrency group cancels the pull request's `pull_request` runs. Those
+  groups are keyed by pull request number, not ref, so a closed pull request's
+  run cannot cancel runs on the base branch.
+
 Update affected path filters, inputs, generated artifacts, tool versions, and
 local-equivalent commands together. Preserve least-privilege permissions,
 supported action versions, lockfile caches, and shared version values.

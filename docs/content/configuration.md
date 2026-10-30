@@ -732,8 +732,10 @@ order the kind filter lists them (`Topology`, `Scenario`, `Experiment`,
 and the table's page.
 
 The table can also be sorted by `Name`, `Kind`, or `Last Updated` by clicking
-the column heading. `Last Updated` shows when the config last changed, followed
-by how long ago that was, for example `(3 hours ago)`.
+the column heading. `Last Updated` shows when the config last changed,
+followed by how long ago that was, for example
+`2026-10-28T14:03:22Z (3 hours ago)` (see
+[Timestamps](web-ui.md#timestamps)).
 
 ### View a Config
 

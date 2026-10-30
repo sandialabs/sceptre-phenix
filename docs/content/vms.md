@@ -10,7 +10,7 @@ tooltip reads `details and actions`) and you will be presented with the VM's
 details card. The card gathers everything phēnix knows about the VM together
 with every action you can take on it.
 
-![VM details for the running site-1-hmi, with power buttons, its screen, resource tiles, storage, a capturing interface, labels, annotations, snapshots and port forwards.](images/vm_details_card.png){: width=800 .center}
+![VM details for the running hmi-01, with its Windows OS box, power buttons, its screen, resource tiles, storage, a capturing interface, labels, annotations, snapshots and port forwards.](images/vm_details_card.png){: width=800 .center}
 
 #### The Header
 
@@ -77,7 +77,9 @@ the server answers, and none of them grays out the page.
 | `Insert CD-ROM` | Insert an ISO image into the VM's CD-ROM drive; reads `Change CD-ROM` when one is already inserted |
 | `Mount disk` | Mount the VM's filesystem to browse, upload and download files |
 
-`Mount disk` is only present when the `vm-mount` feature is enabled; see
+`Reset disk` and `Snapshot` ask you to confirm first, and `Backing image` asks
+once you have named the new image; the other buttons open a dialog of their
+own. `Mount disk` is only present when the `vm-mount` feature is enabled; see
 [Mount a VM](#mount-a-vm).
 
 An action your role may not take is not shown at all. An action the VM's
@@ -87,7 +89,7 @@ not have snapshots enabled`, `Can't restart: the VM is paused and must be
 resumed first`, or `Can't restart: the VM is not running; start it instead`
 beside a `Start`.
 
-![VM details for the shut-down historian, with Start enabled and the actions a stopped VM cannot take grayed out.](images/vm_details_disabled.png){: width=800 .center}
+![VM details for the shut-down historian, with Start enabled and Restart and the other actions a stopped VM cannot take grayed out.](images/vm_details_disabled.png){: width=800 .center}
 
 #### Tiles
 
@@ -113,7 +115,8 @@ names the image the same way. A button in the section heading opens the
 
 `Network` lists one row per interface: the interface index, the VLAN alias, a
 `VLAN <id>` tag, the IP address and the tap name. Click the alias to move the
-interface onto a different VLAN, if your role may do so. While the VM is
+interface onto a different VLAN, if your role may do so; phēnix asks you to
+confirm the change first. While the VM is
 running, every connected interface also has a shark-fin button that starts a
 packet capture on it; while a capture is running, the row is highlighted, the
 button becomes a red stop button, and an `Open in WebShark` button appears
@@ -140,7 +143,7 @@ the third only when WebShark is installed and your role may list captures.
 
 `Labels` lists the VM's labels as key and value pairs; `view/edit` opens the
 label editor. `Snapshots` lists the VM's snapshots; click the play button next
-to a snapshot name to restore it. `Port forwards` lists each forward as
+to a snapshot name, and confirm, to restore it. `Port forwards` lists each forward as
 `<source port> → <destination host>:<destination port>`, along with the
 user who created it; `add` creates one, and you can delete the forwards you
 own. Each of these three sections only appears if your role may list what it
@@ -234,6 +237,9 @@ interface, then its second, and so on; VMs with no VLAN ID or tap, such as
 those that are not running, come last either way. VMs that tie are listed by
 name from A to Z.
 
+The `Uptime` column shows a dash for a VM that is not running and `unknown`
+for an external node.
+
 From the API, `GET /api/v1/experiments/{name}` takes a repeated
 `label=key=value` query parameter and a repeated `host=<host>` query parameter
 with the same meanings, and the VM lists' `hosts` and `labels` hold every host
@@ -255,12 +261,13 @@ buttons that act on that row's VM without opening its details card:
 * `Capture all interfaces`, which becomes `Stop all packet captures` while the
   VM is capturing (see [Capture All Interfaces](#capture-all-interfaces))
 
-![VM table Actions column with a tooltip explaining that a VM without snapshots enabled cannot be snapshotted.](images/vm_row_actions.png){: width=400 .center}
+![VM table with an external node that has no buttons, a shut-down historian whose Actions column shows Start with Restart grayed out and whose Uptime is a dash, and a tooltip explaining that a VM without snapshots enabled cannot be snapshotted.](images/vm_row_actions.png){: width=800 .center}
 
 `Shut down`, `Start` and `Restart` act as soon as you click them, as on the
 details card, and so do the capture buttons; a button spins until its action
-has finished, while the page stays usable.
-The buttons follow the same rules as the ones on the details card: a button is
+has finished, while the page stays usable. `Snapshot` asks you to confirm
+first, and `Port forward` and `Backing image` open their dialogs. The buttons
+follow the same rules as the ones on the details card: a button is
 disabled, with the reason in its tooltip, when your role may not use it
 (`Can't snapshot: you don't have permission`) or when the VM's state rules it
 out (`Can't restart: the VM is busy with another action`, or `Can't restart: the
@@ -307,7 +314,7 @@ phenix vm memory-snapshot <experiment name> <vm name> <snapshot file path>
 ### From the Web-UI
 
 Click on a running VM in a started experiment to open its details card, then
-click `Snapshot` in `More actions`. The same action is also in the VM table's
+click `Snapshot` in `More actions` and confirm. The same action is also in the VM table's
 [Actions column](#vm-actions-column). The VM must be running and have snapshots
 enabled; on a VM that does not, the button is disabled with
 `Cannot snapshot: the VM does not have snapshots enabled`.
@@ -377,7 +384,7 @@ starting the phēnix UI with the `vm-mount` feature flag (see
 
     Mounting a VM requires the minimega command-and-control agent (`miniccc`)
     to be installed and actively running in the VM. If `cc` is not active for a
-    VM, the `Mount disk` button is disabled.
+    VM, the `Mount disk` button is disabled and `phenix vm mount` fails.
 
 ### Enabling VM Mount
 
@@ -485,10 +492,6 @@ phenix vm unmount <experiment name> <vm name>
 
 !!! note
 
-    Mounting a VM requires the minimega command-and-control agent (`miniccc`)
-    to be installed and actively running in the VM; the command will fail if
-    the agent is not reachable.
-
     Mounts are automatically unmounted, and their mount directories removed,
     when the owning experiment is stopped or deleted, so mounts do not
     outlive their experiment.
@@ -574,7 +577,7 @@ captures, and turns back into `Capture all interfaces` once they have stopped.
 ### From the Web-UI
 
 Click on the name of a running VM in a started experiment to open its details
-card, then click `Kill` in the `Power` section.
+card, then click `Kill` in the `Power` section and confirm.
 
 _Note_: if you stop and then start the experiment again, that VM will run again
 per the experiment configuration.
@@ -661,10 +664,10 @@ phenix vm redeploy <experiment name> [vm name] [--label <label>]
 ### From the Web-UI
 
 Click on the name of a running VM in a started experiment to open its details
-card, then click `Reset disk` in `More actions`. The button is disabled with
-`Can't reset disk: the VM does not have snapshots enabled` on a VM whose
-snapshot flag is off, since a persistent VM has no separate disk state to
-discard, and with `Can't reset disk: the VM is paused and must be resumed
+card, then click `Reset disk` in `More actions` and confirm. The button is
+disabled with `Can't reset disk: the VM does not have snapshots enabled` on a
+VM whose snapshot flag is off, since a persistent VM has no separate disk state
+to discard, and with `Can't reset disk: the VM is paused and must be resumed
 first` on a paused VM.
 
 ### From the Command Line Binary
@@ -819,13 +822,13 @@ flag is omitted is left unchanged. The following flags are supported:
 | `--do-not-boot`       | Set the do-not-boot flag for the VM.                                                                              |
 | `--snapshot`          | Set the snapshot (non-persistent) flag for the VM.                                                                |
 | `-L, --label-changes key=value` | VM label to set, in `key=value` form. May be repeated to set multiple labels.                                         |
-| `--append-label`       | Append the provided labels to the VM's existing labels instead of replacing them.                                     |
+| `--append-labels`      | Append the provided labels to the VM's existing labels instead of replacing them.                                     |
 | `-l, --label`         | Apply the change to every VM whose label matches the provided label (supports glob patterns). Use `all` to select every VM in the experiment. May be repeated. |
 
 A label key or value may not hold a double quote, a backslash, `$`, or a
 control character other than a newline or tab, or start with `file:`,
 `http:`, `https:` or `tar:`, since minimega would read it as something else.
-With `--append-label`, the VM's existing labels must follow the same rules.
+With `--append-labels`, the VM's existing labels must follow the same rules.
 A VLAN an interface connects to also may not hold white space, `'` or `#`.
 
 For example, to set the CPU count to 4 and memory to 2048 MB for a VM named

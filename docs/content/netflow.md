@@ -36,7 +36,7 @@ reads `Start Netflow Capture`. Clicking it starts netflow capture for the
 non-default bridge the experiment is configured to use for all VM network
 interfaces.
 
-![Running experiment toolbar with the VMs, Files, VNC and Netflow tabs, a Find a VM box, and the stop, netflow, State of Health, SCORCH and layout buttons.](images/exp_netflow_button.png){: width=800 .center}
+![Running experiment toolbar with the VMs, Files, VNC and Netflow tabs, the Hosts, Labels and Paginate controls, a Find a VM box, and the stop, netflow and column picker buttons.](images/exp_netflow_button.png){: width=800 .center}
 
 The button spins while a capture is starting or stopping. Once the capture is
 running the button turns red and its tooltip reads `Stop Netflow Capture`. To
@@ -46,7 +46,7 @@ progress and the button is red straight away.
 
 The `Netflow` tab is the last tab of the running experiment, and it is always
 there for users whose role can read netflow. Until flows arrive it reads
-`No netflow captures yet. Start one with the netflow button above.`
+`No netflow lines yet. Start a capture with the netflow button above.`
 
 Captured flows are shown as a table with `Time`, `Source`, `Destination`,
 `Protocol`, `Packets` and `Bytes` columns, newest flow first. `Source` and
@@ -56,7 +56,7 @@ IP protocol number. The table is sized to the window, so the page footer stays
 on screen as flows come in. Starting and stopping a capture add their own rows,
 so the table also records when each capture ran.
 
-![Netflow table of 22 flows, newest first, with time, source, destination, protocol, packet and byte counts.](images/netflow_table.png){: width=800 .center}
+![Netflow tab reading 22 lines, newest first, with a Download captures button and a table of flows with time, source, destination, protocol, packet and byte counts.](images/netflow_table.png){: width=800 .center}
 
 The line above the table reports how many flows the tab is holding. The live
 view keeps the 10,000 most recent flows and shows the newest 500 of them; every

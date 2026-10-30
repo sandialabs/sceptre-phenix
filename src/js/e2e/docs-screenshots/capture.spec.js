@@ -226,7 +226,10 @@ test('soh_overview_detail', async ({ page }) => {
   await page.clock.setFixedTime(sohNow);
   await open(page, '/soh');
   // rows sort worst first, so the first expandable row is bennu's
-  await page.locator('td.chevron-cell a').first().click();
+  await page
+    .getByRole('button', { name: /^Problems of / })
+    .first()
+    .click();
   const detail = page.locator('tr.detail').first();
   await expect(detail).toContainText('problems in bennu');
   await shoot(detail, 'soh_overview_detail');

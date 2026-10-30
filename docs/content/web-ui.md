@@ -57,7 +57,7 @@ loaded straight away and loads a fresh copy behind it, so the right-hand end
 of the navbar says how old what you are looking at is, with a button beside it
 (`Refresh this page's data`) that reloads only the page's data.
 
-![Header refresh control reading Updated just now beside a green refresh button.](images/header_refresh.png){: width=500 .center}
+![Header refresh control reading Updated just now beside a refresh button with a green icon.](images/header_refresh.png){: width=500 .center}
 
 The status reads:
 
@@ -80,7 +80,7 @@ The status reads:
     * `older than 90 s` (or another limit): the data has not been reloaded for
       longer than the page expects, such as the Hosts page's 90 seconds.
 
-![The refresh status reading Updated 3 min ago · may be out of date, beside an orange refresh button](images/header_refresh_stale.png){: width=600 .center}
+![The refresh status reading Updated 3 min ago · may be out of date, beside a refresh button with an orange icon](images/header_refresh_stale.png){: width=600 .center}
 
 The age is measured from when the server read the data, not from when your
 browser received it, so a host list the server reused, or a page kept from an
@@ -202,6 +202,17 @@ On an experiment's page, each tab keeps its own search while you look at
 another, and the VMs and VNC tabs share one. The address bar names the open tab
 and its search, for example `/experiment/demo?tab=files&q=log`, so reloading the
 page or sharing the link opens the same tab with the same search.
+
+## Timestamps
+
+Times the server records show as it sent them, an ISO 8601 timestamp to the
+second with its UTC offset, followed by how long ago that was, such as
+`2026-10-28T14:03:22Z (3 hours ago)`. The age goes from `just now` to minutes,
+hours, days, weeks, months and years, and is kept current while the page is
+open. The Experiments page's `Start Time`, a running experiment's start time,
+the Configs page's `Last Updated`, an experiment's `Files` tab `Date`, the
+netflow captures list and the SCORCH run downloads all show times this way.
+The Logs page keeps its own timestamp column.
 
 ## Errors
 

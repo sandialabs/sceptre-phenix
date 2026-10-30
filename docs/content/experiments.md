@@ -12,8 +12,11 @@ Click on the `Experiments` tab. This will display all available experiments that
 the user has access to view or edit.
 
 The box at the top left counts the listed experiments, how many of them are
-running, the VMs of the running experiments, and the VLANs of all of them. The
-counts cover every listed experiment, not only those the search shows.
+running, the `VMs in running experiments`, and the VLANs of all of them. The
+VM count comes from the running experiments' topologies: it leaves out VMs
+marked do not boot and external nodes, and counts a VM that was shut down or
+has not started yet. The counts cover every listed experiment, not only those
+the search shows.
 
 Click a column heading to sort the table by it: `Name`, `Status`, `Topology`,
 `Scenario`, `Start Time`, `VMs`, and `VLANs` can all be sorted on. `VLANs` sorts
@@ -31,6 +34,11 @@ the actual time.
 Click a name in the `Topology` or `Scenario` column to open that config in the
 viewer on the [Configs](configuration.md#view-a-config) page, if your role may
 view it.
+
+Each row's `Actions` column holds the experiment's start and stop buttons, its
+trash can, and, if your role may view the experiment, a heartbeat button that
+opens its [State of Health](state-of-health.md) and a fire button that opens
+its [SCORCH runs](scorch.md).
 
 ### From the Command Line Binary
 
@@ -181,7 +189,7 @@ apps or the experiment has only built-in apps.
 
 ### From the Web-UI
 
-![Experiments page with the add experiment plus button circled in red beside the Find an Experiment search box.](images/create_exp.png){: width=800 .center}
+![Experiments page with its totals strip and the add experiment plus button circled in red beside the Find an Experiment search box.](images/create_exp.png){: width=800 .center}
 
 Click the `+` button to the right of the filter field.
 
@@ -557,14 +565,16 @@ experiment's `files` folder in the minimega files directory, which the
 [Disks](disks.md) tab leaves out, so the experiment's VM disk snapshots and
 other images there are managed here rather than there.
 
-![Experiment Files tab listing packet captures, other files and a disk image with path, category, date, size, and open, download and delete actions.](images/exp_files_tab.png){: width=800 .center}
+![Experiment Files tab listing packet captures, SCORCH archives and other files with path, category, date with its age, size, and open, download and delete actions.](images/exp_files_tab.png){: width=800 .center}
 
 ### Finding a File
 
 The table has a `Name`, `Path`, `Category`, `Date`, `Size`, and `Actions`
 column. `Path` is an information icon; hover over it for the file's full path on
 the phēnix server, such as
-`/phenix/images/my-experiment/files/scorch/1/tcpdump/capture.pcap`. Click the
+`/phenix/images/my-experiment/files/scorch/1/tcpdump/capture.pcap`. `Date`
+shows when the file last changed, with its age, as described in
+[Timestamps](web-ui.md#timestamps). Click the
 `Name`, `Date`, or `Size` heading to sort by that column; the table starts with
 the newest file first. `Category` cannot be sorted on.
 

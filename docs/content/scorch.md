@@ -304,7 +304,7 @@ Level with the search box on the left, the page counts the experiments it lists,
 
 Each button is only shown if your role permits the action it takes. Column headings stay on one line with the sort arrow beside the heading, and the status and terminal buttons are centered in their columns.
 
-![Scorch Table](images/scorch_table.png)
+![SCORCH page with its Experiments, Runs and Running totals and a table of three experiments with their experiment and SCORCH status buttons.](images/scorch_table.png)
 
 ## Scorch Pipeline
 
@@ -318,7 +318,7 @@ A user can access the terminal if a break point is reached by clicking on the co
 
 ### Runs Page
 
-The page showing an experiment's pipelines is reached from the `Experiment` or `Go to SCORCH runs` links in the [Scorch table](#scorch-table), and from the fire button (tooltip `view SCORCH runs`) beside the `Running` status in a running experiment's summary card.
+The page showing an experiment's pipelines is reached from the `Experiment` or `Go to SCORCH runs` links in the [Scorch table](#scorch-table), and from the fire button (tooltip `view SCORCH runs`) in the Experiments table's `Actions` column, beside the `Running` status in a running experiment's summary card, and in a VM's details card.
 
 At its top left, the page counts the experiment's `Runs` and how the last run of each went, as its components show: `Running`, `Succeeded` once its `done` node succeeded, or `Failed` when any component failed. A pipeline whose last run neither failed nor finished, such as one never run or just cleared, counts in none of the three. The following functions are available across the top of the page, below the counts:
 
@@ -333,12 +333,12 @@ Each run is shown below that with its own header: the title `Run:` followed by t
 
 - `Clear` (tooltip `clear this run's status`): forgets the statuses of the run's components, for every loop, so its pipeline reads as never run. It is only enabled once the run is idle and has a status to clear, and it is only offered to users whose role may trigger Scorch runs.
 - `Cleanup` (tooltip `run only this run's cleanup stage`): executes just this run's `cleanup` stage, for example to tear down what a canceled run left behind. It is only shown for runs that define cleanup components, and is disabled while any run of the experiment is busy.
-- `Download`: a menu of the archives of the run's artifacts, newest first, each with the time the run started and the archive's size; picking one downloads it. Each time a run finishes, Scorch archives what the run wrote under `scorch/run-<run>/` in the experiment's files to `scorch-run-<run>_<start>.tgz` at the top of those files, so a run executed several times has several archives, and they are also listed on the experiment's Files tab. The button is greyed, its tooltip saying why, until the run has an archive, and it is only shown to users whose role may download the experiment's files (`get` on `experiments/files`); listing the archives also needs `list` on `experiments/files`. The menu is listed again once a run's `done` stage ends.
+- `Download`: a menu of the archives of the run's artifacts, newest first, each with the time the run started, with its age (see [Timestamps](web-ui.md#timestamps)), and the archive's size; picking one downloads it. Each time a run finishes, Scorch archives what the run wrote under `scorch/run-<run>/` in the experiment's files to `scorch-run-<run>_<start>.tgz` at the top of those files, so a run executed several times has several archives, and they are also listed on the experiment's Files tab. The button is greyed, its tooltip saying why, until the run has an archive, and it is only shown to users whose role may download the experiment's files (`get` on `experiments/files`); listing the archives also needs `list` on `experiments/files`. The menu is listed again once a run's `done` stage ends.
 - a start/stop button (tooltip `start this run` or `stop this run`) that spins until the server reports that the run started or stopped
 
 When you are viewing one of a run's loops, a button also appears to the left of the run's title that returns the display one level up in the loop chain, as described under [Stages](#stages).
 
-![SCORCH Runs Page](images/scorch_runs_page.png)
+![SCORCH runs page of ics-water-plant with its run totals, the Start all, Stop all and Clear all buttons, and the baseline run's Clear, Cleanup and Download buttons above its pipeline.](images/scorch_runs_page.png)
 
 ### Stages
 

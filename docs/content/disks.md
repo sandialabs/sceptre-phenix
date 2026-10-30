@@ -215,6 +215,13 @@ take as one argument: no white space or control characters, and none of `"`,
 from `Clone` or `Rename` follows the same rule. phēnix clones, renames, deletes,
 and downloads the file itself, so those work on an existing image of any name.
 
+!!! warning
+    phēnix does not check whether other images are built on the one you rename
+    or delete. Images backed by a renamed image must be rebased onto its new
+    name, and images backed by a deleted one can no longer be used; the
+    `Rename` and `Delete` dialogs say so. An image's details show its
+    `Backing Chain`, the images it is built on.
+
 ### Cloning in the background
 
 A clone copies the whole file, which can take minutes for a large image, so

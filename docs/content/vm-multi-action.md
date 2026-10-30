@@ -10,9 +10,9 @@ in the header of the first column, to the left of the `Node` column, to
 select all the VMs; its tooltip reads `Select/Unselect All`. Alternatively,
 the checkbox at the start of a VM's row can be used to select the
 VM. Once one or more VMs are selected, a toolbar will appear to the
-left of the search text box.
+left of the `Hosts` and `Labels` filters, before the search text box.
 
-![Running experiment's VM table with two VMs checked and the bulk start, pause, snapshot and other action buttons above it.](images/vms_multi_select.png)
+![Running experiment page with two VMs checked and the bulk start, pause, memory snapshot, backing image, VM snapshot and modify state buttons beside the Hosts, Labels and Paginate controls above the VM table.](images/vms_multi_select.png)
 
 Every button on the toolbar acts on all of the selected VMs at once, and a
 button is only shown if your role allows its action on every one of them.
@@ -193,6 +193,9 @@ textbox to find VMs by:
 * escape keywords - To find keywords that appear in a VM name use double
   quotes. For example, to find a VM named `free_running`, type `"running"`.
 
+The `Hosts` and `Labels` filters beside the search box narrow the list further;
+see [Filtering and Sorting the VM Table](vms.md#filtering-and-sorting-the-vm-table).
+
 #### Example
 
 Multiple search terms
@@ -219,18 +222,18 @@ phenix vm info <experiment name> --label <label>
 ### From the Web-UI
 
 The Web-UI has no single control for a subnet's captures. Enter the subnet in
-the search box, such as `192.168.1.0/30`, to list the VMs in it. Then click an
+the search box, such as `10.1.5.20/30`, to list the VMs in it. Then click an
 address in a VM's `IP` column, or a tap in its `Taps` column, to start a
 capture on that interface (see [Packet Capture](vms.md#packet-capture)).
 
-![VM table filtered to 192.168.1.0/30 with the start packet capture tooltip shown over a VM's capture button.](images/vms_multi_capture_start.png)
+![VM table filtered to 10.1.5.20/30 with the start packet capture tooltip shown over a VM's address.](images/vms_multi_capture_start.png)
 
 The `Capture all interfaces` button in a VM's `Actions` column starts a capture
 on every connected interface of that VM. While the VM is capturing, the button
 becomes `Stop all packet captures`, which stops them all (see
 [Capture All Interfaces](vms.md#capture-all-interfaces)).
 
-![VM table filtered to 192.168.1.0/30 with both VMs capturing, their captured IPs and taps in green and stop capture buttons in red.](images/vms_multi_capture_stop.png)
+![VM table filtered to 10.1.5.20/30 with both VMs capturing, their captured IPs and taps in green and stop capture buttons in red.](images/vms_multi_capture_stop.png)
 
 To find every VM with a running packet capture, enter `capturing` in the search
 box.

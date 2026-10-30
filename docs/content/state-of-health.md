@@ -12,15 +12,17 @@ tab in the navbar summarizes every experiment in one table; see [State of
 Health Overview](#state-of-health-overview). A single experiment also has its
 own SoH page, which shows that experiment's [topology graph](#topology-graph)
 and, when SoH packet capture is enabled, its [network
-volume](#network-volume). You can access an experiment's SoH page by clicking
-the SoH button from the Experiments or Running Experiment components.
+volume](#network-volume). To open an experiment's SoH page, click its
+heartbeat button (tooltip `view state of health`):
 
-Button available on the experiments table.
+* in the `Actions` column of the Experiments table, beside the fire button
+  that opens its [SCORCH](scorch.md) runs;
+* in a running experiment, beside the `Running` status in the experiment's
+  summary card at the top of its page.
 
-![SoH column header of the Experiments table above a State of Health heart-monitor button.](images/exps_soh.png){: width=100 .center}
+![The Actions column of the Experiments table, where each row has start, stop, delete, State of Health heartbeat and SCORCH fire buttons, grayed out where they do not apply.](images/exps_soh.png){: width=200 .center}
 
-Button available in a running experiment, beside the `Running` status in the
-experiment's summary card at the top of its page.
+Both buttons need `get` on the experiment.
 
 An experiment's SoH page has at most two tabs, `Topology Graph` and `Network
 Volume`, and the `Network Volume` tab is only present when the SoH [packet
@@ -52,7 +54,7 @@ table, so you can see which experiments need attention without opening each
 one. The tab needs the `experiments` `list` permission, and it lists only the
 experiments your role may `get`.
 
-![State of Health overview table of five experiments with each one's status, SoH verdict, VM health bar, checks, reachability, a 12-run trend and last check time.](images/soh_overview.png){: width=800 .center}
+![State of Health overview with its filters, summary line and a table of five experiments with each one's status, SoH verdict, VM health bar, checks, reachability, a 12-run trend, last check time and actions.](images/soh_overview.png){: width=800 .center}
 
 Each row describes one experiment:
 
@@ -105,7 +107,7 @@ or `Run SOH`. The server sends at most 50 failing checks and down VMs per
 experiment; when a run has more than that, the detail says so and points at
 the topology graph, which has them all.
 
-![Expanded bennu row listing 5 problems by host, check type, target and result, with Open topology graph and Run SOH buttons.](images/soh_overview_detail.png){: width=800 .center}
+![Expanded ics-water-plant row listing 6 of its 9 problems by host, check type, target and result, with Open topology graph and Run SOH buttons and a Show all 9 problems link.](images/soh_overview_detail.png){: width=800 .center}
 
 A legend under the table names the colors of the `VM Health` bar: `Running`,
 `Checks failing`, `Not running`, `Not booted`, `Delayed start` and

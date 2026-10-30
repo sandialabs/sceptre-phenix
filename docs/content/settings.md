@@ -186,22 +186,29 @@ seconds before it kills the container, which covers the default. If you raise
 `ui.shutdown-grace-period` past that, raise Docker's timeout with it:
 `stop_grace_period` in `docker-compose.yml`, or `docker stop --time`.
 
-## Web UI Session Timeout
+## The Settings Page
 
-The web UI's **Settings** page (admin-only) can also automatically log out idle users. Unlike
-the settings above, this is stored in the data store and takes effect immediately when saved —
-no `config.yaml` or restart involved.
+The web UI's `Settings` tab needs `update` on `settings`. Unlike the settings
+above, these are kept in the data store and take effect as soon as they are
+saved, with no `config.yaml` change or restart.
 
-| Setting | Default | Description |
+| Section | Setting | Default |
 | :--- | :--- | :--- |
-| Log out idle users | Disabled | Enables the idle timeout. |
-| Idle timeout (minutes) | `30` | Minutes of inactivity before an idle user is logged out. |
-| Warning before logout (minutes) | `3` | How long before logout to warn the user. |
+| `Password Settings` | `Require a lowercase letter`, `Require a number`, `Require a symbol` | on |
+| `Password Settings` | `Require an uppercase letter` | off |
+| `Password Settings` | `Minimum length of password`, 8 to 32 | `8` |
+| `Timeout Settings` | `Log out users after period of inactivity` | off |
+| `Timeout Settings` | `Time (minutes) to log out users after idle for` | `30` |
+| `Timeout Settings` | `Display idle user logout with (minutes) left` | `3` |
+| `File Logging Settings` | `Max log file size (MiB)` of the system log | `100` |
+| `File Logging Settings` | `Max number of file rotations (0 for infinite)` | `0` |
+| `File Logging Settings` | `Max rotated log file age (0 for infinite)`, in days | `90` |
 
-The page opens on the settings it last loaded, so there is nothing to wait for;
-the refresh button in the header reloads them. `Reset Form` discards any unsaved
-changes and puts the loaded settings back, and both `Reset Form` and
-`Save Changes` stay disabled until you change something.
+The two idle timeout boxes are greyed out until the timeout is turned on. The
+page opens on the settings it last loaded, and the refresh button in the header
+reloads them without discarding edits you have not saved. `Reset Form` puts
+the loaded settings back, `Save Changes` saves them and says
+`Settings updated`, and both stay greyed out until you change something.
 
 ## phēnix Apps Environment Variables
 

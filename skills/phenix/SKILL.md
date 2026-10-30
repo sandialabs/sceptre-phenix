@@ -142,8 +142,10 @@ through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 
 Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
-aliases/ranges), `workflow` (topology directory deployment), plus `mm`,
-`settings`, `ui`, `util`, `completion`, and `version`. Every subcommand
+aliases/ranges), `workflow` (topology directory deployment), `job`
+(background jobs), `doctor` (offline configuration checks), `healthcheck`
+(the server's liveness and readiness), plus `mm`, `settings`, `ui`, `util`,
+`completion`, and `version`. Every subcommand
 accepts the persistent flags described in
 [`references/cli.md`](references/cli.md), which also links the generated CLI
 reference that lists every command's flags.

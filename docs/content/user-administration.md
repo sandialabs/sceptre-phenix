@@ -141,7 +141,7 @@ with how many have no role yet (for example `Users 12 (1 without a role)`), and
 the `Unique roles` among them: `Global Admin` held by three users counts once.
 The counts cover every user listed, whatever the search.
 
-![Users table of five example users with first and last names, roles, and change password, delete and edit actions, beside a Find a User box.](images/users_search.png){: width=800 .center}
+![Users page with its Users and Roles totals, a Find a User box, and a table of five example users with first and last names, roles, and change password, delete and edit actions.](images/users_search.png){: width=800 .center}
 
 ### Roles
 
