@@ -2,16 +2,13 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -20,7 +17,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"phenix/store"
-	"phenix/util/common"
 	"phenix/util/mm/mmcli"
 )
 
@@ -30,6 +26,10 @@ const (
 	doctorPass doctorStatus = "pass"
 	doctorWarn doctorStatus = "warn"
 	doctorFail doctorStatus = "fail"
+	doctorSkip doctorStatus = "skip"
+
+	// doctorSchemaVersion is the version of the JSON report's layout.
+	doctorSchemaVersion = 1
 
 	sourceFlag    = "flag"
 	sourceEnv     = "env"
@@ -41,7 +41,10 @@ const (
 	minimegaCheckName = "minimega"
 )
 
-var errDoctorFailed = errors.New("phenix doctor found a problem")
+var (
+	errDoctorFailed = errors.New("phenix doctor found a problem")
+	errDoctorWarned = errors.New("phenix doctor found a warning, which --strict makes an error")
+)
 
 // secretSettings are the settings whose values doctor never prints.
 //
@@ -57,6 +60,17 @@ type doctorCheck struct {
 	Detail string       `json:"detail"`
 }
 
+// doctorResult is one row of the report: a check's outcome, the registered
+// check that gave it, and what to do when it warns or fails.
+type doctorResult struct {
+	ID     string       `json:"id"`
+	Group  string       `json:"group"`
+	Name   string       `json:"name"`
+	Status doctorStatus `json:"status"`
+	Detail string       `json:"detail"`
+	Hint   string       `json:"hint,omitempty"`
+}
+
 // doctorSetting is one setting's effective value and where it came from.
 type doctorSetting struct {
 	Key    string `json:"key"`
@@ -64,25 +78,73 @@ type doctorSetting struct {
 	Source string `json:"source"`
 }
 
+// doctorVersion names the phenix build and the minimega that answered.
+type doctorVersion struct {
+	Phenix   string `json:"phenix"`
+	Label    string `json:"label"`
+	Commit   string `json:"commit"`
+	Date     string `json:"date"`
+	Minimega string `json:"minimega"`
+}
+
+// doctorEnvironment describes where doctor ran, for a bug report.
+type doctorEnvironment struct {
+	OS            string `json:"os"`
+	Kernel        string `json:"kernel"`
+	Arch          string `json:"arch"`
+	UID           int    `json:"uid"`
+	GID           int    `json:"gid"`
+	User          string `json:"user"`
+	WorkingDir    string `json:"workingDir"`
+	ConfigFile    string `json:"configFile"`
+	Container     bool   `json:"container"`
+	ContainerHint string `json:"containerHint,omitempty"`
+	Hostname      string `json:"hostname,omitempty"`
+}
+
 // doctorReport is everything phenix doctor found.
 type doctorReport struct {
-	Status   doctorStatus    `json:"status"`
-	Checks   []doctorCheck   `json:"checks"`
-	Settings []doctorSetting `json:"settings"`
+	SchemaVersion int               `json:"schemaVersion"`
+	Status        doctorStatus      `json:"status"`
+	Time          string            `json:"time"`
+	Version       doctorVersion     `json:"version"`
+	Environment   doctorEnvironment `json:"environment"`
+	Checks        []doctorResult    `json:"checks"`
+	Settings      []doctorSetting   `json:"settings"`
+}
+
+// doctorOptions are the doctor command's flags.
+type doctorOptions struct {
+	output     string
+	timeout    time.Duration
+	skip       []string
+	strict     bool
+	noSettings bool
+	report     bool
 }
 
 func newDoctorCmd() *cobra.Command {
 	desc := `Check the phenix configuration without a running server
 
-  Reads the config and users files, reports unknown keys, checks each set
-  environment variable phenix reads (PHENIX_*, PATH, EDITOR, SUDO_USER and
-  SUDO_COMMAND) as phenix parses it and warns about PHENIX_* variables that
-  name no setting, checks that the store and log files can be written, that
-  the base directories exist, and that minimega answers on its socket, then
-  prints every setting with its effective value and where that value came
-  from (flag, env, config file or default). Secret values, such as the JWT
-  signing key and initial users, are redacted. It exits 0 when no check
-  fails, and 1 otherwise.
+  Prints a header for bug reports (the phenix and minimega versions, OS and
+  kernel, user, working directory, the config file read, and whether phenix
+  runs in a container), then every setting with its effective value and where
+  that value came from (flag, env, config file or default), then each check,
+  then a summary that names each failed and warned check, with a hint for
+  each failure.
+
+  The checks read the config and users files and report unknown keys, check
+  each set environment variable phenix reads (PHENIX_*, PATH, EDITOR,
+  SUDO_USER and SUDO_COMMAND) as phenix parses it and warn about PHENIX_*
+  variables that name no setting, check that the store and log files can be
+  written, that the base directories exist, and that minimega answers on its
+  socket. --skip takes a check or a group of checks; an unknown name fails and
+  lists the valid ones. Secret values, such as the JWT signing key and initial
+  users, are redacted. doctor exits 1 when a check fails, or with --strict
+  when one warns, and 0 otherwise.
+
+  --report adds the hostname to the header and prints the whole output in a
+  fenced block to paste into a bug report.
 
   Like healthcheck, doctor opens no store, unix socket or log file, so it
   works while phenix ui is stopped. Run it with the same flags, environment
@@ -97,97 +159,88 @@ func newDoctorCmd() *cobra.Command {
   docker exec phenix phenix doctor
 
   # As JSON, waiting up to 10 seconds for minimega
-  phenix doctor -o json --timeout 10s`,
+  phenix doctor -o json --timeout 10s
+
+  # Without minimega or the settings list, failing on any warning
+  phenix doctor --skip minimega -x --strict
+
+  # Output to paste into a bug report
+  docker exec phenix phenix doctor --report`,
 		Args: cobra.NoArgs,
 		// The root command's hooks read settings from the server, open the
 		// store and the system log, which doctor checks rather than uses.
 		PersistentPreRunE:  func(*cobra.Command, []string) error { return nil },
 		PersistentPostRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			output := mustGet(cmd.Flags().GetString, "output")
-			if output != "text" && output != FormatJSON {
-				return fmt.Errorf("unsupported output format: %s", output)
+			opts := doctorFlagOptions(cmd.Flags())
+			if opts.output != "text" && opts.output != FormatJSON {
+				return fmt.Errorf("unsupported output format: %s", opts.output)
 			}
 
-			timeout := mustGet(cmd.Flags().GetDuration, "timeout")
+			defs := doctorChecks()
 
-			report := runDoctor(cmd.Context(), cmd.Flags(), timeout, osDoctorEnv())
-
-			if output == FormatJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-
-				if err := enc.Encode(report); err != nil {
-					return fmt.Errorf("encoding report: %w", err)
-				}
-			} else {
-				printDoctorReport(cmd.OutOrStdout(), report)
+			skip, err := parseDoctorSkip(opts.skip, defs)
+			if err != nil {
+				return err
 			}
 
-			if report.Status == doctorFail {
-				return errDoctorFailed
+			in := newDoctorInput(cmd.Flags(), opts.timeout)
+			report := runDoctor(cmd.Context(), in, defs, skip, opts)
+
+			if err := writeDoctorReport(cmd.OutOrStdout(), report, opts); err != nil {
+				return err
 			}
 
-			return nil
+			return doctorExitError(report.Status, opts.strict)
 		},
 	}
 
 	cmd.Flags().Duration("timeout", defaultDoctorTimeout, "how long to wait for minimega to answer")
 	cmd.Flags().StringP("output", "o", "text", "output format ('text' or 'json')")
+	cmd.Flags().StringSlice("skip", nil,
+		"checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)")
+	cmd.Flags().Bool("strict", false, "exit 1 when a check warns, not only when one fails")
+	cmd.Flags().BoolP("no-print-settings", "x", false, "leave out the settings list")
+	cmd.Flags().Bool("report", false,
+		"add the hostname and print the output in a fenced block to paste into a bug report")
 
 	return cmd
 }
 
-// runDoctor runs every check against the settings flags and the environment
-// give, as the root command would resolve them.
-func runDoctor(ctx context.Context, flags *pflag.FlagSet, timeout time.Duration, env doctorEnv) doctorReport {
-	effective := func(key string) string { return getEffectiveString(key, flags.Changed(key)) }
+func doctorFlagOptions(flags *pflag.FlagSet) doctorOptions {
+	return doctorOptions{
+		output:     mustGet(flags.GetString, "output"),
+		timeout:    mustGet(flags.GetDuration, "timeout"),
+		skip:       mustGet(flags.GetStringSlice, "skip"),
+		strict:     mustGet(flags.GetBool, "strict"),
+		noSettings: mustGet(flags.GetBool, "no-print-settings"),
+		report:     mustGet(flags.GetBool, "report"),
+	}
+}
 
-	checks, fileKeys := doctorConfigFiles(configSearchPaths)
-	checks = append(checks, unknownKeysCheck(fileKeys, knownSettings()))
-
-	settings := doctorSettings(flags, fileKeys, env.lookup)
-	sources := make(map[string]string, len(settings))
-
-	for _, s := range settings {
-		sources[s.Key] = s.Source
+// doctorExitError is the error doctor exits with for status: one for a
+// failure, and with strict for a warning too.
+func doctorExitError(status doctorStatus, strict bool) error {
+	switch {
+	case status == doctorFail:
+		return errDoctorFailed
+	case status == doctorWarn && strict:
+		return errDoctorWarned
 	}
 
-	checks = append(checks, envChecks(env, sources)...)
+	return nil
+}
 
-	phenixBase := effective("base-dir.phenix")
-	minimegaBase := effective("base-dir.minimega")
-
-	checks = append(checks,
-		storeCheck(effective("store.endpoint")),
-		systemLogCheck("log.system.path", effective("log.system.path")),
-	)
-
-	if console := effective("log.console"); console != "" && console != consoleStderr && console != consoleStdout {
-		checks = append(checks, writableFileCheck("log.console", console))
-	}
-
-	checks = append(checks,
-		baseDirCheck("base-dir.phenix", phenixBase, true),
-		// minimega owns its base directory; phenix only uses its socket
-		baseDirCheck("base-dir.minimega", minimegaBase, false),
-		baseDirCheck("base-dir.injects", derivedBaseDir(effective("base-dir.injects"), phenixBase, "injects"), true),
-		baseDirCheck("base-dir.topologies", derivedBaseDir(effective("base-dir.topologies"), phenixBase, "topologies"), false),
-		baseDirCheck("mount-dir", derivedBaseDir(effective("mount-dir"), phenixBase, "mounts"), true),
-		jwtKeyCheck(viper.GetString("ui.jwt-signing-key")),
-		gracePeriodCheck(viper.GetViper()),
-		netflowMaxSizeCheck(viper.GetViper()),
-	)
-
-	common.MinimegaBase = minimegaBase //nolint:reassign // configuration injection
-
-	checks = append(checks, minimegaCheck(ctx, minimegaBase, timeout, probeMinimega))
-
-	return doctorReport{
-		Status:   worstStatus(checks),
-		Checks:   checks,
-		Settings: settings,
-	}
+// runDoctor runs the checks in defs that skip leaves out against in, and
+// reports them.
+func runDoctor(
+	ctx context.Context,
+	in *doctorInput,
+	defs []doctorCheckDef,
+	skip map[string]bool,
+	opts doctorOptions,
+) doctorReport {
+	return newDoctorReport(in, runDoctorChecks(ctx, in, defs, skip), opts)
 }
 
 // knownSettings are the settings phenix reads: the global flags, the
@@ -205,51 +258,6 @@ func knownSettings() []string {
 	slices.Sort(keys)
 
 	return keys
-}
-
-// doctorConfigFiles parses the config and users files found in paths, as the root
-// command does, and returns their checks and keys; a missing users file gets no check.
-func doctorConfigFiles(paths []string) ([]doctorCheck, map[string]bool) {
-	var (
-		names  = []string{"config", usersConfigName}
-		checks = make([]doctorCheck, 0, len(names))
-		keys   = make(map[string]bool)
-	)
-
-	for _, name := range names {
-		v := viper.New()
-		v.SetConfigName(name)
-
-		for _, path := range paths {
-			v.AddConfigPath(path)
-		}
-
-		check := doctorCheck{Name: name + " file", Status: doctorPass, Detail: ""}
-		err := v.ReadInConfig()
-
-		switch {
-		case err == nil:
-			check.Detail = v.ConfigFileUsed()
-
-			for _, key := range v.AllKeys() {
-				keys[key] = true
-			}
-		case errors.As(err, &viper.ConfigFileNotFoundError{}):
-			if name == usersConfigName {
-				continue
-			}
-
-			check.Status = doctorWarn
-			check.Detail = fmt.Sprintf("none found in %s; using environment variables and defaults", strings.Join(paths, ", "))
-		default:
-			check.Status = doctorFail
-			check.Detail = fmt.Sprintf("%s does not parse, so phenix ignores it: %v", v.ConfigFileUsed(), err)
-		}
-
-		checks = append(checks, check)
-	}
-
-	return checks, keys
 }
 
 // unknownKeysCheck warns about keys in the config files that phenix does not
@@ -278,13 +286,13 @@ func unknownKeysCheck(fileKeys map[string]bool, known []string) doctorCheck {
 
 // storeCheck checks that the store endpoint names a file phenix can write.
 // BoltDB creates the file but not its directory, so that must exist.
-func storeCheck(endpoint string) doctorCheck {
+func (e doctorEnv) storeCheck(endpoint string) doctorCheck {
 	path, err := store.BoltPath(endpoint)
 	if err != nil {
 		return doctorCheck{Name: "store.endpoint", Status: doctorFail, Detail: err.Error()}
 	}
 
-	if dir := filepath.Dir(path); dirMissing(dir) {
+	if dir := filepath.Dir(path); e.dirMissing(dir) {
 		return doctorCheck{
 			Name:   "store.endpoint",
 			Status: doctorFail,
@@ -292,35 +300,35 @@ func storeCheck(endpoint string) doctorCheck {
 		}
 	}
 
-	return writableFileCheck("store.endpoint", path)
+	return e.writableFileCheck("store.endpoint", path)
 }
 
-func dirMissing(dir string) bool {
-	_, err := os.Stat(dir)
+func (e doctorEnv) dirMissing(dir string) bool {
+	_, err := e.stat(dir)
 
 	return errors.Is(err, os.ErrNotExist)
 }
 
 // writableFileCheck checks that this user can write path, or create it in its
 // nearest existing parent directory.
-func writableFileCheck(name, path string) doctorCheck {
+func (e doctorEnv) writableFileCheck(name, path string) doctorCheck {
 	check := doctorCheck{Name: name, Status: doctorPass, Detail: path}
 
-	info, err := os.Stat(path)
+	info, err := e.stat(path)
 
 	switch {
 	case err == nil && !info.Mode().IsRegular():
 		check.Status, check.Detail = doctorFail, path+" is not a regular file"
 	case err == nil:
-		if err := unix.Access(path, unix.W_OK); err != nil {
+		if err := e.access(path, unix.W_OK); err != nil {
 			check.Status, check.Detail = doctorFail, fmt.Sprintf("%s is not writable: %v", path, err)
 		}
 	case errors.Is(err, os.ErrNotExist):
-		dir := existingParent(filepath.Dir(path))
+		dir := e.existingParent(filepath.Dir(path))
 
-		if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+		if info, err := e.stat(dir); err == nil && !info.IsDir() {
 			check.Status, check.Detail = doctorFail, fmt.Sprintf("cannot create %s: %s is not a directory", path, dir)
-		} else if err := unix.Access(dir, unix.W_OK); err != nil {
+		} else if err := e.access(dir, unix.W_OK); err != nil {
 			check.Status, check.Detail = doctorFail, fmt.Sprintf("cannot create %s: %s is not writable: %v", path, dir, err)
 		} else {
 			check.Detail = path + " (created on first use)"
@@ -333,9 +341,9 @@ func writableFileCheck(name, path string) doctorCheck {
 }
 
 // existingParent returns dir, or the nearest directory above it that exists.
-func existingParent(dir string) string {
+func (e doctorEnv) existingParent(dir string) string {
 	for {
-		if _, err := os.Stat(dir); err == nil {
+		if _, err := e.stat(dir); err == nil {
 			return dir
 		}
 
@@ -350,10 +358,10 @@ func existingParent(dir string) string {
 
 // baseDirCheck checks that dir exists, is readable and searchable and, with needWrite,
 // writable. phenix creates some base directories on first use, so a problem only warns.
-func baseDirCheck(name, dir string, needWrite bool) doctorCheck {
+func (e doctorEnv) baseDirCheck(name, dir string, needWrite bool) doctorCheck {
 	check := doctorCheck{Name: name, Status: doctorPass, Detail: dir}
 
-	info, err := os.Stat(dir)
+	info, err := e.stat(dir)
 
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -362,9 +370,9 @@ func baseDirCheck(name, dir string, needWrite bool) doctorCheck {
 		check.Status, check.Detail = doctorFail, err.Error()
 	case !info.IsDir():
 		check.Status, check.Detail = doctorFail, dir+" is not a directory"
-	case unix.Access(dir, unix.R_OK|unix.X_OK) != nil:
+	case e.access(dir, unix.R_OK|unix.X_OK) != nil:
 		check.Status, check.Detail = doctorWarn, dir+" is not readable and searchable by this user"
-	case needWrite && unix.Access(dir, unix.W_OK) != nil:
+	case needWrite && e.access(dir, unix.W_OK) != nil:
 		check.Status, check.Detail = doctorWarn, dir+" is not writable by this user"
 	case !filepath.IsAbs(dir):
 		check.Status, check.Detail = doctorWarn, dir+" is relative, so it depends on the working directory"
@@ -375,12 +383,12 @@ func baseDirCheck(name, dir string, needWrite bool) doctorCheck {
 
 // systemLogCheck checks log.system.path, which names the log file or, when it is a
 // directory, the directory phenix writes phenix.log in.
-func systemLogCheck(name, path string) doctorCheck {
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		return writableFileCheck(name, filepath.Join(path, "phenix.log"))
+func (e doctorEnv) systemLogCheck(name, path string) doctorCheck {
+	if info, err := e.stat(path); err == nil && info.IsDir() {
+		return e.writableFileCheck(name, filepath.Join(path, "phenix.log"))
 	}
 
-	return writableFileCheck(name, path)
+	return e.writableFileCheck(name, path)
 }
 
 // jwtKeyCheck reports the authentication mode the JWT signing key selects,
@@ -473,9 +481,9 @@ func minimegaCheck(
 	}
 }
 
-// probeMinimega sends minimega's version command on a connection of its own,
-// bounded by timeout.
-func probeMinimega(timeout time.Duration) (string, error) {
+// probeMinimega sends minimega's version command to the minimega whose base
+// directory is base, on a connection of its own, bounded by timeout.
+func probeMinimega(base string, timeout time.Duration) (string, error) {
 	cmd := mmcli.NewCommand()
 	cmd.Command = "version"
 	cmd.Timeout = timeout
@@ -486,7 +494,7 @@ func probeMinimega(timeout time.Duration) (string, error) {
 	)
 
 	// every response is read, so the connection is released
-	for resp := range mmcli.Run(cmd) {
+	for resp := range mmcli.RunDedicatedAt(base, cmd) {
 		for _, r := range resp.Resp {
 			if r.Error != "" {
 				if err == nil {
@@ -503,42 +511,6 @@ func probeMinimega(timeout time.Duration) (string, error) {
 	}
 
 	return version, err
-}
-
-// doctorSettings lists every known setting, with secrets redacted, and where
-// its value came from.
-func doctorSettings(
-	flags *pflag.FlagSet,
-	fileKeys map[string]bool,
-	lookupEnv func(string) (string, bool),
-) []doctorSetting {
-	var (
-		fileViper = getFileViper()
-		known     = knownSettings()
-		settings  = make([]doctorSetting, 0, len(known))
-	)
-
-	for _, key := range known {
-		var (
-			changed = flags.Lookup(key) != nil && flags.Changed(key)
-			root    = rootCmd.PersistentFlags().Lookup(key) != nil
-			value   = viper.Get(key)
-		)
-
-		// the global settings prefer the file, as getEffectiveValue does
-		fileFirst := root && !changed && fileViper != nil && fileViper.IsSet(key)
-		if fileFirst {
-			value = fileViper.Get(key)
-		}
-
-		settings = append(settings, doctorSetting{
-			Key:    key,
-			Value:  redactSetting(key, value),
-			Source: settingSource(key, changed, fileFirst, fileKeys[key], lookupEnv),
-		})
-	}
-
-	return settings
 }
 
 // settingSource names where key's value comes from, in viper's order: a set flag,
@@ -594,42 +566,22 @@ func redactSetting(key string, value any) any {
 	return redacted
 }
 
-// worstStatus is fail if any check failed, warn if any warned, else pass.
-func worstStatus(checks []doctorCheck) doctorStatus {
+// worstStatus is fail if any check failed, warn if any warned, else pass; a
+// skipped check counts as neither.
+func worstStatus(results []doctorResult) doctorStatus {
 	status := doctorPass
 
-	for _, c := range checks {
-		switch c.Status {
+	for _, r := range results {
+		switch r.Status {
 		case doctorFail:
 			return doctorFail
 		case doctorWarn:
 			status = doctorWarn
-		case doctorPass:
+		case doctorPass, doctorSkip:
 		}
 	}
 
 	return status
-}
-
-func printDoctorReport(out io.Writer, report doctorReport) {
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0) //nolint:mnd // column padding
-
-	_, _ = fmt.Fprintln(w, "CHECK\tSTATUS\tDETAIL")
-
-	for _, c := range report.Checks {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", c.Name, strings.ToUpper(string(c.Status)), c.Detail)
-	}
-
-	_, _ = fmt.Fprintln(w)
-	_, _ = fmt.Fprintln(w, "SETTING\tVALUE\tSOURCE")
-
-	for _, s := range report.Settings {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", s.Key, formatSettingValue(s.Value), s.Source)
-	}
-
-	_ = w.Flush()
-
-	_, _ = fmt.Fprintf(out, "\n%s\n", strings.ToUpper(string(report.Status)))
 }
 
 // formatSettingValue prints a list as comma-separated values and an empty

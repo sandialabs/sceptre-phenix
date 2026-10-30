@@ -38,14 +38,18 @@ const (
 	userFields     = 3
 )
 
-// doctorEnv is the environment doctor checks and the lookups its checks make,
-// so tests can pass their own.
+// doctorEnv is the environment doctor checks and the lookups and file system
+// reads its checks make, so tests can pass their own.
 type doctorEnv struct {
 	lookup      func(string) (string, bool)
 	environ     func() []string
 	lookPath    func(string) (string, error)
 	lookupUser  func(string) (*user.User, error)
 	lookupGroup func(string) (*user.Group, error)
+	stat        func(string) (os.FileInfo, error)
+	lstat       func(string) (os.FileInfo, error)
+	access      func(string, uint32) error
+	readFile    func(string) ([]byte, error)
 	root        bool
 }
 
@@ -56,6 +60,10 @@ func osDoctorEnv() doctorEnv {
 		lookPath:    exec.LookPath,
 		lookupUser:  user.Lookup,
 		lookupGroup: user.LookupGroupId,
+		stat:        os.Stat,
+		lstat:       os.Lstat,
+		access:      unix.Access,
+		readFile:    os.ReadFile,
 		root:        os.Getuid() == 0,
 	}
 }
@@ -138,19 +146,19 @@ func settingVarCheck(env doctorEnv, key, value, source string) doctorCheck {
 func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 	switch key {
 	case "base-dir.phenix", "base-dir.injects", "mount-dir":
-		return baseDirCheck("", value, true), true
+		return env.baseDirCheck("", value, true), true
 	case "base-dir.minimega", "base-dir.topologies":
-		return baseDirCheck("", value, false), true
+		return env.baseDirCheck("", value, false), true
 	case "store.endpoint":
-		return storeCheck(value), true
+		return env.storeCheck(value), true
 	case "log.system.path":
-		return systemLogCheck("", value), true
+		return env.systemLogCheck("", value), true
 	case "log.console":
 		if value == consoleStderr || value == consoleStdout {
 			return passCheck(value), true
 		}
 
-		return writableFileCheck("", value), true
+		return env.writableFileCheck("", value), true
 	case "log.level":
 		return logLevelCheck(value, true, "phenix ignores it"), true
 	case "ui.logs.level":
@@ -178,7 +186,7 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 	case "use-gre-mesh", "ui.minimega-console":
 		return boolVarCheck(value), true
 	case "unix-socket":
-		return socketCheck(value), true
+		return env.socketCheck(value), true
 	case "unix-socket-gid":
 		return gidCheck(env, value), true
 	case "ui.listen-endpoint":
@@ -200,9 +208,9 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 	case "ui.users":
 		return usersCheck(value), true
 	case "ui.tls-key", "ui.tls-cert":
-		return readableFileCheck(value, doctorFail), true
+		return env.readableFileCheck(value, doctorFail), true
 	case "ui.logs.minimega-path":
-		return readableFileCheck(value, doctorWarn), true
+		return env.readableFileCheck(value, doctorWarn), true
 	case "ui.features":
 		return featuresCheck(value), true
 	case "ui.shutdown-grace-period":
@@ -381,14 +389,14 @@ func suffixesCheck(value string) doctorCheck {
 
 // socketCheck checks a unix socket path that phenix ui creates, after
 // deleting whatever is there, and other commands connect to.
-func socketCheck(path string) doctorCheck {
+func (e doctorEnv) socketCheck(path string) doctorCheck {
 	if limit := len(unix.RawSockaddrUnix{}.Path); len(path) >= limit { //nolint:exhaustruct // only its size
 		return failCheck(fmt.Sprintf("%s is %d bytes, longer than a unix socket path may be (%d)", path, len(path), limit-1))
 	}
 
 	dir := filepath.Dir(path)
 
-	info, err := os.Stat(dir)
+	info, err := e.stat(dir)
 
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -399,11 +407,11 @@ func socketCheck(path string) doctorCheck {
 		return failCheck(dir + " is not a directory")
 	}
 
-	if info, err := os.Lstat(path); err == nil {
+	if info, err := e.lstat(path); err == nil {
 		if info.Mode()&os.ModeSocket == 0 {
 			return warnCheck(path + " is not a socket, and phenix ui deletes it to create one")
 		}
-	} else if unix.Access(dir, unix.W_OK) != nil {
+	} else if e.access(dir, unix.W_OK) != nil {
 		return warnCheck(fmt.Sprintf("phenix ui cannot create %s: %s is not writable by this user", path, dir))
 	}
 
@@ -539,8 +547,8 @@ func usersCheck(value string) doctorCheck {
 
 // readableFileCheck checks a file phenix reads; missing is the status of one
 // that does not exist or cannot be read.
-func readableFileCheck(path string, missing doctorStatus) doctorCheck {
-	info, err := os.Stat(path)
+func (e doctorEnv) readableFileCheck(path string, missing doctorStatus) doctorCheck {
+	info, err := e.stat(path)
 
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -549,7 +557,7 @@ func readableFileCheck(path string, missing doctorStatus) doctorCheck {
 		return failCheck(err.Error())
 	case !info.Mode().IsRegular():
 		return failCheck(path + " is not a regular file")
-	case unix.Access(path, unix.R_OK) != nil:
+	case e.access(path, unix.R_OK) != nil:
 		return doctorCheck{Name: "", Status: missing, Detail: path + " is not readable by this user"}
 	}
 

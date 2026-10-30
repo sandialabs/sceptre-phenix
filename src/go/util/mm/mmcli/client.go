@@ -399,7 +399,7 @@ func runShared(ctx context.Context, c *Command, started func()) chan *miniclient
 	if c.Timeout > 0 {
 		notify(started)
 
-		return runPrivate(cmdStr, c.Timeout)
+		return runPrivate(common.MinimegaBase, cmdStr, c.Timeout)
 	}
 
 	wait, cancel := context.WithTimeout(ctx, DefaultWaitTimeout)
@@ -450,7 +450,13 @@ func gaveUp(err error) error {
 // hold the shared connection, and so every other command, for their whole
 // duration. Callers MUST drain the returned channel, as with Run.
 func RunDedicated(c *Command) chan *miniclient.Response {
-	return runPrivate(c.String(), c.Timeout)
+	return runPrivate(common.MinimegaBase, c.String(), c.Timeout)
+}
+
+// RunDedicatedAt is RunDedicated against the minimega whose base directory is
+// base, for a caller that must not change common.MinimegaBase.
+func RunDedicatedAt(base string, c *Command) chan *miniclient.Response {
+	return runPrivate(base, c.String(), c.Timeout)
 }
 
 func notify(started func()) {
@@ -464,8 +470,8 @@ func notify(started func()) {
 // timeout of zero or less waits for the command however long it takes.
 //
 // Callers MUST drain the returned channel, as with guard.
-func runPrivate(cmdStr string, timeout time.Duration) chan *miniclient.Response {
-	private, err := miniclient.Dial(common.MinimegaBase)
+func runPrivate(base, cmdStr string, timeout time.Duration) chan *miniclient.Response {
+	private, err := miniclient.Dial(base)
 	if err != nil {
 		return wrapErr(fmt.Errorf("unable to dial: %w", err))
 	}

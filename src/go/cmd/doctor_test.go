@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -81,13 +82,21 @@ func TestDoctorConfigFiles(t *testing.T) {
 				writeTestFile(t, dir, "users.yaml", tc.users)
 			}
 
-			checks, keys := doctorConfigFiles([]string{dir})
+			config := doctorConfigFiles([]string{dir})
+
+			var checks []doctorCheck
+
+			for _, name := range []string{"config", "users"} {
+				if c, ok := config.checks[name]; ok {
+					checks = append(checks, c)
+				}
+			}
 
 			if diff := cmp.Diff(tc.want, statuses(checks)); diff != "" {
 				t.Errorf("doctorConfigFiles() checks mismatch (-want +got):\n%s", diff)
 			}
 
-			if diff := cmp.Diff(tc.wantKeys, keys); diff != "" {
+			if diff := cmp.Diff(tc.wantKeys, config.keys); diff != "" {
 				t.Errorf("doctorConfigFiles() keys mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -155,7 +164,7 @@ func TestWritableFileCheck(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := writableFileCheck("store.endpoint", tc.path); got.Status != tc.want {
+			if got := osDoctorEnv().writableFileCheck("store.endpoint", tc.path); got.Status != tc.want {
 				t.Errorf("writableFileCheck(%s) = %+v, want %s", tc.path, got, tc.want)
 			}
 		})
@@ -185,7 +194,7 @@ func TestStoreCheck(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := storeCheck(tc.endpoint); got.Status != tc.want {
+			if got := osDoctorEnv().storeCheck(tc.endpoint); got.Status != tc.want {
 				t.Errorf("storeCheck(%s) = %+v, want %s", tc.endpoint, got, tc.want)
 			}
 		})
@@ -215,7 +224,7 @@ func TestWritableFileCheckReadOnly(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
 	for _, path := range []string{file, filepath.Join(dir, "new.bdb")} {
-		if got := writableFileCheck("store.endpoint", path); got.Status != doctorFail {
+		if got := osDoctorEnv().writableFileCheck("store.endpoint", path); got.Status != doctorFail {
 			t.Errorf("writableFileCheck(%s) = %+v, want fail", path, got)
 		}
 	}
@@ -242,7 +251,7 @@ func TestBaseDirCheck(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := baseDirCheck("base-dir.phenix", tc.path, true); got.Status != tc.want {
+			if got := osDoctorEnv().baseDirCheck("base-dir.phenix", tc.path, true); got.Status != tc.want {
 				t.Errorf("baseDirCheck(%s) = %+v, want %s", tc.path, got, tc.want)
 			}
 		})
@@ -384,15 +393,16 @@ func TestWorstStatus(t *testing.T) {
 		"all pass":   {statuses: []doctorStatus{doctorPass, doctorPass}, want: doctorPass},
 		"one warn":   {statuses: []doctorStatus{doctorPass, doctorWarn}, want: doctorWarn},
 		"warn, fail": {statuses: []doctorStatus{doctorWarn, doctorFail, doctorPass}, want: doctorFail},
+		"skips":      {statuses: []doctorStatus{doctorSkip, doctorSkip}, want: doctorPass},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			checks := make([]doctorCheck, 0, len(tc.statuses))
+			checks := make([]doctorResult, 0, len(tc.statuses))
 			for _, s := range tc.statuses {
-				checks = append(checks, doctorCheck{Name: "c", Status: s, Detail: ""})
+				checks = append(checks, doctorResult{Name: "c", Status: s})
 			}
 
 			if got := worstStatus(checks); got != tc.want {
@@ -404,9 +414,11 @@ func TestWorstStatus(t *testing.T) {
 
 // Whatever the JWT signing key and users, in settings or environment variables,
 // and whatever a sudo command or unknown PHENIX_ variable holds, neither the
-// text nor the JSON report contains them.
+// text nor the JSON report contains them, with or without --report.
 func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 	t.Parallel()
+
+	dir := newDoctorTestDir(t)
 
 	rapid.Check(t, func(t *rapid.T) {
 		secret := rapid.StringMatching(`[A-Za-z0-9|_-]{12,32}`).Draw(t, "secret")
@@ -415,41 +427,33 @@ func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 			user, user + " bob:" + secret, "bob:pw:" + secret + "," + user, secret,
 		}).Draw(t, "users")
 
-		env := fakeDoctorEnv(map[string]string{
+		in := fakeDoctorInput(dir, map[string]string{"ui.jwt-signing-key": secret})
+		in.settings["ui.users"] = resolvedSetting{value: []any{user}, text: user, source: sourceFile}
+		in.env = fakeDoctorEnv(map[string]string{
 			"PHENIX_UI_JWT_SIGNING_KEY": secret,
 			"PHENIX_UI_USERS":           envUsers,
 			"PHENIX_UI_TOKEN":           secret,
 			"SUDO_COMMAND":              "/usr/bin/phenix ui --jwt-signing-key " + secret,
 		}, rapid.Bool().Draw(t, "root"))
 
-		report := doctorReport{
-			Status: doctorWarn,
-			Checks: append([]doctorCheck{jwtKeyCheck(secret)}, envChecks(env, nil)...),
-			Settings: []doctorSetting{
-				{Key: "ui.jwt-signing-key", Value: redactSetting("ui.jwt-signing-key", secret), Source: sourceEnv},
-				{Key: "ui.users", Value: redactSetting("ui.users", []any{user}), Source: sourceFile},
-			},
-		}
+		for _, output := range []string{"text", FormatJSON} {
+			opts := doctorOptions{output: output, report: rapid.Bool().Draw(t, "report")}
+			report := runDoctor(context.Background(), in, doctorChecks(), nil, opts)
 
-		var text bytes.Buffer
+			var out bytes.Buffer
+			if err := writeDoctorReport(&out, report, opts); err != nil {
+				t.Fatalf("writeDoctorReport() error = %v", err)
+			}
 
-		printDoctorReport(&text, report)
-
-		encoded, err := json.Marshal(report)
-		if err != nil {
-			t.Fatalf("json.Marshal() error = %v", err)
-		}
-
-		for name, out := range map[string]string{"text": text.String(), "json": string(encoded)} {
-			if strings.Contains(out, secret) {
-				t.Fatalf("%s report contains the secret %q:\n%s", name, secret, out)
+			if strings.Contains(out.String(), secret) {
+				t.Fatalf("%s report contains the secret %q:\n%s", output, secret, out.String())
 			}
 		}
 	})
 }
 
-// phenix doctor reports each setting's source, redacts the JWT signing key, and
-// fails when minimega does not answer.
+// phenix doctor reports each setting's source, redacts the JWT signing key,
+// fails when minimega does not answer, and leaves common.MinimegaBase alone.
 func TestDoctorCommand(t *testing.T) {
 	const key = "doctor-test-signing-key"
 
@@ -458,7 +462,6 @@ func TestDoctorCommand(t *testing.T) {
 	t.Setenv("PHENIX_STORE_ENDPOINT", "bolt://"+filepath.Join(t.TempDir(), "store.bdb"))
 
 	base := common.MinimegaBase
-	t.Cleanup(func() { common.MinimegaBase = base }) //nolint:reassign // restore global
 
 	cmd := newDoctorCmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true // as under the root command
@@ -475,6 +478,10 @@ func TestDoctorCommand(t *testing.T) {
 
 	if strings.Contains(out.String(), key) {
 		t.Errorf("doctor output contains the JWT signing key:\n%s", out.String())
+	}
+
+	if common.MinimegaBase != base {
+		t.Errorf("doctor changed common.MinimegaBase from %q to %q", base, common.MinimegaBase)
 	}
 
 	var report doctorReport
@@ -515,28 +522,29 @@ func TestDoctorCommand(t *testing.T) {
 }
 
 // The ui.netflow.max-size check passes for a size phenix ui accepts, naming
-// it, and fails for one it refuses.
+// it, and fails for one it refuses, given the value as the registry gives it.
 func TestNetflowMaxSizeCheck(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]struct {
-		env  string
-		want doctorCheck
+		value string
+		want  doctorCheck
 	}{
-		"default": {want: doctorCheck{Name: "ui.netflow.max-size", Status: doctorPass, Detail: "100 MiB"}},
-		"off": {env: "0", want: doctorCheck{
-			Name: "ui.netflow.max-size", Status: doctorPass, Detail: "0; netflow captures are not recorded",
+		"default": {value: "100", want: doctorCheck{Name: "ui.netflow.max-size", Status: doctorPass, Detail: "100 MiB"}},
+		"off": {value: "0", want: doctorCheck{
+			Name: "ui.netflow.max-size", Status: doctorPass, Detail: "0, so phenix ui records no netflow captures",
 		}},
-		"negative": {env: "-5", want: doctorCheck{
+		"negative": {value: "-5", want: doctorCheck{
 			Name: "ui.netflow.max-size", Status: doctorFail, Detail: `invalid ui.netflow.max-size "-5": it must not be negative`,
 		}},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if tt.env != "" {
-				t.Setenv("PHENIX_UI_NETFLOW_MAX_SIZE", tt.env)
-			}
+			t.Parallel()
 
-			if diff := cmp.Diff(tt.want, netflowMaxSizeCheck(viper.GetViper())); diff != "" {
+			got := netflowMaxSizeCheck(viperWith("ui.netflow.max-size", tt.value))
+			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("netflowMaxSizeCheck() mismatch (-want +got):\n%s", diff)
 			}
 		})

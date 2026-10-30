@@ -269,7 +269,7 @@ phenix settings list|get|set|unset [key] [value]  # phenix ui applies log.*, ui.
 phenix settings db ...            # legacy BoltDB-backed settings
 phenix ui                         # run the phenix web UI/API server
 phenix healthcheck [--ready] [--url URL] [-o json]  # probe the UI server's /healthz (or /readyz); exit 0 on 200
-phenix doctor [-o json] [--timeout 3s]  # offline: config syntax/keys, each set PHENIX_*/PATH/EDITOR/SUDO_* variable (parsed as phenix does; unknown PHENIX_* warn), store/log/base dirs, minimega; settings with source, secrets redacted; exit 1 on a failed check
+phenix doctor [-o json] [--timeout 3s] [--skip ID|GROUP,...] [--strict] [-x] [--report]  # offline; prints a header (phenix/minimega versions, OS/kernel, uid/gid, cwd, config file, container), the settings with source (secrets redacted; -x omits), then checks: config syntax/keys, each set PHENIX_*/PATH/EDITOR/SUDO_* variable (parsed as phenix does; unknown PHENIX_* warn), store/log/base dirs, minimega; then a summary with a hint per failure. --skip takes check ids or groups (config, env, files, dirs, ui, minimega); JSON has schemaVersion 1 and a stable id per check; --report adds the hostname and fences the output for a bug report; exit 1 on a failed check, or a warning with --strict
 phenix util app-json <exp>        # print the experiment JSON a user app receives on stdin
 phenix util role-table            # print every permission phenix checks, and which roles allow it
 phenix completion bash|zsh|fish|powershell

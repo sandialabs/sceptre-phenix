@@ -2,6 +2,12 @@
 
 This page consolidates common issues and their solutions when working with phēnix.
 
+When reporting a bug, run `docker exec phenix phenix doctor --report` (or
+`phenix doctor --report`) and paste its output into the issue. It gives the
+phēnix and minimega versions, the OS, user and container, and the result of
+each configuration check, with secrets redacted; see
+[Checking the Configuration](settings.md#checking-the-configuration).
+
 ## Logging Issues
 
 ### Logs Not Appearing in UI
@@ -41,7 +47,8 @@ The same warning names a `users.yaml` that does not parse, or a config
 directory or file that could not be created on first run. Fix the file it
 names; the warning appears in `docker logs phenix` for the Docker deployment.
 `phenix doctor` reports the same problems, misspelled keys, and where each
-setting's value comes from; see
+setting's value comes from, then a summary naming each failed check with a
+hint; see
 [Checking the Configuration](settings.md#checking-the-configuration).
 
 ### Do Not Delete `config.yaml`

@@ -13,15 +13,25 @@ Check the phenix configuration without a running server
 ```text
 Check the phenix configuration without a running server
 
-  Reads the config and users files, reports unknown keys, checks each set
-  environment variable phenix reads (PHENIX_*, PATH, EDITOR, SUDO_USER and
-  SUDO_COMMAND) as phenix parses it and warns about PHENIX_* variables that
-  name no setting, checks that the store and log files can be written, that
-  the base directories exist, and that minimega answers on its socket, then
-  prints every setting with its effective value and where that value came
-  from (flag, env, config file or default). Secret values, such as the JWT
-  signing key and initial users, are redacted. It exits 0 when no check
-  fails, and 1 otherwise.
+  Prints a header for bug reports (the phenix and minimega versions, OS and
+  kernel, user, working directory, the config file read, and whether phenix
+  runs in a container), then every setting with its effective value and where
+  that value came from (flag, env, config file or default), then each check,
+  then a summary that names each failed and warned check, with a hint for
+  each failure.
+
+  The checks read the config and users files and report unknown keys, check
+  each set environment variable phenix reads (PHENIX_*, PATH, EDITOR,
+  SUDO_USER and SUDO_COMMAND) as phenix parses it and warn about PHENIX_*
+  variables that name no setting, check that the store and log files can be
+  written, that the base directories exist, and that minimega answers on its
+  socket. --skip takes a check or a group of checks; an unknown name fails and
+  lists the valid ones. Secret values, such as the JWT signing key and initial
+  users, are redacted. doctor exits 1 when a check fails, or with --strict
+  when one warns, and 0 otherwise.
+
+  --report adds the hostname to the header and prints the whole output in a
+  fenced block to paste into a bug report.
 
   Like healthcheck, doctor opens no store, unix socket or log file, so it
   works while phenix ui is stopped. Run it with the same flags, environment
@@ -40,14 +50,24 @@ docker exec phenix phenix doctor
 
 # As JSON, waiting up to 10 seconds for minimega
 phenix doctor -o json --timeout 10s
+
+# Without minimega or the settings list, failing on any warning
+phenix doctor --skip minimega -x --strict
+
+# Output to paste into a bug report
+docker exec phenix phenix doctor --report
 ```
 
 ### Options
 
 ```text
-  -h, --help               help for doctor
-  -o, --output string      output format ('text' or 'json') (default "text")
-      --timeout duration   how long to wait for minimega to answer (default 3s)
+  -h, --help                help for doctor
+  -x, --no-print-settings   leave out the settings list
+  -o, --output string       output format ('text' or 'json') (default "text")
+      --report              add the hostname and print the output in a fenced block to paste into a bug report
+      --skip strings        checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)
+      --strict              exit 1 when a check warns, not only when one fails
+      --timeout duration    how long to wait for minimega to answer (default 3s)
 ```
 
 ### SEE ALSO

@@ -17,7 +17,7 @@ import (
 )
 
 // fakeDoctorEnv is a doctorEnv holding only vars, with vim on PATH, the user
-// alice and the group 100.
+// alice, the group 100, the real file system and no /proc.
 func fakeDoctorEnv(vars map[string]string, root bool) doctorEnv {
 	return doctorEnv{
 		lookup: func(name string) (string, bool) {
@@ -54,7 +54,11 @@ func fakeDoctorEnv(vars map[string]string, root bool) doctorEnv {
 
 			return nil, user.UnknownGroupIdError(id)
 		},
-		root: root,
+		stat:     os.Stat,
+		lstat:    os.Lstat,
+		access:   unix.Access,
+		readFile: func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		root:     root,
 	}
 }
 

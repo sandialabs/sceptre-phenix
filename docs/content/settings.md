@@ -79,42 +79,74 @@ helps most when the server will not start or a setting seems to have no
 effect:
 
 ```bash
-docker exec phenix phenix doctor          # Docker deployment
-phenix doctor -o json --timeout 10s       # JSON, waiting longer for minimega
+docker exec phenix phenix doctor              # Docker deployment
+phenix doctor -o json --timeout 10s           # JSON, waiting longer for minimega
+phenix doctor --skip minimega -x --strict     # no minimega check or settings list; fail on a warning
+docker exec phenix phenix doctor --report     # output to paste into a bug report
 ```
 
-It runs these checks, then lists every setting with its effective value and
-its source: `flag`, `env`, `config file` or `default`.
+It prints, in order:
 
-| Check | Warns when | Fails when |
-| :--- | :--- | :--- |
-| `config file`, `users file` | no `config.yaml` is found | the file does not parse, so phēnix ignores it |
-| `config keys` | the config files hold keys that are not phēnix settings, such as a misspelling | never |
-| `PHENIX_*` (one row per set variable, such as `PHENIX_BASE_DIR_PHENIX`) | the variable is empty, a flag or the config file overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), or it names no setting, such as a misspelling | phēnix would refuse or misread the value |
-| `PATH`, `EDITOR`, `SUDO_USER`, `SUDO_COMMAND` | `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | `EDITOR` is not a program on `PATH` |
-| `store.endpoint` | never | the file cannot be written, or its directory does not exist or cannot be written |
-| `log.system.path`, `log.console` | never | the file (`phenix.log` in it when `log.system.path` is a directory) cannot be written, or created in the nearest directory above it that exists |
-| `base-dir.phenix`, `base-dir.minimega`, `base-dir.injects`, `base-dir.topologies`, `mount-dir` | the directory does not exist, is not readable and searchable by this user, is relative, or is one phēnix writes to and is not writable by this user | the path is not a directory |
-| `ui.jwt-signing-key` | the key is empty (no sign-in) or a development key | never |
-| `ui.shutdown-grace-period`, `ui.netflow.max-size` | never | `phenix ui` would refuse the value |
-| `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default) |
+1. A header: the phēnix version, commit and build date, minimega's version
+   when the `minimega` check answers, the OS and kernel, the user with its
+   uid and gid, the working directory, the config file read, whether phēnix
+   runs in a container (from `/.dockerenv`, `/run/.containerenv` or
+   `/proc/1/cgroup`), and the time.
+2. Every setting with its effective value and its source: `flag`, `env`,
+   `config file` or `default`. `-x` (`--no-print-settings`) leaves it out,
+   and empties the `settings` list of the JSON report.
+3. One row per check, with its status: `pass`, `warn`, `fail` or `skip`.
+4. A summary line with the overall status, the count of each status and the
+   names of the checks that failed or warned, then a hint for each failure.
+   With `--strict`, warnings get hints too.
 
-Each environment variable phēnix reads gets a row only when it is set, and
-is checked the way the code that reads it parses it: whole numbers, `true` or
-`false`, log levels, modes, durations with a unit (a bare `24` in
-`PHENIX_UI_JWT_LIFETIME` is 24 nanoseconds), `host:port` endpoints, header
-names and paths. A directory variable follows the rules of the `base-dir.*`
-rows above, a file variable those of the `store.endpoint` and `log.*` rows,
-and `PHENIX_UI_TLS_KEY` and `PHENIX_UI_TLS_CERT` must name readable files.
+`--skip` takes a check or a group from the table below, comma-separated or
+repeated, such as `--skip minimega` or `--skip env,ui.jwt-signing-key`. A
+skipped check shows as a `skip` row. An unknown name fails and lists the
+valid ones.
+
+| Check | Group | Warns when | Fails when |
+| :--- | :--- | :--- | :--- |
+| `config-file`, `users-file` | `config` | no `config.yaml` is found | the file does not parse, so phēnix ignores it |
+| `config-keys` | `config` | the config files hold keys that are not phēnix settings, such as a misspelling | never |
+| `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag or the config file overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
+| `store.endpoint` | `files` | never | the file cannot be written, or its directory does not exist or cannot be written |
+| `log.system.path`, `log.console` | `files` | never | the file (`phenix.log` in it when `log.system.path` is a directory) cannot be written, or created in the nearest directory above it that exists; `log.console` gets a row only when it names a file |
+| `base-dir.phenix`, `base-dir.minimega`, `base-dir.injects`, `base-dir.topologies`, `mount-dir` | `dirs` | the directory does not exist, is not readable and searchable by this user, is relative, or is one phēnix writes to and is not writable by this user | the path is not a directory |
+| `ui.jwt-signing-key` | `ui` | the key is empty (no sign-in) or a development key | never |
+| `ui.shutdown-grace-period`, `ui.netflow.max-size` | `ui` | never | `phenix ui` would refuse the value |
+| `minimega` | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default) |
+
+The `env` check covers each environment variable phēnix reads, `PHENIX_*`,
+`PATH`, `EDITOR`, `SUDO_USER` and `SUDO_COMMAND`, with a row only when the
+variable is set. It checks each the way the code that reads it parses it:
+whole numbers, `true` or `false`, log levels, modes, durations with a unit (a
+bare `24` in `PHENIX_UI_JWT_LIFETIME` is 24 nanoseconds), `host:port`
+endpoints, header names and paths. A directory variable follows the rules of
+the `dirs` rows above, a file variable those of the `files` rows, and
+`PHENIX_UI_TLS_KEY` and `PHENIX_UI_TLS_CERT` must name readable files.
 `PHENIX_UI_FEATURES` fails when it holds a comma, and `PHENIX_UI_USERS` when
 a user's role does.
 
-`phenix doctor` exits 1 when a check fails and 0 otherwise. It never prints
-the values of `ui.jwt-signing-key` or `ui.users`, only `<redacted>` when they
-are set, nor those of `PHENIX_UI_JWT_SIGNING_KEY`, `PHENIX_UI_USERS`,
-`SUDO_COMMAND` or a `PHENIX_*` variable that names no setting. Like `phenix healthcheck`, it opens no store, unix socket or log file;
-run it with the same flags, environment and user as the command you are
-checking, since those decide the values it sees.
+`-o json` prints the same report as one JSON object: `schemaVersion` (`1`),
+`status`, `time`, `version` (`phenix`, `label`, `commit`, `date`,
+`minimega`), `environment`, `checks` (each with a stable `id`, its `group`,
+`name`, `status`, `detail` and, when it warns or fails, `hint`) and
+`settings`.
+
+`--report` adds the hostname to the header and prints the whole output, text
+or JSON, in a fenced code block to paste into the
+[bug report form](https://github.com/sandialabs/sceptre-phenix/issues/new?template=1-bug-report.yml).
+Without `--report`, doctor does not print the hostname.
+
+`phenix doctor` exits 1 when a check fails, or with `--strict` when one warns,
+and 0 otherwise. It never prints the values of `ui.jwt-signing-key` or
+`ui.users`, only `<redacted>` when they are set, nor those of
+`PHENIX_UI_JWT_SIGNING_KEY`, `PHENIX_UI_USERS`, `SUDO_COMMAND` or a
+`PHENIX_*` variable that names no setting. Like `phenix healthcheck`, it opens
+no store, unix socket or log file, and sends minimega only its `version`
+command. Run it with the same flags, environment and user as the command you
+are checking, since those decide the values it sees.
 
 ## Configuration Precedence
 
