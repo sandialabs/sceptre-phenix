@@ -3619,6 +3619,11 @@ available roles and their access rights.</p>
 </tr>
 </tbody>
 </table>
+<p>Resource names are <code>&lt;Kind&gt;/&lt;name&gt;</code>, such as <code>Topology/riverside-water</code>.
+<code>Topology/*</code> covers every topology, and <code>*/*</code> covers every config, User and
+Role configs included. phēnix also checks create and update against the kind
+and name of the config in the request body. So a role scoped to <code>Topology/*</code>
+cannot create or overwrite a User or Role config.</p>
 <h4 id="resource-settings">Resource: <code>settings</code><a class="headerlink" href="#resource-settings" title="Permanent link">&para;</a></h4>
 <table>
 <thead>
