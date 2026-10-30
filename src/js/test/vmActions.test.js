@@ -60,7 +60,7 @@ const RULES = {
     agentless: ALREADY_RUNNING,
   },
   pause: { paused: NOT_RUNNING, 'shut down': NOT_RUNNING },
-  restart: { paused: PAUSED },
+  restart: { paused: PAUSED, 'shut down': NOT_RUNNING },
   shutdown: { paused: NOT_RUNNING, 'shut down': NOT_RUNNING },
   kill: { paused: NOT_RUNNING, 'shut down': NOT_RUNNING },
   redeploy: {},
@@ -233,6 +233,11 @@ describe('the state rules', () => {
           });
           expect(button.disabled).toBe(!!reason);
           if (reason) expect(button.reason.endsWith(`: ${reason}`)).toBe(true);
+          const [shown] = vmButtonStates([name], vm, {
+            can: allowAll,
+            features: ['vm-mount'],
+          });
+          expect(shown.disabled).toBe(!!reason);
         }
       }),
     );
@@ -641,10 +646,12 @@ describe('vmButtonStates', () => {
         expect(names.includes('shutdown')).toBe(target.running);
         expect(states).toHaveLength(ROW_ACTIONS.length);
         const restart = states.find((a) => a.name === 'restart');
+        const rule = vmActionState('restart', target, { can: allowAll });
+        expect(restart.disabled).toBe(!target.running || rule.disabled);
         expect(restart).toEqual(
-          target.running
-            ? vmActionState('restart', target, { can: allowAll })
-            : expect.objectContaining({ disabled: true }),
+          rule.reason === 'Cannot restart: the VM is not running'
+            ? { ...rule, reason: `${rule.reason}. Start it instead` }
+            : rule,
         );
       }),
     );

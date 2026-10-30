@@ -55,8 +55,8 @@ const paused = (vm) => (vm.state ?? '').toUpperCase() === 'PAUSED';
 const PAUSED = 'the VM is paused. Resume paused VMs first';
 // why a busy VM can take no action
 const BUSY = 'the VM is busy with another action';
-// why a VM's Restart button is greyed out beside its Start
-const NOT_RUNNING = 'the VM is not running; start it instead';
+// why an action that needs a running VM is ruled out
+const NOT_RUNNING = 'the VM is not running';
 
 // Each action's label, tooltip (description), icon, Bulma color, the RBAC
 // permissions it needs (all of them), and why the VM's state rules it out
@@ -77,7 +77,7 @@ export const VM_ACTIONS = {
     icon: 'pause',
     type: 'is-warning',
     rbac: [['vms/stop', 'update']],
-    blocked: (vm) => (vm.running ? null : 'the VM is not running'),
+    blocked: (vm) => (vm.running ? null : NOT_RUNNING),
   },
   restart: {
     label: 'Restart',
@@ -86,7 +86,10 @@ export const VM_ACTIONS = {
     type: 'is-warning',
     outlined: true,
     rbac: [['vms/restart', 'update']],
-    blocked: (vm) => (paused(vm) ? PAUSED : null),
+    blocked: (vm) => {
+      if (paused(vm)) return PAUSED;
+      return vm.running ? null : NOT_RUNNING;
+    },
   },
   shutdown: {
     label: 'Shut down',
@@ -95,7 +98,7 @@ export const VM_ACTIONS = {
     type: 'is-danger',
     outlined: true,
     rbac: [['vms/shutdown', 'update']],
-    blocked: (vm) => (vm.running ? null : 'the VM is not running'),
+    blocked: (vm) => (vm.running ? null : NOT_RUNNING),
   },
   kill: {
     label: 'Kill',
@@ -103,7 +106,7 @@ export const VM_ACTIONS = {
     icon: 'skull-crossbones',
     type: 'is-danger',
     rbac: [['vms', 'delete']],
-    blocked: (vm) => (vm.running ? null : 'the VM is not running'),
+    blocked: (vm) => (vm.running ? null : NOT_RUNNING),
   },
   redeploy: {
     label: 'Redeploy',
@@ -133,7 +136,7 @@ export const VM_ACTIONS = {
     rbac: [['vms/snapshots', 'create']],
     blocked: (vm) => {
       if (!vm.snapshot) return 'the VM does not have snapshots enabled';
-      if (!vm.running) return 'the VM is not running';
+      if (!vm.running) return NOT_RUNNING;
       return null;
     },
   },
@@ -145,7 +148,7 @@ export const VM_ACTIONS = {
     rbac: [['vms/commit', 'create']],
     blocked: (vm) => {
       if (!vm.snapshot) return 'the VM does not have snapshots enabled';
-      if (!vm.running) return 'the VM is not running';
+      if (!vm.running) return NOT_RUNNING;
       return null;
     },
   },
@@ -156,7 +159,7 @@ export const VM_ACTIONS = {
       "Save a dump of the VM's memory for forensics tools such as Volatility",
     icon: 'database',
     rbac: [['vms/memorySnapshot', 'create']],
-    blocked: (vm) => (vm.running ? null : 'the VM is not running'),
+    blocked: (vm) => (vm.running ? null : NOT_RUNNING),
   },
   portForward: {
     label: 'Port forward',
@@ -165,7 +168,7 @@ export const VM_ACTIONS = {
     icon: 'arrow-right',
     rbac: [['vms/forwards', 'create']],
     blocked: (vm) => {
-      if (!vm.running) return 'the VM is not running';
+      if (!vm.running) return NOT_RUNNING;
       if (!vm.ccActive) return 'it needs an active miniccc agent in the VM';
       return null;
     },
@@ -182,7 +185,7 @@ export const VM_ACTIONS = {
       ['vms/cdrom', 'update'],
       ['vms/cdrom', 'delete'],
     ],
-    blocked: (vm) => (vm.running ? null : 'the VM is not running'),
+    blocked: (vm) => (vm.running ? null : NOT_RUNNING),
   },
   mount: {
     label: 'Mount disk',
@@ -192,7 +195,7 @@ export const VM_ACTIONS = {
     feature: 'vm-mount',
     rbac: [['vms/mount', 'post']],
     blocked: (vm) => {
-      if (!vm.running) return 'the VM is not running';
+      if (!vm.running) return NOT_RUNNING;
       if (!vm.ccActive) return 'it needs an active miniccc agent in the VM';
       return null;
     },
@@ -204,7 +207,7 @@ export const VM_ACTIONS = {
     icon: CAPTURE_ICON,
     rbac: [['vms/captures', 'create']],
     blocked: (vm) => {
-      if (!vm.running) return 'the VM is not running';
+      if (!vm.running) return NOT_RUNNING;
       if (!(vm.networks ?? []).length) return 'the VM has no interfaces';
       if (!vmInterfaces(vm).some((i) => !i.disconnected)) {
         return 'all its interfaces are disconnected';
@@ -277,12 +280,13 @@ export function rowActionNames(vm) {
   return ROW_ACTIONS.map((name) => (swapped[name] ? ROW_SWAPS[name] : name));
 }
 
-// The buttons for one VM's actions, Restart greyed out while the VM is not
-// running, for the Start beside it; a selection still restarts a stopped VM.
+// The buttons for one VM's actions; a Restart greyed out because the VM is not
+// running points to the Start beside it.
 export function vmButtonStates(names, vm, opts) {
+  const notRunning = `Cannot restart: ${NOT_RUNNING}`;
   return vmActionStates(names, vm, opts).map((state) =>
-    state.name === 'restart' && !vm.running && !state.disabled
-      ? { ...state, disabled: true, reason: `Can't restart: ${NOT_RUNNING}` }
+    state.name === 'restart' && state.reason === notRunning
+      ? { ...state, reason: `${notRunning}. Start it instead` }
       : state,
   );
 }

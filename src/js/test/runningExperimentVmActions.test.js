@@ -901,10 +901,24 @@ describe('actions on VMs', () => {
 
     await act(page, 'Restart selected VMs', selection);
     expect(messageOf(questions()[1])).toContain(
-      'The held VM is paused and must be resumed first. ' +
-        'The gone VM is not shown in the table.',
+      'The off VM is not running. ' +
+        'The held VM is paused. Resume paused VMs first. ' +
+        'The gone VM is not in the table.',
     );
     expect(alerts()).toEqual([]);
+  });
+
+  it('restarts none of a selection of VMs that are not running, saying why', async () => {
+    const page = await showing([
+      ...vms,
+      { ...vms[1], name: 'down', disk: '/images/down.qc2' },
+    ]);
+    await act(page, 'Restart selected VMs', ['off', 'down']);
+    expect(questions()).toEqual([]);
+    expect(textOf(alerts()[0].querySelector('.media-content'))).toBe(
+      'The VMs off and down are not running.',
+    );
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   it('words its question for one VM', async () => {

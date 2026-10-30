@@ -42,11 +42,11 @@ A button, here or on the modify state toolbar below, skips the selected VMs its
 action cannot be applied to rather than failing on them, by the same rules that
 disable the action's button in a VM's details card (see [VMs](vms.md)). Every
 button skips VMs that are busy with another action, such as a redeploy or a
-snapshot. `start` skips VMs that are already running; `pause`,
+snapshot. `start` skips VMs that are already running; `pause`, `restart`,
 `create memory snapshot`, `shutdown` and `kill` skip VMs that are not running;
 `create VM snapshot` and `create backing image` skip VMs that are not running or
-do not have snapshots enabled; `restart` skips paused VMs; and
-`reset disk state` skips VMs that are paused or do not have snapshots enabled. A
+do not have snapshots enabled; and `reset disk state` skips VMs that are paused
+or do not have snapshots enabled. A
 selected VM the table no longer shows, because it is on another page, a search
 filtered it out, or it was killed, is skipped as well, since its state is
 unknown. One dialog asks before anything happens: it lists the VMs the action
@@ -84,7 +84,7 @@ a VM's state. These buttons, again named by their tooltips, are:
   experiment started, discarding changes; only VMs with snapshots enabled
   can be reset, and a paused VM cannot be
 
-* `restart` - restarts each selected VM; a paused VM cannot be restarted
+* `restart` - restarts the selected VMs that are running
 
 * `shutdown` - powers off the selected VMs that are running; they can be
   started again later

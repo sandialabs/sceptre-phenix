@@ -685,10 +685,10 @@ phenix vm reset-disk <experiment name> [vm name] [--label <label>]
 Click on the name of a running VM in a started experiment to open its details
 card, then click `Restart` in the `Power` section. `Restart` is also in the VM
 table's [Actions column](#vm-actions-column). On a paused VM it is disabled with
-`Can't restart: the VM is paused and must be resumed first`, and on any other VM
-that is not running with `Can't restart: the VM is not running; start it
-instead`. Restarting a selection of VMs from the table's toolbar still starts
-the ones that are shut down.
+`Cannot restart: the VM is paused. Resume paused VMs first`, and on any other VM
+that is not running with `Cannot restart: the VM is not running. Start it
+instead`. Restarting a selection of VMs from the table's toolbar skips the ones
+that are not running.
 
 ### From the Command Line Binary
 
