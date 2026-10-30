@@ -125,8 +125,9 @@ bare `24` in `PHENIX_UI_JWT_LIFETIME` is 24 nanoseconds), `host:port`
 endpoints, header names and paths. A directory variable follows the rules of
 the `dirs` rows above, a file variable those of the `files` rows, and
 `PHENIX_UI_TLS_KEY` and `PHENIX_UI_TLS_CERT` must name readable files.
-`PHENIX_UI_FEATURES` fails when it holds a comma, and `PHENIX_UI_USERS` when
-a user's role does.
+`PHENIX_UI_BASE_PATH` shows the path `phenix ui` serves under, with a leading
+and a trailing `/` added when missing. `PHENIX_UI_FEATURES` fails when it
+holds a comma, and `PHENIX_UI_USERS` when a user's role does.
 
 `-o json` prints the same report as one JSON object: `schemaVersion` (`1`),
 `status`, `time`, `version` (`phenix`, `label`, `commit`, `date`,

@@ -466,7 +466,7 @@ func listenCheck(value string) doctorCheck {
 }
 
 // basePathCheck checks the path phenix ui serves under, which it gives a
-// leading and trailing slash.
+// leading and a trailing slash when either is missing.
 func basePathCheck(value string) doctorCheck {
 	switch {
 	case strings.Contains(value, "://"):
@@ -475,7 +475,7 @@ func basePathCheck(value string) doctorCheck {
 		return warnCheck(fmt.Sprintf("%q has characters a URL path cannot hold as they are", value))
 	}
 
-	return passCheck("/" + strings.Trim(value, "/") + "/")
+	return passCheck(web.NormalizeBasePath(value))
 }
 
 // jwtLifetimeCheck parses value as viper reads a duration, where a number

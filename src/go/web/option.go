@@ -74,13 +74,7 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		opt(&so)
 	}
 
-	if !strings.HasPrefix(so.basePath, "/") {
-		so.basePath = "/" + so.basePath
-	}
-
-	if !strings.HasSuffix(so.basePath, "/") {
-		so.basePath += "/"
-	}
+	so.basePath = NormalizeBasePath(so.basePath)
 
 	if _, err := os.Stat("downloads/tunneler"); err == nil {
 		so.features["tunneler-download"] = true
@@ -161,6 +155,20 @@ func ServeBasePath(p string) ServerOption {
 	return func(o *serverOptions) {
 		o.basePath = p
 	}
+}
+
+// NormalizeBasePath returns the path the server serves under for p: p with a
+// leading and a trailing slash added when either is missing.
+func NormalizeBasePath(p string) string {
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+
+	return p
 }
 
 // ServeFileServerEndpoint sets the optional experiment file upload server endpoint.

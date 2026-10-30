@@ -215,6 +215,14 @@ func TestEnvChecks(t *testing.T) {
 			vars: map[string]string{"PHENIX_UI_BASE_PATH": "phenix"},
 			want: []doctorCheck{row("PHENIX_UI_BASE_PATH", doctorPass, "/phenix/")},
 		},
+		"root base path": {
+			vars: map[string]string{"PHENIX_UI_BASE_PATH": "/"},
+			want: []doctorCheck{row("PHENIX_UI_BASE_PATH", doctorPass, "/")},
+		},
+		"base path with doubled slashes": {
+			vars: map[string]string{"PHENIX_UI_BASE_PATH": "//a//"},
+			want: []doctorCheck{row("PHENIX_UI_BASE_PATH", doctorPass, "//a//")},
+		},
 		"base path URL": {
 			vars: map[string]string{"PHENIX_UI_BASE_PATH": "https://example.com/phenix"},
 			want: []doctorCheck{

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"pgregory.net/rapid"
+
 	"phenix/util/common"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -102,4 +104,50 @@ func TestServeWithNetflowMaxSize(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "ui.netflow.max-size") {
 		t.Errorf("Start(netflow max size -1) = %v, want an error naming ui.netflow.max-size", err)
 	}
+}
+
+// The base path gets a leading and a trailing slash only when it lacks one,
+// and keeps every other slash.
+func TestNormalizeBasePath(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"":         "/",
+		"/":        "/",
+		"phenix":   "/phenix/",
+		"/phenix":  "/phenix/",
+		"phenix/":  "/phenix/",
+		"/phenix/": "/phenix/",
+		"//a//":    "//a//",
+		"a/b":      "/a/b/",
+	}
+
+	for in, want := range tests {
+		if got := NormalizeBasePath(in); got != want {
+			t.Errorf("NormalizeBasePath(%q) = %q, want %q", in, got, want)
+		}
+
+		if got := newServerOptions(ServeBasePath(in)).basePath; got != want {
+			t.Errorf("newServerOptions(ServeBasePath(%q)).basePath = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A normalized base path starts and ends with a slash, holds the path it
+// came from, and normalizing it again changes nothing.
+func TestNormalizeBasePathProperty(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		p := rapid.StringMatching(`[a-z/]{0,12}`).Draw(t, "path")
+		got := NormalizeBasePath(p)
+
+		if !strings.HasPrefix(got, "/") || !strings.HasSuffix(got, "/") || !strings.Contains(got, p) {
+			t.Fatalf("NormalizeBasePath(%q) = %q", p, got)
+		}
+
+		if again := NormalizeBasePath(got); again != got {
+			t.Fatalf("NormalizeBasePath(%q) = %q, but of that %q", p, got, again)
+		}
+	})
 }
