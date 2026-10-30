@@ -54,14 +54,15 @@
       detailed
       detail-key="name"
       v-model:opened-detailed="opened"
-      :has-detailed-visible="(row) => problemCount(row) > 0"
+      :show-detail-icon="false"
       :row-class="rowClass"
       :paginated="table.isPaginated"
       :per-page="table.perPage"
       v-model:current-page="table.currentPage"
       :pagination-simple="table.isPaginationSimple"
       :pagination-size="table.paginationSize"
-      default-sort="verdict">
+      default-sort="verdict"
+      scrollable>
       <template #empty>
         <section class="section">
           <div class="content has-text-white has-text-centered">
@@ -76,15 +77,29 @@
         header-class="sort-inline"
         sortable
         v-slot="props">
-        <div class="exp-name">
-          <router-link
-            :to="{ name: 'experiment', params: { id: props.row.name } }">
-            {{ props.row.name }}
-          </router-link>
-          <div class="sub">
-            {{ props.row.scenario || 'no scenario' }} ·
-            {{ props.row.vms.total }}
-            {{ pluralWord(props.row.vms.total, 'VM') }}
+        <div class="exp-cell">
+          <button
+            v-if="problemCount(props.row) > 0"
+            type="button"
+            class="plain-button problems-toggle"
+            :aria-expanded="opened.includes(props.row.name) ? 'true' : 'false'"
+            :aria-label="`Problems of ${props.row.name}`"
+            @click="toggleProblems(props.row.name)">
+            <b-icon
+              icon="angle-right"
+              :class="{ 'is-expanded': opened.includes(props.row.name) }" />
+          </button>
+          <span v-else class="problems-toggle" aria-hidden="true"></span>
+          <div class="exp-name">
+            <router-link
+              :to="{ name: 'experiment', params: { id: props.row.name } }">
+              {{ props.row.name }}
+            </router-link>
+            <div class="sub">
+              {{ props.row.scenario || 'no scenario' }} ·
+              {{ props.row.vms.total }}
+              {{ pluralWord(props.row.vms.total, 'VM') }}
+            </div>
           </div>
         </div>
       </b-table-column>
@@ -349,9 +364,12 @@
         </table>
         <div class="hint mt-2">
           <template v-if="hiddenProblems(props.row) > 0">
-            <a role="button" @click="showAll[props.row.name] = true"
-              >Show all {{ problems(props.row).length }} problems</a
-            >
+            <button
+              type="button"
+              class="plain-button link-button"
+              @click="showAll[props.row.name] = true">
+              Show all {{ problems(props.row).length }} problems
+            </button>
             ·
           </template>
           failing checks first, newest first, then VMs that are down
@@ -537,6 +555,12 @@
     },
 
     methods: {
+      toggleProblems(name) {
+        this.opened = this.opened.includes(name)
+          ? this.opened.filter((n) => n !== name)
+          : [...this.opened, name];
+      },
+
       clockTime,
       problemCount,
       problems,
@@ -669,17 +693,23 @@
       },
 
       // why Run SOH cannot be pressed for the row, or '' when it can
+      // why Run SOH is greyed out, or '' when it is not
       runBlocked(row) {
+        const reason = this.runBlockedReason(row);
+        return reason && `Cannot run SOH: ${reason}`;
+      },
+
+      runBlockedReason(row) {
         if (!roleAllowed('experiments/trigger', 'create', row.name)) {
-          return 'You may not run SOH on this experiment';
+          return 'your role cannot run it on this experiment';
         }
-        if (!row.configured) return 'The soh app is not in the scenario';
+        if (!row.configured) return 'the soh app is not in the scenario';
         if (!row.running || row.status !== 'started') {
-          return 'The experiment is not running';
+          return 'the experiment is not running';
         }
-        if (row.soh_running || row.pending) return 'SOH is running';
+        if (row.soh_running || row.pending) return 'it is running';
         if (!row.soh_initialized) {
-          return 'SOH is still running its first checks';
+          return 'it is still running its first checks';
         }
         return '';
       },
@@ -809,7 +839,7 @@
             this.settle(exp);
             this.reloadSoon();
             showError(
-              `State of health run failed for ${name}`,
+              `State of Health run failed for ${name}`,
               result?.error ?? '',
             );
             break;
@@ -900,6 +930,26 @@
 
   :deep(tr.row-warn td:first-child) {
     box-shadow: inset 3px 0 0 #ffad33;
+  }
+
+  .exp-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  /* the toggle of a row's problem list, or the space it would take */
+  .problems-toggle {
+    flex: none;
+    width: 1.5rem;
+  }
+
+  .problems-toggle .icon {
+    transition: transform 0.15s;
+  }
+
+  .problems-toggle .icon.is-expanded {
+    transform: rotate(90deg);
   }
 
   .exp-name a {

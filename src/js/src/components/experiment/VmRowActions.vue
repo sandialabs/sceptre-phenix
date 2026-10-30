@@ -17,8 +17,10 @@
         ]"
         :aria-label="action.label"
         :aria-busy="action.pending"
-        :disabled="action.disabled || action.pending"
-        @click="$emit('action', action.name)">
+        :aria-disabled="action.disabled || action.pending ? 'true' : undefined"
+        @click="
+          action.disabled || action.pending || $emit('action', action.name)
+        ">
         <b-icon :icon="action.icon" />
       </button>
     </b-tooltip>
@@ -29,10 +31,10 @@
   import { roleAllowed } from '@/utils/rbac.js';
   import { rowActionNames, rowSwapOf, vmButtonStates } from './vmActions.js';
 
-  // The VM table's Actions column: compact icon buttons, disabled with the
-  // reason in their tooltip when the role or the VM's state rules them out,
-  // as in the Disks table. They wrap onto more rows rather than widen the
-  // column.
+  // The VM table's Actions column: compact icon buttons, greyed out with the
+  // reason in their tooltip when the role or the VM's state rules them out;
+  // they stay focusable so the keyboard reaches it. They wrap onto more rows
+  // rather than widen the column.
   export default {
     name: 'VmRowActions',
     props: {

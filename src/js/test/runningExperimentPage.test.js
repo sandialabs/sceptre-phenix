@@ -892,7 +892,7 @@ describe('the netflow capture', () => {
       expect.stringMatching(/^experiments\/[^/]+\/netflow\/captures$/),
     );
     expect(textOf(page.find('.netflow-captures .modal-card-body'))).toBe(
-      'No captures recorded yet. Starting a netflow capture records it.',
+      'No captures recorded yet. Start a capture with the netflow button to record one.',
     );
   });
 

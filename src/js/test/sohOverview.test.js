@@ -583,7 +583,11 @@ describe('SohOverview view', () => {
       { params: { apps: 'soh' } },
     );
     expect(runButtons(wrapper)).toMatchObject([
-      { label: 'SOH is running', disabled: true, spinning: true },
+      {
+        label: 'Cannot run SOH: it is running',
+        disabled: true,
+        spinning: true,
+      },
     ]);
 
     const blocked = await page([
@@ -593,9 +597,9 @@ describe('SohOverview view', () => {
     ]);
     // sorted waiting first, then not configured
     expect(runButtons(blocked).map((b) => [b.label, b.disabled])).toEqual([
-      ['The experiment is not running', true],
-      ['SOH is still running its first checks', true],
-      ['The soh app is not in the scenario', true],
+      ['Cannot run SOH: the experiment is not running', true],
+      ['Cannot run SOH: it is still running its first checks', true],
+      ['Cannot run SOH: the soh app is not in the scenario', true],
     ]);
 
     rbac.allowed = denyOnly(['experiments/trigger']);
@@ -603,7 +607,7 @@ describe('SohOverview view', () => {
     const denied = await page([summary()]);
     const [refused] = runButtons(denied);
     expect(refused).toMatchObject({ disabled: true });
-    expect(refused.label).toMatch(/may not run SOH/);
+    expect(refused.label).toMatch(/^Cannot run SOH: your role cannot/);
     // the click handler refuses too, were the button enabled
     refused.control.element.removeAttribute('disabled');
     await refused.control.trigger('click');
@@ -622,7 +626,7 @@ describe('SohOverview view', () => {
       wsMsg('apps/soh', 'ot-substation', 'error', { error: 'boom' }),
     );
     expect(notify.show).toHaveBeenCalledWith(
-      'State of health run failed for ot-substation',
+      'State of Health run failed for ot-substation',
       'boom',
     );
 
@@ -756,11 +760,29 @@ describe('SohOverview view', () => {
     expect(hint(0)).toMatch(/^Show all 8 problems ·/);
     expect(hint(0)).not.toContain('this list stops');
 
-    await detail(0).find('.hint a').trigger('click');
+    await detail(0).find('.hint button').trigger('click');
     expect(shown(0)).toHaveLength(8);
     expect(hint(0)).not.toContain('Show all');
 
     expect(hint(1)).toContain('this list stops at the newest 8 failing checks');
+  });
+
+  it("opens and closes a row's problems from its named toggle", async () => {
+    const failing = summary({
+      name: 'a',
+      checks: { total: 2, passing: 1, failing: 1 },
+      failing_checks: [{ vm: 'web', check: 'ping', error: 'down' }],
+    });
+    const wrapper = await page([failing, summary({ name: 'b' })]);
+    const toggles = wrapper.findAll('button.problems-toggle');
+    expect(toggles.map((t) => t.attributes('aria-label'))).toEqual([
+      'Problems of a',
+    ]);
+    await toggles[0].trigger('click');
+    expect(toggles[0].attributes('aria-expanded')).toBe('true');
+    expect(wrapper.findAll('tr.detail')).toHaveLength(1);
+    await toggles[0].trigger('click');
+    expect(wrapper.findAll('tr.detail')).toHaveLength(0);
   });
 
   it('describes the VM bar for rows without VM states', async () => {

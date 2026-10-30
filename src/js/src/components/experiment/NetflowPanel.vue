@@ -8,7 +8,7 @@
         {{
           starting
             ? 'Starting netflow capture…'
-            : 'No netflow captures yet. Start one with the netflow button above.'
+            : 'No netflow lines yet. Start a capture with the netflow button above.'
         }}
       </p>
       <NetflowCaptures v-if="experiment" :experiment="experiment" />
@@ -17,6 +17,9 @@
       v-if="lines.length > 0"
       ref="view"
       class="netflow-view"
+      tabindex="0"
+      role="region"
+      aria-label="Netflow lines"
       :style="{ maxHeight }">
       <table class="table is-narrow is-fullwidth netflow-table">
         <thead>

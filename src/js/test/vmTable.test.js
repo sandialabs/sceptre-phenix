@@ -101,7 +101,7 @@ describe('the rows', () => {
   it('marks the captured interfaces and the ones waiting on the server', async () => {
     const wrapper = await render([web], { capturePending: { 'web/0': true } });
     const { IP } = rowOf(wrapper, 'web');
-    const ifaces = IP.findAll('.field > div');
+    const ifaces = IP.findAll('.field button');
     expect(ifaces.map((d) => d.classes('is-success'))).toEqual([false, true]);
     expect(ifaces.map((d) => d.attributes('aria-busy'))).toEqual([
       'true',
@@ -196,9 +196,9 @@ describe('the rows', () => {
 
 describe('what it asks the page for', () => {
   it.each([
-    ['info', 'Node', '.tag .field > div', [web]],
-    ['capture', 'Taps', '.field > div:nth-child(2)', [web, 1]],
-    ['change-vlan', 'Network', '.field > div:nth-child(2)', [web, 1]],
+    ['info', 'Node', 'button.tag', [web]],
+    ['capture', 'Taps', '.field > div:nth-child(2) button', [web, 1]],
+    ['change-vlan', 'Network', '.field > div:nth-child(2) button', [web, 1]],
     ['edit-labels', 'Labels', '.is-clickable', [web]],
   ])('emits %s from the %s cell', async (event, column, selector, args) => {
     const wrapper = await render([web]);
@@ -209,7 +209,7 @@ describe('what it asks the page for', () => {
   it('opens the details alone of a VM the role may not get', async () => {
     rbac.allowed = denyOnly(['vms', 'get']);
     const wrapper = await render([web]);
-    await rowOf(wrapper, 'web').Node.find('.field > div').trigger('click');
+    await rowOf(wrapper, 'web').Node.find('button.tag').trigger('click');
     expect(wrapper.emitted('details')).toEqual([[web]]);
     expect(wrapper.emitted('info')).toBeUndefined();
   });
@@ -252,7 +252,7 @@ describe('what it asks the page for', () => {
       });
       const button = wrapper.find(`.vm-row-${shown}`);
       expect(button.classes()).toContain('is-loading');
-      expect(button.attributes('disabled')).toBeDefined();
+      expect(button.attributes('aria-disabled')).toBe('true');
     },
   );
 
@@ -285,14 +285,6 @@ describe('what it asks the page for', () => {
     expect(wrapper.emitted('sort')).toEqual([
       [field, 'asc'],
       [field, 'desc'],
-    ]);
-  });
-
-  it('gives the rows it shows', async () => {
-    const wrapper = await render();
-    expect(wrapper.vm.visibleData().map((row) => row.name)).toEqual([
-      'web',
-      'db',
     ]);
   });
 });

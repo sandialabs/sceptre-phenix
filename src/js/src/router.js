@@ -118,7 +118,7 @@ const router = createRouter({
       name: 'sohoverview',
       component: () => import('@/views/SohOverview.vue'),
       meta: {
-        title: 'State of health',
+        title: 'State of Health',
         allowed: () => roleAllowed('experiments', 'list'),
       },
     },
@@ -126,7 +126,7 @@ const router = createRouter({
       path: '/soh/:id',
       name: 'soh',
       meta: {
-        title: 'State of health',
+        title: 'State of Health',
         allowed: (to) => roleAllowed('experiments', 'get', to.params.id),
       },
       component: () => import('@/views/StateOfHealth.vue'),
@@ -176,6 +176,13 @@ const router = createRouter({
 
     //vnc
     { path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token', name: 'vnc' },
+
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'notfound',
+      meta: { title: 'Page not found' },
+      component: () => import('@/views/NotFound.vue'),
+    },
   ],
 });
 

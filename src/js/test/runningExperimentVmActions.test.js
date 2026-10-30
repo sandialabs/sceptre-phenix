@@ -269,7 +269,7 @@ describe('the VM table', () => {
     open({ experiment: { name: 'demo', vms }, vmsLoaded: true, ...data });
   const row = async () => vmRows(await render([web, busy]))[0];
   // the IPs or taps a cell marks as being captured
-  const captured = (cell) => cell.findAll('.field > .is-success').map(textOf);
+  const captured = (cell) => cell.findAll('.field .is-success').map(textOf);
   // the column toggle with this label
   const toggle = (page, label) =>
     page
@@ -449,7 +449,7 @@ describe('changing a VLAN', () => {
   // picks the VLAN option at `index` for web's interface 0 and clicks Change
   async function change(index) {
     const page = await open({ experiment });
-    await vmRows(page)[0].Network.find('.field > div').trigger('click');
+    await vmRows(page)[0].Network.find('.field button').trigger('click');
     const modal = modalTitled(page, 'Change the VLAN');
     await modal.findAll('select option').at(index).setSelected();
     await modal.find('footer button').trigger('click');
@@ -496,7 +496,7 @@ describe('changing a VLAN', () => {
     });
     const card = () => page.findComponent(VmDetailsCard);
 
-    await card().find('a.vm-iface-name').trigger('click');
+    await card().find('button.vm-iface-name').trigger('click');
     const modal = modalTitled(page, 'Change the VLAN');
     await modal.findAll('select option').at(1).setSelected();
     await modal.find('footer button').trigger('click');
@@ -560,7 +560,7 @@ describe("the open VM's port forwards", () => {
       .map((f) => [f.srcPort, f.canDelete]);
   // opens web's details from its name in the table
   const openDetails = async (page) => {
-    await vmRows(page)[0].Node.find('.field > div').trigger('click');
+    await vmRows(page)[0].Node.find('button.tag').trigger('click');
     await flushPromises();
     return page.findComponent(VmDetailsCard);
   };
@@ -970,7 +970,10 @@ describe('actions on VMs', () => {
     const button = (action) => off().Actions.find(`.vm-row-${action}`);
 
     expect(button('shutdown').exists()).toBe(false);
-    expect(button('restart').attributes('disabled')).toBeDefined();
+    expect(button('restart').attributes('aria-disabled')).toBe('true');
+    // greyed out, it stays focusable and does nothing
+    await button('restart').trigger('click');
+    expect(questions()).toEqual([]);
     await button('start').trigger('click');
     await flushPromises();
     expect(questions()).toEqual([]);
@@ -1648,6 +1651,26 @@ describe("showing the server's copy of a VM", () => {
     expect(rows(page)[0][2]).toBe('new.png');
   });
 
+  it('keeps the open details card current, with its annotations', async () => {
+    const page = await open({
+      experiment: { name: 'demo', vms: [{ name: 'web', running: true }] },
+      expModal: {
+        active: true,
+        vm: { name: 'web', running: true, tags: {}, annotations: { a: 1 } },
+        fullName: 'demo/web',
+        snapshots: false,
+        forwards: [],
+        backingChain: null,
+        disk: null,
+        cdRomDisk: null,
+        filesDir: '',
+      },
+    });
+    await update({ name: 'web', running: true, tags: { role: 'db' } });
+    const vm = page.findComponent(VmDetailsCard).props('vm');
+    expect([vm.tags, vm.annotations]).toEqual([{ role: 'db' }, { a: 1 }]);
+  });
+
   it('ignores a VM the table no longer shows', async () => {
     const page = await showing(true);
     await update({ name: 'gone', running: true, host: 'new' });
@@ -1840,6 +1863,14 @@ describe('the selection toolbar', () => {
       'Select VM db',
     ]);
     expect(toolbarOf(page)).toEqual(MAIN_BAR);
+
+    // unchecking one VM unchecks Select all, which then selects all again
+    await page
+      .find('label.b-checkbox:has(input[value="web"]) input')
+      .setValue(false);
+    expect(checked(page)).toEqual(['Select VM db']);
+    await selectAll().setValue(true);
+    expect(checked(page)).toHaveLength(3);
 
     await selectAll().setValue(false);
     expect(checked(page)).toEqual([]);

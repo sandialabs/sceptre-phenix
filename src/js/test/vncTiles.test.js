@@ -52,12 +52,12 @@ describe('the tiles', () => {
 
   it("asks for a VM's details by its name, if the role may get it", async () => {
     const wrapper = await render({ vms: [vm()] });
-    await wrapper.find('a.vnc-tile-name').trigger('click');
+    await wrapper.find('button.vnc-tile-name').trigger('click');
     expect(wrapper.emitted('info')).toEqual([[vm()]]);
 
     rbac.allowed = denyOnly(['vms', 'get']);
     const denied = await render({ vms: [vm()] });
-    expect(denied.find('a.vnc-tile-name').exists()).toBe(false);
+    expect(denied.find('button.vnc-tile-name').exists()).toBe(false);
     expect(tileNames(denied)).toEqual(['web']);
   });
 });

@@ -154,7 +154,7 @@
         >
       </div>
 
-      <b-field position="is-right">
+      <b-field position="is-right" class="exp-toolbar-search">
         <b-field
           v-if="
             activeTab == TAB.FILES &&
@@ -247,7 +247,8 @@
               <b-dropdown-item
                 v-for="toggle in columnToggles"
                 :key="toggle.key"
-                custom>
+                custom
+                :focusable="false">
                 <b-checkbox
                   v-model="columnVisibility[toggle.key]"
                   @update:modelValue="persistColumnVisibility(toggle)"
@@ -744,9 +745,8 @@
         return all > this.table.perPage;
       },
 
-      // The VM whose details are open: the details fetched when it opened,
-      // kept current with the table row's live screenshot, state, and
-      // captures, which websocket events update.
+      // The VM whose details are open: its live table row over the details
+      // fetched when it opened, which alone carry the annotations.
       expModalVm() {
         const vm = this.expModal.vm ?? {};
         const row = vm.name
@@ -755,13 +755,31 @@
         if (!row || row === vm) return vm;
         return {
           ...vm,
-          state: row.state ?? vm.state,
-          running: row.running,
-          busy: row.busy,
-          percent: row.percent,
-          captures: row.captures ?? vm.captures,
+          ...row,
+          annotations: vm.annotations,
           screenshot: row.screenshot || vm.screenshot,
         };
+      },
+
+      // the header checkbox: whether every VM on this page that can be
+      // selected is, and selecting all of them or none
+      checkAll: {
+        get() {
+          const names = this.selectableVmNames;
+          return (
+            names.length > 0 &&
+            names.every((name) => this.vmSelectedArray.includes(name))
+          );
+        },
+        set(on) {
+          this.vmSelectedArray = on ? [...this.selectableVmNames] : [];
+        },
+      },
+
+      selectableVmNames() {
+        return (this.experiment.vms ?? [])
+          .filter((vm) => !vm.external)
+          .map((vm) => vm.name);
       },
 
       isMultiVmSelected() {
@@ -886,6 +904,7 @@
             experiment: this.$route.params.id,
             tags: vm.tags,
           },
+          events: { saved: () => this.refreshVmDetails(vm.name) },
         });
       },
 
@@ -1152,7 +1171,7 @@
               vm.name,
               'is currently busy and not available for another action',
             ].join(' '),
-            confirmText: 'Ok',
+            confirmText: 'OK',
           });
 
           return;
@@ -1178,6 +1197,7 @@
               ? this.fetchVMForwards(vm)
               : { listeners: [] },
           ]);
+          if (!this.expModal.active || this.expModal.vm.name != vm.name) return;
 
           this.expModal.vm = details;
 
@@ -1845,7 +1865,6 @@
       actOnSelection(action) {
         this[SELECTION_HANDLERS[action]](this.vmSelectedArray);
         this.vmSelectedArray = [];
-        this.checkAll = false;
         this.showModifyStateBar = false;
       },
 
@@ -1866,7 +1885,7 @@
         this.$buefy.dialog.alert({
           title: 'No Action',
           message: escapeHTML(skippedVMsText(skipped)),
-          confirmText: 'Ok',
+          confirmText: 'OK',
         });
       },
 
@@ -2126,22 +2145,6 @@
     },
 
     watch: {
-      checkAll(newVal) {
-        if (newVal) {
-          var visibleItems = this.$refs['vmTable'].visibleData();
-          // add all visible items
-          this.vmSelectedArray = [];
-          for (var i = 0; i < visibleItems.length; i++) {
-            let item = visibleItems[i];
-
-            if (!item.external) {
-              this.vmSelectedArray.push(item.name);
-            }
-          }
-        } else {
-          this.vmSelectedArray = [];
-        }
-      },
       activeTab(newVal, oldVal) {
         // each tab keeps its own search and history while another is open
         const [from, to] = [searchKey(oldVal), searchKey(newVal)];
@@ -2287,7 +2290,6 @@
         // whose buttons spin meanwhile
         vmActionPending: {},
         showModifyStateBar: false,
-        checkAll: false,
         vmSelectedArray: [],
         searchHistory: [],
         // the search and its history of each tab not open, by searchKey
@@ -2383,6 +2385,19 @@
 
   .exp-toolbar :deep(.field.is-grouped.is-grouped-right > *) {
     margin-right: 0;
+  }
+
+  /* the search and its buttons wrap below rather than run left over the tabs */
+  .exp-toolbar :deep(.exp-toolbar-search),
+  .exp-toolbar :deep(.exp-toolbar-search > .field-body > .field) {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .exp-toolbar :deep(.exp-toolbar-search > .field-body > .field) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 0.5rem;
   }
 
   .vm-table-filters {

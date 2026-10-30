@@ -57,7 +57,7 @@ describe('the Tunneler page', () => {
     const { rows } = shown(page);
 
     expect(rows.map(({ os, arch }) => `${os} ${arch}`.trim())).toEqual([
-      'MacOS arm64',
+      'macOS arm64',
       'Linux amd64',
       'Windows amd64',
       'tunneler custom',

@@ -111,8 +111,8 @@
   // how the builds the server may offer are named on the page
   const BUILDS = {
     'phenix-tunneler-linux-amd64': { os: 'Linux', arch: 'amd64' },
-    'phenix-tunneler-darwin-arm64': { os: 'MacOS', arch: 'arm64' },
-    'phenix-tunneler-darwin-amd64': { os: 'MacOS', arch: 'amd64' },
+    'phenix-tunneler-darwin-arm64': { os: 'macOS', arch: 'arm64' },
+    'phenix-tunneler-darwin-amd64': { os: 'macOS', arch: 'amd64' },
     'phenix-tunneler-windows-amd64.exe': { os: 'Windows', arch: 'amd64' },
   };
 

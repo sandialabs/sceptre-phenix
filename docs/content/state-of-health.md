@@ -28,7 +28,7 @@ capture](#packet-capture) option is enabled. Without it there is nothing to
 switch to, so the tab bar is hidden entirely and the topology graph fills the
 page.
 
-A `Go to Experiment` button in the top left corner of the page returns to the
+A `Go to experiment` button in the top left corner of the page returns to the
 experiment. Two counters above the graph's top-left corner show how many VMs
 and VLANs the current filter is showing. Above the graph's top-right corner, a
 book button opens this documentation page and a flame button opens the

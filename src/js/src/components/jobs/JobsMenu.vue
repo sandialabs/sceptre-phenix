@@ -13,7 +13,8 @@ its panel aria-modal although the panel is no dialog.
     ref="root"
     class="dropdown is-right jobs-menu"
     :class="{ 'is-active': open }"
-    @keydown.esc="close(true)">
+    @keydown.esc="close(true)"
+    @focusout="closeOnFocusOut">
     <div class="dropdown-trigger">
       <button
         ref="trigger"
@@ -130,6 +131,11 @@ its panel aria-modal although the panel is no dialog.
         if (!this.open) return;
         this.open = false;
         if (refocus) this.$refs.trigger?.focus();
+      },
+      // Tabbing out of the menu closes it, as a click outside does.
+      closeOnFocusOut(event) {
+        const to = event.relatedTarget;
+        if (to && !this.$refs.root?.contains(to)) this.close(false);
       },
       // A click anywhere outside the menu closes it.
       closeOutside(event) {

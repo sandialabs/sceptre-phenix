@@ -108,18 +108,24 @@
         <template v-if="props.row.plainText && canDownloadFiles">
           <b-tooltip label="view file" type="is-dark">
             <div class="field is-clickable">
-              <div @click="viewFile(props.row)">
+              <button
+                type="button"
+                class="plain-button"
+                @click="viewFile(props.row)">
                 {{ props.row.name }}
-              </div>
+              </button>
             </div>
           </b-tooltip>
         </template>
         <template v-else-if="webSharkLink(props.row)">
           <b-tooltip label="Open in WebShark" type="is-dark">
             <div class="field is-clickable">
-              <div @click="openFileInWebShark(props.row)">
+              <button
+                type="button"
+                class="plain-button"
+                @click="openFileInWebShark(props.row)">
                 {{ props.row.name }}
-              </div>
+              </button>
             </div>
           </b-tooltip>
         </template>
@@ -153,7 +159,7 @@
         header-class="sort-inline"
         centered
         v-slot="props">
-        {{ props.row.date }}
+        <time-with-age :time="props.row.date" />
       </b-table-column>
       <b-table-column
         field="size"
@@ -231,6 +237,7 @@
 
 <script>
   import FileSelectionActions from '@/components/experiment/FileSelectionActions.vue';
+  import TimeWithAge from '@/components/TimeWithAge.vue';
   import { CAPTURE_ICON } from '@/components/experiment/vmActions.js';
   import { usePhenixStore } from '@/store.js';
   import { useErrorNotification } from '@/utils/errorNotif';
@@ -252,7 +259,7 @@
   // and calls reload() when either changes or the tab opens.
   export default {
     name: 'ExperimentFilesTab',
-    components: { FileSelectionActions },
+    components: { FileSelectionActions, TimeWithAge },
     mixins: [formattingMixin],
     props: {
       filter: { type: String, default: '' },

@@ -35,12 +35,13 @@
             :width="width"
             style="display: block" />
         </a>
-        <a
+        <button
           v-if="roleAllowed('vms', 'get', experiment + '/' + vm.name)"
-          class="vnc-tile-name"
-          @click="$emit('info', vm)"
-          >{{ vm.name }}</a
-        >
+          type="button"
+          class="plain-button vnc-tile-name"
+          @click="$emit('info', vm)">
+          {{ vm.name }}
+        </button>
         <span v-else class="vnc-tile-name">{{ vm.name }}</span>
       </div>
     </template>
@@ -98,10 +99,12 @@
 </script>
 
 <style scoped>
+  /* whitesmoke on #595959 is 6.6:1 */
   .vnc-tile-name {
     color: whitesmoke;
     display: block;
-    background-color: grey;
+    width: 100%;
+    background-color: #595959;
     text-align: center;
     padding: 2px 0px;
   }

@@ -82,7 +82,7 @@ describe('the Users page totals', () => {
     const want = ['Users: 4 (1 without a role)', 'Roles: 2'];
     expect(totalsText(page)).toEqual(want);
 
-    await page.find('input[placeholder="Find a user"]').setValue('alice');
+    await page.find('input[placeholder="Find a User"]').setValue('alice');
     expect(tableRows(page)).toHaveLength(1);
     expect(totalsText(page)).toEqual(want);
   });

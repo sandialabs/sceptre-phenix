@@ -7,22 +7,30 @@
       <form v-else class="content" @submit.prevent="sendSettingsToServer">
         <h3>Password Settings</h3>
         <b-field>
-          <b-switch v-model="settings_obj.password_settings.lowercase_req">
+          <b-switch
+            v-model="settings_obj.password_settings.lowercase_req"
+            type="is-light">
             Require a lowercase letter
           </b-switch>
         </b-field>
         <b-field>
-          <b-switch v-model="settings_obj.password_settings.uppercase_req">
+          <b-switch
+            v-model="settings_obj.password_settings.uppercase_req"
+            type="is-light">
             Require an uppercase letter
           </b-switch>
         </b-field>
         <b-field>
-          <b-switch v-model="settings_obj.password_settings.number_req">
+          <b-switch
+            v-model="settings_obj.password_settings.number_req"
+            type="is-light">
             Require a number
           </b-switch>
         </b-field>
         <b-field>
-          <b-switch v-model="settings_obj.password_settings.symbol_req">
+          <b-switch
+            v-model="settings_obj.password_settings.symbol_req"
+            type="is-light">
             Require a symbol
           </b-switch>
         </b-field>
@@ -30,7 +38,7 @@
           <b-numberinput
             aria-labelledby="settings-password-min-length"
             v-model="settings_obj.password_settings.min_length"
-            min="4"
+            min="8"
             max="32"
             :controls="false">
           </b-numberinput>
@@ -40,7 +48,9 @@
         </b-field>
         <h3>Timeout Settings</h3>
         <b-field>
-          <b-switch v-model="settings_obj.timeout_settings.enabled">
+          <b-switch
+            v-model="settings_obj.timeout_settings.enabled"
+            type="is-light">
             Log out users after period of inactivity
           </b-switch>
         </b-field>

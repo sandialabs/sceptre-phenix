@@ -519,7 +519,7 @@ describe('the totals', () => {
     expect(totals(wrapper)).toEqual([
       ['Experiments', '3'],
       ['Running', '2'],
-      ['Running VMs', '5'],
+      ['VMs in running experiments', '5'],
       ['VLANs', '6'],
     ]);
     expect(byLabel(wrapper, 'Experiment totals').attributes('role')).toBe(
@@ -537,7 +537,7 @@ describe('the totals', () => {
     expect(totals(wrapper)).toEqual([
       ['Experiments', '3'],
       ['Running', '2'],
-      ['Running VMs', '6'],
+      ['VMs in running experiments', '6'],
       ['VLANs', '2'],
     ]);
   });
@@ -561,7 +561,7 @@ describe('the Start and Stop buttons', () => {
       { name: 'x', status: 'stopped', running: false },
       () => true,
       [
-        { tooltip: 'start experiment', disabled: false, spinning: false },
+        { tooltip: 'Start experiment x', disabled: false, spinning: false },
         {
           tooltip: 'Cannot stop: the experiment is not running',
           disabled: true,
@@ -579,7 +579,7 @@ describe('the Start and Stop buttons', () => {
           disabled: true,
           spinning: false,
         },
-        { tooltip: 'stop experiment', disabled: false, spinning: false },
+        { tooltip: 'Stop experiment x', disabled: false, spinning: false },
       ],
     ],
     [

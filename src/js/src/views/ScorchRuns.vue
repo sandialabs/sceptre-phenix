@@ -1,9 +1,6 @@
 <template>
   <div class="content">
-    <stat-strip
-      class="runs-totals"
-      label="Pipeline totals"
-      :stats="totalsShown" />
+    <stat-strip class="runs-totals" label="Run totals" :stats="totalsShown" />
     <div class="runs-header">
       <div class="buttons">
         <router-link class="button is-dark" :to="{ name: 'scorch' }">
@@ -26,7 +23,11 @@
       <div class="buttons">
         <b-tooltip
           v-if="roleAllowed('experiments/trigger', 'create', expName)"
-          label="Starts all defined runs in order one by one (not in parallel)"
+          :label="
+            canStartAll
+              ? 'Starts all defined runs in order one by one (not in parallel)'
+              : 'Cannot start all: every run is running or waiting to run'
+          "
           type="is-light"
           multilined>
           <button
@@ -37,17 +38,30 @@
             <span>Start all</span>
           </button>
         </b-tooltip>
-        <button
+        <b-tooltip
           v-if="roleAllowed('experiments/trigger', 'delete', expName)"
-          class="button is-danger"
-          :disabled="!canStopAll"
-          @click="stopAll">
-          <b-icon icon="stop" />
-          <span>Stop all</span>
-        </button>
+          :label="
+            canStopAll
+              ? 'Stops the running run and those waiting to run'
+              : 'Cannot stop all: no run is running or waiting to run'
+          "
+          type="is-light"
+          multilined>
+          <button
+            class="button is-danger"
+            :disabled="!canStopAll"
+            @click="stopAll">
+            <b-icon icon="stop" />
+            <span>Stop all</span>
+          </button>
+        </b-tooltip>
         <b-tooltip
           v-if="roleAllowed('experiments/trigger', 'create', expName)"
-          label="clear the status of every run that is not running"
+          :label="
+            canClearAll
+              ? 'clear the status of every run that is not running'
+              : 'Cannot clear all: no run that is not running has a status'
+          "
           type="is-light is-left">
           <button
             class="button is-dark"
@@ -297,7 +311,7 @@
       totalsShown() {
         const totals = scorchRunTotals(this.runs);
         return [
-          ['pipelines', 'Pipelines', totals.pipelines],
+          ['pipelines', 'Runs', totals.pipelines],
           ['running', 'Running', totals.running, 'success'],
           ['succeeded', 'Succeeded', totals.succeeded],
           ['failed', 'Failed', totals.failed],

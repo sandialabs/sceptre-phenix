@@ -33,6 +33,20 @@ $modal-background-background-color: rgba($black, 0.86);
 $modal-card-head-border-bottom: transparent;
 $modal-card-foot-border-top: 1px solid $scheme-main-bis;
 
+// $colors was built from Bulma's turquoise; primary fills use a darker
+// orange, as white is 3.7:1 on $primary and 5.1:1 on this
+$colors: map.merge(
+  $colors,
+  (
+    'primary': (
+      #b5501f,
+      white,
+      findLightColor($primary),
+      findDarkColor($primary),
+    ),
+  )
+);
+
 // success buttons and tags: white is 2.1:1 on Bulma's #48c78e, 5.3:1 on this
 $success-fill: (#1e7b4b, white, $success-light, $success-dark);
 $tag-colors: map.merge(

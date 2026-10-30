@@ -66,6 +66,8 @@ function showDownWarning(message: string): void {
     message,
     type: 'is-warning',
     indefinite: true,
+    // below the page, off the header's controls, for as long as it lasts
+    position: 'is-bottom',
   });
   errorToastMessage = message;
 }

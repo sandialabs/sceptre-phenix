@@ -20,7 +20,7 @@ The same images can be managed from the command line; see
 
 ## Disk Totals
 
-Above the table on the left, level with the `Find a disk` search box, the page
+Above the table on the left, level with the `Find a Disk` search box, the page
 counts:
 
 * how many disk images the list holds;
@@ -44,7 +44,7 @@ image built on it add their own sizes.
 | `Virtual Size` | How large the disk looks to the guest. |
 | `Actions` | Buttons for the actions that can be run on the image. |
 
-Every column but `Actions` sorts. `Name` sorts, and the `Find a disk` search
+Every column but `Actions` sorts. `Name` sorts, and the `Find a Disk` search
 box searches, by the path the column shows, so `win/` finds every image in the
 `win` folder. `Size on Disk` and `Virtual Size` sort by their real byte count
 rather than as text, so `900 MiB` sorts below `2.1 GiB`.

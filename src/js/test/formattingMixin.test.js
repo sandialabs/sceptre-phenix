@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 
 import { formattingMixin } from '@/utils/formattingMixin.js';
 
-const { formatLowercase, getBaseName, getUniqueItems } =
+const { formatLowercase, formatUptime, getBaseName, getUniqueItems } =
   formattingMixin.methods;
 
 const noSlash = fc.string({ unit: 'binary' }).filter((s) => !s.includes('/'));
@@ -12,6 +12,14 @@ it('lowercases text and shows nothing for a missing value', () => {
   expect(formatLowercase('Enterprise')).toBe('enterprise');
   expect(formatLowercase(null)).toBe('');
   expect(formatLowercase(undefined)).toBe('');
+});
+
+it.each([
+  [3723, '01:02:03'],
+  [86400 + 3723, '1 day, 01:02:03'],
+  [2 * 86400, '2 days, 00:00:00'],
+])('shows an uptime of %s seconds as %s', (seconds, text) => {
+  expect(formatUptime(seconds)).toBe(text);
 });
 
 it('names a disk image by its file name', () => {

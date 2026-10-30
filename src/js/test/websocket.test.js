@@ -482,7 +482,10 @@ describe('a dropped connection', () => {
   ])('warns of %s until the socket is back', (_, code, reason, text) => {
     sockets[0].closeWith(code, reason);
     expect(warnings()).toEqual([text]);
-    expect(toasts[0].indefinite).toBe(true);
+    expect([toasts[0].indefinite, toasts[0].position]).toEqual([
+      true,
+      'is-bottom',
+    ]);
 
     vi.runAllTimers();
     sockets.at(-1).open();

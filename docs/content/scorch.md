@@ -296,11 +296,11 @@ The Scorch table, accessible as one of the tab selections within the phēnix UI,
 
 - `Experiment`: the experiment name, which is a link (tooltip `view SCORCH components`) to that experiment's Scorch runs
 - `Experiment Status`: this reports on the status of the experiment &mdash; an experiment must be running for a Scorch app to start. Beside the status are a button that starts or stops the experiment (its tooltip names the experiment, and starting or stopping is confirmed in a dialog first) and a `Go to experiment` button that opens the experiment itself. While an experiment starts, a progress bar takes the place of the status.
-- `Scorch Status`: this will report the running or stopped status of the Scorch app itself. Beside it are a button that starts or stops a run &mdash; its tooltip names the run it will start or stop, and it spins until the server reports that the run started or stopped &mdash; and a `Go to SCORCH pipelines` button that opens the experiment's runs.
+- `SCORCH Status`: this will report the running or stopped status of the Scorch app itself. Beside it are a button that starts or stops a run &mdash; its tooltip names the run it will start or stop, and it spins until the server reports that the run started or stopped &mdash; and a `Go to SCORCH runs` button that opens the experiment's runs.
 - `Terminal`: if the Scorch app has reached a break point, a terminal will be available &mdash; if clicked, a terminal dialog will be opened and is running on the phēnix host system. The button is only shown for experiments that actually have a Scorch terminal.
 - `Find an Experiment`: similar to the search fields in other tables within the phēnix UI, it is possible to filter experiment names based on terms entered here
 
-Level with the search box on the left, the page counts the experiments it lists, their `Pipelines` (the runs their scenarios define), and the `Running pipelines`, one at most per experiment since Scorch executes one run at a time. The counts cover every listed experiment, whatever the search.
+Level with the search box on the left, the page counts the experiments it lists, their `Runs` (the runs their scenarios define), and those `Running`, one at most per experiment since Scorch executes one run at a time. The counts cover every listed experiment, whatever the search.
 
 Each button is only shown if your role permits the action it takes. Column headings stay on one line with the sort arrow beside the heading, and the status and terminal buttons are centered in their columns.
 
@@ -318,9 +318,9 @@ A user can access the terminal if a break point is reached by clicking on the co
 
 ### Runs Page
 
-The page showing an experiment's pipelines is reached from the `Experiment` or `Go to SCORCH pipelines` links in the [Scorch table](#scorch-table), and from the fire button (tooltip `view SCORCH runs`) beside the `Running` status in a running experiment's summary card.
+The page showing an experiment's pipelines is reached from the `Experiment` or `Go to SCORCH runs` links in the [Scorch table](#scorch-table), and from the fire button (tooltip `view SCORCH runs`) beside the `Running` status in a running experiment's summary card.
 
-At its top left, the page counts the experiment's `Pipelines` and how the last run of each went, as its components show: `Running`, `Succeeded` once its `done` node succeeded, or `Failed` when any component failed. A pipeline whose last run neither failed nor finished, such as one never run or just cleared, counts in none of the three. The following functions are available across the top of the page, below the counts:
+At its top left, the page counts the experiment's `Runs` and how the last run of each went, as its components show: `Running`, `Succeeded` once its `done` node succeeded, or `Failed` when any component failed. A pipeline whose last run neither failed nor finished, such as one never run or just cleared, counts in none of the three. The following functions are available across the top of the page, below the counts:
 
 - `Back to SCORCH`: returns to the Scorch table
 - `Go to experiment`: opens the experiment the runs belong to

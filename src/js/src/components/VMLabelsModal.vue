@@ -10,6 +10,7 @@
           <template v-if="canEdit()">
             <textarea
               class="textarea has-fixed-size"
+              :aria-label="`Note ${props.index + 1}`"
               rows="1"
               v-model="props.row.value"
               @input="(evt) => resizeNoteTextArea(evt.target)"
@@ -22,9 +23,13 @@
           </template>
         </b-table-column>
         <b-table-column v-slot="props" v-if="canEdit()" width="32px">
-          <div @click="deleteNote(props.row)" class="is-clickable">
+          <button
+            type="button"
+            class="plain-button"
+            aria-label="Delete note"
+            @click="deleteNote(props.row)">
             <font-awesome-icon icon="trash" />
-          </div>
+          </button>
         </b-table-column>
         <template #footer v-if="canEdit()">
           <b-button
@@ -42,6 +47,7 @@
         <b-table-column field="key" label="Key" v-slot="props" width="192px">
           <template v-if="canEdit()">
             <b-input
+              :aria-label="`Label ${props.index + 1} key`"
               v-model="props.row.key"
               v-on:keyup.enter="addTag()"
               :ref="`tagKey${props.index}`" />
@@ -56,16 +62,23 @@
           v-slot="props"
           width="512px">
           <template v-if="canEdit()">
-            <b-input v-model="props.row.value" v-on:keyup.enter="addTag()" />
+            <b-input
+              :aria-label="`Label ${props.index + 1} value`"
+              v-model="props.row.value"
+              v-on:keyup.enter="addTag()" />
           </template>
           <template v-else>
             {{ props.row.value }}
           </template>
         </b-table-column>
         <b-table-column v-slot="props" v-if="canEdit()" width="32px">
-          <div @click="deleteTag(props.row)" class="is-clickable">
+          <button
+            type="button"
+            class="plain-button"
+            :aria-label="`Delete label ${props.row.key}`.trim()"
+            @click="deleteTag(props.row)">
             <font-awesome-icon icon="trash" />
-          </div>
+          </button>
         </b-table-column>
         <template #footer v-if="canEdit()">
           <b-button

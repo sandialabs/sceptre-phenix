@@ -22,7 +22,11 @@
         </span>
         <b-tooltip
           v-if="clearable"
-          label="clear this run's status"
+          :label="
+            canClear
+              ? 'clear this run\'s status'
+              : 'Cannot clear: the run is running or has no status'
+          "
           type="is-light is-left">
           <button
             class="button is-dark"
@@ -34,7 +38,11 @@
         </b-tooltip>
         <b-tooltip
           v-if="hasCleanup"
-          label="run only this run's cleanup stage"
+          :label="
+            canCleanUp
+              ? 'run only this run\'s cleanup stage'
+              : 'Cannot clean up: a run is running or starting'
+          "
           type="is-light is-left">
           <button
             class="button is-dark"

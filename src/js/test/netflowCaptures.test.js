@@ -124,7 +124,7 @@ describe('the dialog', () => {
   it('announces its state in a status region', async () => {
     const wrapper = await openDialog([]);
     expect(textOf(wrapper.find('[role="status"]'))).toBe(
-      'No captures recorded yet. Starting a netflow capture records it.',
+      'No captures recorded yet. Start a capture with the netflow button to record one.',
     );
   });
 
@@ -136,7 +136,7 @@ describe('the dialog', () => {
   it('says when there are no captures', async () => {
     const wrapper = await openDialog([]);
     expect(textOf(wrapper.find('.modal-card-body'))).toBe(
-      'No captures recorded yet. Starting a netflow capture records it.',
+      'No captures recorded yet. Start a capture with the netflow button to record one.',
     );
   });
 
@@ -271,7 +271,7 @@ describe('focus', () => {
     await flushPromises();
 
     expect(buttonNamed(wrapper, 'Retry').element).toBe(retry.element);
-    expect(textOf(wrapper.find('[role="status"]'))).toBe('Loading captures...');
+    expect(textOf(wrapper.find('[role="status"]'))).toBe('Loading captures…');
 
     resolve({ data: { captures: [capture()] } });
     await flushPromises();
@@ -311,7 +311,9 @@ describe('closing the dialog', () => {
       props: { experiment: 'demo' },
       attachTo: document.body,
     });
+    // a keyboard user's focus is on the button that opens it
     const trigger = wrapper.find('button');
+    trigger.element.focus();
     await trigger.trigger('click');
     await flushPromises();
 

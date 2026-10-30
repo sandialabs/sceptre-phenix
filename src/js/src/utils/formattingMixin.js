@@ -1,4 +1,5 @@
-import { mebibytesText } from '@/utils/bytes.js';
+import { bytesText, mebibytesText } from '@/utils/bytes.js';
+import { plural } from '@/utils/plural.js';
 
 export const formattingMixin = {
   methods: {
@@ -31,8 +32,8 @@ export const formattingMixin = {
       seconds -= mnts * 60;
       if (days >= 1) {
         uptime =
-          days +
-          ' days, ' +
+          plural(days, 'day') +
+          ', ' +
           ('0' + hrs).slice(-2) +
           ':' +
           ('0' + mnts).slice(-2) +
@@ -48,17 +49,9 @@ export const formattingMixin = {
       }
       return uptime;
     },
+    // a file's size as the rest of the UI gives bytes: 21.7 KiB
     formatFileSize(value) {
-      if (value < Math.pow(10, 3)) {
-        return value.toFixed(2) + ' B';
-      } else if (value >= Math.pow(10, 3) && value < Math.pow(10, 6)) {
-        return (value / Math.pow(10, 3)).toFixed(2) + ' KB';
-      } else if (value >= Math.pow(10, 6) && value < Math.pow(10, 9)) {
-        return (value / Math.pow(10, 6)).toFixed(2) + ' MB';
-      } else if (value >= Math.pow(10, 9)) {
-        return (value / Math.pow(10, 9)).toFixed(2) + ' GB';
-      }
-      return value;
+      return bytesText(value);
     },
     // the last part of a path, to list disk images by file name
     getBaseName(path) {

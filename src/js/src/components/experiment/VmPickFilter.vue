@@ -21,14 +21,18 @@
           }}<span v-if="picked.length">&nbsp;({{ picked.length }})</span>
         </b-button>
       </template>
-      <b-dropdown-item custom class="vm-pick-filter-note">
+      <b-dropdown-item custom :focusable="false" class="vm-pick-filter-note">
         {{ note }}
       </b-dropdown-item>
       <div
         :class="['vm-pick-filter-list', `vm-${kind}-filter-list`]"
         role="group"
         :aria-label="`${title} to filter by`">
-        <b-dropdown-item v-for="option in options" :key="idOf(option)" custom>
+        <b-dropdown-item
+          v-for="option in options"
+          :key="idOf(option)"
+          custom
+          :focusable="false">
           <b-checkbox
             :model-value="isPicked(option)"
             :disabled="!canPick(option)"
@@ -39,10 +43,14 @@
           </b-checkbox>
         </b-dropdown-item>
       </div>
-      <b-dropdown-item v-if="full" custom class="vm-pick-filter-note">
+      <b-dropdown-item
+        v-if="full"
+        custom
+        :focusable="false"
+        class="vm-pick-filter-note">
         Uncheck {{ article }} {{ kind }} to check another
       </b-dropdown-item>
-      <b-dropdown-item custom>
+      <b-dropdown-item custom :focusable="false">
         <b-button
           size="is-small"
           icon-left="eraser"

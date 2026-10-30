@@ -309,7 +309,10 @@
               <b-tooltip
                 v-for="action in powerButtons(props.row)"
                 :key="action.name"
-                :label="action.reason || `${action.name} experiment`"
+                :label="
+                  action.reason ||
+                  `${action.label} experiment ${props.row.name}`
+                "
                 type="is-dark"
                 position="is-left"
                 multilined>
@@ -339,7 +342,7 @@
                 :label="
                   (!deleting[props.row.name] &&
                     rowActions[props.row.name].delete.reason) ||
-                  'delete experiment'
+                  `Delete experiment ${props.row.name}`
                 "
                 type="is-light"
                 position="is-left"
@@ -568,7 +571,7 @@
         return [
           ['experiments', 'Experiments', totals.experiments],
           ['running', 'Running', totals.running, 'success'],
-          ['vms', 'Running VMs', totals.runningVms, 'success'],
+          ['vms', 'VMs in running experiments', totals.runningVms, 'success'],
           ['vlans', 'VLANs', totals.vlans],
         ].map(([key, label, n, tone]) => ({
           key,

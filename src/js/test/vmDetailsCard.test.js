@@ -145,9 +145,9 @@ describe('VmDetailsCard storage', () => {
     expect(textOf(storageValue(await card(), 'Disk'))).toBe('web_snap.qc2');
   });
 
-  it('says none for a VM without a disk', async () => {
+  it('says None for a VM without a disk', async () => {
     const wrapper = await card({ vm: { ...vm, disk: '' } });
-    expect(textOf(storageValue(wrapper, 'Disk'))).toBe('none');
+    expect(textOf(storageValue(wrapper, 'Disk'))).toBe('None');
   });
 
   it('shows the disk alone when it has no backing image', async () => {
@@ -621,7 +621,7 @@ describe('VmRowActions', () => {
     });
     const button = actions.find('.vm-row-captureAll');
     expect(button.classes()).toContain('is-loading');
-    expect(button.attributes('disabled')).toBeDefined();
+    expect(button.attributes('aria-disabled')).toBe('true');
     expect(has(button, '[data-icon="shark-fin"]')).toBe(true);
   });
 });

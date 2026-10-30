@@ -112,11 +112,11 @@
               :type="action.type"
               :outlined="action.outlined"
               :icon-left="action.icon"
-              :disabled="action.disabled"
+              :aria-disabled="action.disabled ? 'true' : undefined"
               :loading="pendingActions.includes(action.name)"
               :aria-busy="pendingActions.includes(action.name)"
               expanded
-              @click="$emit('action', action.name)">
+              @click="action.disabled || $emit('action', action.name)">
               {{ action.label }}
             </b-button>
           </b-tooltip>
@@ -158,11 +158,11 @@
                   type="is-light"
                   size="is-small"
                   :icon-left="action.icon"
-                  :disabled="action.disabled"
+                  :aria-disabled="action.disabled ? 'true' : undefined"
                   :loading="pendingActions.includes(action.name)"
                   :aria-busy="pendingActions.includes(action.name)"
                   expanded
-                  @click="$emit('action', action.name)">
+                  @click="action.disabled || $emit('action', action.name)">
                   {{ action.label }}
                 </b-button>
               </b-tooltip>
@@ -231,7 +231,7 @@
               <span class="vm-kv-key">Disk</span>
               <span class="vm-kv-value vm-mono" :title="vm.disk">
                 {{
-                  diskLabel(disk) || (vm.disk && getBaseName(vm.disk)) || 'none'
+                  diskLabel(disk) || (vm.disk && getBaseName(vm.disk)) || 'None'
                 }}
               </span>
               <DiskWarning
@@ -299,10 +299,16 @@
                     :class="`vm-${action.name}`"
                     :type="action.buttonType"
                     :icon-left="action.buttonIcon"
-                    :disabled="action.disabled || captureAllPending"
+                    :aria-disabled="
+                      action.disabled || captureAllPending ? 'true' : undefined
+                    "
                     :loading="action.loading"
                     :aria-label="action.label"
-                    @click="$emit('action', action.name)" />
+                    @click="
+                      action.disabled ||
+                      captureAllPending ||
+                      $emit('action', action.name)
+                    " />
                 </b-tooltip>
                 <b-tooltip
                   v-if="canOpenWebShark"
@@ -338,9 +344,12 @@
                   v-if="canChangeVlan"
                   label="change VLAN"
                   type="is-dark">
-                  <a class="vm-iface-name" @click="$emit('change-vlan', iface)">
+                  <button
+                    type="button"
+                    class="plain-button vm-iface-name"
+                    @click="$emit('change-vlan', iface)">
                     {{ iface.network }}
-                  </a>
+                  </button>
                 </b-tooltip>
                 <span v-else class="vm-iface-name">{{ iface.network }}</span>
                 <span
@@ -408,9 +417,12 @@
           <div class="vm-section">
             <p class="vm-section-title">
               Labels
-              <a class="vm-section-link" @click="$emit('edit-labels')">
+              <button
+                type="button"
+                class="plain-button vm-section-link"
+                @click="$emit('edit-labels')">
                 <b-icon icon="edit" size="is-small" /> view/edit
-              </a>
+              </button>
             </p>
             <b-taglist v-if="tags.length">
               <div
@@ -428,12 +440,13 @@
             <!-- while editing, the list's own label, with its help, heads it -->
             <p v-if="!annotationRows" class="vm-section-title">
               Annotations
-              <a
+              <button
                 v-if="canEditAnnotations"
-                class="vm-section-link vm-edit-annotations"
+                type="button"
+                class="plain-button vm-section-link vm-edit-annotations"
                 @click="editAnnotations">
                 <b-icon icon="edit" size="is-small" /> edit
-              </a>
+              </button>
             </p>
             <template v-if="annotationRows">
               <annotation-list
@@ -465,12 +478,13 @@
                   v-if="isSecret(key) && !revealed.includes(key)"
                   class="vm-kv-value vm-mono">
                   ••••••
-                  <a
-                    class="vm-reveal"
+                  <button
+                    type="button"
+                    class="plain-button vm-reveal"
                     :aria-label="`Show ${key}`"
                     @click="revealed = [...revealed, key]">
                     <b-icon icon="eye" size="is-small" />
-                  </a>
+                  </button>
                 </span>
                 <span
                   v-else
@@ -513,12 +527,13 @@
             <div v-if="canListForwards" class="vm-section">
               <p class="vm-section-title">
                 Port forwards
-                <a
+                <button
                   v-if="forwardAction.permitted && !forwardAction.disabled"
-                  class="vm-section-link"
+                  type="button"
+                  class="plain-button vm-section-link"
                   @click="$emit('action', 'portForward')">
                   <b-icon icon="plus" size="is-small" /> add
-                </a>
+                </button>
               </p>
               <p v-if="!forwards.length" class="vm-empty">None</p>
               <div
@@ -1076,7 +1091,8 @@
 
   /* one that can't run now is gray, hovered too; its tooltip says why. The
      :not()s outrank the colored buttons' hover rules in _general.scss. */
-  .vm-section-actions .button[disabled]:not(.is-outlined):not(.is-inverted) {
+  .vm-section-actions
+    .button[aria-disabled='true']:not(.is-outlined):not(.is-inverted) {
     border-color: transparent;
     background-color: #5a5a5a;
     color: #a8a8a8;
@@ -1329,7 +1345,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    color: hsl(348, 86%, 71%);
+    color: hsl(348, 86%, 80%);
     letter-spacing: normal;
     text-transform: none;
   }
@@ -1404,7 +1420,7 @@
   }
 
   /* the lighter cyan and blue keep 4.5:1 contrast on the card's grays */
-  a.vm-iface-name {
+  button.vm-iface-name {
     color: #8fd8ea;
   }
 

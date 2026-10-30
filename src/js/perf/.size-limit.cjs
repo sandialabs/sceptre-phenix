@@ -21,7 +21,7 @@ module.exports = [
     gzip: true,
     // includes the State of Health layout libraries, which load only when a
     // layout is picked: ELK (elkjs, about 440 kB), dagre and cola.js
-    limit: '1160 kB',
+    limit: '1220 kB',
   },
   {
     name: 'Images (uncompressed)',

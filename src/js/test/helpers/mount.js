@@ -63,7 +63,10 @@ export const byLabel = (wrapper, label) =>
   createWrapperError('DOMWrapper');
 
 // whether an element is disabled; Vue drops the attribute when it is not
-const disabled = (el) => el.attributes('disabled') !== undefined;
+// disabled, or greyed out with aria-disabled and still focusable
+const disabled = (el) =>
+  el.attributes('disabled') !== undefined ||
+  el.attributes('aria-disabled') === 'true';
 
 // Each button: its text or aria-label, plus ' (submits)', ' (spinning)' or
 // ' (disabled)' when it submits, spins or is disabled.

@@ -109,7 +109,7 @@ describe('the panel', () => {
   it.each([
     [
       false,
-      'No netflow captures yet. Start one with the netflow button above.',
+      'No netflow lines yet. Start a capture with the netflow button above.',
     ],
     [true, 'Starting netflow capture…'],
   ])('says so when it has no lines, starting: %s', async (starting, text) => {

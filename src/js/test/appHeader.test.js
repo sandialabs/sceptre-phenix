@@ -81,7 +81,7 @@ describe('the menu', () => {
         'Hosts',
         'Users',
         'Logs',
-        'Scorch',
+        'SCORCH',
         'State of Health',
         'Console',
         'WebShark',
@@ -99,7 +99,7 @@ describe('the menu', () => {
         'Hosts',
         'Users',
         'Logs',
-        'Scorch',
+        'SCORCH',
         'State of Health',
         'Console',
         'Settings',
@@ -109,7 +109,7 @@ describe('the menu', () => {
       'links only the pages a role may open, as the router allows them',
       viewer,
       ['webshark'],
-      ['Experiments', 'Scorch', 'State of Health'],
+      ['Experiments', 'SCORCH', 'State of Health'],
     ],
     [
       'links Configs and Logs for the roles those pages need',
@@ -588,6 +588,21 @@ describe('the jobs menu', () => {
     trigger.element.blur();
     await menu.trigger('keydown', { key: 'Escape' });
     expect(document.activeElement).not.toBe(trigger.element);
+  });
+
+  it('closes when focus moves out of it, not within it', async () => {
+    const menu = await mountComponent(JobsMenu, { attachTo: document.body });
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    const isOpen = () => menu.classes('is-active');
+
+    await menu.find('.jobs-trigger').trigger('click');
+    await menu.trigger('focusout', {
+      relatedTarget: menu.find('#jobs-panel').element,
+    });
+    expect(isOpen()).toBe(true);
+    await menu.trigger('focusout', { relatedTarget: outside });
+    expect(isOpen()).toBe(false);
   });
 
   it.each([

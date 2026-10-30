@@ -16,8 +16,7 @@
     default-sort-direction="asc"
     default-sort="name"
     scrollable
-    @sort="(column, order) => $emit('sort', column, order)"
-    ref="table">
+    @sort="(column, order) => $emit('sort', column, order)">
     <template #empty>
       <section class="section">
         <div class="content has-text-white has-text-centered">
@@ -64,15 +63,13 @@
           roleAllowed('vms', 'get', experiment + '/' + props.row.name)
         ">
         <b-tooltip label="details and actions" type="is-dark">
-          <span
+          <button
+            type="button"
             class="tag is-medium is-clickable"
-            :class="decorator(props.row.state, props.row.busy)">
-            <div class="field">
-              <div @click="$emit('info', props.row)">
-                {{ props.row.name }}
-              </div>
-            </div>
-          </span>
+            :class="decorator(props.row.state, props.row.busy)"
+            @click="$emit('info', props.row)">
+            {{ props.row.name }}
+          </button>
         </b-tooltip>
       </template>
       <template v-else-if="props.row.external">
@@ -84,17 +81,17 @@
       </template>
       <template v-else>
         <b-tooltip label="get info for the VM" type="is-dark">
-          <span
+          <button
+            type="button"
             class="tag is-medium"
-            :class="decorator(props.row.state, props.row.busy)">
-            <div class="field">
-              <div @click="$emit('details', props.row)">
-                {{ props.row.name }}
-              </div>
-            </div>
-          </span>
+            :class="decorator(props.row.state, props.row.busy)"
+            @click="$emit('details', props.row)">
+            {{ props.row.name }}
+          </button>
         </b-tooltip>
       </template>
+      <!-- the tag's color shows the state; this says it -->
+      <span class="is-sr-only">{{ stateLabel(props.row) }}</span>
       <section v-if="props.row.busy">
         <b-progress
           size="is-small"
@@ -188,22 +185,24 @@
             props.row.running &&
             !props.row.busy
           ">
-          <b-tooltip :label="updateCaptureLabel(props.row)" type="is-dark">
-            <div class="field">
-              <div
-                v-for="(ip, index) in props.row.ipv4"
-                :class="tapDecorator(props.row.captures, index)"
-                :key="index"
-                :aria-busy="isCapturePending(props.row.name, index)"
-                @click="$emit('capture', props.row, index)">
-                {{ ip }}
-                <span
-                  v-if="isCapturePending(props.row.name, index)"
-                  class="capture-spinner"
-                  title="waiting for the server"></span>
-              </div>
+          <div class="field">
+            <div v-for="(ip, index) in props.row.ipv4" :key="index">
+              <b-tooltip :label="captureLabel(props.row, index)" type="is-dark">
+                <button
+                  type="button"
+                  class="plain-button"
+                  :class="tapDecorator(props.row.captures, index)"
+                  :aria-busy="isCapturePending(props.row.name, index)"
+                  @click="$emit('capture', props.row, index)">
+                  {{ ip }}
+                  <span
+                    v-if="isCapturePending(props.row.name, index)"
+                    class="capture-spinner"
+                    title="waiting for the server"></span>
+                </button>
+              </b-tooltip>
             </div>
-          </b-tooltip>
+          </div>
         </template>
         <template v-else>
           {{ formatStringify(props.row.ipv4) }}
@@ -226,19 +225,21 @@
         ">
         <b-tooltip label="change VLANs" type="is-dark">
           <div class="field">
-            <div
-              v-for="(n, index) in props.row.networks"
-              :key="index"
-              @click="$emit('change-vlan', props.row, index)">
-              {{ formatLowercase(n) }}
-              <span
-                v-if="
-                  (actionPending[props.row.name] ?? []).includes(
-                    vlanPendingKey(index),
-                  )
-                "
-                class="capture-spinner"
-                title="waiting for the server"></span>
+            <div v-for="(n, index) in props.row.networks" :key="index">
+              <button
+                type="button"
+                class="plain-button"
+                @click="$emit('change-vlan', props.row, index)">
+                {{ formatLowercase(n) }}
+                <span
+                  v-if="
+                    (actionPending[props.row.name] ?? []).includes(
+                      vlanPendingKey(index),
+                    )
+                  "
+                  class="capture-spinner"
+                  title="waiting for the server"></span>
+              </button>
             </div>
           </div>
         </b-tooltip>
@@ -264,22 +265,24 @@
           props.row.running &&
           !props.row.busy
         ">
-        <b-tooltip :label="updateCaptureLabel(props.row)" type="is-dark">
-          <div class="field">
-            <div
-              v-for="(t, index) in props.row.taps"
-              :class="tapDecorator(props.row.captures, index)"
-              :key="index"
-              :aria-busy="isCapturePending(props.row.name, index)"
-              @click="$emit('capture', props.row, index)">
-              {{ formatLowercase(t) }}
-              <span
-                v-if="isCapturePending(props.row.name, index)"
-                class="capture-spinner"
-                title="waiting for the server"></span>
-            </div>
+        <div class="field">
+          <div v-for="(t, index) in props.row.taps" :key="index">
+            <b-tooltip :label="captureLabel(props.row, index)" type="is-dark">
+              <button
+                type="button"
+                class="plain-button"
+                :class="tapDecorator(props.row.captures, index)"
+                :aria-busy="isCapturePending(props.row.name, index)"
+                @click="$emit('capture', props.row, index)">
+                {{ formatLowercase(t) }}
+                <span
+                  v-if="isCapturePending(props.row.name, index)"
+                  class="capture-spinner"
+                  title="waiting for the server"></span>
+              </button>
+            </b-tooltip>
           </div>
-        </b-tooltip>
+        </div>
       </template>
       <template v-else>
         {{ formatStringify(props.row.taps) }}
@@ -312,9 +315,13 @@
       centered
       v-slot="props">
       <b-tooltip label="View/Edit Labels" type="is-dark">
-        <div @click="$emit('edit-labels', props.row)" class="is-clickable">
+        <button
+          type="button"
+          class="plain-button is-clickable"
+          :aria-label="`Labels of ${props.row.name}: ${labelCount(props.row)}`"
+          @click="$emit('edit-labels', props.row)">
           <VmLabelCount :tags="props.row.tags" />
-        </div>
+        </button>
       </b-tooltip>
     </b-table-column>
     <b-table-column
@@ -349,8 +356,10 @@
     ROW_SWAPS,
     actionPermitted,
     vlanPendingKey,
+    vmStateInfo,
     vmStateType,
   } from './vmActions.js';
+  import { tagCount } from '@/utils/tagCount';
   import {
     consoleLinkAlt,
     screenshotAlt,
@@ -413,7 +422,6 @@
       'update:checkAll',
       'update:selected',
     ],
-    expose: ['visibleData'],
 
     computed: {
       // whether a VM has a delayed start still to come
@@ -433,11 +441,6 @@
     },
 
     methods: {
-      // the rows the table shows now, on its page and in its order
-      visibleData() {
-        return this.$refs.table.visibleData;
-      },
-
       vncLoc(vm) {
         return vncHref(this.$router, this.$route.params.id, vm);
       },
@@ -454,16 +457,29 @@
         return !!this.capturePending[`${vmName}/${iface}`];
       },
 
-      updateCaptureLabel(vm) {
-        return vm.captures.length == 0
-          ? 'start packet capture'
-          : 'stop packet capture';
+      captureLabel(vm, iface) {
+        return isInterfaceCapturing(vm.captures, iface)
+          ? 'stop packet capture'
+          : 'start packet capture';
+      },
+
+      stateLabel(vm) {
+        return vmStateInfo(vm).label;
+      },
+
+      labelCount(vm) {
+        return tagCount(vm.tags);
       },
     },
   };
 </script>
 
 <style scoped>
+  /* $success is 4.3:1 on the table's $background-bis; this tint is 5:1 */
+  .plain-button.is-success {
+    color: #5cd69c;
+  }
+
   /* 4.9:1 on the table's $background-bis (#484848) */
   .vm-uptime-none {
     color: #bdbdbd;

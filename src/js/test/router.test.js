@@ -30,6 +30,7 @@ vi.mock('@/views/Disabled.vue', () => ({ default: {} }));
 vi.mock('@/views/experiment/Base.vue', () => ({ default: {} }));
 vi.mock('@/views/experiment/VMtilesView.vue', () => ({ default: {} }));
 vi.mock('@/views/ProxySignUp.vue', () => ({ default: {} }));
+vi.mock('@/views/NotFound.vue', () => ({ default: {} }));
 const getProxyLogin = vi.hoisted(() => vi.fn());
 vi.mock('@/api/auth.js', () => ({ getProxyLogin }));
 
@@ -168,6 +169,12 @@ describe('a signed-in role', () => {
       role('Disabled'),
       '/hosts',
       'disabled',
+    ],
+    [
+      'is told an unknown address has no page',
+      experimenter,
+      '/no-such-page',
+      'notfound',
     ],
   ])('%s', async (_, signedInRole, path, destination) => {
     signIn(signedInRole);

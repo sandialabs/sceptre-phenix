@@ -20,7 +20,7 @@ them:
 | `Hosts` | `list` on `hosts` |
 | `Users` | any role other than `Disabled` |
 | `Logs` | `get` on `logs` |
-| `Scorch` | `list` on `experiments` |
+| `SCORCH` | `list` on `experiments` |
 | `State of Health` | `list` on `experiments` |
 | `Console` | `post` on `miniconsole` |
 | `WebShark` | the `webshark` feature, plus `get` on `experiments/files` or `list` on `vms/captures` |
@@ -166,7 +166,13 @@ logging out, and is never sent to the server. In a private window, or with site
 data blocked, tables simply start unpaginated.
 
 Sort arrows sit beside the heading they sort by, and a centered heading stays
-centered over the values below it.
+centered over the values below it. Tab reaches each sortable heading, and Enter
+or Space sorts by it as a click does. A table wider than the window scrolls
+sideways inside itself instead of widening the page.
+
+A greyed-out VM action button can still be reached with Tab, and its tooltip,
+shown on keyboard focus as on hover, says why it can't be used. An address
+that matches no page shows `Page not found` with a link to the home page.
 
 An empty table says why it is empty rather than assuming you searched for
 something. On Disks, for example, it reads `Loading disks…` while the first

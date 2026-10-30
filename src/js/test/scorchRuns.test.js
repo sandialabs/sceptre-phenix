@@ -128,6 +128,18 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('Start all', () => {
+  it('says why each greyed header button is greyed', async () => {
+    const wrapper = await open([{}, {}]);
+    await nextTick();
+    const tips = tooltipButtons(wrapper.findAll('.runs-header .buttons').at(1))
+      .filter((t) => t.disabled)
+      .map((t) => t.tooltip);
+    expect(tips).toEqual([
+      'Cannot stop all: no run is running or waiting to run',
+      'Cannot clear all: no run that is not running has a status',
+    ]);
+  });
+
   it('starts the runs one after another, each once the one before ends', async () => {
     const wrapper = await open([{}, {}, {}]);
     expect((await pageButtons(wrapper)).header).toEqual([
@@ -803,11 +815,11 @@ describe("a component's streamed output", () => {
   });
 });
 
-describe('the pipeline totals', () => {
+describe('the run totals', () => {
   // the strip's stats, as "label: value"
   const totalsText = (wrapper) =>
     wrapper
-      .findAll('[aria-label="Pipeline totals"] .stat')
+      .findAll('[aria-label="Run totals"] .stat')
       .map((s) => `${textOf(s.find('dt'))}: ${textOf(s.find('dd'))}`);
 
   const done = (status) => ({ name: 'done', stage: '', status });
@@ -823,7 +835,7 @@ describe('the pipeline totals', () => {
       0,
     );
     expect(totalsText(wrapper)).toEqual([
-      'Pipelines: 4',
+      'Runs: 4',
       'Running: 1',
       'Succeeded: 1',
       'Failed: 1',
@@ -839,7 +851,7 @@ describe('the pipeline totals', () => {
     }
     await nextTick();
     expect(totalsText(wrapper)).toEqual([
-      'Pipelines: 4',
+      'Runs: 4',
       'Running: 0',
       'Succeeded: 2',
       'Failed: 1',
@@ -850,7 +862,7 @@ describe('the pipeline totals', () => {
     axios.get.mockImplementation(never);
     const wrapper = await mountPage(ScorchRuns, { route: '/scorch/exp1' });
     expect(totalsText(wrapper)).toEqual([
-      'Pipelines: …',
+      'Runs: …',
       'Running: …',
       'Succeeded: …',
       'Failed: …',

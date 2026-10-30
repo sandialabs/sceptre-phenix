@@ -63,6 +63,7 @@
         <b-field
           class="editor"
           label="Config Name"
+          label-for="config-name"
           :type="nameErrType"
           :message="nameErrMsg"
           autofocus>
@@ -70,17 +71,30 @@
             v-if="mode == 'edit'"
             label="change the name in the editor"
             type="is-light">
-            <b-input v-model="configName" disabled />
+            <b-input
+              id="config-name"
+              :compat-fallthrough="false"
+              v-model="configName"
+              disabled />
           </b-tooltip>
-          <b-input v-if="mode == 'create'" v-model="configName" />
+          <b-input
+            v-if="mode == 'create'"
+            id="config-name"
+            :compat-fallthrough="false"
+            v-model="configName" />
         </b-field>
 
-        <b-field class="editor" label="Config Kind">
+        <b-field class="editor" label="Config Kind" label-for="config-kind">
           <b-tooltip
             v-if="mode == 'edit'"
             label="change the kind in the editor"
             type="is-light">
-            <b-select placeholder="Select a Kind" v-model="configKind" disabled>
+            <b-select
+              id="config-kind"
+              :compat-fallthrough="false"
+              placeholder="Select a Kind"
+              v-model="configKind"
+              disabled>
               <option v-for="(k, index) in kinds" :key="index" :value="k">
                 {{ k }}
               </option>
@@ -88,6 +102,8 @@
           </b-tooltip>
           <b-select
             v-if="mode == 'create'"
+            id="config-kind"
+            :compat-fallthrough="false"
             placeholder="Select a Kind"
             v-model="configKind">
             <option v-for="(k, index) in kinds" :key="index" :value="k">
@@ -126,28 +142,25 @@
           </b-switch>
         </b-field>
 
-        <button
-          v-if="mode == 'edit' && !expStart"
-          class="button is-success"
-          id="editor"
-          @click="saveConfig(editor.lang)"
-          :disabled="!validConfig">
-          Save
-        </button>
-        <button
-          v-if="mode == 'create'"
-          class="button is-success"
-          id="editor"
-          @click="createConfig(editor.lang)"
-          :disabled="!validConfig">
-          Create
-        </button>
-        <button
-          class="button is-danger"
-          id="editor"
-          @click="confirmResetEditor">
-          Exit
-        </button>
+        <div class="buttons editor-buttons">
+          <button
+            v-if="mode == 'edit' && !expStart"
+            class="button is-success"
+            @click="saveConfig(editor.lang)"
+            :disabled="!validConfig">
+            Save
+          </button>
+          <button
+            v-if="mode == 'create'"
+            class="button is-success"
+            @click="createConfig(editor.lang)"
+            :disabled="!validConfig">
+            Create
+          </button>
+          <button class="button is-danger" @click="confirmResetEditor">
+            Exit
+          </button>
+        </div>
       </div>
       <div class="column">
         <div>
@@ -661,7 +674,7 @@
   };
 </script>
 <style scoped>
-  /*Quickfix for css. incorporate into main css packages*/
+  /* the editor's panel in the app's grays, not Bulma's light gradient */
   .hero.is-light.is-bold {
     background-image: linear-gradient(
       141deg,
@@ -700,8 +713,7 @@
     overflow-wrap: anywhere;
   }
 
-  button#editor {
-    margin-top: 125px;
-    margin-right: 10px;
+  .editor-buttons {
+    margin-top: 1.5rem;
   }
 </style>

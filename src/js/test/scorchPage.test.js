@@ -61,11 +61,11 @@ async function handle(msg) {
 // what each row shows: its name, both statuses and the SCORCH button
 const shown = (wrapper) =>
   tableRows(wrapper).map((cells) => {
-    const button = cells['Scorch Status'].find('button');
+    const button = cells['SCORCH Status'].find('button');
     return {
       name: textOf(cells.Experiment.find('a')),
       status: textOf(cells['Experiment Status'].find('.tag')),
-      scorch: textOf(cells['Scorch Status'].find('.tag')),
+      scorch: textOf(cells['SCORCH Status'].find('.tag')),
       button: button.exists() ? button.attributes('aria-label') : null,
       spinning: button.exists() && button.classes('is-loading'),
       terminal: cells.Terminal.find('button').exists(),
@@ -118,10 +118,10 @@ describe('a created experiment', () => {
   });
 });
 
-// Scorch Status holds the last buttons before the window's right edge
-it('opens the Scorch Status tooltips to the left, inside the window', async () => {
+// SCORCH Status holds the last buttons before the window's right edge
+it('opens the SCORCH Status tooltips to the left, inside the window', async () => {
   const wrapper = await page([row()]);
-  expect(tooltipPositions(tableRows(wrapper)[0]['Scorch Status'])).toEqual([
+  expect(tooltipPositions(tableRows(wrapper)[0]['SCORCH Status'])).toEqual([
     'is-left',
     'is-left',
   ]);
@@ -130,7 +130,7 @@ it('opens the Scorch Status tooltips to the left, inside the window', async () =
 describe('the run button', () => {
   // the SCORCH button of the only row, found again after each change
   const scorchButton = (wrapper) =>
-    tableRows(wrapper)[0]['Scorch Status'].find('button');
+    tableRows(wrapper)[0]['SCORCH Status'].find('button');
 
   it('spins until the server reports the run started, then stopped', async () => {
     axios.post.mockReturnValue(never());
@@ -324,7 +324,7 @@ describe('the SCORCH totals', () => {
         ],
       },
     });
-    const want = ['Experiments: 3', 'Pipelines: 3', 'Running pipelines: 1'];
+    const want = ['Experiments: 3', 'Runs: 3', 'Running: 1'];
     expect(totalsText(wrapper)).toEqual(want);
     expect(
       wrapper.find('[aria-label="SCORCH totals"] .stat-running').classes(),
@@ -341,8 +341,8 @@ describe('the SCORCH totals', () => {
     const wrapper = await page();
     expect(totalsText(wrapper)).toEqual([
       'Experiments: …',
-      'Pipelines: …',
-      'Running pipelines: …',
+      'Runs: …',
+      'Running: …',
     ]);
   });
 

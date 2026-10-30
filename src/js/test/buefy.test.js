@@ -9,7 +9,7 @@ import { expect, test } from 'vitest';
 
 import { installBuefy } from '@/utils/buefy.js';
 
-import { dialogs, mountComponent } from './helpers/mount.js';
+import { dialogs, mountComponent, textOf } from './helpers/mount.js';
 
 const SRC = join(import.meta.dirname, '..', 'src');
 
@@ -94,4 +94,75 @@ test('gives a confirm dialog the alertdialog role, as a modal', async () => {
     'alertdialog',
     'true',
   ]);
+});
+
+test('gives a modal the dialog role, as a modal', async () => {
+  const modal = await mountComponent({
+    template: '<b-modal :model-value="true"><p>x</p></b-modal>',
+  });
+  const root = modal.find('.modal');
+  expect(['role', 'aria-modal'].map((a) => root.attributes(a))).toEqual([
+    'dialog',
+    'true',
+  ]);
+});
+
+test('sorts a table from the keyboard and says how it is sorted', async () => {
+  const table = await mountComponent({
+    template: `<b-table :data="[{ n: 2 }, { n: 1 }]">
+      <b-table-column field="n" label="N" sortable v-slot="p">{{ p.row.n }}</b-table-column>
+      <b-table-column field="m" label="M" v-slot="p">{{ p.row.n }}</b-table-column>
+    </b-table>`,
+  });
+  const [n, m] = table.findAll('th');
+  const values = () => table.findAll('tbody td:first-child').map(textOf);
+  expect([n.attributes('tabindex'), m.attributes('tabindex')]).toEqual([
+    '0',
+    undefined,
+  ]);
+  expect(n.attributes('aria-sort')).toBe('none');
+  await n.trigger('keydown', { key: 'Enter' });
+  expect([n.attributes('aria-sort'), values()]).toEqual([
+    'ascending',
+    ['1', '2'],
+  ]);
+  await n.trigger('keydown', { key: ' ' });
+  expect([n.attributes('aria-sort'), values()]).toEqual([
+    'descending',
+    ['2', '1'],
+  ]);
+  expect(table.find('.table-mobile-sort').exists()).toBe(false);
+});
+
+test.each([
+  [
+    'modal',
+    '<b-modal ref="overlay" :model-value="on" @update:model-value="(v) => (on = v)"><p>x</p></b-modal>',
+    (vm, on) => (vm.on = on),
+  ],
+  [
+    'dropdown',
+    '<b-dropdown ref="overlay"><template #trigger><span /></template></b-dropdown>',
+    // Buefy opens a dropdown after a timeout
+    (vm) => {
+      vm.$refs.overlay.toggle();
+      return new Promise((done) => setTimeout(done));
+    },
+  ],
+])('returns focus to its opener when a %s closes', async (_, inner, set) => {
+  const wrapper = await mountComponent(
+    {
+      template: `<div><button class="opener">open</button>${inner}</div>`,
+      data: () => ({ on: false }),
+    },
+    { attachTo: document.body },
+  );
+  const opener = wrapper.find('.opener').element;
+  opener.focus();
+  await set(wrapper.vm, true);
+  await flushPromises();
+  document.activeElement.blur();
+  await set(wrapper.vm, false);
+  await flushPromises();
+  expect(document.activeElement).toBe(opener);
 });

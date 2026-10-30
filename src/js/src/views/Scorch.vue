@@ -91,8 +91,15 @@
             :label="expControlLabel(props.row)"
             type="is-dark">
             <button
-              class="button is-small is-white"
-              :class="{ 'is-loading': props.row.status == 'stopping' }"
+              class="button is-small"
+              :class="[
+                props.row.running ? 'is-danger' : 'is-success',
+                {
+                  'is-loading':
+                    props.row.status == 'starting' ||
+                    props.row.status == 'stopping',
+                },
+              ]"
               :aria-label="expControlLabel(props.row)"
               @click="expControl(props.row)">
               <b-icon :icon="props.row.running ? 'stop' : 'play'" />
@@ -111,7 +118,7 @@
           </b-tooltip>
         </div>
       </b-table-column>
-      <b-table-column label="Scorch Status" centered v-slot="props">
+      <b-table-column label="SCORCH Status" centered v-slot="props">
         <div class="status-cell">
           <span class="tag is-medium" :class="scorchStatusDecorator(props.row)">
             {{ scorchStatus(props.row) }}
@@ -122,8 +129,11 @@
             type="is-dark"
             position="is-left">
             <button
-              class="button is-small is-white"
-              :class="{ 'is-loading': props.row.scorch.pending }"
+              class="button is-small"
+              :class="[
+                props.row.scorch.running ? 'is-danger' : 'is-success',
+                { 'is-loading': props.row.scorch.pending },
+              ]"
               :disabled="props.row.scorch.pending"
               :aria-label="scorchControlLabel(props.row)"
               @click="scorchControl(props.row)">
@@ -132,12 +142,12 @@
           </b-tooltip>
           <b-tooltip
             v-if="roleAllowed('experiments', 'get', props.row.name)"
-            label="Go to SCORCH pipelines"
+            label="Go to SCORCH runs"
             type="is-dark"
             position="is-left">
             <router-link
               class="button is-small is-white"
-              aria-label="Go to SCORCH pipelines"
+              aria-label="Go to SCORCH runs"
               :to="{ name: 'scorchruns', params: { id: props.row.name } }">
               <b-icon icon="arrow-right" />
             </router-link>
@@ -280,8 +290,8 @@
           stillLoading(this.loaded, this.experiments) ? '…' : n;
         return [
           ['experiments', 'Experiments', totals.experiments],
-          ['pipelines', 'Pipelines', totals.pipelines],
-          ['running', 'Running pipelines', totals.running, 'success'],
+          ['pipelines', 'Runs', totals.pipelines],
+          ['running', 'Running', totals.running, 'success'],
         ].map(([key, label, n, tone]) => ({
           key,
           label,
@@ -294,9 +304,9 @@
           return loadingText('experiments');
         }
         if (this.experiments.length === 0) {
-          return 'No experiments found with SCORCH pipelines';
+          return 'No experiments found with SCORCH runs';
         }
-        return 'No experiments with SCORCH pipelines match your search';
+        return 'No experiments with SCORCH runs match your search';
       },
       filteredExperiments: function () {
         // a plain substring match: the search box is not a regular expression

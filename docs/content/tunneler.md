@@ -29,8 +29,8 @@ phēnix ships these builds:
 | OS      | Architecture |
 | ------- | ------------ |
 | Linux   | amd64        |
-| MacOS   | arm64        |
-| MacOS   | amd64        |
+| macOS   | arm64        |
+| macOS   | amd64        |
 | Windows | amd64        |
 
 The table lists only the builds the server actually has, so it can show
@@ -42,7 +42,7 @@ serve tunneler binaries at all, the page reads
 the table.
 
 Download the binary that matches your local machine and make it
-executable (on Linux/MacOS, `chmod +x phenix-tunneler-<os>-<arch>`).
+executable (on Linux/macOS, `chmod +x phenix-tunneler-<os>-<arch>`).
 
 !!! note
     The `Tunneler` button, and its downloads, are only available if the

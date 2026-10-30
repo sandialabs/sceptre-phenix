@@ -30,7 +30,7 @@
           <b-icon icon="chevron-down" size="is-small" />
         </button>
       </template>
-      <b-dropdown-item custom class="run-downloads-head">
+      <b-dropdown-item custom :focusable="false" class="run-downloads-head">
         Archived artifacts, newest first
       </b-dropdown-item>
       <b-dropdown-item

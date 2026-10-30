@@ -61,17 +61,17 @@ const openPage = (vms, answers) => {
 // the cells of a VM's row in the VM table
 const rowOf = (page, name) =>
   tableRows(page).find(
-    (cells) => textOf(cells.Node.find('.field > div')) === name,
+    (cells) => textOf(cells.Node.find('button.tag')) === name,
   );
 
 // clicks the tap of a VM's interface, which starts or stops its capture
 const clickTap = (page, name, iface) =>
-  rowOf(page, name).Taps.findAll('.field > div')[iface].trigger('click');
+  rowOf(page, name).Taps.findAll('.field button')[iface].trigger('click');
 
 // the interfaces of a VM whose taps show a spinner
 const spinningTaps = (page, name) =>
   rowOf(page, name)
-    .Taps.findAll('.field > div')
+    .Taps.findAll('.field button')
     .flatMap((tap, i) => (tap.attributes('aria-busy') === 'true' ? [i] : []));
 
 // a button in a VM's Actions column
@@ -80,7 +80,7 @@ const rowAction = (page, name, action) =>
 
 // opens a VM's details by its name in the table
 async function openDetails(page, name) {
-  await rowOf(page, name).Node.find('.field > div').trigger('click');
+  await rowOf(page, name).Node.find('button.tag').trigger('click');
   await flushPromises();
   return page.find('.vm-card');
 }
@@ -520,7 +520,7 @@ describe("the VM details' disk and backing image chain", () => {
       cdRom: '/images/isos/tools.iso',
     };
     const card = await openDetails(await openPage([live]), 'live');
-    expect(storage(card, 'Disk')).toBe('none');
+    expect(storage(card, 'Disk')).toBe('None');
     expect(chainOf(card)).toEqual([]);
     expect(storage(card, 'CD-ROM')).toBe('isos/tools.iso');
   });

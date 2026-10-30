@@ -34,6 +34,7 @@ import Disks from '@/views/Disks.vue';
 import { diskListArb } from './helpers/arbitraries.js';
 import { disk, httpError, wsMsg } from './helpers/fixtures.js';
 import {
+  buttons,
   byLabel,
   confirmDialog,
   dialogs,
@@ -475,7 +476,7 @@ describe('disks in folders and outside the files directory', () => {
     const wrapper = await page(disks);
     // the field draws its input afresh as its clear button comes and goes
     const find = (text) =>
-      wrapper.find('input[placeholder="Find a disk"]').setValue(text);
+      wrapper.find('input[placeholder="Find a Disk"]').setValue(text);
 
     await find('WIN/');
     expect(names(wrapper)).toEqual(['win/base.qc2', 'win/snap.qc2']);
@@ -512,7 +513,7 @@ describe('disks in folders and outside the files directory', () => {
     await fc.assert(
       fc.asyncProperty(cases, async ([list, { found, query }]) => {
         const wrapper = await page(list);
-        await wrapper.find('input[placeholder="Find a disk"]').setValue(query);
+        await wrapper.find('input[placeholder="Find a Disk"]').setValue(query);
 
         const shown = tableRows(wrapper).map(
           (cells) => cells.Name.find('.disk-label').element.textContent,
@@ -771,6 +772,25 @@ describe('disk action requests', () => {
     });
   });
 
+  it.each([
+    ['Commit', 'post'],
+    ['Rebase', 'request'],
+  ])(
+    'leaves the %s dialog ready to cancel when it fails',
+    async (action, method) => {
+      axios[method].mockRejectedValue(httpError(500, 'read-only image'));
+      const { wrapper, details } = await opened();
+      await runAction(details, action);
+      const dialog = actionWindow(wrapper);
+      if (action === 'Rebase') {
+        await dialog.find('select').setValue(target.fullPath);
+      }
+      await dialog.findAll('footer button').at(-1).trigger('click');
+      await flushPromises();
+      expect(buttons(dialog)).toEqual(['Cancel', 'OK']);
+    },
+  );
+
   it('commits, then deletes the committed disk when asked', async () => {
     axios.post.mockResolvedValue({});
     axios.request.mockResolvedValue({});
@@ -822,7 +842,7 @@ describe('the disk totals', () => {
     ];
     expect(totalsText(wrapper)).toEqual(want);
 
-    await wrapper.find('input[placeholder="Find a disk"]').setValue('a.qc2');
+    await wrapper.find('input[placeholder="Find a Disk"]').setValue('a.qc2');
     expect(tableRows(wrapper)).toHaveLength(1);
     expect(totalsText(wrapper)).toEqual(want);
   });
@@ -860,7 +880,7 @@ describe('the disk totals', () => {
     const right = toolbar.find('.level-right');
     expect([
       right.find('.switch').exists(),
-      right.find('input[placeholder="Find a disk"]').exists(),
+      right.find('input[placeholder="Find a Disk"]').exists(),
       right.find('[aria-label="Upload a disk"]').exists(),
     ]).toEqual([true, true, true]);
 

@@ -151,9 +151,9 @@ describe('the pickers', () => {
       'file:w1.pcap',
     ]);
     expect(texts(capturePicker(page), FILES)).toEqual([
-      'caps/a.pcap (2.05 KB)',
-      'B.PCAPNG.gz (10.00 B)',
-      'w1.pcap (100.00 B)',
+      'caps/a.pcap (2.0 KiB)',
+      'B.PCAPNG.gz (10 B)',
+      'w1.pcap (100 B)',
     ]);
     expect(axios.get).toHaveBeenCalledWith('experiments/exp1/files', {
       params: { sortCol: 'date', sortDir: 'desc' },
@@ -576,7 +576,7 @@ describe('rendering', () => {
     });
     expect(options(capturePicker(page), FILES)).toContainEqual({
       value: 'file:caps/a.pcap',
-      text: 'caps/a.pcap (2.05 KB)',
+      text: 'caps/a.pcap (2.0 KiB)',
     });
   });
 

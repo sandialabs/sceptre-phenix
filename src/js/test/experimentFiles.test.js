@@ -491,7 +491,9 @@ describe('opening a file', () => {
     );
     expect(webShark('old.PCAPNG.gz').exists()).toBe(true);
 
-    await tab.find('td[data-label="Name"] .is-clickable div').trigger('click');
+    await tab
+      .find('td[data-label="Name"] .is-clickable button')
+      .trigger('click');
     await flushPromises();
     expect(tab.router.currentRoute.value).toMatchObject({
       name: 'webshark',

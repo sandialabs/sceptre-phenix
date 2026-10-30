@@ -553,7 +553,7 @@
             state: { running: running },
           }">
           <b-icon icon="arrow-left" />
-          <span>Go to Experiment</span>
+          <span>Go to experiment</span>
         </router-link>
       </div>
       <div class="column has-text-centered">
@@ -581,67 +581,80 @@
                 </span>
               </div>
               <div class="soh-controls">
-                <b-radio
-                  v-model="radioButton"
-                  native-value="all"
-                  type="is-light"
-                  >All</b-radio
-                >
-                <b-radio
-                  v-model="radioButton"
-                  native-value="running"
-                  type="is-light"
-                  >Running</b-radio
-                >
-                <b-radio
-                  v-model="radioButton"
-                  native-value="notrunning"
-                  type="is-light"
-                  >Not running</b-radio
-                >
-                <b-radio
-                  v-model="radioButton"
-                  native-value="notboot"
-                  type="is-light"
-                  >Not booted</b-radio
-                >
-                <b-radio
-                  v-model="radioButton"
-                  native-value="notdeploy"
-                  type="is-light"
-                  >Not deployed</b-radio
-                >
-                <b-radio
-                  v-model="radioButton"
-                  native-value="external"
-                  type="is-light"
-                  >External / HIL</b-radio
-                >
-                <b-button
-                  @click="reload"
-                  type="is-light"
-                  :loading="pageStatus.loading"
-                  :disabled="pageStatus.loading"
-                  >Refresh Network</b-button
-                >
-                <b-button
-                  v-if="!loaded || !running || sohRunning || !sohInitialized"
-                  type="is-light"
-                  disabled
-                  >{{ sohState }}</b-button
-                >
-                <b-button
-                  v-else-if="
-                    roleAllowed(
-                      'experiments/trigger',
-                      'create',
-                      $route.params.id,
-                    )
-                  "
-                  @click="execSoH"
-                  type="is-light"
-                  >Run SOH</b-button
-                >
+                <div
+                  class="soh-filter"
+                  role="radiogroup"
+                  aria-label="Which VMs the graph shows">
+                  <b-radio
+                    v-model="radioButton"
+                    name="soh-filter"
+                    native-value="all"
+                    type="is-light"
+                    >All</b-radio
+                  >
+                  <b-radio
+                    v-model="radioButton"
+                    name="soh-filter"
+                    native-value="running"
+                    type="is-light"
+                    >Running</b-radio
+                  >
+                  <b-radio
+                    v-model="radioButton"
+                    name="soh-filter"
+                    native-value="notrunning"
+                    type="is-light"
+                    >Not running</b-radio
+                  >
+                  <b-radio
+                    v-model="radioButton"
+                    name="soh-filter"
+                    native-value="notboot"
+                    type="is-light"
+                    >Not booted</b-radio
+                  >
+                  <b-radio
+                    v-model="radioButton"
+                    name="soh-filter"
+                    native-value="notdeploy"
+                    type="is-light"
+                    >Not deployed</b-radio
+                  >
+                  <b-radio
+                    v-model="radioButton"
+                    name="soh-filter"
+                    native-value="external"
+                    type="is-light"
+                    >External / HIL</b-radio
+                  >
+                </div>
+                <div class="buttons soh-actions">
+                  <b-button
+                    @click="reload"
+                    type="is-light"
+                    :loading="pageStatus.loading"
+                    :disabled="pageStatus.loading"
+                    >Refresh Network</b-button
+                  >
+                  <b-button
+                    v-if="!loaded || !running || sohRunning || !sohInitialized"
+                    type="is-light"
+                    disabled
+                    >{{ sohState }}</b-button
+                  >
+                  <b-button
+                    v-else-if="
+                      roleAllowed(
+                        'experiments/trigger',
+                        'create',
+                        $route.params.id,
+                      )
+                    "
+                    @click="execSoH"
+                    type="is-light"
+                    >Run SOH</b-button
+                  >
+                </div>
               </div>
               <div class="soh-links">
                 <b-tooltip
@@ -1934,6 +1947,23 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem 1rem;
+  }
+
+  /* the filters wrap among themselves; the buttons stay together */
+  .soh-filter {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 1rem;
+  }
+
+  .soh-actions {
+    flex-wrap: nowrap;
+    margin-bottom: 0;
+  }
+
+  .soh-actions :deep(.button) {
+    margin-bottom: 0;
   }
 
   .soh-controls :deep(.radio) {

@@ -26,7 +26,8 @@ bandwidth available for experiments, the number of VMs, and host uptime.
       :pagination-simple="table.isPaginationSimple"
       :pagination-size="table.paginationSize"
       :default-sort-direction="table.defaultSortDirection"
-      default-sort="name">
+      default-sort="name"
+      scrollable>
       <template #empty>
         <section class="section">
           <div class="content has-text-white has-text-centered">
@@ -93,19 +94,24 @@ bandwidth available for experiments, the number of VMs, and host uptime.
       <b-table-column
         field="disk_used"
         label="Disk Used (phenix / minimega base)"
-        centered
-        v-slot="props">
-        <span
-          class="tag"
-          :class="decorator(props.row.diskusage.diskphenix, 100.0)">
-          {{ props.row.diskusage.diskphenix }}%
-        </span>
-        /
-        <span
-          class="tag"
-          :class="decorator(props.row.diskusage.diskminimega, 100.0)">
-          {{ props.row.diskusage.diskminimega }}%
-        </span>
+        centered>
+        <template #header>
+          Disk Used
+          <span class="th-sub">phenix / minimega base</span>
+        </template>
+        <template #default="props">
+          <span
+            class="tag"
+            :class="decorator(props.row.diskusage.diskphenix, 100.0)">
+            {{ props.row.diskusage.diskphenix }}%
+          </span>
+          /
+          <span
+            class="tag"
+            :class="decorator(props.row.diskusage.diskminimega, 100.0)">
+            {{ props.row.diskusage.diskminimega }}%
+          </span>
+        </template>
       </b-table-column>
       <b-table-column
         field="bandwidth"
@@ -221,6 +227,13 @@ bandwidth available for experiments, the number of VMs, and host uptime.
   /* headings stay on one line, however narrow the table gets */
   :deep(th) {
     white-space: nowrap;
+  }
+
+  /* a heading's detail, on a line of its own so the column stays narrow */
+  .th-sub {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: normal;
   }
 
   .load {

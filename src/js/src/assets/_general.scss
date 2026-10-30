@@ -121,9 +121,62 @@ div.is-success {
   border-radius: 12px;
 }
 
+// A button drawn as the text or tag inside it: a click target in a table
+// cell or card that the keyboard reaches too.
+.plain-button {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+// a plain-button that reads as a link
+.plain-button.link-button {
+  color: $link;
+}
+
+.plain-button.link-button:hover {
+  text-decoration: underline;
+}
+
+button.tag {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
 //useful for buttons side by side in table
 .action:not(:last-child) {
   margin-right: 5px;
+}
+
+// Greyed buttons that stay focusable, so the keyboard reaches their tooltip
+// saying why: drawn as Bulma draws a disabled button.
+.button[aria-disabled='true'] {
+  background-color: $button-disabled-background-color;
+  border-color: $button-disabled-border-color;
+  box-shadow: $button-disabled-shadow;
+  opacity: $button-disabled-opacity;
+  cursor: not-allowed;
+}
+
+@each $name, $pair in $button-colors {
+  $color: nth($pair, 1);
+  .button.is-#{$name}[aria-disabled='true'] {
+    background-color: $color;
+    border-color: $color;
+    box-shadow: none;
+  }
+
+  .button.is-#{$name}.is-outlined[aria-disabled='true'] {
+    background-color: transparent;
+    border-color: $color;
+    color: $color;
+  }
 }
 
 input::placeholder,
@@ -210,7 +263,8 @@ button:focus-visible,
 
 // $link (#62c0d7) is 4.4:1 on table rows ($table-background-color); lighten
 // links in table cells, such as the Users page's user names, to 4.75:1.
-.table td a:not(.button):not(.tag) {
+.table td a:not(.button):not(.tag),
+.table td .plain-button.link-button {
   color: lighten($link, 4);
 }
 
@@ -267,4 +321,17 @@ button:focus-visible,
 
 .notification .error-step::before {
   content: '↳ ';
+}
+
+// A viewer who asks for reduced motion gets still spinners and markers; each
+// one's state is also given in text or by its color.
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
