@@ -267,7 +267,7 @@ phenix settings list|get|set|unset [key] [value]  # phenix ui applies log.*, ui.
 phenix settings db ...            # legacy BoltDB-backed settings
 phenix ui                         # run the phenix web UI/API server
 phenix healthcheck [--ready] [--url URL] [-o json]  # probe the UI server's /healthz (or /readyz); exit 0 on 200
-phenix doctor [-o json] [--timeout 3s]  # offline: config syntax/keys, store/log/base dirs, minimega; settings with source, secrets redacted; exit 1 on a failed check
+phenix doctor [-o json] [--timeout 3s]  # offline: config syntax/keys, each set PHENIX_*/PATH/EDITOR/SUDO_* variable (parsed as phenix does; unknown PHENIX_* warn), store/log/base dirs, minimega; settings with source, secrets redacted; exit 1 on a failed check
 phenix util app-json <exp>        # print the experiment JSON a user app receives on stdin
 phenix util role-table            # print every permission phenix checks, and which roles allow it
 phenix completion bash|zsh|fish|powershell

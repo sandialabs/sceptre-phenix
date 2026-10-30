@@ -8,8 +8,9 @@ import (
 	"strings"
 )
 
-// normalizeFileServerEndpoint converts the fileserver option into a listen endpoint.
-func normalizeFileServerEndpoint(value string) (string, error) {
+// NormalizeFileServerEndpoint converts the ui.file-server-endpoint setting into a
+// listen endpoint, or "" when the file server is off.
+func NormalizeFileServerEndpoint(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" || value == "0" {
 		return "", nil

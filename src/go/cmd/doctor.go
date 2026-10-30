@@ -74,12 +74,15 @@ type doctorReport struct {
 func newDoctorCmd() *cobra.Command {
 	desc := `Check the phenix configuration without a running server
 
-  Reads the config and users files, reports unknown keys, checks that the
-  store and log files can be written, that the base directories exist, and
-  that minimega answers on its socket, then prints every setting with its
-  effective value and where that value came from (flag, env, config file or
-  default). Secret values, such as the JWT signing key and initial users, are
-  redacted. It exits 0 when no check fails, and 1 otherwise.
+  Reads the config and users files, reports unknown keys, checks each set
+  environment variable phenix reads (PHENIX_*, PATH, EDITOR, SUDO_USER and
+  SUDO_COMMAND) as phenix parses it and warns about PHENIX_* variables that
+  name no setting, checks that the store and log files can be written, that
+  the base directories exist, and that minimega answers on its socket, then
+  prints every setting with its effective value and where that value came
+  from (flag, env, config file or default). Secret values, such as the JWT
+  signing key and initial users, are redacted. It exits 0 when no check
+  fails, and 1 otherwise.
 
   Like healthcheck, doctor opens no store, unix socket or log file, so it
   works while phenix ui is stopped. Run it with the same flags, environment
@@ -108,7 +111,7 @@ func newDoctorCmd() *cobra.Command {
 
 			timeout := mustGet(cmd.Flags().GetDuration, "timeout")
 
-			report := runDoctor(cmd.Context(), cmd.Flags(), timeout)
+			report := runDoctor(cmd.Context(), cmd.Flags(), timeout, osDoctorEnv())
 
 			if output == FormatJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
@@ -137,18 +140,27 @@ func newDoctorCmd() *cobra.Command {
 
 // runDoctor runs every check against the settings flags and the environment
 // give, as the root command would resolve them.
-func runDoctor(ctx context.Context, flags *pflag.FlagSet, timeout time.Duration) doctorReport {
+func runDoctor(ctx context.Context, flags *pflag.FlagSet, timeout time.Duration, env doctorEnv) doctorReport {
 	effective := func(key string) string { return getEffectiveString(key, flags.Changed(key)) }
 
 	checks, fileKeys := doctorConfigFiles(configSearchPaths)
 	checks = append(checks, unknownKeysCheck(fileKeys, knownSettings()))
+
+	settings := doctorSettings(flags, fileKeys, env.lookup)
+	sources := make(map[string]string, len(settings))
+
+	for _, s := range settings {
+		sources[s.Key] = s.Source
+	}
+
+	checks = append(checks, envChecks(env, sources)...)
 
 	phenixBase := effective("base-dir.phenix")
 	minimegaBase := effective("base-dir.minimega")
 
 	checks = append(checks,
 		storeCheck(effective("store.endpoint")),
-		writableFileCheck("log.system.path", effective("log.system.path")),
+		systemLogCheck("log.system.path", effective("log.system.path")),
 	)
 
 	if console := effective("log.console"); console != "" && console != consoleStderr && console != consoleStdout {
@@ -163,8 +175,8 @@ func runDoctor(ctx context.Context, flags *pflag.FlagSet, timeout time.Duration)
 		baseDirCheck("base-dir.topologies", derivedBaseDir(effective("base-dir.topologies"), phenixBase, "topologies"), false),
 		baseDirCheck("mount-dir", derivedBaseDir(effective("mount-dir"), phenixBase, "mounts"), true),
 		jwtKeyCheck(viper.GetString("ui.jwt-signing-key")),
-		gracePeriodCheck(),
-		netflowMaxSizeCheck(),
+		gracePeriodCheck(viper.GetViper()),
+		netflowMaxSizeCheck(viper.GetViper()),
 	)
 
 	common.MinimegaBase = minimegaBase //nolint:reassign // configuration injection
@@ -174,7 +186,7 @@ func runDoctor(ctx context.Context, flags *pflag.FlagSet, timeout time.Duration)
 	return doctorReport{
 		Status:   worstStatus(checks),
 		Checks:   checks,
-		Settings: doctorSettings(flags, fileKeys, os.LookupEnv),
+		Settings: settings,
 	}
 }
 
@@ -336,8 +348,8 @@ func existingParent(dir string) string {
 	}
 }
 
-// baseDirCheck checks that dir exists and, with needWrite, is writable. phenix
-// creates some base directories on first use, so a problem only warns.
+// baseDirCheck checks that dir exists, is readable and searchable and, with needWrite,
+// writable. phenix creates some base directories on first use, so a problem only warns.
 func baseDirCheck(name, dir string, needWrite bool) doctorCheck {
 	check := doctorCheck{Name: name, Status: doctorPass, Detail: dir}
 
@@ -350,13 +362,25 @@ func baseDirCheck(name, dir string, needWrite bool) doctorCheck {
 		check.Status, check.Detail = doctorFail, err.Error()
 	case !info.IsDir():
 		check.Status, check.Detail = doctorFail, dir+" is not a directory"
-	case needWrite:
-		if err := unix.Access(dir, unix.W_OK); err != nil {
-			check.Status, check.Detail = doctorWarn, fmt.Sprintf("%s is not writable by this user: %v", dir, err)
-		}
+	case unix.Access(dir, unix.R_OK|unix.X_OK) != nil:
+		check.Status, check.Detail = doctorWarn, dir+" is not readable and searchable by this user"
+	case needWrite && unix.Access(dir, unix.W_OK) != nil:
+		check.Status, check.Detail = doctorWarn, dir+" is not writable by this user"
+	case !filepath.IsAbs(dir):
+		check.Status, check.Detail = doctorWarn, dir+" is relative, so it depends on the working directory"
 	}
 
 	return check
+}
+
+// systemLogCheck checks log.system.path, which names the log file or, when it is a
+// directory, the directory phenix writes phenix.log in.
+func systemLogCheck(name, path string) doctorCheck {
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return writableFileCheck(name, filepath.Join(path, "phenix.log"))
+	}
+
+	return writableFileCheck(name, path)
 }
 
 // jwtKeyCheck reports the authentication mode the JWT signing key selects,
@@ -376,9 +400,9 @@ func jwtKeyCheck(key string) doctorCheck {
 	return check
 }
 
-// gracePeriodCheck fails for a ui.shutdown-grace-period phenix ui refuses.
-func gracePeriodCheck() doctorCheck {
-	grace, err := shutdownGracePeriod(viper.GetViper())
+// gracePeriodCheck fails for a ui.shutdown-grace-period in v phenix ui refuses.
+func gracePeriodCheck(v *viper.Viper) doctorCheck {
+	grace, err := shutdownGracePeriod(v)
 	if err != nil {
 		return doctorCheck{Name: "ui.shutdown-grace-period", Status: doctorFail, Detail: err.Error()}
 	}
@@ -386,11 +410,11 @@ func gracePeriodCheck() doctorCheck {
 	return doctorCheck{Name: "ui.shutdown-grace-period", Status: doctorPass, Detail: grace.String()}
 }
 
-// netflowMaxSizeCheck fails for a ui.netflow.max-size phenix ui refuses.
-func netflowMaxSizeCheck() doctorCheck {
+// netflowMaxSizeCheck fails for a ui.netflow.max-size in v phenix ui refuses.
+func netflowMaxSizeCheck(v *viper.Viper) doctorCheck {
 	check := doctorCheck{Name: "ui.netflow.max-size", Status: doctorPass, Detail: ""}
 
-	size, err := netflowMaxSize(viper.GetViper())
+	size, err := netflowMaxSize(v)
 
 	switch {
 	case err != nil:

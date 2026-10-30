@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/spf13/viper"
 	"pgregory.net/rapid"
 
 	"phenix/util/common"
@@ -220,7 +221,7 @@ func TestWritableFileCheckReadOnly(t *testing.T) {
 	}
 }
 
-// A missing base directory warns, and a file where one should be fails.
+// A missing or relative base directory warns, and a file where one should be fails.
 func TestBaseDirCheck(t *testing.T) {
 	t.Parallel()
 
@@ -234,6 +235,7 @@ func TestBaseDirCheck(t *testing.T) {
 		"directory": {path: dir, want: doctorPass},
 		"missing":   {path: filepath.Join(dir, "missing"), want: doctorWarn},
 		"file":      {path: file, want: doctorFail},
+		"relative":  {path: ".", want: doctorWarn},
 	}
 
 	for name, tc := range tests {
@@ -400,18 +402,29 @@ func TestWorstStatus(t *testing.T) {
 	}
 }
 
-// Whatever the JWT signing key and users, neither the text nor the JSON
-// report contains them.
+// Whatever the JWT signing key and users, in settings or environment variables,
+// and whatever a sudo command or unknown PHENIX_ variable holds, neither the
+// text nor the JSON report contains them.
 func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 	t.Parallel()
 
 	rapid.Check(t, func(t *rapid.T) {
 		secret := rapid.StringMatching(`[A-Za-z0-9|_-]{12,32}`).Draw(t, "secret")
 		user := "admin:" + secret + ":global-admin"
+		envUsers := rapid.SampledFrom([]string{
+			user, user + " bob:" + secret, "bob:pw:" + secret + "," + user, secret,
+		}).Draw(t, "users")
+
+		env := fakeDoctorEnv(map[string]string{
+			"PHENIX_UI_JWT_SIGNING_KEY": secret,
+			"PHENIX_UI_USERS":           envUsers,
+			"PHENIX_UI_TOKEN":           secret,
+			"SUDO_COMMAND":              "/usr/bin/phenix ui --jwt-signing-key " + secret,
+		}, rapid.Bool().Draw(t, "root"))
 
 		report := doctorReport{
 			Status: doctorWarn,
-			Checks: []doctorCheck{jwtKeyCheck(secret)},
+			Checks: append([]doctorCheck{jwtKeyCheck(secret)}, envChecks(env, nil)...),
 			Settings: []doctorSetting{
 				{Key: "ui.jwt-signing-key", Value: redactSetting("ui.jwt-signing-key", secret), Source: sourceEnv},
 				{Key: "ui.users", Value: redactSetting("ui.users", []any{user}), Source: sourceFile},
@@ -523,7 +536,7 @@ func TestNetflowMaxSizeCheck(t *testing.T) {
 				t.Setenv("PHENIX_UI_NETFLOW_MAX_SIZE", tt.env)
 			}
 
-			if diff := cmp.Diff(tt.want, netflowMaxSizeCheck()); diff != "" {
+			if diff := cmp.Diff(tt.want, netflowMaxSizeCheck(viper.GetViper())); diff != "" {
 				t.Errorf("netflowMaxSizeCheck() mismatch (-want +got):\n%s", diff)
 			}
 		})

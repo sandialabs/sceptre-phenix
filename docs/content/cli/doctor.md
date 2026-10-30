@@ -13,12 +13,15 @@ Check the phenix configuration without a running server
 ```text
 Check the phenix configuration without a running server
 
-  Reads the config and users files, reports unknown keys, checks that the
-  store and log files can be written, that the base directories exist, and
-  that minimega answers on its socket, then prints every setting with its
-  effective value and where that value came from (flag, env, config file or
-  default). Secret values, such as the JWT signing key and initial users, are
-  redacted. It exits 0 when no check fails, and 1 otherwise.
+  Reads the config and users files, reports unknown keys, checks each set
+  environment variable phenix reads (PHENIX_*, PATH, EDITOR, SUDO_USER and
+  SUDO_COMMAND) as phenix parses it and warns about PHENIX_* variables that
+  name no setting, checks that the store and log files can be written, that
+  the base directories exist, and that minimega answers on its socket, then
+  prints every setting with its effective value and where that value came
+  from (flag, env, config file or default). Secret values, such as the JWT
+  signing key and initial users, are redacted. It exits 0 when no check
+  fails, and 1 otherwise.
 
   Like healthcheck, doctor opens no store, unix socket or log file, so it
   works while phenix ui is stopped. Run it with the same flags, environment

@@ -38,7 +38,7 @@ func TestNormalizeFileServerEndpoint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			endpoint, err := normalizeFileServerEndpoint(tt.value)
+			endpoint, err := NormalizeFileServerEndpoint(tt.value)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error")
@@ -92,13 +92,13 @@ func TestNormalizeFileServerEndpointProperties(t *testing.T) {
 
 		value := net.JoinHostPort(host, port.spelled)
 
-		got, err := normalizeFileServerEndpoint(space + value + space)
+		got, err := NormalizeFileServerEndpoint(space + value + space)
 		if port.valid && (err != nil || got != value) {
-			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, %v, want %q", space+value+space, got, err, value)
+			t.Fatalf("NormalizeFileServerEndpoint(%q) = %q, %v, want %q", space+value+space, got, err, value)
 		}
 
 		if !port.valid && err == nil {
-			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, want an error", space+value+space, got)
+			t.Fatalf("NormalizeFileServerEndpoint(%q) = %q, want an error", space+value+space, got)
 		}
 
 		want := net.JoinHostPort("127.0.0.1", port.spelled)
@@ -106,14 +106,14 @@ func TestNormalizeFileServerEndpointProperties(t *testing.T) {
 			want = ""
 		}
 
-		got, err = normalizeFileServerEndpoint(space + port.spelled + space)
+		got, err = NormalizeFileServerEndpoint(space + port.spelled + space)
 		// "0" alone turns the file server off
 		if (port.valid || port.spelled == "0") && (err != nil || got != want) {
-			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, %v, want %q", space+port.spelled+space, got, err, want)
+			t.Fatalf("NormalizeFileServerEndpoint(%q) = %q, %v, want %q", space+port.spelled+space, got, err, want)
 		}
 
 		if !port.valid && port.spelled != "0" && err == nil {
-			t.Fatalf("normalizeFileServerEndpoint(%q) = %q, want an error", space+port.spelled+space, got)
+			t.Fatalf("NormalizeFileServerEndpoint(%q) = %q, want an error", space+port.spelled+space, got)
 		}
 	})
 }

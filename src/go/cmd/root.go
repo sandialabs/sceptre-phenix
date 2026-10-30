@@ -559,7 +559,11 @@ func getCurrentUserInfo() (string, string) {
 // shell -- in that case `SUDO_USER` should not be used to determine the
 // config/store paths, since the command is truly being run as root.
 func sudoRanPhenix() bool {
-	cmd := os.Getenv("SUDO_COMMAND")
+	return sudoCommandNamesPhenix(os.Getenv("SUDO_COMMAND"))
+}
+
+// sudoCommandNamesPhenix reports whether cmd, a SUDO_COMMAND value, ran phenix.
+func sudoCommandNamesPhenix(cmd string) bool {
 	if cmd == "" {
 		return false
 	}

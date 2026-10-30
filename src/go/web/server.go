@@ -162,7 +162,7 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 		return fmt.Errorf("invalid ui.netflow.max-size %d bytes: it must not be negative", o.netflowMaxSize)
 	}
 
-	fileServerEndpoint, err := normalizeFileServerEndpoint(o.fileServerEndpoint)
+	fileServerEndpoint, err := NormalizeFileServerEndpoint(o.fileServerEndpoint)
 	if err != nil {
 		return fmt.Errorf("invalid ui.file-server-endpoint: %w", err)
 	}

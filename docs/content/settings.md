@@ -90,16 +90,30 @@ its source: `flag`, `env`, `config file` or `default`.
 | :--- | :--- | :--- |
 | `config file`, `users file` | no `config.yaml` is found | the file does not parse, so phēnix ignores it |
 | `config keys` | the config files hold keys that are not phēnix settings, such as a misspelling | never |
+| `PHENIX_*` (one row per set variable, such as `PHENIX_BASE_DIR_PHENIX`) | the variable is empty, a flag or the config file overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), or it names no setting, such as a misspelling | phēnix would refuse or misread the value |
+| `PATH`, `EDITOR`, `SUDO_USER`, `SUDO_COMMAND` | `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | `EDITOR` is not a program on `PATH` |
 | `store.endpoint` | never | the file cannot be written, or its directory does not exist or cannot be written |
-| `log.system.path`, `log.console` | never | the file cannot be written, or created in the nearest directory above it that exists |
-| `base-dir.phenix`, `base-dir.minimega`, `base-dir.injects`, `base-dir.topologies`, `mount-dir` | the directory does not exist, or one phēnix writes to is not writable by this user | the path is not a directory |
+| `log.system.path`, `log.console` | never | the file (`phenix.log` in it when `log.system.path` is a directory) cannot be written, or created in the nearest directory above it that exists |
+| `base-dir.phenix`, `base-dir.minimega`, `base-dir.injects`, `base-dir.topologies`, `mount-dir` | the directory does not exist, is not readable and searchable by this user, is relative, or is one phēnix writes to and is not writable by this user | the path is not a directory |
 | `ui.jwt-signing-key` | the key is empty (no sign-in) or a development key | never |
 | `ui.shutdown-grace-period`, `ui.netflow.max-size` | never | `phenix ui` would refuse the value |
 | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default) |
 
+Each environment variable phēnix reads gets a row only when it is set, and
+is checked the way the code that reads it parses it: whole numbers, `true` or
+`false`, log levels, modes, durations with a unit (a bare `24` in
+`PHENIX_UI_JWT_LIFETIME` is 24 nanoseconds), `host:port` endpoints, header
+names and paths. A directory variable follows the rules of the `base-dir.*`
+rows above, a file variable those of the `store.endpoint` and `log.*` rows,
+and `PHENIX_UI_TLS_KEY` and `PHENIX_UI_TLS_CERT` must name readable files.
+`PHENIX_UI_FEATURES` fails when it holds a comma, and `PHENIX_UI_USERS` when
+a user's role does, since phēnix splits these lists on spaces when they come
+from the environment.
+
 `phenix doctor` exits 1 when a check fails and 0 otherwise. It never prints
 the values of `ui.jwt-signing-key` or `ui.users`, only `<redacted>` when they
-are set. Like `phenix healthcheck`, it opens no store, unix socket or log file;
+are set, nor those of `PHENIX_UI_JWT_SIGNING_KEY`, `PHENIX_UI_USERS`,
+`SUDO_COMMAND` or a `PHENIX_*` variable that names no setting. Like `phenix healthcheck`, it opens no store, unix socket or log file;
 run it with the same flags, environment and user as the command you are
 checking, since those decide the values it sees.
 
@@ -152,7 +166,7 @@ The following global flags are supported by all `phenix` subcommands. The
 | `log.system.max-age` | `PHENIX_LOG_SYSTEM_MAX_AGE` | `90` | Max age in days to retain old logs. |
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI and offer for download on the Logs page. **(Restart Required)** |
-| `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable. Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). **(Restart Required)** |
+| `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable (space-separated in `PHENIX_UI_FEATURES`). Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). **(Restart Required)** |
 | `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). If it is set and the address cannot be listened on, `phenix ui` exits with an error. **(Restart Required)** |
 | `ui.shutdown-grace-period` | `PHENIX_UI_SHUTDOWN_GRACE_PERIOD` | `5` | How many seconds stopping `phenix ui` may take to finish requests and jobs and close connections, as a whole number such as `10`. `0` closes everything without waiting; a negative value, or one that is not a whole number of seconds (such as `10s` or `1.5`), is refused at startup. Also `phenix ui --shutdown-grace-period`. See [Stopping the Server](#stopping-the-server). **(Restart Required)** |
 | `ui.netflow.max-size` | `PHENIX_UI_NETFLOW_MAX_SIZE` | `100` | Maximum size in megabytes of each recorded netflow capture, as a whole number. A capture that reaches it stops recording and is marked truncated, while the live view goes on. `0` does not record captures; a negative value, or one that is not a whole number, is refused at startup. Also `phenix ui --netflow.max-size`. See [Recorded Captures](netflow.md#recorded-captures). **(Restart Required)** |
