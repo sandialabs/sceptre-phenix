@@ -64,7 +64,7 @@ leave a one-line pointer to it from `SKILL.md`.
   `Error` with the appropriate `LogType`, message, and structured key/value
   fields. The core routes records to console, system log, and web UI.
 - API auth uses `X-Phenix-Auth-Token`, not `Authorization`.
-- Runtime precedence is CLI flags, config file, environment, then defaults.
+- Runtime precedence is CLI flags, environment, config file, then defaults.
 - Never delete a live `config.yaml`; use `phenix settings unset` so its watcher
   remains active.
 

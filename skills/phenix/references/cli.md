@@ -31,10 +31,12 @@ after the experiment. A command that reaches a `phenix ui` running in `auto`
 mode over `--unix-socket` uses `auto` whatever its own setting. See
 [Bridge Mode](https://phenix.sceptre.dev/latest/bridge-mode/).
 
-Precedence (highest to lowest): **1. command-line flag** → **2. `config.yaml`**
-(managed with `phenix settings set`/`unset`; `log.*`, `ui.logs.level` and
-`ui.users` are hot-reloaded, other keys need a `phenix ui` restart) → **3. environment
-variable** (`PHENIX_*`) → **4. built-in default**. See
+Precedence (highest to lowest): **1. command-line flag** → **2. environment
+variable** (`PHENIX_*`; empty is ignored) → **3. `config.yaml`**, with `users.yaml`
+merged over it (managed with `phenix settings set`/`unset`, which change the file
+phenix read; `log.*`, `ui.logs.level` and `ui.users` are hot-reloaded, other keys
+need a `phenix ui` restart) → **4. built-in default**. A `PHENIX_*` variable hides
+what `settings set` writes; `phenix doctor` warns about each such override. See
 [Settings & Configuration](https://phenix.sceptre.dev/latest/settings/) for the
 full settings reference, including UI-only settings (`ui.logs.level`,
 `ui.features`, `ui.file-server-endpoint`, `ui.shutdown-grace-period`,
@@ -269,7 +271,7 @@ phenix settings list|get|set|unset [key] [value]  # phenix ui applies log.*, ui.
 phenix settings db ...            # legacy BoltDB-backed settings
 phenix ui                         # run the phenix web UI/API server
 phenix healthcheck [--ready] [--url URL] [-o json]  # probe the UI server's /healthz (or /readyz); exit 0 on 200
-phenix doctor [-o json] [--timeout 3s] [--skip ID|GROUP,...] [--strict] [-x] [--report]  # offline; prints a header (phenix/minimega versions, OS/kernel, uid/gid, cwd, config file, container), the settings with source (secrets redacted; -x omits), then checks: config syntax/keys, each set PHENIX_*/PATH/EDITOR/SUDO_* variable (parsed as phenix does; unknown PHENIX_* warn), the settings every command reads (bridge-mode, deploy-mode, log.level, log.system.*), store/log/base dirs, minimega; then a summary with a hint per failure. --skip takes check ids or groups (config, env, settings, files, dirs, ui, minimega); JSON has schemaVersion 1 and a stable id per check; --report adds the hostname and fences the output for a bug report; exit 1 on a failed check, or a warning with --strict
+phenix doctor [-o json] [--timeout 3s] [--skip ID|GROUP,...] [--strict] [-x] [--report]  # offline; prints a header (phenix/minimega versions, OS/kernel, uid/gid, cwd, config file, container), the settings with source (secrets redacted; -x omits), then checks: config syntax/keys, each set PHENIX_*/PATH/EDITOR/SUDO_* variable (parsed as phenix does; unknown PHENIX_* and ones overriding a different config file value warn), the settings every command reads (bridge-mode, deploy-mode, log.level, log.system.*), store/log/base dirs, minimega; then a summary with a hint per failure. --skip takes check ids or groups (config, env, settings, files, dirs, ui, minimega); JSON has schemaVersion 1 and a stable id per check; --report adds the hostname and fences the output for a bug report; exit 1 on a failed check, or a warning with --strict
 phenix util app-json <exp>        # print the experiment JSON a user app receives on stdin
 phenix util role-table            # print every permission phenix checks, and which roles allow it
 phenix completion bash|zsh|fish|powershell

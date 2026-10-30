@@ -12,16 +12,20 @@ config change takes effect only when phenix ui restarts keys="store.endpoint, ui
 
 ## Configuration Files
 
-phēnix looks for a configuration file (e.g. `config.yaml`, `config.json`, `config.toml`) in the following locations:
+phēnix looks for a configuration file (e.g. `config.yaml`, `config.json`, `config.toml`) in the following locations, in order, and reads the first it finds:
 
 **When run as root:**
 
+* `./config.yaml` (the working directory)
 * `/etc/phenix/config.yaml`
 
 **When run as a regular user:**
 
+* `./config.yaml` (the working directory)
 * `$HOME/.config/phenix/config.yaml`
 * `/etc/phenix/config.yaml`
+
+It looks for `users.yaml` in the same locations.
 
 ### Example Configuration
 
@@ -109,7 +113,8 @@ valid ones.
 | :--- | :--- | :--- | :--- |
 | `config-file`, `users-file` | `config` | no `config.yaml` is found | the file does not parse, so phēnix ignores it |
 | `config-keys` | `config` | the config files hold keys that are not phēnix settings, such as a misspelling | never |
-| `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag or the config file overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), it holds a log level phēnix ignores, or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
+| `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), it holds a log level phēnix ignores, or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
+| `env-overrides` | `env` | a `PHENIX_*` variable overrides a different value in the config or users file; the row names the variable, the setting and the file, never a value | never |
 | `bridge-mode`, `deploy-mode`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative | `bridge-mode` or `deploy-mode` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
 | `store.endpoint` | `files` | never | the file cannot be written, or its directory does not exist or cannot be written |
 | `log.system.path`, `log.console` | `files` | never | the file (`phenix.log` in it when `log.system.path` is a directory) cannot be written, or created in the nearest directory above it that exists; `log.console` gets a row only when it names a file |
@@ -157,12 +162,22 @@ are checking, since those decide the values it sees.
 
 ## Configuration Precedence
 
-phēnix resolves configuration settings in the following order (highest to lowest):
+phēnix resolves each setting in the following order (highest to lowest):
 
 1. **Command Line Flags**: Arguments passed directly to the binary (e.g., `phenix ui --log.level=debug`).
-2. **Config File**: Settings defined in `config.yaml` (managed via `phenix settings set`).
-3. **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`.
+2. **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`. An empty variable is ignored.
+3. **Config File**: Settings in `config.yaml` (managed via `phenix settings set`), with
+   `users.yaml` merged over it.
 4. **Defaults**: Internal application defaults.
+
+A `PHENIX_*` variable therefore hides a value that `phenix settings set` writes
+to the config file. `phenix doctor` warns about each one in its `env-overrides`
+check; unset the variable to use the file's value.
+
+`phenix settings set` and `phenix settings unset` change the config file
+phēnix read, the first one found in the locations above. When phēnix read
+none, `set` creates `config.yaml` in `$HOME/.config/phenix/`, or
+`/etc/phenix/` as root. Both refuse a config file that is not YAML.
 
 ## Global Flags
 

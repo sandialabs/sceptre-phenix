@@ -124,7 +124,7 @@ func envChecks(env doctorEnv, sources map[string]string) []doctorCheck {
 }
 
 // settingVarCheck checks the variable of setting key. viper ignores an empty one,
-// and one that a flag or the config file overrides is unused, so both warn.
+// and one that a flag overrides is unused, so both warn.
 func settingVarCheck(env doctorEnv, key, value, source string) doctorCheck {
 	if value == "" {
 		return warnCheck("empty, so phenix ignores it")

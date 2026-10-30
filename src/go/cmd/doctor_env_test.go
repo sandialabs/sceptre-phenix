@@ -353,9 +353,9 @@ func TestEnvChecks(t *testing.T) {
 		},
 		"overridden": {
 			vars:    map[string]string{"PHENIX_LOG_LEVEL": "debug", "PHENIX_USE_GRE_MESH": "yes"},
-			sources: map[string]string{"log.level": sourceFile, "use-gre-mesh": sourceFlag},
+			sources: map[string]string{"log.level": sourceFlag, "use-gre-mesh": sourceFlag},
 			want: []doctorCheck{
-				row("PHENIX_LOG_LEVEL", doctorWarn, "debug; unused, since the config file sets log.level"),
+				row("PHENIX_LOG_LEVEL", doctorWarn, "debug, but unused, because the flag sets log.level"),
 				row("PHENIX_USE_GRE_MESH", doctorWarn,
 					`"yes" is not true or false, so phenix reads it as false, but unused, because the flag sets use-gre-mesh`),
 			},

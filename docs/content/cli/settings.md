@@ -158,7 +158,7 @@ Set a configuration value
 ### Synopsis
 
 ```text
-Sets a configuration value in the config file. If the file does not exist, it will be created.
+Sets a configuration value in the YAML config file phenix read, or, when it read none, in $HOME/.config/phenix/config.yaml (/etc/phenix/config.yaml as root), creating it. A flag or PHENIX_ environment variable for the key still overrides the file.
 ```
 
 ```text
@@ -189,7 +189,7 @@ Unset configuration value(s)
 ### Synopsis
 
 ```text
-Unsets a configuration value in the config file, reverting it to the default. Use --all to reset all settings.
+Unsets a configuration value in the config file phenix read, so a PHENIX_ environment variable or the default applies. Use --all to reset all settings.
 ```
 
 ```text

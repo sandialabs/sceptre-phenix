@@ -262,15 +262,15 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 
 #### Configuration Precedence
 
-phēnix resolves configuration settings in the following order (highest to lowest):
+phēnix resolves each setting in the following order (highest to lowest):
 
 1. **Command Line Flags**: Arguments passed directly to the binary (e.g., `phenix ui --log.level=debug`).
-2. **Config File**: Settings defined in `config.yaml` (managed via `phenix settings set`).
-3. **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`.
+2. **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`.
+3. **Config File**: Settings defined in `config.yaml` (managed via `phenix settings set`).
 4. **Defaults**: Internal application defaults.
 
 > [!NOTE]
-> This precedence allows you to set baseline configuration using Environment Variables (e.g., in Docker Compose) but still override them at runtime using `phenix settings set`. To revert to the environment variable value, use `phenix settings unset`.
+> An environment variable, such as one set in Docker Compose, overrides a value that `phenix settings set` writes to the config file. Unset the variable to use the file's value; `phenix doctor` warns about each such override.
 
 #### Managing Settings
 

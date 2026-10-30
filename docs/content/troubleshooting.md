@@ -71,6 +71,15 @@ If you delete the `config.yaml` file while phēnix is running, the internal file
 
 To reset your configuration, use the command `phenix settings unset --all` instead of deleting the file.
 
+### `phenix settings set` Has No Effect
+
+A flag or a `PHENIX_*` environment variable overrides the config file, so a
+value that `phenix settings set` writes is hidden while one is set, as in a
+Docker deployment that sets `PHENIX_LOG_LEVEL`. `phenix doctor` shows each
+setting's source and warns in its `env-overrides` check about each variable
+that overrides a different config file value. Drop the flag or unset the
+variable to use the file's value.
+
 ### Upgrading the BoltDB Store
 
 phēnix keeps BoltDB's free page list inside the store file. The first time it

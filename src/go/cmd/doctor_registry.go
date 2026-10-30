@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/user"
 	"runtime"
@@ -57,7 +58,14 @@ type resolvedSetting struct {
 type doctorConfig struct {
 	checks map[string]doctorCheck // by file name; no users entry when it is missing
 	keys   map[string]bool
-	used   string // the config file read, or ""
+	values map[string]fileSetting // by key; the users file's win, as phenix merges it last
+	used   string                 // the config file read, or ""
+}
+
+// fileSetting is a setting's value in a config file. value may be a secret.
+type fileSetting struct {
+	file  string
+	value any
 }
 
 // doctorSystem is the operating system doctor runs on.
@@ -134,33 +142,24 @@ func (in *doctorInput) sources() map[string]string {
 	return sources
 }
 
-// resolveSettings reads each known setting as phenix does: a global setting
-// prefers the config file to the environment, as getEffectiveString does.
+// resolveSettings reads each known setting as phenix does, through viper: a set
+// flag, then the PHENIX_ variable, then the config files, then the default.
 func resolveSettings(
 	flags *pflag.FlagSet,
 	fileKeys map[string]bool,
 	known []string,
 	lookupEnv func(string) (string, bool),
 ) map[string]resolvedSetting {
-	var (
-		fileViper = getFileViper()
-		settings  = make(map[string]resolvedSetting, len(known))
-	)
+	settings := make(map[string]resolvedSetting, len(known))
 
 	for _, key := range known {
-		var (
-			changed = flags.Lookup(key) != nil && flags.Changed(key)
-			root    = rootCmd.PersistentFlags().Lookup(key) != nil
-			s       = resolvedSetting{value: viper.Get(key), text: viper.GetString(key), source: ""}
-		)
+		changed := flags.Lookup(key) != nil && flags.Changed(key)
 
-		fileFirst := root && !changed && fileViper != nil && fileViper.IsSet(key)
-		if fileFirst {
-			s.value, s.text = fileViper.Get(key), fileViper.GetString(key)
+		settings[key] = resolvedSetting{
+			value:  viper.Get(key),
+			text:   viper.GetString(key),
+			source: settingSource(key, changed, fileKeys[key], lookupEnv),
 		}
-
-		s.source = settingSource(key, changed, fileFirst, fileKeys[key], lookupEnv)
-		settings[key] = s
 	}
 
 	return settings
@@ -169,7 +168,9 @@ func resolveSettings(
 // doctorConfigFiles parses the config and users files found in paths, as the root
 // command does, and returns their checks and keys; a missing users file gets no check.
 func doctorConfigFiles(paths []string) doctorConfig {
-	config := doctorConfig{checks: make(map[string]doctorCheck), keys: make(map[string]bool), used: ""}
+	config := doctorConfig{
+		checks: make(map[string]doctorCheck), keys: make(map[string]bool), values: make(map[string]fileSetting), used: "",
+	}
 
 	for _, name := range []string{"config", usersConfigName} {
 		v := viper.New()
@@ -188,6 +189,7 @@ func doctorConfigFiles(paths []string) doctorConfig {
 
 			for _, key := range v.AllKeys() {
 				config.keys[key] = true
+				config.values[key] = fileSetting{file: v.ConfigFileUsed(), value: v.Get(key)}
 			}
 		case errors.As(err, &viper.ConfigFileNotFoundError{}):
 			if name == usersConfigName {
@@ -241,6 +243,53 @@ func baseDirDef(key, sub string, needWrite bool) doctorCheckDef {
 	}
 }
 
+// envOverridesCheck warns about each PHENIX_ variable that phenix reads in place
+// of a different value in a config file. It names both, never either value.
+func envOverridesCheck(
+	settings map[string]resolvedSetting,
+	files map[string]fileSetting,
+	lookupEnv func(string) (string, bool),
+) doctorCheck {
+	var overrides []string
+
+	for _, key := range slices.Sorted(maps.Keys(files)) {
+		if settings[key].source != sourceEnv {
+			continue
+		}
+
+		name := settingEnvVar(key)
+		value, _ := lookupEnv(name)
+
+		if f := files[key]; !sameSettingValue(value, f.value) {
+			overrides = append(overrides, fmt.Sprintf("%s overrides %s in %s", name, key, f.file))
+		}
+	}
+
+	if len(overrides) == 0 {
+		return passCheck("no PHENIX_ variable overrides a different config file value")
+	}
+
+	return warnCheck(strings.Join(overrides, ". "))
+}
+
+// sameSettingValue reports whether env, a variable's value, is the config
+// file's value; viper splits a list variable on spaces.
+func sameSettingValue(env string, file any) bool {
+	switch v := file.(type) {
+	case nil:
+		return env == ""
+	case []any:
+		parts := make([]string, len(v))
+		for i, p := range v {
+			parts[i] = fmt.Sprint(p)
+		}
+
+		return slices.Equal(strings.Fields(env), parts)
+	}
+
+	return env == fmt.Sprint(file)
+}
+
 // settingDef registers the check of key's value, from wherever it comes, by
 // the rules of its env check. Every phenix command reads key before it runs.
 func settingDef(key, hint string) doctorCheckDef {
@@ -291,7 +340,14 @@ func doctorChecks() []doctorCheckDef {
 				return envChecks(in.env, in.sources())
 			},
 		},
-		settingDef("bridge-mode", "set bridge-mode to manual or auto; every phenix command refuses another value"),
+		{
+			id: "env-overrides", group: doctorGroupEnv, name: "env overrides",
+			hint: hintText("unset the variable to use the config file's value, or change the file to match it"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(envOverridesCheck(in.settings, in.config.values, in.env.lookup))
+			},
+		},
+		settingDef("bridge-mode", "set bridge-mode to manual or auto, because every phenix command refuses another value"),
 		settingDef("deploy-mode",
 			"set deploy-mode to all, no-headnode or only-headnode, or unset it; every phenix command refuses another value"),
 		settingDef("log.level", "set log.level to debug, info, warn, error or none"),

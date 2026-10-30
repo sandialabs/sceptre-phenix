@@ -22,14 +22,15 @@ Check the phenix configuration without a running server
 
   The checks read the config and users files and report unknown keys, check
   each set environment variable phenix reads (PHENIX_*, PATH, EDITOR,
-  SUDO_USER and SUDO_COMMAND) as phenix parses it and warn about PHENIX_*
-  variables that name no setting, check the settings every other phenix
-  command refuses or misreads (bridge-mode, deploy-mode, log.level and
-  log.system.*), check that the store and log files can be written, that the base directories exist, and that minimega answers on its
-  socket. --skip takes a check or a group of checks; an unknown name fails and
-  lists the valid ones. Secret values, such as the JWT signing key and initial
-  users, are redacted. doctor exits 1 when a check fails, or with --strict
-  when one warns, and 0 otherwise.
+  SUDO_USER and SUDO_COMMAND) as phenix parses it, warn about PHENIX_*
+  variables that name no setting or override a different config file value,
+  check the settings every other phenix command refuses or misreads
+  (bridge-mode, deploy-mode, log.level and log.system.*), check that the
+  store and log files can be written, that the base directories exist, and
+  that minimega answers on its socket. --skip takes a check or a group of
+  checks; an unknown name fails and lists the valid ones. Secret values,
+  such as the JWT signing key and initial users, are redacted. doctor exits
+  1 when a check fails, or with --strict when one warns, and 0 otherwise.
 
   --report adds the hostname to the header and prints the whole output in a
   fenced block to paste into a bug report.

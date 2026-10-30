@@ -2,19 +2,21 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/spf13/viper"
 )
 
-// newSearchViper returns a viper that searches dir for name.
-func newSearchViper(dir, name string) *viper.Viper {
+// newSearchViper returns a viper that searches dir for the config file.
+func newSearchViper(dir string) *viper.Viper {
 	v := viper.New()
-	v.SetConfigName(name)
+	v.SetConfigName("config")
 	v.AddConfigPath(dir)
 
 	return v
@@ -58,7 +60,7 @@ func TestReadConfigReportsBadFiles(t *testing.T) {
 
 			var warn bytes.Buffer
 
-			v := newSearchViper(dir, "config")
+			v := newSearchViper(dir)
 
 			if got := readConfig(v, dir, &warn); got != tc.wantRead {
 				t.Errorf("readConfig() = %t, want %t (warning %q)", got, tc.wantRead, warn.String())
@@ -88,7 +90,7 @@ func TestReadConfigCreatesMissingFile(t *testing.T) {
 		warn   bytes.Buffer
 	)
 
-	v := newSearchViper(search, "config")
+	v := newSearchViper(search)
 	v.AddConfigPath(create)
 
 	if !readConfig(v, create, &warn) {
@@ -117,7 +119,7 @@ func TestReadConfigReportsUncreatableDirectory(t *testing.T) {
 		warn bytes.Buffer
 	)
 
-	v := newSearchViper(dir, "config")
+	v := newSearchViper(dir)
 
 	if readConfig(v, filepath.Join(file, "phenix"), &warn) {
 		t.Fatalf("readConfig() = true, want false")
@@ -129,18 +131,21 @@ func TestReadConfigReportsUncreatableDirectory(t *testing.T) {
 }
 
 // A missing users file is normal and silent; one that does not parse is
-// ignored with a warning.
-func TestMergeConfigReportsBadFiles(t *testing.T) {
+// ignored with a warning, and still returned so it can be watched.
+func TestMergeUsersConfigReportsBadFiles(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		data       string // no file when empty
-		wantMerged bool
-		wantWarn   bool
+		data      string // no file when empty
+		wantUsers []string
+		wantFile  bool
+		wantWarn  bool
 	}{
 		"missing": {},
-		"valid":   {data: "ui:\n  users: [admin:secret:global-admin]\n", wantMerged: true},
-		"bad":     {data: "ui: [\n", wantWarn: true},
+		"valid": {
+			data: "ui:\n  users: [admin:secret:global-admin]\n", wantUsers: []string{"admin:secret:global-admin"}, wantFile: true,
+		},
+		"bad": {data: "ui: [\n", wantFile: true, wantWarn: true},
 	}
 
 	for name, tc := range tests {
@@ -149,19 +154,164 @@ func TestMergeConfigReportsBadFiles(t *testing.T) {
 
 			dir := t.TempDir()
 
+			var wantFile string
 			if tc.data != "" {
-				writeTestFile(t, dir, "users.yaml", tc.data)
+				path := writeTestFile(t, dir, "users.yaml", tc.data)
+				if tc.wantFile {
+					wantFile = path
+				}
 			}
 
 			var warn bytes.Buffer
 
-			if got := mergeConfig(newSearchViper(dir, "users"), &warn); got != tc.wantMerged {
-				t.Errorf("mergeConfig() = %t, want %t", got, tc.wantMerged)
+			v := viper.New()
+
+			if got := mergeUsersConfig(v, []string{dir}, &warn); got != wantFile {
+				t.Errorf("mergeUsersConfig() = %q, want %q", got, wantFile)
+			}
+
+			if diff := cmp.Diff(tc.wantUsers, v.GetStringSlice("ui.users"), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("ui.users mismatch (-want +got):\n%s", diff)
 			}
 
 			if got := warn.Len() != 0; got != tc.wantWarn {
-				t.Errorf("mergeConfig() warned %q, want a warning %t", warn.String(), tc.wantWarn)
+				t.Errorf("mergeUsersConfig() warned %q, want a warning %t", warn.String(), tc.wantWarn)
 			}
 		})
+	}
+}
+
+// newConfigViper is a viper set up as the root command sets up phenix's own:
+// PHENIX_ variables, then the config files in dir.
+func newConfigViper(dir string) *viper.Viper {
+	v := viper.New()
+	v.SetEnvPrefix("PHENIX")
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
+	v.AutomaticEnv()
+	v.AddConfigPath(dir)
+
+	return v
+}
+
+// Loading the config and users files keeps the config file read, so settings
+// commands and the watcher use it, and a change to either file reloads both:
+// the users stay after a config change, a users change is read, and a
+// PHENIX_ variable still wins over the config file after each reload.
+func TestConfigFilesReload(t *testing.T) {
+	t.Setenv("PHENIX_LOG_SYSTEM_MAX_AGE", "7")
+	// empty is unset to viper, so the caller's environment cannot win over the files
+	t.Setenv("PHENIX_LOG_LEVEL", "")
+	t.Setenv("PHENIX_UI_USERS", "")
+
+	var (
+		dir    = t.TempDir()
+		config = writeTestFile(t, dir, "config.yaml", "log:\n  level: info\n  system:\n    max-age: 30\n")
+		users  = writeTestFile(t, dir, "users.yaml", "ui:\n  users: [admin:pw:global-admin]\n")
+		v      = newConfigViper(dir)
+		warn   bytes.Buffer
+	)
+
+	watch, usersFile := loadConfigFiles(v, []string{dir}, dir, &warn)
+	if !watch || usersFile != users {
+		t.Fatalf("loadConfigFiles() = %t, %q, want true, %q", watch, usersFile, users)
+	}
+
+	type state struct {
+		File, Level string
+		MaxAge      int
+		Users       []string
+	}
+
+	read := func() state {
+		return state{
+			File: v.ConfigFileUsed(), Level: v.GetString("log.level"),
+			MaxAge: v.GetInt("log.system.max-age"), Users: v.GetStringSlice("ui.users"),
+		}
+	}
+
+	want := state{File: config, Level: "info", MaxAge: 7, Users: []string{"admin:pw:global-admin"}}
+	if diff := cmp.Diff(want, read()); diff != "" {
+		t.Fatalf("after loading (-want +got):\n%s", diff)
+	}
+
+	// the config watcher reads the config file itself, then calls the handler
+	writeTestFile(t, dir, "config.yaml", "log:\n  level: debug\n  system:\n    max-age: 60\n")
+
+	if err := v.ReadInConfig(); err != nil {
+		t.Fatalf("ReadInConfig() error = %v", err)
+	}
+
+	reloadConfigFiles(v, []string{dir}, &warn)
+
+	want.Level = "debug"
+	if diff := cmp.Diff(want, read()); diff != "" {
+		t.Errorf("after a config change (-want +got):\n%s", diff)
+	}
+
+	writeTestFile(t, dir, "users.yaml", "ui:\n  users: [bob:pw:viewer]\n")
+	reloadConfigFiles(v, []string{dir}, &warn)
+
+	want.Users = []string{"bob:pw:viewer"}
+	if diff := cmp.Diff(want, read()); diff != "" {
+		t.Errorf("after a users change (-want +got):\n%s", diff)
+	}
+
+	if warn.Len() != 0 {
+		t.Errorf("warned %q, want no warning", warn.String())
+	}
+}
+
+// phenix settings set writes the config file phenix read, and only when it
+// read none the config.yaml in the user's config directory.
+func TestSettingsSetWritesFileRead(t *testing.T) {
+	t.Parallel()
+
+	var (
+		dir  = t.TempDir()
+		home = t.TempDir()
+		file = writeTestFile(t, dir, "config.yaml", "log:\n  level: info\n")
+		v    = newSearchViper(dir)
+		warn bytes.Buffer
+	)
+
+	if !readConfig(v, filepath.Join(home, ".config", appName), &warn) {
+		t.Fatalf("readConfig() = false (warning %q)", warn.String())
+	}
+
+	target := settingsFile(v.ConfigFileUsed(), "1000", home)
+	if target != file {
+		t.Fatalf("settingsFile() = %q, want the file read, %q", target, file)
+	}
+
+	if err := setConfigValue(target, "log.level", "debug"); err != nil {
+		t.Fatalf("setConfigValue() error = %v", err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+
+	if diff := cmp.Diff("log:\n    level: debug\n", string(got)); diff != "" {
+		t.Errorf("config file mismatch (-want +got):\n%s", diff)
+	}
+
+	if _, err := os.Stat(filepath.Join(home, ".config")); !os.IsNotExist(err) {
+		t.Errorf("os.Stat(%s/.config) error = %v, want it not to exist", home, err)
+	}
+
+	fallbacks := map[string]string{
+		"1000": filepath.Join(home, ".config", appName, "config.yaml"),
+		"0":    filepath.Join(configDir, "config.yaml"),
+	}
+
+	for uid, want := range fallbacks {
+		if got := settingsFile("", uid, home); got != want {
+			t.Errorf("settingsFile(\"\", %s) = %q, want %q", uid, got, want)
+		}
+	}
+
+	if err := setConfigValue(filepath.Join(dir, "config.toml"), "log.level", "debug"); !errors.Is(err, errNotYAML) {
+		t.Errorf("setConfigValue(config.toml) error = %v, want %v", err, errNotYAML)
 	}
 }

@@ -70,6 +70,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		config: doctorConfig{
 			checks: map[string]doctorCheck{"config": {Name: "config file", Status: doctorPass, Detail: configFile}},
 			keys:   map[string]bool{},
+			values: map[string]fileSetting{},
 			used:   configFile,
 		},
 		known:    known,
@@ -119,6 +120,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 	allPass := []string{
 		"config-file config file pass",
 		"config-keys config keys pass",
+		"env-overrides env overrides pass",
 		"bridge-mode bridge-mode pass",
 		"deploy-mode deploy-mode pass",
 		"log.level log.level pass",
@@ -219,6 +221,18 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			},
 			want: append([]string{allPass[0], "users-file users file fail", "config-keys config keys warn"}, allPass[2:]...),
 		},
+		"environment overrides the config file": {
+			modify: func(in *doctorInput) {
+				in.env = fakeDoctorEnv(map[string]string{"PHENIX_LOG_LEVEL": "debug"}, false)
+				in.config.keys["log.level"] = true
+				in.config.values["log.level"] = fileSetting{file: in.config.used, value: "info"}
+				in.settings["log.level"] = resolvedSetting{value: "debug", text: "debug", source: sourceEnv}
+			},
+			want: replaceRows(
+				append(append(slices.Clone(allPass[:2]), "env PHENIX_LOG_LEVEL pass"), allPass[2:]...),
+				"env-overrides env overrides warn",
+			),
+		},
 		"environment variables": {
 			modify: func(in *doctorInput) {
 				in.env = fakeDoctorEnv(map[string]string{"PHENIX_LOG_LEVEL": "loud", "PATH": "/usr/bin"}, false)
@@ -316,7 +330,9 @@ func TestParseDoctorSkip(t *testing.T) {
 		},
 		"comma list and repeated": {
 			args: []string{"--skip", "env, store.endpoint", "--skip", "ui"},
-			want: []string{"env", "store.endpoint", "ui.jwt-signing-key", "ui.netflow.max-size", "ui.shutdown-grace-period"},
+			want: []string{
+				"env", "env-overrides", "store.endpoint", "ui.jwt-signing-key", "ui.netflow.max-size", "ui.shutdown-grace-period",
+			},
 		},
 		"unknown": {
 			args:    []string{"--skip", "minimega,mm,cofnig"},
@@ -465,7 +481,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 17 passed, 0 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 18 passed, 0 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},

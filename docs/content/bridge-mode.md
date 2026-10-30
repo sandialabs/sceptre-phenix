@@ -91,20 +91,20 @@ phenix ui --bridge-mode auto
 phenix experiment create my-exp -t my-topology --bridge-mode auto
 ```
 
-### 2. Configuration File
+### 2. Environment Variable
+
+```bash
+export PHENIX_BRIDGE_MODE=auto
+phenix ui
+```
+
+### 3. Configuration File
 
 Add `bridge-mode` to the phēnix configuration file (see
 [Settings & Configuration](settings.md) for file locations):
 
 ```yaml
 bridge-mode: auto
-```
-
-### 3. Environment Variable
-
-```bash
-export PHENIX_BRIDGE_MODE=auto
-phenix ui
 ```
 
 ## Example Workflow

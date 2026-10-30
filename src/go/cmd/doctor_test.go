@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -304,8 +305,8 @@ func TestMinimegaCheck(t *testing.T) {
 	}
 }
 
-// A flag wins, then a config value the global settings prefer, then the
-// environment, then any other config value, then the default.
+// A flag wins, then a non-empty environment variable, then the config file,
+// then the default, as viper reads them.
 func TestSettingSource(t *testing.T) {
 	t.Parallel()
 
@@ -317,12 +318,12 @@ func TestSettingSource(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		key                            string
-		flagChanged, fileFirst, inFile bool
-		want                           string
+		key                 string
+		flagChanged, inFile bool
+		want                string
 	}{
-		"flag":             {key: "log.level", flagChanged: true, fileFirst: true, inFile: true, want: sourceFlag},
-		"file first":       {key: "ui.listen-endpoint", fileFirst: true, inFile: true, want: sourceFile},
+		"flag":             {key: "log.level", flagChanged: true, inFile: true, want: sourceFlag},
+		"flag over env":    {key: "ui.listen-endpoint", flagChanged: true, inFile: true, want: sourceFlag},
 		"env over file":    {key: "ui.listen-endpoint", inFile: true, want: sourceEnv},
 		"empty env":        {key: "log.level", inFile: true, want: sourceFile},
 		"default":          {key: "log.level", want: sourceDefault},
@@ -333,12 +334,108 @@ func TestSettingSource(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := settingSource(tc.key, tc.flagChanged, tc.fileFirst, tc.inFile, lookupEnv)
+			got := settingSource(tc.key, tc.flagChanged, tc.inFile, lookupEnv)
 			if got != tc.want {
 				t.Errorf("settingSource(%s) = %q, want %q", tc.key, got, tc.want)
 			}
 		})
 	}
+}
+
+// A PHENIX_ variable that phenix reads in place of a different config file
+// value warns by name, never value; an equal one, or one a flag overrides,
+// does not.
+func TestEnvOverridesCheck(t *testing.T) {
+	t.Parallel()
+
+	const config, users = "/etc/phenix/config.yaml", "/etc/phenix/users.yaml"
+
+	env := map[string]string{
+		"PHENIX_LOG_LEVEL":          "debug",
+		"PHENIX_UI_USERS":           "admin:pw:global-admin  bob:pw:viewer",
+		"PHENIX_UI_JWT_SIGNING_KEY": "env-secret",
+		"PHENIX_STORE_ENDPOINT":     "bolt:///tmp/s.bdb",
+		"PHENIX_LOG_SYSTEM_MAX_AGE": "90",
+	}
+	lookupEnv := func(name string) (string, bool) {
+		v, ok := env[name]
+
+		return v, ok
+	}
+
+	tests := map[string]struct {
+		files   map[string]fileSetting
+		sources map[string]string
+		want    doctorCheck
+	}{
+		"none": {
+			files: map[string]fileSetting{"log.level": {file: config, value: "info"}},
+			want:  passCheck("no PHENIX_ variable overrides a different config file value"),
+		},
+		"same values": {
+			files: map[string]fileSetting{
+				"log.level":          {file: config, value: "debug"},
+				"log.system.max-age": {file: config, value: 90},
+				"ui.users":           {file: users, value: []any{"admin:pw:global-admin", "bob:pw:viewer"}},
+			},
+			sources: map[string]string{"log.level": sourceEnv, "log.system.max-age": sourceEnv, "ui.users": sourceEnv},
+			want:    passCheck("no PHENIX_ variable overrides a different config file value"),
+		},
+		"different values": {
+			files: map[string]fileSetting{
+				"log.level":          {file: config, value: "info"},
+				"ui.jwt-signing-key": {file: config, value: "file-secret"},
+				"ui.users":           {file: users, value: []any{"admin:pw:global-admin"}},
+				"store.endpoint":     {file: config, value: "bolt:///etc/phenix/store.bdb"},
+			},
+			sources: map[string]string{
+				"log.level": sourceEnv, "ui.jwt-signing-key": sourceEnv, "ui.users": sourceEnv, "store.endpoint": sourceFlag,
+			},
+			want: warnCheck("PHENIX_LOG_LEVEL overrides log.level in " + config +
+				". PHENIX_UI_JWT_SIGNING_KEY overrides ui.jwt-signing-key in " + config +
+				". PHENIX_UI_USERS overrides ui.users in " + users),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			settings := make(map[string]resolvedSetting)
+			for key, source := range tc.sources {
+				settings[key] = resolvedSetting{source: source}
+			}
+
+			if diff := cmp.Diff(tc.want, envOverridesCheck(settings, tc.files, lookupEnv)); diff != "" {
+				t.Errorf("envOverridesCheck() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// A list variable is the config file's list when its space-separated fields
+// are the list's items, and a scalar when its text is the value's.
+func TestSameSettingValueProperty(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		items := rapid.SliceOf(rapid.StringMatching(`[a-z0-9:-]{1,8}`)).Draw(t, "items")
+		sep := rapid.SampledFrom([]string{" ", "  ", "\t"}).Draw(t, "sep")
+
+		list := make([]any, len(items))
+		for i, item := range items {
+			list[i] = item
+		}
+
+		if !sameSettingValue(strings.Join(items, sep), list) {
+			t.Fatalf("sameSettingValue(%q, %v) = false, want true", strings.Join(items, sep), list)
+		}
+
+		n := rapid.Int().Draw(t, "n")
+		if !sameSettingValue(strconv.Itoa(n), n) || sameSettingValue(strconv.Itoa(n)+"0", n) {
+			t.Fatalf("sameSettingValue does not compare %d as its text", n)
+		}
+	})
 }
 
 // The environment variable of a setting is its key in upper case, prefixed
