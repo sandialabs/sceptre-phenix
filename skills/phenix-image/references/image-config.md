@@ -141,8 +141,9 @@ tarball first, with or without `--cache`.
 
 ## Consuming built images
 
-- Known image extensions in phenix: `.qcow2`, `.qc2`, `_rootfs.tgz`, `.hdd`, `.iso`
-  (qcow2 and `.hdd` are VM images, `_rootfs.tgz` is a container image, `.iso` an ISO).
+- Known image extensions in phenix: `.qcow2`, `.qc2`, `.qcow`, `_rootfs.tgz`, `.hdd`, `.iso`
+  (qcow2, qcow version 1 and `.hdd` are VM images, `_rootfs.tgz` is a container image,
+  `.iso` an ISO). The Disks page and `phenix doctor` find only these in the files directory.
 - Copy built images into the minimega files directory; phenix's base dir defaults to
   `/phenix` (`--base-dir.phenix`) with images conventionally under `/phenix/images`.
 - Topologies reference images by path relative to the minimega files directory

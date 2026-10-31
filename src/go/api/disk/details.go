@@ -18,7 +18,7 @@ const (
 	ISOImage
 )
 
-var knownImageExtensions = []string{".qcow2", ".qc2", "_rootfs.tgz", ".hdd", ".iso"} //nolint:gochecknoglobals // global constant
+var knownImageExtensions = []string{".qcow2", ".qc2", ".qcow", "_rootfs.tgz", ".hdd", ".iso"} //nolint:gochecknoglobals // global constant
 
 func (k Kind) MarshalJSON() ([]byte, error) {
 	return json.Marshal(k.String())

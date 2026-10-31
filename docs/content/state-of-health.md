@@ -506,7 +506,8 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 
 * `skipHosts`: a list of VM hostnames and/or disk image names to skip health
   monitoring for. For disk image names, any host using the disk image as its
-  primary image will be skipped. The default is `nil`.
+  primary image will be skipped. A disk image name ends in `.qc2`, `.qcow2`,
+  or `.qcow`. The default is `nil`.
 
 * `testReachability`: reachability testing is the process of making sure each VM
   can reach other VMs within the experiment over the network. See [Network

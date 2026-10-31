@@ -169,7 +169,7 @@ type ZipLimits struct {
 // storedExtensions are files already compressed, stored in a zip as they are
 // rather than deflated again.
 var storedExtensions = []string{ //nolint:gochecknoglobals // constant list
-	".7z", ".bz2", ".gz", ".hdd", ".jpg", ".png", ".qc2", ".qcow2", ".tgz", ".xz", ".zip", ".zst",
+	".7z", ".bz2", ".gz", ".hdd", ".jpg", ".png", ".qc2", ".qcow", ".qcow2", ".tgz", ".xz", ".zip", ".zst",
 }
 
 // ZipFiles writes a zip archive of the experiment's files at paths (relative to its files directory) to the writer start

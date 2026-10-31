@@ -410,7 +410,7 @@ func mayCopyDisk(role rbac.Role, path, newPath string) bool {
 func SnapshotDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
-	path, newPath, err := diskAndNew(r)
+	path, newPath, err := diskAndNew(r, false)
 	if err != nil {
 		return diskError(err)
 	}
@@ -501,11 +501,12 @@ func ResizeDisk(w http.ResponseWriter, r *http.Request) error {
 
 // CloneDisk - POST /disks/clone?disk={disk}&new={new}
 //
-// disk and new are as for SnapshotDisk. The copy never replaces a file.
+// disk and new are as for SnapshotDisk, but a copy of a .qcow image keeps .qcow (see normalizeDstDisk). The copy
+// never replaces a file.
 func CloneDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
-	path, newPath, err := diskAndNew(r)
+	path, newPath, err := diskAndNew(r, true)
 	if err != nil {
 		return diskError(err)
 	}
@@ -534,7 +535,7 @@ const cloneKind = "disk.clone"
 func CloneDiskJob(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
-	path, newPath, err := diskAndNew(r)
+	path, newPath, err := diskAndNew(r, true)
 	if err != nil {
 		return diskError(err)
 	}
@@ -599,11 +600,11 @@ func auditCloneJob(j job.Job) {
 
 // RenameDisk - POST /disks/rename?disk={disk}&new={new}
 //
-// disk and new are as for SnapshotDisk. The rename never replaces a file.
+// disk and new are as for CloneDisk. The rename never replaces a file.
 func RenameDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
-	path, newPath, err := diskAndNew(r)
+	path, newPath, err := diskAndNew(r, true)
 	if err != nil {
 		return diskError(err)
 	}
@@ -650,8 +651,9 @@ func DeleteDisk(w http.ResponseWriter, r *http.Request) error {
 
 // diskAndNew resolves an action's disk and new query values (see
 // SnapshotDisk). new must name a file, not a folder, which the added
-// extension would turn into a file beside that folder.
-func diskAndNew(r *http.Request) (string, string, error) {
+// extension would turn into a file beside that folder. sameFormat is as for
+// normalizeDstDisk.
+func diskAndNew(r *http.Request, sameFormat bool) (string, string, error) {
 	path, err := disk.Resolve(mux.Vars(r)["disk"])
 	if err != nil {
 		return "", "", err
@@ -662,7 +664,7 @@ func diskAndNew(r *http.Request) (string, string, error) {
 		return "", "", fmt.Errorf("%w: new image %q does not name a file", disk.ErrNotManaged, dst)
 	}
 
-	newPath, err := disk.Resolve(normalizeDstDisk(path, dst))
+	newPath, err := disk.Resolve(normalizeDstDisk(path, dst, sameFormat))
 	if err != nil {
 		return "", "", err
 	}
@@ -839,14 +841,21 @@ func GetDiskChecksum(w http.ResponseWriter, r *http.Request) error {
 	}
 }
 
-// for output disk names - makes absolute and adds qcow2 file extension.
-func normalizeDstDisk(src, dst string) string {
+// normalizeDstDisk returns dst, the name of an image made from the image at src, as an absolute path: relative to the
+// folder of src. It adds .qcow2 unless dst ends in .qc2 or .qcow2. An action that keeps the format of src (sameFormat),
+// as a copy or a rename does, keeps the qcow format of a .qcow image, so then it also takes .qcow and adds .qcow.
+func normalizeDstDisk(src, dst string, sameFormat bool) string {
 	if !filepath.IsAbs(dst) {
 		dst = filepath.Join(filepath.Dir(src), dst)
 	}
 
-	if !strings.HasSuffix(dst, ".qcow2") && !strings.HasSuffix(dst, ".qc2") {
-		dst += ".qcow2"
+	exts, add := []string{".qcow2", ".qc2"}, ".qcow2"
+	if sameFormat && strings.HasSuffix(src, ".qcow") {
+		exts, add = append(exts, ".qcow"), ".qcow"
+	}
+
+	if !slices.ContainsFunc(exts, func(ext string) bool { return strings.HasSuffix(dst, ext) }) {
+		dst += add
 	}
 
 	return dst

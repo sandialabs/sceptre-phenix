@@ -2122,7 +2122,7 @@ func skip(node ifaces.NodeSpec, toSkip []string) bool {
 	for _, skipHost := range toSkip {
 		// Check to see if this is a reference to an image. If so, skip this host if
 		// it's using the referenced image.
-		if ext := filepath.Ext(skipHost); ext == ".qc2" || ext == ".qcow2" {
+		if ext := filepath.Ext(skipHost); ext == ".qc2" || ext == ".qcow" || ext == ".qcow2" {
 			if filepath.Base(node.Hardware().Drives()[0].Image()) == skipHost {
 				return true
 			}

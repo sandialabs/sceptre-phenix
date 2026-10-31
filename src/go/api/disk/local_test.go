@@ -280,3 +280,30 @@ func TestHumanReadableBytesProperties(t *testing.T) {
 		}
 	})
 }
+
+// The disk list and phenix doctor find VM images by a qcow2, qcow or .hdd extension, container images by _rootfs.tgz
+// and ISO images by .iso, all of them case sensitive.
+func TestKnownImage(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]bool{
+		"kali.qcow2":      true,
+		"kali.qc2":        true,
+		"old.qcow":        true,
+		"win/old.qcow":    true,
+		"snap.hdd":        true,
+		"kali_rootfs.tgz": true,
+		"tools.iso":       true,
+		"old.qcow.bak":    false,
+		"old.QCOW":        false,
+		"oldqcow":         false,
+		"notes.tgz":       false,
+		"kali.img":        false,
+	}
+
+	for name, want := range tests {
+		if got := knownImage(name); got != want {
+			t.Errorf("knownImage(%q) = %t, want %t", name, got, want)
+		}
+	}
+}

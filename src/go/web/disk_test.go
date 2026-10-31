@@ -489,26 +489,115 @@ func tree(t *testing.T, dir string) map[string]string {
 	return files
 }
 
-// A new image's name becomes an absolute qcow2 path, kept as given once it is one, so
-// normalizing it again changes nothing.
+// A new image's name is relative to the folder of its source. A snapshot is a qcow2 image, so it gets .qcow2 unless
+// it has a qcow2 extension. A copy or a rename of a .qcow image keeps the qcow format, so it also keeps .qcow.
+func TestNormalizeDstDisk(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		src, dst   string
+		sameFormat bool
+		want       string
+	}{
+		"snapshot":                    {src: "/files/a.qc2", dst: "new", want: "/files/new.qcow2"},
+		"snapshot to .qc2":            {src: "/files/a.qc2", dst: "new.qc2", want: "/files/new.qc2"},
+		"snapshot of qcow":            {src: "/files/old.qcow", dst: "new", want: "/files/new.qcow2"},
+		"snapshot of qcow to .qcow":   {src: "/files/old.qcow", dst: "new.qcow", want: "/files/new.qcow.qcow2"},
+		"copy":                        {src: "/files/win/b.qcow2", dst: "new", sameFormat: true, want: "/files/win/new.qcow2"},
+		"copy of qcow2 to .qcow":      {src: "/files/a.qc2", dst: "new.qcow", sameFormat: true, want: "/files/new.qcow.qcow2"},
+		"copy of qcow":                {src: "/files/old.qcow", dst: "new", sameFormat: true, want: "/files/new.qcow"},
+		"copy of qcow to .qcow":       {src: "/files/old.qcow", dst: "/abs/new.qcow", sameFormat: true, want: "/abs/new.qcow"},
+		"copy of qcow to .qc2":        {src: "/files/old.qcow", dst: "new.qc2", sameFormat: true, want: "/files/new.qc2"},
+		"copy of qcow to other":       {src: "/files/old.qcow", dst: "new.img", sameFormat: true, want: "/files/new.img.qcow"},
+		"copy of a .qcow2.qcow image": {src: "/files/a.qcow2.qcow", dst: "../b", sameFormat: true, want: "/b.qcow"},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := normalizeDstDisk(tt.src, tt.dst, tt.sameFormat); got != tt.want {
+				t.Errorf("normalizeDstDisk(%q, %q, %t) = %q, want %q", tt.src, tt.dst, tt.sameFormat, got, tt.want)
+			}
+		})
+	}
+}
+
+// A new image's name becomes an absolute path with an extension of the format it has, kept as given once it has
+// one, so normalizing it again changes nothing.
 func TestNormalizeDstDiskProperties(t *testing.T) {
 	t.Parallel()
 
 	rapid.Check(t, func(t *rapid.T) {
-		src := rapid.SampledFrom([]string{"/files/a.qc2", "/files/win/b.qcow2", "/outside/c.img"}).Draw(t, "src")
+		src := rapid.SampledFrom([]string{"/files/a.qc2", "/files/win/b.qcow2", "/outside/c.img", "/files/old.qcow"}).
+			Draw(t, "src")
 		dst := rapid.SampledFrom([]string{"", "/abs/", "sub/", "../", "./"}).Draw(t, "folder") +
-			rapid.SampledFrom([]string{"new", "new.qc2", "new.qcow2", "new.img", "new.qcow2.bak"}).Draw(t, "name")
+			rapid.SampledFrom([]string{"new", "new.qc2", "new.qcow2", "new.qcow", "new.img", "new.qcow2.bak"}).
+				Draw(t, "name")
+		sameFormat := rapid.Bool().Draw(t, "sameFormat")
 
-		got := normalizeDstDisk(src, dst)
+		got := normalizeDstDisk(src, dst, sameFormat)
 
-		if !filepath.IsAbs(got) || (!strings.HasSuffix(got, ".qcow2") && !strings.HasSuffix(got, ".qc2")) {
-			t.Fatalf("normalizeDstDisk(%q, %q) = %q, want an absolute .qcow2 or .qc2 path", src, dst, got)
+		exts := []string{".qcow2", ".qc2"}
+		if sameFormat && strings.HasSuffix(src, ".qcow") {
+			exts = append(exts, ".qcow")
 		}
 
-		if again := normalizeDstDisk(src, got); again != got {
-			t.Fatalf("normalizeDstDisk(%q, %q) = %q, want it unchanged", src, got, again)
+		if !filepath.IsAbs(got) || !slices.ContainsFunc(exts, func(ext string) bool { return strings.HasSuffix(got, ext) }) {
+			t.Fatalf("normalizeDstDisk(%q, %q, %t) = %q, want an absolute path ending in one of %q",
+				src, dst, sameFormat, got, exts)
+		}
+
+		if !sameFormat && strings.HasSuffix(got, ".qcow") {
+			t.Fatalf("normalizeDstDisk(%q, %q, false) = %q, want a qcow2 image to have no .qcow name", src, dst, got)
+		}
+
+		if again := normalizeDstDisk(src, got, sameFormat); again != got {
+			t.Fatalf("normalizeDstDisk(%q, %q, %t) = %q, want it unchanged", src, got, sameFormat, again)
 		}
 	})
+}
+
+// A snapshot of a .qcow image is a qcow2 image, so it gets .qcow2, while a copy or a rename of it keeps .qcow.
+func TestDiskActionsOnQcowImages(t *testing.T) {
+	files := useDiskFilesDir(t)
+	dir := files.dir
+
+	writeDisks(t, dir+"/old.qcow")
+
+	server := serveAs(t, "alice", disksRole(nil, "create", "update", "get")).URL + "/api/v1/disks"
+
+	for _, tc := range []struct {
+		target string
+		sent   []string
+	}{
+		{"/snapshot?disk=old.qcow&new=snap", []string{"disk snapshot " + dir + "/old.qcow " + dir + "/snap.qcow2"}},
+		{"/snapshot?disk=old.qcow&new=snap.qcow", []string{"disk snapshot " + dir + "/old.qcow " + dir + "/snap.qcow.qcow2"}},
+		{"/clone?disk=old.qcow&new=copy", nil},
+		{"/rename?disk=copy.qcow&new=moved", nil},
+		{"/clone?disk=old.qcow&new=new.qc2", nil},
+	} {
+		// each request acts on what the ones before it left
+		resp := do(t, http.MethodPost, server+tc.target, "")
+		if body := readBody(t, resp); resp.StatusCode != http.StatusOK {
+			t.Fatalf("POST /api/v1/disks%s = %d, want %d: %s", tc.target, resp.StatusCode, http.StatusOK, body)
+		}
+
+		if diff := cmp.Diff(tc.sent, files.sent(), cmpopts.EquateEmpty()); diff != "" {
+			t.Errorf("POST /api/v1/disks%s minimega commands mismatch (-want +got):\n%s", tc.target, diff)
+		}
+	}
+
+	// minimega is fake, so only the clones and the rename change files
+	want := map[string]string{
+		dir + "/old.qcow":   dir + "/old.qcow",
+		dir + "/moved.qcow": dir + "/old.qcow",
+		dir + "/new.qc2":    dir + "/old.qcow",
+	}
+
+	if diff := cmp.Diff(want, tree(t, dir)); diff != "" {
+		t.Errorf("files after the disk actions mismatch (-want +got):\n%s", diff)
+	}
 }
 
 // The disk actions refuse, before touching anything, paths outside the files

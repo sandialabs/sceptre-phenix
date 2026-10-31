@@ -172,9 +172,35 @@ describe('the disk list', () => {
 
     expect(notify.show).toHaveBeenCalledWith(
       'Cannot upload notes.tgz',
-      'Valid disk file types are .qcow2, .qc2, *_rootfs.tgz, .hdd, and .iso.',
+      'Valid disk file types are .qcow2, .qc2, .qcow, *_rootfs.tgz, .hdd, and .iso.',
     );
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['old.qcow', true],
+    ['kali.qcow2', true],
+    ['kali.qc2', true],
+    ['kali_rootfs.tgz', true],
+    ['snap.hdd', true],
+    ['tools.iso', true],
+    ['old.qcow.bak', false],
+    ['kali.img', false],
+  ])('uploads %s only when it is a disk image (%s)', async (name, sent) => {
+    axios.post.mockResolvedValue({ data: {} });
+    await upload(name);
+
+    // the file picker itself drops a file of an extension it does not accept
+    expect(axios.post).toHaveBeenCalledTimes(sent ? 1 : 0);
+  });
+
+  it('offers the disk image extensions in the file picker', async () => {
+    const wrapper = await page();
+    await byLabel(wrapper, 'Upload a disk').trigger('click');
+
+    expect(
+      wrapper.find('.modal.is-active input[type="file"]').attributes('accept'),
+    ).toBe('.qcow2,.qc2,.qcow,.tgz,.hdd,.iso');
   });
 
   it('sorts sizes by their bytes, unknown sizes first', async () => {

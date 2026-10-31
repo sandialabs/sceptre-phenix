@@ -204,7 +204,9 @@ an experiment start does (see
 [Disk Check Before a Start](experiments.md#disk-check-before-a-start)). It
 never runs `qemu-img` and sends minimega no command. It checks only the files
 on this host. When it runs out of time, it warns and gives the number of
-images it checked.
+images it checked. The `disk-chains` and `disk-formats` checks read each file
+in the images directory that the [Disks](disks.md) page lists by its extension:
+`.qcow2`, `.qc2`, `.qcow`, `_rootfs.tgz`, `.hdd`, or `.iso`.
 
 `-o json` prints the same report as one JSON object: `schemaVersion` (`1`),
 `status`, `time`, `version` (`phenix`, `label`, `commit`, `date`,

@@ -126,14 +126,14 @@ func TestGetImagesSearchesFolders(t *testing.T) {
 			deep := strings.Repeat("d/", maxDepth)
 
 			kept := []string{
-				"a.qc2", "linux/a.qc2", "win/win10.qcow2", "win/10/deep.qc2", "tools.iso",
+				"a.qc2", "linux/a.qc2", "win/win10.qcow2", "win/10/deep.qc2", "tools.iso", "win/old.qcow",
 				"files/kept.qc2", "exp1/kept.qc2", "a/b/files/kept.qc2", deep + "at-limit.qc2",
 			}
 
 			for _, rel := range append(slices.Clone(kept),
 				"exp1/files/s.hdd", "exp1/tmp/snapshot-1.qc2", "exp1/miniccc_responses/x.qc2",
 				".hidden/x.qc2", ".x.qc2", "lost+found/x.qc2", "win/lost+found/x.qc2",
-				"saved/vm/x.hdd", "transfer_1/x.qc2", "notes.txt", "h_e_v_snapshot",
+				"saved/vm/x.hdd", "transfer_1/x.qc2", "notes.txt", "h_e_v_snapshot", "old.qcow.bak",
 				deep+"d/too-deep.qc2",
 			) {
 				writeImages(t, filepath.Join(folder, rel))

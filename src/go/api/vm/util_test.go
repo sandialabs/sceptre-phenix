@@ -45,3 +45,33 @@ func TestCopyEndsWhileProgressIsPending(t *testing.T) {
 		}
 	}
 }
+
+// A new image takes the time in place of any earlier one, and keeps a qcow2 or qcow extension, as the copy it names
+// keeps the format of the image.
+func TestNewDiskName(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 10, 31, 12, 30, 45, 0, time.UTC)
+
+	tests := map[string]struct {
+		base string
+		want string
+	}{
+		"qc2":             {base: "kali.qc2", want: "kali_20261031123045.qc2"},
+		"qcow2 in folder": {base: "win/win10.qcow2", want: "win/win10_20261031123045.qcow2"},
+		"qcow version 1":  {base: "old.qcow", want: "old_20261031123045.qcow"},
+		"earlier time":    {base: "kali_20191117102805.qcow", want: "kali_20261031123045.qcow"},
+		"raw":             {base: "kali.img", want: "kali_20261031123045.img.qc2"},
+		"no extension":    {base: "kali", want: "kali_20261031123045.qc2"},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := newDiskName(tt.base, now); got != tt.want {
+				t.Errorf("newDiskName(%q) = %q, want %q", tt.base, got, tt.want)
+			}
+		})
+	}
+}

@@ -125,6 +125,12 @@ lack it). Points that are easy to miss:
 - Bulk VM actions, `POST /disks/clone/jobs` and `POST .../files/archive` start
   [background jobs](jobs.md) and answer `202` with a `Location`.
 - Workflow routes are covered in [`workflow.md`](workflow.md#rest-endpoints).
+- `GET /disks` lists the files in the minimega files directory with a known
+  extension (`.qcow2`, `.qc2`, `.qcow`, `_rootfs.tgz`, `.hdd`, `.iso`), every
+  image a topology names, and their backing images. `POST /disks/snapshot`,
+  `/clone` and `/rename` add `.qcow2` to `new` unless it ends in `.qc2` or
+  `.qcow2`. A clone or rename of a `.qcow` image keeps the qcow format, so it
+  also keeps a `.qcow` name, and adds `.qcow` rather than `.qcow2`.
 - `GET /disks` marks an image qemu cannot open (a missing backing file, a
   loop, or more than 64 images) with `brokenChain`, `chainProblem` and
   `missingBacking` (full path; empty for a loop); `backingImages` then holds

@@ -71,6 +71,8 @@ func TestBrokenImagesFormats(t *testing.T) {
 	dct.WriteQcow2(t, path("data.qc2"), dct.Qcow2{DataFile: true})
 	dct.WriteQcow2(t, path("v3.qc2"), dct.Qcow2{})
 	dct.WriteFile(t, path("raw.img.qc2"), []byte("raw"))
+	dct.WriteQcow(t, path("base.qcow"), dct.Qcow{})
+	dct.WriteQcow2(t, path("top.qc2"), dct.Qcow2{Backing: "base.qcow", BackingFormat: "qcow"})
 
 	got, err := BrokenImages(t.Context(), dir)
 	if err != nil {
@@ -79,6 +81,7 @@ func TestBrokenImagesFormats(t *testing.T) {
 
 	want := []FormatImage{
 		{Path: "aes.qc2", Problem: path("aes.qc2") + " uses the old qcow AES encryption, which qemu does not open for VMs"},
+		{Path: "base.qcow", Kind: diskchain.QcowV1},
 		{Path: "corrupt.qc2", Problem: "qemu marked " + path("corrupt.qc2") + " as corrupt"},
 		{Path: "data.qc2", Needs: []QemuNeed{{Feature: "an external data file", Version: "4.0"}}},
 		{Path: "kali.qc2", Kind: diskchain.Qcow2V2},

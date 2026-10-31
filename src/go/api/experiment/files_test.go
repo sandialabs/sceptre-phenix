@@ -386,26 +386,28 @@ func TestZipFilesArchivesTheFiles(t *testing.T) { //nolint:paralleltest // repla
 		"a.log":               "alpha",
 		"scorch/run-0/b.json": `{"ok":true}`,
 		"c.gz":                "gzipped",
+		"d.qcow":              "qcow",
 	})
 	useListedFiles(t)
 
 	var buf bytes.Buffer
 
-	zipped, err := experiment.ZipFiles("exp", []string{"a.log", "scorch/run-0/b.json", "a.log", "c.gz"}, zipLimits,
+	zipped, err := experiment.ZipFiles("exp", []string{"a.log", "scorch/run-0/b.json", "a.log", "c.gz", "d.qcow"}, zipLimits,
 		func() io.Writer { return &buf })
 	if err != nil {
 		t.Fatalf("ZipFiles(exp, ...) error = %v", err)
 	}
 
-	if diff := cmp.Diff([]string{"a.log", "scorch/run-0/b.json", "c.gz"}, zipped); diff != "" {
+	if diff := cmp.Diff([]string{"a.log", "scorch/run-0/b.json", "c.gz", "d.qcow"}, zipped); diff != "" {
 		t.Errorf("ZipFiles(exp, ...) zipped mismatch (-want +got):\n%s", diff)
 	}
 
-	// each file once, and the gzipped one stored rather than compressed again
+	// each file once, and the gzipped one and the disk image stored rather than compressed again
 	want := []zipEntry{
 		{Name: "a.log", Method: zip.Deflate, Data: "alpha"},
 		{Name: "scorch/run-0/b.json", Method: zip.Deflate, Data: `{"ok":true}`},
 		{Name: "c.gz", Method: zip.Store, Data: "gzipped"},
+		{Name: "d.qcow", Method: zip.Store, Data: "qcow"},
 	}
 	if diff := cmp.Diff(want, readZip(t, &buf)); diff != "" {
 		t.Errorf("ZipFiles(exp, ...) archive mismatch (-want +got):\n%s", diff)

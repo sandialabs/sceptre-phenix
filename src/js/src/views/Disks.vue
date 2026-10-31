@@ -374,7 +374,14 @@
 
   // the disk kinds phenix recognizes, see knownImageExtensions in
   // src/go/api/disk/details.go
-  const UPLOAD_TYPES = ['.qcow2', '.qc2', '_rootfs.tgz', '.hdd', '.iso'];
+  const UPLOAD_TYPES = [
+    '.qcow2',
+    '.qc2',
+    '.qcow',
+    '_rootfs.tgz',
+    '.hdd',
+    '.iso',
+  ];
 
   // a header refresh asked the server to inspect every image again; the next
   // disk list request to start takes it, whichever load that request serves

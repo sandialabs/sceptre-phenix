@@ -2,9 +2,9 @@
 
 The `Disks` tab lists the disk images phēnix knows about:
 
-* the images with a known extension (`.qcow2`, `.qc2`, `_rootfs.tgz`, `.hdd`,
-  `.iso`) in the minimega files directory and the folders under it, except the
-  folders described in [Images in Folders](#images-in-folders);
+* the images with a known extension (`.qcow2`, `.qc2`, `.qcow`, `_rootfs.tgz`,
+  `.hdd`, `.iso`) in the minimega files directory and the folders under it,
+  except the folders described in [Images in Folders](#images-in-folders);
 * every image an experiment's topology names, wherever it is and whatever its
   extension, as long as phēnix can open it as a regular file;
 * the images those are backed by.
@@ -268,7 +268,11 @@ the image independent.
 
 `Snapshot`, `Clone`, and `Rename` ask for a new name, which is relative to the
 image's own folder unless it is a full path in the minimega files directory;
-`.qcow2` is added unless the name ends in `.qc2` or `.qcow2`. The name must
+`.qcow2` is added unless the name ends in `.qc2` or `.qcow2`. `Clone` and
+`Rename` do not change the format of the image. Thus, for a `.qcow` image, they
+also keep a name that ends in `.qcow`. They add `.qcow`, not `.qcow2`, to a
+name that has none of these extensions. A snapshot is always a qcow2 image, so
+phēnix adds `.qcow2` to a snapshot name that ends in `.qcow`. The name must
 name a file: one that is empty, ends in `/`, or whose last part is `.` or `..`
 is refused. The folder must already exist, and none of them replaces an
 existing file.
@@ -323,9 +327,9 @@ not list, shows as its full path with `Not in your disk list` instead.
 The upload button, right of the search box, needs `upload` on `disks`. It opens
 `Upload a Disk`, where you can drop a file or click to pick one.
 
-![Upload a Disk dialog with a drop zone that accepts .qcow2, .qc2, root filesystem .tgz, .hdd and .iso files.](images/disks_upload.png){: width=500 .center}
+![Upload a Disk dialog with a drop zone that accepts .qcow2, .qc2, .qcow, root filesystem .tgz, .hdd and .iso files.](images/disks_upload.png){: width=500 .center}
 
-The dialog lists what it takes: `(Valid file types are .qcow2, .qc2,
+The dialog lists what it takes: `(Valid file types are .qcow2, .qc2, .qcow,
 *_rootfs.tgz, .hdd, and .iso)`. Anything else is refused with an error naming
 the file, before the upload starts.
 
@@ -452,6 +456,11 @@ marks these images, and the details card of an image gives its fix command,
 with a button that copies it. The
 table also lists an image that `qemu-img` cannot open for its version or
 feature bits.
+
+The table and `phenix doctor` find a qcow version 1 image in the files
+directory only when its name has a known extension, such as `.qcow`. The table
+also lists an image with a different name when a topology uses it, or when it
+backs a listed image.
 
 Before you change an image, stop each VM that uses it. To fix an image, use
 the command for its problem:

@@ -5434,10 +5434,11 @@ paths:
         - Disks
       summary: Get all available disk images
       description: >-
-        Lists the disk images in the minimega files directory and its folders.
-        It also lists the images that the topologies of the experiments use,
-        wherever they are, and the images that back any of them. Each image is
-        listed once, by its full path. The search goes at most 16 levels below
+        Lists the disk images in the minimega files directory and its folders:
+        the files with a known extension (`.qcow2`, `.qc2`, `.qcow`,
+        `_rootfs.tgz`, `.hdd` or `.iso`). It also lists the images that the
+        topologies of the experiments use, wherever they are, and the images
+        that back any of them. Each image is listed once, by its full path. The search goes at most 16 levels below
         the files directory. It leaves out hidden names (starting with `.`),
         `lost+found`, the experiment folders `<experiment>/files`,
         `<experiment>/tmp` and `<experiment>/miniccc_responses`, and the
@@ -5616,7 +5617,9 @@ paths:
             the new image, relative to the folder holding `disk` or absolute. It
             must name a file that does not exist yet. It is not empty and does
             not end in `/` or in a `.` or `..` element. The server adds `.qcow2`
-            unless it ends in `.qc2` or `.qcow2`.
+            unless it ends in `.qc2` or `.qcow2`. The snapshot is a qcow2
+            image, so the server also adds `.qcow2` to a name that ends in
+            `.qcow`.
           required: true
           schema:
             type: string
@@ -5863,7 +5866,10 @@ paths:
             the new image, relative to the folder holding `disk` or absolute. It
             must name a file that does not exist yet. It is not empty and does
             not end in `/` or in a `.` or `..` element. The server adds `.qcow2`
-            unless it ends in `.qc2` or `.qcow2`.
+            unless it ends in `.qc2` or `.qcow2`. The copy keeps the format of
+            `disk`. Thus, when `disk` ends in `.qcow`, the server also keeps a
+            name that ends in `.qcow`. It adds `.qcow`, not `.qcow2`, to a name
+            that has none of these extensions.
           required: true
           schema:
             type: string
@@ -6018,7 +6024,10 @@ paths:
             the new image, relative to the folder holding `disk` or absolute. It
             must name a file that does not exist yet. It is not empty and does
             not end in `/` or in a `.` or `..` element. The server adds `.qcow2`
-            unless it ends in `.qc2` or `.qcow2`.
+            unless it ends in `.qc2` or `.qcow2`. The image keeps its format.
+            Thus, when `disk` ends in `.qcow`, the server also keeps a name that
+            ends in `.qcow`. It adds `.qcow`, not `.qcow2`, to a name that has
+            none of these extensions.
           required: true
           schema:
             type: string

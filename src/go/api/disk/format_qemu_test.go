@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"phenix/util/diskchain"
 	"phenix/util/testenv"
 )
 
@@ -241,4 +242,63 @@ func TestFormatIssueOfAnOverlayOfARefusedImage(t *testing.T) {
 	if diff := cmp.Diff([]string{base}, got.BackingImages); diff != "" {
 		t.Errorf("GetImage(%s) backing images mismatch (-want +got):\n%s", over, diff)
 	}
+}
+
+// The disk list and the doctor scan find a qcow version 1 image that qemu-img makes by its .qcow name, alone and as
+// the backing file of a qcow2 overlay, and mark it with a warning. CI installs qemu-img.
+func TestListsQcowImagesOfQemuImg(t *testing.T) {
+	testenv.RequireCommands(t, "qemu-img")
+	ClearCache()
+	t.Cleanup(ClearCache)
+
+	dir := useFilesDir(t)
+	solo, old, over := filepath.Join(dir, "solo.qcow"), filepath.Join(dir, "old.qcow"), filepath.Join(dir, "win", "over.qc2")
+
+	if err := os.Mkdir(filepath.Dir(over), 0o750); err != nil {
+		t.Fatalf("os.Mkdir(%s) error = %v", filepath.Dir(over), err)
+	}
+
+	runQemuImg(t, "create", "-q", "-f", "qcow", solo, "1M")
+	runQemuImg(t, "create", "-q", "-f", "qcow", old, "1M")
+	runQemuImg(t, "create", "-q", "-f", "qcow2", "-b", "../old.qcow", "-F", "qcow", over)
+
+	images := listed(t, "")
+
+	v1 := formatFields{Format: "qcow", FormatVersion: 1, FormatIssue: &FormatIssue{Level: IssueWarning}}
+	want := map[string]listedImage{
+		solo: {Kind: VMImage, BackingImages: []string{}, Format: v1},
+		old:  {Kind: VMImage, BackingImages: []string{}, Format: v1},
+		over: {
+			Kind: VMImage, BackingImages: []string{old},
+			Format: formatFields{Format: "qcow2", FormatVersion: 3, FormatIssue: nil},
+		},
+	}
+
+	got := make(map[string]listedImage, len(images))
+	for path, image := range images {
+		got[path] = listedImage{Kind: image.Kind, BackingImages: image.BackingImages, Format: levelOnly(image)}
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("GetImages() mismatch (-want +got):\n%s", diff)
+	}
+
+	scan, err := BrokenImages(t.Context(), dir)
+	if err != nil {
+		t.Fatalf("BrokenImages(%s) error = %v", dir, err)
+	}
+
+	wantScan := ChainScan{Images: 3, Checked: 3, Broken: nil, Formats: []FormatImage{
+		{Path: "old.qcow", Kind: diskchain.QcowV1}, {Path: "solo.qcow", Kind: diskchain.QcowV1},
+	}}
+	if diff := cmp.Diff(wantScan, scan); diff != "" {
+		t.Errorf("BrokenImages(%s) mismatch (-want +got):\n%s", dir, diff)
+	}
+}
+
+// listedImage is what TestListsQcowImagesOfQemuImg checks of a listed image.
+type listedImage struct {
+	Kind          Kind
+	BackingImages []string
+	Format        formatFields
 }

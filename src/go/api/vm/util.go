@@ -32,6 +32,13 @@ func GetNewDiskName(expName, vmName string) (string, error) {
 		return "", fmt.Errorf("getting base disk image: %w", err)
 	}
 
+	return newDiskName(base, time.Now()), nil
+}
+
+// newDiskName is the name of a new image made from the VM image base at now: base with the time in place of any
+// earlier one. It keeps a .qcow2, .qc2 or .qcow extension, since CommitToDisk writes into a copy of the image's
+// base, which keeps its format, and adds .qc2 to any other.
+func newDiskName(base string, now time.Time) string {
 	name := strings.TrimSuffix(base, filepath.Ext(base))
 
 	// For example, if name = ubuntu_server_20191117102805, then this
@@ -40,13 +47,13 @@ func GetNewDiskName(expName, vmName string) (string, error) {
 		name = match[1]
 	}
 
-	name = name + "_" + time.Now().Format("20060102150405") + filepath.Ext(base)
+	name = name + "_" + now.Format("20060102150405") + filepath.Ext(base)
 
-	if ext := filepath.Ext(name); ext != ".qcow2" && ext != ".qc2" {
+	if ext := filepath.Ext(name); ext != ".qcow2" && ext != ".qc2" && ext != ".qcow" {
 		name += ".qc2"
 	}
 
-	return name, nil
+	return name
 }
 
 func getVMImage(expName, vmName string) (string, error) {
