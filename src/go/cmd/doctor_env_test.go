@@ -75,6 +75,7 @@ func fakeDoctorEnv(vars map[string]string, root bool) doctorEnv {
 		readFile: func(string) ([]byte, error) { return nil, os.ErrNotExist },
 		readAt:   osReadAt,
 		readDir:  os.ReadDir,
+		fsType:   func(string) (string, error) { return "ext4", nil },
 		groups:   func() ([]int, error) { return []int{1000, 100}, nil },
 		roles:    builtinRoles(),
 		pageSize: 4096,

@@ -213,6 +213,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"config-keys config keys pass",
 		"config-paths config paths pass",
 		"settings-file settings file pass",
+		"scenario-hosts scenario-hosts skip",
 		"env-overrides env overrides pass",
 		"bridge-mode bridge-mode pass",
 		"deploy-mode deploy-mode pass",
@@ -224,7 +225,10 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"log.system.max-age log.system.max-age pass",
 		"store.endpoint store.endpoint pass",
 		"store-root store root pass",
+		"store-fs store-fs pass",
 		"log.system.path log.system.path pass",
+		"secret-files secret-files pass",
+		"inject-sources inject-sources skip",
 		"base-dir.phenix base-dir.phenix pass",
 		"base-dir.minimega base-dir.minimega pass",
 		"base-dir.injects base-dir.injects pass",
@@ -235,6 +239,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"ui.jwt-signing-key ui.jwt-signing-key pass",
 		"ui.jwt-lifetime ui.jwt-lifetime pass",
 		"ui.users ui.users pass",
+		"rbac-users rbac-users skip",
 		"ui.tls ui.tls pass",
 		"ui.listen-endpoint ui.listen-endpoint pass",
 		"ui.file-server-endpoint ui.file-server-endpoint pass",
@@ -259,7 +264,6 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"qemu-img qemu-img pass",
 		"vmdb2 vmdb2 pass",
 		"filebeat filebeat pass",
-		"apps apps pass",
 		"disk disk phenix-base pass",
 		"kernel-modules kernel-modules pass",
 		"nbd nbd pass",
@@ -268,6 +272,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"image-build image-build root pass",
 		"image-build image-build loop pass",
 		"image-build image-build keyrings pass",
+		"image-configs image-configs skip",
 		"disk-chains disk chains pass",
 		"disk-formats disk formats pass",
 		"writable-images writable-images skip",
@@ -279,6 +284,9 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"disk-space disk-space files pass",
 		"disk-space disk-space inject dirs pass",
 		"image-locks image-locks skip",
+		"apps apps pass",
+		"scenario-apps scenario-apps skip",
+		"app-runtimes app-runtimes pass",
 		"tunneler-download tunneler-download pass",
 		"webshark webshark pass",
 		"ui.features ui.features pass",
@@ -289,7 +297,9 @@ func TestDoctorChecksFromInput(t *testing.T) {
 	withStore := replaceNamedRows(allPass, "writable-images writable-images pass", "leftovers leftovers snapshots pass",
 		"leftovers leftovers files pass", "leftovers leftovers mounts pass", "image-locks image-locks pass",
 		"state-drift state-drift experiments pass", "state-drift state-drift namespaces pass", "vlans vlans pinned pass",
-		"vlans vlans free pass", "schedule-hosts schedule-hosts pass", "cc-clients cc-clients pass")
+		"vlans vlans free pass", "schedule-hosts schedule-hosts pass", "cc-clients cc-clients pass",
+		"scenario-hosts scenario-hosts pass", "inject-sources inject-sources pass", "rbac-users rbac-users pass",
+		"image-configs image-configs pass", "scenario-apps scenario-apps pass")
 
 	storeFile := filepath.Join(dir, "valid.bdb")
 	if err := os.WriteFile(storeFile, doctorFilesBolt(doctorFilesPageSize), 0o600); err != nil {
@@ -405,7 +415,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		},
 		"no jwt key": {
 			settings: map[string]string{"ui.jwt-signing-key": ""},
-			want:     with("ui.jwt-signing-key", "ui.jwt-signing-key ui.jwt-signing-key warn", false),
+			want: replaceRows(with("ui.jwt-signing-key", "ui.jwt-signing-key ui.jwt-signing-key warn", false),
+				"rbac-users rbac-users pass"),
 		},
 		"bad grace period": {
 			settings: map[string]string{"ui.shutdown-grace-period": "5s"},
@@ -439,7 +450,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			settings: map[string]string{"ui.jwt-signing-key": "", "ui.proxy-auth-header": "X-Forwarded-User"},
 			want: replaceRows(
 				with("ui.users", "ui.proxy-auth-header ui.proxy-auth-header warn", true),
-				"ui.jwt-signing-key ui.jwt-signing-key warn",
+				"ui.jwt-signing-key ui.jwt-signing-key warn", "rbac-users rbac-users pass",
 			),
 		},
 		"proxy header with sign-in": {
@@ -553,7 +564,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				in.settings["log.level"] = resolvedSetting{value: "debug", text: "debug", source: sourceEnv}
 			},
 			want: replaceRows(
-				append(append(slices.Clone(allPass[:4]), "env PHENIX_LOG_LEVEL pass"), allPass[4:]...),
+				append(append(slices.Clone(allPass[:5]), "env PHENIX_LOG_LEVEL pass"), allPass[5:]...),
 				"env-overrides env overrides warn",
 			),
 		},
@@ -565,7 +576,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			},
 			// after the config checks, in name order
 			want: replaceRows(
-				append(append(slices.Clone(allPass[:4]), "env PATH pass", "env PHENIX_LOG_LEVEL warn"), allPass[4:]...),
+				append(append(slices.Clone(allPass[:5]), "env PATH pass", "env PHENIX_LOG_LEVEL warn"), allPass[5:]...),
 				"log.level log.level warn",
 			),
 		},
@@ -648,7 +659,7 @@ func TestParseDoctorSkip(t *testing.T) {
 		"id": {args: []string{"--skip", "minimega-env,server"}, want: []string{"minimega-env", "server"}},
 		"group of several": {
 			args: []string{"--skip", "config"},
-			want: []string{"config-file", "config-keys", "config-paths", "settings-file", "users-file"},
+			want: []string{"config-file", "config-keys", "config-paths", "scenario-hosts", "settings-file", "users-file"},
 		},
 		"settings group": {
 			args: []string{"--skip", "settings"},
@@ -664,13 +675,13 @@ func TestParseDoctorSkip(t *testing.T) {
 		"auth, tls and socket groups": {
 			args: []string{"--skip", "auth,tls", "--skip", "socket"},
 			want: []string{
-				"proxy-jwt", "ui.file-server-endpoint", "ui.jwt-lifetime", "ui.jwt-signing-key", "ui.listen-endpoint",
-				"ui.proxy-auth-header", "ui.tls", "ui.users", "unix-socket", "unix-socket-gid",
+				"proxy-jwt", "rbac-users", "ui.file-server-endpoint", "ui.jwt-lifetime", "ui.jwt-signing-key",
+				"ui.listen-endpoint", "ui.proxy-auth-header", "ui.tls", "ui.users", "unix-socket", "unix-socket-gid",
 			},
 		},
 		"unknown": {
 			args:    []string{"--skip", "minimega,mm,cofnig"},
-			wantErr: `--skip: unknown check "mm", "cofnig". Checks: config-file, users-file, config-keys, config-paths, settings-file, env,`,
+			wantErr: `--skip: unknown check "mm", "cofnig". Checks: config-file, users-file, config-keys, config-paths, settings-file, scenario-hosts, env,`,
 		},
 	}
 
@@ -690,7 +701,7 @@ func TestParseDoctorSkip(t *testing.T) {
 					t.Fatalf("parseDoctorSkip(%v) error = %v, want prefix %q", tc.args, err, tc.wantErr)
 				}
 
-				groups := "Groups: config, env, settings, files, dirs, ui, auth, tls, socket, server, minimega, tools, images, features"
+				groups := "Groups: config, env, settings, files, dirs, ui, auth, tls, socket, server, minimega, tools, images, apps, features"
 				if !strings.HasSuffix(err.Error(), groups) {
 					t.Errorf("parseDoctorSkip(%v) error = %v, want the groups listed", tc.args, err)
 				}
@@ -816,7 +827,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 52 passed, 18 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 56 passed, 22 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -842,8 +853,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 52 passed, 18 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"70 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 56 passed, 22 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"78 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

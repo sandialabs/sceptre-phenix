@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -176,6 +177,23 @@ func List() []string {
 	}
 
 	names = append(names, shell.FindCommandsWithPrefix(UserAppPrefix)...)
+
+	return names
+}
+
+// BuiltinApps returns, sorted, the names of the apps built into phenix: the
+// default apps and the other apps that register themselves. phenix runs a
+// phenix-app-<name> on PATH for any other name.
+func BuiltinApps() []string {
+	names := make([]string, 0, len(apps))
+
+	for name := range apps {
+		if name != "user-shell" {
+			names = append(names, name)
+		}
+	}
+
+	slices.Sort(names)
 
 	return names
 }

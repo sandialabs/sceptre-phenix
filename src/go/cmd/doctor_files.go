@@ -37,6 +37,7 @@ const (
 type boltMeta struct {
 	magic, version, pageSize uint32
 	sumOK                    bool
+	freelist, pages, txid    uint64 // the page of the free page list, the high water mark and the transaction
 }
 
 // valid reports whether bbolt accepts the meta page.
@@ -48,7 +49,7 @@ func (m boltMeta) valid() bool {
 // false when page is too short to hold one.
 func parseBoltMeta(page []byte) (boltMeta, bool) {
 	if len(page) < boltPageHeader+boltMetaSize {
-		return boltMeta{magic: 0, version: 0, pageSize: 0, sumOK: false}, false
+		return boltMeta{magic: 0, version: 0, pageSize: 0, sumOK: false, freelist: 0, pages: 0, txid: 0}, false
 	}
 
 	m := page[boltPageHeader : boltPageHeader+boltMetaSize]
@@ -62,6 +63,9 @@ func parseBoltMeta(page []byte) (boltMeta, bool) {
 		version:  order.Uint32(m[4:]),
 		pageSize: order.Uint32(m[8:]),
 		sumOK:    sum == 0 || sum == hash.Sum64(),
+		freelist: order.Uint64(m[32:]),
+		pages:    order.Uint64(m[40:]),
+		txid:     order.Uint64(m[48:]),
 	}, true
 }
 

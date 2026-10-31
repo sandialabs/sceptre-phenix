@@ -59,6 +59,10 @@ type doctorFound struct {
 	ovsShow     *doctorOVSRun      // the output of ovs-vsctl show, once a check ran it
 	leftovers   *doctorLeftovers   // what the leftovers check found that is safe to delete, once it ran
 	mesh        *doctorMesh        // the nodes of minimega's mesh, once a check read them
+
+	stored    map[string]*doctorStored // the stored configs of each kind, once a check read them
+	storeBusy string                   // why a read of the store stopped at its lock, which later reads give
+	users     []string                 // the stored user names that rbac-users names, which --report redacts
 }
 
 // minimegaRunner sends minimega, whose base directory is base, one

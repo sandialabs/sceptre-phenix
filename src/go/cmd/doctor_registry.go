@@ -39,6 +39,7 @@ const (
 	doctorGroupMinimega = "minimega"
 	doctorGroupTools    = "tools"
 	doctorGroupImages   = "images"
+	doctorGroupApps     = "apps"
 	doctorGroupFeatures = "features"
 )
 
@@ -89,6 +90,7 @@ type doctorConfig struct {
 	keys   map[string]bool
 	values map[string]fileSetting // by key; the users file's win, as phenix merges it last
 	used   string                 // the config file read, or ""
+	files  map[string][]string    // by key, every file that sets it
 }
 
 // fileSetting is a setting's value in a config file. value may be a secret.
@@ -218,6 +220,7 @@ func resolveSettings(
 func doctorConfigFiles(paths []string) doctorConfig {
 	config := doctorConfig{
 		checks: make(map[string]doctorCheck), keys: make(map[string]bool), values: make(map[string]fileSetting), used: "",
+		files: make(map[string][]string),
 	}
 
 	for _, name := range []string{"config", usersConfigName} {
@@ -238,6 +241,7 @@ func doctorConfigFiles(paths []string) doctorConfig {
 			for _, key := range v.AllKeys() {
 				config.keys[key] = true
 				config.values[key] = fileSetting{file: v.ConfigFileUsed(), value: v.Get(key)}
+				config.files[key] = append(config.files[key], v.ConfigFileUsed())
 			}
 		case errors.As(err, &viper.ConfigFileNotFoundError{}):
 			if name == usersConfigName {
@@ -398,6 +402,10 @@ func doctorChecks() []doctorCheckDef {
 			},
 		},
 		{
+			id: scenarioHostsName, group: doctorGroupConfig, name: scenarioHostsName, hint: scenarioHostsHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(scenarioHostsCheck(ctx, in)) },
+		},
+		{
 			id: "env", group: doctorGroupEnv, name: "environment variables",
 			hint: func(c doctorCheck) string { return "fix or unset " + c.Name },
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
@@ -471,6 +479,10 @@ func doctorChecks() []doctorCheckDef {
 			},
 		},
 		{
+			id: storeFSName, group: doctorGroupFiles, name: storeFSName, hint: storeFSHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(storeFSCheck(in)) },
+		},
+		{
 			id: "log.system.path", group: doctorGroupFiles, name: "log.system.path",
 			hint: hintText("set log.system.path to a file or directory this user can write"),
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
@@ -488,6 +500,14 @@ func doctorChecks() []doctorCheckDef {
 
 				return one(in.env.writableFileCheck("log.console", console))
 			},
+		},
+		{
+			id: secretFilesName, group: doctorGroupFiles, name: secretFilesName, hint: secretFilesHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(secretFilesCheck(in)) },
+		},
+		{
+			id: injectSourcesName, group: doctorGroupFiles, name: injectSourcesName, hint: injectSourcesHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(injectSourcesCheck(ctx, in)) },
 		},
 		baseDirDef("base-dir.phenix", "", true),
 		// minimega owns its base directory; phenix only uses its socket
@@ -573,6 +593,10 @@ func doctorChecks() []doctorCheckDef {
 
 				return one(proxyHeaderCheck(in.env, header, in.text("ui.jwt-signing-key")))
 			},
+		},
+		{
+			id: rbacUsersName, group: doctorGroupAuth, name: rbacUsersName, hint: rbacUsersHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(rbacUsersCheck(ctx, in)) },
 		},
 		{
 			id: "ui.tls", group: doctorGroupTLS, name: "ui.tls",
@@ -683,10 +707,6 @@ func doctorChecks() []doctorCheckDef {
 			},
 		},
 		{
-			id: "apps", group: doctorGroupTools, name: "apps", hint: nil,
-			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(in.env.appsCheck()) },
-		},
-		{
 			id: "disk", group: doctorGroupTools, name: "disk",
 			hint: hintText("increase the free space on the filesystem that the row names"),
 			run:  diskChecks,
@@ -706,6 +726,10 @@ func doctorChecks() []doctorCheckDef {
 		{
 			id: imageBuildName, group: doctorGroupTools, name: imageBuildName, hint: imageBuildHint,
 			run: imageBuildChecks,
+		},
+		{
+			id: imageConfigsName, group: doctorGroupTools, name: imageConfigsName, hint: imageConfigsHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(imageConfigsCheck(ctx, in)) },
 		},
 		{
 			id: "disk-chains", group: doctorGroupImages, name: diskChainsName, hint: diskChainsHint,
@@ -728,6 +752,18 @@ func doctorChecks() []doctorCheckDef {
 		{
 			id: imageLocksName, group: doctorGroupImages, name: imageLocksName, hint: imageLocksHint,
 			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(imageLocksCheck(ctx, in)) },
+		},
+		{
+			id: "apps", group: doctorGroupApps, name: "apps", hint: nil,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(in.env.appsCheck()) },
+		},
+		{
+			id: scenarioAppsName, group: doctorGroupApps, name: scenarioAppsName, hint: scenarioAppsHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(scenarioAppsCheck(ctx, in)) },
+		},
+		{
+			id: appRuntimesName, group: doctorGroupApps, name: appRuntimesName, hint: appRuntimesHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(appRuntimesCheck(in)) },
 		},
 		{
 			id: web.FeatureTunnelerDownload, group: doctorGroupFeatures, name: web.FeatureTunnelerDownload,
@@ -823,7 +859,7 @@ func runDoctorChecksFound(
 	run := *input
 	run.found = &doctorFound{
 		minimegaUp: false, minimegaArgs: nil, images: nil, experiments: nil, inventory: nil, ovsShow: nil, leftovers: nil,
-		mesh: nil,
+		mesh: nil, stored: nil, storeBusy: "", users: nil,
 	}
 	in := &run
 

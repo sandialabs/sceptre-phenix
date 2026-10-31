@@ -156,6 +156,68 @@ that list and saves it; every open after that reads the saved list instead. This
 happens on its own, so there is no need to delete or recreate `store.bdb` after
 an upgrade, and an earlier release can still open a store this one has written.
 
+### The Store Is on a Network Filesystem or Has Many Free Pages
+
+BoltDB locks the store file and syncs each write to the disk. On a network
+filesystem, such as NFS or SMB, or on a FUSE filesystem, such as sshfs, the
+lock or the sync can fail. Then two processes can write to one store, or a
+write can be lost. The `store-fs` check of `phenix doctor` warns about such a
+filesystem. Set `store.endpoint` to a path on a local disk.
+
+BoltDB does not make the store file smaller when phēnix deletes data. It
+keeps the free pages for later writes. `store-fs` warns when a store file of
+more than 100 MiB has more than 50% free pages. To make the file smaller, do
+these steps:
+
+1. Stop `phenix ui`.
+2. Copy the store file to a backup.
+3. Install the bbolt tool with `go install go.etcd.io/bbolt/cmd/bbolt@latest`.
+4. Run `bbolt compact -o <new file> <store file>`.
+5. Replace the store file with the new file. Keep the owner of the store
+   file and the mode `0600`.
+6. Start `phenix ui`.
+
+### Files That Hold Secrets Are Readable by Other Users
+
+The `secret-files` check of `phenix doctor` warns when the group or other
+users can read a file that holds a secret. These files are the TLS key, a
+config or users file that sets `ui.jwt-signing-key` or `ui.users`, and the
+store file. The check also warns when the TLS key or such a config file
+belongs to a user other than root or the user that runs phēnix. To repair
+the files, do these steps:
+
+1. Run `phenix doctor -p -x` and read the `secret-files` row.
+2. Run `chmod 600 <file>` for each file that the row names.
+3. If the row says that a file belongs to another user, run
+   `chown <user> <file>`. `<user>` is the user that runs `phenix ui`.
+
+### An App or SCORCH Component Is Not Found
+
+phēnix runs an app that it does not build in as the program
+`phenix-app-<app>` on `PATH`. SCORCH runs a component that it does not build
+in as `phenix-scorch-component-<type>`. When the program is not on `PATH`, or
+this user cannot run it, the experiment start or the SCORCH run fails:
+
+```text
+external user app phenix-app-foo does not exist in your path: user app not found
+```
+
+The `scenario-apps` check of `phenix doctor` names each app and component of
+a stored scenario or experiment that has no program. The `app-runtimes` check
+names each program that this user cannot run. To repair them, do these
+steps:
+
+1. Run `phenix doctor -p -x` and read the `scenario-apps` and `app-runtimes`
+   rows.
+2. Install the app, or add its directory to `PATH` for the user that runs
+   `phenix ui`. In the Docker deployment, install it in the image.
+3. Make the program executable with `chmod +x <path>`.
+4. If the `#!` line names an interpreter that does not exist, install the
+   interpreter. Or install the app package again in an environment that has
+   the interpreter.
+5. If the `#!` line ends in a carriage return, change the Windows line ends
+   to Unix line ends with `dos2unix <path>`.
+
 ### Reserved Experiment Names
 
 An experiment cannot be named `minimega`, `__phenix__` or `all`, in any mix of
@@ -223,6 +285,16 @@ directory), a stale socket file, or a user that may not connect. Its
 the `-filepath` directory does not exist for phēnix, which then cannot find
 the images minimega launches. In a container, mount that directory at the
 same path for both, as the Docker Compose setup does with `/phenix`.
+
+### A Start Fails Because an Inject Source Does Not Exist
+
+minimega `disk inject` copies each injection source into the snapshot of a VM
+with `cp`. When a source does not exist, the copy fails with
+`cp: cannot stat`, and the start fails. phēnix finds a relative source in the
+`baseDir` of the experiment. The `inject-sources` check of `phenix doctor`
+names each source of a stored experiment or topology that does not exist.
+Put the file at the path, or change the `src` of the injection. In a
+container, mount the path at the same location for phēnix and minimega.
 
 ### Injects Fail With an nbd Error
 
@@ -412,3 +484,9 @@ missing script and keyring. To repair them, do these steps:
    release to `/usr/share/debootstrap/scripts`.
 3. For Kali on a host that is not Kali, see the Kali host setup in the
    `phenix-image` skill (`skills/phenix-image/references/environment.md`).
+
+The `image-configs` check of `phenix doctor` warns when an overlay directory
+of a stored image config does not exist, because `vmdb2` cannot copy it into
+the image. Create the directory, or remove it from the config with
+`phenix image remove <config> --overlays <path>`. A script file that is not on
+disk does not stop the build: the config holds a copy of each script.

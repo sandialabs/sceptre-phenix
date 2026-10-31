@@ -158,10 +158,9 @@ const doctorDesc = `Check the phenix configuration without a running server
   image whose backing chain is broken. The disk-formats check reads the same
   headers, and warns about each image in an old or unsupported format, such as
   qcow2 version 2, or one that qemu refuses. The tools and features checks look for
-  qemu-img, vmdb2 and filebeat on PATH, list the user apps and SCORCH
-  components there, measure free disk space, report whether phenix ui turns
-  on tunneler downloads and WebShark (relative to the working directory), and
-  check ui.features and ui.logs.minimega-path. --skip takes a check or a group of
+  qemu-img, vmdb2 and filebeat on PATH, measure free disk space, report
+  whether phenix ui turns on tunneler downloads and WebShark (relative to the
+  working directory), and check ui.features and ui.logs.minimega-path. --skip takes a check or a group of
   checks; an unknown name fails and lists the valid ones. Secret values, such
   as the JWT signing key and initial users, are redacted. doctor exits 1 when
   a check fails, or with --strict when one warns, and 0 otherwise.
@@ -216,14 +215,31 @@ const doctorDesc = `Check the phenix configuration without a running server
   VMs that phenix needs miniccc in but that have no client, and the clients
   that minimega logged with another miniccc version after their VMs launched.
 
-  The store-file check reads only the first two pages of the store file.
-  The image-build, writable-images, leftovers, image-locks, state-drift,
-  vlans, schedule-hosts and cc-clients checks open the store through BoltDB,
-  once in a run. doctor opens it read-only, and waits
-  at most --timeout for the lock. doctor opens no log file, writes no file
-  and binds no port, so it works while phenix ui is stopped. Before any
-  command runs, phenix creates the config directory with an empty
-  config.yaml when it finds no config file, and the default log directory.
+  The apps group lists the user apps and SCORCH components on PATH.
+  scenario-apps names each app and SCORCH component type of a stored scenario
+  or experiment that is not built in and not on PATH. app-runtimes names each
+  of those programs that this user cannot run, such as a program whose #!
+  line names an interpreter that does not exist.
+
+  Other checks compare the stored configs with this host. scenario-hosts
+  names the hosts of scenario apps that are not nodes of the topology.
+  inject-sources names the inject sources that do not exist. image-configs
+  names the overlay directories of stored image configs that do not exist.
+  rbac-users, only with sign-in on, names the users with an unknown role, and
+  the names of deleted experiments and users in roles. store-fs warns when the
+  store is on a network or FUSE filesystem, or when a large store has many
+  free pages. secret-files warns when the group or others can read a file
+  that holds a secret, such as the TLS key, and never reads the contents.
+
+  The store-file and store-fs checks read the pages of the store file that
+  they need without the lock. The other checks that read the store open it
+  through BoltDB, once for each kind of config in a run. doctor opens it
+  read-only, and waits at most --timeout for the lock. After one read waits
+  for the lock in vain, the other reads do not wait. doctor opens no log
+  file, writes no file and binds no port, so it works while phenix ui is
+  stopped. Before any command runs, phenix creates the config directory with
+  an empty config.yaml when it finds no config file, and the default log
+  directory.
   doctor connects to the unix socket as a client only, never creating or
   removing it. It sends minimega only commands that change nothing (version,
   args, mesh status, mesh list all and namespace, then vm info, tap, capture,

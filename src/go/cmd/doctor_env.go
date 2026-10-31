@@ -55,9 +55,10 @@ type doctorEnv struct {
 	readFile    func(string) ([]byte, error)
 	readAt      func(path string, off int64, n int) ([]byte, error) // at most n bytes, from off
 	readDir     func(string) ([]os.DirEntry, error)
-	groups      func() ([]int, error) // the groups this process is in
-	roles       []string              // the built-in roles, or nil when unknown
-	pageSize    int                   // the host's memory page size, as bbolt reads it
+	fsType      func(string) (string, error) // the type of the filesystem that holds a path, such as ext4 or nfs
+	groups      func() ([]int, error)        // the groups this process is in
+	roles       []string                     // the built-in roles, or nil when unknown
+	pageSize    int                          // the host's memory page size, as bbolt reads it
 	root        bool
 }
 
@@ -76,6 +77,7 @@ func osDoctorEnv() doctorEnv {
 		readFile:    os.ReadFile,
 		readAt:      osReadAt,
 		readDir:     os.ReadDir,
+		fsType:      filesystemType,
 		groups: func() ([]int, error) {
 			groups, err := os.Getgroups()
 

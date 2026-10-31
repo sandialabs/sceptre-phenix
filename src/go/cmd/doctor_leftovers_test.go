@@ -572,7 +572,7 @@ func TestDoctorLeftoversHint(t *testing.T) {
 func TestDoctorDecodeExperiment(t *testing.T) {
 	t.Parallel()
 
-	yes, no := true, false
+	yes, no, zero := true, false, 0
 
 	exp := types.NewExperiment(store.ConfigMetadata{Name: "e1"})
 	exp.Spec.SetExperimentName("e1")
@@ -586,17 +586,26 @@ func TestDoctorDecodeExperiment(t *testing.T) {
 		{
 			GeneralF:     &v1.General{HostnameF: "b", SnapshotF: &yes},
 			HardwareF:    &v1.Hardware{OSTypeF: "linux", DrivesF: []*v1.Drive{{ImageF: "c.qc2"}}},
+			InjectionsF:  []*v1.Injection{{SrcF: "/injects/b.txt", DstF: "/b.txt"}, {SrcF: "rel.txt", DstF: "/r.txt"}},
 			NetworkF:     &v1.Network{InterfacesF: []*v1.Interface{{VLANF: "OTHER"}}},
 			AnnotationsF: map[string]any{"phenix/startup-via-cc": true},
 			DelayF:       &v1.Delay{C2F: []v1.C2Delay{{HostnameF: "e"}}},
 		},
 		{GeneralF: &v1.General{HostnameF: "c", DoNotBootF: &yes}, HardwareF: &v1.Hardware{}},
 		{ExternalF: &yes, GeneralF: &v1.General{HostnameF: "d"}},
-		{GeneralF: &v1.General{HostnameF: "e"}, HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "e.qc2"}}}},
+		{
+			GeneralF:    &v1.General{HostnameF: "e", SnapshotF: &yes},
+			HardwareF:   &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "e.qc2", InjectPartitionF: &zero}}},
+			InjectionsF: []*v1.Injection{{SrcF: "/injects/e.txt", DstF: "/e.txt"}},
+		},
 		{GeneralF: &v1.General{HostnameF: "f"}, HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "skip.qc2"}}}},
 	}})
 	exp.Spec.SetScenario(&v2.ScenarioSpec{AppsF: []*v2.ScenarioApp{
 		{NameF: "soh", MetadataF: map[string]any{"skipHosts": []any{"a", "skip.qc2"}}},
+		{NameF: "ntp", HostsF: []*v2.ScenarioAppHost{{HostnameF: "a"}, {HostnameF: "gone"}}},
+		{NameF: "scorch", MetadataF: map[string]any{"components": []any{
+			map[string]any{"name": "pause"}, map[string]any{"name": "mine", "type": "custom"},
+		}}},
 	}})
 	exp.Spec.SetSchedule(map[string]string{"a": "node1"})
 
@@ -619,12 +628,19 @@ func TestDoctorDecodeExperiment(t *testing.T) {
 		name: "e1", baseDir: "/phenix/experiments/e1", running: true,
 		vms: []doctorVM{
 			{name: "a", snapshot: false, images: []string{"a.qc2", "/data/b.qc2"}},
-			{name: "b", snapshot: true, images: []string{"c.qc2"}, cc: "the startup app sends its scripts through miniccc"},
-			{name: "e", images: []string{"e.qc2"}, cc: "the start of b waits for its miniccc client"},
+			{
+				name: "b", snapshot: true, images: []string{"c.qc2"}, cc: "the startup app sends its scripts through miniccc",
+				injects: []string{"/injects/b.txt", "rel.txt"},
+			},
+			{name: "e", snapshot: true, images: []string{"e.qc2"}, cc: "the start of b waits for its miniccc client"},
 			{name: "f", images: []string{"skip.qc2"}},
 		},
-		vlans:     doctorVLANs{min: 200, max: 300, pinned: map[string]int{"MGMT": 250}, count: 3},
-		schedules: map[string]string{"a": "node1"},
+		vlans:      doctorVLANs{min: 200, max: 300, pinned: map[string]int{"MGMT": 250}, count: 3},
+		schedules:  map[string]string{"a": "node1"},
+		nodes:      []string{"a", "b", "c", "d", "e", "f"},
+		apps:       []string{"soh", "ntp", "scorch"},
+		components: []string{"pause", "custom"},
+		appHosts:   [][2]string{{"ntp", "a"}, {"ntp", "gone"}},
 	}
 
 	opts := cmp.AllowUnexported(doctorExperiment{}, doctorVM{}, doctorVLANs{})

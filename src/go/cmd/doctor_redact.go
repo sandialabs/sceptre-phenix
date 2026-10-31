@@ -103,6 +103,13 @@ func newDoctorRedactor(in *doctorInput) *doctorRedactor {
 	r.addUser(in.userName)
 	r.addUser(filepath.Base(in.home))
 
+	// the stored users that rbac-users names
+	if in.found != nil {
+		for _, name := range in.found.users {
+			r.addUser(name)
+		}
+	}
+
 	if in.env.lookupUID != nil && in.phenixUID != "" {
 		if u, err := in.env.lookupUID(in.phenixUID); err == nil {
 			r.addUser(u.Username)
