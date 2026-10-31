@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"regexp"
 	"sync"
 
 	"github.com/activeshadow/structs"
@@ -14,6 +15,9 @@ import (
 	"phenix/store"
 	v1 "phenix/types/version/v1"
 )
+
+// passwordCost is the bcrypt cost of stored password hashes.
+var passwordCost = bcrypt.DefaultCost //nolint:gochecknoglobals // tests lower it
 
 /*
 version: v1
@@ -50,7 +54,29 @@ var (
 
 	// ErrUserExists is returned by [NewUser] for a name another user has.
 	ErrUserExists = errors.New("user already exists")
+
+	// ErrInvalidUsername is wrapped by every error that [ValidateUsername]
+	// returns.
+	ErrInvalidUsername = errors.New("invalid username")
 )
+
+// validUsername matches a username that is one URL path segment as it is,
+// and that is not a dot segment or a resource name pattern.
+var validUsername = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+-]*$`)
+
+// ValidateUsername returns an error that wraps [ErrInvalidUsername] when u
+// does not start with an ASCII letter or digit, or contains a character other
+// than ASCII letters, digits, '.', '_', '@', '+' and '-'.
+func ValidateUsername(u string) error {
+	if !validUsername.MatchString(u) {
+		return fmt.Errorf(
+			"%w %q: start with a letter or digit, and use only letters, digits, '.', '_', '@', '+' and '-'",
+			ErrInvalidUsername, u,
+		)
+	}
+
+	return nil
+}
 
 const tokenProxied = "proxied"
 
@@ -65,9 +91,14 @@ type User struct {
 }
 
 // NewUser creates and stores the user u with the password p. For a name
-// another user has, the error wraps [ErrUserExists].
+// another user has, the error wraps [ErrUserExists]. For a name that
+// [ValidateUsername] refuses, the error wraps [ErrInvalidUsername].
 func NewUser(u, p, firstName, lastName string) (*User, error) {
-	hashed, err := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
+	if err := ValidateUsername(u); err != nil {
+		return nil, err
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(p), passwordCost)
 	if err != nil {
 		return nil, fmt.Errorf("hashing password: %w", err)
 	}
@@ -185,7 +216,7 @@ func (u User) UpdatePassword(old, newPass string) error {
 		return err
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPass), passwordCost)
 	if err != nil {
 		return fmt.Errorf("generating password hash: %w", err)
 	}
@@ -291,7 +322,7 @@ func (u User) Role() (Role, error) {
 		return *disabled, nil
 	}
 
-	return Role{Spec: u.Spec.Role}, nil //nolint:exhaustruct // partial initialization
+	return *newRole(u.Spec.Role, nil), nil
 }
 
 func (u *User) SetRole(role *Role) error {

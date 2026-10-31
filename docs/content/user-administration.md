@@ -52,7 +52,9 @@ role.
 
 ## Create a new user
 
-There are three primary ways to create new users.
+There are three primary ways to create new users. A username must start with
+a letter or digit and contain only letters, digits, `.`, `_`, `@`, `+` and `-`.
+phenix refuses other usernames and stores no user.
 
 1. Choose the `Create Account` link off the login page and complete all fields
    in the `Create a New Account` dialogue. This will initiate a message to an
