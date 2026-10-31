@@ -82,6 +82,10 @@ func CommitDisk(path string) error {
 		return err
 	}
 
+	if err := info.Refusal(); err != nil {
+		return err
+	}
+
 	if len(info.BackingImages) == 0 {
 		return fmt.Errorf("image %s has no backing image to commit to", path)
 	}

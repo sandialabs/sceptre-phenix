@@ -17,7 +17,10 @@
           }
         ],
         "backingImages": ["/phenix/images/ubuntu-22.04-base.qc2"],
-        "inUse": true
+        "inUse": true,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
       },
       {
         "kind": "VM",
@@ -35,7 +38,10 @@
           }
         ],
         "backingImages": ["/phenix/images/windows-10-base.qc2"],
-        "inUse": true
+        "inUse": true,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
       },
       {
         "kind": "VM",
@@ -53,7 +59,10 @@
           }
         ],
         "backingImages": ["/phenix/images/ubuntu-22.04-base.qc2"],
-        "inUse": true
+        "inUse": true,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
       },
       {
         "kind": "Container",
@@ -66,7 +75,10 @@
         "virtualSize": "218 MiB",
         "experiments": [],
         "backingImages": [],
-        "inUse": false
+        "inUse": false,
+        "format": "raw",
+        "formatVersion": 0,
+        "formatIssue": null
       },
       {
         "kind": "ISO",
@@ -84,7 +96,10 @@
           }
         ],
         "backingImages": [],
-        "inUse": true
+        "inUse": true,
+        "format": "raw",
+        "formatVersion": 0,
+        "formatIssue": null
       },
       {
         "kind": "VM",
@@ -102,7 +117,10 @@
           }
         ],
         "backingImages": [],
-        "inUse": true
+        "inUse": true,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
       },
       {
         "kind": "VM",
@@ -120,7 +138,10 @@
           }
         ],
         "backingImages": [],
-        "inUse": true
+        "inUse": true,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
       },
       {
         "kind": "VM",
@@ -133,7 +154,10 @@
         "virtualSize": "20 GiB",
         "experiments": [],
         "backingImages": [],
-        "inUse": false
+        "inUse": false,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
       },
       {
         "kind": "VM",
@@ -151,7 +175,10 @@
           }
         ],
         "backingImages": [],
-        "inUse": true
+        "inUse": true,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
       },
       {
         "kind": "VM",
@@ -169,7 +196,15 @@
           }
         ],
         "backingImages": [],
-        "inUse": true
+        "inUse": true,
+        "format": "qcow2",
+        "formatVersion": 2,
+        "formatIssue": {
+          "level": "warning",
+          "problem": "/phenix/images/vyos-1.3.qc2 is a qcow2 version 2 image, an old version of the format",
+          "fix": "Stop each VM that uses it, then upgrade it to version 3",
+          "command": "qemu-img amend -f qcow2 -o compat=1.1 /phenix/images/vyos-1.3.qc2"
+        }
       },
       {
         "kind": "VM",
@@ -182,7 +217,10 @@
         "virtualSize": "40 GiB",
         "experiments": [],
         "backingImages": [],
-        "inUse": false
+        "inUse": false,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
       }
     ]
   },

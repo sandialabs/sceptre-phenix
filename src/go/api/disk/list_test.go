@@ -177,7 +177,7 @@ func TestGetImagesSearchesFolders(t *testing.T) {
 			tools.Kind = ISOImage
 			want[tools.FullPath] = tools
 
-			ignore := cmpopts.IgnoreFields(Details{}, "Size", "VirtualSize", "Experiments", "BackingImages", "InUse")
+			ignore := cmpopts.IgnoreFields(Details{}, "Size", "VirtualSize", "Experiments", "BackingImages", "InUse", "Format")
 			if diff := cmp.Diff(want, listed(t, ""), ignore); diff != "" {
 				t.Errorf("GetImages(%q) mismatch (-want +got):\n%s", "", diff)
 			}
@@ -248,7 +248,7 @@ func TestGetImagesListsTopologyImages(t *testing.T) {
 		outside + "/b-only.qc2":       away("b-only.qc2", VMImage, expB),
 	}
 
-	opts := cmp.Options{cmpopts.IgnoreFields(Details{}, "Size", "VirtualSize", "InUse"), cmpopts.EquateEmpty()}
+	opts := cmp.Options{cmpopts.IgnoreFields(Details{}, "Size", "VirtualSize", "InUse", "Format"), cmpopts.EquateEmpty()}
 	if diff := cmp.Diff(want, listed(t, ""), opts); diff != "" {
 		t.Errorf("GetImages(%q) mismatch (-want +got):\n%s", "", diff)
 	}
@@ -361,7 +361,10 @@ func TestGetImagesThroughMinimega(t *testing.T) {
 		outside + "/o.img":       {Kind: UNKNOWN, Name: "o.img", FullPath: outside + "/o.img", OutsideFilesDir: true},
 	}
 
-	opts := cmp.Options{cmpopts.IgnoreFields(Details{}, "ReadOnly", "Size", "VirtualSize", "Experiments"), cmpopts.EquateEmpty()}
+	opts := cmp.Options{
+		cmpopts.IgnoreFields(Details{}, "ReadOnly", "Size", "VirtualSize", "Experiments", "Format"),
+		cmpopts.EquateEmpty(),
+	}
 	if diff := cmp.Diff(want, listed(t, ""), opts); diff != "" {
 		t.Errorf("GetImages(%q) through minimega mismatch (-want +got):\n%s", "", diff)
 	}

@@ -2,6 +2,7 @@ package disk
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 
@@ -86,6 +87,23 @@ type Details struct {
 	// MissingBacking is the full path of the missing backing file, or "" for a
 	// chain that loops, is too deep, or is not broken.
 	MissingBacking string `json:"missingBacking"`
+	// Format is the image's format as qemu-img names it, such as qcow2, qcow (version 1), raw or vmdk, or "" when it
+	// is not known.
+	Format string `json:"format"`
+	// FormatVersion is the version of a qcow2 or qcow image from its header, or 0.
+	FormatVersion int `json:"formatVersion"`
+	// FormatIssue is why the image's format needs care, or nil.
+	FormatIssue *FormatIssue `json:"formatIssue"`
+}
+
+// Refusal returns an error that says why qemu cannot open d read/write, or nil when its format issue, if any, is not
+// an error.
+func (d Details) Refusal() error {
+	if d.FormatIssue == nil || d.FormatIssue.Level != IssueError {
+		return nil
+	}
+
+	return errors.New(d.FormatIssue.Problem)
 }
 
 // setBreak records in d the break res, a cleaned walk of d's chain (see
@@ -100,6 +118,21 @@ func (d *Details) setBreak(res diskchain.Result) {
 
 	if res.Problem == diskchain.Missing {
 		d.MissingBacking = res.At
+	}
+}
+
+// setChain records in d what res, a cleaned walk of d's chain (see brokenChain), found: a break, or an image that
+// qemu refuses, with the part of the chain before it.
+func (d *Details) setChain(res diskchain.Result) {
+	switch {
+	case res.Broken():
+		d.setBreak(res)
+	case res.Refused():
+		if len(d.BackingImages) == 0 && len(res.Members) > 1 {
+			d.BackingImages = slices.Clone(res.Members[1:])
+		}
+
+		d.setRefusedBacking(res)
 	}
 }
 

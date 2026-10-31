@@ -9,9 +9,10 @@ import (
 	"testing"
 )
 
-// fakeQemuImg reports each image as qemu-img does: a qcow2 when its name ends in .qc2 or .qcow2, raw otherwise, and
-// backed by the image a sidecar <image>.backing file names (joined onto the image's folder without cleaning). A chain
-// naming a missing file cannot be read.
+// fakeQemuImg reports each image as qemu-img does: a qcow2 when its name ends in .qc2 or .qcow2, a qcow, vmdk or vdi
+// for those extensions, raw otherwise, and backed by the image a sidecar <image>.backing file names (joined onto the
+// image's folder without cleaning). A chain naming a missing file, or an image with a sidecar <image>.refuse file,
+// cannot be read.
 const fakeQemuImg = `#!/bin/sh
 echo "$*" >> "$FAKE_QEMU_IMG_CALLS"
 chain=false
@@ -21,8 +22,12 @@ for arg; do
 done
 info() {
 	[ -e "$1" ] || { echo "could not open $1" >&2; exit 1; }
+	[ -e "$1.refuse" ] && { echo "could not open $1: Unsupported qcow2 version" >&2; exit 1; }
 	case $1 in
 	*.qc2|*.qcow2) format=qcow2 ;;
+	*.qcow) format=qcow ;;
+	*.vmdk) format=vmdk ;;
+	*.vdi) format=vdi ;;
 	*) format=raw ;;
 	esac
 	printf '{"filename":"%s","format":"%s","virtual-size":1073741824,"actual-size":2048}' "$1" "$format"

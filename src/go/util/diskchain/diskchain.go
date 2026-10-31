@@ -310,6 +310,16 @@ func Exists(ctx context.Context, path string) Result {
 	return res
 }
 
+// Check returns what Walk finds at the image at path alone, whose header ParseHeader returned as h and err: the
+// problem that stops a walk at the image, if any, and the notes about it. It reads no file, so it does not find a
+// missing backing file.
+func Check(path string, h Header, err error) Result {
+	res := Result{Members: []string{path}, Problem: Whole, At: "", Detail: "", Notes: nil}
+	follow(&res, path, h, err, "")
+
+	return res
+}
+
 // follow returns the image to read after current, whose header is h (or err), or reports in res why the walk stops
 // there, adding to res the notes about current. expect is the format the image above current said current has, or ""
 // when qemu probes it.

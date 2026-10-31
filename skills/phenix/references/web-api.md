@@ -130,6 +130,14 @@ lack it). Points that are easy to miss:
   `missingBacking` (full path; empty for a loop); `backingImages` then holds
   only the readable part. phenix reads the head node's files; no CLI command
   lists these fields.
+- Each `GET /disks` image also has `format` (as qemu-img names it, such as
+  `qcow2`, `qcow` or `raw`), `formatVersion` (the qcow2 or qcow version, else
+  0) and `formatIssue`, or `null`. `formatIssue` holds `level` (`error` when
+  qemu refuses the image, `warning` for an old format, or one whose chain
+  phenix does not check), `problem`, `fix` and `command` (the qemu-img fix, or
+  empty). They come from the image header, cached with the chain. An image
+  that qemu-img cannot open for its version or feature bits is listed from
+  its header alone.
 - `GET /experiments`, `/vms`, `/disks`, `/jobs` and the experiment VM and
   file lists page with `pageNum` and `perPage` (both, from 1; `400`
   otherwise) and report the unpaged `total`; without them they return

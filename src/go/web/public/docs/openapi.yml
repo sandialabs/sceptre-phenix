@@ -5448,7 +5448,9 @@ paths:
         directory, it lists only the images that an experiment the role may
         `get` uses, or that
         back an image the role sees. Each image's experiments are cut to those
-        the role may `list`.
+        the role may `list`. An image that qemu-img cannot open because qemu
+        refuses its qcow2 version or feature bits is listed from its header,
+        with a `formatIssue` of level `error`.
       operationId: getDisks
       parameters:
         - name: expName
@@ -9616,6 +9618,58 @@ components:
           description: >-
             the full path of the missing backing file. Empty for a chain that
             loops, is too deep, or is not broken
+        format:
+          title: Format
+          example: qcow2
+          type: string
+          description: >-
+            the image's format as qemu-img names it, such as qcow2, qcow (qcow
+            version 1), raw, vmdk or qed. Empty when the server does not know
+            it
+        formatVersion:
+          title: Format Version
+          example: 3
+          type: integer
+          description: >-
+            the version of a qcow2 or qcow image from its header, such as 2 or
+            3. Zero for other formats, or when the server cannot read the header
+        formatIssue:
+          title: Format Issue
+          description: >-
+            why the image's format needs care, from its header. Null when it
+            needs no care. The server reads only the header, and runs no other
+            qemu-img command for it
+          type: object
+          nullable: true
+          properties:
+            level:
+              title: Level
+              description: >-
+                error for an image that qemu refuses to open, or to open
+                read/write. warning for an image of an old format, or of a
+                format whose backing chain the server does not check
+              type: string
+              enum: [warning, error]
+            problem:
+              title: Problem
+              example: >-
+                /phenix/images/kali.qc2 is a qcow2 version 2 image, an old
+                version of the format
+              type: string
+              description: what is wrong, in one sentence with no final period
+            fix:
+              title: Fix
+              example: Stop each VM that uses it, then upgrade it to version 3
+              type: string
+              description: what to do, in one or two sentences with no final period
+            command:
+              title: Command
+              example: qemu-img amend -f qcow2 -o compat=1.1 /phenix/images/kali.qc2
+              type: string
+              description: >-
+                the qemu-img command of the fix, with the image's full path.
+                "<new image>" in it is the name of a new image that you
+                choose. Empty when the fix needs more than one command
     Users:
       title: "Users"
       description: "Schema describing the Users resource."

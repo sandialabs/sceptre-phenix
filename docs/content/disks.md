@@ -39,6 +39,7 @@ image built on it add their own sizes.
 | :--- | :--- |
 | `Name` | The image's path within the minimega files directory, such as `win/win10.qcow2`, or its full path, with a warning icon, when it is [outside that directory](#images-outside-the-files-directory). A `Broken chain` tag marks an image whose [backing chain is broken](#broken-backing-chains). Clicking the row opens the image's details. |
 | `Kind` | `VM`, `Container`, `ISO`, or `Unknown`. |
+| `Type` | The image's format and version, such as `qcow2 v3`, `qcow2 v2`, `qcow v1`, `raw`, `vmdk` or `qed`, or `ISO` or `tgz`. A warning icon marks an old version, or a format whose backing chain phēnix does not check. An error icon marks an image that qemu refuses, or an image whose backing chain holds one. The icon's tooltip gives the problem and the fix; see [Image Format Versions](#image-format-versions). |
 | `In Use` | An icon when something holds the image open, with a tooltip naming which experiments. |
 | `Size on Disk` | How much room the file takes now. |
 | `Virtual Size` | How large the disk looks to the guest. |
@@ -46,8 +47,9 @@ image built on it add their own sizes.
 
 Every column but `Actions` sorts. `Name` sorts, and the `Find a Disk` search
 box searches, by the path the column shows, so `win/` finds every image in the
-`win` folder. `Size on Disk` and `Virtual Size` sort by their real byte count
-rather than as text, so `900 MiB` sorts below `2.1 GiB`.
+`win` folder. `Type` sorts versions as numbers. `Size on Disk` and
+`Virtual Size` sort by their real byte count rather than as text, so `900 MiB`
+sorts below `2.1 GiB`.
 
 The `In Use` tooltip reads `In use by` and the running experiments that use the
 image, for example `In use by foo, bar`, or `In use by a running experiment`
@@ -383,7 +385,10 @@ cause problems. This table shows what phēnix does for each format:
 
 With `experiment.disk-check: warn`, or in a dry run, a refused start is a
 warning. `phenix doctor` lists the images of each kind in its `disk-formats`
-row.
+row. On this page, the `Type` column of the [Disks table](#the-disks-table)
+marks these images, and the details of an image give its fix command. The
+table also lists an image that `qemu-img` cannot open for its version or
+feature bits.
 
 Before you change an image, stop each VM that uses it. To fix an image, use
 the command for its problem:

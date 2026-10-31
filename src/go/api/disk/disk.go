@@ -162,15 +162,23 @@ func (MMDiskFiles) GetImage(path string) (Details, error) {
 	var images []Details
 
 	if LocalInspection() {
+		locked, _ := lockedInodes()
+
 		entry, err := cachedChain(path)
-		if err != nil {
+		if err == nil {
+			images = chainDetails(entry, locked)
+		} else if image, ok := refusedImage(path, locked); ok {
+			images = []Details{image}
+		} else {
 			return Details{}, err
 		}
-
-		locked, _ := lockedInodes()
-		images = chainDetails(entry, locked)
 	} else {
 		images = resolveImage(path)
+		if len(images) == 0 {
+			if image, ok := refusedImage(path, nil); ok {
+				images = []Details{image}
+			}
+		}
 	}
 
 	if len(images) == 0 {
@@ -306,7 +314,14 @@ func addResolved(details map[string]Details, path string) {
 		return
 	}
 
-	for _, image := range resolveImage(path) {
+	images := resolveImage(path)
+	if len(images) == 0 {
+		if image, ok := refusedImage(path, nil); ok {
+			images = []Details{image}
+		}
+	}
+
+	for _, image := range images {
 		if _, ok := details[image.FullPath]; !ok {
 			details[image.FullPath] = image
 		}
@@ -338,6 +353,7 @@ func resolveImage(path string) []Details {
 	}
 
 	imageDetails := make([]Details, 0, len(images))
+	headers := make([]imageHeader, len(images))
 
 	for i, row := range images {
 		image := Details{ //nolint:exhaustruct // partial initialization
@@ -349,7 +365,7 @@ func resolveImage(path string) []Details {
 		}
 
 		switch {
-		case row["format"] == "qcow2":
+		case qcowFormat(row["format"]):
 			image.Kind = VMImage
 			image.BackingImages = slices.Clone(paths[i+1:])
 		case strings.HasSuffix(image.Name, "_rootfs.tgz"):
@@ -362,6 +378,9 @@ func resolveImage(path string) []Details {
 			image.Kind = UNKNOWN
 		}
 
+		headers[i] = readHeader(paths[i], paths[i])
+		image.setFormat(row["format"], headers[i])
+
 		var err error
 
 		image.InUse, err = strconv.ParseBool(row["inuse"])
@@ -372,11 +391,13 @@ func resolveImage(path string) []Details {
 		imageDetails = append(imageDetails, image)
 	}
 
+	setRefusedBackings(imageDetails, headers)
+
 	// a backing file on the last row means minimega could not read the rest of
 	// the chain; unknown is not broken, so only a chain phenix reads is checked
 	if len(images) > 0 && images[len(images)-1]["backingfile"] != "" && usableImage(path) {
 		if res, ok := brokenChain(path); ok {
-			imageDetails[0].setBreak(res)
+			imageDetails[0].setChain(res)
 		}
 	}
 

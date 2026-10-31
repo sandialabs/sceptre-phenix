@@ -113,6 +113,38 @@ func TestWalkMatchesModel(t *testing.T) {
 	})
 }
 
+// Check finds at any qcow2 image what Walk finds there: the notes about the image, and the problem when the walk
+// stops at it rather than at its missing backing file.
+func TestCheckMatchesWalk(t *testing.T) {
+	t.Parallel()
+
+	path := t.TempDir() + "/top.qc2"
+
+	rapid.Check(t, func(rt *rapid.T) {
+		q := dct.Qcow2{
+			Version:    rapid.SampledFrom([]int{2, 3}).Draw(rt, "version"),
+			Backing:    rapid.SampledFrom([]string{"", "missing.qc2"}).Draw(rt, "backing"),
+			Encryption: uint32(rapid.IntRange(0, 3).Draw(rt, "encryption")),
+			Features:   rapid.Uint64Range(0, 1<<7-1).Draw(rt, "features"),
+			Zstd:       rapid.Bool().Draw(rt, "zstd"),
+		}
+		data := q.Bytes()
+		dct.WriteFile(t, path, data)
+
+		walk := diskchain.Walk(t.Context(), path)
+		want := diskchain.Result{Members: []string{path}, Notes: walk.Notes}
+
+		if walk.At == path {
+			want.Problem, want.At, want.Detail = walk.Problem, walk.At, walk.Detail
+		}
+
+		h, err := diskchain.ParseHeader(bytes.NewReader(data))
+		if diff := cmp.Diff(want, diskchain.Check(path, h, err), cmpopts.EquateEmpty()); diff != "" {
+			rt.Fatalf("Check(%+v) mismatch with Walk (-want +got):\n%s", q, diff)
+		}
+	})
+}
+
 // ParseHeader never panics, and what it parses is a header qemu could parse: random bytes, often after a qcow2 magic
 // or a seed header.
 func TestParseHeaderProperties(t *testing.T) {

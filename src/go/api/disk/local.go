@@ -61,13 +61,15 @@ type fileStamp struct {
 
 // cacheEntry is an image's backing chain, the image first, as last inspected,
 // with a stamp and the cleaned path (see mm.CleanBackingPath) of every file in
-// the chain. For a broken chain, broken is the walk that found the break, and
-// stamps also hold the files it read and the folder of a missing file.
+// the chain, and what the header of each says about its format. For a chain
+// that qemu cannot open, broken is the walk that found why, and stamps also
+// hold the files it read and the folder of a missing file.
 type cacheEntry struct {
-	chain  []qemuImage
-	stamps []fileStamp
-	paths  []string
-	broken diskchain.Result
+	chain   []qemuImage
+	stamps  []fileStamp
+	paths   []string
+	headers []imageHeader
+	broken  diskchain.Result
 }
 
 // ClearCache forgets every inspected image, so the next listing inspects them
@@ -180,9 +182,10 @@ func cachedChain(path string) (cacheEntry, error) {
 	}
 
 	entry = cacheEntry{ //nolint:exhaustruct // addBreak sets broken
-		chain:  chain,
-		stamps: make([]fileStamp, 0, len(chain)),
-		paths:  make([]string, 0, len(chain)),
+		chain:   chain,
+		stamps:  make([]fileStamp, 0, len(chain)),
+		paths:   make([]string, 0, len(chain)),
+		headers: make([]imageHeader, 0, len(chain)),
 	}
 
 	for i, image := range chain {
@@ -201,6 +204,8 @@ func cachedChain(path string) (cacheEntry, error) {
 		} else {
 			entry.paths = append(entry.paths, mm.CleanBackingPath(stamp.path))
 		}
+
+		entry.headers = append(entry.headers, readHeader(stamp.path, entry.paths[i]))
 	}
 
 	cacheable := complete
@@ -219,9 +224,9 @@ func cachedChain(path string) (cacheEntry, error) {
 	return entry, nil
 }
 
-// addBreak records in e why the chain of the image at path, which qemu-img
-// could not read to its base, is broken, if it is. It reports whether e can be
-// cached: the chain is broken, and stamps tell when the files that break it
+// addBreak records in e why qemu cannot open the chain of the image at path,
+// which qemu-img could not read to its base. It reports whether e can be
+// cached: brokenChain found why, and stamps tell when the files it read
 // change, including the folder in which a missing file would appear.
 func (e *cacheEntry) addBreak(path string) bool {
 	res, ok := brokenChain(path)
@@ -254,13 +259,14 @@ func (e *cacheEntry) addBreak(path string) bool {
 
 // brokenChain walks the backing chain of the image at path and returns the
 // walk, its paths cleaned (see mm.CleanBackingPath), when qemu cannot open the
-// image (see diskchain.Result.Broken).
+// image: the chain is broken, or qemu refuses an image of it (see
+// diskchain.Result.Broken and diskchain.Result.Refused).
 func brokenChain(path string) (diskchain.Result, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), qemuImgTimeout)
 	defer cancel()
 
 	res := diskchain.Walk(ctx, path)
-	if !res.Broken() {
+	if !res.Broken() && !res.Refused() {
 		return diskchain.Result{}, false
 	}
 
@@ -357,7 +363,7 @@ func chainDetails(entry cacheEntry, locked map[uint64]bool) []Details {
 		}
 
 		switch {
-		case image.Format == "qcow2":
+		case qcowFormat(image.Format):
 			details.Kind = VMImage
 
 			details.BackingImages = slices.Clone(entry.paths[i+1:])
@@ -371,11 +377,15 @@ func chainDetails(entry cacheEntry, locked map[uint64]bool) []Details {
 			details.Kind = UNKNOWN
 		}
 
-		if i == 0 && entry.broken.Broken() {
-			details.setBreak(entry.broken)
-		}
+		details.setFormat(image.Format, entry.headers[i])
 
 		images = append(images, details)
+	}
+
+	setRefusedBackings(images, entry.headers)
+
+	if len(images) > 0 {
+		images[0].setChain(entry.broken)
 	}
 
 	return images
@@ -426,6 +436,10 @@ func resolveLocal(paths []string, details map[string]Details) {
 			entry, err := cachedChain(path)
 			if err != nil {
 				plog.Warn(plog.TypeSystem, "cannot inspect disk image", "image", path, "err", err)
+
+				if image, ok := refusedImage(path, locked); ok {
+					results[i] = []Details{image}
+				}
 
 				return
 			}

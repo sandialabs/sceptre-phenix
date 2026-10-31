@@ -44,7 +44,7 @@ func TestGetImageInspectsOnlyChangedImages(t *testing.T) {
 
 	want := Details{
 		Kind: VMImage, Name: "a.qc2", FullPath: path, OutsideFilesDir: true, ReadOnly: true,
-		Size: "2.0 KiB", VirtualSize: "1.0 GiB", BackingImages: []string{},
+		Size: "2.0 KiB", VirtualSize: "1.0 GiB", BackingImages: []string{}, Format: "qcow2",
 	}
 
 	for range 3 {

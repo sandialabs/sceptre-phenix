@@ -28,6 +28,7 @@ vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/pageLoader.js', fetching);
 
 import JobProgress from '@/components/jobs/JobProgress.vue';
+import { diskType as diskTypeOf } from '@/utils/diskFormat.js';
 import { diskTotals } from '@/utils/diskTotals.js';
 import { useJobStore } from '@/utils/jobs.js';
 import Disks from '@/views/Disks.vue';
@@ -717,6 +718,184 @@ describe('disks with a broken backing chain', () => {
 
     expect(details.find('.chain-problem').exists()).toBe(false);
     expect(details.text()).not.toContain('Backing Chain');
+  });
+});
+
+describe('the Type column', () => {
+  const IMAGES = '/phenix/images';
+  const V2 = {
+    level: 'warning',
+    problem: `${IMAGES}/kali.qc2 is a qcow2 version 2 image, an old version of the format`,
+    fix: 'Stop each VM that uses it, then upgrade it to version 3',
+    command: `qemu-img amend -f qcow2 -o compat=1.1 ${IMAGES}/kali.qc2`,
+  };
+  const AES = {
+    level: 'error',
+    problem: `${IMAGES}/aes.qc2 uses the old qcow AES encryption, which qemu does not open for VMs`,
+    fix:
+      'Write a copy without encryption. The Image Format Versions section ' +
+      'of the disks docs shows how',
+    command: '',
+  };
+  const typed = (name, fields) =>
+    disk(`${IMAGES}/${name}`, name, { formatIssue: null, ...fields });
+  const disks = [
+    typed('base.qc2', { format: 'qcow2', formatVersion: 3 }),
+    typed('kali.qc2', { format: 'qcow2', formatVersion: 2, formatIssue: V2 }),
+    typed('aes.qc2', { format: 'qcow2', formatVersion: 3, formatIssue: AES }),
+    typed('old.qcow', {
+      format: 'qcow',
+      formatVersion: 1,
+      formatIssue: { ...V2, problem: 'old', fix: 'Convert it' },
+    }),
+    typed('win.vmdk', {
+      kind: 'Unknown',
+      format: 'vmdk',
+      formatIssue: { ...V2, problem: 'vmdk', fix: 'Convert it' },
+    }),
+    typed('tools.iso', { kind: 'ISO', format: 'raw' }),
+    typed('sensor_rootfs.tgz', { kind: 'Container', format: 'raw' }),
+  ];
+  const typeOf = (cells) => textOf(cells.Type.find('.disk-type'));
+
+  it('shows the type of each disk, sorted by it both ways', async () => {
+    const wrapper = await page(disks);
+
+    expect(
+      tableRows(wrapper).map((cells) => [nameOf(cells), typeOf(cells)]),
+    ).toEqual([
+      ['aes.qc2', 'qcow2 v3'],
+      ['base.qc2', 'qcow2 v3'],
+      ['kali.qc2', 'qcow2 v2'],
+      ['old.qcow', 'qcow v1'],
+      ['sensor_rootfs.tgz', 'tgz'],
+      ['tools.iso', 'ISO'],
+      ['win.vmdk', 'vmdk'],
+    ]);
+
+    const sorted = [
+      'ISO',
+      'qcow v1',
+      'qcow2 v2',
+      'qcow2 v3',
+      'qcow2 v3',
+      'tgz',
+      'vmdk',
+    ];
+    await tableHeader(wrapper, 'Type').trigger('click');
+    expect(tableRows(wrapper).map(typeOf)).toEqual(sorted);
+    await tableHeader(wrapper, 'Type').trigger('click');
+    expect(tableRows(wrapper).map(typeOf)).toEqual(sorted.toReversed());
+  });
+
+  it('marks a format issue with an icon whose name, tooltip and description say it', async () => {
+    const wrapper = await page(disks);
+
+    const marks = tableRows(wrapper).map((cells) =>
+      tooltipButtons(cells.Type).map(({ label, tooltip, control }) => ({
+        label,
+        tooltip,
+        icon: control.find('[data-icon]').attributes('data-icon'),
+        described: textOf(
+          wrapper.find(`[id="${control.attributes('aria-describedby')}"]`),
+        ),
+      })),
+    );
+    const v2Text =
+      `${V2.problem}. Stop each VM that uses it, then upgrade it to ` +
+      `version 3: ${V2.command}`;
+    const aesText = `${AES.problem}. ${AES.fix}.`;
+    expect(marks).toEqual([
+      [
+        {
+          label: 'Format error',
+          tooltip: aesText,
+          icon: 'times-circle',
+          described: aesText,
+        },
+      ],
+      [],
+      [
+        {
+          label: 'Format warning',
+          tooltip: v2Text,
+          icon: 'exclamation-triangle',
+          described: v2Text,
+        },
+      ],
+      [expect.objectContaining({ label: 'Format warning' })],
+      [],
+      [],
+      [expect.objectContaining({ label: 'Format warning' })],
+    ]);
+    // the icon is a button, so the keyboard reaches its tooltip
+    expect(
+      tooltipButtons(tableRows(wrapper)[0].Type)[0].control.element.localName,
+    ).toBe('button');
+  });
+
+  it('sorts any list of types as the column shows them', async () => {
+    const formats = fc.record({
+      format: fc.constantFrom('qcow2', 'qcow', 'raw', 'vmdk', 'qed', ''),
+      formatVersion: fc.nat(12),
+    });
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(formats, { minLength: 1, maxLength: 6 }),
+        async (list) => {
+          const wrapper = await page(
+            list.map((fields, i) => typed(`${i}.img`, fields)),
+          );
+          await tableHeader(wrapper, 'Type').trigger('click');
+
+          const shown = tableRows(wrapper).map(typeOf);
+          const collate = (a, b) =>
+            a.localeCompare(b, 'en-US', { numeric: true, sensitivity: 'base' });
+          expect(shown).toEqual(shown.toSorted(collate));
+          expect(shown.toSorted()).toEqual(
+            list
+              .map((fields, i) => diskTypeOf(typed(`${i}.img`, fields)))
+              .toSorted(),
+          );
+          wrapper.unmount();
+        },
+      ),
+      { numRuns: 20 },
+    );
+  });
+
+  it('shows the type, the problem, the fix and its command in the details', async () => {
+    const details = await openDetails(await page(disks), 'kali.qc2');
+
+    expect(textOf(detail(details, 'Type:').find('.disk-type'))).toBe(
+      'qcow2 v2',
+    );
+    expect(textOf(details.find('.format-problem'))).toBe(
+      `Format warning: ${V2.problem}.`,
+    );
+    expect(textOf(details.find('.format-fix'))).toBe(`${V2.fix}:`);
+    expect(textOf(details.find('.format-command'))).toBe(V2.command);
+    const docs = details.find('a.format-docs');
+    expect([textOf(docs), docs.attributes('href')]).toEqual([
+      'The fix for each image format (phēnix docs)',
+      'https://phenix.sceptre.dev/latest/disks/#image-format-versions',
+    ]);
+  });
+
+  it('shows a fix with no command, and no format section for a disk that needs none', async () => {
+    const wrapper = await page(disks);
+
+    let details = await openDetails(wrapper, 'aes.qc2');
+    expect(textOf(details.find('.format-problem'))).toBe(
+      `Format error: ${AES.problem}.`,
+    );
+    expect(textOf(details.find('.format-fix'))).toBe(`${AES.fix}.`);
+    expect(details.find('.format-command').exists()).toBe(false);
+
+    await details.find('.modal-close, .delete').trigger('click');
+    details = await openDetails(wrapper, 'base.qc2');
+    expect(textOf(detail(details, 'Type:'))).toBe('qcow2 v3');
+    expect(details.find('.format-issue').exists()).toBe(false);
   });
 });
 

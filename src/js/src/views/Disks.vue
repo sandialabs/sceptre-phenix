@@ -72,6 +72,10 @@
               <dd>{{ detailsModal.disk.kind }}</dd>
             </div>
             <div>
+              <dt>Type:</dt>
+              <dd><DiskFormat :disk="detailsModal.disk" /></dd>
+            </div>
+            <div>
               <dt>Size on Disk:</dt>
               <dd>{{ detailsModal.disk.size }}</dd>
             </div>
@@ -129,6 +133,45 @@
                 </span>
               </div>
             </div>
+          </div>
+
+          <div v-if="formatIssueLevel(detailsModal.disk)" class="format-issue">
+            <hr />
+            <p class="title is-5">Image Format</p>
+            <p class="format-problem">
+              <b-icon
+                :icon="
+                  formatIssueLevel(detailsModal.disk) === 'error'
+                    ? 'times-circle'
+                    : 'exclamation-triangle'
+                "
+                size="is-small"
+                :class="
+                  formatIssueLevel(detailsModal.disk) === 'error'
+                    ? 'broken-chain-icon'
+                    : 'has-text-warning'
+                " />
+              <b>{{ formatIssueName(detailsModal.disk) }}:</b>
+              {{ detailsModal.disk.formatIssue.problem }}.
+            </p>
+            <p class="format-fix">
+              {{ detailsModal.disk.formatIssue.fix
+              }}{{ detailsModal.disk.formatIssue.command ? ':' : '.' }}
+            </p>
+            <code
+              v-if="detailsModal.disk.formatIssue.command"
+              class="format-command"
+              >{{ detailsModal.disk.formatIssue.command }}</code
+            >
+            <p>
+              <a
+                class="format-docs"
+                :href="FORMATS_DOCS"
+                target="_blank"
+                rel="noopener noreferrer"
+                >The fix for each image format (phēnix docs)</a
+              >
+            </p>
           </div>
 
           <div v-if="cloneJobsOf(detailsModal.disk).length" class="clones">
@@ -379,6 +422,16 @@
       </b-table-column>
 
       <b-table-column
+        field="format"
+        label="Type"
+        sortable
+        header-class="sort-inline"
+        :custom-sort="sortByType"
+        v-slot="props">
+        <DiskFormat :disk="props.row" />
+      </b-table-column>
+
+      <b-table-column
         field="inUse"
         label="In Use"
         width="7em"
@@ -440,6 +493,7 @@
 </template>
 
 <script>
+  import DiskFormat from '@/components/DiskFormat.vue';
   import DiskWarning from '@/components/DiskWarning.vue';
   import JobProgress from '@/components/jobs/JobProgress.vue';
   import StatStrip from '@/components/StatStrip.vue';
@@ -459,6 +513,12 @@
     findDisk,
     minimegaSafe,
   } from '@/utils/diskChain.js';
+  import {
+    FORMATS_DOCS,
+    compareDiskTypes,
+    formatIssueLevel,
+    formatIssueName,
+  } from '@/utils/diskFormat.js';
   import {
     diskActionState,
     diskDisabledReason,
@@ -481,7 +541,7 @@
   let rescanPending = false;
 
   export default {
-    components: { DiskWarning, JobProgress, StatStrip },
+    components: { DiskFormat, DiskWarning, JobProgress, StatStrip },
     setup() {
       return {
         ...useTable({ name: 'disks' }),
@@ -489,6 +549,9 @@
         chainProblem,
         diskLabel,
         findDisk,
+        formatIssueLevel,
+        formatIssueName,
+        FORMATS_DOCS,
       };
     },
     async created() {
@@ -834,6 +897,10 @@
           diskLabel(diskA).localeCompare(diskLabel(diskB)) * (isAsc ? 1 : -1)
         );
       },
+      // sorts by the types the Type column shows, such as qcow2 v3
+      sortByType(diskA, diskB, isAsc) {
+        return compareDiskTypes(diskA, diskB) * (isAsc ? 1 : -1);
+      },
       // where a disk is, for its details
       locationText(disk) {
         if (disk.outsideFilesDir) {
@@ -1023,8 +1090,26 @@
      ($background-ter); this lighter tint of it is 4.7:1 */
   .button.backing-link,
   .button.backing-link:hover,
-  .button.backing-link:focus {
+  .button.backing-link:focus,
+  .format-docs,
+  .format-docs:hover,
+  .format-docs:focus {
     color: #abddea;
+  }
+
+  .format-docs {
+    text-decoration: underline;
+  }
+
+  .format-issue p {
+    margin-bottom: 0.5rem;
+  }
+
+  .format-command {
+    display: block;
+    margin-bottom: 0.5rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .action-separator {
