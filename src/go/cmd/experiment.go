@@ -162,8 +162,8 @@ func newExperimentCreateCmd() *cobra.Command {
 		Args:    argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				topology = MustGetString(cmd.Flags(), "topology")
-				scenario = MustGetString(cmd.Flags(), "scenario")
+				topology = mustGet(cmd.Flags().GetString, "topology")
+				scenario = mustGet(cmd.Flags().GetString, "scenario")
 			)
 
 			if ext := filepath.Ext(topology); ext != "" {
@@ -227,11 +227,11 @@ func newExperimentCreateCmd() *cobra.Command {
 				experiment.CreateWithName(args[0]),
 				experiment.CreateWithTopology(topology),
 				experiment.CreateWithScenario(scenario),
-				experiment.CreateWithBaseDirectory(MustGetString(cmd.Flags(), "base-dir")),
-				experiment.CreateWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
-				experiment.CreateWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
+				experiment.CreateWithBaseDirectory(mustGet(cmd.Flags().GetString, "base-dir")),
+				experiment.CreateWithVLANMin(mustGet(cmd.Flags().GetInt, "vlan-min")),
+				experiment.CreateWithVLANMax(mustGet(cmd.Flags().GetInt, "vlan-max")),
 				experiment.CreatedWithDisabledApplications(disabledApps),
-				experiment.CreateWithDefaultBridge(MustGetString(cmd.Flags(), "default-bridge")),
+				experiment.CreateWithDefaultBridge(mustGet(cmd.Flags().GetString, "default-bridge")),
 			}
 
 			ctx := notes.Context(context.Background(), false)
@@ -277,7 +277,7 @@ func newExperimentEditCmd() *cobra.Command {
 		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				force = MustGetBool(cmd.Flags(), "force")
+				force = mustGet(cmd.Flags().GetBool, "force")
 				exp   = "experiment/" + args[0]
 			)
 
@@ -323,7 +323,7 @@ func newExperimentDeleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
-				force       = MustGetBool(cmd.Flags(), "force")
+				force       = mustGet(cmd.Flags().GetBool, "force")
 				experiments []types.Experiment
 			)
 
@@ -474,8 +474,8 @@ func newExperimentStartCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
-				dryrun      = MustGetBool(cmd.Flags(), "dry-run")
-				periodic    = MustGetBool(cmd.Flags(), "honor-run-periodically")
+				dryrun      = mustGet(cmd.Flags().GetBool, "dry-run")
+				periodic    = mustGet(cmd.Flags().GetBool, "honor-run-periodically")
 				experiments []types.Experiment
 
 				ctx = notes.Context(sigterm.CancelContext(context.Background()), true)
@@ -517,10 +517,10 @@ func newExperimentStartCmd() *cobra.Command {
 				opts := []experiment.StartOption{
 					experiment.StartWithName(exp.Metadata.Name),
 					experiment.StartWithDryRun(dryrun),
-					experiment.StartWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
-					experiment.StartWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
+					experiment.StartWithVLANMin(mustGet(cmd.Flags().GetInt, "vlan-min")),
+					experiment.StartWithVLANMax(mustGet(cmd.Flags().GetInt, "vlan-max")),
 					experiment.StartWithMMErrorsAsWarnings(
-						MustGetBool(cmd.Flags(), "treat-mm-errors-as-warnings"),
+						mustGet(cmd.Flags().GetBool, "treat-mm-errors-as-warnings"),
 					),
 				}
 
@@ -591,7 +591,7 @@ func newExperimentStopCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name                   = args[0]
-				keepInjectionSnapshots = MustGetBool(cmd.Flags(), "keep-injection-snapshots")
+				keepInjectionSnapshots = mustGet(cmd.Flags().GetBool, "keep-injection-snapshots")
 				experiments            []types.Experiment
 			)
 
@@ -672,7 +672,7 @@ func newExperimentRestartCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
-				dryrun      = MustGetBool(cmd.Flags(), "dry-run")
+				dryrun      = mustGet(cmd.Flags().GetBool, "dry-run")
 				experiments []types.Experiment
 
 				ctx = sigterm.CancelContext(context.Background())
@@ -1127,7 +1127,7 @@ func newExperimentScorchCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name = args[0]
-				run  = MustGetInt(cmd.Flags(), "run")
+				run  = mustGet(cmd.Flags().GetInt, "run")
 				ctx  = sigterm.CancelContext(context.Background())
 			)
 

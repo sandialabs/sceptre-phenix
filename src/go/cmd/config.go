@@ -244,7 +244,7 @@ func newConfigGetCmd() *cobra.Command {
 				delete(c.Spec, "experimentName")
 			}
 
-			output := MustGetString(cmd.Flags(), "output")
+			output := mustGet(cmd.Flags().GetString, "output")
 
 			switch output {
 			case FormatYAML:
@@ -262,7 +262,7 @@ func newConfigGetCmd() *cobra.Command {
 					err error
 				)
 
-				if MustGetBool(cmd.Flags(), "pretty") {
+				if mustGet(cmd.Flags().GetBool, "pretty") {
 					m, err = json.MarshalIndent(c, "", "  ")
 				} else {
 					m, err = json.Marshal(c)
@@ -305,7 +305,7 @@ func newConfigCreateCmd() *cobra.Command {
 				return errors.New("must provide at least one configuration file")
 			}
 
-			skip := MustGetBool(cmd.Flags(), "skip-validation")
+			skip := mustGet(cmd.Flags().GetBool, "skip-validation")
 
 			for _, f := range args {
 				var configs []string
@@ -405,7 +405,7 @@ func newConfigEditCmd() *cobra.Command {
 		Long:  desc,
 		Args:  configKindArgsValidator(false, false),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			force := MustGetBool(cmd.Flags(), "force")
+			force := mustGet(cmd.Flags().GetBool, "force")
 
 			_, err := config.Edit(args[0], force)
 			if err != nil {
