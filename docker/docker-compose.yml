@@ -15,7 +15,7 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
       args:
-        MM_MIN_REV: ${MM_REV:-master}
+        MM_MIN_REV: ${MM_REV:-latest}
         PHENIX_WEB_AUTH: disabled
     command:
       - phenix
@@ -40,7 +40,7 @@ services:
     healthcheck:
       test: phenix version
   minimega:
-    image: ghcr.io/sandia-minimega/minimega:master
+    image: ghcr.io/sandia-minimega/minimega:latest
     container_name: minimega
     privileged: true
     cap_add:
@@ -68,7 +68,7 @@ services:
       MM_LOGFILE: /var/log/phenix/minimega.log
       MM_ABSSNAPSHOT: true # needed for phenix VM backing image and snapshot functions
   es:
-    image: elasticsearch:7.17.5
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.29
     container_name: es
     <<: *common
     volumes:
@@ -78,7 +78,7 @@ services:
     depends_on:
       - volume-permissions-manager
   kibana:
-    image: kibana:7.17.5
+    image: docker.elastic.co/kibana/kibana:7.17.29
     container_name: kibana
     <<: *common
     environment:
@@ -86,7 +86,7 @@ services:
     depends_on:
       - es
   volume-permissions-manager:
-    image: alpine:latest
+    image: docker.io/library/alpine:3.24
     command: sh -c "chmod -R 777 /usr/share/elasticsearch"
     volumes:
       - /phenix/share/elasticsearch/data:/usr/share/elasticsearch/data

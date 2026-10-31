@@ -42,7 +42,7 @@ To use the pre-built image from the registry instead of building from source, ru
 docker compose up -d --pull always
 ```
 
-This will pull the latest images specified in the `image` key for each service (e.g., `ghcr.io/sandialabs/sceptre-phenix/phenix:main` and `ghcr.io/sandia-minimega/minimega:master`) and skip the build step.
+This will pull the latest images specified in the `image` key for each service (e.g., `ghcr.io/sandialabs/sceptre-phenix/phenix:main` and `ghcr.io/sandia-minimega/minimega:latest`) and skip the build step.
 
 #### 3. Check Status
 
@@ -54,6 +54,8 @@ docker compose logs -f
 
 !!! note
     The Docker image includes the user apps from the [sceptre-phenix-apps](https://github.com/sandialabs/sceptre-phenix-apps) repository.
+
+To build the image with Podman instead, run `podman build -f docker/Dockerfile -t phenix .` from the repository root. See `podman/README.md` for running phēnix and minimega as a Podman pod.
 
 ### Accessing the CLI & Shell Completion
 
