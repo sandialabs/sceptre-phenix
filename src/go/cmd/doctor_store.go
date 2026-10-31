@@ -197,6 +197,8 @@ type doctorExperiment struct {
 	apps       []string    // the apps of the scenario
 	components []string    // the types of the SCORCH components of the scenario
 	appHosts   [][2]string // each app of the scenario and a host it names
+
+	stuck doctorStuck // what the stored status marks as in progress
 }
 
 // doctorVLANs is the VLAN part of a stored experiment's spec.
@@ -249,6 +251,7 @@ func decodeDoctorExperiment(c store.Config) doctorExperiment {
 		name: c.Metadata.Name, baseDir: "", running: false, vms: nil,
 		vlans: doctorVLANs{min: 0, max: 0, pinned: nil, count: 0}, schedules: nil,
 		nodes: nil, apps: nil, components: nil, appHosts: nil,
+		stuck: doctorStuck{apps: nil, scorch: false, scorchRun: -1, pending: false, interrupted: false},
 	}
 
 	decoded, err := types.DecodeExperimentFromConfig(c)
@@ -258,6 +261,7 @@ func decodeDoctorExperiment(c store.Config) doctorExperiment {
 
 	exp.baseDir = decoded.Spec.BaseDir()
 	exp.running = decoded.Running()
+	exp.stuck = decodeDoctorStuck(decoded.Status)
 	exp.apps, exp.components, exp.appHosts = doctorScenarioApps(decoded.Spec.Scenario())
 
 	if schedules := decoded.Spec.Schedules(); len(schedules) > 0 {
@@ -424,7 +428,37 @@ func experimentNamed(experiments []doctorExperiment, name string) (doctorExperim
 	return doctorExperiment{
 		name: "", baseDir: "", running: false, vms: nil, vlans: doctorVLANs{min: 0, max: 0, pinned: nil, count: 0},
 		schedules: nil, nodes: nil, apps: nil, components: nil, appHosts: nil,
+		stuck: doctorStuck{apps: nil, scorch: false, scorchRun: -1, pending: false, interrupted: false},
 	}, false
+}
+
+// decodeDoctorStuck is what status marks as in progress: the app running flags, which phenix sets while an app stage
+// or a SCORCH run is in progress, the delayed starts that phenix ui resumes, and an interrupted start.
+func decodeDoctorStuck(status ifaces.ExperimentStatus) doctorStuck {
+	stuck := doctorStuck{apps: nil, scorch: false, scorchRun: -1, pending: false, interrupted: false}
+	if status == nil {
+		return stuck
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(status.AppRunning())) {
+		switch {
+		case !status.AppRunning()[name]:
+		case name == "scorch":
+			stuck.scorch = true
+
+			var scorch scorchmd.ScorchStatus
+			if err := status.ParseAppStatus(name, &scorch); err == nil {
+				stuck.scorchRun = scorch.RunID
+			}
+		default:
+			stuck.apps = append(stuck.apps, name)
+		}
+	}
+
+	stuck.pending = len(status.DelayedTimers()) > 0 || len(status.DelayedC2()) > 0 || status.PostStartPending()
+	stuck.interrupted = status.Interrupted() != ""
+
+	return stuck
 }
 
 // doctorScenarioApps returns the apps of scenario, the types of its SCORCH components, and each app with a host it

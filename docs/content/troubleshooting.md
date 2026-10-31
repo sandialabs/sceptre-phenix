@@ -110,6 +110,32 @@ user), or when `ui.jwt-lifetime` has no unit (`24` is 24 nanoseconds). Run
 `phenix doctor --skip minimega` with the settings and user of `phenix ui`: its
 `auth`, `tls` and `socket` checks report each of these.
 
+### Browsers Refuse the Certificate of `phenix ui`
+
+A browser refuses a certificate that expired, that is not valid yet, or whose
+DNS and IP names do not include the host that users reach. Browsers ignore
+the common name of the certificate. The `ui.tls-cert` check of
+`phenix doctor` gives the expiry date and the names of the certificate. To
+replace the certificate, do these steps:
+
+1. Run `phenix doctor -p -x` and read the `ui.tls-cert` row.
+2. Make a new certificate whose names include the host that users reach.
+3. Set `ui.tls-cert` and `ui.tls-key` to the new files.
+4. Restart `phenix ui`.
+
+### Requests for `phenix ui` Go to a Proxy
+
+When `HTTP_PROXY` or `HTTPS_PROXY` is set, programs that read these
+variables send their requests to the proxy. Go programs never send requests
+for `localhost` or a loopback address to a proxy, but other programs can. The
+`proxy-env` check of `phenix doctor` names each host of `phenix ui` that
+`NO_PROXY` or `no_proxy` does not cover. To repair the variables, do these
+steps:
+
+1. Run `phenix doctor -p -x` and read the `proxy-env` row.
+2. Add the hosts that the hint names to `NO_PROXY` and to `no_proxy`.
+3. Restart `phenix ui` and the apps in the same environment.
+
 ### A Command Ignores `bridge-mode` or `deploy-mode`
 
 Before it runs, every phēnix command asks `phenix ui` on `unix-socket` for its
@@ -404,6 +430,20 @@ stored experiment owns. Make sure that `phenix doctor` reads the store of
 `phenix ui`. Then kill the VMs of the namespace with
 `minimega -e 'clear namespace <namespace>'`.
 
+### Apps or a SCORCH Run Stay Marked as Running
+
+phēnix marks an app as running in the store while an app stage or a SCORCH
+run is in progress. When `phenix ui` stops during a start or a run, the mark
+stays. phēnix then skips the running stage of that app, and SCORCH refuses a
+new run. The `stuck-status` check of `phenix doctor` names each such mark
+that no phenix process can own. To clear the marks, do these steps:
+
+1. Run `phenix doctor -p -x` and read the `stuck-status` row.
+2. Start `phenix ui`, or restart it. As it starts, it clears the marks of the
+   running experiments and resumes their delayed VM starts.
+3. If the row names an interrupted start, run
+   `phenix experiment stop <experiment>`. Then start the experiment again.
+
 ### An Experiment Cannot Get Its VLANs
 
 minimega refuses a VLAN alias for a VLAN that is in use, and stops when its
@@ -449,6 +489,10 @@ restart minimega:
 The minimega-limits memory row warns when this host is short of memory or
 swap, or when the VMs ask for more memory than the host has. Stop VMs, or
 give the VMs less memory in their topologies.
+
+The `ui-limits` check warns when `phenix ui` has more than 80% of its soft
+limit of open files open. Increase the limit of `phenix ui` in the same way,
+then restart `phenix ui`.
 
 ### A VM Has No miniccc Client
 

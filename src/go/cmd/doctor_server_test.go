@@ -235,7 +235,7 @@ func TestServerChecks(t *testing.T) {
 				return doctorEnvMode{FileInfo: nil, mode: tc.mode}, nil
 			}
 
-			got := serverChecks(t.Context(), tc.socket, 50*time.Millisecond, tc.client, lstat, tc.bridge, tc.deploy)
+			got, _ := serverChecks(t.Context(), tc.socket, 50*time.Millisecond, tc.client, lstat, tc.bridge, tc.deploy)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("serverChecks() mismatch (-want +got):\n%s", diff)
 			}

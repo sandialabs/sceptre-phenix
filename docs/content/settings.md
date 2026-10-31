@@ -136,6 +136,7 @@ valid ones.
 | `scenario-hosts` | `config` | an app in the scenario of a stored experiment names a host (`hosts[].hostname`) that is not a node of the topology of the experiment. The apps of phēnix find a host by its exact host name, and skip a host that they do not find. A `skip` row shows when doctor cannot read the store, or when the store file does not exist | never |
 | `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), it holds a log level phēnix ignores, or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
 | `env-overrides` | `env` | a `PHENIX_*` variable overrides a different value in the config or users file; the row names the variable, the setting and the file, never a value | never |
+| `proxy-env` | `env` | a proxy variable is set, and `NO_PROXY` or `no_proxy` does not cover a host of `phenix ui`. The proxy variables are `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` and `https_proxy`. The hosts are `localhost`, `127.0.0.1`, `::1`, the host name and the host of `ui.listen-endpoint`. Programs that read these variables send their requests for such a host to the proxy. The row reads the forms `*`, `.domain`, `*.domain`, a CIDR range and `host:port`, as Go does. It names the variables, never their values, because a proxy URL can hold a password | never |
 | `bridge-mode`, `deploy-mode`, `experiment.disk-check`, `color`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative | `bridge-mode`, `deploy-mode`, `experiment.disk-check` or `color` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
 | `store.endpoint` | `files` | never | the file cannot be written, or its directory does not exist or cannot be written |
 | `store-file` (only when the store file exists) | `files` | one of its two meta pages is corrupt, so BoltDB reads the other, which may not hold the last write | the file is not a BoltDB file, has another format version or byte order, is shorter than its two meta pages, or both meta pages are corrupt |
@@ -153,11 +154,14 @@ valid ones.
 | `proxy-jwt` (only with the `proxy-jwt` key) | `auth` | `ui.listen-endpoint` listens on every address, and `phenix ui` does not check the signatures of proxy JWTs | never |
 | `ui.proxy-auth-header` (only when set) | `auth` | the JWT signing key is empty or a development key, so `phenix ui` ignores the header | the value is not an HTTP header name |
 | `rbac-users` (only with sign-in on) | `auth` | the role (`rbac.roleName`) of a stored user is not a stored role or a built-in role. Or a role names an experiment, a VM (`<experiment>/<vm>`) or a user that the store does not have. The row checks each stored role and the copy of the role in each user. The row checks only the names without a glob (`*`, `?`, `[`) or `!`. It checks them only in a policy for experiments and VMs, or for users. It never shows a password or a token. A `skip` row shows when doctor cannot read the store | never |
-| `ui.tls` | `tls` | the certificate expires within 30 days | only one of `ui.tls-key` and `ui.tls-cert` is set, so `phenix ui` serves plain HTTP; a file cannot be read; the key and certificate do not load as a pair; the certificate has expired or is not valid yet |
+| `ui.tls` | `tls` | never | only one of `ui.tls-key` and `ui.tls-cert` is set, so `phenix ui` serves plain HTTP; a file cannot be read; the key and certificate do not load as a pair |
+| `ui.tls-cert` (only when both TLS settings are set) | `tls` | the certificate expires within 30 days, or it has no DNS or IP names. The row also warns when the names do not cover the host that users reach. That host is the host of `ui.listen-endpoint`, or the host name when `phenix ui` listens on every address. A host name without a domain, such as `ws42`, also matches a name such as `ws42.example.com`. The row gives the expiry date and the names. A `skip` row shows when the key pair does not load | the certificate expired or is not valid yet |
 | `ui.listen-endpoint`, `ui.file-server-endpoint` | `tls` | the listen endpoint has no port, so `phenix ui` listens on a random one | `phenix ui` cannot listen on the value or refuses it |
 | `unix-socket` | `socket` | the path is relative, or holds a file that is not a socket, which `phenix ui` deletes; this user cannot write the directory, but a socket is there, such as one a `phenix ui` of another user serves | the directory does not exist, this user cannot write it and no socket is there, or the path is too long for a unix socket |
 | `unix-socket-gid` | `socket` | phēnix runs as root and no group has the id | phēnix does not run as root, and this user is not in a group of that id, so `phenix ui` exits when it sets the socket's group |
 | `server` (with the rows server bridge-mode and server deploy-mode when phenix ui answers) | `server` | no `phenix ui` answers on `unix-socket`: no socket file, a stale one, a file that is not a socket, or no answer within `--timeout`; the version of `phenix ui` is not the version of this phēnix; its `bridge-mode` or `deploy-mode` is not the one set here | this user may not connect to the socket |
+| `stuck-status` | `server` | the store marks app runs, SCORCH runs or delayed starts of a running experiment as in progress, but no phenix process can own them. That is, no `phenix ui` answers on `unix-socket`, and no other phenix process on this host names the experiment. This occurs when `phenix ui` stops during a start or a run. The row also warns when phēnix could not resume the start of a running experiment. A `skip` row shows when doctor cannot read the store | never |
+| `ui-limits` (Linux only) | `server` | the `phenix ui` process on this host has more than 80% of its soft limit of open files open. doctor finds the process from the peer of `unix-socket`, or from its command line in `/proc`. A `skip` row shows when no `phenix ui` runs on this host, or when this user cannot read `/proc/<pid>` | never |
 | `minimega` | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default); the row names the likely cause: no socket, a stale one, or a user that may not connect |
 | `minimega-env` (the rows minimega files, minimega base and minimega mesh; one skip row when minimega gives no version) | `minimega` | minimega gives no flags (it is older than 3.0); its `-filepath` is relative or not writable by this user; its `-base` is not `base-dir.minimega`; `mesh status` fails when `-degree` is above 0 | the `-filepath` directory does not exist for phēnix or is not readable and searchable by this user |
 | `minimega-limits` (the rows minimega-limits open files and minimega-limits memory; Linux only) | `minimega` | the open files row: the soft limit of open files of the minimega process is lower than its VMs on this node need. The estimate is 64 files, and 5 for each VM (QMP, VNC, cc and two qemu output pipes). The row also warns when more than 80% of the limit are open. The memory row: `MemAvailable` is less than 10% of `MemTotal`, more than 50% of the swap is in use, or the VMs on this node ask for more memory than the memory and swap together. doctor finds minimega through `minimega.pid` in its `-base`. A `skip` row shows when this user cannot read `/proc/<pid>`, or when minimega runs in another container | never |
@@ -255,6 +259,17 @@ otherwise. It uses the `deploy-mode` set here, or the mode of `phenix ui`
 when none is set. The mode rows name the mode the command uses. A failure to
 connect warns, since `phenix doctor` also runs while `phenix ui` is stopped.
 
+The `stuck-status` check reads the stored status of each running experiment.
+phēnix sets an app running flag while an app stage or a SCORCH run is in
+progress, and clears it when the stage ends. It also records the delayed VM
+starts that `phenix ui` resumes. `phenix ui` keeps the `starting` and
+`stopping` states in memory only, so these states end with its process. As it
+starts, `phenix ui` clears the app running flags of the running experiments
+and resumes their delayed starts. A flag that stays set makes phēnix skip the
+running stage of that app, and SCORCH refuses a new run. The jobs of
+`phenix ui` do not include starts, app stages or SCORCH runs, so the check does
+not read them.
+
 The `minimega-env` check sends minimega its `args` command and reads the
 flags minimega runs with. phēnix resolves relative image paths against the
 `-filepath` directory and keeps disk images in it, so phēnix must see it at
@@ -290,7 +305,7 @@ the check details and the hints.
   from `hostname-suffixes`: `ws42-phenix` becomes `<host-1>-phenix`.
 
 doctor finds the values to replace in the host name, the host name that
-minimega answers from, the nodes of its mesh, the nodes that VM schedules name, the user and its home directory, and `SUDO_USER`. It also reads the `ui.users` entries, the JWT
+minimega answers from, the nodes of its mesh, the nodes that VM schedules name, the host of `ui.listen-endpoint`, the DNS names of the TLS certificate, the user and its home directory, and `SUDO_USER`. It also reads the `ui.users` entries, the JWT
 signing key, the interface addresses and the file owners that the checks name.
 doctor also replaces each IPv4 and IPv6 address and each email address it
 finds. Read the output before you paste it: doctor cannot find a name that it

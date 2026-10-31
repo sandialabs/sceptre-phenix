@@ -63,6 +63,10 @@ type doctorFound struct {
 	stored    map[string]*doctorStored // the stored configs of each kind, once a check read them
 	storeBusy string                   // why a read of the store stopped at its lock, which later reads give
 	users     []string                 // the stored user names that rbac-users names, which --report redacts
+
+	ui        *doctorUI    // whether a phenix ui answers, once a check asked it
+	procs     *doctorProcs // the phenix processes on this host, once a check listed them
+	certNames []string     // the DNS names of the TLS certificate, which --report redacts
 }
 
 // minimegaRunner sends minimega, whose base directory is base, one
@@ -148,6 +152,7 @@ type serverModes struct {
 // serverChecks asks the phenix ui on socket for its options through client, as
 // every other phenix command does, and compares its version and modes with
 // this command's bridge and deploy settings. lstat looks at a socket that fails.
+// It also reports whether a phenix ui answered.
 func serverChecks(
 	ctx context.Context,
 	socket string,
@@ -155,9 +160,9 @@ func serverChecks(
 	client func(string, time.Duration) *http.Client,
 	lstat func(string) (os.FileInfo, error),
 	bridge, deploy string,
-) []doctorCheck {
+) ([]doctorCheck, bool) {
 	if socket == "" {
-		return []doctorCheck{passCheck("unix-socket is empty, so phenix commands ask no phenix ui for its modes")}
+		return []doctorCheck{passCheck("unix-socket is empty, so phenix commands ask no phenix ui for its modes")}, false
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -165,7 +170,7 @@ func serverChecks(
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix/api/v1/options", nil)
 	if err != nil {
-		return []doctorCheck{failCheck(err.Error())}
+		return []doctorCheck{failCheck(err.Error())}, false
 	}
 
 	c := client(socket, timeout)
@@ -173,7 +178,7 @@ func serverChecks(
 
 	resp, err := c.Do(req) //nolint:gosec // G704 the phenix server the user configured
 	if err != nil {
-		return []doctorCheck{serverDialCheck(socket, timeout, lstat, err)}
+		return []doctorCheck{serverDialCheck(socket, timeout, lstat, err)}, false
 	}
 
 	defer func() { _ = resp.Body.Close() }()
@@ -182,16 +187,18 @@ func serverChecks(
 
 	switch {
 	case err != nil:
-		return []doctorCheck{warnCheck(fmt.Sprintf("reading the answer of phenix ui on %s: %v", socket, err))}
+		return []doctorCheck{warnCheck(fmt.Sprintf("reading the answer of phenix ui on %s: %v", socket, err))}, true
 	case resp.StatusCode != http.StatusOK:
 		return []doctorCheck{warnCheck(fmt.Sprintf(
 			"phenix ui on %s answered GET /api/v1/options with %s", socket, resp.Status,
-		))}
+		))}, true
 	}
 
 	var modes serverModes
 	if err := json.Unmarshal(body, &modes); err != nil {
-		return []doctorCheck{warnCheck(fmt.Sprintf("phenix ui on %s answered with options that do not parse: %v", socket, err))}
+		return []doctorCheck{
+			warnCheck(fmt.Sprintf("phenix ui on %s answered with options that do not parse: %v", socket, err)),
+		}, true
 	}
 
 	rows := []doctorCheck{serverVersionCheck(socket, resp.Header.Get(middleware.HeaderVersion), version.API())}
@@ -204,7 +211,7 @@ func serverChecks(
 		rows = append(rows, row)
 	}
 
-	return rows
+	return rows, true
 }
 
 // serverDialCheck explains err, the failure of a request to the phenix ui on

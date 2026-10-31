@@ -149,7 +149,7 @@ const doctorDesc = `Check the phenix configuration without a running server
   store file is a whole BoltDB file this user owns and that no root phenix ui
   uses another store, and that the base directories exist, check what phenix
   ui reads at startup (the JWT signing key and lifetime, initial users, proxy
-  auth, the TLS key pair and certificate expiry, the listen endpoints, and
+  auth, the TLS key pair and certificate, the listen endpoints, and
   the unix socket's directory and group), ask a running phenix ui on the unix
   socket for its version and its bridge and deploy modes, and check that
   minimega answers on its socket and that its files directory, base directory
@@ -189,6 +189,17 @@ const doctorDesc = `Check the phenix configuration without a running server
   checks the programs phenix image build needs, root and a free loop device.
   It also checks the debootstrap script and keyring of the release of each
   stored image config.
+
+  The server group also looks at the state of phenix ui. stuck-status names
+  the app runs, SCORCH runs and delayed starts that the store marks as in
+  progress for a running experiment, when no phenix process can own them. It
+  also names the interrupted starts. ui-limits (Linux only) warns when phenix
+  ui has more than 80 percent of its soft limit of open files open. In the
+  tls group, ui.tls-cert warns when the TLS certificate expires within 30
+  days, or when its names do not cover the host that users reach. It fails
+  when the certificate expired or is not valid yet. In the env group,
+  proxy-env warns when a proxy variable is set and NO_PROXY does not cover
+  the hosts of phenix ui. It names the variables, never their values.
 
   The images group also looks for problems that stopped or deleted
   experiments leave. writable-images warns when a VM with snapshot: false

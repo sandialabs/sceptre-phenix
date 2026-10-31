@@ -13,17 +13,18 @@ import (
 )
 
 // redactTestInput is the doctor input the redactor reads: the host name, the
-// hostname suffixes, the user, ui.users, the JWT key, variables, addresses and
-// the host name minimega answers from.
+// hostname suffixes, the user, ui.users, the JWT key, variables, addresses,
+// the host name minimega answers from and ui.listen-endpoint.
 type redactTestInput struct {
-	host, suffixes, user, home, users, key, mmHost string
-	vars                                           map[string]string
-	addrs, meshNodes                               []string
+	host, suffixes, user, home, users, key, mmHost, listen string
+	vars                                                   map[string]string
+	addrs, meshNodes                                       []string
 }
 
 func (ti redactTestInput) input() *doctorInput {
 	in := fakeDoctorInput("/nonexistent", map[string]string{
 		"hostname-suffixes": ti.suffixes, "ui.users": ti.users, "ui.jwt-signing-key": ti.key,
+		"ui.listen-endpoint": ti.listen,
 	})
 
 	in.env = fakeDoctorEnv(ti.vars, false)
@@ -74,6 +75,15 @@ func TestDoctorRedact(t *testing.T) {
 		"mesh nodes": {
 			in:   redactTestInput{host: "ws42-phenix", suffixes: "-minimega,-phenix", meshNodes: []string{"ws42-minimega", "node3"}},
 			text: "e1 VM a on node3, and ws42", want: "e1 VM a on <host-1>, and <host-2>",
+		},
+		"listen host": {
+			in:   redactTestInput{host: "ws42", listen: "phenix.corp.example.com:443"},
+			text: "They do not cover phenix.corp.example.com. NO_PROXY does not cover: localhost, ws42, phenix",
+			want: "They do not cover <host-1>. NO_PROXY does not cover: localhost, <host-2>, phenix",
+		},
+		"listen address": {
+			in:   redactTestInput{host: "ws42", listen: "10.9.8.7:3000"},
+			text: "10.9.8.7:3000 and 10 hosts", want: "<ip-1>:3000 and 10 hosts",
 		},
 		"FQDN": {
 			in:   redactTestInput{host: "node7.lab.example", suffixes: "-phenix"},

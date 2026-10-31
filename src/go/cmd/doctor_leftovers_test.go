@@ -641,16 +641,17 @@ func TestDoctorDecodeExperiment(t *testing.T) {
 		apps:       []string{"soh", "ntp", "scorch"},
 		components: []string{"pause", "custom"},
 		appHosts:   [][2]string{{"ntp", "a"}, {"ntp", "gone"}},
+		stuck:      doctorStuck{scorchRun: -1},
 	}
 
-	opts := cmp.AllowUnexported(doctorExperiment{}, doctorVM{}, doctorVLANs{})
+	opts := cmp.AllowUnexported(doctorExperiment{}, doctorVM{}, doctorVLANs{}, doctorStuck{})
 
 	if diff := cmp.Diff(want, decodeDoctorExperiment(config), opts); diff != "" {
 		t.Errorf("decodeDoctorExperiment() mismatch (-want +got):\n%s", diff)
 	}
 
 	bad := store.Config{Version: "phenix.sandia.gov/v9", Kind: "Experiment", Metadata: store.ConfigMetadata{Name: "e2"}}
-	if diff := cmp.Diff(doctorExperiment{name: "e2"}, decodeDoctorExperiment(bad), opts); diff != "" {
+	if diff := cmp.Diff(doctorExperiment{name: "e2", stuck: doctorStuck{scorchRun: -1}}, decodeDoctorExperiment(bad), opts); diff != "" {
 		t.Errorf("decodeDoctorExperiment() of a bad config mismatch (-want +got):\n%s", diff)
 	}
 }

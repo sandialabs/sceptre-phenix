@@ -419,6 +419,10 @@ func doctorChecks() []doctorCheckDef {
 				return one(envOverridesCheck(in.settings, in.config.values, in.env.lookup))
 			},
 		},
+		{
+			id: proxyEnvName, group: doctorGroupEnv, name: proxyEnvName, hint: proxyEnvHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(proxyEnvCheck(in)) },
+		},
 		settingDef("bridge-mode", "set bridge-mode to manual or auto, because every phenix command refuses another value"),
 		settingDef("deploy-mode",
 			"set deploy-mode to all, no-headnode or only-headnode, or unset it, because every phenix command refuses another value"),
@@ -600,10 +604,14 @@ func doctorChecks() []doctorCheckDef {
 		},
 		{
 			id: "ui.tls", group: doctorGroupTLS, name: "ui.tls",
-			hint: hintText("set both ui.tls-key and ui.tls-cert to a readable key and its current certificate, or neither"),
+			hint: hintText("set both ui.tls-key and ui.tls-cert to a readable key and its certificate, or neither"),
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
-				return one(in.env.tlsCheck(in.text("ui.tls-key"), in.text("ui.tls-cert"), in.now()))
+				return one(in.env.tlsCheck(in.text("ui.tls-key"), in.text("ui.tls-cert")))
 			},
+		},
+		{
+			id: tlsCertName, group: doctorGroupTLS, name: tlsCertName, hint: tlsCertHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return tlsCertCheck(in) },
 		},
 		{
 			id: "ui.listen-endpoint", group: doctorGroupTLS, name: "ui.listen-endpoint",
@@ -645,8 +653,28 @@ func doctorChecks() []doctorCheckDef {
 					bridge = ""
 				}
 
-				return serverChecks(ctx, in.text("unix-socket"), in.timeout, in.server, in.env.lstat, bridge, in.text("deploy-mode"))
+				socket := in.text("unix-socket")
+				rows, answered := serverChecks(ctx, socket, in.timeout, in.server, in.env.lstat, bridge, in.text("deploy-mode"))
+
+				ui := &doctorUI{answered: answered, why: ""}
+				if socket == "" {
+					ui.why = "unix-socket is empty"
+				} else if !answered && len(rows) > 0 {
+					ui.why = rows[0].Detail
+				}
+
+				in.found.ui = ui
+
+				return rows
 			},
+		},
+		{
+			id: stuckStatusName, group: doctorGroupServer, name: stuckStatusName, hint: stuckStatusHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(stuckStatusCheck(ctx, in)) },
+		},
+		{
+			id: uiLimitsName, group: doctorGroupServer, name: uiLimitsName, hint: uiLimitsHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(uiLimitsCheck(ctx, in)) },
 		},
 		{
 			id: minimegaCheckName, group: doctorGroupMinimega, name: minimegaCheckName, hint: minimegaHint,
@@ -859,7 +887,7 @@ func runDoctorChecksFound(
 	run := *input
 	run.found = &doctorFound{
 		minimegaUp: false, minimegaArgs: nil, images: nil, experiments: nil, inventory: nil, ovsShow: nil, leftovers: nil,
-		mesh: nil, stored: nil, storeBusy: "", users: nil,
+		mesh: nil, stored: nil, storeBusy: "", users: nil, ui: nil, procs: nil, certNames: nil,
 	}
 	in := &run
 

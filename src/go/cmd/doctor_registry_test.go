@@ -215,6 +215,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"settings-file settings file pass",
 		"scenario-hosts scenario-hosts skip",
 		"env-overrides env overrides pass",
+		"proxy-env proxy-env pass",
 		"bridge-mode bridge-mode pass",
 		"deploy-mode deploy-mode pass",
 		"experiment.disk-check experiment.disk-check pass",
@@ -248,6 +249,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"server server pass",
 		"server server bridge-mode pass",
 		"server server deploy-mode pass",
+		"stuck-status stuck-status skip",
+		"ui-limits ui-limits skip",
 		"minimega minimega pass",
 		"minimega-env minimega files pass",
 		"minimega-env minimega base pass",
@@ -294,7 +297,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 	}
 
 	// with a store file, the rows that read the stored experiments pass
-	withStore := replaceNamedRows(allPass, "writable-images writable-images pass", "leftovers leftovers snapshots pass",
+	withStore := replaceNamedRows(allPass, "stuck-status stuck-status pass", "writable-images writable-images pass",
+		"leftovers leftovers snapshots pass",
 		"leftovers leftovers files pass", "leftovers leftovers mounts pass", "image-locks image-locks pass",
 		"state-drift state-drift experiments pass", "state-drift state-drift namespaces pass", "vlans vlans pinned pass",
 		"vlans vlans free pass", "schedule-hosts schedule-hosts pass", "cc-clients cc-clients pass",
@@ -459,7 +463,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		},
 		"TLS key without a certificate": {
 			settings: map[string]string{"ui.tls-key": filepath.Join(dir, "phenix.key")},
-			want:     with("ui.tls", "ui.tls ui.tls fail", false),
+			want: slices.Insert(with("ui.tls", "ui.tls ui.tls fail", false), slices.Index(allPass, "ui.tls ui.tls pass")+1,
+				"ui.tls-cert ui.tls-cert skip"),
 		},
 		"listeners phenix ui refuses": {
 			settings: map[string]string{"ui.listen-endpoint": "3000", "ui.file-server-endpoint": "99999"},
@@ -656,7 +661,7 @@ func TestParseDoctorSkip(t *testing.T) {
 		"group": {args: []string{"--skip", "minimega"}, want: []string{
 			"bridge-trunk", "cc-clients", "minimega", "minimega-env", "minimega-limits", "schedule-hosts", "state-drift", "vlans",
 		}},
-		"id": {args: []string{"--skip", "minimega-env,server"}, want: []string{"minimega-env", "server"}},
+		"id": {args: []string{"--skip", "minimega-env,server"}, want: []string{"minimega-env", "server", "stuck-status", "ui-limits"}},
 		"group of several": {
 			args: []string{"--skip", "config"},
 			want: []string{"config-file", "config-keys", "config-paths", "scenario-hosts", "settings-file", "users-file"},
@@ -670,13 +675,13 @@ func TestParseDoctorSkip(t *testing.T) {
 		},
 		"comma list and repeated": {
 			args: []string{"--skip", "env, store.endpoint", "--skip", "ui"},
-			want: []string{"env", "env-overrides", "store.endpoint", "ui.netflow.max-size", "ui.shutdown-grace-period"},
+			want: []string{"env", "env-overrides", "proxy-env", "store.endpoint", "ui.netflow.max-size", "ui.shutdown-grace-period"},
 		},
 		"auth, tls and socket groups": {
 			args: []string{"--skip", "auth,tls", "--skip", "socket"},
 			want: []string{
 				"proxy-jwt", "rbac-users", "ui.file-server-endpoint", "ui.jwt-lifetime", "ui.jwt-signing-key",
-				"ui.listen-endpoint", "ui.proxy-auth-header", "ui.tls", "ui.users", "unix-socket", "unix-socket-gid",
+				"ui.listen-endpoint", "ui.proxy-auth-header", "ui.tls", "ui.tls-cert", "ui.users", "unix-socket", "unix-socket-gid",
 			},
 		},
 		"unknown": {
@@ -827,7 +832,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 56 passed, 22 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 57 passed, 24 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -853,8 +858,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 56 passed, 22 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"78 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 57 passed, 24 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"81 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

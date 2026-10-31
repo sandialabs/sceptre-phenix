@@ -57,9 +57,11 @@ type doctorEnv struct {
 	readDir     func(string) ([]os.DirEntry, error)
 	fsType      func(string) (string, error) // the type of the filesystem that holds a path, such as ext4 or nfs
 	groups      func() ([]int, error)        // the groups this process is in
-	roles       []string                     // the built-in roles, or nil when unknown
-	pageSize    int                          // the host's memory page size, as bbolt reads it
-	root        bool
+	// socketPeer is the pid of the process that listens on a unix socket
+	socketPeer func(ctx context.Context, path string, timeout time.Duration) (int, error)
+	roles      []string // the built-in roles, or nil when unknown
+	pageSize   int      // the host's memory page size, as bbolt reads it
+	root       bool
 }
 
 func osDoctorEnv() doctorEnv {
@@ -78,6 +80,7 @@ func osDoctorEnv() doctorEnv {
 		readAt:      osReadAt,
 		readDir:     os.ReadDir,
 		fsType:      filesystemType,
+		socketPeer:  socketPeer,
 		groups: func() ([]int, error) {
 			groups, err := os.Getgroups()
 

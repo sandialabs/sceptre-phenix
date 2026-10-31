@@ -67,9 +67,9 @@ type doctorRedactor struct {
 	counts map[string]int    // the tokens made, by kind
 }
 
-// newDoctorRedactor collects the values to redact from in: the host name, the
-// host name minimega answers from, the user names, the ui.users names and
-// passwords, the JWT signing key and the addresses of the host's interfaces.
+// newDoctorRedactor collects the values to redact from in: the host names,
+// such as the host of ui.listen-endpoint, the user names, the ui.users names
+// and passwords, the JWT signing key and the addresses of the host's interfaces.
 func newDoctorRedactor(in *doctorInput) *doctorRedactor {
 	r := &doctorRedactor{words: nil, tokens: make(map[string]string), counts: make(map[string]int)}
 
@@ -97,6 +97,22 @@ func newDoctorRedactor(in *doctorInput) *doctorRedactor {
 			for _, node := range exp.schedules {
 				r.addHost(node, redactSuffixes(in.text("hostname-suffixes")))
 			}
+		}
+	}
+
+	// the DNS names of the TLS certificate, which ui.tls-cert names
+	if in.found != nil {
+		for _, name := range in.found.certNames {
+			r.addHost(strings.TrimPrefix(name, "*."), redactSuffixes(in.text("hostname-suffixes")))
+		}
+	}
+
+	// the host of ui.listen-endpoint, which ui.tls-cert and proxy-env name
+	if host, _, err := net.SplitHostPort(in.text("ui.listen-endpoint")); err == nil {
+		if _, err := netip.ParseAddr(host); err == nil {
+			r.addIP(host)
+		} else {
+			r.addHost(host, redactSuffixes(in.text("hostname-suffixes")))
 		}
 	}
 
@@ -207,7 +223,8 @@ func redactSuffixes(setting string) []string {
 }
 
 // addHost adds the host name and its short name. A short name keeps a
-// hostname suffix, so ws42-phenix becomes <host-1>-phenix.
+// hostname suffix, so ws42-phenix becomes <host-1>-phenix. It adds a full
+// name also when the short name is a kept value, such as phenix.
 func (r *doctorRedactor) addHost(name string, suffixes []string) {
 	short, _, _ := strings.Cut(name, ".")
 
@@ -216,12 +233,11 @@ func (r *doctorRedactor) addHost(name string, suffixes []string) {
 		base = strings.TrimSuffix(base, s)
 	}
 
-	if base == "" || redactIsKept(base) {
-		return
+	key := strings.ToLower(name)
+	if base != "" && !redactIsKept(base) {
+		key = strings.ToLower(base)
+		r.add(redactWord{value: base, kind: redactHost, key: key, fold: true})
 	}
-
-	key := strings.ToLower(base)
-	r.add(redactWord{value: base, kind: redactHost, key: key, fold: true})
 
 	if name != short && !redactIsKept(name) {
 		r.add(redactWord{value: name, kind: redactHost, key: key, fold: true})

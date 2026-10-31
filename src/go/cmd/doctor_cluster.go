@@ -68,6 +68,7 @@ const (
 	filesBusyPhrase    = "of the limit are open"
 	unscheduledPhrase  = "not in minimega's mesh"
 	unlimitedOpenFiles = -1
+	unlimitedText      = "unlimited" // a value in /proc/<pid>/limits that sets no limit
 )
 
 // digitRun matches a number in a host name.
@@ -215,7 +216,7 @@ func parseOpenFilesLimit(limits string) (int, int, bool) {
 		values := [2]int{}
 
 		for i, field := range fields[3:5] {
-			if field == "unlimited" {
+			if field == unlimitedText {
 				values[i] = unlimitedOpenFiles
 
 				continue
@@ -261,7 +262,7 @@ func minimegaOpenFilesCheck(ctx context.Context, in *doctorInput) doctorCheck {
 
 	hardText := strconv.Itoa(hard)
 	if hard == unlimitedOpenFiles {
-		hardText = "unlimited"
+		hardText = unlimitedText
 	}
 
 	parts := []string{fmt.Sprintf("minimega (pid %d) can open %d files (soft limit, hard limit %s)", pid, soft, hardText)}
