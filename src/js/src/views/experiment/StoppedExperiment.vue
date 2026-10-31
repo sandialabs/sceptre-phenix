@@ -707,41 +707,6 @@
     },
 
     computed: {
-      vms: function () {
-        let vms = this.experiment.vms;
-
-        var name_re = new RegExp(this.searchName, 'i');
-        var data = [];
-
-        for (let i in vms) {
-          let vm = vms[i];
-          if (vm.name.match(name_re)) {
-            data.push(vm);
-          }
-        }
-
-        return vms;
-      },
-
-      filteredData() {
-        if (this.experiment.length == 0) {
-          return [];
-        }
-
-        let names = this.experiment.vms.map((vm) => {
-          return vm.name;
-        });
-
-        return names.filter((option) => {
-          return (
-            option
-              .toString()
-              .toLowerCase()
-              .indexOf(this.searchName.toLowerCase()) >= 0
-          );
-        });
-      },
-
       // Intentionally restores the persisted pagination toggle as a side
       // effect on first access.
       /* eslint-disable vue/no-side-effects-in-computed-properties */
@@ -800,21 +765,6 @@
           return 'dnb';
         } else {
           return 'boot';
-        }
-      },
-      getSnapshotStatus(vm, persistanceLabel) {
-        if (vm.external) {
-          return true;
-        }
-
-        if (vm.snapshot && persistanceLabel) {
-          return true;
-        } else if (vm.snapshot && !persistanceLabel) {
-          return false;
-        } else if (!vm.snapshot && persistanceLabel) {
-          return false;
-        } else {
-          return true;
         }
       },
 
@@ -1437,7 +1387,6 @@
           hasModalCard: true,
           props: {
             vmName: vm.name,
-            experiment: this.$route.params.id,
             tags: vm.tags,
           },
         });
@@ -1781,9 +1730,7 @@
         hosts: [],
         disks: [],
         searchName: '',
-        filtered: null,
         algorithm: null,
-        dnb: false,
         isWaiting: true,
         searchHistory: [],
         searchHistoryLength: 10,

@@ -84,10 +84,7 @@ func (t *Tap) create(host string) error {
 	opts := []mm.TapOption{
 		mm.TapHost(host), mm.TapNS(t.o.exp), mm.TapName(t.Name),
 		mm.TapBridge(t.Bridge), mm.TapVLANAlias(t.VLAN), mm.TapIP(t.IP),
-	}
-
-	if t.o.netns {
-		opts = append(opts, mm.TapNetNS(t.Name))
+		mm.TapNetNS(t.Name),
 	}
 
 	err := mm.TapVLAN(opts...)
@@ -101,11 +98,7 @@ func (t *Tap) create(host string) error {
 func (t *Tap) delete(host string) error {
 	opts := []mm.TapOption{
 		mm.TapHost(host), mm.TapNS(t.o.exp),
-		mm.TapName(t.Name), mm.TapDelete(),
-	}
-
-	if t.o.netns {
-		opts = append(opts, mm.TapNetNS(t.Name))
+		mm.TapName(t.Name), mm.TapDelete(), mm.TapNetNS(t.Name),
 	}
 
 	err := mm.TapVLAN(opts...)
@@ -117,10 +110,6 @@ func (t *Tap) delete(host string) error {
 }
 
 func (t *Tap) connect(host string, subnet netaddr.IPPrefix) error { //nolint:funlen // complex logic
-	if !t.o.netns {
-		return fmt.Errorf("cannot connect tap %s - not in network namespace", t.Name)
-	}
-
 	t.Subnet = subnet.Masked().String()
 
 	var (
@@ -306,10 +295,6 @@ func (t *Tap) connect(host string, subnet netaddr.IPPrefix) error { //nolint:fun
 }
 
 func (t *Tap) disconnect(host string) error {
-	if !t.o.netns {
-		return fmt.Errorf("cannot disconnect tap %s - not in network namespace", t.Name)
-	}
-
 	subnet, err := netaddr.ParseIPPrefix(t.Subnet)
 	if err != nil {
 		return fmt.Errorf("parsing tap subnet %s: %w", t.Subnet, err)

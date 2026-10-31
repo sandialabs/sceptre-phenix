@@ -26,6 +26,29 @@ test('users: create and delete a user via modal', async ({ page }) => {
   await modal.locator('input[type="password"]').nth(1).fill('Testpass1!');
   await modal.locator('select').selectOption('Global Viewer');
 
+  // A name the list does not show yet is refused with 409: the dialog keeps
+  // what was typed, says so on its User Name field, and a toast announces it.
+  const create = '**/api/v1/users';
+  await page.route(create, (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({
+          status: 409,
+          contentType: 'text/plain',
+          body: 'user e2e-user already exists\n',
+        })
+      : route.fallback(),
+  );
+  await page.getByRole('button', { name: 'Create User' }).click();
+  await expect(modal.getByText('User already exists')).toBeVisible();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'User already exists' }),
+  ).toBeVisible();
+  await expect(modal.locator('input[type="text"]').nth(0)).toBeFocused();
+  await expect(modal.locator('input[type="password"]').nth(1)).toHaveValue(
+    'Testpass1!',
+  );
+  await page.unroute(create);
+
   await page.getByRole('button', { name: 'Create User' }).click();
   // success path must close the modal
   await expect(page.locator('.modal-card')).toBeHidden({ timeout: 15000 });
@@ -88,10 +111,10 @@ test('configs: view a config and open the editor', async ({ page }) => {
 
   const row = page.locator('tr').filter({ hasText: 'e2e-viewer-role' });
   await row.getByText('e2e-viewer-role', { exact: true }).click();
-  await settle(page, 1500);
 
   // viewer opens; Edit switches to the Ace-based editor
-  await page.getByRole('button', { name: /edit/i }).first().click();
+  const viewer = page.getByRole('dialog', { name: 'Role/e2e-viewer-role' });
+  await viewer.getByRole('button', { name: 'Edit Config' }).click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
 
   await page.request
@@ -115,7 +138,7 @@ test('configs: schema selection generates a config template', async ({
 
   const fullSchema = page.waitForResponse(
     (response) =>
-      response.url().endsWith('/api/v1/schemas/v2') &&
+      response.url().endsWith('/api/v1/schemas/v1') &&
       response.request().method() === 'GET',
   );
   const roleSchema = page.waitForResponse(

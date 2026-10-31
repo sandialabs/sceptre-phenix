@@ -98,7 +98,6 @@
   export default {
     props: {
       vmName: String,
-      experiment: String,
       tags: Object,
     },
 

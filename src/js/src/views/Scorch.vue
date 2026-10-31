@@ -692,7 +692,6 @@
     data() {
       return {
         experiments: [], // experiments with scorch configured
-        running: {}, // current scorch status for each experiment
         terminals: {}, // active terminals (TODO: for all experiments?)
         terminal: {
           // terminal currently being viewed

@@ -169,12 +169,8 @@ var rootCmd = &cobra.Command{
 
 		common.StoreEndpoint = endpoint //nolint:reassign // configuration injection
 
-		// Initialize storage backend if not already done
-		if !store.IsInitialized(store.ComponentStore) {
-			err := store.Init(store.Endpoint(endpoint))
-			if err != nil {
-				return fmt.Errorf("initializing storage: %w", err)
-			}
+		if err := store.Init(store.Endpoint(endpoint)); err != nil {
+			return fmt.Errorf("initializing storage: %w", err)
 		}
 
 		// Initialize default configs if not already done
@@ -448,7 +444,7 @@ func init() {
 	}
 
 	rootCmd.PersistentFlags().
-		StringVar(&storeEndpoint, "store.endpoint", defaultStore, "endpoint for storage service")
+		StringVar(&storeEndpoint, "store.endpoint", defaultStore, "BoltDB store endpoint (bolt://<path>)")
 	rootCmd.PersistentFlags().
 		String("log.system.path", defaultLogPath, "path to system log (JSON format)")
 
@@ -615,22 +611,38 @@ func getEffectiveSettings() map[string]any {
 	return vMerge.AllSettings()
 }
 
-// hideInheritedPersistentFlags marks all inherited persistent flags as hidden
-// for the provided command.
-func hideInheritedPersistentFlags(cmd *cobra.Command) {
+// hideInheritedPersistentFlags marks every inherited persistent flag of cmd
+// hidden and returns a function that shows them again. The flags belong to the
+// parent and are shared with every other command, so leaving them hidden would
+// hide them there too.
+func hideInheritedPersistentFlags(cmd *cobra.Command) func() {
+	var hidden []*pflag.Flag
+
 	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) {
-		_ = cmd.Flags().MarkHidden(f.Name)
-		_ = cmd.InheritedFlags().MarkHidden(f.Name)
+		if f.Hidden {
+			return
+		}
+
+		f.Hidden = true
+		hidden = append(hidden, f)
 	})
+
+	return func() {
+		for _, f := range hidden {
+			f.Hidden = false
+		}
+	}
 }
 
-// hideInheritedHelp wraps the default help behavior so inherited
-// persistent flags are hidden when help is generated.
+// hideInheritedHelp wraps the default help behavior so inherited persistent
+// flags are hidden in the help it generates, and only there.
 func hideInheritedHelp(cmd *cobra.Command) {
 	defaultHelp := cmd.HelpFunc()
 
 	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
-		hideInheritedPersistentFlags(c)
+		restore := hideInheritedPersistentFlags(c)
+		defer restore()
+
 		defaultHelp(c, args)
 	})
 }

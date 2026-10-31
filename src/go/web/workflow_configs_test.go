@@ -282,7 +282,9 @@ func TestWorkflowUpsertConfigDryRunExplainsValidationErrors(t *testing.T) {
 
 				dryErr := send("?dryRun=true")
 
-				assertValidationWebError(t, dryErr, tt.raw, tt.lines)
+				if err := validationWebErrorProblem(dryErr, tt.raw, tt.lines); err != nil {
+					t.Errorf("WorkflowUpsertConfig(?dryRun=true): %v", err)
+				}
 
 				if !reflect.DeepEqual(dryErr, realErr) {
 					t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
@@ -373,7 +375,10 @@ func TestWorkflowUpsertConfigDryRunRejectsKindInWrongCase(t *testing.T) {
 
 	err := WorkflowUpsertConfig(httptest.NewRecorder(), upsertTestRequest(t, "?dryRun=true", body))
 
-	assertValidationWebError(t, err, `validating config: config validation failed: *"/kind"*`, []string{`kind (line 2): *`})
+	err = validationWebErrorProblem(err, `validating config: config validation failed: *"/kind"*`, []string{`kind (line 2): *`})
+	if err != nil {
+		t.Errorf("WorkflowUpsertConfig(?dryRun=true) of kind topology: %v", err)
+	}
 }
 
 func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
@@ -462,22 +467,6 @@ func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
 	}
 }
 
-// configsTestRole returns a role allowed only the given verbs on configs. Like
-// the global-admin role, it names "*/*" to match every "<kind>/<name>".
-func configsTestRole(verbs ...string) rbac.Role {
-	return rbac.Role{
-		Spec: &v1.RoleSpec{
-			Policies: []*v1.PolicySpec{
-				{
-					Resources:     []string{"configs"},
-					ResourceNames: []string{"*", "*/*"},
-					Verbs:         verbs,
-				},
-			},
-		},
-	}
-}
-
 // A role that may create but not update configs, or the reverse, passes the
 // first check and is refused by the check for the named config.
 func TestWorkflowUpsertConfigForbidden(t *testing.T) {
@@ -489,11 +478,11 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 				m := installValidationTestStore(t)
 				expectUpsertExists(m, workflowTestKey("topology/main-topo"), exists)
 
-				role := configsTestRole("update")
+				role := configsRole("update")
 				want := "creating config Topology/main-topo not allowed for test-user"
 
 				if exists {
-					role = configsTestRole("create")
+					role = configsRole("create")
 					want = "updating config Topology/main-topo not allowed for test-user"
 				}
 
@@ -511,13 +500,25 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 	}
 }
 
-// configsScopedTestRole returns a role allowed only the given verbs on the
-// configs that match names.
-func configsScopedTestRole(names []string, verbs ...string) rbac.Role {
-	role := configsTestRole(verbs...)
-	role.Spec.Policies[0].ResourceNames = names
+// configsRole holds the given configs verbs on every config: config names
+// such as Topology/lab hold a "/", which "*" alone does not match.
+func configsRole(verbs ...string) rbac.Role {
+	return configsRoleOn([]string{"*", "*/*"}, verbs...)
+}
 
-	return role
+// configsRoleOn holds the given configs verbs on the configs names match.
+func configsRoleOn(names []string, verbs ...string) rbac.Role {
+	return rbac.Role{
+		Spec: &v1.RoleSpec{
+			Policies: []*v1.PolicySpec{
+				{
+					Resources:     []string{"configs"},
+					ResourceNames: names,
+					Verbs:         verbs,
+				},
+			},
+		},
+	}
 }
 
 // Only a caller who may write the named config gets as far as expanding the
@@ -547,23 +548,23 @@ spec:
 	}{
 		// Role.Allowed needs a non-nil Spec.
 		{name: "no policies", role: rbac.Role{Spec: &v1.RoleSpec{}}, forbidden: true},
-		{name: "read only", role: configsTestRole("get", "list"), forbidden: true},
+		{name: "read only", role: configsRole("get", "list"), forbidden: true},
 		{
 			name:      "create other configs",
-			role:      configsScopedTestRole([]string{"Topology/mine-*"}, "create", "update"),
+			role:      configsRoleOn([]string{"Topology/mine-*"}, "create", "update"),
 			lookup:    true,
 			forbidden: true,
 		},
 		{
 			name:      "update other configs",
-			role:      configsScopedTestRole([]string{"Topology/mine-*"}, "create", "update"),
+			role:      configsRoleOn([]string{"Topology/mine-*"}, "create", "update"),
 			lookup:    true,
 			exists:    true,
 			forbidden: true,
 		},
-		{name: "create", role: configsTestRole("create"), lookup: true},
-		{name: "update", role: configsTestRole("update"), lookup: true, exists: true},
-		{name: "create this config", role: configsScopedTestRole([]string{"Topology/probe"}, "create"), lookup: true},
+		{name: "create", role: configsRole("create"), lookup: true},
+		{name: "update", role: configsRole("update"), lookup: true, exists: true},
+		{name: "create this config", role: configsRoleOn([]string{"Topology/probe"}, "create"), lookup: true},
 	}
 
 	for _, query := range []string{"?dryRun=true", ""} {

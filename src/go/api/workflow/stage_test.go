@@ -2,6 +2,7 @@ package workflow_test
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -256,6 +257,198 @@ func TestStageInjectsCopiesSymlinks(t *testing.T) {
 		if got, err := os.Readlink(path); err != nil || got != want {
 			t.Errorf("%s -> %q (err %v), want %q", link, got, err, want)
 		}
+	}
+}
+
+func TestStageInjectsFollowsSymlinks(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "phenix-injects")
+	ext := filepath.Join(root, "external")
+
+	stageFile(t, filepath.Join(src, "local.txt"), "local", 0o644)
+	stageFile(t, filepath.Join(ext, "shared.txt"), "shared", 0o755)
+	stageFile(t, filepath.Join(ext, "shared_dir", "sub.txt"), "sub", 0o600)
+
+	stageSymlink(t, filepath.Join(ext, "shared.txt"), filepath.Join(src, "link_file"))
+	stageSymlink(t, filepath.Join(ext, "shared_dir"), filepath.Join(src, "link_dir"))
+	stageSymlink(t, filepath.Join(ext, "shared_dir"), filepath.Join(src, "link_dir2"))
+
+	base := filepath.Join(root, "injects")
+
+	files, err := workflow.StageInjectsWithOptions(src, base, "foo", workflow.StageOptions{
+		FollowSymlinks: true,
+	})
+	if err != nil {
+		t.Fatalf("StageInjectsWithOptions: %v", err)
+	}
+
+	// 1 local + 1 link_file + 1 link_dir/sub.txt + 1 link_dir2/sub.txt = 4
+	if files != 4 {
+		t.Errorf("files = %d, want 4", files)
+	}
+
+	// link_file must be a regular file, not a symlink
+	linkFilePath := filepath.Join(base, "foo", "link_file")
+	info, err := os.Lstat(linkFilePath)
+	if err != nil {
+		t.Fatalf("stat link_file: %v", err)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		t.Errorf("link_file is still a symlink, want a regular file")
+	}
+	if !info.Mode().IsRegular() {
+		t.Errorf("link_file mode = %v, want regular file", info.Mode())
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Errorf("link_file perm = %v, want 0755", info.Mode().Perm())
+	}
+	if got := stageRead(t, linkFilePath); got != "shared" {
+		t.Errorf("link_file content = %q, want %q", got, "shared")
+	}
+
+	// link_dir must be a directory, not a symlink
+	linkDirPath := filepath.Join(base, "foo", "link_dir")
+	dirInfo, err := os.Lstat(linkDirPath)
+	if err != nil {
+		t.Fatalf("stat link_dir: %v", err)
+	}
+	if dirInfo.Mode()&fs.ModeSymlink != 0 || !dirInfo.IsDir() {
+		t.Errorf("link_dir mode = %v, want a regular directory", dirInfo.Mode())
+	}
+	if got := stageRead(t, filepath.Join(linkDirPath, "sub.txt")); got != "sub" {
+		t.Errorf("link_dir/sub.txt content = %q, want %q", got, "sub")
+	}
+
+	// link_dir2 must also be a directory
+	linkDir2Path := filepath.Join(base, "foo", "link_dir2")
+	if got := stageRead(t, filepath.Join(linkDir2Path, "sub.txt")); got != "sub" {
+		t.Errorf("link_dir2/sub.txt content = %q, want %q", got, "sub")
+	}
+
+	if left := stageLeftovers(t, base); len(left) != 0 {
+		t.Errorf("leftover entries in base: %v", left)
+	}
+}
+
+func TestStageInjectsFollowSymlinksDangling(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "phenix-injects")
+	stageFile(t, filepath.Join(src, "local.txt"), "local", 0o644)
+	stageSymlink(t, filepath.Join(root, "nonexistent"), filepath.Join(src, "broken"))
+
+	base := filepath.Join(root, "injects")
+
+	_, err := workflow.StageInjectsWithOptions(src, base, "foo", workflow.StageOptions{
+		FollowSymlinks: true,
+	})
+	if err == nil {
+		t.Fatal("StageInjectsWithOptions wanted error for dangling symlink, got nil")
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("err = %v, want errors.Is(err, fs.ErrNotExist)", err)
+	}
+
+	if left := stageLeftovers(t, base); len(left) != 0 {
+		t.Errorf("leftover entries in base: %v", left)
+	}
+}
+
+func TestStageInjectsFollowSymlinksCyclic(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "phenix-injects")
+	sub := filepath.Join(src, "dir")
+	stageFile(t, filepath.Join(sub, "file.txt"), "hi", 0o644)
+	stageSymlink(t, sub, filepath.Join(sub, "loop"))
+
+	base := filepath.Join(root, "injects")
+
+	_, err := workflow.StageInjectsWithOptions(src, base, "foo", workflow.StageOptions{
+		FollowSymlinks: true,
+	})
+	if err == nil {
+		t.Fatal("StageInjectsWithOptions wanted error for cyclic symlink, got nil")
+	}
+	if !strings.Contains(err.Error(), "cyclic directory link") {
+		t.Errorf("err = %v, want it to contain 'cyclic directory link'", err)
+	}
+
+	if left := stageLeftovers(t, base); len(left) != 0 {
+		t.Errorf("leftover entries in base: %v", left)
+	}
+}
+
+func TestStageInjectsFollowSymlinksIntoStagingBase(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "phenix-injects")
+	base := filepath.Join(root, "injects")
+	stageMkdir(t, base, 0o755)
+	stageFile(t, filepath.Join(src, "file.txt"), "hi", 0o644)
+	stageSymlink(t, base, filepath.Join(src, "base-link"))
+
+	_, err := workflow.StageInjectsWithOptions(src, base, "foo", workflow.StageOptions{
+		FollowSymlinks: true,
+	})
+	if !errors.Is(err, workflow.ErrUnsafeDestination) {
+		t.Fatalf("StageInjectsWithOptions err = %v, want errors.Is(err, ErrUnsafeDestination)", err)
+	}
+
+	if left := stageLeftovers(t, base); len(left) != 0 {
+		t.Errorf("leftover entries in base: %v", left)
+	}
+}
+
+func TestStageInjectsFollowSymlinksDeepNestedDirs(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "phenix-injects")
+	ext := filepath.Join(root, "external")
+	stageMkdir(t, src, 0o755)
+
+	// Chain 45 acyclic directory symlinks (exceeding Linux's 40-link MAXSYMLINKS
+	// threshold when symlinks are not resolved at each recursion step).
+	const depth = 45
+
+	for i := range depth {
+		dir := filepath.Join(ext, fmt.Sprintf("d%02d", i))
+		stageMkdir(t, dir, 0o755)
+
+		if i > 0 {
+			prev := filepath.Join(ext, fmt.Sprintf("d%02d", i-1))
+			stageSymlink(t, dir, filepath.Join(prev, "next"))
+		}
+	}
+
+	leafDir := filepath.Join(ext, fmt.Sprintf("d%02d", depth-1))
+	stageFile(t, filepath.Join(leafDir, "leaf.txt"), "deep-leaf", 0o644)
+	stageSymlink(t, filepath.Join(ext, "d00"), filepath.Join(src, "entry"))
+
+	base := filepath.Join(root, "injects")
+
+	files, err := workflow.StageInjectsWithOptions(src, base, "foo", workflow.StageOptions{
+		FollowSymlinks: true,
+	})
+	if err != nil {
+		t.Fatalf("StageInjectsWithOptions: %v", err)
+	}
+
+	if files != 1 {
+		t.Errorf("files = %d, want 1", files)
+	}
+
+	parts := make([]string, 0, depth+3)
+	parts = append(parts, base, "foo", "entry")
+
+	for range depth - 1 {
+		parts = append(parts, "next")
+	}
+
+	parts = append(parts, "leaf.txt")
+
+	if got := stageRead(t, filepath.Join(parts...)); got != "deep-leaf" {
+		t.Errorf("leaf.txt = %q, want %q", got, "deep-leaf")
+	}
+
+	if left := stageLeftovers(t, base); len(left) != 0 {
+		t.Errorf("leftover entries in base: %v", left)
 	}
 }
 

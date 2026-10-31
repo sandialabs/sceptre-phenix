@@ -13,13 +13,14 @@ import (
 )
 
 const (
-	workflowConfigName   = "phenix.yml"
-	legacyWorkflowConfig = ".phenix.yml"
-	injectsDirName       = "phenix-injects"
-	configsDirName       = "phenix-configs"
-	optionWorkflowDryRun = "workflow-dry-run"
-	optionInjectsBase    = "base-dir.injects"
-	workflowDateLayout   = "20060102150405MST"
+	workflowConfigName         = "phenix.yml"
+	legacyWorkflowConfig       = ".phenix.yml"
+	injectsDirName             = "phenix-injects"
+	configsDirName             = "phenix-configs"
+	optionWorkflowDryRun       = "workflow-dry-run"
+	optionInjectsBase          = "base-dir.injects"
+	optionFollowInjectSymlinks = "follow-inject-symlinks"
+	workflowDateLayout         = "20060102150405MST"
 
 	// optionBranchName is the -b flag of apply, and optionBranchNameAlias its
 	// hidden alias, kept so an invocation written with --name still works.
@@ -98,6 +99,9 @@ const (
   # Deploy under another name; injects go to <base-dir.injects>/helloworld-2
   phenix workflow apply helloworld -b helloworld-2
 
+  # Follow symlinks in phenix-injects/ and copy targets as regular files and directories
+  phenix workflow apply helloworld --follow-inject-symlinks
+
   # Use another workflow config
   phenix workflow apply helloworld -c alt.yml
 
@@ -172,6 +176,10 @@ func newWorkflowApplyCmd() *cobra.Command {
 	)
 	cmd.Flags().BoolP("dry-run", "n", false, "check every config and the workflow config, log the server's plan, and change nothing")
 	cmd.Flags().BoolP("force", "f", false, "allow apply to stop, reconfigure and restart a running experiment")
+	cmd.Flags().Bool(
+		optionFollowInjectSymlinks, false,
+		"follow symlinks in phenix-injects/ and copy targets as regular files and directories",
+	)
 
 	return cmd
 }
@@ -186,16 +194,17 @@ func applyOptionsFromFlags(cmd *cobra.Command) (applyOptions, error) {
 	}
 
 	return applyOptions{
-		Name:                name,
-		Config:              MustGetString(cmd.Flags(), "config"),
-		ConfigExplicit:      cmd.Flags().Changed("config"),
-		DryRun:              MustGetBool(cmd.Flags(), "dry-run"),
-		Force:               MustGetBool(cmd.Flags(), "force"),
-		Socket:              common.UnixSocket,
-		InjectsBase:         common.InjectsBase,
-		TopologiesBase:      common.TopologiesBase,
-		InjectsBaseExplicit: cmd.Flags().Changed(optionInjectsBase),
-		Now:                 time.Now,
+		Name:                 name,
+		Config:               MustGetString(cmd.Flags(), "config"),
+		ConfigExplicit:       cmd.Flags().Changed("config"),
+		DryRun:               MustGetBool(cmd.Flags(), "dry-run"),
+		Force:                MustGetBool(cmd.Flags(), "force"),
+		Socket:               common.UnixSocket,
+		InjectsBase:          common.InjectsBase,
+		TopologiesBase:       common.TopologiesBase,
+		InjectsBaseExplicit:  cmd.Flags().Changed(optionInjectsBase),
+		FollowInjectSymlinks: MustGetBool(cmd.Flags(), optionFollowInjectSymlinks),
+		Now:                  time.Now,
 	}, nil
 }
 
@@ -227,7 +236,7 @@ func init() { //nolint:gochecknoinits // cobra command
 
 	workflowCmd.AddCommand(newWorkflowApplyCmd())
 
-	// The examples use global flags (--unix-socket, --base-dir.*, --log.level),
-	// so help shows them, as it does for ui.
-	addCommandToRoot(workflowCmd, false)
+	// Global flags are hidden in help, as they are for every command but ui.
+	// The long help and the examples name the ones apply reads.
+	addCommandToRoot(workflowCmd, true)
 }

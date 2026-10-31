@@ -362,7 +362,6 @@
       return {
         nextLogId: 0,
         logs: [], // the loaded logs; filtered in computed
-        suppressWatch: false, // if true, watches won't trigger call
         startDate: new Date(),
         endDate: new Date(),
         endNow: true, // if true, ignore `endDate` and also append streaming logs

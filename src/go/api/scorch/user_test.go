@@ -200,7 +200,6 @@ func TestUserComponentRunRoutesStdoutAndStructuredStderr(t *testing.T) {
 	plog.NewPhenixHandler(io.Discard)
 
 	type logEntry struct {
-		level   string
 		logType string
 		msg     string
 	}
@@ -211,10 +210,10 @@ func TestUserComponentRunRoutesStdoutAndStructuredStderr(t *testing.T) {
 	)
 
 	handlerName := "test-user-component-run"
-	plog.AddHandler(handlerName, plog.NewUIHandler("DEBUG", func(_ time.Time, level, logType, message string) {
+	plog.AddHandler(handlerName, plog.NewUIHandler("DEBUG", func(_ time.Time, _, logType, message string) {
 		mu.Lock()
 		defer mu.Unlock()
-		entries = append(entries, logEntry{level: level, logType: logType, msg: message})
+		entries = append(entries, logEntry{logType: logType, msg: message})
 	}))
 	defer plog.RemoveHandler(handlerName)
 

@@ -26,9 +26,11 @@ func isMarkerName(name string) bool {
 
 // injectsMarkerEntry returns the first entry with a marker name at the top
 // level of injects or directly inside one of its top-level directories,
-// relative to injects, or "". It follows no symbolic link, since staging
-// copies a link as a link.
-func injectsMarkerEntry(injects string) string {
+// relative to injects, or "". When followSymlinks is false, it follows no
+// symbolic link, since staging copies a link as a link. When followSymlinks
+// is true, it follows symlinks to directories so a directory that will become
+// a directory after staging is checked too.
+func injectsMarkerEntry(injects string, followSymlinks bool) string {
 	top, _ := os.ReadDir(injects)
 
 	for _, entry := range top {
@@ -36,7 +38,14 @@ func injectsMarkerEntry(injects string) string {
 			return entry.Name()
 		}
 
-		if !entry.IsDir() {
+		isDir := entry.IsDir()
+		if !isDir && followSymlinks && entry.Type()&fs.ModeSymlink != 0 {
+			if info, err := os.Stat(filepath.Join(injects, entry.Name())); err == nil && info.IsDir() {
+				isDir = true
+			}
+		}
+
+		if !isDir {
 			continue
 		}
 
@@ -78,7 +87,10 @@ func (r *applyRun) stage(injectsBase string) error {
 
 	plog.Info(plog.TypeSystem, "staging injects", "step", stepInjects, "dir", dest)
 
-	count, err := workflow.StageInjects(r.injects, injectsBase, r.name, protect...)
+	count, err := workflow.StageInjectsWithOptions(r.injects, injectsBase, r.name, workflow.StageOptions{
+		FollowSymlinks: r.opts.FollowInjectSymlinks,
+		Protect:        protect,
+	})
 
 	// kept is the error that names the previous copy this run kept, if any.
 	var kept error
@@ -95,7 +107,7 @@ func (r *applyRun) stage(injectsBase string) error {
 		// Name the remedy for the path at fault: a source file that cannot
 		// be read, or else the injects directory.
 		var pathErr *fs.PathError
-		if errors.As(err, &pathErr) && workflow.PathWithin(pathErr.Path, r.injects) {
+		if errors.As(err, &pathErr) && isSourcePermissionError(pathErr.Path, r.injects, injectsBase, cwd, r.opts.FollowInjectSymlinks) {
 			return fmt.Errorf("staging injects into %s: %w; make %s readable by the user running phenix", dest, err, pathErr.Path)
 		}
 
@@ -111,6 +123,25 @@ func (r *applyRun) stage(injectsBase string) error {
 	warnStagingLeftovers(injectsBase, r.name, kept)
 
 	return nil
+}
+
+// isSourcePermissionError reports whether path is an unreadable source entry
+// rather than an unwritable destination in injectsBase. When followSymlinks is
+// true, source entries inside symlinked directories resolve to their real
+// target paths outside injects, so any path outside injectsBase (both as
+// written and with symlinks resolved) is also treated as a source path.
+func isSourcePermissionError(path, injects, injectsBase, cwd string, followSymlinks bool) bool {
+	if workflow.PathWithin(path, injects) {
+		return true
+	}
+
+	if !followSymlinks {
+		return false
+	}
+
+	absBase := absolutePath(injectsBase, cwd)
+
+	return !workflow.PathWithin(path, absBase) && !workflow.PathWithin(path, resolvedPath(absBase))
 }
 
 // checkDestination refuses to stage into injectsBase, or to replace dest, its

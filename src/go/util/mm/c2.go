@@ -12,27 +12,19 @@ import (
 
 const c2OptionPadding = 2
 
-type GroupStateError struct {
+type GroupState struct {
 	Msg string
 	Err error
 
 	Meta map[string]any
 }
 
-func NewGroupSuccess(msg string, meta map[string]any) GroupStateError {
-	return GroupStateError{Msg: msg, Meta: meta} //nolint:exhaustruct // partial initialization
+func NewGroupSuccess(msg string, meta map[string]any) GroupState {
+	return GroupState{Msg: msg, Meta: meta} //nolint:exhaustruct // partial initialization
 }
 
-func NewGroupError(err error, meta map[string]any) GroupStateError {
-	return GroupStateError{Err: err, Meta: meta} //nolint:exhaustruct // partial initialization
-}
-
-func (g GroupStateError) Error() string {
-	return g.Err.Error()
-}
-
-func (g GroupStateError) Unwrap() error {
-	return g.Err
+func NewGroupError(err error, meta map[string]any) GroupState {
+	return GroupState{Err: err, Meta: meta} //nolint:exhaustruct // partial initialization
 }
 
 type StateGroup struct {
@@ -40,7 +32,7 @@ type StateGroup struct {
 
 	mu sync.Mutex
 
-	States   []GroupStateError
+	States   []GroupState
 	ErrCount int
 }
 
@@ -57,17 +49,6 @@ func (s *StateGroup) AddError(err error, meta map[string]any) {
 
 	s.States = append(s.States, NewGroupError(err, meta))
 	s.ErrCount++
-}
-
-func (s *StateGroup) AddGroupStateError(state GroupStateError) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.States = append(s.States, state)
-
-	if state.Err != nil {
-		s.ErrCount++
-	}
 }
 
 type C2RetryError struct {

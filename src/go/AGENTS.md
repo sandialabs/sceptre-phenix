@@ -8,7 +8,7 @@ under `src/go/`.
 - `cmd/`: Cobra commands; `api/`: domain operations; `types/`: versioned
   resources and schemas.
 - `app/`: built-in and user app execution; `scheduler/`: VM placement.
-- `store/`: BoltDB/etcd abstraction; `web/`: REST, websocket, RBAC, and UI
+- `store/`: BoltDB store abstraction; `web/`: REST, websocket, RBAC, and UI
   serving; `util/mm/`: minimega integration.
 
 ## Commands
@@ -19,6 +19,7 @@ Run from `src/go/`:
 |---|---|
 | Focused tests | `go test -race ./path/to/package/...` |
 | All Go tests | `go test -race ./...` or `make test` |
+| Go tests with coverage | `make test-cover` |
 | Non-fixing lint | `make check` |
 | Format / fixing lint | `make format` / `make lint` |
 | Generate all outputs | `make generate` |
@@ -36,8 +37,11 @@ the root target does.
   upgrading or replacing them.
 - Config changes must keep versioned structs, interfaces, YAML/JSON tags,
   OpenAPI schemas, examples, and API output aligned.
-- Preserve persisted BoltDB/etcd compatibility. A kind decodes only at its
-  version in `types/version.StoredVersion`; there are no config upgraders.
+- Preserve persisted BoltDB compatibility. A kind decodes only at its version
+  in `types/version.StoredVersion`; there are no config upgraders.
+- A kind's schema lives only in `types/version/schemas/<version>.yaml` for its
+  stored version. Config validation and the UI config editor both read the
+  file of the config's own `apiVersion`, so a schema change goes in that file.
 - RBAC changes require generated policy, migrations when needed, and migration
   tests. Keep CLI, REST, websocket, and UI authorization equivalent.
 - API route changes require domain behavior, `web/server.go`, RBAC,

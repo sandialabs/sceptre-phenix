@@ -23,6 +23,13 @@
     <div class="columns p-4">
       <div class="column is-1" />
       <div class="column is-2">
+        <!-- Focus starts here when the editor opens, not on the page. -->
+        <h1
+          ref="heading"
+          class="title is-5 config-editor__heading"
+          tabindex="-1">
+          {{ heading }}
+        </h1>
         <b-field
           class="editor"
           label="Config Name"
@@ -134,6 +141,10 @@
             :vim="editor.vim"
             @save="configSentSave"
             @reset="configSentReset" />
+          <p class="help">
+            Press Enter on the editor to type in it, and Escape to leave it
+            (twice in Vim mode), so that Tab moves on.
+          </p>
           <b-loading
             :is-full-page="false"
             v-model="editor.isLoading"></b-loading>
@@ -163,6 +174,8 @@
       editorConfig: Object,
     },
     mounted() {
+      this.$refs.heading?.focus();
+
       //set vim mode
       let user = localStorage.getItem('user');
       if (localStorage.getItem(user + '.vimMode')) {
@@ -186,28 +199,18 @@
         axiosInstance
           .get('configs/' + name, { headers: { Accept: 'application/json' } })
           .then((response) => {
-            if (this.isBuilderTopology(response.data)) {
-              this.$buefy.dialog.alert({
-                title: 'Built by Builder',
-                message: 'This configuration can only be edited in Builder',
-                confirmText: 'OK',
-                type: 'is-warning',
-                hasIcon: true,
-              });
-            } else {
-              this.config.obj = response.data;
-              this.config.str = this.getConfigStr('yaml');
+            this.config.obj = response.data;
+            this.config.str = this.getConfigStr('yaml');
 
-              if (this.config.obj.kind == 'Experiment') {
-                if (
-                  this.config.obj.status &&
-                  this.config.obj.status.startTime !== ''
-                ) {
-                  this.expStart = true;
-                }
+            if (this.config.obj.kind == 'Experiment') {
+              if (
+                this.config.obj.status &&
+                this.config.obj.status.startTime !== ''
+              ) {
+                this.expStart = true;
               }
-              this.editor.lang = 'yaml';
             }
+            this.editor.lang = 'yaml';
             this.editor.isLoading = false;
           })
           .catch((err) => {
@@ -232,10 +235,6 @@
         editor: {
           lang: 'yaml',
           vim: false,
-          options: {
-            useWorker: false,
-            tabSize: 2,
-          },
           isLoading: false,
         },
         config: {
@@ -285,9 +284,12 @@
         this.editor.isLoading = true;
         let version = config.apiVersion.split('/')[1];
 
-        // Always get v2 (latest version) of full schema.
+        // The kind's schema refers to sub-schemas in the full schema of the
+        // same version, so get that version's full schema to resolve them.
         axiosInstance
-          .get('schemas/v2', { headers: { Accept: 'application/json' } })
+          .get('schemas/' + version, {
+            headers: { Accept: 'application/json' },
+          })
           .then((spec) => {
             axiosInstance
               .get('schemas/' + config.kind + '/' + version, {
@@ -312,7 +314,7 @@
           })
           .catch((err) => {
             useErrorNotification(err);
-            this.isWaiting = false;
+            this.editor.isLoading = false;
           });
       },
       async confirmResetEditor() {
@@ -329,7 +331,7 @@
           },
         });
       },
-      resetEditor(msg) {
+      resetEditor(msg, savedName = '') {
         this.editor.vim = false;
 
         this.config.str = '';
@@ -337,7 +339,7 @@
         this.editor.nameErrType = null;
         this.editor.nameErrMsg = null;
 
-        this.$emit('is-done', msg);
+        this.$emit('is-done', msg, savedName);
       },
       getConfigObj(lang = null) {
         if (!lang) {
@@ -402,7 +404,6 @@
             this.editor.lang = 'json';
             this.config.obj = this.getConfigObj('yaml');
             this.config.str = this.getConfigStr('json', this.config.obj);
-            return;
           }
         }
       },
@@ -437,7 +438,11 @@
                 headers: { 'Content-Type': 'application/json' },
               })
               .then(() => {
-                this.resetEditor(`config ${name} has been edited`);
+                // The save can rename the config, so report its new name.
+                this.resetEditor(
+                  `config ${name} has been edited`,
+                  `${config.kind}/${config.metadata.name}`,
+                );
               })
               .catch((err) => {
                 console.log(err);
@@ -497,16 +502,14 @@
 
         this.isWaiting = false;
       },
-      isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
-        }
-        return false;
-      },
     },
     computed: {
+      // What the editor is for: "Edit Topology/web", or "New config".
+      heading() {
+        return this.mode == 'edit' && this.editorConfig
+          ? `Edit ${this.editorConfig.kind}/${this.editorConfig.metadata.name}`
+          : 'New config';
+      },
       validName() {
         return /^[a-zA-Z0-9_@.-]*$/.test(this.configName);
       },
@@ -661,6 +664,11 @@
 
   .editor :deep(.label) {
     color: whitesmoke;
+  }
+
+  .config-editor__heading {
+    color: whitesmoke;
+    overflow-wrap: anywhere;
   }
 
   button#editor {

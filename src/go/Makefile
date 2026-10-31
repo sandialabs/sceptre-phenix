@@ -28,7 +28,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all check-protoc clean generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test
+.PHONY: all check-protoc clean generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test test-cover
 .DEFAULT_GOAL := help
 
 help:
@@ -68,6 +68,11 @@ generate: generate-mocks generate-protobuf go-generate
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
 	go test -v -race ./...
+
+test-cover:
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
+	go test -v -race -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out | tail -n 1
 
 clean:
 	$(RM) bin/phenix

@@ -462,6 +462,12 @@ Key: E - experiment resource, V - VM resource, U - user resource
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
+Resource names are `<Kind>/<name>`, such as `Topology/riverside-water`.
+`Topology/*` covers every topology, and `*/*` covers every config, User and
+Role configs included. phēnix also checks create and update against the kind
+and name of the config in the request body. So a role scoped to `Topology/*`
+cannot create or overwrite a User or Role config.
+
 #### Resource: `settings`
 
 |      |      |

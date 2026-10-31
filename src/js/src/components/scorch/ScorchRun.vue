@@ -110,10 +110,6 @@
       statusDecorator() {
         return this.running ? 'is-success' : 'is-danger';
       },
-
-      control() {},
-
-      rewind() {},
     },
 
     data() {

@@ -986,9 +986,6 @@
         topologies: [],
         searchName: '',
         filtered: null,
-        isMenuActive: false,
-        action: null,
-        rowName: null,
         isWaiting: true,
         options: {},
       };

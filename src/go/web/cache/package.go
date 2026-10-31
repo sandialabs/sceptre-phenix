@@ -9,10 +9,6 @@ func Get(key string) ([]byte, bool) {
 	return DefaultWebCache.Get(key)
 }
 
-func Set(key string, val []byte) error {
-	return DefaultWebCache.Set(key, val)
-}
-
 func SetWithExpire(key string, val []byte, exp time.Duration) error {
 	return DefaultWebCache.SetWithExpire(key, val, exp)
 }

@@ -143,11 +143,11 @@ Reference material — read only what the current task needs:
 ### Release and packages
 
 - **Release detection is an exact list, not a prefix match.** Debian =
-  `jessie stretch buster bullseye bookworm`; Kali = `kali-dev kali-rolling
-  kali-last-snapshot kali-bleeding-edge`; everything else (including `trixie` and
-  bare `kali`) is treated as Ubuntu and gets the Ubuntu mirror, components, and
-  `linux-image-generic`, so debootstrap or apt fails. Use `kali-rolling`, not
-  `kali`. For a release outside the lists, `create` with explicit `--mirror` and
+  `jessie stretch buster bullseye bookworm trixie forky`; Kali = `kali kali-dev
+  kali-rolling kali-last-snapshot kali-bleeding-edge` (bare `kali` is built as
+  `kali-rolling`); everything else is treated as Ubuntu and gets the Ubuntu
+  mirror, components, and `linux-image-generic`, so debootstrap or apt fails.
+  For a release outside the lists, `create` with explicit `--mirror` and
   `--components`, then swap the kernel packages (`--skip-default-pkgs` does not
   affect them): `phenix image remove -P linux-image-generic,linux-headers-generic
   <name>` and `phenix image append -P linux-image-amd64,linux-headers-amd64 <name>`.
@@ -183,6 +183,8 @@ Reference material — read only what the current task needs:
   `miniccc.service` unit pointing at `/opt/minimega/bin/miniccc` (via
   `POSTBUILD_PHENIX_BASE`), not the binary. `inject-miniexe` places the binary at
   `/usr/local/bin/miniccc` and overwrites that unit with one that matches.
+  Both units run as `root` with `HOME=/root`, which is the environment `cc exec`
+  commands inherit.
   `--init-system` is `systemd` (default) or `sysinitv` for Linux; `startup` is
   Windows-only (adds a Startup-folder scheduler for `miniccc.exe`). Injecting
   `minirouter` auto-injects the `miniccc` found next to it; Windows disks only
@@ -241,7 +243,7 @@ apt-get install -y --no-install-recommends <packages>
 | Rebuild ignores release/mirror/package changes | A `<name>.tar` in the output dir is unpacked and skips debootstrap/apt even without `-c`; delete it |
 | `apt-get update` fails with `Temporary failure resolving` inside the build | Host `/etc/resolv.conf` is empty/unusable or the build ran with `--no-virtuals` (no resolv.conf copy) |
 | A user script runs twice | `script_order` has a duplicate key (from `remove` then `append`); fix with `phenix image edit` |
-| `linux-image-generic` has no installation candidate | Release not in the Debian/Kali lists (e.g. `trixie`, bare `kali`) — see Gotchas |
+| `linux-image-generic` has no installation candidate | Release not in the Debian/Kali lists (typo or unlisted codename) — see Gotchas |
 | VM boots with `ens3`-style NIC names or a blanking console | `--kernel-args` replaced vmdb2's defaults; add back `net.ifnames=0,biosdevname=0,consoleblank=0,rw` |
 
 ## Related Resources

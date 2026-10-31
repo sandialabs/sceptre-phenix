@@ -203,38 +203,38 @@ func installValidationTestStore(t *testing.T) *store.MockStore {
 	return m
 }
 
-// assertValidationWebError checks the 400 a handler returns for an invalid
-// config: the first explained line as the message, all of them in
-// metadata.validation and the validator's own text in metadata.validation-raw.
-// raw and lines are patterns for [matchLine].
-func assertValidationWebError(t *testing.T, err error, raw string, lines []string) {
-	t.Helper()
-
+// validationWebErrorProblem reports how err differs from the 400 for an invalid
+// config, whose message, cause and metadata must match the [matchLine] patterns.
+func validationWebErrorProblem(err error, raw string, lines []string) error {
 	var werr *weberror.WebError
 	if !errors.As(err, &werr) {
-		t.Fatalf("expected a *weberror.WebError, got %v", err)
+		return fmt.Errorf("error = %w, want a *weberror.WebError", err)
 	}
 
+	var problems []error
+
 	if werr.Status != http.StatusBadRequest {
-		t.Errorf("status: got %d, want %d", werr.Status, http.StatusBadRequest)
+		problems = append(problems, fmt.Errorf("status = %d, want %d", werr.Status, http.StatusBadRequest))
 	}
 
 	if !matchLine(werr.Message, lines[0]) {
-		t.Errorf("message:\n got %s\nwant %s", werr.Message, lines[0])
+		problems = append(problems, fmt.Errorf("message:\n got %s\nwant %s", werr.Message, lines[0]))
 	}
 
 	if !matchLine(werr.Cause, raw) {
-		t.Errorf("cause:\n got %s\nwant %s", werr.Cause, raw)
+		problems = append(problems, fmt.Errorf("cause:\n got %s\nwant %s", werr.Cause, raw))
 	}
 
 	got := strings.Split(werr.UserMetadata["validation"], "\n")
 	if len(got) != len(lines) || !slices.EqualFunc(got, lines, matchLine) {
-		t.Errorf("metadata.validation:\n got %q\nwant %q", got, lines)
+		problems = append(problems, fmt.Errorf("metadata.validation:\n got %q\nwant %q", got, lines))
 	}
 
 	if got := werr.UserMetadata["validation-raw"]; !matchLine(got, raw) {
-		t.Errorf("metadata.validation-raw:\n got %s\nwant %s", got, raw)
+		problems = append(problems, fmt.Errorf("metadata.validation-raw:\n got %s\nwant %s", got, raw))
 	}
+
+	return errors.Join(problems...)
 }
 
 func TestCreateConfigExplainsValidationErrors(t *testing.T) {
@@ -244,7 +244,9 @@ func TestCreateConfigExplainsValidationErrors(t *testing.T) {
 
 			req := validationTestRequest(t, http.MethodPost, "/api/v1/configs", tt.contentType, tt.body, nil)
 
-			assertValidationWebError(t, CreateConfig(httptest.NewRecorder(), req), tt.raw, tt.lines)
+			if err := validationWebErrorProblem(CreateConfig(httptest.NewRecorder(), req), tt.raw, tt.lines); err != nil {
+				t.Errorf("CreateConfig(%s): %v", tt.name, err)
+			}
 		})
 	}
 }
@@ -267,7 +269,9 @@ func TestUpdateConfigExplainsValidationErrors(t *testing.T) {
 				map[string]string{"kind": "topology", "name": "demo"},
 			)
 
-			assertValidationWebError(t, UpdateConfig(httptest.NewRecorder(), req), tt.raw, tt.lines)
+			if err := validationWebErrorProblem(UpdateConfig(httptest.NewRecorder(), req), tt.raw, tt.lines); err != nil {
+				t.Errorf("UpdateConfig(%s): %v", tt.name, err)
+			}
 		})
 	}
 }
@@ -302,7 +306,10 @@ func TestWorkflowUpsertConfigExplainsValidationErrors(t *testing.T) {
 					map[string]string{"branch": "main"},
 				)
 
-				assertValidationWebError(t, WorkflowUpsertConfig(httptest.NewRecorder(), req), tt.raw, tt.lines)
+				err := validationWebErrorProblem(WorkflowUpsertConfig(httptest.NewRecorder(), req), tt.raw, tt.lines)
+				if err != nil {
+					t.Errorf("WorkflowUpsertConfig(%s): %v", tt.name, err)
+				}
 			})
 		}
 	}
@@ -318,5 +325,25 @@ func TestValidationWebErrorExplainsUnwrappedErrors(t *testing.T) {
 
 	err = validationWebError([]byte(validationTestTopologyYAML), types.ValidateConfigSpec(*c))
 
-	assertValidationWebError(t, err, validationTestYAMLRaw, validationTestYAMLLines())
+	if err := validationWebErrorProblem(err, validationTestYAMLRaw, validationTestYAMLLines()); err != nil {
+		t.Errorf("validationWebError(ValidateConfigSpec(demo)): %v", err)
+	}
+}
+
+// A kind at an apiVersion whose schema file does not hold it is a 400
+// validation error, not an unknown kind.
+func TestCreateConfigRejectsKindAtWrongVersion(t *testing.T) {
+	installValidationTestStore(t) // validation fails before any store call
+
+	body := []byte("apiVersion: phenix.sandia.gov/v1\nkind: Scenario\nmetadata:\n  name: demo\nspec:\n  apps: []\n")
+	req := validationTestRequest(t, http.MethodPost, "/api/v1/configs", "application/x-yaml", body, nil)
+
+	var werr *weberror.WebError
+	if err := CreateConfig(httptest.NewRecorder(), req); !errors.As(err, &werr) {
+		t.Fatalf("expected a *weberror.WebError, got %v", err)
+	}
+
+	if werr.Status != http.StatusBadRequest || !strings.Contains(werr.Cause, "kind Scenario is not valid at apiVersion v1") {
+		t.Errorf("got status %d, cause %q; want 400 naming the kind and apiVersion", werr.Status, werr.Cause)
+	}
 }

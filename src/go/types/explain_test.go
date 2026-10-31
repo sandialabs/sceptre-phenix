@@ -625,10 +625,10 @@ func TestExplainValidationErrorNil(t *testing.T) {
 // any other under spec. That holds only while no kind's spec schema has a
 // top-level property named like a document key.
 func TestSpecSchemasHaveNoDocumentKeys(t *testing.T) {
-	for kind := range version.StoredVersion {
-		schema, err := version.GetVersionedValidatorForKind(kind, version.LATEST_VERSION)
+	for kind, ver := range version.StoredVersion {
+		schema, err := version.GetVersionedValidatorForKind(kind, ver)
 		if errors.Is(err, version.ErrInvalidKind) {
-			continue // no spec schema for this kind in the latest version
+			continue // not a config kind, so it has no spec schema
 		}
 
 		if err != nil {

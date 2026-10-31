@@ -551,15 +551,7 @@ func newExperimentStartCmd() *cobra.Command {
 				if periodic {
 					plog.Info(plog.TypeSystem, "honor-run-periodically flag was passed")
 
-					err := app.PeriodicallyRunApps(ctx, &wg, &exp)
-					if err != nil {
-						plog.Error(
-							plog.TypeSystem,
-							"scheduling experiment apps to run periodically",
-							"err",
-							err,
-						)
-					}
+					app.PeriodicallyRunApps(ctx, &wg, &exp)
 				}
 			}
 

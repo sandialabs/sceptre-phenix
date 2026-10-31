@@ -129,12 +129,7 @@ type SaveOption func(*saveOptions)
 
 type saveOptions struct {
 	name string
-
-	spec   ifaces.ExperimentSpec
-	status ifaces.ExperimentStatus
-
-	saveNilSpec   bool
-	saveNilStatus bool
+	spec ifaces.ExperimentSpec
 }
 
 func newSaveOptions(opts ...SaveOption) saveOptions {
@@ -156,24 +151,6 @@ func SaveWithName(n string) SaveOption {
 func SaveWithSpec(s ifaces.ExperimentSpec) SaveOption {
 	return func(o *saveOptions) {
 		o.spec = s
-	}
-}
-
-func SaveWithStatus(s ifaces.ExperimentStatus) SaveOption {
-	return func(o *saveOptions) {
-		o.status = s
-	}
-}
-
-func SaveWithNilSpec(s bool) SaveOption {
-	return func(o *saveOptions) {
-		o.saveNilSpec = s
-	}
-}
-
-func SaveWithNilStatus(s bool) SaveOption {
-	return func(o *saveOptions) {
-		o.saveNilStatus = s
 	}
 }
 

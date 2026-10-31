@@ -1,5 +1,14 @@
 import { defineStore } from 'pinia';
 import router from '@/router';
+import { tokenExpiry } from '@/utils/token.js';
+
+/**
+ * Whether the token says it has expired. A token that is not a JWT (without
+ * authentication) never expires.
+ */
+export function tokenExpired(token) {
+  return Date.now() >= (tokenExpiry(token) ?? Infinity);
+}
 
 export const usePhenixStore = defineStore('phenix', {
   state: () => ({

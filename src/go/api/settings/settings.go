@@ -188,7 +188,7 @@ func List() ([]types.Setting, error) {
 
 		err = mapstructure.Decode(c.Spec, spec)
 		if err != nil {
-			return nil, fmt.Errorf("decoding image spec: %w", err)
+			return nil, fmt.Errorf("decoding setting %s: %w", c.Metadata.Name, err)
 		}
 
 		sett := types.Setting{Metadata: c.Metadata, Spec: spec}
@@ -211,14 +211,14 @@ func GetSetting(category, name string) (*types.Setting, error) {
 	}
 
 	if err := store.Get(c); err != nil {
-		return nil, fmt.Errorf("getting setting config %s from store: %w", name, err)
+		return nil, fmt.Errorf("getting setting config %s from store: %w", combined, err)
 	}
 
 	spec := new(v2.Setting)
 
 	err = mapstructure.Decode(c.Spec, spec)
 	if err != nil {
-		return nil, fmt.Errorf("decoding image spec: %w", err)
+		return nil, fmt.Errorf("decoding setting %s: %w", combined, err)
 	}
 
 	sett := &types.Setting{Metadata: c.Metadata, Spec: spec}

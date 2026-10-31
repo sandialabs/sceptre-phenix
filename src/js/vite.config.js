@@ -16,7 +16,6 @@ export default defineConfig(({ mode }) => {
     // with this raw value (not Vite's slash-normalized resolved base), and
     // code concatenates paths onto it (e.g. `${BASE_URL}api/v1/`)
     base: (process.env.VITE_BASE_PATH || '/').replace(/\/?$/, '/'),
-    assetsDir: 'assets',
     plugins: [vue(), vueDevTools()],
     resolve: {
       alias: {
@@ -29,19 +28,16 @@ export default defineConfig(({ mode }) => {
         '/api/v1': {
           target: 'http://localhost:3000',
           changeOrigin: true,
-          logLevel: 'debug',
           ws: true,
         },
         '/version': {
           target: 'http://localhost:3000',
           changeOrigin: true,
-          logLevel: 'debug',
           ws: true,
         },
         '/features': {
           target: 'http://localhost:3000',
           changeOrigin: true,
-          logLevel: 'debug',
           ws: true,
         },
       },
@@ -55,9 +51,16 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    // vitest: the Playwright suite in e2e/ has its own runner
+    // Vitest leaves out the Playwright suite in e2e/, which has its own runner.
     test: {
       exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+      setupFiles: ['test/unit-setup.js'],
+      // Measured only with --coverage (npm run test:coverage), as CI does.
+      coverage: {
+        provider: 'v8',
+        include: ['src/**'],
+        reporter: ['text-summary', 'json-summary', 'html'],
+      },
     },
   };
 });

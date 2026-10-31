@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
 
@@ -19,9 +20,11 @@ func init() { //nolint:gochecknoinits // library configuration
 	openapi3.SchemaErrorDetailsDisabled = true //nolint:reassign // configure library error verbosity
 }
 
-// ValidateConfigSpec validates the spec in the given config using the
-// appropriate `openapi3.Schema` validator. Any validation errors encountered
-// are returned.
+// ValidateConfigSpec validates the spec in the given config against the
+// component schema for its kind in the schema file of its own apiVersion, so
+// a v1 Topology is checked against v1.yaml and a v2 Scenario against v2.yaml.
+// A kind with no schema at its apiVersion fails validation, wrapping the
+// lookup error. Any validation errors encountered are returned.
 func ValidateConfigSpec(c store.Config) error {
 	if g := c.APIGroup(); g != store.APIGroup {
 		if g == "" {
@@ -44,7 +47,19 @@ func ValidateConfigSpec(c store.Config) error {
 		return fmt.Errorf("validating config: %w", err)
 	}
 
-	return ValidateSchema(c.Kind, version.LATEST_VERSION, c.Spec)
+	err := ValidateSchema(c.Kind, c.APIVersion(), c.Spec)
+	if err != nil && !errors.Is(err, ErrValidationFailed) {
+		// no schema for the kind at this apiVersion: the config is invalid
+		return fmt.Errorf(
+			"%w: kind %s is not valid at apiVersion %s: %w",
+			ErrValidationFailed,
+			c.Kind,
+			c.APIVersion(),
+			err,
+		)
+	}
+
+	return err
 }
 
 // ValidateSchema validates value against the component schema called name in
@@ -77,19 +92,29 @@ func ValidateSchema(name, ver string, value any) error {
 	return nil
 }
 
-func ValidateConfig(c store.Config) error {
+// configSchema is the Config schema of [OpenAPI], loaded and validated once.
+var configSchema = sync.OnceValues(func() (*openapi3.Schema, error) { //nolint:gochecknoglobals // parsed once per process
 	t, err := openapi3.NewLoader().LoadFromData(OpenAPI)
 	if err != nil {
-		return fmt.Errorf("loading OpenAPI schema for configs: %w", err)
+		return nil, fmt.Errorf("loading OpenAPI schema for configs: %w", err)
 	}
 
 	if err := t.Validate(context.Background()); err != nil {
-		return fmt.Errorf("validating OpenAPI schema for configs: %w", err)
+		return nil, fmt.Errorf("validating OpenAPI schema for configs: %w", err)
 	}
 
 	ref, ok := t.Components.Schemas["Config"]
 	if !ok {
-		return errors.New("no schema definition found for configs")
+		return nil, errors.New("no schema definition found for configs")
+	}
+
+	return ref.Value, nil
+})
+
+func ValidateConfig(c store.Config) error {
+	schema, err := configSchema()
+	if err != nil {
+		return err
 	}
 
 	// FIXME: using JSON marshal/unmarshal to get Go types converted to JSON
@@ -102,7 +127,7 @@ func ValidateConfig(c store.Config) error {
 
 	_ = json.Unmarshal(data, &spec)
 
-	if err := ref.Value.VisitJSON(spec); err != nil {
+	if err := schema.VisitJSON(spec); err != nil {
 		return fmt.Errorf("%w: %w", ErrValidationFailed, err)
 	}
 
