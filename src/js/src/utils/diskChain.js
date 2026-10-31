@@ -41,14 +41,21 @@ export function findDisk(disks, path) {
   return disks.find((disk) => disk.fullPath === path) ?? null;
 }
 
-// The images backing a VM's disk, nearest first down to the base image, each
-// by its label, or its full path when the list does not hold it; empty when
-// it has none or is not in the list.
+// The images backing a VM's disk, nearest first down to the base image, as
+// { label, fullPath }: the label, or the path when the list does not hold the
+// image, whose fullPath is then ''. Empty when it has none or is not listed.
 export function backingChain(disks, path) {
-  return (findDisk(disks, path)?.backingImages ?? []).map(
-    (image) => diskLabel(findDisk(disks, image)) || image,
-  );
+  return (findDisk(disks, path)?.backingImages ?? []).map((image) => {
+    const listed = findDisk(disks, image);
+    return { label: diskLabel(listed) || image, fullPath: listed ? image : '' };
+  });
 }
+
+// The Disks page with the details card of the image at a full path open.
+export const diskDetailsRoute = (path) => ({
+  name: 'disks',
+  query: { disk: path },
+});
 
 // The minimega files directory as the list shows it: the full path of a disk
 // inside it, less that disk's path within it. Empty when the list holds no

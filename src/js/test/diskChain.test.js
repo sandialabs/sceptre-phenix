@@ -17,6 +17,7 @@ import {
   backingChain,
   baseName,
   chainProblem,
+  diskDetailsRoute,
   diskLabel,
   diskList,
   diskOptions,
@@ -86,11 +87,23 @@ describe('diskLabel', () => {
   });
 });
 
+describe('diskDetailsRoute', () => {
+  it('names the Disks page with the card of an image open', () => {
+    expect(diskDetailsRoute('/phenix/images/kali.qc2')).toEqual({
+      name: 'disks',
+      query: { disk: '/phenix/images/kali.qc2' },
+    });
+  });
+});
+
 describe('backingChain', () => {
   it("lists a disk's backing images by label, nearest first", () => {
     expect(backingChain(disks, '/phenix/images/web_snap.qc2')).toEqual([
-      'jammy/jammy_hardened.qc2',
-      '/data/vms/jammy.qc2',
+      {
+        label: 'jammy/jammy_hardened.qc2',
+        fullPath: '/phenix/images/jammy/jammy_hardened.qc2',
+      },
+      { label: '/data/vms/jammy.qc2', fullPath: '/data/vms/jammy.qc2' },
     ]);
   });
 
@@ -101,7 +114,7 @@ describe('backingChain', () => {
       }),
     ];
     expect(backingChain(chained, '/phenix/images/a.qc2')).toEqual([
-      '/phenix/images/gone.qc2',
+      { label: '/phenix/images/gone.qc2', fullPath: '' },
     ]);
   });
 
@@ -131,9 +144,10 @@ describe('backingChain', () => {
         for (const { fullPath, backingImages } of list) {
           const chain = backingChain(list, fullPath);
           expect(chain).toHaveLength(backingImages.length);
-          chain.forEach((name, i) => {
+          chain.forEach(({ label, fullPath }, i) => {
             const image = backingImages[i];
-            expect(name === image || image.endsWith(`/${name}`)).toBe(true);
+            expect(label === image || image.endsWith(`/${label}`)).toBe(true);
+            expect(fullPath).toBe(findDisk(list, image) ? image : '');
           });
           expect(backingChain(shuffled, fullPath)).toEqual(chain);
         }

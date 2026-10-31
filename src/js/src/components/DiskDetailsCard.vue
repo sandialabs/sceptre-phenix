@@ -1,7 +1,7 @@
 <!-- The body of the Disks page's details window for one disk image: a head
 colored by the image's health, its sizes as tiles, then its format, partitions,
-backing chain, the images built on it, the experiments that use it, its clone
-jobs and its actions. It reads the details from GET disks/details when it
+actions, backing chain, the images built on it, the experiments and VMs that use
+it and its clone jobs. It reads the details from GET disks/details when it
 opens, and asks the page by event to run an action or open another image. -->
 <template>
   <div class="modal-card disk-card">
@@ -124,57 +124,6 @@ opens, and asks the page by event to run an action or open another image. -->
         </ul>
       </div>
 
-      <div class="disk-section actions">
-        <p class="disk-section-title">
-          <b-icon icon="bolt" size="is-small" />
-          Actions
-        </p>
-        <div class="disk-action-buttons">
-          <b-tooltip
-            v-for="action in actions"
-            :key="action.name"
-            :label="action.tooltip"
-            :active="action.disabled"
-            type="is-dark"
-            multilined>
-            <b-button
-              :class="['disk-action', `disk-action-${action.name}`]"
-              :type="action.name === 'delete' ? 'is-danger' : 'is-light'"
-              :outlined="action.name === 'delete'"
-              :icon-left="action.icon"
-              :aria-label="action.label"
-              :aria-describedby="`${id}-${action.name}`"
-              :aria-disabled="action.disabled ? 'true' : undefined"
-              expanded
-              @click="action.disabled || $emit('action', action.name)">
-              <span class="disk-action-label">{{ action.label }}</span>
-              <span
-                :id="`${id}-${action.name}`"
-                class="disk-action-description">
-                {{ action.disabled ? action.tooltip : action.description }}
-              </span>
-            </b-button>
-          </b-tooltip>
-        </div>
-        <div class="disk-command">
-          <span class="disk-command-name">qemu-img info</span>
-          <code class="disk-command-text info-command">{{ infoCommand }}</code>
-          <b-tooltip
-            :label="copyLabel('info')"
-            type="is-dark"
-            position="is-left"
-            append-to-body>
-            <button
-              type="button"
-              class="button is-light is-small disk-copy disk-copy-info"
-              :aria-label="COPY.info.label"
-              @click="copy('info', infoCommand)">
-              <b-icon :icon="copyIcon('info')" size="is-small" />
-            </button>
-          </b-tooltip>
-        </div>
-      </div>
-
       <div class="columns is-desktop disk-columns">
         <div class="column is-6-desktop">
           <div class="disk-stats" aria-label="Sizes and layout" role="group">
@@ -280,6 +229,25 @@ opens, and asks the page by event to run an action or open another image. -->
                   >The fix for each image format (phēnix docs)</a
                 >
               </p>
+            </div>
+            <div class="disk-command">
+              <span class="disk-command-name">qemu-img info</span>
+              <code class="disk-command-text info-command">{{
+                infoCommand
+              }}</code>
+              <b-tooltip
+                :label="copyLabel('info')"
+                type="is-dark"
+                position="is-left"
+                append-to-body>
+                <button
+                  type="button"
+                  class="button is-light is-small disk-copy disk-copy-info"
+                  :aria-label="COPY.info.label"
+                  @click="copy('info', infoCommand)">
+                  <b-icon :icon="copyIcon('info')" size="is-small" />
+                </button>
+              </b-tooltip>
             </div>
           </div>
 
@@ -406,6 +374,40 @@ opens, and asks the page by event to run an action or open another image. -->
                 </li>
               </ul>
             </template>
+          </div>
+
+          <div class="disk-section actions">
+            <p class="disk-section-title">
+              <b-icon icon="bolt" size="is-small" />
+              Actions
+            </p>
+            <div class="disk-action-buttons">
+              <b-tooltip
+                v-for="action in actions"
+                :key="action.name"
+                :label="actionHint(action)"
+                type="is-dark"
+                multilined>
+                <b-button
+                  :class="['disk-action', `disk-action-${action.name}`]"
+                  :type="action.name === 'delete' ? 'is-danger' : 'is-light'"
+                  :outlined="action.name === 'delete'"
+                  size="is-small"
+                  :icon-left="action.icon"
+                  :aria-label="action.label"
+                  :aria-describedby="`${id}-${action.name}`"
+                  :aria-disabled="action.disabled ? 'true' : undefined"
+                  expanded
+                  @click="action.disabled || $emit('action', action.name)">
+                  {{ action.label }}
+                  <span
+                    :id="`${id}-${action.name}`"
+                    class="is-sr-only disk-action-description">
+                    {{ actionHint(action) }}
+                  </span>
+                </b-button>
+              </b-tooltip>
+            </div>
           </div>
         </div>
 
@@ -554,7 +556,16 @@ opens, and asks the page by event to run an action or open another image. -->
                 <ul v-if="exp.vms.length" class="disk-use-vms">
                   <li v-for="use in exp.vms" :key="`${use.vm}-${use.drive}`">
                     <b-icon icon="desktop" size="is-small" />
-                    <span>{{ vmUseText(use) }}</span>
+                    <span>
+                      <router-link
+                        v-if="canViewExperiment(exp.name)"
+                        class="disk-use-link disk-vm-link"
+                        :to="vmDetailsRoute(exp.name, use.vm)"
+                        :title="`Open the details of VM ${use.vm}`"
+                        >VM {{ use.vm }}</router-link
+                      ><span v-else>VM {{ use.vm }}</span
+                      >{{ driveText(use) }}
+                    </span>
                   </li>
                 </ul>
                 <p
@@ -595,6 +606,7 @@ opens, and asks the page by event to run an action or open another image. -->
   import DiskWarning from '@/components/DiskWarning.vue';
   import JobProgress from '@/components/jobs/JobProgress.vue';
   import TimeWithAge from '@/components/TimeWithAge.vue';
+  import { vmDetailsRoute } from '@/components/experiment/experimentTabs.js';
   import { bytesText } from '@/utils/bytes.js';
   import { diskRunningText } from '@/utils/diskActions.js';
   import {
@@ -680,6 +692,7 @@ opens, and asks the page by event to run an action or open another image. -->
         docsPage,
         formatIssueName,
         listText,
+        vmDetailsRoute,
       };
     },
 
@@ -968,12 +981,19 @@ opens, and asks the page by event to run an action or open another image. -->
       canViewExperiment(name) {
         return roleAllowed('experiments', 'get', name);
       },
-      vmUseText(use) {
+      // the drive of a VM's use, after its name
+      driveText(use) {
         const inject =
           use.drive === 0 && use.injectPartition > 0
             ? `, inject partition ${use.injectPartition}`
             : '';
-        return `VM ${use.vm}, drive ${use.drive}${inject}`;
+        return `, drive ${use.drive}${inject}`;
+      },
+      // what an action does, or why it cannot run now
+      actionHint(action) {
+        return action.disabled
+          ? action.tooltip
+          : action.description || action.label;
       },
       copyIcon(key) {
         return this.copied === key ? 'check-circle' : 'clipboard';
@@ -1192,42 +1212,21 @@ opens, and asks the page by event to run an action or open another image. -->
     margin-bottom: 0 !important;
   }
 
+  /* the VM card's More actions: an icon and a label, the rest in a tooltip */
   .disk-action-buttons {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 0.4rem;
   }
 
   .disk-action-buttons :deep(.b-tooltip),
   .disk-action-buttons :deep(.tooltip-trigger) {
     display: block;
     width: 100%;
-    height: 100%;
   }
 
   .disk-action-buttons :deep(.button) {
     justify-content: flex-start;
-    height: 100%;
-    min-height: 2.5rem;
-    white-space: normal;
-    text-align: start;
-  }
-
-  .disk-action-buttons :deep(.button > span:not(.icon)) {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .disk-action-label {
-    font-weight: 600;
-  }
-
-  /* 4.9:1 on a light button */
-  .disk-action-description {
-    font-size: 0.75rem;
-    line-height: 1.3;
-    color: #f0f0f0;
   }
 
   /* Bulma's outlined red text is too faint on the section's gray; this is
@@ -1240,15 +1239,7 @@ opens, and asks the page by event to run an action or open another image. -->
     color: #ff9eb0;
   }
 
-  .disk-action-buttons
-    :deep(
-      .button.is-danger.is-outlined:not(:hover):not([aria-disabled='true'])
-        .disk-action-description
-    ) {
-    color: #ff9eb0;
-  }
-
-  /* one that cannot run now is gray, hovered too; its text says why. The
+  /* one that cannot run now is gray, hovered too; its tooltip says why. The
      :not()s outrank the colored buttons' hover rules in _general.scss. */
   .disk-action-buttons :deep(.button[aria-disabled='true']:not(.is-inverted)) {
     border-color: transparent;
@@ -1256,11 +1247,6 @@ opens, and asks the page by event to run an action or open another image. -->
     color: #e0e0e0;
     opacity: 1;
     cursor: not-allowed;
-  }
-
-  .disk-action-buttons
-    :deep(.button[aria-disabled='true'] .disk-action-description) {
-    color: #e0e0e0;
   }
 
   .disk-command {

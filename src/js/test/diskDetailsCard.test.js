@@ -699,13 +699,13 @@ describe('the experiments using the image', () => {
     [
       'may get both experiments',
       allowAll,
-      ['/experiment/bennu', '/experiment/demo'],
+      ['/experiment/bennu', '/experiment/bennu?vm=kali', '/experiment/demo'],
       'demo Stopped Through an image built on this image',
     ],
     [
       'may not get demo',
       denyOnly(['experiments', 'get', 'demo']),
-      ['/experiment/bennu'],
+      ['/experiment/bennu', '/experiment/bennu?vm=kali'],
       'demo Stopped Your role cannot see the VMs of this experiment',
     ],
   ])(
@@ -717,7 +717,7 @@ describe('the experiments using the image', () => {
 
       expect(used.findAll('a').map((a) => a.attributes('href'))).toEqual(links);
       expect(used.findAll('.disk-use').map(spaced)).toEqual([
-        'bennu Running VM kali, drive 0, inject partition 1',
+        'bennu Running VM kali , drive 0, inject partition 1',
         demo,
       ]);
     },
@@ -733,7 +733,7 @@ describe('the experiments using the image', () => {
 });
 
 describe('the actions', () => {
-  it('offer each action with its icon, label and description', async () => {
+  it('show each action as an icon and a label, its description in a tooltip', async () => {
     const wrapper = await card();
     const buttons = wrapper.findAll('.disk-action');
 
@@ -741,11 +741,23 @@ describe('the actions', () => {
       buttons.map((b) => [
         b.attributes('aria-label'),
         b.find('[data-icon]').attributes('data-icon'),
-        textOf(b.find('.disk-action-description')),
+        textOf(b.find('span:not(.icon):not(.is-sr-only)')).split(' ')[0],
+        textOf(wrapper.find(`[id="${b.attributes('aria-describedby')}"]`)),
       ]),
-    ).toEqual(ACTIONS.map((a) => [a.label, a.icon, a.description]));
+    ).toEqual(ACTIONS.map((a) => [a.label, a.icon, a.label, a.description]));
+    const tips = tooltipButtons(wrapper.find('.disk-action-buttons'));
+    expect(tips.map((t) => t.tooltip)).toEqual(
+      ACTIONS.map((a) => a.description),
+    );
     await buttons[3].trigger('click');
     expect(wrapper.emitted('action')).toEqual([['clone']]);
+  });
+
+  it('sit at the bottom of the left column, as on the VM card', async () => {
+    const wrapper = await card();
+    const [left] = wrapper.findAll('.disk-columns > .column');
+    const sections = left.findAll('.disk-section');
+    expect(sections.at(-1).classes()).toContain('actions');
   });
 
   it('keep a disabled action focusable, saying why and sending nothing', async () => {
@@ -957,8 +969,8 @@ describe('accessible names', () => {
     expect(named).toEqual([
       'Copy the full path',
       'Disks documentation',
-      'Copy the qemu-img info command',
       'Copy the fix command',
+      'Copy the qemu-img info command',
     ]);
     // every button has a name
     for (const button of wrapper.findAll('button')) {
@@ -996,7 +1008,6 @@ describe('the colors', () => {
     ['problem text on a warning box', '#f5f5f5', bg('.disk-problems')],
     ['danger icons on a danger box', '#ffc8cf', bg('.disk-problems.is-danger')],
     ['warning icons on a warning box', '#ffe08a', bg('.disk-problems')],
-    ['action descriptions', fg('.disk-action-description'), '#686868'],
     [
       'disabled action text',
       fg(

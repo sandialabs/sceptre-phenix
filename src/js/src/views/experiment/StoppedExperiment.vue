@@ -608,6 +608,7 @@
     searchFromQuery,
     tabFromQuery,
     tabQuery,
+    withoutVm,
   } from '@/components/experiment/experimentTabs.js';
   import { debounce } from 'lodash-es';
   import { addSearch } from '@/utils/searchHistory.js';
@@ -659,6 +660,7 @@
       };
     },
     beforeUnmount() {
+      this.unmounting = true;
       this.searchVMs.cancel();
       removeWsHandler(this.handleWs);
       this.loader.stop();
@@ -727,6 +729,7 @@
           if (this.activeTab == TAB.VMS && this.table.total > 0) {
             this.addSearchHistory();
           }
+          this.openLinkedVm();
         },
         refresh: () => {
           this.updateLists();
@@ -799,6 +802,27 @@
     },
 
     methods: {
+      // Opens the details of the VM a link names (?vm=web), once: its row, or
+      // the VM from the server when the table's page does not hold it.
+      async openLinkedVm() {
+        const name = this.$route.query.vm;
+        if (typeof name !== 'string' || !name || name === this.linkedVm) return;
+        this.linkedVm = name;
+        let vm = this.experiment.vms?.find((row) => row.name == name);
+        const exp = this.experiment.name;
+        if (!vm && roleAllowed('vms', 'get', `${exp}/${name}`)) {
+          try {
+            vm = (await vmsApi.getVm(exp, name)).data;
+          } catch (err) {
+            useErrorNotification(err);
+            return;
+          }
+        }
+        if (vm && !this.unmounting && this.linkedVm == name) {
+          this.expModal = { active: true, vm };
+        }
+      },
+
       bootDecorator(vm) {
         if (vm.external) {
           return 'dnb';
@@ -1522,6 +1546,22 @@
         }
       },
 
+      '$route.query.vm'(name) {
+        if (!name) this.linkedVm = '';
+        else if (this.experiment.name) this.openLinkedVm();
+      },
+
+      // a closed card takes its link out of the URL, so a reload does not
+      // open it again
+      'expModal.active'(open) {
+        const query = this.$route.query;
+        if (open || this.unmounting || this.$route.name !== 'experiment')
+          return;
+        if (!('vm' in query)) return;
+        this.syncedQuery = withoutVm(query);
+        this.$router.replace({ query: this.syncedQuery });
+      },
+
       // a link to this page with another tab or search
       '$route.query'(query) {
         if (
@@ -1548,6 +1588,8 @@
           active: false,
           vm: [],
         },
+        // the VM of the link whose details the page opened
+        linkedVm: '',
         schedules: ['isolate_experiment', 'round_robin'],
         experiment: [],
         // the Files tab's category picker, and the categories it offers

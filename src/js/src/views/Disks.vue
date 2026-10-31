@@ -408,6 +408,7 @@
         apply: (disks) => {
           this.disks = disks;
           this.loaded = true;
+          this.openLinkedDisk();
         },
         // the header button has the server inspect every image again, not
         // just the ones that changed
@@ -423,6 +424,21 @@
     beforeUnmount() {
       removeWsHandler(this.handleWs);
       this.loader.stop();
+    },
+
+    watch: {
+      '$route.query.disk'(path) {
+        if (!path) this.linkedDisk = '';
+        this.openLinkedDisk();
+      },
+      // a closed card takes its link out of the URL, so a reload does not
+      // open it again
+      'detailsModal.active'(open) {
+        const query = { ...this.$route.query };
+        if (open || this.$route.name !== 'disks' || !('disk' in query)) return;
+        delete query.disk;
+        this.$router.replace({ query });
+      },
     },
 
     computed: {
@@ -535,6 +551,16 @@
       rowClick(row) {
         this.detailsModal.disk = row;
         this.detailsModal.active = true;
+      },
+      // Opens the card of the image a link names (/disks?disk=<full path>),
+      // once the list holds it.
+      openLinkedDisk() {
+        const path = this.$route.query.disk;
+        if (typeof path !== 'string' || path === this.linkedDisk) return;
+        const disk = findDisk(this.disks, path);
+        if (!disk) return;
+        this.linkedDisk = path;
+        this.rowClick(disk);
       },
       // shows the details of another listed image, from the open disk's
       // backing chain or the images built on it
@@ -862,6 +888,8 @@
           active: false,
           disk: {},
         },
+        // the image of the link whose card the page opened
+        linkedDisk: '',
         rebaseModal: {
           active: false,
           isWaiting: false,

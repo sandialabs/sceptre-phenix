@@ -42,3 +42,17 @@ export function sameQuery(a, b) {
     keys.every((key) => String(a[key]) === String(b?.[key]))
   );
 }
+
+// The experiment page with the details of one VM open (?vm=web).
+export const vmDetailsRoute = (experiment, vm) => ({
+  name: 'experiment',
+  params: { id: experiment },
+  query: { vm },
+});
+
+// A URL's query less the VM whose details it opens.
+export function withoutVm(query) {
+  const rest = { ...query };
+  delete rest.vm;
+  return rest;
+}

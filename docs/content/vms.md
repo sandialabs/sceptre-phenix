@@ -8,7 +8,8 @@ The experiment must be started; click on the experiment name to enter the
 Running Experiment component. Within that component, click on the VM name (its
 tooltip reads `details and actions`) and you will be presented with the VM's
 details card. The card gathers everything phēnix knows about the VM together
-with every action you can take on it.
+with every action you can take on it. The URL `/experiment/<name>?vm=<vm>`
+opens the details card of that VM.
 
 ![VM details for the running hmi-01, with its Windows OS box, power buttons, its screen, resource tiles, storage, a capturing interface, labels, annotations, snapshots and port forwards.](images/vm_details_card.png){: width=800 .center}
 
@@ -104,7 +105,9 @@ image first. A disk or ISO image whose
 [backing chain is broken](disks.md#broken-backing-chains) shows a red icon with
 a cross. A `CD-ROM` row appears only while an ISO image is inserted, and names
 the image the same way. A button in the section heading opens the
-[Disks](disks.md) page, if your role may list disks.
+[Disks](disks.md) page, if your role may list disks. For such a role, the disk,
+each backing image, and the ISO image are links. A link opens the
+[details card](disks.md#the-details-card) of the image on the Disks page.
 
 #### Network
 

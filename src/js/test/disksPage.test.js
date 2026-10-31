@@ -294,13 +294,19 @@ describe('disk actions', () => {
 
   it('says how the disk rules an action out: its kind, backing image or use', async () => {
     // each action's tooltip in the details window of this disk
+    let does = {};
     const tooltips = async (shown) => {
-      const details = await openDetails(await page([shown]), 'snap.qc2');
+      const wrapper = await page([shown]);
+      does = Object.fromEntries(
+        wrapper.vm.diskActions.map((a) => [a.label, a.description]),
+      );
+      const details = await openDetails(wrapper, 'snap.qc2');
       const found = tooltipButtons(details.find('.disk-action-buttons'));
       return Object.fromEntries(found.map((t, i) => [ACTIONS[i], t.tooltip]));
     };
 
-    expect((await tooltips(vmDisk)).Commit).toBe('Commit');
+    // an action that can run says what it does
+    expect((await tooltips(vmDisk)).Commit).toBe(does.Commit);
     for (const backingImages of [[], undefined]) {
       expect((await tooltips({ ...vmDisk, backingImages })).Commit).toBe(
         'Cannot commit: the disk has no backing image to commit into',
@@ -318,7 +324,7 @@ describe('disk actions', () => {
     expect(kernel.Rebase).toBe('Cannot rebase: only VM disks can be rebased');
     // the rest work on any disk
     for (const label of ['Clone', 'Resize', 'Download', 'Rename', 'Delete']) {
-      expect(kernel[label]).toBe(label);
+      expect(kernel[label]).toBe(does[label]);
     }
 
     const used = await tooltips({
@@ -333,8 +339,8 @@ describe('disk actions', () => {
       expect(used[label]).toMatch(/: the disk is in use by a$/);
     }
     // cloning and downloading only read the disk
-    expect(used.Clone).toBe('Clone');
-    expect(used.Download).toBe('Download');
+    expect(used.Clone).toBe(does.Clone);
+    expect(used.Download).toBe(does.Download);
   });
 
   it('asks roleAllowed about a disk by name, and about creating one with no name', async () => {
@@ -449,6 +455,54 @@ describe('disk actions', () => {
       expect(rows).toEqual(want);
     },
   );
+});
+
+describe('a link to a disk', () => {
+  const kali = disk('/phenix/images/kali.qc2', 'kali.qc2');
+  const base = disk('/phenix/images/base.qc2', 'base.qc2');
+  // the title of the open card, or null when none is open
+  const shown = (wrapper) =>
+    wrapper.vm.detailsModal.active
+      ? textOf(wrapper.find('.modal.is-active .disk-card-title'))
+      : null;
+
+  it('opens the card of the image it names once the list holds it', async () => {
+    const wrapper = await mountPage(Disks, {
+      route: `/disks/?disk=${kali.fullPath}`,
+    });
+    loaderSpy.options.apply([base]);
+    await flushPromises();
+    expect(shown(wrapper)).toBeNull();
+
+    loaderSpy.options.apply([base, kali]);
+    await flushPromises();
+    expect(shown(wrapper)).toBe('kali.qc2');
+  });
+
+  it('drops the link as the card closes, and a new list does not open it again', async () => {
+    const wrapper = await mountPage(Disks, {
+      route: `/disks/?disk=${kali.fullPath}`,
+    });
+    loaderSpy.options.apply([base, kali]);
+    await flushPromises();
+
+    wrapper.vm.detailsModal.active = false;
+    await flushPromises();
+    expect(wrapper.router.currentRoute.value.query).toEqual({});
+    loaderSpy.options.apply([base, kali]);
+    await flushPromises();
+    expect(shown(wrapper)).toBeNull();
+  });
+
+  it('follows a link to another image on the page', async () => {
+    const wrapper = await mountPage(Disks, { route: '/disks/' });
+    loaderSpy.options.apply([base, kali]);
+    await flushPromises();
+
+    await wrapper.router.replace({ query: { disk: base.fullPath } });
+    await flushPromises();
+    expect(shown(wrapper)).toBe('base.qc2');
+  });
 });
 
 describe("a row's action tooltips", () => {

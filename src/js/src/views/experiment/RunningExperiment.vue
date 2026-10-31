@@ -390,6 +390,7 @@
     searchKey,
     tabFromQuery,
     tabQuery,
+    withoutVm,
   } from '@/components/experiment/experimentTabs.js';
   import {
     minuteStamp,
@@ -628,6 +629,7 @@
             this.vmsRequested = true;
             this.updateTable();
           }
+          this.openLinkedVm();
         },
         // the header's refresh button lists the VMs again too
         refresh: () => {
@@ -1151,6 +1153,25 @@
           if (this.expModal.active && this.expModal.vm.name == name) {
             this.expModal.vm = details;
           }
+        } catch (err) {
+          useErrorNotification(err);
+        }
+      },
+
+      // Opens the details of the VM a link names (?vm=web), once: its full
+      // details, or the table's row for a role that may not get the VM.
+      async openLinkedVm() {
+        const name = this.$route.query.vm;
+        if (typeof name !== 'string' || !name || name === this.linkedVm) return;
+        this.linkedVm = name;
+        if (!roleAllowed('vms', 'get', `${this.experiment.name}/${name}`)) {
+          const row = this.experiment.vms?.find((vm) => vm.name == name);
+          if (row) this.showVmDetails(row);
+          return;
+        }
+        try {
+          const vm = await this.fetchVMDetails({ name });
+          if (!this.unmounting && this.linkedVm == name) this.getInfo(vm);
         } catch (err) {
           useErrorNotification(err);
         }
@@ -2169,6 +2190,22 @@
         }
       },
 
+      '$route.query.vm'(name) {
+        if (!name) this.linkedVm = '';
+        else if (this.experiment.name) this.openLinkedVm();
+      },
+
+      // a closed card takes its link out of the URL, so a reload does not
+      // open it again
+      'expModal.active'(open) {
+        const query = this.$route.query;
+        if (open || this.unmounting || this.$route.name !== 'experiment')
+          return;
+        if (!('vm' in query)) return;
+        this.syncedQuery = withoutVm(query);
+        this.$router.replace({ query: this.syncedQuery });
+      },
+
       // a link to this page with another tab or search
       '$route.query'(query) {
         if (
@@ -2211,6 +2248,8 @@
         runtimeUnknown: false,
         // whether the page has asked the websocket for the VM table
         vmsRequested: false,
+        // the VM of the link whose details the page opened
+        linkedVm: '',
         expModal: {
           active: false,
           vm: {},

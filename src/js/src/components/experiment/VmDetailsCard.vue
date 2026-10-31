@@ -229,7 +229,14 @@
             </p>
             <div class="vm-kv">
               <span class="vm-kv-key">Disk</span>
-              <span class="vm-kv-value vm-mono" :title="vm.disk">
+              <router-link
+                v-if="diskLink(disk)"
+                class="vm-kv-value vm-mono vm-disk-link"
+                :title="disk.fullPath"
+                :to="diskLink(disk)">
+                {{ diskLabel(disk) }}
+              </router-link>
+              <span v-else class="vm-kv-value vm-mono" :title="vm.disk">
                 {{
                   diskLabel(disk) || (vm.disk && baseName(vm.disk)) || 'None'
                 }}
@@ -260,16 +267,29 @@
               aria-label="Backing image chain">
               <li
                 v-for="image in backingChain"
-                :key="image"
+                :key="image.label"
                 class="vm-mono"
-                :title="`backed by ${image}`">
+                :title="`backed by ${image.label}`">
                 <span class="vm-chain-arrow" aria-hidden="true">&darr;</span>
-                <span class="vm-chain-name">{{ image }}</span>
+                <router-link
+                  v-if="diskLink(image)"
+                  class="vm-chain-name vm-disk-link"
+                  :to="diskLink(image)">
+                  {{ image.label }}
+                </router-link>
+                <span v-else class="vm-chain-name">{{ image.label }}</span>
               </li>
             </ol>
             <div v-if="vm.cdRom" class="vm-kv vm-cdrom">
               <span class="vm-kv-key">CD-ROM</span>
-              <span class="vm-kv-value vm-mono" :title="vm.cdRom">
+              <router-link
+                v-if="diskLink(cdRomDisk)"
+                class="vm-kv-value vm-mono vm-disk-link"
+                :title="cdRomDisk.fullPath"
+                :to="diskLink(cdRomDisk)">
+                {{ diskLabel(cdRomDisk) }}
+              </router-link>
+              <span v-else class="vm-kv-value vm-mono" :title="vm.cdRom">
                 {{ diskLabel(cdRomDisk) || baseName(vm.cdRom) }}
               </span>
               <DiskWarning
@@ -586,6 +606,7 @@
   import {
     baseName,
     chainProblem,
+    diskDetailsRoute,
     diskLabel,
     diskReasons,
   } from '@/utils/diskChain.js';
@@ -640,8 +661,8 @@
       captureAllPending: { type: Boolean, default: false },
       // the actions running in the background for the VM, whose buttons spin
       pendingActions: { type: Array, default: () => [] },
-      // the images backing the VM's disk, nearest first (see utils/diskChain.js);
-      // null while unknown
+      // the images backing the VM's disk, nearest first, as backingChain in
+      // utils/diskChain.js gives them; null while unknown
       backingChain: { type: Array, default: null },
       // the VM's disk and the ISO image in its CD-ROM drive in the disk list,
       // and the minimega files directory it shows; null and empty while
@@ -853,6 +874,13 @@
       docsPage,
       can(resource, verb) {
         return roleAllowed(resource, verb, this.fullName);
+      },
+      // the Disks page with a listed image's card open, or null for an image
+      // the list does not hold or a role that may not list disks
+      diskLink(image) {
+        return image?.fullPath && this.canListDisks
+          ? diskDetailsRoute(image.fullPath)
+          : null;
       },
       isSecret(key) {
         return NODE_ANNOTATIONS.some(
@@ -1320,6 +1348,14 @@
   .vm-mono {
     font-family: monospace;
     font-size: 0.9rem;
+  }
+
+  /* 5.7:1 on the section's gray, as the Disks page's links */
+  .vm-disk-link,
+  .vm-disk-link:hover,
+  .vm-disk-link:focus {
+    color: #8fd8ea;
+    text-decoration: underline;
   }
 
   .vm-snapshot-tag {

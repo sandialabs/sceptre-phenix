@@ -59,7 +59,8 @@ when phēnix cannot tie the lock to one.
 
 Click a row to open the details card of its image. When the card opens, phēnix
 reads the image again, so the card shows more than the table. phēnix does not
-write to the image.
+write to the image. The URL `/disks?disk=<full path>` opens the details card of
+the image at that path.
 
 ![Details card of the kali image: an OK tag, size tiles, the qcow2 header, the MBR partitions with the inject partition marked, and its experiment.](images/disks_details.png){: width=800 .center}
 
@@ -76,9 +77,6 @@ Below the name are the full path, the location, and the time of the last change.
 A button copies the full path. A `Problems` box lists each problem, with its
 icon. Then the card shows these parts:
 
-* `Actions`: the actions of the row, and `Commit`, `Rebase`, and `Resize`. A
-  disabled action shows why under its label. The `qemu-img info` line gives a
-  command that reads the image and its backing chain, with a copy button.
 * Tiles: the size on disk, the virtual size, and the space on disk as a percent
   of the virtual size. Other tiles give the number of partitions, the partition
   table type (`MBR`, `GPT`, `None`, or `Unknown`), and the number of backing
@@ -89,17 +87,22 @@ icon. Then the card shows these parts:
   snapshots, and the backing file that its header names. Tags mark features
   such as `Corrupt`, `Not closed cleanly`, or `Lazy refcounts`. For a
   [format issue](#image-format-versions), the section gives the fix and its
-  command.
+  command. The `qemu-img info` line gives a command that reads the image and
+  its backing chain, with a copy button.
 * `Partitions`: the table type, the disk ID, and the sector size, then a row for
   each partition. A row gives the number, type, file system, start, size, and
   the `Boot`, `Extended`, `Logical`, and `Inject` flags.
+* `Actions`: the actions of the row, and `Commit`, `Rebase`, and `Resize`. Each
+  button shows an icon and a label. Put the pointer on a button to see what the
+  action does, or why it is disabled.
 * `Backing chain`: the images that this image is built on (see
   [Broken Backing Chains](#broken-backing-chains)).
 * `Built on this image`: the listed images whose backing chain holds this
   image. If you rename or delete this image, they stop working.
 * `Used by`: each experiment that uses the image, with a link to its page, a
   `Running` or `Stopped` tag, and the VMs whose drives name the image. The
-  VMs show only for an experiment that your role may `get`.
+  VMs show only for an experiment that your role may `get`. Click a VM to open
+  its details on the page of its experiment.
 * `Clone jobs`: the clones of the image that run now (see
   [Cloning in the background](#cloning-in-the-background)).
 

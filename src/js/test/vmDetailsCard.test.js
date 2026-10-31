@@ -106,7 +106,10 @@ describe('VmDetailsCard storage', () => {
 
   it("shows the disk's backing chain under it, nearest first", async () => {
     const wrapper = await card({
-      backingChain: ['jammy_hardened.qc2', 'jammy.qc2'],
+      backingChain: [
+        { label: 'jammy_hardened.qc2', fullPath: '' },
+        { label: 'jammy.qc2', fullPath: '' },
+      ],
     });
     const chain = wrapper.find('.vm-backing-chain');
     const above = chain.element.previousElementSibling;
@@ -139,6 +142,39 @@ describe('VmDetailsCard storage', () => {
     expect(outsideWarnings(wrapper)).toEqual([
       expect.stringMatching(OUTSIDE_TEXT),
     ]);
+  });
+
+  it('links the disk, its backing images and the CD-ROM to their cards on the Disks page', async () => {
+    const own = disk('/phenix/images/web_snap.qc2', 'web_snap.qc2');
+    const iso = disk('/phenix/images/tools.iso', 'tools.iso', { kind: 'ISO' });
+    const props = {
+      vm: { ...vm, disk: own.fullPath, cdRom: iso.fullPath },
+      disk: own,
+      cdRomDisk: iso,
+      backingChain: [
+        { label: 'jammy.qc2', fullPath: '/phenix/images/jammy.qc2' },
+        { label: '/gone/base.qc2', fullPath: '' },
+      ],
+    };
+    const links = (wrapper) =>
+      section(wrapper, 'Storage')
+        .findAll('a.vm-disk-link')
+        .map((a) => [textOf(a), a.attributes('href')]);
+    const href = (path) => `/disks/?disk=${path}`;
+
+    expect(links(await card(props))).toEqual([
+      ['web_snap.qc2', href(own.fullPath)],
+      ['jammy.qc2', href('/phenix/images/jammy.qc2')],
+      ['tools.iso', href(iso.fullPath)],
+    ]);
+    // the image the list does not hold is text alone
+    const wrapper = await card(props);
+    expect(
+      wrapper.findAll('.vm-chain-name').map((n) => n.element.tagName),
+    ).toEqual(['A', 'SPAN']);
+
+    rbac.allowed = denyOnly(['disks', 'list']);
+    expect(links(await card(props))).toEqual([]);
   });
 
   it('names the disk by file name while the disk list is unknown', async () => {

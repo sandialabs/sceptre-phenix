@@ -25,6 +25,8 @@ import {
   searchKey,
   tabFromQuery,
   tabQuery,
+  vmDetailsRoute,
+  withoutVm,
 } from '@/components/experiment/experimentTabs.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
@@ -92,6 +94,24 @@ describe('the URL', () => {
       TAB.VMS,
       TAB.NETFLOW,
     ]);
+  });
+});
+
+describe('a link to a VM', () => {
+  it("names the experiment page with the VM's details open", () => {
+    expect(vmDetailsRoute('exp1', 'web')).toEqual({
+      name: 'experiment',
+      params: { id: 'exp1' },
+      query: { vm: 'web' },
+    });
+  });
+
+  it('leaves the rest of a query when the VM goes', () => {
+    expect(withoutVm({ vm: 'web', tab: 'files', q: 'log' })).toEqual({
+      tab: 'files',
+      q: 'log',
+    });
+    expect(withoutVm({})).toEqual({});
   });
 });
 
@@ -221,6 +241,42 @@ describe.each([
     expect(searchBox(page).element.value).toBe('pcap');
     expect(filters.at(-1)).toBe('pcap');
     expect(query(page)).toEqual({ tab: 'files', q: 'pcap' });
+  });
+
+  it("opens a linked VM's details, and drops the link as they close", async () => {
+    const web = { name: 'web', host: 'node1', disk: '', running: false };
+    // the VM's details answer; the page's other requests never do
+    axios.get.mockImplementation((url) =>
+      url === 'experiments/exp1/vms/web'
+        ? Promise.resolve({ data: web })
+        : never(),
+    );
+    const page = await open();
+    page.vm.experiment = { name: 'exp1', vms: [web] };
+
+    await page.router.replace({ query: { tab: 'files', vm: 'web' } });
+    await flushPromises();
+    expect(page.vm.expModal.active).toBe(true);
+    expect(page.vm.expModal.vm.name).toBe('web');
+
+    page.vm.expModal = { ...page.vm.expModal, active: false };
+    await flushPromises();
+    expect(query(page)).toEqual({ tab: 'files' });
+    expect(activeTab(page)).toBe('Files');
+  });
+
+  it('opens nothing for a VM the experiment does not have', async () => {
+    axios.get.mockImplementation((url) =>
+      url === 'experiments/exp1/vms/gone'
+        ? Promise.reject(new Error('not found'))
+        : never(),
+    );
+    rbac.allowed = denyOnly(['vms', 'get']);
+    const page = await open();
+
+    await page.router.replace({ query: { vm: 'gone' } });
+    await flushPromises();
+    expect(page.vm.expModal.active).toBe(false);
   });
 
   it.runIf(view === RunningExperiment)(
