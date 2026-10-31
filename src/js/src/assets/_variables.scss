@@ -2,33 +2,121 @@
 @import 'bulma/sass/utilities/_all';
 @import 'buefy/src/scss/utils/_all';
 
+// The text and surface colors below give text a contrast of 7:1 or more
+// (WCAG 1.4.6) on each surface that holds them.
+
 $logo: #9a4420;
 // derived via: https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
+// Bulma builds its $colors map in the import above, before these two values
+// are set. The `is-primary` and `is-link` classes use the $colors map below;
+// rules that read $primary or $link directly (checked controls, input focus
+// borders, active tabs and dropdown items) use these values.
 $primary: #da622d;
 $link: #62c0d7;
-// Bulma's default $code (darken($red, 15%) = #da1039) is only 2.5:1 against
-// $background and 4.1:1 against black; #ff7b95 is 5:1 on $background.
-$code: #ff7b95;
+// Bulma's $code-background is its own whitesmoke, not $background. This red
+// is 7.4:1 on whitesmoke.
+$code: hsl(348, 86%, 34%);
 
-$scheme-main: #686868;
+$scheme-main: #575757;
 $scheme-main-bis: #b1b1b1;
 $scheme-invert: findColorInvert($scheme-main);
 
 $background: #333;
 $background-bis: #484848;
-$background-ter: #5a5a5a;
+$background-ter: #4a4a4a;
 $border: white;
-$text: whitesmoke;
+$text: white;
 $text-strong: white;
 $text-weak: whitesmoke;
 $input-color: black;
+
+// Link text: 7.2:1 on $background-ter, 10:1 on $background.
+$link-text: #d0ecf3;
+$link-hover: $text-strong;
+$tabs-link-active-color: $link-text;
+$breadcrumb-item-color: $link-text;
+$breadcrumb-item-hover-color: $link-hover;
+$button-ghost-color: $link-text;
+$button-ghost-hover-color: $link-text;
+// A see-through toast loses contrast to the page under it.
+$toast-opacity: 1;
+// Text on light fills (turquoise, green, yellow, cyan).
+$dark-text: $black;
+
+// The is-* color classes. Each entry is (fill, text on the fill, light fill,
+// text on the light fill), 7:1 or more also on the hover and active shades.
+// `is-primary` stays Bulma's turquoise. `is-info`, `is-link` and `is-danger`
+// get darker fills, because no text color has 7:1 on Bulma's fills.
+$colors: map.merge(
+  $colors,
+  (
+    'primary': (
+      $turquoise,
+      $dark-text,
+      $primary-light,
+      #005e50,
+    ),
+    'link': (
+      hsl(229, 53%, 46%),
+      $white,
+      $link-light,
+      #2c3f90,
+    ),
+    'info': (
+      hsl(207, 61%, 33%),
+      $white,
+      $info-light,
+      #1c4d75,
+    ),
+    'success': (
+      $success,
+      $dark-text,
+      $success-light,
+      #1b583c,
+    ),
+    'warning': (
+      $warning,
+      $warning-invert,
+      $warning-light,
+      #694c00,
+    ),
+    'danger': (
+      #a91f3d,
+      $white,
+      $danger-light,
+      #8c0a24,
+    ),
+  )
+);
+
+// The same hues as light text on the dark surfaces, for `has-text-*` and
+// `.help.is-*` (see _general.scss): 7:1 or more on $background-ter.
+$text-on-dark: (
+  'primary': #b5f2e9,
+  'link': $link-text,
+  'info': #daeaf6,
+  'success': #caefde,
+  'warning': #ffe59c,
+  'danger': #fde0e5,
+);
 
 $body-background-color: $background;
 $table-background-color: $background-bis;
 $card-background-color: $background-bis;
 $tag-background-color: $scheme-main;
+$tag-color: $text-strong;
 $navbar-background-color: $background-ter;
 $navbar-item-img-max-height: 2.5rem;
+// Match the header item states in _general.scss.
+$navbar-item-hover-color: $text-strong;
+$navbar-item-hover-background-color: $scheme-main;
+$navbar-item-active-color: $text-strong;
+$navbar-dropdown-item-active-color: $link-text;
+// Bulma's default is a whitesmoke fill under whitesmoke text.
+$file-cta-background-color: $scheme-main;
+$file-cta-color: $text-strong;
+$file-cta-hover-color: $text-strong;
+$file-cta-active-color: $text-strong;
 
 $modal-card-body-background-color: $background-ter;
 $modal-card-head-background-color: $background-ter;
@@ -38,6 +126,8 @@ $modal-card-foot-border-top: 1px solid $scheme-main-bis;
 
 $button-border-color: lighten($scheme-main, 10);
 $button-hover-color: $text-strong;
+$button-focus-color: $text-strong;
+$button-active-color: $text-strong;
 $button-text-hover-background-color: $scheme-main;
 // this line isn't ideal, but a lot of existing buttons were tagged with `is-light` so this sets them to what you would expect
 $button-colors: map.merge(
@@ -60,8 +150,21 @@ $hero-colors: map.merge(
   )
 );
 
+// White text on a darker orange: no text color has 7:1 on $primary.
+$table-row-active-background-color: #8f3a15;
+$datepicker-item-selected-background-color: #8f3a15;
+$datepicker-header-color: $text-strong;
+$datepicker-item-color: $text-strong;
+
+// Black text is 10:1 on the $link fill.
+$dropdown-item-active-color: $dark-text;
+$pagination-current-color: $dark-text;
+$tabs-toggle-link-active-color: $dark-text;
+$menu-item-active-color: $dark-text;
+
 $input-background-color: white;
 $input-color: #363636;
+$input-placeholder-color: #575757;
 $input-icon-color: lighten($scheme-main, 20);
 $input-icon-active-color: lighten($scheme-main, 10);
 $input-hover-color: lighten($link, 10); // dropdown arrows etc.

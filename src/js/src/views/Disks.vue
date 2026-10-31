@@ -4,13 +4,17 @@
     <b-modal
       v-model="detailsModal.active"
       @close="() => (detailsModal.active = false)"
-      has-modal-card>
+      has-modal-card
+      aria-role="dialog"
+      aria-modal
+      :aria-label="detailsModal.disk.name"
+      close-button-aria-label="Close">
       <div class="modal-card">
         <header class="modal-card-head">
-          <p class="modal-card-title">{{ detailsModal.disk.name }}</p>
+          <h2 class="modal-card-title">{{ detailsModal.disk.name }}</h2>
         </header>
         <section class="modal-card-body">
-          <p class="title is-5">Details</p>
+          <h3 class="title is-5">Details</h3>
           <dl>
             <div>
               <dt>Full Path:</dt>
@@ -43,15 +47,19 @@
               detailsModal.disk.backingImages.length > 0
             ">
             <hr />
-            <p class="title is-5">Backing Chain</p>
+            <h3 class="title is-5">Backing Chain</h3>
             <div style="text-align: center">
               <b>{{ detailsModal.disk.name }}</b>
               <div
                 v-for="(i, index) in detailsModal.disk.backingImages"
                 :key="index">
-                &darr;<br />
+                <span aria-hidden="true">&darr;</span><br />
+                <!-- An href, so the keyboard reaches the link too. -->
                 <a
-                  @click="detailsModal.disk = disks.find((d) => d.name == i)"
+                  href="#"
+                  @click.prevent="
+                    detailsModal.disk = disks.find((d) => d.name == i)
+                  "
                   >{{ i }}</a
                 >
               </div>
@@ -60,7 +68,7 @@
 
           <div class="actions">
             <hr />
-            <p class="title is-5">Actions</p>
+            <h3 class="title is-5">Actions</h3>
             <b-button
               type="is-text"
               expanded
@@ -130,7 +138,13 @@
       </div>
     </b-modal>
     <!-- REBASE MODAL -->
-    <b-modal v-model="rebaseModal.active" :can-cancel="false" has-modal-card>
+    <b-modal
+      v-model="rebaseModal.active"
+      :can-cancel="false"
+      has-modal-card
+      aria-role="dialog"
+      aria-modal
+      aria-label="Rebase disk">
       <div class="modal-card" style="max-width: 460px">
         <section class="modal-card-body">
           Are you sure you want to rebase this image onto a different backing
@@ -142,6 +156,7 @@
           name without updating files.
           <b-select
             placeholder="New Backing Image"
+            aria-label="New backing image"
             v-model="rebaseModal.dst"
             style="margin-bottom: 8px; margin-top: 16px">
             <option value="">None</option>
@@ -176,7 +191,13 @@
       </div>
     </b-modal>
     <!-- COMMIT MODAL -->
-    <b-modal v-model="commitModal.active" :can-cancel="false" has-modal-card>
+    <b-modal
+      v-model="commitModal.active"
+      :can-cancel="false"
+      has-modal-card
+      aria-role="dialog"
+      aria-modal
+      aria-label="Commit disk">
       <div class="modal-card" style="max-width: 460px">
         <section class="modal-card-body">
           Are you sure you want to commit the changes in this disk to its
@@ -209,6 +230,7 @@
       <b-field>
         <b-autocomplete
           v-model="filterString"
+          aria-label="Find a disk"
           placeholder="Find a disk"
           icon="search"
           @select="(option) => (selected = option)"
@@ -279,7 +301,14 @@
       </template>
 
       <b-table-column field="name" label="Name" sortable v-slot="props">
-        {{ props.row.name }}
+        <!-- The row opens on a click; the name button opens it with the
+             keyboard too. -->
+        <button
+          type="button"
+          class="disks__name"
+          @click.stop="rowClick(props.row)">
+          {{ props.row.name }}
+        </button>
       </b-table-column>
 
       <b-table-column field="kind" label="Kind" sortable v-slot="props">
@@ -292,7 +321,11 @@
         centered
         sortable
         v-slot="props">
-        <b-icon v-if="props.row.inUse" icon="play-circle" size="is-small" />
+        <template v-if="props.row.inUse">
+          <b-icon icon="play-circle" size="is-small" />
+          <span class="is-sr-only">Yes</span>
+        </template>
+        <span v-else class="is-sr-only">No</span>
       </b-table-column>
 
       <b-table-column
@@ -466,6 +499,7 @@
           inputAttrs: {
             type: 'text',
             placeholder: 'New image name',
+            'aria-label': 'New image name',
           },
           canCancel: ['button'],
           closeOnConfirm: false,
@@ -489,6 +523,7 @@
           inputAttrs: {
             type: 'text',
             placeholder: 'New size',
+            'aria-label': 'New size',
             pattern: '[+-]?\\d+[KMGTPE]',
           },
           canCancel: ['button'],
@@ -506,6 +541,7 @@
           inputAttrs: {
             type: 'text',
             placeholder: 'New image name',
+            'aria-label': 'New image name',
             value: path.split('/').pop(),
           },
           canCancel: ['button'],
@@ -521,6 +557,7 @@
           inputAttrs: {
             type: 'text',
             placeholder: 'New name',
+            'aria-label': 'New name',
             value: path.split('/').pop(),
           },
           canCancel: ['button'],
@@ -545,7 +582,8 @@
       },
       downloadDisk(path) {
         this.$buefy.dialog.confirm({
-          message: 'Are you sure you want to download this disk?',
+          message:
+            'Are you sure you want to download this disk? The download opens in a new tab.',
           onConfirm: () => {
             const store = usePhenixStore();
             const basePath = import.meta.env.BASE_URL;
@@ -667,6 +705,17 @@
     margin: 0 8px;
   }
 
+  /* The name button looks like the text it replaces. */
+  .disks__name {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
   .actions > button {
     text-align: start;
     /* color: blue; */
@@ -678,7 +727,8 @@
   .file-cta > p,
   .file-cta:hover {
     border: none;
-    background-color: #686868;
-    color: whitesmoke !important;
+    /* 7.2:1 ($scheme-main and white); #686868 and whitesmoke were 5.1:1. */
+    background-color: #575757;
+    color: white !important;
   }
 </style>

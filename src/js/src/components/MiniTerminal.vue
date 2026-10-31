@@ -1,5 +1,10 @@
 <template>
-  <div class="xterm" ref="xterm"></div>
+  <div>
+    <div class="xterm" ref="xterm"></div>
+    <p :id="hintId" class="help">
+      Press Ctrl+], then Tab or Shift+Tab, to leave the terminal.
+    </p>
+  </div>
 </template>
 
 <script>
@@ -12,14 +17,25 @@
 
   import '@xterm/xterm/css/xterm.css';
 
+  let hintCount = 0;
+
+  function isReleaseChord(ev) {
+    return (
+      ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.metaKey && ev.key === ']'
+    );
+  }
+
   export default {
     props: ['wsPath', 'resizePath'],
     data() {
+      hintCount += 1;
       return {
         socket: null,
         term: null,
         fit: null,
         attach: null,
+        hintId: `terminal-hint-${hintCount}`,
+        tabReleased: false,
       };
     },
     watch: {
@@ -40,7 +56,13 @@
       this.fit = new FitAddon();
       term.loadAddon(this.fit);
 
+      term.attachCustomKeyEventHandler(this.handleKey);
       term.open(this.$refs.xterm);
+      term.textarea?.setAttribute('aria-describedby', this.hintId);
+      // A Ctrl+] that focus left behind does not apply when focus comes back.
+      term.textarea?.addEventListener('blur', () => {
+        this.tabReleased = false;
+      });
 
       if (this.resizePath === undefined) {
         term.resize(80, 30);
@@ -61,6 +83,34 @@
       this.setupTerminal();
     },
     methods: {
+      // Tab goes to the shell, so Ctrl+] (the telnet escape) lets the next
+      // Tab or Shift+Tab move focus out of the terminal instead (WCAG 2.1.2).
+      handleKey(ev) {
+        if (
+          ev.type !== 'keydown' ||
+          ['Shift', 'Control', 'Alt', 'Meta'].includes(ev.key)
+        ) {
+          return true;
+        }
+
+        if (this.tabReleased) {
+          this.tabReleased = false;
+          if (ev.key === 'Tab') {
+            return false;
+          }
+          // Not a way out, so the shell gets the Ctrl+] it held back.
+          this.term.input('\x1d');
+          return true;
+        }
+
+        if (isReleaseChord(ev)) {
+          ev.preventDefault();
+          this.tabReleased = true;
+          return false;
+        }
+
+        return true;
+      },
       setupTerminal() {
         this.socket = new WebSocket(this.getWsUrl());
 
@@ -84,6 +134,7 @@
         };
       },
       teardownSocket() {
+        this.tabReleased = false;
         if (this.socket) {
           this.socket.onopen = null;
           this.socket.onerror = null;

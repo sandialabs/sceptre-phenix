@@ -3,7 +3,14 @@
     :transform="'translate(' + x + ',' + y + ')'"
     :class="nodeClass"
     cursor="pointer"
+    :tabindex="isStep ? 0 : undefined"
+    :role="isStep ? 'button' : undefined"
+    :aria-label="isStep ? `${label}, status ${status}` : undefined"
     @click="handleClick"
+    @keydown.enter.prevent="handleClick"
+    @keydown.space.prevent="handleClick"
+    @focus="handleFocus"
+    @blur="focused = false"
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave">
     <pipeline-node-start v-if="status == 'start'" :label="label" />
@@ -63,7 +70,7 @@
       fill-opacity="0"
       stroke="none">
     </circle>
-    <g class="pipeline-selection-highlight" v-if="selected">
+    <g class="pipeline-selection-highlight" v-if="selected || focused">
       <circle class="white-highlight" r="13" stroke-width="10"></circle>
       <circle r="15" stroke-width="2"></circle>
     </g>
@@ -111,7 +118,13 @@
     data() {
       return {
         nodeClass: 'pipeline-node',
+        focused: false,
       };
+    },
+    computed: {
+      isStep() {
+        return this.status !== 'start' && this.status !== 'end';
+      },
     },
     methods: {
       getText() {
@@ -132,6 +145,14 @@
         this.nodeClass = 'pipeline-node-selected';
         if (this.status != 'start' && this.status != 'end') {
           this.$emit('click', this.index, this.node);
+        }
+      },
+      handleFocus(event) {
+        // Show the ring for keyboard focus, not after a click.
+        try {
+          this.focused = event.target.matches(':focus-visible');
+        } catch {
+          this.focused = true;
         }
       },
       handleMouseEnter() {
@@ -214,5 +235,12 @@
     fill: #f6b44b;
     animation: rotating 2s linear infinite;
     animation-iteration-count: infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .running,
+    .background {
+      animation: none;
+    }
   }
 </style>
