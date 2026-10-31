@@ -1,8 +1,14 @@
 package cmd
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm"
 )
@@ -200,4 +206,183 @@ func TestVMInfoCommandFilterFlag(t *testing.T) {
 	if flag.Shorthand != "f" {
 		t.Fatalf("--filter shorthand = %q, want %q", flag.Shorthand, "f")
 	}
+}
+
+// genVMInfoFilterSpelling draws a --filter of column (or alias) spelled in any
+// case, with spaces, dashes and underscores in it, and the canonical column.
+func genVMInfoFilterSpelling() *rapid.Generator[[2]string] {
+	columns := map[string]string{
+		vmInfoColumnHost: vmInfoColumnHost, vmInfoColumnName: vmInfoColumnName,
+		vmInfoColumnRunning: vmInfoColumnRunning, vmInfoColumnDisk: vmInfoColumnDisk,
+		vmInfoColumnInterfaces: vmInfoColumnInterfaces, vmInfoColumnUptime: vmInfoColumnUptime,
+		vmInfoColumnMemory: vmInfoColumnMemory, vmInfoColumnVCPUs: vmInfoColumnVCPUs,
+		vmInfoColumnOSType: vmInfoColumnOSType, vmInfoColumnTaps: vmInfoColumnTaps,
+		"ram": vmInfoColumnMemory, "cpus": vmInfoColumnVCPUs,
+	}
+
+	return rapid.Custom(func(t *rapid.T) [2]string {
+		name := rapid.SampledFrom(slices.Sorted(maps.Keys(columns))).Draw(t, "column")
+		separator := rapid.SampledFrom([]string{"", "", " ", "-", "_"})
+
+		var spelled strings.Builder
+
+		spelled.WriteString(rapid.SampledFrom([]string{"", " ", "\t"}).Draw(t, "lead"))
+
+		for i, r := range name {
+			if rapid.Bool().Draw(t, "upper") {
+				r -= 'a' - 'A'
+			}
+
+			spelled.WriteRune(r)
+
+			if i < len(name)-1 {
+				spelled.WriteString(separator.Draw(t, "separator"))
+			}
+		}
+
+		spelled.WriteString(rapid.SampledFrom([]string{"", " ", "\t"}).Draw(t, "trail"))
+
+		return [2]string{spelled.String(), columns[name]}
+	})
+}
+
+func TestParseVMInfoFiltersProperties(t *testing.T) {
+	t.Parallel()
+
+	genValue := rapid.StringOfN(rapid.RuneFrom([]rune("a1= \t")), 0, 6, -1)
+
+	t.Run("spelling", func(t *testing.T) {
+		t.Parallel()
+
+		rapid.Check(t, func(t *rapid.T) {
+			spelling := genVMInfoFilterSpelling().Draw(t, "spelling")
+			value := genValue.Draw(t, "value")
+			raw := spelling[0] + "=" + value
+
+			got, err := parseVMInfoFilters([]string{raw})
+			want := []vmInfoFilter{{column: spelling[1], value: strings.TrimSpace(value)}}
+
+			if err != nil {
+				t.Fatalf("parseVMInfoFilters([%q]) error = %v", raw, err)
+			}
+
+			if diff := cmp.Diff(want, got, cmp.AllowUnexported(vmInfoFilter{})); diff != "" {
+				t.Fatalf("parseVMInfoFilters([%q]) mismatch (-want +got):\n%s", raw, diff)
+			}
+		})
+	})
+
+	// each --filter parses on its own: a list fails as soon as one does
+	t.Run("concatenation", func(t *testing.T) {
+		t.Parallel()
+
+		genRaw := rapid.OneOf(
+			rapid.Map(genVMInfoFilterSpelling(), func(s [2]string) string { return s[0] + "=x" }),
+			rapid.SampledFrom([]string{"STATE=on", "RUNNING", "=true", " =1", "Taps"}),
+		)
+		parseEach := func(raw []string) ([]vmInfoFilter, bool) {
+			var each []vmInfoFilter
+
+			for _, r := range raw {
+				one, err := parseVMInfoFilters([]string{r})
+				if err != nil {
+					return nil, false
+				}
+
+				each = append(each, one...)
+			}
+
+			return each, true
+		}
+
+		rapid.Check(t, func(t *rapid.T) {
+			raw := rapid.SliceOfN(genRaw, 0, 4).Draw(t, "raw")
+
+			got, err := parseVMInfoFilters(raw)
+			want, ok := parseEach(raw)
+
+			if (err == nil) != ok {
+				t.Fatalf("parseVMInfoFilters(%q) error = %v, want an error %t", raw, err, !ok)
+			}
+
+			if diff := cmp.Diff(want, got, cmp.AllowUnexported(vmInfoFilter{}), cmpopts.EquateEmpty()); ok && diff != "" {
+				t.Fatalf("parseVMInfoFilters(%q) mismatch (-each +all):\n%s", raw, diff)
+			}
+		})
+	})
+}
+
+// genVMInfoFilterVMs draws VMs with IDs 0..n-1 whose columns take few values.
+func genVMInfoFilterVMs() *rapid.Generator[[]mm.VM] {
+	genVM := rapid.Custom(func(t *rapid.T) mm.VM {
+		return mm.VM{
+			Name:    rapid.SampledFrom([]string{"a", "b"}).Draw(t, "name"),
+			Host:    rapid.SampledFrom([]string{"n1", "n2"}).Draw(t, "host"),
+			Running: rapid.Bool().Draw(t, "running"),
+			CPUs:    rapid.IntRange(1, 2).Draw(t, "cpus"),
+			Disk:    rapid.SampledFrom([]string{"", "/i/x.qc2", "y.qc2"}).Draw(t, "disk"),
+			OSType:  rapid.SampledFrom([]string{"linux", "Linux", "vyos"}).Draw(t, "os"),
+		}
+	})
+
+	return rapid.Map(rapid.SliceOfN(genVM, 0, 6), func(vms []mm.VM) []mm.VM {
+		for i := range vms {
+			vms[i].ID = i
+		}
+
+		return vms
+	})
+}
+
+func vmInfoFilterIDs(vms []mm.VM) []int {
+	ids := make([]int, 0, len(vms))
+	for _, v := range vms {
+		ids = append(ids, v.ID)
+	}
+
+	return ids
+}
+
+func TestFilterVMInfoProperties(t *testing.T) {
+	t.Parallel()
+
+	// what each filter keeps, spelled out per VM
+	model := map[string]func(v mm.VM) bool{
+		"name=a":        func(v mm.VM) bool { return v.Name == "a" },
+		"HOST=n1":       func(v mm.VM) bool { return v.Host == "n1" },
+		"running=true":  func(v mm.VM) bool { return v.Running },
+		"Running=FALSE": func(v mm.VM) bool { return !v.Running },
+		"vcpus=1":       func(v mm.VM) bool { return v.CPUs == 1 },
+		"cpus=2":        func(v mm.VM) bool { return v.CPUs == 2 },
+		"disk=x":        func(v mm.VM) bool { return v.Disk == "/i/x.qc2" },
+		"DISK=y.qc2":    func(v mm.VM) bool { return v.Disk == "y.qc2" },
+		"disk=/i/x.qc2": func(v mm.VM) bool { return v.Disk == "/i/x.qc2" },
+		"disk=":         func(v mm.VM) bool { return v.Disk == "" },
+		"os_type=LINUX": func(v mm.VM) bool { return v.OSType != "vyos" },
+		"OS TYPE=vyos":  func(v mm.VM) bool { return v.OSType == "vyos" },
+	}
+	genFilters := rapid.SliceOfN(rapid.SampledFrom(slices.Sorted(maps.Keys(model))), 0, 4)
+
+	rapid.Check(t, func(t *rapid.T) {
+		vms := genVMInfoFilterVMs().Draw(t, "vms")
+		filters := genFilters.Draw(t, "filters")
+
+		got, err := filterVMInfo(vms, filters)
+		if err != nil {
+			t.Fatalf("filterVMInfo(vms, %q) error = %v", filters, err)
+		}
+
+		// filters are ANDed, and the VMs keep their order
+		want := make([]int, 0, len(vms))
+
+		for _, v := range vms {
+			if !slices.ContainsFunc(filters, func(f string) bool { return !model[f](v) }) {
+				want = append(want, v.ID)
+			}
+		}
+
+		if diff := cmp.Diff(want, vmInfoFilterIDs(got), cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("filterVMInfo(vms, %q) IDs mismatch (-want +got):\n%s", filters, diff)
+		}
+	})
 }

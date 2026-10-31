@@ -1,4 +1,4 @@
-.PHONY: all build check clean deb docker docs-build docs-serve examples example-go example-python generate help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
+.PHONY: all api-docs build check check-generated clean cli-docs deb docker docs-build docs-screenshots docs-serve examples example-go example-python generate generate-go help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
 DOCKER_TAG ?= latest
@@ -18,7 +18,12 @@ help:
 	@echo "Development:"
 	@echo "  all            - Run all development tasks (lint, test) and build examples"
 	@echo "  check          - Run prek hooks without committing fixes (for CI)"
-	@echo "  generate       - Run code generation (protobuf, mocks, etc)"
+	@echo "  check-generated - Check that 'make generate' is reproducible and writes only ignored files,"
+	@echo "                   and that the CLI reference is current"
+	@echo "  generate       - Generate all derived sources (generate-go and api-docs)"
+	@echo "  generate-go    - Generate Go code (protobuf, mocks, RBAC policy)"
+	@echo "  api-docs       - Render the API reference served at /docs/"
+	@echo "  cli-docs       - Regenerate the CLI reference in docs/content/cli (tracked; commit it)"
 	@echo "  lint           - Run prek hooks and fix issues (formatting, linting, etc)"
 	@echo "  prek           - Alias for 'lint'"
 	@echo "  test           - Run unit tests"
@@ -27,7 +32,7 @@ help:
 	@echo "  update-actions - Update pinned actions in GitHub workflows"
 	@echo ""
 	@echo "Build:"
-	@echo "  build          - Build the main phenix binary"
+	@echo "  build          - Build the main phenix binary (SKIP_UI=1, SKIP_API_DOCS=1 to reuse outputs)"
 	@echo "  deb            - Build the phenix .deb package"
 	@echo "  docker         - Build the phenix docker image"
 	@echo "  ui             - Build the frontend UI"
@@ -36,6 +41,7 @@ help:
 	@echo "Documentation:"
 	@echo "  docs-build     - Build the documentation site with strict checks"
 	@echo "  docs-serve     - Serve the documentation site locally with live reload"
+	@echo "  docs-screenshots - Recapture web UI docs images from a running phenix ui (E2E_BASE_URL)"
 	@echo ""
 	@echo "Installation:"
 	@echo "  install-dev        - Install development and build dependencies"
@@ -77,7 +83,7 @@ check:
 	$(call check-command,prek,Please install prek (run 'make install-dev' or see https://prek.j178.dev/installation/))
 	prek run --all-files --show-diff-on-failure
 
-test: generate
+test: generate-go
 	$(MAKE) -C src/go test
 	$(MAKE) -C examples test
 
@@ -87,15 +93,27 @@ prek:
 	$(call check-command,prek,Please install prek (run 'make install-dev' or see https://prek.j178.dev/installation/))
 	prek run --all-files
 
-generate:
+# `generate` produces every derived source: the Go code generation and the
+# API reference HTML. Go-only targets depend on generate-go, so building and
+# testing Go needs no Node.js.
+generate: generate-go api-docs
+
+generate-go:
 	$(MAKE) -C src/go generate
+
+api-docs:
+	$(MAKE) -C src/go api-docs
+
+cli-docs:
+	$(MAKE) -C src/go cli-docs
+
+check-generated:
+	./scripts/check-generated.sh
 
 install-dev:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
 	$(call check-command,protoc,Please install protobuf-compiler (e.g. sudo apt install protobuf-compiler))
 	$(call check-command,npm,Please install npm (e.g. sudo apt install npm))
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	go install go.uber.org/mock/mockgen@latest
 	@if ! command -v prek > /dev/null; then \
 		curl --proto '=https' --tlsv1.2 -LsSf https://github.com/j178/prek/releases/download/v0.4.14/prek-installer.sh | sh; \
 	fi
@@ -142,29 +160,36 @@ $(DOCS_VENV)/bin/mkdocs: docs/requirements.txt
 docs-build: $(DOCS_VENV)/bin/mkdocs
 	$(DOCS_VENV)/bin/mkdocs build --strict --config-file docs/mkdocs.yml
 
+# Needs a running `phenix ui` built with VITE_AUTH=disabled, at E2E_BASE_URL,
+# and Playwright's Chromium (see src/js/e2e/docs-screenshots/README.md).
+docs-screenshots:
+	cd src/js/e2e && npm ci && npm run docs-screenshots
+
 docs-serve: $(DOCS_VENV)/bin/mkdocs
 	$(DOCS_VENV)/bin/mkdocs serve --config-file docs/mkdocs.yml --dev-addr 127.0.0.1:$(DOCS_PORT)
 
 ui:
 	$(MAKE) -C src/js dist/index.html
 
-bin/phenix: generate $(if $(SKIP_UI),,ui)
+# SKIP_UI=1 reuses an existing src/js/dist; SKIP_API_DOCS=1 skips rendering
+# the API reference, which needs Node.js and network access the first time.
+bin/phenix: generate-go $(if $(SKIP_UI),,ui) $(if $(SKIP_API_DOCS),,api-docs)
 	$(call check-command,go,Please install Go 1.24+)
 	cp -a src/js/dist/* src/go/web/public
 	$(MAKE) -C src/go phenix
 	mkdir -p bin
 	cp src/go/bin/phenix bin/phenix
 
-examples: generate
+examples: generate-go
 	$(MAKE) -C examples all
 
-example-go: generate
+example-go: generate-go
 	$(MAKE) -C examples example-go
 
 example-python:
 	$(MAKE) -C examples example-python
 
-run-examples: generate
+run-examples: generate-go
 	$(MAKE) -C examples run
 
 help-all: help

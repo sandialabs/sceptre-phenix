@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,10 +13,7 @@ import (
 	"phenix/util/mm"
 )
 
-var (
-	ErrCaptureExists = errors.New("capture already exists")
-	ErrNoCaptures    = errors.New("no captures exist")
-)
+var ErrNoCaptures = errors.New("no captures exist")
 
 // ResolveInterface resolves the given interface identifier - either a
 // zero-based index (e.g. "0") or the interface name as declared in the
@@ -52,7 +50,8 @@ func ResolveInterface(v *mm.VM, iface string) (int, error) {
 // in the given experiment. The captured packets are written to the experiment's
 // files directory using the base name of the provided output file in PCAP
 // format. It returns any errors encountered while starting the packet capture.
-func StartCapture(expName, vmName string, iface int, out string) error {
+// Once ctx is done, minimega commands not yet sent give up (see mm.Context).
+func StartCapture(ctx context.Context, expName, vmName string, iface int, out string) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -65,12 +64,12 @@ func StartCapture(expName, vmName string, iface int, out string) error {
 		return errors.New("no output file provided")
 	}
 
-	v, err := Get(expName, vmName)
+	v, err := Get(ctx, expName, vmName)
 	if err != nil {
 		return fmt.Errorf("getting VM details: %w", err)
 	}
 
-	return StartCaptureForVM(v, expName, vmName, iface, out)
+	return StartCaptureForVM(ctx, v, expName, vmName, iface, out)
 }
 
 // StartCaptureForVM behaves like StartCapture, but accepts an already-fetched
@@ -78,7 +77,7 @@ func StartCapture(expName, vmName string, iface int, out string) error {
 // details on hand (e.g. because they resolved an interface name to an index
 // via ResolveInterface, which also requires the VM's details) should use this
 // to avoid an extra, redundant VM lookup.
-func StartCaptureForVM(v *mm.VM, expName, vmName string, iface int, out string) error {
+func StartCaptureForVM(ctx context.Context, v *mm.VM, expName, vmName string, iface int, out string) error {
 	if v == nil {
 		return errors.New("no VM details provided")
 	}
@@ -118,6 +117,7 @@ func StartCaptureForVM(v *mm.VM, expName, vmName string, iface int, out string) 
 		mm.VMName(vmName),
 		mm.CaptureInterface(iface),
 		mm.CaptureFile(out),
+		mm.Context(ctx),
 	); err != nil {
 		return fmt.Errorf(
 			"starting VM capture for interface %d on VM %s in experiment %s: %w",
@@ -133,27 +133,29 @@ func StartCaptureForVM(v *mm.VM, expName, vmName string, iface int, out string) 
 
 // StopCaptures stops all currently running packet captures for the given VM in
 // the given experiment. It returns any errors encountered while stopping the
-// packet captures.
-func StopCaptures(expName, vmName string) error {
-	return stopCaptures(expName, vmName, nil)
+// packet captures. Once ctx is done, minimega commands not yet sent give up
+// (see mm.Context).
+func StopCaptures(ctx context.Context, expName, vmName string) error {
+	return stopCaptures(ctx, expName, vmName, nil)
 }
 
 // StopCapture stops the packet capture running on the given interface for the
 // given VM in the given experiment, leaving any other running captures for
 // the VM untouched. It returns any errors encountered while stopping the
-// packet capture.
-func StopCapture(expName, vmName string, iface int) error {
+// packet capture. Once ctx is done, minimega commands not yet sent give up
+// (see mm.Context).
+func StopCapture(ctx context.Context, expName, vmName string, iface int) error {
 	if iface < 0 {
 		return errors.New("invalid interface provided for capture")
 	}
 
-	return stopCaptures(expName, vmName, &iface)
+	return stopCaptures(ctx, expName, vmName, &iface)
 }
 
 // stopCaptures stops packet captures for the given VM in the given
 // experiment. If iface is non-nil, only the capture running on that
 // interface index is stopped; otherwise all captures for the VM are stopped.
-func stopCaptures(expName, vmName string, iface *int) error {
+func stopCaptures(ctx context.Context, expName, vmName string, iface *int) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -162,9 +164,17 @@ func stopCaptures(expName, vmName string, iface *int) error {
 		return errors.New("no VM name provided")
 	}
 
-	captures := mm.GetVMCaptures(mm.NS(expName), mm.VMName(vmName))
+	captures := mm.GetVMCaptures(mm.NS(expName), mm.VMName(vmName), mm.Context(ctx))
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("listing captures of VM %s in experiment %s: %w", vmName, expName, err)
+	}
 
-	if captures == nil {
+	return stopListedCaptures(ctx, expName, vmName, iface, captures)
+}
+
+// stopListedCaptures is stopCaptures for the VM's captures as already listed.
+func stopListedCaptures(ctx context.Context, expName, vmName string, iface *int, captures []mm.Capture) error {
+	if len(captures) == 0 {
 		return fmt.Errorf("vm %s in experiment %s: %w", vmName, expName, ErrNoCaptures)
 	}
 
@@ -200,7 +210,7 @@ func stopCaptures(expName, vmName string, iface *int) error {
 		return fmt.Errorf("creating files directory for experiment %s: %w", expName, err)
 	}
 
-	opts := []mm.Option{mm.NS(expName), mm.VMName(vmName)}
+	opts := []mm.Option{mm.NS(expName), mm.VMName(vmName), mm.Context(ctx), mm.KnownCaptures(captures)}
 
 	if iface != nil {
 		opts = append(opts, mm.CaptureInterface(*iface))

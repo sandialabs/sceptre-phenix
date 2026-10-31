@@ -40,10 +40,13 @@ leave a one-line pointer to it from `SKILL.md`.
   config models and schemas.
 - `src/go/app/` runs apps; `scheduler/` assigns VMs; `store/` abstracts the
   BoltDB store; `web/` serves REST, websockets, RBAC, and the built UI.
-- `src/js/src/views/` contains pages, `components/` reusable UI, and `utils/`
-  shared helpers. `router.js`, `store.js`, and `main.js` wire the app.
-- The Vite server proxies `/api/v1`, `/version`, and `/features` to
-  `localhost:3000`. Root builds copy `src/js/dist/` into `src/go/web/public/`.
+- `src/js/src/views/` contains pages, `components/` reusable UI, `api/` the
+  REST requests by resource, and `utils/` shared helpers. `router.js`,
+  `store.js`, and `main.js` wire the app.
+- Root builds copy `src/js/dist/` into `src/go/web/public/`; the Vite
+  development proxy is described in [`src/js/AGENTS.md`](src/js/AGENTS.md).
+- The web UI targets desktop browsers only; phēnix is not used on phones or
+  other mobile devices, so mobile support is out of scope.
 - `src/go/web/public/` holds what `//go:embed all:public` in
   `src/go/web/assets.go` embeds: the copied UI build and the bundled noVNC
   and xterm.js. It is excluded from every formatting and lint hook in
@@ -61,7 +64,7 @@ leave a one-line pointer to it from `SKILL.md`.
   `Error` with the appropriate `LogType`, message, and structured key/value
   fields. The core routes records to console, system log, and web UI.
 - API auth uses `X-Phenix-Auth-Token`, not `Authorization`.
-- Runtime precedence is CLI flags, config file, environment, then defaults.
+- Runtime precedence is CLI flags, environment, config file, then defaults.
 - Never delete a live `config.yaml`; use `phenix settings unset` so its watcher
   remains active.
 
@@ -75,11 +78,15 @@ Docker for full deployments and image builds.
 | Inspect targets | `make help` or `make help-all` |
 | Install development tools | `make install-dev` |
 | Install with another Python | `SYSTEM_PYTHON=/path/to/python3.12 make install-dev` |
-| Generate mocks, protobufs, and RBAC | `make generate` |
+| Generate mocks, protobufs, RBAC, and the API reference | `make generate` (Go only: `make generate-go`) |
+| Render / lint the API reference (`/docs/`) | `make api-docs` / `scripts/api-docs.sh lint src/go/web/public/docs/openapi.yml` |
+| Lint the config schemas | `scripts/api-docs.sh lint-schemas` |
 | Format / fixing lint for Go/examples | `make format` / `make lint` |
 | Generate, then non-fixing lint | `make check` |
+| Regenerate the CLI reference (`docs/content/cli/`, tracked) | `make cli-docs` |
+| Check generated outputs are reproducible and the CLI reference is current | `make check-generated` |
 | Go core and example tests | `make test` |
-| Build UI and `bin/phenix` | `make build` |
+| Build UI, API reference, and `bin/phenix` | `make build` (`SKIP_UI=1`, `SKIP_API_DOCS=1` reuse or skip them) |
 | Build UI only | `make ui` |
 | Build container / Debian package | `make docker` / `make deb` |
 | Build / preview docs site | `make docs-build` / `make docs-serve` |
@@ -101,13 +108,15 @@ When changing a capability, inspect every applicable surface:
 | Change | Also inspect or update |
 |---|---|
 | CLI, REST, or UI capability | Implement parity in the other two when applicable and feasible; document gaps |
+| CLI command, flag, or help text | Regenerate the CLI reference with `make cli-docs` and commit `docs/content/cli/` and `docs/mkdocs.yml` |
 | Config field or version | Versioned structs, interfaces, schemas, examples, API output, skill, and docs |
-| REST route | Domain API, route table, RBAC, OpenAPI, UI client, and tests |
+| REST route | Domain API, route registration in `src/go/web/server.go`, RBAC, OpenAPI, UI client, and tests |
 | Store interface | Implementations, mock generation, callers, and tests |
 | Protobuf | `.proto`, generated files, consumers, and tests |
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
 | Log or error message text | Docs and skill text that quotes it, such as the Troubleshooting sections in `docs/content/` and `skills/phenix/references/` |
+| New feature or significant behavior change | A `phenix doctor` check when it applies: a new setting, external program, file, directory, service, port or feature flag (see [`src/go/AGENTS.md`](src/go/AGENTS.md)) |
 
 Preserve persisted BoltDB data, RBAC migrations, and public API compatibility
 unless a breaking change is deliberate and documented. phēnix has no config
@@ -128,7 +137,8 @@ scratch servers) must not listen on ports 9200, 5601, 3000, 3001, or 9001
 unless a hardcoded value requires it or the user asks; choose another free port
 and pass it explicitly, for example
 `phenix ui --listen-endpoint 127.0.0.1:3080` with
-`E2E_BASE_URL=http://127.0.0.1:3080`.
+`E2E_BASE_URL=http://127.0.0.1:3080`. The Playwright and Lighthouse configs and
+`scripts/ci-start-phenix-ui.sh` default to port 3197.
 
 ## Documentation and References
 
@@ -137,14 +147,13 @@ and pass it explicitly, for example
 | Build, install, logging, config | `README.md` |
 | App development | `examples/README.md`, `examples/TUTORIAL.md` |
 | Config interfaces and fields | `src/go/types/interfaces/`, `src/go/types/version/` |
-| YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml`, one file per `apiVersion` holding the kinds stored at it: `v0` `Workflow`, `v1` `Topology`/`Experiment`/`Image`/`User`/`Role`, `v2` `Scenario` |
+| YAML config schemas | `src/go/types/schemas/config.yaml` (the envelope every config matches), `src/go/types/version/schemas/{v0,v1,v2}.yaml` (each kind's spec), one file per `apiVersion` holding the kinds stored at it: `v0` `Workflow`, `v1` `Topology`/`Experiment`/`Image`/`User`/`Role`, `v2` `Scenario` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
-| Narrative docs source | [`docs/`](docs/) |
+| Narrative docs source (phenix.sceptre.dev) | [`docs/`](docs/) |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
 | minimega commands and behavior | [API docs](https://sandia-minimega.github.io/minimega/reference/minimega/), [source](https://github.com/sandia-minimega/minimega) |
 | Official apps and SCORCH components | [`sceptre-phenix-apps`](https://github.com/sandialabs/sceptre-phenix-apps) |
 | Image configs, overlays, scripts | [`sceptre-phenix-images`](https://github.com/sandialabs/sceptre-phenix-images) |
-| Source for phenix.sceptre.dev | [`docs/`](docs/) |
 | Reusable topologies | [`sceptre-phenix-topologies`](https://github.com/sandialabs/sceptre-phenix-topologies) |
 
 Consult minimega documentation and source whenever code constructs commands or
@@ -172,16 +181,47 @@ image, documentation, or topology details.
 
 ## CI and Release Safety
 
-GitHub Actions is path-scoped: `ci.yml` generates, lints, and tests Go;
-`frontend.yml` runs Vitest and, for changes that can affect the browser (the
-paths its `changes` job lists), builds UI/backend and runs Playwright smoke
-tests; `examples.yml` checks Go/Python examples; `packages.yml` builds Docker, Debian,
-and Podman outputs; `docs.yml` builds the documentation site for pull requests
-and publishes it to GitHub Pages from `main`. `lint.yml` runs every prek hook
-on all changes. Update affected path filters, inputs, generated artifacts,
-tool versions, and local-equivalent commands together. Preserve least-privilege
-permissions, supported action versions, lockfile caches, and shared version
-values.
+Most GitHub Actions workflows are path-scoped:
+
+- `ci.yml` generates code and tests Go with a coverage summary; its
+  `generated` job runs `make check-generated`, which also fails on a stale CLI
+  reference.
+- `frontend.yml` runs Vitest with a coverage summary and, for changes that can
+  affect the browser (the paths its `changes` job lists), builds the UI and
+  backend once per `VITE_AUTH` mode and shares those builds with the Playwright
+  jobs, which run in parallel in the pinned Playwright image, and with the UI
+  bundle budget and Lighthouse jobs, the latter writing a budget summary with
+  deltas against the default branch.
+- Both coverage summaries warn, without failing, below
+  `.github/coverage-minimums.json`.
+- `examples.yml` checks the Go and Python examples.
+- `docs.yml` builds the docs and API reference and publishes them from `main`.
+  Every API reference build, local, container or CI, goes through
+  `scripts/api-docs.sh`, which pins the Redocly CLI version; prek hooks lint
+  `openapi.yml` and the config schemas with it.
+- `lint.yml` runs the `prek` hooks on every push, including golangci-lint and
+  deadcode for Go (`src/go/prek.toml`) and knip for the UI
+  (`src/js/prek.toml`).
+- `packages.yml` builds the Docker, Debian and Podman outputs on every push
+  that changes more than the docs, scans each image it builds with grype, and
+  makes SPDX SBOMs of both images and the `.deb` with syft, attaching them to a
+  release and keeping them as an artifact otherwise.
+- `stress.yml` repeats the concurrency-heavy Go packages under `-race` weekly,
+  and `fuzz.yml` runs every Go fuzz target for a bounded time weekly.
+- `security.yml` reports govulncheck and `npm audit` findings on pull requests
+  and weekly, and grype findings for the published image weekly. It and
+  `packages.yml` write the findings to the job summary through
+  `scripts/vuln-report.sh` (`go`, `npm` or `grype`, also runnable locally) and
+  do not fail the run.
+- `cancel-closed-pr.yml` cancels a closed pull request branch's push-triggered
+  runs (branches in this repository only), while each workflow's own
+  concurrency group cancels the pull request's `pull_request` runs. Those
+  groups are keyed by pull request number, not ref, so a closed pull request's
+  run cannot cancel runs on the base branch.
+
+Update affected path filters, inputs, generated artifacts, tool versions, and
+local-equivalent commands together. Preserve least-privilege permissions,
+supported action versions, lockfile caches, and shared version values.
 
 Do not publish artifacts, push images, or create releases under any
 circumstances. The only exception is packages that a fork's own workflows

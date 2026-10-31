@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -85,7 +86,7 @@ func newExperimentListCmd() *cobra.Command {
 			if len(exps) == 0 {
 				plog.Warn(plog.TypeSystem, "no experiments available")
 			} else {
-				printer.PrintTableOfExperiments(os.Stdout, exps...)
+				printer.PrintTableOfExperiments(os.Stdout, outputPalette(os.Stdout), exps...)
 			}
 
 			return nil
@@ -152,7 +153,8 @@ func newExperimentCreateCmd() *cobra.Command {
   phenix experiment create <experiment name> -t <topology name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
-  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"`
+  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"
+  phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly`
 
 	cmd := &cobra.Command{
 		Use:     "create <experiment name>",
@@ -162,8 +164,8 @@ func newExperimentCreateCmd() *cobra.Command {
 		Args:    argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				topology = MustGetString(cmd.Flags(), "topology")
-				scenario = MustGetString(cmd.Flags(), "scenario")
+				topology = mustGet(cmd.Flags().GetString, "topology")
+				scenario = mustGet(cmd.Flags().GetString, "scenario")
 			)
 
 			if ext := filepath.Ext(topology); ext != "" {
@@ -223,15 +225,29 @@ func newExperimentCreateCmd() *cobra.Command {
 				disabledApps[idx] = strings.TrimSpace(disabledApps[idx])
 			}
 
+			annotations, err := parseAnnotationFlags(mustGet(cmd.Flags().GetStringArray, "annotation"))
+			if err != nil {
+				return util.HumanizeError(err, "").Humanized()
+			}
+
+			nodeAnnotations, err := parseNodeAnnotationFlags(
+				mustGet(cmd.Flags().GetStringArray, "node-annotation"),
+			)
+			if err != nil {
+				return util.HumanizeError(err, "").Humanized()
+			}
+
 			opts := []experiment.CreateOption{
 				experiment.CreateWithName(args[0]),
 				experiment.CreateWithTopology(topology),
 				experiment.CreateWithScenario(scenario),
-				experiment.CreateWithBaseDirectory(MustGetString(cmd.Flags(), "base-dir")),
-				experiment.CreateWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
-				experiment.CreateWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
+				experiment.CreateWithBaseDirectory(mustGet(cmd.Flags().GetString, "base-dir")),
+				experiment.CreateWithVLANMin(mustGet(cmd.Flags().GetInt, "vlan-min")),
+				experiment.CreateWithVLANMax(mustGet(cmd.Flags().GetInt, "vlan-max")),
 				experiment.CreatedWithDisabledApplications(disabledApps),
-				experiment.CreateWithDefaultBridge(MustGetString(cmd.Flags(), "default-bridge")),
+				experiment.CreateWithDefaultBridge(mustGet(cmd.Flags().GetString, "default-bridge")),
+				experiment.CreateWithAnnotations(annotations),
+				experiment.CreateWithNodeAnnotations(nodeAnnotations),
 			}
 
 			ctx := notes.Context(context.Background(), false)
@@ -258,9 +274,70 @@ func newExperimentCreateCmd() *cobra.Command {
 		StringP("default-bridge", "b", appName, "Default bridge name to use for experiment (optional)")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
-	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated ist of apps to disable")
+	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated list of apps to disable")
+	cmd.Flags().StringArray(
+		"annotation",
+		nil,
+		"Experiment annotation as key=value; may be repeated",
+	)
+	cmd.Flags().StringArray(
+		"node-annotation",
+		nil,
+		"Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated",
+	)
 
 	return cmd
+}
+
+// parseAnnotationFlags turns key=value flag values into annotations.
+func parseAnnotationFlags(values []string) (map[string]string, error) {
+	annotations := make(map[string]string, len(values))
+
+	for _, value := range values {
+		key, val, ok := strings.Cut(value, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("annotation %q is not of the form key=value", value)
+		}
+
+		annotations[key] = val
+	}
+
+	return annotations, nil
+}
+
+// parseNodeAnnotationFlags turns key=value flag values into node annotations,
+// keeping the type of values the default apps read as booleans or lists.
+func parseNodeAnnotationFlags(values []string) (map[string]any, error) {
+	flat, err := parseAnnotationFlags(values)
+	if err != nil {
+		return nil, err
+	}
+
+	annotations := make(map[string]any, len(flat))
+
+	for key, value := range flat {
+		annotations[key] = nodeAnnotationValue(value)
+	}
+
+	return annotations, nil
+}
+
+// nodeAnnotationValue reads true and false as booleans and a JSON list or
+// object as that value; anything else, numbers included, stays a string.
+func nodeAnnotationValue(value string) any {
+	switch trimmed := strings.TrimSpace(value); {
+	case trimmed == "true":
+		return true
+	case trimmed == "false":
+		return false
+	case strings.HasPrefix(trimmed, "["), strings.HasPrefix(trimmed, "{"):
+		var parsed any
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+			return parsed
+		}
+	}
+
+	return value
 }
 
 func newExperimentEditCmd() *cobra.Command {
@@ -277,7 +354,7 @@ func newExperimentEditCmd() *cobra.Command {
 		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				force = MustGetBool(cmd.Flags(), "force")
+				force = mustGet(cmd.Flags().GetBool, "force")
 				exp   = "experiment/" + args[0]
 			)
 
@@ -323,7 +400,7 @@ func newExperimentDeleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
-				force       = MustGetBool(cmd.Flags(), "force")
+				force       = mustGet(cmd.Flags().GetBool, "force")
 				experiments []types.Experiment
 			)
 
@@ -360,7 +437,8 @@ func newExperimentDeleteCmd() *cobra.Command {
 						continue
 					}
 
-					if err := experiment.Stop(exp.Metadata.Name); err != nil {
+					// -f deletes it even when minimega cannot kill its VMs, as docker rm -f would
+					if err := experiment.Stop(exp.Metadata.Name, experiment.StopWithForce(force)); err != nil {
 						err := util.HumanizeError(
 							err,
 							"%s",
@@ -459,6 +537,14 @@ func newExperimentStartCmd() *cobra.Command {
   experiment name will include all stopped experiments; dry-run will do
 	everything but call out to minimega.
 
+  Before minimega launches a VM, phenix checks that each disk image and
+  CD-ROM image of the VMs exists, and that the backing chain of each disk
+  image is complete. A missing file refuses the start and lists each VM,
+  disk and missing file. With --dry-run or --treat-mm-errors-as-warnings,
+  phenix shows the problems as warnings. The experiment.disk-check setting
+  changes this for every start: warn shows the problems as warnings, and
+  off skips the check.
+
 	NOTE: passing the --honor-run-periodically flag will prevent the CLI from
 	returning. If Ctrl+c is pressed, the experiment will continue to run but
 	the running stage will no longer continue to be triggered for any apps
@@ -474,8 +560,8 @@ func newExperimentStartCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
-				dryrun      = MustGetBool(cmd.Flags(), "dry-run")
-				periodic    = MustGetBool(cmd.Flags(), "honor-run-periodically")
+				dryrun      = mustGet(cmd.Flags().GetBool, "dry-run")
+				periodic    = mustGet(cmd.Flags().GetBool, "honor-run-periodically")
 				experiments []types.Experiment
 
 				ctx = notes.Context(sigterm.CancelContext(context.Background()), true)
@@ -517,22 +603,16 @@ func newExperimentStartCmd() *cobra.Command {
 				opts := []experiment.StartOption{
 					experiment.StartWithName(exp.Metadata.Name),
 					experiment.StartWithDryRun(dryrun),
-					experiment.StartWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
-					experiment.StartWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
+					experiment.StartWithVLANMin(mustGet(cmd.Flags().GetInt, "vlan-min")),
+					experiment.StartWithVLANMax(mustGet(cmd.Flags().GetInt, "vlan-max")),
 					experiment.StartWithMMErrorsAsWarnings(
-						MustGetBool(cmd.Flags(), "treat-mm-errors-as-warnings"),
+						mustGet(cmd.Flags().GetBool, "treat-mm-errors-as-warnings"),
 					),
 				}
 
 				err := experiment.Start(ctx, opts...)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to start the "+exp.Metadata.Name+" experiment",
-					)
-
-					return err.Humanized()
+					return startError(err, exp.Metadata.Name)
 				}
 
 				notes.PrettyPrint(ctx, false)
@@ -576,11 +656,24 @@ func newExperimentStartCmd() *cobra.Command {
 	return cmd
 }
 
+// startError is the error a start of experiment name that failed with err returns: err itself for broken disk images,
+// so the list of VMs, disks and missing files is printed, and a humanized error otherwise.
+func startError(err error, name string) error {
+	if errors.Is(err, experiment.ErrBrokenDisks) {
+		return fmt.Errorf("unable to start the %s experiment: %w", name, err)
+	}
+
+	herr := util.HumanizeError(err, "%s", "Unable to start the "+name+" experiment")
+
+	return herr.Humanized()
+}
+
 func newExperimentStopCmd() *cobra.Command {
 	desc := `Stop an experiment
 
   Used to stop a running experiment, using 'all' instead of a specific
-  experiment name will include all running experiments.`
+  experiment name will include all running experiments. An experiment whose
+  VMs minimega cannot kill stays running; --force marks it stopped anyway.`
 
 	cmd := &cobra.Command{
 		Use:               "stop <experiment name>",
@@ -591,7 +684,8 @@ func newExperimentStopCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name                   = args[0]
-				keepInjectionSnapshots = MustGetBool(cmd.Flags(), "keep-injection-snapshots")
+				keepInjectionSnapshots = mustGet(cmd.Flags().GetBool, "keep-injection-snapshots")
+				force                  = mustGet(cmd.Flags().GetBool, "force")
 				experiments            []types.Experiment
 			)
 
@@ -630,13 +724,15 @@ func newExperimentStopCmd() *cobra.Command {
 				err := experiment.Stop(
 					exp.Metadata.Name,
 					experiment.StopWithKeepInjectionSnapshots(keepInjectionSnapshots),
+					experiment.StopWithForce(force),
 				)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Problem encountered while stopping the "+exp.Metadata.Name+" experiment",
-					)
+					msg := "Problem encountered while stopping the " + exp.Metadata.Name + " experiment"
+					if errors.Is(err, experiment.ErrTeardownFailed) {
+						msg += " (it is still running: try again, or pass --force to mark it stopped anyway)"
+					}
+
+					err := util.HumanizeError(err, "%s", msg)
 
 					return err.Humanized()
 				}
@@ -650,6 +746,8 @@ func newExperimentStopCmd() *cobra.Command {
 
 	cmd.Flags().
 		BoolP("keep-injection-snapshots", "K", false, "Keep VM injection snapshots after stopping")
+	cmd.Flags().
+		BoolP("force", "f", false, "Mark the experiment stopped even if minimega cannot kill its VMs")
 
 	return cmd
 }
@@ -660,7 +758,13 @@ func newExperimentRestartCmd() *cobra.Command {
 
   Used to restart a running experiment, using 'all' instead of a specific
   experiment name will include all running experiments; dry-run will do
-  everything but call out to minimega.`
+  everything but call out to minimega.
+
+  Before phenix stops the experiment, it checks the disk images and CD-ROM
+  images of the VMs as 'phenix experiment start' does. A missing file
+  refuses the restart, and the experiment continues to run. When the
+  scenario has a user app, the app can change the disks, so this check
+  only shows warnings, and the check before the start can still refuse it.`
 
 	cmd := &cobra.Command{
 		Use:               "restart <experiment name>",
@@ -672,10 +776,10 @@ func newExperimentRestartCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
-				dryrun      = MustGetBool(cmd.Flags(), "dry-run")
+				dryrun      = mustGet(cmd.Flags().GetBool, "dry-run")
 				experiments []types.Experiment
 
-				ctx = sigterm.CancelContext(context.Background())
+				ctx = notes.Context(sigterm.CancelContext(context.Background()), true)
 			)
 
 			if name == allExperiments {
@@ -714,13 +818,21 @@ func newExperimentRestartCmd() *cobra.Command {
 					continue
 				}
 
-				err := experiment.Stop(exp.Metadata.Name)
+				warnings, err := experiment.CheckDisksBeforeStop(ctx, exp.Spec, experiment.CheckAsWarnings(dryrun))
+				notes.AddWarnings(ctx, true, warnings...)
+
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to stop the "+exp.Metadata.Name+" experiment",
-					)
+					return fmt.Errorf("unable to restart the %s experiment, which is still running: %w", exp.Metadata.Name, err)
+				}
+
+				err = experiment.Stop(exp.Metadata.Name)
+				if err != nil {
+					msg := "Unable to stop the " + exp.Metadata.Name + " experiment"
+					if errors.Is(err, experiment.ErrTeardownFailed) {
+						msg += " (it is still running: try again, or mark it stopped with stop --force first)"
+					}
+
+					err := util.HumanizeError(err, "%s", msg)
 
 					return err.Humanized()
 				}
@@ -731,14 +843,10 @@ func newExperimentRestartCmd() *cobra.Command {
 					experiment.StartWithDryRun(dryrun),
 				)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to start the "+exp.Metadata.Name+" experiment",
-					)
-
-					return err.Humanized()
+					return startError(err, exp.Metadata.Name)
 				}
+
+				notes.PrettyPrint(ctx, false)
 
 				plog.Info(
 					plog.TypeSystem,
@@ -1127,7 +1235,7 @@ func newExperimentScorchCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name = args[0]
-				run  = MustGetInt(cmd.Flags(), "run")
+				run  = mustGet(cmd.Flags().GetInt, "run")
 				ctx  = sigterm.CancelContext(context.Background())
 			)
 

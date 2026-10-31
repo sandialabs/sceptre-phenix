@@ -63,4 +63,14 @@ type ExperimentStatus interface { //nolint:interfacebloat // legacy interface
 
 	ParseAppStatus(string, any) error
 	ResetAppStatus()
+
+	// Pending starts: each timer-delayed VM's due time (RFC 3339), each C2-delayed VM's awaited VMs (true to
+	// match the C2 client by UUID), whether post-start apps must run, and why phenix could not resume them.
+	DelayedTimers() map[string]string
+	DelayedC2() map[string]map[string]bool
+	PostStartPending() bool
+	Interrupted() string
+
+	SetDelayedStarts(map[string]string, map[string]map[string]bool, bool)
+	SetInterrupted(string)
 }

@@ -53,6 +53,7 @@ markdown_extensions:
   - pymdownx.snippets:
       base_path: !relative $config_dir/..
       check_paths: true
+      # schema.md includes indented sections of the schema files
       dedent_subsections: true
   - pymdownx.highlight:
       anchor_linenums: true
@@ -73,6 +74,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - Web UI: web-ui.md
   - Configuration:
     - Files: configuration.md
     - Settings: settings.md
@@ -82,6 +84,7 @@ nav:
     - VMs: vms.md
     - VM Actions: vm-multi-action.md
     - Images: image.md
+    - Disks: disks.md
   - Apps:
     - Overview: apps.md
     - Examples: examples.md
@@ -91,13 +94,36 @@ nav:
     - Bridge Mode: bridge-mode.md
     - GRE Mesh: gre-mesh.md
     - Netflow: netflow.md
+    - WebShark: webshark.md
     - Tunneler: tunneler.md
   - Integrations:
     - API: api.md
+    - Background Jobs: jobs.md
     - Workflow: workflow.md
   - Administration:
     - Users: user-administration.md
+    - Hosts: hosts.md
+    - Health Checks: health.md
   - Reference:
+    - CLI:
+      # BEGIN generated CLI reference (make cli-docs)
+      - Overview: cli/index.md
+      - phenix completion: cli/completion.md
+      - phenix config: cli/config.md
+      - phenix doctor: cli/doctor.md
+      - phenix experiment: cli/experiment.md
+      - phenix healthcheck: cli/healthcheck.md
+      - phenix image: cli/image.md
+      - phenix job: cli/job.md
+      - phenix mm: cli/mm.md
+      - phenix settings: cli/settings.md
+      - phenix ui: cli/ui.md
+      - phenix util: cli/util.md
+      - phenix version: cli/version.md
+      - phenix vlan: cli/vlan.md
+      - phenix vm: cli/vm.md
+      - phenix workflow: cli/workflow.md
+      # END generated CLI reference
     - minimega: minimega.md
     - Troubleshooting: troubleshooting.md
     - Schema: schema.md

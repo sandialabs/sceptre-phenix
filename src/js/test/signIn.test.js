@@ -1,144 +1,80 @@
-import { beforeEach, expect, test, vi } from 'vitest';
+// What the app starts for a signed-in user and tears down on sign-out, across
+// every sign-in and sign-out, whether the page loaded signed in or not.
+import fc from 'fast-check';
+import { describe, expect, it } from 'vitest';
+import { nextTick, ref } from 'vue';
 
-import SignIn from '@/views/SignIn.vue';
-import axiosInstance from '@/utils/axios.js';
+import { followSignIn } from '@/utils/signIn.js';
 
-// The real modules need a browser. Vitest hoists vi.mock above the imports.
-const store = vi.hoisted(() => ({ login: vi.fn() }));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
-vi.mock('@/utils/axios.js', () => ({ default: { post: vi.fn() } }));
-vi.mock('@/utils/errorNotif', () => ({ useErrorNotification: vi.fn() }));
-
-// The component as its methods and open watcher see it.
-function signIn() {
-  const ctx = {
-    ...SignIn.data(),
-    $buefy: { toast: { open: vi.fn() } },
-    $refs: {},
-    $nextTick: (fn) => fn(),
-  };
-  for (const [name, fn] of Object.entries(SignIn.methods)) {
-    ctx[name] = fn.bind(ctx);
-  }
-  ctx.open = (open) => {
-    ctx.signUpModal = open;
-    SignIn.watch.signUpModal.call(ctx, open);
-  };
-  return ctx;
+function follow(signedIn, authDisabled = false) {
+  const auth = ref(signedIn);
+  const calls = [];
+  const stop = followSignIn(auth, {
+    authDisabled,
+    onSignIn: () => calls.push('in'),
+    onSignOut: () => calls.push('out'),
+  });
+  return { auth, calls, stop };
 }
 
-// Lets the request promise chains finish.
-const settled = () => new Promise((resolve) => setTimeout(resolve));
+describe('followSignIn', () => {
+  it('tears down on sign-out after a page loaded signed in, and starts again for the next user', async () => {
+    const { auth, calls } = follow(true);
+    expect(calls).toEqual(['in']);
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
+    auth.value = false;
+    await nextTick();
+    expect(calls).toEqual(['in', 'out']);
 
-test('signing in after Create Account uses the account sent, even if the dialog reopens', async () => {
-  let finishSignUp;
-  axiosInstance.post.mockImplementation((url) =>
-    url === 'signup'
-      ? new Promise((resolve) => (finishSignUp = resolve))
-      : Promise.resolve({ data: { token: 't' } }),
-  );
-  const ctx = signIn();
-
-  ctx.open(true);
-  Object.assign(ctx.signUp, {
-    username: 'alice',
-    first_name: 'Alice',
-    last_name: 'Smith',
-    password: 'secret123',
-    confirmPassword: 'secret123',
+    auth.value = true;
+    await nextTick();
+    expect(calls).toEqual(['in', 'out', 'in']);
   });
-  ctx.create();
 
-  // The user closes and reopens the dialog and starts a new entry.
-  ctx.open(false);
-  ctx.open(true);
-  ctx.signUp.username = 'bob';
+  it('starts on the first sign-in of a page loaded signed out', async () => {
+    const { auth, calls } = follow(false);
+    expect(calls).toEqual([]);
 
-  finishSignUp({ status: 200 });
-  await settled();
-
-  expect(axiosInstance.post).toHaveBeenCalledWith('login', {
-    user: 'alice',
-    pass: 'secret123',
+    auth.value = true;
+    await nextTick();
+    expect(calls).toEqual(['in']);
   });
-  expect(store.login).toHaveBeenCalledOnce();
-});
 
-test('Create Account closes its own dialog but not one reopened while it was pending', async () => {
-  const finish = [];
-  axiosInstance.post.mockImplementation((url) =>
-    url === 'signup'
-      ? new Promise((resolve) => finish.push(resolve))
-      : Promise.resolve({ data: { token: 't' } }),
-  );
-  const fill = (ctx, username) =>
-    Object.assign(ctx.signUp, {
-      username,
-      first_name: 'A',
-      last_name: 'B',
-      password: 'secret123',
-      confirmPassword: 'secret123',
-    });
+  it('starts once, and never tears down, with auth disabled', async () => {
+    const { auth, calls } = follow(false, true);
+    auth.value = true;
+    await nextTick();
+    auth.value = false;
+    await nextTick();
+    expect(calls).toEqual(['in']);
+  });
 
-  const same = signIn();
-  same.open(true);
-  fill(same, 'alice');
-  same.create();
-  finish.pop()({ status: 200 });
-  await settled();
-  expect(same.signUpModal).toBe(false);
+  it('stops following when asked', async () => {
+    const { auth, calls, stop } = follow(true);
+    stop();
+    auth.value = false;
+    await nextTick();
+    expect(calls).toEqual(['in']);
+  });
 
-  const reopened = signIn();
-  reopened.open(true);
-  fill(reopened, 'alice');
-  reopened.create();
-  reopened.open(false);
-  reopened.open(true);
-  reopened.signUp.username = 'bob';
-  finish.pop()({ status: 200 });
-  await settled();
-  expect(reopened.signUpModal).toBe(true);
-  expect(reopened.signUp.username).toBe('bob');
-});
+  // each step signs in or out, or lets Vue run the watchers
+  const steps = fc.array(fc.oneof(fc.boolean(), fc.constant('tick')), {
+    maxLength: 20,
+  });
 
-test('a taken name marks the User Name field only in the dialog that sent it', async () => {
-  const taken = () => Promise.reject({ response: { status: 409 } });
-  const fill = (ctx) =>
-    Object.assign(ctx.signUp, {
-      username: 'alice',
-      first_name: 'A',
-      last_name: 'B',
-      password: 'secret123',
-      confirmPassword: 'secret123',
-    });
-
-  axiosInstance.post.mockImplementation(taken);
-  const same = signIn();
-  same.open(true);
-  fill(same);
-  same.create();
-  await settled();
-  expect(same.userExists).toBe(true);
-  expect(same.signUpModal).toBe(true);
-
-  let fail;
-  axiosInstance.post.mockImplementation(
-    () => new Promise((_, reject) => (fail = reject)),
-  );
-  const reopened = signIn();
-  reopened.open(true);
-  fill(reopened);
-  reopened.create();
-  reopened.open(false);
-  reopened.open(true);
-  fail({ response: { status: 409 } });
-  await settled();
-  expect(reopened.userExists).toBe(false);
-  expect(reopened.$buefy.toast.open).toHaveBeenCalledWith(
-    expect.objectContaining({ message: 'User already exists' }),
-  );
+  it('alternates start and teardown, started exactly while signed in, over any run of sign-ins', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.boolean(), steps, async (loadedIn, run) => {
+        const { auth, calls, stop } = follow(loadedIn);
+        for (const step of run) {
+          if (step === 'tick') await nextTick();
+          else auth.value = step;
+        }
+        await nextTick();
+        stop();
+        calls.forEach((call, i) => expect(call).toBe(i % 2 ? 'out' : 'in'));
+        expect(calls.at(-1) === 'in').toBe(auth.value);
+      }),
+    );
+  });
 });

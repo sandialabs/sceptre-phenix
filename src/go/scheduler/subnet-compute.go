@@ -95,6 +95,10 @@ func (subnetCompute) Schedule(spec ifaces.ExperimentSpec) error {
 		}
 
 		if scheduled == nil {
+			if len(cluster) == 0 {
+				return fmt.Errorf("scheduling VM %s: %w", node.General().Hostname(), ErrNoSchedulableHosts)
+			}
+
 			// VM's VLAN alias not mapped to a cluster host yet, so use round-robin
 			// approach to find a cluster host to map it to.
 			scheduled = &cluster[0]

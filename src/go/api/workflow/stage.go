@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"phenix/util/file"
 )
 
 // ownerAccess is added to the mode of every staged directory, so a later
@@ -106,7 +108,7 @@ func StageInjectsWithOptions(src, base, name string, opts StageOptions) (int, er
 		return 0, fmt.Errorf("injects source %s is not a directory", src)
 	}
 
-	if err := os.MkdirAll(base, 0o755); err != nil {
+	if err := os.MkdirAll(base, 0o755); err != nil { //nolint:gosec // G301 injects are not secret, and VM tooling reads them
 		return 0, fmt.Errorf("creating injects directory %s: %w", base, err)
 	}
 
@@ -247,13 +249,13 @@ func injectsDestination(src, base, name string, protect []string) (string, error
 	dest := filepath.Join(resolved[0], name)
 	source := resolved[1]
 
-	if PathWithin(dest, source) {
+	if file.WithinDir(source, dest) {
 		return "", fmt.Errorf("%w: the destination %s is the injects source %s or inside it", ErrUnsafeDestination, dest, source)
 	}
 
 	// resolved[1:] is src followed by every protect path.
 	for _, path := range resolved[1:] {
-		if PathWithin(path, dest) {
+		if file.WithinDir(dest, path) {
 			return "", fmt.Errorf("%w: replacing %s would remove %s", ErrUnsafeDestination, dest, path)
 		}
 	}
@@ -269,15 +271,6 @@ func resolveRealPath(p string) (string, error) {
 	}
 
 	return abs, err
-}
-
-// PathWithin reports whether target is dir or lies inside it. Both paths
-// must be absolute and clean. The workflow apply command shares it, so its
-// preflight and the staging agree on what lies inside what.
-func PathWithin(target, dir string) bool {
-	rel, err := filepath.Rel(dir, target)
-
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 type treeCopier struct {
@@ -300,7 +293,7 @@ func (c *treeCopier) copyTree(src, dst string, perm fs.FileMode) (int, error) {
 			return 0, fmt.Errorf("cyclic directory link: %s points to %s", src, realDir)
 		}
 
-		if PathWithin(c.stagingDir, realDir) {
+		if file.WithinDir(realDir, c.stagingDir) {
 			return 0, fmt.Errorf("%w: %s points to %s, which contains the staging directory", ErrUnsafeDestination, src, realDir)
 		}
 

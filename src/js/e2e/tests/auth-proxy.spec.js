@@ -1,12 +1,8 @@
-// Proxy-auth signup flow. Opt-in: needs the UI built with VITE_AUTH=proxy and
-// the server started with --jwt-signing-key proxy-jwt, e.g.:
-//
+// Proxy-auth signup flow, run in CI's test-e2e-auth job; extraHTTPHeaders plays
+// the proxy, whose JWT the server parses unverified. It needs a VITE_AUTH=proxy
+// build and:
 //   phenix ui --jwt-signing-key proxy-jwt
 //   E2E_AUTH_MODE=proxy npx playwright test auth-proxy
-//
-// The auth proxy is simulated with Playwright's extraHTTPHeaders: every
-// request carries the proxy-style JWT, which the server intentionally parses
-// without verifying (that is what proxy mode means).
 const { test, expect } = require('@playwright/test');
 const { attachCapture, settle, fatalOf, unsignedJwt } = require('./helpers');
 
@@ -99,8 +95,11 @@ test('signup success (200) logs the user in via response.data', async ({
   );
 
   // 401 fallout (HTTP and WebSocket) is expected: the user was never created.
+  // Without the proxy that adds X-Phenix-Auth-Token, the websocket is refused.
   const fatal = fatalOf(issues).filter(
-    (i) => !/401|user error|HTTP Authentication failed/.test(i.text),
+    (i) =>
+      !/401|user error|HTTP Authentication failed/.test(i.text) &&
+      !/WebSocket connection to .*\/api\/v1\/ws.* 400/.test(i.text),
   );
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });

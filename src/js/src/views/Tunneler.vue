@@ -1,7 +1,55 @@
 <template>
-  <div class="content">
+  <div class="content tunneler">
+    <section id="downloads" aria-labelledby="downloads-heading">
+      <h1 id="downloads-heading">Tunneler Downloads</h1>
+      <p v-if="notInstalled">
+        Tunneler downloads are not installed on this phēnix server.
+      </p>
+      <b-table v-else :data="downloads">
+        <template #empty>
+          <div class="has-text-centered">
+            {{
+              failed
+                ? 'Could not list the tunneler downloads'
+                : loaded
+                  ? 'No tunneler builds are installed on this server'
+                  : 'Loading downloads…'
+            }}
+          </div>
+        </template>
+        <b-table-column label="OS" v-slot="props">
+          {{ props.row.os }}
+        </b-table-column>
+        <b-table-column label="Architecture" v-slot="props">
+          {{ props.row.arch }}
+        </b-table-column>
+        <b-table-column label="Download" centered v-slot="props">
+          <a
+            :href="props.row.link"
+            download
+            :aria-label="`Download ${props.row.file}`"
+            :title="props.row.file">
+            <b-icon icon="file-download" size="is-small"></b-icon>
+          </a>
+        </b-table-column>
+      </b-table>
+    </section>
+    <hr />
     <div id="quick-start">
-      <h1>Quick Start</h1>
+      <div class="quick-start-head">
+        <h2>Quick Start</h2>
+        <b-button
+          tag="a"
+          :href="docsPage('tunneler')"
+          target="_blank"
+          rel="noopener"
+          type="is-light"
+          size="is-large"
+          icon-left="book"
+          class="docs-button"
+          >Tunneler Documentation</b-button
+        >
+      </div>
       <p>
         The phēnix-tunneler is an application phēnix users can run on their
         local machine in order to access services in VMs locally.
@@ -18,7 +66,7 @@
         <br />
 
         Once the appropriate phenix-tunneler executable is downloaded via the
-        table below, users can do the above by starting the phenix-tunneler
+        table above, users can do the above by starting the phenix-tunneler
         server and then creating a new port forward for a VM in the phēnix UI.
 
         <br />
@@ -54,52 +102,58 @@
         traffic will be forwarded through the phēnix UI server to the VM.
       </p>
     </div>
-    <hr />
-    <b-table :data="data">
-      <b-table-column field="name" label="OS" v-slot="props">
-        {{ props.row.name }}
-      </b-table-column>
-      <b-table-column field="arch" label="Architecture" v-slot="props">
-        {{ props.row.arch }}
-      </b-table-column>
-      <b-table-column field="link" label="Download" centered v-slot="props">
-        <a
-          :href="props.row.link"
-          target="_blank"
-          :aria-label="`Download phenix-tunneler for ${props.row.name} ${props.row.arch} (opens in new tab)`">
-          <b-icon icon="file-download" size="is-small"></b-icon>
-        </a>
-      </b-table-column>
-    </b-table>
   </div>
 </template>
 
 <script>
+  import { docsPage } from '@/utils/docs.js';
+
+  // how the builds the server may offer are named on the page
+  const BUILDS = {
+    'phenix-tunneler-linux-amd64': { os: 'Linux', arch: 'amd64' },
+    'phenix-tunneler-darwin-arm64': { os: 'macOS', arch: 'arm64' },
+    'phenix-tunneler-darwin-amd64': { os: 'macOS', arch: 'amd64' },
+    'phenix-tunneler-windows-amd64.exe': { os: 'Windows', arch: 'amd64' },
+  };
+
+  const downloadsPath = `${import.meta.env.BASE_URL}downloads/tunneler`;
+
   export default {
+    setup() {
+      return { docsPage };
+    },
+
+    async created() {
+      // only the builds actually installed, so no link leads to a 404
+      try {
+        const resp = await fetch(downloadsPath);
+        // without downloads the server has no such route, and answers with
+        // the app's own page
+        if (!resp.headers.get('content-type')?.includes('application/json')) {
+          this.notInstalled = resp.ok || resp.status === 404;
+          if (!this.notInstalled) this.failed = true;
+          return;
+        }
+        const { files } = await resp.json();
+        this.downloads = (files ?? []).map((file) => ({
+          file,
+          os: BUILDS[file]?.os ?? file,
+          arch: BUILDS[file]?.arch ?? '',
+          link: `${downloadsPath}/${encodeURIComponent(file)}`,
+        }));
+      } catch {
+        this.failed = true;
+      } finally {
+        this.loaded = true;
+      }
+    },
+
     data() {
       return {
-        data: [
-          {
-            name: 'Linux',
-            arch: 'amd64',
-            link: this.$router.resolve({ name: 'linux-tunneler' }).href,
-          },
-          {
-            name: 'MacOS',
-            arch: 'arm64',
-            link: this.$router.resolve({ name: 'macos-arm-tunneler' }).href,
-          },
-          {
-            name: 'MacOS',
-            arch: 'amd64',
-            link: this.$router.resolve({ name: 'macos-intel-tunneler' }).href,
-          },
-          {
-            name: 'Windows',
-            arch: 'amd64',
-            link: this.$router.resolve({ name: 'windows-tunneler' }).href,
-          },
-        ],
+        downloads: [],
+        loaded: false,
+        failed: false,
+        notInstalled: false,
       };
     },
   };
@@ -110,9 +164,30 @@
     color: whitesmoke !important;
   }
 
-  div#quick-start {
+  div.tunneler {
     width: 60%;
+    min-width: min(100%, 36rem);
     margin: auto;
+  }
+
+  section#downloads {
+    max-width: 36rem;
+  }
+
+  .quick-start-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.5rem;
+    margin-bottom: 1em;
+  }
+
+  .quick-start-head h2 {
+    margin: 0;
+  }
+
+  #quick-start p {
+    font-size: calc(1em + 2pt);
   }
 
   code {

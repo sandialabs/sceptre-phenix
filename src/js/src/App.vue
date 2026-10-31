@@ -1,9 +1,12 @@
 <script setup>
   import { RouterView } from 'vue-router';
   import {
+    addWsHandler,
     connectWebsocket,
     disconnectWebsocket,
     isWsConnected,
+    onWsReconnect,
+    removeWsHandler,
   } from './utils/websocket';
   import AppHeader from '@/components/AppHeader.vue';
   import AppFooter from '@/components/AppFooter.vue';
@@ -11,12 +14,42 @@
   import router from '@/router';
   import { usePhenixStore } from '@/store';
   import { storeToRefs } from 'pinia';
-  import { watch } from 'vue';
 
   import { TimeoutTool } from '@/utils/timeout.js';
+  import { schedulePagePreload } from '@/utils/pageData.js';
+  import { useJobStore } from '@/utils/jobs.js';
+  import { invalidatePages } from '@/utils/pageCache.js';
+  import { followSignIn } from '@/utils/signIn.js';
+  import { viewKey } from '@/utils/viewKey.js';
 
   const store = usePhenixStore();
+
+  // cached pages a live update changes are loaded again on their next visit
+  addWsHandler(invalidatePages);
   const timeout = new TimeoutTool();
+  const jobs = useJobStore();
+
+  // Background jobs: loaded once signed in, kept current by the websocket,
+  // and loaded again after it reconnects (a reload or a lost connection),
+  // since messages sent meanwhile are lost.
+  const applyJob = (msg) => jobs.apply(msg);
+  const loadJobs = () =>
+    jobs.load().catch((err) => console.warn('failed to load jobs', err));
+  let stopJobReload = null;
+
+  function followJobs() {
+    if (stopJobReload) return;
+    addWsHandler(applyJob);
+    stopJobReload = onWsReconnect(loadJobs, { spread: true });
+    loadJobs();
+  }
+
+  function forgetJobs() {
+    removeWsHandler(applyJob);
+    stopJobReload?.();
+    stopJobReload = null;
+    jobs.clear();
+  }
 
   fetch(router.resolve({ name: 'features' }).href)
     .then((resp) => resp.json())
@@ -24,31 +57,38 @@
       store.features = data.features;
     })
     .catch((err) => {
-      console.log(err);
+      console.warn('failed to get enabled features', err);
+    })
+    .finally(() => {
+      store.featuresLoaded = true;
     });
 
-  onMounted(() => {
-    // connect websockets once user has authenticated (or auth disabled)
-    if (import.meta.env.VITE_AUTH === 'disabled' || store.auth) {
-      connectWebsocket();
-      timeout.fetchAndStart();
-    } else {
-      const { auth } = storeToRefs(store);
-      watch(auth, async (newAuth) => {
-        if (newAuth && !isWsConnected()) {
-          connectWebsocket();
-        } else if (!newAuth && isWsConnected()) {
-          disconnectWebsocket();
-        }
+  let stopFollowingSignIn = () => {};
 
-        if (newAuth) {
-          timeout.fetchAndStart();
-        }
-      });
-    }
+  onMounted(() => {
+    // connect websockets once user has authenticated (or auth disabled), and
+    // drop the user's websocket and jobs on every sign-out, also when the
+    // page was loaded already signed in
+    const { auth } = storeToRefs(store);
+    stopFollowingSignIn = followSignIn(auth, {
+      authDisabled: import.meta.env.VITE_AUTH === 'disabled',
+      onSignIn: () => {
+        if (!isWsConnected()) connectWebsocket();
+        followJobs();
+        timeout.fetchAndStart();
+        schedulePagePreload();
+      },
+      onSignOut: () => {
+        if (isWsConnected()) disconnectWebsocket();
+        forgetJobs();
+      },
+    });
   });
 
   onUnmounted(() => {
+    stopFollowingSignIn();
+    forgetJobs();
+    removeWsHandler(invalidatePages);
     disconnectWebsocket();
   });
 </script>
@@ -58,7 +98,9 @@
     <a class="skip-link" href="#main">Skip to main content</a>
     <app-header></app-header>
     <main id="main" class="row container is-fullhd px-4" tabindex="-1">
-      <router-view></router-view>
+      <router-view v-slot="{ Component, route }">
+        <component :is="Component" :key="viewKey(route)"></component>
+      </router-view>
     </main>
     <app-footer></app-footer>
   </div>

@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import Buefy from 'buefy';
 import axiosInstance from '@/utils/axios.js';
 import { useErrorNotification } from '@/utils/errorNotif';
 import ConfigsList from '@/components/configs/ConfigsList.vue';
+import { clearPageCache } from '@/utils/pageCache.js';
 
 const site = {
   kind: 'Topology',
@@ -13,6 +14,7 @@ const site = {
 
 // The list holds one topology with a Builder diagram, and viewing it reads it
 // again. roleAllowed reads the role from the mocked Pinia store.
+const getURLs = () => axiosInstance.get.mock.calls.map(([url]) => url);
 vi.mock('@/utils/axios.js', () => ({
   default: {
     get: vi.fn((url) =>
@@ -41,6 +43,9 @@ const duplicate = {
   },
 };
 
+// the list is fetched again by each mount, not shown from an earlier one's cache
+beforeEach(() => clearPageCache());
+
 // roleAllowed caches its answers by role name, so every role gets its own.
 let roles = 0;
 function setRole(resources) {
@@ -51,8 +56,6 @@ function setRole(resources) {
   };
 }
 
-enableAutoUnmount(afterEach);
-
 // Mounts the list with the real Buefy.
 function mountList(warnings = [], props = {}) {
   return mount(ConfigsList, {
@@ -61,6 +64,8 @@ function mountList(warnings = [], props = {}) {
     global: {
       plugins: [Buefy],
       config: { warnHandler: (msg) => warnings.push(msg) },
+      // no ?view= link to open
+      mocks: { $route: { query: {} }, $router: { replace: vi.fn() } },
     },
   });
 }
@@ -160,7 +165,7 @@ describe('ConfigsList upload errors', () => {
     await flushPromises();
 
     // Mounting only fetches the config list.
-    expect(axiosInstance.get.mock.calls).toEqual([['configs']]);
+    expect(getURLs()).toEqual(['configs']);
     expect(axiosInstance.post).not.toHaveBeenCalled();
     expect(wrapper.find('textarea').exists()).toBe(false);
 
@@ -262,6 +267,16 @@ describe('ConfigsList focus after the editor closes', () => {
     expect(document.activeElement).toBe(editButton());
   });
 
+  test('a list shown from the cache focuses the edit button too', async () => {
+    mountList().unmount();
+    await flushPromises();
+
+    mountList([], { focusConfig: 'Topology/site' });
+    await flushPromises();
+
+    expect(document.activeElement).toBe(editButton());
+  });
+
   test('a refresh after an upload leaves focus where it is', async () => {
     axiosInstance.post.mockResolvedValueOnce({});
     const wrapper = mountList([], { focusConfig: 'Topology/site' });
@@ -271,7 +286,7 @@ describe('ConfigsList focus after the editor closes', () => {
     await flushPromises();
 
     // The upload fetched the list again.
-    expect(axiosInstance.get.mock.calls).toEqual([['configs'], ['configs']]);
+    expect(getURLs()).toEqual(['configs', 'configs']);
     expect(document.activeElement).not.toBe(editButton());
   });
 });

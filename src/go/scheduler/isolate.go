@@ -116,5 +116,9 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 
 	// if that doesn't work either, there are no unoccupied hosts
 
+	if len(cluster) == 0 {
+		return ErrNoSchedulableHosts
+	}
+
 	return errors.New("no unused hosts -- cannot isolate experiment")
 }

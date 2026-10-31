@@ -2,8 +2,20 @@
 package rbac
 
 import (
+	"errors"
+	"fmt"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
+
+	"phenix/api/config"
+	"phenix/store"
+	"phenix/store/storetest"
+	"phenix/types"
 	v1 "phenix/types/version/v1"
 )
 
@@ -29,14 +41,17 @@ func newTestRole(t *testing.T) Role {
 				{Resources: []string{"**"}, ResourceNames: []string{"*"}, Verbs: []string{"watch"}},
 				{Resources: []string{"things"}, ResourceNames: []string{"*", "!thing1"}, Verbs: []string{"*"}},
 				{Resources: []string{"items"}, ResourceNames: []string{"item*"}, Verbs: []string{"*"}},
+				{Resources: []string{"notes"}, ResourceNames: []string{"note!"}, Verbs: []string{"get"}},
 			},
 		},
 	}
 }
 
-// TestRoleAllowed verifies resource, verb, and resource name matching.
+// TestRoleAllowed checks matching for indexed and unindexed (literal) roles;
+// Allowed must not index a literal, since roles are shared.
 func TestRoleAllowed(t *testing.T) {
-	role := newTestRole(t)
+	literal := newTestRole(t)
+	roles := map[string]*Role{"indexed": newRole(literal.Spec, nil), "unindexed": &literal}
 
 	tests := []struct {
 		name     string
@@ -102,13 +117,239 @@ func TestRoleAllowed(t *testing.T) {
 		{"delete item", "items", "delete", []string{"item"}, true},
 		{"delete item1", "items", "delete", []string{"item1"}, true},
 		{"delete non-item", "items", "delete", []string{"thing"}, false},
+		// only a leading "!" negates
+		{"get note!", "notes", "get", []string{"note!"}, true},
+		{"get note", "notes", "get", []string{"note"}, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := role.Allowed(tt.resource, tt.verb, tt.names...); got != tt.want {
-				t.Errorf("Allowed(%q, %q, %q) = %v, want %v", tt.resource, tt.verb, tt.names, got, tt.want)
+			for kind, role := range roles {
+				if got := role.Allowed(tt.resource, tt.verb, tt.names...); got != tt.want {
+					t.Errorf("Allowed(%q, %q, %q) of the %s role = %v, want %v", tt.resource, tt.verb, tt.names, kind, got, tt.want)
+				}
 			}
 		})
 	}
+
+	if literal.mappedPolicies != nil {
+		t.Error("Allowed() stored a policy index on an unindexed role, want none")
+	}
+}
+
+// Scoping a default role to a user's experiments scopes every unnamed policy,
+// also those after a named one.
+//
+//nolint:paralleltest // replaces the store
+func TestSetResourceNamesScopesEveryUnnamedPolicy(t *testing.T) {
+	storetest.Use(t)
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error = %v", err)
+	}
+
+	for _, tc := range []struct {
+		role    string
+		allowed [][3]string // resource, verb, name
+	}{
+		{"Experiment Admin", [][3]string{
+			{"experiments", "get", "exp-a"},
+			{"experiments/files", "delete", "exp-a"},
+			{"jobs", "list", "exp-a"},
+			{"jobs", "update", "exp-a"},
+		}},
+		{"Experiment Viewer", [][3]string{
+			{"experiments", "get", "exp-a"},
+			{"vms/mount", "post", "exp-a/vm"},
+		}},
+	} {
+		t.Run(tc.role, func(t *testing.T) {
+			role, err := RoleFromConfig(tc.role)
+			if err != nil {
+				t.Fatalf("RoleFromConfig(%s) error = %v", tc.role, err)
+			}
+
+			if err := role.SetResourceNames("exp-a", "exp-a/*"); err != nil {
+				t.Fatalf("SetResourceNames(exp-a, exp-a/*) error = %v", err)
+			}
+
+			for _, a := range tc.allowed {
+				if !role.Allowed(a[0], a[1], a[2]) {
+					t.Errorf("Allowed(%s, %s, %s) after SetResourceNames(exp-a, exp-a/*) = false, want true", a[0], a[1], a[2])
+				}
+
+				other := strings.Replace(a[2], "exp-a", "exp-b", 1)
+				if role.Allowed(a[0], a[1], other) {
+					t.Errorf("Allowed(%s, %s, %s) after SetResourceNames(exp-a, exp-a/*) = true, want false", a[0], a[1], other)
+				}
+			}
+
+			// a policy that names its resources keeps them
+			if !role.Allowed("hosts", "list", "any-host") {
+				t.Error("Allowed(hosts, list, any-host) after SetResourceNames(exp-a, exp-a/*) = false, want true")
+			}
+		})
+	}
+
+	if err := (&Role{Spec: &v1.RoleSpec{}}).SetResourceNames("["); !errors.Is(err, ErrResourceNameInvalid) {
+		t.Errorf("SetResourceNames([) error = %v, want %v", err, ErrResourceNameInvalid)
+	}
+}
+
+// A saved policy that names no resources leaves resourceNames out rather than
+// storing null, which the role schema rejects on the next edit.
+//
+//nolint:paralleltest // replaces the store
+func TestSaveOmitsNullResourceNames(t *testing.T) {
+	useStore(t, []*v1.RoleSpec{{
+		Name:     "Unscoped",
+		Policies: []*v1.PolicySpec{policy("vms/forwards", nil, "create")},
+	}}, nil)
+
+	role, err := RoleFromConfig("Unscoped")
+	if err != nil {
+		t.Fatalf("RoleFromConfig(Unscoped) error = %v", err)
+	}
+
+	if err := role.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	c, _ := store.NewConfig("role/unscoped")
+	if err := store.Get(c); err != nil {
+		t.Fatalf("getting role/unscoped: %v", err)
+	}
+
+	want := map[string]any{
+		"roleName": "Unscoped",
+		"policies": []any{map[string]any{"resources": []any{"vms/forwards"}, "verbs": []any{"create"}}},
+	}
+
+	if diff := cmp.Diff(want, c.Spec); diff != "" {
+		t.Errorf("Save() stored spec mismatch (-want +got):\n%s", diff)
+	}
+
+	if err := types.ValidateConfigSpec(*c); err != nil {
+		t.Errorf("ValidateConfigSpec(saved role/unscoped) error = %v", err)
+	}
+}
+
+// The generated permission list holds checks whose resource or verb is a
+// constant, as well as those written as literals.
+func TestKnownPermissions(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []Permission{
+		{"users", "get"}, {"users", "list"}, {"users/roles", "patch"}, {"users/tokens", "create"}, {"configs", "create"},
+	} {
+		if !slices.Contains(Permissions, want) {
+			t.Errorf("Permissions does not include {%s %s}, want it to", want.Resource, want.Verb)
+		}
+	}
+}
+
+// genRolePolicy draws a policy of a few resources, verbs and names, some
+// negated or wildcards, now and then with an invalid resource pattern.
+func genRolePolicy() *rapid.Generator[*v1.PolicySpec] {
+	return rapid.Custom(func(t *rapid.T) *v1.PolicySpec {
+		resources := rapid.SliceOfN(rapid.SampledFrom([]string{"vms", "vms/*", "*", "experiments", "**"}), 1, 2).Draw(t, "resources")
+		if rapid.IntRange(0, 9).Draw(t, "invalid") == 0 {
+			resources = append(resources, "[bad")
+		}
+
+		var names []string
+		if rapid.IntRange(0, 4).Draw(t, "unnamed") > 0 {
+			patterns := []string{"*", "a", "b", "a*", "*/*", "a/*", "!a", "!b*", "!a/b", "!*", "a!", "!!a"}
+			names = rapid.SliceOfN(rapid.SampledFrom(patterns), 1, 3).Draw(t, "names")
+		}
+
+		verbs := rapid.SliceOfN(rapid.SampledFrom([]string{"get", "list", "*"}), 1, 2).Draw(t, "verbs")
+
+		return &v1.PolicySpec{Resources: resources, ResourceNames: names, Verbs: verbs}
+	})
+}
+
+// roleModelAllowed reads the policies as written: a name matched by a pattern and
+// by no "!" pattern; any invalid resource pattern allows nothing.
+func roleModelAllowed(spec *v1.RoleSpec, resource, verb string, names []string) bool {
+	match := func(name string) func(string) bool {
+		return func(pattern string) bool {
+			matched, _ := filepath.Match(pattern, name)
+
+			return matched
+		}
+	}
+
+	for _, p := range spec.Policies {
+		for _, r := range p.Resources {
+			if _, err := filepath.Match(r, resource); err != nil {
+				return false
+			}
+		}
+	}
+
+	for _, p := range spec.Policies {
+		if !slices.ContainsFunc(p.Resources, match(resource)) || !slices.Contains(p.Verbs, verb) && !slices.Contains(p.Verbs, "*") {
+			continue
+		}
+
+		if len(names) == 0 {
+			return true
+		}
+
+		for _, name := range names {
+			var granted, denied bool
+
+			for _, pattern := range p.ResourceNames {
+				if negated, ok := strings.CutPrefix(pattern, "!"); ok {
+					denied = denied || match(name)(negated)
+				} else {
+					granted = granted || match(name)(pattern)
+				}
+			}
+
+			if granted && !denied {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// rolePolicies is the spec's policies, to print.
+func rolePolicies(spec *v1.RoleSpec) []string {
+	out := make([]string, len(spec.Policies))
+	for i, p := range spec.Policies {
+		out[i] = fmt.Sprintf("%q %q %q", p.Resources, p.ResourceNames, p.Verbs)
+	}
+
+	return out
+}
+
+// Indexed or not, a role allows exactly what its policies say.
+func TestRoleAllowedAgreesWithItsPolicies(t *testing.T) {
+	t.Parallel()
+
+	queries := [][]string{nil, {"a"}, {"b"}, {"a/b"}, {"ab", "b/a"}, {"b", "a/b"}, {"a!"}, {"!a"}}
+
+	rapid.Check(t, func(t *rapid.T) {
+		spec := &v1.RoleSpec{Name: "r", Policies: rapid.SliceOfN(genRolePolicy(), 0, 4).Draw(t, "policies")}
+		roles := map[string]Role{"indexed": *newRole(spec, nil), "unindexed": {Spec: spec}}
+
+		for _, resource := range []string{"vms", "vms/start", "experiments", "x"} {
+			for _, verb := range []string{"get", "list", "update"} {
+				for _, names := range queries {
+					want := roleModelAllowed(spec, resource, verb, names)
+
+					for kind, role := range roles {
+						if got := role.Allowed(resource, verb, names...); got != want {
+							t.Fatalf("Allowed(%q, %q, %q) of the %s role %v = %t, want %t",
+								resource, verb, names, kind, rolePolicies(spec), got, want)
+						}
+					}
+				}
+			}
+		}
+	})
 }

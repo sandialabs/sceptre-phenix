@@ -1,0 +1,105 @@
+name: Vulnerability scan
+
+# Reports govulncheck, npm audit and, weekly, grype findings for the published image in each job's summary
+# (scripts/vuln-report.sh); a finding fails its step, never the run. packages.yml scans the images it builds.
+on:
+  pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
+  schedule:
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.24'
+  NODE_VERSION: '24'
+  # needs Go 1.26 to build; the Go toolchain above still loads the packages
+  GOVULNCHECK_VERSION: v1.9.0
+
+jobs:
+  govulncheck:
+    if: github.event.action != 'closed'
+    name: govulncheck (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/go/go.sum
+      - name: Install system dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y protobuf-compiler
+      - name: Generate code
+        working-directory: src/go
+        run: make generate
+      - name: Install govulncheck
+        env:
+          GOTOOLCHAIN: auto
+        run: |
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Run govulncheck
+        continue-on-error: true
+        run: scripts/vuln-report.sh go
+
+  npm-audit:
+    if: github.event.action != 'closed'
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Run npm audit
+        # reads each package-lock.json; nothing is installed
+        continue-on-error: true
+        run: scripts/vuln-report.sh npm
+
+  image:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: grype (published image)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # pulls the published image, also a private fork's
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Log in to GitHub Docker Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Name the image
+        id: image
+        # registry paths are lowercase, unlike some owner names
+        run: echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/phenix:main" >> "$GITHUB_OUTPUT"
+      - name: Scan the image
+        id: scan
+        continue-on-error: true
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ${{ steps.image.outputs.ref }}
+          fail-build: false
+          output-format: json
+          output-file: grype-image.json
+      - name: Report image vulnerabilities
+        if: steps.scan.outcome == 'success'
+        continue-on-error: true
+        env:
+          IMAGE: ${{ steps.image.outputs.ref }}
+        run: scripts/vuln-report.sh grype grype-image.json "\`$IMAGE\` (grype)"

@@ -43,7 +43,7 @@ func (h uiHandler) Handle(_ context.Context, r slog.Record) error {
 
 	for _, attr := range h.attrs {
 		if _, ok := logKeysIgnored[attr.Key]; !ok {
-			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Any()))
+			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Resolve().Any()))
 		}
 	}
 
@@ -51,7 +51,7 @@ func (h uiHandler) Handle(_ context.Context, r slog.Record) error {
 		if attr.Key == logAttrType {
 			logtype = attr.Value.String()
 		} else if _, ok := logKeysIgnored[attr.Key]; !ok {
-			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Any()))
+			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Resolve().Any()))
 		}
 
 		return true

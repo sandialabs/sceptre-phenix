@@ -1,0 +1,2 @@
+# Functions scripts/go-deadcode.sh reports as unreachable that are kept on
+# purpose, as "<package path> <function>  # reason".

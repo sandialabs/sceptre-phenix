@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"phenix/api/config"
+	"phenix/store"
 	"phenix/types"
 	"phenix/util"
 	"phenix/util/plog"
@@ -37,7 +38,7 @@ func configListKinds() []string {
 	return []string{allExperiments, "topology", "scenario", configKindExperiment, commandImage, "user"}
 }
 
-func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
+func configKindArgsValidator(multi bool) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if multi {
 			if len(args) == 0 {
@@ -56,11 +57,7 @@ func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
 				return errors.New("expected an argument in the form of <config kind>/<config name>")
 			}
 
-			kinds := append([]string(nil), configKinds()...)
-
-			if allowAll {
-				kinds = append(kinds, allExperiments)
-			}
+			kinds := configKinds()
 
 			kind := strings.ToLower(tokens[0])
 
@@ -229,7 +226,7 @@ func newConfigGetCmd() *cobra.Command {
 		Short:             "Get a configuration",
 		Long:              desc,
 		Example:           example,
-		Args:              configKindArgsValidator(false, false),
+		Args:              configKindArgsValidator(false),
 		ValidArgsFunction: configGetArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := config.Get(args[0])
@@ -244,7 +241,7 @@ func newConfigGetCmd() *cobra.Command {
 				delete(c.Spec, "experimentName")
 			}
 
-			output := MustGetString(cmd.Flags(), "output")
+			output := mustGet(cmd.Flags().GetString, "output")
 
 			switch output {
 			case FormatYAML:
@@ -262,7 +259,7 @@ func newConfigGetCmd() *cobra.Command {
 					err error
 				)
 
-				if MustGetBool(cmd.Flags(), "pretty") {
+				if mustGet(cmd.Flags().GetBool, "pretty") {
 					m, err = json.MarshalIndent(c, "", "  ")
 				} else {
 					m, err = json.Marshal(c)
@@ -305,7 +302,7 @@ func newConfigCreateCmd() *cobra.Command {
 				return errors.New("must provide at least one configuration file")
 			}
 
-			skip := MustGetBool(cmd.Flags(), "skip-validation")
+			skip := mustGet(cmd.Flags().GetBool, "skip-validation")
 
 			for _, f := range args {
 				var configs []string
@@ -403,9 +400,9 @@ func newConfigEditCmd() *cobra.Command {
 		Use:   "edit <kind/name>",
 		Short: "Edit a configuration",
 		Long:  desc,
-		Args:  configKindArgsValidator(false, false),
+		Args:  configKindArgsValidator(false),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			force := MustGetBool(cmd.Flags(), "force")
+			force := mustGet(cmd.Flags().GetBool, "force")
 
 			_, err := config.Edit(args[0], force)
 			if err != nil {
@@ -413,6 +410,16 @@ func newConfigEditCmd() *cobra.Command {
 					plog.Warn(plog.TypeSystem, "configuration not updated", "config", args[0])
 
 					return nil
+				}
+
+				if errors.Is(err, store.ErrConflict) {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						args[0]+" changed while you edited it, so run `phenix config edit` again",
+					)
+
+					return err.Humanized()
 				}
 
 				err := util.HumanizeError(
@@ -447,7 +454,7 @@ func newConfigDeleteCmd() *cobra.Command {
 		Aliases: []string{deleteAlias},
 		Short:   "Delete a configuration(s)",
 		Long:    desc,
-		Args:    configKindArgsValidator(true, false),
+		Args:    configKindArgsValidator(true),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, c := range args {
 				err := config.Delete(c)

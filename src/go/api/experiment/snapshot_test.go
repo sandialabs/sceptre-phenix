@@ -89,9 +89,9 @@ func TestStopVMsDoesNotDeleteSnapshotsWhenNamespaceClearFails(t *testing.T) {
 		NodesF: []*v1.Node{{GeneralF: &v1.General{HostnameF: "vm-one"}}},
 	})
 
-	err := stopVMsAndDeleteSnapshots(exp, false)
-	if err == nil {
-		t.Fatal("expected namespace clear error")
+	killed, err := stopVMsAndDeleteSnapshots(exp, false)
+	if killed || !errors.Is(err, ErrTeardownFailed) {
+		t.Fatalf("stopVMsAndDeleteSnapshots() = %t, %v, want false and an error wrapping ErrTeardownFailed", killed, err)
 	}
 
 	if len(clusterFiles.deleted) != 0 {

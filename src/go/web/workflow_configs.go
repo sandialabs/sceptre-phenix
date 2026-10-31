@@ -2,7 +2,6 @@ package web
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +15,7 @@ import (
 	"phenix/api/workflow"
 	"phenix/store"
 	"phenix/util/common"
-	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -78,7 +77,7 @@ func configName(body []byte, typ, branch string) (string, error) {
 
 // authorizeConfigWrite reports whether the config name exists, once role may
 // update it if it does or create it if it does not.
-func authorizeConfigWrite(ctx context.Context, role rbac.Role, name string) (bool, error) {
+func authorizeConfigWrite(r *http.Request, role rbac.Role, name, branch string) (bool, error) {
 	// NewConfig rejects a kind the store does not hold, such as Workflow, and
 	// a name containing a slash; its nil result would make store.Get panic.
 	tester, err := store.NewConfig(name)
@@ -98,19 +97,15 @@ func authorizeConfigWrite(ctx context.Context, role rbac.Role, name string) (boo
 		exists = false
 	}
 
-	verb, action := "update", "updating"
+	verb, action, audited := "update", "updating", audit.ConfigUpdate
 	if !exists {
-		verb, action = "create", "creating"
+		verb, action, audited = "create", "creating", audit.ConfigCreate
 	}
 
 	if !role.Allowed("configs", verb, name) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			action+" config not allowed",
-			"user",
-			user,
-		)
+		user := middleware.UserFromContext(r.Context())
+		audit.Denied(r, audited, action+" config not allowed",
+			audit.Fields{Config: name, Extra: []any{"phenix.workflow.branch", branch}})
 
 		err := weberror.NewWebError(
 			nil,

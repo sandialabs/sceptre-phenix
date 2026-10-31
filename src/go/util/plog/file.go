@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"phenix/util/plog/lumberjack"
@@ -28,6 +29,10 @@ const (
 	DefaultMaxBackups        = 3
 	MaxJSONErrorCount        = 3
 	MaxMissingFileIterations = 3
+
+	// fileHandlerName names the system log file's handler, which audit
+	// records reach whatever the log level.
+	fileHandlerName = "filelogger"
 )
 
 var (
@@ -45,6 +50,10 @@ var (
 	TimestampFormat = "2006-01-02 15:04:05.000" //nolint:gochecknoglobals // package level logger state
 	cacheLock       sync.Mutex                  //nolint:gochecknoglobals // package level logger state
 	cachePath       string                      //nolint:gochecknoglobals // package level logger state
+
+	// systemLogPath is the system log file's path, read by requests while the
+	// config watcher may change it.
+	systemLogPath atomic.Pointer[string] //nolint:gochecknoglobals // package level logger state
 )
 
 type FileHandlerOpts struct {
@@ -73,6 +82,7 @@ func AddFileHandler(fname string, opts FileHandlerOpts) {
 	}
 
 	fileLogger.Filename = filePath
+	systemLogPath.Store(&filePath)
 	cachePath = path.Join(path.Dir(filePath), "lookupCache.json")
 
 	fileLogger.MaxAge = opts.MaxAge
@@ -90,10 +100,20 @@ func AddFileHandler(fname string, opts FileHandlerOpts) {
 			return a
 		},
 	}
-	handler.AddHandler("filelogger", slog.NewJSONHandler(&fileLogger, slogOpts))
+	handler.AddHandler(fileHandlerName, slog.NewJSONHandler(&fileLogger, slogOpts))
 
 	// change to a go thread for main release .. in case has to build
 	loadCache()
+}
+
+// LogFilePath is the system log file records are written to, or "" when no
+// file handler was added.
+func LogFilePath() string {
+	if p := systemLogPath.Load(); p != nil {
+		return *p
+	}
+
+	return ""
 }
 
 func CloseFile() error {
@@ -126,6 +146,7 @@ func ChangeLogFile(fname string) {
 	if fileLogger.Filename != filePath {
 		_ = fileLogger.Close()
 		fileLogger.Filename = filePath
+		systemLogPath.Store(&filePath)
 		cachePath = path.Join(path.Dir(filePath), "lookupCache.json")
 
 		loadCache()
@@ -245,6 +266,8 @@ func (log *LogEntry) UnmarshalJSON(data []byte) error { //nolint:funlen // compl
 			}
 
 			log.Message = msg
+		case auditTimestampKey:
+			// the file's own time says when; keep the entry's text short
 		case "traceback":
 			if tb, ok := value.(string); ok {
 				traceback = tb
@@ -743,25 +766,6 @@ func checkCacheIntegrity() (bool, error) {
 	_ = saveCacheNoBlock()
 
 	return true, nil
-}
-
-func (c *Cache) RemoveDeletedFiles() {
-	logFiles := getLogFilesInDirectory()
-
-	var fileIDremove []int
-
-	for fileID, fileInfo := range c.FileMap {
-		if !slices.Contains(logFiles, fileInfo.Filename) {
-			fileIDremove = append(fileIDremove, fileID)
-			delete(c.FileMap, fileID)
-		}
-	}
-
-	for key, cacheHit := range c.Cache {
-		if slices.Contains(fileIDremove, cacheHit.File) {
-			delete(c.Cache, key)
-		}
-	}
 }
 
 func (c *Cache) AddMissingFiles() {

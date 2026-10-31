@@ -90,11 +90,11 @@ func TestMMCommandFlags(t *testing.T) {
 				t.Fatalf("parsing flags: %v", err)
 			}
 
-			if attach := MustGetBool(cmd.Flags(), "attach"); attach != test.attach {
+			if attach := mustGet(cmd.Flags().GetBool, "attach"); attach != test.attach {
 				t.Errorf("expected attach %t, got %t", test.attach, attach)
 			}
 
-			if namespace := MustGetString(cmd.Flags(), "namespace"); namespace != test.namespace {
+			if namespace := mustGet(cmd.Flags().GetString, "namespace"); namespace != test.namespace {
 				t.Errorf("expected namespace %q, got %q", test.namespace, namespace)
 			}
 
@@ -207,8 +207,7 @@ func TestMinimegaCommandParses(t *testing.T) {
 		}
 	}
 
-	// Quoting the whole command, as phenix used to when adding a namespace,
-	// leaves minimega a single word that matches no command.
+	// A quoted nested command is one word and matches no minimega command.
 	if _, err := minicli.Compile(`namespace exp "vm info"`); err == nil {
 		t.Error("expected quoted nested command to fail to compile")
 	}
@@ -372,8 +371,8 @@ func TestRunMinimegaCommand(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var logs bytes.Buffer
 
-			plog.NewPhenixHandler(&logs)
-			t.Cleanup(func() { plog.NewPhenixHandler(os.Stderr) })
+			plog.NewPhenixHandler(&logs, false)
+			t.Cleanup(func() { plog.NewPhenixHandler(os.Stderr, false) })
 
 			base := fakeMinimega(t, func(miniclient.Request) []miniclient.Response {
 				return test.responses

@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -14,10 +15,13 @@ import (
 
 	"phenix/api/settings"
 	"phenix/util/plog"
+	"phenix/web/audit"
+	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
 	jwtutil "phenix/web/util/jwt"
+	"phenix/web/weberror"
 )
 
 // dummyPasswordHash returns a hash to compare against when a login names an
@@ -34,71 +38,79 @@ const (
 	hoursInDay  = 24
 	jwtClaimSub = "sub"
 	jwtClaimExp = "exp"
+
+	msgSaveSessionToken = "failed to save session token"
 )
 
+// How a user signed in, as phenix.auth.method.
+const (
+	authPassword    = "password"
+	authProxyHeader = "proxy-header"
+	authProxyJWT    = "proxy-jwt"
+)
+
+// errInvalidCreds is the audited error of a sign-in with an unknown user or
+// a wrong password.
+var errInvalidCreds = errors.New("invalid credentials")
+
+// authFields are the audit fields of a sign-in or sign-up by user with method.
+func authFields(user, method string) audit.Fields {
+	return audit.Fields{User: user, Extra: []any{"phenix.auth.method", method}}
+}
+
 //nolint:funlen // handler
-func Signup(w http.ResponseWriter, r *http.Request) {
+func Signup(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "Signup")
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	var req SignupRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	var (
-		ctx   = r.Context()
-		token *jwt.Token
+		ctx    = r.Context()
+		token  *jwt.Token
+		method = authPassword
 	)
+
+	created := audit.Fields{User: req.Username, TargetUser: req.Username}
 
 	// Will only be present when this function is called if proxy JWT is enabled.
 	if userToken := ctx.Value(middleware.ContextKeyUser); userToken != nil {
+		method = authProxyJWT
 		token, _ = userToken.(*jwt.Token)
 		claims, _ := token.Claims.(jwt.MapClaims)
 
 		jwtUser, err := jwtutil.UsernameFromClaims(claims)
 		if err != nil {
-			plog.Error(
-				plog.TypeSecurity,
-				"proxy user missing from JWT",
-				"path",
-				r.URL.Path,
-				"err",
-				err,
-			)
-			http.Error(w, "proxy user missing", http.StatusUnauthorized)
+			audit.Failure(r, audit.UserCreate, "signing up failed", created, err)
 
-			return
+			return weberror.New(http.StatusUnauthorized, "proxy user missing")
 		}
 
 		if req.Username != jwtUser {
-			http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
+			created.Reason = "proxy user mismatch"
+			audit.Denied(r, audit.UserCreate, "signing up not allowed", created)
 
-			return
+			return weberror.New(http.StatusUnauthorized, "proxy user mismatch")
 		}
 	} else if o.proxyAuthHeader != "" {
-		if user := r.Header.Get(o.proxyAuthHeader); user != req.Username {
-			http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
+		method = authProxyHeader
 
-			return
+		if user := r.Header.Get(o.proxyAuthHeader); user != req.Username {
+			created.Reason = "proxy user mismatch"
+			audit.Denied(r, audit.UserCreate, "signing up not allowed", created)
+
+			return weberror.New(http.StatusUnauthorized, "proxy user mismatch")
 		}
 	}
 
@@ -106,15 +118,18 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		plog.Error(plog.TypeSystem, "password does not meet requirements")
 
 		errStr := "password does not meet the requirements:\n" + settings.GetPasswordSettingsHTML()
-		http.Error(w, errStr, http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, errStr)
 	}
 
-	u, ok := createUser(w, req.Username, req.Password, req.FirstName, req.LastName)
-	if !ok {
-		return
+	u, err := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
+	if err != nil {
+		audit.Failure(r, audit.UserCreate, "signing up failed", created, err)
+
+		return createUserError(req.Username, err)
 	}
+
+	audit.Success(r, audit.UserCreate, "user signed up", created)
 
 	var raw string
 
@@ -127,25 +142,25 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		// Sign and get the complete encoded token as a string using the secret
 		raw, err = token.SignedString([]byte(o.jwtKey))
 		if err != nil {
-			http.Error(w, "failed to sign JWT", http.StatusInternalServerError)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(u.Username(), method), err)
 
-			return
+			return weberror.New(http.StatusInternalServerError, "failed to sign JWT")
 		}
 
 		err := u.AddToken(raw, time.Now().Format(time.RFC3339))
 		if err != nil {
-			http.Error(w, "", http.StatusInternalServerError)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(u.Username(), method), err)
 
-			return
+			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	} else { // using proxy JWT
 		raw = token.Raw
 
 		err := u.AddToken(raw, "proxied")
 		if err != nil {
-			http.Error(w, "", http.StatusInternalServerError)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(u.Username(), method), err)
 
-			return
+			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	}
 
@@ -156,34 +171,25 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 
 	body, err = json.Marshal(resp)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	plog.Info(
-		plog.TypeSecurity,
-		"created user",
-		"user",
-		u.Username(),
-		"role",
-		u.RoleName(),
-		"first_name",
-		u.FirstName(),
-		"last_name",
-		u.LastName(),
-	)
+	audit.Success(r, audit.SignIn, "user signed in", authFields(u.Username(), method))
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
+
+	return nil
 }
 
 //nolint:funlen // handler
-func Login(w http.ResponseWriter, r *http.Request) {
+func Login(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "Login")
 
 	var (
 		user, pass string
 		proxied    bool
+		method     = authPassword
 	)
 
 	var (
@@ -202,22 +208,13 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 		user, err = jwtutil.UsernameFromClaims(claims)
 		if err != nil {
-			plog.Error(
-				plog.TypeSecurity,
-				"proxy user missing from JWT",
-				"path",
-				r.URL.Path,
-				"token",
-				token.Raw,
-				"err",
-				err,
-			)
-			http.Error(w, "proxy user missing", http.StatusUnauthorized)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields("", authProxyJWT), err)
 
-			return
+			return weberror.New(http.StatusUnauthorized, "proxy user missing")
 		}
 
 		proxied = true
+		method = authProxyJWT
 	} else {
 		switch r.Method {
 		case http.MethodGet:
@@ -231,101 +228,77 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 					user = query.Get("user")
 					if user == "" {
-						http.Error(w, "no username provided", http.StatusBadRequest)
-
-						return
+						return weberror.New(http.StatusBadRequest, "no username provided")
 					}
 
 					pass = query.Get("pass")
 					if pass == "" {
-						http.Error(w, "no password provided", http.StatusBadRequest)
-
-						return
+						return weberror.New(http.StatusBadRequest, "no password provided")
 					}
 				}
 			} else {
 				user = r.Header.Get(o.proxyAuthHeader)
 
 				if user == "" {
-					plog.Error(plog.TypeSecurity, "proxy authentication failed")
-					http.Error(w, "proxy authentication failed", http.StatusUnauthorized)
+					audit.Failure(r, audit.SignIn, "signing in failed", authFields("", authProxyHeader),
+						errors.New("no proxy user"))
 
-					return
+					return weberror.New(http.StatusUnauthorized, "proxy authentication failed")
 				}
 
 				proxied = true
+				method = authProxyHeader
 			}
 		case http.MethodPost:
 			if o.proxyAuthHeader != "" {
-				http.Error(
-					w,
-					"proxy auth enabled -- must login via GET request",
-					http.StatusBadRequest,
-				)
-
-				return
+				return weberror.New(http.StatusBadRequest, "proxy auth is enabled: log in with a GET request")
 			}
 
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				http.Error(w, "no data provided in POST", http.StatusBadRequest)
-
-				return
+				return weberror.New(http.StatusBadRequest, "no data provided in POST")
 			}
 
 			var req LoginRequest
 			if err := json.Unmarshal(body, &req); err != nil {
-				http.Error(w, "invalid data provided in POST", http.StatusBadRequest)
-
-				return
+				return weberror.New(http.StatusBadRequest, "invalid data provided in POST")
 			}
 
 			if user = req.Username; user == "" {
-				http.Error(w, "invalid username provided in POST", http.StatusBadRequest)
-
-				return
+				return weberror.New(http.StatusBadRequest, "invalid username provided in POST")
 			}
 
 			if pass = req.Password; pass == "" {
-				http.Error(w, "invalid password provided in POST", http.StatusBadRequest)
-
-				return
+				return weberror.New(http.StatusBadRequest, "invalid password provided in POST")
 			}
 		default:
-			http.Error(w, "invalid method", http.StatusBadRequest)
-
-			return
+			return weberror.New(http.StatusBadRequest, "invalid method")
 		}
 	}
 
 	u, err := rbac.GetUser(user)
 	if err != nil {
-		plog.Error(plog.TypeSecurity, "attempted login with unknown username", "username", user)
+		audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), errInvalidCreds)
 
-		// With proxy auth the proxy has already vouched for the name, and the UI
-		// reads it back from this 404 to start a proxied sign-up.
+		// With proxy auth the proxy has already vouched for the name, and the
+		// proxy sign-up page takes it from the metadata of this 404.
 		if proxied {
-			http.Error(w, user, http.StatusNotFound)
-
-			return
+			return weberror.New(http.StatusNotFound, "user not found").WithMetadata("username", user, true)
 		}
 
 		// Answer exactly as for a wrong password, after the same bcrypt work, so
 		// the response does not reveal which usernames exist.
 		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash(), []byte(pass))
 
-		http.Error(w, "invalid creds", http.StatusUnauthorized)
-
-		return
+		return weberror.New(http.StatusUnauthorized, "invalid credentials")
 	}
 
 	if !proxied {
 		err := u.ValidatePassword(pass)
 		if err != nil {
-			plog.Error(plog.TypeSecurity, "attempted login with invalid credentials", "user", user)
-			http.Error(w, "invalid creds", http.StatusUnauthorized)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), errInvalidCreds)
 
-			return
+			return weberror.New(http.StatusUnauthorized, "invalid credentials")
 		}
 	}
 
@@ -340,28 +313,25 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		// Sign and get the complete encoded token as a string using the secret
 		signed, err = token.SignedString([]byte(o.jwtKey))
 		if err != nil {
-			plog.Error(plog.TypeSecurity, "failed to sign JWT")
-			http.Error(w, "failed to sign JWT", http.StatusInternalServerError)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), err)
 
-			return
+			return weberror.New(http.StatusInternalServerError, "failed to sign JWT")
 		}
 
 		err := u.AddToken(signed, time.Now().Format(time.RFC3339))
 		if err != nil {
-			plog.Error(plog.TypeSecurity, "error adding token", "err", err)
-			http.Error(w, "", http.StatusInternalServerError)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), err)
 
-			return
+			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	} else {
 		signed = token.Raw
 
 		err := u.AddToken(signed, "proxied")
 		if err != nil {
-			plog.Error(plog.TypeSecurity, "error adding token", "err", err)
-			http.Error(w, "", http.StatusInternalServerError)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), err)
 
-			return
+			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	}
 
@@ -372,17 +342,19 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	body, err := json.Marshal(resp)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	plog.Info(plog.TypeSecurity, "user signed in", "user", u.Username())
+	audit.Success(r, audit.SignIn, "user signed in", authFields(u.Username(), method))
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
+
+	return nil
 }
 
-func Logout(w http.ResponseWriter, r *http.Request) {
+// Logout - POST /logout.
+func Logout(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "Logout")
 
 	var (
@@ -393,26 +365,32 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 
 	u, err := rbac.GetUser(user)
 	if err != nil {
-		plog.Error(plog.TypeSecurity, "attempted logout with unknown username", "username", user)
-		http.Error(w, "cannot find user", http.StatusBadRequest)
+		audit.Failure(r, audit.SignOut, "signing out failed", audit.Fields{}, err)
 
-		return
+		return weberror.New(http.StatusBadRequest, "cannot find user")
 	}
 
 	if err := u.DeleteToken(token); err != nil {
-		http.Error(w, "", http.StatusInternalServerError)
+		audit.Failure(r, audit.SignOut, "signing out failed", audit.Fields{}, err)
 
-		return
+		return weberror.New(http.StatusInternalServerError, "failed to delete session token")
 	}
 
-	plog.Info(plog.TypeSecurity, "user logged out", "user", u.Username())
+	// the capture grants given under the session end with it
+	if token != "" {
+		revokeCaptureGrants("signed out", func(g capability.Grant) bool {
+			return g.User == u.Username() && g.Session == token
+		}, "user", u.Username())
+	}
+
+	audit.Success(r, audit.SignOut, "user signed out", audit.Fields{})
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // CreateUserToken - POST /users/{username}/tokens.
-//
-//nolint:funlen // handler
-func CreateUserToken(w http.ResponseWriter, r *http.Request) {
+func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateUserToken")
 
 	var (
@@ -420,48 +398,38 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 		vars    = mux.Vars(r)
 		uname   = vars["username"]
+		created = audit.Fields{TargetUser: uname}
 	)
 
 	if !role.Allowed("users", "patch", uname) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"user forbidden to perform action",
-			"username",
-			uname,
-			"action",
-			"users/patch/"+uname,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
+		audit.Denied(r, audit.UserTokenCreate, "creating token not allowed", created)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	// a token for another user lets its holder act as that user
+	if requester := middleware.UserFromContext(ctx); uname != requester && !role.Allowed("users/tokens", "create", uname) {
+		audit.Denied(r, audit.UserTokenCreate, "creating token for another user not allowed", created)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	u, err := rbac.GetUser(uname)
 	if err != nil {
-		plog.Error(
-			plog.TypeSecurity,
-			"attempted to create token with unknown username",
-			"username",
-			uname,
-		)
-		http.Error(w, "unable to get user", http.StatusInternalServerError)
+		audit.Failure(r, audit.UserTokenCreate, "creating token failed", created, err)
 
-		return
+		return weberror.New(http.StatusInternalServerError, "unable to get user")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var req CreateTokenRequest
 
 	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	dur, err := time.ParseDuration(req.Lifetime)
@@ -476,15 +444,15 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 				"duration",
 				req.Lifetime,
 			)
-			http.Error(w, "invalid token lifetime provided", http.StatusBadRequest)
 
-			return
+			return weberror.New(http.StatusBadRequest, "invalid token lifetime provided")
 		}
 
 		dur = time.Duration(days) * hoursInDay * time.Hour
 	}
 
 	exp := time.Now().Add(dur)
+	created.Extra = []any{"phenix.token.expires", exp.UTC().Format(time.RFC3339)}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		jwtClaimSub: u.Username(),
@@ -494,9 +462,9 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 	// Sign and get the complete encoded token as a string using the secret
 	signed, err := token.SignedString([]byte(o.jwtKey))
 	if err != nil {
-		http.Error(w, "failed to sign JWT", http.StatusInternalServerError)
+		audit.Failure(r, audit.UserTokenCreate, "creating token failed", created, err)
 
-		return
+		return weberror.New(http.StatusInternalServerError, "failed to sign JWT")
 	}
 
 	note := "manually generated - " + time.Now().Format(time.RFC3339)
@@ -505,10 +473,9 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := u.AddToken(signed, note); err != nil {
-		plog.Error(plog.TypeSecurity, "error adding token", "err", err)
-		http.Error(w, "", http.StatusInternalServerError)
+		audit.Failure(r, audit.UserTokenCreate, "creating token failed", created, err)
 
-		return
+		return weberror.New(http.StatusInternalServerError, "failed to save token")
 	}
 
 	resp := CreateTokenResponse{
@@ -519,13 +486,16 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 
 	body, _ = json.Marshal(resp)
 
-	plog.Info(plog.TypeSecurity, "create token for user", "user", u.Username())
+	audit.Success(r, audit.UserTokenCreate, "created token", created)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
+
+	return nil
 }
 
 // GetRoles - GET /roles.
-func GetRoles(w http.ResponseWriter, r *http.Request) {
+func GetRoles(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetRoles")
 
 	var (
@@ -541,9 +511,8 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 			"username",
 			user,
 		)
-		http.Error(w, "forbidden to list roles", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden to list roles")
 	}
 
 	var resp []Role
@@ -551,9 +520,8 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 	roles, err := rbac.GetRoles()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "retrieving roles", "err", err)
-		http.Error(w, "error retrieving roles", http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, "error retrieving roles")
 	}
 
 	for _, r := range roles {
@@ -563,10 +531,12 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 	body, err := json.Marshal(util.WithRoot("roles", resp))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling roles", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
+
+	return nil
 }

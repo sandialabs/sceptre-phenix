@@ -1,0 +1,557 @@
+# Disks
+
+The `Disks` tab lists the disk images phēnix knows about:
+
+* the images with a known extension (`.qcow2`, `.qc2`, `.qcow`, `_rootfs.tgz`,
+  `.hdd`, `.iso`) in the minimega files directory and the folders under it,
+  except the folders described in [Images in Folders](#images-in-folders);
+* every image an experiment's topology names, wherever it is and whatever its
+  extension, as long as phēnix can open it as a regular file;
+* the images those are backed by.
+
+Each image is listed once, by its full path, so two images with the same file
+name in different folders are two rows. The tab needs `list` on `disks`, and
+only images your role may see appear; see [Permissions](#permissions).
+
+![Disks table listing images with their kind, an in-use marker, size on disk and virtual size, and snapshot, copy, download, rename and delete actions.](images/disks_table.png){: width=800 .center}
+
+The same images can be managed from the command line; see
+[Virtual Disk Images Management](image.md).
+
+## Disk Totals
+
+Above the table on the left, level with the `Find a Disk` search box, the page
+counts:
+
+* how many disk images the list holds;
+* how many of them are [in use](#in-use), as the `In Use` column marks them;
+* the sum of their sizes on disk, in the same units as the size columns (for
+  example `Total size on disk 310.4 GiB`).
+
+An image whose size phēnix could not read is left out of that sum and counted
+as `unknown` beside it. The totals cover every image in the list, not just the
+ones the search shows. A backing image is a row of its own, so it and each
+image built on it add their own sizes.
+
+## The Disks Table
+
+| Column | What it shows |
+| :--- | :--- |
+| `Name` | The image's path within the minimega files directory, such as `win/win10.qcow2`, or its full path, with a warning icon, when it is [outside that directory](#images-outside-the-files-directory). A `Broken chain` tag marks an image whose [backing chain is broken](#broken-backing-chains). Clicking the row opens the image's [details card](#the-details-card). |
+| `Kind` | `VM`, `Container`, `ISO`, or `Unknown`. |
+| `Type` | The image's format and version, such as `qcow2 v3`, `qcow2 v2`, `qcow v1`, `raw`, `vmdk` or `qed`, or `ISO` or `tgz`. A warning icon marks an old version, or a format whose backing chain phēnix does not check. An error icon marks an image that qemu refuses, or an image whose backing chain holds one. The icon's tooltip gives the problem and the fix; see [Image Format Versions](#image-format-versions). |
+| `In Use` | An icon when something holds the image open, with a tooltip naming which experiments. |
+| `Size on Disk` | How much room the file takes now. |
+| `Virtual Size` | How large the disk looks to the guest. |
+| `Actions` | Buttons for the actions that can be run on the image. |
+
+Every column but `Actions` sorts. `Name` sorts, and the `Find a Disk` search
+box searches, by the path the column shows, so `win/` finds every image in the
+`win` folder. `Type` sorts versions as numbers. `Size on Disk` and
+`Virtual Size` sort by their real byte count rather than as text, so `900 MiB`
+sorts below `2.1 GiB`.
+
+The `In Use` tooltip reads `In use by` and the running experiments that use the
+image, for example `In use by foo, bar`, or `In use by a running experiment`
+when phēnix cannot tie the lock to one.
+
+## The Details Card
+
+Click a row to open the details card of its image. When the card opens, phēnix
+reads the image again, so the card shows more than the table. phēnix does not
+write to the image. The URL `/disks?disk=<full path>` opens the details card of
+the image at that path.
+
+![Details card of the kali image: an OK tag, size tiles, the qcow2 header, the MBR partitions with the inject partition marked, and its experiment.](images/disks_details.png){: width=800 .center}
+
+The head shows the name of the image, and tags for its health, kind, type, and
+use. The color of the head agrees with the health tag:
+
+| Tag | Color | What it means |
+| :--- | :--- | :--- |
+| `OK` | Green | phēnix found no problem. |
+| `Warning` | Yellow | An old format version, a format that phēnix does not check, an image outside the files directory, or a bad inject partition. |
+| `Error` | Red | A broken backing chain, or an image that qemu refuses. |
+
+Below the name are the full path, the location, and the time of the last change.
+A button copies the full path. A `Problems` box lists each problem, with its
+icon. Then the card shows these parts:
+
+* Tiles: the size on disk, the virtual size, and the space on disk as a percent
+  of the virtual size. Other tiles give the number of partitions, the partition
+  table type (`MBR`, `GPT`, `None`, or `Unknown`), and the number of backing
+  images. A container image shows only the size on disk and the backing
+  images.
+* `Format and health`: the type of the image. For a qcow2 or qcow image, also
+  its version, cluster size, refcount width, encryption, compression, internal
+  snapshots, and the backing file that its header names. Tags mark features
+  such as `Corrupt`, `Not closed cleanly`, or `Lazy refcounts`. For a
+  [format issue](#image-format-versions), the section gives the fix and its
+  command. The `qemu-img info` line gives a command that reads the image and
+  its backing chain, with a copy button.
+* `Partitions`: the table type, the disk ID, and the sector size, then a row for
+  each partition. A row gives the number, type, file system, start, size, and
+  the `Boot`, `Extended`, `Logical`, and `Inject` flags.
+* `Actions`: the actions of the row, and `Commit`, `Rebase`, and `Resize`. Each
+  button shows an icon and a label. Put the pointer on a button to see what the
+  action does, or why it is disabled.
+* `Backing chain`: the images that this image is built on (see
+  [Broken Backing Chains](#broken-backing-chains)).
+* `Built on this image`: the listed images whose backing chain holds this
+  image. If you rename or delete this image, they stop working.
+* `Used by`: each experiment that uses the image, with a link to its page, a
+  `Running` or `Stopped` tag, and the VMs whose drives name the image. The
+  VMs show only for an experiment that your role may `get`. Click a VM to open
+  its details on the page of its experiment.
+* `Clone jobs`: the clones of the image that run now (see
+  [Cloning in the background](#cloning-in-the-background)).
+
+`Inject` marks the partition that phēnix injects files into for a VM that uses
+the image: the `inject_partition` of its first drive. A warning names an inject
+partition that the disk does not have. It also names one that holds no file
+system that phēnix can write files to, such as swap or an extended partition.
+
+phēnix reads the partitions of a raw image from the file. For a qcow2 or qcow
+image, it reads them through the backing chain with `qemu-img`. It reads at most
+16 MiB of the disk, for at most 30 seconds. When phēnix cannot read a part, the
+card shows the reason in its place, after `Not available:`. For example, this
+occurs for an image that only minimega can see, or for a container image.
+
+`GET /api/v1/disks/details?disk=<full path>` gives the data of the card. It
+needs the same permissions as the list.
+
+## In Use
+
+An image counts as in use when a process holds a lock on its file, which is how
+minimega decides the same thing. In practice that means a running VM has the
+file open.
+
+Each image in a backing chain is judged on its own file. A backing image is not
+marked in use just because an image built on it is, so a base image stays
+available for snapshots while VMs run off its children.
+
+## Experiments Using an Image
+
+An experiment uses an image when a node in its topology names the image as a
+drive, or when the image backs a drive the topology names. phēnix matches them
+by full path, so a topology naming `win/base.qc2` does not use `base.qc2` at the
+top of the minimega files directory. The `Used by` section of the
+[details card](#the-details-card) lists every experiment using the image that
+your role may list, with a `Running` or `Stopped` tag. The `In Use`
+tooltip names only the running ones, since only those hold the image open.
+
+## Images in Folders
+
+Images can sit in folders under the minimega files directory, and a topology
+names them by their path within it (`image: win/10/win10.qcow2`) or by their
+full path. The list searches folders down to 16 levels below the files
+directory, and leaves out:
+
+* hidden files and folders, whose names start with `.`, and `lost+found`;
+* a `files`, `tmp` or `miniccc_responses` folder directly inside a top-level
+  folder, such as `my-experiment/files`: phēnix keeps an experiment's files,
+  scratch images and command responses there, and the experiment's
+  [Files](experiments.md#experiment-files) tab manages them;
+* anything at the top level named `saved` or starting with `transfer_`, where
+  minimega keeps saved VM state and files it is copying between cluster nodes.
+
+Symlinked folders are not followed, so an image in one is listed only when a
+topology names it; the files directory itself may be a symlink. A symlink to an
+image file is listed at the link's path. A folder phēnix cannot read is left out
+and logged, and the first folder found too deep is logged as
+`disk list leaves out folders nested too deeply`.
+
+An image the list leaves out is still listed when a topology names it, such as
+a VM disk snapshot restored from an experiment's `files` folder, but phēnix does
+not act on it (see [Actions](#actions)). The location in the head of its details card reads
+`The standard images directory (/phenix/images), at a path the disk list leaves out`,
+naming the files directory when the page can tell it from the list.
+
+## Images Outside the Files Directory
+
+A topology can also name an image anywhere else phēnix can read it, such as
+`/data/vms/win10.qcow2`. The list shows such an image by its full path, with a
+warning icon. Hovering over or focusing the icon shows why, naming the files
+directory when the page can tell it from the list:
+
+> Outside the standard images directory (/phenix/images). minimega does not
+> copy this image to other cluster nodes. On a multi-node cluster, every node
+> that may run a VM with this image needs the same file at this path.
+
+The same icon marks the image in the head of its details card, where the
+location reads `Outside the standard images directory`, beside an experiment page's `Disk`
+menu while the menu's disk is outside (see [Disk Menu](vms.md#disk-menu)), and
+on a running VM's disk or inserted ISO in its details. The CD-ROM picker lists
+outside ISO images in a group of their own, without the icon.
+
+minimega copies only images in its files directory to the cluster nodes that
+launch VMs from them. Before using an outside image on a cluster of more than
+one node, put the same file at the same path on every node that may run the VM.
+
+!!! warning
+    With minimega's `-abssnapshot` flag, which the Docker Compose setup turns
+    on with `MM_ABSSNAPSHOT: true`, minimega cannot launch a snapshot VM whose
+    image is outside its files directory on a cluster of more than one node,
+    even when every node has the file. Keep such images in the files directory.
+
+phēnix lists outside images but does not change them: every action, `Download`
+included, is disabled for them, and the server refuses them. To manage one from
+this tab, copy it into the minimega files directory and point the topology at
+the copy.
+
+phēnix reads an image from the path the topology names, and minimega must find
+it at that same path. In the Docker Compose setup the phēnix and minimega
+containers share `/phenix`, so an image elsewhere under `/phenix` works as it
+is; a path outside `/phenix` needs the same mount in both containers.
+
+phēnix leaves out a topology image it cannot open as a regular file, such as a
+missing or unreadable one, and never inspects paths under `/proc`, `/sys`,
+`/dev` or `/run`. The experiment page still shows such a disk, marked as not in
+the list.
+
+## Permissions
+
+`disks` permissions name an image by its file name, such as `win10.qcow2`, in
+whatever folder it is, so a name covers the files of that name in every folder:
+`list` on `win10.qcow2` lists both `win10.qcow2` and `win/win10.qcow2`.
+
+A role sees an image outside the minimega files directory only when, besides
+`list` on its file name, it may `get` an experiment whose topology uses the
+image, or the image backs one the role sees. The experiment page asks for the
+images one experiment can use, which needs `get` on that experiment; see
+[Disk Menu](vms.md#disk-menu).
+
+## Actions
+
+The `Actions` column offers `Snapshot`, `Clone`, `Download`, `Rename`, and
+`Delete`. Clicking a row opens the image's details card, which offers the same
+actions and three more:
+
+* **Snapshot** - Creates a new image backed by this image
+* **Commit** - Commits change in this image to its backing image
+* **Rebase** - Updates image and rebases onto a different backing image
+* **Clone** - Creates a copy of the disk file
+* **Resize** - Changes the virtual size of the disk
+* **Download** - Saves the image file to this computer
+* **Rename** - Gives the image a new name
+* **Delete** - Removes the image file
+
+An action you cannot use stays visible but is disabled, and its tooltip says
+why:
+
+* `Cannot rename: the disk is outside the standard images directory` — every
+  action is disabled on an image outside the files directory (see
+  [Images Outside the Files Directory](#images-outside-the-files-directory)),
+  and on one the list leaves out
+  (`Cannot delete: the disk is at a path the disk list leaves out`).
+* `Cannot resize: minimega cannot use the disk's path` — `Snapshot`, `Commit`,
+  `Rebase`, and `Resize` run through minimega, which cannot take every path;
+  see below.
+* `Cannot rename: the disk is in use by foo` — an image held open cannot be
+  snapshotted, committed, rebased, resized, renamed, or deleted. `Clone` and
+  `Download` still work, because they only read the file.
+* `Cannot snapshot: only VM disks can be snapshotted` — `Snapshot`, `Commit`,
+  and `Rebase` apply to VM images only.
+* `Cannot delete: you do not have permission` — your role lacks the permission
+  the action needs: `create` on `disks` for `Snapshot` and `Clone`, which the
+  server checks against the new image's file name, along with `get` on the
+  image they copy, `update` for `Rebase`,
+  `Rename`, and `Resize`, `update` on both the image and its *backing* image
+  for `Commit`, `get` for `Download`, and `delete` for `Delete`.
+
+`Commit` is also disabled on an image with no backing image to commit into
+(`Cannot commit: the disk has no backing image to commit into`), and on one whose
+backing image phēnix does not act on
+(`Cannot commit: its backing image is outside the standard images directory`),
+since a commit writes into the backing image. The same reasons show when you
+hover a disabled action in the details card, and under its label. The card is
+the only place `Commit`, `Rebase`, and `Resize` appear. `Rebase` offers the other images phēnix acts on and
+minimega can use, sorted by the path the `Name` column shows, or `None` to make
+the image independent.
+
+`Snapshot`, `Clone`, and `Rename` ask for a new name, which is relative to the
+image's own folder unless it is a full path in the minimega files directory.
+A snapshot is always a qcow2 image, so phēnix adds `.qcow2` to a snapshot name
+unless it ends in `.qc2` or `.qcow2`. `Clone` and `Rename` do not change the
+format of the image, so the extension of the image decides the new name:
+
+| Image extension | The new name can end in | Extension that phēnix adds |
+|---|---|---|
+| `.qcow2` or `.qc2` | `.qcow2` or `.qc2` | `.qcow2` |
+| `.qcow` | `.qcow`, `.qcow2` or `.qc2` | `.qcow` |
+| `.iso` | `.iso` | `.iso` |
+| `.hdd` | `.hdd` | `.hdd` |
+| `_rootfs.tgz` | `_rootfs.tgz` | `_rootfs.tgz` |
+
+A new name that ends in an extension of the second column stays as it is.
+phēnix refuses a new name that ends in a different known image extension, such
+as `bar.qcow2` for `foo.iso`, and the error gives the extensions that the name
+can have. phēnix adds the extension of the third column to all other names, so
+a clone named `bar` of `foo.iso` is `bar.iso`. For an image with no known
+extension, phēnix refuses no name: it adds `.qcow2` unless the name ends in
+`.qc2` or `.qcow2`.
+
+The new name must name a file: one that is empty, ends in `/`, or whose last
+part is `.` or `..` is refused. The folder must already exist, and none of
+`Snapshot`, `Clone`, and `Rename` replaces an existing file.
+
+`Snapshot`, `Commit`, `Rebase`, and `Resize` run through minimega, so the image,
+the backing image `Rebase` sets, and any new name must be paths minimega can
+take as one argument: no white space or control characters, and none of `"`,
+`'`, `` ` ``, `\`, `#`, `*`, `?`, `[`, `]`, `{`, `}`, `$`, or `,`. A new name
+from `Clone` or `Rename` follows the same rule. phēnix clones, renames, deletes,
+and downloads the file itself, so those work on an existing image of any name.
+
+!!! warning
+    phēnix does not check whether other images are built on the one you rename
+    or delete. Images backed by a renamed image must be rebased onto its new
+    name, and images backed by a deleted one can no longer be used; the
+    `Rename` and `Delete` dialogs say so. An image's details card shows its
+    `Backing chain`, the images it is built on, and `Built on this image`, the
+    listed images built on it.
+
+### Cloning in the background
+
+A clone copies the whole file, which can take minutes for a large image, so
+`Clone` runs it in the background: the dialog closes as soon as the server has
+started the copy, the [jobs menu](web-ui.md#background-jobs-menu) and the
+`Clone jobs` section of the image's details card show its progress and can
+cancel it, and the list reloads when it ends.
+
+`POST /api/v1/disks/clone/jobs?disk=&new=` makes the same checks as
+`POST /api/v1/disks/clone`, then answers at once with a
+[background job](jobs.md) that copies the image, counting the bytes copied, and
+can be canceled. The copy is written to a hidden temporary file beside the new
+image (`.<new name>.partial-<random>`), which the disk list leaves out, and
+takes the new name only once it is complete. A canceled or failed clone deletes
+it, and when the server restarts mid-clone, it deletes what the clone left the
+next time it starts (in minimega's files directory once minimega answers), so an interrupted clone never leaves an image that looks
+complete.
+
+The server makes the same checks, whatever sends the request, and the error
+names the reason. It answers 400 for an image outside the minimega files
+directory or at a path the list leaves out, a folder rather than an image, a new
+name that does not name a file, or a name minimega cannot use; 404 when the
+image, or the folder for a new one, does not exist; and 409 when the new name is
+taken.
+
+The details card also draws the image's backing chain, the image itself first
+and then the images it is backed by. Each of those is a button that opens that
+image's own card; an image the list does not hold, such as one your role may
+not list, shows as its full path with `Not in your disk list` instead.
+
+## Uploading an Image
+
+The upload button, right of the search box, needs `upload` on `disks`. It opens
+`Upload a Disk`, where you can drop a file or click to pick one.
+
+![Upload a Disk dialog with a drop zone that accepts .qcow2, .qc2, .qcow, root filesystem .tgz, .hdd and .iso files.](images/disks_upload.png){: width=500 .center}
+
+The dialog lists what it takes: `(Valid file types are .qcow2, .qc2, .qcow,
+*_rootfs.tgz, .hdd, and .iso)`. Anything else is refused with an error naming
+the file, before the upload starts.
+
+While an upload runs, the upload button shows its progress as a percentage, and
+the dialog shows a progress bar. Closing the dialog does not stop the upload.
+Uploaded images land at the top of the minimega files directory, so they appear
+in the table on their own once the upload finishes.
+
+## How phēnix Inspects Images
+
+When `qemu-img` is installed — it is in the phēnix container image — phēnix
+inspects images itself, several at a time, instead of running one minimega
+`disk info` per image in turn. It reads each image's size, virtual size, format,
+and backing chain that way, and can read an image a running VM holds locked.
+Without `qemu-img`, phēnix falls back to asking minimega, and lists the folders
+with minimega's `file list`, which, like phēnix's own search, does not follow
+symlinked folders. The fallback leaves out the folders and images whose names
+minimega cannot take, including images a topology names, and anything phēnix
+sees as something other than a regular file.
+
+An image is inspected again only when its file, or a file in its backing chain,
+has changed since the last inspection. phēnix inspects every image at startup,
+and again whenever the minimega files directory or a folder the list searches
+changes and then stays quiet for a couple of seconds, so a long upload is not
+inspected while it is still being written. When that happens, open `Disks`
+pages reload on their own.
+
+phēnix follows folders created later, and stops following removed ones. It
+follows at most 4096 folders, and logs once when it stops at that limit, or at
+the kernel's inotify limit, which the `fs.inotify.max_user_watches` sysctl
+raises. Changes it does not follow, including to images outside the files
+directory, show the next time the list loads.
+
+The header's refresh button does more here than on other pages: it has the
+server inspect every image again from scratch, changed or not. See
+[Page Freshness and Refresh](web-ui.md#page-freshness-and-refresh).
+
+phēnix asks minimega for its files directory (its `-filepath`) the first time
+it needs it. Until minimega answers, phēnix uses `<base-dir.phenix>/images`,
+logs `minimega did not give its files directory`, and asks again at most once a
+minute. When minimega answers with a different directory, phēnix lists and
+watches that one instead, and open `Disks` pages reload.
+
+## Broken Backing Chains
+
+A VM cannot start from an image whose backing file is missing. Before each
+start, phēnix checks the backing chain of each VM disk and refuses the start
+when a file is missing. See
+[Disk Check Before a Start](experiments.md#disk-check-before-a-start).
+
+The table shows a `Broken chain` tag beside the name of an image that qemu
+cannot open. These are the causes:
+
+* A file in the backing chain is missing.
+* The chain names one of its own images again (a loop).
+* The chain has more than 64 images.
+
+Hovering over or focusing the tag shows the problem, for example
+`backing file /phenix/images/ro_kali.qc2 is missing`. A screen reader reads
+the problem as part of the tag. Clicking the tag opens the image's details card.
+
+In the details card, the `Backing chain` section starts with a line such as
+`A VM cannot start from this image: backing file /phenix/images/ro_kali.qc2 is missing.`
+Below the image, the section shows a box for each backing image that phēnix
+could read. For a missing file, the last box is red. It names the full path of
+the file, followed by `(missing)`.
+
+phēnix marks an image only when it can read each image in the chain, up to the
+problem. It does not mark these images:
+
+* An image backed by a vmdk or qed image, or by a backing format other than
+  qcow2 or raw. phēnix does not examine the chain past that image.
+* An image that phēnix cannot open, such as an image that only minimega can
+  see.
+
+The tag shows the view of the head node. A file that is present on a compute
+node but missing on the head node also shows the tag. On the experiment pages,
+a VM disk with a broken chain shows a red icon with a cross, in place of the
+warning triangle. Its tooltip reads
+`This image's backing chain is broken: <problem>. Starting the experiment may fail.`
+
+The tag goes away when the missing file appears. A change in the minimega files
+directory reloads open `Disks` pages, as
+[How phēnix Inspects Images](#how-phenix-inspects-images) describes. For a
+missing file outside that directory, use the header's refresh button.
+
+`GET /api/v1/disks` gives the same data in three fields of each disk:
+`brokenChain`, `chainProblem` (one sentence), and `missingBacking` (the full
+path of the missing file, or empty for a loop). For a broken chain,
+`backingImages` lists only the images that phēnix could read. The CLI has no
+command that lists these fields.
+
+To repair the image, do one of these steps:
+
+1. Restore the missing backing file at the path that the error names.
+2. Point the image at a copy of the missing backing file. Use `Rebase` with
+   `Change reference only` selected (minimega's `disk set-backing`). A rebase
+   without this option must read the missing file, so it fails.
+3. Change the topology to use a different image.
+
+## Image Format Versions
+
+Before a start, phēnix also reads the format and version in the header of each
+image in a backing chain. qemu refuses some images, and some old formats can
+cause problems. This table shows what phēnix does for each format:
+
+| Image | What phēnix does |
+| :--- | :--- |
+| qcow2 version 3 (`compat=1.1`), raw | Starts the VM. |
+| qcow2 version 2 (`compat=0.10`) | Starts the VM. `phenix doctor` warns. |
+| qcow version 1 | Starts the VM with a warning. Some qemu builds, such as the `qemu-kvm` of RHEL, cannot open this format. |
+| qcow2 or qcow version 1 with the old AES encryption | Refuses the start. qemu does not open these images for VMs. |
+| qcow2 with LUKS encryption | Refuses the start. phēnix cannot give qemu the key. |
+| qcow2 of a version later than 3, or with feature bits that qemu does not know | Refuses the start. A newer qemu made the image. |
+| qcow2 that qemu marked as corrupt | Refuses the start when qemu must write to the image: a disk of a VM with `snapshot: false`. Otherwise, starts the VM with a warning. |
+| qcow2 that qemu did not close cleanly | Starts the VM with a warning. |
+| qcow2 with zstd compression or extended L2 entries | Starts the VM. `phenix doctor` warns when the local `qemu-img` is older than qemu 5.1 (zstd) or 5.2 (extended L2). |
+| vmdk, qed, or qcow2 with an external data file | Starts the VM with a warning. phēnix does not check past this image. For an external data file, `phenix doctor` also warns when the local `qemu-img` is older than qemu 4.0. |
+
+With `experiment.disk-check: warn`, or in a dry run, a refused start is a
+warning. `phenix doctor` lists the images of each kind in its `disk-formats`
+row. On this page, the `Type` column of the [Disks table](#the-disks-table)
+marks these images, and the details card of an image gives its fix command,
+with a button that copies it. The
+table also lists an image that `qemu-img` cannot open for its version or
+feature bits.
+
+The table and `phenix doctor` find a qcow version 1 image in the files
+directory only when its name has a known extension, such as `.qcow`. The table
+also lists an image with a different name when a topology uses it, or when it
+backs a listed image.
+
+Before you change an image, stop each VM that uses it. To fix an image, use
+the command for its problem:
+
+1. To upgrade a qcow2 version 2 image to version 3, change it in place:
+
+    ```bash
+    qemu-img amend -f qcow2 -o compat=1.1 kali.qc2
+    ```
+
+2. To convert a qcow version 1 image to qcow2, write a full copy. Then point
+   each image that it backs at the copy:
+
+    ```bash
+    qemu-img convert -f qcow -O qcow2 kali.qcow kali.qc2
+    qemu-img rebase -u -F qcow2 -b kali.qc2 overlay.qc2
+    ```
+
+    `Rebase` with `Change reference only` on this page does the second step.
+
+3. To remove the old AES encryption, write a copy without encryption. Put
+   only the passphrase in a file, with no newline at the end:
+
+    ```bash
+    printf '%s' 'kalipass' > passphrase.txt
+    qemu-img convert --object secret,id=sec0,file=passphrase.txt \
+      --image-opts driver=qcow2,file.filename=kali.qc2,encrypt.key-secret=sec0 \
+      -O qcow2 kali-plain.qc2
+    ```
+
+    For a qcow version 1 image, use `driver=qcow`. The same command removes
+    LUKS encryption. The old AES encryption does not check the passphrase. A
+    wrong passphrase, or a newline after it, gives a copy that holds random
+    data, so examine the copy before you use it.
+
+4. To repair an image that qemu marked as corrupt or did not close cleanly,
+   copy it first, then repair it:
+
+    ```bash
+    cp kali.qc2 kali-backup.qc2
+    qemu-img check -r all kali.qc2
+    ```
+
+5. A newer qemu can make an image that an older qemu cannot open. To fix
+   it, write a copy with the `qemu-img` of the newer qemu. The copy has no
+   zstd compression, extended L2 entries, or external data file. Run this
+   command:
+
+    ```bash
+    qemu-img convert -O qcow2 -o compat=1.1 kali.qc2 kali-compat.qc2
+    ```
+
+## Downloading an Image
+
+`Download` confirms first, then downloads the image through the browser. The
+server serves only images it acts on: in the minimega files directory or a
+folder under it, but not at a path the list leaves out. A path with `../` in
+it, a sibling directory whose name merely starts with that directory's name, and
+an image outside the directory are all refused.
+
+Image downloads resume: if one is interrupted, retrying it in the browser's
+downloads list continues where it stopped, as long as the image has not
+changed. An image a running VM writes to changes during the download, which
+then starts over from the beginning, so stop the VM first for a consistent
+copy. From a shell, `curl -C -` resumes a download the same way, but without
+checking that the image is unchanged:
+
+```bash
+curl -C - -o win.qc2 -H 'X-Phenix-Auth-Token: Bearer <token>' \
+  'https://<phenix>/api/v1/disks/download?disk=win.qc2'
+```
+
+To verify a download, compare its `sha256sum` with the `sha256` that
+`GET /api/v1/disks/checksum?disk=win.qc2` returns. phēnix computes it in the
+background, which takes minutes for a large image; until then the route
+answers `202`, so ask again later.

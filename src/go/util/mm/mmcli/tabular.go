@@ -3,6 +3,8 @@
 package mmcli
 
 import (
+	"context"
+	"errors"
 	"strings"
 
 	"github.com/activeshadow/libminimega/minicli"
@@ -54,6 +56,45 @@ func tabularToMapCols(columns []string) tabularToMapper {
 // be in tabular form. A slice of maps is returned, with each map representing a
 // row in the tabular response and each map key representing the column.
 func RunTabular(cmd *Command) []map[string]string {
+	return RunTabularStartedContext(context.Background(), cmd, nil)
+}
+
+// RunTabularContext is RunTabular for a command run on behalf of something
+// that may end first; see RunContext.
+func RunTabularContext(ctx context.Context, cmd *Command) []map[string]string {
+	return RunTabularStartedContext(ctx, cmd, nil)
+}
+
+// RunTabularStartedContext is RunTabularContext, calling started as RunStartedContext does. Response
+// errors are logged (at debug level once ctx is done) and their rows left out; see RunTabularCheckedContext.
+func RunTabularStartedContext(ctx context.Context, cmd *Command, started func()) []map[string]string {
+	res, err := RunTabularCheckedContext(ctx, cmd, started)
+
+	switch {
+	case err == nil:
+	case ctx.Err() != nil && errors.Is(err, ctx.Err()):
+		plog.Debug(plog.TypeSystem, "mm cmd canceled", "cmd", cmd.Command, "error", err)
+	default:
+		plog.Error(
+			plog.TypeSystem,
+			"error running mm cmd",
+			"cmd",
+			cmd.Command,
+			"error",
+			err,
+		)
+	}
+
+	return res
+}
+
+// RunTabularCheckedContext is RunTabularStartedContext, also returning the response errors, joined;
+// the rows, from the responses without an error, may then be partial.
+func RunTabularCheckedContext(
+	ctx context.Context,
+	cmd *Command,
+	started func(),
+) ([]map[string]string, error) {
 	// copy all fields in header order
 	mapper := tabularToMap
 
@@ -62,19 +103,15 @@ func RunTabular(cmd *Command) []map[string]string {
 		mapper = tabularToMapCols(cmd.Columns)
 	}
 
-	res := []map[string]string{}
+	var (
+		res  = []map[string]string{}
+		errs []error
+	)
 
-	for resps := range Run(cmd) {
+	for resps := range RunStartedContext(ctx, cmd, started) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				plog.Error(
-					plog.TypeSystem,
-					"error running mm cmd",
-					"cmd",
-					cmd.Command,
-					"error",
-					resp.Error,
-				)
+				errs = append(errs, reconstructErr(resp.Error))
 
 				continue
 			}
@@ -85,5 +122,5 @@ func RunTabular(cmd *Command) []map[string]string {
 		}
 	}
 
-	return res
+	return res, errors.Join(errs...)
 }

@@ -1,5 +1,5 @@
 // Shared helpers for the phenix UI smoke tests.
-const { expect } = require('@playwright/test');
+const base = require('@playwright/test');
 const AxeBuilder = require('@axe-core/playwright').default;
 
 // Attach console/network/pageerror capture to a page; findings pushed into `issues`.
@@ -57,14 +57,103 @@ function fatalOf(issues) {
   });
 }
 
-// The first page load of a fresh session redirects to home (store.login()
-// runs before store.next is set — long-standing behavior, predates Vue 3).
-// Seed the session at '/', then navigate to the real target.
-async function gotoSeeded(page, path) {
-  await page.goto('/');
-  await settle(page, 800);
-  await page.goto(path);
+// Playwright's `test` with the page's findings captured into `issues`; the
+// test fails on any fatal one (see fatalOf) once its body has run.
+const test = base.test.extend({
+  issues: [
+    async ({ page }, use) => {
+      const issues = [];
+      attachCapture(page, issues);
+      await use(issues);
+
+      const fatal = fatalOf(issues);
+      base.expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+    },
+    { auto: true },
+  ],
+});
+
+// Resolves once the page on screen has loaded its data, which the header's
+// refresh status reports.
+async function pageDataLoaded(page) {
+  await base.expect(page.getByText('Updated just now')).toBeVisible();
 }
+
+// Fails the test on any WCAG 2.2 A or AA violation axe-core finds on the page
+// as it is now, and attaches the full results as `axe-<name>`.
+async function expectAccessible(page, name) {
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+    .analyze();
+  await base.test.info().attach(`axe-${name}`, {
+    body: JSON.stringify(
+      { violations: results.violations, incomplete: results.incomplete },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+  base
+    .expect(
+      results.violations.map((v) => `${v.id} (${v.nodes.length})`),
+      `axe violations on ${name}; see the axe attachment for details`,
+    )
+    .toEqual([]);
+}
+
+// A Role config that may list experiments, for tests that need a config of
+// their own.
+const roleConfig = (name) => ({
+  apiVersion: 'phenix.sandia.gov/v1',
+  kind: 'Role',
+  metadata: { name },
+  spec: {
+    roleName: name,
+    policies: [
+      { resources: ['experiments'], resourceNames: ['*'], verbs: ['list'] },
+    ],
+  },
+});
+
+// Deletes a config through the REST API; a config that isn't there is fine.
+const deleteConfig = (request, config) =>
+  request.delete(
+    `/api/v1/configs/${config.kind.toLowerCase()}/${config.metadata.name}`,
+  );
+
+// Creates a config through the REST API, replacing one an earlier run left.
+async function createConfig(request, config) {
+  await deleteConfig(request, config);
+  const created = await request.post('/api/v1/configs', { data: config });
+  base.expect(created.ok(), await created.text()).toBe(true);
+}
+
+// A disk as the server's disk list returns it; one with no relativePath is
+// outside the minimega files directory.
+const diskImage = (fullPath, relativePath, overrides = {}) => ({
+  kind: 'VM',
+  name: fullPath.split('/').pop(),
+  fullPath,
+  relativePath,
+  outsideFilesDir: !relativePath,
+  readOnly: !relativePath,
+  size: '1.0 MiB',
+  virtualSize: '10 GiB',
+  experiments: [],
+  backingImages: [],
+  inUse: false,
+  ...overrides,
+});
+
+// Answers the page's disk list requests (GET /api/v1/disks, any query) with `disks`.
+const standInDisks = (page, disks) =>
+  page.route(
+    (url) => url.pathname.endsWith('/api/v1/disks'),
+    (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({ json: { disks } })
+        : route.continue(),
+  );
 
 // Unsigned JWT good enough for proxy mode (the server intentionally parses
 // proxy-supplied tokens without verifying the signature).
@@ -92,15 +181,23 @@ async function expectTextContrast(page, selector, label) {
         `${node.target.join(' ')}: ${node.any.map((check) => check.message).join('; ')}`,
     ),
   );
-  expect(failures, `text contrast in ${label}`).toEqual([]);
+  base.expect(failures, `text contrast in ${label}`).toEqual([]);
 }
 
 module.exports = {
+  test,
+  expect: base.expect,
   attachCapture,
   settle,
   fatalOf,
-  gotoSeeded,
-  isChromium,
-  unsignedJwt,
+  pageDataLoaded,
+  expectAccessible,
   expectTextContrast,
+  isChromium,
+  roleConfig,
+  createConfig,
+  deleteConfig,
+  diskImage,
+  standInDisks,
+  unsignedJwt,
 };

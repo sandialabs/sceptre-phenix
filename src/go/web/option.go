@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -14,7 +15,26 @@ import (
 	"phenix/web/weberror"
 )
 
-const defaultJWTLifetime = 24 * time.Hour
+const (
+	defaultJWTLifetime = 24 * time.Hour
+	// DefaultShutdownGracePeriod is how long shutting the server down may take.
+	DefaultShutdownGracePeriod = 5 * time.Second
+	// DefaultNetflowMaxSize is the most bytes of each netflow capture recorded.
+	DefaultNetflowMaxSize = 100 << 20
+
+	// TunnelerDownloadDir holds the phenix-tunneler builds the server offers,
+	// relative to the directory it starts in.
+	TunnelerDownloadDir = "downloads/tunneler"
+)
+
+// The ui.features names. Only FeatureVMMount is set by hand; the server turns
+// on the others itself when it finds what each one needs.
+const (
+	FeatureVMMount          = "vm-mount"
+	FeatureWebShark         = "webshark"
+	FeatureTunnelerDownload = "tunneler-download"
+	FeatureFileServer       = "file-server"
+)
 
 type ServerOption func(*serverOptions)
 
@@ -27,6 +47,8 @@ type serverOptions struct {
 
 	logMiddleware string
 	minimegaLogs  string
+	// systemLog is the phenix system log file's current path, or "" for none
+	systemLog func() string
 
 	unbundled          bool
 	basePath           string
@@ -40,35 +62,57 @@ type serverOptions struct {
 
 	features map[string]bool
 
+	websharkDir string
+
 	unixSocketGID int
+
+	shutdownGrace time.Duration
+
+	netflowMaxSize int64
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
 	so := serverOptions{ //nolint:exhaustruct // partial initialization
 		endpoint:    ":3000",
-		users:       []string{"admin@foo.com:foobar:Global Admin"},
+		users:       []string{DefaultAdminName + ":foobar:Global Admin"},
 		basePath:    "/",
 		jwtLifetime: defaultJWTLifetime,
 		features:    make(map[string]bool),
+		systemLog:   plog.LogFilePath,
+
+		shutdownGrace:  DefaultShutdownGracePeriod,
+		netflowMaxSize: DefaultNetflowMaxSize,
 	}
 
 	for _, opt := range opts {
 		opt(&so)
 	}
 
-	if !strings.HasPrefix(so.basePath, "/") {
-		so.basePath = "/" + so.basePath
+	so.basePath = NormalizeBasePath(so.basePath)
+
+	if _, err := os.Stat(TunnelerDownloadDir); err == nil {
+		so.features[FeatureTunnelerDownload] = true
 	}
 
-	if !strings.HasSuffix(so.basePath, "/") {
-		so.basePath += "/"
-	}
-
-	if _, err := os.Stat("downloads/tunneler"); err == nil {
-		so.features["tunneler-download"] = true
+	if dir, ok := FindWebShark(os.Stat); ok {
+		so.websharkDir = dir
+		so.features[FeatureWebShark] = true
 	}
 
 	return so
+}
+
+// checkFeatures refuses a feature set by hand that cannot work: webshark
+// without a WebShark build would serve files from no directory.
+func (o serverOptions) checkFeatures() error {
+	if o.featured(FeatureWebShark) && o.websharkDir == "" {
+		return fmt.Errorf(
+			"invalid ui.features: %s needs a WebShark build in %s, and phenix ui enables it automatically when it finds one",
+			FeatureWebShark, strings.Join(websharkDirs, " or "),
+		)
+	}
+
+	return nil
 }
 
 func (o serverOptions) tlsEnabled() bool {
@@ -140,6 +184,20 @@ func ServeBasePath(p string) ServerOption {
 	}
 }
 
+// NormalizeBasePath returns the path the server serves under for p: p with a
+// leading and a trailing slash added when either is missing.
+func NormalizeBasePath(p string) string {
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+
+	return p
+}
+
 // ServeFileServerEndpoint sets the optional experiment file upload server endpoint.
 func ServeFileServerEndpoint(e string) ServerOption {
 	return func(o *serverOptions) {
@@ -167,16 +225,8 @@ func ServeWithProxyAuthHeader(h string) ServerOption {
 
 func ServeWithFeatures(f []string) ServerOption {
 	return func(o *serverOptions) {
-		if f == nil {
-			for k, v := range o.features {
-				if !v {
-					delete(o.features, k)
-				}
-			}
-		} else {
-			for _, feature := range f {
-				o.features[feature] = false
-			}
+		for _, feature := range f {
+			o.features[feature] = true
 		}
 	}
 }
@@ -184,6 +234,22 @@ func ServeWithFeatures(f []string) ServerOption {
 func ServeWithUnixSocketGID(g int) ServerOption {
 	return func(o *serverOptions) {
 		o.unixSocketGID = g
+	}
+}
+
+// ServeWithShutdownGracePeriod sets how long shutting the server down may
+// take; 0 closes everything without waiting.
+func ServeWithShutdownGracePeriod(d time.Duration) ServerOption {
+	return func(o *serverOptions) {
+		o.shutdownGrace = d
+	}
+}
+
+// ServeWithNetflowMaxSize sets the most bytes of each netflow capture
+// recorded; 0 does not record captures.
+func ServeWithNetflowMaxSize(n int64) ServerOption {
+	return func(o *serverOptions) {
+		o.netflowMaxSize = n
 	}
 }
 

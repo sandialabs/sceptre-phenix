@@ -2,11 +2,10 @@
 The header component is available on all views based on the 
 App.vue component. The available routable links are available 
 based on whether the user is logged in and furthermore based on 
-their role. Based on the current limitations per user role, these 
-are only available to Global Administrator or Global Viewer.
+what their role allows.
  -->
 <template>
-  <b-navbar class="mb-4">
+  <b-navbar v-model="menuOpen" class="mb-4">
     <template #brand>
       <b-navbar-item tag="router-link" :to="{ name: 'home' }" :active="false">
         <img src="@/assets/imgs/phenix-banner.png" alt="phenix" />
@@ -38,13 +37,13 @@ are only available to Global Administrator or Global Viewer.
         >Hosts</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && !disabled"
+        v-if="auth && usersPageAllowed()"
         tag="router-link"
         :to="{ name: 'users' }"
         >Users</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && roleAllowed('logs', 'list')"
+        v-if="auth && roleAllowed('logs', 'get')"
         tag="router-link"
         :to="{ name: 'log' }"
         >Logs</b-navbar-item
@@ -53,7 +52,13 @@ are only available to Global Administrator or Global Viewer.
         v-if="auth && roleAllowed('experiments', 'list')"
         tag="router-link"
         :to="{ name: 'scorch' }"
-        >Scorch</b-navbar-item
+        >SCORCH</b-navbar-item
+      >
+      <b-navbar-item
+        v-if="auth && roleAllowed('experiments', 'list')"
+        tag="router-link"
+        :to="{ name: 'sohoverview' }"
+        >State of Health</b-navbar-item
       >
       <b-navbar-item
         v-if="auth && roleAllowed('miniconsole', 'post')"
@@ -62,13 +67,13 @@ are only available to Global Administrator or Global Viewer.
         >Console</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && tunneler"
+        v-if="auth && webshark"
         tag="router-link"
-        :to="{ name: 'tunneler' }">
-        Tunneler
-      </b-navbar-item>
+        :to="{ name: 'webshark' }"
+        >WebShark</b-navbar-item
+      >
       <b-navbar-item
-        v-if="auth && roleAllowed('settings', 'edit')"
+        v-if="auth && roleAllowed('settings', 'update')"
         tag="router-link"
         :to="{ name: 'settings' }"
         >Settings</b-navbar-item
@@ -76,6 +81,23 @@ are only available to Global Administrator or Global Viewer.
     </template>
 
     <template #end>
+      <b-navbar-item v-if="auth && tunneler" tag="div" class="tunneler-item">
+        <b-button
+          tag="router-link"
+          :to="{ name: 'tunneler' }"
+          type="is-primary"
+          icon-left="download"
+          class="tunneler-button"
+          @click="menuOpen = false"
+          >Tunneler</b-button
+        >
+      </b-navbar-item>
+      <b-navbar-item v-if="auth" tag="div">
+        <refresh-status></refresh-status>
+      </b-navbar-item>
+      <b-navbar-item v-if="auth" tag="div">
+        <jobs-menu></jobs-menu>
+      </b-navbar-item>
       <!-- Buttons, so the keyboard reaches them too. While a logout waits
            for the server, they say so. -->
       <b-navbar-item
@@ -103,29 +125,30 @@ are only available to Global Administrator or Global Viewer.
 
 <script>
   import { usePhenixStore } from '@/store.js';
-  import { roleAllowed } from '@/utils/rbac.js';
-  import axiosInstance from '@/utils/axios.js';
+  import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
+  import { canUseWebShark, webSharkInstalled } from '@/utils/webshark.js';
+  import * as authApi from '@/api/auth.js';
+  import { showError } from '@/utils/errorNotif.js';
+  import { endConsole } from '@/utils/consoleSession.js';
+  import RefreshStatus from '@/components/RefreshStatus.vue';
+  import JobsMenu from '@/components/jobs/JobsMenu.vue';
 
   export default {
+    components: { RefreshStatus, JobsMenu },
     setup() {
-      return { roleAllowed };
+      return { roleAllowed, usersPageAllowed };
     },
+    // The burger menu's state: Buefy leaves it open after a click on a button's
+    // label, so the Tunneler button closes it itself.
     data() {
-      return { loggingOut: false };
+      return { menuOpen: false, loggingOut: false };
     },
-    //  The computed elements determine if the user is already logged
-    //  in; if so, the routable links are available. If not, the sign
-    //  in routable link is the only one available. The role getter
-    //  determines what the role of the user is; this is used to present
-    //  routable links in the header row.
+    // Links but Experiments wait for login; a proxy gets Reauthorize, not Logout; Tunneler and WebShark need
+    // the server (WebShark also capture access); signed-in users get the jobs menu.
     computed: {
       auth() {
         const phenixStore = usePhenixStore();
         return phenixStore.auth;
-      },
-      disabled() {
-        const phenixStore = usePhenixStore();
-        return phenixStore.role.name === 'Disabled';
       },
       proxyAuth() {
         return import.meta.env.VITE_AUTH === 'proxy';
@@ -134,12 +157,14 @@ are only available to Global Administrator or Global Viewer.
       tunneler() {
         return usePhenixStore().features.includes('tunneler-download');
       },
+
+      webshark() {
+        return webSharkInstalled(usePhenixStore().features) && canUseWebShark();
+      },
     },
 
     methods: {
-      //  These methods are used to logout a user; or, present
-      //  routable link based on a Global user role.
-      logout(event) {
+      async logout(event) {
         const button = event?.currentTarget;
 
         if (this.loggingOut) {
@@ -148,8 +173,11 @@ are only available to Global Administrator or Global Viewer.
 
         this.loggingOut = true;
 
-        axiosInstance
-          .get('logout')
+        // end the console first, while the token still allows it
+        await endConsole();
+
+        authApi
+          .logOut()
           .then(
             (response) => response.status,
             (error) => error.response?.status,
@@ -165,7 +193,6 @@ are only available to Global Administrator or Global Viewer.
                 this.$buefy.toast.open({
                   message: 'Your account has been reauthorized',
                   type: 'is-success',
-                  duration: 4000,
                 });
               }
 
@@ -173,13 +200,10 @@ are only available to Global Administrator or Global Viewer.
             }
 
             // When the server does not answer the logout, the session stays
-            // as it was and a toast says so. Focus goes back to Logout.
-            this.$buefy.toast.open({
-              message:
-                'Could not log out. Check your connection and try again.',
-              type: 'is-danger',
-              duration: 8000,
-            });
+            // as it was and an error says so. Focus goes back to Logout.
+            showError(
+              'Could not log out. Check your connection and try again.',
+            );
             button?.focus();
 
             // In a narrow window, the menu that held Logout closes on a
@@ -214,5 +238,23 @@ are only available to Global Administrator or Global Viewer.
     .app-header__logout {
       width: 100%;
     }
+  }
+
+  .tunneler-item {
+    padding-block: 0.25rem;
+  }
+
+  .tunneler-button.button.is-primary:hover,
+  .tunneler-button.button.is-primary.router-link-exact-active {
+    background-color: #9a4420;
+  }
+
+  /* a normal-size button, narrower so the header fits on one row */
+  .tunneler-button.button {
+    padding-inline: 0.75em;
+  }
+
+  .tunneler-button.router-link-exact-active {
+    box-shadow: inset 0 -3px 0 whitesmoke;
   }
 </style>

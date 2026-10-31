@@ -1,0 +1,27 @@
+// Every named route in src/router.js, which pages link to by name, for the
+// test routers; keep the two lists the same.
+export const ROUTES = [
+  ['/', 'home'],
+  ['/signin', 'signin'],
+  ['/experiments', 'experiments'],
+  ['/experiment/:id', 'experiment'],
+  ['/hosts', 'hosts'],
+  ['/configs/', 'configs'],
+  ['/disks/', 'disks'],
+  ['/vmtiles', 'vmtiles'],
+  ['/users', 'users'],
+  ['/log', 'log'],
+  ['/console', 'console'],
+  ['/scorch', 'scorch'],
+  ['/scorch/:id', 'scorchruns'],
+  ['/soh', 'sohoverview'],
+  ['/soh/:id', 'soh'],
+  ['/settings', 'settings'],
+  ['/tunneler', 'tunneler'],
+  ['/packets', 'webshark'],
+  ['/proxysignup/:username?', 'proxysignup'],
+  ['/disabled', 'disabled'],
+  ['/version', 'version'],
+  ['/features', 'features'],
+  ['/api/v1/experiments/:id/vms/:name/vnc?token=:token', 'vnc'],
+].map(([path, name]) => ({ path, name, component: {} }));

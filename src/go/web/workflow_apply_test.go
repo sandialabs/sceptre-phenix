@@ -72,17 +72,7 @@ func workflowTestRole(allow bool) rbac.Role {
 		return rbac.Role{Spec: &v1.RoleSpec{}}
 	}
 
-	return rbac.Role{
-		Spec: &v1.RoleSpec{
-			Policies: []*v1.PolicySpec{
-				{
-					Resources:     []string{"*", "*/*"},
-					ResourceNames: []string{"*", "*/*"},
-					Verbs:         []string{"*"},
-				},
-			},
-		},
-	}
+	return adminRole()
 }
 
 // workflowTestYAML returns a YAML workflow config with the given spec body,
@@ -506,6 +496,16 @@ func TestApplyWorkflowSchemaErrors(t *testing.T) {
 			wantLine:    true,
 		},
 		{
+			// Within maxLength in characters but over the 15-byte limit: the
+			// pattern allows only one-byte characters, so the schema refuses it.
+			name:          "defaultBridge with multi-byte characters",
+			contentType:   mimeYAML,
+			body:          workflowTestYAML("  defaultBridge: " + strings.Repeat("\u00e9", experiment.MaxBridgeNameLength/2+2) + "\n"),
+			wantRaw:       `"/spec/defaultBridge"`,
+			wantLine:      true,
+			wantExplained: "spec (line 5): *regular expression* (at defaultBridge)",
+		},
+		{
 			name:        "wrong kind",
 			contentType: mimeYAML,
 			body:        "apiVersion: phenix.sandia.gov/v0\nkind: Topology\nmetadata: {}\nspec:\n  topology: topo\n",
@@ -802,19 +802,6 @@ func TestApplyWorkflowPrepareFailures(t *testing.T) {
 			wantStatus:  http.StatusBadRequest,
 			wantMessage: prepareMsg,
 			wantCause:   []string{"scenario base doesn't exist"},
-		},
-		{
-			// Two-byte characters pass the schema's maxLength, which counts
-			// characters, but not the bridge name limit, which counts bytes and
-			// which Validate applies before experiments are even listed.
-			name:        "defaultBridge over the limit in bytes only",
-			contentType: mimeYAML,
-			body: strings.NewReader(workflowTestYAML(
-				"  defaultBridge: " + strings.Repeat("\u00e9", experiment.MaxBridgeNameLength/2+2) + "\n",
-			)),
-			wantStatus:  http.StatusBadRequest,
-			wantMessage: "invalid phenix workflow config",
-			wantCause:   []string{"invalid workflow config"},
 		},
 	})
 }
@@ -1809,8 +1796,8 @@ func TestApplyWorkflowDryRunChecksPendingIncludes(t *testing.T) {
 			wantCause: notFound,
 		},
 		{
-			// The Topology schema does not declare includeTopologies, and
-			// the real apply's weak decode reads a single value as a list.
+			// The Topology schema allows a single include name, and the
+			// real apply's weak decode reads a single value as a list.
 			name:      "single include in neither the directory nor the store",
 			docs:      []string{topology("${BRANCH_NAME}-net")},
 			wantRefs:  []string{"Topology/main?include=main-net"},

@@ -8,29 +8,46 @@ on:
       - 'src/go/**'
       - 'docker/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/ci-start-phenix-ui.sh'
       - '.github/workflows/frontend.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'src/js/**'
       - 'src/go/**'
       - 'docker/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/ci-start-phenix-ui.sh'
       - '.github/workflows/frontend.yml'
   workflow_dispatch:
 
 env:
   GO_VERSION: '1.24'
   NODE_VERSION: '24'
+  # read by scripts/ci-start-phenix-ui.sh, Playwright and Lighthouse CI
+  E2E_PORT: '3197'
+  E2E_BASE_URL: http://127.0.0.1:3197
 
-permissions:
-  contents: read
+# each job grants only what it needs
+permissions: {}
+
+# a newer commit (or closing the PR) cancels runs still going for this PR or ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # The e2e build and tests run only for a change that can affect the browser
-  # tests (see src/js/e2e/README.md), a manual run or a new branch.
+  # The e2e build and tests and perf run only for a change that can affect the
+  # browser (see src/js/e2e/README.md), a manual run or a new branch.
   changes:
+    if: github.event.action != 'closed'
     name: Detect browser changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       browser: ${{ steps.diff.outputs.browser }}
     steps:
@@ -54,7 +71,8 @@ jobs:
               src/js/test/*) return 1 ;;
               src/js/* | src/go/web/* | src/go/api/* | src/go/store/* | \
                 src/go/cmd/* | src/go/types/version/* | \
-                Makefile | docker/* | .github/workflows/frontend.yml)
+                Makefile | docker/* | scripts/api-docs.sh | \
+                scripts/ci-start-phenix-ui.sh | .github/workflows/frontend.yml)
                 return 0 ;;
               *) return 1 ;;
             esac
@@ -114,8 +132,11 @@ jobs:
           exit "$status"
 
   test-js:
+    if: github.event.action != 'closed'
     name: Unit Tests (JS)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: src/js
@@ -160,20 +181,27 @@ jobs:
           retention-days: 14
 
   build-e2e:
-    # One phenix binary (which embeds the UI) for each auth mode. Without a
-    # browser change every step skips, not the job, as in test-e2e.
+    # One phenix binary (which embeds the UI) for each auth mode; perf uses the
+    # disabled one. Without a browser change every step skips, not the job.
+    if: github.event.action != 'closed'
     name: ${{ matrix.name }}
     needs: changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
+          # the API reference is built, as in releases
           - name: Build phenix (E2E)
             auth: disabled
+          # the auth specs do not open the API reference, so it is not built
           - name: Build phenix (E2E, auth enabled)
             auth: enabled
+            make: SKIP_API_DOCS=1
           - name: Build phenix (E2E, auth proxy)
             auth: proxy
+            make: SKIP_API_DOCS=1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.changes.outputs.browser == 'true'
@@ -204,13 +232,17 @@ jobs:
       - name: Build phenix
         if: needs.changes.outputs.browser == 'true'
         # SKIP_UI keeps make from rebuilding the UI built above
-        run: make bin/phenix SKIP_UI=1
-      - name: Upload phenix
+        run: make bin/phenix SKIP_UI=1 ${{ matrix.make }}
+      - name: Package build
+        if: needs.changes.outputs.browser == 'true'
+        # tar keeps the executable bit, which upload-artifact drops
+        run: tar -cf phenix-build.tar bin/phenix src/js/dist
+      - name: Upload build
         if: needs.changes.outputs.browser == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: phenix-e2e-${{ matrix.auth }}
-          path: bin/phenix
+          path: phenix-build.tar
           if-no-files-found: error
           retention-days: 1
 
@@ -220,8 +252,10 @@ jobs:
     name: E2E ${{ matrix.name }}
     needs: [changes, build-e2e]
     # Runs after the build, or after it was skipped, unless something failed.
-    if: ${{ !cancelled() && !failure() }}
+    if: ${{ !cancelled() && !failure() && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # The changes job checks that the image tag is the e2e lockfile's Playwright
     # version. Without a browser change no image is pulled.
     container: >-
@@ -232,26 +266,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The read-only specs need an empty store, so they get a server of
+          # their own and the store specs split over two more.
           - name: Smoke 1/3
             id: smoke-1
-            tests: --shard=1/3
+            tests: --project=read-only
           - name: Smoke 2/3
             id: smoke-2
-            tests: --shard=2/3
+            tests: --project=store --project=firefox --no-deps --shard=1/2
           - name: Smoke 3/3
             id: smoke-3
-            tests: --shard=3/3
+            tests: --project=store --project=firefox --no-deps --shard=2/2
+          # With E2E_AUTH_MODE set, playwright.config.js runs only that mode's
+          # spec and health.spec.js.
           - name: Auth enabled
             id: auth-enabled
             auth: enabled
-            tests: auth-enabled
             server: >-
               --jwt-signing-key e2e-auth
               --users 'e2e-admin:Testpass1!:Global Admin'
           - name: Auth proxy
             id: auth-proxy
             auth: proxy
-            tests: auth-proxy --project=chromium
+            tests: --project=auth-proxy
             server: --jwt-signing-key proxy-jwt
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -268,19 +305,14 @@ jobs:
         if: needs.changes.outputs.browser == 'true'
         with:
           name: phenix-e2e-${{ matrix.auth || 'disabled' }}
-          path: bin
-      # The container runs steps in sh, so use POSIX redirects. Output left on
-      # the step's pipe stops phenix when the step ends.
+      - name: Unpack build
+        if: needs.changes.outputs.browser == 'true'
+        run: tar -xf phenix-build.tar && rm phenix-build.tar
+      # The script sends phenix's output to the log, not the step's pipe,
+      # which would stop phenix when the step ends.
       - name: Start phenix UI
         if: needs.changes.outputs.browser == 'true'
-        run: |
-          chmod +x bin/phenix
-          ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
-            --listen-endpoint 127.0.0.1:3000 \
-            ${{ matrix.server }} > /tmp/phenix-ui.log 2>&1 &
-          # /version needs no sign-in, so it answers 200 in every auth mode.
-          timeout 30 bash -c \
-            'until curl -sf -o /dev/null http://127.0.0.1:3000/version; do sleep 1; done'
+        run: ./scripts/ci-start-phenix-ui.sh /tmp/phenix-e2e.bdb /tmp/phenix-ui.log ${{ matrix.server }}
       - name: Install e2e dependencies
         if: needs.changes.outputs.browser == 'true'
         working-directory: src/js/e2e
@@ -303,3 +335,134 @@ jobs:
         with:
           name: e2e-artifacts-${{ matrix.id }}
           path: src/js/e2e/test-results
+
+  perf:
+    if: github.event.action != 'closed' && needs.changes.outputs.browser == 'true'
+    name: UI Performance (bundle budgets, Lighthouse)
+    needs: [changes, build-e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # finds and downloads the default branch's perf-summary artifact
+      actions: read
+    defaults:
+      run:
+        working-directory: src/js/perf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/js/perf/package-lock.json
+      - name: Download build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phenix-e2e-disabled
+      - name: Unpack build
+        working-directory: .
+        run: tar -xf phenix-build.tar && rm phenix-build.tar
+      - name: Install perf tooling
+        run: npm ci
+      # The size and Lighthouse steps may fail without stopping the job, so
+      # both always run and the summary covers both; "Check budgets" fails it.
+      - name: Check bundle size budgets
+        id: size
+        continue-on-error: true
+        run: npm run --silent size:json > size-limit.json
+      - name: Start phenix UI
+        id: server
+        working-directory: .
+        run: ./scripts/ci-start-phenix-ui.sh /tmp/phenix-perf.bdb /tmp/phenix-ui.log
+      - name: Run Lighthouse CI
+        id: lighthouse
+        if: steps.server.outcome == 'success'
+        continue-on-error: true
+        run: npm run lighthouse
+      - name: Find baseline
+        # the newest unexpired perf-summary artifact from a push run on the
+        # base branch: push runs are always on this repository's own branches,
+        # never a fork's branch of the same name. Listing runs, not the
+        # repository's artifacts, keeps other branches' artifacts from pushing
+        # the baseline off the first page.
+        id: baseline
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        run: |
+          run_id=""
+          for id in $(gh api -X GET "repos/$REPO/actions/workflows/frontend.yml/runs" \
+              -f branch="$BASE" -f event=push -f status=completed -F per_page=30 \
+              --jq '.workflow_runs[].id'); do
+            found="$(gh api "repos/$REPO/actions/runs/$id/artifacts?name=perf-summary" \
+              --jq '[.artifacts[] | select(.expired | not)] | length')" || found=0
+            if [ "$found" -gt 0 ]; then
+              run_id="$id"
+              break
+            fi
+          done
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Download baseline
+        if: always() && steps.baseline.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: perf-summary
+          run-id: ${{ steps.baseline.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: src/js/perf/baseline
+      - name: Summarize
+        if: always()
+        env:
+          BASE: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        run: |
+          node summary.mjs --size size-limit.json \
+            --assert .lighthouseci/assertion-results.json \
+            --manifest lighthouse-results/manifest.json \
+            --baseline baseline/perf-summary.json --base-ref "$BASE" \
+            --out-md perf-summary.md --out-json perf-summary.json
+      - name: Upload perf summary
+        # kept 90 days: runs on the default branch are the baseline for later runs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: perf-summary
+          path: |
+            src/js/perf/perf-summary.md
+            src/js/perf/perf-summary.json
+          retention-days: 90
+          if-no-files-found: ignore
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lighthouse-reports
+          path: |
+            src/js/perf/lighthouse-results
+            src/js/perf/.lighthouseci
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Check budgets
+        if: always()
+        env:
+          SIZE_OUTCOME: ${{ steps.size.outcome }}
+          LIGHTHOUSE_OUTCOME: ${{ steps.lighthouse.outcome }}
+        run: |
+          if ! node summary.mjs --check perf-summary.json; then
+            exit 1
+          fi
+          # a fallback in case the summary missed a failed step
+          if [ "$SIZE_OUTCOME" != success ] || [ "$LIGHTHOUSE_OUTCOME" != success ]; then
+            echo "::error title=Perf budget::size-limit ($SIZE_OUTCOME) or Lighthouse ($LIGHTHOUSE_OUTCOME) failed; see their steps."
+            exit 1
+          fi
+      - name: Server log
+        if: failure()
+        working-directory: .
+        run: tail -100 /tmp/phenix-ui.log

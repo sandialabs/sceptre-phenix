@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,6 +31,19 @@ type CreateTunnel struct {
 	User       string
 }
 
+// TriggerStateCanceled is the state published when a triggered app run is canceled.
+const TriggerStateCanceled = "canceled"
+
+// publishRunResult announces how an app's running stage ended: error or success, never both.
+func publishRunResult(expName, appName string, err error) {
+	pub := TriggerPublication{Experiment: expName, App: appName, State: "success"} //nolint:exhaustruct // partial initialization
+	if err != nil {
+		pub.State, pub.Error = "error", err
+	}
+
+	pubsub.Publish("trigger-app", pub)
+}
+
 type TriggerPublication struct {
 	Experiment string
 	Verb       string
@@ -49,6 +63,8 @@ const (
 	defaultAppsAnnotation = "phenix/default-apps"
 	osWindows             = "windows"
 	osLinux               = "linux"
+	osRHEL                = "rhel"
+	osCentOS              = "centos"
 )
 
 // Actions returns the supported experiment app lifecycle actions.
@@ -165,6 +181,23 @@ func List() []string {
 	return names
 }
 
+// BuiltinApps returns, sorted, the names of the apps built into phenix: the
+// default apps and the other apps that register themselves. phenix runs a
+// phenix-app-<name> on PATH for any other name.
+func BuiltinApps() []string {
+	names := make([]string, 0, len(apps))
+
+	for name := range apps {
+		if name != "user-shell" {
+			names = append(names, name)
+		}
+	}
+
+	slices.Sort(names)
+
+	return names
+}
+
 // GetApp returns the phenix app with the given name. Preference is given to a
 // user app with the given name to allow users to override internal apps.
 func GetApp(name string) App { //nolint:ireturn // factory
@@ -277,6 +310,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		options = NewOptions(opts...)
 		err     error
 	)
+
+	// External apps in this run share one reading of the cluster's hosts and
+	// the experiment's VMs.
+	ctx = withStageRuntime(ctx)
 
 	if options.Stage == ActionPreStart && !options.Trigger {
 		// Reset status.apps for experiment. Note that this will get rid of any app
@@ -678,13 +715,6 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 
 							err = a.Running(ctx, exp)
 							if err != nil {
-								pubsub.Publish("trigger-app", TriggerPublication{ //nolint:exhaustruct // partial initialization
-									Experiment: exp.Spec.ExperimentName(),
-									App:        app.Name(),
-									State:      "error",
-									Error:      err,
-								})
-
 								plog.Error(
 									plog.TypePhenixApp,
 									"[✗] error periodically running app",
@@ -695,11 +725,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 								)
 							}
 
-							pubsub.Publish("trigger-app", TriggerPublication{ //nolint:exhaustruct // partial initialization
-								Experiment: exp.Spec.ExperimentName(),
-								App:        app.Name(),
-								State:      "success",
-							})
+							publishRunResult(exp.Spec.ExperimentName(), app.Name(), err)
 
 							exp.Status.SetAppRunning(app.Name(), false)
 

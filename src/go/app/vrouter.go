@@ -2,13 +2,13 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/rand/v2"
+	"math/big"
 	"net"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/mitchellh/mapstructure"
 	"inet.af/netaddr"
@@ -374,7 +374,7 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 					net := netaddr.IPPrefixFrom(
 						netaddr.MustParseIP(iface.Address()),
-						uint8(iface.Mask()), //nolint:gosec // integer overflow conversion int -> uint8
+						uint8(iface.Mask()), //nolint:gosec // G115 a prefix length fits in a uint8
 					)
 
 					rules = append(rules, NATRule{SourceAddress: net.Masked().String()}) //nolint:exhaustruct // partial initialization
@@ -1150,15 +1150,16 @@ func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRu
 	return nil
 }
 
+// generateSecret returns n letters and digits drawn from crypto/rand.
 func generateSecret(n int) string {
-	rng := rand.New(rand.NewPCG(uint64(time.Now().UTC().UnixNano()), 1)) //nolint:gosec // weak random number generator
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-	b := make([]rune, n)
+	limit := big.NewInt(int64(len(chars)))
+	b := make([]byte, n)
 
 	for i := range b {
-		b[i] = chars[rng.IntN(len(chars))]
+		idx, _ := rand.Int(rand.Reader, limit) // crypto/rand never fails since Go 1.24
+		b[i] = chars[idx.Int64()]
 	}
 
 	return string(b)

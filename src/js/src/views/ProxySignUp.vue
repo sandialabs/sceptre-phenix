@@ -18,7 +18,7 @@
 
 <script>
   import { usePhenixStore } from '@/store.js';
-  import axiosInstance from '@/utils/axios.js';
+  import * as authApi from '@/api/auth.js';
   import { useErrorNotification } from '@/utils/errorNotif';
 
   export default {
@@ -41,7 +41,6 @@
           this.$buefy.toast.open({
             message: 'You must include a first name',
             type: 'is-warning',
-            duration: 4000,
           });
 
           return;
@@ -51,7 +50,6 @@
           this.$buefy.toast.open({
             message: 'You must include a last name',
             type: 'is-warning',
-            duration: 4000,
           });
 
           return;
@@ -63,8 +61,8 @@
           last_name: this.lastName,
         };
 
-        axiosInstance
-          .post('signup', params)
+        authApi
+          .signUp(params)
           .then((response) => {
             const store = usePhenixStore();
             store.login(response.data, false);

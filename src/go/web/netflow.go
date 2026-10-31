@@ -1,8 +1,11 @@
 package web
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -11,8 +14,12 @@ import (
 	"phenix/api/experiment"
 	putil "phenix/util"
 	"phenix/util/plog"
+	"phenix/web/audit"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 const (
@@ -26,7 +33,7 @@ const (
 )
 
 // GetNetflow - GET /experiments/{exp}/netflow.
-func GetNetflow(w http.ResponseWriter, r *http.Request) {
+func GetNetflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
@@ -44,22 +51,21 @@ func GetNetflow(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			exp,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if flow := experiment.GetNetflow(exp); flow != nil {
 		w.WriteHeader(http.StatusNoContent)
 
-		return
+		return nil
 	}
 
-	w.WriteHeader(http.StatusNotFound)
+	return weberror.New(http.StatusNotFound, "no netflow capture is running")
 }
 
 // StartNetflow - POST /experiments/{exp}/netflow.
-func StartNetflow(w http.ResponseWriter, r *http.Request) {
+func StartNetflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
@@ -67,72 +73,46 @@ func StartNetflow(w http.ResponseWriter, r *http.Request) {
 		exp     = vars["exp"]
 	)
 
-	if !role.Allowed("experiments/netflow", "create", exp) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting netflow capture not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
+	started := audit.Fields{Experiment: exp}
 
-		return
+	if !role.Allowed("experiments/netflow", "create", exp) {
+		audit.Denied(r, audit.NetflowStart, "starting netflow capture not allowed", started)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	err := experiment.StartNetflow(exp)
+	err := experiment.StartNetflow(exp, o.netflowMaxSize)
 	if err != nil {
+		audit.Failure(r, audit.NetflowStart, "starting netflow capture failed", started, err)
 		plog.Error(plog.TypeSystem, "starting netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowAlreadyStarted) {
-			http.Error(w, "neflow already started for experiment", http.StatusBadRequest)
-
-			return
+			return weberror.New(http.StatusBadRequest, "netflow already started for experiment")
 		}
 
 		if errors.Is(err, experiment.ErrExperimentNotFound) {
-			http.Error(w, "unable to find experiment", http.StatusBadRequest)
-
-			return
+			return weberror.New(http.StatusBadRequest, "unable to find experiment")
 		}
 
 		if errors.Is(err, experiment.ErrExperimentNotRunning) {
-			http.Error(w, "cannot start netflow on stopped experiment", http.StatusConflict)
-
-			return
+			return weberror.New(http.StatusConflict, "cannot start netflow on stopped experiment")
 		}
 
 		if errors.Is(err, experiment.ErrNetflowPhenixBridge) {
-			http.Error(
-				w,
-				"cannot start netflow on experiment with default bridge set to 'phenix'",
-				http.StatusConflict,
-			)
-
-			return
+			return weberror.New(http.StatusConflict, "cannot start netflow on experiment with default bridge set to 'phenix'")
 		}
 
-		http.Error(w, "unable to start netflow capture", http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, "unable to start netflow capture")
 	}
 
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"netflow capture started",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	audit.Success(r, audit.NetflowStart, "netflow capture started", started)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // StopNetflow - DELETE /experiments/{exp}/netflow.
-func StopNetflow(w http.ResponseWriter, r *http.Request) {
+func StopNetflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
@@ -140,52 +120,37 @@ func StopNetflow(w http.ResponseWriter, r *http.Request) {
 		exp     = vars["exp"]
 	)
 
-	if !role.Allowed("experiments/netflow", "delete", exp) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping netflow capture not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
+	stopped := audit.Fields{Experiment: exp}
 
-		return
+	if !role.Allowed("experiments/netflow", "delete", exp) {
+		audit.Denied(r, audit.NetflowStop, "stopping netflow capture not allowed", stopped)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := experiment.StopNetflow(exp)
 	if err != nil {
+		audit.Failure(r, audit.NetflowStop, "stopping netflow capture failed", stopped, err)
 		plog.Error(plog.TypeSystem, "stopping netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowNotStarted) {
-			http.Error(w, "not found", http.StatusNotFound)
-
-			return
+			return weberror.New(http.StatusNotFound, "no netflow capture is running for experiment "+exp+
+				": it may already have stopped")
 		}
 
-		http.Error(w, "unable to stop netflow capture", http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, "unable to stop netflow capture")
 	}
 
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"netflow capture stopped",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	audit.Success(r, audit.NetflowStop, "netflow capture stopped", stopped)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // GetNetflowWebSocket - GET /experiments/{exp}/netflow/ws.
 //
 //nolint:funlen // handler
-func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
+func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
@@ -203,16 +168,13 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			exp,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	flow := experiment.GetNetflow(exp)
 	if flow == nil {
-		http.Error(w, "not found", http.StatusNotFound)
-
-		return
+		return weberror.New(http.StatusNotFound, "not found")
 	}
 
 	var (
@@ -223,18 +185,25 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 		upgrader = websocket.Upgrader{ //nolint:exhaustruct // partial initialization
 			ReadBufferSize:  netflowBufferSize,
 			WriteBufferSize: netflowBufferSize,
+			Error:           weberror.UpgradeError,
 		}
 
 		done = make(chan struct{})
+		// closed at shutdown
+		stopping = make(chan struct{})
 	)
 
 	upgrader.CheckOrigin = func(*http.Request) bool { return true }
+
+	if lifecycle.RefuseWhileStopping(w) {
+		return nil
+	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "upgrading connection to WebSocket", "err", err)
 
-		return
+		return nil
 	}
 
 	// Register only after a successful upgrade. A failed handshake must not
@@ -243,7 +212,7 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 	if cb == nil {
 		_ = conn.Close()
 
-		return
+		return nil
 	}
 
 	pongHandler := func(string) error { //nolint:unparam // signature required
@@ -269,6 +238,21 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	plog.Info(plog.TypeSystem, "ws client connected to netflow", "endpoint", endpoint, "client", id)
+
+	// WriteControl and Close may run beside a writer stuck in WriteJSON
+	defer lifecycle.Track("netflow stream", func() {
+		message := websocket.FormatCloseMessage(websocket.CloseGoingAway, lifecycle.CloseReason)
+		_ = conn.WriteControl(websocket.CloseMessage, message, time.Now().Add(lifecycle.CloseWait))
+
+		close(stopping)
+
+		// the reader ends on the client's answering close, or here
+		select {
+		case <-done:
+		case <-time.After(lifecycle.CloseWait):
+			_ = conn.Close()
+		}
+	})()
 
 	go func() { // reader (for pong and close messages)
 		defer close(done) // stop writer
@@ -320,6 +304,8 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 		for {
 			select {
 			case <-done:
+				return
+			case <-stopping:
 				return
 			case msg, open := <-cb:
 				if !open {
@@ -382,4 +368,198 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 		"client",
 		id,
 	)
+
+	return nil
+}
+
+// netflowCaptureTypes are the Content-Type and file extension of each format
+// a recorded netflow capture downloads as.
+var netflowCaptureTypes = map[string][2]string{ //nolint:gochecknoglobals // constant table
+	experiment.NetflowFormatText:  {"text/plain; charset=utf-8", ".txt"},
+	experiment.NetflowFormatCSV:   {"text/csv; charset=utf-8; header=present", ".csv"},
+	experiment.NetflowFormatJSONL: {"application/x-ndjson", ".jsonl"},
+}
+
+// GetNetflowCaptures - GET /experiments/{exp}/netflow/captures.
+func GetNetflowCaptures(w http.ResponseWriter, r *http.Request) error {
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		exp  = mux.Vars(r)["exp"]
+	)
+
+	if !role.Allowed("experiments/netflow", "get", exp) {
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(plog.TypeSecurity, "listing netflow captures not allowed", "user", user, "exp", exp)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	captures, err := experiment.NetflowCaptures(exp)
+	if err != nil {
+		if errors.Is(err, experiment.ErrExperimentNotFound) {
+			return weberror.New(http.StatusNotFound, "experiment "+exp+" not found")
+		}
+
+		plog.Error(plog.TypeSystem, "listing netflow captures", "exp", exp, "err", err)
+
+		return weberror.New(http.StatusInternalServerError, "unable to list netflow captures")
+	}
+
+	body, err := json.Marshal(map[string]any{"captures": captures})
+	if err != nil {
+		return weberror.New(http.StatusInternalServerError, "unable to list netflow captures")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+
+	return nil
+}
+
+// DownloadNetflowCapture - GET|HEAD /experiments/{exp}/netflow/captures/{id}?format=.
+//
+// Text is the recorded file, resumable; CSV and JSONL are converted as they
+// are sent, like the files zip. A live capture converts as it was when opened.
+func DownloadNetflowCapture(w http.ResponseWriter, r *http.Request) error {
+	var (
+		role   = middleware.RoleFromContext(r.Context())
+		vars   = mux.Vars(r)
+		exp    = vars["exp"]
+		id     = vars["id"]
+		format = r.URL.Query().Get("format")
+		head   = r.Method == http.MethodHead
+	)
+
+	if format == "" {
+		format = experiment.NetflowFormatText
+	}
+
+	fields := audit.Fields{
+		Experiment: exp, File: "netflow/" + id + ".txt",
+		Extra: []any{"phenix.netflow.capture", id, "phenix.netflow.format", format},
+	}
+
+	if !role.Allowed("experiments/netflow", "get", exp) {
+		if !head {
+			audit.Denied(r, audit.NetflowDownload, "downloading netflow capture not allowed", fields)
+		}
+
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	fail := func(status int, msg string, err error) error {
+		if !head {
+			audit.Failure(r, audit.NetflowDownload, "downloading netflow capture failed", fields, err)
+		}
+
+		return weberror.New(status, msg)
+	}
+
+	kind, ok := netflowCaptureTypes[format]
+	if !ok {
+		return fail(http.StatusBadRequest, "format must be text, csv or jsonl", experiment.ErrInvalidNetflowFormat)
+	}
+
+	f, capture, err := experiment.OpenNetflowCapture(exp, id)
+	if err != nil {
+		switch {
+		case errors.Is(err, experiment.ErrInvalidNetflowCapture):
+			return fail(http.StatusBadRequest, "invalid netflow capture id", err)
+		case errors.Is(err, experiment.ErrExperimentNotFound):
+			return fail(http.StatusNotFound, "experiment "+exp+" not found", err)
+		case errors.Is(err, experiment.ErrNetflowCaptureNotFound):
+			return fail(http.StatusNotFound, "netflow capture "+id+" not found", err)
+		default:
+			plog.Error(plog.TypeSystem, "opening netflow capture", "exp", exp, "id", id, "err", err)
+
+			return fail(http.StatusInternalServerError, "unable to open netflow capture", err)
+		}
+	}
+
+	defer func() { _ = f.Close() }()
+
+	d := util.Download{Path: f.Name(), Name: exp + "-netflow-" + id + kind[1], ContentType: kind[0], MaxSize: 0}
+
+	if format == experiment.NetflowFormatText {
+		return sendNetflowText(w, r, f, d, fields)
+	}
+
+	return sendNetflowExport(w, r, io.LimitReader(f, capture.Size), d, format, fields)
+}
+
+// sendNetflowText sends a recorded capture's file as it is, resumably.
+func sendNetflowText(w http.ResponseWriter, r *http.Request, f *os.File, d util.Download, fields audit.Fields) error {
+	served, err := util.ServeOpenFile(w, r, f, d)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "sending netflow capture", "exp", fields.Experiment, "file", fields.File, "err", err)
+
+		if r.Method != http.MethodHead {
+			audit.Failure(r, audit.NetflowDownload, "downloading netflow capture failed", fields, err)
+		}
+
+		return weberror.New(http.StatusInternalServerError, "unable to read netflow capture")
+	}
+
+	// once per download, not per resumed range or HEAD
+	if served.Started {
+		if rng := r.Header.Get("Range"); rng != "" {
+			fields.Extra = append(fields.Extra, "http.request.range", rng)
+		}
+
+		audit.Success(r, audit.NetflowDownload, "downloaded netflow capture", fields)
+	}
+
+	return nil
+}
+
+// sendNetflowExport sends a capture's lines from src converted to format, as
+// they are converted; HEAD sends only the headers.
+func sendNetflowExport(
+	w http.ResponseWriter, r *http.Request, src io.Reader, d util.Download, format string, fields audit.Fields,
+) error {
+	start := func() io.Writer {
+		header := w.Header()
+		header.Set("Content-Type", d.ContentType)
+		header.Set("Content-Disposition", util.Attachment(d.Name))
+		header.Set("X-Content-Type-Options", "nosniff")
+		// built as it is sent, so it cannot be resumed or cached
+		header.Set("Accept-Ranges", "none")
+		header.Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+
+		return w
+	}
+
+	if r.Method == http.MethodHead {
+		start()
+
+		return nil
+	}
+
+	var started bool
+
+	exported, err := experiment.ExportNetflow(r.Context(), func() io.Writer {
+		started = true
+
+		return start()
+	}, src, format)
+
+	fields.Extra = append(fields.Extra, "phenix.netflow.flows", exported.Flows, "phenix.netflow.skipped", exported.Skipped)
+
+	if err != nil {
+		audit.Failure(r, audit.NetflowDownload, "downloading netflow capture failed", fields, err)
+
+		if started {
+			// aborting tells the client the export is incomplete
+			plog.Error(plog.TypeSystem, "streaming netflow capture", "exp", fields.Experiment, "file", fields.File, "err", err)
+			panic(http.ErrAbortHandler)
+		}
+
+		return weberror.New(http.StatusInternalServerError, "unable to export netflow capture")
+	}
+
+	audit.Success(r, audit.NetflowDownload, "downloaded netflow capture", fields)
+
+	return nil
 }

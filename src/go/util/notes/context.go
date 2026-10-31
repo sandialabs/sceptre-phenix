@@ -45,6 +45,14 @@ func Context(ctx context.Context, flush bool) context.Context {
 	return context.WithValue(ctx, noteFlush{}, flush)
 }
 
+// Flushes reports whether ctx logs a note added with flush set at once, as the CLI's context does; the web's keeps
+// its notes for the caller to read.
+func Flushes(ctx context.Context) bool {
+	flushable, _ := ctx.Value(noteFlush{}).(bool)
+
+	return flushable
+}
+
 func AddErrors(ctx context.Context, flush bool, e ...error) {
 	uuid, ok := ctx.Value(noteUUID{}).(string)
 

@@ -19,15 +19,17 @@ import (
 	"phenix/api/experiment"
 	"phenix/types"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 const maxFileServerUploadMemory = 32 << 20
-const fileServerTokenCookie = "phenix_file_server_token"
+const fileServerTokenCookie = "phenix_file_server_token" //nolint:gosec // G101 a cookie name, not a credential
 
 const fileServerIndexHTML = `<!doctype html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -143,7 +145,7 @@ const fileServerIndexHTML = `<!doctype html>
 `
 
 const fileServerLoginHTML = `<!doctype html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -207,21 +209,17 @@ type fileServerResponseRecorder struct {
 	status int
 }
 
-// StartFileServer starts an authenticated experiment file upload server.
-func StartFileServer(endpoint string, jwtKey, proxyAuthHeader string) {
+// newFileServer returns the authenticated experiment file upload server.
+func newFileServer(endpoint string, jwtKey, proxyAuthHeader string) *http.Server {
 	mux := http.NewServeMux()
 	authEnabled := jwtKey != ""
 	mux.HandleFunc("/", showFileServerIndex(authEnabled))
 	mux.HandleFunc("/login", fileServerLogin(proxyAuthHeader))
 	mux.HandleFunc("/upload", uploadExperimentFiles(authEnabled))
 
-	plog.Info(plog.TypeSystem, "starting file server", "endpoint", endpoint)
-	handler := fileServerCookieAuth(middleware.Auth(jwtKey, proxyAuthHeader)(mux), jwtKey)
+	handler := fileServerCookieAuth(middleware.Auth(jwtKey, proxyAuthHeader, middleware.OnRefusal(audit.TokenRefused))(mux), jwtKey)
 
-	//nolint:gosec // simple opt-in upload server; no timeouts to match UI server style
-	if err := http.ListenAndServe(endpoint, handler); err != nil {
-		plog.Error(plog.TypeSystem, "serving file server", "err", err)
-	}
+	return newHTTPServer(endpoint, handler)
 }
 
 // fileServerCookieAuth bridges fileserver login cookies to phenix auth headers.
@@ -360,7 +358,7 @@ func fileServerLogin(proxyAuthHeader string) http.HandlerFunc {
 			setFileServerTokenCookie(w, token)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			weberror.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
 }
@@ -389,7 +387,9 @@ func loginFileServerUser(r *http.Request, req *LoginRequest) (string, error) {
 	}
 
 	rec := httptest.NewRecorder()
-	Login(rec, loginReq)
+	if err := Login(rec, loginReq); err != nil {
+		return "", err
+	}
 
 	if rec.Code < http.StatusOK || rec.Code >= http.StatusMultipleChoices {
 		return "", fmt.Errorf("%s", rec.Body.String())
@@ -446,96 +446,121 @@ func clearFileServerTokenCookie(w http.ResponseWriter) {
 	})
 }
 
+// invalidateExperimentFiles drops an experiment's cached file listing after
+// the file server changes its files; tests replace it to see that it does.
+var invalidateExperimentFiles = experiment.InvalidateFiles //nolint:gochecknoglobals // replaced by tests
+
 // uploadExperimentFiles stores posted files under the selected experiment files directory.
+//
+//nolint:funlen // handler
 func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			weberror.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 
 			return
 		}
 
 		if err := r.ParseMultipartForm(maxFileServerUploadMemory); err != nil {
-			http.Error(w, "parsing upload: "+err.Error(), http.StatusBadRequest)
+			weberror.Error(w, "parsing upload: "+err.Error(), http.StatusBadRequest)
 
 			return
 		}
 
 		exp, err := experiment.Get(r.FormValue("experiment"))
 		if err != nil {
-			http.Error(w, "getting experiment: "+err.Error(), http.StatusBadRequest)
+			weberror.Error(w, "getting experiment: "+err.Error(), http.StatusBadRequest)
 
 			return
 		}
 
+		uploaded := audit.Fields{Experiment: exp.Metadata.Name}
+
 		role := middleware.RoleFromContext(r.Context())
 		if !role.Allowed("experiments/files", "create", exp.Metadata.Name) {
-			http.Error(w, "forbidden", http.StatusForbidden)
+			audit.Denied(r, audit.FileUpload, "uploading experiment files not allowed", uploaded)
+			weberror.Error(w, "forbidden", http.StatusForbidden)
 
 			return
+		}
+
+		// failed answers an upload that failed with err, auditing it
+		failed := func(f audit.Fields, msg string, err error) {
+			audit.Failure(r, audit.FileUpload, "uploading experiment file failed", f, err)
+			weberror.Error(w, msg+": "+err.Error(), http.StatusInternalServerError)
 		}
 
 		files := r.MultipartForm.File["files"]
 		if len(files) == 0 {
-			http.Error(w, "no files uploaded", http.StatusBadRequest)
+			weberror.Error(w, "no files uploaded", http.StatusBadRequest)
 
 			return
 		}
 
 		dir := exp.FilesDir()
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			http.Error(w, "creating experiment files directory: "+err.Error(), http.StatusInternalServerError)
+		if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // G703 the experiment's own files directory
+			failed(uploaded, "creating experiment files directory", err)
 
 			return
 		}
 
-		var uploaded int
+		// the files written, even by an upload that then fails, change the
+		// experiment's listing
+		defer invalidateExperimentFiles(exp.Metadata.Name)
+
+		var count int
 		for _, header := range files {
 			name := filepath.Base(header.Filename)
 			if name == "" || name == "." {
-				http.Error(w, "invalid upload filename", http.StatusBadRequest)
+				weberror.Error(w, "invalid upload filename", http.StatusBadRequest)
 
 				return
 			}
+
+			file := uploaded
+			file.Target = filepath.Join(dir, name)
 
 			clientFile, err := header.Open()
 			if err != nil {
-				http.Error(w, "opening upload: "+err.Error(), http.StatusInternalServerError)
+				failed(file, "opening upload", err)
 
 				return
 			}
 
-			target, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+			target, err := os.OpenFile(file.Target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
 				_ = clientFile.Close()
-				http.Error(w, "creating target file: "+err.Error(), http.StatusInternalServerError)
+				failed(file, "creating target file", err)
 
 				return
 			}
 
-			_, copyErr := io.Copy(target, clientFile)
+			written, copyErr := io.Copy(target, clientFile)
 			closeClientErr := clientFile.Close()
 			closeTargetErr := target.Close()
 			if copyErr != nil {
-				http.Error(w, "saving upload: "+copyErr.Error(), http.StatusInternalServerError)
+				failed(file, "saving upload", copyErr)
 
 				return
 			}
 			if closeClientErr != nil {
-				http.Error(w, "closing upload: "+closeClientErr.Error(), http.StatusInternalServerError)
+				failed(file, "closing upload", closeClientErr)
 
 				return
 			}
 			if closeTargetErr != nil {
-				http.Error(w, "closing target file: "+closeTargetErr.Error(), http.StatusInternalServerError)
+				failed(file, "closing target file", closeTargetErr)
 
 				return
 			}
 
-			uploaded++
+			file.Extra = []any{"file.size", written}
+			audit.Success(r, audit.FileUpload, "uploaded experiment file", file)
+
+			count++
 		}
 
-		renderFileServerIndex(w, r, fmt.Sprintf("Uploaded %d file(s) to %s.", uploaded, exp.Metadata.Name), authEnabled)
+		renderFileServerIndex(w, r, fmt.Sprintf("Uploaded %d file(s) to %s.", count, exp.Metadata.Name), authEnabled)
 	}
 }
 
@@ -543,7 +568,7 @@ func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 func renderFileServerIndex(w http.ResponseWriter, r *http.Request, message string, authEnabled bool) {
 	experiments, err := experiment.List()
 	if err != nil {
-		http.Error(w, "listing experiments: "+err.Error(), http.StatusInternalServerError)
+		weberror.Error(w, "listing experiments: "+err.Error(), http.StatusInternalServerError)
 
 		return
 	}

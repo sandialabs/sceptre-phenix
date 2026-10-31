@@ -11,11 +11,16 @@
           <p>Host: {{ expModal.vm.host }}</p>
           <p>Description: {{ expModal.vm.description || 'unknown' }}</p>
           <p>IP: {{ formatStringify(expModal.vm.ipv4) }}</p>
-          <p>CPU(s): {{ expModal.vm.cpus }}</p>
+          <p>
+            {{ pluralWord(expModal.vm.cpus, 'CPU') }}: {{ expModal.vm.cpus }}
+          </p>
           <p>Memory: {{ formatRAM(expModal.vm.ram) }}</p>
           <p>Disk: {{ expModal.vm.disk }}</p>
           <p>Uptime: {{ formatUptime(expModal.vm.uptime) }}</p>
-          <p>Network(s): {{ formatStringify(expModal.vm.networks) }}</p>
+          <p>
+            {{ pluralWord(expModal.vm.networks?.length, 'Network') }}:
+            {{ formatStringify(expModal.vm.networks) }}
+          </p>
           <p>Taps: {{ formatStringify(expModal.vm.taps) }}</p>
         </section>
       </div>
@@ -36,6 +41,9 @@
                   <td style="width: 50%">{{ vlan.alias }}</td>
                   <td>
                     <b-numberinput
+                      :aria-label="`VLAN ID for alias ${vlan.alias}`"
+                      :aria-minus-label="`Decrease VLAN ID for alias ${vlan.alias}`"
+                      :aria-plus-label="`Increase VLAN ID for alias ${vlan.alias}`"
                       min="0"
                       max="4094"
                       type="is-light"
@@ -52,32 +60,6 @@
         <footer class="modal-card-foot buttons is-right">
           <button class="button is-light" @click="updateVLANs">
             Update VLAN(s)
-          </button>
-        </footer>
-      </div>
-    </b-modal>
-    <b-modal
-      v-model="fileViewerModal.active"
-      @close="resetFileViewerModal"
-      has-modal-card>
-      <div class="modal-card" style="width: 50em">
-        <header class="modal-card-head x-modal-dark">
-          <p class="modal-card-title x-config-text">
-            {{ fileViewerModal.title }}
-          </p>
-        </header>
-        <section class="modal-card-body x-modal-dark">
-          <div class="control">
-            <textarea
-              class="textarea x-config-text has-fixed-size"
-              rows="30"
-              v-model="fileViewerModal.contents"
-              readonly></textarea>
-          </div>
-        </section>
-        <footer class="modal-card-foot x-modal-dark buttons is-right">
-          <button class="button is-dark" @click="resetFileViewerModal">
-            Exit
           </button>
         </footer>
       </div>
@@ -113,9 +95,10 @@
             <b-button
               v-if="
                 selectedRows.every((vm) =>
-                  roleAllowed('vms', 'patch', experiment.name + '/' + vm.name),
+                  roleAllowed('vms', 'patch', experiment.name + '/' + vm),
                 )
               "
+              aria-label="Set selected VMs to boot"
               class="button is-light boot"
               icon-right="bolt"
               @click="setBoot(false)" />
@@ -126,9 +109,10 @@
             <b-button
               v-if="
                 selectedRows.every((vm) =>
-                  roleAllowed('vms', 'patch', experiment.name + '/' + vm.name),
+                  roleAllowed('vms', 'patch', experiment.name + '/' + vm),
                 )
               "
+              aria-label="Set selected VMs to not boot"
               class="button is-light dnb"
               icon-right="bolt"
               @click="setBoot(true)" />
@@ -136,25 +120,27 @@
         </b-field>
         <hr style="width: 1px; height: 100%; margin: 0" />
       </template>
-      <b-field>
+      <b-field v-if="roleAllowed('experiments', 'patch', experiment.name)">
         <b-tooltip
           label="assign VLAN ID to alias"
           type="is-light"
           position="is-top">
           <b-button
+            aria-label="Assign VLAN IDs to aliases"
             class="button is-light"
             icon-right="network-wired"
             @click="vlanModal.active = true"></b-button>
         </b-tooltip>
       </b-field>
-      <b-field v-if="activeTab == 1">
+      <b-field v-if="activeTab == TAB.FILES">
         <b-tooltip label="search on a specific category" type="is-light">
           <b-select
-            v-model="filesTable.category"
+            aria-label="Filter files by category"
+            v-model="fileCategory"
             @update:modelValue="(value) => assignCategory(value)"
             placeholder="All Categories">
             <option
-              v-for="(category, index) in filesTable.categories"
+              v-for="(category, index) in fileCategories"
               :key="index"
               :value="category">
               {{ category }}
@@ -162,23 +148,23 @@
           </b-select>
         </b-tooltip>
       </b-field>
-      <b-field>
+      <b-field :addons="false" class="has-addons">
         <b-autocomplete
           v-model="searchName"
           :placeholder="searchPlaceholder"
           icon="search"
-          :data="searchHistory"
+          :data="searchOptions"
           @typing="searchVMs"
           @select="(option) => searchVMs(option)">
           <template #empty>No results found</template>
         </b-autocomplete>
-        <p class="control">
+        <p v-if="searchName || fileCategory" class="control">
           <button
             aria-label="Clear VM search"
             class="button input-button"
             @click="
               searchVMs('');
-              filesTable.category = null;
+              fileCategory = null;
             ">
             <b-icon icon="window-close"></b-icon>
           </button>
@@ -194,7 +180,8 @@
             @click="start"></b-button>
         </b-tooltip>
       </b-field>
-      <b-field>
+      <b-field
+        v-if="roleAllowed('experiments/schedule', 'create', experiment.name)">
         <b-tooltip
           label="menu for scheduling hosts to the experiment"
           type="is-light"
@@ -218,7 +205,7 @@
         </b-tooltip>
       </b-field>
       <router-link
-        v-if="roleAllowed('experiments', 'get', experiment.name)"
+        :aria-label="`View state of health for experiment ${$route.params.id}`"
         class="button is-light"
         :to="{ name: 'soh', params: { id: $route.params.id } }">
         <b-icon icon="heartbeat"></b-icon>
@@ -226,7 +213,18 @@
     </b-field>
     <div style="margin-top: -4em">
       <b-tabs v-model="activeTab">
-        <b-tab-item label="VMs" icon="desktop">
+        <b-tab-item :value="TAB.VMS" label="VMs" icon="desktop">
+          <b-field v-if="paginationNeeded" grouped position="is-right">
+            <div class="control is-flex">
+              <b-switch
+                v-model="table.isPaginated"
+                @update:modelValue="updateExperiment()"
+                size="is-small"
+                type="is-light"
+                >Paginate</b-switch
+              >
+            </div>
+          </b-field>
           <b-table
             :key="table.key"
             :data="experiment.vms"
@@ -245,19 +243,21 @@
             backend-sorting
             :default-sort-direction="table.defaultSortDirection"
             default-sort="name"
-            @sort="onSort"
-            ref="vmTable">
+            scrollable
+            @sort="onSort">
             <template #empty>
               <section class="section">
                 <div class="content has-text-white has-text-centered">
-                  Your search turned up empty!
+                  {{ vmsEmptyText }}
                 </div>
               </section>
             </template>
             <b-table-column field="multiselect" label="">
               <template v-slot:header>
                 <b-tooltip label="Select/Unselect All" type="is-dark">
-                  <b-checkbox v-model="checkAll"></b-checkbox>
+                  <b-checkbox v-model="checkAll">
+                    <span class="is-sr-only">Select all VMs</span>
+                  </b-checkbox>
                 </b-tooltip>
               </template>
               <template v-slot:default="props">
@@ -265,11 +265,20 @@
                   <b-checkbox
                     :disabled="props.row.external"
                     v-model="selectedRows"
-                    :native-value="props.row.name"></b-checkbox>
+                    :native-value="props.row.name">
+                    <span class="is-sr-only">
+                      Select VM {{ props.row.name }}
+                    </span>
+                  </b-checkbox>
                 </div>
               </template>
             </b-table-column>
-            <b-table-column field="name" label="Node" sortable v-slot="props">
+            <b-table-column
+              field="name"
+              label="Node"
+              sortable
+              header-class="sort-inline"
+              v-slot="props">
               <template
                 v-if="
                   !props.row.external &&
@@ -280,7 +289,7 @@
                   )
                 ">
                 <b-tooltip
-                  label="get info on the vm"
+                  label="get info on the VM"
                   type="is-dark"
                   class="is-clickable">
                   <div class="field">
@@ -303,6 +312,7 @@
               label="Host"
               width="200"
               sortable
+              header-class="sort-inline"
               v-slot="props">
               <template
                 v-if="
@@ -314,10 +324,11 @@
                   )
                 ">
                 <b-tooltip
-                  label="assign the vm to a specific host"
+                  label="assign the VM to a specific host"
                   type="is-dark">
                   <b-field>
                     <b-select
+                      :aria-label="`Host for VM ${props.row.name}`"
                       v-model="props.row.host"
                       expanded
                       @update:modelValue="
@@ -356,6 +367,7 @@
               label="CPUs"
               width="100"
               sortable
+              header-class="sort-inline"
               centered
               v-slot="props">
               <template
@@ -367,8 +379,11 @@
                     experiment.name + '/' + props.row.name,
                   )
                 ">
-                <b-tooltip label="menu for assigning vm(s) cpus" type="is-dark">
+                <b-tooltip
+                  label="menu for assigning the VM's CPUs"
+                  type="is-dark">
                   <b-select
+                    :aria-label="`CPUs for VM ${props.row.name}`"
                     v-model="props.row.cpus"
                     expanded
                     @update:modelValue="
@@ -390,6 +405,7 @@
               label="Memory"
               width="112"
               sortable
+              header-class="sort-inline"
               centered
               v-slot="props">
               <template
@@ -402,9 +418,10 @@
                   )
                 ">
                 <b-tooltip
-                  label="menu for assigning vm(s) memory"
+                  label="menu for assigning the VM's memory"
                   type="is-dark">
                   <b-select
+                    :aria-label="`Memory for VM ${props.row.name}`"
                     v-model="props.row.ram"
                     expanded
                     @update:modelValue="
@@ -435,29 +452,31 @@
                     experiment.name + '/' + props.row.name,
                   )
                 ">
-                <b-tooltip
-                  :label="getDiskToolTip(props.row.disk)"
-                  type="is-dark">
-                  <b-select
-                    v-model="props.row.disk"
-                    expanded
-                    @update:modelValue="
-                      (value) => assignDisk(props.row.name, value)
-                    ">
-                    <option v-for="(d, index) in disks" :key="index" :value="d">
-                      {{ getBaseName(d) }}
-                    </option>
-                  </b-select>
-                </b-tooltip>
+                <DiskSelect
+                  :model-value="props.row.disk"
+                  :disks="disks"
+                  :label="`Disk for VM ${props.row.name}`"
+                  expanded
+                  @update:model-value="
+                    (path) => assignDisk(props.row.name, path)
+                  " />
               </template>
               <template v-else>
-                {{ getBaseName(props.row.disk) || 'unknown' }}
+                <span :title="props.row.disk">
+                  {{ diskText(props.row.disk) }}
+                </span>
+                <DiskWarning
+                  v-if="diskWarnings(disks, props.row.disk).length"
+                  :reasons="diskWarnings(disks, props.row.disk)"
+                  :detail="chainProblem(findDisk(disks, props.row.disk))"
+                  :files-dir="filesDir(disks)" />
               </template>
             </b-table-column>
             <b-table-column
               field="inject_partition"
               label="Partition"
               sortable
+              header-class="sort-inline"
               centered
               v-slot="props">
               <template
@@ -473,6 +492,7 @@
                   label="menu for assigning inject partition"
                   type="is-dark">
                   <b-select
+                    :aria-label="`Partition for VM ${props.row.name}`"
                     v-model="props.row.inject_partition"
                     expanded
                     @update:modelValue="
@@ -491,14 +511,13 @@
             </b-table-column>
             <b-table-column label="Labels" centered v-slot="props">
               <b-tooltip label="View/Edit Labels" type="is-dark">
-                <div @click="showTagsModal(props.row)" class="is-clickable">
-                  <font-awesome-layers full-width>
-                    <font-awesome-icon icon="tag" />
-                    <font-awesome-layers-text
-                      counter
-                      :value="tagCount(props.row.tags)" />
-                  </font-awesome-layers>
-                </div>
+                <button
+                  type="button"
+                  class="plain-button is-clickable"
+                  :aria-label="`Labels of ${props.row.name}: ${labelCount(props.row)}`"
+                  @click="showTagsModal(props.row)">
+                  <VmLabelCount :tags="props.row.tags" />
+                </button>
               </b-tooltip>
             </b-table-column>
             <b-table-column label="Boot" centered v-slot="props">
@@ -514,11 +533,15 @@
                   :label="getBootLabel(props.row)"
                   type="is-dark"
                   class="is-clickable">
-                  <div @click="updateDnb(props.row)">
+                  <button
+                    type="button"
+                    class="plain-button"
+                    :aria-label="getBootLabel(props.row)"
+                    @click="updateDnb(props.row)">
                     <font-awesome-icon
                       :class="bootDecorator(props.row)"
                       icon="bolt" />
-                  </div>
+                  </button>
                 </b-tooltip>
               </template>
             </b-table-column>
@@ -531,9 +554,13 @@
                     experiment.name + '/' + props.row.name,
                   )
                 ">
-                <b-tooltip :label="getSnapshotLabel(props.row)" type="is-dark">
+                <b-tooltip
+                  :label="getSnapshotLabel(props.row)"
+                  type="is-dark"
+                  position="is-left">
                   <div>
                     <b-select
+                      :aria-label="`Persistence for VM ${props.row.name}`"
                       v-model="props.row.snapshot"
                       expanded
                       @update:modelValue="
@@ -547,130 +574,20 @@
               </template>
             </b-table-column>
           </b-table>
-          <br />
-          <b-field v-if="paginationNeeded" grouped position="is-right">
-            <div class="control is-flex">
-              <b-switch
-                v-model="table.isPaginated"
-                @update:modelValue="
-                  updateExperiment();
-                  changePaginate();
-                "
-                size="is-small"
-                type="is-light"
-                >Paginate</b-switch
-              >
-            </div>
-          </b-field>
         </b-tab-item>
-        <b-tab-item label="Files" icon="file-alt">
-          <b-table
-            :data="files"
-            :paginated="filesTable.isPaginated && filesPaginationNeeded"
-            aria-next-label="Next page"
-            aria-previous-label="Previous page"
-            aria-page-label="Page"
-            aria-current-label="Current page"
-            backend-pagination
-            :total="filesTable.total"
-            :per-page="filesTable.perPage"
-            v-model:current-page="filesTable.currentPage"
-            @page-change="onFilesPageChange"
-            :pagination-simple="filesTable.isPaginationSimple"
-            :pagination-size="filesTable.paginationSize"
-            backend-sorting
-            :default-sort-direction="filesTable.defaultSortDirection"
-            default-sort="date"
-            @sort="onFilesSort">
-            <template #empty>
-              <section class="section">
-                <div class="content has-text-white has-text-centered">
-                  No Files Are Available!
-                </div>
-              </section>
-            </template>
-            <b-table-column field="name" label="Name" sortable v-slot="props">
-              <template v-if="props.row.plainText">
-                <b-tooltip label="view file" type="is-dark">
-                  <div class="field is-clickable">
-                    <div @click="viewFile(props.row)">
-                      {{ props.row.name }}
-                    </div>
-                  </div>
-                </b-tooltip>
-              </template>
-              <template v-else>
-                {{ props.row.name }}
-              </template>
-            </b-table-column>
-            <b-table-column field="path" label="Path" centered v-slot="props">
-              <b-tooltip
-                :label="
-                  '/phenix/images/' +
-                  experiment.name +
-                  '/files/' +
-                  props.row.path
-                "
-                type="is-dark">
-                <b-icon icon="info-circle" size="is-small" />
-              </b-tooltip>
-            </b-table-column>
-            <b-table-column field="categories" label="Category" v-slot="props">
-              <b-taglist>
-                <b-tag
-                  v-for="(c, index) in props.row.categories"
-                  :key="index"
-                  type="is-light"
-                  >{{ c }}</b-tag
-                >
-              </b-taglist>
-            </b-table-column>
-            <b-table-column
-              field="date"
-              label="Date"
-              sortable
-              centered
-              v-slot="props">
-              {{ props.row.date }}
-            </b-table-column>
-            <b-table-column
-              field="size"
-              label="Size"
-              sortable
-              centered
-              v-slot="props">
-              {{ formatFileSize(props.row.size) }}
-            </b-table-column>
-            <b-table-column
-              field="actions"
-              label="Actions"
-              centered
-              v-slot="props">
-              <b-button
-                :aria-label="`Download ${props.row.name}`"
-                class="button is-light is-small action"
-                icon-left="file-download"
-                @click="
-                  downloadFile(experiment.name, props.row.name, props.row.path)
-                ">
-              </b-button>
-            </b-table-column>
-          </b-table>
-          <br />
-          <b-field v-if="filesPaginationNeeded" grouped position="is-right">
-            <div class="control is-flex">
-              <b-switch
-                v-model="filesTable.isPaginated"
-                @update:modelValue="
-                  updateFiles();
-                  changeFilesPaginate();
-                "
-                size="is-small"
-                type="is-light"
-                >Paginate</b-switch
-              >
-            </div>
-          </b-field>
+        <b-tab-item
+          :value="TAB.FILES"
+          label="Files"
+          icon="file-alt"
+          :visible="canListFiles">
+          <ExperimentFilesTab
+            ref="filesTab"
+            paginate-key="stopped-files"
+            :filter="filesFilter"
+            :category="fileCategory"
+            @categories="(list) => (fileCategories = list)"
+            @found="addSearchHistory"
+            @waiting="(on) => (isWaiting = on)" />
         </b-tab-item>
       </b-tabs>
     </div>
@@ -682,79 +599,229 @@
 </template>
 
 <script>
+  import DiskWarning from '@/components/DiskWarning.vue';
+  import DiskSelect from '@/components/experiment/DiskSelect.vue';
+  import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
+  import {
+    TAB,
+    sameQuery,
+    searchFromQuery,
+    tabFromQuery,
+    tabQuery,
+    withoutVm,
+  } from '@/components/experiment/experimentTabs.js';
   import { debounce } from 'lodash-es';
-  import { tagCount } from '@/utils/tagCount';
-  import { usePhenixStore } from '@/store';
+  import { addSearch } from '@/utils/searchHistory.js';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import VMLabelsModal from '@/components/VMLabelsModal.vue';
+  import VmLabelCount from '@/components/experiment/VmLabelCount.vue';
+  import { tagCount } from '@/utils/tagCount';
   import { roleAllowed } from '@/utils/rbac.js';
-  import axiosInstance from '@/utils/axios.js';
+  import { plural, pluralWord } from '@/utils/plural.js';
+  import * as disksApi from '@/api/disks.js';
+  import * as experimentsApi from '@/api/experiments.js';
+  import * as vmsApi from '@/api/vms.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { escapeHTML } from '@/utils/escapeHTML.js';
+  import { notifyOutcome } from '@/utils/operations.js';
+  import {
+    chainProblem,
+    diskLabel,
+    diskWarnings,
+    filesDir,
+    findDisk,
+  } from '@/utils/diskChain.js';
+  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import {
+    schedulableHostNames,
+    stoppedExperimentKey,
+  } from '@/utils/pageData.js';
+  import { useTable } from '@/utils/useTable.js';
 
   export default {
+    emits: ['running'],
+    components: { DiskSelect, DiskWarning, ExperimentFilesTab, VmLabelCount },
     mixins: [formattingMixin],
     setup() {
-      return { roleAllowed, tagCount };
+      const { table } = useTable({
+        name: 'stopped-vms',
+        fields: { key: 0, total: 0, sortColumn: 'name' },
+      });
+      return {
+        table,
+        roleAllowed,
+        TAB,
+        pluralWord,
+        chainProblem,
+        diskWarnings,
+        filesDir,
+        findDisk,
+      };
     },
     beforeUnmount() {
+      this.unmounting = true;
+      this.searchVMs.cancel();
       removeWsHandler(this.handleWs);
+      this.loader.stop();
+    },
+
+    mounted() {
+      // a link to the Files tab opens it without the activeTab watcher
+      if (this.activeTab === TAB.FILES) this.$refs.filesTab?.reload();
     },
 
     async created() {
-      addWsHandler(this.handleWs);
-      this.updateExperiment();
-    },
-
-    computed: {
-      // Intentionally restores the persisted pagination toggle as a side
-      // effect on first access.
-      /* eslint-disable vue/no-side-effects-in-computed-properties */
-      paginationNeeded() {
-        var user = usePhenixStore().username;
-
-        if (localStorage.getItem(user + '.lastPaginate')) {
-          this.table.isPaginated =
-            localStorage.getItem(user + '.lastPaginate') == 'true';
-        }
-
-        if (this.table.total <= this.table.perPage) {
-          return false;
-        } else {
-          return true;
-        }
-      },
-
-      filesPaginationNeeded() {
-        var user = usePhenixStore().username;
-
-        if (localStorage.getItem(user + '.lastPaginate')) {
-          this.filesTable.isPaginated =
-            localStorage.getItem(user + '.lastPaginate') == 'true';
-        }
-
-        if (this.filesTable.total <= this.filesTable.perPage) {
-          return false;
-        } else {
-          return true;
-        }
-      },
-      /* eslint-enable vue/no-side-effects-in-computed-properties */
-    },
-
-    methods: {
-      searchVMs: debounce(function (term) {
-        if (term === null) {
-          term = '';
-        }
-        this.searchName = term;
-        if (this.activeTab == 0) {
+      // the URL the page opened on, which already names its tab and search
+      this.syncedQuery = this.$route.query;
+      this.searchVMs = debounce((term) => {
+        this.searchName = term ?? '';
+        this.syncQuery();
+        if (this.activeTab == TAB.VMS) {
           this.updateExperiment();
           return;
         }
 
-        this.updateFiles();
-      }, 250),
+        this.$refs.filesTab?.reload();
+      }, 250);
+      addWsHandler(this.handleWs);
+      this.loader = createPageLoader({
+        // only the default view is cached, as its request is the same each
+        // visit
+        key: () =>
+          this.vmFilter || this.table.isPaginated || !this.defaultSort
+            ? null
+            : stoppedExperimentKey(this.$route.params.id),
+        fetch: async (signal) => {
+          const params = {
+            show_dnb: true,
+            filter: this.vmFilter,
+            sortCol: this.table.sortColumn,
+            sortDir: this.table.defaultSortDirection,
+          };
+
+          if (this.table.isPaginated) {
+            params.pageNum = this.table.currentPage;
+            params.perPage = this.table.perPage;
+          }
+
+          const resp = await experimentsApi.getExperiment(
+            this.$route.params.id,
+            { params, signal },
+          );
+          return resp.data;
+        },
+        apply: (experiment) => {
+          if (experiment.running) {
+            // started since the page was opened; Base shows the running view
+            this.$emit('running', true);
+            return;
+          }
+          this.experiment = experiment;
+          // vms holds only the current page; vm_count is the total before paging
+          this.table.total = experiment.vm_count ?? 0;
+
+          this.vlanModal.vlans = this.experiment.vlans.map((vlan) => {
+            return vlan;
+          });
+
+          // Only add successful searches to the search history
+          if (this.activeTab == TAB.VMS && this.table.total > 0) {
+            this.addSearchHistory();
+          }
+          this.openLinkedVm();
+        },
+        refresh: () => {
+          this.updateLists();
+          return this.loader.load();
+        },
+      });
+      this.loader.start();
+      this.updateLists();
+    },
+
+    computed: {
+      // the header checkbox: whether every VM on this page that can be
+      // selected is, and selecting all of them or none
+      checkAll: {
+        get() {
+          const names = this.selectableVmNames;
+          return (
+            names.length > 0 &&
+            names.every((name) => this.selectedRows.includes(name))
+          );
+        },
+        set(on) {
+          this.selectedRows = on ? [...this.selectableVmNames] : [];
+        },
+      },
+
+      selectableVmNames() {
+        return (this.experiment.vms ?? [])
+          .filter((vm) => !vm.external)
+          .map((vm) => vm.name);
+      },
+
+      defaultSort() {
+        return (
+          this.table.sortColumn === 'name' &&
+          this.table.defaultSortDirection === 'asc'
+        );
+      },
+      vmsEmptyText() {
+        if (!this.experiment.name) return loadingText('VMs');
+        if (this.vmFilter) return 'No VMs match your search';
+        return 'This experiment has no VMs';
+      },
+
+      canListFiles() {
+        return roleAllowed('experiments/files', 'list', this.$route.params.id);
+      },
+
+      // the VM table's search and the Files tab's, kept while the other tab
+      // is open
+      vmFilter() {
+        return this.filterOf(TAB.VMS);
+      },
+
+      filesFilter() {
+        return this.filterOf(TAB.FILES);
+      },
+
+      searchPlaceholder() {
+        return this.activeTab == TAB.FILES ? 'Find a File' : 'Find a VM';
+      },
+
+      paginationNeeded() {
+        return this.table.total > this.table.perPage;
+      },
+
+      searchOptions() {
+        return [...this.searchHistory].sort();
+      },
+    },
+
+    methods: {
+      // Opens the details of the VM a link names (?vm=web), once: its row, or
+      // the VM from the server when the table's page does not hold it.
+      async openLinkedVm() {
+        const name = this.$route.query.vm;
+        if (typeof name !== 'string' || !name || name === this.linkedVm) return;
+        this.linkedVm = name;
+        let vm = this.experiment.vms?.find((row) => row.name == name);
+        const exp = this.experiment.name;
+        if (!vm && roleAllowed('vms', 'get', `${exp}/${name}`)) {
+          try {
+            vm = (await vmsApi.getVm(exp, name)).data;
+          } catch (err) {
+            useErrorNotification(err);
+            return;
+          }
+        }
+        if (vm && !this.unmounting && this.linkedVm == name) {
+          this.expModal = { active: true, vm };
+        }
+      },
 
       bootDecorator(vm) {
         if (vm.external) {
@@ -768,19 +835,6 @@
         }
       },
 
-      changePaginate() {
-        var user = usePhenixStore().username;
-        localStorage.setItem(user + '.lastPaginate', this.table.isPaginated);
-      },
-
-      changeFilesPaginate() {
-        var user = usePhenixStore().username;
-        localStorage.setItem(
-          user + '.lastPaginate',
-          this.filesTable.isPaginated,
-        );
-      },
-
       onPageChange(page) {
         this.table.currentPage = page;
         this.updateExperiment();
@@ -792,18 +846,13 @@
         this.updateExperiment();
       },
 
-      onFilesPageChange(page) {
-        this.filesTable.currentPage = page;
-        this.updateFiles();
-      },
-
-      onFilesSort(column, order) {
-        this.filesTable.sortColumn = column;
-        this.filesTable.defaultSortDirection = order;
-        this.updateFiles();
-      },
-
       handleWs(msg) {
+        // experiment resources are named "exp", VM resources "exp/vm"
+        const [exp] = (msg.resource?.name ?? '').split('/');
+        if (exp !== this.$route.params.id || !this.experiment.vms) {
+          return;
+        }
+
         switch (msg.resource.type) {
           case 'experiment': {
             // We only care about experiment publishes pertaining to the
@@ -812,18 +861,7 @@
               return;
             }
 
-            let vms = this.experiment.vms;
-
-            for (let i = 0; i < msg.result.schedule.length; i++) {
-              for (let j = 0; i < vms.length; j++) {
-                if (vms[j].name == msg.result.schedule[i].vm) {
-                  vms[j].host = msg.result.schedule[i].host;
-                  break;
-                }
-              }
-            }
-
-            this.experiment.vms = [...vms];
+            this.applySchedule(msg.result.schedule);
 
             this.$buefy.toast.open({
               message: 'The VMs for this experiment have been scheduled.',
@@ -863,63 +901,29 @@
         }
       },
 
-      updateExperiment() {
-        let params = '?show_dnb=true&filter=' + this.searchName;
-        params = params + '&sortCol=' + this.table.sortColumn;
-        params = params + '&sortDir=' + this.table.defaultSortDirection;
-
-        if (this.table.isPaginated) {
-          params = params + '&pageNum=' + this.table.currentPage;
-          params = params + '&perPage=' + this.table.perPage;
-        }
-
-        axiosInstance
-          .get('experiments/' + this.$route.params.id + params)
-          .then(
-            (response) => {
-              this.experiment = response.data;
-              this.table.total = this.experiment.vms.length;
-
-              this.vlanModal.vlans = this.experiment.vlans.map((vlan) => {
-                return vlan;
-              });
-
-              // Only add successful searches to the search history
-              if (this.table.total > 0) {
-                if (this.searchHistory > this.searchHistoryLength) {
-                  this.searchHistory.pop();
-                }
-                this.searchHistory.push(this.searchName.trim());
-                this.searchHistory = this.getUniqueItems(this.searchHistory);
-              }
-
-              if (roleAllowed('hosts', 'list')) {
-                this.updateHosts();
-              }
-              if (roleAllowed('disks', 'list')) {
-                this.updateDisks();
-              }
-            },
-            (err) => {
-              useErrorNotification(err);
-            },
-          )
-          .finally(() => {
-            this.isWaiting = false;
-          });
+      // reloads the VM table for the current search, sort and page
+      async updateExperiment() {
+        await this.loader.load();
+        this.isWaiting = false;
       },
 
+      // the host and disk choices for editing VMs; loaded on open and on
+      // refresh rather than with every search, since listing disks is slow
+      updateLists() {
+        if (roleAllowed('hosts', 'list')) {
+          this.updateHosts();
+        }
+        if (roleAllowed('disks', 'list')) {
+          this.updateDisks();
+        }
+      },
+
+      // shares the Hosts page's cached list, as listing hosts scans the
+      // whole cluster
       updateHosts() {
-        axiosInstance.get('hosts').then(
-          (response) => {
-            for (let i = 0; i < response.data.hosts.length; i++) {
-              if (response.data.hosts[i].schedulable) {
-                this.hosts.push(response.data.hosts[i].name);
-              }
-
-              this.hosts.sort();
-              this.isWaiting = false;
-            }
+        schedulableHostNames().then(
+          (hosts) => {
+            this.hosts = hosts;
           },
           (err) => {
             useErrorNotification(err);
@@ -927,108 +931,22 @@
         );
       },
 
+      // the images inside the minimega files directory and the ones this
+      // experiment names outside it
       updateDisks() {
-        this.isWaiting = true;
-
-        axiosInstance.get('disks' + '?expName=' + this.$route.params.id).then(
+        disksApi.listDisks({ expName: this.$route.params.id }).then(
           (response) => {
-            this.isWaiting = false;
-
-            for (let i = 0; i < response.data.disks.length; i++) {
-              this.disks.push(response.data.disks[i].fullPath);
-            }
-
-            this.disks.sort((a, b) =>
-              this.getBaseName(a).localeCompare(this.getBaseName(b)),
-            );
+            this.disks = response.data.disks ?? [];
           },
           (err) => {
-            this.isWaiting = false;
             useErrorNotification(err);
           },
         );
       },
 
-      updateFiles() {
-        let params = '?filter=' + this.searchName;
-        params = params + '&sortCol=' + this.filesTable.sortColumn;
-        params = params + '&sortDir=' + this.filesTable.defaultSortDirection;
-
-        if (this.table.isPaginated) {
-          params = params + '&pageNum=' + this.table.currentPage;
-          params = params + '&perPage=' + this.table.perPage;
-        }
-
-        axiosInstance
-          .get('experiments/' + this.$route.params.id + '/files' + params)
-          .then(
-            (response) => {
-              this.files = response.data.files; // TODO: test
-              this.filesTable.total = response.data.total;
-
-              for (let i = 0; i < response.data.files.length; i++) {
-                this.filesTable.categories.push(
-                  ...response.data.files[i].categories,
-                );
-              }
-
-              this.filesTable.categories = this.getUniqueItems(
-                this.filesTable.categories,
-              );
-
-              if (this.filesTable.category) {
-                let files = this.files;
-                this.files = [];
-                for (let i = 0; i < files.length; i++) {
-                  if (files[i].categories.includes(this.filesTable.category)) {
-                    this.files.push(files[i]);
-                  }
-                }
-              }
-
-              // Only add successful searches to the search history
-              if (this.files.length > 0) {
-                if (this.searchHistory > this.searchHistoryLength) {
-                  this.searchHistory.pop();
-                }
-
-                this.searchHistory.push(this.searchName.trim());
-                this.searchHistory = this.getUniqueItems(this.searchHistory);
-              }
-            },
-            (err) => {
-              useErrorNotification(err);
-            },
-          );
-      },
-
-      viewFile(file) {
-        this.isWaiting = true;
-
-        axiosInstance
-          .get(
-            `experiments/${this.$route.params.id}/files/${file.name}?path=${file.path}`,
-            { headers: { Accept: 'text/plain' } },
-          )
-          .then(
-            (response) => {
-              this.fileViewerModal.title = file.path;
-              this.fileViewerModal.contents = response.data;
-              this.fileViewerModal.active = true;
-            },
-            (err) => {
-              useErrorNotification(err);
-            },
-          )
-          .finally(() => {
-            this.isWaiting = false;
-          });
-      },
-
-      resetFileViewerModal() {
-        this.fileViewerModal.active = false;
-        this.fileViewerModal.title = null;
-        this.fileViewerModal.contents = null;
+      // a VM's disk by its label, or by its full path when not listed
+      diskText(path) {
+        return diskLabel(findDisk(this.disks, path)) || path || 'unknown';
       },
 
       updateVLANs() {
@@ -1044,7 +962,7 @@
 
         let body = JSON.stringify(vlans);
 
-        axiosInstance.patch('experiments/' + this.$route.params.id, body).then(
+        experimentsApi.updateExperiment(this.$route.params.id, body).then(
           (_) => {
             this.$buefy.toast.open({
               message:
@@ -1052,7 +970,6 @@
                 this.$route.params.id +
                 ' Experiment was successful.',
               type: 'is-success',
-              duration: 4000,
             });
           },
           (err) => {
@@ -1062,8 +979,41 @@
       },
 
       assignCategory(value) {
-        this.filesTable.category = value;
-        this.updateFiles();
+        this.fileCategory = value;
+        this.$refs.filesTab?.reload();
+      },
+
+      // the tabs this role sees, which a link may open
+      offeredTabs() {
+        const id = this.$route.params.id;
+        return roleAllowed('experiments/files', 'list', id)
+          ? [TAB.VMS, TAB.FILES]
+          : [TAB.VMS];
+      },
+
+      // the search of a tab, whether it is open or not
+      filterOf(tab) {
+        return this.activeTab === tab
+          ? this.searchName
+          : (this.tabSearches[tab]?.filter ?? '');
+      },
+
+      // keeps the URL naming the open tab and its search, as WebShark does
+      syncQuery() {
+        if (this.$route.name !== 'experiment') return;
+        const query = tabQuery(
+          this.$route.query,
+          this.activeTab,
+          this.searchName,
+        );
+        // the query watcher leaves alone the URL the page set itself
+        this.syncedQuery = query;
+        if (!sameQuery(query, this.$route.query))
+          this.$router.replace({ query });
+      },
+
+      addSearchHistory() {
+        this.searchHistory = addSearch(this.searchHistory, this.searchName);
       },
 
       start() {
@@ -1078,20 +1028,15 @@
           onConfirm: () => {
             this.isWaiting = true;
 
-            axiosInstance
-              .post('experiments/' + this.$route.params.id + '/start')
-              .then(
-                () => {
-                  console.log(
-                    'the ' + this.$route.params.id + ' experiment was started.',
-                  );
-                  this.$router.replace('/experiments/');
-                },
-                (err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                },
-              );
+            experimentsApi.startExperiment(this.$route.params.id).then(
+              () => {
+                this.$router.replace({ name: 'experiments' });
+              },
+              (err) => {
+                useErrorNotification(err);
+                this.isWaiting = false;
+              },
+            );
           },
         });
       },
@@ -1110,31 +1055,26 @@
 
             let update = { host: host };
 
-            axiosInstance
-              .patch(
-                'experiments/' + this.$route.params.id + '/vms/' + name,
-                update,
-              )
-              .then(
-                (response) => {
-                  let vms = this.experiment.vms;
+            vmsApi.updateVm(this.$route.params.id, name, update).then(
+              (response) => {
+                let vms = this.experiment.vms;
 
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
+                for (let i = 0; i < vms.length; i++) {
+                  if (vms[i].name == response.data.name) {
+                    vms[i] = response.data;
+                    break;
                   }
+                }
 
-                  this.experiment.vms = [...vms];
+                this.experiment.vms = [...vms];
 
-                  this.isWaiting = false;
-                },
-                (err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                },
-              );
+                this.isWaiting = false;
+              },
+              (err) => {
+                useErrorNotification(err);
+                this.isWaiting = false;
+              },
+            );
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
@@ -1156,31 +1096,26 @@
 
             let update = { host: '' };
 
-            axiosInstance
-              .patch(
-                'experiments/' + this.$route.params.id + '/vms/' + name,
-                update,
-              )
-              .then(
-                (response) => {
-                  let vms = this.experiment.vms;
+            vmsApi.updateVm(this.$route.params.id, name, update).then(
+              (response) => {
+                let vms = this.experiment.vms;
 
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
+                for (let i = 0; i < vms.length; i++) {
+                  if (vms[i].name == response.data.name) {
+                    vms[i] = response.data;
+                    break;
                   }
+                }
 
-                  this.experiment.vms = [...vms];
+                this.experiment.vms = [...vms];
 
-                  this.isWaiting = false;
-                },
-                (err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                },
-              );
+                this.isWaiting = false;
+              },
+              (err) => {
+                useErrorNotification(err);
+                this.isWaiting = false;
+              },
+            );
           },
         });
       },
@@ -1189,7 +1124,11 @@
         this.$buefy.dialog.confirm({
           title: 'Assign CPUs',
           message:
-            'This will assign ' + cpus + ' cpu(s) to the ' + name + ' VM.',
+            'This will assign ' +
+            plural(cpus, 'CPU') +
+            ' to the ' +
+            name +
+            ' VM.',
           cancelText: 'Cancel',
           confirmText: 'Assign CPUs',
           type: 'is-success',
@@ -1199,31 +1138,26 @@
 
             let update = { cpus: cpus };
 
-            axiosInstance
-              .patch(
-                'experiments/' + this.$route.params.id + '/vms/' + name,
-                update,
-              )
-              .then(
-                (response) => {
-                  let vms = this.experiment.vms;
+            vmsApi.updateVm(this.$route.params.id, name, update).then(
+              (response) => {
+                let vms = this.experiment.vms;
 
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
+                for (let i = 0; i < vms.length; i++) {
+                  if (vms[i].name == response.data.name) {
+                    vms[i] = response.data;
+                    break;
                   }
+                }
 
-                  this.experiment.vms = [...vms];
+                this.experiment.vms = [...vms];
 
-                  this.isWaiting = false;
-                },
-                (err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                },
-              );
+                this.isWaiting = false;
+              },
+              (err) => {
+                useErrorNotification(err);
+                this.isWaiting = false;
+              },
+            );
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
@@ -1246,31 +1180,26 @@
 
             let update = { ram: ram };
 
-            axiosInstance
-              .patch(
-                'experiments/' + this.$route.params.id + '/vms/' + name,
-                update,
-              )
-              .then(
-                (response) => {
-                  let vms = this.experiment.vms;
+            vmsApi.updateVm(this.$route.params.id, name, update).then(
+              (response) => {
+                let vms = this.experiment.vms;
 
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
+                for (let i = 0; i < vms.length; i++) {
+                  if (vms[i].name == response.data.name) {
+                    vms[i] = response.data;
+                    break;
                   }
+                }
 
-                  this.experiment.vms = [...vms];
+                this.experiment.vms = [...vms];
 
-                  this.isWaiting = false;
-                },
-                (err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                },
-              );
+                this.isWaiting = false;
+              },
+              (err) => {
+                useErrorNotification(err);
+                this.isWaiting = false;
+              },
+            );
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
@@ -1284,9 +1213,9 @@
           title: 'Assign a Disk Image',
           message:
             'This will assign the ' +
-            disk +
+            escapeHTML(diskLabel(findDisk(this.disks, disk)) || disk) +
             ' disk image to the ' +
-            name +
+            escapeHTML(name) +
             ' VM.',
           cancelText: 'Cancel',
           confirmText: 'Assign Disk',
@@ -1297,31 +1226,26 @@
 
             let update = { disk: disk };
 
-            axiosInstance
-              .patch(
-                'experiments/' + this.$route.params.id + '/vms/' + name,
-                update,
-              )
-              .then(
-                (response) => {
-                  let vms = this.experiment.vms;
+            vmsApi.updateVm(this.$route.params.id, name, update).then(
+              (response) => {
+                let vms = this.experiment.vms;
 
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
+                for (let i = 0; i < vms.length; i++) {
+                  if (vms[i].name == response.data.name) {
+                    vms[i] = response.data;
+                    break;
                   }
+                }
 
-                  this.experiment.vms = [...vms];
+                this.experiment.vms = [...vms];
 
-                  this.isWaiting = false;
-                },
-                (err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                },
-              );
+                this.isWaiting = false;
+              },
+              (err) => {
+                useErrorNotification(err);
+                this.isWaiting = false;
+              },
+            );
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
@@ -1347,31 +1271,26 @@
 
             let update = { inject_partition: partition };
 
-            axiosInstance
-              .patch(
-                'experiments/' + this.$route.params.id + '/vms/' + name,
-                update,
-              )
-              .then(
-                (response) => {
-                  let vms = this.experiment.vms;
+            vmsApi.updateVm(this.$route.params.id, name, update).then(
+              (response) => {
+                let vms = this.experiment.vms;
 
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
+                for (let i = 0; i < vms.length; i++) {
+                  if (vms[i].name == response.data.name) {
+                    vms[i] = response.data;
+                    break;
                   }
+                }
 
-                  this.experiment.vms = [...vms];
+                this.experiment.vms = [...vms];
 
-                  this.isWaiting = false;
-                },
-                (err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                },
-              );
+                this.isWaiting = false;
+              },
+              (err) => {
+                useErrorNotification(err);
+                this.isWaiting = false;
+              },
+            );
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
@@ -1387,6 +1306,7 @@
           hasModalCard: true,
           props: {
             vmName: vm.name,
+            experiment: this.$route.params.id,
             tags: vm.tags,
           },
         });
@@ -1401,31 +1321,26 @@
 
         let update = { dnb: !vm.dnb };
 
-        axiosInstance
-          .patch(
-            'experiments/' + this.$route.params.id + '/vms/' + vm.name,
-            update,
-          )
-          .then(
-            (response) => {
-              let vms = this.experiment.vms;
+        vmsApi.updateVm(this.$route.params.id, vm.name, update).then(
+          (response) => {
+            let vms = this.experiment.vms;
 
-              for (let i = 0; i < vms.length; i++) {
-                if (vms[i].name == response.data.name) {
-                  vms[i] = response.data;
-                  break;
-                }
+            for (let i = 0; i < vms.length; i++) {
+              if (vms[i].name == response.data.name) {
+                vms[i] = response.data;
+                break;
               }
+            }
 
-              this.experiment.vms = [...vms];
+            this.experiment.vms = [...vms];
 
-              this.isWaiting = false;
-            },
-            (err) => {
-              useErrorNotification(err);
-              this.isWaiting = false;
-            },
-          );
+            this.isWaiting = false;
+          },
+          (err) => {
+            useErrorNotification(err);
+            this.isWaiting = false;
+          },
+        );
       },
 
       updateSnapshot(name, persistence) {
@@ -1456,31 +1371,26 @@
 
             let update = { snapshot: persistence };
 
-            axiosInstance
-              .patch(
-                'experiments/' + this.$route.params.id + '/vms/' + name,
-                update,
-              )
-              .then(
-                (response) => {
-                  let vms = this.experiment.vms;
+            vmsApi.updateVm(this.$route.params.id, name, update).then(
+              (response) => {
+                let vms = this.experiment.vms;
 
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
+                for (let i = 0; i < vms.length; i++) {
+                  if (vms[i].name == response.data.name) {
+                    vms[i] = response.data;
+                    break;
                   }
+                }
 
-                  this.experiment.vms = [...vms];
+                this.experiment.vms = [...vms];
 
-                  this.isWaiting = false;
-                },
-                (err) => {
-                  useErrorNotification(err);
-                  this.isWaiting = false;
-                },
-              );
+                this.isWaiting = false;
+              },
+              (err) => {
+                useErrorNotification(err);
+                this.isWaiting = false;
+              },
+            );
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
@@ -1492,7 +1402,7 @@
         this.$buefy.dialog.confirm({
           title: 'Assign a Host Schedule',
           message:
-            'This will schedule host(s) with the ' +
+            'This will schedule hosts with the ' +
             this.algorithm +
             ' algorithm for the ' +
             this.$route.params.id +
@@ -1504,23 +1414,11 @@
           onConfirm: () => {
             this.isWaiting = true;
 
-            axiosInstance
-              .post('experiments/' + this.$route.params.id + '/schedule', {
-                algorithm: this.algorithm,
-              })
+            experimentsApi
+              .scheduleExperiment(this.$route.params.id, this.algorithm)
               .then(
                 (response) => {
-                  let vms = this.experiment.vms;
-
-                  for (let i = 0; i < vms.length; i++) {
-                    if (vms[i].name == response.data.name) {
-                      vms[i] = response.data;
-                      break;
-                    }
-                  }
-
-                  this.experiment.vms = [...vms];
-
+                  this.applySchedule(response.data.schedule);
                   this.isWaiting = false;
                 },
                 (err) => {
@@ -1532,23 +1430,20 @@
         });
       },
 
-      getUniqueItems(inputArray) {
-        let arrayHash = {};
-
-        for (let i = 0; i < inputArray.length; i++) {
-          // Skip really short items
-          if (inputArray[i].length < 4) {
-            if (!inputArray[i].includes('dnb')) {
-              continue;
-            }
-          }
-
-          if (arrayHash[inputArray[i]] === undefined) {
-            arrayHash[inputArray[i]] = true;
-          }
+      // sets each VM's host from a schedule of {vm, host} assignments
+      applySchedule(schedule) {
+        if (!schedule || !this.experiment.vms) {
+          return;
         }
 
-        return Object.keys(arrayHash).sort();
+        const hosts = new Map(schedule.map((s) => [s.vm, s.host]));
+        this.experiment.vms = this.experiment.vms.map((vm) =>
+          hosts.has(vm.name) ? { ...vm, host: hosts.get(vm.name) } : vm,
+        );
+      },
+
+      labelCount(vm) {
+        return tagCount(vm.tags);
       },
 
       getBootLabel(vm) {
@@ -1561,32 +1456,17 @@
       },
 
       setBoot(dnb) {
-        let vms = [];
+        let vms = [...this.selectedRows];
 
         let successMessage = '';
-
-        //Determine the list of VMs to apply the boot request to
-        if (this.selectedRows.length == 0 && this.searchName.length > 0) {
-          let visibleItems = this.$refs['vmTable'].visibleData;
-
-          for (let i = 0; i < visibleItems.length; i++) {
-            vms.push(visibleItems[i].name);
-          }
-        } else {
-          for (let i = 0; i < this.selectedRows.length; i++) {
-            vms.push(this.selectedRows[i]);
-          }
-        }
 
         if (vms.length == 0) {
           return;
         }
 
-        if (dnb) {
-          successMessage = 'The selected VMs were set to not boot';
-        } else {
-          successMessage = 'The selected VMs were set to boot';
-        }
+        const selected =
+          vms.length == 1 ? 'The selected VM was' : 'The selected VMs were';
+        successMessage = `${selected} set to ${dnb ? 'not boot' : 'boot'}`;
 
         let requestList = [];
 
@@ -1595,149 +1475,137 @@
           requestList.push(update);
         });
 
-        axiosInstance
-          .patch('experiments/' + this.$route.params.id + '/vms', {
-            vms: requestList,
-            total: requestList.length,
-          })
-          .then(
-            (response) => {
-              let vms = this.experiment.vms;
+        vmsApi.updateVms(this.$route.params.id, requestList).then(
+          (response) => {
+            let vms = this.experiment.vms;
 
-              for (let i = 0; i < response.data.vms.length; i++) {
-                for (let j = 0; j < vms.length; j++) {
-                  if (response.data.vms[i].name == vms[j].name) {
-                    vms[j] = response.data.vms[i];
-                    break;
-                  }
+            for (let i = 0; i < response.data.vms.length; i++) {
+              for (let j = 0; j < vms.length; j++) {
+                if (response.data.vms[i].name == vms[j].name) {
+                  vms[j] = response.data.vms[i];
+                  break;
                 }
               }
+            }
 
-              this.experiment.vms = [...vms];
-              this.isWaiting = false;
+            this.experiment.vms = [...vms];
+            this.isWaiting = false;
 
-              this.$buefy.toast.open({
-                message: successMessage,
-                type: 'is-success',
-                duration: 4000,
+            // the VMs the server skipped or failed to update
+            const unchanged = response.data.errors ?? [];
+            if (unchanged.length) {
+              notifyOutcome(this.$buefy, {
+                verbPast: 'Updated',
+                noun: 'VM',
+                items: [
+                  ...response.data.vms.map(({ name }) => ({
+                    name,
+                    status: 'succeeded',
+                  })),
+                  ...unchanged.map(({ name, status, error }) => ({
+                    name,
+                    status,
+                    error,
+                  })),
+                ],
               });
-            },
-            (err) => {
-              useErrorNotification(err);
-              this.isWaiting = false;
-            },
-          );
+              return;
+            }
 
-        // clear the selection
-        this.checkAll = false;
-      },
+            this.$buefy.toast.open({
+              message: successMessage,
+              type: 'is-success',
+            });
+          },
+          (err) => {
+            useErrorNotification(err);
+            this.isWaiting = false;
+          },
+        );
 
-      getBaseName(diskName) {
-        return diskName.substring(diskName.lastIndexOf('/') + 1);
-      },
-
-      getDiskToolTip(fullPath) {
-        return this.disks.indexOf(fullPath) == -1
-          ? 'menu for assigning vm(s) disk'
-          : fullPath;
-      },
-
-      downloadFile(exp_name, name, path) {
-        console.log('attempting to download file');
-        const store = usePhenixStore();
-        const basePath = import.meta.env.BASE_URL;
-
-        const url = `${basePath}api/v1/experiments/${exp_name}/files/${name}`;
-        const queryParams = new URLSearchParams({
-          path: path,
-          token: store.token,
-        });
-
-        window.open(`${url}?${queryParams}`, '_blank');
+        this.selectedRows = [];
       },
     },
 
     watch: {
-      checkAll(newVal) {
-        if (newVal) {
-          var visibleItems = this.$refs['vmTable'].visibleData;
-          // add all visible items
-          this.selectedRows = [];
-          for (var i = 0; i < visibleItems.length; i++) {
-            let item = visibleItems[i];
+      activeTab(newVal, oldVal) {
+        // each tab keeps its own search and history while the other is open
+        this.searchVMs.cancel();
+        this.tabSearches[oldVal] = {
+          filter: this.searchName,
+          history: this.searchHistory,
+        };
+        this.searchName = this.tabSearches[newVal]?.filter ?? '';
+        this.searchHistory = this.tabSearches[newVal]?.history ?? [];
+        this.syncQuery();
 
-            if (!item.external) {
-              this.selectedRows.push(item.name);
-            }
-          }
-        } else {
-          this.selectedRows = [];
-        }
-      },
-      activeTab(newVal) {
-        // Clear search history and
-        // search filter when switching tabs
-        this.searchHistory = [];
-        this.searchName = '';
-
-        if (newVal == 0) {
-          this.searchPlaceholder = 'Find a VM';
+        if (newVal == TAB.VMS) {
           this.updateExperiment();
         } else {
-          this.searchPlaceholder = 'Find a File';
-          this.updateFiles();
+          this.$refs.filesTab?.reload();
         }
+      },
+
+      '$route.query.vm'(name) {
+        if (!name) this.linkedVm = '';
+        else if (this.experiment.name) this.openLinkedVm();
+      },
+
+      // a closed card takes its link out of the URL, so a reload does not
+      // open it again
+      'expModal.active'(open) {
+        const query = this.$route.query;
+        if (open || this.unmounting || this.$route.name !== 'experiment')
+          return;
+        if (!('vm' in query)) return;
+        this.syncedQuery = withoutVm(query);
+        this.$router.replace({ query: this.syncedQuery });
+      },
+
+      // a link to this page with another tab or search
+      '$route.query'(query) {
+        if (
+          this.$route.name !== 'experiment' ||
+          sameQuery(query, this.syncedQuery)
+        ) {
+          return;
+        }
+        const tab = tabFromQuery(query, this.offeredTabs());
+        const search = searchFromQuery(query);
+        if (tab === this.activeTab) {
+          if (search !== this.searchName) this.searchVMs(search);
+          return;
+        }
+        // the activeTab watcher opens the tab with the link's search
+        this.tabSearches[tab] = { ...this.tabSearches[tab], filter: search };
+        this.activeTab = tab;
       },
     },
 
     data() {
       return {
-        table: {
-          key: 0,
-          isPaginated: false,
-          isPaginationSimple: true,
-          currentPage: 1,
-          perPage: 10,
-          total: 0,
-          sortColumn: 'name',
-          paginationSize: 'is-small',
-          defaultSortDirection: 'asc',
-        },
-        filesTable: {
-          isPaginated: false,
-          isPaginationSimple: true,
-          currentPage: 1,
-          perPage: 10,
-          total: 0,
-          sortColumn: 'date',
-          paginationSize: 'is-small',
-          defaultSortDirection: 'desc',
-          categories: [],
-          category: null,
-        },
         expModal: {
           active: false,
           vm: [],
         },
-        fileViewerModal: {
-          active: false,
-          title: null,
-          contents: null,
-        },
+        // the VM of the link whose details the page opened
+        linkedVm: '',
         schedules: ['isolate_experiment', 'round_robin'],
         experiment: [],
-        files: [],
+        // the Files tab's category picker, and the categories it offers
+        fileCategory: null,
+        fileCategories: [],
         hosts: [],
-        disks: [],
-        searchName: '',
+        // the disk list, null until it has loaded
+        disks: null,
+        searchName: searchFromQuery(this.$route.query),
+        // the search and its history of the tab not open
+        tabSearches: {},
         algorithm: null,
-        isWaiting: true,
+        isWaiting: false, // set while a change is being saved
         searchHistory: [],
-        searchHistoryLength: 10,
-        checkAll: false,
         selectedRows: [],
-        searchPlaceholder: 'Find a VM',
-        activeTab: 0,
+        activeTab: tabFromQuery(this.$route.query, this.offeredTabs()),
         vlanModal: {
           active: false,
           vlans: [],
@@ -1756,11 +1624,6 @@
 
   .dnb {
     color: #ffffff;
-  }
-
-  .fa-layers-counter {
-    /* counter on tag icon */
-    transform: scale(0.7) translateX(50%) translateY(-50%);
   }
 
   :deep(.tabs ul) {

@@ -6,8 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
+	"unicode"
+	"unicode/utf8"
+
+	"pgregory.net/rapid"
+
+	"phenix/util/common"
 )
 
 func TestLoadConfigs(t *testing.T) {
@@ -84,6 +91,71 @@ func TestCompareConfigs(t *testing.T) {
 			t.Errorf("%s: compareConfigs() = %d, want %d", tt.name, got, tt.want)
 		}
 	}
+}
+
+// genWorkflowFilesConfig draws configs from few paths and kinds, so that
+// equal paths and Topology spelled in other cases are common.
+func genWorkflowFilesConfig() *rapid.Generator[configFile] {
+	return rapid.Custom(func(t *rapid.T) configFile {
+		return configFile{
+			Path: rapid.SampledFrom([]string{"/a.yml", "/b.yml", "/B.yml", "/sub/c.json"}).Draw(t, "path"),
+			Kind: rapid.SampledFrom([]string{kindTopology, "topology", "TOPOLOGY", "Scenario", "Image"}).Draw(t, "kind"),
+		}
+	})
+}
+
+func TestCompareConfigsProperties(t *testing.T) {
+	t.Parallel()
+
+	sign := func(n int) int { return max(-1, min(1, n)) }
+
+	t.Run("order laws", func(t *testing.T) {
+		t.Parallel()
+
+		rapid.Check(t, func(t *rapid.T) {
+			triple := rapid.SliceOfN(genWorkflowFilesConfig(), 3, 3).Draw(t, "configs")
+
+			for _, order := range [][3]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
+				a, b, c := triple[order[0]], triple[order[1]], triple[order[2]]
+
+				if ab, ba := compareConfigs(a, b), compareConfigs(b, a); sign(ab) != -sign(ba) {
+					t.Fatalf("compareConfigs(%+v, %+v) = %d and reversed = %d, want opposite signs", a, b, ab, ba)
+				}
+
+				if compareConfigs(a, b) <= 0 && compareConfigs(b, c) <= 0 && compareConfigs(a, c) > 0 {
+					t.Fatalf("compareConfigs orders %+v <= %+v <= %+v, but %+v > %+v", a, b, c, a, c)
+				}
+			}
+		})
+	})
+
+	t.Run("upsert order", func(t *testing.T) {
+		t.Parallel()
+
+		rapid.Check(t, func(t *rapid.T) {
+			configs := rapid.SliceOfN(genWorkflowFilesConfig(), 0, 8).Draw(t, "configs")
+			sorted := slices.Clone(configs)
+			slices.SortFunc(sorted, compareConfigs)
+
+			// every Topology, in any case, comes first, and each group is in path order
+			isTopology := func(c configFile) bool { return strings.EqualFold(c.Kind, kindTopology) }
+			split := slices.IndexFunc(sorted, func(c configFile) bool { return !isTopology(c) })
+
+			if split >= 0 && slices.ContainsFunc(sorted[split:], isTopology) {
+				t.Fatalf("sorting %+v by compareConfigs = %+v, has a Topology after another kind", configs, sorted)
+			}
+
+			if split < 0 {
+				split = len(sorted)
+			}
+
+			for _, group := range [][]configFile{sorted[:split], sorted[split:]} {
+				if !slices.IsSortedFunc(group, func(a, b configFile) int { return strings.Compare(a.Path, b.Path) }) {
+					t.Fatalf("sorting %+v by compareConfigs = %+v, has a group out of path order", configs, sorted)
+				}
+			}
+		})
+	})
 }
 
 func TestLoadConfigsErrors(t *testing.T) {
@@ -373,6 +445,60 @@ func TestNeutralizePlaceholders(t *testing.T) {
 			t.Errorf("neutralizePlaceholders(%q) = %q, want %q", body, got, want)
 		}
 	}
+}
+
+// genWorkflowFilesBody draws a config body of plain text, near misses and
+// ${VAR} or ${VAR:default} placeholders whose defaults hold blanks and newlines.
+func genWorkflowFilesBody() *rapid.Generator[string] {
+	plain := rapid.StringOfN(rapid.RuneFrom([]rune("a1 :${}\n\té")), 0, 6, -1)
+	placeholder := rapid.Custom(func(t *rapid.T) string {
+		name := rapid.StringMatching(`[A-Za-z0-9_]{1,5}`).Draw(t, "name")
+		if !rapid.Bool().Draw(t, "default") {
+			return "${" + name + "}"
+		}
+
+		return "${" + name + ":" + rapid.StringOfN(rapid.RuneFrom([]rune("a: \n\t\u00a0é${")), 0, 6, -1).Draw(t, "value") + "}"
+	})
+
+	return rapid.Map(rapid.SliceOfN(rapid.OneOf(plain, placeholder), 0, 6), func(parts []string) string {
+		return strings.Join(parts, "")
+	})
+}
+
+// TestNeutralizePlaceholdersProperties checks that only placeholders change,
+// every one of them to x's, and that each rune keeps its line and column.
+func TestNeutralizePlaceholdersProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		body := genWorkflowFilesBody().Draw(t, "body")
+		got := string(neutralizePlaceholders([]byte(body)))
+		in, out := []rune(body), []rune(got)
+
+		if len(out) != len(in) {
+			t.Fatalf("neutralizePlaceholders(%q) = %q, %d runes, want %d", body, got, len(out), len(in))
+		}
+
+		inside := make([]bool, len(in))
+
+		for _, span := range common.EnvPlaceholder.FindAllStringIndex(body, -1) {
+			start, end := utf8.RuneCountInString(body[:span[0]]), utf8.RuneCountInString(body[:span[1]])
+			for i := start; i < end; i++ {
+				inside[i] = true
+			}
+		}
+
+		for i, r := range in {
+			want := r
+			if inside[i] && !unicode.IsSpace(r) {
+				want = 'x'
+			}
+
+			if out[i] != want {
+				t.Fatalf("neutralizePlaceholders(%q) = %q, has %q at rune %d, want %q", body, got, out[i], i, want)
+			}
+		}
+	})
 }
 
 func TestContentTypeFor(t *testing.T) {

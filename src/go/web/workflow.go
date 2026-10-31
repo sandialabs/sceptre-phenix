@@ -17,9 +17,12 @@ import (
 	"phenix/api/workflow"
 	"phenix/store"
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
+	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
@@ -43,17 +46,13 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 		branch  = mux.Vars(r)["branch"]
-		q       = r.URL.Query()
+		applied = audit.Fields{Extra: []any{"phenix.workflow.branch", branch}}
 	)
 
 	if !role.Allowed("workflow", "create") {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"applying phenix workflow not allowed",
-			"user",
-			user,
-		)
+		audit.Denied(r, audit.WorkflowApply, "applying phenix workflow not allowed", applied)
+
 		err := weberror.NewWebError(
 			nil,
 			"applying phenix workflow is not allowed for user %s",
@@ -63,62 +62,180 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	// Repeated tag query parameters become the experiment's workflow tags.
-	tags := strings.Join(q["tag"], ",")
+	result, err := applyWorkflow(r, branch)
 
-	doc, src, err := readWorkflowConfig(r, branch)
+	applied.DryRun = result.DryRun
+	applied.Experiment = result.Plan.Experiment
+
+	if result.Plan.Action != "" {
+		applied.Extra = append(applied.Extra, "phenix.workflow.action", string(result.Plan.Action))
+	}
+
 	if err != nil {
+		audit.Failure(r, audit.WorkflowApply, "applying phenix workflow failed", applied, err)
+
 		return err
 	}
 
-	spec, err := decodeWorkflowConfig(doc, src)
-	if err != nil {
-		return err
+	done := "applied phenix workflow"
+	if result.DryRun {
+		done = "checked phenix workflow"
 	}
 
-	dryRun, err := parseDryRun(q)
-	if err != nil {
-		return err
-	}
+	audit.Success(r, audit.WorkflowApply, done, applied)
 
-	expect := q.Get("expect")
-	if _, err := workflow.ParseAction(expect); expect != "" && err != nil {
-		return weberror.NewWebError(err, "invalid expect value %q", expect)
-	}
-
-	// A real apply runs after the client's upsert, so it looks every config up.
-	pending := q["pending"]
-	if len(pending) > 0 && !dryRun {
-		return weberror.NewWebError(nil, "pending is only allowed with dryRun=true")
-	}
-
-	plan, target, err := planWorkflow(spec, branch)
-	if err != nil {
-		return err
-	}
-
-	prep, err := workflow.Prepare(spec, plan, target, pending...)
-	if err != nil {
-		return workflowWebError(err, "unable to prepare phenix workflow config")
-	}
-
-	if err := workflow.CheckExpected(plan, expect); err != nil {
-		return workflowWebError(err, "unable to apply phenix workflow config")
-	}
-
-	if !dryRun {
-		if err := executeWorkflowPlan(ctx, plan, spec, branch, tags, prep, target); err != nil {
-			return err
-		}
-	}
-
-	// A Result holds only strings and a bool, so marshaling it cannot fail.
-	body, _ := json.Marshal(workflow.Result{Plan: plan, DryRun: dryRun})
+	// A Result holds only strings, a bool and a list of strings, so marshaling it cannot fail.
+	body, _ := json.Marshal(result)
 
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
+}
+
+// applyWorkflow plans applying the request's workflow config to branch and,
+// unless it is a dry run, carries the plan out. The result holds as much of
+// the plan as was made, and whether it is a dry run, also on an error.
+func applyWorkflow(r *http.Request, branch string) (workflow.Result, error) {
+	var (
+		result workflow.Result
+		q      = r.URL.Query()
+	)
+
+	// known early so that a failed dry run is audited as one
+	dryRun, dryRunErr := parseDryRun(q)
+	result.DryRun = dryRun && dryRunErr == nil
+
+	// Repeated tag query parameters become the experiment's workflow tags.
+	tags := strings.Join(q["tag"], ",")
+
+	doc, src, err := readWorkflowConfig(r, branch)
+	if err != nil {
+		return result, err
+	}
+
+	spec, err := decodeWorkflowConfig(doc, src)
+	if err != nil {
+		return result, err
+	}
+
+	if dryRunErr != nil {
+		return result, dryRunErr
+	}
+
+	expect := q.Get("expect")
+	if _, err := workflow.ParseAction(expect); expect != "" && err != nil {
+		return result, weberror.NewWebError(err, "invalid expect value %q", expect)
+	}
+
+	// A real apply runs after the client's upsert, so it looks every config up.
+	pending := q["pending"]
+	if len(pending) > 0 && !dryRun {
+		return result, weberror.NewWebError(nil, "pending is only allowed with dryRun=true")
+	}
+
+	plan, target, err := planWorkflow(spec, branch)
+	if err != nil {
+		return result, err
+	}
+
+	result.Plan = plan
+
+	prep, err := workflow.Prepare(spec, plan, target, pending...)
+	if err != nil {
+		return result, workflowWebError(err, "unable to prepare phenix workflow config")
+	}
+
+	if err := workflow.CheckExpected(plan, expect); err != nil {
+		return result, workflowWebError(err, "unable to apply phenix workflow config")
+	}
+
+	if dryRun {
+		result.Warnings = workflowDiskWarnings(r.Context(), spec, plan, prep, target)
+
+		return result, nil
+	}
+
+	if err := executeWorkflowPlan(r.Context(), plan, spec, branch, tags, prep, target); err != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
+// workflowStartSpec is the experiment spec, as far as the disk check reads it, that the start after applying the
+// workflow uses, before apps run; nil when the action starts nothing or the topology is pending. exp is the
+// experiment an update acts on, nil for a create.
+//
+//nolint:ireturn // the spec the disk check reads
+func workflowStartSpec(
+	spec workflow.Spec, action workflow.Action, prep workflow.Prepared, exp *types.Experiment,
+) ifaces.ExperimentSpec {
+	switch {
+	case prep.Topology == nil:
+		return nil
+	case action != workflow.ActionCreateAndStart && action != workflow.ActionUpdateAndStart &&
+		action != workflow.ActionRestart:
+		return nil
+	}
+
+	// a copy, since Init sets the node defaults, such as snapshot: true, which the prepared topology lacks
+	var topology v1.TopologySpec
+	if raw, err := json.Marshal(prep.Topology); err != nil || json.Unmarshal(raw, &topology) != nil {
+		return nil
+	}
+
+	var md store.ConfigMetadata
+
+	md.Name = spec.ExperimentName()
+
+	start := types.NewExperiment(md)
+	start.Spec.SetTopology(&topology)
+	start.Spec.SetScenario(prep.Scenario)
+	start.Spec.SetSchedule(spec.Schedules)
+	start.Spec.SetDeployMode(string(spec.ExperimentDeployMode()))
+
+	if exp != nil {
+		start.Spec.SetSchedule(prep.Schedules)
+
+		if prep.ScenarioName == "" {
+			start.Spec.SetScenario(exp.Spec.Scenario())
+		}
+	}
+
+	_ = start.Spec.Init() // a topology the start refuses is reported by the start
+
+	return start.Spec
+}
+
+// workflowDiskWarnings are the problems the disk check of the start that carrying out plan makes would find, each
+// one that would refuse the start saying so.
+func workflowDiskWarnings(
+	ctx context.Context, spec workflow.Spec, plan workflow.Plan, prep workflow.Prepared, exp *types.Experiment,
+) []string {
+	start := workflowStartSpec(spec, plan.Action, prep, exp)
+	if start == nil {
+		return nil
+	}
+
+	warnings, err := experiment.CheckDisks(ctx, start)
+
+	var (
+		out    []string
+		broken *experiment.BrokenDisksError
+	)
+
+	if errors.As(err, &broken) {
+		for _, p := range broken.Problems {
+			out = append(out, workflow.StartFailPrefix+p.String())
+		}
+	}
+
+	for _, w := range warnings {
+		out = append(out, w.Error())
+	}
+
+	return out
 }
 
 // readWorkflowConfig returns the request body parsed with its ${VAR}
@@ -267,7 +384,7 @@ func executeWorkflowPlan(
 	case workflow.ActionCreate, workflow.ActionCreateAndStart:
 		return createFromWorkflow(ctx, spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart)
 	case workflow.ActionUpdate, workflow.ActionUpdateAndStart, workflow.ActionRestart:
-		return updateFromWorkflow(exp, spec, tags, prep, plan.Action)
+		return updateFromWorkflow(ctx, exp, spec, tags, prep, plan.Action)
 	}
 
 	return nil
@@ -323,7 +440,7 @@ func createFromWorkflow(
 	if start {
 		cache.UnlockExperiment(expName)
 
-		if _, err := startExperiment(expName); err != nil {
+		if err := startExperiment(expName); err != nil {
 			return err
 		}
 	}
@@ -333,9 +450,11 @@ func createFromWorkflow(
 
 // updateFromWorkflow applies the workflow to exp using only what prep
 // resolved, so nothing is looked up after a running experiment is stopped. A
-// restart stops the experiment first; a restart or an updateAndStart starts
-// it afterward.
+// restart checks the disks of the start it makes (see
+// experiment.CheckDisksBeforeStop) and stops the experiment first; a restart
+// or an updateAndStart starts it afterward.
 func updateFromWorkflow(
+	ctx context.Context,
 	exp *types.Experiment,
 	spec workflow.Spec,
 	tags string,
@@ -345,9 +464,20 @@ func updateFromWorkflow(
 	expName := exp.Metadata.Name
 
 	if action == workflow.ActionRestart {
+		if start := workflowStartSpec(spec, action, prep, exp); start != nil {
+			warnings, err := experiment.CheckDisksBeforeStop(ctx, start)
+			for _, w := range warnings {
+				plog.Warn(plog.TypeSystem, w.Error(), "exp", expName)
+			}
+
+			if err != nil {
+				return startWebError(err, "unable to restart experiment %s, which is still running", expName)
+			}
+		}
+
 		var err error
 
-		if _, err = stopExperiment(expName); err != nil {
+		if _, err = stopExperiment(expName, false); err != nil {
 			return err
 		}
 
@@ -405,7 +535,7 @@ func updateFromWorkflow(
 	if action == workflow.ActionRestart || action == workflow.ActionUpdateAndStart {
 		cache.UnlockExperiment(expName)
 
-		if _, err := startExperiment(expName); err != nil {
+		if err := startExperiment(expName); err != nil {
 			return err
 		}
 	}
@@ -435,12 +565,8 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	// who may not write configs is refused before the body is even read.
 	if !role.Allowed("configs", "create") && !role.Allowed("configs", "update") {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"creating or updating config not allowed",
-			"user",
-			user,
-		)
+		audit.Denied(r, audit.ConfigCreate, "creating or updating config not allowed",
+			audit.Fields{Extra: []any{"phenix.workflow.branch", scope}})
 
 		err := weberror.NewWebError(
 			nil,
@@ -488,70 +614,34 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to parse %s config", format)
 	}
 
-	exists, err := authorizeConfigWrite(ctx, role, name)
+	exists, err := authorizeConfigWrite(r, role, name, scope)
 	if err != nil {
 		return err
 	}
 
-	// set branch name in environment variable so it can be used in
-	// NewConfigFromJSON and NewConfigFromYAML
-	_ = os.Setenv("BRANCH_NAME", scope)
-
-	cfg, err := parse(src)
-	if err != nil {
-		return weberror.NewWebError(err, "unable to parse %s config", format)
-	}
-
-	// The permission checks above were for the name before expansion.
-	if fmt.Sprintf("%s/%s", cfg.Kind, cfg.Metadata.Name) != name {
-		return weberror.NewWebError(nil, "a config's kind and name can use no placeholder but ${BRANCH_NAME}")
-	}
+	var (
+		action, verb, done = audit.ConfigCreate, "creating", "created"
+		upserted           = audit.Fields{Config: name, DryRun: dryRun, Extra: []any{"phenix.workflow.branch", scope}}
+	)
 
 	if exists {
-		err = updateOrValidate(name, cfg, dryRun)
-		if err != nil {
-			if errors.Is(err, store.ErrNotExist) {
-				return weberror.NewWebError(err, "config to update (%s) does not exist", name)
-			}
-
-			if errors.Is(err, types.ErrValidationFailed) {
-				return validationWebError(src, err)
-			}
-
-			if errors.Is(err, store.ErrInvalidFormat) {
-				cause := errors.Unwrap(err)
-
-				return weberror.NewWebError(cause, "invalid formatting").
-					WithMetadata("validation", cause.Error(), true)
-			}
-
-			return weberror.NewWebError(err, "unable to update config %s", name)
-		}
-	} else {
-		cfg, err = createOrValidate(cfg, dryRun)
-		if err != nil {
-			if errors.Is(err, store.ErrExist) {
-				return weberror.NewWebError(err, "config to create (%s) already exists", name)
-			}
-
-			if errors.Is(err, types.ErrValidationFailed) {
-				return validationWebError(src, err)
-			}
-
-			if errors.Is(err, store.ErrInvalidFormat) {
-				cause := errors.Unwrap(err)
-
-				return weberror.NewWebError(cause, "invalid formatting").
-					WithMetadata("validation", cause.Error(), true)
-			}
-
-			if errors.Is(err, version.ErrInvalidKind) {
-				return weberror.NewWebError(err, "unknown config kind provided")
-			}
-
-			return weberror.NewWebError(err, "unable to create new config %s", name)
-		}
+		action, verb, done = audit.ConfigUpdate, "updating", "updated"
 	}
+
+	if dryRun {
+		done = "checked"
+	}
+
+	cfg, err := upsertWorkflowConfig(src, configUpsert{
+		name: name, scope: scope, format: format, parse: parse, exists: exists, dryRun: dryRun,
+	})
+	if err != nil {
+		audit.Failure(r, action, verb+" config from workflow failed", upserted, err)
+
+		return err
+	}
+
+	audit.Success(r, action, done+" config from workflow", upserted)
 
 	if dryRun {
 		writeConfigDryRun(w, exists, cfg)
@@ -559,7 +649,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	w.Header().Set("Location", strings.ToLower("/api/v1/configs/"+name))
+	w.Header().Set("Location", apiLocation(strings.ToLower("configs/"+name)))
 	w.WriteHeader(http.StatusCreated)
 
 	cfg.Spec = nil
@@ -579,4 +669,93 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	return nil
+}
+
+// configUpsert is what WorkflowUpsertConfig upserts: the config name, as
+// Kind/name, its branch, the body's format and parser, whether it is stored
+// already, and whether to only check it.
+type configUpsert struct {
+	name, scope, format string
+	parse               func([]byte) (*store.Config, error)
+	exists, dryRun      bool
+}
+
+// upsertWorkflowConfig parses the config body src, with ${BRANCH_NAME}
+// expanded to u.scope, and creates or updates it, or with u.dryRun only checks
+// it; it returns the config as stored or checked.
+func upsertWorkflowConfig(src []byte, u configUpsert) (*store.Config, error) {
+	// set branch name in environment variable so it can be used in
+	// NewConfigFromJSON and NewConfigFromYAML
+	_ = os.Setenv("BRANCH_NAME", u.scope)
+
+	cfg, err := u.parse(src)
+	if err != nil {
+		return nil, weberror.NewWebError(err, "unable to parse %s config", u.format)
+	}
+
+	// The permission checks above were for the name before expansion.
+	if fmt.Sprintf("%s/%s", cfg.Kind, cfg.Metadata.Name) != u.name {
+		return nil, weberror.NewWebError(nil, "a config's kind and name can use only the ${BRANCH_NAME} placeholder")
+	}
+
+	name := u.name
+
+	if u.exists {
+		if err := keepUserSecrets(name, cfg); err != nil {
+			return nil, weberror.NewWebError(err, "unable to read config %s", name).
+				SetStatus(http.StatusInternalServerError)
+		}
+
+		err = updateOrValidate(name, cfg, u.dryRun)
+		if err != nil {
+			if errors.Is(err, store.ErrNotExist) {
+				return nil, weberror.NewWebError(err, "config to update (%s) does not exist", name)
+			}
+
+			if errors.Is(err, store.ErrConflict) {
+				return nil, conflictWebError(err, name)
+			}
+
+			if errors.Is(err, types.ErrValidationFailed) {
+				return nil, validationWebError(src, err)
+			}
+
+			if errors.Is(err, store.ErrInvalidFormat) {
+				cause := errors.Unwrap(err)
+
+				return nil, weberror.NewWebError(cause, "invalid formatting").
+					WithMetadata("validation", cause.Error(), true)
+			}
+
+			return nil, weberror.NewWebError(err, "unable to update config %s", name)
+		}
+
+		return cfg, nil
+	}
+
+	cfg, err = createOrValidate(cfg, u.dryRun)
+	if err != nil {
+		if errors.Is(err, store.ErrExist) {
+			return nil, weberror.NewWebError(err, "config to create (%s) already exists", name)
+		}
+
+		if errors.Is(err, types.ErrValidationFailed) {
+			return nil, validationWebError(src, err)
+		}
+
+		if errors.Is(err, store.ErrInvalidFormat) {
+			cause := errors.Unwrap(err)
+
+			return nil, weberror.NewWebError(cause, "invalid formatting").
+				WithMetadata("validation", cause.Error(), true)
+		}
+
+		if errors.Is(err, version.ErrInvalidKind) {
+			return nil, weberror.NewWebError(err, "unknown config kind provided")
+		}
+
+		return nil, weberror.NewWebError(err, "unable to create new config %s", name)
+	}
+
+	return cfg, nil
 }
