@@ -65,7 +65,9 @@ func (Minimega) ReadScriptFromFile(ns, filename string) error {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = "read " + filename
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	// A script can take minutes to run; don't hold the shared connection (and
+	// so every other command) for all of it.
+	err := mmcli.ErrorResponse(mmcli.RunDedicated(cmd))
 	if err != nil {
 		return fmt.Errorf("reading mmcli script: %w", err)
 	}
@@ -89,7 +91,9 @@ func (Minimega) LaunchVMs(ns string, start ...string) error {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = "vm launch"
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	// Launching every queued VM can take minutes; don't hold the shared
+	// connection (and so every other command) for all of it.
+	err := mmcli.ErrorResponse(mmcli.RunDedicated(cmd))
 	if err != nil {
 		return fmt.Errorf("launching VMs: %w", err)
 	}
@@ -350,7 +354,7 @@ func (Minimega) GetVNCEndpoint(opts ...Option) (string, error) {
 
 	var endpoint string
 
-	for _, vm := range mmcli.RunTabular(cmd) {
+	for _, vm := range mmcli.RunTabularContext(o.ctx, cmd) {
 		endpoint = fmt.Sprintf("%s:%s", vm[hostColumn], vm["vnc_port"])
 	}
 
@@ -689,7 +693,9 @@ func (Minimega) CreateTunnel(opts ...Option) error {
 		o.dstPort,
 	)
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+	// For a VM on the headnode, the command runs on every node in the
+	// namespace, and the others answer that the VM isn't found.
+	if err := mmcli.VMTargetErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf(
 			"creating tunnel to %s (%d:%s:%d): %w",
 			o.vm,
@@ -747,7 +753,8 @@ func (Minimega) CloseTunnel(opts ...Option) error {
 		cmd := mmcli.NewNamespacedCommand(o.ns)
 		cmd.Command = fmt.Sprintf("%s cc tunnel close %s %s", cmdPrefix, o.vm, row["id"])
 
-		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		// See CreateTunnel.
+		err := mmcli.VMTargetErrorResponse(mmcli.Run(cmd))
 		if err != nil {
 			errs = multierror.Append(
 				errs,
@@ -1140,13 +1147,21 @@ func (Minimega) c2Client(o c2Options) (string, string, error) {
 		case <-after:
 			return "", "", ErrC2ClientNotActive
 		default:
-			rows := mmcli.RunTabular(cmd)
+			rows := mmcli.RunTabularContext(o.ctx, cmd)
 
 			if len(rows) != 0 {
 				return vm.Name, vm.UUID, nil
 			}
+		}
 
-			time.Sleep(c2ActiveCheckInterval)
+		// Wait to check again, but give up as soon as the timeout passes or the
+		// context is done.
+		select {
+		case <-o.ctx.Done():
+			return "", "", o.ctx.Err()
+		case <-after:
+			return "", "", ErrC2ClientNotActive
+		case <-time.After(c2ActiveCheckInterval):
 		}
 	}
 }
@@ -1177,7 +1192,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 			c.Command = "cc filter name=" + vm
 		}
 
-		if err := mmcli.ErrorResponse(mmcli.Run(c)); err != nil {
+		if err := mmcli.ErrorResponse(mmcli.RunContext(o.ctx, c)); err != nil {
 			return "", fmt.Errorf("setting host filter to %s: %w", vm, err)
 		}
 
@@ -1291,7 +1306,7 @@ func (Minimega) GetC2Response(opts ...C2Option) (string, error) {
 	o := NewC2Options(opts...)
 
 	if o.responseType == "" {
-		return getResponse(o.ns, o.commandID)
+		return getResponse(o.ctx, o.ns, o.commandID)
 	}
 
 	if o.vm == "" {
@@ -1301,7 +1316,7 @@ func (Minimega) GetC2Response(opts ...C2Option) (string, error) {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "cc response " + o.commandID
 
-	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
+	resp, err := mmcli.SingleResponse(mmcli.RunContext(o.ctx, cmd))
 	if err != nil {
 		return "", fmt.Errorf("getting response for command %s: %w", o.commandID, err)
 	}
@@ -1353,7 +1368,7 @@ func (Minimega) WaitForC2Response(opts ...C2Option) (string, error) {
 		return "", err
 	}
 
-	return getResponse(o.ns, o.commandID)
+	return getResponse(o.ctx, o.ns, o.commandID)
 }
 
 func (Minimega) ClearC2Responses(opts ...C2Option) error {
@@ -1362,7 +1377,7 @@ func (Minimega) ClearC2Responses(opts ...C2Option) error {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "clear cc responses"
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(mmcli.RunContext(o.ctx, cmd))
 	if err != nil {
 		return fmt.Errorf("clearing C2 responses for namespace %s: %w", o.ns, err)
 	}
@@ -1657,11 +1672,11 @@ func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) 
 	}
 }
 
-func getResponse(ns, id string) (string, error) {
+func getResponse(ctx context.Context, ns, id string) (string, error) {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = fmt.Sprintf("cc response %s raw", id)
 
-	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
+	resp, err := mmcli.SingleResponse(mmcli.RunContext(ctx, cmd))
 	if err != nil {
 		return "", fmt.Errorf("getting response for command %s: %w", id, err)
 	}
