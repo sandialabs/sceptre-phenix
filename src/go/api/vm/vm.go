@@ -999,9 +999,11 @@ func Restore(expName, vmName, snap string) error {
 		return fmt.Errorf("killing VM %s: %w", vmName, err)
 	}
 
+	// `vm flush` runs on every node in the namespace; the nodes not running the
+	// VM answer that it isn't found.
 	cmd.Command = "vm flush " + vmName
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return fmt.Errorf("flushing VMs: %w", err)
+	if err := mmcli.VMTargetErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("flushing VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = "vm launch kvm " + vmName

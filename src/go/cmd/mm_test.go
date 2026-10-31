@@ -207,8 +207,7 @@ func TestMinimegaCommandParses(t *testing.T) {
 		}
 	}
 
-	// Quoting the whole command, as phenix used to when adding a namespace,
-	// leaves minimega a single word that matches no command.
+	// A quoted nested command is one word and matches no minimega command.
 	if _, err := minicli.Compile(`namespace exp "vm info"`); err == nil {
 		t.Error("expected quoted nested command to fail to compile")
 	}

@@ -1,6 +1,7 @@
 package forward
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
@@ -66,6 +67,7 @@ func init() { //nolint:gochecknoinits // background worker
 				tunnel, _ := pub.(app.CreateTunnel)
 
 				err := createPortForward(
+					context.Background(),
 					tunnel.Experiment,
 					tunnel.VM,
 					tunnel.Sport,
@@ -96,7 +98,9 @@ func init() { //nolint:gochecknoinits // background worker
 	}()
 }
 
-func createPortForward(exp, vm, src, host, dst, user string) error {
+// createPortForward creates the user's forward; once ctx is done, a minimega
+// command not yet sent gives up (see mm.Context).
+func createPortForward(ctx context.Context, exp, vm, src, host, dst, user string) error {
 	var err error
 
 	listener := ft.Listener{Exp: exp, VM: vm, Owner: user} //nolint:exhaustruct // partial initialization
@@ -114,7 +118,7 @@ func createPortForward(exp, vm, src, host, dst, user string) error {
 
 	switch strings.ToUpper(dst) {
 	case "VNC":
-		endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(vm))
+		endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(vm), mm.Context(ctx))
 		if err != nil {
 			return fmt.Errorf("getting VNC endpoint for vm %s in experiment %s: %w", vm, exp, err)
 		}
@@ -273,7 +277,7 @@ func CreatePortForward(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	err := createPortForward(exp, vm, src, host, dst, user)
+	err := createPortForward(ctx, exp, vm, src, host, dst, user)
 	if err != nil {
 		plog.Error(
 			plog.TypeSystem,

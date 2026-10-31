@@ -15,6 +15,9 @@ type Command struct {
 	Filters   []string
 	Namespace string
 	Timeout   time.Duration
+	// Background commands, such as screenshots, wait for the shared connection
+	// behind every other command waiting, so they do not hold up user actions.
+	Background bool
 }
 
 // NewCommand returns a pointer to a new, initialized command.

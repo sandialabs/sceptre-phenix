@@ -12,6 +12,8 @@ const DefaultC2Timeout = 5 * time.Minute
 type Option func(*options)
 
 type options struct {
+	ctx context.Context //nolint:containedctx // carried to the commands an option set runs
+
 	ns     string
 	vm     string
 	cpu    int
@@ -40,13 +42,21 @@ type options struct {
 }
 
 func NewOptions(opts ...Option) options {
-	o := options{injectPart: 1} //nolint:exhaustruct // partial initialization
+	o := options{ctx: context.Background(), injectPart: 1} //nolint:exhaustruct // partial initialization
 
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	return o
+}
+
+// Context gives up a call's commands still waiting for the shared connection once ctx is done (see
+// mmcli.RunContext). GetVNCEndpoint uses it.
+func Context(ctx context.Context) Option {
+	return func(o *options) {
+		o.ctx = ctx
+	}
 }
 
 func NS(n string) Option {
