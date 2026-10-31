@@ -2,6 +2,7 @@ package version
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -322,4 +323,49 @@ func TestWorkflowSchemaDocumented(t *testing.T) {
 	if want := 1 + 4 + 9 + 3 + 2; visited != want {
 		t.Errorf("walked %d schemas, want %d", visited, want)
 	}
+}
+
+// TestEmbeddedOpenAPISchemasHaveNoEmptyKeywords: an empty YAML key such as
+// `pattern:` decodes as null, which makes the schemas GET /api/v1/schemas serves invalid JSON Schema.
+func TestEmbeddedOpenAPISchemasHaveNoEmptyKeywords(t *testing.T) {
+	t.Parallel()
+
+	for _, ver := range []string{"v0", "v1", "v2"} {
+		t.Run(ver, func(t *testing.T) {
+			t.Parallel()
+
+			for _, path := range emptyKeywords(schemaComponents(t, ver), "components.schemas") {
+				t.Errorf("%s.yaml has an empty keyword at %s", ver, path)
+			}
+		})
+	}
+}
+
+// emptyKeywords lists the paths of the null values in a schema tree, leaving
+// out example and default values, which are data rather than schema.
+func emptyKeywords(node any, path string) []string {
+	var found []string
+
+	switch typed := node.(type) {
+	case map[string]any:
+		for key, value := range typed {
+			switch {
+			case key == "example" || key == "default":
+			case value == nil:
+				found = append(found, path+"."+key)
+			default:
+				found = append(found, emptyKeywords(value, path+"."+key)...)
+			}
+		}
+	case []any:
+		for i, value := range typed {
+			if value == nil {
+				found = append(found, fmt.Sprintf("%s[%d]", path, i))
+			} else {
+				found = append(found, emptyKeywords(value, fmt.Sprintf("%s[%d]", path, i))...)
+			}
+		}
+	}
+
+	return found
 }

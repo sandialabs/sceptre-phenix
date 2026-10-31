@@ -532,7 +532,7 @@ metadata:
 Once created, either manually or automatically, the experiment configuration
 will be expanded to have the topology and scenario configurations embedded in
 it, as well as additional details like cluster host schedules for VMs, VLAN
-ranges, Builder XML, etc. The advantage of embedding the topology and scenario
+ranges, etc. The advantage of embedding the topology and scenario
 into the experiment is that they can be modified in the experiment without
 modifying the originals.
 
@@ -685,7 +685,8 @@ There are two ways to view a specific config:
    It is possible to select text and copy from this modal. However, it is not
    possible to edit the config directly in this view. Instead, there is an
    `Edit Config` button, which will open an editor. It is also possible to
-   download a copy of the config.
+   download a copy of the config. From the keyboard, Tab to the name and press
+   Enter.
   ![screenshot](images/view.png){: width=800 .center}
 2. Selecting the `Edit` button for a given config will open the editor window.
    It is possible to edit the config in this window and save the update to the
@@ -719,6 +720,9 @@ There are two ways to create a new config:
 ### Editor Window
 
 The editor window allows direct editing of an existing or new config file.
+
+- From the keyboard, Tab stops on the editor once. Press Enter to type in it,
+  and Escape to stop typing (twice with Vim keybindings), so that Tab moves on.
 
 - It is possible to edit a file as YAML or JSON by selecting the relevant radio
   button under `File Format`.
@@ -759,61 +763,6 @@ restored to the store. If an experiment config is deleted, the corresponding
 experiment will not longer be presented in the `Experiments` tab.
 
   ![screenshot](images/actions.png){: width=150 .center}
-
-## Builder
-
-The Builder app is an external app that allows users to generate either topology
-or experiment configuration using a graphical interface. It is based on the
-`minibuilder` app in `minimega`. Users can access the Builder app via the
-`Builder` tab in the phēnix UI.
-
-### Creating or Editing a Topology
-
-When Builder opens, it does so in a new configuration. If a user wanted to open
-an existing configuration, they are available in the File menu through the
-Import from phēnix or Import from Disk selections.
-
-A user can add VM hosts or networking components by selecting the relevant image
-on the left side of the Builder canvas.
-
-  ![screenshot](images/components.png){: width=150 .center}
-
-Each time a configuration is saved to phēnix, it is available to select from
-Import from phēnix in the File menu. A configuration created in Builder can only
-be edited while in the Builder app. There are two options for editing an
-existing configuration created in Builder.
-
-  ![screenshot](images/file.png){: width=150 .center}
-
-1. Select Import from phēnix in Builder &mdash; make any changes and then add to
-   phēnix with a **new** name
-
-1. Select Import from phēnix in Builder &mdash; make any changes and then add to
-   phēnix with the same name; this will overwrite the configuration that was
-   selected to import
-
-    !!! note
-        Any hosts added to a topology will not have a drive image name; this is a
-        requirement and will need to be included in each node added to the Builder
-        canvas.
-        ![screenshot](images/drive.png){: width=150 .center}
-
-Other values will be auto-generated but can be customized by clicking on a
-target node and making changes in the dialogue presented in the Builder UI. It
-is worth noting that a user can set a single node value and then copy and paste
-that node multiple times; the customized values will be extended to each node
-that is pasted in the Builder canvas.
-
-While scenarios are not a part of the Builder environment, a user can add them
-to a topology. When a user selects Save to phēnix, a pulldown will be presented
-with available scenarios from the phēnix store.
-
-  ![screenshot](images/save.png){: width=150 .center}
-
-When a scenario is selected, Builder will write the topology configuration to
-the phēnix store and an experiment configuration. When a scenario is not
-specified, the Builder app will save the topology configuration only. The user
-will then need to create an experiment in the phēnix UI.
 
 ## Environment Variables
 
