@@ -69,6 +69,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Apps**: The `vrouter` app makes IPsec pre-shared keys with `crypto/rand`. App triggers show the correct state when a periodic run fails or when a user cancels a trigger.
 - **Topology Builder**:
   - **Annotation Loss**: Saving a topology replaced the config's entire metadata annotation map, discarding every annotation other than `builder-xml`.
   - **Crash on Invalid Input**: A schema-invalid topology crashed the handlers with a nil-pointer dereference instead of returning a validation error.
