@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/activeshadow/libminimega/minicli"
-	"github.com/activeshadow/libminimega/miniclient"
+	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
+	"github.com/sandia-minimega/minimega/v2/pkg/miniclient"
 
 	"phenix/util/common"
 )

@@ -5,7 +5,7 @@ package mmcli
 import (
 	"strings"
 
-	"github.com/activeshadow/libminimega/minicli"
+	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
 	"phenix/util/plog"
 )
