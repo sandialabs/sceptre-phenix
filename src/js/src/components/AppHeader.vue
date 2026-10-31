@@ -2,8 +2,7 @@
 The header component is available on all views based on the 
 App.vue component. The available routable links are available 
 based on whether the user is logged in and furthermore based on 
-their role. Based on the current limitations per user role, these 
-are only available to Global Administrator or Global Viewer.
+what their role allows.
  -->
 <template>
   <b-navbar class="mb-4">
@@ -38,13 +37,13 @@ are only available to Global Administrator or Global Viewer.
         >Hosts</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && !disabled"
+        v-if="auth && usersPageAllowed()"
         tag="router-link"
         :to="{ name: 'users' }"
         >Users</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && roleAllowed('logs', 'list')"
+        v-if="auth && roleAllowed('logs', 'get')"
         tag="router-link"
         :to="{ name: 'log' }"
         >Logs</b-navbar-item
@@ -68,7 +67,7 @@ are only available to Global Administrator or Global Viewer.
         Tunneler
       </b-navbar-item>
       <b-navbar-item
-        v-if="auth && roleAllowed('settings', 'edit')"
+        v-if="auth && roleAllowed('settings', 'update')"
         tag="router-link"
         :to="{ name: 'settings' }"
         >Settings</b-navbar-item
@@ -106,14 +105,14 @@ are only available to Global Administrator or Global Viewer.
 
 <script>
   import { usePhenixStore } from '@/store.js';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
   import JobsMenu from '@/components/jobs/JobsMenu.vue';
 
   export default {
     components: { JobsMenu },
     setup() {
-      return { roleAllowed };
+      return { roleAllowed, usersPageAllowed };
     },
     data() {
       return { loggingOut: false };
@@ -127,10 +126,6 @@ are only available to Global Administrator or Global Viewer.
       auth() {
         const phenixStore = usePhenixStore();
         return phenixStore.auth;
-      },
-      disabled() {
-        const phenixStore = usePhenixStore();
-        return phenixStore.role.name === 'Disabled';
       },
       proxyAuth() {
         return import.meta.env.VITE_AUTH === 'proxy';
