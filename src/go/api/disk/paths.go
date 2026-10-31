@@ -32,6 +32,10 @@ var (
 	// ErrExists is returned when an action would replace an existing file.
 	ErrExists = errors.New("disk image already exists")
 
+	// ErrWrongExtension is returned for a new image name whose known image
+	// extension does not agree with the format the new image keeps.
+	ErrWrongExtension = errors.New("wrong image extension")
+
 	depthWarned atomic.Bool //nolint:gochecknoglobals // warn once per process
 )
 

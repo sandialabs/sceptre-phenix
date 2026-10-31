@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -490,72 +491,179 @@ func tree(t *testing.T, dir string) map[string]string {
 }
 
 // A new image's name is relative to the folder of its source. A snapshot is a qcow2 image, so it gets .qcow2 unless
-// it has a qcow2 extension. A copy or a rename of a .qcow image keeps the qcow format, so it also keeps .qcow.
+// it has a qcow2 extension. A copy or a rename keeps the format of its source, so it keeps or gets the source's
+// extension, and a name with a known image extension of another format is refused.
 func TestNormalizeDstDisk(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
 		src, dst   string
 		sameFormat bool
-		want       string
+		want       string // empty when refused
 	}{
 		"snapshot":                    {src: "/files/a.qc2", dst: "new", want: "/files/new.qcow2"},
 		"snapshot to .qc2":            {src: "/files/a.qc2", dst: "new.qc2", want: "/files/new.qc2"},
 		"snapshot of qcow":            {src: "/files/old.qcow", dst: "new", want: "/files/new.qcow2"},
 		"snapshot of qcow to .qcow":   {src: "/files/old.qcow", dst: "new.qcow", want: "/files/new.qcow.qcow2"},
+		"snapshot of an ISO to .iso":  {src: "/files/boot.iso", dst: "new.iso", want: "/files/new.iso.qcow2"},
 		"copy":                        {src: "/files/win/b.qcow2", dst: "new", sameFormat: true, want: "/files/win/new.qcow2"},
-		"copy of qcow2 to .qcow":      {src: "/files/a.qc2", dst: "new.qcow", sameFormat: true, want: "/files/new.qcow.qcow2"},
+		"copy of qcow2 to .qc2":       {src: "/files/win/b.qcow2", dst: "/abs/new.qc2", sameFormat: true, want: "/abs/new.qc2"},
+		"copy of qcow2 to .qcow":      {src: "/files/a.qc2", dst: "new.qcow", sameFormat: true},
+		"copy of qcow2 to .iso":       {src: "/files/a.qc2", dst: "new.iso", sameFormat: true},
 		"copy of qcow":                {src: "/files/old.qcow", dst: "new", sameFormat: true, want: "/files/new.qcow"},
 		"copy of qcow to .qcow":       {src: "/files/old.qcow", dst: "/abs/new.qcow", sameFormat: true, want: "/abs/new.qcow"},
 		"copy of qcow to .qc2":        {src: "/files/old.qcow", dst: "new.qc2", sameFormat: true, want: "/files/new.qc2"},
 		"copy of qcow to other":       {src: "/files/old.qcow", dst: "new.img", sameFormat: true, want: "/files/new.img.qcow"},
+		"copy of qcow to .hdd":        {src: "/files/old.qcow", dst: "new.hdd", sameFormat: true},
 		"copy of a .qcow2.qcow image": {src: "/files/a.qcow2.qcow", dst: "../b", sameFormat: true, want: "/b.qcow"},
+		"copy of an ISO":              {src: "/files/boot.iso", dst: "bar", sameFormat: true, want: "/files/bar.iso"},
+		"copy of an ISO to .iso":      {src: "/files/boot.iso", dst: "sub/bar.iso", sameFormat: true, want: "/files/sub/bar.iso"},
+		"copy of an ISO to a folder":  {src: "/files/iso/boot.iso", dst: "../bar", sameFormat: true, want: "/files/bar.iso"},
+		"copy of an ISO to other":     {src: "/files/boot.iso", dst: "/abs/bar.img", sameFormat: true, want: "/abs/bar.img.iso"},
+		"copy of an ISO to .qcow2":    {src: "/files/boot.iso", dst: "bar.qcow2", sameFormat: true},
+		"copy of an ISO to .qcow":     {src: "/files/boot.iso", dst: "/abs/bar.qcow", sameFormat: true},
+		"copy of an HDD":              {src: "/files/d.hdd", dst: "/abs/e", sameFormat: true, want: "/abs/e.hdd"},
+		"copy of an HDD to .hdd":      {src: "/files/d.hdd", dst: "e.hdd", sameFormat: true, want: "/files/e.hdd"},
+		"copy of an HDD to .iso":      {src: "/files/d.hdd", dst: "e.iso", sameFormat: true},
+		"copy of a rootfs":            {src: "/files/c_rootfs.tgz", dst: "d", sameFormat: true, want: "/files/d_rootfs.tgz"},
+		"copy of a rootfs to rootfs":  {src: "/files/c_rootfs.tgz", dst: "d_rootfs.tgz", sameFormat: true, want: "/files/d_rootfs.tgz"},
+		"copy of a rootfs to .tgz":    {src: "/files/c_rootfs.tgz", dst: "d.tgz", sameFormat: true, want: "/files/d.tgz_rootfs.tgz"},
+		"copy of a rootfs to .qc2":    {src: "/files/c_rootfs.tgz", dst: "d.qc2", sameFormat: true},
+		"copy of an unknown image":    {src: "/files/x.img", dst: "y", sameFormat: true, want: "/files/y.qcow2"},
+		"copy of unknown to .iso":     {src: "/files/x.img", dst: "y.iso", sameFormat: true, want: "/files/y.iso.qcow2"},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := normalizeDstDisk(tt.src, tt.dst, tt.sameFormat); got != tt.want {
-				t.Errorf("normalizeDstDisk(%q, %q, %t) = %q, want %q", tt.src, tt.dst, tt.sameFormat, got, tt.want)
+			got, err := normalizeDstDisk(tt.src, tt.dst, tt.sameFormat)
+
+			switch {
+			case tt.want == "" && !errors.Is(err, disk.ErrWrongExtension):
+				t.Errorf("normalizeDstDisk(%q, %q, %t) = %q, %v, want an error wrapping %v",
+					tt.src, tt.dst, tt.sameFormat, got, err, disk.ErrWrongExtension)
+			case tt.want != "" && (err != nil || got != tt.want):
+				t.Errorf("normalizeDstDisk(%q, %q, %t) = %q, %v, want %q", tt.src, tt.dst, tt.sameFormat, got, err, tt.want)
 			}
 		})
 	}
 }
 
-// A new image's name becomes an absolute path with an extension of the format it has, kept as given once it has
-// one, so normalizing it again changes nothing.
+// The extensions each source extension's copies may end in; a snapshot, or a copy of an image with none of these
+// extensions, is named as a qcow2 image.
+var normalizeDstDiskGroups = map[string][]string{ //nolint:gochecknoglobals // test table
+	".qcow2":      {".qcow2", ".qc2"},
+	".qc2":        {".qcow2", ".qc2"},
+	".qcow":       {".qcow", ".qcow2", ".qc2"},
+	".iso":        {".iso"},
+	".hdd":        {".hdd"},
+	"_rootfs.tgz": {"_rootfs.tgz"},
+}
+
+// A new image's name becomes an absolute path that ends in an extension of its source's group, kept as given once it
+// has one, so normalizing it again changes nothing. A copy or a rename to a known image extension of another group is
+// refused instead.
 func TestNormalizeDstDiskProperties(t *testing.T) {
 	t.Parallel()
 
-	rapid.Check(t, func(t *rapid.T) {
-		src := rapid.SampledFrom([]string{"/files/a.qc2", "/files/win/b.qcow2", "/outside/c.img", "/files/old.qcow"}).
-			Draw(t, "src")
-		dst := rapid.SampledFrom([]string{"", "/abs/", "sub/", "../", "./"}).Draw(t, "folder") +
-			rapid.SampledFrom([]string{"new", "new.qc2", "new.qcow2", "new.qcow", "new.img", "new.qcow2.bak"}).
-				Draw(t, "name")
-		sameFormat := rapid.Bool().Draw(t, "sameFormat")
-
-		got := normalizeDstDisk(src, dst, sameFormat)
-
-		exts := []string{".qcow2", ".qc2"}
-		if sameFormat && strings.HasSuffix(src, ".qcow") {
-			exts = append(exts, ".qcow")
+	extOf := func(name string) string {
+		for ext := range normalizeDstDiskGroups {
+			if strings.HasSuffix(name, ext) {
+				return ext
+			}
 		}
 
-		if !filepath.IsAbs(got) || !slices.ContainsFunc(exts, func(ext string) bool { return strings.HasSuffix(got, ext) }) {
+		return ""
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		src := rapid.SampledFrom([]string{
+			"/files/a.qc2", "/files/win/b.qcow2", "/outside/c.img", "/files/old.qcow",
+			"/files/boot.iso", "/files/d.hdd", "/files/e_rootfs.tgz",
+		}).Draw(t, "src")
+		dst := rapid.SampledFrom([]string{"", "/abs/", "sub/", "../", "./"}).Draw(t, "folder") + "new" +
+			rapid.SampledFrom([]string{"", ".qc2", ".qcow2", ".qcow", ".img", ".qcow2.bak", ".iso", ".hdd", "_rootfs.tgz", ".tgz"}).
+				Draw(t, "extension")
+		sameFormat := rapid.Bool().Draw(t, "sameFormat")
+
+		exts, strict := normalizeDstDiskGroups[".qcow2"], false
+		if group, ok := normalizeDstDiskGroups[extOf(src)]; sameFormat && ok {
+			exts, strict = group, true
+		}
+
+		ends := func(name string) bool {
+			return slices.ContainsFunc(exts, func(ext string) bool { return strings.HasSuffix(name, ext) })
+		}
+
+		got, err := normalizeDstDisk(src, dst, sameFormat)
+
+		if refuse := strict && !ends(dst) && extOf(dst) != ""; refuse != (err != nil) {
+			t.Fatalf("normalizeDstDisk(%q, %q, %t) = %q, %v, want refused %t", src, dst, sameFormat, got, err, refuse)
+		}
+
+		if err != nil {
+			if !errors.Is(err, disk.ErrWrongExtension) {
+				t.Fatalf("normalizeDstDisk(%q, %q, %t) error = %v, want it to wrap %v",
+					src, dst, sameFormat, err, disk.ErrWrongExtension)
+			}
+
+			return
+		}
+
+		if !filepath.IsAbs(got) || !ends(got) {
 			t.Fatalf("normalizeDstDisk(%q, %q, %t) = %q, want an absolute path ending in one of %q",
 				src, dst, sameFormat, got, exts)
 		}
 
-		if !sameFormat && strings.HasSuffix(got, ".qcow") {
-			t.Fatalf("normalizeDstDisk(%q, %q, false) = %q, want a qcow2 image to have no .qcow name", src, dst, got)
-		}
-
-		if again := normalizeDstDisk(src, got, sameFormat); again != got {
-			t.Fatalf("normalizeDstDisk(%q, %q, %t) = %q, want it unchanged", src, got, sameFormat, again)
+		if again, err := normalizeDstDisk(src, got, sameFormat); err != nil || again != got {
+			t.Fatalf("normalizeDstDisk(%q, %q, %t) = %q, %v, want it unchanged", src, got, sameFormat, again, err)
 		}
 	})
+}
+
+// A copy or a rename keeps the format of an ISO, HDD or root file system image, so the new image keeps its
+// extension, and a new name with the extension of another format is refused with the extension it must have.
+func TestDiskActionsKeepTheExtension(t *testing.T) {
+	files := useDiskFilesDir(t)
+	dir := files.dir
+
+	writeDisks(t, dir+"/boot.iso", dir+"/data.hdd", dir+"/c_rootfs.tgz")
+
+	server := serveAs(t, "alice", disksRole(nil, "create", "update", "get")).URL + "/api/v1/disks"
+
+	for _, target := range []string{
+		"/clone?disk=boot.iso&new=copy",
+		"/rename?disk=copy.iso&new=moved.iso",
+		"/clone?disk=data.hdd&new=" + url.QueryEscape(dir+"/data2"),
+		"/rename?disk=c_rootfs.tgz&new=r",
+	} {
+		// each request acts on what the ones before it left
+		resp := do(t, http.MethodPost, server+target, "")
+		if body := readBody(t, resp); resp.StatusCode != http.StatusOK {
+			t.Fatalf("POST /api/v1/disks%s = %d, want %d: %s", target, resp.StatusCode, http.StatusOK, body)
+		}
+	}
+
+	resp := do(t, http.MethodPost, server+"/rename?disk=boot.iso&new=boot.qcow2", "")
+	body := readBody(t, resp)
+
+	if want := "must end in .iso"; resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, want) {
+		t.Errorf("POST /api/v1/disks/rename to boot.qcow2 = %d %s, want %d with %q",
+			resp.StatusCode, body, http.StatusBadRequest, want)
+	}
+
+	want := map[string]string{
+		dir + "/boot.iso":     dir + "/boot.iso",
+		dir + "/moved.iso":    dir + "/boot.iso",
+		dir + "/data.hdd":     dir + "/data.hdd",
+		dir + "/data2.hdd":    dir + "/data.hdd",
+		dir + "/r_rootfs.tgz": dir + "/c_rootfs.tgz",
+	}
+
+	if diff := cmp.Diff(want, tree(t, dir)); diff != "" {
+		t.Errorf("files after the disk actions mismatch (-want +got):\n%s", diff)
+	}
 }
 
 // A snapshot of a .qcow image is a qcow2 image, so it gets .qcow2, while a copy or a rename of it keeps .qcow.
@@ -607,7 +715,7 @@ func TestDiskActionsRefuse(t *testing.T) {
 	files := useDiskExperiments(t)
 	dir, outside := files.dir, files.outside
 
-	writeDisks(t, dir+"/win/a b.qc2", dir+"/win/a#b.qc2")
+	writeDisks(t, dir+"/win/a b.qc2", dir+"/win/a#b.qc2", dir+"/boot.iso")
 
 	all := disksRole([]string{"*"}, "create", "update", "delete", "get")
 	q := url.QueryEscape
@@ -652,12 +760,17 @@ func TestDiskActionsRefuse(t *testing.T) {
 		{"clone a disk it may not get", http.MethodPost, "/clone?disk=a.qc2&new=x", ownOnly, http.StatusForbidden},
 		{"clone to no name", http.MethodPost, "/clone?disk=" + q("win/win10.qcow2") + "&new=", all, http.StatusBadRequest},
 		{"clone to a folder", http.MethodPost, "/clone?disk=" + q("win/win10.qcow2") + "&new=" + q("backup/"), all, http.StatusBadRequest},
+		{"clone an ISO to a qcow2 name", http.MethodPost, "/clone?disk=boot.iso&new=x.qcow2", all, http.StatusBadRequest},
+		{"clone a qcow2 image to a .qcow name", http.MethodPost, "/clone?disk=a.qc2&new=x.qcow", all, http.StatusBadRequest},
+		{"clone job of an ISO to a qcow2 name", http.MethodPost, "/clone/jobs?disk=boot.iso&new=x.qc2", all, http.StatusBadRequest},
 		{"clone job outside", http.MethodPost, "/clone/jobs?disk=" + q(outside+"/o.qc2") + "&new=x", all, http.StatusBadRequest},
 		{"clone job onto an image", http.MethodPost, "/clone/jobs?disk=a.qc2&new=over.qc2", all, http.StatusConflict},
 		{"clone job of a missing image", http.MethodPost, "/clone/jobs?disk=missing.qc2&new=x", all, http.StatusNotFound},
 		{"clone job not allowed", http.MethodPost, "/clone/jobs?disk=a.qc2&new=x", disksRole(nil, "update", "get"), http.StatusForbidden},
 		{"clone job of a disk it may not get", http.MethodPost, "/clone/jobs?disk=a.qc2&new=x", ownOnly, http.StatusForbidden},
 		{"rename onto an image", http.MethodPost, "/rename?disk=a.qc2&new=over.qc2", all, http.StatusConflict},
+		{"rename an ISO to an HDD name", http.MethodPost, "/rename?disk=boot.iso&new=x.hdd", all, http.StatusBadRequest},
+		{"rename a qcow2 image to an ISO name", http.MethodPost, "/rename?disk=a.qc2&new=x.iso", all, http.StatusBadRequest},
 		{"rename to a name with a comma", http.MethodPost, "/rename?disk=a.qc2&new=" + q("a,b"), all, http.StatusBadRequest},
 		{"rename a folder", http.MethodPost, "/rename?disk=win&new=x", all, http.StatusBadRequest},
 		{"rename not allowed", http.MethodPost, "/rename?disk=a.qc2&new=x", disksRole(nil, "create"), http.StatusForbidden},

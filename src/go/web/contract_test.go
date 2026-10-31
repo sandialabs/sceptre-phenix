@@ -878,6 +878,10 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=" + contractDisk,
 			want: http.StatusConflict,
 		},
+		"clone to another image extension": {
+			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=copy.iso",
+			want: http.StatusBadRequest,
+		},
 		"unknown console":            {method: "GET", path: "/api/v1/console/1", want: http.StatusNotFound},
 		"another user's console":     {method: "GET", prepare: bobsConsole, want: http.StatusNotFound},
 		"end another user's console": {method: "DELETE", prepare: bobsConsole, want: http.StatusNotFound},

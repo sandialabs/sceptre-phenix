@@ -127,10 +127,12 @@ lack it). Points that are easy to miss:
 - Workflow routes are covered in [`workflow.md`](workflow.md#rest-endpoints).
 - `GET /disks` lists the files in the minimega files directory with a known
   extension (`.qcow2`, `.qc2`, `.qcow`, `_rootfs.tgz`, `.hdd`, `.iso`), every
-  image a topology names, and their backing images. `POST /disks/snapshot`,
-  `/clone` and `/rename` add `.qcow2` to `new` unless it ends in `.qc2` or
-  `.qcow2`. A clone or rename of a `.qcow` image keeps the qcow format, so it
-  also keeps a `.qcow` name, and adds `.qcow` rather than `.qcow2`.
+  image a topology names, and their backing images. `POST /disks/snapshot`
+  adds `.qcow2` to `new` unless it ends in `.qc2` or `.qcow2`. `/clone`,
+  `/clone/jobs` and `/rename` keep the format, so `new` follows the extension
+  of `disk`: `bar` becomes `bar.iso` for `foo.iso`, and `bar.qcow2` answers
+  `400`. A `.qcow` image also takes `.qcow2` and `.qc2` and adds `.qcow`. For
+  a `disk` with no known extension, `new` is named as for a snapshot.
 - `GET /disks` marks an image qemu cannot open (a missing backing file, a
   loop, or more than 64 images) with `brokenChain`, `chainProblem` and
   `missingBacking` (full path; empty for a loop); `backingImages` then holds

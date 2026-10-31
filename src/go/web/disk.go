@@ -501,8 +501,8 @@ func ResizeDisk(w http.ResponseWriter, r *http.Request) error {
 
 // CloneDisk - POST /disks/clone?disk={disk}&new={new}
 //
-// disk and new are as for SnapshotDisk, but a copy of a .qcow image keeps .qcow (see normalizeDstDisk). The copy
-// never replaces a file.
+// disk and new are as for SnapshotDisk, but the copy keeps the format of disk, so new follows its extension (see
+// normalizeDstDisk). The copy never replaces a file.
 func CloneDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
@@ -664,8 +664,12 @@ func diskAndNew(r *http.Request, sameFormat bool) (string, string, error) {
 		return "", "", fmt.Errorf("%w: new image %q does not name a file", disk.ErrNotManaged, dst)
 	}
 
-	newPath, err := disk.Resolve(normalizeDstDisk(path, dst, sameFormat))
+	newPath, err := normalizeDstDisk(path, dst, sameFormat)
 	if err != nil {
+		return "", "", err
+	}
+
+	if newPath, err = disk.Resolve(newPath); err != nil {
 		return "", "", err
 	}
 
@@ -677,7 +681,7 @@ func diskError(err error) error {
 	status := http.StatusInternalServerError
 
 	switch {
-	case errors.Is(err, disk.ErrNotManaged), errors.Is(err, disk.ErrUnsafeName):
+	case errors.Is(err, disk.ErrNotManaged), errors.Is(err, disk.ErrUnsafeName), errors.Is(err, disk.ErrWrongExtension):
 		status = http.StatusBadRequest
 	case errors.Is(err, disk.ErrExists):
 		status = http.StatusConflict
@@ -842,21 +846,44 @@ func GetDiskChecksum(w http.ResponseWriter, r *http.Request) error {
 }
 
 // normalizeDstDisk returns dst, the name of an image made from the image at src, as an absolute path: relative to the
-// folder of src. It adds .qcow2 unless dst ends in .qc2 or .qcow2. An action that keeps the format of src (sameFormat),
-// as a copy or a rename does, keeps the qcow format of a .qcow image, so then it also takes .qcow and adds .qcow.
-func normalizeDstDisk(src, dst string, sameFormat bool) string {
+// folder of src. It adds the first of dstExtensions unless dst ends in one of them. When those follow the known
+// extension of src, it refuses, with disk.ErrWrongExtension, a dst that ends in a different known image extension.
+func normalizeDstDisk(src, dst string, sameFormat bool) (string, error) {
 	if !filepath.IsAbs(dst) {
 		dst = filepath.Join(filepath.Dir(src), dst)
 	}
 
-	exts, add := []string{".qcow2", ".qc2"}, ".qcow2"
-	if sameFormat && strings.HasSuffix(src, ".qcow") {
-		exts, add = append(exts, ".qcow"), ".qcow"
+	exts, strict := dstExtensions(src, sameFormat)
+	if slices.ContainsFunc(exts, func(ext string) bool { return strings.HasSuffix(dst, ext) }) {
+		return dst, nil
 	}
 
-	if !slices.ContainsFunc(exts, func(ext string) bool { return strings.HasSuffix(dst, ext) }) {
-		dst += add
+	if strict && disk.ImageExtension(dst) != "" {
+		return "", fmt.Errorf("%w: the new image %s must end in %s, because it keeps the format of %s",
+			disk.ErrWrongExtension, dst, strings.Join(exts, " or "), src)
 	}
 
-	return dst
+	return dst + exts[0], nil
+}
+
+// dstExtensions returns the extensions that the name of an image made from the image at src may end in, the first
+// being the one to add, and whether a known extension of src decided them. A snapshot (not sameFormat) is a qcow2
+// image. A copy or a rename keeps the format of src: .qcow also takes the qcow2 ones, as phenix always did.
+func dstExtensions(src string, sameFormat bool) ([]string, bool) {
+	qcow2 := []string{".qcow2", ".qc2"}
+
+	if !sameFormat {
+		return qcow2, false
+	}
+
+	switch ext := disk.ImageExtension(src); ext {
+	case "":
+		return qcow2, false
+	case ".qcow2", ".qc2":
+		return qcow2, true
+	case ".qcow":
+		return append([]string{ext}, qcow2...), true
+	default:
+		return []string{ext}, true
+	}
 }

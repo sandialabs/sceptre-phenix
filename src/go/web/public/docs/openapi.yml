@@ -5865,11 +5865,16 @@ paths:
           description: >-
             the new image, relative to the folder holding `disk` or absolute. It
             must name a file that does not exist yet. It is not empty and does
-            not end in `/` or in a `.` or `..` element. The server adds `.qcow2`
-            unless it ends in `.qc2` or `.qcow2`. The copy keeps the format of
-            `disk`. Thus, when `disk` ends in `.qcow`, the server also keeps a
-            name that ends in `.qcow`. It adds `.qcow`, not `.qcow2`, to a name
-            that has none of these extensions.
+            not end in `/` or in a `.` or `..` element. The copy keeps the
+            format of `disk`, so the extension of `disk` decides the name. For
+            `.qcow2` or `.qc2`, the name can end in `.qcow2` or `.qc2`. For
+            `.qcow`, it can also end in `.qcow`. For `.iso`, `.hdd` or
+            `_rootfs.tgz`, it must end in that extension. The server adds
+            `.qcow2`, `.qcow` or the extension of `disk` to a name that has no
+            known image extension. A name with a different known image
+            extension, such as `bar.qcow2` for `foo.iso`, gets `400`. When
+            `disk` has no known extension, the server adds `.qcow2` unless the
+            name ends in `.qc2` or `.qcow2`.
           required: true
           schema:
             type: string
@@ -5880,8 +5885,9 @@ paths:
           description: >-
             a path outside the minimega files directory or in a folder the
             disk list leaves out, or an image that is not a regular file. Also a
-            `new` that names a folder rather than a file, or a new name minimega
-            cannot use.
+            `new` that names a folder rather than a file, a new name minimega
+            cannot use, or a new name with a known image extension that the
+            format of `disk` does not take.
           content:
             application/json:
               schema:
@@ -6023,11 +6029,10 @@ paths:
           description: >-
             the new image, relative to the folder holding `disk` or absolute. It
             must name a file that does not exist yet. It is not empty and does
-            not end in `/` or in a `.` or `..` element. The server adds `.qcow2`
-            unless it ends in `.qc2` or `.qcow2`. The image keeps its format.
-            Thus, when `disk` ends in `.qcow`, the server also keeps a name that
-            ends in `.qcow`. It adds `.qcow`, not `.qcow2`, to a name that has
-            none of these extensions.
+            not end in `/` or in a `.` or `..` element. The image keeps its
+            format, so the extension of `disk` decides the name as for POST
+            /disks/clone: `bar` for `foo.iso` becomes `bar.iso`, and
+            `bar.qcow2` gets `400`.
           required: true
           schema:
             type: string
@@ -6038,7 +6043,9 @@ paths:
           description: >-
             a path outside the minimega files directory or in a folder the
             disk list leaves out, or a folder. Also a `new` that names a folder
-            rather than a file, or a new name minimega cannot use.
+            rather than a file, a new name minimega cannot use, or a new name
+            with a known image extension that the format of `disk` does not
+            take.
           content:
             application/json:
               schema:

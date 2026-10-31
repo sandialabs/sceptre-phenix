@@ -267,15 +267,30 @@ minimega can use, sorted by the path the `Name` column shows, or `None` to make
 the image independent.
 
 `Snapshot`, `Clone`, and `Rename` ask for a new name, which is relative to the
-image's own folder unless it is a full path in the minimega files directory;
-`.qcow2` is added unless the name ends in `.qc2` or `.qcow2`. `Clone` and
-`Rename` do not change the format of the image. Thus, for a `.qcow` image, they
-also keep a name that ends in `.qcow`. They add `.qcow`, not `.qcow2`, to a
-name that has none of these extensions. A snapshot is always a qcow2 image, so
-phēnix adds `.qcow2` to a snapshot name that ends in `.qcow`. The name must
-name a file: one that is empty, ends in `/`, or whose last part is `.` or `..`
-is refused. The folder must already exist, and none of them replaces an
-existing file.
+image's own folder unless it is a full path in the minimega files directory.
+A snapshot is always a qcow2 image, so phēnix adds `.qcow2` to a snapshot name
+unless it ends in `.qc2` or `.qcow2`. `Clone` and `Rename` do not change the
+format of the image, so the extension of the image decides the new name:
+
+| Image extension | The new name can end in | Extension that phēnix adds |
+|---|---|---|
+| `.qcow2` or `.qc2` | `.qcow2` or `.qc2` | `.qcow2` |
+| `.qcow` | `.qcow`, `.qcow2` or `.qc2` | `.qcow` |
+| `.iso` | `.iso` | `.iso` |
+| `.hdd` | `.hdd` | `.hdd` |
+| `_rootfs.tgz` | `_rootfs.tgz` | `_rootfs.tgz` |
+
+A new name that ends in an extension of the second column stays as it is.
+phēnix refuses a new name that ends in a different known image extension, such
+as `bar.qcow2` for `foo.iso`, and the error gives the extensions that the name
+can have. phēnix adds the extension of the third column to all other names, so
+a clone named `bar` of `foo.iso` is `bar.iso`. For an image with no known
+extension, phēnix refuses no name: it adds `.qcow2` unless the name ends in
+`.qc2` or `.qcow2`.
+
+The new name must name a file: one that is empty, ends in `/`, or whose last
+part is `.` or `..` is refused. The folder must already exist, and none of
+`Snapshot`, `Clone`, and `Rename` replaces an existing file.
 
 `Snapshot`, `Commit`, `Rebase`, and `Resize` run through minimega, so the image,
 the backing image `Rebase` sets, and any new name must be paths minimega can

@@ -395,13 +395,19 @@ func chainDetails(entry cacheEntry, locked map[uint64]bool) []Details {
 }
 
 func knownImage(path string) bool {
+	return ImageExtension(path) != ""
+}
+
+// ImageExtension returns the known image extension that name ends in, such as
+// .qcow2 or _rootfs.tgz, or "" when it ends in none.
+func ImageExtension(name string) string {
 	for _, ext := range knownImageExtensions {
-		if strings.HasSuffix(path, ext) {
-			return true
+		if strings.HasSuffix(name, ext) {
+			return ext
 		}
 	}
 
-	return false
+	return ""
 }
 
 // resolveLocal adds to details the Details of each image path and the images
