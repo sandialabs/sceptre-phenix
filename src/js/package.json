@@ -28,7 +28,6 @@
     "file-saver": "^2.0.5",
     "js-yaml": "^4.3.2",
     "lodash-es": "^4.17.21",
-    "minimatch": "^10.0.1",
     "openapi-sampler": "^1.6.1",
     "pinia": "^4.0.3",
     "sass": "^1.87.0",
