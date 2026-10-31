@@ -263,7 +263,7 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, "timeout getting path "+combinedPath)
 	}
 
-	if !strings.HasPrefix(combinedPath, basePath) {
+	if !file.WithinDir(basePath, combinedPath) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Error(
 			plog.TypeSecurity,
@@ -370,7 +370,7 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()))
 	}
 
-	if !strings.HasPrefix(combinedPath, basePath) {
+	if !file.WithinDir(basePath, combinedPath) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Error(
 			plog.TypeSecurity,
@@ -446,7 +446,7 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()))
 	}
 
-	if !strings.HasPrefix(combinedPath, basePath) {
+	if !file.WithinDir(basePath, combinedPath) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Error(
 			plog.TypeSecurity,
@@ -528,8 +528,8 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
 
 	query := r.URL.Query()
 	destDir := filepath.Join(basePath, query.Get("path"))
-	if err := validatePathWithin(destDir, basePath); err != nil {
-		return weberror.New(http.StatusBadRequest, err.Error())
+	if !file.WithinDir(basePath, destDir) {
+		return weberror.New(http.StatusBadRequest, "path is not within base")
 	}
 
 	info, err := os.Stat(destDir)
@@ -559,8 +559,8 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
 
 	destName := filepath.Base(source)
 	destPath := filepath.Join(destDir, destName)
-	if err := validatePathWithin(destPath, destDir); err != nil {
-		return weberror.New(http.StatusBadRequest, err.Error())
+	if !file.WithinDir(destDir, destPath) {
+		return weberror.New(http.StatusBadRequest, "path is not within base")
 	}
 
 	destFile, err := os.OpenFile(
@@ -613,18 +613,4 @@ func getExperimentFilePath(expName, source, filesDir string) (string, error) {
 	}
 
 	return "", errors.New("file not found")
-}
-
-// validatePathWithin returns an error when path escapes base.
-func validatePathWithin(path, base string) error {
-	rel, err := filepath.Rel(base, path)
-	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
-	}
-
-	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return errors.New("path is not within base")
-	}
-
-	return nil
 }

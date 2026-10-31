@@ -921,28 +921,6 @@ func TestStageInjectsReportsUnremovablePreviousCopy(t *testing.T) {
 	}
 }
 
-func TestPathWithin(t *testing.T) {
-	tests := []struct {
-		target string
-		dir    string
-		want   bool
-	}{
-		{target: "/a/b", dir: "/a/b", want: true},
-		{target: "/a/b/c", dir: "/a/b", want: true},
-		{target: "/a/bc", dir: "/a/b", want: false},
-		{target: "/a", dir: "/a/b", want: false},
-		{target: "/a/b/../c", dir: "/a/b", want: false},
-		{target: "/", dir: "/", want: true},
-		{target: "/a", dir: "/", want: true},
-	}
-
-	for _, tt := range tests {
-		if got := workflow.PathWithin(filepath.FromSlash(tt.target), filepath.FromSlash(tt.dir)); got != tt.want {
-			t.Errorf("PathWithin(%q, %q) = %v, want %v", tt.target, tt.dir, got, tt.want)
-		}
-	}
-}
-
 func TestStagingLeftovers(t *testing.T) {
 	// The random suffixes that StageInjects gives its hidden siblings are 26
 	// characters from A to Z and 2 to 7.
