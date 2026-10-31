@@ -123,9 +123,11 @@ func startExperiment(name string) error {
 			dropCanceler(name, registered)
 
 			status <- result{nil, err}
-		} else {
-			followStart(ctx, name, ch)
+
+			return
 		}
+
+		followStart(ctx, name, ch)
 
 		exp, err := experiment.Get(name)
 
