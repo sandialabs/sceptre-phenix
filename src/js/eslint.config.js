@@ -47,6 +47,28 @@ export default [
       // errors from optional/best-effort requests (e.g. probing whether an
       // endpoint/feature is available). Empty blocks elsewhere still error.
       'no-empty': ['error', { allowEmptyCatch: true }],
+      // Dead code: fail on unused Vue members, refs, emits and components,
+      // and on useless or unreachable JavaScript. Remove the code.
+      'vue/no-unused-properties': [
+        'error',
+        {
+          groups: ['props', 'data', 'computed', 'methods', 'setup'],
+          deepData: true,
+        },
+      ],
+      'vue/no-unused-emit-declarations': 'error',
+      'vue/no-unused-refs': 'error',
+      'vue/no-unused-components': 'error',
+      'vue/no-unused-vars': 'error',
+      'no-unused-private-class-members': 'error',
+      'no-useless-assignment': 'error',
+      'no-unreachable-loop': 'error',
+      'no-constant-binary-expression': 'error',
+      'no-useless-return': 'error',
+      'no-useless-constructor': 'error',
+      'no-useless-rename': 'error',
+      'no-unused-expressions': 'error',
+      'no-unused-labels': 'error',
     },
   },
   {

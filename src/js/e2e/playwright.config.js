@@ -22,7 +22,9 @@ function workerCount(value) {
 
 module.exports = defineConfig({
   testDir: './tests',
-  timeout: 120000,
+  timeout: 60000,
+  // On CI the run stops after 8 minutes, about two times the slowest run.
+  globalTimeout: CI ? 8 * 60 * 1000 : 0,
   fullyParallel: true,
   forbidOnly: CI,
   workers: process.env.E2E_WORKERS

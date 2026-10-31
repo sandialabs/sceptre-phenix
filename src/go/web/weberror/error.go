@@ -15,6 +15,17 @@ type WebError struct {
 	Message        string            `json:"message"`
 	SystemMetadata map[string]string `json:"sys_metadata,omitempty"` // logged, but not return to user
 	UserMetadata   map[string]string `json:"metadata,omitempty"`     // logged and returned to user
+
+	// Code is a stable, machine-readable name of the failure. The Builder
+	// routes give every error one. Other routes leave it out.
+	Code string `json:"code,omitempty"`
+	// Issues lists the problems of the failure, one by one, where a route
+	// names them (the Builder routes, as issue objects). Otherwise it is left
+	// out.
+	Issues any `json:"issues,omitempty"`
+
+	// wrapped is the error the WebError was made from, if any.
+	wrapped error
 }
 
 func NewWebError(cause error, format string, args ...any) *WebError {
@@ -28,6 +39,7 @@ func NewWebError(cause error, format string, args ...any) *WebError {
 		Message: fmt.Sprintf(format, args...),
 		Cause:   causeStr,
 		Status:  http.StatusBadRequest,
+		wrapped: cause,
 	}
 
 	return err
@@ -57,12 +69,25 @@ func (err *WebError) SetStatus(status int) *WebError {
 	return err
 }
 
+// WithCode sets the code of the failure (see [WebError.Code]).
+func (err *WebError) WithCode(code string) *WebError {
+	err.Code = code
+
+	return err
+}
+
 func (err WebError) Error() string {
 	if err.Cause == "" {
 		return err.Message
 	}
 
 	return fmt.Sprintf("%s: %v", err.Message, err.Cause)
+}
+
+// Unwrap returns the error the WebError was made from, so [errors.Is] and
+// [errors.As] see through it.
+func (err WebError) Unwrap() error {
+	return err.wrapped
 }
 
 type ErrorHandler func(http.ResponseWriter, *http.Request) error

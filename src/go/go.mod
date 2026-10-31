@@ -38,6 +38,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	inet.af/netaddr v0.0.0-20220617031823-097006376321
+	pgregory.net/rapid v1.3.0
 )
 
 require (

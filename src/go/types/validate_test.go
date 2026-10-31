@@ -2,11 +2,13 @@ package types_test
 
 import (
 	"errors"
-	"slices"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	"phenix/types"
@@ -52,27 +54,32 @@ func TestValidateSchemaAccepts(t *testing.T) {
 	}
 }
 
-// assertSchemaError checks that err is a validation failure whose schema error
-// has the given JSON pointer and breaks the given schema keyword.
-func assertSchemaError(t *testing.T, err error, pointer []string, field string) {
-	t.Helper()
+// schemaFailure is where a schema error points and the keyword it breaks.
+type schemaFailure struct {
+	Pointer []string
+	Field   string
+}
 
+// checkSchemaError returns an error unless err is a validation failure whose
+// schema error has the given JSON pointer and breaks the given schema keyword.
+func checkSchemaError(err error, pointer []string, field string) error {
 	if !errors.Is(err, types.ErrValidationFailed) {
-		t.Fatalf("error = %v, want ErrValidationFailed", err)
+		return fmt.Errorf("error = %w, want ErrValidationFailed", err)
 	}
 
 	var schemaErr *openapi3.SchemaError
 	if !errors.As(err, &schemaErr) {
-		t.Fatalf("error %v carries no *openapi3.SchemaError", err)
+		return fmt.Errorf("error %w carries no *openapi3.SchemaError", err)
 	}
 
-	if got := schemaErr.JSONPointer(); !slices.Equal(got, pointer) {
-		t.Errorf("JSONPointer() = %v, want %v", got, pointer)
+	want := schemaFailure{Pointer: pointer, Field: field}
+	got := schemaFailure{Pointer: schemaErr.JSONPointer(), Field: schemaErr.SchemaField}
+
+	if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+		return fmt.Errorf("schema error mismatch (-want +got):\n%s", diff)
 	}
 
-	if schemaErr.SchemaField != field {
-		t.Errorf("SchemaField = %q, want %q", schemaErr.SchemaField, field)
-	}
+	return nil
 }
 
 // TestValidateSchemaRejects checks the chain of validation failures, whose
@@ -104,7 +111,9 @@ func TestValidateSchemaRejects(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertSchemaError(t, types.ValidateSchema("Workflow", "v0", tc.value), tc.wantPointer, tc.wantField)
+			if err := checkSchemaError(types.ValidateSchema("Workflow", "v0", tc.value), tc.wantPointer, tc.wantField); err != nil {
+				t.Errorf("ValidateSchema(Workflow, v0, value): %v", err)
+			}
 		})
 	}
 }
@@ -171,7 +180,9 @@ func TestValidateConfigSpecErrorChain(t *testing.T) {
 		Spec:     map[string]any{"apps": []any{map[string]any{}}},
 	}
 
-	assertSchemaError(t, types.ValidateConfigSpec(cfg), []string{"apps", "0", "name"}, "required")
+	if err := checkSchemaError(types.ValidateConfigSpec(cfg), []string{"apps", "0", "name"}, "required"); err != nil {
+		t.Errorf("ValidateConfigSpec(Scenario without an app name): %v", err)
+	}
 }
 
 // TestValidateConfigSpecRejectsWorkflowKind proves a Workflow document cannot
@@ -185,7 +196,9 @@ func TestValidateConfigSpecRejectsWorkflowKind(t *testing.T) {
 		Spec:     map[string]any{"topology": "helloworld"},
 	}
 
-	assertSchemaError(t, types.ValidateConfigSpec(cfg), []string{"kind"}, "enum")
+	if err := checkSchemaError(types.ValidateConfigSpec(cfg), []string{"kind"}, "enum"); err != nil {
+		t.Errorf("ValidateConfigSpec(Workflow config): %v", err)
+	}
 }
 
 // TestValidateConfigSpecUsesOwnVersion proves a config validates against the

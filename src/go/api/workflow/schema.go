@@ -13,12 +13,10 @@ const (
 	schemaVersion = "v0"
 )
 
-// ValidateDocument validates a whole workflow config, apiVersion and kind
-// included, against the Workflow schema. doc is the config as parsed after
-// ${VAR} expansion, so the schema sees every top-level key; nil is validated
-// as an empty document. A validation failure wraps [types.ErrValidationFailed]
-// and its JSON pointers are relative to the document root, so they match the
-// source file. Any other error means the schema could not be loaded.
+// ValidateDocument validates a whole workflow config, parsed after
+// ${BRANCH_NAME} expansion, against the Workflow schema. nil is an empty
+// document. A failure wraps [types.ErrValidationFailed], with JSON pointers
+// relative to the document root. Any other error means the schema did not load.
 func ValidateDocument(doc map[string]any) error {
 	if doc == nil {
 		doc = map[string]any{}

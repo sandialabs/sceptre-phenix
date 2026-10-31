@@ -144,6 +144,11 @@ func ConfigureUsers(users []string) error {
 //nolint:funlen,maintidx // server startup
 func Start(opts ...ServerOption) error {
 	o = newServerOptions(opts...)
+
+	// The work the server runs in the background ends when Start returns.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	fileServerEndpoint, err := normalizeFileServerEndpoint(o.fileServerEndpoint)
 	if err != nil {
 		return fmt.Errorf("invalid ui.file-server-endpoint: %w", err)
@@ -195,7 +200,7 @@ func Start(opts ...ServerOption) error {
 	)
 
 	router.PathPrefix("/assets/").Handler(
-		http.FileServer(assets),
+		builderAssetHandler(assets),
 	)
 
 	router.Handle("/favicon.ico", http.FileServer(assets))
@@ -237,6 +242,13 @@ func Start(opts ...ServerOption) error {
 	// The router's NotFoundHandler serves the SPA index, so an API client would get 200 HTML.
 	// A route behind a disabled feature flag would then also look enabled.
 	api.NotFoundHandler = apiNotFoundHandler()
+
+	// The Builder routes are registered before the generic schema routes
+	// so /schemas/builder/v1 is matched by the builder schema handler rather
+	// than by /schemas/{kind}/{version}.
+	if err := registerBuilderRoutes(api, withBuilderSweep(ctx, builderSweepEvery)); err != nil {
+		return fmt.Errorf("configuring Builder API: %w", err)
+	}
 
 	// OPTIONS method needed for CORS
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")

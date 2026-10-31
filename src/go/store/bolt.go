@@ -81,16 +81,18 @@ func (b *BoltDB) InitializeComponent(component Component) error {
 func (b *BoltDB) open() error {
 	b.mu.Lock()
 
-	var err error
-
 	opts := &bbolt.Options{NoFreelistSync: true, Timeout: boltOpenTimeout} //nolint:exhaustruct // partial initialization
 
-	b.db, err = bbolt.Open(b.path, boltFileMode, opts)
+	db, err := bbolt.Open(b.path, boltFileMode, opts)
 	if err != nil {
+		// The lock is held only while the database is open, so release it when
+		// opening fails. Callers do not call Close in that case.
 		b.mu.Unlock()
 
 		return fmt.Errorf("opening BoltDB file %s: %w", b.path, err)
 	}
+
+	b.db = db
 
 	return nil
 }
@@ -102,7 +104,10 @@ func (b *BoltDB) Close() error {
 		return nil
 	}
 
-	return b.db.Close()
+	db := b.db
+	b.db = nil
+
+	return db.Close()
 }
 
 func (b *BoltDB) List(kinds ...string) (Configs, error) {
@@ -192,7 +197,7 @@ func (b *BoltDB) Create(c *Config) error {
 
 	c.Metadata.Updated = now
 
-	v, err := json.Marshal(c)
+	v, err := c.StoredJSON()
 	if err != nil {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
@@ -217,7 +222,7 @@ func (b *BoltDB) Update(c *Config) error {
 
 	c.Metadata.Updated = time.Now().Format(time.RFC3339)
 
-	v, err := json.Marshal(c)
+	v, err := c.StoredJSON()
 	if err != nil {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}

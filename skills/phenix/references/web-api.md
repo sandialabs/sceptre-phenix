@@ -54,6 +54,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 | Realtime | `GET /ws` (websocket broker for UI events/logs), `GET /logs`, `POST /console`, `GET /console/{pid}/ws`, `POST /console/{pid}/size` |
 | SCORCH | `GET /experiments/{name}/scorch/pipelines`, `GET /experiments/{name}/scorch/pipelines/{run}/{loop}`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}[/ws]`, `/experiments/{name}/scorch/terminals*` |
 | Settings | `GET/POST /settings`, `GET /settings/password`, `GET /settings/timeout` |
+| Builder | `/builder/…` routes (drafts, sources, generate, legacy, export, package, documents, topologies, icons, templates, layersets) and `/schemas/builder/…`. See [`builder/api.md`](builder/api.md) |
 | Workflow | `POST /workflow/apply/{branch}` (`?dryRun=true`, `pending`, `expect`, `tag`), `POST /workflow/configs/{branch}` (`?dryRun=true`). Parameters and answers are in [`workflow.md`](workflow.md#rest-endpoints) |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode, plus `base-dir.injects` and `workflow-dry-run`) |
 
@@ -62,13 +63,13 @@ When a config fails its schema, the config routes (`POST /configs`,
 explained lines in `metadata.validation`, one per line, and the validator's
 text in `metadata.validation-raw`; see [`workflow.md`](workflow.md).
 
+Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
+through to the SPA index. A route behind a disabled feature flag is therefore a
+real `404`, not `200 text/html`.
+
 `POST /users` and `POST /signup` answer `409` `user <name> already exists` for
 a name another user has, and `500` `error creating user` for other failures.
 `POST /users` answers `400` `role not found` for an unknown role before it
 creates anything.
-
-Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
-through to the SPA index. A route behind a disabled feature flag is therefore a
-real `404`, not `200 text/html`.
 
 `src/go/web/server.go` is the authoritative route list.

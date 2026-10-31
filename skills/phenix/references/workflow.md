@@ -41,9 +41,9 @@ written out, not given as a `${VAR}` placeholder.
 `<name>` is the workflow branch name: the directory's name unless `-b` sets
 it. It must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. The server expands
 `${BRANCH_NAME}` placeholders (for example
-`/phenix/injects/${BRANCH_NAME}/motd`) to it, and fills in other `${VAR}`
-placeholders from its own environment, except in a config's `kind` and
-`metadata.name`, which can use no placeholder but `${BRANCH_NAME}`. Configs
+`/phenix/injects/${BRANCH_NAME}/motd`) to it and keeps every other `${VAR}`
+placeholder as written. A config's `kind` and `metadata.name` can use no
+placeholder but `${BRANCH_NAME}`. Configs
 that hard-code the injects directory need `-b` set to the name they use.
 
 The names `phenix.yml`, `phenix-configs` and `phenix-injects` are reserved, in
