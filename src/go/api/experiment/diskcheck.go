@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -25,9 +24,6 @@ import (
 const (
 	// diskCheckTimeout is how long a disk check may read images before the start goes on without the rest.
 	diskCheckTimeout = 20 * time.Second
-
-	// maxDiskWorkers is how many images a disk check reads at once.
-	maxDiskWorkers = 8
 
 	// maxListedProblems is how many problems an error lists before it counts the rest.
 	maxListedProblems = 20
@@ -463,59 +459,15 @@ func derefBool(b *bool, unset bool) bool {
 	return *b
 }
 
-// walkImages reads paths, each only opened when openOnly says so, a few at a time, until timeout. A path missing from
-// the result was not read in time; a worker still reading it exits once its read returns.
+// walkImages reads paths, each only opened when openOnly says so, until timeout (see diskchain.WalkAll), and cleans the
+// paths of each result. A path missing from the result was not read in time.
 func walkImages(ctx context.Context, paths []string, openOnly map[string]bool, timeout time.Duration) map[string]diskchain.Result {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	type walked struct {
-		path string
-		res  diskchain.Result
-	}
-
-	queue := make(chan string, len(paths))
-	for _, path := range paths {
-		queue <- path
-	}
-
-	close(queue)
-
-	// buffered, so a worker never waits on a collector that gave up
-	out := make(chan walked, len(paths))
-
-	for range min(runtime.NumCPU(), maxDiskWorkers, len(paths)) {
-		go func() {
-			for path := range queue {
-				if ctx.Err() != nil {
-					return
-				}
-
-				walk := diskchain.Walk
-				if openOnly[path] {
-					walk = diskchain.Exists
-				}
-
-				res := walk(ctx, path)
-
-				if ctx.Err() != nil {
-					return
-				}
-
-				out <- walked{path: path, res: res}
-			}
-		}()
-	}
-
-	results := make(map[string]diskchain.Result, len(paths))
-
-	for len(results) < len(paths) {
-		select {
-		case w := <-out:
-			results[w.path] = cleanResult(w.res)
-		case <-ctx.Done():
-			return results
-		}
+	results := diskchain.WalkAll(ctx, paths, openOnly)
+	for path, res := range results {
+		results[path] = cleanResult(res)
 	}
 
 	return results

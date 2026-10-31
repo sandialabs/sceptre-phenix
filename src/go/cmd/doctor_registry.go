@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/sys/unix"
 
+	"phenix/api/disk"
 	"phenix/store"
 	"phenix/web"
 	"phenix/web/health"
@@ -37,6 +38,7 @@ const (
 	doctorGroupServer   = "server"
 	doctorGroupMinimega = "minimega"
 	doctorGroupTools    = "tools"
+	doctorGroupImages   = "images"
 	doctorGroupFeatures = "features"
 )
 
@@ -52,6 +54,7 @@ type doctorInput struct {
 	server   func(socket string, timeout time.Duration) *http.Client
 	qemuImg  func(ctx context.Context, path string) (string, error) // its version
 	statfs   func(path string) (health.DiskStat, error)
+	images   func(ctx context.Context, dir string) (disk.ChainScan, error)
 	timeout  time.Duration
 	now      func() time.Time
 	hostname func() (string, error)
@@ -134,6 +137,7 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		server:   doctorServerClient,
 		qemuImg:  health.QemuImgVersion,
 		statfs:   health.Statfs,
+		images:   disk.BrokenImages,
 		timeout:  timeout,
 		now:      time.Now,
 		hostname: os.Hostname,
@@ -657,6 +661,10 @@ func doctorChecks() []doctorCheckDef {
 			id: "disk", group: doctorGroupTools, name: "disk",
 			hint: hintText("increase the free space on the filesystem that the row names"),
 			run:  diskChecks,
+		},
+		{
+			id: "disk-chains", group: doctorGroupImages, name: diskChainsName, hint: diskChainsHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(diskChainsCheck(ctx, in)) },
 		},
 		{
 			id: web.FeatureTunnelerDownload, group: doctorGroupFeatures, name: web.FeatureTunnelerDownload,

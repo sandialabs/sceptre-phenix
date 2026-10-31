@@ -150,6 +150,7 @@ valid ones.
 | `filebeat` | `tools` | the program is not on `PATH`, so SCORCH starts no Filebeat, even for a component that enables it | never |
 | `apps` | `tools` | never | never; the row lists the user apps (`phenix-app-*`) and SCORCH components (`phenix-scorch-component-*`) found on `PATH` |
 | `disk` (one row per filesystem, such as disk phenix-base) | `tools` | the filesystem of `base-dir.phenix`, the store or minimega's `-filepath` is 90% full | the filesystem is 98% full |
+| `disk-chains` | `images` | a disk image in the images directory has a broken backing chain: a backing file is missing, the chain loops, or the chain is more than 64 images deep; the row names at most 5 such images and counts the rest; the directory cannot be listed; the check does not finish within `--timeout` | never; the images directory is minimega's `-filepath`, or `<base-dir.phenix>/images` when minimega gives none, and a `skip` row shows when it does not exist |
 | `tunneler-download`, `webshark` | `features` | `downloads/tunneler` is not a directory | never; the row says whether `phenix ui` turns the feature on |
 | `ui.features` | `features` | a name is not a feature, such as a misspelling; `tunneler-download` or `file-server` is set without what it needs | `webshark` is set without a WebShark build, which `phenix ui` refuses |
 | `ui.logs.minimega-path` | `features` | the file does not exist or is not readable by this user; the setting is empty while minimega logs to a file (its `-logfile`, or `MM_LOGFILE` in the environment) | the path is not a regular file |
@@ -196,6 +197,13 @@ A development key is `dev|<user>|<role>`. Since doctor opens no store, it
 checks the roles of `ui.users` and of a development key against the built-in
 roles only, and warns about any other. The `tls` checks read the key and
 certificate files, and print neither.
+
+The `disk-chains` check reads only the image headers, as the disk check before
+an experiment start does (see
+[Disk Check Before a Start](experiments.md#disk-check-before-a-start)). It
+never runs `qemu-img` and sends minimega no command. It checks only the files
+on this host. When it runs out of time, it warns and gives the number of
+images it checked.
 
 `-o json` prints the same report as one JSON object: `schemaVersion` (`1`),
 `status`, `time`, `version` (`phenix`, `label`, `commit`, `date`,

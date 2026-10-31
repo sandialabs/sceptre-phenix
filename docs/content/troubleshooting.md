@@ -187,6 +187,10 @@ steps:
 If the file is on a compute node only, set `experiment.disk-check` to `warn`.
 See [Disk Check Before a Start](experiments.md#disk-check-before-a-start).
 
+To find such images before a start, run `phenix doctor`. Its `disk-chains`
+check warns about each image in minimega's files directory with a broken
+backing chain.
+
 ### phēnix Cannot Reach minimega or Its Images
 
 `phenix doctor` fails its `minimega` check when minimega does not give its

@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/pflag"
 	"pgregory.net/rapid"
 
+	"phenix/api/disk"
 	"phenix/version"
 	"phenix/web/health"
 )
@@ -118,6 +119,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 			return "qemu-img version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1)", nil
 		},
 		statfs:   func(string) (health.DiskStat, error) { return health.DiskStat{Device: 1, Total: 100, Avail: 50}, nil },
+		images:   disk.BrokenImages,
 		timeout:  time.Second,
 		now:      func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
 		hostname: func() (string, error) { return "doctor-test-host", nil },
@@ -217,6 +219,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"filebeat filebeat pass",
 		"apps apps pass",
 		"disk disk phenix-base pass",
+		"disk-chains disk chains pass",
 		"tunneler-download tunneler-download pass",
 		"webshark webshark pass",
 		"ui.features ui.features pass",
@@ -404,8 +407,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			modify: func(in *doctorInput) {
 				in.probe = func(string, time.Duration) (string, error) { return "", errors.New("refused") }
 			},
-			// minimega-env checks nothing, in one skip row
-			want: slices.Replace(replaceRows(allPass, "minimega minimega fail"),
+			// minimega-env checks nothing, in one skip row; no <base-dir.phenix>/images to check
+			want: slices.Replace(replaceRows(allPass, "minimega minimega fail", "disk-chains disk chains skip"),
 				slices.Index(allPass, "minimega-env minimega files pass"),
 				slices.Index(allPass, "minimega-env minimega mesh pass")+1,
 				"minimega-env minimega-env skip"),
@@ -417,6 +420,14 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			},
 			want: replaceRows(allPass,
 				"qemu-img qemu-img fail", "vmdb2 vmdb2 fail", "filebeat filebeat warn", "disk disk phenix-base fail"),
+		},
+		"broken disk image": {
+			modify: func(in *doctorInput) {
+				in.images = func(context.Context, string) (disk.ChainScan, error) {
+					return disk.ChainScan{Images: 1, Checked: 1, Broken: []disk.BrokenImage{{Path: "a.qc2", Problem: "x"}}}, nil
+				}
+			},
+			want: replaceRows(allPass, "disk-chains disk chains warn"),
 		},
 		"features phenix ui turns on by itself": {
 			settings: map[string]string{"ui.features": "vm-mount webshark file-server vm-mnt"},
@@ -606,7 +617,7 @@ func TestParseDoctorSkip(t *testing.T) {
 					t.Fatalf("parseDoctorSkip(%v) error = %v, want prefix %q", tc.args, err, tc.wantErr)
 				}
 
-				groups := "groups: config, env, settings, files, dirs, ui, auth, tls, socket, server, minimega, tools, features"
+				groups := "Groups: config, env, settings, files, dirs, ui, auth, tls, socket, server, minimega, tools, images, features"
 				if !strings.HasSuffix(err.Error(), groups) {
 					t.Errorf("parseDoctorSkip(%v) error = %v, want the groups listed", tc.args, err)
 				}
@@ -732,7 +743,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 41 passed, 1 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 41 passed, 2 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},

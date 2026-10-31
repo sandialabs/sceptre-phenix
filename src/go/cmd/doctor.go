@@ -149,11 +149,13 @@ func newDoctorCmd() *cobra.Command {
   the unix socket's directory and group), ask a running phenix ui on the unix
   socket for its version and its bridge and deploy modes, and check that
   minimega answers on its socket and that its files directory, base directory
-  and mesh suit phenix. The tools and features checks look for qemu-img,
-  vmdb2 and filebeat on PATH, list the user apps and SCORCH components there,
-  measure free disk space, report whether phenix ui turns on tunneler
-  downloads and WebShark (relative to the working directory), and check
-  ui.features and ui.logs.minimega-path. --skip takes a check or a group of
+  and mesh suit phenix. The disk-chains check reads the headers of the disk
+  images in that files directory, for at most --timeout, and warns about each
+  image whose backing chain is broken. The tools and features checks look for
+  qemu-img, vmdb2 and filebeat on PATH, list the user apps and SCORCH
+  components there, measure free disk space, report whether phenix ui turns
+  on tunneler downloads and WebShark (relative to the working directory), and
+  check ui.features and ui.logs.minimega-path. --skip takes a check or a group of
   checks; an unknown name fails and lists the valid ones. Secret values, such
   as the JWT signing key and initial users, are redacted. doctor exits 1 when
   a check fails, or with --strict when one warns, and 0 otherwise.
@@ -216,16 +218,22 @@ func newDoctorCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Duration("timeout", defaultDoctorTimeout, "how long to wait for each answer of minimega or phenix ui")
-	cmd.Flags().StringP("output", "o", "text", "output format ('text' or 'json')")
-	cmd.Flags().StringSlice("skip", nil,
-		"checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)")
-	cmd.Flags().Bool("strict", false, "exit 1 when a check warns, not only when one fails")
-	cmd.Flags().BoolP("no-print-settings", "x", false, "leave out the settings list")
-	cmd.Flags().Bool("report", false,
-		"add the hostname and print the output in a fenced block to paste into a bug report")
+	addDoctorFlags(cmd.Flags())
 
 	return cmd
+}
+
+// addDoctorFlags adds the doctor command's own flags to flags.
+func addDoctorFlags(flags *pflag.FlagSet) {
+	flags.Duration("timeout", defaultDoctorTimeout,
+		"how long to wait for each answer of minimega or phenix ui, and for the disk-chains check")
+	flags.StringP("output", "o", "text", "output format ('text' or 'json')")
+	flags.StringSlice("skip", nil,
+		"checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)")
+	flags.Bool("strict", false, "exit 1 when a check warns, not only when one fails")
+	flags.BoolP("no-print-settings", "x", false, "leave out the settings list")
+	flags.Bool("report", false,
+		"add the hostname and print the output in a fenced block to paste into a bug report")
 }
 
 func doctorFlagOptions(flags *pflag.FlagSet) doctorOptions {
