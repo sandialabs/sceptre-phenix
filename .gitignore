@@ -30,6 +30,7 @@ src/js/dist/
 
 # Example binaries
 examples/go/example-app
+examples/go/example
 examples/stderr
 .github/workflows/example
 .github/workflows/example.exe

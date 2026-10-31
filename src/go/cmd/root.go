@@ -23,6 +23,7 @@ import (
 	"phenix/store"
 	"phenix/util/common"
 	"phenix/util/plog"
+	"phenix/util/termcolor"
 	"phenix/web"
 )
 
@@ -115,6 +116,10 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("setting user-specified deploy mode: %w", err)
 		}
 
+		if _, err := colorMode(); err != nil {
+			return err
+		}
+
 		var logOutput io.Writer = os.Stderr
 		if out := getEffectiveString(
 			"log.console",
@@ -135,7 +140,7 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		plog.NewPhenixHandler(logOutput)
+		plog.NewPhenixHandler(logOutput, outputPalette(logOutput).On())
 		plog.SetLevelText(getEffectiveString("log.level", cmd.Flags().Changed("log.level")))
 
 		common.PhenixBase = getEffectiveString( //nolint:reassign // configuration injection
@@ -208,7 +213,8 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
-	SilenceUsage: true, // don't print help when subcommands return an error
+	SilenceUsage:  true, // don't print help when subcommands return an error
+	SilenceErrors: true, // Execute prints the error, with its color
 }
 
 // serverOptionsClient returns the client with which the root command reads
@@ -241,6 +247,7 @@ func argsWithUsage(validate cobra.PositionalArgs) cobra.PositionalArgs {
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
+		printCommandError(os.Stderr, os.Args[1:], err)
 		os.Exit(1)
 	}
 }
@@ -372,7 +379,7 @@ func init() {
 				}
 			}
 		}
-		plog.ChangeConsoleLogger(logOutput)
+		plog.ChangeConsoleLogger(logOutput, outputPalette(logOutput).On())
 		if currentConsoleFile != nil {
 			_ = currentConsoleFile.Close()
 		}
@@ -434,6 +441,12 @@ func init() {
 		Bool("use-gre-mesh", false, "use GRE tunnels between mesh nodes for VLAN trunking")
 	rootCmd.PersistentFlags().
 		String("unix-socket", "/tmp/phenix.sock", "phēnix unix socket to listen on (ui subcommand) or connect to")
+	rootCmd.PersistentFlags().
+		String(
+			colorFlag, string(termcolor.Auto),
+			"when to color the output: 'auto' colors only a terminal, and not when NO_COLOR is set or TERM is dumb. "+
+				"JSON and YAML output never have color ("+colorOptions+")",
+		)
 
 	// Ensure default directories exist
 	if uid == "0" {

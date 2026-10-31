@@ -85,6 +85,7 @@ The following global flags are supported by all `phenix` subcommands:
 | `--base-dir.phenix` | `string` | `/phenix` | Base phēnix directory. |
 | `--base-dir.topologies` | `string` | `<base-dir.phenix>/topologies` | Directory that `phenix workflow apply` looks up topology directory names in. See [Workflow](workflow.md). |
 | `--bridge-mode` | `string` | `manual` | Bridge naming mode for experiments (`auto` uses experiment name for bridge; `manual` uses user-specified bridge name, or `phenix` if omitted). |
+| `--color` | `string` | `auto` | When to color the output (`auto`, `on`, or `off`). `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. See [Colors](#colors). |
 | `--deploy-mode` | `string` | — | Deploy mode for minimega VMs (`all`, `no-headnode`, or `only-headnode`). |
 | `-h, --help` | — | — | Display help information for the command. |
 | `--hostname-suffixes` | `string` | `-minimega,-phenix` | Hostname suffixes to strip. |
@@ -99,6 +100,26 @@ The following global flags are supported by all `phenix` subcommands:
 | `--unix-socket` | `string` | `/tmp/phenix.sock` | phēnix unix socket to listen on (`ui` subcommand) or connect to. |
 | `--use-gre-mesh` | — | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. See [GRE Mesh](gre-mesh.md). |
 
+## Colors
+
+phēnix colors parts of its text output. The `--color` flag, the `color`
+setting or `PHENIX_COLOR` sets when:
+
+* `auto` (the default) colors an output only when it is a terminal. It
+  does not color when `NO_COLOR` is set to a value or `TERM` is `dumb`.
+* `on` colors every output, also a file or a pipe.
+* `off` colors no output.
+
+phēnix refuses another value. JSON and YAML output never have color. A
+table keeps its columns aligned, because phēnix measures each cell without
+its color codes.
+
+| Output | Colors |
+| :--- | :--- |
+| Every command | The `Error:` label of a failed command is red. A console log record shows its level in color, the message of a warning in yellow, and the message of an error in red. |
+| `phenix experiment list` | The `Started` time of a running experiment is green. |
+| `phenix vm info` | The `Running` value is green for a running VM, red for a VM that minimega shows as `QUIT` or `ERROR`, and faint for other VMs. |
+
 ## Settings Reference
 
 | Setting Key | Environment Variable | Default | Description |
@@ -106,6 +127,7 @@ The following global flags are supported by all `phenix` subcommands:
 | `bridge-mode` | `PHENIX_BRIDGE_MODE` | `manual` | Bridge naming mode for experiments. `auto` uses the experiment name as the bridge name; `manual` uses the user-specified bridge name, or `phenix` if not specified. See [Bridge Mode](bridge-mode.md). |
 | `use-gre-mesh` | `PHENIX_USE_GRE_MESH` | `false` | Enable Layer 2 GRE tunnels for the default bridge of experiments created or updated with this setting. See [GRE Mesh](gre-mesh.md) for usage, server inheritance, and MTU requirements. `phenix ui` reads this setting at startup. **(Restart Required)** |
 | `log.level` | `PHENIX_LOG_LEVEL` | `info` | Global log verbosity (`debug`, `info`, `warn`, `error`). |
+| `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. See [Colors](#colors). |
 | `log.console` | `PHENIX_LOG_CONSOLE` | `stderr` | Destination for console logs (`stderr`, `stdout`, or a file path). Uses **Text/Human-Readable** format. Note: Setting this to a file path will prevent console logs from appearing in `docker logs`. |
 | `log.system.path` | `PHENIX_LOG_SYSTEM_PATH` | `/var/log/phenix/phenix.log` | Path to the persistent system log file (used by UI). Uses **JSON** format. This is independent of `log.console` and is always active. |
 | `log.system.max-size` | `PHENIX_LOG_SYSTEM_MAX_SIZE` | `100` | Max size in MB before rotation. |
