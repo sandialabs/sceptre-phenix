@@ -63,8 +63,8 @@ func newMMCmd() *cobra.Command {
 		ValidArgsFunction: mmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				attach    = MustGetBool(cmd.Flags(), "attach")
-				namespace = MustGetString(cmd.Flags(), "namespace")
+				attach    = mustGet(cmd.Flags().GetBool, "attach")
+				namespace = mustGet(cmd.Flags().GetString, "namespace")
 			)
 
 			if !attach && len(args) == 0 {
@@ -233,7 +233,7 @@ func mmArgsCompletion(
 	args []string,
 	toComplete string,
 ) ([]string, cobra.ShellCompDirective) {
-	if MustGetBool(cmd.Flags(), "attach") {
+	if mustGet(cmd.Flags().GetBool, "attach") {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
