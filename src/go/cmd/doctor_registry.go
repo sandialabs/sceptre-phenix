@@ -55,15 +55,18 @@ type doctorInput struct {
 	qemuImg  func(ctx context.Context, path string) (string, error) // its version
 	statfs   func(path string) (health.DiskStat, error)
 	images   func(ctx context.Context, dir string) (disk.ChainScan, error)
-	timeout  time.Duration
-	now      func() time.Time
-	hostname func() (string, error)
-	addrs    func() ([]string, error) // the host's interface addresses, which --report redacts
-	system   doctorSystem
-	uid, gid int
-	userName string
-	cwd      string
-	found    *doctorFound // set for each run by runDoctorChecks
+	command  func(ctx context.Context, name string, args ...string) ([]byte, error) // stdout and stderr
+	// storeConfigs reads the configs of a kind from the store file, waiting at most timeout for its lock
+	storeConfigs func(ctx context.Context, path, kind string, timeout time.Duration) (store.Configs, error)
+	timeout      time.Duration
+	now          func() time.Time
+	hostname     func() (string, error)
+	addrs        func() ([]string, error) // the host's interface addresses, which --report redacts
+	system       doctorSystem
+	uid, gid     int
+	userName     string
+	cwd          string
+	found        *doctorFound // set for each run by runDoctorChecks
 
 	configPaths  []string // searched for the config and users files, in order
 	settingsUsed string   // the config file the settings commands change, before the default
@@ -139,16 +142,19 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		qemuImg:  health.QemuImgVersion,
 		statfs:   health.Statfs,
 		images:   disk.BrokenImages,
+		command:  runDoctorCommand,
 		timeout:  timeout,
-		now:      time.Now,
-		hostname: os.Hostname,
-		addrs:    interfaceAddrs,
-		system:   osDoctorSystem(),
-		uid:      uid,
-		gid:      os.Getgid(),
-		userName: name,
-		cwd:      cwd,
-		found:    nil,
+
+		storeConfigs: readStoreConfigs,
+		now:          time.Now,
+		hostname:     os.Hostname,
+		addrs:        interfaceAddrs,
+		system:       osDoctorSystem(),
+		uid:          uid,
+		gid:          os.Getgid(),
+		userName:     name,
+		cwd:          cwd,
+		found:        nil,
 
 		configPaths:  configSearchPaths,
 		settingsUsed: viper.ConfigFileUsed(),
@@ -664,6 +670,22 @@ func doctorChecks() []doctorCheckDef {
 			id: "disk", group: doctorGroupTools, name: "disk",
 			hint: hintText("increase the free space on the filesystem that the row names"),
 			run:  diskChecks,
+		},
+		{
+			id: kernelModulesName, group: doctorGroupTools, name: kernelModulesName, hint: kernelModulesHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(kernelModulesCheck(in)) },
+		},
+		{
+			id: nbdName, group: doctorGroupTools, name: nbdName, hint: nbdHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(nbdCheck(in)) },
+		},
+		{
+			id: openvswitchName, group: doctorGroupTools, name: openvswitchName, hint: openvswitchHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(openvswitchCheck(ctx, in)) },
+		},
+		{
+			id: imageBuildName, group: doctorGroupTools, name: imageBuildName, hint: imageBuildHint,
+			run: imageBuildChecks,
 		},
 		{
 			id: "disk-chains", group: doctorGroupImages, name: diskChainsName, hint: diskChainsHint,

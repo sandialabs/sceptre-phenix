@@ -223,3 +223,72 @@ directory), a stale socket file, or a user that may not connect. Its
 the `-filepath` directory does not exist for phēnix, which then cannot find
 the images minimega launches. In a container, mount that directory at the
 same path for both, as the Docker Compose setup does with `/phenix`.
+
+### Injects Fail With an nbd Error
+
+minimega `disk inject` writes injects into an image at an experiment start,
+and `phenix image inject-miniexe` uses it too. It connects the image to a
+`/dev/nbdN` device with `qemu-nbd`, then mounts a partition. These errors come
+from it:
+
+| Error | Cause |
+| :--- | :--- |
+| `add module 'nbd'` | `lsmod` does not show the `nbd` module. It is not loaded, or it is part of the kernel. |
+| `no available nbds found` | Each `/dev/nbdN` has a lock file in `/var/lock` or a process in `/sys/block/nbdN/pid`. |
+| `no partitions found on image` or `desired partition N not found` | The `nbd` module has `max_part` set to 0, so the kernel makes no `/dev/nbdNp1`, or the image has no such partition. |
+
+The `nbd` check of `phenix doctor` finds these problems on the head node, and
+names the devices that a failed inject can leave. To repair them, do these
+steps as root:
+
+1. Load the module with partitions: `modprobe nbd max_part=10`.
+2. If the module has `max_part=0`, disconnect each device, then run
+   `modprobe -r nbd && modprobe nbd max_part=10`.
+3. For a device that a failed inject left, unmount its partition with
+   `umount <mount point>`. The mount point is in `<base-dir.minimega>`, such
+   as `/tmp/minimega/dstImg123`.
+4. Disconnect the device with `qemu-nbd -d /dev/nbdN`.
+5. Remove a lock file `/var/lock/qemu-nbd-nbdN` that no `qemu-nbd` uses.
+
+If `modprobe` cannot find the module, the `kernel-modules` check tells if
+`/lib/modules` has the modules of the running kernel. After a kernel upgrade,
+reboot into the installed kernel. In a container, run the container
+privileged with `/dev` from the host, as the Docker Compose setup does.
+
+### Open vSwitch Does Not Answer
+
+minimega makes bridges and taps for VMs with `ovs-vsctl`. The `openvswitch`
+check of `phenix doctor` runs `ovs-vsctl show`, and fails when `ovs-vsctl` is
+not on `PATH` or `ovsdb-server` does not answer. It warns when
+`ovs-vswitchd` does not run, which stops traffic on the bridges. Run it as
+root, as minimega runs, because the database socket usually refuses other users. To
+repair Open vSwitch on Debian and Ubuntu, do these steps:
+
+1. Install the `openvswitch-switch` package.
+2. Load the module with `modprobe openvswitch`.
+3. Restart the service with `systemctl restart openvswitch-switch`.
+
+minimega makes the experiment bridge, `phenix` by default, when it launches
+the first VM on it.
+
+### `phenix image build` Fails Before or in debootstrap
+
+The `image-build` check of `phenix doctor` checks what `phenix image build`
+needs past `vmdb2`. It warns when `debootstrap`, `kpartx`, `losetup` or
+`qemu-img` is not on `PATH`, when the build cannot use loop devices or mount,
+and when no loop device is free. Run the build as root, or in a privileged
+container with `/dev` from the host.
+
+phēnix gives `vmdb2` no keyring, so `debootstrap` uses the keyring that its
+script for the release names, in `/usr/share/debootstrap/scripts`. Without
+that keyring, `debootstrap` cannot check the Release signature. Without a
+script for the release, `debootstrap` fails with `No such script`. The
+check reads the release of each image config in the store, and names each
+missing script and keyring. To repair them, do these steps:
+
+1. Install the keyring package: `debian-archive-keyring`, `ubuntu-keyring`
+   or `kali-archive-keyring`.
+2. Install a later `debootstrap` for a new release, or add a script for the
+   release to `/usr/share/debootstrap/scripts`.
+3. For Kali on a host that is not Kali, see the Kali host setup in the
+   `phenix-image` skill (`skills/phenix-image/references/environment.md`).

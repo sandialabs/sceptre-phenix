@@ -159,6 +159,10 @@ valid ones.
 | `filebeat` | `tools` | the program is not on `PATH`, so SCORCH starts no Filebeat, even for a component that enables it | never |
 | `apps` | `tools` | never | never; the row lists the user apps (`phenix-app-*`) and SCORCH components (`phenix-scorch-component-*`) found on `PATH` |
 | `disk` (one row per filesystem, such as disk phenix-base) | `tools` | the filesystem of `base-dir.phenix`, the store or minimega's `-filepath` is 90% full | the filesystem is 98% full |
+| `kernel-modules` (Linux only) | `tools` | `/lib/modules/<kernel release>` does not exist, so `modprobe` cannot load modules such as `nbd` and `openvswitch`; `/var/run/reboot-required` exists. A container without `/lib/modules` gives a `skip` row | never |
+| `nbd` (Linux only) | `tools` | the `nbd` module is not loaded, is part of the kernel (so `lsmod` does not show it), or has `max_part` missing or 0; no `/dev/nbdN` device is free, or a container has no `/dev/nbd*` device; a device has a lock file in `/var/lock` and no connection, belongs to a process that is not running, or holds an image for a `qemu-nbd` that a failed inject can leave, with its mounted partition. minimega `disk inject` uses these devices for injects at a start and for `phenix image inject-miniexe`. A row for a missing module points to `kernel-modules` | `qemu-nbd` is not on `PATH` |
+| `openvswitch` (Linux only) | `tools` | this user cannot connect to `ovsdb-server` (permission denied), but minimega runs `ovs-vsctl` as root; `ovs-vswitchd` does not run; the `openvswitch` module is not loaded, and the row points to `kernel-modules`. The row gives the Open vSwitch version, and tells if the bridge `phenix` exists or if minimega makes it at the first VM launch. In a container without `ovs-vsctl`, the row is `skip` | `ovs-vsctl` is not on `PATH`; `ovs-vsctl show` gets no answer from `ovsdb-server` within `--timeout` |
+| `image-build` (the rows image-build tools, image-build root, image-build loop and image-build keyrings; Linux only) | `tools` | `debootstrap`, `kpartx`, `losetup` or `qemu-img` is not on `PATH`; the process does not have `CAP_SYS_ADMIN` (not root, or a container that is not privileged); no `/dev/loop*` device is free and there is no `/dev/loop-control`; debootstrap has no script for the release of a stored image config, or the keyring that the script names does not exist. The keyrings row reads the image configs from the store read-only, and gives `skip` when the store is locked for longer than `--timeout` | never |
 | `disk-chains` | `images` | a disk image in the images directory has a broken backing chain: a backing file is missing, the chain loops, or the chain is more than 64 images deep; the row names at most 5 such images and counts the rest; the directory cannot be listed; the check does not finish within `--timeout` | never; the images directory is minimega's `-filepath`, or `<base-dir.phenix>/images` when minimega gives none, and a `skip` row shows when it does not exist |
 | `disk-formats` (a second row when an image needs a later qemu) | `images` | a disk image in the images directory is in an old or unsupported format: qcow2 version 2, qcow version 1, vmdk or qed. It also warns about an image that qemu refuses, such as an encrypted or corrupt image, and when the local `qemu-img` is older than the qemu version that a feature of an image needs. The row names at most 5 such images and counts the rest. It also warns when it cannot list the directory, or when the check does not finish within `--timeout`. See [Image Format Versions](disks.md#image-format-versions) | never. It reads the headers that the `disk-chains` check reads, in the same pass over the images directory, and a `skip` row shows when that directory does not exist |
 | `tunneler-download`, `webshark` | `features` | `downloads/tunneler` is not a directory | never; the row says whether `phenix ui` turns the feature on |
@@ -279,12 +283,15 @@ does not know, such as the name of another host in a path. doctor never prints t
 and 0 otherwise. It never prints the values of `ui.jwt-signing-key` or
 `ui.users`, only `<redacted>` when they are set, nor those of
 `PHENIX_UI_JWT_SIGNING_KEY`, `PHENIX_UI_USERS`, `SUDO_COMMAND` or a
-`PHENIX_*` variable that names no setting. It never opens the store through
-BoltDB and reads only the first two pages of the store file. It opens no log
+`PHENIX_*` variable that names no setting. The `store-file` check reads only
+the first two pages of the store file. Only the `image-build` check opens the
+store through BoltDB. It opens the store read-only, and waits at most
+`--timeout` for the lock. It opens no log
 file, writes no file and binds no port. It connects to the unix socket of
 `phenix ui` as a client only, and never creates or removes it. It sends
 minimega only global commands that change nothing: `version`, `args` and
-`mesh status`. Run it with the same flags, environment and user as the command you
+`mesh status`. The only programs it runs are `qemu-img --version` and
+`ovs-vsctl show`, which change nothing. Run it with the same flags, environment and user as the command you
 are checking, since those decide the values it sees.
 
 ## Configuration Precedence

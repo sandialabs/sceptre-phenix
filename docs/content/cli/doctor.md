@@ -63,15 +63,29 @@ Check the phenix configuration without a running server
   status does not change. The text output colors the statuses, the summary
   and the hints when --color allows it, but never with -o json or --report.
 
-  doctor never opens the store through BoltDB, which locks it, and reads
-  only the first two pages of the store file. It opens no log file, writes
-  no file and binds no port, so it works while phenix ui is stopped. Before
-  any command runs, phenix creates the config directory with an empty
-  config.yaml when it finds no config file, and the default log directory.
-  doctor connects to the unix socket as a client only, never creating or
-  removing it, and sends minimega only global commands that change nothing
-  (version, args and mesh status). Run it with the same flags, environment
-  and user as the phenix command you are checking.
+  The kernel-modules, nbd, openvswitch and image-build checks look at this
+  host, the head node, and only on Linux. kernel-modules warns when
+  /lib/modules has no directory for the running kernel, or when a reboot is
+  pending. nbd checks what minimega disk inject needs for injects: qemu-nbd,
+  the nbd module with max_part, and a free /dev/nbdN. It also names the
+  devices that a failed inject can leave. openvswitch runs ovs-vsctl show,
+  and reports the Open vSwitch version and the experiment bridge. image-build
+  checks the programs phenix image build needs, root and a free loop device.
+  It also checks the debootstrap script and keyring of the release of each
+  stored image config.
+
+  The store-file check reads only the first two pages of the store file.
+  Only the image-build check opens the store through BoltDB. It opens it
+  read-only, and waits at most --timeout for the lock. doctor opens no log
+  file, writes no file and binds no port, so it works while phenix ui is
+  stopped. Before any command runs, phenix creates the config directory
+  with an empty config.yaml when it finds no config file, and the default
+  log directory. doctor connects to the unix socket as a client only, never
+  creating or removing it, and sends minimega only global commands that
+  change nothing (version, args and mesh status). The only programs it runs
+  are qemu-img --version and ovs-vsctl show, which change nothing. Run it
+  with the same flags, environment and user as the phenix command you are
+  checking.
 ```
 
 ```text
@@ -107,7 +121,7 @@ docker exec phenix phenix doctor --report
       --report              print the output in a fenced block to paste into a bug report, with host names, addresses, user names and secrets replaced
       --skip strings        checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)
       --strict              exit 1 when a check warns, not only when one fails
-      --timeout duration    how long to wait for each answer of minimega or phenix ui, and for the disk-chains and disk-formats checks (default 3s)
+      --timeout duration    how long to wait for each answer of minimega, phenix ui or ovs-vsctl, for the store lock, and for the disk-chains and disk-formats checks (default 3s)
 ```
 
 ### SEE ALSO

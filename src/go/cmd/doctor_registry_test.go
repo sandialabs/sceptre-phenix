@@ -23,6 +23,7 @@ import (
 	"pgregory.net/rapid"
 
 	"phenix/api/disk"
+	"phenix/store"
 	"phenix/version"
 	"phenix/web/health"
 )
@@ -88,7 +89,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 
 	env := fakeDoctorEnv(nil, false)
 	env.lookPath = func(name string) (string, error) {
-		if slices.Contains([]string{"vim", "qemu-img", "vmdb2", "filebeat"}, name) {
+		if slices.Contains(append([]string{"vim", "vmdb2", "filebeat"}, doctorHostTools...), name) {
 			return "/usr/bin/" + name, nil
 		}
 
@@ -102,6 +103,8 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 
 		return os.Stat(path)
 	}
+	// a Linux host on which the host checks pass, wherever the tests run
+	doctorGoodHost().apply(&env)
 
 	return &doctorInput{
 		env: env,
@@ -119,17 +122,20 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		qemuImg: func(context.Context, string) (string, error) {
 			return "qemu-img version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1)", nil
 		},
-		statfs:   func(string) (health.DiskStat, error) { return health.DiskStat{Device: 1, Total: 100, Avail: 50}, nil },
-		images:   disk.BrokenImages,
-		timeout:  time.Second,
-		now:      func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
-		hostname: func() (string, error) { return "doctor-test-host", nil },
-		addrs:    func() ([]string, error) { return []string{"127.0.0.1/8", "192.0.2.10/24"}, nil },
-		system:   doctorSystem{os: "linux", kernel: "6.8.0-49-generic", arch: "amd64"},
-		uid:      1000,
-		gid:      1000,
-		userName: "alice",
-		cwd:      "/home/alice",
+		statfs:  func(string) (health.DiskStat, error) { return health.DiskStat{Device: 1, Total: 100, Avail: 50}, nil },
+		images:  disk.BrokenImages,
+		command: doctorCommands(map[string]doctorCommand{"ovs-vsctl --timeout=1 show": {out: doctorOVSShow, err: nil}}),
+		timeout: time.Second,
+
+		storeConfigs: func(context.Context, string, string, time.Duration) (store.Configs, error) { return nil, nil },
+		now:          func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
+		hostname:     func() (string, error) { return "doctor-test-host", nil },
+		addrs:        func() ([]string, error) { return []string{"127.0.0.1/8", "192.0.2.10/24"}, nil },
+		system:       doctorSystem{os: "linux", kernel: "6.8.0-49-generic", arch: "amd64"},
+		uid:          1000,
+		gid:          1000,
+		userName:     "alice",
+		cwd:          "/home/alice",
 
 		configPaths:  []string{dir},
 		settingsUsed: configFile,
@@ -222,6 +228,13 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"filebeat filebeat pass",
 		"apps apps pass",
 		"disk disk phenix-base pass",
+		"kernel-modules kernel-modules pass",
+		"nbd nbd pass",
+		"openvswitch openvswitch pass",
+		"image-build image-build tools pass",
+		"image-build image-build root pass",
+		"image-build image-build loop pass",
+		"image-build image-build keyrings pass",
 		"disk-chains disk chains pass",
 		"disk-formats disk formats pass",
 		"tunneler-download tunneler-download pass",
@@ -272,8 +285,9 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"store of another user": {
 			settings: map[string]string{"store.endpoint": "bolt://" + storeFile},
 			modify: func(in *doctorInput) {
+				stat := in.env.stat
 				in.env.stat = func(path string) (os.FileInfo, error) {
-					info, err := os.Stat(path)
+					info, err := stat(path)
 					if err != nil || path != storeFile {
 						return info, err
 					}
@@ -424,7 +438,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				in.statfs = func(string) (health.DiskStat, error) { return health.DiskStat{Device: 1, Total: 100, Avail: 1}, nil }
 			},
 			want: replaceRows(allPass,
-				"qemu-img qemu-img fail", "vmdb2 vmdb2 fail", "filebeat filebeat warn", "disk disk phenix-base fail"),
+				"qemu-img qemu-img fail", "vmdb2 vmdb2 fail", "filebeat filebeat warn", "disk disk phenix-base fail",
+				"nbd nbd fail", "openvswitch openvswitch fail", "image-build image-build tools warn"),
 		},
 		"broken disk image": {
 			modify: func(in *doctorInput) {
@@ -748,7 +763,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 42 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 49 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -774,8 +789,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 42 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"45 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 49 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"52 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},
