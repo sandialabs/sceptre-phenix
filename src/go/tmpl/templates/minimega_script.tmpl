@@ -29,9 +29,12 @@ ns add-host localhost
     {{- if (derefBool .General.DoNotBoot) }}
 ## DoNotBoot: {{ derefBool .General.DoNotBoot }} ##
     {{- else }}
-        {{- if (derefBool .General.Snapshot) -}}
-            {{ $firstDrive := index .Hardware.Drives 0 }}
-disk snapshot {{ $firstDrive.Image }} {{ $.SnapshotName .General.Hostname }}
+        {{- if (derefBool .General.Snapshot) }}
+            {{- $hostname := .General.Hostname }}
+            {{- range $i, $drive := .Hardware.Drives }}
+disk snapshot {{ $drive.Image }} {{ $.DriveSnapshotName $hostname $i }}
+            {{- end }}
+            {{- $firstDrive := index .Hardware.Drives 0 }}
             {{- if ne $firstDrive.GetInjectPartition 0 }}
                 {{- if gt (len .Injections) 0 }}
 disk inject {{ $.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} files {{ .FileInjects $basedir }}

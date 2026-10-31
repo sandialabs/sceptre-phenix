@@ -126,6 +126,10 @@ Optional values for a node in the topology configuration can include:
     [C2 Startup Script Delivery](apps.md#c2-startup-script-delivery) for the
     requirements and configuration options.
 
+When `general.snapshot` is `true`, phēnix creates a separate snapshot of every
+drive, so none of the base images are modified. File injections and deletions
+apply only to the first drive.
+
 #### Delay Start
 
 It is possible to delay the start of a VM with the `delay` value. There are
