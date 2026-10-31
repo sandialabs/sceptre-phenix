@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import Buefy from 'buefy';
 import AceEditor from '@/components/configs/AceEditor.vue';
 
@@ -28,8 +28,6 @@ function fakeEditor() {
     destroy: vi.fn(),
   };
 }
-
-enableAutoUnmount(afterEach);
 
 function mountAce() {
   return mount(AceEditor, {
