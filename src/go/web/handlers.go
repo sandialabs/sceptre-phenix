@@ -833,7 +833,7 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 			}
 
 			pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
-				Experiment: name, Verb: "delete", App: a, State: "success",
+				Experiment: name, Verb: "delete", App: a, State: app.TriggerStateCanceled,
 			})
 		}
 	}()

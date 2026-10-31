@@ -8,6 +8,10 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
+
 	"phenix/store"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
@@ -62,6 +66,14 @@ func TestStartupPreStartC2TriggerMatrix(t *testing.T) {
 			node := newStartupTestNode(t, "linux1", osLinux, tt.snapshot, tt.injectPartition)
 			node.AnnotationsF = tt.annotations
 
+			if got := StartupUsesC2(node); got != tt.wantCommands {
+				t.Errorf("StartupUsesC2() = %v, want %v as PreStart sends commands", got, tt.wantCommands)
+			}
+
+			if got := StartupInjects(node); got != tt.wantStartupInj {
+				t.Errorf("StartupInjects() = %v, want %v as PreStart adds injects", got, tt.wantStartupInj)
+			}
+
 			exp, mmDir := newStartupTestExperiment(t, node, nil)
 			runStartupPreStart(t, exp, mmDir)
 
@@ -93,6 +105,68 @@ func TestStartupPreStartC2TriggerMatrix(t *testing.T) {
 			}
 			if !tt.wantStagedScript && !os.IsNotExist(err) {
 				t.Fatalf("unexpected staged script %s", staged)
+			}
+		})
+	}
+}
+
+// StartupUsesC2 is false for the nodes whose startup scripts PreStart skips: routers, nodes with the default apps
+// off, and operating systems it makes no scripts for.
+func TestStartupUsesC2Skips(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		modify func(*v1.Node)
+		want   bool
+	}{
+		"windows":           {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = osWindows }, want: true},
+		"router":            {modify: func(n *v1.Node) { n.TypeF = "Router" }},
+		"default apps off":  {modify: func(n *v1.Node) { n.AnnotationsF[defaultAppsAnnotation] = false }},
+		"other os":          {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = "plan9" }},
+		"linux, C2 enabled": {modify: func(*v1.Node) {}, want: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			node := newStartupTestNode(t, "n1", osLinux, true, 1)
+			node.AnnotationsF = map[string]any{startupViaCCAnnotation: true}
+			tc.modify(node)
+
+			if got := StartupUsesC2(node); got != tc.want {
+				t.Errorf("StartupUsesC2() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// StartupInjects is false for the nodes whose startup scripts PreStart does not inject: routers, nodes with the
+// default apps off or startup via cc on, and other operating systems.
+func TestStartupInjects(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		modify func(*v1.Node)
+		want   bool
+	}{
+		"linux":            {modify: func(*v1.Node) {}, want: true},
+		"windows":          {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = osWindows }, want: true},
+		"router":           {modify: func(n *v1.Node) { n.TypeF = "Router" }},
+		"default apps off": {modify: func(n *v1.Node) { n.AnnotationsF = map[string]any{defaultAppsAnnotation: false} }},
+		"startup via cc":   {modify: func(n *v1.Node) { n.AnnotationsF = map[string]any{startupViaCCAnnotation: true} }},
+		"other os":         {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = "plan9" }},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			node := newStartupTestNode(t, "n1", osLinux, true, 1)
+			tc.modify(node)
+
+			if got := StartupInjects(node); got != tc.want {
+				t.Errorf("StartupInjects() = %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -333,6 +407,74 @@ func TestStartupPreStartLinuxDomainScriptUsesC2(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(mmDir, "exp1", "linux1-domain.sh")); err != nil {
 		t.Fatalf("expected staged domain script: %v", err)
 	}
+}
+
+// startupCommand is a node command and whether the startup app generated it for that node.
+type startupCommand struct {
+	cmd   string
+	stale bool
+}
+
+// genStartupCommand draws a command the startup app generated for host in exp1, or one of another host or
+// experiment, or a user's command.
+func genStartupCommand(host string) *rapid.Generator[startupCommand] {
+	exp1 := &types.Experiment{Spec: &v1.ExperimentSpec{ExperimentNameF: "exp1"}}
+	exp2 := &types.Experiment{Spec: &v1.ExperimentSpec{ExperimentNameF: "exp2"}}
+
+	return rapid.Custom(func(t *rapid.T) startupCommand {
+		if rapid.Bool().Draw(t, "user") {
+			return startupCommand{cmd: rapid.SampledFrom([]string{
+				"exec df -h", "send exp1/notes.txt", "exec-once bash /tmp/miniccc/files/exp1/" + host + "-custom.sh",
+			}).Draw(t, "cmd")}
+		}
+
+		owner := rapid.SampledFrom([]string{host, host + "-x", "other"}).Draw(t, "owner")
+		exp := rapid.SampledFrom([]*types.Experiment{exp1, exp2}).Draw(t, "exp")
+		script := rapid.SampledFrom(startupC2ScriptNames(owner)).Draw(t, "script")
+		executor := rapid.SampledFrom([]startupC2Executor{startupC2Linux, startupC2Windows}).Draw(t, "executor")
+
+		send, exec, _ := startupC2Commands(exp, filepath.Join("/startup", script), executor)
+		cmd := rapid.SampledFrom([]string{send, exec}).Draw(t, "cmd")
+
+		return startupCommand{cmd: cmd, stale: owner == host && exp == exp1}
+	})
+}
+
+// removeStartupC2Commands drops exactly the commands generated for the node, keeps the rest in order, and
+// changes nothing when run again.
+func TestRemoveStartupC2CommandsProperties(t *testing.T) {
+	t.Parallel()
+
+	exp := &types.Experiment{Spec: &v1.ExperimentSpec{ExperimentNameF: "exp1"}}
+
+	rapid.Check(t, func(t *rapid.T) {
+		host := rapid.SampledFrom([]string{"linux1", "win1", "a-b"}).Draw(t, "host")
+		commands := rapid.SliceOfN(genStartupCommand(host), 0, 8).Draw(t, "commands")
+
+		node := &v1.Node{GeneralF: &v1.General{HostnameF: host}}
+
+		var want []string
+
+		for _, c := range commands {
+			node.CommandsF = append(node.CommandsF, c.cmd)
+
+			if !c.stale {
+				want = append(want, c.cmd)
+			}
+		}
+
+		removeStartupC2Commands(exp, node)
+
+		if diff := cmp.Diff(want, node.CommandsF, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("removeStartupC2Commands(%s) commands mismatch (-want +got):\n%s", host, diff)
+		}
+
+		removeStartupC2Commands(exp, node)
+
+		if diff := cmp.Diff(want, node.CommandsF, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("removeStartupC2Commands(%s) run again mismatch (-want +got):\n%s", host, diff)
+		}
+	})
 }
 
 // newStartupTestNode builds a minimal VM node with a real test disk path.
