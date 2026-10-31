@@ -1,5 +1,5 @@
-// Package storetest gives a test a phenix store of its own. Only tests import
-// it.
+// Package storetest gives a test a phenix store of its own. It is imported
+// only by tests, as net/http/httptest is.
 package storetest
 
 import (
@@ -9,29 +9,40 @@ import (
 	"phenix/store"
 )
 
-// NewBolt returns a new BoltDB in a temporary directory of the test.
+// NewBolt returns a new, empty BoltDB in a temporary directory of the test.
 func NewBolt(tb testing.TB) *store.BoltDB {
 	tb.Helper()
 
 	db := new(store.BoltDB)
-	endpoint := "bolt://" + filepath.Join(tb.TempDir(), "phenix.bdb")
+	endpoint := "bolt://" + filepath.Join(tb.TempDir(), "store.bdb")
 
-	err := db.Init(store.Endpoint(endpoint))
-	if err != nil {
-		tb.Fatalf("Init(%s) = %v, want nil", endpoint, err)
+	if err := db.Init(store.Endpoint(endpoint)); err != nil {
+		tb.Fatalf("BoltDB.Init(%s) error = %v", endpoint, err)
 	}
 
 	return db
 }
 
-// Use makes s the phenix store until the test ends. Tests that call it must
-// not run in parallel.
-func Use(tb testing.TB, s store.Store) {
+// Use makes s, or a new BoltDB from NewBolt when s is not given, the phenix
+// store until the test ends. Tests that call it must not run in parallel.
+func Use(tb testing.TB, s ...store.Store) {
 	tb.Helper()
 
-	previous := store.DefaultStore
-	store.DefaultStore = s //nolint:reassign // the test's own store
+	if len(s) > 1 {
+		tb.Fatalf("storetest.Use got %d stores, want at most 1", len(s))
+	}
 
+	var db store.Store
+	if len(s) == 1 {
+		db = s[0]
+	} else {
+		db = NewBolt(tb)
+	}
+
+	previous := store.DefaultStore
+	store.DefaultStore = db //nolint:reassign // the test's own store
+
+	// BoltDB opens its file for each call, so there is nothing to close
 	tb.Cleanup(func() { store.DefaultStore = previous }) //nolint:reassign // restore the store
 }
 
