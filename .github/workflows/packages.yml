@@ -27,6 +27,8 @@ on:
   # Pull request code changes are compiled and tested by the other workflows,
   # so only changes to how the packages are built rebuild them here.
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     branches: [main]
     paths:
       - '.dockerignore'
@@ -62,13 +64,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: packages-${{ inputs.tag || github.ref }}
+  group: packages-${{ inputs.tag || (github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number)) || github.ref }}
   # Never cancel a release build, but do cancel stale runs for the same
   # branch or PR when new commits supersede them.
   cancel-in-progress: ${{ !(inputs.tag || github.ref_type == 'tag') }}
 
 jobs:
   build:
+    if: github.event.action != 'closed'
     name: Build images and Debian package
     runs-on: ubuntu-latest
     permissions:

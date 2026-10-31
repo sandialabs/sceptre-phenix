@@ -9,6 +9,8 @@ on:
       - 'Makefile'
       - '.github/workflows/ci.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'src/go/**'
       - 'schemas/**'
@@ -19,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -27,6 +29,7 @@ env:
 
 jobs:
   test-go:
+    if: github.event.action != 'closed'
     name: Test (Go)
     runs-on: ubuntu-latest
     steps:
