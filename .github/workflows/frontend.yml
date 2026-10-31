@@ -53,7 +53,7 @@ jobs:
               \"*) return 0 ;;
               src/js/test/*) return 1 ;;
               src/js/* | src/go/web/* | src/go/api/* | src/go/store/* | \
-                src/go/cmd/* | src/go/types/version/* | \
+                src/go/cmd/* | src/go/types/builder/* | src/go/types/version/* | \
                 Makefile | docker/* | .github/workflows/frontend.yml)
                 return 0 ;;
               *) return 1 ;;
@@ -130,8 +130,13 @@ jobs:
           cache-dependency-path: src/js/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Check for unused code (knip)
+        run: npm run knip
       - name: Run unit tests with coverage
         run: npm run test:coverage
+      # Contract suites share workers, so they must pass in any order.
+      - name: Run contract tests in random order
+        run: npm run test:contract -- --sequence.shuffle
       # Coverage below the minimums in .github/coverage-minimums.json warns
       # but does not fail the job.
       - name: Summarize coverage
@@ -215,6 +220,8 @@ jobs:
           retention-days: 1
 
   test-e2e:
+    # Each entry starts its own phenix UI from the binary built above and runs one
+    # part of the e2e suite, all in parallel.
     # Without a browser change every step skips, not the job, since a skipped
     # matrix job reports only its unexpanded name to required checks.
     name: E2E ${{ matrix.name }}
@@ -222,25 +229,42 @@ jobs:
     # Runs after the build, or after it was skipped, unless something failed.
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
+    # About two times the slowest job seen (19 minutes, with a 15 minute npm ci
+    # stall). A normal job takes 4 minutes. The limit stops a hung job.
+    timeout-minutes: 40
     # The changes job checks that the image tag is the e2e lockfile's Playwright
     # version. Without a browser change no image is pulled.
     container: >-
       ${{ needs.changes.outputs.browser == 'true'
       && 'mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27'
       || '' }}
+    env:
+      # The server's base directory, which the tests can write: the Builder
+      # file specs put the files a topology names there.
+      E2E_BASE_DIR: /tmp/phenix-e2e-base
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: Smoke 1/3
             id: smoke-1
-            tests: --shard=1/3
+            tests: --grep-invert @axe --shard=1/3
           - name: Smoke 2/3
             id: smoke-2
-            tests: --shard=2/3
+            tests: --grep-invert @axe --shard=2/3
           - name: Smoke 3/3
             id: smoke-3
-            tests: --shard=3/3
+            tests: --grep-invert @axe --shard=3/3
+          - name: Axe scans
+            id: axe
+            tests: --grep @axe --project=chromium
+          - name: Builder multi-user
+            id: multi-user
+            tests: builder-multi-user --project=chromium
+            server: >-
+              --jwt-signing-key e2e-multi-user
+              --users 'e2e-admin:Testpass1!:Global Admin'
+            multi_user: '1'
           - name: Auth enabled
             id: auth-enabled
             auth: enabled
@@ -275,7 +299,9 @@ jobs:
         if: needs.changes.outputs.browser == 'true'
         run: |
           chmod +x bin/phenix
+          mkdir -p "$E2E_BASE_DIR"
           ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
+            --base-dir.phenix "$E2E_BASE_DIR" \
             --listen-endpoint 127.0.0.1:3000 \
             ${{ matrix.server }} > /tmp/phenix-ui.log 2>&1 &
           # /version needs no sign-in, so it answers 200 in every auth mode.
@@ -292,6 +318,7 @@ jobs:
           # The container runs as root, and Firefox does not start as root
           # when HOME belongs to another user, as the runner's HOME does.
           HOME: /root
+          E2E_MULTI_USER: ${{ matrix.multi_user }}
           E2E_AUTH_MODE: ${{ matrix.auth }}
         run: npx playwright test ${{ matrix.tests }}
       - name: Server log

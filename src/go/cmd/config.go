@@ -14,6 +14,7 @@ import (
 
 	"phenix/api/config"
 	"phenix/types"
+	bdoc "phenix/types/builder"
 	"phenix/util"
 	"phenix/util/plog"
 	"phenix/util/printer"
@@ -255,7 +256,7 @@ func newConfigGetCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				fmt.Fprintln(os.Stdout, string(m))
+				fmt.Fprintln(cmd.OutOrStdout(), string(m))
 			case FormatJSON:
 				var (
 					m   []byte
@@ -274,7 +275,7 @@ func newConfigGetCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				fmt.Fprintln(os.Stdout, string(m))
+				fmt.Fprintln(cmd.OutOrStdout(), string(m))
 			default:
 				return fmt.Errorf("unrecognized output format '%s'", output)
 			}
@@ -294,7 +295,16 @@ func newConfigCreateCmd() *cobra.Command {
 
   This subcommand is used to create one or more configurations from JSON or
   YAML file(s). A directory path can also be given, and all JSON and YAML
-  files in the given directory will be parsed.`
+  files in the given directory will be parsed.
+
+  A Builder document (the Builder's JSON or YAML export), a Builder
+  template file, a Builder package and a Builder layer set file are not
+  configurations. The command skips such a file in a directory. It refuses
+  such a file that you name on the command line. Use the Builder in the web
+  UI, or the Builder REST API below /api/v1/builder/, for these files. Upload
+  a document and publish it to create its topology. Use Import templates to
+  add the templates of a template file. Use Upload to open a package. Use
+  Upload layer set on the Layers tab to add a layer set file.`
 
 	cmd := &cobra.Command{
 		Use:   "create </path/to/filename> ...",
@@ -308,43 +318,27 @@ func newConfigCreateCmd() *cobra.Command {
 			skip := MustGetBool(cmd.Flags(), "skip-validation")
 
 			for _, f := range args {
-				var configs []string
-
-				err := filepath.Walk(f, func(path string, info os.FileInfo, err error) error {
-					if err != nil {
-						return err
-					}
-
-					// Don't recursively process subdirectories.
-					if info.IsDir() {
-						return nil
-					}
-
-					extensions := []string{"*.json", "*.yaml", "*.yml"}
-
-					for _, ext := range extensions {
-						match, err := filepath.Match(ext, filepath.Base(path))
-						if err != nil {
-							return err
-						}
-
-						if match {
-							configs = append(configs, path)
-
-							break
-						}
-					}
-
-					return nil
-				})
+				configs, err := configFilesAt(f)
 				if err != nil {
 					err := util.HumanizeError(err, "%s", "Unable to create configuration from "+f)
 
 					return err.Humanized()
 				}
 
-				for _, f := range configs {
-					opts := []config.CreateOption{config.CreateFromPath(f)}
+				for _, path := range configs {
+					if kind := builderFileKind(path); kind != "" {
+						// Refuse only the file named on the command line, not
+						// a file found in a directory it names.
+						if path == f {
+							return builderFileRefusal(kind, path)
+						}
+
+						skipBuilderFile(kind, path)
+
+						continue
+					}
+
+					opts := []config.CreateOption{config.CreateFromPath(path)}
 
 					if !skip {
 						opts = append(opts, config.CreateWithValidation())
@@ -352,7 +346,7 @@ func newConfigCreateCmd() *cobra.Command {
 
 					c, err := config.Create(opts...)
 					if err != nil {
-						return configCreateError(f, err)
+						return configCreateError(path, err)
 					}
 
 					plog.Info(
@@ -373,6 +367,117 @@ func newConfigCreateCmd() *cobra.Command {
 	cmd.Flags().Bool("skip-validation", false, "Skip configuration spec validation against schema")
 
 	return cmd
+}
+
+// configFilesAt returns the JSON and YAML files at path: the file itself, or
+// the files of the directory and of the directories below it.
+func configFilesAt(path string) ([]string, error) {
+	var configs []string
+
+	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		extensions := []string{"*.json", "*.yaml", "*.yml"}
+
+		for _, ext := range extensions {
+			match, err := filepath.Match(ext, filepath.Base(path))
+			if err != nil {
+				return err
+			}
+
+			if match {
+				configs = append(configs, path)
+
+				break
+			}
+		}
+
+		return nil
+	})
+
+	return configs, err //nolint:wrapcheck // the caller words the error
+}
+
+// Kinds of Builder-owned files, none of which holds a configuration (see
+// [builderFileKind]).
+const (
+	builderFileDocument     = "Builder document"
+	builderFileTemplateFile = "Builder template file"
+	builderFilePackage      = "Builder package"
+	builderFileLayerSetFile = "Builder layer set file"
+)
+
+// builderFileKind returns what the file at path is, by its content, when it is
+// a Builder-owned file: a Builder document, a template file, a package or a
+// layer set file. The Builder exports each of these as plain .json or .yaml. It returns "" for any
+// other file. It also returns "" for a file that cannot be read, and leaves it
+// to the normal read to report why.
+func builderFileKind(path string) string {
+	text, err := os.ReadFile(path) //nolint:gosec // a config file the caller named
+	if err != nil {
+		return ""
+	}
+
+	switch bdoc.FileKindOf(text) {
+	case bdoc.FileKindDocument:
+		return builderFileDocument
+	case bdoc.FileKindTemplateFile:
+		return builderFileTemplateFile
+	case bdoc.FileKindPackage:
+		return builderFilePackage
+	case bdoc.FileKindLayerSetFile:
+		return builderFileLayerSetFile
+	case bdoc.FileKindOther:
+	}
+
+	return ""
+}
+
+// skipBuilderFile logs that config create skipped the Builder-owned file at
+// path, of kind, found in a directory it was given. The line of a Builder
+// document says where to publish it. The other kinds are logged at debug
+// level.
+func skipBuilderFile(kind, path string) {
+	if kind == builderFileDocument {
+		plog.Info(plog.TypeSystem, "skipped Builder document. Upload it in the Builder to publish it", "path", path)
+
+		return
+	}
+
+	plog.Debug(plog.TypeSystem, "skipped Builder file, which is not a configuration", "kind", kind, "path", path)
+}
+
+// builderFileRefusal is the error of config create for the Builder-owned file
+// at path, of kind, named on the command line. The error says what to do with
+// the file instead.
+func builderFileRefusal(kind, path string) error {
+	switch kind {
+	case builderFileTemplateFile:
+		return fmt.Errorf(
+			"%s is a Builder template file, not a configuration. To add its Node Templates, use Import templates "+
+				"in the Builder or the Builder REST API (POST /api/v1/builder/templates/items)", path,
+		)
+	case builderFilePackage:
+		return fmt.Errorf(
+			"%s is a Builder package, not a configuration. Upload it in the Builder to open its diagram", path,
+		)
+	case builderFileLayerSetFile:
+		return fmt.Errorf(
+			"%s is a Builder layer set file, not a configuration. "+
+				"Use Upload layer set on the Layers tab of the Builder to add its layer set", path,
+		)
+	}
+
+	return fmt.Errorf(
+		"%s is a Builder document, not a configuration. Upload it in the Builder "+
+			"or send it to the Builder REST API (/api/v1/builder/drafts). Then publish it to create its topology", path,
+	)
 }
 
 // configCreateError is the error "config create" returns when the config in

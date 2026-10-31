@@ -6,3 +6,7 @@ coverage
 package-lock.json
 e2e/test-results
 e2e/playwright-report
+# Generated from phenix/types/builder SchemaJSON; see TestFrontendSchemaBundleMatchesSchemaJSON
+src/builder/schema/builder-v1.schema.json
+# Generated from Go's unicode package; see TestFrontendCaseTableMatchesUnicode
+src/builder/schema/go-case.json

@@ -27,21 +27,45 @@ npm ci
 | Development server       | `npm run dev`                   |
 | Focused Vitest           | `npm test -- test/rbac.test.js` |
 | All Vitest               | `npm test`                      |
+| Contract tests only      | `npm run test:contract`         |
 | Vitest with coverage     | `npm run test:coverage`         |
 | Production build         | `npm run build`                 |
 | Format, then review diff | `npm run format`                |
+| Unused files and exports | `npm run knip`                  |
 
 The development server needs a backend on `localhost:3000`.
 
-`test/unit-setup.js` mocks `@/utils/axios.js` and `@/store.js` for every
-test file. A file mocks the module again for other values, or calls
-`vi.unmock` for the real module.
+ESLint and knip fail on dead code: unused props, data, emits, refs,
+exports, files, and dependencies. Remove the dead code. Do not add an inline
+disable or a knip ignore entry to hide it.
 
-Test what a component does with `@vue/test-utils` in a file that starts
-with `// @vitest-environment happy-dom`: mount it, use `trigger` and
+`npm test` runs two Vitest projects from `vite.config.js`:
+
+- `contract`: the `*.contract.test.js` suites of pure functions, in shared
+  workers without per-file isolation. They must pass in any order, and CI
+  runs them shuffled: `npm run test:contract -- --sequence.shuffle`.
+- `unit`: every other test file, each in a fresh worker. A suite that mocks a
+  module, stubs a global, or leaves storage, timers or module state behind
+  goes here.
+
+`test/unit-setup.js` mocks `@/utils/axios.js` and `@/store.js` for every
+`unit` file. A file mocks the module again for other values, or calls
+`vi.unmock` for the real module. Shared HTML helpers (`textOf`, `tag`,
+`tagOf`, `attribute`) are in `test/builder/fixtures.js`. `renderWithStore`
+is in `test/builder/render.js`, for `unit` files only.
+
+Test what a component does with `@vue/test-utils` in a `unit` file that
+starts with `// @vitest-environment happy-dom`: mount it, use `trigger` and
 `setValue`, and check focus, emitted events and the DOM. Use the server
 render for static output only, and keep each file in one environment.
-happy-dom has no layout, so test sizes and positions in Playwright.
+happy-dom has no layout, so test sizes, positions and the Vue Flow canvas in
+Playwright. In `contract` suites, use `fast-check` properties for rules that
+hold for every input (round trips, order, idempotence). Pass options to each
+`fc.assert` call. Do not call `fc.configureGlobal`.
+
+The build compresses Builder files with Brotli quality 9. Set
+`PHENIX_BROTLI_QUALITY` (an integer from 0 to 11) to change it. The Docker
+and Podman builds set 11 (see `plugins/builder-assets.js`).
 
 ## UI Conventions
 
@@ -85,9 +109,14 @@ adding waits. A check that something does not happen runs the page clock
 past the delay the UI waits for (`page.clock.runFor`), not a fixed
 `waitForTimeout` (see `e2e/README.md`).
 
+Before you change the Builder (`src/builder/`, `src/components/builder/`,
+`src/views/Builder.vue`, or the `builder*` e2e specs), read
+`../../skills/phenix/references/builder.md`
+and then the reference that its routing table names.
+
 ## CI
 
-`.github/workflows/frontend.yml` runs Vitest, builds the UI and a
+`.github/workflows/frontend.yml` runs knip and Vitest, builds the UI and a
 real backend once for each `VITE_AUTH` mode, then runs the Playwright tests
 in parallel jobs, each against its own server (see `e2e/README.md`). It
 builds and runs the Playwright tests only for a change that can affect the

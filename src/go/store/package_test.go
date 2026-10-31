@@ -15,7 +15,6 @@ func TestInitEndpointScheme(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "bolt", endpoint: "bolt://" + boltPath},
-		{name: "etcd", endpoint: "etcd://localhost:2379", wantErr: true},
 		{name: "unknown", endpoint: "foo://localhost", wantErr: true},
 	}
 
@@ -25,18 +24,28 @@ func TestInitEndpointScheme(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			before := DefaultStore
+
 			err := Init(Endpoint(tt.endpoint))
-			if tt.wantErr && err == nil {
-				t.Fatalf("Init(%q) returned no error", tt.endpoint)
+			if !tt.wantErr {
+				if err != nil {
+					t.Errorf("Init(%q) error = %v, want nil", tt.endpoint, err)
+				}
+
+				return
 			}
 
-			if !tt.wantErr && err != nil {
-				t.Fatalf("Init(%q) returned error: %v", tt.endpoint, err)
+			if err == nil {
+				t.Errorf("Init(%q) error = nil, want an error", tt.endpoint)
+			}
+
+			if DefaultStore != before {
+				t.Errorf("Init(%q) failed but replaced DefaultStore", tt.endpoint)
 			}
 		})
 	}
 
 	if _, err := os.Stat(boltPath); err != nil {
-		t.Fatalf("Init did not create the BoltDB file: %v", err)
+		t.Errorf("os.Stat(BoltDB file) error = %v, want the file Init creates", err)
 	}
 }

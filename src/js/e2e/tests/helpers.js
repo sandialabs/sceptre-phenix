@@ -66,6 +66,20 @@ async function gotoSeeded(page, path) {
   await page.goto(path);
 }
 
+// Opens a route once the app has mounted, loading it again if the first load
+// redirected elsewhere.
+async function visit(page, path) {
+  await page.goto(path);
+  await page.waitForFunction(
+    () => (document.querySelector('#app')?.childElementCount || 0) > 0,
+  );
+
+  const want = new URL(path, page.url()).pathname;
+  if (new URL(page.url()).pathname !== want) {
+    await page.goto(path);
+  }
+}
+
 // Unsigned JWT good enough for proxy mode (the server intentionally parses
 // proxy-supplied tokens without verifying the signature).
 function unsignedJwt(username) {
@@ -73,7 +87,7 @@ function unsignedJwt(username) {
   return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: username, exp: 9999999999 })}.sig`;
 }
 
-// Axe scans run only in Chromium.
+// Axe scans run only in Chromium. Firefox runs only browser-compatibility tests.
 function isChromium(page) {
   return page.context().browser()?.browserType().name() === 'chromium';
 }
@@ -103,4 +117,5 @@ module.exports = {
   isChromium,
   unsignedJwt,
   expectTextContrast,
+  visit,
 };

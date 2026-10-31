@@ -305,7 +305,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		parse = store.NewConfigFromJSON
+		parse = store.DecodeConfigJSON
 	case typ == mimeYAML:
 		var err error
 
@@ -316,7 +316,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		parse = store.NewConfigFromYAML
+		parse = store.DecodeConfigYAML
 	case strings.HasPrefix(typ, "multipart/form-data"): // file upload
 		_ = r.ParseMultipartForm(MaxUploadSize)
 
@@ -338,7 +338,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
-			parse = store.NewConfigFromJSON
+			parse = store.DecodeConfigJSON
 		case ".yaml", ".yml":
 			body, err = io.ReadAll(file)
 			if err != nil {
@@ -347,7 +347,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
-			parse = store.NewConfigFromYAML
+			parse = store.DecodeConfigYAML
 		default:
 			return weberror.NewWebError(
 				nil,
@@ -363,7 +363,9 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
-	c, err := parse(body)
+	// Only ${BRANCH_NAME} expands, so a client cannot read the server's
+	// environment through a stored config.
+	c, err := parse(store.ExpandBranchName(body))
 	if err != nil {
 		return weberror.NewWebError(err, "invalid formatting").
 			WithMetadata("validation", err.Error(), true)
@@ -543,7 +545,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		src = body
-		c, err = store.NewConfigFromJSON(body)
+		c, err = store.DecodeConfigJSON(store.ExpandBranchName(body))
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 
@@ -558,7 +560,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		src = body
-		c, err = store.NewConfigFromYAML(body)
+		c, err = store.DecodeConfigYAML(store.ExpandBranchName(body))
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 
@@ -586,7 +588,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 			}
 
 			src = body
-			c, err = store.NewConfigFromJSON(body)
+			c, err = store.DecodeConfigJSON(store.ExpandBranchName(body))
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 
@@ -601,7 +603,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 			}
 
 			src = body
-			c, err = store.NewConfigFromYAML(body)
+			c, err = store.DecodeConfigYAML(store.ExpandBranchName(body))
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 
@@ -631,6 +633,12 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	if c.Kind == kindExperiment {
 		// Reset experiment name in spec since we removed it before sending.
 		c.Spec["experimentName"] = vars["name"]
+	}
+
+	// A rename or kind change removes the old name's published Builder
+	// documents, so it waits for a publication under way.
+	if c.FullName() != name {
+		defer lockBuilderPublishing(name)()
 	}
 
 	if err := config.Update(name, c); err != nil {
@@ -717,18 +725,15 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	err := config.Delete(name)
-	if err != nil {
+	// Deleting a topology removes its published Builder documents, so it
+	// waits for a publication under way.
+	defer lockBuilderPublishing(name)()
+
+	if err := deleteConfig(name); err != nil {
 		return weberror.NewWebError(err, "unable to update config %s", name)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("configs", "list", name),
-		bt.NewResource("config", name, "delete"),
-		nil,
-	)
 	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 	plog.Info(
 		plog.TypeAction,
@@ -775,6 +780,23 @@ func broadcastConfig(c *store.Config, name, action string) error {
 		bt.NewRequestPolicy("configs", "list", c.FullName()),
 		bt.NewResource("config", name, action),
 		body,
+	)
+
+	return nil
+}
+
+// deleteConfig deletes the config name through the config API, which runs
+// the delete hooks of the kind. Then it tells everyone who may list the
+// config that it is gone.
+func deleteConfig(name string) error {
+	if err := config.Delete(name); err != nil {
+		return err //nolint:wrapcheck // callers word the error themselves
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("configs", "list", name),
+		bt.NewResource("config", name, "delete"),
+		nil,
 	)
 
 	return nil

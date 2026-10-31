@@ -162,6 +162,14 @@
   import { debounce } from 'lodash-es';
 
   import axiosInstance from '@/utils/axios.js';
+  import { roleAllowed } from '@/utils/rbac.js';
+  import {
+    DOC_ANNOTATION,
+    LEGACY_ANNOTATION,
+    SNIPPED,
+    builderAnnotation,
+    builderLink,
+  } from '@/builder/configs.js';
 
   export default {
     expose: ['confirmResetEditor'],
@@ -198,7 +206,41 @@
 
         axiosInstance
           .get('configs/' + name, { headers: { Accept: 'application/json' } })
-          .then((response) => {
+          .then(async (response) => {
+            if (builderAnnotation(response.data) === DOC_ANNOTATION) {
+              // Only Builder edits it.
+              this.editor.isLoading = false;
+
+              // A role without the Builder gets an alert, not a page it
+              // cannot use.
+              if (!roleAllowed('builder', 'use')) {
+                const done = () => this.$emit('is-done', '');
+
+                this.$buefy.dialog.alert({
+                  title: 'Built by Builder',
+                  message: 'Only Builder can edit this configuration',
+                  confirmText: 'OK',
+                  type: 'is-warning',
+                  hasIcon: true,
+                  onConfirm: done,
+                  onCancel: done,
+                });
+                return;
+              }
+
+              const router = this.$router;
+              const destination = builderLink(response.data);
+
+              // No message: an empty one would open an empty toast. The
+              // Builder announces the draft it opens.
+              this.$emit('is-done', '');
+              await router.push(destination);
+              return;
+            }
+
+            // The user edits a topology with a legacy Builder diagram as
+            // text, like any other. The text leaves out the diagram, which
+            // goes back as it was (see getConfigStr and getConfigObj).
             this.config.obj = response.data;
             this.config.str = this.getConfigStr('yaml');
 
@@ -276,7 +318,6 @@
         this.error.msg = null;
       },
       changeKeybinding() {
-        console.log(this.editor.vim);
         let user = localStorage.getItem('user');
         localStorage.setItem(user + '.vimMode', this.editor.vim);
       },
@@ -362,8 +403,17 @@
           }
         }
 
-        if (this.config.builderXML) {
-          obj.metadata.annotations['builder-xml'] = this.config.builderXML;
+        // The legacy Builder diagram goes back where the text still has its
+        // placeholder. A line the user removed or rewrote stays as typed.
+        const annotations = obj?.metadata?.annotations;
+
+        if (
+          this.config.builderXML !== null &&
+          annotations &&
+          typeof annotations === 'object' &&
+          annotations[LEGACY_ANNOTATION] === SNIPPED
+        ) {
+          annotations[LEGACY_ANNOTATION] = this.config.builderXML;
         }
         return obj;
       },
@@ -375,11 +425,17 @@
           obj = this.config.obj;
         }
 
-        if ('annotations' in obj.metadata) {
-          if ('builder-xml' in obj.metadata.annotations) {
-            this.config.builderXML = obj.metadata.annotations['builder-xml'];
-            obj.metadata.annotations['builder-xml'] = '<SNIPPED>';
-          }
+        // Keeps the legacy Builder diagram aside and leaves it out of the
+        // text.
+        const annotations = obj.metadata?.annotations;
+
+        if (
+          annotations &&
+          typeof annotations === 'object' &&
+          LEGACY_ANNOTATION in annotations
+        ) {
+          this.config.builderXML = annotations[LEGACY_ANNOTATION];
+          annotations[LEGACY_ANNOTATION] = SNIPPED;
         }
 
         switch (lang) {
