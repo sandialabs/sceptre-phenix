@@ -108,8 +108,9 @@ new jobs and configs include it.
 Every error a route answers, including refusals by authentication, RBAC and
 routing, is JSON (`Content-Type: application/json`): a `message` saying what
 went wrong, a `cause` with the underlying error text, for some errors a
-`metadata` object with details, and a `code`, a stable, machine-readable kind
-of error to match on instead of the message, which may change. Only the
+`metadata` object with details, for some codes a `details` object, and a
+`code`, a stable, machine-readable kind of error to match on instead of the
+message, which may change. Only the
 `/webshark/` routes that WebShark itself calls answer errors in WebShark's own
 format, the health routes in `application/health+json`, and a failed handshake
 on the console, VNC, port forward and SCORCH websockets in plain text.
@@ -124,6 +125,7 @@ on the console, VNC, port forward and SCORCH websockets in plain text.
 | `rate_limited` | `429` | too many requests; `Retry-After` says when to try again |
 | `unavailable` | `502`, `503`, `504` | the server or minimega cannot serve it now; try again later |
 | `internal` | other `5xx` | the request failed in the server |
+| `broken_disks` | `400` | a start refused because a VM disk image or CD-ROM image is missing or its backing chain is broken; `details.disks` lists each one (see [Disk Check Before a Start](experiments.md#disk-check-before-a-start)) |
 
 ```json
 {"message": "job not found", "cause": "", "code": "not_found"}

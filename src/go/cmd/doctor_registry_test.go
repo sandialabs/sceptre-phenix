@@ -182,6 +182,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"env-overrides env overrides pass",
 		"bridge-mode bridge-mode pass",
 		"deploy-mode deploy-mode pass",
+		"experiment.disk-check experiment.disk-check pass",
 		"log.level log.level pass",
 		"log.system.max-size log.system.max-size pass",
 		"log.system.max-backups log.system.max-backups pass",
@@ -568,7 +569,8 @@ func TestParseDoctorSkip(t *testing.T) {
 		"settings group": {
 			args: []string{"--skip", "settings"},
 			want: []string{
-				"bridge-mode", "deploy-mode", "log.level", "log.system.max-age", "log.system.max-backups", "log.system.max-size",
+				"bridge-mode", "deploy-mode", "experiment.disk-check", "log.level", "log.system.max-age",
+				"log.system.max-backups", "log.system.max-size",
 			},
 		},
 		"comma list and repeated": {
@@ -730,7 +732,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 40 passed, 1 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 41 passed, 1 skipped; failed: minimega; warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},

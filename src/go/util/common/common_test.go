@@ -99,3 +99,54 @@ func TestParseEnvProperties(t *testing.T) {
 		}
 	})
 }
+
+// ParseDiskCheck takes the three modes in any case, and "" as the default error mode.
+func TestParseDiskCheck(t *testing.T) {
+	tests := []struct {
+		mode    string
+		want    common.DiskCheck
+		wantErr string
+	}{
+		{mode: "", want: common.DiskCheckError},
+		{mode: "error", want: common.DiskCheckError},
+		{mode: "WARN", want: common.DiskCheckWarn},
+		{mode: "Off", want: common.DiskCheckOff},
+		{mode: "loose", want: common.DiskCheckError, wantErr: "unknown disk check mode provided: loose"},
+	}
+
+	for _, tt := range tests {
+		got, err := common.ParseDiskCheck(tt.mode)
+
+		var gotErr string
+		if err != nil {
+			gotErr = err.Error()
+		}
+
+		if got != tt.want || gotErr != tt.wantErr {
+			t.Errorf("ParseDiskCheck(%q) = %q, %q, want %q, %q", tt.mode, got, gotErr, tt.want, tt.wantErr)
+		}
+	}
+}
+
+// SetDiskCheck keeps the current mode when it refuses one, and ParseDiskCheck refuses exactly the values that are not a
+// mode in some case.
+func TestSetDiskCheckProperties(t *testing.T) {
+	t.Cleanup(func() { _ = common.SetDiskCheck("") })
+
+	rapid.Check(t, func(t *rapid.T) {
+		before := rapid.SampledFrom([]string{"error", "warn", "off"}).Draw(t, "before")
+		mode := rapid.OneOf(rapid.SampledFrom([]string{"", "Error", "wARN", "OFF", "none"}), rapid.String()).Draw(t, "mode")
+
+		_ = common.SetDiskCheck(before)
+
+		valid := slices.Contains([]string{"", "error", "warn", "off"}, strings.ToLower(mode))
+		err := common.SetDiskCheck(mode)
+
+		switch {
+		case valid != (err == nil):
+			t.Fatalf("SetDiskCheck(%q) error = %v, want valid %t", mode, err, valid)
+		case !valid && common.CurrentDiskCheck() != common.DiskCheck(before):
+			t.Fatalf("SetDiskCheck(%q) changed the mode to %q, want %q kept", mode, common.CurrentDiskCheck(), before)
+		}
+	})
+}

@@ -207,6 +207,11 @@ func (r *applyRun) dryRunWorkflow(ctx context.Context, wfConfig *configFile, pen
 		"step", stepPlan, "file", file, "action", string(result.Action), "experiment", result.Experiment, "reason", result.Reason,
 	)
 
+	// what the disk check of the start the plan makes finds
+	for _, warning := range result.Warnings {
+		plog.Warn(plog.TypeSystem, warning, "step", stepPlan, "file", file, "experiment", result.Experiment)
+	}
+
 	if !r.opts.DryRun && !r.opts.Force && result.Action == workflow.ActionRestart {
 		return workflow.Plan{}, fmt.Errorf(
 			"experiment %s is running; apply would stop, reconfigure and restart it; re-run with -f",

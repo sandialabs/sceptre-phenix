@@ -306,6 +306,18 @@ logs `minimega did not give its files directory`, and asks again at most once a
 minute. When minimega answers with a different directory, phēnix lists and
 watches that one instead, and open `Disks` pages reload.
 
+## Missing Backing Files
+
+A VM cannot start from an image whose backing file is missing. Before each
+start, phēnix checks the backing chain of each VM disk and refuses the start
+when a file is missing. See
+[Disk Check Before a Start](experiments.md#disk-check-before-a-start). To
+repair the image, do one of these steps:
+
+1. Restore the missing backing file at the path that the error names.
+2. Use `Rebase` to rebase the image onto a backing image that exists.
+3. Change the topology to use a different image.
+
 ## Downloading an Image
 
 `Download` confirms first, then downloads the image through the browser. The

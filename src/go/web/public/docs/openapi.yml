@@ -1041,6 +1041,14 @@ paths:
       tags:
         - Experiments
       summary: Start existing phenix experiment
+      description: >-
+        Starts the experiment. Before minimega launches a VM, phenix checks that
+        each disk image and CD-ROM image of the VMs exists. It also checks that
+        the backing chain of each disk image is complete. The
+        `experiment.disk-check` setting controls these checks. A missing file
+        refuses the start with 400, the code
+        `broken_disks`, and each VM, disk and missing file in `details.disks`.
+        Needs the `experiments/start` `update` permission.
       operationId: postExperimentsNameStart
       parameters:
         - name: name
@@ -1056,6 +1064,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Experiment"
+        "400":
+          description: >-
+            the start failed. For a missing disk image or CD-ROM image, or a
+            broken backing chain, the code is `broken_disks`. Then
+            `details.disks`
+            lists each one, and the experiment stays stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: the experiment is already starting or stopping
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/experiments/{name}/stop":
     post:
       tags:
@@ -3541,12 +3571,18 @@ paths:
         act on is skipped with `you do not have permission`. A VM another action
         holds fails with `retryable` set. Each succeeded item's `result` is the
         VM as the single-VM route returns it (none for `kill`). Canceling the
-        job starts no more VMs, and the VMs in progress finish. The actions
-        and their single-VM routes and permissions are `start` (POST
-        .../start, `vms/start` `update`), `pause` (POST .../stop, `vms/stop`
-        `update`), `restart` (POST .../restart, `vms/restart` `update`),
-        `shutdown` (POST .../shutdown, `vms/shutdown` `update`), `resetDisk`
-        (POST .../reset, `vms/reset` `update`) and `kill` (DELETE .../{vm_name}, `vms` `delete`).
+        job starts no more VMs, and the VMs in progress finish. The actions and
+        their single-VM routes and permissions are `start` (POST .../start,
+        `vms/start` `update`), `pause` (POST .../stop, `vms/stop` `update`),
+        `restart` (POST .../restart, `vms/restart` `update`). The other actions
+        are `shutdown` (POST
+        .../shutdown, `vms/shutdown` `update`), `resetDisk` (POST .../reset,
+        `vms/reset` `update`) and `kill` (DELETE .../{vm_name}, `vms` `delete`).
+        Before a `start` or `restart`, the job checks the disk images and CD-ROM
+        images of the VMs the role may act on. It checks them as a start of the
+        experiment does (see the `experiment.disk-check` setting). A VM with a
+        missing image fails immediately: its `error` starts with
+        `broken VM disk images` and names each disk and missing file.
       operationId: postExperimentsNameVmsActions
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -6777,9 +6813,15 @@ paths:
         scenario the action would use, including a stored topology's nodes, as
         creating an experiment would. Only then does it create, update, start,
         or restart the experiment. A failed check leaves a running experiment
-        running. With dryRun=true the plan is returned after the same checks,
-        and nothing is changed; a dry run before a first deploy names the
-        configs the caller will store with pending. The server sets BRANCH_NAME
+        running. Before a restart stops the experiment, it checks the disk
+        images and CD-ROM images of the start it makes. A missing file
+        refuses the restart with 400 and the code `broken_disks`, unless the
+        scenario has a user app, which can change the disks. In that case, the
+        start checks again. With dryRun=true, the server returns the plan after
+        the same checks and changes nothing. A dry run of a plan that starts the
+        experiment lists in `warnings` what that disk check finds. A dry run
+        before a first deploy names the configs the caller will store with
+        pending. The server sets BRANCH_NAME
         to the branch before parsing the body. The Content-Type header must be
         exactly application/json or application/x-yaml.
       operationId: postWorkflowApplyBranch
@@ -6890,8 +6932,10 @@ paths:
             scenario that is missing, cannot be read for any reason, fails to
             decode, or fails to merge, a stored topology whose nodes an
             experiment could not use, or a pending reference that fails its
-            check, all of which leave everything unchanged; or a failure to
-            stop, reconfigure or start the experiment while the plan is carried
+            check. These errors leave everything unchanged. A missing disk
+            image or CD-ROM image of a restart has the code `broken_disks` and
+            leaves the experiment running. A failure to stop,
+            reconfigure or start the experiment while the plan is carried
             out, which comes after changes were made
           content:
             application/json:
@@ -9795,6 +9839,19 @@ components:
           example: false
           type: boolean
           description: true when nothing was changed because dryRun was requested
+        warnings:
+          title: "Warnings"
+          description: >-
+            Only a dry run of a plan that starts the experiment sets it. It
+            lists each problem that the disk check of that start finds, such as
+            a missing backing file. A problem that would refuse the start begins
+            with `the start would fail: `
+          type: array
+          items:
+            type: string
+            example: >-
+              the start would fail: VM host-01: disk kali.qc2: backing file
+              /phenix/images/ro_kali.qc2 is missing
     WorkflowConfigResult:
       title: "Workflow Config Result"
       type: object
@@ -9884,13 +9941,16 @@ components:
           type: string
           description: >-
             a stable, machine-readable kind of error, for clients to match on
-            rather than the message: `invalid_request` (the request cannot be
-            acted on as sent: 400, 405, 413, 415, 416, 422), `unauthorized`
-            (401), `forbidden` (403), `not_found` (404, 410), `conflict` (409,
-            412, 423: at odds with the current state), `rate_limited` (429),
-            `unavailable` (502, 503, 504: try again later) or `internal` (any
-            other server error); optional, so a client must also handle an
-            Error without one
+            instead of the message. The codes are `invalid_request` (the server
+            cannot act on the request as sent: 400, 405, 413, 415, 416, 422),
+            `unauthorized` (401), `forbidden` (403), `not_found` (404, 410),
+            `conflict` (409, 412, 423: in conflict with the current state),
+            `rate_limited` (429), `unavailable` (502, 503, 504: try again
+            later), `internal` (any other server error) and `broken_disks`
+            (400). `broken_disks` means that the server refused a start because
+            a VM's disk image or CD-ROM image is missing or its backing chain is
+            broken. `details.disks` lists those images. The code is optional, so
+            a client must also handle an Error without one
           enum:
             - invalid_request
             - unauthorized
@@ -9900,6 +9960,7 @@ components:
             - rate_limited
             - unavailable
             - internal
+            - broken_disks
           example: not_found
         metadata:
           title: "Metadata"
@@ -9941,6 +10002,60 @@ components:
                 again with `?force=true` to mark it stopped anyway
           additionalProperties:
             type: string
+        details:
+          title: "Details"
+          type: object
+          description: structured details, returned for some codes
+          properties:
+            disks:
+              title: "Disks"
+              description: >-
+                for the code `broken_disks`, each disk image or CD-ROM image of
+                a VM that qemu cannot open, sorted by VM and drive
+              type: array
+              items:
+                $ref: "#/components/schemas/BrokenDisk"
+    BrokenDisk:
+      title: "Broken Disk"
+      description: A disk image or CD-ROM image of a VM that is missing or whose backing chain is broken.
+      type: object
+      properties:
+        vm:
+          title: "VM"
+          description: the VM's hostname
+          type: string
+          example: host-01
+        drive:
+          title: "Drive"
+          description: "`disk` for an entry of hardware.drives, `cdrom` for the VM's CD-ROM (advanced.cdrom)"
+          type: string
+          enum:
+            - disk
+            - cdrom
+          example: disk
+        image:
+          title: "Image"
+          description: the image as the topology names it
+          type: string
+          example: kali.qc2
+        path:
+          title: "Path"
+          description: the image's full path, as minimega reads it
+          type: string
+          example: /phenix/images/kali.qc2
+        missing:
+          title: "Missing"
+          description: >-
+            full path of the missing file, the image itself or a file in its
+            backing chain. Empty for a chain that loops or is more than 64
+            images deep
+          type: string
+          example: /phenix/images/ro_kali.qc2
+        problem:
+          title: "Problem"
+          description: what is wrong, in one sentence
+          type: string
+          example: backing file /phenix/images/ro_kali.qc2 is missing
     SoHSummaries:
       title: So HSummaries
       description: The state of health of every experiment the caller may see.

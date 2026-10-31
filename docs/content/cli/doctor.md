@@ -26,24 +26,24 @@ Check the phenix configuration without a running server
   settings set writes, check each set environment variable phenix reads
   (PHENIX_*, PATH, EDITOR, SUDO_USER and SUDO_COMMAND) as phenix parses it,
   warn about PHENIX_* variables that name no setting or override a different
-  config file value, check the settings every other phenix command refuses
-  or misreads (bridge-mode, deploy-mode, log.level and log.system.*), check
-  that the store and log files can be written, that the store file is a
-  whole BoltDB file this user owns and that no root phenix ui uses another
-  store, and that the base directories exist, check what phenix ui reads at
-  startup (the JWT signing key and lifetime, initial users, proxy auth, the
-  TLS key pair and certificate expiry, the listen endpoints, and the unix
-  socket's directory and group), ask a running phenix ui on the unix socket
-  for its version and its bridge and deploy modes, and check that minimega
-  answers on its socket and that its files directory, base directory and
-  mesh suit phenix. The tools and features checks look for qemu-img, vmdb2
-  and filebeat on PATH, list the user apps and SCORCH components there,
+  config file value, check the settings every other phenix command refuses or
+  misreads (bridge-mode, deploy-mode, experiment.disk-check, log.level and
+  log.system.*), check that the store and log files can be written, that the
+  store file is a whole BoltDB file this user owns and that no root phenix ui
+  uses another store, and that the base directories exist, check what phenix
+  ui reads at startup (the JWT signing key and lifetime, initial users, proxy
+  auth, the TLS key pair and certificate expiry, the listen endpoints, and
+  the unix socket's directory and group), ask a running phenix ui on the unix
+  socket for its version and its bridge and deploy modes, and check that
+  minimega answers on its socket and that its files directory, base directory
+  and mesh suit phenix. The tools and features checks look for qemu-img,
+  vmdb2 and filebeat on PATH, list the user apps and SCORCH components there,
   measure free disk space, report whether phenix ui turns on tunneler
   downloads and WebShark (relative to the working directory), and check
   ui.features and ui.logs.minimega-path. --skip takes a check or a group of
-  checks; an unknown name fails and lists the valid ones. Secret values,
-  such as the JWT signing key and initial users, are redacted. doctor exits
-  1 when a check fails, or with --strict when one warns, and 0 otherwise.
+  checks; an unknown name fails and lists the valid ones. Secret values, such
+  as the JWT signing key and initial users, are redacted. doctor exits 1 when
+  a check fails, or with --strict when one warns, and 0 otherwise.
 
   --report adds the hostname to the header and prints the whole output in a
   fenced block to paste into a bug report.

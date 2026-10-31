@@ -34,7 +34,7 @@ mode over `--unix-socket` uses `auto` whatever its own setting. See
 Precedence (highest to lowest): **1. command-line flag** → **2. environment
 variable** (`PHENIX_*`; empty is ignored) → **3. `config.yaml`**, with `users.yaml`
 merged over it (managed with `phenix settings set`/`unset`, which change the file
-phenix read; `log.*`, `ui.logs.level` and `ui.users` are hot-reloaded, other keys
+phenix read; `log.*`, `ui.logs.level`, `ui.users` and `experiment.disk-check` are hot-reloaded, other keys
 need a `phenix ui` restart) → **4. built-in default**. A `PHENIX_*` variable hides
 what `settings set` writes; `phenix doctor` warns about each such override. See
 [Settings & Configuration](https://phenix.sceptre.dev/latest/settings/) for the
@@ -119,7 +119,15 @@ stays a string. The annotations the default apps read are in
 
 `start all` starts every stopped experiment. `--dry-run` (also on `restart`)
 does everything except call out to minimega, which isolates config and
-scheduling problems from minimega problems. `--honor-run-periodically` keeps
+scheduling problems from minimega problems. Before minimega gets anything, `start`
+checks each booting VM's disk images (following qcow2 backing chains) and
+CD-ROM image (`advanced.cdrom`, `.iso` drives: existence only) on the head
+node, and refuses with one line per VM and disk when a file is missing;
+`restart` does the same check before it stops the experiment (warnings only
+when the scenario has a user app). `--dry-run` and
+`--treat-mm-errors-as-warnings` make the problems warnings; the
+`experiment.disk-check` setting (`error` default, `warn`, `off`) applies to
+every start path, CLI, REST, UI, workflow and bulk VM start/restart jobs. `--honor-run-periodically` keeps
 the process in the foreground re-running `running` stages on their
 `runPeriodically` interval.
 
@@ -267,7 +275,7 @@ phenix vlan range <exp> <range min> <range max>  # view or set the VLAN pool ran
 
 ```bash
 phenix mm <minimega args>...     # pass raw commands to (or attach to) minimega
-phenix settings list|get|set|unset [key] [value]  # phenix ui applies log.*, ui.logs.level, users at once; others on restart (it logs which)
+phenix settings list|get|set|unset [key] [value]  # phenix ui applies log.*, ui.logs.level, users, experiment.disk-check at once; others on restart (it logs which)
 phenix settings db ...            # legacy BoltDB-backed settings
 phenix ui                         # run the phenix web UI/API server
 phenix healthcheck [--ready] [--url URL] [-o json]  # probe the UI server's /healthz (or /readyz); exit 0 on 200

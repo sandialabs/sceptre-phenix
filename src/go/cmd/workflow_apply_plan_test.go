@@ -62,6 +62,27 @@ func TestRunWorkflowApplyDryRun(t *testing.T) {
 	checkFields(t, responses[3], map[string]string{"level": "DEBUG", "status": "200"})
 }
 
+// A dry run logs each problem the disk check of the planned start finds.
+func TestRunWorkflowApplyDryRunLogsDiskWarnings(t *testing.T) {
+	logs := captureLogs(t)
+	dir := newTopologyDir(t, "helloworld", fullTopology())
+	warning := "the start would fail: VM vm1: disk a.qc2: backing file /phenix/images/ro_a.qc2 is missing"
+	fake := newFakePhenix(t, fakePhenix{
+		options:  serverOptions(t.TempDir()),
+		plan:     workflow.Plan{Action: workflow.ActionRestart, Experiment: "helloworld", Reason: ""},
+		warnings: []string{warning},
+	})
+
+	opts := testApplyOptions(fake.socket, t.TempDir())
+	opts.DryRun = true
+
+	if err := runWorkflowApply(t.Context(), opts, dir); err != nil {
+		t.Fatalf("runWorkflowApply() error = %v, want none: a disk warning does not fail a dry run", err)
+	}
+
+	checkFields(t, logs.first(t, warning), map[string]string{"level": "WARN", "step": "plan", "experiment": "helloworld"})
+}
+
 // TestRunWorkflowApplyForwardsPendingRefs checks that the workflow dry run
 // names each config as pending by the ref its config dry run answered, in
 // upsert order, and that the real apply names none: only the server knows

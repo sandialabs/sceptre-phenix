@@ -24,6 +24,9 @@ const (
 	CodeUnavailable Code = "unavailable"
 	// CodeInternal is a request that failed in the server.
 	CodeInternal Code = "internal"
+	// CodeBrokenDisks is a start refused because a VM's disk image or CD-ROM image is missing or its backing chain
+	// is broken; details.disks lists them.
+	CodeBrokenDisks Code = "broken_disks"
 )
 
 // CodeFor is the code of an error answered with status.

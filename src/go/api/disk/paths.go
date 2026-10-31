@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
-	"syscall"
 
+	"phenix/util/diskchain"
 	"phenix/util/file"
 	"phenix/util/mm"
 	"phenix/util/plog"
@@ -31,10 +31,6 @@ var (
 
 	// ErrExists is returned when an action would replace an existing file.
 	ErrExists = errors.New("disk image already exists")
-
-	// systemDirs hold files that are not disk images, and that can block or
-	// have side effects when opened; topologies naming them are not inspected.
-	systemDirs = []string{"/proc", "/sys", "/dev", "/run"} //nolint:gochecknoglobals // constant
 
 	depthWarned atomic.Bool //nolint:gochecknoglobals // warn once per process
 )
@@ -154,37 +150,24 @@ func locate(image *Details, dir string) {
 	image.ReadOnly = managed(dir, image.FullPath) != nil
 }
 
-// openRegular opens path for reading when it is a regular file, without
-// blocking on a FIFO or device put in its place.
+// openRegular opens path for reading when it is a regular file outside the system directories (see
+// diskchain.OpenRegular), returning an error wrapping ErrNotManaged for anything else there.
 func openRegular(path string) (*os.File, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, fmt.Errorf("opening disk image: %w", err)
+	f, err := diskchain.OpenRegular(path)
+	if errors.Is(err, diskchain.ErrNotRegular) || errors.Is(err, diskchain.ErrSystemDir) {
+		return nil, fmt.Errorf("%w: %w", ErrNotManaged, err)
 	}
 
-	info, err := f.Stat()
-	if err == nil && !info.Mode().IsRegular() {
-		err = fmt.Errorf("%w: %s is not a regular file", ErrNotManaged, path)
-	}
-
-	if err != nil {
-		_ = f.Close()
-
-		return nil, err
-	}
-
-	return f, nil
+	return f, err
 }
 
 // usableImage reports whether phenix can read path as a regular file outside
 // the system directories.
 func usableImage(path string) bool {
-	for _, dir := range systemDirs {
-		if file.WithinDir(dir, path) {
-			plog.Debug(plog.TypeSystem, "not inspecting a disk image in a system directory", "image", path)
+	if diskchain.InSystemDir(path) {
+		plog.Debug(plog.TypeSystem, "not inspecting a disk image in a system directory", "image", path)
 
-			return false
-		}
+		return false
 	}
 
 	f, err := openRegular(path)

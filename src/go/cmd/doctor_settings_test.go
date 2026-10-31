@@ -16,7 +16,8 @@ import (
 //
 //nolint:gochecknoglobals // constant list
 var settingIDs = []string{
-	"bridge-mode", "deploy-mode", "log.level", "log.system.max-size", "log.system.max-backups", "log.system.max-age",
+	"bridge-mode", "deploy-mode", "experiment.disk-check", "log.level", "log.system.max-size", "log.system.max-backups",
+	"log.system.max-age",
 }
 
 // settingRows runs the checks of settingIDs against in.
@@ -67,7 +68,8 @@ func TestSettingChecks(t *testing.T) {
 			settings: map[string]string{},
 			want: map[string]doctorCheck{
 				"bridge-mode":            passCheck("manual"),
-				"deploy-mode":            passCheck("not set; phenix uses the mode of phenix ui, or no-headnode"),
+				"deploy-mode":            passCheck("not set, so phenix uses the mode of phenix ui, or no-headnode"),
+				"experiment.disk-check":  passCheck("error"),
 				"log.level":              passCheck("info"),
 				"log.system.max-size":    passCheck("100"),
 				"log.system.max-backups": passCheck("3"),
@@ -76,12 +78,13 @@ func TestSettingChecks(t *testing.T) {
 		},
 		"bad values": {
 			settings: map[string]string{
-				"bridge-mode": "", "deploy-mode": "Only-Headnode", "log.level": "loud",
+				"bridge-mode": "", "deploy-mode": "Only-Headnode", "experiment.disk-check": "WARN", "log.level": "loud",
 				"log.system.max-size": "-5", "log.system.max-backups": "five", "log.system.max-age": "0",
 			},
 			want: map[string]doctorCheck{
-				"bridge-mode": passCheck("not set; phenix uses manual, or auto when phenix ui runs in auto"),
-				"deploy-mode": passCheck("only-headnode"),
+				"bridge-mode":           passCheck("not set, so phenix uses manual, or auto when phenix ui runs in auto"),
+				"deploy-mode":           passCheck("only-headnode"),
+				"experiment.disk-check": passCheck("warn"),
 				"log.level": warnCheck(
 					`"loud" is not a log level (debug, info, warn or error), so phenix ignores it and logs at info`),
 				"log.system.max-size":    failCheck("-5 is negative, so every write to the system log fails"),
@@ -90,12 +93,14 @@ func TestSettingChecks(t *testing.T) {
 			},
 		},
 		"refused modes": {
-			settings: map[string]string{"bridge-mode": "sideways", "deploy-mode": "some"},
+			settings: map[string]string{"bridge-mode": "sideways", "deploy-mode": "some", "experiment.disk-check": "loose"},
 			want: map[string]doctorCheck{
 				"bridge-mode": failCheck(
 					"unknown bridge mode provided: sideways, so phenix commands refuse it (options: manual | auto)"),
 				"deploy-mode": failCheck(
-					"unknown deploy mode provided: some; phenix commands refuse it (options: all | no-headnode | only-headnode)"),
+					"unknown deploy mode provided: some, so phenix commands refuse it (options: all | no-headnode | only-headnode)"),
+				"experiment.disk-check": failCheck(
+					"unknown disk check mode provided: loose, so phenix commands refuse it (options: error | warn | off)"),
 				"log.level":              passCheck("info"),
 				"log.system.max-size":    passCheck("100"),
 				"log.system.max-backups": passCheck("3"),
@@ -125,7 +130,9 @@ func TestSettingChecksMatchConsumers(t *testing.T) {
 
 	rapid.Check(t, func(t *rapid.T) {
 		value := rapid.OneOf(
-			rapid.SampledFrom([]string{"", "manual", "AUTO", "all", "no-headnode", "none", "debug", "WARN", "error+2"}),
+			rapid.SampledFrom([]string{
+				"", "manual", "AUTO", "all", "no-headnode", "none", "debug", "WARN", "error+2", "Off", "error",
+			}),
 			rapid.StringMatching(`[-+]?(0x)?[0-9a-z]{0,6}`),
 			rapid.String(),
 		).Draw(t, "value")
@@ -145,6 +152,11 @@ func TestSettingChecksMatchConsumers(t *testing.T) {
 		_, deployErr := common.ParseDeployMode(value)
 		if got := rows["deploy-mode"].Status == doctorFail; got != (deployErr != nil) {
 			t.Fatalf("deploy-mode %q: check %+v, ParseDeployMode error %v", value, rows["deploy-mode"], deployErr)
+		}
+
+		_, diskErr := common.ParseDiskCheck(value)
+		if got := rows["experiment.disk-check"].Status == doctorFail; got != (diskErr != nil) {
+			t.Fatalf("experiment.disk-check %q: check %+v, ParseDiskCheck error %v", value, rows["experiment.disk-check"], diskErr)
 		}
 
 		var level slog.Level

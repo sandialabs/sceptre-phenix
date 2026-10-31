@@ -70,16 +70,17 @@ hint; see
 
 ### Every Command Fails on a Mode Setting
 
-Every phēnix command except `phenix doctor` reads `bridge-mode` and
-`deploy-mode` before it runs, and stops on a value it does not know:
+Every phēnix command except `phenix doctor` reads `bridge-mode`,
+`deploy-mode` and `experiment.disk-check` before it runs, and stops on a value
+it does not know:
 
 ```text
 setting user-specified bridge mode: setting bridge mode: unknown bridge mode provided: sideways
 ```
 
-Fix the value in the flag, `PHENIX_BRIDGE_MODE` or `PHENIX_DEPLOY_MODE`, or the
-config file. `phenix doctor` fails its `bridge-mode` or `deploy-mode` check
-for such a value, and warns about a `log.level` or `log.system.*` value that
+Fix the value in the flag, `PHENIX_BRIDGE_MODE`, `PHENIX_DEPLOY_MODE` or
+`PHENIX_EXPERIMENT_DISK_CHECK`, or the config file. `phenix doctor` fails its
+`bridge-mode`, `deploy-mode` or `experiment.disk-check` check for such a value, and warns about a `log.level` or `log.system.*` value that
 phēnix ignores or reads as `0`.
 
 ### `phenix ui` Fails to Start, or Ignores TLS or Users
@@ -161,6 +162,30 @@ Long-running work, such as an experiment's start script and VM launches, uses
 connections of its own and is not limited this way. This error usually means
 minimega itself is stuck or overloaded: check `minimega -e version` and the
 minimega log on the headnode.
+
+### A Start Fails on a Broken Backing Chain
+
+phēnix refuses to start an experiment when a VM disk image or CD-ROM image is
+missing, or when a file in the backing chain of a disk is missing:
+
+```text
+Error: unable to start the foo experiment: 1 disk on 1 VM is missing or has a broken backing chain: 1 error occurred:
+    * VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing
+```
+
+The experiment stays stopped. A restart refuses before it stops the
+experiment, which continues to run. To repair the problem, do one of these
+steps:
+
+1. Restore the file that the error names, on the head node.
+2. Point the image at a copy of the missing backing file. Use `Rebase` on the
+   `Disks` page with `Change reference only` selected, or minimega's
+   `disk set-backing`. A rebase without this option must read the missing
+   file, so it fails.
+3. Change the topology to use a different image.
+
+If the file is on a compute node only, set `experiment.disk-check` to `warn`.
+See [Disk Check Before a Start](experiments.md#disk-check-before-a-start).
 
 ### phēnix Cannot Reach minimega or Its Images
 

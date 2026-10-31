@@ -134,6 +134,17 @@ describe('showError', () => {
       ['<b>Error:</b> run failed', 'first', '<b>second: killed</b>'],
     ],
     [
+      'shows each broken disk of a refused start on a line of its own',
+      'unable to start experiment foo',
+      '2 disks on 1 VM are missing or have a broken backing chain: 2 errors occurred:\n\t* VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing\n\t* VM host-01: CD-ROM tools.iso: CD-ROM image /phenix/images/tools.iso is missing',
+      [
+        '<b>Error:</b> unable to start experiment foo',
+        '2 disks on 1 VM are missing or have a broken backing chain',
+        'VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing',
+        '<b>VM host-01: CD-ROM tools.iso: CD-ROM image /phenix/images/tools.iso is missing</b>',
+      ],
+    ],
+    [
       'leaves a plain error whole',
       'experiment not found',
       undefined,

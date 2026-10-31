@@ -82,11 +82,14 @@ func NewPlan(spec Spec, branch string, mapped []types.Experiment, existing []str
 }
 
 // Result is the JSON body of an apply response. The fields of the embedded
-// [Plan] are flattened into the same object as dryRun.
+// [Plan] are flattened into the same object as dryRun. Warnings, set only by
+// a dry run of a plan that starts the experiment, are the problems the disk
+// check of that start finds (see experiment.CheckDisks).
 type Result struct {
 	Plan
 
-	DryRun bool `json:"dryRun"`
+	DryRun   bool     `json:"dryRun"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ConfigResult is the JSON body of a config dry run response. Kind and Name

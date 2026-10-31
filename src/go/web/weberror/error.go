@@ -16,6 +16,7 @@ type WebError struct {
 	Code           Code              `json:"code,omitempty"`
 	SystemMetadata map[string]string `json:"sys_metadata,omitempty"` // logged, but not return to user
 	UserMetadata   map[string]string `json:"metadata,omitempty"`     // logged and returned to user
+	Details        map[string]any    `json:"details,omitempty"`      // structured details some codes carry
 }
 
 func NewWebError(cause error, format string, args ...any) *WebError {
@@ -48,6 +49,18 @@ func (err *WebError) WithMetadata(k, v string, user bool) *WebError {
 
 		err.UserMetadata[k] = v
 	}
+
+	return err
+}
+
+// WithDetail sets the structured detail k, returned to the user and not logged, such as the list of
+// broken disks a CodeBrokenDisks error carries.
+func (err *WebError) WithDetail(k string, v any) *WebError {
+	if err.Details == nil {
+		err.Details = make(map[string]any)
+	}
+
+	err.Details[k] = v
 
 	return err
 }

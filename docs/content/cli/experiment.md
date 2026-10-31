@@ -226,6 +226,12 @@ Restart an experiment
   Used to restart a running experiment, using 'all' instead of a specific
   experiment name will include all running experiments; dry-run will do
   everything but call out to minimega.
+
+  Before phenix stops the experiment, it checks the disk images and CD-ROM
+  images of the VMs as 'phenix experiment start' does. A missing file
+  refuses the restart, and the experiment continues to run. When the
+  scenario has a user app, the app can change the disks, so this check
+  only shows warnings, and the check before the start can still refuse it.
 ```
 
 ```text
@@ -328,6 +334,14 @@ Start an experiment
   Used to start a stopped experiment, using 'all' instead of a specific
   experiment name will include all stopped experiments; dry-run will do
 	everything but call out to minimega.
+
+  Before minimega launches a VM, phenix checks that each disk image and
+  CD-ROM image of the VMs exists, and that the backing chain of each disk
+  image is complete. A missing file refuses the start and lists each VM,
+  disk and missing file. With --dry-run or --treat-mm-errors-as-warnings,
+  phenix shows the problems as warnings. The experiment.disk-check setting
+  changes this for every start: warn shows the problems as warnings, and
+  off skips the check.
 
 	NOTE: passing the --honor-run-periodically flag will prevent the CLI from
 	returning. If Ctrl+c is pressed, the experiment will continue to run but

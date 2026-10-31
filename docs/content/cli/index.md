@@ -15,24 +15,25 @@ phenix [flags]
 ### Options
 
 ```text
-      --base-dir.injects string      base directory for staged workflow injects (default: <base-dir.phenix>/injects; workflow apply uses the server's value unless this flag is given)
-      --base-dir.minimega string     base minimega directory (default "/tmp/minimega")
-      --base-dir.phenix string       base phenix directory (default "/phenix")
-      --base-dir.topologies string   base directory for topology directories (default: <base-dir.phenix>/topologies)
-      --bridge-mode string           bridge naming mode for experiments ('auto' uses experiment name for bridge; 'manual' uses user-specified bridge name, or 'phenix' if not specified; a phenix ui in 'auto' mode overrides it) (options: manual | auto) (default "manual")
-      --deploy-mode string           deploy mode for minimega VMs (options: all | no-headnode | only-headnode)
-  -h, --help                         help for phenix
-      --hostname-suffixes string     hostname suffixes to strip (default "-minimega,-phenix")
-      --log.console string           output for console logs (text format) (stderr, stdout, or file path) (default "stderr")
-      --log.level string             level to log messages at (default "info")
-      --log.system.max-age int       maximum number of days to retain old log files (default 90)
-      --log.system.max-backups int   maximum number of old log files to retain (default 3)
-      --log.system.max-size int      maximum size in megabytes of the log file before it gets rotated (default 100)
-      --log.system.path string       path to system log (JSON format) (default: /var/log/phenix/phenix.log as root, $HOME/phenix_logs/phenix.log otherwise)
-      --mount-dir string             base directory for VM filesystem mounts (default: <base-dir.phenix>/mounts)
-      --store.endpoint string        BoltDB store endpoint (bolt://<path>) (default: bolt:///etc/phenix/store.bdb as root, bolt://$HOME/.phenix.bdb otherwise)
-      --unix-socket string           phēnix unix socket to listen on (ui subcommand) or connect to (default "/tmp/phenix.sock")
-      --use-gre-mesh                 use GRE tunnels between mesh nodes for VLAN trunking
+      --base-dir.injects string        base directory for staged workflow injects (default: <base-dir.phenix>/injects; workflow apply uses the server's value unless this flag is given)
+      --base-dir.minimega string       base minimega directory (default "/tmp/minimega")
+      --base-dir.phenix string         base phenix directory (default "/phenix")
+      --base-dir.topologies string     base directory for topology directories (default: <base-dir.phenix>/topologies)
+      --bridge-mode string             bridge naming mode for experiments ('auto' uses experiment name for bridge; 'manual' uses user-specified bridge name, or 'phenix' if not specified; a phenix ui in 'auto' mode overrides it) (options: manual | auto) (default "manual")
+      --deploy-mode string             deploy mode for minimega VMs (options: all | no-headnode | only-headnode)
+      --experiment.disk-check string   what a start does when a VM disk image or CD-ROM image is missing or its backing chain is broken ('error' refuses the start, 'warn' starts with a warning, 'off' does not check) (options: error | warn | off) (default "error")
+  -h, --help                           help for phenix
+      --hostname-suffixes string       hostname suffixes to strip (default "-minimega,-phenix")
+      --log.console string             output for console logs (text format) (stderr, stdout, or file path) (default "stderr")
+      --log.level string               level to log messages at (default "info")
+      --log.system.max-age int         maximum number of days to retain old log files (default 90)
+      --log.system.max-backups int     maximum number of old log files to retain (default 3)
+      --log.system.max-size int        maximum size in megabytes of the log file before it gets rotated (default 100)
+      --log.system.path string         path to system log (JSON format) (default: /var/log/phenix/phenix.log as root, $HOME/phenix_logs/phenix.log otherwise)
+      --mount-dir string               base directory for VM filesystem mounts (default: <base-dir.phenix>/mounts)
+      --store.endpoint string          BoltDB store endpoint (bolt://<path>) (default: bolt:///etc/phenix/store.bdb as root, bolt://$HOME/.phenix.bdb otherwise)
+      --unix-socket string             phēnix unix socket to listen on (ui subcommand) or connect to (default "/tmp/phenix.sock")
+      --use-gre-mesh                   use GRE tunnels between mesh nodes for VLAN trunking
 ```
 
 ### SEE ALSO

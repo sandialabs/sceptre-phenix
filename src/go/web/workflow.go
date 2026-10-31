@@ -17,7 +17,9 @@ import (
 	"phenix/api/workflow"
 	"phenix/store"
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
+	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web/audit"
@@ -82,7 +84,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 
 	audit.Success(r, audit.WorkflowApply, done, applied)
 
-	// A Result holds only strings and a bool, so marshaling it cannot fail.
+	// A Result holds only strings, a bool and a list of strings, so marshaling it cannot fail.
 	body, _ := json.Marshal(result)
 
 	w.Header().Set("Content-Type", mimeJSON)
@@ -148,13 +150,92 @@ func applyWorkflow(r *http.Request, branch string) (workflow.Result, error) {
 		return result, workflowWebError(err, "unable to apply phenix workflow config")
 	}
 
-	if !dryRun {
-		if err := executeWorkflowPlan(r.Context(), plan, spec, branch, tags, prep, target); err != nil {
-			return result, err
-		}
+	if dryRun {
+		result.Warnings = workflowDiskWarnings(r.Context(), spec, plan, prep, target)
+
+		return result, nil
+	}
+
+	if err := executeWorkflowPlan(r.Context(), plan, spec, branch, tags, prep, target); err != nil {
+		return result, err
 	}
 
 	return result, nil
+}
+
+// workflowStartSpec is the experiment spec, as far as the disk check reads it, that the start after applying the
+// workflow uses, before apps run; nil when the action starts nothing or the topology is pending. exp is the
+// experiment an update acts on, nil for a create.
+//
+//nolint:ireturn // the spec the disk check reads
+func workflowStartSpec(
+	spec workflow.Spec, action workflow.Action, prep workflow.Prepared, exp *types.Experiment,
+) ifaces.ExperimentSpec {
+	switch {
+	case prep.Topology == nil:
+		return nil
+	case action != workflow.ActionCreateAndStart && action != workflow.ActionUpdateAndStart &&
+		action != workflow.ActionRestart:
+		return nil
+	}
+
+	// a copy, since Init sets the node defaults, such as snapshot: true, which the prepared topology lacks
+	var topology v1.TopologySpec
+	if raw, err := json.Marshal(prep.Topology); err != nil || json.Unmarshal(raw, &topology) != nil {
+		return nil
+	}
+
+	var md store.ConfigMetadata
+
+	md.Name = spec.ExperimentName()
+
+	start := types.NewExperiment(md)
+	start.Spec.SetTopology(&topology)
+	start.Spec.SetScenario(prep.Scenario)
+	start.Spec.SetSchedule(spec.Schedules)
+	start.Spec.SetDeployMode(string(spec.ExperimentDeployMode()))
+
+	if exp != nil {
+		start.Spec.SetSchedule(prep.Schedules)
+
+		if prep.ScenarioName == "" {
+			start.Spec.SetScenario(exp.Spec.Scenario())
+		}
+	}
+
+	_ = start.Spec.Init() // a topology the start refuses is reported by the start
+
+	return start.Spec
+}
+
+// workflowDiskWarnings are the problems the disk check of the start that carrying out plan makes would find, each
+// one that would refuse the start saying so.
+func workflowDiskWarnings(
+	ctx context.Context, spec workflow.Spec, plan workflow.Plan, prep workflow.Prepared, exp *types.Experiment,
+) []string {
+	start := workflowStartSpec(spec, plan.Action, prep, exp)
+	if start == nil {
+		return nil
+	}
+
+	warnings, err := experiment.CheckDisks(ctx, start)
+
+	var (
+		out    []string
+		broken *experiment.BrokenDisksError
+	)
+
+	if errors.As(err, &broken) {
+		for _, p := range broken.Problems {
+			out = append(out, "the start would fail: "+p.String())
+		}
+	}
+
+	for _, w := range warnings {
+		out = append(out, w.Error())
+	}
+
+	return out
 }
 
 // readWorkflowConfig returns the request body parsed with its ${VAR}
@@ -303,7 +384,7 @@ func executeWorkflowPlan(
 	case workflow.ActionCreate, workflow.ActionCreateAndStart:
 		return createFromWorkflow(ctx, spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart)
 	case workflow.ActionUpdate, workflow.ActionUpdateAndStart, workflow.ActionRestart:
-		return updateFromWorkflow(exp, spec, tags, prep, plan.Action)
+		return updateFromWorkflow(ctx, exp, spec, tags, prep, plan.Action)
 	}
 
 	return nil
@@ -369,9 +450,11 @@ func createFromWorkflow(
 
 // updateFromWorkflow applies the workflow to exp using only what prep
 // resolved, so nothing is looked up after a running experiment is stopped. A
-// restart stops the experiment first; a restart or an updateAndStart starts
-// it afterward.
+// restart checks the disks of the start it makes (see
+// experiment.CheckDisksBeforeStop) and stops the experiment first; a restart
+// or an updateAndStart starts it afterward.
 func updateFromWorkflow(
+	ctx context.Context,
 	exp *types.Experiment,
 	spec workflow.Spec,
 	tags string,
@@ -381,6 +464,17 @@ func updateFromWorkflow(
 	expName := exp.Metadata.Name
 
 	if action == workflow.ActionRestart {
+		if start := workflowStartSpec(spec, action, prep, exp); start != nil {
+			warnings, err := experiment.CheckDisksBeforeStop(ctx, start)
+			for _, w := range warnings {
+				plog.Warn(plog.TypeSystem, w.Error(), "exp", expName)
+			}
+
+			if err != nil {
+				return startWebError(err, "unable to restart experiment %s, which is still running", expName)
+			}
+		}
+
 		var err error
 
 		if _, err = stopExperiment(expName, false); err != nil {

@@ -136,7 +136,7 @@ the auth modes and points to the full route reference.
 | Route | Notes |
 |---|---|
 | `POST /workflow/configs/{branch}[?dryRun=true]` | Create or update a config; `${BRANCH_NAME}` expands to `{branch}`. The dry run stores nothing and returns JSON `{action, kind, name, dryRun, pending}`. |
-| `POST /workflow/apply/{branch}[?dryRun=true][&pending=<ref>][&expect=<action>][&tag=key=value]` | Returns JSON `{action, experiment, reason, dryRun}`. `pending`, only on a dry run, is a config dry run's `pending` value, url-encoded, and names a config the caller stores before the real apply. A plan other than `expect` is a 409 that changes nothing. |
+| `POST /workflow/apply/{branch}[?dryRun=true][&pending=<ref>][&expect=<action>][&tag=key=value]` | Returns JSON `{action, experiment, reason, dryRun, warnings?}`; a dry run of a plan that starts the experiment lists the disk check problems of that start in `warnings` (`the start would fail: ...` for those that would refuse it), and the CLI logs each as a warning. `pending`, only on a dry run, is a config dry run's `pending` value, url-encoded, and names a config the caller stores before the real apply. A plan other than `expect` is a 409 that changes nothing. |
 | `GET /options` | Server-side CLI defaults, plus `base-dir.injects` and `workflow-dry-run`. |
 
 ## Gotchas
@@ -175,6 +175,7 @@ the auth modes and points to the full route reference.
 | Symptom | Likely cause / fix |
 |---|---|
 | `phenix workflow apply` refuses the server | The server doesn't report `workflow-dry-run` in `GET /options`, or answered with an action the command doesn't know; use the same release for `phenix ui` and the CLI. |
+| `unable to restart experiment <exp>, which is still running` (code `broken_disks`) | The restart's start would fail on a missing disk image or backing file, so the server refused before it stopped anything. Fix the file the error names, or set `experiment.disk-check: warn`. |
 | `re-run with -f` | The plan would restart a running experiment. Nothing has changed; re-run with `-f` to allow it. |
 | `phenix server unreachable` | Nothing answered on `--unix-socket`: `phenix ui` isn't running, listens on another socket, or didn't answer in time. In `configs` or `apply`, check the experiment. |
 | `connect: permission denied; run phenix as the user that runs phenix ui` | Your user may not write to the socket. Run the command as the user that runs `phenix ui`, usually root (or through `docker exec` with Compose), or start `phenix ui` with `--unix-socket-gid` set to the ID of a group you are in. Nothing was sent. |

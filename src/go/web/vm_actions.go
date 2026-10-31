@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/mux"
@@ -14,6 +15,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/api/job"
 	"phenix/api/vm"
+	"phenix/util/common"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/audit"
@@ -472,13 +474,91 @@ func RunVMActions(w http.ResponseWriter, r *http.Request) error {
 		BytesTotal: 0,
 		Cancelable: true,
 		Run: func(ctx context.Context, run *job.Run) error {
+			todo := names
+			if req.Action == "start" || req.Action == "restart" {
+				todo = checkVMDisks(ctx, run, exp, names, func(name string) bool { return action.allowed(role, exp+"/"+name) })
+			}
+
 			runVMActions(ctx, run, vmRequest{
 				ctx: ctx, r: nil, role: role, user: user, exp: exp, name: "", jobID: run.ID(),
-			}, action, names)
+			}, action, todo)
 
 			return nil
 		},
 	})
+}
+
+// checkVMDisks checks the disk images and CD-ROM images of the VMs a bulk start or restart names that the role is
+// allowed to act on and that minimega launches again (see experiment.CheckDisks and relaunched), fails each VM with a
+// broken image with its problems, and returns the VMs left to act on, in order.
+func checkVMDisks(ctx context.Context, run *job.Run, exp string, names []string, allowed func(string) bool) []string {
+	if common.CurrentDiskCheck() == common.DiskCheckOff {
+		return names
+	}
+
+	stored, err := experiment.Get(exp)
+	if err != nil {
+		plog.Warn(plog.TypeSystem, "not checking the VM disks", "exp", exp, "job", run.ID(), "err", err)
+
+		return names
+	}
+
+	states, err := mm.GetVMStates(mm.NS(exp), mm.Context(ctx))
+	if err != nil {
+		plog.Warn(plog.TypeSystem, "checking the disks of every VM: cannot get the VM states", "exp", exp, "err", err)
+	}
+
+	checked := make([]string, 0, len(names))
+	for _, name := range names {
+		if allowed(name) && relaunched(states[name]) {
+			checked = append(checked, name)
+		}
+	}
+
+	if len(checked) == 0 {
+		return names
+	}
+
+	warnings, err := experiment.CheckDisks(ctx, stored.Spec, experiment.CheckVMs(checked...))
+	for _, w := range warnings {
+		plog.Warn(plog.TypeSystem, w.Error(), "exp", exp, "job", run.ID())
+	}
+
+	var broken *experiment.BrokenDisksError
+	if !errors.As(err, &broken) {
+		return names
+	}
+
+	problems := make(map[string][]string)
+	for _, p := range broken.Problems {
+		problems[p.VM] = append(problems[p.VM], p.String())
+	}
+
+	left := make([]string, 0, len(names))
+
+	for _, name := range names {
+		if len(problems[name]) > 0 {
+			run.ItemFailed(name, fmt.Errorf("%w: %s", experiment.ErrBrokenDisks, strings.Join(problems[name], ". ")))
+
+			continue
+		}
+
+		left = append(left, name)
+	}
+
+	return left
+}
+
+// relaunched reports whether a start or restart of a VM in minimega state state launches its qemu process again, which
+// opens its images: a VM that quit or failed, or one whose state is not known. A start of a VM that is building, paused
+// or running only resumes it, and a restart of a running VM resets it; qemu already holds its images open.
+func relaunched(state string) bool {
+	switch state {
+	case "BUILDING", "RUNNING", "PAUSED":
+		return false
+	}
+
+	return true
 }
 
 // auditVMActionJob audits, as the user who started it, the action a finished

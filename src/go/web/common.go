@@ -152,9 +152,7 @@ func startExperiment(name string) error {
 					nil,
 				)
 
-				err := weberror.NewWebError(s.err, "unable to start experiment %s", name)
-
-				return err.SetStatus(http.StatusBadRequest)
+				return startWebError(s.err, "unable to start experiment %s", name)
 			}
 
 			// Clear previous SCORCH pipeline runtime state after successful experiment start.
@@ -218,6 +216,19 @@ func startExperiment(name string) error {
 			time.Sleep(experimentStartCheckInterval)
 		}
 	}
+}
+
+// startWebError is the 400 error of a start that failed with err. For broken disk images it has the code
+// broken_disks and lists each VM, disk and missing file in details.disks.
+func startWebError(err error, format string, args ...any) *weberror.WebError {
+	werr := weberror.NewWebError(err, format, args...).SetStatus(http.StatusBadRequest)
+
+	var broken *experiment.BrokenDisksError
+	if errors.As(err, &broken) {
+		werr = werr.WithCode(weberror.CodeBrokenDisks).WithDetail("disks", broken.Problems)
+	}
+
+	return werr
 }
 
 // followStart logs the notes of the experiment's start as it goes on in the

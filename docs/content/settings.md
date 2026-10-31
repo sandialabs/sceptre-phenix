@@ -1,8 +1,8 @@
 # Settings & Configuration
 
 phēnix supports dynamic configuration management via the `phenix settings` command.
-A running `phenix ui` applies changes to the `log.*` settings, `ui.logs.level` and
-the users file at once, without restarting. It reads every other setting only at
+A running `phenix ui` applies changes to the `log.*` settings, `ui.logs.level`,
+`experiment.disk-check` and the users file at once, without restarting. It reads every other setting only at
 startup. On each config file change it logs a warning that names every such key
 that now differs from the value it started with (never the values themselves):
 
@@ -126,7 +126,7 @@ valid ones.
 | `settings-file` | `config` | `phenix settings set` would write a file other than the config file phēnix reads, a file that is not YAML, or a file this user cannot write or create | never |
 | `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), it holds a log level phēnix ignores, or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
 | `env-overrides` | `env` | a `PHENIX_*` variable overrides a different value in the config or users file; the row names the variable, the setting and the file, never a value | never |
-| `bridge-mode`, `deploy-mode`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative | `bridge-mode` or `deploy-mode` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
+| `bridge-mode`, `deploy-mode`, `experiment.disk-check`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative | `bridge-mode`, `deploy-mode` or `experiment.disk-check` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
 | `store.endpoint` | `files` | never | the file cannot be written, or its directory does not exist or cannot be written |
 | `store-file` (only when the store file exists) | `files` | one of its two meta pages is corrupt, so BoltDB reads the other, which may not hold the last write | the file is not a BoltDB file, has another format version or byte order, is shorter than its two meta pages, or both meta pages are corrupt |
 | `store-owner` (only when the store file exists) | `files` | another user owns the file and this user is not root; as root under `sudo phenix`, the file does not belong to the user whose store `sudo phenix` uses | never |
@@ -277,6 +277,7 @@ The following global flags are supported by all `phenix` subcommands. The
 | `--base-dir.topologies` | `string` | `<base-dir.phenix>/topologies` | Directory that `phenix workflow apply` looks up topology directory names in. See [Workflow](workflow.md). |
 | `--bridge-mode` | `string` | `manual` | Bridge naming mode for experiments (`auto` uses experiment name for bridge; `manual` uses user-specified bridge name, or `phenix` if omitted). A `phenix ui` running in `auto` mode makes the commands that reach it over `--unix-socket` use `auto`. See [Bridge Mode](bridge-mode.md). |
 | `--deploy-mode` | `string` | — | Deploy mode for minimega VMs (`all`, `no-headnode`, or `only-headnode`). |
+| `--experiment.disk-check` | `string` | `error` | What a start does when a VM disk image or CD-ROM image is missing, or its backing chain is broken (`error`, `warn`, or `off`). See [Disk Check Before a Start](experiments.md#disk-check-before-a-start). |
 | `-h, --help` | — | — | Display help information for the command. |
 | `--hostname-suffixes` | `string` | `-minimega,-phenix` | Hostname suffixes to strip. |
 | `--log.console` | `string` | `stderr` | Destination output for console logs in text format (`stderr`, `stdout`, or a file path). |
@@ -295,6 +296,7 @@ The following global flags are supported by all `phenix` subcommands. The
 | Setting Key | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `bridge-mode` | `PHENIX_BRIDGE_MODE` | `manual` | Bridge naming mode for experiments. `auto` uses the experiment name as the bridge name; `manual` uses the user-specified bridge name, or `phenix` if not specified. See [Bridge Mode](bridge-mode.md). |
+| `experiment.disk-check` | `PHENIX_EXPERIMENT_DISK_CHECK` | `error` | What a start does when a VM disk image or CD-ROM image is missing, or its backing chain is broken. `error` refuses the start, `warn` starts the experiment and shows each problem as a warning, and `off` does not check the images. It applies to every start: the CLI, the web UI, the REST API, `phenix workflow apply`, and the bulk start and restart of VMs. phēnix refuses another value. `phenix ui` applies a change at once. See [Disk Check Before a Start](experiments.md#disk-check-before-a-start). |
 | `use-gre-mesh` | `PHENIX_USE_GRE_MESH` | `false` | Enable Layer 2 GRE tunnels for the default bridge of experiments created or updated with this setting. See [GRE Mesh](gre-mesh.md) for usage, server inheritance, and MTU requirements. `phenix ui` reads this setting at startup. **(Restart Required)** |
 | `log.level` | `PHENIX_LOG_LEVEL` | `info` | Global log verbosity (`debug`, `info`, `warn`, `error`). |
 | `log.console` | `PHENIX_LOG_CONSOLE` | `stderr` | Destination for console logs (`stderr`, `stdout`, or a file path). Uses **Text/Human-Readable** format. Note: Setting this to a file path will prevent console logs from appearing in `docker logs`. |
