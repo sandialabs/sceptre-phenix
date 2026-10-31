@@ -1,4 +1,7 @@
-import { beforeEach, expect, test, vi } from 'vitest';
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import Buefy from 'buefy';
 
 import SignIn from '@/views/SignIn.vue';
 import axiosInstance from '@/utils/axios.js';
@@ -33,6 +36,15 @@ const settled = () => new Promise((resolve) => setTimeout(resolve));
 beforeEach(() => {
   vi.clearAllMocks();
 });
+
+enableAutoUnmount(afterEach);
+
+function mountSignIn() {
+  return mount(SignIn, {
+    attachTo: document.body,
+    global: { plugins: [Buefy] },
+  });
+}
 
 test('signing in after Create Account uses the account sent, even if the dialog reopens', async () => {
   let finishSignUp;
@@ -141,4 +153,122 @@ test('a taken name marks the User Name field only in the dialog that sent it', a
   expect(reopened.$buefy.toast.open).toHaveBeenCalledWith(
     expect.objectContaining({ message: 'User already exists' }),
   );
+});
+
+test('the sign-in fields are a form that Enter submits, with autocomplete tokens', async () => {
+  axiosInstance.post.mockResolvedValue({ data: { token: 't' } });
+  const wrapper = mountSignIn();
+
+  expect(wrapper.findAll('h1').map((h) => h.text())).toEqual(['Sign in']);
+  const form = wrapper.get('form.signin-form');
+  const username = form.get('#signin-username');
+  const password = form.get('#signin-password');
+  expect(username.attributes('autocomplete')).toBe('username');
+  expect(password.attributes('autocomplete')).toBe('current-password');
+  expect(form.get('label[for="signin-username"]').text()).toBe('Username');
+  expect(form.get('button[type="submit"]').text()).toBe('Submit');
+  expect(
+    form.findAll('button').filter((b) => b.attributes('type') !== 'submit'),
+  ).toHaveLength(1);
+
+  await username.setValue('alice');
+  await password.setValue('secret123');
+  await form.trigger('submit');
+  await flushPromises();
+
+  expect(axiosInstance.post).toHaveBeenCalledOnce();
+  expect(axiosInstance.post).toHaveBeenCalledWith('login', {
+    user: 'alice',
+    pass: 'secret123',
+  });
+});
+
+test('empty fields get inline errors, focus, and no request', async () => {
+  const wrapper = mountSignIn();
+  await wrapper.get('form.signin-form').trigger('submit');
+
+  const username = wrapper.get('#signin-username');
+  expect(username.attributes('aria-invalid')).toBe('true');
+  expect(username.attributes('aria-describedby')).toBe('signin-username-error');
+  expect(wrapper.get('#signin-username-error').text()).toBe(
+    'You must include a username',
+  );
+  expect(wrapper.get('#signin-password-error').text()).toBe(
+    'You must include a password',
+  );
+  expect(document.activeElement).toBe(username.element);
+  expect(axiosInstance.post).not.toHaveBeenCalled();
+
+  await username.setValue('alice');
+  await wrapper.get('form.signin-form').trigger('submit');
+  expect(wrapper.find('#signin-username-error').exists()).toBe(false);
+  expect(document.activeElement).toBe(wrapper.get('#signin-password').element);
+});
+
+test.each([
+  [{ status: 401 }, 'The username and/or password is incorrect'],
+  [{ message: 'Network Error' }, 'The data server is not available.'],
+  [{ status: 500 }, 'Getting the user information failed.'],
+])(
+  'a failed sign-in keeps the username and says why inline (%o)',
+  async (err, message) => {
+    axiosInstance.post.mockRejectedValue(err);
+    const wrapper = mountSignIn();
+
+    await wrapper.get('#signin-username').setValue('alice');
+    await wrapper.get('#signin-password').setValue('wrong');
+    await wrapper.get('form.signin-form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.get('#signin-username').element.value).toBe('alice');
+    expect(wrapper.get('#signin-password').element.value).toBe('');
+    expect(wrapper.get('[role="alert"]').text()).toBe(message);
+    expect(document.activeElement).toBe(
+      wrapper.get('#signin-password').element,
+    );
+    expect(store.login).not.toHaveBeenCalled();
+  },
+);
+
+test('Create Account shows each missing field inline and focuses the first', () => {
+  const ctx = signIn();
+  ctx.$refs.signupFirstName = { focus: vi.fn() };
+  ctx.open(true);
+  ctx.signUp.username = 'alice';
+  ctx.signUp.password = 'secret123';
+  ctx.signUp.confirmPassword = 'other123';
+
+  ctx.create();
+
+  expect(ctx.signUpErrors).toEqual({
+    username: null,
+    first_name: 'You must include a first name',
+    last_name: 'You must include a last name',
+    password: null,
+    confirmPassword: 'Your passwords do not match',
+  });
+  expect(ctx.$refs.signupFirstName.focus).toHaveBeenCalledOnce();
+  expect(ctx.$buefy.toast.open).not.toHaveBeenCalled();
+  expect(axiosInstance.post).not.toHaveBeenCalled();
+
+  // Each open starts without errors.
+  ctx.open(false);
+  ctx.open(true);
+  expect(Object.values(ctx.signUpErrors).every((e) => e === null)).toBe(true);
+});
+
+test('Create Account uses new-password for both password fields', async () => {
+  const wrapper = mountSignIn();
+  await wrapper.get('button[type="button"]').trigger('click');
+  await flushPromises();
+
+  const dialog = wrapper.get('form.modal-card');
+  expect(dialog.get('h2').text()).toBe('Create a New Account');
+  expect(dialog.get('#signup-password').attributes('autocomplete')).toBe(
+    'new-password',
+  );
+  expect(
+    dialog.get('#signup-confirm-password').attributes('autocomplete'),
+  ).toBe('new-password');
+  expect(dialog.get('button[type="submit"]').text()).toBe('Create User');
 });

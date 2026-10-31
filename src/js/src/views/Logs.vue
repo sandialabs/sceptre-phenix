@@ -111,6 +111,7 @@
       <b-field>
         <b-input
           style="width: 360px"
+          aria-label="Search log messages"
           placeholder="Search log messages"
           v-model="searchFilter"
           icon-right="times-circle"
@@ -149,6 +150,7 @@
                   size="is-small"
                   :type="getIconForLevel(item.level)[1]"
                   style="vertical-align: middle" />
+                <span class="is-sr-only">{{ item.level }}</span>
               </b-tooltip>
             </div>
 
@@ -168,9 +170,10 @@
                 position="is-top"
                 type="is-light"
                 multilined>
-                <span class="truncate">
-                  {{ item.msg }}
-                </span>
+                <!-- A button, so the keyboard can show the full message too. -->
+                <button type="button" class="log-message">
+                  <span class="truncate">{{ item.msg }}</span>
+                </button>
               </b-tooltip>
             </div>
           </div>
@@ -411,6 +414,19 @@
     line-height: 1.2;
   }
 
+  /* The message button looks like the text it replaces. */
+  .log-message {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
   .truncate {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -423,8 +439,9 @@
     -webkit-box-orient: vertical;
   }
 
+  /* White text is 7.2:1 on a hovered row; it was 4.5:1 on #777777. */
   :deep(.vue-recycle-scroller__item-view.hover) {
-    background: #777777 !important;
+    background: #575757 !important;
   }
   :deep(.msg-column .b-tooltip .tooltip-content) {
     width: 102% !important;

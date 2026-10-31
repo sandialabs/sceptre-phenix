@@ -1,3 +1,5 @@
+@use 'sass:map';
+
 html {
   background-repeat: no-repeat;
   background-image: url('@/assets/imgs/phenix.png');
@@ -7,6 +9,23 @@ html,
 body {
   margin: 0;
   height: 100%;
+}
+
+// Keep a focused control clear of an open error notice at the top of the
+// window (WCAG 2.4.11, 2.4.12).
+html:has(body > .notices.is-top > .notification) {
+  scroll-padding-top: 12rem;
+}
+
+// Text links. Bulma colors them with $link, which also colors fills and borders.
+a {
+  color: $link-text;
+}
+
+// A link in running text has about the same lightness as the text, so it
+// also needs an underline (WCAG 1.4.1). Tab, menu, and breadcrumb links do not.
+:is(p, dd) > a:not([class]) {
+  text-decoration: underline;
 }
 
 ul {
@@ -77,11 +96,52 @@ a.navbar-item.router-link-exact-active,
 a.navbar-item:hover,
 a.navbar-item:focus {
   background: $scheme-main !important;
-  color: whitesmoke !important;
+  color: $text-strong !important;
 }
 
 div.is-success {
-  color: $success;
+  color: map.get($text-on-dark, 'success');
+}
+
+// The is-* hues as text on the dark surfaces. Bulma uses the $colors fills,
+// which have less than 7:1 there.
+@each $name, $color in $text-on-dark {
+  .has-text-#{$name} {
+    color: $color !important;
+  }
+
+  .help.is-#{$name} {
+    color: $color;
+  }
+}
+
+// Bulma draws the cross in $scheme-main, which is 2.6:1 on the modal
+// backdrop (WCAG 1.4.11).
+.modal-close::before,
+.modal-close::after,
+.delete::before,
+.delete::after {
+  background-color: $text-strong;
+}
+
+// A hovered row has the light $scheme-main-bis fill.
+.table.is-hoverable tbody tr:not(.is-selected):hover {
+  color: $dark-text;
+}
+
+// Bulma colors a hovered checkbox or radio label with $input-hover-color.
+.checkbox:hover,
+.radio:hover {
+  color: $link-text;
+}
+
+// A user can select days of the next and previous month, so they need the
+// contrast of the other days.
+.datepicker
+  .datepicker-table
+  .datepicker-body
+  .datepicker-cell.is-nearby:not(.is-selected) {
+  color: $text-strong;
 }
 
 .b-table {
@@ -143,6 +203,9 @@ textarea::placeholder {
 // outranks Bulma's `.button:focus { outline: none }` reset.
 a:focus-visible,
 button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
 [tabindex]:focus-visible,
 .button:focus-visible,
 .delete:focus-visible,
@@ -157,10 +220,22 @@ button:focus-visible,
   box-shadow: 0 0 0 2px #1a1a1a;
 }
 
+// Bulma's colored and is-light focus shadows outrank the rule above and
+// replace the dark halo, which is the only contrast on white surfaces.
+.button.button:focus-visible:not(:active),
+.input.input:focus,
+.textarea.textarea:focus,
+.select.select select:focus {
+  box-shadow: 0 0 0 2px #1a1a1a;
+}
+
 // The same ring and halo inside the header's items: the header is at the
-// top of the page, which would cut off a ring drawn outside them.
+// top of the page, which would cut off a ring drawn outside them. Tab lists
+// and table wrappers also hide what is outside them.
 .navbar-item:focus-visible,
-.navbar-burger:focus-visible {
+.navbar-burger:focus-visible,
+.b-tabs .tabs li a:focus-visible,
+.table th[tabindex]:focus-visible {
   outline: 3px solid #ffd166;
   outline-offset: -3px;
   box-shadow: inset 0 0 0 5px #1a1a1a;
@@ -168,44 +243,73 @@ button:focus-visible,
 
 // Buefy checkboxes, radios and switches keep focus on a visually hidden
 // input; draw the ring on the visible control instead.
-.b-checkbox input:focus-visible + .check,
-.b-radio input:focus-visible + .check,
-.switch input:focus-visible + .check {
+.b-checkbox.checkbox input[type='checkbox']:focus-visible + .check,
+.b-radio.radio input[type='radio']:focus-visible + .check,
+.switch input[type='checkbox']:focus-visible + .check {
   outline: 3px solid #ffd166;
   outline-offset: 2px;
   box-shadow: 0 0 0 2px #1a1a1a;
 }
 
-.upload:focus-within .file-cta {
+// Buefy removes the outline from a focused tab panel.
+.b-tabs .tab-content .tab-item:focus-visible {
+  outline: 3px solid #ffd166;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #1a1a1a;
+}
+
+// The upload input is hidden. Draw the ring on its label, which clips what
+// is inside it (`.file-label`).
+.upload:focus-within {
   outline: 3px solid #ffd166;
   outline-offset: 2px;
   box-shadow: 0 0 0 2px #1a1a1a;
 }
 
 // Buefy renders an unselected b-select placeholder as rgba($grey, 0.7)
-// (#a2a2a2 on white, 2.6:1); use a colour with 4.5:1 on the white input.
+// (#a2a2a2 on white, 2.6:1); use a colour with 7:1 on the white input.
 .select.is-empty select {
-  color: #5c6672;
+  color: #4f5862;
 }
 
-// Bulma's $danger (#f14668) gives only 3.6:1 against white text. Darken the
-// filled danger surfaces instead of $danger itself so has-text-danger keeps
-// its contrast on the dark page background.
-.notification.is-danger,
-.message.is-danger .message-header,
-.button.is-danger:not(.is-outlined):not(.is-inverted) {
-  background-color: #a91f3d;
-  border-color: #a91f3d;
+// A modal title that is a heading keeps the Bulma modal title look inside
+// `.content`, which styles headings.
+.content .modal-card-head .modal-card-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 400;
+  line-height: 1;
 }
 
-.button.is-danger:not(.is-outlined):not(.is-inverted):hover,
-.button.is-danger:not(.is-outlined):not(.is-inverted):focus {
-  background-color: #8f1a34;
-  border-color: #8f1a34;
+// A dialog wider than a narrow window would hide its sides (WCAG 1.4.10).
+.modal-card,
+.modal-content {
+  max-width: calc(100vw - 40px);
 }
 
-// A field error in a dialog is only 1.9:1 in $danger on $background-ter.
-// This pale red is 4.7:1 there.
-.modal-card-body .help.is-danger {
-  color: #ffc8cf;
+@include mobile {
+  // Mobile cards stack the cells, so a column width set on b-table-column
+  // must not widen the card. The width is an inline style.
+  .b-table .table-wrapper.has-mobile-cards tr td {
+    width: auto !important;
+  }
+
+  // Let a row of grouped controls (search, filter, buttons) wrap.
+  .field.is-grouped {
+    flex-wrap: wrap;
+    row-gap: 0.75rem;
+  }
+}
+
+// Stop animations and transitions for users who ask for less motion
+// (WCAG 2.3.3). Loading spinners stop turning but stay on screen.
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -26,7 +26,7 @@
       has-modal-card>
       <div class="modal-card" style="width: 60em">
         <header class="modal-card-head">
-          <p class="modal-card-title">{{ terminalName() }}</p>
+          <h2 class="modal-card-title">{{ terminalName() }}</h2>
         </header>
         <section class="modal-card-body">
           <vue-terminal :wsPath="terminal.loc"></vue-terminal>
@@ -58,9 +58,9 @@
     <b-modal v-model="output.modal" @close="exitOutput" has-modal-card>
       <div class="modal-card" style="width: 50em">
         <header class="modal-card-head x-modal-dark">
-          <p class="modal-card-title x-config-text">
+          <h2 class="modal-card-title x-config-text">
             {{ output.title }}
-          </p>
+          </h2>
         </header>
         <section class="modal-card-body x-modal-dark">
           <div class="control">
@@ -446,21 +446,18 @@
 </script>
 
 <style scoped>
-  div.autocomplete :deep(a.dropdown-item) {
-    color: #383838 !important;
-  }
-
   .x-modal-dark {
-    background-color: #5b5b5b;
+    background-color: #4a4a4a;
   }
 
-  .x-modal-dark :deep(p) {
+  .x-modal-dark :deep(p),
+  .x-modal-dark .modal-card-title {
     color: whitesmoke;
   }
 
   .x-modal-dark :deep(textarea) {
-    background-color: #686868;
-    color: whitesmoke;
+    background-color: #575757;
+    color: white;
   }
 
   .x-config-text {

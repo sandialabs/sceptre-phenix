@@ -12,7 +12,17 @@ component.
           Copyright &copy; <b>2019-2026 Sandia National Laboratories</b>. All
           Rights Reserved.
         </p>
-        <p style="float: right; color: whitesmoke">{{ version }}</p>
+        <div class="app-footer__end">
+          <nav class="app-footer__links" aria-label="Help">
+            <a
+              href="https://phenix.sceptre.dev/latest/"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Help<span class="is-sr-only"> (opens in new tab)</span></a
+            >
+          </nav>
+          <p v-if="version">{{ version }}</p>
+        </div>
       </small>
     </div>
   </footer>
@@ -40,3 +50,22 @@ component.
     },
   };
 </script>
+
+<style scoped>
+  .app-footer__end {
+    float: right;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 1.5em;
+    color: whitesmoke;
+  }
+
+  .app-footer__links {
+    display: flex;
+    gap: 1em;
+  }
+
+  .app-footer__links a {
+    text-decoration: underline;
+  }
+</style>

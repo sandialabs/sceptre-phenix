@@ -2,6 +2,37 @@ import axiosInstance from '@/utils/axios.js';
 import { usePhenixStore } from '@/store.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
+const MINUTE = 60 * 1000;
+// setTimeout runs a longer delay at once, so longer timeouts use this limit.
+const MAX_TIMER_MS = 2 ** 31 - 1;
+const LOGOUT_REQUEST_MS = 10 * 1000;
+
+/**
+ * When the idle timer warns and logs out, from the timeout settings. The
+ * timeout defaults to 30 minutes. A warning longer than the timeout shows at
+ * once, so the warning never comes late and logout never comes early. A
+ * timeout longer than about 24.8 days uses that limit.
+ */
+export function logoutSchedule({ timeout_min, warning_min }) {
+  let timeout = Number(timeout_min);
+  if (!(timeout > 0)) {
+    timeout = 30;
+  }
+  timeout = Math.min(timeout, MAX_TIMER_MS / MINUTE);
+
+  let warning = Number(warning_min);
+  if (!(warning > 0)) {
+    warning = 0;
+  }
+  warning = Math.min(warning, timeout);
+
+  return {
+    warnAfterMs: (timeout - warning) * MINUTE,
+    warnMinutes: warning,
+    logoutAfterMs: timeout * MINUTE,
+  };
+}
+
 export class TimeoutTool {
   constructor() {
     this.data = {
@@ -42,24 +73,17 @@ export class TimeoutTool {
       return;
     }
 
-    var timeout = this.data.timeout_min;
-    const warning = this.data.warning_min;
+    const { warnAfterMs, warnMinutes, logoutAfterMs } = logoutSchedule(
+      this.data,
+    );
 
-    if (timeout <= 0) {
-      timeout = 30;
-    }
-
-    if (warning > 0) {
-      const diff = timeout - warning;
+    if (warnMinutes > 0) {
       this.logoutTimer = setTimeout(
-        () => this.warnUser(warning),
-        1000 * 60 * diff,
+        () => this.warnUser(warnMinutes),
+        warnAfterMs,
       );
     } else {
-      this.logoutTimer = setTimeout(
-        () => this.logoutUser(),
-        1000 * 60 * timeout,
-      );
+      this.logoutTimer = setTimeout(() => this.logoutUser(), logoutAfterMs);
     }
   }
 
@@ -75,22 +99,23 @@ export class TimeoutTool {
       indefinite: true,
     });
 
-    this.logoutTimer = setTimeout(
-      () => this.logoutUser(),
-      1000 * 60 * timeLeft,
-    );
+    this.logoutTimer = setTimeout(() => this.logoutUser(), timeLeft * MINUTE);
   }
   logoutUser() {
     if (this.warnToast) {
       this.warnToast.close();
       this.warnToast = null;
     }
-    axiosInstance.get('logout').then((resp) => {
-      if (resp.status == 204) {
-        const store = usePhenixStore();
-        store.logout();
-      }
-    });
+    // The session ends here even if the server does not answer, because the
+    // user was idle for the full timeout.
+    return axiosInstance
+      .get('logout', { timeout: LOGOUT_REQUEST_MS })
+      .catch((err) => {
+        console.warn('failed to log out on the server', err);
+      })
+      .finally(() => {
+        usePhenixStore().logout();
+      });
   }
   resetTimer() {
     if (!this.data.enabled) {

@@ -3,9 +3,9 @@
     <b-modal v-model="expModal.active" has-modal-card>
       <div class="modal-card">
         <header class="modal-card-head">
-          <p class="modal-card-title">
+          <h2 class="modal-card-title">
             {{ expModal.vm.name ? expModal.vm.name : 'unknown' }}
-          </p>
+          </h2>
         </header>
         <section class="modal-card-body">
           <p>Host: {{ expModal.vm.host }}</p>
@@ -23,10 +23,10 @@
     <b-modal v-model="vlanModal.active" has-modal-card>
       <div class="modal-card" style="width: 25em; height: 30em">
         <header class="modal-card-head">
-          <p class="modal-card-title">
+          <h2 class="modal-card-title">
             VLAN Assignments for <br />
             {{ $route.params.id }} Experiment
-          </p>
+          </h2>
         </header>
         <section class="modal-card-body">
           <div v-for="(vlan, index) in vlanModal.vlans" :key="index">
@@ -42,6 +42,7 @@
                       size="is-small"
                       controls-alignment="right"
                       controls-position="compact"
+                      :aria-label="`VLAN for ${vlan.alias}`"
                       v-model="vlan.vlan" />
                   </td>
                 </tr>
@@ -62,9 +63,9 @@
       has-modal-card>
       <div class="modal-card" style="width: 50em">
         <header class="modal-card-head x-modal-dark">
-          <p class="modal-card-title x-config-text">
+          <h2 class="modal-card-title x-config-text">
             {{ fileViewerModal.title }}
-          </p>
+          </h2>
         </header>
         <section class="modal-card-body x-modal-dark">
           <div class="control">
@@ -116,6 +117,7 @@
                   roleAllowed('vms', 'patch', experiment.name + '/' + vm.name),
                 )
               "
+              aria-label="Set selected VMs to boot"
               class="button is-light boot"
               icon-right="bolt"
               @click="setBoot(false)" />
@@ -129,6 +131,7 @@
                   roleAllowed('vms', 'patch', experiment.name + '/' + vm.name),
                 )
               "
+              aria-label="Set selected VMs to do not boot"
               class="button is-light dnb"
               icon-right="bolt"
               @click="setBoot(true)" />
@@ -142,6 +145,7 @@
           type="is-light"
           position="is-top">
           <b-button
+            aria-label="Assign VLAN IDs to aliases"
             class="button is-light"
             icon-right="network-wired"
             @click="vlanModal.active = true"></b-button>
@@ -150,6 +154,7 @@
       <b-field v-if="activeTab == 1">
         <b-tooltip label="search on a specific category" type="is-light">
           <b-select
+            aria-label="Filter files by category"
             v-model="filesTable.category"
             @update:modelValue="(value) => assignCategory(value)"
             placeholder="All Categories">
@@ -220,6 +225,7 @@
       <router-link
         v-if="roleAllowed('experiments', 'get', experiment.name)"
         class="button is-light"
+        aria-label="View state of health"
         :to="{ name: 'soh', params: { id: $route.params.id } }">
         <b-icon icon="heartbeat"></b-icon>
       </router-link>
@@ -257,7 +263,9 @@
             <b-table-column field="multiselect" label="">
               <template v-slot:header>
                 <b-tooltip label="Select/Unselect All" type="is-dark">
-                  <b-checkbox v-model="checkAll"></b-checkbox>
+                  <b-checkbox v-model="checkAll"
+                    ><span class="is-sr-only">Select all VMs</span></b-checkbox
+                  >
                 </b-tooltip>
               </template>
               <template v-slot:default="props">
@@ -265,7 +273,11 @@
                   <b-checkbox
                     :disabled="props.row.external"
                     v-model="selectedRows"
-                    :native-value="props.row.name"></b-checkbox>
+                    :native-value="props.row.name"
+                    ><span class="is-sr-only"
+                      >Select {{ props.row.name }}</span
+                    ></b-checkbox
+                  >
                 </div>
               </template>
             </b-table-column>
@@ -279,19 +291,17 @@
                     experiment.name + '/' + props.row.name,
                   )
                 ">
-                <b-tooltip
-                  label="get info on the vm"
-                  type="is-dark"
-                  class="is-clickable">
-                  <div class="field">
-                    <div
-                      @click="
-                        expModal.active = true;
-                        expModal.vm = props.row;
-                      ">
-                      {{ props.row.name }}
-                    </div>
-                  </div>
+                <b-tooltip label="get info on the vm" type="is-dark">
+                  <button
+                    type="button"
+                    class="plain-button"
+                    aria-haspopup="dialog"
+                    @click="
+                      expModal.active = true;
+                      expModal.vm = props.row;
+                    ">
+                    {{ props.row.name }}
+                  </button>
                 </b-tooltip>
               </template>
               <template v-else>
@@ -318,6 +328,7 @@
                   type="is-dark">
                   <b-field>
                     <b-select
+                      :aria-label="`Host for ${props.row.name}`"
                       v-model="props.row.host"
                       expanded
                       @update:modelValue="
@@ -356,33 +367,37 @@
               label="CPUs"
               width="100"
               sortable
-              centered
-              v-slot="props">
-              <template
-                v-if="
-                  !props.row.external &&
-                  roleAllowed(
-                    'vms',
-                    'patch',
-                    experiment.name + '/' + props.row.name,
-                  )
-                ">
-                <b-tooltip label="menu for assigning vm(s) cpus" type="is-dark">
-                  <b-select
-                    v-model="props.row.cpus"
-                    expanded
-                    @update:modelValue="
-                      (value) => assignCpu(props.row.name, value)
-                    ">
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                  </b-select>
-                </b-tooltip>
-              </template>
-              <template v-else>
-                {{ props.row.cpus || 'unknown' }}
+              centered>
+              <template #default="props">
+                <template
+                  v-if="
+                    !props.row.external &&
+                    roleAllowed(
+                      'vms',
+                      'patch',
+                      experiment.name + '/' + props.row.name,
+                    )
+                  ">
+                  <b-tooltip
+                    label="menu for assigning vm(s) cpus"
+                    type="is-dark">
+                    <b-select
+                      :aria-label="`CPUs for ${props.row.name}`"
+                      v-model="props.row.cpus"
+                      expanded
+                      @update:modelValue="
+                        (value) => assignCpu(props.row.name, value)
+                      ">
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                    </b-select>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ props.row.cpus || 'unknown' }}
+                </template>
               </template>
             </b-table-column>
             <b-table-column
@@ -405,6 +420,7 @@
                   label="menu for assigning vm(s) memory"
                   type="is-dark">
                   <b-select
+                    :aria-label="`Memory for ${props.row.name}`"
                     v-model="props.row.ram"
                     expanded
                     @update:modelValue="
@@ -439,6 +455,7 @@
                   :label="getDiskToolTip(props.row.disk)"
                   type="is-dark">
                   <b-select
+                    :aria-label="`Disk for ${props.row.name}`"
                     v-model="props.row.disk"
                     expanded
                     @update:modelValue="
@@ -473,6 +490,7 @@
                   label="menu for assigning inject partition"
                   type="is-dark">
                   <b-select
+                    :aria-label="`Inject partition for ${props.row.name}`"
                     v-model="props.row.inject_partition"
                     expanded
                     @update:modelValue="
@@ -491,14 +509,18 @@
             </b-table-column>
             <b-table-column label="Labels" centered v-slot="props">
               <b-tooltip label="View/Edit Labels" type="is-dark">
-                <div @click="showTagsModal(props.row)" class="is-clickable">
-                  <font-awesome-layers full-width>
+                <button
+                  type="button"
+                  class="plain-button"
+                  :aria-label="`View or edit labels for ${props.row.name} (${tagCount(props.row.tags)})`"
+                  @click="showTagsModal(props.row)">
+                  <font-awesome-layers full-width aria-hidden="true">
                     <font-awesome-icon icon="tag" />
                     <font-awesome-layers-text
                       counter
                       :value="tagCount(props.row.tags)" />
                   </font-awesome-layers>
-                </div>
+                </button>
               </b-tooltip>
             </b-table-column>
             <b-table-column label="Boot" centered v-slot="props">
@@ -510,15 +532,17 @@
                     experiment.name + '/' + props.row.name,
                   )
                 ">
-                <b-tooltip
-                  :label="getBootLabel(props.row)"
-                  type="is-dark"
-                  class="is-clickable">
-                  <div @click="updateDnb(props.row)">
+                <b-tooltip :label="getBootLabel(props.row)" type="is-dark">
+                  <button
+                    type="button"
+                    class="plain-button"
+                    :aria-label="`Boot ${props.row.name}`"
+                    :aria-pressed="!props.row.dnb"
+                    @click="updateDnb(props.row)">
                     <font-awesome-icon
                       :class="bootDecorator(props.row)"
                       icon="bolt" />
-                  </div>
+                  </button>
                 </b-tooltip>
               </template>
             </b-table-column>
@@ -534,6 +558,7 @@
                 <b-tooltip :label="getSnapshotLabel(props.row)" type="is-dark">
                   <div>
                     <b-select
+                      :aria-label="`Persistence for ${props.row.name}`"
                       v-model="props.row.snapshot"
                       expanded
                       @update:modelValue="
@@ -592,11 +617,13 @@
             <b-table-column field="name" label="Name" sortable v-slot="props">
               <template v-if="props.row.plainText">
                 <b-tooltip label="view file" type="is-dark">
-                  <div class="field is-clickable">
-                    <div @click="viewFile(props.row)">
-                      {{ props.row.name }}
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    class="plain-button"
+                    aria-haspopup="dialog"
+                    @click="viewFile(props.row)">
+                    {{ props.row.name }}
+                  </button>
                 </b-tooltip>
               </template>
               <template v-else>
@@ -605,14 +632,15 @@
             </b-table-column>
             <b-table-column field="path" label="Path" centered v-slot="props">
               <b-tooltip
-                :label="
-                  '/phenix/images/' +
-                  experiment.name +
-                  '/files/' +
-                  props.row.path
-                "
-                type="is-dark">
-                <b-icon icon="info-circle" size="is-small" />
+                :label="filePath(props.row)"
+                type="is-dark"
+                :triggers="['hover', 'focus']">
+                <button
+                  type="button"
+                  class="plain-button"
+                  :aria-label="`Path: ${filePath(props.row)}`">
+                  <b-icon icon="info-circle" size="is-small" />
+                </button>
               </b-tooltip>
             </b-table-column>
             <b-table-column field="categories" label="Category" v-slot="props">
@@ -755,6 +783,10 @@
 
         this.updateFiles();
       }, 250),
+
+      filePath(file) {
+        return `/phenix/images/${this.experiment.name}/files/${file.path}`;
+      },
 
       bootDecorator(vm) {
         if (vm.external) {
@@ -1750,8 +1782,9 @@
 <style lang="scss" scoped>
   @import '@/assets/_variables.scss';
 
+  // A lighter $primary hue keeps 3:1 on the button and table grays.
   .boot {
-    color: $primary;
+    color: #ffb38c;
   }
 
   .dnb {
@@ -1769,5 +1802,15 @@
 
   :deep(.b-tabs .tab-content) {
     padding: 1rem 0 0 0;
+  }
+
+  button.plain-button {
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
   }
 </style>

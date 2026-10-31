@@ -80,17 +80,22 @@ side will pass.
               v-for="v in chunk"
               :key="vmFullName(v)"
               class="tile is-child box is-4">
-              <p class="title" style="font-size: medium">
+              <h4 class="title" style="font-size: medium">
                 {{ vmFullName(v) }}
-              </p>
+              </h4>
               <figure class="image">
                 <template v-if="v.running">
-                  <a :href="vncLoc(v)" target="_blank">
-                    <img :src="v.screenshot" />
+                  <a
+                    :href="vncLoc(v)"
+                    target="_blank"
+                    :aria-label="`Open console for VM ${vmFullName(v)} (opens in new tab)`">
+                    <img :src="v.screenshot" alt="" />
                   </a>
                 </template>
                 <template v-else>
-                  <img src="@/assets/imgs/not-running.png" />
+                  <img
+                    src="@/assets/imgs/not-running.png"
+                    alt="Virtual Machine Not Running" />
                 </template>
               </figure>
             </div>
@@ -100,20 +105,25 @@ side will pass.
               v-for="v in chunk"
               :key="vmFullName(v)"
               class="tile is-child box is-4">
-              <p
+              <h4
                 v-if="v.experiment === exp"
                 class="title"
                 style="font-size: medium">
                 {{ vmFullName(v) }}
-              </p>
+              </h4>
               <figure class="image">
                 <template v-if="v.running && v.experiment === exp">
-                  <a :href="vncLoc(v)" target="_blank">
-                    <img :src="v.screenshot" />
+                  <a
+                    :href="vncLoc(v)"
+                    target="_blank"
+                    :aria-label="`Open console for VM ${vmFullName(v)} (opens in new tab)`">
+                    <img :src="v.screenshot" alt="" />
                   </a>
                 </template>
                 <template v-else-if="v.experiment === exp">
-                  <img src="@/assets/imgs/not-running.png" />
+                  <img
+                    src="@/assets/imgs/not-running.png"
+                    alt="Virtual Machine Not Running" />
                 </template>
               </figure>
             </div>

@@ -56,7 +56,9 @@ test('unauthenticated visit redirects to signin', async ({ page }) => {
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });
 
-test('wrong password shows incorrect-credentials toast', async ({ page }) => {
+test('wrong password shows an inline alert and keeps the username', async ({
+  page,
+}) => {
   const issues = [];
   attachCapture(page, issues);
   await page.goto('/signin');
@@ -67,10 +69,15 @@ test('wrong password shows incorrect-credentials toast', async ({ page }) => {
     .fill('definitely-wrong');
   await page.getByRole('button', { name: 'Submit' }).click();
   await expect(
-    page.getByText('The username and/or password is incorrect'),
+    page
+      .getByRole('alert')
+      .getByText('The username and/or password is incorrect'),
   ).toBeVisible({
     timeout: 10000,
   });
+  await expect(page.locator('.signin-form input[type="text"]')).toHaveValue(
+    ADMIN_USER,
+  );
   const fatal = filterKnown403s(fatalOf(issues));
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });

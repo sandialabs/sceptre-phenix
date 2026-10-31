@@ -79,6 +79,10 @@
         tabSize: 2,
         enableKeyboardAccessibility: true,
       });
+      // Chromium puts scrollable divs in the tab order, which adds stops.
+      for (const bar of this.$refs.editor.querySelectorAll('.ace_scrollbar')) {
+        bar.setAttribute('tabindex', '-1');
+      }
       if (this.vim) {
         this.editor.setKeyboardHandler('ace/keyboard/vim');
       }
@@ -142,5 +146,52 @@
   .editor {
     height: 500px;
     width: 100%;
+  }
+
+  /* The stock Dracula theme, with lighter text of the same hues and a darker
+     current line, so text is 7:1 or more on #282a36 and #383a4a (WCAG 1.4.6). */
+  .editor.ace-dracula :deep(.ace_gutter) {
+    color: #cdcdcf;
+  }
+
+  .editor.ace-dracula :deep(.ace_marker-layer .ace_active-line),
+  .editor.ace-dracula :deep(.ace_gutter-active-line) {
+    background-color: #383a4a;
+  }
+
+  .editor.ace-dracula :deep(.ace_comment) {
+    color: #c8cddf;
+  }
+
+  .editor.ace-dracula :deep(.ace_keyword),
+  .editor.ace-dracula :deep(.ace_storage),
+  .editor.ace-dracula :deep(.ace_entity.ace_name.ace_tag),
+  .editor.ace-dracula :deep(.ace_constant.ace_character.ace_escape) {
+    color: #ffb9e1;
+  }
+
+  .editor.ace-dracula :deep(.ace_constant.ace_language),
+  .editor.ace-dracula :deep(.ace_constant.ace_numeric),
+  .editor.ace-dracula :deep(.ace_constant.ace_character),
+  .editor.ace-dracula :deep(.ace_constant.ace_other) {
+    color: #dbc3fc;
+  }
+
+  .editor.ace-dracula :deep(.ace_support.ace_class),
+  .editor.ace-dracula :deep(.ace_support.ace_type) {
+    color: #72dcf0;
+  }
+
+  .editor.ace-dracula :deep(.ace_variable.ace_parameter) {
+    color: #ffc17e;
+  }
+
+  /* Light text on darker fills of the same hues. */
+  .editor.ace-dracula :deep(.ace_invalid) {
+    background-color: #a4005e;
+  }
+
+  .editor.ace-dracula :deep(.ace_invalid.ace_deprecated) {
+    background-color: #670de9;
   }
 </style>
