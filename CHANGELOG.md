@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - **Graceful Shutdown**: `phenix ui` shuts down cleanly on `SIGINT` or `SIGTERM` within the new `ui.shutdown-grace-period` setting (5 seconds by default), and closes its websockets with close code `1001`.
 - **API Reference**: `GET /docs/openapi.yml` serves the spec with the server build in `info.version`, and API responses have the build in `X-Phenix-Version`. An `OPTIONS` request to an API route returns `204` and does not run the route.
 - **Background Jobs**: Added background jobs to `phenix ui`, with the `/api/v1/jobs` routes, the `phenix job` command and a jobs menu in the web UI. The new `jobs` permission, which stored Experiment Admin roles get at startup, lets a role act on the jobs of other users.
+- **Disk Images**: Added the `util/diskchain` and `util/partition` Go packages, which read qcow2 headers, backing file chains and MBR or GPT partition tables without `qemu-img`.
 
 ### Changed
 
