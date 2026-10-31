@@ -122,6 +122,22 @@ func StartupUsesC2(node ifaces.NodeSpec) bool {
 	return false
 }
 
+// StartupInjects reports whether PreStart adds the startup scripts of node as injects: a Linux or Windows VM that is
+// not a router, with the default apps on and without the startup-via-cc annotation.
+func StartupInjects(node ifaces.NodeSpec) bool {
+	if node == nil || node.External() || node.Hardware() == nil || strings.EqualFold(node.Type(), "Router") ||
+		!defaultAppsEnabled(node) || startupViaCCEnabled(node) {
+		return false
+	}
+
+	switch strings.ToLower(node.Hardware().OSType()) {
+	case osLinux, osRHEL, osCentOS, osWindows:
+		return true
+	}
+
+	return false
+}
+
 // firstDriveInjectPartition returns the first disk inject partition, defaulting to one.
 func firstDriveInjectPartition(node ifaces.NodeSpec) int {
 	if node.Hardware() == nil {

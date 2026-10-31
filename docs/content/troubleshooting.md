@@ -333,7 +333,7 @@ from it:
 | :--- | :--- |
 | `add module 'nbd'` | `lsmod` does not show the `nbd` module. It is not loaded, or it is part of the kernel. |
 | `no available nbds found` | Each `/dev/nbdN` has a lock file in `/var/lock` or a process in `/sys/block/nbdN/pid`. |
-| `no partitions found on image` or `desired partition N not found` | The `nbd` module has `max_part` set to 0, so the kernel makes no `/dev/nbdNp1`, or the image has no such partition. |
+| `no partitions found on image` or `desired partition N not found` | The `nbd` module has `max_part` set to 0, so the kernel makes no `/dev/nbdNp1`, or the image has no such partition (see [Injects Go to the Wrong Partition](#injects-go-to-the-wrong-partition)). |
 
 The `nbd` check of `phenix doctor` finds these problems on the head node, and
 names the devices that a failed inject can leave. To repair them, do these
@@ -352,6 +352,49 @@ If `modprobe` cannot find the module, the `kernel-modules` check tells if
 `/lib/modules` has the modules of the running kernel. After a kernel upgrade,
 reboot into the installed kernel. In a container, run the container
 privileged with `/dev` from the host, as the Docker Compose setup does.
+
+### Injects Go to the Wrong Partition
+
+minimega `disk inject` writes the injects, the deletions and the scripts of the
+`startup` app into one partition of the first drive of a VM. That partition is
+the `inject_partition` of the drive, or 1 when it is not set. The number is the
+number that Linux gives the partition: 1 to 4 for MBR primary partitions, 5
+and up for logical partitions, and the entry number for GPT. When the number
+is wrong, the start fails with one of these errors:
+
+| Error | Cause |
+| :--- | :--- |
+| `desired partition N not found` | The disk has no partition of that number. |
+| `no partitions found on image` | The disk has no partition table or no partition 1, or the `nbd` module has `max_part` set to 0 (see [Injects Fail With an nbd Error](#injects-fail-with-an-nbd-error)). |
+| A `mount` error, such as `wrong fs type` | The partition is an extended partition, or holds swap, an LVM physical volume or a LUKS volume. |
+| `cp: cannot create regular file '/tmp/minimega/dstImg.../phenix/startup/20-startup.ps1': No such file or directory` | minimega cannot write the file into the partition, or the partition is not the system partition. Partition 1 of a Windows image is often the small `System Reserved` partition, and `C:` is partition 2 ([sandialabs/sceptre-phenix#166](https://github.com/sandialabs/sceptre-phenix/issues/166)). |
+
+The `inject-partitions` check of `phenix doctor` reads the partition table of
+each image that gets injects, and warns about these partitions. Its row gives
+the partitions of the image, and the largest Linux or NTFS partition as the
+number to try. The `Disks` tab of the UI shows the partitions of an image
+too (see [The Details Card](disks.md#the-details-card)). To fix the
+partition, do these steps:
+
+1. Find the number of the partition that holds the system files of the VM.
+2. Set `inject_partition` of the first drive of the VM to that number.
+3. If the image has no partition that minimega can write to, such as an LVM
+   image, set `inject_partition: 0`. Then the `startup` app sends its scripts
+   through miniccc (see [C2 Startup Script Delivery](apps.md#c2-startup-script-delivery)),
+   and phēnix injects no other files.
+
+```yaml title="inject into partition 2"
+spec:
+  nodes:
+    - type: VirtualMachine
+      general:
+        hostname: win-00
+      hardware:
+        os_type: windows
+        drives:
+          - image: win10.qc2
+            inject_partition: 2
+```
 
 ### Open vSwitch Does Not Answer
 

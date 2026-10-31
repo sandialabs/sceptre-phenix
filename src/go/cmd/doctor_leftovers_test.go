@@ -567,12 +567,13 @@ func TestDoctorLeftoversHint(t *testing.T) {
 }
 
 // The stored experiments keep the VMs phenix launches, with their drive images, snapshot setting and why phenix needs
-// miniccc in them, and leave out external and do-not-boot nodes. They keep the VLAN range, the pinned VLANs and the
-// VLAN count, and the schedules. An experiment that does not decode keeps its name.
+// miniccc in them, and the partition that gets injects, deletions or startup scripts. They leave out external and
+// do-not-boot nodes, and keep the VLAN range, the pinned VLANs, the VLAN count and the schedules. An experiment that
+// does not decode keeps its name.
 func TestDoctorDecodeExperiment(t *testing.T) {
 	t.Parallel()
 
-	yes, no, zero := true, false, 0
+	yes, no, zero, two := true, false, 0, 2
 
 	exp := types.NewExperiment(store.ConfigMetadata{Name: "e1"})
 	exp.Spec.SetExperimentName("e1")
@@ -599,6 +600,16 @@ func TestDoctorDecodeExperiment(t *testing.T) {
 			InjectionsF: []*v1.Injection{{SrcF: "/injects/e.txt", DstF: "/e.txt"}},
 		},
 		{GeneralF: &v1.General{HostnameF: "f"}, HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "skip.qc2"}}}},
+		{
+			GeneralF:  &v1.General{HostnameF: "g", SnapshotF: &yes},
+			HardwareF: &v1.Hardware{OSTypeF: "linux", DrivesF: []*v1.Drive{{ImageF: "g.qc2", InjectPartitionF: &two}}},
+		},
+		{
+			GeneralF:   &v1.General{HostnameF: "h", SnapshotF: &yes},
+			HardwareF:  &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "h.qc2"}}},
+			DeletionsF: []*v1.Deletion{{PathF: "/old.txt"}},
+		},
+		{GeneralF: &v1.General{HostnameF: "i", SnapshotF: &yes}, HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "i.qc2"}}}},
 	}})
 	exp.Spec.SetScenario(&v2.ScenarioSpec{AppsF: []*v2.ScenarioApp{
 		{NameF: "soh", MetadataF: map[string]any{"skipHosts": []any{"a", "skip.qc2"}}},
@@ -630,14 +641,23 @@ func TestDoctorDecodeExperiment(t *testing.T) {
 			{name: "a", snapshot: false, images: []string{"a.qc2", "/data/b.qc2"}},
 			{
 				name: "b", snapshot: true, images: []string{"c.qc2"}, cc: "the startup app sends its scripts through miniccc",
-				injects: []string{"/injects/b.txt", "rel.txt"},
+				injects: []string{"/injects/b.txt", "rel.txt"}, injectPartition: 1, injectImage: "c.qc2",
 			},
 			{name: "e", snapshot: true, images: []string{"e.qc2"}, cc: "the start of b waits for its miniccc client"},
 			{name: "f", images: []string{"skip.qc2"}},
+			{
+				name: "g", snapshot: true, images: []string{"g.qc2"}, cc: "the soh app checks it through miniccc",
+				injectPartition: 2, injectImage: "g.qc2",
+			},
+			{
+				name: "h", snapshot: true, images: []string{"h.qc2"}, cc: "the soh app checks it through miniccc",
+				injectPartition: 1, injectImage: "h.qc2",
+			},
+			{name: "i", snapshot: true, images: []string{"i.qc2"}, cc: "the soh app checks it through miniccc"},
 		},
 		vlans:      doctorVLANs{min: 200, max: 300, pinned: map[string]int{"MGMT": 250}, count: 3},
 		schedules:  map[string]string{"a": "node1"},
-		nodes:      []string{"a", "b", "c", "d", "e", "f"},
+		nodes:      []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
 		apps:       []string{"soh", "ntp", "scorch"},
 		components: []string{"pause", "custom"},
 		appHosts:   [][2]string{{"ntp", "a"}, {"ntp", "gone"}},

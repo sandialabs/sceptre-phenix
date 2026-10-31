@@ -125,7 +125,8 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		statfs: func(string) (health.DiskStat, error) {
 			return health.DiskStat{Device: 1, Total: 100 << 30, Avail: 50 << 30}, nil
 		},
-		images: disk.BrokenImages,
+		images:      disk.BrokenImages,
+		inspectDisk: disk.InspectPath,
 		command: doctorCommands(map[string]doctorCommand{
 			"ovs-vsctl --timeout=1 show":                               {out: doctorOVSShow, err: nil},
 			"ovs-vsctl --timeout=1 --columns=_uuid,name list Mirror":   {out: "", err: nil},
@@ -287,6 +288,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"disk-space disk-space files pass",
 		"disk-space disk-space inject dirs pass",
 		"image-locks image-locks skip",
+		"inject-partitions inject-partitions skip",
 		"apps apps pass",
 		"scenario-apps scenario-apps skip",
 		"app-runtimes app-runtimes pass",
@@ -300,6 +302,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 	withStore := replaceNamedRows(allPass, "stuck-status stuck-status pass", "writable-images writable-images pass",
 		"leftovers leftovers snapshots pass",
 		"leftovers leftovers files pass", "leftovers leftovers mounts pass", "image-locks image-locks pass",
+		"inject-partitions inject-partitions pass",
 		"state-drift state-drift experiments pass", "state-drift state-drift namespaces pass", "vlans vlans pinned pass",
 		"vlans vlans free pass", "schedule-hosts schedule-hosts pass", "cc-clients cc-clients pass",
 		"scenario-hosts scenario-hosts pass", "inject-sources inject-sources pass", "rbac-users rbac-users pass",
@@ -832,7 +835,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 57 passed, 24 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 57 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -858,8 +861,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 57 passed, 24 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"81 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 57 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"82 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

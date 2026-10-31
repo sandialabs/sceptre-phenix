@@ -94,6 +94,9 @@ Check the phenix configuration without a running server
   log, and names the dstImg directories that a failed inject can leave.
   image-locks (Linux only) names the qemu processes that hold an image of a
   stopped experiment open, so qemu cannot lock it at the start.
+  inject-partitions reads the partition table of each image that gets
+  injects, and warns when the inject_partition of a VM names no partition,
+  or one that minimega cannot write files to. It suggests a partition.
 
   The minimega group also compares minimega with this host and the store.
   minimega-limits (Linux only) reads the open files limit of the minimega

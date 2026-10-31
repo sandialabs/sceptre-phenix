@@ -146,6 +146,14 @@ func Inspect(ctx context.Context, image Details, images []Details) Inspection {
 	return found
 }
 
+// InspectPath is Inspect for the VM disk image at the clean absolute path, in the format its header gives, read with
+// qemuImg: the path of qemu-img, or "" when it is not installed. It finds no overlays.
+func InspectPath(ctx context.Context, path, qemuImg string) Inspection {
+	image := Details{Kind: VMImage, FullPath: path} //nolint:exhaustruct // inspect reads only these and the format
+
+	return cachedInspection(ctx, image, qemuImg)
+}
+
 // cachedInspection is inspect, kept until a file it read changes.
 func cachedInspection(ctx context.Context, image Details, qemuImg string) Inspection {
 	inspectMu.Lock()

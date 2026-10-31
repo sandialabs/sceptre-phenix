@@ -215,6 +215,11 @@ type doctorVM struct {
 	images   []string // the drive images, as the topology names them
 	cc       string   // why phenix needs a miniccc client in the VM, or ""
 	injects  []string // the sources of the files minimega injects into the snapshot, as the topology gives them
+
+	// injectPartition is the partition of the first drive, injectImage, that minimega injects files or deletions
+	// into at a start, startup scripts included, or 0 for none
+	injectPartition int
+	injectImage     string
 }
 
 // doctorExperiments is one read of the stored experiments, which a run shares.
@@ -315,7 +320,7 @@ func decodeDoctorExperiment(c store.Config) doctorExperiment {
 
 		vm := doctorVM{
 			name: node.General().Hostname(), snapshot: derefDoctorBool(node.General().Snapshot()), images: nil,
-			cc: needCC(node), injects: nil,
+			cc: needCC(node), injects: nil, injectPartition: 0, injectImage: "",
 		}
 
 		if node.Hardware() != nil {
@@ -326,10 +331,13 @@ func decodeDoctorExperiment(c store.Config) doctorExperiment {
 			}
 
 			// as the minimega script template does: injects go into the snapshot of the first drive, partition 1 by default
-			if drives := node.Hardware().Drives(); vm.snapshot && len(drives) > 0 &&
-				(drives[0].InjectPartition() == nil || *drives[0].InjectPartition() != 0) {
+			if drives := node.Hardware().Drives(); vm.snapshot && len(drives) > 0 && doctorInjectPartition(drives[0]) != 0 {
 				for _, inject := range node.Injections() {
 					vm.injects = append(vm.injects, inject.Src())
+				}
+
+				if len(node.Injections()) > 0 || len(node.Deletions()) > 0 || app.StartupInjects(node) {
+					vm.injectPartition, vm.injectImage = doctorInjectPartition(drives[0]), drives[0].Image()
 				}
 			}
 		}
@@ -410,6 +418,15 @@ func sohSkipsNode(node ifaces.NodeSpec, skips []string) bool {
 
 		return skip == node.General().Hostname() || (ext == ".qc2" || ext == ".qcow" || ext == ".qcow2") && skip == image
 	})
+}
+
+// doctorInjectPartition is the inject partition of drive, as the minimega script template reads it: 1 when unset.
+func doctorInjectPartition(drive ifaces.NodeDrive) int {
+	if p := drive.InjectPartition(); p != nil {
+		return *p
+	}
+
+	return 1
 }
 
 // derefDoctorBool is the value of b, or false for nil, as the minimega script template reads it.

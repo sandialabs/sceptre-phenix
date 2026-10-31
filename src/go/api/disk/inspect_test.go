@@ -199,6 +199,32 @@ func TestInspectRawImage(t *testing.T) {
 	}
 }
 
+// InspectPath finds the format of an image from its header: it reads the partitions of a raw image, and gives the
+// reason for a qcow2 image without qemu-img.
+func TestInspectPath(t *testing.T) {
+	dir := t.TempDir()
+
+	raw := filepath.Join(dir, "kali.hdd")
+	disktest.WriteMBRImage(t, raw)
+
+	qcow2 := filepath.Join(dir, "kali.qc2")
+	dct.WriteQcow2(t, qcow2, dct.Qcow2{})
+
+	found := InspectPath(t.Context(), raw, "")
+	if found.PartitionTable != "mbr" || len(found.Partitions) != 2 || found.Partitions[0].Filesystem.Type != "ext4" {
+		t.Errorf("InspectPath() of a raw image = %q with %+v, want mbr with ext4 and swap",
+			found.PartitionTable, found.Partitions)
+	}
+
+	found = InspectPath(t.Context(), qcow2, "")
+	want := "qemu-img is not installed where phenix runs, so phenix cannot read the partitions of a qcow2 image"
+
+	if found.Qcow == nil || found.PartitionsUnavailable != want {
+		t.Errorf("InspectPath() of a qcow2 image without qemu-img = %v, %q, want a qcow header and %q",
+			found.Qcow, found.PartitionsUnavailable, want)
+	}
+}
+
 // An inspection is kept until a file it read changes, and the disk list's refresh forgets it.
 func TestInspectIsCached(t *testing.T) {
 	ClearCache()

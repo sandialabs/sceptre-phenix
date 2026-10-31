@@ -70,6 +70,10 @@ func TestStartupPreStartC2TriggerMatrix(t *testing.T) {
 				t.Errorf("StartupUsesC2() = %v, want %v as PreStart sends commands", got, tt.wantCommands)
 			}
 
+			if got := StartupInjects(node); got != tt.wantStartupInj {
+				t.Errorf("StartupInjects() = %v, want %v as PreStart adds injects", got, tt.wantStartupInj)
+			}
+
 			exp, mmDir := newStartupTestExperiment(t, node, nil)
 			runStartupPreStart(t, exp, mmDir)
 
@@ -132,6 +136,37 @@ func TestStartupUsesC2Skips(t *testing.T) {
 
 			if got := StartupUsesC2(node); got != tc.want {
 				t.Errorf("StartupUsesC2() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// StartupInjects is false for the nodes whose startup scripts PreStart does not inject: routers, nodes with the
+// default apps off or startup via cc on, and other operating systems.
+func TestStartupInjects(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		modify func(*v1.Node)
+		want   bool
+	}{
+		"linux":            {modify: func(*v1.Node) {}, want: true},
+		"windows":          {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = osWindows }, want: true},
+		"router":           {modify: func(n *v1.Node) { n.TypeF = "Router" }},
+		"default apps off": {modify: func(n *v1.Node) { n.AnnotationsF = map[string]any{defaultAppsAnnotation: false} }},
+		"startup via cc":   {modify: func(n *v1.Node) { n.AnnotationsF = map[string]any{startupViaCCAnnotation: true} }},
+		"other os":         {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = "plan9" }},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			node := newStartupTestNode(t, "n1", osLinux, true, 1)
+			tc.modify(node)
+
+			if got := StartupInjects(node); got != tc.want {
+				t.Errorf("StartupInjects() = %v, want %v", got, tc.want)
 			}
 		})
 	}

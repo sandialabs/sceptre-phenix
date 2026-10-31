@@ -56,7 +56,9 @@ type doctorInput struct {
 	qemuImg  func(ctx context.Context, path string) (string, error) // its version
 	statfs   func(path string) (health.DiskStat, error)
 	images   func(ctx context.Context, dir string) (disk.ChainScan, error)
-	command  func(ctx context.Context, name string, args ...string) ([]byte, error) // stdout and stderr
+	// inspectDisk reads the partitions of the disk image at path (see disk.InspectPath)
+	inspectDisk func(ctx context.Context, path, qemuImg string) disk.Inspection
+	command     func(ctx context.Context, name string, args ...string) ([]byte, error) // stdout and stderr
 	// storeConfigs reads the configs of a kind from the store file, waiting at most timeout for its lock
 	storeConfigs func(ctx context.Context, path, kind string, timeout time.Duration) (store.Configs, error)
 	timeout      time.Duration
@@ -145,7 +147,9 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		statfs:   health.Statfs,
 		images:   disk.BrokenImages,
 		command:  runDoctorCommand,
-		timeout:  timeout,
+
+		inspectDisk: disk.InspectPath,
+		timeout:     timeout,
 
 		storeConfigs: readStoreConfigs,
 		now:          time.Now,
@@ -780,6 +784,10 @@ func doctorChecks() []doctorCheckDef {
 		{
 			id: imageLocksName, group: doctorGroupImages, name: imageLocksName, hint: imageLocksHint,
 			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(imageLocksCheck(ctx, in)) },
+		},
+		{
+			id: injectPartitionsName, group: doctorGroupImages, name: injectPartitionsName, hint: injectPartitionsHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(injectPartitionsCheck(ctx, in)) },
 		},
 		{
 			id: "apps", group: doctorGroupApps, name: "apps", hint: nil,
