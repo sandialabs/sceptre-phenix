@@ -90,11 +90,11 @@ func TestMMCommandFlags(t *testing.T) {
 				t.Fatalf("parsing flags: %v", err)
 			}
 
-			if attach := MustGetBool(cmd.Flags(), "attach"); attach != test.attach {
+			if attach := mustGet(cmd.Flags().GetBool, "attach"); attach != test.attach {
 				t.Errorf("expected attach %t, got %t", test.attach, attach)
 			}
 
-			if namespace := MustGetString(cmd.Flags(), "namespace"); namespace != test.namespace {
+			if namespace := mustGet(cmd.Flags().GetString, "namespace"); namespace != test.namespace {
 				t.Errorf("expected namespace %q, got %q", test.namespace, namespace)
 			}
 

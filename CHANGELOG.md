@@ -48,6 +48,7 @@ All notable changes to this project will be documented in this file.
 - **RBAC**: Roles index their policies once, and the no-auth and dev-auth modes reuse a role for 30 seconds. phēnix scopes all unnamed policies to user resource names, rejects usernames that are not one URL path segment, and removes `resourceNames: null` values.
 - **VNC Banners (breaking)**: The VNC page shows HTML in the `vncBanner` annotation as text, not as markup.
 - **Web Performance**: The server compresses API responses and UI files with gzip, and browsers keep the hashed UI assets in their cache. Disk, VM mount and tunneler downloads accept `HEAD` and `Range` requests, so a client can continue a stopped download.
+- **CLI**: Replaced the `MustGetString`, `MustGetBool`, `MustGetInt` and `MustGetStringArray` flag helpers with one generic `mustGet` helper.
 
 ### Removed
 
