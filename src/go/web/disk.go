@@ -186,21 +186,92 @@ func GetDisks(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	filtered := []disk.Details{}
-
-	for _, disk := range disks {
-		if disk.Kind&defaultDiskType != 0 && role.Allowed("disks", "list", disk.Name) {
-			filtered = append(filtered, disk)
-		}
-	}
-
-	allowed := visibleDisks(role, filtered)
+	allowed := listedDisks(role, disks, defaultDiskType)
 
 	slices.SortFunc(allowed, func(a, b disk.Details) int {
 		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.FullPath, b.FullPath))
 	})
 
 	body, err := json.Marshal(diskList{Disks: util.Page(allowed, page, pageSize), Total: len(allowed)})
+	if err != nil {
+		return weberror.New(http.StatusInternalServerError, err.Error())
+	}
+
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
+
+	return nil
+}
+
+// listedDisks returns the disks of the kinds that GET /disks shows the role: those it may list and see (see
+// visibleDisks).
+func listedDisks(role rbac.Role, disks []disk.Details, kinds disk.Kind) []disk.Details {
+	filtered := []disk.Details{}
+
+	for _, d := range disks {
+		if d.Kind&kinds != 0 && role.Allowed("disks", "list", d.Name) {
+			filtered = append(filtered, d)
+		}
+	}
+
+	return visibleDisks(role, filtered)
+}
+
+// GetDiskDetails - GET /disks/details?disk=.
+//
+// Answers what phenix reads from one image of the disk list for its details card (see disk.Inspect). The role must
+// see the image in GET /disks, and the VMs are cut to the experiments it may get.
+func GetDiskDetails(w http.ResponseWriter, r *http.Request) error {
+	var (
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		name    = mux.Vars(r)["disk"]
+	)
+
+	if name == "" {
+		return diskError(fmt.Errorf("%w: no disk given", disk.ErrNotManaged))
+	}
+
+	path := mm.GetMMFullPath(name)
+
+	if !role.Allowed("disks", "list", filepath.Base(path)) {
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(plog.TypeSecurity, "getting disk details not allowed", "user", user, "disk", path)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	disks, err := disk.GetImages("")
+	if err != nil {
+		return weberror.New(http.StatusInternalServerError, err.Error())
+	}
+
+	listed := listedDisks(role, disks, disk.VMImage|disk.ContainerImage|disk.ISOImage|disk.UNKNOWN)
+
+	i := slices.IndexFunc(listed, func(d disk.Details) bool { return d.FullPath == path })
+	if i < 0 {
+		// a path the disk list cannot hold gets the error of the other disk routes
+		if _, err := disk.Resolve(name); err != nil {
+			return diskError(err)
+		}
+
+		return weberror.New(http.StatusNotFound, "disk image not found: "+path)
+	}
+
+	found := disk.Inspect(ctx, listed[i], listed)
+
+	uses, err := disk.VMUses(path)
+	if err != nil {
+		plog.Warn(plog.TypeSystem, "cannot tell which VMs use a disk", "disk", path, "err", err)
+	}
+
+	for _, use := range uses {
+		if role.Allowed("experiments", "get", use.Experiment) {
+			found.VMs = append(found.VMs, use)
+		}
+	}
+
+	body, err := json.Marshal(found)
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}

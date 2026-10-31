@@ -138,6 +138,15 @@ lack it). Points that are easy to miss:
   empty). They come from the image header, cached with the chain. An image
   that qemu-img cannot open for its version or feature bits is listed from
   its header alone.
+- `GET /disks/details?disk=` reads one image that `GET /disks` shows the
+  role (`disks` `list` permission for its name). It returns the file sizes,
+  the qcow header (`compat`, `clusterSize`, `refcountBits`, `encryption`,
+  feature flags), `partitionTable` (`mbr`, `gpt`, `none` or `unknown`),
+  `partitions` with their file systems, `overlays` and `vms`. A qcow or qcow2
+  disk is read through its backing chain with `qemu-img dd -U`, at most
+  16 MiB in 30 seconds; phenix never mounts it. `fileUnavailable` and
+  `partitionsUnavailable` say why a part is missing. Partition numbers are
+  those that `inject_partition` uses. No CLI command shows these fields.
 - `GET /experiments`, `/vms`, `/disks`, `/jobs` and the experiment VM and
   file lists page with `pageNum` and `perPage` (both, from 1; `400`
   otherwise) and report the unpaged `total`; without them they return

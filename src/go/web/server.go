@@ -585,6 +585,9 @@ func newRouter(assets http.FileSystem) *mux.Router {
 	api.Handle("/disks/checksum", weberror.ErrorHandler(GetDiskChecksum)).
 		Methods("GET", "OPTIONS").
 		Queries("disk", "{disk}")
+	api.Handle("/disks/details", weberror.ErrorHandler(GetDiskDetails)).
+		Methods("GET", "OPTIONS").
+		Queries("disk", "{disk}")
 
 	api.Handle("/vms", weberror.ErrorHandler(GetAllVMs)).Methods("GET", "OPTIONS")
 	api.Handle("/applications", weberror.ErrorHandler(GetApplications)).Methods("GET", "OPTIONS")

@@ -17,6 +17,73 @@ export const disk = (fullPath, relativePath = '', fields = {}) => ({
   ...fields,
 });
 
+// What GET disks/details gives for a qcow2 v3 image, kali.qc2: an MBR disk
+// with an ext4 root (1), an extended partition (2) and swap in it (5), used
+// by the kali VM of the running bennu experiment, which injects into 1.
+export const diskDetails = (fields = {}) => ({
+  fullPath: '/phenix/images/kali.qc2',
+  format: 'qcow2',
+  formatVersion: 3,
+  formatIssue: null,
+  fileBytes: 15 * 1024 ** 3,
+  allocatedBytes: 16 * 1024 ** 3,
+  virtualBytes: 80 * 1024 ** 3,
+  modified: '2026-09-28T14:12:00Z',
+  qcow: {
+    compat: '1.1',
+    clusterSize: 65536,
+    refcountBits: 16,
+    encryption: 'none',
+    compression: 'zlib',
+    dirty: false,
+    corrupt: false,
+    externalDataFile: false,
+    extendedL2: false,
+    lazyRefcounts: false,
+    snapshots: 0,
+    backingFile: '',
+    backingFormat: '',
+  },
+  fileUnavailable: '',
+  partitionTable: 'mbr',
+  diskId: '0x8f3c2a11',
+  sectorSize: 512,
+  partitions: [
+    partition(1, 'Linux', '0x83', { bootable: true, fs: 'ext4' }),
+    partition(2, 'Extended', '0x05', { extended: true }),
+    partition(5, 'Linux swap / Solaris', '0x82', { logical: true, fs: 'swap' }),
+  ],
+  filesystem: null,
+  partitionNotes: [],
+  partitionsUnavailable: '',
+  overlays: [],
+  vms: [
+    {
+      experiment: 'bennu',
+      running: true,
+      vm: 'kali',
+      drive: 0,
+      injectPartition: 1,
+    },
+  ],
+  ...fields,
+});
+
+// a partition as GET disks/details gives it, 1 GiB at 1 MiB per number
+export const partition = (number, type, typeId, opts = {}) => ({
+  number,
+  type,
+  typeId,
+  start: number * 1024 ** 2,
+  size: 1024 ** 3,
+  bootable: !!opts.bootable,
+  extended: !!opts.extended,
+  logical: !!opts.logical,
+  name: opts.name ?? '',
+  guid: '',
+  filesystem: opts.fs ? { type: opts.fs, version: '', label: '' } : null,
+});
+
 // a running VM, named web, as the experiment's VM list gives it
 export const vm = (fields = {}) => ({
   name: 'web',

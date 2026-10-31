@@ -277,6 +277,18 @@ const requests = [
     ['disks', { params: { refresh: true }, ...fetchConfig }],
   ],
   [
+    'getDiskDetails',
+    () => disksApi.getDiskDetails('/phenix/images/kali.qc2'),
+    'get',
+    ['disks/details', { params: { disk: '/phenix/images/kali.qc2' } }],
+  ],
+  [
+    'getDiskDetails with a config',
+    () => disksApi.getDiskDetails('kali.qc2', { signal }),
+    'get',
+    ['disks/details', { params: { disk: 'kali.qc2' }, signal }],
+  ],
+  [
     'uploadDisk',
     () => disksApi.uploadDisk(form, onProgress),
     'post',

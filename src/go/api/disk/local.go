@@ -72,13 +72,16 @@ type cacheEntry struct {
 	broken  diskchain.Result
 }
 
-// ClearCache forgets every inspected image, so the next listing inspects them
-// all again.
+// ClearCache forgets every inspected image, so the next listing and each
+// details request (see Inspect) inspect them again.
 func ClearCache() {
 	cacheMu.Lock()
-	defer cacheMu.Unlock()
-
 	imageCache = make(map[string]cacheEntry)
+	cacheMu.Unlock()
+
+	inspectMu.Lock()
+	inspections = make(map[string]inspectionEntry)
+	inspectMu.Unlock()
 }
 
 // LocalInspection reports whether phenix inspects images itself (and caches

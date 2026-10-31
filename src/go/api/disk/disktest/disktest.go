@@ -1,8 +1,9 @@
-// Package disktest runs a fake qemu-img for tests of the disk listing. It is
+// Package disktest runs a fake qemu-img for tests of the disk listing, and writes a small raw disk image. It is
 // imported only by tests, as net/http/httptest is.
 package disktest
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,5 +71,50 @@ func UseFakeQemuImg(tb testing.TB) func() int {
 		log, _ := os.ReadFile(calls)
 
 		return strings.Count(string(log), "\n")
+	}
+}
+
+// WriteMBRImage writes a raw disk image of 8 MiB at path with an MBR: partition 1, bootable Linux with an ext4 file
+// system labeled rootfs, and partition 2, Linux swap, which runs past the end of the disk.
+//
+//nolint:mnd // the offsets and sizes of a fixed image
+func WriteMBRImage(tb testing.TB, path string) {
+	tb.Helper()
+
+	f, err := os.Create(path)
+	if err != nil {
+		tb.Fatalf("os.Create(%s) error = %v", path, err)
+	}
+
+	defer func() { _ = f.Close() }()
+
+	mbr := make([]byte, 512)
+	binary.LittleEndian.PutUint32(mbr[440:], 0xdeadbeef)
+
+	for i, p := range []struct {
+		boot, typ      byte
+		first, sectors uint32
+	}{{0x80, 0x83, 2048, 4096}, {0, 0x82, 6144, 12288}} {
+		e := mbr[446+16*i:]
+		e[0], e[4] = p.boot, p.typ
+		binary.LittleEndian.PutUint32(e[8:], p.first)
+		binary.LittleEndian.PutUint32(e[12:], p.sectors)
+	}
+
+	mbr[510], mbr[511] = 0x55, 0xAA
+
+	ext := make([]byte, 2048)
+	binary.LittleEndian.PutUint16(ext[1024+0x38:], 0xEF53)
+	binary.LittleEndian.PutUint32(ext[1024+0x60:], 0x42)
+	copy(ext[1024+0x78:], "rootfs")
+
+	for off, data := range map[int64][]byte{0: mbr, 2048 * 512: ext, 6144*512 + 4086: []byte("SWAPSPACE2")} {
+		if _, err := f.WriteAt(data, off); err != nil {
+			tb.Fatalf("writing %s: %v", path, err)
+		}
+	}
+
+	if err := f.Truncate(8 << 20); err != nil {
+		tb.Fatalf("truncating %s: %v", path, err)
 	}
 }

@@ -360,6 +360,7 @@ func contractRoutes() []contractRoute {
 
 		// disks
 		{method: "GET", path: "/api/v1/disks/checksum?disk=" + contractDisk, need: one(diskGet)},
+		{method: "GET", path: "/api/v1/disks/details?disk=" + contractDisk, need: one(testRole("disks", "list", contractDisk))},
 		{method: "GET", path: "/api/v1/disks/download?disk=" + contractDisk, need: one(diskGet)},
 		{method: "HEAD", path: "/api/v1/disks/download?disk=" + contractDisk, need: one(diskGet)},
 		{
@@ -870,6 +871,9 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 		},
 		"checksum of missing disk": {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
 		"checksum of disk outside": {method: "GET", path: "/api/v1/disks/checksum?disk=../none.qc2", want: http.StatusBadRequest},
+		"details of missing disk":  {method: "GET", path: "/api/v1/disks/details?disk=none.qc2", want: http.StatusNotFound},
+		"details of disk outside":  {method: "GET", path: "/api/v1/disks/details?disk=../none.qc2", want: http.StatusBadRequest},
+		"details of no disk":       {method: "GET", path: "/api/v1/disks/details?disk=", want: http.StatusBadRequest},
 		"clone onto existing disk": {
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=" + contractDisk,
 			want: http.StatusConflict,

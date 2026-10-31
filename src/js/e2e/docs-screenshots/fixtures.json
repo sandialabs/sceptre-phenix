@@ -224,6 +224,97 @@
       }
     ]
   },
+  "GET /disks/details": {
+    "fullPath": "/phenix/images/PHENIX-kali.qc2",
+    "format": "qcow2",
+    "formatVersion": 3,
+    "formatIssue": null,
+    "fileBytes": 15032385536,
+    "allocatedBytes": 15032389632,
+    "virtualBytes": 85899345920,
+    "modified": "2026-09-28T14:12:00Z",
+    "qcow": {
+      "compat": "1.1",
+      "clusterSize": 65536,
+      "refcountBits": 16,
+      "encryption": "none",
+      "compression": "zlib",
+      "dirty": false,
+      "corrupt": false,
+      "externalDataFile": false,
+      "extendedL2": false,
+      "lazyRefcounts": false,
+      "snapshots": 0,
+      "backingFile": "",
+      "backingFormat": ""
+    },
+    "fileUnavailable": "",
+    "partitionTable": "mbr",
+    "diskId": "0x8f3c2a11",
+    "sectorSize": 512,
+    "partitions": [
+      {
+        "number": 1,
+        "type": "Linux",
+        "typeId": "0x83",
+        "start": 1048576,
+        "size": 84874887168,
+        "bootable": true,
+        "extended": false,
+        "logical": false,
+        "name": "",
+        "guid": "",
+        "filesystem": {
+          "type": "ext4",
+          "version": "",
+          "label": ""
+        }
+      },
+      {
+        "number": 2,
+        "type": "Extended",
+        "typeId": "0x05",
+        "start": 84876983296,
+        "size": 1021314048,
+        "bootable": false,
+        "extended": true,
+        "logical": false,
+        "name": "",
+        "guid": "",
+        "filesystem": null
+      },
+      {
+        "number": 5,
+        "type": "Linux swap / Solaris",
+        "typeId": "0x82",
+        "start": 84876984320,
+        "size": 1021313024,
+        "bootable": false,
+        "extended": false,
+        "logical": true,
+        "name": "",
+        "guid": "",
+        "filesystem": {
+          "type": "swap",
+          "version": "",
+          "label": ""
+        }
+      }
+    ],
+    "filesystem": null,
+    "partitionNotes": [],
+    "partitionsUnavailable": "",
+    "overlays": [],
+    "vms": [
+      {
+        "experiment": "bennu",
+        "running": true,
+        "vm": "kali",
+        "drive": 0,
+        "injectPartition": 1
+      }
+    ]
+  },
   "GET /hosts": {
     "hosts": [
       {

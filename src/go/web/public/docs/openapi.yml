@@ -6259,6 +6259,64 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/disks/details":
+    get:
+      tags:
+        - Disks
+      summary: Get the details of one disk image
+      description: >-
+        Reads one image of the disk list for the details card of the Disks
+        page. It reads the file, the qcow or qcow2 header, and the partition
+        table and file systems of the disk that the image holds. For a qcow or
+        qcow2 image, it reads through the backing chain with `qemu-img dd`,
+        which it runs read-only with `-U`. It does not mount the image. It
+        reads at most 16 MiB of the disk, for at most 30 seconds. It keeps the
+        result until the size, modification time or inode of a file it read
+        changes, or until a GET /disks with `refresh`. When it cannot read a
+        part, a field such as `partitionsUnavailable` says why. Needs the
+        `disks` `list` permission for the image's file name, and the role must
+        see the image in GET /disks. `vms` holds only the experiments that the
+        role may `get`.
+      operationId: getDisksDetails
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute,
+            as GET /disks lists it
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: what the server read from the image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiskDetails"
+        "400":
+          description: >-
+            no image, a path outside the minimega files directory that the
+            role may not see, or a path in a folder that the disk list leaves
+            out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            the path is in the minimega files directory, but the disk list
+            does not hold the image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/hosts":
     get:
       tags:
@@ -9641,35 +9699,400 @@ components:
             qemu-img command for it
           type: object
           nullable: true
-          properties:
-            level:
-              title: Level
-              description: >-
-                error for an image that qemu refuses to open, or to open
-                read/write. warning for an image of an old format, or of a
-                format whose backing chain the server does not check
-              type: string
-              enum: [warning, error]
-            problem:
-              title: Problem
-              example: >-
-                /phenix/images/kali.qc2 is a qcow2 version 2 image, an old
-                version of the format
-              type: string
-              description: what is wrong, in one sentence with no final period
-            fix:
-              title: Fix
-              example: Stop each VM that uses it, then upgrade it to version 3
-              type: string
-              description: what to do, in one or two sentences with no final period
-            command:
-              title: Command
-              example: qemu-img amend -f qcow2 -o compat=1.1 /phenix/images/kali.qc2
-              type: string
-              description: >-
-                the qemu-img command of the fix, with the image's full path.
-                "<new image>" in it is the name of a new image that you
-                choose. Empty when the fix needs more than one command
+          allOf:
+            - $ref: "#/components/schemas/DiskFormatIssue"
+    DiskFormatIssue:
+      title: Disk Format Issue
+      description: why the format of a disk image needs care
+      type: object
+      properties:
+        level:
+          title: Level
+          description: >-
+            error for an image that qemu refuses to open, or to open
+            read/write. warning for an image of an old format, or of a
+            format whose backing chain the server does not check
+          type: string
+          enum: [warning, error]
+        problem:
+          title: Problem
+          example: >-
+            /phenix/images/kali.qc2 is a qcow2 version 2 image, an old
+            version of the format
+          type: string
+          description: what is wrong, in one sentence with no final period
+        fix:
+          title: Fix
+          example: Stop each VM that uses it, then upgrade it to version 3
+          type: string
+          description: what to do, in one or two sentences with no final period
+        command:
+          title: Command
+          example: qemu-img amend -f qcow2 -o compat=1.1 /phenix/images/kali.qc2
+          type: string
+          description: >-
+            the qemu-img command of the fix, with the image's full path.
+            "<new image>" in it is the name of a new image that you
+            choose. Empty when the fix needs more than one command
+    DiskDetails:
+      title: Disk Details
+      description: >-
+        What the server read from one disk image for its details card. A
+        reason field that is not empty says why the server did not read a
+        part, and the fields of that part are then empty.
+      type: object
+      properties:
+        fullPath:
+          title: Full Path
+          example: /phenix/images/kali.qc2
+          type: string
+          description: the image's absolute path, as GET /disks lists it
+        format:
+          title: Format
+          example: qcow2
+          type: string
+          description: the image's format, as GET /disks lists it
+        formatVersion:
+          title: Format Version
+          example: 3
+          type: integer
+          description: the version of a qcow2 or qcow image, as GET /disks lists it
+        formatIssue:
+          title: Format Issue
+          description: why the image's format needs care, as GET /disks lists it. Null when it needs no care
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DiskFormatIssue"
+        fileBytes:
+          title: File Bytes
+          example: 4294967296
+          type: integer
+          format: int64
+          description: the size of the file in bytes
+        allocatedBytes:
+          title: Allocated Bytes
+          example: 2147483648
+          type: integer
+          format: int64
+          description: the space the file takes on the server's disk, in bytes
+        virtualBytes:
+          title: Virtual Bytes
+          example: 21474836480
+          type: integer
+          format: int64
+          description: >-
+            the size in bytes of the disk the image holds, as the guest sees
+            it. Zero when the server does not know it
+        modified:
+          title: Modified
+          example: "2026-10-30T12:00:00Z"
+          type: string
+          description: the time the file last changed, in RFC 3339, or empty
+        qcow:
+          title: Qcow
+          description: the header of a qcow or qcow2 image. Null for other formats
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DiskQcowHeader"
+        fileUnavailable:
+          title: File Unavailable
+          example: ""
+          type: string
+          description: >-
+            why the server cannot open the image, such as an image that only
+            minimega on a different host can read, or empty
+        partitionTable:
+          title: Partition Table
+          type: string
+          description: >-
+            the partition table of the disk the image holds: none for a disk
+            with no table, and unknown for a table the server cannot read.
+            Empty when partitionsUnavailable says why the server did not read
+            it
+          enum: [mbr, gpt, none, unknown, ""]
+        diskId:
+          title: Disk ID
+          example: "0x1a2b3c4d"
+          type: string
+          description: the MBR disk signature or the GPT disk GUID, or empty
+        sectorSize:
+          title: Sector Size
+          example: 512
+          type: integer
+          description: the sector size of the partition table in bytes, or zero
+        partitions:
+          title: Partitions
+          type: array
+          description: >-
+            the partitions, in the order of their numbers. The numbers are
+            those that Linux gives, which `inject_partition` uses
+          items:
+            $ref: "#/components/schemas/DiskPartition"
+        filesystem:
+          title: Filesystem
+          description: >-
+            the file system on the whole disk when it has no partition table,
+            such as iso9660. Null otherwise
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DiskFilesystem"
+        partitionNotes:
+          title: Partition Notes
+          type: array
+          description: >-
+            what is wrong with the partition table, or what the server did not
+            read, each in one sentence with no final period
+          items:
+            type: string
+        partitionsUnavailable:
+          title: Partitions Unavailable
+          example: >-
+            qemu-img is not installed where phenix runs, so phenix cannot read
+            the partitions of a qcow2 image
+          type: string
+          description: why the server did not read the partitions, or empty
+        overlays:
+          title: Overlays
+          type: array
+          description: >-
+            the images of the disk list whose backing chain holds this image,
+            sorted by full path
+          items:
+            $ref: "#/components/schemas/DiskOverlay"
+        vms:
+          title: VMs
+          type: array
+          description: >-
+            the VMs whose drives name this image directly, in experiments the
+            role may get
+          items:
+            $ref: "#/components/schemas/DiskVMUse"
+    DiskQcowHeader:
+      title: Disk Qcow Header
+      description: what the header of a qcow or qcow2 image says
+      type: object
+      properties:
+        compat:
+          title: Compat
+          type: string
+          description: >-
+            the qcow2 compatibility level: 0.10 for version 2 and 1.1 for
+            version 3. Empty for qcow version 1
+          enum: ["0.10", "1.1", ""]
+        clusterSize:
+          title: Cluster Size
+          example: 65536
+          type: integer
+          format: int64
+          description: the cluster size in bytes
+        refcountBits:
+          title: Refcount Bits
+          example: 16
+          type: integer
+          description: the width of a reference count in bits. Zero for qcow version 1
+        encryption:
+          title: Encryption
+          type: string
+          description: the encryption method. qemu does not open aes or luks images for VMs
+          enum: [none, aes, luks]
+        compression:
+          title: Compression
+          type: string
+          description: the compression type of compressed clusters
+          enum: [zlib, zstd]
+        dirty:
+          title: Dirty
+          example: false
+          type: boolean
+          description: whether qemu did not close the image cleanly
+        corrupt:
+          title: Corrupt
+          example: false
+          type: boolean
+          description: whether qemu marked the image as corrupt
+        externalDataFile:
+          title: External Data File
+          example: false
+          type: boolean
+          description: whether the image's data is in a different file
+        extendedL2:
+          title: Extended L2
+          example: false
+          type: boolean
+          description: whether the image has extended L2 entries (subclusters)
+        lazyRefcounts:
+          title: Lazy Refcounts
+          example: false
+          type: boolean
+          description: whether qemu writes the reference counts late
+        snapshots:
+          title: Snapshots
+          example: 0
+          type: integer
+          description: the number of internal snapshots in the image
+        backingFile:
+          title: Backing File
+          example: kali-base.qc2
+          type: string
+          description: the backing file name as the header stores it, or empty
+        backingFormat:
+          title: Backing Format
+          example: qcow2
+          type: string
+          description: the backing file's format from the header, or empty when qemu probes it
+    DiskPartition:
+      title: Disk Partition
+      description: a partition of the disk an image holds
+      type: object
+      properties:
+        number:
+          title: Number
+          example: 1
+          type: integer
+          description: >-
+            the number Linux gives the partition: 1 to 4 for MBR primary
+            partitions, 5 and up for logical partitions, and the entry
+            number for GPT
+        type:
+          title: Type
+          example: Linux filesystem
+          type: string
+          description: the name of the partition type, or empty for a type the server does not know
+        typeId:
+          title: Type ID
+          example: 0FC63DAF-8483-4772-8E79-3D69D8477DE4
+          type: string
+          description: the MBR type byte, such as 0x83, or the GPT type GUID
+        start:
+          title: Start
+          example: 1048576
+          type: integer
+          format: int64
+          description: the offset of the partition from the start of the disk, in bytes
+        size:
+          title: Size
+          example: 21473787904
+          type: integer
+          format: int64
+          description: the size of the partition in bytes, cut to the end of the disk
+        bootable:
+          title: Bootable
+          example: false
+          type: boolean
+          description: the MBR active flag, or the GPT legacy BIOS bootable attribute
+        extended:
+          title: Extended
+          example: false
+          type: boolean
+          description: whether this is an MBR extended partition, which holds the logical partitions
+        logical:
+          title: Logical
+          example: false
+          type: boolean
+          description: whether this is an MBR logical partition
+        name:
+          title: Name
+          example: root
+          type: string
+          description: the GPT partition name, or empty
+        guid:
+          title: GUID
+          example: 640404B5-A045-442A-A464-CBBDD0706315
+          type: string
+          description: the GPT unique partition GUID, or empty
+        filesystem:
+          title: Filesystem
+          description: >-
+            the file system in the partition. Null for an extended partition,
+            or for a partition the server did not read
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DiskFilesystem"
+    DiskFilesystem:
+      title: Disk Filesystem
+      description: a file system, from its magic bytes
+      type: object
+      properties:
+        type:
+          title: Type
+          type: string
+          description: the file system type as blkid names it, or unknown
+          enum:
+            - ext2
+            - ext3
+            - ext4
+            - xfs
+            - btrfs
+            - ntfs
+            - exfat
+            - vfat
+            - swap
+            - LVM2_member
+            - crypto_LUKS
+            - iso9660
+            - squashfs
+            - unknown
+        version:
+          title: Version
+          example: FAT32
+          type: string
+          description: FAT12, FAT16 or FAT32 for vfat, the LUKS version for crypto_LUKS, or empty
+        label:
+          title: Label
+          example: rootfs
+          type: string
+          description: the file system label, or empty
+    DiskOverlay:
+      title: Disk Overlay
+      description: an image backed by the image of the details
+      type: object
+      properties:
+        fullPath:
+          title: Full Path
+          example: /phenix/images/kali-snap.qc2
+          type: string
+          description: the overlay's absolute path
+        direct:
+          title: Direct
+          example: true
+          type: boolean
+          description: whether the image of the details is the overlay's own backing file
+    DiskVMUse:
+      title: Disk VM Use
+      description: a VM whose drive names a disk image
+      type: object
+      properties:
+        experiment:
+          title: Experiment
+          example: exp1
+          type: string
+          description: the experiment's name
+        running:
+          title: Running
+          example: false
+          type: boolean
+          description: whether the experiment is running
+        vm:
+          title: VM
+          example: kali
+          type: string
+          description: the VM's hostname
+        drive:
+          title: Drive
+          example: 0
+          type: integer
+          description: the index of the drive in the VM's drives
+        injectPartition:
+          title: Inject Partition
+          example: 1
+          type: integer
+          description: >-
+            the partition that phenix injects files into: that of the first
+            drive, or 0 for none
     Users:
       title: "Users"
       description: "Schema describing the Users resource."

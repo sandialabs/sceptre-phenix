@@ -82,21 +82,37 @@ async function openDetails(wrapper, label) {
   return wrapper.find('.modal.is-active');
 }
 
-// a row of the details list, by its term
+// a value of the details card's format list, by its term
 const detail = (details, term) =>
   details
-    .findAll('dl > div')
+    .findAll('.disk-kv > div')
     .find((row) => textOf(row.find('dt')) === term)
     .find('dd');
 
+// the details card's action buttons, in order
+const actionButtons = (details) => details.findAll('.disk-action');
+
 // clicks the details window's button for an action, by its label
 async function runAction(details, label) {
-  const button = details
-    .findAll('.actions button')
-    .find((b) => textOf(b.find('b')) === label);
+  const button = actionButtons(details).find(
+    (b) => b.attributes('aria-label') === label,
+  );
   await button.trigger('click');
   await flushPromises();
 }
+
+// each box of the details card's backing chain below the image: the element
+// that names the image, and its text
+const chainLinks = (details) =>
+  details
+    .findAll('.disk-chain-item:not(.is-self)')
+    .map((item) =>
+      item.find('.backing-link').exists()
+        ? ['button', textOf(item.find('.backing-link'))]
+        : item.find('.missing-backing').exists()
+          ? ['missing', textOf(item.find('.missing-backing'))]
+          : ['span', textOf(item.find('.disk-chain-name'))],
+    );
 
 describe('the disk list', () => {
   it("has the server inspect every image again on the header's refresh", async () => {
@@ -245,14 +261,16 @@ describe('disk actions', () => {
     ).toEqual(['Snapshot', 'Clone', 'Download', 'Rename', 'Delete']);
 
     const details = await openDetails(wrapper, 'snap.qc2');
-    expect(details.findAll('.actions button b').map(textOf)).toEqual(ACTIONS);
+    expect(
+      actionButtons(details).map((b) => b.attributes('aria-label')),
+    ).toEqual(ACTIONS);
   });
 
   it('says how the disk rules an action out: its kind, backing image or use', async () => {
     // each action's tooltip in the details window of this disk
     const tooltips = async (shown) => {
       const details = await openDetails(await page([shown]), 'snap.qc2');
-      const found = tooltipButtons(details.find('.actions'));
+      const found = tooltipButtons(details.find('.disk-action-buttons'));
       return Object.fromEntries(found.map((t, i) => [ACTIONS[i], t.tooltip]));
     };
 
@@ -539,18 +557,12 @@ describe('disks in folders and outside the files directory', () => {
     const details = await openDetails(await page(disks), 'win/snap.qc2');
 
     expect(textOf(details.find('.modal-card-title'))).toBe('win/snap.qc2');
-    expect(textOf(detail(details, 'Location:'))).toBe(
+    expect(textOf(details.find('.disk-location-text'))).toBe(
       'The standard images directory (/phenix/images)',
     );
     // the chain names the listed images by label, with the same-named image
     // outside the files directory its own entry, and one not listed as is
-    const chain = details.find('[style*="text-align: center"]');
-    expect(
-      chain
-        .findAll('div')
-        .map(({ element }) => element.lastElementChild)
-        .map((el) => [el.localName, textOf(el)]),
-    ).toEqual([
+    expect(chainLinks(details)).toEqual([
       ['button', 'win/base.qc2'],
       ['button', '/data/vms/base.qc2'],
       ['span', '/data/vms/gone.qc2'],
@@ -575,8 +587,8 @@ describe('disks in folders and outside the files directory', () => {
     'says where a read-only disk %s is',
     async (_, label, location, warnings) => {
       const details = await openDetails(await page(disks), label);
-      const row = detail(details, 'Location:');
-      expect(textOf(row).startsWith(location)).toBe(true);
+      const row = details.find('.disk-location');
+      expect(textOf(row.find('.disk-location-text'))).toBe(location);
       expect(tooltipButtons(row).map((b) => b.tooltip)).toEqual(warnings);
     },
   );
@@ -589,7 +601,7 @@ describe('disks in folders and outside the files directory', () => {
         .findAll('.backing-link')
         .find((b) => textOf(b) === label)
         .trigger('click');
-      return textOf(detail(details, 'Full Path:'));
+      return textOf(details.find('.disk-full-path'));
     };
 
     expect(await follow('/data/vms/base.qc2')).toBe(outside.fullPath);
@@ -680,15 +692,9 @@ describe('disks with a broken backing chain', () => {
     expect(textOf(details.find('.chain-problem'))).toBe(
       `A VM cannot start from this image: ${PROBLEM}.`,
     );
-    const chain = details.find('[style*="text-align: center"]');
-    expect(
-      chain
-        .findAll(':scope > div')
-        .map(({ element }) => element.lastElementChild)
-        .map((el) => [el.localName, textOf(el)]),
-    ).toEqual([
+    expect(chainLinks(details)).toEqual([
       ['button', 'mid.qc2'],
-      ['span', `${MISSING} (missing)`],
+      ['missing', `${MISSING} (missing)`],
     ]);
   });
 
@@ -717,7 +723,10 @@ describe('disks with a broken backing chain', () => {
     const details = await openDetails(await page(disks), 'whole.qc2');
 
     expect(details.find('.chain-problem').exists()).toBe(false);
-    expect(details.text()).not.toContain('Backing Chain');
+    expect(details.find('.disk-chain').exists()).toBe(false);
+    expect(textOf(details.find('.disk-chain-section .disk-empty'))).toBe(
+      'None: this image has no backing image.',
+    );
   });
 });
 
@@ -867,9 +876,7 @@ describe('the Type column', () => {
   it('shows the type, the problem, the fix and its command in the details', async () => {
     const details = await openDetails(await page(disks), 'kali.qc2');
 
-    expect(textOf(detail(details, 'Type:').find('.disk-type'))).toBe(
-      'qcow2 v2',
-    );
+    expect(textOf(detail(details, 'Type').find('.disk-type'))).toBe('qcow2 v2');
     expect(textOf(details.find('.format-problem'))).toBe(
       `Format warning: ${V2.problem}.`,
     );
@@ -894,7 +901,7 @@ describe('the Type column', () => {
 
     await details.find('.modal-close, .delete').trigger('click');
     details = await openDetails(wrapper, 'base.qc2');
-    expect(textOf(detail(details, 'Type:'))).toBe('qcow2 v3');
+    expect(textOf(detail(details, 'Type'))).toBe('qcow2 v3');
     expect(details.find('.format-issue').exists()).toBe(false);
   });
 });

@@ -129,6 +129,20 @@ test('disks_upload', async ({ page }) => {
   await shoot(dialog, 'disks_upload');
 });
 
+// The details card of PHENIX-kali.qc2: the stand-in answers GET
+// /disks/details with that image's details, whatever the query names. The
+// window is tall enough for the whole card, which otherwise scrolls.
+test('disks_details', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1600 });
+  await open(page, '/disks');
+  await page.locator('.disk-label', { hasText: /^PHENIX-kali\.qc2$/ }).click();
+  const dialog = page.locator('.modal-card.disk-card');
+  await expect(
+    dialog.getByText('MBR partition table, disk ID 0x8f3c2a11'),
+  ).toBeVisible();
+  await shoot(dialog, 'disks_details');
+});
+
 test('create_exp', async ({ page }) => {
   await open(page, '/experiments');
   await ring(page.getByRole('button', { name: 'Create a new experiment' }));

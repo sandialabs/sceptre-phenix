@@ -17,6 +17,7 @@
 //	screenshot frames       web/broker frameCache                  screenshots in view    a changed image; leaving every view     implicit (the image)
 //	topology search index   api/vm topologySearchKey               30 s, memory only      the experiment's store revision         exact
 //	disk image details      api/disk local stamp cache             file stamps            a changed size, mtime or inode          exact
+//	disk partitions         api/disk inspections                   file stamps, 1024      a changed file of the chain; refresh    exact
 //	snapshot backing disks  util/mm snapshotDiskCache              one VM launch          the VM's relaunch                       exact
 //	download checksums      web/util Digests                       file stamps            a changed file                          exact (Repr-Digest)
 //	fixed-mode roles        web/middleware cachedRole              30 s (fixedRoleTTL)    expiry                                  not data

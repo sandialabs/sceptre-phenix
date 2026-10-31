@@ -4,6 +4,7 @@
 // command that streams a live capture into a local Wireshark.
 import * as webSharkApi from '@/api/webshark.js';
 import { roleAllowed } from '@/utils/rbac.js';
+import { shellQuote } from '@/utils/shell.js';
 
 // the feature GET /features lists when the server has WebShark installed
 const WEBSHARK_FEATURE = 'webshark';
@@ -103,9 +104,6 @@ export function openFailure(err) {
       return 'The server could not open it.';
   }
 }
-
-// quotes a string for a POSIX shell
-const shellQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 // POST /experiments/{exp}/captureTokens: a token, starting streams for 5
 // minutes, that a command outside the browser streams a running capture with

@@ -9,6 +9,12 @@ export function listDisks(params, config) {
   return axiosInstance.get('disks', { params, ...config });
 }
 
+// GET /disks/details?disk=: what the server reads from one listed image, such
+// as its qcow header and partitions; config carries the request's signal
+export function getDiskDetails(disk, config) {
+  return axiosInstance.get('disks/details', { params: { disk }, ...config });
+}
+
 // POST /disks, with an uploaded file as FormData; onUploadProgress receives
 // axios's progress events
 export function uploadDisk(formData, onUploadProgress) {
