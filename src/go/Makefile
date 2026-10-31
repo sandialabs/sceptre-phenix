@@ -69,11 +69,20 @@ all: test
 generate: generate-mocks generate-protobuf go-generate generate-builder-schema
 
 # The web UI's copy of the Builder document schema, which embeds the v1
-# and v2 config schemas, is committed, and so is its copy of the Builder
-# error codes. CI regenerates them and fails when the result differs from
-# what is committed. Only a Go of phenix's
+# and v2 config schemas, is committed, and so are its copy of the Builder
+# error codes and the docs' table of them. CI regenerates them and fails
+# when the result differs from what is committed. Only a Go of phenix's
 # Unicode version writes the copy of Go's case mapping (case_test.go).
 BUILDER_SCHEMA_TESTS := TestFrontendSchemaBundleMatchesSchemaJSON|TestFrontendCodesMatchRegistry|TestFrontendCaseTableMatchesUnicode|TestFoldCorpus
+
+# The docs' table of error codes is written and checked only where the
+# repository's docs directory exists: the Docker and Podman images build
+# phenix from a copy of src/go and src/js without it. A full checkout, as
+# CI's Go job has, always has it, so the table is still regenerated and
+# checked there.
+ifneq ($(wildcard $(THISDIR)/../../docs/.),)
+BUILDER_SCHEMA_TESTS := $(BUILDER_SCHEMA_TESTS)|TestDocsCodeTableMatchesRegistry
+endif
 
 generate-builder-schema:
 	go test ./types/builder -run '^($(BUILDER_SCHEMA_TESTS))$$' -count=1 -update-frontend-schema

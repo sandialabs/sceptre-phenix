@@ -15,6 +15,7 @@ has a matching config-file key and `PHENIX_*` env var):
 | `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
 | `--base-dir.injects` | `base-dir.injects` / `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Where `phenix workflow apply` stages `phenix-injects/` (as `<base-dir.injects>/<name>`). The server's value wins over the CLI's own unless the flag is given; see the `injects` step in [`workflow.md`](workflow.md). Use an absolute path |
 | `--base-dir.topologies` | `base-dir.topologies` / `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Where `phenix workflow apply NAME` looks up a bare topology directory name. Use an absolute path |
+| `--base-dir.builder-templates` | `base-dir.builder-templates` / `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Template files `phenix ui` reads at start as read-only Builder server collections (see [`builder/templates-and-icons.md`](builder/templates-and-icons.md#server-collections)). Use an absolute path |
 | `--mount-dir` | `mount-dir` / `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts (`phenix vm mount`, UI `vm-mount` feature) |
 | `--hostname-suffixes` | `hostname-suffixes` / `PHENIX_HOSTNAME_SUFFIXES` | `-minimega,-phenix` | Hostname suffixes to strip |
 | `--log.level` | `log.level` / `PHENIX_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` — use `--log.level=debug` for verbose troubleshooting output |
@@ -43,6 +44,9 @@ VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/
 disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
+For the Builder, scripts use the REST API below `/api/v1/builder/` (see
+[`builder.md`](builder.md)).
+
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
 ```bash
@@ -54,6 +58,24 @@ phenix config edit <kind>/<name> [--force]          # open in $EDITOR
 phenix config delete <kind>/<name> ...              # delete one or more specific configs by kind/name
 phenix config delete all [kind]                     # delete every stored config, or every config of one kind
 ```
+
+A config written as YAML (`phenix config get -o yaml`, `phenix config edit`,
+`GET /configs/{kind}/{name}` with `Accept: application/x-yaml`, and
+`POST /configs/download`) loads back as the stored config. phenix writes a
+string in double quotes when yaml.v3 cannot read it back plain: one that
+starts with a line break, or whose first line starts with a tab.
+
+Annotations are text, except `builder-doc` on a Topology: every JSON and YAML
+form shows it as a map of `digest`, `id` and `path` (see
+[`builder/published-documents.md`](builder/published-documents.md#the-builder-doc-reference)).
+Create and update refuse a Topology whose `builder-doc` is not valid, even
+with `--skip-validation`. `config edit` can change an annotation but cannot
+remove one, because annotation maps merge.
+
+`config create` takes files and directories, and walks directories
+recursively. It skips a Builder document, template file or package in a
+directory, and refuses one named on the command line (see
+[Builder documents and phenix config create](https://phenix.sceptre.dev/latest/builder/import-upload-download/#builder-documents-and-phenix-config-create)).
 
 ## `phenix experiment` — experiment lifecycle
 

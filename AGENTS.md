@@ -27,7 +27,7 @@ SCORCH, minimega integration, or cyber-range workflows, read
 configs, build scripts, overlays, or vmdb2 work, also read
 [`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md).
 For Builder routes, drafts, publishing, or code (the Builder rows below), also
-read `skills/phenix/references/builder.md`
+read [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md)
 and then the reference that its routing table names.
 Use code as final authority when guidance differs, and update the skills when
 behavior changes.
@@ -114,7 +114,7 @@ When changing a capability, inspect every applicable surface:
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
 | Log or error message text | Docs and skill text that quotes it, such as the Troubleshooting sections in `docs/content/` and `skills/phenix/references/` |
-| Builder behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder*.go`, `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/Builder.vue`, the `builder-*` e2e specs, `skills/phenix/references/builder.md`, and the reference its routing table names |
+| Builder behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder*.go`, `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/Builder.vue`, the `builder-*` e2e specs, [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md), and the reference its routing table names |
 
 Preserve persisted BoltDB data, RBAC migrations, and public API compatibility
 unless a breaking change is deliberate and documented. phēnix has no config
@@ -146,7 +146,7 @@ and pass it explicitly, for example
 | Config interfaces and fields | `src/go/types/interfaces/`, `src/go/types/version/` |
 | YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml`, one file per `apiVersion` holding the kinds stored at it: `v0` `Workflow`, `v1` `Topology`/`Experiment`/`Image`/`User`/`Role`, `v2` `Scenario` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
-| Builder | `skills/phenix/references/builder.md`, `src/go/api/builder/`, `src/go/web/builder*.go`, `src/js/src/builder/` |
+| Builder | [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md), `src/go/api/builder/`, `src/go/web/builder*.go`, `src/js/src/builder/` |
 | Narrative docs source | [`docs/`](docs/) |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
 | minimega commands and behavior | [API docs](https://sandia-minimega.github.io/minimega/reference/minimega/), [source](https://github.com/sandia-minimega/minimega) |

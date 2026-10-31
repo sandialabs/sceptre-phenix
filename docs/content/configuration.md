@@ -45,6 +45,17 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
+    `phenix config create` also takes a directory, and creates every
+    configuration file below it. It skips a [Builder](builder/index.md)
+    document in a directory, and refuses one named on the command line (see
+    [Builder documents and phenix config create](builder/import-upload-download.md#builder-documents-and-phenix-config-create)).
+
+The `metadata` section can also hold `annotations`: text values by key, such
+as the `topology` and `scenario` annotations of an [Experiment](#experiment).
+The exception is `builder-doc`, a map of `digest`, `id` and `path` that names
+the Builder diagram of a Topology (see
+[The builder-doc annotation](builder/administration.md#the-builder-doc-annotation)).
+
 ## Topology
 
 The `Topology` configuration is one of the core configuration types for
@@ -694,6 +705,12 @@ There are two ways to view a specific config:
    invalid, an error will be presented.
   ![screenshot](images/view_edit.png){: width=800 .center}
 
+### Topologies with a Builder diagram
+
+A topology with a [Builder](builder/index.md) diagram has the tag `builder`,
+and its `Edit` button opens the Builder, not the editor window (see
+[From the Configs page](builder/import-upload-download.md#from-the-configs-page)).
+
 ### Create a Config
 
 There are two ways to create a new config:
@@ -722,13 +739,13 @@ There are two ways to create a new config:
 The editor window allows direct editing of an existing or new config file.
 
 - From the keyboard, Tab stops on the editor once. Press Enter to type in it,
-  and Escape to stop typing (twice with Vim keybindings), so that Tab moves on.
+  and Escape to stop typing (twice in Vim mode), so that Tab moves on.
 
 - It is possible to edit a file as YAML or JSON by selecting the relevant radio
   button under `File Format`.
 
 - It is also possible to set keybindings to the Vim editor by enabling them with
-  the sliding selector under `Vim Keybindings`.
+  the sliding selector under `Vim Mode`.
   ![screenshot](images/edit_settings.png){: width=150 .center}
 
 #### New Config
@@ -766,13 +783,21 @@ experiment will not longer be presented in the `Experiments` tab.
 
 ## Environment Variables
 
-Phēnix supports environment variables in its configuration files. On creation
-of a new phēnix config, any environment variable placeholders found in the
-config are replaced with their corresponding values. Placeholders can be in the
-format `${VAR}` or `${VAR:default}`, where `VAR` is the environment variable
-name, and `default` is an optional default value to use if the variable is not
-set. If the environment variable is not found and no default is provided, the
-placeholder is replaced with an empty string.
+Phēnix supports environment variables in its configuration files. When the
+CLI reads a config file, such as with `phenix config create <file>`, it
+replaces each environment variable placeholder with the value of that
+variable. Placeholders can be in the format `${VAR}` or
+`${VAR:default}`, where `VAR` is the environment variable name, and `default`
+is an optional default value to use if the variable is not set. If the
+environment variable is not found and no default is provided, the placeholder
+is replaced with an empty string. A `$VAR` without braces is not a placeholder.
+
+!!! note
+    For a config sent to the REST API or the web UI (`POST /configs`,
+    `PUT /configs/{kind}/{name}` and the workflow endpoints), the server fills
+    in only `${BRANCH_NAME}`. It stores every other placeholder as written, so
+    a client cannot read the server environment through a config. The Builder
+    fills in no placeholders.
 
 Example config before parsing environment variables:
 
@@ -822,9 +847,8 @@ docker exec -it -e BRANCH_NAME=foobar phenix phenix exp create foobar -t topo -s
     Configs sent by `phenix workflow apply`, or to the
     `/workflow/configs/{branch}` and `/workflow/apply/{branch}` API endpoints,
     don't need `-e BRANCH_NAME`: phēnix sets `BRANCH_NAME` to the workflow
-    branch name itself, and fills in their other placeholders from the
-    server's own environment, so variables passed with `docker exec -e` don't
-    reach them. The command also copies the topology directory's
+    branch name itself. It keeps their other placeholders as written. The
+    command also copies the topology directory's
     `phenix-injects/` to `<base-dir.injects>/<name>` (by default
     `/phenix/injects/<name>`), so configs can reference injected files as
     `/phenix/injects/${BRANCH_NAME}/<file>`. See [Workflow](workflow.md).

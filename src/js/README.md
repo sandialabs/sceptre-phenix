@@ -65,8 +65,8 @@ creates or updates Topology, Scenario, or Experiment configs. A draft may
 update a stored Topology or Experiment only if the draft is tied to it.
 
 For the features, see the user documentation in
-`docs/content/builder/`. The developer
-reference is `skills/phenix/references/builder.md`.
+[`docs/content/builder/`](../../docs/content/builder/index.md). The developer
+reference is [`skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md).
 
 ## Code Details
 

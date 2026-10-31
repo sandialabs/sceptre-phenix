@@ -111,7 +111,7 @@ past the delay the UI waits for (`page.clock.runFor`), not a fixed
 
 Before you change the Builder (`src/builder/`, `src/components/builder/`,
 `src/views/Builder.vue`, or the `builder*` e2e specs), read
-`../../skills/phenix/references/builder.md`
+[`../../skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md)
 and then the reference that its routing table names.
 
 ## CI
