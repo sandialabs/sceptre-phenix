@@ -1,49 +1,97 @@
 <template>
   <div class="content">
     <!-- CREATE -->
-    <b-modal v-model="isCreateActive" @close="resetLocalUser" has-modal-card>
+    <b-modal
+      v-model="isCreateActive"
+      @close="resetLocalUser"
+      has-modal-card
+      aria-role="dialog"
+      aria-modal
+      aria-label="Create a New User"
+      close-button-aria-label="Close">
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
-          <p class="modal-card-title">Create a New User</p>
+          <h2 class="modal-card-title">Create a New User</h2>
         </header>
         <section class="modal-card-body">
           <b-field
             label="User Name"
+            label-for="create-user-username"
             :type="{ 'is-danger': userExists }"
             :message="{ 'User already exists': userExists }">
             <b-input
+              id="create-user-username"
+              :compat-fallthrough="false"
               ref="createUsername"
               type="text"
+              autocomplete="off"
               v-model="user.username"
               minlength="4"
               maxlength="32"
               autofocus></b-input>
           </b-field>
-          <b-field label="First Name">
-            <b-input type="text" v-model="user.first_name"></b-input>
+          <b-field label="First Name" label-for="create-user-first-name">
+            <b-input
+              id="create-user-first-name"
+              :compat-fallthrough="false"
+              type="text"
+              autocomplete="off"
+              v-model="user.first_name"></b-input>
           </b-field>
-          <b-field label="Last Name">
-            <b-input type="text" v-model="user.last_name"></b-input>
+          <b-field label="Last Name" label-for="create-user-last-name">
+            <b-input
+              id="create-user-last-name"
+              :compat-fallthrough="false"
+              type="text"
+              autocomplete="off"
+              v-model="user.last_name"></b-input>
           </b-field>
           <b-field
             label="Password"
-            :message="createModalErrors.passwordErrorMessage"
+            label-for="create-user-password"
             :type="createModalErrors.passwordErrorLevel">
             <b-input
+              id="create-user-password"
+              :compat-fallthrough="false"
               type="password"
+              autocomplete="new-password"
               minlength="8"
               maxlength="32"
+              :aria-invalid="
+                createModalErrors.passwordErrorMessage ? 'true' : null
+              "
+              :aria-describedby="
+                createModalErrors.passwordErrorMessage
+                  ? 'create-user-password-error'
+                  : null
+              "
               v-model="user.password"></b-input>
+            <template #message>
+              <span
+                v-if="createModalErrors.passwordErrorMessage"
+                id="create-user-password-error"
+                >{{ createModalErrors.passwordErrorMessage }}</span
+              >
+            </template>
           </b-field>
-          <b-field label="Confirm Password">
+          <b-field
+            label="Confirm Password"
+            label-for="create-user-confirm-password">
             <b-input
+              id="create-user-confirm-password"
+              :compat-fallthrough="false"
               type="password"
+              autocomplete="new-password"
               minlength="8"
               maxlength="32"
               v-model="user.confirmPassword"></b-input>
           </b-field>
-          <b-field label="Role">
-            <b-select v-model="user.role_name" expanded>
+          <b-field label="Role" label-for="create-user-role">
+            <b-select
+              id="create-user-role"
+              :compat-fallthrough="false"
+              v-model="user.role_name"
+              expanded>
               <option v-for="(r, i) in roleNames" :key="i">
                 {{ r }}
               </option>
@@ -52,22 +100,33 @@
           <!-- This padding isn't strictly necessary, but helps prevent tooltip from breaking view -->
           <b-field
             label="Resource Name(s)"
+            label-for="create-user-resource-names"
             grouped
             style="padding-bottom: 20px">
             <b-input
+              id="create-user-resource-names"
+              :compat-fallthrough="false"
               type="text"
+              autocomplete="off"
+              aria-describedby="create-user-resource-names-help"
               v-model="user.resource_names"
               expanded></b-input>
             <b-tooltip
-              label="resource names can include wildcards for broad
-                    assignment (ex. *inv*); they can also include `!` to not
-                    allow access to a resource (ex. !*inv*). VM and config
-                    names are namespaced (ex. exp1/vm1, Topology/foo) and `*`
-                    does not match `/`, so use patterns such as exp1/* or */vm1"
+              :label="resourceNamesHelp"
+              :triggers="['hover', 'focus']"
               type="is-light is-left"
               multilined>
-              <b-icon icon="question-circle"></b-icon>
+              <button
+                type="button"
+                class="users__help"
+                aria-label="Help for resource names"
+                aria-describedby="create-user-resource-names-help">
+                <b-icon icon="question-circle"></b-icon>
+              </button>
             </b-tooltip>
+            <span id="create-user-resource-names-help" class="is-sr-only">{{
+              resourceNamesHelp
+            }}</span>
           </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
@@ -81,30 +140,65 @@
       </div>
     </b-modal>
     <!-- EDIT -->
-    <b-modal v-model="isEditActive" @close="resetLocalUser" has-modal-card>
+    <b-modal
+      v-model="isEditActive"
+      @close="resetLocalUser"
+      has-modal-card
+      aria-role="dialog"
+      aria-modal
+      :aria-label="`User ${user.username}`"
+      close-button-aria-label="Close">
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
-          <p class="modal-card-title">User {{ user.username }}</p>
+          <h2 class="modal-card-title">User {{ user.username }}</h2>
         </header>
         <section class="modal-card-body">
-          <b-field label="First Name">
-            <b-input type="text" v-model="user.first_name" autofocus></b-input>
-          </b-field>
-          <b-field label="Last Name">
-            <b-input type="text" v-model="user.last_name"></b-input>
-          </b-field>
-          <b-field label="Password">
-            <b-input type="password" v-model="user.password"></b-input>
-          </b-field>
-          <b-field label="New Password">
+          <b-field label="First Name" label-for="edit-user-first-name">
             <b-input
+              id="edit-user-first-name"
+              :compat-fallthrough="false"
+              type="text"
+              autocomplete="off"
+              v-model="user.first_name"
+              autofocus></b-input>
+          </b-field>
+          <b-field label="Last Name" label-for="edit-user-last-name">
+            <b-input
+              id="edit-user-last-name"
+              :compat-fallthrough="false"
+              type="text"
+              autocomplete="off"
+              v-model="user.last_name"></b-input>
+          </b-field>
+          <!-- The user's current password. A password manager fills it only
+               when users edit their own account. -->
+          <b-field label="Password" label-for="edit-user-password">
+            <b-input
+              id="edit-user-password"
+              :compat-fallthrough="false"
               type="password"
+              :autocomplete="editingSelf ? 'current-password' : 'off'"
+              v-model="user.password"></b-input>
+          </b-field>
+          <b-field label="New Password" label-for="edit-user-new-password">
+            <b-input
+              id="edit-user-new-password"
+              :compat-fallthrough="false"
+              type="password"
+              autocomplete="new-password"
               minlength="8"
               maxlength="32"
               v-model="user.new_password"></b-input>
           </b-field>
-          <b-field v-if="roleAllowed('users', 'create')" label="Role">
-            <b-select v-model="user.role_name" expanded>
+          <b-field
+            v-if="roleAllowed('users', 'create')"
+            label="Role"
+            label-for="edit-user-role">
+            <b-select
+              id="edit-user-role"
+              :compat-fallthrough="false"
+              v-model="user.role_name"
+              expanded>
               <option v-for="(r, i) in roleNames" :key="i">
                 {{ r }}
               </option>
@@ -113,23 +207,34 @@
           <!-- This padding isn't strictly necessary, but helps prevent tooltip from breaking view -->
           <b-field
             label="Resource Name(s)"
+            label-for="edit-user-resource-names"
             grouped
             style="padding-bottom: 20px"
             v-if="roleAllowed('users', 'create')">
             <b-input
+              id="edit-user-resource-names"
+              :compat-fallthrough="false"
               type="text"
+              autocomplete="off"
+              aria-describedby="edit-user-resource-names-help"
               v-model="user.resource_names"
               expanded></b-input>
             <b-tooltip
-              label="resource names can include wildcards for broad
-                    assignment (ex. *inv*); they can also include `!` to not
-                    allow access to a resource (ex. !*inv*). VM and config
-                    names are namespaced (ex. exp1/vm1, Topology/foo) and `*`
-                    does not match `/`, so use patterns such as exp1/* or */vm1"
+              :label="resourceNamesHelp"
+              :triggers="['hover', 'focus']"
               type="is-light is-left"
               multilined>
-              <b-icon icon="question-circle"></b-icon>
+              <button
+                type="button"
+                class="users__help"
+                aria-label="Help for resource names"
+                aria-describedby="edit-user-resource-names-help">
+                <b-icon icon="question-circle"></b-icon>
+              </button>
             </b-tooltip>
+            <span id="edit-user-resource-names-help" class="is-sr-only">{{
+              resourceNamesHelp
+            }}</span>
           </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
@@ -140,15 +245,27 @@
       </div>
     </b-modal>
     <!-- TOKEN -->
-    <b-modal v-model="isNewTokenActive" @close="resetLocalUser" has-modal-card>
+    <b-modal
+      v-model="isNewTokenActive"
+      @close="resetLocalUser"
+      has-modal-card
+      aria-role="dialog"
+      aria-modal
+      :aria-label="`New token for ${user.username}`"
+      close-button-aria-label="Close">
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
-          <p class="modal-card-title">New token for {{ user.username }}</p>
+          <h2 class="modal-card-title">New token for {{ user.username }}</h2>
         </header>
         <section class="modal-card-body">
           <template v-if="user.token">
-            <b-field label="Token">
-              <b-input type="text" v-model="user.token" readonly></b-input>
+            <b-field label="Token" label-for="token-value">
+              <b-input
+                id="token-value"
+                :compat-fallthrough="false"
+                type="text"
+                v-model="user.token"
+                readonly></b-input>
             </b-field>
 
             <b-button
@@ -158,25 +275,49 @@
               @click="copy">
             </b-button>
 
-            <b-field label="Expires">
-              <b-input type="text" v-model="user.token_exp" readonly></b-input>
+            <b-field label="Expires" label-for="token-expires">
+              <b-input
+                id="token-expires"
+                :compat-fallthrough="false"
+                type="text"
+                v-model="user.token_exp"
+                readonly></b-input>
             </b-field>
           </template>
           <template v-else>
-            <b-field label="Description">
+            <b-field label="Description" label-for="token-description">
               <b-input
+                id="token-description"
+                :compat-fallthrough="false"
                 type="text"
+                autocomplete="off"
                 v-model="user.token_desc"
                 autofocus></b-input>
             </b-field>
-            <b-field label="Lifetime (days)">
-              <b-input type="text" v-model="user.token_lifetime"></b-input>
+            <b-field label="Lifetime (days)" label-for="token-lifetime">
+              <b-input
+                id="token-lifetime"
+                :compat-fallthrough="false"
+                type="text"
+                autocomplete="off"
+                aria-describedby="token-lifetime-help"
+                v-model="user.token_lifetime"></b-input>
             </b-field>
             <b-tooltip
-              label="number of days this token should be valid"
+              :label="tokenLifetimeHelp"
+              :triggers="['hover', 'focus']"
               type="is-light is-right">
-              <b-icon icon="question-circle"></b-icon>
+              <button
+                type="button"
+                class="users__help"
+                aria-label="Help for lifetime"
+                aria-describedby="token-lifetime-help">
+                <b-icon icon="question-circle"></b-icon>
+              </button>
             </b-tooltip>
+            <span id="token-lifetime-help" class="is-sr-only">{{
+              tokenLifetimeHelp
+            }}</span>
           </template>
         </section>
         <footer v-if="!user.token" class="modal-card-foot buttons is-right">
@@ -225,12 +366,14 @@
         :default-sort-direction="table.defaultSortDirection"
         default-sort="username">
         <b-table-column field="username" label="User" sortable v-slot="props">
+          <!-- A button, so the keyboard reaches it too. -->
           <b-tooltip label="change user settings" type="is-dark">
-            <div class="field">
-              <div @click="editUser(props.row.username)">
-                {{ props.row.username }}
-              </div>
-            </div>
+            <button
+              type="button"
+              class="users__name"
+              @click="editUser(props.row.username)">
+              {{ props.row.username }}
+            </button>
           </b-tooltip>
         </b-table-column>
         <b-table-column field="first_name" label="First Name" v-slot="props">
@@ -332,6 +475,10 @@
       this.getPasswordRequirements();
     },
     computed: {
+      // Whether the edit dialog shows the account of the signed-in user.
+      editingSelf() {
+        return this.user.username === usePhenixStore().username;
+      },
       // Intentionally restores the persisted pagination toggle as a side
       // effect on first access.
       /* eslint-disable vue/no-side-effects-in-computed-properties */
@@ -459,7 +606,7 @@
 
         if (!this.user.username) {
           this.$buefy.toast.open({
-            message: 'You must include an username',
+            message: 'You must include a username',
             type: 'is-warning',
             duration: 4000,
           });
@@ -760,31 +907,31 @@
             'Password must be longer than ' +
             this.passwordReqs.min_length +
             ' characters.';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
         if (!/[a-z]/.test(password) && this.passwordReqs.lowercase_req) {
           this.createModalErrors.passwordErrorMessage =
             'Password must contain a lowercase letter';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
         if (!/[A-Z]/.test(password) && this.passwordReqs.uppercase_req) {
           this.createModalErrors.passwordErrorMessage =
             'Password must contain an uppercase letter';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
         if (!/\d/.test(password) && this.passwordReqs.number_req) {
           this.createModalErrors.passwordErrorMessage =
             'Password must contain a number';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
         if (!/\W/.test(password) && this.passwordReqs.symbol_req) {
           this.createModalErrors.passwordErrorMessage =
             'Password must contain a symbol';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
 
@@ -809,6 +956,9 @@
 
     data() {
       return {
+        resourceNamesHelp:
+          'resource names can include wildcards for broad assignment (ex. *inv*); they can also include `!` to not allow access to a resource (ex. !*inv*). VM and config names are namespaced (ex. exp1/vm1, Topology/foo) and `*` does not match `/`, so use patterns such as exp1/* or */vm1',
+        tokenLifetimeHelp: 'number of days this token should be valid',
         roleNames: [],
         users: [],
         user: {},
@@ -834,3 +984,33 @@
     },
   };
 </script>
+
+<style scoped>
+  /* The name button looks like the text it replaces, and shows its focus. */
+  .users__name {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  /* The help icon is a button, so the keyboard can show its tooltip. */
+  .users__help {
+    display: inline-flex;
+    align-items: center;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: help;
+  }
+
+  /* Buefy fields keep their message slot; it shows only with an error. */
+  .modal-card :deep(.help:empty) {
+    display: none;
+  }
+</style>

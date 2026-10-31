@@ -3,15 +3,21 @@
     <b-modal v-model="expModal.active" @close="resetExpModal" has-modal-card>
       <div class="modal-card" style="width: 35em">
         <header class="modal-card-head">
-          <p class="modal-card-title">
+          <h2 class="modal-card-title">
             {{ expModal.vm.name ? expModal.vm.name : 'unknown' }}
-          </p>
+          </h2>
         </header>
         <section class="modal-card-body">
           <p>Host: {{ expModal.vm.host }}</p>
           <p>Description: {{ expModal.vm.description || 'unknown' }}</p>
-          <p>IP: {{ formatStringify(expModal.vm.ipv4) }}</p>
-          <p>CPU(s): {{ expModal.vm.cpus }}</p>
+          <p>
+            <abbr title="Internet Protocol">IP</abbr>:
+            {{ formatStringify(expModal.vm.ipv4) }}
+          </p>
+          <p>
+            <abbr title="central processing unit">CPU</abbr>(s):
+            {{ expModal.vm.cpus }}
+          </p>
           <p>Memory: {{ formatRAM(expModal.vm.ram) }}</p>
           <p>Disk: {{ expModal.vm.disk }}</p>
           <p>Uptime: {{ formatUptime(expModal.vm.uptime) }}</p>
@@ -26,7 +32,10 @@
           </p>
           <p>Network(s): {{ formatStringify(expModal.vm.networks) }}</p>
           <p>Taps: {{ formatStringify(expModal.vm.taps) }}</p>
-          <p>CC Active: {{ expModal.vm.ccActive }}</p>
+          <p>
+            <abbr title="command and control">CC</abbr> Active:
+            {{ expModal.vm.ccActive }}
+          </p>
           <div v-if="expModal.snapshots">
             Snapshots:
             <br />
@@ -38,10 +47,13 @@
                 v-if="roleAllowed('vms/snapshots', 'update', expModal.fullName)"
                 label="restore this snapshot"
                 type="is-light is-right">
-                <b-icon
-                  class="is-clickable"
-                  icon="play-circle"
-                  @click="restoreSnapshot(expModal.vm.name, snap)"></b-icon>
+                <button
+                  type="button"
+                  class="plain-button"
+                  :aria-label="`Restore snapshot ${snap}`"
+                  @click="restoreSnapshot(expModal.vm.name, snap)">
+                  <b-icon icon="play-circle"></b-icon>
+                </button>
               </b-tooltip>
               {{ snap }}
             </div>
@@ -58,13 +70,13 @@
                 v-if="forward.canDelete"
                 label="delete this port forward"
                 type="is-light is-right">
-                <b-icon
-                  class="isClickable"
-                  icon="trash"
-                  size="is-small"
-                  @click="
-                    deletePortForward(expModal.vm.name, forward)
-                  "></b-icon>
+                <button
+                  type="button"
+                  class="plain-button"
+                  :aria-label="`Delete port forward ${forward.desc}`"
+                  @click="deletePortForward(expModal.vm.name, forward)">
+                  <b-icon icon="trash" size="is-small"></b-icon>
+                </button>
               </b-tooltip>
             </div>
           </div>
@@ -291,17 +303,29 @@
       has-modal-card>
       <div class="modal-card" style="width: 30em">
         <header class="modal-card-head">
-          <p class="modal-card-title">Create New Port Forward</p>
+          <h2 class="modal-card-title">Create New Port Forward</h2>
         </header>
         <section class="modal-card-body">
-          <b-field label="Source Port">
-            <b-input type="text" v-model="portForwardModal.srcPort"></b-input>
+          <b-field label="Source Port" label-for="port-forward-src-port">
+            <b-input
+              id="port-forward-src-port"
+              :compat-fallthrough="false"
+              type="text"
+              v-model="portForwardModal.srcPort"></b-input>
           </b-field>
-          <b-field label="Destination Host">
-            <b-input type="text" v-model="portForwardModal.dstHost"></b-input>
+          <b-field label="Destination Host" label-for="port-forward-dst-host">
+            <b-input
+              id="port-forward-dst-host"
+              :compat-fallthrough="false"
+              type="text"
+              v-model="portForwardModal.dstHost"></b-input>
           </b-field>
-          <b-field label="Destination Port">
-            <b-input type="text" v-model="portForwardModal.dstPort"></b-input>
+          <b-field label="Destination Port" label-for="port-forward-dst-port">
+            <b-input
+              id="port-forward-dst-port"
+              :compat-fallthrough="false"
+              type="text"
+              v-model="portForwardModal.dstPort"></b-input>
           </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
@@ -314,14 +338,17 @@
     <b-modal v-model="vlanModal.active" has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
-          <p class="modal-card-title">Change the VLAN</p>
+          <h2 class="modal-card-title">
+            Change the <abbr title="virtual local area network">VLAN</abbr>
+          </h2>
         </header>
         <section class="modal-card-body">
           Move interface {{ vlanModal.vmNetIndex }} from
           {{ formatLowercase(vlanModal.vmFromNet) }} to a new one for the
-          {{ vlanModal.active ? vlanModal.vmName : 'unknown' }} VM. <br /><br />
+          {{ vlanModal.active ? vlanModal.vmName : 'unknown' }}
+          <abbr title="virtual machine">VM</abbr>. <br /><br />
           <b-field>
-            <b-select v-model="vlan" expanded>
+            <b-select aria-label="New VLAN" v-model="vlan" expanded>
               <option value="0">disconnect</option>
               <option
                 v-for="(n, index) in experiment.vlans"
@@ -355,7 +382,9 @@
       ref="reDeploy">
       <div class="modal-card" style="width: auto">
         <header class="modal-card-head">
-          <p class="modal-card-title">Redeploy the VMs</p>
+          <h2 class="modal-card-title">
+            Redeploy the <abbr title="virtual machines">VMs</abbr>
+          </h2>
         </header>
         <section class="modal-card-body">
           <div v-if="redeployModal.vm.length > 0">
@@ -364,9 +393,12 @@
                 <hr v-if="parseInt(index) > 0" />
                 Modify current settings and redeploy
                 {{ vmI.name }} <br /><br />
-                CPUs:
+                <abbr title="central processing units">CPUs</abbr>:
                 <b-tooltip label="menu for assigning cpus" type="is-dark">
-                  <b-select v-model="vmI.cpus" expanded>
+                  <b-select
+                    :aria-label="`CPUs for ${vmI.name}`"
+                    v-model="vmI.cpus"
+                    expanded>
                     <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
@@ -379,7 +411,10 @@
                 </b-tooltip>
                 Memory:
                 <b-tooltip label="menu for assigning memory" type="is-dark">
-                  <b-select v-model="vmI.ram" expanded>
+                  <b-select
+                    :aria-label="`Memory for ${vmI.name}`"
+                    v-model="vmI.ram"
+                    expanded>
                     <option value="512">512 MB</option>
                     <option value="1024">1 GB</option>
                     <option value="2048">2 GB</option>
@@ -393,7 +428,9 @@
                 <br /><br />
                 Disk:
                 <b-tooltip :label="getDiskToolTip(vmI.disk)" type="is-dark">
-                  <b-select v-model="vmI.disk">
+                  <b-select
+                    :aria-label="`Disk for ${vmI.name}`"
+                    v-model="vmI.disk">
                     <option v-for="(d, index) in disks" :key="index" :value="d">
                       {{ getBaseName(d) }}
                     </option>
@@ -404,7 +441,10 @@
                 <b-tooltip
                   label="menu for replicating injections"
                   type="is-dark">
-                  <b-select v-model="vmI.inject" expanded>
+                  <b-select
+                    :aria-label="`Replicate original injections for ${vmI.name}`"
+                    v-model="vmI.inject"
+                    expanded>
                     <option value="true">Yes</option>
                     <option value="false">No</option>
                   </b-select>
@@ -432,22 +472,25 @@
       ref="diskImage">
       <div class="modal-card" style="width: auto">
         <header class="modal-card-head">
-          <p class="modal-card-title">Create a Disk Image</p>
+          <h2 class="modal-card-title">Create a Disk Image</h2>
         </header>
         <section class="modal-card-body">
           <div v-if="diskImageModal.vm.length > 0">
             <div v-for="(vmI, index) in diskImageModal.vm" :key="index">
               <div>
-                <hr
-                  v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
-                Create disk image of the {{ vmI.name }} VM with filename:
+                <hr v-if="parseInt(index) > 0" />
+                Create disk image of the {{ vmI.name }}
+                <abbr title="virtual machine">VM</abbr> with filename:
                 <br /><br />
                 <b-field
                   :type="vmI.nameErrType"
                   :message="vmI.nameErrMsg"
                   autofocus>
-                  <b-input type="text" v-model="vmI.filename" focus></b-input>
+                  <b-input
+                    :aria-label="`Disk image filename for ${vmI.name}`"
+                    type="text"
+                    v-model="vmI.filename"
+                    focus></b-input>
                 </b-field>
               </div>
             </div>
@@ -473,22 +516,25 @@
       ref="memorySnapshot">
       <div class="modal-card" style="width: auto">
         <header class="modal-card-head">
-          <p class="modal-card-title">Create memory snapshot</p>
+          <h2 class="modal-card-title">Create memory snapshot</h2>
         </header>
         <section class="modal-card-body">
           <div v-if="memorySnapshotModal.vm.length > 0">
             <div v-for="(vmI, index) in memorySnapshotModal.vm" :key="index">
               <div>
-                <hr
-                  v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
+                <hr v-if="parseInt(index) > 0" />
                 Create a memory snapshot for the
-                {{ vmI.name }} VM with filename: <br /><br />
+                {{ vmI.name }} <abbr title="virtual machine">VM</abbr> with
+                filename: <br /><br />
                 <b-field
                   :type="vmI.nameErrType"
                   :message="vmI.nameErrMsg"
                   autofocus>
-                  <b-input type="text" v-model="vmI.filename" focus></b-input>
+                  <b-input
+                    :aria-label="`Memory snapshot filename for ${vmI.name}`"
+                    type="text"
+                    v-model="vmI.filename"
+                    focus></b-input>
                 </b-field>
               </div>
             </div>
@@ -513,7 +559,7 @@
     <b-modal v-model="appsModal.active" @close="resetAppsModal" has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
-          <p class="modal-card-title">phēnix Apps</p>
+          <h2 class="modal-card-title">phēnix Apps</h2>
         </header>
         <section class="modal-card-body">
           <div v-if="appsModal.triggerable.length">
@@ -556,9 +602,9 @@
       has-modal-card>
       <div class="modal-card" style="width: 50em">
         <header class="modal-card-head x-modal-dark">
-          <p class="modal-card-title x-config-text">
+          <h2 class="modal-card-title x-config-text">
             {{ fileViewerModal.title }}
-          </p>
+          </h2>
         </header>
         <section class="modal-card-body x-modal-dark">
           <div class="control">
@@ -583,16 +629,18 @@
       ref="opticalDisc">
       <div class="modal-card" style="width: auto">
         <header class="modal-card-head">
-          <p class="modal-card-title">
+          <h2 class="modal-card-title">
             Change Optical Disc for {{ opticalDiscModal.vmName }}
-          </p>
+          </h2>
         </header>
         <section class="modal-card-body pt-3">
-          <b-field label="Optical Disc:">
+          <b-field label="Optical Disc:" label-for="optical-disc-select">
             <b-tooltip
               :label="getDiskToolTip(opticalDiscModal.disc, 'select ISO')"
               type="is-dark">
               <b-select
+                id="optical-disc-select"
+                :compat-fallthrough="false"
                 :value="opticalDiscModal.disc"
                 @update:modelValue="(value) => (opticalDiscModal.disc = value)">
                 <option v-for="(d, index) in disks" :key="index" :value="d">
@@ -628,18 +676,20 @@
           >Scenario: {{ experiment.scenario }}</span
         >
       </div>
-      <div
-        class="level-right is-clickable"
+      <button
+        type="button"
+        class="level-right plain-button"
         v-if="experiment.scenario"
         style="max-width: 50%"
+        aria-haspopup="dialog"
         @click="getApps()">
         <span style="font-weight: bold">Apps:</span>&nbsp;
-        <div style="display: flex; flex-wrap: wrap; gap: 4px">
+        <span style="display: flex; flex-wrap: wrap; gap: 4px">
           <b-tag v-for="(a, index) in experiment.apps" :key="index">
             {{ a }}
           </b-tag>
-        </div>
-      </div>
+        </span>
+      </button>
     </div>
     <b-field position="is-right" grouped>
       <!-- Multi-VM options shown next to search -->
@@ -653,6 +703,7 @@
           <b-field>
             <b-tooltip label="start" type="is-light">
               <b-button
+                aria-label="Start selected VMs"
                 class="button is-success"
                 icon-left="play"
                 @click="processMultiVmAction(vmActions.start)">
@@ -804,27 +855,6 @@
               v-if="
                 vmSelectedArray.every((vm) =>
                   roleAllowed(
-                    'vms/restart',
-                    'update',
-                    experiment.name + '/' + vm,
-                  ),
-                )
-              "
-              label="restart"
-              type="is-light">
-              <b-button
-                aria-label="Restart selected VMs"
-                class="button is-success"
-                icon-left="sync-alt"
-                @click="processMultiVmAction(vmActions.restart)">
-              </b-button>
-            </b-tooltip>
-          </b-field>
-          <b-field>
-            <b-tooltip
-              v-if="
-                vmSelectedArray.every((vm) =>
-                  roleAllowed(
                     'vms/shutdown',
                     'update',
                     experiment.name + '/' + vm,
@@ -892,6 +922,7 @@
         <b-field v-if="activeTab == 1">
           <b-tooltip label="search on a specific category" type="is-light">
             <b-select
+              aria-label="Filter files by category"
               :value="filesTable.category"
               @update:modelValue="(value) => assignCategory(value)"
               placeholder="All Categories">
@@ -943,6 +974,7 @@
             <router-link
               v-if="roleAllowed('experiments', 'get', experiment.name)"
               class="button is-light"
+              aria-label="View state of health"
               :to="{
                 name: 'soh',
                 params: { id: $route.params.id },
@@ -956,6 +988,7 @@
             <router-link
               v-if="roleAllowed('experiments', 'get', experiment.name)"
               class="button is-light"
+              aria-label="View SCORCH runs"
               :to="{
                 name: 'scorchruns',
                 params: { id: $route.params.id },
@@ -975,7 +1008,10 @@
               position="is-bottom-left"
               style="margin-right: 1rem">
               <template #trigger>
-                <b-button type="is-light" icon-left="columns" />
+                <b-button
+                  aria-label="Select visible columns"
+                  type="is-light"
+                  icon-left="columns" />
               </template>
               <b-dropdown-item
                 v-for="toggle in columnToggles"
@@ -998,6 +1034,10 @@
     <div style="margin-top: -4em">
       <b-tabs v-model="activeTab">
         <b-tab-item label="VMs" icon="desktop">
+          <template #header>
+            <b-icon icon="desktop" />
+            <span><abbr title="virtual machines">VMs</abbr></span>
+          </template>
           <b-table
             :data="experiment.vms"
             :paginated="table.isPaginated"
@@ -1026,7 +1066,9 @@
             <b-table-column field="multiselect" label="">
               <template v-slot:header>
                 <b-tooltip label="Select/Unselect All" type="is-dark">
-                  <b-checkbox v-model="checkAll"></b-checkbox>
+                  <b-checkbox v-model="checkAll"
+                    ><span class="is-sr-only">Select all VMs</span></b-checkbox
+                  >
                 </b-tooltip>
               </template>
               <template v-slot:default="props">
@@ -1035,7 +1077,11 @@
                     <b-checkbox
                       :disabled="props.row.external"
                       v-model="vmSelectedArray"
-                      :native-value="props.row.name"></b-checkbox>
+                      :native-value="props.row.name"
+                      ><span class="is-sr-only"
+                        >Select {{ props.row.name }}</span
+                      ></b-checkbox
+                    >
                   </div>
                 </template>
                 <template v-else> BUSY </template>
@@ -1058,15 +1104,14 @@
                   )
                 ">
                 <b-tooltip label="start/stop/redeploy the vm" type="is-dark">
-                  <span
-                    class="tag is-medium is-clickable"
-                    :class="decorator(props.row.state, props.row.busy)">
-                    <div class="field">
-                      <div @click="getInfo(props.row)">
-                        {{ props.row.name }}
-                      </div>
-                    </div>
-                  </span>
+                  <button
+                    type="button"
+                    class="tag is-medium plain-button"
+                    :class="decorator(props.row.state, props.row.busy)"
+                    aria-haspopup="dialog"
+                    @click="getInfo(props.row)">
+                    {{ props.row.name }}
+                  </button>
                 </b-tooltip>
               </template>
               <template v-else-if="props.row.external">
@@ -1078,19 +1123,17 @@
               </template>
               <template v-else>
                 <b-tooltip label="get info for the vm" type="is-dark">
-                  <span
-                    class="tag is-medium"
-                    :class="decorator(props.row.running, !props.row.busy)">
-                    <div class="field">
-                      <div
-                        @click="
-                          expModal.active = true;
-                          expModal.vm = props.row;
-                        ">
-                        {{ props.row.name }}
-                      </div>
-                    </div>
-                  </span>
+                  <button
+                    type="button"
+                    class="tag is-medium plain-button"
+                    :class="decorator(props.row.running, !props.row.busy)"
+                    aria-haspopup="dialog"
+                    @click="
+                      expModal.active = true;
+                      expModal.vm = props.row;
+                    ">
+                    {{ props.row.name }}
+                  </button>
                 </b-tooltip>
               </template>
               <section v-if="props.row.busy">
@@ -1111,6 +1154,7 @@
               <template v-if="props.row.external">
                 <img
                   :src="getVmScreenshot(props.row)"
+                  :alt="getVmScreenshotAlt(props.row)"
                   width="200"
                   height="150" />
               </template>
@@ -1119,9 +1163,13 @@
                   (props.row.running && !props.row.busy) ||
                   (props.row.delayed_start && props.row.state == 'BUILDING')
                 ">
-                <a :href="vncLoc(props.row)" target="_blank">
+                <a
+                  :href="vncLoc(props.row)"
+                  target="_blank"
+                  :aria-label="vncLinkLabel(props.row)">
                   <img
                     :src="getVmScreenshot(props.row)"
+                    alt=""
                     :width="props.row.screenshot ? undefined : 200"
                     :height="props.row.screenshot ? undefined : 150" />
                 </a>
@@ -1132,6 +1180,7 @@
                   type="is-dark">
                   <img
                     :src="getVmScreenshot(props.row)"
+                    :alt="getVmScreenshotAlt(props.row)"
                     width="200"
                     height="150" />
                 </b-tooltip>
@@ -1139,6 +1188,7 @@
               <template v-else>
                 <img
                   :src="getVmScreenshot(props.row)"
+                  :alt="getVmScreenshotAlt(props.row)"
                   width="200"
                   height="150" />
               </template>
@@ -1172,6 +1222,9 @@
               field="ipv4"
               label="IP"
               width="150">
+              <template #header>
+                <abbr title="Internet Protocol">IP</abbr>
+              </template>
               <template v-slot:default="props">
                 <template
                   v-if="
@@ -1187,13 +1240,16 @@
                     :label="updateCaptureLabel(props.row)"
                     type="is-dark">
                     <div class="field">
-                      <div
+                      <button
                         v-for="(ip, index) in props.row.ipv4"
+                        type="button"
+                        class="plain-button cell-item"
                         :class="tapDecorator(props.row.captures, index)"
                         :key="index"
+                        :aria-label="`${ip}, ${captureLabel(props.row, index)}`"
                         @click="handlePcap(props.row, index)">
                         {{ ip }}
-                      </div>
+                      </button>
                     </div>
                   </b-tooltip>
                 </template>
@@ -1219,9 +1275,12 @@
                 ">
                 <b-tooltip label="change vlan(s)" type="is-dark">
                   <div class="field">
-                    <div
+                    <button
                       v-for="(n, index) in props.row.networks"
+                      type="button"
+                      class="plain-button cell-item"
                       :key="index"
+                      :aria-label="`${formatLowercase(n)}, change VLAN`"
                       @click="
                         vlanModal.active = true;
                         vlanModal.vmName = props.row.name;
@@ -1230,7 +1289,7 @@
                         vlanModal.vmNetIndex = index;
                       ">
                       {{ formatLowercase(n) }}
-                    </div>
+                    </button>
                   </div>
                 </b-tooltip>
               </template>
@@ -1257,13 +1316,16 @@
                   :label="updateCaptureLabel(props.row)"
                   type="is-dark">
                   <div class="field">
-                    <div
+                    <button
                       v-for="(t, index) in props.row.taps"
+                      type="button"
+                      class="plain-button cell-item"
                       :class="tapDecorator(props.row.captures, index)"
                       :key="index"
+                      :aria-label="`${formatLowercase(t)}, ${captureLabel(props.row, index)}`"
                       @click="handlePcap(props.row, index)">
                       {{ formatLowercase(t) }}
-                    </div>
+                    </button>
                   </div>
                 </b-tooltip>
               </template>
@@ -1288,14 +1350,18 @@
               centered
               v-slot="props">
               <b-tooltip label="View/Edit Labels" type="is-dark">
-                <div @click="showTagsModal(props.row)" class="is-clickable">
-                  <font-awesome-layers full-width>
+                <button
+                  type="button"
+                  class="plain-button"
+                  :aria-label="`View or edit labels for ${props.row.name} (${tagCount(props.row.tags)})`"
+                  @click="showTagsModal(props.row)">
+                  <font-awesome-layers full-width aria-hidden="true">
                     <font-awesome-icon icon="tag" />
                     <font-awesome-layers-text
                       counter
                       :value="tagCount(props.row.tags)" />
                   </font-awesome-layers>
-                </div>
+                </button>
               </b-tooltip>
             </b-table-column>
           </b-table>
@@ -1344,11 +1410,13 @@
             <b-table-column field="name" label="Name" sortable v-slot="props">
               <template v-if="props.row.plainText">
                 <b-tooltip label="view file" type="is-dark">
-                  <div class="field is-clickable">
-                    <div @click="viewFile(props.row)">
-                      {{ props.row.name }}
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    class="plain-button"
+                    aria-haspopup="dialog"
+                    @click="viewFile(props.row)">
+                    {{ props.row.name }}
+                  </button>
                 </b-tooltip>
               </template>
               <template v-else>
@@ -1357,14 +1425,15 @@
             </b-table-column>
             <b-table-column field="path" label="Path" centered v-slot="props">
               <b-tooltip
-                :label="
-                  '/phenix/images/' +
-                  experiment.name +
-                  '/files/' +
-                  props.row.path
-                "
-                type="is-dark">
-                <b-icon icon="info-circle" size="is-small" />
+                :label="filePath(props.row)"
+                type="is-dark"
+                :triggers="['hover', 'focus']">
+                <button
+                  type="button"
+                  class="plain-button"
+                  :aria-label="`Path: ${filePath(props.row)}`">
+                  <b-icon icon="info-circle" size="is-small" />
+                </button>
               </b-tooltip>
             </b-table-column>
             <b-table-column field="categories" label="Category" v-slot="props">
@@ -1399,6 +1468,7 @@
               centered
               v-slot="props">
               <b-button
+                :aria-label="`Download ${props.row.name}`"
                 class="button is-light is-small action"
                 icon-left="file-download"
                 @click="
@@ -1424,6 +1494,10 @@
           </b-field>
         </b-tab-item>
         <b-tab-item label="VNC" icon="arrow-pointer">
+          <template #header>
+            <b-icon icon="arrow-pointer" />
+            <span><abbr title="Virtual Network Computing">VNC</abbr></span>
+          </template>
           <b-field
             label="Zoom Level"
             style="width: 300px; margin-left: 32px"
@@ -1451,23 +1525,23 @@
             ">
             <template v-if="vncVms.length">
               <div v-for="vm in vncVms" :key="vm.name">
-                <a :href="vncLoc(vm)" target="_blank">
+                <a
+                  :href="vncLoc(vm)"
+                  target="_blank"
+                  :aria-label="vncLinkLabel(vm)">
                   <img
                     :src="getVmScreenshot(vm)"
+                    alt=""
                     :width="vncWidth"
                     style="display: block" />
                 </a>
-                <a
-                  style="
-                    color: whitesmoke;
-                    display: block;
-                    background-color: grey;
-                    text-align: center;
-                    padding: 2px 0px;
-                  "
-                  @click="getInfo(vm)"
-                  >{{ vm.name }}</a
-                >
+                <button
+                  type="button"
+                  class="plain-button vnc-vm-name"
+                  aria-haspopup="dialog"
+                  @click="getInfo(vm)">
+                  {{ vm.name }}
+                </button>
               </div>
             </template>
             <template v-else>Your search turned up empty!</template>
@@ -1480,6 +1554,7 @@
               style="font-family: 'Courier New'"
               readonly
               rows="40"
+              aria-label="Netflow data"
               v-model="netflow.data"></textarea>
           </div>
         </b-tab-item>
@@ -1629,6 +1704,29 @@
             token: usePhenixStore().token,
           },
         }).href;
+      },
+
+      getVmScreenshotAlt(vm) {
+        if (vm.external) {
+          return 'External node';
+        } else if (vm.running && !vm.busy && !vm.screenshot) {
+          return 'Screenshot not available';
+        } else if (vm.delayed_start && vm.state == 'BUILDING') {
+          return 'Virtual machine delayed start';
+        } else if (vm.running && !vm.busy && vm.screenshot) {
+          return `Screenshot of VM ${vm.name}`;
+        } else if (vm.busy) {
+          return 'Screenshot not available';
+        }
+        return 'Virtual machine not running';
+      },
+
+      vncLinkLabel(vm) {
+        return `Open console for VM ${vm.name} (opens in new tab)`;
+      },
+
+      filePath(file) {
+        return `/phenix/images/${this.experiment.name}/files/${file.path}`;
       },
 
       getVmScreenshot(vm) {
@@ -3732,6 +3830,12 @@
           : 'stop packet capture';
       },
 
+      captureLabel(vm, iface) {
+        return isInterfaceCapturing(vm.captures, iface)
+          ? 'stop packet capture'
+          : 'start packet capture';
+      },
+
       notImplemented() {
         this.$buefy.dialog.alert({
           title: 'Not Implemented',
@@ -4166,5 +4270,37 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  .plain-button {
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  button.plain-button:not(.tag) {
+    padding: 0;
+    background: none;
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    text-align: inherit;
+  }
+
+  button.plain-button.is-success:not(.tag) {
+    color: #caefde;
+  }
+
+  .cell-item {
+    display: block;
+  }
+
+  button.plain-button.vnc-vm-name {
+    display: block;
+    width: 100%;
+    padding: 2px 0;
+    background-color: #4d4d4d;
+    color: whitesmoke;
+    text-align: center;
   }
 </style>

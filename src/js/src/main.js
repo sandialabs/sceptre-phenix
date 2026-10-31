@@ -3,6 +3,7 @@ import { createPinia } from 'pinia';
 
 import './assets/main.scss';
 import Buefy from 'buefy';
+import buefyA11y from './plugins/buefyA11y.js';
 
 /* import the fontawesome core */
 import { library } from '@fortawesome/fontawesome-svg-core';
@@ -53,5 +54,6 @@ app.use(Buefy, {
   defaultIconPack: 'fas',
   defaultProgrammaticPromise: true,
 });
+app.use(buefyA11y);
 
 app.mount('#app');

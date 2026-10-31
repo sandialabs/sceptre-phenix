@@ -4,14 +4,22 @@ import { ToastProgrammatic as Toast } from 'buefy';
 
 import { tokenExpired, usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
+import { routeTitle } from '@/utils/pageTitle.js';
 
-/** A page's title (WCAG 2.4.2): the most specific part first, then the app. */
-export function pageTitle(...parts) {
-  return [...parts.filter(Boolean), 'phēnix'].join(' - ');
-}
+export { pageTitle } from '@/utils/pageTitle.js';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  // Back and forward restore the saved position. A link such as
+  // /glossary#vlan goes to its term. Other navigation keeps the position.
+  scrollBehavior(to, _, savedPosition) {
+    if (savedPosition) {
+      return savedPosition;
+    }
+    if (to.hash) {
+      return { el: to.hash };
+    }
+  },
   routes: [
     {
       path: '/',
@@ -39,7 +47,7 @@ const router = createRouter({
     {
       path: '/experiment/:id',
       name: 'experiment',
-      meta: { title: 'Experiment' },
+      meta: { title: 'Experiment', titleParam: 'id' },
       component: () => import('@/views/experiment/Base.vue'),
     },
     {
@@ -93,13 +101,13 @@ const router = createRouter({
     {
       path: '/scorch/:id',
       name: 'scorchruns',
-      meta: { title: 'SCORCH runs' },
+      meta: { title: 'SCORCH runs', titleParam: 'id' },
       component: () => import('@/views/ScorchRuns.vue'),
     },
     {
       path: '/soh/:id',
       name: 'soh',
-      meta: { title: 'State of health' },
+      meta: { title: 'State of health', titleParam: 'id' },
       component: () => import('@/views/StateOfHealth.vue'),
     },
     {
@@ -113,6 +121,12 @@ const router = createRouter({
       name: 'tunneler',
       meta: { title: 'Tunneler' },
       component: () => import('@/views/Tunneler.vue'),
+    },
+    {
+      path: '/glossary',
+      name: 'glossary',
+      meta: { title: 'Glossary' },
+      component: () => import('@/views/Glossary.vue'),
     },
 
     {
@@ -251,9 +265,10 @@ router.beforeEach(async (to, _, next) => {
     }
   }
 });
-// Give every route its own document title (WCAG 2.4.2 Page Titled).
+// Give every route its own document title (WCAG 2.4.2 Page Titled), with the
+// name of the item it shows (WCAG 2.4.8 Location).
 router.afterEach((to) => {
-  document.title = pageTitle(to.meta?.title);
+  document.title = routeTitle(to);
 });
 
 export default router;

@@ -128,8 +128,8 @@ no `config.yaml` or restart involved.
 | Setting | Default | Description |
 | :--- | :--- | :--- |
 | Log out idle users | Disabled | Enables the idle timeout. |
-| Idle timeout (minutes) | `30` | Minutes of inactivity before an idle user is logged out. |
-| Warning before logout (minutes) | `3` | How long before logout to warn the user. |
+| Idle timeout (minutes) | `30` | Minutes of inactivity before an idle user is logged out. The minimum is `0.5`. |
+| Warning before logout (minutes) | `3` | How long before logout to warn the user. This value must be less than the idle timeout. |
 
 ## phēnix Apps Environment Variables
 

@@ -7,7 +7,9 @@
           type="is-light is-right"
           :delay="1000">
           <button
+            type="button"
             class="button is-dark"
+            aria-label="Return to previous loop"
             @click="rewinder(exp, run)"
             :disabled="loop == 0">
             <b-icon icon="history" />
@@ -15,17 +17,18 @@
         </b-tooltip>
       </div>
       <div class="column has-text-centered">
-        <span style="font-weight: bold; font-size: x-large" justify="center"
-          >Experiment: {{ runName() }}</span
-        >
+        <h2 class="run-title">Experiment: {{ runName() }}</h2>
       </div>
       <div class="column is-1">
         <b-tooltip :label="statusLabel()" type="is-light is-left" :delay="1000">
-          <span class="tag is-medium" :class="statusDecorator()">
-            <div class="field" @click="controller(exp, run)">
-              {{ status }}
-            </div>
-          </span>
+          <button
+            type="button"
+            class="tag is-medium plain-button"
+            :class="statusDecorator()"
+            :aria-label="`${status}: ${statusLabel()} for ${runName()}`"
+            @click="controller(exp, run)">
+            {{ status }}
+          </button>
         </b-tooltip>
       </div>
     </div>
@@ -117,3 +120,19 @@
     },
   };
 </script>
+
+<style scoped>
+  .content .run-title {
+    margin: 0;
+    color: inherit;
+    font-weight: bold;
+    font-size: x-large;
+    line-height: inherit;
+  }
+
+  .plain-button {
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+  }
+</style>

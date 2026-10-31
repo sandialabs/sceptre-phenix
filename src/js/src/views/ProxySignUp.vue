@@ -1,18 +1,62 @@
 <template>
   <div id="signup">
-    <div class="signup-form">
-      <b-field label="Username">
-        <b-input type="text" :model-value="username" disabled></b-input>
+    <!-- A form, so Enter submits it and password managers know its fields. -->
+    <form class="signup-form" novalidate @submit.prevent="onSubmit">
+      <b-field label="Username" label-for="proxy-signup-username">
+        <b-input
+          id="proxy-signup-username"
+          :compat-fallthrough="false"
+          type="text"
+          autocomplete="username"
+          :model-value="username"
+          disabled></b-input>
       </b-field>
-      <b-field label="First Name">
-        <b-input type="text" v-model="firstName" autofocus></b-input>
+      <b-field
+        label="First Name"
+        label-for="proxy-signup-first-name"
+        :type="errors.firstName ? 'is-danger' : null">
+        <b-input
+          id="proxy-signup-first-name"
+          :compat-fallthrough="false"
+          ref="firstName"
+          type="text"
+          autocomplete="given-name"
+          v-model="firstName"
+          :aria-invalid="errors.firstName ? 'true' : null"
+          :aria-describedby="
+            errors.firstName ? 'proxy-signup-first-name-error' : null
+          "
+          autofocus></b-input>
+        <template #message>
+          <span v-if="errors.firstName" id="proxy-signup-first-name-error">{{
+            errors.firstName
+          }}</span>
+        </template>
       </b-field>
-      <b-field label="Last Name">
-        <b-input type="text" v-model="lastName"></b-input>
+      <b-field
+        label="Last Name"
+        label-for="proxy-signup-last-name"
+        :type="errors.lastName ? 'is-danger' : null">
+        <b-input
+          id="proxy-signup-last-name"
+          :compat-fallthrough="false"
+          ref="lastName"
+          type="text"
+          autocomplete="family-name"
+          v-model="lastName"
+          :aria-invalid="errors.lastName ? 'true' : null"
+          :aria-describedby="
+            errors.lastName ? 'proxy-signup-last-name-error' : null
+          "></b-input>
+        <template #message>
+          <span v-if="errors.lastName" id="proxy-signup-last-name-error">{{
+            errors.lastName
+          }}</span>
+        </template>
       </b-field>
       <br />
-      <button class="button is-light" @click="onSubmit">Submit</button>
-    </div>
+      <button type="submit" class="button is-light">Submit</button>
+    </form>
   </div>
 </template>
 
@@ -37,23 +81,16 @@
 
     methods: {
       onSubmit() {
-        if (!this.firstName) {
-          this.$buefy.toast.open({
-            message: 'You must include a first name',
-            type: 'is-warning',
-            duration: 4000,
-          });
+        this.errors = {
+          firstName: this.firstName ? null : 'You must include a first name',
+          lastName: this.lastName ? null : 'You must include a last name',
+        };
 
-          return;
-        }
-
-        if (!this.lastName) {
-          this.$buefy.toast.open({
-            message: 'You must include a last name',
-            type: 'is-warning',
-            duration: 4000,
-          });
-
+        if (this.errors.firstName || this.errors.lastName) {
+          (this.errors.firstName
+            ? this.$refs.firstName
+            : this.$refs.lastName
+          )?.focus();
           return;
         }
 
@@ -79,6 +116,7 @@
       return {
         firstName: null,
         lastName: null,
+        errors: { firstName: null, lastName: null },
       };
     },
   };
@@ -88,6 +126,7 @@
 <style scoped>
   .signup-form {
     width: 400px;
+    max-width: calc(100% - 32px);
     margin: 30px auto;
     border: 1px solid #eee;
     padding: 20px;
@@ -96,5 +135,10 @@
 
   .signup-form :deep(.label) {
     color: whitesmoke;
+  }
+
+  /* Buefy fields keep their message slot; it shows only with an error. */
+  .signup-form :deep(.help:empty) {
+    display: none;
   }
 </style>

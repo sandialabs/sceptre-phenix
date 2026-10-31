@@ -1,10 +1,12 @@
 <template>
   <div class="content">
     <div id="quick-start">
-      <h1>Quick Start</h1>
+      <h1 class="title is-4">Tunneler</h1>
+      <h2>Quick Start</h2>
       <p>
         The phēnix-tunneler is an application phēnix users can run on their
-        local machine in order to access services in VMs locally.
+        local machine in order to access services in
+        <abbr title="virtual machines">VMs</abbr> locally.
 
         <br />
         <br />
@@ -115,7 +117,9 @@
     margin: auto;
   }
 
+  /* Keeps the light red on black (8.5:1); the global $code is dark red. */
   code {
     background-color: black;
+    color: #ff7b95;
   }
 </style>

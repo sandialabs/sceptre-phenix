@@ -1,8 +1,15 @@
 <template>
-  <b-modal v-model="error.modal" @close="resetErrorModal" has-modal-card>
+  <b-modal
+    v-model="error.modal"
+    @close="resetErrorModal"
+    has-modal-card
+    aria-role="dialog"
+    aria-modal
+    :aria-label="error.title"
+    close-button-aria-label="Close">
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
-        <p class="modal-card-title">{{ error.title }}</p>
+        <h2 class="modal-card-title">{{ error.title }}</h2>
       </header>
       <section class="modal-card-body x-modal-dark">
         <div class="control">
@@ -10,6 +17,7 @@
             class="textarea x-config-text has-fixed-size"
             style="font-family: monospace"
             rows="30"
+            aria-label="Validation errors"
             v-model="error.msg"
             readonly />
         </div>
@@ -33,6 +41,7 @@
         <b-field
           class="editor"
           label="Config Name"
+          label-for="config-editor-name"
           :type="nameErrType"
           :message="nameErrMsg"
           autofocus>
@@ -40,17 +49,33 @@
             v-if="mode == 'edit'"
             label="change the name in the editor"
             type="is-light">
-            <b-input v-model="configName" disabled />
+            <b-input
+              id="config-editor-name"
+              :compat-fallthrough="false"
+              v-model="configName"
+              disabled />
           </b-tooltip>
-          <b-input v-if="mode == 'create'" v-model="configName" />
+          <b-input
+            v-if="mode == 'create'"
+            id="config-editor-name"
+            :compat-fallthrough="false"
+            v-model="configName" />
         </b-field>
 
-        <b-field class="editor" label="Config Kind">
+        <b-field
+          class="editor"
+          label="Config Kind"
+          label-for="config-editor-kind">
           <b-tooltip
             v-if="mode == 'edit'"
             label="change the kind in the editor"
             type="is-light">
-            <b-select placeholder="Select a Kind" v-model="configKind" disabled>
+            <b-select
+              id="config-editor-kind"
+              :compat-fallthrough="false"
+              placeholder="Select a Kind"
+              v-model="configKind"
+              disabled>
               <option v-for="(k, index) in kinds" :key="index" :value="k">
                 {{ k }}
               </option>
@@ -58,6 +83,8 @@
           </b-tooltip>
           <b-select
             v-if="mode == 'create'"
+            id="config-editor-kind"
+            :compat-fallthrough="false"
             placeholder="Select a Kind"
             v-model="configKind">
             <option v-for="(k, index) in kinds" :key="index" :value="k">
@@ -73,7 +100,7 @@
             :disabled="!validConfig"
             native-value="yaml"
             @input="convertLang('yaml')">
-            YAML
+            <abbr title="YAML Ain't Markup Language">YAML</abbr>
           </b-radio>
         </b-field>
         <b-field>
@@ -629,24 +656,22 @@
 </script>
 <style scoped>
   /*Quickfix for css. incorporate into main css packages*/
+  /* Darker stops give white text 7:1 or more on all of the gradient. */
   .hero.is-light.is-bold {
     background-image: linear-gradient(
       141deg,
       #564749 0%,
-      #686868 71%,
-      #7b716f 100%
+      #575757 71%,
+      #595251 100%
     );
   }
   .hero.is-light {
-    background-color: #686868;
+    background-color: #575757;
     color: #fff;
-  }
-  div.autocomplete :deep(a.dropdown-item) {
-    color: #383838 !important;
   }
 
   .x-modal-dark {
-    background-color: #5b5b5b;
+    background-color: #4a4a4a;
   }
 
   .x-modal-dark :deep(p) {
@@ -654,8 +679,8 @@
   }
 
   .x-modal-dark :deep(textarea) {
-    background-color: #686868;
-    color: whitesmoke;
+    background-color: #575757;
+    color: white;
   }
 
   .x-config-text {
@@ -663,11 +688,11 @@
   }
 
   .editor :deep(.label) {
-    color: whitesmoke;
+    color: white;
   }
 
   .config-editor__heading {
-    color: whitesmoke;
+    color: white;
     overflow-wrap: anywhere;
   }
 

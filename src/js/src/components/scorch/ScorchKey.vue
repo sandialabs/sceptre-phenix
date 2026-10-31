@@ -5,7 +5,7 @@
       <div class="column is-one-fifth">
         <div class="columns is-variable is-1">
           <div class="column has-text-right">
-            <svg width="30" height="30">
+            <svg width="30" height="30" aria-hidden="true">
               <g transform="translate(15,15)">
                 <g class="node">
                   <circle
@@ -25,7 +25,7 @@
       <div class="column is-one-fifth">
         <div class="columns is-variable is-1">
           <div class="column has-text-right">
-            <svg width="30" height="30">
+            <svg width="30" height="30" aria-hidden="true">
               <g transform="translate(15,15)">
                 <g class="node">
                   <circle
@@ -51,7 +51,7 @@
       <div class="column is-one-fifth">
         <div class="columns is-variable is-1">
           <div class="column has-text-right">
-            <svg width="30" height="30">
+            <svg width="30" height="30" aria-hidden="true">
               <g transform="translate(15,15)">
                 <g class="node">
                   <circle
@@ -80,7 +80,7 @@
       <div class="column is-one-fifth">
         <div class="columns is-variable is-1">
           <div class="column has-text-right">
-            <svg width="30" height="30">
+            <svg width="30" height="30" aria-hidden="true">
               <g transform="translate(15,15)">
                 <g class="node">
                   <circle
@@ -104,7 +104,7 @@
       <div class="column is-one-fifth">
         <div class="columns is-variable is-1">
           <div class="column has-text-right">
-            <svg width="30" height="30">
+            <svg width="30" height="30" aria-hidden="true">
               <g transform="translate(15,15)">
                 <g class="node">
                   <circle
@@ -130,7 +130,7 @@
       <div class="column is-one-fifth">
         <div class="columns is-variable is-1">
           <div class="column has-text-right">
-            <svg width="30" height="30">
+            <svg width="30" height="30" aria-hidden="true">
               <g transform="translate(15,15)">
                 <g class="node">
                   <circle
@@ -205,5 +205,12 @@
     fill: #f6b44b;
     animation: rotating 2s linear infinite;
     animation-iteration-count: infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    g.running,
+    g.background {
+      animation: none;
+    }
   }
 </style>

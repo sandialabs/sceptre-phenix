@@ -10,6 +10,7 @@ a CI-built binary, a container, or a full range node.
 | ------------------------------ | -------------------------------------------------------------------------------------------- | ------------------- |
 | `routes.spec.js`               | just a running server (empty store is fine)                                                  | yes                 |
 | `forms.spec.js`                | just a running server                                                                        | yes                 |
+| `a11y-seeded.spec.js`          | just a running server (each test seeds and deletes its own data)                             | yes                 |
 | `experiment-lifecycle.spec.js` | minimega, VM images, a topology (`E2E_LIFECYCLE=1`)                                          | no (needs minimega) |
 | `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`, `E2E_AUTH_MODE=enabled`       | yes (own job)       |
 | `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`, `E2E_AUTH_MODE=proxy` | yes (own job)       |
@@ -50,10 +51,15 @@ The smoke shards and the Auth enabled job run both projects (below) on
 their part. The Auth proxy job runs only the `chromium` project. The shards
 use Playwright's `--shard`, which splits the tests by count, not by time.
 
-Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A/AA
-rule tags) as rendered against the empty store and fails on any violation.
-Content that only appears with data (table rows, modals, notifications) is
-not covered; the full axe report is attached to each test result.
+Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A, AA
+and AAA rule tags, with `wcag2aaa`) as rendered against the empty store and
+fails on any violation. `a11y-seeded.spec.js` seeds a topology, a scenario, a
+stopped experiment and a user through the REST API, without minimega. It
+scans the table rows, modals and config editor that only appear with data,
+with the same rules (`expectNoAxeViolations` in `helpers.js`). It also fails
+when the config editor traps the keyboard, or when anything moves for longer
+than 0.01s while the browser asks for reduced motion. Notifications are not
+covered; the full axe report is attached to each test result.
 
 Tests run in parallel (`fullyParallel`), in 4 workers on CI and half the CPU
 cores locally; set `E2E_WORKERS` to a count or a percentage such as `50%` to

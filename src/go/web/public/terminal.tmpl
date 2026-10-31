@@ -1,10 +1,14 @@
+<!DOCTYPE html>
 <html lang="en-US">
 	<head>
+		<meta charset="utf-8">
+		<title>Terminal · phēnix</title>
 		<link rel="stylesheet" href="/xterm.js/src/xterm.css"/>
 		<script src="/xterm.js/dist/xterm.js"></script>
 		<script src="/xterm.js/addons/attach/attach.js"></script>
+	</head>
 	<body>
-		<div id="terminal"></div>
+		<main id="terminal" aria-label="Terminal"></main>
 		<script>
 		var terminalContainer = document.getElementById('terminal');
 		var term = new Terminal();
