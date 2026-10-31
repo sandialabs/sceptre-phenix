@@ -13,9 +13,9 @@ import (
 
 // v1KindSpecs are representative specs of the kinds stored at v1. Each wants
 // the outcome the v2.yaml definitions gave when config validation used them
-// for every kind. They cover the places where the earlier v1.yaml definitions
-// differed, so validating a v1 config against its own schema must keep these
-// outcomes.
+// for every kind, except that includeTopologies and schedules are declared.
+// They cover the places where the earlier v1.yaml definitions differed, so
+// validating a v1 config against its own schema must keep these outcomes.
 var v1KindSpecs = []struct { //nolint:gochecknoglobals // test table
 	name  string
 	kind  string
@@ -28,8 +28,9 @@ nodes:
 - type: VirtualMachine
   general: {hostname: host-1}
   hardware: {os_type: linux, drives: [{image: ubuntu.qc2}]}`, true},
-	{"topology with only includeTopologies", "Topology", `{includeTopologies: [base]}`, false},
-	{"topology with includeTopologies of any shape", "Topology", `{includeTopologies: [{name: x}], nodes: []}`, true},
+	{"topology with only includeTopologies", "Topology", `{includeTopologies: [base]}`, true},
+	{"topology with a single includeTopologies name", "Topology", `{includeTopologies: base, nodes: []}`, true},
+	{"topology with includeTopologies of mappings", "Topology", `{includeTopologies: [{name: x}], nodes: []}`, false},
 	{"topology with a node missing hardware", "Topology", `
 nodes:
 - type: VirtualMachine
@@ -130,10 +131,10 @@ nodes:
 topology: {nodes: []}
 scenario: null
 vlans: {aliases: null, min: 100, max: 200}
-schedule: null`, true},
+schedules: null`, true},
 	{"experiment with null vlans", "Experiment", `{topology: {nodes: []}, vlans: null}`, true},
 	{"experiment with a non-integer VLAN alias", "Experiment", `{topology: {nodes: []}, vlans: {aliases: {MGMT: x}}}`, false},
-	{"experiment with a non-string schedule", "Experiment", `{topology: {nodes: []}, schedule: {host-1: 1}}`, false},
+	{"experiment with a non-string schedule", "Experiment", `{topology: {nodes: []}, schedules: {host-1: 1}}`, false},
 	{"experiment with a scenario", "Experiment", `
 topology: {nodes: []}
 scenario:

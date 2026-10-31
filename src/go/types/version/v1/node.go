@@ -135,6 +135,10 @@ func (n *Node) SetLabels(m map[string]string) {
 	n.LabelsF = m
 }
 
+func (n *Node) SetAnnotations(m map[string]any) {
+	n.AnnotationsF = m
+}
+
 func (n *Node) AddAnnotation(k string, i any) {
 	if n.AnnotationsF == nil {
 		n.AnnotationsF = make(map[string]any)
@@ -614,6 +618,12 @@ func (n Node) validate() error {
 		)
 	}
 
+	if n.DelayF != nil && n.DelayF.TimerF != "" {
+		if _, err := time.ParseDuration(n.DelayF.TimerF); err != nil {
+			return fmt.Errorf("delay timer %q is not a duration such as 5m: %w", n.DelayF.TimerF, err)
+		}
+	}
+
 	if n.NetworkF == nil {
 		return nil
 	}
@@ -762,10 +772,10 @@ func (n Node) FileInjects(baseDir string) string {
 		}
 
 		if inject.PermissionsF != "" && len(inject.PermissionsF) <= 4 {
-			if perms, err := strconv.ParseInt(inject.PermissionsF, 8, 64); err == nil {
+			if perms, err := strconv.ParseUint(strings.TrimPrefix(inject.PermissionsF, "+"), 8, 32); err == nil {
 				// Update file permissions on local disk before it gets injected into
 				// disk image.
-				_ = os.Chmod(inject.SrcF, os.FileMode(perms)) //nolint:gosec // integer overflow conversion int64 -> uint32
+				_ = os.Chmod(inject.SrcF, os.FileMode(perms))
 			}
 		}
 	}
