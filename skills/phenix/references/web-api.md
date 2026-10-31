@@ -125,6 +125,11 @@ lack it). Points that are easy to miss:
 - Bulk VM actions, `POST /disks/clone/jobs` and `POST .../files/archive` start
   [background jobs](jobs.md) and answer `202` with a `Location`.
 - Workflow routes are covered in [`workflow.md`](workflow.md#rest-endpoints).
+- `GET /disks` marks an image qemu cannot open (a missing backing file, a
+  loop, or more than 64 images) with `brokenChain`, `chainProblem` and
+  `missingBacking` (full path; empty for a loop); `backingImages` then holds
+  only the readable part. phenix reads the head node's files; no CLI command
+  lists these fields.
 - `GET /experiments`, `/vms`, `/disks`, `/jobs` and the experiment VM and
   file lists page with `pageNum` and `perPage` (both, from 1; `400`
   otherwise) and report the unpaged `total`; without them they return

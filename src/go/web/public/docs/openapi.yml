@@ -461,8 +461,8 @@ paths:
         "412":
           description: >-
             the config is no longer at the `If-Match` revision, or does not
-            exist, or, for a User config, it changed while the update ran;
-            `metadata.revision` holds its current revision
+            exist, or, for a User config, it changed while the update ran.
+            `metadata.revision` holds its current revision.
           content:
             application/json:
               schema:
@@ -1144,7 +1144,7 @@ paths:
         "502":
           description: >-
             minimega could not kill the experiment's VMs, so it is still
-            running; `metadata.retry` is `force`
+            running (`metadata.retry` is `force`)
           content:
             application/json:
               schema:
@@ -1371,8 +1371,8 @@ paths:
         `/experiments/{exp_name}/webshark` takes it and with the same
         permissions. With `"operations": ["stream"]` (a running capture
         only), a command outside the browser streams the capture as pcap with
-        `GET /webshark/streams/{token}`, which needs no other credentials
-        and lives outside `/api/v1`, under the UI's base path, so that
+        `GET /webshark/streams/{token}`. That route needs no other credentials
+        and is outside `/api/v1`, under the UI's base path. Because of this,
         `curl -fsSN '<origin>/webshark/streams/<token>' | wireshark -k -i -`
         works without the caller's session token. A stream token starts streams
         for 5 minutes, from the start of the capture or with `?from=now`. A
@@ -2553,7 +2553,7 @@ paths:
                     allOf:
                       - $ref: "#/components/schemas/ScorchTerminal"
         "400":
-          description: the run or loop is not a number, or the break component's terminal is gone
+          description: the run or loop is not a number, or the break component's terminal no longer exists
           content:
             application/json:
               schema:
@@ -9581,7 +9581,8 @@ components:
           title: Backing Images
           type: array
           description: >-
-            the full paths of the images this one is backed by, nearest first
+            the full paths of the backing images of this one, nearest first. For
+            a broken chain, only the images the server could read
           items:
             type: string
         inUse:
@@ -9589,6 +9590,28 @@ components:
           example: false
           type: boolean
           description: whether the image's file is in use, such as by a running VM
+        brokenChain:
+          title: Broken Chain
+          example: false
+          type: boolean
+          description: >-
+            whether qemu cannot open the image as the server sees the files. A
+            file in its backing chain is missing, or the chain loops or is more
+            than 64 images deep. False when the server cannot read the image
+        chainProblem:
+          title: Chain Problem
+          example: backing file /phenix/images/ro_kali.qc2 is missing
+          type: string
+          description: >-
+            what breaks the backing chain, in one sentence, or empty when
+            brokenChain is false
+        missingBacking:
+          title: Missing Backing
+          example: /phenix/images/ro_kali.qc2
+          type: string
+          description: >-
+            the full path of the missing backing file. Empty for a chain that
+            loops, is too deep, or is not broken
     Users:
       title: "Users"
       description: "Schema describing the Users resource."

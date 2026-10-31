@@ -524,18 +524,7 @@ func walkImages(ctx context.Context, paths []string, openOnly map[string]bool, t
 // cleanResult names the files of res as the kernel opens them, without "." and ".." segments (see
 // mm.CleanBackingPath).
 func cleanResult(res diskchain.Result) diskchain.Result {
-	members := make([]string, 0, len(res.Members))
-	for _, m := range res.Members {
-		members = append(members, mm.CleanBackingPath(m))
-	}
-
-	res.Members = members
-
-	if res.Problem != diskchain.NotAFile && res.At != "" {
-		res.At = mm.CleanBackingPath(res.At)
-	}
-
-	return res
+	return res.MapPaths(mm.CleanBackingPath)
 }
 
 // classify returns use of the image at path, whose chain res says is broken, as a problem refusing the start, or as a

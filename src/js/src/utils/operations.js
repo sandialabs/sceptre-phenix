@@ -1,5 +1,11 @@
 import { h } from 'vue';
 
+import {
+  brokenDisks,
+  brokenDisksSummary,
+  diskProblemLine,
+  jobDiskProblems,
+} from '@/utils/brokenDisks.js';
 import { escapeHTML } from '@/utils/escapeHTML.js';
 import { openNotification } from '@/utils/notify.js';
 import { namedList, plural, pluralWord, upperFirst } from '@/utils/plural.js';
@@ -198,12 +204,24 @@ export function isRetryable(err) {
 }
 
 // The outcome of each name's request, from Promise.allSettled's results in
-// the same order: { name, status, error, retryable }.
+// the same order: { name, status, error, retryable }, and `details` lines for
+// a start refused for broken disks.
 export function outcomeFromSettled(names, results) {
   return names.map((name, i) => {
     const result = results[i];
     if (result?.status === 'fulfilled') {
       return { name, status: 'succeeded', error: null, retryable: false };
+    }
+    const disks = brokenDisks(errorBody(result?.reason?.response?.data));
+    if (disks) {
+      const vms = new Set(disks.map((disk) => disk.vm)).size;
+      return {
+        name,
+        status: 'failed',
+        error: brokenDisksSummary(disks.length, vms),
+        retryable: false,
+        details: disks.map((disk) => `VM ${disk.vm}: ${diskProblemLine(disk)}`),
+      };
     }
     return {
       name,
@@ -214,14 +232,23 @@ export function outcomeFromSettled(names, results) {
   });
 }
 
-// The outcome of each of a background job's items.
+// The outcome of each of a background job's items, with `details` lines for
+// a VM failed for its broken disks.
 export function outcomeFromJob(job) {
-  return (job?.items ?? []).map((item) => ({
-    name: item.name,
-    status: item.status,
-    error: item.error ?? null,
-    retryable: !!item.retryable,
-  }));
+  return (job?.items ?? []).map((item) => {
+    const outcome = {
+      name: item.name,
+      status: item.status,
+      error: item.error ?? null,
+      retryable: !!item.retryable,
+    };
+    const problems = jobDiskProblems(item.error);
+    if (problems?.length) {
+      outcome.error = brokenDisksSummary(problems.length);
+      outcome.details = problems;
+    }
+    return outcome;
+  });
 }
 
 // How many items succeeded, failed, were skipped, and were canceled, and the
@@ -257,23 +284,41 @@ export function outcomeTitle({ verbPast, noun, items }) {
   return `${verbPast} ${counts.succeeded} of ${count}: ${rest.join(', ')}`;
 }
 
-// the lines naming an outcome's failures and skips, at most LISTED_FAILURES
-export function outcomeLines(items) {
+// The entries naming an outcome's failures and skips, at most
+// LISTED_FAILURES: { line, details }, details the item's lines, if any.
+function outcomeEntries(items) {
   const unsuccessful = (items ?? []).filter(
     (item) => item.status === 'failed' || item.status === 'skipped',
   );
-  const lines = unsuccessful
-    .slice(0, LISTED_FAILURES)
-    .map((item) =>
-      item.error
-        ? `${item.name}: ${item.error}`
-        : `${item.name}: ${item.status}`,
-    );
+  const entries = unsuccessful.slice(0, LISTED_FAILURES).map((item) => ({
+    line: item.error
+      ? `${item.name}: ${item.error}`
+      : `${item.name}: ${item.status}`,
+    details: item.details ?? [],
+  }));
   if (unsuccessful.length > LISTED_FAILURES) {
-    lines.push(`and ${unsuccessful.length - LISTED_FAILURES} more`);
+    entries.push({
+      line: `and ${unsuccessful.length - LISTED_FAILURES} more`,
+      details: [],
+    });
   }
-  return lines;
+  return entries;
 }
+
+// the lines naming an outcome's failures and skips, at most LISTED_FAILURES
+export const outcomeLines = (items) =>
+  outcomeEntries(items).map((entry) => entry.line);
+
+// An entry's details, in a disclosure the keyboard reaches: open when it is
+// the only entry, so one failure shows them at once.
+const entryDetails = (details, only) =>
+  h('details', { class: 'error-details', open: only }, [
+    h('summary', `Show ${plural(details.length, 'problem')}`),
+    h(
+      'ul',
+      details.map((line) => h('li', line)),
+    ),
+  ]);
 
 // Tells how an operation on several items went: a toast when every item
 // succeeded, and otherwise one lasting notification with the summary, the
@@ -302,9 +347,12 @@ export function notifyOutcome(buefy, { verbPast, noun, items, onRetry }) {
     { role: 'alert' },
     [
       h('span', { class: 'error-title' }, [h('b', title)]),
-      ...outcomeLines(items).map((line) =>
+      ...outcomeEntries(items).flatMap(({ line, details }, _, entries) => [
         h('span', { class: 'error-step' }, line),
-      ),
+        ...(details.length
+          ? [entryDetails(details, entries.length === 1)]
+          : []),
+      ]),
       retry &&
         h(
           'button',

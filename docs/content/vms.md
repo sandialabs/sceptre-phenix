@@ -100,8 +100,10 @@ minimega files directory, or by its full path, with a warning icon, when it is
 the list does not hold, or any disk for a role that may not list disks, is named
 by its file name. Hovering over the name shows the full path. When the disk is
 built on other images, that backing image chain is listed beneath it, nearest
-image first. A `CD-ROM` row appears only while an ISO image is inserted, and
-names the image the same way. A button in the section heading opens the
+image first. A disk or ISO image whose
+[backing chain is broken](disks.md#broken-backing-chains) shows a red icon with
+a cross. A `CD-ROM` row appears only while an ISO image is inserted, and names
+the image the same way. A button in the section heading opens the
 [Disks](disks.md) page, if your role may list disks.
 
 #### Network
@@ -760,6 +762,10 @@ stopped experiment, then writes the image's full path into the topology.
   [outside the minimega files directory](disks.md#images-outside-the-files-directory);
   hovering over or focusing it explains that minimega does not copy the image to
   other cluster nodes.
+* A red icon with a cross marks a disk whose
+  [backing chain is broken](disks.md#broken-backing-chains). Its tooltip names
+  the problem and tells that the start may fail. For a disk with more than one
+  problem, the one icon gives all of them.
 * A disk the list does not hold, such as a missing image, shows as
   `<full path> (not listed)`, with a warning icon whose tooltip reads
   `This image is not in your disk list: it may be missing, unreadable, or hidden from your role.`

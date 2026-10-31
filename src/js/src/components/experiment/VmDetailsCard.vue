@@ -235,8 +235,9 @@
                 }}
               </span>
               <DiskWarning
-                v-if="disk && disk.outsideFilesDir"
-                reason="outside"
+                v-if="diskReasons(disk).length"
+                :reasons="diskReasons(disk)"
+                :detail="chainProblem(disk)"
                 :files-dir="filesDir" />
               <b-tooltip
                 :label="
@@ -272,8 +273,9 @@
                 {{ diskLabel(cdRomDisk) || baseName(vm.cdRom) }}
               </span>
               <DiskWarning
-                v-if="cdRomDisk && cdRomDisk.outsideFilesDir"
-                reason="outside"
+                v-if="diskReasons(cdRomDisk).length"
+                :reasons="diskReasons(cdRomDisk)"
+                :detail="chainProblem(cdRomDisk)"
                 :files-dir="filesDir" />
             </div>
           </div>
@@ -581,7 +583,12 @@
   } from '@/utils/experimentAnnotations.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { docsPage } from '@/utils/docs.js';
-  import { baseName, diskLabel } from '@/utils/diskChain.js';
+  import {
+    baseName,
+    chainProblem,
+    diskLabel,
+    diskReasons,
+  } from '@/utils/diskChain.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { plural, pluralWord } from '@/utils/plural.js';
   import { webSharkInstalled } from '@/utils/webshark.js';
@@ -612,7 +619,9 @@
         pluralWord,
         annotationText,
         baseName,
+        chainProblem,
         diskLabel,
+        diskReasons,
         NODE_ANNOTATIONS,
         CUSTOM_NODE_ANNOTATION,
         restorePendingKey,

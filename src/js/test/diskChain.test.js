@@ -16,10 +16,12 @@ vi.mock('@/store.js', modules.store);
 import {
   backingChain,
   baseName,
+  chainProblem,
   diskLabel,
   diskList,
   diskOptions,
-  diskWarning,
+  diskReasons,
+  diskWarnings,
   filesDir,
   findDisk,
   isoDisks,
@@ -310,20 +312,92 @@ describe('filesDir', () => {
   });
 });
 
-describe('diskWarning', () => {
+describe('chainProblem', () => {
+  it('names what breaks a broken chain', () => {
+    const broken = disk('/phenix/images/a.qc2', 'a.qc2', {
+      brokenChain: true,
+      chainProblem: 'backing file /phenix/images/base.qc2 is missing',
+    });
+    expect(chainProblem(broken)).toBe(
+      'backing file /phenix/images/base.qc2 is missing',
+    );
+  });
+
+  it('gives a general sentence when the server gives none', () => {
+    const broken = disk('/phenix/images/a.qc2', 'a.qc2', { brokenChain: true });
+    expect(chainProblem(broken)).toBe('a file in its backing chain is missing');
+  });
+
+  it('is empty for a whole chain or no disk', () => {
+    const whole = disk('/phenix/images/a.qc2', 'a.qc2', {
+      chainProblem: 'left over',
+    });
+    expect(chainProblem(whole)).toBe('');
+    expect(chainProblem(null)).toBe('');
+  });
+});
+
+describe('diskWarnings', () => {
   it('warns of a disk outside the files directory', () => {
-    expect(diskWarning(disks, '/data/vms/jammy.qc2')).toBe('outside');
-    expect(diskWarning(disks, '/phenix/images/jammy.qc2')).toBe(null);
+    expect(diskWarnings(disks, '/data/vms/jammy.qc2')).toEqual(['outside']);
+    expect(diskWarnings(disks, '/phenix/images/jammy.qc2')).toEqual([]);
   });
 
   it('warns of a disk a known list does not hold', () => {
-    expect(diskWarning(disks, '/phenix/images/gone.qc2')).toBe('unlisted');
-    expect(diskWarning([], '/phenix/images/gone.qc2')).toBe('unlisted');
+    expect(diskWarnings(disks, '/phenix/images/gone.qc2')).toEqual([
+      'unlisted',
+    ]);
+    expect(diskWarnings([], '/phenix/images/gone.qc2')).toEqual(['unlisted']);
+  });
+
+  it('gives a broken chain first, with the other reasons', () => {
+    const list = [
+      disk('/data/vms/over.qc2', '', { brokenChain: true }),
+      disk('/phenix/images/over.qc2', 'over.qc2', { brokenChain: true }),
+    ];
+    expect(diskWarnings(list, '/data/vms/over.qc2')).toEqual([
+      'broken',
+      'outside',
+    ]);
+    expect(diskWarnings(list, '/phenix/images/over.qc2')).toEqual(['broken']);
   });
 
   it('says nothing while the list is unknown, or of no disk', () => {
-    expect(diskWarning(null, '/phenix/images/gone.qc2')).toBe(null);
-    expect(diskWarning(disks, '')).toBe(null);
+    expect(diskWarnings(null, '/phenix/images/gone.qc2')).toEqual([]);
+    expect(diskWarnings(disks, '')).toEqual([]);
+  });
+
+  it('gives distinct known reasons, broken exactly for a broken listed disk', () => {
+    const lists = diskListArb().chain((list) =>
+      fc.tuple(
+        fc.constant(list),
+        fc.array(fc.boolean(), {
+          minLength: list.length,
+          maxLength: list.length,
+        }),
+        fc.oneof(
+          fc.constant('/phenix/images/gone.qc2'),
+          ...(list.length
+            ? [fc.constantFrom(...list.map((d) => d.fullPath))]
+            : []),
+        ),
+      ),
+    );
+    fc.assert(
+      fc.property(lists, ([list, broken, path]) => {
+        const marked = list.map((d, i) => ({ ...d, brokenChain: broken[i] }));
+        const reasons = diskWarnings(marked, path);
+        const found = findDisk(marked, path);
+
+        expect(new Set(reasons).size).toBe(reasons.length);
+        for (const reason of reasons) {
+          expect(['unlisted', 'broken', 'outside']).toContain(reason);
+        }
+        expect(reasons.includes('broken')).toBe(!!found?.brokenChain);
+        expect(reasons.includes('unlisted')).toBe(!found);
+        if (found) expect(reasons).toEqual(diskReasons(found));
+      }),
+    );
   });
 });
 

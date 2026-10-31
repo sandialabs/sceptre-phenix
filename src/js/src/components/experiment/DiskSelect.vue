@@ -1,5 +1,6 @@
 <!-- A VM's disk picker: the listed disks, with those outside the minimega files
-directory grouped apart. Its disk list is null until it loads. -->
+directory grouped apart, and a warning when the chosen disk needs care. Its
+disk list is null until it loads. -->
 <template>
   <div class="disk-select" :class="{ 'is-expanded': expanded }">
     <b-select
@@ -9,11 +10,8 @@ directory grouped apart. Its disk list is null until it loads. -->
       :expanded="expanded"
       @update:model-value="(path) => $emit('update:modelValue', path)">
       <option v-if="!modelValue" value="" disabled>No disk</option>
-      <option
-        v-else-if="!listed"
-        :value="modelValue"
-        :disabled="warning === 'unlisted'">
-        {{ warning === 'unlisted' ? `${modelValue} (not listed)` : modelValue }}
+      <option v-else-if="!listed" :value="modelValue" :disabled="unlisted">
+        {{ unlisted ? `${modelValue} (not listed)` : modelValue }}
       </option>
       <option
         v-for="option in options.inside"
@@ -32,7 +30,11 @@ directory grouped apart. Its disk list is null until it loads. -->
         </option>
       </optgroup>
     </b-select>
-    <DiskWarning v-if="warning" :reason="warning" :files-dir="filesDir" />
+    <DiskWarning
+      v-if="warnings.length"
+      :reasons="warnings"
+      :detail="chainProblem(listed)"
+      :files-dir="filesDir" />
   </div>
 </template>
 
@@ -40,8 +42,9 @@ directory grouped apart. Its disk list is null until it loads. -->
   import DiskWarning from '@/components/DiskWarning.vue';
   import {
     OUTSIDE_GROUP,
+    chainProblem,
     diskOptions,
-    diskWarning,
+    diskWarnings,
     filesDir,
     findDisk,
   } from '@/utils/diskChain.js';
@@ -60,7 +63,7 @@ directory grouped apart. Its disk list is null until it loads. -->
     },
     emits: ['update:modelValue'],
     setup() {
-      return { OUTSIDE_GROUP };
+      return { OUTSIDE_GROUP, chainProblem };
     },
     computed: {
       listed() {
@@ -69,8 +72,11 @@ directory grouped apart. Its disk list is null until it loads. -->
       options() {
         return diskOptions(this.disks);
       },
-      warning() {
-        return diskWarning(this.disks, this.modelValue);
+      warnings() {
+        return diskWarnings(this.disks, this.modelValue);
+      },
+      unlisted() {
+        return this.warnings.includes('unlisted');
       },
       filesDir() {
         return filesDir(this.disks);

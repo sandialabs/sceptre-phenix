@@ -186,8 +186,13 @@ Error: unable to start the foo experiment: 2 disks on 1 VM are missing or have a
     * VM host-01: CD-ROM tools.iso: CD-ROM image /phenix/images/tools.iso is missing
 ```
 
-The error lists at most 20 disks, then `and N more`. The Web-UI shows each
-disk on a line of its own. The REST API answers `400` with the code
+The error lists at most 20 disks, then `and N more`. The Web-UI shows the
+count, then each VM with a list of its disks and problems. It lists 10 disks,
+and puts the others under `Show N more disks`, which opens with a click or the
+keyboard. After a start of more than one experiment, or a bulk `Start` or
+`Restart` of VMs, the summary shows each item that failed. Its problems are
+under `Show N problems`, which is open when only one item failed. The REST API
+answers `400` with the code
 `broken_disks`. Its `details.disks` holds one object for each disk, with the
 fields `vm`, `drive` (`disk` or `cdrom`), `image`, `path`, `missing`, and
 `problem`. The error shows full paths to every user who can start the

@@ -372,5 +372,13 @@ func resolveImage(path string) []Details {
 		imageDetails = append(imageDetails, image)
 	}
 
+	// a backing file on the last row means minimega could not read the rest of
+	// the chain; unknown is not broken, so only a chain phenix reads is checked
+	if len(images) > 0 && images[len(images)-1]["backingfile"] != "" && usableImage(path) {
+		if res, ok := brokenChain(path); ok {
+			imageDetails[0].setBreak(res)
+		}
+	}
+
 	return imageDetails
 }

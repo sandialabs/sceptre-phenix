@@ -132,6 +132,40 @@ describe('DiskSelect', () => {
     ]);
   });
 
+  it('warns of a broken chain with a different icon, before any other reason', async () => {
+    const problem = 'backing file /data/vms/base.qc2 is missing';
+    const list = [
+      ...disks,
+      disk('/data/vms/over.qc2', '', {
+        brokenChain: true,
+        chainProblem: problem,
+        missingBacking: '/data/vms/base.qc2',
+      }),
+    ];
+    const { picker, warnings } = await render('/data/vms/over.qc2', list);
+
+    // one button names both reasons, and its text gives both
+    expect(warnings).toEqual([
+      {
+        label: `Broken backing chain, ${OUTSIDE}`,
+        tooltip:
+          `This image's backing chain is broken: ${problem}. Starting the ` +
+          'experiment may fail. Outside the standard images directory ' +
+          '(/phenix/images). minimega does not copy this image to other ' +
+          'cluster nodes. On a multi-node cluster, every node that may ' +
+          'run a VM with this image needs the same file at this path.',
+      },
+    ]);
+    // the icon differs in shape, not only in color
+    expect(picker.find('.disk-warning .icon').classes()).toContain(
+      'broken-chain-icon',
+    );
+    const { picker: plain } = await render('/data/vms/e2e.img', list);
+    expect(plain.find('.disk-warning .icon').classes()).toContain(
+      'has-text-warning',
+    );
+  });
+
   it('shows the disk as it is, with no warning, while the list is unknown', async () => {
     // not loaded yet, or the role may not list disks
     const { options, warnings } = await render('/phenix/images/gone.qc2', null);

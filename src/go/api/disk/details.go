@@ -2,7 +2,10 @@ package disk
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
+
+	"phenix/util/diskchain"
 )
 
 type Kind uint8
@@ -73,6 +76,31 @@ type Details struct {
 	// nearest first.
 	BackingImages []string `json:"backingImages"`
 	InUse         bool     `json:"inUse"`
+	// BrokenChain is set when qemu cannot open the image, as phenix sees the
+	// files: a file in its backing chain is missing, or the chain loops or is
+	// too deep. BackingImages then holds the part of the chain phenix read.
+	BrokenChain bool `json:"brokenChain"`
+	// ChainProblem says what breaks the chain in one sentence, or is "" when
+	// BrokenChain is not set.
+	ChainProblem string `json:"chainProblem"`
+	// MissingBacking is the full path of the missing backing file, or "" for a
+	// chain that loops, is too deep, or is not broken.
+	MissingBacking string `json:"missingBacking"`
+}
+
+// setBreak records in d the break res, a cleaned walk of d's chain (see
+// brokenChain), and the part of the chain before it.
+func (d *Details) setBreak(res diskchain.Result) {
+	d.BrokenChain = true
+	d.ChainProblem = res.Sentence()
+
+	if len(res.Members) > 1 {
+		d.BackingImages = slices.Clone(res.Members[1:])
+	}
+
+	if res.Problem == diskchain.Missing {
+		d.MissingBacking = res.At
+	}
 }
 
 // ExperimentUse names an experiment whose topology uses a disk, directly or

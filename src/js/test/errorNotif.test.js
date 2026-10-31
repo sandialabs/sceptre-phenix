@@ -9,6 +9,7 @@ vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
 
 import { openNotification } from '@/utils/notify.js';
 import { AxiosError } from 'axios';
+import { render } from 'vue';
 import { showError, useErrorNotification } from '@/utils/errorNotif.js';
 import { setWsDown } from '@/utils/freshness.js';
 import { SHUTTING_DOWN, UNREACHABLE } from '@/utils/unreachable.js';
@@ -289,6 +290,37 @@ describe('useErrorNotification', () => {
       '<b>Error:</b> forbidden',
       '<b>role &lt;viewer&gt;</b>',
     ]);
+  });
+
+  it('lists the VMs and broken disks of a refused start, as text', async () => {
+    const disks = [
+      {
+        vm: 'host-01',
+        drive: 'disk',
+        image: 'kali.qc2',
+        problem: 'backing file /phenix/images/ro_kali.qc2 is missing',
+      },
+    ];
+    await useErrorNotification(
+      failed({
+        status: 400,
+        type: 'application/json',
+        data: {
+          message: 'unable to start experiment foo',
+          cause: '1 disk on 1 VM is missing or has a broken backing chain: …',
+          code: 'broken_disks',
+          details: { disks },
+        },
+      }),
+    );
+
+    const box = document.createElement('div');
+    render(message(), box);
+    expect(box.querySelector('[role="alert"]').textContent).toBe(
+      'Error: unable to start experiment foo' +
+        '1 disk on 1 VM is missing or has a broken backing chain' +
+        'VM host-01disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing',
+    );
   });
 
   it('names the status of an error without a body', async () => {

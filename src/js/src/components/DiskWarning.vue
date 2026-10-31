@@ -1,7 +1,8 @@
 <!-- A warning icon beside a disk image's name, saying why the image needs
-care: it is outside the minimega files directory, or it is not in the disk
-list. Hovering or focusing the icon shows why, and Escape hides it again; the
-tooltip is added to the page body so a table or card never clips it. -->
+care: its backing chain is broken, it is outside the minimega files directory,
+or it is not in the disk list. A broken chain shows a different icon. Hovering
+or focusing the icon shows why, and Escape hides it again; the tooltip is added
+to the page body so a table or card never clips it. -->
 <template>
   <span class="disk-warning">
     <b-tooltip
@@ -20,9 +21,9 @@ tooltip is added to the page body so a table or card never clips it. -->
         :aria-describedby="`${id}-text`"
         @keyup.esc="dismiss">
         <b-icon
-          icon="exclamation-triangle"
+          :icon="broken ? 'times-circle' : 'exclamation-triangle'"
           size="is-small"
-          class="has-text-warning" />
+          :class="broken ? 'broken-chain-icon' : 'has-text-warning'" />
       </button>
     </b-tooltip>
     <span :id="`${id}-text`" class="is-sr-only">{{ text }}</span>
@@ -34,15 +35,27 @@ tooltip is added to the page body so a table or card never clips it. -->
 
   import { OUTSIDE_GROUP } from '@/utils/diskChain.js';
 
+  // each reason's short name, the button's accessible name
+  const NAMES = {
+    broken: 'Broken backing chain',
+    outside: OUTSIDE_GROUP,
+    unlisted: 'Not in your disk list',
+  };
+
   export default {
     name: 'DiskWarning',
     props: {
-      // 'outside' the minimega files directory, or 'unlisted'
-      reason: {
-        type: String,
+      // why, the most serious first: its chain is 'broken', it is 'outside'
+      // the minimega files directory, or it is 'unlisted' (see diskWarnings)
+      reasons: {
+        type: Array,
         required: true,
-        validator: (reason) => ['outside', 'unlisted'].includes(reason),
+        validator: (reasons) =>
+          reasons.length > 0 &&
+          reasons.every((r) => ['broken', 'outside', 'unlisted'].includes(r)),
       },
+      // what breaks the chain, for 'broken' (see chainProblem)
+      detail: { type: String, default: '' },
       // the minimega files directory, when known
       filesDir: { type: String, default: '' },
     },
@@ -50,13 +63,26 @@ tooltip is added to the page body so a table or card never clips it. -->
       return { id: useId() };
     },
     computed: {
+      broken() {
+        return this.reasons.includes('broken');
+      },
       name() {
-        return this.reason === 'outside'
-          ? OUTSIDE_GROUP
-          : 'Not in your disk list';
+        return this.reasons.map((reason) => NAMES[reason]).join(', ');
       },
       text() {
-        if (this.reason === 'unlisted') {
+        return this.reasons.map((reason) => this.reasonText(reason)).join(' ');
+      },
+    },
+    methods: {
+      reasonText(reason) {
+        if (reason === 'broken') {
+          const why = this.detail ? `: ${this.detail}` : '';
+          return (
+            `This image's backing chain is broken${why}. Starting the ` +
+            'experiment may fail.'
+          );
+        }
+        if (reason === 'unlisted') {
           return (
             'This image is not in your disk list: it may be missing, ' +
             'unreadable, or hidden from your role.'
@@ -69,8 +95,6 @@ tooltip is added to the page body so a table or card never clips it. -->
           'may run a VM with this image needs the same file at this path.'
         );
       },
-    },
-    methods: {
       // Escape hides the explanation, and goes no further while it shows: a
       // Buefy modal around the warning closes on the same key's keyup on the
       // document.

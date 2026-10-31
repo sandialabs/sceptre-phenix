@@ -261,6 +261,11 @@ button:focus-visible,
   color: #ffc8cf;
 }
 
+// the icon of a disk image whose backing chain is broken, in the same pale red
+.broken-chain-icon {
+  color: #ffc8cf;
+}
+
 // $link (#62c0d7) is 4.4:1 on table rows ($table-background-color); lighten
 // links in table cells, such as the Users page's user names, to 4.75:1.
 .table td a:not(.button):not(.tag),
@@ -321,6 +326,31 @@ button:focus-visible,
 
 .notification .error-step::before {
   content: '↳ ';
+}
+
+// the VMs and disk images of a start refused for broken disks, and the
+// details of a failed item; the disclosure's summary is underlined as a control
+.notification .broken-disk-list,
+.notification .error-details ul {
+  margin: 0.25rem 0 0.25rem 1.25rem;
+  list-style: disc;
+  columns: auto;
+}
+
+.notification .broken-disk-list ul {
+  margin-left: 1.25rem;
+  list-style: circle;
+  columns: auto;
+}
+
+.notification details > summary {
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.notification details > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 // A viewer who asks for reduced motion gets still spinners and markers; each

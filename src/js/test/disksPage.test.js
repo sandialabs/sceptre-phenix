@@ -611,6 +611,115 @@ describe('disks in folders and outside the files directory', () => {
   });
 });
 
+describe('disks with a broken backing chain', () => {
+  const MISSING = '/phenix/images/ro_kali.qc2';
+  const PROBLEM = `backing file ${MISSING} is missing`;
+  const broken = disk('/phenix/images/kali.qc2', 'kali.qc2', {
+    backingImages: ['/phenix/images/mid.qc2'],
+    brokenChain: true,
+    chainProblem: PROBLEM,
+    missingBacking: MISSING,
+  });
+  const mid = disk('/phenix/images/mid.qc2', 'mid.qc2', {
+    brokenChain: true,
+    chainProblem: PROBLEM,
+    missingBacking: MISSING,
+  });
+  const loop = disk('/data/vms/loop.qc2', '', {
+    brokenChain: true,
+    chainProblem: 'backing chain loops back to /data/vms/loop.qc2',
+  });
+  const whole = disk('/phenix/images/whole.qc2', 'whole.qc2');
+  const disks = [broken, mid, loop, whole];
+
+  it('tags each broken disk, naming the problem in its tooltip and accessible name', async () => {
+    const wrapper = await page(disks);
+
+    const tags = tableRows(wrapper).map((cells) =>
+      cells.Name.findAll('.broken-tag').map((tag) => textOf(tag)),
+    );
+    expect(names(wrapper)).toEqual([
+      '/data/vms/loop.qc2',
+      'kali.qc2',
+      'mid.qc2',
+      'whole.qc2',
+    ]);
+    expect(tags).toEqual([
+      ['Broken chain: backing chain loops back to /data/vms/loop.qc2'],
+      [`Broken chain: ${PROBLEM}`],
+      [`Broken chain: ${PROBLEM}`],
+      [],
+    ]);
+
+    // the tag says it in text, not by its color alone, and keeps its tooltip
+    const [loopRow] = tableRows(wrapper);
+    const tooltips = tooltipButtons(loopRow.Name).map((b) => b.tooltip);
+    expect(tooltips[0]).toBe('backing chain loops back to /data/vms/loop.qc2');
+    expect(textOf(loopRow.Name.find('.broken-tag .is-sr-only'))).toBe(
+      ': backing chain loops back to /data/vms/loop.qc2',
+    );
+  });
+
+  it('opens the details of a broken disk from its tag', async () => {
+    const wrapper = await page(disks);
+    const row = tableRows(wrapper).find(
+      (cells) => nameOf(cells) === 'kali.qc2',
+    );
+    expect(row.Name.find('.broken-tag').element.localName).toBe('button');
+    await row.Name.find('.broken-tag').trigger('click');
+    await flushPromises();
+
+    const details = wrapper.find('.modal.is-active');
+    expect(textOf(details.find('.modal-card-title'))).toBe('kali.qc2');
+  });
+
+  it('shows the readable chain, then the missing file, under the reason a VM cannot start', async () => {
+    const details = await openDetails(await page(disks), 'kali.qc2');
+
+    expect(textOf(details.find('.chain-problem'))).toBe(
+      `A VM cannot start from this image: ${PROBLEM}.`,
+    );
+    const chain = details.find('[style*="text-align: center"]');
+    expect(
+      chain
+        .findAll(':scope > div')
+        .map(({ element }) => element.lastElementChild)
+        .map((el) => [el.localName, textOf(el)]),
+    ).toEqual([
+      ['button', 'mid.qc2'],
+      ['span', `${MISSING} (missing)`],
+    ]);
+  });
+
+  it('shows the problem of a broken chain with no backing image it could read', async () => {
+    const details = await openDetails(await page(disks), 'mid.qc2');
+
+    expect(textOf(details.find('.chain-problem'))).toBe(
+      `A VM cannot start from this image: ${PROBLEM}.`,
+    );
+    expect(textOf(details.find('.missing-backing'))).toBe(
+      `${MISSING} (missing)`,
+    );
+  });
+
+  it('names no missing file for a chain that loops', async () => {
+    const details = await openDetails(await page(disks), '/data/vms/loop.qc2');
+
+    expect(textOf(details.find('.chain-problem'))).toBe(
+      'A VM cannot start from this image: backing chain loops back to ' +
+        '/data/vms/loop.qc2.',
+    );
+    expect(details.find('.missing-backing').exists()).toBe(false);
+  });
+
+  it('shows no chain problem for a whole chain', async () => {
+    const details = await openDetails(await page(disks), 'whole.qc2');
+
+    expect(details.find('.chain-problem').exists()).toBe(false);
+    expect(details.text()).not.toContain('Backing Chain');
+  });
+});
+
 describe('disk action requests', () => {
   // a path whose characters a query string would otherwise mangle
   const path = '/phenix/images/a+b&c=d/x%1.qc2';

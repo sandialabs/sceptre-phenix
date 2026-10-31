@@ -433,6 +433,63 @@ describe('outcomes', () => {
     ]);
   });
 
+  const BROKEN = {
+    message: 'unable to start experiment foo',
+    code: 'broken_disks',
+    details: {
+      disks: [
+        {
+          vm: 'host-01',
+          drive: 'disk',
+          image: 'kali.qc2',
+          problem: 'backing file /phenix/images/ro_kali.qc2 is missing',
+        },
+        {
+          vm: 'host-02',
+          drive: 'cdrom',
+          image: 'tools.iso',
+          problem: 'CD-ROM image /phenix/images/tools.iso is missing',
+        },
+      ],
+    },
+  };
+
+  it('counts the broken disks of a refused start, and lists each as a detail', () => {
+    const results = [{ status: 'rejected', reason: httpError(400, BROKEN) }];
+    expect(outcomeFromSettled(['foo'], results)).toEqual([
+      {
+        name: 'foo',
+        status: 'failed',
+        error: '2 disks on 2 VMs are missing or have a broken backing chain',
+        retryable: false,
+        details: [
+          'VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing',
+          'VM host-02: CD-ROM tools.iso: CD-ROM image /phenix/images/tools.iso is missing',
+        ],
+      },
+    ]);
+  });
+
+  it("lists the broken disks of a job's VM as details", () => {
+    const error =
+      'broken VM disk images: VM web: disk a.qc2: backing file /b.qc2 is missing. ' +
+      'VM web: CD-ROM t.iso: CD-ROM image /t.iso is missing';
+    expect(
+      outcomeFromJob({ items: [{ name: 'web', status: 'failed', error }] }),
+    ).toEqual([
+      {
+        name: 'web',
+        status: 'failed',
+        error: '2 disks are missing or have a broken backing chain',
+        retryable: false,
+        details: [
+          'disk a.qc2: backing file /b.qc2 is missing',
+          'CD-ROM t.iso: CD-ROM image /t.iso is missing',
+        ],
+      },
+    ]);
+  });
+
   it("passes a job's items through", () => {
     expect(
       outcomeFromJob({
@@ -594,6 +651,42 @@ describe('notifyOutcome', () => {
     messageOf(notice).querySelector('button').click();
     expect(onRetry).toHaveBeenCalledWith(['b']);
     await vi.waitFor(() => expect(notices()).toEqual([]));
+  });
+
+  it("shows an item's details in a disclosure, open when it is the only failure", async () => {
+    const buefy = await realBuefy();
+    const broken = (name) => ({
+      name,
+      status: 'failed',
+      error: '1 disk is missing or has a broken backing chain',
+      details: ['disk a.qc2: backing file /b.qc2 is missing'],
+    });
+
+    notifyOutcome(buefy, {
+      verbPast: 'Started',
+      noun: 'VM',
+      items: [broken('web')],
+    });
+    let [notice] = notices();
+    let details = messageOf(notice).querySelectorAll('details');
+    expect(lines(notice)).toEqual([
+      'Started 0 of 1 VM: 1 failed',
+      'web: 1 disk is missing or has a broken backing chain',
+      'Show 1 problemdisk a.qc2: backing file /b.qc2 is missing',
+    ]);
+    expect([...details].map((d) => d.open)).toEqual([true]);
+    expect(details[0].querySelector('summary')).not.toBe(null);
+    notice.querySelector('.delete').click();
+    await vi.waitFor(() => expect(notices()).toEqual([]));
+
+    notifyOutcome(buefy, {
+      verbPast: 'Started',
+      noun: 'VM',
+      items: [broken('web'), broken('db')],
+    });
+    [notice] = notices();
+    details = messageOf(notice).querySelectorAll('details');
+    expect([...details].map((d) => d.open)).toEqual([false, false]);
   });
 
   it('keeps its lasting notification when later toasts come and go', async () => {

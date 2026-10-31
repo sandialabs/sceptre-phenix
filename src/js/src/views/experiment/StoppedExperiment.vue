@@ -466,8 +466,9 @@
                   {{ diskText(props.row.disk) }}
                 </span>
                 <DiskWarning
-                  v-if="diskWarning(disks, props.row.disk)"
-                  :reason="diskWarning(disks, props.row.disk)"
+                  v-if="diskWarnings(disks, props.row.disk).length"
+                  :reasons="diskWarnings(disks, props.row.disk)"
+                  :detail="chainProblem(findDisk(disks, props.row.disk))"
                   :files-dir="filesDir(disks)" />
               </template>
             </b-table-column>
@@ -624,8 +625,9 @@
   import { escapeHTML } from '@/utils/escapeHTML.js';
   import { notifyOutcome } from '@/utils/operations.js';
   import {
+    chainProblem,
     diskLabel,
-    diskWarning,
+    diskWarnings,
     filesDir,
     findDisk,
   } from '@/utils/diskChain.js';
@@ -650,8 +652,10 @@
         roleAllowed,
         TAB,
         pluralWord,
-        diskWarning,
+        chainProblem,
+        diskWarnings,
         filesDir,
+        findDisk,
       };
     },
     beforeUnmount() {

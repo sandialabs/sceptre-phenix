@@ -86,15 +86,29 @@ export function diskOptions(disks) {
   };
 }
 
-// Why a VM's disk needs a warning: 'outside' the minimega files directory,
-// or 'unlisted' when the list is known and does not hold it. Null when it
-// needs none or the list is not known (null), as for a role that may not list
-// disks.
-export function diskWarning(disks, path) {
-  if (!path || !Array.isArray(disks)) return null;
+// What breaks a disk's backing chain, in one sentence, or '' when the server
+// found no break (see brokenChain in the disk list).
+export const chainProblem = (disk) =>
+  disk?.brokenChain
+    ? disk.chainProblem || 'a file in its backing chain is missing'
+    : '';
+
+// Why a disk in the list needs a warning, the most serious first: its backing
+// chain is 'broken', or it is 'outside' the minimega files directory.
+export function diskReasons(disk) {
+  const reasons = [];
+  if (disk?.brokenChain) reasons.push('broken');
+  if (disk?.outsideFilesDir) reasons.push('outside');
+  return reasons;
+}
+
+// Why a VM's disk needs a warning: those of diskReasons, or 'unlisted' when
+// the list is known and does not hold it. Empty when it needs none or the list
+// is not known (null), as for a role that may not list disks.
+export function diskWarnings(disks, path) {
+  if (!path || !Array.isArray(disks)) return [];
   const disk = findDisk(disks, path);
-  if (!disk) return 'unlisted';
-  return disk.outsideFilesDir ? 'outside' : null;
+  return disk ? diskReasons(disk) : ['unlisted'];
 }
 
 // the ISO images in a disk list, for the CD-ROM picker

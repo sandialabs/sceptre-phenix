@@ -86,6 +86,23 @@ func (r Result) Sentence() string {
 	return ""
 }
 
+// MapPaths returns r with each file it names passed through f, such as to clean the paths; the backing name of a
+// NotAFile is kept as it is.
+func (r Result) MapPaths(f func(string) string) Result {
+	members := make([]string, 0, len(r.Members))
+	for _, m := range r.Members {
+		members = append(members, f(m))
+	}
+
+	r.Members = members
+
+	if r.Problem != NotAFile && r.At != "" {
+		r.At = f(r.At)
+	}
+
+	return r
+}
+
 // Walk follows the backing chain of the image at path as qemu opens it, reading only headers. It stops at the first
 // problem, or once ctx is done, which it reports as Unreadable.
 func Walk(ctx context.Context, path string) Result {

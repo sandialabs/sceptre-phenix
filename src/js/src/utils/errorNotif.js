@@ -1,4 +1,5 @@
 import { usePhenixStore } from '@/store.js';
+import { brokenDisks, brokenDisksBody } from '@/utils/brokenDisks.js';
 import { escapeHTML } from '@/utils/escapeHTML.js';
 import { openNotification } from '@/utils/notify.js';
 import { errorBody, errorSteps } from '@/utils/operations.js';
@@ -29,7 +30,7 @@ export async function useErrorNotification(error) {
 }
 
 // The notification body for an error the server answered, whose JSON Error
-// may come as an object, as text, or in a download's Blob.
+// may come as an object, as text, or in a download's Blob: HTML, or a VNode.
 async function responseMessage(error) {
   const response = error.response;
   let data = response.data;
@@ -40,6 +41,8 @@ async function responseMessage(error) {
     usePhenixStore().logout();
     return 'Token was invalid. Logging out';
   }
+  const disks = brokenDisks(body);
+  if (disks) return brokenDisksBody(body.message ?? error.message, disks);
   if (body || isJSON(response)) {
     return errorHTML(body?.message ?? error.message, body?.cause);
   }
@@ -87,6 +90,7 @@ export function showError(title, detail) {
   showErrorNotification(errorHTML(title, detail));
 }
 
+// message is HTML, or a VNode that carries its own role=alert
 function showErrorNotification(message) {
   openNotification({
     type: 'is-danger',
@@ -96,6 +100,9 @@ function showErrorNotification(message) {
     ariaCloseLabel: 'Dismiss error',
     // Buefy renders the notice as an <article>, which may not carry role=alert;
     // wrap the text instead so assistive technology announces it.
-    message: `<span role="alert">${message}</span>`,
+    message:
+      typeof message === 'string'
+        ? `<span role="alert">${message}</span>`
+        : message,
   });
 }

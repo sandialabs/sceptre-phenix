@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"phenix/util/diskchain"
 	"phenix/util/mm"
 	"phenix/util/plog"
 )
@@ -60,11 +61,13 @@ type fileStamp struct {
 
 // cacheEntry is an image's backing chain, the image first, as last inspected,
 // with a stamp and the cleaned path (see mm.CleanBackingPath) of every file in
-// the chain.
+// the chain. For a broken chain, broken is the walk that found the break, and
+// stamps also hold the files it read and the folder of a missing file.
 type cacheEntry struct {
 	chain  []qemuImage
 	stamps []fileStamp
 	paths  []string
+	broken diskchain.Result
 }
 
 // ClearCache forgets every inspected image, so the next listing inspects them
@@ -160,7 +163,8 @@ func stat(path string) (fileStamp, error) {
 }
 
 // cachedChain returns the image's chain and stamps, inspecting it again only once
-// it or its backing files changed; an incomplete chain is never cached.
+// it or its backing files changed. An incomplete chain is cached only when it is
+// broken, until a file it read or the folder of the missing file changes.
 func cachedChain(path string) (cacheEntry, error) {
 	cacheMu.Lock()
 	entry, ok := imageCache[path]
@@ -175,7 +179,7 @@ func cachedChain(path string) (cacheEntry, error) {
 		return cacheEntry{}, err
 	}
 
-	entry = cacheEntry{
+	entry = cacheEntry{ //nolint:exhaustruct // addBreak sets broken
 		chain:  chain,
 		stamps: make([]fileStamp, 0, len(chain)),
 		paths:  make([]string, 0, len(chain)),
@@ -199,8 +203,13 @@ func cachedChain(path string) (cacheEntry, error) {
 		}
 	}
 
+	cacheable := complete
+	if !complete {
+		cacheable = entry.addBreak(path)
+	}
+
 	cacheMu.Lock()
-	if complete {
+	if cacheable {
 		imageCache[path] = entry
 	} else {
 		delete(imageCache, path)
@@ -208,6 +217,54 @@ func cachedChain(path string) (cacheEntry, error) {
 	cacheMu.Unlock()
 
 	return entry, nil
+}
+
+// addBreak records in e why the chain of the image at path, which qemu-img
+// could not read to its base, is broken, if it is. It reports whether e can be
+// cached: the chain is broken, and stamps tell when the files that break it
+// change, including the folder in which a missing file would appear.
+func (e *cacheEntry) addBreak(path string) bool {
+	res, ok := brokenChain(path)
+	if !ok {
+		return false
+	}
+
+	e.broken = res
+
+	watched := slices.Clone(res.Members)
+	if res.Problem == diskchain.Missing {
+		watched = append(watched, filepath.Dir(res.At))
+	}
+
+	for _, p := range watched {
+		if p == path {
+			continue
+		}
+
+		stamp, err := stat(p)
+		if err != nil {
+			return false
+		}
+
+		e.stamps = append(e.stamps, stamp)
+	}
+
+	return true
+}
+
+// brokenChain walks the backing chain of the image at path and returns the
+// walk, its paths cleaned (see mm.CleanBackingPath), when qemu cannot open the
+// image (see diskchain.Result.Broken).
+func brokenChain(path string) (diskchain.Result, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), qemuImgTimeout)
+	defer cancel()
+
+	res := diskchain.Walk(ctx, path)
+	if !res.Broken() {
+		return diskchain.Result{}, false
+	}
+
+	return res.MapPaths(mm.CleanBackingPath), true
 }
 
 // chainPath resolves a filename qemu-img reported, which is relative to the
@@ -312,6 +369,10 @@ func chainDetails(entry cacheEntry, locked map[uint64]bool) []Details {
 			details.Kind = ISOImage
 		default:
 			details.Kind = UNKNOWN
+		}
+
+		if i == 0 && entry.broken.Broken() {
+			details.setBreak(entry.broken)
 		}
 
 		images = append(images, details)

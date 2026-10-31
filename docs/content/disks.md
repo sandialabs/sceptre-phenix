@@ -37,7 +37,7 @@ image built on it add their own sizes.
 
 | Column | What it shows |
 | :--- | :--- |
-| `Name` | The image's path within the minimega files directory, such as `win/win10.qcow2`, or its full path, with a warning icon, when it is [outside that directory](#images-outside-the-files-directory). Clicking the row opens the image's details. |
+| `Name` | The image's path within the minimega files directory, such as `win/win10.qcow2`, or its full path, with a warning icon, when it is [outside that directory](#images-outside-the-files-directory). A `Broken chain` tag marks an image whose [backing chain is broken](#broken-backing-chains). Clicking the row opens the image's details. |
 | `Kind` | `VM`, `Container`, `ISO`, or `Unknown`. |
 | `In Use` | An icon when something holds the image open, with a tooltip naming which experiments. |
 | `Size on Disk` | How much room the file takes now. |
@@ -306,16 +306,60 @@ logs `minimega did not give its files directory`, and asks again at most once a
 minute. When minimega answers with a different directory, phēnix lists and
 watches that one instead, and open `Disks` pages reload.
 
-## Missing Backing Files
+## Broken Backing Chains
 
 A VM cannot start from an image whose backing file is missing. Before each
 start, phēnix checks the backing chain of each VM disk and refuses the start
 when a file is missing. See
-[Disk Check Before a Start](experiments.md#disk-check-before-a-start). To
-repair the image, do one of these steps:
+[Disk Check Before a Start](experiments.md#disk-check-before-a-start).
+
+The table shows a `Broken chain` tag beside the name of an image that qemu
+cannot open. These are the causes:
+
+* A file in the backing chain is missing.
+* The chain names one of its own images again (a loop).
+* The chain has more than 64 images.
+
+Hovering over or focusing the tag shows the problem, for example
+`backing file /phenix/images/ro_kali.qc2 is missing`. A screen reader reads
+the problem as part of the tag. Clicking the tag opens the image's details.
+
+In the details window, the `Backing Chain` section starts with a line such as
+`A VM cannot start from this image: backing file /phenix/images/ro_kali.qc2 is missing.`
+Below the image, the section lists the backing images that phēnix could read.
+For a missing file, the last row names its full path, followed by `(missing)`.
+
+phēnix marks an image only when it can read each image in the chain, up to the
+problem. It does not mark these images:
+
+* An image backed by a vmdk or qed image, or by a backing format other than
+  qcow2 or raw. phēnix does not examine the chain past that image.
+* An image that phēnix cannot open, such as an image that only minimega can
+  see.
+
+The tag shows the view of the head node. A file that is present on a compute
+node but missing on the head node also shows the tag. On the experiment pages,
+a VM disk with a broken chain shows a red icon with a cross, in place of the
+warning triangle. Its tooltip reads
+`This image's backing chain is broken: <problem>. Starting the experiment may fail.`
+
+The tag goes away when the missing file appears. A change in the minimega files
+directory reloads open `Disks` pages, as
+[How phēnix Inspects Images](#how-phenix-inspects-images) describes. For a
+missing file outside that directory, use the header's refresh button.
+
+`GET /api/v1/disks` gives the same data in three fields of each disk:
+`brokenChain`, `chainProblem` (one sentence), and `missingBacking` (the full
+path of the missing file, or empty for a loop). For a broken chain,
+`backingImages` lists only the images that phēnix could read. The CLI has no
+command that lists these fields.
+
+To repair the image, do one of these steps:
 
 1. Restore the missing backing file at the path that the error names.
-2. Use `Rebase` to rebase the image onto a backing image that exists.
+2. Point the image at a copy of the missing backing file. Use `Rebase` with
+   `Change reference only` selected (minimega's `disk set-backing`). A rebase
+   without this option must read the missing file, so it fails.
 3. Change the topology to use a different image.
 
 ## Downloading an Image
