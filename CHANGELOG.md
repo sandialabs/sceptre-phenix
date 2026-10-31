@@ -52,6 +52,7 @@ All notable changes to this project will be documented in this file.
 - **CLI**: Replaced the `MustGetString`, `MustGetBool`, `MustGetInt` and `MustGetStringArray` flag helpers with one generic `mustGet` helper.
 - **minimega Connection**: `vm launch` and `read` run on a dedicated minimega connection, so other commands do not wait for them. C2 commands and VNC endpoint lookups stop when their context ends, and tunnel and `vm flush` commands ignore "vm not found" answers from other cluster nodes.
 - **Audit Logging (breaking)**: The web API logs sign-ins, refused tokens and security-relevant actions as `AUDIT` records with Elastic Common Schema fields, not as `SECURITY` or `ACTION` records, and always writes them to the system log file.
+- **Config Store (breaking)**: The BoltDB store opens read-only for reads, writes each config change in one transaction, and gives each config a `metadata.revision`, so `phenix config edit` refuses edits to a config that changed after it opened. On the first write, the store file changes to the format that keeps the free page list in the file.
 
 ### Removed
 

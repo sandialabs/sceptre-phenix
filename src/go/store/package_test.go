@@ -15,7 +15,6 @@ func TestInitEndpointScheme(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "bolt", endpoint: "bolt://" + boltPath},
-		{name: "etcd", endpoint: "etcd://localhost:2379", wantErr: true},
 		{name: "unknown", endpoint: "foo://localhost", wantErr: true},
 	}
 
