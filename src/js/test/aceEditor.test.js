@@ -44,7 +44,14 @@ describe('AceEditor', () => {
 
   beforeEach(() => {
     editor = fakeEditor();
-    ace.edit = vi.fn(() => editor);
+    ace.edit = vi.fn((el) => {
+      for (const suffix of ['-v', '-h']) {
+        const bar = document.createElement('div');
+        bar.className = `ace_scrollbar ace_scrollbar${suffix}`;
+        el.appendChild(bar);
+      }
+      return editor;
+    });
   });
 
   test('turns on keyboard accessibility, so Tab does not trap focus', async () => {
@@ -55,6 +62,17 @@ describe('AceEditor', () => {
     expect(ace.edit.mock.calls[0][1]).toMatchObject({
       enableKeyboardAccessibility: true,
     });
+  });
+
+  test('takes the scroll bars out of the tab order', async () => {
+    const wrapper = mountAce();
+    await vi.waitFor(() => expect(wrapper.vm.isLoading).toBe(false));
+
+    const bars = wrapper.findAll('.ace_scrollbar');
+    expect(bars).toHaveLength(2);
+    for (const bar of bars) {
+      expect(bar.attributes('tabindex')).toBe('-1');
+    }
   });
 
   test('an editor removed before Ace loads makes no editor and does not throw', async () => {

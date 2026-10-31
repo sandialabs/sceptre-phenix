@@ -1,16 +1,17 @@
 <template>
   <div class="modal-card" style="width: auto">
     <header class="modal-card-head">
-      <p class="modal-card-title mr-6">{{ this.vmName }} Labels</p>
+      <h2 class="modal-card-title mr-6">{{ this.vmName }} Labels</h2>
     </header>
     <section class="modal-card-body fixed-height">
-      <p class="title is-4">Notes</p>
+      <h3 class="title is-4">Notes</h3>
       <b-table :data="workingNotes" ref="notesTable">
         <b-table-column field="value" label="Value" v-slot="props">
           <template v-if="canEdit()">
             <textarea
               class="textarea has-fixed-size"
               rows="1"
+              :aria-label="`Note ${props.index + 1}`"
               v-model="props.row.value"
               @input="resizeNoteTextArea(`note${props.index}`)"
               @keypress="(evt) => noteKeyHandler(evt, `note${props.index}`)"
@@ -21,9 +22,13 @@
           </template>
         </b-table-column>
         <b-table-column v-slot="props" v-if="canEdit()" width="32px">
-          <div @click="deleteNote(props.row)" class="is-clickable">
+          <button
+            type="button"
+            class="plain-button"
+            :aria-label="`Delete note ${props.index + 1}`"
+            @click="deleteNote(props.row)">
             <font-awesome-icon icon="trash" />
-          </div>
+          </button>
         </b-table-column>
         <template #footer v-if="canEdit()">
           <b-button
@@ -36,11 +41,12 @@
         </template>
       </b-table>
       <hr />
-      <p class="title is-4">Labels</p>
+      <h3 class="title is-4">Labels</h3>
       <b-table :data="workingTags">
         <b-table-column field="key" label="Key" v-slot="props" width="192px">
           <template v-if="canEdit()">
             <b-input
+              :aria-label="`Label ${props.index + 1} key`"
               v-model="props.row.key"
               v-on:keyup.enter="addTag()"
               :ref="`tagKey${props.index}`" />
@@ -55,16 +61,23 @@
           v-slot="props"
           width="512px">
           <template v-if="canEdit()">
-            <b-input v-model="props.row.value" v-on:keyup.enter="addTag()" />
+            <b-input
+              :aria-label="`Label ${props.index + 1} value`"
+              v-model="props.row.value"
+              v-on:keyup.enter="addTag()" />
           </template>
           <template v-else>
             {{ props.row.value }}
           </template>
         </b-table-column>
         <b-table-column v-slot="props" v-if="canEdit()" width="32px">
-          <div @click="deleteTag(props.row)" class="is-clickable">
+          <button
+            type="button"
+            class="plain-button"
+            :aria-label="`Delete label ${props.row.key || props.index + 1}`"
+            @click="deleteTag(props.row)">
             <font-awesome-icon icon="trash" />
-          </div>
+          </button>
         </b-table-column>
         <template #footer v-if="canEdit()">
           <b-button
@@ -225,5 +238,14 @@
 
   textarea {
     overflow-y: hidden;
+  }
+
+  .plain-button {
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
   }
 </style>

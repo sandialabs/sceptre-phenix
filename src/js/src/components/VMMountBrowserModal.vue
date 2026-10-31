@@ -2,10 +2,11 @@
   <form action="">
     <div class="modal-card">
       <header class="modal-card-head">
-        <p class="modal-card-title mr-6">{{ targetVm }} Mount</p>
+        <h2 class="modal-card-title mr-6">{{ targetVm }} Mount</h2>
         <button
           type="button"
           class="delete light"
+          aria-label="Close"
           @click="$emit('close')"></button>
       </header>
       <section class="modal-card-body">
@@ -13,17 +14,22 @@
           <b-breadcrumb-item
             v-for="p in pathParts"
             :key="p.upTo"
-            @click="currentPath = p.upTo"
+            href="#"
+            :aria-current="p == pathParts.at(-1) ? 'location' : undefined"
+            @click.prevent="currentPath = p.upTo"
             :active="p == pathParts.at(-1)">
             {{ p.part }}
           </b-breadcrumb-item>
         </b-breadcrumb>
         <b-table :data="files" :loading="filesLoading" class="fixed-table">
           <b-table-column field="name" label="File" v-slot="props">
-            <a v-if="props.row.isDir" @click="currentPath = props.row.path">{{
-              `${props.row.name}/`
-            }}</a>
-            <a v-else @click="downloadFile(props.row.path)">{{
+            <a
+              v-if="props.row.isDir"
+              href="#"
+              @click.prevent="currentPath = props.row.path"
+              >{{ `${props.row.name}/` }}</a
+            >
+            <a v-else href="#" @click.prevent="downloadFile(props.row.path)">{{
               props.row.name
             }}</a>
           </b-table-column>
@@ -77,6 +83,7 @@
           class="ml-3"
           style="margin-bottom: 0">
           <b-select
+            aria-label="Copy experiment file"
             v-model="selectedExperimentFile"
             :disabled="
               copyingExperimentFile ||

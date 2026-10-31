@@ -16,16 +16,19 @@ It requires a valid username and password.
       :destroy-on-hide="false">
       <!-- The page keeps the dialog after it closes, so one reopened while it
            closes still shows. A new form key on each open drops old values. -->
-      <div class="modal-card" :key="signUpForm">
+      <form
+        class="modal-card"
+        :key="signUpForm"
+        novalidate
+        @submit.prevent="create">
         <header class="modal-card-head">
-          <p class="modal-card-title">Create a New Account</p>
+          <h2 class="modal-card-title">Create a New Account</h2>
         </header>
         <section class="modal-card-body">
           <b-field
             label="User Name"
             label-for="signup-username"
-            :type="{ 'is-danger': userExists }"
-            :message="{ 'User already exists': userExists }">
+            :type="signUpError('username') ? 'is-danger' : null">
             <b-input
               id="signup-username"
               :compat-fallthrough="false"
@@ -33,71 +36,159 @@ It requires a valid username and password.
               type="text"
               autocomplete="username"
               v-model="signUp.username"
+              v-bind="invalid(signUpError('username'), 'signup-username-error')"
               minlength="4"
               maxlength="32"></b-input>
+            <template #message="{ messages }">
+              <span
+                v-if="signUpError('username') || messages.length"
+                id="signup-username-error"
+                >{{ signUpError('username') || messages.join(' ') }}</span
+              >
+            </template>
           </b-field>
-          <b-field label="First Name" label-for="signup-first-name">
+          <b-field
+            label="First Name"
+            label-for="signup-first-name"
+            :type="signUpErrors.first_name ? 'is-danger' : null">
             <b-input
               id="signup-first-name"
               :compat-fallthrough="false"
+              ref="signupFirstName"
               type="text"
               autocomplete="given-name"
-              v-model="signUp.first_name"></b-input>
+              v-model="signUp.first_name"
+              v-bind="
+                invalid(signUpErrors.first_name, 'signup-first-name-error')
+              "></b-input>
+            <template #message>
+              <span
+                v-if="signUpErrors.first_name"
+                id="signup-first-name-error"
+                >{{ signUpErrors.first_name }}</span
+              >
+            </template>
           </b-field>
-          <b-field label="Last Name" label-for="signup-last-name">
+          <b-field
+            label="Last Name"
+            label-for="signup-last-name"
+            :type="signUpErrors.last_name ? 'is-danger' : null">
             <b-input
               id="signup-last-name"
               :compat-fallthrough="false"
+              ref="signupLastName"
               type="text"
               autocomplete="family-name"
-              v-model="signUp.last_name"></b-input>
+              v-model="signUp.last_name"
+              v-bind="
+                invalid(signUpErrors.last_name, 'signup-last-name-error')
+              "></b-input>
+            <template #message>
+              <span v-if="signUpErrors.last_name" id="signup-last-name-error">{{
+                signUpErrors.last_name
+              }}</span>
+            </template>
           </b-field>
-          <b-field label="Password" label-for="signup-password">
+          <b-field
+            label="Password"
+            label-for="signup-password"
+            :type="signUpErrors.password ? 'is-danger' : null">
             <b-input
               id="signup-password"
               :compat-fallthrough="false"
+              ref="signupPassword"
               type="password"
               autocomplete="new-password"
               minlength="8"
               maxlength="32"
-              v-model="signUp.password"></b-input>
+              v-model="signUp.password"
+              v-bind="
+                invalid(signUpErrors.password, 'signup-password-error')
+              "></b-input>
+            <template #message="{ messages }">
+              <span
+                v-if="signUpErrors.password || messages.length"
+                id="signup-password-error"
+                >{{ signUpErrors.password || messages.join(' ') }}</span
+              >
+            </template>
           </b-field>
-          <b-field label="Confirm Password" label-for="signup-confirm-password">
+          <b-field
+            label="Confirm Password"
+            label-for="signup-confirm-password"
+            :type="signUpErrors.confirmPassword ? 'is-danger' : null">
             <b-input
               id="signup-confirm-password"
               :compat-fallthrough="false"
+              ref="signupConfirmPassword"
               type="password"
               autocomplete="new-password"
               minlength="8"
               maxlength="32"
               v-model="signUp.confirmPassword"
-              @keyup.enter="create"></b-input>
+              v-bind="
+                invalid(
+                  signUpErrors.confirmPassword,
+                  'signup-confirm-password-error',
+                )
+              "></b-input>
+            <template #message="{ messages }">
+              <span
+                v-if="signUpErrors.confirmPassword || messages.length"
+                id="signup-confirm-password-error"
+                >{{ signUpErrors.confirmPassword || messages.join(' ') }}</span
+              >
+            </template>
           </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <button class="button" @click="create">Create User</button>
+          <button type="submit" class="button">Create User</button>
         </footer>
-      </div>
+      </form>
     </b-modal>
-    <div class="signin-form">
-      <b-field label="Username" label-for="signin-username">
+    <!-- A form, so Enter submits it and password managers know its fields. -->
+    <form class="signin-form" novalidate @submit.prevent="onSubmit">
+      <h1 class="title is-4">Sign in</h1>
+      <b-field
+        label="Username"
+        label-for="signin-username"
+        :type="errors.username ? 'is-danger' : null">
         <b-input
           id="signin-username"
           :compat-fallthrough="false"
           ref="username"
           type="text"
           autocomplete="username"
-          v-model="username"></b-input>
+          v-model="username"
+          v-bind="invalid(errors.username, 'signin-username-error')"></b-input>
+        <template #message>
+          <span v-if="errors.username" id="signin-username-error">{{
+            errors.username
+          }}</span>
+        </template>
       </b-field>
-      <b-field label="Password" label-for="signin-password">
+      <b-field
+        label="Password"
+        label-for="signin-password"
+        :type="errors.password ? 'is-danger' : null">
         <b-input
           id="signin-password"
           :compat-fallthrough="false"
+          ref="password"
           type="password"
           autocomplete="current-password"
           v-model="password"
-          @keyup.enter="onSubmit"></b-input>
+          v-bind="invalid(errors.password, 'signin-password-error')"></b-input>
+        <template #message>
+          <span v-if="errors.password" id="signin-password-error">{{
+            errors.password
+          }}</span>
+        </template>
       </b-field>
+      <!-- Stays on the page until the next attempt, unlike a toast. -->
+      <div class="signin-error" role="alert">
+        <p v-if="errors.form" class="help is-danger">{{ errors.form }}</p>
+      </div>
       <b-checkbox
         type="is-light"
         size="is-small"
@@ -106,14 +197,15 @@ It requires a valid username and password.
         >Remember me</b-checkbox
       >
       <br />
-      <button class="button" @click="onSubmit">Submit</button>
+      <button type="submit" class="button">Submit</button>
       <button
         ref="createAccount"
+        type="button"
         class="button is-pulled-right is-small is-text"
         @click="signUpModal = true">
         Create Account
       </button>
-    </div>
+    </form>
   </div>
 </template>
 
@@ -133,28 +225,56 @@ It requires a valid username and password.
     };
   }
 
+  // The inline errors of the Create Account fields.
+  function blankSignUpErrors() {
+    return {
+      username: null,
+      first_name: null,
+      last_name: null,
+      password: null,
+      confirmPassword: null,
+    };
+  }
+
+  // The inline errors of the sign-in form.
+  function blankErrors() {
+    return { username: null, password: null, form: null };
+  }
+
   export default {
-    //  this method is called when the Submit button is pressed (or
-    //  return key is) executed. It will check that a username
-    //  is used, and/or a password. It does not check if they are valid.
     methods: {
-      onSubmit() {
-        if (!this.username) {
-          this.$buefy.toast.open({
-            message: 'You must include a username',
-            type: 'is-warning',
-            duration: 4000,
-          });
-          return {};
+      // The attributes that tie a field to its inline error, if it has one.
+      invalid(error, id) {
+        return error
+          ? { 'aria-invalid': 'true', 'aria-describedby': id }
+          : { 'aria-invalid': null, 'aria-describedby': null };
+      },
+
+      // The Create Account field error, including a name that is taken.
+      signUpError(field) {
+        if (field === 'username' && this.userExists) {
+          return 'User already exists';
         }
+        return this.signUpErrors[field];
+      },
 
+      //  this method is called when the Submit button is pressed (or
+      //  return key is) executed. It will check that a username
+      //  is used, and/or a password. It does not check if they are valid.
+      onSubmit() {
+        this.errors = blankErrors();
+
+        if (!this.username) {
+          this.errors.username = 'You must include a username';
+        }
         if (!this.password) {
-          this.$buefy.toast.open({
-            message: 'You must include a password',
-            type: 'is-warning',
-            duration: 4000,
-          });
-
+          this.errors.password = 'You must include a password';
+        }
+        if (this.errors.username || this.errors.password) {
+          (this.errors.username
+            ? this.$refs.username
+            : this.$refs.password
+          )?.focus();
           return {};
         }
 
@@ -165,97 +285,57 @@ It requires a valid username and password.
               const store = usePhenixStore();
               store.login(response.data, this.rememberMe);
             },
-            (response) => {
-              if (response.status == 401) {
-                this.$buefy.toast.open({
-                  message: 'The username and/or password is incorrect',
-                  type: 'is-warning',
-                  duration: 4000,
-                });
+            (err) => {
+              const status = err.status ?? err.response?.status;
 
-                this.username = null;
-                this.password = null;
-              } else if (response.status == 0) {
-                this.$buefy.toast.open({
-                  message: 'The data server is not available.',
-                  type: 'is-danger',
-                  duration: 6000,
-                });
-
-                this.username = null;
-                this.password = null;
+              if (status == 401) {
+                this.errors.form = 'The username and/or password is incorrect';
+              } else if (!status) {
+                this.errors.form = 'The data server is not available.';
               } else {
-                this.$buefy.toast.open({
-                  message: 'Getting the user information failed.',
-                  type: 'is-danger',
-                  duration: 4000,
-                });
-
-                this.username = null;
-                this.password = null;
+                this.errors.form = 'Getting the user information failed.';
               }
+
+              // The username stays, so only the password is typed again.
+              this.password = null;
+              this.$refs.password?.focus();
             },
           );
       },
 
       create() {
-        if (!this.signUp.username) {
-          this.$buefy.toast.open({
-            message: 'You must include an username',
-            type: 'is-warning',
-            duration: 4000,
-          });
+        const checks = [
+          ['username', 'You must include a username'],
+          ['first_name', 'You must include a first name'],
+          ['last_name', 'You must include a last name'],
+          ['password', 'You must include a password'],
+          ['confirmPassword', 'You must include a password confirmation'],
+        ];
+        const refs = {
+          username: 'signupUsername',
+          first_name: 'signupFirstName',
+          last_name: 'signupLastName',
+          password: 'signupPassword',
+          confirmPassword: 'signupConfirmPassword',
+        };
 
-          return {};
+        this.signUpErrors = blankSignUpErrors();
+        for (const [field, message] of checks) {
+          if (!this.signUp[field]) {
+            this.signUpErrors[field] = message;
+          }
+        }
+        if (
+          !this.signUpErrors.confirmPassword &&
+          this.signUp.password &&
+          this.signUp.password != this.signUp.confirmPassword
+        ) {
+          this.signUpErrors.confirmPassword = 'Your passwords do not match';
         }
 
-        if (!this.signUp.first_name) {
-          this.$buefy.toast.open({
-            message: 'You must include a first name',
-            type: 'is-warning',
-            duration: 4000,
-          });
-
-          return {};
-        }
-
-        if (!this.signUp.last_name) {
-          this.$buefy.toast.open({
-            message: 'You must include a last name',
-            type: 'is-warning',
-            duration: 4000,
-          });
-
-          return {};
-        }
-
-        if (!this.signUp.password) {
-          this.$buefy.toast.open({
-            message: 'You must include a password',
-            type: 'is-warning',
-            duration: 4000,
-          });
-
-          return {};
-        }
-
-        if (!this.signUp.confirmPassword) {
-          this.$buefy.toast.open({
-            message: 'You must include a password confirmation',
-            type: 'is-warning',
-            duration: 4000,
-          });
-
-          return {};
-        }
-
-        if (this.signUp.password != this.signUp.confirmPassword) {
-          this.$buefy.toast.open({
-            message: 'Your passwords do not match',
-            type: 'is-warning',
-            duration: 4000,
-          });
-
+        const first = checks.find(([field]) => this.signUpErrors[field]);
+        if (first) {
+          this.$refs[refs[first[0]]]?.focus();
           return {};
         }
 
@@ -314,6 +394,7 @@ It requires a valid username and password.
       signUpModal(open) {
         if (open) {
           this.signUp = blankSignUp();
+          this.signUpErrors = blankSignUpErrors();
           this.userExists = false;
           this.signUpForm++;
         }
@@ -336,6 +417,8 @@ It requires a valid username and password.
         // The key of the dialog's form, changed each time it opens.
         signUpForm: 0,
         signUp: blankSignUp(),
+        signUpErrors: blankSignUpErrors(),
+        errors: blankErrors(),
         username: null,
         password: null,
         rememberMe: false,
@@ -362,5 +445,18 @@ It requires a valid username and password.
 
   label.checkbox:hover {
     color: whitesmoke;
+  }
+
+  /* Buefy fields keep their message slot; it shows only with an error. */
+  .signin-form :deep(.help:empty) {
+    display: none;
+  }
+
+  .signin-error p {
+    margin: -0.25rem 0 0.75rem;
+  }
+
+  .modal-card :deep(.help:empty) {
+    display: none;
   }
 </style>

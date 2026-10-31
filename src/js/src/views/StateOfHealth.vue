@@ -7,10 +7,10 @@
       :width="1280">
       <div class="modal-card" style="width: auto">
         <header class="modal-card-head">
-          <p class="modal-card-title">{{ detailsModal.vm }} Details</p>
+          <h2 class="modal-card-title">{{ detailsModal.vm }} Details</h2>
         </header>
         <section class="modal-card-body">
-          <p class="title is-4">Notes</p>
+          <h3 class="title is-4">Notes</h3>
           <div class="content">
             <ul>
               <li
@@ -25,15 +25,18 @@
             </ul>
           </div>
           <hr />
-          <p class="title is-4">State of Health</p>
+          <h3 class="title is-4">State of Health</h3>
           <template v-if="detailsModal.soh">
             <br />
             <div v-if="detailsModal.soh.cpuLoad">
-              <p class="title is-6">CPU Load: {{ detailsModal.soh.cpuLoad }}</p>
+              <h4 class="title is-6">
+                <abbr title="central processing unit">CPU</abbr> Load:
+                {{ detailsModal.soh.cpuLoad }}
+              </h4>
             </div>
             <br />
             <div v-if="detailsModal.soh.networking">
-              <p class="title is-6">Networking</p>
+              <h4 class="title is-6">Networking</h4>
               <b-table
                 :data="detailsModal.soh.networking"
                 default-sort="timestamp">
@@ -62,7 +65,7 @@
               <br />
             </div>
             <div v-if="detailsModal.soh.reachability">
-              <p class="title is-6">Reachability</p>
+              <h4 class="title is-6">Reachability</h4>
               <b-table
                 :data="detailsModal.soh.reachability"
                 default-sort="timestamp">
@@ -105,7 +108,7 @@
               <br />
             </div>
             <div v-if="detailsModal.soh.processes">
-              <p class="title is-6">Processes</p>
+              <h4 class="title is-6">Processes</h4>
               <b-table
                 :data="detailsModal.soh.processes"
                 default-sort="timestamp">
@@ -141,7 +144,7 @@
               <br />
             </div>
             <div v-if="detailsModal.soh.files">
-              <p class="title is-6">Files</p>
+              <h4 class="title is-6">Files</h4>
               <b-table :data="detailsModal.soh.files" default-sort="timestamp">
                 <b-table-column
                   field="timestamp"
@@ -175,7 +178,7 @@
               <br />
             </div>
             <div v-if="detailsModal.soh.filesAbsent">
-              <p class="title is-6">Files (Absent)</p>
+              <h4 class="title is-6">Files (Absent)</h4>
               <b-table
                 :data="detailsModal.soh.filesAbsent"
                 default-sort="timestamp">
@@ -211,7 +214,7 @@
               <br />
             </div>
             <div v-if="detailsModal.soh.services">
-              <p class="title is-6">Services</p>
+              <h4 class="title is-6">Services</h4>
               <b-table
                 :data="detailsModal.soh.services"
                 default-sort="timestamp">
@@ -247,7 +250,7 @@
               <br />
             </div>
             <div v-if="detailsModal.soh.listeners">
-              <p class="title is-6">Listeners</p>
+              <h4 class="title is-6">Listeners</h4>
               <b-table
                 :data="detailsModal.soh.listeners"
                 default-sort="timestamp">
@@ -283,7 +286,7 @@
               <br />
             </div>
             <div v-if="detailsModal.soh.containers">
-              <p class="title is-6">Docker Containers</p>
+              <h4 class="title is-6">Docker Containers</h4>
               <b-table
                 :data="detailsModal.soh.containers"
                 default-sort="timestamp">
@@ -319,7 +322,7 @@
               <br />
             </div>
             <div v-if="detailsModal.soh.customTests">
-              <p class="title is-6">Custom User Tests</p>
+              <h4 class="title is-6">Custom User Tests</h4>
               <b-table :data="detailsModal.soh.customTests" default-sort="test">
                 <b-table-column
                   field="test"
@@ -393,29 +396,35 @@
               type="is-light is-left"
               :delay="400">
               <b-button
+                aria-label="Customize style"
                 class="button is-light"
                 icon-left="paintbrush"
                 @click="showStyleModal(detailsModal.vm)" />
             </b-tooltip>
           </template>
           <template v-if="detailsModal.status.toLowerCase() == 'running'">
-            <a :href="vncLoc(detailsModal.vm)" target="_blank">
-              <b-tooltip
-                label="open vnc for a running vm"
-                type="is-light is-left"
-                :delay="400">
-                <b-button type="is-success">
-                  <b-icon icon="tv" />
-                </b-button>
-              </b-tooltip>
-            </a>
+            <b-tooltip
+              label="open vnc for a running vm"
+              type="is-light is-left"
+              :delay="400">
+              <a
+                class="button is-success"
+                :href="vncLoc(detailsModal.vm)"
+                target="_blank"
+                :aria-label="`Open VNC console for VM ${detailsModal.vm} (opens in new tab)`">
+                <b-icon icon="tv" />
+              </a>
+            </b-tooltip>
           </template>
           <template v-else>
             <b-tooltip
               label="vnc is only available on a running vm"
               type="is-light is-left"
               :delay="400">
-              <b-button type="is-danger" disabled>
+              <b-button
+                type="is-danger"
+                aria-label="VNC is only available on a running VM"
+                disabled>
                 <b-icon icon="tv" />
               </b-button>
             </b-tooltip>
@@ -431,12 +440,12 @@
       has-modal-card>
       <div class="modal-card">
         <header class="modal-card-head">
-          <p class="modal-card-title">{{ detailsModal.vm }} Style</p>
+          <h2 class="modal-card-title">{{ detailsModal.vm }} Style</h2>
         </header>
         <section class="modal-card-body">
           <div class="columns is-vcentered">
             <div class="column is-three-quarters">
-              <p class="title is-6 mb-2">Fill Color</p>
+              <h3 class="title is-6 mb-2">Fill Color</h3>
               <b-field grouped>
                 <b-switch :left-label="true" v-model="styleModal.overrideFill"
                   >Override</b-switch
@@ -447,7 +456,7 @@
                   v-model="styleModal.fill" />
               </b-field>
 
-              <p class="title is-6 mb-2">Stroke Color</p>
+              <h3 class="title is-6 mb-2">Stroke Color</h3>
               <b-field grouped>
                 <b-switch :left-label="true" v-model="styleModal.overrideStroke"
                   >Override</b-switch
@@ -458,7 +467,7 @@
                   v-model="styleModal.stroke" />
               </b-field>
 
-              <p class="title is-6 mb-2">Stroke Style</p>
+              <h3 class="title is-6 mb-2">Stroke Style</h3>
               <b-field grouped>
                 <b-switch
                   :left-label="true"
@@ -476,7 +485,11 @@
             </div>
             <div class="column has-text-centered">
               <p>Preview:</p>
-              <svg height="64" width="64" xmlns="http://www.w3.org/2000/svg">
+              <svg
+                height="64"
+                width="64"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true">
                 <circle
                   cx="8"
                   cy="8"
@@ -511,6 +524,7 @@
       <div class="column is-1">
         <router-link
           class="button"
+          :aria-label="`Return to experiment ${$route.params.id}`"
           :to="{
             name: 'experiment',
             params: { id: $route.params.id },
@@ -573,7 +587,8 @@
                 v-model="radioButton"
                 native-value="external"
                 type="is-light"
-                >External / HIL</b-radio
+                >External /
+                <abbr title="hardware in the loop">HIL</abbr></b-radio
               >
             </div>
             <div class="column">
@@ -583,25 +598,34 @@
             </div>
             <div class="column">
               <div v-if="!running">
-                <b-button type="is-light" disabled>Exp Not Running</b-button>
+                <b-button type="is-light" disabled
+                  >Experiment Not Running</b-button
+                >
               </div>
               <div v-else-if="sohRunning">
                 <div v-if="sohInitialized">
-                  <b-button type="is-light" disabled>SOH Is Running</b-button>
+                  <b-button type="is-light" disabled
+                    ><abbr title="state of health">SOH</abbr> Is
+                    Running</b-button
+                  >
                 </div>
                 <div v-else>
                   <b-button type="is-light" disabled
-                    >SOH Is Initializing</b-button
+                    ><abbr title="state of health">SOH</abbr> Is
+                    Initializing</b-button
                   >
                 </div>
               </div>
               <div v-else-if="!sohInitialized">
                 <b-button type="is-light" disabled
-                  >SOH Not Initialized</b-button
+                  ><abbr title="state of health">SOH</abbr> Not
+                  Initialized</b-button
                 >
               </div>
               <div v-else>
-                <b-button @click="execSoH" type="is-light">Run SOH</b-button>
+                <b-button @click="execSoH" type="is-light"
+                  >Run <abbr title="state of health">SOH</abbr></b-button
+                >
               </div>
             </div>
             <div class="column" />
@@ -616,9 +640,9 @@
               <section class="hero is-light is-bold is-large">
                 <div class="hero-body">
                   <div class="container" style="text-align: center">
-                    <h1 class="title">
+                    <h2 class="title">
                       There are no nodes matching your search criteria!
-                    </h1>
+                    </h2>
                     <b-button type="is-success" outlined @click="resetNetwork()"
                       >Refresh Network</b-button
                     >
@@ -634,10 +658,13 @@
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <img :src="vlan" style="width: 20px; height: 20px" />
+                  <img :src="vlan" alt="" style="width: 20px; height: 20px" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">VLAN Segment</span>
+                  <span style="color: whitesmoke"
+                    ><abbr title="virtual local area network">VLAN</abbr>
+                    Segment</span
+                  >
                 </div>
               </div>
             </div>
@@ -654,7 +681,7 @@
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #670b00" />
+                  <b-icon icon="circle" style="color: #ff6b5b" />
                 </div>
                 <div class="column">
                   <span style="color: whitesmoke">Not running</span>
@@ -668,7 +695,17 @@
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: black" />
+                  <span class="icon" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 16 16">
+                      <circle
+                        cx="8"
+                        cy="8"
+                        r="7.25"
+                        fill="black"
+                        stroke="whitesmoke"
+                        stroke-width="1.5" />
+                    </svg>
+                  </span>
                 </div>
                 <div class="column">
                   <span style="color: whitesmoke">Not booted</span>
@@ -688,7 +725,7 @@
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #005493" />
+                  <b-icon icon="circle" style="color: #4fa8f0" />
                 </div>
                 <div class="column">
                   <span style="color: whitesmoke">External</span>
@@ -714,6 +751,21 @@
 </template>
 <script>
   const SOH_STYLE_LABEL_KEY = '__sohStyle';
+  const STATUS_TEXT = {
+    running: 'running',
+    notrunning: 'not running',
+    notboot: 'not booted',
+    notdeploy: 'not deployed',
+    external: 'external',
+  };
+
+  function prefersReducedMotion() {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
   import { roleAllowed } from '@/utils/rbac.js';
   import * as d3 from 'd3';
   import VmLabelsModal from '@/components/VMLabelsModal.vue';
@@ -825,7 +877,7 @@
                 for (let i = 0; i < this.nodes.length; i++) {
                   if (this.nodes[i].label == vmName) {
                     this.nodes[i].status = 'notrunning';
-                    d3.selectAll('circle').attr('fill', this.updateNodeColor);
+                    this.refreshNodeStatus();
                   }
                 }
 
@@ -835,7 +887,7 @@
                 for (let i = 0; i < this.nodes.length; i++) {
                   if (this.nodes[i].label == vmName) {
                     this.nodes[i].status = 'running';
-                    d3.selectAll('circle').attr('fill', this.updateNodeColor);
+                    this.refreshNodeStatus();
                   }
                 }
 
@@ -845,7 +897,7 @@
                 for (let i = 0; i < this.nodes.length; i++) {
                   if (this.nodes[i].label == vmName) {
                     this.nodes[i].status = 'notdeploy';
-                    d3.selectAll('circle').attr('fill', this.updateNodeColor);
+                    this.refreshNodeStatus();
                   }
                 }
 
@@ -907,16 +959,18 @@
           return '#FF9900'; // orange
         }
 
-        return this.updateNodeColor(node);
+        // A light ring keeps black "not booted" nodes visible on #333 (WCAG 1.4.11).
+        const color = this.updateNodeColor(node);
+        return color === 'black' ? 'whitesmoke' : color;
       },
 
       updateNodeColor(node) {
         const colors = {
           running: '#4F8F00', // green
-          notrunning: '#670b00', // red
+          notrunning: '#ff6b5b', // red
           notboot: 'black',
           notdeploy: '#FFD479', // yellow
-          external: '#005493', // blue
+          external: '#4fa8f0', // blue
         };
 
         if (node.status === 'external') {
@@ -948,6 +1002,7 @@
 
         const width = 600;
         const height = 400;
+        const reduceMotion = prefersReducedMotion();
 
         const simulation = d3
           .forceSimulation(nodes)
@@ -963,7 +1018,12 @@
         const svg = d3
           .select('#graph')
           .append('svg')
-          .attr('viewBox', [0, 0, width, height]);
+          .attr('viewBox', [0, 0, width, height])
+          .attr('role', 'group')
+          .attr(
+            'aria-label',
+            `Topology graph for experiment ${this.$route.params.id}`,
+          );
 
         const g = svg.append('g');
 
@@ -1095,7 +1155,22 @@
           .on('mouseenter', this.entered)
           .on('mouseleave', this.exited)
           .on('click', this.clicked)
-          .call(this.drag(simulation));
+          .call(this.drag(simulation, reduceMotion, () => render()));
+
+        // Keyboard users reach each VM node and open its details (WCAG 2.1.1).
+        node
+          .filter((n) => this.isVmNode(n))
+          .attr('tabindex', 0)
+          .attr('role', 'button')
+          .attr('aria-label', (n) => this.nodeLabel(n))
+          .on('focus', this.entered)
+          .on('blur', this.exited)
+          .on('keydown', (e, n) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              this.clicked(e, n);
+            }
+          });
 
         const label = g
           .selectAll('text')
@@ -1106,7 +1181,7 @@
           .style('fill', 'whitesmoke')
           .style('font-size', '6px');
 
-        simulation.on('tick', () => {
+        const render = () => {
           link
             .attr('x1', (d) => d.source.x)
             .attr('y1', (d) => d.source.y)
@@ -1116,7 +1191,40 @@
           node.attr('cx', (d) => d.x).attr('cy', (d) => d.y);
 
           label.attr('x', (d) => d.x + 4).attr('y', (d) => d.y + 8);
-        });
+        };
+
+        if (reduceMotion) {
+          // Compute the resting layout at once and draw it one time (WCAG 2.3.3).
+          simulation.stop();
+          const steps = Math.ceil(
+            Math.log(simulation.alphaMin()) /
+              Math.log(1 - simulation.alphaDecay()),
+          );
+          simulation.tick(steps);
+          render();
+        } else {
+          simulation.on('tick', render);
+        }
+      },
+
+      isVmNode(n) {
+        return !!n.image && n.image.toLowerCase() != 'switch';
+      },
+
+      refreshNodeStatus() {
+        d3.selectAll('#graph circle.circle')
+          .attr('fill', this.updateNodeColor)
+          .filter((n) => this.isVmNode(n))
+          .attr('aria-label', (n) => this.nodeLabel(n));
+      },
+
+      nodeLabel(n) {
+        const status = STATUS_TEXT[n.status] || n.status;
+        return `${n.label}, status ${status}`;
+      },
+
+      transitionFor(selection) {
+        return prefersReducedMotion() ? selection : selection.transition();
       },
 
       entered(e, n) {
@@ -1126,8 +1234,7 @@
 
         let circle = d3.select(e.target);
 
-        circle
-          .transition()
+        this.transitionFor(circle)
           .attr('r', 15)
           .attr('fill', () => this.updateNodeImage(n));
       },
@@ -1135,8 +1242,7 @@
       exited(e, n) {
         let circle = d3.select(e.target);
 
-        circle
-          .transition()
+        this.transitionFor(circle)
           .attr('r', 5)
           .attr('fill', () => this.updateNodeColor(n));
       },
@@ -1157,19 +1263,28 @@
         }
       },
 
-      drag(simulation) {
+      drag(simulation, reduceMotion = false, render = () => {}) {
         function dragstarted(event) {
+          if (reduceMotion) return;
           if (!event.active) simulation.alphaTarget(0.3).restart();
           event.subject.fx = event.subject.x;
           event.subject.fy = event.subject.y;
         }
 
+        // With reduced motion, only the dragged node moves and it stays put.
         function dragged(event) {
+          if (reduceMotion) {
+            event.subject.x = event.x;
+            event.subject.y = event.y;
+            render();
+            return;
+          }
           event.subject.fx = event.x;
           event.subject.fy = event.y;
         }
 
         function dragended(event) {
+          if (reduceMotion) return;
           if (!event.active) simulation.alphaTarget(0);
           event.subject.fx = null;
           event.subject.fy = null;
@@ -1513,16 +1628,12 @@
     color: whitesmoke;
   }
 
-  .modal-card-head {
-    background-color: #686868;
-  }
-
   .modal-card-title {
     color: whitesmoke;
   }
 
   li::marker {
-    color: black;
+    color: currentColor;
   }
 
   ul {

@@ -82,13 +82,14 @@
             roleAllowed('experiments/start', 'update', props.row.name)
           ">
           <b-tooltip :label="expControlLabel(props.row)" type="is-dark">
-            <span
-              class="tag is-medium"
-              :class="expStatusDecorator(props.row.status)">
-              <div class="field" @click="expControl(props.row)">
-                {{ props.row.status }}
-              </div>
-            </span>
+            <button
+              type="button"
+              class="tag is-medium plain-button"
+              :class="expStatusDecorator(props.row.status)"
+              :aria-label="`${props.row.status}: ${expControlLabel(props.row)}`"
+              @click="expControl(props.row)">
+              {{ props.row.status }}
+            </button>
           </b-tooltip>
         </template>
         <template v-else>
@@ -103,13 +104,14 @@
         <template
           v-if="roleAllowed('experiments/trigger', 'create', props.row.name)">
           <b-tooltip :label="scorchControlLabel(props.row)" type="is-dark">
-            <span
-              class="tag is-medium"
-              :class="scorchStatusDecorator(props.row)">
-              <div class="field" @click="scorchControl(props.row, -1)">
-                {{ scorchStatus(props.row) }}
-              </div>
-            </span>
+            <button
+              type="button"
+              class="tag is-medium plain-button"
+              :class="scorchStatusDecorator(props.row)"
+              :aria-label="`${scorchStatus(props.row)}: ${scorchControlLabel(props.row)} for experiment ${props.row.name}`"
+              @click="scorchControl(props.row, -1)">
+              {{ scorchStatus(props.row) }}
+            </button>
           </b-tooltip>
         </template>
       </b-table-column>
@@ -135,7 +137,7 @@
       has-modal-card>
       <div class="modal-card" style="width: 60em">
         <header class="modal-card-head">
-          <p class="modal-card-title">{{ terminalName() }}</p>
+          <h2 class="modal-card-title">{{ terminalName() }}</h2>
         </header>
         <section class="modal-card-body">
           <vue-terminal :wsPath="terminal.loc"></vue-terminal>
@@ -708,7 +710,9 @@
   };
 </script>
 <style scoped>
-  div.autocomplete :deep(a.dropdown-item) {
-    color: #383838 !important;
+  .plain-button {
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
   }
 </style>

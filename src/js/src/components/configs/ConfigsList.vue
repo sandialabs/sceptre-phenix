@@ -1,8 +1,15 @@
 <template>
-  <b-modal v-model="error.modal" @close="resetErrorModal" has-modal-card>
+  <b-modal
+    v-model="error.modal"
+    @close="resetErrorModal"
+    has-modal-card
+    aria-role="dialog"
+    aria-modal
+    :aria-label="error.title"
+    close-button-aria-label="Close">
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
-        <p class="modal-card-title">{{ error.title }}</p>
+        <h2 class="modal-card-title">{{ error.title }}</h2>
       </header>
       <section class="modal-card-body x-modal-dark">
         <div class="control">
@@ -23,10 +30,14 @@
   <b-modal
     v-model="isUploaderModalActive"
     @close="resetUploader"
-    has-modal-card>
+    has-modal-card
+    aria-role="dialog"
+    aria-modal
+    aria-label="Upload a Config"
+    close-button-aria-label="Close">
     <div class="modal-card" style="width: auto">
       <header class="modal-card-head x-modal-dark">
-        <p class="modal-card-title">Upload a Config</p>
+        <h2 class="modal-card-title">Upload a Config</h2>
       </header>
       <section class="modal-card-body x-modal-dark">
         <b-field>
@@ -61,7 +72,7 @@
          removed stayed invisible over the page, and Exit did not close it. -->
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
-        <p class="modal-card-title x-config-text">{{ viewer.title }}</p>
+        <h2 class="modal-card-title x-config-text">{{ viewer.title }}</h2>
       </header>
       <section class="modal-card-body x-modal-dark">
         <div class="control">
@@ -146,6 +157,7 @@
             </b-select>
             <b-autocomplete
               v-model="searchQuery"
+              aria-label="Find a config"
               placeholder="Find a Config"
               icon="search"
               :data="filteredConfigs.map((c) => c.metadata.name)"
@@ -676,11 +688,12 @@
     outline-offset: 2px;
   }
 
+  /* 7.2:1; #686868 and whitesmoke were 5.1:1. */
   .x-modal-dark :deep(textarea) {
-    background-color: #686868;
-    color: whitesmoke;
+    background-color: #575757;
+    color: white;
   }
   textarea {
-    color: whitesmoke;
+    color: white;
   }
 </style>

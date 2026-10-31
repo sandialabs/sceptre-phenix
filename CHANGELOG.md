@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Web UI Glossary and Help**: Added a Glossary page that defines phēnix terms and abbreviations, and Help and Glossary links in the footer.
 - **Image Releases**: `phenix image create` recognizes the Debian releases `trixie` and `forky`.
 - **SCORCH**: Support the `cleanup` stage in the built-in `tap` component for reliable tap teardown on run completion or cancellation.
 - **Topology Builder**:
@@ -26,6 +27,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Web UI Accessibility**: The web UI now meets more WCAG 2.2 AAA criteria, with 7:1 text contrast, headings and abbreviation expansions, item names in page titles, keyboard access to all controls, and less motion when the user asks for it. The browser tests now also fail on axe-core AAA violations and scan pages that show data.
 - **Image Defaults (breaking)**: `phenix image create` defaults `--release` to `noble`. Debian releases now default to the Debian components `main contrib non-free non-free-firmware` instead of the Ubuntu ones.
 - **Image miniccc Service**: `miniccc` systemd service created by `phenix image {build|inject-miniexe}` now sets `User=root` and `HOME=/root`, so commands run through `cc exec` have an environment.
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, and form controls, labelled the config selection checkboxes, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, and code colours, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
@@ -53,6 +55,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Web UI Accessibility**: Fixed WCAG A and AA failures that only showed with data: controls that worked only with a mouse, controls with no name, low-contrast colored buttons and tags, dialogs without a dialog role or focus return, and a keyboard trap in the terminal.
+- **Web UI Idle Timeout**: A warning time longer than the idle timeout no longer delays the logout past the timeout, and Settings rejects a warning time that is not shorter than the timeout.
+- **Web UI**: The multi-VM toolbar of a running experiment no longer shows two Restart buttons.
 - **Topology Builder**:
   - **Annotation Loss**: Saving a topology replaced the config's entire metadata annotation map, discarding every annotation other than `builder-xml`.
   - **Crash on Invalid Input**: A schema-invalid topology crashed the handlers with a nil-pointer dereference instead of returning a validation error.

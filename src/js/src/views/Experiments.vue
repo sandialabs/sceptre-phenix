@@ -6,18 +6,28 @@
       has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
-          <p class="modal-card-title">Create a New Experiment</p>
+          <h2 class="modal-card-title">Create a New Experiment</h2>
         </header>
         <section class="modal-card-body">
           <b-field
             label="Experiment Name"
+            label-for="create-experiment-name"
             :type="createModal.nameErrType"
             :message="createModal.nameErrMsg"
             autofocus>
-            <b-input type="text" v-model="createModal.name" v-focus></b-input>
+            <b-input
+              id="create-experiment-name"
+              :compat-fallthrough="false"
+              type="text"
+              v-model="createModal.name"
+              v-focus></b-input>
           </b-field>
-          <b-field label="Experiment Topology">
+          <b-field
+            label="Experiment Topology"
+            label-for="create-experiment-topology">
             <b-select
+              id="create-experiment-topology"
+              :compat-fallthrough="false"
               placeholder="Select a topology"
               v-model="createModal.topology"
               @update:modelValue="getScenarios"
@@ -30,8 +40,11 @@
           <b-field
             v-if="createModal.showScenarios"
             label="Experiment Scenario"
+            label-for="create-experiment-scenario"
             grouped>
             <b-select
+              id="create-experiment-scenario"
+              :compat-fallthrough="false"
               v-if="createModal.showScenarios"
               v-model="createModal.scenario"
               expanded
@@ -44,40 +57,59 @@
               </option>
             </b-select>
             <b-tooltip
-              label="a scenario is a collection of user app configurations for a topology 
-                            and they are optional"
+              :label="scenarioHelp"
               type="is-light is-right"
+              :triggers="['hover', 'focus']"
               multilined>
-              <b-icon
-                v-if="createModal.showScenarios"
-                icon="question-circle"></b-icon>
+              <button
+                type="button"
+                class="plain-button"
+                :aria-label="`Help: ${scenarioHelp}`">
+                <b-icon icon="question-circle"></b-icon>
+              </button>
             </b-tooltip>
           </b-field>
           <b-taglist>
-            <b-tag
+            <button
               v-for="(a, index) in createModal.scenarios[createModal.scenario]"
               :key="index"
-              class="is-clickable"
+              type="button"
+              class="tag plain-button"
               :class="{ 'is-success': !a.disabled }"
+              :aria-pressed="!a.disabled"
               @click="clickScenario(index)">
               {{ a.name }}
-            </b-tag>
+            </button>
           </b-taglist>
-          <b-collapse class="card" animation="slide" :model-value="false">
+          <b-collapse
+            class="card"
+            animation="slide"
+            aria-id="create-experiment-options"
+            :model-value="false">
             <template #trigger="props">
-              <div class="card-header" role="button">
-                <p class="card-header-title">Options</p>
-                <a class="card-header-icon">
+              <button
+                type="button"
+                class="card-header plain-button full-width"
+                aria-controls="create-experiment-options"
+                :aria-expanded="String(props.open)">
+                <span class="card-header-title">Options</span>
+                <span class="card-header-icon">
                   <b-icon
                     size="is-small"
                     :icon="props.open ? 'chevron-down' : 'chevron-up'"></b-icon>
-                </a>
-              </div>
+                </span>
+              </button>
             </template>
             <div class="card-content">
               <div class="content">
-                <b-field label="Deployment Mode">
-                  <b-select v-model="createModal.deploy_mode" expanded>
+                <b-field
+                  label="Deployment Mode"
+                  label-for="create-experiment-deploy-mode">
+                  <b-select
+                    id="create-experiment-deploy-mode"
+                    :compat-fallthrough="false"
+                    v-model="createModal.deploy_mode"
+                    expanded>
                     <option
                       v-for="(mode, index) in [
                         '',
@@ -94,11 +126,19 @@
                 <b-field
                   v-if="bridgeMode != 'auto'"
                   label="Default Bridge Name"
+                  label-for="create-experiment-bridge"
                   :type="createModal.bridgeErrType"
                   :message="createModal.bridgeErrMsg">
-                  <b-input type="text" v-model="createModal.bridge" />
+                  <b-input
+                    id="create-experiment-bridge"
+                    :compat-fallthrough="false"
+                    type="text"
+                    v-model="createModal.bridge" />
                 </b-field>
-                <b-field label="VLAN Range">
+                <b-field>
+                  <template #label>
+                    <abbr title="virtual local area network">VLAN</abbr> Range
+                  </template>
                   <b-field>
                     <b-numberinput
                       min="0"
@@ -108,6 +148,7 @@
                       controls-alignment="right"
                       controls-position="compact"
                       placeholder="min"
+                      aria-label="VLAN range minimum"
                       v-model="createModal.vlan_min" />
                     &nbsp;
                     <b-numberinput
@@ -118,11 +159,18 @@
                       controls-alignment="right"
                       controls-position="compact"
                       placeholder="max"
+                      aria-label="VLAN range maximum"
                       v-model="createModal.vlan_max" />
                   </b-field>
                 </b-field>
-                <b-field label="Git Workflow Branch Name">
-                  <b-input type="text" v-model="createModal.branch" />
+                <b-field
+                  label="Git Workflow Branch Name"
+                  label-for="create-experiment-branch">
+                  <b-input
+                    id="create-experiment-branch"
+                    :compat-fallthrough="false"
+                    type="text"
+                    v-model="createModal.branch" />
                 </b-field>
               </div>
             </div>
@@ -142,7 +190,7 @@
       <section class="hero is-bold is-large">
         <div class="hero-body">
           <div class="container" style="text-align: center">
-            <h1 class="title">There are no experiments!</h1>
+            <h2 class="title hero-title">There are no experiments!</h2>
             <b-button
               v-if="roleAllowed('experiments', 'create')"
               type="is-success"
@@ -250,21 +298,18 @@
               <b-tooltip
                 :label="getExpControlLabel(props.row.name, props.row.status)"
                 type="is-dark">
-                <span
-                  class="tag is-medium"
-                  :class="decorator(props.row.status)">
-                  <div class="field is-clickable">
-                    <div
-                      class="field"
-                      @click="
-                        props.row.running
-                          ? stop(props.row.name, props.row.status)
-                          : start(props.row.name, props.row.status)
-                      ">
-                      {{ props.row.status }}
-                    </div>
-                  </div>
-                </span>
+                <button
+                  type="button"
+                  class="tag is-medium plain-button"
+                  :class="decorator(props.row.status)"
+                  :aria-label="`${props.row.status}: ${getExpControlLabel(props.row.name, props.row.status)}`"
+                  @click="
+                    props.row.running
+                      ? stop(props.row.name, props.row.status)
+                      : start(props.row.name, props.row.status)
+                  ">
+                  {{ props.row.status }}
+                </button>
               </b-tooltip>
             </template>
             <template v-else>
@@ -295,14 +340,15 @@
             v-slot="props">
             {{ props.row.vm_count }}
           </b-table-column>
-          <b-table-column
-            field="vlan_range"
-            label="VLANs"
-            centered
-            v-slot="props">
-            {{ props.row.vlan_min }} - {{ props.row.vlan_max }} ({{
-              props.row.vlan_count
-            }})
+          <b-table-column field="vlan_range" label="VLANs" centered>
+            <template #header>
+              <abbr title="virtual local area networks">VLANs</abbr>
+            </template>
+            <template #default="props">
+              {{ props.row.vlan_min }} - {{ props.row.vlan_max }} ({{
+                props.row.vlan_count
+              }})
+            </template>
           </b-table-column>
           <b-table-column label="Actions" width="125" centered v-slot="props">
             <b-tooltip
@@ -329,6 +375,7 @@
               <router-link
                 v-if="roleAllowed('experiments', 'get', props.row.name)"
                 class="button is-light is-small"
+                :aria-label="`View state of health for experiment ${props.row.name}`"
                 :to="{
                   name: 'soh',
                   params: { id: props.row.name },
@@ -345,6 +392,7 @@
               <router-link
                 v-if="roleAllowed('experiments', 'get', props.row.name)"
                 class="button is-light is-small"
+                :aria-label="`View SCORCH runs for experiment ${props.row.name}`"
                 :to="{
                   name: 'scorchruns',
                   params: { id: props.row.name },
@@ -983,6 +1031,8 @@
           bridge: null,
         },
         experiments: [],
+        scenarioHelp:
+          'A scenario is a collection of user app configurations for a topology. Scenarios are optional.',
         topologies: [],
         searchName: '',
         filtered: null,
@@ -992,3 +1042,25 @@
     },
   };
 </script>
+
+<style scoped>
+  .plain-button {
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  button.plain-button:not(.tag) {
+    padding: 0;
+    background: none;
+    color: inherit;
+  }
+
+  .full-width {
+    width: 100%;
+  }
+
+  .content .hero-title {
+    font-size: 2rem;
+  }
+</style>

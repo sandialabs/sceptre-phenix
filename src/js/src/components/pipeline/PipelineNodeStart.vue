@@ -31,7 +31,7 @@
 
   .pipeline-node-start__text {
     stroke: none;
-    fill: whitesmoke;
+    fill: #1a1a1a;
     font-size: 14px;
     font-weight: bold;
   }

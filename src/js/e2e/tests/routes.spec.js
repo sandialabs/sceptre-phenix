@@ -1,9 +1,15 @@
 // Render every route with auth disabled and fail on any JS error or any
-// WCAG 2.2 AA violation reported by axe-core.
+// WCAG 2.x A, AA or AAA violation reported by axe-core.
 // Works against an empty store; no experiment or configs required.
+// a11y-seeded.spec.js scans the views that need data.
 const { test, expect } = require('@playwright/test');
-const AxeBuilder = require('@axe-core/playwright').default;
-const { attachCapture, settle, fatalOf, gotoSeeded } = require('./helpers');
+const {
+  attachCapture,
+  settle,
+  fatalOf,
+  gotoSeeded,
+  expectNoAxeViolations,
+} = require('./helpers');
 
 const routes = [
   '/',
@@ -20,6 +26,7 @@ const routes = [
   '/console',
   '/tunneler',
   '/disabled',
+  '/glossary',
 ];
 
 for (const r of routes) {
@@ -41,24 +48,6 @@ for (const r of routes) {
     const fatal = fatalOf(issues);
     expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 
-    const accessibility = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-      .analyze();
-    await test.info().attach(`axe-${r}`, {
-      body: JSON.stringify(
-        {
-          violations: accessibility.violations,
-          incomplete: accessibility.incomplete,
-        },
-        null,
-        2,
-      ),
-      contentType: 'application/json',
-    });
-    const violations = accessibility.violations;
-    expect(
-      violations.map((v) => `${v.id} (${v.nodes.length})`),
-      'axe violations; see the axe attachment for details',
-    ).toEqual([]);
+    await expectNoAxeViolations(page, r);
   });
 }

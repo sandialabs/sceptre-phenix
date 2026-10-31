@@ -206,7 +206,7 @@ are only available to Global Administrator or Global Viewer.
 
   .app-header__logout:hover,
   .app-header__logout:focus-visible {
-    background-color: rgba(255, 255, 255, 0.12);
+    background-color: #575757;
   }
 
   /* In the collapsed menu, the row is the button, as it is for a link. */
