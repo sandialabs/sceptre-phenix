@@ -2,19 +2,56 @@ package rbac
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/activeshadow/structs"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/store"
+	"phenix/store/storetest"
+	"phenix/types"
 	v1 "phenix/types/version/v1"
 )
+
+// useStore gives the test a store of its own holding the given roles and
+// users.
+func useStore(t *testing.T, roles []*v1.RoleSpec, users []*v1.UserSpec) {
+	t.Helper()
+
+	storetest.UseBolt(t)
+
+	create := func(name string, spec any) {
+		c, err := store.NewConfig(name)
+		if err != nil {
+			t.Fatalf("NewConfig(%s) error = %v", name, err)
+		}
+
+		c.Spec = structs.MapDefaultCase(spec, structs.CASESNAKE)
+
+		if err := store.Create(c); err != nil {
+			t.Fatalf("creating %s: %v", name, err)
+		}
+	}
+
+	for _, role := range roles {
+		create("role/"+strings.ReplaceAll(strings.ToLower(role.Name), " ", "-"), role)
+	}
+
+	for _, user := range users {
+		create("user/"+user.Username, user)
+	}
+}
+
+func policy(resource string, names []string, verbs ...string) *v1.PolicySpec {
+	return &v1.PolicySpec{Resources: []string{resource}, ResourceNames: names, Verbs: verbs}
+}
 
 // TestEnsureExperimentFilesCreatePolicyAddsPolicy verifies missing upload permission is added.
 func TestEnsureExperimentFilesCreatePolicyAddsPolicy(t *testing.T) {
 	role := &v1.RoleSpec{Name: "Experiment Admin", Policies: []*v1.PolicySpec{{Resources: []string{"experiments"}, Verbs: []string{"get"}}}}
 
-	if !ensureExperimentFilesCreatePolicy(role, nil) {
+	if !ensurePolicy(role, experimentFilesResource, []string{experimentFilesCreateVerb}, nil) {
 		t.Fatal("expected role to change")
 	}
 
@@ -43,7 +80,7 @@ func TestEnsureExperimentFilesCreatePolicyUpdatesExistingPolicy(t *testing.T) {
 		},
 	}
 
-	if !ensureExperimentFilesCreatePolicy(role, []string{"exp-a", "exp-b"}) {
+	if !ensurePolicy(role, experimentFilesResource, []string{experimentFilesCreateVerb}, []string{"exp-a", "exp-b"}) {
 		t.Fatal("expected role to change")
 	}
 
@@ -65,7 +102,7 @@ func TestEnsureExperimentFilesCreatePolicyIdempotent(t *testing.T) {
 		},
 	}
 
-	if ensureExperimentFilesCreatePolicy(role, []string{"exp-a"}) {
+	if ensurePolicy(role, experimentFilesResource, []string{experimentFilesCreateVerb}, []string{"exp-a"}) {
 		t.Fatal("expected role to stay unchanged")
 	}
 
@@ -133,7 +170,8 @@ func TestSyncUserSpecForExperimentFilesMigration(t *testing.T) {
 		config: &store.Config{Spec: map[string]any{}},
 	}
 
-	if !ensureExperimentFilesCreatePolicy(user.Spec.Role, experimentResourceNames(user.Spec.Role)) {
+	names := experimentResourceNames(user.Spec.Role)
+	if !ensurePolicy(user.Spec.Role, experimentFilesResource, []string{experimentFilesCreateVerb}, names) {
 		t.Fatal("expected user role to change")
 	}
 
@@ -150,5 +188,83 @@ func TestSyncUserSpecForExperimentFilesMigration(t *testing.T) {
 
 	if len(policies) != 2 {
 		t.Fatalf("expected 2 policies, got %d", len(policies))
+	}
+}
+
+// The null resource names migration removes stored resourceNames: null from
+// role and user policies, keeping the rest of the config.
+//
+//nolint:paralleltest // replaces the store
+func TestDropNullResourceNames(t *testing.T) {
+	storetest.UseBolt(t)
+
+	policies := func() []any {
+		return []any{
+			map[string]any{"resources": []any{"vms"}, "resourceNames": nil, "verbs": []any{"get"}},
+			map[string]any{"resources": []any{"hosts"}, "resourceNames": []any{"*"}, "verbs": []any{"list"}},
+		}
+	}
+
+	stored := map[string]map[string]any{
+		"role/legacy": {"roleName": "Legacy", "policies": policies()},
+		"user/legacy": {
+			"username": "legacy",
+			"password": "hash",
+			"rbac":     map[string]any{"roleName": "Legacy", "policies": policies()},
+		},
+	}
+
+	for name, spec := range stored {
+		c, err := store.NewConfig(name)
+		if err != nil {
+			t.Fatalf("NewConfig(%s) error = %v", name, err)
+		}
+
+		c.Spec = spec
+
+		if err := store.Create(c); err != nil {
+			t.Fatalf("creating %s: %v", name, err)
+		}
+	}
+
+	unnamed := map[string]any{"resources": []any{"vms"}, "verbs": []any{"get"}}
+	named := map[string]any{"resources": []any{"hosts"}, "resourceNames": []any{"*"}, "verbs": []any{"list"}}
+	want := map[string]map[string]any{
+		"role/legacy": {"roleName": "Legacy", "policies": []any{unnamed, named}},
+		"user/legacy": {
+			"username": "legacy",
+			"password": "hash",
+			"rbac":     map[string]any{"roleName": "Legacy", "policies": []any{unnamed, named}},
+		},
+	}
+
+	for _, pass := range []string{"first", "repeated"} {
+		if err := DropNullResourceNames(); err != nil {
+			t.Fatalf("DropNullResourceNames() %s pass error = %v", pass, err)
+		}
+
+		got := make(map[string]map[string]any, len(stored))
+
+		for name := range stored {
+			c, _ := store.NewConfig(name)
+			if err := store.Get(c); err != nil {
+				t.Fatalf("getting %s: %v", name, err)
+			}
+
+			got[name] = c.Spec
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("DropNullResourceNames() %s pass: stored specs mismatch (-want +got):\n%s", pass, diff)
+		}
+	}
+
+	c, _ := store.NewConfig("role/legacy")
+	if err := store.Get(c); err != nil {
+		t.Fatalf("getting role/legacy: %v", err)
+	}
+
+	if err := types.ValidateConfigSpec(*c); err != nil {
+		t.Errorf("ValidateConfigSpec(migrated role/legacy) error = %v", err)
 	}
 }

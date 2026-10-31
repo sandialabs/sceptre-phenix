@@ -30,5 +30,9 @@ func Init() error {
 		return fmt.Errorf("ensuring experiment file upload permissions: %w", err)
 	}
 
+	if err := rbac.DropNullResourceNames(); err != nil {
+		return fmt.Errorf("dropping null resource names: %w", err)
+	}
+
 	return nil
 }
