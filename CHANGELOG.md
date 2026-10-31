@@ -43,6 +43,7 @@ All notable changes to this project will be documented in this file.
 - **CLI**: Upgraded cobra from v1.0.0 to v1.10.2 and pflag from v1.0.3 to v1.0.9. `phenix completion bash` now generates cobra's V2 Bash script, and `phenix completion powershell` includes descriptions.
 - **Web Server**: Moved the HTTP handlers from `src/go/web/handlers.go` into one source file for each API area, with no change in behavior.
 - **API Errors (breaking)**: Every API error, including authentication and unknown-route refusals, is now a JSON body with a `message` and a stable `code`, such as `not_found` or `forbidden`, instead of plain text.
+- **Web UI Build**: The web UI registers only the Buefy components that it uses and shows PNG images instead of SVG images, which makes the page bundle smaller. The footer has a link to the phēnix documentation.
 
 ### Removed
 

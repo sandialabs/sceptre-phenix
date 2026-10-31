@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import Buefy from 'buefy';
 import axiosInstance from '@/utils/axios.js';
 import { useErrorNotification } from '@/utils/errorNotif';
@@ -50,8 +50,6 @@ function setRole(resources) {
     policies: [{ resources, verbs: ['*'], resourceNames: ['*/*'] }],
   };
 }
-
-enableAutoUnmount(afterEach);
 
 // Mounts the list with the real Buefy.
 function mountList(warnings = [], props = {}) {
