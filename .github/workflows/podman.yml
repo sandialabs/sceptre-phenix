@@ -13,6 +13,8 @@ on:
       - 'docker/install-certs.sh'
       - 'podman/**'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     paths:
       - '.dockerignore'
       - '.github/workflows/podman.yml'
@@ -30,11 +32,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-podman:
+    if: github.event.action != 'closed'
     name: Build and Smoke Test Podman Image
     runs-on: ubuntu-latest
     timeout-minutes: 90
