@@ -95,6 +95,7 @@ effect:
 docker exec phenix phenix doctor              # Docker deployment
 phenix doctor -o json --timeout 10s           # JSON, waiting longer for minimega
 phenix doctor --skip minimega -x --strict     # no minimega check or settings list; fail on a warning
+phenix doctor -p -x                           # only the checks that warn or fail
 docker exec phenix phenix doctor --report     # output to paste into a bug report
 ```
 
@@ -109,9 +110,12 @@ It prints, in order:
    `config file` or `default`. `-x` (`--no-print-settings`) leaves it out,
    and empties the `settings` list of the JSON report.
 3. One row per check, with its status: `pass`, `warn`, `fail` or `skip`.
+   `-p` (`--problems-only`) shows only the rows that warn or fail.
 4. A summary line with the overall status, the count of each status and the
    names of the checks that failed or warned, then a hint for each failure.
-   With `--strict`, warnings get hints too.
+   With `--strict`, warnings get hints too. With `-p`, the summary still
+   counts every check and gives the number of hidden checks. The exit
+   status does not change.
 
 On a terminal, doctor shows `pass` in green, `warn` in yellow, `fail` in
 bold red and `skip` faint. The summary line has the color of the overall
@@ -217,7 +221,9 @@ in the images directory that the [Disks](disks.md) page lists by its extension:
 `status`, `time`, `version` (`phenix`, `label`, `commit`, `date`,
 `minimega`), `environment`, `checks` (each with a stable `id`, its `group`,
 `name`, `status`, `detail` and, when it warns or fails, `hint`) and
-`settings`.
+`settings`. With `-p`, `checks` holds only the checks that warn or fail,
+`hiddenChecks` gives the number of the others, and `status` is still the
+status of every check.
 
 The `server` check asks `phenix ui` on `unix-socket` for `GET /api/v1/options`,
 as every other phēnix command does before it runs, and reads the
@@ -244,10 +250,30 @@ is there or in `/opt/phenix/webshark`, and `file-server` when
 that is not there, `phenix ui` waits for it without a warning, and the Logs
 page shows no minimega logs.
 
-`--report` adds the hostname to the header and prints the whole output, text
-or JSON, in a fenced code block to paste into the
+`--report` prints the whole output, text or JSON, in a fenced code block to
+paste into the
 [bug report form](https://github.com/sandialabs/sceptre-phenix/issues/new?template=1-bug-report.yml).
-Without `--report`, doctor does not print the hostname.
+It removes data about the host from every line: the header, the settings,
+the check details and the hints.
+
+* It replaces host names, IP addresses, user names and email addresses with
+  tokens, such as `<host-1>`, `<ip-1>`, `<user-1>` and `<email-1>`. The same
+  value always gets the same token, and a path keeps its shape, such as
+  `/home/<user-1>/images`.
+* It replaces passwords, the JWT signing key, other secret-like values (such
+  as `password=...` or `token=...`) and the credentials in a URL with
+  `<redacted>`.
+* It keeps `localhost`, `127.0.0.1`, `::1`, `0.0.0.0` and `::`, the users
+  `root`, `phenix`, `minimega`, `nobody` and `admin@foo.com`, and a suffix
+  from `hostname-suffixes`: `ws42-phenix` becomes `<host-1>-phenix`.
+
+doctor finds the values to replace in the host name, the user and its home
+directory, and `SUDO_USER`. It also reads the `ui.users` entries, the JWT
+signing key, the interface addresses and the file owners that the checks name.
+doctor also replaces each IPv4 and IPv6 address and each email address it
+finds. Read the output before you paste it: doctor cannot find a name that it
+does not know, such as the name of another host in a path. doctor never prints the hostname, also without
+`--report`.
 
 `phenix doctor` exits 1 when a check fails, or with `--strict` when one warns,
 and 0 otherwise. It never prints the values of `ui.jwt-signing-key` or

@@ -124,6 +124,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		timeout:  time.Second,
 		now:      func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
 		hostname: func() (string, error) { return "doctor-test-host", nil },
+		addrs:    func() ([]string, error) { return []string{"127.0.0.1/8", "192.0.2.10/24"}, nil },
 		system:   doctorSystem{os: "linux", kernel: "6.8.0-49-generic", arch: "amd64"},
 		uid:      1000,
 		gid:      1000,
@@ -763,7 +764,20 @@ func TestDoctorTextOutput(t *testing.T) {
 		},
 		"report": {
 			opts: doctorOptions{output: "text", report: true},
-			want: []string{"```text\nphenix:", "hostname:", "doctor-test-host", "time:", "\nSETTING", "\nCHECK", "\nFAIL: ", "```\n"},
+			want: []string{
+				"```text\nphenix:", "user:", "<user-1> (uid 1000, gid 1000)", "directory:", "/home/<user-1>",
+				"time:", "\nSETTING", "\nCHECK", "\nFAIL: ", "```\n",
+			},
+			wantNot: []string{"hostname:", "doctor-test-host", "alice", "Alicepass1!"},
+		},
+		"problems only": {
+			opts: doctorOptions{output: "text", problems: true},
+			want: []string{
+				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
+				"\nFAIL: 1 failed, 1 warned, 42 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"45 passing or skipped checks hidden\n",
+			},
+			wantNot: []string{" PASS ", " SKIP "},
 		},
 	}
 
@@ -800,7 +814,8 @@ func TestDoctorTextOutput(t *testing.T) {
 }
 
 // The JSON report has a schema version, the version and environment of the
-// header, and an id and group on every check; the hostname only with --report.
+// header, and an id and group on every check, and never a hostname. With
+// --report, the user is a token.
 func TestDoctorJSONOutput(t *testing.T) {
 	t.Parallel()
 
@@ -853,8 +868,12 @@ func TestDoctorJSONOutput(t *testing.T) {
 			}
 		}
 
-		if _, ok := decoded.Environment["hostname"]; ok != report {
-			t.Errorf("environment hostname present = %t, want %t", ok, report)
+		if _, ok := decoded.Environment["hostname"]; ok {
+			t.Errorf("environment = %v, want no hostname", decoded.Environment)
+		}
+
+		if user := decoded.Environment["user"]; report && user != "<user-1>" {
+			t.Errorf("--report environment user = %v, want <user-1>", user)
 		}
 
 		for _, c := range decoded.Checks {

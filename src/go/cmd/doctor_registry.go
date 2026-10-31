@@ -58,6 +58,7 @@ type doctorInput struct {
 	timeout  time.Duration
 	now      func() time.Time
 	hostname func() (string, error)
+	addrs    func() ([]string, error) // the host's interface addresses, which --report redacts
 	system   doctorSystem
 	uid, gid int
 	userName string
@@ -141,6 +142,7 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		timeout:  timeout,
 		now:      time.Now,
 		hostname: os.Hostname,
+		addrs:    interfaceAddrs,
 		system:   osDoctorSystem(),
 		uid:      uid,
 		gid:      os.Getgid(),

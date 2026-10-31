@@ -28,7 +28,8 @@ var containerMarkers = []string{"/.dockerenv", "/run/.containerenv"}
 var cgroupContainerHints = []string{"docker", "kubepods", "containerd", "libpod", "lxc"}
 
 // newDoctorReport builds the report of results: the header from in, and the
-// settings, secrets redacted, unless opts leaves them out.
+// settings, secrets redacted, unless opts leaves them out. With --report, it
+// also replaces the host's names, addresses and users in every string.
 func newDoctorReport(in *doctorInput, results []doctorResult, opts doctorOptions) doctorReport {
 	report := doctorReport{
 		SchemaVersion: doctorSchemaVersion,
@@ -52,10 +53,10 @@ func newDoctorReport(in *doctorInput, results []doctorResult, opts doctorOptions
 			ConfigFile:    in.config.used,
 			Container:     false,
 			ContainerHint: containerHint(in.env),
-			Hostname:      "",
 		},
-		Checks:   results,
-		Settings: []doctorSetting{},
+		Checks:       results,
+		HiddenChecks: 0,
+		Settings:     []doctorSetting{},
 	}
 
 	report.Environment.Container = report.Environment.ContainerHint != ""
@@ -63,13 +64,6 @@ func newDoctorReport(in *doctorInput, results []doctorResult, opts doctorOptions
 	for _, r := range results {
 		if r.ID == minimegaCheckName && r.Status == doctorPass {
 			report.Version.Minimega = r.Detail
-		}
-	}
-
-	if opts.report {
-		report.Environment.Hostname = "unknown"
-		if name, err := in.hostname(); err == nil {
-			report.Environment.Hostname = name
 		}
 	}
 
@@ -82,7 +76,25 @@ func newDoctorReport(in *doctorInput, results []doctorResult, opts doctorOptions
 		}
 	}
 
+	if opts.report {
+		report = newDoctorRedactor(in).report(report)
+	}
+
 	return report
+}
+
+// doctorProblems returns checks without the rows that pass or are skipped,
+// and the number of rows it left out.
+func doctorProblems(checks []doctorResult) ([]doctorResult, int) {
+	problems := make([]doctorResult, 0, len(checks))
+
+	for _, c := range checks {
+		if c.Status == doctorWarn || c.Status == doctorFail {
+			problems = append(problems, c)
+		}
+	}
+
+	return problems, len(checks) - len(problems)
 }
 
 // containerHint names what shows doctor runs in a container, or is "" when
@@ -108,14 +120,20 @@ func containerHint(env doctorEnv) string {
 	return ""
 }
 
-// writeDoctorReport writes report as opts asks: text or JSON, and with
-// --report in a fenced block. Only text without --report gets colors.
+// writeDoctorReport writes report as opts asks: text or JSON, with -p only
+// the problem rows, and with --report in a fenced block. Only text without
+// --report gets colors.
 func writeDoctorReport(out io.Writer, report doctorReport, opts doctorOptions) error {
 	var buf bytes.Buffer
 
 	if opts.output == FormatJSON {
 		enc := json.NewEncoder(&buf)
 		enc.SetIndent("", "  ")
+		enc.SetEscapeHTML(false) // keep tokens such as <host-1> readable
+
+		if opts.problems {
+			report.Checks, report.HiddenChecks = doctorProblems(report.Checks)
+		}
 
 		if err := enc.Encode(report); err != nil {
 			return fmt.Errorf("encoding report: %w", err)
@@ -126,7 +144,7 @@ func writeDoctorReport(out io.Writer, report doctorReport, opts doctorOptions) e
 			palette = termcolor.New(false)
 		}
 
-		printDoctorReport(&buf, report, opts.strict, palette)
+		printDoctorReport(&buf, report, doctorView{strict: opts.strict, problems: opts.problems, palette: palette})
 	}
 
 	if opts.report {
@@ -145,10 +163,19 @@ func writeDoctorReport(out io.Writer, report doctorReport, opts doctorOptions) e
 	return nil
 }
 
+// doctorView is how the text output shows a report.
+type doctorView struct {
+	strict   bool              // give the hints of warnings too
+	problems bool              // show only the rows that warn or fail
+	palette  termcolor.Palette // colors the statuses, the summary and the hints
+}
+
 // printDoctorReport prints the header, the settings (when the report has any),
-// the checks and a summary; with strict, the summary gives warnings' hints too.
-// palette colors the statuses, the summary and the hints.
-func printDoctorReport(out io.Writer, report doctorReport, strict bool, palette termcolor.Palette) {
+// the checks and a summary, as view says. The summary counts every check,
+// also those view hides.
+func printDoctorReport(out io.Writer, report doctorReport, view doctorView) {
+	palette := view.palette
+
 	w := tabwriter.NewWriter(out, 0, 0, doctorColumnPadding, ' ', 0)
 
 	printDoctorHeader(w, report)
@@ -164,14 +191,19 @@ func printDoctorReport(out io.Writer, report doctorReport, strict bool, palette 
 
 	_ = w.Flush()
 
-	_, _ = fmt.Fprintln(out)
-	printDoctorChecks(out, report.Checks, palette)
+	checks, hidden := report.Checks, 0
+	if view.problems {
+		checks, hidden = doctorProblems(report.Checks)
+	}
 
 	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, doctorStatusColor(palette, report.Status, doctorSummary(report)))
+	printDoctorChecks(out, checks, palette)
+
+	_, _ = fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out, doctorStatusColor(palette, report.Status, doctorSummary(report, hidden)))
 
 	for _, c := range report.Checks {
-		if c.Hint != "" && (c.Status == doctorFail || (strict && c.Status == doctorWarn)) {
+		if c.Hint != "" && (c.Status == doctorFail || (view.strict && c.Status == doctorWarn)) {
 			_, _ = fmt.Fprintf(out, "  %s: %s\n", c.Name, palette.Faint(c.Hint))
 		}
 	}
@@ -257,13 +289,8 @@ func printDoctorHeader(w io.Writer, report doctorReport) {
 		{"directory", env.WorkingDir},
 		{"config", config},
 		{"container", container},
+		{"time", report.Time},
 	}
-
-	if env.Hostname != "" {
-		rows = append(rows, [2]string{"hostname", env.Hostname})
-	}
-
-	rows = append(rows, [2]string{"time", report.Time})
 
 	for _, row := range rows {
 		_, _ = fmt.Fprintf(w, "%s:\t%s\n", row[0], row[1])
@@ -271,8 +298,8 @@ func printDoctorHeader(w io.Writer, report doctorReport) {
 }
 
 // doctorSummary is one line: the overall status, a count of each status,
-// and the names of the checks that failed and warned.
-func doctorSummary(report doctorReport) string {
+// the names of the checks that failed and warned, and the number of hidden checks.
+func doctorSummary(report doctorReport, hidden int) string {
 	var (
 		counts         = make(map[doctorStatus]int)
 		failed, warned []string
@@ -301,6 +328,13 @@ func doctorSummary(report doctorReport) string {
 
 	if len(warned) > 0 {
 		line += ". Warned: " + strings.Join(warned, ", ")
+	}
+
+	switch {
+	case hidden == 1:
+		line += ". 1 passing or skipped check hidden"
+	case hidden > 1:
+		line += fmt.Sprintf(". %d passing or skipped checks hidden", hidden)
 	}
 
 	return line

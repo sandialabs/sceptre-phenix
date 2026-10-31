@@ -49,10 +49,19 @@ Check the phenix configuration without a running server
   as the JWT signing key and initial users, are redacted. doctor exits 1 when
   a check fails, or with --strict when one warns, and 0 otherwise.
 
-  --report adds the hostname to the header and prints the whole output in a
-  fenced block to paste into a bug report. The text output colors the
-  statuses, the summary and the hints when --color allows it, but never with
-  -o json or --report.
+  --report prints the whole output, text or JSON, in a fenced block to paste
+  into a bug report. It replaces host names, IP addresses, user names and email
+  addresses with tokens, such as <host-1>. It replaces passwords, secrets and
+  the credentials in URLs with <redacted>. The same value always gets the same
+  token, and a path keeps its shape, such as /home/<user-1>/images. It keeps
+  localhost, 127.0.0.1, ::1, 0.0.0.0 and ::, the users root, phenix, minimega,
+  nobody and admin@foo.com, and a hostname suffix, such as -phenix in
+  <host-1>-phenix.
+
+  --problems-only (-p) shows only the checks that warn or fail. The summary
+  still counts every check and gives the number of hidden checks, and the exit
+  status does not change. The text output colors the statuses, the summary
+  and the hints when --color allows it, but never with -o json or --report.
 
   doctor never opens the store through BoltDB, which locks it, and reads
   only the first two pages of the store file. It opens no log file, writes
@@ -81,7 +90,10 @@ phenix doctor -o json --timeout 10s
 # Without minimega or the settings list, failing on any warning
 phenix doctor --skip minimega -x --strict
 
-# Output to paste into a bug report
+# Only the problems
+phenix doctor -p -x
+
+# Output to paste into a bug report, with host data replaced
 docker exec phenix phenix doctor --report
 ```
 
@@ -91,7 +103,8 @@ docker exec phenix phenix doctor --report
   -h, --help                help for doctor
   -x, --no-print-settings   leave out the settings list
   -o, --output string       output format ('text' or 'json') (default "text")
-      --report              add the hostname and print the output in a fenced block to paste into a bug report
+  -p, --problems-only       show only the checks that warn or fail (the summary still counts every check)
+      --report              print the output in a fenced block to paste into a bug report, with host names, addresses, user names and secrets replaced
       --skip strings        checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)
       --strict              exit 1 when a check warns, not only when one fails
       --timeout duration    how long to wait for each answer of minimega or phenix ui, and for the disk-chains and disk-formats checks (default 3s)

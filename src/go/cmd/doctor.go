@@ -101,7 +101,6 @@ type doctorEnvironment struct {
 	ConfigFile    string `json:"configFile"`
 	Container     bool   `json:"container"`
 	ContainerHint string `json:"containerHint,omitempty"`
-	Hostname      string `json:"hostname,omitempty"`
 }
 
 // doctorReport is everything phenix doctor found.
@@ -112,6 +111,7 @@ type doctorReport struct {
 	Version       doctorVersion     `json:"version"`
 	Environment   doctorEnvironment `json:"environment"`
 	Checks        []doctorResult    `json:"checks"`
+	HiddenChecks  int               `json:"hiddenChecks,omitempty"` // passing and skipped checks -p leaves out
 	Settings      []doctorSetting   `json:"settings"`
 }
 
@@ -123,11 +123,12 @@ type doctorOptions struct {
 	strict     bool
 	noSettings bool
 	report     bool
+	problems   bool              // only the checks that warn or fail
 	palette    termcolor.Palette // colors the text output
 }
 
-func newDoctorCmd() *cobra.Command {
-	desc := `Check the phenix configuration without a running server
+// doctorDesc is the long help of phenix doctor.
+const doctorDesc = `Check the phenix configuration without a running server
 
   Prints a header for bug reports (the phenix and minimega versions, OS and
   kernel, user, working directory, the config file read, and whether phenix
@@ -165,10 +166,19 @@ func newDoctorCmd() *cobra.Command {
   as the JWT signing key and initial users, are redacted. doctor exits 1 when
   a check fails, or with --strict when one warns, and 0 otherwise.
 
-  --report adds the hostname to the header and prints the whole output in a
-  fenced block to paste into a bug report. The text output colors the
-  statuses, the summary and the hints when --color allows it, but never with
-  -o json or --report.
+  --report prints the whole output, text or JSON, in a fenced block to paste
+  into a bug report. It replaces host names, IP addresses, user names and email
+  addresses with tokens, such as <host-1>. It replaces passwords, secrets and
+  the credentials in URLs with <redacted>. The same value always gets the same
+  token, and a path keeps its shape, such as /home/<user-1>/images. It keeps
+  localhost, 127.0.0.1, ::1, 0.0.0.0 and ::, the users root, phenix, minimega,
+  nobody and admin@foo.com, and a hostname suffix, such as -phenix in
+  <host-1>-phenix.
+
+  --problems-only (-p) shows only the checks that warn or fail. The summary
+  still counts every check and gives the number of hidden checks, and the exit
+  status does not change. The text output colors the statuses, the summary
+  and the hints when --color allows it, but never with -o json or --report.
 
   doctor never opens the store through BoltDB, which locks it, and reads
   only the first two pages of the store file. It opens no log file, writes
@@ -180,10 +190,11 @@ func newDoctorCmd() *cobra.Command {
   (version, args and mesh status). Run it with the same flags, environment
   and user as the phenix command you are checking.`
 
+func newDoctorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check the phenix configuration without a running server",
-		Long:  desc,
+		Long:  doctorDesc,
 		Example: `
   # In the Docker deployment
   docker exec phenix phenix doctor
@@ -194,7 +205,10 @@ func newDoctorCmd() *cobra.Command {
   # Without minimega or the settings list, failing on any warning
   phenix doctor --skip minimega -x --strict
 
-  # Output to paste into a bug report
+  # Only the problems
+  phenix doctor -p -x
+
+  # Output to paste into a bug report, with host data replaced
   docker exec phenix phenix doctor --report`,
 		Args: cobra.NoArgs,
 		// The root command's hooks read settings from the server, open the
@@ -240,7 +254,10 @@ func addDoctorFlags(flags *pflag.FlagSet) {
 	flags.Bool("strict", false, "exit 1 when a check warns, not only when one fails")
 	flags.BoolP("no-print-settings", "x", false, "leave out the settings list")
 	flags.Bool("report", false,
-		"add the hostname and print the output in a fenced block to paste into a bug report")
+		"print the output in a fenced block to paste into a bug report, "+
+			"with host names, addresses, user names and secrets replaced")
+	flags.BoolP("problems-only", "p", false,
+		"show only the checks that warn or fail (the summary still counts every check)")
 }
 
 // doctorFlagOptions reads the doctor flags, and the colors of output to out.
@@ -252,6 +269,7 @@ func doctorFlagOptions(flags *pflag.FlagSet, out io.Writer) doctorOptions {
 		strict:     mustGet(flags.GetBool, "strict"),
 		noSettings: mustGet(flags.GetBool, "no-print-settings"),
 		report:     mustGet(flags.GetBool, "report"),
+		problems:   mustGet(flags.GetBool, "problems-only"),
 		palette:    outputPalette(out),
 	}
 }

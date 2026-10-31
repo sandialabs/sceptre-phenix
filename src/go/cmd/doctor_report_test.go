@@ -18,10 +18,10 @@ import (
 
 // doctorReportLines is the text output of report, each line with its runs of
 // spaces made one, so the tests do not depend on column widths.
-func doctorReportLines(report doctorReport, strict bool) []string {
+func doctorReportLines(report doctorReport, strict, problems bool) []string {
 	var out bytes.Buffer
 
-	printDoctorReport(&out, report, strict, termcolor.New(false))
+	printDoctorReport(&out, report, doctorView{strict: strict, problems: problems, palette: termcolor.New(false)})
 
 	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
 	for i, line := range lines {
@@ -41,10 +41,11 @@ func doctorReportBase(status doctorStatus, checks ...doctorResult) doctorReport 
 		Version:       doctorVersion{Phenix: "1.0.0", Label: "v1.0.0", Commit: "abc1234", Date: "2026-10-01", Minimega: ""},
 		Environment: doctorEnvironment{
 			OS: "linux", Kernel: "6.8.0", Arch: "amd64", UID: 1000, GID: 1000, User: "alice",
-			WorkingDir: "/home/alice", ConfigFile: "", Container: false, ContainerHint: "", Hostname: "",
+			WorkingDir: "/home/alice", ConfigFile: "", Container: false, ContainerHint: "",
 		},
-		Checks:   checks,
-		Settings: []doctorSetting{},
+		Checks:       checks,
+		HiddenChecks: 0,
+		Settings:     []doctorSetting{},
 	}
 }
 
@@ -61,7 +62,6 @@ func TestPrintDoctorReport(t *testing.T) {
 	answered := doctorReportBase(doctorPass, check(minimegaCheckName, doctorPass, ""))
 	answered.Version.Minimega = "minimega 3.0.1"
 	answered.Environment.ConfigFile = "/etc/phenix/config.yaml"
-	answered.Environment.Hostname = "host1"
 
 	inContainer := doctorReportBase(doctorFail, check("config-file", doctorFail, "fix the file"))
 	inContainer.Environment.ConfigFile = "/etc/phenix/config.yaml"
@@ -85,9 +85,10 @@ func TestPrintDoctorReport(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		report doctorReport
-		strict bool
-		want   []string
+		report   doctorReport
+		strict   bool
+		problems bool
+		want     []string
 	}{
 		"minimega skipped, no config file": {
 			report: doctorReportBase(doctorPass, check(minimegaCheckName, doctorSkip, "")),
@@ -95,10 +96,10 @@ func TestPrintDoctorReport(t *testing.T) {
 				"time: 2026-10-30T12:00:00Z", "", "CHECK STATUS DETAIL", "minimega SKIP minimega detail", "",
 				"PASS: 0 failed, 0 warned, 0 passed, 1 skipped"),
 		},
-		"minimega answers, with a hostname": {
+		"minimega answers": {
 			report: answered,
 			want: append(header("minimega 3.0.1", "/etc/phenix/config.yaml", "no"),
-				"hostname: host1", "time: 2026-10-30T12:00:00Z", "", "CHECK STATUS DETAIL", "minimega PASS minimega detail", "",
+				"time: 2026-10-30T12:00:00Z", "", "CHECK STATUS DETAIL", "minimega PASS minimega detail", "",
 				"PASS: 0 failed, 0 warned, 1 passed, 0 skipped"),
 		},
 		"config does not parse, in a container": {
@@ -115,6 +116,23 @@ func TestPrintDoctorReport(t *testing.T) {
 				"time: 2026-10-30T12:00:00Z", "", "CHECK STATUS DETAIL",
 				"a FAIL a detail", "b WARN b detail", "c FAIL c detail", "d WARN d detail", "e PASS e detail", "f SKIP f detail", "",
 				"FAIL: 2 failed, 2 warned, 1 passed, 1 skipped. Failed: a, c. Warned: b, d", "a: fix a", "c: fix c"),
+		},
+		"failures and warnings, problems only": {
+			report: doctorReportBase(doctorFail,
+				check(minimegaCheckName, doctorSkip, ""), check("a", doctorFail, "fix a"), check("b", doctorWarn, "fix b"),
+				check("e", doctorPass, "")),
+			problems: true,
+			want: append(header("not checked (--skip)", "none found", "no"),
+				"time: 2026-10-30T12:00:00Z", "", "CHECK STATUS DETAIL", "a FAIL a detail", "b WARN b detail", "",
+				"FAIL: 1 failed, 1 warned, 1 passed, 1 skipped. Failed: a. Warned: b. 2 passing or skipped checks hidden",
+				"a: fix a"),
+		},
+		"all pass, problems only": {
+			report:   doctorReportBase(doctorPass, check("e", doctorPass, "")),
+			problems: true,
+			want: append(header("unknown (see the minimega check)", "none found", "no"),
+				"time: 2026-10-30T12:00:00Z", "", "CHECK STATUS DETAIL", "",
+				"PASS: 0 failed, 0 warned, 1 passed, 0 skipped. 1 passing or skipped check hidden"),
 		},
 		"failures and warnings, strict": {
 			report: doctorReportBase(doctorFail, check("a", doctorFail, "fix a"), check("b", doctorWarn, "fix b")),
@@ -136,7 +154,7 @@ func TestPrintDoctorReport(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			if diff := cmp.Diff(tc.want, doctorReportLines(tc.report, tc.strict)); diff != "" {
+			if diff := cmp.Diff(tc.want, doctorReportLines(tc.report, tc.strict, tc.problems)); diff != "" {
 				t.Errorf("printDoctorReport() mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -240,7 +258,7 @@ func TestPrintDoctorReportColors(t *testing.T) {
 
 			var out bytes.Buffer
 
-			printDoctorReport(&out, report, true, tc.palette)
+			printDoctorReport(&out, report, doctorView{strict: true, problems: false, palette: tc.palette})
 
 			_, checks, _ := strings.Cut(out.String(), "2026-10-30T12:00:00Z\n")
 			if diff := cmp.Diff(tc.want, checks); diff != "" {

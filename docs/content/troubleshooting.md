@@ -5,7 +5,9 @@ This page consolidates common issues and their solutions when working with phēn
 When reporting a bug, run `docker exec phenix phenix doctor --report` (or
 `phenix doctor --report`) and paste its output into the issue. It gives the
 phēnix and minimega versions, the OS, user and container, and the result of
-each configuration check, with secrets redacted; see
+each configuration check. It replaces host names, IP addresses, user names,
+email addresses and secrets with tokens, such as `<host-1>`. Read the output
+before you paste it. See
 [Checking the Configuration](settings.md#checking-the-configuration).
 
 ## Logging Issues
