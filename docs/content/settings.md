@@ -165,6 +165,10 @@ valid ones.
 | `image-build` (the rows image-build tools, image-build root, image-build loop and image-build keyrings; Linux only) | `tools` | `debootstrap`, `kpartx`, `losetup` or `qemu-img` is not on `PATH`; the process does not have `CAP_SYS_ADMIN` (not root, or a container that is not privileged); no `/dev/loop*` device is free and there is no `/dev/loop-control`; debootstrap has no script for the release of a stored image config, or the keyring that the script names does not exist. The keyrings row reads the image configs from the store read-only, and gives `skip` when the store is locked for longer than `--timeout` | never |
 | `disk-chains` | `images` | a disk image in the images directory has a broken backing chain: a backing file is missing, the chain loops, or the chain is more than 64 images deep; the row names at most 5 such images and counts the rest; the directory cannot be listed; the check does not finish within `--timeout` | never; the images directory is minimega's `-filepath`, or `<base-dir.phenix>/images` when minimega gives none, and a `skip` row shows when it does not exist |
 | `disk-formats` (a second row when an image needs a later qemu) | `images` | a disk image in the images directory is in an old or unsupported format: qcow2 version 2, qcow version 1, vmdk or qed. It also warns about an image that qemu refuses, such as an encrypted or corrupt image, and when the local `qemu-img` is older than the qemu version that a feature of an image needs. The row names at most 5 such images and counts the rest. It also warns when it cannot list the directory, or when the check does not finish within `--timeout`. See [Image Format Versions](disks.md#image-format-versions) | never. It reads the headers that the `disk-chains` check reads, in the same pass over the images directory, and a `skip` row shows when that directory does not exist |
+| `writable-images` | `images` | a VM of a stored experiment has `snapshot: false`, so minimega writes to its drive images. The row warns when another image in the images directory has such an image as a backing file, because the writes break that image. It also warns when more than one VM uses such an image. It reads the experiments from the store, and the backing files from the pass of `disk-chains` | never. A `skip` row shows when the store cannot be read, or when the store file does not exist |
+| `leftovers` (the rows leftovers snapshots, leftovers files, leftovers mounts, leftovers taps and leftovers mirrors) | `images` | the snapshots row: a snapshot file of this head node in the images directory (`<head node>_<experiment>_<VM>_snapshot`) belongs to an experiment that the store does not have. The files row: a base directory in `<base-dir.phenix>/experiments`, or a directory with `files` or `miniccc_responses` in the images directory, belongs to such an experiment. The row gives each size and the total. The mounts row: a VM file system mount under `mount-dir` belongs to such an experiment, or to a VM that minimega does not run. The taps row: a minimega tap (`mega_tap*`) on this host or on an Open vSwitch bridge has no owner, or a port has no network device. An owner is a VM or a host tap in a minimega namespace, or a capture of a whole bridge. The mirrors row: a minimega mirror (`mirror-<tap>`) belongs to no capture. The rows keep what belongs to a namespace in which minimega runs a VM. In a container, the taps row checks the taps of this host only when it shows a minimega tap, an Open vSwitch bridge or the `ovs-system` device. A row that cannot get its data from the store, minimega or `ovs-vsctl` is a `skip` row with the reason. A store file that does not exist gives a `skip` row, because `phenix doctor` can read a store other than the store of `phenix ui` | never |
+| `disk-space` (one row for each filesystem, such as disk-space files, and the row disk-space inject dirs) | `images` | the filesystem of the images directory, of minimega's `-base` or of minimega's `-logfile` has less free space than 10% of its size or 5 GiB, whichever is larger. The row names each filesystem once. It gives the size of the minimega log, and the size of the files that the `leftovers` rows found. The inject dirs row warns about each `dstImg*` directory in minimega's `-base`, which a failed `disk inject` can leave, and tells which ones are mounted | never |
+| `image-locks` (Linux only) | `images` | a `qemu-system`, `qemu-nbd` or `qemu-img` process holds open a drive image of a stopped experiment, or one of its backing files, and is not a VM of a running experiment. qemu then cannot get the lock it needs to start the VM (`Failed to get "write" lock`). Any open of an image that a VM writes to (`snapshot: false`) blocks the start. An open of another image blocks it only when the process can write to the file. The row tells how many processes this user cannot read | never. A `skip` row shows in a container that shows no minimega process, because the container can have its own PID namespace |
 | `tunneler-download`, `webshark` | `features` | `downloads/tunneler` is not a directory | never; the row says whether `phenix ui` turns the feature on |
 | `ui.features` | `features` | a name is not a feature, such as a misspelling; `tunneler-download` or `file-server` is set without what it needs | `webshark` is set without a WebShark build, which `phenix ui` refuses |
 | `ui.logs.minimega-path` | `features` | the file does not exist or is not readable by this user; the setting is empty while minimega logs to a file (its `-logfile`, or `MM_LOGFILE` in the environment) | the path is not a regular file |
@@ -271,8 +275,8 @@ the check details and the hints.
   `root`, `phenix`, `minimega`, `nobody` and `admin@foo.com`, and a suffix
   from `hostname-suffixes`: `ws42-phenix` becomes `<host-1>-phenix`.
 
-doctor finds the values to replace in the host name, the user and its home
-directory, and `SUDO_USER`. It also reads the `ui.users` entries, the JWT
+doctor finds the values to replace in the host name, the host name that
+minimega answers from, the user and its home directory, and `SUDO_USER`. It also reads the `ui.users` entries, the JWT
 signing key, the interface addresses and the file owners that the checks name.
 doctor also replaces each IPv4 and IPv6 address and each email address it
 finds. Read the output before you paste it: doctor cannot find a name that it
@@ -284,14 +288,19 @@ and 0 otherwise. It never prints the values of `ui.jwt-signing-key` or
 `ui.users`, only `<redacted>` when they are set, nor those of
 `PHENIX_UI_JWT_SIGNING_KEY`, `PHENIX_UI_USERS`, `SUDO_COMMAND` or a
 `PHENIX_*` variable that names no setting. The `store-file` check reads only
-the first two pages of the store file. Only the `image-build` check opens the
-store through BoltDB. It opens the store read-only, and waits at most
-`--timeout` for the lock. It opens no log
+the first two pages of the store file. The `image-build`, `writable-images`,
+`leftovers` and `image-locks` checks open the store through BoltDB, once in a
+run. doctor opens the store read-only, and waits at most `--timeout` for the
+lock. The unix socket of `phenix ui` serves no configs, so doctor does not ask
+`phenix ui` for them. It opens no log
 file, writes no file and binds no port. It connects to the unix socket of
 `phenix ui` as a client only, and never creates or removes it. It sends
-minimega only global commands that change nothing: `version`, `args` and
-`mesh status`. The only programs it runs are `qemu-img --version` and
-`ovs-vsctl show`, which change nothing. Run it with the same flags, environment and user as the command you
+minimega only commands that change nothing: `version`, `args`, `mesh status`
+and `namespace`. For each namespace that minimega lists, it also sends
+`namespace <name> vm info`, `namespace <name> tap` and
+`namespace <name> capture`. The only programs it runs are `qemu-img --version`,
+`ovs-vsctl show`, `ovs-vsctl list Mirror` and `ovs-vsctl list Bridge`, which
+change nothing. Run it with the same flags, environment and user as the command you
 are checking, since those decide the values it sees.
 
 ## Configuration Precedence

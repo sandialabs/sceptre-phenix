@@ -66,6 +66,7 @@ type doctorMinimega struct {
 	args     map[string]string
 	size     string
 	commands []string
+	answers  map[string][]*minicli.Response // the answers to other commands, by command
 }
 
 func (m *doctorMinimega) run(_, command string, _ time.Duration) ([]*minicli.Response, error) {
@@ -89,7 +90,27 @@ func (m *doctorMinimega) run(_, command string, _ time.Duration) ([]*minicli.Res
 		}}, nil
 	}
 
+	if answer, ok := m.answers[command]; ok {
+		return answer, nil
+	}
+
+	if answer, ok := doctorEmptyNamespace[command]; ok && m.answers == nil {
+		return answer, nil
+	}
+
 	return nil, errors.New("invalid command")
+}
+
+// doctorEmptyNamespace is what a minimega with only its minimega namespace, and no VMs, taps or captures, answers.
+//
+//nolint:gochecknoglobals // constant answers
+var doctorEmptyNamespace = map[string][]*minicli.Response{
+	"namespace": {
+		{Host: "mm1", Header: []string{"namespace", "vlans", "active"}, Tabular: [][]string{{"minimega", "", "true"}}},
+	},
+	"namespace minimega vm info": {{Host: "mm1", Header: []string{"id", "name", "state", "pid", "tap"}}},
+	"namespace minimega tap":     {{Host: "mm1", Header: []string{"bridge", "tap", "vlan"}}},
+	"namespace minimega capture": {{Host: "mm1", Header: []string{"bridge", "type", "interface", "mode", "compress", "path"}}},
 }
 
 func doctorMinimegaArgs(dir string) map[string]string {

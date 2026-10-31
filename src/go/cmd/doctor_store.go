@@ -11,6 +11,7 @@ import (
 	"go.etcd.io/bbolt"
 
 	"phenix/store"
+	"phenix/types"
 )
 
 const (
@@ -120,4 +121,105 @@ func openStoreReadOnly(ctx context.Context, path string, timeout time.Duration) 
 
 		return nil, ctx.Err() //nolint:wrapcheck // the context's own error
 	}
+}
+
+// doctorExperiment is what the doctor checks read of a stored experiment.
+type doctorExperiment struct {
+	name    string
+	baseDir string // the experiment's base directory, from its spec
+	running bool   // the store gives a start time
+	vms     []doctorVM
+}
+
+// doctorVM is a VM that phenix launches for a stored experiment: not external, and not do-not-boot.
+type doctorVM struct {
+	name     string
+	snapshot bool     // minimega runs the VM on a snapshot of its first drive, so it does not write to that image
+	images   []string // the drive images, as the topology names them
+}
+
+// doctorExperiments is one read of the stored experiments, which a run shares.
+type doctorExperiments struct {
+	list []doctorExperiment
+	why  string // why doctor read no experiments, or ""
+}
+
+// storedExperiments reads the stored experiments once in a run, by the rules of storedConfigs, and reports why it read
+// none. A store file that is not there is a reason, because it can be another store than the one phenix ui uses. An
+// experiment that does not decode keeps only its name.
+func (in *doctorInput) storedExperiments(ctx context.Context) ([]doctorExperiment, string) {
+	if in.found != nil && in.found.experiments != nil {
+		return in.found.experiments.list, in.found.experiments.why
+	}
+
+	configs, missing, why := in.storedConfigs(ctx, "Experiment")
+	if missing {
+		path, _ := store.BoltPath(in.text("store.endpoint"))
+		why = fmt.Sprintf("the store file %s does not exist or is empty", path)
+	}
+
+	read := &doctorExperiments{list: nil, why: why}
+
+	for _, c := range configs {
+		read.list = append(read.list, decodeDoctorExperiment(c))
+	}
+
+	if in.found != nil {
+		in.found.experiments = read
+	}
+
+	return read.list, read.why
+}
+
+// decodeDoctorExperiment is what doctor reads of the stored experiment config c.
+func decodeDoctorExperiment(c store.Config) doctorExperiment {
+	exp := doctorExperiment{name: c.Metadata.Name, baseDir: "", running: false, vms: nil}
+
+	decoded, err := types.DecodeExperimentFromConfig(c)
+	if err != nil || decoded.Spec == nil {
+		return exp
+	}
+
+	exp.baseDir = decoded.Spec.BaseDir()
+	exp.running = decoded.Running()
+
+	if decoded.Spec.Topology() == nil {
+		return exp
+	}
+
+	for _, node := range decoded.Spec.Topology().Nodes() {
+		if node == nil || node.External() || node.General() == nil || derefDoctorBool(node.General().DoNotBoot()) {
+			continue
+		}
+
+		vm := doctorVM{name: node.General().Hostname(), snapshot: derefDoctorBool(node.General().Snapshot()), images: nil}
+
+		if node.Hardware() != nil {
+			for _, drive := range node.Hardware().Drives() {
+				if drive.Image() != "" {
+					vm.images = append(vm.images, drive.Image())
+				}
+			}
+		}
+
+		exp.vms = append(exp.vms, vm)
+	}
+
+	return exp
+}
+
+// derefDoctorBool is the value of b, or false for nil, as the minimega script template reads it.
+func derefDoctorBool(b *bool) bool {
+	return b != nil && *b
+}
+
+// experimentNamed returns the stored experiment name, if there is one.
+func experimentNamed(experiments []doctorExperiment, name string) (doctorExperiment, bool) {
+	for _, exp := range experiments {
+		if exp.name == name {
+			return exp, true
+		}
+	}
+
+	return doctorExperiment{name: "", baseDir: "", running: false, vms: nil}, false
 }

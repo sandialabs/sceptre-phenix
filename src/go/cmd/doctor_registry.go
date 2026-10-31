@@ -696,6 +696,20 @@ func doctorChecks() []doctorCheckDef {
 			run: diskFormatsChecks,
 		},
 		{
+			id: writableImagesName, group: doctorGroupImages, name: writableImagesName, hint: writableImagesHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(writableImagesCheck(ctx, in)) },
+		},
+		{
+			id: leftoversName, group: doctorGroupImages, name: leftoversName, hint: leftoversHint, run: leftoversChecks,
+		},
+		{
+			id: diskSpaceName, group: doctorGroupImages, name: diskSpaceName, hint: diskSpaceHint, run: diskSpaceChecks,
+		},
+		{
+			id: imageLocksName, group: doctorGroupImages, name: imageLocksName, hint: imageLocksHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(imageLocksCheck(ctx, in)) },
+		},
+		{
 			id: web.FeatureTunnelerDownload, group: doctorGroupFeatures, name: web.FeatureTunnelerDownload,
 			hint: hintText("make " + web.TunnelerDownloadDir + " a directory of phenix-tunneler builds, or remove it"),
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
@@ -777,7 +791,9 @@ func runDoctorChecks(ctx context.Context, input *doctorInput, defs []doctorCheck
 	var results []doctorResult
 
 	run := *input
-	run.found = &doctorFound{minimegaUp: false, minimegaArgs: nil, images: nil}
+	run.found = &doctorFound{
+		minimegaUp: false, minimegaArgs: nil, images: nil, experiments: nil, inventory: nil, ovsShow: nil, leftovers: nil,
+	}
 	in := &run
 
 	for _, def := range defs {

@@ -53,9 +53,14 @@ type doctorFound struct {
 	minimegaUp   bool
 	minimegaArgs map[string]string // minimega's flags, once minimega-env read them
 	images       *doctorImageScan  // the scan of the images folder, once disk-chains or disk-formats read it
+
+	experiments *doctorExperiments // the stored experiments, once a check read them
+	inventory   *doctorInventory   // minimega's namespaces, VMs, taps and captures, once a check read them
+	ovsShow     *doctorOVSRun      // the output of ovs-vsctl show, once a check ran it
+	leftovers   *doctorLeftovers   // what the leftovers check found that is safe to delete, once it ran
 }
 
-// minimegaRunner sends minimega, whose base directory is base, one global
+// minimegaRunner sends minimega, whose base directory is base, one
 // command, bounded by timeout, and returns every response or the first error.
 type minimegaRunner func(base, command string, timeout time.Duration) ([]*minicli.Response, error)
 
@@ -90,8 +95,8 @@ func boundedCall(
 }
 
 // runMinimegaAt sends minimega, whose base directory is base, one command on
-// a connection of its own, bounded by timeout. command must be global: a
-// namespaced one creates its namespace.
+// a connection of its own, bounded by timeout. A namespaced command creates
+// its namespace, so send one only for a namespace that minimega listed.
 func runMinimegaAt(base, command string, timeout time.Duration) ([]*minicli.Response, error) {
 	cmd := mmcli.NewCommand()
 	cmd.Command = command

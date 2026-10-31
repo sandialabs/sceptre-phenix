@@ -271,6 +271,55 @@ repair Open vSwitch on Debian and Ubuntu, do these steps:
 minimega makes the experiment bridge, `phenix` by default, when it launches
 the first VM on it.
 
+### Low Disk Space and Leftovers of Deleted Experiments
+
+The `disk-space` check of `phenix doctor` warns when the filesystem of the
+images directory, of minimega's `-base` or of the minimega log has less free
+space than 10% of its size or 5 GiB. The `leftovers` check names what phēnix
+and minimega can leave behind, and the `disk-space` row gives the size of it.
+To free space and remove the leftovers, do these steps on the head node, as
+root:
+
+1. Make sure that `store.endpoint` has the same value as for `phenix ui`.
+   Then run `phenix doctor -p -x` and read the `leftovers` and `disk-space`
+   rows.
+2. Delete each snapshot file that the leftovers snapshots row names with
+   `rm <file>`. No stored experiment uses it.
+3. Copy the files that you want to keep, such as captures, from each
+   directory that the leftovers files row names. Then delete the directory
+   with `rm -r <directory>`.
+4. Unmount each path that the leftovers mounts row names with
+   `umount <path>`.
+5. Delete each Open vSwitch port that the leftovers taps row names with
+   `ovs-vsctl del-port <bridge> <port>`, then each tap with
+   `ip link delete <tap>`.
+6. Remove each mirror that the leftovers mirrors row names with
+   `ovs-vsctl -- --id=@m get mirror <mirror> -- remove bridge <bridge> mirrors @m`.
+7. If no inject runs, unmount each mounted `dstImg*` directory that the
+   disk-space inject dirs row names. Disconnect its nbd device, then delete
+   the directory with `rmdir <directory>`.
+8. Rotate or delete a large minimega log, such as with `logrotate` and its
+   `copytruncate` option.
+
+A snapshot file has the name `<head node>_<experiment>_<VM>_snapshot`. The
+check names only the files of this head node, and keeps a file that can
+belong to a stored experiment.
+
+### A VM Does Not Start: `Failed to get "write" lock`
+
+qemu locks each image that it opens. A VM does not start when another process
+holds its image or a backing file in a way that blocks the lock. The
+`image-locks` check of `phenix doctor` names each `qemu-system`, `qemu-nbd` or
+`qemu-img` process that holds an image of a stopped experiment and is not a
+VM of a running experiment. Stop the process with `kill <pid>`, or disconnect
+a `qemu-nbd` device with `qemu-nbd -d /dev/nbdN`.
+
+A VM with `snapshot: false` writes to its drive images. The `writable-images`
+check warns when such an image is the backing file of another image, because
+the writes break that image, and when more than one VM uses the image. Set
+`snapshot: true`, or give each VM its own copy of the image, such as with
+`qemu-img convert -O qcow2 <image> <copy>`.
+
 ### `phenix image build` Fails Before or in debootstrap
 
 The `image-build` check of `phenix doctor` checks what `phenix image build`

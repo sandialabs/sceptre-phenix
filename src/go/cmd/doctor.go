@@ -191,16 +191,29 @@ const doctorDesc = `Check the phenix configuration without a running server
   It also checks the debootstrap script and keyring of the release of each
   stored image config.
 
+  The images group also looks for problems that stopped or deleted
+  experiments leave. writable-images warns when a VM with snapshot: false
+  writes to an image that backs other images, or that more than one VM uses.
+  leftovers names the snapshot files and directories of deleted experiments,
+  VM file system mounts with no running VM, minimega taps and Open vSwitch
+  ports that no VM owns, and mirrors that no capture owns. disk-space
+  measures the filesystems of the images directory, minimega's -base and its
+  log, and names the dstImg directories that a failed inject can leave.
+  image-locks (Linux only) names the qemu processes that hold an image of a
+  stopped experiment open, so qemu cannot lock it at the start.
+
   The store-file check reads only the first two pages of the store file.
-  Only the image-build check opens the store through BoltDB. It opens it
-  read-only, and waits at most --timeout for the lock. doctor opens no log
-  file, writes no file and binds no port, so it works while phenix ui is
-  stopped. Before any command runs, phenix creates the config directory
-  with an empty config.yaml when it finds no config file, and the default
-  log directory. doctor connects to the unix socket as a client only, never
-  creating or removing it, and sends minimega only global commands that
-  change nothing (version, args and mesh status). The only programs it runs
-  are qemu-img --version and ovs-vsctl show, which change nothing. Run it
+  The image-build, writable-images, leftovers and image-locks checks open the
+  store through BoltDB, once in a run. doctor opens it read-only, and waits
+  at most --timeout for the lock. doctor opens no log file, writes no file
+  and binds no port, so it works while phenix ui is stopped. Before any
+  command runs, phenix creates the config directory with an empty
+  config.yaml when it finds no config file, and the default log directory.
+  doctor connects to the unix socket as a client only, never creating or
+  removing it. It sends minimega only commands that change nothing (version,
+  args, mesh status and namespace, then vm info, tap and capture in each
+  namespace that minimega lists). The only programs it runs are qemu-img
+  --version, ovs-vsctl show and ovs-vsctl list, which change nothing. Run it
   with the same flags, environment and user as the phenix command you are
   checking.`
 
@@ -262,7 +275,7 @@ func newDoctorCmd() *cobra.Command {
 func addDoctorFlags(flags *pflag.FlagSet) {
 	flags.Duration("timeout", defaultDoctorTimeout,
 		"how long to wait for each answer of minimega, phenix ui or ovs-vsctl, for the store lock, "+
-			"and for the disk-chains and disk-formats checks")
+			"and for each check that reads many files, such as disk-chains, leftovers and image-locks")
 	flags.StringP("output", "o", "text", "output format ('text' or 'json')")
 	flags.StringSlice("skip", nil,
 		"checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)")

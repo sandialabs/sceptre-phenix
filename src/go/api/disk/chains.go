@@ -22,6 +22,9 @@ type ChainScan struct {
 	// Formats are the checked images whose own header shows an old format, a format phenix does not check, a reason
 	// qemu refuses the image, or a feature that needs a recent qemu, sorted by path.
 	Formats []FormatImage
+	// Backing are the backing files that the walk of each checked image read, in chain order, by the image's path
+	// relative to the folder scanned. Each backing file is a cleaned path. An image with no backing file is not here.
+	Backing map[string][]string
 }
 
 // FormatImage is an image whose header shows an old or unsupported format, or a feature that needs a recent qemu.
@@ -83,7 +86,7 @@ func BrokenImages(ctx context.Context, dir string) (ChainScan, error) {
 	}
 
 	results := diskchain.WalkAll(ctx, l.paths, nil)
-	scan := ChainScan{Images: len(l.paths), Checked: len(results), Broken: nil, Formats: nil}
+	scan := ChainScan{Images: len(l.paths), Checked: len(results), Broken: nil, Formats: nil, Backing: nil}
 
 	for path, res := range results {
 		rel, err := filepath.Rel(dir, path)
@@ -98,6 +101,16 @@ func BrokenImages(ctx context.Context, dir string) (ChainScan, error) {
 		if image, ok := formatOf(path, res); ok {
 			image.Path = rel
 			scan.Formats = append(scan.Formats, image)
+		}
+
+		if len(res.Members) > 1 {
+			if scan.Backing == nil {
+				scan.Backing = make(map[string][]string)
+			}
+
+			for _, member := range res.Members[1:] {
+				scan.Backing[rel] = append(scan.Backing[rel], filepath.Clean(member))
+			}
 		}
 	}
 

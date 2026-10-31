@@ -290,7 +290,7 @@ func TestListsQcowImagesOfQemuImg(t *testing.T) {
 
 	wantScan := ChainScan{Images: 3, Checked: 3, Broken: nil, Formats: []FormatImage{
 		{Path: "old.qcow", Kind: diskchain.QcowV1}, {Path: "solo.qcow", Kind: diskchain.QcowV1},
-	}}
+	}, Backing: map[string][]string{filepath.Join("win", "over.qc2"): {old}}}
 	if diff := cmp.Diff(wantScan, scan); diff != "" {
 		t.Errorf("BrokenImages(%s) mismatch (-want +got):\n%s", dir, diff)
 	}

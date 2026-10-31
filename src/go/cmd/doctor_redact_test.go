@@ -13,11 +13,12 @@ import (
 )
 
 // redactTestInput is the doctor input the redactor reads: the host name, the
-// hostname suffixes, the user, ui.users, the JWT key, variables and addresses.
+// hostname suffixes, the user, ui.users, the JWT key, variables, addresses and
+// the host name minimega answers from.
 type redactTestInput struct {
-	host, suffixes, user, home, users, key string
-	vars                                   map[string]string
-	addrs                                  []string
+	host, suffixes, user, home, users, key, mmHost string
+	vars                                           map[string]string
+	addrs                                          []string
 }
 
 func (ti redactTestInput) input() *doctorInput {
@@ -35,6 +36,10 @@ func (ti redactTestInput) input() *doctorInput {
 	}
 	in.addrs = func() ([]string, error) { return ti.addrs, nil }
 	in.userName, in.home, in.phenixUID = ti.user, ti.home, ""
+
+	if ti.mmHost != "" {
+		in.found = &doctorFound{inventory: &doctorInventory{host: ti.mmHost}}
+	}
 
 	return in
 }
@@ -59,6 +64,13 @@ func TestDoctorRedact(t *testing.T) {
 		"host with a suffix":    {in: base, text: "ws42-phenix and ws42-minimega", want: "<host-1>-phenix and <host-1>-minimega"},
 		"host in another case":  {in: base, text: "WS42 is ws42", want: "<host-1> is <host-1>"},
 		"host in a longer word": {in: base, text: "ws420 xws42", want: "ws420 xws42"},
+		"host in a snapshot file": {
+			in: base, text: "ws42_exp1_vm1_snapshot (1.0 GiB)", want: "<host-1>_exp1_vm1_snapshot (1.0 GiB)",
+		},
+		"minimega host": {
+			in:   redactTestInput{host: "ws42-phenix", suffixes: "-minimega,-phenix", mmHost: "mm7"},
+			text: "mm7_exp1_vm1_snapshot on ws42-phenix", want: "<host-2>_exp1_vm1_snapshot on <host-1>-phenix",
+		},
 		"FQDN": {
 			in:   redactTestInput{host: "node7.lab.example", suffixes: "-phenix"},
 			text: "node7.lab.example node7", want: "<host-1> <host-1>",

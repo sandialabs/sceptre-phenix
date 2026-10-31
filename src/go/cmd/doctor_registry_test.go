@@ -122,9 +122,15 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		qemuImg: func(context.Context, string) (string, error) {
 			return "qemu-img version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1)", nil
 		},
-		statfs:  func(string) (health.DiskStat, error) { return health.DiskStat{Device: 1, Total: 100, Avail: 50}, nil },
-		images:  disk.BrokenImages,
-		command: doctorCommands(map[string]doctorCommand{"ovs-vsctl --timeout=1 show": {out: doctorOVSShow, err: nil}}),
+		statfs: func(string) (health.DiskStat, error) {
+			return health.DiskStat{Device: 1, Total: 100 << 30, Avail: 50 << 30}, nil
+		},
+		images: disk.BrokenImages,
+		command: doctorCommands(map[string]doctorCommand{
+			"ovs-vsctl --timeout=1 show":                               {out: doctorOVSShow, err: nil},
+			"ovs-vsctl --timeout=1 --columns=_uuid,name list Mirror":   {out: "", err: nil},
+			"ovs-vsctl --timeout=1 --columns=name,mirrors list Bridge": {out: "name : phenix\nmirrors : []\n", err: nil},
+		}),
 		timeout: time.Second,
 
 		storeConfigs: func(context.Context, string, string, time.Duration) (store.Configs, error) { return nil, nil },
@@ -153,6 +159,24 @@ func replaceRows(rows []string, with ...string) []string {
 	for _, w := range with {
 		id, _, _ := strings.Cut(w, " ")
 		i := slices.IndexFunc(rows, func(r string) bool { return strings.HasPrefix(r, id+" ") })
+		rows[i] = w
+	}
+
+	return rows
+}
+
+// replaceNamedRows returns rows with each row in with in place of the row of the same id and name, for a check with
+// more than one row. A row "<old row> => <new row>" replaces the row <old row>.
+func replaceNamedRows(rows []string, with ...string) []string {
+	rows = slices.Clone(rows)
+
+	for _, w := range with {
+		prefix := w[:strings.LastIndex(w, " ")+1]
+		if old, renamed, ok := strings.Cut(w, " => "); ok {
+			prefix, w = old, renamed
+		}
+
+		i := slices.IndexFunc(rows, func(r string) bool { return strings.HasPrefix(r, prefix) })
 		rows[i] = w
 	}
 
@@ -237,11 +261,24 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"image-build image-build keyrings pass",
 		"disk-chains disk chains pass",
 		"disk-formats disk formats pass",
+		"writable-images writable-images skip",
+		"leftovers leftovers snapshots skip",
+		"leftovers leftovers files skip",
+		"leftovers leftovers mounts skip",
+		"leftovers leftovers taps pass",
+		"leftovers leftovers mirrors pass",
+		"disk-space disk-space files pass",
+		"disk-space disk-space inject dirs pass",
+		"image-locks image-locks skip",
 		"tunneler-download tunneler-download pass",
 		"webshark webshark pass",
 		"ui.features ui.features pass",
 		"ui.logs.minimega-path ui.logs.minimega-path pass",
 	}
+
+	// with a store file, the rows that read the stored experiments pass
+	withStore := replaceNamedRows(allPass, "writable-images writable-images pass", "leftovers leftovers snapshots pass",
+		"leftovers leftovers files pass", "leftovers leftovers mounts pass", "image-locks image-locks pass")
 
 	storeFile := filepath.Join(dir, "valid.bdb")
 	if err := os.WriteFile(storeFile, doctorFilesBolt(doctorFilesPageSize), 0o600); err != nil {
@@ -279,7 +316,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"store file": {
 			settings: map[string]string{"store.endpoint": "bolt://" + storeFile},
 			modify:   func(in *doctorInput) { in.uid = os.Getuid() },
-			want: slices.Insert(slices.Clone(allPass), slices.Index(allPass, "store.endpoint store.endpoint pass")+1,
+			want: slices.Insert(slices.Clone(withStore), slices.Index(allPass, "store.endpoint store.endpoint pass")+1,
 				"store-file store file pass", "store-owner store owner pass"),
 		},
 		"store of another user": {
@@ -295,13 +332,13 @@ func TestDoctorChecksFromInput(t *testing.T) {
 					return doctorFilesOwned{FileInfo: info, uid: 4242}, nil
 				}
 			},
-			want: slices.Insert(slices.Clone(allPass), slices.Index(allPass, "store.endpoint store.endpoint pass")+1,
+			want: slices.Insert(slices.Clone(withStore), slices.Index(allPass, "store.endpoint store.endpoint pass")+1,
 				"store-file store file pass", "store-owner store owner warn"),
 		},
 		"not a store": {
 			settings: map[string]string{"store.endpoint": "bolt://" + notStore},
 			modify:   func(in *doctorInput) { in.uid = os.Getuid() },
-			want: slices.Insert(slices.Clone(allPass), slices.Index(allPass, "store.endpoint store.endpoint pass")+1,
+			want: slices.Insert(slices.Clone(withStore), slices.Index(allPass, "store.endpoint store.endpoint pass")+1,
 				"store-file store file fail", "store-owner store owner pass"),
 		},
 		"root store exists": {
@@ -425,9 +462,11 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			modify: func(in *doctorInput) {
 				in.probe = func(string, time.Duration) (string, error) { return "", errors.New("refused") }
 			},
-			// minimega-env checks nothing, in one skip row; no <base-dir.phenix>/images to check
-			want: slices.Replace(replaceRows(allPass, "minimega minimega fail", "disk-chains disk chains skip",
-				"disk-formats disk formats skip"),
+			// minimega-env checks nothing, in one skip row; no <base-dir.phenix>/images to check or measure
+			want: slices.Replace(replaceNamedRows(allPass, "minimega minimega fail", "disk-chains disk chains skip",
+				"disk-formats disk formats skip", "leftovers leftovers snapshots skip", "leftovers leftovers taps skip",
+				"leftovers leftovers mirrors skip",
+				"disk-space disk-space files pass => disk-space disk-space base pass"),
 				slices.Index(allPass, "minimega-env minimega files pass"),
 				slices.Index(allPass, "minimega-env minimega mesh pass")+1,
 				"minimega-env minimega-env skip"),
@@ -437,9 +476,10 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				in.env.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 				in.statfs = func(string) (health.DiskStat, error) { return health.DiskStat{Device: 1, Total: 100, Avail: 1}, nil }
 			},
-			want: replaceRows(allPass,
+			want: replaceNamedRows(allPass,
 				"qemu-img qemu-img fail", "vmdb2 vmdb2 fail", "filebeat filebeat warn", "disk disk phenix-base fail",
-				"nbd nbd fail", "openvswitch openvswitch fail", "image-build image-build tools warn"),
+				"nbd nbd fail", "openvswitch openvswitch fail", "image-build image-build tools warn",
+				"leftovers leftovers taps skip", "leftovers leftovers mirrors skip", "disk-space disk-space files warn"),
 		},
 		"broken disk image": {
 			modify: func(in *doctorInput) {
@@ -763,7 +803,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 49 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 51 passed, 10 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -789,8 +829,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 49 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"52 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 51 passed, 10 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"61 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

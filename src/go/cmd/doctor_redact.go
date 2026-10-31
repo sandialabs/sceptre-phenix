@@ -68,8 +68,8 @@ type doctorRedactor struct {
 }
 
 // newDoctorRedactor collects the values to redact from in: the host name, the
-// user names, the ui.users names and passwords, the JWT signing key and the
-// addresses of the host's interfaces.
+// host name minimega answers from, the user names, the ui.users names and
+// passwords, the JWT signing key and the addresses of the host's interfaces.
 func newDoctorRedactor(in *doctorInput) *doctorRedactor {
 	r := &doctorRedactor{words: nil, tokens: make(map[string]string), counts: make(map[string]int)}
 
@@ -77,6 +77,11 @@ func newDoctorRedactor(in *doctorInput) *doctorRedactor {
 		if name, err := in.hostname(); err == nil {
 			r.addHost(name, redactSuffixes(in.text("hostname-suffixes")))
 		}
+	}
+
+	// the head node in the names of snapshot files, as minimega answers
+	if in.found != nil && in.found.inventory != nil && in.found.inventory.host != "" {
+		r.addHost(in.found.inventory.host, redactSuffixes(in.text("hostname-suffixes")))
 	}
 
 	r.addUser(in.userName)
@@ -462,10 +467,12 @@ func (r *doctorRedactor) uidName(s string) (string, int) {
 	return r.token(redactUser, name) + s[m[3]:m[1]], m[1]
 }
 
+// word matches w where it is a whole word. A host name can also come before
+// '_', as in the names of snapshot files.
 func (r *doctorRedactor) word(w redactWord) func(string) (string, int) {
 	return func(s string) (string, int) {
 		n := len(w.value)
-		if n > len(s) || !endsWord(s, n) {
+		if n > len(s) || !endsWord(s, n) && (w.kind != redactHost || s[n] != '_') {
 			return "", 0
 		}
 

@@ -450,14 +450,10 @@ func openvswitchCheck(ctx context.Context, in *doctorInput) doctorCheck {
 		module = ovsModulePhrase + ", so ovs-vswitchd cannot make kernel bridges" + kernelModulesNote
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, in.timeout)
-	defer cancel()
+	show := in.runOVSShow(ctx)
 
-	seconds := max(1, int(math.Ceil(in.timeout.Seconds())))
-	out, err := in.command(ctx, "ovs-vsctl", "--timeout="+strconv.Itoa(seconds), "show")
-
-	if err != nil {
-		check := ovsShowFailure(ctx, out, err, in.timeout)
+	if show.err != nil {
+		check := ovsShowFailure(show, in.timeout)
 		if module != "" {
 			check.Detail += ". " + module
 		}
@@ -465,7 +461,7 @@ func openvswitchCheck(ctx context.Context, in *doctorInput) doctorCheck {
 		return check
 	}
 
-	version, bridges := parseOVSShow(string(out))
+	version, bridges := parseOVSShow(string(show.out))
 
 	var problems []string
 
@@ -502,8 +498,41 @@ func openvswitchCheck(ctx context.Context, in *doctorInput) doctorCheck {
 // defaultExperimentBridge is the bridge of an experiment that sets none, in bridge-mode manual.
 const defaultExperimentBridge = "phenix"
 
-// ovsShowFailure explains the failure err of ovs-vsctl show, which wrote out.
-func ovsShowFailure(ctx context.Context, out []byte, err error, timeout time.Duration) doctorCheck {
+// doctorOVSRun is one run of ovs-vsctl show, which a run of doctor shares.
+type doctorOVSRun struct {
+	out      []byte // stdout and stderr
+	err      error
+	timedOut bool // the doctor timeout ended the run
+}
+
+// runOVSShow runs ovs-vsctl show once in a run, waiting at most the doctor timeout, and returns that run.
+func (in *doctorInput) runOVSShow(ctx context.Context) *doctorOVSRun {
+	if in.found != nil && in.found.ovsShow != nil {
+		return in.found.ovsShow
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, in.timeout)
+	defer cancel()
+
+	out, err := in.command(ctx, "ovs-vsctl", ovsTimeoutArg(in.timeout), "show")
+	show := &doctorOVSRun{out: out, err: err, timedOut: ctx.Err() != nil}
+
+	if in.found != nil {
+		in.found.ovsShow = show
+	}
+
+	return show
+}
+
+// ovsTimeoutArg is the --timeout option that makes ovs-vsctl give up after timeout, in whole seconds.
+func ovsTimeoutArg(timeout time.Duration) string {
+	return "--timeout=" + strconv.Itoa(max(1, int(math.Ceil(timeout.Seconds()))))
+}
+
+// ovsShowFailure explains the failure of show, a run of ovs-vsctl show.
+func ovsShowFailure(show *doctorOVSRun, timeout time.Duration) doctorCheck {
+	out := show.out
+
 	text := strings.TrimSpace(string(out))
 	if first, _, ok := strings.Cut(text, "\n"); ok {
 		text = first
@@ -512,10 +541,10 @@ func ovsShowFailure(ctx context.Context, out []byte, err error, timeout time.Dur
 	switch {
 	case strings.Contains(string(out), ovsDeniedPhrase):
 		return warnCheck("this user cannot connect to ovsdb-server (" + ovsDeniedPhrase + "). minimega runs ovs-vsctl as root")
-	case ctx.Err() != nil || strings.Contains(strings.ToLower(text), "timeout"):
+	case show.timedOut || strings.Contains(strings.ToLower(text), "timeout"):
 		return failCheck(fmt.Sprintf("ovsdb-server did not %s within %s", ovsNoAnswerPhrase, timeout))
 	case text == "":
-		text = err.Error()
+		text = show.err.Error()
 	}
 
 	return failCheck(fmt.Sprintf("ovsdb-server does not %s: %s", ovsNoAnswerPhrase, text))

@@ -14,7 +14,7 @@ import (
 )
 
 // BrokenImages counts the images the disk list finds, leaving out folders it skips and files without an image
-// extension, and names each one qemu cannot open by its path in the folder.
+// extension, names each one qemu cannot open by its path in the folder, and gives the backing files it read.
 func TestBrokenImages(t *testing.T) {
 	t.Parallel()
 
@@ -46,6 +46,7 @@ func TestBrokenImages(t *testing.T) {
 			{Path: "link.qc2", Problem: "backing file " + filepath.Join(dir, "gone.qc2") + " is missing"},
 			{Path: "sub/over.qc2", Problem: "backing file " + filepath.Join(dir, "ro_over.qc2") + " is missing"},
 		},
+		Backing: map[string][]string{"whole.qc2": {filepath.Join(dir, "base.qcow2")}},
 	}
 
 	if diff := cmp.Diff(want, got); diff != "" {
