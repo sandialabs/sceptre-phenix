@@ -362,6 +362,80 @@ To repair the image, do one of these steps:
    without this option must read the missing file, so it fails.
 3. Change the topology to use a different image.
 
+## Image Format Versions
+
+Before a start, phēnix also reads the format and version in the header of each
+image in a backing chain. qemu refuses some images, and some old formats can
+cause problems. This table shows what phēnix does for each format:
+
+| Image | What phēnix does |
+| :--- | :--- |
+| qcow2 version 3 (`compat=1.1`), raw | Starts the VM. |
+| qcow2 version 2 (`compat=0.10`) | Starts the VM. `phenix doctor` warns. |
+| qcow version 1 | Starts the VM with a warning. Some qemu builds, such as the `qemu-kvm` of RHEL, cannot open this format. |
+| qcow2 or qcow version 1 with the old AES encryption | Refuses the start. qemu does not open these images for VMs. |
+| qcow2 with LUKS encryption | Refuses the start. phēnix cannot give qemu the key. |
+| qcow2 of a version later than 3, or with feature bits that qemu does not know | Refuses the start. A newer qemu made the image. |
+| qcow2 that qemu marked as corrupt | Refuses the start when qemu must write to the image: a disk of a VM with `snapshot: false`. Otherwise, starts the VM with a warning. |
+| qcow2 that qemu did not close cleanly | Starts the VM with a warning. |
+| qcow2 with zstd compression or extended L2 entries | Starts the VM. `phenix doctor` warns when the local `qemu-img` is older than qemu 5.1 (zstd) or 5.2 (extended L2). |
+| vmdk, qed, or qcow2 with an external data file | Starts the VM with a warning. phēnix does not check past this image. For an external data file, `phenix doctor` also warns when the local `qemu-img` is older than qemu 4.0. |
+
+With `experiment.disk-check: warn`, or in a dry run, a refused start is a
+warning. `phenix doctor` lists the images of each kind in its `disk-formats`
+row.
+
+Before you change an image, stop each VM that uses it. To fix an image, use
+the command for its problem:
+
+1. To upgrade a qcow2 version 2 image to version 3, change it in place:
+
+    ```bash
+    qemu-img amend -f qcow2 -o compat=1.1 kali.qc2
+    ```
+
+2. To convert a qcow version 1 image to qcow2, write a full copy. Then point
+   each image that it backs at the copy:
+
+    ```bash
+    qemu-img convert -f qcow -O qcow2 kali.qcow kali.qc2
+    qemu-img rebase -u -F qcow2 -b kali.qc2 overlay.qc2
+    ```
+
+    `Rebase` with `Change reference only` on this page does the second step.
+
+3. To remove the old AES encryption, write a copy without encryption. Put
+   only the passphrase in a file, with no newline at the end:
+
+    ```bash
+    printf '%s' 'kalipass' > passphrase.txt
+    qemu-img convert --object secret,id=sec0,file=passphrase.txt \
+      --image-opts driver=qcow2,file.filename=kali.qc2,encrypt.key-secret=sec0 \
+      -O qcow2 kali-plain.qc2
+    ```
+
+    For a qcow version 1 image, use `driver=qcow`. The same command removes
+    LUKS encryption. The old AES encryption does not check the passphrase. A
+    wrong passphrase, or a newline after it, gives a copy that holds random
+    data, so examine the copy before you use it.
+
+4. To repair an image that qemu marked as corrupt or did not close cleanly,
+   copy it first, then repair it:
+
+    ```bash
+    cp kali.qc2 kali-backup.qc2
+    qemu-img check -r all kali.qc2
+    ```
+
+5. A newer qemu can make an image that an older qemu cannot open. To fix
+   it, write a copy with the `qemu-img` of the newer qemu. The copy has no
+   zstd compression, extended L2 entries, or external data file. Run this
+   command:
+
+    ```bash
+    qemu-img convert -O qcow2 -o compat=1.1 kali.qc2 kali-compat.qc2
+    ```
+
 ## Downloading an Image
 
 `Download` confirms first, then downloads the image through the browser. The

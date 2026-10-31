@@ -38,7 +38,9 @@ Check the phenix configuration without a running server
   minimega answers on its socket and that its files directory, base directory
   and mesh suit phenix. The disk-chains check reads the headers of the disk
   images in that files directory, for at most --timeout, and warns about each
-  image whose backing chain is broken. The tools and features checks look for
+  image whose backing chain is broken. The disk-formats check reads the same
+  headers, and warns about each image in an old or unsupported format, such as
+  qcow2 version 2, or one that qemu refuses. The tools and features checks look for
   qemu-img, vmdb2 and filebeat on PATH, list the user apps and SCORCH
   components there, measure free disk space, report whether phenix ui turns
   on tunneler downloads and WebShark (relative to the working directory), and
@@ -90,7 +92,7 @@ docker exec phenix phenix doctor --report
       --report              add the hostname and print the output in a fenced block to paste into a bug report
       --skip strings        checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)
       --strict              exit 1 when a check warns, not only when one fails
-      --timeout duration    how long to wait for each answer of minimega or phenix ui, and for the disk-chains check (default 3s)
+      --timeout duration    how long to wait for each answer of minimega or phenix ui, and for the disk-chains and disk-formats checks (default 3s)
 ```
 
 ### SEE ALSO

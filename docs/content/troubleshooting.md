@@ -169,7 +169,7 @@ phēnix refuses to start an experiment when a VM disk image or CD-ROM image is
 missing, or when a file in the backing chain of a disk is missing:
 
 ```text
-Error: unable to start the foo experiment: 1 disk on 1 VM is missing or has a broken backing chain: 1 error occurred:
+Error: unable to start the foo experiment: qemu cannot open 1 disk on 1 VM: 1 error occurred:
     * VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing
 ```
 
@@ -190,6 +190,12 @@ See [Disk Check Before a Start](experiments.md#disk-check-before-a-start).
 To find such images before a start, run `phenix doctor`. Its `disk-chains`
 check warns about each image in minimega's files directory with a broken
 backing chain.
+
+The start also refuses an image that qemu cannot open. Examples are an image
+with the old AES encryption and an unknown qcow2 version. A qcow version 1
+image gives a warning. To fix these images, see
+[Image Format Versions](disks.md#image-format-versions). The `disk-formats`
+check of `phenix doctor` lists them.
 
 ### phēnix Cannot Reach minimega or Its Images
 

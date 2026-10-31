@@ -39,7 +39,7 @@ const (
 )
 
 // ErrBrokenDisks is matched by the error CheckDisks and Start return when a VM's disk image or CD-ROM image is
-// missing, or its backing chain is broken (see BrokenDisksError).
+// missing, its backing chain is broken, or qemu cannot open an image of the chain (see BrokenDisksError).
 var ErrBrokenDisks = errors.New("broken VM disk images")
 
 // DiskProblem is a disk image or CD-ROM image of a VM that qemu cannot open.
@@ -53,7 +53,7 @@ type DiskProblem struct {
 	// Path is the image's full path.
 	Path string `json:"path"`
 	// Missing is the full path of the missing file, the image or one in its chain, or "" for a chain that loops or is
-	// too deep.
+	// too deep, or an image that qemu cannot open.
 	Missing string `json:"missing"`
 	// Problem is what is wrong, in one sentence.
 	Problem string `json:"problem"`
@@ -83,14 +83,8 @@ func (e *BrokenDisksError) Error() string {
 		items = append(items, p.String())
 	}
 
-	verb := "are missing or have"
-	if len(e.Problems) == 1 {
-		verb = "is missing or has"
-	}
-
 	return fmt.Sprintf(
-		"%s on %s %s a broken backing chain: %s",
-		countOf(len(e.Problems), "disk"), countOf(len(vms), "VM"), verb, errorList(items),
+		"qemu cannot open %s on %s: %s", countOf(len(e.Problems), "disk"), countOf(len(vms), "VM"), errorList(items),
 	)
 }
 
@@ -167,11 +161,12 @@ func bootingVMs(spec ifaces.ExperimentSpec) map[string]bool {
 	return names
 }
 
-// CheckDisks checks that each disk and CD-ROM image of a booting VM in spec exists, and that each disk image's
-// backing chain reaches its base. It reads the files on the head node for at most 20 seconds. It returns a
-// *BrokenDisksError for images qemu cannot open, unless the mode is warn or CheckAsWarnings is set. Other problems,
-// such as images it cannot read or did not check in time, are warnings. With the mode off it checks nothing.
-// When ctx is done before the check ends, it returns ctx's error.
+// CheckDisks checks that each disk and CD-ROM image of a booting VM in spec exists, that each disk image's backing
+// chain reaches its base, and that qemu can open each image of the chain. It reads the files on the head node for at
+// most 20 seconds. It returns a *BrokenDisksError for images qemu cannot open, unless the mode is warn or
+// CheckAsWarnings is set. Other problems, such as images it cannot read or did not check in time, a qcow version 1
+// image or an image qemu did not close cleanly, are warnings. With the mode off it checks nothing. When ctx is done
+// before the check ends, it returns ctx's error.
 func CheckDisks(ctx context.Context, spec ifaces.ExperimentSpec, opts ...CheckOption) ([]error, error) {
 	o := checkOptions{mode: common.CurrentDiskCheck(), asWarnings: false, vms: nil, booting: nil}
 	for _, opt := range opts {
@@ -302,6 +297,7 @@ type diskUse struct {
 	vm, drive, image string
 	index            int
 	snapshot         bool // the VM's first drive, which minimega snapshots on the head node
+	readOnly         bool // qemu opens the image read-only: a CD-ROM, or a drive of a VM with snapshot set
 }
 
 // label names the use as an item of an error or warning.
@@ -348,23 +344,14 @@ func checkDisks(ctx context.Context, spec ifaces.ExperimentSpec, scope diskScope
 
 	for _, path := range paths {
 		res, ok := results[path]
-
-		switch {
-		case !ok:
+		if !ok {
 			unchecked = append(unchecked, path)
-		case res.Problem == diskchain.Whole:
-		case res.Broken():
-			for _, use := range uses[path] {
-				problem, warning := classify(ctx, env, where, use, path, res)
-				if warning != nil {
-					warnings = append(warnings, warning)
-				} else {
-					problems = append(problems, problem)
-				}
-			}
-		default:
-			warnings = append(warnings, sharedWarning(uses[path], res))
+
+			continue
 		}
+
+		w, p := checkResult(ctx, env, where, uses[path], path, res)
+		warnings, problems = append(warnings, w...), append(problems, p...)
 	}
 
 	if len(unchecked) > 0 {
@@ -381,6 +368,69 @@ func checkDisks(ctx context.Context, spec ifaces.ExperimentSpec, scope diskScope
 
 		return a.index - b.index
 	})
+
+	return warnings, problems
+}
+
+// checkResult returns the warnings and the problems refusing the start that res, the walk of the image at path, gives
+// for the uses of the image.
+func checkResult(
+	ctx context.Context, env checkEnv, where *placement, uses []diskUse, path string, res diskchain.Result,
+) ([]error, []DiskProblem) {
+	var (
+		warnings []error
+		problems []DiskProblem
+		refused  = res.Broken() || res.Refused()
+	)
+
+	add := func(use diskUse, sentence, missing string) {
+		problem, warning := classify(ctx, env, where, use, path, sentence, missing)
+		if warning != nil {
+			warnings = append(warnings, warning)
+		} else {
+			problems = append(problems, problem)
+		}
+	}
+
+	switch {
+	case refused:
+		sentence, missing := res.Sentence(), ""
+		if res.Problem == diskchain.Missing {
+			missing = res.At
+		}
+
+		for _, use := range uses {
+			if use.drive == driveCDROM && res.Problem == diskchain.Missing {
+				add(use, "CD-ROM image "+res.At+" is missing", missing)
+			} else {
+				add(use, sentence, missing)
+			}
+		}
+	case res.Problem != diskchain.Whole:
+		warnings = append(warnings, sharedWarning(uses, res.Sentence()))
+	}
+
+	for _, note := range res.Notes {
+		switch {
+		case note.Kind == diskchain.Corrupt:
+			// qemu refuses a corrupt image only when it opens the image read/write
+			var readOnly []diskUse
+
+			for _, use := range uses {
+				if refused || use.readOnly || len(res.Members) == 0 || note.Path != res.Members[0] {
+					readOnly = append(readOnly, use)
+				} else {
+					add(use, note.Sentence(), "")
+				}
+			}
+
+			if len(readOnly) > 0 {
+				warnings = append(warnings, sharedWarning(readOnly, note.Sentence()+". Copy it, then run qemu-img check -r all on it"))
+			}
+		case note.AtStart():
+			warnings = append(warnings, sharedWarning(uses, note.Sentence()))
+		}
+	}
 
 	return warnings, problems
 }
@@ -431,11 +481,15 @@ func collectDisks(spec ifaces.ExperimentSpec, scope diskScope, dir string) (map[
 
 			iso := strings.EqualFold(filepath.Ext(d.Image()), ".iso")
 
-			add(diskUse{vm: hostname, drive: driveDisk, image: d.Image(), index: i, snapshot: i == 0 && snapshot}, iso)
+			add(diskUse{
+				vm: hostname, drive: driveDisk, image: d.Image(), index: i, snapshot: i == 0 && snapshot, readOnly: snapshot,
+			}, iso)
 		}
 
 		if image := node.Advanced()[cdromSetting]; image != "" {
-			add(diskUse{vm: hostname, drive: driveCDROM, image: image, index: len(drives), snapshot: false}, true)
+			add(diskUse{
+				vm: hostname, drive: driveCDROM, image: image, index: len(drives), snapshot: false, readOnly: true,
+			}, true)
 		}
 	}
 
@@ -479,22 +533,14 @@ func cleanResult(res diskchain.Result) diskchain.Result {
 	return res.MapPaths(mm.CleanBackingPath)
 }
 
-// classify returns use of the image at path, whose chain res says is broken, as a problem refusing the start, or as a
-// warning when the VM may run where phenix did not look.
+// classify returns use of the image at path, which qemu cannot open for the reason sentence gives, as a problem
+// refusing the start, or as a warning when the VM may run where phenix did not look. missing is the missing file, or
+// "" for another reason.
 func classify(
-	ctx context.Context, env checkEnv, where *placement, use diskUse, path string, res diskchain.Result,
+	ctx context.Context, env checkEnv, where *placement, use diskUse, path, sentence, missing string,
 ) (DiskProblem, error) {
-	sentence := res.Sentence()
-	if use.drive == driveCDROM && res.Problem == diskchain.Missing {
-		sentence = "CD-ROM image " + res.At + " is missing"
-	}
-
 	problem := DiskProblem{
-		VM: use.vm, Drive: use.drive, Image: use.image, Path: path, Missing: "", Problem: sentence, index: use.index,
-	}
-
-	if res.Problem == diskchain.Missing {
-		problem.Missing = res.At
+		VM: use.vm, Drive: use.drive, Image: use.image, Path: path, Missing: missing, Problem: sentence, index: use.index,
 	}
 
 	warn := func(why string) (DiskProblem, error) {
@@ -502,7 +548,7 @@ func classify(
 	}
 
 	switch {
-	case res.Problem == diskchain.Missing && !env.filesDirSeen:
+	case missing != "" && !env.filesDirSeen:
 		return warn(fmt.Sprintf("phenix cannot see minimega's files directory %s, so it did not check the image", env.filesDir))
 	case use.snapshot, file.WithinDir(env.filesDir, path):
 		return problem, nil
@@ -520,8 +566,8 @@ func classify(
 	}
 }
 
-// sharedWarning reports a problem that does not refuse the start, of an image the uses share.
-func sharedWarning(uses []diskUse, res diskchain.Result) error {
+// sharedWarning reports sentence, a problem that does not refuse the start, of an image the uses share.
+func sharedWarning(uses []diskUse, sentence string) error {
 	names := make([]string, 0, len(uses))
 	for _, use := range uses {
 		if !slices.Contains(names, use.vm) {
@@ -536,7 +582,7 @@ func sharedWarning(uses []diskUse, res diskchain.Result) error {
 
 	return fmt.Errorf(
 		"%s %s of %s %s: %s",
-		driveLabel(uses[0].drive), uses[0].image, word, listOf(names, maxListedVMs), res.Sentence(),
+		driveLabel(uses[0].drive), uses[0].image, word, listOf(names, maxListedVMs), sentence,
 	)
 }
 

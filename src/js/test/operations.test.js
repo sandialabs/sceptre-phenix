@@ -460,7 +460,7 @@ describe('outcomes', () => {
       {
         name: 'foo',
         status: 'failed',
-        error: '2 disks on 2 VMs are missing or have a broken backing chain',
+        error: 'qemu cannot open 2 disks on 2 VMs',
         retryable: false,
         details: [
           'VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing',
@@ -480,7 +480,7 @@ describe('outcomes', () => {
       {
         name: 'web',
         status: 'failed',
-        error: '2 disks are missing or have a broken backing chain',
+        error: 'qemu cannot open 2 disks',
         retryable: false,
         details: [
           'disk a.qc2: backing file /b.qc2 is missing',
@@ -658,7 +658,7 @@ describe('notifyOutcome', () => {
     const broken = (name) => ({
       name,
       status: 'failed',
-      error: '1 disk is missing or has a broken backing chain',
+      error: 'qemu cannot open 1 disk',
       details: ['disk a.qc2: backing file /b.qc2 is missing'],
     });
 
@@ -671,7 +671,7 @@ describe('notifyOutcome', () => {
     let details = messageOf(notice).querySelectorAll('details');
     expect(lines(notice)).toEqual([
       'Started 0 of 1 VM: 1 failed',
-      'web: 1 disk is missing or has a broken backing chain',
+      'web: qemu cannot open 1 disk',
       'Show 1 problemdisk a.qc2: backing file /b.qc2 is missing',
     ]);
     expect([...details].map((d) => d.open)).toEqual([true]);

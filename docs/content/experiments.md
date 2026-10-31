@@ -174,14 +174,17 @@ phēnix examines these files:
   `.iso` extension. phēnix checks only that the file exists.
 
 phēnix refuses the start when a file is missing, when a backing chain loops,
-or when a chain has more than 64 images. The experiment stays stopped, and
-phēnix sends no command to minimega. Pre-start apps run before the check. The
-default `startup` app marks a VM `do_not_boot` when it cannot find the first
-disk image of the VM. phēnix still checks that VM. The error names each VM,
-each disk, and the missing file:
+or when a chain has more than 64 images. It also refuses the start when qemu
+cannot open an image of the chain. Examples are an encrypted image and an
+unknown qcow2 version. See
+[Image Format Versions](disks.md#image-format-versions). The experiment stays
+stopped, and phēnix sends no command to minimega. Pre-start apps run before
+the check. The default `startup` app marks a VM `do_not_boot` when it cannot
+find the first disk image of the VM. phēnix still checks that VM. The error
+names each VM, each disk, and the missing file:
 
 ```text
-Error: unable to start the foo experiment: 2 disks on 1 VM are missing or have a broken backing chain: 2 errors occurred:
+Error: unable to start the foo experiment: qemu cannot open 2 disks on 1 VM: 2 errors occurred:
     * VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing
     * VM host-01: CD-ROM tools.iso: CD-ROM image /phenix/images/tools.iso is missing
 ```
@@ -204,6 +207,10 @@ These problems do not refuse the start. phēnix shows each one as a warning:
   does not examine the chain past that image.
 * A qcow2 image with an external data file, or a backing file with a protocol
   name, such as `nbd://` or `json:`.
+* A qcow version 1 image, which some qemu builds cannot open, or a qcow2 image
+  that qemu did not close cleanly. The warning gives the fix.
+* A qcow2 image that qemu marked as corrupt, when qemu only reads it: a
+  backing file, or a disk of a VM with `snapshot: true`.
 * A file that phēnix cannot read, for example because of its permissions.
 * A missing file that a cluster node other than the head node can have (see
   [Clusters](#clusters)).

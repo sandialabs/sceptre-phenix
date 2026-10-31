@@ -667,6 +667,10 @@ func doctorChecks() []doctorCheckDef {
 			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(diskChainsCheck(ctx, in)) },
 		},
 		{
+			id: "disk-formats", group: doctorGroupImages, name: diskFormatsName, hint: diskFormatsHint,
+			run: diskFormatsChecks,
+		},
+		{
 			id: web.FeatureTunnelerDownload, group: doctorGroupFeatures, name: web.FeatureTunnelerDownload,
 			hint: hintText("make " + web.TunnelerDownloadDir + " a directory of phenix-tunneler builds, or remove it"),
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
@@ -748,7 +752,7 @@ func runDoctorChecks(ctx context.Context, input *doctorInput, defs []doctorCheck
 	var results []doctorResult
 
 	run := *input
-	run.found = &doctorFound{minimegaUp: false, minimegaArgs: nil}
+	run.found = &doctorFound{minimegaUp: false, minimegaArgs: nil, images: nil}
 	in := &run
 
 	for _, def := range defs {

@@ -112,6 +112,8 @@ func diskTexts(warnings []error, problems []DiskProblem) ([]string, []string) {
 
 // The check refuses a start for each image qemu cannot open where the VM runs, and only warns where phenix cannot
 // tell: it reads the head node's files, which minimega snapshots from, and copies from inside its files directory.
+//
+//nolint:maintidx // the table
 func TestCheckDisksClassifies(t *testing.T) {
 	t.Parallel()
 
@@ -258,6 +260,86 @@ func TestCheckDisksClassifies(t *testing.T) {
 			},
 		},
 		{
+			name: "images qemu refuses for their version, feature bits or encryption are refused",
+			setup: func(t *testing.T, images, _ string) {
+				t.Helper()
+				v4 := dct.Qcow2{}.Bytes()
+				v4[7] = 4
+				dct.WriteFile(t, images+"/v4.qc2", v4)
+				dct.WriteQcow2(t, images+"/bits.qc2", dct.Qcow2{Features: 1 << 5})
+				dct.WriteQcow2(t, images+"/luks.qc2", dct.Qcow2{Encryption: 2})
+				dct.WriteQcow2(t, images+"/kali.qc2", dct.Qcow2{Backing: "old.qcow", BackingFormat: "qcow"})
+				dct.WriteQcow(t, images+"/old.qcow", dct.Qcow{Encryption: 1})
+			},
+			vms: func(string, string) []diskVM {
+				return []diskVM{{name: "a", drives: []string{"v4.qc2", "bits.qc2", "luks.qc2", "kali.qc2"}, snapshot: off}}
+			},
+			wantProblems: []string{
+				"VM a: disk v4.qc2: {images}/v4.qc2 is a qcow2 version 4 image, which qemu cannot open",
+				"VM a: disk bits.qc2: {images}/bits.qc2 uses qcow2 features that qemu does not know " +
+					"(incompatible feature bits 0x20)",
+				"VM a: disk luks.qc2: {images}/luks.qc2 uses LUKS encryption, and phenix cannot give qemu its key",
+				"VM a: disk kali.qc2: {images}/old.qcow uses the old qcow AES encryption, which qemu does not open for VMs",
+			},
+		},
+		{
+			name: "a qcow version 1 image and a dirty image only warn, and version 2 and zstd images pass",
+			setup: func(t *testing.T, images, _ string) {
+				t.Helper()
+				dct.WriteQcow2(t, images+"/kali.qc2", dct.Qcow2{Backing: "ro_kali.qcow", BackingFormat: "qcow"})
+				dct.WriteQcow(t, images+"/ro_kali.qcow", dct.Qcow{})
+				dct.WriteQcow2(t, images+"/dirty.qc2", dct.Qcow2{Features: 1})
+				dct.WriteQcow2(t, images+"/v2.qc2", dct.Qcow2{Version: 2, Backing: "zstd.qc2"})
+				dct.WriteQcow2(t, images+"/zstd.qc2", dct.Qcow2{Zstd: true})
+			},
+			vms: func(string, string) []diskVM {
+				return []diskVM{
+					{name: "a", drives: []string{"kali.qc2", "v2.qc2"}},
+					{name: "b", drives: []string{"dirty.qc2"}, snapshot: off},
+				}
+			},
+			wantWarnings: []string{
+				"disk dirty.qc2 of VM b: qemu did not close {images}/dirty.qc2 cleanly. Run qemu-img check -r all on it",
+				"disk kali.qc2 of VM a: {images}/ro_kali.qcow is a qcow version 1 image, an old format that some qemu " +
+					"builds cannot open. Convert it to qcow2",
+			},
+		},
+		{
+			name: "a corrupt image is refused only where qemu opens it read/write",
+			setup: func(t *testing.T, images, _ string) {
+				t.Helper()
+				dct.WriteQcow2(t, images+"/kali.qc2", dct.Qcow2{Features: 1 << 1})
+				dct.WriteQcow2(t, images+"/top.qc2", dct.Qcow2{Backing: "kali.qc2"})
+			},
+			vms: func(string, string) []diskVM {
+				return []diskVM{
+					{name: "a", drives: []string{"kali.qc2"}, snapshot: off},
+					{name: "b", drives: []string{"kali.qc2"}},
+					{name: "c", drives: []string{"top.qc2"}, snapshot: off},
+				}
+			},
+			wantWarnings: []string{
+				"disk kali.qc2 of VM b: qemu marked {images}/kali.qc2 as corrupt. Copy it, then run qemu-img check -r all on it",
+				"disk top.qc2 of VM c: qemu marked {images}/kali.qc2 as corrupt. Copy it, then run qemu-img check -r all on it",
+			},
+			wantProblems: []string{"VM a: disk kali.qc2: qemu marked {images}/kali.qc2 as corrupt"},
+		},
+		{
+			name: "outside the files directory, an image qemu refuses on another node only warns",
+			mode: string(common.DeployModeAll), schedules: map[string]string{"a": "c1"}, hosts: []string{"head", "c1"},
+			setup: func(t *testing.T, _, outside string) {
+				t.Helper()
+				dct.WriteQcow2(t, outside+"/a.qc2", dct.Qcow2{Encryption: 1})
+			},
+			vms: func(_, outside string) []diskVM {
+				return []diskVM{{name: "a", drives: []string{outside + "/a.qc2"}, snapshot: off}}
+			},
+			wantWarnings: []string{
+				"VM a: disk {outside}/a.qc2: {outside}/a.qc2 uses the old qcow AES encryption, which qemu does not open " +
+					"for VMs. phenix checks only the head node, and the VM may run on another node",
+			},
+		},
+		{
 			name: "problems are sorted by VM, then drive",
 			setup: func(t *testing.T, images, _ string) {
 				t.Helper()
@@ -332,6 +414,26 @@ func TestCheckDisksProblemFields(t *testing.T) {
 	want := []DiskProblem{{
 		VM: "a", Drive: "disk", Image: "sub/top.qc2", Path: images + "/sub/top.qc2", Missing: images + "/ro_top.qc2",
 		Problem: "backing file " + images + "/ro_top.qc2 is missing",
+	}}
+
+	if diff := cmp.Diff(want, problems, cmpopts.IgnoreUnexported(DiskProblem{})); diff != "" {
+		t.Errorf("checkDisks problems mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// A problem of an image qemu refuses names no missing file.
+func TestCheckDisksRefusedFields(t *testing.T) {
+	t.Parallel()
+
+	images := t.TempDir()
+	dct.WriteQcow2(t, images+"/kali.qc2", dct.Qcow2{Encryption: 2})
+
+	spec := diskSpec("", nil, diskVM{name: "a", drives: []string{"kali.qc2"}})
+	_, problems := checkDisks(t.Context(), spec, diskScope{}, diskEnv(images, nil, nil))
+
+	want := []DiskProblem{{
+		VM: "a", Drive: "disk", Image: "kali.qc2", Path: images + "/kali.qc2", Missing: "",
+		Problem: images + "/kali.qc2 uses LUKS encryption, and phenix cannot give qemu its key",
 	}}
 
 	if diff := cmp.Diff(want, problems, cmpopts.IgnoreUnexported(DiskProblem{})); diff != "" {
@@ -422,20 +524,20 @@ func TestBrokenDisksError(t *testing.T) {
 		{
 			name:     "one disk",
 			problems: []DiskProblem{problem("a", "a.qc2")},
-			want: "1 disk on 1 VM is missing or has a broken backing chain: 1 error occurred:" +
+			want: "qemu cannot open 1 disk on 1 VM: 1 error occurred:" +
 				"\n\t* VM a: disk a.qc2: disk image /i/a.qc2 is missing",
 		},
 		{
 			name:     "two disks of one VM",
 			problems: []DiskProblem{problem("a", "a.qc2"), problem("a", "b.qc2")},
-			want: "2 disks on 1 VM are missing or have a broken backing chain: 2 errors occurred:" +
+			want: "qemu cannot open 2 disks on 1 VM: 2 errors occurred:" +
 				"\n\t* VM a: disk a.qc2: disk image /i/a.qc2 is missing" +
 				"\n\t* VM a: disk b.qc2: disk image /i/b.qc2 is missing",
 		},
 		{
 			name:     "more than 20",
 			problems: many,
-			want: "25 disks on 25 VMs are missing or have a broken backing chain: 25 errors occurred:" +
+			want: "qemu cannot open 25 disks on 25 VMs: 25 errors occurred:" +
 				manyItems.String() + "\n\t* and 5 more",
 		},
 	}

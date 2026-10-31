@@ -137,10 +137,10 @@ describe('showError', () => {
     [
       'shows each broken disk of a refused start on a line of its own',
       'unable to start experiment foo',
-      '2 disks on 1 VM are missing or have a broken backing chain: 2 errors occurred:\n\t* VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing\n\t* VM host-01: CD-ROM tools.iso: CD-ROM image /phenix/images/tools.iso is missing',
+      'qemu cannot open 2 disks on 1 VM: 2 errors occurred:\n\t* VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing\n\t* VM host-01: CD-ROM tools.iso: CD-ROM image /phenix/images/tools.iso is missing',
       [
         '<b>Error:</b> unable to start experiment foo',
-        '2 disks on 1 VM are missing or have a broken backing chain',
+        'qemu cannot open 2 disks on 1 VM',
         'VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing',
         '<b>VM host-01: CD-ROM tools.iso: CD-ROM image /phenix/images/tools.iso is missing</b>',
       ],
@@ -307,7 +307,7 @@ describe('useErrorNotification', () => {
         type: 'application/json',
         data: {
           message: 'unable to start experiment foo',
-          cause: '1 disk on 1 VM is missing or has a broken backing chain: …',
+          cause: 'qemu cannot open 1 disk on 1 VM: …',
           code: 'broken_disks',
           details: { disks },
         },
@@ -318,7 +318,7 @@ describe('useErrorNotification', () => {
     render(message(), box);
     expect(box.querySelector('[role="alert"]').textContent).toBe(
       'Error: unable to start experiment foo' +
-        '1 disk on 1 VM is missing or has a broken backing chain' +
+        'qemu cannot open 1 disk on 1 VM' +
         'VM host-01disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing',
     );
   });

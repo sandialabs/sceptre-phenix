@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"phenix/util/diskchain"
 	dct "phenix/util/diskchain/diskchaintest"
 )
 
@@ -49,6 +50,47 @@ func TestBrokenImages(t *testing.T) {
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("BrokenImages() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// BrokenImages names each image whose own header shows an old or unsupported format, a reason qemu refuses it, or a
+// feature that needs a recent qemu, and leaves out what only a backing file shows.
+func TestBrokenImagesFormats(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := func(name string) string { return filepath.Join(dir, name) }
+
+	dct.WriteQcow2(t, path("kali.qc2"), dct.Qcow2{Version: 2})
+	dct.WriteQcow(t, path("ro_old.qc2"), dct.Qcow{})
+	dct.WriteQcow2(t, path("old.qc2"), dct.Qcow2{Backing: "ro_old.qc2", BackingFormat: "qcow"})
+	dct.WriteFile(t, path("win.qcow2"), []byte("KDMV"))
+	dct.WriteQcow2(t, path("aes.qc2"), dct.Qcow2{Encryption: 1})
+	dct.WriteQcow2(t, path("corrupt.qc2"), dct.Qcow2{Features: 1<<1 | 1})
+	dct.WriteQcow2(t, path("new.qc2"), dct.Qcow2{Zstd: true, Features: 1 << 4})
+	dct.WriteQcow2(t, path("data.qc2"), dct.Qcow2{DataFile: true})
+	dct.WriteQcow2(t, path("v3.qc2"), dct.Qcow2{})
+	dct.WriteFile(t, path("raw.img.qc2"), []byte("raw"))
+
+	got, err := BrokenImages(t.Context(), dir)
+	if err != nil {
+		t.Fatalf("BrokenImages() error = %v", err)
+	}
+
+	want := []FormatImage{
+		{Path: "aes.qc2", Problem: path("aes.qc2") + " uses the old qcow AES encryption, which qemu does not open for VMs"},
+		{Path: "corrupt.qc2", Problem: "qemu marked " + path("corrupt.qc2") + " as corrupt"},
+		{Path: "data.qc2", Needs: []QemuNeed{{Feature: "an external data file", Version: "4.0"}}},
+		{Path: "kali.qc2", Kind: diskchain.Qcow2V2},
+		{Path: "new.qc2", Needs: []QemuNeed{
+			{Feature: "zstd compression", Version: "5.1"}, {Feature: "extended L2 entries", Version: "5.2"},
+		}},
+		{Path: "ro_old.qc2", Kind: diskchain.QcowV1},
+		{Path: "win.qcow2", Kind: diskchain.VMDK},
+	}
+
+	if diff := cmp.Diff(want, got.Formats); diff != "" {
+		t.Errorf("BrokenImages() formats mismatch (-want +got):\n%s", diff)
 	}
 }
 

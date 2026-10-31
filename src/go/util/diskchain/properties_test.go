@@ -14,12 +14,13 @@ import (
 	dct "phenix/util/diskchain/diskchaintest"
 )
 
-// propertiesImage is one file of a random layout: missing, a raw image, or a qcow2 image backed by another file of
-// the layout, named by its absolute or relative path.
+// propertiesImage is one file of a random layout: missing, a raw image, or a qcow2 or qcow version 1 image backed by
+// another file of the layout, named by its absolute or relative path.
 type propertiesImage struct {
 	missing  bool
 	backing  int // -1 for a raw image
 	relative bool
+	v1       bool
 }
 
 // propertiesLayout draws a layout of up to six files, f0 to f5, whose backing edges may point anywhere, so it holds
@@ -33,6 +34,7 @@ func propertiesLayout(t *rapid.T) []propertiesImage {
 			missing:  rapid.IntRange(0, 4).Draw(t, fmt.Sprintf("missing %d", i)) == 0,
 			backing:  rapid.IntRange(-1, n-1).Draw(t, fmt.Sprintf("backing %d", i)),
 			relative: rapid.Bool().Draw(t, fmt.Sprintf("relative %d", i)),
+			v1:       rapid.Bool().Draw(t, fmt.Sprintf("v1 %d", i)),
 		}
 	}
 
@@ -67,11 +69,15 @@ func propertiesModel(dir string, images []propertiesImage) diskchain.Result {
 			return res
 		}
 
+		if images[i].v1 {
+			res.Notes = append(res.Notes, diskchain.Note{Path: path, Kind: diskchain.QcowV1})
+		}
+
 		i = images[i].backing
 	}
 }
 
-// Walk agrees with a model walk of any layout of missing files, loops and chains.
+// Walk agrees with a model walk of any layout of missing files, loops and chains of qcow2 and qcow version 1 images.
 func TestWalkMatchesModel(t *testing.T) {
 	t.Parallel()
 
@@ -82,14 +88,19 @@ func TestWalkMatchesModel(t *testing.T) {
 		for i, image := range images {
 			path := fmt.Sprintf("%s/f%d", dir, i)
 
+			backing := fmt.Sprintf("%s/f%d", dir, image.backing)
+			if image.relative {
+				backing = fmt.Sprintf("f%d", image.backing)
+			}
+
 			switch {
 			case image.missing:
 			case image.backing < 0:
 				dct.WriteFile(t, path, []byte("raw"))
-			case image.relative:
-				dct.WriteQcow2(t, path, dct.Qcow2{Backing: fmt.Sprintf("f%d", image.backing)})
+			case image.v1:
+				dct.WriteQcow(t, path, dct.Qcow{Backing: backing})
 			default:
-				dct.WriteQcow2(t, path, dct.Qcow2{Backing: fmt.Sprintf("%s/f%d", dir, image.backing)})
+				dct.WriteQcow2(t, path, dct.Qcow2{Backing: backing})
 			}
 		}
 
@@ -102,7 +113,7 @@ func TestWalkMatchesModel(t *testing.T) {
 	})
 }
 
-// ParseHeader never panics, and what it parses is a header qemu could open: random bytes, often after a qcow2 magic
+// ParseHeader never panics, and what it parses is a header qemu could parse: random bytes, often after a qcow2 magic
 // or a seed header.
 func TestParseHeaderProperties(t *testing.T) {
 	t.Parallel()

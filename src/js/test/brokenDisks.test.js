@@ -75,9 +75,9 @@ describe('brokenDisks', () => {
 
 describe('brokenDisksSummary', () => {
   it.each([
-    [1, 1, '1 disk on 1 VM is missing or has a broken backing chain'],
-    [3, 2, '3 disks on 2 VMs are missing or have a broken backing chain'],
-    [2, undefined, '2 disks are missing or have a broken backing chain'],
+    [1, 1, 'qemu cannot open 1 disk on 1 VM'],
+    [3, 2, 'qemu cannot open 3 disks on 2 VMs'],
+    [2, undefined, 'qemu cannot open 2 disks'],
   ])('counts %s disks on %s VMs as the server does', (n, vms, want) => {
     expect(brokenDisksSummary(n, vms)).toBe(want);
   });
@@ -163,7 +163,7 @@ describe('brokenDisksBody', () => {
       'Error: unable to start experiment foo',
     );
     expect(alert.find('.error-step').text()).toBe(
-      '3 disks on 2 VMs are missing or have a broken backing chain',
+      'qemu cannot open 3 disks on 2 VMs',
     );
     expect(listed(alert.find('.broken-disk-list'))).toEqual(
       disksByVM(disks).map(({ vm, lines }) => ({ vm: `VM ${vm}`, lines })),

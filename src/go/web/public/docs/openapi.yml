@@ -1044,10 +1044,11 @@ paths:
       description: >-
         Starts the experiment. Before minimega launches a VM, phenix checks that
         each disk image and CD-ROM image of the VMs exists. It also checks that
-        the backing chain of each disk image is complete. The
-        `experiment.disk-check` setting controls these checks. A missing file
-        refuses the start with 400, the code
-        `broken_disks`, and each VM, disk and missing file in `details.disks`.
+        the backing chain of each disk image is complete, and that qemu can
+        open each image of the chain. The `experiment.disk-check` setting
+        controls these checks. A missing file or an image that qemu cannot
+        open refuses the start with 400, the code `broken_disks`, and each VM,
+        disk and problem in `details.disks`.
         Needs the `experiments/start` `update` permission.
       operationId: postExperimentsNameStart
       parameters:
@@ -1066,8 +1067,9 @@ paths:
                 $ref: "#/components/schemas/Experiment"
         "400":
           description: >-
-            the start failed. For a missing disk image or CD-ROM image, or a
-            broken backing chain, the code is `broken_disks`. Then
+            the start failed. For a missing disk image or CD-ROM image, a
+            broken backing chain, or an image that qemu cannot open, the code
+            is `broken_disks`. Then
             `details.disks`
             lists each one, and the experiment stays stopped.
           content:
@@ -3581,8 +3583,9 @@ paths:
         Before a `start` or `restart`, the job checks the disk images and CD-ROM
         images of the VMs the role may act on. It checks them as a start of the
         experiment does (see the `experiment.disk-check` setting). A VM with a
-        missing image fails immediately: its `error` starts with
-        `broken VM disk images` and names each disk and missing file.
+        missing image, or an image that qemu cannot open, fails immediately:
+        its `error` starts with `broken VM disk images` and names each disk and
+        problem.
       operationId: postExperimentsNameVmsActions
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -6814,8 +6817,9 @@ paths:
         creating an experiment would. Only then does it create, update, start,
         or restart the experiment. A failed check leaves a running experiment
         running. Before a restart stops the experiment, it checks the disk
-        images and CD-ROM images of the start it makes. A missing file
-        refuses the restart with 400 and the code `broken_disks`, unless the
+        images and CD-ROM images of the start it makes. A missing file, or an
+        image that qemu cannot open, refuses the restart with 400 and the code
+        `broken_disks`, unless the
         scenario has a user app, which can change the disks. In that case, the
         start checks again. With dryRun=true, the server returns the plan after
         the same checks and changes nothing. A dry run of a plan that starts the
@@ -9971,8 +9975,9 @@ components:
             `rate_limited` (429), `unavailable` (502, 503, 504: try again
             later), `internal` (any other server error) and `broken_disks`
             (400). `broken_disks` means that the server refused a start because
-            a VM's disk image or CD-ROM image is missing or its backing chain is
-            broken. `details.disks` lists those images. The code is optional, so
+            a VM's disk image or CD-ROM image is missing, its backing chain is
+            broken, or qemu cannot open an image of the chain. `details.disks`
+            lists those images. The code is optional, so
             a client must also handle an Error without one
           enum:
             - invalid_request
@@ -10040,7 +10045,9 @@ components:
                 $ref: "#/components/schemas/BrokenDisk"
     BrokenDisk:
       title: "Broken Disk"
-      description: A disk image or CD-ROM image of a VM that is missing or whose backing chain is broken.
+      description: >-
+        A disk image or CD-ROM image of a VM that is missing, whose backing
+        chain is broken, or that qemu cannot open.
       type: object
       properties:
         vm:
@@ -10071,7 +10078,8 @@ components:
           description: >-
             full path of the missing file, the image itself or a file in its
             backing chain. Empty for a chain that loops or is more than 64
-            images deep
+            images deep, and for an image that qemu cannot open, such as an
+            encrypted image
           type: string
           example: /phenix/images/ro_kali.qc2
         problem:

@@ -52,6 +52,7 @@ var errNoAnswer = errors.New("no answer")
 type doctorFound struct {
 	minimegaUp   bool
 	minimegaArgs map[string]string // minimega's flags, once minimega-env read them
+	images       *doctorImageScan  // the scan of the images folder, once disk-chains or disk-formats read it
 }
 
 // minimegaRunner sends minimega, whose base directory is base, one global

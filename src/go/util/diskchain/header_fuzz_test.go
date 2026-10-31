@@ -8,7 +8,7 @@ import (
 )
 
 // FuzzParseHeader checks that ParseHeader never panics on an untrusted image header, and that what it parses is a
-// header qemu could open.
+// header qemu could parse (see checkHeader).
 func FuzzParseHeader(f *testing.F) {
 	for _, seed := range headerSeeds() {
 		f.Add(seed)

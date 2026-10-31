@@ -26,11 +26,10 @@ export const diskProblemLine = (disk) =>
   `${disk.drive === 'cdrom' ? 'CD-ROM' : 'disk'} ${disk.image}: ${disk.problem}`;
 
 // The count of the broken disks, and of the VMs when given, as the server
-// words it: "2 disks on 1 VM are missing or have a broken backing chain".
+// words it: "qemu cannot open 2 disks on 1 VM".
 export function brokenDisksSummary(disks, vms) {
   const on = vms === undefined ? '' : ` on ${plural(vms, 'VM')}`;
-  const verb = disks === 1 ? 'is missing or has' : 'are missing or have';
-  return `${plural(disks, 'disk')}${on} ${verb} a broken backing chain`;
+  return `qemu cannot open ${plural(disks, 'disk')}${on}`;
 }
 
 // The broken disks by VM, in the order given: [{ vm, lines }].

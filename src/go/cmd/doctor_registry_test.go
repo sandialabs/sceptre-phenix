@@ -220,6 +220,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"apps apps pass",
 		"disk disk phenix-base pass",
 		"disk-chains disk chains pass",
+		"disk-formats disk formats pass",
 		"tunneler-download tunneler-download pass",
 		"webshark webshark pass",
 		"ui.features ui.features pass",
@@ -408,7 +409,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				in.probe = func(string, time.Duration) (string, error) { return "", errors.New("refused") }
 			},
 			// minimega-env checks nothing, in one skip row; no <base-dir.phenix>/images to check
-			want: slices.Replace(replaceRows(allPass, "minimega minimega fail", "disk-chains disk chains skip"),
+			want: slices.Replace(replaceRows(allPass, "minimega minimega fail", "disk-chains disk chains skip",
+				"disk-formats disk formats skip"),
 				slices.Index(allPass, "minimega-env minimega files pass"),
 				slices.Index(allPass, "minimega-env minimega mesh pass")+1,
 				"minimega-env minimega-env skip"),
@@ -743,7 +745,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 41 passed, 2 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 41 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},

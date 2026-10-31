@@ -151,7 +151,9 @@ func newDoctorCmd() *cobra.Command {
   minimega answers on its socket and that its files directory, base directory
   and mesh suit phenix. The disk-chains check reads the headers of the disk
   images in that files directory, for at most --timeout, and warns about each
-  image whose backing chain is broken. The tools and features checks look for
+  image whose backing chain is broken. The disk-formats check reads the same
+  headers, and warns about each image in an old or unsupported format, such as
+  qcow2 version 2, or one that qemu refuses. The tools and features checks look for
   qemu-img, vmdb2 and filebeat on PATH, list the user apps and SCORCH
   components there, measure free disk space, report whether phenix ui turns
   on tunneler downloads and WebShark (relative to the working directory), and
@@ -226,7 +228,7 @@ func newDoctorCmd() *cobra.Command {
 // addDoctorFlags adds the doctor command's own flags to flags.
 func addDoctorFlags(flags *pflag.FlagSet) {
 	flags.Duration("timeout", defaultDoctorTimeout,
-		"how long to wait for each answer of minimega or phenix ui, and for the disk-chains check")
+		"how long to wait for each answer of minimega or phenix ui, and for the disk-chains and disk-formats checks")
 	flags.StringP("output", "o", "text", "output format ('text' or 'json')")
 	flags.StringSlice("skip", nil,
 		"checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)")

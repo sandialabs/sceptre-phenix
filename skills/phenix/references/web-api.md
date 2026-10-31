@@ -51,8 +51,8 @@ websocket handshake aside); match on
 `conflict`, `rate_limited`, `unavailable`, `internal`, `broken_disks`), not
 the message. `broken_disks` is a 400 from a start (`POST
 /experiments/{name}/start`, a workflow apply that starts or restarts) refused
-because a VM disk image or CD-ROM image is missing or its backing chain is
-broken; `details.disks` lists `{vm, drive, image, path, missing, problem}`
+because a VM disk image or CD-ROM image is missing, its backing chain is
+broken, or qemu cannot open an image of the chain (`missing` is then empty); `details.disks` lists `{vm, drive, image, path, missing, problem}`
 per disk, with full paths. A bulk `vms.action` start or restart checks only
 VMs that minimega launches again (state `QUIT`, `ERROR` or unknown), and fails
 each such VM's item with `broken VM disk images: ...` instead. An

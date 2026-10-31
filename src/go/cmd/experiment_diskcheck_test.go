@@ -81,7 +81,7 @@ func TestExperimentStartPrintsBrokenDisks(t *testing.T) { //nolint:paralleltest 
 
 	err := runExperimentCmd(t, cfg, newExperimentStartCmd(), "start", "foo")
 
-	want := "unable to start the foo experiment: 1 disk on 1 VM is missing or has a broken backing chain: " +
+	want := "unable to start the foo experiment: qemu cannot open 1 disk on 1 VM: " +
 		"1 error occurred:\n\t* VM a: disk " + image + ": backing chain loops back to " + image
 	if err == nil || err.Error() != want {
 		t.Errorf("experiment start error = %v, want %q", err, want)
@@ -94,8 +94,8 @@ func TestExperimentRestartChecksDisksBeforeStopping(t *testing.T) { //nolint:par
 
 	err := runExperimentCmd(t, cfg, newExperimentRestartCmd(), "restart", "foo")
 
-	want := "unable to restart the foo experiment, which is still running: 1 disk on 1 VM is missing or has a " +
-		"broken backing chain: 1 error occurred:\n\t* VM a: disk " + image + ": backing chain loops back to " + image
+	want := "unable to restart the foo experiment, which is still running: qemu cannot open 1 disk " +
+		"on 1 VM: 1 error occurred:\n\t* VM a: disk " + image + ": backing chain loops back to " + image
 	if err == nil || err.Error() != want {
 		t.Errorf("experiment restart error = %v, want %q", err, want)
 	}

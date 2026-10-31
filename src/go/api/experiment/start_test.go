@@ -250,7 +250,7 @@ func TestStartRefusesBrokenDisks(t *testing.T) { //nolint:paralleltest // replac
 
 	err := Start(notes.Context(t.Context(), false), StartWithName("exp"))
 
-	want := "1 disk on 1 VM is missing or has a broken backing chain: 1 error occurred:\n\t* VM a: disk " + image +
+	want := "qemu cannot open 1 disk on 1 VM: 1 error occurred:\n\t* VM a: disk " + image +
 		": backing chain loops back to " + image
 	if err == nil || err.Error() != want || !errors.Is(err, ErrBrokenDisks) {
 		t.Fatalf("Start error = %v, want %q matching ErrBrokenDisks", err, want)
