@@ -43,6 +43,8 @@ var validNamespace = regexp.MustCompile(`^[a-zA-Z0-9-_.]+$`)
 // doctorInventory is what minimega gives about its namespaces, which a run of doctor shares.
 type doctorInventory struct {
 	host           string          // the host name minimega answers from, without the hostname-suffixes
+	local          string          // the host name minimega answers from, as minimega names it
+	namespaces     []string        // the namespaces minimega lists, with a name that minimega accepts
 	vms            []doctorMMVM    // the VMs of every namespace, on every node of the namespace
 	taps           map[string]bool // the taps of those VMs, and the host taps of every namespace
 	bridgeCaptures map[string]bool // the bridges with a pcap capture of the whole bridge
@@ -53,6 +55,10 @@ type doctorInventory struct {
 type doctorMMVM struct {
 	namespace, name, state string
 	pid                    int
+	host                   string        // the node that runs the VM, as minimega names it
+	uuid                   string        // the UUID, which miniccc gives in cc clients
+	memory                 int           // the memory the VM asks for, in MiB
+	uptime                 time.Duration // the time since its launch
 }
 
 // alive reports whether minimega still runs the VM: its state is not QUIT or ERROR.
@@ -76,7 +82,9 @@ func (in *doctorInput) minimegaInventory(ctx context.Context) *doctorInventory {
 		return in.found.inventory
 	}
 
-	inv := &doctorInventory{host: "", vms: nil, taps: map[string]bool{}, bridgeCaptures: map[string]bool{}, why: ""}
+	inv := &doctorInventory{
+		host: "", local: "", namespaces: nil, vms: nil, taps: map[string]bool{}, bridgeCaptures: map[string]bool{}, why: "",
+	}
 	if in.found != nil {
 		in.found.inventory = inv
 	}
@@ -96,6 +104,7 @@ func (in *doctorInput) minimegaInventory(ctx context.Context) *doctorInventory {
 
 	for _, r := range resps {
 		if inv.host == "" && r.Host != "" {
+			inv.local = r.Host
 			inv.host = trimSuffixes(r.Host, in.text("hostname-suffixes"))
 		}
 	}
@@ -105,6 +114,8 @@ func (in *doctorInput) minimegaInventory(ctx context.Context) *doctorInventory {
 		if !validNamespace.MatchString(ns) {
 			continue
 		}
+
+		inv.namespaces = append(inv.namespaces, ns)
 
 		for _, part := range []string{"vm info", "tap", "capture"} {
 			command := "namespace " + ns + " " + part
@@ -116,20 +127,27 @@ func (in *doctorInput) minimegaInventory(ctx context.Context) *doctorInventory {
 				return inv
 			}
 
-			inv.add(ns, part, minimegaRows(resps))
+			for _, r := range resps {
+				inv.add(ns, part, r.Host, minimegaRows([]*minicli.Response{r}))
+			}
 		}
 	}
 
 	return inv
 }
 
-// add records rows, minimega's answer to part (vm info, tap or capture) in the namespace ns.
-func (inv *doctorInventory) add(ns, part string, rows []map[string]string) {
+// add records rows, the answer of the node host to part (vm info, tap or capture) in the namespace ns.
+func (inv *doctorInventory) add(ns, part, host string, rows []map[string]string) {
 	for _, row := range rows {
 		switch part {
 		case "vm info":
 			pid, _ := strconv.Atoi(row["pid"])
-			inv.vms = append(inv.vms, doctorMMVM{namespace: ns, name: row["name"], state: row["state"], pid: pid})
+			memory, _ := strconv.Atoi(row["memory"])
+			uptime, _ := time.ParseDuration(row["uptime"])
+			inv.vms = append(inv.vms, doctorMMVM{
+				namespace: ns, name: row["name"], state: row["state"], pid: pid,
+				host: host, uuid: row["uuid"], memory: memory, uptime: uptime,
+			})
 
 			for _, tap := range minimegaList(row["tap"]) {
 				inv.taps[tap] = true

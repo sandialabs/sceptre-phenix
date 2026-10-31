@@ -111,6 +111,12 @@ var doctorEmptyNamespace = map[string][]*minicli.Response{
 	"namespace minimega vm info": {{Host: "mm1", Header: []string{"id", "name", "state", "pid", "tap"}}},
 	"namespace minimega tap":     {{Host: "mm1", Header: []string{"bridge", "tap", "vlan"}}},
 	"namespace minimega capture": {{Host: "mm1", Header: []string{"bridge", "type", "interface", "mode", "compress", "path"}}},
+	"namespace minimega vlans":   {{Host: "mm1", Header: []string{"alias", "vlan"}}},
+	"namespace minimega vlans range": {
+		{Host: "mm1", Header: []string{"min", "max", "next"}, Tabular: [][]string{{"101", "4096", "101"}}},
+	},
+	"namespace minimega vlans blacklist": {{Host: "mm1", Header: []string{"vlan"}}},
+	"mesh list all":                      {{Host: "mm1", Response: "mm1"}},
 }
 
 func doctorMinimegaArgs(dir string) map[string]string {

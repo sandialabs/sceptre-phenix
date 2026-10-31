@@ -62,6 +62,8 @@ const (
 	defaultAppsAnnotation = "phenix/default-apps"
 	osWindows             = "windows"
 	osLinux               = "linux"
+	osRHEL                = "rhel"
+	osCentOS              = "centos"
 )
 
 // Actions returns the supported experiment app lifecycle actions.

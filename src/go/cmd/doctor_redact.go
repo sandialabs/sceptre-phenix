@@ -84,6 +84,22 @@ func newDoctorRedactor(in *doctorInput) *doctorRedactor {
 		r.addHost(in.found.inventory.host, redactSuffixes(in.text("hostname-suffixes")))
 	}
 
+	// the nodes of minimega's mesh, which schedule-hosts and bridge-trunk name
+	if in.found != nil && in.found.mesh != nil {
+		for _, node := range in.found.mesh.nodes {
+			r.addHost(node, redactSuffixes(in.text("hostname-suffixes")))
+		}
+	}
+
+	// the cluster nodes that VM schedules name, which schedule-hosts names when they are not in the mesh
+	if in.found != nil && in.found.experiments != nil {
+		for _, exp := range in.found.experiments.list {
+			for _, node := range exp.schedules {
+				r.addHost(node, redactSuffixes(in.text("hostname-suffixes")))
+			}
+		}
+	}
+
 	r.addUser(in.userName)
 	r.addUser(filepath.Base(in.home))
 

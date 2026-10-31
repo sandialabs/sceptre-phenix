@@ -6,12 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
+	"path/filepath"
+	"slices"
 	"time"
 
 	"go.etcd.io/bbolt"
 
+	"phenix/app"
 	"phenix/store"
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 )
 
 const (
@@ -129,6 +134,16 @@ type doctorExperiment struct {
 	baseDir string // the experiment's base directory, from its spec
 	running bool   // the store gives a start time
 	vms     []doctorVM
+
+	vlans     doctorVLANs
+	schedules map[string]string // the cluster node of each VM that the spec schedules
+}
+
+// doctorVLANs is the VLAN part of a stored experiment's spec.
+type doctorVLANs struct {
+	min, max int            // the experiment's own VLAN range, or 0 and 0
+	pinned   map[string]int // the VLAN ID of each alias that the spec fixes
+	count    int            // the VLAN aliases of the experiment, from vlans.aliases and the node interfaces
 }
 
 // doctorVM is a VM that phenix launches for a stored experiment: not external, and not do-not-boot.
@@ -136,6 +151,7 @@ type doctorVM struct {
 	name     string
 	snapshot bool     // minimega runs the VM on a snapshot of its first drive, so it does not write to that image
 	images   []string // the drive images, as the topology names them
+	cc       string   // why phenix needs a miniccc client in the VM, or ""
 }
 
 // doctorExperiments is one read of the stored experiments, which a run shares.
@@ -173,7 +189,10 @@ func (in *doctorInput) storedExperiments(ctx context.Context) ([]doctorExperimen
 
 // decodeDoctorExperiment is what doctor reads of the stored experiment config c.
 func decodeDoctorExperiment(c store.Config) doctorExperiment {
-	exp := doctorExperiment{name: c.Metadata.Name, baseDir: "", running: false, vms: nil}
+	exp := doctorExperiment{
+		name: c.Metadata.Name, baseDir: "", running: false, vms: nil,
+		vlans: doctorVLANs{min: 0, max: 0, pinned: nil, count: 0}, schedules: nil,
+	}
 
 	decoded, err := types.DecodeExperimentFromConfig(c)
 	if err != nil || decoded.Spec == nil {
@@ -183,16 +202,55 @@ func decodeDoctorExperiment(c store.Config) doctorExperiment {
 	exp.baseDir = decoded.Spec.BaseDir()
 	exp.running = decoded.Running()
 
+	if schedules := decoded.Spec.Schedules(); len(schedules) > 0 {
+		exp.schedules = maps.Clone(schedules)
+	}
+
+	aliases := make(map[string]bool)
+
+	if vlans := decoded.Spec.VLANs(); vlans != nil {
+		exp.vlans.min, exp.vlans.max = vlans.Min(), vlans.Max()
+
+		for alias, id := range vlans.Aliases() {
+			aliases[alias] = true
+
+			if id != 0 {
+				if exp.vlans.pinned == nil {
+					exp.vlans.pinned = make(map[string]int)
+				}
+
+				exp.vlans.pinned[alias] = id
+			}
+		}
+	}
+
 	if decoded.Spec.Topology() == nil {
+		exp.vlans.count = len(aliases)
+
 		return exp
 	}
 
+	needCC := doctorCCNeeds(decoded.Spec)
+
 	for _, node := range decoded.Spec.Topology().Nodes() {
-		if node == nil || node.External() || node.General() == nil || derefDoctorBool(node.General().DoNotBoot()) {
+		if node == nil {
 			continue
 		}
 
-		vm := doctorVM{name: node.General().Hostname(), snapshot: derefDoctorBool(node.General().Snapshot()), images: nil}
+		for _, iface := range node.Network().Interfaces() {
+			if iface.VLAN() != "" {
+				aliases[iface.VLAN()] = true
+			}
+		}
+
+		if node.External() || node.General() == nil || derefDoctorBool(node.General().DoNotBoot()) {
+			continue
+		}
+
+		vm := doctorVM{
+			name: node.General().Hostname(), snapshot: derefDoctorBool(node.General().Snapshot()), images: nil,
+			cc: needCC(node),
+		}
 
 		if node.Hardware() != nil {
 			for _, drive := range node.Hardware().Drives() {
@@ -205,7 +263,79 @@ func decodeDoctorExperiment(c store.Config) doctorExperiment {
 		exp.vms = append(exp.vms, vm)
 	}
 
+	exp.vlans.count = len(aliases)
+
 	return exp
+}
+
+// doctorCCNeeds returns a function that says why phenix needs a miniccc client in a node of spec, or "": the startup
+// app sends its scripts through miniccc, another VM waits for its client at the start, or the soh app checks it.
+func doctorCCNeeds(spec ifaces.ExperimentSpec) func(ifaces.NodeSpec) string {
+	waitedFor := make(map[string]string)
+
+	for _, node := range spec.Topology().Nodes() {
+		if node == nil || node.General() == nil || node.Delay() == nil {
+			continue
+		}
+
+		for _, c2 := range node.Delay().C2() {
+			if _, ok := waitedFor[c2.Hostname()]; !ok {
+				waitedFor[c2.Hostname()] = node.General().Hostname()
+			}
+		}
+	}
+
+	var (
+		soh       bool
+		sohSkips  []string
+		scenarios = spec.Scenario()
+	)
+
+	if scenarios != nil {
+		for _, a := range scenarios.Apps() {
+			if a == nil || a.Name() != "soh" {
+				continue
+			}
+
+			soh = true
+
+			if skips, ok := a.Metadata()["skipHosts"].([]any); ok {
+				for _, s := range skips {
+					sohSkips = append(sohSkips, fmt.Sprint(s))
+				}
+			}
+		}
+	}
+
+	return func(node ifaces.NodeSpec) string {
+		name := node.General().Hostname()
+
+		switch {
+		case app.StartupUsesC2(node):
+			return "the startup app sends its scripts through miniccc"
+		case waitedFor[name] != "":
+			return fmt.Sprintf("the start of %s waits for its miniccc client", waitedFor[name])
+		case soh && !sohSkipsNode(node, sohSkips):
+			return "the soh app checks it through miniccc"
+		}
+
+		return ""
+	}
+}
+
+// sohSkipsNode reports whether the soh app skips node, by its skipHosts: a host name, or the base name of the image of
+// the first drive.
+func sohSkipsNode(node ifaces.NodeSpec, skips []string) bool {
+	var image string
+	if node.Hardware() != nil && len(node.Hardware().Drives()) > 0 {
+		image = filepath.Base(node.Hardware().Drives()[0].Image())
+	}
+
+	return slices.ContainsFunc(skips, func(skip string) bool {
+		ext := filepath.Ext(skip)
+
+		return skip == node.General().Hostname() || (ext == ".qc2" || ext == ".qcow" || ext == ".qcow2") && skip == image
+	})
 }
 
 // derefDoctorBool is the value of b, or false for nil, as the minimega script template reads it.
@@ -221,5 +351,8 @@ func experimentNamed(experiments []doctorExperiment, name string) (doctorExperim
 		}
 	}
 
-	return doctorExperiment{name: "", baseDir: "", running: false, vms: nil}, false
+	return doctorExperiment{
+		name: "", baseDir: "", running: false, vms: nil, vlans: doctorVLANs{min: 0, max: 0, pinned: nil, count: 0},
+		schedules: nil,
+	}, false
 }

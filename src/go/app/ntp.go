@@ -243,7 +243,7 @@ func (NTP) preStartWithNodeLabels(_ context.Context, exp *types.Experiment, ntpD
 		}
 
 		switch strings.ToLower(node.Hardware().OSType()) {
-		case osLinux, "rhel", "centos":
+		case osLinux, osRHEL, osCentOS:
 			data := NTPTemplateData{Source: serverAddr, Server: false}
 			err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", data, ntpFile)
 			if err != nil {

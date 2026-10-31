@@ -106,6 +106,22 @@ func startupC2DeliveryEnabled(node ifaces.NodeSpec) bool {
 	return startupViaCCEnabled(node) || firstDriveInjectPartition(node) == 0
 }
 
+// StartupUsesC2 reports whether PreStart sends the startup scripts of node through miniccc: a Linux or Windows VM
+// that is not a router, with the default apps and C2 delivery on. Such a VM needs a running miniccc client.
+func StartupUsesC2(node ifaces.NodeSpec) bool {
+	if node == nil || node.External() || node.Hardware() == nil || strings.EqualFold(node.Type(), "Router") ||
+		!defaultAppsEnabled(node) || !startupC2DeliveryEnabled(node) {
+		return false
+	}
+
+	switch strings.ToLower(node.Hardware().OSType()) {
+	case osLinux, osRHEL, osCentOS, osWindows:
+		return true
+	}
+
+	return false
+}
+
 // firstDriveInjectPartition returns the first disk inject partition, defaulting to one.
 func firstDriveInjectPartition(node ifaces.NodeSpec) int {
 	if node.Hardware() == nil {
@@ -430,7 +446,7 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		switch strings.ToLower(node.Hardware().OSType()) {
-		case osLinux, "rhel", "centos":
+		case osLinux, osRHEL, osCentOS:
 			var (
 				hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
 				timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"

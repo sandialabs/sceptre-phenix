@@ -641,6 +641,26 @@ func doctorChecks() []doctorCheckDef {
 			run: minimegaEnvChecks,
 		},
 		{
+			id: minimegaLimitsName, group: doctorGroupMinimega, name: minimegaLimitsName, hint: minimegaLimitsHint,
+			run: minimegaLimitsChecks,
+		},
+		{
+			id: stateDriftName, group: doctorGroupMinimega, name: stateDriftName, hint: stateDriftHint, run: stateDriftChecks,
+		},
+		{id: vlansName, group: doctorGroupMinimega, name: vlansName, hint: vlansHint, run: vlansChecks},
+		{
+			id: bridgeTrunkName, group: doctorGroupMinimega, name: bridgeTrunkName, hint: bridgeTrunkHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(bridgeTrunkCheck(ctx, in)) },
+		},
+		{
+			id: scheduleHostsName, group: doctorGroupMinimega, name: scheduleHostsName, hint: scheduleHostsHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(scheduleHostsCheck(ctx, in)) },
+		},
+		{
+			id: ccClientsName, group: doctorGroupMinimega, name: ccClientsName, hint: ccClientsHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(ccClientsCheck(ctx, in)) },
+		},
+		{
 			id: "qemu-img", group: doctorGroupTools, name: "qemu-img",
 			hint: hintText("install qemu-img (the qemu-utils package on Debian and Ubuntu)"),
 			run: func(ctx context.Context, in *doctorInput) []doctorCheck {
@@ -788,11 +808,22 @@ func parseDoctorSkip(names []string, defs []doctorCheckDef) (map[string]bool, er
 // runDoctorChecks runs each check in defs against a copy of input, in order,
 // and gives a skip row for each one skip names.
 func runDoctorChecks(ctx context.Context, input *doctorInput, defs []doctorCheckDef, skip map[string]bool) []doctorResult {
+	results, _ := runDoctorChecksFound(ctx, input, defs, skip)
+
+	return results
+}
+
+// runDoctorChecksFound is runDoctorChecks, and also returns what the checks
+// found, which the report's redactor reads.
+func runDoctorChecksFound(
+	ctx context.Context, input *doctorInput, defs []doctorCheckDef, skip map[string]bool,
+) ([]doctorResult, *doctorFound) {
 	var results []doctorResult
 
 	run := *input
 	run.found = &doctorFound{
 		minimegaUp: false, minimegaArgs: nil, images: nil, experiments: nil, inventory: nil, ovsShow: nil, leftovers: nil,
+		mesh: nil,
 	}
 	in := &run
 
@@ -821,5 +852,5 @@ func runDoctorChecks(ctx context.Context, input *doctorInput, defs []doctorCheck
 		}
 	}
 
-	return results
+	return results, run.found
 }

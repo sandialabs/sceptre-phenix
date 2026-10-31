@@ -93,6 +93,7 @@ func doctorGoodHost() doctorHostFS {
 		"/proc/modules":                         "nbd 65536 0 - Live 0x0\nopenvswitch 200704 1 - Live 0x0\n",
 		"/proc/self/status":                     "Name:\tphenix\nCapEff:\t000001ffffffffff\n",
 		"/proc/mounts":                          "proc /proc proc rw 0 0\n",
+		"/proc/meminfo":                         doctorMeminfo,
 		"/proc/42/":                             "",
 		"/sys/module/nbd/parameters/max_part":   "10\n",
 		"/sys/module/openvswitch/":              "",
@@ -104,6 +105,10 @@ func doctorGoodHost() doctorHostFS {
 		"/var/run/openvswitch/ovs-vswitchd.pid": "42\n",
 	}
 }
+
+// doctorMeminfo is the /proc/meminfo of a host with 64 GiB of memory, half of it available, and 8 GiB of free swap.
+const doctorMeminfo = "MemTotal:       67108864 kB\nMemFree:        1048576 kB\nMemAvailable:   33554432 kB\n" +
+	"SwapTotal:       8388608 kB\nSwapFree:        8388608 kB\nHugePages_Total:       0\n"
 
 // doctorOVSShow is what ovs-vsctl show prints with the bridge phenix.
 const doctorOVSShow = `0b9d3ad4-6f8e-4b8e-9a3c-6a8f1d3e2c11

@@ -66,6 +66,10 @@ func TestStartupPreStartC2TriggerMatrix(t *testing.T) {
 			node := newStartupTestNode(t, "linux1", osLinux, tt.snapshot, tt.injectPartition)
 			node.AnnotationsF = tt.annotations
 
+			if got := StartupUsesC2(node); got != tt.wantCommands {
+				t.Errorf("StartupUsesC2() = %v, want %v as PreStart sends commands", got, tt.wantCommands)
+			}
+
 			exp, mmDir := newStartupTestExperiment(t, node, nil)
 			runStartupPreStart(t, exp, mmDir)
 
@@ -97,6 +101,37 @@ func TestStartupPreStartC2TriggerMatrix(t *testing.T) {
 			}
 			if !tt.wantStagedScript && !os.IsNotExist(err) {
 				t.Fatalf("unexpected staged script %s", staged)
+			}
+		})
+	}
+}
+
+// StartupUsesC2 is false for the nodes whose startup scripts PreStart skips: routers, nodes with the default apps
+// off, and operating systems it makes no scripts for.
+func TestStartupUsesC2Skips(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		modify func(*v1.Node)
+		want   bool
+	}{
+		"windows":           {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = osWindows }, want: true},
+		"router":            {modify: func(n *v1.Node) { n.TypeF = "Router" }},
+		"default apps off":  {modify: func(n *v1.Node) { n.AnnotationsF[defaultAppsAnnotation] = false }},
+		"other os":          {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = "plan9" }},
+		"linux, C2 enabled": {modify: func(*v1.Node) {}, want: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			node := newStartupTestNode(t, "n1", osLinux, true, 1)
+			node.AnnotationsF = map[string]any{startupViaCCAnnotation: true}
+			tc.modify(node)
+
+			if got := StartupUsesC2(node); got != tc.want {
+				t.Errorf("StartupUsesC2() = %v, want %v", got, tc.want)
 			}
 		})
 	}

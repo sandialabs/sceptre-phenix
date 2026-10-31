@@ -85,20 +85,36 @@ Check the phenix configuration without a running server
   image-locks (Linux only) names the qemu processes that hold an image of a
   stopped experiment open, so qemu cannot lock it at the start.
 
+  The minimega group also compares minimega with this host and the store.
+  minimega-limits (Linux only) reads the open files limit of the minimega
+  process from /proc, and warns when it is too low for its VMs on this node.
+  It also warns when this host is short of memory or swap, or when the VMs
+  ask for more memory than the host has. state-drift names the experiments
+  that the store marks as running with no VMs in minimega, and the
+  namespaces with VMs that no stored experiment owns. vlans warns when two
+  experiments pin the same VLAN ID, or when a stopped experiment cannot get
+  its VLANs now. bridge-trunk warns when a mesh of more than one node has an
+  experiment bridge with no trunk or tunnel port. schedule-hosts names the VM
+  schedules on nodes that are not in the mesh. cc-clients names the running
+  VMs that phenix needs miniccc in but that have no client, and the clients
+  that minimega logged with another miniccc version after their VMs launched.
+
   The store-file check reads only the first two pages of the store file.
-  The image-build, writable-images, leftovers and image-locks checks open the
-  store through BoltDB, once in a run. doctor opens it read-only, and waits
+  The image-build, writable-images, leftovers, image-locks, state-drift,
+  vlans, schedule-hosts and cc-clients checks open the store through BoltDB,
+  once in a run. doctor opens it read-only, and waits
   at most --timeout for the lock. doctor opens no log file, writes no file
   and binds no port, so it works while phenix ui is stopped. Before any
   command runs, phenix creates the config directory with an empty
   config.yaml when it finds no config file, and the default log directory.
   doctor connects to the unix socket as a client only, never creating or
   removing it. It sends minimega only commands that change nothing (version,
-  args, mesh status and namespace, then vm info, tap and capture in each
-  namespace that minimega lists). The only programs it runs are qemu-img
-  --version, ovs-vsctl show and ovs-vsctl list, which change nothing. Run it
-  with the same flags, environment and user as the phenix command you are
-  checking.
+  args, mesh status, mesh list all and namespace, then vm info, tap, capture,
+  vlans, vlans range and cc clients in the namespaces that minimega lists, and
+  vlans blacklist). It also reads /proc and the end of minimega's log file.
+  The only programs it runs are qemu-img --version, ovs-vsctl show and
+  ovs-vsctl list, which change nothing. Run it with the same flags,
+  environment and user as the phenix command you are checking.
 ```
 
 ```text

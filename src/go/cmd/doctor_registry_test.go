@@ -247,6 +247,15 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"minimega-env minimega files pass",
 		"minimega-env minimega base pass",
 		"minimega-env minimega mesh pass",
+		"minimega-limits minimega-limits open files skip",
+		"minimega-limits minimega-limits memory pass",
+		"state-drift state-drift experiments skip",
+		"state-drift state-drift namespaces skip",
+		"vlans vlans pinned skip",
+		"vlans vlans free skip",
+		"bridge-trunk bridge-trunk skip",
+		"schedule-hosts schedule-hosts skip",
+		"cc-clients cc-clients skip",
 		"qemu-img qemu-img pass",
 		"vmdb2 vmdb2 pass",
 		"filebeat filebeat pass",
@@ -278,7 +287,9 @@ func TestDoctorChecksFromInput(t *testing.T) {
 
 	// with a store file, the rows that read the stored experiments pass
 	withStore := replaceNamedRows(allPass, "writable-images writable-images pass", "leftovers leftovers snapshots pass",
-		"leftovers leftovers files pass", "leftovers leftovers mounts pass", "image-locks image-locks pass")
+		"leftovers leftovers files pass", "leftovers leftovers mounts pass", "image-locks image-locks pass",
+		"state-drift state-drift experiments pass", "state-drift state-drift namespaces pass", "vlans vlans pinned pass",
+		"vlans vlans free pass", "schedule-hosts schedule-hosts pass", "cc-clients cc-clients pass")
 
 	storeFile := filepath.Join(dir, "valid.bdb")
 	if err := os.WriteFile(storeFile, doctorFilesBolt(doctorFilesPageSize), 0o600); err != nil {
@@ -631,8 +642,10 @@ func TestParseDoctorSkip(t *testing.T) {
 	}{
 		"none":   {want: []string{}},
 		"one id": {args: []string{"--skip", "ui.jwt-signing-key"}, want: []string{"ui.jwt-signing-key"}},
-		"group":  {args: []string{"--skip", "minimega"}, want: []string{"minimega", "minimega-env"}},
-		"id":     {args: []string{"--skip", "minimega-env,server"}, want: []string{"minimega-env", "server"}},
+		"group": {args: []string{"--skip", "minimega"}, want: []string{
+			"bridge-trunk", "cc-clients", "minimega", "minimega-env", "minimega-limits", "schedule-hosts", "state-drift", "vlans",
+		}},
+		"id": {args: []string{"--skip", "minimega-env,server"}, want: []string{"minimega-env", "server"}},
 		"group of several": {
 			args: []string{"--skip", "config"},
 			want: []string{"config-file", "config-keys", "config-paths", "settings-file", "users-file"},
@@ -803,7 +816,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 51 passed, 10 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 52 passed, 18 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -829,8 +842,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 51 passed, 10 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"61 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 52 passed, 18 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"70 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

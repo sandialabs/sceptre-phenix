@@ -320,6 +320,77 @@ the writes break that image, and when more than one VM uses the image. Set
 `snapshot: true`, or give each VM its own copy of the image, such as with
 `qemu-img convert -O qcow2 <image> <copy>`.
 
+### Experiments Show as Running After minimega Restarts
+
+When minimega restarts or stops, the store still marks its experiments as
+running. The state-drift experiments row of `phenix doctor` names each such
+experiment. Run `phenix experiment stop <experiment>` to reset the stored
+state, then start the experiment again.
+
+The state-drift namespaces row names each minimega namespace with VMs that no
+stored experiment owns. Make sure that `phenix doctor` reads the store of
+`phenix ui`. Then kill the VMs of the namespace with
+`minimega -e 'clear namespace <namespace>'`.
+
+### An Experiment Cannot Get Its VLANs
+
+minimega refuses a VLAN alias for a VLAN that is in use, and stops when its
+VLAN range has no free VLAN. The `vlans` check of `phenix doctor` finds these
+problems before a start:
+
+* The vlans pinned row names two experiments that pin the same VLAN ID. Give
+  one of them another ID with
+  `phenix vlan alias <experiment> <alias> <id> --force`.
+* The vlans free row names a stopped experiment whose VLAN range has too few
+  free VLANs. Stop other experiments, or set a larger range with
+  `phenix vlan range <experiment> <min> <max> --force`.
+* The vlans free row also names a range that overlaps the range of another
+  namespace, and a pinned VLAN that another namespace uses.
+
+### VMs on Different Nodes Cannot Reach Each Other
+
+In a mesh of more than one node, each experiment bridge needs a trunk port or
+a tunnel to the other nodes. The `bridge-trunk` check of `phenix doctor`
+warns about a bridge with neither. To add a trunk, do these steps on each
+node:
+
+1. Find the interface that connects the nodes, such as `eth1`.
+2. Run `minimega -e 'bridge trunk <bridge> <interface>'`.
+
+You can also set `use-gre-mesh` to `true`, and phēnix then makes GRE tunnels
+between the nodes at each start. The `schedule-hosts` check names each VM
+schedule on a node that is not in minimega's mesh. Change the schedule with
+`phenix experiment edit <experiment>`, or connect the node to the mesh.
+
+### minimega Runs Out of Open Files or Memory
+
+minimega keeps about 5 files open for each VM, and each qemu gets the limits
+of minimega. The minimega-limits open files row of `phenix doctor` warns when
+the soft limit is too low for the VMs on this node. Increase the limit, then
+restart minimega:
+
+* For systemd, set `LimitNOFILE=<n>` in the `[Service]` section of the
+  minimega unit.
+* For Docker, add `--ulimit nofile=<n>:<n>` to `docker run`, or `ulimits` to
+  the Compose service.
+
+The minimega-limits memory row warns when this host is short of memory or
+swap, or when the VMs ask for more memory than the host has. Stop VMs, or
+give the VMs less memory in their topologies.
+
+### A VM Has No miniccc Client
+
+phēnix needs a miniccc client in a VM when the startup app sends its scripts
+through miniccc, when another VM waits for the client at the start, or when
+the `soh` app checks the VM. The `cc-clients` check of `phenix doctor` names
+each such VM that has run for 5 minutes with no client. Copy miniccc into the
+image with `phenix image inject-miniexe <miniccc> <image>`, and start it when
+the VM boots. The row also names the clients that minimega logged with a
+miniccc version that differs from its own after their VMs launched. Copy the
+miniccc of the same minimega release into those images. Each name shows the
+time of the log line. `phenix vm restart` does not change the launch time, so
+the line can be from the client before the restart.
+
 ### `phenix image build` Fails Before or in debootstrap
 
 The `image-build` check of `phenix doctor` checks what `phenix image build`

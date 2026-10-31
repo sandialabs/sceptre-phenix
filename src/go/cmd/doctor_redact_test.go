@@ -18,7 +18,7 @@ import (
 type redactTestInput struct {
 	host, suffixes, user, home, users, key, mmHost string
 	vars                                           map[string]string
-	addrs                                          []string
+	addrs, meshNodes                               []string
 }
 
 func (ti redactTestInput) input() *doctorInput {
@@ -37,8 +37,8 @@ func (ti redactTestInput) input() *doctorInput {
 	in.addrs = func() ([]string, error) { return ti.addrs, nil }
 	in.userName, in.home, in.phenixUID = ti.user, ti.home, ""
 
-	if ti.mmHost != "" {
-		in.found = &doctorFound{inventory: &doctorInventory{host: ti.mmHost}}
+	if ti.mmHost != "" || ti.meshNodes != nil {
+		in.found = &doctorFound{inventory: &doctorInventory{host: ti.mmHost}, mesh: &doctorMesh{nodes: ti.meshNodes}}
 	}
 
 	return in
@@ -70,6 +70,10 @@ func TestDoctorRedact(t *testing.T) {
 		"minimega host": {
 			in:   redactTestInput{host: "ws42-phenix", suffixes: "-minimega,-phenix", mmHost: "mm7"},
 			text: "mm7_exp1_vm1_snapshot on ws42-phenix", want: "<host-2>_exp1_vm1_snapshot on <host-1>-phenix",
+		},
+		"mesh nodes": {
+			in:   redactTestInput{host: "ws42-phenix", suffixes: "-minimega,-phenix", meshNodes: []string{"ws42-minimega", "node3"}},
+			text: "e1 VM a on node3, and ws42", want: "e1 VM a on <host-1>, and <host-2>",
 		},
 		"FQDN": {
 			in:   redactTestInput{host: "node7.lab.example", suffixes: "-phenix"},

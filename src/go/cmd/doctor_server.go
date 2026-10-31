@@ -58,6 +58,7 @@ type doctorFound struct {
 	inventory   *doctorInventory   // minimega's namespaces, VMs, taps and captures, once a check read them
 	ovsShow     *doctorOVSRun      // the output of ovs-vsctl show, once a check ran it
 	leftovers   *doctorLeftovers   // what the leftovers check found that is safe to delete, once it ran
+	mesh        *doctorMesh        // the nodes of minimega's mesh, once a check read them
 }
 
 // minimegaRunner sends minimega, whose base directory is base, one

@@ -17,6 +17,7 @@ import (
 	"phenix/store"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
+	v2 "phenix/types/version/v2"
 )
 
 // leftoverInput is an input on host with minimega up, the images directory <dir>/files, the stored experiments
@@ -461,8 +462,11 @@ func TestDoctorMinimegaInventory(t *testing.T) {
 		"namespace": {{Host: "ws42-minimega", Header: []string{"namespace", "vlans", "active"},
 			Tabular: [][]string{{"exp1", "101-200", "false"}, {"bad name", "", "false"}}}},
 		"namespace exp1 vm info": {
-			{Host: "ws42", Header: []string{"name", "state", "pid", "tap"},
-				Tabular: [][]string{{"a", "RUNNING", "300", "[mega_tap1, mega_tap2]"}, {"b", "QUIT", "0", "[]"}}},
+			{Host: "ws42", Header: []string{"name", "state", "pid", "tap", "uuid", "memory", "uptime"},
+				Tabular: [][]string{
+					{"a", "RUNNING", "300", "[mega_tap1, mega_tap2]", "u-a", "2048", "1h2m3.5s"},
+					{"b", "QUIT", "0", "[]", "u-b", "N/A", ""},
+				}},
 			{Host: "node2", Header: []string{"name", "state", "pid", "tap"}, Tabular: [][]string{{"c", "PAUSED", "7", "[mega_tap0]"}}},
 		},
 		"namespace exp1 tap": {{Host: "ws42", Header: []string{"bridge", "tap", "vlan"},
@@ -480,10 +484,14 @@ func TestDoctorMinimegaInventory(t *testing.T) {
 		"inventory": {
 			up: true, answers: answers,
 			want: &doctorInventory{
-				host: "ws42",
+				host: "ws42", local: "ws42-minimega", namespaces: []string{"exp1"},
 				vms: []doctorMMVM{
-					{namespace: "exp1", name: "a", state: "RUNNING", pid: 300}, {namespace: "exp1", name: "b", state: "QUIT"},
-					{namespace: "exp1", name: "c", state: "PAUSED", pid: 7},
+					{
+						namespace: "exp1", name: "a", state: "RUNNING", pid: 300, host: "ws42", uuid: "u-a", memory: 2048,
+						uptime: time.Hour + 2*time.Minute + 3500*time.Millisecond,
+					},
+					{namespace: "exp1", name: "b", state: "QUIT", host: "ws42", uuid: "u-b"},
+					{namespace: "exp1", name: "c", state: "PAUSED", pid: 7, host: "node2"},
 				},
 				taps:           map[string]bool{"mega_tap0": true, "mega_tap1": true, "mega_tap2": true, "mega_tap9": true},
 				bridgeCaptures: map[string]bool{"other": true},
@@ -495,8 +503,8 @@ func TestDoctorMinimegaInventory(t *testing.T) {
 		"a command fails": {
 			up: true, answers: map[string][]*minicli.Response{"namespace": answers["namespace"]},
 			want: &doctorInventory{
-				host: "ws42", taps: map[string]bool{}, bridgeCaptures: map[string]bool{},
-				why: "minimega did not answer namespace exp1 vm info: invalid command",
+				host: "ws42", local: "ws42-minimega", namespaces: []string{"exp1"}, taps: map[string]bool{},
+				bridgeCaptures: map[string]bool{}, why: "minimega did not answer namespace exp1 vm info: invalid command",
 			},
 		},
 	}
@@ -558,8 +566,9 @@ func TestDoctorLeftoversHint(t *testing.T) {
 	}
 }
 
-// The stored experiments keep the VMs phenix launches, with their drive images and snapshot setting, and leave out
-// external and do-not-boot nodes. An experiment that does not decode keeps its name.
+// The stored experiments keep the VMs phenix launches, with their drive images, snapshot setting and why phenix needs
+// miniccc in them, and leave out external and do-not-boot nodes. They keep the VLAN range, the pinned VLANs and the
+// VLAN count, and the schedules. An experiment that does not decode keeps its name.
 func TestDoctorDecodeExperiment(t *testing.T) {
 	t.Parallel()
 
@@ -572,11 +581,30 @@ func TestDoctorDecodeExperiment(t *testing.T) {
 		{
 			GeneralF:  &v1.General{HostnameF: "a", SnapshotF: &no},
 			HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "a.qc2"}, {ImageF: "/data/b.qc2"}}},
+			NetworkF:  &v1.Network{InterfacesF: []*v1.Interface{{VLANF: "EXP"}, {VLANF: "MGMT"}}},
 		},
-		{GeneralF: &v1.General{HostnameF: "b", SnapshotF: &yes}, HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "c.qc2"}}}},
+		{
+			GeneralF:     &v1.General{HostnameF: "b", SnapshotF: &yes},
+			HardwareF:    &v1.Hardware{OSTypeF: "linux", DrivesF: []*v1.Drive{{ImageF: "c.qc2"}}},
+			NetworkF:     &v1.Network{InterfacesF: []*v1.Interface{{VLANF: "OTHER"}}},
+			AnnotationsF: map[string]any{"phenix/startup-via-cc": true},
+			DelayF:       &v1.Delay{C2F: []v1.C2Delay{{HostnameF: "e"}}},
+		},
 		{GeneralF: &v1.General{HostnameF: "c", DoNotBootF: &yes}, HardwareF: &v1.Hardware{}},
 		{ExternalF: &yes, GeneralF: &v1.General{HostnameF: "d"}},
+		{GeneralF: &v1.General{HostnameF: "e"}, HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "e.qc2"}}}},
+		{GeneralF: &v1.General{HostnameF: "f"}, HardwareF: &v1.Hardware{DrivesF: []*v1.Drive{{ImageF: "skip.qc2"}}}},
 	}})
+	exp.Spec.SetScenario(&v2.ScenarioSpec{AppsF: []*v2.ScenarioApp{
+		{NameF: "soh", MetadataF: map[string]any{"skipHosts": []any{"a", "skip.qc2"}}},
+	}})
+	exp.Spec.SetSchedule(map[string]string{"a": "node1"})
+
+	if err := exp.Spec.SetVLANRange(200, 300, false); err != nil {
+		t.Fatalf("SetVLANRange() error = %v", err)
+	}
+
+	exp.Spec.VLANs().SetAliases(map[string]int{"EXP": 0, "MGMT": 250})
 	exp.Status.SetStartTime(time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC).Format(time.RFC3339))
 
 	config := store.Config{
@@ -591,11 +619,15 @@ func TestDoctorDecodeExperiment(t *testing.T) {
 		name: "e1", baseDir: "/phenix/experiments/e1", running: true,
 		vms: []doctorVM{
 			{name: "a", snapshot: false, images: []string{"a.qc2", "/data/b.qc2"}},
-			{name: "b", snapshot: true, images: []string{"c.qc2"}},
+			{name: "b", snapshot: true, images: []string{"c.qc2"}, cc: "the startup app sends its scripts through miniccc"},
+			{name: "e", images: []string{"e.qc2"}, cc: "the start of b waits for its miniccc client"},
+			{name: "f", images: []string{"skip.qc2"}},
 		},
+		vlans:     doctorVLANs{min: 200, max: 300, pinned: map[string]int{"MGMT": 250}, count: 3},
+		schedules: map[string]string{"a": "node1"},
 	}
 
-	opts := cmp.AllowUnexported(doctorExperiment{}, doctorVM{})
+	opts := cmp.AllowUnexported(doctorExperiment{}, doctorVM{}, doctorVLANs{})
 
 	if diff := cmp.Diff(want, decodeDoctorExperiment(config), opts); diff != "" {
 		t.Errorf("decodeDoctorExperiment() mismatch (-want +got):\n%s", diff)
