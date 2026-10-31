@@ -116,6 +116,7 @@ When changing a capability, inspect every applicable surface:
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
 | Log or error message text | Docs and skill text that quotes it, such as the Troubleshooting sections in `docs/content/` and `skills/phenix/references/` |
+| New feature or significant behavior change | A `phenix doctor` check when it applies: a new setting, external program, file, directory, service, port or feature flag (see [`src/go/AGENTS.md`](src/go/AGENTS.md)) |
 
 Preserve persisted BoltDB data, RBAC migrations, and public API compatibility
 unless a breaking change is deliberate and documented. phēnix has no config

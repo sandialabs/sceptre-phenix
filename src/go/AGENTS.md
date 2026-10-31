@@ -96,6 +96,16 @@ the root target does.
   fails until the Global Flags table lists every root flag, and until each
   Settings Reference row's environment variable and default match its flag.
   It does not notice a setting missing from a Settings Reference table.
+- Keep `phenix doctor` current. When a change adds a feature or significantly
+  changes behavior, add or update a doctor check for it when relevant: a new
+  setting, external program, file or directory, service or port, or feature
+  flag. Register the check in `cmd/doctor_registry.go` with an id, a group
+  and a hint. Add its row to the doctor table in `docs/content/settings.md`
+  (`TestDoctorChecksMatchDocs` fails without it). Also update the `--skip`
+  list and flags in `skills/phenix/references/cli.md`, and run
+  `make cli-docs` when the help text changes. A check warns unless the
+  problem stops phenix. A check that cannot get its data gives `skip` with
+  the reason, and never blocks on minimega, the server or the store lock.
 - A new cache or reused result must name its bound and invalidation in the
   registry in `util/freshness/doc.go`, and report its age with
   `freshness.SetObserved` when it serves minimega data. A failed minimega read
