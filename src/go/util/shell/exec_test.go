@@ -2,16 +2,14 @@ package shell_test
 
 import (
 	"context"
-	"os/exec"
 	"testing"
 
 	"phenix/util/shell"
+	"phenix/util/testenv"
 )
 
 func TestExecCommandCopiesStreamedBytes(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("sh not available")
-	}
+	testenv.RequireCommands(t, "sh")
 
 	tests := []struct {
 		name      string
