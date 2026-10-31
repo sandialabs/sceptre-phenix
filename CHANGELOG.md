@@ -65,6 +65,7 @@ All notable changes to this project will be documented in this file.
 - **API Conventions (breaking)**: `/api/v1/logout` and the VM `reset`, `restart` and `shutdown` routes accept only `POST`. The experiment, VM and disk lists accept `pageNum` and `perPage`, and the paged lists return `400` for a page that is not a whole number of at least 1.
 - **Websocket Broker (breaking)**: The websocket broker encodes each message once, and experiment lists and websocket VM lists do not include screenshots. The broker sends log lines only to Logs pages that subscribe and whose role can get logs.
 - **Config Schemas**: Each field of the config schemas has a title and a description, and a validation error in a JSON config points to the correct field. A topology can use `includeTopologies` without `nodes`, and a node `delay.timer` must be a duration such as `5m`.
+- **Web UI Permissions**: The web UI shows only the pages and navbar links that the role can use, and opens the experiments list or the VM tiles in place of a page that the role cannot use. An unknown address shows a "Page not found" page.
 
 ### Removed
 
