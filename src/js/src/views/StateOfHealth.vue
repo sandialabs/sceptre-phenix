@@ -713,18 +713,19 @@
   </div>
 </template>
 <script>
+  import { BColorpicker } from 'buefy';
   const SOH_STYLE_LABEL_KEY = '__sohStyle';
   import { roleAllowed } from '@/utils/rbac.js';
   import * as d3 from 'd3';
   import VmLabelsModal from '@/components/VMLabelsModal.vue';
 
-  import Linux from '@/assets/imgs/linux.svg';
-  import CentOS from '@/assets/imgs/centos.svg';
-  import RedHat from '@/assets/imgs/redhat.svg';
-  import Windows from '@/assets/imgs/windows.svg';
-  import Router from '@/assets/imgs/router.svg';
-  import Firewall from '@/assets/imgs/firewall.svg';
-  import VLAN from '@/assets/imgs/vlan.svg';
+  import Linux from '@/assets/imgs/linux.png';
+  import CentOS from '@/assets/imgs/centos.png';
+  import RedHat from '@/assets/imgs/redhat.png';
+  import Windows from '@/assets/imgs/windows.png';
+  import Router from '@/assets/imgs/router.png';
+  import Firewall from '@/assets/imgs/firewall.png';
+  import VLAN from '@/assets/imgs/vlan.png';
 
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
@@ -732,6 +733,7 @@
   import { usePhenixStore } from '@/store.js';
 
   export default {
+    components: { BColorpicker },
     setup() {
       return { roleAllowed };
     },

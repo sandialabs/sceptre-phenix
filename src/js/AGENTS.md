@@ -33,16 +33,6 @@ npm ci
 
 The development server needs a backend on `localhost:3000`.
 
-`test/unit-setup.js` mocks `@/utils/axios.js` and `@/store.js` for every
-test file. A file mocks the module again for other values, or calls
-`vi.unmock` for the real module.
-
-Test what a component does with `@vue/test-utils` in a file that starts
-with `// @vitest-environment happy-dom`: mount it, use `trigger` and
-`setValue`, and check focus, emitted events and the DOM. Use the server
-render for static output only, and keep each file in one environment.
-happy-dom has no layout, so test sizes and positions in Playwright.
-
 ## UI Conventions
 
 - Follow two-space indentation and Prettier.
@@ -84,6 +74,44 @@ is flaky and fails the run (`failOnFlakyTests`). Fix the cause instead of
 adding waits. A check that something does not happen runs the page clock
 past the delay the UI waits for (`page.clock.runFor`), not a fixed
 `waitForTimeout` (see `e2e/README.md`).
+
+## Unit Tests
+
+Vitest runs in happy-dom (`vite.config.js`); a test needing Node file URLs or
+no DOM starts `// @vitest-environment node`. `test/setup.js` gives each test
+an empty `localStorage`, clears the page body and unmounts every wrapper.
+`test/unit-setup.js` mocks `@/utils/axios.js` and `@/store.js` for every
+test file. A file mocks the module again for other values, or calls
+`vi.unmock` for the real module. happy-dom has no layout, so test sizes and
+positions in Playwright. Shared helpers live in `test/helpers/`:
+
+- Mount with `mount.js`: `mountComponent` (props, data, route, stubs) and
+  `mountPage` (also answers the requests the page made as it opened), both
+  with the real Buefy and the app's named routes. Its readers (`textOf`,
+  `byLabel`, `buttons`, `tableRows`, `tooltipButtons`, `dialogs`,
+  `confirmDialog`, `toasts`) read what the page draws.
+- Act as a user: click and type with `trigger()` and `setValue()`, then
+  `await flushPromises()` for requests and `await nextTick()` for re-renders.
+  Assert on the DOM and `emitted()`, not on methods called by hand.
+- Page tests load `mocks.js` with `vi.hoisted`, hand its `modules.*`
+  factories to `vi.mock`, and call `resetMocks()` in `beforeEach`, passing
+  the store the test needs (`resetMocks({ store: {} })`). Add a stand-in for
+  each mocked module there rather than in one test file.
+- Roles for the mocked `roleAllowed` are `permissions.js` predicates
+  (`allowAll`, `denyAll`, `allowOnly`, `denyOnly`); `roles.js` builds role
+  objects for the real `rbac.js`. Build disks, VMs, websocket messages and
+  failed requests with `fixtures.js`.
+- Write repeated permission or state cases as `it.each` tables, each row
+  checking both the allowed and the refused case.
+- Check escaping, round trips and list invariants as fast-check properties
+  beside the named examples, with the shared arbitraries in
+  `arbitraries.js`. A property that mounts a component lowers `numRuns` to
+  about 20 to keep the file fast.
+
+## Performance
+
+Register new Buefy components in `src/utils/buefy.js` (or locally in the one
+view that uses a heavy one) rather than installing all of Buefy.
 
 ## CI
 
