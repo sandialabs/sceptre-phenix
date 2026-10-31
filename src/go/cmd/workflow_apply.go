@@ -4,15 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/lmittmann/tint"
 
 	"phenix/api/workflow"
 	"phenix/util/plog"
 )
 
-const elapsedPrecision = time.Millisecond
+const (
+	elapsedPrecision = time.Millisecond
+
+	// ANSI color numbers of tint.Attr.
+	ansiGreen  = 2
+	ansiYellow = 3
+	ansiGray   = 8
+)
 
 // applyOptions is what runWorkflowApply needs. The apply command fills it
 // from its flags and the global settings; tests fill it directly. An empty
@@ -151,7 +161,7 @@ func (r *applyRun) dryRunConfigs(ctx context.Context, configs []configFile) ([]s
 
 		plog.Info(
 			plog.TypeSystem, "config checked",
-			"step", stepPlan, "file", file, "kind", result.Kind, "name", result.Name, "action", string(result.Action),
+			"step", stepPlan, "file", file, "kind", result.Kind, "name", result.Name, actionAttr(result.Action),
 		)
 
 		if first, ok := definedBy[ref]; ok {
@@ -204,12 +214,17 @@ func (r *applyRun) dryRunWorkflow(ctx context.Context, wfConfig *configFile, pen
 
 	plog.Info(
 		plog.TypeSystem, "workflow plan",
-		"step", stepPlan, "file", file, "action", string(result.Action), "experiment", result.Experiment, "reason", result.Reason,
+		"step", stepPlan, "file", file, actionAttr(result.Action), "experiment", result.Experiment, "reason", result.Reason,
 	)
 
 	// what the disk check of the start the plan makes finds
 	for _, warning := range result.Warnings {
-		plog.Warn(plog.TypeSystem, warning, "step", stepPlan, "file", file, "experiment", result.Experiment)
+		warn := plog.Warn
+		if strings.HasPrefix(warning, workflow.StartFailPrefix) {
+			warn = plog.WarnAlarm
+		}
+
+		warn(plog.TypeSystem, warning, "step", stepPlan, "file", file, "experiment", result.Experiment)
 	}
 
 	if !r.opts.DryRun && !r.opts.Force && result.Action == workflow.ActionRestart {
@@ -318,7 +333,7 @@ func (r *applyRun) apply(ctx context.Context, wfConfig *configFile, plan workflo
 
 	plog.Info(
 		plog.TypeSystem, "applying workflow config",
-		"step", stepApply, "file", file, "action", string(plan.Action), "experiment", plan.Experiment,
+		"step", stepApply, "file", file, actionAttr(plan.Action), "experiment", plan.Experiment,
 	)
 	plog.Debug(plog.TypeSystem, "workflow tags", "step", stepApply, "tags", strings.Join(tags, ","))
 
@@ -330,7 +345,7 @@ func (r *applyRun) apply(ctx context.Context, wfConfig *configFile, plan workflo
 	if result.Action == workflow.ActionNone {
 		plog.Warn(
 			plog.TypeSystem, "workflow config applied; no experiment changed",
-			"step", stepApply, "file", file, "action", string(result.Action), "experiment", result.Experiment, "reason", result.Reason,
+			"step", stepApply, "file", file, actionAttr(result.Action), "experiment", result.Experiment, "reason", result.Reason,
 		)
 
 		return nil
@@ -338,10 +353,27 @@ func (r *applyRun) apply(ctx context.Context, wfConfig *configFile, plan workflo
 
 	plog.Info(
 		plog.TypeSystem, "workflow config applied",
-		"step", stepApply, "file", file, "action", string(result.Action), "experiment", result.Experiment,
+		"step", stepApply, "file", file, actionAttr(result.Action), "experiment", result.Experiment,
 	)
 
 	return nil
+}
+
+// actionAttr is the action attribute of a log record. A colored console
+// shows it as a plan tool shows a change: a create green, an update or a
+// restart yellow, and no change gray.
+func actionAttr(action workflow.Action) slog.Attr {
+	attr := slog.String("action", string(action))
+
+	switch action {
+	case workflow.ActionCreate, workflow.ActionCreateAndStart:
+		return tint.Attr(ansiGreen, attr)
+	case workflow.ActionUpdate, workflow.ActionUpdateAndStart, workflow.ActionRestart:
+		return tint.Attr(ansiYellow, attr)
+	case workflow.ActionNone:
+	}
+
+	return tint.Attr(ansiGray, attr)
 }
 
 // notSentError is an interrupt that came before the request what describes

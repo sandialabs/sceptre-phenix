@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"maps"
 	"net/http"
 	"os"
@@ -185,6 +186,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"bridge-mode bridge-mode pass",
 		"deploy-mode deploy-mode pass",
 		"experiment.disk-check experiment.disk-check pass",
+		"color color pass",
 		"log.level log.level pass",
 		"log.system.max-size log.system.max-size pass",
 		"log.system.max-backups log.system.max-backups pass",
@@ -582,7 +584,7 @@ func TestParseDoctorSkip(t *testing.T) {
 		"settings group": {
 			args: []string{"--skip", "settings"},
 			want: []string{
-				"bridge-mode", "deploy-mode", "experiment.disk-check", "log.level", "log.system.max-age",
+				"bridge-mode", "color", "deploy-mode", "experiment.disk-check", "log.level", "log.system.max-age",
 				"log.system.max-backups", "log.system.max-size",
 			},
 		},
@@ -612,7 +614,7 @@ func TestParseDoctorSkip(t *testing.T) {
 				t.Fatalf("ParseFlags(%v) error = %v", tc.args, err)
 			}
 
-			skip, err := parseDoctorSkip(doctorFlagOptions(cmd.Flags()).skip, doctorChecks())
+			skip, err := parseDoctorSkip(doctorFlagOptions(cmd.Flags(), io.Discard).skip, doctorChecks())
 
 			if tc.wantErr != "" {
 				if err == nil || !strings.HasPrefix(err.Error(), tc.wantErr) {
@@ -745,7 +747,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 41 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 42 passed, 3 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},

@@ -227,7 +227,7 @@ func workflowDiskWarnings(
 
 	if errors.As(err, &broken) {
 		for _, p := range broken.Problems {
-			out = append(out, "the start would fail: "+p.String())
+			out = append(out, workflow.StartFailPrefix+p.String())
 		}
 	}
 

@@ -86,7 +86,7 @@ func newExperimentListCmd() *cobra.Command {
 			if len(exps) == 0 {
 				plog.Warn(plog.TypeSystem, "no experiments available")
 			} else {
-				printer.PrintTableOfExperiments(os.Stdout, exps...)
+				printer.PrintTableOfExperiments(os.Stdout, outputPalette(os.Stdout), exps...)
 			}
 
 			return nil

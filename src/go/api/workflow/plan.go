@@ -25,6 +25,10 @@ const (
 	ActionRestart        Action = "restart"
 )
 
+// StartFailPrefix starts each dry run warning about a disk problem that makes
+// the planned start fail. The value is part of the JSON API.
+const StartFailPrefix = "the start would fail: "
+
 // Reasons given for an [ActionNone] plan. The values are part of the JSON API.
 const (
 	reasonNoCreate  = "no experiment mapped and auto.create not set"

@@ -3,10 +3,17 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"text/tabwriter"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
+
+	"phenix/util/termcolor"
 )
 
 // doctorReportLines is the text output of report, each line with its runs of
@@ -14,7 +21,7 @@ import (
 func doctorReportLines(report doctorReport, strict bool) []string {
 	var out bytes.Buffer
 
-	printDoctorReport(&out, report, strict)
+	printDoctorReport(&out, report, strict, termcolor.New(false))
 
 	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
 	for i, line := range lines {
@@ -188,5 +195,174 @@ func TestDoctorJSONNoSettings(t *testing.T) {
 		if diff := cmp.Diff(c, skipped[id]); diff != "" {
 			t.Errorf("skipped check %s mismatch (-want +got):\n%s", id, diff)
 		}
+	}
+}
+
+// The checks table and summary, in full, with colors off and on: the columns
+// line up the same, each status has its color, the summary has the color of
+// the worst status, and the hints are faint.
+func TestPrintDoctorReportColors(t *testing.T) {
+	t.Parallel()
+
+	report := doctorReportBase(doctorFail,
+		doctorResult{ID: "minimega", Group: "g", Name: "minimega", Status: doctorFail, Detail: "no answer", Hint: "start minimega"},
+		doctorResult{ID: "env", Group: "g", Name: "PHENIX_X", Status: doctorWarn, Detail: "unknown", Hint: "unset it"},
+		doctorResult{ID: "disk", Group: "g", Name: "disk", Status: doctorPass, Detail: ""},
+		doctorResult{ID: "vmdb2", Group: "g", Name: "vmdb2", Status: doctorSkip, Detail: "skipped by --skip"},
+	)
+
+	plain := "\nCHECK     STATUS  DETAIL\n" +
+		"minimega  FAIL    no answer\n" +
+		"PHENIX_X  WARN    unknown\n" +
+		"disk      PASS    \n" +
+		"vmdb2     SKIP    skipped by --skip\n" +
+		"\nFAIL: 1 failed, 1 warned, 1 passed, 1 skipped. Failed: minimega. Warned: PHENIX_X\n" +
+		"  minimega: start minimega\n" +
+		"  PHENIX_X: unset it\n"
+	colored := "\nCHECK     STATUS  DETAIL\n" +
+		"minimega  \x1b[1;31mFAIL\x1b[22;0m    no answer\n" +
+		"PHENIX_X  \x1b[33mWARN\x1b[0m    unknown\n" +
+		"disk      \x1b[32mPASS\x1b[0m    \n" +
+		"vmdb2     \x1b[2mSKIP\x1b[22m    skipped by --skip\n" +
+		"\n\x1b[1;31mFAIL: 1 failed, 1 warned, 1 passed, 1 skipped. Failed: minimega. Warned: PHENIX_X\x1b[22;0m\n" +
+		"  minimega: \x1b[2mstart minimega\x1b[22m\n" +
+		"  PHENIX_X: \x1b[2munset it\x1b[22m\n"
+
+	for name, tc := range map[string]struct {
+		palette termcolor.Palette
+		want    string
+	}{
+		"off": {palette: termcolor.New(false), want: plain},
+		"on":  {palette: termcolor.New(true), want: colored},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var out bytes.Buffer
+
+			printDoctorReport(&out, report, true, tc.palette)
+
+			_, checks, _ := strings.Cut(out.String(), "2026-10-30T12:00:00Z\n")
+			if diff := cmp.Diff(tc.want, checks); diff != "" {
+				t.Errorf("printDoctorReport() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// The checks table aligns its columns as tabwriter did before it had colors,
+// and without its codes a colored report is the plain report.
+func TestPrintDoctorChecksAlignment(t *testing.T) {
+	t.Parallel()
+
+	statuses := []doctorStatus{doctorPass, doctorWarn, doctorFail, doctorSkip}
+
+	rapid.Check(t, func(t *rapid.T) {
+		names := rapid.SliceOf(rapid.StringMatching(`[a-zé.-]{1,24}`)).Draw(t, "names")
+
+		checks := make([]doctorResult, 0, len(names))
+
+		for i, name := range names {
+			status := rapid.SampledFrom(statuses).Draw(t, "status")
+			checks = append(checks, doctorResult{
+				ID: name, Group: "g", Name: name, Status: status,
+				Detail: rapid.StringMatching(`[a-z ]{0,12}`).Draw(t, "detail"), Hint: strconv.Itoa(i),
+			})
+		}
+
+		var want, plain, colored bytes.Buffer
+
+		tw := tabwriter.NewWriter(&want, 0, 0, doctorColumnPadding, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "CHECK\tSTATUS\tDETAIL")
+
+		for _, c := range checks {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", c.Name, strings.ToUpper(string(c.Status)), c.Detail)
+		}
+
+		_ = tw.Flush()
+
+		printDoctorChecks(&plain, checks, termcolor.New(false))
+		printDoctorChecks(&colored, checks, termcolor.New(true))
+
+		if diff := cmp.Diff(want.String(), plain.String()); diff != "" {
+			t.Fatalf("plain table differs from tabwriter's (-want +got):\n%s", diff)
+		}
+
+		if diff := cmp.Diff(plain.String(), stripColor(colored.String())); diff != "" {
+			t.Fatalf("colored table without its codes differs (-plain +stripped):\n%s", diff)
+		}
+	})
+}
+
+// -o json and --report never color, even when --color asks for it.
+func TestWriteDoctorReportColors(t *testing.T) {
+	t.Parallel()
+
+	report := doctorReportBase(doctorWarn, doctorResult{ID: "a", Group: "g", Name: "a", Status: doctorWarn, Detail: "d", Hint: "h"})
+
+	tests := map[string]struct {
+		opts      doctorOptions
+		wantColor bool
+	}{
+		"text":            {opts: doctorOptions{output: "text", palette: termcolor.New(true)}, wantColor: true},
+		"text, report":    {opts: doctorOptions{output: "text", report: true, palette: termcolor.New(true)}},
+		"json":            {opts: doctorOptions{output: FormatJSON, palette: termcolor.New(true)}},
+		"json, report":    {opts: doctorOptions{output: FormatJSON, report: true, palette: termcolor.New(true)}},
+		"text, colorless": {opts: doctorOptions{output: "text", palette: termcolor.New(false)}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var out bytes.Buffer
+			if err := writeDoctorReport(&out, report, tc.opts); err != nil {
+				t.Fatalf("writeDoctorReport() error = %v", err)
+			}
+
+			if got := strings.Contains(out.String(), "\x1b["); got != tc.wantColor {
+				t.Errorf("output has escape codes = %v, want %v:\n%q", got, tc.wantColor, out.String())
+			}
+		})
+	}
+}
+
+// phenix doctor colors its text output only when --color says so: auto
+// leaves a writer that is not a terminal plain, and -o json is never colored.
+func TestDoctorCommandColors(t *testing.T) { //nolint:paralleltest // sets environment variables
+	t.Setenv("PHENIX_BASE_DIR_MINIMEGA", t.TempDir())
+	t.Setenv("PHENIX_STORE_ENDPOINT", "bolt://"+filepath.Join(t.TempDir(), "store.bdb"))
+	t.Setenv("PHENIX_UNIX_SOCKET", filepath.Join(t.TempDir(), "phenix.sock"))
+
+	tests := map[string]struct {
+		color     string
+		args      []string
+		wantColor bool
+	}{
+		"auto":     {color: "auto"},
+		"off":      {color: "off"},
+		"on":       {color: "on", wantColor: true},
+		"on, json": {color: "on", args: []string{"-o", "json"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("PHENIX_COLOR", tc.color)
+
+			cmd := newDoctorCmd()
+			cmd.SilenceUsage, cmd.SilenceErrors = true, true // as under the root command
+
+			var out bytes.Buffer
+
+			cmd.SetOut(&out)
+			cmd.SetArgs(append([]string{"--skip", "minimega,server", "-x"}, tc.args...))
+			cmd.SetContext(t.Context())
+
+			_ = cmd.Execute()
+
+			if got := strings.Contains(out.String(), "\x1b["); got != tc.wantColor {
+				t.Errorf("doctor output has escape codes = %v, want %v:\n%q", got, tc.wantColor, out.String())
+			}
+		})
 	}
 }

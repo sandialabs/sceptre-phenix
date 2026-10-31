@@ -8,9 +8,14 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode/utf8"
 
+	"phenix/util/termcolor"
 	"phenix/version"
 )
+
+// doctorColumnPadding is the number of spaces between the columns of a table.
+const doctorColumnPadding = 2
 
 // containerMarkers are files a container runtime creates in the container.
 //
@@ -104,7 +109,7 @@ func containerHint(env doctorEnv) string {
 }
 
 // writeDoctorReport writes report as opts asks: text or JSON, and with
-// --report in a fenced block.
+// --report in a fenced block. Only text without --report gets colors.
 func writeDoctorReport(out io.Writer, report doctorReport, opts doctorOptions) error {
 	var buf bytes.Buffer
 
@@ -116,7 +121,12 @@ func writeDoctorReport(out io.Writer, report doctorReport, opts doctorOptions) e
 			return fmt.Errorf("encoding report: %w", err)
 		}
 	} else {
-		printDoctorReport(&buf, report, opts.strict)
+		palette := opts.palette
+		if opts.report {
+			palette = termcolor.New(false)
+		}
+
+		printDoctorReport(&buf, report, opts.strict, palette)
 	}
 
 	if opts.report {
@@ -137,8 +147,9 @@ func writeDoctorReport(out io.Writer, report doctorReport, opts doctorOptions) e
 
 // printDoctorReport prints the header, the settings (when the report has any),
 // the checks and a summary; with strict, the summary gives warnings' hints too.
-func printDoctorReport(out io.Writer, report doctorReport, strict bool) {
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0) //nolint:mnd // column padding
+// palette colors the statuses, the summary and the hints.
+func printDoctorReport(out io.Writer, report doctorReport, strict bool, palette termcolor.Palette) {
+	w := tabwriter.NewWriter(out, 0, 0, doctorColumnPadding, ' ', 0)
 
 	printDoctorHeader(w, report)
 
@@ -151,23 +162,64 @@ func printDoctorReport(out io.Writer, report doctorReport, strict bool) {
 		}
 	}
 
-	_, _ = fmt.Fprintln(w)
-	_, _ = fmt.Fprintln(w, "CHECK\tSTATUS\tDETAIL")
-
-	for _, c := range report.Checks {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", c.Name, strings.ToUpper(string(c.Status)), c.Detail)
-	}
-
 	_ = w.Flush()
 
 	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, doctorSummary(report))
+	printDoctorChecks(out, report.Checks, palette)
+
+	_, _ = fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out, doctorStatusColor(palette, report.Status, doctorSummary(report)))
 
 	for _, c := range report.Checks {
 		if c.Hint != "" && (c.Status == doctorFail || (strict && c.Status == doctorWarn)) {
-			_, _ = fmt.Fprintf(out, "  %s: %s\n", c.Name, c.Hint)
+			_, _ = fmt.Fprintf(out, "  %s: %s\n", c.Name, palette.Faint(c.Hint))
 		}
 	}
+}
+
+// printDoctorChecks prints the checks table, aligned as tabwriter aligns the
+// other tables. It pads each cell before it colors the status, since tabwriter
+// counts escape codes as text.
+func printDoctorChecks(out io.Writer, checks []doctorResult, palette termcolor.Palette) {
+	const statusHeader = "STATUS"
+
+	nameWidth := utf8.RuneCountInString("CHECK")
+	for _, c := range checks {
+		nameWidth = max(nameWidth, utf8.RuneCountInString(c.Name))
+	}
+
+	pad := func(text string, width int) string {
+		return strings.Repeat(" ", width+doctorColumnPadding-utf8.RuneCountInString(text))
+	}
+
+	_, _ = fmt.Fprintf(out, "CHECK%s%s%sDETAIL\n", pad("CHECK", nameWidth), statusHeader, pad(statusHeader, len(statusHeader)))
+
+	for _, c := range checks {
+		status := strings.ToUpper(string(c.Status))
+
+		_, _ = fmt.Fprintf(out, "%s%s%s%s%s\n",
+			c.Name, pad(c.Name, nameWidth),
+			doctorStatusColor(palette, c.Status, status), pad(status, len(statusHeader)),
+			c.Detail,
+		)
+	}
+}
+
+// doctorStatusColor colors text as palette colors status: pass green, warn
+// yellow, fail bold red and skip faint.
+func doctorStatusColor(palette termcolor.Palette, status doctorStatus, text string) string {
+	switch status {
+	case doctorPass:
+		return palette.Green(text)
+	case doctorWarn:
+		return palette.Yellow(text)
+	case doctorFail:
+		return palette.BoldRed(text)
+	case doctorSkip:
+		return palette.Faint(text)
+	}
+
+	return text
 }
 
 func printDoctorHeader(w io.Writer, report doctorReport) {

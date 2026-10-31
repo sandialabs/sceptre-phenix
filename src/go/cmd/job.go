@@ -197,7 +197,7 @@ func printJob(w io.Writer, j job.Job, output string) error {
 		return writeJobJSON(w, j)
 	}
 
-	printer.PrintJob(w, j)
+	printer.PrintJob(w, outputPalette(w), j)
 
 	return nil
 }
@@ -272,7 +272,7 @@ func newJobListCmd() *cobra.Command {
 				return nil
 			}
 
-			printer.PrintTableOfJobs(cmd.OutOrStdout(), jobs...)
+			printer.PrintTableOfJobs(cmd.OutOrStdout(), outputPalette(cmd.OutOrStdout()), jobs...)
 
 			return nil
 		},

@@ -408,6 +408,7 @@ func doctorChecks() []doctorCheckDef {
 			"set deploy-mode to all, no-headnode or only-headnode, or unset it, because every phenix command refuses another value"),
 		settingDef("experiment.disk-check",
 			"set experiment.disk-check to error, warn or off, or unset it, because every phenix command refuses another value"),
+		settingDef(colorFlag, "set color to auto, on or off, or unset it, because every phenix command refuses another value"),
 		settingDef("log.level", "set log.level to debug, info, warn, error or none"),
 		settingDef("log.system.max-size", "set log.system.max-size to a whole number of megabytes, or 0 for 100"),
 		settingDef("log.system.max-backups", "set log.system.max-backups to a whole number, or 0 to keep every old log"),

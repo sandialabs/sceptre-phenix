@@ -22,6 +22,7 @@ import (
 	"phenix/api/config"
 	"phenix/util/common"
 	"phenix/util/editor"
+	"phenix/util/termcolor"
 	"phenix/web"
 )
 
@@ -228,6 +229,13 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 		mode, err := common.ParseDiskCheck(value)
 		if err != nil {
 			return failCheck(err.Error() + ", so phenix commands refuse it (options: error | warn | off)"), true
+		}
+
+		return passCheck(string(mode)), true
+	case colorFlag:
+		mode, err := termcolor.ParseMode(value)
+		if err != nil {
+			return failCheck(err.Error() + ", so phenix commands refuse it (" + colorOptions + ")"), true
 		}
 
 		return passCheck(string(mode)), true

@@ -113,6 +113,11 @@ It prints, in order:
    names of the checks that failed or warned, then a hint for each failure.
    With `--strict`, warnings get hints too.
 
+On a terminal, doctor shows `pass` in green, `warn` in yellow, `fail` in
+bold red and `skip` faint. The summary line has the color of the overall
+status, and the hints are faint. `--color` sets when doctor uses colors (see
+[Colors](#colors)). `-o json` and `--report` never have color.
+
 `--skip` takes a check or a group from the table below, comma-separated or
 repeated, such as `--skip minimega` or `--skip env,ui.jwt-signing-key`. A
 skipped check shows as a `skip` row. An unknown name fails and lists the
@@ -126,7 +131,7 @@ valid ones.
 | `settings-file` | `config` | `phenix settings set` would write a file other than the config file phēnix reads, a file that is not YAML, or a file this user cannot write or create | never |
 | `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), it holds a log level phēnix ignores, or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
 | `env-overrides` | `env` | a `PHENIX_*` variable overrides a different value in the config or users file; the row names the variable, the setting and the file, never a value | never |
-| `bridge-mode`, `deploy-mode`, `experiment.disk-check`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative | `bridge-mode`, `deploy-mode` or `experiment.disk-check` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
+| `bridge-mode`, `deploy-mode`, `experiment.disk-check`, `color`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative | `bridge-mode`, `deploy-mode`, `experiment.disk-check` or `color` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
 | `store.endpoint` | `files` | never | the file cannot be written, or its directory does not exist or cannot be written |
 | `store-file` (only when the store file exists) | `files` | one of its two meta pages is corrupt, so BoltDB reads the other, which may not hold the last write | the file is not a BoltDB file, has another format version or byte order, is shorter than its two meta pages, or both meta pages are corrupt |
 | `store-owner` (only when the store file exists) | `files` | another user owns the file and this user is not root; as root under `sudo phenix`, the file does not belong to the user whose store `sudo phenix` uses | never |
@@ -287,6 +292,7 @@ The following global flags are supported by all `phenix` subcommands. The
 | `--base-dir.phenix` | `string` | `/phenix` | Base phēnix directory. |
 | `--base-dir.topologies` | `string` | `<base-dir.phenix>/topologies` | Directory that `phenix workflow apply` looks up topology directory names in. See [Workflow](workflow.md). |
 | `--bridge-mode` | `string` | `manual` | Bridge naming mode for experiments (`auto` uses experiment name for bridge; `manual` uses user-specified bridge name, or `phenix` if omitted). A `phenix ui` running in `auto` mode makes the commands that reach it over `--unix-socket` use `auto`. See [Bridge Mode](bridge-mode.md). |
+| `--color` | `string` | `auto` | When to color the output (`auto`, `on`, or `off`). `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. See [Colors](#colors). |
 | `--deploy-mode` | `string` | — | Deploy mode for minimega VMs (`all`, `no-headnode`, or `only-headnode`). |
 | `--experiment.disk-check` | `string` | `error` | What a start does when a VM disk image or CD-ROM image is missing, or its backing chain is broken (`error`, `warn`, or `off`). See [Disk Check Before a Start](experiments.md#disk-check-before-a-start). |
 | `-h, --help` | — | — | Display help information for the command. |
@@ -302,6 +308,29 @@ The following global flags are supported by all `phenix` subcommands. The
 | `--unix-socket` | `string` | `/tmp/phenix.sock` | phēnix unix socket to listen on (`ui` subcommand) or connect to. |
 | `--use-gre-mesh` | `bool` | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. See [GRE Mesh](gre-mesh.md). |
 
+## Colors
+
+phēnix colors parts of its text output. The `--color` flag, the `color`
+setting or `PHENIX_COLOR` sets when:
+
+* `auto` (the default) colors an output only when it is a terminal. It
+  does not color when `NO_COLOR` is set to a value or `TERM` is `dumb`.
+* `on` colors every output, also a file or a pipe.
+* `off` colors no output.
+
+phēnix refuses another value. JSON and YAML output, and the output of
+`phenix doctor --report`, never have color. A table keeps its columns
+aligned, because phēnix measures each cell without its color codes.
+
+| Output | Colors |
+| :--- | :--- |
+| Every command | The `Error:` label of a failed command is red. A console log record shows its level in color, the message of a warning in yellow, and the message of an error in red. A config file warning shows `warning:` in yellow. |
+| `phenix doctor` | `PASS` green, `WARN` yellow, `FAIL` bold red, `SKIP` faint. The summary line has the color of the overall status. The hints are faint. |
+| `phenix workflow apply`, also with `--dry-run` | The `action` of each config and of the plan: green for a create, yellow for an update or a restart, gray for no change. A disk problem that makes the start fail (`the start would fail: ...`) is red. Other warnings are yellow. |
+| `phenix experiment list` | The `Started` time of a running experiment is green, and `(interrupted)` is yellow. |
+| `phenix vm info` | The `Running` value is green for a running VM, red for a VM that minimega shows as `QUIT` or `ERROR`, and faint for other VMs. |
+| `phenix job list`, `get` and `wait` | Job and item states: `running` cyan, `succeeded` green, `partial` and `canceled` yellow, `failed` red, and `queued`, `pending` and `skipped` faint. |
+
 ## Settings Reference
 
 | Setting Key | Environment Variable | Default | Description |
@@ -310,6 +339,7 @@ The following global flags are supported by all `phenix` subcommands. The
 | `experiment.disk-check` | `PHENIX_EXPERIMENT_DISK_CHECK` | `error` | What a start does when a VM disk image or CD-ROM image is missing, or its backing chain is broken. `error` refuses the start, `warn` starts the experiment and shows each problem as a warning, and `off` does not check the images. It applies to every start: the CLI, the web UI, the REST API, `phenix workflow apply`, and the bulk start and restart of VMs. phēnix refuses another value. `phenix ui` applies a change at once. See [Disk Check Before a Start](experiments.md#disk-check-before-a-start). |
 | `use-gre-mesh` | `PHENIX_USE_GRE_MESH` | `false` | Enable Layer 2 GRE tunnels for the default bridge of experiments created or updated with this setting. See [GRE Mesh](gre-mesh.md) for usage, server inheritance, and MTU requirements. `phenix ui` reads this setting at startup. **(Restart Required)** |
 | `log.level` | `PHENIX_LOG_LEVEL` | `info` | Global log verbosity (`debug`, `info`, `warn`, `error`). |
+| `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, `phenix doctor` rows, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. See [Colors](#colors). |
 | `log.console` | `PHENIX_LOG_CONSOLE` | `stderr` | Destination for console logs (`stderr`, `stdout`, or a file path). Uses **Text/Human-Readable** format. Note: Setting this to a file path will prevent console logs from appearing in `docker logs`. |
 | `log.system.path` | `PHENIX_LOG_SYSTEM_PATH` | `/var/log/phenix/phenix.log` | Path to the persistent system log file (used by UI). Uses **JSON** format. This is independent of `log.console` and is always active. |
 | `log.system.max-size` | `PHENIX_LOG_SYSTEM_MAX_SIZE` | `100` | Max size in MB before rotation. |

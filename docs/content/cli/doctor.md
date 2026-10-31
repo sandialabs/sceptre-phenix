@@ -50,7 +50,9 @@ Check the phenix configuration without a running server
   a check fails, or with --strict when one warns, and 0 otherwise.
 
   --report adds the hostname to the header and prints the whole output in a
-  fenced block to paste into a bug report.
+  fenced block to paste into a bug report. The text output colors the
+  statuses, the summary and the hints when --color allows it, but never with
+  -o json or --report.
 
   doctor never opens the store through BoltDB, which locks it, and reads
   only the first two pages of the store file. It opens no log file, writes

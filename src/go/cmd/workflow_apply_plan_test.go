@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"phenix/api/workflow"
+	"phenix/util/plog"
 )
 
 func TestRunWorkflowApplyDryRun(t *testing.T) {
@@ -81,6 +83,39 @@ func TestRunWorkflowApplyDryRunLogsDiskWarnings(t *testing.T) {
 	}
 
 	checkFields(t, logs.first(t, warning), map[string]string{"level": "WARN", "step": "plan", "experiment": "helloworld"})
+}
+
+// A colored console shows a problem that would make the start fail in red,
+// another disk warning in yellow, and the plan's action as a change.
+func TestRunWorkflowApplyDryRunColorsWarnings(t *testing.T) {
+	var console bytes.Buffer
+
+	plog.NewPhenixHandler(&console, true)
+	t.Cleanup(func() { plog.NewPhenixHandler(os.Stderr, false) })
+
+	dir := newTopologyDir(t, "helloworld", fullTopology())
+	fail := workflow.StartFailPrefix + "VM vm1: disk a.qc2: backing file /phenix/images/ro_a.qc2 is missing"
+	other := "VM vm2: disk b.qc2: qcow2 version 2 is old"
+	fake := newFakePhenix(t, fakePhenix{
+		options:  serverOptions(t.TempDir()),
+		plan:     workflow.Plan{Action: workflow.ActionRestart, Experiment: "helloworld", Reason: ""},
+		warnings: []string{fail, other},
+	})
+
+	opts := testApplyOptions(fake.socket, t.TempDir())
+	opts.DryRun = true
+
+	if err := runWorkflowApply(t.Context(), opts, dir); err != nil {
+		t.Fatalf("runWorkflowApply() error = %v", err)
+	}
+
+	for _, want := range []string{
+		"\x1b[31m" + fail + "\x1b[0m", "\x1b[33m" + other + "\x1b[0m", "\x1b[2;33maction=\x1b[22mrestart\x1b[0m",
+	} {
+		if !strings.Contains(console.String(), want) {
+			t.Errorf("console output lacks %q:\n%s", want, console.String())
+		}
+	}
 }
 
 // TestRunWorkflowApplyForwardsPendingRefs checks that the workflow dry run

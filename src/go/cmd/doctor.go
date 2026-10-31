@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,6 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"phenix/store"
+	"phenix/util/termcolor"
 )
 
 const (
@@ -121,6 +123,7 @@ type doctorOptions struct {
 	strict     bool
 	noSettings bool
 	report     bool
+	palette    termcolor.Palette // colors the text output
 }
 
 func newDoctorCmd() *cobra.Command {
@@ -163,7 +166,9 @@ func newDoctorCmd() *cobra.Command {
   a check fails, or with --strict when one warns, and 0 otherwise.
 
   --report adds the hostname to the header and prints the whole output in a
-  fenced block to paste into a bug report.
+  fenced block to paste into a bug report. The text output colors the
+  statuses, the summary and the hints when --color allows it, but never with
+  -o json or --report.
 
   doctor never opens the store through BoltDB, which locks it, and reads
   only the first two pages of the store file. It opens no log file, writes
@@ -197,7 +202,7 @@ func newDoctorCmd() *cobra.Command {
 		PersistentPreRunE:  func(*cobra.Command, []string) error { return nil },
 		PersistentPostRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			opts := doctorFlagOptions(cmd.Flags())
+			opts := doctorFlagOptions(cmd.Flags(), cmd.OutOrStdout())
 			if opts.output != "text" && opts.output != FormatJSON {
 				return fmt.Errorf("unsupported output format: %s", opts.output)
 			}
@@ -238,7 +243,8 @@ func addDoctorFlags(flags *pflag.FlagSet) {
 		"add the hostname and print the output in a fenced block to paste into a bug report")
 }
 
-func doctorFlagOptions(flags *pflag.FlagSet) doctorOptions {
+// doctorFlagOptions reads the doctor flags, and the colors of output to out.
+func doctorFlagOptions(flags *pflag.FlagSet, out io.Writer) doctorOptions {
 	return doctorOptions{
 		output:     mustGet(flags.GetString, "output"),
 		timeout:    mustGet(flags.GetDuration, "timeout"),
@@ -246,6 +252,7 @@ func doctorFlagOptions(flags *pflag.FlagSet) doctorOptions {
 		strict:     mustGet(flags.GetBool, "strict"),
 		noSettings: mustGet(flags.GetBool, "no-print-settings"),
 		report:     mustGet(flags.GetBool, "report"),
+		palette:    outputPalette(out),
 	}
 }
 

@@ -25,6 +25,7 @@ import (
 	"phenix/store"
 	"phenix/util/common"
 	"phenix/util/plog"
+	"phenix/util/termcolor"
 	"phenix/web"
 )
 
@@ -125,6 +126,10 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("%w (options: error | warn | off)", err)
 		}
 
+		if _, err := colorMode(); err != nil {
+			return err
+		}
+
 		var logOutput io.Writer = os.Stderr
 		if out := viper.GetString("log.console"); out != consoleStderr {
 			if out == consoleStdout {
@@ -142,7 +147,7 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		plog.NewPhenixHandler(logOutput)
+		plog.NewPhenixHandler(logOutput, outputPalette(logOutput).On())
 		plog.SetLevelText(viper.GetString("log.level"))
 
 		common.PhenixBase = viper.GetString("base-dir.phenix") //nolint:reassign // configuration injection
@@ -195,7 +200,8 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
-	SilenceUsage: true, // don't print help when subcommands return an error
+	SilenceUsage:  true, // don't print help when subcommands return an error
+	SilenceErrors: true, // Execute prints the error, with its color
 }
 
 // serverOptionsClient returns the client with which the root command reads
@@ -230,9 +236,12 @@ func Root() *cobra.Command {
 	return rootCmd
 }
 
+// Execute runs the phenix command that [os.Args] names, and exits with its
+// error's code after it prints the error.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
+		printCommandError(os.Stderr, os.Args[1:], err)
 		os.Exit(exitCode(err))
 	}
 }
@@ -345,6 +354,12 @@ func init() {
 		)
 	rootCmd.PersistentFlags().
 		String("unix-socket", "/tmp/phenix.sock", "phēnix unix socket to listen on (ui subcommand) or connect to")
+	rootCmd.PersistentFlags().
+		String(
+			colorFlag, string(termcolor.Auto),
+			"when to color the output: 'auto' colors only a terminal, and not when NO_COLOR is set or TERM is dumb. "+
+				"JSON and YAML output never have color ("+colorOptions+")",
+		)
 
 	// Ensure default directories exist
 	if uid == "0" {
@@ -405,7 +420,7 @@ func applyConfigChange(e fsnotify.Event) {
 			}
 		}
 	}
-	plog.ChangeConsoleLogger(logOutput)
+	plog.ChangeConsoleLogger(logOutput, outputPalette(logOutput).On())
 	if currentConsoleFile != nil {
 		_ = currentConsoleFile.Close()
 	}
@@ -436,13 +451,13 @@ func readConfig(v *viper.Viper, createDir string, warn io.Writer) bool {
 	}
 
 	if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
-		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: it %s\n", v.ConfigFileUsed(), configReadProblem(err))
+		configWarningf(warn, "ignoring config file %s: it %s", v.ConfigFileUsed(), configReadProblem(err))
 
 		return false
 	}
 
 	if err := os.MkdirAll(createDir, 0o750); err != nil {
-		_, _ = fmt.Fprintf(warn, "phenix: warning: creating config directory: %v\n", err)
+		configWarningf(warn, "creating config directory: %v", err)
 
 		return false
 	}
@@ -450,13 +465,13 @@ func readConfig(v *viper.Viper, createDir string, warn io.Writer) bool {
 	target := filepath.Join(createDir, "config.yaml")
 
 	if err := v.SafeWriteConfigAs(target); err != nil {
-		_, _ = fmt.Fprintf(warn, "phenix: warning: creating config file %s: %v\n", target, err)
+		configWarningf(warn, "creating config file %s: %v", target, err)
 
 		return false
 	}
 
 	if err := v.ReadInConfig(); err != nil {
-		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: it %s\n", target, configReadProblem(err))
+		configWarningf(warn, "ignoring config file %s: it %s", target, configReadProblem(err))
 
 		return false
 	}
@@ -479,7 +494,7 @@ func loadConfigFiles(v *viper.Viper, paths []string, createDir string, warn io.W
 // users file added, and merges the users file over it again.
 func reloadConfigFiles(v *viper.Viper, paths []string, warn io.Writer) {
 	if err := v.ReadInConfig(); err != nil {
-		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: it %s\n", v.ConfigFileUsed(), configReadProblem(err))
+		configWarningf(warn, "ignoring config file %s: it %s", v.ConfigFileUsed(), configReadProblem(err))
 	}
 
 	mergeUsersConfig(v, paths, warn)
@@ -502,7 +517,7 @@ func mergeUsersConfig(v *viper.Viper, paths []string, warn io.Writer) string {
 	case errors.As(err, &viper.ConfigFileNotFoundError{}):
 		return ""
 	case err != nil:
-		_, _ = fmt.Fprintf(warn, "phenix: warning: ignoring config file %s: it %s\n", users.ConfigFileUsed(), configReadProblem(err))
+		configWarningf(warn, "ignoring config file %s: it %s", users.ConfigFileUsed(), configReadProblem(err))
 	default:
 		_ = v.MergeConfigMap(users.AllSettings())
 	}

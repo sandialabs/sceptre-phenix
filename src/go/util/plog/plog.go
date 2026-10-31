@@ -9,7 +9,8 @@ import (
 	"sync"
 
 	"github.com/lmittmann/tint"
-	"github.com/mattn/go-isatty"
+
+	"phenix/util/termcolor"
 )
 
 var (
@@ -34,21 +35,17 @@ type phenixHandler struct {
 
 // NewPhenixHandler creates a new [slog.TextHandler] named "phenix-default"
 // logging to STDERR. This handler will default to a log level of [slog.LevelInfo]
-// until it is changed with the "SetLevelText" function.
-func NewPhenixHandler(w io.Writer) {
+// until it is changed with the "SetLevelText" function. With color, it colors
+// each level, the message of a warning yellow, and that of an error or alarm red.
+func NewPhenixHandler(w io.Writer, color bool) {
 	if w == nil {
 		w = os.Stderr
-	}
-
-	noColor := true
-	if f, ok := w.(*os.File); ok {
-		noColor = !isatty.IsTerminal(f.Fd())
 	}
 
 	options := &tint.Options{ //nolint:exhaustruct // partial initialization
 		Level:      Level,
 		TimeFormat: "2006-01-02 15:04:05.000",
-		NoColor:    noColor,
+		NoColor:    !color,
 		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
 			if _, ok := logKeysIgnored[a.Key]; ok {
 				return slog.Attr{}
@@ -58,12 +55,49 @@ func NewPhenixHandler(w io.Writer) {
 		},
 	}
 
-	handler.AddHandler("phenix-default", tint.NewTextHandler(w, options))
+	console := tint.NewTextHandler(w, options)
+	if color {
+		console = consoleColors{Handler: console, palette: termcolor.New(true)}
+	}
+
+	handler.AddHandler("phenix-default", console)
 }
 
-// ChangeConsoleLogger updates the "phenix-default" handler with a new writer.
-func ChangeConsoleLogger(w io.Writer) {
-	NewPhenixHandler(w)
+// ChangeConsoleLogger updates the "phenix-default" handler with a new writer,
+// colored as NewPhenixHandler colors it.
+func ChangeConsoleLogger(w io.Writer, color bool) {
+	NewPhenixHandler(w, color)
+}
+
+// consoleColors colors the message of each record that warns or fails, as
+// tint colors the level beside it.
+type consoleColors struct {
+	slog.Handler
+
+	palette termcolor.Palette
+}
+
+// Handle colors the message of a warning yellow, and that of an error or an
+// alarm red, then passes the record on.
+func (h consoleColors) Handle(ctx context.Context, r slog.Record) error {
+	switch {
+	case r.Level >= slog.LevelError, r.Level >= slog.LevelWarn && isAlarm(ctx):
+		r.Message = h.palette.Red(r.Message)
+	case r.Level >= slog.LevelWarn:
+		r.Message = h.palette.Yellow(r.Message)
+	}
+
+	return h.Handler.Handle(ctx, r)
+}
+
+// WithAttrs implements the [slog.Handler] interface for consoleColors.
+func (h consoleColors) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return consoleColors{Handler: h.Handler.WithAttrs(attrs), palette: h.palette}
+}
+
+// WithGroup implements the [slog.Handler] interface for consoleColors.
+func (h consoleColors) WithGroup(name string) slog.Handler {
+	return consoleColors{Handler: h.Handler.WithGroup(name), palette: h.palette}
 }
 
 // AddHandler adds a new [slog.Handler] by name to the main phenix [slog.Handler].

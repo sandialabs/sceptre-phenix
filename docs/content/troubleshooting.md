@@ -71,17 +71,31 @@ hint; see
 ### Every Command Fails on a Mode Setting
 
 Every phēnix command except `phenix doctor` reads `bridge-mode`,
-`deploy-mode` and `experiment.disk-check` before it runs, and stops on a value
-it does not know:
+`deploy-mode`, `experiment.disk-check` and `color` before it runs, and stops on
+a value it does not know:
 
 ```text
 setting user-specified bridge mode: setting bridge mode: unknown bridge mode provided: sideways
 ```
 
-Fix the value in the flag, `PHENIX_BRIDGE_MODE`, `PHENIX_DEPLOY_MODE` or
-`PHENIX_EXPERIMENT_DISK_CHECK`, or the config file. `phenix doctor` fails its
-`bridge-mode`, `deploy-mode` or `experiment.disk-check` check for such a value, and warns about a `log.level` or `log.system.*` value that
+Fix the value in the flag, `PHENIX_BRIDGE_MODE`, `PHENIX_DEPLOY_MODE`,
+`PHENIX_EXPERIMENT_DISK_CHECK` or `PHENIX_COLOR`, or the config file. `phenix doctor` fails its
+`bridge-mode`, `deploy-mode`, `experiment.disk-check` or `color` check for such a value, and warns about a `log.level` or `log.system.*` value that
 phēnix ignores or reads as `0`.
+
+### Output Shows Escape Codes Such as `^[[32m`
+
+phēnix colors its output when `--color` is `on`, or when it is `auto` and
+the output is a terminal. A program that reads the output, or a terminal
+without colors, then shows the codes as text. To remove the colors, do one
+of these steps:
+
+* Run the command with `--color off`.
+* Set `NO_COLOR=1` in the environment of the command. `auto` then colors no
+  output.
+* Set `color: off` in the config file, or `PHENIX_COLOR=off`.
+
+JSON and YAML output never have color. See [Colors](settings.md#colors).
 
 ### `phenix ui` Fails to Start, or Ignores TLS or Users
 

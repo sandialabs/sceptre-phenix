@@ -20,6 +20,7 @@ phenix [flags]
       --base-dir.phenix string         base phenix directory (default "/phenix")
       --base-dir.topologies string     base directory for topology directories (default: <base-dir.phenix>/topologies)
       --bridge-mode string             bridge naming mode for experiments ('auto' uses experiment name for bridge; 'manual' uses user-specified bridge name, or 'phenix' if not specified; a phenix ui in 'auto' mode overrides it) (options: manual | auto) (default "manual")
+      --color string                   when to color the output: 'auto' colors only a terminal, and not when NO_COLOR is set or TERM is dumb. JSON and YAML output never have color (options: auto | on | off) (default "auto")
       --deploy-mode string             deploy mode for minimega VMs (options: all | no-headnode | only-headnode)
       --experiment.disk-check string   what a start does when a VM disk image or CD-ROM image is missing or its backing chain is broken ('error' refuses the start, 'warn' starts with a warning, 'off' does not check) (options: error | warn | off) (default "error")
   -h, --help                           help for phenix

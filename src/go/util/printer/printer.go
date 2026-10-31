@@ -15,6 +15,7 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/util/mm"
+	"phenix/util/termcolor"
 )
 
 const (
@@ -22,6 +23,10 @@ const (
 	imageConfigFixedCols = 7
 	headerName           = "Name"
 	headerValue          = "Value"
+
+	// minimega's names of the states of a VM that stopped or failed.
+	vmStateQuit  = "QUIT"
+	vmStateError = "ERROR"
 )
 
 // PrintTableOfConfigs writes the given configs to the given writer as an ASCII
@@ -40,8 +45,8 @@ func PrintTableOfConfigs(writer io.Writer, configs store.Configs) {
 
 // PrintTableOfExperiments writes the given experiments to the given writer as
 // an ASCII table. The table headers are set to Name, Topology, Scenario,
-// Started, VM Count, VLAN Count, and Apps.
-func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
+// Started, VM Count, VLAN Count, and Apps. palette colors the Started column.
+func PrintTableOfExperiments(writer io.Writer, palette termcolor.Palette, exps ...types.Experiment) {
 	table := tablewriter.NewWriter(writer)
 
 	table.SetHeader(
@@ -55,9 +60,10 @@ func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
 			apps = append(apps, app.Name())
 		}
 
-		started := exp.Status.StartTime()
+		started := palette.Green(exp.Status.StartTime())
 		if exp.Running() && exp.Status.Interrupted() != "" {
-			started += " (interrupted)"
+			// each word has its own codes, since the table can wrap the cell between them
+			started += " " + palette.Yellow("(interrupted)")
 		}
 
 		table.Append([]string{
@@ -75,22 +81,23 @@ func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
 }
 
 // PrintTableOfVMs writes the given VMs to the given writer as an ASCII table.
-func PrintTableOfVMs(writer io.Writer, includeTaps bool, vms ...mm.VM) {
+// palette colors the Running column.
+func PrintTableOfVMs(writer io.Writer, palette termcolor.Palette, includeTaps bool, vms ...mm.VM) {
 	table := tablewriter.NewWriter(writer)
 
 	switch len(vms) {
 	case 0:
 		return
 	case 1:
-		buildSingleVMTable(table, includeTaps, vms[0])
+		buildSingleVMTable(table, palette, includeTaps, vms[0])
 	default:
-		buildMultipleVMTable(table, includeTaps, vms...)
+		buildMultipleVMTable(table, palette, includeTaps, vms...)
 	}
 
 	table.Render()
 }
 
-func buildMultipleVMTable(table *tablewriter.Table, includeTaps bool, vms ...mm.VM) {
+func buildMultipleVMTable(table *tablewriter.Table, palette termcolor.Palette, includeTaps bool, vms ...mm.VM) {
 	header := []string{
 		"Host",
 		headerName,
@@ -112,7 +119,7 @@ func buildMultipleVMTable(table *tablewriter.Table, includeTaps bool, vms ...mm.
 
 	for _, vm := range vms {
 		var (
-			running = strconv.FormatBool(vm.Running)
+			running = vmRunning(palette, vm)
 			ifaces  = make([]string, 0, len(vm.Networks))
 			uptime  string
 		)
@@ -144,7 +151,7 @@ func buildMultipleVMTable(table *tablewriter.Table, includeTaps bool, vms ...mm.
 	}
 }
 
-func buildSingleVMTable(table *tablewriter.Table, includeTaps bool, vm mm.VM) {
+func buildSingleVMTable(table *tablewriter.Table, palette termcolor.Palette, includeTaps bool, vm mm.VM) {
 	table.SetHeader([]string{"Setting", headerValue})
 	table.SetAutoWrapText(false)
 	table.SetColWidth(colWidth)
@@ -177,7 +184,7 @@ func buildSingleVMTable(table *tablewriter.Table, includeTaps bool, vm mm.VM) {
 
 	table.Append([]string{"Host", vm.Host})
 	table.Append([]string{headerName, vm.Name})
-	table.Append([]string{"Running", strconv.FormatBool(vm.Running)})
+	table.Append([]string{"Running", vmRunning(palette, vm)})
 	table.Append([]string{"Disk", vm.Disk})
 	table.Append([]string{"Interfaces", strings.Join(ifaces, "\n")})
 	table.Append([]string{"Uptime", uptime})
@@ -189,6 +196,21 @@ func buildSingleVMTable(table *tablewriter.Table, includeTaps bool, vm mm.VM) {
 	}
 	table.Append([]string{"Labels", strings.Join(labels, ", ")})
 	table.Append([]string{"Metadata", string(metadata)})
+}
+
+// vmRunning is the Running value of vm: green when it runs, red when
+// minimega shows it as QUIT or ERROR, and faint otherwise.
+func vmRunning(palette termcolor.Palette, vm mm.VM) string {
+	running := strconv.FormatBool(vm.Running)
+
+	switch {
+	case vm.Running:
+		return palette.Green(running)
+	case vm.State == vmStateQuit || vm.State == vmStateError:
+		return palette.Red(running)
+	default:
+		return palette.Faint(running)
+	}
 }
 
 func PrintTableOfImageConfigs(writer io.Writer, optional []string, imgs ...types.Image) {
@@ -361,8 +383,8 @@ func PrintTableOfRuntimeSettings(writer io.Writer, settings map[string]any) {
 }
 
 // PrintTableOfJobs writes the given background jobs to the given writer as an
-// ASCII table.
-func PrintTableOfJobs(writer io.Writer, jobs ...job.Job) {
+// ASCII table. palette colors the Status column.
+func PrintTableOfJobs(writer io.Writer, palette termcolor.Palette, jobs ...job.Job) {
 	table := tablewriter.NewWriter(writer)
 	table.SetHeader([]string{"ID", "Kind", "Status", "Progress", "Experiment", "Owner", "Created"})
 
@@ -370,7 +392,7 @@ func PrintTableOfJobs(writer io.Writer, jobs ...job.Job) {
 		table.Append([]string{
 			j.ID,
 			j.Kind,
-			string(j.Status),
+			jobState(palette, string(j.Status)),
 			jobProgress(j),
 			j.Experiment,
 			j.Owner,
@@ -382,13 +404,13 @@ func PrintTableOfJobs(writer io.Writer, jobs ...job.Job) {
 }
 
 // PrintJob writes a background job, then a table of its items with their
-// outcomes, to the given writer.
-func PrintJob(writer io.Writer, j job.Job) {
+// outcomes, to the given writer. palette colors the job's and items' states.
+func PrintJob(writer io.Writer, palette termcolor.Palette, j job.Job) {
 	fields := [][2]string{
 		{"ID", j.ID},
 		{"Kind", j.Kind},
 		{"Title", j.Title},
-		{"Status", string(j.Status)},
+		{"Status", jobState(palette, string(j.Status))},
 		{"Progress", jobProgress(j)},
 		{"Experiment", j.Experiment},
 		{"Owner", j.Owner},
@@ -434,10 +456,30 @@ func PrintJob(writer io.Writer, j job.Job) {
 			retryable = "yes"
 		}
 
-		table.Append([]string{item.Name, string(item.Status), retryable, item.Error})
+		table.Append([]string{item.Name, jobState(palette, string(item.Status)), retryable, item.Error})
 	}
 
 	table.Render()
+}
+
+// jobState colors the state of a job or of a job item: running cyan,
+// succeeded green, partial and canceled yellow, failed red, and queued,
+// pending and skipped faint.
+func jobState(palette termcolor.Palette, state string) string {
+	switch state {
+	case string(job.StatusRunning):
+		return palette.Cyan(state)
+	case string(job.StatusSucceeded):
+		return palette.Green(state)
+	case string(job.StatusPartial), string(job.StatusCanceled):
+		return palette.Yellow(state)
+	case string(job.StatusFailed):
+		return palette.Red(state)
+	case string(job.StatusQueued), string(job.ItemPending), string(job.ItemSkipped):
+		return palette.Faint(state)
+	}
+
+	return state
 }
 
 // jobProgress is a job's progress as "done/total", with the bytes when it

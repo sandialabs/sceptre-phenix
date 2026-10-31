@@ -583,7 +583,7 @@ func newVMInfoCmd() *cobra.Command {
 				return err
 			}
 
-			printer.PrintTableOfVMs(os.Stdout, mustGet(cmd.Flags().GetBool, "taps"), vms...)
+			printer.PrintTableOfVMs(os.Stdout, outputPalette(os.Stdout), mustGet(cmd.Flags().GetBool, "taps"), vms...)
 
 			return nil
 		},
