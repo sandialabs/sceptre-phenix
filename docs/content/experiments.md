@@ -332,6 +332,40 @@ Is equivalent to:
 phenix exp trigger running my-experiment [<app name> ...]
 ```
 
+## VLAN Aliases
+
+Topologies refer to VLANs by alias, such as `MGMT` or `EXP-1`,
+which is mapped by phēnix to a numerical VLAN ID.
+
+### From the Command Line Binary
+
+The `phenix vlan alias` command can list and change VLAN aliases.
+
+```bash
+# List VLAN aliases of every experiment
+phenix vlan alias
+
+# List VLAN aliases of a single experiment
+phenix vlan alias <experiment name>
+
+# Print the VLAN ID of a specific alias for an experiment
+phenix vlan alias <experiment name> <alias name>
+
+# Set the alias to a VLAN ID (add -f to overwrite an existing alias)
+phenix vlan alias <experiment name> <alias name> <vlan id>
+```
+
+For example, if the `MYVLAN` alias of `my-experiment` maps to VLAN 105:
+
+```bash
+$ phenix vlan alias my-experiment MYVLAN
+105
+```
+
+A running experiment reports the VLAN IDs minimega assigned when it started. A
+stopped experiment has no ID for an alias unless one was set explicitly, so
+most alias lookups will fail until the experiment starts.
+
 ## Common Workflows
 
 ### 1. Basic Experiment Lifecycle

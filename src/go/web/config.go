@@ -3,6 +3,7 @@ package web
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -161,7 +162,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusForbidden)
 		}
 
-		cfg, err := config.Get(name, false)
+		cfg, err := config.Get(name)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
@@ -204,7 +205,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			continue
 		}
 
-		cfg, err := config.Get(name, false)
+		cfg, err := config.Get(name)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
@@ -288,32 +289,34 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var (
-		typ  = r.Header.Get("Content-Type")
-		opts = []config.CreateOption{config.CreateWithValidation()}
-		src  []byte
+		typ   = r.Header.Get("Content-Type")
+		body  []byte
+		parse func([]byte) (*store.Config, error)
 	)
 
 	switch {
 	case typ == mimeJSON: // default to JSON if not set
-		body, err := io.ReadAll(r.Body)
+		var err error
+
+		body, err = io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		src = body
-		opts = append(opts, config.CreateFromJSON(body))
+		parse = store.NewConfigFromJSON
 	case typ == mimeYAML:
-		body, err := io.ReadAll(r.Body)
+		var err error
+
+		body, err = io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		src = body
-		opts = append(opts, config.CreateFromYAML(body))
+		parse = store.NewConfigFromYAML
 	case strings.HasPrefix(typ, "multipart/form-data"): // file upload
 		_ = r.ParseMultipartForm(MaxUploadSize)
 
@@ -328,25 +331,23 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 		switch filepath.Ext(handler.Filename) {
 		case ".json":
-			body, err := io.ReadAll(file)
+			body, err = io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
-			src = body
-			opts = append(opts, config.CreateFromJSON(body))
+			parse = store.NewConfigFromJSON
 		case ".yaml", ".yml":
-			body, err := io.ReadAll(file)
+			body, err = io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
-			src = body
-			opts = append(opts, config.CreateFromYAML(body))
+			parse = store.NewConfigFromYAML
 		default:
 			return weberror.NewWebError(
 				nil,
@@ -362,21 +363,26 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
-	c, err := config.Create(opts...)
+	c, err := parse(body)
+	if err != nil {
+		return weberror.NewWebError(err, "invalid formatting").
+			WithMetadata("validation", err.Error(), true)
+	}
+
+	// The check above allows creating some config. This one checks the config
+	// the body names, so a role scoped to some kinds or names creates no other.
+	if name := c.FullName(); !role.Allowed("configs", "create", name) {
+		return configForbidden(ctx, "creating", name)
+	}
+
+	c, err = config.Create(config.CreateFromConfig(c), config.CreateWithValidation())
 	if err != nil {
 		if errors.Is(err, store.ErrExist) {
 			return weberror.NewWebError(err, "config with same name already exists")
 		}
 
 		if errors.Is(err, types.ErrValidationFailed) {
-			return validationWebError(src, err)
-		}
-
-		if errors.Is(err, store.ErrInvalidFormat) {
-			cause := errors.Unwrap(err)
-
-			return weberror.NewWebError(cause, "invalid formatting").
-				WithMetadata("validation", cause.Error(), true)
+			return validationWebError(body, err)
 		}
 
 		if errors.Is(err, version.ErrInvalidKind) {
@@ -390,21 +396,11 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
 	w.WriteHeader(http.StatusCreated)
 
-	c.Spec = nil
-	c.Status = nil
-
-	body, err := json.Marshal(c)
-	if err != nil {
+	if err := broadcastConfig(c, c.FullName(), "create"); err != nil {
 		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
 
 		return nil
 	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("configs", "list", c.FullName()),
-		bt.NewResource("config", c.FullName(), "create"),
-		body,
-	)
 
 	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 	plog.Info(
@@ -450,9 +446,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	upgrade := r.URL.Query().Get("noupgrade") == ""
-
-	cfg, err := config.Get(name, upgrade)
+	cfg, err := config.Get(name)
 	if err != nil {
 		return weberror.NewWebError(err, "unable to get config %s from store", name)
 	}
@@ -465,7 +459,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	var body []byte
 
 	switch typ := r.Header.Get("Accept"); typ {
-	case "", "*/*", "application/json": // default to JSON if not set
+	case "", mimeAny, mimeJSON: // default to JSON if not set
 		var err error
 
 		body, err = json.Marshal(cfg)
@@ -540,7 +534,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	switch {
-	case typ == "application/json": // default to JSON if not set
+	case typ == mimeJSON: // default to JSON if not set
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
@@ -628,6 +622,12 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
+	// The config is stored under the body's kind and name, which can differ from
+	// the path's (a rename or another config), so check that config too.
+	if target := c.FullName(); target != name && !role.Allowed("configs", "update", target) {
+		return configForbidden(ctx, "updating", target)
+	}
+
 	if c.Kind == kindExperiment {
 		// Reset experiment name in spec since we removed it before sending.
 		c.Spec["experimentName"] = vars["name"]
@@ -667,25 +667,12 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
 	w.WriteHeader(http.StatusNoContent)
 
-	c.Spec = nil
-	c.Status = nil
-
-	body, err := json.Marshal(c)
-	if err != nil {
+	// The old name, so clients know which config to update.
+	if err := broadcastConfig(c, name, "update"); err != nil {
 		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
 
 		return nil
 	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("configs", "list", c.FullName()),
-		bt.NewResource(
-			"config",
-			name,
-			"update",
-		), // use old name in broadcast so client knows what to update
-		body,
-	)
 	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 	plog.Info(
 		plog.TypeAction,
@@ -750,6 +737,44 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 		user,
 		"config",
 		name,
+	)
+
+	return nil
+}
+
+// configForbidden logs and returns a 403 for a role that may not act on the
+// config name. action is what the request asked for, such as "creating".
+func configForbidden(ctx context.Context, action, name string) error {
+	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+	plog.Warn(
+		plog.TypeSecurity,
+		action+" config not allowed",
+		"user",
+		user,
+		"config",
+		name,
+	)
+
+	return weberror.NewWebError(nil, "%s config %s not allowed for %s", action, name, user).
+		SetStatus(http.StatusForbidden)
+}
+
+// broadcastConfig sends c without its spec and status to everyone who may list
+// it. name is the full name clients know, which after a rename is the old one.
+func broadcastConfig(c *store.Config, name, action string) error {
+	summary := *c
+	summary.Spec = nil
+	summary.Status = nil
+
+	body, err := json.Marshal(summary)
+	if err != nil {
+		return fmt.Errorf("encoding config broadcast: %w", err)
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("configs", "list", c.FullName()),
+		bt.NewResource("config", name, action),
+		body,
 	)
 
 	return nil

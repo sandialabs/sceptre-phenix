@@ -8,23 +8,7 @@ import (
 	"time"
 )
 
-type (
-	ImageKind  int
-	CopyStatus func(float64)
-)
-
-const (
-	_ ImageKind = iota
-	VMImage
-	ContainerImage
-)
-
-type ImageDetails struct {
-	Kind     ImageKind
-	Name     string
-	FullPath string
-	Size     int
-}
+type CopyStatus func(float64)
 
 type File struct {
 	Name       string   `json:"name"`

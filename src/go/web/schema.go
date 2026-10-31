@@ -1,6 +1,8 @@
 package web
 
 import (
+	"errors"
+	"io/fs"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -136,11 +138,17 @@ func GetSchema(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	schema, err := version.GetVersionedSchemaForKind(kind, ver)
-	if err != nil {
-		err := weberror.NewWebError(err, "unable to get version %s of schema for %s", ver, kind)
+	schema, verErr := version.GetVersionedSchemaForKind(kind, ver)
+	if verErr != nil {
+		webErr := weberror.NewWebError(verErr, "unable to get version %s of schema for %s", ver, kind)
 
-		return err.SetStatus(http.StatusInternalServerError)
+		// A kind or version with no schema is a missing resource, not a server
+		// failure.
+		if errors.Is(verErr, version.ErrInvalidKind) || errors.Is(verErr, fs.ErrNotExist) {
+			return webErr.SetStatus(http.StatusNotFound)
+		}
+
+		return webErr.SetStatus(http.StatusInternalServerError)
 	}
 
 	var body []byte

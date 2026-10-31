@@ -30,6 +30,9 @@ func TestResolveTopologyDir(t *testing.T) {
 	})
 	t.Chdir(root)
 
+	// Shell completion appends this to a directory it completes.
+	sep := string(filepath.Separator)
+
 	tests := []struct {
 		name    string
 		arg     string
@@ -55,6 +58,23 @@ func TestResolveTopologyDir(t *testing.T) {
 			base:    topologies,
 			wantErr: "topology directory not found: stat " + filepath.Join("sub", "named"),
 		},
+		{name: "trailing separator on a name", arg: "named" + sep, base: topologies, want: filepath.Join(topologies, "named")},
+		{
+			name: "repeated trailing separators on a name",
+			arg:  "named" + sep + sep,
+			base: topologies,
+			want: filepath.Join(topologies, "named"),
+		},
+		{name: "trailing separator on a local path", arg: "local" + sep, base: topologies, want: filepath.Join(root, "local")},
+		{name: "trailing separator on the current directory", arg: "." + sep, base: topologies, want: root},
+		{name: "the root directory", arg: sep, base: topologies, want: sep},
+		{
+			name:    "trailing separator on a missing name",
+			arg:     "nope" + sep,
+			base:    topologies,
+			wantErr: "topology directory not found: tried nope and " + filepath.Join(topologies, "nope"),
+		},
+		{name: "trailing separator on a local file", arg: "file.txt" + sep, base: topologies, wantErr: "file.txt is not a directory"},
 		{name: "no topologies base", arg: "named", base: "", wantErr: "topology directory not found: stat named"},
 		{name: "local file", arg: "file.txt", base: topologies, wantErr: "file.txt is not a directory"},
 		{
@@ -747,5 +767,32 @@ func TestRunWorkflowApplyRefusesMarkerNamesInInjects(t *testing.T) {
 
 			checkNotLogged(t, logs, "staging injects")
 		})
+	}
+}
+
+func TestRunWorkflowApplyRefusesMarkerNamesInSymlinkedInjects(t *testing.T) {
+	extDir := t.TempDir()
+	extSub := filepath.Join(extDir, "sub")
+	if err := os.Mkdir(extSub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extSub, "phenix.yml"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := newTopologyDir(t, "foo", fullTopology())
+	if err := os.Symlink(extSub, filepath.Join(dir, "phenix-injects", "symdir")); err != nil {
+		t.Fatal(err)
+	}
+
+	injects := t.TempDir()
+	fake := newFakePhenix(t, fakePhenix{options: serverOptions(injects)})
+	opts := testApplyOptions(fake.socket, t.TempDir())
+	opts.FollowInjectSymlinks = true
+
+	err := runWorkflowApply(t.Context(), opts, dir)
+	want := dir + "/phenix-injects holds symdir/phenix.yml, a name that marks a topology directory; rename it or move it deeper"
+	if err == nil || err.Error() != want {
+		t.Fatalf("runWorkflowApply() error = %v, want %q", err, want)
 	}
 }

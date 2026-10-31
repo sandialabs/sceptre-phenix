@@ -148,7 +148,8 @@ list it first so later scripts inherit the exported proxy vars and CA certificat
 
 `POSTBUILD_PHENIX_BASE` installs `phenix.service`, which runs every file in
 `/etc/phenix/startup/` on each boot via `/usr/local/bin/phenix-start.sh`, and
-`miniccc.service`, which talks to minimega over `/dev/virtio-ports/cc`. Anything that
+`miniccc.service`, which talks to minimega over `/dev/virtio-ports/cc` and runs as
+`root` with `HOME=/root` (the environment `cc exec` commands inherit). Anything that
 depends on the experiment (hostname, interfaces, injected files) belongs in
 `/etc/phenix/startup/` — written by topology/scenario apps at launch — not in a build
 script.

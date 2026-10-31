@@ -2,6 +2,8 @@ package web
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -34,6 +36,8 @@ const (
 
 var o serverOptions //nolint:gochecknoglobals // global options
 
+// ConfigureUsers creates each missing default user (name:password:role[:resource...])
+// with its role. It skips an entry without a role and joins the errors.
 func ConfigureUsers(users []string) error {
 	setUserRole := func(user *rbac.User, rname string, resources ...string) {
 		if role, err := rbac.RoleFromConfig(rname); err == nil {
@@ -61,8 +65,34 @@ func ConfigureUsers(users []string) error {
 		}
 	}
 
-	for _, u := range users {
+	// Where an entry's password and role are, after its name.
+	const (
+		passwordField = 1
+		roleField     = 2
+	)
+
+	var errs []error
+
+	for position, u := range users {
 		creds := strings.Split(u, ":")
+
+		if len(creds) <= roleField {
+			// Name the entry by position and by its name, never by a field
+			// that may be a password.
+			var name string
+			if len(creds) > passwordField {
+				name = creds[0]
+			}
+
+			plog.Error(plog.TypeSecurity, "skipping default user without a role", "position", position+1, "user", name)
+
+			errs = append(errs, fmt.Errorf(
+				"default user %d (%q) is not name:password:role[:resource...]", position+1, name,
+			))
+
+			continue
+		}
+
 		uname := creds[0]
 		pword := creds[1]
 		rname := creds[2]
@@ -90,12 +120,25 @@ func ConfigureUsers(users []string) error {
 
 		plog.Info(plog.TypeSecurity, "creating default user", "user", uname, "role", rname)
 
-		user := rbac.NewUser(uname, pword)
+		user, err := rbac.NewUser(uname, pword, "", "")
+		if errors.Is(err, rbac.ErrUserExists) {
+			// Created since it was looked up, by another phenix sharing the
+			// store, say. It is left as it is.
+			plog.Info(plog.TypeSecurity, "default user already exists", "user", uname)
+
+			continue
+		} else if err != nil {
+			plog.Error(plog.TypeSecurity, "creating default user", "user", uname, "err", err)
+
+			errs = append(errs, err)
+
+			continue
+		}
 
 		setUserRole(user, rname, creds[3:]...)
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 //nolint:funlen,maintidx // server startup
@@ -136,8 +179,6 @@ func Start(opts ...ServerOption) error {
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
-	router.HandleFunc("/builder", GetBuilder).Methods("GET")
-	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
 
 	plog.Info(plog.TypeSystem, "setting up assets")
 
@@ -154,10 +195,6 @@ func Start(opts ...ServerOption) error {
 	)
 
 	router.PathPrefix("/assets/").Handler(
-		http.FileServer(assets),
-	)
-
-	router.PathPrefix("/grapheditor/").Handler(
 		http.FileServer(assets),
 	)
 
@@ -197,15 +234,11 @@ func Start(opts ...ServerOption) error {
 
 	api := router.PathPrefix("/api/v1").Subrouter()
 
+	// The router's NotFoundHandler serves the SPA index, so an API client would get 200 HTML.
+	// A route behind a disabled feature flag would then also look enabled.
+	api.NotFoundHandler = apiNotFoundHandler()
+
 	// OPTIONS method needed for CORS
-	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/builder/topologies", weberror.ErrorHandler(CreateBuilderTopology)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(GetBuilderTopology)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(UpdateBuilderTopology)).
-		Methods("PUT", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")
@@ -221,10 +254,6 @@ func Start(opts ...ServerOption) error {
 
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(UpdateExperimentFromBuilder)).
-		Methods("PUT", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(UpdateExperiment)).
@@ -407,11 +436,6 @@ func Start(opts ...ServerOption) error {
 	addRoutesToRouter(api, workflowRoutes...)
 	addRoutesToRouter(api, optionRoutes...)
 
-	if o.allowCORS {
-		plog.Info(plog.TypeSystem, "CORS is enabled on HTTP API endpoints")
-		api.Use(middleware.AllowCORS)
-	}
-
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
 
 	switch o.logMiddleware {
@@ -518,4 +542,34 @@ func addRoutesToRouter(router *mux.Router, routes ...route) {
 	for _, r := range routes {
 		router.Handle(r.path, r.handler).Methods(r.methods...)
 	}
+}
+
+// apiNotFoundHandler answers 404 to an API request that matches no route, and never serves the SPA index.
+// Router middleware, including authentication, does not run here, so it must disclose nothing the path does not.
+func apiNotFoundHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plog.Warn(
+			plog.TypeSystem,
+			"Unknown API route requested",
+			"route",
+			r.URL.Path,
+			"method",
+			r.Method,
+		)
+
+		webErr := weberror.NewWebError(nil, "no API route matches this request").
+			SetStatus(http.StatusNotFound)
+
+		body, err := json.Marshal(webErr)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", mimeJSON)
+		w.WriteHeader(http.StatusNotFound)
+
+		_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	})
 }

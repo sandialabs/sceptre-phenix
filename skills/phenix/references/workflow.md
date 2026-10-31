@@ -15,6 +15,7 @@ validation error format and the curl walkthrough.
 phenix workflow apply helloworld                 # look helloworld up under base-dir.topologies; works from any directory
 phenix workflow apply helloworld -n              # --dry-run: validate everything, log the server's plan, change nothing
 phenix workflow apply helloworld -f              # --force: allow restarting the running experiment
+phenix workflow apply helloworld --follow-inject-symlinks # follow symlinks in phenix-injects/ and copy as regular files
 phenix workflow apply ./site -b lab-a -c alt.yml # --branch-name: branch name (default: the directory's name); --config: workflow config, relative to DIR unless absolute
 ```
 
@@ -41,8 +42,9 @@ written out, not given as a `${VAR}` placeholder.
 it. It must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. The server expands
 `${BRANCH_NAME}` placeholders (for example
 `/phenix/injects/${BRANCH_NAME}/motd`) to it, and fills in other `${VAR}`
-placeholders from its own environment. Configs that hard-code the injects
-directory need `-b` set to the name they use.
+placeholders from its own environment, except in a config's `kind` and
+`metadata.name`, which can use no placeholder but `${BRANCH_NAME}`. Configs
+that hard-code the injects directory need `-b` set to the name they use.
 
 The names `phenix.yml`, `phenix-configs` and `phenix-injects` are reserved, in
 any letter case. The branch name cannot be one of them, and no entry of
@@ -58,9 +60,11 @@ nothing changes before `injects`:
    and the plan is logged. `-n` stops here with exit status 0. Without `-n`,
    a `restart` plan fails unless `-f` is given, and nothing has changed.
 3. **`injects`.** `phenix-injects/` is copied to `<base-dir.injects>/<name>`,
-   replacing the previous copy. The server's `base-dir.injects` is used unless
-   `--base-dir.injects` is given on the command line. Staging needs write
-   access there, so run the command as the user that runs `phenix ui`.
+   replacing the previous copy (`--follow-inject-symlinks` follows symlinks
+   and copies targets as regular files or directories). The server's
+   `base-dir.injects` is used unless `--base-dir.injects` is given on the
+   command line. Staging needs write access there, so run the command as the
+   user that runs `phenix ui`.
 4. **`configs`.** Each config is created or updated, topologies first.
 5. **`apply`.** The workflow config is applied, with the tags
    `method=workflow`, `dir`, `branch`, `workflow_date` and, in a git work

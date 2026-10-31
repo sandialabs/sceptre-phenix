@@ -48,7 +48,17 @@
       </section>
     </div>
   </b-modal>
-  <b-modal v-model="viewer.isActive" @close="resetViewer" has-modal-card>
+  <b-modal
+    v-model="viewer.isActive"
+    @close="resetViewer"
+    has-modal-card
+    aria-role="dialog"
+    aria-modal
+    :aria-label="viewer.title"
+    close-button-aria-label="Close"
+    :destroy-on-hide="false">
+    <!-- Kept after it closes: a viewer opened while the last one was being
+         removed stayed invisible over the page, and Exit did not close it. -->
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
         <p class="modal-card-title x-config-text">{{ viewer.title }}</p>
@@ -58,13 +68,17 @@
           <textarea
             class="textarea x-config-text has-fixed-size"
             rows="30"
+            aria-label="Config, as YAML"
             v-model="viewer.obj"
             readonly />
         </div>
       </section>
       <footer class="modal-card-foot x-modal-dark buttons is-right">
         <button
-          v-if="roleAllowed('configs', 'update', configFullName(viewer.config))"
+          v-if="
+            viewer.config &&
+            roleAllowed('configs', 'update', configFullName(viewer.config))
+          "
           class="button is-success"
           @click="$emit('edit', viewer.config)">
           Edit Config
@@ -145,7 +159,7 @@
                 multilined>
                 <button
                   class="button input-button"
-                  aria-label="Clear config filters"
+                  aria-label="Reset the search and the kind filter"
                   @click="
                     searchQuery = '';
                     filterKind = null;
@@ -192,8 +206,7 @@
       pagination-simple="true"
       pagination-size="is-small"
       default-sort="kind"
-      :loading="isWaiting"
-      ref="cfgTable">
+      :loading="isWaiting">
       <!-- docs currently wrong with checked rows, see: https://github.com/buefy/buefy/issues/4102 -->
       <!-- <b-loading :is-full-page="false" v-model="isWaiting"></b-loading> -->
 
@@ -246,24 +259,22 @@
         v-slot="props">
         <template
           v-if="roleAllowed('configs', 'get', configFullName(props.row))">
+          <!-- A button, so the keyboard reaches the read-only view too. -->
           <b-tooltip label="view config" type="is-dark">
-            <div class="field is-clickable">
-              <div @click="viewConfig(props.row)">
-                {{ props.row.metadata.name }}
-              </div>
-            </div>
+            <button
+              type="button"
+              class="config-name"
+              :aria-label="`View ${props.row.kind} ${props.row.metadata.name}`"
+              :data-config-view="configFullName(props.row)"
+              @click="viewConfig(props.row)">
+              {{ props.row.metadata.name }}
+            </button>
           </b-tooltip>
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
         </template>
         <template v-else>
           {{ props.row.metadata.name }}
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
         </template>
       </b-table-column>
 
@@ -281,7 +292,8 @@
           <button
             v-if="roleAllowed('configs', 'update', configFullName(props.row))"
             class="button is-light is-small action"
-            :aria-label="`Edit config ${props.row.metadata.name}`"
+            :aria-label="`Edit ${props.row.kind} ${props.row.metadata.name}`"
+            :data-config-edit="configFullName(props.row)"
             @click="$emit('edit', props.row)">
             <b-icon icon="edit"></b-icon>
           </button>
@@ -295,7 +307,7 @@
           <button
             v-if="roleAllowed('configs', 'get', configFullName(props.row))"
             class="button is-light is-small action"
-            :aria-label="`Download config ${props.row.metadata.name}`"
+            :aria-label="`Download ${props.row.kind} ${props.row.metadata.name}`"
             @click="download([props.row])">
             <b-icon icon="download"></b-icon>
           </button>
@@ -309,7 +321,7 @@
           <button
             v-if="roleAllowed('configs', 'delete', configFullName(props.row))"
             class="button is-light is-small action"
-            :aria-label="`Delete config ${props.row.metadata.name}`"
+            :aria-label="`Delete ${props.row.kind} ${props.row.metadata.name}`"
             @click="deleteConfigs([props.row])">
             <b-icon icon="trash"></b-icon>
           </button>
@@ -337,6 +349,11 @@
 
   export default {
     emits: ['edit', 'create'],
+    props: {
+      // The config ("Kind/name") whose edit button takes focus on the first
+      // load, so focus returns there when the editor closes.
+      focusConfig: { type: String, default: '' },
+    },
     setup() {
       return { roleAllowed };
     },
@@ -358,8 +375,6 @@
         ],
         //table
         isPaginated: false,
-        perPage: 10,
-        currentPage: 1,
         selectedConfigs: [],
 
         //uploader modal
@@ -375,14 +390,14 @@
 
         viewer: {
           isActive: false,
-          config: { kind: null, metadata: { name: null } },
+          config: null,
           title: null,
           obj: null,
         },
       };
     },
     created() {
-      this.updateConfigs();
+      this.updateConfigs(true);
     },
     computed: {
       paginationNeeded() {
@@ -436,14 +451,26 @@
           );
         }
       },
-      updateConfigs() {
+      // focus is true only for the first load, so a later refresh (an
+      // upload) leaves focus where it is.
+      updateConfigs(focus = false) {
         this.isWaiting = true;
         axiosInstance
           .get('configs')
-          .then((response) => {
+          .then(async (response) => {
             const state = response.data;
             this.configs = state.configs === null ? [] : state.configs;
             this.isWaiting = false;
+
+            // The list has several root elements, so search the document.
+            if (focus && this.focusConfig) {
+              await this.$nextTick();
+              document
+                .querySelector(
+                  `[data-config-edit="${CSS.escape(this.focusConfig)}"]`,
+                )
+                ?.focus();
+            }
           })
           .catch(() => {
             this.isWaiting = false;
@@ -452,15 +479,6 @@
       // Matches store.Config.FullName, the name the server authorizes.
       configFullName(cfg) {
         return `${cfg.kind}/${cfg.metadata.name}`;
-      },
-      isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
-        }
-
-        return false;
       },
       download(configList) {
         const configs = configList.map(this.configFullName);
@@ -592,12 +610,19 @@
         this.error.msg = null;
       },
       resetViewer() {
+        // Focus goes back to the name the viewer was opened from.
+        const opener = this.viewer.title;
+        if (opener) {
+          this.$nextTick(() =>
+            document
+              .querySelector(`[data-config-view="${CSS.escape(opener)}"]`)
+              ?.focus(),
+          );
+        }
+
         this.viewer.isActive = false;
-        ((this.viewer.config = {
-          kind: null,
-          metadata: { name: null },
-        }),
-          (this.viewer.title = null));
+        this.viewer.config = null;
+        this.viewer.title = null;
         this.viewer.obj = null;
       },
       viewConfig(cfg) {
@@ -613,10 +638,10 @@
           .then((response) => {
             let obj = response.data;
 
+            // The viewer keeps no copy of the Builder diagram it leaves out:
+            // Edit and Download read the config again.
             if ('annotations' in obj.metadata) {
               if ('builder-xml' in obj.metadata.annotations) {
-                this.config.builderXML =
-                  obj.metadata.annotations['builder-xml'];
                 obj.metadata.annotations['builder-xml'] = '<SNIPPED>';
               }
             }
@@ -635,6 +660,22 @@
   };
 </script>
 <style scoped>
+  /* The name button looks like the text it replaces, and shows its focus. */
+  .config-name {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .config-name:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+
   .x-modal-dark :deep(textarea) {
     background-color: #686868;
     color: whitesmoke;

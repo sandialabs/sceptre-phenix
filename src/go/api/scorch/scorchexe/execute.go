@@ -11,6 +11,8 @@ import (
 	"phenix/app"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/mm"
+	"phenix/util/tap"
 )
 
 func Execute(ctx context.Context, exp *types.Experiment, run int) error {
@@ -60,6 +62,20 @@ func Execute(ctx context.Context, exp *types.Experiment, run int) error {
 	}
 
 	_ = exp.Reload() // reload experiment from store in case status was updated during run
+
+	var scorchStatus scorchmd.ScorchStatus
+	if err := exp.Status.ParseAppStatus("scorch", &scorchStatus); err == nil {
+		for name, tp := range scorchStatus.Taps {
+			tp.Init(exp.Spec.DefaultBridge(), tap.Experiment(exp.Metadata.Name))
+
+			if delErr := tp.Delete(mm.Headnode()); delErr != nil {
+				errors = multierror.Append(
+					errors,
+					fmt.Errorf("cleaning up remaining scorch tap %s: %w", name, delErr),
+				)
+			}
+		}
+	}
 
 	exp.Status.SetAppRunning("scorch", false)
 	exp.Status.SetAppStatus("scorch", nil)

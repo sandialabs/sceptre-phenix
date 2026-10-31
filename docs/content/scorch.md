@@ -162,7 +162,7 @@ spec:
 
 The `tap` component implements the exact same functionality described above in the [`break`](#break-component) component for creating a minimega tap and, optionally, external network access, but allows for the tap (and external network access, if configured) to exist while other components are executed (as opposed to only existing for the duration of the [`break`](#break-component) component).
 
-An example of configuring a `tap` component to create a tap and configure external network access is as follows. The `tap` component can only be configured to run in the `start` stage (create the tap) and the `stop` stage (delete the tap).
+An example of configuring a `tap` component to create a tap and configure external network access is as follows. The `tap` component can be configured to run in the `start` stage (create the tap), the `stop` stage (delete the tap), and the `cleanup` stage (delete the tap). Configuring the `tap` component in the `cleanup` stage ensures that the tap is deleted even if preceding stages or components fail or if the SCORCH run is cancelled.
 
 ```yaml
 spec:
@@ -179,7 +179,8 @@ spec:
           internetAccess: true
       runs:
       - start: ["tap-inet"]
-      - stop: ["tap-inet"]
+        stop: ["tap-inet"]
+        cleanup: ["tap-inet"]
 ```
 
 **NOTE:** In deployments where `minimega` is running in a container on the headnode, and Docker networking is in use (e.g., the `minimega` container is **not** configured to use host networking), users will need to execute the following commands if access to the `minimega` tap created by the [`tap`](#tap-component) (or [`break`](#break-component)) component from the Docker host is required.
@@ -190,7 +191,7 @@ docker exec -it minimega ovs-vsctl add-port phenix TDN
 ovs-vsctl add-port phenix temp-tap tag=<vlan ID> -- set interface temp-tap type=internal
 ```
 
-The above commands assume the name of the minimega container is `minimega`. The name of the local tap created (in this case, `temp-tap`) can be whatever, but the value for the VLAN tag must match the numerical ID of the VLAN that's mapped to the VLAN alias used in the [`tap`](#tap-component) (or [`break`](#break-component)) component configuration.
+The above commands assume the name of the minimega container is `minimega`. The name of the local tap created (in this case, `temp-tap`) can be whatever, but the value for the VLAN tag must match the numerical ID of the VLAN that's mapped to the VLAN alias used in the [`tap`](#tap-component) (or [`break`](#break-component)) component configuration. Run `phenix vlan alias <experiment name> <VLAN alias>` to print that ID.
 
 !!! note
     Using host networking mode for the `minimega` container allows for all the above nonsense to be skipped.

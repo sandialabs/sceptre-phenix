@@ -8,3 +8,4 @@ web/public/assets
 web/public/favicon*.ico
 web/public/index.html
 web/public/docs/index.html
+coverage.out

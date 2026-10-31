@@ -12,7 +12,6 @@ import (
 
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mitchellh/mapstructure"
 
 	"phenix/api/config"
 	"phenix/app"
@@ -21,7 +20,6 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	"phenix/types/version"
-	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
@@ -344,7 +342,6 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		return errors.New("topology doesn't exist")
 	}
 
-	// This will upgrade the topology to the latest known version if needed.
 	topo, err2 := types.DecodeTopologyFromConfig(*topoC)
 	if err2 != nil {
 		return fmt.Errorf("decoding topology from config: %w", err2)
@@ -443,7 +440,6 @@ func processCreateScenario(
 		return fmt.Errorf("experiment/scenario topology mismatch for scenario %s", scenarioName)
 	}
 
-	// This will upgrade the scenario to the latest known version if needed.
 	plog.Info(plog.TypeSystem, "Creating custom scenario")
 
 	scenario, err2 := types.MakeCustomScenarioFromConfig(*scenarioC, disabledApps)
@@ -951,24 +947,6 @@ func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool) error 
 	return nil
 }
 
-func Status(name string) (*v1.ExperimentStatus, error) {
-	c, _ := store.NewConfig("experiment/" + name)
-
-	err := store.Get(c)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get experiment status from store: %w", err)
-	}
-
-	var status v1.ExperimentStatus
-
-	err = mapstructure.Decode(c.Status, &status)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode experiment status: %w", err)
-	}
-
-	return &status, nil
-}
-
 func Running(name string) bool {
 	var err error
 	c, _ := store.NewConfig("experiment/" + name)
@@ -1000,20 +978,8 @@ func Save(opts ...SaveOption) error {
 		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
-	if o.spec == nil {
-		if o.saveNilSpec {
-			c.Spec = nil
-		}
-	} else {
+	if o.spec != nil {
 		c.Spec = structs.MapDefaultCase(o.spec, structs.CASESNAKE)
-	}
-
-	if o.status == nil {
-		if o.saveNilStatus {
-			c.Status = nil
-		}
-	} else {
-		c.Status = structs.MapDefaultCase(o.status, structs.CASESNAKE)
 	}
 
 	err = store.Update(c)
@@ -1197,7 +1163,7 @@ func Delete(name string) error {
 		return errors.New("cannot delete a running experiment")
 	}
 
-	c, err := config.Get("experiment/"+name, true)
+	c, err := config.Get("experiment/" + name)
 	if err != nil {
 		return fmt.Errorf("getting experiment %s: %w", name, err)
 	}

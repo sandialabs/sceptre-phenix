@@ -3,7 +3,6 @@ info:
   description: phenix API
   version: 0.0.0
   title: phenix
-  termsOfService: http://swagger.io/terms/
   contact:
     url: https://github.com/sandialabs/sceptre-phenix
   license:
@@ -23,8 +22,6 @@ tags:
     description: Available phenix user applications
   - name: Topologies
     description: Available phenix topologies
-  - name: Builder
-    description: Graphical topology Builder diagrams and the topologies built from them
   - name: Disks
     description: Available phenix disk images
   - name: Users
@@ -66,7 +63,9 @@ paths:
       tags:
         - Configs
       summary: Create new phenix config
-      description: ""
+      description: >
+        Needs `configs` `create` on the config the body names, by its kind
+        and name (such as `Topology/lab`).
       operationId: postConfigs
       requestBody:
         description: phenix config creation parameters
@@ -165,6 +164,8 @@ paths:
       description: >
         Can also be used to rename a config by changing the name in the metadata
         portion of the config header and using the old name in the request path.
+        Needs `configs` `update` on the config of the path and, when the body
+        names another kind or name, on that config too.
       operationId: putConfigsKindName
       parameters:
         - name: kind
@@ -256,7 +257,11 @@ paths:
       tags:
         - Schemas
       summary: Get full schema (all config specs) for specific version
-      description: ""
+      description: >
+        Each version's schema file holds the schemas of the config kinds stored
+        at that version, and a config is validated against the file of its own
+        apiVersion: v0 holds Workflow; v1 holds Topology, Experiment, Image,
+        User and Role; v2 holds Scenario.
       operationId: getSchemasVersion
       parameters:
         - name: version
@@ -291,12 +296,27 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        "400":
+          description: unknown version or Accept content type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: getting schemas is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/schemas/{kind}/{version}":
     get:
       tags:
         - Schemas
       summary: Get schema for specific config spec kind/version
-      description: the Workflow schema exists only in version v0
+      description: >
+        A kind's schema exists only in the version it is stored at, the version
+        its configs are validated against: Workflow in v0, Scenario in v2, and
+        every other kind in v1.
       operationId: getSchemasKindVersion
       parameters:
         - name: kind
@@ -345,6 +365,26 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        "400":
+          description: unknown Accept content type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: getting this schema is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >
+            there is no schema for this kind or version, such as a v1 kind
+            requested at v2, or an unknown version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
   "/experiments":
     get:
       tags:
@@ -517,7 +557,7 @@ paths:
           description: name of phenix experiment to update schedule for
           required: true
           schema:
-            type: name
+            type: string
       requestBody:
         description: scheduling algorithm to use
         required: true
@@ -723,7 +763,7 @@ paths:
       description: ""
       operationId: deleteExperimentsNameVmsName
       parameters:
-        - name: name
+        - name: exp_name
           in: path
           description: name of phenix experiment
           required: true
@@ -1088,159 +1128,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Applications"
-  "/builder/topologies":
-    get:
-      tags:
-        - Builder
-      summary: Get topologies that carry a Builder diagram
-      description: ""
-      operationId: getBuilderTopologies
-      responses:
-        "200":
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Topologies"
-        "403":
-          description: listing topologies not allowed for this user
-    post:
-      tags:
-        - Builder
-      summary: Create a topology and its Builder diagram
-      description: >-
-        Creates the topology config and stores the diagram on it. Does not
-        create an experiment. Refused while an experiment built from a topology
-        of the same name is running.
-      operationId: postBuilderTopology
-      requestBody:
-        description: Builder topology and diagram
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BuilderTopology"
-      responses:
-        "201":
-          description: topology created
-          headers:
-            Location:
-              description: path the new diagram is readable at
-              schema:
-                type: string
-        "400":
-          description: name, topology, or builderXML missing, or the spec is invalid
-        "403":
-          description: creating this topology not allowed for this user
-        "409":
-          description: another Builder write holds this name
-  "/builder/topologies/{name}":
-    get:
-      tags:
-        - Builder
-      summary: Get one Builder diagram
-      description: ""
-      operationId: getBuilderTopology
-      parameters:
-        - name: name
-          in: path
-          description: topology name
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: successful operation
-          content:
-            application/xml:
-              schema:
-                type: string
-        "400":
-          description: the topology does not carry a Builder diagram
-        "403":
-          description: getting this topology not allowed for this user
-        "404":
-          description: topology not found
-        "500":
-          description: reading the topology from the store failed
-    put:
-      tags:
-        - Builder
-      summary: Update a topology and its Builder diagram
-      description: >-
-        Writes only the spec and the diagram, leaving the rest of the stored
-        config's metadata intact. Does not create or update an experiment.
-      operationId: putBuilderTopology
-      parameters:
-        - name: name
-          in: path
-          description: topology name, which takes precedence over the payload
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: topology updated
-        "400":
-          description: >-
-            topology or builderXML missing, the spec is invalid, the topology
-            does not exist, or an experiment built from it is running
-        "403":
-          description: updating this topology not allowed for this user
-        "409":
-          description: another Builder write holds this name
-      requestBody:
-        description: Builder topology and diagram
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BuilderTopology"
-  "/experiments/builder":
-    post:
-      tags:
-        - Builder
-      summary: Create a topology and a same-named experiment from Builder
-      description: ""
-      operationId: postExperimentFromBuilder
-      requestBody:
-        description: Builder topology, diagram, VLAN aliases, and scenario
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BuilderTopology"
-      responses:
-        "200":
-          description: successful operation
-        "400":
-          description: request invalid, or the topology or experiment failed validation
-        "403":
-          description: creating experiments not allowed for this user
-        "409":
-          description: experiment locked for creation
-    put:
-      tags:
-        - Builder
-      summary: Update a Builder topology and its same-named experiment
-      description: ""
-      operationId: putExperimentFromBuilder
-      requestBody:
-        description: Builder topology, diagram, VLAN aliases, and scenario
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BuilderTopology"
-      responses:
-        "200":
-          description: successful operation
-        "400":
-          description: request invalid, or the experiment is running
-        "403":
-          description: updating experiments not allowed for this user
-        "409":
-          description: experiment locked for update
   "/topologies":
     get:
       tags:
@@ -1332,6 +1219,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
+        "409":
+          description: a user of that name exists
   "/users/{username}":
     get:
       tags:
@@ -1367,7 +1256,7 @@ paths:
           schema:
             type: string
       requestBody:
-        description: user paramaters
+        description: user parameters
         required: true
         content:
           application/json:
@@ -1437,6 +1326,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Credentials"
+        "409":
+          description: a user of that name exists
   "/login":
     get:
       tags:
@@ -1510,7 +1401,10 @@ paths:
         Topology is also checked for a node an experiment could not use, such
         as a hostname used twice or a reserved hostname, before it is stored.
         With dryRun=true it runs the same checks, returns what it would do, and
-        stores nothing.
+        stores nothing. Needs `configs` `create` or `update` before the body is
+        parsed, then `configs` `create` on a new config or `update` on a
+        stored one, by the kind and name the body gives (such as
+        `Topology/lab`), dry run or not.
       operationId: postWorkflowConfigsBranch
       parameters:
         - name: branch
@@ -1896,7 +1790,7 @@ components:
           items:
             $ref: "#/components/schemas/Capture"
         running:
-          type: bool
+          type: boolean
         uptime:
           type: number
           format: float
@@ -1983,34 +1877,6 @@ components:
           type: array
           items:
             type: string
-    BuilderTopology:
-      type: object
-      required:
-        - topology
-        - builderXML
-      properties:
-        name:
-          type: string
-          description: topology name; ignored by PUT /builder/topologies/{name}
-        topology:
-          type: object
-          description: generated topology spec
-          properties:
-            nodes:
-              type: array
-              items:
-                type: object
-        builderXML:
-          type: string
-          description: mxGraph document for the diagram
-        vlans:
-          type: object
-          description: VLAN alias to ID, used by the experiment endpoints only
-          additionalProperties:
-            type: integer
-        scenario:
-          type: string
-          description: scenario name, used by the experiment endpoints only
     Topologies:
       type: object
       properties:
@@ -2071,6 +1937,17 @@ components:
           type: string
         token:
           type: string
+    WebError:
+      type: object
+      properties:
+        message:
+          type: string
+        cause:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
     Workflow:
       type: object
       title: Workflow

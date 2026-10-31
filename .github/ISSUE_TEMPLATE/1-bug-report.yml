@@ -5,6 +5,41 @@ labels: ["bug"]
 type: Bug
 assignees: []
 body:
+  - type: textarea
+    attributes:
+      label: Description
+      description: >-
+        A clear and concise description of what the bug is.
+        What did you expect to happen, and what actually happened?
+      placeholder: "Describe the bug here..."
+    validations:
+      required: true
+  - type: input
+    id: phenix-version
+    attributes:
+      label: Phenix Version
+      description: >-
+        Output of '`phenix version`', '`docker exec phenix phenix version`',
+        the release timestamp + commit from bottom right of phenix UI, or 'N/A' if not applicable.
+        At a bare minimum, include the specific commit or release version.
+        **The word "latest" is not allowed** (e.g., 'latest', 'latest on main', 'latest release'),
+        and issues that use it will be flagged until a real version or commit is given.
+      placeholder: "main (commit 5792e16) Mon Sep 29 19:35:35 UTC 2025"
+    validations:
+      required: true
+  - type: input
+    id: minimega-version
+    attributes:
+      label: Minimega Version
+      description: >-
+        Output of '`mm version`', '`docker exec minimega minimega -e version`',
+        or 'N/A' if not applicable.
+        At a bare minimum, include the specific commit or version number.
+        **The word "latest" is not allowed**,
+        and issues that use it will be flagged until a real version or commit is given.
+      placeholder: "minimega 3.0.1 837c9174cdbda9ceb84e015020f0db87393bc00f 2026-07-08"
+    validations:
+      required: true
   - type: input
     attributes:
       label: Host OS
@@ -30,36 +65,6 @@ body:
         The OS name and version of the system you are using to access the phenix UI,
         or 'N/A' if not applicable.
       placeholder: "e.g., Windows 11, macOS 26.6.2, Ubuntu 24.04, N/A"
-  - type: input
-    attributes:
-      label: Phenix Version
-      description: >-
-        Output of '`phenix version`', '`docker exec phenix phenix version`',
-        the release timestamp + commit from bottom right of phenix UI, or 'N/A' if not applicable.
-        At a bare minimum, include the specific commit or release version.
-        Do not say things like 'latest on main' or 'latest release', please.
-      placeholder: "main (commit 5792e16) Mon Sep 29 19:35:35 UTC 2025"
-    validations:
-      required: true
-  - type: input
-    attributes:
-      label: Minimega Version
-      description: >-
-        Output of '`mm version`', '`docker exec minimega minimega -e version`',
-        or 'N/A' if not applicable.
-        At a bare minimum, include the specific commit or version number.
-      placeholder: "minimega 3.0.1 837c9174cdbda9ceb84e015020f0db87393bc00f 2026-07-08"
-    validations:
-      required: true
-  - type: textarea
-    attributes:
-      label: Description
-      description: >-
-        A clear and concise description of what the bug is.
-        What did you expect to happen, and what actually happened?
-      placeholder: "Describe the bug here..."
-    validations:
-      required: true
   - type: textarea
     attributes:
       label: Steps to Reproduce

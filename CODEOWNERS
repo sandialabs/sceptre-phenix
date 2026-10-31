@@ -1,28 +1,45 @@
-# Generated from GitHub commit history by path (June 2026)
+# Owners from git history, blame, and merges (October 2026).
+# The last matching pattern wins and replaces every earlier owner of a path.
+# Owners are listed primary first. Keep this file current (see AGENTS.md).
 
 # Default owners
-* @activeshadow @glattercj @cmulk @GhostofGoes @mgaliar
+*                       @GhostofGoes @cmulk @nblair2 @glattercj @activeshadow @jacdavi @mgaliar
 
-# Repo files
-.editorconfig   @GhostofGoes
-.gitignore      @GhostofGoes @activeshadow @glattercj @cmulk
-CHANGELOG.md    @glattercj @cmulk @GhostofGoes
-LICENSE         @cmulk @mgaliar
-Makefile        @glattercj @activeshadow @GhostofGoes @cmulk
-README.md       @cmulk @activeshadow @glattercj @GhostofGoes @mgaliar
+# Repository files
+/.editorconfig          @GhostofGoes
+/.gitignore             @glattercj @GhostofGoes @activeshadow @cmulk
+/.yamllint.yml          @GhostofGoes
+/AGENTS.md              @GhostofGoes @glattercj
+/CHANGELOG.md           @GhostofGoes @glattercj @activeshadow @cmulk
+/CODEOWNERS             @GhostofGoes
+/Makefile               @glattercj @GhostofGoes @activeshadow @cmulk
+/README.md              @glattercj @GhostofGoes @activeshadow @nblair2 @cmulk
+/prek.toml              @GhostofGoes
 
-# Misc directories
-/.github/       @cmulk @mgaliar @GhostofGoes @activeshadow @glattercj
-/docs/          @GhostofGoes @activeshadow @cmulk @nblair2 @glattercj
-/examples/      @nblair2 @glattercj
-/scripts/       @glattercj
+# Repository configuration
+/.github/               @GhostofGoes @mgaliar @cmulk
+/.github/workflows/     @GhostofGoes @nblair2 @glattercj @jacdavi @activeshadow @cmulk
+
+# Documentation, examples, and agent skills
+/docs/                  @GhostofGoes @cmulk @nblair2 @glattercj @activeshadow
+/examples/              @glattercj @nblair2 @GhostofGoes
+/scripts/               @glattercj
+/skills/                @GhostofGoes @glattercj
 
 # Containers
-/docker/        @activeshadow @glattercj @GhostofGoes @mgaliar @cmulk @nblair2
-/podman/        @activeshadow
+/docker/                @activeshadow @GhostofGoes @glattercj @jacdavi @cmulk
+/podman/                @activeshadow @GhostofGoes @glattercj @jacdavi
 
-# Go code
-/src/go/        @activeshadow @glattercj @nblair2 @GhostofGoes
+# Go code; the narrower lines must follow /src/go/ to take precedence.
+/src/go/                @activeshadow @glattercj @GhostofGoes @nblair2 @jacdavi @cmulk
+/src/go/api/scorch/     @nblair2 @activeshadow @GhostofGoes
+/src/go/api/workflow/   @glattercj @cmulk
+# Vendored noVNC and xterm.js, and the built UI, owned by whoever updates them.
+/src/go/web/public/     @GhostofGoes @nblair2 @jacdavi @activeshadow
 
 # Web UI
-/src/js/        @activeshadow @glattercj @jacdavi @nblair2 @eric-c-wood
+/src/js/                @nblair2 @glattercj @GhostofGoes @activeshadow @jacdavi
+
+# Sandia staff who approve license changes own every LICENSE file.
+# Unanchored and last on purpose, so it wins at any depth.
+LICENSE*                @cmulk @mgaliar @adamsrnmsu

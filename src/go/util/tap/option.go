@@ -6,13 +6,12 @@ type Option func(*options)
 
 type options struct {
 	exp    string
-	netns  bool
 	subnet netaddr.IPPrefix
 	used   []netaddr.IPPrefix
 }
 
 func NewOptions(opts ...Option) options {
-	o := options{netns: true} //nolint:exhaustruct // partial initialization
+	o := options{} //nolint:exhaustruct // partial initialization
 
 	for _, opt := range opts {
 		opt(&o)
@@ -28,12 +27,6 @@ func NewOptions(opts ...Option) options {
 func Experiment(e string) Option {
 	return func(o *options) {
 		o.exp = e
-	}
-}
-
-func UseNetNS(u bool) Option {
-	return func(o *options) {
-		o.netns = u
 	}
 }
 

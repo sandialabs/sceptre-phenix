@@ -430,48 +430,43 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		scope   = vars["branch"]
 	)
 
+	// Parsing substitutes ${NAME} references with the server's environment
+	// variables, and a parse error quotes the text it failed on, so a caller
+	// who may not write configs is refused before the body is even read.
+	if !role.Allowed("configs", "create") && !role.Allowed("configs", "update") {
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating or updating config not allowed",
+			"user",
+			user,
+		)
+
+		err := weberror.NewWebError(
+			nil,
+			"creating or updating configs not allowed for %s",
+			user,
+		)
+
+		return err.SetStatus(http.StatusForbidden)
+	}
+
 	dryRun, err := parseDryRun(r.URL.Query())
 	if err != nil {
 		return err
 	}
 
 	var (
-		typ = r.Header.Get("Content-Type")
-		cfg *store.Config
-		src []byte
+		typ    = r.Header.Get("Content-Type")
+		format string
+		parse  func([]byte) (*store.Config, error)
 	)
 
-	// set branch name in environment variable so it can be used in
-	// NewConfigFromJSON and NewConfigFromYAML
-	_ = os.Setenv("BRANCH_NAME", scope)
-
 	switch typ {
-	case mimeJSON: // default to JSON if not set
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to read request data")
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		src = body
-		cfg, err = store.NewConfigFromJSON(body)
-		if err != nil {
-			return weberror.NewWebError(err, "unable to parse JSON config")
-		}
+	case mimeJSON:
+		format, parse = "JSON", store.NewConfigFromJSON
 	case mimeYAML:
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to parse request")
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		src = body
-		cfg, err = store.NewConfigFromYAML(body)
-		if err != nil {
-			return weberror.NewWebError(err, "unable to parse YAML config")
-		}
+		format, parse = "YAML", store.NewConfigFromYAML
 	default:
 		return weberror.NewWebError(
 			nil,
@@ -479,48 +474,40 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
-	var (
-		name   = fmt.Sprintf("%s/%s", cfg.Kind, cfg.Metadata.Name)
-		exists = true
-	)
+	src, err := io.ReadAll(r.Body)
+	if err != nil {
+		err := weberror.NewWebError(err, "unable to read request data")
 
-	// NewConfig rejects a kind the store does not hold, such as Workflow, and
-	// a name containing a slash; its nil result would make store.Get panic.
-	tester, nameErr := store.NewConfig(name)
-	if nameErr != nil {
-		return weberror.NewWebError(nameErr, "invalid config %s", name)
+		return err.SetStatus(http.StatusInternalServerError)
 	}
 
-	if err := store.Get(tester); err != nil {
-		if !errors.Is(err, store.ErrNotExist) {
-			err := weberror.NewWebError(err, "checking store for config")
+	// The checks for the named config run before the environment is expanded,
+	// so only a caller who may write this config sees what the expansion gives.
+	name, err := configName(src, typ, scope)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to parse %s config", format)
+	}
 
-			return err.SetStatus(http.StatusInternalServerError)
-		}
+	exists, err := authorizeConfigWrite(ctx, role, name)
+	if err != nil {
+		return err
+	}
 
-		exists = false
+	// set branch name in environment variable so it can be used in
+	// NewConfigFromJSON and NewConfigFromYAML
+	_ = os.Setenv("BRANCH_NAME", scope)
+
+	cfg, err := parse(src)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to parse %s config", format)
+	}
+
+	// The permission checks above were for the name before expansion.
+	if fmt.Sprintf("%s/%s", cfg.Kind, cfg.Metadata.Name) != name {
+		return weberror.NewWebError(nil, "a config's kind and name can use no placeholder but ${BRANCH_NAME}")
 	}
 
 	if exists {
-		if !role.Allowed("configs", "update", name) {
-			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-			plog.Warn(
-				plog.TypeSecurity,
-				"updating config not allowed",
-				"user",
-				user,
-			)
-
-			err := weberror.NewWebError(
-				nil,
-				"updating config %s not allowed for %s",
-				name,
-				user,
-			)
-
-			return err.SetStatus(http.StatusForbidden)
-		}
-
 		err = updateOrValidate(name, cfg, dryRun)
 		if err != nil {
 			if errors.Is(err, store.ErrNotExist) {
@@ -541,17 +528,6 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to update config %s", name)
 		}
 	} else {
-		if !role.Allowed("configs", "create") {
-			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-			err := weberror.NewWebError(
-				nil,
-				"creating configs not allowed for %s",
-				user,
-			)
-
-			return err.SetStatus(http.StatusForbidden)
-		}
-
 		cfg, err = createOrValidate(cfg, dryRun)
 		if err != nil {
 			if errors.Is(err, store.ErrExist) {

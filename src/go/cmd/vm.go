@@ -25,9 +25,6 @@ const (
 	infoArgs               = 2
 	pauseArgs              = 2
 	defaultMem             = 512
-	redeployArgs           = 2
-	shutdownArgs           = 2
-	killArgs               = 2
 	connectArgs            = 4
 	disconnectArgs         = 3
 	startCaptureArgs       = 4

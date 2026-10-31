@@ -76,6 +76,18 @@
     padding-bottom: 20px;
   }
 
+  /* Header links wrap in a narrow window or with enlarged text instead of
+     running off the page (WCAG 1.4.4, 1.4.10). */
+  #app :deep(.navbar-menu) {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  #app :deep(.navbar-start) {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
   // Visually hidden until it receives keyboard focus.
   .skip-link {
     position: absolute;

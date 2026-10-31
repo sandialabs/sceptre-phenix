@@ -51,18 +51,6 @@ func UserFromContext(ctx context.Context) string {
 	return user
 }
 
-// JWTFromContext safely extracts the raw JWT string from the given context.
-func JWTFromContext(ctx context.Context) string {
-	val := ctx.Value(ContextKeyJWT)
-
-	jwt, ok := val.(string)
-	if !ok {
-		return ""
-	}
-
-	return jwt
-}
-
 func fromPhenixAuthTokenHeader(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("X-Phenix-Auth-Token")
 	if authHeader == "" {
@@ -158,13 +146,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 	userMiddleware := func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasSuffix(r.URL.Path, "/signup") {
-				h.ServeHTTP(w, r)
-
-				return
-			}
-
-			if strings.HasSuffix(r.URL.Path, "/login") {
+			if isPublicPath(r.URL.Path) {
 				h.ServeHTTP(w, r)
 
 				return
@@ -286,6 +268,21 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 	// First validate the token itself, then ensure the user in the token is valid.
 	return func(h http.Handler) http.Handler { return tokenMiddleware.Handler(userMiddleware(h)) }
+}
+
+// publicPaths are the only routes reachable without a valid user token. They
+// are matched exactly: a suffix match also let through routes such as
+// /api/v1/experiments/{name} whose last path variable was "login".
+var publicPaths = map[string]struct{}{ //nolint:gochecknoglobals // constant lookup set
+	"/api/v1/login":  {},
+	"/api/v1/signup": {},
+	"/login":         {}, // file server
+}
+
+func isPublicPath(path string) bool {
+	_, ok := publicPaths[path]
+
+	return ok
 }
 
 // userTokenFromContext returns the parsed JWT from phenix or JWT middleware context keys.

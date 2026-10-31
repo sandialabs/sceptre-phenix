@@ -49,17 +49,13 @@ func init() { //nolint:gochecknoinits // app registration
 
 type Scorch struct {
 	md scorchmd.ScorchMetadata
-
-	options app.Options
 }
 
 func newScorch() *Scorch {
 	return new(Scorch)
 }
 
-func (s *Scorch) Init(opts ...app.Option) error {
-	s.options = app.NewOptions(opts...)
-
+func (*Scorch) Init(...app.Option) error {
 	return nil
 }
 

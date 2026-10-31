@@ -282,7 +282,9 @@ func TestWorkflowUpsertConfigDryRunExplainsValidationErrors(t *testing.T) {
 
 				dryErr := send("?dryRun=true")
 
-				assertValidationWebError(t, dryErr, tt.raw, tt.lines)
+				if err := validationWebErrorProblem(dryErr, tt.raw, tt.lines); err != nil {
+					t.Errorf("WorkflowUpsertConfig(?dryRun=true): %v", err)
+				}
 
 				if !reflect.DeepEqual(dryErr, realErr) {
 					t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
@@ -373,7 +375,10 @@ func TestWorkflowUpsertConfigDryRunRejectsKindInWrongCase(t *testing.T) {
 
 	err := WorkflowUpsertConfig(httptest.NewRecorder(), upsertTestRequest(t, "?dryRun=true", body))
 
-	assertValidationWebError(t, err, `validating config: config validation failed: *"/kind"*`, []string{`kind (line 2): *`})
+	err = validationWebErrorProblem(err, `validating config: config validation failed: *"/kind"*`, []string{`kind (line 2): *`})
+	if err != nil {
+		t.Errorf("WorkflowUpsertConfig(?dryRun=true) of kind topology: %v", err)
+	}
 }
 
 func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
@@ -462,6 +467,8 @@ func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
 	}
 }
 
+// A role that may create but not update configs, or the reverse, passes the
+// first check and is refused by the check for the named config.
 func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 	for _, query := range []string{"?dryRun=true", ""} {
 		for _, exists := range []bool{false, true} {
@@ -471,14 +478,16 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 				m := installValidationTestStore(t)
 				expectUpsertExists(m, workflowTestKey("topology/main-topo"), exists)
 
-				// A role with no policies. Role.Allowed needs a non-nil Spec.
-				req := upsertTestRequest(t, query, upsertTestTopology)
-				req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, rbac.Role{Spec: &v1.RoleSpec{}}))
+				role := configsRole("update")
+				want := "creating config Topology/main-topo not allowed for test-user"
 
-				want := "creating configs not allowed for test-user"
 				if exists {
+					role = configsRole("create")
 					want = "updating config Topology/main-topo not allowed for test-user"
 				}
+
+				req := upsertTestRequest(t, query, upsertTestTopology)
+				req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, role))
 
 				err := WorkflowUpsertConfig(httptest.NewRecorder(), req)
 
@@ -491,55 +500,173 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 	}
 }
 
-// TestWorkflowUpsertConfigWritesWithoutDryRun pins the real upsert, which the
-// dry run must not change: 201, a Location header and an empty body, for a
-// topology without nodes and for one with a node that passes the node check.
-func TestWorkflowUpsertConfigWritesWithoutDryRun(t *testing.T) {
-	bodies := []struct {
-		name string
-		body string
+// configsRole holds the given configs verbs on every config: config names
+// such as Topology/lab hold a "/", which "*" alone does not match.
+func configsRole(verbs ...string) rbac.Role {
+	return configsRoleOn([]string{"*", "*/*"}, verbs...)
+}
+
+// configsRoleOn holds the given configs verbs on the configs names match.
+func configsRoleOn(names []string, verbs ...string) rbac.Role {
+	return rbac.Role{
+		Spec: &v1.RoleSpec{
+			Policies: []*v1.PolicySpec{
+				{
+					Resources:     []string{"configs"},
+					ResourceNames: names,
+					Verbs:         verbs,
+				},
+			},
+		},
+	}
+}
+
+// Only a caller who may write the named config gets as far as expanding the
+// environment, and with it a parse error that quotes an environment variable.
+func TestWorkflowUpsertConfigChecksPermissionBeforeParsing(t *testing.T) {
+	const secret = "s3cret-value-for-test"
+
+	t.Setenv("PHENIX_TEST_SECRET", secret)
+
+	// Parsing fails on the repeated key, with an error that quotes its value.
+	body := `apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+  name: probe
+  "${PHENIX_TEST_SECRET}": a
+  "${PHENIX_TEST_SECRET}": b
+spec:
+  nodes: []
+`
+
+	tests := []struct {
+		name      string
+		role      rbac.Role
+		lookup    bool // whether the handler looks the config up
+		exists    bool
+		forbidden bool
 	}{
-		{name: "topology without nodes", body: upsertTestTopology},
-		{name: "topology with a node", body: upsertTestNodeTopology},
+		// Role.Allowed needs a non-nil Spec.
+		{name: "no policies", role: rbac.Role{Spec: &v1.RoleSpec{}}, forbidden: true},
+		{name: "read only", role: configsRole("get", "list"), forbidden: true},
+		{
+			name:      "create other configs",
+			role:      configsRoleOn([]string{"Topology/mine-*"}, "create", "update"),
+			lookup:    true,
+			forbidden: true,
+		},
+		{
+			name:      "update other configs",
+			role:      configsRoleOn([]string{"Topology/mine-*"}, "create", "update"),
+			lookup:    true,
+			exists:    true,
+			forbidden: true,
+		},
+		{name: "create", role: configsRole("create"), lookup: true},
+		{name: "update", role: configsRole("update"), lookup: true, exists: true},
+		{name: "create this config", role: configsRoleOn([]string{"Topology/probe"}, "create"), lookup: true},
 	}
 
-	for _, tt := range bodies {
-		for _, query := range []string{"", "?dryRun=false"} {
-			for _, exists := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s, query %q, exists=%t", tt.name, query, exists), func(t *testing.T) {
-					t.Setenv("BRANCH_NAME", "")
+	for _, query := range []string{"?dryRun=true", ""} {
+		for _, tt := range tests {
+			t.Run(fmt.Sprintf("%s, query %q", tt.name, query), func(t *testing.T) {
+				t.Setenv("BRANCH_NAME", "")
 
-					m := installValidationTestStore(t)
-					key := workflowTestKey("topology/main-topo")
+				m := installValidationTestStore(t)
+				if tt.lookup {
+					expectUpsertExists(m, workflowTestKey("topology/probe"), tt.exists)
+				}
 
-					if exists {
-						// The handler's existence check, then config.Update's own read.
-						m.EXPECT().Get(gomock.Eq(key)).Return(nil).Times(2)
-						m.EXPECT().Update(gomock.Any()).Return(nil)
-					} else {
-						expectUpsertExists(m, key, false)
-						m.EXPECT().Create(gomock.Any()).Return(nil)
+				req := upsertTestRequest(t, query, body)
+				req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, tt.role))
+
+				rec := httptest.NewRecorder()
+				weberror.ErrorHandler(WorkflowUpsertConfig).ServeHTTP(rec, req)
+
+				if !tt.forbidden {
+					// The probe quotes the variable to a caller who may write this
+					// config, who could store it and read it back anyway.
+					if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), secret) {
+						t.Fatalf("status = %d, want a 400 that quotes the probe: %s", rec.Code, rec.Body.String())
 					}
 
-					rec := httptest.NewRecorder()
+					return
+				}
 
-					if err := WorkflowUpsertConfig(rec, upsertTestRequest(t, query, tt.body)); err != nil {
-						t.Fatalf("WorkflowUpsertConfig() error = %v", err)
-					}
+				if rec.Code != http.StatusForbidden {
+					t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+				}
 
-					if rec.Code != http.StatusCreated {
-						t.Errorf("status = %d, want %d", rec.Code, http.StatusCreated)
-					}
-
-					if got := rec.Header().Get("Location"); got != "/api/v1/configs/topology/main-topo" {
-						t.Errorf("Location = %q, want %q", got, "/api/v1/configs/topology/main-topo")
-					}
-
-					if rec.Body.Len() != 0 {
-						t.Errorf("body = %q, want empty", rec.Body.String())
-					}
-				})
-			}
+				if strings.Contains(rec.Body.String(), secret) {
+					t.Fatalf("response quotes the environment variable: %s", rec.Body.String())
+				}
+			})
 		}
+	}
+}
+
+// A placeholder other than ${BRANCH_NAME} in a config's kind or name would
+// make the permission checks miss the name the config is stored under.
+func TestWorkflowUpsertConfigRefusesEnvironmentInName(t *testing.T) {
+	const secret = "s3cret-value-for-test"
+
+	t.Setenv("PHENIX_TEST_SECRET", secret)
+	t.Setenv("BRANCH_NAME", "")
+
+	m := installValidationTestStore(t)
+	expectUpsertExists(m, workflowTestKey("topology/1"), false)
+
+	body := "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: ${PHENIX_TEST_SECRET}\nspec:\n  nodes: []\n"
+
+	rec := httptest.NewRecorder()
+	weberror.ErrorHandler(WorkflowUpsertConfig).ServeHTTP(rec, upsertTestRequest(t, "?dryRun=true", body))
+
+	if rec.Code != http.StatusBadRequest || strings.Contains(rec.Body.String(), secret) {
+		t.Fatalf("status = %d, want a 400 that does not quote the variable: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConfigName(t *testing.T) {
+	t.Setenv("PHENIX_TEST_SECRET", "s3cret-value-for-test")
+
+	tests := []struct {
+		name string
+		typ  string
+		body string
+		want string
+	}{
+		{
+			name: "branch name",
+			typ:  mimeYAML,
+			body: "kind: Topology\nmetadata:\n  name: ${BRANCH_NAME}-topo\n",
+			want: "Topology/main-topo",
+		},
+		{
+			name: "branch name with a default",
+			typ:  mimeYAML,
+			body: "kind: Topology\nmetadata:\n  name: ${BRANCH_NAME:x}-topo\n",
+			want: "Topology/main-topo",
+		},
+		{
+			name: "other placeholders",
+			typ:  mimeYAML,
+			body: "kind: Topology\nmetadata:\n  name: ${PHENIX_TEST_SECRET}\n  ${A}: a\n  ${A}: b\n",
+			want: "Topology/1",
+		},
+		{
+			name: "unquoted JSON placeholder",
+			typ:  mimeJSON,
+			body: `{"kind": "Scenario", "metadata": {"name": "${BRANCH_NAME}"}, "spec": {"port": ${PORT}}}`,
+			want: "Scenario/main",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := configName([]byte(tt.body), tt.typ, "main")
+			if err != nil || got != tt.want {
+				t.Fatalf("configName() = %q, %v, want %q", got, err, tt.want)
+			}
+		})
 	}
 }

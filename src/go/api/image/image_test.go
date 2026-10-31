@@ -75,3 +75,90 @@ func TestUpdateDoesNotDuplicateScriptOrder(t *testing.T) {
 		t.Fatalf("script contents = %q, want %q", got, "updated script")
 	}
 }
+
+type setupImageTest struct {
+	name           string
+	img            v1.Image
+	wantMirror     string
+	wantComponents []string
+	wantPackages   []string
+	wantNoPackages []string
+}
+
+func TestSetupImage(t *testing.T) {
+	const ubuntuMirror = "http://us.archive.ubuntu.com/ubuntu"
+
+	tests := []setupImageTest{
+		{
+			name:           "ubuntu keeps default mirror and ubuntu components",
+			img:            v1.Image{Variant: "minbase", Release: "noble", Mirror: ubuntuMirror},
+			wantMirror:     ubuntuMirror,
+			wantComponents: image.UbuntuComponents,
+			wantPackages:   []string{"linux-image-generic", "curl"},
+			wantNoPackages: []string{"linux-image-amd64"},
+		},
+		{
+			name:           "debian trixie swaps mirror and uses debian components",
+			img:            v1.Image{Variant: "minbase", Release: "trixie", Mirror: ubuntuMirror},
+			wantMirror:     "http://ftp.us.debian.org/debian",
+			wantComponents: image.DebianComponents,
+			wantPackages:   []string{"linux-image-amd64"},
+			wantNoPackages: []string{"linux-image-generic"},
+		},
+		{
+			name:           "bare kali swaps mirror and uses kali components",
+			img:            v1.Image{Variant: "minbase", Release: "kali", Mirror: ubuntuMirror},
+			wantMirror:     "http://http.kali.org/kali",
+			wantComponents: image.KaliComponents,
+			wantPackages:   []string{"linux-image-amd64", "default-jdk"},
+		},
+		{
+			name: "explicit mirror and components are preserved",
+			img: v1.Image{
+				Variant:    "minbase",
+				Release:    "forky",
+				Mirror:     "http://mirror/debian",
+				Components: []string{"main"},
+			},
+			wantMirror:     "http://mirror/debian",
+			wantComponents: []string{"main"},
+			wantPackages:   []string{"linux-image-amd64"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			img := tt.img
+
+			if err := image.SetupImage(&img); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			checkSetupImage(t, tt, img)
+		})
+	}
+}
+
+func checkSetupImage(t *testing.T, tt setupImageTest, img v1.Image) {
+	t.Helper()
+
+	if tt.wantMirror != "" && img.Mirror != tt.wantMirror {
+		t.Errorf("mirror = %q, want %q", img.Mirror, tt.wantMirror)
+	}
+
+	if tt.wantComponents != nil && !slices.Equal(img.Components, tt.wantComponents) {
+		t.Errorf("components = %v, want %v", img.Components, tt.wantComponents)
+	}
+
+	for _, pkg := range tt.wantPackages {
+		if !slices.Contains(img.Packages, pkg) {
+			t.Errorf("missing package %q in %v", pkg, img.Packages)
+		}
+	}
+
+	for _, pkg := range tt.wantNoPackages {
+		if slices.Contains(img.Packages, pkg) {
+			t.Errorf("unexpected package %q in %v", pkg, img.Packages)
+		}
+	}
+}

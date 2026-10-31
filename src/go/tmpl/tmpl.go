@@ -16,6 +16,18 @@ import (
 //go:embed templates
 var templatesFS embed.FS
 
+// escapeQuoted escapes s for a double-quoted minimega argument with the
+// escapes minicli reads back (\\, \", \n, \r, \t), keeping the command on one line.
+func escapeQuoted(s string) string {
+	return strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\r", `\r`,
+		"\t", `\t`,
+	).Replace(s)
+}
+
 // GenerateFromTemplate executes the template with the given name using the
 // given data. The result is written to the given writer. The templates used are
 // located in the `phenix/tmpl/templates' directory. Each template will have a
@@ -62,10 +74,8 @@ func GenerateFromTemplate(name string, data any, w io.Writer) error {
 				return false
 			}
 		},
-		"stringsJoin": strings.Join,
-		"escapeNewline": func(s string) string {
-			return strings.ReplaceAll(s, "\n", "\\n")
-		},
+		"stringsJoin":  strings.Join,
+		"escapeQuoted": escapeQuoted,
 	}
 
 	tplContent, err := templatesFS.ReadFile(path.Join("templates", name))

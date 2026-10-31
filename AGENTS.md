@@ -29,46 +29,26 @@ configs, build scripts, overlays, or vmdb2 work, also read
 authority when guidance differs, and update the skills when behavior changes.
 
 `SKILL.md` stays broad and always loaded; deep, area-specific material lives in
-`skills/phenix/references/` and is read only when that area is in scope — for
-example [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md)
-for the graphical topology Builder. Put new detail in the matching reference
-file rather than growing `SKILL.md`, and leave a one-line pointer to it from
-`SKILL.md`.
+`skills/phenix/references/` and is read only when that area is in scope. Put
+new detail in the matching reference file rather than growing `SKILL.md`, and
+leave a one-line pointer to it from `SKILL.md`.
 
 ## Architecture
 
 - `src/go/main.go` starts commands from `src/go/cmd/`.
 - `src/go/api/` implements domain operations; `src/go/types/` owns versioned
   config models and schemas.
-- `src/go/app/` runs apps; `scheduler/` assigns VMs; `store/` abstracts BoltDB
-  and etcd; `web/` serves REST, websockets, RBAC, and the built UI.
+- `src/go/app/` runs apps; `scheduler/` assigns VMs; `store/` abstracts the
+  BoltDB store; `web/` serves REST, websockets, RBAC, and the built UI.
 - `src/js/src/views/` contains pages, `components/` reusable UI, and `utils/`
   shared helpers. `router.js`, `store.js`, and `main.js` wire the app.
 - The Vite server proxies `/api/v1`, `/version`, and `/features` to
   `localhost:3000`. Root builds copy `src/js/dist/` into `src/go/web/public/`.
-- `src/go/web/public/grapheditor/` is the Topology Builder, and is unrelated to
-  the Vue app above. `js/`, `utils/`, `stencils/`, `open.html` and `index.html`
-  are the phēnix-modified draw.io GraphEditor and are the files a Builder change
-  normally touches. `src/` is the vendored mxGraph library.
-- **mxGraph is no longer maintained.** JGraph archived the project in 2020, and
-  4.2.2 — the version vendored here — is its final release, so there are no
-  upstream fixes to wait for or upgrade to. Its successor, maxGraph, is a
-  TypeScript rewrite with a different API and ships no GraphEditor, so adopting
-  it would mean rewriting the editor rather than bumping a dependency.
-- Because of that, **phēnix patches the vendored library under `src/` when its
-  own needs require it**, rather than waiting for a fix that will never come.
-  One such change exists today: `src/js/io/mxObjectCodec.js` drops an image's
-  directory when encoding a diagram. Keep these edits minimal, and mark each
-  with a `phenix:` comment saying what upstream did and why it changed.
-- Prefer changing the phēnix-owned editor in `js/` when either would work; the
-  vendored tree is the harder place to review. `js/Editor.js` and
-  `js/EditorUi.js` already carry phēnix changes of this kind — for example the
-  `hideCloseImage` argument on `Dialog`, which lets a dialog keep
-  click-outside-to-close without drawing the corner close image.
-- `src/go/web/public/` is excluded from every formatting and lint hook in
-  `prek.toml`, so `make check` will not catch anything under it. It is embedded
-  by `//go:embed all:public` in `src/go/web/assets.go`, so a Builder change only
-  appears after the Go binary is rebuilt.
+- `src/go/web/public/` holds what `//go:embed all:public` in
+  `src/go/web/assets.go` embeds: the copied UI build and the bundled noVNC
+  and xterm.js. It is excluded from every formatting and lint hook in
+  `prek.toml`, so `make check` will not catch anything under it, and a
+  change there only appears after the Go binary is rebuilt.
 
 ## Essential Runtime Contracts
 
@@ -128,10 +108,11 @@ When changing a capability, inspect every applicable surface:
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
 | Log or error message text | Docs and skill text that quotes it, such as the Troubleshooting sections in `docs/content/` and `skills/phenix/references/` |
-| Topology Builder behavior | `src/go/web/builder.go`, Builder routes in `src/go/web/server.go`, the editor under `src/go/web/public/grapheditor/js/`, the embedded schemas in `.../grapheditor/utils/schemas/`, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
 
-Preserve v1/v2 config upgrades, persisted BoltDB/etcd data, RBAC migrations, and
-public API compatibility unless a breaking change is deliberate and documented.
+Preserve persisted BoltDB data, RBAC migrations, and public API compatibility
+unless a breaking change is deliberate and documented. phēnix has no config
+upgraders: each kind decodes only at its stored version, so changing that
+version breaks existing configs.
 Keep CLI, REST, websocket, and UI authorization consistent.
 
 ## Validation
@@ -156,9 +137,8 @@ and pass it explicitly, for example
 | Build, install, logging, config | `README.md` |
 | App development | `examples/README.md`, `examples/TUTORIAL.md` |
 | Config interfaces and fields | `src/go/types/interfaces/`, `src/go/types/version/` |
-| YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml` |
+| YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml`, one file per `apiVersion` holding the kinds stored at it: `v0` `Workflow`, `v1` `Topology`/`Experiment`/`Image`/`User`/`Role`, `v2` `Scenario` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
-| Topology Builder | [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md), `src/go/web/builder.go`, `src/go/web/public/grapheditor/` |
 | Narrative docs source | [`docs/`](docs/) |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
 | minimega commands and behavior | [API docs](https://sandia-minimega.github.io/minimega/reference/minimega/), [source](https://github.com/sandia-minimega/minimega) |
@@ -193,8 +173,9 @@ image, documentation, or topology details.
 ## CI and Release Safety
 
 GitHub Actions is path-scoped: `ci.yml` generates, lints, and tests Go;
-`frontend.yml` runs Vitest, builds UI/backend, and runs Playwright smoke tests;
-`examples.yml` checks Go/Python examples; `packages.yml` builds Docker, Debian,
+`frontend.yml` runs Vitest and, for changes that can affect the browser (the
+paths its `changes` job lists), builds UI/backend and runs Playwright smoke
+tests; `examples.yml` checks Go/Python examples; `packages.yml` builds Docker, Debian,
 and Podman outputs; `docs.yml` builds the documentation site for pull requests
 and publishes it to GitHub Pages from `main`. `lint.yml` runs every prek hook
 on all changes. Update affected path filters, inputs, generated artifacts,

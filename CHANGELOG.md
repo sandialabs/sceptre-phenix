@@ -6,18 +6,28 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Image Releases**: `phenix image create` recognizes the Debian releases `trixie` and `forky`.
+- **SCORCH**: Support the `cleanup` stage in the built-in `tap` component for reliable tap teardown on run completion or cancellation.
 - **Topology Builder**:
   - **Topology Endpoints**: Added `POST /api/v1/builder/topologies` and `PUT /api/v1/builder/topologies/{name}` to create and save a topology and its diagram without touching an experiment; both refuse the write while an experiment built from that topology is running.
   - **Default Disk Images**: Added the `$DEFAULT_VM_IMAGE` and `$DEFAULT_ROUTER_IMAGE` experiment variables, which set the disk image new VM and router nodes are created with.
   - **API Documentation**: Documented the Builder routes in `openapi.yml`, which previously carried none of them.
 - **Documentation Sources**: Consolidate the phēnix MkDocs site into this repository so documentation changes can ship with the code they describe.
-- **Workflow CLI**: Added `phenix workflow apply <DIR|NAME>`, which deploys a topology directory (`phenix-configs/`, `phenix-injects/` and `phenix.yml`) in one command. `-n, --dry-run` validates everything and changes nothing, and `-f, --force` allows restarting a running experiment. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+- **Workflow CLI**:
+  - Added `phenix workflow apply <DIR|NAME>`, which deploys a topology directory (`phenix-configs/`, `phenix-injects/` and `phenix.yml`) in one command. `-n, --dry-run` validates everything and changes nothing, and `-f, --force` allows restarting a running experiment. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+  - Added `--follow-inject-symlinks` to `phenix workflow apply` to follow symbolic links in `phenix-injects/` and copy targets as regular files and directories (`cp -aL` behavior).
 - **Settings**: Added `base-dir.injects` and `base-dir.topologies`, the directories `phenix workflow apply` stages injects in and looks up topology directories in. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow API**: The workflow endpoints accept `?dryRun=true`, which validates the request and changes nothing, and return a JSON result. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+- **CLI**: `phenix vlan alias <experiment> <alias>` now prints the VLAN ID of that alias, or an error if the experiment has no such alias or the alias has no VLAN ID yet, instead of rejecting the arguments. Its shell completion also completes experiment and alias names.
+- **CLI**: Added `phenix minimega` as an alias for `phenix mm`, and `-a` and `-n` as shorthands for `--attach` and `--namespace`.
+- **CLI**: Added tab completion for `phenix mm`, which will now suggest minimega commands from the running minimega and `--namespace` from the names of running experiments.
+- **CLI**: `phenix vlan alias <experiment> <alias>` now prints the VLAN ID of that alias, or an error if the alias doesn't exist or doesn't have a VLAN ID yet. Its shell completion also completes experiment and alias names.
 
 ### Changed
 
+- **Image Defaults (breaking)**: `phenix image create` defaults `--release` to `noble`. Debian releases now default to the Debian components `main contrib non-free non-free-firmware` instead of the Ubuntu ones.
+- **Image miniccc Service**: `miniccc` systemd service created by `phenix image {build|inject-miniexe}` now sets `User=root` and `HOME=/root`, so commands run through `cc exec` have an environment.
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, and form controls, labelled the config selection checkboxes, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, and code colours, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 - **Topology Builder**:
@@ -26,7 +36,20 @@ All notable changes to this project will be documented in this file.
 - **Topology validation**: Reject the node hostnames `all`, all-digit names, and `phenix` on Windows nodes, and warn about hostnames that may cause problems.
 - **Topology schema**: Require node hostnames to be at least 2 characters long.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+- **Workflow configs**: `POST /api/v1/workflow/configs/{branch}` refuses a config whose kind or name uses a placeholder other than `${BRANCH_NAME}`. ([#436](https://github.com/sandialabs/sceptre-phenix/pull/436))
 - **Workflow Schema (breaking)**: Workflow configs are validated against the new `Workflow` schema, so unknown or misspelled keys, values of the wrong type and a missing `spec` return 400 instead of being ignored. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+- **CLI**: `phenix mm` now stops parsing its own flags at the first minimega argument, so flags meant for minimega (for example the `-a` in `phenix mm cc exec ls -a`) are passed through. `phenix mm` and global flags must now come *before* the minimega command.
+- **CLI**: Upgraded cobra from v1.0.0 to v1.10.2 and pflag from v1.0.3 to v1.0.9. `phenix completion bash` now generates cobra's V2 Bash script, and `phenix completion powershell` includes descriptions.
+
+### Removed
+
+- **Topology v0 (breaking)**: Topology configs with apiVersion `phenix.sandia.gov/v0` are no longer supported.
+
+### Removed
+
+- **Topology v0 (breaking)**: Topology configs with apiVersion `phenix.sandia.gov/v0` are no longer supported.
+- **Scenario v1 (breaking)**: Scenario configs with apiVersion `phenix.sandia.gov/v1` are no longer supported.
+- **Config CLI and API (breaking)**: Removed the `--show-upgraded` (`-u`) flag of `phenix config get` and the `noupgrade` query parameter of `GET /api/v1/configs/{kind}/{name}`.
 
 ### Fixed
 
@@ -43,6 +66,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **CLI**: `phenix mm` exited 0 even when minimega reported an error or the connection to minimega was lost. It now logs the error, prints it to stderr, and exits non-zero.
+- **CLI**: `phenix mm` sent empty arguments and arguments containing `#`, quotes, or backslashes to minimega unquoted, so minimega dropped or misread them. Combining `--namespace` with a whole command passed as one string, such as `phenix mm -n my-exp "vm info"`, also failed.
+- **CLI**: Zsh and PowerShell shell completion only completed command and flag names, never values such as experiment, VM, or config names, because the scripts generated by cobra v1.0.0 were static. They now complete the same values as Bash and Fish.
 - **Web UI**: The log viewer no longer leaves blank gaps between entries when several log messages share the same millisecond timestamp.
 - **Web UI RBAC**: Match resource names with the same namespace-aware semantics as the server, so the UI no longer shows controls the server would reject.
   - A bare pattern such as `vm1` or `*` no longer matches namespaced VM names such as `exp1/vm1`; use `exp1/*` or `*/vm1`.
@@ -56,6 +82,11 @@ All notable changes to this project will be documented in this file.
 - **Web UI**: The Configs page shows validation errors for uploaded configs again instead of failing silently. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow API**: `POST /api/v1/workflow/configs/{branch}` returns 400 for a config with a missing or unknown kind, or with `/` in its name, instead of dropping the connection. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **CLI**: Every `phenix` command waits at most one minute for the server's options over `--unix-socket` instead of hanging on a server that never answers. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+
+### Security
+
+- **API Authentication**: The auth middleware let any request whose path ended in `/login` or `/signup` through without a token, which included routes such as `/api/v1/experiments/{name}` and `/api/v1/configs/{kind}/{name}` when the last path variable was `login`. Only `/api/v1/login`, `/api/v1/signup`, and the file server `/login` are now public. Signing in with an unknown username now returns the same 401 as a wrong password, after the same bcrypt work, instead of a 404 that echoed the username. With proxy authentication the 404 still carries the proxied username, which the web UI uses to start sign-up.
+- **Workflow configs**: `POST /api/v1/workflow/configs/{branch}` no longer exposes server environment variables in its errors to callers who may not write that config, and checks the role's config names when creating one. ([#436](https://github.com/sandialabs/sceptre-phenix/pull/436))
 
 ## [1.0.0]
 

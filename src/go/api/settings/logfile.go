@@ -13,17 +13,6 @@ type LoggingSettings struct {
 	MaxFileAge       int32 `json:"max_file_age"`
 }
 
-func GetLoggingSettings() (LoggingSettings, error) {
-	plog.Debug(plog.TypeSystem, "Getting all log settings")
-
-	settings, err := List()
-	if err != nil {
-		return LoggingSettings{}, fmt.Errorf("error listing settings: %w", err)
-	}
-
-	return GetLoggingSettingsFromList(settings)
-}
-
 func GetLoggingSettingsFromList(settings []types.Setting) (LoggingSettings, error) {
 	logsettings := LoggingSettings{} //nolint:exhaustruct // partial initialization
 

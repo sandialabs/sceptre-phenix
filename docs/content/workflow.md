@@ -103,6 +103,9 @@ of them is an error.
   already exists.
 * `phenix-injects/` - copied to `<base-dir.injects>/<name>` on the phēnix
   host, by default `/phenix/injects/<name>`, replacing any previous copy.
+  By default, symlinks inside `phenix-injects/` are copied as symlinks;
+  `--follow-inject-symlinks` follows them and copies targets as regular files
+  or directories.
 
 ### Branch Name
 
@@ -115,7 +118,8 @@ name; other `${VAR}` placeholders are filled in from the server's environment
 (see [Environment Variables](configuration.md#environment-variables)). That's
 why configs reference injected files as
 `/phenix/injects/${BRANCH_NAME}/<file>`, and why one directory can be deployed
-under several names side by side. An experiment that a workflow creates is
+under several names side by side. A config's `kind` and `metadata.name` can
+use no placeholder but `${BRANCH_NAME}`. An experiment that a workflow creates is
 [mapped](#actions) to its branch name.
 
 Configs that hard-code the injects path need `-b` set to the name they use:
@@ -143,6 +147,7 @@ by default `/phenix/topologies/NAME`, so the command works from any directory.
 | `-c, --config` | `phenix.yml` | Workflow config file, relative to the directory unless absolute. |
 | `-n, --dry-run` | `false` | Validate everything, log the server's plan, and change nothing. |
 | `-f, --force` | `false` | Allow restarting a running experiment. |
+| `--follow-inject-symlinks` | `false` | Follow symlinks in `phenix-injects/` and copy targets as regular files or directories. |
 
 The global flags `--unix-socket`, `--base-dir.injects`, `--base-dir.topologies`
 and `--log.level` also apply; see [Global Flags](settings.md#global-flags).
@@ -188,6 +193,7 @@ uncommitted changes.
 | `phenix workflow apply helloworld -n` | Validate everything and log the plan. |
 | `phenix workflow apply helloworld -f` | Allow restarting the running experiment. |
 | `phenix workflow apply helloworld -b helloworld-2` | Deploy a second copy under another branch name. |
+| `phenix workflow apply helloworld --follow-inject-symlinks` | Follow symlinks in `phenix-injects/` and copy targets as regular files or directories. |
 | `phenix workflow apply helloworld -c alt.yml` | Use another workflow config from the directory. |
 | `docker exec phenix phenix workflow apply helloworld -f` | Run it in a [Docker Compose](#docker-compose) deployment. |
 

@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"gopkg.in/yaml.v3"
 
-	v0 "phenix/types/version/v0"
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
 )
@@ -35,8 +35,6 @@ var StoredVersion = map[string]string{ //nolint:gochecknoglobals // global regis
 	"Setting":      "v2",
 }
 
-const LATEST_VERSION = "v2" //nolint:staticcheck // constant name is part of API
-
 // GetStoredSpecForKind looks up the current stored version for the given kind
 // and returns the versioned spec. Internally it calls `GetVersionedSpecForKind`.
 func GetStoredSpecForKind(kind string) (any, error) {
@@ -54,8 +52,6 @@ func GetVersionedSpecForKind(kind, version string) (any, error) {
 	switch kind {
 	case "Topology":
 		switch version {
-		case "v0":
-			return new(v0.TopologySpec), nil
 		case "v1":
 			return new(v1.TopologySpec), nil
 		default:
@@ -63,8 +59,6 @@ func GetVersionedSpecForKind(kind, version string) (any, error) {
 		}
 	case "Scenario":
 		switch version {
-		case "v1":
-			return new(v1.ScenarioSpec), nil
 		case "v2":
 			return new(v2.ScenarioSpec), nil
 		default:
@@ -151,21 +145,11 @@ func GetVersionedSchemaForKind(kind, version string) (map[string]any, error) {
 }
 
 // GetVersionedValidatorForKind returns a pointer to the `openapi3.Schema`
-// validator corresponding to the given kind and version.
+// validator corresponding to the given kind and version. Callers must not modify it.
 func GetVersionedValidatorForKind(kind, version string) (*openapi3.Schema, error) {
-	schemaText, err := ReadSchemaFile(version)
+	t, err := loadOpenAPI(version)
 	if err != nil {
 		return nil, err
-	}
-
-	t, err := openapi3.NewLoader().LoadFromData(schemaText)
-	if err != nil {
-		return nil, fmt.Errorf("loading OpenAPI schema for version %s: %w", version, err)
-	}
-
-	err = t.Validate(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("validating OpenAPI schema for version %s: %w", version, err)
 	}
 
 	ref, ok := t.Components.Schemas[kind]
@@ -179,6 +163,53 @@ func GetVersionedValidatorForKind(kind, version string) (*openapi3.Schema, error
 	}
 
 	return ref.Value, nil
+}
+
+//nolint:gochecknoglobals // each embedded schema file is parsed once per process
+var (
+	openAPIMu     sync.Mutex
+	openAPILoaded = map[string]func() (*openapi3.T, error){}
+)
+
+// loadOpenAPI loads and validates the embedded schema file of version once.
+func loadOpenAPI(version string) (*openapi3.T, error) {
+	load, err := openAPILoader(version)
+	if err != nil {
+		return nil, err
+	}
+
+	return load()
+}
+
+// openAPILoader returns the cached loader for version. It reads the schema file
+// only on a cache miss, and it does not cache a version that has no file.
+func openAPILoader(version string) (func() (*openapi3.T, error), error) {
+	openAPIMu.Lock()
+	defer openAPIMu.Unlock()
+
+	load, ok := openAPILoaded[version]
+	if !ok {
+		schemaText, err := ReadSchemaFile(version)
+		if err != nil {
+			return nil, err
+		}
+
+		load = sync.OnceValues(func() (*openapi3.T, error) {
+			t, err := openapi3.NewLoader().LoadFromData(schemaText)
+			if err != nil {
+				return nil, fmt.Errorf("loading OpenAPI schema for version %s: %w", version, err)
+			}
+
+			if err := t.Validate(context.Background()); err != nil {
+				return nil, fmt.Errorf("validating OpenAPI schema for version %s: %w", version, err)
+			}
+
+			return t, nil
+		})
+		openAPILoaded[version] = load
+	}
+
+	return load, nil
 }
 
 // ReadSchemaFile reads the embedded OpenAPI schema YAML file for the given version.

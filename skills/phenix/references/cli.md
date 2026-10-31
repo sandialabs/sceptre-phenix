@@ -10,7 +10,7 @@ has a matching config-file key and `PHENIX_*` env var):
 
 | Flag | Config key / Env var | Default | Description |
 |---|---|---|---|
-| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`) |
+| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://<path>`) |
 | `--base-dir.phenix` | `base-dir.phenix` / `PHENIX_BASE_DIR_PHENIX` | `/phenix` | Base phēnix data directory |
 | `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
 | `--base-dir.injects` | `base-dir.injects` / `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Where `phenix workflow apply` stages `phenix-injects/` (as `<base-dir.injects>/<name>`). The server's value wins over the CLI's own unless the flag is given; see the `injects` step in [`workflow.md`](workflow.md). Use an absolute path |
@@ -48,7 +48,7 @@ equivalents (`phenix vm mount`/`unmount`) are always available.
 ```bash
 phenix config list <kind|all>                      # table of stored configs
 phenix config get <kind>/<name> [-o yaml|json] [-p] # dump a config
-phenix config create </path/to/file.yaml> ...       # create from file(s) or dir; validates against schema
+phenix config create </path/to/file.yaml> ...       # create from file(s) or dir; validates against its apiVersion's schema
 phenix config create --skip-validation <file>       # skip schema validation
 phenix config edit <kind>/<name> [--force]          # open in $EDITOR
 phenix config delete <kind>/<name> ...              # delete one or more specific configs by kind/name
@@ -109,6 +109,7 @@ phenix workflow apply <DIR|NAME> -n                 # --dry-run: validate everyt
 phenix workflow apply <DIR|NAME> -f                 # --force: allow restarting a running experiment
 phenix workflow apply <DIR|NAME> -b <name>          # --branch-name: workflow branch name (default: the directory's name)
 phenix workflow apply <DIR|NAME> -c <file>          # --config: workflow config, relative to DIR unless absolute
+phenix workflow apply <DIR|NAME> --follow-inject-symlinks # follow symlinks in phenix-injects/ and copy as regular files
 ```
 
 The argument, the directory layout, the steps, the workflow config, and the
@@ -169,7 +170,7 @@ phenix vm set my-exp node1 -L role=web -L site=east --append-labels
 
 ```bash
 phenix image list
-phenix image create <name> [-s 10G] [-v minbase] [-r jammy] [-m <mirror>] [-l comp1,comp2] \
+phenix image create <name> [-s 10G] [-v minbase] [-r noble] [-m <mirror>] [-l comp1,comp2] \
   [-f qcow2] [-c] [-R] [-O overlay1,overlay2] [-P pkg1,pkg2] [-T script1,script2] \
   [-k arg1,arg2] [--skip-default-pkgs] [--no-virtuals]
 phenix image create-from <existing> <new>
@@ -180,7 +181,7 @@ phenix image append|remove|update <name> ...
 phenix image inject-miniexe <path/to/exe> <path/to/disk>
 ```
 
-Default variant/release/mirror are `minbase`/`jammy`/Ubuntu archive; `-l`
+Default variant/release/mirror are `minbase`/`noble`/Ubuntu archive; `-l`
 restricts which mirror components packages come from; `-f` supports `qcow2`
 (default) and other formats vmdb2 supports. On `build`, `-x` is very verbose
 and also writes `<image name>.log`, `-c` caches the rootfs as a tar archive for
@@ -193,7 +194,9 @@ build troubleshooting, read the sibling
 ## `phenix vlan` — VLAN aliasing/ranges per experiment
 
 ```bash
-phenix vlan alias <exp> <alias name> <vlan id>   # view (no value) or set an alias
+phenix vlan alias [exp]                          # list VLAN aliases (all experiments, or one)
+phenix vlan alias <exp> <alias name>             # print the alias's VLAN ID (e.g. `105`)
+phenix vlan alias <exp> <alias name> <vlan id>   # set an alias (-f to overwrite)
 phenix vlan range <exp> <range min> <range max>  # view or set the VLAN pool range
 ```
 
@@ -209,3 +212,13 @@ phenix util role-table            # print the permissions/roles table
 phenix completion bash|zsh|fish|powershell
 phenix version
 ```
+
+`phenix mm` is also available as `phenix minimega`. Its flags (`-n/--namespace`
+to scope commands to a minimega namespace, `-a/--attach` to open the
+interactive console) and any global flags must come before the first minimega
+argument; everything after it is passed to minimega unchanged, so
+`phenix mm -n my-exp cc exec ls -a` sends `-a` to `ls`. Arguments are quoted
+for minimega as needed; a single argument is sent as-is, so
+`phenix mm -n my-exp "vm info"` passes a whole minimega command line. The
+command exits non-zero, and logs the error, when minimega reports an error or
+the connection to minimega is lost, so scripts can check its exit status.
