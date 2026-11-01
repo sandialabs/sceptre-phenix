@@ -51,7 +51,11 @@ func GetVMSnapshots(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	snapshots, err := vm.Snapshots(exp, name)
+	snapshots, err := vm.Snapshots(ctx, exp, name)
+	if requestCanceled(r, err) {
+		return nil
+	}
+
 	if err != nil {
 		plog.Error(
 			plog.TypeSystem,
@@ -72,7 +76,8 @@ func GetVMSnapshots(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -138,15 +143,11 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	status := make(chan string)
+	// vm.Snapshot reports no end when it fails, so the progress goroutine ends when the handler does
+	defer close(status)
 
 	go func() {
-		for {
-			s := <-status
-
-			if s == "completed" {
-				return
-			}
-
+		for s := range status {
 			progress, err := strconv.ParseFloat(s, 64)
 			if err == nil {
 				plog.Debug(plog.TypeSystem, "snapshot percent complete", statusKeyPercent, progress)
@@ -169,12 +170,20 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) error {
 	cb := func(s string) { status <- s }
 	snapshotted := audit.Fields{Experiment: exp, VM: name, Target: req.GetFilename()}
 
-	if err := vm.Snapshot(exp, name, req.GetFilename(), cb); err != nil {
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
+	if err := vm.Snapshot(change, exp, name, req.GetFilename(), cb); err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/snapshots", "create", fullName),
 			bt.NewResource("experiment/vm/snapshot", exp+"/"+name, "errorCreating"),
 			nil,
 		)
+
+		// one that gave up before its first change left the VM as it was
+		if requestCanceled(r, err) {
+			return nil
+		}
 
 		plog.Error(plog.TypeSystem, "snapshotting VM", "exp", exp, "vm", name, "err", err)
 		audit.Failure(r, audit.VMSnapshot, "snapshotting VM failed", snapshotted, err)
@@ -240,7 +249,10 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) error {
 		nil,
 	)
 
-	err = vm.Restore(exp, name, snap)
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
+	err = vm.Restore(change, exp, name, snap)
 	if err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/snapshots", "create", fullName),
@@ -251,6 +263,11 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) error {
 			),
 			nil,
 		)
+
+		// one that gave up before its first change left the VM as it was
+		if requestCanceled(r, err) {
+			return nil
+		}
 
 		plog.Error(plog.TypeSystem, "restoring VM", "exp", exp, "vm", name, "err", err)
 		audit.Failure(r, audit.VMRestore, "restoring VM failed", restored, err)
@@ -362,9 +379,20 @@ func CommitVM(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	status := make(chan float64)
+	// vm.CommitToDisk can call cb after it returns, so done (not close) ends the progress goroutine
+	done := make(chan struct{})
+	defer close(done)
 
 	go func() {
-		for s := range status {
+		for {
+			var s float64
+
+			select {
+			case <-done:
+				return
+			case s = <-status:
+			}
+
 			plog.Debug(plog.TypeSystem, "VM commit percent complete", statusKeyPercent, s)
 
 			status := map[string]any{
@@ -381,15 +409,28 @@ func CommitVM(w http.ResponseWriter, r *http.Request) error {
 		}
 	}()
 
-	cb := func(s float64) { status <- s }
+	cb := func(s float64) {
+		select {
+		case status <- s:
+		case <-done:
+		}
+	}
 	committed := audit.Fields{Experiment: expName, VM: name, Target: filename}
 
-	if _, err = vm.CommitToDisk(expName, name, filename, cb); err != nil {
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
+	if _, err = vm.CommitToDisk(change, expName, name, filename, cb); err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/commit", "create", fullName),
 			bt.NewResource("experiment/vm/commit", expName+"/"+name, "errorCommitting"),
 			nil,
 		)
+
+		// one that gave up before its first change left the VM as it was
+		if requestCanceled(r, err) {
+			return nil
+		}
 
 		plog.Error(plog.TypeSystem, "committing VM", "exp", expName, "vm", name, "err", err)
 		audit.Failure(r, audit.VMCommit, "committing VM failed", committed, err)
@@ -411,6 +452,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
+	// broadcast to every client, so read even once this request's client left
 	v, err := vm.GetFor(context.WithoutCancel(ctx), exp, name)
 	if err != nil {
 		broker.Broadcast(
@@ -431,18 +473,8 @@ func CommitVM(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm committed",
-		"user",
-		user,
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -531,12 +563,20 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	status := make(chan string)
+	// vm.MemorySnapshot can return before its first cb call, so done ends the progress goroutine
+	done := make(chan struct{})
+	defer close(done)
 
 	go func() {
-		defer close(status)
-
 		for {
-			s := <-status
+			var s string
+
+			select {
+			case <-done:
+				return
+			case s = <-status:
+			}
+
 			if s == "failed" || s == "completed" {
 				return
 			}
@@ -560,15 +600,28 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) error {
 		}
 	}()
 
-	cb := func(s string) { status <- s }
+	cb := func(s string) {
+		select {
+		case status <- s:
+		case <-done:
+		}
+	}
 	snapshotted := audit.Fields{Experiment: exp, VM: name, Target: filename}
 
-	if _, err = vm.MemorySnapshot(exp, name, filename, cb); err != nil {
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
+	if _, err = vm.MemorySnapshot(change, exp, name, filename, cb); err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/memorySnapshot", "create", fullName),
 			bt.NewResource("experiment/vm/memorySnapshot", exp+"/"+name, "errorCommitting"),
 			nil,
 		)
+
+		// one that gave up before its first change left the VM as it was
+		if requestCanceled(r, err) {
+			return nil
+		}
 
 		plog.Error(plog.TypeSystem, "memory snapshot for VM", "exp", exp, "vm", name, "err", err)
 		audit.Failure(r, audit.VMMemorySnapshot, "memory snapshot of VM failed", snapshotted, err)

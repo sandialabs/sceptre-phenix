@@ -1,5 +1,7 @@
 package vm
 
+import "context"
+
 type UpdateOption func(*updateOptions)
 
 type iface struct {
@@ -20,16 +22,26 @@ type updateOptions struct {
 	snapshot   *bool
 	appendTags bool
 	tags       *map[string]string
+	// gives up minimega commands not yet sent before a running VM's first change
+	ctx context.Context //nolint:containedctx // an option, as mm.Context is
 }
 
 func newUpdateOptions(opts ...UpdateOption) updateOptions {
-	var o updateOptions
+	o := updateOptions{ctx: context.Background()} //nolint:exhaustruct // the rest are unset options
 
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	return o
+}
+
+// UpdateWithContext gives up the update of a running VM once ctx is done,
+// until its first change is sent (see mm.Context).
+func UpdateWithContext(ctx context.Context) UpdateOption {
+	return func(o *updateOptions) {
+		o.ctx = ctx
+	}
 }
 
 func UpdateExperiment(e string) UpdateOption {

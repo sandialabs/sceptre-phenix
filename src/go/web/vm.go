@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
+	"phenix/api/job"
 	"phenix/api/vm"
 	"phenix/util/freshness"
 	"phenix/util/mm"
@@ -22,6 +23,7 @@ import (
 	"phenix/web/cache"
 	"phenix/web/middleware"
 	"phenix/web/proto"
+	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
 )
@@ -273,7 +275,15 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 
 	updated := vmUpdateFields(expName, name, &req, true)
 
-	if err := vm.Update(opts...); err != nil {
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
+	if err := vm.Update(append(opts, vm.UpdateWithContext(change))...); err != nil {
+		// one that gave up before its first change left the VM as it was
+		if requestCanceled(r, err) {
+			return nil
+		}
+
 		audit.Failure(r, audit.VMUpdate, "updating vm failed", updated, err)
 
 		if errors.Is(err, mm.ErrUnsafeArg) {
@@ -292,18 +302,14 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "unable to get experiment")
 	}
 
+	// broadcast to every client, so read even once this request's client left
 	vm, err := vm.GetFor(context.WithoutCancel(ctx), exp, name)
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, "unable to get VM")
 	}
 
 	if vm.Running {
-		screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
-		if err != nil {
-			plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-		} else {
-			vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
-		}
+		vm.Screenshot = vmScreenshot(change, expName, name, defaultScreenshotSize)
 	}
 
 	body, err = marshaler.Marshal(util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
@@ -323,8 +329,9 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// UpdateVMs - PATCH /experiments/{exp}/vms.
-func UpdateVMs(w http.ResponseWriter, r *http.Request) error { //nolint:funlen // complex logic
+// UpdateVMs - PATCH /experiments/{exp}/vms: updates each VM the role may patch, carrying on past failures, and
+// answers with the VMs read back and in errors those skipped or failed; 403 if it may patch none, 500 if all fail.
+func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
@@ -351,81 +358,53 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error { //nolint:funlen /
 		}
 	}
 
-	resp := &proto.VMList{Total: req.GetTotal()} //nolint:exhaustruct // partial initialization
-	resp.Vms = make([]*proto.VM, int(req.GetTotal()))
+	allowed, skipped := patchableVMs(r, role, expName, req.GetVms())
+	if len(allowed) == 0 && len(skipped) > 0 {
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
 
-	for index, vmRequest := range req.GetVms() {
-		updated := vmUpdateFields(expName, vmRequest.GetName(), vmRequest, false)
+	resp := &proto.VMList{ //nolint:exhaustruct // partial initialization
+		Vms:    make([]*proto.VM, 0, len(allowed)),
+		Errors: skipped,
+	}
 
-		// Skip any vms that are not allowed to be updated
-		if !role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, vmRequest.GetName())) {
-			audit.Denied(r, audit.VMUpdate, "updating vm not allowed", updated)
+	// every VM is updated even once the client has left, until the deadline
+	change, cancel := committedChangeContext(r, vmsChangeTimeout)
+	defer cancel()
+
+	var failed []error
+
+	for _, vmRequest := range allowed {
+		if err := updateListedVM(r, change, expName, vmRequest); err != nil {
+			failed = append(failed, fmt.Errorf("VM %s: %w", vmRequest.GetName(), err))
+			resp.Errors = append(resp.Errors, &proto.VMItemError{
+				Name: vmRequest.GetName(), Status: string(job.ItemFailed), Error: err.Error(),
+			})
 
 			continue
 		}
 
-		opts := []vm.UpdateOption{
-			vm.UpdateExperiment(expName),
-			vm.UpdateVM(vmRequest.GetName()),
-			vm.UpdateWithCPU(int(vmRequest.GetCpus())),
-			vm.UpdateWithMem(int(vmRequest.GetRam())),
-			vm.UpdateWithDisk(vmRequest.GetDisk()),
+		// The rest only reads the VM back for the response. Once the client
+		// has left, the remaining VMs are still updated, but not read back.
+		if requestGone(r) {
+			continue
 		}
 
-		if vmRequest.GetInterface() != nil {
-			opts = append(
-				opts,
-				vm.UpdateWithInterface(
-					int(vmRequest.GetInterface().GetIndex()),
-					vmRequest.GetInterface().GetVlan(),
-				),
-			)
+		if pb := readBackVM(ctx, r, expName, vmRequest.GetName()); pb != nil {
+			resp.Vms = append(resp.Vms, pb)
 		}
-
-		if vmRequest.GetBoot() != nil {
-			opts = append(opts, vm.UpdateWithDNB(vmRequest.GetDoNotBoot()))
-		}
-
-		if vmRequest.GetClusterHost() != nil {
-			opts = append(opts, vm.UpdateWithHost(vmRequest.GetHost()))
-		}
-
-		if vmRequest.GetSnapshotOption() != nil {
-			opts = append(opts, vm.UpdateWithSnapshot(vmRequest.GetSnapshot()))
-		}
-
-		if err := vm.Update(opts...); err != nil {
-			audit.Failure(r, audit.VMUpdate, "updating vm failed", updated, err)
-			plog.Error(plog.TypeSystem, "updating VM", "err", err)
-
-			return weberror.New(http.StatusInternalServerError, "unable to update VM")
-		}
-
-		audit.Success(r, audit.VMUpdate, "vm updated", updated)
-
-		exp, err := experiment.Get(expName)
-		if err != nil {
-			return weberror.New(http.StatusBadRequest, "unable to get experiment")
-		}
-
-		vm, err := vm.GetFor(context.WithoutCancel(ctx), exp, vmRequest.GetName())
-		if err != nil {
-			return weberror.New(http.StatusInternalServerError, "unable to get VM")
-		}
-
-		if vm.Running {
-			screenshot, err := util.GetScreenshot(expName, vmRequest.GetName(), defaultScreenshotSize)
-			if err != nil {
-				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-			} else {
-				vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-					screenshot,
-				)
-			}
-		}
-
-		resp.Vms[index] = util.VMToProtobuf(expName, *vm, exp.Spec.Topology())
 	}
+
+	if requestGone(r) {
+		return nil
+	}
+
+	if len(allowed) > 0 && len(failed) == len(allowed) {
+		return weberror.NewWebError(errors.Join(failed...), "unable to update VMs").
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	resp.Total = uint32(len(resp.GetVms())) //nolint:gosec // G115 as many VMs as the request named
 
 	body, err = marshaler.Marshal(resp)
 	if err != nil {
@@ -436,6 +415,118 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error { //nolint:funlen /
 	_, _ = w.Write(body)
 
 	return nil
+}
+
+// patchableVMs splits the VMs a bulk update names into those the role may
+// patch and, as errors, those it skips, auditing each refusal.
+func patchableVMs(
+	r *http.Request, role rbac.Role, expName string, vms []*proto.UpdateVMRequest,
+) ([]*proto.UpdateVMRequest, []*proto.VMItemError) {
+	var (
+		allowed = make([]*proto.UpdateVMRequest, 0, len(vms))
+		skipped []*proto.VMItemError
+	)
+
+	for _, vmRequest := range vms {
+		if role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, vmRequest.GetName())) {
+			allowed = append(allowed, vmRequest)
+
+			continue
+		}
+
+		audit.Denied(r, audit.VMUpdate, "updating vm not allowed", vmUpdateFields(expName, vmRequest.GetName(), vmRequest, false))
+
+		skipped = append(skipped, &proto.VMItemError{
+			Name: vmRequest.GetName(), Status: string(job.ItemSkipped), Error: job.ErrForbidden.Error(),
+		})
+	}
+
+	return allowed, skipped
+}
+
+// updateListedVM makes the change a bulk update asks of one VM, in change,
+// and audits it.
+func updateListedVM(r *http.Request, change context.Context, expName string, vmRequest *proto.UpdateVMRequest) error {
+	updated := vmUpdateFields(expName, vmRequest.GetName(), vmRequest, false)
+
+	opts := []vm.UpdateOption{
+		vm.UpdateExperiment(expName),
+		vm.UpdateVM(vmRequest.GetName()),
+		vm.UpdateWithCPU(int(vmRequest.GetCpus())),
+		vm.UpdateWithMem(int(vmRequest.GetRam())),
+		vm.UpdateWithDisk(vmRequest.GetDisk()),
+		vm.UpdateWithContext(change),
+	}
+
+	if vmRequest.GetInterface() != nil {
+		opts = append(
+			opts,
+			vm.UpdateWithInterface(
+				int(vmRequest.GetInterface().GetIndex()),
+				vmRequest.GetInterface().GetVlan(),
+			),
+		)
+	}
+
+	if vmRequest.GetBoot() != nil {
+		opts = append(opts, vm.UpdateWithDNB(vmRequest.GetDoNotBoot()))
+	}
+
+	if vmRequest.GetClusterHost() != nil {
+		opts = append(opts, vm.UpdateWithHost(vmRequest.GetHost()))
+	}
+
+	if vmRequest.GetSnapshotOption() != nil {
+		opts = append(opts, vm.UpdateWithSnapshot(vmRequest.GetSnapshot()))
+	}
+
+	if err := vm.Update(opts...); err != nil {
+		audit.Failure(r, audit.VMUpdate, "updating vm failed", updated, err)
+		plog.Error(plog.TypeSystem, "updating VM", "exp", expName, "vm", vmRequest.GetName(), "err", err)
+
+		return err //nolint:wrapcheck // the caller names the VM
+	}
+
+	audit.Success(r, audit.VMUpdate, "vm updated", updated)
+
+	return nil
+}
+
+// readBackVM returns the VM name as a bulk update that took left it, with a screenshot when it runs, or nil
+// when it cannot be read.
+func readBackVM(ctx context.Context, r *http.Request, expName, name string) *proto.VM {
+	exp, err := experiment.Get(expName)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "reading back updated VM", "exp", expName, "vm", name, "err", err)
+
+		return nil
+	}
+
+	v, err := vm.GetFor(ctx, exp, name)
+	if requestCanceled(r, err) {
+		return nil
+	}
+
+	if err != nil {
+		plog.Error(plog.TypeSystem, "reading back updated VM", "exp", expName, "vm", name, "err", err)
+
+		return nil
+	}
+
+	if v.Running {
+		screenshot, err := util.GetScreenshotContext(ctx, expName, name, defaultScreenshotSize)
+		if requestCanceled(r, err) {
+			return nil
+		}
+
+		if err != nil {
+			plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+		} else {
+			v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+		}
+	}
+
+	return util.VMToProtobuf(expName, *v, exp.Spec.Topology())
 }
 
 // RedeployVM - POST /experiments/{exp}/vms/{name}/redeploy.
@@ -449,20 +540,28 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 		expName  = vars["exp"]
 		name     = vars["name"]
 		fullName = expName + "/" + name
-		query    = r.URL.Query()
-		inject   = query.Get("replicate-injects") != ""
 	)
 
-	audited := audit.Fields{Experiment: expName, VM: name}
+	redeployed := audit.Fields{Experiment: expName, VM: name}
 
 	if !role.Allowed("vms/redeploy", "update", fullName) {
-		audit.Denied(r, audit.VMRedeploy, "redeploying vm not allowed", audited)
+		audit.Denied(r, audit.VMRedeploy, "redeploying vm not allowed", redeployed)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return weberror.New(http.StatusInternalServerError, err.Error())
+	}
+
+	var req proto.VMRedeployRequest
+	if err := unmarshaler.Unmarshal(body, &req); err != nil {
+		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
 	if err := cache.LockVMForRedeploying(expName, name); err != nil {
-		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", audited, err)
+		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", redeployed, err)
 		plog.Error(
 			plog.TypeSystem,
 			"locking VM",
@@ -483,22 +582,29 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
-		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", audited, err)
+		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", redeployed, err)
 
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
-	v, err := vm.GetFor(ctx, exp, name)
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
+	// the redeploy starts only once this has answered, within the deadline
+	v, err := vm.GetFor(change, exp, name)
+	if requestCanceled(r, err) {
+		return nil
+	}
+
 	if err != nil {
-		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", audited, err)
+		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", redeployed, err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	v.Busy = true
 
-	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
-
+	body, err = marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
@@ -509,47 +615,20 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	redeployed := make(chan error)
+	done := make(chan error)
 
 	go func() {
-		defer close(redeployed)
-
-		body, err := io.ReadAll(r.Body)
-		if err != nil && !errors.Is(err, io.EOF) {
-			redeployed <- err
-
-			return
-		}
+		defer close(done)
 
 		opts := []vm.RedeployOption{
-			vm.CPU(v.CPUs),
-			vm.Memory(v.RAM),
-			vm.Disk(v.Disk),
-			vm.Inject(inject),
+			vm.CPU(int(req.GetCpus())),
+			vm.Memory(int(req.GetRam())),
+			vm.Disk(req.GetDisk()),
+			vm.Inject(req.GetInjects()),
 		}
 
-		// `body` will be nil if err above was EOF.
-		if body != nil {
-			var req proto.VMRedeployRequest
-
-			// Update VM struct with values from POST request body.
-			err := unmarshaler.Unmarshal(body, &req)
-			if err != nil {
-				redeployed <- err
-
-				return
-			}
-
-			opts = []vm.RedeployOption{
-				vm.CPU(int(req.GetCpus())),
-				vm.Memory(int(req.GetRam())),
-				vm.Disk(req.GetDisk()),
-				vm.Inject(req.GetInjects()),
-			}
-		}
-
-		if err := vm.Redeploy(expName, name, opts...); err != nil {
-			redeployed <- err
+		if err := vm.Redeploy(change, expName, name, opts...); err != nil {
+			done <- err
 		}
 
 		v.Busy = false
@@ -560,34 +639,35 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 	// Linux VMs).
 	time.Sleep(5 * time.Second) //nolint:mnd // sleep duration
 
-	err = <-redeployed
+	err = <-done
 	if err != nil {
-		plog.Error(plog.TypeSystem, "redeploying VM", "exp", expName, "vm", name, "err", err)
-		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", audited, err)
-
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/redeploy", "update", fullName),
 			bt.NewResource("experiment/vm", expName+"/"+name, "errorRedeploying"),
 			nil,
 		)
 
+		// one that gave up before its first change left the VM as it was
+		if requestCanceled(r, err) {
+			return nil
+		}
+
+		plog.Error(plog.TypeSystem, "redeploying VM", "exp", expName, "vm", name, "err", err)
+		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", redeployed, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	audit.Success(r, audit.VMRedeploy, "vm redeployed", audited)
+	audit.Success(r, audit.VMRedeploy, "vm redeployed", redeployed)
 
-	// Get the VM details again since redeploying may have changed them.
-	v, err = vm.GetFor(context.WithoutCancel(ctx), exp, name)
+	// Get the VM details again since redeploying may have changed them. They
+	// are broadcast to every client, so read even once this request's left.
+	v, err = vm.Get(context.WithoutCancel(ctx), expName, name)
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
-	if err != nil {
-		plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-	} else {
-		v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
-	}
+	v.Screenshot = vmScreenshot(change, expName, name, defaultScreenshotSize)
 
 	body, _ = marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 
@@ -781,7 +861,15 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	err := vm.ChangeOpticalDisc(exp, name, isoPath)
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
+	// a canceled request left the VM as it was, so is not audited
+	err := vm.ChangeOpticalDisc(change, exp, name, isoPath)
+	if requestCanceled(r, err) {
+		return nil
+	}
+
 	if err != nil {
 		audit.Failure(r, audit.VMDiscChange, "changing optical disc failed", changed, err)
 		plog.Error(plog.TypeSystem, "changing disc for VM", "exp", exp, "vm", name, "err", err)
@@ -789,13 +877,14 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	audit.Success(r, audit.VMDiscChange, "optical disc changed", changed)
+
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/cdrom", "update", fullName),
 		bt.NewResource("experiment/vm", fullName, "cdrom-inserted"),
 		nil,
 	)
 
-	audit.Success(r, audit.VMDiscChange, "optical disc changed", changed)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
@@ -820,7 +909,15 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	err := vm.EjectOpticalDisc(exp, name)
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
+	// a canceled request left the VM as it was, so is not audited
+	err := vm.EjectOpticalDisc(change, exp, name)
+	if requestCanceled(r, err) {
+		return nil
+	}
+
 	if err != nil {
 		audit.Failure(r, audit.VMDiscEject, "ejecting optical disc failed", ejected, err)
 		plog.Error(plog.TypeSystem, "ejecting disc for VM", "exp", exp, "vm", name, "err", err)
@@ -828,13 +925,14 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	audit.Success(r, audit.VMDiscEject, "optical disc ejected", ejected)
+
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/cdrom", "delete", fullName),
 		bt.NewResource("experiment/vm", fullName, "cdrom-ejected"),
 		nil,
 	)
 
-	audit.Success(r, audit.VMDiscEject, "optical disc ejected", ejected)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil

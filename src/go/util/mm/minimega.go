@@ -2279,8 +2279,8 @@ func (Minimega) MeshShell(host, command string) error {
 	return nil
 }
 
-func (Minimega) MeshShellResponse(host, command string) (string, error) {
-	return meshShellResponse(context.Background(), host, command)
+func (Minimega) MeshShellResponse(ctx context.Context, host, command string) (string, error) {
+	return meshShellResponse(ctx, host, command)
 }
 
 // meshShellResponse is MeshShellResponse, its command giving up once ctx is

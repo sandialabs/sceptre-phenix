@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/broker"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -39,7 +41,11 @@ type jobKind struct {
 }
 
 // jobKindOf returns the hooks of the job kind; none for a kind without any.
-func jobKindOf(_ string) jobKind {
+func jobKindOf(kind string) jobKind {
+	if kind == vmActionKind {
+		return jobKind{artifactServed: nil, artifactAllowed: nil, finished: auditVMActionJob}
+	}
+
 	return jobKind{artifactServed: nil, artifactAllowed: nil, finished: nil}
 }
 
@@ -131,6 +137,50 @@ func logJobEnd(j job.Job, removed bool) {
 	if finished := jobKindOf(j.Kind).finished; finished != nil {
 		finished(j)
 	}
+}
+
+// startJob starts a job for the request's user, logs it, and answers 202 with the job and its location under
+// the base path, or returns the error of a job it could not start.
+func startJob(w http.ResponseWriter, r *http.Request, spec job.Spec) error {
+	spec.Owner = middleware.UserFromContext(r.Context())
+
+	j, err := jobs.Start(spec)
+	if errors.Is(err, job.ErrQueueFull) {
+		plog.Warn(plog.TypeSystem, "job queue full", "kind", spec.Kind, "user", spec.Owner)
+		w.Header().Set("Retry-After", "60")
+
+		return weberror.New(http.StatusTooManyRequests, err.Error())
+	}
+
+	if errors.Is(err, job.ErrShuttingDown) {
+		lifecycle.Refuse(w)
+
+		return nil
+	}
+
+	if err != nil {
+		plog.Error(plog.TypeSystem, "starting job", "kind", spec.Kind, "err", err)
+
+		return weberror.New(http.StatusInternalServerError, err.Error())
+	}
+
+	plog.Info(
+		plog.TypeAction, "job started",
+		"job", j.ID, "kind", j.Kind, "user", j.Owner, "exp", j.Experiment, "items", len(j.Items),
+	)
+
+	w.Header().Set("Location", apiLocation("jobs/"+j.ID))
+
+	return writeJob(w, http.StatusAccepted, j)
+}
+
+// countOf is n and noun, plural unless n is 1, as in "3 VMs".
+func countOf(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // writeJob answers with the job as JSON, or returns the error that kept it
