@@ -739,7 +739,10 @@ func TestGitCommitRefBoundsTheWaitForGit(t *testing.T) {
 
 	// Cancel about 200 ms after the start, but not before the filter's child
 	// holds the pipes, so that the cancel always stops a hanging git.
-	done := make(chan struct{})
+	var (
+		done     = make(chan struct{})
+		canceled = make(chan time.Time, 1)
+	)
 
 	go func() {
 		defer cancel()
@@ -761,14 +764,15 @@ func TestGitCommitRefBoundsTheWaitForGit(t *testing.T) {
 			}
 
 			if started && deadline == nil {
+				canceled <- time.Now()
+
 				return
 			}
 		}
 	}()
 
-	start := time.Now()
 	got := gitCommitRef(ctx, repo)
-	elapsed := time.Since(start)
+	returned := time.Now()
 
 	close(done)
 
@@ -780,7 +784,13 @@ func TestGitCommitRefBoundsTheWaitForGit(t *testing.T) {
 		t.Errorf("gitCommitRef(git status stopped) = %q, want %q", got, short)
 	}
 
-	if elapsed >= returnBound {
-		t.Errorf("gitCommitRef returned after %v, want less than %v", elapsed, returnBound)
+	// timed from the cancel, so a slow machine starting git does not count
+	select {
+	case at := <-canceled:
+		if elapsed := returned.Sub(at); elapsed >= returnBound {
+			t.Errorf("gitCommitRef returned %v after the cancel, want less than %v", elapsed, returnBound)
+		}
+	default:
+		t.Error("gitCommitRef returned before the cancel, so git never hung")
 	}
 }

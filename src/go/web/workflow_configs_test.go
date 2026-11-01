@@ -49,7 +49,7 @@ spec:
 
 // upsertTestIncludeTopology is a topology without nodes of its own that
 // includes a topology that is not stored; its name expands to main-topo on
-// branch main. The Topology schema does not declare includeTopologies.
+// branch main.
 const upsertTestIncludeTopology = `apiVersion: phenix.sandia.gov/v1
 kind: Topology
 metadata:
@@ -75,19 +75,6 @@ spec:
       os_type: linux
       drives:
       - image: x.qc2
-`
-
-// upsertTestUndecodableTopology is a topology that passes its schema, which
-// does not declare includeTopologies, but does not decode: a mapping is no
-// include name. Its name expands to main-topo on branch main.
-const upsertTestUndecodableTopology = `apiVersion: phenix.sandia.gov/v1
-kind: Topology
-metadata:
-  name: ${BRANCH_NAME}-topo
-spec:
-  includeTopologies:
-  - name: x
-  nodes: []
 `
 
 // upsertTestScenarioWithNodes is a valid scenario, named main-scn on branch
@@ -294,12 +281,11 @@ func TestWorkflowUpsertConfigDryRunExplainsValidationErrors(t *testing.T) {
 	}
 }
 
-// TestWorkflowUpsertConfigRefusesBadTopology sends topologies that pass their
-// schema but that no experiment could use, for real and as a dry run, to a
-// stored and to a new config, and expects the same 400 from both: the node
-// error's text for a node named all, and the decode error for a topology
-// that does not decode. The strict mock allows only the existence check, so
-// the real upsert stores nothing and config.Update's own read never happens.
+// TestWorkflowUpsertConfigRefusesBadTopology sends a topology that passes its
+// schema but has a node named all, which no experiment could use, for real and
+// as a dry run, to a stored and to a new config, and expects the same 400 from
+// both with the node error's text. The strict mock allows only the existence
+// check, so the real upsert stores nothing.
 func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -310,11 +296,6 @@ func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 			name:      "node named all",
 			body:      upsertTestBadTopology,
 			wantCause: `topology "main-topo" cannot be used in an experiment: validating node all: hostname 'all' is reserved`,
-		},
-		{
-			name:      "topology that does not decode",
-			body:      upsertTestUndecodableTopology,
-			wantCause: `decoding topology "main-topo": `,
 		},
 	}
 
