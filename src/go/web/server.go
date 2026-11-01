@@ -167,6 +167,8 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 		}
 	}
 
+	recoverExperiments()
+
 	router := newRouter(assets)
 
 	// background loops run until shutdown, not until ctx is done

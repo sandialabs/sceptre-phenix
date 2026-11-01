@@ -171,6 +171,9 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	// the capture writes to the experiment's files directory
+	experiment.InvalidateFiles(exp)
+
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/captures", "create", fmt.Sprintf("%s/%s", exp, name)),
 		bt.NewResource("experiment/vm/capture", fmt.Sprintf("%s/%s", exp, name), "start"),
@@ -257,6 +260,9 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
+
+	// the stopped captures' files are now complete
+	experiment.InvalidateFiles(exp)
 
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/captures", "delete", fmt.Sprintf("%s/%s", exp, name)),

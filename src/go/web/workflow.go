@@ -361,7 +361,7 @@ func createFromWorkflow(
 	if start {
 		cache.UnlockExperiment(expName)
 
-		if _, err := startExperiment(expName); err != nil {
+		if err := startExperiment(expName); err != nil {
 			return err
 		}
 	}
@@ -385,7 +385,7 @@ func updateFromWorkflow(
 	if action == workflow.ActionRestart {
 		var err error
 
-		if _, err = stopExperiment(expName); err != nil {
+		if _, err = stopExperiment(expName, false); err != nil {
 			return err
 		}
 
@@ -443,7 +443,7 @@ func updateFromWorkflow(
 	if action == workflow.ActionRestart || action == workflow.ActionUpdateAndStart {
 		cache.UnlockExperiment(expName)
 
-		if _, err := startExperiment(expName); err != nil {
+		if err := startExperiment(expName); err != nil {
 			return err
 		}
 	}

@@ -62,16 +62,11 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) error {
 			ctx = app.SetContextTriggerUI(ctx)
 			ctx = app.SetContextMetadata(ctx, md)
 
-			commonMu.Lock()
-			cancelers[k] = append(cancelers[k], cancel)
-			commonMu.Unlock()
+			registered := addCanceler(k, cancel)
 
 			err := experiment.TriggerRunning(ctx, name, a)
 			if err != nil {
-				cancel() // avoid leakage
-				commonMu.Lock()
-				delete(cancelers, k)
-				commonMu.Unlock()
+				dropCanceler(k, registered)
 
 				humanized := putil.HumanizeError(
 					err,
@@ -140,8 +135,8 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) error
 			delete(cancelers, k)
 			commonMu.Unlock()
 
-			for _, cancel := range cancels {
-				cancel()
+			for _, c := range cancels {
+				c.cancel()
 			}
 
 			pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization

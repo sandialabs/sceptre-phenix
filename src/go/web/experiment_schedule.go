@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,6 +9,8 @@ import (
 	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
+	"phenix/scheduler"
+	"phenix/store"
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/broker"
@@ -45,7 +48,7 @@ func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) error {
 	if status := cache.IsExperimentLocked(name); status != "" {
 		plog.Warn(plog.TypeSystem, "experiment locked", "exp", name, "status", status)
 
-		return weberror.New(http.StatusConflict, fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status))
+		return weberror.New(http.StatusConflict, fmt.Sprintf("experiment %s is locked with status %s", name, status))
 	}
 
 	exp, err := experiment.Get(name)
@@ -62,7 +65,7 @@ func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
-	//nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
@@ -86,7 +89,7 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 	if status := cache.IsExperimentLocked(name); status != "" {
 		plog.Warn(plog.TypeSystem, "experiment locked", "exp", name, "status", status)
 
-		return weberror.New(http.StatusConflict, fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status))
+		return weberror.New(http.StatusConflict, fmt.Sprintf("experiment %s is locked with status %s", name, status))
 	}
 
 	body, err := io.ReadAll(r.Body)
@@ -124,7 +127,7 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 			err,
 		)
 
-		return weberror.New(http.StatusInternalServerError, err.Error())
+		return weberror.New(scheduleErrorStatus(err), err.Error())
 	}
 
 	audit.Success(r, audit.ExperimentSchedule, "experiment scheduled", scheduled)
@@ -149,7 +152,22 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
+}
+
+// scheduleErrorStatus is the status a failed experiment.Schedule answers with.
+func scheduleErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, store.ErrNotExist):
+		return http.StatusNotFound
+	case errors.Is(err, experiment.ErrExperimentRunning), errors.Is(err, scheduler.ErrNoSchedulableHosts):
+		return http.StatusConflict
+	case errors.Is(err, scheduler.ErrUserSchedulerNotFound):
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
+	}
 }
