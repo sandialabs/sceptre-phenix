@@ -84,6 +84,28 @@ func TestGetOptionsForbidden(t *testing.T) {
 	}
 }
 
+// Each capture records 100 MiB by default; the option sets another limit, and
+// the server refuses a negative one.
+//
+//nolint:paralleltest // sets the server options
+func TestServeWithNetflowMaxSize(t *testing.T) {
+	if got := newServerOptions().netflowMaxSize; got != 100<<20 {
+		t.Errorf("default netflow max size = %d, want %d", got, 100<<20)
+	}
+
+	if got := newServerOptions(ServeWithNetflowMaxSize(0)).netflowMaxSize; got != 0 {
+		t.Errorf("netflow max size with ServeWithNetflowMaxSize(0) = %d, want 0", got)
+	}
+
+	saved := o
+	t.Cleanup(func() { o = saved })
+
+	err := Start(t.Context(), ServeWithNetflowMaxSize(-1))
+	if err == nil || !strings.Contains(err.Error(), "ui.netflow.max-size") {
+		t.Errorf("Start(netflow max size -1) = %v, want an error naming ui.netflow.max-size", err)
+	}
+}
+
 // The base path gets a leading and a trailing slash only when it lacks one,
 // and keeps every other slash.
 func TestNormalizeBasePath(t *testing.T) {

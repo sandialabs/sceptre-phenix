@@ -414,6 +414,40 @@ const requests = [
     ['experiments/exp/soh?statusFilter=Error', { signal }],
   ],
   [
+    'getNetflowCapture',
+    () => experimentsApi.getNetflowCapture('exp'),
+    'get',
+    ['experiments/exp/netflow'],
+  ],
+  [
+    'startNetflowCapture',
+    () => experimentsApi.startNetflowCapture('exp'),
+    'post',
+    ['experiments/exp/netflow'],
+  ],
+  [
+    'stopNetflowCapture',
+    () => experimentsApi.stopNetflowCapture('exp'),
+    'delete',
+    ['experiments/exp/netflow'],
+  ],
+  [
+    'listNetflowCaptures',
+    () => experimentsApi.listNetflowCaptures('exp'),
+    'get',
+    ['experiments/exp/netflow/captures'],
+  ],
+  [
+    'headNetflowCapture',
+    () =>
+      experimentsApi.headNetflowCapture('exp', '20261028T153012.345Z', 'csv'),
+    'head',
+    [
+      'experiments/exp/netflow/captures/20261028T153012.345Z',
+      { params: { format: 'csv' } },
+    ],
+  ],
+  [
     'listExperimentCaptures',
     () => experimentsApi.listExperimentCaptures('e@x'),
     'get',
@@ -842,6 +876,11 @@ describe('names encoded into a path', () => {
       (name) => ['experiments', name, 'files', 'archive'],
     ],
     [
+      'listNetflowCaptures',
+      (name) => experimentsApi.listNetflowCaptures(name),
+      (name) => ['experiments', name, 'netflow', 'captures'],
+    ],
+    [
       'updateUser',
       (name) => usersApi.updateUser(name, {}),
       (name) => ['users', name],
@@ -874,4 +913,46 @@ describe('names encoded into a path', () => {
       );
     },
   );
+});
+
+describe('a netflow capture download link', () => {
+  it('names the encoded experiment, ID and format, and the token when there is one', () => {
+    expect(
+      experimentsApi.netflowCaptureURL(
+        'e x',
+        '20261028T153012.345Z',
+        'csv',
+        't/1',
+      ),
+    ).toBe(
+      '/api/v1/experiments/e%20x/netflow/captures/20261028T153012.345Z?format=csv&token=t%2F1',
+    );
+    expect(experimentsApi.netflowCaptureURL('exp', 'id', 'text', null)).toBe(
+      '/api/v1/experiments/exp/netflow/captures/id?format=text',
+    );
+  });
+
+  it('keeps any name and ID one segment each, decoding back to them', () => {
+    fc.assert(
+      fc.property(anyName, anyName, (name, id) => {
+        const url = experimentsApi.netflowCaptureURL(name, id, 'jsonl', 'tok');
+        const [path, query, ...rest] = url.split('?');
+        expect(rest).toEqual([]);
+        expect(decodedParts(path)).toEqual([
+          '',
+          'api',
+          'v1',
+          'experiments',
+          name,
+          'netflow',
+          'captures',
+          id,
+        ]);
+        expect(Object.fromEntries(new URLSearchParams(query))).toEqual({
+          format: 'jsonl',
+          token: 'tok',
+        });
+      }),
+    );
+  });
 });
