@@ -16,6 +16,8 @@ export default [
       '**/coverage/**',
       'e2e/test-results/**',
       'e2e/playwright-report/**',
+      'perf/lighthouse-results/**',
+      'perf/.lighthouseci/**',
     ],
   },
   js.configs.recommended,
@@ -75,6 +77,26 @@ export default [
     files: ['e2e/**/*.js'],
     languageOptions: {
       sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
+  {
+    // size-limit and Lighthouse CI configs are CommonJS run under Node.
+    files: ['perf/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
+  {
+    // perf/summary.mjs is an ES module run under Node in CI.
+    files: ['perf/**/*.mjs'],
+    languageOptions: {
+      sourceType: 'module',
       globals: {
         ...globals.node,
       },
