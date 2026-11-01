@@ -197,7 +197,7 @@ func TestUserComponentRunRoutesStdoutAndStructuredStderr(t *testing.T) {
 		t.Fatalf("writing temp script: %v", err)
 	}
 
-	plog.NewPhenixHandler(io.Discard)
+	plog.NewPhenixHandler(io.Discard, false)
 
 	type logEntry struct {
 		logType string

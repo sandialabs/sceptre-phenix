@@ -235,6 +235,7 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 | Setting Key | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `log.level` | `PHENIX_LOG_LEVEL` | `info` | Global log verbosity (`debug`, `info`, `warn`, `error`). |
+| `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. |
 | `log.console` | `PHENIX_LOG_CONSOLE` | `stderr` | Destination for console logs (`stderr`, `stdout`, or a file path). Uses **Text/Human-Readable** format. Note: Setting this to a file path will prevent console logs from appearing in `docker logs`. |
 | `log.system.path` | `PHENIX_LOG_SYSTEM_PATH` | `/var/log/phenix/phenix.log` | Path to the persistent system log file (used by UI). Uses **JSON** format. This is independent of `log.console` and is always active. |
 | `log.system.max-size` | `PHENIX_LOG_SYSTEM_MAX_SIZE` | `100` | Max size in MB before rotation. |
@@ -247,15 +248,15 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 
 #### Configuration Precedence
 
-phēnix resolves configuration settings in the following order (highest to lowest):
+phēnix resolves each setting in the following order (highest to lowest):
 
 1. **Command Line Flags**: Arguments passed directly to the binary (e.g., `phenix ui --log.level=debug`).
-2. **Config File**: Settings defined in `config.yaml` (managed via `phenix settings set`).
-3. **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`.
+2. **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`.
+3. **Config File**: Settings defined in `config.yaml` (managed via `phenix settings set`).
 4. **Defaults**: Internal application defaults.
 
 > [!NOTE]
-> This precedence allows you to set baseline configuration using Environment Variables (e.g., in Docker Compose) but still override them at runtime using `phenix settings set`. To revert to the environment variable value, use `phenix settings unset`.
+> An environment variable, such as one set in Docker Compose, overrides a value that `phenix settings set` writes to the config file. Unset the variable to use the file's value.
 
 #### Managing Settings
 

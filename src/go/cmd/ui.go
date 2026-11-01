@@ -16,6 +16,16 @@ const defaultJWTLifetime = 24 * time.Hour
 
 var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
 
+// uiSettings are the phenix ui flags also read from the ui.<flag> setting and
+// the PHENIX_UI_<FLAG> environment variable.
+//
+//nolint:gochecknoglobals // constant list
+var uiSettings = []string{
+	"listen-endpoint", "base-path", "jwt-signing-key", "jwt-lifetime", "file-server-endpoint",
+	"proxy-auth-header", "users", "tls-key", "tls-cert", "logs.minimega-path", "logs.level",
+	"features", "minimega-console",
+}
+
 //nolint:funlen // command definition
 func newUICmd() *cobra.Command {
 	desc := `Run the phenix UI server
@@ -26,6 +36,8 @@ func newUICmd() *cobra.Command {
 		Short: "Run the phenix UI",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			watchRestartSettings()
+
 			err := web.Init()
 			if err != nil {
 				return fmt.Errorf("initializing web package: %w", err)
@@ -88,7 +100,11 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().String("file-server-endpoint", "0", "port or host:port to serve experiment file uploads on; port-only binds 127.0.0.1")
 	uiCmd.Flags().
 		String("proxy-auth-header", "", "header containing username when using proxy authentication")
-	uiCmd.Flags().StringSlice("users", nil, "pipe-delimited list of initial users to add")
+	uiCmd.Flags().StringSlice(
+		"users",
+		nil,
+		"initial users to add, each as <username>:<password>:<role>[:<resource name>...] (comma-separated or repeated)",
+	)
 	uiCmd.Flags().String("tls-key", "", "path to TLS key file")
 	uiCmd.Flags().String("tls-cert", "", "path to TLS cert file")
 	uiCmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
@@ -97,33 +113,10 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
 	uiCmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
 
-	_ = viper.BindPFlag("ui.listen-endpoint", uiCmd.Flags().Lookup("listen-endpoint"))
-	_ = viper.BindPFlag("ui.base-path", uiCmd.Flags().Lookup("base-path"))
-	_ = viper.BindPFlag("ui.jwt-signing-key", uiCmd.Flags().Lookup("jwt-signing-key"))
-	_ = viper.BindPFlag("ui.jwt-lifetime", uiCmd.Flags().Lookup("jwt-lifetime"))
-	_ = viper.BindPFlag("ui.file-server-endpoint", uiCmd.Flags().Lookup("file-server-endpoint"))
-	_ = viper.BindPFlag("ui.proxy-auth-header", uiCmd.Flags().Lookup("proxy-auth-header"))
-	_ = viper.BindPFlag("ui.users", uiCmd.Flags().Lookup("users"))
-	_ = viper.BindPFlag("ui.tls-key", uiCmd.Flags().Lookup("tls-key"))
-	_ = viper.BindPFlag("ui.tls-cert", uiCmd.Flags().Lookup("tls-cert"))
-	_ = viper.BindPFlag("ui.logs.minimega-path", uiCmd.Flags().Lookup("logs.minimega-path"))
-	_ = viper.BindPFlag("ui.logs.level", uiCmd.Flags().Lookup("logs.level"))
-	_ = viper.BindPFlag("ui.features", uiCmd.Flags().Lookup("features"))
-	_ = viper.BindPFlag("ui.minimega-console", uiCmd.Flags().Lookup("minimega-console"))
-
-	_ = viper.BindEnv("ui.listen-endpoint")
-	_ = viper.BindEnv("ui.base-path")
-	_ = viper.BindEnv("ui.jwt-signing-key")
-	_ = viper.BindEnv("ui.jwt-lifetime")
-	_ = viper.BindEnv("ui.file-server-endpoint")
-	_ = viper.BindEnv("ui.proxy-auth-header")
-	_ = viper.BindEnv("ui.users")
-	_ = viper.BindEnv("ui.tls-key")
-	_ = viper.BindEnv("ui.tls-cert")
-	_ = viper.BindEnv("ui.logs.minimega-path")
-	_ = viper.BindEnv("ui.logs.level")
-	_ = viper.BindEnv("ui.features")
-	_ = viper.BindEnv("ui.minimega-console")
+	for _, name := range uiSettings {
+		_ = viper.BindPFlag("ui."+name, uiCmd.Flags().Lookup(name))
+		_ = viper.BindEnv("ui." + name)
+	}
 
 	uiCmd.Flags().Bool("log-requests", false, "Log HTTP requests")
 	uiCmd.Flags().

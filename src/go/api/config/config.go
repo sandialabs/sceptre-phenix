@@ -326,6 +326,12 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 		return nil, errors.New("no config, path, or data provided")
 	}
 
+	if o.check != nil {
+		if err := o.check(c); err != nil {
+			return nil, err
+		}
+	}
+
 	if o.validate {
 		if err := Validate(c); err != nil {
 			return nil, err
@@ -505,6 +511,14 @@ func Update(name string, c *store.Config) error {
 // are removed. It returns any errors encountered while removing the config from
 // the store.
 func Delete(name string) error {
+	return DeleteAtRevision(name, 0)
+}
+
+// DeleteAtRevision deletes the named config as Delete does. When revision is
+// not zero, it returns an error wrapping store.ErrConflict, and deletes
+// nothing, unless the config is at that revision. A revision is ignored when
+// name is "all".
+func DeleteAtRevision(name string, revision uint64) error {
 	if name == "" {
 		return errors.New("no config name provided")
 	}
@@ -548,6 +562,8 @@ func Delete(name string) error {
 	if err != nil {
 		return fmt.Errorf("getting config %s: %w", name, err)
 	}
+
+	c.IfRevision = revision
 
 	if err = store.Delete(c); err != nil {
 		return fmt.Errorf("deleting config %s: %w", name, err)

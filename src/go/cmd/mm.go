@@ -239,8 +239,8 @@ func mmArgsCompletion(
 
 	// The root command's PersistentPreRunE runs for the completion request,
 	// not for the command line being completed, so common.MinimegaBase misses
-	// a --base-dir.minimega typed on that line. Read it from the parsed flags.
-	base := getEffectiveString("base-dir.minimega", cmd.Flags().Changed("base-dir.minimega"))
+	// a --base-dir.minimega typed on that line. viper reads the parsed flags.
+	base := viper.GetString("base-dir.minimega")
 
 	line := toComplete
 	if len(args) > 0 {

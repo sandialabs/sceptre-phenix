@@ -14,6 +14,7 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/util/mm"
+	"phenix/util/termcolor"
 )
 
 const (
@@ -21,6 +22,10 @@ const (
 	imageConfigFixedCols = 7
 	headerName           = "Name"
 	headerValue          = "Value"
+
+	// minimega's names of the states of a VM that stopped or failed.
+	vmStateQuit  = "QUIT"
+	vmStateError = "ERROR"
 )
 
 // PrintTableOfConfigs writes the given configs to the given writer as an ASCII
@@ -39,8 +44,8 @@ func PrintTableOfConfigs(writer io.Writer, configs store.Configs) {
 
 // PrintTableOfExperiments writes the given experiments to the given writer as
 // an ASCII table. The table headers are set to Name, Topology, Scenario,
-// Started, VM Count, VLAN Count, and Apps.
-func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
+// Started, VM Count, VLAN Count, and Apps. palette colors the Started column.
+func PrintTableOfExperiments(writer io.Writer, palette termcolor.Palette, exps ...types.Experiment) {
 	table := tablewriter.NewWriter(writer)
 
 	table.SetHeader(
@@ -58,7 +63,7 @@ func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
 			exp.Spec.ExperimentName(),
 			exp.Metadata.Annotations["topology"],
 			exp.Metadata.Annotations["scenario"],
-			exp.Status.StartTime(),
+			palette.Green(exp.Status.StartTime()),
 			strconv.Itoa(len(exp.Spec.Topology().Nodes())),
 			strconv.Itoa(len(exp.Spec.VLANs().Aliases())),
 			strings.Join(apps, ", "),
@@ -69,22 +74,23 @@ func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
 }
 
 // PrintTableOfVMs writes the given VMs to the given writer as an ASCII table.
-func PrintTableOfVMs(writer io.Writer, includeTaps bool, vms ...mm.VM) {
+// palette colors the Running column.
+func PrintTableOfVMs(writer io.Writer, palette termcolor.Palette, includeTaps bool, vms ...mm.VM) {
 	table := tablewriter.NewWriter(writer)
 
 	switch len(vms) {
 	case 0:
 		return
 	case 1:
-		buildSingleVMTable(table, includeTaps, vms[0])
+		buildSingleVMTable(table, palette, includeTaps, vms[0])
 	default:
-		buildMultipleVMTable(table, includeTaps, vms...)
+		buildMultipleVMTable(table, palette, includeTaps, vms...)
 	}
 
 	table.Render()
 }
 
-func buildMultipleVMTable(table *tablewriter.Table, includeTaps bool, vms ...mm.VM) {
+func buildMultipleVMTable(table *tablewriter.Table, palette termcolor.Palette, includeTaps bool, vms ...mm.VM) {
 	header := []string{
 		"Host",
 		headerName,
@@ -106,7 +112,7 @@ func buildMultipleVMTable(table *tablewriter.Table, includeTaps bool, vms ...mm.
 
 	for _, vm := range vms {
 		var (
-			running = strconv.FormatBool(vm.Running)
+			running = vmRunning(palette, vm)
 			ifaces  = make([]string, 0, len(vm.Networks))
 			uptime  string
 		)
@@ -138,7 +144,7 @@ func buildMultipleVMTable(table *tablewriter.Table, includeTaps bool, vms ...mm.
 	}
 }
 
-func buildSingleVMTable(table *tablewriter.Table, includeTaps bool, vm mm.VM) {
+func buildSingleVMTable(table *tablewriter.Table, palette termcolor.Palette, includeTaps bool, vm mm.VM) {
 	table.SetHeader([]string{"Setting", headerValue})
 	table.SetAutoWrapText(false)
 	table.SetColWidth(colWidth)
@@ -171,7 +177,7 @@ func buildSingleVMTable(table *tablewriter.Table, includeTaps bool, vm mm.VM) {
 
 	table.Append([]string{"Host", vm.Host})
 	table.Append([]string{headerName, vm.Name})
-	table.Append([]string{"Running", strconv.FormatBool(vm.Running)})
+	table.Append([]string{"Running", vmRunning(palette, vm)})
 	table.Append([]string{"Disk", vm.Disk})
 	table.Append([]string{"Interfaces", strings.Join(ifaces, "\n")})
 	table.Append([]string{"Uptime", uptime})
@@ -183,6 +189,21 @@ func buildSingleVMTable(table *tablewriter.Table, includeTaps bool, vm mm.VM) {
 	}
 	table.Append([]string{"Labels", strings.Join(labels, ", ")})
 	table.Append([]string{"Metadata", string(metadata)})
+}
+
+// vmRunning is the Running value of vm: green when it runs, red when
+// minimega shows it as QUIT or ERROR, and faint otherwise.
+func vmRunning(palette termcolor.Palette, vm mm.VM) string {
+	running := strconv.FormatBool(vm.Running)
+
+	switch {
+	case vm.Running:
+		return palette.Green(running)
+	case vm.State == vmStateQuit || vm.State == vmStateError:
+		return palette.Red(running)
+	default:
+		return palette.Faint(running)
+	}
 }
 
 func PrintTableOfImageConfigs(writer io.Writer, optional []string, imgs ...types.Image) {

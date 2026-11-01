@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/gorilla/mux"
 
@@ -65,37 +64,21 @@ func ConfigureUsers(users []string) error {
 		}
 	}
 
-	// Where an entry's password and role are, after its name.
-	const (
-		passwordField = 1
-		roleField     = 2
-	)
-
 	var errs []error
 
 	for position, u := range users {
-		creds := strings.Split(u, ":")
+		entry, err := ParseDefaultUser(position+1, u)
+		if err != nil {
+			plog.Error(plog.TypeSecurity, "skipping default user without a role", "position", position+1, "user", entry.Name)
 
-		if len(creds) <= roleField {
-			// Name the entry by position and by its name, never by a field
-			// that may be a password.
-			var name string
-			if len(creds) > passwordField {
-				name = creds[0]
-			}
-
-			plog.Error(plog.TypeSecurity, "skipping default user without a role", "position", position+1, "user", name)
-
-			errs = append(errs, fmt.Errorf(
-				"default user %d (%q) is not name:password:role[:resource...]", position+1, name,
-			))
+			errs = append(errs, err)
 
 			continue
 		}
 
-		uname := creds[0]
-		pword := creds[1]
-		rname := creds[2]
+		uname := entry.Name
+		pword := entry.Password
+		rname := entry.Role
 
 		// User already exists.
 		// Confirm existing user has specified role and update if necessary.
@@ -112,7 +95,7 @@ func ConfigureUsers(users []string) error {
 					rname,
 				)
 
-				setUserRole(user, rname, creds[3:]...)
+				setUserRole(user, rname, entry.Resources...)
 			}
 
 			continue
@@ -135,7 +118,7 @@ func ConfigureUsers(users []string) error {
 			continue
 		}
 
-		setUserRole(user, rname, creds[3:]...)
+		setUserRole(user, rname, entry.Resources...)
 	}
 
 	return errors.Join(errs...)
@@ -150,7 +133,7 @@ func Start(opts ...ServerOption) error {
 	}
 
 	if fileServerEndpoint != "" {
-		o.features["file-server"] = true
+		o.features[FeatureFileServer] = true
 	}
 
 	_ = ConfigureUsers(o.users)
@@ -172,7 +155,7 @@ func Start(opts ...ServerOption) error {
 		}
 	}
 
-	if o.featured("tunneler-download") {
+	if o.featured(FeatureTunnelerDownload) {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
 		router.HandleFunc("/downloads/tunneler/{name}", forward.GetTunneler).Methods("GET")
 	}
@@ -352,7 +335,7 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws", forward.GetPortForwardWebSocket).
 		Methods("GET", "OPTIONS")
 
-	if o.featured("vm-mount") {
+	if o.featured(FeatureVMMount) {
 		api.HandleFunc("/experiments/{exp}/vms/{name}/mount", MountVM).Methods("POST", "OPTIONS")
 		api.HandleFunc("/experiments/{exp}/vms/{name}/unmount", UnmountVM).
 			Methods("DELETE", "OPTIONS")
