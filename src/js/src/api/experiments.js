@@ -66,6 +66,11 @@ export function getExperimentApps(name) {
   return axiosInstance.get('experiments/' + name + '/apps');
 }
 
+// GET /soh: every experiment's state of health, as far as the role may get it
+export function listSoh(config) {
+  return axiosInstance.get('soh', config);
+}
+
 // GET /experiments/{name}/soh, filtered by statusFilter when it is given
 export function getSoh(name, statusFilter, signal) {
   let url = 'experiments/' + name + '/soh';

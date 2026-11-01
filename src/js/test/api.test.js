@@ -366,6 +366,12 @@ const requests = [
     ['experiments?vms=false', fetchConfig],
   ],
   [
+    'listSoh',
+    () => experimentsApi.listSoh(fetchConfig),
+    'get',
+    ['soh', fetchConfig],
+  ],
+  [
     'getExperiment',
     () => experimentsApi.getExperiment('exp', { params: { pageNum: 2 } }),
     'get',

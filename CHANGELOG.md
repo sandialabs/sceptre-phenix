@@ -45,6 +45,7 @@ All notable changes to this project will be documented in this file.
 - **Running Experiment Page**: The running experiment page uses the shared VM table and VM details card, and shows a summary card, an `Apps` box and netflow captures. It opens from the page cache and keeps its open tab and search in the URL.
 - **Admin Pages**: The Hosts, Users and Settings pages open from the page cache. The Tunneler page lists the tunneler builds that the server has, with a quick start.
 - **Log Files**: The Logs page shows each log level as a colored badge. The Logs page and the new `/api/v1/logs/files` routes download the phēnix and minimega log files.
+- **State of Health Overview**: Added the `State of Health` tab and `GET /api/v1/soh`, which show the SoH verdict, VM states, checks and last 20 runs of each experiment. The `soh` app gets DHCP addresses without a data race, and its `skipHosts` setting also matches `.qcow` disk images.
 
 ### Changed
 

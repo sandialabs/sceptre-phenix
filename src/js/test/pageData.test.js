@@ -68,6 +68,7 @@ describe('the list pages', () => {
     ['configs', 'configs', { configs: [1] }],
     ['disks', 'disks', { disks: [1] }],
     ['hosts', 'hosts', { hosts: [1] }],
+    ['soh', 'soh', { experiments: [1] }],
     ['vmtiles', 'vms', { vms: [1] }],
   ])('%s lists what GET %s answers, or nothing', async (page, url, body) => {
     const signal = new AbortController().signal;

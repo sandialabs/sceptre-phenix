@@ -360,6 +360,9 @@ func contractRoutes() []contractRoute {
 		// consoles: a user reaches only their own
 		{method: "GET", path: "/api/v1/console/{console}", need: one(testRole("miniconsole", "get")), want: ok},
 		{method: "DELETE", path: "/api/v1/console/{console}", need: one(testRole("miniconsole", "post")), want: done},
+
+		// state of health
+		{method: "GET", path: "/api/v1/soh", need: one(testRole("experiments", "list"))},
 	}
 }
 
@@ -704,6 +707,7 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 			want: http.StatusNotFound,
 		},
 		"unknown API path":     {method: "GET", path: "/api/v1/no-such-route", want: http.StatusNotFound},
+		"method SOH takes not": {method: "PATCH", path: "/api/v1/soh", want: http.StatusMethodNotAllowed},
 		"VM restart by GET":    {method: "GET", path: exp + "/vms/" + contractVM + "/restart", want: http.StatusMethodNotAllowed},
 		"VM shutdown by GET":   {method: "GET", path: exp + "/vms/" + contractVM + "/shutdown", want: http.StatusMethodNotAllowed},
 		"VM disk reset by GET": {method: "GET", path: exp + "/vms/" + contractVM + "/reset", want: http.StatusMethodNotAllowed},

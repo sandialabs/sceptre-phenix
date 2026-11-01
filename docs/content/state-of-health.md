@@ -7,8 +7,11 @@ collect the experiment health state data. See the [command and control](#command
 
 ## User Interface
 
-SoH information is presented in the UI in three separate tabs. You can access
-the information by clicking the SoH button from the Experiments or Running
+SoH information is presented in the UI in two places. The `State of Health`
+tab in the navbar summarizes every experiment in one table; see [State of
+Health Overview](#state-of-health-overview). A single experiment also has its
+own SoH page, which presents its information in separate tabs. To open an
+experiment's SoH page, click the SoH button from the Experiments or Running
 Experiment components.
 
 Button available on the experiments table.
@@ -19,7 +22,106 @@ Button available in running experiment.
 
 ![screenshot](images/exp_run.png){: width=200 .center}
 
-### Topology Graph
+Both the overview and an experiment's SoH page read their data through the
+API, so the refresh control in the header applies to them. The label beside it
+says when the page's data was last loaded, and the button reloads it: the icon
+is yellow while it refreshes, green after a successful load, and red after a
+failure.
+
+`GET /api/v1/soh` returns the same summary the `State of Health` tab shows,
+for every experiment the caller may `get`. See [API](api.md) for the
+interactive API documentation and for how to authenticate.
+
+## State of Health Overview
+
+The `State of Health` tab in the navbar (`/soh`) lists every experiment in one
+table, so you can see which experiments need attention without opening each
+one. The tab needs the `experiments` `list` permission, and it lists only the
+experiments your role may `get`.
+
+![State of Health overview with its filters, summary line and a table of five experiments with each one's status, SoH verdict, VM health bar, checks, reachability, a 12-run trend, last check time and actions.](images/soh_overview.png){: width=800 .center}
+
+Each row describes one experiment:
+
+| Column | Shows |
+|---|---|
+| `Experiment` | the experiment's name, linking to it, with its scenario and VM count beneath |
+| `Experiment Status` | `started`, `stopped`, or what phēnix is currently doing to it; a starting experiment shows a progress bar instead |
+| `SoH` | the experiment's verdict (see below) |
+| `VM Health` | a bar of the experiment's VMs by state, with the counts beneath |
+| `Checks` | how many checks passed out of the total, and how many are failing |
+| `Reachability` | the share of reachability pairs that pass, with the pair counts, or `not tested` when the `soh` app is not testing reachability |
+| `Failing, last 12 runs` | a sparkline of the failing check count of each of the last 12 runs, or `after next run` until the app has run twice |
+| `Last Check` | the time of day of the last run and how long ago it was, or `running now…` while a run is in progress |
+| `Actions` | a button to run SoH on the experiment, and one to view its topology graph |
+
+The `SoH` column holds one of five verdicts, the waiting one naming what it is
+waiting for:
+
+| Verdict | Meaning |
+|---|---|
+| `degraded` | a VM that should be up is down, at least 20% of the checked hosts have a failing check, or fewer than 90% of the reachability pairs pass |
+| `checks failing` | at least one check is failing, but none of the `degraded` conditions is met |
+| `waiting for start` | the `soh` app is configured, but the experiment is not running yet |
+| `waiting for first run` | the experiment is running, but the app has no results yet |
+| `healthy` | every check the app ran passed |
+| `not configured` | the experiment's scenario does not include the `soh` app |
+
+Rows are marked down their left edge, red for `degraded` and orange for
+`checks failing`. The table is sorted by verdict, worst first, and can also be
+sorted by `Experiment`, `Experiment Status`, `Checks` and `Last Check`.
+Columns that need results from a run show a dash for an experiment that has
+none, and the `Last Check` column says why: `soh app not in scenario`,
+`starts after post-start`, `first run in progress…` or `no results yet`.
+
+Above the table, four filters show how many experiments each one holds: `All`
+(the default), `Needs attention` (the `degraded` and `checks failing`
+experiments), `Healthy`, and `No SOH data` (the experiments waiting for
+results or without the app). The count on `Needs attention` turns orange while
+anything is in it. Beside the filters, a one-line summary gives how many
+experiments SoH is active on, how many hosts are failing checks, and how many
+VMs are down, and the `Find an Experiment` box narrows the table to
+experiments whose name contains what you type.
+
+The row of an experiment with problems can be expanded. The detail names how
+many problems the experiment has, then lists them in a table of `Host`,
+`Check`, `Target`, `Result` and `Checked` — failing checks first, newest
+first, then the VMs that are down. Six problems are listed at a time, with a
+`Show all N problems` link for the rest, and buttons to `Open topology graph`
+or `Run SOH`. The server sends at most 50 failing checks and down VMs per
+experiment; when a run has more than that, the detail says so and points at
+the topology graph, which has them all.
+
+![Expanded ics-water-plant row listing 6 of its 9 problems by host, check type, target and result, with Open topology graph and Run SOH buttons and a Show all 9 problems link.](images/soh_overview_detail.png){: width=800 .center}
+
+A legend under the table names the colors of the `VM Health` bar: `Running`,
+`Checks failing`, `Not running`, `Not booted`, `Delayed start` and
+`External / HIL`. A VM counts as down only when it should be up: a VM marked Do
+Not Boot, an external device, or a VM still waiting for its delayed start
+(state `BUILDING`) is not a problem. A delayed VM that is paused, quit or in
+error counts as down.
+
+The `Run SOH` button in a row's `Actions` column triggers a new run for that
+experiment and spins until the run is reported. When a run cannot be
+triggered, the button is disabled and its tooltip says why (you may not
+trigger runs on the experiment, the `soh` app is not in its scenario, the
+experiment is not running, SoH is already running, or SoH is still running its
+first checks).
+
+The overview loads in the background along with the other tabs, so it shows
+its last known data as soon as you open it. It reloads when an experiment, a
+VM or an `soh` run changes, and while a run is writing its results it reloads
+every 15 seconds for as long as the page is in the foreground. The refresh
+control in the header reloads it at any time.
+
+While an experiment is starting or stopping, minimega is busy, so the overview
+shows each running experiment's VM states as it last read them, says `states may
+be out of date` under the `VM Health` bar (hovering over it gives the time they
+were read), and the header marks the page `may be out of date`. A running
+experiment whose VM states were never read, or that minimega could not answer
+for, shows `states unavailable` instead of counts.
+
+## Topology Graph
 
 This tab displays a network graph of the running experiment.
 
@@ -83,7 +185,7 @@ example of no SoH information with the VNC button disabled.
 
 ![screenshot](images/soh_no_details.png){: width=800 .center}
 
-### External Devices
+## External Devices
 
 Experiments that include hardware-in-the-loop or other devices not deployed by
 minimega can still represent them in the topology graph by adding them to the
@@ -116,7 +218,7 @@ to/from the device from another VM in the experiment.
     with no `vlan` set on its interface(s) will appear in the graph as an
     isolated node with no connecting lines.
 
-### Network Volume
+## Network Volume
 
 This tab displays a chord graph that shows network flows between nodes using
 flows from Packetbeat fed to Elasticsearch; connections represent the volume of
@@ -313,7 +415,8 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 
 * `skipHosts`: a list of VM hostnames and/or disk image names to skip health
   monitoring for. For disk image names, any host using the disk image as its
-  primary image will be skipped. The default is `nil`.
+  primary image will be skipped. A disk image name ends in `.qc2`, `.qcow2`,
+  or `.qcow`. The default is `nil`.
 
 * `testReachability`: reachability testing is the process of making sure each VM
   can reach other VMs within the experiment over the network. See [Network
@@ -518,3 +621,17 @@ Corresponding tests for Windows VMs include the following:
 * `powershell -command "Get-Process <process> -ErrorAction SilentlyContinue"`
 * `powershell -command "netstat -an | select-string -pattern 'listening' | select-string -pattern '<port>'"`
 * `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select Average"`
+
+### SoH Run History
+
+Besides the per-host results of its latest run, the `soh` app records each
+finished run in its app status: `lastRun`, the time the run finished;
+`lastRunDuration`, how long it took in seconds; and `history`, a summary of the
+last 20 runs. Each history entry holds the run's `time` and `duration`, the
+`total` number of checks it ran and how many were `failing`, `hostsFailing`
+(hosts with at least one failing check) and `hostsDown` (hosts whose network
+configuration could not be confirmed).
+
+The [State of Health Overview](#state-of-health-overview) takes its
+`Last Check` column and its `Failing, last 12 runs` sparkline from this
+history.
