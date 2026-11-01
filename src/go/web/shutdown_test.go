@@ -304,6 +304,71 @@ func TestShutdownClosesWebSocketsGoingAway(t *testing.T) {
 	}
 }
 
+// Running jobs get half the grace period to finish; the rest are canceled
+// then, and a minimega console's process is ended at once.
+//
+//nolint:paralleltest // runs the broker and swaps the job registry and consoles
+func TestShutdownGivesJobsHalfTheGracePeriod(t *testing.T) {
+	// the quick job has 650ms to spare before half the grace period
+	const grace = 1500 * time.Millisecond
+
+	registry := useTestConsoles(t, time.Minute)
+	s := runTestServer(t, grace, http.NotFoundHandler())
+
+	console, err := registry.start(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("starting a console: %v", err)
+	}
+
+	quick := startShutdownJob(t, s.jobs, "quick", func(ctx context.Context) error {
+		select {
+		case <-time.After(100 * time.Millisecond):
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+
+	var canceledAfter time.Duration
+
+	began := time.Now()
+	slow := startShutdownJob(t, s.jobs, "slow", func(ctx context.Context) error {
+		<-ctx.Done()
+		canceledAfter = time.Since(began)
+
+		return ctx.Err()
+	})
+
+	took, err := s.stop()
+	if err != nil {
+		t.Errorf("run() after SIGTERM = %v, want nil", err)
+	}
+
+	if took > grace+shutdownSlack {
+		t.Errorf("run() took %s, want at most %s", took, grace+shutdownSlack)
+	}
+
+	got := map[string]job.Status{}
+
+	for name, id := range map[string]string{"quick": quick, "slow": slow} {
+		j, _ := s.jobs.Get(id)
+		got[name] = j.Status
+	}
+
+	want := map[string]job.Status{"quick": job.StatusSucceeded, "slow": job.StatusCanceled}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("job statuses after shutdown mismatch (-want +got):\n%s", diff)
+	}
+
+	if canceledAfter < grace/2 {
+		t.Errorf("slow job canceled %s after shutdown began, want at least half the %s grace period", canceledAfter, grace)
+	}
+
+	if !isDone(console.done) {
+		t.Error("minimega console still running after shutdown, want it ended")
+	}
+}
+
 // A grace period of 0 waits for nothing: running jobs are canceled at once.
 //
 //nolint:paralleltest // runs the broker and swaps the job registry

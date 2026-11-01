@@ -73,6 +73,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - Web UI: web-ui.md
   - Configuration:
     - Files: configuration.md
     - Settings: settings.md

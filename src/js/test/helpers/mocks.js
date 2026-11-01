@@ -2,7 +2,12 @@
 // websocket through. Load with vi.hoisted; it imports only vitest and helpers.
 import { vi } from 'vitest';
 
+import { idle, resetLoader } from './pageLoader.js';
 import { allowAll } from './permissions.js';
+
+// the other page loaders, for a file to mock pageLoader.js with instead of
+// modules.pageLoader
+export { capturing, fetching, loaderSpy } from './pageLoader.js';
 
 // roleAllowed(resource, verb, name), and the checks built on it, answer with
 // rbac.allowed; set it to a predicate from permissions.js
@@ -18,8 +23,8 @@ export const axios = {
   request: vi.fn(),
 };
 
-// useErrorNotification
-export const notify = { error: vi.fn() };
+// useErrorNotification and showError
+export const notify = { error: vi.fn(), show: vi.fn() };
 
 // the lasting notifications opened outside a component (utils/notify.js),
 // such as the outcome of an operation that did not fully succeed
@@ -56,10 +61,14 @@ const remove = (list, item) => {
 export const modules = {
   rbac: () => ({
     roleAllowed: (...args) => rbac.allowed(...args),
+    usersPageAllowed: () =>
+      rbac.allowed('users', 'list') ||
+      rbac.allowed('users', 'get', store.username),
   }),
   axios: () => ({ default: axios }),
   errorNotif: () => ({
     useErrorNotification: notify.error,
+    showError: notify.show,
   }),
   store: () => ({ usePhenixStore: () => store }),
   websocket: () => ({
@@ -78,9 +87,12 @@ export const modules = {
   }),
   // a component that cannot run outside a browser, such as MiniTerminal.vue
   stub: () => ({ default: {} }),
+  // every page gets a loader that loads nothing
+  pageLoader: idle,
 };
 
-// Undoes what a test set: every role allowed, no calls or traffic, and the store holds just `store` (STORE_DEFAULTS unless given; {} empty).
+// Undoes what a test set: every role allowed, no calls or traffic, no loader,
+// and the store holds just `store` (STORE_DEFAULTS unless given; {} empty).
 export function resetMocks({ store: fields = STORE_DEFAULTS } = {}) {
   rbac.allowed = allowAll;
   for (const fn of [
@@ -97,4 +109,5 @@ export function resetMocks({ store: fields = STORE_DEFAULTS } = {}) {
     store,
     fields === STORE_DEFAULTS ? structuredClone(STORE_DEFAULTS) : fields,
   );
+  resetLoader();
 }
