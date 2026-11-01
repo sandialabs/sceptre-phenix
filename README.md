@@ -42,6 +42,8 @@ make docker
 ```
 
 The compose file uses `phenix healthcheck` to check the health of the `phenix` container. This command probes the `/healthz` endpoint of the server. The `docker exec phenix phenix healthcheck --ready` command also checks minimega, the store and free disk space. See [Health Checks](https://phenix.sceptre.dev/latest/health/).
+`docker exec phenix phenix doctor` checks the configuration without the server: it prints the phēnix and minimega versions and the environment, each setting with where its value came from (secrets redacted), then the checks of config file syntax and keys, the config files found and the one `phenix settings set` writes, environment variables, the settings every command reads, the store, log and base directories, the store file's format and owner, what `phenix ui` reads at startup (sign-in, users, TLS, listen endpoints and the unix socket), the version and modes of a running `phenix ui`, minimega with its files directory, base directory and mesh, the host tools phēnix runs, free disk space, and the optional features, and a summary with a hint per failure. `--skip` leaves out a check or group, `--strict` fails on warnings, `-x` leaves out the settings, and `--report` prints it all in a block to paste into a bug report. `-p` shows only the checks that warn or fail. `--report` replaces host names, addresses, user names and secrets with tokens. See [Checking the Configuration](https://phenix.sceptre.dev/latest/settings/#checking-the-configuration).
+
 ### Native Installation (.deb)
 
 As an alternative to running phēnix using Docker, you can build a native Debian package (`.deb`) which installs the binaries and dependencies directly onto your system.
