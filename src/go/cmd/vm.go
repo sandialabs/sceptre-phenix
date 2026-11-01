@@ -456,12 +456,12 @@ func newVMInfoCmd() *cobra.Command {
 				}
 			}
 
-			vms, err = filterVMInfo(vms, MustGetStringArray(cmd.Flags(), "filter"))
+			vms, err = filterVMInfo(vms, mustGet(cmd.Flags().GetStringArray, "filter"))
 			if err != nil {
 				return err
 			}
 
-			printer.PrintTableOfVMs(os.Stdout, MustGetBool(cmd.Flags(), "taps"), vms...)
+			printer.PrintTableOfVMs(os.Stdout, mustGet(cmd.Flags().GetBool, "taps"), vms...)
 
 			return nil
 		},
@@ -565,8 +565,8 @@ func newVMRedeployCmd() *cobra.Command {
 			}
 
 			var (
-				disk   = MustGetString(cmd.Flags(), "disk")
-				inject = MustGetBool(cmd.Flags(), "replicate-injects")
+				disk   = mustGet(cmd.Flags().GetString, "disk")
+				inject = mustGet(cmd.Flags().GetBool, "replicate-injects")
 			)
 
 			if cpu != 0 && (cpu < 1 || cpu > 8) {
@@ -686,11 +686,11 @@ func newVMSetCmd() *cobra.Command {
 			}
 
 			var (
-				disk          = MustGetString(cmd.Flags(), "disk")
-				dnb           = MustGetBool(cmd.Flags(), "do-not-boot")
-				snapshot      = MustGetBool(cmd.Flags(), "snapshot")
-				rawLabels     = MustGetStringArray(cmd.Flags(), "label-changes")
-				appendLabels  = MustGetBool(cmd.Flags(), "append-labels")
+				disk          = mustGet(cmd.Flags().GetString, "disk")
+				dnb           = mustGet(cmd.Flags().GetBool, "do-not-boot")
+				snapshot      = mustGet(cmd.Flags().GetBool, "snapshot")
+				rawLabels     = mustGet(cmd.Flags().GetStringArray, "label-changes")
+				appendLabels  = mustGet(cmd.Flags().GetBool, "append-labels")
 				cpuChanged    = cmd.Flags().Changed("cpu")
 				memChanged    = cmd.Flags().Changed("mem")
 				partChanged   = cmd.Flags().Changed("partition")
@@ -994,7 +994,7 @@ func newVMCaptureCmd() *cobra.Command {
 			var (
 				expName = args[0]
 				subnet  = args[1]
-				filter  = MustGetString(cmd.Flags(), "filter")
+				filter  = mustGet(cmd.Flags().GetString, "filter")
 				vmList  = []string{}
 			)
 
@@ -1150,7 +1150,7 @@ func newVMCaptureCmd() *cobra.Command {
 			var (
 				expName = args[0]
 				subnet  = args[1]
-				filter  = MustGetString(cmd.Flags(), "filter")
+				filter  = mustGet(cmd.Flags().GetString, "filter")
 				vmList  = []string{}
 			)
 

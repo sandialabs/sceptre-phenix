@@ -87,7 +87,7 @@ func newVlanAliasCmd() *cobra.Command {
 					exp   = args[0]
 					alias = args[1]
 					id    = args[2]
-					force = MustGetBool(cmd.Flags(), "force")
+					force = mustGet(cmd.Flags().GetBool, "force")
 				)
 
 				vid, err := strconv.Atoi(id)
@@ -215,7 +215,7 @@ func newVlanRangeCmd() *cobra.Command {
 					exp    = args[0]
 					minVal = args[1]
 					maxVal = args[2]
-					force  = MustGetBool(cmd.Flags(), "force")
+					force  = mustGet(cmd.Flags().GetBool, "force")
 				)
 
 				vmin, err := strconv.Atoi(minVal)
