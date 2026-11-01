@@ -99,6 +99,7 @@ nav:
     - Workflow: workflow.md
   - Administration:
     - Users: user-administration.md
+    - Hosts: hosts.md
   - Reference:
     - minimega: minimega.md
     - Troubleshooting: troubleshooting.md

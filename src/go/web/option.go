@@ -43,6 +43,8 @@ type serverOptions struct {
 
 	logMiddleware string
 	minimegaLogs  string
+	// systemLog is the phenix system log file's current path, or "" for none
+	systemLog func() string
 
 	unbundled          bool
 	basePath           string
@@ -68,6 +70,7 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		basePath:    "/",
 		jwtLifetime: defaultJWTLifetime,
 		features:    make(map[string]bool),
+		systemLog:   plog.LogFilePath,
 
 		shutdownGrace: DefaultShutdownGracePeriod,
 	}
