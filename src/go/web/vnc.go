@@ -154,7 +154,7 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name))
+	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name), mm.Context(r.Context()))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting VNC endpoint", "err", err)
 
