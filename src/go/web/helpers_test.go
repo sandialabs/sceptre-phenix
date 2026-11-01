@@ -326,8 +326,6 @@ func serveRouter(t *testing.T, public fs.FS, jwtKey string) *httptest.Server {
 
 // do sends a request to the server and returns the response, which is closed
 // when the test ends.
-//
-//nolint:unparam // tests can send any header
 func do(t *testing.T, method, url, body string, header ...string) *http.Response {
 	t.Helper()
 
@@ -348,6 +346,30 @@ func do(t *testing.T, method, url, body string, header ...string) *http.Response
 	t.Cleanup(func() { resp.Body.Close() })
 
 	return resp
+}
+
+func get(t *testing.T, h http.Handler, target, acceptEncoding string) *http.Response {
+	t.Helper()
+
+	return getIfNoneMatch(t, h, target, acceptEncoding, "")
+}
+
+func getIfNoneMatch(t *testing.T, h http.Handler, target, acceptEncoding, etag string) *http.Response {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	if acceptEncoding != "" {
+		req.Header.Set("Accept-Encoding", acceptEncoding)
+	}
+
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	return rec.Result()
 }
 
 // errorMessage returns the message of body, a JSON Error body, failing the

@@ -2,8 +2,10 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -477,7 +479,7 @@ func UploadDisk(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// DownloadDisk - GET /disks?disk={disk}
+// DownloadDisk - GET /disks/download?disk={disk}
 // disk may be relative to filedir or absolute. If absolute must be in the files dir.
 func DownloadDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
@@ -508,23 +510,31 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	fileInfo, err := os.Stat(path) //nolint:gosec // Path traversal via taint analysis
+	served, err := util.ServeDownload(w, r, util.Download{
+		Path:        path,
+		Name:        filepath.Base(path),
+		ContentType: "application/octet-stream",
+		MaxSize:     0,
+	})
 	if err != nil {
+		if errors.Is(err, util.ErrNotRegular) {
+			return weberror.New(http.StatusBadRequest, "Cannot download directory: "+path)
+		}
+
 		errString := fmt.Sprintf("Error getting path %s: %s", path, err.Error())
 		plog.Error(plog.TypeSystem, errString)
+
+		if errors.Is(err, fs.ErrNotExist) {
+			return weberror.New(http.StatusNotFound, errString)
+		}
 
 		return weberror.New(http.StatusInternalServerError, errString)
 	}
 
-	if fileInfo.IsDir() {
-		return weberror.New(http.StatusBadRequest, "Can't download directory: "+path)
+	// once per download, not per resumed range or HEAD
+	if served.Started {
+		plog.Info(plog.TypeSystem, "download for file", "file", filepath.Base(path))
 	}
-
-	plog.Info(plog.TypeSystem, "download for file", "file", fileInfo.Name())
-
-	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(fileInfo.Name()))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeFile(w, r, path)
 
 	return nil
 }

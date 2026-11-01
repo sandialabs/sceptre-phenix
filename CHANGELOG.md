@@ -47,6 +47,7 @@ All notable changes to this project will be documented in this file.
 - **Web UI Build**: The web UI registers only the Buefy components that it uses and shows PNG images instead of SVG images, which makes the page bundle smaller. The footer has a link to the phēnix documentation.
 - **RBAC**: Roles index their policies once, and the no-auth and dev-auth modes reuse a role for 30 seconds. phēnix scopes all unnamed policies to user resource names, rejects usernames that are not one URL path segment, and removes `resourceNames: null` values.
 - **VNC Banners (breaking)**: The VNC page shows HTML in the `vncBanner` annotation as text, not as markup.
+- **Web Performance**: The server compresses API responses and UI files with gzip, and browsers keep the hashed UI assets in their cache. Disk, VM mount and tunneler downloads accept `HEAD` and `Range` requests, so a client can continue a stopped download.
 
 ### Removed
 

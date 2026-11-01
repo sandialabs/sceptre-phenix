@@ -1,36 +1,45 @@
 package forward
 
 import (
+	"errors"
+	"io/fs"
 	"net/http"
-	"os"
-	"time"
+	"path/filepath"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gorilla/mux"
 
+	"phenix/util/plog"
+	"phenix/web/util"
 	"phenix/web/weberror"
 )
 
 // GetTunneler - GET /downloads/tunneler/{name}.
 func GetTunneler(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("GetTunneler HTTP handler called")
+	name := mux.Vars(r)["name"]
 
-	var (
-		vars = mux.Vars(r)
-		name = vars["name"]
-	)
-
-	file, err := os.Open("downloads/tunneler/" + name) //nolint:gosec // Path traversal via taint analysis
-	if err != nil {
-		log.Error("opening tunneler file (%s) for download: %v", name, err)
-
-		return weberror.New(http.StatusBadRequest, "error opening file")
+	// a name directly in the downloads directory, and not a hidden file
+	if name == "" || filepath.Base(name) != name || name[0] == '.' {
+		return weberror.New(http.StatusBadRequest, "invalid tunneler name")
 	}
 
-	w.Header().Set("Content-Disposition", "attachment; filename="+name)
-	w.Header().Set("Content-Type", "application/octet-stream")
+	path := filepath.Join("downloads/tunneler", name)
 
-	http.ServeContent(w, r, "", time.Now(), file)
+	_, err := util.ServeDownload(w, r, util.Download{
+		Path:        path,
+		Name:        name,
+		ContentType: "application/octet-stream",
+		MaxSize:     0,
+	})
+
+	switch {
+	case err == nil:
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, util.ErrNotRegular):
+		return weberror.New(http.StatusNotFound, "tunneler "+name+" is not installed on this server")
+	default:
+		plog.Error(plog.TypeSystem, "opening tunneler for download", "name", name, "err", err)
+
+		return weberror.New(http.StatusInternalServerError, "unable to open tunneler "+name)
+	}
 
 	return nil
 }
