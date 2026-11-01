@@ -66,6 +66,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		"bridge-mode":              "manual",
 		"ui.jwt-signing-key":       "doctor-test-key",
 		"ui.shutdown-grace-period": "5",
+		"ui.netflow.max-size":      "100",
 		"ui.jwt-lifetime":          "24h",
 		"ui.users":                 "alice:Alicepass1!:global-admin",
 		"ui.listen-endpoint":       "0.0.0.0:3000",
@@ -93,7 +94,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 
 		return "", exec.ErrNotFound
 	}
-	// no tunneler downloads, wherever the tests run
+	// no tunneler downloads or WebShark build, wherever the tests run
 	env.stat = func(path string) (os.FileInfo, error) {
 		if !filepath.IsAbs(path) || strings.HasPrefix(path, "/opt/phenix") {
 			return nil, os.ErrNotExist
@@ -219,7 +220,7 @@ func TestParseDoctorSkip(t *testing.T) {
 		},
 		"comma list and repeated": {
 			args: []string{"--skip", "env, store.endpoint", "--skip", "ui"},
-			want: []string{"env", "env-overrides", "proxy-env", "store.endpoint", "ui.shutdown-grace-period"},
+			want: []string{"env", "env-overrides", "proxy-env", "store.endpoint", "ui.netflow.max-size", "ui.shutdown-grace-period"},
 		},
 		"auth, tls and socket groups": {
 			args: []string{"--skip", "auth,tls", "--skip", "socket"},
@@ -376,7 +377,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 48 passed, 12 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 50 passed, 12 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -402,8 +403,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 48 passed, 12 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"60 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 50 passed, 12 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"62 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

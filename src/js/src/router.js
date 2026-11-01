@@ -5,6 +5,7 @@ import { ToastProgrammatic as Toast } from 'buefy';
 import * as authApi from '@/api/auth.js';
 import { tokenExpired, usePhenixStore } from '@/store.js';
 import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
+import { canUseWebShark } from '@/utils/webshark.js';
 
 /** A page's title (WCAG 2.4.2): the most specific part first, then the app. */
 export function pageTitle(...parts) {
@@ -144,6 +145,13 @@ const router = createRouter({
       name: 'tunneler',
       meta: { title: 'Tunneler' },
       component: () => import('@/views/Tunneler.vue'),
+    },
+    {
+      // not /webshark: the server serves WebShark itself there
+      path: '/packets',
+      name: 'webshark',
+      component: () => import('@/views/WebShark.vue'),
+      meta: { title: 'WebShark', allowed: () => canUseWebShark() },
     },
 
     {

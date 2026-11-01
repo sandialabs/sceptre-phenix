@@ -213,13 +213,12 @@ The web API logs an audit event, a record of type `AUDIT`, for each
 security-relevant action: who signed in or out, or sent a request with a
 missing, expired or otherwise refused token; created, changed or deleted a
 user, config or experiment; applied a workflow or changed the settings;
-started or stopped an experiment, an app or a netflow capture, or canceled a
-SCORCH run; changed a VM's settings or optical disc, or powered it on or off;
-started or stopped a packet capture; downloaded a netflow capture; opened a
-console, VNC session or port forward; changed a disk image; uploaded or
-downloaded a file; or downloaded a log file. Signing in and out, and refused
-tokens, are logged only as these events, not as `SECURITY` records. Its fields
-follow the
+started or stopped an experiment, an app, a SCORCH run or a netflow capture;
+changed a VM's settings or optical disc, or powered it on or off; read a
+packet capture or downloaded a netflow capture; opened a console, VNC session
+or port forward; changed a disk image; uploaded, downloaded or deleted a file;
+or downloaded a log file. Signing in and out, and
+refused tokens, are logged only as these events, not as `SECURITY` records. Its fields follow the
 [Elastic Common Schema](https://www.elastic.co/guide/en/ecs/current/index.html)
 (ECS) as flat dotted keys, so the system log file can be shipped to
 Elasticsearch as it is.
@@ -284,11 +283,11 @@ user it named, and a token's event names only its user and expiry.
 | `vm-cdrom-change`, `vm-cdrom-eject` | `host` | `change` | `POST .../vms/{name}/cdrom` (the disc in `file.path`), `DELETE .../vms/{name}/cdrom` |
 | `capture-start` | `network` | `start` | `POST .../vms/{name}/captures`, `POST .../captureSubnet` (one event per VM) |
 | `capture-stop` | `network` | `end` | `DELETE .../vms/{name}/captures`, `POST .../stopCaptureSubnet` (one event per VM) |
-| `capture-stream` | `network` | `access` | none: no route records this action yet |
-| `capture-webshark-open` | `network` | `access` | none: no route records this action yet |
-| `capture-webshark-read` | `network` | `access` | none: no route records this action yet |
-| `capture-token-create` | `iam` | `creation` | none: no route records this action yet |
-| `capture-token-revoke` | `iam` | `deletion` | none: no route records this action yet |
+| `capture-stream` | `network` | `access` | `GET .../captures/{iface}/stream`, `GET /webshark/streams/{token}` |
+| `capture-webshark-open` | `network` | `access` | `POST /experiments/{exp}/webshark` |
+| `capture-webshark-read` | `network` | `access` | `GET /webshark/captures/{name}` (once per grant), `GET /webshark/json?method=download` (once per download) |
+| `capture-token-create` | `iam` | `creation` | `POST /experiments/{exp}/captureTokens` |
+| `capture-token-revoke` | `iam` | `deletion` | `DELETE /experiments/{exp}/captureTokens/{id}` |
 | `netflow-start`, `netflow-stop` | `network` | `start`, `end` | `POST /experiments/{exp}/netflow`, `DELETE /experiments/{exp}/netflow` |
 | `netflow-download` | `file` | `access` | `GET /experiments/{exp}/netflow/captures/{id}` (once per download, not per resumed range or `HEAD`), naming the capture and format in `phenix.netflow.capture` and `phenix.netflow.format`, and for CSV and JSONL the flows written and lines skipped in `phenix.netflow.flows` and `phenix.netflow.skipped` |
 | `file-download` | `file` | `access` | `GET /experiments/{name}/files/{filename}` (downloads and the Files tab's viewer), `POST .../files/download` (one event per file sent, including those sent before the download failed), `GET .../vms/{name}/files/download`, `GET /jobs/{id}/artifact` of an archive job (one event per file archived); refusals of `GET .../files/{filename}/checksum` and `POST .../files/archive`, and archive jobs that fail or are canceled |
@@ -359,13 +358,15 @@ naming it.
 | `phenix.file.target_path` | the file the action wrote or named: a new image, a backing image, a copy's or upload's destination |
 | `file.size` | the bytes an upload wrote |
 | `process.pid` | a console's or SCORCH terminal's process |
-| `phenix.file.preview` | whether a downloaded file was shown in the Files tab's viewer |
+| `phenix.file.capture`, `phenix.file.preview` | whether a downloaded file is a packet capture, and whether it was shown in the Files tab's viewer |
 | `phenix.netflow.capture`, `phenix.netflow.format` | the netflow capture downloaded, by its ID, and the format it was downloaded as: `text`, `csv` or `jsonl` |
 | `phenix.netflow.flows`, `phenix.netflow.skipped` | the flows a CSV or JSONL netflow download wrote, and the lines it left out because they do not parse |
 | `phenix.file.count` | the files a failed bulk action, such as a download, deletion or archive job, asked for |
 | `phenix.job.id` | the background job that did the action, or built the archive downloaded |
 | `phenix.capture.subnet` | a subnet capture's subnet |
+| `phenix.capability.id`, `phenix.capability.op`, `phenix.capability.ops`, `phenix.capability.expires` | a capture grant's ID (never its token), the operation used or those granted, and when it ends |
 | `phenix.log.name` | the log file a `log-download` asked for: `phenix` or `minimega` |
+| `phenix.webshark.live` | whether a capture opened in WebShark is still running |
 | `phenix.console.end_reason` | why a console ended: `user` (ended from the UI), `idle` (no websocket attached for 15 seconds), `shutdown` (the server stopped) or `exited` (its process exited) |
 | `phenix.disk.size`, `phenix.disk.unsafe` | a resize's size and a rebase's `unsafe` |
 | `phenix.mount.path` | where a VM's disk is mounted |
@@ -374,6 +375,10 @@ naming it.
 `source.ip` is the address the connection came from: behind a reverse proxy, it
 is the proxy's. `network.forwarded_ip` is copied from a header any client can
 send, so it is not verified.
+
+A request authorized by a capture grant (see [WebShark](webshark.md)) is
+audited as the user the grant was given to, and its `url.path` is the route's
+template, such as `/webshark/streams/{token}`, so the token is never logged.
 
 ### Refused Tokens
 
@@ -417,9 +422,9 @@ as `event.action=disk-delete` or `user.name=alice`.
 
 Actions taken with the `phenix` CLI, such as `phenix vm capture` or
 `phenix image`, have no web user and are not audited, other than those
-`phenix workflow apply` sends through the Unix socket. Neither are the
-console's resize requests and status checks, other than their refusals, nor
-reads that change nothing, such as `GET` requests for configs, the running
+`phenix workflow apply` sends through the Unix socket. Neither are a
+WebShark capture's watch requests or the console's resize and status checks,
+other than their refusals, nor reads that change nothing, such as `GET` requests for configs, the running
 netflow capture or the list of recorded netflow captures.
 
 ### Shipping Audit Events with Filebeat

@@ -116,21 +116,26 @@ each backing image, and the ISO image are links. A link opens the
 interface onto a different VLAN, if your role may do so; phēnix asks you to
 confirm the change first. While the VM is
 running, every connected interface also has a shark-fin button that starts a
-packet capture on it; while a capture is running, the row is highlighted
-and the button becomes a red stop button. The section heading counts the
-captures running on the VM. See [Packet Capture](#packet-capture).
+packet capture on it; while a capture is running, the row is highlighted, the
+button becomes a red stop button, and an `Open in WebShark` button appears
+beside it. The section heading counts the captures running on the VM. See
+[Packet Capture](#packet-capture) and [WebShark](webshark.md).
 
-Two buttons sit at the right of the section heading:
+Three buttons sit at the right of the section heading:
 
 * a green play button, `Capture all interfaces`, which starts a capture on every
   connected interface that is not already being captured (see
   [Capture All Interfaces](#capture-all-interfaces));
 * a red stop button, `Stop all packet captures`, which stops every capture
-  running on the VM.
+  running on the VM;
+* a search button that opens the [WebShark](webshark.md) tab: on the VM's
+  running capture (the lowest interface's, when several are running), or on the
+  experiment's saved captures when none is.
 
 The play button is grayed out when every connected interface is already being
 captured, and the stop button when no capture is running; hover either one to
-see why. They only appear if your role may start or stop captures.
+see why. The first two only appear if your role may start or stop captures, and
+the third only when WebShark is installed and your role may list captures.
 
 #### Labels, Snapshots and Port Forwards
 
@@ -545,6 +550,9 @@ phenix vm capture stop <experiment name> <vm name> [iface name/index]
 !!! note
     Stopping the capture on a single interface, from the Web-UI or the command
     line, requires minimega 3.3.0 or later.
+
+To view a capture's packets in the browser, or stream a running capture into a
+local Wireshark (`phenix vm capture stream`), see [WebShark](webshark.md).
 
 ## Capture All Interfaces
 

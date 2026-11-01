@@ -211,6 +211,26 @@ describe('VmDetailsCard capture buttons', () => {
   });
 });
 
+describe('VmDetailsCard Open in WebShark', () => {
+  it('opens each running capture on the WebShark page', async () => {
+    const wrapper = await card({ features: ['webshark'] });
+    const links = wrapper.findAll('.vm-webshark');
+    // only interface 1 is capturing
+    expect(links).toHaveLength(1);
+    expect(links[0].element.tagName).toBe('A');
+    expect(links[0].attributes('href')).toBe(
+      '/packets?exp=demo&vm=web&iface=1',
+    );
+    expect(links[0].attributes('aria-label')).toBe('Open in WebShark');
+    // not the capture icon, which starts captures
+    expect(has(links[0], '[data-icon="search"]')).toBe(true);
+  });
+
+  it('needs WebShark installed', async () => {
+    expect((await card()).findAll('.vm-webshark')).toEqual([]);
+  });
+});
+
 // the Network box's buttons, with their tooltips
 const networkButtons = (wrapper) =>
   tooltipButtons(
@@ -274,6 +294,47 @@ describe('VmDetailsCard Network buttons', () => {
     expect(stop.control.classes('is-loading')).toBe(false);
     expect(start.disabled).toBe(true);
     expect(stop.disabled).toBe(true);
+  });
+
+  it("link to the WebShark tab on the VM's running capture", async () => {
+    const tab = networkButton(
+      await card({ features: ['webshark'] }),
+      'webshark-tab',
+    );
+    expect(tab.tooltip).toBe(
+      "Open this VM's running capture in the WebShark tab",
+    );
+    expect(tab.control.attributes('href')).toBe(
+      '/packets?exp=demo&vm=web&iface=1',
+    );
+  });
+
+  it('link to the first of several running captures', async () => {
+    const wrapper = await card({
+      vm: { ...vm, captures: [...twoCaptured].reverse() },
+      features: ['webshark'],
+    });
+    const tab = networkButton(wrapper, 'webshark-tab');
+    expect(tab.tooltip).toBe(
+      "Open this VM's capture of interface 0 in the WebShark tab",
+    );
+    expect(tab.control.attributes('href')).toMatch(/iface=0$/);
+  });
+
+  it("link to the experiment's captures when none is running", async () => {
+    const wrapper = await card({
+      vm: { ...vm, captures: [] },
+      features: ['webshark'],
+    });
+    const tab = networkButton(wrapper, 'webshark-tab');
+    expect(tab.tooltip).toBe(
+      "Open the WebShark tab on this experiment's captures",
+    );
+    expect(tab.control.attributes('href')).toBe('/packets?exp=demo');
+  });
+
+  it('link to the WebShark tab only where it is installed', async () => {
+    expect(networkButton(await card(), 'webshark-tab')).toBeUndefined();
   });
 });
 
@@ -495,6 +556,13 @@ describe('VmDetailsCard permissions', () => {
   // [what a role loses, the permission it lacks, the card's props, the
   // selectors of what shows that part of the card, a part the role keeps]
   it.each([
+    [
+      'the WebShark links',
+      ['vms/captures', 'list'],
+      { features: ['webshark'] },
+      ['.vm-webshark'],
+      null,
+    ],
     [
       'Capture all interfaces',
       ['vms/captures', 'create'],

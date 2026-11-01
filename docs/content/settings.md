@@ -139,7 +139,7 @@ valid ones.
 | `log.system.path`, `log.console` | `files` | never | the file (`phenix.log` in it when `log.system.path` is a directory) cannot be written, or created in the nearest directory above it that exists; `log.console` gets a row only when it names a file |
 | `inject-sources` | `files` | the source (`src`) of a node injection does not exist on this host, so minimega `disk inject` cannot copy it at the start. For a stored experiment, doctor checks the injections of each VM that gets injects: `snapshot: true` and an inject partition other than 0. It finds a relative source in the `baseDir` of the experiment. It does not check an absolute source in the `baseDir`, because apps write those files at the start. For a stored topology, doctor checks only the absolute sources. A `skip` row shows when doctor cannot read the store | never |
 | `base-dir.phenix`, `base-dir.minimega`, `base-dir.injects`, `base-dir.topologies`, `mount-dir` | `dirs` | the directory does not exist, is not readable and searchable by this user, is relative, or is one phēnix writes to and is not writable by this user | the path is not a directory |
-| `ui.shutdown-grace-period` | `ui` | never | `phenix ui` would refuse the value |
+| `ui.shutdown-grace-period`, `ui.netflow.max-size` | `ui` | never | `phenix ui` would refuse the value |
 | `ui.jwt-signing-key` | `auth` | the key is empty (no sign-in) or a development key | a development key does not name exactly a user and a role, so `phenix ui` refuses every request |
 | `ui.jwt-lifetime` | `auth` | never | phēnix reads the value as under a minute: `24` is 24 nanoseconds, and a value that is not a duration, such as `1d`, is 0 |
 | `ui.users` | `auth` | an entry's role is not built in, so `phenix ui` skips the user unless the store holds the role; the list is empty while sign-in is on, so `phenix ui` creates the default user `admin@foo.com` | an entry is not `name:password:role[:resource...]`, which `phenix ui` skips without an error, or its role holds a comma; a row names an entry by position and user name, never by its password |
@@ -168,8 +168,8 @@ valid ones.
 | `disk-space` (one row for each filesystem, such as disk-space files, and the row disk-space inject dirs) | `images` | the filesystem of the images directory, of minimega's `-base` or of minimega's `-logfile` has less free space than 10% of its size or 5 GiB, whichever is larger. The row names each filesystem once. It gives the size of the minimega log, and the size of the files that the `leftovers` rows found. The inject dirs row warns about each `dstImg*` directory in minimega's `-base`, which a failed `disk inject` can leave, and tells which ones are mounted | never |
 | `apps` | `apps` | never | never; the row lists the user apps (`phenix-app-*`) and SCORCH components (`phenix-scorch-component-*`) found on `PATH` |
 | `scenario-apps` | `apps` | an app of a stored scenario or experiment is not built in, and `PATH` has no `phenix-app-<app>`. Or a SCORCH component type (its `type`, else its `name`) is not built in, and `PATH` has no `phenix-scorch-component-<type>`. The built-in apps are `ntp`, `serial`, `startup`, `vrouter`, `tap`, `soh` and `scorch`. The built-in SCORCH components are `break`, `pause`, `soh` and `tap`. A `skip` row shows when doctor cannot read the store | never |
-| `tunneler-download` | `features` | `downloads/tunneler` is not a directory | never; the row says whether `phenix ui` turns the feature on |
-| `ui.features` | `features` | a name is not a feature, such as a misspelling; `tunneler-download` or `file-server` is set without what it needs | never |
+| `tunneler-download`, `webshark` | `features` | `downloads/tunneler` is not a directory | never; the row says whether `phenix ui` turns the feature on |
+| `ui.features` | `features` | a name is not a feature, such as a misspelling; `tunneler-download` or `file-server` is set without what it needs | `webshark` is set without a WebShark build, which `phenix ui` refuses |
 | `ui.logs.minimega-path` | `features` | the file does not exist or is not readable by this user; the setting is empty while minimega logs to a file (its `-logfile`, or `MM_LOGFILE` in the environment) | the path is not a regular file |
 
 Every phēnix command reads the `settings` group before it runs, and `phenix
@@ -233,7 +233,8 @@ the same path, as the Docker Compose setup does with `/phenix`. The
 
 The `tools` and `features` groups check what parts of phēnix need beyond
 its settings. `phenix ui` turns on `tunneler-download` when the directory it
-starts in holds `downloads/tunneler`, and `file-server` when
+starts in holds `downloads/tunneler`, `webshark` when `webshark/index.html`
+is there or in `/opt/phenix/webshark`, and `file-server` when
 `ui.file-server-endpoint` is set. The rows name the working directory of
 `phenix doctor`, so run it in the directory `phenix ui` starts in, such as
 `/opt/phenix` in the Docker image. When `ui.logs.minimega-path` names a file
@@ -368,7 +369,7 @@ its color codes.
 | `log.system.max-age` | `PHENIX_LOG_SYSTEM_MAX_AGE` | `90` | Max age in days to retain old logs. |
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI and offer for download on the Logs page. **(Restart Required)** |
-| `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable. Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). **(Restart Required)** |
+| `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable (space-separated in `PHENIX_UI_FEATURES`). Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). `phenix ui` turns on `webshark`, `tunneler-download` and `file-server` itself, and refuses to start with `webshark` set but no WebShark build. **(Restart Required)** |
 | `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). **(Restart Required)** |
 | `ui.shutdown-grace-period` | `PHENIX_UI_SHUTDOWN_GRACE_PERIOD` | `5` | How many seconds stopping `phenix ui` may take to finish requests and jobs and close connections, as a whole number such as `10`. `0` closes everything without waiting; a negative value, or one that is not a whole number of seconds (such as `10s` or `1.5`), is refused at startup. Also `phenix ui --shutdown-grace-period`. See [Stopping the Server](#stopping-the-server). **(Restart Required)** |
 | `ui.netflow.max-size` | `PHENIX_UI_NETFLOW_MAX_SIZE` | `100` | Maximum size in megabytes of each recorded netflow capture, as a whole number. A capture that reaches it stops recording and is marked truncated, while the live view goes on. `0` does not record captures; a negative value, or one that is not a whole number, is refused at startup. Also `phenix ui --netflow.max-size`. See [Recorded Captures](netflow.md#recorded-captures). **(Restart Required)** |

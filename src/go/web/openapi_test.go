@@ -126,7 +126,7 @@ func routerOperations(t *testing.T) (map[string]bool, []string) {
 	t.Helper()
 
 	server := serveContract(t, func(o *serverOptions) {
-		o.features = map[string]bool{"vm-mount": true, "tunneler-download": true}
+		o.features = map[string]bool{"webshark": true, "vm-mount": true, "tunneler-download": true}
 	})
 
 	router, ok := server.Config.Handler.(*mux.Router)
@@ -177,6 +177,7 @@ func routerOperations(t *testing.T) (map[string]bool, []string) {
 //nolint:gochecknoglobals // constant table
 var routesOfAnyMethod = map[string]string{
 	"/api/v1":      "the API's subrouter; its routes are walked one by one",
+	"/webshark/":   "WebShark's pages and scripts, behind its own routes",
 	"/docs/":       "the documentation site",
 	"/novnc/":      "noVNC, which the VNC page loads",
 	"/xterm.js/":   "xterm.js, which the console page loads",

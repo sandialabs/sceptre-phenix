@@ -74,7 +74,7 @@ export async function fetchRunningExperiment(name, signal, meta) {
   };
 }
 
-// The experiment list for pages built on it (SCORCH), sharing the
+// The experiment list for pages built on it (SCORCH, WebShark), sharing the
 // Experiments page's request or recent result (see the reuse window in
 // freshness.js): listing experiments has the server query minimega for every
 // running one. meta, if given, takes on the list's freshness.

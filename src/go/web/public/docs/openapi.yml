@@ -60,7 +60,7 @@ info:
     signed-out token, or behind a proxy naming another user than the token's,
     it answers 401. A role without the permission a route needs gets 403. Some
     routes say that they answer 404 instead, so as not to reveal another
-    user's job or console. An unknown `/api/v1` path is a 404, and a
+    user's job, console or token. An unknown `/api/v1` path is a 404, and a
     method a path does not take is a 405, both before authentication. An
     `OPTIONS` request answers 204, also before authentication, without running
     the route. With `--jwt-signing-key proxy-jwt`, the server reads the token
@@ -72,9 +72,11 @@ info:
     Every error, refusals by authentication, RBAC and routing included,
     answers with the `Error` schema as `application/json`. The schema has a
     `message`, the `cause`, sometimes `metadata`, and a `code` to match on
-    rather than the message. There are two exceptions. The health routes
-    answer in `application/health+json`. A failed handshake on the console,
-    VNC, port forward and SCORCH websockets answers in plain text.
+    rather than the message. There are three exceptions. The `/webshark/`
+    routes that WebShark itself calls answer in WebShark's own format. The
+    health routes answer in `application/health+json`. A failed handshake on
+    the console, VNC, port forward and SCORCH websockets answers in plain
+    text.
   version: 0.0.0
   title: phenix
   contact:
@@ -1247,6 +1249,245 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Captures"
+  "/experiments/{exp_name}/webshark":
+    post:
+      tags:
+        - Experiments
+      summary: Name a packet capture for WebShark to open
+      description: >-
+        Returns a random name under which the WebShark viewer (served at
+        `/webshark/` when installed) opens a capture. The capture is a saved
+        capture file, by its path as the experiment's files are listed. This
+        needs the `experiments/files` `get` permission. Or it is a VM
+        interface's running capture, which also needs `vms/captures` `list` on
+        `<exp>/<vm>`. A file still being captured opens live. WebShark's own
+        requests carry no credentials, so the name is a capture grant. It is
+        bound to the caller and the session it was given under. Each use checks
+        that the caller may still read the capture. It ends 2 hours after its
+        last use, or 12 hours after it was given, whichever is first. It also
+        ends when the session ends (sign-out or token expiry), or when the
+        experiment or
+        the capture file is deleted. Open it at
+        `/webshark/embed?capture=<name>&embed=1`.
+      operationId: postExperimentsNameWebshark
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  title: Path
+                  type: string
+                  description: a .pcap, .pcapng or .cap experiment file, optionally gzipped
+                  example: captures/router_eth0.pcap
+                vm:
+                  title: VM
+                  example: router
+                  type: string
+                  description: VM with a running capture (with interface)
+                interface:
+                  title: Interface
+                  example: 0
+                  type: integer
+                  description: index of the VM interface being captured
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capture:
+                    title: Capture
+                    example: router-k2j4m6n8p1q3r5s7t9v2w4x6y8.pcap
+                    type: string
+                    description: the name WebShark opens the capture by
+                  live:
+                    title: Live
+                    example: false
+                    type: boolean
+                    description: whether the capture is still running
+                  title:
+                    title: Title
+                    description: how the WebShark page names the capture, the file's path or `<vm> interface <n> (live)`
+                    example: router interface 0 (live)
+                    type: string
+                  id:
+                    title: ID
+                    type: string
+                    description: >-
+                      the grant's ID, not secret, which
+                      `/experiments/{exp_name}/captureTokens` lists and
+                      revokes it by
+                    example: 3f9a0c51d2e47b86
+                  expires:
+                    title: Expires
+                    example: "2026-01-01T12:00:00Z"
+                    type: string
+                    format: date-time
+                    description: when the name stops working at the latest
+        "400":
+          description: >-
+            neither or both of a path and a VM, or a VM without an interface
+            index. Also a path that is not clean and relative to the files
+            directory, or not a capture file.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: no such file, or the interface is not being captured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "501":
+          description: WebShark is not installed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{exp_name}/captureTokens":
+    post:
+      tags:
+        - Experiments
+      summary: Give a capture token
+      description: >-
+        Gives the caller a capture token for one capture, named as
+        `/experiments/{exp_name}/webshark` takes it and with the same
+        permissions. With `"operations": ["stream"]` (a running capture
+        only), a command outside the browser streams the capture as pcap with
+        `GET /webshark/streams/{token}`. That route needs no other credentials
+        and is outside `/api/v1`, under the UI's base path. Because of this,
+        `curl -fsSN '<origin>/webshark/streams/<token>' | wireshark -k -i -`
+        works without the caller's session token. A stream token starts streams
+        for 5 minutes, from the start of the capture or with `?from=now`. A
+        stream it started ends with the caller's session, or 24 hours after the
+        token was given when the server does not sign users in. With any of
+        `view`, `download` and `watch`, the token is a WebShark capture name. A
+        token is bound to the caller and the session it was given under. Each
+        use checks that the caller may still read the capture. Signing out,
+        deleting the user, deleting the experiment or the capture file, and
+        revoking the token end it. Stopping the
+        experiment ends its stream tokens. Tokens are kept in the server's
+        memory, so a restart ends them all.
+      operationId: postExperimentsNameCaptureTokens
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaptureTokenRequest"
+      responses:
+        "201":
+          description: the token, which no other response shows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureToken"
+        "400":
+          description: >-
+            no or unknown operations, stream with other operations, a stream
+            of a capture that is not running, or a capture named as
+            `/experiments/{exp_name}/webshark` refuses it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: no such file, or the interface is not being captured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "501":
+          description: WebShark is not installed (for view, download and watch)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags:
+        - Experiments
+      summary: List the caller's capture tokens
+      description: >-
+        Lists the caller's own capture tokens for the experiment that have
+        not ended, WebShark capture names included, without the tokens.
+      operationId: getExperimentsNameCaptureTokens
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureTokenList"
+  "/experiments/{exp_name}/captureTokens/{id}":
+    delete:
+      tags:
+        - Experiments
+      summary: Revoke a capture token
+      description: >-
+        Revokes one of the caller's own capture tokens, ending the streams
+        and WebShark watches it opened.
+      operationId: deleteExperimentsNameCaptureTokensId
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: the token's ID
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: revoked
+        "404":
+          description: no such token of the caller's, or it has ended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/experiments/{name}/captureSubnet":
     post:
       tags:
@@ -3976,6 +4217,85 @@ paths:
       responses:
         "204":
           description: successful operation
+  "/experiments/{exp_name}/vms/{vm_name}/captures/{interface}/stream":
+    get:
+      tags:
+        - Virtual Machines
+      summary: stream a running VM packet capture
+      description: >-
+        Streams a running capture as a pcap file until the capture stops. The
+        stream starts with everything captured so far (or, with `from=now`,
+        nothing captured before the request), then each packet as it is
+        captured. A plain request
+        gets a chunked `application/vnd.tcpdump.pcap` body that Wireshark can
+        read from a pipe, for example `curl -sN -H 'X-Phenix-Auth-Token:
+        Bearer <token>' <url> | wireshark -k -i -`. A websocket request gets
+        the same bytes as binary messages: the first holds the pcap file
+        header and each later one whole packets. Needs the `vms/captures`
+        `list` permission on `<exp>/<vm>` and `experiments/files` `get` on the
+        experiment.
+      operationId: getExperimentsNameVmsNameCapturesInterfaceStream
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: vm_name
+          in: path
+          description: name of phenix VM being captured
+          required: true
+          schema:
+            type: string
+        - name: interface
+          in: path
+          description: index of the VM interface being captured
+          required: true
+          schema:
+            type: integer
+        - name: from
+          in: query
+          description: "`now` to skip packets captured before the request"
+          required: false
+          schema:
+            type: string
+            enum: [now]
+      responses:
+        "101":
+          description: switching protocols (websocket)
+        "200":
+          description: the capture, streamed as it grows
+          content:
+            application/vnd.tcpdump.pcap:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: the interface is not an index
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the interface is not being captured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/experiments/{exp_name}/vms/{vm_name}/cdrom":
     post:
       tags:
@@ -6432,7 +6752,8 @@ paths:
         - Users
       summary: Logout a user
       description: >-
-        Signs the session's token out, so it is refused from then on.
+        Signs the session's token out, so it is refused from then on, and
+        revokes the capture tokens given under it.
       operationId: postLogout
       responses:
         "204":
@@ -7151,6 +7472,256 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/webshark/json":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Experiments
+      summary: Answer WebShark's capture listing and download requests
+      description: >-
+        What the bundled WebShark asks of its server, with a capture name that
+        `POST /experiments/{exp_name}/webshark` or a capture token gave as
+        its only credential (see `GET /webshark/captures/{name}`).
+        `method=files` lists no captures, since WebShark opens each one by
+        name. `method=download` sends the capture as an attachment, needs a
+        name that allows `download`, and resumes as other downloads do.
+        Served from the server root, only when WebShark is installed. Errors
+        are WebShark's JSON, `{"err": 1, "errstr": "..."}`.
+      operationId: getWebsharkJson
+      parameters:
+        - name: method
+          in: query
+          description: what WebShark asks for
+          required: true
+          schema:
+            type: string
+            enum: [files, download]
+        - name: capture
+          in: query
+          description: the capture name, for `download`
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: no captures, or the capture
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    title: Files
+                    type: array
+                    description: always empty
+                    items:
+                      type: string
+                    example: []
+                  pwd:
+                    title: Pwd
+                    type: string
+                    description: always `.`
+                    example: .
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: a method other than files or download
+        "403":
+          description: >-
+            the capture name does not allow downloads, or a proxy that names
+            its user named another user than the name's
+        "404":
+          description: >-
+            no such capture name, one that has ended, or whose user may no
+            longer read the capture, or a capture that no longer exists
+        "503":
+          description: the user's access to the capture could not be checked
+  "/webshark/captures/{name}":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Experiments
+      summary: Read a capture for WebShark
+      description: >-
+        The capture that a capture name names, as WebShark reads it to show it.
+        The name is the only credential, and it is bound to the user and session
+        it was given to. Each use checks that the user may still read the
+        capture. A saved capture resumes as other downloads do. A running
+        capture sends the bytes captured so far, with no `ETag` or
+        `Last-Modified` and `Cache-Control: no-store`. Served from the server
+        root, only when WebShark is installed.
+      operationId: getWebsharkCapturesName
+      parameters:
+        - name: name
+          in: path
+          description: the capture name
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the capture
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "403":
+          description: >-
+            the capture name does not allow viewing, or a proxy that names its
+            user named another user than the name's
+        "404":
+          description: >-
+            no such capture name, one that has ended, or whose user may no
+            longer read the capture, or a capture that no longer exists
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+        "503":
+          description: the user's access to the capture could not be checked
+    head:
+      tags:
+        - Experiments
+      summary: Check a capture for WebShark
+      description: The GET response's headers without the capture.
+      operationId: headWebsharkCapturesName
+      parameters:
+        - name: name
+          in: path
+          description: the capture name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the capture's headers
+        "403":
+          description: the capture name does not allow viewing, or names another proxy user
+        "404":
+          description: no such capture name, one that has ended, or a capture that no longer exists
+        "503":
+          description: the user's access to the capture could not be checked
+  "/webshark/streams/{token}":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Virtual Machines
+      summary: Stream a running VM packet capture with a stream token
+      description: >-
+        Streams the running capture a `pcs_` stream token from
+        `POST /experiments/{exp_name}/captureTokens` names, as
+        `GET /experiments/{exp_name}/vms/{vm_name}/captures/{interface}/stream`
+        does, for a command outside the browser, such as `curl -fsSN
+        '<origin>/webshark/streams/<token>' | wireshark -k -i -`. Served from
+        the server root, under the base path when there is one, rather than
+        under `/api/v1`. The token is its only credential, so it needs no
+        session token. Each use checks again that the token's user may
+        still read the capture. The stream ends when the token does.
+      operationId: getWebsharkStreamsToken
+      parameters:
+        - name: token
+          in: path
+          description: the stream token
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: "`now` to skip packets captured before the request"
+          required: false
+          schema:
+            type: string
+            enum: [now]
+      responses:
+        "200":
+          description: the capture, streamed as it grows
+          content:
+            application/vnd.tcpdump.pcap:
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: >-
+            a proxy that names its user named another user than the token's
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            no such token, or one that has ended, been revoked, or whose user
+            may no longer read the capture. Also the interface is no longer
+            being captured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: the token's user's access could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/webshark/watch":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Experiments
+      summary: Follow a capture's growth for WebShark
+      description: >-
+        Server-sent events that tell WebShark when a running capture grows,
+        so it reloads the capture. The first is a `capture-changed` event whose
+        `kind` is `init`, with the capture's size and modification time. Then
+        one of kind `append` comes each time the capture has grown, at most as
+        often as its size allows. `heartbeat` events come between them. A saved
+        capture gets
+        only its `init`. The stream ends when the capture name does. Needs a
+        capture name that allows `watch`. Served from the server root, only
+        when WebShark is installed.
+      operationId: getWebsharkWatch
+      parameters:
+        - name: capture
+          in: query
+          description: the capture name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >-
+            the events, each `event: <name>` and `data: <JSON>`:
+            `capture-changed` data is `{"size": <bytes>, "mtime":
+            <milliseconds since the epoch>, "kind": "init" | "append"}`, and
+            `heartbeat` data is `{"t": <milliseconds since the epoch>}`
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                event: capture-changed
+                data: {"kind":"init","mtime":1767261600000,"size":4096}
+        "403":
+          description: >-
+            the capture name does not allow watching, or a proxy that names its
+            user named another user than the name's
+        "404":
+          description: >-
+            no such capture name, one that has ended, or whose user may no
+            longer read the capture, or a capture that no longer exists
+        "503":
+          description: the user's access to the capture could not be checked
   "/healthz":
     servers:
       - url: http://localhost:3000
@@ -7196,13 +7767,13 @@ paths:
       summary: Check the server's readiness
       description: >-
         Whether the server can run experiments. The checks cover minimega's
-        response time, version and namespaces, the mesh size, the store and
-        qemu-img. They also cover disk use of the
+        response time, version and namespaces, the mesh size, the store,
+        qemu-img and WebShark (when installed). They also cover disk use of the
         minimega files directory and the phenix base directory, the websocket
         broker, uptime and Go runtime numbers. Status is the worst status of
         every check. These fail: minimega not answering, an unreadable store, or
         a disk at least 98% full. These warn: a disk at least 90% full, a slow
-        minimega or store, or a missing qemu-img. A shrunken mesh or
+        minimega or store, or a missing qemu-img or WebShark. A shrunken mesh or
         a backed-up websocket queue also warns. Results are cached per check
         (minimega for 5
         seconds), so probes send minimega at most three commands every 5
@@ -7214,7 +7785,7 @@ paths:
           in: query
           description: >-
             checks to leave out, by name (`uptime`, `go`, `store`, `minimega`,
-            `qemu-img`, `disk`, `websocket`). Repeat it, or separate
+            `qemu-img`, `webshark`, `disk`, `websocket`). Repeat it, or separate
             names with commas.
           required: false
           style: form
@@ -8455,6 +9026,139 @@ components:
           description: "Path to the packet capture file."
           example: /phenix/captures/capture.pcap
           type: string
+    CaptureToken:
+      title: Capture Token
+      description: A capture token, as the experiment's capture token routes give and list it.
+      type: object
+      properties:
+        id:
+          title: ID
+          type: string
+          description: not secret. It names the token in listings, logs and revocation
+          example: 3f9a0c51d2e47b86
+        token:
+          title: Token
+          type: string
+          description: >-
+            the token, only when it is given: `pcs_<random>` for a stream, or
+            a WebShark capture name
+          example: pcs_k2j4m6n8p1q3r5s7t9v2w4x6y8
+        operations:
+          title: Operations
+          description: what the token may be used for
+          type: array
+          items:
+            type: string
+            enum: [stream, view, download, watch]
+        expires:
+          title: Expires
+          example: "2026-01-01T12:00:00Z"
+          type: string
+          format: date-time
+          description: when the token, and anything it opened, ends at the latest
+        useBy:
+          title: Use By
+          example: "2026-01-01T10:05:00Z"
+          type: string
+          format: date-time
+          description: a stream token's last moment to start a stream
+        lastUsed:
+          title: Last Used
+          description: when the token was last used
+          example: "2026-01-01T10:05:00Z"
+          type: string
+          format: date-time
+        uses:
+          title: Uses
+          description: how many times the token has been used
+          example: 1
+          type: integer
+        experiment:
+          title: Experiment
+          description: the experiment the capture belongs to
+          example: exp1
+          type: string
+        target:
+          title: Target
+          description: the capture the token reads
+          type: object
+          properties:
+            path:
+              title: Path
+              example: captures/router_eth0.pcap
+              type: string
+              description: the experiment file holding the capture, when known
+            vm:
+              title: VM
+              description: the VM whose interface is captured, for a running capture
+              example: router
+              type: string
+            interface:
+              title: Interface
+              description: the index of the captured VM interface, for a running capture
+              example: 0
+              type: integer
+        urls:
+          title: URLs
+          type: object
+          description: where to use the token, relative to the UI's base path
+          properties:
+            stream:
+              title: Stream
+              description: where a stream token streams the capture as pcap
+              type: string
+              example: webshark/streams/pcs_k2j4m6n8p1q3r5s7t9v2w4x6y8
+            view:
+              title: View
+              description: where WebShark opens the capture
+              type: string
+              example: webshark/embed?capture=router-k2j4m6n8p1q3r5s7t9v2w4x6y8.pcap
+    CaptureTokenRequest:
+      title: Capture Token Request
+      description: >-
+        The capture a capture token is for, named as
+        `/experiments/{exp_name}/webshark` takes it, and what it may be used
+        for.
+      type: object
+      required:
+        - operations
+      properties:
+        path:
+          title: Path
+          example: captures/router_eth0.pcap
+          type: string
+          description: a .pcap, .pcapng or .cap experiment file, optionally gzipped
+        vm:
+          title: VM
+          example: router
+          type: string
+          description: VM with a running capture (with interface)
+        interface:
+          title: Interface
+          example: 0
+          type: integer
+          description: index of the VM interface being captured
+        operations:
+          title: Operations
+          type: array
+          description: "`stream` alone, or any of `view`, `download` and `watch`"
+          items:
+            type: string
+            enum: [stream, view, download, watch]
+          example: [stream]
+    CaptureTokenList:
+      title: Capture Token List
+      description: The caller's capture tokens for one experiment.
+      type: object
+      properties:
+        tokens:
+          title: Tokens
+          description: >-
+            the caller's capture tokens for the experiment that have
+            not ended, without the tokens themselves
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptureToken"
     Snapshots:
       title: "Snapshots"
       description: "Schema describing the Snapshots resource."
@@ -10176,10 +10880,11 @@ components:
             feature that the `phenix ui --features` flag names, such as
             `vm-mount`. It has `file-server` when a file server endpoint is
             configured, and `tunneler-download` when the server's
-            `downloads/tunneler` directory exists at startup
+            `downloads/tunneler` directory exists at startup. It has `webshark`
+            when a WebShark build is installed
           items:
             type: string
-            example: vm-mount
+            example: webshark
     FileChecksum:
       title: File Checksum
       description: The size, modification time, ETag and SHA-256 digest of an experiment file.

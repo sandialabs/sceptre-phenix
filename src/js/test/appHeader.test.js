@@ -62,13 +62,66 @@ const links = (wrapper) => wrapper.findAll('.navbar-start a').map(textOf);
 
 describe('the menu', () => {
   const admin = role('Global Admin', ['*', '*'], ['*/*', '*']);
+  const viewer = role(
+    'Viewer',
+    ['experiments', 'list'],
+    ['logs', 'list'],
+    ['settings', 'get'],
+  );
 
   it.each([
+    [
+      'links every page for a role allowed everything, with every feature',
+      admin,
+      ['webshark', 'tunneler-download'],
+      [
+        'Experiments',
+        'Configs',
+        'Disks',
+        'Hosts',
+        'Users',
+        'Logs',
+        'SCORCH',
+        'State of Health',
+        'Console',
+        'WebShark',
+        'Settings',
+      ],
+    ],
+    [
+      'leaves out the pages of features the server does not have',
+      admin,
+      [],
+      [
+        'Experiments',
+        'Configs',
+        'Disks',
+        'Hosts',
+        'Users',
+        'Logs',
+        'SCORCH',
+        'State of Health',
+        'Console',
+        'Settings',
+      ],
+    ],
+    [
+      'links only the pages a role may open, as the router allows them',
+      viewer,
+      ['webshark'],
+      ['Experiments', 'SCORCH', 'State of Health'],
+    ],
     [
       'links Configs and Logs for the roles those pages need',
       role('Configs', ['configs', 'list'], ['logs', 'get']),
       [],
       ['Configs', 'Logs'],
+    ],
+    [
+      'links WebShark for a role that may open captures when it is installed',
+      role('Captures', ['vms/captures', 'list']),
+      ['webshark'],
+      ['WebShark'],
     ],
     [
       'links Users for a role that may list users',

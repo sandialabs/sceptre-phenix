@@ -49,10 +49,13 @@ authentication refusal, and a `404` or `405` for an unserved path or method,
 lack it). Points that are easy to miss:
 
 - Outside `/api/v1`, at the server root: `/healthz` and `/readyz` (no token;
-  see `docs/content/health.md`), `/version`, `/features` and
-  `/downloads/tunneler/{name}` (with the `tunneler-download` feature).
-- Feature-gated routes: the VM mount routes need the `vm-mount` feature, and
-  the `/console` routes `phenix ui --minimega-console`.
+  see `docs/content/health.md`), `/version`, `/features`,
+  `/downloads/tunneler/{name}` (with the `tunneler-download` feature) and the
+  `/webshark/` routes, including `GET /webshark/streams/{token}`, whose `pcs_`
+  stream token is its only credential.
+- Feature-gated routes: the VM mount routes need the `vm-mount` feature, the
+  `/console` routes `phenix ui --minimega-console`, and WebShark's view routes
+  an installed WebShark.
 - Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
   through to the SPA index. A route behind a disabled feature flag is therefore
   a real `404`, not `200 text/html`.
@@ -64,7 +67,7 @@ lack it). Points that are easy to miss:
   settings, carrying on past a failure, and lists each VM it skipped or failed
   in the response's `errors` (`403` if the role may patch none, `500` if all
   fail). Sign out with `POST /logout`.
-- Paths use camelCase (`captureSubnet`, `memorySnapshot`).
+- Paths use camelCase (`captureSubnet`, `memorySnapshot`, `captureTokens`).
 - `GET /schemas/{version}` returns the whole schema file (`v0` Workflow, `v1`
   Topology/Experiment/Image/User/Role, `v2` Scenario).
   `GET /schemas/{kind}/{version}` returns one kind, only at the version it is

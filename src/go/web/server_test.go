@@ -36,6 +36,11 @@ func TestRouterServesTheUI(t *testing.T) {
 			path: "/experiments/test-experiment", wantStatus: http.StatusOK,
 			wantCache: "no-cache", wantBody: "<title>phenix</title>",
 		},
+		// not the UI, which would load itself in WebShark's frame
+		"WebShark not installed": {
+			path: "/webshark/embed", wantStatus: http.StatusNotFound,
+			wantBody: "WebShark is not installed",
+		},
 		// not the UI's page, which an API client would take for data
 		"unknown API route": {
 			path: "/api/v1/no-such-route", wantStatus: http.StatusNotFound, wantBody: "no API route matches this request",

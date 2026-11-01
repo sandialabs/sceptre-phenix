@@ -2032,7 +2032,7 @@
         ];
       },
 
-      // keeps the URL naming the open tab and its search
+      // keeps the URL naming the open tab and its search, as WebShark does
       syncQuery() {
         if (this.unmounting || this.$route.name !== 'experiment') return;
         const query = tabQuery(

@@ -159,6 +159,8 @@ func DeleteExperimentFile(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(status, err.Error())
 	}
 
+	revokeExperimentFileGrants(name, path)
+
 	audit.Success(r, audit.FileDelete, "deleted file", deleted)
 
 	w.WriteHeader(http.StatusNoContent)
@@ -198,6 +200,7 @@ func DeleteExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	for _, path := range deleted {
+		revokeExperimentFileGrants(name, path)
 		audit.Success(r, audit.FileDelete, "deleted file", audit.Fields{Experiment: name, File: path})
 	}
 
@@ -266,7 +269,9 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 
 	// Each file sent, even when a later one fails.
 	for _, path := range zipped {
-		audit.Success(r, audit.FileDownload, "downloaded file", audit.Fields{Experiment: name, File: path})
+		audit.Success(r, audit.FileDownload, "downloaded file", audit.Fields{
+			Experiment: name, File: path, Extra: []any{"phenix.file.capture", isCaptureFile(path)},
+		})
 	}
 
 	if err != nil {
@@ -441,7 +446,7 @@ func auditArchiveDownload(r *http.Request, j job.Job) {
 
 		audit.Success(r, audit.FileDownload, "downloaded file", audit.Fields{
 			Experiment: j.Experiment, File: item.Name,
-			Extra: extra,
+			Extra: append([]any{"phenix.file.capture", isCaptureFile(item.Name)}, extra...),
 		})
 	}
 }
@@ -533,7 +538,10 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) error {
 	// the Files tab's viewer shows the file inline as text
 	var (
 		preview = r.Header.Get("Accept") == "text/plain"
-		fields  = audit.Fields{Experiment: name, File: path, Extra: []any{"phenix.file.preview", preview}}
+		fields  = audit.Fields{
+			Experiment: name, File: path,
+			Extra: []any{"phenix.file.capture", isCaptureFile(path), "phenix.file.preview", preview},
+		}
 	)
 
 	if !role.Allowed("experiments/files", "get", name) {

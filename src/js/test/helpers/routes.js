@@ -18,6 +18,7 @@ export const ROUTES = [
   ['/soh/:id', 'soh'],
   ['/settings', 'settings'],
   ['/tunneler', 'tunneler'],
+  ['/packets', 'webshark'],
   ['/proxysignup/:username?', 'proxysignup'],
   ['/disabled', 'disabled'],
   ['/version', 'version'],

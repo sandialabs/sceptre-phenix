@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -30,6 +31,7 @@ const (
 // on the others itself when it finds what each one needs.
 const (
 	FeatureVMMount          = "vm-mount"
+	FeatureWebShark         = "webshark"
 	FeatureTunnelerDownload = "tunneler-download"
 	FeatureFileServer       = "file-server"
 )
@@ -59,6 +61,8 @@ type serverOptions struct {
 	proxyAuthHeader string
 
 	features map[string]bool
+
+	websharkDir string
 
 	unixSocketGID int
 
@@ -90,7 +94,25 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		so.features[FeatureTunnelerDownload] = true
 	}
 
+	if dir, ok := FindWebShark(os.Stat); ok {
+		so.websharkDir = dir
+		so.features[FeatureWebShark] = true
+	}
+
 	return so
+}
+
+// checkFeatures refuses a feature set by hand that cannot work: webshark
+// without a WebShark build would serve files from no directory.
+func (o serverOptions) checkFeatures() error {
+	if o.featured(FeatureWebShark) && o.websharkDir == "" {
+		return fmt.Errorf(
+			"invalid ui.features: %s needs a WebShark build in %s, and phenix ui enables it automatically when it finds one",
+			FeatureWebShark, strings.Join(websharkDirs, " or "),
+		)
+	}
+
+	return nil
 }
 
 func (o serverOptions) tlsEnabled() bool {

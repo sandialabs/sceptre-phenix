@@ -711,16 +711,22 @@ seconds, so a file an app has only just written may not be in the next listing.
 Clicking a text file's name opens it in a read-only viewer, so you do not have
 to download it to read it. phēnix treats `.json`, `.jsonl`, `.log`, `.txt`,
 `.yaml`, and `.yml` files as text, and indents JSON so it is readable. `Exit`
-closes the viewer. Any other kind of file has to be downloaded to be read.
+closes the viewer.
+
+Clicking a capture file's name opens it in
+[WebShark](webshark.md#viewing-captures), when WebShark is installed. Capture
+files are `.pcap`, `.pcapng`, and `.cap` files, optionally gzipped. Any other
+kind of file has to be downloaded to be read.
 
 ### Acting on One File
 
 The buttons in a row's `Actions` column are icons; hover over one for its label.
 In order, they are:
 
-* the button that opens the file: `view file` for a text file. A row for any
-  other kind of file leaves that space empty. A text file over 10 MiB is too
-  large to view; download it instead.
+* the button that opens the file: `Open in WebShark`, a shark fin, for a capture
+  file, or `view file` for a text file. A row for any other kind of file leaves
+  that space empty. A text file over 10 MiB is too large to view; download it
+  instead.
 * `download`, which downloads that one file; an interrupted download resumes.
 * `delete`, which asks you to confirm, naming the file, and spins while the file
   is deleted. Deleting a file removes it from every cluster node and cannot be
@@ -800,9 +806,10 @@ canceling the job leaves no archive.
 
 !!! warning
     A `.pcap` file a running capture is still writing cannot be viewed,
-    downloaded, or deleted, so a half-written capture never leaves the server (a
-    `400` through the API). Stop the capture first. A file that is no longer on
-    the cluster gives a `404`.
+    downloaded, or deleted, so a half-written capture never leaves the server
+    (a `400` through the API). Stop the capture first, or watch it live in
+    [WebShark](webshark.md#viewing-captures), which follows a running capture as
+    it grows. A file that is no longer on the cluster gives a `404`.
 
 ### Adding Files
 

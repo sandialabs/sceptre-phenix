@@ -51,7 +51,9 @@ parameters, response schemas and status codes. That includes the websockets
 (`/ws` and the netflow, VNC, console, port forward and SCORCH streams), each
 described as a `GET` that answers `101` with its message protocol, and the
 routes outside `/api/v1`: the health, features, version and tunneler download
-routes. Only the web UI's own files (scripts, styles, images and the
+routes, and the `/webshark/` routes that WebShark itself calls and that stream
+a capture by token, which take a capture token instead of a sign-in token. Only
+the web UI's own files (scripts, styles, images and the
 documentation site) are left out.
 
 !!! info
@@ -92,6 +94,48 @@ Without both, they return everything; a value that is not a whole number of at
 least 1 answers `400`. A page of experiments asks minimega only about the
 experiments on it, and a page of `GET /vms?screenshot=` takes screenshots only
 of its own VMs.
+
+## Streaming Endpoints
+
+Three endpoints stream rather than return a document, and are easiest to use from
+the command line:
+
+* `GET /experiments/{exp}/vms/{name}/captures/{interface}/stream` streams a
+  running packet capture as a pcap file, over plain HTTP or as websocket binary
+  messages. See [WebShark](webshark.md#streaming-a-running-capture) for worked
+  examples, or use `phenix vm capture stream`.
+* `GET /webshark/streams/{token}`, outside `/api/v1`, streams the same pcap
+  with a short-lived stream token from
+  `POST /experiments/{exp}/captureTokens` as its only credential, so a command
+  run elsewhere need not carry a sign-in token. See
+  [Capture Tokens](webshark.md#capture-tokens).
+* `GET /console/{pid}/ws` attaches a websocket to a minimega console the server
+  is running. See [minimega](minimega.md#from-the-web-ui).
+
+### Slow clients
+
+The web UI's websocket, `GET /ws`, queues up to 256 messages for each client.
+The server closes a client that falls that far behind with close code 1013
+(Try Again Later) and the reason `client too slow`, so one stalled browser tab
+cannot hold up the others; the web UI reconnects and reloads what it shows. A
+client of its own should do the same. Under heavy load the live log stream
+skips lines rather than wait, and sends a `WARN` entry saying how many it
+skipped; `GET /logs` and the log file still have them.
+
+### Server shutdown
+
+When `phenix ui` shuts down (see
+[Stopping the Server](settings.md#stopping-the-server)), it closes every
+websocket with close code 1001 (Going Away), and sends that code at no other
+time. `GET /ws` and the capture stream and netflow websockets carry the reason
+`server shutting down`; the console, SCORCH, VNC and port forward websockets
+carry no reason. Until the server stops, a new websocket, starting a console
+and starting a job answer `503 Service Unavailable` with `Retry-After`.
+
+The capture stream above, and WebShark's live update stream, end when one
+write to the client takes longer than 10 seconds, letting go of the capture.
+The server also waits at most 10 seconds for a request's headers; request
+bodies and responses are not time-limited.
 
 ## Background Jobs
 

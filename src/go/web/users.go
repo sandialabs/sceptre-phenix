@@ -14,6 +14,7 @@ import (
 	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -419,6 +420,8 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) error {
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
+
+	revokeCaptureGrants("user deleted", func(g capability.Grant) bool { return g.User == uname }, "user", uname)
 
 	broker.Broadcast(
 		bt.NewRequestPolicy(resourceUsers, "delete", uname),

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"runtime/metrics"
 	"slices"
 	"strconv"
@@ -151,6 +153,34 @@ func TestQemuImg(t *testing.T) {
 				t.Errorf("QemuImg() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestWebShark(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	always := func() bool { return true }
+
+	missing := only(t, one(t, WebShark(dir, always)), KeyWebShark)
+
+	// the output ends with the platform's stat error
+	want := Result{ComponentID: "webshark", ComponentType: TypeComponent, Status: Warn, AffectedEndpoints: []string{"/webshark/"}}
+	if diff := cmp.Diff(want, missing, cmpopts.IgnoreFields(Result{}, "Output")); diff != "" {
+		t.Errorf("WebShark() without index.html mismatch (-want +got):\n%s", diff)
+	}
+
+	if !strings.HasPrefix(missing.Output, "WebShark build missing: ") {
+		t.Errorf("WebShark() without index.html: Output = %q, want the missing build", missing.Output)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	want = Result{ComponentID: "webshark", ComponentType: TypeComponent, Status: Pass}
+	if diff := cmp.Diff(want, only(t, one(t, WebShark(dir, always)), KeyWebShark)); diff != "" {
+		t.Errorf("WebShark() with index.html mismatch (-want +got):\n%s", diff)
 	}
 }
 

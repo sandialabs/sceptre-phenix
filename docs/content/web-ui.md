@@ -23,6 +23,7 @@ them:
 | `SCORCH` | `list` on `experiments` |
 | `State of Health` | `list` on `experiments` |
 | `Console` | `post` on `miniconsole` |
+| `WebShark` | the `webshark` feature, plus `get` on `experiments/files` or `list` on `vms/captures` |
 | `Settings` | `update` on `settings` |
 
 When the server has the `tunneler-download` feature, a `Tunneler` button at
@@ -37,7 +38,8 @@ its buttons download the phēnix and minimega log files (see
 [The Logs Page](logging.md#the-logs-page)).
 
 A feature is something the server found at startup, not a permission. The
-server reports the `tunneler-download` feature when it finds a
+server reports the `webshark` feature when it finds a WebShark build (see
+[WebShark](webshark.md)) and `tunneler-download` when it finds a
 `downloads/tunneler` directory to hand tunneler builds out from (see
 [Tunneler](tunneler.md)).
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"runtime/metrics"
 	"slices"
 	"strconv"
@@ -26,6 +28,7 @@ const (
 	storeTTL, storeTimeout       = 2 * time.Second, 3 * time.Second
 	minimegaTTL, minimegaTimeout = 5 * time.Second, 3 * time.Second
 	qemuImgTTL, qemuImgTimeout   = time.Minute, 2 * time.Second
+	websharkTTL, websharkTimeout = 30 * time.Second, time.Second
 	diskTTL, diskTimeout         = 10 * time.Second, 2 * time.Second
 )
 
@@ -41,6 +44,7 @@ const (
 	KeyMinimegaNamespaces = "minimega:namespaces"
 	KeyMeshNodes          = "mesh:nodes"
 	KeyQemuImg            = "qemu-img:version"
+	KeyWebShark           = "webshark:files"
 	KeyDisk               = "disk:utilization"
 	KeyWebsocketClients   = "websocket:clients"
 	KeyWebsocketQueue     = "websocket:queue"
@@ -454,6 +458,41 @@ func QemuImg(lookPath func(string) (string, error), version func(ctx context.Con
 			result.Output = path + ": " + line
 
 			return map[string][]Result{KeyQemuImg: {result}}
+		},
+	}
+}
+
+// WebShark reports whether the WebShark build the server found at startup is
+// still there. WebShark is optional, so a missing build only warns.
+func WebShark(dir string, enabled func() bool) Check {
+	key := Key{Name: KeyWebShark, ComponentID: "webshark", ComponentType: TypeComponent}
+
+	return Check{
+		Name:    "webshark",
+		Keys:    []Key{key},
+		Timeout: websharkTimeout,
+		TTL:     websharkTTL,
+		Enabled: enabled,
+		Run: func(context.Context) map[string][]Result {
+			result := Result{ //nolint:exhaustruct // filled in below
+				ComponentID:   key.ComponentID,
+				ComponentType: key.ComponentType,
+				Status:        Pass,
+			}
+
+			index := filepath.Join(dir, "index.html")
+
+			if info, err := os.Stat(index); err != nil {
+				result.Status = Warn
+				result.AffectedEndpoints = []string{"/webshark/"}
+				result.Output = "WebShark build missing: " + err.Error()
+			} else if !info.Mode().IsRegular() {
+				result.Status = Warn
+				result.AffectedEndpoints = []string{"/webshark/"}
+				result.Output = index + " is not a file"
+			}
+
+			return map[string][]Result{KeyWebShark: {result}}
 		},
 	}
 }

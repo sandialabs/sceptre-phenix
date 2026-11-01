@@ -683,3 +683,33 @@ func TestDoctorCommand(t *testing.T) {
 		}
 	}
 }
+
+// The ui.netflow.max-size check passes for a size phenix ui accepts, naming
+// it, and fails for one it refuses, given the value as the registry gives it.
+func TestNetflowMaxSizeCheck(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		value string
+		want  doctorCheck
+	}{
+		"default": {value: "100", want: doctorCheck{Name: "ui.netflow.max-size", Status: doctorPass, Detail: "100 MiB"}},
+		"off": {value: "0", want: doctorCheck{
+			Name: "ui.netflow.max-size", Status: doctorPass, Detail: "0, so phenix ui records no netflow captures",
+		}},
+		"negative": {value: "-5", want: doctorCheck{
+			Name: "ui.netflow.max-size", Status: doctorFail, Detail: `invalid ui.netflow.max-size "-5": it must not be negative`,
+		}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := netflowMaxSizeCheck(viperWith("ui.netflow.max-size", tt.value))
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("netflowMaxSizeCheck() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
