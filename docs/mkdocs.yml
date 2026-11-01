@@ -98,6 +98,7 @@ nav:
     - Workflow: workflow.md
   - Administration:
     - Users: user-administration.md
+    - Health Checks: health.md
   - Reference:
     - minimega: minimega.md
     - Troubleshooting: troubleshooting.md

@@ -48,7 +48,8 @@ response past authentication names that build in `X-Phenix-Version` (an
 authentication refusal, and a `404` or `405` for an unserved path or method,
 lack it). Points that are easy to miss:
 
-- Outside `/api/v1`, at the server root: `/version`, `/features` and
+- Outside `/api/v1`, at the server root: `/healthz` and `/readyz` (no token;
+  see `docs/content/health.md`), `/version`, `/features` and
   `/downloads/tunneler/{name}` (with the `tunneler-download` feature).
 - Feature-gated routes: the VM mount routes need the `vm-mount` feature, and
   the `/console` routes `phenix ui --minimega-console`.
