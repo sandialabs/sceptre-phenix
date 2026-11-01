@@ -22,8 +22,8 @@ repo = "local"
 
 [[repos.hooks]]
 id = "go-generate"
-name = "go generate (protobuf, mocks, RBAC policy)"
-description = "Regenerates code (protobuf, mocks, RBAC policy) so golangci-lint can type-check the full package graph."
+name = "go generate (protobuf, mocks, RBAC policy, JSON schemas)"
+description = "Regenerates code (protobuf, mocks, RBAC policy, JSON schemas) so golangci-lint can type-check the full package graph."
 entry = "make generate"
 language = "system"
 pass_filenames = false

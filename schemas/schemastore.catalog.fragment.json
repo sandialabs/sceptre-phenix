@@ -1,0 +1,15 @@
+[
+  {
+    "name": "phenix",
+    "description": "phenix config files (Topology, Scenario, Experiment, Image, Role, User) and workflow configs (phenix.yml)",
+    "fileMatch": [
+      "**/phenix-configs/**/*.yml",
+      "**/phenix-configs/**/*.yaml",
+      "**/phenix-images/*.yml",
+      "**/phenix-images/*.yaml",
+      "**/phenix.yml",
+      "**/.phenix.yml"
+    ],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/phenix.schema.json"
+  }
+]

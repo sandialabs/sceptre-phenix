@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/js/**'
       - 'src/go/**'
+      - 'schemas/**'
       - 'docker/**'
       - 'Makefile'
       - '.github/workflows/frontend.yml'
@@ -13,6 +14,7 @@ on:
     paths:
       - 'src/js/**'
       - 'src/go/**'
+      - 'schemas/**'
       - 'docker/**'
       - 'Makefile'
       - '.github/workflows/frontend.yml'

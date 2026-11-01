@@ -75,7 +75,7 @@ Docker for full deployments and image builds.
 | Inspect targets | `make help` or `make help-all` |
 | Install development tools | `make install-dev` |
 | Install with another Python | `SYSTEM_PYTHON=/path/to/python3.12 make install-dev` |
-| Generate mocks, protobufs, and RBAC | `make generate` |
+| Generate mocks, protobufs, RBAC, and JSON Schemas | `make generate` |
 | Format / fixing lint for Go/examples | `make format` / `make lint` |
 | Generate, then non-fixing lint | `make check` |
 | Go core and example tests | `make test` |

@@ -148,7 +148,7 @@ We use a `Makefile` to standardize development tasks. Run `make help` to see all
 # Development
 make all         # Run all tools (lint, test, build examples)
 make check       # Run linters without fixing (for CI)
-make generate    # Run code generation (protobuf, mocks, etc)
+make generate    # Run code generation (protobuf, mocks, JSON Schemas, etc)
 make lint        # Run linters and formatters, fixing issues in place
 make test        # Run unit tests
 
