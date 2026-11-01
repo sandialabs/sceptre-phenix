@@ -121,19 +121,34 @@ func (r *Role) SetResourceNames(names ...string) error {
 	return nil
 }
 
+// AddResourceName adds name once to each policy that names resources but not
+// name. A policy that names no resources stays as it is. A bad pattern returns
+// ErrResourceNameInvalid before any change. It returns ErrResourceNameExists
+// only when no policy changed and a policy already names name.
 func (r *Role) AddResourceName(name string) error {
+	if !validPattern(name) {
+		return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
+	}
+
+	var changed, exists bool
+
 	for _, policy := range r.Spec.Policies {
-		for _, existing := range policy.ResourceNames {
-			if name == existing {
-				return fmt.Errorf("%w: %s", ErrResourceNameExists, name)
-			}
-
-			if !validPattern(name) {
-				return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
-			}
-
-			policy.ResourceNames = append(policy.ResourceNames, name)
+		if len(policy.ResourceNames) == 0 {
+			continue
 		}
+
+		if slices.Contains(policy.ResourceNames, name) {
+			exists = true
+
+			continue
+		}
+
+		policy.ResourceNames = append(policy.ResourceNames, name)
+		changed = true
+	}
+
+	if exists && !changed {
+		return fmt.Errorf("%w: %s", ErrResourceNameExists, name)
 	}
 
 	return nil
