@@ -48,6 +48,7 @@ library.add(faLinux, faSharkFin, faWindows);
 
 import App from './App.vue';
 import router from './router.js';
+import { lazyRouteLoaders, schedulePrefetch } from './utils/prefetch.js';
 
 const app = createApp(App);
 
@@ -61,3 +62,13 @@ app.use(router);
 installBuefy(app);
 
 app.mount('#app');
+
+router.isReady().then(() => {
+  schedulePrefetch([
+    ...lazyRouteLoaders(router.getRoutes()),
+    // loaded by pages rather than routes
+    () => import('@/components/configs/ConfigsEditor.vue'),
+    () => import('@/views/experiment/RunningExperiment.vue'),
+    () => import('@/views/experiment/StoppedExperiment.vue'),
+  ]);
+});

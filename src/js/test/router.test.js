@@ -31,6 +31,8 @@ vi.mock('@/views/experiment/Base.vue', () => ({ default: {} }));
 vi.mock('@/views/experiment/VMtilesView.vue', () => ({ default: {} }));
 vi.mock('@/views/ProxySignUp.vue', () => ({ default: {} }));
 vi.mock('@/views/NotFound.vue', () => ({ default: {} }));
+const getProxyLogin = vi.hoisted(() => vi.fn());
+vi.mock('@/api/auth.js', () => ({ getProxyLogin }));
 
 let router;
 let store;
@@ -226,6 +228,29 @@ describe('with no one signed in', () => {
     expect((await visit('/hosts')).name).toBe('signin');
     expect(store.next.fullPath).toBe('/hosts');
     expect(document.title).toBe('Sign in - phēnix');
+  });
+});
+
+describe('behind an authenticating proxy', () => {
+  // the proxy's user has no phenix user: the server's 404 names it
+  const unknownUser = (data) =>
+    Object.assign(new Error('Request failed with status code 404'), {
+      response: { status: 404, data },
+    });
+
+  it.each([
+    [
+      'offers to sign up the user a JSON Error names',
+      { message: 'user not found', metadata: { username: 'alice' } },
+      'alice',
+    ],
+    ['offers an empty sign-up for an error naming no user', 'forbidden', ''],
+  ])('%s', async (_, data, username) => {
+    vi.stubEnv('VITE_AUTH', 'proxy');
+    getProxyLogin.mockRejectedValue(unknownUser(data));
+    const to = await visit('/hosts');
+    expect(to.name).toBe('proxysignup');
+    expect(to.params.username).toBe(username);
   });
 });
 

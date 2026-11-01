@@ -3,6 +3,7 @@ import fc from 'fast-check';
 import { expect, it } from 'vitest';
 
 import { bytesText, mebibytesText, parseBytes } from '@/utils/bytes.js';
+import { formattingMixin } from '@/utils/formattingMixin.js';
 
 it.each([
   [512, '512 B'],
@@ -44,6 +45,7 @@ it.each([
   [3 * 1024 ** 2 + 512 * 1024, '3.5 TiB'],
 ])('writes %d MiB of memory as %s', (mebibytes, want) => {
   expect(mebibytesText(mebibytes)).toBe(want);
+  expect(formattingMixin.methods.formatRAM(mebibytes)).toBe(want);
 });
 
 it('writes memory to a tenth of its unit, not rounded to a whole one', () => {

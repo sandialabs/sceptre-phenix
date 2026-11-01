@@ -30,6 +30,7 @@ All notable changes to this project will be documented in this file.
 - **API Reference**: `GET /docs/openapi.yml` serves the spec with the server build in `info.version`, and API responses have the build in `X-Phenix-Version`. An `OPTIONS` request to an API route returns `204` and does not run the route.
 - **Background Jobs**: Added background jobs to `phenix ui`, with the `/api/v1/jobs` routes, the `phenix job` command and a jobs menu in the web UI. The new `jobs` permission, which stored Experiment Admin roles get at startup, lets a role act on the jobs of other users.
 - **minimega Console**: The web UI console stays open across page changes, reloads and tabs, and shows its recent output again. It ends on logout or 15 seconds after its last tab closes.
+- **Web UI Page Cache**: The web UI shows the data that each page loaded last while it loads new data. The header shows the age of the page data, with a button that loads the data again.
 
 ### Changed
 

@@ -1,0 +1,167 @@
+// How each cached page fetches its data. They live here rather than in the
+// pages so the data can be preloaded before a page is ever opened.
+import * as configsApi from '@/api/configs.js';
+import * as experimentsApi from '@/api/experiments.js';
+import * as hostsApi from '@/api/hosts.js';
+import * as logsApi from '@/api/logs.js';
+import * as rolesApi from '@/api/roles.js';
+import * as settingsApi from '@/api/settings.js';
+import * as usersApi from '@/api/users.js';
+import * as vmsApi from '@/api/vms.js';
+import { useErrorNotification } from '@/utils/errorNotif.js';
+import {
+  cachedPage,
+  fetchIntoCache,
+  isLoadingPage,
+  recentPage,
+} from '@/utils/pageCache.js';
+import { whenIdle } from '@/utils/prefetch.js';
+import { whenServing } from '@/utils/freshness.js';
+import { serverNotAnswering } from '@/utils/unreachable.js';
+import { roleAllowed } from '@/utils/rbac.js';
+import { usePhenixStore } from '@/store.js';
+
+// the Logs page's default range, in seconds
+export const DEFAULT_LOG_WINDOW = 10 * 60;
+
+// Several log entries can share the same millisecond timestamp, so the Logs
+// page's virtual scroller keys each entry by its own id rather than by `time`,
+// which would drop rows and leave blank gaps. The counter is shared by every
+// fetch and the websocket stream, so cached entries never share a key with
+// ones streamed in later.
+let nextLogId = 0;
+export const withLogIds = (logs) =>
+  logs.map((log) => ({ ...log, id: nextLogId++ }));
+
+// cache keys for an experiment's page, running and stopped
+export const experimentKey = (name) => `experiment/${name}`;
+export const stoppedExperimentKey = (name) => `experiment/${name}/stopped`;
+// cache key for an experiment's SCORCH runs page (its pipelines response)
+export const scorchRunsKey = (name) => `scorchruns/${name}`;
+
+// Copies of VM rows without their screenshots, for the cache: each is tens of
+// kilobytes, and the live page keeps updating its own rows' screenshots.
+export const withoutScreenshots = (vms) =>
+  (vms ?? []).map((vm) => {
+    const row = { ...vm };
+    delete row.screenshot;
+    return row;
+  });
+
+// the data a request answers with
+const body = async (request) => (await request).data;
+
+// The running experiment page's data without its VMs, which it lists over
+// the websocket, plus the rows it last showed, without screenshots.
+export async function fetchRunningExperiment(name, signal, meta) {
+  const experiment = await body(
+    experimentsApi.getExperiment(name, {
+      signal,
+      meta,
+      params: { vms: false },
+    }),
+  );
+  return {
+    ...experiment,
+    vms: withoutScreenshots(cachedPage(experimentKey(name))?.data?.vms),
+  };
+}
+
+// The names of the hosts VMs can be scheduled on, sorted, from the Hosts
+// page's cached list when it is recent (see the reuse window in freshness.js)
+// or its request in flight, rather than a new cluster-wide host scan.
+export async function schedulableHostNames() {
+  const hosts = await recentPage('hosts', pageFetchers.hosts);
+  return (hosts ?? [])
+    .filter((host) => host.schedulable)
+    .map((host) => host.name)
+    .sort();
+}
+
+// Each fetcher takes (signal, meta) and passes meta with its requests, so the
+// page cache knows how fresh the result is.
+export const pageFetchers = {
+  configs: async (signal, meta) =>
+    (await body(configsApi.listConfigs({ signal, meta }))).configs ?? [],
+
+  hosts: async (signal, meta) =>
+    (await body(hostsApi.listHosts({ signal, meta }))).hosts ?? [],
+
+  users: async (signal, meta) => {
+    // roles are only used for the role dropdown when creating/editing
+    const [users, roles] = await Promise.all([
+      body(usersApi.listUsers({ signal, meta })),
+      roleAllowed('roles', 'list')
+        ? body(rolesApi.listRoles({ signal, meta })).catch((err) => {
+            // the user list is still worth showing without roles
+            useErrorNotification(err);
+            return null;
+          })
+        : null,
+    ]);
+    users.users.forEach((u) => (u.role_name = u.role.name));
+    return {
+      users: users.users,
+      roleNames: roles ? roles.roles.map((r) => r.name) : [],
+    };
+  },
+
+  logs: async (signal, meta) => {
+    const start = new Date(Date.now() - DEFAULT_LOG_WINDOW * 1000);
+    return withLogIds(
+      (await body(logsApi.listLogs(start, null, { signal, meta }))) ?? [],
+    );
+  },
+
+  settings: (signal, meta) => body(settingsApi.getSettings({ signal, meta })),
+
+  // the tiles fetch their screenshots themselves, only while on screen
+  vmtiles: async (signal, meta) =>
+    (await body(vmsApi.listAllVms({ signal, meta }))).vms ?? [],
+};
+
+// Tabs worth loading ahead of a visit, cheapest first, with who may see them
+// (mirrors the navbar). VM tiles are left out: they list every running VM.
+const PRELOADS = [
+  ['configs', () => roleAllowed('configs', 'list')],
+  ['users', () => usePhenixStore().role?.name !== 'Disabled'],
+  ['logs', () => roleAllowed('logs', 'get')],
+  ['hosts', () => roleAllowed('hosts', 'list')],
+  ['settings', () => roleAllowed('settings', 'update')],
+];
+
+// Preload requests in flight at once, so the page on screen keeps its share
+// of the browser's connections.
+const PRELOAD_CONCURRENCY = 2;
+
+// Loads every tab's data into the page cache in the background, a couple of
+// requests at a time. Tabs already cached or loading are skipped. A failed
+// preload is not reported here; the page reports its own failure when opened.
+export async function preloadPages() {
+  const queue = PRELOADS.filter(
+    ([key, allowed]) => allowed() && !cachedPage(key) && !isLoadingPage(key),
+  ).map(([key]) => key);
+
+  const worker = async () => {
+    for (let key = queue.shift(); key; key = queue.shift()) {
+      // paused while the server is shutting down
+      await whenServing();
+      if (cachedPage(key) || isLoadingPage(key)) continue;
+      const request = fetchIntoCache(key, pageFetchers[key]);
+      request.release(); // nothing waits on it; the background limit applies
+      const failure = await request.promise.then(
+        () => null,
+        (err) => err,
+      );
+      // the server is unreachable: the rest would fail too
+      if (serverNotAnswering(failure)) return;
+    }
+  };
+
+  await Promise.all(Array.from({ length: PRELOAD_CONCURRENCY }, worker));
+}
+
+// Preloads once the browser is idle, so the page being opened loads first.
+export function schedulePagePreload() {
+  whenIdle(() => preloadPages(), 3000);
+}
