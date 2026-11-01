@@ -67,6 +67,7 @@ All notable changes to this project will be documented in this file.
 - **API Conventions (breaking)**: `/api/v1/logout` and the VM `reset`, `restart` and `shutdown` routes accept only `POST`. The experiment, VM and disk lists accept `pageNum` and `perPage`, and the paged lists return `400` for a page that is not a whole number of at least 1.
 - **Websocket Broker (breaking)**: The websocket broker encodes each message once, and experiment lists and websocket VM lists do not include screenshots. The broker sends log lines only to Logs pages that subscribe and whose role can get logs.
 - **Web UI Permissions**: The web UI shows only the pages and navbar links that the role can use, and opens the experiments list or the VM tiles in place of a page that the role cannot use. An unknown address shows a "Page not found" page.
+- **Disks Page**: The Disks page shows disk totals, the format version of each image and broken backing chains, and runs clones in the background. A details card for each image shows its qcow2 header, partitions, backing chain, the images built on it, the experiments that use it and its clone jobs.
 
 ### Removed
 
