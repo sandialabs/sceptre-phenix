@@ -78,6 +78,7 @@ All notable changes to this project will be documented in this file.
   - **Authorization**: Using a scenario now requires update permission on it, creating a topology authorizes the named topology rather than the `configs` resource as a whole, and requests missing a name, topology, or diagram are rejected before the data store is touched.
   - **Scenario Membership**: Adding a topology to a scenario now matches names exactly rather than by substring, and no longer creates duplicate or empty entries.
   - **Clipped Dialogs and Panels**: Dialog buttons rendered outside their dialogs, dialog content rendered underneath pinned button rows, and the format panel cut off its buttons, option rows and tab title. The About dialog also drew a redundant corner close image next to its own Close button.
+- **minimega Commands**: phēnix runs the VM config and `cc filter` commands of each minimega namespace one at a time, and flushes only the VM that it kills. It rejects VLAN, bridge and tag values that minimega cannot read as one argument, and port forward changes do not block other requests while minimega answers.
 
 ### Fixed
 

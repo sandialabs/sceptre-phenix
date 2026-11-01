@@ -337,6 +337,18 @@ func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // com
 		return errors.New("experiment or VM name not provided")
 	}
 
+	if o.tags != nil {
+		if err := mm.ValidateTags(*o.tags); err != nil {
+			return err
+		}
+	}
+
+	if o.iface != nil && o.iface.vlan != "" {
+		if err := mm.ValidateArg(o.iface.vlan); err != nil {
+			return fmt.Errorf("VLAN: %w", err)
+		}
+	}
+
 	exp, err := experiment.Get(o.exp)
 	if err != nil {
 		return fmt.Errorf("unable to get experiment %s: %w", o.exp, err)
@@ -971,6 +983,10 @@ func Restore(expName, vmName, snap string) error {
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)
+
+	// From `vm config clone` to `vm launch`, the namespace's VM config and
+	// launch queue are this VM's alone.
+	defer mm.LockVMConfig(expName)()
 
 	cmd.Command = "vm config clone " + vmName
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {

@@ -278,6 +278,11 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 
 	if err := vm.Update(opts...); err != nil {
 		audit.Failure(r, audit.VMUpdate, "updating vm failed", updated, err)
+
+		if errors.Is(err, mm.ErrUnsafeArg) {
+			return weberror.New(http.StatusBadRequest, err.Error())
+		}
+
 		plog.Error(plog.TypeSystem, "updating VM", "err", err)
 
 		return weberror.New(http.StatusInternalServerError, "unable to update VM")
@@ -322,7 +327,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 }
 
 // UpdateVMs - PATCH /experiments/{exp}/vms.
-func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
+func UpdateVMs(w http.ResponseWriter, r *http.Request) error { //nolint:funlen // complex logic
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
@@ -338,6 +343,15 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 	var req proto.UpdateVMRequestList
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
 		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
+	// refused before any VM changes, as minimega could not take the VLAN
+	for _, vmRequest := range req.GetVms() {
+		if vlan := vmRequest.GetInterface().GetVlan(); vlan != "" {
+			if err := mm.ValidateArg(vlan); err != nil {
+				return weberror.New(http.StatusBadRequest, fmt.Sprintf("VM %s: VLAN: %v", vmRequest.GetName(), err))
+			}
+		}
 	}
 
 	resp := &proto.VMList{Total: req.GetTotal()} //nolint:exhaustruct // partial initialization

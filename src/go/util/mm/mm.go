@@ -17,6 +17,7 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	RedeployVM(...Option) error
 	KillVM(...Option) error
 	GetVMHost(...Option) (string, error)
+	GetVMHosts(...Option) map[string]string
 	GetVMState(...Option) (string, error)
 
 	SetVMTags(...Option) error

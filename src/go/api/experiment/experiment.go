@@ -710,13 +710,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			}
 		}
 
-		schedule := make(map[string]string)
-
-		for _, vm := range mm.GetVMInfo(mm.NS(exp.Spec.ExperimentName())) {
-			schedule[vm.Name] = vm.Host
-		}
-
-		exp.Status.SetSchedule(schedule)
+		exp.Status.SetSchedule(mm.GetVMHosts(mm.NS(exp.Spec.ExperimentName())))
 
 		var vlans map[string]int
 		vlans, err = mm.GetVLANs(mm.NS(exp.Spec.ExperimentName()))
@@ -738,7 +732,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	if o.errChan == nil {
 		if !o.dryrun {
 			if exp.Spec.Topology().HasCommands() {
-				err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), ccScript)
+				err = mm.ReadC2ScriptFromFile(exp.Spec.ExperimentName(), ccScript)
 				if err != nil {
 					errors := multierror.Append(
 						nil,
@@ -803,7 +797,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 			if !o.dryrun {
 				if exp.Spec.Topology().HasCommands() {
-					err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), ccScript)
+					err = mm.ReadC2ScriptFromFile(exp.Spec.ExperimentName(), ccScript)
 					if err != nil {
 						o.errChan <- fmt.Errorf("reading minimega cc script: %w", err)
 
@@ -1269,9 +1263,13 @@ func deleteSnapshots(exp *types.Experiment) error {
 	// including the hostname we ensure that only snapshots created for
 	// experiments by this headnode get deleted. This is important when multiple
 	// headnodes exist for a single minimega cluster.
+	//
+	// The snapshots are deleted together, by their exact names (see
+	// file.DeleteExistingFiles).
 	var (
-		expName  = exp.Metadata.Name
-		headnode = mm.Headnode()
+		expName   = exp.Metadata.Name
+		headnode  = mm.Headnode()
+		snapshots []string
 	)
 
 	for _, node := range exp.Spec.Topology().Nodes() {
@@ -1280,17 +1278,12 @@ func deleteSnapshots(exp *types.Experiment) error {
 		}
 
 		hostname := node.General().Hostname()
-		snapshot := fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname)
+		snapshots = append(snapshots, fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname))
+	}
 
-		err := file.DeleteFile(snapshot)
-		if err != nil {
-			return fmt.Errorf(
-				"deleting snapshot file for VM %s in experiment %s: %w",
-				hostname,
-				expName,
-				err,
-			)
-		}
+	err := file.DeleteExistingFiles(snapshots)
+	if err != nil {
+		return fmt.Errorf("deleting snapshot files for experiment %s: %w", expName, err)
 	}
 
 	return nil

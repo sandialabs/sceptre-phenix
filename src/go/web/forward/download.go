@@ -1,10 +1,14 @@
 package forward
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/gorilla/mux"
 
@@ -12,6 +16,48 @@ import (
 	"phenix/web/util"
 	"phenix/web/weberror"
 )
+
+// tunnelerDir holds the phenix-tunneler builds offered for download, relative
+// to the directory phenix runs in.
+const tunnelerDir = "downloads/tunneler"
+
+// ListTunnelers - GET /downloads/tunneler.
+//
+// Lists the builds installed in the downloads directory (none without one), including links to files elsewhere; a broken
+// link or one to a directory is left out.
+func ListTunnelers(w http.ResponseWriter, _ *http.Request) error {
+	entries, err := os.ReadDir(tunnelerDir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		plog.Error(plog.TypeSystem, "listing tunneler downloads", "err", err)
+
+		return weberror.New(http.StatusInternalServerError, "unable to list tunneler downloads")
+	}
+
+	names := []string{}
+
+	for _, entry := range entries {
+		// only what GetTunneler serves
+		if !strings.HasPrefix(entry.Name(), ".") && isBuild(filepath.Join(tunnelerDir, entry.Name())) {
+			names = append(names, entry.Name())
+		}
+	}
+
+	sort.Strings(names)
+
+	body, _ := json.Marshal(map[string][]string{"files": names})
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+
+	return nil
+}
+
+// isBuild reports whether path is, or links to, a regular file.
+func isBuild(path string) bool {
+	info, err := os.Stat(path)
+
+	return err == nil && info.Mode().IsRegular()
+}
 
 // GetTunneler - GET /downloads/tunneler/{name}.
 func GetTunneler(w http.ResponseWriter, r *http.Request) error {
@@ -22,7 +68,7 @@ func GetTunneler(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "invalid tunneler name")
 	}
 
-	path := filepath.Join("downloads/tunneler", name)
+	path := filepath.Join(tunnelerDir, name)
 
 	_, err := util.ServeDownload(w, r, util.Download{
 		Path:        path,

@@ -1,6 +1,23 @@
 package mm
 
+import (
+	"context"
+	"time"
+
+	"phenix/util/freshness"
+)
+
 func ReadScriptFromFile(ns, filename string) error {
+	return DefaultMM.ReadScriptFromFile(ns, filename)
+}
+
+// ReadC2ScriptFromFile is ReadScriptFromFile for an experiment's script of cc
+// commands, which sets `cc filter` for each VM in turn. The namespace's cc lock
+// (see ccLocks) is held while it runs, so phenix's own cc commands cannot pick
+// up one of its filters or clear one mid-script.
+func ReadC2ScriptFromFile(ns, filename string) error {
+	defer ccLocks.lock(ns)()
+
 	return DefaultMM.ReadScriptFromFile(ns, filename)
 }
 
@@ -18,6 +35,26 @@ func GetLaunchProgress(ns string, expected int) (float64, error) {
 
 func GetVMInfo(opts ...Option) VMs {
 	return DefaultMM.GetVMInfo(opts...)
+}
+
+// vmInfoObserver is the optional part of MM that reports when VM info was
+// read and whether minimega answered. It is kept out of MM so the stand-ins
+// tests use for MM need not implement it.
+type vmInfoObserver interface {
+	GetVMInfoObserved(...Option) (VMs, freshness.Observation)
+}
+
+// GetVMInfoObserved is GetVMInfo, also reporting when the VMs were read and
+// whether minimega answered for all of them. An MM that cannot tell is taken
+// to have answered now.
+func GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation) {
+	if o, ok := DefaultMM.(vmInfoObserver); ok {
+		return o.GetVMInfoObserved(opts...)
+	}
+
+	at := time.Now()
+
+	return DefaultMM.GetVMInfo(opts...), freshness.Observed(at)
 }
 
 func GetVMScreenshot(opts ...Option) ([]byte, error) {
@@ -46,6 +83,10 @@ func KillVM(opts ...Option) error {
 
 func GetVMHost(opts ...Option) (string, error) {
 	return DefaultMM.GetVMHost(opts...)
+}
+
+func GetVMHosts(opts ...Option) map[string]string {
+	return DefaultMM.GetVMHosts(opts...)
 }
 
 func GetVMState(opts ...Option) (string, error) {
@@ -98,6 +139,31 @@ func GetVMCaptures(opts ...Option) []Capture {
 
 func GetClusterHosts(schedOnly bool) (Hosts, error) {
 	return DefaultMM.GetClusterHosts(schedOnly)
+}
+
+// clusterHostsObserver is the optional part of MM that reports when the
+// cluster hosts were read; see vmInfoObserver.
+type clusterHostsObserver interface {
+	GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error)
+}
+
+// GetClusterHostsObserved is GetClusterHosts, also reporting when the hosts
+// were read from minimega. An MM that cannot tell is taken to have read them
+// now. Its minimega commands give up once ctx is done (see Context), where
+// the MM supports it.
+func GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error) {
+	if o, ok := DefaultMM.(clusterHostsObserver); ok {
+		return o.GetClusterHostsObserved(ctx, schedOnly)
+	}
+
+	at := time.Now()
+
+	hosts, err := DefaultMM.GetClusterHosts(schedOnly)
+	if err != nil {
+		return hosts, freshness.Observation{}, err //nolint:wrapcheck // as GetClusterHosts
+	}
+
+	return hosts, freshness.Observed(at), nil
 }
 
 func GetNamespaceHosts(ns string) (Hosts, error) {
