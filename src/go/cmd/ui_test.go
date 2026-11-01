@@ -191,3 +191,76 @@ func TestSignalExitCode(t *testing.T) {
 		}
 	}
 }
+
+// ui.netflow.max-size is a whole number of MiB from the environment, a flag or
+// the config file; a negative, non-numeric or overflowing value is refused.
+func TestNetflowMaxSize(t *testing.T) {
+	const maxMiB = int64(1<<43 - 1)
+
+	tests := map[string]struct {
+		env, arg, config string
+		want             int64
+		wantErr          string
+	}{
+		"default":          {want: 100 << 20},
+		"env":              {env: "7", want: 7 << 20},
+		"env off":          {env: "0", want: 0},
+		"env fraction":     {env: "1.5", wantErr: "whole number of megabytes"},
+		"env word":         {env: "lots", wantErr: "whole number of megabytes"},
+		"env negative":     {env: "-1", wantErr: "must not be negative"},
+		"env largest":      {env: "8796093022207", want: maxMiB << 20},
+		"env too large":    {env: "8796093022208", wantErr: "at most"},
+		"env overflows":    {env: "9223372036854775808", wantErr: "at most"},
+		"flag":             {arg: "250", want: 250 << 20},
+		"flag negative":    {arg: "-5", wantErr: "must not be negative"},
+		"config":           {config: "12", want: 12 << 20},
+		"config string":    {config: `"12"`, want: 12 << 20},
+		"config duration":  {config: "5s", wantErr: "whole number of megabytes"},
+		"config negative":  {config: "-3", wantErr: "must not be negative"},
+		"names setting":    {env: "x", wantErr: "ui.netflow.max-size"},
+		"config overflows": {config: "9300000000000", wantErr: "at most"},
+	}
+
+	flag := uiCmd.Flags().Lookup("netflow.max-size")
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			v := viper.GetViper()
+
+			switch {
+			case tt.env != "":
+				t.Setenv("PHENIX_UI_NETFLOW_MAX_SIZE", tt.env)
+			case tt.arg != "":
+				t.Cleanup(func() {
+					_ = flag.Value.Set(flag.DefValue)
+					flag.Changed = false
+				})
+
+				if err := uiCmd.Flags().Parse([]string{"--netflow.max-size=" + tt.arg}); err != nil {
+					t.Fatalf("parsing --netflow.max-size=%s: %v", tt.arg, err)
+				}
+			case tt.config != "":
+				v = viper.New()
+				v.SetConfigType("yaml")
+
+				config := "ui:\n  netflow:\n    max-size: " + tt.config + "\n"
+				if err := v.ReadConfig(strings.NewReader(config)); err != nil {
+					t.Fatalf("reading config %q: %v", config, err)
+				}
+			}
+
+			got, err := netflowMaxSize(v)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("netflowMaxSize() = %d, %v; want an error containing %q", got, err, tt.wantErr)
+				}
+
+				return
+			}
+
+			if err != nil || got != tt.want {
+				t.Errorf("netflowMaxSize() = %d, %v; want %d, nil", got, err, tt.want)
+			}
+		})
+	}
+}

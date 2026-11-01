@@ -26,6 +26,9 @@ const (
 	signalExitBase = 128
 	// the longest ui.shutdown-grace-period a [time.Duration] holds.
 	maxShutdownGraceSeconds = int64(math.MaxInt64 / time.Second)
+	// ui.netflow.max-size is in MiB, 1 << mibShift bytes, and its bytes fit an int64.
+	mibShift             = 20
+	maxNetflowMaxSizeMiB = int64(math.MaxInt64 >> mibShift)
 )
 
 var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
@@ -37,7 +40,7 @@ var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
 var uiSettings = []string{
 	"listen-endpoint", "base-path", "jwt-signing-key", "jwt-lifetime", "file-server-endpoint",
 	"proxy-auth-header", "users", "tls-key", "tls-cert", "logs.minimega-path", "logs.level",
-	"features", "minimega-console", "shutdown-grace-period",
+	"features", "minimega-console", "shutdown-grace-period", "netflow.max-size",
 }
 
 //nolint:funlen // command definition
@@ -51,6 +54,11 @@ func newUICmd() *cobra.Command {
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			grace, err := shutdownGracePeriod(viper.GetViper())
+			if err != nil {
+				return err
+			}
+
+			netflowMax, err := netflowMaxSize(viper.GetViper())
 			if err != nil {
 				return err
 			}
@@ -75,6 +83,7 @@ func newUICmd() *cobra.Command {
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
 				web.ServeWithUnixSocketGID(viper.GetInt("unix-socket-gid")),
 				web.ServeWithShutdownGracePeriod(grace),
+				web.ServeWithNetflowMaxSize(netflowMax),
 			}
 
 			if level := viper.GetString("ui.logs.level"); level != "" {
@@ -140,6 +149,11 @@ func newUICmd() *cobra.Command {
 		int(web.DefaultShutdownGracePeriod/time.Second),
 		"how many seconds stopping the server may take to close connections and finish work (0 does not wait)",
 	)
+	uiCmd.Flags().Int(
+		"netflow.max-size",
+		web.DefaultNetflowMaxSize>>mibShift,
+		"maximum size in megabytes of each recorded netflow capture (0 does not record)",
+	)
 
 	for _, name := range uiSettings {
 		_ = viper.BindPFlag("ui."+name, uiCmd.Flags().Lookup(name))
@@ -183,6 +197,27 @@ func shutdownGracePeriod(v *viper.Viper) (time.Duration, error) {
 	}
 
 	return time.Duration(seconds) * time.Second, nil
+}
+
+// netflowMaxSize returns ui.netflow.max-size from v, a whole number of MiB
+// that is not negative, in bytes.
+func netflowMaxSize(v *viper.Viper) (int64, error) {
+	value := v.GetString("ui.netflow.max-size")
+
+	mib, err := strconv.ParseInt(value, 10, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, fmt.Errorf("invalid ui.netflow.max-size %q: it must be a whole number of megabytes, such as 100", value)
+	}
+
+	if mib < 0 {
+		return 0, fmt.Errorf("invalid ui.netflow.max-size %q: it must not be negative", value)
+	}
+
+	if mib > maxNetflowMaxSizeMiB {
+		return 0, fmt.Errorf("invalid ui.netflow.max-size %q: it must be at most %d megabytes", value, maxNetflowMaxSizeMiB)
+	}
+
+	return mib << mibShift, nil
 }
 
 // notifyShutdown returns a copy of parent canceled, with a web.SignalError, by
