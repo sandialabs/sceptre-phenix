@@ -101,6 +101,40 @@ While ELF memory dumps can be created via `phenix vm memory-snapshot`, there is 
 The experiment must be started; click on the VM screenshot to open a new browser
 tab that provides VNC access to the VM.
 
+#### VNC Banners
+
+The VNC tab shows a banner above and below the VM's screen. Both read
+`EXP: <experiment> - VM: <vm>` unless the VM has a `vncBanner` annotation:
+
+* **A string** is the text of both banners, and each newline in it starts a new
+  line.
+* **A map** sets each banner apart. `topBanner` and `bottomBanner` each take a
+  `banner` list of lines, a `backgroundColor` and a `textColor`. A banner the
+  map leaves out is not shown, and `disabled: true` turns both off.
+
+```yaml
+annotations:
+  vncBanner:
+    topBanner:
+      banner:
+        - Training range
+        - Lab use only
+      backgroundColor: "#007a33"
+      textColor: white
+    bottomBanner:
+      banner:
+        - Training range
+      backgroundColor: "#007a33"
+      textColor: white
+```
+
+Colors are CSS color names, such as `green`, or hex colors, such as `#007a33`.
+For any other color, phēnix logs a warning and uses the default white
+background or black text. It also logs and ignores map keys it does not know.
+
+Banner text is shown exactly as written, so HTML in it appears as text rather
+than as markup.
+
 ### From the Command Line Binary
 
 Not applicable.
@@ -146,6 +180,12 @@ The mount browser modal presents two panes:
   into the VM. This option is only available when the
   [experiment file server](settings.md#settings-reference) is enabled (see
   below).
+
+Several users can have the same VM mounted; it is unmounted when the last of
+them closes the modal. That unmount waits up to 30 seconds for downloads from
+the VM to finish, and otherwise leaves the VM mounted and fails with
+`409 mount busy`. Opening the modal for a VM still being unmounted fails with
+`409 unmount in progress`; try again a moment later.
 
 ### Uploading Experiment Files from the phēnix Server { #uploading-experiment-files-from-the-phenix-server }
 

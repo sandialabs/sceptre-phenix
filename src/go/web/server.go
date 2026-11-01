@@ -117,6 +117,13 @@ func ConfigureUsers(users []string) error {
 			continue
 		}
 
+		// do not store a user whose role does not exist
+		if _, err := rbac.RoleFromConfig(rname); err != nil {
+			plog.Error(plog.TypeSecurity, "skipping default user with unknown role", "user", uname, "role", rname)
+
+			continue
+		}
+
 		plog.Info(plog.TypeSecurity, "creating default user", "user", uname, "role", rname)
 
 		user, err := rbac.NewUser(uname, pword, "", "")

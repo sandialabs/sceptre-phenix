@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -20,6 +21,35 @@ const experimentUserRole = "Experiment User"
 // Experiment User roles, and users with them, upload experiment files.
 func EnsureExperimentFilesCreatePermission() error {
 	return ensurePermission(experimentFilesResource, []string{experimentFilesCreateVerb}, experimentFilesRole)
+}
+
+const (
+	experimentViewerRole = "Experiment Viewer"
+	mountResource        = "vms/mount"
+)
+
+// EnsureExperimentViewerMountScope scopes the vms/mount policy of users who
+// were given the Experiment Viewer role before every unnamed policy was scoped
+// on assignment, and so cannot mount their VMs, to the user's VM names.
+func EnsureExperimentViewerMountScope() error {
+	users, err := GetUsers()
+	if err != nil {
+		return fmt.Errorf("getting users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.Spec.Role == nil || user.Spec.Role.Name != experimentViewerRole || !scopeUnnamed(user.Spec.Role, mountResource) {
+			continue
+		}
+
+		user.config.Spec = structs.MapDefaultCase(user.Spec, structs.CASESNAKE)
+
+		if err := user.Save(); err != nil {
+			return fmt.Errorf("saving user %s: %w", user.Username(), err)
+		}
+	}
+
+	return nil
 }
 
 // DropNullResourceNames removes the resourceNames: null that roles and users
@@ -63,6 +93,35 @@ func dropNullNames(policies any) bool {
 		if names, ok := policy["resourceNames"]; ok && names == nil {
 			delete(policy, "resourceNames")
 
+			changed = true
+		}
+	}
+
+	return changed
+}
+
+// scopeUnnamed gives the role's policies on resource that name nothing the
+// names of its first other policy covering resource, and reports whether it
+// changed the role.
+func scopeUnnamed(role *v1.RoleSpec, resource string) bool {
+	covers := func(p *v1.PolicySpec) bool {
+		return len(p.ResourceNames) > 0 && slices.ContainsFunc(p.Resources, func(pattern string) bool {
+			matched, _ := filepath.Match(pattern, resource)
+
+			return matched
+		})
+	}
+
+	i := slices.IndexFunc(role.Policies, covers)
+	if i < 0 {
+		return false
+	}
+
+	var changed bool
+
+	for _, policy := range role.Policies {
+		if len(policy.ResourceNames) == 0 && slices.Equal(policy.Resources, []string{resource}) {
+			policy.ResourceNames = slices.Clone(role.Policies[i].ResourceNames)
 			changed = true
 		}
 	}

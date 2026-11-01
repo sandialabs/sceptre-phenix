@@ -67,7 +67,8 @@ phenix refuses other usernames and stores no user.
 
 2. From the `Users` tab, click the `+` button to create a new user. Here the
    administrator will add the [role(s) and resource
-   name(s)](#user-administration).
+   name(s)](#user-administration). phenix refuses a username that is already
+   taken or a role that does not exist, and stores no user.
 
     ![screenshot](images/create_a_new_user.png){: width=400 .center}
 
@@ -77,7 +78,8 @@ phenix refuses other usernames and stores no user.
    For users in the file that already exist, `phenix` ensures the user role
    matches what's in the file and updates it as necessary. This file is also
    automatically watched, so any users added to the file while `phenix` is
-   running will automatically be added to `phenix`.
+   running will automatically be added to `phenix`. phenix skips and logs an
+   entry whose role does not exist, and stores no user for it.
 
 ```yaml
 ui:
@@ -103,7 +105,9 @@ Without the `-k` (or `--jwt-signing-key`), authentication is disabled.
 
 ## Generating User Authentication Tokens
 
-From the `Users` tab, click the key icon next to the given user's name. A dialog
+From the `Users` tab, click the key icon next to the given user's name. To
+create a token for another user, your role also needs
+[`users/tokens`](#resource-userstokens) `create` on them. A dialog
 box will pop up where you can enter in a description for the token to be created
 and an expiration date. This expiration date should be entered in Golang time
 duration. For example, `4320h` is valid and represents 4320 hours or about 6
@@ -214,7 +218,7 @@ Key: E - experiment resource, V - VM resource, U - user resource
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | trigger the running stage of an experiment |
+| Desc | trigger the running stage of an experiment, and type into or exit a SCORCH break terminal |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -445,6 +449,18 @@ Key: E - experiment resource, V - VM resource, U - user resource
 | Desc | delete an existing user |
 | Exp. Scoped | no |
 | Res. Scoped | yes |
+
+#### Resource: `users/tokens`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create an API token for another user (also needs `users` `patch` on them) |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
+By default only `Global Admin` has this permission. A user with `users`
+`patch` on themselves creates their own tokens without it.
 
 #### Resource: `users/roles`
 
@@ -693,6 +709,11 @@ spec:
     - post
     - delete
 ```
+
+!!! note
+    On startup the UI server gives the `vms/mount` policy in the role of every
+    user assigned `Experiment Viewer` the resource names of the user's `vms`
+    policy.
 
 #### VM Admin (`vm-admin`)
 

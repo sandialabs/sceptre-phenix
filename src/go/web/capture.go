@@ -49,7 +49,7 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	for _, capture := range captures {
-		if role.Allowed("experiments/captures", "list", capture.VM) {
+		if role.Allowed("experiments/captures", "list", name+"/"+capture.VM) {
 			allowed = append(allowed, capture)
 		}
 	}
@@ -61,7 +61,7 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	//nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
@@ -100,7 +100,8 @@ func GetVMCaptures(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -334,7 +335,8 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 		"exp",
 		exp,
 	)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -399,7 +401,8 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 		"exp",
 		exp,
 	)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
