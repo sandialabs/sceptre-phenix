@@ -13,6 +13,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 const (
@@ -26,7 +27,7 @@ const (
 )
 
 // GetNetflow - GET /experiments/{exp}/netflow.
-func GetNetflow(w http.ResponseWriter, r *http.Request) {
+func GetNetflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
@@ -44,22 +45,21 @@ func GetNetflow(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			exp,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if flow := experiment.GetNetflow(exp); flow != nil {
 		w.WriteHeader(http.StatusNoContent)
 
-		return
+		return nil
 	}
 
-	w.WriteHeader(http.StatusNotFound)
+	return weberror.New(http.StatusNotFound, "no netflow capture is running")
 }
 
 // StartNetflow - POST /experiments/{exp}/netflow.
-func StartNetflow(w http.ResponseWriter, r *http.Request) {
+func StartNetflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
@@ -77,9 +77,8 @@ func StartNetflow(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			exp,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := experiment.StartNetflow(exp)
@@ -87,36 +86,22 @@ func StartNetflow(w http.ResponseWriter, r *http.Request) {
 		plog.Error(plog.TypeSystem, "starting netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowAlreadyStarted) {
-			http.Error(w, "neflow already started for experiment", http.StatusBadRequest)
-
-			return
+			return weberror.New(http.StatusBadRequest, "neflow already started for experiment")
 		}
 
 		if errors.Is(err, experiment.ErrExperimentNotFound) {
-			http.Error(w, "unable to find experiment", http.StatusBadRequest)
-
-			return
+			return weberror.New(http.StatusBadRequest, "unable to find experiment")
 		}
 
 		if errors.Is(err, experiment.ErrExperimentNotRunning) {
-			http.Error(w, "cannot start netflow on stopped experiment", http.StatusConflict)
-
-			return
+			return weberror.New(http.StatusConflict, "cannot start netflow on stopped experiment")
 		}
 
 		if errors.Is(err, experiment.ErrNetflowPhenixBridge) {
-			http.Error(
-				w,
-				"cannot start netflow on experiment with default bridge set to 'phenix'",
-				http.StatusConflict,
-			)
-
-			return
+			return weberror.New(http.StatusConflict, "cannot start netflow on experiment with default bridge set to 'phenix'")
 		}
 
-		http.Error(w, "unable to start netflow capture", http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, "unable to start netflow capture")
 	}
 
 	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
@@ -129,10 +114,12 @@ func StartNetflow(w http.ResponseWriter, r *http.Request) {
 		exp,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // StopNetflow - DELETE /experiments/{exp}/netflow.
-func StopNetflow(w http.ResponseWriter, r *http.Request) {
+func StopNetflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
@@ -150,9 +137,8 @@ func StopNetflow(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			exp,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := experiment.StopNetflow(exp)
@@ -160,14 +146,10 @@ func StopNetflow(w http.ResponseWriter, r *http.Request) {
 		plog.Error(plog.TypeSystem, "stopping netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowNotStarted) {
-			http.Error(w, "not found", http.StatusNotFound)
-
-			return
+			return weberror.New(http.StatusNotFound, "not found")
 		}
 
-		http.Error(w, "unable to stop netflow capture", http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, "unable to stop netflow capture")
 	}
 
 	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
@@ -180,12 +162,14 @@ func StopNetflow(w http.ResponseWriter, r *http.Request) {
 		exp,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // GetNetflowWebSocket - GET /experiments/{exp}/netflow/ws.
 //
 //nolint:funlen // handler
-func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
+func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
@@ -203,16 +187,13 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			exp,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	flow := experiment.GetNetflow(exp)
 	if flow == nil {
-		http.Error(w, "not found", http.StatusNotFound)
-
-		return
+		return weberror.New(http.StatusNotFound, "not found")
 	}
 
 	var (
@@ -223,6 +204,7 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 		upgrader = websocket.Upgrader{ //nolint:exhaustruct // partial initialization
 			ReadBufferSize:  netflowBufferSize,
 			WriteBufferSize: netflowBufferSize,
+			Error:           weberror.UpgradeError,
 		}
 
 		done = make(chan struct{})
@@ -234,7 +216,7 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "upgrading connection to WebSocket", "err", err)
 
-		return
+		return nil
 	}
 
 	// Register only after a successful upgrade. A failed handshake must not
@@ -243,7 +225,7 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 	if cb == nil {
 		_ = conn.Close()
 
-		return
+		return nil
 	}
 
 	pongHandler := func(string) error { //nolint:unparam // signature required
@@ -382,4 +364,6 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 		"client",
 		id,
 	)
+
+	return nil
 }

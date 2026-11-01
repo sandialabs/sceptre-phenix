@@ -67,7 +67,7 @@ var (
 )
 
 // GetTerminals - GET /experiments/{name}/scorch/terminals.
-func GetTerminals(w http.ResponseWriter, r *http.Request) {
+func GetTerminals(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTerminal")
 
 	var (
@@ -79,10 +79,12 @@ func GetTerminals(w http.ResponseWriter, r *http.Request) {
 
 	body, _ := json.Marshal(util.WithRoot("terminals", terms))
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // ConnectTerminal - GET /experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}.
-func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
+func ConnectTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminal")
 
 	var (
@@ -94,31 +96,27 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 
 	run, err := strconv.Atoi(vars["run"])
 	if err != nil {
-		http.Error(w, "invalid run ID provided", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "invalid run ID provided")
 	}
 
 	loop, err := strconv.Atoi(vars["loop"])
 	if err != nil {
-		http.Error(w, "invalid loop number provided", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "invalid loop number provided")
 	}
 
 	t, err := initTerminal(exp, run, loop, stage, cmp)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	body, _ := json.Marshal(t)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // StreamTerminal - GET /experiments/{name}/scorch/terminals/{pid}/ws/{id}.
-func StreamTerminal(w http.ResponseWriter, r *http.Request) {
+func StreamTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StreamTerminal")
 
 	exp := mux.Vars(r)["name"]
@@ -126,15 +124,11 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 
 	t, err := GetTerminalByPID(pid)
 	if err != nil {
-		http.Error(w, "no web terminal found", http.StatusNotFound)
-
-		return
+		return weberror.New(http.StatusNotFound, "no web terminal found")
 	}
 
 	if t.Exp != exp {
-		http.Error(w, "no web terminal found", http.StatusNotFound)
-
-		return
+		return weberror.New(http.StatusNotFound, "no web terminal found")
 	}
 
 	id := mux.Vars(r)["id"]
@@ -144,9 +138,7 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 	mu.Unlock()
 
 	if !ok {
-		http.Error(w, "terminal client ID invalid", http.StatusNotFound)
-
-		return
+		return weberror.New(http.StatusNotFound, "terminal client ID invalid")
 	}
 
 	close(done)
@@ -156,10 +148,12 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "starting web terminal streamer", "pid", pid)
 
 	websocket.Handler(terminalWsHandler(t)).ServeHTTP(w, r)
+
+	return nil
 }
 
 // ExitTerminal - POST /experiments/{name}/scorch/terminals/{pid}/exit/{id}.
-func ExitTerminal(w http.ResponseWriter, r *http.Request) {
+func ExitTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ExitTerminal")
 
 	exp := mux.Vars(r)["name"]
@@ -175,30 +169,25 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) {
 			"pid",
 			pid,
 		)
-		http.Error(w, "terminal client not allowed to exit terminal", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "terminal client not allowed to exit terminal")
 	}
 
 	t, err := GetTerminalByPID(pid)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "web terminal for PID not found", "pid", pid)
-		http.Error(w, "web terminal not found", http.StatusNotFound)
 
-		return
+		return weberror.New(http.StatusNotFound, "web terminal not found")
 	}
 
 	if t.Exp != exp {
-		http.Error(w, "no web terminal found", http.StatusNotFound)
-
-		return
+		return weberror.New(http.StatusNotFound, "no web terminal found")
 	}
 
 	if err := KillTerminal(t); err != nil {
 		plog.Error(plog.TypeSystem, "killing terminal for PID", "pid", pid, "err", err)
-		http.Error(w, "error exiting terminal", http.StatusNotFound)
 
-		return
+		return weberror.New(http.StatusNotFound, "error exiting terminal")
 	}
 
 	mu.Lock()
@@ -206,6 +195,8 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) {
 	mu.Unlock()
 
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 //nolint:funlen // handler
@@ -468,7 +459,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 }
 
 // StreamComponentOutput - GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws.
-func StreamComponentOutput(w http.ResponseWriter, r *http.Request) {
+func StreamComponentOutput(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StreamScorchComponentOutput")
 
 	var (
@@ -480,16 +471,12 @@ func StreamComponentOutput(w http.ResponseWriter, r *http.Request) {
 
 	run, err := strconv.Atoi(vars["run"])
 	if err != nil {
-		http.Error(w, "invalid run ID provided", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "invalid run ID provided")
 	}
 
 	loop, err := strconv.Atoi(vars["loop"])
 	if err != nil {
-		http.Error(w, "invalid loop number provided", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "invalid loop number provided")
 	}
 
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
@@ -497,6 +484,8 @@ func StreamComponentOutput(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "starting scorch component streamer", "key", key)
 
 	websocket.Handler(scorchComponentWsHandler(key)).ServeHTTP(w, r)
+
+	return nil
 }
 
 func scorchComponentWsHandler(key string) func(*websocket.Conn) {

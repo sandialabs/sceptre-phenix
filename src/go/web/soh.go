@@ -10,10 +10,11 @@ import (
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 // GetExperimentSoH handles GET requests for /experiments/{exp}/soh[?statusFilter=<status filter>].
-func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
+func GetExperimentSoH(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentSoH")
 
 	var (
@@ -36,16 +37,13 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			exp,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	state, err := soh.Get(exp, statusFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	hosts, flows, err := soh.GetFlows(exp)
@@ -56,10 +54,10 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
 
 	marshalled, err := json.Marshal(state)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(marshalled) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }

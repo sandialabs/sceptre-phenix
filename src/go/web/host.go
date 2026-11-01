@@ -7,10 +7,11 @@ import (
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/middleware"
+	"phenix/web/weberror"
 )
 
 // GetClusterHosts - GET /hosts.
-func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
+func GetClusterHosts(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -23,16 +24,13 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
 			"listing cluster hosts not allowed",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	hosts, err := mm.GetClusterHosts(false)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	allowed := []mm.Host{}
@@ -45,10 +43,10 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
 
 	marshalled, err := json.Marshal(mm.Cluster{Hosts: allowed})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(marshalled) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }

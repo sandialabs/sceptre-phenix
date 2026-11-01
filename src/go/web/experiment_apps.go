@@ -20,7 +20,7 @@ import (
 )
 
 // TriggerExperimentApps - POST /experiments/{name}/trigger[?apps=<foo,bar,baz>].
-func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
+func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -41,9 +41,8 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	go func() {
@@ -121,10 +120,12 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 		appsFilter,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // CancelTriggeredExperimentApps - DELETE /experiments/{name}/trigger[?apps=<foo,bar,baz>].
-func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
+func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -145,9 +146,8 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	go func() {
@@ -184,6 +184,8 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 	)
 
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // GetExperimentApps - GET /experiments/{name}/apps.

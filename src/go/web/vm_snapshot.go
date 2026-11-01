@@ -18,12 +18,13 @@ import (
 	"phenix/web/middleware"
 	"phenix/web/proto"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 const percentDivisor = 100
 
 // GetVMSnapshots - GET /experiments/{exp}/vms/{name}/snapshots.
-func GetVMSnapshots(w http.ResponseWriter, r *http.Request) {
+func GetVMSnapshots(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -44,9 +45,8 @@ func GetVMSnapshots(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	snapshots, err := vm.Snapshots(exp, name)
@@ -61,25 +61,24 @@ func GetVMSnapshots(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	body, err := marshaler.Marshal(&proto.SnapshotList{Snapshots: snapshots})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // SnapshotVM - POST /experiments/{exp}/vms/{name}/snapshots.
 //
 //nolint:funlen // handler
-func SnapshotVM(w http.ResponseWriter, r *http.Request) {
+func SnapshotVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -101,17 +100,15 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var req proto.SnapshotRequest
@@ -119,9 +116,8 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 	err = unmarshaler.Unmarshal(body, &req)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	if err := cache.LockVMForSnapshotting(exp, name); err != nil {
@@ -137,9 +133,8 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(exp, name)
@@ -189,9 +184,8 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "snapshotting VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -214,10 +208,12 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 		req.GetFilename(),
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // RestoreVM - POST /experiments/{exp}/vms/{name}/snapshots/{snapshot}.
-func RestoreVM(w http.ResponseWriter, r *http.Request) {
+func RestoreVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -240,9 +236,8 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := cache.LockVMForRestoring(exp, name)
@@ -259,9 +254,8 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(exp, name)
@@ -285,9 +279,8 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "restoring VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -308,12 +301,14 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // CommitVM - POST /experiments/{exp}/vms/{name}/commit.
 //
 //nolint:funlen // handler
-func CommitVM(w http.ResponseWriter, r *http.Request) {
+func CommitVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -335,17 +330,15 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var filename string
@@ -360,16 +353,14 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		err = unmarshaler.Unmarshal(body, &req)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
 
-			return
+			return weberror.New(http.StatusBadRequest, err.Error())
 		}
 
 		if req.GetFilename() == "" {
 			plog.Error(plog.TypeSystem, "missing filename for commit")
-			http.Error(w, "missing 'filename' key", http.StatusBadRequest)
 
-			return
+			return weberror.New(http.StatusBadRequest, "missing 'filename' key")
 		}
 
 		filename = req.GetFilename()
@@ -388,9 +379,8 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(expName, name)
@@ -404,9 +394,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 			}
 		*/
 
-		http.Error(w, "must provide new disk name for commit", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "must provide new disk name for commit")
 	}
 
 	payload := &proto.BackingImageResponse{Disk: filename} //nolint:exhaustruct // partial initialization
@@ -448,9 +436,8 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "committing VM", "exp", expName, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	exp, err := experiment.Get(expName)
@@ -461,9 +448,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	v, err := vm.Get(expName, name)
@@ -474,9 +459,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	payload.Vm = util.VMToProtobuf(expName, *v, exp.Spec.Topology())
@@ -500,12 +483,14 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // CreateVMMemorySnapshot - POST /experiments/{exp}/vms/{name}/memorySnapshot.
 //
 //nolint:funlen // handler
-func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
+func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -527,17 +512,15 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var filename string
@@ -550,16 +533,14 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		err = unmarshaler.Unmarshal(body, &req)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
 
-			return
+			return weberror.New(http.StatusBadRequest, err.Error())
 		}
 
 		if req.GetFilename() == "" {
 			plog.Error(plog.TypeSystem, "missing filename for memory snapshot")
-			http.Error(w, "missing 'filename' key", http.StatusBadRequest)
 
-			return
+			return weberror.New(http.StatusBadRequest, "missing 'filename' key")
 		}
 
 		filename = req.GetFilename()
@@ -578,17 +559,14 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(exp, name)
 
 	if filename == "" {
-		http.Error(w, "must provide new disk name for memory snapshot", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "must provide new disk name for memory snapshot")
 	}
 
 	payload := &proto.MemorySnapshotResponse{Disk: filename} //nolint:exhaustruct // partial initialization
@@ -640,9 +618,8 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "memory snapshot for VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	marshalled, _ := json.Marshal(util.WithRoot("disk", filename))
@@ -665,4 +642,6 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }

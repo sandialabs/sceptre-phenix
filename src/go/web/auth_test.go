@@ -9,6 +9,7 @@ import (
 	"github.com/golang/mock/gomock"
 
 	"phenix/store"
+	"phenix/web/weberror"
 )
 
 func TestLoginUnknownUserLooksLikeWrongPassword(t *testing.T) {
@@ -33,7 +34,7 @@ func TestLoginUnknownUserLooksLikeWrongPassword(t *testing.T) {
 	)
 
 	rec := httptest.NewRecorder()
-	Login(rec, req)
+	weberror.ErrorHandler(Login).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for an unknown user, got %d", rec.Code)

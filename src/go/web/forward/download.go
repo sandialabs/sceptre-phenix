@@ -7,10 +7,12 @@ import (
 
 	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gorilla/mux"
+
+	"phenix/web/weberror"
 )
 
 // GetTunneler - GET /downloads/tunneler/{name}.
-func GetTunneler(w http.ResponseWriter, r *http.Request) {
+func GetTunneler(w http.ResponseWriter, r *http.Request) error {
 	log.Debug("GetTunneler HTTP handler called")
 
 	var (
@@ -21,13 +23,14 @@ func GetTunneler(w http.ResponseWriter, r *http.Request) {
 	file, err := os.Open("downloads/tunneler/" + name) //nolint:gosec // Path traversal via taint analysis
 	if err != nil {
 		log.Error("opening tunneler file (%s) for download: %v", name, err)
-		http.Error(w, "error opening file", http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, "error opening file")
 	}
 
 	w.Header().Set("Content-Disposition", "attachment; filename="+name)
 	w.Header().Set("Content-Type", "application/octet-stream")
 
 	http.ServeContent(w, r, "", time.Now(), file)
+
+	return nil
 }

@@ -21,6 +21,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 const maxFileServerUploadMemory = 32 << 20
@@ -360,7 +361,7 @@ func fileServerLogin(proxyAuthHeader string) http.HandlerFunc {
 			setFileServerTokenCookie(w, token)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			weberror.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
 }
@@ -389,7 +390,9 @@ func loginFileServerUser(r *http.Request, req *LoginRequest) (string, error) {
 	}
 
 	rec := httptest.NewRecorder()
-	Login(rec, loginReq)
+	if err := Login(rec, loginReq); err != nil {
+		return "", err
+	}
 
 	if rec.Code < http.StatusOK || rec.Code >= http.StatusMultipleChoices {
 		return "", fmt.Errorf("%s", rec.Body.String())
@@ -450,41 +453,41 @@ func clearFileServerTokenCookie(w http.ResponseWriter) {
 func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			weberror.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 
 			return
 		}
 
 		if err := r.ParseMultipartForm(maxFileServerUploadMemory); err != nil {
-			http.Error(w, "parsing upload: "+err.Error(), http.StatusBadRequest)
+			weberror.Error(w, "parsing upload: "+err.Error(), http.StatusBadRequest)
 
 			return
 		}
 
 		exp, err := experiment.Get(r.FormValue("experiment"))
 		if err != nil {
-			http.Error(w, "getting experiment: "+err.Error(), http.StatusBadRequest)
+			weberror.Error(w, "getting experiment: "+err.Error(), http.StatusBadRequest)
 
 			return
 		}
 
 		role := middleware.RoleFromContext(r.Context())
 		if !role.Allowed("experiments/files", "create", exp.Metadata.Name) {
-			http.Error(w, "forbidden", http.StatusForbidden)
+			weberror.Error(w, "forbidden", http.StatusForbidden)
 
 			return
 		}
 
 		files := r.MultipartForm.File["files"]
 		if len(files) == 0 {
-			http.Error(w, "no files uploaded", http.StatusBadRequest)
+			weberror.Error(w, "no files uploaded", http.StatusBadRequest)
 
 			return
 		}
 
 		dir := exp.FilesDir()
 		if err := os.MkdirAll(dir, 0o750); err != nil {
-			http.Error(w, "creating experiment files directory: "+err.Error(), http.StatusInternalServerError)
+			weberror.Error(w, "creating experiment files directory: "+err.Error(), http.StatusInternalServerError)
 
 			return
 		}
@@ -493,14 +496,14 @@ func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 		for _, header := range files {
 			name := filepath.Base(header.Filename)
 			if name == "" || name == "." {
-				http.Error(w, "invalid upload filename", http.StatusBadRequest)
+				weberror.Error(w, "invalid upload filename", http.StatusBadRequest)
 
 				return
 			}
 
 			clientFile, err := header.Open()
 			if err != nil {
-				http.Error(w, "opening upload: "+err.Error(), http.StatusInternalServerError)
+				weberror.Error(w, "opening upload: "+err.Error(), http.StatusInternalServerError)
 
 				return
 			}
@@ -508,7 +511,7 @@ func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 			target, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
 				_ = clientFile.Close()
-				http.Error(w, "creating target file: "+err.Error(), http.StatusInternalServerError)
+				weberror.Error(w, "creating target file: "+err.Error(), http.StatusInternalServerError)
 
 				return
 			}
@@ -517,17 +520,17 @@ func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 			closeClientErr := clientFile.Close()
 			closeTargetErr := target.Close()
 			if copyErr != nil {
-				http.Error(w, "saving upload: "+copyErr.Error(), http.StatusInternalServerError)
+				weberror.Error(w, "saving upload: "+copyErr.Error(), http.StatusInternalServerError)
 
 				return
 			}
 			if closeClientErr != nil {
-				http.Error(w, "closing upload: "+closeClientErr.Error(), http.StatusInternalServerError)
+				weberror.Error(w, "closing upload: "+closeClientErr.Error(), http.StatusInternalServerError)
 
 				return
 			}
 			if closeTargetErr != nil {
-				http.Error(w, "closing target file: "+closeTargetErr.Error(), http.StatusInternalServerError)
+				weberror.Error(w, "closing target file: "+closeTargetErr.Error(), http.StatusInternalServerError)
 
 				return
 			}
@@ -543,7 +546,7 @@ func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 func renderFileServerIndex(w http.ResponseWriter, r *http.Request, message string, authEnabled bool) {
 	experiments, err := experiment.List()
 	if err != nil {
-		http.Error(w, "listing experiments: "+err.Error(), http.StatusInternalServerError)
+		weberror.Error(w, "listing experiments: "+err.Error(), http.StatusInternalServerError)
 
 		return
 	}

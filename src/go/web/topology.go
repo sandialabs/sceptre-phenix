@@ -14,10 +14,11 @@ import (
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/proto"
+	"phenix/web/weberror"
 )
 
 // GetApplications - GET /applications.
-func GetApplications(w http.ResponseWriter, r *http.Request) {
+func GetApplications(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -30,9 +31,8 @@ func GetApplications(w http.ResponseWriter, r *http.Request) {
 			"listing applications not allowed",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	allowed := []string{}
@@ -45,16 +45,16 @@ func GetApplications(w http.ResponseWriter, r *http.Request) {
 
 	body, err := marshaler.Marshal(&proto.AppList{Applications: allowed})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // GetTopologies - GET /topologies.
-func GetTopologies(w http.ResponseWriter, r *http.Request) {
+func GetTopologies(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -67,16 +67,13 @@ func GetTopologies(w http.ResponseWriter, r *http.Request) {
 			"listing topologies not allowed",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	topologies, err := config.List("topology")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	allowed := []string{}
@@ -89,16 +86,16 @@ func GetTopologies(w http.ResponseWriter, r *http.Request) {
 
 	body, err := marshaler.Marshal(&proto.TopologyList{Topologies: allowed})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // GetScenarios - GET /topologies/{topo}/scenarios.
-func GetScenarios(w http.ResponseWriter, r *http.Request) {
+func GetScenarios(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -113,16 +110,13 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) {
 			"listing scenarios not allowed",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	scenarios, err := config.List("scenario")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	allowed := make(map[string]*structpb.ListValue)
@@ -169,10 +163,10 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) {
 
 	body, err := marshaler.Marshal(&proto.ScenarioList{Scenarios: allowed})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
