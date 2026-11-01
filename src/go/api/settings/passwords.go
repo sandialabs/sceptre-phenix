@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"phenix/types"
 	"phenix/util/plog"
@@ -112,6 +113,15 @@ func GetPasswordSettingsFromList(settings []types.Setting) (PasswordSettings, er
 func UpdatePasswordSettings(newSettings PasswordSettings) error {
 	plog.Debug(plog.TypeSystem, "Updating password settings")
 
+	minLen := newSettings.MinLength
+	if minLen > MaxPasswordMinLen || minLen < MinPasswordMinLen {
+		return fmt.Errorf(
+			"minimum password length must be between %d and %d",
+			MinPasswordMinLen,
+			MaxPasswordMinLen,
+		)
+	}
+
 	var err error
 
 	_, err = Update(settingCategoryPassword, "NumberReq", strconv.FormatBool(newSettings.NumberReq))
@@ -132,15 +142,6 @@ func UpdatePasswordSettings(newSettings PasswordSettings) error {
 	_, err = Update(settingCategoryPassword, "UppercaseReq", strconv.FormatBool(newSettings.UppercaseReq))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.UppercaseReq: %w", err)
-	}
-
-	minLen := newSettings.MinLength
-	if minLen > MaxPasswordMinLen || minLen < MinPasswordMinLen {
-		return fmt.Errorf(
-			"minimum password length must be between %d and %d",
-			MinPasswordMinLen,
-			MaxPasswordMinLen,
-		)
 	}
 
 	_, err = Update(settingCategoryPassword, "MinLength", formatInt(newSettings.MinLength))
@@ -167,7 +168,7 @@ func IsPasswordValid(password string) bool {
 		return false
 	}
 
-	if len(password) < int(ps.MinLength) {
+	if utf8.RuneCountInString(password) < int(ps.MinLength) {
 		return false
 	}
 
