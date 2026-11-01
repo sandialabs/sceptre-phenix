@@ -178,9 +178,10 @@ taking at most `ui.shutdown-grace-period` seconds (5 by default):
 
 * It stops accepting connections at once. Requests in progress may finish
   until the grace period ends, and are cut off then.
-* It closes the websockets of minimega consoles, SCORCH terminals and output,
-  VNC, port forwards and netflow streams with close code `1001` (going away).
-  New websockets are refused with `503 Service Unavailable`.
+* It closes every websocket, including consoles, SCORCH terminals, VNC and
+  port forwards, with close code `1001` (going away), so the web UI says the
+  server is shutting down rather than that the network failed. New websockets
+  are refused with `503 Service Unavailable`.
 * Running background jobs get the first half of the grace period to finish,
   and are canceled then. Queued jobs are canceled at once.
 * It logs `shutdown complete` once everything has stopped, or a warning that

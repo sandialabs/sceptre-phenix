@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"phenix/util/plog"
+	"phenix/web/broker"
 	"phenix/web/lifecycle"
 )
 
@@ -103,6 +104,7 @@ func (s *uiServer) shutdown(cause error) {
 		mu sync.Mutex
 
 		cut     []string // servers whose requests the deadline cut off
+		clients int
 		running []string
 	)
 
@@ -122,7 +124,13 @@ func (s *uiServer) shutdown(cause error) {
 		}()
 	}
 
-	wg.Add(1)
+	wg.Add(2) //nolint:mnd // the goroutines below
+
+	go func() {
+		defer wg.Done()
+
+		clients = broker.Shutdown(ctx)
+	}()
 
 	go func() {
 		defer wg.Done()
@@ -151,6 +159,10 @@ func (s *uiServer) shutdown(cause error) {
 	if len(cut) > 0 {
 		slices.Sort(cut)
 		left = append(left, "requests_cut_off", cut)
+	}
+
+	if clients > 0 {
+		left = append(left, "websocket_clients", clients)
 	}
 
 	if len(running) > 0 {

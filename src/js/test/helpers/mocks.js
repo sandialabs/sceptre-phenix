@@ -40,9 +40,9 @@ const STORE_DEFAULTS = {
 // what usePhenixStore() returns
 export const store = structuredClone(STORE_DEFAULTS);
 
-// The websocket traffic: the messages pages sent and the handlers they added
-// and have not removed.
-export const ws = { sent: [], handlers: [] };
+// The websocket traffic: the messages pages sent, the handlers they added
+// and have not removed, and the reconnect callbacks still registered.
+export const ws = { sent: [], handlers: [], reconnect: [] };
 
 // file-saver's saveAs, which downloads a file the page built
 export const saver = { saveAs: vi.fn() };
@@ -65,6 +65,10 @@ export const modules = {
   websocket: () => ({
     addWsHandler: (handler) => ws.handlers.push(handler),
     removeWsHandler: (handler) => remove(ws.handlers, handler),
+    onWsReconnect: (f) => {
+      ws.reconnect.push(f);
+      return () => remove(ws.reconnect, f);
+    },
     sendWsMsg: (msg) => ws.sent.push(msg),
   }),
   fileSaver: () => ({ default: saver }),

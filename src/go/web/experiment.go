@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -16,7 +17,6 @@ import (
 	"phenix/api/experiment"
 	"phenix/api/vm"
 	"phenix/types"
-	ucache "phenix/util/cache"
 	"phenix/util/common"
 	"phenix/util/freshness"
 	"phenix/util/mm"
@@ -61,7 +61,11 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	topo, err := vm.Topology(name, ignore)
+	topo, err := vm.Topology(ctx, name, ignore)
+	if requestCanceled(r, err) {
+		return nil
+	}
+
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "unable to get experiment topology")
 	}
@@ -104,21 +108,12 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	cacheKey := fmt.Sprintf("experiment|%s|search", name)
-
-	val, ok := ucache.Get(cacheKey)
-	if !ok {
-		if _, err := vm.Topology(name, nil); err != nil {
-			return weberror.New(http.StatusBadRequest, "error getting experiment topology")
-		}
-
-		val, _ = ucache.Get(cacheKey)
+	search, err := vm.TopologySearchIndex(name)
+	if err != nil {
+		return weberror.New(http.StatusBadRequest, "error getting experiment topology")
 	}
 
-	var (
-		search, _ = val.(vm.TopologySearch)
-		nodes     []int
-	)
+	var nodes []int
 
 	// TODO: how to handle multiple terms? AND or OR?
 
@@ -173,14 +168,14 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 
 // GetExperiments - GET /experiments.
 //
-// With pageNum and perPage, only the experiments on that page are read from
-// minimega.
+// With vms=false the VMs are left out and nothing is asked of minimega (counts come from each topology); with
+// pageNum and perPage, only the experiments on that page are read from minimega.
 func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
 		role  = middleware.RoleFromContext(ctx)
 		query = r.URL.Query()
-		size  = query.Get("screenshot")
+		noVMs = query.Get("vms") == "false"
 	)
 
 	if !role.Allowed("experiments", "list") {
@@ -234,32 +229,20 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 
-		// TODO: limit per-experiment VMs based on RBAC
+		if noVMs {
+			allowed = append(allowed, util.ExperimentSummaryToProtobuf(exp, status))
 
-		vms := vm.ListFor(ctx, &exp)
-
-		if exp.Running() && size != "" {
-			for i, v := range vms {
-				if !v.Running {
-					continue
-				}
-
-				screenshot, err := util.GetScreenshot(exp.Spec.ExperimentName(), v.Name, size)
-				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-
-					continue
-				}
-
-				v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-					screenshot,
-				)
-
-				vms[i] = v
-			}
+			continue
 		}
 
+		// TODO: limit per-experiment VMs based on RBAC
+		vms := vm.ListFor(ctx, &exp)
+
 		allowed = append(allowed, util.ExperimentToProtobuf(exp, status, vms))
+	}
+
+	if requestGone(r) {
+		return nil
 	}
 
 	body, err := marshaler.Marshal(&proto.ExperimentList{Experiments: allowed})
@@ -270,9 +253,35 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	freshness.SetObserved(w, observed)
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
+}
+
+// addVMScreenshots sets each running VM's screenshot, at the given size, in
+// place, until ctx is done.
+func addVMScreenshots(ctx context.Context, expName string, vms []mm.VM, size string) {
+	for i, v := range vms {
+		if !v.Running {
+			continue
+		}
+
+		screenshot, err := util.GetScreenshotContext(ctx, expName, v.Name, size)
+		if ctx.Err() != nil {
+			return
+		}
+
+		if err != nil {
+			plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+
+			continue
+		}
+
+		vms[i].Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+			screenshot,
+		)
+	}
 }
 
 // CreateExperiment - POST /experiments.
@@ -472,30 +481,65 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// parseVMQuery reads the VM filter, label, host, sort and page parameters of a
+// request.
+func parseVMQuery(query url.Values) (util.VMQuery, error) {
+	sortDir := query.Get("sortDir")
+
+	page, pageSize, err := util.ParsePage(query.Get("pageNum"), query.Get("perPage"))
+	if err != nil {
+		return util.VMQuery{}, weberror.NewWebError(nil, "%v", err).SetStatus(http.StatusBadRequest)
+	}
+
+	labels := make([]util.VMLabel, 0, len(query["label"]))
+
+	for _, raw := range query["label"] {
+		label, ok := util.ParseVMLabel(raw)
+		if !ok {
+			return util.VMQuery{}, weberror.NewWebError(nil, "label %q is not key=value", raw).SetStatus(http.StatusBadRequest)
+		}
+
+		labels = append(labels, label)
+	}
+
+	hosts := query["host"]
+	if slices.Contains(hosts, "") {
+		return util.VMQuery{}, weberror.NewWebError(nil, "host must not be empty").SetStatus(http.StatusBadRequest)
+	}
+
+	return util.VMQuery{
+		Filter:  query.Get("filter"),
+		Labels:  labels,
+		Hosts:   hosts,
+		ShowDNB: query.Get("show_dnb") != "",
+		SortCol: sortColumn(query.Get("sortCol"), sortDir),
+		SortAsc: sortDir == sortAsc,
+		Page:    page,
+		Size:    pageSize,
+	}, nil
+}
+
 // GetExperiment - GET /experiments/{name}.
 //
-//nolint:funlen // handler
+// With vms=false the VMs are left out and nothing is asked of minimega:
+// vm_count and delayed_vms come from the topology. The running experiment page
+// uses it, as its VM rows arrive over the websocket (experiment/vms list).
 func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
-		ctx          = r.Context()
-		role         = middleware.RoleFromContext(ctx)
-		vars         = mux.Vars(r)
-		name         = vars["name"]
-		query        = r.URL.Query()
-		size         = query.Get("screenshot")
-		sortCol      = query.Get("sortCol")
-		sortDir      = query.Get("sortDir")
-		pageNum      = query.Get("pageNum")
-		perPage      = query.Get("perPage")
-		showDNB      = query.Get("show_dnb") != ""
-		clientFilter = query.Get("filter")
+		ctx   = r.Context()
+		role  = middleware.RoleFromContext(ctx)
+		vars  = mux.Vars(r)
+		name  = vars["name"]
+		query = r.URL.Query()
+		size  = query.Get("screenshot")
+		noVMs = query.Get("vms") == "false" && size == ""
 	)
 
 	if !role.Allowed("experiments", "get", name) {
 		user := middleware.UserFromContext(ctx)
 		plog.Warn(
 			plog.TypeSecurity,
-			"getting  experiment not allowed",
+			"getting experiment not allowed",
 			"user",
 			user,
 			"experiment",
@@ -511,9 +555,9 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	page, pageSize, err := util.ParsePage(pageNum, perPage)
+	vmQuery, err := parseVMQuery(query)
 	if err != nil {
-		return weberror.NewWebError(nil, "%v", err).SetStatus(http.StatusBadRequest)
+		return err
 	}
 
 	exp, err := experiment.Get(name)
@@ -521,68 +565,47 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
-	vms, observed := vm.ListForObserved(ctx, exp)
+	var (
+		vms      []mm.VM
+		observed = freshness.Unobserved()
+	)
+
+	if noVMs {
+		vms = vm.ListConfigured(*exp)
+	} else {
+		vms, observed = vm.ListForObserved(ctx, exp)
+	}
 
 	// This will happen if another handler is currently acting on the
 	// experiment.
 	status := cache.IsExperimentLocked(name)
-	allowed := mm.VMs{}
 
-	// Build a Boolean expression tree and determine
-	// the fields that should be searched
-	filterTree := mm.BuildTree(clientFilter)
+	allowed, total := util.SelectVMs(name, vms, exp.Spec.Topology(), vmQuery, role)
 
-	for _, vm := range vms {
-		if vm.DoNotBoot && !showDNB {
-			continue
-		}
-
-		// If the filter supplied could not be
-		// parsed, do not add the VM
-		if len(clientFilter) > 0 {
-			if filterTree == nil {
-				continue
-			} else if !filterTree.Evaluate(&vm) {
-				// If the search string could be parsed,
-				// determine if the VM should be included
-				continue
-			}
-		}
-
-		if role.Allowed("vms", "list", fmt.Sprintf("%s/%s", name, vm.Name)) {
-			if vm.Running && size != "" {
-				screenshot, err := util.GetScreenshot(name, vm.Name, size)
-				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-				} else {
-					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-						screenshot,
-					)
-				}
-			}
-
-			allowed = append(allowed, vm)
-		}
+	if size != "" {
+		addVMScreenshots(ctx, name, allowed, size)
 	}
 
-	if col := sortColumn(sortCol, sortDir); col != "" {
-		allowed.SortBy(col, sortDir == sortAsc)
+	if requestGone(r) {
+		return nil
 	}
-
-	totalBeforePaging := len(allowed)
-	allowed = util.Page(allowed, page, pageSize)
 
 	experiment := util.ExperimentToProtobuf(*exp, status, allowed)
-	experiment.VmCount = uint32(totalBeforePaging) //nolint:gosec // integer overflow conversion int -> uint32
+	experiment.VmCount = uint32(total) //nolint:gosec // G115 counts fit in a uint32
+
+	if noVMs {
+		experiment.Vms = nil
+	} else {
+		freshness.SetObserved(w, observed)
+	}
 
 	body, err := marshaler.Marshal(experiment)
 	if err != nil {
-		err := weberror.NewWebError(err, "marshaling experiment %s - %v", name, err)
+		err := weberror.NewWebError(err, "marshaling experiment %s: %v", name, err)
 
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
-	freshness.SetObserved(w, observed)
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 

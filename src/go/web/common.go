@@ -182,7 +182,9 @@ func startExperiment(name string) ([]byte, error) {
 
 			app.PeriodicallyRunApps(ctx, &wg, s.exp)
 
-			body, err := marshaler.Marshal(util.ExperimentToProtobuf(*s.exp, "", vm.ListFor(context.Background(), s.exp)))
+			// Like GET /experiments?vms=false: counts come from the topology and
+			// no VM list is asked of minimega for the broadcast.
+			broadcast, err := marshaler.Marshal(util.ExperimentSummaryToProtobuf(*s.exp, ""))
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to start experiment %s", name)
 
@@ -192,8 +194,16 @@ func startExperiment(name string) ([]byte, error) {
 			broker.Broadcast(
 				bt.NewRequestPolicy("experiments/start", "update", name),
 				bt.NewResource("experiment", name, "start"),
-				body,
+				broadcast,
 			)
+
+			// The broadcast leaves the VM list out; API callers still get it.
+			body, err := marshaler.Marshal(util.ExperimentToProtobuf(*s.exp, "", vm.ListFor(context.Background(), s.exp)))
+			if err != nil {
+				err := weberror.NewWebError(err, "unable to start experiment %s", name)
+
+				return nil, err.SetStatus(http.StatusInternalServerError)
+			}
 
 			return body, nil
 		default:

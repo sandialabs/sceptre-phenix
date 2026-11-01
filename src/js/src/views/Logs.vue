@@ -187,7 +187,12 @@
 
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
-  import { addWsHandler, removeWsHandler } from '@/utils/websocket';
+  import {
+    addWsHandler,
+    onWsReconnect,
+    removeWsHandler,
+    sendWsMsg,
+  } from '@/utils/websocket';
 
   const KNOWN_LEVELS = [
     // in-order
@@ -236,9 +241,20 @@
       this.getLogs();
 
       addWsHandler(this.handleWs);
+      // the server sends log lines only to clients that ask for them, and
+      // forgets who asked when the websocket reconnects
+      this.subscribeLogs('subscribe');
+      this.offWsReconnect = onWsReconnect(
+        () => {
+          this.subscribeLogs('subscribe');
+        },
+        { spread: true },
+      );
     },
 
     beforeUnmount() {
+      this.offWsReconnect();
+      this.subscribeLogs('unsubscribe');
       removeWsHandler(this.handleWs);
     },
 
@@ -297,6 +313,9 @@
     },
 
     methods: {
+      subscribeLogs(action) {
+        sendWsMsg({ resource: { type: 'log', name: 'phenix', action } });
+      },
       getLogs() {
         this.isLoading = true;
         let query =

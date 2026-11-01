@@ -5734,6 +5734,38 @@ paths:
           headers:
             X-Phenix-Version:
               $ref: "#/components/headers/Version"
+  "/downloads/tunneler":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Tunneler
+      summary: List the tunneler builds installed on this server
+      description: >-
+        Names the phenix-tunneler builds in the server's `downloads/tunneler`
+        directory, sorted, so the Tunneler page offers only downloads that
+        exist. A build may be a link to a file elsewhere. The list leaves out
+        subdirectories, hidden files (names starting with a dot), broken links
+        and anything else that is not a file. It is empty once the directory is
+        gone. Both download paths are served from the server root, not under
+        `/api/v1`, and need neither credentials nor a permission. They exist
+        only while the `tunneler-download` feature is on. The feature is on when
+        that directory exists at startup, relative to the directory the server
+        runs from. Without it, the web UI handler serves the request instead.
+      operationId: getDownloadsTunneler
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tunnelers"
+        "500":
+          description: the downloads directory exists but could not be read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/downloads/tunneler/{name}":
     servers:
       - url: http://localhost:3000
@@ -8958,6 +8990,18 @@ components:
           type: string
           description: what happened to it, or what the request asks
           example: start
+    Tunnelers:
+      title: Tunnelers
+      description: The tunneler builds this server offers for download.
+      type: object
+      properties:
+        files:
+          title: Files
+          type: array
+          description: file names of the builds installed on this server, sorted
+          items:
+            type: string
+            example: phenix-tunneler-linux-amd64
 
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.
