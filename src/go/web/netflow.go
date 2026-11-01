@@ -12,6 +12,7 @@ import (
 	putil "phenix/util"
 	"phenix/util/plog"
 	"phenix/web/audit"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -183,9 +184,15 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		done = make(chan struct{})
+		// closed at shutdown
+		stopping = make(chan struct{})
 	)
 
 	upgrader.CheckOrigin = func(*http.Request) bool { return true }
+
+	if lifecycle.RefuseWhileStopping(w) {
+		return nil
+	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -226,6 +233,21 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	plog.Info(plog.TypeSystem, "ws client connected to netflow", "endpoint", endpoint, "client", id)
+
+	// WriteControl and Close may run beside a writer stuck in WriteJSON
+	defer lifecycle.Track("netflow stream", func() {
+		message := websocket.FormatCloseMessage(websocket.CloseGoingAway, lifecycle.CloseReason)
+		_ = conn.WriteControl(websocket.CloseMessage, message, time.Now().Add(lifecycle.CloseWait))
+
+		close(stopping)
+
+		// the reader ends on the client's answering close, or here
+		select {
+		case <-done:
+		case <-time.After(lifecycle.CloseWait):
+			_ = conn.Close()
+		}
+	})()
 
 	go func() { // reader (for pong and close messages)
 		defer close(done) // stop writer
@@ -277,6 +299,8 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) error {
 		for {
 			select {
 			case <-done:
+				return
+			case <-stopping:
 				return
 			case msg, open := <-cb:
 				if !open {

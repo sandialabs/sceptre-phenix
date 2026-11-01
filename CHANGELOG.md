@@ -26,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - **Go Tests**: Added the `util/testenv` and `util/polltest` test helpers. Go tests that need a missing command fail in CI instead of skipping, and CI installs `qemu-utils`, `fdisk`, `dosfstools` and `e2fsprogs`.
 - **API Freshness**: API responses have an `X-Phenix-Seq` sequence number and `Cache-Control: no-cache, private`, unsupported methods return JSON `405` errors, and `Location` headers include the UI base path. `GET /api/v1/experiments` marks a partial list with `X-Phenix-Stale: true` and returns `500` when it reads none, and failed file listings return `502`.
 - **CLI Colors**: Added the `--color` flag (`auto`, `on` or `off`), also set by the `color` setting or `PHENIX_COLOR`. It colors the `Error:` label, console log lines and the status columns of `phenix experiment list` and `phenix vm info`.
+- **Graceful Shutdown**: `phenix ui` shuts down cleanly on `SIGINT` or `SIGTERM` within the new `ui.shutdown-grace-period` setting (5 seconds by default), and closes its websockets with close code `1001`.
 
 ### Changed
 

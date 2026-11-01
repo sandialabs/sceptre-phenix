@@ -20,6 +20,7 @@ import (
 	"phenix/util/mm"
 	"phenix/util/plog"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/proto"
 	"phenix/web/rbac"
@@ -651,6 +652,10 @@ func (c *Client) updateScreenshots() {
 }
 
 func ServeWS(w http.ResponseWriter, r *http.Request) {
+	if lifecycle.RefuseWhileStopping(w) {
+		return
+	}
+
 	upgrader.CheckOrigin = func(*http.Request) bool { return true }
 
 	conn, err := upgrader.Upgrade(w, r, nil)

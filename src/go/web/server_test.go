@@ -2,12 +2,16 @@ package web
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gorilla/mux"
+
+	"phenix/util/plog"
 )
 
 func TestRouterServesTheUI(t *testing.T) {
@@ -69,6 +73,47 @@ func TestRouterServesTheUI(t *testing.T) {
 				t.Errorf("GET %s = %q, want it to contain %q", tt.path, body, tt.wantBody)
 			}
 		})
+	}
+}
+
+// A request for an unknown route, of the UI or the API, is logged without the
+// session token its URL may carry.
+func TestUnknownRoutesLogNoToken(t *testing.T) {
+	server := serveAs(t, "alice", testRole("options", "list")).URL
+
+	var (
+		mu   sync.Mutex
+		logs strings.Builder
+	)
+
+	plog.AddHandler(t.Name(), slog.NewJSONHandler(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return logs.Write(p)
+	}), &slog.HandlerOptions{Level: slog.LevelDebug}))
+	t.Cleanup(func() { plog.RemoveHandler(t.Name()) })
+
+	for _, path := range []string{
+		"/api/v1/experiments/e/vms/v/files/download?path=/a&token=SECRET-JWT",
+		"/no-such-page?token=SECRET-JWT",
+	} {
+		_ = readBody(t, do(t, http.MethodGet, server+path, ""))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	got := logs.String()
+
+	for _, msg := range []string{"Unknown API route", "Unknown route"} {
+		if !strings.Contains(got, msg) {
+			t.Errorf("log after GET of unknown routes = %s, want %q", got, msg)
+		}
+	}
+
+	if strings.Contains(got, "SECRET-JWT") {
+		t.Errorf("log after GET of unknown routes = %s, want no token", got)
 	}
 }
 

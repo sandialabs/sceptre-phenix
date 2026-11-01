@@ -16,6 +16,8 @@ import (
 
 const (
 	defaultJWTLifetime = 24 * time.Hour
+	// DefaultShutdownGracePeriod is how long shutting the server down may take.
+	DefaultShutdownGracePeriod = 5 * time.Second
 
 	// TunnelerDownloadDir holds the phenix-tunneler builds the server offers,
 	// relative to the directory it starts in.
@@ -55,6 +57,8 @@ type serverOptions struct {
 	features map[string]bool
 
 	unixSocketGID int
+
+	shutdownGrace time.Duration
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -64,6 +68,8 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		basePath:    "/",
 		jwtLifetime: defaultJWTLifetime,
 		features:    make(map[string]bool),
+
+		shutdownGrace: DefaultShutdownGracePeriod,
 	}
 
 	for _, opt := range opts {
@@ -198,6 +204,14 @@ func ServeWithFeatures(f []string) ServerOption {
 func ServeWithUnixSocketGID(g int) ServerOption {
 	return func(o *serverOptions) {
 		o.unixSocketGID = g
+	}
+}
+
+// ServeWithShutdownGracePeriod sets how long shutting the server down may
+// take; 0 closes everything without waiting.
+func ServeWithShutdownGracePeriod(d time.Duration) ServerOption {
+	return func(o *serverOptions) {
+		o.shutdownGrace = d
 	}
 }
 

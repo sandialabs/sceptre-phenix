@@ -7,12 +7,14 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
 
+	"phenix/api/settings"
 	"phenix/store"
 	"phenix/util/mm/mmtest"
 	"phenix/web/middleware"
@@ -307,6 +309,62 @@ func TestNetflowIsAudited(t *testing.T) {
 	wantAudit(t, got, "netflow-stop", "failure", map[string]any{"user.name": "alice", "event.reason": nil})
 	wantAudit(t, got, "netflow-start", "failure", map[string]any{"user.name": "bob", "event.reason": "forbidden"})
 	wantAudit(t, got, "netflow-stop", "failure", map[string]any{"user.name": "bob", "event.reason": "forbidden"})
+}
+
+// settingsBody is a POST /settings body with the default settings, but for
+// the password minimum length and whether sessions time out.
+func settingsBody(minLength string, timeout bool) string {
+	enabled := strconv.FormatBool(timeout)
+
+	return `{"password_settings":{"lowercase_req":true,"uppercase_req":false,"number_req":true,"symbol_req":true,` +
+		`"min_length":` + minLength + `},"logging_settings":{"max_file_rotations":0,"max_file_size":100,"max_file_age":90},` +
+		`"timeout_settings":{"enabled":` + enabled + `,"timeout_min":30,"warning_min":3}}`
+}
+
+// Changing the settings is audited with the names and values of those
+// changed, and so are its refusals and failures.
+func TestSettingsChangesAreAudited(t *testing.T) {
+	useTestStore(t)
+
+	if err := settings.SetDefaults(); err != nil {
+		t.Fatalf("settings.SetDefaults() error = %v", err)
+	}
+
+	var (
+		events = captureAudit(t)
+		alice  = serveAs(t, "alice", testRole("settings", "update")).URL + "/api/v1/settings"
+		bob    = serveAs(t, "bob", testRole("settings", "get")).URL + "/api/v1/settings"
+	)
+
+	for _, tc := range []struct {
+		url, body string
+		want      int
+	}{
+		{bob, settingsBody("12", true), http.StatusForbidden},
+		{alice, settingsBody("3", true), http.StatusBadRequest},
+		{alice, settingsBody("12", true), http.StatusOK},
+	} {
+		if resp := do(t, http.MethodPost, tc.url, tc.body); resp.StatusCode != tc.want {
+			t.Errorf("POST %s %s = %d, want %d", tc.url, tc.body, resp.StatusCode, tc.want)
+		}
+	}
+
+	got := events()
+	changed := []string{"password_settings.min_length", "timeout_settings.enabled"}
+
+	wantAudit(t, got, "settings-update", "failure", map[string]any{"user.name": "bob", "event.reason": "forbidden"})
+
+	refused := wantAudit(t, got, "settings-update", "failure", map[string]any{
+		"user.name": "alice", "event.reason": nil, "phenix.settings.changed": changed,
+	})
+	if refused != nil {
+		wantErrorMessage(t, refused, settings.ErrPasswordMinLength.Error())
+	}
+
+	wantAudit(t, got, "settings-update", "success", map[string]any{
+		"user.name": "alice", "event.category": "configuration", "phenix.settings.changed": changed,
+		"phenix.settings.values": map[string]any{"password_settings.min_length": "12", "timeout_settings.enabled": "true"},
+	})
 }
 
 // A request refused for its token is audited once, with why, and never with

@@ -132,9 +132,15 @@ func ConfigureUsers(users []string) error {
 	return errors.Join(errs...)
 }
 
-//nolint:funlen // server startup
-func Start(opts ...ServerOption) error {
+// Start runs the UI server until ctx is done, then shuts it down within the
+// shutdown grace period and returns nil. It returns early if a server fails.
+func Start(ctx context.Context, opts ...ServerOption) error {
 	o = newServerOptions(opts...)
+
+	if o.shutdownGrace < 0 {
+		return fmt.Errorf("invalid ui.shutdown-grace-period %s: it must not be negative", o.shutdownGrace)
+	}
+
 	fileServerEndpoint, err := NormalizeFileServerEndpoint(o.fileServerEndpoint)
 	if err != nil {
 		return fmt.Errorf("invalid ui.file-server-endpoint: %w", err)
@@ -162,6 +168,9 @@ func Start(opts ...ServerOption) error {
 
 	router := newRouter(assets)
 
+	// background loops run until shutdown, not until ctx is done
+	background, stopBackground := context.WithCancel(context.WithoutCancel(ctx))
+
 	plog.Info(plog.TypeSystem, "starting websockets broker")
 
 	go broker.Start()
@@ -172,88 +181,111 @@ func Start(opts ...ServerOption) error {
 
 	plog.Info(plog.TypeSystem, "starting log publisher")
 
-	go SyncMinimegaLogs(context.Background(), o.minimegaLogs)
+	go SyncMinimegaLogs(background, o.minimegaLogs)
 
 	plog.Info(plog.TypeSystem, "using base path", "path", o.basePath)
 	plog.Info(plog.TypeSystem, "using JWT lifetime", "lifetime", o.jwtLifetime)
 
+	server := &uiServer{grace: o.shutdownGrace, servers: nil, socket: "", stopBackground: stopBackground}
+
+	if err := server.listen(ctx, fileServerEndpoint, router); err != nil {
+		server.closeListeners()
+
+		return err
+	}
+
+	return server.run(ctx)
+}
+
+// listen opens the listeners of the file server, the Unix socket and the main
+// server, as the options ask for them.
+func (s *uiServer) listen(ctx context.Context, fileServerEndpoint string, router http.Handler) error {
+	lc := &net.ListenConfig{} //nolint:exhaustruct // defaults
+
+	// a signal during startup shuts the server down once it runs
+	ctx = context.WithoutCancel(ctx)
+
 	if fileServerEndpoint != "" {
-		go StartFileServer(fileServerEndpoint, o.jwtKey, o.proxyAuthHeader)
+		plog.Info(plog.TypeSystem, "starting file server", "endpoint", fileServerEndpoint)
+
+		ln, err := lc.Listen(ctx, "tcp", fileServerEndpoint)
+		if err != nil {
+			return fmt.Errorf("listening for the file server: %w", err)
+		}
+
+		s.servers = append(s.servers, servedHTTP{
+			name:  "file server",
+			srv:   newFileServer(fileServerEndpoint, o.jwtKey, o.proxyAuthHeader),
+			ln:    ln,
+			serve: (*http.Server).Serve,
+		})
 	}
 
 	if common.UnixSocket != "" {
-		var (
-			router = mux.NewRouter().StrictSlash(true)
-			api    = router.PathPrefix("/api/v1").Subrouter()
-		)
-
-		addRoutesToRouter(api, socketRoutes()...)
-
-		api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
-
-		api.Use(middleware.UnixSocket)
-		api.Use(middleware.NoAuth)
-		api.Use(middleware.Freshness)
-
 		_ = os.Remove(common.UnixSocket)
 
 		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
 
-		server := http.Server{Handler: router} //nolint:gosec // Potential Slowloris Attack
-
-		//nolint:exhaustruct // partial initialization
-		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", common.UnixSocket)
+		ln, err := lc.Listen(ctx, "unix", common.UnixSocket)
 		if err != nil {
-			return err
+			return fmt.Errorf("listening on the Unix socket: %w", err)
 		}
+
+		s.socket = common.UnixSocket
+		s.servers = append(s.servers, servedHTTP{
+			name:  "Unix socket server",
+			srv:   newHTTPServer("", newSocketRouter()),
+			ln:    ln,
+			serve: (*http.Server).Serve,
+		})
 
 		if o.unixSocketGID != -1 {
-			plog.Info(
-				plog.TypeSystem,
-				"setting Unix socket group permissions",
-				"gid",
-				o.unixSocketGID,
-			)
+			plog.Info(plog.TypeSystem, "setting Unix socket group permissions", "gid", o.unixSocketGID)
 
-			err = os.Chown(common.UnixSocket, -1, o.unixSocketGID)
-			if err != nil {
+			if err := os.Chown(common.UnixSocket, -1, o.unixSocketGID); err != nil {
 				return err
 			}
 
-			err := os.Chmod(common.UnixSocket, 0o770) //nolint:gosec // unix socket permissions
-			if err != nil {
+			if err := os.Chmod(common.UnixSocket, 0o770); err != nil { //nolint:gosec // G302 the group may use the socket
 				return err
 			}
 		}
-
-		go func() {
-			err := server.Serve(listener)
-			if err != nil {
-				plog.Error(plog.TypeSystem, "serving Unix socket", "err", err)
-			}
-		}()
 	}
 
 	plog.Info(plog.TypeSecurity, "starting server", "tls_enabled", o.tlsEnabled())
 
+	primary := servedHTTP{name: "HTTP server", srv: newHTTPServer(o.endpoint, router), ln: nil, serve: (*http.Server).Serve}
+
 	if o.tlsEnabled() {
 		plog.Info(plog.TypeSystem, "starting HTTPS server", "endpoint", o.endpoint)
 
-		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
-		return http.ListenAndServeTLS(
-			o.endpoint,
-			o.tlsCrtPath,
-			o.tlsKeyPath,
-			router,
-		)
+		primary.name = "HTTPS server"
+		primary.serve = func(srv *http.Server, ln net.Listener) error {
+			return srv.ServeTLS(ln, o.tlsCrtPath, o.tlsKeyPath)
+		}
 	} else {
 		plog.Info(plog.TypeSystem, "Starting HTTP server", "endpoint", o.endpoint)
-		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
-		return http.ListenAndServe(
-			o.endpoint,
-			router,
-		)
 	}
+
+	// as ListenAndServe does
+	addr := o.endpoint
+	if addr == "" {
+		addr = ":http"
+
+		if o.tlsEnabled() {
+			addr = ":https"
+		}
+	}
+
+	ln, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listening on %s: %w", addr, err)
+	}
+
+	primary.ln = ln
+	s.servers = append(s.servers, primary)
+
+	return nil
 }
 
 // newRouter routes the UI pages, the assets and the REST API, as the server options say.
@@ -293,7 +325,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 			plog.TypeSystem,
 			"Unknown route requested",
 			"route",
-			r.RequestURI,
+			middleware.RedactURI(r.RequestURI),
 			"method",
 			r.Method,
 		)
@@ -550,6 +582,26 @@ func apiLocation(p string) string {
 	return base + "api/v1/" + p
 }
 
+// newSocketRouter routes the API routes the Unix socket serves, to every
+// local client as global-admin, since the socket's file permissions are its
+// access control.
+func newSocketRouter() *mux.Router {
+	var (
+		router = mux.NewRouter().StrictSlash(true)
+		api    = router.PathPrefix("/api/v1").Subrouter()
+	)
+
+	addRoutesToRouter(api, socketRoutes()...)
+
+	api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
+
+	api.Use(middleware.UnixSocket)
+	api.Use(middleware.NoAuth)
+	api.Use(middleware.Freshness)
+
+	return router
+}
+
 // socketRoutes are the API routes the Unix socket serves as well.
 func socketRoutes() []route {
 	return []route{
@@ -580,14 +632,8 @@ func addRoutesToRouter(router *mux.Router, routes ...route) {
 func apiNotFoundHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		plog.Warn(
-			plog.TypeSystem,
-			"Unknown API route requested",
-			"route",
-			r.URL.Path,
-			"method",
-			r.Method,
+			plog.TypeSystem, "Unknown API route requested", "route", middleware.RedactURI(r.RequestURI), "method", r.Method,
 		)
-
 		weberror.Error(w, "no API route matches this request", http.StatusNotFound)
 	})
 }

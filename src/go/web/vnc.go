@@ -18,6 +18,7 @@ import (
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/audit"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -147,9 +148,15 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "unable to get VNC endpoint")
 	}
 
+	if lifecycle.RefuseWhileStopping(w) {
+		return nil
+	}
+
 	proxy := util.ConnectWSHandler(endpoint)
 
 	websocket.Handler(func(ws *websocket.Conn) {
+		defer lifecycle.TrackConn("VNC", ws)()
+
 		audit.Success(r, audit.VNCAttach, "vnc attached", fields)
 		proxy(ws)
 	}).ServeHTTP(w, r)

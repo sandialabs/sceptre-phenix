@@ -3,8 +3,12 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 
 	"phenix/api/settings"
@@ -66,9 +70,15 @@ func SetSettings(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, http.StatusText(http.StatusBadRequest))
 	}
 
+	changed := audit.Fields{}
+
+	if current, err := settings.GetSettings(); err == nil {
+		changed.Extra = settingChanges(*current, *s)
+	}
+
 	err = settings.UpdateAllSettings(*s)
 	if err != nil {
-		audit.Failure(r, audit.SettingsUpdate, "changing settings failed", audit.Fields{}, err)
+		audit.Failure(r, audit.SettingsUpdate, "changing settings failed", changed, err)
 	}
 
 	if errors.Is(err, settings.ErrPasswordMinLength) {
@@ -81,9 +91,66 @@ func SetSettings(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, "Error updating settings")
 	}
 
-	audit.Success(r, audit.SettingsUpdate, "settings changed", audit.Fields{})
+	audit.Success(r, audit.SettingsUpdate, "settings changed", changed)
 
 	return nil
+}
+
+// settingChanges are the audit fields naming the settings that differ between
+// current and requested, as category.name (phenix.settings.changed), and
+// their requested values (phenix.settings.values), but for any secret's.
+func settingChanges(current, requested settings.Settings) []any {
+	flatten := func(s settings.Settings) map[string]string {
+		var categories map[string]map[string]any
+
+		// a Settings holds only bools and numbers, so this cannot fail
+		body, _ := json.Marshal(s)
+		_ = json.Unmarshal(body, &categories)
+
+		flat := make(map[string]string)
+
+		for category, values := range categories {
+			for name, value := range values {
+				flat[category+"."+name] = fmt.Sprint(value)
+			}
+		}
+
+		return flat
+	}
+
+	var (
+		before, after = flatten(current), flatten(requested)
+		names         = []string{}
+		values        = make(map[string]string)
+	)
+
+	for _, name := range slices.Sorted(maps.Keys(after)) {
+		if after[name] == before[name] {
+			continue
+		}
+
+		names = append(names, name)
+
+		if !secretSetting(name) {
+			values[name] = after[name]
+		}
+	}
+
+	return []any{"phenix.settings.changed", names, "phenix.settings.values", values}
+}
+
+// secretSetting reports whether the setting category.name could hold a
+// secret, whose value is never audited.
+func secretSetting(name string) bool {
+	_, leaf, _ := strings.Cut(name, ".")
+
+	for _, word := range []string{"secret", "token", "password", "key"} {
+		if strings.Contains(leaf, word) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetPasswordRequirements - GET /settings/password.

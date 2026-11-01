@@ -16,6 +16,12 @@ import (
 
 var tokenRegex = regexp.MustCompile(`(token=)(.+)(\?|$)`)
 
+// RedactURI is a request URI fit to log: from a token parameter on, which
+// holds a session token, it is replaced with REDACTED.
+func RedactURI(uri string) string {
+	return tokenRegex.ReplaceAllString(uri, "${1}REDACTED")
+}
+
 // LogRequests logs requests along with ip/user/role that made the request
 // this method redacts tokens in GET parameters.
 func LogRequests(h http.Handler) http.Handler {
@@ -30,7 +36,7 @@ func LogRequests(h http.Handler) http.Handler {
 
 		plog.Info(plog.TypeHTTP, "HTTP request",
 			"method", r.Method,
-			"url", tokenRegex.ReplaceAllString(r.RequestURI, "${1}REDACTED"),
+			"url", RedactURI(r.RequestURI),
 			"address", r.RemoteAddr,
 			"user", user,
 			"role", role)
