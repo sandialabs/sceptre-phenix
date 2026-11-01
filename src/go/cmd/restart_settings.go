@@ -15,7 +15,7 @@ import (
 // watcher applies at once; any other change waits for phenix ui to restart.
 //
 //nolint:gochecknoglobals // constant list
-var liveSettings = []string{"log.", "ui.logs.level", "ui.users"}
+var liveSettings = []string{"log.", "ui.logs.level", "ui.users", "experiment.disk-check"}
 
 // uiStartSettings holds phenix ui's settings at startup; other commands leave it unset.
 //

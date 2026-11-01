@@ -343,6 +343,7 @@ func dropConnection(t *testing.T, w http.ResponseWriter) {
 type fakePhenix struct {
 	options        map[string]any
 	plan           workflow.Plan
+	warnings       []string // of a dry run
 	results        []workflow.ConfigResult
 	reject         string
 	fail           string
@@ -396,7 +397,12 @@ func newFakePhenix(t *testing.T, p fakePhenix) *fakeServer {
 		case !dryRun && p.applyStatus != 0:
 			fakeFailure(t, w, p.applyStatus, "")
 		default:
-			writeJSON(t, w, http.StatusOK, workflow.Result{Plan: p.plan, DryRun: dryRun && !p.planNotDryRun})
+			result := workflow.Result{Plan: p.plan, DryRun: dryRun && !p.planNotDryRun}
+			if dryRun {
+				result.Warnings = p.warnings
+			}
+
+			writeJSON(t, w, http.StatusOK, result)
 		}
 	})
 }

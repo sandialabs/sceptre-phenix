@@ -555,6 +555,9 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		exp.Spec.VLANs().SetMax(o.vlanMax)
 	}
 
+	// the startup app marks a VM do not boot when its first disk image is missing; the disk check still reports it
+	booting := bootingVMs(exp.Spec)
+
 	err = app.ApplyApps(
 		ctx,
 		exp,
@@ -563,6 +566,14 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	)
 	if err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
+	}
+
+	// pre-start apps may change the drives, so the check comes after them and before minimega is told anything
+	warnings, err := CheckDisks(ctx, exp.Spec, CheckAsWarnings(o.dryrun || o.mmErrAsWarn), checkBooting(booting))
+	reportDiskWarnings(ctx, exp.Metadata.Name, warnings)
+
+	if err != nil {
+		return err
 	}
 
 	var (

@@ -582,6 +582,16 @@ func TestResultJSON(t *testing.T) {
 			},
 			want: `{"action":"none","experiment":"","reason":"auto.update is false","dryRun":true}`,
 		},
+		{
+			name: "dry run of a restart with disk warnings",
+			result: workflow.Result{
+				Plan:     workflow.Plan{Action: workflow.ActionRestart, Experiment: "foo", Reason: ""},
+				DryRun:   true,
+				Warnings: []string{"the start would fail: VM a: disk a.qc2: disk image /i/a.qc2 is missing"},
+			},
+			want: `{"action":"restart","experiment":"foo","reason":"","dryRun":true,` +
+				`"warnings":["the start would fail: VM a: disk a.qc2: disk image /i/a.qc2 is missing"]}`,
+		},
 	}
 
 	for _, tc := range cases {

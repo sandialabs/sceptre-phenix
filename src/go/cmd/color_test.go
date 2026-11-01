@@ -3,11 +3,16 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/lmittmann/tint"
 	"pgregory.net/rapid"
+
+	"phenix/api/workflow"
 )
 
 // colorFlagInArgs finds the last --color value before "--", in both forms,
@@ -142,6 +147,41 @@ func TestConfigWarningf(t *testing.T) { //nolint:paralleltest // sets PHENIX_COL
 
 			if got := out.String(); got != tc.want {
 				t.Errorf("configWarningf() wrote %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A colored console shows a workflow action as a plan tool shows a change;
+// every other handler sees the plain action.
+func TestActionAttr(t *testing.T) {
+	t.Parallel()
+
+	tests := map[workflow.Action]string{
+		workflow.ActionCreate:         "\x1b[2;32maction=\x1b[22mcreate\x1b[0m",
+		workflow.ActionCreateAndStart: "\x1b[2;32maction=\x1b[22mcreateAndStart\x1b[0m",
+		workflow.ActionUpdate:         "\x1b[2;33maction=\x1b[22mupdate\x1b[0m",
+		workflow.ActionUpdateAndStart: "\x1b[2;33maction=\x1b[22mupdateAndStart\x1b[0m",
+		workflow.ActionRestart:        "\x1b[2;33maction=\x1b[22mrestart\x1b[0m",
+		workflow.ActionNone:           "\x1b[2;90maction=\x1b[22mnone\x1b[0m",
+	}
+
+	for action, want := range tests {
+		t.Run(string(action), func(t *testing.T) {
+			t.Parallel()
+
+			var colored, plain bytes.Buffer
+
+			coloredLog := slog.New(tint.NewTextHandler(&colored, &tint.Options{NoColor: false}))
+			coloredLog.Info("plan", actionAttr(action))
+			slog.New(slog.NewTextHandler(&plain, nil)).Info("plan", actionAttr(action))
+
+			if got := colored.String(); !strings.Contains(got, want) {
+				t.Errorf("colored line %q lacks %q", got, want)
+			}
+
+			if diff := cmp.Diff("action="+string(action), strings.Fields(plain.String())[3]); diff != "" {
+				t.Errorf("plain attribute mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

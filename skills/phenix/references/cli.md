@@ -92,7 +92,18 @@ stays a string. The annotations the default apps read are in
 
 `start all` starts every stopped experiment. `--dry-run` (also on `restart`)
 does everything except call out to minimega, which isolates config and
-scheduling problems from minimega problems. `--honor-run-periodically` keeps
+scheduling problems from minimega problems. Before minimega gets anything, `start`
+checks each booting VM's disk images (following qcow2 backing chains) and
+CD-ROM image (`advanced.cdrom`, `.iso` drives: existence only) on the head
+node, and refuses with one line per VM and disk when a file is missing or
+qemu cannot open an image of the chain (encryption, an unknown qcow2 version
+or feature bit, a corrupt image opened read/write); a qcow version 1 or dirty
+qcow2 image only warns;
+`restart` does the same check before it stops the experiment (warnings only
+when the scenario has a user app). `--dry-run` and
+`--treat-mm-errors-as-warnings` make the problems warnings; the
+`experiment.disk-check` setting (`error` default, `warn`, `off`) applies to
+every start path, CLI, REST, UI, workflow and bulk VM start/restart jobs. `--honor-run-periodically` keeps
 the process in the foreground re-running `running` stages on their
 `runPeriodically` interval.
 
