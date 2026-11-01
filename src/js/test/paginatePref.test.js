@@ -23,6 +23,9 @@ import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
 import { loadPaginate, savePaginate } from '@/utils/paginatePref.js';
 import { useTable } from '@/utils/useTable.js';
 import Disks from '@/views/Disks.vue';
+import Experiments from '@/views/Experiments.vue';
+import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
+import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import { disk } from './helpers/fixtures.js';
 import { mountComponent, tableRows, textOf } from './helpers/mount.js';
 import { blockedStorage, memoryStorage } from './helpers/storage.js';
@@ -165,9 +168,12 @@ describe('the pages with a Paginate toggle', () => {
   });
 });
 
-// tables whose toggle needs an experiment's files to show
+// tables whose toggle needs a running experiment or its files to show
 describe('the tables with a Paginate toggle', () => {
   it.each([
+    ['experiments', Experiments],
+    ['stopped-vms', StoppedExperiment],
+    ['running-vms', RunningExperiment],
     // each experiment page names its Files tab's table
     ['stopped-files', ExperimentFilesTab, { paginateKey: 'stopped-files' }],
     ['running-files', ExperimentFilesTab, { paginateKey: 'running-files' }],
@@ -179,7 +185,7 @@ describe('the tables with a Paginate toggle', () => {
       props,
       route: '/experiment/exp1',
     });
-    const table = vm.filesTable;
+    const table = vm.table ?? vm.filesTable;
     expect(table.isPaginated).toBe(true);
 
     table.isPaginated = false;

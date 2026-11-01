@@ -24,7 +24,6 @@ import {
   Progress,
   Radio,
   Select,
-  Slider,
   Switch,
   Table,
   Tabs,
@@ -38,7 +37,7 @@ import { returnFocus } from '@/utils/returnFocus.js';
 import { TOAST_DURATION } from '@/utils/toast.js';
 
 // Register only the Buefy components in use (test/buefy.test.js checks this).
-// Views register one-view components (colorpicker, datetimepicker) locally.
+// Views register one-view components (colorpicker, slider and others) locally.
 const buefyPlugins = [
   Autocomplete,
   Breadcrumb,
@@ -58,8 +57,6 @@ const buefyPlugins = [
   Progress,
   Radio,
   Select,
-  // the screenshot slider of RunningExperiment.vue
-  Slider,
   Switch,
   Table,
   Tabs,

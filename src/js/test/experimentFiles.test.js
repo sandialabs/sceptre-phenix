@@ -1,7 +1,7 @@
 // The experiment Files tab (ExperimentFilesTab.vue): listing, opening,
-// selecting, downloading and deleting files.
+// selecting, downloading and deleting files, and the pages that hold it.
 import fc from 'fast-check';
-import { flushPromises } from '@vue/test-utils';
+import { flushPromises, RouterLinkStub } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,12 +11,19 @@ vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
+// the experiment pages around the tab
+vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 vi.mock('@/utils/notify.js', modules.notify);
+
+import { h } from 'vue';
 
 import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
 import FileSelectionActions from '@/components/experiment/FileSelectionActions.vue';
 import { keepListed } from '@/utils/experimentFiles.js';
 import { useJobStore } from '@/utils/jobs.js';
+import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
+import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import { pathSegment } from './helpers/arbitraries.js';
 import { deferredGets, never } from './helpers/async.js';
 import { httpError, wsMsg } from './helpers/fixtures.js';
@@ -942,4 +949,87 @@ describe('rendering', () => {
       true,
     );
   });
+});
+
+describe('the experiment pages', () => {
+  const pages = [
+    [
+      'StoppedExperiment',
+      StoppedExperiment,
+      'stopped-files',
+      { searchName: 'web-server' },
+    ],
+    [
+      'RunningExperiment',
+      RunningExperiment,
+      'running-files',
+      { search: { filter: 'web-server' } },
+    ],
+  ];
+
+  // the page on exp1 with its Files tab open, and what passed between them
+  async function mountPage(view, state) {
+    // the page's own lists never arrive
+    axios.get.mockReturnValue(never());
+
+    const tabs = [];
+    const FilesTab = {
+      props: ExperimentFilesTab.props,
+      emits: ExperimentFilesTab.emits,
+      created() {
+        tabs.push({ ...this.$props });
+        this.$emit('categories', ['Packet Capture', 'Unknown']);
+        this.$emit('found');
+        this.$emit('waiting', true);
+      },
+      methods: { reload: vi.fn() },
+      render: () => h('div'),
+    };
+    const page = await mountOn(view, {
+      data: {
+        activeTab: 'files',
+        experiment: { name: 'exp1', vms: [] },
+        fileCategory: 'Packet Capture',
+        ...state,
+      },
+      stubs: { ExperimentFilesTab: FilesTab, RouterLink: RouterLinkStub },
+    });
+    return { page, tabs, reload: FilesTab.methods.reload };
+  }
+
+  it.each(pages)(
+    '%s passes the tab its search and category, and takes its news',
+    async (_, view, paginateKey, search) => {
+      const { page, tabs } = await mountPage(view, search);
+
+      expect(tabs).toEqual([
+        { paginateKey, filter: 'web-server', category: 'Packet Capture' },
+      ]);
+      const categories = page.find(
+        'select[aria-label="Filter files by category"]',
+      );
+      expect(categories.findAll('option').map((o) => o.text())).toEqual([
+        'Packet Capture',
+        'Unknown',
+      ]);
+      expect(
+        page.findComponent({ name: 'BAutocomplete' }).props('data'),
+      ).toEqual(['web-server']);
+      expect(page.find('.loading-overlay.is-active').exists()).toBe(true);
+      // the tab holds the file list, not the page
+      expect(page.vm.files).toBeUndefined();
+    },
+  );
+
+  it.each(pages)(
+    '%s reloads the tab when the category changes',
+    async (_, view) => {
+      const { page, reload } = await mountPage(view, {});
+      await page
+        .find('select[aria-label="Filter files by category"]')
+        .setValue('Unknown');
+      expect(page.vm.fileCategory).toBe('Unknown');
+      expect(reload).toHaveBeenCalled();
+    },
+  );
 });
