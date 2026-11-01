@@ -4,7 +4,8 @@ The phēnix web UI is a single page in the browser. Whichever tab you are on,
 the banner at the top holds the tabs and the page's freshness status, and the
 footer holds a book button that opens this documentation. This page describes
 the behavior that is the same everywhere; the pages themselves are described
-under [Experiments](experiments.md), [VMs](vms.md), and the rest.
+under [Experiments](experiments.md), [VMs](vms.md), [Hosts](hosts.md), and
+the rest.
 
 ## Page Freshness and Refresh
 

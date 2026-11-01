@@ -30,6 +30,10 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	hosts, observed, err := mm.GetClusterHostsObserved(ctx, false)
+	if requestCanceled(r, err) {
+		return nil
+	}
+
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
@@ -49,7 +53,8 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	_, _ = w.Write(marshalled) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(marshalled)
 
 	return nil
 }

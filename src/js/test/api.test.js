@@ -139,6 +139,12 @@ const requests = [
       { signal },
     ],
   ],
+  [
+    'listLogFiles',
+    () => logsApi.listLogFiles(signal),
+    'get',
+    ['logs/files', { signal }],
+  ],
 
   // configs
   [

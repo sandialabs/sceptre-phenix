@@ -45,7 +45,7 @@ func (c client) close() error {
 
 func (c client) getLocalListeners() (Listeners, error) {
 	msg := Message{ //nolint:exhaustruct // partial initialization
-		MID:  int(rand.Uint64()), //nolint:gosec // weak random number generator
+		MID:  int(rand.Uint64()), //nolint:gosec // G404 message IDs, not secrets
 		Type: LISTENERS,
 	}
 
@@ -63,7 +63,7 @@ func (c client) getLocalListeners() (Listeners, error) {
 
 func (c client) moveLocalListener(id, port int) error {
 	msg := Message{ //nolint:exhaustruct // partial initialization
-		MID:     int(rand.Uint64()), //nolint:gosec // weak random number generator
+		MID:     int(rand.Uint64()), //nolint:gosec // G404 message IDs, not secrets
 		Type:    MOVE,
 		Payload: marshalPayload(listenerAction{ID: id, Port: port}),
 	}
@@ -81,7 +81,7 @@ func (c client) moveLocalListener(id, port int) error {
 
 func (c client) activateLocalListener(id int) error {
 	msg := Message{ //nolint:exhaustruct // partial initialization
-		MID:  int(rand.Uint64()), //nolint:gosec // weak random number generator
+		MID:  int(rand.Uint64()), //nolint:gosec // G404 message IDs, not secrets
 		Type: ACTIVATE,
 		Payload: marshalPayload(
 			listenerAction{ID: id}, //nolint:exhaustruct // partial initialization
@@ -101,7 +101,7 @@ func (c client) activateLocalListener(id int) error {
 
 func (c client) deactivateLocalListener(id int) error {
 	msg := Message{ //nolint:exhaustruct // partial initialization
-		MID:  int(rand.Uint64()), //nolint:gosec // weak random number generator
+		MID:  int(rand.Uint64()), //nolint:gosec // G404 message IDs, not secrets
 		Type: DEACTIVATE,
 		Payload: marshalPayload(
 			listenerAction{ID: id}, //nolint:exhaustruct // partial initialization

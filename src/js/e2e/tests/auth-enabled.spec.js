@@ -67,7 +67,7 @@ test('wrong password shows incorrect-credentials toast', async ({ page }) => {
     .fill('definitely-wrong');
   await page.getByRole('button', { name: 'Submit' }).click();
   await expect(
-    page.getByText('The username and/or password is incorrect'),
+    page.getByText('The username or password is incorrect'),
   ).toBeVisible({
     timeout: 10000,
   });

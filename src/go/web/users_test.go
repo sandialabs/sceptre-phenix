@@ -409,3 +409,39 @@ func TestConfigureUsersSkipsUnknownRole(t *testing.T) {
 		t.Errorf("rbac.GetUser(real) role = %q, want %q", got, experimentUserRole)
 	}
 }
+
+// users patch lets a user create their own tokens; a token for another user
+// also needs users/tokens create for that user (the contract tests cover the rest).
+//
+//nolint:paralleltest // replaces the store
+func TestCreateUserTokenForOtherUser(t *testing.T) {
+	storetest.UseBolt(t)
+	createUserWithToken(t, "test-user")
+	createUserWithToken(t, "bob")
+
+	original := o
+	t.Cleanup(func() { o = original })
+
+	o.jwtKey = testJWTKey
+
+	patch := func(name string) rbac.Role { return testRole(resourceUsers, verbPatch, name) }
+	tokens := func(name string) rbac.Role { return testRole("users/tokens", "create", name) }
+
+	for _, tc := range []struct {
+		name, target string
+		role         rbac.Role
+		want         int
+	}{
+		{"own token", "test-user", patch("test-user"), http.StatusOK},
+		{"users/tokens for someone else", "bob", combinedRole(patch("bob"), tokens("carol")), http.StatusForbidden},
+	} {
+		w := httptest.NewRecorder()
+		vars := map[string]string{"username": tc.target}
+		weberror.ErrorHandler(CreateUserToken).
+			ServeHTTP(w, roleRequest(http.MethodPost, "/api/v1/users/"+tc.target+"/tokens", `{"lifetime":"1h"}`, vars, tc.role))
+
+		if w.Code != tc.want {
+			t.Errorf("CreateUserToken(%s) for %s = %d, want %d: %s", tc.name, tc.target, w.Code, tc.want, w.Body.String())
+		}
+	}
+}

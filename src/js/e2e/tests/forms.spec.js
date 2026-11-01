@@ -75,10 +75,24 @@ test('settings: load and save round-trip', async ({ page }) => {
   await gotoSeeded(page, '/settings');
   await settle(page);
 
-  await page.getByRole('button', { name: 'Save Changes' }).click();
+  const save = page.getByRole('button', { name: 'Save Changes' });
+  const toggle = page.locator('.switch', {
+    hasText: 'Require a lowercase letter',
+  });
+
+  // Save only enables once something has changed
+  await expect(save).toBeDisabled();
+  await toggle.click();
+  await save.click();
   await expect(page.getByText('Settings updated')).toBeVisible({
     timeout: 10000,
   });
+  await expect(save).toBeDisabled();
+
+  // put the setting back for the other tests
+  await toggle.click();
+  await save.click();
+  await expect(save).toBeDisabled({ timeout: 10000 });
 
   const fatal = fatalOf(issues);
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);

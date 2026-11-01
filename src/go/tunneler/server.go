@@ -191,8 +191,6 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
-	case CREATE, DELETE:
-		// TODO: implement
 	}
 }
 
@@ -226,7 +224,7 @@ func getRemoteListeners() ([]ft.Listener, error) {
 				)
 			}
 
-			resp, err := httpCli.Do(req) //nolint:gosec // SSRF via taint analysis
+			resp, err := httpCli.Do(req) //nolint:gosec // G704 the phenix server the user named
 			if err != nil {
 				return nil, fmt.Errorf(
 					"getting port forwards for VM %s in experiment %s: %w",
@@ -278,7 +276,7 @@ func getRemoteExperiments(client *http.Client, url string) ([]string, error) {
 		return nil, fmt.Errorf("creating HTTP request for getting experiments: %w", err)
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // SSRF via taint analysis
+	resp, err := client.Do(req) //nolint:gosec // G704 the phenix server the user named
 	if err != nil {
 		return nil, fmt.Errorf("getting experiments: %w", err)
 	}
@@ -321,7 +319,7 @@ func getRemoteVMs(client *http.Client, url string) ([]string, error) {
 		return nil, fmt.Errorf("creating HTTP request for getting VMs: %w", err)
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // SSRF via taint analysis
+	resp, err := client.Do(req) //nolint:gosec // G704 the phenix server the user named
 	if err != nil {
 		return nil, fmt.Errorf("getting VMs: %w", err)
 	}
