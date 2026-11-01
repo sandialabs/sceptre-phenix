@@ -17,7 +17,10 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	RedeployVM(...Option) error
 	KillVM(...Option) error
 	GetVMHost(...Option) (string, error)
+	GetVMHosts(...Option) map[string]string
+	GetVMIPv4(...Option) ([]string, error)
 	GetVMState(...Option) (string, error)
+	GetVMStates(...Option) (map[string]string, error)
 
 	SetVMTags(...Option) error
 
@@ -43,6 +46,7 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	GetVLANs(...Option) (map[string]int, error)
 
 	IsC2ClientActive(...C2Option) error
+	ActiveC2Clients(string, []C2ClientRef) map[C2ClientRef]bool
 	ExecC2Command(...C2Option) (string, error)
 	GetC2Response(...C2Option) (string, error)
 	WaitForC2Response(...C2Option) (string, error)

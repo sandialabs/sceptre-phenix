@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
@@ -18,8 +19,11 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"phenix/api/experiment"
+	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/util/common"
 	"phenix/util/file"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 )
@@ -54,7 +58,7 @@ func Count(expName string) (int, error) {
 // List collects VMs, combining topology settings with running VM details if the
 // experiment is running. It returns a slice of VM structs and any errors
 // encountered while gathering them.
-func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
+func List(expName string) ([]mm.VM, error) {
 	if expName == "" {
 		return nil, errors.New("no experiment name provided")
 	}
@@ -64,70 +68,53 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 		return nil, fmt.Errorf("getting experiment %s: %w", expName, err)
 	}
 
-	var (
-		running = make(map[string]mm.VM)
-		vms     []mm.VM
-	)
+	return ListFor(context.Background(), exp), nil
+}
 
-	if exp.Running() {
-		for _, vm := range mm.GetVMInfo(mm.NS(expName)) {
-			running[vm.Name] = vm
-		}
+// ListFor is List for an experiment the caller already read from the store, so
+// the experiment is not read again.
+func ListFor(ctx context.Context, exp *types.Experiment) []mm.VM {
+	vms, _ := ListForObserved(ctx, exp)
+
+	return vms
+}
+
+// ListForObserved is ListFor, also reporting when minimega was read (Unobserved for a stopped
+// experiment). Unless the observation is Known, the VMs minimega missed are listed as configured,
+// with no state; a listing whose commands gave up because ctx is done carries ctx's error.
+func ListForObserved(ctx context.Context, exp *types.Experiment) ([]mm.VM, freshness.Observation) {
+	if !exp.Running() {
+		return listVMs(*exp, nil, false), freshness.Unobserved()
 	}
 
+	vms, obs := mm.GetVMInfoObserved(mm.NS(exp.Metadata.Name), mm.Context(ctx))
+
+	running := make(map[string]mm.VM, len(vms))
+
+	for _, vm := range vms {
+		running[vm.Name] = vm
+	}
+
+	return listVMs(*exp, running, obs.Known), obs
+}
+
+// ListConfigured lists the experiment's VMs as its topology configures them,
+// without asking minimega for their state, for when minimega is busy.
+func ListConfigured(exp types.Experiment) []mm.VM {
+	return listVMs(exp, nil, false)
+}
+
+// listVMs combines the topology's VMs with running, minimega's details for a
+// running experiment's VMs. When complete, running holds every VM minimega
+// runs, so a bootable VM it lacks was not deployed and is left out.
+func listVMs(exp types.Experiment, running map[string]mm.VM, complete bool) []mm.VM {
+	var vms []mm.VM
+
 	for idx, node := range exp.Spec.Topology().Nodes() {
-		var (
-			disk            string
-			dnb             bool
-			snapshot        bool
-			injectPartition int
-		)
-
-		if drives := node.Hardware().Drives(); len(drives) > 0 {
-			disk = mm.GetMMFullPath(drives[0].Image())
-			injectPartition = *drives[0].InjectPartition()
-		}
-
-		if node.General().DoNotBoot() != nil {
-			dnb = *node.General().DoNotBoot()
-		}
-
-		if node.General().Snapshot() != nil {
-			snapshot = *node.General().Snapshot()
-		}
-
-		vm := mm.VM{ //nolint:exhaustruct // partial initialization
-			ID:              idx,
-			Name:            node.General().Hostname(),
-			Description:     node.General().Description(),
-			Experiment:      exp.Spec.ExperimentName(),
-			CPUs:            node.Hardware().VCPU(),
-			RAM:             node.Hardware().Memory(),
-			Disk:            disk,
-			InjectPartition: injectPartition,
-			Interfaces:      make(map[string]string),
-			DoNotBoot:       dnb,
-			Type:            node.Type(),
-			OSType:          node.Hardware().OSType(),
-			Snapshot:        snapshot,
-			Tags:            node.Labels(),
-		}
-
-		ifaceNameByVLAN := make(map[string]string)
-
-		for _, iface := range node.Network().Interfaces() {
-			vm.IPv4 = append(vm.IPv4, iface.Address()) // empty for DHCP
-
-			if iface.VLAN() != "" { // might be empty for external nodes
-				vm.Networks = append(vm.Networks, iface.VLAN())
-				vm.IfaceNames = append(vm.IfaceNames, iface.Name())
-				vm.Interfaces[iface.VLAN()] = iface.Address() // empty for DHCP
-				ifaceNameByVLAN[iface.VLAN()] = iface.Name()
-			}
-		}
+		vm, ifaceNameByVLAN := nodeVM(exp, idx, node)
 
 		details, exists := running[vm.Name]
-		if exp.Running() && !exp.DryRun() && !node.External() && !dnb && !exists {
+		if complete && exp.Running() && !exp.DryRun() && !node.External() && !vm.DoNotBoot && !exists {
 			continue
 		}
 
@@ -135,57 +122,7 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 		case node.External():
 			vm.State = "EXTERNAL"
 		case exists:
-			vm.Host = details.Host
-			vm.State = details.State
-			vm.Running = details.Running
-			vm.Networks = details.Networks
-			vm.Taps = details.Taps
-			vm.IPv4 = details.IPv4
-			vm.Captures = details.Captures
-			vm.CdRom = details.CdRom
-			vm.Tags = details.Tags
-			vm.Uptime = details.Uptime
-			vm.CPUs = details.CPUs
-			vm.RAM = details.RAM
-			vm.Disk = details.Disk
-			vm.CCActive = details.CCActive
-
-			// `vm.IPv4` could be nil/empty if minimega isn't reporting any IPs for it
-			if len(vm.IPv4) == 0 {
-				vm.IPv4 = make([]string, len(details.Networks))
-			}
-
-			// minimega is the source of truth for interface ordering in a running
-			// experiment, so rebuild `vm.IfaceNames` to match `details.Networks`
-			// instead of leaving it in the (possibly different) order the
-			// interfaces were declared in the topology.
-			vm.IfaceNames = make([]string, len(details.Networks))
-
-			// Since we get the IP from the experiment config, but the network name
-			// from minimega (to preserve iface to network ordering), make sure the
-			// ordering of IPs matches the ordering of networks. We could just use a
-			// map here, but then the iface to network ordering that minimega ensures
-			// would be lost.
-			for i, nw := range details.Networks {
-				// At this point, `nw` will look something like `EXP_1 (101)`. In the
-				// experiment config, we just have `EXP_1` so we need to use that
-				// portion from minimega as the `Interfaces`/`ifaceNameByVLAN` map key.
-				match := vlanAliasRegex.FindStringSubmatch(nw)
-
-				// If it's set here, we got it from minimega, which is the source of truth
-				// for running experiments.
-				if vm.IPv4[i] == "" {
-					if match != nil {
-						vm.IPv4[i] = vm.Interfaces[match[1]]
-					} else {
-						vm.IPv4[i] = "n/a"
-					}
-				}
-
-				if match != nil {
-					vm.IfaceNames[i] = ifaceNameByVLAN[match[1]]
-				}
-			}
+			mergeRunning(&vm, details, ifaceNameByVLAN)
 		default:
 			vm.Host = exp.Spec.Schedules()[vm.Name]
 		}
@@ -193,14 +130,126 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 		vms = append(vms, vm)
 	}
 
-	return vms, nil
+	return vms
+}
+
+// nodeVM is the VM the topology configures for its node at index idx, and
+// the name of its interface on each of its VLANs.
+func nodeVM(exp types.Experiment, idx int, node ifaces.NodeSpec) (mm.VM, map[string]string) {
+	var (
+		disk            string
+		dnb             bool
+		snapshot        bool
+		injectPartition int
+	)
+
+	if drives := node.Hardware().Drives(); len(drives) > 0 {
+		disk = mm.GetMMFullPath(drives[0].Image())
+		injectPartition = *drives[0].InjectPartition()
+	}
+
+	if node.General().DoNotBoot() != nil {
+		dnb = *node.General().DoNotBoot()
+	}
+
+	if node.General().Snapshot() != nil {
+		snapshot = *node.General().Snapshot()
+	}
+
+	vm := mm.VM{ //nolint:exhaustruct // partial initialization
+		ID:              idx,
+		Name:            node.General().Hostname(),
+		Description:     node.General().Description(),
+		Experiment:      exp.Spec.ExperimentName(),
+		CPUs:            node.Hardware().VCPU(),
+		RAM:             node.Hardware().Memory(),
+		Disk:            disk,
+		InjectPartition: injectPartition,
+		Interfaces:      make(map[string]string),
+		DoNotBoot:       dnb,
+		Type:            node.Type(),
+		OSType:          node.Hardware().OSType(),
+		Snapshot:        snapshot,
+		Tags:            node.Labels(),
+	}
+
+	ifaceNameByVLAN := make(map[string]string)
+
+	for _, iface := range node.Network().Interfaces() {
+		vm.IPv4 = append(vm.IPv4, iface.Address()) // empty for DHCP
+
+		if iface.VLAN() != "" { // might be empty for external nodes
+			vm.Networks = append(vm.Networks, iface.VLAN())
+			vm.IfaceNames = append(vm.IfaceNames, iface.Name())
+			vm.Interfaces[iface.VLAN()] = iface.Address() // empty for DHCP
+			ifaceNameByVLAN[iface.VLAN()] = iface.Name()
+		}
+	}
+
+	return vm, ifaceNameByVLAN
+}
+
+// mergeRunning overlays minimega's details of a running VM on the VM its
+// topology configures; ifaceNameByVLAN names its interface on each VLAN.
+func mergeRunning(vm *mm.VM, details mm.VM, ifaceNameByVLAN map[string]string) {
+	vm.Host = details.Host
+	vm.State = details.State
+	vm.Running = details.Running
+	vm.Networks = details.Networks
+	vm.Taps = details.Taps
+	vm.IPv4 = details.IPv4
+	vm.Captures = details.Captures
+	vm.CdRom = details.CdRom
+	vm.Tags = details.Tags
+	vm.Uptime = details.Uptime
+	vm.CPUs = details.CPUs
+	vm.RAM = details.RAM
+	vm.Disk = details.Disk
+	vm.CCActive = details.CCActive
+
+	// `vm.IPv4` could be nil/empty if minimega isn't reporting any IPs for it
+	if len(vm.IPv4) == 0 {
+		vm.IPv4 = make([]string, len(details.Networks))
+	}
+
+	// minimega is the source of truth for interface ordering in a running
+	// experiment, so rebuild `vm.IfaceNames` to match `details.Networks`
+	// instead of leaving it in the (possibly different) order the interfaces
+	// were declared in the topology.
+	vm.IfaceNames = make([]string, len(details.Networks))
+
+	// Since we get the IP from the experiment config, but the network name
+	// from minimega (to preserve iface to network ordering), make sure the
+	// ordering of IPs matches the ordering of networks. We could just use a
+	// map here, but then the iface to network ordering that minimega ensures
+	// would be lost.
+	for i, nw := range details.Networks {
+		// At this point, `nw` will look something like `EXP_1 (101)`. In the
+		// experiment config, we just have `EXP_1` so we need to use that
+		// portion from minimega as the `Interfaces`/`ifaceNameByVLAN` map key.
+		match := vlanAliasRegex.FindStringSubmatch(nw)
+
+		// If it's set here, we got it from minimega, which is the source of truth
+		// for running experiments.
+		if vm.IPv4[i] == "" {
+			if match != nil {
+				vm.IPv4[i] = vm.Interfaces[match[1]]
+			} else {
+				vm.IPv4[i] = "n/a"
+			}
+		}
+
+		if match != nil {
+			vm.IfaceNames[i] = ifaceNameByVLAN[match[1]]
+		}
+	}
 }
 
 // Get retrieves the VM with the given name from the experiment with the given
 // name. If the experiment is running, topology VM settings are combined with
 // running VM details. It returns a pointer to a VM struct, and any errors
 // encountered while retrieving the VM.
-func Get(expName, vmName string) (*mm.VM, error) { //nolint:funlen // complex logic
+func Get(expName, vmName string) (*mm.VM, error) {
 	if expName == "" {
 		return nil, errors.New("no experiment name provided")
 	}
@@ -214,9 +263,21 @@ func Get(expName, vmName string) (*mm.VM, error) { //nolint:funlen // complex lo
 		return nil, fmt.Errorf("getting experiment %s: %w", expName, err)
 	}
 
+	return GetFor(context.Background(), exp, vmName)
+}
+
+// GetFor is Get for an experiment the caller already read from the store, so
+// the experiment is not read again.
+func GetFor(ctx context.Context, exp *types.Experiment, vmName string) (*mm.VM, error) {
+	if vmName == "" {
+		return nil, errors.New("no VM name provided")
+	}
+
+	expName := exp.Metadata.Name
+
 	var (
 		vm              *mm.VM
-		ifaceNameByVLAN = make(map[string]string)
+		ifaceNameByVLAN map[string]string
 	)
 
 	for idx, node := range exp.Spec.Topology().Nodes() {
@@ -224,40 +285,22 @@ func Get(expName, vmName string) (*mm.VM, error) { //nolint:funlen // complex lo
 			continue
 		}
 
-		vm = &mm.VM{ //nolint:exhaustruct // partial initialization
-			ID:              idx,
-			Name:            node.General().Hostname(),
-			Description:     node.General().Description(),
-			Experiment:      exp.Spec.ExperimentName(),
-			CPUs:            node.Hardware().VCPU(),
-			RAM:             node.Hardware().Memory(),
-			Disk:            mm.GetMMFullPath(node.Hardware().Drives()[0].Image()),
-			InjectPartition: *node.Hardware().Drives()[0].InjectPartition(),
-			Interfaces:      make(map[string]string),
-			DoNotBoot:       *node.General().DoNotBoot(),
-			OSType:          node.Hardware().OSType(),
-			Snapshot:        *node.General().Snapshot(),
-			Metadata:        make(map[string]any),
-			Labels:          node.Labels(),
-			Tags:            node.Labels(),
-			Annotations:     node.Annotations(),
-		}
+		var configured mm.VM
 
-		for _, iface := range node.Network().Interfaces() {
-			vm.IPv4 = append(vm.IPv4, iface.Address()) // empty for DHCP
-			vm.Networks = append(vm.Networks, iface.VLAN())
-			vm.IfaceNames = append(vm.IfaceNames, iface.Name())
-			vm.Interfaces[iface.VLAN()] = iface.Address() // empty for DHCP
-			ifaceNameByVLAN[iface.VLAN()] = iface.Name()
-		}
+		configured, ifaceNameByVLAN = nodeVM(*exp, idx, node)
+		configured.Metadata = make(map[string]any)
+		configured.Labels = node.Labels()
+		configured.Annotations = node.Annotations()
 
 		for _, app := range exp.Apps() {
 			for _, h := range app.Hosts() {
-				if h.Hostname() == vm.Name {
-					vm.Metadata[app.Name()] = h.Metadata()
+				if h.Hostname() == configured.Name {
+					configured.Metadata[app.Name()] = h.Metadata()
 				}
 			}
 		}
+
+		vm = &configured
 	}
 
 	if vm == nil {
@@ -270,62 +313,16 @@ func Get(expName, vmName string) (*mm.VM, error) { //nolint:funlen // complex lo
 		return vm, nil
 	}
 
-	details := mm.GetVMInfo(mm.NS(expName), mm.VMName(vmName))
+	details := mm.GetVMInfo(mm.NS(expName), mm.VMName(vmName), mm.Context(ctx))
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("getting details of VM %s: %w", vmName, err)
+	}
 
 	if len(details) != 1 {
 		return vm, nil
 	}
 
-	vm.Host = details[0].Host
-	vm.State = details[0].State
-	vm.Running = details[0].Running
-	vm.Networks = details[0].Networks
-	vm.Taps = details[0].Taps
-	vm.IPv4 = details[0].IPv4
-	vm.Captures = details[0].Captures
-	vm.CdRom = details[0].CdRom
-	vm.Tags = details[0].Tags
-	vm.Uptime = details[0].Uptime
-	vm.CPUs = details[0].CPUs
-	vm.RAM = details[0].RAM
-	vm.Disk = details[0].Disk
-	vm.CCActive = details[0].CCActive
-
-	// `vm.IPv4` could be nil/empty if minimega isn't reporting any IPs for it
-	if len(vm.IPv4) == 0 {
-		vm.IPv4 = make([]string, len(details[0].Networks))
-	}
-
-	// minimega is the source of truth for interface ordering in a running
-	// experiment, so rebuild `vm.IfaceNames` to match `details[0].Networks`
-	// instead of leaving it in the (possibly different) order the interfaces
-	// were declared in the topology.
-	vm.IfaceNames = make([]string, len(details[0].Networks))
-
-	// Since we get the IP from the experiment config, but the network name from
-	// minimega (to preserve iface to network ordering), make sure the ordering of
-	// IPs matches the ordering of networks. We could just use a map here, but then
-	// the iface to network ordering that minimega ensures would be lost.
-	for idx, nw := range details[0].Networks {
-		// At this point, `nw` will look something like `EXP_1 (101)`. In the exp,
-		// we just have `EXP_1` so we need to use that portion from minimega as the
-		// `Interfaces`/`ifaceNameByVLAN` map key.
-		match := vlanAliasRegex.FindStringSubmatch(nw)
-
-		// If it's set here, we got it from minimega, which is the source of truth
-		// for running experiments.
-		if vm.IPv4[idx] == "" {
-			if match != nil {
-				vm.IPv4[idx] = vm.Interfaces[match[1]]
-			} else {
-				vm.IPv4[idx] = "n/a"
-			}
-		}
-
-		if match != nil {
-			vm.IfaceNames[idx] = ifaceNameByVLAN[match[1]]
-		}
-	}
+	mergeRunning(vm, details[0], ifaceNameByVLAN)
 
 	return vm, nil
 }
@@ -335,6 +332,18 @@ func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // com
 
 	if o.exp == "" || o.vm == "" {
 		return errors.New("experiment or VM name not provided")
+	}
+
+	if o.tags != nil {
+		if err := mm.ValidateTags(*o.tags); err != nil {
+			return err
+		}
+	}
+
+	if o.iface != nil && o.iface.vlan != "" {
+		if err := mm.ValidateArg(o.iface.vlan); err != nil {
+			return fmt.Errorf("VLAN: %w", err)
+		}
 	}
 
 	exp, err := experiment.Get(o.exp)
@@ -347,12 +356,9 @@ func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // com
 		return fmt.Errorf("unable to find VM %s in experiment %s", o.vm, o.exp)
 	}
 
-	// if appending, copy over old labels (keep newer version if present)
 	if o.tags != nil && o.appendTags {
-		for k, v := range vm.Labels() {
-			if _, ok := (*o.tags)[k]; !ok {
-				(*o.tags)[k] = v
-			}
+		if err := appendLabels(*o.tags, vm.Labels()); err != nil {
+			return err
 		}
 	}
 
@@ -454,6 +460,26 @@ func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // com
 	if err != nil {
 		return fmt.Errorf("unable to save experiment with updated VM: %w", err)
 	}
+
+	return nil
+}
+
+// appendLabels copies into tags each label it lacks, once every such label
+// passes mm.ValidateTags, as they all go to minimega with the new tags.
+func appendLabels(tags, labels map[string]string) error {
+	kept := make(map[string]string)
+
+	for k, v := range labels {
+		if _, ok := tags[k]; !ok {
+			kept[k] = v
+		}
+	}
+
+	if err := mm.ValidateTags(kept); err != nil {
+		return fmt.Errorf("existing label: %w", err)
+	}
+
+	maps.Copy(tags, kept)
 
 	return nil
 }
@@ -831,6 +857,10 @@ func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:fun
 		return errors.New("VM is not running")
 	}
 
+	// the snapshot's files land in the experiment's files directory, possibly
+	// only partly if a step fails
+	defer file.InvalidateExperimentFiles(expName)
+
 	out = strings.TrimSuffix(out, filepath.Ext(out))
 	out = fmt.Sprintf("%s_%s__%s", expName, vmName, out)
 
@@ -971,6 +1001,10 @@ func Restore(expName, vmName, snap string) error {
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)
+
+	// From `vm config clone` to `vm launch`, the namespace's VM config and
+	// launch queue are this VM's alone.
+	defer mm.LockVMConfig(expName)()
 
 	cmd.Command = "vm config clone " + vmName
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
@@ -1321,6 +1355,10 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 		return "", fmt.Errorf("getting VM details: %w", err)
 	}
 
+	// the dump usually lands in the experiment's files directory, possibly
+	// only partly if it fails
+	defer file.InvalidateExperimentFiles(expName)
+
 	if out == "" {
 		out = fmt.Sprintf("%s_%s.elf", vmName, getTimestamp())
 	}
@@ -1495,13 +1533,9 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 	// Find the interfaces that are in the
 	// specified subnet
 	for _, vm := range vms {
-		// Make sure the VM is running
-		state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vm.Name))
-		if err != nil {
-			continue
-		}
-
-		if state != vmStateRunning {
+		// Make sure the VM is running. List already has its state from minimega
+		// (and none for a VM minimega doesn't have).
+		if vm.State != vmStateRunning {
 			continue
 		}
 
@@ -1512,34 +1546,49 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 			}
 		}
 
+		var started bool
+
 		for iface, network := range vm.IPv4 {
 			address := net.ParseIP(network)
 
-			if address == nil {
+			if address == nil || !refNet.Contains(address) {
 				continue
 			}
 
-			if refNet.Contains(address) {
-				timeStamp := getTimestamp()
+			filename := fmt.Sprintf("%s_%d_%s.pcap", vm.Name, iface, getTimestamp())
 
-				filename := fmt.Sprintf("%s_%d_%s.pcap", vm.Name, iface, timeStamp)
-				if StartCapture(expName, vm.Name, iface, filename) == nil {
-					matchedVMs = append(matchedVMs, vm.Name)
-				}
+			if StartCapture(expName, vm.Name, iface, filename) == nil {
+				started = true
 			}
+		}
+
+		if started {
+			matchedVMs = append(matchedVMs, vm.Name)
 		}
 	}
 
-	// Get all the captures for all the VMs
-	var allVMCaptures []mm.Capture
+	// captures write to the experiment's files directory
+	file.InvalidateExperimentFiles(expName)
 
-	for _, vmName := range matchedVMs {
-		vmCaptures := mm.GetVMCaptures(mm.NS(expName), mm.VMName(vmName))
+	return capturesForVMs(expName, matchedVMs), nil
+}
 
-		allVMCaptures = append(allVMCaptures, vmCaptures...)
+// capturesForVMs returns the captures for each of the named VMs, in the order
+// named, with one `capture` listing for the experiment rather than one per VM.
+func capturesForVMs(expName string, vmNames []string) []mm.Capture {
+	if len(vmNames) == 0 {
+		return nil
 	}
 
-	return allVMCaptures, nil
+	byVM := mm.GroupCapturesByVM(mm.GetExperimentCaptures(mm.NS(expName)))
+
+	var captures []mm.Capture
+
+	for _, vmName := range vmNames {
+		captures = append(captures, byVM[vmName]...)
+	}
+
+	return captures
 }
 
 // StopCaptureSubnet will stop all captures for any VM
@@ -1598,13 +1647,8 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 			continue
 		}
 
-		// Make sure the VM is running
-		state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vm.Name))
-		if err != nil {
-			continue
-		}
-
-		if state != vmStateRunning {
+		// Make sure the VM is running. List already has its state from minimega.
+		if vm.State != vmStateRunning {
 			continue
 		}
 
@@ -1615,41 +1659,33 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 			}
 		}
 
-		// if no subnet was specified, then stop
-		// all the captures for this VM
-		if len(subnet) == 0 {
-			if StopCaptures(expName, vm.Name) == nil {
-				matchedVMs = append(matchedVMs, vm.Name)
-			}
-
+		if subnet != "" && !hasAddressIn(vm.IPv4, refNet) {
 			continue
 		}
 
-		if refNet == nil {
-			continue
-		}
-
-		for _, network := range vm.IPv4 {
-			address := net.ParseIP(network)
-
-			if address == nil {
-				continue
-			}
-
-			if refNet.Contains(address) {
-				if StopCaptures(expName, vm.Name) == nil {
-					matchedVMs = append(matchedVMs, vm.Name)
-
-					// Avoid trying to stop captures for
-					// the same vm since all the captures
-					// for a VM should be stopped
-					break
-				}
-			}
+		if StopCaptures(expName, vm.Name) == nil {
+			matchedVMs = append(matchedVMs, vm.Name)
 		}
 	}
 
+	// the stopped captures' files are now complete
+	file.InvalidateExperimentFiles(expName)
+
 	return matchedVMs, nil
+}
+
+// hasAddressIn reports whether any of the addresses is in subnet, which is
+// nil for a subnet that did not parse.
+func hasAddressIn(addresses []string, subnet *net.IPNet) bool {
+	if subnet == nil {
+		return false
+	}
+
+	return slices.ContainsFunc(addresses, func(address string) bool {
+		ip := net.ParseIP(address)
+
+		return ip != nil && subnet.Contains(ip)
+	})
 }
 
 // ChangeOpticalDisc changes the optical disc in the first drive.

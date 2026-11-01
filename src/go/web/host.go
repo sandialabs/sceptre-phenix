@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/middleware"
@@ -28,10 +29,12 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	hosts, err := mm.GetClusterHosts(false)
+	hosts, observed, err := mm.GetClusterHostsObserved(ctx, false)
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
+
+	freshness.SetObserved(w, observed)
 
 	allowed := []mm.Host{}
 

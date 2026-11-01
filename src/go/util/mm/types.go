@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -251,6 +252,12 @@ type VM struct {
 
 	// Used internally to check for active CC agent.
 	UUID string `json:"-"`
+}
+
+// OnAnyHost reports whether the VM runs on one of hosts, named exactly as
+// minimega reports them; a VM with no host matches none.
+func (v VM) OnAnyHost(hosts []string) bool {
+	return v.Host != "" && slices.Contains(hosts, v.Host)
 }
 
 // Copy returns a deep copy of the VM. It only makes deep copies of fields that
