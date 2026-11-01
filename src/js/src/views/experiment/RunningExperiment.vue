@@ -3218,7 +3218,7 @@
               this.resetExpModal();
               vmList.forEach((vmName) => {
                 axiosInstance
-                  .get(
+                  .post(
                     'experiments/' +
                       this.$route.params.id +
                       '/vms/' +
@@ -3289,7 +3289,7 @@
               this.resetExpModal();
               vmList.forEach((vmName) => {
                 axiosInstance
-                  .get(
+                  .post(
                     'experiments/' +
                       this.$route.params.id +
                       '/vms/' +
@@ -3360,7 +3360,7 @@
               this.resetExpModal();
               vmList.forEach((vmName) => {
                 axiosInstance
-                  .get(
+                  .post(
                     'experiments/' +
                       this.$route.params.id +
                       '/vms/' +

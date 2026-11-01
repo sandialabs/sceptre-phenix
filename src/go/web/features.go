@@ -16,5 +16,7 @@ func GetFeatures(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body, _ := json.Marshal(util.WithRoot("features", features))
+
+	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
 }

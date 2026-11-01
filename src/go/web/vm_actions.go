@@ -262,7 +262,7 @@ func StopVM(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// RestartVM - GET /experiments/{exp}/vms/{name}/restart.
+// RestartVM - POST /experiments/{exp}/vms/{name}/restart.
 func RestartVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
@@ -346,7 +346,7 @@ func RestartVM(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// ShutdownVM - GET /experiments/{exp}/vms/{name}/shutdown.
+// ShutdownVM - POST /experiments/{exp}/vms/{name}/shutdown.
 func ShutdownVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
@@ -419,7 +419,7 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// ResetVM - GET /experiments/{exp}/vms/{name}/reset.
+// ResetVM - POST /experiments/{exp}/vms/{name}/reset.
 func ResetVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()

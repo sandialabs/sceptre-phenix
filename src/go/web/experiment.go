@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
+	"slices"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -14,6 +14,7 @@ import (
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
+	"phenix/types"
 	ucache "phenix/util/cache"
 	"phenix/util/common"
 	"phenix/util/freshness"
@@ -170,6 +171,9 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 }
 
 // GetExperiments - GET /experiments.
+//
+// With pageNum and perPage, only the experiments on that page are read from
+// minimega.
 func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
@@ -190,6 +194,11 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
+	page, pageSize, err := util.ParsePage(query.Get("pageNum"), query.Get("perPage"))
+	if err != nil {
+		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
 	experiments, err := experiment.List()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiments", "err", err)
@@ -200,17 +209,18 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	allowed := []*proto.Experiment{}
+	experiments = slices.DeleteFunc(experiments, func(exp types.Experiment) bool {
+		return !role.Allowed("experiments", "list", exp.Metadata.Name)
+	})
+
+	experiments = util.Page(experiments, page, pageSize)
+	allowed := make([]*proto.Experiment, 0, len(experiments))
 
 	// some experiments could not be read, so the list is incomplete
 	observed := freshness.Unobserved()
 	observed.Stale = err != nil
 
 	for _, exp := range experiments {
-		if !role.Allowed("experiments", "list", exp.Metadata.Name) {
-			continue
-		}
-
 		// This will happen if another handler is currently acting on the
 		// experiment.
 		status := cache.IsExperimentLocked(exp.Metadata.Name)
@@ -227,14 +237,7 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 
 		vms, err := vm.List(exp.Spec.ExperimentName())
 		if err != nil {
-			plog.Error(
-				plog.TypeSystem,
-				"listing VMs for experiment",
-				"exp",
-				exp.Spec.ExperimentName(),
-				"err",
-				err,
-			)
+			plog.Error(plog.TypeSystem, "listing VMs for experiment", "exp", exp.Spec.ExperimentName(), "err", err)
 		}
 
 		if exp.Running() && size != "" {
@@ -514,6 +517,11 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
+	page, pageSize, err := util.ParsePage(pageNum, perPage)
+	if err != nil {
+		return weberror.NewWebError(nil, "%v", err).SetStatus(http.StatusBadRequest)
+	}
+
 	exp, err := experiment.Get(name)
 	if err != nil {
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
@@ -566,18 +574,12 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	if sortCol != "" && sortDir != "" {
-		allowed.SortBy(sortCol, sortDir == sortAsc)
+	if col := sortColumn(sortCol, sortDir); col != "" {
+		allowed.SortBy(col, sortDir == sortAsc)
 	}
 
 	totalBeforePaging := len(allowed)
-
-	if pageNum != "" && perPage != "" {
-		n, _ := strconv.Atoi(pageNum)
-		s, _ := strconv.Atoi(perPage)
-
-		allowed = allowed.Paginate(n, s)
-	}
+	allowed = util.Page(allowed, page, pageSize)
 
 	experiment := util.ExperimentToProtobuf(*exp, status, allowed)
 	experiment.VmCount = uint32(totalBeforePaging) //nolint:gosec // integer overflow conversion int -> uint32
