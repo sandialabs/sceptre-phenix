@@ -184,7 +184,8 @@ var routesOfAnyMethod = map[string]string{
 	"/favicon.ico": "the UI's icon",
 }
 
-// Every router operation is in openapi.yml and vice versa, except any-method routes.
+// Every router operation is in openapi.yml and vice versa, except any-method routes;
+// the Unix socket's routes are among the router's.
 func TestRouterMatchesOpenAPI(t *testing.T) {
 	spec := loadOpenAPI(t)
 	router, anyMethod := routerOperations(t)
@@ -199,6 +200,14 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 	for path := range routesOfAnyMethod {
 		if !slices.Contains(anyMethod, path) {
 			t.Errorf("%s is no longer a route of any method: take it off routesOfAnyMethod", path)
+		}
+	}
+
+	for _, r := range socketRoutes() {
+		for _, method := range r.methods {
+			if key := openAPIKey("api", method, r.path); !router[key] {
+				t.Errorf("socket route %s is not an HTTP API route", key)
+			}
 		}
 	}
 

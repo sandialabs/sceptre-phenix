@@ -1,0 +1,170 @@
+# Background Jobs
+
+Some operations take longer than a web request should. phēnix runs these as
+**background jobs** on the server. The request that starts one answers at once
+with the job, and the job then runs on its own: closing the browser tab,
+reloading the page or losing the connection does not stop it, and the UI
+picks it up again when you come back.
+
+Each job records:
+
+* what it acts on, as a list of **items**, each with its own outcome;
+* its **progress**, as items done out of the total and, for file work, bytes;
+* an **artifact**, a file the job produced for you to download, if any.
+
+## Lifecycle
+
+A job is `queued` until a slot frees, then `running`, then ends in one of
+four statuses:
+
+| Status | Meaning |
+|---|---|
+| `succeeded` | every item succeeded |
+| `partial` | some items succeeded and others failed or were skipped |
+| `failed` | no item succeeded, or the job itself failed; `error` says why |
+| `canceled` | someone canceled the job before it finished |
+
+phēnix runs at most 4 jobs at once for each user and 16 in all; later jobs
+wait, `queued`, and start in the order they came as slots free. At most 32 of
+a user's jobs, and 256 in all, wait at once: starting one more that would
+have to wait answers `429 Too Many Requests` with `Retry-After`.
+
+### Item outcomes
+
+Each item ends as `succeeded`, `failed`, `skipped` or `canceled`. A failed or
+skipped item carries an `error` saying why, while the rest of the job goes on.
+
+A failed item is marked `retryable` when trying it again later may succeed,
+such as an item that another action holds, or a request that timed out.
+
+### Canceling
+
+A job you can cancel answers `POST /jobs/{id}/cancel` with `202` and
+`cancelRequested: true`, and ends `canceled`. A queued job is canceled at
+once. A running job stops when its work notices.
+
+Items that succeeded before the cancel keep their outcome; the others are
+`canceled`.
+
+## Retention
+
+Jobs live **in the memory of the `phenix ui` server only**:
+
+* a finished job is kept for one hour, and at most 200 finished jobs are kept
+  (the oldest go first); dismissing a job forgets it at once;
+* restarting the server loses every job, and stops the work of the running
+  ones: they get half of `ui.shutdown-grace-period` to finish, and are
+  canceled then (see [Stopping the Server](settings.md#stopping-the-server));
+* the files a job leaves when the server stops mid-way are deleted when it
+  starts again (`<base-dir.phenix>/jobs/`).
+
+Download an artifact soon after the job makes it: it is deleted with its job.
+
+## Who sees a job
+
+A job belongs to the user who started it. Other users see it, cancel it or
+dismiss it only with the `jobs` permission (see
+[User Administration](user-administration.md#resources)):
+
+| Verb | Lets a role, for other users' jobs |
+|---|---|
+| `list` | list them |
+| `get` | read them and download their artifacts |
+| `update` | cancel them |
+| `delete` | dismiss them |
+
+The permission's resource name is the job's experiment, so an Experiment Admin
+role sees and cancels the jobs of its own experiments. A job of no experiment
+needs the same verbs on the `jobs/global` resource instead, which Global Admin
+has; a `jobs` permission does not reach it, even on every experiment (`*`).
+Starting a job needs only the permission of the operation itself, never
+`jobs`.
+
+To anyone else, another user's job answers `404`, as if it did not exist.
+
+## Web UI
+
+The background jobs menu in the header lists your jobs, with their progress,
+and cancels, downloads and dismisses them. It picks up jobs again after a
+reload. Its button turns red or green when jobs have failed or succeeded since
+you last opened it.
+
+![The open jobs menu: running jobs with progress bars and Cancel buttons, and finished jobs with Download and Dismiss buttons](images/jobs_menu.png){: width=450 .center}
+
+## Command line
+
+`phenix job` follows and cancels the jobs of the running `phenix ui` server
+over its unix socket (`--unix-socket`), which acts as Global Admin, so it sees
+every user's jobs:
+
+```bash
+phenix job list                          # every job, newest first
+phenix job list --experiment exp1 --active -o json
+phenix job get j0f3a9c2e81b4d7a6         # the job and each item's outcome
+phenix job cancel j0f3a9c2e81b4d7a6
+phenix job wait j0f3a9c2e81b4d7a6 --timeout 10m
+```
+
+`phenix job wait` asks for the job every second until it finishes, prints it,
+and exits `0` when it succeeded, `2` when it ended `partial`, and `1` when it
+failed or was canceled, or when waiting timed out. Without a running server,
+each command fails with `phenix ui is not running (no socket at ...)`.
+
+!!! note
+    The command line can follow jobs, but not start them. Commands such as
+    `phenix vm start` act in the `phenix` process itself rather than through the
+    server, so they wait for their result and are not jobs.
+
+## REST API
+
+| Route | Does |
+|---|---|
+| `GET /api/v1/jobs` | lists your jobs, and the ones you may list, newest first, without their items' results; `?experiment=`, `?kind=` and `?active=true` filter it |
+| `GET /api/v1/jobs/{id}` | returns one job, with every item and its result |
+| `POST /api/v1/jobs/{id}/cancel` | cancels it: `202`, or `409` once it finished or when it cannot be canceled |
+| `DELETE /api/v1/jobs/{id}` | dismisses a finished job and deletes its artifact: `204`, or `409` while it runs |
+| `GET /api/v1/jobs/{id}/artifact` | downloads its artifact, resumable with `Range` |
+
+```bash
+# list your running jobs
+curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  "http://localhost:3000/api/v1/jobs?active=true"
+
+# follow one
+curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  http://localhost:3000/api/v1/jobs/j0f3a9c2e81b4d7a6
+
+# cancel it
+curl -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  http://localhost:3000/api/v1/jobs/j0f3a9c2e81b4d7a6/cancel
+```
+
+A job looks like this. `kind` names the operation that started the job, and
+`title` describes it for people:
+
+```json
+{
+  "id": "j0f3a9c2e81b4d7a6",
+  "kind": "vms.action",
+  "owner": "alice",
+  "experiment": "exp1",
+  "title": "Restart 3 VMs",
+  "params": {"action": "restart"},
+  "status": "partial",
+  "cancelable": true,
+  "progress": {"done": 3, "total": 3},
+  "items": [
+    {"name": "web", "status": "succeeded", "result": {"name": "web", "running": true}},
+    {"name": "db", "status": "failed", "error": "vm db is locked with status stopping", "retryable": true},
+    {"name": "fw", "status": "skipped", "error": "you do not have permission"}
+  ],
+  "created": "2026-10-14T15:04:05Z",
+  "updated": "2026-10-14T15:04:09Z",
+  "started": "2026-10-14T15:04:05Z",
+  "finished": "2026-10-14T15:04:09Z",
+  "revision": 9
+}
+```
+
+`revision` grows with every change, so a client that gets updates out of order
+keeps the one with the highest revision.

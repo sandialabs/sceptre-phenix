@@ -41,7 +41,9 @@ info:
     `token` query parameter for browser links, unless auth is disabled.
     Without a token, an API route answers 403. With a malformed, expired or
     signed-out token, or behind a proxy naming another user than the token's,
-    it answers 401. A role without the permission a route needs gets 403. An unknown `/api/v1` path is a 404, and a
+    it answers 401. A role without the permission a route needs gets 403. Some
+    routes say that they answer 404 instead, so as not to reveal another
+    user's job. An unknown `/api/v1` path is a 404, and a
     method a path does not take is a 405, both before authentication. An
     `OPTIONS` request answers 204, also before authentication, without running
     the route. With `--jwt-signing-key proxy-jwt`, the server reads the token
@@ -115,6 +117,15 @@ tags:
       endpoints here, and like /features, this one is served from the server
       root, not under /api/v1. So it declares its own server. It needs
       neither credentials nor a permission.
+  - name: Jobs
+    description: >-
+      Background jobs: long operations that continue in the server after the
+      request that starts them answers 202. A job belongs to the user who
+      started it. Other users see, cancel or dismiss it only with the `jobs`
+      permission on its experiment (`jobs/global` for a job of no experiment).
+      Anyone else gets 404.
+      Jobs live in the server's memory only: a restart loses them. A finished
+      job is kept for an hour, at most 200 of them.
 paths:
   "/configs":
     get:
@@ -5828,6 +5839,197 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/jobs":
+    get:
+      tags:
+        - Jobs
+      summary: List background jobs
+      description: >-
+        The requesting user's jobs, and those of other users the role may list
+        (`jobs` `list` on their experiment), newest first. The list leaves out
+        their items'
+        `result`, which GET /jobs/{id} returns. Also served on the unix socket.
+      operationId: getJobs
+      parameters:
+        - name: experiment
+          in: query
+          description: only the jobs of this experiment
+          required: false
+          schema:
+            type: string
+        - name: kind
+          in: query
+          description: only jobs of this kind
+          required: false
+          schema:
+            type: string
+        - name: active
+          in: query
+          description: "`true` for only the jobs queued or running"
+          required: false
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/PageNum"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: the jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    title: Jobs
+                    description: the jobs the caller may see, newest first
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Job"
+                  total:
+                    title: Total
+                    description: how many jobs the caller may see, before paging
+                    example: 3
+                    type: integer
+        "400":
+          description: pageNum or perPage is not a whole number of at least 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/jobs/{id}":
+    parameters:
+      - $ref: "#/components/parameters/JobID"
+    get:
+      tags:
+        - Jobs
+      summary: Get a background job
+      description: >-
+        The job with every item and its result. Needs to be the job's owner,
+        or `jobs` `get`. Also served on the unix socket.
+      operationId: getJob
+      responses:
+        "200":
+          description: the job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: no such job, or another user's that the role may not get
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags:
+        - Jobs
+      summary: Dismiss a finished background job
+      description: >-
+        Forgets the job and deletes its artifact. Needs to be the job's owner,
+        or `jobs` `delete`.
+      operationId: deleteJob
+      responses:
+        "204":
+          description: the job is dismissed
+        "404":
+          description: no such job, or another user's that the role may not delete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: the job is still queued or running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/jobs/{id}/cancel":
+    post:
+      tags:
+        - Jobs
+      summary: Cancel a background job
+      description: >-
+        A queued job ends `canceled` immediately. A running job ends `canceled`
+        when its work notices. Needs to be the job's
+        owner, or `jobs` `update`. Also served on the unix socket.
+      operationId: postJobCancel
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "202":
+          description: the job, with `cancelRequested`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: no such job, or another user's that the role may not cancel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >-
+            the job has finished (`job has finished`), or phēnix cannot cancel it
+            (`phēnix cannot cancel this job`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/jobs/{id}/artifact":
+    get:
+      tags:
+        - Jobs
+      summary: Download a background job's artifact
+      description: >-
+        The file the job produced, as an attachment. Downloads resume with
+        `Range` and `If-Range`, as other downloads do. Needs to be the job's
+        owner, or `jobs` `get`. A browser link may pass the token as `?token=`.
+      operationId: getJobArtifact
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the artifact
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "404":
+          description: no such job, another user's, or a job with no artifact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+    head:
+      tags:
+        - Jobs
+      summary: Check a background job's artifact
+      description: The GET response's headers without the file.
+      operationId: headJobArtifact
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "200":
+          description: the artifact's headers
+        "404":
+          description: no such job, another user's, or a job with no artifact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/roles":
     get:
       tags:
@@ -7674,6 +7876,228 @@ components:
           items:
             type: string
             example: vm-mount
+    Job:
+      title: Job
+      type: object
+      description: A background job and the outcome of each of its items.
+      required:
+        - id
+        - kind
+        - owner
+        - title
+        - status
+        - cancelable
+        - progress
+        - items
+        - created
+        - updated
+        - revision
+      properties:
+        id:
+          title: ID
+          type: string
+          description: "`j` and 16 hex digits"
+          example: j0f3a9c2e81b4d7a6
+        kind:
+          title: Kind
+          description: what the job does
+          type: string
+        owner:
+          title: Owner
+          example: admin@example.com
+          type: string
+          description: the user who started the job
+        experiment:
+          title: Experiment
+          example: exp1
+          type: string
+          description: the experiment the job acts on, if any
+        title:
+          title: Title
+          description: a readable description of the job
+          type: string
+          example: Restart 3 VMs
+        params:
+          title: Params
+          type: object
+          description: what the job was asked to do, such as its action
+          additionalProperties:
+            type: string
+        status:
+          title: Status
+          type: string
+          description: >-
+            `partial` when some items succeeded and others failed or were
+            skipped, `failed` when none succeeded or the job itself failed
+          enum:
+            - queued
+            - running
+            - succeeded
+            - partial
+            - failed
+            - canceled
+        cancelable:
+          title: Cancelable
+          description: whether the job can still be canceled
+          example: true
+          type: boolean
+        cancelRequested:
+          title: Cancel Requested
+          description: whether the job received a cancel request and is stopping
+          example: false
+          type: boolean
+        progress:
+          title: Progress
+          description: the job's progress
+          allOf:
+            - $ref: "#/components/schemas/JobProgress"
+        items:
+          title: Items
+          description: each item the job acts on, with its outcome
+          type: array
+          items:
+            $ref: "#/components/schemas/JobItem"
+        itemsOmitted:
+          title: Items Omitted
+          example: 0
+          type: integer
+          description: >-
+            items that a shortened copy of the job omits. GET the job to get
+            all items
+        error:
+          title: Error
+          example: experiment exp1 is not running
+          type: string
+          description: why the job failed, when no item gives the reason
+        artifact:
+          title: Artifact
+          description: the file the job produced, once it is ready
+          allOf:
+            - $ref: "#/components/schemas/JobArtifact"
+        created:
+          title: Created
+          description: when the job was created
+          example: "2026-01-01T10:00:00Z"
+          type: string
+          format: date-time
+        updated:
+          title: Updated
+          description: when the job last changed
+          example: "2026-01-01T10:00:05Z"
+          type: string
+          format: date-time
+        started:
+          title: Started
+          description: when the job started running
+          example: "2026-01-01T10:00:01Z"
+          type: string
+          format: date-time
+        finished:
+          title: Finished
+          description: when the job finished
+          example: "2026-01-01T10:00:09Z"
+          type: string
+          format: date-time
+        revision:
+          title: Revision
+          example: 7
+          type: integer
+          description: increases with every change. Keep the update with the highest value
+    JobItem:
+      title: Job Item
+      description: One item a job acts on and its outcome.
+      type: object
+      required:
+        - name
+        - status
+      properties:
+        name:
+          title: Name
+          example: web
+          type: string
+          description: the VM, file or disk image the item acts on
+        status:
+          title: Status
+          description: the item's outcome so far
+          type: string
+          enum:
+            - pending
+            - running
+            - succeeded
+            - failed
+            - skipped
+            - canceled
+        error:
+          title: Error
+          type: string
+          description: why the item failed or was skipped
+          example: you do not have permission
+        retryable:
+          title: Retryable
+          example: false
+          type: boolean
+          description: >-
+            trying the item again later may succeed, such as a VM another
+            action holds
+        result:
+          title: Result
+          type: object
+          description: >-
+            what the item's action returned, such as the VM it left (as GET
+            /experiments/{exp}/vms/{name} returns it)
+    JobProgress:
+      title: Job Progress
+      description: The progress of a job.
+      type: object
+      required:
+        - done
+        - total
+      properties:
+        done:
+          title: Done
+          example: 2
+          type: integer
+          description: items with an outcome
+        total:
+          title: Total
+          example: 3
+          type: integer
+          description: items, or 1 for a job of none
+        bytes:
+          title: Bytes
+          example: 10485760
+          type: integer
+          format: int64
+          description: bytes handled, for file work
+        bytesTotal:
+          title: Bytes Total
+          description: bytes to handle in all, for file work
+          example: 52428800
+          type: integer
+          format: int64
+    JobArtifact:
+      title: Job Artifact
+      type: object
+      description: The file a job produced, at GET /jobs/{id}/artifact.
+      required:
+        - name
+        - size
+      properties:
+        name:
+          title: Name
+          description: the file name the artifact downloads as
+          type: string
+        size:
+          title: Size
+          description: the file's size in bytes
+          example: 52428800
+          type: integer
+          format: int64
+        incomplete:
+          title: Incomplete
+          example: false
+          type: boolean
+          description: the file lacks some of the requested content
     NetflowRecord:
       title: Netflow Record
       type: object
@@ -8612,6 +9036,13 @@ components:
       required: true
       schema:
         type: integer
+    JobID:
+      name: id
+      in: path
+      description: the job's ID
+      required: true
+      schema:
+        type: string
     RangeHeader:
       name: Range
       in: header

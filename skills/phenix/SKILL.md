@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow, job).'
 license: GPL-3.0-only
 ---
 
@@ -18,6 +18,7 @@ Detailed references and examples, loaded only when needed:
 |---|---|
 | Global flags, every subcommand and flag | [`references/cli.md`](references/cli.md) |
 | REST auth modes and the full route table | [`references/web-api.md`](references/web-api.md) |
+| Background jobs: statuses, routes, RBAC, `phenix job` | [`references/jobs.md`](references/jobs.md) |
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
@@ -139,7 +140,8 @@ through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 
 Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
-aliases/ranges), `workflow` (topology directory deployment), plus `mm`,
+aliases/ranges), `workflow` (topology directory deployment), `job`
+(background jobs), plus `mm`,
 `settings`, `ui`, `util`, `completion`, and `version`. Every subcommand
 accepts the persistent flags documented in
 [`references/cli.md`](references/cli.md), which also lists each subcommand's

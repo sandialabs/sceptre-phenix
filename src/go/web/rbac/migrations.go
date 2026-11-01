@@ -13,6 +13,7 @@ import (
 )
 
 const experimentFilesResource = "experiments/files"
+const jobsResource = "jobs"
 const experimentFilesCreateVerb = "create"
 const experimentAdminRole = "Experiment Admin"
 const experimentUserRole = "Experiment User"
@@ -21,6 +22,13 @@ const experimentUserRole = "Experiment User"
 // Experiment User roles, and users with them, upload experiment files.
 func EnsureExperimentFilesCreatePermission() error {
 	return ensurePermission(experimentFilesResource, []string{experimentFilesCreateVerb}, experimentFilesRole)
+}
+
+// EnsureJobsPermission lets existing Experiment Admin roles, and users with
+// them, see, cancel and dismiss the background jobs of their experiments that
+// other users started, as the default Experiment Admin role does.
+func EnsureJobsPermission() error {
+	return ensurePermission(jobsResource, []string{"list", "get", "update", "delete"}, experimentFilesDeleteRole)
 }
 
 const (
@@ -171,6 +179,12 @@ func ensurePermission(resource string, verbs []string, wants func(role string) b
 // experimentFilesRole returns true for roles that should allow experiment file uploads.
 func experimentFilesRole(name string) bool {
 	return name == experimentAdminRole || name == experimentUserRole
+}
+
+// experimentFilesDeleteRole returns true for roles that should allow deleting
+// experiment files, and acting on other users' jobs of their experiments.
+func experimentFilesDeleteRole(name string) bool {
+	return name == experimentAdminRole
 }
 
 // ensurePolicy ensures the role can take verbs on resource for the given

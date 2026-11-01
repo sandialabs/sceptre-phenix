@@ -81,8 +81,8 @@ func (s *uiServer) closeListeners() {
 	s.stopBackground()
 }
 
-// shutdown stops everything the server runs within its grace period. Nothing
-// waits past it.
+// shutdown stops everything the server runs within its grace period; jobs get
+// half of it before they are canceled. Nothing waits past it.
 func (s *uiServer) shutdown(cause error) {
 	began := time.Now()
 
@@ -102,7 +102,8 @@ func (s *uiServer) shutdown(cause error) {
 		wg sync.WaitGroup
 		mu sync.Mutex
 
-		cut []string // servers whose requests the deadline cut off
+		cut     []string // servers whose requests the deadline cut off
+		running []string
 	)
 
 	wg.Add(len(s.servers))
@@ -120,6 +121,16 @@ func (s *uiServer) shutdown(cause error) {
 			}
 		}()
 	}
+
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		for _, j := range jobs.ShutdownContext(ctx, s.grace/2) { //nolint:mnd // half the grace period
+			running = append(running, j.Kind+" "+j.ID)
+		}
+	}()
 
 	handlers := lifecycle.Wait(ctx)
 
@@ -140,6 +151,11 @@ func (s *uiServer) shutdown(cause error) {
 	if len(cut) > 0 {
 		slices.Sort(cut)
 		left = append(left, "requests_cut_off", cut)
+	}
+
+	if len(running) > 0 {
+		slices.Sort(running)
+		left = append(left, "jobs", running)
 	}
 
 	if len(handlers) > 0 {

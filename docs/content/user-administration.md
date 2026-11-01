@@ -531,6 +531,24 @@ cannot create or overwrite a User or Role config.
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+#### Resource: `jobs`
+
+|      |      |
+|------|------|
+| Verb | list, get, update, delete |
+| Desc | list, read (and download the artifact of), cancel, and dismiss [background jobs](jobs.md) other users started; a user always may for their own |
+| Exp. Scoped | yes (the job's experiment; a job of no experiment needs `jobs/global` instead) |
+| Res. Scoped | no |
+
+#### Resource: `jobs/global`
+
+|      |      |
+|------|------|
+| Verb | list, get, update, delete |
+| Desc | as for `jobs`, for the background jobs of no experiment that other users started |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
 ### Built-In Roles
 
 The following default roles are defined in phēnix as YAML resource specifications:
@@ -622,12 +640,25 @@ spec:
     verbs:
     - create
   - resources:
+    - jobs
+    verbs:
+    - list
+    - get
+    - update
+    - delete
+  - resources:
     - hosts
     resourceNames:
     - "*"
     verbs:
     - list
 ```
+
+!!! note
+    On startup the UI server adds the `jobs` policy to stored
+    `Experiment Admin` roles, scoped to each user's experiments, so an
+    Experiment Admin sees and cancels the [background jobs](jobs.md) other
+    users started in those experiments.
 
 #### Experiment User (`experiment-user`)
 

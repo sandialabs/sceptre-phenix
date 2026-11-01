@@ -206,6 +206,56 @@ func TestWorkflowConfigUpsertIsAudited(t *testing.T) {
 	}
 }
 
+// A workflow config upsert and a workflow apply over the Unix socket are
+// audited without a user or client address, as having come over the socket.
+//
+//nolint:paralleltest // replaces the store and the server options
+func TestUnixSocketWorkflowIsAudited(t *testing.T) {
+	useTestStore(t)
+	useGlobalAdmin(t)
+	t.Setenv("BRANCH_NAME", "")
+
+	original := o
+	t.Cleanup(func() { o = original })
+
+	o = newServerOptions()
+
+	server := httptest.NewServer(newSocketRouter())
+	t.Cleanup(server.Close)
+
+	events := captureAudit(t)
+	api := server.URL + "/api/v1/workflow"
+
+	resp := do(t, http.MethodPost, api+"/configs/main", upsertTestTopology, "Content-Type", mimeYAML)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /workflow/configs/main over the socket = %d, want %d: %s",
+			resp.StatusCode, http.StatusCreated, readBody(t, resp))
+	}
+
+	apply := workflowTestYAML("  auto:\n    create: foo\n  topology: main-topo\n")
+
+	resp = do(t, http.MethodPost, api+"/apply/main?dryRun=true", apply, "Content-Type", mimeYAML)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /workflow/apply/main?dryRun=true over the socket = %d, want %d: %s",
+			resp.StatusCode, http.StatusOK, readBody(t, resp))
+	}
+
+	socket := map[string]any{
+		"phenix.auth.method": "unix-socket", "user.name": nil, "source.ip": nil, "user.roles": []string{"Global Admin"},
+		"phenix.workflow.branch": "main",
+	}
+
+	created := wantAudit(t, events(), "config-create", "success", socket)
+	if created != nil && created["phenix.config.name"] != "Topology/main-topo" {
+		t.Errorf("config-create phenix.config.name = %v, want Topology/main-topo", created["phenix.config.name"])
+	}
+
+	applied := wantAudit(t, events(), "workflow-apply", "success", socket)
+	if applied != nil && applied["phenix.dry_run"] != true {
+		t.Errorf("workflow-apply phenix.dry_run = %v, want true", applied["phenix.dry_run"])
+	}
+}
+
 // eventText is the event as JSON.
 func eventText(t *testing.T, e auditEvent) string {
 	t.Helper()

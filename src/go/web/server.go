@@ -175,6 +175,10 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 
 	go broker.Start()
 
+	plog.Info(plog.TypeSystem, "starting background job registry")
+
+	ConfigureJobs()
+
 	plog.Info(plog.TypeSystem, "starting scorch processors")
 
 	go scorch.Start(o.basePath)
@@ -541,6 +545,10 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 		Methods("POST", "OPTIONS").
 		Queries("cols", "{cols:[0-9]+}", "rows", "{rows:[0-9]+}")
 
+	// background jobs; listing, reading and canceling them are socket routes
+	api.Handle("/jobs/{id}", weberror.ErrorHandler(DeleteJob)).Methods("DELETE", "OPTIONS")
+	api.Handle("/jobs/{id}/artifact", weberror.ErrorHandler(GetJobArtifact)).Methods("GET", "HEAD", "OPTIONS")
+
 	api.Handle("/settings", weberror.ErrorHandler(GetSettings)).Methods("GET", "OPTIONS")
 	api.Handle("/settings", weberror.ErrorHandler(SetSettings)).Methods("POST", "OPTIONS")
 	api.Handle("/settings/password", weberror.ErrorHandler(GetPasswordRequirements)).Methods("GET", "OPTIONS")
@@ -620,6 +628,9 @@ func socketRoutes() []route {
 			[]string{"POST"},
 		},
 		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
+		{"/jobs", weberror.ErrorHandler(GetJobs), []string{"GET"}},
+		{"/jobs/{id}", weberror.ErrorHandler(GetJob), []string{"GET"}},
+		{"/jobs/{id}/cancel", weberror.ErrorHandler(CancelJob), []string{"POST"}},
 	}
 }
 

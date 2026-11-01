@@ -1,9 +1,11 @@
 <script setup>
   import { RouterView } from 'vue-router';
   import {
+    addWsHandler,
     connectWebsocket,
     disconnectWebsocket,
     isWsConnected,
+    removeWsHandler,
   } from './utils/websocket';
   import AppHeader from '@/components/AppHeader.vue';
   import AppFooter from '@/components/AppFooter.vue';
@@ -14,9 +16,28 @@
   import { watch } from 'vue';
 
   import { TimeoutTool } from '@/utils/timeout.js';
+  import { useJobStore } from '@/utils/jobs.js';
 
   const store = usePhenixStore();
   const timeout = new TimeoutTool();
+  const jobs = useJobStore();
+
+  // Background jobs: loaded once signed in, and kept current by the websocket.
+  const applyJob = (msg) => jobs.apply(msg);
+  let followingJobs = false;
+
+  function followJobs() {
+    if (followingJobs) return;
+    followingJobs = true;
+    addWsHandler(applyJob);
+    jobs.load().catch((err) => console.warn('failed to load jobs', err));
+  }
+
+  function forgetJobs() {
+    removeWsHandler(applyJob);
+    followingJobs = false;
+    jobs.clear();
+  }
 
   fetch(router.resolve({ name: 'features' }).href)
     .then((resp) => resp.json())
@@ -31,6 +52,7 @@
     // connect websockets once user has authenticated (or auth disabled)
     if (import.meta.env.VITE_AUTH === 'disabled' || store.auth) {
       connectWebsocket();
+      followJobs();
       timeout.fetchAndStart();
     } else {
       const { auth } = storeToRefs(store);
@@ -42,13 +64,17 @@
         }
 
         if (newAuth) {
+          followJobs();
           timeout.fetchAndStart();
+        } else {
+          forgetJobs();
         }
       });
     }
   });
 
   onUnmounted(() => {
+    forgetJobs();
     disconnectWebsocket();
   });
 </script>

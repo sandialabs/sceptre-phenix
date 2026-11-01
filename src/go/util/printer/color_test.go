@@ -5,10 +5,12 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"pgregory.net/rapid"
 
+	"phenix/api/job"
 	"phenix/store"
 	"phenix/types"
 	"phenix/util/mm"
@@ -93,6 +95,58 @@ func TestPrintTableOfVMsColors(t *testing.T) {
 
 	if !strings.Contains(single, "\x1b[31mfalse\x1b[0m") {
 		t.Errorf("single VM table lacks a red false:\n%s", single)
+	}
+}
+
+// Each job state has its color in the jobs table, and in the job and item
+// table of one job.
+func TestPrintJobColors(t *testing.T) {
+	t.Parallel()
+
+	created := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	jobs := []job.Job{
+		{ID: "j1", Status: job.StatusQueued, Created: created},
+		{ID: "j2", Status: job.StatusRunning, Created: created},
+		{ID: "j3", Status: job.StatusSucceeded, Created: created},
+		{ID: "j4", Status: job.StatusPartial, Created: created},
+		{ID: "j5", Status: job.StatusFailed, Created: created},
+		{ID: "j6", Status: job.StatusCanceled, Created: created},
+	}
+
+	_, colored := colorTables(t, func(p termcolor.Palette, out *bytes.Buffer) { PrintTableOfJobs(out, p, jobs...) })
+
+	for _, want := range []string{
+		"\x1b[2mqueued\x1b[22m", "\x1b[36mrunning\x1b[0m", "\x1b[32msucceeded\x1b[0m",
+		"\x1b[33mpartial\x1b[0m", "\x1b[31mfailed\x1b[0m", "\x1b[33mcanceled\x1b[0m",
+	} {
+		if !strings.Contains(colored, want) {
+			t.Errorf("colored jobs table lacks %q:\n%s", want, colored)
+		}
+	}
+
+	one := job.Job{
+		ID: "j7", Status: job.StatusPartial, Created: created,
+		Items: []job.Item{
+			{Name: "a", Status: job.ItemSucceeded},
+			{Name: "b", Status: job.ItemFailed, Error: "locked"},
+			{Name: "c", Status: job.ItemSkipped},
+			{Name: "d", Status: job.ItemPending},
+		},
+	}
+
+	plain, colored := colorTables(t, func(p termcolor.Palette, out *bytes.Buffer) { PrintJob(out, p, one) })
+
+	if !strings.Contains(plain, "Status:     partial\n") {
+		t.Errorf("job without colors lacks its status line:\n%s", plain)
+	}
+
+	for _, want := range []string{
+		"Status:     \x1b[33mpartial\x1b[0m\n", "\x1b[32msucceeded\x1b[0m", "\x1b[31mfailed\x1b[0m",
+		"\x1b[2mskipped\x1b[22m", "\x1b[2mpending\x1b[22m",
+	} {
+		if !strings.Contains(colored, want) {
+			t.Errorf("colored job lacks %q:\n%s", want, colored)
+		}
 	}
 }
 
