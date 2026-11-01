@@ -3,6 +3,7 @@ package scorch
 import (
 	"context"
 	"fmt"
+	"slices"
 )
 
 // Action represents the different SCORCH lifecycle hooks.
@@ -53,6 +54,22 @@ func init() { //nolint:gochecknoinits // component registration
 		"tap":        new(Tap),
 		"user-shell": new(UserComponent),
 	}
+}
+
+// BuiltinComponents returns, sorted, the SCORCH component types built into
+// phenix. SCORCH runs a phenix-scorch-component-<type> on PATH for any other type.
+func BuiltinComponents() []string {
+	types := make([]string, 0, len(components))
+
+	for typ := range components {
+		if typ != "user-shell" {
+			types = append(types, typ)
+		}
+	}
+
+	slices.Sort(types)
+
+	return types
 }
 
 func ExecuteComponent(ctx context.Context, opts ...Option) error {

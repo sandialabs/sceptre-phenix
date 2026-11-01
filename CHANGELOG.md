@@ -35,6 +35,7 @@ All notable changes to this project will be documented in this file.
 - **minimega Console**: The web UI console stays open across page changes, reloads and tabs, and shows its recent output again. It ends on logout or 15 seconds after its last tab closes.
 - **Web UI Page Cache**: The web UI shows the data that each page loaded last while it loads new data. The header shows the age of the page data, with a button that loads the data again.
 - **Experiments Page**: The Experiments page shows totals, Start and Stop buttons, links to topology and scenario configs, and a toolbar that starts, stops or deletes selected experiments. The create card can start the experiment after it creates it and can set experiment and VM annotations.
+- **SCORCH Runs**: The SCORCH runs page can clear run status, run only the cleanup stage, and download the artifact archive of a finished run. Added `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/clear` and `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/cleanup`.
 
 ### Changed
 

@@ -56,17 +56,14 @@
 
     <title>{{ hint }}</title>
 
-    <!-- high light -->
+    <!-- an invisible circle around the node, so the pointer need not land
+         on the node itself -->
     <circle
       r="19"
       class="pipeline-node-hittarget"
       fill-opacity="0"
       stroke="none">
     </circle>
-    <g class="pipeline-selection-highlight" v-if="selected">
-      <circle class="white-highlight" r="13" stroke-width="10"></circle>
-      <circle r="15" stroke-width="2"></circle>
-    </g>
   </g>
 </template>
 <script>
@@ -80,7 +77,7 @@
     },
     // declare emits so the click listener does not also fall through
     // to the root element as a native listener and fire twice
-    emits: ['click', 'mouseenter', 'mouseleave'],
+    emits: ['click'],
     props: {
       index: {
         type: Number,
@@ -103,10 +100,6 @@
       node: {
         type: Object,
       },
-      selected: {
-        type: Boolean,
-        default: false,
-      },
     },
     data() {
       return {
@@ -128,7 +121,6 @@
         };
       },
       handleClick() {
-        // console.log("click", this.node);
         this.nodeClass = 'pipeline-node-selected';
         if (this.status != 'start' && this.status != 'end') {
           this.$emit('click', this.index, this.node);
@@ -136,21 +128,9 @@
       },
       handleMouseEnter() {
         this.nodeClass = 'pipeline-node-selected';
-        this.$emit('mouseenter', this.index, this.node);
       },
       handleMouseLeave() {
         this.nodeClass = 'pipeline-node';
-        this.$emit('mouseleave', this.index, this.node);
-      },
-      getTextWidth(text, font) {
-        // reuse canvas object for better performance
-        var canvas =
-          this.getTextWidth.canvas ||
-          (this.getTextWidth.canvas = document.createElement('canvas'));
-        var context = canvas.getContext('2d');
-        context.font = font;
-        var metrics = context.measureText(text);
-        return metrics.width;
       },
     },
   };
@@ -175,9 +155,6 @@
   }
   .svgResultStatus > circle.unstable {
     fill: #f6b44b;
-  }
-  .svgResultStatus > circle.aborted {
-    fill: #949393;
   }
   .svgResultStatus > circle.paused {
     fill: #24b0d5;

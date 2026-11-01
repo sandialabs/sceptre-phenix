@@ -92,8 +92,8 @@ tags:
       defines one or more runs. Each run is a pipeline of configure, start,
       loop,
       stop and cleanup stages built from the components it names. These
-      endpoints report those pipelines and their latest statuses, and start
-      and cancel a run.
+      endpoints report those pipelines and their latest statuses, and start,
+      cancel, clear and clean up a run.
   - name: Virtual Machines
     description: Experiment VM details and controls
   - name: Hosts
@@ -1687,6 +1687,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/experiments/{name}/scorch/pipelines":
     get:
       tags:
@@ -1811,6 +1818,119 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: canceling Scorch runs is not allowed for this user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/scorch/pipelines/{run}/cleanup":
+    post:
+      tags:
+        - Scorch
+      summary: Run only a Scorch run's cleanup stage
+      description: >-
+        Executes the run's top-level cleanup components on their own, without
+        its other stages, to remove what a canceled or failed run left behind.
+        It answers as soon as they have started. Only a run whose
+        `hasCleanup` is true has any, and a run that is already executing is
+        refused. Needs the `experiments/trigger` `create` and the
+        `experiments` `get` permissions on the experiment.
+      operationId: postExperimentsNameScorchPipelinesRunCleanup
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to clean a Scorch run up for
+          required: true
+          schema:
+            type: string
+        - name: run
+          in: path
+          description: index of the run in the experiment's scorch app metadata
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: the cleanup stage has started
+        "400":
+          description: >-
+            the run ID is not a number, the experiment could not be read from
+            the store, or the run is already executing. Also the run (or the
+            experiment's scorch app) does not exist or has no cleanup
+            components.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: starting Scorch runs is not allowed for this user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the experiment's scorch metadata could not be decoded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/scorch/pipelines/{run}/clear":
+    post:
+      tags:
+        - Scorch
+      summary: Clear a Scorch run's status
+      description: >-
+        Forgets the statuses held for every loop of the run, so its pipeline
+        shows as never run. It broadcasts each cleared loop over the
+        `apps/scorch` websocket resource. A run that is executing is refused,
+        so cancel it first. Needs the `experiments/trigger` `create`
+        permission on the experiment.
+      operationId: postExperimentsNameScorchPipelinesRunClear
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to clear a Scorch run for
+          required: true
+          schema:
+            type: string
+        - name: run
+          in: path
+          description: index of the run in the experiment's scorch app metadata
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: the run's status has been cleared
+        "400":
+          description: >-
+            the run ID is not a number, or the experiment could not be read
+            from the store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: clearing Scorch runs is not allowed for this user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            the experiment's scorch app metadata has no such run, or the
+            experiment has no scorch app
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: the run is executing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the experiment's scorch metadata could not be decoded
           content:
             application/json:
               schema:
@@ -2020,6 +2140,13 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: no such terminal for the experiment, or a client ID unknown, used or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
           content:
             application/json:
               schema:
