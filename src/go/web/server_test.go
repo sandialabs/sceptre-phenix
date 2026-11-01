@@ -76,6 +76,30 @@ func TestRouterServesTheUI(t *testing.T) {
 	}
 }
 
+// OPTIONS is answered with 204, before authentication, without running the
+// route's handler, including on the routes the Unix socket also serves.
+func TestRouterAnswersOptions(t *testing.T) {
+	registry := useJobs(t)
+	j := waitJob(t, registry, startTestJob(t, registry, "alice", "", nil, "").ID)
+
+	servers := map[string]string{
+		"as alice":      serveAs(t, "alice", testRole("options", "list")).URL,
+		"without token": serveRouter(t, testPublic(), testJWTKey).URL,
+	}
+
+	for name, server := range servers {
+		for _, path := range []string{"/api/v1/jobs/" + j.ID, "/api/v1/jobs"} {
+			if resp := do(t, http.MethodOptions, server+path, ""); resp.StatusCode != http.StatusNoContent {
+				t.Errorf("OPTIONS %s %s = %d, want %d", path, name, resp.StatusCode, http.StatusNoContent)
+			}
+		}
+	}
+
+	if _, ok := registry.Get(j.ID); !ok {
+		t.Errorf("Registry.Get(%s) after OPTIONS /api/v1/jobs/%s found no job, want it kept", j.ID, j.ID)
+	}
+}
+
 // A request for an unknown route, of the UI or the API, is logged without the
 // session token its URL may carry.
 func TestUnknownRoutesLogNoToken(t *testing.T) {

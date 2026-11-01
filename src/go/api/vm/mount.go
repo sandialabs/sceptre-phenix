@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -41,7 +42,7 @@ func Mount(expName, vmName, hostPath string) (string, error) {
 		return "", errors.New("no VM name provided")
 	}
 
-	details, err := Get(expName, vmName)
+	details, err := Get(context.Background(), expName, vmName)
 	if err != nil {
 		return "", fmt.Errorf("getting VM details: %w", err)
 	}
@@ -146,7 +147,7 @@ func UnmountFilesystem(expName, vmName string) error {
 // experiment and removes the experiment's mount directory. Errors are logged
 // but not returned since this is invoked from experiment lifecycle hooks.
 func unmountExperiment(expName string) {
-	vms, err := List(expName)
+	vms, err := List(context.Background(), expName)
 	if err != nil {
 		plog.Warn(plog.TypeSystem, "listing VMs to unmount", "exp", expName, "err", err)
 	}
