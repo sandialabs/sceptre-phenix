@@ -83,6 +83,7 @@ All notable changes to this project will be documented in this file.
 - **Web UI Permissions**: The web UI shows only the pages and navbar links that the role can use, and opens the experiments list or the VM tiles in place of a page that the role cannot use. An unknown address shows a "Page not found" page.
 - **Disks Page**: The Disks page shows disk totals, the format version of each image and broken backing chains, and runs clones in the background. A details card for each image shows its qcow2 header, partitions, backing chain, the images built on it, the experiments that use it and its clone jobs.
 - **Config Schemas**: Each field of the config schemas has a title and a description, and a validation error in a JSON config points to the correct field. A topology can use `includeTopologies` without `nodes`, and a node `delay.timer` must be a duration such as `5m`.
+- **Web UI Style**: All web UI pages use the same style for tables, search boxes, buttons and pagination, and a `Tunneler` button at the right of the navbar opens the Tunneler page. The `make docs-screenshots` target captures the web UI images of the documentation again.
 
 ### Removed
 

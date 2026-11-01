@@ -10,17 +10,19 @@ collect the experiment health state data. See the [command and control](#command
 SoH information is presented in the UI in two places. The `State of Health`
 tab in the navbar summarizes every experiment in one table; see [State of
 Health Overview](#state-of-health-overview). A single experiment also has its
-own SoH page, which presents its information in separate tabs. To open an
-experiment's SoH page, click the SoH button from the Experiments or Running
-Experiment components.
+own SoH page, which shows that experiment's [topology graph](#topology-graph)
+and, when SoH packet capture is enabled, its [network
+volume](#network-volume). To open an experiment's SoH page, click its
+heartbeat button (tooltip `view state of health`):
 
-Button available on the experiments table.
+* in the `Actions` column of the Experiments table, beside the fire button
+  that opens its [SCORCH](scorch.md) runs;
+* in a running experiment, beside the `Running` status in the experiment's
+  summary card at the top of its page.
 
-![screenshot](images/exps_soh.png){: width=100 .center}
+![The Actions column of the Experiments table, where each row has start, stop, delete, State of Health heartbeat and SCORCH fire buttons, grayed out where they do not apply.](images/exps_soh.png){: width=200 .center}
 
-Button available in running experiment.
-
-![screenshot](images/exp_run.png){: width=200 .center}
+Both buttons need `get` on the experiment.
 
 An experiment's SoH page has a `Topology Graph` tab and, when SoH
 [packet capture](#packet-capture) is enabled, a `Network Volume` tab. Without

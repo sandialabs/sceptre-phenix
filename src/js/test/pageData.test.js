@@ -21,7 +21,13 @@ import {
   isLoadingPage,
   BACKGROUND_TIMEOUT_MS,
 } from '@/utils/pageCache.js';
-import { FreshnessMeta, RESOURCES } from '@/utils/freshness.js';
+import {
+  BACK_SPREAD_MS,
+  forgetServer,
+  FreshnessMeta,
+  RESOURCES,
+  setWsDown,
+} from '@/utils/freshness.js';
 import {
   DEFAULT_LOG_WINDOW,
   experimentKey,
@@ -30,6 +36,7 @@ import {
   pageFetchers,
   preloadPages,
   schedulableHostNames,
+  schedulePagePreload,
   scorchRow,
   scorchRunsKey,
   stoppedExperimentKey,
@@ -648,6 +655,26 @@ describe('preloading', () => {
     }
   });
 
+  it('loads every tab the role may see except the VM tiles', async () => {
+    roleAllowed.mockImplementation((resource) => resource !== 'disks');
+    await preloadPages();
+
+    for (const key of [
+      'experiments',
+      'configs',
+      'users',
+      'logs',
+      'hosts',
+      'scorch',
+      'soh',
+      'settings',
+    ]) {
+      expect(cachedPage(key).data).toEqual([key]);
+    }
+    expect(cachedPage('disks')).toBeUndefined();
+    expect(pageFetchers.vmtiles).not.toHaveBeenCalled();
+  });
+
   it('leaves out the Users tab for a disabled account', async () => {
     store.role = { name: 'Disabled' };
     await preloadPages();
@@ -665,6 +692,28 @@ describe('preloading', () => {
     expect(cachedPage('hosts').data).toEqual(['cached']);
     answer.resolve([]);
     await loading.promise;
+  });
+
+  it('runs two requests at a time until every tab has loaded', async () => {
+    const started = [];
+    for (const key of Object.keys(pageFetchers)) {
+      pageFetchers[key].mockImplementation(() => {
+        const request = Promise.withResolvers();
+        started.push(request);
+        return request.promise;
+      });
+    }
+
+    const done = preloadPages();
+    let finished = 0;
+    for (;;) {
+      await flush();
+      const left = 9 - finished;
+      expect(started.length - finished).toBe(Math.min(2, left));
+      if (left == 0) break;
+      started[finished++].resolve([]);
+    }
+    await done;
   });
 
   it('never has more than two requests out, and loads each tab once, whatever answers first or fails', async () => {
@@ -700,5 +749,67 @@ describe('preloading', () => {
         },
       ),
     );
+  });
+
+  it('waits while the server shuts down, and goes on once it is back', async () => {
+    vi.useFakeTimers();
+    try {
+      setWsDown(true, 'shutdown');
+      const done = preloadPages();
+      await vi.advanceTimersByTimeAsync(30_000);
+      for (const key of Object.keys(pageFetchers)) {
+        expect(pageFetchers[key]).not.toHaveBeenCalled();
+      }
+
+      setWsDown(false);
+      await vi.advanceTimersByTimeAsync(BACK_SPREAD_MS);
+      await done;
+      expect(cachedPage('experiments').data).toEqual(['experiments']);
+      expect(cachedPage('disks').data).toEqual(['disks']);
+    } finally {
+      forgetServer();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [
+      'the server does not answer',
+      { code: 'ERR_NETWORK', request: {}, message: 'Network Error' },
+    ],
+    [
+      'a proxy cannot reach the server',
+      { response: { status: 502, headers: {} }, message: 'Bad Gateway' },
+    ],
+  ])('stops once %s, leaving the pages to load when opened', async (_, err) => {
+    for (const key of Object.keys(pageFetchers)) {
+      pageFetchers[key].mockRejectedValue(
+        Object.assign(new Error(err.message), err),
+      );
+    }
+    await preloadPages();
+
+    const asked = Object.keys(pageFetchers).filter(
+      (key) => pageFetchers[key].mock.calls.length > 0,
+    );
+    // one request per worker
+    expect(asked).toEqual(['experiments', 'configs']);
+  });
+
+  it('starts once the browser is idle, unless saving data', async () => {
+    const requestIdleCallback = vi.fn();
+    vi.stubGlobal('requestIdleCallback', requestIdleCallback);
+    schedulePagePreload();
+    expect(requestIdleCallback).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 3000,
+    });
+    expect(pageFetchers.experiments).not.toHaveBeenCalled();
+    await requestIdleCallback.mock.calls[0][0]();
+    expect(cachedPage('experiments').data).toEqual(['experiments']);
+
+    requestIdleCallback.mockClear();
+    vi.stubGlobal('navigator', { connection: { saveData: true } });
+    schedulePagePreload();
+    expect(requestIdleCallback).not.toHaveBeenCalled();
   });
 });

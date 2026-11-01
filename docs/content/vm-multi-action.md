@@ -57,7 +57,7 @@ the selection, whether or not its dialog is then confirmed.
 
 `start`, `pause`, `restart`, `shutdown`, `kill` and `reset disk state` run as
 one [background job](jobs.md) for all the VMs, which the
-[jobs menu](jobs.md#web-ui) shows and can cancel; canceling
+[jobs menu](web-ui.md#background-jobs-menu) shows and can cancel; canceling
 stops after the VMs in progress finish, and a VM still waiting its turn for
 minimega is left untouched. The page stays usable while the job runs, and the
 VMs' own buttons in the table and the details card spin until it ends; the page

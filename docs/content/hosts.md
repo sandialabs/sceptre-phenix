@@ -26,7 +26,7 @@ and the same load on a 4-CPU host is red. Hovering the `Load` cell says what the
 three numbers are: `Load average over the last 1, 5 and 15 minutes`.
 
 The `Paginate` toggle appears above the table once there are more hosts than one
-page holds.
+page holds; see [Tables](web-ui.md#tables).
 
 ## Disk Usage
 

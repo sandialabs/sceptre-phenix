@@ -26,6 +26,8 @@ import Disks from '@/views/Disks.vue';
 import Experiments from '@/views/Experiments.vue';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
+import Hosts from '@/views/Hosts.vue';
+import Users from '@/views/Users.vue';
 import { disk } from './helpers/fixtures.js';
 import { mountComponent, tableRows, textOf } from './helpers/mount.js';
 import { blockedStorage, memoryStorage } from './helpers/storage.js';
@@ -116,6 +118,17 @@ describe('paginate preference', () => {
 // more rows than a page holds, so each page offers its Paginate toggle
 const ROWS = 11;
 const rows = (row) => Array.from({ length: ROWS }, (_, i) => row(i));
+const host = (i) => ({
+  name: `node${i}`,
+  cpus: 4,
+  load: ['0.1', '0.2', '0.3'],
+  memused: 1024,
+  memtotal: 4096,
+  diskusage: { diskphenix: 10, diskminimega: 20 },
+  bandwidth: '0 MB/s',
+  vms: 0,
+  uptime: 60,
+});
 
 // Clicks a page's Paginate toggle.
 async function togglePaginate(wrapper) {
@@ -145,6 +158,20 @@ describe('the pages with a Paginate toggle', () => {
       '/disks/',
       {
         disks: rows((i) => disk(`/phenix/images/d${i}.qc2`, `d${i}.qc2`)),
+      },
+    ],
+    ['hosts', Hosts, '/hosts', { hosts: rows(host) }],
+    [
+      'users',
+      Users,
+      '/users',
+      {
+        users: rows((i) => ({
+          username: `u${i}`,
+          first_name: '',
+          last_name: '',
+          role_name: 'Viewer',
+        })),
       },
     ],
   ])('remember theirs as %s', async (name, component, route, data) => {

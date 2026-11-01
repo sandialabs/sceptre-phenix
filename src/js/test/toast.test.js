@@ -1,10 +1,21 @@
 // Toast durations come from utils/toast.js, and errors are never toasts: they
 // open as notifications that stay until dismissed (utils/errorNotif.js).
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { defineComponent, h } from 'vue';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { TOAST_DURATION } from '@/utils/toast.js';
 import { mountComponent, toasts } from './helpers/mount.js';
+
+const SRC = join(import.meta.dirname, '..', 'src');
+
+const sources = (dir) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return sources(path);
+    return /\.(vue|js|ts)$/.test(entry.name) ? [path] : [];
+  });
 
 // the index of the ')' that closes a call whose arguments start at i
 function closingParen(text, i) {
@@ -72,4 +83,16 @@ it.each([
   ],
 ])('reads the whole call in %j', (text, calls) => {
   expect(toastCalls(text)).toEqual(calls);
+});
+
+it('leaves toast durations to utils/toast.js and errors to errorNotif.js', () => {
+  const found = sources(SRC).flatMap((file) =>
+    toastCalls(readFileSync(file, 'utf8'))
+      .filter(
+        (options) =>
+          /duration:\s*\d/.test(options) || /is-danger/.test(options),
+      )
+      .map(() => relative(SRC, file)),
+  );
+  expect(found).toEqual([]);
 });

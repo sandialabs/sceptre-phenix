@@ -1,5 +1,4 @@
 import { reactive, watch } from 'vue';
-import { usePhenixStore } from '@/store.js';
 import { loadPaginate, savePaginate } from '@/utils/paginatePref.js';
 
 // A Buefy <b-table>'s pagination state (paging, page, page size and default
@@ -25,22 +24,5 @@ export function useTable(options = {}) {
     );
   }
 
-  function storageKey() {
-    return `${usePhenixStore().username}.lastPaginate`;
-  }
-
-  // Persist the current pagination preference for this user.
-  function changePaginate() {
-    localStorage.setItem(storageKey(), table.isPaginated);
-  }
-
-  // Restore the saved pagination preference for this user (if any).
-  function restorePaginate() {
-    const saved = localStorage.getItem(storageKey());
-    if (saved !== null) {
-      table.isPaginated = saved === 'true';
-    }
-  }
-
-  return { table, changePaginate, restorePaginate };
+  return { table };
 }

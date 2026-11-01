@@ -5,7 +5,7 @@ based on whether the user is logged in and furthermore based on
 what their role allows.
  -->
 <template>
-  <b-navbar class="mb-4">
+  <b-navbar v-model="menuOpen" class="mb-4">
     <template #brand>
       <b-navbar-item tag="router-link" :to="{ name: 'home' }" :active="false">
         <img src="@/assets/imgs/phenix-banner.png" alt="phenix" />
@@ -52,7 +52,7 @@ what their role allows.
         v-if="auth && roleAllowed('experiments', 'list')"
         tag="router-link"
         :to="{ name: 'scorch' }"
-        >Scorch</b-navbar-item
+        >SCORCH</b-navbar-item
       >
       <b-navbar-item
         v-if="auth && roleAllowed('experiments', 'list')"
@@ -67,12 +67,6 @@ what their role allows.
         >Console</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && tunneler"
-        tag="router-link"
-        :to="{ name: 'tunneler' }">
-        Tunneler
-      </b-navbar-item>
-      <b-navbar-item
         v-if="auth && roleAllowed('settings', 'update')"
         tag="router-link"
         :to="{ name: 'settings' }"
@@ -81,6 +75,17 @@ what their role allows.
     </template>
 
     <template #end>
+      <b-navbar-item v-if="auth && tunneler" tag="div" class="tunneler-item">
+        <b-button
+          tag="router-link"
+          :to="{ name: 'tunneler' }"
+          type="is-primary"
+          icon-left="download"
+          class="tunneler-button"
+          @click="menuOpen = false"
+          >Tunneler</b-button
+        >
+      </b-navbar-item>
       <b-navbar-item v-if="auth" tag="div">
         <refresh-status></refresh-status>
       </b-navbar-item>
@@ -126,14 +131,13 @@ what their role allows.
     setup() {
       return { roleAllowed, usersPageAllowed };
     },
+    // The burger menu's state: Buefy leaves it open after a click on a button's
+    // label, so the Tunneler button closes it itself.
     data() {
-      return { loggingOut: false };
+      return { menuOpen: false, loggingOut: false };
     },
-    //  The computed elements determine if the user is already logged
-    //  in; if so, the routable links are available. If not, the sign
-    //  in routable link is the only one available. The role getter
-    //  determines what the role of the user is; this is used to present
-    //  routable links in the header row.
+    // Links but Experiments wait for login; a proxy gets Reauthorize, not Logout; Tunneler needs
+    // the server; signed-in users get the jobs menu.
     computed: {
       auth() {
         const phenixStore = usePhenixStore();
@@ -149,8 +153,6 @@ what their role allows.
     },
 
     methods: {
-      //  These methods are used to logout a user; or, present
-      //  routable link based on a Global user role.
       async logout(event) {
         const button = event?.currentTarget;
 
@@ -180,7 +182,6 @@ what their role allows.
                 this.$buefy.toast.open({
                   message: 'Your account has been reauthorized',
                   type: 'is-success',
-                  duration: 4000,
                 });
               }
 
@@ -226,5 +227,23 @@ what their role allows.
     .app-header__logout {
       width: 100%;
     }
+  }
+
+  .tunneler-item {
+    padding-block: 0.25rem;
+  }
+
+  .tunneler-button.button.is-primary:hover,
+  .tunneler-button.button.is-primary.router-link-exact-active {
+    background-color: #9a4420;
+  }
+
+  /* a normal-size button, narrower so the header fits on one row */
+  .tunneler-button.button {
+    padding-inline: 0.75em;
+  }
+
+  .tunneler-button.router-link-exact-active {
+    box-shadow: inset 0 -3px 0 whitesmoke;
   }
 </style>

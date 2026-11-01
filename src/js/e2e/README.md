@@ -116,3 +116,10 @@ comment in each spec. The proxy spec simulates the auth proxy with Playwright's
 
 Failure artifacts (screenshots, traces) land in `test-results/`; open traces
 with `npx playwright show-trace <trace.zip>`.
+
+## Docs screenshots
+
+`docs-screenshots/` holds an on-demand script, never run in CI, that retakes
+the web UI images in `docs/content/images` against a running server with sample
+data (`npm run docs-screenshots`); see its
+[README](docs-screenshots/README.md).
