@@ -441,6 +441,52 @@ func TestAllVMsCommandCount(t *testing.T) {
 	counter.wantCommands(t, "GET /api/v1/vms", want)
 }
 
+// The state of health summary reads each running experiment's VM states with
+// one narrow command, however many VMs it has, and asks nothing about a
+// stopped one.
+func TestSoHSummaryCommandCount(t *testing.T) {
+	var (
+		small   = routeExperiment(t, "soh-small", 3, true)
+		large   = routeExperiment(t, "soh-large", 40, true)
+		stopped = routeExperiment(t, "soh-stopped", 4, false)
+	)
+
+	useTestStore(t, small, large, stopped)
+
+	var (
+		cluster = &routeCluster{head: "head", vms: map[string]routeVMs{
+			small.Metadata.Name: {count: 3, host: "head"},
+			large.Metadata.Name: {count: 40, host: "head"},
+		}}
+		counter = commandCounter{received: useRouteCluster(t, cluster)}
+		server  = serveAs(t, "alice", routeViewerRole()).URL
+	)
+
+	resp := do(t, http.MethodGet, server+"/api/v1/soh", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/v1/soh = %d, want %d: %s", resp.StatusCode, http.StatusOK, readBody(t, resp))
+	}
+
+	var summary struct {
+		Experiments []struct {
+			Name string `json:"name"`
+		} `json:"experiments"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&summary); err != nil {
+		t.Fatalf("decoding GET /api/v1/soh: %v", err)
+	}
+
+	if got := len(summary.Experiments); got != 3 {
+		t.Errorf("GET /api/v1/soh summarized %d experiments, want 3", got)
+	}
+
+	counter.wantCommands(t, "GET /api/v1/soh", map[string]int{
+		small.Metadata.Name + ": vm info summary": 1,
+		large.Metadata.Name + ": vm info summary": 1,
+	})
+}
+
 // Listing the cluster's hosts reads the mesh once and each host's disk usage
 // once, then reuses the list for a while.
 func TestClusterHostsCommandCount(t *testing.T) {

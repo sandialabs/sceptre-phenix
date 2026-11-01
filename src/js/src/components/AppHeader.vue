@@ -55,6 +55,12 @@ what their role allows.
         >Scorch</b-navbar-item
       >
       <b-navbar-item
+        v-if="auth && roleAllowed('experiments', 'list')"
+        tag="router-link"
+        :to="{ name: 'sohoverview' }"
+        >State of Health</b-navbar-item
+      >
+      <b-navbar-item
         v-if="auth && roleAllowed('miniconsole', 'post')"
         tag="router-link"
         :to="{ name: 'console' }"

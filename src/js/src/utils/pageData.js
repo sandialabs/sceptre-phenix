@@ -138,6 +138,10 @@ export const pageFetchers = {
     );
   },
 
+  // every experiment's state of health, as far as the role may get each
+  soh: async (signal, meta) =>
+    (await body(experimentsApi.listSoh({ signal, meta }))).experiments ?? [],
+
   settings: (signal, meta) => body(settingsApi.getSettings({ signal, meta })),
 
   // the tiles fetch their screenshots themselves, only while on screen
@@ -153,6 +157,7 @@ const PRELOADS = [
   ['users', () => usePhenixStore().role?.name !== 'Disabled'],
   ['logs', () => roleAllowed('logs', 'get')],
   ['hosts', () => roleAllowed('hosts', 'list')],
+  ['soh', () => roleAllowed('experiments', 'list')],
   ['settings', () => roleAllowed('settings', 'update')],
   // last: the server inspects every disk image, one at a time
   ['disks', () => roleAllowed('disks', 'list')],

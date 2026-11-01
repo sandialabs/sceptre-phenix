@@ -247,7 +247,6 @@ func (m sohMetadata) useUUIDForC2Active(host string) bool {
 }
 
 type sohProfile struct {
-	C2Timeout   string           `mapstructure:"c2Timeout"`
 	Processes   []string         `mapstructure:"processes"`
 	Listeners   []string         `mapstructure:"listeners"`
 	CustomTests []customHostTest `mapstructure:"customTests"`

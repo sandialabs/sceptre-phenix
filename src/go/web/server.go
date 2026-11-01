@@ -467,6 +467,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.ConnectTerminal)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/soh", weberror.ErrorHandler(GetExperimentSoH)).Methods("GET", "OPTIONS")
+	api.Handle("/soh", weberror.ErrorHandler(GetSoHSummary)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(GetVMs)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(UpdateVMs)).Methods("PATCH", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/actions", idempotent.Wrap(weberror.ErrorHandler(RunVMActions))).

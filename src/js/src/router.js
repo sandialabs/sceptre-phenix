@@ -113,10 +113,19 @@ const router = createRouter({
       component: () => import('@/views/ScorchRuns.vue'),
     },
     {
+      path: '/soh',
+      name: 'sohoverview',
+      component: () => import('@/views/SohOverview.vue'),
+      meta: {
+        title: 'State of Health',
+        allowed: () => roleAllowed('experiments', 'list'),
+      },
+    },
+    {
       path: '/soh/:id',
       name: 'soh',
       meta: {
-        title: 'State of health',
+        title: 'State of Health',
         allowed: (to) => roleAllowed('experiments', 'get', to.params.id),
       },
       component: () => import('@/views/StateOfHealth.vue'),
