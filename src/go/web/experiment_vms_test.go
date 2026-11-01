@@ -3,11 +3,15 @@ package web
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/protobuf/encoding/protojson"
 	gproto "google.golang.org/protobuf/proto"
+	"pgregory.net/rapid"
 
 	"phenix/util/mm"
 	"phenix/web/cache"
@@ -283,4 +287,197 @@ func TestVMListHosts(t *testing.T) {
 	if got := list.GetRunning(); got != 1 {
 		t.Errorf("GET %s running = %d, want 1", path, got)
 	}
+}
+
+// stoppedVMNode is a VM node of the topology of a stopped test experiment.
+func stoppedVMNode(hostname string) map[string]any {
+	return map[string]any{
+		"type":     "VirtualMachine",
+		"general":  map[string]any{"hostname": hostname, "do_not_boot": false},
+		"hardware": map[string]any{"os_type": "linux", "drives": []map[string]any{{"image": "test.qc2"}}},
+	}
+}
+
+// patchedVM is what a bulk update answers for one VM it updated.
+type patchedVM struct {
+	Name      string
+	DoNotBoot bool
+}
+
+// patchedItem is what a bulk update answers for one VM it left unchanged.
+type patchedItem struct {
+	Name, Status, Error string
+}
+
+// patchVMs sends a bulk update of the stopped experiment's VMs as a role with
+// policy, and returns its status, the VMs it updated and those it did not.
+func patchVMs(t *testing.T, policy rbac.Role, body string) (int, []patchedVM, []patchedItem) {
+	t.Helper()
+
+	server := serveAs(t, "alice", policy)
+
+	resp := do(t, http.MethodPatch, server.URL+"/api/v1/experiments/stopped/vms", body)
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading PATCH /api/v1/experiments/stopped/vms: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		errorMessage(t, resp.StatusCode, string(raw))
+
+		return resp.StatusCode, nil, nil
+	}
+
+	var list proto.VMList
+	if err := protojson.Unmarshal(raw, &list); err != nil {
+		t.Fatalf("PATCH /api/v1/experiments/stopped/vms = %s, not a VM list: %v", raw, err)
+	}
+
+	if got, want := int(list.GetTotal()), len(list.GetVms()); got != want {
+		t.Errorf("PATCH /api/v1/experiments/stopped/vms %s total = %d, want %d", body, got, want)
+	}
+
+	vms := make([]patchedVM, 0, len(list.GetVms()))
+	for _, vm := range list.GetVms() {
+		vms = append(vms, patchedVM{Name: vm.GetName(), DoNotBoot: vm.GetDoNotBoot()})
+	}
+
+	items := make([]patchedItem, 0, len(list.GetErrors()))
+	for _, e := range list.GetErrors() {
+		items = append(items, patchedItem{Name: e.GetName(), Status: e.GetStatus(), Error: e.GetError()})
+	}
+
+	return resp.StatusCode, vms, items
+}
+
+// A bulk update answers with the VMs it updated and lists those the role may not patch as skipped and those it
+// could not update as failed, carrying on; it answers 403 if the role may patch none, 500 if every VM failed.
+func TestUpdateVMsPerItem(t *testing.T) {
+	const (
+		missing = "unable to find VM vm-x in experiment stopped"
+		denied  = "you do not have permission"
+	)
+
+	var (
+		onlyA = testRole("vms", "patch", "stopped/vm-a")
+		all   = testRole("vms", "patch", "stopped/*")
+	)
+
+	for name, tc := range map[string]struct {
+		role   rbac.Role
+		body   string
+		status int
+		vms    []patchedVM
+		items  []patchedItem
+	}{
+		"one skipped": {
+			role:   onlyA,
+			body:   `{"total": 5, "vms": [{"name": "vm-b", "dnb": true}, {"name": "vm-a", "dnb": true}]}`,
+			status: http.StatusOK,
+			vms:    []patchedVM{{Name: "vm-a", DoNotBoot: true}},
+			items:  []patchedItem{{Name: "vm-b", Status: "skipped", Error: denied}},
+		},
+		"one failed": {
+			role:   all,
+			body:   `{"vms": [{"name": "vm-x", "dnb": true}, {"name": "vm-a", "dnb": true}]}`,
+			status: http.StatusOK,
+			vms:    []patchedVM{{Name: "vm-a", DoNotBoot: true}},
+			items:  []patchedItem{{Name: "vm-x", Status: "failed", Error: missing}},
+		},
+		"none updated": {
+			role:   all,
+			body:   `{"vms": [{"name": "vm-x", "dnb": true}]}`,
+			status: http.StatusInternalServerError,
+		},
+		"none allowed": {
+			role:   onlyA,
+			body:   `{"vms": [{"name": "vm-b", "dnb": true}]}`,
+			status: http.StatusForbidden,
+		},
+		"none named": {
+			role:   onlyA,
+			body:   `{"vms": []}`,
+			status: http.StatusOK,
+			vms:    []patchedVM{},
+			items:  []patchedItem{},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			useTestStore(t, namedExperiment(t, "stopped", "", stoppedVMNode("vm-a"), stoppedVMNode("vm-b")))
+
+			status, vms, items := patchVMs(t, tc.role, tc.body)
+			if status != tc.status {
+				t.Fatalf("PATCH /api/v1/experiments/stopped/vms %s = %d, want %d", tc.body, status, tc.status)
+			}
+
+			if diff := cmp.Diff(tc.vms, vms); diff != "" {
+				t.Errorf("PATCH /api/v1/experiments/stopped/vms %s VMs mismatch (-want +got):\n%s", tc.body, diff)
+			}
+
+			if diff := cmp.Diff(tc.items, items); diff != "" {
+				t.Errorf("PATCH /api/v1/experiments/stopped/vms %s errors mismatch (-want +got):\n%s", tc.body, diff)
+			}
+		})
+	}
+}
+
+// A bulk update puts each VM it names either among those to update, when the
+// role may patch it, or among those skipped as not permitted, in its order.
+func TestPatchableVMsProperty(t *testing.T) {
+	names := []string{"vm-a", "vm-b", "vm-c", "vm-d"}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/v1/experiments/stopped/vms", nil)
+
+	rapid.Check(t, func(t *rapid.T) {
+		var (
+			permitted = rapid.SliceOfDistinct(rapid.SampledFrom(names), rapid.ID).Draw(t, "permitted")
+			named     = rapid.SliceOf(rapid.SampledFrom(names)).Draw(t, "named")
+			policies  = make([]rbac.Role, 0, len(permitted))
+			vms       = make([]*proto.UpdateVMRequest, 0, len(named))
+		)
+
+		for _, name := range permitted {
+			policies = append(policies, testRole("vms", "patch", "stopped/"+name))
+		}
+
+		for _, name := range named {
+			vms = append(vms, &proto.UpdateVMRequest{Name: name})
+		}
+
+		allowed, skipped := patchableVMs(req, combinedRole(policies...), "stopped", vms)
+
+		var (
+			wantAllowed, wantSkipped []string
+			gotAllowed               = make([]string, 0, len(allowed))
+			gotSkipped               = make([]string, 0, len(skipped))
+		)
+
+		for _, name := range named {
+			if slices.Contains(permitted, name) {
+				wantAllowed = append(wantAllowed, name)
+			} else {
+				wantSkipped = append(wantSkipped, name)
+			}
+		}
+
+		for _, vm := range allowed {
+			gotAllowed = append(gotAllowed, vm.GetName())
+		}
+
+		for _, e := range skipped {
+			gotSkipped = append(gotSkipped, e.GetName())
+
+			if e.GetStatus() != "skipped" || e.GetError() != "you do not have permission" {
+				t.Fatalf("patchableVMs skipped %s as %q (%s), want skipped for permission", e.GetName(), e.GetStatus(), e.GetError())
+			}
+		}
+
+		if diff := cmp.Diff(wantAllowed, gotAllowed, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("patchableVMs(%v) allowed mismatch (-want +got):\n%s", named, diff)
+		}
+
+		if diff := cmp.Diff(wantSkipped, gotSkipped, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("patchableVMs(%v) skipped mismatch (-want +got):\n%s", named, diff)
+		}
+	})
 }

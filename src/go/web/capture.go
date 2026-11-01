@@ -156,8 +156,16 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 	iface := int(req.GetInterface())
 	captured := audit.Fields{Experiment: exp, VM: name, Interface: &iface, File: req.GetFilename()}
 
-	if err := vm.StartCapture(exp, name, iface, req.GetFilename()); err != nil {
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
+	if err := vm.StartCapture(change, exp, name, iface, req.GetFilename()); err != nil {
 		audit.Failure(r, audit.CaptureStart, "starting capture for VM failed", captured, err)
+
+		if requestCanceled(r, err) {
+			return nil
+		}
+
 		plog.Error(plog.TypeSystem, "starting capture for VM", "exp", exp, "vm", name, "err", err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
@@ -205,8 +213,11 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 		stopped = audit.Fields{Experiment: exp, VM: name}
 	)
 
+	change, cancel := changeContext(r, vmChangeTimeout)
+	defer cancel()
+
 	if ifaceStr == "" {
-		err = vm.StopCaptures(exp, name)
+		err = vm.StopCaptures(change, exp, name)
 	} else {
 		var iface int
 
@@ -215,7 +226,9 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 			return weberror.New(http.StatusBadRequest, "iface query parameter must be an integer")
 		}
 
-		if err = vm.StopCapture(exp, name, iface); err == nil {
+		stopped.Interface = &iface
+
+		if err = vm.StopCapture(change, exp, name, iface); err == nil {
 			body, err = json.Marshal(map[string]int{"interface": iface})
 			if err != nil {
 				plog.Error(plog.TypeSystem, "marshaling capture stop result", "err", err)
@@ -227,6 +240,10 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 
 	if err != nil {
 		audit.Failure(r, audit.CaptureStop, "stopping captures for VM failed", stopped, err)
+
+		if requestCanceled(r, err) {
+			return nil
+		}
 
 		plog.Error(
 			plog.TypeSystem,
@@ -292,9 +309,17 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 
 	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
 
-	vmCaptures, err := vm.CaptureSubnet(exp, req.GetSubnet(), req.GetVms())
+	change, cancel := changeContext(r, vmsChangeTimeout)
+	defer cancel()
+
+	vmCaptures, err := vm.CaptureSubnet(change, exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
 		audit.Failure(r, audit.CaptureStart, "starting subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
+
+		if requestCanceled(r, err) {
+			return nil
+		}
+
 		plog.Error(plog.TypeSystem, "unable to start subnet capture", "err", err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
@@ -328,7 +353,7 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 		exp  = vars["exp"]
 	)
 
-	if !role.Allowed("exp/captureSubnet", "create", exp) {
+	if !role.Allowed("exp/captureSubnet", "delete", exp) {
 		audit.Denied(r, audit.CaptureStop, "stopping subnet capture for experiment not allowed", audit.Fields{Experiment: exp})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
@@ -350,9 +375,17 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 
 	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
 
-	vms, err := vm.StopCaptureSubnet(exp, req.GetSubnet(), req.GetVms())
+	change, cancel := changeContext(r, vmsChangeTimeout)
+	defer cancel()
+
+	vms, err := vm.StopCaptureSubnet(change, exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
 		audit.Failure(r, audit.CaptureStop, "stopping subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
+
+		if requestCanceled(r, err) {
+			return nil
+		}
+
 		plog.Error(plog.TypeSystem, "unable to stop subnet capture", "err", err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())

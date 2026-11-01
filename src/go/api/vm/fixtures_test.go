@@ -1,6 +1,7 @@
 package vm_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -14,6 +15,22 @@ const (
 	// startTime is the start time of a running experiment.
 	startTime = "2026-08-26T00:00:00Z"
 )
+
+// errAny is the wanted error of a case that expects an error of any kind.
+var errAny = errors.New("any error")
+
+// errMatches reports whether err is want: nil for none, errAny for any error,
+// or else an error that wraps want.
+func errMatches(err, want error) bool {
+	switch {
+	case want == nil:
+		return err == nil
+	case errors.Is(want, errAny):
+		return err != nil
+	default:
+		return errors.Is(err, want)
+	}
+}
 
 // fakeMM fakes minimega, reporting the same VMs and captures for any VM; undefined mm.MM methods panic.
 type fakeMM struct {

@@ -18,6 +18,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"phenix/api/job"
 	"phenix/store"
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
@@ -475,6 +476,13 @@ func getIfNoneMatch(t *testing.T, h http.Handler, target, acceptEncoding, etag s
 	h.ServeHTTP(rec, req)
 
 	return rec.Result()
+}
+
+// serveStartJob serves req as a route that starts a job of spec would, on ErrorHandler.
+func serveStartJob(w http.ResponseWriter, req *http.Request, spec job.Spec) {
+	weberror.ErrorHandler(func(w http.ResponseWriter, r *http.Request) error {
+		return startJob(w, r, spec)
+	}).ServeHTTP(w, req)
 }
 
 // errorMessage returns the message of body, a JSON Error body, failing the

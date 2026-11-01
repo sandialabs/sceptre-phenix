@@ -1,6 +1,7 @@
 package soh
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -27,7 +28,7 @@ func Get(expName, statusFilter string) (*Network, error) { //nolint:funlen // co
 	}
 
 	// fetch all the VMs in the experiment
-	vms, err := vm.List(expName)
+	vms, err := vm.List(context.Background(), expName)
 	if err != nil {
 		return nil, fmt.Errorf("getting experiment %s VMs: %w", expName, err)
 	}

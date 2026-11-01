@@ -30,9 +30,11 @@ All notable changes to this project will be documented in this file.
 - **API Reference**: `GET /docs/openapi.yml` serves the spec with the server build in `info.version`, and API responses have the build in `X-Phenix-Version`. An `OPTIONS` request to an API route returns `204` and does not run the route.
 - **Background Jobs**: Added background jobs to `phenix ui`, with the `/api/v1/jobs` routes, the `phenix job` command and a jobs menu in the web UI. The new `jobs` permission, which stored Experiment Admin roles get at startup, lets a role act on the jobs of other users.
 - **Disk Images**: Added the `util/diskchain` and `util/partition` Go packages, which read qcow2 headers, backing file chains and MBR or GPT partition tables without `qemu-img`.
+- **VM Bulk Actions**: Added `POST /api/v1/experiments/{exp}/vms/actions`, which takes one power action on several VMs in a background job. Added `phenix vm info --host`, which lists only the VMs on the named cluster hosts.
 
 ### Changed
 
+- **VM Changes**: `PATCH /api/v1/experiments/{exp}/vms` updates each permitted VM even when one fails, and lists the skipped and failed VMs in `errors`. Stopping subnet captures needs `exp/captureSubnet` `delete`, which stored roles that may start subnet captures get at startup.
 - **Image Defaults (breaking)**: `phenix image create` defaults `--release` to `noble`. Debian releases now default to the Debian components `main contrib non-free non-free-firmware` instead of the Ubuntu ones.
 - **Image miniccc Service**: `miniccc` systemd service created by `phenix image {build|inject-miniexe}` now sets `User=root` and `HOME=/root`, so commands run through `cc exec` have an environment.
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, and form controls, labelled the config selection checkboxes, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, and code colours, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
