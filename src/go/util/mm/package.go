@@ -222,8 +222,10 @@ func MeshShell(host, cmd string) error {
 	return DefaultMM.MeshShell(host, cmd)
 }
 
-func MeshShellResponse(host, cmd string) (string, error) {
-	return DefaultMM.MeshShellResponse(host, cmd)
+// MeshShellResponse runs the shell command on host (the headnode when "") and
+// returns its output; once ctx is done, the command gives up if not yet sent.
+func MeshShellResponse(ctx context.Context, host, cmd string) (string, error) {
+	return DefaultMM.MeshShellResponse(ctx, host, cmd)
 }
 
 func MeshSend(ns, host, command string) error {

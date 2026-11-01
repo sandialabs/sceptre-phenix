@@ -1,5 +1,7 @@
 package mm
 
+import "context"
+
 var DefaultMM MM = new(Minimega) //nolint:gochecknoglobals // default implementation
 
 type MM interface { //nolint:interfacebloat // legacy interface
@@ -54,6 +56,6 @@ type MM interface { //nolint:interfacebloat // legacy interface
 
 	TapVLAN(...TapOption) error
 	MeshShell(string, string) error
-	MeshShellResponse(string, string) (string, error)
+	MeshShellResponse(context.Context, string, string) (string, error)
 	MeshSend(string, string, string) error
 }

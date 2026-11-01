@@ -16,6 +16,7 @@ import (
 	"phenix/web/audit"
 	"phenix/web/broker"
 	"phenix/web/forward"
+	"phenix/web/idempotency"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/scorch"
@@ -364,6 +365,9 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 
 	api := router.PathPrefix("/api/v1").Subrouter()
 
+	// the routes that start a background job honor Idempotency-Key
+	idempotent := idempotency.New(idempotency.DefaultTTL, idempotency.DefaultMaxEntries, idempotency.DefaultMaxBytes)
+
 	// The router's NotFoundHandler serves the SPA index, so an API client would get 200 HTML.
 	// A route behind a disabled feature flag would then also look enabled.
 	api.NotFoundHandler = apiNotFoundHandler()
@@ -441,6 +445,8 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/experiments/{name}/soh", weberror.ErrorHandler(GetExperimentSoH)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(GetVMs)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(UpdateVMs)).Methods("PATCH", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/actions", idempotent.Wrap(weberror.ErrorHandler(RunVMActions))).
+		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(GetVM)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(UpdateVM)).Methods("PATCH", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(DeleteVM)).Methods("DELETE", "OPTIONS")

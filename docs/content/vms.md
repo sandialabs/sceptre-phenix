@@ -48,7 +48,18 @@ phenix vm info <experiment name>
 Or, run the following to see the information for a specific VM in an experiment.
 
 ```shell
-phenix vm info <experiment name> [vm name] [--label <label>]
+phenix vm info <experiment name> [vm name] [--label <label>] [--host <host>]
+```
+
+`--host` lists only the VMs running on the named cluster host, named exactly
+as minimega reports it. Repeat it to list the VMs on any of several hosts. It
+combines with the VM name or `--label`, and with `--filter`: a VM must match
+each of them. A host filter matching no VM is an error. Press Tab after
+`--host` to complete host names.
+
+```shell
+phenix vm info my-exp --host compute1 --host compute2
+phenix vm info my-exp --host compute1 --label role-web
 ```
 
 ## Create a Backing Image
