@@ -450,24 +450,25 @@ cause problems. This table shows what phēnix does for each format:
 | Image | What phēnix does |
 | :--- | :--- |
 | qcow2 version 3 (`compat=1.1`), raw | Starts the VM. |
-| qcow2 version 2 (`compat=0.10`) | Starts the VM. |
+| qcow2 version 2 (`compat=0.10`) | Starts the VM. `phenix doctor` warns. |
 | qcow version 1 | Starts the VM with a warning. Some qemu builds, such as the `qemu-kvm` of RHEL, cannot open this format. |
 | qcow2 or qcow version 1 with the old AES encryption | Refuses the start. qemu does not open these images for VMs. |
 | qcow2 with LUKS encryption | Refuses the start. phēnix cannot give qemu the key. |
 | qcow2 of a version later than 3, or with feature bits that qemu does not know | Refuses the start. A newer qemu made the image. |
 | qcow2 that qemu marked as corrupt | Refuses the start when qemu must write to the image: a disk of a VM with `snapshot: false`. Otherwise, starts the VM with a warning. |
 | qcow2 that qemu did not close cleanly | Starts the VM with a warning. |
-| qcow2 with zstd compression or extended L2 entries | Starts the VM. |
-| vmdk, qed, or qcow2 with an external data file | Starts the VM with a warning. phēnix does not check past this image. |
+| qcow2 with zstd compression or extended L2 entries | Starts the VM. `phenix doctor` warns when the local `qemu-img` is older than qemu 5.1 (zstd) or 5.2 (extended L2). |
+| vmdk, qed, or qcow2 with an external data file | Starts the VM with a warning. phēnix does not check past this image. For an external data file, `phenix doctor` also warns when the local `qemu-img` is older than qemu 4.0. |
 
 With `experiment.disk-check: warn`, or in a dry run, a refused start is a
-warning. On this page, the `Type` column of the [Disks table](#the-disks-table)
+warning. `phenix doctor` lists the images of each kind in its `disk-formats`
+row. On this page, the `Type` column of the [Disks table](#the-disks-table)
 marks these images, and the details card of an image gives its fix command,
 with a button that copies it. The
 table also lists an image that `qemu-img` cannot open for its version or
 feature bits.
 
-The table finds a qcow version 1 image in the files
+The table and `phenix doctor` find a qcow version 1 image in the files
 directory only when its name has a known extension, such as `.qcow`. The table
 also lists an image with a different name when a topology uses it, or when it
 backs a listed image.

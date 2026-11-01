@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,14 @@ import (
 
 	"phenix/api/workflow"
 )
+
+// ansiCodes matches the escape codes the palettes write.
+var ansiCodes = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// stripColor removes the escape codes from s.
+func stripColor(s string) string {
+	return ansiCodes.ReplaceAllString(s, "")
+}
 
 // colorFlagInArgs finds the last --color value before "--", in both forms,
 // and nothing when the flag has no value.

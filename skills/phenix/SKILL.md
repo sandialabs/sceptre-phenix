@@ -141,8 +141,9 @@ through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
 aliases/ranges), `workflow` (topology directory deployment), `job`
-(background jobs), `healthcheck` (the server's liveness and readiness), plus
-`mm`, `settings`, `ui`, `util`, `completion`, and `version`. Every subcommand
+(background jobs), `doctor` (offline configuration checks), `healthcheck`
+(the server's liveness and readiness), plus `mm`, `settings`, `ui`, `util`,
+`completion`, and `version`. Every subcommand
 accepts the persistent flags documented in
 [`references/cli.md`](references/cli.md), which also lists each subcommand's
 own flags.
@@ -174,6 +175,7 @@ are run with `docker exec` rather than a host-installed binary:
 ```bash
 docker exec phenix phenix experiment list   # no -it for scripted/agentic use
 docker exec phenix phenix healthcheck --ready  # is minimega, the store and disk OK?
+docker exec phenix phenix doctor  # no server needed: versions/env header, each setting's source, config/env/settings/path checks (incl. which config file is read and written, store file format and owner), phenix ui startup checks (auth, tls, socket), a running phenix ui's version and modes (client only), minimega and its args (files dir, base, mesh), host tools (qemu-img, vmdb2, filebeat, apps, disk), optional features and the minimega log path, summary with hints; --report for bug reports (host names, addresses, users and secrets replaced with tokens); -p shows only warn/fail rows
 ```
 
 For interactive human use, `make install-wrapper` installs
@@ -245,10 +247,11 @@ The other gotchas of `phenix workflow apply` are in
 | `expects the configuration kind to be one of [...]` | Kind in `<kind>/<name>` is misspelled or unsupported. Kinds are case-insensitive but must be one of `topology, scenario, experiment, image, user, role` (plus `all` where supported). |
 | `Unable to create configuration from <path>` | File isn't valid YAML/JSON, fails schema validation, or path doesn't exist. Schema failures are followed by explained lines naming the item, its hostname or name, and the line. Try `--skip-validation` to isolate schema vs. parse errors. |
 | Experiment `create` succeeds but `start` fails to boot VMs | Re-run with `phenix experiment start --dry-run <exp>` to see what would be sent to minimega, check `phenix vm info <exp>` and minimega directly via `phenix mm <cmd>`, and verify the disk images referenced in the topology exist (`phenix image list` for image configs, `GET /api/v1/disks` for disk files present on the headnode). |
-| `unable to start the <exp> experiment: qemu cannot open N disks on M VMs` | A VM disk image, a file in its qcow2 backing chain, or its CD-ROM image (`advanced.cdrom`) is missing on the head node, the chain loops, or qemu cannot open an image of the chain (old AES or LUKS encryption, an unknown qcow2 version or feature bit, a corrupt mark on an image a `snapshot: false` VM writes). phenix checks this before minimega launches anything, so the experiment stays stopped (a restart refuses before it stops). Restore the file the error names, point the image at a copy of it (`Rebase` with `Change reference only` on the Disks page, or minimega `disk set-backing`; a normal rebase must read the missing file and fails), or change the topology; for a file only on compute nodes, set `experiment.disk-check: warn` (`off` skips the check). REST answers 400 with code `broken_disks` and `details.disks`. A qcow version 1 image or a dirty qcow2 image only warns; qcow2 version 2 passes. Fixes per format: [Image Format Versions](https://phenix.sceptre.dev/latest/disks/#image-format-versions). See [Disk Check Before a Start](https://phenix.sceptre.dev/latest/experiments/#disk-check-before-a-start). |
+| `unable to start the <exp> experiment: qemu cannot open N disks on M VMs` | A VM disk image, a file in its qcow2 backing chain, or its CD-ROM image (`advanced.cdrom`) is missing on the head node, the chain loops, or qemu cannot open an image of the chain (old AES or LUKS encryption, an unknown qcow2 version or feature bit, a corrupt mark on an image a `snapshot: false` VM writes). phenix checks this before minimega launches anything, so the experiment stays stopped (a restart refuses before it stops). Restore the file the error names, point the image at a copy of it (`Rebase` with `Change reference only` on the Disks page, or minimega `disk set-backing`; a normal rebase must read the missing file and fails), or change the topology; for a file only on compute nodes, set `experiment.disk-check: warn` (`off` skips the check). REST answers 400 with code `broken_disks` and `details.disks`. A qcow version 1 image or a dirty qcow2 image only warns; qcow2 version 2 passes (`phenix doctor` `disk-formats` warns). Fixes per format: [Image Format Versions](https://phenix.sceptre.dev/latest/disks/#image-format-versions). See [Disk Check Before a Start](https://phenix.sceptre.dev/latest/experiments/#disk-check-before-a-start). |
 | Web API calls return 401 | That server has a JWT signing key configured, so auth is on: send a current token in `X-Phenix-Auth-Token` (or `?token=`), not in `Authorization` — standard bearer-token tooling silently 401s. Re-login if the token expired. A server started without a signing key never returns 401. |
 | `configuration not updated` after `phenix config edit` | No changes were saved in the editor — this is expected, not an error. |
-| Settings changes via `phenix settings set` don't seem to apply | Command-line flags always win over the config file; unset the flag or use `phenix settings unset <key>` to fall back to the file/env value. |
+| `phenix ui` exits at startup, serves HTTP despite a TLS setting, or lacks an initial user | Run `phenix doctor --skip minimega` with the same settings and user: the `auth`, `tls` and `socket` checks catch a half-set TLS pair, a malformed `ui.users` entry (skipped silently), a unitless `ui.jwt-lifetime`, a bad `dev\|<user>\|<role>` key, and a socket directory or `unix-socket-gid` phenix ui cannot use. |
+| Settings changes via `phenix settings set` don't seem to apply | Command-line flags and `PHENIX_*` environment variables win over the config file; drop the flag or unset the variable (`phenix doctor` warns about each variable that overrides the file). |
 
 Errors of `phenix workflow apply` and their fixes are in the troubleshooting
 table of [`references/workflow.md`](references/workflow.md#troubleshooting).
