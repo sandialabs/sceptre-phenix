@@ -8,10 +8,21 @@ const { axios, modules, resetMocks } = await vi.hoisted(
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/store.js', modules.store);
 
+import * as consoleApi from '@/api/console.js';
 import * as jobsApi from '@/api/jobs.js';
 
 // [function, call, axios method, the arguments it is called with]
 const requests = [
+  // console
+  ['startConsole', () => consoleApi.startConsole(), 'post', ['console']],
+  ['getConsole', () => consoleApi.getConsole(7), 'get', ['console/7']],
+  ['endConsole', () => consoleApi.endConsole(7), 'delete', ['console/7']],
+  [
+    'resizeConsole',
+    () => consoleApi.resizeConsole(7, 80, 24),
+    'post',
+    ['console/7/size?cols=80&rows=24'],
+  ],
   // jobs
   ['listJobs', () => jobsApi.listJobs(), 'get', ['jobs']],
   ['getJob', () => jobsApi.getJob('j1'), 'get', ['jobs/j1']],
@@ -45,7 +56,7 @@ describe('the API modules', () => {
 
   it('every exported function has a request case', () => {
     const tested = new Set(requests.map(([name]) => name.split(' ')[0]));
-    const exported = [jobsApi].flatMap((mod) => Object.keys(mod));
+    const exported = [consoleApi, jobsApi].flatMap((mod) => Object.keys(mod));
     expect(exported.filter((name) => !tested.has(name))).toEqual([]);
   });
 });

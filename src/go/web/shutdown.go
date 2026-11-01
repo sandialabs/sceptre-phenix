@@ -84,6 +84,8 @@ func (s *uiServer) closeListeners() {
 
 // shutdown stops everything the server runs within its grace period; jobs get
 // half of it before they are canceled. Nothing waits past it.
+//
+//nolint:funlen // one step after another
 func (s *uiServer) shutdown(cause error) {
 	began := time.Now()
 
@@ -103,9 +105,10 @@ func (s *uiServer) shutdown(cause error) {
 		wg sync.WaitGroup
 		mu sync.Mutex
 
-		cut     []string // servers whose requests the deadline cut off
-		clients int
-		running []string
+		cut          []string // servers whose requests the deadline cut off
+		clients      int
+		running      []string
+		consolesLeft int
 	)
 
 	wg.Add(len(s.servers))
@@ -124,7 +127,7 @@ func (s *uiServer) shutdown(cause error) {
 		}()
 	}
 
-	wg.Add(2) //nolint:mnd // the goroutines below
+	wg.Add(3) //nolint:mnd // the goroutines below
 
 	go func() {
 		defer wg.Done()
@@ -138,6 +141,12 @@ func (s *uiServer) shutdown(cause error) {
 		for _, j := range jobs.ShutdownContext(ctx, s.grace/2) { //nolint:mnd // half the grace period
 			running = append(running, j.Kind+" "+j.ID)
 		}
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		consolesLeft = consoles.endAll(ctx, consoleEndedShutdown)
 	}()
 
 	handlers := lifecycle.Wait(ctx)
@@ -168,6 +177,10 @@ func (s *uiServer) shutdown(cause error) {
 	if len(running) > 0 {
 		slices.Sort(running)
 		left = append(left, "jobs", running)
+	}
+
+	if consolesLeft > 0 {
+		left = append(left, "minimega_consoles", consolesLeft)
 	}
 
 	if len(handlers) > 0 {

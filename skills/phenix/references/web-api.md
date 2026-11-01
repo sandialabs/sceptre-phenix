@@ -86,3 +86,18 @@ text in `metadata.validation-raw`; see [`workflow.md`](workflow.md).
 a name another user has, and `500` `error creating user` for other failures.
 `POST /users` answers `400` `role not found` for an unknown role before it
 creates anything.
+
+## minimega Console
+
+The console routes need `phenix ui --minimega-console`. `POST /console` starts
+`phenix mm --attach` on a pty and answers `{"pid": N}`; the console belongs to
+the user who started it, and every other console route answers 404 for another
+user's pid. `GET /console/{pid}/ws` sends up to 256 KiB of recent output, then
+live output, as binary frames, and what the client sends is the console's
+input. Several websockets can attach at once; closing one leaves the console
+running, so the UI keeps it across page changes, reloads and tabs. A console
+ends when its process exits (the server then closes its websockets with code
+1000), on `DELETE /console/{pid}` (the UI sends it on logout), or once no
+websocket has been attached for 15 seconds. `GET /console/{pid}` checks that it
+is still running. Starting, resizing and ending need `miniconsole` `post`;
+checking and attaching need `miniconsole` `get`.

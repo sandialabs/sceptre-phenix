@@ -1,15 +1,18 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -45,11 +48,12 @@ func serveContractAs(t *testing.T, role rbac.Role) *httptest.Server {
 	return serveContract(t, func(o *serverOptions) { o.jwtKey = key })
 }
 
-// contractFixture: running test-experiment with test-vm mounted (etc/hostname), test-disk.qc2, the user bob, and bob's
-// finished job (3-byte artifact).
+// contractFixture: running test-experiment with test-vm mounted (etc/hostname), test-disk.qc2, the user bob, bob's
+// finished job (3-byte artifact), and on-demand consoles.
 type contractFixture struct {
-	jobs    *job.Registry
-	bobsJob job.Job
+	jobs     *job.Registry
+	bobsJob  job.Job
+	consoles *consoleRegistry
 }
 
 // useContractFixture sets up the contract fixture until the test ends.
@@ -71,7 +75,7 @@ func useContractFixture(t *testing.T) contractFixture {
 	registry := useJobs(t)
 	bobs := waitJob(t, registry, startTestJob(t, registry, "bob", contractExp, nil, "zip").ID)
 
-	return contractFixture{jobs: registry, bobsJob: bobs}
+	return contractFixture{jobs: registry, bobsJob: bobs, consoles: useTestConsoles(t, time.Minute)}
 }
 
 // useContractMount mounts test-vm of test-experiment, with the file
@@ -106,6 +110,18 @@ func useContractMount(t *testing.T) {
 	})
 }
 
+// console starts a console of user's, and returns its pid.
+func (f contractFixture) console(t *testing.T, user string) string {
+	t.Helper()
+
+	console, err := f.consoles.start(context.WithoutCancel(t.Context()), user)
+	if err != nil {
+		t.Fatalf("starting a console of %s: %v", user, err)
+	}
+
+	return strconv.Itoa(console.pid)
+}
+
 // serveContract serves newRouter's routes over testPublic as phenix ui does,
 // with the server options set changes. The options stay in effect until the
 // test ends, as handlers read some per request.
@@ -136,7 +152,8 @@ func serveContract(t *testing.T, set func(*serverOptions)) *httptest.Server {
 // answers past RBAC.
 type contractRoute struct {
 	method string
-	// path is the request's path and query; {job} stands for bob's job
+	// path is the request's path and query; {job} stands for bob's job, and
+	// {console} for a console of the user's
 	path string
 	body string
 	// header is the request's headers, as name and value pairs
@@ -154,6 +171,19 @@ type contractRoute struct {
 }
 
 func (c contractRoute) String() string { return c.method + " " + c.path }
+
+// url is the route's URL on server for the fixture, when user sends it.
+func (c contractRoute) url(t *testing.T, server string, f contractFixture, user string) string {
+	t.Helper()
+
+	path := strings.ReplaceAll(c.path, "{job}", f.bobsJob.ID)
+
+	if strings.Contains(path, "{console}") {
+		path = strings.ReplaceAll(path, "{console}", f.console(t, user))
+	}
+
+	return server + path
+}
 
 // passed reports whether the route answered past authentication and RBAC
 // with status.
@@ -189,6 +219,7 @@ func contractRoutes() []contractRoute {
 		one     = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
 		jobs    = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
 		ok      = []int{http.StatusOK}
+		done    = []int{http.StatusNoContent}
 	)
 
 	return []contractRoute{
@@ -235,6 +266,10 @@ func contractRoutes() []contractRoute {
 			method: "GET", path: "/api/v1/configs/experiment/" + contractExp,
 			need: one(testRole("configs", "get", "Experiment/"+contractExp)),
 		},
+
+		// consoles: a user reaches only their own
+		{method: "GET", path: "/api/v1/console/{console}", need: one(testRole("miniconsole", "get")), want: ok},
+		{method: "DELETE", path: "/api/v1/console/{console}", need: one(testRole("miniconsole", "post")), want: done},
 	}
 }
 
@@ -262,14 +297,14 @@ func TestContractRBAC(t *testing.T) {
 					f := useContractFixture(t)
 					server := serveContractAs(t, role).URL
 
-					path := strings.ReplaceAll(route.path, "{job}", f.bobsJob.ID)
+					url := route.url(t, server, f, "alice")
 
-					resp := do(t, route.method, server+path, route.body, route.header...)
+					resp := do(t, route.method, url, route.body, route.header...)
 					if resp.StatusCode != route.denied() {
 						t.Fatalf("%s %s = %d, want %d", route, name, resp.StatusCode, route.denied())
 					}
 
-					wantDocumentedBody(t, route.method, path, resp)
+					wantDocumentedBody(t, route.method, strings.TrimPrefix(url, server), resp)
 					wantErrorBody(t, route, resp)
 				})
 			}
@@ -278,14 +313,14 @@ func TestContractRBAC(t *testing.T) {
 				f := useContractFixture(t)
 				server := serveContractAs(t, combinedRole(route.need...)).URL
 
-				path := strings.ReplaceAll(route.path, "{job}", f.bobsJob.ID)
+				url := route.url(t, server, f, "alice")
 
-				resp := do(t, route.method, server+path, route.body, route.header...)
+				resp := do(t, route.method, url, route.body, route.header...)
 				if !route.passed(resp.StatusCode) {
 					t.Errorf("%s with exactly what it needs = %d, want it past RBAC: %s", route, resp.StatusCode, readBody(t, resp))
 				}
 
-				wantDocumentedBody(t, route.method, path, resp)
+				wantDocumentedBody(t, route.method, strings.TrimPrefix(url, server), resp)
 
 				// ordered against websocket messages, as every API route's
 				if resp.Header.Get("X-Phenix-Seq") == "" {
@@ -444,14 +479,22 @@ func useGlobalAdmin(t *testing.T) {
 type contractErrorCase struct {
 	method, path, body string
 	header             []string
-	want               int
+	// prepare returns the path to request when it depends on the fixture
+	prepare func(t *testing.T, f contractFixture) string
+	want    int
 }
 
 const contractExpPath = "/api/v1/experiments/" + contractExp
 
-// fileAndVMErrorCases are TestContractErrors' file, disk and VM cases.
+// fileAndVMErrorCases are TestContractErrors' file, disk, VM and console cases.
 func fileAndVMErrorCases() map[string]contractErrorCase {
 	const exp = contractExpPath
+
+	bobsConsole := func(t *testing.T, f contractFixture) string {
+		t.Helper()
+
+		return "/api/v1/console/" + f.console(t, "bob")
+	}
 
 	return map[string]contractErrorCase{
 		"checksum of missing disk": {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
@@ -467,6 +510,9 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=copy.iso",
 			want: http.StatusBadRequest,
 		},
+		"unknown console":            {method: "GET", path: "/api/v1/console/1", want: http.StatusNotFound},
+		"another user's console":     {method: "GET", prepare: bobsConsole, want: http.StatusNotFound},
+		"end another user's console": {method: "DELETE", prepare: bobsConsole, want: http.StatusNotFound},
 		"mount download of missing file": {
 			method: "GET", path: exp + "/vms/" + contractVM + "/files/download?path=etc/none", want: http.StatusNotFound,
 		},
@@ -493,7 +539,7 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 }
 
 // Refusals get openapi.yml's status for the route (405 and unknown paths' 404 in its errors text) and the JSON Error body:
-// unknown things 404, bad input 400.
+// unknown things and others' consoles 404, bad input 400.
 func TestContractErrors(t *testing.T) {
 	spec := loadOpenAPI(t)
 
@@ -508,25 +554,30 @@ func TestContractErrors(t *testing.T) {
 func checkContractError(t *testing.T, spec openAPISpec, name string, tc contractErrorCase) {
 	t.Helper()
 
-	useContractFixture(t)
+	f := useContractFixture(t)
 	server := serveContractAs(t, adminRole()).URL
 
-	resp := do(t, tc.method, server+tc.path, tc.body, tc.header...)
+	path := tc.path
+	if tc.prepare != nil {
+		path = tc.prepare(t, f)
+	}
+
+	resp := do(t, tc.method, server+path, tc.body, tc.header...)
 	if resp.StatusCode != tc.want {
-		t.Fatalf("%s %s = %d, want %d: %s", tc.method, tc.path, resp.StatusCode, tc.want, readBody(t, resp))
+		t.Fatalf("%s %s = %d, want %d: %s", tc.method, path, resp.StatusCode, tc.want, readBody(t, resp))
 	}
 
 	// openapi.yml's errors text documents these for every path
 	everyPath := name == "unknown API path" || tc.want == http.StatusMethodNotAllowed
 
 	if !everyPath {
-		wantDocumentedBody(t, tc.method, tc.path, resp)
+		wantDocumentedBody(t, tc.method, path, resp)
 	}
 
-	wantErrorBody(t, contractRoute{method: tc.method, path: tc.path}, resp)
+	wantErrorBody(t, contractRoute{method: tc.method, path: path}, resp)
 
-	if !everyPath && !spec.documents(tc.method, tc.path, tc.want) {
-		t.Errorf("openapi.yml documents %d for %s %s = false, want true", tc.want, tc.method, tc.path)
+	if !everyPath && !spec.documents(tc.method, path, tc.want) {
+		t.Errorf("openapi.yml documents %d for %s %s = false, want true", tc.want, tc.method, path)
 	}
 }
 
