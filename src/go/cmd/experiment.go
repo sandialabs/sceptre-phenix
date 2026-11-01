@@ -360,7 +360,8 @@ func newExperimentDeleteCmd() *cobra.Command {
 						continue
 					}
 
-					if err := experiment.Stop(exp.Metadata.Name); err != nil {
+					// -f deletes it even when minimega cannot kill its VMs, as docker rm -f would
+					if err := experiment.Stop(exp.Metadata.Name, experiment.StopWithForce(force)); err != nil {
 						err := util.HumanizeError(
 							err,
 							"%s",
@@ -580,7 +581,8 @@ func newExperimentStopCmd() *cobra.Command {
 	desc := `Stop an experiment
 
   Used to stop a running experiment, using 'all' instead of a specific
-  experiment name will include all running experiments.`
+  experiment name will include all running experiments. An experiment whose
+  VMs minimega cannot kill stays running; --force marks it stopped anyway.`
 
 	cmd := &cobra.Command{
 		Use:               "stop <experiment name>",
@@ -592,6 +594,7 @@ func newExperimentStopCmd() *cobra.Command {
 			var (
 				name                   = args[0]
 				keepInjectionSnapshots = mustGet(cmd.Flags().GetBool, "keep-injection-snapshots")
+				force                  = mustGet(cmd.Flags().GetBool, "force")
 				experiments            []types.Experiment
 			)
 
@@ -630,13 +633,15 @@ func newExperimentStopCmd() *cobra.Command {
 				err := experiment.Stop(
 					exp.Metadata.Name,
 					experiment.StopWithKeepInjectionSnapshots(keepInjectionSnapshots),
+					experiment.StopWithForce(force),
 				)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Problem encountered while stopping the "+exp.Metadata.Name+" experiment",
-					)
+					msg := "Problem encountered while stopping the " + exp.Metadata.Name + " experiment"
+					if errors.Is(err, experiment.ErrTeardownFailed) {
+						msg += " (it is still running: try again, or pass --force to mark it stopped anyway)"
+					}
+
+					err := util.HumanizeError(err, "%s", msg)
 
 					return err.Humanized()
 				}
@@ -650,6 +655,8 @@ func newExperimentStopCmd() *cobra.Command {
 
 	cmd.Flags().
 		BoolP("keep-injection-snapshots", "K", false, "Keep VM injection snapshots after stopping")
+	cmd.Flags().
+		BoolP("force", "f", false, "Mark the experiment stopped even if minimega cannot kill its VMs")
 
 	return cmd
 }
@@ -716,11 +723,12 @@ func newExperimentRestartCmd() *cobra.Command {
 
 				err := experiment.Stop(exp.Metadata.Name)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to stop the "+exp.Metadata.Name+" experiment",
-					)
+					msg := "Unable to stop the " + exp.Metadata.Name + " experiment"
+					if errors.Is(err, experiment.ErrTeardownFailed) {
+						msg += " (it is still running: try again, or mark it stopped with stop --force first)"
+					}
+
+					err := util.HumanizeError(err, "%s", msg)
 
 					return err.Humanized()
 				}

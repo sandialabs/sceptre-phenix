@@ -378,8 +378,18 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 	const exp = contractExpPath
 
 	return map[string]contractErrorCase{
+		"stop with a force that is not a boolean": {
+			method: "POST", path: exp + "/stop?force=maybe", want: http.StatusBadRequest,
+		},
 		"user with unknown role": {
 			method: "POST", path: "/api/v1/users", body: createUserBody("carol", "No Such Role"), want: http.StatusBadRequest,
+		},
+		"schedule of running experiment": {
+			method: "POST", path: exp + "/schedule", body: `{"algorithm":"round-robin"}`, want: http.StatusConflict,
+		},
+		"schedule of unknown experiment": {
+			method: "POST", path: "/api/v1/experiments/none/schedule", body: `{"algorithm":"round-robin"}`,
+			want: http.StatusNotFound,
 		},
 		"unknown API path":     {method: "GET", path: "/api/v1/no-such-route", want: http.StatusNotFound},
 		"VM restart by GET":    {method: "GET", path: exp + "/vms/" + contractVM + "/restart", want: http.StatusMethodNotAllowed},
@@ -437,6 +447,7 @@ func TestContractJSONContentType(t *testing.T) {
 
 	for _, path := range []string{
 		exp,
+		exp + "/schedule",
 		exp + "/captures",
 		exp + "/topology/search?hostname=" + contractVM,
 		exp + "/vms",

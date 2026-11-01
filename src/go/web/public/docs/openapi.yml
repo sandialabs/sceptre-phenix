@@ -1032,7 +1032,7 @@ paths:
       description: >-
         Runs the apps' cleanup stage and kills the experiment's VMs. When
         minimega cannot kill them, the experiment stays running so the stop can
-        be tried again, and the 400 error carries `metadata.retry` `force`.
+        be tried again, and the 502 error carries `metadata.retry` `force`.
         Needs the `experiments/stop` `update` permission.
       operationId: postExperimentsNameStop
       parameters:
