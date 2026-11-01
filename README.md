@@ -149,24 +149,26 @@ We use a `Makefile` to standardize development tasks. Run `make help` to see all
 
 ```bash
 # Development
-make all         # Run all tools (lint, test, build examples)
-make check       # Run linters without fixing (for CI)
-make generate    # Generate Go code (protobuf, mocks, RBAC policy) and the API reference
-make api-docs    # Render the API reference served at /docs/ (src/go/web/public/docs/index.html)
-make lint        # Run linters and formatters, fixing issues in place
-make test        # Run unit tests
+make all             # Run all tools (lint, test, build examples)
+make check           # Run linters without fixing (for CI)
+make check-generated # Check that `make generate` is reproducible and writes only ignored files
+make generate        # Generate Go code (protobuf, mocks, RBAC policy) and the API reference
+make api-docs        # Render the API reference served at /docs/ (src/go/web/public/docs/index.html)
+make cli-docs        # Write the CLI reference pages in docs/content/cli (commit them)
+make lint            # Run linters and formatters, fixing issues in place
+make test            # Run unit tests
 
 # Build
-make build       # Build the UI, the API reference and the main phenix binary
-make deb         # Build the phenix .deb package
-make docker      # Build the phenix docker image
-make tunneler    # Build phenix-tunneler binaries
+make build           # Build the UI, the API reference and the main phenix binary
+make deb             # Build the phenix .deb package
+make docker          # Build the phenix docker image
+make tunneler        # Build phenix-tunneler binaries
 
 # Installation
-make install-dev # Install development and build dependencies
+make install-dev     # Install development and build dependencies
 
 # Cleanup
-make clean       # Clean build artifacts
+make clean           # Clean build artifacts
 ```
 
 The `phenix-tunneler serve` command can provide a local web interface for

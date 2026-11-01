@@ -355,7 +355,8 @@ none, `set` creates `config.yaml` in `$HOME/.config/phenix/`, or
 
 ## Global Flags
 
-The following global flags are supported by all `phenix` subcommands:
+The following global flags are supported by all `phenix` subcommands. The
+[CLI reference](cli/index.md) lists them with every command's own flags.
 
 | Flag | Type | Default | Description |
 | :--- | :--- | :--- | :--- |

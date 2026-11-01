@@ -1,4 +1,4 @@
-.PHONY: all api-docs build check clean deb docker docs-build docs-screenshots docs-serve examples example-go example-python generate generate-go help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
+.PHONY: all api-docs build check check-generated clean cli-docs deb docker docs-build docs-screenshots docs-serve examples example-go example-python generate generate-go help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
 DOCKER_TAG ?= latest
@@ -18,9 +18,12 @@ help:
 	@echo "Development:"
 	@echo "  all            - Run all development tasks (lint, test) and build examples"
 	@echo "  check          - Run prek hooks without committing fixes (for CI)"
+	@echo "  check-generated - Check that 'make generate' is reproducible and writes only ignored files,"
+	@echo "                   and that the CLI reference is current"
 	@echo "  generate       - Generate all derived sources (generate-go and api-docs)"
 	@echo "  generate-go    - Generate Go code (protobuf, mocks, RBAC policy)"
 	@echo "  api-docs       - Render the API reference served at /docs/"
+	@echo "  cli-docs       - Regenerate the CLI reference in docs/content/cli (tracked; commit it)"
 	@echo "  lint           - Run prek hooks and fix issues (formatting, linting, etc)"
 	@echo "  prek           - Alias for 'lint'"
 	@echo "  test           - Run unit tests"
@@ -100,6 +103,12 @@ generate-go:
 
 api-docs:
 	$(MAKE) -C src/go api-docs
+
+cli-docs:
+	$(MAKE) -C src/go cli-docs
+
+check-generated:
+	./scripts/check-generated.sh
 
 install-dev:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))

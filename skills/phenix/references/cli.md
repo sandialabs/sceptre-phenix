@@ -1,40 +1,54 @@
 # phenix CLI Reference
 
-Full subcommand and flag reference. The [skill body](../SKILL.md) covers the
-concepts and the commands needed for common workflows.
+What each subcommand is for, with the command lines common workflows need. The
+[skill body](../SKILL.md) covers the concepts.
+
+The generated CLI reference owns every command's flags and their defaults:
+[phenix.sceptre.dev/latest/cli](https://phenix.sceptre.dev/latest/cli/), built
+from `docs/content/cli/` in the phēnix repository, one page per top-level
+command. `make cli-docs` regenerates it from the Cobra command tree, and CI
+fails when it is out of date. The command lines below are a summary; read the
+generated page for a command's complete flags.
 
 ## Global flags and configuration precedence
 
-Every subcommand accepts these persistent flags (bound to viper, so each also
-has a matching config-file key and `PHENIX_*` env var):
+The options of `phenix` itself, listed on the reference's
+[overview page](https://phenix.sceptre.dev/latest/cli/#options), are
+persistent flags every subcommand accepts. Each is bound to viper: its
+config-file key is the flag name, and its environment variable is `PHENIX_`
+followed by the name in upper case with `.` and `-` as `_`, so
+`--log.system.max-size` is `log.system.max-size` and
+`PHENIX_LOG_SYSTEM_MAX_SIZE`. The defaults of `--store.endpoint` and
+`--log.system.path` depend on the user: `bolt:///etc/phenix/store.bdb` and
+`/var/log/phenix/phenix.log` as root, `bolt://$HOME/.phenix.bdb` and
+`$HOME/phenix_logs/phenix.log` otherwise.
 
-| Flag | Config key / Env var | Default | Description |
-|---|---|---|---|
-| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://<path>`) |
-| `--base-dir.phenix` | `base-dir.phenix` / `PHENIX_BASE_DIR_PHENIX` | `/phenix` | Base phēnix data directory |
-| `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
-| `--base-dir.injects` | `base-dir.injects` / `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Where `phenix workflow apply` stages `phenix-injects/` (as `<base-dir.injects>/<name>`). The server's value wins over the CLI's own unless the flag is given; see the `injects` step in [`workflow.md`](workflow.md). Use an absolute path |
-| `--base-dir.topologies` | `base-dir.topologies` / `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Where `phenix workflow apply NAME` looks up a bare topology directory name. Use an absolute path |
-| `--mount-dir` | `mount-dir` / `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts (`phenix vm mount`, UI `vm-mount` feature) |
-| `--hostname-suffixes` | `hostname-suffixes` / `PHENIX_HOSTNAME_SUFFIXES` | `-minimega,-phenix` | Hostname suffixes to strip |
-| `--log.level` | `log.level` / `PHENIX_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` — use `--log.level=debug` for verbose troubleshooting output |
-| `--log.console` | `log.console` / `PHENIX_LOG_CONSOLE` | `stderr` | Console log destination: `stderr`, `stdout`, or a file path |
-| `--log.system.path` | `log.system.path` / `PHENIX_LOG_SYSTEM_PATH` | `/var/log/phenix/phenix.log` | Persistent JSON system log path (used by UI) |
-| `--log.system.max-size` | `log.system.max-size` / `PHENIX_LOG_SYSTEM_MAX_SIZE` | `100` | Max log file size (MB) before rotation |
-| `--log.system.max-backups` | `log.system.max-backups` / `PHENIX_LOG_SYSTEM_MAX_BACKUPS` | `3` | Number of rotated log files to retain |
-| `--log.system.max-age` | `log.system.max-age` / `PHENIX_LOG_SYSTEM_MAX_AGE` | `90` | Max age (days) to retain old logs |
-| `--bridge-mode` | `bridge-mode` / `PHENIX_BRIDGE_MODE` | (unset) | `manual` (user/`phenix`-named bridge) or `auto` (experiment-named bridge) |
-| `--deploy-mode` | `deploy-mode` / `PHENIX_DEPLOY_MODE` | (unset) | `all`, `no-headnode`, or `only-headnode` — which minimega VMs to deploy |
-| `--use-gre-mesh` | `use-gre-mesh` / `PHENIX_USE_GRE_MESH` | `false` | Use GRE tunnels between mesh nodes for VLAN trunking |
-| `--color` | `color` / `PHENIX_COLOR` | `auto` | When to color the text output: `auto`, `on`, or `off` |
-| `--unix-socket` | `unix-socket` / `PHENIX_UNIX_SOCKET` | `/tmp/phenix.sock` | Unix socket to listen on (`ui`) or connect to (other commands, to inherit server-set options; `phenix workflow apply` sends all its requests through it) |
+`--store.endpoint` takes a BoltDB path, `bolt://<path>`, the only data store.
 
-Precedence (highest to lowest): **1. command-line flag** → **2. `config.yaml`**
-(managed with `phenix settings set`/`unset`, hot-reloaded) → **3. environment
-variable** (`PHENIX_*`) → **4. built-in default**. See
+`--bridge-mode` defaults to `manual`, which uses the bridge name given when an
+experiment is created, or `phenix`; `auto` names each experiment's bridge
+after the experiment. A command that reaches a `phenix ui` running in `auto`
+mode over `--unix-socket` uses `auto` whatever its own setting. See
+[Bridge Mode](https://phenix.sceptre.dev/latest/bridge-mode/).
+
+`--color` (`auto` default, `on`, `off`) sets when phenix colors its
+text output: doctor statuses, the summary and hints, the `Error:` label,
+console log levels and warning or error messages, workflow apply actions,
+the status columns of `experiment list`, `vm info` and `job`. `auto` colors
+only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. JSON,
+YAML and `doctor --report` never have color. phenix refuses another value.
+
+Precedence (highest to lowest): **1. command-line flag** → **2. environment
+variable** (`PHENIX_*`; empty is ignored) → **3. `config.yaml`**, with `users.yaml`
+merged over it (managed with `phenix settings set`/`unset`, which change the file
+phenix read; `log.*`, `ui.logs.level`, `ui.users` and `experiment.disk-check` are hot-reloaded, other keys
+need a `phenix ui` restart) → **4. built-in default**. A `PHENIX_*` variable hides
+what `settings set` writes; `phenix doctor` warns about each such override. See
 [Settings & Configuration](https://phenix.sceptre.dev/latest/settings/) for the
 full settings reference, including UI-only settings (`ui.logs.level`,
-`ui.features`, `ui.file-server-endpoint`) not exposed as root-level CLI flags.
+`ui.features`, `ui.file-server-endpoint`, `ui.shutdown-grace-period`,
+`ui.netflow.max-size`) not
+exposed as root-level CLI flags.
 
 `phenix ui --features vm-mount` (equivalently `ui.features: vm-mount` in
 `config.yaml`, or `PHENIX_UI_FEATURES=vm-mount`) enables the optional
@@ -62,14 +76,11 @@ phenix config delete all [kind]                     # delete every stored config
 phenix experiment list
 phenix experiment apps                              # list available apps
 phenix experiment schedulers                        # list scheduling algorithms
-phenix experiment create <exp> -t <topology> [-s <scenario>] [-d <base-dir>] \
-  [--disabled-apps app1,app2] [--vlan-min N] [--vlan-max N] [-b <bridge>] \
-  [--annotation key=value]... [--node-annotation key=value]...
+phenix experiment create <exp> -t <topology> [-s <scenario>] [flags]
 phenix experiment edit <exp> [--force]              # --force overrides the running-experiment check
 phenix experiment delete <exp> [-f|--force]          # -f stops a running experiment before deleting it, forcing the stop
 phenix experiment schedule <exp> <algorithm>         # e.g. round-robin, isolate-experiment, subnet-compute
-phenix experiment start <exp|all> [--dry-run] [--honor-run-periodically] \
-  [--treat-mm-errors-as-warnings] [--vlan-min N] [--vlan-max N]
+phenix experiment start <exp|all> [--dry-run] [flags]
 phenix experiment stop <exp|all> [-K] [-f|--force]   # -f marks it stopped even if minimega cannot kill its VMs
 phenix experiment restart <exp> [--dry-run]
 phenix experiment reconfigure <exp>
@@ -158,10 +169,8 @@ are not jobs); see [`jobs.md`](jobs.md).
 phenix vm info <exp> [vm] [--host h]                 # table of VM(s); --host: only VMs on that host
 phenix vm pause|resume|restart|shutdown|kill <exp> [vm]
 phenix vm reset-disk <exp> [vm]
-phenix vm redeploy <exp> [vm] [-c <cpus>] [-m <MB>] [-d <disk image>] [-p <partition>] \
-  [-r|--replicate-injects]                           # -r recreates the disk snapshot and injections
-phenix vm set <exp> [vm] [-c|--cpu <n>] [-m|--mem <MB>] [-d|--disk <image>] [-p|--partition <n>] \
-  [--do-not-boot] [--snapshot] [-L key=value ...] [--append-labels]
+phenix vm redeploy <exp> [vm] [flags]                # new CPU, memory or disk; -r recreates the disk snapshot and injections
+phenix vm set <exp> [vm] [flags]                     # change VM settings and labels
 phenix vm net connect <exp> <vm> <iface index> <vlan id>
 phenix vm net disconnect <exp> <vm> <iface index>
 phenix vm capture start <exp> <vm> <iface index> <output file>
@@ -218,12 +227,10 @@ phenix vm set my-exp node1 -L role=web -L site=east --append-labels
 
 ```bash
 phenix image list
-phenix image create <name> [-s 10G] [-v minbase] [-r noble] [-m <mirror>] [-l comp1,comp2] \
-  [-f qcow2] [-c] [-R] [-O overlay1,overlay2] [-P pkg1,pkg2] [-T script1,script2] \
-  [-k arg1,arg2] [--skip-default-pkgs] [--no-virtuals]
+phenix image create <name> [flags]
 phenix image create-from <existing> <new>
 phenix image edit <name>
-phenix image build <name> [-v|-x] [-c|--cache] [--dry-run] [-o <output dir>]
+phenix image build <name> [flags]
 phenix image delete <name>
 phenix image append|remove|update <name> ...
 phenix image inject-miniexe <path/to/exe> <path/to/disk>

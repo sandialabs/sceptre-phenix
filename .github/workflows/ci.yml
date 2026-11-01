@@ -6,11 +6,19 @@ on:
     paths:
       - 'src/go/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/check-generated.sh'
+      - 'docs/content/cli/**'
+      - 'docs/mkdocs.yml'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
       - 'src/go/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/check-generated.sh'
+      - 'docs/content/cli/**'
+      - 'docs/mkdocs.yml'
       - '.github/workflows/ci.yml'
 
 permissions:
@@ -22,6 +30,7 @@ concurrency:
 
 env:
   GO_VERSION: '1.24'
+  NODE_VERSION: '24'
 
 jobs:
   test-go:
@@ -67,3 +76,25 @@ jobs:
           name: coverage-go
           path: src/go/coverage.out
           retention-days: 14
+
+  generated:
+    name: Reproducible generated outputs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/go/go.sum
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # scripts/api-docs.sh runs the pinned Redocly CLI through npx
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install system dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y protobuf-compiler
+      - name: Check generated outputs
+        # generates twice from scratch; fails on missing, non-deterministic or
+        # unignored outputs, changed tracked files, and a stale CLI reference
+        run: make check-generated

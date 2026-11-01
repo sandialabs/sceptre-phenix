@@ -28,7 +28,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all api-docs check-protoc clean generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test test-cover
+.PHONY: all api-docs check-protoc clean cli-docs generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test test-cover
 .DEFAULT_GOAL := help
 
 help:
@@ -51,6 +51,7 @@ help:
 	@echo "  generate-protobuf  - Generate protobufs"
 	@echo "  go-generate        - Run go generate"
 	@echo "  api-docs           - Render the API reference (web/public/docs/index.html)"
+	@echo "  cli-docs           - Regenerate the tracked CLI reference (docs/content/cli)"
 	@echo ""
 	@echo "Installation targets:"
 	@echo "  install            - Install Go module dependencies"
@@ -108,6 +109,10 @@ bin/protoc-gen-go:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go
 
 api-docs: web/public/docs/index.html
+
+# Unlike the outputs above, the CLI reference is tracked; check-generated fails when it is stale.
+cli-docs: generate
+	go run ./cmd/gendocs -out ../../docs/content/cli -mkdocs ../../docs/mkdocs.yml
 
 # The Redocly version is pinned in scripts/api-docs.sh, shared with every
 # other place that renders the API reference.
