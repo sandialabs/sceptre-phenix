@@ -13,12 +13,16 @@ components:
   schemas:
     # --8<-- [start:scenario]
     Scenario:
+      title: "Scenario"
+      description: "Schema describing the Scenario resource."
       type: object
       nullable: true
       required:
       - apps
       properties:
         apps:
+          title: "Apps"
+          description: "Applications configured for this scenario."
           type: array
           nullable: true
           items:
@@ -27,12 +31,18 @@ components:
             - name
             properties:
               name:
+                title: "Name"
+                description: "Name used to identify this resource or entry."
                 type: string
                 example: example-app
               assetDir:
+                title: "Asset Directory"
+                description: "Directory containing assets made available to the application."
                 type: string
                 example: /phenix/topologies/example-topo/assets
               metadata:
+                title: "Metadata"
+                description: "Application-specific settings shared across its hosts."
                 type: object
                 nullable: true
                 additionalProperties: true
@@ -40,12 +50,26 @@ components:
                   setting0: true
                   setting1: 42
                   setting2: universe key
+              runPeriodically:
+                title: "Run Periodically"
+                description: "Interval at which the application running stage repeats."
+                type: string
+                example: 30s
               disabled:
+                title: "Disabled"
+                description: "Whether to skip this application."
                 type: boolean
                 default: false
                 example: false
                 nullable: true
+              fromScenario:
+                title: "From Scenario"
+                description: "Scenario inherited by this application configuration."
+                type: string
+                example: base-scenario
               hosts:
+                title: "Hosts"
+                description: "Host-specific application settings."
                 type: array
                 items:
                   type: object
@@ -53,9 +77,13 @@ components:
                   - hostname
                   properties:
                     hostname:
+                      title: "Hostname"
+                      description: "Hostname used to identify the node."
                       type: string
                       example: example-host
                     metadata:
+                      title: "Metadata"
+                      description: "Application-specific settings for this host."
                       type: object
                       nullable: true
                       additionalProperties: true

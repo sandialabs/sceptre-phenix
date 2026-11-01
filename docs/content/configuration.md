@@ -155,7 +155,9 @@ three options available to set, but on only one option can be set:
    start either through the phēnix UI or command line (the latter can be by
    phēnix or minimega commands).
 
-1. `timer` is a string that is set as a delay in minutes; e.g., `5m`.
+1. `timer` is a
+   [Golang duration string](https://pkg.go.dev/time#ParseDuration) such as
+   `30s`, `5m`, or `1h30m`. A timer that is not a duration is rejected.
 
 1. `c2` requires minimega command and control. Note in the example below that
    the hostname `AD1` will be delayed starting until the VM `host-00` has
@@ -532,12 +534,14 @@ spec:
 scenarios to form an experiment (it should be note that an experiments do not
 require a scenario).
 
-Typically experiment configurations are
-[created automatically](experiments.md#create-a-new-experiment), but it is
-possible to create them manually using a configuration file similar to the one
-shown below. In this case, an experiment named `foobar` would be created based
-on an existing topology named `foobar` and an existing scenario named `foobar`
-(note that none of the names are required to match).
+Experiment configurations are
+[created](experiments.md#create-a-new-experiment) from an existing topology and
+an optional scenario, with `phenix experiment create` or the web UI. A
+configuration file holding only the header below is not enough: its `spec` must
+already hold the experiment, so `phenix config create` rejects it. The header
+of an experiment named `foobar`, created from a topology named `foobar` and a
+scenario named `foobar` (none of the names are required to match), looks like
+this:
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -547,12 +551,13 @@ metadata:
   annotations:
     topology: foobar # this is required
     scenario: foobar # this is optional
+spec:
+  ...
 ```
 
-Once created, either manually or automatically, the experiment configuration
-will be expanded to have the topology and scenario configurations embedded in
-it, as well as additional details like cluster host schedules for VMs, VLAN
-ranges, etc. The advantage of embedding the topology and scenario
+The experiment configuration has the topology and scenario configurations
+embedded in it, as well as additional details like cluster host schedules for
+VMs, VLAN ranges, etc. The advantage of embedding the topology and scenario
 into the experiment is that they can be modified in the experiment without
 modifying the originals.
 
