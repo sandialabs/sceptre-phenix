@@ -657,6 +657,16 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 		"user with unknown role": {
 			method: "POST", path: "/api/v1/users", body: createUserBody("carol", "No Such Role"), want: http.StatusBadRequest,
 		},
+		"user with taken username": {
+			method: "POST", path: "/api/v1/users", body: createUserBody("bob", "Global Admin"), want: http.StatusConflict,
+			prepare: func(t *testing.T, _ contractFixture) string {
+				t.Helper()
+
+				useGlobalAdmin(t)
+
+				return "/api/v1/users"
+			},
+		},
 		"schedule of running experiment": {
 			method: "POST", path: exp + "/schedule", body: `{"algorithm":"round-robin"}`, want: http.StatusConflict,
 		},

@@ -1,180 +1,232 @@
 <template>
   <section>
     <div class="form-section">
-      <form class="content" @submit.prevent="sendSettingsToServer">
+      <p v-if="!loaded" class="has-text-grey">
+        {{ loadingText('settings') }}
+      </p>
+      <form v-else class="content" @submit.prevent="sendSettingsToServer">
         <h3>Password Settings</h3>
         <b-field>
-          <b-switch v-model="settings_obj.password_settings.lowercase_req">
+          <b-switch
+            v-model="settings_obj.password_settings.lowercase_req"
+            type="is-light">
             Require a lowercase letter
           </b-switch>
         </b-field>
         <b-field>
-          <b-switch v-model="settings_obj.password_settings.uppercase_req">
+          <b-switch
+            v-model="settings_obj.password_settings.uppercase_req"
+            type="is-light">
             Require an uppercase letter
           </b-switch>
         </b-field>
         <b-field>
-          <b-switch v-model="settings_obj.password_settings.number_req">
+          <b-switch
+            v-model="settings_obj.password_settings.number_req"
+            type="is-light">
             Require a number
           </b-switch>
         </b-field>
         <b-field>
-          <b-switch v-model="settings_obj.password_settings.symbol_req">
+          <b-switch
+            v-model="settings_obj.password_settings.symbol_req"
+            type="is-light">
             Require a symbol
           </b-switch>
         </b-field>
-        <b-field>
-          <span id="settings-password-min-length"
-            >Minimum length of password</span
-          >
+        <b-field class="setting-number" :addons="false">
           <b-numberinput
             aria-labelledby="settings-password-min-length"
             v-model="settings_obj.password_settings.min_length"
-            class="custom-small"
-            min="4"
+            min="8"
             max="32"
             :controls="false">
           </b-numberinput>
+          <span id="settings-password-min-length"
+            >Minimum length of password</span
+          >
         </b-field>
         <h3>Timeout Settings</h3>
         <b-field>
-          <b-switch v-model="settings_obj.timeout_settings.enabled">
+          <b-switch
+            v-model="settings_obj.timeout_settings.enabled"
+            type="is-light">
             Log out users after period of inactivity
           </b-switch>
         </b-field>
-        <b-field>
-          <span id="settings-idle-timeout"
-            >Time (minutes) to log out users after idle for</span
-          >
+        <b-field class="setting-number" :addons="false">
           <b-numberinput
             aria-labelledby="settings-idle-timeout"
             v-model="settings_obj.timeout_settings.timeout_min"
             :disabled="!settings_obj.timeout_settings.enabled"
             :controls="false"
-            step=".5"
-            class="custom-small">
+            step=".5">
           </b-numberinput>
-        </b-field>
-        <b-field>
-          <span id="settings-idle-warning"
-            >Display idle user logout with (minutes) left</span
+          <span id="settings-idle-timeout"
+            >Time (minutes) to log out users after idle for</span
           >
+        </b-field>
+        <b-field class="setting-number" :addons="false">
           <b-numberinput
             aria-labelledby="settings-idle-warning"
             v-model="settings_obj.timeout_settings.warning_min"
             :disabled="!settings_obj.timeout_settings.enabled"
             :controls="false"
-            step=".5"
-            class="custom-small">
+            step=".5">
           </b-numberinput>
+          <span id="settings-idle-warning"
+            >Display idle user logout with (minutes) left</span
+          >
         </b-field>
 
         <h3>File Logging Settings</h3>
-        <b-field>
-          <span id="settings-log-max-size">Max log file size (MiB)</span>
+        <b-field class="setting-number" :addons="false">
           <b-numberinput
             aria-labelledby="settings-log-max-size"
             v-model="settings_obj.logging_settings.max_file_size"
             :controls="false"
-            step="1"
-            class="custom-small">
+            step="1">
           </b-numberinput>
+          <span id="settings-log-max-size">Max log file size (MiB)</span>
         </b-field>
-        <b-field>
-          <span id="settings-log-max-rotations"
-            >Max number of file rotations (0 for infinite)</span
-          >
+        <b-field class="setting-number" :addons="false">
           <b-numberinput
             aria-labelledby="settings-log-max-rotations"
             v-model="settings_obj.logging_settings.max_file_rotations"
             :controls="false"
             step="1"
-            class="custom-small"
             min="0">
           </b-numberinput>
-        </b-field>
-        <b-field>
-          <span id="settings-log-max-age"
-            >Max rotated log file age (0 for infinite)</span
+          <span id="settings-log-max-rotations"
+            >Max number of file rotations (0 for infinite)</span
           >
+        </b-field>
+        <b-field class="setting-number" :addons="false">
           <b-numberinput
             aria-labelledby="settings-log-max-age"
             v-model="settings_obj.logging_settings.max_file_age"
             :controls="false"
             step="1"
-            class="custom-small"
             min="0">
           </b-numberinput>
+          <span id="settings-log-max-age"
+            >Max rotated log file age (0 for infinite)</span
+          >
         </b-field>
 
         <hr />
-        <!-- <b-button @click="getSettings">Reset Form</b-button> -->
-        <b-button native-type="submit">Save Changes</b-button>
+        <div class="buttons">
+          <b-button :disabled="!changed" @click="resetForm"
+            >Reset Form</b-button
+          >
+          <b-button native-type="submit" :disabled="!changed" :loading="saving">
+            Save Changes
+          </b-button>
+        </div>
       </form>
     </div>
   </section>
 </template>
 <script>
-  import axiosInstance from '@/utils/axios.js';
+  import * as settingsApi from '@/api/settings.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { cachePage } from '@/utils/pageCache.js';
+  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import { pageFetchers } from '@/utils/pageData.js';
+
+  const copy = (obj) => JSON.parse(JSON.stringify(obj));
+
   export default {
-    async created() {
-      this.getSettings();
+    created() {
+      this.loader = createPageLoader({
+        key: 'settings',
+        fetch: pageFetchers.settings,
+        apply: (data) => {
+          // a reload must not wipe out edits that have not been saved yet
+          const keepEdits = this.loaded && this.changed;
+          this.saved = copy(data);
+          if (!keepEdits) this.settings_obj = copy(data);
+          this.loaded = true;
+        },
+      });
+      this.loader.start();
+    },
+
+    beforeUnmount() {
+      this.loader.stop();
+    },
+
+    computed: {
+      changed() {
+        return JSON.stringify(this.settings_obj) !== JSON.stringify(this.saved);
+      },
     },
 
     methods: {
-      getSettings() {
-        console.log('getting settings');
-        axiosInstance.get('settings').then((response) => {
-          const state = response.data;
-          console.log(state);
-          this.settings_obj = state;
-        });
+      loadingText,
+
+      // back to the settings last loaded from or saved to the server
+      resetForm() {
+        this.settings_obj = copy(this.saved);
       },
+
       sendSettingsToServer() {
-        axiosInstance
-          .post('settings', this.settings_obj, { timeout: 0 })
-          .then((resp) => {
-            console.log(resp);
+        // Enter submits the form too
+        if (this.saving || !this.changed) return;
+        const sent = copy(this.settings_obj);
+        this.saving = true;
+        settingsApi
+          .saveSettings(sent)
+          .then((_) => {
+            this.saved = sent;
+            cachePage('settings', copy(sent));
             this.$buefy.toast.open({
               message: 'Settings updated',
               type: 'is-success',
-              duration: 3000,
             });
           })
           .catch((err) => {
             useErrorNotification(err);
+          })
+          .finally(() => {
+            this.saving = false;
           });
       },
     },
     data() {
       return {
-        settings_obj: {
-          password_settings: {
-            number_req: false,
-            symbol_req: false,
-            lowercase_req: false,
-            uppercase_req: false,
-            min_length: 8,
-          },
-          timeout_settings: {
-            enabled: false,
-            timeout_min: 30,
-            warning_min: 3,
-          },
-          logging_settings: {
-            max_file_age: 365,
-            max_file_rotations: 3,
-            max_file_size: 100,
-          },
-        },
+        loaded: false,
+        saving: false,
+        saved: null,
+        settings_obj: null,
       };
     },
   };
 </script>
 <style scoped>
-  .custom-small {
-    width: 25%;
-    min-width: 150px;
+  /* a number box sized to its value before its label, like the switches */
+  .setting-number {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .setting-number :deep(.b-numberinput) {
+    flex: none;
+    width: 5.5em;
+    margin-bottom: 0;
+  }
+
+  /* dark like the page; text is 11:1 and the border 4.2:1 on the form */
+  .setting-number :deep(.input) {
+    background-color: #333333;
+    border-color: #b1b1b1;
+    color: #f5f5f5;
+  }
+
+  .setting-number :deep(.input[disabled]) {
+    border-color: #686868;
+    color: #b1b1b1;
+    box-shadow: none;
   }
 </style>

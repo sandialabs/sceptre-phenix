@@ -64,6 +64,10 @@ export const modules = {
     usersPageAllowed: () =>
       rbac.allowed('users', 'list') ||
       rbac.allowed('users', 'get', store.username),
+    userTokenAllowed: (username) =>
+      rbac.allowed('users', 'patch', username) &&
+      (username === store.username ||
+        rbac.allowed('users/tokens', 'create', username)),
   }),
   axios: () => ({ default: axios }),
   errorNotif: () => ({

@@ -1,5 +1,5 @@
-// The pages that poll the server on a timer, the VM tiles with their
-// screenshots, and how they hold back while the server is away.
+// The pages that poll the server on a timer, the hosts and the VM tiles with
+// their screenshots, and how they hold back while the server is away.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { capturing, loaderSpy, modules, resetMocks } = await vi.hoisted(
@@ -13,6 +13,7 @@ vi.mock('@/utils/websocket', modules.websocket);
 // the pages' loads are recorded
 vi.mock('@/utils/pageLoader.js', capturing);
 
+import Hosts from '@/views/Hosts.vue';
 import VMtilesView from '@/views/experiment/VMtilesView.vue';
 import {
   BACK_SPREAD_MS,
@@ -38,6 +39,7 @@ afterEach(() => {
 });
 
 describe.each([
+  ['the hosts', Hosts, '/hosts', RESOURCES.hosts.pollMs],
   ['the VM tiles', VMtilesView, '/vmtiles', RESOURCES.vmtiles.pollMs],
 ])('polling %s', (_, page, route, pollMs) => {
   const open = () => mountComponent(page, { route });

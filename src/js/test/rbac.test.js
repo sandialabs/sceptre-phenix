@@ -1,7 +1,7 @@
 // Which resources and resource names a role's policies allow; mirrors
 // role_test.go.
 import fc from 'fast-check';
-import { roleAllowed } from '@/utils/rbac.js';
+import { roleAllowed, userTokenAllowed } from '@/utils/rbac.js';
 import { usePhenixStore } from '@/store.js';
 import { beforeEach, test, expect, vi } from 'vitest';
 
@@ -226,6 +226,32 @@ test('a policy with null resource names allows no resource name', () => {
 
   expect(roleAllowed('vms/forwards', 'create')).toBe(true);
   expect(roleAllowed('vms/forwards', 'create', 'expA/vm1')).toBe(false);
+});
+
+test('a token for another user also needs users/tokens create on them', () => {
+  const usersPatch = {
+    resources: ['users'],
+    resourceNames: ['alice', 'bob', 'carol'],
+    verbs: ['patch'],
+  };
+  const signInAsAlice = (...policies) =>
+    usePhenixStore.mockReturnValue({
+      username: 'alice',
+      role: { name: `Tokens ${policies.length}`, policies },
+    });
+
+  signInAsAlice(usersPatch);
+  expect(userTokenAllowed('alice')).toBe(true);
+  expect(userTokenAllowed('bob')).toBe(false);
+  expect(userTokenAllowed('dave')).toBe(false);
+
+  signInAsAlice(usersPatch, {
+    resources: ['users/tokens'],
+    resourceNames: ['bob'],
+    verbs: ['create'],
+  });
+  expect(userTokenAllowed('bob')).toBe(true);
+  expect(userTokenAllowed('carol')).toBe(false);
 });
 
 // Go's filepath.Match for patterns of literals, * and ?: neither crosses a /

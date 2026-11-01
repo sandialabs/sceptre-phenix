@@ -308,25 +308,10 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 
 	if req.NewPassword != "" {
 		if req.Password == "" {
-			plog.Error(
-				plog.TypeSecurity,
-				"new password provided without old password",
-				"user",
-				uname,
-			)
-
 			return weberror.New(http.StatusBadRequest, "cannot change password without the current password")
 		}
 
 		if !settings.IsPasswordValid(req.NewPassword) {
-			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-			plog.Error(
-				plog.TypeSecurity,
-				"new password does not meet requirements",
-				"requester",
-				user,
-			)
-
 			errStr := "new password does not meet the requirements:\n" + settings.GetPasswordSettingsHTML()
 
 			return weberror.New(http.StatusBadRequest, errStr)
