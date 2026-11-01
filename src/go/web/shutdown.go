@@ -15,6 +15,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/lifecycle"
+	"phenix/web/scorch"
 )
 
 // SignalError is the cause of a Start context canceled by a signal.
@@ -105,10 +106,11 @@ func (s *uiServer) shutdown(cause error) {
 		wg sync.WaitGroup
 		mu sync.Mutex
 
-		cut          []string // servers whose requests the deadline cut off
-		clients      int
-		running      []string
-		consolesLeft int
+		cut           []string // servers whose requests the deadline cut off
+		clients       int
+		running       []string
+		consolesLeft  int
+		terminalsLeft int
 	)
 
 	wg.Add(len(s.servers))
@@ -127,7 +129,7 @@ func (s *uiServer) shutdown(cause error) {
 		}()
 	}
 
-	wg.Add(3) //nolint:mnd // the goroutines below
+	wg.Add(4) //nolint:mnd // the goroutines below
 
 	go func() {
 		defer wg.Done()
@@ -147,6 +149,12 @@ func (s *uiServer) shutdown(cause error) {
 		defer wg.Done()
 
 		consolesLeft = consoles.endAll(ctx, consoleEndedShutdown)
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		terminalsLeft = scorch.KillTerminals(ctx)
 	}()
 
 	handlers := lifecycle.Wait(ctx)
@@ -181,6 +189,10 @@ func (s *uiServer) shutdown(cause error) {
 
 	if consolesLeft > 0 {
 		left = append(left, "minimega_consoles", consolesLeft)
+	}
+
+	if terminalsLeft > 0 {
+		left = append(left, "scorch_terminals", terminalsLeft)
 	}
 
 	if len(handlers) > 0 {

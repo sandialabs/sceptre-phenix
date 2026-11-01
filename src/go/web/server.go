@@ -186,7 +186,7 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 
 	plog.Info(plog.TypeSystem, "starting scorch processors")
 
-	go scorch.Start(o.basePath)
+	scorch.Start(background, o.basePath)
 
 	plog.Info(plog.TypeSystem, "starting log publisher")
 
@@ -435,28 +435,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/experiments/{name}/files", weberror.ErrorHandler(GetExperimentFiles)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/files/{filename}", weberror.ErrorHandler(GetExperimentFile)).
 		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.GetComponentOutput)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(scorch.StreamComponentOutput)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines", weberror.ErrorHandler(scorch.GetPipelines)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}/{loop}", weberror.ErrorHandler(scorch.GetPipeline)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.StartPipeline)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.CancelPipeline)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/terminals", weberror.ErrorHandler(scorch.GetTerminals)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/terminals/{pid}", weberror.ErrorHandler(scorch.ConnectTerminal)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/terminals/{pid}/exit/{id}", weberror.ErrorHandler(scorch.ExitTerminal)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/terminals/{pid}/ws/{id}", weberror.ErrorHandler(scorch.StreamTerminal)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.ConnectTerminal)).
-		Methods("GET", "OPTIONS")
+	scorch.RegisterRoutes(api)
 	api.Handle("/experiments/{name}/soh", weberror.ErrorHandler(GetExperimentSoH)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(GetVMs)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(UpdateVMs)).Methods("PATCH", "OPTIONS")

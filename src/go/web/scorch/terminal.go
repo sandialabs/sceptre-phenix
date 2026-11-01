@@ -15,6 +15,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/lifecycle"
 )
 
 type WebTerm struct {
@@ -54,7 +55,11 @@ var (
 	webTermsExp = make(map[string]WebTerm) //nolint:gochecknoglobals // global state
 )
 
-var ErrTerminalNotFound = errors.New("web terminal not found")
+var (
+	ErrTerminalNotFound = errors.New("web terminal not found")
+	// ErrServerStopping is why no terminal starts once the server shuts down.
+	ErrServerStopping = errors.New(lifecycle.Unavailable)
+)
 
 func CreateWebTerminal(
 	ctx context.Context,
@@ -64,6 +69,10 @@ func CreateWebTerminal(
 	args []string,
 	envs ...string,
 ) (chan struct{}, error) {
+	if lifecycle.IsStopping() {
+		return nil, ErrServerStopping
+	}
+
 	term := newWebTerm(exp, run, loop, stage, name)
 
 	c := exec.CommandContext(ctx, cmd, args...)
@@ -81,6 +90,18 @@ func CreateWebTerminal(
 	plog.Info(plog.TypeSystem, "spawned new terminal", "cmd", cmd, "pid", term.Pid)
 
 	webTermMu.Lock()
+
+	// checked again under the lock KillTerminals lists terminals under
+	if lifecycle.IsStopping() {
+		webTermMu.Unlock()
+
+		_ = c.Process.Kill()
+		_ = c.Wait()
+		_ = tty.Close()
+
+		return nil, ErrServerStopping
+	}
+
 	webTermsPid[term.Pid] = term
 	webTermsExp[term.key] = term
 	webTermMu.Unlock()
@@ -98,7 +119,7 @@ func CreateWebTerminal(
 	body, _ := json.Marshal(term)
 
 	broker.Broadcast(
-		nil,
+		bt.NewRequestPolicy("experiments", "get", exp),
 		bt.NewResource("apps/scorch", exp, "terminal-create"),
 		body,
 	)
@@ -106,16 +127,24 @@ func CreateWebTerminal(
 	return term.Done, nil
 }
 
+// KillTerminal ends the terminal's process. A terminal already ended is left
+// alone, so its owner's context and an exit request may both end it.
 func KillTerminal(term WebTerm) error {
-	close(term.Done)
-
 	webTermMu.Lock()
+
+	if known, ok := webTermsPid[term.Pid]; !ok || known.Done != term.Done {
+		webTermMu.Unlock()
+
+		return nil
+	}
+
+	close(term.Done)
 	delete(webTermsPid, term.Pid)
 	delete(webTermsExp, term.key)
 	webTermMu.Unlock()
 
 	broker.Broadcast(
-		nil,
+		bt.NewRequestPolicy("experiments", "get", term.Exp),
 		bt.NewResource("apps/scorch", term.Exp, "terminal-exit"),
 		nil,
 	)
@@ -133,6 +162,37 @@ func KillTerminal(term WebTerm) error {
 	plog.Debug(plog.TypeSystem, "process killed", "pid", term.Pid)
 
 	return nil
+}
+
+// KillTerminals ends every terminal's process, and waits for them until ctx is
+// done. It returns how many had not ended by then.
+func KillTerminals(ctx context.Context) int {
+	webTermMu.Lock()
+	terms := make([]WebTerm, 0, len(webTermsPid))
+
+	for _, term := range webTermsPid {
+		terms = append(terms, term)
+	}
+	webTermMu.Unlock()
+
+	killed := make(chan struct{}, len(terms))
+
+	for _, term := range terms {
+		go func() {
+			_ = KillTerminal(term)
+			killed <- struct{}{}
+		}()
+	}
+
+	for left := len(terms); left > 0; left-- {
+		select {
+		case <-killed:
+		case <-ctx.Done():
+			return left
+		}
+	}
+
+	return 0
 }
 
 func GetTerminalByPID(pid int) (WebTerm, error) {
