@@ -19,6 +19,10 @@ import (
 	"phenix/web/weberror"
 )
 
+// maxFilesRequestBytes bounds the JSON body listing files to download or
+// delete: well over 500 long paths.
+const maxFilesRequestBytes = 1 << 20
+
 // GetExperimentFiles - GET /experiments/{name}/files.
 func GetExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 	var (

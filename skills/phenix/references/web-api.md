@@ -58,7 +58,11 @@ lack it). Points that are easy to miss:
 - `OPTIONS` on an `/api/v1` route answers `204` before auth, without running
   the route.
 - VM power changes are `POST`: `.../vms/{name}/start`, `/stop`, `/restart`,
-  `/shutdown`, `/reset` and `/redeploy`. Sign out with `POST /logout`.
+  `/shutdown`, `/reset` and `/redeploy`, or `POST /experiments/{exp}/vms/actions`
+  for several VMs at once. `PATCH /experiments/{exp}/vms` changes several VMs'
+  settings, carrying on past a failure, and lists each VM it skipped or failed
+  in the response's `errors` (`403` if the role may patch none, `500` if all
+  fail). Sign out with `POST /logout`.
 - Paths use camelCase (`captureSubnet`, `memorySnapshot`).
 - `GET /schemas/{version}` returns the whole schema file (`v0` Workflow, `v1`
   Topology/Experiment/Image/User/Role, `v2` Scenario).
@@ -69,6 +73,8 @@ lack it). Points that are easy to miss:
   without them they return everything. `/vms`, `/disks`, `/jobs` and
   `/experiments/{name}/vms` also report the unpaged `total`.
 - Other users' [background jobs](jobs.md) answer `404`, not `403`.
+- Bulk VM actions start [background jobs](jobs.md) and answer `202` with a
+  `Location`.
 - Workflow routes are covered in [`workflow.md`](workflow.md#rest-endpoints).
 
 When a config fails its schema, the config routes (`POST /configs`,

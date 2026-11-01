@@ -32,6 +32,13 @@ func GetNewDiskName(expName, vmName string) (string, error) {
 		return "", fmt.Errorf("getting base disk image: %w", err)
 	}
 
+	return newDiskName(base, time.Now()), nil
+}
+
+// newDiskName is the name of a new image made from the VM image base at now: base with the time in place of any
+// earlier one. It keeps a .qcow2, .qc2 or .qcow extension, since CommitToDisk writes into a copy of the image's
+// base, which keeps its format, and adds .qc2 to any other.
+func newDiskName(base string, now time.Time) string {
 	name := strings.TrimSuffix(base, filepath.Ext(base))
 
 	// For example, if name = ubuntu_server_20191117102805, then this
@@ -40,13 +47,13 @@ func GetNewDiskName(expName, vmName string) (string, error) {
 		name = match[1]
 	}
 
-	name = name + "_" + time.Now().Format("20060102150405") + filepath.Ext(base)
+	name = name + "_" + now.Format("20060102150405") + filepath.Ext(base)
 
-	if ext := filepath.Ext(name); ext != ".qcow2" && ext != ".qc2" {
+	if ext := filepath.Ext(name); ext != ".qcow2" && ext != ".qc2" && ext != ".qcow" {
 		name += ".qc2"
 	}
 
-	return name, nil
+	return name
 }
 
 func getVMImage(expName, vmName string) (string, error) {
@@ -64,12 +71,12 @@ func getVMImage(expName, vmName string) (string, error) {
 	return vm.Hardware().Drives()[0].Image(), nil
 }
 
-func getBackingImage(path string) (string, error) {
+func getBackingImage(ctx context.Context, path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = common.PhenixBase + "/images/" + path
 	}
 
-	chain, err := getImageBackingChain(path)
+	chain, err := getImageBackingChain(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("getting image backing chain for %s: %w", path, err)
 	}
@@ -95,8 +102,8 @@ func getBackingImage(path string) (string, error) {
 	return path, nil
 }
 
-func getImageSnapshots(path string) ([]string, error) {
-	chain, err := getImageBackingChain(path)
+func getImageSnapshots(ctx context.Context, path string) ([]string, error) {
+	chain, err := getImageBackingChain(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("getting image backing chain for %s: %w", path, err)
 	}
@@ -116,10 +123,10 @@ func getImageSnapshots(path string) ([]string, error) {
 	return snapshots, nil
 }
 
-func getImageBackingChain(path string) ([]qemuBackingChain, error) {
+func getImageBackingChain(ctx context.Context, path string) ([]qemuBackingChain, error) {
 	cmd := fmt.Sprintf("qemu-img info --backing-chain %s --output json", path)
 
-	resp, err := mm.MeshShellResponse("", cmd)
+	resp, err := mm.MeshShellResponse(ctx, "", cmd)
 	if err != nil {
 		return nil, fmt.Errorf("getting image info for %s: %w", path, err)
 	}
@@ -133,12 +140,16 @@ func getImageBackingChain(path string) ([]qemuBackingChain, error) {
 	return chain, nil
 }
 
+// copyProgressInterval is how often a copier reports its progress.
+const copyProgressInterval = time.Second
+
 type copier struct {
-	subs []chan float64
+	subs     []chan float64
+	interval time.Duration // how often it reports its progress
 }
 
-func newCopier() *copier {
-	return new(copier)
+func newCopier(interval time.Duration) *copier {
+	return &copier{subs: nil, interval: interval}
 }
 
 func (c *copier) subscribe() chan float64 {
@@ -174,24 +185,37 @@ func (c copier) copy(ctx context.Context, src, dst string) error {
 
 	pw := newProgressWriter(out)
 	cr := newCancelableReader(ctx, in)
-	done := make(chan struct{})
+
+	var (
+		done         = make(chan struct{})
+		progressDone = make(chan struct{})
+	)
 
 	go func() {
+		defer close(progressDone)
+
 		info, _ := in.Stat()
 		size := info.Size()
 
+		ticker := time.NewTicker(c.interval)
+		defer ticker.Stop()
+
 		for {
+			n := pw.N()
+
+			// a subscriber that stops reading does not hold up the copy's end
+			for _, s := range c.subs {
+				select {
+				case s <- float64(n) / float64(size):
+				case <-done:
+					return
+				}
+			}
+
 			select {
 			case <-done:
 				return
-			default:
-				n := pw.N()
-
-				for _, s := range c.subs {
-					s <- float64(n) / float64(size)
-				}
-
-				time.Sleep(1 * time.Second)
+			case <-ticker.C:
 			}
 		}
 	}()
@@ -199,6 +223,9 @@ func (c copier) copy(ctx context.Context, src, dst string) error {
 	_, err = io.Copy(pw, cr)
 
 	close(done)
+
+	// done closes the subscriptions, which the progress goroutine sends on
+	<-progressDone
 
 	if err != nil {
 		return err

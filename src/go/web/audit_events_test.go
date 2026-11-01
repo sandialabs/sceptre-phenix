@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	"phenix/store/storetest"
 	"phenix/util/plog"
+	"phenix/web/cache"
 	"phenix/web/middleware"
 	"phenix/web/weberror"
 )
@@ -406,4 +408,69 @@ func TestExperimentActionsAreAudited(t *testing.T) {
 	wantAudit(t, got, "app-trigger-cancel", "success", map[string]any{
 		"phenix.experiment.name": "stopped", "phenix.app.names": "a,b", "event.category": "process",
 	})
+}
+
+// A single-VM power action is audited when its request is answered; a bulk
+// action's VMs are audited as refused when it is asked for, and the others
+// when its job finishes.
+func TestVMPowerActionsAreAudited(t *testing.T) {
+	useVMExperiment(t, true, "a", "b", "c")
+
+	var (
+		registry = useJobs(t)
+		events   = captureAudit(t)
+	)
+
+	fakeVMAction(t, "pause", map[string]error{"b": errors.New("minimega says no")}, nil)
+
+	var (
+		allowed = serveAs(t, "alice", testRole("vms/stop", "update", "exp/a", "exp/b")).URL
+		denied  = serveAs(t, "bob", testRole("vms", "get", "exp/*")).URL
+		vms     = "/api/v1/experiments/exp/vms/"
+	)
+
+	do(t, http.MethodPost, allowed+vms+"a/stop", "")
+	do(t, http.MethodPost, allowed+vms+"b/stop", "")
+	do(t, http.MethodPost, denied+vms+"a/stop", "")
+
+	if err := cache.LockVMForStarting("exp", "a"); err != nil {
+		t.Fatalf("cache.LockVMForStarting(exp, a) error = %v", err)
+	}
+
+	do(t, http.MethodPost, allowed+vms+"a/stop", "")
+	cache.UnlockVM("exp", "a")
+
+	got := events()
+
+	wantAudit(t, got, "vm-stop", "success", map[string]any{
+		"user.name": "alice", "phenix.experiment.name": "exp", "phenix.vm.name": "a", "event.category": "host",
+		"url.path": vms + "a/stop",
+	})
+	wantAudit(t, got, "vm-stop", "failure", map[string]any{"phenix.vm.name": "b", "error.message": "minimega says no"})
+	wantAudit(t, got, "vm-stop", "failure", map[string]any{"user.name": "bob", "event.reason": "forbidden"})
+	wantAudit(t, got, "vm-stop", "failure", map[string]any{
+		"phenix.vm.name": "a", "error.message": (&cache.LockedError{What: "vm", Name: "a", Status: cache.StatusStarting}).Error(),
+	})
+
+	resp := postVMActions(t, allowed, "pause", "a", "b", "c")
+
+	var started struct {
+		ID string `json:"id"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
+		t.Fatalf("decoding POST vms/actions: %v", err)
+	}
+
+	waitJob(t, registry, started.ID)
+
+	job := map[string]any{"phenix.job.id": started.ID}
+	got = waitAudit(t, events, "vm-stop", "failure", map[string]any{"phenix.job.id": started.ID, "phenix.vm.name": "b"})
+
+	wantAudit(t, got, "vm-stop", "failure", map[string]any{"phenix.vm.name": "c", "event.reason": "forbidden"})
+	wantAudit(t, got, "vm-stop", "success", map[string]any{"phenix.job.id": started.ID, "phenix.vm.name": "a", "user.name": "alice"})
+
+	if n := countAudit(got, "vm-stop", "success", job) + countAudit(got, "vm-stop", "failure", job); n != 2 {
+		t.Errorf("bulk pause of a, b and c audited %d VMs in its job, want 2 (c was refused)", n)
+	}
 }

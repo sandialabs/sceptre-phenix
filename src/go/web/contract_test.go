@@ -11,6 +11,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
+	"phenix/api/job"
 	"phenix/store"
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
@@ -41,9 +45,15 @@ func serveContractAs(t *testing.T, role rbac.Role) *httptest.Server {
 	return serveContract(t, func(o *serverOptions) { o.jwtKey = key })
 }
 
-// useContractFixture sets up the contract fixture until the test ends: running test-experiment with test-vm mounted
-// (etc/hostname), and the user bob.
-func useContractFixture(t *testing.T) {
+// contractFixture: running test-experiment with test-vm mounted (etc/hostname), the user bob, and bob's finished job
+// (3-byte artifact).
+type contractFixture struct {
+	jobs    *job.Registry
+	bobsJob job.Job
+}
+
+// useContractFixture sets up the contract fixture until the test ends.
+func useContractFixture(t *testing.T) contractFixture {
 	t.Helper()
 
 	useExperimentFilesDir(t, nil)
@@ -55,6 +65,11 @@ func useContractFixture(t *testing.T) {
 		Version: "phenix.sandia.gov/v1", Kind: "User", Metadata: store.ConfigMetadata{Name: "bob"},
 		Spec: map[string]any{"username": "bob", "rbac": map[string]any{"roleName": "test-role", "policies": []any{}}},
 	})
+
+	registry := useJobs(t)
+	bobs := waitJob(t, registry, startTestJob(t, registry, "bob", contractExp, nil, "zip").ID)
+
+	return contractFixture{jobs: registry, bobsJob: bobs}
 }
 
 // useContractMount mounts test-vm of test-experiment, with the file
@@ -119,7 +134,7 @@ func serveContract(t *testing.T, set func(*serverOptions)) *httptest.Server {
 // answers past RBAC.
 type contractRoute struct {
 	method string
-	// path is the request's path and query
+	// path is the request's path and query; {job} stands for bob's job
 	path string
 	body string
 	// header is the request's headers, as name and value pairs
@@ -170,11 +185,29 @@ func contractRoutes() []contractRoute {
 		diskGet = testRole("disks", "get", contractDisk)
 		mount   = testRole("vms/mount", "get", contractExp+"/"+contractVM)
 		one     = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
+		jobs    = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
 		ok      = []int{http.StatusOK}
 	)
 
 	return []contractRoute{
-		// VMs
+		// jobs: another user's job is hidden without a jobs permission on
+		// its experiment; GET /jobs lists only what the role may see
+		{method: "GET", path: "/api/v1/jobs", want: ok},
+		{method: "GET", path: "/api/v1/jobs/{job}", need: jobs("get"), hidden: http.StatusNotFound},
+		{method: "POST", path: "/api/v1/jobs/{job}/cancel", need: jobs("update"), hidden: http.StatusNotFound},
+		{method: "DELETE", path: "/api/v1/jobs/{job}", need: jobs("delete"), hidden: http.StatusNotFound},
+		{method: "GET", path: "/api/v1/jobs/{job}/artifact", need: jobs("get"), hidden: http.StatusNotFound},
+		{method: "HEAD", path: "/api/v1/jobs/{job}/artifact", need: jobs("get"), hidden: http.StatusNotFound},
+
+		// VMs: a bulk update refuses a role that may patch none of its VMs
+		{
+			method: "PATCH", path: exp + "/vms", body: `{"vms":[{"name":"test-vm","interface":{"index":0,"vlan":"EXP"}}]}`,
+			need: one(testRole("vms", "patch", contractExp+"/"+contractVM)),
+		},
+		{
+			method: "POST", path: exp + "/vms/actions", body: `{"action":"start","vms":["test-vm"]}`,
+			need: one(testRole("vms/start", "update", contractExp+"/"+contractVM)),
+		},
 		{method: "GET", path: vm + "/vnc/ws", need: one(testRole("vms/vnc", "get", contractExp+"/"+contractVM))},
 		{method: "GET", path: vm + "/files/download?path=etc/hostname", need: one(mount), want: ok},
 		{method: "HEAD", path: vm + "/files/download?path=etc/hostname", need: one(mount), want: ok},
@@ -218,29 +251,33 @@ func TestContractRBAC(t *testing.T) {
 
 			for name, role := range denied {
 				t.Run(name, func(t *testing.T) {
-					useContractFixture(t)
+					f := useContractFixture(t)
 					server := serveContractAs(t, role).URL
 
-					resp := do(t, route.method, server+route.path, route.body, route.header...)
+					path := strings.ReplaceAll(route.path, "{job}", f.bobsJob.ID)
+
+					resp := do(t, route.method, server+path, route.body, route.header...)
 					if resp.StatusCode != route.denied() {
 						t.Fatalf("%s %s = %d, want %d", route, name, resp.StatusCode, route.denied())
 					}
 
-					wantDocumentedBody(t, route.method, route.path, resp)
+					wantDocumentedBody(t, route.method, path, resp)
 					wantErrorBody(t, route, resp)
 				})
 			}
 
 			t.Run("with exactly what it needs", func(t *testing.T) {
-				useContractFixture(t)
+				f := useContractFixture(t)
 				server := serveContractAs(t, combinedRole(route.need...)).URL
 
-				resp := do(t, route.method, server+route.path, route.body, route.header...)
+				path := strings.ReplaceAll(route.path, "{job}", f.bobsJob.ID)
+
+				resp := do(t, route.method, server+path, route.body, route.header...)
 				if !route.passed(resp.StatusCode) {
 					t.Errorf("%s with exactly what it needs = %d, want it past RBAC: %s", route, resp.StatusCode, readBody(t, resp))
 				}
 
-				wantDocumentedBody(t, route.method, route.path, resp)
+				wantDocumentedBody(t, route.method, path, resp)
 
 				// ordered against websocket messages, as every API route's
 				if resp.Header.Get("X-Phenix-Seq") == "" {
@@ -334,6 +371,51 @@ func wantErrorBody(t *testing.T, route contractRoute, resp *http.Response) {
 
 	if want := weberror.CodeFor(resp.StatusCode); body.Code != want {
 		t.Errorf("%s error body code = %q, want %q", route, body.Code, want)
+	}
+}
+
+// GET /jobs lists another user's job only for a role that may list the jobs
+// of its experiment.
+func TestContractJobListing(t *testing.T) {
+	for name, tc := range map[string]struct {
+		role rbac.Role
+		want bool
+	}{
+		"jobs list":                     {testRole("jobs", "list", contractExp), true},
+		"jobs list on other experiment": {testRole("jobs", "list", contractOther), false},
+		"jobs get":                      {testRole("jobs", "get", contractExp), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := useContractFixture(t)
+			server := serveContractAs(t, tc.role).URL
+
+			resp := do(t, http.MethodGet, server+"/api/v1/jobs", "")
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("GET /api/v1/jobs = %d, want %d", resp.StatusCode, http.StatusOK)
+			}
+
+			var body struct {
+				Jobs []job.Job `json:"jobs"`
+			}
+
+			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+				t.Fatalf("decoding GET /api/v1/jobs: %v", err)
+			}
+
+			ids := make([]string, 0, len(body.Jobs))
+			for _, j := range body.Jobs {
+				ids = append(ids, j.ID)
+			}
+
+			var want []string
+			if tc.want {
+				want = []string{f.bobsJob.ID}
+			}
+
+			if diff := cmp.Diff(want, ids, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("GET /api/v1/jobs job IDs mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -493,5 +575,76 @@ func TestContractPublicRoutes(t *testing.T) {
 				t.Errorf("GET %s Content-Type = %q, want %s", path, got, tc.contentType)
 			}
 		})
+	}
+}
+
+// The Unix socket serves its routes to every local client, as global-admin,
+// with the response's sequence number, and no other API route: each socket
+// route answers, and an HTTP-only route or method is not there.
+func TestContractSocket(t *testing.T) {
+	f := useContractFixture(t)
+	useGlobalAdmin(t)
+
+	original := o
+	t.Cleanup(func() { o = original })
+
+	o = newServerOptions()
+
+	server := httptest.NewServer(newSocketRouter())
+	t.Cleanup(server.Close)
+
+	covered := map[string]bool{}
+
+	for _, tc := range []struct {
+		method, path, body, contentType string
+		// route is the socket route's path template, or empty for a route or
+		// method only HTTP serves
+		route string
+		want  int
+	}{
+		{method: "GET", path: "/options", route: "/options", want: http.StatusOK},
+		{method: "GET", path: "/jobs", route: "/jobs", want: http.StatusOK},
+		{method: "GET", path: "/jobs/{job}", route: "/jobs/{id}", want: http.StatusOK},
+		{method: "POST", path: "/jobs/{job}/cancel", route: "/jobs/{id}/cancel", want: http.StatusConflict},
+		{
+			method: "POST", path: "/workflow/configs/main?dryRun=true", body: upsertTestTopology, contentType: mimeYAML,
+			route: "/workflow/configs/{branch}", want: http.StatusOK,
+		},
+		// without a workflow config's content type
+		{
+			method: "POST", path: "/workflow/apply/main?dryRun=true", body: "{}",
+			route: "/workflow/apply/{branch}", want: http.StatusBadRequest,
+		},
+		{method: "DELETE", path: "/jobs/{job}", want: http.StatusMethodNotAllowed},
+		{method: "OPTIONS", path: "/jobs", want: http.StatusMethodNotAllowed},
+		{method: "GET", path: "/jobs/{job}/artifact", want: http.StatusNotFound},
+	} {
+		if tc.route != "" {
+			covered[tc.method+" "+tc.route] = true
+		}
+
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			var header []string
+			if tc.contentType != "" {
+				header = []string{"Content-Type", tc.contentType}
+			}
+
+			resp := do(t, tc.method, server.URL+"/api/v1"+strings.ReplaceAll(tc.path, "{job}", f.bobsJob.ID), tc.body, header...)
+			if resp.StatusCode != tc.want {
+				t.Errorf("socket %s %s = %d, want %d: %s", tc.method, tc.path, resp.StatusCode, tc.want, readBody(t, resp))
+			}
+
+			if tc.route != "" && resp.Header.Get("X-Phenix-Seq") == "" {
+				t.Errorf("socket %s %s: X-Phenix-Seq is missing", tc.method, tc.path)
+			}
+		})
+	}
+
+	for _, r := range socketRoutes() {
+		for _, method := range r.methods {
+			if !covered[method+" "+r.path] {
+				t.Errorf("socket route %s %s has no case", method, r.path)
+			}
+		}
 	}
 }

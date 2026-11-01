@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -12,6 +13,12 @@ import (
 // experiment to the given VLAN. The given interface must already exist in the
 // VM. It returns any errors encountered while connecting the interface.
 func Connect(expName, vmName string, iface int, vlan string) error {
+	return connect(context.Background(), expName, vmName, iface, vlan)
+}
+
+// connect is Connect, giving up a minimega command not yet sent once ctx is
+// done (see mm.Context).
+func connect(ctx context.Context, expName, vmName string, iface int, vlan string) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -31,6 +38,7 @@ func Connect(expName, vmName string, iface int, vlan string) error {
 		mm.ConnectInterface(iface),
 		mm.ConnectVLAN(vlan),
 		mm.Bridge(exp.Spec.DefaultBridge()),
+		mm.Context(ctx),
 	)
 	if err != nil {
 		return fmt.Errorf("connecting VM interface to VLAN: %w", err)
@@ -43,6 +51,12 @@ func Connect(expName, vmName string, iface int, vlan string) error {
 // experiment from the VLAN it's currently connected to (if any). It returns any
 // errors encountered while disconnecting the interface.
 func Disconnect(expName, vmName string, iface int) error {
+	return disconnect(context.Background(), expName, vmName, iface)
+}
+
+// disconnect is Disconnect, giving up a minimega command not yet sent once ctx
+// is done (see mm.Context).
+func disconnect(ctx context.Context, expName, vmName string, iface int) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -51,7 +65,7 @@ func Disconnect(expName, vmName string, iface int) error {
 		return errors.New("no VM name provided")
 	}
 
-	err := mm.DisconnectVMInterface(mm.NS(expName), mm.VMName(vmName), mm.ConnectInterface(iface))
+	err := mm.DisconnectVMInterface(mm.NS(expName), mm.VMName(vmName), mm.ConnectInterface(iface), mm.Context(ctx))
 	if err != nil {
 		return fmt.Errorf("disconnecting VM interface: %w", err)
 	}
