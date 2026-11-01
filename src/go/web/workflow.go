@@ -603,16 +603,25 @@ func upsertWorkflowConfig(src []byte, u configUpsert) (*store.Config, error) {
 
 	// The permission checks above were for the name before expansion.
 	if fmt.Sprintf("%s/%s", cfg.Kind, cfg.Metadata.Name) != u.name {
-		return nil, weberror.NewWebError(nil, "a config's kind and name can use no placeholder but ${BRANCH_NAME}")
+		return nil, weberror.NewWebError(nil, "a config's kind and name can use only the ${BRANCH_NAME} placeholder")
 	}
 
 	name := u.name
 
 	if u.exists {
+		if err := keepUserSecrets(name, cfg); err != nil {
+			return nil, weberror.NewWebError(err, "unable to read config %s", name).
+				SetStatus(http.StatusInternalServerError)
+		}
+
 		err = updateOrValidate(name, cfg, u.dryRun)
 		if err != nil {
 			if errors.Is(err, store.ErrNotExist) {
 				return nil, weberror.NewWebError(err, "config to update (%s) does not exist", name)
+			}
+
+			if errors.Is(err, store.ErrConflict) {
+				return nil, conflictWebError(err, name)
 			}
 
 			if errors.Is(err, types.ErrValidationFailed) {
