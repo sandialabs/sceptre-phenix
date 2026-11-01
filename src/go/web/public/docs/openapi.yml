@@ -2660,6 +2660,12 @@ paths:
         are `shutdown` (POST
         .../shutdown, `vms/shutdown` `update`), `resetDisk` (POST .../reset,
         `vms/reset` `update`) and `kill` (DELETE .../{vm_name}, `vms` `delete`).
+        Before a `start` or `restart`, the job checks the disk images and CD-ROM
+        images of the VMs the role may act on. It checks them as a start of the
+        experiment does (see the `experiment.disk-check` setting). A VM with a
+        missing image, or an image that qemu cannot open, fails immediately:
+        its `error` starts with `broken VM disk images` and names each disk and
+        problem.
       operationId: postExperimentsNameVmsActions
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"

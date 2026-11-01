@@ -1,5 +1,11 @@
 import { h } from 'vue';
 
+import {
+  brokenDisks,
+  brokenDisksSummary,
+  diskProblemLine,
+  jobDiskProblems,
+} from '@/utils/brokenDisks.js';
 import { escapeHTML } from '@/utils/escapeHTML.js';
 import { openNotification } from '@/utils/notify.js';
 import { namedList, plural, pluralWord, upperFirst } from '@/utils/plural.js';
@@ -198,12 +204,24 @@ export function isRetryable(err) {
 }
 
 // The outcome of each name's request, from Promise.allSettled's results in
-// the same order: { name, status, error, retryable }.
+// the same order: { name, status, error, retryable }, and `details` lines for
+// a start refused for broken disks.
 export function outcomeFromSettled(names, results) {
   return names.map((name, i) => {
     const result = results[i];
     if (result?.status === 'fulfilled') {
       return { name, status: 'succeeded', error: null, retryable: false };
+    }
+    const disks = brokenDisks(errorBody(result?.reason?.response?.data));
+    if (disks) {
+      const vms = new Set(disks.map((disk) => disk.vm)).size;
+      return {
+        name,
+        status: 'failed',
+        error: brokenDisksSummary(disks.length, vms),
+        retryable: false,
+        details: disks.map((disk) => `VM ${disk.vm}: ${diskProblemLine(disk)}`),
+      };
     }
     return {
       name,
@@ -214,14 +232,23 @@ export function outcomeFromSettled(names, results) {
   });
 }
 
-// The outcome of each of a background job's items.
+// The outcome of each of a background job's items, with `details` lines for
+// a VM failed for its broken disks.
 export function outcomeFromJob(job) {
-  return (job?.items ?? []).map((item) => ({
-    name: item.name,
-    status: item.status,
-    error: item.error ?? null,
-    retryable: !!item.retryable,
-  }));
+  return (job?.items ?? []).map((item) => {
+    const outcome = {
+      name: item.name,
+      status: item.status,
+      error: item.error ?? null,
+      retryable: !!item.retryable,
+    };
+    const problems = jobDiskProblems(item.error);
+    if (problems?.length) {
+      outcome.error = brokenDisksSummary(problems.length);
+      outcome.details = problems;
+    }
+    return outcome;
+  });
 }
 
 // How many items succeeded, failed, were skipped, and were canceled, and the
