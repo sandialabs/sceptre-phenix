@@ -76,6 +76,9 @@ are only available to Global Administrator or Global Viewer.
     </template>
 
     <template #end>
+      <b-navbar-item v-if="auth" tag="div">
+        <jobs-menu></jobs-menu>
+      </b-navbar-item>
       <!-- Buttons, so the keyboard reaches them too. While a logout waits
            for the server, they say so. -->
       <b-navbar-item
@@ -105,8 +108,10 @@ are only available to Global Administrator or Global Viewer.
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
+  import JobsMenu from '@/components/jobs/JobsMenu.vue';
 
   export default {
+    components: { JobsMenu },
     setup() {
       return { roleAllowed };
     },

@@ -64,10 +64,11 @@ lack it). Points that are easy to miss:
   Topology/Experiment/Image/User/Role, `v2` Scenario).
   `GET /schemas/{kind}/{version}` returns one kind, only at the version it is
   stored at; any other kind or version answers `404`.
-- `GET /experiments`, `/vms`, `/disks` and the experiment VM and file lists
-  page with `pageNum` and `perPage` (both, from 1; `400` otherwise); without
-  them they return everything. `/vms`, `/disks` and `/experiments/{name}/vms`
-  also report the unpaged `total`.
+- `GET /experiments`, `/vms`, `/disks`, `/jobs` and the experiment VM and file
+  lists page with `pageNum` and `perPage` (both, from 1; `400` otherwise);
+  without them they return everything. `/vms`, `/disks`, `/jobs` and
+  `/experiments/{name}/vms` also report the unpaged `total`.
+- Other users' [background jobs](jobs.md) answer `404`, not `403`.
 - Workflow routes are covered in [`workflow.md`](workflow.md#rest-endpoints).
 
 When a config fails its schema, the config routes (`POST /configs`,

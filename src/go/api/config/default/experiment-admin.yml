@@ -33,6 +33,13 @@ spec:
     verbs:
     - create
   - resources:
+    - jobs
+    verbs:
+    - list
+    - get
+    - update
+    - delete
+  - resources:
     - hosts
     resourceNames:
     - "*"

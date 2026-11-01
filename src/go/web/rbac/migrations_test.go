@@ -372,3 +372,42 @@ func TestEnsureExperimentViewerMountScope(t *testing.T) {
 		t.Errorf("Allowed(%s, post, exp-b/vm) of the migrated user = true, want false", mountResource)
 	}
 }
+
+// The jobs migration lets Experiment Admin roles and their users act on others'
+// jobs of their experiments.
+//
+//nolint:paralleltest // replaces the store
+func TestEnsureJobsPermission(t *testing.T) {
+	var (
+		experiments = policy("experiments", nil, "list", "get")
+		scopedA     = policy("experiments", []string{"exp-a"}, "get")
+		jobVerbs    = []string{"list", "get", "update", "delete"}
+	)
+
+	useStore(t,
+		[]*v1.RoleSpec{
+			role(experimentAdminRole, experiments),
+			role(experimentUserRole, experiments),
+		},
+		[]*v1.UserSpec{
+			{Username: "scoped-admin", Role: role(experimentAdminRole, scopedA)},
+			// assigned before every unnamed policy was scoped
+			{Username: "unscoped-admin", Role: role(experimentAdminRole, scopedA, policy(jobsResource, nil, jobVerbs...))},
+			{Username: "user", Role: role(experimentUserRole, scopedA)},
+		},
+	)
+
+	want := map[string][]*v1.PolicySpec{
+		"role Experiment Admin": {experiments, policy(jobsResource, nil, jobVerbs...)},
+		"role Experiment User":  {experiments},
+		"user scoped-admin":     {scopedA, policy(jobsResource, []string{"exp-a"}, jobVerbs...)},
+		"user unscoped-admin":   {scopedA, policy(jobsResource, []string{"exp-a"}, jobVerbs...)},
+		"user user":             {scopedA},
+	}
+
+	for _, pass := range []string{"first", "repeated"} {
+		if diff := cmp.Diff(want, migrate(t, EnsureJobsPermission)); diff != "" {
+			t.Errorf("EnsureJobsPermission() %s pass: stored policies mismatch (-want +got):\n%s", pass, diff)
+		}
+	}
+}

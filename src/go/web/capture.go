@@ -45,9 +45,13 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var (
-		captures = mm.GetExperimentCaptures(mm.NS(name))
+		captures = mm.GetExperimentCaptures(mm.NS(name), mm.Context(ctx))
 		allowed  []mm.Capture
 	)
+
+	if requestGone(r) {
+		return nil
+	}
 
 	for _, capture := range captures {
 		if role.Allowed("experiments/captures", "list", name+"/"+capture.VM) {
@@ -94,7 +98,10 @@ func GetVMCaptures(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	captures := mm.GetVMCaptures(mm.NS(exp), mm.VMName(name))
+	captures := mm.GetVMCaptures(mm.NS(exp), mm.VMName(name), mm.Context(ctx))
+	if requestGone(r) {
+		return nil
+	}
 
 	body, err := marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(captures)})
 	if err != nil {

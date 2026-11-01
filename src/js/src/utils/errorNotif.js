@@ -1,6 +1,7 @@
 import { usePhenixStore } from '@/store.js';
 import { escapeHTML } from '@/utils/escapeHTML.js';
 import { openNotification } from '@/utils/notify.js';
+import { errorBody, errorSteps } from '@/utils/operations.js';
 import { noResponseMessage } from '@/utils/unreachable.js';
 
 // Shows an error: a request's, an Error, or a message (a string).
@@ -21,17 +22,19 @@ export async function useErrorNotification(error) {
   } else if (!('response' in error)) {
     message = errorHTML(error.message);
   } else {
-    message = responseMessage(error);
+    message = await responseMessage(error);
   }
 
   showErrorNotification(message);
 }
 
-// The notification body, as HTML, for an error the server answered.
-function responseMessage(error) {
+// The notification body, as HTML, for an error the server answered, whose
+// JSON Error may come as an object, as text, or in a download's Blob.
+async function responseMessage(error) {
   const response = error.response;
-  const data = response.data;
-  const body = data && typeof data === 'object' ? data : null;
+  let data = response.data;
+  if (data instanceof Blob) data = await data.text().catch(() => '');
+  const body = errorBody(data);
 
   if (tokenInvalid(response.status, body ? body.message : data)) {
     usePhenixStore().logout();
@@ -61,13 +64,27 @@ const tokenInvalid = (status, text) =>
 const textHTML = (text) =>
   escapeHTML(text).replace(/\n/g, '<br>').replace(/\t/g, '&emsp;');
 
-// The notification body for an error and its optional cause: the error as the
-// title, then the cause on its own line and in bold. Both are text.
+// The notification body for an error and its optional cause: the outermost
+// error as the title, then each step that led to it on its own line, the
+// innermost (the actual cause) last and in bold.
 function errorHTML(text, cause) {
+  const steps = [...errorSteps(text), ...errorSteps(cause)];
+  const title = steps.shift() ?? 'Unknown error';
+
   // spans, not paragraphs or lists: the notification puts this in a <p>
-  const message = `<span class="error-title"><b>Error:</b> ${textHTML(text || 'Unknown error')}</span>`;
-  if (!cause) return message;
-  return `${message}<span class="error-step"><b>${textHTML(cause)}</b></span>`;
+  const message = `<span class="error-title"><b>Error:</b> ${textHTML(title)}</span>`;
+  const items = steps.map((step, i) =>
+    i === steps.length - 1
+      ? `<span class="error-step"><b>${textHTML(step)}</b></span>`
+      : `<span class="error-step">${textHTML(step)}</span>`,
+  );
+  return message + items.join('');
+}
+
+// Shows an error that did not come from a request, such as one reported over
+// the websocket. title and detail are plain text.
+export function showError(title, detail) {
+  showErrorNotification(errorHTML(title, detail));
 }
 
 // message is HTML

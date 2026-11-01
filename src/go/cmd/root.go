@@ -232,11 +232,13 @@ func Root() *cobra.Command {
 	return rootCmd
 }
 
+// Execute runs the phenix command that [os.Args] names, and exits with its
+// error's code after it prints the error.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
 		printCommandError(os.Stderr, os.Args[1:], err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }
 

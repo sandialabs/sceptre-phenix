@@ -147,6 +147,7 @@ its color codes.
 | Every command | The `Error:` label of a failed command is red. A console log record shows its level in color, the message of a warning in yellow, and the message of an error in red. |
 | `phenix experiment list` | The `Started` time of a running experiment is green. |
 | `phenix vm info` | The `Running` value is green for a running VM, red for a VM that minimega shows as `QUIT` or `ERROR`, and faint for other VMs. |
+| `phenix job list`, `get` and `wait` | Job and item states: `running` cyan, `succeeded` green, `partial` and `canceled` yellow, `failed` red, and `queued`, `pending` and `skipped` faint. |
 
 ## Settings Reference
 
@@ -165,7 +166,7 @@ its color codes.
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI. **(Restart Required)** |
 | `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable. Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). **(Restart Required)** |
 | `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). **(Restart Required)** |
-| `ui.shutdown-grace-period` | `PHENIX_UI_SHUTDOWN_GRACE_PERIOD` | `5` | How many seconds stopping `phenix ui` may take to finish requests and close connections, as a whole number such as `10`. `0` closes everything without waiting; a negative value, or one that is not a whole number of seconds (such as `10s` or `1.5`), is refused at startup. Also `phenix ui --shutdown-grace-period`. See [Stopping the Server](#stopping-the-server). **(Restart Required)** |
+| `ui.shutdown-grace-period` | `PHENIX_UI_SHUTDOWN_GRACE_PERIOD` | `5` | How many seconds stopping `phenix ui` may take to finish requests and jobs and close connections, as a whole number such as `10`. `0` closes everything without waiting; a negative value, or one that is not a whole number of seconds (such as `10s` or `1.5`), is refused at startup. Also `phenix ui --shutdown-grace-period`. See [Stopping the Server](#stopping-the-server). **(Restart Required)** |
 | `mount-dir` | `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory used for VM filesystem mounts created via `phenix vm mount`. See [Mount a VM](vms.md#mount-a-vm). |
 | `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`. The phēnix server's value is used unless `--base-dir.injects` is given; see [Workflow](workflow.md#settings). Use an absolute path. **(Restart Required)** |
 | `base-dir.topologies` | `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Directory where `phenix workflow apply NAME` looks for `NAME` when `NAME` isn't an existing path. Use an absolute path. See [Workflow](workflow.md). |
@@ -180,6 +181,8 @@ taking at most `ui.shutdown-grace-period` seconds (5 by default):
 * It closes the websockets of minimega consoles, SCORCH terminals and output,
   VNC, port forwards and netflow streams with close code `1001` (going away).
   New websockets are refused with `503 Service Unavailable`.
+* Running background jobs get the first half of the grace period to finish,
+  and are canceled then. Queued jobs are canceled at once.
 * It logs `shutdown complete` once everything has stopped, or a warning that
   names what was still running when the grace period ended, and exits with
   status 0 either way.

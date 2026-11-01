@@ -46,7 +46,7 @@ available in two places:
 
 The API docs are organized by tag (`Configs`, `Experiments`, `Virtual
 Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`,
-`Workflow`, `Events`, etc.) and document every route, including request
+`Workflow`, `Jobs`, `Events`, etc.) and document every route, including request
 parameters, response schemas and status codes. That includes the websockets
 (`/ws` and the netflow, VNC, console, port forward and SCORCH streams), each
 described as a `GET` that answers `101` with its message protocol, and the
@@ -83,14 +83,24 @@ authentication, without running the route.
 
 ## Paging
 
-The experiment, VM, disk, experiment VM, and experiment file lists
-(`GET /experiments`, `/vms`, `/disks`, `/experiments/{name}/vms` and
+The experiment, VM, disk, job, experiment VM, and experiment file lists
+(`GET /experiments`, `/vms`, `/disks`, `/jobs`, `/experiments/{name}/vms` and
 `/experiments/{name}/files`) take `pageNum` (from 1) and `perPage` together
-and return only that page. `GET /vms`, `/disks` and `/experiments/{name}/vms`
-also return a `total` that counts the whole list. Without both, they return
-everything; a value that is not a whole number of at least 1 answers `400`. A
-page of experiments asks minimega only about the experiments on it, and a page
-of `GET /vms?screenshot=` takes screenshots only of its own VMs.
+and return only that page. `GET /vms`, `/disks`, `/jobs` and
+`/experiments/{name}/vms` also return a `total` that counts the whole list.
+Without both, they return everything; a value that is not a whole number of at
+least 1 answers `400`. A page of experiments asks minimega only about the
+experiments on it, and a page of `GET /vms?screenshot=` takes screenshots only
+of its own VMs.
+
+## Background Jobs
+
+Long operations run as [background jobs](jobs.md), and
+`GET /api/v1/jobs/{id}` follows one to the end. `GET /api/v1/jobs` lists your
+jobs, `POST /api/v1/jobs/{id}/cancel` cancels one, `DELETE /api/v1/jobs/{id}`
+dismisses a finished one, and `GET /api/v1/jobs/{id}/artifact` downloads the
+file it produced. A download can continue from where it stopped. Another
+user's job answers `404`, as if it did not exist.
 
 ## Integrations
 

@@ -337,6 +337,19 @@ func wantErrorBody(t *testing.T, route contractRoute, resp *http.Response) {
 	}
 }
 
+// useGlobalAdmin stores the global-admin role every request has with auth off and over the Unix socket;
+// the server keeps that role for 30 seconds across tests, so every test stores this one.
+func useGlobalAdmin(t *testing.T) {
+	t.Helper()
+
+	useTestStore(t, store.Config{
+		Version:  "phenix.sandia.gov/v1",
+		Kind:     "Role",
+		Metadata: store.ConfigMetadata{Name: "global-admin"},
+		Spec:     map[string]any{"roleName": "Global Admin", "policies": rolePolicies(adminRole())},
+	})
+}
+
 // contractErrorCase is a request TestContractErrors makes and the status it wants.
 type contractErrorCase struct {
 	method, path, body string
