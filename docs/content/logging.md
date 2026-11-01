@@ -170,6 +170,43 @@ The log types are `AUDIT`, `SECURITY`, `SOH`, `SCORCH`, `PHENIX-APP`, `ACTION`,
 
 To view detailed HTTP request logs (method, path, status, duration), start the UI with the `--log-requests` flag.
 
+## The Logs Page
+
+The web UI's Logs page shows the system log's entries, oldest first, and
+follows new entries as the server logs them. It needs `get` on `logs`.
+
+* The **Logs shown** box at the top left counts the entries that pass the
+  date range, level, type and search filters. When the filters hide some, it
+  also says how many were loaded, such as `Logs shown 120 of 4,000`.
+* The **Level** column shows each entry's level as a short badge: `DBG`
+  (dark gray), `INFO` (blue), `WRN` (yellow) and `ERR` (red). A level the page
+  does not know shows its own name in uppercase. Hold the pointer over a badge
+  to see the full level name.
+* The **phēnix log** and **minimega log** buttons at the top right download
+  the log files themselves (see [Downloading Log Files](#downloading-log-files)).
+
+### Downloading Log Files
+
+**phēnix log** downloads the system log file (`log.system.path`) as it is
+when the download starts, without its rotated files. **minimega log**
+downloads the file that `ui.logs.minimega-path` names, which the `phenix ui`
+server must be able to read; in a container deployment, mount minimega's log
+into the phēnix container. A file that cannot be downloaded has its button
+grayed out, and the button's tooltip says why, such as `the minimega log file
+is not configured (set ui.logs.minimega-path)`. The page checks the files
+again every 30 seconds and after it reconnects, so a button comes on once its
+file appears.
+
+Through the API, `GET /logs/files` lists both files and whether each can be
+downloaded now, and `GET /logs/files/phenix` or `GET /logs/files/minimega`
+downloads one. A download also answers `HEAD` and resumes with `Range`. Both
+routes need `get` on `logs`, and each download is audited as `log-download`.
+
+```bash
+curl -OJ -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  https://phenix.example.com/api/v1/logs/files/phenix
+```
+
 ## Audit Events
 
 The web API logs an audit event, a record of type `AUDIT`, for each
@@ -179,7 +216,8 @@ user, config or experiment; applied a workflow or changed the settings;
 started or stopped an experiment, an app or a netflow capture, or canceled a
 SCORCH run; changed a VM's settings or optical disc, or powered it on or off;
 started or stopped a packet capture; opened a console, VNC session or port
-forward; changed a disk image; or uploaded or downloaded a file. Signing in
+forward; changed a disk image; uploaded or downloaded a file; or downloaded a
+log file. Signing in
 and out, and refused tokens, are logged only as these events, not as
 `SECURITY` records. Its fields follow the
 [Elastic Common Schema](https://www.elastic.co/guide/en/ecs/current/index.html)
@@ -271,7 +309,7 @@ user it named, and a token's event names only its user and expiry.
 | `vm-restore` | `file` | `change` | `POST .../vms/{name}/snapshots/{snapshot}` |
 | `vm-mount`, `vm-unmount` | `session` | `start`, `end` | `POST .../vms/{name}/mount`, `DELETE .../vms/{name}/unmount` |
 | `vm-file-upload`, `vm-file-copy` | `file` | `creation` | `PUT .../vms/{name}/files/upload`, `POST .../vms/{name}/files/copy` |
-| `log-download` | `file` | `access` | none: no route records this action yet |
+| `log-download` | `file` | `access` | `GET /logs/files/{name}`, naming the log file in `phenix.log.name` |
 
 A download is audited once, however many requests resuming it take: for a `GET`
 answered with the whole file, or with a range starting at its first byte.
@@ -323,6 +361,7 @@ naming it.
 | `process.pid` | a console's or SCORCH terminal's process |
 | `phenix.file.preview` | whether a downloaded file was shown in the Files tab's viewer |
 | `phenix.capture.subnet` | a subnet capture's subnet |
+| `phenix.log.name` | the log file a `log-download` asked for: `phenix` or `minimega` |
 | `phenix.console.end_reason` | why a console ended: `user` (ended from the UI), `idle` (no websocket attached for 15 seconds), `shutdown` (the server stopped) or `exited` (its process exited) |
 | `phenix.disk.size`, `phenix.disk.unsafe` | a resize's size and a rebase's `unsafe` |
 | `phenix.mount.path` | where a VM's disk is mounted |

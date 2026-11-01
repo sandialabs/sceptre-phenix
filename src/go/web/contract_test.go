@@ -36,12 +36,18 @@ const (
 
 // serveContractAs is serveContract with every request taken as one from alice
 // with role, as dev authentication does.
-func serveContractAs(t *testing.T, role rbac.Role) *httptest.Server {
+func serveContractAs(t *testing.T, role rbac.Role, set func(*serverOptions)) *httptest.Server {
 	t.Helper()
 
 	key := devKey(t, "alice", role)
 
-	return serveContract(t, func(o *serverOptions) { o.jwtKey = key })
+	return serveContract(t, func(o *serverOptions) {
+		o.jwtKey = key
+
+		if set != nil {
+			set(o)
+		}
+	})
 }
 
 // contractFixture: running test-experiment with test-vm mounted (etc/hostname), the user bob, and on-demand consoles.
@@ -121,6 +127,7 @@ func serveContract(t *testing.T, set func(*serverOptions)) *httptest.Server {
 
 	o = newServerOptions()
 	o.features = map[string]bool{"vm-mount": true, "tunneler-download": true}
+	o.systemLog = contractSystemLog(t)
 
 	if set != nil {
 		set(&o)
@@ -134,6 +141,19 @@ func serveContract(t *testing.T, set func(*serverOptions)) *httptest.Server {
 	t.Cleanup(server.Close)
 
 	return server
+}
+
+// contractSystemLog writes a system log file of one entry, and returns the
+// systemLog server option that names it.
+func contractSystemLog(t *testing.T) func() string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "phenix.log")
+	if err := os.WriteFile(path, []byte(`{"level":"INFO","msg":"contract"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	return func() string { return path }
 }
 
 // contractRoute is one API route of the contract, as a request the fixture
@@ -219,6 +239,11 @@ func contractRoutes() []contractRoute {
 		{method: "GET", path: "/api/v1/disks/download?disk=" + contractDisk, need: one(diskGet)},
 		{method: "HEAD", path: "/api/v1/disks/download?disk=" + contractDisk, need: one(diskGet)},
 
+		// the server's log files
+		{method: "GET", path: "/api/v1/logs/files", need: one(testRole("logs", "get")), want: ok},
+		{method: "GET", path: "/api/v1/logs/files/phenix", need: one(testRole("logs", "get")), want: ok},
+		{method: "HEAD", path: "/api/v1/logs/files/phenix", need: one(testRole("logs", "get")), want: ok},
+
 		// users: a token for another user also needs users/tokens create
 		{
 			method: "POST", path: "/api/v1/users/bob/tokens", body: `{"lifetime":"1h"}`, want: ok,
@@ -259,7 +284,7 @@ func TestContractRBAC(t *testing.T) {
 			for name, role := range denied {
 				t.Run(name, func(t *testing.T) {
 					f := useContractFixture(t)
-					server := serveContractAs(t, role).URL
+					server := serveContractAs(t, role, nil).URL
 
 					url := route.url(t, server, f, "alice")
 
@@ -275,7 +300,7 @@ func TestContractRBAC(t *testing.T) {
 
 			t.Run("with exactly what it needs", func(t *testing.T) {
 				f := useContractFixture(t)
-				server := serveContractAs(t, combinedRole(route.need...)).URL
+				server := serveContractAs(t, combinedRole(route.need...), nil).URL
 
 				url := route.url(t, server, f, "alice")
 
@@ -433,6 +458,10 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 	const exp = contractExpPath
 
 	return map[string]contractErrorCase{
+		"unknown log file": {method: "GET", path: "/api/v1/logs/files/none", want: http.StatusNotFound},
+		"unconfigured minimega log file": {
+			method: "GET", path: "/api/v1/logs/files/minimega", want: http.StatusNotFound,
+		},
 		"user with unknown role": {
 			method: "POST", path: "/api/v1/users", body: createUserBody("carol", "No Such Role"), want: http.StatusBadRequest,
 		},
@@ -461,7 +490,7 @@ func checkContractError(t *testing.T, spec openAPISpec, name string, tc contract
 	t.Helper()
 
 	f := useContractFixture(t)
-	server := serveContractAs(t, adminRole()).URL
+	server := serveContractAs(t, adminRole(), nil).URL
 
 	path := tc.path
 	if tc.prepare != nil {
@@ -511,7 +540,7 @@ func TestContractJSONContentType(t *testing.T) {
 	} {
 		t.Run(path, func(t *testing.T) {
 			useContractFixture(t)
-			server := serveContractAs(t, adminRole()).URL
+			server := serveContractAs(t, adminRole(), nil).URL
 
 			resp := do(t, http.MethodGet, server+path, "")
 			if resp.StatusCode != http.StatusOK {
