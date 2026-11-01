@@ -191,8 +191,8 @@ Each audited action is logged with one of three outcomes:
 * **Success** (`INFO`): the action worked. `event.outcome` is `success`.
 * **Refused** (`WARN`): the user's role does not allow it. `event.outcome` is
   `failure`, `event.type` also holds `denied`, and `event.reason` says why:
-  `forbidden`, or for example `outside mount` for a path outside a VM's
-  mount.
+  `forbidden`, or for example `not owner` for another user's console and
+  `outside mount` for a path outside a VM's mount.
 * **Failed** (`WARN`): the role allows it, but it failed. `event.outcome` is
   `failure` and `error.message` holds the error. A failed sign-in, with an
   unknown user or a wrong password, is a failure whose `error.message` is
@@ -257,9 +257,9 @@ user it named, and a token's event names only its user and expiry.
 | `file-upload` | `file` | `creation` | the file server's upload page (one event per file) |
 | `file-delete` | `file` | `deletion` | none: no route records this action yet |
 | `console-create` | `process` | `start` | `POST /console` |
-| `console-attach` | `process` | `access` | `GET /console/{pid}/ws`; refusals of `POST /console/{pid}/size` |
-| `console-terminate` | `process` | `end` | none: no route records this action yet |
-| `console-end` | `process` | `end` | none: no route records this action yet |
+| `console-attach` | `process` | `access` | `GET /console/{pid}/ws`; refusals of `GET /console/{pid}` and `POST /console/{pid}/size`, and of another user's console on any console route |
+| `console-terminate` | `process` | `end` | `DELETE /console/{pid}` |
+| `console-end` | `process` | `end` | none: a console ended, for any reason |
 | `vnc-attach` | `session` | `start` | `GET .../vms/{name}/vnc/ws`; refusals of `GET .../vms/{name}/vnc` |
 | `port-forward-attach` | `network` | `connection` | `GET .../vms/{name}/forwards/{host}/{port}/ws` |
 | `disk-snapshot`, `disk-clone` | `file` | `creation` | `POST /disks/snapshot`, `POST /disks/clone` |
@@ -323,6 +323,7 @@ naming it.
 | `process.pid` | a console's or SCORCH terminal's process |
 | `phenix.file.preview` | whether a downloaded file was shown in the Files tab's viewer |
 | `phenix.capture.subnet` | a subnet capture's subnet |
+| `phenix.console.end_reason` | why a console ended: `user` (ended from the UI), `idle` (no websocket attached for 15 seconds), `shutdown` (the server stopped) or `exited` (its process exited) |
 | `phenix.disk.size`, `phenix.disk.unsafe` | a resize's size and a rebase's `unsafe` |
 | `phenix.mount.path` | where a VM's disk is mounted |
 | `destination.address`, `destination.port`, `phenix.forward.owner` | a port forward's destination, and the user who created it |
@@ -374,8 +375,9 @@ as `event.action=disk-delete` or `user.name=alice`.
 Actions taken with the `phenix` CLI, such as `phenix vm capture` or
 `phenix image`, have no web user and are not audited, other than those
 `phenix workflow apply` sends through the Unix socket. Neither are the
-console's resize requests, other than their refusals, nor reads that change
-nothing, such as `GET` requests for configs or the running netflow capture.
+console's resize requests and status checks, other than their refusals, nor
+reads that change nothing, such as `GET` requests for configs or the running
+netflow capture.
 
 ### Shipping Audit Events with Filebeat
 

@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - **Graceful Shutdown**: `phenix ui` shuts down cleanly on `SIGINT` or `SIGTERM` within the new `ui.shutdown-grace-period` setting (5 seconds by default), and closes its websockets with close code `1001`.
 - **API Reference**: `GET /docs/openapi.yml` serves the spec with the server build in `info.version`, and API responses have the build in `X-Phenix-Version`. An `OPTIONS` request to an API route returns `204` and does not run the route.
 - **Background Jobs**: Added background jobs to `phenix ui`, with the `/api/v1/jobs` routes, the `phenix job` command and a jobs menu in the web UI. The new `jobs` permission, which stored Experiment Admin roles get at startup, lets a role act on the jobs of other users.
+- **minimega Console**: The web UI console stays open across page changes, reloads and tabs, and shows its recent output again. It ends on logout or 15 seconds after its last tab closes.
 
 ### Changed
 
