@@ -2,7 +2,6 @@ package rbac
 
 import (
 	"errors"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -119,10 +118,6 @@ func FuzzRoleAllowed(f *testing.F) {
 			t.Skip("too many policies")
 		}
 
-		if probeDependent(decoded, resource) {
-			t.Skip("resource pattern validity depends on the probe string")
-		}
-
 		var added *v1.PolicySpec
 		if ops&2 != 0 && len(decoded) > 0 {
 			added, decoded = decoded[len(decoded)-1], decoded[:len(decoded)-1]
@@ -161,24 +156,6 @@ func FuzzRoleAllowed(f *testing.F) {
 	})
 }
 
-// probeDependent reports whether a resource pattern is bad against only one of
-// "useless" (the probe of mapPolicies) and resource (the probe of
-// roleModelAllowed). For such a pattern, the two do not agree.
-func probeDependent(policies []*v1.PolicySpec, resource string) bool {
-	for _, p := range policies {
-		for _, r := range p.Resources {
-			_, errProbe := filepath.Match(r, "useless")
-			_, errResource := filepath.Match(r, resource)
-
-			if (errProbe == nil) != (errResource == nil) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
 // checkSetResourceNames calls r.SetResourceNames(names...) and checks that it
 // refuses a bad pattern without a change, and otherwise scopes only the
 // policies that have no resource names.
@@ -190,15 +167,7 @@ func checkSetResourceNames(t *testing.T, r *Role, names []string) {
 		scope = []string{"*"}
 	}
 
-	var bad bool
-
-	for _, n := range scope {
-		// SetResourceNames probes with "useless", and filepath.Match finds a
-		// bad pattern only when it parses that part of the pattern.
-		if _, err := filepath.Match(n, "useless"); err != nil {
-			bad = true
-		}
-	}
+	bad := slices.ContainsFunc(scope, func(n string) bool { return !validPattern(n) })
 
 	want := cloneFuzzSpec(r.Spec)
 	if !bad {

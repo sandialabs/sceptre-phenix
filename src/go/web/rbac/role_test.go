@@ -223,6 +223,34 @@ func TestSetResourceNamesScopesAnEmptyList(t *testing.T) {
 	}
 }
 
+// A name pattern that is bad only past where a probe name stops matching, such
+// as "x*[", is refused, and the role stays as it was.
+func TestResourceNamesRefuseAPartlyBadPattern(t *testing.T) {
+	t.Parallel()
+
+	spec := func() *v1.RoleSpec {
+		return &v1.RoleSpec{Name: "r", Policies: []*v1.PolicySpec{
+			{Resources: []string{"vms"}, ResourceNames: []string{"vm1"}, Verbs: []string{"get"}},
+			{Resources: []string{"experiments"}, Verbs: []string{"get"}},
+		}}
+	}
+
+	for name, call := range map[string]func(*Role) error{
+		"SetResourceNames": func(r *Role) error { return r.SetResourceNames("x*[") },
+		"AddResourceName":  func(r *Role) error { return r.AddResourceName("x*[") },
+	} {
+		r := newRole(spec(), nil)
+
+		if err := call(r); !errors.Is(err, ErrResourceNameInvalid) {
+			t.Errorf("%s(x*[) error = %v, want %v", name, err, ErrResourceNameInvalid)
+		}
+
+		if diff := cmp.Diff(spec(), r.Spec); diff != "" {
+			t.Errorf("%s(x*[) changed the spec (-want +got):\n%s", name, diff)
+		}
+	}
+}
+
 // A saved policy that names no resources leaves resourceNames out rather than
 // storing null, which the role schema rejects on the next edit.
 //
@@ -297,7 +325,7 @@ func genRolePolicy() *rapid.Generator[*v1.PolicySpec] {
 }
 
 // roleModelAllowed reads the policies as written: a name matched by a pattern and
-// by no "!" pattern; any invalid resource pattern allows nothing.
+// by no "!" pattern; any invalid resource pattern (see validPattern) allows nothing.
 func roleModelAllowed(spec *v1.RoleSpec, resource, verb string, names []string) bool {
 	match := func(name string) func(string) bool {
 		return func(pattern string) bool {
@@ -309,7 +337,7 @@ func roleModelAllowed(spec *v1.RoleSpec, resource, verb string, names []string) 
 
 	for _, p := range spec.Policies {
 		for _, r := range p.Resources {
-			if _, err := filepath.Match(r, resource); err != nil {
+			if !validPattern(r) {
 				return false
 			}
 		}
