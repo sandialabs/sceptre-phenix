@@ -397,6 +397,9 @@ func Edit(name string, force bool) (*store.Config, error) {
 		delete(c.Spec, "experimentName")
 	}
 
+	// the update is refused if the config changes while it is being edited
+	revision := c.Metadata.Revision
+
 	var body []byte
 	body, err = yaml.Marshal(c)
 	if err != nil {
@@ -411,6 +414,10 @@ func Edit(name string, force bool) (*store.Config, error) {
 	if err = yaml.Unmarshal(body, c); err != nil {
 		return nil, fmt.Errorf("unmarshaling config as YAML: %w", err)
 	}
+
+	// the store sets the revision; an edited one means nothing
+	c.Metadata.Revision = 0
+	c.IfRevision = revision
 
 	if c.Kind == kindExperiment {
 		c.Spec["experimentName"] = expName
@@ -434,6 +441,15 @@ func Update(name string, c *store.Config) error {
 
 	if err = store.Get(old); err != nil {
 		return fmt.Errorf("getting config to update: %w", err)
+	}
+
+	// Checked before the hooks run, and before a rename, whose create and
+	// delete the store cannot make atomic. The store checks again as it writes.
+	if c.IfRevision != 0 && old.Metadata.Revision != c.IfRevision {
+		return fmt.Errorf(
+			"updating config %s: %w: at revision %d, not %d",
+			name, store.ErrConflict, old.Metadata.Revision, c.IfRevision,
+		)
 	}
 
 	c.Metadata.Created = old.Metadata.Created
@@ -462,9 +478,14 @@ func Update(name string, c *store.Config) error {
 				return fmt.Errorf("renaming updated config in store: %w", createErr)
 			}
 
+			old.IfRevision = c.IfRevision
+
 			deleteErr := store.Delete(old)
 			if deleteErr != nil {
-				_ = store.Delete(c) // don't offer a path to creation via updates
+				// Don't offer a path to creation via updates. Remove the copy
+				// just created, unless something changed it meanwhile.
+				c.IfRevision = c.Metadata.Revision
+				_ = store.Delete(c)
 
 				return fmt.Errorf("renaming updated config in store: %w", deleteErr)
 			}

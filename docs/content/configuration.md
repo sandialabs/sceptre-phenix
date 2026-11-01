@@ -45,6 +45,26 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
+## Revisions
+
+phenix stamps every stored config with `metadata.created`, `metadata.updated`
+and `metadata.revision`. The revision is a number that changes on every write
+to the config and only increases; it is ignored in files and requests, like
+the timestamps. A config with no revision gets one on its next write.
+
+```yaml
+metadata:
+  name: foobar
+  created: "2026-10-14T09:12:44-06:00"
+  updated: "2026-10-14T09:30:02-06:00"
+  revision: 42
+```
+
+`phenix config edit` remembers the revision it opened. If someone else saves
+the config before you close the editor, it does not save your edits. It shows
+an error that tells you to run `phenix config edit` again, so it does not
+overwrite the change of the other user.
+
 ## Topology
 
 The `Topology` configuration is one of the core configuration types for
