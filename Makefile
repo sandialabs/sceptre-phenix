@@ -114,8 +114,6 @@ install-dev:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
 	$(call check-command,protoc,Please install protobuf-compiler (e.g. sudo apt install protobuf-compiler))
 	$(call check-command,npm,Please install npm (e.g. sudo apt install npm))
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	go install go.uber.org/mock/mockgen@latest
 	@if ! command -v prek > /dev/null; then \
 		curl --proto '=https' --tlsv1.2 -LsSf https://github.com/j178/prek/releases/download/v0.4.14/prek-installer.sh | sh; \
 	fi

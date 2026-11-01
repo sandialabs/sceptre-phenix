@@ -28,7 +28,7 @@ func (shell) FindCommandsWithPrefix(prefix string) []string {
 	args := strings.Split(os.Getenv("PATH"), ":")
 	args = append(args, "-type", "f", "-executable", "-name", prefix+"*")
 
-	cmd := exec.Command("find", args...) //nolint:noctx,gosec // simple find command, Command injection via taint analysis
+	cmd := exec.Command("find", args...) //nolint:noctx,gosec // simple find command; G702 the arguments are PATH and a name prefix
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -103,7 +103,7 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 	// canceled below in order to gracefully terminate the child process. Using
 	// `exec.CommandContext` forcefully kills the child process when the context
 	// is canceled.
-	cmd := exec.CommandContext(ctx, o.cmd, o.args...) //nolint:gosec // Subprocess launched with a potential tainted input
+	cmd := exec.CommandContext(ctx, o.cmd, o.args...) //nolint:gosec // G204 callers name the command
 
 	cmd.Stdin = stdIn
 	stdout, _ := cmd.StdoutPipe()

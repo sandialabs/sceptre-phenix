@@ -44,6 +44,11 @@ docker compose up -d --pull always
 
 This will pull the latest images specified in the `image` key for each service (e.g., `ghcr.io/sandialabs/sceptre-phenix/phenix:main` and `ghcr.io/sandia-minimega/minimega:master`) and skip the build step.
 
+Each [GitHub release](https://github.com/sandialabs/sceptre-phenix/releases)
+attaches SPDX JSON software bills of materials (SBOMs) of the phenix and JIT UI
+images and of the Debian package, listing the packages and Go modules each one
+contains.
+
 #### 3. Check Status
 
 After starting the services with either method, view the logs to see the initialization progress:

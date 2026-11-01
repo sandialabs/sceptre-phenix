@@ -199,8 +199,9 @@ file appears.
 
 Through the API, `GET /logs/files` lists both files and whether each can be
 downloaded now, and `GET /logs/files/phenix` or `GET /logs/files/minimega`
-downloads one. A download also answers `HEAD` and resumes with `Range`. Both
-routes need `get` on `logs`, and each download is audited as `log-download`.
+downloads one. A download also answers `HEAD` and resumes with `Range` (see
+[Downloads](api.md#downloads)). Both routes need `get` on `logs`, and each
+download is audited as `log-download`.
 
 ```bash
 curl -OJ -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
@@ -247,7 +248,7 @@ user it named, and a token's event names only its user and expiry.
 | `event.action` | `event.category` | `event.type` | Routes |
 | :--- | :--- | :--- | :--- |
 | `sign-in` | `authentication` | `start` | `GET`, `POST /login`, by password or through a proxy (`phenix.auth.method`); `POST /signup`, once the user is created |
-| `sign-out` | `authentication` | `end` | `GET /logout` |
+| `sign-out` | `authentication` | `end` | `POST /logout` |
 | `user-create` | `iam` | `creation` | `POST /users`, `POST /signup` (as the user signing up) |
 | `user-update` | `iam` | `change` | `PATCH /users/{username}` changing a first or last name (`phenix.user.changed`) |
 | `user-role-change` | `iam` | `change` | `PATCH /users/{username}` with a `role_name`; refused, and the role left as it is, without `patch` on `users/roles` (a `role_name` equal to the user's current role is not refused) |
@@ -255,11 +256,11 @@ user it named, and a token's event names only its user and expiry.
 | `user-delete` | `iam` | `deletion` | `DELETE /users/{username}`; refused for the user's own account (`event.reason` `own user`) |
 | `user-token-create` | `iam` | `creation` | `POST /users/{username}/tokens` |
 | `request-auth` | `authentication` | `info` | any API or file server request refused for its token (`event.reason`), at most once a minute for each client address and reason (see [Refused Tokens](#refused-tokens)) |
-| `config-create` | `configuration` | `creation` | `POST /configs`, `POST /workflow/configs/{branch}` for a new config (and its refusal by a role that may neither create nor update configs) |
+| `config-create` | `configuration` | `creation` | `POST /configs`, `POST /workflow/configs/{branch}` for a new config (and its refusal by a role that may neither create nor update configs), and `PUT /configs/{kind}/{name}` refusals of the new name it renames a config to |
 | `config-update` | `configuration` | `change` | `PUT /configs/{kind}/{name}`, `POST /workflow/configs/{branch}` for a stored config |
 | `config-delete` | `configuration` | `deletion` | `DELETE /configs/{kind}/{name}` |
 | `workflow-apply` | `configuration` | `change` | `POST /workflow/apply/{branch}` (`phenix.workflow.branch`, `phenix.workflow.action`) |
-| `settings-update` | `configuration` | `change` | `POST /settings` |
+| `settings-update` | `configuration` | `change` | `POST /settings` (`phenix.settings.changed`) |
 | `experiment-create` | `configuration` | `creation` | `POST /experiments` |
 | `experiment-update` | `configuration` | `change` | `PATCH /experiments/{name}` |
 | `experiment-schedule` | `configuration` | `change` | `POST /experiments/{name}/schedule` |
@@ -268,18 +269,18 @@ user it named, and a token's event names only its user and expiry.
 | `experiment-stop` | `host` | `end` | `POST /experiments/{name}/stop` |
 | `app-trigger` | `process` | `start` | `POST /experiments/{name}/trigger` (`phenix.app.names`) |
 | `app-trigger-cancel` | `process` | `end` | `DELETE /experiments/{name}/trigger` |
-| `scorch-start` | `process` | `start` | none: no route records this action yet |
+| `scorch-start` | `process` | `start` | `POST .../scorch/pipelines/{run}`, `POST .../scorch/pipelines/{run}/cleanup` (`phenix.scorch.cleanup_only`) |
 | `scorch-cancel` | `process` | `end` | `DELETE .../scorch/pipelines/{run}` |
-| `scorch-clear` | `process` | `change` | none: no route records this action yet |
+| `scorch-clear` | `process` | `change` | `POST .../scorch/pipelines/{run}/clear` |
 | `scorch-terminal-exit` | `process` | `end` | `POST .../scorch/terminals/{pid}/exit/{id}` |
-| `vm-start` | `host` | `start` | `POST .../vms/{name}/start` |
-| `vm-stop` | `host` | `end` | `POST .../vms/{name}/stop` |
-| `vm-shutdown` | `host` | `end` | `GET .../vms/{name}/shutdown` |
-| `vm-restart` | `host` | `change` | `GET .../vms/{name}/restart` |
-| `vm-reset-disk` | `host` | `change` | `GET .../vms/{name}/reset` |
+| `vm-start` | `host` | `start` | `POST .../vms/{name}/start`, `POST .../vms/actions` with `start` (one event per VM) |
+| `vm-stop` | `host` | `end` | `POST .../vms/{name}/stop`, `POST .../vms/actions` with `pause` |
+| `vm-shutdown` | `host` | `end` | `POST .../vms/{name}/shutdown`, `POST .../vms/actions` with `shutdown` |
+| `vm-restart` | `host` | `change` | `POST .../vms/{name}/restart`, `POST .../vms/actions` with `restart` |
+| `vm-reset-disk` | `host` | `change` | `POST .../vms/{name}/reset`, `POST .../vms/actions` with `resetDisk` |
 | `vm-redeploy` | `host` | `change` | `POST .../vms/{name}/redeploy` |
-| `vm-kill` | `host` | `end` | `DELETE .../vms/{name}` |
-| `vm-update` | `configuration` | `change` | `PATCH .../vms/{name}`, `PATCH /experiments/{exp}/vms` (one event per VM), naming the settings changed in `phenix.vm.changed` |
+| `vm-kill` | `host` | `end` | `DELETE .../vms/{name}`, `POST .../vms/actions` with `kill` |
+| `vm-update` | `configuration` | `change` | `PATCH .../vms/{name}`, `PATCH /experiments/{exp}/vms` (one event per VM), naming the settings changed in `phenix.vm.changed`; refused (`event.reason` `port forwards not allowed`) for annotations that start port forwards the role may not create |
 | `vm-cdrom-change`, `vm-cdrom-eject` | `host` | `change` | `POST .../vms/{name}/cdrom` (the disc in `file.path`), `DELETE .../vms/{name}/cdrom` |
 | `capture-start` | `network` | `start` | `POST .../vms/{name}/captures`, `POST .../captureSubnet` (one event per VM) |
 | `capture-stop` | `network` | `end` | `DELETE .../vms/{name}/captures`, `POST .../stopCaptureSubnet` (one event per VM) |
@@ -299,11 +300,11 @@ user it named, and a token's event names only its user and expiry.
 | `console-end` | `process` | `end` | none: a console ended, for any reason |
 | `vnc-attach` | `session` | `start` | `GET .../vms/{name}/vnc/ws`; refusals of `GET .../vms/{name}/vnc` |
 | `port-forward-attach` | `network` | `connection` | `GET .../vms/{name}/forwards/{host}/{port}/ws` |
-| `disk-snapshot`, `disk-clone` | `file` | `creation` | `POST /disks/snapshot`, `POST /disks/clone` |
+| `disk-snapshot`, `disk-clone` | `file` | `creation` | `POST /disks/snapshot`, `POST /disks/clone`, `POST /disks/clone/jobs` |
 | `disk-rename`, `disk-commit`, `disk-rebase`, `disk-resize` | `file` | `change` | `POST /disks/rename`, `/disks/commit`, `/disks/rebase`, `/disks/resize` |
 | `disk-delete` | `file` | `deletion` | `DELETE /disks` |
 | `disk-upload` | `file` | `creation` | `POST /disks` |
-| `disk-download` | `file` | `access` | `GET /disks/download` |
+| `disk-download` | `file` | `access` | `GET /disks/download`; refusals of `GET /disks/checksum` |
 | `vm-snapshot`, `vm-commit`, `vm-memory-snapshot` | `file` | `creation` | `POST .../vms/{name}/snapshots`, `/commit`, `/memorySnapshot` |
 | `vm-restore` | `file` | `change` | `POST .../vms/{name}/snapshots/{snapshot}` |
 | `vm-mount`, `vm-unmount` | `session` | `start`, `end` | `POST .../vms/{name}/mount`, `DELETE .../vms/{name}/unmount` |
@@ -313,6 +314,16 @@ user it named, and a token's event names only its user and expiry.
 A download is audited once, however many requests resuming it take: for a `GET`
 answered with the whole file, or with a range starting at its first byte.
 
+An action run as a [background job](jobs.md) is audited when the job finishes,
+not when the request starting it is answered: as the user who started it,
+without the request's `source.ip`, `http.request.method` and `url.path`, and
+with the job's ID in `phenix.job.id`. A job canceled before its work was done
+is a failure with `error.message` `canceled`. A request starting the job is
+audited only when refused, or when it fails before the job starts. A bulk VM
+action job (`POST .../vms/actions`) is audited once for each VM: the VMs the
+role may not act on as refusals when the job is asked for, and the others when
+it finishes, those it did not get to before it was canceled as failures.
+
 A workflow apply or workflow config upsert with `dryRun=true` checks what it
 would do and changes nothing: it is audited with `phenix.dry_run` `true` and
 `event.type` `info` in place of the action's own, so it never reads as a
@@ -321,10 +332,13 @@ apply`, has no web user or client address: it is audited without `user.name`
 and `source.ip`, with `phenix.auth.method` `unix-socket` and the socket's
 `Global Admin` role in `user.roles`.
 
-Starting an experiment's apps is audited when the run starts; how the run
-ends is in the `SCORCH` and `SYSTEM` logs. A Role or User config changed
-through `/configs` is audited as a config action, with `phenix.config.name`
-naming it.
+Starting an experiment's apps or a SCORCH run is audited when the run starts;
+how the run ends is in the `SCORCH` and `SYSTEM` logs. A Role or User config
+changed through `/configs` is audited as a config action, with
+`phenix.config.name` naming it. The files
+of an archive job are audited when its archive is downloaded, by the user
+downloading it, and only those archived, including any cut short, not those its
+`MISSING.txt` lists as left out.
 
 ### Fields
 
@@ -343,12 +357,14 @@ naming it.
 | `phenix.suppressed` | the token refusals from the same client address and reason not audited since the last one that was |
 | `phenix.workflow.branch`, `phenix.workflow.action` | the branch a workflow or workflow config was sent for, and the action the apply planned (`create`, `createAndStart`, `update`, `updateAndStart`, `restart` or `none`) |
 | `phenix.dry_run` | `true` for a dry run, which changed nothing |
-| `phenix.vm.changed` | the VM settings a `vm-update` changes, without their values: `cpus`, `memory`, `disk`, `inject_partition`, `interface`, `tags`, `do_not_boot`, `host`, `snapshot` |
+| `phenix.experiment.force` | `true` for an experiment stop forced with `?force=true`, which marks the experiment stopped even if minimega could not kill its VMs |
+| `phenix.settings.changed`, `phenix.settings.values` | the settings a `settings-update` changes, as `category.name`, and their new values, other than any that could be a secret |
+| `phenix.vm.changed` | the VM settings a `vm-update` changes, without their values: `cpus`, `memory`, `disk`, `inject_partition`, `interface`, `tags`, `do_not_boot`, `host`, `snapshot`, `annotations` |
 | `phenix.token.expires` | when a created token expires |
 | `phenix.config.name`, `phenix.config.new_name` | the config acted on, as `Kind/name`, and the name an update renames it to |
 | `phenix.app.names` | the apps a trigger names, as the request's `apps` gives them |
 | `phenix.schedule.algorithm` | a schedule's algorithm |
-| `phenix.scorch.run`, `phenix.scorch.running` | a SCORCH run, and whether a canceled run was executing |
+| `phenix.scorch.run`, `phenix.scorch.cleanup_only`, `phenix.scorch.running` | a SCORCH run, whether only its cleanup stage was started, and whether a canceled run was executing |
 | `source.ip` | the address of the client that sent the request |
 | `network.forwarded_ip` | the first address in the request's `X-Forwarded-For` header, when it has one, cut to 64 bytes |
 | `http.request.method`, `url.path` | the request's method and path, cut to 1,024 bytes; never its query, which can carry a token |
@@ -382,7 +398,7 @@ template, such as `/webshark/streams/{token}`, so the token is never logged.
 
 ### Refused Tokens
 
-A request to the API or the file server that the server
+A request to the API, the file server or a health probe that the server
 refuses for its credentials is audited as a `request-auth` failure, with
 `event.reason` saying why:
 
@@ -424,8 +440,9 @@ Actions taken with the `phenix` CLI, such as `phenix vm capture` or
 `phenix image`, have no web user and are not audited, other than those
 `phenix workflow apply` sends through the Unix socket. Neither are a
 WebShark capture's watch requests or the console's resize and status checks,
-other than their refusals, nor reads that change nothing, such as `GET` requests for configs, the running
-netflow capture or the list of recorded netflow captures.
+other than their refusals, nor reads that change nothing, such as `GET`
+requests for configs, the running netflow capture or the list of recorded
+netflow captures.
 
 ### Shipping Audit Events with Filebeat
 

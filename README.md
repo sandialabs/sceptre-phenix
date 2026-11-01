@@ -41,7 +41,8 @@ To build the phēnix container image from source (does not require installing lo
 make docker
 ```
 
-The compose file uses `phenix healthcheck` to check the health of the `phenix` container. This command probes the `/healthz` endpoint of the server. The `docker exec phenix phenix healthcheck --ready` command also checks minimega, the store and free disk space. See [Health Checks](https://phenix.sceptre.dev/latest/health/).
+The compose file checks the `phenix` container's health with `phenix healthcheck`, which probes the server's `/healthz` endpoint; `docker exec phenix phenix healthcheck --ready` also checks minimega, the store and free disk space. See [Health Checks](https://phenix.sceptre.dev/latest/health/).
+
 `docker exec phenix phenix doctor` checks the configuration without the server: it prints the phēnix and minimega versions and the environment, each setting with where its value came from (secrets redacted), then the checks of config file syntax and keys, the config files found and the one `phenix settings set` writes, environment variables, the settings every command reads, the store, log and base directories, the store file's format and owner, what `phenix ui` reads at startup (sign-in, users, TLS, listen endpoints and the unix socket), the version and modes of a running `phenix ui`, minimega with its files directory, base directory and mesh, the host tools phēnix runs, free disk space, and the optional features, and a summary with a hint per failure. `--skip` leaves out a check or group, `--strict` fails on warnings, `-x` leaves out the settings, and `--report` prints it all in a block to paste into a bug report. `-p` shows only the checks that warn or fail. `--report` replaces host names, addresses, user names and secrets with tokens. See [Checking the Configuration](https://phenix.sceptre.dev/latest/settings/#checking-the-configuration).
 
 ### Native Installation (.deb)
@@ -57,6 +58,8 @@ Once the build is complete, you can install the generated package:
 ```bash
 sudo apt install ./build/deb/phenix_<version>_amd64.deb
 ```
+
+Each [GitHub release](https://github.com/sandialabs/sceptre-phenix/releases) also attaches the `.deb` and SPDX JSON software bills of materials (SBOMs) of it and of the phenix and JIT UI container images.
 
 ### Shell Completion
 
@@ -149,26 +152,25 @@ We use a `Makefile` to standardize development tasks. Run `make help` to see all
 
 ```bash
 # Development
-make all             # Run all tools (lint, test, build examples)
-make check           # Run linters without fixing (for CI)
+make all         # Run all tools (lint, test, build examples)
+make check       # Run linters without fixing (for CI)
 make check-generated # Check that `make generate` is reproducible and writes only ignored files
-make generate        # Generate Go code (protobuf, mocks, RBAC policy) and the API reference
-make api-docs        # Render the API reference served at /docs/ (src/go/web/public/docs/index.html)
-make cli-docs        # Write the CLI reference pages in docs/content/cli (commit them)
-make lint            # Run linters and formatters, fixing issues in place
-make test            # Run unit tests
+make generate    # Generate Go code (protobuf, mocks, RBAC policy) and the API reference
+make api-docs    # Render the API reference served at /docs/ (src/go/web/public/docs/index.html)
+make lint        # Run linters and formatters, fixing issues in place
+make test        # Run unit tests
 
 # Build
-make build           # Build the UI, the API reference and the main phenix binary
-make deb             # Build the phenix .deb package
-make docker          # Build the phenix docker image
-make tunneler        # Build phenix-tunneler binaries
+make build       # Build the UI, the API reference and the main phenix binary
+make deb         # Build the phenix .deb package
+make docker      # Build the phenix docker image
+make tunneler    # Build phenix-tunneler binaries
 
 # Installation
-make install-dev     # Install development and build dependencies
+make install-dev # Install development and build dependencies
 
 # Cleanup
-make clean           # Clean build artifacts
+make clean       # Clean build artifacts
 ```
 
 The `phenix-tunneler serve` command can provide a local web interface for
@@ -248,7 +250,7 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 | :--- | :--- | :--- | :--- |
 | `experiment.disk-check` | `PHENIX_EXPERIMENT_DISK_CHECK` | `error` | What a start does when a VM disk image or CD-ROM image is missing, or its backing chain is broken: `error` refuses the start, `warn` starts with a warning, and `off` does not check. |
 | `log.level` | `PHENIX_LOG_LEVEL` | `info` | Global log verbosity (`debug`, `info`, `warn`, `error`). |
-| `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. |
+| `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, `phenix doctor` rows, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. |
 | `log.console` | `PHENIX_LOG_CONSOLE` | `stderr` | Destination for console logs (`stderr`, `stdout`, or a file path). Uses **Text/Human-Readable** format. Note: Setting this to a file path will prevent console logs from appearing in `docker logs`. |
 | `log.system.path` | `PHENIX_LOG_SYSTEM_PATH` | `/var/log/phenix/phenix.log` | Path to the persistent system log file (used by UI). Uses **JSON** format. This is independent of `log.console` and is always active. |
 | `log.system.max-size` | `PHENIX_LOG_SYSTEM_MAX_SIZE` | `100` | Max size in MB before rotation. |
@@ -270,7 +272,7 @@ phēnix resolves each setting in the following order (highest to lowest):
 4. **Defaults**: Internal application defaults.
 
 > [!NOTE]
-> An environment variable, such as one set in Docker Compose, overrides a value that `phenix settings set` writes to the config file. Unset the variable to use the file's value.
+> An environment variable, such as one set in Docker Compose, overrides a value that `phenix settings set` writes to the config file. Unset the variable to use the file's value; `phenix doctor` warns about each such override.
 
 #### Managing Settings
 
@@ -358,6 +360,11 @@ func MyFunc() {
     plog.Info(plog.TypeSystem, "System initialized", "version", "1.0")
 }
 ```
+
+Web handlers log security-relevant actions (capture access, consoles, disk
+changes, file deletion, ...) as `AUDIT` records with ECS fields through
+`phenix/web/audit`. These always reach the system log file, whatever
+`log.level` is; see [Audit Events](docs/content/logging.md#audit-events).
 
 ### 🧠 Decision Log
 

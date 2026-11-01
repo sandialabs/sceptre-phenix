@@ -774,13 +774,13 @@ func GetScreenshot(w http.ResponseWriter, r *http.Request) error {
 
 	if encode {
 		encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
-		_, _ = w.Write([]byte(encoded)) //nolint:gosec // XSS via taint analysis
+		_, _ = w.Write([]byte(encoded)) //nolint:gosec // G705 base64 text, not HTML
 
 		return nil
 	}
 
 	w.Header().Set("Content-Type", "image/png")
-	_, _ = w.Write(screenshot) //nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(screenshot) //nolint:gosec // G705 a PNG image, not HTML
 
 	return nil
 }

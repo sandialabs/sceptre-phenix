@@ -53,25 +53,14 @@ func TestSlowComponentViewerDoesNotBlockUpdates(t *testing.T) {
 
 	var want strings.Builder
 
-	// half a queue at a time, so the fast viewer is never a full queue behind
-	const batch = viewerQueue / 2
+	polltest.Within(t, "sending the updates", func() {
+		for i := range 2 * viewerQueue {
+			line := strconv.Itoa(i) + "\n"
+			want.WriteString(line)
 
-	for start := 0; start < 2*viewerQueue; start += batch {
-		polltest.Within(t, "sending the updates", func() {
-			for i := start; i < start+batch; i++ {
-				line := strconv.Itoa(i) + "\n"
-				want.WriteString(line)
+			UpdateComponent(update(cmp, statusRunning, line))
+		}
 
-				UpdateComponent(update(cmp, statusRunning, line))
-			}
-		})
-
-		polltest.Until(t, "the fast viewer writing the updates", func() bool {
-			return fastConn.String() == want.String()
-		})
-	}
-
-	polltest.Within(t, "finishing the component", func() {
 		UpdateComponent(update(cmp, statusSuccess, ""))
 	})
 

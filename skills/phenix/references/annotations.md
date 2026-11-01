@@ -7,9 +7,10 @@ and interpret the value however they define it. The [skill body](../SKILL.md)
 covers the Topology and Scenario shapes these annotations attach to.
 
 An experiment can also be given node annotations when it is created, with
-`phenix experiment create --node-annotation key=value` or the
-`node_annotations` field of `POST /experiments`. They are added to every VM
-(not external nodes) in the experiment's own copy of the topology; the Topology config is unchanged, and a VM that already
+`phenix experiment create --node-annotation key=value`, the `node_annotations`
+field of `POST /experiments`, or the Advanced Options of the web UI's create
+card. They are added to every VM (not external nodes) in the experiment's own
+copy of the topology; the Topology config is unchanged, and a VM that already
 has the key keeps its value. Creation rejects a value of the wrong type for the
 default apps' annotations below (a non-boolean `phenix/default-apps`, a
 `phenix/startup-autotunnel` that is not a list of strings, a non-string
@@ -18,9 +19,10 @@ default apps' annotations below (a non-boolean `phenix/default-apps`, a
 
 One VM's annotations in an existing experiment can be read and replaced, even
 while it runs, with `GET` and `PATCH /experiments/{exp}/vms/{name}` (see
-[`web-api.md`](web-api.md#vm-annotations)). The same type checks apply. Apps
-read most annotations when the experiment starts, so a change to a running
-experiment mostly takes effect at its next start.
+[`web-api.md`](web-api.md#vm-annotations)) or the Annotations box of the web UI's
+VM details card. The same type checks apply. Apps read most annotations when the
+experiment starts, so a change to a running experiment mostly takes effect at
+its next start.
 
 Annotations read by phenix's own default apps and web server:
 

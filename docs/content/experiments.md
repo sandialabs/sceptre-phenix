@@ -27,8 +27,9 @@ created or start, without reloading the page.
 
 `Start Time` shows when the experiment started as phēnix recorded it, an
 ISO 8601 timestamp with the server's UTC offset, followed by how long ago that
-was, for example `2026-10-28T14:03:22-06:00 (3 hours ago)`. The column sorts
-by the actual time.
+was, for example `2026-10-28T14:03:22-06:00 (3 hours ago)`, the same form as
+`Last Updated` on the [Configs](configuration.md) page. The column sorts by
+the actual time.
 
 Click a name in the `Topology` or `Scenario` column to open that config in the
 viewer on the [Configs](configuration.md#view-a-config) page, if your role may
@@ -439,9 +440,8 @@ line, and for a custom annotation in the Web-UI, a VM annotation's value `true`
 or `false` becomes a boolean and a JSON list or object keeps that type; anything
 else, numbers included, stays a string. Experiment annotations are always
 strings. The API takes `node_annotations` as JSON values, keeping their types.
-To change one VM's annotations after the experiment is created, send
-`PATCH /api/v1/experiments/{exp}/vms/{name}` with an `annotations` object. It
-replaces all of the VM's annotations, also while the experiment runs.
+To change one VM's annotations after the experiment is created, use the
+[Annotations](vms.md#annotations) section of its details card.
 
 ![Annotation rows for every VM (phenix/startup-via-cc and phenix/startup-autotunnel) and for the experiment (phenix.workflow/tags), each with its help text and a delete button.](images/create_exp_annotations.png){: width=600 .center}
 
@@ -727,7 +727,8 @@ In order, they are:
   file, or `view file` for a text file. A row for any other kind of file leaves
   that space empty. A text file over 10 MiB is too large to view; download it
   instead.
-* `download`, which downloads that one file; an interrupted download resumes.
+* `download`, which downloads that one file; an interrupted download resumes
+  (see [Downloads](api.md#downloads)).
 * `delete`, which asks you to confirm, naming the file, and spins while the file
   is deleted. Deleting a file removes it from every cluster node and cannot be
   undone.
@@ -769,8 +770,8 @@ moving to another page drops the rest of the selection.
 
 When some of the files cannot be deleted, phēnix deletes the ones it can and
 reports the rest in one summary, naming up to eight of them with the reason and
-counting any beyond that. Those files stay checked, so you can try again or
-download them instead.
+counting any beyond that. Those files stay checked, so you can try again or download them
+instead.
 
 !!! note
     One zip download holds at most 500 files and 2 GiB in total. A larger one is
@@ -778,15 +779,15 @@ download them instead.
 
 Through the API, `POST /api/v1/experiments/<name>/files/archive` with the same
 `{"paths": [...]}` body builds the archive in a [background job](jobs.md)
-instead, with the same limits and checks. A file that cannot be fetched, such as
-one a mesh node no longer has, is left out rather than failing the whole
+instead, with the same limits and checks. A file that cannot be fetched, such
+as one a mesh node no longer has, is left out rather than failing the whole
 archive: the job ends `partial`, the archive is named
 `<experiment name>-files-incomplete.zip`, and a `MISSING.txt` entry in it lists
-each file left out and why. A file that grows after the request is archived only
-up to the size it had then: it counts as archived, but the archive is still
-named `-files-incomplete.zip` and `MISSING.txt` says so. The finished archive
-downloads, resumably, from `GET /api/v1/jobs/<id>/artifact` for an hour, and
-canceling the job leaves no archive.
+each file left out and why. A file that grows after the request is archived
+only up to the size it had then: it counts as archived, but the archive is still
+named `-files-incomplete.zip` and `MISSING.txt` says so. The finished archive downloads, resumably, from
+`GET /api/v1/jobs/<id>/artifact` for an hour, and canceling the job leaves no
+archive.
 
 !!! tip "Resuming a download from a shell"
     `curl -C -` resumes a single-file download where an earlier attempt

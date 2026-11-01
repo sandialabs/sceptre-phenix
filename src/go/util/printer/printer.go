@@ -60,11 +60,17 @@ func PrintTableOfExperiments(writer io.Writer, palette termcolor.Palette, exps .
 			apps = append(apps, app.Name())
 		}
 
+		started := palette.Green(exp.Status.StartTime())
+		if exp.Running() && exp.Status.Interrupted() != "" {
+			// each word has its own codes, since the table can wrap the cell between them
+			started += " " + palette.Yellow("(interrupted)")
+		}
+
 		table.Append([]string{
 			exp.Spec.ExperimentName(),
 			exp.Metadata.Annotations["topology"],
 			exp.Metadata.Annotations["scenario"],
-			palette.Green(exp.Status.StartTime()),
+			started,
 			strconv.Itoa(len(exp.Spec.Topology().Nodes())),
 			strconv.Itoa(len(exp.Spec.VLANs().Aliases())),
 			strings.Join(apps, ", "),

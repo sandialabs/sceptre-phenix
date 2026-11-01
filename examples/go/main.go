@@ -67,7 +67,7 @@ func setupLogging() *slog.Logger {
 
 	var output io.Writer = os.Stderr
 	if path := os.Getenv("PHENIX_LOG_FILE"); path != "" && path != "stderr" {
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600) //nolint:gosec // G703 phenix names the log file
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to open log file %s: %v\n", path, err)
 		} else {

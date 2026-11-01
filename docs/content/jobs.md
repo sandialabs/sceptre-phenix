@@ -1,16 +1,29 @@
 # Background Jobs
 
-Some operations take longer than a web request should. phēnix runs these as
-**background jobs** on the server. The request that starts one answers at once
-with the job, and the job then runs on its own: closing the browser tab,
-reloading the page or losing the connection does not stop it, and the UI
-picks it up again when you come back.
+Some operations take longer than a web request should: acting on many VMs at
+once, building a zip archive of experiment files, or cloning a large disk
+image. phēnix runs these as **background jobs** on the server. The request
+that starts one answers at once with the job, and the job then runs on its
+own: closing the browser tab, reloading the page or losing the connection does
+not stop it, and the UI picks it up again when you come back.
 
 Each job records:
 
-* what it acts on, as a list of **items**, each with its own outcome;
+* what it acts on, as a list of **items** (VMs, files or a disk), each with
+  its own outcome;
 * its **progress**, as items done out of the total and, for file work, bytes;
 * an **artifact**, a file the job produced for you to download, if any.
+
+## What runs as a job
+
+| Kind | Started by | Items |
+|---|---|---|
+| `vms.action` | the VM table's bulk actions (`POST /api/v1/experiments/{exp}/vms/actions`, see [VM Multi Action](vm-multi-action.md#from-the-api)) | the VMs |
+| `files.archive` | downloading several experiment files (`POST /api/v1/experiments/{name}/files/archive`, see [Experiments](experiments.md#acting-on-several-files)) | the files |
+| `disk.clone` | cloning a disk image (`POST /api/v1/disks/clone/jobs`, see [Disks](disks.md#cloning-in-the-background)) | the new image |
+
+Other operations, such as VM snapshots, commits and memory snapshots, experiment
+starts and SCORCH runs, run within their request and are not jobs.
 
 ## Lifecycle
 
@@ -32,17 +45,26 @@ have to wait answers `429 Too Many Requests` with `Retry-After`.
 ### Item outcomes
 
 Each item ends as `succeeded`, `failed`, `skipped` or `canceled`. A failed or
-skipped item carries an `error` saying why, while the rest of the job goes on.
+skipped item carries an `error` saying why: a VM your role may not act on is
+skipped with `you do not have permission`, for example, while the rest of the
+job goes on.
 
 A failed item is marked `retryable` when trying it again later may succeed,
-such as an item that another action holds, or a request that timed out.
+such as a VM busy with another action (`vm ... is locked with status ...`) or
+a request that timed out. The web UI offers **Retry failed** for these items;
+retrying starts a new job with just them.
 
 ### Canceling
 
 A job you can cancel answers `POST /jobs/{id}/cancel` with `202` and
 `cancelRequested: true`, and ends `canceled`. A queued job is canceled at
-once. A running job stops when its work notices. An archive job stops at once
-and leaves no file behind.
+once. A running job stops when its work notices:
+
+* a VM action job starts no more VMs, and finishes the minimega commands
+  already sent, so it stops after the VMs in progress finish; a VM whose
+  commands were still waiting their turn on the minimega connection is
+  `canceled` without being touched;
+* an archive or clone job stops at once and leaves no file behind.
 
 Items that succeeded before the cancel keep their outcome; the others are
 `canceled`.
@@ -57,9 +79,9 @@ Jobs live **in the memory of the `phenix ui` server only**:
   ones: they get half of `ui.shutdown-grace-period` to finish, and are
   canceled then (see [Stopping the Server](settings.md#stopping-the-server));
 * the files a job leaves when the server stops mid-way are deleted when it
-  starts again (`<base-dir.phenix>/jobs/`).
+  starts again (`<base-dir.phenix>/jobs/` and partial disk clones).
 
-Download an artifact soon after the job makes it: it is deleted with its job.
+Download an archive soon after it is built: it is deleted with its job.
 
 ## Who sees a job
 
@@ -69,28 +91,33 @@ dismiss it only with the `jobs` permission (see
 
 | Verb | Lets a role, for other users' jobs |
 |---|---|
-| `list` | list them |
+| `list` | list them, and get their websocket updates |
 | `get` | read them and download their artifacts |
 | `update` | cancel them |
 | `delete` | dismiss them |
 
 The permission's resource name is the job's experiment, so an Experiment Admin
-role sees and cancels the jobs of its own experiments. A job of no experiment
-needs the same verbs on the `jobs/global` resource instead, which Global Admin
-has; a `jobs` permission does not reach it, even on every experiment (`*`).
-Starting a job needs only the permission of the operation itself, never
-`jobs`. Downloading an experiment file archive, the owner's included, also
-needs `experiments/files` `get` on its experiment, checked on every download,
-and a refused download is recorded in the audit log.
+role sees and cancels the jobs of its own experiments. A job of no experiment,
+such as a disk clone, needs the same verbs on the `jobs/global` resource
+instead, which Global Admin has; a `jobs` permission does not reach it, even
+on every experiment (`*`). Starting a job needs only the permission of the
+operation itself, never `jobs`. Downloading an experiment file archive, the
+owner's included, also needs `experiments/files` `get` on its experiment,
+checked on every download, and a refused download is recorded in the audit
+log.
 
 To anyone else, another user's job answers `404`, as if it did not exist.
+
+A disk clone, and the files of an archive, are recorded in the audit log as
+for the operations run within their request; see
+[Audit Events](logging.md#audit-events) for when.
 
 ## Web UI
 
 The [background jobs menu](web-ui.md#background-jobs-menu) in the header lists
 your jobs, with their progress, and cancels, downloads and dismisses them. It
-picks up jobs again after a reload. Its button turns red or green when jobs
-have failed or succeeded since you last opened it.
+picks up jobs again after a reload or a lost connection. Its button turns red
+or green when jobs have failed or succeeded since you last opened it.
 
 ## Command line
 
@@ -114,7 +141,9 @@ each command fails with `phenix ui is not running (no socket at ...)`.
 !!! note
     The command line can follow jobs, but not start them. Commands such as
     `phenix vm start` act in the `phenix` process itself rather than through the
-    server, so they wait for their result and are not jobs.
+    server, so they wait for their result and are not jobs; start
+    bulk VM actions, file archives and disk clones from the web UI or the REST
+    API.
 
 ## REST API
 
@@ -124,7 +153,13 @@ each command fails with `phenix ui is not running (no socket at ...)`.
 | `GET /api/v1/jobs/{id}` | returns one job, with every item and its result |
 | `POST /api/v1/jobs/{id}/cancel` | cancels it: `202`, or `409` once it finished or when it cannot be canceled |
 | `DELETE /api/v1/jobs/{id}` | dismisses a finished job and deletes its artifact: `204`, or `409` while it runs |
-| `GET /api/v1/jobs/{id}/artifact` | downloads its artifact, resumable with `Range` |
+| `GET /api/v1/jobs/{id}/artifact` | downloads its artifact, resumable with `Range` (see [API](api.md#downloads)) |
+
+A route that starts a job answers `202 Accepted` with the job and a
+`Location: /api/v1/jobs/{id}` header, under the base path phēnix is served
+behind (`--base-path`), if any. It checks what it can first, such as
+permissions and limits, and answers with the usual `400`, `403`, `404`, `409`
+or `413` without starting a job when they fail.
 
 ```bash
 # list your running jobs
@@ -140,8 +175,7 @@ curl -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
   http://localhost:3000/api/v1/jobs/j0f3a9c2e81b4d7a6/cancel
 ```
 
-A job looks like this. `kind` names the operation that started the job, and
-`title` describes it for people:
+A job looks like this:
 
 ```json
 {
@@ -169,3 +203,44 @@ A job looks like this. `kind` names the operation that started the job, and
 
 `revision` grows with every change, so a client that gets updates out of order
 keeps the one with the highest revision.
+
+### Retrying a request that starts a job
+
+A client that loses the `202` answer, to a timeout or a dropped connection,
+cannot tell whether the job started. To retry safely, send an
+`Idempotency-Key` header (any 1 to 255 printable ASCII characters, such as a
+UUID) with the request, and the same key with each retry:
+
+* a retry with the same key, body and query, to the same path, by the same
+  user, gets the first answer again: the same `202`, `Location` and job, with
+  `Idempotent-Replayed: true`, and starts no second job;
+* the same key with a different body or query is refused with `422`;
+* a retry while the first request is still being answered gets `409` with
+  `Retry-After`.
+
+Only a `202` is kept, so a request refused with, for example, `429` can be
+retried with the same key. phēnix keeps keys in memory for an hour, at most
+1000 of them, dropping the oldest first; a restart forgets them.
+
+```bash
+# one key per request, reused for each of its retries
+KEY=$(uuidgen)
+curl -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  -H "Idempotency-Key: $KEY" \
+  -d '{"action": "restart", "vms": ["web", "db"]}' \
+  http://localhost:3000/api/v1/experiments/exp1/vms/actions
+```
+
+### Websocket updates
+
+The web UI's websocket (`GET /api/v1/ws`) sends each change to a job, at most
+four times a second while it makes progress and at once when its status
+changes, to the job's owner and to the users who may list it:
+
+```json
+{"resource": {"type": "job", "name": "j0f3a9c2e81b4d7a6", "action": "update"}, "result": {...}}
+```
+
+`action` is `remove` when the job is dismissed or forgotten. These messages
+leave out the items' `result`, and carry at most 500 items, with
+`itemsOmitted` counting the rest; `GET /api/v1/jobs/{id}` has them all.

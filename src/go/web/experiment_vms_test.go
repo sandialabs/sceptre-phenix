@@ -64,6 +64,7 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 		wantVMs      int
 		wantState    string // of the VM listed, if one is
 		wantCount    uint32
+		wantPercent  float64
 	}{
 		{name: "experiment", vms: running, wantListings: 1, wantVMs: 1, wantState: "RUNNING", wantCount: 1},
 		{name: "experiment without VMs", query: "?vms=false", vms: running, wantCount: 1},
@@ -74,7 +75,10 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 		// the list takes no screenshots, so one asked for changes nothing
 		{name: "list ignores screenshots", list: true, query: "?vms=false&screenshot=200", vms: running, wantCount: 1},
 		// the VM as the topology configures it, with no state from minimega
-		{name: "list while starting", list: true, vms: running, starting: true, wantVMs: 1, wantCount: 1},
+		{
+			name: "list while starting", list: true, vms: running, starting: true,
+			wantVMs: 1, wantCount: 1, wantPercent: 0.25,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			useTestExperiment(t)
@@ -86,7 +90,12 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 					t.Fatalf("cache.LockExperimentForStarting(test-experiment) error = %v", err)
 				}
 
-				t.Cleanup(func() { cache.UnlockExperiment("test-experiment") })
+				startProgress.Store("test-experiment", tt.wantPercent)
+
+				t.Cleanup(func() {
+					startProgress.Delete("test-experiment")
+					cache.UnlockExperiment("test-experiment")
+				})
 			}
 
 			var (
@@ -130,6 +139,10 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 				if got := exp.GetVms()[0].GetState(); got != tt.wantState {
 					t.Errorf("GET %s VM state = %q, want %q", path, got, tt.wantState)
 				}
+			}
+
+			if got := exp.GetPercent(); got != tt.wantPercent {
+				t.Errorf("GET %s percent = %v, want %v", path, got, tt.wantPercent)
 			}
 		})
 	}

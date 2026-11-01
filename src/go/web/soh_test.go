@@ -286,7 +286,7 @@ func TestGetSoHSummaryReusesStatesWhileBusy(t *testing.T) {
 	}
 
 	resp := do(t, http.MethodGet, serveAs(t, "alice", sohSummaryRole("*")).URL+"/api/v1/soh", "")
-	if got := resp.Header.Get("X-Phenix-Stale"); got != "true" {
+	if got := resp.Header.Get("X-Phenix-Stale"); got != flagTrue {
 		t.Errorf("GET /api/v1/soh while busy X-Phenix-Stale = %q, want true", got)
 	}
 

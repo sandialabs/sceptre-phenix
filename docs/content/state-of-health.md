@@ -593,8 +593,9 @@ added to the experiment topology so they do not clutter the phenix UI.
 When packet capture is enabled, the phenix UI SoH tab will include a Network
 Volume tab that uses network flow data queried from Elasticsearch to populate a
 chord graph in an effort to depict how much traffic is flowing between VMs.
-Users/Analysts can also access Kibana using VNC via the phenix UI to do
-additional analysis on the network flow data that's being captured.
+Users/Analysts can also access Kibana using
+VNC via the phenix UI to do additional analysis on the network flow data that's
+being captured.
 
 ## Sample SoH Scenario Config
 

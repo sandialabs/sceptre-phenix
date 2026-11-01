@@ -137,8 +137,8 @@ tags:
   - name: Tunneler
     description: >-
       phenix-tunneler builds this server offers for download. Unlike the other
-      endpoints here, and like /features, this one is served from the server
-      root, not under /api/v1. So it declares its own server. It needs
+      endpoints here, and like /features, these two are served from the server
+      root, not under /api/v1. So each declares its own server. They need
       neither credentials nor a permission.
   - name: Health
     description: >-
@@ -1096,7 +1096,7 @@ paths:
       description: >-
         Runs the apps' cleanup stage and kills the experiment's VMs. When
         minimega cannot kill them, the experiment stays running so the stop can
-        be tried again, and the 502 error carries `metadata.retry` `force`.
+        be tried again, and the 400 error carries `metadata.retry` `force`.
         Needs the `experiments/stop` `update` permission.
       operationId: postExperimentsNameStop
       parameters:
@@ -2499,6 +2499,13 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: no netflow capture is running for the experiment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
           content:
             application/json:
               schema:
@@ -4131,6 +4138,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/experiments/{exp_name}/vms/{vm_name}/captures":
     get:
       tags:
@@ -5031,6 +5045,13 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: forbidden, or a handshake without an `Origin` header
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
           content:
             application/json:
               schema:
@@ -7375,7 +7396,7 @@ paths:
         - Tunneler
       summary: Download a tunneler build
       description: >-
-        Serves one of the builds in the server's downloads directory, as an
+        Serves one of the builds `GET /downloads/tunneler` lists, as an
         attachment under its own name. Only a file, or a link to one,
         directly in the downloads directory is served. A name that is a path,
         or that starts with a dot, is refused. Downloads resume with `Range`
@@ -8409,7 +8430,7 @@ paths:
         publishes. Examples are an `experiment` that was created, started or
         deleted, and an `experiment/vm` that was started, stopped, redeployed
         or updated. Other examples are a VM `experiment/vm/screenshot`, a
-        `config`, `user` or `disks` change, `apps/<app>` trigger
+        `config`, `user`, `job` or `disks` change, `apps/<app>` trigger
         progress, a SCORCH `apps/scorch` update, or a `log` entry. A client
         gets only the messages its role may see, each checked against the
         permission of the route that made the change. It gets `log` entries
@@ -8445,7 +8466,9 @@ paths:
         When 256 messages wait for a client that is too slow, the server
         closes it with 1013 (Try Again Later) and the reason
         `client too slow`. The client then reconnects
-        and reloads what it shows. Every message carries `seq`, as the
+        and reloads what it shows. When the server shuts down it closes every
+        client with 1001 (Going Away) and the reason `server shutting down`,
+        and answers new websockets with 503. Every message carries `seq`, as the
         introduction describes. Needs a signed-in user, but no permission of
         its own.
       operationId: getWs
@@ -8454,6 +8477,13 @@ paths:
           description: switching protocols, then `WebSocketMessage`s follow
         "400":
           description: not a websocket handshake
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
           content:
             application/json:
               schema:
@@ -10917,6 +10947,139 @@ components:
           example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
           type: string
           description: hex SHA-256 of the file. Absent while the server computes it
+    Tunnelers:
+      title: Tunnelers
+      description: The tunneler builds this server offers for download.
+      type: object
+      properties:
+        files:
+          title: Files
+          type: array
+          description: file names of the builds installed on this server, sorted
+          items:
+            type: string
+            example: phenix-tunneler-linux-amd64
+    HealthResponse:
+      title: Health Response
+      type: object
+      description: >-
+        A health response in the format of the IETF draft
+        draft-inadarei-api-health-check-06
+      properties:
+        status:
+          title: Status
+          type: string
+          enum: [pass, warn, fail]
+          description: the worst status of every check
+          example: pass
+        version:
+          title: Version
+          type: string
+          description: the phenix build's tag
+          example: v1.2.0
+        releaseId:
+          title: Release ID
+          type: string
+          description: the phenix build's commit
+          example: 059cd25b
+        serviceId:
+          title: Service ID
+          description: the service the response is for
+          type: string
+          example: phenix
+        description:
+          title: Description
+          description: what the response reports on
+          type: string
+          example: phēnix readiness
+        notes:
+          title: Notes
+          type: array
+          description: present when the request was not authenticated
+          items:
+            type: string
+            example: "output fields omitted: request not authenticated"
+        output:
+          title: Output
+          example: "minimega did not answer: unable to dial"
+          type: string
+          description: detail, only for authenticated requests
+        checks:
+          title: Checks
+          type: object
+          description: >-
+            the checks' results, keyed "component:measurement" (such as
+            `minimega:responseTime`). Most keys have one result, and
+            `disk:utilization` has one per filesystem
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/HealthCheckResult"
+      required:
+        - status
+        - serviceId
+        - description
+        - checks
+    HealthCheckResult:
+      title: Health Check Result
+      description: One check's result in a health response.
+      type: object
+      properties:
+        componentId:
+          title: Component ID
+          type: string
+          description: >-
+            the component observed, such as `minimega`, `bolt` or `files-dir`.
+            It is never a path or host name
+          example: minimega
+        componentType:
+          title: Component Type
+          description: the kind of component observed
+          type: string
+          enum: [component, datastore, system]
+          example: component
+        observedValue:
+          title: Observed Value
+          description: >-
+            the value observed. Each key keeps one JSON type across runs, and a
+            run that observed nothing omits it. Fractional values (milliseconds,
+            percentages) always carry a decimal point, even when whole (`42.0`)
+          example: 1.27
+        observedUnit:
+          title: Observed Unit
+          description: the unit of `observedValue`, when it has one
+          type: string
+          example: ms
+        status:
+          title: Status
+          description: the check's status
+          type: string
+          enum: [pass, warn, fail]
+          example: pass
+        affectedEndpoints:
+          title: Affected Endpoints
+          type: array
+          description: the API routes that do not work while this check warns or fails
+          items:
+            type: string
+            example: /api/v1/vms
+        time:
+          title: Time
+          example: "2026-01-01T10:00:00Z"
+          type: string
+          format: date-time
+          description: when the value was observed
+        output:
+          title: Output
+          type: string
+          description: >-
+            why the check warns or fails, or other detail (paths, hosts,
+            errors). Only for authenticated requests
+          example: "minimega did not answer: unable to dial"
+      required:
+        - status
+        - time
+
     Job:
       title: Job
       type: object
@@ -11007,8 +11170,8 @@ components:
           example: 0
           type: integer
           description: >-
-            items that a shortened copy of the job omits. GET the job to get
-            all items
+            items that a websocket message omits (it carries at most 500). GET
+            the job to get all items
         error:
           title: Error
           example: experiment exp1 is not running
@@ -11089,7 +11252,8 @@ components:
           type: object
           description: >-
             what the item's action returned, such as the VM it left (as GET
-            /experiments/{exp}/vms/{name} returns it)
+            /experiments/{exp}/vms/{name} returns it). The websocket does not
+            send it
     JobProgress:
       title: Job Progress
       description: The progress of a job.
@@ -12120,138 +12284,6 @@ components:
           type: string
           description: what happened to it, or what the request asks
           example: start
-    Tunnelers:
-      title: Tunnelers
-      description: The tunneler builds this server offers for download.
-      type: object
-      properties:
-        files:
-          title: Files
-          type: array
-          description: file names of the builds installed on this server, sorted
-          items:
-            type: string
-            example: phenix-tunneler-linux-amd64
-    HealthResponse:
-      title: Health Response
-      type: object
-      description: >-
-        A health response in the format of the IETF draft
-        draft-inadarei-api-health-check-06
-      properties:
-        status:
-          title: Status
-          type: string
-          enum: [pass, warn, fail]
-          description: the worst status of every check
-          example: pass
-        version:
-          title: Version
-          type: string
-          description: the phenix build's tag
-          example: v1.2.0
-        releaseId:
-          title: Release ID
-          type: string
-          description: the phenix build's commit
-          example: 059cd25b
-        serviceId:
-          title: Service ID
-          description: the service the response is for
-          type: string
-          example: phenix
-        description:
-          title: Description
-          description: what the response reports on
-          type: string
-          example: phēnix readiness
-        notes:
-          title: Notes
-          type: array
-          description: present when the request was not authenticated
-          items:
-            type: string
-            example: "output fields omitted: request not authenticated"
-        output:
-          title: Output
-          example: "minimega did not answer: unable to dial"
-          type: string
-          description: detail, only for authenticated requests
-        checks:
-          title: Checks
-          type: object
-          description: >-
-            the checks' results, keyed "component:measurement" (such as
-            `minimega:responseTime`). Most keys have one result, and
-            `disk:utilization` has one per filesystem
-          additionalProperties:
-            type: array
-            items:
-              $ref: "#/components/schemas/HealthCheckResult"
-      required:
-        - status
-        - serviceId
-        - description
-        - checks
-    HealthCheckResult:
-      title: Health Check Result
-      description: One check's result in a health response.
-      type: object
-      properties:
-        componentId:
-          title: Component ID
-          type: string
-          description: >-
-            the component observed, such as `minimega`, `bolt` or `files-dir`.
-            It is never a path or host name
-          example: minimega
-        componentType:
-          title: Component Type
-          description: the kind of component observed
-          type: string
-          enum: [component, datastore, system]
-          example: component
-        observedValue:
-          title: Observed Value
-          description: >-
-            the value observed. Each key keeps one JSON type across runs, and a
-            run that observed nothing omits it. Fractional values (milliseconds,
-            percentages) always carry a decimal point, even when whole (`42.0`)
-          example: 1.27
-        observedUnit:
-          title: Observed Unit
-          description: the unit of `observedValue`, when it has one
-          type: string
-          example: ms
-        status:
-          title: Status
-          description: the check's status
-          type: string
-          enum: [pass, warn, fail]
-          example: pass
-        affectedEndpoints:
-          title: Affected Endpoints
-          type: array
-          description: the API routes that do not work while this check warns or fails
-          items:
-            type: string
-            example: /api/v1/vms
-        time:
-          title: Time
-          example: "2026-01-01T10:00:00Z"
-          type: string
-          format: date-time
-          description: when the value was observed
-        output:
-          title: Output
-          type: string
-          description: >-
-            why the check warns or fails, or other detail (paths, hosts,
-            errors). Only for authenticated requests
-          example: "minimega did not answer: unable to dial"
-      required:
-        - status
-        - time
 
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.

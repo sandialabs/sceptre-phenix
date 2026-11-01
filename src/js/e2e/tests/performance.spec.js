@@ -1,6 +1,6 @@
 // First-visit navigation over an emulated high-latency link: any page chunk not
 // prefetched makes the first click on its nav tab blow the time budget.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./helpers');
 
 const LATENCY_MS = 1000;
 

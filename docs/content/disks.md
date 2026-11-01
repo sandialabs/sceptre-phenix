@@ -179,7 +179,10 @@ directory when the page can tell it from the list:
 > that may run a VM with this image needs the same file at this path.
 
 The same icon marks the image in the head of its details card, where the
-location reads `Outside the standard images directory`.
+location reads `Outside the standard images directory`, beside an experiment page's `Disk`
+menu while the menu's disk is outside (see [Disk Menu](vms.md#disk-menu)), and
+on a running VM's disk or inserted ISO in its details. The CD-ROM picker lists
+outside ISO images in a group of their own, without the icon.
 
 minimega copies only images in its files directory to the cluster nodes that
 launch VMs from them. Before using an outside image on a cluster of more than
@@ -203,7 +206,8 @@ is; a path outside `/phenix` needs the same mount in both containers.
 
 phēnix leaves out a topology image it cannot open as a regular file, such as a
 missing or unreadable one, and never inspects paths under `/proc`, `/sys`,
-`/dev` or `/run`.
+`/dev` or `/run`. The experiment page still shows such a disk, marked as not in
+the list.
 
 ## Permissions
 
@@ -213,8 +217,9 @@ whatever folder it is, so a name covers the files of that name in every folder:
 
 A role sees an image outside the minimega files directory only when, besides
 `list` on its file name, it may `get` an experiment whose topology uses the
-image, or the image backs one the role sees. `GET /api/v1/disks?expName=` asks
-for the images one experiment can use, which needs `get` on that experiment.
+image, or the image backs one the role sees. The experiment page asks for the
+images one experiment can use, which needs `get` on that experiment; see
+[Disk Menu](vms.md#disk-menu).
 
 ## Actions
 
@@ -296,7 +301,6 @@ take as one argument: no white space or control characters, and none of `"`,
 `'`, `` ` ``, `\`, `#`, `*`, `?`, `[`, `]`, `{`, `}`, `$`, or `,`. A new name
 from `Clone` or `Rename` follows the same rule. phēnix clones, renames, deletes,
 and downloads the file itself, so those work on an existing image of any name.
-A VM disk that an update or redeploy of a VM sets must follow the same rule.
 
 !!! warning
     phēnix does not check whether other images are built on the one you rename
@@ -420,7 +424,10 @@ problem. It does not mark these images:
   see.
 
 The tag shows the view of the head node. A file that is present on a compute
-node but missing on the head node also shows the tag.
+node but missing on the head node also shows the tag. On the experiment pages,
+a VM disk with a broken chain shows a red icon with a cross, in place of the
+warning triangle. Its tooltip reads
+`This image's backing chain is broken: <problem>. Starting the experiment may fail.`
 
 The tag goes away when the missing file appears. A change in the minimega files
 directory reloads open `Disks` pages, as

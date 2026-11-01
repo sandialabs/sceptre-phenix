@@ -445,6 +445,46 @@ func TestUnmountGivesUpOnABusyMount(t *testing.T) {
 	}
 }
 
+// A mount download answers HEAD and resumes with a range against its ETag.
+func TestDownloadMountFileResumes(t *testing.T) {
+	useTestMount(t)
+
+	query := url.Values{"path": {"etc/hostname"}}
+
+	head := requestMount(t, http.MethodHead, "/download", query)
+	etag := head.Header.Get("ETag")
+
+	if head.StatusCode != http.StatusOK {
+		t.Fatalf("HEAD files/download?%s = %d, want %d", query.Encode(), head.StatusCode, http.StatusOK)
+	}
+
+	if etag == "" {
+		t.Fatalf("HEAD files/download?%s has no ETag, want one", query.Encode())
+	}
+
+	if got, want := head.Header.Get("Content-Length"), "7"; got != want {
+		t.Errorf("HEAD files/download?%s Content-Length = %q, want %q", query.Encode(), got, want)
+	}
+
+	server := serveAs(t, "alice", mountRole()).URL
+	resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/vms/test-vm/files/download?"+query.Encode(), "",
+		"Range", "bytes=5-", "If-Range", etag)
+
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Errorf("GET files/download?%s with Range bytes=5- = %d, want %d", query.Encode(), resp.StatusCode, http.StatusPartialContent)
+	}
+
+	if got, want := readBody(t, resp), "vm"; got != want {
+		t.Errorf("GET files/download?%s with Range bytes=5- = %q, want %q", query.Encode(), got, want)
+	}
+
+	for path, want := range map[string]int{"etc": http.StatusBadRequest, "etc/missing": http.StatusNotFound} {
+		if resp := requestMount(t, http.MethodGet, "/download", url.Values{"path": {path}}); resp.StatusCode != want {
+			t.Errorf("GET files/download?path=%s = %d, want %d", path, resp.StatusCode, want)
+		}
+	}
+}
+
 // Mounting and unmounting a VM are audited, refusals included.
 func TestMountAndUnmountAreAudited(t *testing.T) {
 	useTestMount(t)

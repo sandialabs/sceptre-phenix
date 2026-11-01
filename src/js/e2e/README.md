@@ -10,6 +10,7 @@ a CI-built binary, a container, or a full range node.
 | ------------------------------ | -------------------------------------------------------------------------------------------- | ----------------------- |
 | `routes.spec.js`               | just a running server (empty store is fine)                                                  | yes                     |
 | `forms.spec.js`                | just a running server                                                                        | yes                     |
+| `performance.spec.js`          | just a running server                                                                        | yes                     |
 | `experiments.spec.js`          | just a running server                                                                        | yes                     |
 | `navbar.spec.js`               | just a running server                                                                        | yes                     |
 | `tables.spec.js`               | just a running server                                                                        | yes                     |
@@ -21,7 +22,7 @@ a CI-built binary, a container, or a full range node.
 
 CI (`.github/workflows/frontend.yml`) builds `bin/phenix` three times, with
 the UI built with `VITE_AUTH=disabled`, `enabled` and `proxy`. Each build, with its UI, is the
-`phenix-e2e-<mode>` artifact.
+`phenix-e2e-<mode>` artifact; the `perf` job also uses the `disabled` one.
 Then five jobs run in parallel. Each starts its own `bin/phenix ui` against a
 throw-away store with `scripts/ci-start-phenix-ui.sh` and runs one part of
 the suite:
@@ -33,13 +34,13 @@ the suite:
 | Auth enabled      | `enabled`  | authentication on             | `auth-enabled.spec.js` and `health.spec.js`     |
 | Auth proxy        | `proxy`    | `--jwt-signing-key proxy-jwt` | the same for proxy, in Chromium only            |
 
-The builds and the five jobs run only for a change that can affect
+The builds, the five jobs and `perf` run only for a change that can affect
 the browser: `src/js/` outside its unit tests in `src/js/test/`,
 `src/go/web/`, `src/go/api/`, `src/go/store/`, `src/go/cmd/`,
 `src/go/types/version/`, the `Makefile`, `docker/`, `scripts/api-docs.sh`,
 `scripts/ci-start-phenix-ui.sh` or the workflow itself (`browser_path()` in
 the workflow). For any other change the builds and the five jobs report
-success without running a test. On CI, a `test.only`
+success without running a test, and `perf` is skipped. On CI, a `test.only`
 left in a spec fails the run (`forbidOnly`). A test that fails on CI runs
 once more. A test that passes only on that retry is flaky, and it fails the
 run too (`failOnFlakyTests`). The trace and screenshot of the failed try are
@@ -73,11 +74,11 @@ notifications and the running experiment page, is not covered.
 
 `playwright.config.js` splits the default set in three projects:
 
-| Project     | Browser  | Runs                                                                      |
-| ----------- | -------- | ------------------------------------------------------------------------- |
-| `read-only` | Chromium | the specs that never change the store (routes, jobs, health), in parallel |
-| `store`     | Chromium | the rest, one at a time once `read-only` finishes                         |
-| `firefox`   | Firefox  | only tests tagged `@cross-browser`, one at a time once `store` finishes   |
+| Project     | Browser  | Runs                                                                                   |
+| ----------- | -------- | -------------------------------------------------------------------------------------- |
+| `read-only` | Chromium | the specs that never change the store (routes, performance, jobs, health), in parallel |
+| `store`     | Chromium | the rest, one at a time once `read-only` finishes                                      |
+| `firefox`   | Firefox  | only tests tagged `@cross-browser`, one at a time once `store` finishes                |
 
 The read-only specs therefore always see the empty store. A failure in
 `read-only` skips `store`. With `E2E_AUTH_MODE` set, only that mode's spec and

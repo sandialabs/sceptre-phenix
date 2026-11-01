@@ -381,6 +381,22 @@ a role that cannot list experiments.
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+#### Resource: `exp/captureSubnet`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | start packet captures on every VM interface in a subnet of an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | stop the packet captures of a subnet of an experiment (roles that may start them gain it on startup) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
 #### Resource: `vms/snapshots`
 
 |      |      |
@@ -433,12 +449,51 @@ a role that cannot list experiments.
 
 #### Resource: `disks`
 
+A `disks` resource name is a disk image's file name, such as `win10.qcow2`,
+and matches the files of that name in every folder of the minimega files
+directory. See [Disks](disks.md#permissions).
+
 |      |      |
 |------|------|
 | Verb | list |
-| Desc | get list of available backing images |
+| Desc | get list of disk images |
+| Exp. Scoped | no (listing one experiment's images also needs `get` on that experiment) |
+| Res. Scoped | yes (list is filtered to only include images in scope; an image outside the minimega files directory also needs `get` on an experiment using it, unless it backs a listed image) |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | download a disk image |
 | Exp. Scoped | no |
-| Res. Scoped | yes (list is filtered to only include backing images in scope) |
+| Res. Scoped | yes |
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | snapshot or clone a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the new image's file name; the image copied also needs `get`) |
+
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | commit, rebase, resize, or rename a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes (commit also needs it for the backing image) |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
+|      |      |
+|------|------|
+| Verb | upload |
+| Desc | upload a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | no |
 
 #### Resource: `hosts`
 
@@ -516,11 +571,25 @@ By default only `Global Admin` has this permission. A user with `users`
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
-Resource names are `<Kind>/<name>`, such as `Topology/riverside-water`.
-`Topology/*` covers every topology, and `*/*` covers every config, User and
-Role configs included. phēnix also checks create and update against the kind
-and name of the config in the request body. So a role scoped to `Topology/*`
-cannot create or overwrite a User or Role config.
+Config permissions are matched against the config's `Kind/name`, not its name
+alone, so write `resourceNames` that way: `Topology/my-topo` rather than
+`my-topo`. A `*` in a resource name never crosses the `/`, so use `*/*` or
+`Topology/*` to cover every config or every topology. The web UI checks config
+permissions the same way the server does.
+
+`create` is checked against the new config's `Kind/name`, through the Configs
+page, `POST /configs` and `POST /workflow/configs/{branch}` alike, and `update`
+against the `Kind/name` in the request body as well as the one in the path. So
+a role scoped to `Topology/*` cannot create or overwrite a `User` or `Role`
+config. An update that renames a config or changes its kind also needs
+`create` for the new `Kind/name`.
+
+The configs API never returns a `User` config's password hash or API tokens,
+and an update of a `User` config through it keeps the stored ones, so an
+edited config sent back without them leaves them as they were. If the
+password or tokens change while such an update runs, it fails with `412`
+instead of writing back the old ones. Change a password or a token from the
+`Users` tab or the users API.
 
 #### Resource: `settings`
 
@@ -548,6 +617,10 @@ cannot create or overwrite a User or Role config.
 | Desc | manage port forwarding rules for experiment VMs |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
+
+`create` is also needed to give a VM the `phenix/startup-autotunnel`
+annotation through the web UI or API, when creating an experiment or editing
+the VM.
 
 #### Resource: `vms/cdrom`
 
@@ -581,7 +654,7 @@ cannot create or overwrite a User or Role config.
 |      |      |
 |------|------|
 | Verb | list, get, update, delete |
-| Desc | as for `jobs`, for the background jobs of no experiment that other users started |
+| Desc | as for `jobs`, for the background jobs of no experiment, such as disk clones, that other users started |
 | Exp. Scoped | no |
 | Res. Scoped | no |
 

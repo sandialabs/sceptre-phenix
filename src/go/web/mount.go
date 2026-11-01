@@ -625,7 +625,7 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
 
 	uploaded.Target = filepath.Join(combinedPath, handler.Filename)
 
-	localFile, err := os.OpenFile( //nolint:gosec // Path traversal via taint analysis
+	localFile, err := os.OpenFile(
 		uploaded.Target,
 		os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
 		0o600,
@@ -700,7 +700,7 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "path is not within base")
 	}
 
-	info, err := os.Stat(destDir)
+	info, err := os.Stat(destDir) //nolint:gosec // destDir validated against mount path
 	if err != nil {
 		audit.Failure(r, audit.VMFileCopy, "copying file to vm mount failed", copied, err)
 
@@ -739,11 +739,11 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "path is not within base")
 	}
 
-	destFile, err := os.OpenFile(
+	destFile, err := os.OpenFile( //nolint:gosec // destination validated against mount path
 		destPath,
 		os.O_CREATE|os.O_TRUNC|os.O_WRONLY,
 		0o600,
-	) //nolint:gosec // destination validated against mount path
+	)
 	if err != nil {
 		audit.Failure(r, audit.VMFileCopy, "copying file to vm mount failed", copied, err)
 

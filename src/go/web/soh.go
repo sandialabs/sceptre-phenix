@@ -18,7 +18,6 @@ import (
 	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
-	"phenix/web/cache"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -162,7 +161,9 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) error {
 			summary.VMsStale = obs.Stale
 		}
 
-		summary.Status = string(cache.ExperimentStatus(name, exp.Running()))
+		status, percent := experimentStatus(exp)
+		summary.Status = string(status)
+		summary.Percent = percent
 
 		summaries = append(summaries, summary)
 	}

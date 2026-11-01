@@ -20,7 +20,7 @@ import (
 func useStore(t *testing.T, roles []*v1.RoleSpec, users []*v1.UserSpec) {
 	t.Helper()
 
-	storetest.UseBolt(t)
+	storetest.Use(t)
 
 	create := func(name string, spec any) {
 		c, err := store.NewConfig(name)
@@ -329,7 +329,7 @@ func TestEnsureExperimentViewerMountScope(t *testing.T) {
 //
 //nolint:paralleltest // replaces the store
 func TestDropNullResourceNames(t *testing.T) {
-	storetest.UseBolt(t)
+	storetest.Use(t)
 
 	policies := func() []any {
 		return []any{

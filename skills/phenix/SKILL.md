@@ -16,9 +16,9 @@ Detailed references and examples, loaded only when needed:
 
 | Need | Reference |
 |---|---|
-| Global flags, every subcommand and flag | [`references/cli.md`](references/cli.md) |
-| REST auth modes and the full route table | [`references/web-api.md`](references/web-api.md) |
-| Background jobs: statuses, routes, RBAC, `phenix job` | [`references/jobs.md`](references/jobs.md) |
+| Global flags, what each subcommand is for, and where the generated flag reference lives | [`references/cli.md`](references/cli.md) |
+| REST auth modes, route gotchas, and where the route reference (`openapi.yml`) lives | [`references/web-api.md`](references/web-api.md) |
+| Background jobs (bulk VM actions, file archives, disk clones): statuses, routes, RBAC, `phenix job` | [`references/jobs.md`](references/jobs.md) |
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
@@ -60,7 +60,9 @@ for a complete, copyable two-node topology):
   (router/firewall interfaces also accept `ospf`), `address`, `mask`, `gateway`, `bridge`
 - `network.rulesets[]`: firewall rules with `action: accept|drop|reject`
 - `injections[]` / `deletions[]`: files to inject into or remove from the disk image before boot
-- `delay`: boot delay (timer, user-ack, or C2/miniccc-based)
+- `delay`: boot delay (timer, user-ack, or C2/miniccc-based); a restarted
+  `phenix ui` resumes pending timer and C2 starts, or marks the experiment's
+  `status.interrupted` when it cannot
 - `annotations`: free-form hints for apps; the ones the default apps read are in
   [`references/annotations.md`](references/annotations.md)
 - An `external` node represents a physical/non-minimega host in the topology (not scheduled/booted).
@@ -144,9 +146,9 @@ aliases/ranges), `workflow` (topology directory deployment), `job`
 (background jobs), `doctor` (offline configuration checks), `healthcheck`
 (the server's liveness and readiness), plus `mm`, `settings`, `ui`, `util`,
 `completion`, and `version`. Every subcommand
-accepts the persistent flags documented in
-[`references/cli.md`](references/cli.md), which also lists each subcommand's
-own flags.
+accepts the persistent flags described in
+[`references/cli.md`](references/cli.md), which also links the generated CLI
+reference that lists every command's flags.
 
 A topology and scenario go from YAML to running VMs like this:
 
@@ -182,10 +184,11 @@ For interactive human use, `make install-wrapper` installs
 `scripts/phenix-wrapper.sh` as `/usr/local/bin/phenix` so shell completion and
 TTY allocation work. See `README.md` ("Running with Docker").
 
-**Local binary (development):** `make build` produces `bin/phenix`; run any
-subcommand from it, typically against a local `bolt://` store and a local
-`minimega`. See `README.md` ("Local Development") for prerequisites and
-`make help` for targets.
+**Local binary (development):** `make build` produces `bin/phenix`, which
+also serves the API reference at `/docs/`; run any subcommand from it,
+typically against a local `bolt://` store and a local `minimega`. See
+`README.md` ("Local Development") for prerequisites and `make help` for
+targets.
 
 ## Querying the Web API
 
@@ -194,15 +197,18 @@ default, with every route under `/api/v1`. Auth is off unless
 `--jwt-signing-key` is set (it is empty by default and in the bundled compose
 file), in which case the server serves every request as `global-admin` and
 plain `curl http://localhost:3000/api/v1/experiments` works. When a key is
-set, log in and send the JWT in the custom `X-Phenix-Auth-Token` header:
+set, log in and send the JWT in the custom `X-Phenix-Auth-Token` header as
+`Bearer <jwt>`:
 
 ```bash
 TOKEN=$(curl -s -u admin:password http://localhost:3000/api/v1/login | jq -r .token)
-curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
+curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experiments
 ```
 
-[`references/web-api.md`](references/web-api.md) has the route table, the
-`?token=` query-parameter alternative, and proxy/dev auth modes.
+[`references/web-api.md`](references/web-api.md) points to the route reference
+(`src/go/web/public/docs/openapi.yml`) and has the
+`?token=` query-parameter alternative, proxy/dev auth modes, config revisions
+(`ETag`/`If-Match`), and the `X-Phenix-Seq` ordering and freshness headers.
 
 ## Gotchas
 
@@ -248,7 +254,7 @@ The other gotchas of `phenix workflow apply` are in
 | `Unable to create configuration from <path>` | File isn't valid YAML/JSON, fails schema validation, or path doesn't exist. Schema failures are followed by explained lines naming the item, its hostname or name, and the line. Try `--skip-validation` to isolate schema vs. parse errors. |
 | Experiment `create` succeeds but `start` fails to boot VMs | Re-run with `phenix experiment start --dry-run <exp>` to see what would be sent to minimega, check `phenix vm info <exp>` and minimega directly via `phenix mm <cmd>`, and verify the disk images referenced in the topology exist (`phenix image list` for image configs, `GET /api/v1/disks` for disk files present on the headnode). |
 | `unable to start the <exp> experiment: qemu cannot open N disks on M VMs` | A VM disk image, a file in its qcow2 backing chain, or its CD-ROM image (`advanced.cdrom`) is missing on the head node, the chain loops, or qemu cannot open an image of the chain (old AES or LUKS encryption, an unknown qcow2 version or feature bit, a corrupt mark on an image a `snapshot: false` VM writes). phenix checks this before minimega launches anything, so the experiment stays stopped (a restart refuses before it stops). Restore the file the error names, point the image at a copy of it (`Rebase` with `Change reference only` on the Disks page, or minimega `disk set-backing`; a normal rebase must read the missing file and fails), or change the topology; for a file only on compute nodes, set `experiment.disk-check: warn` (`off` skips the check). REST answers 400 with code `broken_disks` and `details.disks`. A qcow version 1 image or a dirty qcow2 image only warns; qcow2 version 2 passes (`phenix doctor` `disk-formats` warns). Fixes per format: [Image Format Versions](https://phenix.sceptre.dev/latest/disks/#image-format-versions). See [Disk Check Before a Start](https://phenix.sceptre.dev/latest/experiments/#disk-check-before-a-start). |
-| Web API calls return 401 | That server has a JWT signing key configured, so auth is on: send a current token in `X-Phenix-Auth-Token` (or `?token=`), not in `Authorization` — standard bearer-token tooling silently 401s. Re-login if the token expired. A server started without a signing key never returns 401. |
+| Web API calls return 401 | That server has a JWT signing key configured, so auth is on: send a current token as `X-Phenix-Auth-Token: Bearer <jwt>` (or `?token=`), not in `Authorization` — standard bearer-token tooling silently 401s. Re-login if the token expired. A server started without a signing key never returns 401. |
 | `configuration not updated` after `phenix config edit` | No changes were saved in the editor — this is expected, not an error. |
 | `phenix ui` exits at startup, serves HTTP despite a TLS setting, or lacks an initial user | Run `phenix doctor --skip minimega` with the same settings and user: the `auth`, `tls` and `socket` checks catch a half-set TLS pair, a malformed `ui.users` entry (skipped silently), a unitless `ui.jwt-lifetime`, a bad `dev\|<user>\|<role>` key, and a socket directory or `unix-socket-gid` phenix ui cannot use. |
 | Settings changes via `phenix settings set` don't seem to apply | Command-line flags and `PHENIX_*` environment variables win over the config file; drop the flag or unset the variable (`phenix doctor` warns about each variable that overrides the file). |

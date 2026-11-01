@@ -27,7 +27,12 @@ function workerCount(value) {
 
 // Specs that never change the store run in parallel, before the rest run one
 // at a time; a failure here skips the store specs.
-const readOnly = ['routes.spec.js', 'jobs.spec.js', 'health.spec.js'];
+const readOnly = [
+  'routes.spec.js',
+  'performance.spec.js',
+  'jobs.spec.js',
+  'health.spec.js',
+];
 const authSpecs = /auth-.*\.spec\.js/;
 
 const projects = authMode

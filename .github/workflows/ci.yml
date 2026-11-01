@@ -55,7 +55,8 @@ jobs:
         run: make generate
       - name: Run tests with coverage
         working-directory: src/go
-        run: make test-cover
+        shell: bash
+        run: make test COVERPROFILE=coverage.out 2>&1 | tee test-output.txt
       # Coverage below the minimum in .github/coverage-minimums.json warns
       # but does not fail the job.
       - name: Summarize coverage
@@ -68,6 +69,12 @@ jobs:
             echo '### Go coverage'
             echo
             echo "Total statements: ${total}% (minimum ${min}%)"
+            echo
+            echo '| Package | Statements covered |'
+            echo '| --- | --- |'
+            awk '$1 == "ok" && $2 ~ /^phenix\/(web|web\/middleware|util\/mm)$/ {
+              for (i = 3; i < NF; i++) if ($i == "coverage:") print "| `" $2 "` | " $(i + 1) " |"
+            }' test-output.txt
           } >> "$GITHUB_STEP_SUMMARY"
           if awk -v t="$total" -v m="$min" 'BEGIN { exit !(t < m) }'; then
             echo "::warning title=Go coverage::Statement coverage is ${total}%, below the minimum of ${min}% in .github/coverage-minimums.json"
@@ -81,6 +88,7 @@ jobs:
           retention-days: 14
 
   generated:
+    if: github.event.action != 'closed'
     name: Reproducible generated outputs
     runs-on: ubuntu-latest
     steps:

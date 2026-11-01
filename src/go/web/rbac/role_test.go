@@ -142,7 +142,7 @@ func TestRoleAllowed(t *testing.T) {
 //
 //nolint:paralleltest // replaces the store
 func TestSetResourceNamesScopesEveryUnnamedPolicy(t *testing.T) {
-	storetest.UseBolt(t)
+	storetest.Use(t)
 
 	if err := config.Init(); err != nil {
 		t.Fatalf("config.Init() error = %v", err)
@@ -439,7 +439,7 @@ func TestKnownPermissions(t *testing.T) {
 	t.Parallel()
 
 	for _, want := range []Permission{
-		{"users", "get"}, {"users", "list"}, {"users/roles", "patch"}, {"configs", "create"},
+		{"users", "get"}, {"users", "list"}, {"users/roles", "patch"}, {"users/tokens", "create"}, {"configs", "create"},
 	} {
 		if !slices.Contains(Permissions, want) {
 			t.Errorf("Permissions does not include {%s %s}, want it to", want.Resource, want.Verb)

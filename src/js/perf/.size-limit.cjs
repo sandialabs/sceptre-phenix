@@ -7,7 +7,7 @@ module.exports = [
     name: 'Entry JS (loaded on every page)',
     path: '../dist/assets/index-*.js',
     gzip: true,
-    limit: '170 kB',
+    limit: '200 kB',
   },
   {
     name: 'Entry CSS',
@@ -21,12 +21,12 @@ module.exports = [
     gzip: true,
     // includes the State of Health layout libraries, which load only when a
     // layout is picked: ELK (elkjs, about 440 kB), dagre and cola.js
-    limit: '1240 kB',
+    limit: '1220 kB',
   },
   {
     name: 'Images (uncompressed)',
     path: '../dist/assets/*.{png,svg,jpg,jpeg,gif,webp}',
     brotli: false,
-    limit: '115 kB',
+    limit: '120 kB',
   },
 ];

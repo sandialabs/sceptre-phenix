@@ -61,9 +61,9 @@ metadata:
 ```
 
 `phenix config edit` remembers the revision it opened. If someone else saves
-the config before you close the editor, it does not save your edits. It shows
-an error that tells you to run `phenix config edit` again, so it does not
-overwrite the change of the other user.
+the config before you close the editor, it refuses to save your edits with
+`<kind/name> changed while you edited it, so run phenix config edit again`,
+so their change is not silently overwritten.
 
 ## Topology
 
@@ -171,6 +171,21 @@ three options available to set, but on only one option can be set:
     tag in the Delay column next to the Screenshot column. The tag will indicate
     what type of dealy was set. Once all the delayed VMs have started, the Delay
     column will no longer be visible.
+
+!!! note
+    An experiment started from the web UI or the API counts as running while
+    its `timer` and `c2` delayed VMs, and the post-start apps that wait on
+    them, are still pending, and phēnix records them in the experiment's
+    status. If `phenix ui` restarts before they are done, it resumes them when
+    it starts again, with each timer keeping its original due time; a stop
+    that leaves the experiment running because minimega could not kill its
+    VMs resumes them too. A delayed
+    VM that minimega no longer holds, or a `c2` VM waiting on one, cannot
+    start, and minimega must answer for phēnix to tell; the experiment is then
+    marked interrupted, which the Experiments table shows beside its status, the
+    experiment page explains, and `phenix experiment list` shows beside its
+    start time. Its post-start apps do not run; restart the experiment to run
+    them. `user` delays wait for a start request and need nothing resumed.
 
 #### Network Address Translation (NAT)
 
@@ -665,9 +680,10 @@ that user should have is specified, and using that role name the appropriate
 RBAC permissions are copied from the role configuration into the user
 configuration.
 
-There are six (6) default role configurations that get created automatically,
-and are described under [default roles](user-administration.md#roles). An example role
-configuration is shown below for completeness.
+There are eight (8) default role configurations that get created automatically:
+the seven described under [default roles](user-administration.md#roles), and
+`Disabled`, which allows nothing. An example role configuration is shown below
+for completeness.
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -679,12 +695,18 @@ spec:
   policies:
   - resourceNames:
     - '*'
+    - '*/*'
     resources:
     - '*'
     - '*/*'
     verbs:
     - '*'
 ```
+
+Resource names are matched with the same `Kind/name` or `experiment/vm` shape
+as the resource they belong to, and a `*` never crosses the `/`, which is why
+this role lists both `*` and `*/*`. See
+[Resources](user-administration.md#resources).
 
 ## Web-UI
 
@@ -723,7 +745,8 @@ There are two ways to view a specific config:
    possible to edit the config directly in this view. Instead, there is an
    `Edit Config` button, which will open an editor. It is also possible to
    download a copy of the config. From the keyboard, Tab to the name and press
-   Enter.
+   Enter. A topology or scenario name on the `Experiments` page opens its
+   config in this viewer, too.
   ![Config viewer dialog showing the YAML of Role/vm-viewer, with Edit Config, download and Exit buttons.](images/view.png){: width=800 .center}
 2. Selecting the `Edit` button for a given config will open the editor window.
    It is possible to edit the config in this window and save the update to the

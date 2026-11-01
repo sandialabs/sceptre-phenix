@@ -36,17 +36,14 @@ func GetSettings(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
 
 	return nil
 }
 
 // SetSettings - POST /settings.
 func SetSettings(w http.ResponseWriter, r *http.Request) error {
-	var (
-		ctx  = r.Context()
-		role = middleware.RoleFromContext(ctx)
-	)
+	role := middleware.RoleFromContext(r.Context())
 
 	if !role.Allowed("settings", "update") {
 		audit.Denied(r, audit.SettingsUpdate, "changing settings not allowed", audit.Fields{})
@@ -168,12 +165,12 @@ func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := json.Marshal(passwordReqs)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "Marshalling password reqs:", "err", err)
+		plog.Error(plog.TypeSystem, "Marshalling password settings:", "err", err)
 
 		return weberror.New(http.StatusBadRequest, http.StatusText(http.StatusBadRequest))
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -204,12 +201,12 @@ func GetTimeoutSettings(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := json.Marshal(timeoutReqs)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "Marshalling timeout reqs:", "err", err)
+		plog.Error(plog.TypeSystem, "Marshalling timeout settings:", "err", err)
 
 		return weberror.New(http.StatusBadRequest, http.StatusText(http.StatusBadRequest))
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
 
 	return nil
 }

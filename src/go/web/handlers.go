@@ -10,7 +10,7 @@ var (
 )
 
 const sortAsc = "asc"
-const defaultScreenshotSize = "215"
+const defaultScreenshotSize = "200"
 
 // sortColumn is the column a REST list is sorted by: none unless both sortCol
 // and sortDir are given.

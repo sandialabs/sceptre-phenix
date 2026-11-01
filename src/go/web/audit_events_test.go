@@ -91,7 +91,7 @@ func loginRequest(user, pass string) *http.Request {
 //
 //nolint:paralleltest // replaces the store and the server options
 func TestSignInAndOutAreAudited(t *testing.T) {
-	storetest.UseBolt(t)
+	storetest.Use(t)
 	createUserWithToken(t, "alice")
 	useOptions(t)
 
@@ -325,7 +325,7 @@ func TestUserChangesAreAudited(t *testing.T) {
 //
 //nolint:paralleltest // replaces the store
 func TestConfigChangesAreAudited(t *testing.T) {
-	storetest.UseBolt(t)
+	storetest.Use(t)
 
 	events := captureAudit(t)
 

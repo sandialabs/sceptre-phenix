@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/gorilla/mux"
 
 	"phenix/api/job"
 	"phenix/util/common"
@@ -20,6 +23,9 @@ import (
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/middleware"
+	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 // holdMinimega points the real mm package at fake minimega and holds the shared connection with a "hold" command
@@ -62,6 +68,79 @@ func holdMinimega(t *testing.T) func() []mmtest.Command {
 	mmtest.Await(t, "hold")
 
 	return received
+}
+
+// A request whose client leaves while its minimega commands wait for the
+// shared connection gives them up, unsent, and writes nothing.
+func TestReadsGiveUpWhenTheClientLeaves(t *testing.T) {
+	tests := map[string]struct {
+		handler weberror.ErrorHandler
+		path    string
+		vars    map[string]string
+		role    rbac.Role
+	}{
+		"vm": {
+			handler: GetVM, path: "/experiments/exp/vms/a",
+			vars: map[string]string{"exp": "exp", "name": "a"}, role: testRole("vms", "get", "exp/a"),
+		},
+		"vm snapshots": {
+			handler: GetVMSnapshots, path: "/experiments/exp/vms/a/snapshots",
+			vars: map[string]string{"exp": "exp", "name": "a"}, role: testRole("vms/snapshots", "list", "exp/a"),
+		},
+		"state of health": {
+			handler: GetExperimentSoH, path: "/experiments/exp/soh",
+			vars: map[string]string{"name": "exp"}, role: testRole("experiments", "get", "exp"),
+		},
+		"topology": {
+			handler: GetExperimentTopology, path: "/experiments/exp/topology",
+			vars: map[string]string{"name": "exp"}, role: testRole("experiments/topology", "get", "exp"),
+		},
+		"cluster hosts": {
+			handler: GetClusterHosts, path: "/hosts", role: testRole("hosts", "list", "*"),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			useTestStore(t, namedExperiment(t, "exp", "2024-01-01T00:00:00Z", diskVM("a", "a.qc2")))
+
+			received := holdMinimega(t)
+
+			ctx, cancel := context.WithCancel(context.WithValue(t.Context(), middleware.ContextKeyRole, tc.role))
+
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, tc.path, nil)
+			req = mux.SetURLVars(req, tc.vars)
+
+			var (
+				rec  = httptest.NewRecorder()
+				done = make(chan struct{})
+			)
+
+			go func() {
+				defer close(done)
+
+				tc.handler.ServeHTTP(rec, req)
+			}()
+
+			cancel()
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("GET %s kept waiting for minimega after its client left", tc.path)
+			}
+
+			if rec.Body.Len() != 0 {
+				t.Errorf("GET %s wrote %q (status %d) to a client that left, want nothing", tc.path, rec.Body.String(), rec.Code)
+			}
+
+			// leaving out the files directory lookup, if this test made it
+			got := slices.DeleteFunc(mmtest.Bases(received()), func(base string) bool { return base == "args" })
+			if diff := cmp.Diff([]string{"hold"}, got); diff != "" {
+				t.Errorf("GET %s minimega commands mismatch (-want +got):\n%s", tc.path, diff)
+			}
+		})
+	}
 }
 
 // useDiskCheck sets the experiment.disk-check mode for the rest of the test.

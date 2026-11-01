@@ -6,8 +6,6 @@ DATE   := $(shell date -u)
 
 SOURCES   := $(shell find . -name '*.go')
 UISOURCES := $(shell find web -name '*.go' -not -path 'web/rbac/known_policy.go')
-CONFIGS   := $(shell find api/config/default -name '*')
-TEMPLATES := $(shell find tmpl/templates -name '*')
 
 TUNNELSOURCES := $(shell find tunneler -name '*.go' )
 
@@ -28,7 +26,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all api-docs check-protoc clean cli-docs generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test test-cover
+.PHONY: all api-docs check-protoc clean cli-docs generate generate-mocks generate-protobuf go-generate help install install-dev deadcode fuzz phenix phenix-debug phenix-tunneler test test-cover test-stress
 .DEFAULT_GOAL := help
 
 help:
@@ -39,7 +37,12 @@ help:
 	@echo ""
 	@echo "Development targets:"
 	@echo "  all                - Run all tools (test)"
-	@echo "  test               - Run unit tests"
+	@echo "  test               - Run unit tests (V=1 for verbose output,"
+	@echo "                       COVERPROFILE=<file> to write a coverage profile)"
+	@echo "  test-cover         - Run unit tests into coverage.out and print the total"
+	@echo "  test-stress        - Run the concurrency-heavy packages STRESS_COUNT times with -race"
+	@echo "  fuzz               - Run every Go fuzz target for FUZZTIME (default 30s) each"
+	@echo "  deadcode           - Fail on unreachable functions not in deadcode-allow.txt"
 	@echo ""
 	@echo "NOTE: Linting/formatting (golangci-lint) is handled by 'prek' from"
 	@echo "      the repository root, not by this Makefile. Run 'make lint'"
@@ -67,13 +70,34 @@ all: test
 
 generate: generate-mocks generate-protobuf go-generate
 
+# Shuffled test order exposes tests that depend on each other; a failing
+# package prints the -test.shuffle seed to rerun it with.
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
-	go test -v -race ./...
+	go test $(if $(V),-v) -race -shuffle=on $(if $(COVERPROFILE),-coverprofile=$(COVERPROFILE)) ./...
+
+# Packages whose shared state many goroutines touch: grants, the job registry,
+# the freshness sequence and the audit writer.
+STRESS_COUNT ?= 20
+STRESS_PKGS  ?= ./api/job/... ./util/freshness/... ./web/audit/... ./web/capability/... ./web/middleware/...
+
+test-stress:
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
+	go test -race -shuffle=on -count=$(STRESS_COUNT) $(STRESS_PKGS)
+
+# Each target fuzzes for FUZZTIME; a failing input lands in its testdata/fuzz/.
+FUZZTIME ?= 30s
+export FUZZTIME
+
+fuzz:
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
+	../../scripts/go-fuzz.sh
+
+deadcode: generate
+	../../scripts/go-deadcode.sh
 
 test-cover:
-	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
-	go test -v -race -coverprofile=coverage.out ./...
+	$(MAKE) test COVERPROFILE=coverage.out
 	go tool cover -func=coverage.out | tail -n 1
 
 clean:

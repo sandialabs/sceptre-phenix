@@ -49,7 +49,7 @@ src/js/.env.local
 src/js/.env.*.local
 
 # Python specific
-.venv/
+.venv
 __pycache__/
 .pytest_cache/
 

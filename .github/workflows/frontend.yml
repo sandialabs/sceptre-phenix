@@ -27,12 +27,12 @@ on:
 env:
   GO_VERSION: '1.24'
   NODE_VERSION: '24'
-  # read by scripts/ci-start-phenix-ui.sh and Playwright
+  # read by scripts/ci-start-phenix-ui.sh, Playwright and Lighthouse CI
   E2E_PORT: '3197'
   E2E_BASE_URL: http://127.0.0.1:3197
 
-permissions:
-  contents: read
+# each job grants only what it needs
+permissions: {}
 
 # a newer commit (or closing the PR) cancels runs still going for this PR or ref
 concurrency:
@@ -46,6 +46,8 @@ jobs:
     if: github.event.action != 'closed'
     name: Detect browser changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       browser: ${{ steps.diff.outputs.browser }}
     steps:
@@ -133,6 +135,8 @@ jobs:
     if: github.event.action != 'closed'
     name: Unit Tests (JS)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: src/js
@@ -183,6 +187,8 @@ jobs:
     name: ${{ matrix.name }}
     needs: changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -248,6 +254,8 @@ jobs:
     # Runs after the build, or after it was skipped, unless something failed.
     if: ${{ !cancelled() && !failure() && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # The changes job checks that the image tag is the e2e lockfile's Playwright
     # version. Without a browser change no image is pulled.
     container: >-
@@ -329,7 +337,7 @@ jobs:
           path: src/js/e2e/test-results
 
   perf:
-    if: needs.changes.outputs.browser == 'true'
+    if: github.event.action != 'closed' && needs.changes.outputs.browser == 'true'
     name: UI Performance (bundle budgets, Lighthouse)
     needs: [changes, build-e2e]
     runs-on: ubuntu-latest
@@ -364,15 +372,10 @@ jobs:
         id: size
         continue-on-error: true
         run: npm run --silent size:json > size-limit.json
-      # Output left on the step's pipe stops phenix when the step ends.
       - name: Start phenix UI
         id: server
         working-directory: .
-        run: |
-          ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-perf.bdb \
-            --listen-endpoint 127.0.0.1:3197 > /tmp/phenix-ui.log 2>&1 &
-          timeout 30 bash -c \
-            'until curl -sf -o /dev/null http://127.0.0.1:3197/version; do sleep 1; done'
+        run: ./scripts/ci-start-phenix-ui.sh /tmp/phenix-perf.bdb /tmp/phenix-ui.log
       - name: Run Lighthouse CI
         id: lighthouse
         if: steps.server.outcome == 'success'

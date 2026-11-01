@@ -159,7 +159,6 @@ RUN wget --progress=dot:giga -O filebeat.deb https://artifacts.elastic.co/downlo
   && rm filebeat.deb
 
 # Allow the use of PyPI mirrors via build args
-ARG PIP_INDEX="https://pypi.org/"
 ARG PIP_INDEX_URL="https://pypi.org/simple"
 
 # Do this before installing phenix-apps so minimega package is latest version
@@ -192,5 +191,8 @@ ARG   MM_MIN_REV=master
 LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/minimega:${MM_MIN_REV}"
 
 WORKDIR /opt/phenix
+
+# No HEALTHCHECK: most commands run from this image serve no UI. The UI's
+# check, `phenix healthcheck`, is set on the service in docker-compose.yml.
 
 CMD ["phenix", "help"]

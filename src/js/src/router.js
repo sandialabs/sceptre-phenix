@@ -173,35 +173,9 @@ const router = createRouter({
     //static paths
     { path: '/version', name: 'version' },
     { path: '/features', name: 'features' },
-    { path: '/api/v1/options', name: 'options' },
 
-    //file, vnc
-    {
-      path: '/api/v1/experiments/:id/files/:name',
-      name: 'file',
-    },
+    //vnc
     { path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token', name: 'vnc' },
-
-    //console paths
-    { path: '/api/v1/console/:pid/ws', name: 'console-ws' },
-
-    //tunneler paths
-    {
-      path: '/downloads/tunneler/phenix-tunneler-linux-amd64',
-      name: 'linux-tunneler',
-    },
-    {
-      path: '/downloads/tunneler/phenix-tunneler-darwin-arm64',
-      name: 'macos-arm-tunneler',
-    },
-    {
-      path: '/downloads/tunneler/phenix-tunneler-darwin-amd64',
-      name: 'macos-intel-tunneler',
-    },
-    {
-      path: '/downloads/tunneler/phenix-tunneler-windows-amd64.exe',
-      name: 'windows-tunneler',
-    },
 
     {
       path: '/:pathMatch(.*)*',
@@ -267,7 +241,6 @@ router.beforeEach(async (to, _, next) => {
       new Toast().open({
         message: `Token is expired. Log in again`,
         type: 'is-warning',
-        duration: 5000,
       });
       store.logout();
     } else if (to.meta.allowed && !to.meta.allowed(to)) {

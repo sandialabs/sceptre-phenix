@@ -667,6 +667,9 @@ the taps to already exist when the experiment starts. Valid values are
 `pre-start` and `post-start`; when unset, it defaults to `post-start` to
 preserve backwards compatibility.
 
+The taps are created on the experiment host running the fewest VMs, the first
+by name among hosts with equally few, so every run places them the same way.
+
 The following is an example of how the `tap` app can be configured via a
 `Scenario` configuration, showing all the possible options.
 
@@ -794,6 +797,13 @@ phēnix centralized logging system.
     In the case of user apps, `phenix` will send a `SIGTERM` to the user app
     process and wait a maximum of 10 seconds for the process to exit gracefully
     before killin the process with a `SIGKILL`.
+
+!!! note
+    While an app runs a stage, phēnix marks it running in the experiment's
+    `status.appRunningStageStatus`, and refuses to start that app's `running`
+    stage, such as a Scorch run, again until it finishes. If phēnix stops in
+    the middle, `phenix ui` clears these marks for every running experiment
+    when it starts again, so the app can run without restarting the experiment.
 
 ### Available User Apps
 

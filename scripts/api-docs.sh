@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Renders and lints the OpenAPI spec with one pinned Redocly CLI.
+# Renders and lints the OpenAPI spec and config schemas with one pinned Redocly CLI.
 # Every API reference build calls this script, so change the version only here.
 
 set -euo pipefail
@@ -13,6 +13,7 @@ redocly() {
 usage() {
   echo "usage: $0 build <openapi.yml> <out.html>" >&2
   echo "       $0 lint <openapi.yml>" >&2
+  echo "       $0 lint-schemas [<schema.yaml>...]  (default: every embedded config schema)" >&2
   exit 2
 }
 
@@ -33,6 +34,14 @@ case "$cmd" in
     # The `spec` ruleset checks that the document is valid OpenAPI; the
     # stricter default ruleset flags style issues the spec has not adopted.
     redocly lint --extends=spec "$2"
+    ;;
+  lint-schemas)
+    shift
+    types="$(cd "$(dirname "$0")/../src/go/types" && pwd)"
+    if [ "$#" -eq 0 ]; then
+      set -- "$types"/schemas/*.yaml "$types"/version/schemas/*.yaml
+    fi
+    redocly lint --config="$types/redocly.yaml" "$@"
     ;;
   *)
     usage

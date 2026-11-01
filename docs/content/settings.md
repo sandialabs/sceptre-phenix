@@ -346,7 +346,8 @@ phēnix resolves each setting in the following order (highest to lowest):
 4. **Defaults**: Internal application defaults.
 
 A `PHENIX_*` variable therefore hides a value that `phenix settings set` writes
-to the config file. Unset the variable to use the file's value.
+to the config file. `phenix doctor` warns about each one in its `env-overrides`
+check; unset the variable to use the file's value.
 
 `phenix settings set` and `phenix settings unset` change the config file
 phēnix read, the first one found in the locations above. When phēnix read
@@ -391,15 +392,16 @@ setting or `PHENIX_COLOR` sets when:
 * `on` colors every output, also a file or a pipe.
 * `off` colors no output.
 
-phēnix refuses another value. JSON and YAML output never have color. A
-table keeps its columns aligned, because phēnix measures each cell without
-its color codes.
+phēnix refuses another value. JSON and YAML output, and the output of
+`phenix doctor --report`, never have color. A table keeps its columns
+aligned, because phēnix measures each cell without its color codes.
 
 | Output | Colors |
 | :--- | :--- |
-| Every command | The `Error:` label of a failed command is red. A console log record shows its level in color, the message of a warning in yellow, and the message of an error in red. |
+| Every command | The `Error:` label of a failed command is red. A console log record shows its level in color, the message of a warning in yellow, and the message of an error in red. A config file warning shows `warning:` in yellow. |
+| `phenix doctor` | `PASS` green, `WARN` yellow, `FAIL` bold red, `SKIP` faint. The summary line has the color of the overall status. The hints are faint. |
 | `phenix workflow apply`, also with `--dry-run` | The `action` of each config and of the plan: green for a create, yellow for an update or a restart, gray for no change. A disk problem that makes the start fail (`the start would fail: ...`) is red. Other warnings are yellow. |
-| `phenix experiment list` | The `Started` time of a running experiment is green. |
+| `phenix experiment list` | The `Started` time of a running experiment is green, and `(interrupted)` is yellow. |
 | `phenix vm info` | The `Running` value is green for a running VM, red for a VM that minimega shows as `QUIT` or `ERROR`, and faint for other VMs. |
 | `phenix job list`, `get` and `wait` | Job and item states: `running` cyan, `succeeded` green, `partial` and `canceled` yellow, `failed` red, and `queued`, `pending` and `skipped` faint. |
 
@@ -411,7 +413,7 @@ its color codes.
 | `experiment.disk-check` | `PHENIX_EXPERIMENT_DISK_CHECK` | `error` | What a start does when a VM disk image or CD-ROM image is missing, or its backing chain is broken. `error` refuses the start, `warn` starts the experiment and shows each problem as a warning, and `off` does not check the images. It applies to every start: the CLI, the web UI, the REST API, `phenix workflow apply`, and the bulk start and restart of VMs. phēnix refuses another value. `phenix ui` applies a change at once. See [Disk Check Before a Start](experiments.md#disk-check-before-a-start). |
 | `use-gre-mesh` | `PHENIX_USE_GRE_MESH` | `false` | Enable Layer 2 GRE tunnels for the default bridge of experiments created or updated with this setting. See [GRE Mesh](gre-mesh.md) for usage, server inheritance, and MTU requirements. `phenix ui` reads this setting at startup. **(Restart Required)** |
 | `log.level` | `PHENIX_LOG_LEVEL` | `info` | Global log verbosity (`debug`, `info`, `warn`, `error`). |
-| `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. See [Colors](#colors). |
+| `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, `phenix doctor` rows, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. See [Colors](#colors). |
 | `log.console` | `PHENIX_LOG_CONSOLE` | `stderr` | Destination for console logs (`stderr`, `stdout`, or a file path). Uses **Text/Human-Readable** format. Note: Setting this to a file path will prevent console logs from appearing in `docker logs`. |
 | `log.system.path` | `PHENIX_LOG_SYSTEM_PATH` | `/var/log/phenix/phenix.log` | Path to the persistent system log file (used by UI). Uses **JSON** format. This is independent of `log.console` and is always active. |
 | `log.system.max-size` | `PHENIX_LOG_SYSTEM_MAX_SIZE` | `100` | Max size in MB before rotation. |
@@ -420,7 +422,7 @@ its color codes.
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI and offer for download on the Logs page. **(Restart Required)** |
 | `ui.features` | `PHENIX_UI_FEATURES` | `""` | Comma-separated list of optional UI features to enable (space-separated in `PHENIX_UI_FEATURES`). Currently supports `vm-mount`, which enables transferring files to and from a running VM. See [Mount a VM](vms.md#mount-a-vm). `phenix ui` turns on `webshark`, `tunneler-download` and `file-server` itself, and refuses to start with `webshark` set but no WebShark build. **(Restart Required)** |
-| `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). **(Restart Required)** |
+| `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). If it is set and the address cannot be listened on, `phenix ui` exits with an error. **(Restart Required)** |
 | `ui.shutdown-grace-period` | `PHENIX_UI_SHUTDOWN_GRACE_PERIOD` | `5` | How many seconds stopping `phenix ui` may take to finish requests and jobs and close connections, as a whole number such as `10`. `0` closes everything without waiting; a negative value, or one that is not a whole number of seconds (such as `10s` or `1.5`), is refused at startup. Also `phenix ui --shutdown-grace-period`. See [Stopping the Server](#stopping-the-server). **(Restart Required)** |
 | `ui.netflow.max-size` | `PHENIX_UI_NETFLOW_MAX_SIZE` | `100` | Maximum size in megabytes of each recorded netflow capture, as a whole number. A capture that reaches it stops recording and is marked truncated, while the live view goes on. `0` does not record captures; a negative value, or one that is not a whole number, is refused at startup. Also `phenix ui --netflow.max-size`. See [Recorded Captures](netflow.md#recorded-captures). **(Restart Required)** |
 | `mount-dir` | `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory used for VM filesystem mounts created via `phenix vm mount`. See [Mount a VM](vms.md#mount-a-vm). |
@@ -439,7 +441,10 @@ taking at most `ui.shutdown-grace-period` seconds (5 by default):
   server is shutting down rather than that the network failed. New websockets
   are refused with `503 Service Unavailable`.
 * Running background jobs get the first half of the grace period to finish,
-  and are canceled then. Queued jobs are canceled at once.
+  and are canceled then. Queued jobs are canceled at once, and starting a job
+  or a console answers `503 Service Unavailable`.
+* It ends minimega consoles and SCORCH terminals, so their processes do not
+  outlive the server.
 * It logs `shutdown complete` once everything has stopped, or a warning that
   names what was still running when the grace period ended, and exits with
   status 0 either way.
@@ -450,17 +455,29 @@ seconds before it kills the container, which covers the default. If you raise
 `ui.shutdown-grace-period` past that, raise Docker's timeout with it:
 `stop_grace_period` in `docker-compose.yml`, or `docker stop --time`.
 
-## Web UI Session Timeout
+## The Settings Page
 
-The web UI's **Settings** page (admin-only) can also automatically log out idle users. Unlike
-the settings above, this is stored in the data store and takes effect immediately when saved —
-no `config.yaml` or restart involved.
+The web UI's `Settings` tab needs `update` on `settings`. Unlike the settings
+above, these are kept in the data store and take effect as soon as they are
+saved, with no `config.yaml` change or restart.
 
-| Setting | Default | Description |
+| Section | Setting | Default |
 | :--- | :--- | :--- |
-| Log out idle users | Disabled | Enables the idle timeout. |
-| Idle timeout (minutes) | `30` | Minutes of inactivity before an idle user is logged out. |
-| Warning before logout (minutes) | `3` | How long before logout to warn the user. |
+| `Password Settings` | `Require a lowercase letter`, `Require a number`, `Require a symbol` | on |
+| `Password Settings` | `Require an uppercase letter` | off |
+| `Password Settings` | `Minimum length of password`, 8 to 32 | `8` |
+| `Timeout Settings` | `Log out users after period of inactivity` | off |
+| `Timeout Settings` | `Time (minutes) to log out users after idle for` | `30` |
+| `Timeout Settings` | `Display idle user logout with (minutes) left` | `3` |
+| `File Logging Settings` | `Max log file size (MiB)` of the system log | `100` |
+| `File Logging Settings` | `Max number of file rotations (0 for infinite)` | `0` |
+| `File Logging Settings` | `Max rotated log file age (0 for infinite)`, in days | `90` |
+
+The two idle timeout boxes are grayed out until the timeout is turned on. The
+page opens on the settings it last loaded, and the refresh button in the header
+reloads them without discarding edits you have not saved. `Reset Form` puts
+the loaded settings back, `Save Changes` saves them and says
+`Settings updated`, and both stay grayed out until you change something.
 
 ## phēnix Apps Environment Variables
 
