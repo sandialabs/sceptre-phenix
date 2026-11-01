@@ -139,13 +139,16 @@ available roles and their access rights.
 |-------------------|:-------------------------------------------------------------------------------------------------------------------------|:-----:|:-----:|:------:|:------:|:-----:|:------:|
 | Global Admin      | Can see and control absolutely anything/everything.                                                                      | E V U | E V U | E V U  | E V U  | E V U | E V U  |
 | Global Viewer     | Can see absolutely anything/everything, but cannot make any changes.                                                     | E V U | E V U |        |        |       |        |
-| Experiment Admin  | Can see and control anything/everything for assigned experiments, including VMs, but cannot create new experiments.      | E V   | E V   |   V    | E V    |   V   |   V    |
+| Experiment Admin  | Can see and control anything/everything for assigned experiments, including VMs, but cannot create new experiments.      | E V   | E V   |   V    | E V    |   V   | E\* V  |
 | Experiment User   | Can see assigned experiments, and can control VMs within assigned experiments, but cannot modify experiments themselves. | E V   | E V   |        |        |   V   |        |
 | Experiment Viewer | Can see assigned experiments and VMs within assigned experiments, but cannot modify or control experiments or VMs.       | E V   | E V   |        |        |       |        |
 | VM Admin          | Can see assigned experiments, and has full administrative control over VMs in assigned experiments.                       | E V   | E V   |   V    |   V    |   V   |   V    |
 | VM Viewer         | Can only see VM screenshots and access VM VNC, nothing else.                                                             |   V   |       |        |        |       |        |
 
 Key: E - experiment resource, V - VM resource, U - user resource
+
+E\* in the Experiment Admin row means the role can delete an experiment's
+files, but not the experiment itself.
 
 ### Resources
 
@@ -244,6 +247,20 @@ Key: E - experiment resource, V - VM resource, U - user resource
 |------|------|
 | Verb | get |
 | Desc | get specific experiment file |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | upload one or more files to an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete one or more experiment files |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -639,6 +656,7 @@ spec:
     - "experiments/files"
     verbs:
     - create
+    - delete
   - resources:
     - jobs
     verbs:
@@ -653,6 +671,12 @@ spec:
     verbs:
     - list
 ```
+
+!!! note
+    On startup the UI server adds `experiments/files delete` to any stored
+    `Experiment Admin` role and to the role of every user assigned it.
+    `Experiment User` can upload but not delete experiment files;
+    `Experiment Viewer` and `VM Admin` can do neither.
 
 !!! note
     On startup the UI server adds the `jobs` policy to stored

@@ -305,12 +305,13 @@ func useTestExperiment(t *testing.T) {
 	}))
 }
 
-// testFiles is the cluster file listing of test-experiment. Other
-// file.ClusterFiles methods panic.
+// testFiles is the cluster file listing of test-experiment; it records deletions and copies as
+// the test says. Other file.ClusterFiles methods panic.
 type testFiles struct {
 	file.ClusterFiles
 
-	files file.Files
+	files   file.Files
+	deleted []string
 	// copies a file only a mesh node has to the headnode; without it, no
 	// mesh node has the file
 	copy func(src string) error
@@ -328,10 +329,14 @@ func (f *testFiles) GetExperimentFiles(string, string) (file.Files, error) {
 	return f.files, nil
 }
 
+func (f *testFiles) DeleteExistingFiles(names []string) error {
+	f.deleted = append(f.deleted, names...)
+
+	return nil
+}
+
 // useTestFiles makes the cluster list the experiment files at paths for the
 // rest of the test.
-//
-//nolint:unparam // a test can read the fake back
 func useTestFiles(t *testing.T, paths ...string) *testFiles {
 	t.Helper()
 

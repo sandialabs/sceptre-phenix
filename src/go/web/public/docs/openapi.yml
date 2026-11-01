@@ -39,6 +39,7 @@ info:
 
     The routes that start a background job take an optional
     `Idempotency-Key` header. These routes are `POST
+    /experiments/{name}/files/archive`, `POST
     /experiments/{exp_name}/vms/actions` and `POST /disks/clone/jobs`. With
     the key, a client that lost the `202` answer can retry without starting
     a second job. A retry with the same key, by the same user to the same
@@ -139,11 +140,12 @@ tags:
       neither credentials nor a permission.
   - name: Jobs
     description: >-
-      Background jobs: long operations (bulk VM actions, disk clones) that
-      continue in the server after the request that starts them answers 202. A
-      job belongs to the user who started it. Other users see, cancel or
-      dismiss it only with the `jobs` permission on its experiment
-      (`jobs/global` for a job of no experiment). Anyone else gets 404.
+      Background jobs: long operations (bulk VM actions, experiment file
+      archives, disk clones) that continue in the server after the request that
+      starts them answers 202. A job belongs to the user who started it. Other
+      users see, cancel or dismiss it only with the `jobs` permission on its
+      experiment (`jobs/global` for a job of no experiment). Anyone else
+      gets 404.
       Jobs live in the server's memory only: a restart loses them. A finished
       job is kept for an hour, at most 200 of them.
 paths:
@@ -1369,6 +1371,207 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/experiments/{name}/files/download":
+    post:
+      tags:
+        - Experiments
+      summary: Download several experiment files as a zip archive
+      description: >-
+        Streams a zip archive (`<name>-files.zip`) of the listed files, each
+        stored under its path relative to the experiment's files directory.
+        Every path is checked before anything is sent. Needs the
+        `experiments/files` `get` permission. At most 500 files totaling
+        2 GiB are allowed. The archive is built as it is sent, so it cannot
+        be resumed (`Accept-Ranges: none`). Download very large files one at
+        a time with `GET /experiments/{name}/files/{filename}`.
+      operationId: postExperimentsNameFilesDownload
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to download files from
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FilePaths"
+      responses:
+        "200":
+          description: zip archive of the files
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: >-
+            no paths, a path that is not clean and relative to the files
+            directory, or a pcap a running capture is still writing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: a path is not one of the experiment's files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: more than 500 files, or more than 2 GiB in total
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/files/archive":
+    post:
+      tags:
+        - Experiments
+        - Jobs
+      summary: Build a zip archive of several experiment files in a background job
+      description: >-
+        Checks the files as POST .../files/download does. Then it builds their
+        zip archive in a `files.archive` background job. The job's items are the
+        files, and its progress counts the bytes read. The job leaves out a file
+        that it cannot fetch and ends `partial`. The archive is then named
+        `<name>-files-incomplete.zip` instead of `<name>-files.zip`, and lists
+        the file with the reason in a `MISSING.txt` entry. Download the archive,
+        which resumes, from GET /jobs/{id}/artifact. Canceling the job leaves no
+        archive. Needs the `experiments/files` `get` permission.
+      operationId: postExperimentsNameFilesArchive
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: name
+          in: path
+          description: name of phenix experiment to archive files from
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FilePaths"
+      responses:
+        "202":
+          description: the job, started
+          headers:
+            Location:
+              description: the job, at /api/v1/jobs/{id} under the server's base path
+              schema:
+                type: string
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          description: >-
+            no paths, a path that is not clean and relative to the files
+            directory, a pcap that a running capture writes, or an
+            invalid `Idempotency-Key`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: a path is not one of the experiment's files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: more than 500 files, or more than 2 GiB in total
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          $ref: "#/components/responses/IdempotencyKeyInFlight"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
+        "429":
+          description: >-
+            too many of the user's jobs, or of all jobs, are waiting to run
+            (`Retry-After` says when to try again)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down and starts no more jobs (`Retry-After`
+            says when to try again)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/files/delete":
+    post:
+      tags:
+        - Experiments
+      summary: Delete several experiment files
+      description: >-
+        Deletes the listed files from the head node and every mesh node that
+        has them. Files that cannot be deleted are listed with the reason and
+        the rest are still deleted. Needs the `experiments/files` `delete`
+        permission.
+      operationId: postExperimentsNameFilesDelete
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to delete files from
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FilePaths"
+      responses:
+        "200":
+          description: files deleted, and those that were not
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesDeleted"
+        "400":
+          description: an invalid request body, or no paths given
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: deleting the files failed (any of them may remain)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/experiments/{name}/files/{filename}":
     get:
       tags:
@@ -1472,6 +1675,211 @@ paths:
                 $ref: "#/components/schemas/Error"
         "416":
           $ref: "#/components/responses/RangeNotSatisfiable"
+    head:
+      tags:
+        - Experiments
+      summary: Check an experiment file download
+      description: >-
+        The GET response's headers without the file: its size
+        (Content-Length), `ETag` and `Last-Modified`. Needs the
+        `experiments/files` `get` permission.
+      operationId: headExperimentsNameFilesFilename
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to get file from
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          description: >-
+            name the download is saved as (sent in Content-Disposition). `path`
+            names the file that is sent.
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: path of the file relative to the experiment's files directory, as listed
+          required: true
+          schema:
+            type: string
+        - name: Accept
+          in: header
+          description: >-
+            `text/plain` for the Files tab's viewer: the file is sent inline
+            as text rather than as an attachment
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the file's headers
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          description: >-
+            the path is not clean and relative to the files directory, or a
+            running capture is still writing the pcap
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the path is not one of the experiment's files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags:
+        - Experiments
+      summary: Delete experiment file
+      description: >-
+        Deletes the file from the head node and every mesh node that has it.
+        Needs the `experiments/files` `delete` permission.
+      operationId: deleteExperimentsNameFilesFilename
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to delete the file from
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          description: name of the file to delete
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: path of the file relative to the experiment's files directory, as listed
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: file deleted
+        "400":
+          description: >-
+            the path is not clean and relative to the files directory, or names
+            a pcap that a running capture is still writing. Also a path with
+            characters that minimega would read as a glob or several arguments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the path is not one of the experiment's files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/files/{filename}/checksum":
+    get:
+      tags:
+        - Experiments
+      summary: Get an experiment file's SHA-256 checksum
+      description: >-
+        Computes the file's SHA-256 in the background, at most two files at
+        a time server-wide. It keeps the checksum in memory for as long as the
+        file is unchanged. The answer is 202 until the checksum is known (a
+        small file's comes back immediately),
+        then 200. From then on, downloads of the file carry it as
+        `Repr-Digest`. Needs the `experiments/files` `get` permission.
+      operationId: getExperimentsNameFilesFilenameChecksum
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment the file belongs to
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          description: the file's name (`path` names the file)
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: path of the file relative to the experiment's files directory, as listed
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the file's checksum
+          headers:
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileChecksum"
+        "202":
+          description: the server is computing the checksum. Ask again later.
+          headers:
+            Retry-After:
+              description: seconds to wait before asking again
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileChecksum"
+        "400":
+          description: >-
+            the path is not clean and relative to the files directory, or a
+            running capture is still writing the pcap
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the path is not one of the experiment's files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: the file changed while the server hashed it. Ask again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/experiments/{name}/netflow":
     get:
       tags:
@@ -6366,6 +6774,7 @@ paths:
             type: string
             enum:
               - vms.action
+              - files.archive
               - disk.clone
         - name: active
           in: query
@@ -6455,8 +6864,9 @@ paths:
       description: >-
         A queued job ends `canceled` immediately. A running job ends `canceled`
         when its work notices. A VM action job ends after the VMs in progress,
-        and a clone job ends immediately, leaving no file. Needs to be the
-        job's owner, or `jobs` `update`. Also served on the unix socket.
+        and an archive or clone job ends immediately, leaving no file. Needs to be
+        the job's
+        owner, or `jobs` `update`. Also served on the unix socket.
       operationId: postJobCancel
       parameters:
         - $ref: "#/components/parameters/JobID"
@@ -6489,7 +6899,9 @@ paths:
       description: >-
         The file the job produced, as an attachment. Downloads resume with
         `Range` and `If-Range`, as other downloads do. Needs to be the job's
-        owner, or `jobs` `get`. A browser link may pass the token as `?token=`.
+        owner, or `jobs` `get`. An experiment file archive also needs
+        `experiments/files` `get` on its experiment, checked on every
+        download. A browser link may pass the token as `?token=`.
       operationId: getJobArtifact
       parameters:
         - $ref: "#/components/parameters/JobID"
@@ -6506,10 +6918,21 @@ paths:
               $ref: "#/components/headers/LastModified"
             Accept-Ranges:
               $ref: "#/components/headers/AcceptRanges"
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
         "206":
           $ref: "#/components/responses/PartialContent"
         "304":
           $ref: "#/components/responses/NotModified"
+        "403":
+          description: the role may no longer get the files the archive holds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: no such job, another user's, or a job with no artifact
           content:
@@ -6529,6 +6952,12 @@ paths:
       responses:
         "200":
           description: the artifact's headers
+        "403":
+          description: the role may no longer get the files the archive holds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: no such job, another user's, or a job with no artifact
           content:
@@ -7422,6 +7851,47 @@ components:
           example: 12
           type: integer
           description: how many files match, before paging
+    FilePaths:
+      title: File Paths
+      description: Experiment files to act on, by their paths as listed.
+      type: object
+      required:
+        - paths
+      properties:
+        paths:
+          title: Paths
+          type: array
+          description: file paths relative to the experiment's files directory, as listed
+          items:
+            type: string
+    FilesDeleted:
+      title: Files Deleted
+      description: The outcome of deleting several experiment files.
+      type: object
+      properties:
+        deleted:
+          title: Deleted
+          description: the paths that the server deleted
+          type: array
+          items:
+            type: string
+        failed:
+          title: Failed
+          description: the paths that the server could not delete, with the reason
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                title: Path
+                description: the file's path as the request named it
+                example: captures/router_eth0.pcap
+                type: string
+              error:
+                title: Error
+                description: why the server could not delete the file
+                example: no such file
+                type: string
     ScorchPipelines:
       title: Scorch Pipelines
       type: object
@@ -8810,6 +9280,7 @@ components:
           type: string
           enum:
             - vms.action
+            - files.archive
             - disk.clone
         owner:
           title: Owner
@@ -8996,6 +9467,7 @@ components:
           title: Name
           description: the file name the artifact downloads as
           type: string
+          example: exp1-files.zip
         size:
           title: Size
           description: the file's size in bytes

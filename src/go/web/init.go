@@ -30,6 +30,10 @@ func Init() error {
 		return fmt.Errorf("ensuring experiment file upload permissions: %w", err)
 	}
 
+	if err := rbac.EnsureExperimentFilesDeletePermission(); err != nil {
+		return fmt.Errorf("adding the permission to delete experiment files: %w", err)
+	}
+
 	if err := rbac.EnsureJobsPermission(); err != nil {
 		return fmt.Errorf("adding the job permissions: %w", err)
 	}

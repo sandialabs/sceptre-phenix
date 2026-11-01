@@ -41,7 +41,8 @@ such as an item that another action holds, or a request that timed out.
 
 A job you can cancel answers `POST /jobs/{id}/cancel` with `202` and
 `cancelRequested: true`, and ends `canceled`. A queued job is canceled at
-once. A running job stops when its work notices.
+once. A running job stops when its work notices. An archive job stops at once
+and leaves no file behind.
 
 Items that succeeded before the cancel keep their outcome; the others are
 `canceled`.
@@ -78,7 +79,9 @@ role sees and cancels the jobs of its own experiments. A job of no experiment
 needs the same verbs on the `jobs/global` resource instead, which Global Admin
 has; a `jobs` permission does not reach it, even on every experiment (`*`).
 Starting a job needs only the permission of the operation itself, never
-`jobs`.
+`jobs`. Downloading an experiment file archive, the owner's included, also
+needs `experiments/files` `get` on its experiment, checked on every download,
+and a refused download is recorded in the audit log.
 
 To anyone else, another user's job answers `404`, as if it did not exist.
 

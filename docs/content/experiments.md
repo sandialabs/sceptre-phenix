@@ -452,6 +452,150 @@ A running experiment reports the VLAN IDs minimega assigned when it started. A
 stopped experiment has no ID for an alias unless one was set explicitly, so
 most alias lookups will fail until the experiment starts.
 
+## Experiment Files
+
+The `Files` tab of an experiment lists the files phēnix, its apps, and SCORCH
+wrote for that experiment, wherever on the cluster they were written. It is the
+second tab on both the running and the stopped experiment page, and a role needs
+`list` on `experiments/files` to see it at all. These files are kept in the
+experiment's `files` folder in the minimega files directory, which the
+[Disks](disks.md) tab leaves out, so the experiment's VM disk snapshots and
+other images there are managed here rather than there.
+
+![Experiment Files tab listing packet captures, SCORCH archives and other files with path, category, date with its age, size, and open, download and delete actions.](images/exp_files_tab.png){: width=800 .center}
+
+### Finding a File
+
+The table has a `Name`, `Path`, `Category`, `Date`, `Size`, and `Actions`
+column. `Path` is an information icon; hover over it for the file's full path on
+the phēnix server, such as
+`/phenix/images/my-experiment/files/scorch/1/tcpdump/capture.pcap`. `Date`
+shows when the file last changed, with its age. Click the
+`Name`, `Date`, or `Size` heading to sort by that column; the table starts with
+the newest file first. `Category` cannot be sorted on.
+
+phēnix categorizes each file by what it is and what wrote it: `Packet Capture`,
+`Scorch Artifact` (with the SCORCH run ID and the component's name as categories
+of their own), `Filebeat`, `ELF Memory Snapshot`, `VM Memory Snapshot`,
+`VM Disk Snapshot`, `Backing Image`, or `Unknown`. The `All Categories` dropdown
+left of the search box keeps only the files in one category, and the
+`Find a File` search box matches a file's name or its categories. The dropdown
+narrows the rows the table has already loaded; the search box goes to the
+server, which applies it to every file in the experiment.
+
+Once the experiment has more files than fit on one page, a `Paginate` toggle
+appears above the table. It is remembered in your browser for this table until
+you turn it off again. Sorting, searching, changing the category, and changing
+the page each list the files again, and phēnix reuses a listing for a few
+seconds, so a file an app has only just written may not be in the next listing.
+
+### Opening a File
+
+Clicking a text file's name opens it in a read-only viewer, so you do not have
+to download it to read it. phēnix treats `.json`, `.jsonl`, `.log`, `.txt`,
+`.yaml`, and `.yml` files as text, and indents JSON so it is readable. `Exit`
+closes the viewer. Any other kind of file has to be downloaded to be read.
+
+### Acting on One File
+
+The buttons in a row's `Actions` column are icons; hover over one for its label.
+In order, they are:
+
+* the button that opens the file: `view file` for a text file. A row for any
+  other kind of file leaves that space empty. A text file over 10 MiB is too
+  large to view; download it instead.
+* `download`, which downloads that one file; an interrupted download resumes.
+* `delete`, which asks you to confirm, naming the file, and spins while the file
+  is deleted. Deleting a file removes it from every cluster node and cannot be
+  undone.
+
+The `delete` button appears only for a role with `delete` on
+`experiments/files`, which among the default roles means `Global Admin` and
+`Experiment Admin` (see [Roles](user-administration.md#roles)).
+
+### Acting on Several Files
+
+A role that can download or delete an experiment's files also gets a checkbox on
+each row, and one in the heading that checks or clears every file the table is
+showing. Checking a file puts a toolbar above the table, holding whichever of
+these your role allows:
+
+* `Download (N)` has the server build the checked files into one
+  `<experiment name>-files.zip` archive in a [background job](jobs.md), whose
+  progress shows in the toolbar and the jobs menu, and downloads it once built.
+  A file the server cannot fetch is left out, and one that grows after you ask
+  holds only the part it had then: the archive is then named
+  `<experiment name>-files-incomplete.zip`, lists each such file and why in its
+  `MISSING.txt`, and downloads only when you click `Download incomplete archive`
+  and confirm. If you leave the page meanwhile, download the archive from the
+  jobs menu, within the hour.
+* `Delete (N)` asks to confirm once for all of them, with `Delete N Files` as
+  the confirm button, then deletes them together.
+* The last button clears the selection.
+
+![Files tab with three files checked and Download (3), Delete (3) and clear selection buttons above the table.](images/exp_files_selected.png){: width=800 .center}
+
+While the archive is built, the toolbar shows its progress, with a `Cancel`
+button, and the `Download` and `Delete` buttons wait for it.
+
+![The Files toolbar while a ZIP archive of three checked files is built: its title, a Running tag, a progress bar, the bytes archived so far, and a Cancel button](images/exp_files_archive.png){: width=800 .center}
+
+Only files you can still see stay checked: searching, changing the category, or
+moving to another page drops the rest of the selection.
+
+When some of the files cannot be deleted, phēnix deletes the ones it can and
+reports the rest in one summary, naming up to eight of them with the reason and
+counting any beyond that. Those files stay checked, so you can try again or
+download them instead.
+
+!!! note
+    One zip download holds at most 500 files and 2 GiB in total. A larger one is
+    refused before any of it is sent; through the [API](api.md) that is a `413`.
+
+Through the API, `POST /api/v1/experiments/<name>/files/archive` with the same
+`{"paths": [...]}` body builds the archive in a [background job](jobs.md)
+instead, with the same limits and checks. A file that cannot be fetched, such as
+one a mesh node no longer has, is left out rather than failing the whole
+archive: the job ends `partial`, the archive is named
+`<experiment name>-files-incomplete.zip`, and a `MISSING.txt` entry in it lists
+each file left out and why. A file that grows after the request is archived only
+up to the size it had then: it counts as archived, but the archive is still
+named `-files-incomplete.zip` and `MISSING.txt` says so. The finished archive
+downloads, resumably, from `GET /api/v1/jobs/<id>/artifact` for an hour, and
+canceling the job leaves no archive.
+
+!!! tip "Resuming a download from a shell"
+    `curl -C -` resumes a single-file download where an earlier attempt
+    stopped:
+
+    ```bash
+    curl -C - -o out.pcap -H 'X-Phenix-Auth-Token: Bearer <token>' \
+      'https://<phenix>/api/v1/experiments/<name>/files/out.pcap?path=scorch/run-0/out.pcap'
+    ```
+
+    Unlike a browser, `curl -C -` does not check that the file is unchanged,
+    so a file that changed between attempts comes out spliced. To verify a
+    resumed download, compare its `sha256sum` with the `sha256` that
+    `GET /api/v1/experiments/<name>/files/<file>/checksum?path=<path>` returns.
+    phēnix computes the checksum in the background: until it is known the
+    route answers `202`, so ask again after a few seconds.
+
+!!! warning
+    A `.pcap` file a running capture is still writing cannot be viewed,
+    downloaded, or deleted, so a half-written capture never leaves the server (a
+    `400` through the API). Stop the capture first. A file that is no longer on
+    the cluster gives a `404`.
+
+### Adding Files
+
+phēnix and its apps write most of an experiment's files. To add your own, such
+as an installer or a configuration file, upload it through the phēnix file
+server; see
+[Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server),
+which also covers copying an uploaded file into a VM. Uploads land in the
+experiment's files directory, so they appear in the `Files` tab like any other
+file.
+
 ## Common Workflows
 
 ### 1. Basic Experiment Lifecycle

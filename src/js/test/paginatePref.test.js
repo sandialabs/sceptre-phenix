@@ -18,8 +18,13 @@ vi.mock('@/utils/notify.js', modules.notify);
 
 import { nextTick } from 'vue';
 
+import ConfigsList from '@/components/configs/ConfigsList.vue';
+import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
 import { loadPaginate, savePaginate } from '@/utils/paginatePref.js';
 import { useTable } from '@/utils/useTable.js';
+import Disks from '@/views/Disks.vue';
+import { disk } from './helpers/fixtures.js';
+import { mountComponent, tableRows, textOf } from './helpers/mount.js';
 import { blockedStorage, memoryStorage } from './helpers/storage.js';
 
 beforeEach(() => {
@@ -102,5 +107,83 @@ describe('paginate preference', () => {
 
     expect(loadPaginate('disks')).toBe(false);
     expect(() => savePaginate('disks', true)).not.toThrow();
+  });
+});
+
+// more rows than a page holds, so each page offers its Paginate toggle
+const ROWS = 11;
+const rows = (row) => Array.from({ length: ROWS }, (_, i) => row(i));
+
+// Clicks a page's Paginate toggle.
+async function togglePaginate(wrapper) {
+  const toggle = wrapper
+    .findAll('label.switch')
+    .find((label) => textOf(label) === 'Paginate');
+  const input = toggle.find('input');
+  await input.setValue(!input.element.checked);
+}
+
+describe('the pages with a Paginate toggle', () => {
+  it.each([
+    [
+      'configs',
+      ConfigsList,
+      '/configs/',
+      {
+        configs: rows((i) => ({
+          kind: 'Topology',
+          metadata: { name: `t${i}`, updated: '2025-01-02T03:04:05Z' },
+        })),
+      },
+    ],
+    [
+      'disks',
+      Disks,
+      '/disks/',
+      {
+        disks: rows((i) => disk(`/phenix/images/d${i}.qc2`, `d${i}.qc2`)),
+      },
+    ],
+  ])('remember theirs as %s', async (name, component, route, data) => {
+    const key = `phenix.paginate.${name}`;
+    const page = () =>
+      mountComponent(component, { route, data: { ...data, loaded: true } });
+
+    const first = await page();
+    expect(tableRows(first)).toHaveLength(ROWS);
+    await togglePaginate(first);
+    expect(localStorage.getItem(key)).toBe('true');
+    expect(tableRows(first)).toHaveLength(10);
+    first.unmount();
+
+    // opened again, the page pages until the toggle is clicked off
+    const again = await page();
+    expect(tableRows(again)).toHaveLength(10);
+    await togglePaginate(again);
+    expect(localStorage.getItem(key)).toBe('false');
+    expect(tableRows(again)).toHaveLength(ROWS);
+  });
+});
+
+// tables whose toggle needs an experiment's files to show
+describe('the tables with a Paginate toggle', () => {
+  it.each([
+    // each experiment page names its Files tab's table
+    ['stopped-files', ExperimentFilesTab, { paginateKey: 'stopped-files' }],
+    ['running-files', ExperimentFilesTab, { paginateKey: 'running-files' }],
+  ])('remember theirs as %s', async (name, component, props) => {
+    const key = `phenix.paginate.${name}`;
+    localStorage.setItem(key, 'true');
+
+    const { vm } = await mountComponent(component, {
+      props,
+      route: '/experiment/exp1',
+    });
+    const table = vm.filesTable;
+    expect(table.isPaginated).toBe(true);
+
+    table.isPaginated = false;
+    await nextTick();
+    expect(localStorage.getItem(key)).toBe('false');
   });
 });

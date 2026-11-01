@@ -713,21 +713,14 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "Expected directory not file: "+destDir)
 	}
 
-	exp, err := experiment.Get(vars["exp"])
-	if err != nil {
-		audit.Failure(r, audit.VMFileCopy, "copying file to vm mount failed", copied, err)
-
-		return weberror.New(http.StatusInternalServerError, "Error getting experiment: "+err.Error())
-	}
-
-	source, err := getExperimentFilePath(vars["exp"], query.Get("source"), exp.FilesDir())
+	source, err := experiment.LocalFile(vars["exp"], query.Get("source"))
 	if err != nil {
 		audit.Failure(r, audit.VMFileCopy, "copying file to vm mount failed", copied, err)
 
 		return weberror.New(http.StatusBadRequest, "Error getting source file: "+err.Error())
 	}
 
-	sourceFile, err := os.Open(source) //nolint:gosec // source validated against experiment file list
+	sourceFile, err := os.Open(source) //nolint:gosec // G703 source checked by experiment.LocalFile
 	if err != nil {
 		audit.Failure(r, audit.VMFileCopy, "copying file to vm mount failed", copied, err)
 
@@ -767,39 +760,4 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
 	audit.Success(r, audit.VMFileCopy, "copied file to vm mount", copied)
 
 	return nil
-}
-
-// getExperimentFilePath returns a source path only when it matches a known experiment file.
-func getExperimentFilePath(expName, source, filesDir string) (string, error) {
-	if source == "" {
-		return "", errors.New("no source file provided")
-	}
-
-	files, err := experiment.Files(expName, "")
-	if err != nil {
-		return "", fmt.Errorf("listing experiment files: %w", err)
-	}
-
-	for _, f := range files {
-		if source != f.Path {
-			continue
-		}
-
-		headnode, _ := os.Hostname()
-		_ = file.CopyFile(fmt.Sprintf("/%s/files/%s", expName, f.Path), headnode, nil)
-
-		path := filepath.Join(filesDir, f.Path)
-		info, err := os.Stat(path)
-		if err != nil {
-			return "", err
-		}
-
-		if info.IsDir() {
-			return "", errors.New("source is a directory")
-		}
-
-		return path, nil
-	}
-
-	return "", errors.New("file not found")
 }
