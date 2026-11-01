@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/audit"
@@ -57,7 +58,11 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
-	files, err := experiment.Files(name, clientFilter)
+	files, observed, err := experiment.FilesObserved(ctx, name, clientFilter)
+	if requestCanceled(r, err) {
+		return nil
+	}
+
 	if err != nil {
 		// minimega did not list every node's files; an empty or partial list
 		// would read as files missing
@@ -65,6 +70,8 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 
 		return weberror.New(http.StatusBadGateway, "could not list files: "+err.Error())
 	}
+
+	freshness.SetObserved(w, observed)
 
 	if sortCol != "" && sortDir != "" {
 		files.SortBy(sortCol, sortDir == "asc")

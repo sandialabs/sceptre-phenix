@@ -14,6 +14,7 @@ import (
 	"pgregory.net/rapid"
 
 	"phenix/util/mm"
+	"phenix/web/cache"
 	"phenix/web/proto"
 	"phenix/web/rbac"
 )
@@ -45,6 +46,93 @@ func getAPI(t *testing.T, url string, msg gproto.Message) int {
 	}
 
 	return resp.StatusCode
+}
+
+// Experiment endpoints list VMs as minimega reports them; vms=false counts from the topology instead,
+// except for one experiment's screenshots. A starting experiment lists topology VMs without waiting on minimega.
+func TestExperimentEndpointsListVMs(t *testing.T) {
+	running := mm.VMs{{Name: "test-vm", Running: true, State: "RUNNING", Networks: []string{"EXP_1 (101)"}}}
+
+	for _, tt := range []struct {
+		name     string
+		list     bool
+		query    string
+		vms      mm.VMs // as minimega reports them
+		starting bool
+
+		wantListings int32
+		wantVMs      int
+		wantState    string // of the VM listed, if one is
+		wantCount    uint32
+	}{
+		{name: "experiment", vms: running, wantListings: 1, wantVMs: 1, wantState: "RUNNING", wantCount: 1},
+		{name: "experiment without VMs", query: "?vms=false", vms: running, wantCount: 1},
+		// minimega reports no VMs, so there are none to take screenshots of
+		{name: "experiment screenshots", query: "?vms=false&screenshot=200", wantListings: 1},
+		{name: "list", list: true, vms: running, wantListings: 1, wantVMs: 1, wantState: "RUNNING", wantCount: 1},
+		{name: "list without VMs", list: true, query: "?vms=false", vms: running, wantCount: 1},
+		// the list takes no screenshots, so one asked for changes nothing
+		{name: "list ignores screenshots", list: true, query: "?vms=false&screenshot=200", vms: running, wantCount: 1},
+		// the VM as the topology configures it, with no state from minimega
+		{name: "list while starting", list: true, vms: running, starting: true, wantVMs: 1, wantCount: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			useTestExperiment(t)
+
+			fake := useTestMM(t, &testMM{vms: tt.vms})
+
+			if tt.starting {
+				if err := cache.LockExperimentForStarting("test-experiment"); err != nil {
+					t.Fatalf("cache.LockExperimentForStarting(test-experiment) error = %v", err)
+				}
+
+				t.Cleanup(func() { cache.UnlockExperiment("test-experiment") })
+			}
+
+			var (
+				server = serveAs(t, "alice", experimentViewerRole()).URL
+				exp    = new(proto.Experiment)
+				path   = "/api/v1/experiments/test-experiment" + tt.query
+			)
+
+			if tt.list {
+				var list proto.ExperimentList
+
+				path = "/api/v1/experiments" + tt.query
+				if code := getAPI(t, server+path, &list); code != http.StatusOK {
+					t.Fatalf("GET %s = %d, want %d", path, code, http.StatusOK)
+				}
+
+				if n := len(list.GetExperiments()); n != 1 {
+					t.Fatalf("GET %s listed %d experiments, want 1: %v", path, n, list.GetExperiments())
+				}
+
+				exp = list.GetExperiments()[0]
+			} else if code := getAPI(t, server+path, exp); code != http.StatusOK {
+				t.Fatalf("GET %s = %d, want %d", path, code, http.StatusOK)
+			}
+
+			if n := fake.vmListings.Load(); n != tt.wantListings {
+				t.Errorf("GET %s listed minimega's VMs %d times, want %d", path, n, tt.wantListings)
+			}
+
+			if !exp.GetRunning() {
+				t.Errorf("GET %s running = false, want true", path)
+			}
+
+			if got := exp.GetVmCount(); got != tt.wantCount {
+				t.Errorf("GET %s VM count = %d, want %d", path, got, tt.wantCount)
+			}
+
+			if got := len(exp.GetVms()); got != tt.wantVMs {
+				t.Errorf("GET %s listed %d VMs, want %d", path, got, tt.wantVMs)
+			} else if tt.wantVMs == 1 {
+				if got := exp.GetVms()[0].GetState(); got != tt.wantState {
+					t.Errorf("GET %s VM state = %q, want %q", path, got, tt.wantState)
+				}
+			}
+		})
+	}
 }
 
 // Both VM lists page alike: the count covers every VM, and an invalid page is a 400.

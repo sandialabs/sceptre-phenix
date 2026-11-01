@@ -65,11 +65,11 @@ phenix experiment schedulers                        # list scheduling algorithms
 phenix experiment create <exp> -t <topology> [-s <scenario>] [-d <base-dir>] \
   [--disabled-apps app1,app2] [--vlan-min N] [--vlan-max N] [-b <bridge>]
 phenix experiment edit <exp> [--force]              # --force overrides the running-experiment check
-phenix experiment delete <exp> [-f|--force]          # -f stops a running experiment before deleting it
+phenix experiment delete <exp> [-f|--force]          # -f stops a running experiment before deleting it, forcing the stop
 phenix experiment schedule <exp> <algorithm>         # e.g. round-robin, isolate-experiment, subnet-compute
 phenix experiment start <exp|all> [--dry-run] [--honor-run-periodically] \
   [--treat-mm-errors-as-warnings] [--vlan-min N] [--vlan-max N]
-phenix experiment stop <exp>
+phenix experiment stop <exp|all> [-K] [-f|--force]   # -f marks it stopped even if minimega cannot kill its VMs
 phenix experiment restart <exp> [--dry-run]
 phenix experiment reconfigure <exp>
 phenix experiment trigger <lifecycle> <exp> [app ...]  # re-fire a lifecycle stage for app(s)

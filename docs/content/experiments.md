@@ -63,6 +63,19 @@ phenix exp stop --keep-injection-snapshots <experiment name>
 Only `phenix exp stop` accepts this option. Stopping an experiment from the
 Web-UI, or with `phenix exp restart`, always deletes the snapshots.
 
+If minimega cannot kill an experiment's VMs, for example because it is not
+answering, the stop fails and the experiment stays running, so you can stop it
+again once minimega answers. To mark it stopped anyway, use `--force` or its
+`-f` shorthand, then clear any of its VMs still in minimega by hand:
+
+```bash
+phenix exp stop --force <experiment name>
+```
+
+The API offers the same as
+`POST /api/v1/experiments/{name}/stop?force=true`. Until then, the experiment's
+periodic apps keep running and its delayed VMs keep waiting to start.
+
 The `phenix exp --help` command will output:
 
 ```text
@@ -196,7 +209,8 @@ phenix exp delete <experiment name>
 ```
 
 Alternatively, the `-f`/`--force` flag can be used to automatically stop a
-running experiment before deleting it, similar to `docker rm -f`:
+running experiment before deleting it, similar to `docker rm -f`, even when
+minimega cannot kill its VMs, which are then left for you to clear by hand:
 
 ```bash
 phenix exp delete -f <experiment name>
