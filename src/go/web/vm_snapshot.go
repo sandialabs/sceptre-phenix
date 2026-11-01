@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -410,7 +411,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
-	v, err := vm.Get(expName, name)
+	v, err := vm.GetFor(context.WithoutCancel(ctx), exp, name)
 	if err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/commit", "create", fullName),

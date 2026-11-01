@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -225,17 +226,7 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 
 		// TODO: limit per-experiment VMs based on RBAC
 
-		vms, err := vm.List(exp.Spec.ExperimentName())
-		if err != nil {
-			plog.Error(
-				plog.TypeSystem,
-				"listing VMs for experiment",
-				"exp",
-				exp.Spec.ExperimentName(),
-				"err",
-				err,
-			)
-		}
+		vms := vm.ListFor(ctx, &exp)
 
 		if exp.Running() && size != "" {
 			for i, v := range vms {
@@ -375,12 +366,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, "")
 	}
 
-	vms, err := vm.List(req.GetName())
-	if err != nil {
-		plog.Error(plog.TypeSystem, "listing experiment VMs", "exp", req.GetName(), "err", err)
-
-		return weberror.New(http.StatusInternalServerError, err.Error())
-	}
+	// broadcast to every client, so read even once this request's client left
+	vms := vm.ListFor(context.WithoutCancel(ctx), exp)
 
 	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {
@@ -519,10 +506,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
-	vms, err := vm.List(name)
-	if err != nil {
-		plog.Error(plog.TypeSystem, "listing VMs for experiment", "exp", name, "err", err)
-	}
+	vms, observed := vm.ListForObserved(ctx, exp)
 
 	// This will happen if another handler is currently acting on the
 	// experiment.
@@ -589,6 +573,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
+	freshness.SetObserved(w, observed)
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 

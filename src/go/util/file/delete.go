@@ -29,6 +29,8 @@ func DeleteExistingFiles(names []string) error {
 		return nil
 	}
 
+	defer invalidateAllExperimentFiles()
+
 	if d, ok := DefaultClusterFiles.(existingFilesDeleter); ok {
 		return d.DeleteExistingFiles(names) //nolint:wrapcheck // passthrough
 	}

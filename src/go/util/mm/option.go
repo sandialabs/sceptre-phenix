@@ -32,6 +32,8 @@ type options struct {
 	captureIface    int
 	captureIfaceSet bool
 	captureFile     string
+	captures        []Capture
+	capturesKnown   bool
 
 	screenshotSize string
 
@@ -52,7 +54,8 @@ func NewOptions(opts ...Option) options {
 }
 
 // Context gives up a call's commands still waiting for the shared connection once ctx is done (see
-// mmcli.RunContext). GetVNCEndpoint uses it.
+// mmcli.RunContext), returning ctx's error. A call making several changes checks ctx only until its
+// first change is sent, so it is never left half done.
 func Context(ctx context.Context) Option {
 	return func(o *options) {
 		o.ctx = ctx
@@ -135,6 +138,15 @@ func CaptureInterface(i int) Option {
 func CaptureFile(f string) Option {
 	return func(o *options) {
 		o.captureFile = f
+	}
+}
+
+// KnownCaptures gives the VM's captures as the caller already listed them, so
+// StopVMCapture does not list them again.
+func KnownCaptures(c []Capture) Option {
+	return func(o *options) {
+		o.captures = c
+		o.capturesKnown = true
 	}
 }
 

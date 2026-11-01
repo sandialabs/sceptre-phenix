@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,6 +22,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 
 	"phenix/util/common"
+	"phenix/util/freshness"
 	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 )
@@ -132,6 +134,9 @@ func (Minimega) ReadScriptFromFile(ns, filename string) error {
 func (Minimega) ClearNamespace(ns string) error {
 	cmd := mmcli.NewCommand()
 	cmd.Command = "clear namespace " + ns
+
+	// The namespace's VMs are gone (or going) either way.
+	forgetSnapshotDisks(ns)
 
 	err := mmcli.ErrorResponse(mmcli.Run(cmd))
 	if err != nil {
@@ -341,11 +346,57 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 	return float64(queued) / float64(expected), nil
 }
 
-func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex logic
+// GetVMInfo returns minimega's details for a namespace's VMs, or one VM's. Concurrent identical
+// calls share one run (see flight.Group) and each gets a copy. A failed read leaves the list partial
+// and is only logged; GetVMInfoObserved reports it.
+func (m Minimega) GetVMInfo(opts ...Option) VMs {
+	vms, obs := m.GetVMInfoObserved(opts...)
+
+	switch o := NewOptions(opts...); {
+	case obs.Err == nil:
+	case o.ctx.Err() != nil:
+		plog.Debug(plog.TypeSystem, "getting VM info canceled", "ns", o.ns, "error", obs.Err)
+	default:
+		plog.Error(plog.TypeSystem, "getting VM info", "ns", o.ns, "error", obs.Err)
+	}
+
+	return vms
+}
+
+// GetVMInfoObserved is GetVMInfo, also reporting when the VMs were read and
+// whether minimega answered for all of them. An observation that is not Known
+// carries the error, and the VMs then hold only those minimega did report.
+func (m Minimega) GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation) {
 	o := NewOptions(opts...)
 
+	res, err := vmInfoFlights.Do(o.ctx, o.ns+"\x00"+o.vm, func(ctx context.Context, seal func()) (vmInfoResult, error) {
+		// before the run's first command, so the data is no older than this
+		at := time.Now()
+
+		run := o
+		run.ctx = ctx
+
+		vms, err := m.getVMInfo(run, seal)
+
+		return vmInfoResult{vms: vms, at: at, err: err}, nil
+	})
+	if err == nil {
+		err = res.err
+	}
+
+	if err != nil {
+		return cloneVMs(res.vms), freshness.Observation{At: res.at, Stale: false, Known: false, Err: err}
+	}
+
+	return cloneVMs(res.vms), freshness.Observed(res.at)
+}
+
+// getVMInfo does GetVMInfo's work, calling started just before its first
+// minimega command is sent. The VMs are those minimega reported even when it
+// also reported an error.
+func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 	// don't rely on `cc_active` column in `vm info` table
-	activeC2 := getActiveC2(o.ns)
+	activeC2 := getActiveC2(o.ctx, o.ns, started)
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = vmInfoCmd
@@ -370,8 +421,16 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 		cmd.Filters = []string{"name=" + o.vm}
 	}
 
-	status := mmcli.RunTabular(cmd)
+	status, statusErr := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+	received := time.Now()
 	vms := make(VMs, 0, len(status))
+
+	var captures map[string][]Capture
+
+	// One `capture` listing for the namespace, rather than one per VM.
+	if len(status) > 0 {
+		captures = GroupCapturesByVM(m.GetExperimentCaptures(NS(o.ns), Context(o.ctx)))
+	}
 
 	for _, row := range status {
 		vm := VM{ //nolint:exhaustruct // partial initialization
@@ -382,45 +441,19 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 			Running:  row[stateColumn] == stateRunning,
 			CCActive: activeC2[row["uuid"]],
 			CdRom:    row["cdrom"],
+			Networks: parseList(row["vlan"]),
+			Taps:     parseList(row["tap"]),
+			IPv4:     parseList(row["ip"]),
+			Captures: captures[row["name"]],
 		}
-
-		s := row["vlan"]
-		s = strings.TrimPrefix(s, "[")
-		s = strings.TrimSuffix(s, "]")
-
-		if s != "" {
-			vm.Networks = strings.Split(s, ", ")
-		}
-
-		s = row["tap"]
-		s = strings.TrimPrefix(s, "[")
-		s = strings.TrimSuffix(s, "]")
-
-		if s != "" {
-			vm.Taps = strings.Split(s, ", ")
-		}
-
-		s = row["ip"]
-		s = strings.TrimPrefix(s, "[")
-		s = strings.TrimSuffix(s, "]")
-
-		if s != "" {
-			vm.IPv4 = strings.Split(s, ", ")
-		}
-
-		s = row["tags"]
 
 		var tags map[string]string
 
-		_ = json.Unmarshal([]byte(s), &tags)
+		_ = json.Unmarshal([]byte(row["tags"]), &tags)
 		vm.Tags = tags
 
-		// Make sure the VM name is set prior to calling `GetVMCaptures`, as the VM
-		// name is not always set when calling `GetVMInfo`.
-		vm.Captures = m.GetVMCaptures(NS(o.ns), VMName(vm.Name))
-
-		uptime, err := time.ParseDuration(row["uptime"])
-		if err == nil {
+		uptime, uptimeErr := time.ParseDuration(row["uptime"])
+		if uptimeErr == nil {
 			vm.Uptime = uptime.Seconds()
 		}
 
@@ -437,37 +470,83 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 		snapshot, _ := strconv.ParseBool(row["snapshot"])
 
 		if snapshot && disk != "" {
-			cmd = mmcli.NewCommand()
-			cmd.Command = "disk info " + disk
-
-			if !IsHeadnode(row[hostColumn]) {
-				cmd.Command = fmt.Sprintf("mesh send %s %s", row[hostColumn], cmd.Command)
+			launch := vmLaunch{ //nolint:exhaustruct // at is only known with an uptime
+				ns:   o.ns,
+				name: vm.Name,
+				uuid: vm.UUID,
+				host: vm.Host,
+				disk: disk,
 			}
 
-			resp := mmcli.RunTabular(cmd)
-
-			if len(resp) == 0 {
-				vm.Disk = disk
-			} else {
-				// Only expect one row returned
-				info := resp[0]
-
-				if info["backingfile"] == "" {
-					vm.Disk = info["image"]
-				} else {
-					vm.Disk = info["backingfile"]
-				}
+			// The disk's backing file can only change while its VM's process is
+			// gone, so a result is only reused for the same launch of a VM whose
+			// process is still up.
+			if uptimeErr == nil && (vm.State == stateRunning || vm.State == "PAUSED") {
+				launch.at = received.Add(-uptime)
 			}
-		} else {
+
+			vm.Disk = snapshotBackingDisk(o.ctx, launch)
+		} else if disk != "" {
 			// Attempting to get disk info when not using a snapshot will cause a
 			// locked file error.
-			vm.Disk = disk
+			vm.Disk = filepath.Clean(disk)
 		}
 
 		vms = append(vms, vm)
 	}
 
-	return vms
+	if statusErr != nil {
+		return vms, fmt.Errorf("reading VM info: %w", statusErr)
+	}
+
+	// the capture and disk reads give up quietly once o.ctx is done
+	if err := ended(o.ctx); len(status) > 0 && err != nil {
+		return vms, err
+	}
+
+	return vms, nil
+}
+
+// snapshotBackingDisk returns the image a VM's snapshot disk is based on (or
+// the snapshot itself if minimega can't say), asking minimega at most once per
+// launch of the VM.
+func snapshotBackingDisk(ctx context.Context, launch vmLaunch) string {
+	if disk, ok := snapshotDisks.lookup(launch); ok {
+		return disk
+	}
+
+	cmd := mmcli.NewCommand()
+	cmd.Command = "disk info " + launch.disk
+
+	if !IsHeadnode(launch.host) {
+		cmd.Command = fmt.Sprintf("mesh send %s %s", launch.host, cmd.Command)
+	}
+
+	resp := mmcli.RunTabularContext(ctx, cmd)
+
+	if len(resp) == 0 {
+		return launch.disk
+	}
+
+	// Only expect one row returned
+	info := resp[0]
+
+	disk := info["backingfile"]
+
+	switch {
+	case disk == "":
+		disk = info["image"]
+	case filepath.IsAbs(disk):
+		disk = CleanBackingPath(disk)
+	default:
+		// minimega names the backing file relative to the snapshot's directory
+		// unless it runs with -abssnapshot
+		disk = CleanBackingPath(filepath.Dir(launch.disk) + "/" + disk)
+	}
+
+	snapshotDisks.store(launch, disk)
+
+	return disk
 }
 
 func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
@@ -584,6 +663,9 @@ func (Minimega) StopVM(opts ...Option) error {
 
 func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex logic
 	o := NewOptions(opts...)
+
+	// The VM's snapshot disk may be recreated from a different image.
+	forgetSnapshotDisks(o.ns)
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 
@@ -741,6 +823,8 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 func (Minimega) KillVM(opts ...Option) error {
 	o := NewOptions(opts...)
 
+	forgetSnapshotDisks(o.ns)
+
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm kill " + o.vm
 
@@ -796,6 +880,28 @@ func (Minimega) GetVMHosts(opts ...Option) map[string]string {
 	return hosts
 }
 
+// GetVMIPv4 returns the IPv4 addresses minimega reports for a VM's interfaces,
+// in interface order (nil if it reports none), using a single narrow `vm info`.
+func (Minimega) GetVMIPv4(opts ...Option) ([]string, error) {
+	o := NewOptions(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = vmInfoCmd
+	cmd.Columns = []string{"ip"}
+	cmd.Filters = []string{"name=" + o.vm}
+
+	rows := o.tabular(cmd)
+	if err := ended(o.ctx); len(rows) == 0 && err != nil {
+		return nil, err
+	}
+
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("vm %s in namespace %s: %w", o.vm, o.ns, ErrVMNotFound)
+	}
+
+	return parseList(rows[0]["ip"]), nil
+}
+
 // getVMIdentities returns the name and UUID of the VMs in a namespace
 // (optionally filtered by VM name), and nothing else, using a single narrow
 // `vm info`.
@@ -816,6 +922,74 @@ func getVMIdentities(ctx context.Context, ns, name string) VMs {
 	}
 
 	return vms
+}
+
+// GetVMStates returns each VM's state in the namespace, by name, from one `vm info summary`; unlike
+// GetVMInfo it errors when minimega cannot answer. Concurrent calls share one run, each getting a copy.
+func (Minimega) GetVMStates(opts ...Option) (map[string]string, error) {
+	o := NewOptions(opts...)
+
+	res, err := vmStatesFlights.Do(o.ctx, o.ns, func(ctx context.Context, seal func()) (vmStates, error) {
+		run := o
+		run.ctx = ctx
+
+		states, err := getVMStates(run, seal)
+
+		return vmStates{states: states, err: err}, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting VM states in namespace %s: %w", o.ns, err)
+	}
+
+	if res.err != nil {
+		return nil, res.err
+	}
+
+	return maps.Clone(res.states), nil
+}
+
+// getVMStates does GetVMStates's work, calling started just before its
+// command is sent.
+func getVMStates(o options, started func()) (map[string]string, error) {
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = vmInfoSummaryCmd
+	cmd.Columns = []string{"name", stateColumn}
+
+	var (
+		states = make(map[string]string)
+		errs   []string
+	)
+
+	for resps := range mmcli.RunStartedContext(o.ctx, cmd, started) {
+		for _, resp := range resps.Resp {
+			if resp.Error != "" {
+				errs = append(errs, resp.Error)
+
+				continue
+			}
+
+			name, state := slices.Index(resp.Header, "name"), slices.Index(resp.Header, stateColumn)
+			if name < 0 || state < 0 {
+				continue
+			}
+
+			for _, row := range resp.Tabular {
+				if name < len(row) && state < len(row) {
+					states[row[name]] = row[state]
+				}
+			}
+		}
+	}
+
+	if err := ended(o.ctx); err != nil {
+		return nil, err
+	}
+
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("getting VM states in namespace %s: %s", o.ns, strings.Join(errs, ". "))
+	}
+
+	return states, nil
 }
 
 func (Minimega) GetVMState(opts ...Option) (string, error) {
@@ -1116,13 +1290,18 @@ func (Minimega) StartVMCapture(opts ...Option) error {
 // StopVMCapture stops packet captures for a VM. If the CaptureInterface
 // option is provided, only the capture running on that interface index is
 // stopped, leaving any other captures for the VM running. Otherwise, all
-// captures for the VM are stopped.
+// captures for the VM are stopped. The VM's captures are listed first unless
+// given with KnownCaptures.
 func (Minimega) StopVMCapture(opts ...Option) error {
 	o := NewOptions(opts...)
 
-	captures := GetVMCaptures(opts...)
-	if err := ended(o.ctx); err != nil {
-		return err
+	captures := o.captures
+
+	if !o.capturesKnown {
+		captures = GetVMCaptures(opts...)
+		if err := ended(o.ctx); err != nil {
+			return err
+		}
 	}
 
 	if o.captureIfaceSet {
@@ -1228,30 +1407,59 @@ func (m Minimega) GetVMCaptures(opts ...Option) []Capture {
 	return keep
 }
 
-// GetClusterHosts returns the cluster's hosts, or only those VMs can be scheduled on.
+// GetClusterHosts returns the cluster's hosts, or only those VMs can be scheduled on. A schedOnly call always asks
+// minimega, since VM placement depends on current counts; the full list, shown only to people, is reused for up to
+// clusterHostsTTL. Concurrent calls share one set of commands (see flight.Group), and each caller gets its own copy.
 func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
-	hosts, err := m.getClusterHosts(context.Background())
-	if err != nil || !schedOnly {
-		return hosts, err
-	}
+	hosts, _, err := m.GetClusterHostsObserved(context.Background(), schedOnly)
 
-	if n := len(hosts); n > 0 && hosts[n-1].Headnode && !hosts[n-1].Schedulable {
-		hosts = hosts[:n-1]
-	}
-
-	if len(hosts) == 0 {
-		return nil, nil
-	}
-
-	return hosts, nil
+	return hosts, err
 }
 
-// getClusterHosts does GetClusterHosts' work for the full list. The headnode is
+// GetClusterHostsObserved is GetClusterHosts, also reporting when the hosts
+// were read from minimega, which for a reused list is up to clusterHostsTTL
+// ago. The list's minimega commands give up once ctx, and that of every other
+// caller waiting for the same list, is done (see Context), and the call then
+// returns an error wrapping ctx's error.
+func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error) {
+	if !schedOnly {
+		if hosts, at, ok := recentHosts.get(); ok {
+			return cloneHosts(hosts), freshness.Observed(at), nil
+		}
+	}
+
+	res, err := clusterHostsFlights.Do(ctx, "", func(ctx context.Context, seal func()) (clusterHosts, error) {
+		at := time.Now()
+
+		hosts, err := m.getClusterHosts(ctx, seal)
+		if err == nil {
+			recentHosts.put(hosts, at)
+		}
+
+		return clusterHosts{hosts: hosts, at: at, err: err}, nil
+	})
+	if err != nil {
+		return nil, freshness.Observation{}, fmt.Errorf("getting cluster hosts: %w", err)
+	}
+
+	if res.err != nil {
+		return cloneHosts(res.hosts), freshness.Observation{}, res.err
+	}
+
+	if schedOnly {
+		return schedulableHosts(res.hosts), freshness.Observed(res.at), nil
+	}
+
+	return cloneHosts(res.hosts), freshness.Observed(res.at), nil
+}
+
+// getClusterHosts does GetClusterHosts' work for the full list, calling
+// started just before its first minimega command is sent. The headnode is
 // always last. Once ctx is done, it gives up with an error wrapping ctx's
 // error rather than return a list some commands gave up on.
-func (m Minimega) getClusterHosts(ctx context.Context) (Hosts, error) {
+func (m Minimega) getClusterHosts(ctx context.Context, started func()) (Hosts, error) {
 	// Get headnode details. The default namespace only ever spans this node.
-	hosts := processNamespaceHosts(ctx, "minimega")
+	hosts := processNamespaceHosts(ctx, "minimega", started)
 
 	if err := ended(ctx); err != nil {
 		return nil, err
@@ -1283,7 +1491,7 @@ func (m Minimega) getClusterHosts(ctx context.Context) (Hosts, error) {
 	}
 
 	// Get compute nodes details
-	hosts = processNamespaceHosts(ctx, phenixHostsNS)
+	hosts = processNamespaceHosts(ctx, phenixHostsNS, nil)
 
 	if err := ended(ctx); err != nil {
 		return nil, err
@@ -1392,9 +1600,23 @@ func withoutLeadingZeros(name string) string {
 	})
 }
 
+// schedulableHosts copies the hosts VMs can be scheduled on out of
+// getClusterHosts' full list, which is nil when there are none.
+func schedulableHosts(hosts Hosts) Hosts {
+	if n := len(hosts); n > 0 && hosts[n-1].Headnode && !hosts[n-1].Schedulable {
+		hosts = hosts[:n-1]
+	}
+
+	if len(hosts) == 0 {
+		return nil
+	}
+
+	return cloneHosts(hosts)
+}
+
 func (m Minimega) GetNamespaceHosts(ns string) (Hosts, error) {
 	// Get namespace nodes details
-	processed := processNamespaceHosts(context.Background(), ns)
+	processed := processNamespaceHosts(context.Background(), ns, nil)
 
 	hosts := make([]Host, 0, len(processed))
 
@@ -1423,7 +1645,7 @@ func (Minimega) Headnode() string {
 	}
 
 	// Get headnode details
-	hosts := processNamespaceHosts(context.Background(), "minimega")
+	hosts := processNamespaceHosts(context.Background(), "minimega", nil)
 
 	if len(hosts) == 0 {
 		// hosts is empty on any mmcli failure, fall back to the last known
@@ -2141,13 +2363,13 @@ func GetLocalMountPath(ns, vm string) string {
 	return filepath.Join(common.MountDir(), ns, vm)
 }
 
-func getActiveC2(ns string) map[string]bool {
+func getActiveC2(ctx context.Context, ns string, started func()) map[string]bool {
 	active := make(map[string]bool)
 
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = ccClientCmd
 
-	for _, row := range mmcli.RunTabular(cmd) {
+	for _, row := range mmcli.RunTabularStartedContext(ctx, cmd, started) {
 		active[row["uuid"]] = true
 	}
 
@@ -2233,11 +2455,11 @@ func deleteFile(path string) error {
 	return nil
 }
 
-func processNamespaceHosts(ctx context.Context, namespace string) Hosts {
+func processNamespaceHosts(ctx context.Context, namespace string, started func()) Hosts {
 	cmd := mmcli.NewNamespacedCommand(namespace)
 	cmd.Command = hostColumn
 
-	status := mmcli.RunTabularContext(ctx, cmd)
+	status := mmcli.RunTabularStartedContext(ctx, cmd, started)
 	hosts := make(Hosts, 0, len(status))
 
 	for _, row := range status {

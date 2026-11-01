@@ -55,6 +55,7 @@ All notable changes to this project will be documented in this file.
 - **Audit Logging (breaking)**: The web API logs sign-ins, refused tokens and security-relevant actions as `AUDIT` records with Elastic Common Schema fields, not as `SECURITY` or `ACTION` records, and always writes them to the system log file.
 - **Config Store (breaking)**: The BoltDB store opens read-only for reads, writes each config change in one transaction, and gives each config a `metadata.revision`, so `phenix config edit` refuses edits to a config that changed after it opened. On the first write, the store file changes to the format that keeps the free page list in the file.
 - **Settings (breaking)**: A `PHENIX_*` environment variable now overrides the config file, and `phenix settings set` and `unset` change the YAML config file that phēnix read. A running `phenix ui` logs a warning that names each changed setting that takes effect only after a restart.
+- **VM Lists**: phēnix reads the VMs of an experiment with three minimega commands, and requests for the same data at the same time share one minimega answer. phēnix keeps cluster host and experiment file lists for 5 seconds, and VM list and experiment responses of a running experiment have an `X-Phenix-Observed-At` header.
 
 ### Removed
 

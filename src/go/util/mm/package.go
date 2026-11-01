@@ -89,8 +89,16 @@ func GetVMHosts(opts ...Option) map[string]string {
 	return DefaultMM.GetVMHosts(opts...)
 }
 
+func GetVMIPv4(opts ...Option) ([]string, error) {
+	return DefaultMM.GetVMIPv4(opts...)
+}
+
 func GetVMState(opts ...Option) (string, error) {
 	return DefaultMM.GetVMState(opts...)
+}
+
+func GetVMStates(opts ...Option) (map[string]string, error) {
+	return DefaultMM.GetVMStates(opts...)
 }
 
 func SetVMTags(opts ...Option) error {
@@ -178,16 +186,16 @@ func IsHeadnode(node string) bool {
 	return DefaultMM.IsHeadnode(node)
 }
 
-func GetMMArgs() (map[string]string, error) {
-	return DefaultMM.GetMMArgs()
-}
-
 func GetVLANs(opts ...Option) (map[string]int, error) {
 	return DefaultMM.GetVLANs(opts...)
 }
 
 func IsC2ClientActive(opts ...C2Option) error {
 	return DefaultMM.IsC2ClientActive(opts...)
+}
+
+func ActiveC2Clients(ns string, refs []C2ClientRef) map[C2ClientRef]bool {
+	return DefaultMM.ActiveC2Clients(ns, refs)
 }
 
 func ExecC2Command(opts ...C2Option) (string, error) {

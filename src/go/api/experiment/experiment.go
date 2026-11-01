@@ -1391,20 +1391,18 @@ func waitForC2(
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			done := true
-
+			refs := make([]mm.C2ClientRef, 0, len(others))
 			for other, useUUID := range others {
-				opts := []mm.C2Option{
-					mm.C2NS(ns),
-					mm.C2VM(other),
-					mm.C2Timeout(1 * time.Second),
-				}
+				refs = append(refs, mm.C2ClientRef{VM: other, ByUUID: useUUID})
+			}
 
-				if useUUID {
-					opts = append(opts, mm.C2IDClientsByUUID())
-				}
+			var (
+				active = mm.ActiveC2Clients(ns, refs)
+				done   = true
+			)
 
-				if mm.IsC2ClientActive(opts...) != nil {
+			for _, ref := range refs {
+				if !active[ref] {
 					done = false
 
 					break
