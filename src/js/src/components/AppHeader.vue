@@ -108,6 +108,7 @@ what their role allows.
   import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
   import JobsMenu from '@/components/jobs/JobsMenu.vue';
+  import { endConsole } from '@/utils/consoleSession.js';
 
   export default {
     components: { JobsMenu },
@@ -139,7 +140,7 @@ what their role allows.
     methods: {
       //  These methods are used to logout a user; or, present
       //  routable link based on a Global user role.
-      logout(event) {
+      async logout(event) {
         const button = event?.currentTarget;
 
         if (this.loggingOut) {
@@ -147,6 +148,9 @@ what their role allows.
         }
 
         this.loggingOut = true;
+
+        // end the console first, while the token still allows it
+        await endConsole();
 
         axiosInstance
           .post('logout')
