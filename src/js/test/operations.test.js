@@ -433,6 +433,63 @@ describe('outcomes', () => {
     ]);
   });
 
+  const BROKEN = {
+    message: 'unable to start experiment foo',
+    code: 'broken_disks',
+    details: {
+      disks: [
+        {
+          vm: 'host-01',
+          drive: 'disk',
+          image: 'kali.qc2',
+          problem: 'backing file /phenix/images/ro_kali.qc2 is missing',
+        },
+        {
+          vm: 'host-02',
+          drive: 'cdrom',
+          image: 'tools.iso',
+          problem: 'CD-ROM image /phenix/images/tools.iso is missing',
+        },
+      ],
+    },
+  };
+
+  it('counts the broken disks of a refused start, and lists each as a detail', () => {
+    const results = [{ status: 'rejected', reason: httpError(400, BROKEN) }];
+    expect(outcomeFromSettled(['foo'], results)).toEqual([
+      {
+        name: 'foo',
+        status: 'failed',
+        error: 'qemu cannot open 2 disks on 2 VMs',
+        retryable: false,
+        details: [
+          'VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing',
+          'VM host-02: CD-ROM tools.iso: CD-ROM image /phenix/images/tools.iso is missing',
+        ],
+      },
+    ]);
+  });
+
+  it("lists the broken disks of a job's VM as details", () => {
+    const error =
+      'broken VM disk images: VM web: disk a.qc2: backing file /b.qc2 is missing. ' +
+      'VM web: CD-ROM t.iso: CD-ROM image /t.iso is missing';
+    expect(
+      outcomeFromJob({ items: [{ name: 'web', status: 'failed', error }] }),
+    ).toEqual([
+      {
+        name: 'web',
+        status: 'failed',
+        error: 'qemu cannot open 2 disks',
+        retryable: false,
+        details: [
+          'disk a.qc2: backing file /b.qc2 is missing',
+          'CD-ROM t.iso: CD-ROM image /t.iso is missing',
+        ],
+      },
+    ]);
+  });
+
   it("passes a job's items through", () => {
     expect(
       outcomeFromJob({

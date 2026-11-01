@@ -537,6 +537,14 @@ func newExperimentStartCmd() *cobra.Command {
   experiment name will include all stopped experiments; dry-run will do
 	everything but call out to minimega.
 
+  Before minimega launches a VM, phenix checks that each disk image and
+  CD-ROM image of the VMs exists, and that the backing chain of each disk
+  image is complete. A missing file refuses the start and lists each VM,
+  disk and missing file. With --dry-run or --treat-mm-errors-as-warnings,
+  phenix shows the problems as warnings. The experiment.disk-check setting
+  changes this for every start: warn shows the problems as warnings, and
+  off skips the check.
+
 	NOTE: passing the --honor-run-periodically flag will prevent the CLI from
 	returning. If Ctrl+c is pressed, the experiment will continue to run but
 	the running stage will no longer continue to be triggered for any apps
@@ -604,13 +612,7 @@ func newExperimentStartCmd() *cobra.Command {
 
 				err := experiment.Start(ctx, opts...)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to start the "+exp.Metadata.Name+" experiment",
-					)
-
-					return err.Humanized()
+					return startError(err, exp.Metadata.Name)
 				}
 
 				notes.PrettyPrint(ctx, false)
@@ -652,6 +654,18 @@ func newExperimentStartCmd() *cobra.Command {
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
 
 	return cmd
+}
+
+// startError is the error a start of experiment name that failed with err returns: err itself for broken disk images,
+// so the list of VMs, disks and missing files is printed, and a humanized error otherwise.
+func startError(err error, name string) error {
+	if errors.Is(err, experiment.ErrBrokenDisks) {
+		return fmt.Errorf("unable to start the %s experiment: %w", name, err)
+	}
+
+	herr := util.HumanizeError(err, "%s", "Unable to start the "+name+" experiment")
+
+	return herr.Humanized()
 }
 
 func newExperimentStopCmd() *cobra.Command {
@@ -744,7 +758,13 @@ func newExperimentRestartCmd() *cobra.Command {
 
   Used to restart a running experiment, using 'all' instead of a specific
   experiment name will include all running experiments; dry-run will do
-  everything but call out to minimega.`
+  everything but call out to minimega.
+
+  Before phenix stops the experiment, it checks the disk images and CD-ROM
+  images of the VMs as 'phenix experiment start' does. A missing file
+  refuses the restart, and the experiment continues to run. When the
+  scenario has a user app, the app can change the disks, so this check
+  only shows warnings, and the check before the start can still refuse it.`
 
 	cmd := &cobra.Command{
 		Use:               "restart <experiment name>",
@@ -759,7 +779,7 @@ func newExperimentRestartCmd() *cobra.Command {
 				dryrun      = mustGet(cmd.Flags().GetBool, "dry-run")
 				experiments []types.Experiment
 
-				ctx = sigterm.CancelContext(context.Background())
+				ctx = notes.Context(sigterm.CancelContext(context.Background()), true)
 			)
 
 			if name == allExperiments {
@@ -798,7 +818,14 @@ func newExperimentRestartCmd() *cobra.Command {
 					continue
 				}
 
-				err := experiment.Stop(exp.Metadata.Name)
+				warnings, err := experiment.CheckDisksBeforeStop(ctx, exp.Spec, experiment.CheckAsWarnings(dryrun))
+				notes.AddWarnings(ctx, true, warnings...)
+
+				if err != nil {
+					return fmt.Errorf("unable to restart the %s experiment, which is still running: %w", exp.Metadata.Name, err)
+				}
+
+				err = experiment.Stop(exp.Metadata.Name)
 				if err != nil {
 					msg := "Unable to stop the " + exp.Metadata.Name + " experiment"
 					if errors.Is(err, experiment.ErrTeardownFailed) {
@@ -816,14 +843,10 @@ func newExperimentRestartCmd() *cobra.Command {
 					experiment.StartWithDryRun(dryrun),
 				)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to start the "+exp.Metadata.Name+" experiment",
-					)
-
-					return err.Humanized()
+					return startError(err, exp.Metadata.Name)
 				}
+
+				notes.PrettyPrint(ctx, false)
 
 				plog.Info(
 					plog.TypeSystem,

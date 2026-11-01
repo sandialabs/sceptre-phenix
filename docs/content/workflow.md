@@ -284,6 +284,10 @@ branch:
 It is also an error when `auto.create` names an existing experiment that
 isn't mapped to the branch.
 
+A `restart` checks the disks of its start before it stops the experiment. If
+the start would fail, the apply fails, and the experiment continues to run.
+See [Restarts](experiments.md#restarts).
+
 ## Dry Run
 
 `phenix workflow apply -n` asks the server to check everything the command
@@ -300,6 +304,14 @@ The server checks that:
 
 A first deploy can be checked too: the topology and scenario may come from
 the directory's `phenix-configs/` before they are stored in phēnix.
+
+When the plan starts the experiment (`createAndStart`, `updateAndStart` or
+`restart`), the dry run also does the disk check of that start. See
+[Disk Check Before a Start](experiments.md#disk-check-before-a-start). A
+problem does not fail the dry run. The CLI logs each problem as a warning, and
+the REST response lists the problems in `warnings`. A problem that would
+refuse the start begins with `the start would fail:`. When the topology is
+pending, the dry run does not do this check.
 
 ## Validation Errors
 

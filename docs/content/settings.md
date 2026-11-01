@@ -1,8 +1,8 @@
 # Settings & Configuration
 
 phēnix supports dynamic configuration management via the `phenix settings` command.
-A running `phenix ui` applies changes to the `log.*` settings, `ui.logs.level`
-and the users file at once, without restarting. It reads every other setting only at
+A running `phenix ui` applies changes to the `log.*` settings, `ui.logs.level`,
+`experiment.disk-check` and the users file at once, without restarting. It reads every other setting only at
 startup. On each config file change it logs a warning that names every such key
 that now differs from the value it started with (never the values themselves):
 
@@ -115,6 +115,7 @@ The following global flags are supported by all `phenix` subcommands:
 | `--bridge-mode` | `string` | `manual` | Bridge naming mode for experiments (`auto` uses experiment name for bridge; `manual` uses user-specified bridge name, or `phenix` if omitted). A `phenix ui` running in `auto` mode makes the commands that reach it over `--unix-socket` use `auto`. See [Bridge Mode](bridge-mode.md). |
 | `--color` | `string` | `auto` | When to color the output (`auto`, `on`, or `off`). `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. See [Colors](#colors). |
 | `--deploy-mode` | `string` | — | Deploy mode for minimega VMs (`all`, `no-headnode`, or `only-headnode`). |
+| `--experiment.disk-check` | `string` | `error` | What a start does when a VM disk image or CD-ROM image is missing, or its backing chain is broken (`error`, `warn`, or `off`). See [Disk Check Before a Start](experiments.md#disk-check-before-a-start). |
 | `-h, --help` | — | — | Display help information for the command. |
 | `--hostname-suffixes` | `string` | `-minimega,-phenix` | Hostname suffixes to strip. |
 | `--log.console` | `string` | `stderr` | Destination output for console logs in text format (`stderr`, `stdout`, or a file path). |
@@ -145,6 +146,7 @@ its color codes.
 | Output | Colors |
 | :--- | :--- |
 | Every command | The `Error:` label of a failed command is red. A console log record shows its level in color, the message of a warning in yellow, and the message of an error in red. |
+| `phenix workflow apply`, also with `--dry-run` | The `action` of each config and of the plan: green for a create, yellow for an update or a restart, gray for no change. A disk problem that makes the start fail (`the start would fail: ...`) is red. Other warnings are yellow. |
 | `phenix experiment list` | The `Started` time of a running experiment is green. |
 | `phenix vm info` | The `Running` value is green for a running VM, red for a VM that minimega shows as `QUIT` or `ERROR`, and faint for other VMs. |
 | `phenix job list`, `get` and `wait` | Job and item states: `running` cyan, `succeeded` green, `partial` and `canceled` yellow, `failed` red, and `queued`, `pending` and `skipped` faint. |
@@ -154,6 +156,7 @@ its color codes.
 | Setting Key | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `bridge-mode` | `PHENIX_BRIDGE_MODE` | `manual` | Bridge naming mode for experiments. `auto` uses the experiment name as the bridge name; `manual` uses the user-specified bridge name, or `phenix` if not specified. See [Bridge Mode](bridge-mode.md). |
+| `experiment.disk-check` | `PHENIX_EXPERIMENT_DISK_CHECK` | `error` | What a start does when a VM disk image or CD-ROM image is missing, or its backing chain is broken. `error` refuses the start, `warn` starts the experiment and shows each problem as a warning, and `off` does not check the images. It applies to every start: the CLI, the web UI, the REST API, `phenix workflow apply`, and the bulk start and restart of VMs. phēnix refuses another value. `phenix ui` applies a change at once. See [Disk Check Before a Start](experiments.md#disk-check-before-a-start). |
 | `use-gre-mesh` | `PHENIX_USE_GRE_MESH` | `false` | Enable Layer 2 GRE tunnels for the default bridge of experiments created or updated with this setting. See [GRE Mesh](gre-mesh.md) for usage, server inheritance, and MTU requirements. `phenix ui` reads this setting at startup. **(Restart Required)** |
 | `log.level` | `PHENIX_LOG_LEVEL` | `info` | Global log verbosity (`debug`, `info`, `warn`, `error`). |
 | `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. See [Colors](#colors). |

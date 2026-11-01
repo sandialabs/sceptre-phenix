@@ -37,6 +37,7 @@ All notable changes to this project will be documented in this file.
 - **Annotations**: Added `--annotation` and `--node-annotation` to `phenix experiment create`, and `annotations` and `node_annotations` to `POST /api/v1/experiments`, for experiment and VM annotations. `GET` and `PATCH /api/v1/experiments/{exp}/vms/{name}` read and replace the annotations of one VM.
 - **Config Revisions**: The config API sends the config revision in an `ETag` header and accepts `If-Match` to update or delete a config only at that revision, else it returns `412`. The web UI Configs page uses this to show a `Config Changed` dialog in place of a silent overwrite, and opens from the page cache.
 - **VM Details and VM Table**: Added a VM details card and a VM table to the web UI. The table has row actions, host and label filters, and bulk actions that run as background jobs.
+- **Disk Check Before a Start**: A start, a restart and a bulk VM start or restart refuse a VM when qemu cannot open its disk image, backing file or CD-ROM image. The new `experiment.disk-check` setting (`error`, `warn` or `off`) changes this, and a workflow dry run lists the problems in `warnings`.
 - **Experiment Files**: Added API routes that delete one or more experiment files and download several files as a zip archive, also as a `files.archive` background job. Stored Experiment Admin roles get the new `experiments/files` `delete` permission at startup.
 
 ### Changed
