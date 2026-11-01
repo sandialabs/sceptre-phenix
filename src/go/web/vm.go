@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/api/vm"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/audit"
@@ -61,10 +63,7 @@ func GetVMs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
-	vms, err := vm.List(expName)
-	if err != nil {
-		return weberror.New(http.StatusInternalServerError, err.Error())
-	}
+	vms, observed := vm.ListForObserved(ctx, exp)
 
 	allowed := mm.VMs{}
 
@@ -105,6 +104,7 @@ func GetVMs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	freshness.SetObserved(w, observed)
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
@@ -144,7 +144,7 @@ func GetVM(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
-	vm, err := vm.Get(expName, name)
+	vm, err := vm.GetFor(ctx, exp, name)
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
@@ -279,6 +279,11 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 
 	if err := vm.Update(opts...); err != nil {
 		audit.Failure(r, audit.VMUpdate, "updating vm failed", updated, err)
+
+		if errors.Is(err, mm.ErrUnsafeArg) {
+			return weberror.New(http.StatusBadRequest, err.Error())
+		}
+
 		plog.Error(plog.TypeSystem, "updating VM", "err", err)
 
 		return weberror.New(http.StatusInternalServerError, "unable to update VM")
@@ -291,7 +296,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "unable to get experiment")
 	}
 
-	vm, err := vm.Get(expName, name)
+	vm, err := vm.GetFor(context.WithoutCancel(ctx), exp, name)
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, "unable to get VM")
 	}
@@ -323,7 +328,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 }
 
 // UpdateVMs - PATCH /experiments/{exp}/vms.
-func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
+func UpdateVMs(w http.ResponseWriter, r *http.Request) error { //nolint:funlen // complex logic
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
@@ -339,6 +344,15 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 	var req proto.UpdateVMRequestList
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
 		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
+	// refused before any VM changes, as minimega could not take the VLAN
+	for _, vmRequest := range req.GetVms() {
+		if vlan := vmRequest.GetInterface().GetVlan(); vlan != "" {
+			if err := mm.ValidateArg(vlan); err != nil {
+				return weberror.New(http.StatusBadRequest, fmt.Sprintf("VM %s: VLAN: %v", vmRequest.GetName(), err))
+			}
+		}
 	}
 
 	resp := &proto.VMList{Total: req.GetTotal()} //nolint:exhaustruct // partial initialization
@@ -398,7 +412,7 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.New(http.StatusBadRequest, "unable to get experiment")
 		}
 
-		vm, err := vm.Get(expName, vmRequest.GetName())
+		vm, err := vm.GetFor(context.WithoutCancel(ctx), exp, vmRequest.GetName())
 		if err != nil {
 			return weberror.New(http.StatusInternalServerError, "unable to get VM")
 		}
@@ -478,7 +492,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
-	v, err := vm.Get(expName, name)
+	v, err := vm.GetFor(ctx, exp, name)
 	if err != nil {
 		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", audited, err)
 
@@ -567,7 +581,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 	audit.Success(r, audit.VMRedeploy, "vm redeployed", audited)
 
 	// Get the VM details again since redeploying may have changed them.
-	v, err = vm.Get(expName, name)
+	v, err = vm.GetFor(context.WithoutCancel(ctx), exp, name)
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
@@ -684,7 +698,10 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 		topo ifaces.TopologySpec
 	}
 
-	var running []runningVM
+	var (
+		running  []runningVM
+		observed = freshness.Unobserved()
+	)
 
 	for _, exp := range exps {
 		if !exp.Running() {
@@ -693,17 +710,8 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 			continue
 		}
 
-		vms, err := vm.List(exp.Spec.ExperimentName())
-		if err != nil {
-			plog.Error(
-				plog.TypeSystem,
-				"listing VMs for experiment",
-				"exp",
-				exp.Spec.ExperimentName(),
-				"err",
-				err,
-			)
-		}
+		vms, obs := vm.ListForObserved(ctx, &exp)
+		observed = observed.Older(obs)
 
 		for _, vm := range vms {
 			id := exp.Metadata.Name + "/" + vm.Name
@@ -745,6 +753,7 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	freshness.SetObserved(w, observed)
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 

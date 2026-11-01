@@ -182,13 +182,7 @@ func startExperiment(name string) ([]byte, error) {
 
 			app.PeriodicallyRunApps(ctx, &wg, s.exp)
 
-			vms, err := vm.List(name)
-			if err != nil {
-				// TODO
-				plog.Error(plog.TypeSystem, "listing VMs in experiment", "exp", name, "err", err)
-			}
-
-			body, err := marshaler.Marshal(util.ExperimentToProtobuf(*s.exp, "", vms))
+			body, err := marshaler.Marshal(util.ExperimentToProtobuf(*s.exp, "", vm.ListFor(context.Background(), s.exp)))
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to start experiment %s", name)
 
@@ -284,15 +278,12 @@ func stopExperiment(name string) ([]byte, error) {
 
 	exp, err := experiment.Get(name)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "getting experiment", "exp", name, "err", err)
+		err := weberror.NewWebError(err, "unable to get stopped experiment %s", name)
+
+		return nil, err.SetStatus(http.StatusInternalServerError)
 	}
 
-	vms, err := vm.List(name)
-	if err != nil {
-		plog.Error(plog.TypeSystem, "listing VMs in experiment", "exp", name, "err", err)
-	}
-
-	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
+	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vm.ListFor(context.Background(), exp)))
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to stop experiment %s", name)
 

@@ -209,10 +209,21 @@ func resolveImage(path string) []Details {
 	cmd.Command = fmt.Sprintf("disk info %v recursive", path)
 	images := mmcli.RunTabular(cmd)
 
+	// minimega reports a backing file as its overlay's directory joined with
+	// the stored name, so it can hold ".." segments
+	paths := make([]string, len(images))
+	for i, row := range images {
+		if i == 0 {
+			paths[i] = filepath.Clean(row["image"])
+		} else {
+			paths[i] = mm.CleanBackingPath(row["image"])
+		}
+	}
+
 	for i, row := range images {
 		image := Details{ //nolint:exhaustruct // partial initialization
-			Name:          filepath.Base(row["image"]),
-			FullPath:      row["image"],
+			Name:          filepath.Base(paths[i]),
+			FullPath:      paths[i],
 			Size:          row["disksize"],
 			VirtualSize:   row["virtualsize"],
 			BackingImages: []string{},
@@ -223,8 +234,8 @@ func resolveImage(path string) []Details {
 			image.Kind = VMImage
 
 			backingChain := []string{}
-			for _, backing := range images[i+1:] {
-				backingChain = append(backingChain, filepath.Base(backing["image"]))
+			for _, backing := range paths[i+1:] {
+				backingChain = append(backingChain, filepath.Base(backing))
 			}
 
 			image.BackingImages = backingChain
