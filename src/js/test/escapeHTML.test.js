@@ -1,5 +1,5 @@
-// escapeHTML guards user, file and server text in the HTML Buefy renders;
-// errorNotif.test.js shows it at work.
+// escapeHTML guards user, file and server text in the HTML Buefy renders; the
+// Files tab's delete confirmation and errorNotif.test.js show it at work.
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 

@@ -424,8 +424,18 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/experiments/{exp}/stopCaptureSubnet", weberror.ErrorHandler(StopCaptureSubnet)).
 		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{name}/files", weberror.ErrorHandler(GetExperimentFiles)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/files/download", weberror.ErrorHandler(DownloadExperimentFiles)).
+		Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{name}/files/archive", idempotent.Wrap(weberror.ErrorHandler(ArchiveExperimentFiles))).
+		Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{name}/files/delete", weberror.ErrorHandler(DeleteExperimentFiles)).
+		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{name}/files/{filename}", weberror.ErrorHandler(GetExperimentFile)).
+		Methods("GET", "HEAD", "OPTIONS")
+	api.Handle("/experiments/{name}/files/{filename}/checksum", weberror.ErrorHandler(GetExperimentFileChecksum)).
 		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/files/{filename}", weberror.ErrorHandler(DeleteExperimentFile)).
+		Methods("DELETE", "OPTIONS")
 	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.GetComponentOutput)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(scorch.StreamComponentOutput)).

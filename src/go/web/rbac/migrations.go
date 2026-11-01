@@ -15,6 +15,7 @@ import (
 const experimentFilesResource = "experiments/files"
 const jobsResource = "jobs"
 const experimentFilesCreateVerb = "create"
+const experimentFilesDeleteVerb = "delete"
 const experimentAdminRole = "Experiment Admin"
 const experimentUserRole = "Experiment User"
 
@@ -22,6 +23,13 @@ const experimentUserRole = "Experiment User"
 // Experiment User roles, and users with them, upload experiment files.
 func EnsureExperimentFilesCreatePermission() error {
 	return ensurePermission(experimentFilesResource, []string{experimentFilesCreateVerb}, experimentFilesRole)
+}
+
+// EnsureExperimentFilesDeletePermission lets existing Experiment Admin roles,
+// and users with them, delete experiment files, as the default Experiment Admin
+// role does. Experiment User and viewer roles are left without it.
+func EnsureExperimentFilesDeletePermission() error {
+	return ensurePermission(experimentFilesResource, []string{experimentFilesDeleteVerb}, experimentFilesDeleteRole)
 }
 
 // EnsureJobsPermission lets existing Experiment Admin roles, and users with

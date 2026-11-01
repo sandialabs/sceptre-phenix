@@ -253,9 +253,9 @@ user it named, and a token's event names only its user and expiry.
 | `capture-token-revoke` | `iam` | `deletion` | none: no route records this action yet |
 | `netflow-start`, `netflow-stop` | `network` | `start`, `end` | `POST /experiments/{exp}/netflow`, `DELETE /experiments/{exp}/netflow` |
 | `netflow-download` | `file` | `access` | none: no route records this action yet |
-| `file-download` | `file` | `access` | `GET /experiments/{name}/files/{filename}` (downloads and the Files tab's viewer), `GET .../vms/{name}/files/download` |
+| `file-download` | `file` | `access` | `GET /experiments/{name}/files/{filename}` (downloads and the Files tab's viewer), `POST .../files/download` (one event per file sent, including those sent before the download failed), `GET .../vms/{name}/files/download`, `GET /jobs/{id}/artifact` of an archive job (one event per file archived); refusals of `GET .../files/{filename}/checksum` and `POST .../files/archive`, and archive jobs that fail or are canceled |
 | `file-upload` | `file` | `creation` | the file server's upload page (one event per file) |
-| `file-delete` | `file` | `deletion` | none: no route records this action yet |
+| `file-delete` | `file` | `deletion` | `DELETE /experiments/{name}/files/{filename}`, `POST .../files/delete` (one event per file) |
 | `console-create` | `process` | `start` | `POST /console` |
 | `console-attach` | `process` | `access` | `GET /console/{pid}/ws`; refusals of `GET /console/{pid}` and `POST /console/{pid}/size`, and of another user's console on any console route |
 | `console-terminate` | `process` | `end` | `DELETE /console/{pid}` |
@@ -322,6 +322,8 @@ naming it.
 | `file.size` | the bytes an upload wrote |
 | `process.pid` | a console's or SCORCH terminal's process |
 | `phenix.file.preview` | whether a downloaded file was shown in the Files tab's viewer |
+| `phenix.file.count` | the files a failed bulk action, such as a download, deletion or archive job, asked for |
+| `phenix.job.id` | the background job that did the action, or built the archive downloaded |
 | `phenix.capture.subnet` | a subnet capture's subnet |
 | `phenix.console.end_reason` | why a console ended: `user` (ended from the UI), `idle` (no websocket attached for 15 seconds), `shutdown` (the server stopped) or `exited` (its process exited) |
 | `phenix.disk.size`, `phenix.disk.unsafe` | a resize's size and a rebase's `unsafe` |

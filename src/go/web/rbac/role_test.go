@@ -154,7 +154,9 @@ func TestSetResourceNamesScopesEveryUnnamedPolicy(t *testing.T) {
 	}{
 		{"Experiment Admin", [][3]string{
 			{"experiments", "get", "exp-a"},
-			{"experiments/files", "create", "exp-a"},
+			{"experiments/files", "delete", "exp-a"},
+			{"jobs", "list", "exp-a"},
+			{"jobs", "update", "exp-a"},
 		}},
 		{"Experiment Viewer", [][3]string{
 			{"experiments", "get", "exp-a"},

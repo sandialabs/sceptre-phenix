@@ -150,7 +150,8 @@ directory, and leaves out:
 * hidden files and folders, whose names start with `.`, and `lost+found`;
 * a `files`, `tmp` or `miniccc_responses` folder directly inside a top-level
   folder, such as `my-experiment/files`: phēnix keeps an experiment's files,
-  scratch images and command responses there;
+  scratch images and command responses there, and the experiment's
+  [Files](experiments.md#experiment-files) tab manages them;
 * anything at the top level named `saved` or starting with `transfer_`, where
   minimega keeps saved VM state and files it is copying between cluster nodes.
 

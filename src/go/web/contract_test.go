@@ -51,8 +51,8 @@ func serveContractAs(t *testing.T, role rbac.Role) *httptest.Server {
 	return serveContract(t, func(o *serverOptions) { o.jwtKey = key })
 }
 
-// contractFixture: running test-experiment with test-vm mounted (etc/hostname), test-disk.qc2, the user bob, demo at
-// revision 5, bob's finished job (3-byte artifact), and on-demand consoles.
+// contractFixture: running test-experiment with test-vm mounted (etc/hostname), the file a.log, test-disk.qc2, the user
+// bob, demo at revision 5, bob's finished job (3-byte artifact), and on-demand consoles.
 type contractFixture struct {
 	jobs     *job.Registry
 	bobsJob  job.Job
@@ -67,6 +67,17 @@ func useContractFixture(t *testing.T) contractFixture {
 	writeDisks(t, filepath.Join(files.dir, contractDisk))
 
 	useTestExperiment(t)
+	useTestFiles(t, "a.log")
+
+	expFiles := filepath.Join(files.dir, contractExp, "files")
+	if err := os.MkdirAll(expFiles, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(expFiles, "a.log"), []byte("alpha"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	useContractMount(t)
 
 	// another user, for routes that act on a user other than the requester
@@ -222,18 +233,20 @@ func contractRoutes() []contractRoute {
 	const (
 		exp    = "/api/v1/experiments/" + contractExp
 		vm     = exp + "/vms/" + contractVM
+		files  = `{"paths":["a.log"]}`
 		config = "/api/v1/configs/topology/" + contractTopo
 	)
 
 	var (
-		diskGet = testRole("disks", "get", contractDisk)
-		mount   = testRole("vms/mount", "get", contractExp+"/"+contractVM)
-		one     = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
-		jobs    = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
-		configs = func(verb string) []rbac.Role { return one(testRole("configs", verb, "Topology/"+contractTopo)) }
-		current = []string{"If-Match", freshness.ETag(contractRevision), "Content-Type", mimeJSON}
-		ok      = []int{http.StatusOK}
-		done    = []int{http.StatusNoContent}
+		filesGet = testRole("experiments/files", "get", contractExp)
+		diskGet  = testRole("disks", "get", contractDisk)
+		mount    = testRole("vms/mount", "get", contractExp+"/"+contractVM)
+		one      = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
+		jobs     = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
+		configs  = func(verb string) []rbac.Role { return one(testRole("configs", verb, "Topology/"+contractTopo)) }
+		current  = []string{"If-Match", freshness.ETag(contractRevision), "Content-Type", mimeJSON}
+		ok       = []int{http.StatusOK}
+		done     = []int{http.StatusNoContent}
 	)
 
 	return []contractRoute{
@@ -245,6 +258,22 @@ func contractRoutes() []contractRoute {
 		{method: "DELETE", path: "/api/v1/jobs/{job}", need: jobs("delete"), hidden: http.StatusNotFound},
 		{method: "GET", path: "/api/v1/jobs/{job}/artifact", need: jobs("get"), hidden: http.StatusNotFound},
 		{method: "HEAD", path: "/api/v1/jobs/{job}/artifact", need: jobs("get"), hidden: http.StatusNotFound},
+
+		// experiment files
+		{method: "GET", path: exp + "/files", need: one(testRole("experiments/files", "list", contractExp)), want: ok},
+		{method: "GET", path: exp + "/files/a.log?path=a.log", need: one(filesGet)},
+		{method: "HEAD", path: exp + "/files/a.log?path=a.log", need: one(filesGet)},
+		{method: "GET", path: exp + "/files/a.log/checksum?path=a.log", need: one(filesGet)},
+		{method: "POST", path: exp + "/files/archive", body: files, need: one(filesGet)},
+		{method: "POST", path: exp + "/files/download", body: files, need: one(filesGet)},
+		{
+			method: "POST", path: exp + "/files/delete", body: files,
+			need: one(testRole("experiments/files", "delete", contractExp)),
+		},
+		{
+			method: "DELETE", path: exp + "/files/a.log?path=a.log",
+			need: one(testRole("experiments/files", "delete", contractExp)), want: done,
+		},
 
 		// VMs: a bulk update refuses a role that may patch none of its VMs
 		{
@@ -520,6 +549,16 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 	}
 
 	return map[string]contractErrorCase{
+		"checksum of missing file": {
+			method: "GET", path: exp + "/files/none.log/checksum?path=none.log", want: http.StatusNotFound,
+		},
+		"archive of no files": {method: "POST", path: exp + "/files/archive", body: "{}", want: http.StatusBadRequest},
+		"archive of missing file": {
+			method: "POST",
+			path:   exp + "/files/archive",
+			body:   `{"paths":["none.log"]}`,
+			want:   http.StatusNotFound,
+		},
 		"checksum of missing disk": {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
 		"checksum of disk outside": {method: "GET", path: "/api/v1/disks/checksum?disk=../none.qc2", want: http.StatusBadRequest},
 		"details of missing disk":  {method: "GET", path: "/api/v1/disks/details?disk=none.qc2", want: http.StatusNotFound},
@@ -536,6 +575,9 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 		"unknown console":            {method: "GET", path: "/api/v1/console/1", want: http.StatusNotFound},
 		"another user's console":     {method: "GET", prepare: bobsConsole, want: http.StatusNotFound},
 		"end another user's console": {method: "DELETE", prepare: bobsConsole, want: http.StatusNotFound},
+		"delete missing file": {
+			method: "DELETE", path: exp + "/files/none.log?path=none.log", want: http.StatusNotFound,
+		},
 		"mount download of missing file": {
 			method: "GET", path: exp + "/vms/" + contractVM + "/files/download?path=etc/none", want: http.StatusNotFound,
 		},

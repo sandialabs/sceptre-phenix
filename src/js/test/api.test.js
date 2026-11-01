@@ -465,6 +465,28 @@ const requests = [
       },
     ],
   ],
+  [
+    'deleteExperimentFile',
+    () =>
+      experimentFilesApi.deleteExperimentFile('e@x', {
+        name: 'a b',
+        path: 'x/a b',
+      }),
+    'delete',
+    ['experiments/e%40x/files/a%20b', { params: { path: 'x/a b' } }],
+  ],
+  [
+    'deleteExperimentFiles',
+    () => experimentFilesApi.deleteExperimentFiles('e@x', ['a', 'b']),
+    'post',
+    ['experiments/e%40x/files/delete', { paths: ['a', 'b'] }],
+  ],
+  [
+    'archiveExperimentFiles',
+    () => experimentFilesApi.archiveExperimentFiles('e@x', ['a']),
+    'post',
+    ['experiments/e%40x/files/archive', { paths: ['a'] }],
+  ],
 
   // VMs
   ['listVms', () => vmsApi.listVms('exp'), 'get', ['experiments/exp/vms']],
@@ -748,6 +770,17 @@ describe('the API modules', () => {
     expect(job).toBe(useJobStore().jobs.job1);
   });
 
+  it('sums up a bulk file delete, with lists when the server sends none', async () => {
+    axios.post.mockResolvedValue({ data: { deleted: ['a'] } });
+    await expect(
+      experimentFilesApi.deleteExperimentFiles('exp', ['a', 'b']),
+    ).resolves.toEqual({ deleted: ['a'], failed: [] });
+    axios.post.mockResolvedValue({ data: null });
+    await expect(
+      experimentFilesApi.deleteExperimentFiles('exp', ['a']),
+    ).resolves.toEqual({ deleted: [], failed: [] });
+  });
+
   it('every exported function has a request case', () => {
     const tested = new Set(requests.map(([name]) => name.split(' ')[0]));
     const exported = [
@@ -803,6 +836,22 @@ describe('names encoded into a path', () => {
       (name) =>
         experimentFilesApi.getExperimentFile('exp', { name, path: name }),
       (name) => ['experiments', 'exp', 'files', name],
+    ],
+    [
+      'deleteExperimentFile',
+      (name) =>
+        experimentFilesApi.deleteExperimentFile(name, { name, path: name }),
+      (name) => ['experiments', name, 'files', name],
+    ],
+    [
+      'deleteExperimentFiles',
+      (name) => experimentFilesApi.deleteExperimentFiles(name, []),
+      (name) => ['experiments', name, 'files', 'delete'],
+    ],
+    [
+      'archiveExperimentFiles',
+      (name) => experimentFilesApi.archiveExperimentFiles(name, []),
+      (name) => ['experiments', name, 'files', 'archive'],
     ],
     [
       'updateUser',

@@ -411,3 +411,27 @@ func TestStartJobAnswersQueueFull(t *testing.T) {
 		t.Errorf("startJob() with a full queue message = %q, want %q", got, job.ErrQueueFull.Error())
 	}
 }
+
+// Each job kind has the hooks its routes rely on: an archive is audited, checked and logged as it is downloaded,
+// a clone or bulk VM action is audited as it finishes, and any other kind has none.
+func TestJobKindOf(t *testing.T) {
+	type hooks struct{ served, allowed, finished bool }
+
+	got := map[string]hooks{}
+
+	for _, kind := range []string{archiveKind, cloneKind, vmActionKind, "unknown"} {
+		k := jobKindOf(kind)
+		got[kind] = hooks{served: k.artifactServed != nil, allowed: k.artifactAllowed != nil, finished: k.finished != nil}
+	}
+
+	want := map[string]hooks{
+		archiveKind:  {served: true, allowed: true, finished: true},
+		cloneKind:    {served: false, allowed: false, finished: true},
+		vmActionKind: {served: false, allowed: false, finished: true},
+		"unknown":    {served: false, allowed: false, finished: false},
+	}
+
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(hooks{})); diff != "" {
+		t.Errorf("job kind hooks mismatch (-want +got):\n%s", diff)
+	}
+}

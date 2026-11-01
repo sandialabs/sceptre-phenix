@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -1213,43 +1212,6 @@ func Delete(name string) error {
 	return errors //nolint:wrapcheck // returning multierror
 }
 
-func Files(name, filter string) (file.Files, error) {
-	return file.GetExperimentFiles(name, filter) //nolint:wrapcheck // passthrough
-}
-
-func File(name, filePath string) ([]byte, error) {
-	files, err := file.GetExperimentFiles(name, "")
-	if err != nil {
-		return nil, fmt.Errorf("getting list of experiment files: %w", err)
-	}
-
-	for _, c := range mm.GetExperimentCaptures(mm.NS(name)) {
-		if strings.Contains(c.Filepath, path.Base(filePath)) {
-			return nil, mm.ErrCaptureExists
-		}
-	}
-
-	for _, f := range files {
-		if filePath == f.Path {
-			headnode, _ := os.Hostname()
-
-			_ = file.CopyFile(fmt.Sprintf("/%s/files/%s", name, f.Path), headnode, nil)
-
-			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f.Path)
-
-			var data []byte
-			data, err = os.ReadFile(path)
-			if err != nil {
-				return nil, fmt.Errorf("reading contents of file: %w", err)
-			}
-
-			return data, nil
-		}
-	}
-
-	return nil, errors.New("file not found")
-}
-
 // FilesObserved lists the experiment's files matching filter, also reporting
 // when the listing was read from minimega. The listing may be a few seconds
 // old (see file.InvalidateExperimentFiles). It returns an error, not a partial
@@ -1263,6 +1225,25 @@ func FilesObserved(ctx context.Context, name, filter string) (file.Files, freshn
 // for after phenix changes them.
 func InvalidateFiles(name string) {
 	file.InvalidateExperimentFiles(name)
+}
+
+// LocalFile returns the headnode path of one of the experiment's files, by its
+// path relative to the experiment's files directory as listed (see
+// FilesObserved), copying it to the headnode first if only a mesh node has it.
+// It refuses a pcap a running capture is still writing (a *CaptureWritingError,
+// which wraps mm.ErrCaptureExists).
+func LocalFile(name, filePath string) (string, error) {
+	clean, err := cleanFilePath(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	err = captureChecker(name)(clean)
+	if err != nil {
+		return "", err
+	}
+
+	return fetchFile(name, clean)
 }
 
 func deleteC2AndSnapshots(exp *types.Experiment) error {

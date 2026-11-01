@@ -43,6 +43,8 @@ type jobKind struct {
 // jobKindOf returns the hooks of the job kind; none for a kind without any.
 func jobKindOf(kind string) jobKind {
 	switch kind {
+	case archiveKind:
+		return jobKind{artifactServed: auditArchiveDownload, artifactAllowed: mayDownloadArchive, finished: auditArchiveJob}
 	case cloneKind:
 		return jobKind{artifactServed: nil, artifactAllowed: nil, finished: auditCloneJob}
 	case vmActionKind:
