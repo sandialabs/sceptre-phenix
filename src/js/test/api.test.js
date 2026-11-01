@@ -1,5 +1,7 @@
 // The per-resource API modules in src/api/: the exact request each function
-// sends.
+// sends, and that names put into a path are encoded where the function says.
+import fc from 'fast-check';
+import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, resetMocks } = await vi.hoisted(
@@ -8,11 +10,208 @@ const { axios, modules, resetMocks } = await vi.hoisted(
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/store.js', modules.store);
 
+import * as authApi from '@/api/auth.js';
+import * as configsApi from '@/api/configs.js';
 import * as consoleApi from '@/api/console.js';
+import * as disksApi from '@/api/disks.js';
+import * as experimentFilesApi from '@/api/experimentFiles.js';
+import * as experimentsApi from '@/api/experiments.js';
+import * as hostsApi from '@/api/hosts.js';
 import * as jobsApi from '@/api/jobs.js';
+import * as logsApi from '@/api/logs.js';
+import * as rolesApi from '@/api/roles.js';
+import * as scorchApi from '@/api/scorch.js';
+import * as settingsApi from '@/api/settings.js';
+import * as topologiesApi from '@/api/topologies.js';
+import * as usersApi from '@/api/users.js';
+import * as vmsApi from '@/api/vms.js';
+
+// what a test passes through untouched: a form, a progress callback, a signal
+const form = { form: true };
+const onProgress = () => {};
+const signal = new AbortController().signal;
+// a page fetcher's request config: its signal and freshness meta
+const fetchConfig = { signal, meta: {} };
+
+const JSON_TYPE = { 'Content-Type': 'application/json' };
+const ACCEPT_JSON = { headers: { Accept: 'application/json' } };
+const UPLOAD = { 'Content-Type': 'multipart/form-data' };
 
 // [function, call, axios method, the arguments it is called with]
 const requests = [
+  // auth
+  ['getProxyLogin', () => authApi.getProxyLogin(), 'get', ['login']],
+  [
+    'logIn',
+    () => authApi.logIn('alice', 'pw'),
+    'post',
+    ['login', { user: 'alice', pass: 'pw' }],
+  ],
+  [
+    'signUp',
+    () => authApi.signUp({ username: 'bob' }),
+    'post',
+    ['signup', { username: 'bob' }],
+  ],
+  ['logOut', () => authApi.logOut(), 'post', ['logout']],
+
+  // settings
+  [
+    'getSettings',
+    () => settingsApi.getSettings(fetchConfig),
+    'get',
+    ['settings', fetchConfig],
+  ],
+  [
+    'saveSettings',
+    () => settingsApi.saveSettings({ a: 1 }),
+    'post',
+    ['settings', { a: 1 }, { timeout: 0 }],
+  ],
+  [
+    'getPasswordRequirements',
+    () => settingsApi.getPasswordRequirements(),
+    'get',
+    ['settings/password'],
+  ],
+  [
+    'getTimeoutSettings',
+    () => settingsApi.getTimeoutSettings(),
+    'get',
+    ['settings/timeout'],
+  ],
+
+  // users
+  [
+    'listUsers',
+    () => usersApi.listUsers(fetchConfig),
+    'get',
+    ['users', fetchConfig],
+  ],
+  [
+    'createUser',
+    () => usersApi.createUser({ username: 'bob' }),
+    'post',
+    ['users', { username: 'bob' }],
+  ],
+  [
+    'updateUser',
+    () => usersApi.updateUser('bob', { role: 'x' }),
+    'patch',
+    ['users/bob', { role: 'x' }],
+  ],
+  ['deleteUser', () => usersApi.deleteUser('bob'), 'delete', ['users/bob']],
+  [
+    'createUserToken',
+    () => usersApi.createUserToken('bob', { desc: 'd', lifetime: '1h' }),
+    'post',
+    ['users/bob/tokens', { desc: 'd', lifetime: '1h' }],
+  ],
+
+  // topologies
+  [
+    'listTopologies',
+    () => topologiesApi.listTopologies(),
+    'get',
+    ['topologies'],
+  ],
+  [
+    'listTopologyScenarios',
+    () => topologiesApi.listTopologyScenarios('a b'),
+    'get',
+    ['topologies/a%20b/scenarios'],
+  ],
+
+  // logs
+  [
+    'listLogs to now',
+    () => logsApi.listLogs(new Date(0), null, { signal }),
+    'get',
+    ['logs?start=1970-01-01T00:00:00.000Z', { signal }],
+  ],
+  [
+    'listLogs to an end',
+    () => logsApi.listLogs(new Date(0), new Date(1000), { signal }),
+    'get',
+    [
+      'logs?start=1970-01-01T00:00:00.000Z&end=1970-01-01T00:00:01.000Z',
+      { signal },
+    ],
+  ],
+
+  // configs
+  [
+    'downloadConfigs',
+    () => configsApi.downloadConfigs(['Topology/a', 'Scenario/b']),
+    'post',
+    [
+      'configs/download',
+      '["Topology/a","Scenario/b"]',
+      {
+        headers: { ...JSON_TYPE, Accept: 'application/x-yaml' },
+        responseType: 'blob',
+      },
+    ],
+  ],
+  [
+    'deleteConfig',
+    () => configsApi.deleteConfig('Topology/a'),
+    'delete',
+    ['configs/Topology/a'],
+  ],
+  [
+    'uploadConfig',
+    () => configsApi.uploadConfig(form),
+    'post',
+    ['configs', form],
+  ],
+  [
+    'createConfig',
+    () => configsApi.createConfig({ kind: 'Topology' }),
+    'post',
+    ['configs', '{"kind":"Topology"}', { headers: JSON_TYPE }],
+  ],
+  [
+    'updateConfig without a revision',
+    () => configsApi.updateConfig('Topology/a', { kind: 'Topology' }),
+    'put',
+    ['configs/Topology/a', '{"kind":"Topology"}', { headers: JSON_TYPE }],
+  ],
+  [
+    'updateConfig at a revision',
+    () => configsApi.updateConfig('Topology/a', { kind: 'Topology' }, 7),
+    'put',
+    [
+      'configs/Topology/a',
+      '{"kind":"Topology"}',
+      { headers: { ...JSON_TYPE, 'If-Match': '"r7"' } },
+    ],
+  ],
+  [
+    'getSchemaSpec',
+    () => configsApi.getSchemaSpec('v2'),
+    'get',
+    ['schemas/v2', ACCEPT_JSON],
+  ],
+  [
+    'getKindSchema',
+    () => configsApi.getKindSchema('Topology', 'v1'),
+    'get',
+    ['schemas/Topology/v1', ACCEPT_JSON],
+  ],
+  [
+    'listConfigs',
+    () => configsApi.listConfigs(fetchConfig),
+    'get',
+    ['configs', fetchConfig],
+  ],
+  [
+    'getConfig',
+    () => configsApi.getConfig('Topology/a'),
+    'get',
+    ['configs/Topology/a', ACCEPT_JSON],
+  ],
+
   // console
   ['startConsole', () => consoleApi.startConsole(), 'post', ['console']],
   ['getConsole', () => consoleApi.getConsole(7), 'get', ['console/7']],
@@ -23,11 +222,448 @@ const requests = [
     'post',
     ['console/7/size?cols=80&rows=24'],
   ],
-  // jobs
+
+  // hosts, roles and jobs
+  [
+    'listHosts',
+    () => hostsApi.listHosts(fetchConfig),
+    'get',
+    ['hosts', fetchConfig],
+  ],
+  [
+    'listRoles',
+    () => rolesApi.listRoles(fetchConfig),
+    'get',
+    ['roles', fetchConfig],
+  ],
   ['listJobs', () => jobsApi.listJobs(), 'get', ['jobs']],
   ['getJob', () => jobsApi.getJob('j1'), 'get', ['jobs/j1']],
   ['cancelJob', () => jobsApi.cancelJob('j1'), 'post', ['jobs/j1/cancel']],
   ['deleteJob', () => jobsApi.deleteJob('j1'), 'delete', ['jobs/j1']],
+
+  // disks
+  [
+    'listDisks',
+    () => disksApi.listDisks({ expName: 'exp' }),
+    'get',
+    ['disks', { params: { expName: 'exp' } }],
+  ],
+  [
+    'listDisks with a config',
+    () => disksApi.listDisks({ refresh: true }, fetchConfig),
+    'get',
+    ['disks', { params: { refresh: true }, ...fetchConfig }],
+  ],
+  [
+    'uploadDisk',
+    () => disksApi.uploadDisk(form, onProgress),
+    'post',
+    ['disks', form, { headers: UPLOAD, onUploadProgress: onProgress }],
+  ],
+  [
+    'deleteDisk',
+    () => disksApi.deleteDisk('a.qc2'),
+    'request',
+    [{ method: 'delete', url: 'disks', params: { disk: 'a.qc2' } }],
+  ],
+  [
+    'commitDisk',
+    () => disksApi.commitDisk('a.qc2'),
+    'post',
+    ['disks/commit', null, { params: { disk: 'a.qc2' } }],
+  ],
+  [
+    'snapshotDisk',
+    () => disksApi.snapshotDisk('a.qc2', 'b.qc2'),
+    'request',
+    [
+      {
+        method: 'post',
+        url: 'disks/snapshot',
+        params: { disk: 'a.qc2', new: 'b.qc2' },
+      },
+    ],
+  ],
+  [
+    'rebaseDisk',
+    () => disksApi.rebaseDisk('a.qc2', 'b.qc2', true),
+    'request',
+    [
+      {
+        method: 'post',
+        url: 'disks/rebase',
+        params: { disk: 'a.qc2', backing: 'b.qc2', unsafe: true },
+      },
+    ],
+  ],
+  [
+    'resizeDisk',
+    () => disksApi.resizeDisk('a.qc2', '+5G'),
+    'request',
+    [
+      {
+        method: 'post',
+        url: 'disks/resize',
+        params: { disk: 'a.qc2', size: '+5G' },
+      },
+    ],
+  ],
+  [
+    'renameDisk',
+    () => disksApi.renameDisk('a.qc2', 'b.qc2'),
+    'request',
+    [
+      {
+        method: 'post',
+        url: 'disks/rename',
+        params: { disk: 'a.qc2', new: 'b.qc2' },
+      },
+    ],
+  ],
+
+  // experiments
+  [
+    'getExperimentOptions',
+    () => experimentsApi.getExperimentOptions(),
+    'get',
+    ['/options'],
+  ],
+  [
+    'createExperiment',
+    () => experimentsApi.createExperiment({ name: 'exp' }),
+    'post',
+    ['experiments', { name: 'exp' }, { timeout: 0 }],
+  ],
+  [
+    'getExperiment',
+    () => experimentsApi.getExperiment('exp', { params: { pageNum: 2 } }),
+    'get',
+    ['experiments/exp', { params: { pageNum: 2 } }],
+  ],
+  [
+    'updateExperiment',
+    () => experimentsApi.updateExperiment('exp', '{"EXP":100}'),
+    'patch',
+    ['experiments/exp', '{"EXP":100}'],
+  ],
+  [
+    'deleteExperiment',
+    () => experimentsApi.deleteExperiment('exp'),
+    'delete',
+    ['experiments/exp'],
+  ],
+  [
+    'startExperiment',
+    () => experimentsApi.startExperiment('exp'),
+    'post',
+    ['experiments/exp/start'],
+  ],
+  [
+    'stopExperiment',
+    () => experimentsApi.stopExperiment('exp'),
+    'post',
+    ['experiments/exp/stop'],
+  ],
+  [
+    'scheduleExperiment',
+    () => experimentsApi.scheduleExperiment('exp', 'isolate-experiment'),
+    'post',
+    ['experiments/exp/schedule', { algorithm: 'isolate-experiment' }],
+  ],
+  [
+    'triggerApps',
+    () => experimentsApi.triggerApps('exp', 'soh,scorch'),
+    'post',
+    ['experiments/exp/trigger', null, { params: { apps: 'soh,scorch' } }],
+  ],
+  [
+    'getExperimentApps',
+    () => experimentsApi.getExperimentApps('exp'),
+    'get',
+    ['experiments/exp/apps'],
+  ],
+  [
+    'getSoh',
+    () => experimentsApi.getSoh('exp', '', signal),
+    'get',
+    ['experiments/exp/soh', { signal }],
+  ],
+  [
+    'getSoh filtered',
+    () => experimentsApi.getSoh('exp', 'Error', signal),
+    'get',
+    ['experiments/exp/soh?statusFilter=Error', { signal }],
+  ],
+  [
+    'listExperimentCaptures',
+    () => experimentsApi.listExperimentCaptures('e@x'),
+    'get',
+    ['experiments/e%40x/captures'],
+  ],
+
+  // experiment files
+  [
+    'listExperimentFiles',
+    () => experimentFilesApi.listExperimentFiles('exp'),
+    'get',
+    ['experiments/exp/files', undefined],
+  ],
+  [
+    'listExperimentFiles with params',
+    () =>
+      experimentFilesApi.listExperimentFiles('exp', {
+        params: { sortCol: 'date' },
+      }),
+    'get',
+    ['experiments/exp/files', { params: { sortCol: 'date' } }],
+  ],
+  [
+    'getExperimentFile',
+    () =>
+      experimentFilesApi.getExperimentFile('exp', {
+        name: 'a b.json',
+        path: 'x/a b.json',
+      }),
+    'get',
+    [
+      'experiments/exp/files/a%20b.json',
+      {
+        params: { path: 'x/a b.json' },
+        headers: { Accept: 'text/plain' },
+        responseType: 'text',
+      },
+    ],
+  ],
+
+  // VMs
+  ['listVms', () => vmsApi.listVms('exp'), 'get', ['experiments/exp/vms']],
+  [
+    'listAllVms',
+    () => vmsApi.listAllVms(fetchConfig),
+    'get',
+    ['vms', fetchConfig],
+  ],
+  ['getVm', () => vmsApi.getVm('exp', 'a'), 'get', ['experiments/exp/vms/a']],
+  [
+    'updateVm',
+    () => vmsApi.updateVm('exp', 'a', { cpus: 2 }),
+    'patch',
+    ['experiments/exp/vms/a', { cpus: 2 }],
+  ],
+  [
+    'redeployVm',
+    () => vmsApi.redeployVm('exp', 'a', { cpus: 2, ram: 512 }),
+    'post',
+    ['experiments/exp/vms/a/redeploy', { cpus: 2, ram: 512 }],
+  ],
+  [
+    'listVmSnapshots',
+    () => vmsApi.listVmSnapshots('exp', 'a'),
+    'get',
+    ['experiments/exp/vms/a/snapshots'],
+  ],
+  [
+    'createVmSnapshot',
+    () => vmsApi.createVmSnapshot('exp', 'a', 'snap'),
+    'post',
+    ['experiments/exp/vms/a/snapshots', { filename: 'snap' }, { timeout: 0 }],
+  ],
+  [
+    'restoreVmSnapshot',
+    () => vmsApi.restoreVmSnapshot('exp', 'a', 'snap'),
+    'post',
+    ['experiments/exp/vms/a/snapshots/snap', {}, { timeout: 0 }],
+  ],
+  [
+    'commitVmDisk',
+    () => vmsApi.commitVmDisk('exp', 'a', 'img'),
+    'post',
+    ['experiments/exp/vms/a/commit', { filename: 'img' }, { timeout: 0 }],
+  ],
+  [
+    'createVmMemorySnapshot',
+    () => vmsApi.createVmMemorySnapshot('exp', 'a', 'a.elf'),
+    'post',
+    [
+      'experiments/exp/vms/a/memorySnapshot',
+      { filename: 'a.elf' },
+      { timeout: 0 },
+    ],
+  ],
+  [
+    'getVmScreenshot',
+    () => vmsApi.getVmScreenshot('e x', 'a/b', 300, signal),
+    'get',
+    [
+      'experiments/e%20x/vms/a%2Fb/screenshot.png',
+      { params: { size: 300, base64: true }, responseType: 'text', signal },
+    ],
+  ],
+  [
+    'listVmForwards',
+    () => vmsApi.listVmForwards('exp', 'a'),
+    'get',
+    ['experiments/exp/vms/a/forwards'],
+  ],
+  [
+    'createVmForward',
+    () => vmsApi.createVmForward('exp', 'a', { src: 1, host: 'h', dst: 2 }),
+    'post',
+    [
+      'experiments/exp/vms/a/forwards',
+      null,
+      { params: { src: 1, host: 'h', dst: 2 } },
+    ],
+  ],
+  [
+    'deleteVmForward',
+    () => vmsApi.deleteVmForward('exp', 'a', { host: 'h', dst: 2 }),
+    'delete',
+    ['experiments/exp/vms/a/forwards', { params: { host: 'h', dst: 2 } }],
+  ],
+  [
+    'insertVmDisc',
+    () => vmsApi.insertVmDisc('exp', 'a', '/isos/a.iso'),
+    'post',
+    [
+      'experiments/exp/vms/a/cdrom',
+      null,
+      { params: { isoPath: '/isos/a.iso' } },
+    ],
+  ],
+  [
+    'ejectVmDisc',
+    () => vmsApi.ejectVmDisc('exp', 'a'),
+    'delete',
+    ['experiments/exp/vms/a/cdrom'],
+  ],
+  [
+    'listVmCaptures',
+    () => vmsApi.listVmCaptures('exp', 'a'),
+    'get',
+    ['experiments/exp/vms/a/captures'],
+  ],
+  [
+    'createVmCapture',
+    () => vmsApi.createVmCapture('exp', 'a', 0, 'a_0.pcap'),
+    'post',
+    ['experiments/exp/vms/a/captures', { interface: 0, filename: 'a_0.pcap' }],
+  ],
+  [
+    'deleteVmCapture on an interface',
+    () => vmsApi.deleteVmCapture('exp', 'a', 0),
+    'delete',
+    ['experiments/exp/vms/a/captures', { params: { iface: 0 } }],
+  ],
+  [
+    'deleteVmCapture on every interface',
+    () => vmsApi.deleteVmCapture('exp', 'a'),
+    'delete',
+    ['experiments/exp/vms/a/captures', { params: {} }],
+  ],
+  [
+    'deleteVmCaptures',
+    () => vmsApi.deleteVmCaptures('exp', 'a'),
+    'delete',
+    ['experiments/exp/vms/a/captures'],
+  ],
+  [
+    'mountVm',
+    () => vmsApi.mountVm('exp', 'a'),
+    'post',
+    ['experiments/exp/vms/a/mount'],
+  ],
+  [
+    'unmountVm',
+    () => vmsApi.unmountVm('exp', 'a'),
+    'delete',
+    ['experiments/exp/vms/a/unmount'],
+  ],
+  [
+    'listVmFiles',
+    () => vmsApi.listVmFiles('exp', 'a', '/etc'),
+    'get',
+    ['experiments/exp/vms/a/files', { params: { path: '/etc' } }],
+  ],
+  [
+    'copyFileToVm',
+    () => vmsApi.copyFileToVm('exp', 'a', '/tmp', 'x/b.txt'),
+    'post',
+    [
+      'experiments/exp/vms/a/files/copy',
+      null,
+      { params: { path: '/tmp', source: 'x/b.txt' } },
+    ],
+  ],
+  [
+    'uploadVmFile',
+    () => vmsApi.uploadVmFile('exp', 'a', '/tmp', form, onProgress),
+    'put',
+    [
+      'experiments/exp/vms/a/files/upload',
+      form,
+      {
+        params: { path: '/tmp' },
+        headers: UPLOAD,
+        onUploadProgress: onProgress,
+      },
+    ],
+  ],
+
+  // SCORCH
+  [
+    'listScorchPipelines',
+    () => scorchApi.listScorchPipelines('exp', { signal }),
+    'get',
+    [
+      'experiments/exp/scorch/pipelines',
+      { signal, headers: { Accept: 'application/json' } },
+    ],
+  ],
+  [
+    'startScorchRun',
+    () => scorchApi.startScorchRun('exp', 0),
+    'post',
+    ['experiments/exp/scorch/pipelines/0'],
+  ],
+  [
+    'stopScorchRun',
+    () => scorchApi.stopScorchRun('exp', 1),
+    'delete',
+    ['experiments/exp/scorch/pipelines/1'],
+  ],
+  [
+    'getScorchLoop',
+    () => scorchApi.getScorchLoop('exp', 1, 2),
+    'get',
+    ['experiments/exp/scorch/pipelines/1/2', ACCEPT_JSON],
+  ],
+  [
+    'listScorchTerminals',
+    () => scorchApi.listScorchTerminals('exp'),
+    'get',
+    ['experiments/exp/scorch/terminals', ACCEPT_JSON],
+  ],
+  [
+    'getScorchComponent',
+    () =>
+      scorchApi.getScorchComponent({
+        exp: 'exp',
+        run: 1,
+        loop: 2,
+        stage: 'start',
+        name: 'tap',
+        extra: 'ignored',
+      }),
+    'get',
+    ['experiments/exp/scorch/components/1/2/start/tap', ACCEPT_JSON],
+  ],
+  [
+    'exitScorchTerminal',
+    () => scorchApi.exitScorchTerminal('/base/api/v1/exit/7'),
+    'post',
+    ['/base/api/v1/exit/7', null, { baseURL: '' }],
+  ],
 ];
 
 // the axios methods the modules call
@@ -44,6 +680,7 @@ function onlyCall() {
 
 beforeEach(() => {
   resetMocks();
+  setActivePinia(createPinia());
   const answer = { data: { id: 'job1', status: 'running', revision: 1 } };
   for (const m of METHODS) axios[m].mockResolvedValue(answer);
 });
@@ -54,9 +691,102 @@ describe('the API modules', () => {
     expect(onlyCall()).toStrictEqual([method, args]);
   });
 
+  it('returns what axios answers, so callers see the response', async () => {
+    const response = { status: 204 };
+    axios.post.mockResolvedValue(response);
+    await expect(authApi.logOut()).resolves.toBe(response);
+    const failure = new Error('refused');
+    axios.post.mockRejectedValue(failure);
+    await expect(authApi.logOut()).rejects.toBe(failure);
+  });
+
   it('every exported function has a request case', () => {
     const tested = new Set(requests.map(([name]) => name.split(' ')[0]));
-    const exported = [consoleApi, jobsApi].flatMap((mod) => Object.keys(mod));
-    expect(exported.filter((name) => !tested.has(name))).toEqual([]);
+    const exported = [
+      authApi,
+      configsApi,
+      consoleApi,
+      disksApi,
+      experimentFilesApi,
+      experimentsApi,
+      hostsApi,
+      jobsApi,
+      logsApi,
+      rolesApi,
+      scorchApi,
+      settingsApi,
+      topologiesApi,
+      usersApi,
+      vmsApi,
+    ].flatMap((mod) => Object.keys(mod));
+    // builds a link's URL rather than sending a request (tested below)
+    const links = new Set(['netflowCaptureURL']);
+    expect(
+      exported.filter((name) => !tested.has(name) && !links.has(name)),
+    ).toEqual([]);
   });
+});
+
+// any name, in well-formed Unicode, which encodeURIComponent accepts
+const anyName = fc.string({ unit: 'grapheme', maxLength: 12 });
+
+// the request's URL path split at '/', with each part decoded
+const decodedParts = (url) => url.split('/').map(decodeURIComponent);
+
+describe('names encoded into a path', () => {
+  it.each([
+    [
+      'listTopologyScenarios',
+      (name) => topologiesApi.listTopologyScenarios(name),
+      (name) => ['topologies', name, 'scenarios'],
+    ],
+    [
+      'listExperimentCaptures',
+      (name) => experimentsApi.listExperimentCaptures(name),
+      (name) => ['experiments', name, 'captures'],
+    ],
+    [
+      'getVmScreenshot',
+      (name) => vmsApi.getVmScreenshot(name, name, 1, signal),
+      (name) => ['experiments', name, 'vms', name, 'screenshot.png'],
+    ],
+    [
+      'getExperimentFile',
+      (name) =>
+        experimentFilesApi.getExperimentFile('exp', { name, path: name }),
+      (name) => ['experiments', 'exp', 'files', name],
+    ],
+    [
+      'updateUser',
+      (name) => usersApi.updateUser(name, {}),
+      (name) => ['users', name],
+    ],
+    [
+      'deleteUser',
+      (name) => usersApi.deleteUser(name),
+      (name) => ['users', name],
+    ],
+    [
+      'createUserToken',
+      (name) => usersApi.createUserToken(name, {}),
+      (name) => ['users', name, 'tokens'],
+    ],
+  ])(
+    '%s keeps each name one segment that decodes back to it',
+    async (_, call, parts) => {
+      await fc.assert(
+        fc.asyncProperty(anyName, async (name) => {
+          resetMocks();
+          setActivePinia(createPinia());
+          axios.get.mockResolvedValue({ data: {} });
+          axios.post.mockResolvedValue({ data: { id: 'j', revision: 1 } });
+          axios.delete.mockResolvedValue({});
+          await call(name);
+          const [, [url]] = onlyCall();
+          expect(url).not.toMatch(/[?#]/);
+          expect(decodedParts(url)).toEqual(parts(name));
+        }),
+      );
+    },
+  );
 });

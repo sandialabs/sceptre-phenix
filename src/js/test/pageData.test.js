@@ -1,0 +1,478 @@
+// How each page's data is fetched, shared and preloaded (utils/pageData.js),
+// with the server answered by a mocked axios.
+import fc from 'fast-check';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/utils/axios.js', () => ({ default: { get: vi.fn() } }));
+vi.mock('@/utils/errorNotif.js', () => ({ useErrorNotification: vi.fn() }));
+vi.mock('@/utils/rbac.js', () => ({ roleAllowed: vi.fn() }));
+const store = vi.hoisted(() => ({ role: null }));
+vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
+
+import axiosInstance from '@/utils/axios.js';
+import { useErrorNotification } from '@/utils/errorNotif.js';
+import {
+  cachedPage,
+  cachePage,
+  clearPageCache,
+  fetchIntoCache,
+  invalidatePages,
+  isInvalidated,
+  isLoadingPage,
+  BACKGROUND_TIMEOUT_MS,
+} from '@/utils/pageCache.js';
+import { FreshnessMeta, RESOURCES } from '@/utils/freshness.js';
+import {
+  DEFAULT_LOG_WINDOW,
+  experimentKey,
+  fetchRunningExperiment,
+  pageFetchers,
+  preloadPages,
+  schedulableHostNames,
+  scorchRunsKey,
+  stoppedExperimentKey,
+  withLogIds,
+  withoutScreenshots,
+} from '@/utils/pageData.js';
+import { roleAllowed } from '@/utils/rbac.js';
+
+// answers each GET with the body given for its URL
+function serve(bodies) {
+  axiosInstance.get.mockImplementation(async (url) => {
+    if (!(url in bodies)) throw new Error(`unexpected GET ${url}`);
+    return { data: bodies[url] };
+  });
+}
+
+const urls = () => axiosInstance.get.mock.calls.map(([url]) => url);
+
+beforeEach(() => {
+  clearPageCache();
+  axiosInstance.get.mockReset();
+  roleAllowed.mockReset();
+  roleAllowed.mockReturnValue(true);
+  useErrorNotification.mockReset();
+  store.role = { name: 'Global Admin' };
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe('the list pages', () => {
+  it.each([
+    ['configs', 'configs', { configs: [1] }],
+    ['hosts', 'hosts', { hosts: [1] }],
+    ['vmtiles', 'vms', { vms: [1] }],
+  ])('%s lists what GET %s answers, or nothing', async (page, url, body) => {
+    const signal = new AbortController().signal;
+    axiosInstance.get.mockResolvedValue({ data: body });
+    expect(await pageFetchers[page](signal)).toEqual([1]);
+    expect(axiosInstance.get).toHaveBeenCalledWith(url, { signal });
+
+    axiosInstance.get.mockResolvedValue({ data: {} });
+    expect(await pageFetchers[page](signal)).toEqual([]);
+  });
+
+  it('shows the settings as the server sends them', async () => {
+    serve({ settings: { a: 1 } });
+    expect(await pageFetchers.settings()).toEqual({ a: 1 });
+  });
+});
+
+describe('the Users page', () => {
+  const users = { users: [{ name: 'a', role: { name: 'Viewer' } }] };
+
+  it('lists the users with their role names, and the roles to pick', async () => {
+    serve({ users, roles: { roles: [{ name: 'Viewer' }, { name: 'Admin' }] } });
+    expect(await pageFetchers.users()).toEqual({
+      users: [{ name: 'a', role: { name: 'Viewer' }, role_name: 'Viewer' }],
+      roleNames: ['Viewer', 'Admin'],
+    });
+  });
+
+  it('lists the users without roles the role may not list', async () => {
+    roleAllowed.mockImplementation((resource) => resource != 'roles');
+    serve({ users });
+    expect((await pageFetchers.users()).roleNames).toEqual([]);
+    expect(urls()).toEqual(['users']);
+  });
+
+  it('still lists the users when the roles fail to load, and says so', async () => {
+    const err = new Error('forbidden');
+    axiosInstance.get.mockImplementation(async (url) => {
+      if (url == 'roles') throw err;
+      return { data: users };
+    });
+    const page = await pageFetchers.users();
+    expect(page.users).toHaveLength(1);
+    expect(page.roleNames).toEqual([]);
+    expect(useErrorNotification).toHaveBeenCalledWith(err);
+  });
+});
+
+describe('the Logs page', () => {
+  it(`asks for the last ${DEFAULT_LOG_WINDOW / 60} minutes`, async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-09-29T15:10:00Z') });
+    serve({ 'logs?start=2026-09-29T15:00:00.000Z': null });
+    expect(await pageFetchers.logs()).toEqual([]);
+  });
+
+  it('keys each entry by an id no other entry has', async () => {
+    const time = '2026-09-29T15:00:00Z';
+    axiosInstance.get.mockResolvedValue({
+      data: [
+        { time, msg: 'first' },
+        { time, msg: 'second' },
+      ],
+    });
+
+    const logs = await pageFetchers.logs(undefined);
+    const streamed = withLogIds([{ time, msg: 'streamed' }]);
+
+    // entries sharing a timestamp still get their own key, and entries
+    // streamed in later never reuse a preloaded entry's key
+    const ids = [...logs, ...streamed].map((log) => log.id);
+    expect(ids.every(Number.isInteger)).toBe(true);
+    expect(new Set(ids).size).toBe(3);
+    expect(logs.map((log) => log.msg)).toEqual(['first', 'second']);
+  });
+
+  it('gives every entry of every batch its own id, keeping the rest of it', () => {
+    const log = fc.record({
+      time: fc.constant('2026-09-29T15:00:00Z'),
+      msg: fc.string(),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(fc.array(log, { maxLength: 5 }), { maxLength: 4 }),
+        (batches) => {
+          const keyed = batches.map(withLogIds);
+          const ids = keyed.flat().map((entry) => entry.id);
+          expect(ids.every(Number.isInteger)).toBe(true);
+          expect(new Set(ids).size).toBe(ids.length);
+          const kept = (log) => ({ ...log, id: expect.any(Number) });
+          expect(keyed).toEqual(batches.map((b) => b.map(kept)));
+        },
+      ),
+    );
+  });
+});
+
+describe('the running experiment page', () => {
+  it('asks for the experiment without its VMs', async () => {
+    axiosInstance.get.mockResolvedValue({
+      data: { name: 'exp', running: true, vm_count: 2 },
+    });
+    const signal = new AbortController().signal;
+
+    const exp = await fetchRunningExperiment('exp', signal);
+
+    expect(axiosInstance.get).toHaveBeenCalledWith('experiments/exp', {
+      signal,
+      params: { vms: false },
+    });
+    expect(exp).toEqual({ name: 'exp', running: true, vm_count: 2, vms: [] });
+  });
+
+  it('keeps the VM rows it last showed for that experiment, without screenshots', async () => {
+    const rows = [{ name: 'vm1', running: true, screenshot: 'data:shot' }];
+    cachePage(experimentKey('exp'), { name: 'exp', vms: rows });
+    axiosInstance.get.mockResolvedValue({
+      data: { name: 'exp', running: true },
+    });
+
+    expect((await fetchRunningExperiment('exp')).vms).toEqual([
+      { name: 'vm1', running: true },
+    ]);
+    expect(rows[0].screenshot).toBe('data:shot');
+    // another experiment's rows are not borrowed
+    expect((await fetchRunningExperiment('other')).vms).toEqual([]);
+  });
+
+  it('copies any VM rows without their screenshots, leaving them as they were', () => {
+    const row = fc.record(
+      {
+        name: fc.string(),
+        running: fc.boolean(),
+        screenshot: fc.oneof(fc.constant(''), fc.string()),
+      },
+      { requiredKeys: ['name'] },
+    );
+    fc.assert(
+      fc.property(fc.array(row), (rows) => {
+        const before = structuredClone(rows);
+        const copies = withoutScreenshots(rows);
+
+        expect(rows).toEqual(before);
+        expect(copies).toHaveLength(rows.length);
+        copies.forEach((copy, i) => {
+          expect(copy).not.toBe(rows[i]);
+          expect('screenshot' in copy).toBe(false);
+          const { screenshot: _, ...rest } = rows[i];
+          expect(copy).toEqual(rest);
+        });
+      }),
+    );
+    expect(withoutScreenshots(undefined)).toEqual([]);
+  });
+});
+
+describe('the shared lists', () => {
+  it('name the schedulable hosts from a recent Hosts page list', async () => {
+    cachePage('hosts', [
+      { name: 'b', schedulable: true },
+      { name: 'a', schedulable: true },
+      { name: 'head', schedulable: false },
+    ]);
+
+    expect(await schedulableHostNames()).toEqual(['a', 'b']);
+    expect(axiosInstance.get).not.toHaveBeenCalled();
+  });
+
+  it('name every schedulable host of any list once, sorted', async () => {
+    const host = fc.record({
+      name: fc.string({ maxLength: 4 }),
+      schedulable: fc.boolean(),
+    });
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(host, { selector: (h) => h.name }),
+        async (hosts) => {
+          clearPageCache();
+          cachePage('hosts', hosts);
+          const names = await schedulableHostNames();
+          const can = new Set(
+            hosts.filter((h) => h.schedulable).map((h) => h.name),
+          );
+          expect(names).toHaveLength(can.size);
+          expect(names.every((n) => can.has(n))).toBe(true);
+          expect([...can].every((n) => names.includes(n))).toBe(true);
+          expect(names.every((n, i) => i === 0 || names[i - 1] <= n)).toBe(
+            true,
+          );
+        },
+      ),
+    );
+  });
+
+  it('fetch the hosts into the cache when no list is recent', async () => {
+    vi.useFakeTimers();
+    cachePage('hosts', [{ name: 'old', schedulable: true }]);
+    vi.advanceTimersByTime(RESOURCES.hosts.reuseMs + 1);
+    serve({ hosts: { hosts: [{ name: 'new', schedulable: true }] } });
+
+    expect(await schedulableHostNames()).toEqual(['new']);
+    expect(urls()).toEqual(['hosts']);
+    expect(cachedPage('hosts').data).toEqual([
+      { name: 'new', schedulable: true },
+    ]);
+  });
+});
+
+describe('live updates of cached pages', () => {
+  const loadedAt = (seq) => Object.assign(new FreshnessMeta(), { seq });
+  const experimentMsg = (seq) => ({
+    resource: { type: 'experiment', name: 'a', action: 'stop' },
+    seq,
+  });
+
+  it('mark a cached page changed only by a message newer than its load', () => {
+    cachePage('experiments', [{ name: 'a' }], loadedAt(10));
+    cachePage('hosts', [], loadedAt(10));
+
+    invalidatePages(experimentMsg(9));
+    expect(isInvalidated(cachedPage('experiments'))).toBe(false);
+
+    invalidatePages(experimentMsg(11));
+    expect(isInvalidated(cachedPage('experiments'))).toBe(true);
+    // hosts are not changed by experiment messages
+    expect(isInvalidated(cachedPage('hosts'))).toBe(false);
+
+    // a load the server read before the change does not clear it
+    cachePage('experiments', [{ name: 'a' }], loadedAt(10));
+    expect(isInvalidated(cachedPage('experiments'))).toBe(true);
+    cachePage('experiments', [{ name: 'a' }], loadedAt(12));
+    expect(isInvalidated(cachedPage('experiments'))).toBe(false);
+  });
+
+  const deleted = (name, seq) => ({
+    resource: { type: 'experiment', name, action: 'delete' },
+    ...(seq === undefined ? {} : { seq }),
+  });
+
+  it("drop a deleted experiment's pages, and no one else's", () => {
+    const keys = [
+      experimentKey('a'),
+      stoppedExperimentKey('a'),
+      scorchRunsKey('a'),
+      experimentKey('ab'),
+      stoppedExperimentKey('b'),
+      scorchRunsKey('b'),
+      'experiments',
+      'scorch',
+    ];
+    for (const key of keys) cachePage(key, [key], loadedAt(10));
+
+    invalidatePages(deleted('a', 11));
+
+    expect(keys.filter((key) => cachedPage(key))).toEqual([
+      experimentKey('ab'),
+      stoppedExperimentKey('b'),
+      scorchRunsKey('b'),
+      'experiments',
+      'scorch',
+    ]);
+    // the lists that named it are loaded again
+    expect(isInvalidated(cachedPage('experiments'))).toBe(true);
+    expect(isInvalidated(cachedPage(experimentKey('ab')))).toBe(false);
+  });
+
+  it('let a load running at the delete finish without caching what it read before', async () => {
+    const answer = Promise.withResolvers();
+    const fetch = (_, meta) => {
+      meta.seq = 10;
+      return answer.promise;
+    };
+    const request = fetchIntoCache(experimentKey('a'), fetch);
+
+    invalidatePages(deleted('a', 11));
+    // still shared with a page that opens now
+    expect(isLoadingPage(experimentKey('a'))).toBe(true);
+    const joined = fetchIntoCache(experimentKey('a'), fetch);
+    expect(joined.promise).toBe(request.promise);
+
+    answer.resolve({ name: 'a' });
+    expect(await request.promise).toEqual({ name: 'a' });
+    request.release();
+    joined.release();
+    expect(isLoadingPage(experimentKey('a'))).toBe(false);
+    expect(cachedPage(experimentKey('a'))).toBeUndefined();
+
+    // an experiment of that name created since is cached again
+    cachePage(experimentKey('a'), { name: 'a' }, loadedAt(12));
+    expect(cachedPage(experimentKey('a')).data).toEqual({ name: 'a' });
+  });
+
+  it('without seqs, cache nothing for a deleted experiment until loads outlast the delete', () => {
+    vi.useFakeTimers();
+    cachePage(experimentKey('a'), { name: 'a' });
+
+    invalidatePages(deleted('a'));
+    expect(cachedPage(experimentKey('a'))).toBeUndefined();
+    cachePage(experimentKey('a'), { name: 'a' });
+    expect(cachedPage(experimentKey('a'))).toBeUndefined();
+    // another experiment is not held back
+    cachePage(experimentKey('b'), { name: 'b' });
+    expect(cachedPage(experimentKey('b'))).toBeDefined();
+
+    // no load runs this long while a page waits on it
+    vi.advanceTimersByTime(BACKGROUND_TIMEOUT_MS);
+    cachePage(experimentKey('a'), { name: 'a' });
+    expect(cachedPage(experimentKey('a'))).toBeDefined();
+  });
+
+  it('keep only the pages loaded after every delete of their experiment, whatever the order', () => {
+    const name = fc.constantFrom('a', 'b');
+    const keysOf = (n) => [
+      experimentKey(n),
+      stoppedExperimentKey(n),
+      scorchRunsKey(n),
+    ];
+    const step = fc.oneof(
+      fc.record({
+        name,
+        write: fc.integer({ min: 0, max: 2 }),
+        seq: fc.nat(30),
+      }),
+      fc.record({ name, seq: fc.nat(30) }),
+    );
+    fc.assert(
+      fc.property(fc.array(step, { maxLength: 20 }), (steps) => {
+        clearPageCache();
+        // what each key should hold: the seq of the load cached for it
+        const expected = new Map();
+        const lastDelete = new Map();
+        for (const { name: n, write, seq } of steps) {
+          if (write !== undefined) {
+            const key = keysOf(n)[write];
+            cachePage(key, key, loadedAt(seq));
+            if (seq > (lastDelete.get(n) ?? -Infinity)) expected.set(key, seq);
+          } else {
+            invalidatePages(deleted(n, seq));
+            lastDelete.set(n, Math.max(lastDelete.get(n) ?? -Infinity, seq));
+            for (const key of keysOf(n)) expected.delete(key);
+          }
+        }
+        for (const key of [...keysOf('a'), ...keysOf('b')]) {
+          expect(cachedPage(key)?.meta.seq).toBe(expected.get(key));
+        }
+      }),
+    );
+  });
+});
+
+describe('preloading', () => {
+  // every page's fetcher answers with its own name, or as the test says
+  beforeEach(() => {
+    for (const key of Object.keys(pageFetchers)) {
+      vi.spyOn(pageFetchers, key).mockResolvedValue([key]);
+    }
+  });
+
+  it('leaves out the Users tab for a disabled account', async () => {
+    store.role = { name: 'Disabled' };
+    await preloadPages();
+    expect(pageFetchers.users).not.toHaveBeenCalled();
+  });
+
+  it('skips tabs already cached or loading', async () => {
+    cachePage('hosts', ['cached']);
+    const answer = Promise.withResolvers();
+    const loading = fetchIntoCache('configs', () => answer.promise);
+    await preloadPages();
+
+    expect(pageFetchers.hosts).not.toHaveBeenCalled();
+    expect(pageFetchers.configs).not.toHaveBeenCalled();
+    expect(cachedPage('hosts').data).toEqual(['cached']);
+    answer.resolve([]);
+    await loading.promise;
+  });
+
+  it('never has more than two requests out, and loads each tab once, whatever answers first or fails', async () => {
+    const tabs = Object.keys(pageFetchers).filter((key) => key !== 'vmtiles');
+    await fc.assert(
+      fc.asyncProperty(
+        fc.subarray(tabs),
+        fc.scheduler(),
+        async (failing, s) => {
+          clearPageCache();
+          let out = 0;
+          let most = 0;
+          for (const key of tabs) {
+            pageFetchers[key].mockReset().mockImplementation(() => {
+              most = Math.max(most, ++out);
+              return s.schedule(Promise.resolve(), key).then(() => {
+                out--;
+                if (failing.includes(key)) throw new Error('down');
+                return [key];
+              });
+            });
+          }
+
+          await s.waitFor(preloadPages());
+
+          expect(most).toBe(2);
+          for (const key of tabs) {
+            expect(pageFetchers[key]).toHaveBeenCalledOnce();
+            expect(cachedPage(key)?.data).toEqual(
+              failing.includes(key) ? undefined : [key],
+            );
+          }
+        },
+      ),
+    );
+  });
+});
