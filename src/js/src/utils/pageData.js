@@ -16,7 +16,7 @@ import {
   recentPage,
 } from '@/utils/pageCache.js';
 import { whenIdle } from '@/utils/prefetch.js';
-import { whenServing } from '@/utils/freshness.js';
+import { mergeFreshness, whenServing } from '@/utils/freshness.js';
 import { serverNotAnswering } from '@/utils/unreachable.js';
 import { roleAllowed } from '@/utils/rbac.js';
 import { usePhenixStore } from '@/store.js';
@@ -67,6 +67,14 @@ export async function fetchRunningExperiment(name, signal, meta) {
   };
 }
 
+// The experiment list, shared with the Experiments page request or recent result
+// (see freshness.js). meta, if given, takes on the list's freshness.
+export async function experimentList(meta) {
+  const experiments = await recentPage('experiments', pageFetchers.experiments);
+  mergeFreshness(meta, cachedPage('experiments')?.meta);
+  return experiments;
+}
+
 // The names of the hosts VMs can be scheduled on, sorted, from the Hosts
 // page's cached list when it is recent (see the reuse window in freshness.js)
 // or its request in flight, rather than a new cluster-wide host scan.
@@ -81,6 +89,11 @@ export async function schedulableHostNames() {
 // Each fetcher takes (signal, meta) and passes meta with its requests, so the
 // page cache knows how fresh the result is.
 export const pageFetchers = {
+  experiments: async (signal, meta) =>
+    // the list only shows VM counts, which need nothing from minimega
+    (await body(experimentsApi.listExperiments({ signal, meta })))
+      .experiments ?? [],
+
   configs: async (signal, meta) =>
     (await body(configsApi.listConfigs({ signal, meta }))).configs ?? [],
 
@@ -123,6 +136,7 @@ export const pageFetchers = {
 // Tabs worth loading ahead of a visit, cheapest first, with who may see them
 // (mirrors the navbar). VM tiles are left out: they list every running VM.
 const PRELOADS = [
+  ['experiments', () => roleAllowed('experiments', 'list')],
   ['configs', () => roleAllowed('configs', 'list')],
   ['users', () => usePhenixStore().role?.name !== 'Disabled'],
   ['logs', () => roleAllowed('logs', 'get')],

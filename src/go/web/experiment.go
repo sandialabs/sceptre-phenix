@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -215,6 +216,7 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 		return !role.Allowed("experiments", "list", exp.Metadata.Name)
 	})
 
+	total := len(experiments)
 	experiments = util.Page(experiments, page, pageSize)
 	allowed := make([]*proto.Experiment, 0, len(experiments))
 
@@ -225,26 +227,33 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 	observed.Stale = err != nil
 
 	for _, exp := range experiments {
-		status := cache.ExperimentStatus(exp.Metadata.Name, exp.Running())
+		status, percent := experimentStatus(exp)
+
+		var pb *proto.Experiment
 
 		if noVMs {
-			allowed = append(allowed, util.ExperimentSummaryToProtobuf(exp, status))
+			pb = util.ExperimentSummaryToProtobuf(exp, status)
+		} else {
+			// TODO: limit per-experiment VMs based on RBAC
+			vms, obs := listExperimentVMs(ctx, exp, busy)
+			observed = observed.Older(obs)
 
-			continue
+			pb = util.ExperimentToProtobuf(exp, status, vms)
+			pb.VmsUnknown = !obs.Known
 		}
 
-		// TODO: limit per-experiment VMs based on RBAC
-		vms, obs := listExperimentVMs(ctx, exp, busy)
-		observed = observed.Older(obs)
-
-		allowed = append(allowed, util.ExperimentToProtobuf(exp, status, vms))
+		pb.Percent = percent
+		allowed = append(allowed, pb)
 	}
 
 	if requestGone(r) {
 		return nil
 	}
 
-	body, err := marshaler.Marshal(&proto.ExperimentList{Experiments: allowed})
+	body, err := marshaler.Marshal(&proto.ExperimentList{
+		Experiments: allowed,
+		Total:       uint32(total), //nolint:gosec // G115 counts fit in a uint32
+	})
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling experiments", "err", err)
 
@@ -343,6 +352,26 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "invalid request body")
 	}
 
+	annotations, nodeAnnotations, err := createAnnotations(&req)
+	if err != nil {
+		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
+	if _, ok := nodeAnnotations[autotunnelAnnotation]; ok {
+		vms, err := topologyVMs(req.GetTopology())
+		if err != nil {
+			return weberror.New(http.StatusBadRequest, err.Error())
+		}
+
+		if denied := forwardDeniedVM(role, req.GetName(), vms); denied != "" {
+			audit.Denied(r, audit.ExperimentCreate, "creating port forwards not allowed", audit.Fields{
+				Experiment: req.GetName(), VM: denied, Reason: "port forward forbidden",
+			})
+
+			return weberror.New(http.StatusForbidden, "forbidden")
+		}
+	}
+
 	created := audit.Fields{Experiment: req.GetName()}
 
 	if err := cache.LockExperimentForCreation(req.GetName()); err != nil {
@@ -386,11 +415,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 		experiment.CreateWithDeployMode(deployMode),
 		experiment.CreateWithDefaultBridge(req.GetDefaultBridge()),
 		experiment.CreateWithGREMesh(req.GetUseGreMesh()),
-	}
-
-	if req.GetWorkflowBranch() != "" {
-		annotations := map[string]string{"phenix.workflow/branch": req.GetWorkflowBranch()}
-		opts = append(opts, experiment.CreateWithAnnotations(annotations))
+		experiment.CreateWithAnnotations(annotations),
+		experiment.CreateWithNodeAnnotations(nodeAnnotations),
 	}
 
 	if err := experiment.Create(ctx, opts...); err != nil {
@@ -434,6 +460,43 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
+}
+
+// createAnnotations returns the experiment and node annotations of a create
+// request. req may not set the branch annotation; the workflow branch sets it.
+func createAnnotations(
+	req *proto.CreateExperimentRequest,
+) (map[string]string, map[string]any, error) {
+	const branchKey = "phenix.workflow/branch"
+
+	annotations := maps.Clone(req.GetAnnotations())
+
+	if branch := req.GetWorkflowBranch(); branch != "" {
+		if _, ok := annotations[branchKey]; ok {
+			return nil, nil, fmt.Errorf(
+				"workflow_branch sets experiment annotation %q. Give only one of them",
+				branchKey,
+			)
+		}
+
+		if annotations == nil {
+			annotations = make(map[string]string, 1)
+		}
+
+		annotations[branchKey] = branch
+	}
+
+	var nodeAnnotations map[string]any
+
+	if len(req.GetNodeAnnotations()) > 0 {
+		nodeAnnotations = make(map[string]any, len(req.GetNodeAnnotations()))
+
+		for key, value := range req.GetNodeAnnotations() {
+			nodeAnnotations[key] = value.AsInterface()
+		}
+	}
+
+	return annotations, nodeAnnotations, nil
 }
 
 // UpdateExperiment - PATCH /experiments/{name}.
@@ -630,6 +693,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	if noVMs {
 		experiment.Vms = nil
 	} else {
+		experiment.VmsUnknown = !observed.Known
 		freshness.SetObserved(w, observed)
 	}
 

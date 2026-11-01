@@ -70,8 +70,8 @@ lack it). Points that are easy to miss:
   stored at; any other kind or version answers `404`.
 - `GET /experiments`, `/vms`, `/disks`, `/jobs` and the experiment VM and file
   lists page with `pageNum` and `perPage` (both, from 1; `400` otherwise);
-  without them they return everything. `/vms`, `/disks`, `/jobs` and
-  `/experiments/{name}/vms` also report the unpaged `total`.
+  without them they return everything. `/experiments`, `/vms`, `/disks`,
+  `/jobs` and `/experiments/{name}/vms` also report the unpaged `total`.
 - Other users' [background jobs](jobs.md) answer `404`, not `403`.
 - Bulk VM actions start [background jobs](jobs.md) and answer `202` with a
   `Location`.
@@ -101,3 +101,56 @@ ends when its process exits (the server then closes its websockets with code
 websocket has been attached for 15 seconds. `GET /console/{pid}` checks that it
 is still running. Starting, resizing and ending need `miniconsole` `post`;
 checking and attaching need `miniconsole` `get`.
+
+## Creating an experiment
+
+`POST /experiments` takes JSON and answers `204 No Content`; websocket clients
+then get an `experiment` `create` event carrying the new experiment.
+
+```json
+{
+  "name": "exp1",
+  "topology": "example",
+  "scenario": "example",
+  "disabled_apps": ["soh"],
+  "vlan_min": 100,
+  "vlan_max": 200,
+  "deploy_mode": "no-headnode",
+  "default_bridge": "exp1",
+  "workflow_branch": "main",
+  "annotations": {"phenix.workflow/tags": "run=nightly"},
+  "node_annotations": {
+    "phenix/default-apps": false,
+    "phenix/startup-autotunnel": ["8080:80"]
+  }
+}
+```
+
+Only `name` and `topology` are required. `annotations` become the experiment's
+metadata annotations: `topology` and `scenario` are set by phenix and rejected,
+and `phenix.workflow/branch` comes from `workflow_branch`, so a request may not
+give both. `node_annotations` are added to every VM in the experiment's own
+copy of the topology (the Topology config is unchanged), keep their JSON types,
+and never replace a VM's own value for the same key. A value of the wrong type
+for an annotation the default apps read (see [`annotations.md`](annotations.md))
+is rejected with `400` naming the key. Giving `phenix/startup-autotunnel` in
+`node_annotations` needs `vms/forwards` `create` on every VM the experiment
+deploys (external nodes excluded), or the request gets `403`, because the
+startup app creates those forwards.
+
+## VM annotations
+
+`GET /experiments/{exp}/vms/{name}` includes the VM's own `annotations` from the
+experiment's copy of the topology; VM lists and websocket VM updates carry
+`null` instead. `PATCH /experiments/{exp}/vms/{name}` with
+`{"annotations": {...}}` replaces the whole set (`{}` removes them all), also
+while the experiment is running, where only `interface` (the VLAN it connects
+to), `tags` and `annotations` may change. Values keep their JSON types, and the
+same type checks as creation reject a bad value with `400` naming the key. The
+response carries the saved annotations only when the role may also `get` the
+VM. Setting `phenix/startup-autotunnel` to a value the VM does not already have
+needs `vms/forwards` `create` on that VM, or the request gets `403`.
+
+```json
+{"annotations": {"phenix/startup-autotunnel": ["8080:80"], "vncBanner": "lab"}}
+```
