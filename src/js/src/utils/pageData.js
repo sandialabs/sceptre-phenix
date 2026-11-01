@@ -5,18 +5,24 @@ import * as experimentsApi from '@/api/experiments.js';
 import * as hostsApi from '@/api/hosts.js';
 import * as logsApi from '@/api/logs.js';
 import * as rolesApi from '@/api/roles.js';
+import * as scorchApi from '@/api/scorch.js';
 import * as settingsApi from '@/api/settings.js';
 import * as usersApi from '@/api/users.js';
 import * as vmsApi from '@/api/vms.js';
 import { useErrorNotification } from '@/utils/errorNotif.js';
 import {
+  cachePage,
   cachedPage,
   fetchIntoCache,
   isLoadingPage,
   recentPage,
 } from '@/utils/pageCache.js';
 import { whenIdle } from '@/utils/prefetch.js';
-import { mergeFreshness, whenServing } from '@/utils/freshness.js';
+import {
+  FreshnessMeta,
+  mergeFreshness,
+  whenServing,
+} from '@/utils/freshness.js';
 import { serverNotAnswering } from '@/utils/unreachable.js';
 import { roleAllowed } from '@/utils/rbac.js';
 import { usePhenixStore } from '@/store.js';
@@ -67,8 +73,10 @@ export async function fetchRunningExperiment(name, signal, meta) {
   };
 }
 
-// The experiment list, shared with the Experiments page request or recent result
-// (see freshness.js). meta, if given, takes on the list's freshness.
+// The experiment list for pages built on it (SCORCH), sharing the
+// Experiments page's request or recent result (see the reuse window in
+// freshness.js): listing experiments has the server query minimega for every
+// running one. meta, if given, takes on the list's freshness.
 export async function experimentList(meta) {
   const experiments = await recentPage('experiments', pageFetchers.experiments);
   mergeFreshness(meta, cachedPage('experiments')?.meta);
@@ -85,6 +93,30 @@ export async function schedulableHostNames() {
     .map((host) => host.name)
     .sort();
 }
+
+// Whether an experiment (as the experiment list or a websocket experiment
+// message carries it) has the SCORCH app configured.
+const hasScorch = (exp) => (exp?.apps ?? []).includes('scorch');
+
+// Whether the SCORCH page lists an experiment: it has SCORCH configured and
+// the role may see it and its runs.
+export const scorchListed = (exp) =>
+  hasScorch(exp) &&
+  roleAllowed('experiments/apps', 'get', exp.name) &&
+  roleAllowed('experiments', 'get', exp.name);
+
+// An experiment's row on the SCORCH page: a copy of it (the experiment
+// objects are shared with the Experiments page) with its SCORCH run state and
+// run names.
+export const scorchRow = (exp, pipelines) => ({
+  ...exp,
+  scorch: {
+    running: !!pipelines.app_running,
+    run: pipelines.running,
+    runs: (pipelines.pipelines ?? []).map((p) => p.name),
+    pending: false,
+  },
+});
 
 // Each fetcher takes (signal, meta) and passes meta with its requests, so the
 // page cache knows how fresh the result is.
@@ -126,6 +158,35 @@ export const pageFetchers = {
     );
   },
 
+  // experiments that have SCORCH configured, with their run state and run
+  // names
+  scorch: async (signal, meta) => {
+    const experiments = await experimentList(meta);
+
+    // The list already names each experiment's apps, so only experiments with
+    // SCORCH configured are asked for their pipelines. Fetched concurrently
+    // rather than one after another.
+    const scorchExps = await Promise.all(
+      experiments.map(async (exp) => {
+        // one forbidden experiment must not fail the whole list
+        if (!scorchListed(exp)) return null;
+
+        const runMeta = new FreshnessMeta();
+        const pipelines = await body(
+          scorchApi.listScorchPipelines(exp.name, { signal, meta: runMeta }),
+        );
+        mergeFreshness(meta, runMeta);
+        // the experiment's runs page shows the same response, so it opens at
+        // once too, unless it has fetched a fresher copy of its own
+        const runsKey = scorchRunsKey(exp.name);
+        if (!isLoadingPage(runsKey)) cachePage(runsKey, pipelines, runMeta);
+        return scorchRow(exp, pipelines);
+      }),
+    );
+
+    return scorchExps.filter((exp) => exp !== null);
+  },
+
   settings: (signal, meta) => body(settingsApi.getSettings({ signal, meta })),
 
   // the tiles fetch their screenshots themselves, only while on screen
@@ -141,6 +202,7 @@ const PRELOADS = [
   ['users', () => usePhenixStore().role?.name !== 'Disabled'],
   ['logs', () => roleAllowed('logs', 'get')],
   ['hosts', () => roleAllowed('hosts', 'list')],
+  ['scorch', () => roleAllowed('experiments', 'list')],
   ['settings', () => roleAllowed('settings', 'update')],
 ];
 

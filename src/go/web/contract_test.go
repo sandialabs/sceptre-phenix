@@ -212,6 +212,7 @@ func contractRoutes() []contractRoute {
 	)
 
 	var (
+		trigger = testRole("experiments/trigger", "create", contractExp)
 		diskGet = testRole("disks", "get", contractDisk)
 		mount   = testRole("vms/mount", "get", contractExp+"/"+contractVM)
 		one     = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
@@ -229,6 +230,13 @@ func contractRoutes() []contractRoute {
 		{method: "DELETE", path: "/api/v1/jobs/{job}", need: jobs("delete"), hidden: http.StatusNotFound},
 		{method: "GET", path: "/api/v1/jobs/{job}/artifact", need: jobs("get"), hidden: http.StatusNotFound},
 		{method: "HEAD", path: "/api/v1/jobs/{job}/artifact", need: jobs("get"), hidden: http.StatusNotFound},
+
+		// SCORCH
+		{
+			method: "POST", path: exp + "/scorch/pipelines/0/cleanup",
+			need: []rbac.Role{trigger, testRole("experiments", "get", contractExp)},
+		},
+		{method: "POST", path: exp + "/scorch/pipelines/0/clear", need: one(trigger)},
 
 		// VMs: a bulk update refuses a role that may patch none of its VMs
 		{
@@ -501,13 +509,22 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 	}
 }
 
-// configAndRouteErrorCases are TestContractErrors' user and routing cases.
+// configAndRouteErrorCases are TestContractErrors' SCORCH, user and routing cases.
 func configAndRouteErrorCases() map[string]contractErrorCase {
 	const exp = contractExpPath
 
 	return map[string]contractErrorCase{
 		"stop with a force that is not a boolean": {
 			method: "POST", path: exp + "/stop?force=maybe", want: http.StatusBadRequest,
+		},
+		"clear run that is not a number": {
+			method: "POST", path: exp + "/scorch/pipelines/x/clear", want: http.StatusBadRequest,
+		},
+		"clear run the experiment lacks": {
+			method: "POST", path: exp + "/scorch/pipelines/0/clear", want: http.StatusNotFound,
+		},
+		"clean up run the experiment lacks": {
+			method: "POST", path: exp + "/scorch/pipelines/0/cleanup", want: http.StatusBadRequest,
 		},
 		"user with unknown role": {
 			method: "POST", path: "/api/v1/users", body: createUserBody("carol", "No Such Role"), want: http.StatusBadRequest,

@@ -23,6 +23,18 @@ export function stopScorchRun(exp, run) {
   return axiosInstance.delete(`${pipelinesURL(exp)}/${run}`);
 }
 
+// POST /experiments/{exp}/scorch/pipelines/{run}/clear: forgets the run's
+// status
+export function clearScorchRun(exp, run) {
+  return axiosInstance.post(`${pipelinesURL(exp)}/${run}/clear`);
+}
+
+// POST /experiments/{exp}/scorch/pipelines/{run}/cleanup: runs only the
+// run's cleanup stage
+export function cleanupScorchRun(exp, run) {
+  return axiosInstance.post(`${pipelinesURL(exp)}/${run}/cleanup`);
+}
+
 // GET /experiments/{exp}/scorch/pipelines/{run}/{loop}: one loop's pipeline
 export function getScorchLoop(exp, run, loop) {
   return axiosInstance.get(`${pipelinesURL(exp)}/${run}/${loop}`, {

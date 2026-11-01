@@ -30,12 +30,14 @@ import {
   pageFetchers,
   preloadPages,
   schedulableHostNames,
+  scorchRow,
   scorchRunsKey,
   stoppedExperimentKey,
   withLogIds,
   withoutScreenshots,
 } from '@/utils/pageData.js';
 import { roleAllowed } from '@/utils/rbac.js';
+import { flush } from './helpers/async.js';
 
 // answers each GET with the body given for its URL
 function serve(bodies) {
@@ -385,6 +387,26 @@ describe('live updates of cached pages', () => {
     expect(cachedPage(experimentKey('a')).data).toEqual({ name: 'a' });
   });
 
+  it("keep the SCORCH list from putting back a deleted experiment's runs", async () => {
+    const pipelines = Promise.withResolvers();
+    axiosInstance.get.mockImplementation(async (url, { meta }) => {
+      meta.seq = 10;
+      if (url === 'experiments?vms=false') {
+        return { data: { experiments: [{ name: 'a', apps: ['scorch'] }] } };
+      }
+      return { data: await pipelines.promise };
+    });
+
+    const request = fetchIntoCache('scorch', pageFetchers.scorch);
+    await flush();
+    invalidatePages(deleted('a', 11));
+    pipelines.resolve({ pipelines: [] });
+    await request.promise;
+    request.release();
+
+    expect(cachedPage(scorchRunsKey('a'))).toBeUndefined();
+  });
+
   it('without seqs, cache nothing for a deleted experiment until loads outlast the delete', () => {
     vi.useFakeTimers();
     cachePage(experimentKey('a'), { name: 'a' });
@@ -440,6 +462,171 @@ describe('live updates of cached pages', () => {
         }
       }),
     );
+  });
+
+  it("pass each request the load's freshness, which a composite load folds in", async () => {
+    axiosInstance.get.mockImplementation(async (url, { meta }) => {
+      // as the axios interceptor fills it in
+      meta.seq = Math.min(
+        meta.seq ?? Infinity,
+        url === 'experiments?vms=false' ? 7 : 9,
+      );
+      return {
+        data:
+          url === 'experiments?vms=false'
+            ? { experiments: [{ name: 'a', apps: ['scorch'] }] }
+            : { pipelines: [] },
+      };
+    });
+
+    const request = fetchIntoCache('scorch', pageFetchers.scorch);
+    await request.promise;
+    request.release();
+    // never newer than the experiment list it is built on
+    expect(cachedPage('scorch').meta.seq).toBe(7);
+    expect(cachedPage(scorchRunsKey('a')).meta.seq).toBe(9);
+  });
+});
+
+describe('the SCORCH page', () => {
+  it('asks only SCORCH experiments for their pipelines', async () => {
+    cachePage('experiments', [
+      { name: 'a', apps: ['scorch'] },
+      { name: 'b', apps: ['ntp'] },
+      { name: 'c', apps: ['scorch', 'soh'] },
+      { name: 'd', apps: [] },
+      { name: 'e' },
+    ]);
+    const pipelines = {
+      a: { pipelines: [{ name: 'first' }], running: 2, app_running: true },
+      c: { pipelines: [], running: -1, app_running: false },
+    };
+    axiosInstance.get.mockImplementation(async (url) => ({
+      data: pipelines[url.split('/')[1]],
+    }));
+
+    const exps = await pageFetchers.scorch(undefined);
+
+    expect(urls().sort()).toEqual([
+      'experiments/a/scorch/pipelines',
+      'experiments/c/scorch/pipelines',
+    ]);
+    expect(exps.map((e) => e.name)).toEqual(['a', 'c']);
+    expect(exps[0].scorch).toEqual({
+      running: true,
+      run: 2,
+      runs: ['first'],
+      pending: false,
+    });
+    expect(exps[1].scorch.running).toBe(false);
+    // each experiment's runs page opens with the same answer
+    expect(cachedPage(scorchRunsKey('a')).data).toBe(pipelines.a);
+  });
+
+  it('lists the SCORCH experiments the role may get in list order, whatever order their answers come in', async () => {
+    const exps = fc.uniqueArray(
+      fc.record({
+        name: fc.stringMatching(/^[a-z][a-z0-9]{0,3}$/),
+        apps: fc.subarray(['scorch', 'ntp', 'soh']),
+      }),
+      { selector: (exp) => exp.name, maxLength: 6 },
+    );
+    await fc.assert(
+      fc.asyncProperty(
+        exps.chain((list) =>
+          fc.tuple(fc.constant(list), fc.subarray(list.map((e) => e.name))),
+        ),
+        fc.scheduler(),
+        async ([list, denied], s) => {
+          clearPageCache();
+          cachePage('experiments', list);
+          roleAllowed.mockImplementation(
+            (...args) => !denied.includes(args[2]),
+          );
+          const answers = {};
+          axiosInstance.get.mockImplementation((url) => {
+            const name = url.split('/')[1];
+            answers[name] = {
+              pipelines: [{ name: `${name}-run` }],
+              running: 1,
+            };
+            return s.schedule(Promise.resolve({ data: answers[name] }), name);
+          });
+
+          const rows = await s.waitFor(pageFetchers.scorch(undefined));
+
+          const listed = list.filter(
+            (e) => e.apps.includes('scorch') && !denied.includes(e.name),
+          );
+          expect(rows.map((row) => row.name)).toEqual(
+            listed.map((e) => e.name),
+          );
+          for (const row of rows) {
+            expect(row.scorch.runs).toEqual([`${row.name}-run`]);
+            expect(cachedPage(scorchRunsKey(row.name)).data).toBe(
+              answers[row.name],
+            );
+          }
+          expect(Object.keys(answers).sort()).toEqual(
+            listed.map((e) => e.name).sort(),
+          );
+        },
+      ),
+    );
+  });
+
+  it("leaves the runs page's own request for its answer alone", async () => {
+    cachePage('experiments', [{ name: 'a', apps: ['scorch'] }]);
+    const fresher = { pipelines: [{ name: 'fresher' }] };
+    const answer = Promise.withResolvers();
+    const own = fetchIntoCache(scorchRunsKey('a'), () => answer.promise);
+    axiosInstance.get.mockResolvedValue({ data: { pipelines: [] } });
+
+    await pageFetchers.scorch(undefined);
+    expect(cachedPage(scorchRunsKey('a'))).toBeUndefined();
+
+    answer.resolve(fresher);
+    await own.promise;
+    expect(cachedPage(scorchRunsKey('a')).data).toBe(fresher);
+  });
+
+  it('skips experiments the role may not get', async () => {
+    cachePage('experiments', [
+      { name: 'a', apps: ['scorch'] },
+      { name: 'b', apps: ['scorch'] },
+    ]);
+    roleAllowed.mockImplementation((...args) => args[2] !== 'b');
+    axiosInstance.get.mockResolvedValue({
+      data: { pipelines: [], running: -1, app_running: false },
+    });
+
+    const exps = await pageFetchers.scorch(undefined);
+
+    expect(exps.map((e) => e.name)).toEqual(['a']);
+    expect(axiosInstance.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows each experiment as a copy with its run state', () => {
+    const exp = { name: 'a', status: 'started', apps: ['scorch'] };
+    const row = scorchRow(exp, {
+      app_running: true,
+      running: 1,
+      pipelines: [{ name: 'baseline' }, { name: 'attack' }],
+    });
+    expect(row).toEqual({
+      ...exp,
+      scorch: {
+        running: true,
+        run: 1,
+        runs: ['baseline', 'attack'],
+        pending: false,
+      },
+    });
+    expect(row).not.toBe(exp);
+    expect(scorchRow(exp, {}).scorch).toMatchObject({
+      running: false,
+      runs: [],
+    });
   });
 });
 
