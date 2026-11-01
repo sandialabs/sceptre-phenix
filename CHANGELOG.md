@@ -46,6 +46,7 @@ All notable changes to this project will be documented in this file.
 - **Admin Pages**: The Hosts, Users and Settings pages open from the page cache. The Tunneler page lists the tunneler builds that the server has, with a quick start.
 - **Log Files**: The Logs page shows each log level as a colored badge. The Logs page and the new `/api/v1/logs/files` routes download the phēnix and minimega log files.
 - **State of Health Overview**: Added the `State of Health` tab and `GET /api/v1/soh`, which show the SoH verdict, VM states, checks and last 20 runs of each experiment. The `soh` app gets DHCP addresses without a data race, and its `skipHosts` setting also matches `.qcow` disk images.
+- **State of Health Graph**: The State of Health topology graph has a layout picker (Force, Radial tree, Layered, VLAN groups and ELK layered), a `Fit` button and a `Download` menu for PNG, SVG and GEXF files.
 
 ### Changed
 

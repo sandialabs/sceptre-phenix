@@ -22,6 +22,17 @@ Button available in running experiment.
 
 ![screenshot](images/exp_run.png){: width=200 .center}
 
+An experiment's SoH page has a `Topology Graph` tab and, when SoH
+[packet capture](#packet-capture) is enabled, a `Network Volume` tab. Without
+packet capture the tab bar is hidden.
+
+A `Go to experiment` button in the top left corner of the page returns to the
+experiment. Two counters above the graph's top-left corner show how many VMs
+and VLANs the current filter is showing. Above the graph's top-right corner, a
+book button opens this documentation page and a flame button opens the
+experiment's [Scorch](scorch.md) pipelines. The status legend is stacked in a
+column to the left of the graph.
+
 Both the overview and an experiment's SoH page read their data through the
 API, so the refresh control in the header applies to them. The label beside it
 says when the page's data was last loaded, and the button reloads it: the icon
@@ -125,7 +136,7 @@ for, shows `states unavailable` instead of counts.
 
 This tab displays a network graph of the running experiment.
 
-![screenshot](images/net_graph.png){: width=800 .center}
+![State of Health topology graph in the Force layout, with a status legend, VM and VLAN counts, filter radio buttons, and VMs colored by state around VLAN segment nodes.](images/soh_graph.png){: width=800 .center}
 
 The color of the node is based on the condition of the corresponding VM and
 could be:
@@ -134,29 +145,37 @@ could be:
 * `Not running` (part of the experiment, but currently paused)
 * `Not booted` (part of the experiment, but marked as Do Not Boot)
 * `Not deployed` (part of the experiment, but flushed from minimega)
-* `External` (an [external node](configuration.md#external-nodes), i.e.
+* `External / HIL` (an [external node](configuration.md#external-nodes), i.e.
   hardware in the loop, not deployed by minimega)
-* `Experiment stopped`
 
-![screenshot](images/graph_legend.png){: width=800 .center}
+Those five conditions, along with the icon used for a VLAN segment, make up
+the legend in the column to the left of the graph. While the experiment is
+stopped its VMs are drawn without a status color; external nodes keep theirs.
 
-It is also possible to filter the graph based on nodes that are either:
+The graph can also be filtered to one condition. The six filters sit above the
+graph, and are, in order:
 
-* `Running`,
+* `All` (the default)
+* `Running`
 * `Not running`
 * `Not booted`
 * `Not deployed`
+* `External / HIL`
 
-!!! warning
-    There is no filter option for `External` nodes. Applying any of the filters
-    above will hide external nodes from the graph, since they don't match any
-    of the filterable statuses. Use `Refresh Network` to clear the filter and
-    see external nodes again.
+The filter you pick is kept when the graph reloads, and the VM and VLAN
+counters above the graph's top-left corner show how much of the experiment it
+is showing. When nothing matches, the graph area reads `There are no nodes
+matching your filter criteria!`; choose `All` to see every node again.
 
-The `Refresh Network` button will reset the filter, showing all nodes.
+The `Refresh Network` button reloads the graph data from the server, showing a
+spinner while it does. It keeps the filter you picked.
 
-The `Manual Refresh` button will request the latest server-side SoH data and
-update the three tabs.
+The `Run SOH` button triggers a new SoH run. It is only shown to roles that
+may trigger apps for the experiment, and while a run cannot be triggered it is
+replaced by a disabled button that says why: `Loading…`, `Exp Not Running`,
+`SOH Is Initializing`, `SOH Is Running` or `SOH Not Initialized`. To bring in
+the latest server-side SoH data without running the checks again, use the
+`Refresh Network` button or the refresh control in the header.
 
 Hovering over a node in the graph will cause it to expand to show what operating
 system the node is running. An orange border around a node is indicative of the
@@ -165,17 +184,17 @@ processes are missing, or the node cannot reach other nodes on the network).
 Other virtual systems will also be represented accordingly (e.g., a printer or
 firewall).
 
-![screenshot](images/linux.png){: width=800 .center}
+![Graph node hovered to show its Linux server icon and name, ringed in orange because a check failed.](images/linux.png){: width=800 .center}
 
 Clicking on the node with an orange border will produce a details modal with the
 current error reporting.
 
-![screenshot](images/soh_log_details.png){: width=800 .center}
+![server VM Details dialog reporting a CPU load of 0.26 and a listener on port 465 that is not listening.](images/soh_log_details.png){: width=800 .center}
 
 If there are no errors to report and command and control is enabled, the details
 modal will only show the current CPU load.
 
-![screenshot](images/soh_details.png){: width=800 .center}
+![client2 VM Details dialog reporting only a CPU load of 0.18.](images/soh_details.png){: width=800 .center}
 
 Note the green button in the lower right corner of the modal; this will provide
 access to the VNC for any running VM. When the VM is not running, access to the
@@ -183,16 +202,86 @@ VNC will be disabled. Finally, if there is no SoH information to report on a
 given VM, it will be noted in the details modal. The following screenshot is an
 example of no SoH information with the VNC button disabled.
 
-![screenshot](images/soh_no_details.png){: width=800 .center}
+![VM Details dialog saying there is no state of health data available for the VM.](images/soh_no_details.png){: width=800 .center}
+
+## Graph Layouts
+
+The `Layout` picker in the bar above the graph decides how the nodes are
+arranged. The hint for the layout you have picked is shown beside the picker,
+and `Computing layout…` appears while a layout is being worked out.
+
+![Layout picker with the Force, Radial, Layered, VLANs and ELK buttons, Force selected as the default physics simulation.](images/soh_layout_picker.png){: width=800 .center}
+
+| Layout | What it draws |
+|---|---|
+| `Force` | `Physics simulation (default)`: nodes repel each other and their links pull them together, so the graph settles into a shape |
+| `Radial tree` | `Rings out from the core router`: the most central router or firewall in the middle, everything else in rings by hop distance |
+| `Layered` | `Top-down tiers (dagre)`: the core on top, VLANs under their routers, hosts below, with the hosts that only sit on one VLAN packed into a block under it |
+| `VLAN groups` | `Hosts boxed by VLAN (cola.js)`: a labeled box per VLAN around the hosts on it |
+| `ELK layered` | `Top-down tiers with host blocks (ELK)`: tiers like `Layered`, arranged by the ELK engine |
+
+![State of Health graph in the Layered layout, with the router at the top and VLAN segments grouping their VMs in tiers below.](images/soh_layout_layered.png){: width=800 .center}
+
+`VLAN groups` is disabled on graphs of more than 300 nodes; its tooltip gives
+the node count. If it is the saved layout on such a graph, the graph is drawn
+with `Force` and a notice says why.
+
+Each layout's library is downloaded the first time you pick that layout. Your
+choice is remembered in the browser and
+survives filter changes, reloads and later visits. If a layout fails to load
+or to compute, the graph falls back to `Force` and an error notification names
+the layout that failed.
+
+Everything else about the graph works the same in every layout: hovering a node
+expands it to its OS icon, clicking it opens the details modal, nodes keep
+their status colors, orange SoH error borders and any custom node style, and
+VMs are recolored as they start and stop.
+
+The `Fit` button zooms the whole graph into view. The graph is sized to the
+room left in the window, so the page needs no scrolling, and it refits itself
+when the window is resized — unless you have zoomed or panned it, in which
+case it is left where you put it until you press `Fit` again.
+
+## Downloading the Graph
+
+The `Download` menu beside the `Fit` button saves the graph as drawn, in one of
+three formats.
+
+![Graph Download menu offering PNG, SVG and GEXF (for Gephi) files.](images/soh_download_menu.png){: width=800 .center}
+
+| Format | Menu hint | What you get |
+|---|---|---|
+| `PNG` | `Image of the graph, 2× size` | A bitmap rendered at twice the drawing's size, reduced only if it would exceed what the browser can draw |
+| `SVG` | `Vector image, scales cleanly` | A standalone vector image that can be scaled or edited |
+| `GEXF` | `Graph with VM and SOH data for Gephi` | A GEXF 1.3 graph file for [Gephi](https://gephi.org/) and Gephi Lite |
+
+The PNG and the SVG keep the zoom level the graph is at and are sized so the
+whole graph fits, so nothing is cut off. Both carry a title naming the
+experiment, a line giving the VM and VLAN counts, the filter, the layout and
+the date, and the legend beneath the graph. The OS and VLAN icons are embedded,
+so the file stands on its own.
+
+The GEXF file holds each VM and VLAN node with typed attributes (status, OS
+type, VM state, host, addresses, resources, labels and notes, and SoH check
+counts and failures), its color, shape, size and position, and an edge for each
+interface. When [network volume](#network-volume) data is available, traffic
+flows are added as weighted directed edges, with a node for any endpoint that is
+not one of the experiment's VMs. VM details (host, addresses, CPUs, memory,
+disk) are included only if your role may list the experiment's VMs; the file's
+description says when they are missing.
+
+Downloads are named `<experiment>-soh-<layout>-<timestamp>.<ext>`, where
+`<layout>` is the layout's short name (`force`, `radial`, `layered`, `groups`
+or `elk`) and `<timestamp>` is the local time as `yyyymmdd-hhmmss`.
 
 ## External Devices
 
 Experiments that include hardware-in-the-loop or other devices not deployed by
 minimega can still represent them in the topology graph by adding them to the
 topology as [external nodes](configuration.md#external-nodes) (`external:
-true`). External nodes show up in the graph with the `External` status color
-(see the legend above) and, when hovered, still show which OS type/icon was
-configured for them.
+true`). External nodes show up in the graph with the `External / HIL` status
+color (see the legend above) and, when hovered, still show which OS type/icon
+was configured for them.
 
 Because external nodes don't run `miniccc`, they're excluded from the
 automated command-and-control-based checks described in [Command and
@@ -231,13 +320,13 @@ traffic between nodes.
 This is an example chord graph of a Protonuke server with two clients; one of
 which is requesting content at a delayed interval (therefore less traffic flow).
 
-![screenshot](images/chord.png){: width=800 .center}
+![Network Volume chord diagram for the icmp-test experiment, where 192.168.100.100 carries almost all of the traffic.](images/chord.png){: width=800 .center}
 
 If you hover over traffic flow, a tooltip will appear providing additional
 details. (In this screenshot, the mouse is hovering over the traffic for IP
 `192.168.100.1`.)
 
-![screenshot](images/chord_tooltip.png){: width=800 .center}
+![Chord diagram tooltip giving the traffic volume in each direction between 192.168.100.1 and 192.168.100.100.](images/chord_tooltip.png){: width=800 .center}
 
 ## Configuration Options
 
@@ -265,7 +354,7 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   wait before initiating checks at the experiment starts. This can be useful
   when some processes are not healthy immediately at experiment start. This
   only delays SoH when it first runs at the experiment start. It will not delay
-  SoH when run manually later by clicking the 'Run SoH' button in the UI or
+  SoH when run manually later by clicking the `Run SOH` button in the UI or
   running `phenix exp trigger running` (or the deprecated `trigger-running`
   command) from the command line. The default is no delay.
 
