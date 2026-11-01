@@ -35,6 +35,7 @@ All notable changes to this project will be documented in this file.
 - **minimega Console**: The web UI console stays open across page changes, reloads and tabs, and shows its recent output again. It ends on logout or 15 seconds after its last tab closes.
 - **Web UI Page Cache**: The web UI shows the data that each page loaded last while it loads new data. The header shows the age of the page data, with a button that loads the data again.
 - **Annotations**: Added `--annotation` and `--node-annotation` to `phenix experiment create`, and `annotations` and `node_annotations` to `POST /api/v1/experiments`, for experiment and VM annotations. `GET` and `PATCH /api/v1/experiments/{exp}/vms/{name}` read and replace the annotations of one VM.
+- **VM Details and VM Table**: Added a VM details card and a VM table to the web UI. The table has row actions, host and label filters, and bulk actions that run as background jobs.
 
 ### Changed
 

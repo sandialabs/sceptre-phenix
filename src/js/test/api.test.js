@@ -25,6 +25,7 @@ import * as settingsApi from '@/api/settings.js';
 import * as topologiesApi from '@/api/topologies.js';
 import * as usersApi from '@/api/users.js';
 import * as vmsApi from '@/api/vms.js';
+import { useJobStore } from '@/utils/jobs.js';
 
 // what a test passes through untouched: a form, a progress callback, a signal
 const form = { form: true };
@@ -461,6 +462,18 @@ const requests = [
     'get',
     ['vms', fetchConfig],
   ],
+  [
+    'updateVms',
+    () => vmsApi.updateVms('exp', [{ name: 'a', dnb: true }]),
+    'patch',
+    ['experiments/exp/vms', { vms: [{ name: 'a', dnb: true }], total: 1 }],
+  ],
+  [
+    'startVmActionsJob',
+    () => vmsApi.startVmActionsJob('exp', 'restart', ['a', 'b']),
+    'post',
+    ['experiments/exp/vms/actions', { action: 'restart', vms: ['a', 'b'] }],
+  ],
   ['getVm', () => vmsApi.getVm('exp', 'a'), 'get', ['experiments/exp/vms/a']],
   [
     'updateVm',
@@ -716,6 +729,11 @@ describe('the API modules', () => {
     const failure = new Error('refused');
     axios.post.mockRejectedValue(failure);
     await expect(authApi.logOut()).rejects.toBe(failure);
+  });
+
+  it('returns the started job from the job-starting functions', async () => {
+    const job = await vmsApi.startVmActionsJob('exp', 'pause', ['a']);
+    expect(job).toBe(useJobStore().jobs.job1);
   });
 
   it('every exported function has a request case', () => {

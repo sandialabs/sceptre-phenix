@@ -1359,6 +1359,7 @@
           hasModalCard: true,
           props: {
             vmName: vm,
+            experiment: this.$route.params.id,
             tags: tags,
           },
           events: {

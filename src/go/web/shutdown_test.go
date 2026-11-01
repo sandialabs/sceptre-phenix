@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -484,6 +485,64 @@ func TestShutdownClosesXNetWebSocketsGoingAway(t *testing.T) {
 	want := &websocket.CloseError{Code: websocket.CloseGoingAway, Text: ""}
 	if diff := cmp.Diff(want, readCloseError(t, conn)); diff != "" {
 		t.Errorf("x/net websocket close at shutdown mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// Once the server is shutting down, a new broker websocket, a console and a
+// job are refused with 503, Retry-After and the same message in a JSON Error.
+//
+//nolint:paralleltest // stops the server's lifecycle and swaps the consoles and jobs
+func TestRefusedWhileStopping(t *testing.T) {
+	registry := useTestConsoles(t, time.Minute)
+	api := consoleAPI(t, "alice", consoleRole())
+	jobs := useJobs(t)
+
+	lifecycle.Start()
+	t.Cleanup(lifecycle.Start)
+
+	lifecycle.Stop()
+
+	type answer struct {
+		Status     int
+		RetryAfter string
+		Body       string
+	}
+
+	var (
+		want     = answer{http.StatusServiceUnavailable, lifecycle.RetryAfter, lifecycle.Unavailable}
+		answerOf = func(status int, header http.Header, body string) answer {
+			return answer{status, header.Get("Retry-After"), errorMessage(t, status, body)}
+		}
+	)
+
+	resp := do(t, http.MethodPost, api+"/console", "")
+	if diff := cmp.Diff(want, answerOf(resp.StatusCode, resp.Header, readBody(t, resp))); diff != "" {
+		t.Errorf("POST /console while stopping mismatch (-want +got):\n%s", diff)
+	}
+
+	ws := httptest.NewRecorder()
+	broker.ServeWS(ws, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ws", nil))
+
+	if diff := cmp.Diff(want, answerOf(ws.Code, ws.Header(), ws.Body.String())); diff != "" {
+		t.Errorf("GET /ws while stopping mismatch (-want +got):\n%s", diff)
+	}
+
+	jobs.ShutdownContext(context.Background(), 0)
+
+	started := httptest.NewRecorder()
+	serveStartJob(started, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/jobs", nil), job.Spec{
+		Kind: "test", Run: func(context.Context, *job.Run) error { return nil },
+	})
+
+	if diff := cmp.Diff(want, answerOf(started.Code, started.Header(), started.Body.String())); diff != "" {
+		t.Errorf("starting a job while stopping mismatch (-want +got):\n%s", diff)
+	}
+
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+
+	if n := len(registry.sessions); n != 0 {
+		t.Errorf("consoles after a refused start = %d, want none", n)
 	}
 }
 
