@@ -173,7 +173,7 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 
 	plog.Info(plog.TypeSystem, "starting websockets broker")
 
-	go broker.Start()
+	go broker.Start(background)
 
 	plog.Info(plog.TypeSystem, "starting background job registry")
 
@@ -298,6 +298,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 
 	if o.featured(FeatureTunnelerDownload) {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
+		router.Handle("/downloads/tunneler", weberror.ErrorHandler(forward.ListTunnelers)).Methods("GET")
 		router.Handle("/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)).Methods("GET", "HEAD")
 	}
 

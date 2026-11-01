@@ -59,6 +59,7 @@ All notable changes to this project will be documented in this file.
 - **Settings (breaking)**: A `PHENIX_*` environment variable now overrides the config file, and `phenix settings set` and `unset` change the YAML config file that phēnix read. A running `phenix ui` logs a warning that names each changed setting that takes effect only after a restart.
 - **VM Lists**: phēnix reads the VMs of an experiment with three minimega commands, and requests for the same data at the same time share one minimega answer. phēnix keeps cluster host and experiment file lists for 5 seconds, and VM list and experiment responses of a running experiment have an `X-Phenix-Observed-At` header.
 - **API Conventions (breaking)**: `/api/v1/logout` and the VM `reset`, `restart` and `shutdown` routes accept only `POST`. The experiment, VM and disk lists accept `pageNum` and `perPage`, and the paged lists return `400` for a page that is not a whole number of at least 1.
+- **Websocket Broker (breaking)**: The websocket broker encodes each message once, and experiment lists and websocket VM lists do not include screenshots. The broker sends log lines only to Logs pages that subscribe and whose role can get logs.
 
 ### Removed
 

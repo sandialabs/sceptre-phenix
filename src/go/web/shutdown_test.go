@@ -22,14 +22,16 @@ import (
 	"phenix/api/job"
 	"phenix/util/plog"
 	"phenix/util/polltest"
+	"phenix/web/broker"
 	"phenix/web/lifecycle"
+	"phenix/web/middleware"
 )
 
 // shutdownSlack is how long past its grace period shutting down may take.
 const shutdownSlack = time.Second
 
-// testServer is a uiServer a test runs on 127.0.0.1, with a job registry of
-// the test's own.
+// testServer is a uiServer a test runs on 127.0.0.1, with the broker running
+// and a job registry of the test's own.
 type testServer struct {
 	url  string
 	jobs *job.Registry
@@ -49,11 +51,20 @@ func runTestServer(t *testing.T, grace time.Duration, handler http.Handler) *tes
 		t.Fatalf("listening on 127.0.0.1: %v", err)
 	}
 
+	background, stopBackground := context.WithCancel(context.Background())
+	brokerStopped := make(chan struct{})
+
+	go func() {
+		defer close(brokerStopped)
+
+		broker.Start(background)
+	}()
+
 	server := &uiServer{
 		grace:          grace,
 		servers:        []servedHTTP{{name: "HTTP server", srv: newHTTPServer("", handler), ln: ln, serve: (*http.Server).Serve}},
 		socket:         "",
-		stopBackground: func() {},
+		stopBackground: stopBackground,
 	}
 
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -64,6 +75,8 @@ func runTestServer(t *testing.T, grace time.Duration, handler http.Handler) *tes
 
 	t.Cleanup(func() {
 		s.stop()
+		stopBackground()
+		<-brokerStopped
 		lifecycle.Start()
 	})
 
@@ -139,7 +152,7 @@ func wantLogged(t *testing.T, logs map[string][]string, level, msg string) {
 // A request in flight when shutdown begins, and done within the grace period,
 // gets its whole response, and the shutdown is logged as complete.
 //
-//nolint:paralleltest // swaps the job registry
+//nolint:paralleltest // runs the broker and swaps the job registry
 func TestShutdownFinishesRequestsInFlight(t *testing.T) {
 	const (
 		grace = 2 * time.Second
@@ -199,7 +212,7 @@ func TestShutdownFinishesRequestsInFlight(t *testing.T) {
 // A request still running at the end of the grace period is cut off, run
 // returns soon after, and the shutdown says what it cut off.
 //
-//nolint:paralleltest // swaps the job registry
+//nolint:paralleltest // runs the broker and swaps the job registry
 func TestShutdownCutsOffRequestsPastTheGracePeriod(t *testing.T) {
 	const grace = 300 * time.Millisecond
 
@@ -247,9 +260,53 @@ func TestShutdownCutsOffRequestsPastTheGracePeriod(t *testing.T) {
 	wantLogged(t, logs(), "WARN", "shutdown grace period ended with work still running")
 }
 
+// Every broker websocket client is closed with close code 1001 and the
+// shutdown reason, which the UI tells apart from a network failure.
+//
+//nolint:paralleltest // runs the broker and swaps the job registry
+func TestShutdownClosesWebSocketsGoingAway(t *testing.T) {
+	s := runTestServer(t, 2*time.Second, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), middleware.ContextKeyRole, testRole("experiments", "list"))
+		broker.ServeWS(w, r.WithContext(ctx))
+	}))
+
+	conn, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(s.url, "http"), nil)
+	if err != nil {
+		t.Fatalf("dialing the broker: %v", err)
+	}
+
+	resp.Body.Close()
+	t.Cleanup(func() { conn.Close() })
+
+	polltest.Until(t, "the broker has the client", func() bool { return broker.CurrentStats().Clients == 1 })
+
+	if _, err := s.stop(); err != nil {
+		t.Errorf("run() after SIGTERM = %v, want nil", err)
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+	var closed *websocket.CloseError
+
+	for {
+		if _, _, err = conn.ReadMessage(); err != nil {
+			break
+		}
+	}
+
+	if !errors.As(err, &closed) {
+		t.Fatalf("reading the broker websocket after shutdown = %v, want a close frame", err)
+	}
+
+	want := &websocket.CloseError{Code: websocket.CloseGoingAway, Text: "server shutting down"}
+	if diff := cmp.Diff(want, closed); diff != "" {
+		t.Errorf("broker websocket close at shutdown mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // A grace period of 0 waits for nothing: running jobs are canceled at once.
 //
-//nolint:paralleltest // swaps the job registry
+//nolint:paralleltest // runs the broker and swaps the job registry
 func TestShutdownWithNoGracePeriod(t *testing.T) {
 	s := runTestServer(t, 0, http.NotFoundHandler())
 
@@ -330,7 +387,7 @@ func readCloseError(t *testing.T, conn *websocket.Conn) *websocket.CloseError {
 // A golang.org/x/net/websocket socket, as the console, SCORCH, VNC and port
 // forwards use, is closed with close code 1001 and no reason.
 //
-//nolint:paralleltest // swaps the job registry
+//nolint:paralleltest // runs the broker and swaps the job registry
 func TestShutdownClosesXNetWebSocketsGoingAway(t *testing.T) {
 	s := runTestServer(t, 2*time.Second, xwebsocket.Handler(func(ws *xwebsocket.Conn) {
 		defer lifecycle.TrackConn("test", ws)()

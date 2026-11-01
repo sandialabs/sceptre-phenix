@@ -14,6 +14,7 @@ import (
 	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web/audit"
+	"phenix/web/broker"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -81,8 +82,8 @@ var (
 	}
 )
 
-// ConfigureJobs points the job registry at the server: it logs job ends, and
-// keeps artifacts in <PhenixBase>/jobs, where it
+// ConfigureJobs points the job registry at the server: it tells websocket
+// clients of job changes, and keeps artifacts in <PhenixBase>/jobs, where it
 // first deletes the job folders a previous run left.
 func ConfigureJobs() {
 	dir := filepath.Join(common.PhenixBase, "jobs")
@@ -99,8 +100,9 @@ func ConfigureJobs() {
 	}
 }
 
-// notifyJob logs the end of a job when a change to it is its finishing.
+// notifyJob tells websocket clients of a change to a job, and logs its end.
 func notifyJob(j job.Job, removed bool) {
+	broker.PublishJob(j, removed)
 	logJobEnd(j, removed)
 }
 

@@ -13,7 +13,6 @@ import (
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
-	ifaces "phenix/types/interfaces"
 	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
@@ -63,48 +62,37 @@ func GetVMs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
+	vmQuery := util.VMQuery{ //nolint:exhaustruct // this route does not filter
+		ShowDNB: true,
+		SortCol: sortColumn(sortCol, sortDir),
+		SortAsc: sortDir == sortAsc,
+		Page:    page,
+		Size:    pageSize,
+	}
+
 	vms, observed := vm.ListForObserved(ctx, exp)
+	allowed, total := util.SelectVMs(expName, vms, exp.Spec.Topology(), vmQuery, role)
 
-	allowed := mm.VMs{}
-
-	for _, vm := range vms {
-		if role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
-			if vm.Running && size != "" {
-				screenshot, err := util.GetScreenshot(expName, vm.Name, size)
-				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-				} else {
-					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-						screenshot,
-					)
-				}
-			}
-
-			allowed = append(allowed, vm)
-		}
+	if size != "" {
+		addVMScreenshots(ctx, expName, allowed, size)
 	}
 
-	if col := sortColumn(sortCol, sortDir); col != "" {
-		allowed.SortBy(col, sortDir == sortAsc)
+	if requestGone(r) {
+		return nil
 	}
 
-	total := len(allowed)
-	allowed = util.Page(allowed, page, pageSize)
-
-	resp := &proto.VMList{
-		Total: uint32(total), //nolint:gosec // G115 counts fit in a uint32
-		Vms:   make([]*proto.VM, len(allowed)),
-	}
-	for i, v := range allowed {
-		resp.Vms[i] = util.VMToProtobuf(expName, v, exp.Spec.Topology())
-	}
+	resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
+	util.SetVMListObservation(resp, observed)
+	resp.Labels = util.VMLabelsToProtobuf(util.VMLabels(expName, vms, vmQuery.ShowDNB, role))
+	resp.Hosts = util.VMHosts(expName, vms, vmQuery.ShowDNB, role)
+	resp.Running = util.CountRunning(expName, vms, vmQuery.ShowDNB, role)
+	freshness.SetObserved(w, observed)
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	freshness.SetObserved(w, observed)
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
@@ -145,12 +133,20 @@ func GetVM(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	vm, err := vm.GetFor(ctx, exp, name)
+	if requestCanceled(r, err) {
+		return nil
+	}
+
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	if vm.Running && size != "" {
-		screenshot, err := util.GetScreenshot(expName, name, size)
+		screenshot, err := util.GetScreenshotContext(ctx, expName, name, size)
+		if requestCanceled(r, err) {
+			return nil
+		}
+
 		if err != nil {
 			plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 		} else {
@@ -671,13 +667,7 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("vms", "list") {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"listing vms not allowed",
-			"user",
-			user,
-		)
+		plog.Warn(plog.TypeSecurity, "listing vms not allowed", "user", middleware.UserFromContext(ctx))
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -690,12 +680,17 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 	exps, err := experiment.List()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiments", "err", err)
+
+		// an empty list would read as no running VMs
+		if len(exps) == 0 {
+			return weberror.New(http.StatusInternalServerError, "unable to read experiments from the store")
+		}
 	}
 
 	type runningVM struct {
-		exp  string
-		vm   mm.VM
-		topo ifaces.TopologySpec
+		exp   string
+		vm    mm.VM
+		nodes util.NodeIndex
 	}
 
 	var (
@@ -712,20 +707,13 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 
 		vms, obs := vm.ListForObserved(ctx, &exp)
 		observed = observed.Older(obs)
+		nodes := util.IndexTopology(exp.Spec.Topology())
 
 		for _, vm := range vms {
-			id := exp.Metadata.Name + "/" + vm.Name
-
-			if !role.Allowed("vms", "list", id) {
-				continue
+			// We only care about running VMs.
+			if vm.Running && role.Allowed("vms", "list", exp.Metadata.Name+"/"+vm.Name) {
+				running = append(running, runningVM{exp: exp.Metadata.Name, vm: vm, nodes: nodes})
 			}
-
-			if !vm.Running {
-				// We only care about running VMs.
-				continue
-			}
-
-			running = append(running, runningVM{exp: exp.Metadata.Name, vm: vm, topo: exp.Spec.Topology()})
 		}
 	}
 
@@ -735,7 +723,11 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 
 	for _, v := range running {
 		if size != "" {
-			screenshot, err := util.GetScreenshot(v.exp, v.vm.Name, size)
+			screenshot, err := util.GetScreenshotContext(ctx, v.exp, v.vm.Name, size)
+			if requestGone(r) {
+				return nil
+			}
+
 			if err != nil {
 				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 			} else {
@@ -743,17 +735,25 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 
-		allowed = append(allowed, util.VMToProtobuf(v.exp, v.vm, v.topo))
+		allowed = append(allowed, util.VMToProtobufIndexed(v.exp, v.vm, v.nodes))
 	}
 
-	resp := &proto.VMList{Total: uint32(total), Vms: allowed} //nolint:gosec // G115 counts fit in a uint32
+	if requestGone(r) {
+		return nil
+	}
+
+	resp := &proto.VMList{ //nolint:exhaustruct // partial initialization
+		Total: uint32(total), //nolint:gosec // G115 counts fit in a uint32
+		Vms:   allowed,
+	}
+	util.SetVMListObservation(resp, observed)
+	freshness.SetObserved(w, observed)
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	freshness.SetObserved(w, observed)
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 

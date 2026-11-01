@@ -13,7 +13,6 @@ import (
 
 	"phenix/util/plog"
 	"phenix/web/broker"
-	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -189,9 +188,5 @@ func PublishPhenixLog(ts time.Time, level, logtype, log string) {
 
 	marshalled, _ := json.Marshal(body)
 
-	broker.Broadcast(
-		nil,
-		bt.NewResource("log", "phenix", "update"),
-		marshalled,
-	)
+	broker.BroadcastLog(marshalled)
 }
