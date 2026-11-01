@@ -25,10 +25,10 @@ import (
 )
 
 const maxFileServerUploadMemory = 32 << 20
-const fileServerTokenCookie = "phenix_file_server_token"
+const fileServerTokenCookie = "phenix_file_server_token" //nolint:gosec // G101 a cookie name, not a credential
 
 const fileServerIndexHTML = `<!doctype html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -144,7 +144,7 @@ const fileServerIndexHTML = `<!doctype html>
 `
 
 const fileServerLoginHTML = `<!doctype html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

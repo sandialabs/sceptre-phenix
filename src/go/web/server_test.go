@@ -10,6 +10,68 @@ import (
 	"github.com/gorilla/mux"
 )
 
+func TestRouterServesTheUI(t *testing.T) {
+	server := serveAs(t, "alice", testRole("options", "list")).URL
+
+	tests := map[string]struct {
+		path         string
+		wantStatus   int
+		wantEncoding string
+		wantCache    string
+		wantBody     string
+	}{
+		"hashed asset": {
+			path: "/assets/index-abc123.js", wantStatus: http.StatusOK,
+			wantEncoding: "gzip", wantCache: immutableCacheControl, wantBody: "console.log('phenix');",
+		},
+		"docs": {
+			path: "/docs/", wantStatus: http.StatusOK, wantEncoding: "gzip", wantBody: "phenix docs",
+		},
+		// index.html names the build's hashed assets, so it is revalidated
+		"page of the UI": {
+			path: "/experiments/test-experiment", wantStatus: http.StatusOK,
+			wantCache: "no-cache", wantBody: "<title>phenix</title>",
+		},
+		// not the UI's page, which an API client would take for data
+		"unknown API route": {
+			path: "/api/v1/no-such-route", wantStatus: http.StatusNotFound, wantBody: "no API route matches this request",
+		},
+		// API data is revalidated: the freshness middleware marks it
+		"API": {
+			path: "/api/v1/options", wantStatus: http.StatusOK,
+			wantEncoding: "gzip", wantCache: "no-cache, private", wantBody: `"deploy-mode"`,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			resp := do(t, http.MethodGet, server+tt.path, "", "Accept-Encoding", "gzip")
+
+			if resp.StatusCode != tt.wantStatus {
+				t.Fatalf("GET %s = %d, want %d", tt.path, resp.StatusCode, tt.wantStatus)
+			}
+
+			if got := resp.Header.Get("Content-Encoding"); got != tt.wantEncoding {
+				t.Errorf("GET %s Content-Encoding = %q, want %q", tt.path, got, tt.wantEncoding)
+			}
+
+			if got := resp.Header.Get("Cache-Control"); got != tt.wantCache {
+				t.Errorf("GET %s Cache-Control = %q, want %q", tt.path, got, tt.wantCache)
+			}
+
+			// a route's responses, not the router's own 404
+			if strings.HasPrefix(tt.path, "/api/") && tt.wantStatus == http.StatusOK &&
+				resp.Header.Get("X-Phenix-Seq") == "" {
+				t.Errorf("GET %s has no X-Phenix-Seq header, want one", tt.path)
+			}
+
+			if body := readBody(t, resp); !strings.Contains(body, tt.wantBody) {
+				t.Errorf("GET %s = %q, want it to contain %q", tt.path, body, tt.wantBody)
+			}
+		})
+	}
+}
+
 // spaIndexBody stands in for the SPA index the router level NotFoundHandler serves in production.
 const spaIndexBody = "<!doctype html><title>phenix</title>"
 

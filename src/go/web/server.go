@@ -150,7 +150,7 @@ func ConfigureUsers(users []string) error {
 //nolint:funlen // server startup
 func Start(opts ...ServerOption) error {
 	o = newServerOptions(opts...)
-	fileServerEndpoint, err := normalizeFileServerEndpoint(o.fileServerEndpoint)
+	fileServerEndpoint, err := NormalizeFileServerEndpoint(o.fileServerEndpoint)
 	if err != nil {
 		return fmt.Errorf("invalid ui.file-server-endpoint: %w", err)
 	}
@@ -276,7 +276,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 
 	if o.featured("tunneler-download") {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
-		router.Handle("/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)).Methods("GET")
+		router.Handle("/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)).Methods("GET", "HEAD")
 	}
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
@@ -285,22 +285,22 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	plog.Info(plog.TypeSystem, "setting up assets")
 
 	router.PathPrefix("/docs/").Handler(
-		http.FileServer(assets),
+		StaticHandler(assets, false),
 	)
 
 	router.PathPrefix("/novnc/").Handler(
-		http.FileServer(assets),
+		StaticHandler(assets, false),
 	)
 
 	router.PathPrefix("/xterm.js/").Handler(
-		http.FileServer(assets),
+		StaticHandler(assets, false),
 	)
 
 	router.PathPrefix("/assets/").Handler(
-		http.FileServer(assets),
+		StaticHandler(assets, true),
 	)
 
-	router.Handle("/favicon.ico", http.FileServer(assets))
+	router.Handle("/favicon.ico", StaticHandler(assets, false))
 
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		plog.Warn(
@@ -311,6 +311,10 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 			"method",
 			r.Method,
 		)
+
+		// index.html names the current build's hashed chunks, so browsers must
+		// revalidate it rather than reuse a stale copy
+		w.Header().Set("Cache-Control", "no-cache")
 
 		if o.unbundled {
 			http.ServeFile(w, r, "web/public/index.html")
@@ -463,7 +467,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 			Methods("GET", "OPTIONS").
 			Queries("path", "{path}")
 		api.Handle("/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)).
-			Methods("GET", "OPTIONS").
+			Methods("GET", "HEAD", "OPTIONS").
 			Queries("path", "{path}")
 		api.Handle("/experiments/{exp}/vms/{name}/files/upload", weberror.ErrorHandler(UploadMountFile)).
 			Methods("PUT", "OPTIONS").
@@ -492,7 +496,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 		Queries("disk", "{disk}", "new", "{new}")
 	api.Handle("/disks", weberror.ErrorHandler(UploadDisk)).Methods("POST", "OPTIONS")
 	api.Handle("/disks/download", weberror.ErrorHandler(DownloadDisk)).
-		Methods("GET", "OPTIONS").
+		Methods("GET", "HEAD", "OPTIONS").
 		Queries("disk", "{disk}")
 
 	api.Handle("/vms", weberror.ErrorHandler(GetAllVMs)).Methods("GET", "OPTIONS")
@@ -524,6 +528,10 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/settings/timeout", weberror.ErrorHandler(GetTimeoutSettings)).Methods("GET", "OPTIONS")
 
 	addRoutesToRouter(api, socketRoutes()...)
+
+	// outermost, so the other middleware (full logging in particular) sees the
+	// uncompressed response
+	api.Use(CompressResponses)
 
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
 	// after Auth, so a refused request takes no sequence number

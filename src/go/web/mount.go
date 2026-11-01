@@ -546,30 +546,30 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath))
 	}
 
-	fileInfo, err := os.Stat(combinedPath)
+	served, err := util.ServeDownload(w, r, util.Download{
+		Path:        combinedPath,
+		Name:        filepath.Base(combinedPath),
+		ContentType: "application/octet-stream",
+		MaxSize:     0,
+	})
 	if err != nil {
-		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
+		switch {
+		case errors.Is(err, util.ErrNotRegular):
+			return weberror.New(http.StatusBadRequest, "Cannot download directory: "+combinedPath)
+		case errors.Is(err, fs.ErrNotExist):
+			return weberror.New(http.StatusNotFound, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()))
+		default:
+			plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
 
-		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()))
+			return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()))
+		}
 	}
 
-	if fileInfo.IsDir() {
-		return weberror.New(http.StatusBadRequest, "Can't download directory: "+combinedPath)
+	// once per download, not per resumed range or HEAD
+	if served.Started {
+		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+		plog.Info(plog.TypeAction, "download for file", "file", combinedPath, "user", user)
 	}
-
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"download for file",
-		"file",
-		combinedPath,
-		"user",
-		user,
-	)
-
-	w.Header().Set("Content-Disposition", util.Attachment(fileInfo.Name()))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeFile(w, r, combinedPath)
 
 	return nil
 }
