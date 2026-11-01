@@ -87,6 +87,7 @@ All notable changes to this project will be documented in this file.
   - **Scenario Membership**: Adding a topology to a scenario now matches names exactly rather than by substring, and no longer creates duplicate or empty entries.
   - **Clipped Dialogs and Panels**: Dialog buttons rendered outside their dialogs, dialog content rendered underneath pinned button rows, and the format panel cut off its buttons, option rows and tab title. The About dialog also drew a redundant corner close image next to its own Close button.
 - **minimega Commands**: phēnix runs the VM config and `cc filter` commands of each minimega namespace one at a time, and flushes only the VM that it kills. It rejects VLAN, bridge and tag values that minimega cannot read as one argument, and port forward changes do not block other requests while minimega answers.
+- **Experiment Lifecycle**: When a stop cannot kill the VMs, the experiment stays running unless you use `--force` or `?force=true`. A restarted `phenix ui` resumes incomplete experiment starts.
 
 ### Fixed
 
