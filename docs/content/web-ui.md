@@ -62,9 +62,9 @@ Lists and live updates are ordered by the server, not by your browser's clock:
 a list the server read before an update never undoes it, so a VM stopped while
 the VM table was loading stays stopped.
 
-After you sign in, the UI loads the Configs, Users, Logs, Hosts and Settings
-tabs in the background, two requests at a time, so they open with data already
-in place. The VM tiles are not preloaded.
+After you sign in, the UI loads the Configs, Users, Logs, Hosts, State of
+Health and Settings tabs in the background, two requests at a time, so they
+open with data already in place. The VM tiles are not preloaded.
 
 A page's load finishes even if you leave before it comes back, for up to two
 minutes, so the data is ready when you return; a request nothing is waiting on

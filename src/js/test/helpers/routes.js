@@ -14,6 +14,7 @@ export const ROUTES = [
   ['/console', 'console'],
   ['/scorch', 'scorch'],
   ['/scorch/:id', 'scorchruns'],
+  ['/soh', 'sohoverview'],
   ['/soh/:id', 'soh'],
   ['/settings', 'settings'],
   ['/tunneler', 'tunneler'],

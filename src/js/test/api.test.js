@@ -335,6 +335,12 @@ const requests = [
     ['experiments', { name: 'exp' }, { timeout: 0 }],
   ],
   [
+    'listSoh',
+    () => experimentsApi.listSoh(fetchConfig),
+    'get',
+    ['soh', fetchConfig],
+  ],
+  [
     'getExperiment',
     () => experimentsApi.getExperiment('exp', { params: { pageNum: 2 } }),
     'get',
