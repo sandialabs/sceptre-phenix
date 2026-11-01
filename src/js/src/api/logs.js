@@ -9,3 +9,8 @@ export function listLogs(start, end, config) {
     (end === null ? '' : `&end=${end.toISOString()}`);
   return axiosInstance.get(query, config);
 }
+
+// GET /logs/files: the log files to download, and whether each can be
+export function listLogFiles(signal) {
+  return axiosInstance.get('logs/files', { signal });
+}

@@ -44,6 +44,7 @@ All notable changes to this project will be documented in this file.
 - **Experiments Page**: The Experiments page shows totals, Start and Stop buttons, links to topology and scenario configs, and a toolbar that starts, stops or deletes selected experiments. The create card can start the experiment after it creates it and can set experiment and VM annotations.
 - **Running Experiment Page**: The running experiment page uses the shared VM table and VM details card, and shows a summary card, an `Apps` box and netflow captures. It opens from the page cache and keeps its open tab and search in the URL.
 - **Admin Pages**: The Hosts, Users and Settings pages open from the page cache. The Tunneler page lists the tunneler builds that the server has, with a quick start.
+- **Log Files**: The Logs page shows each log level as a colored badge. The Logs page and the new `/api/v1/logs/files` routes download the phēnix and minimega log files.
 
 ### Changed
 
