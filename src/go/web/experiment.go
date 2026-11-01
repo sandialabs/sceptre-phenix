@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -16,6 +18,7 @@ import (
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
+	"phenix/store"
 	"phenix/types"
 	"phenix/util/common"
 	"phenix/util/freshness"
@@ -205,6 +208,9 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	// whether minimega is busy depends on every experiment, not just those listed
+	busy := anyExperimentLocked(experiments)
+
 	experiments = slices.DeleteFunc(experiments, func(exp types.Experiment) bool {
 		return !role.Allowed("experiments", "list", exp.Metadata.Name)
 	})
@@ -212,22 +218,14 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 	experiments = util.Page(experiments, page, pageSize)
 	allowed := make([]*proto.Experiment, 0, len(experiments))
 
-	// some experiments could not be read, so the list is incomplete
+	// when minimega was read for the VMs listed, and whether it answered
 	observed := freshness.Unobserved()
+
+	// some experiments could not be read, so the list is incomplete
 	observed.Stale = err != nil
 
 	for _, exp := range experiments {
-		// This will happen if another handler is currently acting on the
-		// experiment.
-		status := cache.IsExperimentLocked(exp.Metadata.Name)
-
-		if status == "" {
-			if exp.Running() {
-				status = cache.StatusStarted
-			} else {
-				status = cache.StatusStopped
-			}
-		}
+		status := cache.ExperimentStatus(exp.Metadata.Name, exp.Running())
 
 		if noVMs {
 			allowed = append(allowed, util.ExperimentSummaryToProtobuf(exp, status))
@@ -236,7 +234,8 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		// TODO: limit per-experiment VMs based on RBAC
-		vms := vm.ListFor(ctx, &exp)
+		vms, obs := listExperimentVMs(ctx, exp, busy)
+		observed = observed.Older(obs)
 
 		allowed = append(allowed, util.ExperimentToProtobuf(exp, status, vms))
 	}
@@ -282,6 +281,37 @@ func addVMScreenshots(ctx context.Context, expName string, vms []mm.VM, size str
 			screenshot,
 		)
 	}
+}
+
+// anyExperimentLocked reports whether a handler holds the lock of any of the
+// experiments, as while one starts or stops. Starting or stopping keeps
+// minimega busy for as long as it takes, so asking it about VMs meanwhile
+// would stall the experiment list until it finishes.
+func anyExperimentLocked(experiments []types.Experiment) bool {
+	for _, exp := range experiments {
+		if cache.IsExperimentLocked(exp.Metadata.Name) != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// listExperimentVMs lists the experiment's VMs, from its topology alone when
+// minimega is busy, and how minimega was read for them. A running
+// experiment's VMs listed from the topology are unknown, and stale.
+func listExperimentVMs(ctx context.Context, exp types.Experiment, busy bool) ([]mm.VM, freshness.Observation) {
+	if busy {
+		obs := freshness.Unobserved()
+
+		if exp.Running() {
+			obs.Known, obs.Stale = false, true
+		}
+
+		return vm.ListConfigured(exp), obs
+	}
+
+	return vm.ListForObserved(ctx, &exp)
 }
 
 // CreateExperiment - POST /experiments.
@@ -338,7 +368,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 		plog.Warn(
 			plog.TypeSystem,
 			fmt.Sprintf(
-				"error parsing experiment deploy mode ('%s') - using default of '%s'",
+				"error parsing experiment deploy mode ('%s'): using default of '%s'",
 				req.GetDeployMode(),
 				common.DeployMode,
 			),
@@ -382,7 +412,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiment", "exp", req.GetName(), "err", err)
 
-		return weberror.New(http.StatusInternalServerError, "")
+		return weberror.New(http.StatusInternalServerError, "unable to get experiment")
 	}
 
 	// broadcast to every client, so read even once this request's client left
@@ -430,30 +460,32 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	exp, err := experiment.Get(name)
 	if err != nil {
-		err := weberror.NewWebError(err, "unable to get experiment %s details", name)
+		status := http.StatusInternalServerError
+		if errors.Is(err, store.ErrNotExist) {
+			status = http.StatusNotFound
+		}
 
-		return err.SetStatus(http.StatusInternalServerError)
+		return weberror.NewWebError(err, "unable to get experiment %s details", name).SetStatus(status)
 	}
 
 	if exp.Running() {
-		err := weberror.NewWebError(err, "cannot update running experiment %s", name)
+		err := weberror.NewWebError(nil, "cannot update running experiment %s", name)
 
 		return err.SetStatus(http.StatusBadRequest)
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
+		err := weberror.NewWebError(err, "unable to read update request for experiment %s", name)
 
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
 	var vlans map[string]int
 
+	// a malformed body is the client's mistake
 	if err := json.Unmarshal(body, &vlans); err != nil {
-		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
-
-		return err.SetStatus(http.StatusInternalServerError)
+		return weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
 	}
 
 	aliases := exp.Spec.VLANs().Aliases()
@@ -477,6 +509,8 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	audit.Success(r, audit.ExperimentUpdate, "experiment updated", audit.Fields{Experiment: name})
+
+	w.WriteHeader(http.StatusNoContent)
 
 	return nil
 }
@@ -669,8 +703,6 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) error {
 }
 
 // StartExperiment - POST /experiments/{name}/start.
-//
-//nolint:dupl // similar to StopExperiment
 func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
@@ -692,8 +724,7 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	body, err := startExperiment(name)
-	if err != nil {
+	if err := startExperiment(name); err != nil {
 		audit.Failure(r, audit.ExperimentStart, "starting experiment failed", audit.Fields{Experiment: name}, err)
 
 		return err
@@ -701,15 +732,25 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	audit.Success(r, audit.ExperimentStart, "experiment started", audit.Fields{Experiment: name})
 
+	// The broadcast leaves the VM list out; API callers still get it.
+	exp, err := experiment.Get(name)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to get experiment %s", name)
+	}
+
+	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vm.ListFor(ctx, exp)))
+	if err != nil {
+		return weberror.NewWebError(err, "unable to marshal experiment %s", name)
+	}
+
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
 }
 
-// StopExperiment - POST /experiments/{name}/stop.
-//
-//nolint:dupl // similar to StartExperiment
+// StopExperiment - POST /experiments/{name}/stop?force=true marks the
+// experiment stopped even when minimega cannot kill its VMs.
 func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
@@ -731,17 +772,44 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	body, err := stopExperiment(name)
+	force, err := parseForce(r.URL.Query())
 	if err != nil {
-		audit.Failure(r, audit.ExperimentStop, "stopping experiment failed", audit.Fields{Experiment: name}, err)
+		return err
+	}
+
+	fields := audit.Fields{Experiment: name}
+	if force {
+		fields.Extra = []any{"phenix.experiment.force", true}
+	}
+
+	body, err := stopExperiment(name, force)
+	if err != nil {
+		audit.Failure(r, audit.ExperimentStop, "stopping experiment failed", fields, err)
 
 		return err
 	}
 
-	audit.Success(r, audit.ExperimentStop, "experiment stopped", audit.Fields{Experiment: name})
+	audit.Success(r, audit.ExperimentStop, "experiment stopped", fields)
 
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
+}
+
+// parseForce reports whether the force query parameter is set. A bare force
+// is refused rather than taken as a request to force.
+func parseForce(q url.Values) (bool, error) {
+	if !q.Has("force") {
+		return false, nil
+	}
+
+	value := q.Get("force")
+
+	force, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, weberror.NewWebError(err, "invalid force value %q", value)
+	}
+
+	return force, nil
 }

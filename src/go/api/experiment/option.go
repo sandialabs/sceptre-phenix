@@ -247,6 +247,7 @@ type StopOption func(*stopOptions)
 
 type stopOptions struct {
 	keepInjectionSnapshots bool
+	force                  bool
 }
 
 func newStopOptions(opts ...StopOption) stopOptions {
@@ -262,5 +263,13 @@ func newStopOptions(opts ...StopOption) stopOptions {
 func StopWithKeepInjectionSnapshots(k bool) StopOption {
 	return func(o *stopOptions) {
 		o.keepInjectionSnapshots = k
+	}
+}
+
+// StopWithForce marks the experiment stopped even when minimega cannot kill its VMs, as for an unreachable
+// minimega; the VMs left behind need clearing by hand.
+func StopWithForce(f bool) StopOption {
+	return func(o *stopOptions) {
+		o.force = f
 	}
 }

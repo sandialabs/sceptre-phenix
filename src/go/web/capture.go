@@ -9,6 +9,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"phenix/api/experiment"
 	"phenix/api/vm"
 	"phenix/util/mm"
 	"phenix/util/plog"
@@ -45,9 +46,15 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var (
-		captures = mm.GetExperimentCaptures(mm.NS(name), mm.Context(ctx))
+		captures []mm.Capture
 		allowed  []mm.Capture
 	)
+
+	// A stopped experiment has no captures, and asking minimega would
+	// recreate its namespace (see experiment.Running).
+	if experiment.Running(name) {
+		captures = mm.GetExperimentCaptures(mm.NS(name), mm.Context(ctx))
+	}
 
 	if requestGone(r) {
 		return nil
@@ -156,6 +163,9 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	// the capture writes to the experiment's files directory
+	experiment.InvalidateFiles(exp)
+
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/captures", "create", fmt.Sprintf("%s/%s", exp, name)),
 		bt.NewResource("experiment/vm/capture", fmt.Sprintf("%s/%s", exp, name), "start"),
@@ -233,6 +243,9 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
+
+	// the stopped captures' files are now complete
+	experiment.InvalidateFiles(exp)
 
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/captures", "delete", fmt.Sprintf("%s/%s", exp, name)),

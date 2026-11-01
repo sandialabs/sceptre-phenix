@@ -446,6 +446,10 @@ func clearFileServerTokenCookie(w http.ResponseWriter) {
 	})
 }
 
+// invalidateExperimentFiles drops an experiment's cached file listing after
+// the file server changes its files; tests replace it to see that it does.
+var invalidateExperimentFiles = experiment.InvalidateFiles //nolint:gochecknoglobals // replaced by tests
+
 // uploadExperimentFiles stores posted files under the selected experiment files directory.
 //
 //nolint:funlen // handler
@@ -494,11 +498,15 @@ func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 		}
 
 		dir := exp.FilesDir()
-		if err := os.MkdirAll(dir, 0o750); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // G703 the experiment's own files directory
 			failed(uploaded, "creating experiment files directory", err)
 
 			return
 		}
+
+		// the files written, even by an upload that then fails, change the
+		// experiment's listing
+		defer invalidateExperimentFiles(exp.Metadata.Name)
 
 		var count int
 		for _, header := range files {

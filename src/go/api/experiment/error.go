@@ -1,6 +1,13 @@
 package experiment
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrTeardownFailed is wrapped by the error Stop returns when minimega could
+// not kill the experiment's VMs, leaving the experiment running.
+var ErrTeardownFailed = errors.New("killing experiment VMs")
 
 type DelayedVMError struct {
 	VM  string
