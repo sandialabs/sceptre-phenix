@@ -159,6 +159,9 @@ phenix experiment create <experiment name> -t /path/to/topology.yaml -s /path/to
 
 # Specifying a base directory and disabled apps
 phenix experiment create <experiment name> -t /path/to/topology.yaml -s /path/to/scenario.yaml -d </path/to/dir/> --disabled-apps "app1,app2"
+
+# Adding annotations to every VM and to the experiment (see Adding Annotations below)
+phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/startup-via-cc=true --annotation phenix.workflow/tags=team=red
 ```
 
 The `phenix exp create --help` command will output:
@@ -180,16 +183,85 @@ Examples:
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"
+  phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly
 
 Flags:
-  -d, --base-dir string         Base directory to use for experiment (optional)
-  -b, --default-bridge string   Default bridge name to use for experiment (optional) (default "phenix")
-      --disabled-apps strings   Comma separated ist of apps to disable
-  -h, --help                    help for create
-  -s, --scenario string         Name of an existing scenario to use (optional)
-  -t, --topology string         Name of an existing topology to use
-      --vlan-max int            VLAN pool maximum
-      --vlan-min int            VLAN pool minimum
+      --annotation stringArray        Experiment annotation as key=value; may be repeated
+  -d, --base-dir string               Base directory to use for experiment (optional)
+  -b, --default-bridge string         Default bridge name to use for experiment (optional) (default "phenix")
+      --disabled-apps strings         Comma separated list of apps to disable
+  -h, --help                          help for create
+      --node-annotation stringArray   Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated
+  -s, --scenario string               Name of an existing scenario to use (optional)
+  -t, --topology string               Name of an existing topology to use
+      --vlan-max int                  VLAN pool maximum
+      --vlan-min int                  VLAN pool minimum
+```
+
+### Adding Annotations
+
+An experiment can be given annotations when it is created, without editing its
+topology or scenario:
+
+| Annotations | Command line (repeatable) | API (`POST /experiments`) |
+| :--- | :--- | :--- |
+| On every VM | `--node-annotation key=value` | `node_annotations` |
+| On the experiment | `--annotation key=value` | `annotations` |
+
+**Annotations for every VM** are node annotations, which apps read from the
+topology's nodes, such as
+[`phenix/default-apps`](apps.md#disable-default-apps-for-a-vm) and
+[`phenix/startup-via-cc`](apps.md#c2-startup-script-delivery). phēnix adds them
+to every VM in the experiment's own copy of the topology, so the topology config
+itself is unchanged. A VM that already has an annotation keeps its own value,
+and [external nodes](configuration.md#external-nodes) are skipped.
+
+**Experiment annotations** are added to the experiment's metadata annotations,
+where apps can read them; for example, SCORCH records the `key=value` pairs of
+`phenix.workflow/tags` in the info file it writes for each run. phēnix sets the
+`topology` and `scenario` annotations itself and rejects them. The
+`phenix.workflow/branch` annotation comes from the `workflow_branch` field of an
+API request, and a request cannot give it both as an annotation and as
+`workflow_branch`.
+
+On the command line, a VM annotation's value `true` or `false` becomes a
+boolean and a JSON list or object keeps that type; anything else, numbers
+included, stays a string. Experiment annotations are always strings. The API
+takes `node_annotations` as JSON values, keeping their types. To change one
+VM's annotations after the experiment is created, send
+`PATCH /api/v1/experiments/{exp}/vms/{name}` with an `annotations` object. It
+replaces all of the VM's annotations, also while the experiment runs.
+
+A value of the wrong type for an annotation the default apps read is rejected,
+naming the annotation: `phenix/default-apps` must be `true` or `false`,
+`phenix/startup-autotunnel` a list of port forwards, `phenix/startup-via-cc`
+not blank, and `vrouter/vyos-password` and `vrouter/enable-ssh` strings.
+Because `phenix/startup-autotunnel` creates port forwards, giving it through the
+API requires a role that may create port forwards to every VM the
+experiment deploys (external nodes excluded).
+
+```bash
+# For every VM, deliver startup scripts over C2 and create a port forward from 8080 to its port 80
+phenix experiment create my-experiment -t my-topology \
+  --node-annotation phenix/startup-via-cc=true \
+  --node-annotation 'phenix/startup-autotunnel=["8080:80"]' \
+  --annotation phenix.workflow/tags=team=red
+```
+
+The same request through the API:
+
+```json
+{
+  "name": "my-experiment",
+  "topology": "my-topology",
+  "node_annotations": {
+    "phenix/startup-via-cc": true,
+    "phenix/startup-autotunnel": ["8080:80"]
+  },
+  "annotations": {
+    "phenix.workflow/tags": "team=red"
+  }
+}
 ```
 
 ## Deleting Experiments

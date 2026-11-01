@@ -1,6 +1,13 @@
 package util
 
 import (
+	"encoding/json"
+	"fmt"
+	"slices"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
+
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
@@ -82,6 +89,24 @@ func (c *vmCounts) add(running, doNotBoot, external bool, delay string) {
 	}
 }
 
+// experimentScenarios lists the scenario an experiment was created from, then
+// each other scenario its apps take configuration from, once each in app order.
+func experimentScenarios(scenario string, apps []ifaces.ScenarioApp) []string {
+	var names []string
+
+	if scenario != "" {
+		names = append(names, scenario)
+	}
+
+	for _, app := range apps {
+		if from := app.FromScenario(); from != "" && !slices.Contains(names, from) {
+			names = append(names, from)
+		}
+	}
+
+	return names
+}
+
 // experimentToProtobuf converts all of the experiment but its VMs.
 func experimentToProtobuf(exp types.Experiment, status cache.Status) *proto.Experiment {
 	pb := &proto.Experiment{ //nolint:exhaustruct // partial initialization
@@ -93,6 +118,10 @@ func experimentToProtobuf(exp types.Experiment, status cache.Status) *proto.Expe
 		Status:    string(status),
 	}
 
+	if exp.Running() {
+		pb.Interrupted = exp.Status.Interrupted()
+	}
+
 	apps := make([]string, 0, len(exp.Apps()))
 
 	for _, app := range exp.Apps() {
@@ -100,6 +129,7 @@ func experimentToProtobuf(exp types.Experiment, status cache.Status) *proto.Expe
 	}
 
 	pb.Apps = apps
+	pb.Scenarios = experimentScenarios(exp.Metadata.Annotations["scenario"], exp.Apps())
 
 	var aliases map[string]int
 
@@ -189,6 +219,28 @@ func VMToProtobufIndexed(exp string, vm mm.VM, nodes NodeIndex) *proto.VM {
 	}
 
 	return v
+}
+
+// AnnotationsToProtobuf converts a node's annotations for a single-VM response.
+// No annotations give an empty object, unlike VM lists, which send null.
+func AnnotationsToProtobuf(annotations map[string]any) (*structpb.Struct, error) {
+	out := new(structpb.Struct)
+
+	if len(annotations) == 0 {
+		return out, nil
+	}
+
+	// through JSON, which takes the nested lists and maps a config decodes to
+	body, err := json.Marshal(annotations)
+	if err != nil {
+		return nil, fmt.Errorf("encoding annotations: %w", err)
+	}
+
+	if err := protojson.Unmarshal(body, out); err != nil {
+		return nil, fmt.Errorf("converting annotations: %w", err)
+	}
+
+	return out, nil
 }
 
 func vmToProtobuf(exp string, vm mm.VM) *proto.VM {
