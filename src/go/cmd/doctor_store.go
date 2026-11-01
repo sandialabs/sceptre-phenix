@@ -434,6 +434,23 @@ func derefDoctorBool(b *bool) bool {
 	return b != nil && *b
 }
 
+// experimentNamed returns the stored experiment name, if there is one.
+//
+//nolint:unparam // a lookup that also gives the experiment
+func experimentNamed(experiments []doctorExperiment, name string) (doctorExperiment, bool) {
+	for _, exp := range experiments {
+		if exp.name == name {
+			return exp, true
+		}
+	}
+
+	return doctorExperiment{
+		name: "", baseDir: "", running: false, vms: nil, vlans: doctorVLANs{min: 0, max: 0, pinned: nil, count: 0},
+		schedules: nil, nodes: nil, apps: nil, components: nil, appHosts: nil,
+		stuck: doctorStuck{apps: nil, scorch: false, scorchRun: -1, pending: false, interrupted: false},
+	}, false
+}
+
 // decodeDoctorStuck is what status marks as in progress: the app running flags, which phenix sets while an app stage
 // or a SCORCH run is in progress, the delayed starts that phenix ui resumes, and an interrupted start.
 func decodeDoctorStuck(status ifaces.ExperimentStatus) doctorStuck {

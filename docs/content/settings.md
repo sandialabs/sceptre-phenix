@@ -92,16 +92,17 @@ effect:
 
 ```bash
 docker exec phenix phenix doctor              # Docker deployment
-phenix doctor -o json --timeout 10s           # JSON, waiting longer for the store lock
-phenix doctor --skip auth -x --strict         # no auth checks or settings list; fail on a warning
+phenix doctor -o json --timeout 10s           # JSON, waiting longer for minimega
+phenix doctor --skip minimega -x --strict     # no minimega check or settings list; fail on a warning
 phenix doctor -p -x                           # only the checks that warn or fail
 docker exec phenix phenix doctor --report     # output to paste into a bug report
 ```
 
 It prints, in order:
 
-1. A header: the phēnix version, commit and build date, the OS and kernel,
-   the user with its uid and gid, the working directory, the config file read, whether phēnix
+1. A header: the phēnix version, commit and build date, minimega's version
+   when the `minimega` check answers, the OS and kernel, the user with its
+   uid and gid, the working directory, the config file read, whether phēnix
    runs in a container (from `/.dockerenv`, `/run/.containerenv` or
    `/proc/1/cgroup`), and the time.
 2. Every setting with its effective value and its source: `flag`, `env`,
@@ -121,7 +122,7 @@ status, and the hints are faint. `--color` sets when doctor uses colors (see
 [Colors](#colors)). `-o json` and `--report` never have color.
 
 `--skip` takes a check or a group from the table below, comma-separated or
-repeated, such as `--skip auth` or `--skip env,ui.jwt-signing-key`. A
+repeated, such as `--skip minimega` or `--skip env,ui.jwt-signing-key`. A
 skipped check shows as a `skip` row. An unknown name fails and lists the
 valid ones.
 
@@ -150,8 +151,26 @@ valid ones.
 | `ui.listen-endpoint`, `ui.file-server-endpoint` | `tls` | the listen endpoint has no port, so `phenix ui` listens on a random one | `phenix ui` cannot listen on the value or refuses it |
 | `unix-socket` | `socket` | the path is relative, or holds a file that is not a socket, which `phenix ui` deletes; this user cannot write the directory, but a socket is there, such as one a `phenix ui` of another user serves | the directory does not exist, this user cannot write it and no socket is there, or the path is too long for a unix socket |
 | `unix-socket-gid` | `socket` | phēnix runs as root and no group has the id | phēnix does not run as root, and this user is not in a group of that id, so `phenix ui` exits when it sets the socket's group |
+| `server` (with the rows server bridge-mode and server deploy-mode when phenix ui answers) | `server` | no `phenix ui` answers on `unix-socket`: no socket file, a stale one, a file that is not a socket, or no answer within `--timeout`; the version of `phenix ui` is not the version of this phēnix; its `bridge-mode` or `deploy-mode` is not the one set here | this user may not connect to the socket |
+| `stuck-status` | `server` | the store marks app runs, SCORCH runs or delayed starts of a running experiment as in progress, but no phenix process can own them. That is, no `phenix ui` answers on `unix-socket`, and no other phenix process on this host names the experiment. This occurs when `phenix ui` stops during a start or a run. The row also warns when phēnix could not resume the start of a running experiment. A `skip` row shows when doctor cannot read the store | never |
+| `ui-limits` (Linux only) | `server` | the `phenix ui` process on this host has more than 80% of its soft limit of open files open. doctor finds the process from the peer of `unix-socket`, or from its command line in `/proc`. A `skip` row shows when no `phenix ui` runs on this host, or when this user cannot read `/proc/<pid>` | never |
+| `minimega` | `minimega` | never | minimega does not give its version on `<base-dir.minimega>/minimega` within `--timeout` (3 seconds by default); the row names the likely cause: no socket, a stale one, or a user that may not connect |
+| `minimega-env` (the rows minimega files, minimega base and minimega mesh; one skip row when minimega gives no version) | `minimega` | minimega gives no flags (it is older than 3.0); its `-filepath` is relative or not writable by this user; its `-base` is not `base-dir.minimega`; `mesh status` fails when `-degree` is above 0 | the `-filepath` directory does not exist for phēnix or is not readable and searchable by this user |
+| `qemu-img`, `vmdb2` | `tools` | never | the program is not on `PATH`, or `qemu-img --version` fails: phēnix commits VMs to disk images with `qemu-img`, and `phenix image build` runs `vmdb2` |
+| `filebeat` | `tools` | the program is not on `PATH`, so SCORCH starts no Filebeat, even for a component that enables it | never |
+| `disk` (one row per filesystem, such as disk phenix-base) | `tools` | the filesystem of `base-dir.phenix`, the store or minimega's `-filepath` is 90% full | the filesystem is 98% full |
+| `kernel-modules` (Linux only) | `tools` | `/lib/modules/<kernel release>` does not exist, so `modprobe` cannot load modules such as `nbd` and `openvswitch`; `/var/run/reboot-required` exists. A container without `/lib/modules` gives a `skip` row | never |
+| `nbd` (Linux only) | `tools` | the `nbd` module is not loaded, is part of the kernel (so `lsmod` does not show it), or has `max_part` missing or 0; no `/dev/nbdN` device is free, or a container has no `/dev/nbd*` device; a device has a lock file in `/var/lock` and no connection, belongs to a process that is not running, or holds an image for a `qemu-nbd` that a failed inject can leave, with its mounted partition. minimega `disk inject` uses these devices for injects at a start and for `phenix image inject-miniexe`. A row for a missing module points to `kernel-modules` | `qemu-nbd` is not on `PATH` |
+| `openvswitch` (Linux only) | `tools` | this user cannot connect to `ovsdb-server` (permission denied), but minimega runs `ovs-vsctl` as root; `ovs-vswitchd` does not run; the `openvswitch` module is not loaded, and the row points to `kernel-modules`. The row gives the Open vSwitch version, and tells if the bridge `phenix` exists or if minimega makes it at the first VM launch. In a container without `ovs-vsctl`, the row is `skip` | `ovs-vsctl` is not on `PATH`; `ovs-vsctl show` gets no answer from `ovsdb-server` within `--timeout` |
+| `image-build` (the rows image-build tools, image-build root, image-build loop and image-build keyrings; Linux only) | `tools` | `debootstrap`, `kpartx`, `losetup` or `qemu-img` is not on `PATH`; the process does not have `CAP_SYS_ADMIN` (not root, or a container that is not privileged); no `/dev/loop*` device is free and there is no `/dev/loop-control`; debootstrap has no script for the release of a stored image config, or the keyring that the script names does not exist. The keyrings row reads the image configs from the store read-only, and gives `skip` when the store is locked for longer than `--timeout` | never |
 | `image-configs` | `tools` | an overlay directory (`overlays`) of a stored image config does not exist or is not a directory, so `phenix image build` fails. The row also names each script file of a config that is not on disk, without a warning. The config holds a copy of each script, which the build uses and `phenix image update` keeps | never |
+| `leftovers` (the rows leftovers snapshots, leftovers files, leftovers mounts, leftovers taps and leftovers mirrors) | `images` | the snapshots row: a snapshot file of this head node in the images directory (`<head node>_<experiment>_<VM>_snapshot`) belongs to an experiment that the store does not have. The files row: a base directory in `<base-dir.phenix>/experiments`, or a directory with `files` or `miniccc_responses` in the images directory, belongs to such an experiment. The row gives each size and the total. The mounts row: a VM file system mount under `mount-dir` belongs to such an experiment, or to a VM that minimega does not run. The taps row: a minimega tap (`mega_tap*`) on this host or on an Open vSwitch bridge has no owner, or a port has no network device. An owner is a VM or a host tap in a minimega namespace, or a capture of a whole bridge. The mirrors row: a minimega mirror (`mirror-<tap>`) belongs to no capture. The rows keep what belongs to a namespace in which minimega runs a VM. In a container, the taps row checks the taps of this host only when it shows a minimega tap, an Open vSwitch bridge or the `ovs-system` device. A row that cannot get its data from the store, minimega or `ovs-vsctl` is a `skip` row with the reason. A store file that does not exist gives a `skip` row, because `phenix doctor` can read a store other than the store of `phenix ui` | never |
+| `disk-space` (one row for each filesystem, such as disk-space files, and the row disk-space inject dirs) | `images` | the filesystem of the images directory, of minimega's `-base` or of minimega's `-logfile` has less free space than 10% of its size or 5 GiB, whichever is larger. The row names each filesystem once. It gives the size of the minimega log, and the size of the files that the `leftovers` rows found. The inject dirs row warns about each `dstImg*` directory in minimega's `-base`, which a failed `disk inject` can leave, and tells which ones are mounted | never |
+| `apps` | `apps` | never | never; the row lists the user apps (`phenix-app-*`) and SCORCH components (`phenix-scorch-component-*`) found on `PATH` |
 | `scenario-apps` | `apps` | an app of a stored scenario or experiment is not built in, and `PATH` has no `phenix-app-<app>`. Or a SCORCH component type (its `type`, else its `name`) is not built in, and `PATH` has no `phenix-scorch-component-<type>`. The built-in apps are `ntp`, `serial`, `startup`, `vrouter`, `tap`, `soh` and `scorch`. The built-in SCORCH components are `break`, `pause`, `soh` and `tap`. A `skip` row shows when doctor cannot read the store | never |
+| `tunneler-download` | `features` | `downloads/tunneler` is not a directory | never; the row says whether `phenix ui` turns the feature on |
+| `ui.features` | `features` | a name is not a feature, such as a misspelling; `tunneler-download` or `file-server` is set without what it needs | never |
+| `ui.logs.minimega-path` | `features` | the file does not exist or is not readable by this user; the setting is empty while minimega logs to a file (its `-logfile`, or `MM_LOGFILE` in the environment) | the path is not a regular file |
 
 Every phēnix command reads the `settings` group before it runs, and `phenix
 doctor` skips that step, so these checks show what the other commands would
@@ -186,6 +205,41 @@ certificate files, and print neither.
 `hiddenChecks` gives the number of the others, and `status` is still the
 status of every check.
 
+The `server` check asks `phenix ui` on `unix-socket` for `GET /api/v1/options`,
+as every other phēnix command does before it runs, and reads the
+`X-Phenix-Version` header. A phēnix command uses `auto` when `phenix ui` uses
+`bridge-mode: auto`, whatever is set here, and the `bridge-mode` set here
+otherwise. It uses the `deploy-mode` set here, or the mode of `phenix ui`
+when none is set. The mode rows name the mode the command uses. A failure to
+connect warns, since `phenix doctor` also runs while `phenix ui` is stopped.
+
+The `stuck-status` check reads the stored status of each running experiment.
+phēnix sets an app running flag while an app stage or a SCORCH run is in
+progress, and clears it when the stage ends. It also records the delayed VM
+starts that `phenix ui` resumes. `phenix ui` keeps the `starting` and
+`stopping` states in memory only, so these states end with its process. As it
+starts, `phenix ui` clears the app running flags of the running experiments
+and resumes their delayed starts. A flag that stays set makes phēnix skip the
+running stage of that app, and SCORCH refuses a new run. The jobs of
+`phenix ui` do not include starts, app stages or SCORCH runs, so the check does
+not read them.
+
+The `minimega-env` check sends minimega its `args` command and reads the
+flags minimega runs with. phēnix resolves relative image paths against the
+`-filepath` directory and keeps disk images in it, so phēnix must see it at
+the same path, as the Docker Compose setup does with `/phenix`. The
+`minimega mesh` row gives `-degree` and `-abssnapshot` (see
+[Disks](disks.md)) and, when `-degree` is above 0, the size of the mesh.
+
+The `tools` and `features` groups check what parts of phēnix need beyond
+its settings. `phenix ui` turns on `tunneler-download` when the directory it
+starts in holds `downloads/tunneler`, and `file-server` when
+`ui.file-server-endpoint` is set. The rows name the working directory of
+`phenix doctor`, so run it in the directory `phenix ui` starts in, such as
+`/opt/phenix` in the Docker image. When `ui.logs.minimega-path` names a file
+that is not there, `phenix ui` waits for it without a warning, and the Logs
+page shows no minimega logs.
+
 `--report` prints the whole output, text or JSON, in a fenced code block to
 paste into the
 [bug report form](https://github.com/sandialabs/sceptre-phenix/issues/new?template=1-bug-report.yml).
@@ -203,7 +257,8 @@ the check details and the hints.
   `root`, `phenix`, `minimega`, `nobody` and `admin@foo.com`, and a suffix
   from `hostname-suffixes`: `ws42-phenix` becomes `<host-1>-phenix`.
 
-doctor finds the values to replace in the host name, the host of `ui.listen-endpoint`, the DNS names of the TLS certificate, the user and its home directory, and `SUDO_USER`. It also reads the `ui.users` entries, the JWT
+doctor finds the values to replace in the host name, the host name that
+minimega answers from, the host of `ui.listen-endpoint`, the DNS names of the TLS certificate, the user and its home directory, and `SUDO_USER`. It also reads the `ui.users` entries, the JWT
 signing key, the interface addresses and the file owners that the checks name.
 doctor also replaces each IPv4 and IPv6 address and each email address it
 finds. Read the output before you paste it: doctor cannot find a name that it
@@ -215,12 +270,20 @@ and 0 otherwise. It never prints the values of `ui.jwt-signing-key` or
 `ui.users`, only `<redacted>` when they are set, nor those of
 `PHENIX_UI_JWT_SIGNING_KEY`, `PHENIX_UI_USERS`, `SUDO_COMMAND` or a
 `PHENIX_*` variable that names no setting. The `scenario-hosts`,
-`inject-sources`, `rbac-users`, `image-configs` and `scenario-apps` checks open
-the store through BoltDB, once for each kind of config in a run. doctor opens
-the store read-only, and waits at most `--timeout` for the lock. It opens no
-log file, writes no file and binds no port. Run it with the same flags,
-environment and user as the command you are checking, since those decide the
-values it sees.
+`inject-sources`, `rbac-users`, `image-configs`, `scenario-apps`,
+`stuck-status`, `image-build` and `leftovers` checks open the store through
+BoltDB, once for each kind of config in a run. doctor opens the store
+read-only, and waits at most `--timeout` for the lock. The unix socket of
+`phenix ui` serves no configs, so doctor does not ask `phenix ui` for them. It
+opens no log file, writes no file and binds no port. It connects to the unix
+socket of `phenix ui` as a client only, and never creates or removes it. It
+sends minimega only commands that change nothing: `version`, `args`,
+`mesh status` and `namespace`. For each namespace that minimega lists, it also
+sends `namespace <name> vm info`, `namespace <name> tap` and
+`namespace <name> capture`. The only programs it runs are `qemu-img --version`,
+`ovs-vsctl show`, `ovs-vsctl list Mirror` and `ovs-vsctl list Bridge`, which
+change nothing. Run it with the same flags, environment and user as the command
+you are checking, since those decide the values it sees.
 
 ## Configuration Precedence
 

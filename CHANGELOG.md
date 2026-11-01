@@ -50,6 +50,7 @@ All notable changes to this project will be documented in this file.
 - **SCORCH Runs**: The SCORCH runs page can clear run status, run only the cleanup stage, and download the artifact archive of a finished run. Added `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/clear` and `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/cleanup`.
 - **Health Checks**: Added the `/healthz` and `/readyz` endpoints and the `phenix healthcheck` command, which is the health check of the `phenix` container.
 - **Configuration Checks**: Added `phenix doctor`, which checks the config files, environment variables, settings, store, log files, base directories and `phenix ui` startup settings without a running server. `--report` prints the output for a bug report, with host names, addresses, user names and secrets replaced by tokens.
+- **Host Checks**: `phenix doctor` checks a running `phenix ui`, minimega, the host tools, free disk space and optional features. It also names the leftovers of deleted experiments and the app runs that stay marked as running.
 
 ### Changed
 

@@ -7,11 +7,13 @@ import (
 	"errors"
 	"io"
 	"maps"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,7 +23,11 @@ import (
 
 	"phenix/api/disk"
 	"phenix/store"
+	"phenix/version"
+	"phenix/web/health"
 )
+
+const doctorTestMinimega = "minimega 3.0.1 837c9174 2026-07-08"
 
 // newDoctorTestDir makes the phenix base directory, with the directories
 // derived from it, and minimega's base directory under a new directory.
@@ -81,12 +87,22 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 
 	env := fakeDoctorEnv(nil, false)
 	env.lookPath = func(name string) (string, error) {
-		if name == "vim" {
+		if slices.Contains(append([]string{"vim", "vmdb2", "filebeat"}, doctorHostTools...), name) {
 			return "/usr/bin/" + name, nil
 		}
 
 		return "", exec.ErrNotFound
 	}
+	// no tunneler downloads, wherever the tests run
+	env.stat = func(path string) (os.FileInfo, error) {
+		if !filepath.IsAbs(path) || strings.HasPrefix(path, "/opt/phenix") {
+			return nil, os.ErrNotExist
+		}
+
+		return os.Stat(path)
+	}
+	// a Linux host on which the host checks pass, wherever the tests run
+	doctorGoodHost().apply(&env)
 
 	return &doctorInput{
 		env: env,
@@ -96,11 +112,25 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 			values: map[string]fileSetting{},
 			used:   configFile,
 		},
-		known:       known,
-		settings:    resolved,
+		known:    known,
+		settings: resolved,
+		probe:    func(string, time.Duration) (string, error) { return doctorTestMinimega, nil },
+		minimega: (&doctorMinimega{mu: sync.Mutex{}, args: doctorMinimegaArgs(dir), size: "1", commands: nil}).run,
+		server:   doctorServerAnswer(http.StatusOK, version.API(), doctorTestOptions),
+		qemuImg: func(context.Context, string) (string, error) {
+			return "qemu-img version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1)", nil
+		},
+		statfs: func(string) (health.DiskStat, error) {
+			return health.DiskStat{Device: 1, Total: 100 << 30, Avail: 50 << 30}, nil
+		},
 		images:      disk.BrokenImages,
 		inspectDisk: disk.InspectPath,
-		timeout:     time.Second,
+		command: doctorCommands(map[string]doctorCommand{
+			"ovs-vsctl --timeout=1 show":                               {out: doctorOVSShow, err: nil},
+			"ovs-vsctl --timeout=1 --columns=_uuid,name list Mirror":   {out: "", err: nil},
+			"ovs-vsctl --timeout=1 --columns=name,mirrors list Bridge": {out: "name : phenix\nmirrors : []\n", err: nil},
+		}),
+		timeout: time.Second,
 
 		storeConfigs: func(context.Context, string, string, time.Duration) (store.Configs, error) { return nil, nil },
 		now:          func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
@@ -127,8 +157,9 @@ func TestRunDoctorChecksSkipAndHints(t *testing.T) {
 
 	dir := newDoctorTestDir(t)
 	in := fakeDoctorInput(dir, map[string]string{"ui.jwt-signing-key": ""})
+	in.probe = func(string, time.Duration) (string, error) { return "", errors.New("refused") }
 
-	got := runDoctorChecks(t.Context(), in, doctorChecks(), map[string]bool{"base-dir.phenix": true, "ui.tls": true})
+	got := runDoctorChecks(t.Context(), in, doctorChecks(), map[string]bool{"base-dir.phenix": true, "minimega": true})
 
 	byID := make(map[string]doctorResult)
 	for _, r := range got {
@@ -141,8 +172,8 @@ func TestRunDoctorChecksSkipAndHints(t *testing.T) {
 			ID: "base-dir.phenix", Group: doctorGroupDirs, Name: "base-dir.phenix", Status: doctorSkip,
 			Detail: "skipped by --skip",
 		},
-		"ui.tls": {
-			ID: "ui.tls", Group: doctorGroupTLS, Name: "ui.tls", Status: doctorSkip, Detail: "skipped by --skip",
+		"minimega": {
+			ID: "minimega", Group: doctorGroupMinimega, Name: "minimega", Status: doctorSkip, Detail: "skipped by --skip",
 		},
 		"ui.jwt-signing-key": {
 			ID: "ui.jwt-signing-key", Group: doctorGroupAuth, Name: "ui.jwt-signing-key", Status: doctorWarn,
@@ -173,10 +204,8 @@ func TestParseDoctorSkip(t *testing.T) {
 	}{
 		"none":   {want: []string{}},
 		"one id": {args: []string{"--skip", "ui.jwt-signing-key"}, want: []string{"ui.jwt-signing-key"}},
-		"group": {args: []string{"--skip", "tls"}, want: []string{
-			"ui.file-server-endpoint", "ui.listen-endpoint", "ui.tls", "ui.tls-cert",
-		}},
-		"id": {args: []string{"--skip", "proxy-env,ui.users"}, want: []string{"proxy-env", "ui.users"}},
+		"group":  {args: []string{"--skip", "minimega"}, want: []string{"minimega", "minimega-env"}},
+		"id":     {args: []string{"--skip", "minimega-env,server"}, want: []string{"minimega-env", "server", "stuck-status", "ui-limits"}},
 		"group of several": {
 			args: []string{"--skip", "config"},
 			want: []string{"config-file", "config-keys", "scenario-hosts", "users-file"},
@@ -200,7 +229,7 @@ func TestParseDoctorSkip(t *testing.T) {
 			},
 		},
 		"unknown": {
-			args:    []string{"--skip", "tls,mm,cofnig"},
+			args:    []string{"--skip", "minimega,mm,cofnig"},
 			wantErr: `--skip: unknown check "mm", "cofnig". Checks: config-file, users-file, config-keys, scenario-hosts, env,`,
 		},
 	}
@@ -221,7 +250,7 @@ func TestParseDoctorSkip(t *testing.T) {
 					t.Fatalf("parseDoctorSkip(%v) error = %v, want prefix %q", tc.args, err, tc.wantErr)
 				}
 
-				groups := "Groups: config, env, settings, files, dirs, ui, auth, tls, socket, tools, apps"
+				groups := "Groups: config, env, settings, files, dirs, ui, auth, tls, socket, server, minimega, tools, images, apps, features"
 				if !strings.HasSuffix(err.Error(), groups) {
 					t.Errorf("parseDoctorSkip(%v) error = %v, want the groups listed", tc.args, err)
 				}
@@ -331,7 +360,8 @@ func TestDoctorTextOutput(t *testing.T) {
 	t.Parallel()
 
 	dir := newDoctorTestDir(t)
-	in := fakeDoctorInput(dir, map[string]string{"ui.jwt-signing-key": "", "bridge-mode": "bogus"})
+	in := fakeDoctorInput(dir, map[string]string{"ui.jwt-signing-key": ""})
+	in.probe = func(string, time.Duration) (string, error) { return "", errors.New("refused") }
 
 	tests := map[string]struct {
 		opts      doctorOptions
@@ -345,9 +375,9 @@ func TestDoctorTextOutput(t *testing.T) {
 				"phenix:", "minimega:", "os:", "linux 6.8.0-49-generic (amd64)", "user:", "alice (uid 1000, gid 1000)",
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
-				"\nSETTING", "store.endpoint", "\nCHECK", "bridge-mode", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 27 passed, 4 skipped. Failed: bridge-mode. Warned: ui.jwt-signing-key\n",
-				"  bridge-mode: set bridge-mode",
+				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
+				"\nFAIL: 1 failed, 1 warned, 48 passed, 12 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
 		},
@@ -358,7 +388,7 @@ func TestDoctorTextOutput(t *testing.T) {
 		},
 		"strict": {
 			opts: doctorOptions{output: "text", strict: true},
-			want: []string{"\nFAIL: ", "  bridge-mode: set bridge-mode", "  ui.jwt-signing-key: set ui.jwt-signing-key"},
+			want: []string{"\nFAIL: ", "  ui.jwt-signing-key: set ui.jwt-signing-key", "  minimega: start minimega"},
 		},
 		"report": {
 			opts: doctorOptions{output: "text", report: true},
@@ -371,9 +401,9 @@ func TestDoctorTextOutput(t *testing.T) {
 		"problems only": {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
-				"\nCHECK", "bridge-mode", "FAIL", "ui.jwt-signing-key", "WARN",
-				"\nFAIL: 1 failed, 1 warned, 27 passed, 4 skipped. Failed: bridge-mode. Warned: ui.jwt-signing-key. " +
-					"31 passing or skipped checks hidden\n",
+				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
+				"\nFAIL: 1 failed, 1 warned, 48 passed, 12 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"60 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},
@@ -456,8 +486,8 @@ func TestDoctorJSONOutput(t *testing.T) {
 			t.Errorf("report = %d %s %s, want schemaVersion 1, pass and the time", decoded.SchemaVersion, decoded.Status, decoded.Time)
 		}
 
-		if decoded.Version["phenix"] == "" {
-			t.Errorf("version = %v, want phenix's", decoded.Version)
+		if decoded.Version["minimega"] != doctorTestMinimega || decoded.Version["phenix"] == "" {
+			t.Errorf("version = %v, want phenix and minimega's", decoded.Version)
 		}
 
 		for _, key := range []string{"os", "kernel", "arch", "uid", "gid", "user", "workingDir", "configFile", "container"} {

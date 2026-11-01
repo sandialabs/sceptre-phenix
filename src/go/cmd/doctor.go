@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/activeshadow/libminimega/minicli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -128,12 +129,12 @@ type doctorOptions struct {
 // doctorDesc is the long help of phenix doctor.
 const doctorDesc = `Check the phenix configuration without a running server
 
-  Prints a header for bug reports (the phenix version, OS and kernel, user,
-  working directory, the config file read, and whether phenix runs in a
-  container), then every setting with its effective value and where that
-  value came from (flag, env, config file or default), then each check, then
-  a summary that names each failed and warned check, with a hint for each
-  failure.
+  Prints a header for bug reports (the phenix and minimega versions, OS and
+  kernel, user, working directory, the config file read, and whether phenix
+  runs in a container), then every setting with its effective value and where
+  that value came from (flag, env, config file or default), then each check,
+  then a summary that names each failed and warned check, with a hint for
+  each failure.
 
   The checks read the config and users files and report unknown keys, check
   each set environment variable phenix reads (PHENIX_*, PATH, EDITOR,
@@ -142,13 +143,19 @@ const doctorDesc = `Check the phenix configuration without a running server
   check the settings every other phenix command refuses or misreads
   (bridge-mode, deploy-mode, experiment.disk-check, color, log.level and
   log.system.*), check that the store and log files can be written and that
-  the base directories exist, and check what phenix ui reads at startup (the
-  JWT signing key and lifetime, initial users, proxy auth, the TLS key pair
-  and certificate, the listen endpoints, and the unix socket's directory and
-  group). --skip takes a check or a group of checks; an unknown name fails
-  and lists the valid ones. Secret values, such as the JWT signing key and
-  initial users, are redacted. doctor exits 1 when a check fails, or with
-  --strict when one warns, and 0 otherwise.
+  the base directories exist, check what phenix ui reads at startup (the JWT
+  signing key and lifetime, initial users, proxy auth, the TLS key pair and
+  certificate, the listen endpoints, and the unix socket's directory and
+  group), ask a running phenix ui on the unix socket for its version and its
+  bridge and deploy modes, and check that minimega answers on its socket and
+  that its files directory, base directory and mesh suit phenix. The tools
+  and features checks look for qemu-img, vmdb2 and filebeat on PATH, measure
+  free disk space, report whether phenix ui turns on tunneler downloads
+  (relative to the working directory), and check ui.features and
+  ui.logs.minimega-path. --skip takes a check or a group of checks; an
+  unknown name fails and lists the valid ones. Secret values, such as the JWT
+  signing key and initial users, are redacted. doctor exits 1 when a check
+  fails, or with --strict when one warns, and 0 otherwise.
 
   --report prints the whole output, text or JSON, in a fenced block to paste
   into a bug report. It replaces host names, IP addresses, user names and email
@@ -164,20 +171,45 @@ const doctorDesc = `Check the phenix configuration without a running server
   status does not change. The text output colors the statuses, the summary
   and the hints when --color allows it, but never with -o json or --report.
 
-  In the tls group, ui.tls-cert warns when the TLS certificate expires within
-  30 days, or when its names do not cover the host that users reach. It fails
+  The kernel-modules, nbd, openvswitch and image-build checks look at this
+  host, the head node, and only on Linux. kernel-modules warns when
+  /lib/modules has no directory for the running kernel, or when a reboot is
+  pending. nbd checks what minimega disk inject needs for injects: qemu-nbd,
+  the nbd module with max_part, and a free /dev/nbdN. It also names the
+  devices that a failed inject can leave. openvswitch runs ovs-vsctl show,
+  and reports the Open vSwitch version and the experiment bridge. image-build
+  checks the programs phenix image build needs, root and a free loop device.
+  It also checks the debootstrap script and keyring of the release of each
+  stored image config.
+
+  The server group also looks at the state of phenix ui. stuck-status names
+  the app runs, SCORCH runs and delayed starts that the store marks as in
+  progress for a running experiment, when no phenix process can own them. It
+  also names the interrupted starts. ui-limits (Linux only) warns when phenix
+  ui has more than 80 percent of its soft limit of open files open. In the
+  tls group, ui.tls-cert warns when the TLS certificate expires within 30
+  days, or when its names do not cover the host that users reach. It fails
   when the certificate expired or is not valid yet. In the env group,
   proxy-env warns when a proxy variable is set and NO_PROXY does not cover
   the hosts of phenix ui. It names the variables, never their values.
+
+  The images group looks for problems that stopped or deleted experiments
+  leave. leftovers names the snapshot files and directories of deleted experiments,
+  VM file system mounts with no running VM, minimega taps and Open vSwitch
+  ports that no VM owns, and mirrors that no capture owns. disk-space
+  measures the filesystems of the images directory, minimega's -base and its
+  log, and names the dstImg directories that a failed inject can leave.
+
+  The apps group lists the user apps and SCORCH components on PATH.
+  scenario-apps names each app and SCORCH component type of a stored scenario
+  or experiment that is not built in and not on PATH.
 
   Other checks compare the stored configs with this host. scenario-hosts
   names the hosts of scenario apps that are not nodes of the topology.
   inject-sources names the inject sources that do not exist. image-configs
   names the overlay directories of stored image configs that do not exist.
-  scenario-apps names each app and SCORCH component type of a stored scenario
-  or experiment that is not built in and not on PATH. rbac-users, only with
-  sign-in on, names the users with an unknown role, and the names of deleted
-  experiments and users in roles.
+  rbac-users, only with sign-in on, names the users with an unknown role, and
+  the names of deleted experiments and users in roles.
 
   The checks that read the store open it through BoltDB, once for each kind
   of config in a run. doctor opens it read-only, and waits at most --timeout
@@ -185,7 +217,13 @@ const doctorDesc = `Check the phenix configuration without a running server
   not wait. doctor opens no log file, writes no file and binds no port, so it
   works while phenix ui is stopped. Before any command runs, phenix creates
   the config directory with an empty config.yaml when it finds no config
-  file, and the default log directory. Run it with the same flags,
+  file, and the default log directory.
+  doctor connects to the unix socket as a client only, never creating or
+  removing it. It sends minimega only commands that change nothing (version,
+  args, mesh status and namespace, then vm info, tap and capture in the
+  namespaces that minimega lists). It also reads /proc. The only programs it
+  runs are qemu-img --version, ovs-vsctl show and ovs-vsctl list, which
+  change nothing. Run it with the same flags,
   environment and user as the phenix command you are checking.`
 
 func newDoctorCmd() *cobra.Command {
@@ -197,11 +235,11 @@ func newDoctorCmd() *cobra.Command {
   # In the Docker deployment
   docker exec phenix phenix doctor
 
-  # As JSON, waiting up to 10 seconds for the store lock
+  # As JSON, waiting up to 10 seconds for minimega
   phenix doctor -o json --timeout 10s
 
-  # Without the auth checks or the settings list, failing on any warning
-  phenix doctor --skip auth -x --strict
+  # Without minimega or the settings list, failing on any warning
+  phenix doctor --skip minimega -x --strict
 
   # Only the problems
   phenix doctor -p -x
@@ -244,10 +282,12 @@ func newDoctorCmd() *cobra.Command {
 
 // addDoctorFlags adds the doctor command's own flags to flags.
 func addDoctorFlags(flags *pflag.FlagSet) {
-	flags.Duration("timeout", defaultDoctorTimeout, "how long to wait for the store lock")
+	flags.Duration("timeout", defaultDoctorTimeout,
+		"how long to wait for each answer of minimega, phenix ui or ovs-vsctl, for the store lock, "+
+			"and for each check that reads many files, such as leftovers")
 	flags.StringP("output", "o", "text", "output format ('text' or 'json')")
 	flags.StringSlice("skip", nil,
-		"checks or groups of checks to skip, comma-separated or repeated (such as auth or ui.jwt-signing-key)")
+		"checks or groups of checks to skip, comma-separated or repeated (such as minimega or ui.jwt-signing-key)")
 	flags.Bool("strict", false, "exit 1 when a check warns, not only when one fails")
 	flags.BoolP("no-print-settings", "x", false, "leave out the settings list")
 	flags.Bool("report", false,
@@ -456,6 +496,57 @@ func gracePeriodCheck(v *viper.Viper) doctorCheck {
 	}
 
 	return doctorCheck{Name: "ui.shutdown-grace-period", Status: doctorPass, Detail: grace.String()}
+}
+
+// minimegaCheck asks minimega, through probe, for its version, waiting at
+// most timeout, and explains a failure to connect.
+func minimegaCheck(
+	ctx context.Context,
+	base string,
+	timeout time.Duration,
+	probe func(time.Duration) (string, error),
+) doctorCheck {
+	socket := filepath.Join(base, minimegaCheckName)
+
+	resps, err := boundedCall(ctx, timeout, func() ([]*minicli.Response, error) {
+		version, err := probe(timeout)
+
+		return []*minicli.Response{{Response: version}}, err
+	})
+
+	var check doctorCheck
+	if len(resps) > 0 {
+		check = passCheck(resps[0].Response)
+	}
+
+	switch {
+	case errors.Is(err, errNoAnswer):
+		check = failCheck(fmt.Sprintf("no answer on %s within %s", socket, timeout))
+	case err != nil:
+		check = failCheck(fmt.Sprintf("no answer on %s: %v", socket, err))
+		if problem := minimegaDialProblem(err); problem != "" {
+			check.Detail += " (" + problem + ")"
+		}
+	}
+
+	check.Name = minimegaCheckName
+
+	return check
+}
+
+// probeMinimega sends minimega's version command to the minimega whose base
+// directory is base, on a connection of its own, bounded by timeout.
+func probeMinimega(base string, timeout time.Duration) (string, error) {
+	resps, err := runMinimegaAt(base, "version", timeout)
+	if err != nil {
+		return "", err
+	}
+
+	if len(resps) == 0 {
+		return "", nil
+	}
+
+	return strings.TrimSpace(resps[0].Response), nil
 }
 
 // settingSource names where key's value comes from, in viper's order: a set

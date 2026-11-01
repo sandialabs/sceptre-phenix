@@ -4,8 +4,8 @@ This page consolidates common issues and their solutions when working with phēn
 
 When reporting a bug, run `docker exec phenix phenix doctor --report` (or
 `phenix doctor --report`) and paste its output into the issue. It gives the
-phēnix version, the OS, user and container, and the result of each
-configuration check. It replaces host names, IP addresses, user names,
+phēnix and minimega versions, the OS, user and container, and the result of
+each configuration check. It replaces host names, IP addresses, user names,
 email addresses and secrets with tokens, such as `<host-1>`. Read the output
 before you paste it. See
 [Checking the Configuration](settings.md#checking-the-configuration).
@@ -20,6 +20,15 @@ If your application logs are not showing up in the phēnix web UI, check the fol
 * **Check the format**: The phēnix core expects valid, single-line JSON objects. If your app prints raw text (like `Starting app...`), it may be logged as a warning or error by the core but will not be indexed correctly for the UI.
 * **Check the environment**: Verify `PHENIX_LOG_FILE=stderr` is set in your app's environment (phēnix does this automatically for apps it launches).
 * **Check for skipped lines**: When the server logs faster than it can send to the browser, the Logs page's live view skips lines and shows a `WARN` entry such as `120 log lines skipped while the server was busy`. The lines are still in the log file: reload the Logs page, or call `GET /logs`, to see them. The server also logs a `WebSocket broker dropped slow clients or live log lines` warning at most every 30 seconds.
+
+### No minimega Logs on the Logs Page
+
+The Logs page shows minimega's log only when `ui.logs.minimega-path` names
+the file minimega logs to, such as `/var/log/phenix/minimega.log` in the
+Docker Compose setup. When the file is not there, `phenix ui` waits for it
+without a warning. `phenix doctor` warns in its `ui.logs.minimega-path` check
+when the file is missing, or when the setting is empty while minimega logs to
+a file.
 
 ### JSON Parsing Errors
 
@@ -127,6 +136,15 @@ steps:
 2. Add the hosts that the hint names to `NO_PROXY` and to `no_proxy`.
 3. Restart `phenix ui` and the apps in the same environment.
 
+### A Command Ignores `bridge-mode` or `deploy-mode`
+
+Before it runs, every phēnix command asks `phenix ui` on `unix-socket` for its
+modes. When `phenix ui` uses `bridge-mode: auto`, the command uses `auto` too,
+and when `deploy-mode` is not set here, the command uses the mode of
+`phenix ui`. `phenix doctor` warns in its `server` check when either mode
+differs from the one set here, and names the mode the command uses. It also
+warns when the version of `phenix ui` is not the version of the command.
+
 ### Do Not Delete `config.yaml`
 
 If you delete the `config.yaml` file while phēnix is running, the internal file watcher will break, and dynamic configuration changes will no longer apply.
@@ -222,6 +240,17 @@ with the old AES encryption and an unknown qcow2 version. A qcow version 1
 image gives a warning. To fix these images, see
 [Image Format Versions](disks.md#image-format-versions).
 
+### phēnix Cannot Reach minimega or Its Images
+
+`phenix doctor` fails its `minimega` check when minimega does not give its
+version on `<base-dir.minimega>/minimega`, and names the likely cause: no
+socket (minimega is not running, or `base-dir.minimega` names another
+directory), a stale socket file, or a user that may not connect. Its
+`minimega-env` check then reads the flags minimega runs with. It fails when
+the `-filepath` directory does not exist for phēnix, which then cannot find
+the images minimega launches. In a container, mount that directory at the
+same path for both, as the Docker Compose setup does with `/phenix`.
+
 ### A Start Fails Because an Inject Source Does Not Exist
 
 minimega `disk inject` copies each injection source into the snapshot of a VM
@@ -231,3 +260,126 @@ with `cp`. When a source does not exist, the copy fails with
 names each source of a stored experiment or topology that does not exist.
 Put the file at the path, or change the `src` of the injection. In a
 container, mount the path at the same location for phēnix and minimega.
+
+### Injects Fail With an nbd Error
+
+minimega `disk inject` writes injects into an image at an experiment start,
+and `phenix image inject-miniexe` uses it too. It connects the image to a
+`/dev/nbdN` device with `qemu-nbd`, then mounts a partition. These errors come
+from it:
+
+| Error | Cause |
+| :--- | :--- |
+| `add module 'nbd'` | `lsmod` does not show the `nbd` module. It is not loaded, or it is part of the kernel. |
+| `no available nbds found` | Each `/dev/nbdN` has a lock file in `/var/lock` or a process in `/sys/block/nbdN/pid`. |
+| `no partitions found on image` or `desired partition N not found` | The `nbd` module has `max_part` set to 0, so the kernel makes no `/dev/nbdNp1`, or the image has no such partition. |
+
+The `nbd` check of `phenix doctor` finds these problems on the head node, and
+names the devices that a failed inject can leave. To repair them, do these
+steps as root:
+
+1. Load the module with partitions: `modprobe nbd max_part=10`.
+2. If the module has `max_part=0`, disconnect each device, then run
+   `modprobe -r nbd && modprobe nbd max_part=10`.
+3. For a device that a failed inject left, unmount its partition with
+   `umount <mount point>`. The mount point is in `<base-dir.minimega>`, such
+   as `/tmp/minimega/dstImg123`.
+4. Disconnect the device with `qemu-nbd -d /dev/nbdN`.
+5. Remove a lock file `/var/lock/qemu-nbd-nbdN` that no `qemu-nbd` uses.
+
+If `modprobe` cannot find the module, the `kernel-modules` check tells if
+`/lib/modules` has the modules of the running kernel. After a kernel upgrade,
+reboot into the installed kernel. In a container, run the container
+privileged with `/dev` from the host, as the Docker Compose setup does.
+
+### Open vSwitch Does Not Answer
+
+minimega makes bridges and taps for VMs with `ovs-vsctl`. The `openvswitch`
+check of `phenix doctor` runs `ovs-vsctl show`, and fails when `ovs-vsctl` is
+not on `PATH` or `ovsdb-server` does not answer. It warns when
+`ovs-vswitchd` does not run, which stops traffic on the bridges. Run it as
+root, as minimega runs, because the database socket usually refuses other users. To
+repair Open vSwitch on Debian and Ubuntu, do these steps:
+
+1. Install the `openvswitch-switch` package.
+2. Load the module with `modprobe openvswitch`.
+3. Restart the service with `systemctl restart openvswitch-switch`.
+
+minimega makes the experiment bridge, `phenix` by default, when it launches
+the first VM on it.
+
+### Low Disk Space and Leftovers of Deleted Experiments
+
+The `disk-space` check of `phenix doctor` warns when the filesystem of the
+images directory, of minimega's `-base` or of the minimega log has less free
+space than 10% of its size or 5 GiB. The `leftovers` check names what phēnix
+and minimega can leave behind, and the `disk-space` row gives the size of it.
+To free space and remove the leftovers, do these steps on the head node, as
+root:
+
+1. Make sure that `store.endpoint` has the same value as for `phenix ui`.
+   Then run `phenix doctor -p -x` and read the `leftovers` and `disk-space`
+   rows.
+2. Delete each snapshot file that the leftovers snapshots row names with
+   `rm <file>`. No stored experiment uses it.
+3. Copy the files that you want to keep, such as captures, from each
+   directory that the leftovers files row names. Then delete the directory
+   with `rm -r <directory>`.
+4. Unmount each path that the leftovers mounts row names with
+   `umount <path>`.
+5. Delete each Open vSwitch port that the leftovers taps row names with
+   `ovs-vsctl del-port <bridge> <port>`, then each tap with
+   `ip link delete <tap>`.
+6. Remove each mirror that the leftovers mirrors row names with
+   `ovs-vsctl -- --id=@m get mirror <mirror> -- remove bridge <bridge> mirrors @m`.
+7. If no inject runs, unmount each mounted `dstImg*` directory that the
+   disk-space inject dirs row names. Disconnect its nbd device, then delete
+   the directory with `rmdir <directory>`.
+8. Rotate or delete a large minimega log, such as with `logrotate` and its
+   `copytruncate` option.
+
+A snapshot file has the name `<head node>_<experiment>_<VM>_snapshot`. The
+check names only the files of this head node, and keeps a file that can
+belong to a stored experiment.
+
+### Apps or a SCORCH Run Stay Marked as Running
+
+phēnix marks an app as running in the store while an app stage or a SCORCH
+run is in progress. When `phenix ui` stops during a start or a run, the mark
+stays. phēnix then skips the running stage of that app, and SCORCH refuses a
+new run. The `stuck-status` check of `phenix doctor` names each such mark
+that no phenix process can own. To clear the marks, do these steps:
+
+1. Run `phenix doctor -p -x` and read the `stuck-status` row.
+2. Start `phenix ui`, or restart it. As it starts, it clears the marks of the
+   running experiments and resumes their delayed VM starts.
+3. If the row names an interrupted start, run
+   `phenix experiment stop <experiment>`. Then start the experiment again.
+
+### `phenix image build` Fails Before or in debootstrap
+
+The `image-build` check of `phenix doctor` checks what `phenix image build`
+needs past `vmdb2`. It warns when `debootstrap`, `kpartx`, `losetup` or
+`qemu-img` is not on `PATH`, when the build cannot use loop devices or mount,
+and when no loop device is free. Run the build as root, or in a privileged
+container with `/dev` from the host.
+
+phēnix gives `vmdb2` no keyring, so `debootstrap` uses the keyring that its
+script for the release names, in `/usr/share/debootstrap/scripts`. Without
+that keyring, `debootstrap` cannot check the Release signature. Without a
+script for the release, `debootstrap` fails with `No such script`. The
+check reads the release of each image config in the store, and names each
+missing script and keyring. To repair them, do these steps:
+
+1. Install the keyring package: `debian-archive-keyring`, `ubuntu-keyring`
+   or `kali-archive-keyring`.
+2. Install a later `debootstrap` for a new release, or add a script for the
+   release to `/usr/share/debootstrap/scripts`.
+3. For Kali on a host that is not Kali, see the Kali host setup in the
+   `phenix-image` skill (`skills/phenix-image/references/environment.md`).
+
+The `image-configs` check of `phenix doctor` warns when an overlay directory
+of a stored image config does not exist, because `vmdb2` cannot copy it into
+the image. Create the directory, or remove it from the config with
+`phenix image remove <config> --overlays <path>`. A script file that is not on
+disk does not stop the build: the config holds a copy of each script.

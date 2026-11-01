@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"os/user"
 	"runtime"
@@ -19,6 +20,8 @@ import (
 
 	"phenix/api/disk"
 	"phenix/store"
+	"phenix/web"
+	"phenix/web/health"
 )
 
 // The groups --skip takes in place of a check id.
@@ -32,8 +35,12 @@ const (
 	doctorGroupAuth     = "auth"
 	doctorGroupTLS      = "tls"
 	doctorGroupSocket   = "socket"
+	doctorGroupServer   = "server"
+	doctorGroupMinimega = "minimega"
 	doctorGroupTools    = "tools"
+	doctorGroupImages   = "images"
 	doctorGroupApps     = "apps"
+	doctorGroupFeatures = "features"
 )
 
 // doctorInput is everything the checks and the report header read, resolved
@@ -43,9 +50,15 @@ type doctorInput struct {
 	config   doctorConfig
 	known    []string
 	settings map[string]resolvedSetting
+	probe    func(base string, timeout time.Duration) (string, error)
+	minimega minimegaRunner
+	server   func(socket string, timeout time.Duration) *http.Client
+	qemuImg  func(ctx context.Context, path string) (string, error) // its version
+	statfs   func(path string) (health.DiskStat, error)
 	images   func(ctx context.Context, dir string) (disk.ChainScan, error)
 	// inspectDisk reads the partitions of the disk image at path (see disk.InspectPath)
 	inspectDisk func(ctx context.Context, path, qemuImg string) disk.Inspection
+	command     func(ctx context.Context, name string, args ...string) ([]byte, error) // stdout and stderr
 	// storeConfigs reads the configs of a kind from the store file, waiting at most timeout for its lock
 	storeConfigs func(ctx context.Context, path, kind string, timeout time.Duration) (store.Configs, error)
 	timeout      time.Duration
@@ -127,7 +140,13 @@ func newDoctorInput(flags *pflag.FlagSet, timeout time.Duration) *doctorInput {
 		config:   config,
 		known:    known,
 		settings: resolveSettings(flags, config.keys, known, env.lookup),
+		probe:    probeMinimega,
+		minimega: runMinimegaAt,
+		server:   doctorServerClient,
+		qemuImg:  health.QemuImgVersion,
+		statfs:   health.Statfs,
 		images:   disk.BrokenImages,
+		command:  runDoctorCommand,
 
 		inspectDisk: disk.InspectPath,
 		timeout:     timeout,
@@ -342,7 +361,7 @@ func settingDef(key, hint string) doctorCheckDef {
 
 // doctorChecks is every check doctor runs, in the order it runs them.
 //
-//nolint:funlen // one entry per check
+//nolint:funlen,maintidx // one entry per check
 func doctorChecks() []doctorCheckDef {
 	one := func(c doctorCheck) []doctorCheck { return []doctorCheck{c} }
 	parseHint := hintText("fix the YAML syntax in the file it names")
@@ -556,12 +575,138 @@ func doctorChecks() []doctorCheckDef {
 			},
 		},
 		{
+			id: serverCheckName, group: doctorGroupServer, name: serverCheckName, hint: serverHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck {
+				bridge := in.text("bridge-mode")
+				if in.settings["bridge-mode"].source == sourceDefault {
+					bridge = ""
+				}
+
+				socket := in.text("unix-socket")
+				rows, answered := serverChecks(ctx, socket, in.timeout, in.server, in.env.lstat, bridge, in.text("deploy-mode"))
+
+				ui := &doctorUI{answered: answered, why: ""}
+				if socket == "" {
+					ui.why = "unix-socket is empty"
+				} else if !answered && len(rows) > 0 {
+					ui.why = rows[0].Detail
+				}
+
+				in.found.ui = ui
+
+				return rows
+			},
+		},
+		{
+			id: stuckStatusName, group: doctorGroupServer, name: stuckStatusName, hint: stuckStatusHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(stuckStatusCheck(ctx, in)) },
+		},
+		{
+			id: uiLimitsName, group: doctorGroupServer, name: uiLimitsName, hint: uiLimitsHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(uiLimitsCheck(ctx, in)) },
+		},
+		{
+			id: minimegaCheckName, group: doctorGroupMinimega, name: minimegaCheckName, hint: minimegaHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck {
+				base := in.text("base-dir.minimega")
+				probe := func(timeout time.Duration) (string, error) { return in.probe(base, timeout) }
+
+				check := minimegaCheck(ctx, base, in.timeout, probe)
+				in.found.minimegaUp = check.Status == doctorPass
+
+				return one(check)
+			},
+		},
+		{
+			id: "minimega-env", group: doctorGroupMinimega, name: "minimega-env", hint: minimegaEnvHint,
+			run: minimegaEnvChecks,
+		},
+		{
+			id: "qemu-img", group: doctorGroupTools, name: "qemu-img",
+			hint: hintText("install qemu-img (the qemu-utils package on Debian and Ubuntu)"),
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck {
+				return one(qemuImgCheck(ctx, in.timeout, in.env.lookPath, in.qemuImg))
+			},
+		},
+		{
+			id: "vmdb2", group: doctorGroupTools, name: "vmdb2",
+			hint: hintText("install vmdb2 to build images with phenix image build, or skip this check with --skip vmdb2"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(toolCheck(in.env.lookPath, "vmdb2", doctorFail, "phenix image build fails"))
+			},
+		},
+		{
+			id: "filebeat", group: doctorGroupTools, name: "filebeat",
+			hint: hintText("install filebeat for the SCORCH components that enable it"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(toolCheck(in.env.lookPath, "filebeat", doctorWarn,
+					"SCORCH starts no Filebeat, even for a component that enables it"))
+			},
+		},
+		{
+			id: "disk", group: doctorGroupTools, name: "disk",
+			hint: hintText("increase the free space on the filesystem that the row names"),
+			run:  diskChecks,
+		},
+		{
+			id: kernelModulesName, group: doctorGroupTools, name: kernelModulesName, hint: kernelModulesHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(kernelModulesCheck(in)) },
+		},
+		{
+			id: nbdName, group: doctorGroupTools, name: nbdName, hint: nbdHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(nbdCheck(in)) },
+		},
+		{
+			id: openvswitchName, group: doctorGroupTools, name: openvswitchName, hint: openvswitchHint,
+			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(openvswitchCheck(ctx, in)) },
+		},
+		{
+			id: imageBuildName, group: doctorGroupTools, name: imageBuildName, hint: imageBuildHint,
+			run: imageBuildChecks,
+		},
+		{
 			id: imageConfigsName, group: doctorGroupTools, name: imageConfigsName, hint: imageConfigsHint,
 			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(imageConfigsCheck(ctx, in)) },
 		},
 		{
+			id: leftoversName, group: doctorGroupImages, name: leftoversName, hint: leftoversHint, run: leftoversChecks,
+		},
+		{
+			id: diskSpaceName, group: doctorGroupImages, name: diskSpaceName, hint: diskSpaceHint, run: diskSpaceChecks,
+		},
+		{
+			id: "apps", group: doctorGroupApps, name: "apps", hint: nil,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(in.env.appsCheck()) },
+		},
+		{
 			id: scenarioAppsName, group: doctorGroupApps, name: scenarioAppsName, hint: scenarioAppsHint,
 			run: func(ctx context.Context, in *doctorInput) []doctorCheck { return one(scenarioAppsCheck(ctx, in)) },
+		},
+		{
+			id: web.FeatureTunnelerDownload, group: doctorGroupFeatures, name: web.FeatureTunnelerDownload,
+			hint: hintText("make " + web.TunnelerDownloadDir + " a directory of phenix-tunneler builds, or remove it"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(in.env.tunnelerDownloadCheck(in.cwd))
+			},
+		},
+		{
+			id: "ui.features", group: doctorGroupFeatures, name: "ui.features", hint: featuresHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				// as phenix ui reads it, whatever type the source gives
+				v := viper.New()
+				v.Set("ui.features", in.settings["ui.features"].value)
+
+				return one(in.env.featuresSettingCheck(
+					v.GetStringSlice("ui.features"), in.cwd, in.text("ui.file-server-endpoint"),
+				))
+			},
+		},
+		{
+			id: "ui.logs.minimega-path", group: doctorGroupFeatures, name: "ui.logs.minimega-path",
+			hint: hintText("set ui.logs.minimega-path to the file minimega logs to, readable by this user"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(in.env.minimegaLogCheck(in.text("ui.logs.minimega-path"), in.found.minimegaArgs["logfile"]))
+			},
 		},
 	}
 }
@@ -626,7 +771,8 @@ func runDoctorChecksFound(
 
 	run := *input
 	run.found = &doctorFound{
-		experiments: nil, inventory: nil, mesh: nil, stored: nil, storeBusy: "", users: nil, certNames: nil,
+		minimegaUp: false, minimegaArgs: nil, experiments: nil, inventory: nil, ovsShow: nil, leftovers: nil,
+		mesh: nil, stored: nil, storeBusy: "", users: nil, ui: nil, procs: nil, certNames: nil,
 	}
 	in := &run
 
