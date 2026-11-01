@@ -10,6 +10,8 @@ on:
       - 'Makefile'
       - '.github/workflows/frontend.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'src/js/**'
       - 'src/go/**'
@@ -25,10 +27,16 @@ env:
 permissions:
   contents: read
 
+# a newer commit (or closing the PR) cancels runs still going for this PR or ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # The e2e build and tests run only for a change that can affect the browser
   # tests (see src/js/e2e/README.md), a manual run or a new branch.
   changes:
+    if: github.event.action != 'closed'
     name: Detect browser changes
     runs-on: ubuntu-latest
     outputs:
@@ -114,6 +122,7 @@ jobs:
           exit "$status"
 
   test-js:
+    if: github.event.action != 'closed'
     name: Unit Tests (JS)
     runs-on: ubuntu-latest
     defaults:
@@ -162,6 +171,7 @@ jobs:
   build-e2e:
     # One phenix binary (which embeds the UI) for each auth mode. Without a
     # browser change every step skips, not the job, as in test-e2e.
+    if: github.event.action != 'closed'
     name: ${{ matrix.name }}
     needs: changes
     runs-on: ubuntu-latest
@@ -220,7 +230,7 @@ jobs:
     name: E2E ${{ matrix.name }}
     needs: [changes, build-e2e]
     # Runs after the build, or after it was skipped, unless something failed.
-    if: ${{ !cancelled() && !failure() }}
+    if: ${{ !cancelled() && !failure() && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
     # The changes job checks that the image tag is the e2e lockfile's Playwright
     # version. Without a browser change no image is pulled.
