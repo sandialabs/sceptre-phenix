@@ -30,7 +30,7 @@ import (
 )
 
 // GetExperimentTopology - GET /experiments/{name}/topology[?ignore=MGMT].
-func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
+func GetExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentTopology")
 
 	var (
@@ -53,26 +53,27 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
 			"experiment",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	topo, err := vm.Topology(name, ignore)
 	if err != nil {
-		http.Error(w, "unable to get experiment topology", http.StatusBadRequest)
+		return weberror.New(http.StatusBadRequest, "unable to get experiment topology")
 	}
 
 	body, err := json.Marshal(topo)
 	if err != nil {
-		http.Error(w, "unable to convert topology", http.StatusInternalServerError)
+		return weberror.New(http.StatusInternalServerError, "unable to convert topology")
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // SearchExperimentTopology - GET /experiments/{name}/topology/search?hostname=xyz&vlan=abc.
-func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
+func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "SearchExperimentTopology")
 
 	var (
@@ -94,9 +95,8 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 			"experiment",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	cacheKey := fmt.Sprintf("experiment|%s|search", name)
@@ -104,9 +104,7 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 	val, ok := ucache.Get(cacheKey)
 	if !ok {
 		if _, err := vm.Topology(name, nil); err != nil {
-			http.Error(w, "error getting experiment topology", http.StatusBadRequest)
-
-			return
+			return weberror.New(http.StatusBadRequest, "error getting experiment topology")
 		}
 
 		val, _ = ucache.Get(cacheKey)
@@ -159,16 +157,16 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 
 	body, err := json.Marshal(util.WithRoot("nodes", nodes))
 	if err != nil {
-		http.Error(w, "error marshaling search results", http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, "error marshaling search results")
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // GetExperiments - GET /experiments.
-func GetExperiments(w http.ResponseWriter, r *http.Request) {
+func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
 		role  = middleware.RoleFromContext(ctx)
@@ -184,9 +182,8 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 			"user",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	experiments, err := experiment.List()
@@ -254,22 +251,19 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(&proto.ExperimentList{Experiments: allowed})
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling experiments", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	_, _ = w.Write(body)
+
+	return nil
 }
 
 // CreateExperiment - POST /experiments.
 //
 //nolint:funlen // handler
-func CreateExperiment(w http.ResponseWriter, r *http.Request) {
+func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -283,33 +277,22 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 			"user",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	var req proto.CreateExperimentRequest
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.NewWebError(err, "invalid request body")
 	}
 
 	if err := cache.LockExperimentForCreation(req.GetName()); err != nil {
@@ -323,9 +306,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockExperiment(req.GetName())
@@ -362,9 +344,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 
 	if err := experiment.Create(ctx, opts...); err != nil {
 		plog.Error(plog.TypeSystem, "creating experiment", "exp", req.GetName(), "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	if warns := notes.Warnings(ctx, true); warns != nil {
@@ -376,25 +357,22 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 	exp, err := experiment.Get(req.GetName())
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiment", "exp", req.GetName(), "err", err)
-		http.Error(w, "", http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, "")
 	}
 
 	vms, err := vm.List(req.GetName())
 	if err != nil {
 		plog.Error(plog.TypeSystem, "listing experiment VMs", "exp", req.GetName(), "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling experiment", "err", req.GetName(), "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -413,6 +391,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		req.GetName(),
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // UpdateExperiment - PATCH /experiments/{name}.
@@ -624,7 +604,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 }
 
 // DeleteExperiment - DELETE /experiments/{name}.
-func DeleteExperiment(w http.ResponseWriter, r *http.Request) {
+func DeleteExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -642,9 +622,8 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := cache.LockExperimentForDeletion(name)
@@ -659,9 +638,8 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockExperiment(name)
@@ -669,9 +647,8 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) {
 	err = experiment.Delete(name)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "deleting experiment", "exp", name, "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	broker.Broadcast(
@@ -690,6 +667,8 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // StartExperiment - POST /experiments/{name}/start.

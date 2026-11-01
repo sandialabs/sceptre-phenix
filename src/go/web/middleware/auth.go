@@ -13,6 +13,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/rbac"
 	jwtutil "phenix/web/util/jwt"
+	"phenix/web/weberror"
 )
 
 type ContextKey string
@@ -107,7 +108,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 				// TODO: remove token from user spec?
 
-				http.Error(w, e, http.StatusUnauthorized)
+				weberror.Error(w, e, http.StatusUnauthorized)
 			},
 		},
 	)
@@ -123,7 +124,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 					err,
 				)
 
-				http.Error(w, "missing phenix auth token header", http.StatusBadRequest)
+				weberror.Error(w, "missing phenix auth token header", http.StatusBadRequest)
 
 				return
 			}
@@ -132,7 +133,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 			if err != nil {
 				plog.Error(plog.TypeSecurity, "parsing valid JWT", "token", raw, "err", err)
 
-				http.Error(w, "parsing auth token", http.StatusBadRequest)
+				weberror.Error(w, "parsing auth token", http.StatusBadRequest)
 
 				return
 			}
@@ -162,7 +163,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 					"path",
 					r.URL.Path,
 				)
-				http.Error(w, "Forbidden", http.StatusForbidden)
+				weberror.Error(w, "Forbidden", http.StatusForbidden)
 
 				return
 			}
@@ -182,7 +183,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 					"err",
 					err,
 				)
-				http.Error(w, "Forbidden", http.StatusUnauthorized)
+				weberror.Error(w, "invalid token", http.StatusUnauthorized)
 
 				return
 			}
@@ -197,7 +198,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 						"token",
 						jwtUser,
 					)
-					http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
+					weberror.Error(w, "proxy user mismatch", http.StatusUnauthorized)
 
 					return
 				}
@@ -205,7 +206,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 			user, err := rbac.GetUser(jwtUser)
 			if err != nil {
-				http.Error(w, "user error", http.StatusUnauthorized)
+				weberror.Error(w, "user error", http.StatusUnauthorized)
 
 				return
 			}
@@ -213,14 +214,14 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 			// Check to see that the token is still associated w/ the user (ie. the
 			// user didn't delete it because it became compromised).
 			if err := user.ValidateToken(token.Raw); err != nil {
-				http.Error(w, "user token error", http.StatusUnauthorized)
+				weberror.Error(w, "user token error", http.StatusUnauthorized)
 
 				return
 			}
 
 			role, err := user.Role()
 			if err != nil {
-				http.Error(w, "user role error", http.StatusUnauthorized)
+				weberror.Error(w, "user role error", http.StatusUnauthorized)
 
 				return
 			}

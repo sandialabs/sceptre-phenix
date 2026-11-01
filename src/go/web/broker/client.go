@@ -24,6 +24,7 @@ import (
 	"phenix/web/proto"
 	"phenix/web/rbac"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 var marshaler = protojson.MarshalOptions{EmitUnpopulated: true} //nolint:gochecknoglobals // global marshaler
@@ -51,6 +52,7 @@ var (
 	upgrader = websocket.Upgrader{ //nolint:gochecknoglobals,exhaustruct // global upgrader
 		ReadBufferSize:  socketBufferSize,
 		WriteBufferSize: socketBufferSize,
+		Error:           weberror.UpgradeError,
 	}
 	screenshotSize = defaultBrokerScreenshotSize //nolint:gochecknoglobals // global config
 )

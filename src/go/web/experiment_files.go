@@ -15,10 +15,11 @@ import (
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 // GetExperimentFiles - GET /experiments/{name}/files.
-func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
+func GetExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx          = r.Context()
 		role         = middleware.RoleFromContext(ctx)
@@ -42,17 +43,15 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	files, err := experiment.Files(name, clientFilter)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting list of files for experiment", "exp", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	if sortCol != "" && sortDir != "" {
@@ -69,16 +68,17 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 	body, err := json.Marshal(util.WithRoot("files", files))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling file list for experiment", "exp", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body)
+
+	return nil
 }
 
 // GetExperimentFile - GET /experiments/{name}/files/{filename}.
-func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
+func GetExperimentFile(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
 		role  = middleware.RoleFromContext(ctx)
@@ -99,17 +99,14 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	contents, err := experiment.File(name, path)
 	if err != nil {
 		if errors.Is(err, mm.ErrCaptureExists) {
-			http.Error(w, "capture still in progress", http.StatusBadRequest)
-
-			return
+			return weberror.New(http.StatusBadRequest, "capture still in progress")
 		}
 
 		plog.Error(
@@ -122,16 +119,15 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	if r.Header.Get("Accept") == "text/plain" {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write(contents) //nolint:gosec // XSS via taint analysis
 
-		return
+		return nil
 	}
 
 	w.Header().Set("Content-Disposition", "attachment; filename="+file)
@@ -147,4 +143,6 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		path,
 	)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader(contents))
+
+	return nil
 }

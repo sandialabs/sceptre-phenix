@@ -16,10 +16,11 @@ import (
 	"phenix/web/cache"
 	"phenix/web/middleware"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 // DeleteVM - DELETE /experiments/{exp}/vms/{name}.
-func DeleteVM(w http.ResponseWriter, r *http.Request) {
+func DeleteVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
@@ -39,28 +40,21 @@ func DeleteVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	if !exp.Running() {
-		http.Error(w, "experiment not running", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "experiment not running")
 	}
 
 	if err := mm.KillVM(mm.NS(expName), mm.VMName(name)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -80,12 +74,14 @@ func DeleteVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // StartVM - POST /experiments/{exp}/vms/{name}/start.
 //
 //nolint:funlen // handler
-func StartVM(w http.ResponseWriter, r *http.Request) {
+func StartVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -106,9 +102,8 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if err := cache.LockVMForStarting(expName, name); err != nil {
@@ -124,9 +119,8 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(expName, name)
@@ -144,9 +138,7 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	exp, err := experiment.Get(expName)
@@ -157,9 +149,7 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	v, err := vm.Get(expName, name)
@@ -170,9 +160,7 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	screenshot, err := util.GetScreenshot(expName, name, "215")
@@ -184,9 +172,7 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -206,12 +192,14 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // StopVM - POST /experiments/{exp}/vms/{name}/stop.
 //
 //nolint:funlen // handler
-func StopVM(w http.ResponseWriter, r *http.Request) {
+func StopVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -232,9 +220,8 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if err := cache.LockVMForStopping(expName, name); err != nil {
@@ -250,9 +237,8 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(expName, name)
@@ -270,9 +256,7 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	exp, err := experiment.Get(expName)
@@ -283,9 +267,7 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	v, err := vm.Get(expName, name)
@@ -296,16 +278,12 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -325,12 +303,12 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // RestartVM - GET /experiments/{exp}/vms/{name}/restart.
-//
-//nolint:funlen // handler
-func RestartVM(w http.ResponseWriter, r *http.Request) {
+func RestartVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -351,9 +329,8 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if err := cache.LockVMForStarting(expName, name); err != nil {
@@ -369,9 +346,8 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(expName, name)
@@ -383,23 +359,17 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err := vm.Restart(expName, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	v, err := vm.Get(expName, name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
@@ -411,9 +381,7 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -433,10 +401,12 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // ShutdownVM - GET /experiments/{exp}/vms/{name}/shutdown.
-func ShutdownVM(w http.ResponseWriter, r *http.Request) {
+func ShutdownVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -457,9 +427,8 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if err := cache.LockVMForStopping(expName, name); err != nil {
@@ -475,40 +444,31 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(expName, name)
 
 	if err := vm.Shutdown(expName, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	v, err := vm.Get(expName, name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	v.Running = false
 
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -528,10 +488,12 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // ResetVM - GET /experiments/{exp}/vms/{name}/reset.
-func ResetVM(w http.ResponseWriter, r *http.Request) {
+func ResetVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -552,9 +514,8 @@ func ResetVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if err := cache.LockVMForStopping(expName, name); err != nil {
@@ -570,38 +531,29 @@ func ResetVM(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(expName, name)
 
 	if err := vm.ResetDiskState(expName, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	v, err := vm.Get(expName, name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -621,4 +573,6 @@ func ResetVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }

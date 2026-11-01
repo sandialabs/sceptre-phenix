@@ -16,10 +16,11 @@ import (
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 // GetUsers handles GET requests for /users.
-func GetUsers(w http.ResponseWriter, r *http.Request) {
+func GetUsers(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetUsers")
 
 	var (
@@ -34,9 +35,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	case role.Allowed(resourceUsers, "list"):
 		users, err := rbac.GetUsers()
 		if err != nil {
-			http.Error(w, "", http.StatusInternalServerError)
-
-			return
+			return weberror.New(http.StatusInternalServerError, "")
 		}
 
 		for _, rbacUser := range users {
@@ -53,9 +52,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	case role.Allowed(resourceUsers, verbGet, uname):
 		rbacUser, err := rbac.GetUser(uname)
 		if err != nil {
-			http.Error(w, "", http.StatusInternalServerError)
-
-			return
+			return weberror.New(http.StatusInternalServerError, "")
 		}
 
 		user := userFromRBAC(*rbacUser)
@@ -64,26 +61,24 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		resp = append(resp, user)
 	default:
 		plog.Warn(plog.TypeSecurity, "getting users not allowed", "user", uname)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := json.Marshal(util.WithRoot(resourceUsers, resp))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling users", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // CreateUser - POST /users.
-//
-//nolint:funlen // handler
-func CreateUser(w http.ResponseWriter, r *http.Request) {
+func CreateUser(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateUser")
 
 	var (
@@ -99,33 +94,22 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 			"requester",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	var req CreateUserRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	if !settings.IsPasswordValid(req.Password) {
@@ -138,9 +122,8 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		)
 
 		errStr := "password does not meet the requirements:\n" + settings.GetPasswordSettingsHTML()
-		http.Error(w, errStr, http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, errStr)
 	}
 
 	// The role is found before the user is created, so a request naming no
@@ -148,14 +131,13 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	uRole, err := rbac.RoleFromConfig(req.RoleName)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "role not found", "role", req.RoleName)
-		http.Error(w, "role not found", http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, "role not found")
 	}
 
 	user, ok := createUser(w, req.Username, req.Password, req.FirstName, req.LastName)
 	if !ok {
-		return
+		return nil
 	}
 
 	_ = uRole.SetResourceNames(req.ResourceNames...)
@@ -174,9 +156,8 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	body, err = json.Marshal(resp)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling user", "user", user.Username(), "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -197,10 +178,12 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	//nolint:gosec // XSS via taint analysis
 	_, _ = w.Write(body)
+
+	return nil
 }
 
 // GetUser handles GET requests for /users/{username}.
-func GetUser(w http.ResponseWriter, r *http.Request) {
+func GetUser(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "GetUser")
 
 	var (
@@ -219,16 +202,13 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 			"requester",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	rbacUser, err := rbac.GetUser(username)
 	if err != nil {
-		http.Error(w, "unable to get user", http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, "unable to get user")
 	}
 
 	user := userFromRBAC(*rbacUser)
@@ -240,18 +220,19 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	body, err := json.Marshal(user)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling user", "user", rbacUser.Username(), "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body)
+
+	return nil
 }
 
 // UpdateUser - PATCH /users/{username}.
 //
 //nolint:funlen // handler
-func UpdateUser(w http.ResponseWriter, r *http.Request) {
+func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "UpdateUser")
 
 	var (
@@ -271,39 +252,31 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 			"user",
 			uname,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var req UpdateUserRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	u, err := rbac.GetUser(uname)
 	if err != nil {
-		http.Error(w, "unable to get user", http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, "unable to get user")
 	}
 
 	if req.FirstName != "" {
 		err := u.UpdateFirstName(req.FirstName)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "updating first name for user", "user", uname, "err", err)
-			http.Error(w, "unable to update user", http.StatusInternalServerError)
 
-			return
+			return weberror.New(http.StatusInternalServerError, "unable to update user")
 		}
 
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
@@ -323,9 +296,8 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		err := u.UpdateLastName(req.LastName)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "updating last name for user", "user", uname, "err", err)
-			http.Error(w, "unable to update user", http.StatusInternalServerError)
 
-			return
+			return weberror.New(http.StatusInternalServerError, "unable to update user")
 		}
 
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
@@ -345,9 +317,8 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		uRole, err := rbac.RoleFromConfig(req.RoleName)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "role not found", "role", req.RoleName)
-			http.Error(w, "role not found", http.StatusBadRequest)
 
-			return
+			return weberror.New(http.StatusBadRequest, "role not found")
 		}
 
 		_ = uRole.SetResourceNames(req.ResourceNames...)
@@ -382,9 +353,8 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 				"user",
 				uname,
 			)
-			http.Error(w, "cannot change password without password", http.StatusBadRequest)
 
-			return
+			return weberror.New(http.StatusBadRequest, "cannot change password without password")
 		}
 
 		if !settings.IsPasswordValid(req.NewPassword) {
@@ -397,17 +367,15 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 			)
 
 			errStr := "new password does not meet the requirements:\n" + settings.GetPasswordSettingsHTML()
-			http.Error(w, errStr, http.StatusBadRequest)
 
-			return
+			return weberror.New(http.StatusBadRequest, errStr)
 		}
 
 		err := u.UpdatePassword(req.Password, req.NewPassword)
 		if err != nil {
 			plog.Error(plog.TypeSecurity, "updating password for user", "user", uname, "err", err)
-			http.Error(w, "unable to update password", http.StatusBadRequest)
 
-			return
+			return weberror.New(http.StatusBadRequest, "unable to update password")
 		}
 
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
@@ -426,9 +394,8 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	body, err = json.Marshal(resp)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling user", "user", uname, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -438,10 +405,12 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	)
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // DeleteUser - DELETE /users/{username}.
-func DeleteUser(w http.ResponseWriter, r *http.Request) {
+func DeleteUser(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DeleteUser")
 
 	var (
@@ -453,9 +422,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if user == uname {
-		http.Error(w, "you cannot delete your own user", http.StatusForbidden)
-
-		return
+		return weberror.New(http.StatusForbidden, "you cannot delete your own user")
 	}
 
 	if !role.Allowed(resourceUsers, "delete", uname) {
@@ -468,17 +435,15 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 			"user",
 			uname,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := config.Delete("user/" + uname)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "deleting user", "user", uname, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -495,6 +460,8 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		user,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // createUser creates and stores a user. When it cannot, it answers 409 for a
@@ -506,13 +473,13 @@ func createUser(w http.ResponseWriter, username, password, firstName, lastName s
 	}
 
 	if errors.Is(err, rbac.ErrUserExists) {
-		http.Error(w, "user "+username+" already exists", http.StatusConflict)
+		weberror.Error(w, "user "+username+" already exists", http.StatusConflict)
 
 		return nil, false
 	}
 
 	plog.Error(plog.TypeSecurity, "creating user", "user", username, "err", err)
-	http.Error(w, "error creating user", http.StatusInternalServerError)
+	weberror.Error(w, "error creating user", http.StatusInternalServerError)
 
 	return nil, false
 }

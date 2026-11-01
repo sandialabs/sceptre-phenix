@@ -6,6 +6,10 @@ export async function useErrorNotification(error) {
   console.warn('Error', error);
   if (!('response' in error)) {
     message = error.message;
+  } else if (tokenInvalid(error.response)) {
+    // if the error is for an invalid token, log the user out
+    usePhenixStore().logout();
+    message = 'Token was invalid. Logging out';
   } else if (error.response.headers.get('content-type') == 'application/json') {
     let msg = error.response.data;
     message = `<p><strong>Error:</strong> ${msg.message}</p>`;
@@ -15,16 +19,7 @@ export async function useErrorNotification(error) {
       message = `${message}<br><b>Cause:</b> ${cause}`;
     }
   } else if (error.response.data) {
-    // if the error is for an invalid token, log the user out
-    if (
-      error.response.status === 401 &&
-      String(error.response.data).toLowerCase().includes('invalid')
-    ) {
-      usePhenixStore().logout();
-      message = 'Token was invalid. Logging out';
-    } else {
-      message = `<b>Error:</b> ${error.response.data}`;
-    }
+    message = `<b>Error:</b> ${error.response.data}`;
   } else {
     message = `<b>Unknown Error Occurred: ${error.response.statusText}</b>`;
   }
@@ -42,3 +37,11 @@ export async function useErrorNotification(error) {
     message: `<div role="alert">${message}</div>`,
   });
 }
+
+// whether the server refused the request's token as invalid: a 401 whose
+// JSON Error message, or text body, says so
+const tokenInvalid = (response) =>
+  response.status === 401 &&
+  String(response.data?.message ?? response.data ?? '')
+    .toLowerCase()
+    .includes('invalid');

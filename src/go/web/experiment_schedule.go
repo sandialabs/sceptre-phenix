@@ -15,10 +15,11 @@ import (
 	"phenix/web/middleware"
 	"phenix/web/proto"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 // GetExperimentSchedule - GET /experiments/{name}/schedule.
-func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) {
+func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -36,50 +37,38 @@ func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if status := cache.IsExperimentLocked(name); status != "" {
 		plog.Warn(plog.TypeSystem, "experiment locked", "exp", name, "status", status)
-		http.Error(
-			w,
-			fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status),
-			http.StatusConflict,
-		)
 
-		return
+		return weberror.New(http.StatusConflict, fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status))
 	}
 
 	exp, err := experiment.Get(name)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiment", "exp", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	body, err := marshaler.Marshal(util.ExperimentScheduleToProtobuf(*exp))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling schedule for experiment", "exp", name, "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	//nolint:gosec // XSS via taint analysis
 	_, _ = w.Write(body)
+
+	return nil
 }
 
 // ScheduleExperiment - POST /experiments/{name}/schedule.
-//
-//nolint:funlen // handler
-func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
+func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -97,28 +86,21 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if status := cache.IsExperimentLocked(name); status != "" {
 		plog.Warn(plog.TypeSystem, "experiment locked", "exp", name, "status", status)
-		http.Error(
-			w,
-			fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status),
-			http.StatusConflict,
-		)
 
-		return
+		return weberror.New(http.StatusConflict, fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status))
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var req proto.UpdateScheduleRequest
@@ -126,9 +108,8 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
 	err = unmarshaler.Unmarshal(body, &req)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	err = experiment.Schedule(
@@ -146,29 +127,22 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	exp, err := experiment.Get(name)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiment", "exp", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	body, err = marshaler.Marshal(util.ExperimentScheduleToProtobuf(*exp))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling schedule for experiment", "exp", name, "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	broker.Broadcast(
@@ -189,4 +163,6 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
 	)
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }

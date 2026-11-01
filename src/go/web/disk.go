@@ -19,10 +19,11 @@ import (
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 // GetDisks - GET /disks.
-func GetDisks(w http.ResponseWriter, r *http.Request) {
+func GetDisks(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetDisks")
 
 	var (
@@ -42,9 +43,8 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 			"user",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if len(diskType) > 0 {
@@ -56,9 +56,7 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 
 	disks, err := disk.GetImages(expName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	filtered := []disk.Details{}
@@ -83,34 +81,26 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 
 	body, err := json.Marshal(util.WithRoot("disks", allowed))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // CommitDisk - POST /disks/commit?disk={disk}.
-func CommitDisk(w http.ResponseWriter, r *http.Request) {
+func CommitDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	path := mux.Vars(r)["disk"]
 
 	info, err := disk.GetImage(path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	if len(info.BackingImages) == 0 {
-		http.Error(
-			w,
-			fmt.Sprintf("image %s has no backing image to commit to", path),
-			http.StatusInternalServerError,
-		)
-
-		return
+		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("image %s has no backing image to commit to", path))
 	}
 
 	if !role.Allowed("disks", "update", info.BackingImages[0]) {
@@ -125,9 +115,8 @@ func CommitDisk(w http.ResponseWriter, r *http.Request) {
 			"to_disk",
 			info.BackingImages[0],
 		)
-		http.Error(w, "forbidden for "+info.BackingImages[0], http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden for "+info.BackingImages[0])
 	}
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
@@ -142,16 +131,13 @@ func CommitDisk(w http.ResponseWriter, r *http.Request) {
 			"to_disk",
 			info.BackingImages[0],
 		)
-		http.Error(w, "forbidden for "+path, http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden for "+path)
 	}
 
 	err = disk.CommitDisk(path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
@@ -166,6 +152,8 @@ func CommitDisk(w http.ResponseWriter, r *http.Request) {
 		info.BackingImages[0],
 	)
 	w.WriteHeader(http.StatusOK)
+
+	return nil
 }
 
 // SnapshotDisk - POST /disks/snapshot?disk={disk}&new={new}
@@ -173,7 +161,7 @@ func CommitDisk(w http.ResponseWriter, r *http.Request) {
 // new may be absolute, but will be put in same dir as disk if not. Extension will be set to qcow2.
 //
 //nolint:dupl // similar to RenameDisk
-func SnapshotDisk(w http.ResponseWriter, r *http.Request) {
+func SnapshotDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	path := mux.Vars(r)["disk"]
 	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
@@ -190,16 +178,13 @@ func SnapshotDisk(w http.ResponseWriter, r *http.Request) {
 			"to_disk",
 			newPath,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.SnapshotDisk(path, newPath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
@@ -214,20 +199,20 @@ func SnapshotDisk(w http.ResponseWriter, r *http.Request) {
 		newPath,
 	)
 	w.WriteHeader(http.StatusOK)
+
+	return nil
 }
 
 // RebaseDisk - POST /disks/rebase?disk={disk}&backing={backing}&unsafe={unsafe}
 // disk and backing should be absolute.
-func RebaseDisk(w http.ResponseWriter, r *http.Request) {
+func RebaseDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	path := mux.Vars(r)["disk"]
 	backing := mux.Vars(r)["backing"]
 
 	unsafe, err := strconv.ParseBool(mux.Vars(r)["unsafe"])
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
@@ -240,16 +225,13 @@ func RebaseDisk(w http.ResponseWriter, r *http.Request) {
 			"disk",
 			path,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err = disk.RebaseDisk(path, backing, unsafe)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
@@ -266,11 +248,13 @@ func RebaseDisk(w http.ResponseWriter, r *http.Request) {
 		unsafe,
 	)
 	w.WriteHeader(http.StatusOK)
+
+	return nil
 }
 
 // ResizeDisk - POST /disks/resize?disk={disk}&size={size}
 // disk should be absolute. size should be a valid size (absolute or relative) per `qemu-img --help`.
-func ResizeDisk(w http.ResponseWriter, r *http.Request) {
+func ResizeDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	path := mux.Vars(r)["disk"]
 	size := mux.Vars(r)["size"]
@@ -285,16 +269,13 @@ func ResizeDisk(w http.ResponseWriter, r *http.Request) {
 			"disk",
 			path,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.ResizeDisk(path, size)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
@@ -309,12 +290,14 @@ func ResizeDisk(w http.ResponseWriter, r *http.Request) {
 		size,
 	)
 	w.WriteHeader(http.StatusOK)
+
+	return nil
 }
 
 // CloneDisk - POST /disks/clone?disk={disk}&new={new}
 // disk should be absolute
 // new may be absolute, but will be put in same dir as disk if not. Extension will be set to qcow2.
-func CloneDisk(w http.ResponseWriter, r *http.Request) {
+func CloneDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	path := mux.Vars(r)["disk"]
 	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
@@ -331,16 +314,13 @@ func CloneDisk(w http.ResponseWriter, r *http.Request) {
 			"to_disk",
 			newPath,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.CloneDisk(path, newPath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
@@ -355,6 +335,8 @@ func CloneDisk(w http.ResponseWriter, r *http.Request) {
 		newPath,
 	)
 	w.WriteHeader(http.StatusOK)
+
+	return nil
 }
 
 // RenameDisk - POST /disks/rename?disk={disk}&new={new}
@@ -362,7 +344,7 @@ func CloneDisk(w http.ResponseWriter, r *http.Request) {
 // new may be absolute, but will be put in same dir as disk if not. Extension will be set to qcow2.
 //
 //nolint:dupl // similar to SnapshotDisk
-func RenameDisk(w http.ResponseWriter, r *http.Request) {
+func RenameDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	path := mux.Vars(r)["disk"]
 	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
@@ -379,16 +361,13 @@ func RenameDisk(w http.ResponseWriter, r *http.Request) {
 			"to_disk",
 			newPath,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.RenameDisk(path, newPath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
@@ -403,11 +382,13 @@ func RenameDisk(w http.ResponseWriter, r *http.Request) {
 		newPath,
 	)
 	w.WriteHeader(http.StatusOK)
+
+	return nil
 }
 
 // DeleteDisk - DELETE /disks?disk={disk}
 // disk should be absolute.
-func DeleteDisk(w http.ResponseWriter, r *http.Request) {
+func DeleteDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	path := mux.Vars(r)["disk"]
 
@@ -421,16 +402,13 @@ func DeleteDisk(w http.ResponseWriter, r *http.Request) {
 			"disk",
 			path,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.DeleteDisk(path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
@@ -443,10 +421,12 @@ func DeleteDisk(w http.ResponseWriter, r *http.Request) {
 		path,
 	)
 	w.WriteHeader(http.StatusOK)
+
+	return nil
 }
 
 // UploadDisk - POST /disks.
-func UploadDisk(w http.ResponseWriter, r *http.Request) {
+func UploadDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	clientFile, handler, err := r.FormFile("file")
 
@@ -458,14 +438,14 @@ func UploadDisk(w http.ResponseWriter, r *http.Request) {
 			"user",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if err != nil {
 		plog.Error(plog.TypeSystem, err.Error())
-		http.Error(w, "Error uploading: "+err.Error(), http.StatusInternalServerError)
+
+		return weberror.New(http.StatusInternalServerError, "Error uploading: "+err.Error())
 	}
 
 	defer func() { _ = clientFile.Close() }()
@@ -477,7 +457,8 @@ func UploadDisk(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		plog.Error(plog.TypeSystem, err.Error())
-		http.Error(w, "Error uploading: "+err.Error(), http.StatusInternalServerError)
+
+		return weberror.New(http.StatusInternalServerError, "Error uploading: "+err.Error())
 	}
 
 	defer func() { _ = localFile.Close() }()
@@ -492,11 +473,13 @@ func UploadDisk(w http.ResponseWriter, r *http.Request) {
 		"disk",
 		localFile.Name(),
 	)
+
+	return nil
 }
 
 // DownloadDisk - GET /disks?disk={disk}
 // disk may be relative to filedir or absolute. If absolute must be in the files dir.
-func DownloadDisk(w http.ResponseWriter, r *http.Request) {
+func DownloadDisk(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	path := mux.Vars(r)["disk"]
 
@@ -507,9 +490,8 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 	} else if !strings.HasPrefix(path, fileDir) {
 		errString := fmt.Sprintf("Error getting path %s: Path is not within files directory", path)
 		plog.Error(plog.TypeSystem, errString)
-		http.Error(w, errString, http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, errString)
 	}
 
 	if !role.Allowed("disks", "get", filepath.Base(path)) {
@@ -522,24 +504,20 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 			"disk",
 			path,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	fileInfo, err := os.Stat(path) //nolint:gosec // Path traversal via taint analysis
 	if err != nil {
 		errString := fmt.Sprintf("Error getting path %s: %s", path, err.Error())
 		plog.Error(plog.TypeSystem, errString)
-		http.Error(w, errString, http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, errString)
 	}
 
 	if fileInfo.IsDir() {
-		http.Error(w, "Can't download directory: "+path, http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "Can't download directory: "+path)
 	}
 
 	plog.Info(plog.TypeSystem, "download for file", "file", fileInfo.Name())
@@ -547,6 +525,8 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(fileInfo.Name()))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	http.ServeFile(w, r, path)
+
+	return nil
 }
 
 // for output disk names - makes absolute and adds qcow2 file extension.

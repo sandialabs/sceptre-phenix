@@ -21,10 +21,11 @@ import (
 	"phenix/web/middleware"
 	"phenix/web/proto"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 // GetVMs - GET /experiments/{exp}/vms.
-func GetVMs(w http.ResponseWriter, r *http.Request) {
+func GetVMs(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
@@ -45,23 +46,18 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 			"getting vms file not allowed",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	vms, err := vm.List(expName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	allowed := mm.VMs{}
@@ -104,16 +100,16 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // GetVM - GET /experiments/{exp}/vms/{name}.
-func GetVM(w http.ResponseWriter, r *http.Request) {
+func GetVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
@@ -136,23 +132,18 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	vm, err := vm.Get(expName, name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	if vm.Running && size != "" {
@@ -166,18 +157,18 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // UpdateVM - PATCH /experiments/{exp}/vms/{name}.
 //
 //nolint:funlen // handler
-func UpdateVM(w http.ResponseWriter, r *http.Request) {
+func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
@@ -197,23 +188,18 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var req proto.UpdateVMRequest
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	opts := []vm.UpdateOption{
@@ -258,23 +244,18 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 
 	if err := vm.Update(opts...); err != nil {
 		plog.Error(plog.TypeSystem, "updating VM", "err", err)
-		http.Error(w, "unable to update VM", http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, "unable to update VM")
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
-		http.Error(w, "unable to get experiment", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "unable to get experiment")
 	}
 
 	vm, err := vm.Get(expName, name)
 	if err != nil {
-		http.Error(w, "unable to get VM", http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, "unable to get VM")
 	}
 
 	if vm.Running {
@@ -288,9 +269,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 
 	body, err = marshaler.Marshal(util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -310,12 +289,14 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // UpdateVMs - PATCH /experiments/{exp}/vms.
 //
 //nolint:funlen // handler
-func UpdateVMs(w http.ResponseWriter, r *http.Request) {
+func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
@@ -325,16 +306,12 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var req proto.UpdateVMRequestList
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	resp := &proto.VMList{Total: req.GetTotal()} //nolint:exhaustruct // partial initialization
@@ -389,23 +366,18 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 
 		if err := vm.Update(opts...); err != nil {
 			plog.Error(plog.TypeSystem, "updating VM", "err", err)
-			http.Error(w, "unable to update VM", http.StatusInternalServerError)
 
-			return
+			return weberror.New(http.StatusInternalServerError, "unable to update VM")
 		}
 
 		exp, err := experiment.Get(expName)
 		if err != nil {
-			http.Error(w, "unable to get experiment", http.StatusBadRequest)
-
-			return
+			return weberror.New(http.StatusBadRequest, "unable to get experiment")
 		}
 
 		vm, err := vm.Get(expName, vmRequest.GetName())
 		if err != nil {
-			http.Error(w, "unable to get VM", http.StatusInternalServerError)
-
-			return
+			return weberror.New(http.StatusInternalServerError, "unable to get VM")
 		}
 
 		if vm.Running {
@@ -434,18 +406,18 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 
 	body, err = marshaler.Marshal(resp)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // RedeployVM - POST /experiments/{exp}/vms/{name}/redeploy.
 //
 //nolint:funlen // handler
-func RedeployVM(w http.ResponseWriter, r *http.Request) {
+func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -468,9 +440,8 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if err := cache.LockVMForRedeploying(expName, name); err != nil {
@@ -486,25 +457,20 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusConflict)
 
-		return
+		return weberror.New(http.StatusConflict, err.Error())
 	}
 
 	defer cache.UnlockVM(expName, name)
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	v, err := vm.Get(expName, name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	v.Busy = true
@@ -512,9 +478,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -584,17 +548,13 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	// Get the VM details again since redeploying may have changed them.
 	v, err = vm.Get(expName, name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
@@ -623,10 +583,12 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // GetScreenshot - GET /experiments/{exp}/vms/{name}/screenshot.png.
-func GetScreenshot(w http.ResponseWriter, r *http.Request) {
+func GetScreenshot(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx    = r.Context()
 		role   = middleware.RoleFromContext(ctx)
@@ -650,9 +612,8 @@ func GetScreenshot(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if size == "" {
@@ -661,24 +622,24 @@ func GetScreenshot(w http.ResponseWriter, r *http.Request) {
 
 	screenshot, err := util.GetScreenshot(exp, name, size)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	if encode {
 		encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 		_, _ = w.Write([]byte(encoded)) //nolint:gosec // XSS via taint analysis
 
-		return
+		return nil
 	}
 
 	w.Header().Set("Content-Type", "image/png")
 	_, _ = w.Write(screenshot) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // GetAllVMs - GET /vms.
-func GetAllVMs(w http.ResponseWriter, r *http.Request) {
+func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
 		role  = middleware.RoleFromContext(ctx)
@@ -694,9 +655,8 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 			"user",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	exps, err := experiment.List()
@@ -756,16 +716,16 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // ChangeOpticalDisc - POST /experiments/{exp}/vms/{name}/cdrom.
-func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
+func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -790,17 +750,15 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
 			"iso",
 			isoPath,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := vm.ChangeOpticalDisc(exp, name, isoPath)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "changing disc for VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -822,10 +780,12 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
 		isoPath,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // EjectOpticalDisc - DELETE /experiments/{exp}/vms/{name}/cdrom.
-func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
+func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -846,17 +806,15 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := vm.EjectOpticalDisc(exp, name)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "ejecting disc for VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -876,4 +834,6 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }

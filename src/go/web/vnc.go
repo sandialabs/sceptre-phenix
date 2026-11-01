@@ -16,10 +16,11 @@ import (
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 // GetVNC - GET /experiments/{exp}/vms/{name}/vnc.
-func GetVNC(w http.ResponseWriter, r *http.Request) {
+func GetVNC(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNC")
 
 	var (
@@ -41,16 +42,13 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	vm, err := vm.Get(exp, name)
 	if err != nil {
-		http.Error(w, "VM not found", http.StatusNotFound)
-
-		return
+		return weberror.New(http.StatusNotFound, "VM not found")
 	}
 
 	// The `token` variable will be an empty string if authentication is disabled,
@@ -105,16 +103,17 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 	} else {
 		assets, err := GetAssets()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return weberror.New(http.StatusInternalServerError, err.Error())
 		}
 		bfs := util.NewBinaryFileSystem(assets)
 		bfs.ServeTemplate(w, "vnc.html", config)
 	}
+
+	return nil
 }
 
 // GetVNCWebSocket - GET /experiments/{exp}/vms/{name}/vnc/ws.
-func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
+func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNCWebSocket")
 
 	var (
@@ -126,12 +125,13 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting VNC endpoint", "err", err)
-		http.Error(w, "", http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, "")
 	}
 
 	websocket.Handler(util.ConnectWSHandler(endpoint)).ServeHTTP(w, r)
+
+	return nil
 }
 
 type bannerConfig struct {

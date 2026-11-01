@@ -243,7 +243,9 @@ router.beforeEach(async (to, _, next) => {
         .catch((err) => {
           next({
             name: 'proxysignup',
-            params: { username: (err.response?.data ?? '').trim() },
+            params: {
+              username: err.response?.data?.metadata?.username ?? '',
+            },
           });
         });
     } else {

@@ -22,6 +22,7 @@ import (
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 var (
@@ -32,12 +33,11 @@ var (
 const consoleResizeSleep = 100 * time.Millisecond
 
 // CreateConsole - POST /console.
-func CreateConsole(w http.ResponseWriter, r *http.Request) {
+func CreateConsole(w http.ResponseWriter, r *http.Request) error {
 	if !o.minimegaConsole {
 		plog.Error(plog.TypeSystem, "request made for minimega console, but console not enabled")
-		http.Error(w, "'minimega-console' CLI arg not enabled", http.StatusMethodNotAllowed)
 
-		return
+		return weberror.New(http.StatusMethodNotAllowed, "'minimega-console' CLI arg not enabled")
 	}
 
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
@@ -48,18 +48,16 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 			"creating miniconsole not allowed",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	// create a new console
 	phenix, err := os.Executable()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to get full path to phenix")
-		http.Error(w, "", http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, "")
 	}
 
 	// the console must outlive this request; r.Context() is canceled as soon
@@ -73,13 +71,7 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 
 	tty, err := pty.Start(cmd)
 	if err != nil {
-		http.Error(
-			w,
-			fmt.Sprintf("could not start terminal: %v", err),
-			http.StatusInternalServerError,
-		)
-
-		return
+		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("could not start terminal: %v", err))
 	}
 
 	pid := cmd.Process.Pid
@@ -114,10 +106,12 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 		user,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // ResizeConsole - POST /console/{pid}/size?cols={[0-9]+}&rows={[0-9]+}.
-func ResizeConsole(w http.ResponseWriter, r *http.Request) {
+func ResizeConsole(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
 	if !role.Allowed("miniconsole", "post") {
@@ -127,24 +121,19 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 			"resizing miniconsole not allowed",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	vars := mux.Vars(r)
 
 	pid, err := strconv.Atoi(vars["pid"])
 	if err != nil {
-		http.Error(w, "invalid pid", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "invalid pid")
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "bad form")
 	}
 
 	ptyMu.Lock()
@@ -152,23 +141,17 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 	ptyMu.Unlock()
 
 	if !ok {
-		http.Error(w, "pty not found", http.StatusNotFound)
-
-		return
+		return weberror.New(http.StatusNotFound, "pty not found")
 	}
 
 	rows, err := strconv.ParseUint(r.FormValue("rows"), 10, 16)
 	if err != nil {
-		http.Error(w, "invalid rows", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "invalid rows")
 	}
 
 	cols, err := strconv.ParseUint(r.FormValue("cols"), 10, 16)
 	if err != nil {
-		http.Error(w, "invalid cols", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "invalid cols")
 	}
 
 	plog.Debug(plog.TypeSystem, "resize console", "pid", pid, "cols", cols, "rows", rows)
@@ -188,17 +171,20 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 
 	if errno != 0 {
 		plog.Error(plog.TypeSystem, "unable to set winsize", "err", errno)
-		http.Error(w, "set winsize failed", http.StatusInternalServerError)
+
+		return weberror.New(http.StatusInternalServerError, "set winsize failed")
 	}
 
 	// make sure winsize gets processed, hopefully the user isn't typing...
 	time.Sleep(consoleResizeSleep)
 
 	_, _ = io.WriteString(tty, "\n")
+
+	return nil
 }
 
 // WsConsole - GET /console/{pid}/ws.
-func WsConsole(w http.ResponseWriter, r *http.Request) {
+func WsConsole(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
 	if !role.Allowed("miniconsole", "get") {
@@ -208,24 +194,19 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 			"getting miniconsole not allowed",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	vars := mux.Vars(r)
 
 	pid, err := strconv.Atoi(vars["pid"])
 	if err != nil {
-		http.Error(w, "invalid pid", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "invalid pid")
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-
-		return
+		return weberror.New(http.StatusBadRequest, "bad form")
 	}
 
 	ptyMu.Lock()
@@ -233,9 +214,7 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 	ptyMu.Unlock()
 
 	if !ok {
-		http.Error(w, "pty not found", http.StatusNotFound)
-
-		return
+		return weberror.New(http.StatusNotFound, "pty not found")
 	}
 
 	websocket.Handler(func(ws *websocket.Conn) {
@@ -263,4 +242,6 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 
 		plog.Debug(plog.TypeSystem, "killed minimega console", "pid", pid)
 	}).ServeHTTP(w, r)
+
+	return nil
 }

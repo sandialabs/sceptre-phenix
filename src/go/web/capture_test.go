@@ -14,6 +14,7 @@ import (
 	"phenix/util/mm"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 // captureHandlerTestMM is a test double for mm.MM used by the StopVMCaptures
@@ -176,7 +177,7 @@ func TestStopVMCapturesStopsAllWithoutIfaceQuery(t *testing.T) {
 	installCaptureHandlerTestMM(t, fake)
 
 	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, stopVMCapturesTestRequest(""))
+	weberror.ErrorHandler(StopVMCaptures).ServeHTTP(rec, stopVMCapturesTestRequest(""))
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
@@ -200,7 +201,7 @@ func TestStopVMCapturesStopsOnlyRequestedInterface(t *testing.T) {
 	installCaptureHandlerTestMM(t, fake)
 
 	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, stopVMCapturesTestRequest("iface=1"))
+	weberror.ErrorHandler(StopVMCaptures).ServeHTTP(rec, stopVMCapturesTestRequest("iface=1"))
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
@@ -225,7 +226,7 @@ func TestStopVMCapturesUnrequestedInterfaceNotCaptured(t *testing.T) {
 	installCaptureHandlerTestMM(t, fake)
 
 	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, stopVMCapturesTestRequest("iface=0"))
+	weberror.ErrorHandler(StopVMCaptures).ServeHTTP(rec, stopVMCapturesTestRequest("iface=0"))
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
@@ -246,7 +247,7 @@ func TestStopVMCapturesRejectsNonIntegerIface(t *testing.T) {
 	installCaptureHandlerTestMM(t, fake)
 
 	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, stopVMCapturesTestRequest("iface=not-a-number"))
+	weberror.ErrorHandler(StopVMCaptures).ServeHTTP(rec, stopVMCapturesTestRequest("iface=not-a-number"))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
@@ -272,7 +273,7 @@ func TestStopVMCapturesForbidden(t *testing.T) {
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, req)
+	weberror.ErrorHandler(StopVMCaptures).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())

@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -174,7 +173,7 @@ func Start(opts ...ServerOption) error {
 
 	if o.featured("tunneler-download") {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
-		router.HandleFunc("/downloads/tunneler/{name}", forward.GetTunneler).Methods("GET")
+		router.Handle("/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)).Methods("GET")
 	}
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
@@ -252,42 +251,42 @@ func Start(opts ...ServerOption) error {
 	api.Handle("/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)).
 		Methods("GET", "OPTIONS")
 
-	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
+	api.Handle("/experiments", weberror.ErrorHandler(GetExperiments)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments", weberror.ErrorHandler(CreateExperiment)).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(UpdateExperiment)).
 		Methods("PATCH", "OPTIONS")
-	api.HandleFunc("/experiments/{name}", DeleteExperiment).Methods("DELETE", "OPTIONS")
+	api.Handle("/experiments/{name}", weberror.ErrorHandler(DeleteExperiment)).Methods("DELETE", "OPTIONS")
 	api.Handle("/experiments/{name}/apps", weberror.ErrorHandler(GetExperimentApps)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/start", weberror.ErrorHandler(StartExperiment)).
 		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{name}/stop", weberror.ErrorHandler(StopExperiment)).
 		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/netflow", GetNetflow).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/netflow", StartNetflow).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/netflow", StopNetflow).Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/netflow/ws", GetNetflowWebSocket).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/topology", GetExperimentTopology).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/topology/search", SearchExperimentTopology).
+	api.Handle("/experiments/{exp}/netflow", weberror.ErrorHandler(GetNetflow)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/netflow", weberror.ErrorHandler(StartNetflow)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/netflow", weberror.ErrorHandler(StopNetflow)).Methods("DELETE", "OPTIONS")
+	api.Handle("/experiments/{exp}/netflow/ws", weberror.ErrorHandler(GetNetflowWebSocket)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/topology", weberror.ErrorHandler(GetExperimentTopology)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/topology/search", weberror.ErrorHandler(SearchExperimentTopology)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/trigger", TriggerExperimentApps).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/trigger", CancelTriggeredExperimentApps).
+	api.Handle("/experiments/{name}/trigger", weberror.ErrorHandler(TriggerExperimentApps)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{name}/trigger", weberror.ErrorHandler(CancelTriggeredExperimentApps)).
 		Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/schedule", GetExperimentSchedule).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/schedule", ScheduleExperiment).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/captures", GetExperimentCaptures).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/captureSubnet", StartCaptureSubnet).
+	api.Handle("/experiments/{name}/schedule", weberror.ErrorHandler(GetExperimentSchedule)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/schedule", weberror.ErrorHandler(ScheduleExperiment)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{name}/captures", weberror.ErrorHandler(GetExperimentCaptures)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/captureSubnet", weberror.ErrorHandler(StartCaptureSubnet)).
 		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/stopCaptureSubnet", StopCaptureSubnet).
+	api.Handle("/experiments/{exp}/stopCaptureSubnet", weberror.ErrorHandler(StopCaptureSubnet)).
 		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/files", GetExperimentFiles).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).
+	api.Handle("/experiments/{name}/files", weberror.ErrorHandler(GetExperimentFiles)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/files/{filename}", weberror.ErrorHandler(GetExperimentFile)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.GetComponentOutput)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws", scorch.StreamComponentOutput).
+	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(scorch.StreamComponentOutput)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/scorch/pipelines", weberror.ErrorHandler(scorch.GetPipelines)).
 		Methods("GET", "OPTIONS")
@@ -297,128 +296,128 @@ func Start(opts ...ServerOption) error {
 		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.CancelPipeline)).
 		Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals", scorch.GetTerminals).
+	api.Handle("/experiments/{name}/scorch/terminals", weberror.ErrorHandler(scorch.GetTerminals)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}", scorch.ConnectTerminal).
+	api.Handle("/experiments/{name}/scorch/terminals/{pid}", weberror.ErrorHandler(scorch.ConnectTerminal)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/exit/{id}", scorch.ExitTerminal).
+	api.Handle("/experiments/{name}/scorch/terminals/{pid}/exit/{id}", weberror.ErrorHandler(scorch.ExitTerminal)).
 		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/ws/{id}", scorch.StreamTerminal).
+	api.Handle("/experiments/{name}/scorch/terminals/{pid}/ws/{id}", weberror.ErrorHandler(scorch.StreamTerminal)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}", scorch.ConnectTerminal).
+	api.Handle("/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.ConnectTerminal)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/soh", GetExperimentSoH).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms", GetVMs).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms", UpdateVMs).Methods("PATCH", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}", GetVM).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}", UpdateVM).Methods("PATCH", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}", DeleteVM).Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/reset", ResetVM).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/restart", RestartVM).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/start", StartVM).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/stop", StopVM).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/shutdown", ShutdownVM).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/redeploy", RedeployVM).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/cdrom", ChangeOpticalDisc).
+	api.Handle("/experiments/{name}/soh", weberror.ErrorHandler(GetExperimentSoH)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(GetVMs)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(UpdateVMs)).Methods("PATCH", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(GetVM)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(UpdateVM)).Methods("PATCH", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(DeleteVM)).Methods("DELETE", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/reset", weberror.ErrorHandler(ResetVM)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/restart", weberror.ErrorHandler(RestartVM)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/start", weberror.ErrorHandler(StartVM)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/stop", weberror.ErrorHandler(StopVM)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/shutdown", weberror.ErrorHandler(ShutdownVM)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/redeploy", weberror.ErrorHandler(RedeployVM)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/cdrom", weberror.ErrorHandler(ChangeOpticalDisc)).
 		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/cdrom", EjectOpticalDisc).
+	api.Handle("/experiments/{exp}/vms/{name}/cdrom", weberror.ErrorHandler(EjectOpticalDisc)).
 		Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/screenshot.png", GetScreenshot).
+	api.Handle("/experiments/{exp}/vms/{name}/screenshot.png", weberror.ErrorHandler(GetScreenshot)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/vnc", GetVNC).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/vnc/ws", GetVNCWebSocket).
+	api.Handle("/experiments/{exp}/vms/{name}/vnc", weberror.ErrorHandler(GetVNC)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/vnc/ws", weberror.ErrorHandler(GetVNCWebSocket)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", GetVMCaptures).
+	api.Handle("/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(GetVMCaptures)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", StartVMCapture).
+	api.Handle("/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(StartVMCapture)).
 		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", StopVMCaptures).
+	api.Handle("/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(StopVMCaptures)).
 		Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots", GetVMSnapshots).
+	api.Handle("/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(GetVMSnapshots)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots", SnapshotVM).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots/{snapshot}", RestoreVM).
+	api.Handle("/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(SnapshotVM)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/snapshots/{snapshot}", weberror.ErrorHandler(RestoreVM)).
 		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/commit", CommitVM).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/memorySnapshot", CreateVMMemorySnapshot).
+	api.Handle("/experiments/{exp}/vms/{name}/commit", weberror.ErrorHandler(CommitVM)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/memorySnapshot", weberror.ErrorHandler(CreateVMMemorySnapshot)).
 		Methods("POST", "OPTIONS")
 
-	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.GetPortForwards).
+	api.Handle("/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.GetPortForwards)).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.CreatePortForward).
+	api.Handle("/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.CreatePortForward)).
 		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.DeletePortForward).
+	api.Handle("/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.DeletePortForward)).
 		Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws", forward.GetPortForwardWebSocket).
+	api.Handle("/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws", weberror.ErrorHandler(forward.GetPortForwardWebSocket)).
 		Methods("GET", "OPTIONS")
 
 	if o.featured("vm-mount") {
-		api.HandleFunc("/experiments/{exp}/vms/{name}/mount", MountVM).Methods("POST", "OPTIONS")
-		api.HandleFunc("/experiments/{exp}/vms/{name}/unmount", UnmountVM).
+		api.Handle("/experiments/{exp}/vms/{name}/mount", weberror.ErrorHandler(MountVM)).Methods("POST", "OPTIONS")
+		api.Handle("/experiments/{exp}/vms/{name}/unmount", weberror.ErrorHandler(UnmountVM)).
 			Methods("DELETE", "OPTIONS")
-		api.HandleFunc("/experiments/{exp}/vms/{name}/files", GetMountFiles).
+		api.Handle("/experiments/{exp}/vms/{name}/files", weberror.ErrorHandler(GetMountFiles)).
 			Methods("GET", "OPTIONS").
 			Queries("path", "{path}")
-		api.HandleFunc("/experiments/{exp}/vms/{name}/files/download", DownloadMountFile).
+		api.Handle("/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)).
 			Methods("GET", "OPTIONS").
 			Queries("path", "{path}")
-		api.HandleFunc("/experiments/{exp}/vms/{name}/files/upload", UploadMountFile).
+		api.Handle("/experiments/{exp}/vms/{name}/files/upload", weberror.ErrorHandler(UploadMountFile)).
 			Methods("PUT", "OPTIONS").
 			Queries("path", "{path}")
-		api.HandleFunc("/experiments/{exp}/vms/{name}/files/copy", CopyExperimentFileToMount).
+		api.Handle("/experiments/{exp}/vms/{name}/files/copy", weberror.ErrorHandler(CopyExperimentFileToMount)).
 			Methods("POST", "OPTIONS")
 	}
 
-	api.HandleFunc("/disks", GetDisks).Methods("GET", "OPTIONS")
-	api.HandleFunc("/disks/snapshot", SnapshotDisk).
+	api.Handle("/disks", weberror.ErrorHandler(GetDisks)).Methods("GET", "OPTIONS")
+	api.Handle("/disks/snapshot", weberror.ErrorHandler(SnapshotDisk)).
 		Methods("POST", "OPTIONS").
 		Queries("disk", "{disk}", "new", "{new}")
-	api.HandleFunc("/disks/rebase", RebaseDisk).
+	api.Handle("/disks/rebase", weberror.ErrorHandler(RebaseDisk)).
 		Methods("POST", "OPTIONS").
 		Queries("disk", "{disk}", "backing", "{backing}", "unsafe", "{unsafe}")
-	api.HandleFunc("/disks/resize", ResizeDisk).
+	api.Handle("/disks/resize", weberror.ErrorHandler(ResizeDisk)).
 		Methods("POST", "OPTIONS").
 		Queries("disk", "{disk}", "size", "{size}")
-	api.HandleFunc("/disks/commit", CommitDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}")
-	api.HandleFunc("/disks/clone", CloneDisk).
+	api.Handle("/disks/commit", weberror.ErrorHandler(CommitDisk)).Methods("POST", "OPTIONS").Queries("disk", "{disk}")
+	api.Handle("/disks/clone", weberror.ErrorHandler(CloneDisk)).
 		Methods("POST", "OPTIONS").
 		Queries("disk", "{disk}", "new", "{new}")
-	api.HandleFunc("/disks", DeleteDisk).Methods("DELETE", "OPTIONS").Queries("disk", "{disk}")
-	api.HandleFunc("/disks/rename", RenameDisk).
+	api.Handle("/disks", weberror.ErrorHandler(DeleteDisk)).Methods("DELETE", "OPTIONS").Queries("disk", "{disk}")
+	api.Handle("/disks/rename", weberror.ErrorHandler(RenameDisk)).
 		Methods("POST", "OPTIONS").
 		Queries("disk", "{disk}", "new", "{new}")
-	api.HandleFunc("/disks", UploadDisk).Methods("POST", "OPTIONS")
-	api.HandleFunc("/disks/download", DownloadDisk).
+	api.Handle("/disks", weberror.ErrorHandler(UploadDisk)).Methods("POST", "OPTIONS")
+	api.Handle("/disks/download", weberror.ErrorHandler(DownloadDisk)).
 		Methods("GET", "OPTIONS").
 		Queries("disk", "{disk}")
 
-	api.HandleFunc("/vms", GetAllVMs).Methods("GET", "OPTIONS")
-	api.HandleFunc("/applications", GetApplications).Methods("GET", "OPTIONS")
-	api.HandleFunc("/topologies", GetTopologies).Methods("GET", "OPTIONS")
-	api.HandleFunc("/topologies/{topo}/scenarios", GetScenarios).Methods("GET", "OPTIONS")
-	api.HandleFunc("/hosts", GetClusterHosts).Methods("GET", "OPTIONS")
-	api.HandleFunc("/users", GetUsers).Methods("GET", "OPTIONS")
-	api.HandleFunc("/users", CreateUser).Methods("POST", "OPTIONS")
-	api.HandleFunc("/users/{username}", GetUser).Methods("GET", "OPTIONS")
-	api.HandleFunc("/users/{username}", UpdateUser).Methods("PATCH", "OPTIONS")
-	api.HandleFunc("/users/{username}", DeleteUser).Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/users/{username}/tokens", CreateUserToken).Methods("POST", "OPTIONS")
-	api.HandleFunc("/roles", GetRoles).Methods("GET", "OPTIONS")
-	api.HandleFunc("/signup", Signup).Methods("POST", "OPTIONS")
-	api.HandleFunc("/login", Login).Methods("GET", "POST", "OPTIONS")
-	api.HandleFunc("/logout", Logout).Methods("GET", "OPTIONS")
-	api.HandleFunc("/logs", GetLogs).Methods("GET", "OPTIONS")
+	api.Handle("/vms", weberror.ErrorHandler(GetAllVMs)).Methods("GET", "OPTIONS")
+	api.Handle("/applications", weberror.ErrorHandler(GetApplications)).Methods("GET", "OPTIONS")
+	api.Handle("/topologies", weberror.ErrorHandler(GetTopologies)).Methods("GET", "OPTIONS")
+	api.Handle("/topologies/{topo}/scenarios", weberror.ErrorHandler(GetScenarios)).Methods("GET", "OPTIONS")
+	api.Handle("/hosts", weberror.ErrorHandler(GetClusterHosts)).Methods("GET", "OPTIONS")
+	api.Handle("/users", weberror.ErrorHandler(GetUsers)).Methods("GET", "OPTIONS")
+	api.Handle("/users", weberror.ErrorHandler(CreateUser)).Methods("POST", "OPTIONS")
+	api.Handle("/users/{username}", weberror.ErrorHandler(GetUser)).Methods("GET", "OPTIONS")
+	api.Handle("/users/{username}", weberror.ErrorHandler(UpdateUser)).Methods("PATCH", "OPTIONS")
+	api.Handle("/users/{username}", weberror.ErrorHandler(DeleteUser)).Methods("DELETE", "OPTIONS")
+	api.Handle("/users/{username}/tokens", weberror.ErrorHandler(CreateUserToken)).Methods("POST", "OPTIONS")
+	api.Handle("/roles", weberror.ErrorHandler(GetRoles)).Methods("GET", "OPTIONS")
+	api.Handle("/signup", weberror.ErrorHandler(Signup)).Methods("POST", "OPTIONS")
+	api.Handle("/login", weberror.ErrorHandler(Login)).Methods("GET", "POST", "OPTIONS")
+	api.Handle("/logout", weberror.ErrorHandler(Logout)).Methods("GET", "OPTIONS")
+	api.Handle("/logs", weberror.ErrorHandler(GetLogs)).Methods("GET", "OPTIONS")
 	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
-	api.HandleFunc("/console", CreateConsole).Methods("POST", "OPTIONS")
-	api.HandleFunc("/console/{pid}/ws", WsConsole).Methods("GET", "OPTIONS")
-	api.HandleFunc("/console/{pid}/size", ResizeConsole).
+	api.Handle("/console", weberror.ErrorHandler(CreateConsole)).Methods("POST", "OPTIONS")
+	api.Handle("/console/{pid}/ws", weberror.ErrorHandler(WsConsole)).Methods("GET", "OPTIONS")
+	api.Handle("/console/{pid}/size", weberror.ErrorHandler(ResizeConsole)).
 		Methods("POST", "OPTIONS").
 		Queries("cols", "{cols:[0-9]+}", "rows", "{rows:[0-9]+}")
 
-	api.HandleFunc("/settings", GetSettings).Methods("GET", "OPTIONS")
-	api.HandleFunc("/settings", SetSettings).Methods("POST", "OPTIONS")
-	api.HandleFunc("/settings/password", GetPasswordRequirements).Methods("GET", "OPTIONS")
-	api.HandleFunc("/settings/timeout", GetTimeoutSettings).Methods("GET", "OPTIONS")
+	api.Handle("/settings", weberror.ErrorHandler(GetSettings)).Methods("GET", "OPTIONS")
+	api.Handle("/settings", weberror.ErrorHandler(SetSettings)).Methods("POST", "OPTIONS")
+	api.Handle("/settings/password", weberror.ErrorHandler(GetPasswordRequirements)).Methods("GET", "OPTIONS")
+	api.Handle("/settings/timeout", weberror.ErrorHandler(GetTimeoutSettings)).Methods("GET", "OPTIONS")
 
 	workflowRoutes := []route{
 		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
@@ -557,19 +556,6 @@ func apiNotFoundHandler() http.Handler {
 			r.Method,
 		)
 
-		webErr := weberror.NewWebError(nil, "no API route matches this request").
-			SetStatus(http.StatusNotFound)
-
-		body, err := json.Marshal(webErr)
-		if err != nil {
-			http.Error(w, "not found", http.StatusNotFound)
-
-			return
-		}
-
-		w.Header().Set("Content-Type", mimeJSON)
-		w.WriteHeader(http.StatusNotFound)
-
-		_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+		weberror.Error(w, "no API route matches this request", http.StatusNotFound)
 	})
 }

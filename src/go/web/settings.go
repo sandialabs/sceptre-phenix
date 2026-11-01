@@ -8,20 +8,16 @@ import (
 	"phenix/api/settings"
 	"phenix/util/plog"
 	"phenix/web/middleware"
+	"phenix/web/weberror"
 )
 
 // GetSettings - GET /settings.
-func GetSettings(w http.ResponseWriter, r *http.Request) {
+func GetSettings(w http.ResponseWriter, r *http.Request) error {
 	settings, err := settings.GetSettings()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting proto settings", "err:", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -29,20 +25,17 @@ func GetSettings(w http.ResponseWriter, r *http.Request) {
 	body, err := json.Marshal(settings)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling settings", "err:", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // SetSettings - POST /settings.
-func SetSettings(w http.ResponseWriter, r *http.Request) {
+func SetSettings(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -55,21 +48,15 @@ func SetSettings(w http.ResponseWriter, r *http.Request) {
 			"setting settings not allowed",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	s := &settings.Settings{} //nolint:exhaustruct // partial initialization
@@ -77,17 +64,15 @@ func SetSettings(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(body, s)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Unmarshaling request body", "err", err)
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, http.StatusText(http.StatusBadRequest))
 	}
 
 	err = settings.UpdateAllSettings(*s)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Updating all settings", "err", err)
-		http.Error(w, "Error updating settings", http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, "Error updating settings")
 	}
 
 	user := middleware.UserFromContext(ctx)
@@ -97,22 +82,19 @@ func SetSettings(w http.ResponseWriter, r *http.Request) {
 		"user",
 		user,
 	)
+
+	return nil
 }
 
 // GetPasswordRequirements - GET /settings/password.
-func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) {
+func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) error {
 	_ = settings.SetDefaults()
 
 	passwordReqs, err := settings.GetPasswordSettings()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Getting password settings:", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -120,16 +102,17 @@ func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) {
 	body, err := json.Marshal(passwordReqs)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Marshalling password reqs:", "err", err)
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, http.StatusText(http.StatusBadRequest))
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // GetTimeoutSettings - GET /settings/timeout.
-func GetTimeoutSettings(w http.ResponseWriter, r *http.Request) {
+func GetTimeoutSettings(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTimeoutSettings")
 
 	_ = settings.SetDefaults()
@@ -137,13 +120,8 @@ func GetTimeoutSettings(w http.ResponseWriter, r *http.Request) {
 	timeoutReqs, err := settings.GetTimeoutSettings()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Getting timeout settings:", "err", err)
-		http.Error(
-			w,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError,
-		)
 
-		return
+		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -151,10 +129,11 @@ func GetTimeoutSettings(w http.ResponseWriter, r *http.Request) {
 	body, err := json.Marshal(timeoutReqs)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Marshalling timeout reqs:", "err", err)
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, http.StatusText(http.StatusBadRequest))
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }

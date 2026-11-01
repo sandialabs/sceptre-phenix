@@ -17,10 +17,11 @@ import (
 	"phenix/web/middleware"
 	"phenix/web/proto"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 // GetExperimentCaptures - GET /experiments/{name}/captures.
-func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
+func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -38,9 +39,8 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	var (
@@ -57,17 +57,18 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(allowed)})
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling captures for experiment", "exp", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	//nolint:gosec // XSS via taint analysis
 	_, _ = w.Write(body)
+
+	return nil
 }
 
 // GetVMCaptures - GET /experiments/{exp}/vms/{name}/captures.
-func GetVMCaptures(w http.ResponseWriter, r *http.Request) {
+func GetVMCaptures(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -88,25 +89,24 @@ func GetVMCaptures(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	captures := mm.GetVMCaptures(mm.NS(exp), mm.VMName(name))
 
 	body, err := marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(captures)})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // StartVMCapture - POST /experiments/{exp}/vms/{name}/captures.
-func StartVMCapture(w http.ResponseWriter, r *http.Request) {
+func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -127,17 +127,15 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var req proto.StartCaptureRequest
@@ -145,16 +143,14 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 	err = unmarshaler.Unmarshal(body, &req)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	if err := vm.StartCapture(exp, name, int(req.GetInterface()), req.GetFilename()); err != nil {
 		plog.Error(plog.TypeSystem, "starting capture for VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -175,6 +171,8 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 		name,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // StopVMCaptures - DELETE /experiments/{exp}/vms/{name}/captures[?iface={iface}].
@@ -182,7 +180,7 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 // If the iface query parameter is provided, only the packet capture running
 // on that interface is stopped, leaving any other running captures for the
 // VM untouched. Otherwise, all packet captures for the VM are stopped.
-func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
+func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
@@ -204,9 +202,8 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 			"vm",
 			name,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	var (
@@ -221,18 +218,15 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 
 		iface, err = strconv.Atoi(ifaceStr)
 		if err != nil {
-			http.Error(w, "iface query parameter must be an integer", http.StatusBadRequest)
-
-			return
+			return weberror.New(http.StatusBadRequest, "iface query parameter must be an integer")
 		}
 
 		if err = vm.StopCapture(exp, name, iface); err == nil {
 			body, err = json.Marshal(map[string]int{"interface": iface})
 			if err != nil {
 				plog.Error(plog.TypeSystem, "marshaling capture stop result", "err", err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
 
-				return
+				return weberror.New(http.StatusInternalServerError, err.Error())
 			}
 		}
 	}
@@ -250,9 +244,8 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	broker.Broadcast(
@@ -275,10 +268,12 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 		ifaceStr,
 	)
 	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // StartCaptureSubnet - POST /experiments/{exp}/captureSubnet.
-func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
+func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -296,17 +291,15 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			exp,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var req proto.CaptureSubnetRequest
@@ -314,25 +307,22 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 	err = unmarshaler.Unmarshal(body, &req)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	vmCaptures, err := vm.CaptureSubnet(exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to start subnet capture", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	body, err = marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(vmCaptures)})
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to marshal vm capture list", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	user := middleware.UserFromContext(ctx)
@@ -345,10 +335,12 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		exp,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }
 
 // StopCaptureSubnet - POST /experiments/{exp}/stopCaptureSubnet.
-func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
+func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
@@ -366,41 +358,36 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 			"exp",
 			exp,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
 
-		return
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	var req proto.CaptureSubnetRequest
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
 
-		return
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	vms, err := vm.StopCaptureSubnet(exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to stop subnet capture", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	body, err = marshaler.Marshal(&proto.VMNameList{Vms: vms})
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to marshal vm capture list", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
+		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
 	user := middleware.UserFromContext(ctx)
@@ -413,4 +400,6 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		exp,
 	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
 }

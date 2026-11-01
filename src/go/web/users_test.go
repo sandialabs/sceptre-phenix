@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"phenix/util/plog/plogtest"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 // usersTestRole is the role the tests give the users they create.
@@ -88,32 +90,33 @@ func postUsers(signup bool, body string) *httptest.ResponseRecorder {
 
 	if signup {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/signup", strings.NewReader(body))
-		Signup(rec, req)
+		weberror.ErrorHandler(Signup).ServeHTTP(rec, req)
 
 		return rec
 	}
 
-	role := rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{
-		{Resources: []string{resourceUsers}, ResourceNames: []string{"*"}, Verbs: []string{"create"}},
-	}}}
-
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
-	ctx := context.WithValue(req.Context(), middleware.ContextKeyRole, role)
+	ctx := context.WithValue(req.Context(), middleware.ContextKeyRole, testRole(resourceUsers, "create"))
 	ctx = context.WithValue(ctx, middleware.ContextKeyUser, "admin")
 
-	CreateUser(rec, req.WithContext(ctx))
+	weberror.ErrorHandler(CreateUser).ServeHTTP(rec, req.WithContext(ctx))
 
 	return rec
 }
 
-// usersAnswer is the status and body of an answer to a request to create a user.
+// usersAnswer is the status and error message of an answer to a request to
+// create a user.
 type usersAnswer struct {
-	Status int
-	Body   string
+	Status  int
+	Message string
 }
 
 func newUsersAnswer(rec *httptest.ResponseRecorder) usersAnswer {
-	return usersAnswer{Status: rec.Code, Body: rec.Body.String()}
+	var body weberror.WebError
+
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+
+	return usersAnswer{Status: rec.Code, Message: body.Message}
 }
 
 // TestCreateUserRefusesAnExistingName refuses an existing name with 409, as
@@ -131,7 +134,7 @@ func TestCreateUserRefusesAnExistingName(t *testing.T) {
 			body := `{"username":"alice","password":"Testpass1!","first_name":"Other","last_name":"Name",` +
 				`"role_name":"` + usersTestRole + `"}`
 
-			want := usersAnswer{Status: http.StatusConflict, Body: "user alice already exists\n"}
+			want := usersAnswer{Status: http.StatusConflict, Message: "user alice already exists"}
 			if diff := cmp.Diff(want, newUsersAnswer(postUsers(signup, body))); diff != "" {
 				t.Errorf("POST /%s of alice mismatch (-want +got):\n%s", name, diff)
 			}
@@ -147,7 +150,7 @@ func TestCreateUserRefusesAnExistingName(t *testing.T) {
 
 			s.createErr = errors.New("store is read-only")
 
-			want = usersAnswer{Status: http.StatusInternalServerError, Body: "error creating user\n"}
+			want = usersAnswer{Status: http.StatusInternalServerError, Message: "error creating user"}
 			if diff := cmp.Diff(want, newUsersAnswer(postUsers(signup, strings.ReplaceAll(body, "alice", "bob")))); diff != "" {
 				t.Errorf("POST /%s of bob to a read-only store mismatch (-want +got):\n%s", name, diff)
 			}
