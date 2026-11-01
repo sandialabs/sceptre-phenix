@@ -38,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - **Experiments Page**: The Experiments page shows totals, Start and Stop buttons, links to topology and scenario configs, and a toolbar that starts, stops or deletes selected experiments. The create card can start the experiment after it creates it and can set experiment and VM annotations.
 - **SCORCH Runs**: The SCORCH runs page can clear run status, run only the cleanup stage, and download the artifact archive of a finished run. Added `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/clear` and `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/cleanup`.
 - **Disk Check Before a Start**: A start, a restart and a bulk VM start or restart refuse a VM when qemu cannot open its disk image, backing file or CD-ROM image. The new `experiment.disk-check` setting (`error`, `warn` or `off`) changes this, and a workflow dry run lists the problems in `warnings`.
+- **Health Checks**: Added the `/healthz` and `/readyz` endpoints and the `phenix healthcheck` command, which is the health check of the `phenix` container.
 - **Configuration Checks**: Added `phenix doctor`, which checks the config files, environment variables, settings, store, log files, base directories and `phenix ui` startup settings without a running server. `--report` prints the output for a bug report, with host names, addresses, user names and secrets replaced by tokens.
 
 ### Changed
