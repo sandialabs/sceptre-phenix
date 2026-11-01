@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file.
 - **Disk Images**: Added the `util/diskchain` and `util/partition` Go packages, which read qcow2 headers, backing file chains and MBR or GPT partition tables without `qemu-img`.
 - **VM Bulk Actions**: Added `POST /api/v1/experiments/{exp}/vms/actions`, which takes one power action on several VMs in a background job. Added `phenix vm info --host`, which lists only the VMs on the named cluster hosts.
 - **Annotations**: Added `--annotation` and `--node-annotation` to `phenix experiment create`, and `annotations` and `node_annotations` to `POST /api/v1/experiments`, for experiment and VM annotations. `GET` and `PATCH /api/v1/experiments/{exp}/vms/{name}` read and replace the annotations of one VM.
+- **minimega Console**: The web UI console stays open across page changes, reloads and tabs, and shows its recent output again. It ends on logout or 15 seconds after its last tab closes.
 
 ### Changed
 

@@ -421,3 +421,29 @@ func TestShutdownClosesXNetWebSocketsGoingAway(t *testing.T) {
 		t.Errorf("x/net websocket close at shutdown mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// A console started once endAll has run is ended at once, so none outlives
+// the shutdown.
+//
+//nolint:paralleltest // swaps the consoles
+func TestConsoleStartAfterEndAllIsRefused(t *testing.T) {
+	registry := useTestConsoles(t, time.Minute)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if left := registry.endAll(ctx, consoleEndedShutdown); left != 0 {
+		t.Errorf("endAll() with no consoles = %d left, want 0", left)
+	}
+
+	if _, err := registry.start(context.Background(), "alice"); !errors.Is(err, errServerStopping) {
+		t.Errorf("start() after endAll() error = %v, want %v", err, errServerStopping)
+	}
+
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+
+	if n := len(registry.sessions); n != 0 {
+		t.Errorf("consoles after start() following endAll() = %d, want none", n)
+	}
+}
