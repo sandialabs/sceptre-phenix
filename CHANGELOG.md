@@ -51,6 +51,7 @@ All notable changes to this project will be documented in this file.
 - **Web Performance**: The server compresses API responses and UI files with gzip, and browsers keep the hashed UI assets in their cache. Disk, VM mount and tunneler downloads accept `HEAD` and `Range` requests, so a client can continue a stopped download.
 - **CLI**: Replaced the `MustGetString`, `MustGetBool`, `MustGetInt` and `MustGetStringArray` flag helpers with one generic `mustGet` helper.
 - **minimega Connection**: `vm launch` and `read` run on a dedicated minimega connection, so other commands do not wait for them. C2 commands and VNC endpoint lookups stop when their context ends, and tunnel and `vm flush` commands ignore "vm not found" answers from other cluster nodes.
+- **Audit Logging (breaking)**: The web API logs sign-ins, refused tokens and security-relevant actions as `AUDIT` records with Elastic Common Schema fields, not as `SECURITY` or `ACTION` records, and always writes them to the system log file.
 
 ### Removed
 

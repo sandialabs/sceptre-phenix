@@ -15,6 +15,7 @@ import (
 	putil "phenix/util"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/weberror"
 )
@@ -31,16 +32,10 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) error {
 		appsFilter = query.Get("apps")
 	)
 
+	triggered := audit.Fields{Experiment: name, Extra: []any{"phenix.app.names", appsFilter}}
+
 	if !role.Allowed("experiments/trigger", "create", name) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"triggering experiment apps not allowed",
-			"user",
-			user,
-			"exp",
-			name,
-		)
+		audit.Denied(r, audit.AppTrigger, "triggering experiment apps not allowed", triggered)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -108,17 +103,7 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) error {
 		}
 	}()
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"experiment apps triggered",
-		"user",
-		user,
-		"exp",
-		name,
-		"appsFilter",
-		appsFilter,
-	)
+	audit.Success(r, audit.AppTrigger, "experiment apps triggered", triggered)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
@@ -136,16 +121,10 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) error
 		appsFilter = query.Get("apps")
 	)
 
+	canceled := audit.Fields{Experiment: name, Extra: []any{"phenix.app.names", appsFilter}}
+
 	if !role.Allowed("experiments/trigger", "delete", name) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"canceling triggered experiment apps not allowed",
-			"user",
-			user,
-			"exp",
-			name,
-		)
+		audit.Denied(r, audit.AppTriggerCancel, "canceling triggered experiment apps not allowed", canceled)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -171,17 +150,7 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) error
 		}
 	}()
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"experiment apps trigger cancelled",
-		"user",
-		user,
-		"exp",
-		name,
-		"appsFilter",
-		appsFilter,
-	)
+	audit.Success(r, audit.AppTriggerCancel, "experiment apps trigger canceled", canceled)
 
 	w.WriteHeader(http.StatusNoContent)
 

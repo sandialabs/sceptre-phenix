@@ -12,6 +12,7 @@ import (
 	"phenix/api/vm"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
@@ -117,17 +118,7 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("vms/captures", "create", fmt.Sprintf("%s/%s", exp, name)) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting capture for VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.CaptureStart, "starting capture for VM not allowed", audit.Fields{Experiment: exp, VM: name})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -148,7 +139,11 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
-	if err := vm.StartCapture(exp, name, int(req.GetInterface()), req.GetFilename()); err != nil {
+	iface := int(req.GetInterface())
+	captured := audit.Fields{Experiment: exp, VM: name, Interface: &iface, File: req.GetFilename()}
+
+	if err := vm.StartCapture(exp, name, iface, req.GetFilename()); err != nil {
+		audit.Failure(r, audit.CaptureStart, "starting capture for VM failed", captured, err)
 		plog.Error(plog.TypeSystem, "starting capture for VM", "exp", exp, "vm", name, "err", err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
@@ -160,17 +155,7 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm capture started",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.CaptureStart, "vm capture started", captured)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
@@ -192,24 +177,15 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("vms/captures", "delete", fmt.Sprintf("%s/%s", exp, name)) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping captures for VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.CaptureStop, "stopping captures for VM not allowed", audit.Fields{Experiment: exp, VM: name})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	var (
-		err  error
-		body json.RawMessage
+		err     error
+		body    json.RawMessage
+		stopped = audit.Fields{Experiment: exp, VM: name}
 	)
 
 	if ifaceStr == "" {
@@ -233,6 +209,8 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if err != nil {
+		audit.Failure(r, audit.CaptureStop, "stopping captures for VM failed", stopped, err)
+
 		plog.Error(
 			plog.TypeSystem,
 			"stopping captures for VM",
@@ -255,19 +233,7 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm capture stopped",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-		"iface",
-		ifaceStr,
-	)
+	audit.Success(r, audit.CaptureStop, "vm capture stopped", stopped)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
@@ -283,15 +249,7 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("exp/captureSubnet", "create", exp) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting subnet capture for experiment not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
+		audit.Denied(r, audit.CaptureStart, "starting subnet capture for experiment not allowed", audit.Fields{Experiment: exp})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -312,8 +270,11 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
+	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
+
 	vmCaptures, err := vm.CaptureSubnet(exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
+		audit.Failure(r, audit.CaptureStart, "starting subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
 		plog.Error(plog.TypeSystem, "unable to start subnet capture", "err", err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
@@ -326,15 +287,12 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"subnet capture started",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	for _, c := range vmCaptures {
+		audit.Success(r, audit.CaptureStart, "subnet capture started", audit.Fields{
+			Experiment: exp, VM: c.VM, Interface: &c.Interface, File: c.Filepath, Extra: subnet,
+		})
+	}
+
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
@@ -351,15 +309,7 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("exp/captureSubnet", "create", exp) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping subnet capture for experiment not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
+		audit.Denied(r, audit.CaptureStop, "stopping subnet capture for experiment not allowed", audit.Fields{Experiment: exp})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -378,8 +328,11 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
+	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
+
 	vms, err := vm.StopCaptureSubnet(exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
+		audit.Failure(r, audit.CaptureStop, "stopping subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
 		plog.Error(plog.TypeSystem, "unable to stop subnet capture", "err", err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
@@ -392,15 +345,10 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"subnet capture stopped",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	for _, name := range vms {
+		audit.Success(r, audit.CaptureStop, "subnet capture stopped", audit.Fields{Experiment: exp, VM: name, Extra: subnet})
+	}
+
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 

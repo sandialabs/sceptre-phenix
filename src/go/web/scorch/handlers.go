@@ -22,6 +22,7 @@ import (
 	"phenix/app"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -203,15 +204,10 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	exited := audit.Fields{Experiment: exp, PID: pid}
+
 	if !mayWrite(r, exp) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"exiting experiment scorch terminal not allowed",
-			"user",
-			r.Context().Value(middleware.ContextKeyUser),
-			"exp",
-			exp,
-		)
+		audit.Denied(r, audit.ScorchTerminalExit, "exiting experiment scorch terminal not allowed", exited)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -221,6 +217,8 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) error {
 	mu.Unlock()
 
 	if owner != id {
+		exited.Reason = "not writer"
+		audit.Denied(r, audit.ScorchTerminalExit, "exiting experiment scorch terminal not allowed", exited)
 		plog.Error(
 			plog.TypeSystem,
 			"terminal client doesn't own R/W rights to PTY",
@@ -246,9 +244,12 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) error {
 
 	if err := KillTerminal(t); err != nil {
 		plog.Error(plog.TypeSystem, "killing terminal for PID", "pid", pid, "err", err)
+		audit.Failure(r, audit.ScorchTerminalExit, "exiting experiment scorch terminal failed", exited, err)
 
 		return weberror.New(http.StatusNotFound, "error exiting terminal")
 	}
+
+	audit.Success(r, audit.ScorchTerminalExit, "exited experiment scorch terminal", exited)
 
 	mu.Lock()
 	delete(history, pid)
@@ -885,8 +886,11 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
 	}
 
+	canceled := runFields(name, run)
+
 	if !role.Allowed("experiments/trigger", "delete", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		audit.Denied(r, audit.ScorchCancel, "canceling scorch run not allowed", canceled)
 		err := weberror.NewWebError(
 			nil,
 			"canceling Scorch runs for experiment %s not allowed for %s",
@@ -897,7 +901,11 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	if cancel := scorchexe.GetCanceler(name, run); cancel != nil {
+	running := scorchexe.GetCanceler(name, run)
+	canceled.Extra = append(canceled.Extra, "phenix.scorch.running", running != nil)
+	audit.Success(r, audit.ScorchCancel, "canceled scorch run", canceled)
+
+	if cancel := running; cancel != nil {
 		plog.Debug(plog.TypeSystem, "canceling Scorch run for experiment", "exp", name, "run", run)
 
 		cancel()
@@ -912,4 +920,9 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
+}
+
+// runFields are the audit fields of the experiment's SCORCH run.
+func runFields(exp string, run int) audit.Fields {
+	return audit.Fields{Experiment: exp, Extra: []any{"phenix.scorch.run", run}}
 }

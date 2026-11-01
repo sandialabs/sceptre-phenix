@@ -11,6 +11,7 @@ import (
 	"phenix/api/experiment"
 	putil "phenix/util"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -67,22 +68,17 @@ func StartNetflow(w http.ResponseWriter, r *http.Request) error {
 		exp     = vars["exp"]
 	)
 
+	started := audit.Fields{Experiment: exp}
+
 	if !role.Allowed("experiments/netflow", "create", exp) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting netflow capture not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
+		audit.Denied(r, audit.NetflowStart, "starting netflow capture not allowed", started)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := experiment.StartNetflow(exp)
 	if err != nil {
+		audit.Failure(r, audit.NetflowStart, "starting netflow capture failed", started, err)
 		plog.Error(plog.TypeSystem, "starting netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowAlreadyStarted) {
@@ -104,15 +100,7 @@ func StartNetflow(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, "unable to start netflow capture")
 	}
 
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"netflow capture started",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	audit.Success(r, audit.NetflowStart, "netflow capture started", started)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
@@ -127,22 +115,17 @@ func StopNetflow(w http.ResponseWriter, r *http.Request) error {
 		exp     = vars["exp"]
 	)
 
+	stopped := audit.Fields{Experiment: exp}
+
 	if !role.Allowed("experiments/netflow", "delete", exp) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping netflow capture not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
+		audit.Denied(r, audit.NetflowStop, "stopping netflow capture not allowed", stopped)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := experiment.StopNetflow(exp)
 	if err != nil {
+		audit.Failure(r, audit.NetflowStop, "stopping netflow capture failed", stopped, err)
 		plog.Error(plog.TypeSystem, "stopping netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowNotStarted) {
@@ -152,15 +135,7 @@ func StopNetflow(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, "unable to stop netflow capture")
 	}
 
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"netflow capture stopped",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	audit.Success(r, audit.NetflowStop, "netflow capture stopped", stopped)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil

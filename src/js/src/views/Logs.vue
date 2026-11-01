@@ -208,6 +208,7 @@
   };
   const KNOWN_TYPES = [
     // keep in sync with plog/package.go
+    'AUDIT',
     'SECURITY',
     'SOH',
     'SCORCH',

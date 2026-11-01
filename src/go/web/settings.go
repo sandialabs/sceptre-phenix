@@ -7,6 +7,7 @@ import (
 
 	"phenix/api/settings"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/weberror"
 )
@@ -42,12 +43,7 @@ func SetSettings(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("settings", "update") {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSystem,
-			"setting settings not allowed",
-			user,
-		)
+		audit.Denied(r, audit.SettingsUpdate, "changing settings not allowed", audit.Fields{})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -70,18 +66,13 @@ func SetSettings(w http.ResponseWriter, r *http.Request) error {
 
 	err = settings.UpdateAllSettings(*s)
 	if err != nil {
+		audit.Failure(r, audit.SettingsUpdate, "changing settings failed", audit.Fields{}, err)
 		plog.Error(plog.TypeSystem, "Updating all settings", "err", err)
 
 		return weberror.New(http.StatusInternalServerError, "Error updating settings")
 	}
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeSystem,
-		"settings changed",
-		"user",
-		user,
-	)
+	audit.Success(r, audit.SettingsUpdate, "settings changed", audit.Fields{})
 
 	return nil
 }

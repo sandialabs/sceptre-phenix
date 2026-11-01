@@ -19,6 +19,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/types"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -217,7 +218,7 @@ func StartFileServer(endpoint string, jwtKey, proxyAuthHeader string) {
 	mux.HandleFunc("/upload", uploadExperimentFiles(authEnabled))
 
 	plog.Info(plog.TypeSystem, "starting file server", "endpoint", endpoint)
-	handler := fileServerCookieAuth(middleware.Auth(jwtKey, proxyAuthHeader)(mux), jwtKey)
+	handler := fileServerCookieAuth(middleware.Auth(jwtKey, proxyAuthHeader, middleware.OnRefusal(audit.TokenRefused))(mux), jwtKey)
 
 	//nolint:gosec // simple opt-in upload server; no timeouts to match UI server style
 	if err := http.ListenAndServe(endpoint, handler); err != nil {
@@ -450,6 +451,8 @@ func clearFileServerTokenCookie(w http.ResponseWriter) {
 }
 
 // uploadExperimentFiles stores posted files under the selected experiment files directory.
+//
+//nolint:funlen // handler
 func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -471,11 +474,20 @@ func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 			return
 		}
 
+		uploaded := audit.Fields{Experiment: exp.Metadata.Name}
+
 		role := middleware.RoleFromContext(r.Context())
 		if !role.Allowed("experiments/files", "create", exp.Metadata.Name) {
+			audit.Denied(r, audit.FileUpload, "uploading experiment files not allowed", uploaded)
 			weberror.Error(w, "forbidden", http.StatusForbidden)
 
 			return
+		}
+
+		// failed answers an upload that failed with err, auditing it
+		failed := func(f audit.Fields, msg string, err error) {
+			audit.Failure(r, audit.FileUpload, "uploading experiment file failed", f, err)
+			weberror.Error(w, msg+": "+err.Error(), http.StatusInternalServerError)
 		}
 
 		files := r.MultipartForm.File["files"]
@@ -487,12 +499,12 @@ func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 
 		dir := exp.FilesDir()
 		if err := os.MkdirAll(dir, 0o750); err != nil {
-			weberror.Error(w, "creating experiment files directory: "+err.Error(), http.StatusInternalServerError)
+			failed(uploaded, "creating experiment files directory", err)
 
 			return
 		}
 
-		var uploaded int
+		var count int
 		for _, header := range files {
 			name := filepath.Base(header.Filename)
 			if name == "" || name == "." {
@@ -501,44 +513,50 @@ func uploadExperimentFiles(authEnabled bool) http.HandlerFunc {
 				return
 			}
 
+			file := uploaded
+			file.Target = filepath.Join(dir, name)
+
 			clientFile, err := header.Open()
 			if err != nil {
-				weberror.Error(w, "opening upload: "+err.Error(), http.StatusInternalServerError)
+				failed(file, "opening upload", err)
 
 				return
 			}
 
-			target, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+			target, err := os.OpenFile(file.Target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
 				_ = clientFile.Close()
-				weberror.Error(w, "creating target file: "+err.Error(), http.StatusInternalServerError)
+				failed(file, "creating target file", err)
 
 				return
 			}
 
-			_, copyErr := io.Copy(target, clientFile)
+			written, copyErr := io.Copy(target, clientFile)
 			closeClientErr := clientFile.Close()
 			closeTargetErr := target.Close()
 			if copyErr != nil {
-				weberror.Error(w, "saving upload: "+copyErr.Error(), http.StatusInternalServerError)
+				failed(file, "saving upload", copyErr)
 
 				return
 			}
 			if closeClientErr != nil {
-				weberror.Error(w, "closing upload: "+closeClientErr.Error(), http.StatusInternalServerError)
+				failed(file, "closing upload", closeClientErr)
 
 				return
 			}
 			if closeTargetErr != nil {
-				weberror.Error(w, "closing target file: "+closeTargetErr.Error(), http.StatusInternalServerError)
+				failed(file, "closing target file", closeTargetErr)
 
 				return
 			}
 
-			uploaded++
+			file.Extra = []any{"file.size", written}
+			audit.Success(r, audit.FileUpload, "uploaded experiment file", file)
+
+			count++
 		}
 
-		renderFileServerIndex(w, r, fmt.Sprintf("Uploaded %d file(s) to %s.", uploaded, exp.Metadata.Name), authEnabled)
+		renderFileServerIndex(w, r, fmt.Sprintf("Uploaded %d file(s) to %s.", count, exp.Metadata.Name), authEnabled)
 	}
 }
 

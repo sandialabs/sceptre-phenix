@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,6 +22,8 @@ import (
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/file"
+	"phenix/util/mm"
+	"phenix/util/plog"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
 )
@@ -56,6 +59,72 @@ func combinedRole(roles ...rbac.Role) rbac.Role {
 	}
 
 	return combined
+}
+
+// testMM is the test minimega: every node is the headnode, and it serves the VMs, captures and
+// states it holds, counting calls. Other mm.MM methods panic.
+type testMM struct {
+	mm.MM
+
+	vms      mm.VMs
+	captures []mm.Capture // of the experiment, and of each VM
+	states   map[string]string
+	err      error  // from reading VM states and stopping captures
+	vnc      string // every VM's VNC endpoint
+
+	vmListings, captureListings, stateReads, captureStops atomic.Int32
+}
+
+func (m *testMM) IsHeadnode(string) bool { return true }
+
+func (m *testMM) GetVMHost(...mm.Option) (string, error) { return "headnode", nil }
+
+func (m *testMM) GetVNCEndpoint(...mm.Option) (string, error) { return m.vnc, nil }
+
+func (m *testMM) GetVMInfo(...mm.Option) mm.VMs {
+	m.vmListings.Add(1)
+
+	return m.vms
+}
+
+func (m *testMM) GetExperimentCaptures(...mm.Option) []mm.Capture {
+	m.captureListings.Add(1)
+
+	return m.captures
+}
+
+func (m *testMM) GetVMCaptures(...mm.Option) []mm.Capture {
+	return m.captures
+}
+
+func (m *testMM) StopVMCapture(...mm.Option) error {
+	m.captureStops.Add(1)
+
+	return m.err
+}
+
+func (m *testMM) GetVMStates(...mm.Option) (map[string]string, error) {
+	m.stateReads.Add(1)
+
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	return m.states, nil
+}
+
+// useTestMM makes fake answer for minimega for the rest of the test.
+//
+//nolint:unparam // a test can read the fake back
+func useTestMM(t *testing.T, fake *testMM) *testMM {
+	t.Helper()
+
+	original := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore test double
+
+	mm.DefaultMM = fake //nolint:reassign // install test double
+
+	return fake
 }
 
 // testStore is an in-memory store of configs. Any store.Store method it does
@@ -198,12 +267,50 @@ func namedExperiment(t *testing.T, name, started string, nodes ...map[string]any
 	return c
 }
 
+// useTestExperiment stores test-experiment, running, with one VM, test-vm,
+// whose two interfaces are on VLANs EXP_1 and EXP_2.
+func useTestExperiment(t *testing.T) {
+	t.Helper()
+
+	useTestStore(t, testExperiment(t, "2024-01-01T00:00:00Z", map[string]any{
+		"type": "VirtualMachine",
+		"general": map[string]any{
+			"hostname":    "test-vm",
+			"do_not_boot": false,
+			"snapshot":    false,
+		},
+		"hardware": map[string]any{
+			"vcpus":   2,
+			"memory":  512,
+			"os_type": "linux",
+			"drives":  []map[string]any{{"image": "test.qc2", "inject_partition": 1}},
+		},
+		"network": map[string]any{
+			"interfaces": []map[string]any{
+				{"name": "IF0", "vlan": "EXP_1"},
+				{"name": "IF1", "vlan": "EXP_2"},
+			},
+		},
+	}))
+}
+
 // testFiles is the cluster file listing of test-experiment. Other
 // file.ClusterFiles methods panic.
 type testFiles struct {
 	file.ClusterFiles
 
 	files file.Files
+	// copies a file only a mesh node has to the headnode; without it, no
+	// mesh node has the file
+	copy func(src string) error
+}
+
+func (f *testFiles) CopyFile(src, _ string, _ file.CopyStatus) error {
+	if f.copy != nil {
+		return f.copy(src)
+	}
+
+	return fmt.Errorf("no mesh node has %s", src)
 }
 
 func (f *testFiles) GetExperimentFiles(string, string) (file.Files, error) {
@@ -212,6 +319,8 @@ func (f *testFiles) GetExperimentFiles(string, string) (file.Files, error) {
 
 // useTestFiles makes the cluster list the experiment files at paths for the
 // rest of the test.
+//
+//nolint:unparam // a test can read the fake back
 func useTestFiles(t *testing.T, paths ...string) *testFiles {
 	t.Helper()
 
@@ -269,8 +378,6 @@ var roleNames atomic.Int64 //nolint:gochecknoglobals // unique across tests
 
 // serveAs serves the routes over testPublic, taking every API request as user with role (dev auth);
 // it adds the role to the test's store, installing one if needed.
-//
-//nolint:unparam // tests can serve as any user
 func serveAs(t *testing.T, user string, role rbac.Role) *httptest.Server {
 	t.Helper()
 
@@ -413,4 +520,98 @@ func readBody(t *testing.T, resp *http.Response) string {
 	}
 
 	return string(body)
+}
+
+// auditEvent is an audit record as the system log file holds it.
+type auditEvent map[string]any
+
+// captureAudit records the audit events logged during the test; the
+// returned function lists those logged so far.
+func captureAudit(t *testing.T) func() []auditEvent {
+	t.Helper()
+
+	var (
+		mu     sync.Mutex
+		events []auditEvent
+	)
+
+	plog.AddHandler(t.Name(), slog.NewJSONHandler(writerFunc(func(p []byte) (int, error) {
+		var e auditEvent
+		if err := json.Unmarshal(p, &e); err == nil && e["type"] == string(plog.TypeAudit) {
+			mu.Lock()
+			events = append(events, e)
+			mu.Unlock()
+		}
+
+		return len(p), nil
+	}), &slog.HandlerOptions{Level: slog.LevelDebug}))
+	t.Cleanup(func() { plog.RemoveHandler(t.Name()) })
+
+	return func() []auditEvent {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return slices.Clone(events)
+	}
+}
+
+// writerFunc is an [io.Writer] of a function.
+type writerFunc func(p []byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// matches reports whether the event is of the action and outcome, and has
+// each of fields (compared as JSON decodes them, so numbers as float64).
+func (e auditEvent) matches(action, outcome string, fields map[string]any) bool {
+	if e["event.action"] != action || e["event.outcome"] != outcome {
+		return false
+	}
+
+	for k, v := range fields {
+		if fmt.Sprint(e[k]) != fmt.Sprint(v) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// wantAudit fails the test unless one of events is of the action and
+// outcome with each of fields; it returns that event.
+func wantAudit(t *testing.T, events []auditEvent, action, outcome string, fields map[string]any) auditEvent {
+	t.Helper()
+
+	for _, e := range events {
+		if e.matches(action, outcome, fields) {
+			return e
+		}
+	}
+
+	t.Errorf("no %s %s audit event with %v among %d:", action, outcome, fields, len(events))
+
+	for _, e := range events {
+		t.Errorf("  %v", e)
+	}
+
+	return nil
+}
+
+// countAudit counts the events of the action and outcome with each of fields.
+func countAudit(events []auditEvent, action, outcome string, fields map[string]any) int {
+	n := 0
+
+	for _, e := range events {
+		if e.matches(action, outcome, fields) {
+			n++
+		}
+	}
+
+	return n
+}
+
+// wantDenied fails the test unless events hold an RBAC refusal of the action.
+func wantDenied(t *testing.T, events []auditEvent, action string) {
+	t.Helper()
+
+	wantAudit(t, events, action, "failure", map[string]any{"event.reason": "forbidden"})
 }

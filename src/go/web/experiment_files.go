@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -13,6 +14,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/util"
 	"phenix/web/weberror"
@@ -91,22 +93,22 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) error {
 		path  = query.Get("path")
 	)
 
+	// the Files tab's viewer shows the file inline as text
+	var (
+		preview = r.Header.Get("Accept") == "text/plain"
+		fields  = audit.Fields{Experiment: name, File: path, Extra: []any{"phenix.file.preview", preview}}
+	)
+
 	if !role.Allowed("experiments/files", "get", name) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"getting experiment file not allowed",
-			"user",
-			user,
-			"exp",
-			name,
-		)
+		audit.Denied(r, audit.FileDownload, "getting experiment file not allowed", fields)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	contents, err := experiment.File(name, path)
 	if err != nil {
+		audit.Failure(r, audit.FileDownload, "getting experiment file failed", fields, err)
+
 		if errors.Is(err, mm.ErrCaptureExists) {
 			return weberror.New(http.StatusBadRequest, "capture still in progress")
 		}
@@ -125,7 +127,9 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	if r.Header.Get("Accept") == "text/plain" {
+	if preview {
+		audit.Success(r, audit.FileDownload, "downloaded file", fields)
+
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write(contents) //nolint:gosec // XSS via taint analysis
 
@@ -133,17 +137,11 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	w.Header().Set("Content-Disposition", "attachment; filename="+file)
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"downloaded file",
-		"user",
-		user,
-		"exp",
-		name,
-		"file",
-		path,
-	)
+	// once per download, not per resumed range
+	if rng := r.Header.Get("Range"); rng == "" || strings.HasPrefix(rng, "bytes=0-") {
+		audit.Success(r, audit.FileDownload, "downloaded file", fields)
+	}
+
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader(contents))
 
 	return nil

@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"phenix/api/settings"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -39,6 +41,22 @@ const (
 	msgSaveSessionToken = "failed to save session token"
 )
 
+// How a user signed in, as phenix.auth.method.
+const (
+	authPassword    = "password"
+	authProxyHeader = "proxy-header"
+	authProxyJWT    = "proxy-jwt"
+)
+
+// errInvalidCreds is the audited error of a sign-in with an unknown user or
+// a wrong password.
+var errInvalidCreds = errors.New("invalid credentials")
+
+// authFields are the audit fields of a sign-in or sign-up by user with method.
+func authFields(user, method string) audit.Fields {
+	return audit.Fields{User: user, Extra: []any{"phenix.auth.method", method}}
+}
+
 //nolint:funlen // handler
 func Signup(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "Signup")
@@ -58,34 +76,39 @@ func Signup(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var (
-		ctx   = r.Context()
-		token *jwt.Token
+		ctx    = r.Context()
+		token  *jwt.Token
+		method = authPassword
 	)
+
+	created := audit.Fields{User: req.Username, TargetUser: req.Username}
 
 	// Will only be present when this function is called if proxy JWT is enabled.
 	if userToken := ctx.Value(middleware.ContextKeyUser); userToken != nil {
+		method = authProxyJWT
 		token, _ = userToken.(*jwt.Token)
 		claims, _ := token.Claims.(jwt.MapClaims)
 
 		jwtUser, err := jwtutil.UsernameFromClaims(claims)
 		if err != nil {
-			plog.Error(
-				plog.TypeSecurity,
-				"proxy user missing from JWT",
-				"path",
-				r.URL.Path,
-				"err",
-				err,
-			)
+			audit.Failure(r, audit.UserCreate, "signing up failed", created, err)
 
 			return weberror.New(http.StatusUnauthorized, "proxy user missing")
 		}
 
 		if req.Username != jwtUser {
+			created.Reason = "proxy user mismatch"
+			audit.Denied(r, audit.UserCreate, "signing up not allowed", created)
+
 			return weberror.New(http.StatusUnauthorized, "proxy user mismatch")
 		}
 	} else if o.proxyAuthHeader != "" {
+		method = authProxyHeader
+
 		if user := r.Header.Get(o.proxyAuthHeader); user != req.Username {
+			created.Reason = "proxy user mismatch"
+			audit.Denied(r, audit.UserCreate, "signing up not allowed", created)
+
 			return weberror.New(http.StatusUnauthorized, "proxy user mismatch")
 		}
 	}
@@ -100,8 +123,12 @@ func Signup(w http.ResponseWriter, r *http.Request) error {
 
 	u, err := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
 	if err != nil {
+		audit.Failure(r, audit.UserCreate, "signing up failed", created, err)
+
 		return createUserError(req.Username, err)
 	}
+
+	audit.Success(r, audit.UserCreate, "user signed up", created)
 
 	var raw string
 
@@ -114,11 +141,15 @@ func Signup(w http.ResponseWriter, r *http.Request) error {
 		// Sign and get the complete encoded token as a string using the secret
 		raw, err = token.SignedString([]byte(o.jwtKey))
 		if err != nil {
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(u.Username(), method), err)
+
 			return weberror.New(http.StatusInternalServerError, "failed to sign JWT")
 		}
 
 		err := u.AddToken(raw, time.Now().Format(time.RFC3339))
 		if err != nil {
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(u.Username(), method), err)
+
 			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	} else { // using proxy JWT
@@ -126,6 +157,8 @@ func Signup(w http.ResponseWriter, r *http.Request) error {
 
 		err := u.AddToken(raw, "proxied")
 		if err != nil {
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(u.Username(), method), err)
+
 			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	}
@@ -140,18 +173,7 @@ func Signup(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	plog.Info(
-		plog.TypeSecurity,
-		"created user",
-		"user",
-		u.Username(),
-		"role",
-		u.RoleName(),
-		"first_name",
-		u.FirstName(),
-		"last_name",
-		u.LastName(),
-	)
+	audit.Success(r, audit.SignIn, "user signed in", authFields(u.Username(), method))
 
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
@@ -166,6 +188,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 	var (
 		user, pass string
 		proxied    bool
+		method     = authPassword
 	)
 
 	var (
@@ -184,19 +207,13 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 
 		user, err = jwtutil.UsernameFromClaims(claims)
 		if err != nil {
-			plog.Error(
-				plog.TypeSecurity,
-				"proxy user missing from JWT",
-				"path",
-				r.URL.Path,
-				"err",
-				err,
-			)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields("", authProxyJWT), err)
 
 			return weberror.New(http.StatusUnauthorized, "proxy user missing")
 		}
 
 		proxied = true
+		method = authProxyJWT
 	} else {
 		switch r.Method {
 		case http.MethodGet:
@@ -222,12 +239,14 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 				user = r.Header.Get(o.proxyAuthHeader)
 
 				if user == "" {
-					plog.Error(plog.TypeSecurity, "proxy authentication failed")
+					audit.Failure(r, audit.SignIn, "signing in failed", authFields("", authProxyHeader),
+						errors.New("no proxy user"))
 
 					return weberror.New(http.StatusUnauthorized, "proxy authentication failed")
 				}
 
 				proxied = true
+				method = authProxyHeader
 			}
 		case http.MethodPost:
 			if o.proxyAuthHeader != "" {
@@ -258,7 +277,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 
 	u, err := rbac.GetUser(user)
 	if err != nil {
-		plog.Error(plog.TypeSecurity, "attempted login with unknown username", "username", user)
+		audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), errInvalidCreds)
 
 		// With proxy auth the proxy has already vouched for the name, and the
 		// proxy sign-up page takes it from the metadata of this 404.
@@ -276,7 +295,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 	if !proxied {
 		err := u.ValidatePassword(pass)
 		if err != nil {
-			plog.Error(plog.TypeSecurity, "attempted login with invalid credentials", "user", user)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), errInvalidCreds)
 
 			return weberror.New(http.StatusUnauthorized, "invalid credentials")
 		}
@@ -293,14 +312,14 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 		// Sign and get the complete encoded token as a string using the secret
 		signed, err = token.SignedString([]byte(o.jwtKey))
 		if err != nil {
-			plog.Error(plog.TypeSecurity, "failed to sign JWT")
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), err)
 
 			return weberror.New(http.StatusInternalServerError, "failed to sign JWT")
 		}
 
 		err := u.AddToken(signed, time.Now().Format(time.RFC3339))
 		if err != nil {
-			plog.Error(plog.TypeSecurity, "error adding token", "err", err)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), err)
 
 			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
@@ -309,7 +328,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 
 		err := u.AddToken(signed, "proxied")
 		if err != nil {
-			plog.Error(plog.TypeSecurity, "error adding token", "err", err)
+			audit.Failure(r, audit.SignIn, "signing in failed", authFields(user, method), err)
 
 			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
@@ -325,7 +344,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	plog.Info(plog.TypeSecurity, "user signed in", "user", u.Username())
+	audit.Success(r, audit.SignIn, "user signed in", authFields(u.Username(), method))
 
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
@@ -345,24 +364,24 @@ func Logout(w http.ResponseWriter, r *http.Request) error {
 
 	u, err := rbac.GetUser(user)
 	if err != nil {
-		plog.Error(plog.TypeSecurity, "attempted logout with unknown username", "username", user)
+		audit.Failure(r, audit.SignOut, "signing out failed", audit.Fields{}, err)
 
 		return weberror.New(http.StatusBadRequest, "cannot find user")
 	}
 
 	if err := u.DeleteToken(token); err != nil {
+		audit.Failure(r, audit.SignOut, "signing out failed", audit.Fields{}, err)
+
 		return weberror.New(http.StatusInternalServerError, "failed to delete session token")
 	}
 
-	plog.Info(plog.TypeSecurity, "user logged out", "user", u.Username())
+	audit.Success(r, audit.SignOut, "user signed out", audit.Fields{})
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
 }
 
 // CreateUserToken - POST /users/{username}/tokens.
-//
-//nolint:funlen // handler
 func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateUserToken")
 
@@ -371,43 +390,25 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 		vars    = mux.Vars(r)
 		uname   = vars["username"]
+		created = audit.Fields{TargetUser: uname}
 	)
 
 	if !role.Allowed("users", "patch", uname) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"user forbidden to perform action",
-			"username",
-			uname,
-			"action",
-			"users/patch/"+uname,
-		)
+		audit.Denied(r, audit.UserTokenCreate, "creating token not allowed", created)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	// a token for another user lets its holder act as that user
 	if requester := middleware.UserFromContext(ctx); uname != requester && !role.Allowed("users/tokens", "create", uname) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"user forbidden to create a token for another user",
-			"requester",
-			requester,
-			"username",
-			uname,
-		)
+		audit.Denied(r, audit.UserTokenCreate, "creating token for another user not allowed", created)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	u, err := rbac.GetUser(uname)
 	if err != nil {
-		plog.Error(
-			plog.TypeSecurity,
-			"attempted to create token with unknown username",
-			"username",
-			uname,
-		)
+		audit.Failure(r, audit.UserTokenCreate, "creating token failed", created, err)
 
 		return weberror.New(http.StatusInternalServerError, "unable to get user")
 	}
@@ -443,6 +444,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	exp := time.Now().Add(dur)
+	created.Extra = []any{"phenix.token.expires", exp.UTC().Format(time.RFC3339)}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		jwtClaimSub: u.Username(),
@@ -452,6 +454,8 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 	// Sign and get the complete encoded token as a string using the secret
 	signed, err := token.SignedString([]byte(o.jwtKey))
 	if err != nil {
+		audit.Failure(r, audit.UserTokenCreate, "creating token failed", created, err)
+
 		return weberror.New(http.StatusInternalServerError, "failed to sign JWT")
 	}
 
@@ -461,7 +465,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if err := u.AddToken(signed, note); err != nil {
-		plog.Error(plog.TypeSecurity, "error adding token", "err", err)
+		audit.Failure(r, audit.UserTokenCreate, "creating token failed", created, err)
 
 		return weberror.New(http.StatusInternalServerError, "failed to save token")
 	}
@@ -474,7 +478,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 
 	body, _ = json.Marshal(resp)
 
-	plog.Info(plog.TypeSecurity, "create token for user", "user", u.Username())
+	audit.Success(r, audit.UserTokenCreate, "created token", created)
 
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)

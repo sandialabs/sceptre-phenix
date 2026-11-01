@@ -3,6 +3,7 @@ package forward
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	ft "phenix/web/forward/forwardtypes"
@@ -33,6 +35,9 @@ const (
 	forwardPortBase       = 50000
 	forwardPortRange      = 15000
 )
+
+// errUnknownForward is why a port forward's websocket cannot attach to it.
+var errUnknownForward = errors.New("unknown forward")
 
 var (
 	forwards   = make(map[string]ft.Listener) //nolint:gochecknoglobals // global state
@@ -408,17 +413,13 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) error {
 		port = vars["port"]
 	)
 
+	fields := audit.Fields{Experiment: exp, VM: vm, Extra: []any{"destination.address", host}}
+	if p, err := strconv.Atoi(port); err == nil {
+		fields.Extra = append(fields.Extra, "destination.port", p)
+	}
+
 	if !role.Allowed("vms/forwards", "get", fmt.Sprintf("%s/%s", exp, vm)) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"accessing port forwards not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			vm,
-		)
+		audit.Denied(r, audit.PortForwardAttach, "accessing port forwards not allowed", fields)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -432,7 +433,7 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) error {
 	if listener, ok := forwards[key]; ok {
 		forwardsMu.Unlock()
 
-		websocket.Handler(util.ConnectWSHandler(listener.ClusterEndpoint())).ServeHTTP(w, r)
+		serveForward(w, r, listener, fields)
 
 		return nil
 	}
@@ -453,6 +454,7 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) error {
 		forwardsMu.Unlock()
 
 		plog.Error(plog.TypeSystem, "listener not found for forward", "key", key)
+		audit.Failure(r, audit.PortForwardAttach, "port forward attach failed", fields, errUnknownForward)
 
 		return weberror.New(http.StatusBadRequest, "unknown forward")
 	}
@@ -468,7 +470,19 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) error {
 
 	forwardsMu.Unlock()
 
-	websocket.Handler(util.ConnectWSHandler(listener.ClusterEndpoint())).ServeHTTP(w, r)
+	serveForward(w, r, listener, fields)
 
 	return nil
+}
+
+// serveForward proxies the request's websocket to the forward's listener,
+// auditing the attach once the websocket is open.
+func serveForward(w http.ResponseWriter, r *http.Request, listener ft.Listener, fields audit.Fields) {
+	fields.Extra = append(fields.Extra, "phenix.forward.owner", listener.Owner)
+	proxy := util.ConnectWSHandler(listener.ClusterEndpoint())
+
+	websocket.Handler(func(ws *websocket.Conn) {
+		audit.Success(r, audit.PortForwardAttach, "port forward attached", fields)
+		proxy(ws)
+	}).ServeHTTP(w, r)
 }

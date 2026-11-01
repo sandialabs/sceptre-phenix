@@ -3,7 +3,6 @@ package web
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 	"phenix/types"
 	"phenix/types/version"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
@@ -273,12 +273,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("configs", "create") {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"creating config not allowed",
-			"user",
-			user,
-		)
+		audit.Denied(r, audit.ConfigCreate, "creating config not allowed", audit.Fields{})
 		err := weberror.NewWebError(
 			nil,
 			"creating configs not allowed for %s",
@@ -365,18 +360,23 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	c, err := parse(body)
 	if err != nil {
+		audit.Failure(r, audit.ConfigCreate, "creating config failed", audit.Fields{}, err)
+
 		return weberror.NewWebError(err, "invalid formatting").
 			WithMetadata("validation", err.Error(), true)
 	}
 
 	// The check above allows creating some config. This one checks the config
 	// the body names, so a role scoped to some kinds or names creates no other.
-	if name := c.FullName(); !role.Allowed("configs", "create", name) {
-		return configForbidden(ctx, "creating", name)
+	name := c.FullName()
+	if !role.Allowed("configs", "create", name) {
+		return configForbidden(r, audit.ConfigCreate, "creating", name)
 	}
 
 	c, err = config.Create(config.CreateFromConfig(c), config.CreateWithValidation())
 	if err != nil {
+		audit.Failure(r, audit.ConfigCreate, "creating config failed", audit.Fields{Config: name}, err)
+
 		if errors.Is(err, store.ErrExist) {
 			return weberror.NewWebError(err, "config with same name already exists")
 		}
@@ -392,24 +392,14 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to create new config")
 	}
 
+	audit.Success(r, audit.ConfigCreate, "created config", audit.Fields{Config: c.FullName()})
+
 	w.Header().Set("Location", apiLocation(strings.ToLower(fmt.Sprintf("configs/%s/%s", c.Kind, c.Metadata.Name))))
 	w.WriteHeader(http.StatusCreated)
 
 	if err := broadcastConfig(c, c.FullName(), "create"); err != nil {
 		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
-
-		return nil
 	}
-
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"created config",
-		"user",
-		user,
-		"config",
-		c.FullName(),
-	)
 
 	return nil
 }
@@ -508,14 +498,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("configs", "update", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"updating config not allowed",
-			"user",
-			user,
-			"config",
-			name,
-		)
+		audit.Denied(r, audit.ConfigUpdate, "updating config not allowed", audit.Fields{Config: name})
 		err := weberror.NewWebError(
 			nil,
 			"updating config %s not allowed for %s",
@@ -624,7 +607,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	// The config is stored under the body's kind and name, which can differ from
 	// the path's (a rename or another config), so check that config too.
 	if target := c.FullName(); target != name && !role.Allowed("configs", "update", target) {
-		return configForbidden(ctx, "updating", target)
+		return configForbidden(r, audit.ConfigUpdate, "updating", target)
 	}
 
 	if c.Kind == kindExperiment {
@@ -632,7 +615,14 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		c.Spec["experimentName"] = vars["name"]
 	}
 
+	updated := audit.Fields{Config: name}
+	if renamed := c.FullName(); renamed != name {
+		updated.Extra = []any{"phenix.config.new_name", renamed}
+	}
+
 	if err := config.Update(name, c); err != nil {
+		audit.Failure(r, audit.ConfigUpdate, "updating config failed", updated, err)
+
 		if errors.Is(err, store.ErrNotExist) {
 			return weberror.NewWebError(err, "config to update (%s) does not exist", name)
 		}
@@ -654,6 +644,8 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	if c.Kind == kindExperiment {
 		err := experiment.Reconfigure(c.Metadata.Name)
 		if err != nil {
+			audit.Failure(r, audit.ConfigUpdate, "updating config failed", updated, err)
+
 			return weberror.NewWebError(
 				err,
 				"unable to reconfigure updated experiment %s",
@@ -662,24 +654,15 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	audit.Success(r, audit.ConfigUpdate, "updated config", updated)
+
 	w.Header().Set("Location", apiLocation(strings.ToLower(fmt.Sprintf("configs/%s/%s", c.Kind, c.Metadata.Name))))
 	w.WriteHeader(http.StatusNoContent)
 
 	// The old name, so clients know which config to update.
 	if err := broadcastConfig(c, name, "update"); err != nil {
 		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
-
-		return nil
 	}
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"updated config",
-		"user",
-		user,
-		"config",
-		name,
-	)
 
 	return nil
 }
@@ -697,14 +680,7 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("configs", "delete", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"deleting config not allowed",
-			"user",
-			user,
-			"config",
-			name,
-		)
+		audit.Denied(r, audit.ConfigDelete, "deleting config not allowed", audit.Fields{Config: name})
 		err := weberror.NewWebError(
 			nil,
 			"deleting config %s not allowed for %s",
@@ -717,9 +693,12 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 
 	err := config.Delete(name)
 	if err != nil {
+		audit.Failure(r, audit.ConfigDelete, "deleting config failed", audit.Fields{Config: name}, err)
+
 		return weberror.NewWebError(err, "unable to update config %s", name)
 	}
 
+	audit.Success(r, audit.ConfigDelete, "deleted config", audit.Fields{Config: name})
 	w.WriteHeader(http.StatusNoContent)
 
 	broker.Broadcast(
@@ -727,33 +706,17 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 		bt.NewResource("config", name, "delete"),
 		nil,
 	)
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"deleted config",
-		"user",
-		user,
-		"config",
-		name,
-	)
 
 	return nil
 }
 
-// configForbidden logs and returns a 403 for a role that may not act on the
-// config name. action is what the request asked for, such as "creating".
-func configForbidden(ctx context.Context, action, name string) error {
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Warn(
-		plog.TypeSecurity,
-		action+" config not allowed",
-		"user",
-		user,
-		"config",
-		name,
-	)
+// configForbidden audits the refusal a and returns a 403 for a role that may not
+// act on the config name. verb is what the request asked for, such as "creating".
+func configForbidden(r *http.Request, a audit.Action, verb, name string) error {
+	user := middleware.UserFromContext(r.Context())
+	audit.Denied(r, a, verb+" config not allowed", audit.Fields{Config: name})
 
-	return weberror.NewWebError(nil, "%s config %s not allowed for %s", action, name, user).
+	return weberror.NewWebError(nil, "%s config %s not allowed for %s", verb, name, user).
 		SetStatus(http.StatusForbidden)
 }
 

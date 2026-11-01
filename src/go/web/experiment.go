@@ -20,6 +20,7 @@ import (
 	"phenix/util/mm"
 	"phenix/util/notes"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
@@ -283,13 +284,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("experiments", "create") {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"creating experiments not allowed",
-			"user",
-			user,
-		)
+		audit.Denied(r, audit.ExperimentCreate, "creating experiments not allowed", audit.Fields{})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -308,7 +303,10 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
+	created := audit.Fields{Experiment: req.GetName()}
+
 	if err := cache.LockExperimentForCreation(req.GetName()); err != nil {
+		audit.Failure(r, audit.ExperimentCreate, "creating experiment failed", created, err)
 		plog.Error(
 			plog.TypeSystem,
 			"locking experiment",
@@ -357,9 +355,12 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	if err := experiment.Create(ctx, opts...); err != nil {
 		plog.Error(plog.TypeSystem, "creating experiment", "exp", req.GetName(), "err", err)
+		audit.Failure(r, audit.ExperimentCreate, "creating experiment failed", created, err)
 
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
+
+	audit.Success(r, audit.ExperimentCreate, "new experiment created", created)
 
 	if warns := notes.Warnings(ctx, true); warns != nil {
 		for _, warn := range warns {
@@ -394,15 +395,6 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"new experiment created",
-		"user",
-		user,
-		"experiment",
-		req.GetName(),
-	)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
@@ -419,14 +411,7 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("experiments", "patch", name) {
 		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"updating experiment not allowed",
-			"user",
-			user,
-			"experiment",
-			name,
-		)
+		audit.Denied(r, audit.ExperimentUpdate, "updating experiment not allowed", audit.Fields{Experiment: name})
 		err := weberror.NewWebError(
 			nil,
 			"updating experiment %s not allowed for %s",
@@ -478,21 +463,14 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 
 		err := exp.WriteToStore(false)
 		if err != nil {
+			audit.Failure(r, audit.ExperimentUpdate, "updating experiment failed", audit.Fields{Experiment: name}, err)
 			err := weberror.NewWebError(err, "unable to write updated experiment %s", name)
 
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 	}
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"experiment updated",
-		"user",
-		user,
-		"experiment",
-		name,
-	)
+	audit.Success(r, audit.ExperimentUpdate, "experiment updated", audit.Fields{Experiment: name})
 
 	return nil
 }
@@ -626,22 +604,17 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) error {
 		name = vars["name"]
 	)
 
+	deleted := audit.Fields{Experiment: name}
+
 	if !role.Allowed("experiments", "delete", name) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"deleting experiment not allowed",
-			"user",
-			user,
-			"exp",
-			name,
-		)
+		audit.Denied(r, audit.ExperimentDelete, "deleting experiment not allowed", deleted)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := cache.LockExperimentForDeletion(name)
 	if err != nil {
+		audit.Failure(r, audit.ExperimentDelete, "deleting experiment failed", deleted, err)
 		plog.Error(
 			plog.TypeSystem,
 			"locking experiment",
@@ -661,6 +634,7 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) error {
 	err = experiment.Delete(name)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "deleting experiment", "exp", name, "err", err)
+		audit.Failure(r, audit.ExperimentDelete, "deleting experiment failed", deleted, err)
 
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
@@ -671,15 +645,7 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) error {
 		nil,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"deleted experiment",
-		"user",
-		user,
-		"exp",
-		name,
-	)
+	audit.Success(r, audit.ExperimentDelete, "deleted experiment", deleted)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
@@ -687,7 +653,7 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) error {
 
 // StartExperiment - POST /experiments/{name}/start.
 //
-
+//nolint:dupl // similar to StopExperiment
 func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
@@ -698,14 +664,7 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("experiments/start", "update", name) {
 		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting experiment not allowed",
-			"user",
-			user,
-			"exp",
-			name,
-		)
+		audit.Denied(r, audit.ExperimentStart, "starting experiment not allowed", audit.Fields{Experiment: name})
 		err := weberror.NewWebError(
 			nil,
 			"starting experiment %s not allowed for %s",
@@ -718,27 +677,22 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := startExperiment(name)
 	if err != nil {
+		audit.Failure(r, audit.ExperimentStart, "starting experiment failed", audit.Fields{Experiment: name}, err)
+
 		return err
 	}
 
+	audit.Success(r, audit.ExperimentStart, "experiment started", audit.Fields{Experiment: name})
+
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"experiment started",
-		"user",
-		user,
-		"exp",
-		name,
-	)
 
 	return nil
 }
 
 // StopExperiment - POST /experiments/{name}/stop.
 //
-
+//nolint:dupl // similar to StartExperiment
 func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
@@ -749,14 +703,7 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("experiments/stop", "update", name) {
 		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping experiment not allowed",
-			"user",
-			user,
-			"exp",
-			name,
-		)
+		audit.Denied(r, audit.ExperimentStop, "stopping experiment not allowed", audit.Fields{Experiment: name})
 		err := weberror.NewWebError(
 			nil,
 			"stopping experiment %s not allowed for %s",
@@ -769,20 +716,15 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := stopExperiment(name)
 	if err != nil {
+		audit.Failure(r, audit.ExperimentStop, "stopping experiment failed", audit.Fields{Experiment: name}, err)
+
 		return err
 	}
 
+	audit.Success(r, audit.ExperimentStop, "experiment stopped", audit.Fields{Experiment: name})
+
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"experiment stopped",
-		"user",
-		user,
-		"exp",
-		name,
-	)
 
 	return nil
 }
