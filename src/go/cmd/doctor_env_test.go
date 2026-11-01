@@ -193,13 +193,17 @@ func TestEnvChecks(t *testing.T) {
 			vars: map[string]string{"PHENIX_UI_JWT_LIFETIME": "12h"},
 			want: []doctorCheck{row("PHENIX_UI_JWT_LIFETIME", doctorPass, "12h0m0s")},
 		},
-		"grace period": {
-			vars: map[string]string{"PHENIX_UI_SHUTDOWN_GRACE_PERIOD": "10"},
-			want: []doctorCheck{row("PHENIX_UI_SHUTDOWN_GRACE_PERIOD", doctorPass, "10s")},
+		"size": {
+			vars: map[string]string{"PHENIX_UI_NETFLOW_MAX_SIZE": "-5", "PHENIX_UI_SHUTDOWN_GRACE_PERIOD": "10"},
+			want: []doctorCheck{
+				row("PHENIX_UI_NETFLOW_MAX_SIZE", doctorFail, `invalid ui.netflow.max-size "-5": it must not be negative`),
+				row("PHENIX_UI_SHUTDOWN_GRACE_PERIOD", doctorPass, "10s"),
+			},
 		},
 		"grace period with a unit": {
-			vars: map[string]string{"PHENIX_UI_SHUTDOWN_GRACE_PERIOD": "10s"},
+			vars: map[string]string{"PHENIX_UI_SHUTDOWN_GRACE_PERIOD": "10s", "PHENIX_UI_NETFLOW_MAX_SIZE": "50"},
 			want: []doctorCheck{
+				row("PHENIX_UI_NETFLOW_MAX_SIZE", doctorPass, "50 MiB"),
 				row("PHENIX_UI_SHUTDOWN_GRACE_PERIOD", doctorFail,
 					`invalid ui.shutdown-grace-period "10s": it must be a whole number of seconds, such as 5`),
 			},
@@ -287,9 +291,9 @@ func TestEnvChecks(t *testing.T) {
 				`"vm-mount,webshark" holds a comma. phenix splits PHENIX_UI_FEATURES on spaces, so separate features with spaces`)},
 		},
 		"unknown feature": {
-			vars: map[string]string{"PHENIX_UI_FEATURES": "vm-mount file-servr"},
+			vars: map[string]string{"PHENIX_UI_FEATURES": "vm-mount webshrak"},
 			want: []doctorCheck{
-				row("PHENIX_UI_FEATURES", doctorWarn, `unknown feature "file-servr" (did you mean file-server?)`),
+				row("PHENIX_UI_FEATURES", doctorWarn, `unknown feature "webshrak" (did you mean webshark?)`),
 			},
 		},
 		"directories": {

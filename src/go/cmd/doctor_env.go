@@ -276,6 +276,8 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 		return featuresCheck(value), true
 	case "ui.shutdown-grace-period":
 		return gracePeriodCheck(viperWith(key, value)), true
+	case "ui.netflow.max-size":
+		return netflowMaxSizeCheck(viperWith(key, value)), true
 	}
 
 	return failCheck(""), false

@@ -67,6 +67,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		"bridge-mode":              "manual",
 		"ui.jwt-signing-key":       "doctor-test-key",
 		"ui.shutdown-grace-period": "5",
+		"ui.netflow.max-size":      "100",
 		"ui.jwt-lifetime":          "24h",
 		"ui.users":                 "alice:Alicepass1!:global-admin",
 		"ui.listen-endpoint":       "0.0.0.0:3000",
@@ -94,7 +95,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 
 		return "", exec.ErrNotFound
 	}
-	// no tunneler downloads, wherever the tests run
+	// no tunneler downloads or WebShark build, wherever the tests run
 	env.stat = func(path string) (os.FileInfo, error) {
 		if !filepath.IsAbs(path) || strings.HasPrefix(path, "/opt/phenix") {
 			return nil, os.ErrNotExist
@@ -236,6 +237,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"base-dir.topologies base-dir.topologies pass",
 		"mount-dir mount-dir pass",
 		"ui.shutdown-grace-period ui.shutdown-grace-period pass",
+		"ui.netflow.max-size ui.netflow.max-size pass",
 		"ui.jwt-signing-key ui.jwt-signing-key pass",
 		"ui.jwt-lifetime ui.jwt-lifetime pass",
 		"ui.users ui.users pass",
@@ -291,6 +293,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"scenario-apps scenario-apps skip",
 		"app-runtimes app-runtimes pass",
 		"tunneler-download tunneler-download pass",
+		"webshark webshark pass",
 		"ui.features ui.features pass",
 		"ui.logs.minimega-path ui.logs.minimega-path pass",
 	}
@@ -426,6 +429,10 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			settings: map[string]string{"ui.shutdown-grace-period": "5s"},
 			want:     with("ui.shutdown-grace-period", "ui.shutdown-grace-period ui.shutdown-grace-period fail", false),
 		},
+		"bad netflow size": {
+			settings: map[string]string{"ui.netflow.max-size": "-1"},
+			want:     with("ui.netflow.max-size", "ui.netflow.max-size ui.netflow.max-size fail", false),
+		},
 		"auth settings phenix ui misreads": {
 			settings: map[string]string{"ui.jwt-lifetime": "24", "ui.users": "bob:Bobpass1!", "ui.jwt-signing-key": "dev|bob"},
 			want: replaceRows(allPass,
@@ -513,8 +520,8 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			want: replaceRows(allPass, "disk-chains disk chains warn"),
 		},
 		"features phenix ui turns on by itself": {
-			settings: map[string]string{"ui.features": "vm-mount file-server vm-mnt"},
-			want:     replaceRows(allPass, "ui.features ui.features warn"),
+			settings: map[string]string{"ui.features": "vm-mount webshark file-server vm-mnt"},
+			want:     replaceRows(allPass, "ui.features ui.features fail"),
 		},
 		"minimega log missing": {
 			settings: map[string]string{"ui.logs.minimega-path": filepath.Join(dir, "minimega.log")},
@@ -671,7 +678,7 @@ func TestParseDoctorSkip(t *testing.T) {
 		},
 		"comma list and repeated": {
 			args: []string{"--skip", "env, store.endpoint", "--skip", "ui"},
-			want: []string{"env", "env-overrides", "proxy-env", "store.endpoint", "ui.shutdown-grace-period"},
+			want: []string{"env", "env-overrides", "proxy-env", "store.endpoint", "ui.netflow.max-size", "ui.shutdown-grace-period"},
 		},
 		"auth, tls and socket groups": {
 			args: []string{"--skip", "auth,tls", "--skip", "socket"},
@@ -828,7 +835,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 55 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 57 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -854,8 +861,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 55 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"80 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 57 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"82 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

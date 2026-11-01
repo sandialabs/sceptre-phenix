@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -156,14 +157,13 @@ const doctorDesc = `Check the phenix configuration without a running server
   images in that files directory, for at most --timeout, and warns about each
   image whose backing chain is broken. The disk-formats check reads the same
   headers, and warns about each image in an old or unsupported format, such as
-  qcow2 version 2, or one that qemu refuses. The tools and features checks
-  look for qemu-img, vmdb2 and filebeat on PATH, measure free disk space,
-  report whether phenix ui turns on tunneler downloads (relative to the
-  working directory), and check ui.features and ui.logs.minimega-path. --skip
-  takes a check or a group of checks; an unknown name fails and lists the
-  valid ones. Secret values, such as the JWT signing key and initial users,
-  are redacted. doctor exits 1 when a check fails, or with --strict when one
-  warns, and 0 otherwise.
+  qcow2 version 2, or one that qemu refuses. The tools and features checks look for
+  qemu-img, vmdb2 and filebeat on PATH, measure free disk space, report
+  whether phenix ui turns on tunneler downloads and WebShark (relative to the
+  working directory), and check ui.features and ui.logs.minimega-path. --skip takes a check or a group of
+  checks; an unknown name fails and lists the valid ones. Secret values, such
+  as the JWT signing key and initial users, are redacted. doctor exits 1 when
+  a check fails, or with --strict when one warns, and 0 otherwise.
 
   --report prints the whole output, text or JSON, in a fenced block to paste
   into a bug report. It replaces host names, IP addresses, user names and email
@@ -533,6 +533,24 @@ func gracePeriodCheck(v *viper.Viper) doctorCheck {
 	}
 
 	return doctorCheck{Name: "ui.shutdown-grace-period", Status: doctorPass, Detail: grace.String()}
+}
+
+// netflowMaxSizeCheck fails for a ui.netflow.max-size in v phenix ui refuses.
+func netflowMaxSizeCheck(v *viper.Viper) doctorCheck {
+	check := doctorCheck{Name: "ui.netflow.max-size", Status: doctorPass, Detail: ""}
+
+	size, err := netflowMaxSize(v)
+
+	switch {
+	case err != nil:
+		check.Status, check.Detail = doctorFail, err.Error()
+	case size == 0:
+		check.Detail = "0, so phenix ui records no netflow captures"
+	default:
+		check.Detail = strconv.FormatInt(size>>mibShift, 10) + " MiB"
+	}
+
+	return check
 }
 
 // minimegaCheck asks minimega, through probe, for its version, waiting at

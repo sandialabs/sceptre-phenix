@@ -117,6 +117,18 @@
             </div>
           </b-tooltip>
         </template>
+        <template v-else-if="webSharkLink(props.row)">
+          <b-tooltip label="Open in WebShark" type="is-dark">
+            <div class="field is-clickable">
+              <button
+                type="button"
+                class="plain-button"
+                @click="openFileInWebShark(props.row)">
+                {{ props.row.name }}
+              </button>
+            </div>
+          </b-tooltip>
+        </template>
         <template v-else>
           {{ props.row.name }}
         </template>
@@ -169,7 +181,19 @@
                with no such button keep an invisible one in its place so
                every row's download button lines up -->
           <b-tooltip
-            v-if="props.row.plainText && canDownloadFiles"
+            v-if="webSharkLink(props.row)"
+            label="Open in WebShark"
+            type="is-dark">
+            <b-button
+              tag="router-link"
+              :to="webSharkLink(props.row)"
+              class="button is-light is-small action"
+              :icon-left="captureIcon"
+              :aria-label="`Open ${props.row.name} in WebShark`">
+            </b-button>
+          </b-tooltip>
+          <b-tooltip
+            v-else-if="props.row.plainText && canDownloadFiles"
             label="view file"
             type="is-dark">
             <b-button
@@ -214,6 +238,7 @@
 <script>
   import FileSelectionActions from '@/components/experiment/FileSelectionActions.vue';
   import TimeWithAge from '@/components/TimeWithAge.vue';
+  import { CAPTURE_ICON } from '@/components/experiment/vmActions.js';
   import { usePhenixStore } from '@/store.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { escapeHTML } from '@/utils/escapeHTML.js';
@@ -226,6 +251,7 @@
   import { plural } from '@/utils/plural.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { useTable } from '@/utils/useTable.js';
+  import { isCaptureFile, webSharkInstalled } from '@/utils/webshark.js';
 
   // The Files tab of the running and stopped experiment pages: listing,
   // viewing, downloading and deleting the experiment's files. The search box
@@ -295,6 +321,18 @@
           'experiments/files',
           'delete',
           this.$route.params.id,
+        );
+      },
+
+      // capture files open in WebShark with the icon that starts captures
+      captureIcon() {
+        return CAPTURE_ICON;
+      },
+
+      // whether capture files get an Open in WebShark button
+      canOpenInWebShark() {
+        return (
+          webSharkInstalled(usePhenixStore().features) && this.canDownloadFiles
         );
       },
 
@@ -452,6 +490,26 @@
           ),
           '_blank',
         );
+      },
+
+      // the WebShark page for a row's capture file, or null when the row is
+      // no capture file or WebShark cannot open it
+      webSharkLink(file) {
+        if (
+          !this.canOpenInWebShark ||
+          file.isDir ||
+          !isCaptureFile(file.name)
+        ) {
+          return null;
+        }
+        return {
+          name: 'webshark',
+          query: { exp: this.$route.params.id, file: file.path },
+        };
+      },
+
+      openFileInWebShark(file) {
+        this.$router.push(this.webSharkLink(file));
       },
 
       // drops selected rows the list no longer shows (another page, search,

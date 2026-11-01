@@ -67,6 +67,12 @@ what their role allows.
         >Console</b-navbar-item
       >
       <b-navbar-item
+        v-if="auth && webshark"
+        tag="router-link"
+        :to="{ name: 'webshark' }"
+        >WebShark</b-navbar-item
+      >
+      <b-navbar-item
         v-if="auth && roleAllowed('settings', 'update')"
         tag="router-link"
         :to="{ name: 'settings' }"
@@ -120,6 +126,7 @@ what their role allows.
 <script>
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
+  import { canUseWebShark, webSharkInstalled } from '@/utils/webshark.js';
   import * as authApi from '@/api/auth.js';
   import { showError } from '@/utils/errorNotif.js';
   import { endConsole } from '@/utils/consoleSession.js';
@@ -136,8 +143,8 @@ what their role allows.
     data() {
       return { menuOpen: false, loggingOut: false };
     },
-    // Links but Experiments wait for login; a proxy gets Reauthorize, not Logout; Tunneler needs
-    // the server; signed-in users get the jobs menu.
+    // Links but Experiments wait for login; a proxy gets Reauthorize, not Logout; Tunneler and WebShark need
+    // the server (WebShark also capture access); signed-in users get the jobs menu.
     computed: {
       auth() {
         const phenixStore = usePhenixStore();
@@ -149,6 +156,10 @@ what their role allows.
 
       tunneler() {
         return usePhenixStore().features.includes('tunneler-download');
+      },
+
+      webshark() {
+        return webSharkInstalled(usePhenixStore().features) && canUseWebShark();
       },
     },
 

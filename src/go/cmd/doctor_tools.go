@@ -24,7 +24,7 @@ const (
 // autoFeatures are the ui.features phenix ui turns on by itself.
 //
 //nolint:gochecknoglobals // constant list
-var autoFeatures = []string{web.FeatureTunnelerDownload, web.FeatureFileServer}
+var autoFeatures = []string{web.FeatureWebShark, web.FeatureTunnelerDownload, web.FeatureFileServer}
 
 // qemuImgCheck reports qemu-img's version as the readiness check does, but
 // fails without it: phenix commits VMs to disk images with it.
@@ -200,6 +200,29 @@ func (e doctorEnv) tunnelerDownloadCheck(cwd string) doctorCheck {
 	return passCheck("on: " + filepath.Join(cwd, dir))
 }
 
+// webSharkCheck reports whether phenix ui, started in cwd, serves WebShark: it
+// does when one of its directories holds a build.
+func (e doctorEnv) webSharkCheck(cwd string) doctorCheck {
+	if dir, ok := web.FindWebShark(e.stat); ok {
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(cwd, dir)
+		}
+
+		return passCheck("on: the build in " + dir)
+	}
+
+	return passCheck("off: no index.html in " + webSharkDirsText(cwd))
+}
+
+func webSharkDirsText(cwd string) string {
+	dirs := web.WebSharkDirs()
+	for i, dir := range dirs {
+		dirs[i] = relativeToCwd(dir, cwd)
+	}
+
+	return strings.Join(dirs, " or ")
+}
+
 // featuresSettingCheck checks ui.features as phenix ui reads it: unknown names
 // warn, and a feature phenix ui turns on by itself warns, set by hand without
 // what it needs, or fails when phenix ui then refuses to start.
@@ -223,6 +246,11 @@ func (e doctorEnv) featuresSettingCheck(features []string, cwd, fileServer strin
 	for _, feature := range features {
 		switch feature {
 		case web.FeatureVMMount:
+		case web.FeatureWebShark:
+			if _, ok := web.FindWebShark(e.stat); !ok {
+				problem(doctorFail, fmt.Sprintf("webshark is set by hand without a WebShark build in %s, so phenix ui refuses to start",
+					webSharkDirsText(cwd)))
+			}
 		case web.FeatureTunnelerDownload:
 			if _, err := e.stat(web.TunnelerDownloadDir); err != nil {
 				problem(doctorWarn, fmt.Sprintf(

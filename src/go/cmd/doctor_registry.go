@@ -533,6 +533,15 @@ func doctorChecks() []doctorCheckDef {
 			},
 		},
 		{
+			id: "ui.netflow.max-size", group: doctorGroupUI, name: "ui.netflow.max-size",
+			hint: hintText("set ui.netflow.max-size to a whole number of MiB, such as 100"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				key := "ui.netflow.max-size"
+
+				return one(netflowMaxSizeCheck(viperWith(key, in.text(key))))
+			},
+		},
+		{
 			id: "ui.jwt-signing-key", group: doctorGroupAuth, name: "ui.jwt-signing-key",
 			hint: func(c doctorCheck) string {
 				if c.Status == doctorFail {
@@ -798,6 +807,10 @@ func doctorChecks() []doctorCheckDef {
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
 				return one(in.env.tunnelerDownloadCheck(in.cwd))
 			},
+		},
+		{
+			id: web.FeatureWebShark, group: doctorGroupFeatures, name: web.FeatureWebShark, hint: nil,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(in.env.webSharkCheck(in.cwd)) },
 		},
 		{
 			id: "ui.features", group: doctorGroupFeatures, name: "ui.features", hint: featuresHint,

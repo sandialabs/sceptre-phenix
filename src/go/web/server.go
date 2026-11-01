@@ -155,6 +155,10 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 		o.features[FeatureFileServer] = true
 	}
 
+	if err := o.checkFeatures(); err != nil {
+		return err
+	}
+
 	_ = ConfigureUsers(o.users)
 
 	var assets http.FileSystem
@@ -187,6 +191,8 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 	plog.Info(plog.TypeSystem, "starting background job registry")
 
 	ConfigureJobs()
+
+	removeStaleCaptureSpools()
 
 	plog.Info(plog.TypeSystem, "starting scorch processors")
 
@@ -315,6 +321,28 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 		router.Handle("/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)).Methods("GET", "HEAD")
 	}
 
+	// capture grants are the credentials of these routes (see capability.go)
+	grants := grantChecker{jwtKey: o.jwtKey, proxyAuthHeader: o.proxyAuthHeader}
+
+	// streams a capture into a command outside the browser, with or without
+	// WebShark, under the /webshark/ that proxies already pass on
+	router.Handle("/webshark/streams/{token}", weberror.ErrorHandler(grants.GetCaptureStreamByToken)).Methods("GET")
+
+	if o.featured(FeatureWebShark) {
+		plog.Info(plog.TypeSystem, "Serving WebShark", "dir", o.websharkDir)
+		router.HandleFunc("/webshark/json", grants.GetWebSharkJSON).Methods("GET")
+		router.HandleFunc("/webshark/captures/{name}", grants.GetWebSharkCaptureFile).Methods("GET", "HEAD")
+		router.HandleFunc("/webshark/watch", grants.GetWebSharkWatch).Methods("GET")
+		router.PathPrefix("/webshark/").Handler(WebSharkHandler(o.websharkDir, o.basePath))
+	} else {
+		// rather than the phēnix UI, which would load itself in its own frame
+		router.PathPrefix("/webshark/").Handler(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				weberror.Error(w, "WebShark is not installed on this phēnix server", http.StatusNotFound)
+			}),
+		)
+	}
+
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
 
@@ -440,6 +468,11 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/stopCaptureSubnet", weberror.ErrorHandler(StopCaptureSubnet)).
 		Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/webshark", weberror.ErrorHandler(CreateWebSharkCapture)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/captureTokens", weberror.ErrorHandler(CreateCaptureToken)).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/captureTokens", ListCaptureTokens).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/captureTokens/{id}", weberror.ErrorHandler(DeleteCaptureToken)).Methods("DELETE", "OPTIONS")
+
 	api.Handle("/experiments/{name}/files", weberror.ErrorHandler(GetExperimentFiles)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/files/download", weberror.ErrorHandler(DownloadExperimentFiles)).
 		Methods("POST", "OPTIONS")
@@ -484,6 +517,8 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(StopVMCaptures)).
 		Methods("DELETE", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/captures/{iface}/stream", weberror.ErrorHandler(GetVMCaptureStream)).
+		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(GetVMSnapshots)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(SnapshotVM)).Methods("POST", "OPTIONS")

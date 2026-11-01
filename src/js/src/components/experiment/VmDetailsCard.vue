@@ -332,6 +332,22 @@
                       $emit('action', action.name)
                     " />
                 </b-tooltip>
+                <b-tooltip
+                  v-if="canOpenWebShark"
+                  :label="webSharkTab.label"
+                  type="is-dark"
+                  position="is-top"
+                  append-to-body
+                  multilined>
+                  <b-button
+                    tag="router-link"
+                    :to="webSharkTab.to"
+                    size="is-small"
+                    type="is-light"
+                    class="vm-webshark-tab"
+                    icon-left="search"
+                    :aria-label="webSharkTab.label" />
+                </b-tooltip>
               </span>
             </p>
             <p v-if="!interfaces.length" class="vm-empty">No interfaces</p>
@@ -342,6 +358,7 @@
               :class="{
                 'is-capturing': iface.capturing,
                 'is-disconnected': iface.disconnected,
+                'has-webshark': canOpenWebShark,
               }">
               <span class="vm-iface-index">{{ iface.index }}</span>
               <div class="vm-iface-net">
@@ -400,6 +417,20 @@
                   label="packet capture running"
                   type="is-dark">
                   <span class="vm-rec-dot"></span>
+                </b-tooltip>
+                <!-- not the capture icon, which starts captures here -->
+                <b-tooltip
+                  v-if="canOpenWebShark && iface.capturing"
+                  label="Open in WebShark"
+                  type="is-dark">
+                  <b-button
+                    tag="router-link"
+                    :to="webSharkLink(iface)"
+                    size="is-small"
+                    type="is-light"
+                    class="vm-webshark"
+                    icon-left="search"
+                    aria-label="Open in WebShark" />
                 </b-tooltip>
               </span>
             </div>
@@ -581,6 +612,7 @@
   } from '@/utils/diskChain.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { plural, pluralWord } from '@/utils/plural.js';
+  import { webSharkInstalled } from '@/utils/webshark.js';
   import { osTypeInfo } from './osType.js';
   import {
     CAPTURE_ICON,
@@ -733,6 +765,30 @@
           }))
           .filter((action) => action.permitted);
       },
+      // The WebShark tab: on the VM's first running capture, or on the
+      // experiment, where its saved captures are
+      webSharkTab() {
+        const ifaces = (this.vm.captures ?? [])
+          .map((c) => c.interface)
+          .sort((a, b) => a - b);
+        const query = { exp: this.experiment };
+        if (!ifaces.length) {
+          return {
+            to: { name: 'webshark', query },
+            label: "Open the WebShark tab on this experiment's captures",
+          };
+        }
+        return {
+          to: {
+            name: 'webshark',
+            query: { ...query, vm: this.vm.name, iface: String(ifaces[0]) },
+          },
+          label:
+            ifaces.length == 1
+              ? "Open this VM's running capture in the WebShark tab"
+              : `Open this VM's capture of interface ${ifaces[0]} in the WebShark tab`,
+        };
+      },
       tags() {
         return Object.entries(this.vm.tags ?? {}).sort(([a], [b]) =>
           a.localeCompare(b),
@@ -771,6 +827,14 @@
       },
       canCapture() {
         return this.live && this.can('vms/captures', 'create');
+      },
+      // whether running captures get an Open in WebShark button
+      canOpenWebShark() {
+        return (
+          !!this.experiment &&
+          webSharkInstalled(this.features) &&
+          this.can('vms/captures', 'list')
+        );
       },
       canViewExperiment() {
         return (
@@ -840,6 +904,17 @@
             if (saved) this.annotationRows = null;
           },
         );
+      },
+      // the WebShark page for an interface's running capture
+      webSharkLink(iface) {
+        return {
+          name: 'webshark',
+          query: {
+            exp: this.experiment,
+            vm: this.vm.name,
+            iface: String(iface.index),
+          },
+        };
       },
     },
   };
@@ -1045,7 +1120,7 @@
     text-transform: none;
   }
 
-  /* the Network box's start and stop buttons */
+  /* the Network box's start, stop and WebShark buttons */
   .vm-section-actions {
     display: flex;
     gap: 0.3rem;
@@ -1346,11 +1421,19 @@
     margin-top: 0.35rem;
   }
 
-  /* the capture button */
+  /* the capture button, then Open in WebShark on a capturing interface */
   .vm-iface-cap {
     display: flex;
     align-items: center;
     gap: 0.3rem;
+  }
+
+  @media screen and (min-width: 769px) {
+    .vm-iface.has-webshark {
+      grid-template-columns:
+        1.6rem minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.8fr)
+        4.8rem;
+    }
   }
 
   .vm-iface.is-capturing {

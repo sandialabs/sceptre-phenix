@@ -583,7 +583,7 @@ func TestGetExperimentFileRefuses(t *testing.T) {
 }
 
 func TestGetExperimentFileAudits(t *testing.T) {
-	useExperimentFilesDir(t, map[string]string{"a.log": "alpha"})
+	useExperimentFilesDir(t, map[string]string{"a.log": "alpha", "captures/r.pcap": "pcap"})
 
 	tests := map[string]struct {
 		path    string
@@ -593,7 +593,11 @@ func TestGetExperimentFileAudits(t *testing.T) {
 	}{
 		"download": {
 			path: "a.log", outcome: "success",
-			fields: map[string]any{"phenix.file.preview": false, "file.name": "a.log"},
+			fields: map[string]any{"phenix.file.preview": false, "phenix.file.capture": false, "file.name": "a.log"},
+		},
+		"capture download": {
+			path: "captures/r.pcap", outcome: "success",
+			fields: map[string]any{"phenix.file.capture": true, "file.path": "captures/r.pcap", "file.name": "r.pcap"},
 		},
 		"preview": {
 			path: "a.log", header: []string{"Accept", "text/plain"}, outcome: "success",

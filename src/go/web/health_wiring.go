@@ -42,6 +42,7 @@ func newHealthHandlers() healthHandlers {
 		authenticated = middleware.Authenticator(o.jwtKey, o.proxyAuthHeader, middleware.OnRefusal(audit.TokenRefused))
 		uptime        = health.Uptime(startedAt)
 		storeCheck    = health.Store("bolt", listRoles)
+		webshark      = o.featured(FeatureWebShark)
 	)
 
 	ready := health.NewRegistry(
@@ -50,6 +51,7 @@ func newHealthHandlers() healthHandlers {
 		storeCheck,
 		health.Minimega(runMinimega),
 		health.QemuImg(exec.LookPath, health.QemuImgVersion),
+		health.WebShark(o.websharkDir, func() bool { return webshark }),
 		health.Disk(diskPaths, health.Statfs),
 		health.Broker(brokerStats),
 	)

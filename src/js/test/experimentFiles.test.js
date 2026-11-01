@@ -475,6 +475,53 @@ describe('opening a file', () => {
       { numRuns: 20 },
     );
   });
+
+  it('opens capture files on the WebShark page', async () => {
+    store.features = ['webshark'];
+    const tab = await listing([
+      'caps/web_0.pcap',
+      'old.PCAPNG.gz',
+      'notes.txt',
+      row('run.pcap', { isDir: true }),
+    ]);
+    const webShark = (name) => byLabel(tab, `Open ${name} in WebShark`);
+
+    expect(webShark('web_0.pcap').attributes('href')).toBe(
+      '/packets?exp=exp1&file=caps/web_0.pcap',
+    );
+    expect(webShark('old.PCAPNG.gz').exists()).toBe(true);
+
+    await tab
+      .find('td[data-label="Name"] .is-clickable button')
+      .trigger('click');
+    await flushPromises();
+    expect(tab.router.currentRoute.value).toMatchObject({
+      name: 'webshark',
+      query: { exp: 'exp1', file: 'caps/web_0.pcap' },
+    });
+
+    // not other files, or a directory named like a capture
+    expect(webShark('notes.txt').exists()).toBe(false);
+    expect(webShark('run.pcap').exists()).toBe(false);
+  });
+
+  it.each([
+    ['WebShark is not installed', ['tunneler-download'], allowAll],
+    ['the server has not said what it has installed', null, allowAll],
+    [
+      'the role may not get the files',
+      ['webshark'],
+      denyOnly(['experiments/files', 'get', 'exp1']),
+    ],
+  ])('opens nothing in WebShark when %s', async (_, features, allowed) => {
+    store.features = features;
+    rbac.allowed = allowed;
+    const tab = await listing(['a.pcap']);
+    expect(byLabel(tab, 'Open a.pcap in WebShark').exists()).toBe(false);
+    expect(tab.find('td[data-label="Name"] .is-clickable').exists()).toBe(
+      false,
+    );
+  });
 });
 
 describe('deleting a file', () => {
@@ -842,6 +889,7 @@ describe('rendering', () => {
   });
 
   it('gives each row the button that opens it, then download and delete', async () => {
+    store.features = ['webshark'];
     const tab = await listing([
       'caps/a.pcap',
       row('notes.txt', { plainText: true }),
@@ -849,10 +897,15 @@ describe('rendering', () => {
     ]);
 
     expect(actions(tab, 0)).toEqual([
-      '(space)',
+      'Open a.pcap in WebShark -> /packets?exp=exp1&file=caps/a.pcap',
       'Download a.pcap',
       'Delete a.pcap',
     ]);
+    expect(
+      byLabel(tab, 'Open a.pcap in WebShark')
+        .find('[data-icon="shark-fin"]')
+        .exists(),
+    ).toBe(true);
     expect(actions(tab, 1)).toEqual([
       'View notes.txt',
       'Download notes.txt',
@@ -870,7 +923,11 @@ describe('rendering', () => {
       .findAll('tbody td[data-label="Name"]')
       .map((td) => td.findAll('.tooltip-content, .is-clickable'))
       .map((parts) => parts.map((part) => part.text()));
-    expect(names).toEqual([[], ['view file', 'notes.txt'], []]);
+    expect(names).toEqual([
+      ['Open in WebShark', 'a.pcap'],
+      ['view file', 'notes.txt'],
+      [],
+    ]);
     expect(tab.find('tbody td[data-label="Path"]').text()).toContain(
       '/phenix/images/exp1/files/caps/a.pcap',
     );

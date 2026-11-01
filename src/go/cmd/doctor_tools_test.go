@@ -224,8 +224,62 @@ func statOf(t *testing.T, isDir map[string]bool) func(string) (os.FileInfo, erro
 	}
 }
 
-// ui.features warns about an unknown name with a suggestion and about a
-// feature phenix ui turns on itself set without what it needs.
+// Tunneler downloads and WebShark turn on when phenix ui finds what each
+// needs, relative to the working directory it starts in.
+func TestOptionalFeatureChecks(t *testing.T) {
+	t.Parallel()
+
+	const cwd = "/home/alice"
+
+	tests := map[string]struct {
+		files        map[string]bool
+		wantTunneler doctorCheck
+		wantShark    doctorCheck
+	}{
+		"neither": {
+			wantTunneler: row("", doctorPass,
+				"off: no downloads/tunneler (under /home/alice), and phenix ui looks in the directory it starts in"),
+			wantShark: row("", doctorPass, "off: no index.html in webshark (under /home/alice) or /opt/phenix/webshark"),
+		},
+		"both": {
+			files:        map[string]bool{"downloads/tunneler": true, "webshark/index.html": false},
+			wantTunneler: row("", doctorPass, "on: /home/alice/downloads/tunneler"),
+			wantShark:    row("", doctorPass, "on: the build in /home/alice/webshark"),
+		},
+		"tunneler file, installed WebShark": {
+			files: map[string]bool{"downloads/tunneler": false, "/opt/phenix/webshark/index.html": false},
+			wantTunneler: row("", doctorWarn,
+				"on, but downloads/tunneler (under /home/alice) is not a directory, so listing tunneler downloads fails"),
+			wantShark: row("", doctorPass, "on: the build in /opt/phenix/webshark"),
+		},
+		"WebShark directory without a build": {
+			files: map[string]bool{"webshark/index.html": true},
+			wantTunneler: row("", doctorPass,
+				"off: no downloads/tunneler (under /home/alice), and phenix ui looks in the directory it starts in"),
+			wantShark: row("", doctorPass, "off: no index.html in webshark (under /home/alice) or /opt/phenix/webshark"),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			env := fakeDoctorEnv(nil, false)
+			env.stat = statOf(t, tc.files)
+
+			if diff := cmp.Diff(tc.wantTunneler, env.tunnelerDownloadCheck(cwd)); diff != "" {
+				t.Errorf("tunnelerDownloadCheck() mismatch (-want +got):\n%s", diff)
+			}
+
+			if diff := cmp.Diff(tc.wantShark, env.webSharkCheck(cwd)); diff != "" {
+				t.Errorf("webSharkCheck() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// ui.features warns about an unknown name and a feature set without what it
+// needs, and fails for webshark without a build, which phenix ui refuses.
 func TestFeaturesSettingCheck(t *testing.T) {
 	t.Parallel()
 
@@ -251,18 +305,25 @@ func TestFeaturesSettingCheck(t *testing.T) {
 				`unknown feature "vm-mount,webshark". Separate features with spaces, or list them in YAML`),
 			wantHint: "remove or fix the unknown features",
 		},
+		"webshark without a build": {
+			features: []string{"webshark"},
+			want: row("", doctorFail, "webshark is set by hand without a WebShark build in webshark (under /opt/phenix) "+
+				"or /opt/phenix/webshark, so phenix ui refuses to start"),
+			wantHint: "keep only vm-mount",
+		},
 		"auto features with what they need": {
-			features:   []string{"tunneler-download", "file-server"},
-			files:      map[string]bool{"downloads/tunneler": true},
+			features:   []string{"webshark", "tunneler-download", "file-server"},
+			files:      map[string]bool{"/opt/phenix/webshark/index.html": false, "downloads/tunneler": true},
 			fileServer: "8080",
-			want:       row("", doctorPass, "tunneler-download file-server"),
+			want:       row("", doctorPass, "webshark tunneler-download file-server"),
 		},
 		"auto features without": {
-			features:   []string{"tunneler-download", "file-server"},
+			features:   []string{"tunneler-download", "file-server", "webshark"},
 			fileServer: "0",
-			want: row("", doctorWarn, "tunneler-download is set by hand without downloads/tunneler (under /opt/phenix), "+
+			want: row("", doctorFail, "tunneler-download is set by hand without downloads/tunneler (under /opt/phenix), "+
 				"so the download menu lists no tunnelers. file-server is set by hand without ui.file-server-endpoint, "+
-				"so no file server runs"),
+				"so no file server runs. webshark is set by hand without a WebShark build in webshark (under /opt/phenix) "+
+				"or /opt/phenix/webshark, so phenix ui refuses to start"),
 			wantHint: "keep only vm-mount",
 		},
 	}

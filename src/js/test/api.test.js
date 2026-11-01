@@ -25,6 +25,7 @@ import * as settingsApi from '@/api/settings.js';
 import * as topologiesApi from '@/api/topologies.js';
 import * as usersApi from '@/api/users.js';
 import * as vmsApi from '@/api/vms.js';
+import * as webSharkApi from '@/api/webshark.js';
 import { useJobStore } from '@/utils/jobs.js';
 
 // what a test passes through untouched: a form, a progress callback, a signal
@@ -247,6 +248,20 @@ const requests = [
   ['getJob', () => jobsApi.getJob('j1'), 'get', ['jobs/j1']],
   ['cancelJob', () => jobsApi.cancelJob('j1'), 'post', ['jobs/j1/cancel']],
   ['deleteJob', () => jobsApi.deleteJob('j1'), 'delete', ['jobs/j1']],
+
+  // WebShark
+  [
+    'openWebSharkCapture',
+    () => webSharkApi.openWebSharkCapture('e@x', form),
+    'post',
+    ['experiments/e%40x/webshark', form],
+  ],
+  [
+    'createCaptureToken',
+    () => webSharkApi.createCaptureToken('e@x', form),
+    'post',
+    ['experiments/e%40x/captureTokens', form],
+  ],
 
   // disks
   [
@@ -857,6 +872,7 @@ describe('the API modules', () => {
       topologiesApi,
       usersApi,
       vmsApi,
+      webSharkApi,
     ].flatMap((mod) => Object.keys(mod));
     // builds a link's URL rather than sending a request (tested below)
     const links = new Set(['netflowCaptureURL']);

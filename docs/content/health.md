@@ -8,8 +8,8 @@ Kubernetes `livez`/`readyz` convention:
   means restarting phēnix may help, so this is what the Docker and Podman
   health checks run.
 * **`/readyz` (readiness)**: can phēnix run experiments right now? It checks
-  minimega, the mesh, the store, `qemu-img`, free disk space and the websocket
-  broker. A failing readiness check usually means something phēnix
+  minimega, the mesh, the store, `qemu-img`, WebShark, free disk space and the
+  websocket broker. A failing readiness check usually means something phēnix
   depends on is down, which restarting phēnix will not fix.
 
 Both answer `GET` and `HEAD`, need no credentials, and are served from the
@@ -94,6 +94,7 @@ The **Check** column is the name `?exclude=` takes.
 | `minimega:namespaces` | `minimega` | `/readyz` | `namespaces` | the namespaces cannot be listed | minimega does not answer |
 | `mesh:nodes` | `minimega` | `/readyz` | `nodes` | the mesh has fewer nodes than it has had since phēnix started | minimega does not answer |
 | `qemu-img:version` | `qemu-img` | `/readyz` | (version) | `qemu-img` is missing or broken (phēnix then inspects disks through minimega) | never |
+| `webshark:files` | `webshark` | `/readyz`, only when WebShark is installed | | the WebShark build is gone | never |
 | `disk:utilization` | `disk` | `/readyz` | `percent` | a filesystem is at least 90% full | a filesystem is at least 98% full |
 | `websocket:clients` | `websocket` | `/readyz` | `clients` | never | never |
 | `websocket:queue` | `websocket` | `/readyz` | `percent` | the broker's broadcast queue is at least 75% full | never |
@@ -121,6 +122,7 @@ so probing often is cheap and a hung dependency cannot hold a probe:
 | `minimega` | 5 seconds | 3 seconds |
 | `store` | 2 seconds | 3 seconds |
 | `disk` | 10 seconds | 2 seconds |
+| `webshark` | 30 seconds | 1 second |
 | `qemu-img` | 1 minute | 2 seconds |
 | `uptime`, `go`, `websocket` | measured on every request | |
 

@@ -6,16 +6,20 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/signal"
 	"path"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"phenix/api/experiment"
+	"phenix/api/livecapture"
 	"phenix/api/vm"
 	"phenix/util"
 	"phenix/util/mm"
@@ -35,6 +39,7 @@ const (
 	stopCaptureIfaceArgs   = 3
 	stopSubnetArgs         = 2
 	stopAllArgs            = 1
+	streamCaptureArgs      = 3
 	memSnapArgs            = 3
 	mountArgs              = 2
 	unmountArgs            = 2
@@ -1354,11 +1359,133 @@ func newVMCaptureCmd() *cobra.Command {
 	cmd.AddCommand(stopVMCaptures)
 	cmd.AddCommand(stopSubnetCaptures)
 	cmd.AddCommand(stopAllCaptures)
+	cmd.AddCommand(newVMCaptureStreamCmd())
 
 	startSubnetCaptures.Flags().StringP("filter", "f", "", "Filter to restrict the list of VMs")
 	stopSubnetCaptures.Flags().StringP("filter", "f", "", "Filter to restrict the list of VMs")
 
 	return cmd
+}
+
+func newVMCaptureStreamCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "stream <experiment name> <vm name> <iface name/index>",
+		Short: "Write a running packet capture to stdout as it is captured",
+		Long: `Write a running packet capture to stdout as it is captured
+
+  Writes the capture as a pcap stream: every packet captured so far (or, with
+  --from-now, none of them), then each packet as it is captured, until the
+  capture stops or the command is interrupted. Pipe it into Wireshark to
+  watch it live:
+
+    phenix vm capture stream <exp> <vm> <iface> | wireshark -k -i -`,
+		ValidArgsFunction: vmArgsCompletion,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != streamCaptureArgs {
+				return errors.New("must provide an experiment name, VM name, and iface name/index")
+			}
+
+			var (
+				expName = args[0]
+				vmName  = args[1]
+				output  = mustGet(cmd.Flags().GetString, "output")
+				fromNow = mustGet(cmd.Flags().GetBool, "from-now")
+			)
+
+			v, err := vm.Get(context.Background(), expName, vmName)
+			if err != nil {
+				err := util.HumanizeError(err, "%s", "Unable to get details for the "+vmName+" VM")
+
+				return err.Humanized()
+			}
+
+			iface, err := vm.ResolveInterface(v, args[2])
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to resolve interface "+args[2]+" on the "+vmName+" VM",
+				)
+
+				return err.Humanized()
+			}
+
+			out := os.Stdout
+
+			if output != "" && output != "-" {
+				out, err = os.Create(output)
+				if err != nil {
+					return fmt.Errorf("creating %s: %w", output, err)
+				}
+
+				defer out.Close()
+			} else if term.IsTerminal(int(os.Stdout.Fd())) { //nolint:gosec // G115 file descriptors fit in an int
+				return errors.New("refusing to write a packet capture to a terminal: pipe it to a program or use --output")
+			}
+
+			// the first signal ends the stream, so the cleanup below runs; the next
+			// ends the process at once, even while it waits on minimega
+			ctx, stop := signal.NotifyContext(cmd.Context(), captureStreamStopSignals()...)
+			defer stop()
+
+			context.AfterFunc(ctx, stop)
+
+			// with SIGPIPE ignored, a write to a pipe whose reader has gone
+			// fails with EPIPE instead of killing the process
+			signal.Ignore(syscall.SIGPIPE)
+
+			tap, err := livecapture.Open(expName, vmName, iface)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to follow the packet capture on the "+vmName+" VM",
+				)
+
+				return err.Humanized()
+			}
+
+			// the process exits before a released Tap's idle expiry would remove a
+			// remote spool, so CloseAll removes it; from here a signal ends the process
+			defer func() {
+				stop()
+				livecapture.CloseAll()
+			}()
+
+			err = tap.Stream(ctx, fromNow, func(b []byte) error {
+				_, err := out.Write(b)
+
+				return err //nolint:wrapcheck // the reader went away
+			})
+
+			// a signal, or the reader closing the pipe, is how streaming
+			// normally ends
+			if err != nil && ctx.Err() == nil && !errors.Is(err, syscall.EPIPE) {
+				return fmt.Errorf("streaming the capture: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringP("output", "o", "", "Write the capture to this file instead of stdout")
+	cmd.Flags().Bool("from-now", false, "Skip the packets captured before the command started")
+
+	return cmd
+}
+
+// captureStreamStopSignals are the signals that end `phenix vm capture stream`, less any the process was started
+// ignoring (such as a hangup under nohup), since asking to be notified of one would stop that.
+func captureStreamStopSignals() []os.Signal {
+	stopOn := []os.Signal{syscall.SIGTERM}
+
+	for _, sig := range []os.Signal{os.Interrupt, syscall.SIGHUP} {
+		if !signal.Ignored(sig) {
+			stopOn = append(stopOn, sig)
+		}
+	}
+
+	return stopOn
 }
 
 func newVMMemorySnapshotCmd() *cobra.Command {
