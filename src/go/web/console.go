@@ -20,6 +20,7 @@ import (
 
 	"phenix/util/plog"
 	"phenix/web/audit"
+	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -200,7 +201,12 @@ func WsConsole(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusNotFound, "pty not found")
 	}
 
+	if lifecycle.RefuseWhileStopping(w) {
+		return nil
+	}
+
 	websocket.Handler(func(ws *websocket.Conn) {
+		defer lifecycle.TrackConn("minimega console", ws)()
 		defer func() { _ = tty.Close() }()
 
 		proc, err := os.FindProcess(pid)
