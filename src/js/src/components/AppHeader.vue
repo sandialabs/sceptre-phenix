@@ -105,6 +105,7 @@ are only available to Global Administrator or Global Viewer.
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
+  import { endConsole } from '@/utils/consoleSession.js';
 
   export default {
     setup() {
@@ -139,7 +140,7 @@ are only available to Global Administrator or Global Viewer.
     methods: {
       //  These methods are used to logout a user; or, present
       //  routable link based on a Global user role.
-      logout(event) {
+      async logout(event) {
         const button = event?.currentTarget;
 
         if (this.loggingOut) {
@@ -147,6 +148,9 @@ are only available to Global Administrator or Global Viewer.
         }
 
         this.loggingOut = true;
+
+        // end the console first, while the token still allows it
+        await endConsole();
 
         axiosInstance
           .post('logout')

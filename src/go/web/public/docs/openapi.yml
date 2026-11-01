@@ -41,8 +41,10 @@ info:
     `token` query parameter for browser links, unless auth is disabled.
     Without a token, an API route answers 403. With a malformed, expired or
     signed-out token, or behind a proxy naming another user than the token's,
-    it answers 401. A role without the permission a route needs gets 403. An unknown `/api/v1` path is a 404, and a
-    method a path does not take is a 405, both before authentication. An
+    it answers 401. A role without the permission a route needs gets 403. Some
+    routes say that they answer 404 instead, so as not to reveal another
+    user's console. An unknown `/api/v1` path is a 404, and a method a path
+    does not take is a 405, both before authentication. An
     `OPTIONS` request answers 204, also before authentication, without running
     the route. With `--jwt-signing-key proxy-jwt`, the server reads the token
     only from the header, and a missing or malformed token answers 400. With
@@ -104,7 +106,11 @@ tags:
   - name: Console
     description: >-
       minimega consoles in the web UI (the server must run with
-      --minimega-console).
+      --minimega-console). A console belongs to the user who started it. Only
+      that user can check, attach to, resize or end it. For another user, the
+      server reports the console as not found. A console keeps running while
+      websockets attach and detach. It ends when its process exits, when
+      it is deleted, or once no websocket has been attached for 15 seconds.
   - name: Features
     description: >-
       The optional features this server has enabled, which the web UI reads to
@@ -5538,7 +5544,8 @@ paths:
         - Console
       summary: Start a minimega console
       description: >-
-        Starts a console.
+        Starts a console owned by the requesting user. It ends if no websocket
+        attaches within 15 seconds.
       operationId: postConsole
       responses:
         "200":
@@ -5565,13 +5572,88 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/console/{pid}":
+    parameters:
+      - name: pid
+        in: path
+        description: process ID of the console
+        required: true
+        schema:
+          type: integer
+    get:
+      tags:
+        - Console
+      summary: Check that a console is still running
+      description: >-
+        Lets a client attach to the console it had open, after a reload or from
+        another tab, instead of starting another.
+      operationId: getConsole
+      responses:
+        "200":
+          description: the console is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Console"
+        "403":
+          description: the role may not use a console (miniconsole get)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: no running console with this pid belongs to the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags:
+        - Console
+      summary: End a console
+      description: >-
+        Kills the console's process and closes its websockets. The UI does this
+        when the user logs out. Needs the permission that starts a console.
+      operationId: deleteConsole
+      responses:
+        "204":
+          description: the console has ended
+        "403":
+          description: the role may not start a console (miniconsole post)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: no running console with this pid belongs to the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the console's process did not end
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/console/{pid}/ws":
     get:
       tags:
         - Console
       summary: Attach to a console using a WebSocket
       description: >-
-        Binary frames carry the console's output. Frames sent are its input.
+        Binary frames carry the console's output: first up to 256 KiB of its
+        recent output, then its live output. Frames sent are its input.
+        Several websockets can attach at once, and closing one leaves the
+        console running. The server closes the websocket normally (1000) once
+        the console has ended.
       operationId: getConsoleWs
       parameters:
         - name: pid
@@ -5590,7 +5672,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
-          description: no running console has this pid
+          description: no running console with this pid belongs to the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
           content:
             application/json:
               schema:
@@ -5642,7 +5731,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
-          description: no running console has this pid
+          description: no running console with this pid belongs to the user
           content:
             application/json:
               schema:

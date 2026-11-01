@@ -102,7 +102,8 @@ func (s *uiServer) shutdown(cause error) {
 		wg sync.WaitGroup
 		mu sync.Mutex
 
-		cut []string // servers whose requests the deadline cut off
+		cut          []string // servers whose requests the deadline cut off
+		consolesLeft int
 	)
 
 	wg.Add(len(s.servers))
@@ -120,6 +121,14 @@ func (s *uiServer) shutdown(cause error) {
 			}
 		}()
 	}
+
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		consolesLeft = consoles.endAll(ctx, consoleEndedShutdown)
+	}()
 
 	handlers := lifecycle.Wait(ctx)
 
@@ -140,6 +149,10 @@ func (s *uiServer) shutdown(cause error) {
 	if len(cut) > 0 {
 		slices.Sort(cut)
 		left = append(left, "requests_cut_off", cut)
+	}
+
+	if consolesLeft > 0 {
+		left = append(left, "minimega_consoles", consolesLeft)
 	}
 
 	if len(handlers) > 0 {
