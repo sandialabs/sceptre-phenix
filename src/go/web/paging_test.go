@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -10,14 +11,16 @@ import (
 	"phenix/web/proto"
 )
 
-// The experiment, VM and disk lists page with pageNum and perPage as the experiment VM and file lists do,
+// The experiment, VM, disk and job lists page with pageNum and perPage as the experiment VM and file lists do,
 // returning everything without them, and refuse a page that is not a whole number of at least 1.
 func TestListsRefuseBadPages(t *testing.T) {
 	useTestExperiment(t)
+	useJobs(t)
+	useDiskExperiments(t)
 
 	server := serveAs(t, "alice", adminRole()).URL
 
-	for _, path := range []string{"/api/v1/experiments", "/api/v1/vms", "/api/v1/disks"} {
+	for _, path := range []string{"/api/v1/experiments", "/api/v1/vms", "/api/v1/disks", "/api/v1/jobs"} {
 		for _, query := range []string{"pageNum=0&perPage=10", "pageNum=1&perPage=0", "pageNum=x&perPage=10"} {
 			url := path + "?" + query
 			if resp := do(t, http.MethodGet, server+url, ""); resp.StatusCode != http.StatusBadRequest {
@@ -80,4 +83,71 @@ func vmIDs(list *proto.VMList) []string {
 	}
 
 	return ids
+}
+
+// A page of disks or jobs is that slice of the whole list, with the whole list's total.
+func TestDisksAndJobsPage(t *testing.T) {
+	useDiskExperiments(t)
+
+	registry := useJobs(t)
+	for range 3 {
+		waitJob(t, registry, startTestJob(t, registry, "alice", "", nil, "").ID)
+	}
+
+	server := serveAs(t, "alice", adminRole()).URL
+
+	for _, key := range []string{"disks", "jobs"} {
+		t.Run(key, func(t *testing.T) {
+			whole := listPage(t, server+"/api/v1/"+key, key)
+			if len(whole.items) < 3 {
+				t.Fatalf("GET /api/v1/%s listed %d, want at least 3 to page", key, len(whole.items))
+			}
+
+			path := "/api/v1/" + key + "?pageNum=2&perPage=2"
+			page := listPage(t, server+path, key)
+
+			want := whole.items[2:min(4, len(whole.items))]
+			if diff := cmp.Diff(want, page.items); diff != "" {
+				t.Errorf("GET %s mismatch (-want +got):\n%s", path, diff)
+			}
+
+			if page.total != len(whole.items) || whole.total != len(whole.items) {
+				t.Errorf("GET %s total = %d and unpaged total = %d, want %d", path, page.total, whole.total, len(whole.items))
+			}
+		})
+	}
+}
+
+// listed is a page of a list answered as {"<key>": [...], "total": n}.
+type listed struct {
+	items []json.RawMessage
+	total int
+}
+
+// listPage gets url and reads its page of key.
+func listPage(t *testing.T, url, key string) listed {
+	t.Helper()
+
+	resp := do(t, http.MethodGet, url, "")
+	body := readBody(t, resp)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want %d: %s", url, resp.StatusCode, http.StatusOK, body)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		t.Fatalf("GET %s = %s, not an object: %v", url, body, err)
+	}
+
+	var page listed
+	if err := json.Unmarshal(raw[key], &page.items); err != nil {
+		t.Fatalf("GET %s %s = %s, not a list: %v", url, key, raw[key], err)
+	}
+
+	if err := json.Unmarshal(raw["total"], &page.total); err != nil {
+		t.Fatalf("GET %s total = %s, not a number: %v", url, raw["total"], err)
+	}
+
+	return page
 }

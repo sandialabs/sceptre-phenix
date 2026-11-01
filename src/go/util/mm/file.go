@@ -147,24 +147,3 @@ func minimegaFilesDirectory() (string, error) {
 
 	return filepath.Clean(dir), nil
 }
-
-// GetMMFilesDirectory tries to extract the minimega files directory from a process listing.
-func GetMMFilesDirectory() string {
-	defaultMMFilesDirectory := common.PhenixBase + "/images"
-
-	args, err := DefaultMM.GetMMArgs()
-	if err != nil {
-		plog.Warn(plog.TypeSystem, "Could not get mm files directory from minimega")
-
-		return defaultMMFilesDirectory
-	}
-
-	path, ok := args["filepath"]
-	if !ok {
-		plog.Warn(plog.TypeSystem, "Could not get mm files directory from minimega")
-
-		return defaultMMFilesDirectory
-	}
-
-	return path
-}

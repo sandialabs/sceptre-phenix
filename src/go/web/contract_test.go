@@ -45,8 +45,8 @@ func serveContractAs(t *testing.T, role rbac.Role) *httptest.Server {
 	return serveContract(t, func(o *serverOptions) { o.jwtKey = key })
 }
 
-// contractFixture: running test-experiment with test-vm mounted (etc/hostname), the user bob, and bob's finished job
-// (3-byte artifact).
+// contractFixture: running test-experiment with test-vm mounted (etc/hostname), test-disk.qc2, the user bob, and bob's
+// finished job (3-byte artifact).
 type contractFixture struct {
 	jobs    *job.Registry
 	bobsJob job.Job
@@ -56,7 +56,9 @@ type contractFixture struct {
 func useContractFixture(t *testing.T) contractFixture {
 	t.Helper()
 
-	useExperimentFilesDir(t, nil)
+	files := useDiskFilesDir(t)
+	writeDisks(t, filepath.Join(files.dir, contractDisk))
+
 	useTestExperiment(t)
 	useContractMount(t)
 
@@ -213,8 +215,14 @@ func contractRoutes() []contractRoute {
 		{method: "HEAD", path: vm + "/files/download?path=etc/hostname", need: one(mount), want: ok},
 
 		// disks
+		{method: "GET", path: "/api/v1/disks/checksum?disk=" + contractDisk, need: one(diskGet)},
+		{method: "GET", path: "/api/v1/disks/details?disk=" + contractDisk, need: one(testRole("disks", "list", contractDisk))},
 		{method: "GET", path: "/api/v1/disks/download?disk=" + contractDisk, need: one(diskGet)},
 		{method: "HEAD", path: "/api/v1/disks/download?disk=" + contractDisk, need: one(diskGet)},
+		{
+			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=copy",
+			need: []rbac.Role{testRole("disks", "create", "copy.qcow2"), diskGet},
+		},
 
 		// users: a token for another user also needs users/tokens create
 		{
@@ -293,7 +301,7 @@ func TestContractRBAC(t *testing.T) {
 func otherNames(roles []rbac.Role) map[string]rbac.Role {
 	changes := map[string]*strings.Replacer{
 		"another experiment, disk or config": strings.NewReplacer(
-			contractExp, contractOther, contractDisk, "other-disk.qc2",
+			contractExp, contractOther, contractDisk, "other-disk.qc2", "copy.qcow2", "other.qcow2",
 		),
 		"another VM": strings.NewReplacer(contractVM, "other-vm"),
 	}
@@ -441,11 +449,24 @@ type contractErrorCase struct {
 
 const contractExpPath = "/api/v1/experiments/" + contractExp
 
-// fileAndVMErrorCases are TestContractErrors' file and VM cases.
+// fileAndVMErrorCases are TestContractErrors' file, disk and VM cases.
 func fileAndVMErrorCases() map[string]contractErrorCase {
 	const exp = contractExpPath
 
 	return map[string]contractErrorCase{
+		"checksum of missing disk": {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
+		"checksum of disk outside": {method: "GET", path: "/api/v1/disks/checksum?disk=../none.qc2", want: http.StatusBadRequest},
+		"details of missing disk":  {method: "GET", path: "/api/v1/disks/details?disk=none.qc2", want: http.StatusNotFound},
+		"details of disk outside":  {method: "GET", path: "/api/v1/disks/details?disk=../none.qc2", want: http.StatusBadRequest},
+		"details of no disk":       {method: "GET", path: "/api/v1/disks/details?disk=", want: http.StatusBadRequest},
+		"clone onto existing disk": {
+			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=" + contractDisk,
+			want: http.StatusConflict,
+		},
+		"clone to another image extension": {
+			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=copy.iso",
+			want: http.StatusBadRequest,
+		},
 		"mount download of missing file": {
 			method: "GET", path: exp + "/vms/" + contractVM + "/files/download?path=etc/none", want: http.StatusNotFound,
 		},
@@ -526,6 +547,7 @@ func TestContractJSONContentType(t *testing.T) {
 		vm + "/captures",
 		exp + "/scorch/terminals",
 		"/api/v1/vms",
+		"/api/v1/disks",
 		"/api/v1/applications",
 		"/api/v1/topologies",
 		"/api/v1/users",

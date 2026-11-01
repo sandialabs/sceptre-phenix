@@ -188,6 +188,10 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 
 	go SyncMinimegaLogs(background, o.minimegaLogs)
 
+	plog.Info(plog.TypeSystem, "starting disk image watcher")
+
+	WatchDisks(background)
+
 	plog.Info(plog.TypeSystem, "using base path", "path", o.basePath)
 	plog.Info(plog.TypeSystem, "using JWT lifetime", "lifetime", o.jwtLifetime)
 
@@ -520,6 +524,9 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/disks/clone", weberror.ErrorHandler(CloneDisk)).
 		Methods("POST", "OPTIONS").
 		Queries("disk", "{disk}", "new", "{new}")
+	api.Handle("/disks/clone/jobs", idempotent.Wrap(weberror.ErrorHandler(CloneDiskJob))).
+		Methods("POST", "OPTIONS").
+		Queries("disk", "{disk}", "new", "{new}")
 	api.Handle("/disks", weberror.ErrorHandler(DeleteDisk)).Methods("DELETE", "OPTIONS").Queries("disk", "{disk}")
 	api.Handle("/disks/rename", weberror.ErrorHandler(RenameDisk)).
 		Methods("POST", "OPTIONS").
@@ -527,6 +534,12 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/disks", weberror.ErrorHandler(UploadDisk)).Methods("POST", "OPTIONS")
 	api.Handle("/disks/download", weberror.ErrorHandler(DownloadDisk)).
 		Methods("GET", "HEAD", "OPTIONS").
+		Queries("disk", "{disk}")
+	api.Handle("/disks/checksum", weberror.ErrorHandler(GetDiskChecksum)).
+		Methods("GET", "OPTIONS").
+		Queries("disk", "{disk}")
+	api.Handle("/disks/details", weberror.ErrorHandler(GetDiskDetails)).
+		Methods("GET", "OPTIONS").
 		Queries("disk", "{disk}")
 
 	api.Handle("/vms", weberror.ErrorHandler(GetAllVMs)).Methods("GET", "OPTIONS")
