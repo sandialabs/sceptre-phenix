@@ -1387,6 +1387,7 @@
           hasModalCard: true,
           props: {
             vmName: vm.name,
+            experiment: this.$route.params.id,
             tags: vm.tags,
           },
         });

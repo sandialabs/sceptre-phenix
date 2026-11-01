@@ -1,6 +1,7 @@
 // An experiment's VMs: settings, snapshots, disks, forwards, discs, captures, files.
 // Names go into the path as given unless a function says it encodes them.
 import axiosInstance from '@/utils/axios.js';
+import { useJobStore } from '@/utils/jobs.js';
 
 const vmURL = (exp, vm) => 'experiments/' + exp + '/vms/' + vm;
 
@@ -12,6 +13,22 @@ export function listAllVms(config) {
 // GET /experiments/{exp}/vms
 export function listVms(exp) {
   return axiosInstance.get('experiments/' + exp + '/vms');
+}
+
+// PATCH /experiments/{exp}/vms, setting each of vms ({ name, ... }) at once
+export function updateVms(exp, vms) {
+  return axiosInstance.patch('experiments/' + exp + '/vms', {
+    vms,
+    total: vms.length,
+  });
+}
+
+// POST /experiments/{exp}/vms/actions: the server takes a power action on
+// the VMs in a background job (see utils/jobs.js), which this returns
+export function startVmActionsJob(exp, action, vms) {
+  return useJobStore().start(
+    axiosInstance.post(`experiments/${exp}/vms/actions`, { action, vms }),
+  );
 }
 
 // GET /experiments/{exp}/vms/{vm}
