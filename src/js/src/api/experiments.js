@@ -2,6 +2,12 @@
 // Names go into the path as given unless a function says it encodes them.
 import axiosInstance from '@/utils/axios.js';
 
+// GET /experiments?vms=false: the experiments with VM counts but no VMs;
+// config carries the request's signal and meta
+export function listExperiments(config) {
+  return axiosInstance.get('experiments?vms=false', config);
+}
+
 // GET /options: the choices the create-experiment card offers
 export function getExperimentOptions() {
   return axiosInstance.get('/options');
@@ -33,9 +39,12 @@ export function startExperiment(name) {
   return axiosInstance.post('experiments/' + name + '/start');
 }
 
-// POST /experiments/{name}/stop
-export function stopExperiment(name) {
-  return axiosInstance.post('experiments/' + name + '/stop');
+// POST /experiments/{name}/stop; force=true marks it stopped even when
+// minimega cannot kill its VMs
+export function stopExperiment(name, { force = false } = {}) {
+  const url = 'experiments/' + name + '/stop';
+  if (!force) return axiosInstance.post(url);
+  return axiosInstance.post(url, null, { params: { force: true } });
 }
 
 // POST /experiments/{name}/schedule: places the VMs on hosts by algorithm

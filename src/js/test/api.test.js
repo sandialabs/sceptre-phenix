@@ -354,6 +354,12 @@ const requests = [
     ['experiments', { name: 'exp' }, { timeout: 0 }],
   ],
   [
+    'listExperiments',
+    () => experimentsApi.listExperiments(fetchConfig),
+    'get',
+    ['experiments?vms=false', fetchConfig],
+  ],
+  [
     'getExperiment',
     () => experimentsApi.getExperiment('exp', { params: { pageNum: 2 } }),
     'get',
@@ -382,6 +388,12 @@ const requests = [
     () => experimentsApi.stopExperiment('exp'),
     'post',
     ['experiments/exp/stop'],
+  ],
+  [
+    'stopExperiment, forced',
+    () => experimentsApi.stopExperiment('exp', { force: true }),
+    'post',
+    ['experiments/exp/stop', null, { params: { force: true } }],
   ],
   [
     'scheduleExperiment',

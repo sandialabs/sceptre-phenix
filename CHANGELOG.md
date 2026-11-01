@@ -41,6 +41,7 @@ All notable changes to this project will be documented in this file.
 - **Experiment Files**: Added API routes that delete one or more experiment files and download several files as a zip archive, also as a `files.archive` background job. Stored Experiment Admin roles get the new `experiments/files` `delete` permission at startup.
 - **Stopped Experiment and VM Tiles**: The stopped experiment page and the VM tiles page open from the page cache, and the VM tiles get screenshots only for the tiles on screen. The stopped page keeps its open tab and search in the URL.
 - **Netflow Captures**: phēnix records each netflow capture in the experiment files, up to the new `ui.netflow.max-size` setting (100 MB by default). The new `/api/v1/experiments/{name}/netflow/captures` routes list the recorded captures and download each one as text, CSV or JSON Lines.
+- **Experiments Page**: The Experiments page shows totals, Start and Stop buttons, links to topology and scenario configs, and a toolbar that starts, stops or deletes selected experiments. The create card can start the experiment after it creates it and can set experiment and VM annotations.
 
 ### Changed
 

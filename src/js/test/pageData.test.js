@@ -25,6 +25,7 @@ import { FreshnessMeta, RESOURCES } from '@/utils/freshness.js';
 import {
   DEFAULT_LOG_WINDOW,
   experimentKey,
+  experimentList,
   fetchRunningExperiment,
   pageFetchers,
   preloadPages,
@@ -63,6 +64,7 @@ afterEach(() => {
 
 describe('the list pages', () => {
   it.each([
+    ['experiments', 'experiments?vms=false', { experiments: [1] }],
     ['configs', 'configs', { configs: [1] }],
     ['disks', 'disks', { disks: [1] }],
     ['hosts', 'hosts', { hosts: [1] }],
@@ -230,6 +232,23 @@ describe('the running experiment page', () => {
 });
 
 describe('the shared lists', () => {
+  it('reuse the Experiments page request or its recent result', async () => {
+    const answer = Promise.withResolvers();
+    axiosInstance.get.mockReturnValue(answer.promise);
+
+    // the Experiments page's request is still loading
+    const page = fetchIntoCache('experiments', pageFetchers.experiments);
+    const joined = experimentList();
+    answer.resolve({ data: { experiments: [{ name: 'a' }] } });
+    expect(await joined).toEqual([{ name: 'a' }]);
+    page.release();
+    expect(axiosInstance.get).toHaveBeenCalledTimes(1);
+
+    // and then its result is recent enough to reuse
+    expect(await experimentList()).toEqual([{ name: 'a' }]);
+    expect(axiosInstance.get).toHaveBeenCalledTimes(1);
+  });
+
   it('name the schedulable hosts from a recent Hosts page list', async () => {
     cachePage('hosts', [
       { name: 'b', schedulable: true },
@@ -305,6 +324,16 @@ describe('live updates of cached pages', () => {
     expect(isInvalidated(cachedPage('experiments'))).toBe(true);
     cachePage('experiments', [{ name: 'a' }], loadedAt(12));
     expect(isInvalidated(cachedPage('experiments'))).toBe(false);
+  });
+
+  it('are loaded again rather than reused once changed', async () => {
+    cachePage('experiments', [{ name: 'old' }], loadedAt(10));
+    expect(await experimentList()).toEqual([{ name: 'old' }]);
+
+    invalidatePages(experimentMsg(11));
+    serve({ 'experiments?vms=false': { experiments: [{ name: 'new' }] } });
+    expect(await experimentList()).toEqual([{ name: 'new' }]);
+    expect(urls()).toEqual(['experiments?vms=false']);
   });
 
   const deleted = (name, seq) => ({
