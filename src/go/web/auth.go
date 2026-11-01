@@ -35,6 +35,8 @@ const (
 	hoursInDay  = 24
 	jwtClaimSub = "sub"
 	jwtClaimExp = "exp"
+
+	msgSaveSessionToken = "failed to save session token"
 )
 
 //nolint:funlen // handler
@@ -96,9 +98,9 @@ func Signup(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, errStr)
 	}
 
-	u, ok := createUser(w, req.Username, req.Password, req.FirstName, req.LastName)
-	if !ok {
-		return nil
+	u, err := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
+	if err != nil {
+		return createUserError(req.Username, err)
 	}
 
 	var raw string
@@ -117,14 +119,14 @@ func Signup(w http.ResponseWriter, r *http.Request) error {
 
 		err := u.AddToken(raw, time.Now().Format(time.RFC3339))
 		if err != nil {
-			return weberror.New(http.StatusInternalServerError, "")
+			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	} else { // using proxy JWT
 		raw = token.Raw
 
 		err := u.AddToken(raw, "proxied")
 		if err != nil {
-			return weberror.New(http.StatusInternalServerError, "")
+			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	}
 
@@ -151,6 +153,7 @@ func Signup(w http.ResponseWriter, r *http.Request) error {
 		u.LastName(),
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
@@ -186,8 +189,6 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 				"proxy user missing from JWT",
 				"path",
 				r.URL.Path,
-				"token",
-				token.Raw,
 				"err",
 				err,
 			)
@@ -230,7 +231,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 			}
 		case http.MethodPost:
 			if o.proxyAuthHeader != "" {
-				return weberror.New(http.StatusBadRequest, "proxy auth enabled -- must login via GET request")
+				return weberror.New(http.StatusBadRequest, "proxy auth is enabled: log in with a GET request")
 			}
 
 			body, err := io.ReadAll(r.Body)
@@ -269,7 +270,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 		// the response does not reveal which usernames exist.
 		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash(), []byte(pass))
 
-		return weberror.New(http.StatusUnauthorized, "invalid creds")
+		return weberror.New(http.StatusUnauthorized, "invalid credentials")
 	}
 
 	if !proxied {
@@ -277,7 +278,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			plog.Error(plog.TypeSecurity, "attempted login with invalid credentials", "user", user)
 
-			return weberror.New(http.StatusUnauthorized, "invalid creds")
+			return weberror.New(http.StatusUnauthorized, "invalid credentials")
 		}
 	}
 
@@ -301,7 +302,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			plog.Error(plog.TypeSecurity, "error adding token", "err", err)
 
-			return weberror.New(http.StatusInternalServerError, "")
+			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	} else {
 		signed = token.Raw
@@ -310,7 +311,7 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			plog.Error(plog.TypeSecurity, "error adding token", "err", err)
 
-			return weberror.New(http.StatusInternalServerError, "")
+			return weberror.New(http.StatusInternalServerError, msgSaveSessionToken)
 		}
 	}
 
@@ -326,11 +327,13 @@ func Login(w http.ResponseWriter, r *http.Request) error {
 
 	plog.Info(plog.TypeSecurity, "user signed in", "user", u.Username())
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
 }
 
+// Logout - POST /logout.
 func Logout(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "Logout")
 
@@ -348,7 +351,7 @@ func Logout(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if err := u.DeleteToken(token); err != nil {
-		return weberror.New(http.StatusInternalServerError, "")
+		return weberror.New(http.StatusInternalServerError, "failed to delete session token")
 	}
 
 	plog.Info(plog.TypeSecurity, "user logged out", "user", u.Username())
@@ -358,6 +361,8 @@ func Logout(w http.ResponseWriter, r *http.Request) error {
 }
 
 // CreateUserToken - POST /users/{username}/tokens.
+//
+//nolint:funlen // handler
 func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateUserToken")
 
@@ -376,6 +381,20 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 			uname,
 			"action",
 			"users/patch/"+uname,
+		)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	// a token for another user lets its holder act as that user
+	if requester := middleware.UserFromContext(ctx); uname != requester && !role.Allowed("users/tokens", "create", uname) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"user forbidden to create a token for another user",
+			"requester",
+			requester,
+			"username",
+			uname,
 		)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
@@ -444,7 +463,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 	if err := u.AddToken(signed, note); err != nil {
 		plog.Error(plog.TypeSecurity, "error adding token", "err", err)
 
-		return weberror.New(http.StatusInternalServerError, "")
+		return weberror.New(http.StatusInternalServerError, "failed to save token")
 	}
 
 	resp := CreateTokenResponse{
@@ -457,6 +476,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 
 	plog.Info(plog.TypeSecurity, "create token for user", "user", u.Username())
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
@@ -503,6 +523,7 @@ func GetRoles(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil

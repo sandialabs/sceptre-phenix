@@ -48,7 +48,8 @@ func GetApplications(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -89,7 +90,8 @@ func GetTopologies(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -166,7 +168,8 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }

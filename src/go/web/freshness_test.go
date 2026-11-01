@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"phenix/store"
 	"phenix/util/file"
 )
 
@@ -27,5 +28,29 @@ func TestGetExperimentFilesListingFailure(t *testing.T) {
 	if body := readBody(t, resp); resp.StatusCode != http.StatusBadGateway {
 		t.Errorf("GET /api/v1/experiments/test-experiment/files when the listing fails = %d, want %d: %s",
 			resp.StatusCode, http.StatusBadGateway, body)
+	}
+}
+
+// failingListStore is the test store, failing to list configs.
+type failingListStore struct {
+	*testStore
+}
+
+func (failingListStore) List(...string) (store.Configs, error) {
+	return nil, errors.New("store unreadable")
+}
+
+// A store that cannot be read is an error, not an empty experiment list.
+func TestGetExperimentsStoreFailure(t *testing.T) {
+	role := testRole("experiments", "list", "*")
+	server := serveAs(t, "alice", role).URL
+
+	s, _ := store.DefaultStore.(*testStore)
+	store.DefaultStore = failingListStore{testStore: s} //nolint:reassign // useTestStore restores it
+
+	resp := do(t, http.MethodGet, server+"/api/v1/experiments", "")
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("GET /api/v1/experiments with an unreadable store = %d, want %d",
+			resp.StatusCode, http.StatusInternalServerError)
 	}
 }

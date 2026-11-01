@@ -34,5 +34,9 @@ func Init() error {
 		return fmt.Errorf("dropping null resource names: %w", err)
 	}
 
+	if err := rbac.EnsureExperimentViewerMountScope(); err != nil {
+		return fmt.Errorf("limiting the mount permissions of the Experiment Viewer role: %w", err)
+	}
+
 	return nil
 }

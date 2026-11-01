@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,26 +23,97 @@ import (
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/util"
 	"phenix/web/weberror"
 )
 
-const MountPathTimeout = 2 * time.Second
+const (
+	MountPathTimeout = 2 * time.Second
+	// how often an unmount checks whether the mount's file requests finished.
+	unmountPollInterval = 50 * time.Millisecond
+)
+
+// unmountWaitTimeout is how long an unmount waits for the mount's file
+// requests, such as downloads, to finish before giving up with 409.
+var unmountWaitTimeout = 30 * time.Second //nolint:gochecknoglobals // shortened in tests
+
+type mountState int
+
+const (
+	mountMounted mountState = iota
+	mountMounting
+	mountUnmounting
+)
 
 // MountInfo is a small struct for tracking number of users interacting with a mount and the
 // lock for that mount.
 type MountInfo struct {
 	users int
 	lock  *sync.RWMutex
+
+	state mountState
+	// closed once a mounting entry is mounted or failed; err tells which
+	ready chan struct{}
+	err   error
 }
 
 var (
 	// generally, use exclusive WLock for mount/unmount ops; RLock for file interactions.
 	activeMounts = make(map[string]*MountInfo) //nolint:gochecknoglobals // global state
-	// locks activeMounts map itself.
+	// locks activeMounts and its entries' users and state; never held across a
+	// mount, unmount or file request, so one VM's mount does not wait on another's.
 	activeMountsMu sync.RWMutex //nolint:gochecknoglobals // global lock
+
+	// replaced in tests.
+	mountFilesystem   = vm.MountFilesystem   //nolint:gochecknoglobals // see above
+	unmountFilesystem = vm.UnmountFilesystem //nolint:gochecknoglobals // see above
 )
 
+// lockMountForFiles returns the mount at key, read-locked for a file request,
+// if it is mounted. The caller unlocks it.
+func lockMountForFiles(key string) (*MountInfo, bool) {
+	activeMountsMu.RLock()
+	defer activeMountsMu.RUnlock()
+
+	info, ok := activeMounts[key]
+	if !ok || info.state != mountMounted {
+		return nil, false
+	}
+
+	// fails only while an unmount holds the lock
+	if !info.lock.TryRLock() {
+		return nil, false
+	}
+
+	return info, true
+}
+
+// lockMountForUnmount takes the mount's lock once its file requests finish,
+// giving up after unmountWaitTimeout or when ctx is done. New file requests
+// are refused meanwhile, since the mount is unmounting.
+func lockMountForUnmount(ctx context.Context, info *MountInfo) bool {
+	timeout := time.NewTimer(unmountWaitTimeout)
+	defer timeout.Stop()
+
+	ticker := time.NewTicker(unmountPollInterval)
+	defer ticker.Stop()
+
+	for !info.lock.TryLock() {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timeout.C:
+			return false
+		case <-ticker.C:
+		}
+	}
+
+	return true
+}
+
 // MountVM - POST /experiments/{exp}/vms/{name}/mount.
+//
+//nolint:funlen // handler
 func MountVM(w http.ResponseWriter, r *http.Request) error {
 	vars := mux.Vars(r)
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
@@ -62,12 +133,18 @@ func MountVM(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
+	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+
 	activeMountsMu.Lock()
-	defer activeMountsMu.Unlock()
 
 	mountInfo, exists := activeMounts[mapKey]
 	if exists {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+		if mountInfo.state == mountUnmounting {
+			activeMountsMu.Unlock()
+
+			return weberror.New(http.StatusConflict, "unmount in progress")
+		}
+
 		plog.Info(
 			plog.TypeAction,
 			"adding additional user to mount",
@@ -80,28 +157,89 @@ func MountVM(w http.ResponseWriter, r *http.Request) error {
 		)
 
 		mountInfo.users += 1
-	} else {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Info(
-			plog.TypeAction,
-			"vm mounted",
-			"exp",
-			vars["exp"],
-			"vm",
-			vars["vm"],
-			"path",
-			mapKey,
-			"user",
-			user,
-		)
+		mounting := mountInfo.state == mountMounting
 
-		if err := vm.MountFilesystem(vars["exp"], vars["name"]); err != nil {
-			plog.Error(plog.TypeSystem, "creating mount", "mount", mapKey, "err", err)
+		activeMountsMu.Unlock()
 
-			return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error mounting: %s", err))
+		if mounting {
+			return waitForMount(w, r, mapKey, mountInfo)
 		}
 
-		activeMounts[mapKey] = &MountInfo{1, &sync.RWMutex{}}
+		w.WriteHeader(http.StatusOK)
+
+		return nil
+	}
+
+	mountInfo = &MountInfo{
+		users: 1,
+		lock:  &sync.RWMutex{},
+		state: mountMounting,
+		ready: make(chan struct{}),
+		err:   nil,
+	}
+	activeMounts[mapKey] = mountInfo
+
+	activeMountsMu.Unlock()
+
+	err := mountFilesystem(vars["exp"], vars["name"])
+
+	activeMountsMu.Lock()
+
+	mountInfo.err = err
+
+	if err != nil {
+		if activeMounts[mapKey] == mountInfo {
+			delete(activeMounts, mapKey)
+		}
+	} else {
+		mountInfo.state = mountMounted
+	}
+
+	activeMountsMu.Unlock()
+
+	close(mountInfo.ready)
+
+	if err != nil {
+		plog.Error(plog.TypeSystem, "creating mount", "mount", mapKey, "err", err)
+
+		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error mounting: %s", err))
+	}
+
+	plog.Info(
+		plog.TypeAction,
+		"vm mounted",
+		"exp",
+		vars["exp"],
+		"vm",
+		vars["name"],
+		"path",
+		mapKey,
+		"user",
+		user,
+	)
+
+	w.WriteHeader(http.StatusOK)
+
+	return nil
+}
+
+// waitForMount answers, once it finishes, a mount request for a VM another request is mounting,
+// returning the error of a failed mount; the request's user was already counted.
+func waitForMount(w http.ResponseWriter, r *http.Request, mapKey string, mountInfo *MountInfo) error {
+	select {
+	case <-mountInfo.ready:
+	case <-r.Context().Done():
+		activeMountsMu.Lock()
+		if activeMounts[mapKey] == mountInfo {
+			mountInfo.users -= 1
+		}
+		activeMountsMu.Unlock()
+
+		return nil
+	}
+
+	if mountInfo.err != nil {
+		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error mounting: %s", mountInfo.err))
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -110,6 +248,8 @@ func MountVM(w http.ResponseWriter, r *http.Request) error {
 }
 
 // UnmountVM - POST /experiments/{exp}/vms/{name}/unmount.
+//
+//nolint:funlen // handler
 func UnmountVM(w http.ResponseWriter, r *http.Request) error {
 	vars := mux.Vars(r)
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
@@ -129,55 +269,96 @@ func UnmountVM(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
+	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+
 	activeMountsMu.Lock()
-	defer activeMountsMu.Unlock()
 
 	mountInfo, exists := activeMounts[mapKey]
-	if exists {
-		mountInfo.users -= 1
+	if !exists {
+		activeMountsMu.Unlock()
 
-		if mountInfo.users == 0 {
-			user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-			plog.Info(
-				plog.TypeAction,
-				"unmounting",
-				"mount",
-				mapKey,
-				"user",
-				user,
-			)
-
-			mountInfo.lock.Lock()
-
-			if err := vm.UnmountFilesystem(vars["exp"], vars["name"]); err != nil {
-				mountInfo.lock.Unlock()
-
-				plog.Error(plog.TypeSystem, "unmounting", "mount", mapKey, "err", err)
-
-				return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error unmounting: %s", err))
-			}
-
-			delete(activeMounts, mapKey)
-		} else {
-			user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-			plog.Info(
-				plog.TypeAction,
-				"call to unmount but skipping since users remain",
-				"mount",
-				mapKey,
-				"count",
-				mountInfo.users,
-				"user",
-				user,
-			)
-		}
-	} else {
 		plog.Warn(
 			plog.TypeSystem,
 			"tried to unmount VM whose lock was not in map",
 			"vm",
 			vars["name"],
 		)
+
+		w.WriteHeader(http.StatusOK)
+
+		return nil
+	}
+
+	if mountInfo.state != mountMounted {
+		activeMountsMu.Unlock()
+
+		return weberror.New(http.StatusConflict, "mount or unmount in progress")
+	}
+
+	mountInfo.users -= 1
+
+	if mountInfo.users > 0 {
+		activeMountsMu.Unlock()
+
+		plog.Info(
+			plog.TypeAction,
+			"call to unmount but skipping since users remain",
+			"mount",
+			mapKey,
+			"count",
+			mountInfo.users,
+			"user",
+			user,
+		)
+
+		w.WriteHeader(http.StatusOK)
+
+		return nil
+	}
+
+	mountInfo.state = mountUnmounting
+
+	activeMountsMu.Unlock()
+
+	plog.Info(
+		plog.TypeAction,
+		"unmounting",
+		"mount",
+		mapKey,
+		"user",
+		user,
+	)
+
+	// waits only for this mount's own file requests
+	if !lockMountForUnmount(r.Context(), mountInfo) {
+		activeMountsMu.Lock()
+		mountInfo.state = mountMounted
+		mountInfo.users += 1
+		activeMountsMu.Unlock()
+
+		plog.Warn(plog.TypeSystem, "unmount gave up waiting for file requests", "mount", mapKey)
+
+		return weberror.New(http.StatusConflict, "mount busy")
+	}
+
+	err := unmountFilesystem(vars["exp"], vars["name"])
+
+	mountInfo.lock.Unlock()
+
+	activeMountsMu.Lock()
+
+	if err != nil {
+		mountInfo.state = mountMounted
+	} else if activeMounts[mapKey] == mountInfo {
+		delete(activeMounts, mapKey)
+	}
+
+	activeMountsMu.Unlock()
+
+	if err != nil {
+		plog.Error(plog.TypeSystem, "unmounting", "mount", mapKey, "err", err)
+
+		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error unmounting: %s", err))
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -210,17 +391,11 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	activeMountsMu.RLock()
-
-	mountInfo, exists := activeMounts[basePath]
-
-	activeMountsMu.RUnlock()
-
+	mountInfo, exists := lockMountForFiles(basePath)
 	if !exists {
 		return weberror.New(http.StatusBadRequest, "No existing mount for "+basePath)
 	}
 
-	mountInfo.lock.RLock()
 	defer mountInfo.lock.RUnlock()
 
 	combinedPath := filepath.Join(basePath, vars["path"])
@@ -233,6 +408,19 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) error {
 		"user",
 		user,
 	)
+
+	if !file.WithinDir(basePath, combinedPath) {
+		plog.Error(
+			plog.TypeSecurity,
+			"user attempted getting path outside of mount",
+			"path",
+			combinedPath,
+			"user",
+			user,
+		)
+
+		return weberror.New(http.StatusBadRequest, fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath))
+	}
 
 	var (
 		info fs.FileInfo
@@ -261,20 +449,6 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) error {
 		plog.Error(plog.TypeSystem, "timeout getting mount path", "path", combinedPath)
 
 		return weberror.New(http.StatusInternalServerError, "timeout getting path "+combinedPath)
-	}
-
-	if !file.WithinDir(basePath, combinedPath) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Error(
-			plog.TypeSecurity,
-			"user attempted getting path outside of mount",
-			"path",
-			combinedPath,
-			"user",
-			user,
-		)
-
-		return weberror.New(http.StatusBadRequest, fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath))
 	}
 
 	var dirEntries []fs.DirEntry
@@ -316,6 +490,7 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		body, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", mimeJSON)
 		_, _ = w.Write(body)
 	case <-time.After(MountPathTimeout):
 		err := "timeout getting files in " + combinedPath
@@ -348,27 +523,14 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	activeMountsMu.RLock()
-
-	mountInfo, exists := activeMounts[basePath]
-
-	activeMountsMu.RUnlock()
-
+	mountInfo, exists := lockMountForFiles(basePath)
 	if !exists {
 		return weberror.New(http.StatusBadRequest, "No existing mount for "+basePath)
 	}
 
-	mountInfo.lock.RLock()
 	defer mountInfo.lock.RUnlock()
 
 	combinedPath := filepath.Join(basePath, vars["path"])
-
-	fileInfo, err := os.Stat(combinedPath)
-	if err != nil {
-		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
-
-		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()))
-	}
 
 	if !file.WithinDir(basePath, combinedPath) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
@@ -382,6 +544,13 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) error {
 		)
 
 		return weberror.New(http.StatusBadRequest, fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath))
+	}
+
+	fileInfo, err := os.Stat(combinedPath)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
+
+		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()))
 	}
 
 	if fileInfo.IsDir() {
@@ -398,14 +567,14 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) error {
 		user,
 	)
 
-	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(fileInfo.Name()))
+	w.Header().Set("Content-Disposition", util.Attachment(fileInfo.Name()))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	http.ServeFile(w, r, combinedPath)
 
 	return nil
 }
 
-// UploadMountFile - PUT /experiments/{exp}/vms/{name}/files/download?path=.
+// UploadMountFile - PUT /experiments/{exp}/vms/{name}/files/upload?path=.
 func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
 	vars := mux.Vars(r)
 	basePath := mm.GetLocalMountPath(vars["exp"], vars["name"])
@@ -425,27 +594,14 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	activeMountsMu.RLock()
-
-	mountInfo, exists := activeMounts[basePath]
-
-	activeMountsMu.RUnlock()
-
+	mountInfo, exists := lockMountForFiles(basePath)
 	if !exists {
 		return weberror.New(http.StatusBadRequest, "No existing mount for "+basePath)
 	}
 
-	mountInfo.lock.RLock()
 	defer mountInfo.lock.RUnlock()
 
 	combinedPath := filepath.Join(basePath, vars["path"])
-	//nolint:gosec // Path traversal via taint analysis
-	if _, err := os.Stat(combinedPath); err != nil {
-		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
-
-		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()))
-	}
-
 	if !file.WithinDir(basePath, combinedPath) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Error(
@@ -458,6 +614,13 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
 		)
 
 		return weberror.New(http.StatusBadRequest, fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath))
+	}
+
+	//nolint:gosec // Path traversal via taint analysis
+	if _, err := os.Stat(combinedPath); err != nil {
+		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
+
+		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()))
 	}
 
 	clientFile, handler, err := r.FormFile("file")
@@ -478,7 +641,7 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
 
 	localFile, err := os.OpenFile( //nolint:gosec // Path traversal via taint analysis
 		filepath.Join(combinedPath, handler.Filename),
-		os.O_WRONLY|os.O_CREATE,
+		os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
 		0o600,
 	)
 	if err != nil {
@@ -496,7 +659,11 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
 
 	defer func() { _ = localFile.Close() }()
 
-	_, _ = io.Copy(localFile, clientFile)
+	if _, err := io.Copy(localFile, clientFile); err != nil {
+		plog.Error(plog.TypeSystem, "error uploading file", "err", err.Error(), "dest_path", combinedPath)
+
+		return weberror.New(http.StatusInternalServerError, "Error uploading: "+err.Error())
+	}
 
 	return nil
 }
@@ -515,15 +682,11 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	activeMountsMu.RLock()
-	mountInfo, exists := activeMounts[basePath]
-	activeMountsMu.RUnlock()
-
+	mountInfo, exists := lockMountForFiles(basePath)
 	if !exists {
 		return weberror.New(http.StatusBadRequest, "No existing mount for "+basePath)
 	}
 
-	mountInfo.lock.RLock()
 	defer mountInfo.lock.RUnlock()
 
 	query := r.URL.Query()

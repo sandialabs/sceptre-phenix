@@ -117,16 +117,22 @@ type validationTestBody struct {
 	lines       []string
 }
 
-// validationTestUpload builds the multipart body the UI upload form sends for
-// one file, and its content type.
-func validationTestUpload(t *testing.T, filename, content string) ([]byte, string) {
+// formUpload builds a multipart body holding content as the file filename in field, after the
+// form fields given as name and value pairs, and returns it with its content type.
+func formUpload(t *testing.T, field, filename, content string, fields ...string) ([]byte, string) {
 	t.Helper()
 
 	var body bytes.Buffer
 
 	form := multipart.NewWriter(&body)
 
-	part, err := form.CreateFormFile("fileupload", filename)
+	for i := 0; i+1 < len(fields); i += 2 {
+		if err := form.WriteField(fields[i], fields[i+1]); err != nil {
+			t.Fatalf("writing form field: %v", err)
+		}
+	}
+
+	part, err := form.CreateFormFile(field, filename)
 	if err != nil {
 		t.Fatalf("creating form file: %v", err)
 	}
@@ -148,8 +154,8 @@ func validationTestUpload(t *testing.T, filename, content string) ([]byte, strin
 func validationTestBodies(t *testing.T) []validationTestBody {
 	t.Helper()
 
-	jsonUpload, jsonUploadType := validationTestUpload(t, "topology.json", validationTestTopologyJSON)
-	yamlUpload, yamlUploadType := validationTestUpload(t, "topology.yml", validationTestTopologyYAML)
+	jsonUpload, jsonUploadType := formUpload(t, "fileupload", "topology.json", validationTestTopologyJSON)
+	yamlUpload, yamlUploadType := formUpload(t, "fileupload", "topology.yml", validationTestTopologyYAML)
 
 	return []validationTestBody{
 		{

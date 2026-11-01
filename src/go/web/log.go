@@ -88,7 +88,7 @@ func GetLogs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, "error with converting logs to protobuf")
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
 
 	return nil
 }

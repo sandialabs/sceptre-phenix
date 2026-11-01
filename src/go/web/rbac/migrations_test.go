@@ -43,8 +43,54 @@ func useStore(t *testing.T, roles []*v1.RoleSpec, users []*v1.UserSpec) {
 	}
 }
 
+// storedPolicies reads back the policies of every stored role and user role.
+func storedPolicies(t *testing.T) map[string][]*v1.PolicySpec {
+	t.Helper()
+
+	roles, err := GetRoles()
+	if err != nil {
+		t.Fatalf("GetRoles() error = %v", err)
+	}
+
+	users, err := GetUsers()
+	if err != nil {
+		t.Fatalf("GetUsers() error = %v", err)
+	}
+
+	policies := make(map[string][]*v1.PolicySpec)
+
+	for _, role := range roles {
+		policies["role "+role.Spec.Name] = role.Spec.Policies
+	}
+
+	for _, user := range users {
+		if user.Spec.Role != nil {
+			policies["user "+user.Username()] = user.Spec.Role.Policies
+		}
+	}
+
+	return policies
+}
+
 func policy(resource string, names []string, verbs ...string) *v1.PolicySpec {
 	return &v1.PolicySpec{Resources: []string{resource}, ResourceNames: names, Verbs: verbs}
+}
+
+func role(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
+	return &v1.RoleSpec{Name: name, Policies: policies}
+}
+
+// migrate runs the migrations and returns the policies stored after them.
+func migrate(t *testing.T, migrations ...func() error) map[string][]*v1.PolicySpec {
+	t.Helper()
+
+	for _, m := range migrations {
+		if err := m(); err != nil {
+			t.Fatalf("migrating: %v", err)
+		}
+	}
+
+	return storedPolicies(t)
 }
 
 // TestEnsureExperimentFilesCreatePolicyAddsPolicy verifies missing upload permission is added.
@@ -266,5 +312,63 @@ func TestDropNullResourceNames(t *testing.T) {
 
 	if err := types.ValidateConfigSpec(*c); err != nil {
 		t.Errorf("ValidateConfigSpec(migrated role/legacy) error = %v", err)
+	}
+}
+
+// The Experiment Viewer migration scopes a user's unnamed vms/mount policy to
+// the names of their VM policy.
+//
+//nolint:paralleltest // replaces the store
+func TestEnsureExperimentViewerMountScope(t *testing.T) {
+	var (
+		scopedA   = []string{"exp-a", "exp-a/*"}
+		resources = []string{"experiments", "experiments/*", "vms", "vms/*"}
+		viewing   = func(names []string) *v1.PolicySpec {
+			return &v1.PolicySpec{Resources: resources, ResourceNames: names, Verbs: []string{"list", "get"}}
+		}
+		hosts = policy("hosts", []string{"*"}, "list")
+		mount = func(names []string) *v1.PolicySpec { return policy(mountResource, names, "post", "delete") }
+	)
+
+	useStore(t,
+		[]*v1.RoleSpec{role(experimentViewerRole, viewing(nil), hosts, mount(nil))},
+		[]*v1.UserSpec{
+			{Username: "legacy", Role: role(experimentViewerRole, viewing(scopedA), hosts, mount(nil))},
+			{Username: "scoped", Role: role(experimentViewerRole, viewing(scopedA), hosts, mount([]string{"exp-b/*"}))},
+			{Username: "unnamed", Role: role(experimentViewerRole, viewing(nil), mount(nil))},
+			{Username: "other", Role: role(experimentUserRole, viewing(scopedA), hosts, mount(nil))},
+		},
+	)
+
+	want := map[string][]*v1.PolicySpec{
+		"role Experiment Viewer": {viewing(nil), hosts, mount(nil)},
+		"user legacy":            {viewing(scopedA), hosts, mount(scopedA)},
+		"user scoped":            {viewing(scopedA), hosts, mount([]string{"exp-b/*"})},
+		"user unnamed":           {viewing(nil), mount(nil)},
+		"user other":             {viewing(scopedA), hosts, mount(nil)},
+	}
+
+	for _, pass := range []string{"first", "repeated"} {
+		if diff := cmp.Diff(want, migrate(t, EnsureExperimentViewerMountScope)); diff != "" {
+			t.Errorf("EnsureExperimentViewerMountScope() %s pass: stored policies mismatch (-want +got):\n%s", pass, diff)
+		}
+	}
+
+	user, err := GetUser("legacy")
+	if err != nil {
+		t.Fatalf("GetUser(legacy) error = %v", err)
+	}
+
+	r, err := user.Role()
+	if err != nil {
+		t.Fatalf("Role() of the migrated user error = %v", err)
+	}
+
+	if !r.Allowed(mountResource, "post", "exp-a/vm") {
+		t.Errorf("Allowed(%s, post, exp-a/vm) of the migrated user = false, want true", mountResource)
+	}
+
+	if r.Allowed(mountResource, "post", "exp-b/vm") {
+		t.Errorf("Allowed(%s, post, exp-b/vm) of the migrated user = true, want false", mountResource)
 	}
 }

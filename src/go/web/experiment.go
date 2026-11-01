@@ -68,7 +68,8 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, "unable to convert topology")
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -161,7 +162,8 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, "error marshaling search results")
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -609,7 +611,8 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -718,7 +721,8 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 	user := middleware.UserFromContext(ctx)
 	plog.Info(
 		plog.TypeAction,
@@ -768,7 +772,8 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 	user := middleware.UserFromContext(ctx)
 	plog.Info(
 		plog.TypeAction,

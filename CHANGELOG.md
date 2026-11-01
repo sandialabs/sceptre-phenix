@@ -46,6 +46,7 @@ All notable changes to this project will be documented in this file.
 - **API Errors (breaking)**: Every API error, including authentication and unknown-route refusals, is now a JSON body with a `message` and a stable `code`, such as `not_found` or `forbidden`, instead of plain text.
 - **Web UI Build**: The web UI registers only the Buefy components that it uses and shows PNG images instead of SVG images, which makes the page bundle smaller. The footer has a link to the phēnix documentation.
 - **RBAC**: Roles index their policies once, and the no-auth and dev-auth modes reuse a role for 30 seconds. phēnix scopes all unnamed policies to user resource names, rejects usernames that are not one URL path segment, and removes `resourceNames: null` values.
+- **VNC Banners (breaking)**: The VNC page shows HTML in the `vncBanner` annotation as text, not as markup.
 
 ### Removed
 
@@ -94,6 +95,7 @@ All notable changes to this project will be documented in this file.
 
 - **API Authentication**: The auth middleware let any request whose path ended in `/login` or `/signup` through without a token, which included routes such as `/api/v1/experiments/{name}` and `/api/v1/configs/{kind}/{name}` when the last path variable was `login`. Only `/api/v1/login`, `/api/v1/signup`, and the file server `/login` are now public. Signing in with an unknown username now returns the same 401 as a wrong password, after the same bcrypt work, instead of a 404 that echoed the username. With proxy authentication the 404 still carries the proxied username, which the web UI uses to start sign-up.
 - **Workflow configs**: `POST /api/v1/workflow/configs/{branch}` no longer exposes server environment variables in its errors to callers who may not write that config, and checks the role's config names when creating one. ([#436](https://github.com/sandialabs/sceptre-phenix/pull/436))
+- **Web Security**: The SCORCH terminal, packet capture, State of Health and user token endpoints now check the permissions of the user. The server does not log API tokens, and the web UI shows server text in error messages as text.
 
 ## [1.0.0]
 

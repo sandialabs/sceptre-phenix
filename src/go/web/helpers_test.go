@@ -2,11 +2,13 @@ package web
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,8 +19,10 @@ import (
 
 	"phenix/store"
 	v1 "phenix/types/version/v1"
+	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 // testRole returns a role with one policy.
@@ -41,6 +45,17 @@ func adminRole() rbac.Role {
 	return rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{{
 		Resources: []string{"*", "*/*"}, ResourceNames: []string{"*", "*/*"}, Verbs: []string{"*"},
 	}}}}
+}
+
+// combinedRole returns a role with the policies of every role given.
+func combinedRole(roles ...rbac.Role) rbac.Role {
+	combined := rbac.Role{Spec: &v1.RoleSpec{}}
+
+	for _, role := range roles {
+		combined.Spec.Policies = append(combined.Spec.Policies, role.Spec.Policies...)
+	}
+
+	return combined
 }
 
 // testStore is an in-memory store of configs. Any store.Store method it does
@@ -152,6 +167,37 @@ func useTestStore(t *testing.T, configs ...store.Config) {
 	s.mu.Unlock()
 }
 
+// testExperiment is the stored config of test-experiment, running since
+// started unless that is empty, with the given topology nodes.
+func testExperiment(t *testing.T, started string, nodes ...map[string]any) store.Config {
+	t.Helper()
+
+	return namedExperiment(t, "test-experiment", started, nodes...)
+}
+
+// namedExperiment is the stored config of the experiment name, running since
+// started unless that is empty, with the given topology nodes.
+func namedExperiment(t *testing.T, name, started string, nodes ...map[string]any) store.Config {
+	t.Helper()
+
+	c := store.Config{
+		Version:  "phenix.sandia.gov/v1",
+		Kind:     "Experiment",
+		Metadata: store.ConfigMetadata{Name: name},
+		Spec: map[string]any{
+			"experimentName": name,
+			"baseDir":        t.TempDir(),
+			"topology":       map[string]any{"nodes": nodes},
+		},
+	}
+
+	if started != "" {
+		c.Status = map[string]any{"startTime": started}
+	}
+
+	return c
+}
+
 // testFiles is the cluster file listing of test-experiment. Other
 // file.ClusterFiles methods panic.
 type testFiles struct {
@@ -182,6 +228,30 @@ func useTestFiles(t *testing.T, paths ...string) *testFiles {
 	return fake
 }
 
+// useExperimentFilesDir makes a temp dir the phenix base, with contents in test-experiment's files directory.
+func useExperimentFilesDir(t *testing.T, files map[string]string) {
+	t.Helper()
+
+	base := t.TempDir()
+
+	original := common.PhenixBase
+	common.PhenixBase = base //nolint:reassign // point at a temporary tree
+
+	t.Cleanup(func() { common.PhenixBase = original }) //nolint:reassign // restore
+
+	for p, contents := range files {
+		local := filepath.Join(base, "images", "test-experiment", "files", p)
+
+		if err := os.MkdirAll(filepath.Dir(local), 0o750); err != nil {
+			t.Fatalf("making the folder of experiment file %s: %v", p, err)
+		}
+
+		if err := os.WriteFile(local, []byte(contents), 0o600); err != nil {
+			t.Fatalf("writing experiment file %s: %v", p, err)
+		}
+	}
+}
+
 // testPublic is the UI's files for serving tests.
 func testPublic() fstest.MapFS {
 	return fstest.MapFS{
@@ -199,6 +269,8 @@ var roleNames atomic.Int64 //nolint:gochecknoglobals // unique across tests
 
 // serveAs serves the routes over testPublic, taking every API request as user with role (dev auth);
 // it adds the role to the test's store, installing one if needed.
+//
+//nolint:unparam // tests can serve as any user
 func serveAs(t *testing.T, user string, role rbac.Role) *httptest.Server {
 	t.Helper()
 
@@ -254,6 +326,8 @@ func serveRouter(t *testing.T, public fs.FS, jwtKey string) *httptest.Server {
 
 // do sends a request to the server and returns the response, which is closed
 // when the test ends.
+//
+//nolint:unparam // tests can send any header
 func do(t *testing.T, method, url, body string, header ...string) *http.Response {
 	t.Helper()
 
@@ -274,6 +348,27 @@ func do(t *testing.T, method, url, body string, header ...string) *http.Response
 	t.Cleanup(func() { resp.Body.Close() })
 
 	return resp
+}
+
+// errorMessage returns the message of body, a JSON Error body, failing the
+// test unless it is one with the code of status.
+func errorMessage(t *testing.T, status int, body string) string {
+	t.Helper()
+
+	var e struct {
+		Message string        `json:"message"`
+		Code    weberror.Code `json:"code"`
+	}
+
+	if err := json.Unmarshal([]byte(body), &e); err != nil {
+		t.Fatalf("error body %q is not JSON: %v", body, err)
+	}
+
+	if want := weberror.CodeFor(status); e.Code != want {
+		t.Errorf("error body %q code = %q, want %q", body, e.Code, want)
+	}
+
+	return e.Message
 }
 
 // readBody reads the response's body, decompressed if it is gzipped.

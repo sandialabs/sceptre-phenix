@@ -27,7 +27,7 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) error {
 		statusFilter = query.Get("statusFilter")
 	)
 
-	if !role.Allowed("vms", "list") {
+	if !role.Allowed("experiments", "get", exp) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Warn(
 			plog.TypeSecurity,
@@ -57,7 +57,8 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	_, _ = w.Write(marshalled) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(marshalled)
 
 	return nil
 }

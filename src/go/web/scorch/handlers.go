@@ -66,6 +66,34 @@ var (
 	mu sync.Mutex //nolint:gochecknoglobals // global lock
 )
 
+// canView returns a 403 unless the request's role may view the experiment's
+// SCORCH output and terminals.
+func canView(r *http.Request, exp string) error {
+	ctx := r.Context()
+
+	if middleware.RoleFromContext(ctx).Allowed("experiments", "get", exp) {
+		return nil
+	}
+
+	plog.Warn(
+		plog.TypeSecurity,
+		"viewing experiment scorch output not allowed",
+		"user",
+		ctx.Value(middleware.ContextKeyUser),
+		"exp",
+		exp,
+	)
+
+	return weberror.New(http.StatusForbidden, "forbidden")
+}
+
+// mayWrite reports whether the request's role may type into the experiment's
+// SCORCH terminals and stop them, which, like starting a pipeline, needs
+// experiments/trigger create.
+func mayWrite(r *http.Request, exp string) bool {
+	return middleware.RoleFromContext(r.Context()).Allowed("experiments/trigger", "create", exp)
+}
+
 // GetTerminals - GET /experiments/{name}/scorch/terminals.
 func GetTerminals(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTerminal")
@@ -75,10 +103,15 @@ func GetTerminals(w http.ResponseWriter, r *http.Request) error {
 		exp  = vars["name"]
 	)
 
+	if err := canView(r, exp); err != nil {
+		return err
+	}
+
 	terms, _ := GetExperimentTerminals(exp, -1)
 
 	body, _ := json.Marshal(util.WithRoot("terminals", terms))
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -94,6 +127,10 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) error {
 		cmp   = vars["cmp"]
 	)
 
+	if err := canView(r, exp); err != nil {
+		return err
+	}
+
 	run, err := strconv.Atoi(vars["run"])
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid run ID provided")
@@ -104,13 +141,14 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "invalid loop number provided")
 	}
 
-	t, err := initTerminal(exp, run, loop, stage, cmp)
+	t, err := initTerminal(exp, run, loop, stage, cmp, mayWrite(r, exp))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	body, _ := json.Marshal(t)
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -120,6 +158,10 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StreamTerminal")
 
 	exp := mux.Vars(r)["name"]
+	if err := canView(r, exp); err != nil {
+		return err
+	}
+
 	pid, _ := strconv.Atoi(mux.Vars(r)["pid"])
 
 	t, err := GetTerminalByPID(pid)
@@ -131,19 +173,16 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusNotFound, "no web terminal found")
 	}
 
-	id := mux.Vars(r)["id"]
+	readOnly, status := claimTerminalClient(pid, mux.Vars(r)["id"], mayWrite(r, exp))
 
-	mu.Lock()
-	done, ok := termClientIDs[id]
-	mu.Unlock()
-
-	if !ok {
-		return weberror.New(http.StatusNotFound, "terminal client ID invalid")
+	switch status {
+	case http.StatusNotFound:
+		return weberror.New(status, "terminal client ID invalid")
+	case http.StatusForbidden:
+		return weberror.New(status, "forbidden")
 	}
 
-	close(done)
-
-	t.RO = rwTerm[pid] != id
+	t.RO = readOnly
 
 	plog.Debug(plog.TypeSystem, "starting web terminal streamer", "pid", pid)
 
@@ -160,7 +199,28 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) error {
 	pid, _ := strconv.Atoi(mux.Vars(r)["pid"])
 	id := mux.Vars(r)["id"]
 
-	if rwTerm[pid] != id {
+	if err := canView(r, exp); err != nil {
+		return err
+	}
+
+	if !mayWrite(r, exp) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"exiting experiment scorch terminal not allowed",
+			"user",
+			r.Context().Value(middleware.ContextKeyUser),
+			"exp",
+			exp,
+		)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	mu.Lock()
+	owner := rwTerm[pid]
+	mu.Unlock()
+
+	if owner != id {
 		plog.Error(
 			plog.TypeSystem,
 			"terminal client doesn't own R/W rights to PTY",
@@ -324,7 +384,34 @@ func terminalWsHandler(t WebTerm) func(*websocket.Conn) {
 	}
 }
 
-func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error) {
+// claimTerminalClient takes the client ID initTerminal gave for the terminal
+// pid and reports whether the client reads only. An ID is claimed once, so a
+// second websocket with it gets 404; the writer's ID, sent by a role that may
+// not write, gets 403 and stays unclaimed for the writer.
+func claimTerminalClient(pid int, id string, writable bool) (bool, int) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	done, ok := termClientIDs[id]
+	if !ok {
+		return false, http.StatusNotFound
+	}
+
+	writer := rwTerm[pid] == id
+	if writer && !writable {
+		return false, http.StatusForbidden
+	}
+
+	delete(termClientIDs, id)
+	close(done)
+
+	return !writer, http.StatusOK
+}
+
+// initTerminal hands a client of the terminal its stream location. The first
+// client that may write (rw) gets the terminal's read/write side and its exit
+// location; every other client gets a read-only stream.
+func initTerminal(exp string, run, loop int, stage, cmp string, rw bool) (WebTerm, error) {
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
 
 	t, err := GetTerminalByExperiment(key)
@@ -348,7 +435,7 @@ func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error)
 	mu.Lock()
 	defer mu.Unlock()
 
-	if _, ok := rwTerm[t.Pid]; ok {
+	if _, ok := rwTerm[t.Pid]; ok || !rw {
 		t.RO = true
 	} else {
 		rwTerm[t.Pid] = id
@@ -368,7 +455,11 @@ func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error)
 		select {
 		case <-time.After(TerminalInitTimeout):
 			mu.Lock()
-			delete(rwTerm, t.Pid)
+			// a read-only client that never attaches leaves the writer's rights
+			if rwTerm[t.Pid] == id {
+				delete(rwTerm, t.Pid)
+			}
+
 			delete(termClientIDs, id)
 			mu.Unlock()
 		case <-done:
@@ -392,6 +483,10 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 		cmp   = vars["cmp"]
 	)
 
+	if err := canView(r, exp); err != nil {
+		return err
+	}
+
 	run, err := strconv.Atoi(vars["run"])
 	if err != nil {
 		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
@@ -411,7 +506,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 
 	if resp.running {
 		if resp.terminal {
-			t, err := initTerminal(exp, run, loop, stage, cmp)
+			t, err := initTerminal(exp, run, loop, stage, cmp, mayWrite(r, exp))
 			if err != nil {
 				return weberror.NewWebError(err, "unable to initialize terminal")
 			}
@@ -468,6 +563,10 @@ func StreamComponentOutput(w http.ResponseWriter, r *http.Request) error {
 		stage = vars["stage"]
 		cmp   = vars["cmp"]
 	)
+
+	if err := canView(r, exp); err != nil {
+		return err
+	}
 
 	run, err := strconv.Atoi(vars["run"])
 	if err != nil {

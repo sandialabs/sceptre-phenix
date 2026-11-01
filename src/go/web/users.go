@@ -35,7 +35,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) error {
 	case role.Allowed(resourceUsers, "list"):
 		users, err := rbac.GetUsers()
 		if err != nil {
-			return weberror.New(http.StatusInternalServerError, "")
+			return weberror.New(http.StatusInternalServerError, "unable to list users")
 		}
 
 		for _, rbacUser := range users {
@@ -52,7 +52,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) error {
 	case role.Allowed(resourceUsers, verbGet, uname):
 		rbacUser, err := rbac.GetUser(uname)
 		if err != nil {
-			return weberror.New(http.StatusInternalServerError, "")
+			return weberror.New(http.StatusInternalServerError, "unable to get user")
 		}
 
 		user := userFromRBAC(*rbacUser)
@@ -72,12 +72,15 @@ func GetUsers(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
 
 // CreateUser - POST /users.
+//
+//nolint:funlen // handler
 func CreateUser(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateUser")
 
@@ -135,11 +138,6 @@ func CreateUser(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "role not found")
 	}
 
-	user, ok := createUser(w, req.Username, req.Password, req.FirstName, req.LastName)
-	if !ok {
-		return nil
-	}
-
 	_ = uRole.SetResourceNames(req.ResourceNames...)
 
 	// allow user to get and update their own user details
@@ -149,7 +147,19 @@ func CreateUser(w http.ResponseWriter, r *http.Request) error {
 		[]string{verbGet, verbPatch},
 	)
 
-	_ = user.SetRole(uRole)
+	user, err := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
+	if err != nil {
+		return createUserError(req.Username, err)
+	}
+
+	if err := user.SetRole(uRole); err != nil {
+		plog.Error(plog.TypeSystem, "setting user role", "user", req.Username, "err", err)
+
+		// do not leave a user without a role behind
+		_ = config.Delete("user/" + req.Username)
+
+		return weberror.New(http.StatusInternalServerError, "error setting user role")
+	}
 
 	resp := userFromRBAC(*user)
 
@@ -176,7 +186,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) error {
 		req.Username,
 	)
 
-	//nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
@@ -224,6 +234,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
 	return nil
@@ -354,7 +365,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 				uname,
 			)
 
-			return weberror.New(http.StatusBadRequest, "cannot change password without password")
+			return weberror.New(http.StatusBadRequest, "cannot change password without the current password")
 		}
 
 		if !settings.IsPasswordValid(req.NewPassword) {
@@ -404,7 +415,8 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -464,22 +476,18 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// createUser creates and stores a user. When it cannot, it answers 409 for a
-// name in use or 500 otherwise, and returns false.
-func createUser(w http.ResponseWriter, username, password, firstName, lastName string) (*rbac.User, bool) {
-	user, err := rbac.NewUser(username, password, firstName, lastName)
-	if err == nil {
-		return user, true
+// createUserError is the answer to err, from rbac.NewUser for username: 400 for
+// an invalid name, 409 for a name in use, 500 otherwise.
+func createUserError(username string, err error) *weberror.WebError {
+	if errors.Is(err, rbac.ErrInvalidUsername) {
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	if errors.Is(err, rbac.ErrUserExists) {
-		weberror.Error(w, "user "+username+" already exists", http.StatusConflict)
-
-		return nil, false
+		return weberror.New(http.StatusConflict, "user "+username+" already exists")
 	}
 
 	plog.Error(plog.TypeSecurity, "creating user", "user", username, "err", err)
-	weberror.Error(w, "error creating user", http.StatusInternalServerError)
 
-	return nil, false
+	return weberror.New(http.StatusInternalServerError, "error creating user")
 }
