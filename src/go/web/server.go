@@ -208,6 +208,7 @@ func Start(opts ...ServerOption) error {
 
 		api.Use(middleware.NoAuth)
 		api.Use(middleware.Freshness)
+		api.Use(middleware.Version)
 
 		_ = os.Remove(common.UnixSocket)
 
@@ -284,6 +285,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 
 	plog.Info(plog.TypeSystem, "setting up assets")
 
+	router.Handle(openAPIPath, OpenAPISpecHandler(assets)).Methods("GET", "HEAD")
 	router.PathPrefix("/docs/").Handler(
 		StaticHandler(assets, false),
 	)
@@ -345,7 +347,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.NotFoundHandler = apiNotFoundHandler()
 	api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
 
-	// OPTIONS method needed for CORS
+	// API routes take OPTIONS, which AnswerOptions answers with 204
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")
@@ -527,15 +529,21 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/settings/password", weberror.ErrorHandler(GetPasswordRequirements)).Methods("GET", "OPTIONS")
 	api.Handle("/settings/timeout", weberror.ErrorHandler(GetTimeoutSettings)).Methods("GET", "OPTIONS")
 
-	addRoutesToRouter(api, socketRoutes()...)
+	// with OPTIONS, as every API route takes it
+	for _, r := range socketRoutes() {
+		api.Handle(r.path, r.handler).Methods(append(r.methods, "OPTIONS")...)
+	}
 
 	// outermost, so the other middleware (full logging in particular) sees the
 	// uncompressed response
 	api.Use(CompressResponses)
 
+	api.Use(middleware.AnswerOptions)
+
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
 	// after Auth, so a refused request takes no sequence number
 	api.Use(middleware.Freshness)
+	api.Use(middleware.Version)
 
 	switch o.logMiddleware {
 	case "full":

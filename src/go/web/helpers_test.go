@@ -198,6 +198,33 @@ func namedExperiment(t *testing.T, name, started string, nodes ...map[string]any
 	return c
 }
 
+// useTestExperiment stores test-experiment, running, with one VM, test-vm,
+// whose two interfaces are on VLANs EXP_1 and EXP_2.
+func useTestExperiment(t *testing.T) {
+	t.Helper()
+
+	useTestStore(t, testExperiment(t, "2024-01-01T00:00:00Z", map[string]any{
+		"type": "VirtualMachine",
+		"general": map[string]any{
+			"hostname":    "test-vm",
+			"do_not_boot": false,
+			"snapshot":    false,
+		},
+		"hardware": map[string]any{
+			"vcpus":   2,
+			"memory":  512,
+			"os_type": "linux",
+			"drives":  []map[string]any{{"image": "test.qc2", "inject_partition": 1}},
+		},
+		"network": map[string]any{
+			"interfaces": []map[string]any{
+				{"name": "IF0", "vlan": "EXP_1"},
+				{"name": "IF1", "vlan": "EXP_2"},
+			},
+		},
+	}))
+}
+
 // testFiles is the cluster file listing of test-experiment. Other
 // file.ClusterFiles methods panic.
 type testFiles struct {

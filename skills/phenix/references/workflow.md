@@ -131,7 +131,7 @@ these lines in `metadata.validation` and the validator's text in
 ## REST endpoints
 
 Paths are relative to the `/api/v1` base path; [`web-api.md`](web-api.md) has
-the full route table and the auth modes.
+the auth modes and points to the full route reference.
 
 | Route | Notes |
 |---|---|
