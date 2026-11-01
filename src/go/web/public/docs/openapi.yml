@@ -72,9 +72,9 @@ info:
     Every error, refusals by authentication, RBAC and routing included,
     answers with the `Error` schema as `application/json`. The schema has a
     `message`, the `cause`, sometimes `metadata`, and a `code` to match on
-    rather than the message. The exception is a failed handshake on the
-    console, VNC, port forward and SCORCH websockets, which answers in plain
-    text.
+    rather than the message. There are two exceptions. The health routes
+    answer in `application/health+json`. A failed handshake on the console,
+    VNC, port forward and SCORCH websockets answers in plain text.
   version: 0.0.0
   title: phenix
   contact:
@@ -138,6 +138,16 @@ tags:
       endpoints here, and like /features, this one is served from the server
       root, not under /api/v1. So it declares its own server. It needs
       neither credentials nor a permission.
+  - name: Health
+    description: >-
+      Liveness (/healthz) and readiness (/readyz) of this server, in the
+      application/health+json format of the IETF draft
+      draft-inadarei-api-health-check-06. Like /features, these are served
+      from the server root rather than under /api/v1, and need no credentials.
+      Every caller sees the statuses, observed values, versions and timings.
+      Only an authenticated request (a valid token, or any request when
+      auth is disabled) sees the `output` fields, which may name paths, hosts
+      and errors.
   - name: Jobs
     description: >-
       Background jobs: long operations (bulk VM actions, experiment file
@@ -7141,6 +7151,113 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/healthz":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Health
+      summary: Check the server's liveness
+      description: >-
+        Whether the server is up: its uptime and how long the BoltDB store
+        takes to list configs. Results are cached briefly (the store for 2
+        seconds), and each check has a timeout, so probes are cheap. Needs no
+        credentials. `output` fields need a token, or auth disabled.
+      operationId: getHealthz
+      responses:
+        "200":
+          description: the server is alive (status pass or warn)
+          content:
+            application/health+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: the server is not alive (status fail)
+          content:
+            application/health+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+    head:
+      tags:
+        - Health
+      summary: Check the server's liveness, without a body
+      operationId: headHealthz
+      responses:
+        "200":
+          description: the server is alive (status pass or warn)
+        "503":
+          description: the server is not alive (status fail)
+  "/readyz":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Health
+      summary: Check the server's readiness
+      description: >-
+        Whether the server can run experiments. The checks cover minimega's
+        response time, version and namespaces, the mesh size, the store and
+        qemu-img. They also cover disk use of the
+        minimega files directory and the phenix base directory, the websocket
+        broker, uptime and Go runtime numbers. Status is the worst status of
+        every check. These fail: minimega not answering, an unreadable store, or
+        a disk at least 98% full. These warn: a disk at least 90% full, a slow
+        minimega or store, or a missing qemu-img. A shrunken mesh or
+        a backed-up websocket queue also warns. Results are cached per check
+        (minimega for 5
+        seconds), so probes send minimega at most three commands every 5
+        seconds. Needs no credentials. `output` fields
+        need a token, or auth disabled.
+      operationId: getReadyz
+      parameters:
+        - name: exclude
+          in: query
+          description: >-
+            checks to leave out, by name (`uptime`, `go`, `store`, `minimega`,
+            `qemu-img`, `disk`, `websocket`). Repeat it, or separate
+            names with commas.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              example: disk
+      responses:
+        "200":
+          description: the server is ready (status pass or warn)
+          content:
+            application/health+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: the server is not ready (status fail)
+          content:
+            application/health+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+    head:
+      tags:
+        - Health
+      summary: Check the server's readiness, without a body
+      operationId: headReadyz
+      parameters:
+        - name: exclude
+          in: query
+          description: checks to leave out, by name, as for GET
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        "200":
+          description: the server is ready (status pass or warn)
+        "503":
+          description: the server is not ready (status fail)
   "/jobs":
     get:
       tags:
@@ -11310,6 +11427,126 @@ components:
           items:
             type: string
             example: phenix-tunneler-linux-amd64
+    HealthResponse:
+      title: Health Response
+      type: object
+      description: >-
+        A health response in the format of the IETF draft
+        draft-inadarei-api-health-check-06
+      properties:
+        status:
+          title: Status
+          type: string
+          enum: [pass, warn, fail]
+          description: the worst status of every check
+          example: pass
+        version:
+          title: Version
+          type: string
+          description: the phenix build's tag
+          example: v1.2.0
+        releaseId:
+          title: Release ID
+          type: string
+          description: the phenix build's commit
+          example: 059cd25b
+        serviceId:
+          title: Service ID
+          description: the service the response is for
+          type: string
+          example: phenix
+        description:
+          title: Description
+          description: what the response reports on
+          type: string
+          example: phēnix readiness
+        notes:
+          title: Notes
+          type: array
+          description: present when the request was not authenticated
+          items:
+            type: string
+            example: "output fields omitted: request not authenticated"
+        output:
+          title: Output
+          example: "minimega did not answer: unable to dial"
+          type: string
+          description: detail, only for authenticated requests
+        checks:
+          title: Checks
+          type: object
+          description: >-
+            the checks' results, keyed "component:measurement" (such as
+            `minimega:responseTime`). Most keys have one result, and
+            `disk:utilization` has one per filesystem
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/HealthCheckResult"
+      required:
+        - status
+        - serviceId
+        - description
+        - checks
+    HealthCheckResult:
+      title: Health Check Result
+      description: One check's result in a health response.
+      type: object
+      properties:
+        componentId:
+          title: Component ID
+          type: string
+          description: >-
+            the component observed, such as `minimega`, `bolt` or `files-dir`.
+            It is never a path or host name
+          example: minimega
+        componentType:
+          title: Component Type
+          description: the kind of component observed
+          type: string
+          enum: [component, datastore, system]
+          example: component
+        observedValue:
+          title: Observed Value
+          description: >-
+            the value observed. Each key keeps one JSON type across runs, and a
+            run that observed nothing omits it. Fractional values (milliseconds,
+            percentages) always carry a decimal point, even when whole (`42.0`)
+          example: 1.27
+        observedUnit:
+          title: Observed Unit
+          description: the unit of `observedValue`, when it has one
+          type: string
+          example: ms
+        status:
+          title: Status
+          description: the check's status
+          type: string
+          enum: [pass, warn, fail]
+          example: pass
+        affectedEndpoints:
+          title: Affected Endpoints
+          type: array
+          description: the API routes that do not work while this check warns or fails
+          items:
+            type: string
+            example: /api/v1/vms
+        time:
+          title: Time
+          example: "2026-01-01T10:00:00Z"
+          type: string
+          format: date-time
+          description: when the value was observed
+        output:
+          title: Output
+          type: string
+          description: >-
+            why the check warns or fails, or other detail (paths, hosts,
+            errors). Only for authenticated requests
+          example: "minimega did not answer: unable to dial"
+      required:
+        - status
+        - time
 
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.
