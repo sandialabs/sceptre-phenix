@@ -2,6 +2,8 @@ syntax = "proto3";
 
 option go_package = "web/proto";
 
+import "google/protobuf/struct.proto";
+
 message VM {
   string name = 1;
   string host = 2;
@@ -27,6 +29,9 @@ message VM {
   bool snapshot = 22 [json_name="snapshot"];
   uint32 inject_partition = 23 [json_name="inject_partition"];
   string description = 24;
+  // the node's annotations; only a single-VM GET, and a PATCH response to a
+  // caller who may get the VM, carry them (not VM lists or broadcasts)
+  google.protobuf.Struct annotations = 25;
   // the guest operating system its topology node gives (hardware.os_type)
   string os_type = 26 [json_name="os_type"];
 }
@@ -120,6 +125,8 @@ message UpdateVMRequest {
   uint32 inject_partition = 10 [json_name="inject_partition"];
   TagUpdateMode tag_update_mode = 11 [json_name="tag_update_mode"];
   map<string, string> tags = 12;
+  // replaces all of the node's annotations when set
+  google.protobuf.Struct annotations = 13;
 }
 
 message UpdateVMRequestList {

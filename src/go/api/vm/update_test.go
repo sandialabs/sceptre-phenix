@@ -34,6 +34,7 @@ func TestUpdate(t *testing.T) {
 	var (
 		annotations = map[string]any{"vncBanner": "old", "phenix/default-apps": true}
 		labels      = map[string]string{"role": "edge"}
+		replaced    = map[string]any{"vncBanner": "new", "phenix/startup-autotunnel": []any{"8080"}}
 	)
 
 	tests := []struct {
@@ -53,6 +54,30 @@ func TestUpdate(t *testing.T) {
 		wantAnnotations map[string]any
 		wantTagUpdates  int
 	}{
+		{
+			name:     "replaces the annotations of a stopped experiment's VM",
+			opts:     []vm.UpdateOption{vm.UpdateWithAnnotations(replaced)},
+			wantCPUs: 2, wantLabels: labels, wantAnnotations: replaced,
+		},
+		{
+			name:     "replaces the annotations of a running experiment's VM",
+			running:  true,
+			opts:     []vm.UpdateOption{vm.UpdateWithAnnotations(replaced)},
+			wantCPUs: 2, wantLabels: labels, wantAnnotations: replaced,
+		},
+		{
+			name:     "removes all annotations for a nil map",
+			opts:     []vm.UpdateOption{vm.UpdateWithAnnotations(nil)},
+			wantCPUs: 2, wantLabels: labels, wantAnnotations: map[string]any{},
+		},
+		{
+			name:    "rejects annotations the default apps would ignore",
+			running: true,
+			opts: []vm.UpdateOption{
+				vm.UpdateWithAnnotations(map[string]any{"phenix/default-apps": "false"}),
+			},
+			wantErr: vm.ErrInvalidAnnotations,
+		},
 		{
 			name: "changes a stopped VM's CPUs and adds tags to its labels",
 			opts: []vm.UpdateOption{
@@ -108,7 +133,7 @@ func TestUpdate(t *testing.T) {
 		{
 			name:    "rejects a hardware change while the experiment runs",
 			running: true,
-			opts:    []vm.UpdateOption{vm.UpdateWithCPU(4)},
+			opts:    []vm.UpdateOption{vm.UpdateWithCPU(4), vm.UpdateWithAnnotations(replaced)},
 			wantErr: errAny,
 		},
 		{

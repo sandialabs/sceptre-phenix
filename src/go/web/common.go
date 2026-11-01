@@ -136,6 +136,10 @@ func startExperiment(name string) error {
 
 	var progress float64
 
+	// the experiment list reports the latest progress to pages opened
+	// mid-start
+	defer startProgress.Delete(name)
+
 	count, _ := vm.Count(name)
 
 	for {
@@ -192,6 +196,8 @@ func startExperiment(name string) error {
 			if p > progress {
 				progress = p
 			}
+
+			startProgress.Store(name, progress)
 
 			plog.Debug(plog.TypeSystem, "percent deployed", statusKeyPercent, progress*percentMultiplier, "exp", name)
 
@@ -313,6 +319,23 @@ func resumeStart(name string) {
 	}
 
 	followStart(ctx, name, ch)
+}
+
+// startProgress holds each starting experiment's launch progress, from 0 to 1.
+var startProgress sync.Map //nolint:gochecknoglobals // shared with the list handler
+
+// experimentStatus is the experiment's status as the experiment lists report
+// it, and how far along its start is while it is starting.
+func experimentStatus(exp types.Experiment) (cache.Status, float64) {
+	status := cache.ExperimentStatus(exp.Metadata.Name, exp.Running())
+	if status != cache.StatusStarting {
+		return status, 0
+	}
+
+	progress, _ := startProgress.Load(exp.Metadata.Name)
+	percent, _ := progress.(float64)
+
+	return status, percent
 }
 
 // stopExperiment stops the experiment; force marks it stopped even when minimega cannot kill its VMs,

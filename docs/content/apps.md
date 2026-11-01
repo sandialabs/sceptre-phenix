@@ -39,6 +39,10 @@ during every lifecycle stage. User apps configured in a scenario are
 unaffected. Omit the annotation, or set it to `true`, to retain the default
 behavior.
 
+To set the annotation on every VM of one experiment without editing its
+topology, add it when you create the experiment; see
+[Adding Annotations](experiments.md#adding-annotations).
+
 ### startup App
 
 The `startup` app generates scripts that configure supported guest operating
@@ -175,6 +179,10 @@ spec:
         drives:
           - image: ubuntu.qc2
 ```
+
+To set the annotation on every VM of one experiment without editing its
+topology, add it when you create the experiment; see
+[Adding Annotations](experiments.md#adding-annotations).
 
 For a disk layout that cannot be injected into, such as an LVM-based image, set
 the injection partition on the first drive to `0`:

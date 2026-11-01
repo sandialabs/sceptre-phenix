@@ -27,6 +27,66 @@ func TestListsRefuseBadPages(t *testing.T) {
 	}
 }
 
+// A page of experiments reads only its own experiments' VMs from minimega, and total counts them all.
+func TestExperimentsPage(t *testing.T) {
+	var (
+		a = routeExperiment(t, "page-a", 2, true)
+		b = routeExperiment(t, "page-b", 3, true)
+		c = routeExperiment(t, "page-c", 1, true)
+	)
+
+	useTestStore(t, a, b, c)
+
+	var (
+		cluster = &routeCluster{head: "head", vms: map[string]routeVMs{
+			a.Metadata.Name: {count: 2, host: "head"},
+			b.Metadata.Name: {count: 3, host: "head"},
+			c.Metadata.Name: {count: 1, host: "head"},
+		}}
+		counter = &commandCounter{received: useRouteCluster(t, cluster)}
+		server  = serveAs(t, "alice", routeViewerRole()).URL
+	)
+
+	var all proto.ExperimentList
+	if code := getAPI(t, server+"/api/v1/experiments?vms=false", &all); code != http.StatusOK {
+		t.Fatalf("GET /api/v1/experiments?vms=false = %d, want %d", code, http.StatusOK)
+	}
+
+	names := listedExperimentNames(&all)
+	if all.GetTotal() != 3 || len(names) != 3 {
+		t.Fatalf("GET /api/v1/experiments?vms=false = %v of total %d, want 3 of 3", names, all.GetTotal())
+	}
+
+	counter.since() // forget the commands so far
+
+	const path = "/api/v1/experiments?pageNum=2&perPage=2"
+
+	var page proto.ExperimentList
+	if code := getAPI(t, server+path, &page); code != http.StatusOK {
+		t.Fatalf("GET %s = %d, want %d", path, code, http.StatusOK)
+	}
+
+	if diff := cmp.Diff(names[2:], listedExperimentNames(&page)); diff != "" {
+		t.Errorf("GET %s experiments mismatch (-want +got):\n%s", path, diff)
+	}
+
+	if got := page.GetTotal(); got != 3 {
+		t.Errorf("GET %s total = %d, want 3", path, got)
+	}
+
+	counter.wantCommands(t, "GET "+path, vmInfoRun(names[2]))
+}
+
+// listedExperimentNames is each listed experiment's name, in order.
+func listedExperimentNames(list *proto.ExperimentList) []string {
+	names := make([]string, 0, len(list.GetExperiments()))
+	for _, exp := range list.GetExperiments() {
+		names = append(names, exp.GetName())
+	}
+
+	return names
+}
+
 // Pages of the running VMs follow one another in the order of the whole list, each with the whole list's total.
 func TestAllVMsPages(t *testing.T) {
 	var (
