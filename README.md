@@ -41,6 +41,7 @@ To build the phēnix container image from source (does not require installing lo
 make docker
 ```
 
+The compose file uses `phenix healthcheck` to check the health of the `phenix` container. This command probes the `/healthz` endpoint of the server. The `docker exec phenix phenix healthcheck --ready` command also checks minimega, the store and free disk space. See [Health Checks](https://phenix.sceptre.dev/latest/health/).
 ### Native Installation (.deb)
 
 As an alternative to running phēnix using Docker, you can build a native Debian package (`.deb`) which installs the binaries and dependencies directly onto your system.
