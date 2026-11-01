@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -20,9 +21,11 @@ import (
 	"phenix/api/scorch/scorchexe"
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
+	"phenix/types"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
 	"phenix/web/audit"
+	"phenix/web/cache"
 	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -38,32 +41,47 @@ func init() { //nolint:gochecknoinits // hook registration
 	})
 }
 
+// RegisterRoutes serves the SCORCH API from api, the router of the /api/v1
+// paths.
+func RegisterRoutes(api *mux.Router) {
+	const base = "/experiments/{name}/scorch/"
+
+	api.Handle(base+"components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(GetComponentOutput)).
+		Methods("GET", "OPTIONS")
+	api.Handle(base+"components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(StreamComponentOutput)).
+		Methods("GET", "OPTIONS")
+	api.Handle(base+"pipelines", weberror.ErrorHandler(GetPipelines)).Methods("GET", "OPTIONS")
+	api.Handle(base+"pipelines/{run}/{loop}", weberror.ErrorHandler(GetPipeline)).Methods("GET", "OPTIONS")
+	api.Handle(base+"pipelines/{run}/cleanup", weberror.ErrorHandler(CleanupPipeline)).Methods("POST", "OPTIONS")
+	api.Handle(base+"pipelines/{run}/clear", weberror.ErrorHandler(ClearPipeline)).Methods("POST", "OPTIONS")
+	api.Handle(base+"pipelines/{run}", weberror.ErrorHandler(StartPipeline)).Methods("POST", "OPTIONS")
+	api.Handle(base+"pipelines/{run}", weberror.ErrorHandler(CancelPipeline)).Methods("DELETE", "OPTIONS")
+	api.Handle(base+"terminals", weberror.ErrorHandler(GetTerminals)).Methods("GET", "OPTIONS")
+	api.Handle(base+"terminals/{pid}", weberror.ErrorHandler(ConnectTerminalByPID)).Methods("GET", "OPTIONS")
+	api.Handle(base+"terminals/{pid}/exit/{id}", weberror.ErrorHandler(ExitTerminal)).Methods("POST", "OPTIONS")
+	api.Handle(base+"terminals/{pid}/ws/{id}", weberror.ErrorHandler(StreamTerminal)).Methods("GET", "OPTIONS")
+	api.Handle(base+"terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(ConnectTerminal)).Methods("GET", "OPTIONS")
+}
+
 const (
 	appNameScorch       = "scorch"
 	TerminalBufferSize  = 32 * 1024
 	TerminalInitTimeout = 5 * time.Second
 )
 
-type termClient struct {
-	id   string
-	ws   *websocket.Conn
-	done chan struct{}
-}
-
-func newTermClient(ws *websocket.Conn) termClient {
-	return termClient{
-		id:   uuid.Must(uuid.NewV4()).String(),
-		ws:   ws,
-		done: make(chan struct{}),
-	}
-}
+// exitedMarker ends a read-only terminal's stream.
+const exitedMarker = "***** BREAK PROCESS EXITED *****"
 
 var (
-	rwTerm  = make(map[int]string)                //nolint:gochecknoglobals // global state
-	roTerms = make(map[int]map[string]termClient) //nolint:gochecknoglobals // global state
-	history = make(map[int]bytes.Buffer)          //nolint:gochecknoglobals // global state
+	rwTerm = make(map[int]string) //nolint:gochecknoglobals // global state
+	// read-only viewers of each terminal; output is queued for them under mu.
+	roTerms = make(map[int]map[string]*viewer) //nolint:gochecknoglobals // global state
+	history = make(map[int]bytes.Buffer)       //nolint:gochecknoglobals // global state
 
 	termClientIDs = make(map[string]chan struct{}) //nolint:gochecknoglobals // global state
+
+	// how long a connected client has to attach to its terminal.
+	terminalInitTimeout = TerminalInitTimeout //nolint:gochecknoglobals // tests shorten it
 
 	mu sync.Mutex //nolint:gochecknoglobals // global lock
 )
@@ -146,6 +164,40 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) error {
 	t, err := initTerminal(exp, run, loop, stage, cmp, mayWrite(r, exp))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
+	body, _ := json.Marshal(t)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+
+	return nil
+}
+
+// ConnectTerminalByPID - GET /experiments/{name}/scorch/terminals/{pid}.
+//
+// Connects to a terminal by the PID its earlier connection's loc and exit URLs name. As on the component route, only a
+// role that may trigger the experiment takes its read/write side.
+func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminalByPID")
+
+	exp := mux.Vars(r)["name"]
+	if err := canView(r, exp); err != nil {
+		return err
+	}
+
+	pid, err := strconv.Atoi(mux.Vars(r)["pid"])
+	if err != nil {
+		return weberror.New(http.StatusBadRequest, "invalid terminal PID provided")
+	}
+
+	term, err := GetTerminalByPID(pid)
+	if err != nil || term.Exp != exp {
+		return weberror.New(http.StatusNotFound, "no web terminal found")
+	}
+
+	t, err := initTerminal(exp, term.Run, term.Loop, term.Stage, term.Name, mayWrite(r, exp))
+	if err != nil {
+		return weberror.New(http.StatusNotFound, err.Error())
 	}
 
 	body, _ := json.Marshal(t)
@@ -265,7 +317,6 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-//nolint:funlen // handler
 func terminalWsHandler(t WebTerm) func(*websocket.Conn) {
 	return func(ws *websocket.Conn) {
 		defer lifecycle.TrackConn("SCORCH terminal", ws)()
@@ -277,118 +328,127 @@ func terminalWsHandler(t WebTerm) func(*websocket.Conn) {
 			return
 		}
 
-		readTerm := func() {
-			for {
-				buf := make([]byte, TerminalBufferSize)
-
-				nr, err := t.Pty.Read(buf)
-				if err != nil {
-					break
-				}
-
-				nw, err := ws.Write(buf[0:nr])
-				if err != nil {
-					break
-				}
-
-				if nw != nr {
-					break
-				}
-
-				mu.Lock()
-				h := history[t.Pid]
-				h.Write(buf[0:nr])
-				history[t.Pid] = h
-
-				ro := roTerms[t.Pid]
-				mu.Unlock()
-
-				for _, client := range ro {
-					nw, err := client.ws.Write(buf[0:nr])
-					if err != nil {
-						close(client.done)
-
-						break
-					}
-
-					if nw != nr {
-						close(client.done)
-
-						break
-					}
-				}
-			}
-		}
-
-		writeTerm := func() {
-			for {
-				buf := make([]byte, TerminalBufferSize)
-
-				nr, err := ws.Read(buf)
-				if err != nil {
-					break
-				}
-
-				nw, err := t.Pty.Write(buf[0:nr])
-				if err != nil {
-					break
-				}
-
-				if nw != nr {
-					break
-				}
-			}
-		}
-
-		waitTerm := func(tc termClient) {
-			select {
-			case <-tc.done:
-				mu.Lock()
-				terms := roTerms[t.Pid]
-				delete(terms, tc.id)
-				roTerms[t.Pid] = terms
-				mu.Unlock()
-			case <-t.Done:
-				mu.Lock()
-				for _, ro := range roTerms[t.Pid] {
-					// notify read-only clients that R/W terminal has exited
-					_, _ = ro.ws.Write([]byte("***** BREAK PROCESS EXITED *****"))
-				}
-
-				delete(roTerms, t.Pid)
-				mu.Unlock()
-			}
-		}
-
 		if t.RO {
-			tc := newTermClient(ws)
+			v := attachReadOnly(t, ws)
 
-			mu.Lock()
+			go v.watch(ws)
+			go waitReadOnly(t, v)
 
-			terms, ok := roTerms[t.Pid]
-			if !ok {
-				terms = make(map[string]termClient)
-			}
+			v.serve()
 
-			terms[tc.id] = tc
-			roTerms[t.Pid] = terms
-
-			if h, ok := history[t.Pid]; ok {
-				_, _ = tc.ws.Write(h.Bytes())
-			}
-
-			mu.Unlock()
-
-			waitTerm(tc)
-		} else {
-			go readTerm()
-
-			writeTerm()
-
-			mu.Lock()
-			delete(rwTerm, t.Pid)
-			mu.Unlock()
+			return
 		}
+
+		go readTerm(t, ws)
+
+		writeTerm(t, ws)
+
+		mu.Lock()
+		delete(rwTerm, t.Pid)
+		mu.Unlock()
+	}
+}
+
+// readTerm copies the terminal's output to its read/write client, which it
+// waits on, and queues it for the read-only viewers, which it does not.
+func readTerm(t WebTerm, rw io.Writer) {
+	for {
+		buf := make([]byte, TerminalBufferSize)
+
+		nr, err := t.Pty.Read(buf)
+		if err != nil {
+			break
+		}
+
+		nw, err := rw.Write(buf[0:nr])
+		if err != nil {
+			break
+		}
+
+		if nw != nr {
+			break
+		}
+
+		mu.Lock()
+		h := history[t.Pid]
+		h.Write(buf[0:nr])
+		history[t.Pid] = h
+
+		for id, v := range roTerms[t.Pid] {
+			if !v.offer(buf[0:nr]) {
+				v.finish()
+				delete(roTerms[t.Pid], id)
+
+				go plog.Warn(plog.TypeSystem, "dropping slow SCORCH terminal viewer", "pid", t.Pid)
+			}
+		}
+		mu.Unlock()
+	}
+}
+
+// writeTerm copies the read/write client's input to the terminal.
+func writeTerm(t WebTerm, rw io.Reader) {
+	for {
+		buf := make([]byte, TerminalBufferSize)
+
+		nr, err := rw.Read(buf)
+		if err != nil {
+			break
+		}
+
+		nw, err := t.Pty.Write(buf[0:nr])
+		if err != nil {
+			break
+		}
+
+		if nw != nr {
+			break
+		}
+	}
+}
+
+// attachReadOnly adds a read-only viewer of the terminal, with the output so
+// far queued for it first.
+func attachReadOnly(t WebTerm, conn frameConn) *viewer {
+	v := newViewer(conn)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// the history is one chunk, so it fits the viewer's empty queue
+	if h, ok := history[t.Pid]; ok {
+		v.offer(h.Bytes())
+	}
+
+	terms, ok := roTerms[t.Pid]
+	if !ok {
+		terms = make(map[string]*viewer)
+	}
+
+	terms[v.id] = v
+	roTerms[t.Pid] = terms
+
+	return v
+}
+
+// waitReadOnly forgets a read-only viewer once it leaves, or tells every
+// read-only viewer the terminal exited, finishing their output.
+func waitReadOnly(t WebTerm, v *viewer) {
+	select {
+	case <-v.gone:
+		mu.Lock()
+		delete(roTerms[t.Pid], v.id)
+		mu.Unlock()
+	case <-t.Done:
+		mu.Lock()
+		for _, ro := range roTerms[t.Pid] {
+			// notify read-only clients that R/W terminal has exited
+			ro.offer([]byte(exitedMarker))
+			ro.finish()
+		}
+
+		delete(roTerms, t.Pid)
+		mu.Unlock()
 	}
 }
 
@@ -459,9 +519,11 @@ func initTerminal(exp string, run, loop int, stage, cmp string, rw bool) (WebTer
 	done := make(chan struct{})
 	termClientIDs[id] = done
 
+	timeout := terminalInitTimeout
+
 	go func() {
 		select {
-		case <-time.After(TerminalInitTimeout):
+		case <-time.After(timeout):
 			mu.Lock()
 			// a read-only client that never attaches leaves the writer's rights
 			if rwTerm[t.Pid] == id {
@@ -506,7 +568,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
-	req := outputRequest{key: key, resp: make(chan outputResponse)}
+	req := outputRequest{key: key, resp: make(chan outputResponse, 1)}
 
 	outputRequests <- req
 
@@ -522,7 +584,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 			body, _ := json.Marshal(util.WithRoot("terminal", t))
 
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+			_, _ = w.Write(body)
 
 			return nil
 		}
@@ -543,7 +605,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 		)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+		_, _ = w.Write(body)
 
 		return nil
 	}
@@ -603,13 +665,14 @@ func scorchComponentWsHandler(key string) func(*websocket.Conn) {
 	return func(ws *websocket.Conn) {
 		defer lifecycle.TrackConn("SCORCH output", ws)()
 
-		id := uuid.Must(uuid.NewV4()).String()
-		req := wsRequest{key: key, id: id, ws: ws, done: make(chan struct{})}
+		v := newViewer(ws)
 
 		// add client to list for component
-		wsRequests <- req
-		// wait for done channel to be closed
-		<-req.done
+		wsRequests <- wsRequest{key: key, v: v}
+
+		go v.watch(ws)
+
+		v.serve()
 	}
 }
 
@@ -698,7 +761,17 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	body, _ := json.Marshal(map[string]any{"pipelines": pipelines, "running": runID})
+	// the experiment's own state, so the pipelines page can show it
+	status := cache.ExperimentStatus(name, exp.Running())
+
+	body, _ := json.Marshal(map[string]any{
+		"pipelines": pipelines,
+		"running":   runID,
+		// whether the SCORCH app itself is running, so the SCORCH page needs no
+		// separate experiment apps request
+		"app_running": running,
+		"experiment":  map[string]any{"status": status},
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
@@ -756,18 +829,17 @@ func GetPipeline(w http.ResponseWriter, r *http.Request) error {
 	body, _ := json.Marshal(pipeline)
 
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
 
 	return nil
 }
 
-// TODO: change this to `scorch/runs`
-
-// StartPipeline - POST /experiments/{name}/scorch/pipelines/{run}.
+// ClearPipeline - POST /experiments/{name}/scorch/pipelines/{run}/clear.
 //
-//nolint:funlen // handler
-func StartPipeline(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StartPipeline")
+// Forgets the component statuses of a run that is not executing, for every
+// loop, so its pipeline shows as never run.
+func ClearPipeline(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ClearPipeline")
 
 	var (
 		ctx     = r.Context()
@@ -781,8 +853,113 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
 	}
 
+	cleared := runFields(name, run)
+
 	if !role.Allowed("experiments/trigger", "create", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		audit.Denied(r, audit.ScorchClear, "clearing scorch run not allowed", cleared)
+		err := weberror.NewWebError(
+			nil,
+			"clearing Scorch runs for experiment %s not allowed for %s",
+			name,
+			user,
+		)
+
+		return err.SetStatus(http.StatusForbidden)
+	}
+
+	exp, err := experiment.Get(name)
+	if err != nil {
+		audit.Failure(r, audit.ScorchClear, "clearing scorch run failed", cleared, err)
+
+		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
+	}
+
+	md, err := scorchRuns(exp)
+	if err != nil {
+		err := weberror.NewWebError(err, "unable to decode scorch metadata for experiment %s", name)
+
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	if run < 0 || run >= len(md.Runs) {
+		err := weberror.NewWebError(nil, "Scorch run %d not found for experiment %s", run, name)
+
+		return err.SetStatus(http.StatusNotFound)
+	}
+
+	if scorchexe.HasCanceler(name, run) {
+		audit.Failure(r, audit.ScorchClear, "clearing scorch run failed", cleared, errors.New("run executing"))
+
+		err := weberror.NewWebError(nil, "Scorch run %d for experiment %s is executing", run, name)
+
+		return err.SetStatus(http.StatusConflict)
+	}
+
+	// rebuilding broadcasts each loop's cleared pipeline
+	DeletePipeline(name, run, -1, true)
+	audit.Success(r, audit.ScorchClear, "cleared scorch run", cleared)
+
+	w.WriteHeader(http.StatusNoContent)
+
+	return nil
+}
+
+// runFields are the audit fields of the experiment's SCORCH run.
+func runFields(exp string, run int) audit.Fields {
+	return audit.Fields{Experiment: exp, Extra: []any{"phenix.scorch.run", run}}
+}
+
+// scorchRuns decodes the experiment's scorch app metadata, which has no runs
+// when the experiment has no scorch app.
+func scorchRuns(exp *types.Experiment) (scorchmd.ScorchMetadata, error) {
+	md, err := scorchmd.DecodeMetadata(exp)
+	if errors.Is(err, scorchmd.ErrScorchNotConfigured) {
+		return scorchmd.ScorchMetadata{}, nil
+	}
+
+	return md, err //nolint:wrapcheck // the callers say what failed
+}
+
+// TODO: change this to `scorch/runs`
+
+// StartPipeline - POST /experiments/{name}/scorch/pipelines/{run}.
+func StartPipeline(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StartPipeline")
+
+	return startPipeline(w, r, false)
+}
+
+// CleanupPipeline - POST /experiments/{name}/scorch/pipelines/{run}/cleanup.
+//
+// Runs only the run's cleanup stage, for example to tear down what a canceled
+// run left behind.
+func CleanupPipeline(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CleanupPipeline")
+
+	return startPipeline(w, r, true)
+}
+
+//nolint:funlen // handler
+func startPipeline(w http.ResponseWriter, r *http.Request, cleanupOnly bool) error {
+	var (
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		name    = vars["name"]
+	)
+
+	run, err := strconv.Atoi(vars["run"])
+	if err != nil {
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+	}
+
+	started := runFields(name, run)
+	started.Extra = append(started.Extra, "phenix.scorch.cleanup_only", cleanupOnly)
+
+	if !role.Allowed("experiments/trigger", "create", name) {
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		audit.Denied(r, audit.ScorchStart, "starting scorch run not allowed", started)
 		err := weberror.NewWebError(
 			nil,
 			"starting Scorch runs for experiment %s not allowed for %s",
@@ -795,6 +972,7 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("experiments", "get", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		audit.Denied(r, audit.ScorchStart, "starting scorch run not allowed", started)
 		err := weberror.NewWebError(
 			nil,
 			"getting experiment %s not allowed for %s",
@@ -807,16 +985,46 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 
 	exp, err := experiment.Get(name)
 	if err != nil {
+		audit.Failure(r, audit.ScorchStart, "starting scorch run failed", started, err)
+
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
+	if cleanupOnly {
+		md, err := scorchRuns(exp)
+		if err != nil {
+			err := weberror.NewWebError(err, "unable to decode scorch metadata for experiment %s", name)
+
+			return err.SetStatus(http.StatusInternalServerError)
+		}
+
+		if run < 0 || run >= len(md.Runs) || len(md.Runs[run].Cleanup) == 0 {
+			err := weberror.NewWebError(
+				nil,
+				"Scorch run %d for experiment %s has no cleanup components",
+				run,
+				name,
+			)
+
+			return err.SetStatus(http.StatusBadRequest)
+		}
+	}
+
 	if scorchexe.HasCanceler(name, run) {
+		audit.Failure(r, audit.ScorchStart, "starting scorch run failed", started, errors.New("run already executing"))
+
 		return weberror.NewWebError(nil, "Scorch run already executing for experiment %s", name)
 	}
+
+	audit.Success(r, audit.ScorchStart, "started scorch run", started)
 
 	// We don't want to use the HTTP request's context here.
 	ctx = scorchexe.AddCanceler(context.Background(), name, run)
 	ctx = app.SetContextTriggerUI(ctx)
+
+	if cleanupOnly {
+		ctx = scorchexe.SetCleanupOnly(ctx)
+	}
 
 	go func() {
 		plog.Debug(plog.TypeSystem, "executing Scorch run for experiment", "exp", name, "run", run)
@@ -847,9 +1055,10 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 					Resource:   key,
 					State:      "error",
 					Error: fmt.Errorf(
-						"failed to execute Scorch run %d for experiment %s",
+						"failed to execute Scorch run %d for experiment %s: %w",
 						run,
 						name,
+						err,
 					),
 				})
 			}
@@ -933,9 +1142,4 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
-}
-
-// runFields are the audit fields of the experiment's SCORCH run.
-func runFields(exp string, run int) audit.Fields {
-	return audit.Fields{Experiment: exp, Extra: []any{"phenix.scorch.run", run}}
 }

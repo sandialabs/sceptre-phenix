@@ -270,6 +270,7 @@ func contractRoutes() []contractRoute {
 	var (
 		filesGet   = testRole("experiments/files", "get", contractExp)
 		netflowGet = testRole("experiments/netflow", "get", contractExp)
+		trigger    = testRole("experiments/trigger", "create", contractExp)
 		diskGet    = testRole("disks", "get", contractDisk)
 		mount      = testRole("vms/mount", "get", contractExp+"/"+contractVM)
 		one        = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
@@ -310,6 +311,13 @@ func contractRoutes() []contractRoute {
 			method: "DELETE", path: exp + "/files/a.log?path=a.log",
 			need: one(testRole("experiments/files", "delete", contractExp)), want: done,
 		},
+
+		// SCORCH
+		{
+			method: "POST", path: exp + "/scorch/pipelines/0/cleanup",
+			need: []rbac.Role{trigger, testRole("experiments", "get", contractExp)},
+		},
+		{method: "POST", path: exp + "/scorch/pipelines/0/clear", need: one(trigger)},
 
 		// VMs: a bulk update refuses a role that may patch none of its VMs
 		{
@@ -644,7 +652,7 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 	}
 }
 
-// configAndRouteErrorCases are TestContractErrors' config, user and routing cases.
+// configAndRouteErrorCases are TestContractErrors' config, SCORCH, user and routing cases.
 func configAndRouteErrorCases() map[string]contractErrorCase {
 	const (
 		exp    = contractExpPath
@@ -685,6 +693,15 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 		"unknown log file": {method: "GET", path: "/api/v1/logs/files/none", want: http.StatusNotFound},
 		"unconfigured minimega log file": {
 			method: "GET", path: "/api/v1/logs/files/minimega", want: http.StatusNotFound,
+		},
+		"clear run that is not a number": {
+			method: "POST", path: exp + "/scorch/pipelines/x/clear", want: http.StatusBadRequest,
+		},
+		"clear run the experiment lacks": {
+			method: "POST", path: exp + "/scorch/pipelines/0/clear", want: http.StatusNotFound,
+		},
+		"clean up run the experiment lacks": {
+			method: "POST", path: exp + "/scorch/pipelines/0/cleanup", want: http.StatusBadRequest,
 		},
 		"user with unknown role": {
 			method: "POST", path: "/api/v1/users", body: createUserBody("carol", "No Such Role"), want: http.StatusBadRequest,
