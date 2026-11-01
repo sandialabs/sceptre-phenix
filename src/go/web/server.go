@@ -606,8 +606,8 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	return router
 }
 
-// apiLocation returns the path of the API resource p (relative to /api/v1/) behind the
-// UI base path o.basePath, which it makes start and end with "/".
+// apiLocation returns the absolute path, behind o.basePath, of the API resource
+// at p relative to /api/v1/. A test can set o.basePath without the "/" ends.
 func apiLocation(p string) string {
 	base := o.basePath
 	if !strings.HasPrefix(base, "/") {

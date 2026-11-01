@@ -21,6 +21,7 @@ import (
 	"phenix/store"
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -29,13 +30,15 @@ import (
 // The API contract drives each contractRoutes route through phenix ui's router in each auth mode, with and without
 // its permissions, behind a base path and with refused inputs; a new route adds a row there and its openapi.yml path.
 
-// The experiment, VM and disk image of the contract fixture, and an
-// experiment it does not have.
+// The experiment, VM, disk image and topology of the contract fixture, the
+// topology's revision, and an experiment it does not have.
 const (
-	contractExp   = "test-experiment"
-	contractVM    = "test-vm"
-	contractDisk  = "test-disk.qc2"
-	contractOther = "other-experiment"
+	contractExp      = "test-experiment"
+	contractVM       = "test-vm"
+	contractDisk     = "test-disk.qc2"
+	contractTopo     = "demo"
+	contractRevision = 5
+	contractOther    = "other-experiment"
 )
 
 // serveContractAs is serveContract with every request taken as one from alice
@@ -48,8 +51,8 @@ func serveContractAs(t *testing.T, role rbac.Role) *httptest.Server {
 	return serveContract(t, func(o *serverOptions) { o.jwtKey = key })
 }
 
-// contractFixture: running test-experiment with test-vm mounted (etc/hostname), test-disk.qc2, the user bob, bob's
-// finished job (3-byte artifact) and on-demand consoles.
+// contractFixture: running test-experiment with test-vm mounted (etc/hostname), test-disk.qc2, the user bob, demo at
+// revision 5, bob's finished job (3-byte artifact), and on-demand consoles.
 type contractFixture struct {
 	jobs     *job.Registry
 	bobsJob  job.Job
@@ -71,6 +74,14 @@ func useContractFixture(t *testing.T) contractFixture {
 		Version: "phenix.sandia.gov/v1", Kind: "User", Metadata: store.ConfigMetadata{Name: "bob"},
 		Spec: map[string]any{"username": "bob", "rbac": map[string]any{"roleName": "test-role", "policies": []any{}}},
 	})
+
+	topology, err := store.NewConfigFromJSON([]byte(revisionTestTopology))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	topology.Metadata.Revision = contractRevision
+	useTestStore(t, *topology)
 
 	registry := useJobs(t)
 	bobs := waitJob(t, registry, startTestJob(t, registry, "bob", contractExp, nil, "zip").ID)
@@ -209,8 +220,9 @@ func (c contractRoute) denied() int {
 // gained on this branch, and those whose contract it changed.
 func contractRoutes() []contractRoute {
 	const (
-		exp = "/api/v1/experiments/" + contractExp
-		vm  = exp + "/vms/" + contractVM
+		exp    = "/api/v1/experiments/" + contractExp
+		vm     = exp + "/vms/" + contractVM
+		config = "/api/v1/configs/topology/" + contractTopo
 	)
 
 	var (
@@ -218,6 +230,8 @@ func contractRoutes() []contractRoute {
 		mount   = testRole("vms/mount", "get", contractExp+"/"+contractVM)
 		one     = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
 		jobs    = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
+		configs = func(verb string) []rbac.Role { return one(testRole("configs", verb, "Topology/"+contractTopo)) }
+		current = []string{"If-Match", freshness.ETag(contractRevision), "Content-Type", mimeJSON}
 		ok      = []int{http.StatusOK}
 		done    = []int{http.StatusNoContent}
 	)
@@ -261,11 +275,17 @@ func contractRoutes() []contractRoute {
 			need: []rbac.Role{testRole(resourceUsers, verbPatch, "bob"), testRole("users/tokens", "create", "bob")},
 		},
 
-		// configs
+		// configs, read and written at a revision
 		{
 			method: "GET", path: "/api/v1/configs/experiment/" + contractExp,
 			need: one(testRole("configs", "get", "Experiment/"+contractExp)),
 		},
+		{method: "GET", path: config, need: configs("get"), want: ok},
+		{
+			method: "PUT", path: config, body: revisionTestTopology, header: current,
+			need: configs("update"), want: done,
+		},
+		{method: "DELETE", path: config, header: current, need: configs("delete"), want: done},
 
 		// consoles: a user reaches only their own
 		{method: "GET", path: "/api/v1/console/{console}", need: one(testRole("miniconsole", "get")), want: ok},
@@ -484,7 +504,10 @@ type contractErrorCase struct {
 	want    int
 }
 
-const contractExpPath = "/api/v1/experiments/" + contractExp
+const (
+	contractExpPath    = "/api/v1/experiments/" + contractExp
+	contractConfigPath = "/api/v1/configs/topology/" + contractTopo
+)
 
 // fileAndVMErrorCases are TestContractErrors' file, disk, VM and console cases.
 func fileAndVMErrorCases() map[string]contractErrorCase {
@@ -497,14 +520,11 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 	}
 
 	return map[string]contractErrorCase{
-		"unknown console":            {method: "GET", path: "/api/v1/console/1", want: http.StatusNotFound},
-		"another user's console":     {method: "GET", prepare: bobsConsole, want: http.StatusNotFound},
-		"end another user's console": {method: "DELETE", prepare: bobsConsole, want: http.StatusNotFound},
-		"checksum of missing disk":   {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
-		"checksum of disk outside":   {method: "GET", path: "/api/v1/disks/checksum?disk=../none.qc2", want: http.StatusBadRequest},
-		"details of missing disk":    {method: "GET", path: "/api/v1/disks/details?disk=none.qc2", want: http.StatusNotFound},
-		"details of disk outside":    {method: "GET", path: "/api/v1/disks/details?disk=../none.qc2", want: http.StatusBadRequest},
-		"details of no disk":         {method: "GET", path: "/api/v1/disks/details?disk=", want: http.StatusBadRequest},
+		"checksum of missing disk": {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
+		"checksum of disk outside": {method: "GET", path: "/api/v1/disks/checksum?disk=../none.qc2", want: http.StatusBadRequest},
+		"details of missing disk":  {method: "GET", path: "/api/v1/disks/details?disk=none.qc2", want: http.StatusNotFound},
+		"details of disk outside":  {method: "GET", path: "/api/v1/disks/details?disk=../none.qc2", want: http.StatusBadRequest},
+		"details of no disk":       {method: "GET", path: "/api/v1/disks/details?disk=", want: http.StatusBadRequest},
 		"clone onto existing disk": {
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=" + contractDisk,
 			want: http.StatusConflict,
@@ -513,6 +533,9 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=copy.iso",
 			want: http.StatusBadRequest,
 		},
+		"unknown console":            {method: "GET", path: "/api/v1/console/1", want: http.StatusNotFound},
+		"another user's console":     {method: "GET", prepare: bobsConsole, want: http.StatusNotFound},
+		"end another user's console": {method: "DELETE", prepare: bobsConsole, want: http.StatusNotFound},
 		"mount download of missing file": {
 			method: "GET", path: exp + "/vms/" + contractVM + "/files/download?path=etc/none", want: http.StatusNotFound,
 		},
@@ -522,11 +545,41 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 	}
 }
 
-// configAndRouteErrorCases are TestContractErrors' user and routing cases.
+// configAndRouteErrorCases are TestContractErrors' config, user and routing cases.
 func configAndRouteErrorCases() map[string]contractErrorCase {
-	const exp = contractExpPath
+	const (
+		exp    = contractExpPath
+		config = contractConfigPath
+	)
+
+	var (
+		current = freshness.ETag(contractRevision)
+		stale   = freshness.ETag(contractRevision - 1)
+	)
 
 	return map[string]contractErrorCase{
+		"unknown config": {method: "GET", path: "/api/v1/configs/topology/none", want: http.StatusNotFound},
+		"current config": {method: "GET", path: config, header: []string{"If-None-Match", current}, want: http.StatusNotModified},
+		"update of stale config": {
+			method: "PUT", path: config, body: revisionTestTopology, want: http.StatusPreconditionFailed,
+			header: []string{"If-Match", stale, "Content-Type", mimeJSON},
+		},
+		"update of malformed revision": {
+			method: "PUT", path: config, body: revisionTestTopology, want: http.StatusBadRequest,
+			header: []string{"If-Match", "r5", "Content-Type", mimeJSON},
+		},
+		"update of missing config at a revision": {
+			method: "PUT", path: "/api/v1/configs/topology/none", body: revisionTestTopology,
+			want: http.StatusPreconditionFailed, header: []string{"If-Match", current, "Content-Type", mimeJSON},
+		},
+		"update of missing config": {
+			method: "PUT", path: "/api/v1/configs/topology/none", body: revisionTestTopology,
+			want: http.StatusNotFound, header: []string{"Content-Type", mimeJSON},
+		},
+		"delete of missing config": {method: "DELETE", path: "/api/v1/configs/topology/none", want: http.StatusNotFound},
+		"delete of stale config": {
+			method: "DELETE", path: config, header: []string{"If-Match", stale}, want: http.StatusPreconditionFailed,
+		},
 		"stop with a force that is not a boolean": {
 			method: "POST", path: exp + "/stop?force=maybe", want: http.StatusBadRequest,
 		},
@@ -549,7 +602,7 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 }
 
 // Refusals get openapi.yml's status for the route (405 and unknown paths' 404 in its errors text) and the JSON Error body:
-// unknown things and others' consoles 404, bad input 400.
+// unknown things and others' consoles 404, bad input 400, stale revision 412; current revision 304.
 func TestContractErrors(t *testing.T) {
 	spec := loadOpenAPI(t)
 
@@ -575,6 +628,11 @@ func checkContractError(t *testing.T, spec openAPISpec, name string, tc contract
 	resp := do(t, tc.method, server+path, tc.body, tc.header...)
 	if resp.StatusCode != tc.want {
 		t.Fatalf("%s %s = %d, want %d: %s", tc.method, path, resp.StatusCode, tc.want, readBody(t, resp))
+	}
+
+	// a 304 has no body
+	if tc.want == http.StatusNotModified {
+		return
 	}
 
 	// openapi.yml's errors text documents these for every path

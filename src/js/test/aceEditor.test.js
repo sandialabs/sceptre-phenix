@@ -7,10 +7,11 @@ import AceEditor from '@/components/configs/AceEditor.vue';
 // A stand-in for Ace that records the options each editor is made with. The
 // real Vim and language tools extensions register on the global ace.
 const ace = vi.hoisted(() => {
+  const vim = { CodeMirror: { Vim: { defineEx: () => {} } } };
   globalThis.ace = {
     config: { set: () => {}, setModuleUrl: () => {}, loadModule: () => {} },
     define: () => {},
-    require: vi.fn(),
+    require: vi.fn((name) => (name === 'ace/keyboard/vim' ? vim : undefined)),
     edit: null,
   };
   return globalThis.ace;
