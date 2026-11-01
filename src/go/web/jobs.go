@@ -42,11 +42,14 @@ type jobKind struct {
 
 // jobKindOf returns the hooks of the job kind; none for a kind without any.
 func jobKindOf(kind string) jobKind {
-	if kind == vmActionKind {
+	switch kind {
+	case cloneKind:
+		return jobKind{artifactServed: nil, artifactAllowed: nil, finished: auditCloneJob}
+	case vmActionKind:
 		return jobKind{artifactServed: nil, artifactAllowed: nil, finished: auditVMActionJob}
+	default:
+		return jobKind{artifactServed: nil, artifactAllowed: nil, finished: nil}
 	}
-
-	return jobKind{artifactServed: nil, artifactAllowed: nil, finished: nil}
 }
 
 // jobAccess checks whether a role may act on a job of another user.
@@ -137,6 +140,25 @@ func logJobEnd(j job.Job, removed bool) {
 	if finished := jobKindOf(j.Kind).finished; finished != nil {
 		finished(j)
 	}
+}
+
+// jobError is why a finished job, or its first failed item, failed.
+func jobError(j job.Job) error {
+	if j.Status == job.StatusCanceled {
+		return errors.New("canceled")
+	}
+
+	for _, item := range j.Items {
+		if item.Status == job.ItemFailed && item.Error != "" {
+			return errors.New(item.Error)
+		}
+	}
+
+	if j.Error != "" {
+		return errors.New(j.Error)
+	}
+
+	return fmt.Errorf("job %s", j.Status)
 }
 
 // startJob starts a job for the request's user, logs it, and answers 202 with the job and its location under
