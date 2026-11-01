@@ -18,6 +18,9 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"phenix/api/job"
 	"phenix/store"
 	v1 "phenix/types/version/v1"
@@ -60,6 +63,15 @@ func combinedRole(roles ...rbac.Role) rbac.Role {
 	}
 
 	return combined
+}
+
+// startedJobOpts compare a job as a start request answers it, leaving out what
+// the registry sets and what changes as the job runs.
+var startedJobOpts = cmp.Options{ //nolint:gochecknoglobals // shared comparison options
+	cmpopts.IgnoreFields(job.Job{}, "ID", "Title", "Params", "Status", "Created", "Updated",
+		"Started", "Finished", "Revision"),
+	cmpopts.IgnoreFields(job.Progress{}, "Done", "Total", "Bytes"),
+	cmpopts.IgnoreFields(job.Item{}, "Status"),
 }
 
 // testMM is the test minimega: every node is the headnode, and it serves the VMs, captures and

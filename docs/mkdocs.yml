@@ -83,6 +83,7 @@ nav:
     - VMs: vms.md
     - VM Actions: vm-multi-action.md
     - Images: image.md
+    - Disks: disks.md
   - Apps:
     - Overview: apps.md
     - Examples: examples.md

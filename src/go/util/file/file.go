@@ -250,7 +250,7 @@ func listExperimentFiles(ctx context.Context, exp string) (Files, error) {
 		switch extension {
 		case ".hdd":
 			file.Categories = append(file.Categories, "VM Disk Snapshot")
-		case ".qc2", ".qcow2":
+		case ".qc2", ".qcow", ".qcow2":
 			file.Categories = append(file.Categories, "Backing Image")
 		}
 
