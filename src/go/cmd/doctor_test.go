@@ -279,6 +279,52 @@ func TestBaseDirCheck(t *testing.T) {
 	}
 }
 
+// minimega's version passes, an error fails, and a probe that never answers
+// fails once the timeout passes.
+func TestMinimegaCheck(t *testing.T) {
+	t.Parallel()
+
+	hung := make(chan struct{})
+	t.Cleanup(func() { close(hung) })
+
+	tests := map[string]struct {
+		probe func(time.Duration) (string, error)
+		want  doctorCheck
+	}{
+		"answers": {
+			probe: func(time.Duration) (string, error) { return "minimega 2.9", nil },
+			want:  doctorCheck{Name: "minimega", Status: doctorPass, Detail: "minimega 2.9"},
+		},
+		"error": {
+			probe: func(time.Duration) (string, error) { return "", errors.New("connection refused") },
+			want: doctorCheck{
+				Name:   "minimega",
+				Status: doctorFail,
+				Detail: "no answer on /tmp/mm/minimega: connection refused (a stale socket file: minimega stopped without removing it)",
+			},
+		},
+		"hangs": {
+			probe: func(time.Duration) (string, error) { <-hung; return "", nil },
+			want: doctorCheck{
+				Name:   "minimega",
+				Status: doctorFail,
+				Detail: "no answer on /tmp/mm/minimega within 50ms",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := minimegaCheck(t.Context(), "/tmp/mm", 50*time.Millisecond, tc.probe)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("minimegaCheck() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 // A flag wins, then a non-empty environment variable, then the config file,
 // then the default, as viper reads them.
 func TestSettingSource(t *testing.T) {
@@ -559,13 +605,12 @@ func TestDoctorReportNeverShowsSecrets(t *testing.T) {
 }
 
 // phenix doctor reports each setting's source, redacts the JWT signing key,
-// fails on a setting phenix refuses, creates no unix socket, and leaves
-// common.MinimegaBase alone.
+// fails when minimega does not answer, warns when phenix ui does not, creates
+// no unix socket, and leaves common.MinimegaBase alone.
 func TestDoctorCommand(t *testing.T) {
 	const key = "doctor-test-signing-key"
 
 	t.Setenv("PHENIX_UI_JWT_SIGNING_KEY", key)
-	t.Setenv("PHENIX_BRIDGE_MODE", "bogus")
 	t.Setenv("PHENIX_BASE_DIR_MINIMEGA", t.TempDir())
 	t.Setenv("PHENIX_STORE_ENDPOINT", "bolt://"+filepath.Join(t.TempDir(), "store.bdb"))
 
@@ -584,7 +629,7 @@ func TestDoctorCommand(t *testing.T) {
 	cmd.SetContext(t.Context())
 
 	if err := cmd.Execute(); !errors.Is(err, errDoctorFailed) {
-		t.Fatalf("doctor error = %v, want %v (bridge-mode)", err, errDoctorFailed)
+		t.Fatalf("doctor error = %v, want %v (no minimega)", err, errDoctorFailed)
 	}
 
 	if strings.Contains(out.String(), key) {
@@ -630,7 +675,8 @@ func TestDoctorCommand(t *testing.T) {
 	}
 
 	for name, status := range map[string]doctorStatus{
-		"bridge-mode": doctorFail, "store.endpoint": doctorPass, "ui.jwt-signing-key": doctorPass,
+		"minimega": doctorFail, "minimega-env": doctorSkip, "server": doctorWarn,
+		"store.endpoint": doctorPass, "ui.jwt-signing-key": doctorPass,
 	} {
 		if checks[name] != status {
 			t.Errorf("check %s = %q, want %q (checks %v)", name, checks[name], status, report.Checks)

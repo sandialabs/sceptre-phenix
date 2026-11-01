@@ -168,7 +168,7 @@ func TestDoctorJSONNoSettings(t *testing.T) {
 
 	in := fakeDoctorInput(newDoctorTestDir(t), nil)
 	opts := doctorOptions{output: FormatJSON, noSettings: true}
-	report := runDoctor(t.Context(), in, doctorChecks(), map[string]bool{"env": true, "ui.tls": true}, opts)
+	report := runDoctor(t.Context(), in, doctorChecks(), map[string]bool{"env": true, minimegaCheckName: true}, opts)
 
 	var out bytes.Buffer
 	if err := writeDoctorReport(&out, report, opts); err != nil {
@@ -180,11 +180,16 @@ func TestDoctorJSONNoSettings(t *testing.T) {
 	}
 
 	var decoded struct {
-		Checks []map[string]any `json:"checks"`
+		Version map[string]string `json:"version"`
+		Checks  []map[string]any  `json:"checks"`
 	}
 
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if decoded.Version["minimega"] != "" {
+		t.Errorf("version minimega = %q, want empty with minimega skipped", decoded.Version["minimega"])
 	}
 
 	skipped := make(map[string]map[string]any)
@@ -200,8 +205,8 @@ func TestDoctorJSONNoSettings(t *testing.T) {
 	}
 
 	want := map[string]map[string]any{
-		"env":    {"id": "env", "group": "env", "name": "environment variables", "status": "skip", "detail": "skipped by --skip"},
-		"ui.tls": {"id": "ui.tls", "group": "tls", "name": "ui.tls", "status": "skip", "detail": "skipped by --skip"},
+		"env":             {"id": "env", "group": "env", "name": "environment variables", "status": "skip", "detail": "skipped by --skip"},
+		minimegaCheckName: {"id": "minimega", "group": "minimega", "name": "minimega", "status": "skip", "detail": "skipped by --skip"},
 	}
 
 	for id, c := range want {
@@ -368,7 +373,7 @@ func TestDoctorCommandColors(t *testing.T) { //nolint:paralleltest // sets envir
 			var out bytes.Buffer
 
 			cmd.SetOut(&out)
-			cmd.SetArgs(append([]string{"-x"}, tc.args...))
+			cmd.SetArgs(append([]string{"--skip", "minimega,server", "-x"}, tc.args...))
 			cmd.SetContext(t.Context())
 
 			_ = cmd.Execute()
