@@ -48,26 +48,30 @@ The development server needs a backend on `localhost:3000`.
 ## Browser Tests
 
 Playwright requires a running `phenix ui`; default URL is
-`http://127.0.0.1:3000`, override with `E2E_BASE_URL`. Locally, start the
-server on another port (see the port rule in the root `AGENTS.md`):
+`http://127.0.0.1:3197`, override with `E2E_BASE_URL` (see the port rule in
+the root `AGENTS.md`):
 
 ```bash
 cd e2e
 npm ci
 npx playwright install --with-deps chromium firefox
-# against `phenix ui --listen-endpoint 127.0.0.1:3080`
-E2E_BASE_URL=http://127.0.0.1:3080 npx playwright test
+# against `phenix ui --listen-endpoint 127.0.0.1:3197`
+npx playwright test
 ```
 
-`routes.spec.js` also runs an axe-core WCAG 2.x A/AA scan on every route; fix
-violations in the UI (accessible names, contrast, ARIA) rather than excluding
-rules. Lifecycle tests additionally need minimega, VM images, and a topology
-(`E2E_LIFECYCLE=1`). Auth suites require a matching `VITE_AUTH` build and
-signing key. See `e2e/README.md`; report missing prerequisites instead of
-silently skipping checks.
+Specs that only read the store are listed in `playwright.config.js` and run in
+parallel; add a new spec there only if it creates, changes and deletes nothing.
+Tests time out after 30 s unless their file raises it.
+
+Default smoke tests need only a server. `routes.spec.js` also runs an
+axe-core WCAG 2.x A/AA scan on every route; fix violations in the UI
+(accessible names, contrast, ARIA) rather than excluding rules. Lifecycle tests additionally need
+minimega, VM images, and a topology (`E2E_LIFECYCLE=1`). Auth suites require a
+matching `VITE_AUTH` build and signing key. See `e2e/README.md`; report missing
+prerequisites instead of silently skipping checks.
 
 Axe scans run only in Chromium. Do not run them in Firefox. The Firefox
-project (`@cross-browser` tests) is only for browser-compatibility tests.
+projects (`@cross-browser` tests) are only for browser-compatibility tests.
 
 On CI a failed test runs once more, and a test that passes only on that retry
 is flaky and fails the run (`failOnFlakyTests`). Fix the cause instead of
@@ -117,7 +121,8 @@ view that uses a heavy one) rather than installing all of Buefy.
 
 `.github/workflows/frontend.yml` runs Vitest, builds the UI and a
 real backend once for each `VITE_AUTH` mode, then runs the Playwright tests
-in parallel jobs, each against its own server (see `e2e/README.md`). It
+in parallel jobs, each against its own server started with
+`scripts/ci-start-phenix-ui.sh` (see `e2e/README.md`). It
 builds and runs the Playwright tests only for a change that can affect the
 browser, as its `changes` job decides. A change to unit tests under `test/`
 alone runs Vitest only. Keep Node versions, npm cache lockfiles, auth build
